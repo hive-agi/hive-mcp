@@ -101,8 +101,8 @@
   [{:name "eval_elisp"
     :description "Execute arbitrary Emacs Lisp code in the running Emacs instance. Returns the result of the evaluation."
     :inputSchema {:type "object"
-                  :properties {:code {:type "string"
-                                      :description "The Emacs Lisp code to evaluate"}}
+                  :properties {"code" {:type "string"
+                                       :description "The Emacs Lisp code to evaluate"}}
                   :required ["code"]}
     :handler handle-eval-elisp}
 
@@ -119,8 +119,8 @@
    {:name "get_buffer_content"
     :description "Get the full content of a specific Emacs buffer."
     :inputSchema {:type "object"
-                  :properties {:buffer_name {:type "string"
-                                             :description "Name of the buffer to read"}}
+                  :properties {"buffer_name" {:type "string"
+                                              :description "Name of the buffer to read"}}
                   :required ["buffer_name"]}
     :handler handle-get-buffer-content}
 
@@ -132,16 +132,16 @@
    {:name "switch_to_buffer"
     :description "Switch to a specific buffer in Emacs."
     :inputSchema {:type "object"
-                  :properties {:buffer_name {:type "string"
-                                             :description "Name of the buffer to switch to"}}
+                  :properties {"buffer_name" {:type "string"
+                                              :description "Name of the buffer to switch to"}}
                   :required ["buffer_name"]}
     :handler handle-switch-to-buffer}
 
    {:name "find_file"
     :description "Open a file in Emacs. Creates a new buffer visiting that file."
     :inputSchema {:type "object"
-                  :properties {:file_path {:type "string"
-                                           :description "Absolute path to the file to open"}}
+                  :properties {"file_path" {:type "string"
+                                            :description "Absolute path to the file to open"}}
                   :required ["file_path"]}
     :handler handle-find-file}
 
@@ -153,16 +153,16 @@
    {:name "goto_line"
     :description "Move cursor to a specific line number in the current buffer."
     :inputSchema {:type "object"
-                  :properties {:line {:type "integer"
-                                      :description "Line number to go to (1-indexed)"}}
+                  :properties {"line" {:type "integer"
+                                       :description "Line number to go to (1-indexed)"}}
                   :required ["line"]}
     :handler handle-goto-line}
 
    {:name "insert_text"
     :description "Insert text at the current cursor position in Emacs."
     :inputSchema {:type "object"
-                  :properties {:text {:type "string"
-                                      :description "Text to insert"}}
+                  :properties {"text" {:type "string"
+                                       :description "Text to insert"}}
                   :required ["text"]}
     :handler handle-insert-text}
 
