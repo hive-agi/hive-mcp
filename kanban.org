@@ -8,8 +8,152 @@
 :END:
 
 ** TODO Implement bidirectional sync between vibe-kanban and org-kanban
+:PROPERTIES:
+:ID:       c75935fb-2f77-49b8-ba0e-2e0db9e4d044
+:VIBE_ID:  e54edcbd-3b67-42fd-8ce3-487d22e883fe
+:END:
 ** TODO Create projectile addon for emacs-mcp
+:PROPERTIES:
+:ID:       667e61c0-4e2b-42e8-9b7b-ccc2a0d2dd55
+:VIBE_ID:  bc0e078a-1613-4596-a4f3-cb75d16d203a
+:END:
 ** TODO Create magit addon for emacs-mcp
+:PROPERTIES:
+:ID:       ff03ad80-47ee-41bd-8c59-6b9a1d57c803
+:VIBE_ID:  c801605b-d21e-42eb-9a61-300c3f96ca3c
+:END:
+** DONE Add org-kanban addon with dual backends
+:PROPERTIES:
+:ID:       3131b0ec-09c9-48c0-b6bb-56bb52a7cb4c
+:CREATED:  2025-12-29 16:26
+:AGENT:    emacs-3455282
+:SESSION:  20251229-162605
+:UPDATED:  2025-12-29 16:26
+:LAST_AGENT: emacs-3455282
+:VIBE_ID:  ee9d5a6b-afe6-4224-9543-cd448a49f2a6
+:END:
+** DONE Implement graceful degradation for eval failures
+:PROPERTIES:
+:ID:       3663b578-2d56-4115-b0bf-4edd679b48b5
+:CREATED:  2025-12-29 16:26
+:AGENT:    emacs-3455282
+:SESSION:  20251229-162605
+:UPDATED:  2025-12-29 16:26
+:LAST_AGENT: emacs-3455282
+:VIBE_ID:  687f5b15-9673-411c-b086-81f9cb3ff3b0
+:END:
+** DONE Add telemetry for eval operations
+:PROPERTIES:
+:ID:       f711c92d-f05a-4823-a12c-a20758c02ac0
+:CREATED:  2025-12-29 16:26
+:AGENT:    emacs-3455282
+:SESSION:  20251229-162605
+:UPDATED:  2025-12-29 16:26
+:LAST_AGENT: emacs-3455282
+:VIBE_ID:  de363cea-e8b4-46a5-ad2d-eddbd1df9408
+:END:
+** DONE Add boundary validation for eval inputs
+:PROPERTIES:
+:ID:       cb611618-bcdf-477d-93ee-50ad42893753
+:CREATED:  2025-12-29 16:26
+:AGENT:    emacs-3455282
+:SESSION:  20251229-162606
+:UPDATED:  2025-12-29 16:26
+:LAST_AGENT: emacs-3455282
+:VIBE_ID:  6252b3bf-0a73-4173-8706-3f76d8f19336
+:END:
+** DONE Create EvaluatorFactory with mode selection
+:PROPERTIES:
+:ID:       e6d109b7-bf0b-40bf-8ad5-d92e1bdf126f
+:CREATED:  2025-12-29 16:26
+:AGENT:    emacs-3455282
+:SESSION:  20251229-162606
+:UPDATED:  2025-12-29 16:26
+:LAST_AGENT: emacs-3455282
+:VIBE_ID:  ba551d14-5d89-4ed4-8b85-6928f827ec44
+:END:
+** DONE Implement EmacsCiderEvaluator
+:PROPERTIES:
+:ID:       882f9eeb-0e82-46c7-a0af-287f543193cb
+:CREATED:  2025-12-29 16:26
+:AGENT:    emacs-3455282
+:SESSION:  20251229-162606
+:UPDATED:  2025-12-29 16:26
+:LAST_AGENT: emacs-3455282
+:VIBE_ID:  4992fe7c-644f-4659-bb3b-9660689667ea
+:END:
+** DONE Implement DirectNreplEvaluator
+:PROPERTIES:
+:ID:       0de8a6ec-8c54-406b-8f5a-f861b1dc3c8d
+:CREATED:  2025-12-29 16:26
+:AGENT:    emacs-3455282
+:SESSION:  20251229-162606
+:UPDATED:  2025-12-29 16:26
+:LAST_AGENT: emacs-3455282
+:VIBE_ID:  de4cfc8c-de0d-43a3-87a7-addaa7808b24
+:END:
+** DONE Define ReplEvaluator protocol (DIP)
+:PROPERTIES:
+:ID:       e0a7a379-7ecd-4000-97aa-ab53056f62ca
+:CREATED:  2025-12-29 16:26
+:AGENT:    emacs-3455282
+:SESSION:  20251229-162606
+:UPDATED:  2025-12-29 16:26
+:LAST_AGENT: emacs-3455282
+:VIBE_ID:  dcd6cd59-20c8-4033-827c-45974b0a440f
+:END:
+** DONE Merge feat/addon-system to staging
+:PROPERTIES:
+:ID:       31dd233d-a042-4e56-8ccd-d4ff1c1638fd
+:CREATED:  2025-12-29 16:26
+:AGENT:    emacs-3455282
+:SESSION:  20251229-162606
+:UPDATED:  2025-12-29 16:26
+:LAST_AGENT: emacs-3455282
+:VIBE_ID:  1d0e9b71-4889-4951-a1d0-6df0d270fea2
+:END:
+** DONE Test addon loading in Emacs
+:PROPERTIES:
+:ID:       45879f05-452e-40fa-b3d2-7955bfe3045b
+:CREATED:  2025-12-29 16:26
+:AGENT:    emacs-3455282
+:SESSION:  20251229-162606
+:UPDATED:  2025-12-29 16:26
+:LAST_AGENT: emacs-3455282
+:VIBE_ID:  26fba8fc-2158-486d-b6cd-c4be5920ab65
+:END:
+** DONE Update README with addon system documentation
+:PROPERTIES:
+:ID:       72dbb55a-49aa-48f9-b47a-8c392962ad77
+:CREATED:  2025-12-29 16:26
+:AGENT:    emacs-3455282
+:SESSION:  20251229-162606
+:UPDATED:  2025-12-29 16:26
+:LAST_AGENT: emacs-3455282
+:VIBE_ID:  ee555311-f56c-4510-b657-de390f4d5d09
+:END:
+** DONE Create org-ai-mcp addon stub
+:PROPERTIES:
+:ID:       f04692bb-592a-4b3a-8b98-7d4a811508a8
+:CREATED:  2025-12-29 16:26
+:AGENT:    emacs-3455282
+:SESSION:  20251229-162607
+:UPDATED:  2025-12-29 16:26
+:LAST_AGENT: emacs-3455282
+:VIBE_ID:  6bcd672a-6f47-4af1-a630-9be012503da1
+:END:
+
+
+
+
+
+
+
+
+
+
+
+
 
 * Swarm Orchestration (Claude Fleet Control)
 :PROPERTIES:
@@ -32,7 +176,8 @@ Define JSON schema for master↔slave communication:
 
 See: [[file:docs/swarm-protocol.md][docs/swarm-protocol.md]]
 
-*** TODO Create emacs-mcp-swarm.el addon skeleton
+*** DONE Create emacs-mcp-swarm.el addon skeleton
+CLOSED: [2025-12-29]
 :PROPERTIES:
 :EFFORT: S
 :PRIORITY: high
@@ -41,8 +186,13 @@ See: [[file:docs/swarm-protocol.md][docs/swarm-protocol.md]]
 - Register with addon system (:init, :shutdown)
 - Define customization variables
 - Create keymap (C-c s prefix)
+- File-based presets system with custom directory support
 
-*** TODO Implement slave session spawning (vterm)
+See: [[file:elisp/addons/emacs-mcp-swarm.el][elisp/addons/emacs-mcp-swarm.el]]
+See: [[file:presets/][presets/]]
+
+*** DONE Implement slave session spawning (vterm)
+CLOSED: [2025-12-29]
 :PROPERTIES:
 :EFFORT: M
 :PRIORITY: high
@@ -51,7 +201,8 @@ See: [[file:docs/swarm-protocol.md][docs/swarm-protocol.md]]
 - track-slave: Register in emacs-mcp-swarm--sessions alist
 - configure-slave: Set working directory, context
 
-*** TODO Implement prompt dispatch to slave
+*** DONE Implement prompt dispatch to slave
+CLOSED: [2025-12-29]
 :PROPERTIES:
 :EFFORT: M
 :PRIORITY: high
@@ -60,16 +211,28 @@ See: [[file:docs/swarm-protocol.md][docs/swarm-protocol.md]]
 - Handle multi-line prompts (heredoc or temp file)
 - Add task ID tracking
 
-*** TODO Implement response collection
+*** DONE Implement response collection
+CLOSED: [2025-12-29]
 :PROPERTIES:
 :EFFORT: L
 :PRIORITY: high
 :END:
 - Monitor buffer for completion markers
-- Parse response from buffer content
+- Parse response from buffer content (vterm-aware: search for ● marker)
 - Handle timeouts and errors
 
-*** TODO Implement slave lifecycle management
+
+*** DONE Add eat terminal support (experimental)
+CLOSED: [2025-12-29]
+:PROPERTIES:
+:EFFORT: S
+:PRIORITY: low
+:END:
+- Added emacs-mcp-swarm-terminal customization (vterm/eat)
+- Updated spawn and dispatch for terminal-agnostic operation
+- Marked experimental due to input handling issues with eat
+*** DONE Implement slave lifecycle management
+CLOSED: [2025-12-29]
 :PROPERTIES:
 :EFFORT: M
 :PRIORITY: high
@@ -221,14 +384,50 @@ Returns: killed_count
 - Code review swarm
 
 ** DONE Add org-kanban addon with dual backends
+:PROPERTIES:
+:VIBE_ID:  ee9d5a6b-afe6-4224-9543-cd448a49f2a6
+:END:
 ** DONE Implement graceful degradation for eval failures
+:PROPERTIES:
+:VIBE_ID:  687f5b15-9673-411c-b086-81f9cb3ff3b0
+:END:
 ** DONE Add telemetry for eval operations
+:PROPERTIES:
+:VIBE_ID:  de363cea-e8b4-46a5-ad2d-eddbd1df9408
+:END:
 ** DONE Add boundary validation for eval inputs
+:PROPERTIES:
+:VIBE_ID:  6252b3bf-0a73-4173-8706-3f76d8f19336
+:END:
 ** DONE Create EvaluatorFactory with mode selection
+:PROPERTIES:
+:VIBE_ID:  ba551d14-5d89-4ed4-8b85-6928f827ec44
+:END:
 ** DONE Implement EmacsCiderEvaluator
+:PROPERTIES:
+:VIBE_ID:  4992fe7c-644f-4659-bb3b-9660689667ea
+:END:
 ** DONE Implement DirectNreplEvaluator
+:PROPERTIES:
+:VIBE_ID:  de4cfc8c-de0d-43a3-87a7-addaa7808b24
+:END:
 ** DONE Define ReplEvaluator protocol (DIP)
+:PROPERTIES:
+:VIBE_ID:  dcd6cd59-20c8-4033-827c-45974b0a440f
+:END:
 ** DONE Merge feat/addon-system to staging
+:PROPERTIES:
+:VIBE_ID:  1d0e9b71-4889-4951-a1d0-6df0d270fea2
+:END:
 ** DONE Test addon loading in Emacs
+:PROPERTIES:
+:VIBE_ID:  26fba8fc-2158-486d-b6cd-c4be5920ab65
+:END:
 ** DONE Update README with addon system documentation
+:PROPERTIES:
+:VIBE_ID:  ee555311-f56c-4510-b657-de390f4d5d09
+:END:
 ** DONE Create org-ai-mcp addon stub
+:PROPERTIES:
+:VIBE_ID:  6bcd672a-6f47-4af1-a630-9be012503da1
+:END:

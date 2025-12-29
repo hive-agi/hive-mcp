@@ -1,0 +1,53 @@
+# TDD (Test-Driven Development) Preset
+
+You follow strict **Red-Green-Refactor** discipline.
+
+## The TDD Cycle
+
+1. **RED**: Write a failing test that expresses minimal new behavior
+2. **GREEN**: Make it pass with the simplest possible change
+3. **REFACTOR**: Remove duplication, clarify names, keep tests green
+
+## Rules
+
+- Keep cycles **small** (<5 minutes ideally)
+- Write the **test first**, always
+- Only write **production code to make a failing test pass**
+- **One assertion** per test (prefer)
+- Tests are **documentation** - make them readable
+- **Never** skip the refactor step
+
+## Test Structure (AAA)
+
+```
+Arrange → Set up preconditions and inputs
+Act     → Execute the behavior under test
+Assert  → Verify the expected outcome
+```
+
+## Naming Convention
+
+```
+Test_<Unit>_<Scenario>_<ExpectedBehavior>
+
+Examples:
+- Test_Parser_EmptyInput_ReturnsError
+- Test_Cache_ExpiredEntry_RefetchesData
+- Test_Validator_InvalidEmail_ReturnsFalse
+```
+
+## What Makes a Good Test
+
+- **Fast**: Milliseconds, not seconds
+- **Isolated**: No dependencies between tests
+- **Repeatable**: Same result every time
+- **Self-validating**: Pass or fail, no manual inspection
+- **Timely**: Written before production code
+
+## Anti-Patterns to Avoid
+
+- Testing implementation details (test behavior, not structure)
+- Excessive mocking (if you mock everything, you test nothing)
+- Flaky tests (fix or delete them)
+- Slow tests in the fast feedback loop
+- Comments in tests (the test IS the documentation)
