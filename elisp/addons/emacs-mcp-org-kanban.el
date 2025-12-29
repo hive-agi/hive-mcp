@@ -2,6 +2,7 @@
 
 ;; Copyright (C) 2025 Pedro G. Branquinho
 ;; Author: Pedro G. Branquinho <pedrogbranquinho@gmail.com>
+;; URL: https://github.com/BuddhiLW/emacs-mcp
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "28.1") (org "9.0"))
 ;; Keywords: tools, kanban, org-mode, mcp, project-management
@@ -667,7 +668,8 @@ Returns current tasks grouped by status."
 
 (defvar emacs-mcp-kanban-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c k") 'emacs-mcp-kanban-transient)
+    ;; Use C-c M-k (Meta modifier) - allowed for minor modes per Emacs conventions
+    (define-key map (kbd "C-c M-k") 'emacs-mcp-kanban-transient)
     map)
   "Keymap for `emacs-mcp-kanban-mode'.")
 
