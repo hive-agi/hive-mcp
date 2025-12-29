@@ -199,32 +199,50 @@ elisp/
 ├── emacs-mcp-transient.el # Transient menus
 ├── emacs-mcp-workflows.el # Workflow system
 ├── emacs-mcp-api.el       # Stable API for Claude
-├── emacs-mcp-addons.el    # Addon system
+├── emacs-mcp-addons.el    # Addon system with lifecycle hooks
 └── addons/                # Built-in and custom addons
-    ├── emacs-mcp-addon-template.el
+    ├── emacs-mcp-addon-template.el  # Template for new addons
+    ├── emacs-mcp-cider.el           # CIDER + async nREPL
+    ├── emacs-mcp-vibe-kanban.el     # Task management server
+    ├── emacs-mcp-package-lint.el    # MELPA tools
     ├── emacs-mcp-claude-code.el
-    ├── emacs-mcp-cider.el
     ├── emacs-mcp-org-ai.el
-    └── emacs-mcp-org-kanban.el  # Dual-backend kanban
+    └── emacs-mcp-org-kanban.el
 ```
 
 ## Addon System
 
-Modular integrations with other Emacs packages. Addons are **lazy-loaded** when target packages are detected.
+Modular integrations with other Emacs packages. Addons are **lazy-loaded** when target packages are detected and support lifecycle hooks for async initialization.
 
-| Addon | Integration | MCP Tools | Description |
-|-------|-------------|:---------:|-------------|
-| [claude-code](ADDONS.org#claude-code) | [claude-code.el](https://github.com/karthink/claude-code) | - | Context injection for Claude CLI |
-| [cider](ADDONS.org#cider) | [CIDER](https://github.com/clojure-emacs/cider) | ✓ | Clojure REPL integration |
-| [org-ai](ADDONS.org#org-ai) | [org-ai](https://github.com/rksm/org-ai) | - | AI conversation context |
-| [org-kanban](ADDONS.org#org-kanban) | [org-kanban](https://github.com/gizmomogwai/org-kanban) | ✓ | Dual-backend kanban tracking |
+| Addon | Integration | Features |
+|-------|-------------|----------|
+| cider | [CIDER](https://github.com/clojure-emacs/cider) | Async nREPL startup, auto-connect, memory integration |
+| vibe-kanban | [vibe-kanban](https://github.com/your/vibe-kanban) | Task management server (npx subprocess) |
+| claude-code | [claude-code.el](https://github.com/karthink/claude-code) | Context injection for Claude CLI |
+| org-ai | [org-ai](https://github.com/rksm/org-ai) | AI conversation context |
+| package-lint | package-lint | MELPA compliance tools |
 
 **Quick start:**
 ```elisp
-(emacs-mcp-addons-auto-load)  ; Auto-load when packages detected
+;; Auto-load addons when packages are detected
+(emacs-mcp-addons-auto-load)
+
+;; Or always load specific addons on startup
+(setq emacs-mcp-addon-always-load '(cider vibe-kanban))
+
+;; For async nREPL startup
+(setq emacs-mcp-cider-auto-start-nrepl t)
 ```
 
-📖 **Full documentation:** [ADDONS.org](ADDONS.org)
+**Addon lifecycle hooks:**
+- `:init` - Synchronous setup (keybindings, config)
+- `:async-init` - Non-blocking startup (servers, subprocesses)
+- `:shutdown` - Cleanup on unload
+
+📖 **Documentation:**
+- [Addon Development Guide](docs/addon-development.md)
+- [Addon API Reference](docs/addon-api.md)
+- [Full Addon Docs](docs/ADDONS.org)
 
 ## Tested & Working
 
@@ -302,6 +320,20 @@ To avoid confusion when discussing MCP servers at multiple levels:
    | Provides tools for | Editing code | Controlling editor |
 
 4. **The map ≠ territory**: The *name* "clojure-mcp" refers to its *target domain* (Clojure development), not its implementation language.
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Addon Development Guide](docs/addon-development.md) | How to create addons |
+| [Addon API Reference](docs/addon-api.md) | Complete API documentation |
+| [Contributing](docs/CONTRIBUTING.md) | Contribution guidelines |
+| [Project Summary](docs/PROJECT_SUMMARY.md) | Architecture overview |
+| [Implementation Summary](docs/IMPLEMENTATION_SUMMARY.md) | Technical details |
+| [Telemetry](docs/telemetry.md) | Telemetry & metrics |
+| [Resilience](docs/resilience.md) | Error handling patterns |
+| [Validation](docs/validation.md) | Input validation |
+| [Evaluator](docs/evaluator.md) | Elisp evaluation |
 
 ## License
 
