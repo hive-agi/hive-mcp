@@ -48,7 +48,8 @@
     (claude-code . claude-code)
     (org-ai . org-ai)
     (org-kanban . org-kanban)
-    (vibe-kanban . vibe-kanban))
+    (vibe-kanban . vibe-kanban)
+    (swarm . vterm))
   "Alist of (ADDON . TRIGGER-FEATURE).
 When TRIGGER-FEATURE is loaded, ADDON will be auto-loaded.
 Addon names correspond to files: emacs-mcp-ADDON.el"

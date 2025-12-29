@@ -2,6 +2,7 @@
 
 ;; Copyright (C) 2025 Pedro G. Branquinho
 ;; Author: Pedro G. Branquinho <pedrogbranquinho@gmail.com>
+;; URL: https://github.com/BuddhiLW/emacs-mcp
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "28.1") (org "9.0"))
 ;; Keywords: tools, kanban, org-mode, mcp, project-management
@@ -273,6 +274,68 @@ If PROJECT-ID is nil, uses the first project (Default Project)."
          (save-buffer)
          `((id . ,(org-entry-get nil "ID"))))))))
 
+(defun emacs-mcp-kanban-create-task-with-vibe-id (title vibe-id &optional description status)
+  "Create task with VIBE-ID for delta sync tracking.
+TITLE is the task title, VIBE-ID is the vibe-kanban UUID.
+Optional DESCRIPTION and STATUS (defaults to todo)."
+  (emacs-mcp-kanban--with-org-file
+   (save-excursion
+     (goto-char (point-min))
+     (when (re-search-forward "^\\* " nil t)
+       (beginning-of-line)
+       (org-end-of-subtree t)
+       (let ((org-status (upcase (or (emacs-mcp-kanban--vibe-to-org-status status) "TODO"))))
+         (insert "\n** " org-status " " title "\n")
+         (org-entry-put nil "ID" (org-id-uuid))
+         (org-entry-put nil "VIBE_ID" vibe-id)
+         (org-entry-put nil "CREATED" (format-time-string "%Y-%m-%d %H:%M"))
+         (when description
+           (org-entry-put nil "DESCRIPTION" description))
+         (save-buffer)
+         `((id . ,(org-entry-get nil "ID"))
+           (vibe_id . ,vibe-id)))))))
+
+(defun emacs-mcp-kanban-find-by-vibe-id (vibe-id)
+  "Find task by VIBE-ID. Returns task alist or nil."
+  (emacs-mcp-kanban--with-org-file
+   (let ((found nil))
+     (org-map-entries
+      (lambda ()
+        (when (equal (org-entry-get nil "VIBE_ID") vibe-id)
+          (setq found `((id . ,(org-entry-get nil "ID"))
+                        (vibe_id . ,vibe-id)
+                        (title . ,(org-get-heading t t t t))
+                        (status . ,(emacs-mcp-kanban--org-to-vibe-status
+                                   (org-entry-get nil "TODO")))))))
+      "LEVEL=2")
+     found)))
+
+(defun emacs-mcp-kanban-get-synced-vibe-ids ()
+  "Get list of all VIBE_IDs already synced to org-kanban."
+  (emacs-mcp-kanban--with-org-file
+   (let ((ids '()))
+     (org-map-entries
+      (lambda ()
+        (when-let ((vibe-id (org-entry-get nil "VIBE_ID")))
+          (push vibe-id ids)))
+      "LEVEL=2")
+     ids)))
+
+(defun emacs-mcp-kanban-backfill-vibe-id (title vibe-id)
+  "Add VIBE_ID to existing task matched by TITLE.
+Returns t if task was found and updated, nil otherwise."
+  (emacs-mcp-kanban--with-org-file
+   (let ((found nil))
+     (org-map-entries
+      (lambda ()
+        (let ((task-title (org-get-heading t t t t)))
+          (when (string= task-title title)
+            (org-entry-put nil "VIBE_ID" vibe-id)
+            (setq found t))))
+      "LEVEL=2")
+     (when found (save-buffer))
+     found)))
+
 (cl-defmethod emacs-mcp-kanban--update-task ((_backend (eql standalone)) task-id &rest props)
   "Update task in standalone org file."
   (emacs-mcp-kanban--with-org-file
@@ -311,6 +374,10 @@ If PROJECT-ID is nil, uses the first project (Default Project)."
 (defmacro emacs-mcp-kanban--with-org-file (&rest body)
   "Execute BODY with the kanban org file as current buffer."
   `(let ((file emacs-mcp-kanban-org-file))
+     ;; Ensure org-id is properly initialized
+     (require 'org-id)
+     (unless org-id-locations
+       (setq org-id-locations (make-hash-table :test 'equal)))
      (unless (file-exists-p file)
        (emacs-mcp-kanban--init-org-file file))
      (with-current-buffer (find-file-noselect file)
@@ -601,7 +668,8 @@ Returns current tasks grouped by status."
 
 (defvar emacs-mcp-kanban-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c k") 'emacs-mcp-kanban-transient)
+    ;; Use C-c M-k (Meta modifier) - allowed for minor modes per Emacs conventions
+    (define-key map (kbd "C-c M-k") 'emacs-mcp-kanban-transient)
     map)
   "Keymap for `emacs-mcp-kanban-mode'.")
 
