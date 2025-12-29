@@ -363,20 +363,22 @@ Returns: killed_count
 - Status dashboard
 
 ** Phase 4: Documentation & Testing
-*** TODO Write swarm-development.md guide
+*** DONE Write swarm-development.md guide
 :PROPERTIES:
 :EFFORT: M
 :PRIORITY: medium
 :END:
+CLOSED: [2025-12-29]
 - Architecture overview
 - Usage examples
 - Best practices for task decomposition
 
-*** TODO Write swarm-api.md reference
+*** DONE Write swarm-api.md reference
 :PROPERTIES:
 :EFFORT: S
 :PRIORITY: medium
 :END:
+CLOSED: [2025-12-29]
 - All MCP tools documented
 - Elisp API documented
 - JSON schemas
