@@ -2,7 +2,7 @@
 
 ;; Copyright (C) 2025 Pedro G. Branquinho
 ;; Author: Pedro G. Branquinho <pedrogbranquinho@gmail.com>
-;; Version: 0.1.0
+;; Version: 0.2.0
 ;; Package-Requires: ((emacs "28.1") (cider "1.0"))
 ;; Keywords: tools, clojure, mcp
 ;; SPDX-License-Identifier: MIT
@@ -16,6 +16,8 @@
 ;; - Save REPL results to memory
 ;; - Query memory for previous solutions
 ;; - Auto-log REPL sessions
+;; - Auto-start nREPL server (async, non-blocking)
+;; - Auto-connect CIDER when nREPL becomes available
 ;;
 ;; Usage:
 ;;   (emacs-mcp-addon-load 'cider)
@@ -23,6 +25,10 @@
 ;;
 ;; Or enable auto-loading when CIDER loads:
 ;;   (emacs-mcp-addons-auto-load)
+;;
+;; For auto-start nREPL on addon load:
+;;   (setq emacs-mcp-cider-auto-start-nrepl t)
+;;   (add-to-list 'emacs-mcp-addon-always-load 'cider)
 
 ;;; Code:
 
@@ -34,6 +40,9 @@
 (declare-function cider-nrepl-eval-sync "cider-nrepl")
 (declare-function cider-last-sexp "cider-eval")
 (declare-function cider-interactive-eval "cider-eval")
+(declare-function cider-connect-clj "cider")
+(declare-function cider-connected-p "cider-connection")
+(declare-function cider-repl-buffers "cider-connection")
 
 ;;;; Customization
 
@@ -53,10 +62,164 @@
   :type 'integer
   :group 'emacs-mcp-cider)
 
+(defcustom emacs-mcp-cider-auto-start-nrepl nil
+  "When non-nil, automatically start nREPL server on addon load.
+The server starts asynchronously and does not block Emacs startup."
+  :type 'boolean
+  :group 'emacs-mcp-cider)
+
+(defcustom emacs-mcp-cider-auto-connect t
+  "When non-nil, automatically connect CIDER when nREPL is available.
+Works with both auto-started and externally started nREPL servers."
+  :type 'boolean
+  :group 'emacs-mcp-cider)
+
+(defcustom emacs-mcp-cider-nrepl-port 7910
+  "Default port for nREPL server."
+  :type 'integer
+  :group 'emacs-mcp-cider)
+
+(defcustom emacs-mcp-cider-project-dir nil
+  "Project directory for starting nREPL.
+If nil, uses the current project root or `default-directory'."
+  :type '(choice (const nil) directory)
+  :group 'emacs-mcp-cider)
+
+(defcustom emacs-mcp-cider-connect-retry-interval 1.0
+  "Seconds between connection retry attempts."
+  :type 'number
+  :group 'emacs-mcp-cider)
+
+(defcustom emacs-mcp-cider-connect-max-retries 30
+  "Maximum number of connection retry attempts (0 = unlimited)."
+  :type 'integer
+  :group 'emacs-mcp-cider)
+
 ;;;; Internal
 
 (defvar emacs-mcp-cider--last-eval nil
   "Last evaluated expression and result for potential saving.")
+
+(defvar emacs-mcp-cider--nrepl-process nil
+  "Process object for auto-started nREPL server.")
+
+(defvar emacs-mcp-cider--connect-timer nil
+  "Timer for auto-connect retry attempts.")
+
+(defvar emacs-mcp-cider--connect-attempts 0
+  "Number of connection attempts made.")
+
+;;;; Async nREPL Start & Auto-Connect
+
+(defun emacs-mcp-cider--project-dir ()
+  "Get the project directory for nREPL."
+  (or emacs-mcp-cider-project-dir
+      (when (fboundp 'project-root)
+        (when-let* ((proj (project-current)))
+          (project-root proj)))
+      default-directory))
+
+(defun emacs-mcp-cider--port-open-p (port)
+  "Check if PORT is accepting connections."
+  (condition-case nil
+      (let ((proc (make-network-process
+                   :name "nrepl-check"
+                   :host "localhost"
+                   :service port
+                   :nowait nil)))
+        (delete-process proc)
+        t)
+    (error nil)))
+
+(defun emacs-mcp-cider--start-nrepl-async ()
+  "Start nREPL server asynchronously in background.
+Does not block Emacs startup."
+  (let* ((default-directory (emacs-mcp-cider--project-dir))
+         (port (number-to-string emacs-mcp-cider-nrepl-port))
+         (buf-name "*nREPL-server*"))
+    (message "emacs-mcp-cider: Starting nREPL on port %s..." port)
+    (setq emacs-mcp-cider--nrepl-process
+          (start-process "nrepl-server" buf-name
+                         "clojure" "-M:nrepl"))))
+
+(defun emacs-mcp-cider--try-connect ()
+  "Try to connect CIDER to nREPL.  Returns t if successful."
+  (when (and (featurep 'cider)
+             (fboundp 'cider-connect-clj)
+             (not (cider-connected-p))
+             (emacs-mcp-cider--port-open-p emacs-mcp-cider-nrepl-port))
+    (condition-case err
+        (progn
+          (cider-connect-clj (list :host "localhost"
+                                   :port emacs-mcp-cider-nrepl-port))
+          (message "emacs-mcp-cider: Connected to nREPL on port %d"
+                   emacs-mcp-cider-nrepl-port)
+          t)
+      (error
+       (message "emacs-mcp-cider: Connection failed: %s" (error-message-string err))
+       nil))))
+
+(defun emacs-mcp-cider--auto-connect-tick ()
+  "Timer callback for auto-connect attempts."
+  (setq emacs-mcp-cider--connect-attempts (1+ emacs-mcp-cider--connect-attempts))
+  (cond
+   ;; Already connected - stop trying
+   ((and (featurep 'cider) (cider-connected-p))
+    (emacs-mcp-cider--stop-auto-connect)
+    (message "emacs-mcp-cider: Already connected"))
+   ;; Successfully connected
+   ((emacs-mcp-cider--try-connect)
+    (emacs-mcp-cider--stop-auto-connect))
+   ;; Max retries reached
+   ((and (> emacs-mcp-cider-connect-max-retries 0)
+         (>= emacs-mcp-cider--connect-attempts emacs-mcp-cider-connect-max-retries))
+    (emacs-mcp-cider--stop-auto-connect)
+    (message "emacs-mcp-cider: Auto-connect gave up after %d attempts"
+             emacs-mcp-cider--connect-attempts))))
+
+(defun emacs-mcp-cider--start-auto-connect ()
+  "Start the auto-connect timer."
+  (unless emacs-mcp-cider--connect-timer
+    (setq emacs-mcp-cider--connect-attempts 0)
+    (setq emacs-mcp-cider--connect-timer
+          (run-with-timer emacs-mcp-cider-connect-retry-interval
+                          emacs-mcp-cider-connect-retry-interval
+                          #'emacs-mcp-cider--auto-connect-tick))
+    (message "emacs-mcp-cider: Auto-connect started (checking every %.1fs)"
+             emacs-mcp-cider-connect-retry-interval)))
+
+(defun emacs-mcp-cider--stop-auto-connect ()
+  "Stop the auto-connect timer."
+  (when emacs-mcp-cider--connect-timer
+    (cancel-timer emacs-mcp-cider--connect-timer)
+    (setq emacs-mcp-cider--connect-timer nil)))
+
+;;;###autoload
+(defun emacs-mcp-cider-start-nrepl ()
+  "Start nREPL server and auto-connect CIDER.
+Non-blocking - runs in background."
+  (interactive)
+  (emacs-mcp-cider--start-nrepl-async)
+  (when emacs-mcp-cider-auto-connect
+    (emacs-mcp-cider--start-auto-connect)))
+
+;;;###autoload
+(defun emacs-mcp-cider-auto-connect ()
+  "Start polling for nREPL and connect when available.
+Use this when nREPL is started externally."
+  (interactive)
+  (emacs-mcp-cider--start-auto-connect))
+
+;;;###autoload
+(defun emacs-mcp-cider-stop-nrepl ()
+  "Stop the auto-started nREPL server."
+  (interactive)
+  (emacs-mcp-cider--stop-auto-connect)
+  (when (and emacs-mcp-cider--nrepl-process
+             (process-live-p emacs-mcp-cider--nrepl-process))
+    (kill-process emacs-mcp-cider--nrepl-process)
+    (setq emacs-mcp-cider--nrepl-process nil)
+    (message "emacs-mcp-cider: nREPL server stopped")))
 
 ;;;; Context Functions
 
@@ -171,6 +334,10 @@
 (transient-define-prefix emacs-mcp-cider-transient ()
   "MCP integration menu for CIDER."
   ["emacs-mcp + CIDER"
+   ["nREPL Server"
+    ("n" "Start nREPL (async)" emacs-mcp-cider-start-nrepl)
+    ("N" "Stop nREPL" emacs-mcp-cider-stop-nrepl)
+    ("c" "Auto-connect" emacs-mcp-cider-auto-connect)]
    ["Evaluate"
     ("e" "Eval with context" emacs-mcp-cider-eval-with-context)]
    ["Memory"
@@ -221,6 +388,39 @@ Shows output in REPL buffer for collaborative debugging."
         :repl-type (when (and (featurep 'cider) (boundp 'cider-repl-type))
                      cider-repl-type)))
 
+;;;; Addon Lifecycle Functions
+
+(defun emacs-mcp-cider--addon-init ()
+  "Synchronous init for cider addon.
+Sets up keybindings and loads required features."
+  (require 'emacs-mcp-api nil t)
+  (message "emacs-mcp-cider: initialized"))
+
+(defun emacs-mcp-cider--addon-async-init ()
+  "Asynchronous init for cider addon.
+Starts nREPL server in background if configured.
+Returns the process object for lifecycle tracking."
+  (when emacs-mcp-cider-auto-start-nrepl
+    (emacs-mcp-cider--start-nrepl-async)
+    ;; Register timer with addon system for cleanup
+    (when emacs-mcp-cider-auto-connect
+      (emacs-mcp-cider--start-auto-connect)
+      (when emacs-mcp-cider--connect-timer
+        (when (fboundp 'emacs-mcp-addon-register-timer)
+          (emacs-mcp-addon-register-timer 'cider emacs-mcp-cider--connect-timer))))
+    ;; Return process for lifecycle tracking
+    emacs-mcp-cider--nrepl-process))
+
+(defun emacs-mcp-cider--addon-shutdown ()
+  "Shutdown function for cider addon.
+Stops nREPL server and cleans up timers."
+  (emacs-mcp-cider--stop-auto-connect)
+  (when (and emacs-mcp-cider--nrepl-process
+             (process-live-p emacs-mcp-cider--nrepl-process))
+    (kill-process emacs-mcp-cider--nrepl-process)
+    (setq emacs-mcp-cider--nrepl-process nil))
+  (message "emacs-mcp-cider: shutdown complete"))
+
 ;;;; Minor Mode
 
 ;;;###autoload
@@ -230,26 +430,30 @@ Shows output in REPL buffer for collaborative debugging."
 Provides:
 - Save REPL results to memory
 - Query past solutions
-- Clojure-aware context"
+- Clojure-aware context
+
+Note: nREPL auto-start is handled by addon lifecycle hooks.
+Set `emacs-mcp-cider-auto-start-nrepl' to t and load the addon."
   :init-value nil
   :lighter " MCP-Clj"
   :global t
   :group 'emacs-mcp-cider
   (if emacs-mcp-cider-mode
-      (progn
-        (require 'emacs-mcp-api nil t)
-        (message "emacs-mcp-cider enabled"))
-    (message "emacs-mcp-cider disabled")))
+      (message "emacs-mcp-cider mode enabled")
+    (message "emacs-mcp-cider mode disabled")))
 
 ;;;; Addon Registration
 
 (with-eval-after-load 'emacs-mcp-addons
   (emacs-mcp-addon-register
    'cider
-   :version "0.1.0"
-   :description "Integration with CIDER (Clojure IDE)"
+   :version "0.2.0"
+   :description "Integration with CIDER (Clojure IDE) - async nREPL startup"
    :requires '(cider emacs-mcp-api)
-   :provides '(emacs-mcp-cider-mode emacs-mcp-cider-transient)))
+   :provides '(emacs-mcp-cider-mode emacs-mcp-cider-transient)
+   :init #'emacs-mcp-cider--addon-init
+   :async-init #'emacs-mcp-cider--addon-async-init
+   :shutdown #'emacs-mcp-cider--addon-shutdown))
 
 (provide 'emacs-mcp-cider)
 ;;; emacs-mcp-cider.el ends here

@@ -131,6 +131,32 @@
 ;;    ["Query"
 ;;     ("q" "Query memory" emacs-mcp-template-query-memory)]])
 
+;;;; Addon Lifecycle Functions (NEW - recommended approach)
+
+;; These functions are called automatically by the addon system:
+
+(defun emacs-mcp-template--addon-init ()
+  "Synchronous init - runs immediately after loading.
+Use for lightweight setup that must complete before use."
+  (require 'emacs-mcp-api nil t)
+  ;; Example: setup keybindings, hooks
+  (message "emacs-mcp-template: initialized"))
+
+(defun emacs-mcp-template--addon-async-init ()
+  "Asynchronous init - runs in background after loading.
+Use for long-running startup (servers, subprocesses).
+Should return a process object if starting a subprocess."
+  ;; Example: start a server
+  ;; (when emacs-mcp-template-auto-start
+  ;;   (start-process "my-server" "*my-server*" "my-command"))
+  nil)
+
+(defun emacs-mcp-template--addon-shutdown ()
+  "Shutdown - runs when addon is unloaded.
+Use for cleanup (stopping servers, saving state)."
+  ;; Example: stop server, save state
+  (message "emacs-mcp-template: shutdown complete"))
+
 ;;;; Registration
 
 ;; Register this addon with emacs-mcp
@@ -140,7 +166,11 @@
    :version "0.1.0"
    :description "Template addon for emacs-mcp"
    :requires '(emacs-mcp-api)
-   :provides '(emacs-mcp-template-mode)))
+   :provides '(emacs-mcp-template-mode)
+   ;; Lifecycle hooks (all optional):
+   :init #'emacs-mcp-template--addon-init
+   :async-init #'emacs-mcp-template--addon-async-init
+   :shutdown #'emacs-mcp-template--addon-shutdown))
 
 (provide 'emacs-mcp-addon-template)
 ;;; emacs-mcp-addon-template.el ends here
