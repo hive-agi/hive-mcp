@@ -14,7 +14,10 @@
 
         ;; Logging - Timbre with SLF4J bridge
         com.taoensso/timbre {:mvn/version "6.8.0"}
-        com.fzakaria/slf4j-timbre {:mvn/version "0.4.1"}}
+        com.fzakaria/slf4j-timbre {:mvn/version "0.4.1"}
+
+        ;; Schema validation for org-clj
+        metosin/malli {:mvn/version "0.16.4"}}
 
  :aliases
  {:mcp
