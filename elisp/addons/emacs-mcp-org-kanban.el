@@ -579,6 +579,29 @@ For standalone backend, PROJECT-ID can be nil."
   (setq-local line-spacing 0.2)
   (hl-line-mode 1))
 
+;; Evil-mode integration
+(with-eval-after-load 'evil
+  (evil-set-initial-state 'emacs-mcp-kanban-board-mode 'emacs)
+  ;; Also define keys in normal state for users who prefer staying in normal
+  (evil-define-key 'normal emacs-mcp-kanban-board-mode-map
+    "n" #'emacs-mcp-kanban-board-next-task
+    "p" #'emacs-mcp-kanban-board-prev-task
+    "j" #'emacs-mcp-kanban-board-next-task
+    "k" #'emacs-mcp-kanban-board-prev-task
+    "l" #'emacs-mcp-kanban-board-next-column
+    "h" #'emacs-mcp-kanban-board-prev-column
+    (kbd "RET") #'emacs-mcp-kanban-board-open-task
+    "m" #'emacs-mcp-kanban-board-move-task
+    ">" #'emacs-mcp-kanban-board-move-right
+    "<" #'emacs-mcp-kanban-board-move-left
+    "c" #'emacs-mcp-kanban-board-create-task
+    "d" #'emacs-mcp-kanban-board-delete-task
+    "e" #'emacs-mcp-kanban-board-edit-task
+    "g" #'emacs-mcp-kanban-board-refresh
+    "o" #'emacs-mcp-kanban-open-org-file
+    "q" #'quit-window
+    "?" #'emacs-mcp-kanban-board-help))
+
 (defun emacs-mcp-kanban-board--render ()
   "Render the kanban board in the current buffer."
   (let* ((inhibit-read-only t)
@@ -988,9 +1011,9 @@ Used when CIDER is not connected."
       (dolist (status emacs-mcp-kanban-statuses)
         (insert (format "* %s\n" status))
         (let ((status-tasks (cl-remove-if-not
-                             (lambda (t)
+                             (lambda (tsk)
                                (equal (emacs-mcp-kanban--vibe-to-org-status
-                                      (alist-get 'status t))
+                                      (alist-get 'status tsk))
                                      status))
                              tasks)))
           (dolist (task status-tasks)
@@ -1022,10 +1045,10 @@ Used when CIDER is not connected."
   "Update status of a task interactively."
   (interactive)
   (let* ((tasks (emacs-mcp-kanban-list-tasks))
-         (task-names (mapcar (lambda (t)
+         (task-names (mapcar (lambda (tsk)
                               (format "%s [%s]"
-                                      (alist-get 'title t)
-                                      (alist-get 'status t)))
+                                      (alist-get 'title tsk)
+                                      (alist-get 'status tsk)))
                             tasks))
          (selection (completing-read "Task: " task-names nil t))
          (task (nth (cl-position selection task-names :test #'equal) tasks))
