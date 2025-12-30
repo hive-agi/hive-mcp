@@ -78,7 +78,9 @@ If nil, will attempt to find it in common locations."
 
 ;;;; Internal Variables
 
-(defvar emacs-mcp-melpazoid-transient)  ; defined by transient-define-prefix
+;; Forward declarations for byte-compiler (defined at runtime by transient)
+(defvar emacs-mcp-melpazoid--transient-menu)
+(declare-function emacs-mcp-melpazoid--transient-menu "emacs-mcp-melpazoid")
 
 (defvar emacs-mcp-melpazoid--process nil
   "Current melpazoid process.")
@@ -306,19 +308,26 @@ If RECIPE is nil, attempts to auto-detect from recipes/ directory."
 
 ;;;; Transient Menu
 
-;;;###autoload (autoload 'emacs-mcp-melpazoid-transient "emacs-mcp-melpazoid" nil t)
-(with-eval-after-load 'transient
-  (transient-define-prefix emacs-mcp-melpazoid-transient ()
-    "Melpazoid MELPA testing menu."
-    ["Melpazoid - MELPA Submission Testing"
-     ["Run"
-      ("r" "Run on project" emacs-mcp-melpazoid-run-current-project)
-      ("R" "Run on directory" emacs-mcp-melpazoid-run)
-      ("s" "Stop" emacs-mcp-melpazoid-stop)]
-     ["Results"
-      ("v" "View results" emacs-mcp-melpazoid-show-results)
-      ("S" "Save to memory" emacs-mcp-melpazoid-save-results)
-      ("?" "Status" emacs-mcp-melpazoid-status)]]))
+;;;###autoload
+(defun emacs-mcp-melpazoid-transient ()
+  "Melpazoid MELPA testing menu."
+  (interactive)
+  (if (require 'transient nil t)
+      (progn
+        (unless (fboundp 'emacs-mcp-melpazoid--transient-menu)
+          (transient-define-prefix emacs-mcp-melpazoid--transient-menu ()
+            "Melpazoid MELPA testing menu."
+            ["Melpazoid - MELPA Submission Testing"
+             ["Run"
+              ("r" "Run on project" emacs-mcp-melpazoid-run-current-project)
+              ("R" "Run on directory" emacs-mcp-melpazoid-run)
+              ("s" "Stop" emacs-mcp-melpazoid-stop)]
+             ["Results"
+              ("v" "View results" emacs-mcp-melpazoid-show-results)
+              ("S" "Save to memory" emacs-mcp-melpazoid-save-results)
+              ("?" "Status" emacs-mcp-melpazoid-status)]]))
+        (emacs-mcp-melpazoid--transient-menu))
+    (message "Transient package not available. Use M-x emacs-mcp-melpazoid-run-current-project")))
 
 ;;;; Minor Mode
 
