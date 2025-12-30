@@ -143,6 +143,292 @@
 :VIBE_ID:  6bcd672a-6f47-4af1-a630-9be012503da1
 :END:
 
+* org-clj: Native Clojure Org-Mode Parser
+:PROPERTIES:
+:ID: org-clj-epic-2025
+:EPIC: org-clj
+:DESCRIPTION: Native Clojure library for parsing, querying, and writing org-mode files
+:END:
+
+** Phase 1: Core Parser (Wave 1 - Parallelizable)
+*** TODO Define org-clj data schemas (spec/malli)
+:PROPERTIES:
+:EFFORT: S
+:PRIORITY: high
+:WAVE: 1
+:WORKER: A
+:END:
+Create core data structures for org documents:
+- Document schema with properties, content, headlines
+- Headline schema with level, keyword, tags, properties, planning
+- Property drawer schema
+- Validation functions
+
+*** TODO Implement headline text parser
+:PROPERTIES:
+:EFFORT: M
+:PRIORITY: high
+:WAVE: 1
+:WORKER: A
+:DEPENDS: schemas
+:END:
+Parse headline components:
+- TODO keywords (TODO, DONE, IN-PROGRESS, etc)
+- Priority markers ([#A], [#B], [#C])
+- Tags (:tag1:tag2:)
+- Title text
+
+*** TODO Implement property drawer parser
+:PROPERTIES:
+:EFFORT: S
+:PRIORITY: high
+:WAVE: 1
+:WORKER: B
+:END:
+Parse :PROPERTIES: ... :END: blocks:
+- Key-value extraction
+- Special properties (ID, CREATED, etc)
+- Custom property handling
+
+*** TODO Create test fixtures and sample org files
+:PROPERTIES:
+:EFFORT: S
+:PRIORITY: high
+:WAVE: 1
+:WORKER: C
+:END:
+Create test data:
+- Minimal org file
+- Complex nested headlines
+- Various TODO keywords
+- Property drawer variations
+- Edge cases (empty, special chars)
+
+** Phase 2: Document Parser & Writer (Wave 2)
+*** TODO Implement document-level parser
+:PROPERTIES:
+:EFFORT: M
+:PRIORITY: high
+:WAVE: 2
+:WORKER: A
+:DEPENDS: headline-parser
+:END:
+Parse file-level elements:
+- #+TITLE, #+AUTHOR, #+STARTUP
+- File-level properties
+- Comments and blank lines
+
+*** TODO Implement headline tree builder
+:PROPERTIES:
+:EFFORT: M
+:PRIORITY: high
+:WAVE: 2
+:WORKER: A
+:DEPENDS: headline-parser
+:END:
+Build nested structure from flat headlines:
+- Level-based nesting algorithm
+- Parent-child relationships
+- Sibling ordering
+
+*** TODO Implement headline writer/serializer
+:PROPERTIES:
+:EFFORT: M
+:PRIORITY: high
+:WAVE: 2
+:WORKER: B
+:DEPENDS: schemas
+:END:
+Serialize headline back to org format:
+- Stars based on level
+- TODO keyword formatting
+- Priority and tags
+- Property drawer formatting
+
+*** TODO Implement document writer
+:PROPERTIES:
+:EFFORT: M
+:PRIORITY: high
+:WAVE: 2
+:WORKER: B
+:DEPENDS: headline-writer
+:END:
+Full document serialization:
+- File-level properties
+- Headline tree traversal
+- Whitespace preservation
+
+*** TODO Add round-trip parser tests
+:PROPERTIES:
+:EFFORT: M
+:PRIORITY: high
+:WAVE: 2
+:WORKER: C
+:DEPENDS: parser, writer
+:END:
+Verify idempotent round-trips:
+- parse → write → parse = same structure
+- Test with real kanban.org
+- Property preservation
+
+** Phase 3: Query & Transform (Wave 3 - Parallelizable)
+*** TODO Implement find-by-id query
+:PROPERTIES:
+:EFFORT: S
+:PRIORITY: medium
+:WAVE: 3
+:WORKER: A
+:DEPENDS: parser
+:END:
+Find headline by :ID property.
+
+*** TODO Implement find-by-status query
+:PROPERTIES:
+:EFFORT: S
+:PRIORITY: medium
+:WAVE: 3
+:WORKER: A
+:DEPENDS: parser
+:END:
+Filter headlines by TODO keyword.
+
+*** TODO Implement find-by-property query
+:PROPERTIES:
+:EFFORT: S
+:PRIORITY: medium
+:WAVE: 3
+:WORKER: A
+:DEPENDS: parser
+:END:
+Generic property-based queries.
+
+*** TODO Implement update-headline transform
+:PROPERTIES:
+:EFFORT: M
+:PRIORITY: medium
+:WAVE: 3
+:WORKER: B
+:DEPENDS: query
+:END:
+Update headline by ID with new values.
+
+*** TODO Implement set-status transform
+:PROPERTIES:
+:EFFORT: S
+:PRIORITY: medium
+:WAVE: 3
+:WORKER: B
+:DEPENDS: query
+:END:
+Change TODO keyword on headline.
+
+*** TODO Implement set-property transform
+:PROPERTIES:
+:EFFORT: S
+:PRIORITY: medium
+:WAVE: 3
+:WORKER: B
+:DEPENDS: query
+:END:
+Add/update property on headline.
+
+*** TODO Create kanban-specific operations
+:PROPERTIES:
+:EFFORT: M
+:PRIORITY: medium
+:WAVE: 3
+:WORKER: C
+:DEPENDS: parser
+:END:
+Kanban helpers:
+- kanban-tasks: Extract level-2 as tasks
+- kanban-move-task: Change status column
+- kanban-create-task: Add new task
+
+** Phase 4: MCP Integration (Wave 4)
+*** TODO Implement org_clj_parse MCP tool
+:PROPERTIES:
+:EFFORT: S
+:PRIORITY: medium
+:WAVE: 4
+:WORKER: A
+:DEPENDS: parser
+:END:
+Parse org file to EDN/JSON.
+
+*** TODO Implement org_clj_write MCP tool
+:PROPERTIES:
+:EFFORT: S
+:PRIORITY: medium
+:WAVE: 4
+:WORKER: A
+:DEPENDS: writer
+:END:
+Write EDN back to org file.
+
+*** TODO Implement org_clj_query MCP tool
+:PROPERTIES:
+:EFFORT: S
+:PRIORITY: medium
+:WAVE: 4
+:WORKER: A
+:DEPENDS: query
+:END:
+Query headlines via MCP.
+
+*** TODO Implement org_kanban_native_status MCP tool
+:PROPERTIES:
+:EFFORT: M
+:PRIORITY: medium
+:WAVE: 4
+:WORKER: B
+:DEPENDS: kanban-ops
+:END:
+Native kanban status (replaces elisp).
+
+*** TODO Implement org_kanban_native_move MCP tool
+:PROPERTIES:
+:EFFORT: M
+:PRIORITY: medium
+:WAVE: 4
+:WORKER: B
+:DEPENDS: kanban-ops
+:END:
+Native task move operation.
+
+** Phase 5: Polish (Wave 5)
+*** TODO Add document caching layer
+:PROPERTIES:
+:EFFORT: M
+:PRIORITY: low
+:WAVE: 5
+:END:
+Cache by file path + mtime.
+
+*** TODO Add telemetry for org-clj operations
+:PROPERTIES:
+:EFFORT: S
+:PRIORITY: low
+:WAVE: 5
+:END:
+Parse time, query performance metrics.
+
+*** TODO Update org-kanban.el for native backend
+:PROPERTIES:
+:EFFORT: M
+:PRIORITY: low
+:WAVE: 5
+:END:
+Add option to use Clojure backend with elisp fallback.
+
+*** TODO Write org-clj API documentation
+:PROPERTIES:
+:EFFORT: M
+:PRIORITY: low
+:WAVE: 5
+:END:
+API reference, usage examples, integration guide.
+
 
 
 
