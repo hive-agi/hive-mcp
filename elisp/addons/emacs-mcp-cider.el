@@ -109,6 +109,170 @@ If nil, uses the current project root or `default-directory'."
 (defvar emacs-mcp-cider--connect-attempts 0
   "Number of connection attempts made.")
 
+;;;; Multi-Session Registry:
+
+(defvar emacs-mcp-cider--sessions (make-hash-table :test 'equal)
+  "Registry of named CIDER sessions.
+Keys are session names (strings).
+Values are plists with :port, :process, :buffer, :agent-id, :project-dir.")
+
+(defcustom emacs-mcp-cider-session-port-base 7920
+  "Base port for spawning new CIDER sessions.
+Sessions will use ports starting from this value."
+  :type 'integer
+  :group 'emacs-mcp-cider)
+
+(defcustom emacs-mcp-cider-session-port-max 7999
+  "Maximum port for CIDER sessions."
+  :type 'integer
+  :group 'emacs-mcp-cider)
+
+(defun emacs-mcp-cider--find-available-port ()
+  "Find the next available port for a new session."
+  (let ((port emacs-mcp-cider-session-port-base)
+        (used-ports (mapcar (lambda (name)
+                              (plist-get (gethash name emacs-mcp-cider--sessions) :port))
+                            (hash-table-keys emacs-mcp-cider--sessions))))
+    (while (and (<= port emacs-mcp-cider-session-port-max)
+                (or (member port used-ports)
+                    (emacs-mcp-cider--port-open-p port)))
+      (setq port (1+ port)))
+    (if (<= port emacs-mcp-cider-session-port-max)
+        port
+      (error "No available ports in range %d-%d"
+             emacs-mcp-cider-session-port-base
+             emacs-mcp-cider-session-port-max))))
+
+;;;###autoload
+(defun emacs-mcp-cider-spawn-session (name &optional project-dir agent-id)
+  "Spawn a new named CIDER session.
+NAME is the session identifier (e.g., \"agent-1\", \"task-render\").
+PROJECT-DIR is the directory to start nREPL in (default: current project).
+AGENT-ID optionally links this session to a swarm agent."
+  (interactive "sSession name: ")
+  (when (gethash name emacs-mcp-cider--sessions)
+    (error "Session '%s' already exists" name))
+  (let* ((port (emacs-mcp-cider--find-available-port))
+         (dir (or project-dir (emacs-mcp-cider--project-dir)))
+         (default-directory dir)
+         (buf-name (format "*nREPL-%s*" name))
+         (process (start-process (format "nrepl-%s" name) buf-name
+                                 "clojure" "-M:nrepl"
+                                 "-p" (number-to-string port))))
+    ;; Register session
+    (puthash name
+             (list :port port
+                   :process process
+                   :buffer buf-name
+                   :agent-id agent-id
+                   :project-dir dir
+                   :status 'starting
+                   :cider-buffer nil)
+             emacs-mcp-cider--sessions)
+    (message "emacs-mcp-cider: Spawning session '%s' on port %d..." name port)
+    ;; Start auto-connect for this session
+    (run-with-timer 2 1
+                    (lambda ()
+                      (emacs-mcp-cider--try-connect-session name)))
+    (list :name name :port port :status "starting")))
+
+(defun emacs-mcp-cider--try-connect-session (name)
+  "Try to connect CIDER to session NAME."
+  (let* ((session (gethash name emacs-mcp-cider--sessions))
+         (port (plist-get session :port))
+         (status (plist-get session :status)))
+    (when (and session (eq status 'starting))
+      (if (emacs-mcp-cider--port-open-p port)
+          (condition-case err
+              (let ((conn (cider-connect-clj (list :host "localhost" :port port))))
+                (puthash name
+                         (plist-put (plist-put session :status 'connected)
+                                    :cider-buffer (buffer-name conn))
+                         emacs-mcp-cider--sessions)
+                (message "emacs-mcp-cider: Session '%s' connected on port %d" name port))
+            (error
+             (message "emacs-mcp-cider: Session '%s' connection failed: %s"
+                      name (error-message-string err))))
+        ;; Still waiting for nREPL to start
+        (let ((attempts (or (plist-get session :attempts) 0)))
+          (if (< attempts 30)
+              (progn
+                (puthash name (plist-put session :attempts (1+ attempts))
+                         emacs-mcp-cider--sessions)
+                (run-with-timer 1 nil
+                                (lambda () (emacs-mcp-cider--try-connect-session name))))
+            (puthash name (plist-put session :status 'timeout)
+                     emacs-mcp-cider--sessions)
+            (message "emacs-mcp-cider: Session '%s' timed out waiting for nREPL" name)))))))
+
+;;;###autoload
+(defun emacs-mcp-cider-list-sessions ()
+  "List all active CIDER sessions."
+  (interactive)
+  (let ((sessions '()))
+    (maphash (lambda (name props)
+               (push (list :name name
+                           :port (plist-get props :port)
+                           :status (plist-get props :status)
+                           :agent-id (plist-get props :agent-id)
+                           :cider-buffer (plist-get props :cider-buffer))
+                     sessions))
+             emacs-mcp-cider--sessions)
+    (if (called-interactively-p 'any)
+        (message "Sessions: %s" (json-encode sessions))
+      sessions)))
+
+;;;###autoload
+(defun emacs-mcp-cider-get-session (name)
+  "Get session info for NAME."
+  (gethash name emacs-mcp-cider--sessions))
+
+;;;###autoload
+(defun emacs-mcp-cider-kill-session (name)
+  "Kill the CIDER session NAME."
+  (interactive
+   (list (completing-read "Kill session: "
+                          (hash-table-keys emacs-mcp-cider--sessions))))
+  (let ((session (gethash name emacs-mcp-cider--sessions)))
+    (when session
+      (let ((process (plist-get session :process))
+            (cider-buf (plist-get session :cider-buffer)))
+        ;; Kill CIDER connection
+        (when (and cider-buf (get-buffer cider-buf))
+          (with-current-buffer cider-buf
+            (when (fboundp 'cider-quit) (cider-quit))))
+        ;; Kill nREPL process
+        (when (and process (process-live-p process))
+          (kill-process process)))
+      (remhash name emacs-mcp-cider--sessions)
+      (message "emacs-mcp-cider: Session '%s' killed" name))))
+
+;;;###autoload
+(defun emacs-mcp-cider-eval-in-session (name code)
+  "Evaluate CODE in the CIDER session NAME."
+  (let* ((session (gethash name emacs-mcp-cider--sessions))
+         (cider-buf (plist-get session :cider-buffer)))
+    (unless session
+      (error "Session '%s' not found" name))
+    (unless (eq (plist-get session :status) 'connected)
+      (error "Session '%s' not connected (status: %s)"
+             name (plist-get session :status)))
+    (with-current-buffer cider-buf
+      (let ((result (cider-nrepl-sync-request:eval code)))
+        (or (nrepl-dict-get result "value")
+            (nrepl-dict-get result "err")
+            (nrepl-dict-get result "out"))))))
+
+;;;###autoload
+(defun emacs-mcp-cider-kill-all-sessions ()
+  "Kill all CIDER sessions."
+  (interactive)
+  (maphash (lambda (name _props)
+             (emacs-mcp-cider-kill-session name))
+           emacs-mcp-cider--sessions)
+  (clrhash emacs-mcp-cider--sessions)
+  (message "emacs-mcp-cider: All sessions killed"))
+
 ;;;; Async nREPL Start & Auto-Connect:
 
 (defun emacs-mcp-cider--project-dir ()

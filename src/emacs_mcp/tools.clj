@@ -347,6 +347,87 @@
         (v/wrap-validation-error e)
         (throw e)))))
 
+;; =============================================================================
+;; Multi-Session CIDER Tools
+;; =============================================================================
+
+(defn handle-cider-spawn-session
+  "Spawn a new named CIDER session with its own nREPL server.
+   Useful for parallel agent work where each agent needs isolated REPL."
+  [{:keys [name project_dir agent_id]}]
+  (log/info "cider-spawn-session" {:name name :agent_id agent_id})
+  (let [elisp (format "(progn
+                         (require 'emacs-mcp-cider nil t)
+                         (if (fboundp 'emacs-mcp-cider-spawn-session)
+                             (json-encode (emacs-mcp-cider-spawn-session %s %s %s))
+                           (error \"emacs-mcp-cider not loaded\")))"
+                      (pr-str name)
+                      (if project_dir (pr-str project_dir) "nil")
+                      (if agent_id (pr-str agent_id) "nil"))
+        {:keys [success result error]} (ec/eval-elisp elisp)]
+    (if success
+      {:content [{:type "text" :text result}]}
+      {:content [{:type "text" :text (format "Error: %s" error)}]})))
+
+(defn handle-cider-list-sessions
+  "List all active CIDER sessions with their status and ports."
+  [_]
+  (log/info "cider-list-sessions")
+  (let [elisp "(progn
+                 (require 'emacs-mcp-cider nil t)
+                 (if (fboundp 'emacs-mcp-cider-list-sessions)
+                     (json-encode (emacs-mcp-cider-list-sessions))
+                   (json-encode (list))))"
+        {:keys [success result error]} (ec/eval-elisp elisp)]
+    (if success
+      {:content [{:type "text" :text result}]}
+      {:content [{:type "text" :text (format "Error: %s" error)}]})))
+
+(defn handle-cider-eval-session
+  "Evaluate Clojure code in a specific named CIDER session."
+  [{:keys [session_name code]}]
+  (log/info "cider-eval-session" {:session session_name :code-length (count code)})
+  (let [elisp (format "(progn
+                         (require 'emacs-mcp-cider nil t)
+                         (if (fboundp 'emacs-mcp-cider-eval-in-session)
+                             (emacs-mcp-cider-eval-in-session %s %s)
+                           (error \"emacs-mcp-cider not loaded\")))"
+                      (pr-str session_name)
+                      (pr-str code))
+        {:keys [success result error]} (ec/eval-elisp elisp)]
+    (if success
+      {:content [{:type "text" :text result}]}
+      {:content [{:type "text" :text (format "Error: %s" error)}]})))
+
+(defn handle-cider-kill-session
+  "Kill a specific named CIDER session."
+  [{:keys [session_name]}]
+  (log/info "cider-kill-session" {:session session_name})
+  (let [elisp (format "(progn
+                         (require 'emacs-mcp-cider nil t)
+                         (if (fboundp 'emacs-mcp-cider-kill-session)
+                             (progn (emacs-mcp-cider-kill-session %s) \"killed\")
+                           (error \"emacs-mcp-cider not loaded\")))"
+                      (pr-str session_name))
+        {:keys [success result error]} (ec/eval-elisp elisp)]
+    (if success
+      {:content [{:type "text" :text (format "Session '%s' killed" session_name)}]}
+      {:content [{:type "text" :text (format "Error: %s" error)}]})))
+
+(defn handle-cider-kill-all-sessions
+  "Kill all CIDER sessions."
+  [_]
+  (log/info "cider-kill-all-sessions")
+  (let [elisp "(progn
+                 (require 'emacs-mcp-cider nil t)
+                 (if (fboundp 'emacs-mcp-cider-kill-all-sessions)
+                     (progn (emacs-mcp-cider-kill-all-sessions) \"all sessions killed\")
+                   (error \"emacs-mcp-cider not loaded\")))"
+        {:keys [success result error]} (ec/eval-elisp elisp)]
+    (if success
+      {:content [{:type "text" :text "All CIDER sessions killed"}]}
+      {:content [{:type "text" :text (format "Error: %s" error)}]})))
+
 ;;; ============================================================================
 ;;; Kanban Tools (org-kanban integration)
 ;;; ============================================================================
@@ -911,6 +992,47 @@
                                        :description "Clojure code to evaluate"}}
                   :required ["code"]}
     :handler handle-cider-eval-explicit}
+
+   ;; Multi-Session CIDER Tools (for parallel agent work)
+   {:name "cider_spawn_session"
+    :description "Spawn a new named CIDER session with its own nREPL server. Useful for parallel agent work where each agent needs an isolated REPL. Sessions auto-connect when nREPL starts."
+    :inputSchema {:type "object"
+                  :properties {"name" {:type "string"
+                                       :description "Session identifier (e.g., 'agent-1', 'task-render')"}
+                               "project_dir" {:type "string"
+                                              :description "Directory to start nREPL in (optional, defaults to current project)"}
+                               "agent_id" {:type "string"
+                                           :description "Optional swarm agent ID to link this session to"}}
+                  :required ["name"]}
+    :handler handle-cider-spawn-session}
+
+   {:name "cider_list_sessions"
+    :description "List all active CIDER sessions with their status, ports, and linked agents."
+    :inputSchema {:type "object" :properties {}}
+    :handler handle-cider-list-sessions}
+
+   {:name "cider_eval_session"
+    :description "Evaluate Clojure code in a specific named CIDER session. Use for isolated evaluation in multi-agent scenarios."
+    :inputSchema {:type "object"
+                  :properties {"session_name" {:type "string"
+                                               :description "Name of the session to evaluate in"}
+                               "code" {:type "string"
+                                       :description "Clojure code to evaluate"}}
+                  :required ["session_name" "code"]}
+    :handler handle-cider-eval-session}
+
+   {:name "cider_kill_session"
+    :description "Kill a specific named CIDER session and its nREPL server."
+    :inputSchema {:type "object"
+                  :properties {"session_name" {:type "string"
+                                               :description "Name of the session to kill"}}
+                  :required ["session_name"]}
+    :handler handle-cider-kill-session}
+
+   {:name "cider_kill_all_sessions"
+    :description "Kill all CIDER sessions. Useful for cleanup after parallel agent work."
+    :inputSchema {:type "object" :properties {}}
+    :handler handle-cider-kill-all-sessions}
 
    ;; Kanban Integration Tools (requires emacs-mcp-org-kanban addon)
    {:name "mcp_kanban_status"
