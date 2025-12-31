@@ -125,6 +125,52 @@ Returns the created entry as alist suitable for JSON encoding."
   "Delete memory entry by ID."
   (emacs-mcp-memory-delete id))
 
+(defun emacs-mcp-api-memory--content-preview (content &optional max-len)
+  "Return a preview of CONTENT truncated to MAX-LEN characters.
+MAX-LEN defaults to 100.  Handles both string and plist content."
+  (let ((max-len (or max-len 100))
+        (text (cond
+               ((stringp content) content)
+               ((plistp content)
+                ;; For plists, try to get a meaningful preview
+                (or (plist-get content :description)
+                    (plist-get content :title)
+                    (plist-get content :name)
+                    (plist-get content :code)
+                    (format "%S" content)))
+               (t (format "%S" content)))))
+    (if (> (length text) max-len)
+        (concat (substring text 0 (- max-len 3)) "...")
+      text)))
+
+(defun emacs-mcp-api-memory--entry-to-metadata (entry)
+  "Convert ENTRY plist to metadata-only alist.
+Returns id, type, preview (first 100 chars), tags, created."
+  (let ((content (plist-get entry :content)))
+    `((id . ,(plist-get entry :id))
+      (type . ,(plist-get entry :type))
+      (preview . ,(emacs-mcp-api-memory--content-preview content))
+      (tags . ,(or (plist-get entry :tags) []))
+      (created . ,(plist-get entry :created)))))
+
+(defun emacs-mcp-api-memory-query-metadata (type &optional tags limit)
+  "Query project memory by TYPE, returning only metadata.
+TYPE is a string: \"note\", \"snippet\", \"convention\", \"decision\",
+or \"conversation\".
+TAGS is a list of strings.
+LIMIT is max results (default 20).
+Returns a vector of alists with only: id, type, preview, tags, created.
+Use `emacs-mcp-api-memory-get-full' to fetch full content by ID."
+  (let ((results (emacs-mcp-memory-query (intern type) tags nil (or limit 20))))
+    (apply #'vector (mapcar #'emacs-mcp-api-memory--entry-to-metadata results))))
+
+(defun emacs-mcp-api-memory-get-full (id)
+  "Get full memory entry by ID.
+Returns the complete entry as alist suitable for JSON encoding.
+Use this after `emacs-mcp-api-memory-query-metadata' to fetch full content."
+  (when-let* ((entry (emacs-mcp-memory-get id)))
+    (emacs-mcp-api--plist-to-alist entry)))
+
 (defun emacs-mcp-api-memory-get-project-context ()
   "Return full project context including all memory."
   (emacs-mcp-memory-get-project-context))

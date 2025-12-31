@@ -140,12 +140,14 @@ Returns a vector of alists (`json-serialize' requires vectors for arrays)."
 
 (defun emacs-mcp-memory--write-json-file (path data)
   "Write DATA as JSON to PATH.
-DATA is expected to be a list of plists."
+DATA is expected to be a list of plists.
+Uses UTF-8 encoding to avoid interactive coding system prompts."
   (make-directory (file-name-directory path) t)
-  (with-temp-file path
-    (insert (json-serialize (emacs-mcp-memory--convert-for-json data)
-                            :null-object :null
-                            :false-object :false))))
+  (let ((coding-system-for-write 'utf-8-unix))
+    (with-temp-file path
+      (insert (json-serialize (emacs-mcp-memory--convert-for-json data)
+                              :null-object :null
+                              :false-object :false)))))
 
 ;;; Cache Management
 

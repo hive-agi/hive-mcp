@@ -180,6 +180,39 @@
         {:type "text" :text (str "Error: " error) :isError true}))
     {:type "text" :text "Error: emacs-mcp.el is not loaded." :isError true}))
 
+(defn handle-mcp-memory-query-metadata
+  "Query project memory by type, returning only metadata (id, type, preview, tags, created).
+  Use this for efficient browsing - returns ~10x fewer tokens than full query.
+  Follow up with mcp_memory_get_full to fetch specific entries."
+  [{:keys [type tags limit]}]
+  (log/info "mcp-memory-query-metadata:" type)
+  (if (emacs-mcp-el-available?)
+    (let [tags-str (if (seq tags) (str "'" (pr-str tags)) "nil")
+          limit-val (or limit 20)
+          elisp (format "(json-encode (emacs-mcp-api-memory-query-metadata %s %s %d))"
+                        (pr-str type)
+                        tags-str
+                        limit-val)
+          {:keys [success result error]} (ec/eval-elisp elisp)]
+      (if success
+        {:type "text" :text result}
+        {:type "text" :text (str "Error: " error) :isError true}))
+    {:type "text" :text "Error: emacs-mcp.el is not loaded." :isError true}))
+
+(defn handle-mcp-memory-get-full
+  "Get full content of a memory entry by ID.
+  Use after mcp_memory_query_metadata to fetch specific entries."
+  [{:keys [id]}]
+  (log/info "mcp-memory-get-full:" id)
+  (if (emacs-mcp-el-available?)
+    (let [elisp (format "(json-encode (emacs-mcp-api-memory-get-full %s))"
+                        (pr-str id))
+          {:keys [success result error]} (ec/eval-elisp elisp)]
+      (if success
+        {:type "text" :text result}
+        {:type "text" :text (str "Error: " error) :isError true}))
+    {:type "text" :text "Error: emacs-mcp.el is not loaded." :isError true}))
+
 (defn handle-mcp-run-workflow
   "Run a user-defined workflow."
   [{:keys [name args]}]
@@ -920,6 +953,28 @@
                                         :description "Maximum number of results (default: 20)"}}
                   :required ["type"]}
     :handler handle-mcp-memory-query}
+
+   {:name "mcp_memory_query_metadata"
+    :description "Query project memory by type, returning only metadata (id, type, preview, tags, created). Use this for efficient browsing - returns ~10x fewer tokens than full query. Follow up with mcp_memory_get_full to fetch specific entries. Requires emacs-mcp.el."
+    :inputSchema {:type "object"
+                  :properties {"type" {:type "string"
+                                       :enum ["note" "snippet" "convention" "decision" "conversation"]
+                                       :description "Type of memory entries to query"}
+                               "tags" {:type "array"
+                                       :items {:type "string"}
+                                       :description "Optional tags to filter by"}
+                               "limit" {:type "integer"
+                                        :description "Maximum number of results (default: 20)"}}
+                  :required ["type"]}
+    :handler handle-mcp-memory-query-metadata}
+
+   {:name "mcp_memory_get_full"
+    :description "Get full content of a memory entry by ID. Use after mcp_memory_query_metadata to fetch specific entries when you need the full content. Requires emacs-mcp.el."
+    :inputSchema {:type "object"
+                  :properties {"id" {:type "string"
+                                     :description "ID of the memory entry to retrieve"}}
+                  :required ["id"]}
+    :handler handle-mcp-memory-get-full}
 
    {:name "mcp_list_workflows"
     :description "List available user-defined workflows. Requires emacs-mcp.el."
