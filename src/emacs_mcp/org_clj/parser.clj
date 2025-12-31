@@ -217,27 +217,37 @@
 ;; =============================================================================
 
 (defn extract-property-drawer
-  "Extract property drawer from a sequence of org lines.
+  "Extract property drawer from the beginning of org lines.
+   Property drawers must appear immediately after a headline (per org-mode spec).
    Returns {:properties map, :remaining-lines lines-after-drawer}
-   or {:properties nil, :remaining-lines all-lines} if no drawer found."
+   or {:properties nil, :remaining-lines all-lines} if no drawer at start."
   [lines]
   (let [lines-vec (vec lines)
-        start-idx (some (fn [[idx line]]
-                          (when (re-matches #"^\s*:PROPERTIES:\s*$" (str/trim line))
-                            idx))
-                        (map-indexed vector lines-vec))]
-    (if start-idx
-      (let [end-idx (some (fn [[idx line]]
-                            (when (and (> idx start-idx)
-                                       (re-matches #"^\s*:END:\s*$" (str/trim line)))
-                              idx))
+        ;; Skip leading blank lines to find where content starts
+        first-non-blank-idx (some (fn [[idx line]]
+                                    (when-not (str/blank? line) idx))
+                                  (map-indexed vector lines-vec))]
+    (if (and first-non-blank-idx
+             (re-matches #"^\s*:PROPERTIES:\s*$" (str/trim (nth lines-vec first-non-blank-idx))))
+      ;; Found :PROPERTIES: at start - look for :END: (but stop at first headline)
+      (let [start-idx first-non-blank-idx
+            end-idx (some (fn [[idx line]]
+                            (when (> idx start-idx)
+                              (cond
+                                ;; Found :END: - success
+                                (re-matches #"^\s*:END:\s*$" (str/trim line)) idx
+                                ;; Hit a headline before :END: - malformed, stop
+                                (headline? line) nil
+                                :else nil)))
                           (map-indexed vector lines-vec))]
         (if end-idx
           {:properties (parse-property-drawer (subvec lines-vec (inc start-idx) end-idx))
            :remaining-lines (vec (concat (subvec lines-vec 0 start-idx)
                                          (subvec lines-vec (inc end-idx))))}
+          ;; No :END: found or hit a headline - no valid drawer
           {:properties nil
            :remaining-lines lines-vec}))
+      ;; No :PROPERTIES: at start
       {:properties nil
        :remaining-lines lines-vec})))
 
@@ -395,6 +405,24 @@
     {:type :document
      :properties properties
      :headlines (or nested-headlines [])}))
+
+(defn parse-file
+  "Parse an org file directly from a file path.
+   
+   Input: file-path (string path to .org file)
+   Output: Parsed document {:type :document, :properties {...}, :headlines [...]}
+   
+   Example:
+     (parse-file \"/path/to/tasks.org\")
+     => {:type :document
+         :properties {:TITLE \"Tasks\"}
+         :headlines [...]}
+   
+   Throws: Exception if file doesn't exist or can't be read"
+  [file-path]
+  (-> file-path
+      slurp
+      parse-document))
 
 ;; =============================================================================
 ;; Tests

@@ -33,13 +33,25 @@
 
 (defn extract-board-data
   "Extract kanban board data from a parsed org document.
-   Returns {:columns [...] :stats {...} :title ...}"
+   Returns {:columns [...] :stats {...} :title ...}
+   
+   Uses level-2 tasks consistently for both stats and column counts
+   to avoid mismatch between stats line and column headers."
   [doc]
-  (let [stats (query/task-stats doc)
-        todos (query/find-todo doc)
-        in-progress (query/find-in-progress doc)
-        in-review (query/find-by-status doc "IN-REVIEW")
-        done (query/find-done doc)]
+  (let [;; Use find-tasks (level-2 only) for consistent counting
+        tasks (query/find-tasks doc)
+        ;; Group by status keyword
+        by-status (group-by :keyword tasks)
+        todos (get by-status "TODO" [])
+        in-progress (get by-status "IN-PROGRESS" [])
+        in-review (get by-status "IN-REVIEW" [])
+        done (get by-status "DONE" [])
+        ;; Stats derived from the same task set
+        stats {:total (count tasks)
+               :todo (count todos)
+               :in-progress (count in-progress)
+               :in-review (count in-review)
+               :done (count done)}]
     {:title (get-in doc [:properties :TITLE] "Kanban Board")
      :stats stats
      :columns [{:name "TODO" :tasks todos :emoji "📋"}

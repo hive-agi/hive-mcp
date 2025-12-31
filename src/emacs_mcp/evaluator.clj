@@ -297,10 +297,11 @@
 
   (eval-code [_this code]
     (log/debug "EmacsCiderEvaluator: eval-code (explicit mode)")
-    (let [elisp (format "(require 'emacs-mcp-cider nil t)
-                         (if (fboundp 'emacs-mcp-cider-eval-explicit)
-                             (emacs-mcp-cider-eval-explicit %s)
-                           (error \"emacs-mcp-cider not loaded\"))"
+    (let [elisp (format "(progn
+                          (require 'emacs-mcp-cider nil t)
+                          (if (fboundp 'emacs-mcp-cider-eval-explicit)
+                              (emacs-mcp-cider-eval-explicit %s)
+                            (error \"emacs-mcp-cider not loaded\")))"
                         (pr-str code))
           {:keys [success result error]} (ec/eval-elisp elisp)]
       (if success
@@ -324,10 +325,11 @@
 
   (get-status [_this]
     (log/debug "EmacsCiderEvaluator: checking status")
-    (let [elisp "(require 'emacs-mcp-cider nil t)
-                 (if (fboundp 'emacs-mcp-cider-status)
-                     (json-encode (emacs-mcp-cider-status))
-                   (json-encode (list :connected nil :error \"emacs-mcp-cider not loaded\")))"
+    (let [elisp "(progn
+                  (require 'emacs-mcp-cider nil t)
+                  (if (fboundp 'emacs-mcp-cider-status)
+                      (json-encode (emacs-mcp-cider-status))
+                    (json-encode (list :connected nil :error \"emacs-mcp-cider not loaded\"))))"
           {:keys [success result error]} (ec/eval-elisp elisp)]
       (if success
         (try

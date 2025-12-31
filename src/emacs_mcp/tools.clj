@@ -293,10 +293,11 @@
   "Get CIDER connection status."
   [_]
   (log/info "cider-status")
-  (let [elisp "(require 'emacs-mcp-cider nil t)
-               (if (fboundp 'emacs-mcp-cider-status)
-                   (json-encode (emacs-mcp-cider-status))
-                 (json-encode (list :connected nil :error \"emacs-mcp-cider not loaded\")))"
+  (let [elisp "(progn
+                (require 'emacs-mcp-cider nil t)
+                (if (fboundp 'emacs-mcp-cider-status)
+                    (json-encode (emacs-mcp-cider-status))
+                  (json-encode (list :connected nil :error \"emacs-mcp-cider not loaded\"))))"
         {:keys [success result error]} (ec/eval-elisp elisp)]
     (if success
       {:type "text" :text result}
@@ -309,10 +310,11 @@
     (v/validate-cider-eval-request params)
     (let [{:keys [code]} params]
       (telemetry/with-eval-telemetry :cider-silent code nil
-        (let [elisp (format "(require 'emacs-mcp-cider nil t)
-                             (if (fboundp 'emacs-mcp-cider-eval-silent)
-                                 (emacs-mcp-cider-eval-silent %s)
-                               (error \"emacs-mcp-cider not loaded\"))"
+        (let [elisp (format "(progn
+                              (require 'emacs-mcp-cider nil t)
+                              (if (fboundp 'emacs-mcp-cider-eval-silent)
+                                  (emacs-mcp-cider-eval-silent %s)
+                                (error \"emacs-mcp-cider not loaded\")))"
                             (pr-str code))
               {:keys [success result error]} (ec/eval-elisp elisp)]
           (if success
@@ -330,10 +332,11 @@
     (v/validate-cider-eval-request params)
     (let [{:keys [code]} params]
       (telemetry/with-eval-telemetry :cider-explicit code nil
-        (let [elisp (format "(require 'emacs-mcp-cider nil t)
-                             (if (fboundp 'emacs-mcp-cider-eval-explicit)
-                                 (emacs-mcp-cider-eval-explicit %s)
-                               (error \"emacs-mcp-cider not loaded\"))"
+        (let [elisp (format "(progn
+                              (require 'emacs-mcp-cider nil t)
+                              (if (fboundp 'emacs-mcp-cider-eval-explicit)
+                                  (emacs-mcp-cider-eval-explicit %s)
+                                (error \"emacs-mcp-cider not loaded\")))"
                             (pr-str code))
               {:keys [success result error]} (ec/eval-elisp elisp)]
           (if success
@@ -495,9 +498,10 @@
     (let [elisp (if slave_id
                   (format "(json-encode (emacs-mcp-swarm-status \"%s\"))" slave_id)
                   "(json-encode (emacs-mcp-swarm-api-status))")
-          result (ec/eval-elisp elisp)]
-      {:content [{:type "text"
-                  :text (str result)}]})
+          {:keys [success result error]} (ec/eval-elisp elisp)]
+      (if success
+        {:content [{:type "text" :text result}]}
+        {:content [{:type "text" :text (format "Error: %s" error)}]}))
     {:content [{:type "text"
                 :text "emacs-mcp-swarm addon not loaded."}]}))
 
