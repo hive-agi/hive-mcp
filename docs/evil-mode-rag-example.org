@@ -1,0 +1,173 @@
+#+TITLE: Evil-Mode: A Comprehensive Guide
+#+SUBTITLE: Generated via emacs-mcp-docs retrieval + LLM synthesis
+#+DATE: 2025-12-31
+
+* What is Evil-Mode?
+
+Evil is an *extensible Vi layer for Emacs*. It emulates the main features of
+Vim, providing modal editing within Emacs. This means you get:
+
+- Vim's efficient modal editing paradigm
+- Emacs's extensibility and ecosystem
+- The best of both worlds
+
+** Requirements
+
+Evil requires:
+- =undo-redo= (Emacs 28+), =undo-fu=, or =undo-tree= for redo functionality
+- =goto-chg= for =g;= and =g,= motions (jump to last change)
+
+* Core Concept: States (Modes)
+
+Evil's power comes from *states* - different modes for different tasks:
+
+| State    | Purpose                          | Key to Enter |
+|----------+----------------------------------+--------------|
+| Normal   | Navigation and commands          | =ESC=        |
+| Insert   | Text insertion (like normal Emacs) | =i=, =a=, =o= |
+| Visual   | Text selection                   | =v=, =V=, =C-v= |
+| Replace  | Overwrite text                   | =R=          |
+| Operator | Pending operator (after =d=, =c=, etc.) | automatic |
+| Motion   | Read-only navigation             | varies       |
+| Emacs    | Full Emacs keybindings           | =C-z=        |
+
+** State Commands Found
+
+The following state-switching commands are available:
+- =evil-normal-state= - The default "command" state
+- =evil-insert-state= - For inserting text
+- =evil-visual-state= - For selecting regions
+- =evil-replace-state= - For overwriting text
+- =evil-emacs-state= - Escape hatch to pure Emacs
+- =evil-motion-state= - Read-only navigation
+
+* Motions: The Navigation Language
+
+Evil provides a rich vocabulary of motions:
+
+** Character/Line Motions
+| Key | Command                  | Description              |
+|-----+--------------------------+--------------------------|
+| =h= | =evil-backward-char=     | Move left                |
+| =l= | =evil-forward-char=      | Move right               |
+| =j= | =evil-next-line=         | Move down                |
+| =k= | =evil-previous-line=     | Move up                  |
+
+** Word Motions
+| Key | Command                   | Description                |
+|-----+---------------------------+----------------------------|
+| =w= | =evil-forward-word-begin= | Next word start            |
+| =e= | =evil-forward-word-end=   | Next word end              |
+| =b= | =evil-backward-word-begin=| Previous word start        |
+| =W= | =evil-forward-WORD-begin= | Next WORD (whitespace-delimited) |
+
+** Paragraph/Section Motions
+| Key | Command                      | Description           |
+|-----+------------------------------+-----------------------|
+| =}= | =evil-forward-paragraph=     | Next paragraph        |
+| ={= | =evil-backward-paragraph=    | Previous paragraph    |
+| =]]= | =evil-forward-section-begin= | Next section start   |
+| =[[= | =evil-backward-section-begin=| Previous section start |
+
+* Operators: Actions on Text
+
+Operators define *what* to do. Combined with motions, they define *where*:
+
+| Key | Command        | Description            |
+|-----+----------------+------------------------|
+| =d= | =evil-delete=  | Delete text            |
+| =c= | =evil-change=  | Change (delete + insert) |
+| =y= | =evil-yank=    | Copy (yank) text       |
+| =>=  | indent        | Indent right           |
+| =<=  | dedent        | Indent left            |
+
+** The Grammar: Operator + Motion
+
+#+begin_example
+  d w    → delete word
+  c i "  → change inside quotes
+  y a p  → yank a paragraph
+  > }    → indent to next paragraph
+#+end_example
+
+* Text Objects: Semantic Selections
+
+Text objects select *meaningful* chunks of text:
+
+** Inner Objects (=i=) - exclude delimiters
+| Key  | Command              | Selects                |
+|------+----------------------+------------------------|
+| =iw= | =evil-inner-word=    | Word (no whitespace)   |
+| =i"= | =evil-inner-double-quote= | Inside quotes     |
+| =i(= | =evil-inner-paren=   | Inside parentheses     |
+| =i{= | =evil-inner-curly=   | Inside braces          |
+| =ip= | =evil-inner-paragraph= | Paragraph content    |
+| =it= | =evil-inner-tag=     | Inside XML/HTML tag    |
+
+** A Objects (=a=) - include delimiters
+| Key  | Command             | Selects                 |
+|------+---------------------+-------------------------|
+| =aw= | =evil-a-word=       | Word + whitespace       |
+| =a"= | =evil-a-double-quote= | Quotes + contents     |
+| =a(= | =evil-a-paren=      | Parens + contents       |
+| =as= | =evil-a-sentence=   | Full sentence           |
+| =ap= | =evil-a-paragraph=  | Paragraph + blank lines |
+
+* Practical Examples
+
+** Delete Operations
+#+begin_example
+  d d      → delete whole line
+  d w      → delete word
+  d i w    → delete inner word (preserve whitespace)
+  d a p    → delete a paragraph
+  d t )    → delete until )
+  d f "    → delete through next "
+#+end_example
+
+** Change Operations  
+#+begin_example
+  c w      → change word
+  c i "    → change inside quotes
+  c c      → change whole line
+  c $      → change to end of line
+#+end_example
+
+** Yank (Copy) Operations
+#+begin_example
+  y y      → yank line
+  y i {    → yank inside braces
+  y a p    → yank a paragraph
+#+end_example
+
+* Configuration Tips
+
+#+begin_src emacs-lisp
+;; Basic setup
+(require 'evil)
+(evil-mode 1)
+
+;; Set initial state for specific modes
+(evil-set-initial-state 'dired-mode 'emacs)
+(evil-set-initial-state 'magit-status-mode 'emacs)
+
+;; Useful settings
+(setq evil-want-C-u-scroll t)      ; C-u scrolls up
+(setq evil-want-fine-undo t)       ; More granular undo
+(setq evil-search-module 'evil-search) ; Use evil's search
+#+end_src
+
+* Summary
+
+Evil-mode brings Vim's modal editing to Emacs through:
+
+1. *States* - Different modes for different tasks
+2. *Motions* - A language for navigation (41+ motion commands)
+3. *Operators* - Actions like delete, change, yank
+4. *Text Objects* - Semantic selections (26+ text objects)
+
+The combination creates a *composable editing language*:
+=operator= + =motion/text-object= = powerful editing
+
+---
+/Generated by emacs-mcp-docs addon - queried Emacs documentation and synthesized this guide/

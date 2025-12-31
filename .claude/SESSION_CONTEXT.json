@@ -1,67 +1,67 @@
 {
-  "date": "2025-12-29",
-  "focus_area": "emacs-mcp Doom Emacs configuration and kanban migration",
+  "date": "2025-12-31",
+  "focus_area": "Prompt Capture System - RAG Knowledge Base for LLM prompt engineering",
   "branches_created": [],
-  "tags_created": ["v0.3.0"],
-  "merged_prs": [
-    {
-      "number": 7,
-      "title": "feat: Add async nREPL startup and CIDER middleware",
-      "merged_at": "2025-12-29"
-    },
-    {
-      "number": 8,
-      "title": "feat: Add standardized addon lifecycle system",
-      "merged_at": "2025-12-29"
-    },
-    {
-      "number": 9,
-      "title": "chore: Organize documentation into docs/ folder",
-      "merged_at": "2025-12-29"
-    }
-  ],
+  "tags_created": [],
+  "merged_prs": [],
   "key_files": [
-    "elisp/emacs-mcp-addons.el",
-    "elisp/addons/emacs-mcp-cider.el",
-    "elisp/addons/emacs-mcp-org-kanban.el",
-    "kanban.org",
-    "~/.doom.d/Emacs.org"
+    "src/emacs_mcp/prompt_capture.clj",
+    "src/emacs_mcp/tools.clj",
+    "PROJECT_SUMMARY.md"
   ],
   "completed_tasks": [
-    "Updated Emacs.org with emacs-mcp config using expandable $DOTFILES path",
-    "Unified duplicate emacs-mcp configurations in Emacs.org",
-    "Tangled Emacs.org to generate config.el",
-    "Migrated 15 vibe-kanban tasks to local kanban.org (3 TODO, 12 DONE)"
+    "Created prompt_capture.clj namespace with Malli schemas",
+    "Implemented 8-category taxonomy with auto-inference",
+    "Added quality assessment scoring (0-100)",
+    "Implemented auto-generated improvement suggestions",
+    "Integrated org-mode storage via org-clj parser/writer",
+    "Added 5 MCP tools: prompt_capture, prompt_list, prompt_search, prompt_analyze, prompt_stats",
+    "Fixed org-clj content format (vector of lines vs string)",
+    "Fixed headline->entry to parse children headlines",
+    "Fixed property key format (keywords vs strings)",
+    "Updated PROJECT_SUMMARY.md with prompt capture documentation"
   ],
-  "in_progress_tasks": [
-    "Clean up old feature branches (local and remote)",
-    "Test org-kanban addon in real workflow"
-  ],
-  "blocking_issues": [
-    "emacs-mcp kanban MCP tools timing out (need Emacs reload)"
-  ],
+  "in_progress_tasks": [],
+  "blocking_issues": [],
   "next_actions": [
-    "Reload Emacs with doom/reload to apply new config",
-    "Test org-kanban integration after reload",
-    "Clean up merged feature branches",
-    "Consider MELPA submission"
+    "Restart emacs-mcp server to load new MCP tools",
+    "Test prompt capture MCP tools via Claude",
+    "Consider elisp workflow for /capture-prompt command",
+    "Add emacs-mcp memory integration for auto-capture triggers"
   ],
   "decisions_made": [
-    "Use local DOTFILES path for emacs-mcp instead of GitHub package",
-    "emacs-mcp-root variable with (getenv DOTFILES) for portability",
-    "Removed package! recipe, using direct load-path instead"
+    "Use Malli for schema validation (consistent with org-clj parser)",
+    "Store prompts in ~/.emacs.d/emacs-mcp/prompts.org",
+    "Use org-clj for storage (no elisp dependency for persistence)",
+    "8 categories: coding, debug, planning, meta, research, config, workflow, architecture",
+    "Quality ratings: success, partial, failure, untested",
+    "Auto-infer category from prompt text keywords",
+    "Auto-generate improvement suggestions based on missing elements"
   ],
   "vibe_kanban_project_id": "b70720e8-3a52-41ba-a115-964b81369bb5",
   "git_state": {
     "current_branch": "main",
     "clean_working_tree": false,
-    "uncommitted_files": [".claude/SESSION_CONTEXT.json", "elisp/emacs-mcp-addons.el", "kanban.org"],
-    "all_prs_merged": true
+    "uncommitted_files": [
+      "src/emacs_mcp/prompt_capture.clj",
+      "src/emacs_mcp/tools.clj",
+      "PROJECT_SUMMARY.md",
+      ".claude/SESSION_CONTEXT.json"
+    ],
+    "needs_commit": true
   },
   "release": "v0.3.0",
-  "dotfiles_changes": {
-    "file": "~/.doom.d/Emacs.org",
-    "section": "Clojure > emacs-mcp",
-    "change": "Switched from package! to local load-path with $DOTFILES"
+  "prompt_capture_system": {
+    "namespace": "emacs-mcp.prompt-capture",
+    "storage_file": "~/.emacs.d/emacs-mcp/prompts.org",
+    "mcp_tools": [
+      "prompt_capture",
+      "prompt_list",
+      "prompt_search",
+      "prompt_analyze",
+      "prompt_stats"
+    ],
+    "categories": ["coding", "debug", "planning", "meta", "research", "config", "workflow", "architecture"],
+    "quality_ratings": ["success", "partial", "failure", "untested"]
   }
 }
