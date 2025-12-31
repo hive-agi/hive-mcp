@@ -150,6 +150,60 @@
 :AGENT:    emacs-1664516
 :SESSION:  20251231-141135
 :END:
+** TODO BUG #1: Add parse-file function to org-clj parser
+:PROPERTIES:
+:ID:       076910d5-ad28-4842-8c0b-d72a658c5b3f
+:CREATED:  2025-12-31 16:43
+:DESCRIPTION: HIGH PRIORITY - Add convenience function parse-file that wraps slurp + parse-document. Test: test-parse-file-exists, test-parse-file-works in bug_regression_test.clj
+:AGENT:    emacs-1664516
+:SESSION:  20251231-164359
+:END:
+** TODO BUG #1: Add parse-file function to org-clj parser
+:PROPERTIES:
+:ID:       929c44a2-ed9a-46b5-9947-b4ed1188c129
+:CREATED:  2025-12-31 16:46
+:DESCRIPTION: HIGH - Add convenience function. Test: test-parse-file-exists
+:AGENT:    emacs-1664516
+:SESSION:  20251231-164646
+:END:
+** TODO BUG #2: Fix CIDER eval returning feature name
+:PROPERTIES:
+:ID:       a1bd3899-8b4d-4755-9305-98f540b5036f
+:CREATED:  2025-12-31 16:46
+:DESCRIPTION: HIGH - Returns 'emacs-mcp-cider' instead of result. Test: test-cider-eval-returns-result
+:AGENT:    emacs-1664516
+:SESSION:  20251231-164647
+:END:
+** TODO BUG #3: Fix prompt-capture list-prompts nil fields
+:PROPERTIES:
+:ID:       054a1296-5e3e-454c-98aa-20365da886ae
+:CREATED:  2025-12-31 16:46
+:DESCRIPTION: MEDIUM - Second entry returns nil for :id, :created, :source
+:AGENT:    emacs-1664516
+:SESSION:  20251231-164647
+:END:
+** TODO BUG #4: Fix render stats vs column count mismatch
+:PROPERTIES:
+:ID:       f9a8898b-1265-4c35-adde-8fa078c4e450
+:CREATED:  2025-12-31 16:46
+:DESCRIPTION: LOW - Stats shows 4 todo but column shows 54. Test: test-render-stats-match-columns
+:AGENT:    emacs-1664516
+:SESSION:  20251231-164647
+:END:
+** TODO BUG #6: Fix swarm double-encoded JSON response
+:PROPERTIES:
+:ID:       3686c044-84f3-4ba6-8371-ddfb7c08d660
+:CREATED:  2025-12-31 16:46
+:DESCRIPTION: LOW - Returns escaped JSON within JSON. Test: test-swarm-status-clean-json
+:AGENT:    emacs-1664516
+:SESSION:  20251231-164648
+:END:
+
+
+
+
+
+
 
 
 * MCP-Native Documentation Tools (Emacs RAG)

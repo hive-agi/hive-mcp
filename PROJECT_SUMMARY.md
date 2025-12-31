@@ -105,6 +105,13 @@ Emacs requirements: Emacs 28.1+, transient 0.4.0+
 ;; Evaluate Clojure (via CIDER)
 (handle-cider-eval-silent {:code "(+ 1 2)"})      ; No REPL output
 (handle-cider-eval-explicit {:code "(println x)"}) ; Shows in REPL
+
+;; Multi-Session CIDER Management (for parallel agent work)
+(handle-cider-spawn-session {:name "agent-1" :project_dir "/path" :agent_id "id"})
+(handle-cider-list-sessions _)                    ; List all active sessions
+(handle-cider-eval-session {:session_name "agent-1" :code "(+ 1 2)"})
+(handle-cider-kill-session {:session_name "agent-1"})
+(handle-cider-kill-all-sessions _)
 ```
 
 ### Kanban Tools
@@ -415,6 +422,16 @@ Board operations go through unified API for consistency:
 **Current branch**: `main`
 
 **Recent work** (Dec 2025):
+- **Multi-CIDER Session Management** - Isolated REPL sessions for parallel agent work
+  - 5 MCP tools: spawn, list, eval, kill, kill-all sessions
+  - Port range 7920-7999 for spawned sessions
+  - Session registry in emacs-mcp-cider.el
+  - Verified session isolation between agents
+- **TDD Bug Regression Suite** - 7 tests, 21 assertions
+  - Fixed 4 bugs via swarm collaboration
+  - BUG #1: parse-file function added to parser.clj
+  - BUG #4: Render stats/column count mismatch
+  - BUG #6: Double-encoded JSON in swarm-status
 - **Prompt Capture System** - RAG knowledge base for prompt engineering
   - Malli schema validation (Category, QualityRating, PromptEntry)
   - 8-category taxonomy with auto-inference
@@ -428,4 +445,4 @@ Board operations go through unified API for consistency:
 - Melpazoid integration addon with fast-mode
 
 **Released**: v0.3.0 (async nREPL startup, addon lifecycle system)
-**Merged PRs**: #7 (async nREPL), #8 (addon lifecycle), #9 (docs reorganization), #13 (melpazoid)
+**Merged PRs**: #7 (async nREPL), #8 (addon lifecycle), #9 (docs reorganization), #13 (melpazoid), #20 (bug fixes TDD/swarm), #22 (multi-CIDER sessions)
