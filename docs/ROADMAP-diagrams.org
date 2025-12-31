@@ -1,0 +1,218 @@
+#+TITLE: Diagram Capabilities Roadmap
+#+AUTHOR: Pedro G. Branquinho
+#+DATE: 2025-12-31
+#+STARTUP: overview
+
+* Overview
+
+Diagram-building capabilities for emacs-mcp ecosystem using an adapter-based
+architecture. Supports multiple backends: Overarch (C4/UML), TikZ (LaTeX), 
+Mermaid (web-friendly).
+
+* ✅ Completed: Core Architecture
+
+** Diagram Adapter Protocol
+Located in: =src/emacs_mcp/diagrams/core.clj=
+
+#+begin_src clojure
+(defprotocol DiagramAdapter
+  (adapter-id [this])        ; :overarch, :tikz, :mermaid
+  (supported-types [this])   ; #{:flowchart :c4-context ...}
+  (validate-spec [this spec])
+  (render [this spec format])
+  (preview-command [this path]))
+#+end_src
+
+** DSL Helpers
+#+begin_src clojure
+;; Convenience constructors
+(node :id "Label" :shape :diamond)
+(edge :from :to :label "connection")
+(person :user "User" :desc "...")
+(system :api "API" :tech "Clojure" :external? true)
+(container :db "Database" "PostgreSQL")
+(rel :from :to :name "uses")
+#+end_src
+
+* ✅ Completed: Adapters
+
+** Overarch Adapter (C4/UML)
+File: =src/emacs_mcp/diagrams/adapters/overarch.clj=
+
+Integrates with [[https://github.com/soulspace-org/overarch][soulspace-org/overarch]] for:
+- C4 Context/Container/Component diagrams
+- UML Use Case diagrams
+- State machine diagrams
+- Deployment diagrams
+
+Outputs: PlantUML, GraphViz DOT, Markdown
+
+** TikZ Adapter (LaTeX)
+File: =src/emacs_mcp/diagrams/adapters/tikz.clj=
+
+Generates LaTeX/TikZ for:
+- Flowcharts
+- Block diagrams
+- Architecture diagrams
+- State machines
+- Network diagrams
+
+Outputs: .tex, .pdf (via pdflatex)
+
+** Mermaid Adapter (Web)
+File: =src/emacs_mcp/diagrams/adapters/mermaid.clj=
+
+Generates Mermaid.js for:
+- Flowcharts
+- Sequence diagrams
+- Class diagrams
+- State diagrams
+- ER diagrams
+- Gantt charts
+- C4 diagrams
+
+Outputs: .mmd, .html (with CDN), .svg/.png (via mmdc)
+
+* ✅ Completed: MCP Tools
+
+File: =src/emacs_mcp/diagrams/tools.clj=
+
+| Tool | Description |
+|------+-------------|
+| =diagram_list_adapters= | List available adapters and types |
+| =diagram_create= | Create diagram from spec |
+| =diagram_create_c4= | Create C4 architecture diagram |
+| =diagram_create_flowchart= | Create flowchart/workflow |
+| =diagram_create_sequence= | Create sequence diagram |
+| =diagram_render_edn= | Render from EDN file/string |
+| =diagram_emacs_mcp_architecture= | Generate system architecture |
+
+* Architecture Diagram
+
+#+begin_src 
+┌─────────────────────────────────────────────────────────────┐
+│                    emacs-mcp Diagram System                  │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌──────────────┐    ┌───────────────────────────────────┐  │
+│  │   MCP Tools  │───>│         Diagram Core              │  │
+│  │  (tools.clj) │    │  Protocol + Registry + DSL        │  │
+│  └──────────────┘    └───────────────────────────────────┘  │
+│                                   │                          │
+│                    ┌──────────────┼──────────────┐          │
+│                    ▼              ▼              ▼          │
+│              ┌──────────┐  ┌──────────┐   ┌──────────┐      │
+│              │ Overarch │  │   TikZ   │   │ Mermaid  │      │
+│              │ Adapter  │  │ Adapter  │   │ Adapter  │      │
+│              └────┬─────┘  └────┬─────┘   └────┬─────┘      │
+│                   │             │              │             │
+│                   ▼             ▼              ▼             │
+│              ┌─────────┐  ┌─────────┐   ┌──────────┐        │
+│              │ C4/UML  │  │ LaTeX/  │   │  HTML/   │        │
+│              │PlantUML │  │  PDF    │   │   SVG    │        │
+│              └─────────┘  └─────────┘   └──────────┘        │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+#+end_src
+
+* Phase 2: Elisp Integration (Pending)
+
+** TODO emacs-mcp-diagrams.el addon
+Create Emacs interface for the Clojure diagram system:
+
+*** Commands
+| Command | Description |
+|---------+-------------|
+| =emacs-mcp-diagram-create= | Interactive diagram creation |
+| =emacs-mcp-diagram-compile= | Compile to output format |
+| =emacs-mcp-diagram-preview= | Preview in buffer/browser |
+| =emacs-mcp-diagram-from-region= | Create from selected EDN |
+
+*** Transient Menu
+#+begin_src elisp
+(transient-define-prefix emacs-mcp-diagram-menu ()
+  "Diagram creation menu."
+  ["Create"
+   ("f" "Flowchart" emacs-mcp-diagram-flowchart)
+   ("s" "Sequence" emacs-mcp-diagram-sequence)
+   ("c" "C4 Context" emacs-mcp-diagram-c4-context)
+   ("a" "Architecture" emacs-mcp-diagram-architecture)]
+  ["Output"
+   ("h" "HTML" emacs-mcp-diagram-to-html)
+   ("p" "PDF" emacs-mcp-diagram-to-pdf)
+   ("t" "TikZ" emacs-mcp-diagram-to-tikz)])
+#+end_src
+
+** TODO Presentation Integration
+- Insert diagrams into org-mode presentations
+- Auto-compile on export
+- Inline preview in org buffers
+
+* Phase 3: Enhanced Features (Future)
+
+** TODO Additional Adapters
+- PlantUML direct adapter (without Overarch)
+- GraphViz direct adapter
+- D2 (declarative diagrams)
+- Excalidraw (hand-drawn style)
+
+** TODO Live Preview
+- Watch mode for diagram files
+- Auto-recompile on save
+- Split-pane preview in Emacs
+
+** TODO Diagram Templates
+- Pre-built templates for common patterns
+- MCP architecture template
+- Microservices template
+- Event-driven template
+
+* Example Usage
+
+** C4 Context Diagram (via MCP)
+#+begin_src clojure
+(create-c4-diagram
+  {:type :c4-context
+   :title "Internet Banking System"
+   :elements
+   [{:el :person :id :customer :name "Customer" 
+     :desc "Banking customer"}
+    {:el :system :id :banking :name "Banking System"
+     :desc "Core banking platform"}
+    {:el :system :id :email :name "Email System" 
+     :external? true :desc "Sendgrid"}]
+   :relations
+   [{:from :customer :to :banking :name "uses"}
+    {:from :banking :to :email :name "sends via"}]
+   :adapter :mermaid
+   :format :html})
+#+end_src
+
+** Flowchart (DSL)
+#+begin_src clojure
+(flowchart "Claude Workflow"
+  :nodes [{:id :prompt :label "User Prompt"}
+          {:id :claude :label "Claude" :shape :stadium}
+          {:id :tools :label "MCP Tools" :shape :hexagon}
+          {:id :result :label "Result"}]
+  :edges [{:from :prompt :to :claude}
+          {:from :claude :to :tools :label "calls"}
+          {:from :tools :to :result}]
+  :direction :LR)
+#+end_src
+
+* Dependencies
+
+| Component | Requirement |
+|-----------+-------------|
+| Overarch | Java + overarch.jar |
+| TikZ | pdflatex + tikz |
+| Mermaid | Optional: mmdc CLI |
+| Preview | xdg-open / browser |
+
+* References
+
+- [[https://github.com/soulspace-org/overarch][Overarch]] - C4/UML architecture modeling
+- [[https://tikz.dev/][TikZ Manual]] - LaTeX graphics
+- [[https://mermaid.js.org/][Mermaid.js]] - Diagrams as code
+- [[https://c4model.com/][C4 Model]] - Software architecture

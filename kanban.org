@@ -142,6 +142,237 @@
 :LAST_AGENT: emacs-3455282
 :VIBE_ID:  6bcd672a-6f47-4af1-a630-9be012503da1
 :END:
+** TODO Create emacs-mcp-presentation addon
+:PROPERTIES:
+:ID:       45d2e2c4-9ea5-4a4b-a3ff-737ce8ba838c
+:CREATED:  2025-12-31 14:11
+:DESCRIPTION: New addon for emacs-mcp that streamlines org-mode presentation creation. Supports both Beamer (LaTeX/PDF) and Reveal.js (HTML) output formats. Features: templates, slide scaffolding, MCP tools for AI-assisted content generation.
+:AGENT:    emacs-1664516
+:SESSION:  20251231-141135
+:END:
+
+
+* MCP-Native Documentation Tools (Emacs RAG)
+:PROPERTIES:
+:ID: emacs-docs-rag-epic-2025
+:EPIC: docs-rag
+:DESCRIPTION: Native MCP tools for querying Emacs documentation - enables LLM-powered docs synthesis
+:END:
+
+** Phase 1: Core MCP Tools (Clojure Server)
+*** TODO Implement mcp_describe_function MCP tool
+:PROPERTIES:
+:ID: docs-rag-describe-function
+:EFFORT: S
+:PRIORITY: high
+:WAVE: 1
+:END:
+Native MCP tool to get function documentation.
+- Parameters: function_name (string)
+- Returns: {:name, :type, :signature, :docstring, :file}
+- Calls emacs-mcp-docs-describe-function via emacsclient
+
+*** TODO Implement mcp_describe_variable MCP tool
+:PROPERTIES:
+:ID: docs-rag-describe-variable
+:EFFORT: S
+:PRIORITY: high
+:WAVE: 1
+:END:
+Native MCP tool to get variable documentation.
+- Parameters: variable_name (string)
+- Returns: {:name, :type, :value, :docstring, :file}
+- Calls emacs-mcp-docs-describe-variable via emacsclient
+
+*** TODO Implement mcp_apropos MCP tool
+:PROPERTIES:
+:ID: docs-rag-apropos
+:EFFORT: M
+:PRIORITY: high
+:WAVE: 1
+:END:
+Native MCP tool for symbol search.
+- Parameters: pattern (string), type (optional: "function", "variable", "command", "face")
+- Returns: {:pattern, :total-matches, :symbols [{:name, :type, :docstring-preview}]}
+- Calls emacs-mcp-docs-apropos via emacsclient
+
+*** TODO Implement mcp_package_functions MCP tool
+:PROPERTIES:
+:ID: docs-rag-package-functions
+:EFFORT: S
+:PRIORITY: high
+:WAVE: 1
+:END:
+List all functions in a package/prefix.
+- Parameters: package_or_prefix (string)
+- Returns: {:prefix, :total-functions, :functions [{:name, :signature, :interactive}]}
+- Calls emacs-mcp-docs-package-functions via emacsclient
+
+*** TODO Implement mcp_find_keybindings MCP tool
+:PROPERTIES:
+:ID: docs-rag-find-keybindings
+:EFFORT: S
+:PRIORITY: high
+:WAVE: 1
+:END:
+Find keybindings for a command.
+- Parameters: command (string)
+- Returns: {:command, :bindings [{:key}], :binding-count}
+- Calls emacs-mcp-docs-find-keybindings via emacsclient
+
+*** TODO Implement mcp_package_commentary MCP tool
+:PROPERTIES:
+:ID: docs-rag-package-commentary
+:EFFORT: S
+:PRIORITY: medium
+:WAVE: 1
+:END:
+Get package Commentary section.
+- Parameters: package_name (string)
+- Returns: {:file, :path, :commentary}
+- Calls emacs-mcp-docs-package-commentary via emacsclient
+
+*** TODO Implement mcp_list_packages MCP tool
+:PROPERTIES:
+:ID: docs-rag-list-packages
+:EFFORT: S
+:PRIORITY: low
+:WAVE: 1
+:END:
+List loaded Emacs features/packages.
+- Parameters: none
+- Returns: {:total, :features [{:name, :file}]}
+- Calls emacs-mcp-docs-list-packages via emacsclient
+
+** Phase 2: Clojure Server Infrastructure
+*** TODO Create docs.clj MCP tool namespace
+:PROPERTIES:
+:ID: docs-rag-namespace
+:EFFORT: M
+:PRIORITY: high
+:WAVE: 2
+:DEPENDS: phase-1
+:END:
+- Define tool schemas for all docs tools
+- Wire to emacs-mcp-docs.el functions via emacsclient
+- Parse elisp plist responses to JSON/EDN
+
+*** TODO Add emacsclient response parser
+:PROPERTIES:
+:ID: docs-rag-response-parser
+:EFFORT: M
+:PRIORITY: high
+:WAVE: 2
+:END:
+Parse elisp plist output from emacsclient:
+- Convert (:key value) to {:key value}
+- Handle nested structures
+- Handle nil, t, strings, numbers
+
+*** TODO Add docs tool registration to server
+:PROPERTIES:
+:ID: docs-rag-registration
+:EFFORT: S
+:PRIORITY: high
+:WAVE: 2
+:DEPENDS: docs-namespace
+:END:
+Register all docs MCP tools in the server tool registry.
+
+** Phase 3: Enhanced Features
+*** TODO Implement mcp_info_lookup MCP tool
+:PROPERTIES:
+:ID: docs-rag-info-lookup
+:EFFORT: M
+:PRIORITY: medium
+:WAVE: 3
+:END:
+Search Info manuals for symbol.
+- Parameters: symbol (string), mode (optional)
+- Returns: {:symbol, :found, :info-content}
+- More complex: may need to capture Info buffer content
+
+*** TODO Implement mcp_describe_mode MCP tool
+:PROPERTIES:
+:ID: docs-rag-describe-mode
+:EFFORT: M
+:PRIORITY: medium
+:WAVE: 3
+:END:
+Get documentation for a major/minor mode.
+- Parameters: mode_name (string)
+- Returns: {:mode, :docstring, :keybindings, :hooks}
+
+*** TODO Implement mcp_customization_options MCP tool
+:PROPERTIES:
+:ID: docs-rag-customization
+:EFFORT: M
+:PRIORITY: low
+:WAVE: 3
+:END:
+List customization options for a group.
+- Parameters: group (string)
+- Returns: {:group, :options [{:name, :type, :default, :docstring}]}
+
+*** TODO Add caching layer for docs queries
+:PROPERTIES:
+:ID: docs-rag-caching
+:EFFORT: M
+:PRIORITY: low
+:WAVE: 3
+:END:
+Cache frequent queries:
+- LRU cache with TTL
+- Invalidate on package reload
+- Configurable cache size
+
+** Phase 4: Integration & Polish
+*** TODO Add docs addon auto-load trigger
+:PROPERTIES:
+:ID: docs-rag-autoload
+:EFFORT: S
+:PRIORITY: medium
+:WAVE: 4
+:END:
+Update emacs-mcp-addon-auto-load-list to include docs addon.
+Trigger: always (no specific feature dependency).
+
+*** TODO Write docs-tools.md API reference
+:PROPERTIES:
+:ID: docs-rag-api-docs
+:EFFORT: M
+:PRIORITY: medium
+:WAVE: 4
+:END:
+Document all MCP tools:
+- Parameters and return values
+- Usage examples
+- Integration with LLM workflows
+
+*** TODO Create example: package explainer workflow
+:PROPERTIES:
+:ID: docs-rag-example-workflow
+:EFFORT: M
+:PRIORITY: low
+:WAVE: 4
+:END:
+Demonstrate end-to-end workflow:
+- User asks about a package
+- MCP tools gather docs
+- LLM synthesizes guide
+- Output to org buffer
+
+*** TODO Add telemetry for docs tool usage
+:PROPERTIES:
+:ID: docs-rag-telemetry
+:EFFORT: S
+:PRIORITY: low
+:WAVE: 4
+:END:
+Track query patterns:
+- Most queried packages
+- Query latency
+- Cache hit rates
 
 * org-clj: Native Clojure Org-Mode Parser
 :PROPERTIES:
