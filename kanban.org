@@ -6,33 +6,7 @@
 :PROPERTIES:
 :ID: b70720e8-3a52-41ba-a115-964b81369bb5
 :END:
-** TODO Monitor upstream PR: jsonrpc4clj p/future async handler fix
-:PROPERTIES:
-:ID: 9165d016-monitor-upstream
-:VIBE_ID: 9165d016-9376-4b96-9959-34af12ec813b
-:CREATED: 2025-12-31
-:END:
-Track clojure-lsp/jsonrpc4clj#2 - if merged, switch mcp-clojure-sdk back to upstream.
-** DONE Bug: CIDER sync nREPL timeout (10s) too short
-:PROPERTIES:
-:ID: 7bb836d7-db3a-48cd-a33d-4ed2643bc3b5
-:VIBE_ID: 7bb836d7-db3a-48cd-a33d-4ed2643bc3b5
-:CREATED: 2025-12-31
-:END:
-Increase emacs-mcp-cider-connect-max-retries or timeout for slow nREPL startups.
-** DONE Auto-initialize Chroma embedding provider at server startup
-CLOSED: [2025-12-31]
-:PROPERTIES:
-:ID: chroma-auto-init
-:CREATED: 2025-12-31
-:END:
-PR #31. Added init-embedding-provider! to server.clj that:
-- Configures Ollama with nomic-embed-text model (768 dims)
-- Sets up Chroma for semantic memory search
-- Fails gracefully if Ollama/Chroma unavailable
-Enables mcp_memory_search_semantic without manual config.
-** DONE Implement bidirectional sync between vibe-kanban and org-kanban
-CLOSED: [2025-12-31]
+** TODO Implement bidirectional sync between vibe-kanban and org-kanban
 :PROPERTIES:
 :ID: c75935fb-2f77-49b8-ba0e-2e0db9e4d044
 :VIBE_ID: e54edcbd-3b67-42fd-8ce3-487d22e883fe
@@ -240,42 +214,6 @@ PR #15 + #23 merged. Beamer and Reveal.js support with C4 diagram integration.
 :AGENT: emacs-1664516
 :SESSION: 20251231-164648
 :END:
-** TODO Migrate magit handlers to use emacs-mcp.elisp
-:PROPERTIES:
-:ID:       6f4888f3-f627-40ad-bc4e-c57e229ebebf
-:CREATED:  2026-01-01 01:31
-:DESCRIPTION: Migrate handle-magit-branches, handle-magit-log, handle-magit-diff, handle-magit-stage, handle-magit-commit, handle-magit-push, handle-magit-pull, handle-magit-fetch, handle-magit-feature-branches to use el/require-and-call-json or el/emit patterns instead of hand-quoted elisp strings.
-:AGENT:    emacs-1766330
-:SESSION:  20260101-013156
-:END:
-** TODO Migrate CIDER handlers to use emacs-mcp.elisp
-:PROPERTIES:
-:ID:       b5e2a36c-d8a8-41b6-a10e-b01cf50e226a
-:CREATED:  2026-01-01 01:31
-:DESCRIPTION: Migrate handle-cider-status, handle-cider-eval-silent, handle-cider-eval-explicit, handle-cider-spawn-session, handle-cider-list-sessions, handle-cider-eval-session, handle-cider-kill-session, handle-cider-kill-all-sessions to use el/require-and-call-json or el/emit patterns.
-:AGENT:    emacs-1766330
-:SESSION:  20260101-013156
-:END:
-** TODO Migrate projectile handlers to use emacs-mcp.elisp
-:PROPERTIES:
-:ID:       1ea0add1-e866-4051-8060-22e98c6a7dff
-:CREATED:  2026-01-01 01:31
-:DESCRIPTION: Migrate handle-projectile-info, handle-projectile-files, handle-projectile-find-file, handle-projectile-search, handle-projectile-recent, handle-projectile-list-projects to use el/require-and-call-json pattern.
-:AGENT:    emacs-1766330
-:SESSION:  20260101-013156
-:END:
-** DONE Fix swarm vterm-return bug - prompt not auto-submitted
-:PROPERTIES:
-:AGENT:    emacs-1766330
-:SESSION:  20260101-015033
-:ID:       2382379a-b44e-44ad-89b9-c2b4fc368898
-:CREATED:  2026-01-01 01:50
-:DESCRIPTION: Fixed by adding run-at-time delays in emacs-mcp-swarm-dispatch to ensure vterm-send-string completes before vterm-send-return is called. The fix uses a 0.1s delay for the initial string send and a 0.05s delay before sending return.
-:END:
-
-
-
-
 * MCP-Native Documentation Tools (Emacs RAG)
 :PROPERTIES:
 :ID: emacs-docs-rag-epic-2025
