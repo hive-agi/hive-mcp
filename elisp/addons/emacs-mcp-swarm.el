@@ -780,13 +780,110 @@ Otherwise return aggregate status."
   "API: Get swarm status as JSON-serializable plist."
   (emacs-mcp-swarm-status))
 
+(defun emacs-mcp-swarm--check-task-completion (task-id)
+  "Check if TASK-ID has completed without blocking.
+Returns result if complete, nil if still running."
+  (when-let* ((task (gethash task-id emacs-mcp-swarm--tasks))
+              (slave-id (plist-get task :slave-id))
+              (slave (gethash slave-id emacs-mcp-swarm--slaves))
+              (buffer (plist-get slave :buffer))
+              (prompt (plist-get task :prompt)))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (save-excursion
+          (goto-char (point-min))
+          (let ((search-key (substring prompt 0 (min 50 (length prompt)))))
+            (when (search-forward search-key nil t)
+              (when (search-forward "●" nil t)
+                (let ((response-start (point)))
+                  (cond
+                   ((search-forward "\n> " nil t)
+                    (string-trim
+                     (buffer-substring-no-properties
+                      response-start (- (point) 3))))
+                   ((search-forward "\n────" nil t)
+                    (string-trim
+                     (buffer-substring-no-properties
+                      response-start (- (point) 5))))
+                   ((search-forward "\n\n\n" nil t)
+                    (string-trim
+                     (buffer-substring-no-properties
+                      response-start (- (point) 3))))))))))))))
+
 (defun emacs-mcp-swarm-api-collect (task-id &optional timeout-ms)
-  "API: Collect result for TASK-ID with optional TIMEOUT-MS."
-  (let ((task (emacs-mcp-swarm-collect task-id timeout-ms)))
-    `(:task-id ,(plist-get task :task-id)
-      :status ,(symbol-name (plist-get task :status))
-      :result ,(plist-get task :result)
-      :error ,(plist-get task :error))))
+  "API: Collect result for TASK-ID - NON-BLOCKING.
+Returns immediately with current status:
+- :status \"completed\" with :result if done
+- :status \"polling\" if still running (client should poll again)
+- :status \"timeout\" if task timed out
+- :status \"error\" if task failed
+
+TIMEOUT-MS is used to check if task has exceeded its timeout,
+but this function never blocks."
+  (let* ((task (gethash task-id emacs-mcp-swarm--tasks))
+         (slave-id (and task (plist-get task :slave-id)))
+         (slave (and slave-id (gethash slave-id emacs-mcp-swarm--slaves)))
+         (dispatched-at (and task (plist-get task :dispatched-at)))
+         (task-timeout (or timeout-ms
+                           (plist-get task :timeout)
+                           emacs-mcp-swarm-default-timeout))
+         (elapsed-ms (when dispatched-at
+                       (* 1000 (- (float-time)
+                                  (float-time (date-to-time dispatched-at)))))))
+    (cond
+     ;; Task not found
+     ((not task)
+      `(:task-id ,task-id :status "error" :error "Task not found"))
+     
+     ;; Already completed
+     ((eq (plist-get task :status) 'completed)
+      `(:task-id ,task-id
+        :status "completed"
+        :result ,(plist-get task :result)))
+     
+     ;; Already timed out
+     ((eq (plist-get task :status) 'timeout)
+      `(:task-id ,task-id
+        :status "timeout"
+        :error ,(plist-get task :error)))
+     
+     ;; Check if timed out now
+     ((and elapsed-ms (> elapsed-ms task-timeout))
+      (plist-put task :status 'timeout)
+      (plist-put task :error (format "Timed out after %dms" elapsed-ms))
+      (when slave
+        (plist-put slave :status 'idle)
+        (plist-put slave :current-task nil)
+        (plist-put slave :tasks-failed (1+ (or (plist-get slave :tasks-failed) 0))))
+      `(:task-id ,task-id
+        :status "timeout"
+        :error ,(format "Timed out after %dms" elapsed-ms)
+        :elapsed-ms ,elapsed-ms))
+     
+     ;; Try to get result (non-blocking check)
+     (t
+      (if-let* ((result (emacs-mcp-swarm--check-task-completion task-id)))
+          (progn
+            ;; Update task
+            (plist-put task :status 'completed)
+            (plist-put task :result result)
+            (plist-put task :completed-at (format-time-string "%FT%TZ"))
+            ;; Update slave
+            (when slave
+              (plist-put slave :status 'idle)
+              (plist-put slave :current-task nil)
+              (plist-put slave :tasks-completed
+                         (1+ (or (plist-get slave :tasks-completed) 0))))
+            `(:task-id ,task-id
+              :status "completed"
+              :result ,result
+              :elapsed-ms ,elapsed-ms))
+        ;; Still running - return polling status
+        `(:task-id ,task-id
+          :status "polling"
+          :elapsed-ms ,elapsed-ms
+          :timeout-ms ,task-timeout
+          :message "Task still running, poll again"))))))
 
 (defun emacs-mcp-swarm-api-list-presets ()
   "API: List available presets."
