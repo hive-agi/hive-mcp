@@ -4,7 +4,7 @@
 
 ;; Author: Pedro G. Branquinho <pedrogbranquinho@gmail.com>
 ;; Maintainer: Pedro G. Branquinho <pedrogbranquinho@gmail.com>
-;; Version: 0.2.1
+;; Version: 0.4.0
 ;; Package-Requires: ((emacs "28.1") (transient "0.4.0"))
 ;; Keywords: tools, ai, convenience
 ;; URL: https://github.com/BuddhiLW/emacs-mcp
