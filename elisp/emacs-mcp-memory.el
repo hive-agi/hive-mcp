@@ -265,6 +265,49 @@ Uses UTF-8 encoding to avoid interactive coding system prompts."
                               :null-object :null
                               :false-object :false)))))
 
+;;; Content Deduplication
+
+(defun emacs-mcp-memory--normalize-content (content)
+  "Normalize CONTENT for consistent hashing.
+Trims whitespace, collapses multiple spaces/newlines.
+For plists, converts to canonical string representation."
+  (let ((text (cond
+               ((stringp content) content)
+               ((plistp content) (format "%S" content))
+               (t (format "%S" content)))))
+    ;; Trim leading/trailing whitespace
+    (setq text (string-trim text))
+    ;; Collapse multiple spaces to single space
+    (setq text (replace-regexp-in-string "[ \t]+" " " text))
+    ;; Collapse multiple newlines to single newline
+    (setq text (replace-regexp-in-string "\n+" "\n" text))
+    text))
+
+(defun emacs-mcp-memory-content-hash (content)
+  "Compute SHA-256 hash of normalized CONTENT.
+Returns a 64-character hex string."
+  (secure-hash 'sha256 (emacs-mcp-memory--normalize-content content)))
+
+(defun emacs-mcp-memory-find-duplicate (type content &optional project-id)
+  "Find existing entry with same content hash in TYPE.
+TYPE is a symbol or string: note, snippet, convention, decision.
+CONTENT is the content to check for duplicates.
+PROJECT-ID defaults to current project.
+Returns the existing entry if found, nil otherwise."
+  (let* ((pid (or project-id (emacs-mcp-memory--project-id)))
+         (type-str (if (symbolp type) (symbol-name type) type))
+         (content-hash (emacs-mcp-memory-content-hash content))
+         (data (emacs-mcp-memory--get-data pid type-str)))
+    (seq-find (lambda (entry)
+                (let ((entry-hash (plist-get entry :content-hash)))
+                  (and entry-hash (string= entry-hash content-hash))))
+              data)))
+
+(defun emacs-mcp-memory--merge-tags (existing-tags new-tags)
+  "Merge NEW-TAGS into EXISTING-TAGS, removing duplicates.
+Returns a list of unique tags."
+  (seq-uniq (append existing-tags new-tags) #'string=))
+
 ;;; Cache Management
 
 (defun emacs-mcp-memory--cache-key (project-id type)
@@ -298,29 +341,50 @@ CONTENT is a string or plist.
 TAGS is optional list of strings.
 PROJECT-ID defaults to current project or global.
 DURATION is optional lifespan (symbol from `emacs-mcp-memory-durations').
-Defaults to `emacs-mcp-memory-default-duration'."
+Defaults to `emacs-mcp-memory-default-duration'.
+
+If an entry with the same content already exists (based on content hash),
+the existing entry is returned instead of creating a duplicate.
+If TAGS are provided, they are merged with the existing entry's tags."
   (let* ((pid (or project-id (emacs-mcp-memory--project-id)))
          (type-str (if (symbolp type) (symbol-name type) type))
-         (dur (or duration emacs-mcp-memory-default-duration))
-         (entry (list :id (emacs-mcp-memory--generate-id)
-                      :type type-str
-                      :content content
-                      :tags (or tags '())
-                      :duration (symbol-name dur)
-                      :expires (emacs-mcp-memory--calculate-expires dur)
-                      :created (emacs-mcp-memory--timestamp)
-                      :updated (emacs-mcp-memory--timestamp)))
-         (data (emacs-mcp-memory--get-data pid type-str)))
-    ;; For conversations, enforce ring buffer limit
-    (when (string= type-str "conversation")
-      (when (>= (length data) emacs-mcp-conversation-max-entries)
-        (setq data (seq-take data (1- emacs-mcp-conversation-max-entries)))))
-    ;; Prepend new entry
-    (setq data (cons entry data))
-    (emacs-mcp-memory--set-data pid type-str data)
-    ;; Run hooks
-    (run-hook-with-args 'emacs-mcp-memory-add-hook type entry pid)
-    entry))
+         (content-hash (emacs-mcp-memory-content-hash content))
+         ;; Check for duplicate (skip for conversations - they're logs)
+         (existing (unless (string= type-str "conversation")
+                     (emacs-mcp-memory-find-duplicate type content pid))))
+    (if existing
+        ;; Duplicate found - merge tags if new ones provided
+        (if (and tags (not (seq-empty-p tags)))
+            (let ((merged-tags (emacs-mcp-memory--merge-tags
+                                (plist-get existing :tags) tags)))
+              (emacs-mcp-memory-update (plist-get existing :id)
+                                       (list :tags merged-tags) pid)
+              ;; Return updated entry
+              (emacs-mcp-memory-get (plist-get existing :id) pid))
+          ;; No new tags, just return existing
+          existing)
+      ;; No duplicate - create new entry
+      (let* ((dur (or duration emacs-mcp-memory-default-duration))
+             (entry (list :id (emacs-mcp-memory--generate-id)
+                          :type type-str
+                          :content content
+                          :content-hash content-hash
+                          :tags (or tags '())
+                          :duration (symbol-name dur)
+                          :expires (emacs-mcp-memory--calculate-expires dur)
+                          :created (emacs-mcp-memory--timestamp)
+                          :updated (emacs-mcp-memory--timestamp)))
+             (data (emacs-mcp-memory--get-data pid type-str)))
+        ;; For conversations, enforce ring buffer limit
+        (when (string= type-str "conversation")
+          (when (>= (length data) emacs-mcp-conversation-max-entries)
+            (setq data (seq-take data (1- emacs-mcp-conversation-max-entries)))))
+        ;; Prepend new entry
+        (setq data (cons entry data))
+        (emacs-mcp-memory--set-data pid type-str data)
+        ;; Run hooks
+        (run-hook-with-args 'emacs-mcp-memory-add-hook type entry pid)
+        entry))))
 
 (defun emacs-mcp-memory-get (id &optional project-id)
   "Retrieve memory entry by ID from PROJECT-ID."
@@ -405,6 +469,64 @@ PROJECT-ID specifies the project (defaults to current)."
         (when deleted
           (emacs-mcp-memory--set-data pid type new-data))))
     deleted))
+
+;;; Audit Log Functions
+
+(defun emacs-mcp-memory-log-access (id &optional project-id)
+  "Log access to memory entry ID.
+Increments :access-count and updates :last-accessed timestamp.
+PROJECT-ID specifies the project (defaults to current).
+Returns the updated entry, or nil if not found."
+  (when-let* ((entry (emacs-mcp-memory-get id project-id)))
+    (let* ((access-count (or (plist-get entry :access-count) 0))
+           (new-count (1+ access-count)))
+      (emacs-mcp-memory-update id
+                               (list :access-count new-count
+                                     :last-accessed (emacs-mcp-memory--timestamp))
+                               project-id)
+      ;; Return updated entry
+      (emacs-mcp-memory-get id project-id))))
+
+(defun emacs-mcp-memory-mark-helpful (id &optional project-id)
+  "Mark memory entry ID as helpful.
+Increments :helpful-count.
+PROJECT-ID specifies the project (defaults to current).
+Returns the updated entry, or nil if not found."
+  (when-let* ((entry (emacs-mcp-memory-get id project-id)))
+    (let* ((helpful-count (or (plist-get entry :helpful-count) 0))
+           (new-count (1+ helpful-count)))
+      (emacs-mcp-memory-update id
+                               (list :helpful-count new-count)
+                               project-id)
+      ;; Return updated entry
+      (emacs-mcp-memory-get id project-id))))
+
+(defun emacs-mcp-memory-mark-unhelpful (id &optional project-id)
+  "Mark memory entry ID as unhelpful.
+Increments :unhelpful-count.
+PROJECT-ID specifies the project (defaults to current).
+Returns the updated entry, or nil if not found."
+  (when-let* ((entry (emacs-mcp-memory-get id project-id)))
+    (let* ((unhelpful-count (or (plist-get entry :unhelpful-count) 0))
+           (new-count (1+ unhelpful-count)))
+      (emacs-mcp-memory-update id
+                               (list :unhelpful-count new-count)
+                               project-id)
+      ;; Return updated entry
+      (emacs-mcp-memory-get id project-id))))
+
+(defun emacs-mcp-memory-helpfulness-ratio (id &optional project-id)
+  "Calculate helpfulness ratio for memory entry ID.
+Returns helpful-count / (helpful-count + unhelpful-count).
+Returns nil if no feedback has been given (to avoid division by zero).
+PROJECT-ID specifies the project (defaults to current)."
+  (when-let* ((entry (emacs-mcp-memory-get id project-id)))
+    (let* ((helpful (or (plist-get entry :helpful-count) 0))
+           (unhelpful (or (plist-get entry :unhelpful-count) 0))
+           (total (+ helpful unhelpful)))
+      (if (zerop total)
+          nil  ; No feedback yet
+        (/ (float helpful) total)))))
 
 ;;; Convenience Functions
 

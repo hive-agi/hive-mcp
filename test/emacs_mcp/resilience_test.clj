@@ -4,6 +4,7 @@
    These tests demonstrate the graceful degradation patterns and verify
    the CLARITY principle 'Yield safe failure' is properly implemented."
   (:require [clojure.test :refer [deftest testing is]]
+            [clojure.string :as str]
             [emacs-mcp.resilience :as resilience]
             [emacs-mcp.evaluator :as evaluator]))
 
@@ -15,7 +16,7 @@
   "Creates a mock evaluator that always fails with a specific error."
   [error-message]
   (reify evaluator/ReplEvaluator
-    (eval-code [_ _ _]
+    (eval-code [_ _]
       {:success false :error error-message})
     (connected? [_] false)
     (get-status [_] {:connected false :error error-message})))
@@ -24,17 +25,19 @@
   "Creates a mock evaluator that always succeeds with a specific result."
   [result]
   (reify evaluator/ReplEvaluator
-    (eval-code [_ _ _]
+    (eval-code [_ _]
       {:success true :result result})
     (connected? [_] true)
     (get-status [_] {:connected true})))
 
 (defn make-mode-specific-evaluator
-  "Creates an evaluator that fails in explicit mode but succeeds in silent mode."
+  "Creates an evaluator that returns different results based on code content.
+   Simulates mode-specific behavior without opts parameter."
   [explicit-error silent-result]
   (reify evaluator/ReplEvaluator
-    (eval-code [_ code opts]
-      (if (:silent? opts)
+    (eval-code [_ code]
+      ;; Use code content to determine behavior (simulating mode)
+      (if (str/includes? (str code) "silent")
         {:success true :result silent-result}
         {:success false :error explicit-error}))
     (connected? [_] true)
@@ -46,7 +49,7 @@
   [failures-before-success result]
   (let [attempts (atom 0)]
     (reify evaluator/ReplEvaluator
-      (eval-code [_ _ _]
+      (eval-code [_ _]
         (let [attempt (swap! attempts inc)]
           (if (> attempt failures-before-success)
             {:success true :result result}
@@ -156,7 +159,7 @@
 
   (testing "Catches throwables from evaluator"
     (let [evil-evaluator (reify evaluator/ReplEvaluator
-                           (eval-code [_ _ _]
+                           (eval-code [_ _]
                              (throw (ex-info "Boom!" {:cause :evil})))
                            (connected? [_] true)
                            (get-status [_] {:connected true}))
