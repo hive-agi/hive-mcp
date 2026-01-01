@@ -66,16 +66,44 @@
     {:type "text" :text "emacs-mcp-swarm addon not loaded." :isError true}))
 
 (defn handle-swarm-collect
-  "Collect response from a task."
+  "Collect response from a task with client-side polling.
+   The elisp API is now non-blocking, so we poll here with exponential backoff."
   [{:keys [task_id timeout_ms]}]
   (if (swarm-addon-available?)
-    (let [elisp (format "(json-encode (emacs-mcp-swarm-api-collect \"%s\" %s))"
-                        (v/escape-elisp-string task_id)
-                        (or timeout_ms "nil"))
-          {:keys [success result error]} (ec/eval-elisp elisp)]
-      (if success
-        {:type "text" :text result}
-        {:type "text" :text (str "Error: " error) :isError true}))
+    (let [timeout (or timeout_ms 300000) ; default 5 minutes
+          start-time (System/currentTimeMillis)
+          poll-interval-ms (atom 500) ; start at 500ms
+          max-poll-interval 5000] ; max 5 seconds between polls
+      (loop []
+        (let [elapsed (- (System/currentTimeMillis) start-time)
+              elisp (format "(json-encode (emacs-mcp-swarm-api-collect \"%s\" %s))"
+                            (v/escape-elisp-string task_id)
+                            timeout_ms)
+              {:keys [success result error]} (ec/eval-elisp elisp)]
+          (if success
+            (let [parsed (try (json/read-str result :key-fn keyword) (catch Exception _ nil))
+                  status (:status parsed)]
+              (cond
+                ;; Task complete or failed - return immediately
+                (contains? #{"completed" "timeout" "error"} status)
+                {:type "text" :text result}
+
+                ;; Still polling and within timeout - wait and retry
+                (and (= status "polling") (< elapsed timeout))
+                (do
+                  (Thread/sleep @poll-interval-ms)
+                  ;; Exponential backoff
+                  (swap! poll-interval-ms #(min max-poll-interval (* % 2)))
+                  (recur))
+
+                ;; Exceeded our timeout
+                :else
+                {:type "text"
+                 :text (json/write-str {:task_id task_id
+                                        :status "timeout"
+                                        :error (format "Collection timed out after %dms" elapsed)
+                                        :elapsed_ms elapsed})}))
+            {:type "text" :text (str "Error: " error) :isError true}))))
     {:type "text" :text "emacs-mcp-swarm addon not loaded." :isError true}))
 
 (defn handle-swarm-list-presets
