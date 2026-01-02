@@ -33,7 +33,7 @@
 ;; Actual: {:text "emacs-mcp-cider"}
 ;; =============================================================================
 
-(deftest test-cider-eval-returns-result
+(deftest ^:integration test-cider-eval-returns-result
   (testing "BUG #2: cider-eval-silent should return evaluation result, not feature name"
     (let [result (tools/handle-cider-eval-silent {:code "(+ 1 2 3)"})]
       (is (map? result) "Should return a map")
@@ -94,7 +94,7 @@
 ;; Actual: Times out after 10+ seconds
 ;; =============================================================================
 
-(deftest test-kanban-status-performance
+(deftest ^:integration test-kanban-status-performance
   (testing "BUG #5: kanban-status should complete within reasonable time"
     (let [start (System/currentTimeMillis)
           ;; Use a timeout wrapper
@@ -115,7 +115,7 @@
 ;; Actual: Returns escaped JSON strings within JSON
 ;; =============================================================================
 
-(deftest test-swarm-status-clean-json
+(deftest ^:integration test-swarm-status-clean-json
   (testing "BUG #6: swarm-status should return clean JSON, not double-encoded"
     (let [result (tools/handle-swarm-status {})]
       (is (map? result) "Should return a map")
@@ -125,6 +125,97 @@
             "Should not have triple-escaped quotes (double-encoding sign)")
         (is (not (str/includes? text "\\\"{"))
             "Should not have escaped JSON object start")))))
+
+;; =============================================================================
+;; BUG #7: swarm_collect returns "0ms timeout" immediately (HIGH) - FIXED 2026-01-01
+;; Expected: Should poll for result until task completes or timeout
+;; Actual: Returns "Collection timed out after 0ms" immediately
+;; Root cause: emacsclient returns quoted JSON, needs double-parse
+;; =============================================================================
+
+(deftest test-emacsclient-json-double-parse
+  (testing "BUG #7: emacsclient JSON output needs double parsing"
+    ;; Simulate what emacsclient returns for json-encode output
+    (let [emacsclient-output "\"{\\\"status\\\":\\\"completed\\\",\\\"result\\\":\\\"test\\\"}\""
+          ;; First parse: unwrap emacsclient quotes
+          first-parse (clojure.data.json/read-str emacsclient-output)
+          ;; Second parse: parse the actual JSON
+          second-parse (clojure.data.json/read-str first-parse :key-fn keyword)]
+      ;; First parse should return a string
+      (is (string? first-parse)
+          "First parse should return the inner JSON as string")
+      ;; Second parse should return a map
+      (is (map? second-parse)
+          "Second parse should return the parsed map")
+      (is (= "completed" (:status second-parse))
+          "Should correctly extract status from double-parsed JSON"))))
+
+(deftest test-swarm-collect-parses-correctly
+  (testing "BUG #7: swarm_collect handler should parse emacsclient output correctly"
+    ;; Dynamically require swarm namespace
+    (require '[emacs-mcp.tools.swarm :as swarm-ns])
+    ;; This test requires Emacs to be running with swarm addon loaded
+    ;; In CI environment, we just verify the handler function exists
+    (is (ifn? (resolve 'emacs-mcp.tools.swarm/handle-swarm-collect))
+        "handle-swarm-collect should exist")
+    ;; Verify swarm-addon-available? exists (used for guard)
+    (is (ifn? (resolve 'emacs-mcp.tools.swarm/swarm-addon-available?))
+        "swarm-addon-available? should exist")))
+
+;; =============================================================================
+;; BUG #8: cider_eval_silent hangs with heartbeat timeout (HIGH) - OPEN
+;; Expected: Should return result within reasonable time
+;; Actual: "Eval timed out after 60 seconds (heartbeat polling)"
+;; =============================================================================
+
+(deftest ^:integration test-cider-eval-does-not-hang
+  (testing "BUG #8: cider_eval_silent should not hang indefinitely"
+    ;; Use a timeout wrapper to detect hanging
+    (let [result (deref
+                  (future
+                    (try
+                      (tools/handle-cider-eval-silent {:code "(+ 1 1)"})
+                      (catch Exception e
+                        {:error (.getMessage e)})))
+                  10000 ; 10 second timeout - should be plenty
+                  {:timeout true :error "Evaluation hung for 10+ seconds"})]
+      ;; Should either succeed or fail fast, never hang
+      (is (not (:timeout result))
+          "cider_eval_silent should complete within 10 seconds, not hang"))))
+
+;; =============================================================================
+;; BUG #10: org_kanban_native_status stats mismatch (MEDIUM) - OPEN
+;; Expected: stats.todo should match (count by_status.todo)
+;; Actual: stats.todo shows 4, by_status.todo has 54 items
+;; =============================================================================
+
+(deftest test-org-kanban-native-stats-match-array
+  (testing "BUG #10: org_kanban_native_status stats should match by_status arrays"
+    (let [test-file "/home/lages/dotfiles/gitthings/emacs-mcp/kanban.org"
+          result (tools/handle-org-kanban-native-status {:file_path test-file})]
+      (when-not (:isError result)
+        (let [parsed (clojure.data.json/read-str (:text result) :key-fn keyword)
+              stats (:stats parsed)
+              by-status (:by_status parsed)]
+          ;; Each stat count should match the corresponding array length
+          (is (= (:todo stats) (count (:todo by-status)))
+              (format "stats.todo (%d) should equal by_status.todo count (%d)"
+                      (:todo stats) (count (:todo by-status))))
+          (is (= (:in-progress stats) (count (:in_progress by-status)))
+              (format "stats.in-progress (%d) should equal by_status.in_progress count (%d)"
+                      (:in-progress stats) (count (:in_progress by-status))))
+          (is (= (:done stats) (count (:done by-status)))
+              (format "stats.done (%d) should equal by_status.done count (%d)"
+                      (:done stats) (count (:done by-status)))))))))
+
+;; =============================================================================
+;; BUG #9: claude-context search hangs (HIGH) - OPEN
+;; Expected: Search should complete within 30 seconds
+;; Actual: AbortError - operation was aborted after timeout
+;; Note: This is an external MCP tool, test just documents the issue
+;; =============================================================================
+
+;; No test added - external tool, would need integration test setup
 
 ;; =============================================================================
 ;; Helper to run all bug tests

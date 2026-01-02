@@ -49,4 +49,22 @@
   {:extra-paths ["test"]
    :extra-deps {io.github.cognitect-labs/test-runner
                 {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
-   :main-opts ["-m" "cognitect.test-runner"]}}}
+   :main-opts ["-m" "cognitect.test-runner"]}
+
+  ;; CI-friendly: Run only unit tests (excludes tests requiring Emacs)
+  :test-unit
+  {:extra-paths ["test"]
+   :extra-deps {io.github.cognitect-labs/test-runner
+                {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+   :main-opts ["-m" "cognitect.test-runner" "-e" ":integration"]
+   :exec-fn cognitect.test-runner.api/test
+   :exec-args {:excludes [:integration]}}
+
+  ;; Run only integration tests (requires Emacs with emacs-mcp loaded)
+  :test-integration
+  {:extra-paths ["test"]
+   :extra-deps {io.github.cognitect-labs/test-runner
+                {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+   :main-opts ["-m" "cognitect.test-runner" "-i" ":integration"]
+   :exec-fn cognitect.test-runner.api/test
+   :exec-args {:includes [:integration]}}}}
