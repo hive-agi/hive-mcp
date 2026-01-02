@@ -245,6 +245,53 @@
         {:type "text" :text (str "Error: " error) :isError true}))
     {:type "text" :text "emacs-mcp-swarm addon not loaded." :isError true}))
 
+(defn handle-swarm-pending-prompts
+  "Get list of pending prompts awaiting human decision.
+   Only relevant when prompt-mode is 'human'."
+  [_]
+  (if (swarm-addon-available?)
+    (let [{:keys [success result error timed-out]}
+          (ec/eval-elisp-with-timeout
+           "(json-encode (emacs-mcp-swarm-api-pending-prompts))" 5000)]
+      (cond
+        timed-out
+        {:type "text"
+         :text (json/write-str {:error "Pending prompts check timed out"
+                                :status "timeout"})
+         :isError true}
+
+        success
+        {:type "text" :text result}
+
+        :else
+        {:type "text" :text (str "Error: " error) :isError true}))
+    {:type "text" :text "emacs-mcp-swarm addon not loaded." :isError true}))
+
+(defn handle-swarm-respond-prompt
+  "Send a response to a pending prompt from a specific slave.
+   Use this to answer permission prompts when prompt-mode is 'human'."
+  [{:keys [slave_id response]}]
+  (if (swarm-addon-available?)
+    (let [elisp (format "(json-encode (emacs-mcp-swarm-api-respond-prompt \"%s\" \"%s\"))"
+                        (v/escape-elisp-string slave_id)
+                        (v/escape-elisp-string response))
+          {:keys [success result error timed-out]}
+          (ec/eval-elisp-with-timeout elisp 5000)]
+      (cond
+        timed-out
+        {:type "text"
+         :text (json/write-str {:error "Respond prompt timed out"
+                                :status "timeout"
+                                :slave_id slave_id})
+         :isError true}
+
+        success
+        {:type "text" :text result}
+
+        :else
+        {:type "text" :text (str "Error: " error) :isError true}))
+    {:type "text" :text "emacs-mcp-swarm addon not loaded." :isError true}))
+
 ;; ============================================================
 ;; JVM Process Cleanup (for swarm garbage collection)
 ;; ============================================================
@@ -645,6 +692,23 @@
                                          :description "The prompt to broadcast to all slaves"}}
                   :required ["prompt"]}
     :handler handle-swarm-broadcast}
+
+   {:name "swarm_pending_prompts"
+    :description "Get list of pending prompts from slaves awaiting human decision. Only relevant when emacs-mcp-swarm-prompt-mode is 'human'."
+    :inputSchema {:type "object"
+                  :properties {}
+                  :required []}
+    :handler handle-swarm-pending-prompts}
+
+   {:name "swarm_respond_prompt"
+    :description "Send a response to a pending prompt from a specific slave. Use to answer permission prompts when prompt-mode is 'human'."
+    :inputSchema {:type "object"
+                  :properties {"slave_id" {:type "string"
+                                           :description "ID of the slave whose prompt to respond to"}
+                               "response" {:type "string"
+                                           :description "Response to send (e.g., 'y', 'n', or custom text)"}}
+                  :required ["slave_id" "response"]}
+    :handler handle-swarm-respond-prompt}
 
    {:name "jvm_cleanup"
     :description "Find and optionally kill orphaned JVM processes. Uses true orphan detection (parent dead or PID 1). Efficient: only 2 ps calls total. Keeps processes managed by living Claude sessions."
