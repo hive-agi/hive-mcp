@@ -3,13 +3,19 @@
 ;; Copyright (C) 2025 Pedro G. Branquinho
 ;; Author: Pedro G. Branquinho <pedrogbranquinho@gmail.com>
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "28.1") (org-ai "0.1.0"))
+;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: tools, ai, org-mode, mcp
 ;; SPDX-License-Identifier: MIT
 
 ;;; Commentary:
 ;;
 ;; This addon integrates org-ai (AI chat in org-mode) with emacs-mcp.
+;;
+;; OPTIONAL DEPENDENCIES:
+;; - org-ai (for AI chat in org-mode integration)
+;;
+;; This addon activates automatically when org-ai is loaded.
+;; Without org-ai, the addon is silently disabled.
 ;;
 ;; Features:
 ;; - Inject MCP context into org-ai prompts
@@ -33,7 +39,8 @@
 
 ;;; Code:
 
-(require 'emacs-mcp-api)
+;; Only require emacs-mcp-api if available
+(require 'emacs-mcp-api nil t)
 
 ;; Soft dependencies - don't error if org-ai isn't installed
 (declare-function org-ai-prompt "org-ai")
@@ -399,13 +406,18 @@ Key bindings in org-ai blocks (see `emacs-mcp-org-ai-block-map'):
   \\[emacs-mcp-org-ai-insert-context] - Insert context
   \\[emacs-mcp-org-ai-save-conversation] - Save conversation
   \\[emacs-mcp-org-ai-query-memory] - Query memory
-  \\[emacs-mcp-org-ai-transient] - Open transient menu"
+  \\[emacs-mcp-org-ai-transient] - Open transient menu
+
+Requires `org-ai' package to be installed."
   :init-value nil
   :lighter " MCP-AI"
   :global t
   :group 'emacs-mcp-org-ai
   (if emacs-mcp-org-ai-mode
-      (progn
+      (if (not (featurep 'org-ai))
+          (progn
+            (setq emacs-mcp-org-ai-mode nil)
+            (message "emacs-mcp-org-ai: org-ai not available, addon disabled"))
         ;; Try to load emacs-mcp-api
         (require 'emacs-mcp-api nil t)
         ;; Add keybindings to org-ai-mode if available
