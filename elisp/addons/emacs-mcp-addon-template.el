@@ -3,13 +3,19 @@
 ;; Copyright (C) 2025 Your Name
 ;; Author: Your Name <your@email.com>
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "28.1") (emacs-mcp "0.1.0"))
+;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: tools, ai, mcp
 ;; SPDX-License-Identifier: MIT
 
 ;;; Commentary:
 ;;
-;; This is a template for creating emacs-mcp addons.
+;; Template for creating emacs-mcp addons.
+;;
+;; OPTIONAL DEPENDENCIES:
+;; - Replace 'target-package' with the package you're integrating
+;; - Add your package's dependencies here
+;;
+;; Copy this file and rename to emacs-mcp-{yourpackage}.el
 ;;
 ;; To create your own addon:
 ;; 1. Copy this file to addons/emacs-mcp-YOUR-ADDON.el
