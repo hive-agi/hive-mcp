@@ -1432,24 +1432,9 @@
       (mcp-error (str "Error querying org file: " (.getMessage e))))))
 
 (defn handle-org-kanban-native-status
-  "Get kanban status using native Clojure parser (no elisp dependency)."
-  [{:keys [file_path]}]
-  (try
-    (let [content (slurp file_path)
-          doc (org-parser/parse-document content)
-          stats (org-query/task-stats doc)
-          todos (org-query/find-todo doc)
-          in-progress (org-query/find-in-progress doc)
-          done (org-query/find-done doc)
-          result {:stats stats
-                  :by_status {:todo (mapv #(select-keys % [:title :properties]) todos)
-                              :in_progress (mapv #(select-keys % [:title :properties]) in-progress)
-                              :done (mapv #(select-keys % [:title :properties]) done)}
-                  :file file_path
-                  :backend "org-clj-native"}]
-      {:type "text" :text (json/write-str result)})
-    (catch Exception e
-      {:type "text" :text (str "Error getting kanban status: " (.getMessage e)) :isError true})))
+  "Delegate to org namespace for native kanban status."
+  [params]
+  (org/handle-org-kanban-native-status params))
 
 (defn handle-org-kanban-native-move
   "Move a task to a new status using native Clojure parser."

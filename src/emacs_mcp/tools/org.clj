@@ -58,15 +58,28 @@
       (mcp-error (str "Error querying org file: " (.getMessage e))))))
 
 (defn handle-org-kanban-native-status
-  "Get kanban status using native Clojure parser (no elisp dependency)."
+  "Get kanban status using native Clojure parser (no elisp dependency).
+   
+   Uses find-tasks (level 2 headlines) for consistency between stats
+   and by_status arrays. This ensures stats.todo matches by_status.todo count."
   [{:keys [file_path]}]
   (try
     (let [content (slurp file_path)
           doc (org-parser/parse-document content)
-          stats (org-query/task-stats doc)
-          todos (org-query/find-todo doc)
-          in-progress (org-query/find-in-progress doc)
-          done (org-query/find-done doc)
+          ;; Use find-tasks for all queries to ensure consistency
+          tasks (org-query/find-tasks doc)
+          by-status (group-by :keyword tasks)
+          todos (get by-status "TODO" [])
+          in-progress (get by-status "IN-PROGRESS" [])
+          in-review (get by-status "IN-REVIEW" [])
+          done (get by-status "DONE" [])
+          cancelled (get by-status "CANCELLED" [])
+          stats {:total (count tasks)
+                 :todo (count todos)
+                 :in-progress (count in-progress)
+                 :in-review (count in-review)
+                 :done (count done)
+                 :cancelled (count cancelled)}
           result {:stats stats
                   :by_status {:todo (mapv #(select-keys % [:title :properties]) todos)
                               :in_progress (mapv #(select-keys % [:title :properties]) in-progress)
