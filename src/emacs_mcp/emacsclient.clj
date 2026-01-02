@@ -2,11 +2,58 @@
   "Shell wrapper for emacsclient communication with running Emacs."
   (:require [clojure.java.shell :refer [sh]]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log])
+  (:import [java.util.concurrent TimeoutException]))
 
 (def ^:dynamic *emacsclient-path*
   "Path to emacsclient binary."
   (or (System/getenv "EMACSCLIENT") "emacsclient"))
+
+(def ^:dynamic *default-timeout-ms*
+  "Default timeout for emacsclient calls in milliseconds."
+  5000)
+
+(defn eval-elisp-with-timeout
+  "Execute elisp code with a timeout. Returns immediately if the operation
+   takes longer than timeout-ms milliseconds.
+   
+   Returns a map with :success, :result or :error keys.
+   On timeout, returns {:success false :error \"Timeout...\" :timed-out true}"
+  ([code] (eval-elisp-with-timeout code *default-timeout-ms*))
+  ([code timeout-ms]
+   (log/debug "Executing elisp with timeout:" timeout-ms "ms -" code)
+   (let [start (System/currentTimeMillis)
+         f (future
+             (try
+               (let [{:keys [exit out err]} (sh *emacsclient-path* "--eval" code)]
+                 (if (zero? exit)
+                   {:success true :result (str/trim out)}
+                   {:success false :error (str/trim err)}))
+               (catch Exception e
+                 {:success false :error (str "Failed to execute emacsclient: " (.getMessage e))})))]
+     (try
+       (let [result (deref f timeout-ms ::timeout)
+             duration (- (System/currentTimeMillis) start)]
+         (if (= result ::timeout)
+           (do
+             (future-cancel f)
+             (log/warn :emacsclient-timeout {:timeout-ms timeout-ms
+                                             :code-preview (subs code 0 (min 100 (count code)))})
+             {:success false
+              :error (format "Emacsclient call timed out after %dms" timeout-ms)
+              :timed-out true
+              :duration-ms duration})
+           (do
+             (if (:success result)
+               (log/debug :emacsclient-success {:duration-ms duration})
+               (log/warn :emacsclient-failure {:duration-ms duration :error (:error result)}))
+             (assoc result :duration-ms duration))))
+       (catch Exception e
+         (let [duration (- (System/currentTimeMillis) start)]
+           (log/error :emacsclient-exception {:duration-ms duration :exception (.getMessage e)} e)
+           {:success false
+            :error (str "Exception during emacsclient call: " (.getMessage e))
+            :duration-ms duration}))))))
 
 (defn eval-elisp
   "Execute elisp code in running Emacs and return the result.

@@ -16,13 +16,15 @@
 ;; ============================================================
 
 (defn swarm-addon-available?
-  "Check if emacs-mcp-swarm addon is loaded."
+  "Check if emacs-mcp-swarm addon is loaded.
+   Uses short timeout (2s) to fail fast if Emacs is unresponsive."
   []
-  (let [{:keys [success result]} (ec/eval-elisp "(featurep 'emacs-mcp-swarm)")]
-    (and success (= result "t"))))
+  (let [{:keys [success result timed-out]} (ec/eval-elisp-with-timeout "(featurep 'emacs-mcp-swarm)" 2000)]
+    (and success (not timed-out) (= result "t"))))
 
 (defn handle-swarm-spawn
-  "Spawn a new Claude slave instance."
+  "Spawn a new Claude slave instance.
+   Uses timeout to prevent MCP blocking."
   [{:keys [name presets cwd role terminal]}]
   (if (swarm-addon-available?)
     (let [presets-str (when (seq presets)
@@ -32,61 +34,132 @@
                         (or presets-str "nil")
                         (if cwd (format "\"%s\"" (v/escape-elisp-string cwd)) "nil")
                         (if terminal (format "\"%s\"" terminal) "nil"))
-          {:keys [success result error]} (ec/eval-elisp elisp)]
-      (if success
+          ;; Use 10s timeout for spawn as it may take longer
+          {:keys [success result error timed-out]} (ec/eval-elisp-with-timeout elisp 10000)]
+      (cond
+        timed-out
+        {:type "text"
+         :text (json/write-str {:error "Spawn operation timed out"
+                                :status "timeout"
+                                :slave_name name})
+         :isError true}
+
+        success
         {:type "text" :text result}
+
+        :else
         {:type "text" :text (str "Error: " error) :isError true}))
     {:type "text" :text "emacs-mcp-swarm addon not loaded. Run (require 'emacs-mcp-swarm)" :isError true}))
 
 (defn handle-swarm-dispatch
-  "Dispatch a prompt to a slave."
+  "Dispatch a prompt to a slave.
+   Uses timeout to prevent MCP blocking."
   [{:keys [slave_id prompt timeout_ms]}]
   (if (swarm-addon-available?)
     (let [elisp (format "(json-encode (emacs-mcp-swarm-api-dispatch \"%s\" \"%s\" %s))"
                         (v/escape-elisp-string slave_id)
                         (v/escape-elisp-string prompt)
                         (or timeout_ms "nil"))
-          {:keys [success result error]} (ec/eval-elisp elisp)]
-      (if success
+          ;; Dispatch should be quick - 5s default timeout
+          {:keys [success result error timed-out]} (ec/eval-elisp-with-timeout elisp 5000)]
+      (cond
+        timed-out
+        {:type "text"
+         :text (json/write-str {:error "Dispatch operation timed out"
+                                :status "timeout"
+                                :slave_id slave_id})
+         :isError true}
+
+        success
         {:type "text" :text result}
+
+        :else
         {:type "text" :text (str "Error: " error) :isError true}))
     {:type "text" :text "emacs-mcp-swarm addon not loaded." :isError true}))
 
 (defn handle-swarm-status
-  "Get swarm status including all slaves and their states."
+  "Get swarm status including all slaves and their states.
+   Uses timeout to prevent MCP blocking."
   [{:keys [slave_id]}]
   (if (swarm-addon-available?)
     (let [elisp (if slave_id
                   (format "(json-encode (emacs-mcp-swarm-status \"%s\"))" slave_id)
                   "(json-encode (emacs-mcp-swarm-api-status))")
-          {:keys [success result error]} (ec/eval-elisp elisp)]
-      (if success
+          {:keys [success result error timed-out]} (ec/eval-elisp-with-timeout elisp 5000)]
+      (cond
+        timed-out
+        {:type "text"
+         :text (json/write-str {:error "Status check timed out"
+                                :status "timeout"})
+         :isError true}
+
+        success
         {:type "text" :text result}
+
+        :else
         {:type "text" :text (str "Error: " error) :isError true}))
     {:type "text" :text "emacs-mcp-swarm addon not loaded." :isError true}))
 
 (defn handle-swarm-collect
   "Collect response from a task with client-side polling.
-   The elisp API is now non-blocking, so we poll here with exponential backoff."
+   The elisp API is now non-blocking, so we poll here with exponential backoff.
+   Uses timeout-wrapped elisp calls to prevent MCP blocking.
+   
+   Note: emacsclient returns a quoted string, and json-encode creates another
+   layer of JSON, so we need to parse twice to get the actual data."
   [{:keys [task_id timeout_ms]}]
   (if (swarm-addon-available?)
     (let [timeout (or timeout_ms 300000) ; default 5 minutes
           start-time (System/currentTimeMillis)
           poll-interval-ms (atom 500) ; start at 500ms
-          max-poll-interval 5000] ; max 5 seconds between polls
+          max-poll-interval 5000 ; max 5 seconds between polls
+          elisp-timeout 10000] ; 10s timeout per elisp call
       (loop []
         (let [elapsed (- (System/currentTimeMillis) start-time)
               elisp (format "(json-encode (emacs-mcp-swarm-api-collect \"%s\" %s))"
                             (v/escape-elisp-string task_id)
-                            timeout_ms)
-              {:keys [success result error]} (ec/eval-elisp elisp)]
-          (if success
-            (let [parsed (try (json/read-str result :key-fn keyword) (catch Exception _ nil))
+                            (or timeout_ms "nil"))
+              {:keys [success result error timed-out]} (ec/eval-elisp-with-timeout elisp elisp-timeout)]
+          (cond
+            ;; Elisp call timed out
+            timed-out
+            {:type "text"
+             :text (json/write-str {:task_id task_id
+                                    :status "error"
+                                    :error "Elisp evaluation timed out"
+                                    :elapsed_ms elapsed})
+             :isError true}
+
+            ;; Elisp call failed
+            (not success)
+            {:type "text" :text (str "Error: " error) :isError true}
+
+            ;; Parse the result - need TWO parses:
+            ;; 1. First parse: emacsclient quotes the output -> get inner JSON string
+            ;; 2. Second parse: parse the actual JSON object
+            :else
+            (let [;; First parse: unwrap emacsclient quotes
+                  json-str (try (json/read-str result) (catch Exception _ nil))
+                  ;; Second parse: parse the actual JSON from elisp
+                  parsed (when (string? json-str)
+                           (try (json/read-str json-str :key-fn keyword)
+                                (catch Exception _ nil)))
                   status (:status parsed)]
               (cond
-                ;; Task complete or failed - return immediately
+                ;; Parse failed - log and return error
+                (nil? parsed)
+                {:type "text"
+                 :text (json/write-str {:task_id task_id
+                                        :status "error"
+                                        :error "Failed to parse elisp response"
+                                        :raw_result result
+                                        :first_parse json-str
+                                        :elapsed_ms elapsed})
+                 :isError true}
+
+                ;; Task complete or failed - return the inner JSON directly
                 (contains? #{"completed" "timeout" "error"} status)
-                {:type "text" :text result}
+                {:type "text" :text json-str}
 
                 ;; Still polling and within timeout - wait and retry
                 (and (= status "polling") (< elapsed timeout))
@@ -96,49 +169,79 @@
                   (swap! poll-interval-ms #(min max-poll-interval (* % 2)))
                   (recur))
 
-                ;; Exceeded our timeout
+                ;; Exceeded our timeout or unknown status
                 :else
                 {:type "text"
                  :text (json/write-str {:task_id task_id
                                         :status "timeout"
-                                        :error (format "Collection timed out after %dms" elapsed)
-                                        :elapsed_ms elapsed})}))
-            {:type "text" :text (str "Error: " error) :isError true}))))
+                                        :error (format "Collection timed out after %dms (status was: %s)" elapsed status)
+                                        :elapsed_ms elapsed})}))))))
     {:type "text" :text "emacs-mcp-swarm addon not loaded." :isError true}))
 
 (defn handle-swarm-list-presets
-  "List available swarm presets."
+  "List available swarm presets.
+   Uses timeout to prevent MCP blocking."
   [_]
   (if (swarm-addon-available?)
-    (let [{:keys [success result error]} (ec/eval-elisp "(json-encode (emacs-mcp-swarm-api-list-presets))")]
-      (if success
+    (let [{:keys [success result error timed-out]} (ec/eval-elisp-with-timeout "(json-encode (emacs-mcp-swarm-api-list-presets))" 5000)]
+      (cond
+        timed-out
+        {:type "text"
+         :text (json/write-str {:error "List presets timed out"
+                                :status "timeout"})
+         :isError true}
+
+        success
         {:type "text" :text result}
+
+        :else
         {:type "text" :text (str "Error: " error) :isError true}))
     {:type "text" :text "emacs-mcp-swarm addon not loaded." :isError true}))
 
 (defn handle-swarm-kill
-  "Kill a slave or all slaves."
+  "Kill a slave or all slaves.
+   Uses short timeout (3s) as kill should be fast."
   [{:keys [slave_id]}]
   (if (swarm-addon-available?)
     (let [elisp (if (= slave_id "all")
                   "(json-encode (emacs-mcp-swarm-api-kill-all))"
                   (format "(json-encode (emacs-mcp-swarm-api-kill \"%s\"))"
                           (v/escape-elisp-string slave_id)))
-          {:keys [success result error]} (ec/eval-elisp elisp)]
-      (if success
+          {:keys [success result error timed-out]} (ec/eval-elisp-with-timeout elisp 3000)]
+      (cond
+        timed-out
+        {:type "text"
+         :text (json/write-str {:error "Kill operation timed out"
+                                :status "timeout"
+                                :slave_id slave_id})
+         :isError true}
+
+        success
         {:type "text" :text result}
+
+        :else
         {:type "text" :text (str "Error: " error) :isError true}))
     {:type "text" :text "emacs-mcp-swarm addon not loaded." :isError true}))
 
 (defn handle-swarm-broadcast
-  "Broadcast a prompt to all slaves."
+  "Broadcast a prompt to all slaves.
+   Uses timeout to prevent MCP blocking."
   [{:keys [prompt]}]
   (if (swarm-addon-available?)
     (let [elisp (format "(json-encode (emacs-mcp-swarm-broadcast \"%s\"))"
                         (v/escape-elisp-string prompt))
-          {:keys [success result error]} (ec/eval-elisp elisp)]
-      (if success
+          {:keys [success result error timed-out]} (ec/eval-elisp-with-timeout elisp 5000)]
+      (cond
+        timed-out
+        {:type "text"
+         :text (json/write-str {:error "Broadcast operation timed out"
+                                :status "timeout"})
+         :isError true}
+
+        success
         {:type "text" :text result}
+
+        :else
         {:type "text" :text (str "Error: " error) :isError true}))
     {:type "text" :text "emacs-mcp-swarm addon not loaded." :isError true}))
 

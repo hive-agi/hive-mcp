@@ -596,17 +596,32 @@ Called async from `emacs-mcp-swarm-spawn'.  Updates slave status as work progres
 
 (defun emacs-mcp-swarm-kill (slave-id)
   "Kill slave SLAVE-ID without prompts.
-Force-kills the buffer to prevent blocking on process/unsaved prompts."
+Force-kills the buffer to prevent blocking on process/unsaved prompts.
+Handles vterm/eat process cleanup to ensure no confirmation dialogs."
   (interactive
    (list (completing-read "Kill slave: "
                           (hash-table-keys emacs-mcp-swarm--slaves))))
   (when-let* ((slave (gethash slave-id emacs-mcp-swarm--slaves)))
     (let ((buffer (plist-get slave :buffer)))
       (when (buffer-live-p buffer)
-        ;; Force kill without any confirmation prompts
-        ;; This prevents Emacs from blocking on "Buffer has running process" etc.
+        (with-current-buffer buffer
+          ;; Step 1: Mark buffer as unmodified to prevent "save buffer?" prompts
+          (set-buffer-modified-p nil)
+          ;; Step 2: Disable process query-on-exit for ALL processes in this buffer
+          ;; This prevents "Buffer has running process; kill it?" prompts
+          (when-let* ((proc (get-buffer-process buffer)))
+            (set-process-query-on-exit-flag proc nil))
+          ;; Also handle vterm's internal process tracking if present
+          (when (and (boundp 'vterm--process) vterm--process
+                     (process-live-p vterm--process))
+            (set-process-query-on-exit-flag vterm--process nil)))
+        ;; Step 3: Kill buffer with ALL hooks disabled
+        ;; - kill-buffer-query-functions: prevents "process running" prompts
+        ;; - kill-buffer-hook: prevents any cleanup hooks from blocking
+        ;; - vterm-exit-functions: prevents vterm cleanup hooks
         (let ((kill-buffer-query-functions nil)
-              (kill-buffer-hook nil))
+              (kill-buffer-hook nil)
+              (vterm-exit-functions nil))
           (kill-buffer buffer))))
     (remhash slave-id emacs-mcp-swarm--slaves)
     (remhash slave-id emacs-mcp-swarm--last-approve-positions)

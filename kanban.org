@@ -214,6 +214,68 @@ PR #15 + #23 merged. Beamer and Reveal.js support with C4 diagram integration.
 :AGENT: emacs-1664516
 :SESSION: 20251231-164648
 :END:
+** DONE Swarm: Async timeout wrapper for MCP calls
+:PROPERTIES:
+:ID: 79f2252f-ef64-4b83-9b77-b1075ca3152c
+:CREATED: 2026-01-01 18:26
+:DESCRIPTION: Implement timeout wrapper on Clojure side to prevent Emacs blocking from freezing MCP server. Default 5s timeout, return error on timeout.
+:AGENT: emacs-1035819
+:SESSION: 20260101-182630
+:END:
+** DONE Swarm: Force-kill without prompts
+:PROPERTIES:
+:ID: 47417376-f06b-427c-ac31-e878d021d89a
+:CREATED: 2026-01-01 18:26
+:DESCRIPTION: Kill swarm slave buffers without confirmation prompts (kill-buffer-query-functions nil). Prevents blocking on "Buffer has running process".
+:AGENT: emacs-1035819
+:SESSION: 20260101-182631
+:END:
+** TODO [EPIC] Swarm: Dedicated daemon architecture
+:PROPERTIES:
+:ID: aed3402b-31bb-4fed-985f-fc1b8e6ab549
+:CREATED: 2026-01-01 18:26
+:DESCRIPTION: Long-term architectural improvement: Run swarm slaves in separate emacs --daemon=swarm. Benefits: Main Emacs never blocks, dashboard view possible, bb-mcp integration for lighter JVM. Requires architectural review.
+:AGENT: emacs-1035819
+:SESSION: 20260101-182631
+:END:
+** TODO Swarm: Dashboard panel for slave monitoring
+:PROPERTIES:
+:ID: 05fa9283-6b12-47dc-b2ec-6ceb5c3c6202
+:CREATED: 2026-01-01 18:26
+:DESCRIPTION: Create a dashboard view showing all swarm slaves with live status updates. Part of dedicated daemon epic. Could use tabulated-list-mode or custom buffer.
+:AGENT: emacs-1035819
+:SESSION: 20260101-182631
+:END:
+** TODO Swarm: bb-mcp integration for lighter JVM
+:PROPERTIES:
+:ID: 7948f020-5333-4c1f-8e10-6a7770b7567f
+:CREATED: 2026-01-01 18:26
+:DESCRIPTION: Explore using bb-mcp (Babashka) for swarm operations instead of full JVM. Faster startup, lower memory. Could complement dedicated daemon architecture.
+:AGENT: emacs-1035819
+:SESSION: 20260101-182632
+:END:
+** DONE BUG #7: swarm_collect double JSON parse issue (FIXED)
+:PROPERTIES:
+:ID:       58716982-4db7-4591-ad7b-5eeb66442117
+:CREATED:  2026-01-01 21:30
+:DESCRIPTION: FIXED - emacsclient returns quoted JSON, json-encode adds another layer. Solution: Double parse - first unwraps quotes, second gets map. Fixed in src/emacs_mcp/tools/swarm.clj handle-swarm-collect
+:AGENT:    emacs-126582
+:SESSION:  20260101-213013
+:UPDATED:  2026-01-01 21:30
+:LAST_AGENT: emacs-126582
+:END:
+** DONE BUG #10: org_kanban_native_status stats mismatch
+:PROPERTIES:
+:ID:       95bb1f33-5a1e-48ce-adc3-51c4ac6b14f4
+:CREATED:  2026-01-01 21:30
+:DESCRIPTION: MEDIUM - stats.todo shows 4 but by_status.todo array contains 54 items. The stats calculation is incorrect or filtering differently than the array population.
+:AGENT:    emacs-126582
+:SESSION:  20260101-213013
+:UPDATED:  2026-01-01 21:33
+:LAST_AGENT: emacs-126582
+:END:
+
+
 * MCP-Native Documentation Tools (Emacs RAG)
 :PROPERTIES:
 :ID: emacs-docs-rag-epic-2025
