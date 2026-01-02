@@ -3,7 +3,7 @@
 ;; Copyright (C) 2025 Pedro G. Branquinho
 ;; Author: Pedro G. Branquinho <pedrogbranquinho@gmail.com>
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "28.1") (claude-code "0.4.0"))
+;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: tools, ai, mcp
 ;; SPDX-License-Identifier: MIT
 
@@ -11,6 +11,12 @@
 ;;
 ;; This package integrates claude-code.el (the Emacs interface to Claude Code CLI)
 ;; with emacs-mcp (the MCP server for Claude).  It enables:
+;;
+;; OPTIONAL DEPENDENCIES:
+;; - claude-code (for Claude Code CLI integration)
+;;
+;; This addon activates automatically when claude-code is loaded.
+;; Without claude-code, the addon is silently disabled.
 ;;
 ;; - Automatic context injection when sending commands to Claude
 ;; - Memory persistence for important conversation snippets
@@ -26,7 +32,8 @@
 
 ;;; Code:
 
-(require 'claude-code)
+;; Only require claude-code if available (optional dependency)
+(require 'claude-code nil t)
 
 ;; Soft dependencies - load if available
 (declare-function emacs-mcp-api-get-context "emacs-mcp-api")
@@ -335,13 +342,18 @@ When enabled, provides:
 - Workflow access
 - Conversation logging
 
-Key bindings under `C-c c m' prefix (customizable)."
+Key bindings under `C-c c m' prefix (customizable).
+
+Requires `claude-code' package to be installed."
   :init-value nil
   :lighter " MCP"
   :global t
   :group 'emacs-mcp-claude-code
   (if emacs-mcp-claude-code-mode
-      (progn
+      (if (not (featurep 'claude-code))
+          (progn
+            (setq emacs-mcp-claude-code-mode nil)
+            (message "emacs-mcp-claude-code: claude-code not available, addon disabled"))
         ;; Add advice for context injection
         (advice-add 'claude-code--do-send-command :around
                     #'emacs-mcp-claude-code--advise-send-command)
