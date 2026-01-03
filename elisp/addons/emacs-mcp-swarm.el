@@ -65,6 +65,10 @@
 (require 'subr-x)
 (require 'emacs-mcp-graceful)
 
+;; Soft dependency on channel for push events
+(declare-function emacs-mcp-channel-connected-p "emacs-mcp-channel")
+(declare-function emacs-mcp-channel-send "emacs-mcp-channel")
+
 ;; Soft dependency on vterm
 (declare-function vterm "vterm")
 (declare-function vterm-send-string "vterm")
@@ -247,6 +251,73 @@ This alerts the human even when running master Claude in a terminal."
   "List of pending prompts awaiting human decision.
 Each entry is a plist: (:slave-id ID :prompt TEXT :buffer BUF :timestamp TIME)")
 
+;;;; Channel Event Emission (Push-based updates):
+
+(defun emacs-mcp-swarm--channel-available-p ()
+  "Check if the bidirectional channel is available and connected."
+  (and (require 'emacs-mcp-channel nil t)
+       (fboundp 'emacs-mcp-channel-connected-p)
+       (emacs-mcp-channel-connected-p)))
+
+(defun emacs-mcp-swarm--emit-event (event-type data)
+  "Emit EVENT-TYPE with DATA through the channel if connected.
+EVENT-TYPE should be a string like \"task-completed\".
+DATA is an alist of additional event properties."
+  (when (emacs-mcp-swarm--channel-available-p)
+    (let ((event `(("type" . ,event-type)
+                   ("timestamp" . ,(float-time))
+                   ("session-id" . ,emacs-mcp-swarm--session-id)
+                   ,@data)))
+      (condition-case err
+          (emacs-mcp-channel-send event)
+        (error
+         (message "[swarm] Channel emit error: %s" (error-message-string err)))))))
+
+(defun emacs-mcp-swarm--emit-task-completed (task-id slave-id result)
+  "Emit task-completed event for TASK-ID from SLAVE-ID with RESULT."
+  (emacs-mcp-swarm--emit-event
+   "task-completed"
+   `(("task-id" . ,task-id)
+     ("slave-id" . ,slave-id)
+     ("result" . ,result))))
+
+(defun emacs-mcp-swarm--emit-task-failed (task-id slave-id error-msg)
+  "Emit task-failed event for TASK-ID from SLAVE-ID with ERROR-MSG."
+  (emacs-mcp-swarm--emit-event
+   "task-failed"
+   `(("task-id" . ,task-id)
+     ("slave-id" . ,slave-id)
+     ("error" . ,error-msg))))
+
+(defun emacs-mcp-swarm--emit-prompt-shown (slave-id prompt-text)
+  "Emit prompt-shown event for SLAVE-ID with PROMPT-TEXT."
+  (emacs-mcp-swarm--emit-event
+   "prompt-shown"
+   `(("slave-id" . ,slave-id)
+     ("prompt" . ,prompt-text))))
+
+(defun emacs-mcp-swarm--emit-state-changed (slave-id old-state new-state)
+  "Emit state-changed event for SLAVE-ID from OLD-STATE to NEW-STATE."
+  (emacs-mcp-swarm--emit-event
+   "state-changed"
+   `(("slave-id" . ,slave-id)
+     ("old-state" . ,(symbol-name old-state))
+     ("new-state" . ,(symbol-name new-state)))))
+
+(defun emacs-mcp-swarm--emit-slave-spawned (slave-id name presets)
+  "Emit slave-spawned event for SLAVE-ID with NAME and PRESETS."
+  (emacs-mcp-swarm--emit-event
+   "slave-spawned"
+   `(("slave-id" . ,slave-id)
+     ("name" . ,name)
+     ("presets" . ,(or presets [])))))
+
+(defun emacs-mcp-swarm--emit-slave-killed (slave-id)
+  "Emit slave-killed event for SLAVE-ID."
+  (emacs-mcp-swarm--emit-event
+   "slave-killed"
+   `(("slave-id" . ,slave-id))))
+
 ;;;; Auto-Approve Watcher:
 
 (defun emacs-mcp-swarm--check-for-prompts (buffer)
@@ -373,7 +444,8 @@ Returns plist (:text TEXT :pos POS) or nil."
 
 (defun emacs-mcp-swarm--queue-prompt (slave-id prompt-text buffer)
   "Add a prompt to the pending queue and notify user.
-Sends both Emacs message and desktop notification for immediate awareness."
+Sends both Emacs message and desktop notification for immediate awareness.
+Also emits prompt-shown event via channel for push-based updates."
   (push (list :slave-id slave-id
               :prompt prompt-text
               :buffer buffer
@@ -388,7 +460,9 @@ Sends both Emacs message and desktop notification for immediate awareness."
   ;; Desktop notification (immediate hook - not polling!)
   (emacs-mcp-swarm--send-desktop-notification
    (format "🐝 Swarm Prompt: %s" slave-id)
-   (truncate-string-to-width prompt-text 100)))
+   (truncate-string-to-width prompt-text 100))
+  ;; Push event via channel (sub-100ms notification to master)
+  (emacs-mcp-swarm--emit-prompt-shown slave-id prompt-text))
 
 (defun emacs-mcp-swarm--update-prompts-buffer ()
   "Refresh the prompts buffer with current pending prompts."
@@ -674,6 +748,9 @@ Poll the slave's :status to check progress: spawning -> starting -> idle."
              spawn-depth
              parent-id)
 
+    ;; Emit slave-spawned event via channel
+    (emacs-mcp-swarm--emit-slave-spawned slave-id name presets)
+
     ;; FULLY ASYNC: Defer ALL work to timer so we return IMMEDIATELY
     (run-with-timer
      0 nil
@@ -799,7 +876,8 @@ Called async from `emacs-mcp-swarm-spawn'.  Updates slave status as work progres
 (defun emacs-mcp-swarm-kill (slave-id)
   "Kill slave SLAVE-ID without prompts.
 Force-kills the buffer to prevent blocking on process/unsaved prompts.
-Handles vterm/eat process cleanup to ensure no confirmation dialogs."
+Handles vterm/eat process cleanup to ensure no confirmation dialogs.
+Emits slave-killed event via channel for push-based updates."
   (interactive
    (list (completing-read "Kill slave: "
                           (hash-table-keys emacs-mcp-swarm--slaves))))
@@ -825,6 +903,8 @@ Handles vterm/eat process cleanup to ensure no confirmation dialogs."
               (kill-buffer-hook nil)
               (vterm-exit-functions nil))
           (kill-buffer buffer))))
+    ;; Emit slave-killed event via channel before cleanup
+    (emacs-mcp-swarm--emit-slave-killed slave-id)
     (remhash slave-id emacs-mcp-swarm--slaves)
     (remhash slave-id emacs-mcp-swarm--last-approve-positions)
     (message "Killed slave: %s" slave-id)))
@@ -1251,6 +1331,9 @@ fallback to ensure MCP clients never receive errors."
             (plist-put slave :status 'idle)
             (plist-put slave :current-task nil)
             (plist-put slave :tasks-failed (1+ (or (plist-get slave :tasks-failed) 0))))
+          ;; Emit task-failed event via channel
+          (emacs-mcp-swarm--emit-task-failed
+           task-id slave-id (format "Timed out after %dms" elapsed-ms))
           `(:task-id ,task-id
             :status "timeout"
             :error ,(format "Timed out after %dms" elapsed-ms)
@@ -1270,6 +1353,8 @@ fallback to ensure MCP clients never receive errors."
                   (plist-put slave :current-task nil)
                   (plist-put slave :tasks-completed
                              (1+ (or (plist-get slave :tasks-completed) 0))))
+                ;; Emit task-completed event via channel (sub-100ms push!)
+                (emacs-mcp-swarm--emit-task-completed task-id slave-id result)
                 `(:task-id ,task-id
                   :status "completed"
                   :result ,result
