@@ -1,170 +1,102 @@
 # emacs-mcp
 
-MCP (Model Context Protocol) server that allows Claude to interact with a running Emacs instance via `emacsclient`.
+**Your AI finally remembers.**
 
-## Features
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![MCP](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io)
+[![Emacs](https://img.shields.io/badge/Emacs-28.1+-purple.svg)](https://www.gnu.org/software/emacs/)
 
-### Core Tools
+> *"Every other AI tool forgets everything between sessions. This one doesn't."*
 
-| Tool | Description |
-|------|-------------|
-| `eval_elisp` | Execute arbitrary Emacs Lisp code |
-| `emacs_status` | Check if Emacs server is running |
-| `list_buffers` | List all open buffers |
-| `get_buffer_content` | Read content from a buffer |
-| `current_buffer` | Get current buffer name and file |
-| `switch_to_buffer` | Switch to a specific buffer |
-| `find_file` | Open a file in Emacs |
-| `save_buffer` | Save the current buffer |
-| `goto_line` | Move cursor to a line number |
-| `insert_text` | Insert text at cursor |
-| `project_root` | Get current project root |
-| `recent_files` | Get recently opened files |
+---
 
-### Memory & Context Tools
+## The Problem
 
-| Tool | Description |
-|------|-------------|
-| `mcp_capabilities` | Check emacs-mcp.el availability and features |
-| `mcp_get_context` | Get full context (buffer, project, git, memory) |
-| `mcp_memory_add` | Add notes, snippets, conventions, or decisions |
-| `mcp_memory_query` | Query stored memory entries by type |
-| `mcp_memory_query_metadata` | Efficient metadata-only queries (10x fewer tokens) |
-| `mcp_memory_get_full` | Get full content of a memory entry by ID |
-| `mcp_memory_search_semantic` | **NEW!** Vector similarity search via Chroma |
+You're deep in a debugging session with Claude. You've explained the architecture, the constraints, the patterns. Then you hit the context limit. New session. **Claude forgets everything.**
 
-### Workflow & Notification Tools
+Or worse: you come back tomorrow. Same project. Same questions. Same explanations. **Every. Single. Time.**
 
-| Tool | Description |
-|------|-------------|
-| `mcp_list_workflows` | List available user-defined workflows |
-| `mcp_run_workflow` | Execute a workflow by name |
-| `mcp_notify` | Show notification messages in Emacs |
-| `mcp_list_special_buffers` | List special buffers (*Messages*, etc.) |
-| `mcp_watch_buffer` | Monitor buffer content (logs, warnings) |
+## The Solution
 
-### Kanban Tools
+```
+Session 1                         Session 2
+─────────────────────────────────────────────────
+You: "Our auth uses JWT with..."
+Claude: *learns*                  You: /catchup
+         ↓                        Claude: "I see from memory:
+     /wrap                         - Auth uses JWT with refresh
+         ↓                         - Convention: validate at boundaries
+    [Memory]  ─────────────────►   - Decision: chose bcrypt over argon2
+                                   What should we work on?"
+```
 
-| Tool | Description |
-|------|-------------|
-| `mcp_kanban_status` | Get kanban board status and progress |
-| `mcp_kanban_list_tasks` | List tasks with optional status filter |
-| `mcp_kanban_create_task` | Create a new task |
-| `mcp_kanban_update_task` | Update task title/status |
-| `mcp_kanban_move_task` | Move task to new status column |
-| `mcp_kanban_my_tasks` | Get tasks assigned to current agent |
-| `mcp_kanban_roadmap` | View roadmap with milestones |
-| `mcp_kanban_sync` | Sync between vibe-kanban and org-kanban |
+**emacs-mcp** gives Claude persistent, project-scoped memory with semantic search. Conventions, decisions, snippets—stored locally, queryable by meaning, never forgotten.
 
-### CIDER Tools (Clojure Development)
+---
 
-| Tool | Description |
-|------|-------------|
-| `cider_status` | Get CIDER connection status |
-| `cider_eval_silent` | Fast silent evaluation |
-| `cider_eval_explicit` | Interactive evaluation with REPL output |
-| `cider_list_sessions` | List all active CIDER sessions |
-| `cider_spawn_session` | Create isolated nREPL session for parallel agents |
-| `cider_eval_session` | Evaluate in specific named session |
-| `cider_kill_session` | Kill a named session |
-| `cider_kill_all_sessions` | Clean up all sessions |
+## Key Features
 
-### Swarm Tools (Multi-Agent)
+### 1. Persistent Project Memory
 
-| Tool | Description |
-|------|-------------|
-| `swarm_spawn` | Spawn a new Claude slave instance |
-| `swarm_dispatch` | Send prompt to a slave |
-| `swarm_collect` | Collect response from a task |
-| `swarm_broadcast` | Send same prompt to all slaves |
-| `swarm_status` | Get swarm status and task counts |
-| `swarm_kill` | Kill slave instance(s) |
-| `swarm_list_presets` | List available specialization presets |
+```elisp
+;; Claude stores what it learns
+(mcp_memory_add :type "convention"
+                :content "Always validate at API boundaries"
+                :tags ["security" "validation"])
 
-### Git Tools (via Magit)
+;; And retrieves it next session
+(mcp_memory_search_semantic :query "input validation patterns")
+;; => Finds the convention, even without exact keywords
+```
 
-| Tool | Description |
-|------|-------------|
-| `magit_status` | Full repo status with staged/unstaged/untracked |
-| `magit_branches` | Branch info (current, upstream, local, remote) |
-| `magit_log` | Recent commits |
-| `magit_diff` | Show staged/unstaged/all diffs |
-| `magit_stage` | Stage files or all changes |
-| `magit_commit` | Create commit with message |
-| `magit_push` | Push to remote |
-| `magit_pull` | Pull from upstream |
-| `magit_fetch` | Fetch from remotes |
-| `magit_feature_branches` | List feature/fix/feat branches |
+**Memory types:** notes, conventions, decisions, snippets
+**Durations:** ephemeral (1 day) → short (7 days) → long (90 days) → permanent
+**Search:** Keyword or semantic (via local Ollama embeddings)
 
-### Project Tools (via Projectile)
+### 2. Session Continuity
 
-| Tool | Description |
-|------|-------------|
-| `projectile_info` | Project name, type, root, file count |
-| `projectile_files` | List files with optional glob filter |
-| `projectile_find_file` | Find file by name |
-| `projectile_search` | Search project with ripgrep |
-| `projectile_recent` | Recently visited project files |
-| `projectile_list_projects` | List all known projects |
+```bash
+# End of session
+/wrap   # Stores accomplishments, decisions, conventions
 
-### Prompt Capture Tools (RAG Knowledge Base)
+# Start of next session
+/catchup   # Restores full context from memory
+```
 
-| Tool | Description |
-|------|-------------|
-| `prompt_capture` | Capture well-structured prompts with analysis |
-| `prompt_analyze` | Analyze prompt structure without saving |
-| `prompt_search` | Search captured prompts by keyword |
-| `prompt_list` | List prompts with filters |
-| `prompt_stats` | Statistics about captured prompts |
+No more re-explaining your codebase. No more lost context.
 
-### Org-Mode Tools
+### 3. Multi-Agent Swarm
 
-| Tool | Description |
-|------|-------------|
-| `org_clj_parse` | Parse org file to JSON structure |
-| `org_clj_query` | Query headlines by ID, status, etc. |
-| `org_clj_write` | Write org structure back to file |
-| `org_kanban_native_status` | Get kanban status from org file |
-| `org_kanban_native_move` | Move task to new status |
-| `org_kanban_render` | Render visual kanban board |
+```elisp
+;; Spawn parallel Claude instances with specialized roles
+(swarm_spawn :name "tester" :preset "tdd")
+(swarm_spawn :name "reviewer" :preset "code-review")
 
-> **Auto-detection**: Tools automatically check if required packages are loaded and provide helpful error messages if not
+;; Dispatch tasks
+(swarm_dispatch :slave-id "tester" :prompt "Write tests for auth.clj")
 
-## Prerequisites
+;; Human-in-the-loop for risky operations
+;; File claims prevent conflicts between agents
+```
 
-1. **Emacs** with server mode enabled:
-   ```elisp
-   (server-start)
-   ```
+### 4. Full Emacs Integration
 
-2. **Clojure CLI** (deps.edn)
+50+ MCP tools for buffer management, git (Magit), projects (Projectile), Clojure (CIDER), and org-mode. Claude controls your editor, not just reads files.
 
-3. **emacsclient** in your PATH
+---
 
-## Installation
+## Quick Start
 
-### 1. Clone the repository
+### 1. Install
 
 ```bash
 git clone https://github.com/BuddhiLW/emacs-mcp.git
 cd emacs-mcp
 ```
 
-### 2. Add to Claude Code
+### 2. Configure Claude Code
 
-Add to `~/.claude/settings.json` under `mcpServers`:
-
-```json
-{
-  "mcpServers": {
-    "emacs-mcp": {
-      "command": "/home/you/path/to/emacs-mcp/start-mcp.sh"
-    }
-  }
-}
-```
-
-Or directly with clojure:
+Add to `~/.claude.json`:
 
 ```json
 {
@@ -172,424 +104,185 @@ Or directly with clojure:
     "emacs-mcp": {
       "command": "clojure",
       "args": ["-X:mcp"],
-      "cwd": "/home/you/path/to/emacs-mcp"
+      "cwd": "/path/to/emacs-mcp"
     }
   }
 }
 ```
 
-### 3. Ensure Emacs server is running
+### 3. Enable in Emacs
 
 ```elisp
-;; In your Emacs init.el
-(server-start)
-```
-
-### 4. (Optional) Load emacs-mcp.el for full features
-
-```elisp
+;; In init.el
 (add-to-list 'load-path "/path/to/emacs-mcp/elisp")
 (require 'emacs-mcp)
 (emacs-mcp-mode 1)
+(server-start)  ; Required for emacsclient
 ```
 
-**No nREPL needed!** The MCP server runs standalone via `clojure -X:mcp`.
-
-### Alternative: Lightweight Mode (bb-mcp)
-
-For memory-constrained environments, use **bb-mcp** - a Babashka-based MCP server:
-
-| Metric | JVM (start-mcp.sh) | bb-mcp (start-bb-mcp.sh) |
-|--------|-------------------|--------------------------|
-| Memory | ~500 MB | ~50 MB |
-| Startup | ~2-3s | ~5ms |
-| Tools | 50+ (full Emacs) | 6 (basic file ops) |
-
-**bb-mcp tools:** `bash`, `read_file`, `file_write`, `glob_files`, `grep`, `clojure_eval`
-
-**Setup:**
-
-1. Clone bb-mcp:
-   ```bash
-   git clone https://github.com/BuddhiLW/bb-mcp.git ~/bb-mcp
-   ```
-
-2. Configure Claude Code:
-   ```json
-   {
-     "mcpServers": {
-       "emacs-mcp": {
-         "command": "/path/to/emacs-mcp/start-bb-mcp.sh"
-       }
-     }
-   }
-   ```
-
-3. (Optional) Start shared nREPL for `clojure_eval`:
-   ```bash
-   cd /your/project && clojure -M:nrepl -p 7910
-   ```
-
-**When to use bb-mcp:**
-- Multiple Claude sessions (saves ~450MB per session)
-- Fast startup needed
-- Only need basic file/bash operations
-
-**When to use full JVM:**
-- Need Emacs integration (eval_elisp, buffers, kanban)
-- Need memory, workflows, magit, projectile tools
-
-## Development
-
-### Start nREPL for development
+### 4. (Optional) Enable Semantic Search
 
 ```bash
-clojure -M:nrepl
+# Local embeddings via Ollama
+ollama pull nomic-embed-text
+
+# Vector database via Docker
+docker compose up -d
 ```
 
-### Run tests
-
-```bash
-clojure -M:test
-```
-
-### Run MCP server directly
-
-```bash
-clojure -X:mcp
-```
+---
 
 ## Architecture
 
 ```
-┌─────────────┐     MCP/STDIO      ┌─────────────┐
-│   Claude    │ ◄────────────────► │  emacs-mcp  │
-│   (AI)      │                    │  (Clojure)  │
-└─────────────┘                    └──────┬──────┘
-                                          │
-                                          │ emacsclient --eval
-                                          ▼
-                                   ┌─────────────┐
-                                   │   Emacs     │
-                                   │  (daemon)   │
-                                   │             │
-                                   │ emacs-mcp.el│ ← NEW!
-                                   └─────────────┘
-```
-
-## emacs-mcp.el - Emacs Package
-
-The `elisp/` directory contains an Emacs package that enables **bidirectional** collaboration:
-
-- **Memory**: Persistent notes, snippets, conventions, decisions per-project
-- **Context**: Rich information about buffer, region, project, git
-- **Workflows**: User-defined multi-step automations
-- **Triggers**: Hooks and keybindings for automation
-
-### Installation
-
-```elisp
-;; Add to load-path
-(add-to-list 'load-path "/path/to/emacs-mcp/elisp")
-
-;; Load and enable
-(require 'emacs-mcp)
-(emacs-mcp-mode 1)
-```
-
-### Keybindings (C-c m prefix)
-
-| Key       | Command                    |
-|-----------|----------------------------|
-| `C-c m m` | Open transient menu        |
-| `C-c m n` | Add note to memory         |
-| `C-c m s` | Save region as snippet     |
-| `C-c m c` | Add project convention     |
-| `C-c m d` | Record architecture decision|
-| `C-c m l` | Browse project memory      |
-| `C-c m w` | Run workflow               |
-| `C-c m h` | Show conversation history  |
-| `C-c m x` | Show current context       |
-
-### API for Claude
-
-Claude can use these functions via `eval_elisp`:
-
-```clojure
-;; Get full context including memory
-(ec/eval-elisp "(emacs-mcp-api-get-context)")
-
-;; Add a note
-(ec/eval-elisp "(emacs-mcp-api-memory-add \"note\" \"Remember this\")")
-
-;; Query conventions
-(ec/eval-elisp "(emacs-mcp-api-memory-query \"convention\")")
-
-;; Run user workflow
-(ec/eval-elisp "(emacs-mcp-api-run-workflow \"test-and-commit\")")
-```
-
-### Package Structure
-
-```
-elisp/
-├── emacs-mcp.el           # Main entry, minor mode
-├── emacs-mcp-memory.el    # Persistent JSON storage
-├── emacs-mcp-context.el   # Context gathering
-├── emacs-mcp-triggers.el  # Keybindings, hooks
-├── emacs-mcp-transient.el # Transient menus
-├── emacs-mcp-workflows.el # Workflow system
-├── emacs-mcp-api.el       # Stable API for Claude
-├── emacs-mcp-addons.el    # Addon system with lifecycle hooks
-└── addons/                # Built-in and custom addons
-    ├── emacs-mcp-addon-template.el  # Template for new addons
-    ├── emacs-mcp-chroma.el          # Semantic search via Chroma + Ollama
-    ├── emacs-mcp-cider.el           # CIDER + async nREPL
-    ├── emacs-mcp-claude-code.el     # Claude Code CLI integration
-    ├── emacs-mcp-docs.el            # Documentation generation
-    ├── emacs-mcp-magit.el           # Git via Magit with shell fallback
-    ├── emacs-mcp-melpazoid.el       # MELPA submission tools
-    ├── emacs-mcp-org-ai.el          # org-ai conversation context
-    ├── emacs-mcp-org-kanban.el      # Org-mode kanban boards
-    ├── emacs-mcp-package-lint.el    # MELPA compliance tools
-    ├── emacs-mcp-presentation.el    # Presentation mode
-    ├── emacs-mcp-projectile.el      # Project management via Projectile
-    ├── emacs-mcp-swarm.el           # Multi-agent orchestration
-    └── emacs-mcp-vibe-kanban.el     # Cloud task management server
-```
-
-## Addon System
-
-Modular integrations with other Emacs packages. Addons are **lazy-loaded** when target packages are detected and support lifecycle hooks for async initialization.
-
-| Addon | Integration | Features |
-|-------|-------------|----------|
-| chroma | [Chroma](https://www.trychroma.com/) + [Ollama](https://ollama.com/) | Semantic memory search, vector embeddings, docker-compose management |
-| cider | [CIDER](https://github.com/clojure-emacs/cider) | Async nREPL startup, auto-connect, isolated sessions for parallel agents |
-| claude-code | [claude-code.el](https://github.com/karthink/claude-code) | Context injection for Claude CLI |
-| docs | Built-in | Documentation generation utilities |
-| magit | [Magit](https://magit.vc/) | Git status, staging, commits, push/pull, branch management (shell fallback) |
-| melpazoid | [melpazoid](https://github.com/riscy/melpazoid) | MELPA recipe testing and submission |
-| org-ai | [org-ai](https://github.com/rksm/org-ai) | AI conversation context |
-| org-kanban | org-mode | Native Clojure org-mode parser for kanban boards |
-| package-lint | [package-lint](https://github.com/purcell/package-lint) | MELPA compliance checking |
-| presentation | Built-in | Presentation mode for demos |
-| projectile | [Projectile](https://github.com/bbatsov/projectile) | Project info, file listing, search with ripgrep |
-| swarm | vterm/eat | Multi-agent orchestration with presets, parallel Claude instances |
-| vibe-kanban | [vibe-kanban](https://vibekanban.dev/) | Cloud task management server (npx subprocess) |
-
-**Quick start:**
-```elisp
-;; Auto-load addons when packages are detected
-(emacs-mcp-addons-auto-load)
-
-;; Or always load specific addons on startup
-(setq emacs-mcp-addon-always-load '(cider vibe-kanban))
-
-;; For async nREPL startup
-(setq emacs-mcp-cider-auto-start-nrepl t)
-```
-
-**Addon lifecycle hooks:**
-- `:init` - Synchronous setup (keybindings, config)
-- `:async-init` - Non-blocking startup (servers, subprocesses)
-- `:shutdown` - Cleanup on unload
-
-📖 **Documentation:**
-- [Addon Development Guide](docs/addon-development.md)
-- [Addon API Reference](docs/addon-api.md)
-- [Full Addon Docs](docs/ADDONS.org)
-
-## Tested & Working
-
-All features verified through the Clojure MCP → Emacs integration:
-
-| Feature | Status | 
-|---------|--------|
-| Context API | ✓ Full buffer/project/git/memory info |
-| Memory persistence | ✓ Notes saved to JSON per-project |
-| Memory query | ✓ Retrieves stored notes, conventions |
-| Workflows | ✓ `quick-note`, `commit` registered |
-| Notifications | ✓ Messages displayed in Emacs |
-| Jump to file:line | ✓ Opens file with line highlight |
-| Show in buffer | ✓ Creates buffer with content |
-| Synergy functions | ✓ Full dev-tools + emacs-bridge integration |
-
-```clojure
-;; Example: Get full context with memory
-(require '[emacs-mcp.synergy :as syn])
-(syn/get-full-context!)
-;; => {:buffer {...} :project {...} :git {...} :memory {:notes [...]}}
-
-;; Jump to a specific location
-(syn/jump-to! "src/myfile.clj" 42)
-
-;; Show results in Emacs
-(syn/show-in-buffer! "*Results*" "# Analysis\n..." "markdown-mode")
-```
-
-## Semantic Memory Search
-
-Enable vector similarity search across your project memory using **Chroma** (vector database) and **Ollama** (local embeddings).
-
-### Prerequisites
-
-1. **Docker** and **docker-compose** (for Chroma)
-2. **Ollama** with embedding model:
-   ```bash
-   # Install Ollama
-   curl -fsSL https://ollama.com/install.sh | sh
-   
-   # Pull embedding model (768 dimensions)
-   ollama pull nomic-embed-text
-   ```
-
-### Quick Start
-
-```bash
-# Start Chroma container
-cd /path/to/emacs-mcp
-docker compose up -d
-
-# Verify health
-curl http://localhost:8000/api/v2/heartbeat
-```
-
-### Configuration
-
-Environment variables (set in shell, Emacs, or systemd):
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CHROMA_HOST` | `localhost` | Chroma server host |
-| `CHROMA_PORT` | `8000` | Chroma server port |
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama API URL |
-
-**Emacs configuration** (in `init.el` or `config.el`):
-
-```elisp
-;; Set before loading emacs-mcp
-(setenv "CHROMA_HOST" "localhost")
-(setenv "CHROMA_PORT" "8000")
-(setenv "OLLAMA_HOST" "http://localhost:11434")
-
-;; Load chroma addon
-(require 'emacs-mcp-chroma nil t)
-(when (featurep 'emacs-mcp-chroma)
-  (emacs-mcp-chroma-mode 1))
-```
-
-### Usage
-
-Once configured, use the `mcp_memory_search_semantic` tool:
-
-```clojure
-;; Search for conceptually similar entries
-(mcp_memory_search_semantic {:query "authentication flow" :limit 5})
-
-;; Filter by type
-(mcp_memory_search_semantic {:query "error handling" :type "convention"})
-```
-
-The semantic search finds conceptually related entries even without exact keyword matches - "auth flow" will find entries about "login", "session management", etc.
-
-### Fallback Behavior
-
-If Chroma is unavailable, the system automatically falls back to local text-based search, ensuring memory queries always work.
-
-## Meta: MCP Servers Editing MCP Servers
-
-This project demonstrates an interesting recursive pattern: **an MCP server can be developed using another MCP server**.
-
-### The Setup
-
-| Server | Function | Tools Provided |
-|--------|----------|----------------|
-| **clojure-mcp** (mcp-dev₁) | Clojure development | read, edit, eval, grep, glob |
-| **emacs-mcp** (mcp-emacs₂) | Emacs interaction | eval-elisp, list-buffers, find-file |
-
-Both servers are *implemented* in Clojure, but they serve different *domains*:
-
-```
 ┌─────────────────────────────────────────────────────────────┐
 │                         Claude                              │
-├─────────────────────────────┬───────────────────────────────┤
-│      clojure-mcp            │         emacs-mcp             │
-│   (dev-tools server)        │    (emacs-bridge server)      │
-│                             │                               │
-│  • read/edit Clojure files  │  • eval elisp                 │
-│  • REPL evaluation          │  • buffer management          │
-│  • project navigation       │  • file operations            │
-├─────────────────────────────┴───────────────────────────────┤
-│                    can edit ───────►                        │
-│   clojure-mcp edits emacs-mcp source files                  │
+│                           │                                 │
+│                     MCP Protocol                            │
+│                           │                                 │
+├───────────────────────────┼─────────────────────────────────┤
+│                           ▼                                 │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │              emacs-mcp (Clojure)                    │   │
+│  │                                                     │   │
+│  │  Memory ──► JSON + Chroma (semantic)               │   │
+│  │  Channel ──► Unix socket (push events)             │   │
+│  │  Swarm ──► Parallel Claude instances               │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                           │                                 │
+│                     emacsclient                             │
+│                           │                                 │
+│                           ▼                                 │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │                 Emacs (daemon)                      │   │
+│  │                                                     │   │
+│  │  emacs-mcp.el ──► Memory, Context, Workflows       │   │
+│  │  Addons ──► Magit, CIDER, Projectile, Org...       │   │
+│  └─────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Naming Clarity (General Semantics)
+---
 
-To avoid confusion when discussing MCP servers at multiple levels:
+## Tools Reference
 
-1. **Index by function, not implementation**: 
-   - "dev-tools server" vs "emacs-bridge server"
-   - Not "the Clojure one" (ambiguous - both use Clojure)
+<details>
+<summary><b>Memory & Context</b> (click to expand)</summary>
 
-2. **Use subscripts for instances**:
-   - mcp₁ (dev tools), mcp₂ (emacs bridge)
-   
-3. **Distinguish layers**:
-   | Layer | clojure-mcp | emacs-mcp |
-   |-------|-------------|-----------|
-   | Implementation | Clojure | Clojure |
-   | Target domain | Clojure dev | Emacs control |
-   | Provides tools for | Editing code | Controlling editor |
+| Tool | Description |
+|------|-------------|
+| `mcp_memory_add` | Store notes, conventions, decisions, snippets |
+| `mcp_memory_query` | Query by type with optional tag filter |
+| `mcp_memory_search_semantic` | Vector similarity search |
+| `mcp_memory_promote` / `demote` | Adjust retention duration |
+| `mcp_get_context` | Full context (buffer, project, git, memory) |
 
-4. **The map ≠ territory**: The *name* "clojure-mcp" refers to its *target domain* (Clojure development), not its implementation language.
+</details>
 
-## Why Lisp?
+<details>
+<summary><b>Workflows & Automation</b></summary>
 
-> **User:** "I think this is revolutionary. LISP revenge at full force. No VSCode can do this. Maybe in 5 years."
->
-> **Claude:** "5 years? Maybe. But they'd have to reinvent Lisp to get there."
->
-> **User:** "Sheesh, sharp as a knife lmao"
+| Tool | Description |
+|------|-------------|
+| `mcp_run_workflow` | Execute named workflow with args |
+| `mcp_list_workflows` | List available workflows |
+| `mcp_notify` | Show notification in Emacs |
 
-Every time someone tries to make a "programmable editor" they end up building:
+**Built-in workflows:** `wrap`, `catchup`, `quick-note`, `commit`
 
-- A configuration language (that becomes Turing complete)
-- A plugin system (that needs lifecycle hooks)
+</details>
+
+<details>
+<summary><b>Swarm (Multi-Agent)</b></summary>
+
+| Tool | Description |
+|------|-------------|
+| `swarm_spawn` | Create Claude instance with preset |
+| `swarm_dispatch` | Send task to agent |
+| `swarm_collect` | Get task result |
+| `swarm_broadcast` | Send to all agents |
+| `swarm_status` | View all agents and tasks |
+
+**Presets:** tdd, code-review, docs, clarity, security
+
+</details>
+
+<details>
+<summary><b>Git (Magit)</b></summary>
+
+| Tool | Description |
+|------|-------------|
+| `magit_status` | Full repo status |
+| `magit_stage` / `commit` / `push` | Standard git ops |
+| `magit_branches` | Branch management |
+| `magit_log` / `diff` | History and changes |
+
+</details>
+
+<details>
+<summary><b>Emacs Core</b></summary>
+
+| Tool | Description |
+|------|-------------|
+| `eval_elisp` | Execute arbitrary elisp |
+| `list_buffers` / `get_buffer_content` | Buffer ops |
+| `find_file` / `save_buffer` | File ops |
+| `projectile_*` | Project navigation |
+| `cider_*` | Clojure REPL |
+
+</details>
+
+<details>
+<summary><b>Org-Mode</b></summary>
+
+| Tool | Description |
+|------|-------------|
+| `org_clj_parse` | Parse org to JSON |
+| `org_kanban_render` | Visual kanban board |
+| `mcp_kanban_*` | Task management |
+
+</details>
+
+---
+
+## Why Emacs?
+
+Every "programmable editor" eventually reinvents:
+- A config language (that becomes Turing complete)
+- A plugin system (with lifecycle hooks)
 - An eval mechanism (for "dynamic" features)
-- A REPL (for debugging plugins)
+- A REPL (for debugging)
 
-...and at that point you've just built a worse Lisp with different syntax.
+...and at that point you've just built a worse Lisp.
 
-**McCarthy figured this out in 1958.** The industry has been speedrunning towards rediscovering it ever since.
-
-The difference with Emacs:
+**McCarthy figured this out in 1958.** Emacs is the editor that didn't fight it.
 
 | VSCode | Emacs |
 |--------|-------|
 | Extension API → LSP → JSON-RPC → Sandbox | `(eval elisp)` → done |
-| Security benefit, creativity constraint | Everything is data, no boundaries |
+| Security boundary, creativity constraint | Everything is data |
 
-Lisp was dismissed as "academic" for decades. Now LLMs need exactly what Lisp provides—homoiconicity, runtime metaprogramming, data-as-code. The "weird" features are suddenly the killer features.
+LLMs need exactly what Lisp provides: homoiconicity, runtime metaprogramming, data-as-code. The "weird" features are suddenly the killer features.
 
-**Enjoy the head start.** 🎯
+---
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
-| [Addon Development Guide](docs/addon-development.md) | How to create addons |
-| [Addon API Reference](docs/addon-api.md) | Complete API documentation |
-| [Contributing](docs/CONTRIBUTING.md) | Contribution guidelines |
-| [Project Summary](docs/PROJECT_SUMMARY.md) | Architecture overview |
-| [Implementation Summary](docs/IMPLEMENTATION_SUMMARY.md) | Technical details |
-| [Telemetry](docs/telemetry.md) | Telemetry & metrics |
-| [Resilience](docs/resilience.md) | Error handling patterns |
-| [Validation](docs/validation.md) | Input validation |
-| [Evaluator](docs/evaluator.md) | Elisp evaluation |
+| [Tool Reference](docs/TOOLS.md) | Complete tool documentation |
+| [Addon Guide](docs/addon-development.md) | Create custom addons |
+| [Architecture](docs/PROJECT_SUMMARY.md) | Technical deep-dive |
+| [Contributing](docs/CONTRIBUTING.md) | How to contribute |
+
+---
 
 ## License
 
 MIT
+
+---
+
+<p align="center">
+  <i>"Lisp was dismissed as 'academic' for decades. Now LLMs need exactly what Lisp provides."</i>
+</p>
