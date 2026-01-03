@@ -11,8 +11,6 @@
   (:require [emacs-mcp.tools.core :refer [mcp-success mcp-error mcp-json]]
             [emacs-mcp.emacsclient :as ec]
             [emacs-mcp.validation :as v]
-            [emacs-mcp.swarm.coordinator :as coord]
-            [emacs-mcp.swarm.hive :as hive]
             [clojure.data.json :as json]
             [clojure.java.shell :as shell]
             [clojure.string :as str]
@@ -52,45 +50,29 @@
       (subscribe-fn event-type))))
 
 (defn- handle-task-completed
-  "Handle task-completed event from channel.
-   Note: bencode returns string keys, so we use get instead of keywords."
-  [event]
-  (let [task-id (get event "task-id")
-        slave-id (get event "slave-id")
-        result (get event "result")
-        timestamp (get event "timestamp")]
-    (log/info "Channel: task-completed" task-id "from" slave-id)
-    (swap! event-journal assoc (str task-id)
-           {:status "completed"
-            :result result
-            :slave-id slave-id
-            :timestamp (or timestamp (System/currentTimeMillis))})))
+  "Handle task-completed event from channel."
+  [{:keys [task-id slave-id result timestamp] :as event}]
+  (log/info "Channel: task-completed" task-id "from" slave-id)
+  (swap! event-journal assoc (str task-id)
+         {:status "completed"
+          :result result
+          :slave-id slave-id
+          :timestamp (or timestamp (System/currentTimeMillis))}))
 
 (defn- handle-task-failed
-  "Handle task-failed event from channel.
-   Note: bencode returns string keys, so we use get instead of keywords."
-  [event]
-  (let [task-id (get event "task-id")
-        slave-id (get event "slave-id")
-        error (get event "error")
-        timestamp (get event "timestamp")]
-    (log/info "Channel: task-failed" task-id "from" slave-id ":" error)
-    (swap! event-journal assoc (str task-id)
-           {:status "failed"
-            :error error
-            :slave-id slave-id
-            :timestamp (or timestamp (System/currentTimeMillis))})))
+  "Handle task-failed event from channel."
+  [{:keys [task-id slave-id error timestamp] :as event}]
+  (log/info "Channel: task-failed" task-id "from" slave-id ":" error)
+  (swap! event-journal assoc (str task-id)
+         {:status "failed"
+          :error error
+          :slave-id slave-id
+          :timestamp (or timestamp (System/currentTimeMillis))}))
 
 (defn- handle-prompt-shown
-  "Handle prompt-shown event from channel.
-   Note: bencode returns string keys, so we use get instead of keywords."
-  [event]
-  (let [slave-id (get event "slave-id")
-        prompt (get event "prompt")
-        timestamp (get event "timestamp")]
-    (log/info "Channel: prompt-shown from" slave-id)
-    ;; For now just log - could add to a prompts journal if needed
-    ))
+  "Handle prompt-shown event from channel."
+  [{:keys [slave-id prompt timestamp] :as event}]
+  (log/info "Channel: prompt-shown from" slave-id))
 
 (defn start-channel-subscriptions!
   "Start listening for swarm events via channel.
@@ -186,88 +168,28 @@
 
 (defn handle-swarm-dispatch
   "Dispatch a prompt to a slave.
-   Runs pre-flight conflict checks before dispatch.
-   Optionally injects hive knowledge context into prompt.
-   Uses timeout to prevent MCP blocking.
-
-   Parameters:
-   - slave_id: Target slave for dispatch
-   - prompt: The prompt/task to send
-   - timeout_ms: Optional timeout in milliseconds
-   - files: Optional explicit list of files task will modify
-   - inject_hive: If true, inject hive knowledge context (conventions, decisions)"
-  [{:keys [slave_id prompt timeout_ms files inject_hive]}]
+   Uses timeout to prevent MCP blocking."
+  [{:keys [slave_id prompt timeout_ms]}]
   (if (swarm-addon-available?)
-    ;; Optionally wrap prompt with hive knowledge context
-    (let [{:keys [prompt context-injected?] :as wrapped}
-          (if inject_hive
-            (hive/wrap-prompt-with-context prompt {:conventions 10 :decisions 5})
-            {:prompt prompt :context-injected? false})
-          ;; Pre-flight check: detect conflicts before dispatch
-          preflight (coord/dispatch-or-queue!
-                     {:slave-id slave_id
-                      :prompt prompt
-                      :files files
-                      :timeout-ms timeout_ms})]
-      (case (:action preflight)
-        ;; Blocked due to circular dependency - cannot proceed
-        :blocked
+    (let [elisp (format "(json-encode (emacs-mcp-swarm-api-dispatch \"%s\" \"%s\" %s))"
+                        (v/escape-elisp-string slave_id)
+                        (v/escape-elisp-string prompt)
+                        (or timeout_ms "nil"))
+          ;; Dispatch should be quick - 5s default timeout
+          {:keys [success result error timed-out]} (ec/eval-elisp-with-timeout elisp 5000)]
+      (cond
+        timed-out
         {:type "text"
-         :text (json/write-str {:error "Dispatch blocked: circular dependency detected"
-                                :status "blocked"
-                                :would_deadlock (:would-deadlock preflight)
+         :text (json/write-str {:error "Dispatch operation timed out"
+                                :status "timeout"
                                 :slave_id slave_id})
          :isError true}
 
-        ;; Queued due to file conflicts - will dispatch when conflicts clear
-        :queued
-        {:type "text"
-         :text (json/write-str {:status "queued"
-                                :task_id (:task-id preflight)
-                                :queue_position (:position preflight)
-                                :conflicts (:conflicts preflight)
-                                :slave_id slave_id
-                                :hive_context_injected context-injected?
-                                :message "Task queued - waiting for file conflicts to clear"})}
+        success
+        {:type "text" :text result}
 
-        ;; Approved - proceed with dispatch
-        :dispatch
-        (let [effective-files (:files preflight)
-              elisp (format "(json-encode (emacs-mcp-swarm-api-dispatch \"%s\" \"%s\" %s))"
-                            (v/escape-elisp-string slave_id)
-                            (v/escape-elisp-string prompt)
-                            (or timeout_ms "nil"))
-              ;; Dispatch should be quick - 5s default timeout
-              {:keys [success result error timed-out]} (ec/eval-elisp-with-timeout elisp 5000)]
-          (cond
-            timed-out
-            {:type "text"
-             :text (json/write-str {:error "Dispatch operation timed out"
-                                    :status "timeout"
-                                    :slave_id slave_id})
-             :isError true}
-
-            success
-            (do
-              ;; Register file claims for successful dispatch
-              (when-let [task-id (try
-                                   (:task-id (json/read-str result :key-fn keyword))
-                                   (catch Exception _ nil))]
-                (when (seq effective-files)
-                  (coord/register-task-claims! task-id slave_id effective-files)))
-              ;; Merge hive injection info into result
-              (let [result-map (try (json/read-str result :key-fn keyword) (catch Exception _ {}))
-                    enhanced (assoc result-map :hive_context_injected context-injected?)]
-                {:type "text" :text (json/write-str enhanced)}))
-
-            :else
-            {:type "text" :text (str "Error: " error) :isError true}))
-
-        ;; Fallback
-        {:type "text"
-         :text (json/write-str {:error "Unknown pre-flight result"
-                                :preflight preflight})
-         :isError true}))
+        :else
+        {:type "text" :text (str "Error: " error) :isError true}))
     {:type "text" :text "emacs-mcp-swarm addon not loaded." :isError true}))
 
 (defn handle-swarm-status
@@ -872,19 +794,14 @@
     :handler handle-swarm-spawn}
 
    {:name "swarm_dispatch"
-    :description "Send a prompt to a slave Claude instance. Runs pre-flight conflict checks. Returns task_id, or queues task if file conflicts detected."
+    :description "Send a prompt to a slave Claude instance. Returns a task_id for tracking."
     :inputSchema {:type "object"
                   :properties {"slave_id" {:type "string"
                                            :description "ID of the slave to send prompt to"}
                                "prompt" {:type "string"
                                          :description "The prompt/task to send to the slave"}
                                "timeout_ms" {:type "integer"
-                                             :description "Optional timeout in milliseconds"}
-                               "files" {:type "array"
-                                        :items {:type "string"}
-                                        :description "Explicit list of files this task will modify (optional, extracted from prompt if not provided)"}
-                               "inject_hive" {:type "boolean"
-                                              :description "If true, inject hive knowledge (conventions, decisions) into prompt. Enables collective learning across sessions."}}
+                                             :description "Optional timeout in milliseconds"}}
                   :required ["slave_id" "prompt"]}
     :handler handle-swarm-dispatch}
 
@@ -973,27 +890,4 @@
                                "cleanup_dry_run" {:type "boolean"
                                                   :description "If auto_cleanup, whether to actually kill orphans (default: false)"}}
                   :required []}
-    :handler handle-resource-guard}
-
-   {:name "swarm_coordinator_status"
-    :description "Get hivemind coordinator status including task queue, file claims, and logic database stats."
-    :inputSchema {:type "object" :properties {}}
-    :handler (fn [_]
-               {:type "text"
-                :text (json/write-str (coord/coordinator-status))})}
-
-   {:name "swarm_process_queue"
-    :description "Process queued tasks - dispatch any tasks whose file conflicts have cleared."
-    :inputSchema {:type "object" :properties {}}
-    :handler (fn [_]
-               (let [ready (coord/process-queue!)]
-                 {:type "text"
-                  :text (json/write-str {:processed (count ready)
-                                         :tasks (mapv #(select-keys % [:id :slave-id]) ready)})}))}
-
-   {:name "swarm_hive_stats"
-    :description "Get statistics about available hive knowledge (conventions, decisions, notes). Use to understand what collective knowledge will be injected when inject_hive is enabled."
-    :inputSchema {:type "object" :properties {}}
-    :handler (fn [_]
-               {:type "text"
-                :text (json/write-str (hive/get-hive-stats))})}])
+    :handler handle-resource-guard}])
