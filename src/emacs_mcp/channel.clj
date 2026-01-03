@@ -345,13 +345,17 @@
 
 (defn emit-event!
   "Emit an event to all connected clients and local subscribers.
+   Uses string keys for consistency with bencode format.
 
    Example:
      (emit-event! :task-completed {:task-id \"123\" :result \"done\"})"
   [event-type data]
-  (let [event (assoc data
-                     :type event-type
-                     :timestamp (System/currentTimeMillis))]
+  ;; Convert keyword keys to strings for consistency with bencode
+  (let [string-data (into {} (map (fn [[k v]] [(name k) v]) data))
+        event (assoc string-data
+                     "type" (name event-type)
+                     "timestamp" (System/currentTimeMillis)
+                     :type event-type)] ; Keep :type for pub/sub routing
     ;; Local pub/sub
     (publish! event)
     ;; Broadcast to connected Emacs clients
