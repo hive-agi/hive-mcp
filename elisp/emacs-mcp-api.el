@@ -354,6 +354,19 @@ Returns structured result suitable for JSON encoding."
         '((error . "catchup-workflow-not-available")))
     '((error . "catchup-workflow-failed"))))
 
+(declare-function emacs-mcp-workflow-wrap--gather-session-data "emacs-mcp-workflows")
+
+(defun emacs-mcp-api-wrap-gather ()
+  "Gather session data for wrap workflow.
+Returns plist with gathered data from memory, git, kanban, and channel.
+Use before wrap to preview/confirm data before storing."
+  (emacs-mcp-with-fallback
+      (if (fboundp 'emacs-mcp-workflow-wrap--gather-session-data)
+          (let ((result (emacs-mcp-workflow-wrap--gather-session-data)))
+            (emacs-mcp-api--plist-to-alist result))
+        '((error . "wrap-gather-not-available")))
+    '((error . "wrap-gather-failed"))))
+
 ;;;; Trigger API:
 
 (defun emacs-mcp-api-register-trigger (name spec)

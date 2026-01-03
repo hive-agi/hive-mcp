@@ -29,7 +29,9 @@
             [emacs-mcp.tools.kanban :as kanban]
             [emacs-mcp.tools.swarm :as swarm]
             [emacs-mcp.tools.org :as org]
-            [emacs-mcp.tools.prompt :as prompt]))
+            [emacs-mcp.tools.prompt :as prompt]
+            [emacs-mcp.hivemind :as hivemind]
+            [emacs-mcp.channel :as channel]))
 
 ;; =============================================================================
 ;; MCP Response Format Helpers
@@ -1539,7 +1541,9 @@
                kanban/tools
                swarm/tools
                org/tools
-               prompt/tools)))
+               prompt/tools
+               hivemind/tools
+               channel/channel-tools)))
 
 (defn get-tool-by-name
   "Find a tool definition by name."

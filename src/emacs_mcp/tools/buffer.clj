@@ -220,6 +220,22 @@
         {:type "text" :text (str "Error: " error) :isError true}))
     {:type "text" :text "Error: emacs-mcp.el is not loaded." :isError true}))
 
+(defn handle-wrap-gather
+  "Gather session data for wrap workflow without storing.
+   Returns gathered notes, commits, kanban activity for confirmation."
+  [_params]
+  (log/info "wrap-gather")
+  (if (emacs-mcp-el-available?)
+    (let [elisp "(json-encode (emacs-mcp-api-wrap-gather))"
+          {:keys [success result error]} (ec/eval-elisp elisp)]
+      (if success
+        (try
+          {:type "text" :text result}
+          (catch Exception e
+            {:type "text" :text (str "Parse error: " (.getMessage e)) :isError true}))
+        {:type "text" :text (str "Error: " (or error "Failed to gather session data")) :isError true}))
+    {:type "text" :text "Error: emacs-mcp.el is not loaded." :isError true}))
+
 (defn handle-mcp-watch-buffer
   "Get recent content from a buffer for monitoring (e.g., *Messages*)."
   [{:keys [buffer_name lines]}]
@@ -389,6 +405,13 @@
                                        :description "Optional arguments to pass to the workflow"}}
                   :required ["name"]}
     :handler handle-mcp-run-workflow}
+
+   {:name "wrap_gather"
+    :description "Gather session data for wrap workflow. Returns recent notes, git commits, kanban activity without storing. Use before wrap to preview/confirm data."
+    :inputSchema {:type "object"
+                  :properties {}
+                  :required []}
+    :handler handle-wrap-gather}
 
    {:name "mcp_watch_buffer"
     :description "Get recent content from a buffer for monitoring. Useful for watching *Messages*, *Warnings*, *Compile-Log*, etc. Returns the last N lines."

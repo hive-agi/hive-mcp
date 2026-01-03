@@ -401,6 +401,70 @@ Returns count of successfully moved tasks."
         (emacs-mcp-kanban-stats)
       (error nil))))
 
+(defun emacs-mcp-workflow-wrap--gather-recent-notes ()
+  "Get memory entries (notes/snippets) created today."
+  (let* ((today (format-time-string "%Y-%m-%d"))
+         (notes (ignore-errors (emacs-mcp-memory-query 'note nil 20)))
+         (snippets (ignore-errors (emacs-mcp-memory-query 'snippet nil 20))))
+    (seq-filter
+     (lambda (entry)
+       (when-let* ((created (plist-get entry :created)))
+         (string-prefix-p today created)))
+     (append (when (listp notes) notes)
+             (when (listp snippets) snippets)))))
+
+(defun emacs-mcp-workflow-wrap--gather-git-commits ()
+  "Get commits on current branch from today."
+  (let ((output (shell-command-to-string
+                 "git log --since='midnight' --oneline 2>/dev/null")))
+    (when (and output (not (string-empty-p output)))
+      (split-string output "\n" t))))
+
+(defun emacs-mcp-workflow-wrap--gather-kanban-activity ()
+  "Get in-progress and review kanban tasks."
+  (when (fboundp 'emacs-mcp-kanban-list-tasks)
+    (condition-case nil
+        (list :in-progress (emacs-mcp-kanban-list-tasks "inprogress")
+              :review (emacs-mcp-kanban-list-tasks "inreview"))
+      (error nil))))
+
+(defun emacs-mcp-workflow-wrap--gather-channel-events ()
+  "Get recent channel events if channel is active."
+  (when (and (fboundp 'emacs-mcp-channel-get-recent-events)
+             (fboundp 'emacs-mcp-channel-connected-p)
+             (emacs-mcp-channel-connected-p))
+    (condition-case nil
+        (emacs-mcp-channel-get-recent-events 10)
+      (error nil))))
+
+(defun emacs-mcp-workflow-wrap--gather-session-data ()
+  "Auto-gather session data from all available sources.
+Returns plist with :recent-notes, :recent-commits, :kanban-activity, :ai-interactions."
+  (list :recent-notes (emacs-mcp-workflow-wrap--gather-recent-notes)
+        :recent-commits (emacs-mcp-workflow-wrap--gather-git-commits)
+        :kanban-activity (emacs-mcp-workflow-wrap--gather-kanban-activity)
+        :ai-interactions (emacs-mcp-workflow-wrap--gather-channel-events)))
+
+(defun emacs-mcp-workflow-wrap--merge-args (gathered provided)
+  "Merge GATHERED data with user-PROVIDED args.
+PROVIDED takes precedence. Converts gathered data to wrap args format."
+  (let ((result (copy-sequence provided)))
+    ;; If no accomplishments provided, derive from gathered notes
+    (unless (plist-get result :accomplishments)
+      (when-let* ((notes (plist-get gathered :recent-notes)))
+        (plist-put result :accomplishments
+                   (mapcar (lambda (n)
+                             (let ((content (plist-get n :content)))
+                               (if (> (length content) 100)
+                                   (concat (substring content 0 97) "...")
+                                 content)))
+                           (seq-take notes 5)))))
+    ;; Add git commits as context
+    (when-let* ((commits (plist-get gathered :recent-commits)))
+      (unless (plist-get result :git-commits)
+        (plist-put result :git-commits commits)))
+    result))
+
 (defun emacs-mcp-workflow-wrap (&optional args)
   "Execute wrap workflow with ARGS plist.
 
@@ -501,10 +565,11 @@ Returns structured result with:
                              (mapconcat #'symbol-name stored ", ")
                              expired-count)))))
 
-(defun emacs-mcp-workflow-catchup ()
+(defun emacs-mcp-workflow-catchup (&optional _args)
   "Execute the catchup workflow - restore context from memory.
 Queries session notes, decisions, and conventions with project scope.
-Returns structured context for display."
+Returns structured context for display.
+ARGS is unused but accepted for workflow handler compatibility."
   (interactive)
   (let* ((project-name (emacs-mcp-memory--get-project-name))
          (applicable-scopes (emacs-mcp-memory--applicable-scope-tags)))

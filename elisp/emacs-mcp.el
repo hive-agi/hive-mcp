@@ -88,6 +88,8 @@ and enables auto-loading for feature-triggered addons."
 (require 'emacs-mcp-workflows)
 (require 'emacs-mcp-api)
 (require 'emacs-mcp-addons)
+(require 'emacs-mcp-channel)
+(require 'emacs-mcp-hivemind)
 
 ;; Forward declaration for byte-compiler
 (declare-function emacs-mcp-addons-setup "emacs-mcp-addons")
@@ -125,6 +127,10 @@ and enables auto-loading for feature-triggered addons."
     ;; Set up addons (always-load + auto-load triggers)
     (when emacs-mcp-setup-addons
       (emacs-mcp-addons-setup))
+
+    ;; Connect to bidirectional channel (if server is running)
+    (when (fboundp 'emacs-mcp-channel-setup-auto-connect)
+      (emacs-mcp-channel-setup-auto-connect))
 
     (setq emacs-mcp--initialized t)
     (message "Emacs-mcp initialized (C-c m for menu)")))

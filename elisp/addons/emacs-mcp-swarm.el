@@ -987,30 +987,36 @@ Looks for the prompt followed by Claude's response marker (●)."
 (defun emacs-mcp-swarm--send-to-terminal (buffer text term-type)
   "Send TEXT to terminal BUFFER using TERM-TYPE backend.
 Returns the point-max before sending for verification.
-For vterm, adds a small delay between text and return to ensure proper processing."
-  (let ((start-point (with-current-buffer buffer (point-max))))
+For vterm/eat, adds a small delay between text and return to ensure proper processing.
+Uses `sit-for' after scheduling timer to force event loop processing during MCP calls."
+  (let ((start-point (with-current-buffer buffer (point-max)))
+        (delay emacs-mcp-swarm-return-delay))
     (with-current-buffer buffer
       (goto-char (point-max))
       (pcase term-type
         ('vterm
          (vterm-send-string text)
          ;; Delay before return to ensure vterm processes the text
-         (run-at-time emacs-mcp-swarm-return-delay nil
+         (run-at-time delay nil
                       (lambda ()
                         (when (buffer-live-p buffer)
                           (with-current-buffer buffer
-                            (vterm-send-return))))))
+                            (vterm-send-return)))))
+         ;; Force event loop to process timer (critical for MCP calls)
+         (sit-for (+ delay 0.05)))
         ('eat
          (if (and (boundp 'eat-terminal) eat-terminal)
              (progn
                (eat-term-send-string eat-terminal text)
                ;; Small delay for eat as well
-               (run-at-time emacs-mcp-swarm-return-delay nil
+               (run-at-time delay nil
                             (lambda ()
                               (when (and (buffer-live-p buffer)
                                          (boundp 'eat-terminal)
                                          eat-terminal)
-                                (eat-term-send-string eat-terminal "\r")))))
+                                (eat-term-send-string eat-terminal "\r"))))
+               ;; Force event loop to process timer (critical for MCP calls)
+               (sit-for (+ delay 0.05)))
            (error "Eat-terminal not available in buffer %s" (buffer-name buffer))))))
     start-point))
 
