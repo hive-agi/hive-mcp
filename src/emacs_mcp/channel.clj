@@ -346,7 +346,7 @@
     (reset! server-state nil)
     (log/info "Server stopped")))
 
-(defn connected?
+(defn server-connected?
   "Check if channel server is running and has connected clients."
   []
   (when-let [{:keys [running clients]} @server-state]
@@ -389,7 +389,7 @@
   (start-server! {:type :unix :path "/tmp/emacs-mcp-channel.sock"})
 
   ;; Start TCP server
-  (start-server! {:type :tcp :port 9999})
+  (start-server! {:type :tcp :port 9998})
 
   ;; Subscribe to events
   (let [ch (subscribe! :task-completed)]

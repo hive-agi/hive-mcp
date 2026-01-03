@@ -18,12 +18,12 @@
 ;; =============================================================================
 ;; State
 
-(defonce pending-asks
-  "Map of ask-id -> {:question ... :response-chan ...}"
+(defonce ^{:doc "Map of ask-id -> {:question ... :response-chan ...}"}
+  pending-asks
   (atom {}))
 
-(defonce agent-registry
-  "Map of agent-id -> {:status :last-seen :current-task}"
+(defonce ^{:doc "Map of agent-id -> {:status :last-seen :current-task}"}
+  agent-registry
   (atom {}))
 
 ;; =============================================================================
@@ -118,7 +118,7 @@
                           :question question
                           :options options})
                        @pending-asks)
-   :channel-connected (channel/connected?)})
+   :channel-connected (channel/server-connected?)})
 
 (defn clear-agent!
   "Remove an agent from the registry (when it terminates)."

@@ -5,9 +5,14 @@
             [emacs-mcp.docs :as docs]
             [emacs-mcp.chroma :as chroma]
             [emacs-mcp.channel :as channel]
+            [emacs-mcp.hivemind :as hivemind]
             [emacs-mcp.embeddings.ollama :as ollama]
+            [nrepl.server :as nrepl-server]
             [taoensso.timbre :as log])
   (:gen-class))
+
+;; Store nREPL server reference for shutdown
+(defonce ^:private nrepl-server-atom (atom nil))
 
 ;; Configure Timbre to write to stderr instead of stdout
 ;; This is CRITICAL for MCP servers - stdout is the JSON-RPC channel
@@ -32,6 +37,7 @@
 (def emacs-server-spec
   {:name "emacs-mcp"
    :version "0.1.0"
+   ;; hivemind/tools already included in tools/tools aggregation
    :tools (mapv make-tool (concat tools/tools docs/docs-tools))})
 
 (defn init-embedding-provider!
@@ -62,19 +68,52 @@
                 "- Semantic search will be unavailable")
       false)))
 
+(defn start-embedded-nrepl!
+  "Start an embedded nREPL server for bb-mcp tool forwarding.
+
+   CRITICAL: This runs in the SAME JVM as the MCP server and channel,
+   allowing bb-mcp to forward tool calls that access the live channel.
+
+   Without this, bb-mcp connects to a separate nREPL JVM that has no
+   channel server running, so hivemind broadcasts go nowhere."
+  []
+  (let [nrepl-port (parse-long (or (System/getenv "EMACS_MCP_NREPL_PORT") "7910"))]
+    (try
+      ;; Try to load cider middleware if available
+      (let [middleware (try
+                         (require 'cider.nrepl)
+                         (let [mw-var (resolve 'cider.nrepl/cider-middleware)]
+                           (when mw-var @mw-var))
+                         (catch Exception _
+                           nil))
+            server-opts (cond-> {:port nrepl-port :bind "127.0.0.1"}
+                          middleware (assoc :handler (nrepl-server/default-handler middleware)))]
+        (let [server (nrepl-server/start-server server-opts)]
+          (reset! nrepl-server-atom server)
+          (log/info "Embedded nREPL started on port" nrepl-port
+                    (if middleware "(with CIDER middleware)" "(basic)"))
+          server))
+      (catch Exception e
+        (log/warn "Embedded nREPL failed to start (non-fatal):" (.getMessage e))
+        nil))))
+
 (defn start!
   "Start the MCP server."
   [& _args]
   (let [server-id (random-uuid)]
     (log/info "Starting emacs-mcp server:" server-id)
+    ;; Start embedded nREPL FIRST - bb-mcp needs this to forward tool calls
+    ;; This MUST run in the same JVM as channel server for hivemind to work
+    (start-embedded-nrepl!)
     ;; Initialize embedding provider for semantic search (fails gracefully)
     (init-embedding-provider!)
     ;; Start bidirectional channel server for push-based events
-    (try
-      (channel/start-server! {:type :tcp :port 9999})
-      (log/info "Channel server started on TCP port 9999")
-      (catch Exception e
-        (log/warn "Channel server failed to start (non-fatal):" (.getMessage e))))
+    (let [channel-port (parse-long (or (System/getenv "EMACS_MCP_CHANNEL_PORT") "9998"))]
+      (try
+        (channel/start-server! {:type :tcp :port channel-port})
+        (log/info "Channel server started on TCP port" channel-port)
+        (catch Exception e
+          (log/warn "Channel server failed to start (non-fatal):" (.getMessage e)))))
     @(io-server/run! (assoc emacs-server-spec :server-id server-id))))
 
 (defn -main
