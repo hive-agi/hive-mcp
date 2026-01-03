@@ -13,6 +13,7 @@
    All communication flows through the bidirectional channel to Emacs."
   (:require [emacs-mcp.channel :as channel]
             [clojure.core.async :as async :refer [<!! >!! chan timeout alt!!]]
+            [clojure.data.json :as json]
             [taoensso.timbre :as log]))
 
 ;; =============================================================================
@@ -154,22 +155,22 @@ USE THIS to report:
 
 The coordinator sees all shouts in real-time."
     :inputSchema {:type "object"
-                  :properties {:agent_id {:type "string"
-                                          :description "Your agent identifier"}
-                               :event_type {:type "string"
-                                            :enum ["progress" "completed" "error" "blocked" "started"]
-                                            :description "Type of event"}
-                               :task {:type "string"
-                                      :description "Current task description"}
-                               :message {:type "string"
-                                         :description "Status message"}
-                               :data {:type "object"
-                                      :description "Additional event data"}}
+                  :properties {"agent_id" {:type "string"
+                                           :description "Your agent identifier"}
+                               "event_type" {:type "string"
+                                             :enum ["progress" "completed" "error" "blocked" "started"]
+                                             :description "Type of event"}
+                               "task" {:type "string"
+                                       :description "Current task description"}
+                               "message" {:type "string"
+                                          :description "Status message"}
+                               "data" {:type "object"
+                                       :description "Additional event data"}}
                   :required ["agent_id" "event_type"]}
     :handler (fn [{:keys [agent_id event_type task message data]}]
                (shout! agent_id (keyword event_type)
                        (merge {:task task :message message} data))
-               {:success true})}
+               {:type "text" :text (json/write-str {:success true})})}
 
    {:name "hivemind_ask"
     :description "Request a decision from the human coordinator.
@@ -183,23 +184,24 @@ BLOCKS until human responds (up to timeout).
 
 Example: hivemind_ask('Should I delete these 50 files?', ['yes', 'no', 'show me first'])"
     :inputSchema {:type "object"
-                  :properties {:agent_id {:type "string"
-                                          :description "Your agent identifier"}
-                               :question {:type "string"
-                                          :description "What decision do you need?"}
-                               :options {:type "array"
-                                         :items {:type "string"}
-                                         :description "Available options (or omit for free-form)"}
-                               :timeout_ms {:type "integer"
-                                            :description "Timeout in ms (default 300000 = 5 min)"}}
+                  :properties {"agent_id" {:type "string"
+                                           :description "Your agent identifier"}
+                               "question" {:type "string"
+                                           :description "What decision do you need?"}
+                               "options" {:type "array"
+                                          :items {:type "string"}
+                                          :description "Available options (or omit for free-form)"}
+                               "timeout_ms" {:type "integer"
+                                             :description "Timeout in ms (default 300000 = 5 min)"}}
                   :required ["agent_id" "question"]}
     :handler (fn [{:keys [agent_id question options timeout_ms]}]
                (let [result (ask! agent_id question options
                                   :timeout-ms (or timeout_ms 300000))]
-                 (if (:timeout result)
-                   {:timeout true :message "No response within timeout"}
-                   {:decision (:decision result)
-                    :by (:by result)})))}
+                 {:type "text"
+                  :text (json/write-str
+                         (if (:timeout result)
+                           {:timeout true :message "No response within timeout"}
+                           {:decision (:decision result) :by (:by result)}))}))}
 
    {:name "hivemind_status"
     :description "Get current hivemind coordinator status.
@@ -211,22 +213,26 @@ Returns:
     :inputSchema {:type "object"
                   :properties {}
                   :required []}
-    :handler (fn [_] (get-status))}
+    :handler (fn [_]
+               {:type "text"
+                :text (json/write-str (get-status))})}
 
    {:name "hivemind_respond"
     :description "Respond to a pending ask from an agent.
                   
 Used by the coordinator to answer agent questions."
     :inputSchema {:type "object"
-                  :properties {:ask_id {:type "string"
-                                        :description "ID of the ask to respond to"}
-                               :decision {:type "string"
-                                          :description "The decision/response"}}
+                  :properties {"ask_id" {:type "string"
+                                         :description "ID of the ask to respond to"}
+                               "decision" {:type "string"
+                                           :description "The decision/response"}}
                   :required ["ask_id" "decision"]}
     :handler (fn [{:keys [ask_id decision]}]
-               (if (respond-ask! ask_id decision)
-                 {:success true}
-                 {:error "No pending ask with that ID"}))}])
+               {:type "text"
+                :text (json/write-str
+                       (if (respond-ask! ask_id decision)
+                         {:success true}
+                         {:error "No pending ask with that ID"}))})}])
 
 (defn register-tools!
   "Register hivemind tools with the MCP server."

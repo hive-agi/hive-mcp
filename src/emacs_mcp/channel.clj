@@ -18,7 +18,9 @@
      (subscribe! :task-completed (fn [event] (println event)))
    "
   (:require [clojure.core.async :as async :refer [go go-loop <! >! chan pub sub unsub close!]]
+            [clojure.data.json :as json]
             [bencode.core :as bencode]
+            [emacs-mcp.emacsclient :as emacsclient]
             [taoensso.timbre :as log])
   (:import [java.net UnixDomainSocketAddress StandardProtocolFamily InetSocketAddress Socket ServerSocket]
            [java.nio.channels SocketChannel ServerSocketChannel Channels]
@@ -381,6 +383,100 @@
     (publish! event)
     ;; Broadcast to connected Emacs clients
     (broadcast! event)))
+
+;; =============================================================================
+;; MCP Tools for Emacs Channel Operations
+;; =============================================================================
+
+(defn- emacs-channel-connect!
+  "Connect Emacs to the bidirectional channel via emacsclient."
+  []
+  (let [result (emacsclient/eval-elisp "(emacs-mcp-channel-connect)")]
+    (if (:success result)
+      {:connected true :message "Emacs connecting to channel..."}
+      {:connected false :error (:error result)})))
+
+(defn- emacs-channel-disconnect!
+  "Disconnect Emacs from the bidirectional channel."
+  []
+  (let [result (emacsclient/eval-elisp "(emacs-mcp-channel-disconnect)")]
+    (if (:success result)
+      {:disconnected true}
+      {:disconnected false :error (:error result)})))
+
+(defn- emacs-channel-status
+  "Get Emacs channel connection status and configuration."
+  []
+  (let [connected (emacsclient/eval-elisp
+                   "(if (emacs-mcp-channel-connected-p) \"connected\" \"disconnected\")")
+        host (emacsclient/eval-elisp "emacs-mcp-channel-host")
+        port (emacsclient/eval-elisp "emacs-mcp-channel-port")]
+    {:emacs-connected (= (:result connected) "connected")
+     :host (:result host)
+     :port (some-> (:result port) parse-long)
+     :server-connected (server-connected?)}))
+
+(defn- emacs-channel-recent-events
+  "Get recent events from Emacs channel history."
+  [n type-filter]
+  (let [elisp (if type-filter
+                (format "(emacs-mcp-channel-get-recent-events %d :%s)" (or n 10) type-filter)
+                (format "(emacs-mcp-channel-get-recent-events %d)" (or n 10)))
+        result (emacsclient/eval-elisp elisp)]
+    (if (:success result)
+      {:events (:result result)}
+      {:error (:error result)})))
+
+(def channel-tools
+  "MCP tools for Emacs channel operations."
+  [{:name "channel_emacs_connect"
+    :description "Connect Emacs to the bidirectional MCP channel.
+                  
+Call this after starting the MCP server to establish push-based
+communication between Clojure and Emacs."
+    :inputSchema {:type "object"
+                  :properties {}
+                  :required []}
+    :handler (fn [_]
+               {:type "text"
+                :text (json/write-str (emacs-channel-connect!))})}
+
+   {:name "channel_emacs_disconnect"
+    :description "Disconnect Emacs from the MCP channel."
+    :inputSchema {:type "object"
+                  :properties {}
+                  :required []}
+    :handler (fn [_]
+               {:type "text"
+                :text (json/write-str (emacs-channel-disconnect!))})}
+
+   {:name "channel_status"
+    :description "Get channel connection status.
+                  
+Returns:
+- emacs-connected: whether Emacs client is connected
+- server-connected: whether Clojure server has any clients
+- host/port: channel configuration"
+    :inputSchema {:type "object"
+                  :properties {}
+                  :required []}
+    :handler (fn [_]
+               {:type "text"
+                :text (json/write-str (emacs-channel-status))})}
+
+   {:name "channel_recent_events"
+    :description "Get recent events from Emacs channel history.
+                  
+Useful for debugging and monitoring channel communication."
+    :inputSchema {:type "object"
+                  :properties {"count" {:type "integer"
+                                        :description "Number of events to retrieve (default: 10)"}
+                               "type_filter" {:type "string"
+                                              :description "Filter by event type (e.g., 'task-completed')"}}
+                  :required []}
+    :handler (fn [{:keys [count type_filter]}]
+               {:type "text"
+                :text (json/write-str (emacs-channel-recent-events count type_filter))})}])
 
 (comment
   ;; Development REPL examples

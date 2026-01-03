@@ -54,8 +54,10 @@
   :type 'string
   :group 'emacs-mcp-channel)
 
-(defcustom emacs-mcp-channel-port 9999
-  "Port for TCP channel."
+(defcustom emacs-mcp-channel-port
+  (string-to-number (or (getenv "EMACS_MCP_CHANNEL_PORT") "9998"))
+  "Port for TCP channel.
+Can be set via EMACS_MCP_CHANNEL_PORT environment variable."
   :type 'integer
   :group 'emacs-mcp-channel)
 
