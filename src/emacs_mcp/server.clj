@@ -4,6 +4,7 @@
             [emacs-mcp.tools :as tools]
             [emacs-mcp.docs :as docs]
             [emacs-mcp.chroma :as chroma]
+            [emacs-mcp.channel :as channel]
             [emacs-mcp.embeddings.ollama :as ollama]
             [taoensso.timbre :as log])
   (:gen-class))
@@ -68,6 +69,12 @@
     (log/info "Starting emacs-mcp server:" server-id)
     ;; Initialize embedding provider for semantic search (fails gracefully)
     (init-embedding-provider!)
+    ;; Start bidirectional channel server for push-based events
+    (try
+      (channel/start-server! {:type :tcp :port 9999})
+      (log/info "Channel server started on TCP port 9999")
+      (catch Exception e
+        (log/warn "Channel server failed to start (non-fatal):" (.getMessage e))))
     @(io-server/run! (assoc emacs-server-spec :server-id server-id))))
 
 (defn -main
