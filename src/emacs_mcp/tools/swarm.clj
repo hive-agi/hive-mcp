@@ -2,17 +2,132 @@
   "Swarm management and JVM resource cleanup tools.
 
    Handles Claude swarm slave spawning, dispatch, and lifecycle management.
-   Also provides JVM process cleanup for garbage collecting orphaned processes."
+   Also provides JVM process cleanup for garbage collecting orphaned processes.
+
+   Push-based updates:
+   When emacs-mcp.channel is available, subscribes to swarm events for
+   sub-100ms task completion detection. Falls back to polling if channel
+   not connected."
   (:require [emacs-mcp.tools.core :refer [mcp-success mcp-error mcp-json]]
             [emacs-mcp.emacsclient :as ec]
             [emacs-mcp.validation :as v]
             [clojure.data.json :as json]
             [clojure.java.shell :as shell]
             [clojure.string :as str]
+            [clojure.core.async :as async :refer [go go-loop <! close!]]
             [taoensso.timbre :as log]))
 
 ;; ============================================================
 ;; Swarm Management Tools
+;; ============================================================
+
+;; ============================================================
+;; Event Journal (Push-based task tracking)
+;; ============================================================
+
+;; In-memory journal of swarm events received via channel.
+;; Maps task-id -> {:status :result :timestamp :slave-id}
+(defonce ^:private event-journal (atom {}))
+
+;; Active channel subscriptions (for cleanup).
+(defonce ^:private channel-subscriptions (atom []))
+
+(defn- try-require-channel
+  "Attempt to require the channel namespace. Returns true if available."
+  []
+  (try
+    (require 'emacs-mcp.channel)
+    true
+    (catch Exception _
+      false)))
+
+(defn- channel-subscribe!
+  "Subscribe to an event type if channel is available.
+   Returns the subscription channel or nil."
+  [event-type]
+  (when (try-require-channel)
+    (when-let [subscribe-fn (resolve 'emacs-mcp.channel/subscribe!)]
+      (subscribe-fn event-type))))
+
+(defn- handle-task-completed
+  "Handle task-completed event from channel."
+  [{:keys [task-id slave-id result timestamp] :as event}]
+  (log/info "Channel: task-completed" task-id "from" slave-id)
+  (swap! event-journal assoc (str task-id)
+         {:status "completed"
+          :result result
+          :slave-id slave-id
+          :timestamp (or timestamp (System/currentTimeMillis))}))
+
+(defn- handle-task-failed
+  "Handle task-failed event from channel."
+  [{:keys [task-id slave-id error timestamp] :as event}]
+  (log/info "Channel: task-failed" task-id "from" slave-id ":" error)
+  (swap! event-journal assoc (str task-id)
+         {:status "failed"
+          :error error
+          :slave-id slave-id
+          :timestamp (or timestamp (System/currentTimeMillis))}))
+
+(defn- handle-prompt-shown
+  "Handle prompt-shown event from channel."
+  [{:keys [slave-id prompt timestamp] :as event}]
+  (log/info "Channel: prompt-shown from" slave-id))
+
+(defn start-channel-subscriptions!
+  "Start listening for swarm events via channel.
+   Called at startup if channel is available."
+  []
+  (when (try-require-channel)
+    (log/info "Starting channel subscriptions for swarm events...")
+
+    ;; Subscribe to task-completed
+    (when-let [sub (channel-subscribe! :task-completed)]
+      (swap! channel-subscriptions conj sub)
+      (go-loop []
+        (when-let [event (<! sub)]
+          (handle-task-completed event)
+          (recur))))
+
+    ;; Subscribe to task-failed
+    (when-let [sub (channel-subscribe! :task-failed)]
+      (swap! channel-subscriptions conj sub)
+      (go-loop []
+        (when-let [event (<! sub)]
+          (handle-task-failed event)
+          (recur))))
+
+    ;; Subscribe to prompt-shown
+    (when-let [sub (channel-subscribe! :prompt-shown)]
+      (swap! channel-subscriptions conj sub)
+      (go-loop []
+        (when-let [event (<! sub)]
+          (handle-prompt-shown event)
+          (recur))))
+
+    (log/info "Channel subscriptions started")))
+
+(defn stop-channel-subscriptions!
+  "Stop all channel subscriptions."
+  []
+  (doseq [sub @channel-subscriptions]
+    (close! sub))
+  (reset! channel-subscriptions [])
+  (log/info "Channel subscriptions stopped"))
+
+(defn check-event-journal
+  "Check event journal for task completion.
+   Returns the event if found, nil otherwise."
+  [task-id]
+  (get @event-journal (str task-id)))
+
+(defn clear-event-journal!
+  "Clear all entries from the event journal."
+  []
+  (reset! event-journal {}))
+
+;; ============================================================
+;; Swarm Addon Check
 ;; ============================================================
 
 (defn swarm-addon-available?
@@ -101,10 +216,11 @@
     {:type "text" :text "emacs-mcp-swarm addon not loaded." :isError true}))
 
 (defn handle-swarm-collect
-  "Collect response from a task with client-side polling.
-   The elisp API is now non-blocking, so we poll here with exponential backoff.
-   Uses timeout-wrapped elisp calls to prevent MCP blocking.
-   
+  "Collect response from a task with push-first, poll-fallback strategy.
+
+   PHASE 2 OPTIMIZATION: Check event journal first for sub-100ms detection.
+   If event not in journal, falls back to elisp polling with exponential backoff.
+
    Note: emacsclient returns a quoted string, and json-encode creates another
    layer of JSON, so we need to parse twice to get the actual data."
   [{:keys [task_id timeout_ms]}]
@@ -114,68 +230,99 @@
           poll-interval-ms (atom 500) ; start at 500ms
           max-poll-interval 5000 ; max 5 seconds between polls
           elisp-timeout 10000] ; 10s timeout per elisp call
-      (loop []
-        (let [elapsed (- (System/currentTimeMillis) start-time)
-              elisp (format "(json-encode (emacs-mcp-swarm-api-collect \"%s\" %s))"
-                            (v/escape-elisp-string task_id)
-                            (or timeout_ms "nil"))
-              {:keys [success result error timed-out]} (ec/eval-elisp-with-timeout elisp elisp-timeout)]
-          (cond
-            ;; Elisp call timed out
-            timed-out
-            {:type "text"
-             :text (json/write-str {:task_id task_id
-                                    :status "error"
-                                    :error "Elisp evaluation timed out"
-                                    :elapsed_ms elapsed})
-             :isError true}
 
-            ;; Elisp call failed
-            (not success)
-            {:type "text" :text (str "Error: " error) :isError true}
+      ;; PHASE 2: Check event journal first (push-based, sub-100ms)
+      (if-let [journal-event (check-event-journal task_id)]
+        ;; Event found in journal - return immediately!
+        (let [{:keys [status result error slave-id timestamp]} journal-event]
+          (log/info "Task" task_id "found in event journal (push-based)")
+          {:type "text"
+           :text (json/write-str {:task_id task_id
+                                  :status status
+                                  :result result
+                                  :error error
+                                  :slave_id slave-id
+                                  :via "channel-push"
+                                  :elapsed_ms (- (System/currentTimeMillis) start-time)})})
 
-            ;; Parse the result - need TWO parses:
-            ;; 1. First parse: emacsclient quotes the output -> get inner JSON string
-            ;; 2. Second parse: parse the actual JSON object
-            :else
-            (let [;; First parse: unwrap emacsclient quotes
-                  json-str (try (json/read-str result) (catch Exception _ nil))
-                  ;; Second parse: parse the actual JSON from elisp
-                  parsed (when (string? json-str)
-                           (try (json/read-str json-str :key-fn keyword)
-                                (catch Exception _ nil)))
-                  status (:status parsed)]
-              (cond
-                ;; Parse failed - log and return error
-                (nil? parsed)
+        ;; Not in journal - fall back to polling
+        (loop []
+          (let [elapsed (- (System/currentTimeMillis) start-time)
+                ;; Check journal again (event might have arrived during poll wait)
+                journal-check (check-event-journal task_id)]
+            (if journal-check
+              ;; Found in journal during poll loop
+              (let [{:keys [status result error slave-id]} journal-check]
                 {:type "text"
                  :text (json/write-str {:task_id task_id
-                                        :status "error"
-                                        :error "Failed to parse elisp response"
-                                        :raw_result result
-                                        :first_parse json-str
-                                        :elapsed_ms elapsed})
-                 :isError true}
+                                        :status status
+                                        :result result
+                                        :error error
+                                        :slave_id slave-id
+                                        :via "channel-push-delayed"
+                                        :elapsed_ms elapsed})})
 
-                ;; Task complete or failed - return the inner JSON directly
-                (contains? #{"completed" "timeout" "error"} status)
-                {:type "text" :text json-str}
+              ;; Still not in journal - poll elisp
+              (let [elisp (format "(json-encode (emacs-mcp-swarm-api-collect \"%s\" %s))"
+                                  (v/escape-elisp-string task_id)
+                                  (or timeout_ms "nil"))
+                    {:keys [success result error timed-out]} (ec/eval-elisp-with-timeout elisp elisp-timeout)]
+                (cond
+                  ;; Elisp call timed out
+                  timed-out
+                  {:type "text"
+                   :text (json/write-str {:task_id task_id
+                                          :status "error"
+                                          :error "Elisp evaluation timed out"
+                                          :elapsed_ms elapsed})
+                   :isError true}
 
-                ;; Still polling and within timeout - wait and retry
-                (and (= status "polling") (< elapsed timeout))
-                (do
-                  (Thread/sleep @poll-interval-ms)
-                  ;; Exponential backoff
-                  (swap! poll-interval-ms #(min max-poll-interval (* % 2)))
-                  (recur))
+                  ;; Elisp call failed
+                  (not success)
+                  {:type "text" :text (str "Error: " error) :isError true}
 
-                ;; Exceeded our timeout or unknown status
-                :else
-                {:type "text"
-                 :text (json/write-str {:task_id task_id
-                                        :status "timeout"
-                                        :error (format "Collection timed out after %dms (status was: %s)" elapsed status)
-                                        :elapsed_ms elapsed})}))))))
+                  ;; Parse the result - need TWO parses:
+                  ;; 1. First parse: emacsclient quotes the output -> get inner JSON string
+                  ;; 2. Second parse: parse the actual JSON object
+                  :else
+                  (let [;; First parse: unwrap emacsclient quotes
+                        json-str (try (json/read-str result) (catch Exception _ nil))
+                        ;; Second parse: parse the actual JSON from elisp
+                        parsed (when (string? json-str)
+                                 (try (json/read-str json-str :key-fn keyword)
+                                      (catch Exception _ nil)))
+                        status (:status parsed)]
+                    (cond
+                      ;; Parse failed - log and return error
+                      (nil? parsed)
+                      {:type "text"
+                       :text (json/write-str {:task_id task_id
+                                              :status "error"
+                                              :error "Failed to parse elisp response"
+                                              :raw_result result
+                                              :first_parse json-str
+                                              :elapsed_ms elapsed})
+                       :isError true}
+
+                      ;; Task complete or failed - return the inner JSON directly
+                      (contains? #{"completed" "timeout" "error"} status)
+                      {:type "text" :text json-str}
+
+                      ;; Still polling and within timeout - wait and retry
+                      (and (= status "polling") (< elapsed timeout))
+                      (do
+                        (Thread/sleep @poll-interval-ms)
+                        ;; Exponential backoff
+                        (swap! poll-interval-ms #(min max-poll-interval (* % 2)))
+                        (recur))
+
+                      ;; Exceeded our timeout or unknown status
+                      :else
+                      {:type "text"
+                       :text (json/write-str {:task_id task_id
+                                              :status "timeout"
+                                              :error (format "Collection timed out after %dms (status was: %s)" elapsed status)
+                                              :elapsed_ms elapsed})})))))))))
     {:type "text" :text "emacs-mcp-swarm addon not loaded." :isError true}))
 
 (defn handle-swarm-list-presets
