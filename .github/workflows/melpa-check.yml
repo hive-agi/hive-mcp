@@ -86,28 +86,29 @@ jobs:
 
       - name: Byte-compile all elisp files
         run: |
-          # Compile all files together - dependencies are loaded from source
-          # Order matters: compile dependency files first
+          # Load all files first, then byte-compile each
+          # This ensures dependencies are available
           emacs --batch \
             --eval "(require 'package)" \
             --eval "(package-initialize)" \
             --eval "(setq byte-compile-error-on-warn nil)" \
             --eval "(add-to-list 'load-path \"./elisp\")" \
             --eval "(add-to-list 'load-path \"./elisp/addons\")" \
-            -f batch-byte-compile \
-            elisp/emacs-mcp-memory.el \
-            elisp/emacs-mcp-kanban.el \
-            elisp/emacs-mcp-context.el \
-            elisp/emacs-mcp-triggers.el \
-            elisp/emacs-mcp-workflows.el \
-            elisp/emacs-mcp-api.el \
-            elisp/emacs-mcp-addons.el \
-            elisp/emacs-mcp-channel.el \
-            elisp/emacs-mcp-hivemind.el \
-            elisp/emacs-mcp-ai-bridge.el \
-            elisp/emacs-mcp-graceful.el \
-            elisp/emacs-mcp-transient.el \
-            elisp/emacs-mcp.el
+            --eval "(dolist (f '(\"elisp/emacs-mcp-memory.el\"
+                                \"elisp/emacs-mcp-kanban.el\"
+                                \"elisp/emacs-mcp-context.el\"
+                                \"elisp/emacs-mcp-triggers.el\"
+                                \"elisp/emacs-mcp-workflows.el\"
+                                \"elisp/emacs-mcp-api.el\"
+                                \"elisp/emacs-mcp-addons.el\"
+                                \"elisp/emacs-mcp-channel.el\"
+                                \"elisp/emacs-mcp-hivemind.el\"
+                                \"elisp/emacs-mcp-ai-bridge.el\"
+                                \"elisp/emacs-mcp-graceful.el\"
+                                \"elisp/emacs-mcp-transient.el\"
+                                \"elisp/emacs-mcp.el\"))
+                     (load (expand-file-name f) nil t)
+                     (byte-compile-file (expand-file-name f)))"
 
   checkdoc:
     name: Checkdoc
