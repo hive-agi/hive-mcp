@@ -352,7 +352,7 @@ M-x emacs-mcp-melpazoid-transient
 
 ---
 
-## claude-code-ide
+## cci (claude-code-ide)
 
 **Purpose**: Swarm orchestration via claude-code-ide.el with hivemind completion tracking.
 
@@ -377,8 +377,8 @@ M-x emacs-mcp-melpazoid-transient
 
 **Usage**:
 ```elisp
-(require 'emacs-mcp-claude-code-ide)
-(emacs-mcp-claude-code-ide-mode 1)
+(require 'emacs-mcp-cci)
+(emacs-mcp-cci-mode 1)
 
 ;; Spawn a ling
 (emacs-mcp-cci-spawn "worker" :presets '("hivemind" "tdd"))

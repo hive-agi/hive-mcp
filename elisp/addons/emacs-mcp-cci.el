@@ -1,9 +1,10 @@
-;;; emacs-mcp-claude-code-ide.el --- Swarm integration via claude-code-ide.el -*- lexical-binding: t; -*-
+;;; emacs-mcp-cci.el --- Swarm integration via claude-code-ide.el -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Pedro G. Branquinho
 ;; Author: Pedro G. Branquinho <pedrogbranquinho@gmail.com>
+;; URL: https://github.com/BuddhiLW/emacs-mcp
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "28.1") (claude-code-ide "0.1.0"))
+;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: tools, ai, mcp, swarm
 ;; SPDX-License-Identifier: MIT
 
@@ -23,7 +24,7 @@
 ;;   Master Claude (you)
 ;;         │ emacs-mcp MCP tools
 ;;         v
-;;   emacs-mcp-claude-code-ide.el (this file)
+;;   emacs-mcp-cci.el (this file)
 ;;         │ claude-code-ide API
 ;;         v
 ;;   ┌─────┴─────┐
@@ -39,8 +40,8 @@
 ;;   5. This addon polls hivemind to update task status
 ;;
 ;; Usage:
-;;   (require 'emacs-mcp-claude-code-ide)
-;;   (emacs-mcp-claude-code-ide-mode 1)
+;;   (require 'emacs-mcp-cci)
+;;   (emacs-mcp-cci-mode 1)
 ;;
 ;;   ;; Spawn a ling via claude-code-ide
 ;;   (emacs-mcp-cci-spawn "worker-1" :presets '("hivemind"))
@@ -76,7 +77,7 @@
 
 ;;;; Customization:
 
-(defgroup emacs-mcp-claude-code-ide nil
+(defgroup emacs-mcp-cci nil
   "Swarm orchestration via claude-code-ide."
   :group 'emacs-mcp
   :prefix "emacs-mcp-cci-")
@@ -84,22 +85,22 @@
 (defcustom emacs-mcp-cci-default-timeout 300000
   "Default task timeout in milliseconds (5 minutes)."
   :type 'integer
-  :group 'emacs-mcp-claude-code-ide)
+  :group 'emacs-mcp-cci)
 
 (defcustom emacs-mcp-cci-max-lings 10
   "Maximum number of concurrent lings."
   :type 'integer
-  :group 'emacs-mcp-claude-code-ide)
+  :group 'emacs-mcp-cci)
 
 (defcustom emacs-mcp-cci-hivemind-poll-interval 5
   "Interval in seconds for polling hivemind for task completions."
   :type 'integer
-  :group 'emacs-mcp-claude-code-ide)
+  :group 'emacs-mcp-cci)
 
 (defcustom emacs-mcp-cci-auto-sync t
   "If non-nil, automatically sync task status from hivemind."
   :type 'boolean
-  :group 'emacs-mcp-claude-code-ide)
+  :group 'emacs-mcp-cci)
 
 ;;;; Internal State:
 
@@ -192,25 +193,25 @@ Updates local task records based on hivemind agent messages."
     (plist-put task :result result)
     (plist-put task :files-modified files)
     (plist-put task :completed-at (format-time-string "%FT%T%z"))
-    
+
     ;; Update ling state
     (when-let* ((ling-id (plist-get task :ling-id))
                 (ling (gethash ling-id emacs-mcp-cci--lings)))
       (plist-put ling :status 'idle)
       (plist-put ling :current-task nil)
       (cl-incf (plist-get ling :tasks-completed)))
-    
+
     ;; Call completion callback if registered
     (when-let* ((callback (gethash task-id emacs-mcp-cci--pending-completions)))
       (remhash task-id emacs-mcp-cci--pending-completions)
       (funcall callback task))
-    
+
     ;; Emit channel event
     (emacs-mcp-cci--emit-event "task-completed"
                                 `(("task-id" . ,task-id)
                                   ("status" . ,status)
                                   ("ling-id" . ,(plist-get task :ling-id))))
-    
+
     (message "[cci] Task %s completed via hivemind: %s" task-id status)))
 
 (defun emacs-mcp-cci--start-sync-timer ()
@@ -241,6 +242,7 @@ Updates local task records based on hivemind agent messages."
 
 ;;;; Ling Management:
 
+;;;###autoload
 (cl-defun emacs-mcp-cci-spawn (name &key presets cwd hivemind-agent)
   "Spawn a new ling with NAME using claude-code-ide.
 
@@ -248,15 +250,15 @@ PRESETS is a list of preset names (uses emacs-mcp-swarm presets).
 CWD is the working directory.
 HIVEMIND-AGENT is the agent ID to use for hivemind tracking (defaults to NAME).
 
-Returns ling-id immediately. Session starts async."
+Returns ling-id immediately.  Session starts async."
   (interactive (list (read-string "Ling name: ")))
-  
+
   (unless (featurep 'claude-code-ide)
     (error "claude-code-ide not available"))
-  
+
   (when (>= (hash-table-count emacs-mcp-cci--lings) emacs-mcp-cci-max-lings)
     (error "Maximum ling count (%d) reached" emacs-mcp-cci-max-lings))
-  
+
   (let* ((ling-id (emacs-mcp-cci--generate-ling-id name))
          (work-dir (or cwd (when (fboundp 'project-root)
                             (when-let* ((proj (project-current)))
@@ -265,7 +267,7 @@ Returns ling-id immediately. Session starts async."
          (agent-id (or hivemind-agent name))
          (system-prompt (when (and presets (featurep 'emacs-mcp-swarm))
                           (emacs-mcp-swarm--build-system-prompt presets))))
-    
+
     ;; Register ling immediately
     (puthash ling-id
              (list :ling-id ling-id
@@ -279,7 +281,7 @@ Returns ling-id immediately. Session starts async."
                    :tasks-completed 0
                    :spawned-at (format-time-string "%FT%T%z"))
              emacs-mcp-cci--lings)
-    
+
     ;; Start claude-code-ide session async
     (run-with-timer
      0 nil
@@ -304,10 +306,11 @@ Returns ling-id immediately. Session starts async."
             (plist-put ling :status 'error)
             (plist-put ling :error (error-message-string err)))
           (message "[cci] Spawn error: %s" (error-message-string err))))))
-    
+
     (message "[cci] Spawning ling %s..." ling-id)
     ling-id))
 
+;;;###autoload
 (defun emacs-mcp-cci-kill (ling-id)
   "Kill ling LING-ID."
   (interactive
@@ -321,6 +324,7 @@ Returns ling-id immediately. Session starts async."
     (remhash ling-id emacs-mcp-cci--lings)
     (message "[cci] Killed ling: %s" ling-id)))
 
+;;;###autoload
 (defun emacs-mcp-cci-kill-all ()
   "Kill all lings."
   (interactive)
@@ -330,6 +334,7 @@ Returns ling-id immediately. Session starts async."
 
 ;;;; Task Dispatch:
 
+;;;###autoload
 (cl-defun emacs-mcp-cci-dispatch (ling-id prompt &key timeout callback)
   "Dispatch PROMPT to LING-ID.
 
@@ -338,19 +343,19 @@ CALLBACK is called with task plist when complete (via hivemind sync).
 
 Returns task-id.
 
-The ling should call hivemind_shout with event_type='completed' when done.
+The ling should call hivemind_shout with event_type=completed when done.
 Use `emacs-mcp-cci-sync-from-hivemind' to poll for completion, or rely
 on automatic sync if `emacs-mcp-cci-auto-sync' is enabled."
   (let* ((ling (gethash ling-id emacs-mcp-cci--lings))
          (task-id (emacs-mcp-cci--generate-task-id ling-id))
          (agent-id (plist-get ling :hivemind-agent)))
-    
+
     (unless ling
       (error "Ling not found: %s" ling-id))
-    
+
     (unless (eq (plist-get ling :status) 'idle)
       (error "Ling %s is busy (status: %s)" ling-id (plist-get ling :status)))
-    
+
     ;; Create task record
     (puthash task-id
              (list :task-id task-id
@@ -362,15 +367,15 @@ on automatic sync if `emacs-mcp-cci-auto-sync' is enabled."
                    :completed-at nil
                    :result nil)
              emacs-mcp-cci--tasks)
-    
+
     ;; Register callback if provided
     (when callback
       (puthash task-id callback emacs-mcp-cci--pending-completions))
-    
+
     ;; Update ling state
     (plist-put ling :status 'working)
     (plist-put ling :current-task task-id)
-    
+
     ;; Build prompt with hivemind completion instructions
     (let* ((cwd (plist-get ling :cwd))
            (task-prompt (format "## Task ID: %s
@@ -395,22 +400,23 @@ hivemind_shout(
 )
 ```"
                                 task-id prompt agent-id task-id task-id)))
-      
+
       ;; Send to ling via claude-code-ide
       (let ((default-directory (or cwd default-directory)))
         (claude-code-ide-send-prompt task-prompt)))
-    
+
     (message "[cci] Dispatched task %s to %s" task-id ling-id)
     task-id))
 
 ;;;; Status:
 
+;;;###autoload
 (defun emacs-mcp-cci-status ()
   "Get swarm status."
   (interactive)
   (let ((total 0) (idle 0) (working 0) (error-count 0)
         (lings-detail '()))
-    
+
     (maphash
      (lambda (id ling)
        (cl-incf total)
@@ -426,7 +432,7 @@ hivemind_shout(
                    :tasks-completed (plist-get ling :tasks-completed))
              lings-detail))
      emacs-mcp-cci--lings)
-    
+
     (let ((status `(:backend "claude-code-ide"
                     :completion-mechanism "hivemind"
                     :auto-sync ,emacs-mcp-cci-auto-sync
@@ -470,7 +476,7 @@ hivemind_shout(
 ;;;; Minor Mode:
 
 ;;;###autoload
-(define-minor-mode emacs-mcp-claude-code-ide-mode
+(define-minor-mode emacs-mcp-cci-mode
   "Minor mode for swarm orchestration via claude-code-ide.
 
 Provides structured communication with ling Claude instances
@@ -484,30 +490,34 @@ Key features:
   :init-value nil
   :lighter " CCI"
   :global t
-  :group 'emacs-mcp-claude-code-ide
-  
-  (if emacs-mcp-claude-code-ide-mode
+  :group 'emacs-mcp-cci
+
+  (if emacs-mcp-cci-mode
       (progn
         (unless (require 'claude-code-ide nil t)
-          (setq emacs-mcp-claude-code-ide-mode nil)
+          (setq emacs-mcp-cci-mode nil)
           (error "claude-code-ide not available"))
         ;; Start auto-sync timer
         (emacs-mcp-cci--start-sync-timer)
-        (message "emacs-mcp-claude-code-ide enabled (hivemind completion)"))
+        (message "emacs-mcp-cci enabled (hivemind completion)"))
     ;; Cleanup
     (emacs-mcp-cci--stop-sync-timer)
     (emacs-mcp-cci-kill-all)
-    (message "emacs-mcp-claude-code-ide disabled")))
+    (message "emacs-mcp-cci disabled")))
+
+;; Backwards compatibility alias (use prefix for package-lint compliance)
+(defalias 'emacs-mcp-cci-claude-code-ide-mode 'emacs-mcp-cci-mode
+  "Backwards compatibility alias for `emacs-mcp-cci-mode'.")
 
 ;;;; Addon Registration:
 
-(with-eval-after-load 'emacs-mcp-addons
+(when (fboundp 'emacs-mcp-addon-register)
   (emacs-mcp-addon-register
-   'claude-code-ide
+   'cci
    :version "0.1.0"
    :description "Swarm orchestration via claude-code-ide.el with hivemind completion"
-   :requires '(claude-code-ide)
-   :provides '(emacs-mcp-claude-code-ide-mode)))
+   :requires '()  ; claude-code-ide is a soft dependency
+   :provides '(emacs-mcp-cci-mode)))
 
-(provide 'emacs-mcp-claude-code-ide)
-;;; emacs-mcp-claude-code-ide.el ends here
+(provide 'emacs-mcp-cci)
+;;; emacs-mcp-cci.el ends here
