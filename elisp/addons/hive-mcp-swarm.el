@@ -68,6 +68,12 @@
 (require 'subr-x)
 (require 'hive-mcp-graceful)
 
+;; Add swarm/ subdirectory to load-path for modular components
+(let ((swarm-dir (expand-file-name "swarm" (file-name-directory
+                                            (or load-file-name buffer-file-name)))))
+  (when (file-directory-p swarm-dir)
+    (add-to-list 'load-path swarm-dir)))
+
 ;; Load modular components from swarm/ directory
 (require 'hive-mcp-swarm-events)
 (require 'hive-mcp-swarm-prompts)
