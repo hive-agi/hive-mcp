@@ -51,7 +51,7 @@ EVENT-TYPE should be a string like \"task-completed\".
 DATA is an alist of additional event properties."
   (when (hive-mcp-swarm-events-channel-available-p)
     (let ((event `(("type" . ,event-type)
-                   ("timestamp" . ,(float-time))
+                   ("timestamp" . ,(truncate (float-time)))
                    ("session-id" . ,hive-mcp-swarm-events--session-id)
                    ,@data)))
       (condition-case err
