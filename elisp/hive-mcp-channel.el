@@ -38,10 +38,11 @@
   :group 'hive-mcp
   :prefix "hive-mcp-channel-")
 
-(defcustom hive-mcp-channel-type 'unix
-  "Channel transport type."
-  :type '(choice (const :tag "Unix socket" unix)
-                 (const :tag "TCP" tcp))
+(defcustom hive-mcp-channel-type 'tcp
+  "Channel transport type.
+TCP is the default as it's more portable and was the working configuration."
+  :type '(choice (const :tag "TCP" tcp)
+                 (const :tag "Unix socket" unix))
   :group 'hive-mcp-channel)
 
 (defcustom hive-mcp-channel-socket-path "/tmp/hive-mcp-channel.sock"
@@ -54,8 +55,9 @@
   :type 'string
   :group 'hive-mcp-channel)
 
-(defcustom hive-mcp-channel-port 9999
-  "Port for TCP channel."
+(defcustom hive-mcp-channel-port 9998
+  "Port for TCP channel.
+Must match HIVE_MCP_CHANNEL_PORT env var on the Clojure server (default: 9998)."
   :type 'integer
   :group 'hive-mcp-channel)
 

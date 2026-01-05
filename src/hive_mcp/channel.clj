@@ -373,8 +373,8 @@
   ;; Start Unix socket server (JDK 16+ native)
   (start-server! {:type :unix :path "/tmp/hive-mcp-channel.sock"})
 
-  ;; Start TCP server
-  (start-server! {:type :tcp :port 9999})
+  ;; Start TCP server (default port 9998)
+  (start-server! {:type :tcp :port 9998})
 
   ;; Subscribe to events
   (let [ch (subscribe! :task-completed)]
@@ -392,6 +392,8 @@
 ;; =============================================================================
 ;; MCP Tool Definitions
 ;; =============================================================================
+
+;; Note: Default port is 9998, matching HIVE_MCP_CHANNEL_PORT env var
 
 (def channel-tools
   "Channel-related MCP tools - currently empty as channel operations

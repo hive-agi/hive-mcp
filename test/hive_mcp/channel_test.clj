@@ -24,10 +24,10 @@
 
 (deftest tcp-channel-create-test
   (testing "TCP channel creation"
-    (let [ch (ch/tcp-channel "localhost" 9999)]
+    (let [ch (ch/tcp-channel "localhost" 9998)]
       (is (some? ch))
       (is (= "localhost" (:host ch)))
-      (is (= 9999 (:port ch)))
+      (is (= 9998 (:port ch)))
       (is (not (ch/connected? ch))))))
 
 (deftest unix-channel-create-test
