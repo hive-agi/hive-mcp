@@ -430,6 +430,7 @@ LLMs need exactly what Lisp provides: homoiconicity, runtime metaprogramming, da
 
 | Document | Description |
 |----------|-------------|
+| [Claude Code Commands](docs/CLAUDE_CODE_COMMANDS.md) | Setup `/wrap` and `/catchup` commands |
 | [Tool Reference](docs/TOOLS.md) | Complete tool documentation |
 | [Addon Guide](docs/addon-development.md) | Create custom addons |
 | [Architecture](docs/PROJECT_SUMMARY.md) | Technical deep-dive |
