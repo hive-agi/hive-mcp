@@ -150,12 +150,15 @@ Key: worker-id, Value: plist with :model :buffer :status :task")
 
 (defun hive-mcp-ellama-make-provider (&optional model)
   "Create an Ollama provider for MODEL.
-MODEL defaults to `hive-mcp-ellama-default-model'."
+MODEL defaults to `hive-mcp-ellama-default-model'.
+Includes num_ctx for larger context windows."
   (when (hive-mcp-ellama--ensure-llm-ollama)
     (make-llm-ollama
      :chat-model (or model hive-mcp-ellama-default-model)
      :host hive-mcp-ellama-ollama-host
-     :port hive-mcp-ellama-ollama-port)))
+     :port hive-mcp-ellama-ollama-port
+     :embedding-model "nomic-embed-text"
+     :default-chat-non-standard-params '(("num_ctx" . 32768)))))
 
 ;;;; Context Injection
 
@@ -198,19 +201,23 @@ PROMPT is the original user prompt."
 
 ;;;###autoload
 (defun hive-mcp-ellama-dispatch (prompt &optional model callback)
-  "Send PROMPT to Ollama via ellama.
+  "Send PROMPT to Ollama via llm-chat-async.
 MODEL overrides `hive-mcp-ellama-default-model'.
-CALLBACK is called with the response when complete."
+CALLBACK is called with the response when complete.
+Uses llm-chat-async directly for reliable model selection."
   (interactive "sPrompt: ")
-  (when (hive-mcp-ellama--ensure-ellama)
+  (when (hive-mcp-ellama--ensure-llm-ollama)
     (setq hive-mcp-ellama--last-prompt prompt)
-    (let ((ellama-provider (hive-mcp-ellama-make-provider model))
-          (ellama-chat-done-callback
-           (lambda (response)
-             (hive-mcp-ellama--handle-response response)
-             (when callback
-               (funcall callback response)))))
-      (ellama-chat prompt))))
+    (let ((provider (hive-mcp-ellama-make-provider model)))
+      (llm-chat-async
+       provider
+       (llm-make-chat-prompt prompt)
+       (lambda (response)
+         (hive-mcp-ellama--handle-response response)
+         (when callback
+           (funcall callback response)))
+       (lambda (err)
+         (message "[hive-mcp-ellama] Error: %s" err))))))
 
 ;;;###autoload
 (defun hive-mcp-ellama-dispatch-with-context (prompt &optional model callback)
