@@ -2,19 +2,31 @@
   "Agent delegation with tool-use loop for two-tier LLM architecture.
    
    Allows Claude (coordinator) to delegate tasks to local models (Ollama)
-   while giving them access to hive-mcp tools.
+   or cloud models (OpenRouter) while giving them access to hive-mcp tools.
    
    Architecture:
    - LLMBackend protocol for pluggable model backends (see agent.protocol)
    - Tool-use loop: send → execute tool calls → append results → repeat
    - Permission gates via hivemind.ask! for dangerous operations
    - Max steps guardrail to prevent runaway loops
+   - Task-based model selection for OpenRouter free tier
    
    Usage:
+     ;; Ollama (local)
      (delegate! {:model \"devstral-small\"
                  :task \"Implement the foo function in src/bar.clj\"
                  :tools [:read_file :file_edit :grep :glob_files]
-                 :max_steps 10})"
+                 :max_steps 10})
+     
+     ;; OpenRouter with task type
+     (delegate! {:backend :openrouter
+                 :task-type :coding
+                 :task \"Write a palindrome function\"})
+     
+     ;; OpenRouter with explicit model
+     (delegate! {:backend :openrouter
+                 :model \"mistralai/devstral-2512:free\"
+                 :task \"Fix the bug in auth.clj\"})"
   (:require [hive-mcp.agent.protocol :as proto]
             [hive-mcp.tools.core :refer [mcp-success mcp-error mcp-json]]
             [hive-mcp.hivemind :as hivemind]
@@ -129,6 +141,129 @@
      :or {host "http://localhost:11434"
           model "devstral-small:24b"}}]
    (->OllamaBackend host model)))
+
+;;; ============================================================
+;;; OpenRouter Backend (Task-Based Model Selection)
+;;; ============================================================
+
+(defonce openrouter-task-models
+  ;; Task-type to model mapping for OpenRouter free tier.
+  ;; Configurable via MCP tools from Elisp.
+  ;;
+  ;; Default task types:
+  ;;   :coding      - Code generation, implementation, bug fixes
+  ;;   :coding-alt  - Fallback for coding tasks  
+  ;;   :arch        - Architecture, design decisions, planning
+  ;;   :docs        - Documentation, explanations, comments
+  (atom {:coding "mistralai/devstral-2512:free"
+         :coding-alt "google/gemma-3-4b-it:free"
+         :arch "xiaomi/mimo-v2-flash:free"
+         :docs "openai/gpt-oss-120b:free"}))
+
+(defonce preset-task-types
+  ;; Mapping from swarm presets/roles to OpenRouter task types.
+  ;; Configurable via MCP tools from Elisp.
+  ;;
+  ;; Preset categories:
+  ;;   :coding - Implementation, testing, bug fixing
+  ;;   :arch   - Architecture, design, review, planning
+  ;;   :docs   - Documentation, explanations
+  (atom {;; Implementation-focused
+         "tdd" :coding
+         "tester" :coding
+         "fixer" :coding
+         "refactorer" :coding
+         "ling" :coding
+         "minimal" :coding
+         ;; Architecture/design-focused
+         "reviewer" :arch
+         "clarity" :arch
+         "solid" :arch
+         "ddd" :arch
+         "researcher" :arch
+         "task-coordinator" :arch
+         "hivemind" :arch
+         "hivemind-master" :arch
+         "hive-master" :arch
+         "mcp-first" :arch
+         "ling-pattern" :arch
+         ;; Documentation-focused
+         "documenter" :docs}))
+
+(defn preset->task-type
+  "Get the task type for a preset name. Returns :coding as default."
+  [preset]
+  (get @preset-task-types (name preset) :coding))
+
+(defn list-preset-mappings
+  "List all preset to task-type mappings."
+  []
+  @preset-task-types)
+
+(defn set-preset-task-type!
+  "Set the task type for a preset.
+   
+   Example: (set-preset-task-type! \"my-preset\" :arch)"
+  [preset task-type]
+  (swap! preset-task-types assoc (name preset) (keyword task-type))
+  @preset-task-types)
+
+(defn list-openrouter-models
+  "List all configured OpenRouter task models."
+  []
+  @openrouter-task-models)
+
+(defn set-openrouter-model!
+  "Set the model for a task type.
+   
+   Example: (set-openrouter-model! :coding \"anthropic/claude-3-haiku\")"
+  [task-type model]
+  (swap! openrouter-task-models assoc task-type model)
+  @openrouter-task-models)
+
+(defn remove-openrouter-model!
+  "Remove a task type from the model mapping."
+  [task-type]
+  (swap! openrouter-task-models dissoc task-type)
+  @openrouter-task-models)
+
+(defn openrouter-backend
+  "Create an OpenRouter backend for agent delegation.
+   
+   Options:
+     :model     - Explicit model name (highest priority)
+     :preset    - Swarm preset name for auto task-type selection
+     :task-type - Task type for model selection (:coding :arch :docs)
+     :api-key   - OpenRouter API key (or set OPENROUTER_API_KEY env)
+   
+   Priority: model > preset > task-type > :coding (default)
+   
+   Task types (configurable via MCP):
+     :coding     - mistralai/devstral-2512:free
+     :coding-alt - google/gemma-3-4b-it:free  
+     :arch       - xiaomi/mimo-v2-flash:free
+     :docs       - openai/gpt-oss-120b:free
+   
+   Preset mappings:
+     tdd, tester, fixer, refactorer, ling → :coding
+     reviewer, clarity, solid, ddd, researcher → :arch
+     documenter → :docs"
+  [{:keys [model preset task-type api-key]
+    :or {task-type :coding}}]
+  (let [models @openrouter-task-models
+        ;; Priority: explicit model > preset-derived > task-type > default
+        resolved-task-type (or (when preset (preset->task-type preset))
+                               (keyword task-type)
+                               :coding)
+        resolved-model (or model
+                           (get models resolved-task-type)
+                           (get models :coding))
+        key (or api-key (System/getenv "OPENROUTER_API_KEY"))]
+    (when-not key
+      (throw (ex-info "OpenRouter API key required" {:env "OPENROUTER_API_KEY"})))
+    (log/debug "OpenRouter backend" {:preset preset :task-type resolved-task-type :model resolved-model})
+    (require 'hive-mcp.agent.openrouter)
+    ((resolve 'hive-mcp.agent.openrouter/->OpenRouterBackend) key resolved-model)))
 
 ;;; ============================================================
 ;;; Tool Registry & Execution
@@ -298,27 +433,37 @@
 ;;; ============================================================
 
 (defn delegate!
-  "Delegate a task to a local model with tool access.
+  "Delegate a task to a local or cloud model with tool access.
    
    Options:
-     :model - Model name (default: devstral-small:24b)
-     :host - Ollama host (default: http://localhost:11434)
-     :task - Task description (required)
-     :tools - List of tool names to allow (nil = all registered)
+     :backend   - Backend type: :ollama (default) or :openrouter
+     :model     - Model name (backend-specific)
+     :preset    - Swarm preset for auto model selection (OpenRouter)
+     :task-type - For OpenRouter: :coding, :coding-alt, :arch, :docs
+     :host      - Ollama host (default: http://localhost:11434)
+     :api-key   - OpenRouter API key (or set OPENROUTER_API_KEY env)
+     :task      - Task description (required)
+     :tools     - List of tool names to allow (nil = all registered)
      :permissions - Set of permissions (:auto-approve skips human checks)
      :max-steps - Maximum tool-use iterations (default: 15)
-     :trace - If true, emit progress events via channel for monitoring
+     :trace     - If true, emit progress events via channel for monitoring
    
    Returns result map with :status, :result, :steps, :tool_calls_made
    
-   Progress events (when trace=true):
-     :agent-started - Task begins
-     :agent-step - Each LLM call or tool execution
-     :agent-completed - Task finished
-     :agent-max-steps - Hit iteration limit
-     :agent-error - Something went wrong"
-  [{:keys [model host task tools permissions max-steps trace]
-    :or {model "devstral-small:24b"
+   Examples:
+     ;; Ollama (local)
+     (delegate! {:task \"Fix the bug\" :model \"devstral-small:24b\"})
+     
+     ;; OpenRouter with preset (auto model selection)
+     (delegate! {:backend :openrouter :preset \"tdd\" :task \"Write tests\"})
+     
+     ;; OpenRouter with task type
+     (delegate! {:backend :openrouter :task-type :arch :task \"Review design\"})
+     
+     ;; OpenRouter with explicit model
+     (delegate! {:backend :openrouter :model \"mistralai/devstral-2512:free\" :task \"...\"})"
+  [{:keys [backend model host task preset task-type api-key tools permissions max-steps trace]
+    :or {backend :ollama
          host "http://localhost:11434"
          max-steps 15
          permissions #{}
@@ -327,14 +472,28 @@
   (when-not task
     (throw (ex-info "Task is required" {:opts opts})))
 
-  (let [backend (ollama-backend {:host host :model model})
+  (let [;; Only use default Ollama model if backend is :ollama and no model provided
+        effective-model (or model
+                            (when (= backend :ollama) "devstral-small:24b"))
+        backend-instance (case backend
+                           :ollama (ollama-backend {:host host :model (or effective-model "devstral-small:24b")})
+                           :openrouter (openrouter-backend {:model effective-model
+                                                            :preset preset
+                                                            :task-type (or task-type :coding)
+                                                            :api-key api-key})
+                           ;; Default to ollama
+                           (ollama-backend {:host host :model (or effective-model "devstral-small:24b")}))
         agent-id (str "delegate-" (System/currentTimeMillis))]
 
     (when trace
-      (channel/emit-event! :agent-started {:agent-id agent-id :model model :task task}))
+      (channel/emit-event! :agent-started {:agent-id agent-id
+                                           :backend backend
+                                           :preset preset
+                                           :model (proto/model-name backend-instance)
+                                           :task task}))
 
     (try
-      (let [result (run-tool-loop {:backend backend
+      (let [result (run-tool-loop {:backend backend-instance
                                    :task task
                                    :tools tools
                                    :permissions permissions
@@ -358,9 +517,13 @@
 
 (defn handle-agent-delegate
   "MCP handler for agent.delegate tool."
-  [{:keys [model task tools permissions max_steps trace]}]
+  [{:keys [backend model task preset task_type api_key tools permissions max_steps trace]}]
   (try
-    (let [result (delegate! {:model (or model "devstral-small:24b")
+    (let [result (delegate! {:backend (keyword (or backend "ollama"))
+                             :model model
+                             :preset preset
+                             :task-type (when task_type (keyword task_type))
+                             :api-key api_key
                              :task task
                              :tools (when tools (set tools))
                              :permissions (set (map keyword (or permissions [])))
@@ -372,10 +535,20 @@
 
 (def tools
   [{:name "agent_delegate"
-    :description "Delegate a task to a local LLM (Ollama) with MCP tool access. The delegated model runs a tool-use loop until task completion. Use for implementation tasks to conserve coordinator context."
+    :description "Delegate a task to a local LLM (Ollama) or cloud LLM (OpenRouter) with MCP tool access. The delegated model runs a tool-use loop until task completion. Use for implementation tasks to conserve coordinator context."
     :inputSchema {:type "object"
-                  :properties {"model" {:type "string"
-                                        :description "Ollama model (default: devstral-small:24b)"}
+                  :properties {"backend" {:type "string"
+                                          :enum ["ollama" "openrouter"]
+                                          :description "Backend: 'ollama' (local, default) or 'openrouter' (cloud)"}
+                               "model" {:type "string"
+                                        :description "Model name (backend-specific)"}
+                               "preset" {:type "string"
+                                         :description "Swarm preset for auto model selection (e.g., 'tdd', 'reviewer', 'documenter')"}
+                               "task_type" {:type "string"
+                                            :enum ["coding" "coding-alt" "arch" "docs"]
+                                            :description "OpenRouter task type (preset takes priority if both specified)"}
+                               "api_key" {:type "string"
+                                          :description "OpenRouter API key (or set OPENROUTER_API_KEY env)"}
                                "task" {:type "string"
                                        :description "Task description for the agent"}
                                "tools" {:type "array"
@@ -389,4 +562,67 @@
                                "trace" {:type "boolean"
                                         :description "Emit progress events via channel"}}
                   :required ["task"]}
-    :handler handle-agent-delegate}])
+    :handler handle-agent-delegate}
+
+   ;; OpenRouter model configuration
+   {:name "openrouter_list_models"
+    :description "List all configured OpenRouter task-type to model mappings. Shows which models are used for :coding, :arch, :docs tasks."
+    :inputSchema {:type "object" :properties {}}
+    :handler (fn [_]
+               (mcp-json {:models @openrouter-task-models
+                          :task-types (keys @openrouter-task-models)}))}
+
+   {:name "openrouter_set_model"
+    :description "Set the OpenRouter model for a specific task type. Task types: coding, coding-alt, arch, docs (or custom)."
+    :inputSchema {:type "object"
+                  :properties {"task_type" {:type "string"
+                                            :description "Task type (e.g., 'coding', 'arch', 'docs')"}
+                               "model" {:type "string"
+                                        :description "OpenRouter model ID (e.g., 'mistralai/devstral-2512:free')"}}
+                  :required ["task_type" "model"]}
+    :handler (fn [{:keys [task_type model]}]
+               (let [task-key (keyword task_type)
+                     updated (set-openrouter-model! task-key model)]
+                 (mcp-json {:success true
+                            :message (format "Set %s → %s" task_type model)
+                            :models updated})))}
+
+   {:name "openrouter_remove_model"
+    :description "Remove an OpenRouter task-type mapping."
+    :inputSchema {:type "object"
+                  :properties {"task_type" {:type "string"
+                                            :description "Task type to remove"}}
+                  :required ["task_type"]}
+    :handler (fn [{:keys [task_type]}]
+               (let [task-key (keyword task_type)
+                     updated (remove-openrouter-model! task-key)]
+                 (mcp-json {:success true
+                            :message (format "Removed %s" task_type)
+                            :models updated})))}
+
+   ;; Preset to task-type mappings
+   {:name "preset_list_mappings"
+    :description "List all swarm preset to task-type mappings. Shows which presets map to :coding, :arch, :docs."
+    :inputSchema {:type "object" :properties {}}
+    :handler (fn [_]
+               (let [mappings @preset-task-types
+                     by-type (group-by val mappings)]
+                 (mcp-json {:mappings mappings
+                            :by-task-type {:coding (keys (get by-type :coding))
+                                           :arch (keys (get by-type :arch))
+                                           :docs (keys (get by-type :docs))}})))}
+
+   {:name "preset_set_task_type"
+    :description "Set the task type for a swarm preset. This determines which OpenRouter model is used when delegating with that preset."
+    :inputSchema {:type "object"
+                  :properties {"preset" {:type "string"
+                                         :description "Preset name (e.g., 'tdd', 'reviewer', 'documenter')"}
+                               "task_type" {:type "string"
+                                            :enum ["coding" "coding-alt" "arch" "docs"]
+                                            :description "Task type to map to"}}
+                  :required ["preset" "task_type"]}
+    :handler (fn [{:keys [preset task_type]}]
+               (let [updated (set-preset-task-type! preset task_type)]
+                 (mcp-json {:success true
+                            :message (format "Set preset %s → %s" preset task_type)
+                            :mappings updated})))}])
