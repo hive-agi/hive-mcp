@@ -121,7 +121,7 @@ Returns plist (:text TEXT :pos POS) or nil."
 ;;;; Auto-Approve Mode:
 
 (defun hive-mcp-swarm-prompts--send-approval (buffer term-type)
-  "Send 'y' approval to BUFFER using TERM-TYPE."
+  "Send \\='y\\=' approval to BUFFER using TERM-TYPE."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (goto-char (point-max))

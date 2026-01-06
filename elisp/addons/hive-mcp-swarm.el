@@ -79,6 +79,8 @@
 (require 'hive-mcp-swarm-prompts)
 (require 'hive-mcp-swarm-presets)
 (require 'hive-mcp-swarm-terminal)
+(require 'hive-mcp-swarm-slaves)
+(require 'hive-mcp-swarm-tasks)
 
 ;; Soft dependency on channel for push events
 (declare-function hive-mcp-channel-connected-p "hive-mcp-channel")
@@ -207,11 +209,11 @@ is non-nil, automatically send 'y' to approve."
   :type '(repeat string)
   :group 'hive-mcp-swarm)
 
-(defcustom hive-mcp-swarm-prompt-mode 'bypass
+(defcustom hive-mcp-swarm-prompt-mode 'human
   "How to handle permission prompts in slaves.
-- `bypass': Use --permission-mode bypassPermissions (no prompts)
-- `auto': Timer-based auto-approve (legacy behavior)
-- `human': Forward prompts to master for human decision"
+- `human': Forward prompts to master for human decision (RECOMMENDED)
+- `auto': Timer-based auto-approve (use with caution)
+- `bypass': Use --permission-mode bypassPermissions (dangerous, sandboxed only)"
   :type '(choice (const :tag "Bypass permissions (CLI flag)" bypass)
           (const :tag "Auto-approve (timer)" auto)
           (const :tag "Human decision (hooks)" human))
@@ -271,39 +273,17 @@ This alerts the human even when running master Claude in a terminal."
 ;; - Pending prompts: hive-mcp-swarm-prompts module
 
 ;;;; Channel Event Emission (Push-based updates):
-;; Delegated to hive-mcp-swarm-events module for centralized event handling.
+;; Delegated to hive-mcp-swarm-events module.
+;; Aliases for backward compatibility with internal callers:
 
-(defun hive-mcp-swarm--channel-available-p ()
-  "Check if the bidirectional channel is available and connected."
-  (hive-mcp-swarm-events-channel-available-p))
-
-(defun hive-mcp-swarm--emit-event (event-type data)
-  "Emit EVENT-TYPE with DATA through the channel if connected."
-  (hive-mcp-swarm-events-emit event-type data))
-
-(defun hive-mcp-swarm--emit-task-completed (task-id slave-id result)
-  "Emit task-completed event for TASK-ID from SLAVE-ID with RESULT."
-  (hive-mcp-swarm-events-emit-task-completed task-id slave-id result))
-
-(defun hive-mcp-swarm--emit-task-failed (task-id slave-id error-msg)
-  "Emit task-failed event for TASK-ID from SLAVE-ID with ERROR-MSG."
-  (hive-mcp-swarm-events-emit-task-failed task-id slave-id error-msg))
-
-(defun hive-mcp-swarm--emit-prompt-shown (slave-id prompt-text)
-  "Emit prompt-shown event for SLAVE-ID with PROMPT-TEXT."
-  (hive-mcp-swarm-events-emit-prompt-shown slave-id prompt-text))
-
-(defun hive-mcp-swarm--emit-state-changed (slave-id old-state new-state)
-  "Emit state-changed event for SLAVE-ID from OLD-STATE to NEW-STATE."
-  (hive-mcp-swarm-events-emit-state-changed slave-id old-state new-state))
-
-(defun hive-mcp-swarm--emit-slave-spawned (slave-id name presets)
-  "Emit slave-spawned event for SLAVE-ID with NAME and PRESETS."
-  (hive-mcp-swarm-events-emit-slave-spawned slave-id name presets))
-
-(defun hive-mcp-swarm--emit-slave-killed (slave-id)
-  "Emit slave-killed event for SLAVE-ID."
-  (hive-mcp-swarm-events-emit-slave-killed slave-id))
+(defalias 'hive-mcp-swarm--channel-available-p 'hive-mcp-swarm-events-channel-available-p)
+(defalias 'hive-mcp-swarm--emit-event 'hive-mcp-swarm-events-emit)
+(defalias 'hive-mcp-swarm--emit-task-completed 'hive-mcp-swarm-events-emit-task-completed)
+(defalias 'hive-mcp-swarm--emit-task-failed 'hive-mcp-swarm-events-emit-task-failed)
+(defalias 'hive-mcp-swarm--emit-prompt-shown 'hive-mcp-swarm-events-emit-prompt-shown)
+(defalias 'hive-mcp-swarm--emit-state-changed 'hive-mcp-swarm-events-emit-state-changed)
+(defalias 'hive-mcp-swarm--emit-slave-spawned 'hive-mcp-swarm-events-emit-slave-spawned)
+(defalias 'hive-mcp-swarm--emit-slave-killed 'hive-mcp-swarm-events-emit-slave-killed)
 
 ;;;; Auto-Approve Watcher:
 ;; Delegated to hive-mcp-swarm-prompts module for centralized prompt handling.
@@ -327,559 +307,38 @@ This alerts the human even when running master Claude in a terminal."
   (message "[swarm] Auto-approve watcher stopped"))
 
 ;;;; Human Mode - Prompt Hooks:
-;; Delegated to hive-mcp-swarm-prompts module for centralized prompt handling.
-;; These wrappers maintain backward compatibility.
+;; Delegated to hive-mcp-swarm-prompts module.
 
-(defun hive-mcp-swarm--update-prompts-buffer ()
-  "Refresh the prompts buffer with current pending prompts."
-  (hive-mcp-swarm-prompts-update-buffer))
-
-(defun hive-mcp-swarm-respond ()
-  "Respond to the next pending prompt interactively."
-  (interactive)
-  (hive-mcp-swarm-prompts-respond))
-
-(defun hive-mcp-swarm-approve ()
-  "Approve (send \\='y\\=') to the next pending prompt."
-  (interactive)
-  (hive-mcp-swarm-prompts-approve))
-
-(defun hive-mcp-swarm-deny ()
-  "Deny (send \\='n\\=') to the next pending prompt."
-  (interactive)
-  (hive-mcp-swarm-prompts-deny))
-
-(defun hive-mcp-swarm-list-prompts ()
-  "List all pending prompts in the prompts buffer."
-  (interactive)
-  (hive-mcp-swarm-prompts-list))
+(defalias 'hive-mcp-swarm--update-prompts-buffer 'hive-mcp-swarm-prompts-update-buffer)
+(defalias 'hive-mcp-swarm-respond 'hive-mcp-swarm-prompts-respond)
+(defalias 'hive-mcp-swarm-approve 'hive-mcp-swarm-prompts-approve)
+(defalias 'hive-mcp-swarm-deny 'hive-mcp-swarm-prompts-deny)
+(defalias 'hive-mcp-swarm-list-prompts 'hive-mcp-swarm-prompts-list)
 
 ;;;; Preset Management:
 ;; Delegated to hive-mcp-swarm-presets module.
-;; These wrappers maintain backward compatibility.
 
-(defun hive-mcp-swarm-reload-presets ()
-  "Reload all presets from disk."
-  (interactive)
-  (hive-mcp-swarm-presets-reload))
-
-(defun hive-mcp-swarm-list-presets ()
-  "List all available presets (file-based + memory-based)."
-  (interactive)
-  (hive-mcp-swarm-presets-list))
-
-(defun hive-mcp-swarm--build-system-prompt (presets)
-  "Build combined system prompt from list of PRESETS."
-  (hive-mcp-swarm-presets-build-system-prompt presets))
-
-(defun hive-mcp-swarm-add-custom-presets-dir (dir)
-  "Add DIR to custom preset directories and reload."
-  (interactive "DPresets directory: ")
-  (hive-mcp-swarm-presets-add-custom-dir dir))
-
-(defun hive-mcp-swarm--role-to-presets (role)
-  "Convert ROLE to list of preset names."
-  (hive-mcp-swarm-presets-role-to-presets role))
+(defalias 'hive-mcp-swarm-reload-presets 'hive-mcp-swarm-presets-reload)
+(defalias 'hive-mcp-swarm-list-presets 'hive-mcp-swarm-presets-list)
+(defalias 'hive-mcp-swarm--build-system-prompt 'hive-mcp-swarm-presets-build-system-prompt)
+(defalias 'hive-mcp-swarm-add-custom-presets-dir 'hive-mcp-swarm-presets-add-custom-dir)
+(defalias 'hive-mcp-swarm--role-to-presets 'hive-mcp-swarm-presets-role-to-presets)
 
 ;;;; Slave Management:
+;; Delegated to hive-mcp-swarm-slaves module.
+;; Public API aliases for backward compatibility:
 
-(defun hive-mcp-swarm--generate-slave-id (name)
-  "Generate unique slave ID for NAME."
-  (format "swarm-%s-%d" name (floor (float-time))))
-
-(defun hive-mcp-swarm--generate-task-id (slave-id)
-  "Generate unique task ID for SLAVE-ID."
-  (cl-incf hive-mcp-swarm--task-counter)
-  (format "task-%s-%03d"
-          (replace-regexp-in-string "^swarm-" "" slave-id)
-          hive-mcp-swarm--task-counter))
-
-(defun hive-mcp-swarm--depth-label (depth)
-  "Return human-readable label for DEPTH level."
-  (pcase depth
-    (0 "master")
-    (1 "child")
-    (2 "grandchild")
-    (3 "great-grandchild")
-    (_ (format "depth-%d" depth))))
-
-(defun hive-mcp-swarm--check-depth ()
-  "Check if we can spawn at current depth.
-Returns the current depth if allowed, signals error if blocked."
-  (let* ((depth (string-to-number (or (getenv "CLAUDE_SWARM_DEPTH") "0")))
-         (master-id (getenv "CLAUDE_SWARM_MASTER"))
-         (my-id (getenv "CLAUDE_SWARM_SLAVE_ID")))
-    (setq hive-mcp-swarm--current-depth depth)
-    ;; Track ancestry for loop detection
-    (when (and my-id master-id)
-      (push (cons my-id master-id) hive-mcp-swarm--ancestry))
-    (when (>= depth hive-mcp-swarm-max-depth)
-      (error "Recursion limit reached: %s (depth %d) cannot spawn children.
-Maximum depth is %d (master → child → grandchild → great-grandchild).
-This limit prevents runaway recursive spawning."
-             (hive-mcp-swarm--depth-label depth)
-             depth
-             hive-mcp-swarm-max-depth))
-    depth))
-
-(defun hive-mcp-swarm--check-rate-limit ()
-  "Check if spawn rate limit allows a new spawn.
-Removes old timestamps and checks count within window."
-  (let* ((now (float-time))
-         (window-start (- now hive-mcp-swarm-rate-limit-window)))
-    ;; Prune old timestamps
-    (setq hive-mcp-swarm--spawn-timestamps
-          (cl-remove-if (lambda (ts) (< ts window-start))
-                        hive-mcp-swarm--spawn-timestamps))
-    ;; Check limit
-    (when (>= (length hive-mcp-swarm--spawn-timestamps)
-              hive-mcp-swarm-rate-limit-max-spawns)
-      (error "Rate limit exceeded: %d spawns in %d seconds.
-Wait before spawning more slaves to prevent spawn storms."
-             hive-mcp-swarm-rate-limit-max-spawns
-             hive-mcp-swarm-rate-limit-window))
-    ;; Record this spawn attempt
-    (push now hive-mcp-swarm--spawn-timestamps)))
-
-(defun hive-mcp-swarm--check-slave-limit ()
-  "Check if we can spawn more slaves."
-  (when (>= (hash-table-count hive-mcp-swarm--slaves) hive-mcp-swarm-max-slaves)
-    (error "Maximum slave count (%d) reached.
-Kill some slaves with `hive-mcp-swarm-kill' before spawning more."
-           hive-mcp-swarm-max-slaves)))
-
-(cl-defun hive-mcp-swarm-spawn (name &key presets cwd role terminal)
-  "Spawn a new Claude slave with NAME - FULLY ASYNC.
-
-PRESETS is a list of preset names to apply (e.g., '(\"tdd\" \"clarity\")).
-CWD is the working directory (defaults to current project root).
-ROLE is a predefined role that maps to presets.
-TERMINAL overrides `hive-mcp-swarm-terminal' for this spawn ('vterm or 'eat).
-
-Returns the slave-id IMMEDIATELY.  The actual spawn happens async.
-Poll the slave's :status to check progress: spawning -> starting -> idle."
-  (interactive
-   (list (read-string "Slave name: ")
-         :presets (completing-read-multiple
-                   "Presets: "
-                   (hive-mcp-swarm-list-presets))))
-  ;; Safety checks (order matters: depth → rate → slave count)
-  (hive-mcp-swarm--check-depth)
-  (hive-mcp-swarm--check-rate-limit)
-  (hive-mcp-swarm--check-slave-limit)
-
-  ;; Resolve role to presets if provided
-  (when (and role (not presets))
-    (setq presets (hive-mcp-swarm--role-to-presets role)))
-
-  (let* ((slave-id (hive-mcp-swarm--generate-slave-id name))
-         (work-dir (or cwd (hive-mcp-swarm--project-root) default-directory))
-         (term-backend (or terminal hive-mcp-swarm-terminal))
-         (parent-id (or (getenv "CLAUDE_SWARM_SLAVE_ID") "master"))
-         (spawn-depth (1+ hive-mcp-swarm--current-depth)))
-
-    ;; Register slave IMMEDIATELY with "spawning" status - BEFORE any work
-    (puthash slave-id
-             (list :slave-id slave-id
-                   :name name
-                   :role role
-                   :presets presets
-                   :status 'spawning  ; Not starting yet - we return immediately
-                   :buffer nil        ; Buffer created async
-                   :terminal term-backend
-                   :cwd work-dir
-                   :depth spawn-depth
-                   :parent-id parent-id
-                   :current-task nil
-                   :task-queue '()
-                   :tasks-completed 0
-                   :tasks-failed 0
-                   :spawned-at (format-time-string "%FT%T%z")
-                   :last-activity (format-time-string "%FT%T%z"))
-             hive-mcp-swarm--slaves)
-
-    ;; Log spawn intent
-    (message "[swarm] Spawning %s (%s) at depth %d, parent: %s (async)"
-             slave-id
-             (hive-mcp-swarm--depth-label spawn-depth)
-             spawn-depth
-             parent-id)
-
-    ;; Emit slave-spawned event via channel
-    (hive-mcp-swarm--emit-slave-spawned slave-id name presets)
-
-    ;; FULLY ASYNC: Defer ALL work to timer so we return IMMEDIATELY
-    (run-with-timer
-     0 nil
-     (lambda ()
-       (condition-case err
-           (hive-mcp-swarm--do-spawn-async slave-id name presets work-dir term-backend)
-         (error
-          ;; Mark slave as errored
-          (when-let* ((slave (gethash slave-id hive-mcp-swarm--slaves)))
-            (plist-put slave :status 'error)
-            (plist-put slave :error (error-message-string err)))
-          (message "[swarm] Spawn error for %s: %s" slave-id (error-message-string err))))))
-
-    (when (called-interactively-p 'any)
-      (message "Spawning slave: %s (async)" slave-id))
-
-    slave-id))
-
-(defun hive-mcp-swarm--do-spawn-async (slave-id name presets work-dir term-backend)
-  "Actually spawn the slave buffer for SLAVE-ID.
-Called async from `hive-mcp-swarm-spawn'.  Updates slave status as work progresses."
-  (let* ((slave (gethash slave-id hive-mcp-swarm--slaves))
-         (buffer-name (format "%s%s*" hive-mcp-swarm-buffer-prefix name))
-         (system-prompt (hive-mcp-swarm--build-system-prompt presets))
-         buffer)
-
-    (unless slave
-      (error "Slave record not found: %s" slave-id))
-
-    ;; Require terminal emulator (could potentially block on first load)
-    (pcase term-backend
-      ('claude-code-ide (unless (require 'claude-code-ide nil t)
-                          (error "Claude-code-ide is required but not available")))
-      ('vterm (unless (require 'vterm nil t)
-                (error "Vterm is required but not available")))
-      ('eat (unless (require 'eat nil t)
-              (error "Eat is required but not available"))))
-
-    ;; Update status to starting
-    (plist-put slave :status 'starting)
-
-    ;; Create terminal buffer
-    (setq buffer (generate-new-buffer buffer-name))
-    (plist-put slave :buffer buffer)
-
-    (let* ((default-directory work-dir)
-           (process-environment
-            (append
-             (list (format "CLAUDE_SWARM_DEPTH=%d" (plist-get slave :depth))
-                   (format "CLAUDE_SWARM_MASTER=%s" (or hive-mcp-swarm--session-id "direct"))
-                   (format "CLAUDE_SWARM_SLAVE_ID=%s" slave-id))
-             process-environment))
-           (permission-flag (pcase hive-mcp-swarm-prompt-mode
-                              ('bypass "--permission-mode bypassPermissions")
-                              (_ "")))
-           (claude-cmd (if system-prompt
-                           (let ((prompt-file (make-temp-file "swarm-prompt-" nil ".md")))
-                             (with-temp-file prompt-file
-                               (insert system-prompt))
-                             (format "cd %s && %s %s --system-prompt %s"
-                                     (shell-quote-argument work-dir)
-                                     hive-mcp-swarm-claude-command
-                                     permission-flag
-                                     (shell-quote-argument prompt-file)))
-                         (format "cd %s && %s %s"
-                                 (shell-quote-argument work-dir)
-                                 hive-mcp-swarm-claude-command
-                                 permission-flag))))
-
-      (pcase term-backend
-        ('claude-code-ide
-         ;; Use full claude-code-ide session with MCP WebSocket integration
-         ;; Kill the pre-created buffer since claude-code-ide creates its own
-         (when (buffer-live-p buffer)
-           (kill-buffer buffer))
-         ;; Ensure MCP server is running (starts it if needed)
-         (let* ((port (when (fboundp 'claude-code-ide-mcp-server-ensure-server)
-                        (claude-code-ide-mcp-server-ensure-server)))
-                (_ (unless port
-                     (error "Failed to start MCP server for claude-code-ide backend")))
-                (result (claude-code-ide--create-terminal-session
-                         buffer-name
-                         work-dir
-                         port
-                         nil  ;; continue
-                         nil  ;; resume
-                         slave-id)))
-           (setq buffer (car result))
-           (plist-put slave :buffer buffer)
-           (plist-put slave :process (cdr result))
-           ;; Apply system prompt if present via CLI command after session starts
-           (when system-prompt
-             (let ((prompt-to-send system-prompt))
-               (run-at-time 1.0 nil
-                            (lambda ()
-                              (when (buffer-live-p buffer)
-                                (hive-mcp-swarm-terminal-send
-                                 buffer
-                                 (format "/system-prompt %s"
-                                         (shell-quote-argument prompt-to-send))
-                                 'claude-code-ide))))))))
-        ('vterm
-         (with-current-buffer buffer
-           (vterm-mode)
-           (run-at-time 0.5 nil
-                        (lambda ()
-                          (when (buffer-live-p buffer)
-                            (with-current-buffer buffer
-                              (vterm-send-string claude-cmd)
-                              (vterm-send-return)))))))
-        ('eat
-         (with-current-buffer buffer
-           (eat-mode)
-           (eat-exec buffer "swarm-shell" "/bin/bash" nil '("-l")))
-         (run-at-time 0.5 nil
-                      (lambda ()
-                        (when (buffer-live-p buffer)
-                          (with-current-buffer buffer
-                            (when (and (boundp 'eat-terminal) eat-terminal)
-                              (eat-term-send-string eat-terminal claude-cmd)
-                              (eat-term-send-string eat-terminal "\r"))))))))))
-
-  ;; Log completion
-  (message "[swarm] Spawned %s buffer created" slave-id)
-
-  ;; Schedule status transition to idle
-  (run-at-time
-   3 nil
-   (lambda ()
-     (when-let* ((s (gethash slave-id hive-mcp-swarm--slaves)))
-       (when (memq (plist-get s :status) '(starting spawning))
-         (plist-put s :status 'idle))))))
-
-(defun hive-mcp-swarm--project-root ()
-  "Get current project root."
-  (or (when (fboundp 'project-root)
-        (when-let* ((proj (project-current)))
-          (project-root proj)))
-      default-directory))
-
-(defun hive-mcp-swarm-kill (slave-id)
-  "Kill slave SLAVE-ID without prompts.
-Force-kills the buffer to prevent blocking on process/unsaved prompts.
-Handles vterm/eat process cleanup to ensure no confirmation dialogs.
-Emits slave-killed event via channel for push-based updates."
-  (interactive
-   (list (completing-read "Kill slave: "
-                          (hash-table-keys hive-mcp-swarm--slaves))))
-  (when-let* ((slave (gethash slave-id hive-mcp-swarm--slaves)))
-    (let ((buffer (plist-get slave :buffer)))
-      (when (buffer-live-p buffer)
-        (with-current-buffer buffer
-          ;; Step 1: Mark buffer as unmodified to prevent "save buffer?" prompts
-          (set-buffer-modified-p nil)
-          ;; Step 2: Disable process query-on-exit for ALL processes in this buffer
-          ;; This prevents "Buffer has running process; kill it?" prompts
-          (when-let* ((proc (get-buffer-process buffer)))
-            (set-process-query-on-exit-flag proc nil))
-          ;; Also handle vterm's internal process tracking if present
-          (when (and (boundp 'vterm--process) vterm--process
-                     (process-live-p vterm--process))
-            (set-process-query-on-exit-flag vterm--process nil)))
-        ;; Step 3: Kill buffer with ALL hooks disabled
-        ;; - kill-buffer-query-functions: prevents "process running" prompts
-        ;; - kill-buffer-hook: prevents any cleanup hooks from blocking
-        ;; - vterm-exit-functions: prevents vterm cleanup hooks
-        (let ((kill-buffer-query-functions nil)
-              (kill-buffer-hook nil)
-              (vterm-exit-functions nil))
-          (kill-buffer buffer))))
-    ;; Emit slave-killed event via channel before cleanup
-    (hive-mcp-swarm--emit-slave-killed slave-id)
-    (remhash slave-id hive-mcp-swarm--slaves)
-    ;; Clear prompt tracking for this slave
-    (hive-mcp-swarm-prompts-clear-slave slave-id)
-    (message "Killed slave: %s" slave-id)))
-
-(defun hive-mcp-swarm-kill-all ()
-  "Kill all slaves."
-  (interactive)
-  (let ((count 0))
-    (maphash (lambda (id _)
-               (hive-mcp-swarm-kill id)
-               (cl-incf count))
-             hive-mcp-swarm--slaves)
-    (message "Killed %d slaves" count)))
-
-;;;; Terminal Send Functions:
-
-(defun hive-mcp-swarm--buffer-contains-p (buffer text &optional start-point)
-  "Check if BUFFER contains TEXT after START-POINT.
-Uses first 40 chars as signature. Returns position if found, nil otherwise."
-  (when (buffer-live-p buffer)
-    (with-current-buffer buffer
-      (save-excursion
-        (goto-char (or start-point (point-min)))
-        (let ((sig (substring text 0 (min 40 (length text)))))
-          (search-forward sig nil t))))))
-
-(defun hive-mcp-swarm--claude-responded-p (buffer text &optional start-point)
-  "Check if Claude has responded to TEXT in BUFFER after START-POINT.
-Looks for the prompt followed by Claude's response marker (●)."
-  (when (buffer-live-p buffer)
-    (with-current-buffer buffer
-      (save-excursion
-        (goto-char (or start-point (point-min)))
-        (let ((sig (substring text 0 (min 40 (length text)))))
-          ;; Find our prompt
-          (when (search-forward sig nil t)
-            ;; Check if there's a response marker after it
-            (search-forward "●" nil t)))))))
+(defalias 'hive-mcp-swarm-spawn 'hive-mcp-swarm-slaves-spawn)
+(defalias 'hive-mcp-swarm-kill 'hive-mcp-swarm-slaves-kill)
+(defalias 'hive-mcp-swarm-kill-all 'hive-mcp-swarm-slaves-kill-all)
 
 ;;;; Task Dispatch and Collection:
-;; NOTE: Terminal operations delegated to hive-mcp-swarm-terminal module
-;; All send operations are NON-BLOCKING to prevent Emacs hanging during MCP calls
+;; Delegated to hive-mcp-swarm-tasks module.
+;; Public API aliases for backward compatibility:
 
-(cl-defun hive-mcp-swarm-dispatch (slave-id prompt &key timeout priority context)
-  "Dispatch PROMPT to SLAVE-ID.
-
-TIMEOUT is milliseconds (default: `hive-mcp-swarm-default-timeout').
-PRIORITY is one of: critical, high, normal, low.
-CONTEXT is additional context plist.
-
-Returns task-id."
-  (interactive
-   (list (completing-read "Slave: " (hash-table-keys hive-mcp-swarm--slaves))
-         (read-string "Prompt: ")))
-
-  (let* ((slave (gethash slave-id hive-mcp-swarm--slaves))
-         (task-id (hive-mcp-swarm--generate-task-id slave-id))
-         (buffer (plist-get slave :buffer)))
-
-    (unless slave
-      (error "Slave not found: %s" slave-id))
-
-    (unless (buffer-live-p buffer)
-      (error "Slave buffer is dead: %s" slave-id))
-
-    ;; Create task record
-    (puthash task-id
-             (list :task-id task-id
-                   :slave-id slave-id
-                   :prompt prompt
-                   :status 'dispatched
-                   :priority (or priority 'normal)
-                   :timeout (or timeout hive-mcp-swarm-default-timeout)
-                   :context context
-                   :dispatched-at (format-time-string "%FT%T%z")
-                   :completed-at nil
-                   :result nil
-                   :error nil)
-             hive-mcp-swarm--tasks)
-
-    ;; Update slave state
-    (plist-put slave :status 'working)
-    (plist-put slave :current-task task-id)
-    (plist-put slave :last-activity (format-time-string "%FT%T%z"))
-    (plist-put slave :task-start-point
-               (with-current-buffer buffer (point-max)))
-
-    ;; Send prompt to slave - NON-BLOCKING via terminal module
-    ;; No sit-for loops - prevents Emacs hanging during MCP calls
-    (let ((target-buffer buffer)
-          (term-type (or (plist-get slave :terminal) hive-mcp-swarm-terminal))
-          (prompt-text prompt)
-          (the-task-id task-id))
-      (condition-case err
-          (hive-mcp-swarm-terminal-send target-buffer prompt-text term-type)
-        (error
-         (message "[swarm] Dispatch error for %s: %s"
-                  the-task-id (error-message-string err)))))
-
-    (when (called-interactively-p 'any)
-      (message "Dispatched task %s to %s" task-id slave-id))
-
-    task-id))
-
-(defun hive-mcp-swarm-collect (task-id &optional timeout-ms)
-  "Collect response for TASK-ID.
-
-TIMEOUT-MS is how long to wait (default: 5000ms).
-Returns the task plist with :result populated."
-  (interactive
-   (list (completing-read "Task: " (hash-table-keys hive-mcp-swarm--tasks))))
-
-  (let* ((task (gethash task-id hive-mcp-swarm--tasks))
-         (slave-id (plist-get task :slave-id))
-         (slave (gethash slave-id hive-mcp-swarm--slaves))
-         (buffer (plist-get slave :buffer))
-         (prompt (plist-get task :prompt))
-         (timeout (/ (or timeout-ms 5000) 1000.0))
-         (start-time (float-time))
-         result)
-
-    (unless task
-      (error "Task not found: %s" task-id))
-
-    ;; Wait for completion by searching for prompt text + response marker
-    ;; vterm buffers have complex structure, so we search for our prompt
-    ;; then look for Claude's response marker (●) after it
-    (while (and (< (- (float-time) start-time) timeout)
-                (not result))
-      (when (buffer-live-p buffer)
-        (with-current-buffer buffer
-          (save-excursion
-            (goto-char (point-min))
-            ;; Find our prompt in the buffer (use first 50 chars as search key)
-            (let ((search-key (substring prompt 0 (min 50 (length prompt)))))
-              (when (search-forward search-key nil t)
-                ;; Found our prompt, now look for response marker
-                (when (search-forward "●" nil t)
-                  (let ((response-start (point)))
-                    ;; Find end: next prompt "> " or horizontal line or double newline
-                    (cond
-                     ((search-forward "\n> " nil t)
-                      (setq result (string-trim
-                                    (buffer-substring-no-properties
-                                     response-start (- (point) 3)))))
-                     ((search-forward "\n────" nil t)
-                      (setq result (string-trim
-                                    (buffer-substring-no-properties
-                                     response-start (- (point) 5)))))
-                     ((search-forward "\n\n\n" nil t)
-                      (setq result (string-trim
-                                    (buffer-substring-no-properties
-                                     response-start (- (point) 3)))))))))))))
-      (unless result
-        (sleep-for 0.5)))
-
-    ;; Update task
-    (if result
-        (progn
-          (plist-put task :status 'completed)
-          (plist-put task :result result)
-          (plist-put task :completed-at (format-time-string "%FT%T%z"))
-          ;; Update slave stats
-          (plist-put slave :status 'idle)
-          (plist-put slave :current-task nil)
-          (plist-put slave :tasks-completed (1+ (plist-get slave :tasks-completed))))
-      (plist-put task :status 'timeout)
-      (plist-put task :error "Collection timed out"))
-
-    (when (called-interactively-p 'any)
-      (if result
-          (message "Collected result (%d chars)" (length result))
-        (message "Collection timed out")))
-
-    task))
-
-(defun hive-mcp-swarm-broadcast (prompt &optional slave-filter)
-  "Send PROMPT to all slaves (or those matching SLAVE-FILTER).
-SLAVE-FILTER is a plist like (:role \"tester\").
-Returns list of task-ids."
-  (let ((task-ids '()))
-    (maphash
-     (lambda (slave-id slave)
-       (when (or (not slave-filter)
-                 (hive-mcp-swarm--slave-matches-filter slave slave-filter))
-         (push (hive-mcp-swarm-dispatch slave-id prompt) task-ids)))
-     hive-mcp-swarm--slaves)
-    (nreverse task-ids)))
-
-(defun hive-mcp-swarm--slave-matches-filter (slave filter)
-  "Check if SLAVE matches FILTER criteria."
-  (let ((matches t))
-    (when-let* ((role (plist-get filter :role)))
-      (unless (equal (plist-get slave :role) role)
-        (setq matches nil)))
-    (when-let* ((status (plist-get filter :status)))
-      (unless (eq (plist-get slave :status) status)
-        (setq matches nil)))
-    matches))
+(defalias 'hive-mcp-swarm-dispatch 'hive-mcp-swarm-tasks-dispatch)
+(defalias 'hive-mcp-swarm-collect 'hive-mcp-swarm-tasks-collect)
+(defalias 'hive-mcp-swarm-broadcast 'hive-mcp-swarm-tasks-broadcast)
 
 ;;;; Status and Monitoring:
 
@@ -957,35 +416,8 @@ Returns task-id on success, or error plist on failure."
   "API: Get swarm status as JSON-serializable plist."
   (hive-mcp-swarm-status))
 
-(defun hive-mcp-swarm--check-task-completion (task-id)
-  "Check if TASK-ID has completed without blocking.
-Returns result if complete, nil if still running."
-  (when-let* ((task (gethash task-id hive-mcp-swarm--tasks))
-              (slave-id (plist-get task :slave-id))
-              (slave (gethash slave-id hive-mcp-swarm--slaves))
-              (buffer (plist-get slave :buffer))
-              (prompt (plist-get task :prompt)))
-    (when (buffer-live-p buffer)
-      (with-current-buffer buffer
-        (save-excursion
-          (goto-char (point-min))
-          (let ((search-key (substring prompt 0 (min 50 (length prompt)))))
-            (when (search-forward search-key nil t)
-              (when (search-forward "●" nil t)
-                (let ((response-start (point)))
-                  (cond
-                   ((search-forward "\n> " nil t)
-                    (string-trim
-                     (buffer-substring-no-properties
-                      response-start (- (point) 3))))
-                   ((search-forward "\n────" nil t)
-                    (string-trim
-                     (buffer-substring-no-properties
-                      response-start (- (point) 5))))
-                   ((search-forward "\n\n\n" nil t)
-                    (string-trim
-                     (buffer-substring-no-properties
-                      response-start (- (point) 3))))))))))))))
+;; Alias for task completion check - delegated to tasks module
+(defalias 'hive-mcp-swarm--check-task-completion 'hive-mcp-swarm-tasks-check-completion)
 
 (defun hive-mcp-swarm-api-collect (task-id &optional timeout-ms)
   "API: Collect result for TASK-ID - NON-BLOCKING with graceful fallback.
