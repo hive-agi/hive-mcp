@@ -9,7 +9,8 @@
    Uses with-redefs to mock channel dependencies for isolated unit testing."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.core.async :as async :refer [chan >!! <!! close! timeout alts!!]]
-            [hive-mcp.tools.swarm :as swarm]))
+            [hive-mcp.tools.swarm :as swarm]
+            [hive-mcp.tools.swarm.channel :as channel]))
 
 ;; =============================================================================
 ;; Test Fixtures - Reset state between tests
@@ -58,7 +59,7 @@
     ;; Then manually add via the handler mechanism
     (let [task-id (gen-task-id)]
       ;; Simulate adding an event via handle-task-completed
-      (with-redefs [hive-mcp.tools.swarm/try-require-channel (constantly false)]
+      (with-redefs [hive-mcp.tools.swarm.channel/try-require-channel (constantly false)]
         ;; Directly manipulate the atom for setup (since handlers are private)
         ;; We'll use check-event-journal to verify state
         (is (nil? (swarm/check-event-journal task-id)))
@@ -85,7 +86,7 @@
 
 (deftest test-start-channel-subscriptions!-no-channel-available
   (testing "start-channel-subscriptions! does nothing when channel unavailable"
-    (with-redefs [hive-mcp.tools.swarm/try-require-channel (constantly false)]
+    (with-redefs [hive-mcp.tools.swarm.channel/try-require-channel (constantly false)]
       ;; Should not throw, just return nil
       (is (nil? (swarm/start-channel-subscriptions!))))))
 
@@ -101,8 +102,8 @@
 (deftest test-start-channel-subscriptions!-with-mock-channel
   (testing "start-channel-subscriptions! subscribes to expected event types"
     (let [subscribed-events (atom [])]
-      (with-redefs [hive-mcp.tools.swarm/try-require-channel (constantly true)
-                    hive-mcp.tools.swarm/channel-subscribe!
+      (with-redefs [hive-mcp.tools.swarm.channel/try-require-channel (constantly true)
+                    hive-mcp.tools.swarm.channel/channel-subscribe!
                     (fn [event-type]
                       (swap! subscribed-events conj event-type)
                       (chan 1))] ; Return a real channel
@@ -123,8 +124,8 @@
                            (let [c (chan 1)]
                              (swap! test-channels conj c)
                              c))]
-      (with-redefs [hive-mcp.tools.swarm/try-require-channel (constantly true)
-                    hive-mcp.tools.swarm/channel-subscribe! (fn [_] (make-test-chan))]
+      (with-redefs [hive-mcp.tools.swarm.channel/try-require-channel (constantly true)
+                    hive-mcp.tools.swarm.channel/channel-subscribe! (fn [_] (make-test-chan))]
         (swarm/start-channel-subscriptions!)
 
         ;; Verify channels were created
@@ -169,7 +170,7 @@
                                  :slave-id "slave-1"
                                  :result "success output")]
       ;; Access private function via var
-      (#'swarm/handle-task-completed event)
+      (#'channel/handle-task-completed event)
 
       (let [journal-entry (swarm/check-event-journal task-id)]
         (is (some? journal-entry))
@@ -184,7 +185,7 @@
           event (make-test-event :task-id task-id
                                  :slave-id "slave-2"
                                  :error "Something went wrong")]
-      (#'swarm/handle-task-failed event)
+      (#'channel/handle-task-failed event)
 
       (let [journal-entry (swarm/check-event-journal task-id)]
         (is (some? journal-entry))
@@ -201,7 +202,7 @@
       ;; Capture journal state before
       (swarm/clear-event-journal!)
 
-      (#'swarm/handle-prompt-shown event)
+      (#'channel/handle-prompt-shown event)
 
       ;; Journal should still be empty (prompt-shown just logs)
       (is (nil? (swarm/check-event-journal slave-id))))))
@@ -213,7 +214,7 @@
           event (make-test-event :task-id task-id
                                  :timestamp custom-timestamp
                                  :result "done")]
-      (#'swarm/handle-task-completed event)
+      (#'channel/handle-task-completed event)
 
       (let [journal-entry (swarm/check-event-journal task-id)]
         (is (= custom-timestamp (:timestamp journal-entry)))))))
@@ -225,7 +226,7 @@
           event {"task-id" task-id
                  "slave-id" "slave-1"
                  "result" "done"}]
-      (#'swarm/handle-task-completed event)
+      (#'channel/handle-task-completed event)
 
       (let [after-ts (System/currentTimeMillis)
             journal-entry (swarm/check-event-journal task-id)]
@@ -245,12 +246,12 @@
                                    :slave-id "slave-2"
                                    :error "second failed")]
       ;; First: completed
-      (#'swarm/handle-task-completed event-1)
+      (#'channel/handle-task-completed event-1)
       (is (= "completed" (:status (swarm/check-event-journal task-id))))
       (is (= "slave-1" (:slave-id (swarm/check-event-journal task-id))))
 
       ;; Second: failed (overwrites)
-      (#'swarm/handle-task-failed event-2)
+      (#'channel/handle-task-failed event-2)
       (is (= "failed" (:status (swarm/check-event-journal task-id))))
       (is (= "slave-2" (:slave-id (swarm/check-event-journal task-id)))))))
 
@@ -260,9 +261,9 @@
           task-2 (gen-task-id)
           task-3 (gen-task-id)]
 
-      (#'swarm/handle-task-completed (make-test-event :task-id task-1 :result "r1"))
-      (#'swarm/handle-task-failed (make-test-event :task-id task-2 :error "e2"))
-      (#'swarm/handle-task-completed (make-test-event :task-id task-3 :result "r3"))
+      (#'channel/handle-task-completed (make-test-event :task-id task-1 :result "r1"))
+      (#'channel/handle-task-failed (make-test-event :task-id task-2 :error "e2"))
+      (#'channel/handle-task-completed (make-test-event :task-id task-3 :result "r3"))
 
       ;; All three should be independently accessible
       (is (= "completed" (:status (swarm/check-event-journal task-1))))
@@ -284,8 +285,8 @@
           task-2 (gen-task-id)]
 
       ;; Add some events
-      (#'swarm/handle-task-completed (make-test-event :task-id task-1 :result "r1"))
-      (#'swarm/handle-task-failed (make-test-event :task-id task-2 :error "e2"))
+      (#'channel/handle-task-completed (make-test-event :task-id task-1 :result "r1"))
+      (#'channel/handle-task-failed (make-test-event :task-id task-2 :error "e2"))
 
       ;; Verify they exist
       (is (some? (swarm/check-event-journal task-1)))
@@ -306,14 +307,14 @@
   (testing "try-require-channel returns true when channel namespace exists"
     ;; This tests the actual behavior - channel namespace may or may not be available
     ;; in test environment, so we test the return type
-    (let [result (#'swarm/try-require-channel)]
+    (let [result (#'channel/try-require-channel)]
       (is (boolean? result)))))
 
 (deftest test-try-require-channel-handles-missing-namespace
   (testing "try-require-channel returns false for non-existent namespace"
     ;; We can't easily mock require, but we can verify the function doesn't throw
     ;; when the channel namespace is not available (which is the current test state)
-    (is (boolean? (#'swarm/try-require-channel)))))
+    (is (boolean? (#'channel/try-require-channel)))))
 
 ;; =============================================================================
 ;; Test: channel-subscribe! Behavior
@@ -321,19 +322,19 @@
 
 (deftest test-channel-subscribe!-returns-nil-when-no-channel
   (testing "channel-subscribe! returns nil when channel not available"
-    (with-redefs [hive-mcp.tools.swarm/try-require-channel (constantly false)]
-      (is (nil? (#'swarm/channel-subscribe! :task-completed)))
-      (is (nil? (#'swarm/channel-subscribe! :task-failed)))
-      (is (nil? (#'swarm/channel-subscribe! :prompt-shown))))))
+    (with-redefs [hive-mcp.tools.swarm.channel/try-require-channel (constantly false)]
+      (is (nil? (#'channel/channel-subscribe! :task-completed)))
+      (is (nil? (#'channel/channel-subscribe! :task-failed)))
+      (is (nil? (#'channel/channel-subscribe! :prompt-shown))))))
 
 (deftest test-channel-subscribe!-returns-channel-when-available
   (testing "channel-subscribe! returns subscription channel when available"
     (let [mock-chan (chan 1)]
-      (with-redefs [hive-mcp.tools.swarm/try-require-channel (constantly true)]
+      (with-redefs [hive-mcp.tools.swarm.channel/try-require-channel (constantly true)]
         ;; Mock the resolve to return a function that returns our mock channel
         (with-redefs [resolve (fn [sym]
                                 (when (= sym 'hive-mcp.channel/subscribe!)
                                   (fn [_] mock-chan)))]
-          (let [result (#'swarm/channel-subscribe! :task-completed)]
+          (let [result (#'channel/channel-subscribe! :task-completed)]
             (is (some? result))
             (is (= mock-chan result))))))))

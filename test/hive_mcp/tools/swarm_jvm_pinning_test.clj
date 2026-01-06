@@ -14,7 +14,8 @@
             [clojure.string :as str]
             [clojure.data.json :as json]
             [clojure.java.shell :as shell]
-            [hive-mcp.tools.swarm :as swarm]))
+            [hive-mcp.tools.swarm :as swarm]
+            [hive-mcp.tools.swarm.jvm :as jvm]))
 
 ;; =============================================================================
 ;; Test Helpers
@@ -137,9 +138,9 @@
 
 (deftest classify-jvm-process-shadow-cljs-test
   (testing "Classifies shadow-cljs processes"
-    (with-redefs [swarm/get-process-swarm-info (constantly nil)]
+    (with-redefs [jvm/get-process-swarm-info (constantly nil)]
       (let [proc {:pid "123" :cmd "java -jar shadow-cljs.jar watch app"}
-            result (swarm/classify-jvm-process proc)]
+            result (jvm/classify-jvm-process proc)]
         (is (= :shadow-cljs (:type result))
             "Should identify shadow-cljs process")
         (is (false? (:swarm-spawned result))
@@ -147,44 +148,44 @@
 
 (deftest classify-jvm-process-hive-mcp-test
   (testing "Classifies hive-mcp processes"
-    (with-redefs [swarm/get-process-swarm-info (constantly nil)]
+    (with-redefs [jvm/get-process-swarm-info (constantly nil)]
       (let [proc {:pid "456" :cmd "java -cp hive-mcp.jar clojure.main"}
-            result (swarm/classify-jvm-process proc)]
+            result (jvm/classify-jvm-process proc)]
         (is (= :hive-mcp (:type result))
             "Should identify hive-mcp process")))))
 
 (deftest classify-jvm-process-nrepl-test
   (testing "Classifies nREPL processes"
-    (with-redefs [swarm/get-process-swarm-info (constantly nil)]
+    (with-redefs [jvm/get-process-swarm-info (constantly nil)]
       (let [proc {:pid "789" :cmd "java -jar clojure nrepl.server"}
-            result (swarm/classify-jvm-process proc)]
+            result (jvm/classify-jvm-process proc)]
         (is (= :nrepl (:type result))
             "Should identify nREPL process")))))
 
 (deftest classify-jvm-process-leiningen-test
   (testing "Classifies Leiningen processes"
-    (with-redefs [swarm/get-process-swarm-info (constantly nil)]
+    (with-redefs [jvm/get-process-swarm-info (constantly nil)]
       (let [proc {:pid "101" :cmd "java -jar leiningen-standalone.jar repl"}
-            result (swarm/classify-jvm-process proc)]
+            result (jvm/classify-jvm-process proc)]
         (is (= :leiningen (:type result))
             "Should identify Leiningen process")))))
 
 (deftest classify-jvm-process-other-test
   (testing "Classifies unknown JVM processes as :other"
-    (with-redefs [swarm/get-process-swarm-info (constantly nil)]
+    (with-redefs [jvm/get-process-swarm-info (constantly nil)]
       (let [proc {:pid "999" :cmd "java -jar some-random-app.jar"}
-            result (swarm/classify-jvm-process proc)]
+            result (jvm/classify-jvm-process proc)]
         (is (= :other (:type result))
             "Should classify unknown as :other")))))
 
 (deftest classify-jvm-process-swarm-spawned-test
   (testing "Identifies swarm-spawned processes"
-    (with-redefs [swarm/get-process-swarm-info
+    (with-redefs [jvm/get-process-swarm-info
                   (constantly {:swarm-slave-id "slave-1"
                                :swarm-master-id "master-1"
                                :swarm-depth 1})]
       (let [proc {:pid "222" :cmd "java -jar app.jar"}
-            result (swarm/classify-jvm-process proc)]
+            result (jvm/classify-jvm-process proc)]
         (is (true? (:swarm-spawned result))
             "Swarm process should have swarm-spawned true")
         (is (= "slave-1" (:swarm-slave-id result))
@@ -220,8 +221,8 @@
                                  {:exit 0 :out sample-parent-output :err ""}
 
                                  :else {:exit 0 :out "" :err ""})))
-                  swarm/get-process-swarm-info (constantly nil)]
-      (let [result (swarm/handle-jvm-cleanup {:dry_run true})
+                  jvm/get-process-swarm-info (constantly nil)]
+      (let [result (jvm/handle-jvm-cleanup {:dry_run true})
             data (parse-json-result result)]
         (is (= "text" (:type result))
             "Should return MCP text response")
@@ -244,9 +245,9 @@
                                  {:exit 0 :out sample-parent-output :err ""}
 
                                  :else {:exit 0 :out "" :err ""})))
-                  swarm/get-process-swarm-info (constantly nil)]
-      (let [result (swarm/handle-jvm-cleanup {:dry_run true
-                                              :keep_types ["shadow-cljs"]})
+                  jvm/get-process-swarm-info (constantly nil)]
+      (let [result (jvm/handle-jvm-cleanup {:dry_run true
+                                            :keep_types ["shadow-cljs"]})
             data (parse-json-result result)]
         ;; shadow-cljs should be protected
         (is (some #(= "protected-type" (:reason %))
@@ -265,10 +266,10 @@
                                  {:exit 0 :out sample-parent-output :err ""}
 
                                  :else {:exit 0 :out "" :err ""})))
-                  swarm/get-process-swarm-info (constantly nil)]
-      (let [result (swarm/handle-jvm-cleanup {:dry_run true
-                                              :true_orphans_only true
-                                              :keep_types []})
+                  jvm/get-process-swarm-info (constantly nil)]
+      (let [result (jvm/handle-jvm-cleanup {:dry_run true
+                                            :true_orphans_only true
+                                            :keep_types []})
             data (parse-json-result result)]
         (is (= "true-orphans" (get-in data [:orphan-detection :mode]))
             "Should use true-orphans mode")))))
@@ -278,7 +279,7 @@
     ;; Note: find-jvm-processes catches exceptions and returns [] 
     ;; So handle-jvm-cleanup still returns success with empty results
     (with-redefs [shell/sh (fn [& _] (throw (Exception. "ps command failed")))]
-      (let [result (swarm/handle-jvm-cleanup {:dry_run true})
+      (let [result (jvm/handle-jvm-cleanup {:dry_run true})
             data (parse-json-result result)]
         (is (= "text" (:type result))
             "Should return MCP response")
@@ -299,9 +300,9 @@
                                  {:exit 0 :out sample-parent-output :err ""}
 
                                  :else {:exit 0 :out "" :err ""})))
-                  swarm/get-process-swarm-info (constantly nil)]
-      (let [result (swarm/handle-jvm-cleanup {:dry_run true
-                                              :swarm_only true})
+                  jvm/get-process-swarm-info (constantly nil)]
+      (let [result (jvm/handle-jvm-cleanup {:dry_run true
+                                            :swarm_only true})
             data (parse-json-result result)]
         (is (true? (:swarm-only-mode data))
             "Should indicate swarm-only mode")))))
@@ -332,7 +333,7 @@ Cached:          1000000 kB")
                                {:exit 0 :out sample-meminfo :err ""}
 
                                :else {:exit 0 :out "" :err ""}))]
-      (let [result (swarm/handle-resource-guard {})
+      (let [result (jvm/handle-resource-guard {})
             data (parse-json-result result)]
         (is (= "text" (:type result))
             "Should return MCP text response")
@@ -354,7 +355,7 @@ Cached:          1000000 kB")
                                {:exit 0 :out "" :err ""}
 
                                :else {:exit 0 :out "" :err ""}))]
-      (let [result (swarm/handle-resource-guard {:auto_cleanup false})
+      (let [result (jvm/handle-resource-guard {:auto_cleanup false})
             data (parse-json-result result)]
         (is (false? (:can-spawn data))
             "Should deny spawning when memory high")
@@ -369,8 +370,8 @@ Cached:          1000000 kB")
                                {:exit 0 :out sample-meminfo :err ""}
 
                                :else {:exit 0 :out "" :err ""}))]
-      (let [result (swarm/handle-resource-guard {:ram_threshold 90
-                                                 :min_available_mb 1024})
+      (let [result (jvm/handle-resource-guard {:ram_threshold 90
+                                               :min_available_mb 1024})
             data (parse-json-result result)]
         (is (= 90 (get-in data [:memory :threshold-percent]))
             "Should use custom RAM threshold")
@@ -389,12 +390,12 @@ Cached:          1000000 kB")
                                  {:exit 0 :out "" :err ""}
 
                                  :else {:exit 0 :out "" :err ""}))
-                    swarm/handle-jvm-cleanup (fn [_]
-                                               (reset! cleanup-called true)
-                                               {:type "text"
-                                                :text "{\"orphans-found\":0,\"killed\":[]}"})]
-        (let [result (swarm/handle-resource-guard {:auto_cleanup true
-                                                   :cleanup_dry_run true})
+                    jvm/handle-jvm-cleanup (fn [_]
+                                             (reset! cleanup-called true)
+                                             {:type "text"
+                                              :text "{\"orphans-found\":0,\"killed\":[]}"})]
+        (let [result (jvm/handle-resource-guard {:auto_cleanup true
+                                                 :cleanup_dry_run true})
               data (parse-json-result result)]
           (is @cleanup-called
               "Should call jvm cleanup when memory high")
@@ -404,7 +405,7 @@ Cached:          1000000 kB")
 (deftest handle-resource-guard-error-handling-test
   (testing "Handles memory read errors gracefully"
     (with-redefs [shell/sh (fn [& _] {:exit 1 :out "" :err "Failed to read"})]
-      (let [result (swarm/handle-resource-guard {})]
+      (let [result (jvm/handle-resource-guard {})]
         (is (= "text" (:type result))
             "Should return MCP response even on error")
         (is (true? (:isError result))
@@ -420,7 +421,7 @@ Cached:          1000000 kB")
                                {:exit 0 :out sample-meminfo :err ""}
 
                                :else {:exit 0 :out "" :err ""}))]
-      (let [result (swarm/handle-resource-guard {})
+      (let [result (jvm/handle-resource-guard {})
             data (parse-json-result result)]
         (is (string? (:recommendation data))
             "Should include recommendation")
@@ -442,15 +443,15 @@ Cached:          1000000 kB")
                                {:exit 0 :out "" :err ""}
 
                                :else {:exit 0 :out "" :err ""}))
-                  swarm/get-process-swarm-info (constantly nil)]
+                  jvm/get-process-swarm-info (constantly nil)]
       ;; Test jvm-cleanup
-      (let [cleanup-result (swarm/handle-jvm-cleanup {:dry_run true})]
+      (let [cleanup-result (jvm/handle-jvm-cleanup {:dry_run true})]
         (is (contains? cleanup-result :type))
         (is (contains? cleanup-result :text))
         (is (= "text" (:type cleanup-result))))
 
       ;; Test resource-guard
-      (let [guard-result (swarm/handle-resource-guard {})]
+      (let [guard-result (jvm/handle-resource-guard {})]
         (is (contains? guard-result :type))
         (is (contains? guard-result :text))
         (is (= "text" (:type guard-result)))))))
@@ -461,7 +462,7 @@ Cached:          1000000 kB")
     ;; So we only test resource-guard for error format consistency
     (with-redefs [shell/sh (fn [& _] {:exit 1 :out "" :err "Mock error"})]
       ;; Test resource-guard error (propagates errors properly)
-      (let [guard-result (swarm/handle-resource-guard {})]
+      (let [guard-result (jvm/handle-resource-guard {})]
         (is (= "text" (:type guard-result)))
         (is (true? (:isError guard-result)))
         (is (str/includes? (:text guard-result) "error"))))))
