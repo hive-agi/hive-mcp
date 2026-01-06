@@ -36,6 +36,11 @@
 (declare-function claude-code-ide--create-terminal-session "claude-code-ide")
 (declare-function claude-code-ide-mcp-server-ensure-server "claude-code-ide-mcp-server")
 
+(declare-function hive-mcp-ellama-dispatch "hive-mcp-ellama")
+
+;; External state from swarm module
+(defvar hive-mcp-swarm--slaves)
+
 ;;;; Customization:
 
 (defgroup hive-mcp-swarm-terminal nil
@@ -92,6 +97,20 @@ Ensures terminal processes text before return is sent."
         'claude-code-ide)
        (t nil)))))
 
+;;;; Helpers:
+
+(defun hive-mcp-swarm-terminal--find-slave-by-buffer (buffer)
+  "Find slave-id that owns BUFFER by iterating slaves hash."
+  (when (and (buffer-live-p buffer)
+             (boundp 'hive-mcp-swarm--slaves)
+             (hash-table-p hive-mcp-swarm--slaves))
+    (catch 'found
+      (maphash (lambda (id slave)
+                 (when (eq (plist-get slave :buffer) buffer)
+                   (throw 'found id)))
+               hive-mcp-swarm--slaves)
+      nil)))
+
 ;;;; Non-Blocking Send Operations:
 
 (defun hive-mcp-swarm-terminal--send-vterm (buffer text)
@@ -118,6 +137,29 @@ Ensures terminal processes text before return is sent."
                                 eat-terminal)
                        (with-current-buffer buffer
                          (eat-term-send-string eat-terminal "\r"))))))))
+
+(defun hive-mcp-swarm-terminal--send-ollama (buffer text)
+  "Send TEXT to Ollama via ellama. Non-blocking.
+BUFFER is the swarm worker buffer (used for logging).
+Routes to hive-mcp-ellama for actual inference."
+  (let* ((slave-id (hive-mcp-swarm-terminal--find-slave-by-buffer buffer))
+         (slave (and slave-id (gethash slave-id hive-mcp-swarm--slaves)))
+         (model (or (and slave (plist-get slave :model)) "devstral-small-2")))
+    (if (fboundp 'hive-mcp-ellama-dispatch)
+        (hive-mcp-ellama-dispatch
+         text
+         model
+         (lambda (response)
+           ;; Log response to worker buffer
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer
+               (goto-char (point-max))
+               (insert (format "\n--- Ollama Response ---\n%s\n" response))))
+           ;; Update slave status
+           (when slave
+             (plist-put slave :last-response response)
+             (plist-put slave :status 'idle))))
+      (error "hive-mcp-ellama not available"))))
 
 (defun hive-mcp-swarm-terminal--send-claude-code-ide (buffer text)
   "Send TEXT via claude-code-ide abstraction.
@@ -151,6 +193,8 @@ Returns immediately - uses timers for delayed operations."
        (hive-mcp-swarm-terminal--send-vterm buffer text))
       ('eat
        (hive-mcp-swarm-terminal--send-eat buffer text))
+      ('ollama
+       (hive-mcp-swarm-terminal--send-ollama buffer text))
       (_
        (error "Unknown terminal backend: %s" backend)))))
 

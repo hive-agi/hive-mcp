@@ -48,6 +48,7 @@
 (declare-function hive-mcp-swarm-presets-build-system-prompt "hive-mcp-swarm-presets")
 (declare-function hive-mcp-swarm-presets-role-to-presets "hive-mcp-swarm-presets")
 (declare-function hive-mcp-swarm-presets-role-to-tier "hive-mcp-swarm-presets")
+(declare-function hive-mcp-swarm-presets-merge-defaults "hive-mcp-swarm-presets")
 (declare-function hive-mcp-swarm-prompts-clear-slave "hive-mcp-swarm-prompts")
 (declare-function hive-mcp-swarm-events-emit-slave-spawned "hive-mcp-swarm-events")
 (declare-function hive-mcp-swarm-events-emit-slave-killed "hive-mcp-swarm-events")
@@ -192,6 +193,9 @@ Poll the slave's :status to check progress: spawning -> starting -> idle."
         (setq backend (plist-get tier :backend)))
       (unless model
         (setq model (plist-get tier :model)))))
+
+  ;; Merge with default presets (ling, mcp-first by default)
+  (setq presets (hive-mcp-swarm-presets-merge-defaults (or presets '())))
 
   (let* ((slave-id (hive-mcp-swarm-slaves-generate-id name))
          (work-dir (or cwd (hive-mcp-swarm-slaves--project-root) default-directory))
@@ -384,7 +388,7 @@ WORK-DIR is the working directory, TERM-BACKEND the terminal type."
    (lambda ()
      (when-let* ((s (gethash slave-id hive-mcp-swarm--slaves)))
        (when (memq (plist-get s :status) '(starting spawning))
-         (plist-put s :status 'idle))))))
+         (plist-put s :status 'idle)))))))
 
 ;;;; Kill Functions:
 

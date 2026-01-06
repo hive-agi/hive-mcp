@@ -8,6 +8,7 @@
             [hive-mcp.hivemind :as hivemind]
             [hive-mcp.swarm.sync :as sync]
             [hive-mcp.embeddings.ollama :as ollama]
+            [hive-mcp.agent :as agent]
             [nrepl.server :as nrepl-server]
             [taoensso.timbre :as log])
   (:gen-class))
@@ -111,6 +112,9 @@
     (start-embedded-nrepl!)
     ;; Initialize embedding provider for semantic search (fails gracefully)
     (init-embedding-provider!)
+    ;; Register tools for agent delegation (allows local models to use MCP tools)
+    (agent/register-tools! tools/tools)
+    (log/info "Registered" (count tools/tools) "tools for agent delegation")
     ;; Start bidirectional channel server for push-based events
     (let [channel-port (parse-long (or (System/getenv "HIVE_MCP_CHANNEL_PORT") "9998"))]
       (try

@@ -59,6 +59,14 @@ Requires the MCP server to be running with Chroma configured."
   :type 'integer
   :group 'hive-mcp-swarm-presets)
 
+(defcustom hive-mcp-swarm-default-presets '("ling" "mcp-first")
+  "Default presets applied to all spawned swarm slaves.
+These presets are merged with any explicit presets passed to spawn.
+Explicit presets take priority (listed first in system prompt).
+Set to nil to disable default presets."
+  :type '(repeat string)
+  :group 'hive-mcp-swarm-presets)
+
 ;;;; Internal State:
 
 (defvar hive-mcp-swarm-presets--cache nil
@@ -215,6 +223,16 @@ Memory-based presets allow project-scoped and semantically searchable presets."
 
 ;;;; Public API:
 
+(defun hive-mcp-swarm-presets-merge-defaults (explicit-presets)
+  "Merge EXPLICIT-PRESETS with default presets.
+Returns combined list with explicit presets first, then defaults.
+Duplicates are removed, preserving first occurrence (explicit wins)."
+  (let ((defaults (or hive-mcp-swarm-default-presets '())))
+    (cl-remove-duplicates
+     (append explicit-presets defaults)
+     :test #'string=
+     :from-end t)))
+
 (defun hive-mcp-swarm-presets-list ()
   "List all available presets (chroma + file-based + memory-based)."
   (interactive)
@@ -280,13 +298,13 @@ Each entry is (ROLE . PRESETS-LIST)."
   '(("coordinator" . (:backend claude-code-ide))
     ("reviewer" . (:backend claude-code-ide))
     ("architect" . (:backend claude-code-ide))
-    ("implementer" . (:backend ollama :model "devstral"))
-    ("tester" . (:backend ollama :model "devstral-small"))
-    ("fixer" . (:backend ollama :model "deepseek-r1:7b"))
-    ("documenter" . (:backend ollama :model "devstral-small"))
-    ("refactorer" . (:backend ollama :model "devstral"))
-    ("worker" . (:backend ollama :model "devstral"))
-    ("ling" . (:backend ollama :model "devstral-small"))
+    ("implementer" . (:backend ollama :model "devstral-small-2"))
+    ("tester" . (:backend ollama :model "devstral-small-2"))
+    ("fixer" . (:backend ollama :model "deepseek-r1"))
+    ("documenter" . (:backend ollama :model "devstral-small-2"))
+    ("refactorer" . (:backend ollama :model "devstral-small-2"))
+    ("worker" . (:backend ollama :model "devstral-small-2"))
+    ("ling" . (:backend ollama :model "devstral-small-2"))
     ("researcher" . (:backend claude-code-ide)))
   "Two-tier mapping of roles to backend and model.
 
@@ -299,9 +317,8 @@ Backend options:
 - `ollama': Local Ollama via hive-mcp-ellama (free, good enough)
 
 Models for ollama backend:
-- devstral: Best quality coding (Mistral's dev model)
-- devstral-small: Fast, good enough for simple tasks
-- deepseek-r1:7b: Reasoning tasks with chain-of-thought"
+- devstral-small-2: Mistral's coding model (15GB, good quality)
+- deepseek-r1: Reasoning tasks with chain-of-thought (5.2GB)"
   :type '(alist :key-type string
                 :value-type (plist :key-type symbol :value-type sexp))
   :group 'hive-mcp-swarm-presets)

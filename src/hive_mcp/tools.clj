@@ -32,7 +32,8 @@
             [hive-mcp.tools.prompt :as prompt]
             [hive-mcp.tools.presets :as presets-tools]
             [hive-mcp.hivemind :as hivemind]
-            [hive-mcp.channel :as channel]))
+            [hive-mcp.channel :as channel]
+            [hive-mcp.agent :as agent]))
 
 ;; =============================================================================
 ;; MCP Response Format Helpers
@@ -1545,7 +1546,8 @@
                prompt/tools
                presets-tools/tools
                hivemind/tools
-               channel/channel-tools)))
+               channel/channel-tools
+               agent/tools)))
 
 (defn get-tool-by-name
   "Find a tool definition by name."
