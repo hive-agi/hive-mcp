@@ -273,6 +273,9 @@
 
 (defonce ^:private tools-initialized? (atom false))
 
+;; Forward declaration for ensure-tools-registered!
+(declare register-tools!)
+
 (defn ensure-tools-registered!
   "Lazily initialize tool registry on first use.
    This allows delegate! to work from REPL without manual registration."

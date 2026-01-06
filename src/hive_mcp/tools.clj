@@ -195,260 +195,74 @@
     {:type "text" :text "Error: hive-mcp.el is not loaded. Run (require 'hive-mcp) and (hive-mcp-mode 1) in Emacs." :isError true}))
 
 (defn handle-mcp-memory-add
-  "Add an entry to project memory.
-   After successful elisp memory add, auto-indexes in Chroma if configured."
-  [{:keys [type content tags duration]}]
-  (log/info "mcp-memory-add:" type)
-  (if (hive-mcp-el-available?)
-    (let [tags-str (if (seq tags) (str "'" (pr-str tags)) "nil")
-          duration-str (if duration (pr-str duration) "nil")
-          elisp (format "(json-encode (hive-mcp-api-memory-add %s %s %s %s))"
-                        (pr-str type)
-                        (pr-str content)
-                        tags-str
-                        duration-str)
-          {:keys [success result error]} (ec/eval-elisp elisp)]
-      (if success
-        (do
-          ;; Try to auto-index in Chroma if configured
-          (when (chroma/embedding-configured?)
-            (try
-              (let [parsed-result (json/read-str result :key-fn keyword)
-                    entry-id (:id parsed-result)]
-                (when entry-id
-                  (chroma/index-memory-entry! {:id entry-id
-                                               :content content
-                                               :type type
-                                               :tags tags})
-                  (log/info "Auto-indexed memory entry in Chroma:" entry-id)))
-              (catch Exception e
-                (log/warn "Failed to auto-index memory entry in Chroma:"
-                          (ex-message e)))))
-          {:type "text" :text result})
-        {:type "text" :text (str "Error: " error) :isError true}))
-    {:type "text" :text "Error: hive-mcp.el is not loaded." :isError true}))
+  "Add an entry to project memory. Delegates to memory module."
+  [params]
+  (memory/handle-mcp-memory-add params))
 
 (defn handle-mcp-memory-query
-  "Query project memory by type with scope filtering.
-  SCOPE controls which memories are returned:
-    - nil/omitted: auto-filter by current project + global
-    - \"all\": return all entries regardless of scope  
-    - \"global\": return only scope:global entries
-    - specific scope tag: filter by that scope"
-  [{:keys [type tags limit duration scope]}]
-  (log/info "mcp-memory-query:" type "scope:" scope)
-  (if (hive-mcp-el-available?)
-    (let [tags-str (if (seq tags) (str "'" (pr-str tags)) "nil")
-          limit-val (or limit 20)
-          duration-str (if duration (pr-str duration) "nil")
-          scope-str (if scope (pr-str scope) "nil")
-          elisp (format "(json-encode (hive-mcp-api-memory-query %s %s %d %s))"
-                        (pr-str type)
-                        tags-str
-                        limit-val
-                        scope-str)
-          {:keys [success result error]} (ec/eval-elisp elisp)]
-      (if success
-        {:type "text" :text result}
-        {:type "text" :text (str "Error: " error) :isError true}))
-    {:type "text" :text "Error: hive-mcp.el is not loaded." :isError true}))
+  "Query project memory by type with scope filtering. Delegates to memory module."
+  [params]
+  (memory/handle-mcp-memory-query params))
 
 (defn handle-mcp-memory-query-metadata
-  "Query project memory by type, returning only metadata (id, type, preview, tags, created).
-  Use this for efficient browsing - returns ~10x fewer tokens than full query.
-  Follow up with mcp_memory_get_full to fetch specific entries.
-  SCOPE controls filtering (see handle-mcp-memory-query for options)."
-  [{:keys [type tags limit scope]}]
-  (log/info "mcp-memory-query-metadata:" type "scope:" scope)
-  (if (hive-mcp-el-available?)
-    (let [tags-str (if (seq tags) (str "'" (pr-str tags)) "nil")
-          limit-val (or limit 20)
-          scope-str (if scope (pr-str scope) "nil")
-          elisp (format "(json-encode (hive-mcp-api-memory-query-metadata %s %s %d %s))"
-                        (pr-str type)
-                        tags-str
-                        limit-val
-                        scope-str)
-          {:keys [success result error]} (ec/eval-elisp elisp)]
-      (if success
-        {:type "text" :text result}
-        {:type "text" :text (str "Error: " error) :isError true}))
-    {:type "text" :text "Error: hive-mcp.el is not loaded." :isError true}))
+  "Query project memory by type, returning only metadata. Delegates to memory module."
+  [params]
+  (memory/handle-mcp-memory-query-metadata params))
 
 (defn handle-mcp-memory-get-full
-  "Get full content of a memory entry by ID.
-  Use after mcp_memory_query_metadata to fetch specific entries."
-  [{:keys [id]}]
-  (log/info "mcp-memory-get-full:" id)
-  (if (hive-mcp-el-available?)
-    (let [elisp (format "(json-encode (hive-mcp-api-memory-get-full %s))"
-                        (pr-str id))
-          {:keys [success result error]} (ec/eval-elisp elisp)]
-      (if success
-        {:type "text" :text result}
-        {:type "text" :text (str "Error: " error) :isError true}))
-    {:type "text" :text "Error: hive-mcp.el is not loaded." :isError true}))
+  "Get full content of a memory entry by ID. Delegates to memory module."
+  [params]
+  (memory/handle-mcp-memory-get-full params))
 
 (defn handle-mcp-memory-search-semantic
-  "Search project memory using semantic similarity (vector search).
-   Requires Chroma to be configured with an embedding provider."
-  [{:keys [query limit type]}]
-  (log/info "mcp-memory-search-semantic:" query)
-  (let [status (chroma/status)]
-    (if-not (:configured? status)
-      {:type "text"
-       :text (json/write-str
-              {:error "Chroma semantic search not configured"
-               :message "To enable semantic search, configure Chroma with an embedding provider. See hive-mcp.chroma namespace."
-               :status status})
-       :isError true}
-      (try
-        (let [results (chroma/search-similar query
-                                             :limit (or limit 10)
-                                             :type type)
-              ;; Format results for user-friendly output
-              formatted (mapv (fn [{:keys [id document metadata distance]}]
-                                {:id id
-                                 :type (get metadata :type)
-                                 :tags (when-let [t (get metadata :tags)]
-                                         (when (not= t "")
-                                           (clojure.string/split t #",")))
-                                 :distance distance
-                                 :preview (when document
-                                            (subs document 0 (min 200 (count document))))})
-                              results)]
-          {:type "text"
-           :text (json/write-str {:results formatted
-                                  :count (count formatted)
-                                  :query query})})
-        (catch Exception e
-          {:type "text"
-           :text (json/write-str {:error (str "Semantic search failed: " (.getMessage e))
-                                  :status status})
-           :isError true})))))
+  "Search project memory using semantic similarity. Delegates to memory module."
+  [params]
+  (memory/handle-mcp-memory-search-semantic params))
 
 (defn handle-mcp-memory-set-duration
-  "Set duration category for a memory entry."
-  [{:keys [id duration]}]
-  (log/info "mcp-memory-set-duration:" id duration)
-  (if (hive-mcp-el-available?)
-    (let [elisp (el/require-and-call-json "hive-mcp-api" "hive-mcp-api-memory-set-duration"
-                                          id duration)
-          {:keys [success result error]} (ec/eval-elisp elisp)]
-      (if success
-        {:type "text" :text result}
-        {:type "text" :text (str "Error: " error) :isError true}))
-    {:type "text" :text "Error: hive-mcp.el is not loaded." :isError true}))
+  "Set duration category for a memory entry. Delegates to memory module."
+  [params]
+  (memory/handle-mcp-memory-set-duration params))
 
 (defn handle-mcp-memory-promote
-  "Promote memory entry to longer duration."
-  [{:keys [id]}]
-  (log/info "mcp-memory-promote:" id)
-  (if (hive-mcp-el-available?)
-    (let [elisp (el/require-and-call-json "hive-mcp-api" "hive-mcp-api-memory-promote" id)
-          {:keys [success result error]} (ec/eval-elisp elisp)]
-      (if success
-        {:type "text" :text result}
-        {:type "text" :text (str "Error: " error) :isError true}))
-    {:type "text" :text "Error: hive-mcp.el is not loaded." :isError true}))
+  "Promote memory entry to longer duration. Delegates to memory module."
+  [params]
+  (memory/handle-mcp-memory-promote params))
 
 (defn handle-mcp-memory-demote
-  "Demote memory entry to shorter duration."
-  [{:keys [id]}]
-  (log/info "mcp-memory-demote:" id)
-  (if (hive-mcp-el-available?)
-    (let [elisp (el/require-and-call-json "hive-mcp-api" "hive-mcp-api-memory-demote" id)
-          {:keys [success result error]} (ec/eval-elisp elisp)]
-      (if success
-        {:type "text" :text result}
-        {:type "text" :text (str "Error: " error) :isError true}))
-    {:type "text" :text "Error: hive-mcp.el is not loaded." :isError true}))
+  "Demote memory entry to shorter duration. Delegates to memory module."
+  [params]
+  (memory/handle-mcp-memory-demote params))
 
 (defn handle-mcp-memory-cleanup-expired
-  "Remove all expired memory entries."
-  [_]
-  (log/info "mcp-memory-cleanup-expired")
-  (if (hive-mcp-el-available?)
-    (let [elisp (el/require-and-call-json "hive-mcp-api" "hive-mcp-api-memory-cleanup-expired")
-          {:keys [success result error]} (ec/eval-elisp elisp)]
-      (if success
-        {:type "text" :text result}
-        {:type "text" :text (str "Error: " error) :isError true}))
-    {:type "text" :text "Error: hive-mcp.el is not loaded." :isError true}))
+  "Remove all expired memory entries. Delegates to memory module."
+  [params]
+  (memory/handle-mcp-memory-cleanup-expired params))
 
 (defn handle-mcp-memory-expiring-soon
-  "List memory entries expiring within N days."
-  [{:keys [days]}]
-  (log/info "mcp-memory-expiring-soon:" (or days 7))
-  (if (hive-mcp-el-available?)
-    (let [days-val (or days 7)
-          elisp (el/require-and-call-json "hive-mcp-api" "hive-mcp-api-memory-expiring-soon" days-val)
-          {:keys [success result error]} (ec/eval-elisp elisp)]
-      (if success
-        {:type "text" :text result}
-        {:type "text" :text (str "Error: " error) :isError true}))
-    {:type "text" :text "Error: hive-mcp.el is not loaded." :isError true}))
+  "List memory entries expiring within N days. Delegates to memory module."
+  [params]
+  (memory/handle-mcp-memory-expiring-soon params))
 
 (defn handle-mcp-memory-log-access
-  "Log access to a memory entry.
-   Increments access-count and updates last-accessed timestamp."
-  [{:keys [id]}]
-  (log/info "mcp-memory-log-access:" id)
-  (if (hive-mcp-el-available?)
-    (let [elisp (el/require-and-call-json "hive-mcp-memory"
-                                          "hive-mcp-memory-log-access"
-                                          id)
-          {:keys [success result error]} (ec/eval-elisp elisp)]
-      (if success
-        {:type "text" :text result}
-        {:type "text" :text (str "Error: " error) :isError true}))
-    {:type "text" :text "Error: hive-mcp.el is not loaded." :isError true}))
+  "Log access to a memory entry. Delegates to memory module."
+  [params]
+  (memory/handle-mcp-memory-log-access params))
 
 (defn handle-mcp-memory-feedback
-  "Submit helpfulness feedback for a memory entry.
-   feedback should be 'helpful' or 'unhelpful'."
-  [{:keys [id feedback]}]
-  (log/info "mcp-memory-feedback:" id feedback)
-  (if (hive-mcp-el-available?)
-    (let [fn-name (case feedback
-                    "helpful" "hive-mcp-memory-mark-helpful"
-                    "unhelpful" "hive-mcp-memory-mark-unhelpful"
-                    (throw (ex-info "Invalid feedback type" {:feedback feedback})))
-          elisp (el/require-and-call-json "hive-mcp-memory" fn-name id)
-          {:keys [success result error]} (ec/eval-elisp elisp)]
-      (if success
-        {:type "text" :text result}
-        {:type "text" :text (str "Error: " error) :isError true}))
-    {:type "text" :text "Error: hive-mcp.el is not loaded." :isError true}))
+  "Submit helpfulness feedback for a memory entry. Delegates to memory module."
+  [params]
+  (memory/handle-mcp-memory-feedback params))
 
 (defn handle-mcp-memory-helpfulness-ratio
-  "Get helpfulness ratio for a memory entry.
-   Returns helpful/(helpful+unhelpful) or null if no feedback."
-  [{:keys [id]}]
-  (log/info "mcp-memory-helpfulness-ratio:" id)
-  (if (hive-mcp-el-available?)
-    (let [elisp (el/require-and-call-json "hive-mcp-memory"
-                                          "hive-mcp-memory-helpfulness-ratio"
-                                          id)
-          {:keys [success result error]} (ec/eval-elisp elisp)]
-      (if success
-        {:type "text" :text result}
-        {:type "text" :text (str "Error: " error) :isError true}))
-    {:type "text" :text "Error: hive-mcp.el is not loaded." :isError true}))
+  "Get helpfulness ratio for a memory entry. Delegates to memory module."
+  [params]
+  (memory/handle-mcp-memory-helpfulness-ratio params))
 
 (defn handle-mcp-memory-check-duplicate
-  "Check if content already exists in memory (duplicate detection)."
-  [{:keys [type content]}]
-  (log/info "mcp-memory-check-duplicate:" type)
-  (if (hive-mcp-el-available?)
-    (let [elisp (el/require-and-call-json "hive-mcp-api"
-                                          "hive-mcp-api-memory-check-duplicate"
-                                          type content)
-          {:keys [success result error]} (ec/eval-elisp elisp)]
-      (if success
-        {:type "text" :text result}
-        {:type "text" :text (str "Error: " error) :isError true}))
-    {:type "text" :text "Error: hive-mcp.el is not loaded." :isError true}))
+  "Check if content already exists in memory. Delegates to memory module."
+  [params]
+  (memory/handle-mcp-memory-check-duplicate params))
 
 (defn handle-mcp-run-workflow
   "Run a user-defined workflow."
@@ -556,259 +370,66 @@
       {:type "text" :text (str "Error: " error) :isError true})))
 
 ;; ============================================================================
-;; CIDER Integration Tools
+;; CIDER Integration Tools - Delegated to hive-mcp.tools.cider
 ;; ============================================================================
 
-(defn handle-cider-status
-  "Get CIDER connection status."
-  [_]
-  (log/info "cider-status")
-  (let [elisp (el/require-and-call-json 'hive-mcp-cider 'hive-mcp-cider-status)
-        {:keys [success result error]} (ec/eval-elisp elisp)]
-    (if success
-      {:type "text" :text result}
-      {:type "text" :text (str "Error: " error) :isError true})))
+(defn handle-cider-status [params]
+  (cider/handle-cider-status params))
 
-(defn handle-cider-eval-silent
-  "Evaluate Clojure code via CIDER silently with telemetry."
-  [params]
-  (try
-    (v/validate-cider-eval-request params)
-    (let [{:keys [code]} params]
-      (telemetry/with-eval-telemetry :cider-silent code nil
-        (let [elisp (el/require-and-call-text 'hive-mcp-cider 'hive-mcp-cider-eval-silent code)
-              {:keys [success result error]} (ec/eval-elisp elisp)]
-          (if success
-            {:type "text" :text result}
-            {:type "text" :text (str "Error: " error) :isError true}))))
-    (catch clojure.lang.ExceptionInfo e
-      (if (= :validation (:type (ex-data e)))
-        (v/wrap-validation-error e)
-        (throw e)))))
+(defn handle-cider-eval-silent [params]
+  (cider/handle-cider-eval-silent params))
 
-(defn handle-cider-eval-explicit
-  "Evaluate Clojure code via CIDER interactively (shows in REPL) with telemetry."
-  [params]
-  (try
-    (v/validate-cider-eval-request params)
-    (let [{:keys [code]} params]
-      (telemetry/with-eval-telemetry :cider-explicit code nil
-        (let [elisp (el/require-and-call-text 'hive-mcp-cider 'hive-mcp-cider-eval-explicit code)
-              {:keys [success result error]} (ec/eval-elisp elisp)]
-          (if success
-            {:type "text" :text result}
-            {:type "text" :text (str "Error: " error) :isError true}))))
-    (catch clojure.lang.ExceptionInfo e
-      (if (= :validation (:type (ex-data e)))
-        (v/wrap-validation-error e)
-        (throw e)))))
+(defn handle-cider-eval-explicit [params]
+  (cider/handle-cider-eval-explicit params))
 
-;; =============================================================================
-;; Multi-Session CIDER Tools
-;; =============================================================================
+(defn handle-cider-spawn-session [params]
+  (cider/handle-cider-spawn-session params))
 
-(defn handle-cider-spawn-session
-  "Spawn a new named CIDER session with its own nREPL server.
-   Useful for parallel agent work where each agent needs isolated REPL."
-  [{:keys [name project_dir agent_id]}]
-  (log/info "cider-spawn-session" {:name name :agent_id agent_id})
-  (let [elisp (el/require-and-call-json 'hive-mcp-cider 'hive-mcp-cider-spawn-session
-                                        name project_dir agent_id)
-        {:keys [success result error]} (ec/eval-elisp elisp)]
-    (if success
-      (mcp-success result)
-      (mcp-error (format "Error: %s" error)))))
+(defn handle-cider-list-sessions [params]
+  (cider/handle-cider-list-sessions params))
 
-(defn handle-cider-list-sessions
-  "List all active CIDER sessions with their status and ports."
-  [_]
-  (log/info "cider-list-sessions")
-  (let [elisp (el/require-and-call-json 'hive-mcp-cider 'hive-mcp-cider-list-sessions)
-        {:keys [success result error]} (ec/eval-elisp elisp)]
-    (if success
-      (mcp-success result)
-      (mcp-error (format "Error: %s" error)))))
+(defn handle-cider-eval-session [params]
+  (cider/handle-cider-eval-session params))
 
-(defn handle-cider-eval-session
-  "Evaluate Clojure code in a specific named CIDER session."
-  [{:keys [session_name code]}]
-  (log/info "cider-eval-session" {:session session_name :code-length (count code)})
-  (let [elisp (el/require-and-call-text 'hive-mcp-cider 'hive-mcp-cider-eval-in-session
-                                        session_name code)
-        {:keys [success result error]} (ec/eval-elisp elisp)]
-    (if success
-      (mcp-success result)
-      (mcp-error (format "Error: %s" error)))))
+(defn handle-cider-kill-session [params]
+  (cider/handle-cider-kill-session params))
 
-(defn handle-cider-kill-session
-  "Kill a specific named CIDER session."
-  [{:keys [session_name]}]
-  (log/info "cider-kill-session" {:session session_name})
-  (let [elisp (el/require-and-call 'hive-mcp-cider 'hive-mcp-cider-kill-session session_name)
-        {:keys [success error]} (ec/eval-elisp elisp)]
-    (if success
-      (mcp-success (format "Session '%s' killed" session_name))
-      (mcp-error (format "Error: %s" error)))))
-
-(defn handle-cider-kill-all-sessions
-  "Kill all CIDER sessions."
-  [_]
-  (log/info "cider-kill-all-sessions")
-  (let [elisp (el/require-and-call 'hive-mcp-cider 'hive-mcp-cider-kill-all-sessions)
-        {:keys [success error]} (ec/eval-elisp elisp)]
-    (if success
-      (mcp-success "All CIDER sessions killed")
-      (mcp-error (format "Error: %s" error)))))
+(defn handle-cider-kill-all-sessions [params]
+  (cider/handle-cider-kill-all-sessions params))
 
 ;; ============================================================
-;; Magit Integration Tools (requires hive-mcp-magit addon)
+;; Magit Integration Tools - Delegations to hive-mcp.tools.magit
 ;; ============================================================
 
-(defn magit-addon-available?
-  "Check if the magit addon is loaded in Emacs."
-  []
-  (let [elisp "(progn
-                (require 'hive-mcp-magit nil t)
-                (if (featurep 'hive-mcp-magit) t nil))"
-        {:keys [success result]} (ec/eval-elisp elisp)]
-    (and success (= result "t"))))
+(defn handle-magit-status [params]
+  (magit/handle-magit-status params))
 
-(defn handle-magit-status
-  "Get comprehensive git repository status via magit addon."
-  [_]
-  (log/info "magit-status")
-  (let [elisp (el/require-and-call-json 'hive-mcp-magit 'hive-mcp-magit-api-status)
-        {:keys [success result error]} (ec/eval-elisp elisp)]
-    (if success
-      {:type "text" :text result}
-      {:type "text" :text (str "Error: " error) :isError true})))
+(defn handle-magit-branches [params]
+  (magit/handle-magit-branches params))
 
-(defn handle-magit-branches
-  "Get branch information including current, upstream, local and remote branches."
-  [_]
-  (log/info "magit-branches")
-  (let [elisp (el/require-and-call-json 'hive-mcp-magit 'hive-mcp-magit-api-branches)
-        {:keys [success result error]} (ec/eval-elisp elisp)]
-    (if success
-      {:type "text" :text result}
-      {:type "text" :text (str "Error: " error) :isError true})))
+(defn handle-magit-log [params]
+  (magit/handle-magit-log params))
 
-(defn handle-magit-log
-  "Get recent commit log."
-  [{:keys [count]}]
-  (log/info "magit-log" {:count count})
-  (let [n (or count 10)
-        elisp (el/require-and-call-json 'hive-mcp-magit 'hive-mcp-magit-api-log n)
-        {:keys [success result error]} (ec/eval-elisp elisp)]
-    (if success
-      {:type "text" :text result}
-      {:type "text" :text (str "Error: " error) :isError true})))
+(defn handle-magit-diff [params]
+  (magit/handle-magit-diff params))
 
-(defn handle-magit-diff
-  "Get diff for staged, unstaged, or all changes."
-  [{:keys [target]}]
-  (log/info "magit-diff" {:target target})
-  (let [target-sym (case target
-                     "staged" 'staged
-                     "unstaged" 'unstaged
-                     "all" 'all
-                     'staged)
-        elisp (el/require-and-call-text 'hive-mcp-magit 'hive-mcp-magit-api-diff target-sym)
-        {:keys [success result error]} (ec/eval-elisp elisp)]
-    (if success
-      {:type "text" :text result}
-      {:type "text" :text (str "Error: " error) :isError true})))
+(defn handle-magit-stage [params]
+  (magit/handle-magit-stage params))
 
-(defn handle-magit-stage
-  "Stage files for commit. Use 'all' to stage all modified files."
-  [{:keys [files]}]
-  (log/info "magit-stage" {:files files})
-  (let [file-arg (if (= files "all") 'all files)
-        elisp (el/require-and-call 'hive-mcp-magit 'hive-mcp-magit-api-stage file-arg)
-        {:keys [success result error]} (ec/eval-elisp elisp)]
-    (if success
-      {:type "text" :text (or result "Staged files")}
-      {:type "text" :text (str "Error: " error) :isError true})))
+(defn handle-magit-commit [params]
+  (magit/handle-magit-commit params))
 
-(defn handle-magit-commit
-  "Create a commit with the given message."
-  [{:keys [message all]}]
-  (log/info "magit-commit" {:message-len (count message) :all all})
-  (let [options (if all "'(:all t)" "nil")
-        elisp (el/format-elisp
-               "(progn
-                  (require 'hive-mcp-magit nil t)
-                  (if (fboundp 'hive-mcp-magit-api-commit)
-                      (hive-mcp-magit-api-commit %s %s)
-                    \"hive-mcp-magit not loaded\"))"
-               (pr-str message) options)
-        {:keys [success result error]} (ec/eval-elisp elisp)]
-    (if success
-      {:type "text" :text result}
-      {:type "text" :text (str "Error: " error) :isError true})))
+(defn handle-magit-push [params]
+  (magit/handle-magit-push params))
 
-(defn handle-magit-push
-  "Push to remote. Optionally set upstream tracking."
-  [{:keys [set_upstream]}]
-  (log/info "magit-push" {:set_upstream set_upstream})
-  (let [options (if set_upstream "'(:set-upstream t)" "nil")
-        elisp (el/format-elisp
-               "(progn
-                  (require 'hive-mcp-magit nil t)
-                  (if (fboundp 'hive-mcp-magit-api-push)
-                      (hive-mcp-magit-api-push %s)
-                    \"hive-mcp-magit not loaded\"))"
-               options)
-        {:keys [success result error]} (ec/eval-elisp elisp)]
-    (if success
-      {:type "text" :text result}
-      {:type "text" :text (str "Error: " error) :isError true})))
+(defn handle-magit-pull [params]
+  (magit/handle-magit-pull params))
 
-(defn handle-magit-pull
-  "Pull from upstream."
-  [_]
-  (log/info "magit-pull")
-  (let [elisp (el/require-and-call-text 'hive-mcp-magit 'hive-mcp-magit-api-pull)
-        {:keys [success result error]} (ec/eval-elisp elisp)]
-    (if success
-      {:type "text" :text result}
-      {:type "text" :text (str "Error: " error) :isError true})))
+(defn handle-magit-fetch [params]
+  (magit/handle-magit-fetch params))
 
-(defn handle-magit-fetch
-  "Fetch from remote(s)."
-  [{:keys [remote]}]
-  (log/info "magit-fetch" {:remote remote})
-  (let [elisp (if remote
-                (el/require-and-call-text 'hive-mcp-magit 'hive-mcp-magit-api-fetch remote)
-                (el/require-and-call-text 'hive-mcp-magit 'hive-mcp-magit-api-fetch))
-        {:keys [success result error]} (ec/eval-elisp elisp)]
-    (if success
-      {:type "text" :text result}
-      {:type "text" :text (str "Error: " error) :isError true})))
-
-(defn handle-magit-feature-branches
-  "Get list of feature/fix/feat branches (for /ship and /ship-pr skills)."
-  [_]
-  (log/info "magit-feature-branches")
-  ;; Complex elisp with client-side filtering - use format-elisp
-  (let [elisp (el/format-elisp
-               "(progn
-                  (require 'hive-mcp-magit nil t)
-                  (if (fboundp 'hive-mcp-magit-api-branches)
-                      (let* ((branches (hive-mcp-magit-api-branches))
-                             (local (plist-get branches :local))
-                             (feature-branches 
-                               (seq-filter 
-                                 (lambda (b) 
-                                   (string-match-p \"^\\\\(feature\\\\|fix\\\\|feat\\\\)/\" b))
-                                 local)))
-                        (json-encode (list :current (plist-get branches :current)
-                                           :feature_branches feature-branches)))
-                    (json-encode (list :error \"hive-mcp-magit not loaded\"))))")
-        {:keys [success result error]} (ec/eval-elisp elisp)]
-    (if success
-      {:type "text" :text result}
-      {:type "text" :text (str "Error: " error) :isError true})))
+(defn handle-magit-feature-branches [params]
+  (magit/handle-magit-feature-branches params))
 
 ;; Projectile Integration Handlers (requires hive-mcp-projectile addon)
 
