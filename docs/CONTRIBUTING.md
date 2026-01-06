@@ -4,8 +4,8 @@
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/BuddhiLW/emacs-mcp.git
-   cd emacs-mcp
+   git clone https://github.com/BuddhiLW/hive-mcp.git
+   cd hive-mcp
    ```
 
 2. Start nREPL for Clojure development:
@@ -15,7 +15,7 @@
 
 3. Load the Emacs package:
    ```elisp
-   (add-to-list 'load-path "/path/to/emacs-mcp/elisp")
+   (add-to-list 'load-path "/path/to/hive-mcp/elisp")
    (require 'emacs-mcp)
    (emacs-mcp-mode 1)
    ```
@@ -32,7 +32,7 @@ The package is submitted to MELPA with the following recipe:
 
 ```elisp
 (emacs-mcp :fetcher github
-           :repo "BuddhiLW/emacs-mcp"
+           :repo "BuddhiLW/hive-mcp"
            :files ("elisp/*.el"))
 ```
 
@@ -99,12 +99,12 @@ This is a fast-moving project. Create a new release after each PR merge to main.
    ```
 3. Include link to full changelog:
    ```
-   https://github.com/BuddhiLW/emacs-mcp/compare/v0.X.Z...v0.X.Y
+   https://github.com/BuddhiLW/hive-mcp/compare/v0.X.Z...v0.X.Y
    ```
 
 ### Current Version
 
-See [Releases](https://github.com/BuddhiLW/emacs-mcp/releases) for the latest version.
+See [Releases](https://github.com/BuddhiLW/hive-mcp/releases) for the latest version.
 
 ## License
 

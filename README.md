@@ -1,4 +1,4 @@
-# emacs-mcp
+# hive-mcp
 
 **Your AI finally remembers.**
 
@@ -30,7 +30,7 @@ Claude: *learns*                  You: /catchup
                                    What should we work on?"
 ```
 
-**emacs-mcp** gives Claude persistent, project-scoped memory with semantic search. Conventions, decisions, snippets—stored locally, queryable by meaning, never forgotten.
+**hive-mcp** gives Claude persistent, project-scoped memory with semantic search. Conventions, decisions, snippets—stored locally, queryable by meaning, never forgotten.
 
 ---
 
@@ -111,12 +111,12 @@ Choose your setup:
 **[bb-mcp](https://github.com/BuddhiLW/bb-mcp)** is a Babashka wrapper that uses ~50MB RAM vs ~500MB for direct JVM. Multiple Claude instances share one Emacs connection.
 
 ```bash
-# Install bb-mcp (includes emacs-mcp as dependency)
+# Install bb-mcp (includes hive-mcp as dependency)
 git clone https://github.com/BuddhiLW/bb-mcp.git
 cd bb-mcp
 
 # Follow bb-mcp setup instructions
-# It will connect to emacs-mcp running on port 7910
+# It will connect to hive-mcp running on port 7910
 ```
 
 See [bb-mcp README](https://github.com/BuddhiLW/bb-mcp) for complete setup.
@@ -126,8 +126,8 @@ See [bb-mcp README](https://github.com/BuddhiLW/bb-mcp) for complete setup.
 #### Step 1: Clone & Install Dependencies
 
 ```bash
-git clone https://github.com/BuddhiLW/emacs-mcp.git
-cd emacs-mcp
+git clone https://github.com/BuddhiLW/hive-mcp.git
+cd hive-mcp
 clojure -P  # Download all dependencies (may take a minute)
 ```
 
@@ -137,8 +137,8 @@ Add to your Emacs config (`~/.emacs.d/init.el` or Doom: `~/.doom.d/config.el`):
 
 ```elisp
 ;; Add emacs-mcp to load path
-(add-to-list 'load-path "/path/to/emacs-mcp/elisp")
-(add-to-list 'load-path "/path/to/emacs-mcp/elisp/addons")
+(add-to-list 'load-path "/path/to/hive-mcp/elisp")
+(add-to-list 'load-path "/path/to/hive-mcp/elisp/addons")
 
 ;; Load core
 (require 'emacs-mcp)
@@ -169,12 +169,12 @@ emacsclient -e '(emacs-version)'
 
 ```bash
 # Automatic registration
-claude mcp add emacs-mcp --scope user -- \
+claude mcp add hive-mcp --scope user -- \
   clojure -X:mcp :project-dir '"/path/to/your/project"'
 
 # Verify registration
 claude mcp list
-# Should show: emacs-mcp
+# Should show: hive-mcp
 ```
 
 **Or manually** add to `~/.claude.json`:
@@ -182,10 +182,10 @@ claude mcp list
 ```json
 {
   "mcpServers": {
-    "emacs-mcp": {
+    "hive-mcp": {
       "command": "clojure",
       "args": ["-X:mcp"],
-      "cwd": "/path/to/emacs-mcp"
+      "cwd": "/path/to/hive-mcp"
     }
   }
 }
@@ -215,7 +215,7 @@ For vector-based memory search (find by meaning, not just keywords):
 ollama pull nomic-embed-text
 
 # 2. Start Chroma vector database
-cd /path/to/emacs-mcp
+cd /path/to/hive-mcp
 docker compose up -d
 
 # 3. Verify Chroma is running
@@ -261,12 +261,12 @@ brew install clojure/tools/clojure
 
 ```bash
 # Download dependencies first
-cd /path/to/emacs-mcp
+cd /path/to/hive-mcp
 clojure -P
 
 # Test server starts manually
 clojure -X:mcp
-# Should print: "Starting emacs-mcp server..."
+# Should print: "Starting hive-mcp server..."
 # Ctrl+C to stop
 ```
 
@@ -275,7 +275,7 @@ clojure -X:mcp
 Verify your load-path in Emacs:
 ```elisp
 M-x eval-expression RET
-(member "/path/to/emacs-mcp/elisp" load-path)
+(member "/path/to/hive-mcp/elisp" load-path)
 ;; Should return non-nil
 ```
 
@@ -300,7 +300,7 @@ ls ~/.emacs-mcp/memory/
 ├───────────────────────────┼─────────────────────────────────┤
 │                           ▼                                 │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │              emacs-mcp (Clojure)                    │   │
+│  │              hive-mcp (Clojure)                    │   │
 │  │                                                     │   │
 │  │  Memory ──► JSON + Chroma (semantic)               │   │
 │  │  Channel ──► TCP:9999 (push events)                │   │
