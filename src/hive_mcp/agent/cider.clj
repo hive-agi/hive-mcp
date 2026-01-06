@@ -14,6 +14,7 @@
    - Integrates with existing agent.delegate! flow"
   (:require [hive-mcp.agent.protocol :as proto]
             [hive-mcp.agent :as agent]
+            [hive-mcp.agent.openrouter :as openrouter]
             [hive-mcp.emacsclient :as ec]
             [clojure.data.json :as json]
             [taoensso.timbre :as log])
@@ -179,15 +180,18 @@
   "Factory function for creating LLM backends.
    
    Supports:
-     :ollama - HTTP backend to Ollama (default)
-     :cider  - nREPL session backend via CIDER pool
+     :ollama     - HTTP backend to Ollama (default)
+     :cider      - nREPL session backend via CIDER pool
+     :openrouter - OpenRouter API (100+ models via unified API)
    
    Examples:
      (make-backend :ollama {:model \"devstral-small:24b\"})
-     (make-backend :cider {:timeout-ms 60000})"
+     (make-backend :cider {:timeout-ms 60000})
+     (make-backend :openrouter {:api-key \"sk-or-...\" :model \"anthropic/claude-3-haiku\"})"
   ([type] (make-backend type {}))
   ([type opts]
    (case type
      :ollama (agent/ollama-backend opts)
      :cider (cider-backend opts)
-     (throw (ex-info "Unknown backend type" {:type type :available [:ollama :cider]})))))
+     :openrouter (openrouter/openrouter-backend opts)
+     (throw (ex-info "Unknown backend type" {:type type :available [:ollama :cider :openrouter]})))))
