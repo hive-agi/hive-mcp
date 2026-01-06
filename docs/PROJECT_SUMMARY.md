@@ -245,7 +245,7 @@ clojure -M:test
 ### Loading Emacs Package
 
 ```elisp
-(add-to-list 'load-path "/path/to/emacs-mcp/elisp")
+(add-to-list 'load-path "/path/to/hive-mcp/elisp")
 (require 'emacs-mcp)
 (emacs-mcp-mode 1)
 ```
@@ -298,7 +298,7 @@ clojure -M:test
 {
   "mcpServers": {
     "emacs-mcp": {
-      "command": "/path/to/emacs-mcp/start-mcp.sh"
+      "command": "/path/to/hive-mcp/start-mcp.sh"
     }
   }
 }

@@ -124,7 +124,7 @@ This dialogue occurred on **2026-01-01** during a development session where we:
 - Built the feature in ~3 minutes of wall-clock time
 - All because Emacs lets you eval arbitrary code at runtime
 
-The project: [emacs-mcp](https://github.com/BuddhiLW/emacs-mcp) - MCP server enabling Claude to interact with a running Emacs instance.
+The project: [emacs-mcp](https://github.com/BuddhiLW/hive-mcp) - MCP server enabling Claude to interact with a running Emacs instance.
 
 ---
 
