@@ -2,87 +2,37 @@
   "Infrastructure adapters for the prompts/permissions domain.
    
    Provides:
-   - Desktop notifications via D-Bus (org.freedesktop.Notifications)
-   - WebSocket channel emission for Emacs integration
-   
-   Uses lambdaisland/dbus-client for native Clojure D-Bus communication."
-  (:require [lambdaisland.dbus.client :as dbus]
+   - Desktop notifications via notify-send
+   - WebSocket channel emission for Emacs integration"
+  (:require [hive-mcp.notify :as notify]
             [hive-mcp.channel :as channel]
             [taoensso.timbre :as log]))
 
-(defonce ^:private dbus-client (atom nil))
-
-(defn- ensure-dbus-client!
-  "Lazily initialize the D-Bus session client."
-  []
-  (when-not @dbus-client
-    (try
-      (reset! dbus-client
-              (dbus/init-client!
-               (dbus/session-sock)
-               (fn [v] (log/debug "D-Bus reply:" v))))
-      (catch Exception e
-        (log/warn e "Failed to initialize D-Bus client - notifications disabled")
-        nil))))
-
-(defn notify!
-  "Send desktop notification via D-Bus org.freedesktop.Notifications.
-   
-   Options:
-     :urgency  - 0=low, 1=normal (default), 2=critical
-     :app-name - Application name (default: \"hive-mcp\")
-     :icon     - Icon name or path (default: \"\")
-     :timeout  - Timeout in ms, -1 for default (default: -1)
-   
-   Returns promise of notification ID, or nil if D-Bus unavailable."
-  [title body & {:keys [urgency app-name icon timeout]
-                 :or {urgency 1 app-name "hive-mcp" icon "" timeout -1}}]
-  (ensure-dbus-client!)
-  (when @dbus-client
-    (try
-      @(dbus/write-message
-        @dbus-client
-        {:type :method-call
-         :headers
-         {:path "/org/freedesktop/Notifications"
-          :member "Notify"
-          :interface "org.freedesktop.Notifications"
-          :destination "org.freedesktop.Notifications"}
-         :body [app-name ; app_name
-                0 ; replaces_id (0 = new notification)
-                icon ; app_icon
-                title ; summary
-                body ; body
-                [] ; actions
-                {"urgency" urgency} ; hints
-                timeout]}) ; expire_timeout
-      (catch Exception e
-        (log/warn e "Failed to send D-Bus notification")
-        nil))))
+;;; ---------------------------------------------------------------------------
+;;; Desktop Notifications (delegates to hive-mcp.notify)
+;;; ---------------------------------------------------------------------------
 
 (defn notify-permission-request!
-  "Send critical notification for permission request requiring human decision.
-   
-   Returns notification ID or nil."
+  "Send critical notification for permission request requiring human decision."
   [agent-id tool-name summary]
-  (notify! (str "🔐 Permission: " tool-name)
-           (str "Agent: " agent-id "\n" summary)
-           :urgency 2
-           :timeout 0)) ; 0 = never expire
+  (notify/notify! {:summary (str "🔐 Permission: " tool-name)
+                   :body (str "Agent: " agent-id "\n" summary)
+                   :type "error" ; critical urgency
+                   :timeout 0})) ; never auto-dismiss
 
 (defn notify-agent-blocked!
   "Send notification when agent is blocked waiting for input."
   [agent-id reason]
-  (notify! (str "⏸️ Agent Blocked: " agent-id)
-           reason
-           :urgency 1))
+  (notify/notify! {:summary (str "⏸️ Agent Blocked: " agent-id)
+                   :body reason
+                   :type "warning"}))
 
 (defn notify-agent-completed!
   "Send notification when agent completes a task."
   [agent-id task-summary]
-  (notify! (str "✅ Agent Completed: " agent-id)
-           task-summary
-           :urgency 0))
+  (notify/notify! {:summary (str "✅ Agent Completed: " agent-id)
+                   :body task-summary
+                   :type "info"}))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Channel Emission Adapters

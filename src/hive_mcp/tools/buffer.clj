@@ -163,17 +163,24 @@
                             :message "hive-mcp.el is not loaded. Run (require 'hive-mcp) and (hive-mcp-mode 1) in Emacs."})}))
 
 (defn handle-mcp-notify
-  "Show notification to user in Emacs."
+  "Show notification to user via desktop notification AND Emacs echo-area.
+   Desktop notification ensures visibility even when Emacs is not focused."
   [{:keys [message type]}]
   (log/info "mcp-notify:" message)
-  (let [type-str (or type "info")
-        elisp (format "(hive-mcp-api-notify %s %s)"
-                      (pr-str message)
-                      (pr-str type-str))
-        {:keys [success error]} (ec/eval-elisp elisp)]
-    (if success
-      {:type "text" :text "Notification sent"}
-      {:type "text" :text (str "Error: " error) :isError true})))
+  (let [type-str (or type "info")]
+    ;; Send desktop notification (primary - catches attention)
+    (require 'hive-mcp.notify)
+    ((resolve 'hive-mcp.notify/notify!) {:summary "Hive-MCP"
+                                         :body message
+                                         :type type-str})
+    ;; Also send to Emacs echo-area (secondary - visible if Emacs focused)
+    (let [elisp (format "(hive-mcp-api-notify %s %s)"
+                        (pr-str message)
+                        (pr-str type-str))
+          {:keys [success error]} (ec/eval-elisp elisp)]
+      (if success
+        {:type "text" :text "Notification sent"}
+        {:type "text" :text (str "Desktop sent, Emacs error: " error)}))))
 
 (defn handle-mcp-list-workflows
   "List available workflows."
