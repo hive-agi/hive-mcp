@@ -29,6 +29,7 @@
                  :task \"Fix the bug in auth.clj\"})"
   (:require [hive-mcp.agent.protocol :as proto]
             [hive-mcp.tools.core :refer [mcp-success mcp-error mcp-json]]
+            [hive-mcp.tools.diff :as diff]
             [hive-mcp.hivemind :as hivemind]
             [hive-mcp.channel :as channel]
             [hive-mcp.permissions :as permissions]
@@ -602,15 +603,16 @@
    Automatically:
    - Injects catchup context (conventions, decisions, snippets)
    - Uses drone-worker preset for OpenRouter
+   - Auto-applies any diffs proposed by the drone
    - Records results to hivemind for review
    
    Options:
      :task      - Task description (required)
-     :files     - List of files the ling will modify
-     :preset    - Override preset (default: ling-worker)
+     :files     - List of files the drone will modify
+     :preset    - Override preset (default: drone-worker)
      :trace     - Enable progress events (default: true)
    
-   Returns result map with :status, :result, :agent-id"
+   Returns result map with :status, :result, :agent-id, :files-modified"
   [{:keys [task files preset trace]
     :or {preset "drone-worker"
          trace true}}]
@@ -630,18 +632,44 @@
                               (str "\n\n## Files to modify\n"
                                    (str/join "\n" (map #(str "- " %) files)))))
         agent-id (str "drone-" (System/currentTimeMillis))
+        ;; Capture diff state before drone runs
+        diffs-before (set (keys @diff/pending-diffs))
         result (delegate! {:backend :openrouter
                            :preset preset
                            :task augmented-task
                            :tools drone-allowed-tools
-                           :trace trace})]
+                           :trace trace})
+        ;; Find new diffs proposed during this drone's execution
+        diffs-after (set (keys @diff/pending-diffs))
+        new-diff-ids (clojure.set/difference diffs-after diffs-before)
+        ;; Auto-apply the new diffs
+        diff-results (when (seq new-diff-ids)
+                       (let [results (for [diff-id new-diff-ids]
+                                       (let [diff-info (get @diff/pending-diffs diff-id)
+                                             response (diff/handle-apply-diff {:diff_id diff-id})
+                                             parsed (try (json/read-str (:text response) :key-fn keyword)
+                                                         (catch Exception _ nil))]
+                                         (if (:isError response)
+                                           {:status :failed :file (:file-path diff-info) :error (:error parsed)}
+                                           {:status :applied :file (:file-path diff-info)})))
+                             {applied :applied failed :failed} (group-by :status results)]
+                         (when (seq applied)
+                           (log/info "Auto-applied drone diffs" {:drone agent-id :files (mapv :file applied)}))
+                         (when (seq failed)
+                           (log/warn "Some drone diffs failed to apply" {:drone agent-id :failures failed}))
+                         {:applied (mapv :file applied)
+                          :failed (mapv #(select-keys % [:file :error]) failed)}))]
     ;; Record result for coordinator review
     (hivemind/record-ling-result! agent-id
                                   {:task task
                                    :files files
                                    :result result
+                                   :diff-results diff-results
                                    :timestamp (System/currentTimeMillis)})
-    (assoc result :agent-id agent-id)))
+    (assoc result
+           :agent-id agent-id
+           :files-modified (:applied diff-results)
+           :files-failed (:failed diff-results))))
 
 (defn handle-delegate-drone
   "MCP tool handler for delegate_drone."

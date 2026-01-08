@@ -37,6 +37,14 @@
   (let [f (File. (lockfile-path port))]
     (when (.exists f) (.delete f))))
 
+(defn- register-shutdown-hook!
+  "Register JVM shutdown hook to clean up lockfile on crash/exit."
+  [port]
+  (.addShutdownHook (Runtime/getRuntime)
+                    (Thread. ^Runnable (fn []
+                                         (log/debug "Shutdown hook: removing lockfile")
+                                         (remove-lockfile! port)))))
+
 ;; WebSocket handler
 (defn- ws-handler [input-ch output-ch]
   (fn [req]
@@ -68,6 +76,7 @@
         server (http/start-server handler {:port (or port 0)})
         actual-port (aleph.netty/port server)]
     (create-lockfile! actual-port project-dir)
+    (register-shutdown-hook! actual-port)
     (reset! server-atom {:server server :port actual-port})
     (log/info "WebSocket server started on port" actual-port)
     actual-port))

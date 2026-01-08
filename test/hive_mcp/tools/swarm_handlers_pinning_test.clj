@@ -281,16 +281,18 @@
 
 (deftest handle-swarm-collect-completed-test
   (testing "Returns proper MCP response format when task completed"
-    ;; The collect handler does double JSON parsing, so we need to simulate that
-    (let [inner-json "{\"task_id\":\"task-001\",\"status\":\"completed\",\"result\":\"Success\"}"
-          ;; Outer layer: emacsclient quotes the result
-          outer-json (json/write-str inner-json)]
-      (with-addon-available (mock-elisp-timeout-success outer-json)
+    ;; Single JSON string - unwrap-emacs-string already handles emacsclient quoting
+    (let [json-str "{\"task_id\":\"task-001\",\"status\":\"completed\",\"result\":\"Success\"}"]
+      (with-addon-available (mock-elisp-timeout-success json-str)
         (with-redefs [swarm/check-event-journal (constantly nil)]
-          (let [result (swarm/handle-swarm-collect {:task_id "task-001"})]
+          (let [result (swarm/handle-swarm-collect {:task_id "task-001"})
+                parsed (json/read-str (:text result) :key-fn keyword)]
             (is (= "text" (:type result)))
             (is (string? (:text result)))
-            (is (nil? (:isError result)))))))))
+            (is (nil? (:isError result)))
+            ;; Verify actual content
+            (is (= "completed" (:status parsed)))
+            (is (= "task-001" (:task_id parsed)))))))))
 
 (deftest handle-swarm-collect-from-journal-test
   (testing "Returns result from event journal (push-based)"
@@ -308,26 +310,32 @@
 
 (deftest handle-swarm-collect-error-task-test
   (testing "Returns error status when task failed"
-    (let [inner-json "{\"task_id\":\"task-001\",\"status\":\"error\",\"error\":\"Task crashed\"}"
-          outer-json (json/write-str inner-json)]
-      (with-addon-available (mock-elisp-timeout-success outer-json)
+    ;; Single JSON string - unwrap-emacs-string already handles emacsclient quoting
+    (let [json-str "{\"task_id\":\"task-001\",\"status\":\"error\",\"error\":\"Task crashed\"}"]
+      (with-addon-available (mock-elisp-timeout-success json-str)
         (with-redefs [swarm/check-event-journal (constantly nil)]
-          (let [result (swarm/handle-swarm-collect {:task_id "task-001"})]
+          (let [result (swarm/handle-swarm-collect {:task_id "task-001"})
+                parsed (json/read-str (:text result) :key-fn keyword)]
             (is (= "text" (:type result)))
-            ;; Error status in result, but not isError on response
-            (is (string? (:text result)))))))))
+            (is (string? (:text result)))
+            ;; Error status in result - verify content
+            (is (= "error" (:status parsed)))
+            (is (= "Task crashed" (:error parsed)))))))))
 
 (deftest handle-swarm-collect-timeout-test
   (testing "Returns timeout when collection times out"
-    (let [inner-json "{\"task_id\":\"task-001\",\"status\":\"polling\"}"
-          outer-json (json/write-str inner-json)]
-      (with-addon-available (mock-elisp-timeout-success outer-json)
+    ;; Single JSON string - unwrap-emacs-string already handles emacsclient quoting
+    (let [json-str "{\"task_id\":\"task-001\",\"status\":\"polling\"}"]
+      (with-addon-available (mock-elisp-timeout-success json-str)
         (with-redefs [swarm/check-event-journal (constantly nil)]
           ;; Use very short timeout to trigger timeout
           (let [result (swarm/handle-swarm-collect {:task_id "task-001"
-                                                    :timeout_ms 1})]
+                                                    :timeout_ms 1})
+                parsed (json/read-str (:text result) :key-fn keyword)]
             (is (= "text" (:type result)))
-            (is (string? (:text result)))))))))
+            (is (string? (:text result)))
+            ;; Should return timeout status
+            (is (= "timeout" (:status parsed)))))))))
 
 (deftest handle-swarm-collect-elisp-timeout-test
   (testing "Returns error when elisp evaluation times out"

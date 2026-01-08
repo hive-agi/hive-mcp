@@ -90,6 +90,20 @@
            (catch Exception _ nil))
       (System/getProperty "user.dir")))
 
+(defn translate-sandbox-path
+  "Translate clojure-mcp sandbox paths back to real project paths.
+   
+   Drones run through clojure-mcp which sandboxes file access to /tmp/fs-<n>/.
+   This function detects sandbox paths and translates them to real paths.
+   
+   Example: /tmp/fs-1/src/foo.clj -> <project-root>/src/foo.clj"
+  [file-path]
+  (if-let [[_ relative-path] (re-matches #"/tmp/fs-\d+/(.+)" file-path)]
+    (let [project-root (get-project-root)]
+      (log/debug "Translating sandbox path" {:sandbox file-path :relative relative-path})
+      (str (str/replace project-root #"/$" "") "/" relative-path))
+    file-path))
+
 (defn validate-diff-path
   "Validate a file path for propose_diff.
    
@@ -148,19 +162,22 @@
 (defn handle-propose-diff
   "Handle propose_diff tool call.
    Stores a proposed diff for review by the hivemind.
-   Validates file paths to catch hallucinated paths from drones."
+   Translates sandbox paths and validates file paths."
   [{:keys [file_path old_content new_content description drone_id] :as params}]
   (log/debug "propose_diff called" {:file file_path :drone drone_id})
   (if-let [error (validate-propose-params params)]
     (do
       (log/warn "propose_diff validation failed" {:error error})
       (mcp-error-json error))
-    ;; Validate the file path
-    (let [path-result (validate-diff-path file_path)]
+    ;; Translate sandbox paths before validation
+    (let [translated-path (translate-sandbox-path file_path)
+          _ (when (not= translated-path file_path)
+              (log/info "Translated sandbox path" {:from file_path :to translated-path}))
+          path-result (validate-diff-path translated-path)]
       (if-not (:valid path-result)
         (do
           (log/warn "propose_diff path validation failed"
-                    {:file file_path :error (:error path-result) :drone drone_id})
+                    {:file translated-path :original file_path :error (:error path-result) :drone drone_id})
           (mcp-error-json (:error path-result)))
         (try
           ;; Use the resolved path for the proposal
@@ -206,7 +223,8 @@
 
 (defn handle-apply-diff
   "Handle apply_diff tool call.
-   Applies the diff to the file and removes from pending."
+   Applies the diff by finding and replacing old-content within the file.
+   If old-content is empty and file doesn't exist, creates a new file."
   [{:keys [diff_id]}]
   (log/debug "apply_diff called" {:diff_id diff_id})
   (cond
@@ -221,27 +239,59 @@
       (mcp-error-json (str "Diff not found: " diff_id)))
 
     :else
-    (let [{:keys [file-path old-content new-content] :as diff} (get @pending-diffs diff_id)]
+    (let [{:keys [file-path old-content new-content] :as diff} (get @pending-diffs diff_id)
+          file-exists? (.exists (io/file file-path))
+          creating-new-file? (and (str/blank? old-content) (not file-exists?))]
       (try
-        ;; Verify file content matches expected old content
-        (let [current-content (slurp file-path)]
-          (if (not= current-content old-content)
-            (do
-              (log/warn "apply_diff content mismatch" {:file file-path})
-              (mcp-error-json "File content has changed since diff was proposed. Cannot apply safely."))
-            (do
-              ;; Apply the change
-              (spit file-path new-content)
-              ;; Remove from pending
-              (swap! pending-diffs dissoc diff_id)
-              (log/info "Diff applied" {:id diff_id :file file-path})
-              (mcp-json {:id diff_id
-                         :status "applied"
-                         :file-path file-path
-                         :message "Diff applied successfully"}))))
-        (catch java.io.FileNotFoundException _
-          (log/warn "apply_diff file not found" {:file file-path})
-          (mcp-error-json (str "File not found: " file-path)))
+        (cond
+          ;; Case 1: Creating a new file (old-content empty, file doesn't exist)
+          creating-new-file?
+          (do
+            ;; Ensure parent directory exists
+            (let [parent (.getParentFile (io/file file-path))]
+              (when (and parent (not (.exists parent)))
+                (.mkdirs parent)))
+            (spit file-path new-content)
+            (swap! pending-diffs dissoc diff_id)
+            (log/info "New file created" {:id diff_id :file file-path})
+            (mcp-json {:id diff_id
+                       :status "applied"
+                       :file-path file-path
+                       :created true
+                       :message "New file created successfully"}))
+
+          ;; Case 2: File doesn't exist but old-content is not empty - error
+          (not file-exists?)
+          (do
+            (log/warn "apply_diff file not found" {:file file-path})
+            (mcp-error-json (str "File not found: " file-path)))
+
+          ;; Case 3: Normal replacement in existing file
+          :else
+          (let [current-content (slurp file-path)]
+            (cond
+              ;; old-content not found in file
+              (not (str/includes? current-content old-content))
+              (do
+                (log/warn "apply_diff old content not found in file" {:file file-path})
+                (mcp-error-json "Old content not found in file. File may have been modified since diff was proposed."))
+
+              ;; Multiple occurrences - ambiguous
+              (> (count (re-seq (re-pattern (java.util.regex.Pattern/quote old-content)) current-content)) 1)
+              (do
+                (log/warn "apply_diff multiple matches found" {:file file-path})
+                (mcp-error-json "Multiple occurrences of old content found. Cannot apply safely - diff is ambiguous."))
+
+              ;; Exactly one match - apply the replacement
+              :else
+              (let [updated-content (str/replace-first current-content old-content new-content)]
+                (spit file-path updated-content)
+                (swap! pending-diffs dissoc diff_id)
+                (log/info "Diff applied" {:id diff_id :file file-path})
+                (mcp-json {:id diff_id
+                           :status "applied"
+                           :file-path file-path
+                           :message "Diff applied successfully"})))))
         (catch Exception e
           (log/error e "Failed to apply diff" {:diff_id diff_id})
           (mcp-error-json (str "Failed to apply diff: " (.getMessage e))))))))

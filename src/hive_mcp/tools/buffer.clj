@@ -246,22 +246,27 @@
      :tags (vec (or (:tags entry) []))}))
 
 (defn- matches-project-scope?
-  "Check if entry matches project scope (project + global)."
-  [entry project-id]
+  "Check if entry matches project scope (project + global).
+   Matches both project-name and project-id for robustness since
+   wrap stores with project-name but we may query with project-id."
+  [entry project-name project-id]
   (let [tags (set (or (:tags entry) []))
-        project-scope (str "scope:project:" project-id)]
-    (or (contains? tags project-scope)
+        name-scope (when project-name (str "scope:project:" project-name))
+        id-scope (when project-id (str "scope:project:" project-id))]
+    (or (and name-scope (contains? tags name-scope))
+        (and id-scope (contains? tags id-scope))
         (contains? tags "scope:global"))))
 
 (defn- query-scoped-entries
-  "Query Chroma entries filtered by project scope."
-  [entry-type tags project-id limit]
+  "Query Chroma entries filtered by project scope.
+   Uses both project-name and project-id for scope matching."
+  [entry-type tags project-name project-id limit]
   (when (chroma/embedding-configured?)
     (let [;; Query with over-fetch to allow for filtering
           entries (chroma/query-entries :type entry-type
                                         :limit (* (or limit 20) 5))
-          ;; Filter by scope
-          scoped (filter #(matches-project-scope? % project-id) entries)
+          ;; Filter by scope (matches name, id, or global)
+          scoped (filter #(matches-project-scope? % project-name project-id) entries)
           ;; Filter by tags if provided
           tag-filtered (if (seq tags)
                          (filter (fn [entry]
@@ -273,7 +278,9 @@
 
 (defn- handle-native-catchup
   "Native Clojure catchup implementation that queries Chroma directly.
-   Returns structured catchup data with proper project scoping."
+   Returns structured catchup data with proper project scoping.
+   Uses both project-name and project-id for scope matching to ensure
+   compatibility with wrap workflow (which stores using project-name)."
   [_args]
   (log/info "native-catchup: querying Chroma with project scope")
   (if-not (chroma/embedding-configured?)
@@ -284,19 +291,23 @@
      :isError true}
     (try
       (let [project-id (get-current-project-id)
-            project-name (or (get-current-project-name) project-id)
-            scopes [(str "scope:project:" project-id) "scope:global"]
+            project-name (get-current-project-name)
+            ;; Include both name and id scopes for display
+            scopes (cond-> ["scope:global"]
+                     project-name (conj (str "scope:project:" project-name))
+                     (and project-id (not= project-id project-name))
+                     (conj (str "scope:project:" project-id)))
 
-            ;; Query each type from Chroma with scope filtering
-            sessions (query-scoped-entries "note" ["session-summary"] project-id 3)
-            decisions (query-scoped-entries "decision" nil project-id 10)
-            conventions (query-scoped-entries "convention" nil project-id 10)
-            snippets (query-scoped-entries "snippet" nil project-id 5)
+            ;; Query each type from Chroma with scope filtering (pass both name and id)
+            sessions (query-scoped-entries "note" ["session-summary"] project-name project-id 3)
+            decisions (query-scoped-entries "decision" nil project-name project-id 10)
+            conventions (query-scoped-entries "convention" nil project-name project-id 10)
+            snippets (query-scoped-entries "snippet" nil project-name project-id 5)
 
             ;; Query expiring entries (all types, filter later)
             all-expiring (chroma/query-entries :limit 50)
             expiring (->> all-expiring
-                          (filter #(matches-project-scope? % project-id))
+                          (filter #(matches-project-scope? % project-name project-id))
                           (filter (fn [e]
                                     (when-let [exp (:expires e)]
                                       (let [exp-time (try (java.time.ZonedDateTime/parse exp)
@@ -329,7 +340,7 @@
         {:type "text"
          :text (json/write-str
                 {:success true
-                 :project project-name
+                 :project (or project-name project-id "global")
                  :scopes scopes
                  :git git-info
                  :counts {:sessions (count sessions-meta)
