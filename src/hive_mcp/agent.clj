@@ -601,6 +601,7 @@
   "Delegate a task to a drone (token-optimized leaf agent).
    
    Automatically:
+   - Pre-injects file contents (drone doesn't need to read)
    - Injects catchup context (conventions, decisions, snippets)
    - Uses drone-worker preset for OpenRouter
    - Auto-applies any diffs proposed by the drone
@@ -608,7 +609,7 @@
    
    Options:
      :task      - Task description (required)
-     :files     - List of files the drone will modify
+     :files     - List of files the drone will modify (contents pre-injected)
      :preset    - Override preset (default: drone-worker)
      :trace     - Enable progress events (default: true)
    
@@ -627,10 +628,29 @@
                              (str "### Decisions\n"
                                   (str/join "\n" (map :content (:decisions context)))
                                   "\n\n"))))
-        augmented-task (str context-str "## Task\n" task
+        ;; Pre-read file contents so drone has exact content for propose_diff
+        file-contents-str (when (seq files)
+                            (let [project-root (or (diff/get-project-root) "")
+                                  contents (for [f files]
+                                             (let [abs-path (if (str/starts-with? f "/")
+                                                              f
+                                                              (str project-root "/" f))]
+                                               (try
+                                                 (let [content (slurp abs-path)]
+                                                   (str "### " f "\n```\n" content "```\n"))
+                                                 (catch Exception e
+                                                   (str "### " f "\n(File not found or unreadable: " (.getMessage e) ")\n")))))]
+                              (str "## Current File Contents\n"
+                                   "IMPORTANT: Use this EXACT content as old_content in propose_diff.\n"
+                                   "Do NOT guess or assume file content - use what is provided below.\n\n"
+                                   (str/join "\n" contents))))
+        augmented-task (str context-str
+                            "## Task\n" task
                             (when (seq files)
                               (str "\n\n## Files to modify\n"
-                                   (str/join "\n" (map #(str "- " %) files)))))
+                                   (str/join "\n" (map #(str "- " %) files))))
+                            (when file-contents-str
+                              (str "\n\n" file-contents-str)))
         agent-id (str "drone-" (System/currentTimeMillis))
         ;; Capture diff state before drone runs
         diffs-before (set (keys @diff/pending-diffs))
