@@ -7,6 +7,7 @@
    - Result formatting for conversation history"
   (:require [hive-mcp.agent.registry :as registry]
             [hive-mcp.hivemind :as hivemind]
+            [hive-mcp.permissions :as permissions]
             [clojure.data.json :as json]
             [taoensso.timbre :as log]))
 
@@ -14,15 +15,11 @@
 ;;; Permission Gates
 ;;; ============================================================
 
-(def ^:private dangerous-tools
-  "Tools that require human approval before execution."
-  #{"file_write" "file_edit" "clojure_edit" "bash" "magit_commit" "magit_push"})
-
 (defn requires-approval?
   "Check if a tool call requires human approval."
-  [tool-name permissions]
-  (and (contains? dangerous-tools tool-name)
-       (not (contains? (set permissions) :auto-approve))))
+  [tool-name perms]
+  (and (permissions/dangerous-tool? tool-name)
+       (not (contains? (set perms) :auto-approve))))
 
 (defn request-approval!
   "Request human approval via hivemind channel. Blocks until response."

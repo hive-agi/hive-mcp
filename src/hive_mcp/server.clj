@@ -138,7 +138,9 @@
   [{:keys [name description inputSchema handler]}]
   (let [wrapped-handler (fn [args]
                           (let [result (handler args)
-                                agent-id (or (:agent-id args)
+                                agent-id (or (:agent_id args)
+                                             (:agent-id args)
+                                             (get args "agent_id")
                                              (get args "agent-id")
                                              "coordinator")
                                 _ (require 'hive-mcp.tools.core)

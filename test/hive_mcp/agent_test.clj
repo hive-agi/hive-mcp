@@ -5,7 +5,8 @@
    dangerous operations like file writes, bash execution, and git commits."
   (:require [clojure.test :refer :all]
             [clojure.set :as set]
-            [hive-mcp.agent]))
+            [hive-mcp.agent]
+            [hive-mcp.permissions :as permissions]))
 
 ;; =============================================================================
 ;; Test Data
@@ -17,8 +18,18 @@
     "magit_status" "magit_diff" "magit_log" "magit_branches"
     "propose_diff" "hivemind_shout"})
 
+(def expected-file-mutation-tools
+  "File mutation tools that drones MUST NOT have direct access to."
+  #{"file_write" "file_edit" "clojure_edit"})
+
+(def expected-tier-3-tools
+  "Tier-3 tools that require human approval (from permissions module)."
+  #{"bash" "magit_commit" "magit_push" "eval_elisp" "cider_eval_explicit"
+    "preset_delete" "swarm_kill" "mcp_memory_cleanup_expired"})
+
 (def expected-dangerous-tools
-  "Tools that drones MUST NOT have access to."
+  "Combined set of tools that drones MUST NOT have access to.
+   Includes file mutation tools + tier-3 tools that drones specifically lack."
   #{"file_write" "file_edit" "clojure_edit" "bash" "magit_commit" "magit_push"})
 
 ;; =============================================================================
@@ -38,28 +49,29 @@
                "Missing: " (set/difference expected-drone-tools actual) ", "
                "Extra: " (set/difference actual expected-drone-tools))))))
 
-(deftest dangerous-tools-exists
-  (testing "dangerous-tools var is defined"
-    (is (some? @#'hive-mcp.agent/dangerous-tools)
-        "dangerous-tools must be defined")))
+(deftest dangerous-tool-predicate-exists
+  (testing "permissions/dangerous-tool? is defined"
+    (is (fn? permissions/dangerous-tool?)
+        "permissions/dangerous-tool? must be defined")))
 
-(deftest dangerous-tools-contains-expected
-  (testing "dangerous-tools contains all expected dangerous tools"
-    (let [actual @#'hive-mcp.agent/dangerous-tools]
-      (is (= expected-dangerous-tools actual)
-          (str "Mismatch in dangerous tools. "
-               "Missing: " (set/difference expected-dangerous-tools actual) ", "
-               "Extra: " (set/difference actual expected-dangerous-tools))))))
+(deftest tier-3-tools-match-expected
+  (testing "permissions/dangerous-tool? returns true for tier-3 tools"
+    (doseq [tool expected-tier-3-tools]
+      (is (permissions/dangerous-tool? tool)
+          (str tool " should be marked as dangerous"))))
+  (testing "permissions/dangerous-tool? returns false for safe tools"
+    (doseq [tool ["read_file" "grep" "glob_files"]]
+      (is (not (permissions/dangerous-tool? tool))
+          (str tool " should not be marked as dangerous")))))
 
 ;; =============================================================================
 ;; Critical Safety Test - Tool Exclusion
 ;; =============================================================================
 
 (deftest drone-allowed-tools-excludes-dangerous
-  (testing "drone-allowed-tools has no intersection with dangerous-tools"
+  (testing "drone-allowed-tools has no intersection with dangerous tools"
     (let [allowed (set @#'hive-mcp.agent/drone-allowed-tools)
-          dangerous @#'hive-mcp.agent/dangerous-tools
-          overlap (set/intersection allowed dangerous)]
+          overlap (set/intersection allowed expected-dangerous-tools)]
       (is (empty? overlap)
           (str "SECURITY VIOLATION: Drone tools must not include dangerous tools. "
                "Found overlap: " overlap)))))

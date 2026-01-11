@@ -56,7 +56,13 @@
     "cider_eval_explicit" ; arbitrary Clojure code
     "preset_delete" ; config removal
     "swarm_kill" ; process termination
-    "mcp_memory_cleanup_expired"}) ; data deletion
+    "mcp_memory_cleanup_expired"})
+
+(defn dangerous-tool?
+  "Check if a tool is in tier-3 (requires human approval).
+   Use this for simple boolean checks without path context."
+  [tool-name]
+  (contains? tier-3-tools tool-name)) ; data deletion
 
 (def ^:private tier-3-operations
   "Operations that always require human approval regardless of tool"

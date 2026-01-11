@@ -28,6 +28,7 @@
                  :model \"mistralai/devstral-2512:free\"
                  :task \"Fix the bug in auth.clj\"})"
   (:require [hive-mcp.agent.protocol :as proto]
+            [hive-mcp.agent.ollama :as ollama :refer [ollama-backend]]
             [hive-mcp.tools.core :refer [mcp-success mcp-error mcp-json]]
             [hive-mcp.tools.diff :as diff]
             [hive-mcp.hivemind :as hivemind]
@@ -76,73 +77,6 @@
       (json/read-str body-str :key-fn keyword)
       (throw (ex-info "HTTP request failed"
                       {:status status :body body-str :url url})))))
-
-;;; ============================================================
-;;; Ollama Backend
-;;; ============================================================
-
-(defn- ollama-tools->openai-format
-  "Convert hive-mcp tool schemas to OpenAI function format for Ollama."
-  [tools]
-  (mapv (fn [{:keys [name description inputSchema]}]
-          {:type "function"
-           :function {:name name
-                      :description description
-                      :parameters (or inputSchema {:type "object" :properties {}})}})
-        tools))
-
-(defn- parse-ollama-response
-  "Parse Ollama chat response into normalized format."
-  [response]
-  (let [message (get-in response [:message])
-        content (:content message)
-        tool-calls (:tool_calls message)]
-    (cond
-      ;; Tool calls present
-      (seq tool-calls)
-      {:type :tool_calls
-       :calls (mapv (fn [tc]
-                      {:id (str (java.util.UUID/randomUUID))
-                       :name (get-in tc [:function :name])
-                       :arguments (let [args (get-in tc [:function :arguments])]
-                                    (if (string? args)
-                                      (json/read-str args :key-fn keyword)
-                                      args))})
-                    tool-calls)}
-
-      ;; Text response
-      content
-      {:type :text :content content}
-
-      ;; Empty response
-      :else
-      {:type :text :content ""})))
-
-(defrecord OllamaBackend [host model]
-  proto/LLMBackend
-  (chat [_ messages tools]
-    (let [ollama-tools (when (seq tools)
-                         (ollama-tools->openai-format tools))
-          body (cond-> {:model model
-                        :messages messages
-                        :stream false}
-                 (seq ollama-tools) (assoc :tools ollama-tools))
-          response (http-post (str host "/api/chat") body :timeout-secs 300)]
-      (parse-ollama-response response)))
-
-  (model-name [_] model))
-
-(defn ollama-backend
-  "Create an Ollama backend for agent delegation.
-   
-   Options:
-     :host - Ollama server URL (default: http://localhost:11434)
-     :model - Model name (default: devstral-small:24b)"
-  ([] (ollama-backend {}))
-  ([{:keys [host model]
-     :or {host "http://localhost:11434"
-          model "devstral-small:24b"}}]
-   (->OllamaBackend host model)))
 
 ;;; ============================================================
 ;;; OpenRouter Backend (Task-Based Model Selection)
@@ -327,10 +261,6 @@
 ;;; Permission Gates
 ;;; ============================================================
 
-(def ^:private dangerous-tools
-  "Tools that require human approval before execution."
-  #{"file_write" "file_edit" "clojure_edit" "bash" "magit_commit" "magit_push"})
-
 (def ^:private drone-allowed-tools
   "Safe tools for drone agents. Drones cannot write files directly - they must use propose_diff."
   ["read_file" "grep" "glob_files" "clojure_eval" "clojure_inspect_project"
@@ -340,7 +270,7 @@
 (defn- requires-approval?
   "Check if a tool call requires human approval."
   [tool-name permissions]
-  (and (contains? dangerous-tools tool-name)
+  (and (permissions/dangerous-tool? tool-name)
        (not (contains? (set permissions) :auto-approve))))
 
 (defn- request-approval!
@@ -606,18 +536,23 @@
    - Uses drone-worker preset for OpenRouter
    - Auto-applies any diffs proposed by the drone
    - Records results to hivemind for review
+   - Reports status to parent ling (if parent-id provided) for swarm state sync
    
    Options:
      :task      - Task description (required)
      :files     - List of files the drone will modify (contents pre-injected)
      :preset    - Override preset (default: drone-worker)
      :trace     - Enable progress events (default: true)
+     :parent-id - Parent ling's slave-id (for swarm status sync)
    
    Returns result map with :status, :result, :agent-id, :files-modified"
-  [{:keys [task files preset trace]
+  [{:keys [task files preset trace parent-id]
     :or {preset "drone-worker"
          trace true}}]
-  (let [context (prepare-drone-context)
+  (let [;; Try to get parent-id from env var if not provided
+        effective-parent-id (or parent-id
+                                (System/getenv "CLAUDE_SWARM_SLAVE_ID"))
+        context (prepare-drone-context)
         context-str (when (seq context)
                       (str "## Project Context\n"
                            (when (seq (:conventions context))
@@ -651,55 +586,79 @@
                                    (str/join "\n" (map #(str "- " %) files))))
                             (when file-contents-str
                               (str "\n\n" file-contents-str)))
+        ;; Generate drone-specific agent-id for tracking
         agent-id (str "drone-" (System/currentTimeMillis))
         ;; Capture diff state before drone runs
-        diffs-before (set (keys @diff/pending-diffs))
-        result (delegate! {:backend :openrouter
-                           :preset preset
-                           :task augmented-task
-                           :tools drone-allowed-tools
-                           :trace trace})
-        ;; Find new diffs proposed during this drone's execution
-        diffs-after (set (keys @diff/pending-diffs))
-        new-diff-ids (clojure.set/difference diffs-after diffs-before)
-        ;; Auto-apply the new diffs
-        diff-results (when (seq new-diff-ids)
-                       (let [results (for [diff-id new-diff-ids]
-                                       (let [diff-info (get @diff/pending-diffs diff-id)
-                                             response (diff/handle-apply-diff {:diff_id diff-id})
-                                             parsed (try (json/read-str (:text response) :key-fn keyword)
-                                                         (catch Exception _ nil))]
-                                         (if (:isError response)
-                                           {:status :failed :file (:file-path diff-info) :error (:error parsed)}
-                                           {:status :applied :file (:file-path diff-info)})))
-                             {applied :applied failed :failed} (group-by :status results)]
-                         (when (seq applied)
-                           (log/info "Auto-applied drone diffs" {:drone agent-id :files (mapv :file applied)}))
-                         (when (seq failed)
-                           (log/warn "Some drone diffs failed to apply" {:drone agent-id :failures failed}))
-                         {:applied (mapv :file applied)
-                          :failed (mapv #(select-keys % [:file :error]) failed)}))]
-    ;; Record result for coordinator review
-    (hivemind/record-ling-result! agent-id
-                                  {:task task
-                                   :files files
-                                   :result result
-                                   :diff-results diff-results
-                                   :timestamp (System/currentTimeMillis)})
-    (assoc result
-           :agent-id agent-id
-           :files-modified (:applied diff-results)
-           :files-failed (:failed diff-results))))
+        diffs-before (set (keys @diff/pending-diffs))]
+
+    ;; Shout started to parent ling's slave-id (for swarm registry sync)
+    (when effective-parent-id
+      (hivemind/shout! effective-parent-id :started
+                       {:task (str "Drone: " (subs task 0 (min 80 (count task))))
+                        :message (format "Delegated drone %s working" agent-id)}))
+
+    (let [result (delegate! {:backend :openrouter
+                             :preset preset
+                             :task augmented-task
+                             :tools drone-allowed-tools
+                             :trace trace})
+          ;; Find new diffs proposed during this drone's execution
+          diffs-after (set (keys @diff/pending-diffs))
+          new-diff-ids (clojure.set/difference diffs-after diffs-before)
+          ;; Auto-apply the new diffs
+          diff-results (when (seq new-diff-ids)
+                         (let [results (for [diff-id new-diff-ids]
+                                         (let [diff-info (get @diff/pending-diffs diff-id)
+                                               response (diff/handle-apply-diff {:diff_id diff-id})
+                                               parsed (try (json/read-str (:text response) :key-fn keyword)
+                                                           (catch Exception _ nil))]
+                                           (if (:isError response)
+                                             {:status :failed :file (:file-path diff-info) :error (:error parsed)}
+                                             {:status :applied :file (:file-path diff-info)})))
+                               {applied :applied failed :failed} (group-by :status results)]
+                           (when (seq applied)
+                             (log/info "Auto-applied drone diffs" {:drone agent-id :files (mapv :file applied)}))
+                           (when (seq failed)
+                             (log/warn "Some drone diffs failed to apply" {:drone agent-id :failures failed}))
+                           {:applied (mapv :file applied)
+                            :failed (mapv #(select-keys % [:file :error]) failed)}))]
+
+      ;; Shout completion to parent ling's slave-id (for swarm registry sync)
+      (when effective-parent-id
+        (if (= :completed (:status result))
+          (hivemind/shout! effective-parent-id :completed
+                           {:task (str "Drone: " (subs task 0 (min 80 (count task))))
+                            :message (format "Drone %s completed. Files: %s"
+                                             agent-id
+                                             (str/join ", " (or (:applied diff-results) [])))})
+          (hivemind/shout! effective-parent-id :error
+                           {:task (str "Drone: " (subs task 0 (min 80 (count task))))
+                            :message (format "Drone %s failed: %s" agent-id (:result result))})))
+
+      ;; Record result for coordinator review
+      (hivemind/record-ling-result! agent-id
+                                    {:task task
+                                     :files files
+                                     :result result
+                                     :diff-results diff-results
+                                     :parent-id effective-parent-id
+                                     :timestamp (System/currentTimeMillis)})
+      (assoc result
+             :agent-id agent-id
+             :parent-id effective-parent-id
+             :files-modified (:applied diff-results)
+             :files-failed (:failed diff-results)))))
 
 (defn handle-delegate-drone
   "MCP tool handler for delegate_drone."
-  [{:keys [task files preset trace]}]
+  [{:keys [task files preset trace parent_id]}]
   (if (str/blank? task)
     (mcp-error "Task is required")
     (let [result (delegate-drone! {:task task
                                    :files files
                                    :preset (or preset "drone-worker")
-                                   :trace (if (nil? trace) true trace)})]
+                                   :trace (if (nil? trace) true trace)
+                                   :parent-id parent_id})]
       (mcp-json result))))
 
 (def tools
@@ -744,7 +703,9 @@
                                :preset {:type "string"
                                         :description "Preset to use (default: drone-worker)"}
                                :trace {:type "boolean"
-                                       :description "Enable progress events (default: true)"}}
+                                       :description "Enable progress events (default: true)"}
+                               :parent_id {:type "string"
+                                           :description "Parent ling's slave-id for swarm status sync. Pass your CLAUDE_SWARM_SLAVE_ID env var value."}}
                   :required ["task"]}
     :handler handle-delegate-drone}
 

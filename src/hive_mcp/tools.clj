@@ -33,6 +33,7 @@
             [hive-mcp.tools.presets :as presets-tools]
             [hive-mcp.tools.diff :as diff]
             [hive-mcp.tools.jvm :as jvm]
+            [hive-mcp.tools.crystal :as crystal]
             [hive-mcp.hivemind :as hivemind]
             [hive-mcp.channel :as channel]
             [hive-mcp.agent :as agent]))
@@ -844,6 +845,7 @@
    This enables Open/Closed Principle - new tools are added to their respective
    modules without modifying this aggregation."
   (vec (concat buffer/tools
+               crystal/tools
                memory/tools
                mem-kanban/tools
                cider/tools

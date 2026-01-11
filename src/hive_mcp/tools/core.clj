@@ -1,48 +1,26 @@
 (ns hive-mcp.tools.core
   "Core utilities for MCP tool responses.
-   
+
    All tool handler modules should require this namespace for
    consistent response formatting.
-   
-   Piggyback Instructions:
-   Enables hivemind→ling bidirectional communication via tool response.
-   When an agent-id is provided to response functions, any pending
-   instructions for that agent are included in the response and drained
-   from the queue."
-  (:require [clojure.data.json :as json]))
+
+   Piggyback system delegates to hive-mcp.channel.piggyback for:
+   - Instruction queue (hivemind → ling)
+   - Message cursors (ling reads hivemind broadcasts)"
+  (:require [clojure.data.json :as json]
+            [hive-mcp.channel.piggyback :as piggyback]))
 
 ;; =============================================================================
-;; Instruction Queue for Piggyback Communication
+;; Instruction Queue (delegated to piggyback)
 ;; =============================================================================
 
-;; Atom storing pending instructions per agent. Map of agent-id -> [instructions...]
-;; Used for hivemind→ling communication via tool response piggyback.
-;; Instructions are drained when included in a response.
-(defonce instruction-queues (atom {}))
+(def push-instruction!
+  "Push an instruction to an agent's queue. Delegates to piggyback module."
+  piggyback/push-instruction!)
 
-(defn push-instruction!
-  "Push an instruction to an agent's queue.
-   
-   The instruction will be piggybacked on the next tool response
-   that includes this agent-id.
-   
-   Example instructions:
-   - {:type \"flow\" :action \"pause\"}
-   - {:type \"priority\" :level \"urgent\"}
-   - {:type \"context\" :file \"/changed.clj\" :message \"Modified\"}
-   - {:type \"coordinate\" :wait-for \"ling-2\"}"
-  [agent-id instruction]
-  (swap! instruction-queues update agent-id (fnil conj []) instruction))
-
-(defn drain-instructions!
-  "Drain all pending instructions for an agent.
-   
-   Returns the vector of instructions and removes them from the queue.
-   Returns empty vector if no instructions pending."
-  [agent-id]
-  (let [instructions (get @instruction-queues agent-id [])]
-    (swap! instruction-queues dissoc agent-id)
-    instructions))
+(def drain-instructions!
+  "Drain all pending instructions for an agent. Delegates to piggyback module."
+  piggyback/drain-instructions!)
 
 (defn- attach-instructions
   "Attach pending instructions to a response if agent-id provided and instructions exist."
@@ -60,7 +38,7 @@
 
 (defn mcp-success
   "Create a successful MCP response. Text can be string or will be pr-str'd.
-   
+
    Options:
    - :agent-id - If provided, drains and attaches pending instructions for this agent"
   [text & {:keys [agent-id]}]
@@ -74,9 +52,35 @@
 
 (defn mcp-json
   "Create a successful MCP response with JSON-encoded data.
-   
+
    Options:
    - :agent-id - If provided, drains and attaches pending instructions for this agent"
   [data & {:keys [agent-id]}]
   (-> {:type "text" :text (json/write-str data)}
       (attach-instructions agent-id)))
+
+;; =============================================================================
+;; Hivemind Message Piggyback (delegated to piggyback)
+;; =============================================================================
+
+(def get-hivemind-piggyback
+  "Get new hivemind messages since last tool call for specific agent.
+   Delegates to piggyback module. Returns nil if no new messages."
+  piggyback/get-messages)
+
+(def fetch-hivemind-history
+  "Get hivemind messages without marking as read. Delegates to piggyback module."
+  piggyback/fetch-history)
+
+(defn mcp-success+hm
+  "MCP success response with hivemind piggyback for coordinator.
+   Includes any new agent shouts since last tool call.
+
+   The agent-id parameter is required to track per-agent read cursors,
+   ensuring each agent only sees messages once."
+  [text & {:keys [agent-id]}]
+  (let [base (mcp-success text :agent-id agent-id)
+        hm (when agent-id (get-hivemind-piggyback agent-id))]
+    (if (seq hm)
+      (assoc base :_hm hm)
+      base)))
