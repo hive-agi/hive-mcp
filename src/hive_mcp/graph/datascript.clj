@@ -204,6 +204,76 @@
   (create-store schema/schema persist-path))
 
 ;;; -----------------------------------------------------------------------------
+;;; Convenience Functions (for crystal/graph.clj compatibility)
+;;; -----------------------------------------------------------------------------
+
+(defn make-datascript-store
+  "Create a DatascriptStore with default schema and no persistence.
+   Convenience function for modules that need a quick store."
+  []
+  (create-store schema/schema nil))
+
+(defn ds-reset!
+  "Reset a DatascriptStore to empty state."
+  [store]
+  (let [new-db (d/empty-db schema/schema)]
+    (clojure.core/reset! (:conn store) new-db)))
+
+(defn db
+  "Get the current database value from a store."
+  [store]
+  @(:conn store))
+
+(defn retract!
+  "Retract an entity or specific datom from the store.
+   
+   lookup-ref: [:attr value] to identify entity
+   OR [eid attr value] to retract specific datom"
+  [store lookup-ref]
+  (let [conn (:conn store)]
+    (if (= 2 (count lookup-ref))
+      ;; Entity retraction by lookup ref
+      (when-let [eid (:db/id (d/entity @conn lookup-ref))]
+        (d/transact! conn [[:db/retractEntity eid]]))
+      ;; Specific datom retraction [eid attr value]
+      (let [[eid attr value] lookup-ref]
+        (d/transact! conn [[:db/retract eid attr value]])))))
+
+(defn query
+  "Query the store with optional argument map.
+   
+   Extends protocol query to support {:id val :ctx val} style args.
+   Maps ?id in query to :id in args-map (strips ? prefix)."
+  ([store datalog-query]
+   (d/q datalog-query @(:conn store)))
+  ([store datalog-query args-map]
+   (if (map? args-map)
+     ;; Map-style args: extract values in order they appear in query
+     (let [in-vars (->> datalog-query
+                        (drop-while #(not= % :in))
+                        rest
+                        (take-while #(not= % :where))
+                        (remove #{'$}))
+           ;; Strip ? prefix from var names to get map keys
+           var->key (fn [v] (keyword (subs (name v) 1)))]
+       (if (seq in-vars)
+         (apply d/q datalog-query @(:conn store)
+                (map #(get args-map (var->key %)) in-vars))
+         (d/q datalog-query @(:conn store))))
+     ;; Vector-style args (passthrough)
+     (apply d/q datalog-query @(:conn store) (if (sequential? args-map) args-map [args-map])))))
+
+(defn ds-entity
+  "Get entity by eid or lookup ref."
+  [store eid-or-ref]
+  (d/entity @(:conn store) eid-or-ref))
+
+(defn transact!
+  "Transact data into the store. Wrapper for protocol method."
+  [store tx-data]
+  (d/transact! (:conn store) tx-data))
+
+;;; -----------------------------------------------------------------------------
 ;;; Convenience Functions
 ;;; -----------------------------------------------------------------------------
 

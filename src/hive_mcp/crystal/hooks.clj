@@ -205,6 +205,12 @@
 ;; Crystallization Hook
 ;; =============================================================================
 
+(defn- tags->elisp-list
+  "Convert Clojure tags vector to elisp list format.
+   [\"a\" \"b\"] -> '(\"a\" \"b\")"
+  [tags]
+  (str "'(" (str/join " " (map pr-str tags)) ")"))
+
 (defn crystallize-session
   "Crystallize session data into long-term memory.
    
@@ -221,9 +227,11 @@
   (let [summary (crystal/summarize-session-progress
                  (concat progress-notes completed-tasks)
                  git-commits)
-        elisp (format "(hive-mcp-memory-add 'note %s '%s nil 'short-term)"
+        ;; Convert tags to elisp list format
+        elisp-tags (tags->elisp-list (:tags summary))
+        elisp (format "(hive-mcp-memory-add 'note %s %s nil 'short-term)"
                       (pr-str (:content summary))
-                      (pr-str (:tags summary)))
+                      elisp-tags)
         {:keys [success result error]} (ec/eval-elisp elisp)]
     (if success
       (do

@@ -263,14 +263,23 @@ Returns nil if TAG is not a scope tag."
   "Return non-nil if TAGS contains any scope tag."
   (seq-some (lambda (tag) (string-prefix-p "scope:" tag)) tags))
 
+(defun hive-mcp-memory--ensure-list (seq)
+  "Convert SEQ to a list if it's a vector.
+Defensive helper for handling JSON arrays that may come as vectors."
+  (if (vectorp seq)
+      (append seq nil)
+    seq))
+
 (defun hive-mcp-memory--inject-project-scope (tags)
   "Inject current project scope into TAGS if no scope present.
-Returns modified tags list."
-  (if (hive-mcp-memory--has-scope-tag-p tags)
-      tags  ; Already has scope
-    (if-let* ((project-name (hive-mcp-memory--get-project-name)))
-        (cons (hive-mcp-memory--make-scope-tag 'project project-name) tags)
-      tags)))  ; Not in project, leave as-is (global)
+Returns modified tags list.
+Defensively converts vectors to lists to prevent malformed cons cells."
+  (let ((tags-list (hive-mcp-memory--ensure-list tags)))
+    (if (hive-mcp-memory--has-scope-tag-p tags-list)
+        tags-list  ; Already has scope
+      (if-let* ((project-name (hive-mcp-memory--get-project-name)))
+          (cons (hive-mcp-memory--make-scope-tag 'project project-name) tags-list)
+        tags-list))))  ; Not in project, leave as-is (global)
 
 (defun hive-mcp-memory--applicable-scope-tags (&optional project-name domain-name)
   "Return list of scope tags applicable to current context.

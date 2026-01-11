@@ -40,6 +40,49 @@
   #{:convention :decision :pattern})
 
 ;;; -----------------------------------------------------------------------------
+;;; Memory Types (Enum values)
+;;; -----------------------------------------------------------------------------
+
+(def memory-types
+  "Valid memory entry types (from Emacs memory store).
+   
+   :note       - General notes and observations
+   :snippet    - Code snippets or examples
+   :convention - Agreed-upon practices
+   :decision   - Architectural or design decisions"
+  #{:note :snippet :convention :decision})
+
+;;; -----------------------------------------------------------------------------
+;;; Memory Duration Types (Enum values)
+;;; -----------------------------------------------------------------------------
+
+(def duration-types
+  "Valid duration/TTL categories for memory entries.
+   
+   :ephemeral  - 1 day TTL
+   :short      - 7 days TTL
+   :medium     - 30 days TTL
+   :long       - 90 days TTL
+   :permanent  - Never expires"
+  #{:ephemeral :short :medium :long :permanent})
+
+;;; -----------------------------------------------------------------------------
+;;; Recall Context Types (Enum values)
+;;; -----------------------------------------------------------------------------
+
+(def recall-contexts
+  "Valid recall context types for tracking access patterns.
+   
+   :catchup-structural  - Mechanical catchup query (low weight)
+   :wrap-structural     - Mechanical wrap query (low weight)
+   :explicit-reference  - LLM explicitly cited (high weight)
+   :cross-session       - Accessed from different session (high weight)
+   :cross-project       - Accessed from different project (highest weight)
+   :user-feedback       - User marked as helpful (highest weight)"
+  #{:catchup-structural :wrap-structural :explicit-reference
+    :cross-session :cross-project :user-feedback})
+
+;;; -----------------------------------------------------------------------------
 ;;; Agent Types (Enum values)
 ;;; -----------------------------------------------------------------------------
 
@@ -59,11 +102,45 @@
   "Datascript schema for knowledge graph.
    
    Entity types:
+   - Memory: Entries from Emacs memory store (notes, snippets, conventions, decisions)
+   - Recall: Access tracking for memory promotion scoring
    - Friction: Reports from lings about blockers/gaps
    - Knowledge: Derived insights from friction patterns
    - Agent: Swarm participants (hivemind, lings, drones)"
 
   {;;; =========================================================================
+   ;;; Memory Entity (from crystal module)
+   ;;; =========================================================================
+   ;;
+   ;; Memory entries mirror the Emacs memory store, enabling graph queries
+   ;; for session lineage, cross-references, and promotion candidates.
+
+   :memory/id
+   {:db/doc "Unique identifier for the memory entry (UUID string)"
+    :db/unique :db.unique/identity}
+
+   :memory/tags
+   {:db/doc "Tags for categorization and search"
+    :db/cardinality :db.cardinality/many}
+
+   :memory/references
+   {:db/doc "References to other memory entries (cross-references)"
+    :db/valueType :db.type/ref
+    :db/cardinality :db.cardinality/many}
+
+   ;;; =========================================================================
+   ;;; Recall Entity (access tracking for promotion)
+   ;;; =========================================================================
+   ;;
+   ;; Tracks how memory entries are accessed, with context-aware weighting.
+   ;; Used by crystal/core to calculate promotion scores.
+
+   :recall/memory
+   {:db/doc "Reference to the memory entry being accessed"
+    :db/valueType :db.type/ref
+    :db/cardinality :db.cardinality/one}
+
+   ;;; =========================================================================
    ;;; Friction Entity
    ;;; =========================================================================
    ;;
@@ -142,6 +219,21 @@
   [t]
   (contains? agent-types t))
 
+(defn valid-memory-type?
+  "Check if type is a valid memory type."
+  [t]
+  (contains? memory-types t))
+
+(defn valid-duration-type?
+  "Check if type is a valid duration type."
+  [t]
+  (contains? duration-types t))
+
+(defn valid-recall-context?
+  "Check if context is a valid recall context."
+  [ctx]
+  (contains? recall-contexts ctx))
+
 ;;; -----------------------------------------------------------------------------
 ;;; Entity Constructors
 ;;; -----------------------------------------------------------------------------
@@ -192,3 +284,33 @@
              :agent/created-at now
              :agent/last-active now}
       spawned-by (assoc :agent/spawned-by spawned-by))))
+
+(defn make-memory
+  "Create a memory entity map for the graph.
+   
+   Required: id, type, duration
+   Optional: session-id, tags, references (entity ids)"
+  [{:keys [id type duration session-id tags references]}]
+  {:pre [(string? id)
+         (valid-memory-type? (keyword type))
+         (valid-duration-type? (keyword duration))]}
+  (cond-> {:memory/id id
+           :memory/type (keyword type)
+           :memory/duration (keyword duration)
+           :memory/created-at (java.util.Date.)}
+    session-id (assoc :memory/session-id session-id)
+    (seq tags) (assoc :memory/tags (set tags))
+    (seq references) (assoc :memory/references references)))
+
+(defn make-recall
+  "Create a recall entity map for tracking memory access.
+   
+   Required: memory (entity ref or lookup ref), context
+   Optional: count (default 1)"
+  [{:keys [memory context count]}]
+  {:pre [(some? memory)
+         (valid-recall-context? (keyword context))]}
+  {:recall/memory memory
+   :recall/context (keyword context)
+   :recall/count (or count 1)
+   :recall/accessed-at (java.util.Date.)})
