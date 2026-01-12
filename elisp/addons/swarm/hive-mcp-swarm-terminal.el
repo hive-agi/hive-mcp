@@ -38,8 +38,27 @@
 
 (declare-function hive-mcp-ellama-dispatch "hive-mcp-ellama")
 
+;; Forward declarations for event emission (from hive-mcp-swarm-events)
+(declare-function hive-mcp-swarm-events-emit-auto-started "hive-mcp-swarm-events")
+(declare-function hive-mcp-swarm-events-emit-auto-error "hive-mcp-swarm-events")
+(declare-function hive-mcp-swarm-events-emit-auto-completed "hive-mcp-swarm-events")
+
 ;; External state from swarm module
 (defvar hive-mcp-swarm--slaves)
+
+;;;; Buffer-Local State (Auto-Completion Detection):
+
+(defvar-local hive-mcp-swarm-terminal--working-p nil
+  "Non-nil when the terminal is actively processing a task.
+Set to t when `hive-mcp-swarm-terminal-send' is called with a task prompt.
+Set to nil when the terminal becomes ready again.")
+
+(defvar-local hive-mcp-swarm-terminal--task-start-time nil
+  "Time when the current task started (float-time).
+Used to calculate task duration for auto-shout events.")
+
+(defvar-local hive-mcp-swarm-terminal--pending-prompt nil
+  "The prompt text that was sent, for completion detection.")
 
 ;;;; Customization:
 
@@ -73,6 +92,57 @@ Ensures terminal processes text before return is sent."
   "Marker indicating Claude CLI is ready for input."
   :type 'string
   :group 'hive-mcp-swarm-terminal)
+
+(defcustom hive-mcp-swarm-terminal-auto-shout t
+  "If non-nil, automatically emit hivemind shout when lings complete tasks.
+When a ling finishes a task (transitions from working to ready),
+an auto-completion event is emitted without requiring explicit shout calls."
+  :type 'boolean
+  :group 'hive-mcp-swarm-terminal)
+
+(defcustom hive-mcp-swarm-terminal-completion-poll-interval 1.0
+  "Interval in seconds between completion checks for working buffers."
+  :type 'float
+  :group 'hive-mcp-swarm-terminal)
+
+(defcustom hive-mcp-swarm-terminal-error-patterns
+  '(;; Claude CLI errors
+    ("Error:" . "cli-error")
+    ("error:" . "cli-error")
+    ("ERROR" . "cli-error")
+    ;; Tool/execution errors
+    ("failed with exit code" . "tool-error")
+    ("Command failed" . "tool-error")
+    ("Traceback (most recent" . "tool-error")
+    ("Exception:" . "tool-error")
+    ("Panic:" . "tool-error")
+    ;; API errors
+    ("API error" . "api-error")
+    ("rate limit" . "api-error")
+    ("authentication failed" . "api-error")
+    ;; Process errors
+    ("Killed" . "process-error")
+    ("Segmentation fault" . "process-error")
+    ("Out of memory" . "process-error"))
+  "Alist of (PATTERN . ERROR-TYPE) for detecting errors in terminal output.
+PATTERN is a string to search for in the recent terminal output.
+ERROR-TYPE is a category string for the error."
+  :type '(alist :key-type string :value-type string)
+  :group 'hive-mcp-swarm-terminal)
+
+(defcustom hive-mcp-swarm-terminal-error-search-lines 100
+  "Number of lines to search for error patterns in terminal output."
+  :type 'integer
+  :group 'hive-mcp-swarm-terminal)
+
+;;;; Completion Watcher State:
+
+(defvar hive-mcp-swarm-terminal--completion-timer nil
+  "Timer for polling task completion across all working slave buffers.")
+
+(defvar hive-mcp-swarm-terminal--completion-callback nil
+  "Callback to invoke when task completion is detected.
+Called with (buffer slave-id duration-secs).")
 
 ;;;; Backend Detection:
 
@@ -110,6 +180,42 @@ Ensures terminal processes text before return is sent."
                    (throw 'found id)))
                hive-mcp-swarm--slaves)
       nil)))
+
+;;;; Error Detection:
+
+(defun hive-mcp-swarm-terminal--detect-error (buffer)
+  "Detect error patterns in BUFFER's recent output.
+Returns (ERROR-TYPE . ERROR-PREVIEW) if error found, nil otherwise.
+Searches the last `hive-mcp-swarm-terminal-error-search-lines' lines."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (save-excursion
+        (goto-char (point-max))
+        (let* ((search-start (save-excursion
+                               (forward-line (- hive-mcp-swarm-terminal-error-search-lines))
+                               (point)))
+               (recent-text (buffer-substring-no-properties search-start (point-max))))
+          (catch 'found-error
+            (dolist (pattern-pair hive-mcp-swarm-terminal-error-patterns)
+              (let ((pattern (car pattern-pair))
+                    (error-type (cdr pattern-pair)))
+                (when (string-match-p (regexp-quote pattern) recent-text)
+                  ;; Extract error preview: find the line containing the pattern
+                  (let ((error-preview
+                         (when (string-match (concat "^.*" (regexp-quote pattern) ".*$")
+                                             recent-text)
+                           (substring recent-text
+                                      (match-beginning 0)
+                                      (min (match-end 0)
+                                           (+ (match-beginning 0) 200))))))
+                    (throw 'found-error (cons error-type (or error-preview pattern)))))))
+            nil))))))
+
+(defun hive-mcp-swarm-terminal--truncate-for-preview (text max-length)
+  "Truncate TEXT to MAX-LENGTH chars, adding ellipsis if needed."
+  (if (and text (> (length text) max-length))
+      (concat (substring text 0 (- max-length 3)) "...")
+    (or text "")))
 
 ;;;; Non-Blocking Send Operations:
 
@@ -183,9 +289,30 @@ Delay scales with text length to allow vterm to process large pastes."
 (defun hive-mcp-swarm-terminal-send (buffer text &optional backend)
   "Send TEXT to terminal BUFFER using BACKEND. NON-BLOCKING.
 BACKEND defaults to auto-detection or `hive-mcp-swarm-terminal-backend'.
-Returns immediately - uses timers for delayed operations."
+Returns immediately - uses timers for delayed operations.
+
+Side effects:
+- Sets buffer-local `hive-mcp-swarm-terminal--working-p' to t
+- Records start time in `hive-mcp-swarm-terminal--task-start-time'
+- Stores prompt in `hive-mcp-swarm-terminal--pending-prompt'
+- Emits auto-started event for task tracking
+
+These are used by the completion watcher to detect task completion
+and emit auto-shout events."
   (unless (buffer-live-p buffer)
     (error "Terminal buffer is dead"))
+  ;; Set working state for completion detection
+  (with-current-buffer buffer
+    (setq-local hive-mcp-swarm-terminal--working-p t)
+    (setq-local hive-mcp-swarm-terminal--task-start-time (float-time))
+    (setq-local hive-mcp-swarm-terminal--pending-prompt text))
+  ;; Emit auto-started event for task tracking
+  (when hive-mcp-swarm-terminal-auto-shout
+    (when-let* ((slave-id (hive-mcp-swarm-terminal--find-slave-by-buffer buffer)))
+      (let ((task-preview (hive-mcp-swarm-terminal--truncate-for-preview text 100)))
+        (when (fboundp 'hive-mcp-swarm-events-emit-auto-started)
+          (hive-mcp-swarm-events-emit-auto-started slave-id task-preview))
+        (message "[swarm-terminal] Auto-shout: %s started task" slave-id))))
   (let ((backend (or backend
                      (hive-mcp-swarm-terminal-detect-buffer-backend buffer)
                      hive-mcp-swarm-terminal-backend)))
@@ -290,6 +417,116 @@ Handles process cleanup to prevent confirmation dialogs."
           (kill-buffer-hook nil)
           (vterm-exit-functions nil))
       (kill-buffer buffer))))
+
+;;;; Completion Watcher (Auto-Shout):
+
+(defun hive-mcp-swarm-terminal--check-buffer-completion (buffer)
+  "Check if BUFFER has completed its task (working → ready transition).
+Returns a plist with completion info if done, nil otherwise.
+
+Return format:
+  (:slave-id ID :duration SECS :status STATUS [:error-type TYPE :error-preview TEXT])
+
+STATUS is one of:
+- \"completed\" - task finished normally
+- \"error\" - error pattern detected in output"
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (when (and hive-mcp-swarm-terminal--working-p
+                 (hive-mcp-swarm-terminal-ready-p buffer))
+        ;; Transition detected: working → ready
+        (let* ((slave-id (hive-mcp-swarm-terminal--find-slave-by-buffer buffer))
+               (start-time hive-mcp-swarm-terminal--task-start-time)
+               (duration (when start-time
+                           (- (float-time) start-time)))
+               ;; Check for error patterns in output
+               (error-info (hive-mcp-swarm-terminal--detect-error buffer))
+               (status (if error-info "error" "completed")))
+          ;; Clear working state
+          (setq-local hive-mcp-swarm-terminal--working-p nil)
+          (setq-local hive-mcp-swarm-terminal--task-start-time nil)
+          (setq-local hive-mcp-swarm-terminal--pending-prompt nil)
+          ;; Return completion info with status
+          (when slave-id
+            (if error-info
+                (list :slave-id slave-id
+                      :duration duration
+                      :status status
+                      :error-type (car error-info)
+                      :error-preview (cdr error-info))
+              (list :slave-id slave-id
+                    :duration duration
+                    :status status))))))))
+
+(defun hive-mcp-swarm-terminal--completion-watcher-tick ()
+  "Check all working slave buffers for completion.
+Called periodically by the completion watcher timer.
+
+Detects both successful completions and errors, emitting the
+appropriate auto-shout event for each."
+  (when (and hive-mcp-swarm-terminal-auto-shout
+             (boundp 'hive-mcp-swarm--slaves)
+             (hash-table-p hive-mcp-swarm--slaves))
+    (maphash
+     (lambda (_slave-id slave)
+       (when-let* ((buffer (plist-get slave :buffer))
+                   (completion-info (hive-mcp-swarm-terminal--check-buffer-completion buffer)))
+         (let* ((completed-slave-id (plist-get completion-info :slave-id))
+                (duration (plist-get completion-info :duration))
+                (status (plist-get completion-info :status))
+                (error-type (plist-get completion-info :error-type))
+                (error-preview (plist-get completion-info :error-preview)))
+           ;; Emit appropriate auto-shout event
+           (if (string= status "error")
+               (progn
+                 ;; Emit auto-error event
+                 (when (fboundp 'hive-mcp-swarm-events-emit-auto-error)
+                   (hive-mcp-swarm-events-emit-auto-error
+                    completed-slave-id duration error-type error-preview))
+                 (message "[swarm-terminal] Auto-shout: %s error detected (%s, %.1fs)"
+                          completed-slave-id error-type (or duration 0)))
+             ;; Emit auto-completed event
+             (when (fboundp 'hive-mcp-swarm-events-emit-auto-completed)
+               (hive-mcp-swarm-events-emit-auto-completed
+                completed-slave-id duration status))
+             (message "[swarm-terminal] Auto-shout: %s completed task (%.1fs)"
+                      completed-slave-id (or duration 0)))
+           ;; Invoke callback if registered (for backward compatibility)
+           (when (functionp hive-mcp-swarm-terminal--completion-callback)
+             (funcall hive-mcp-swarm-terminal--completion-callback
+                      buffer completed-slave-id duration status
+                      error-type error-preview)))))
+     hive-mcp-swarm--slaves)))
+
+(defun hive-mcp-swarm-terminal-start-completion-watcher (callback)
+  "Start the completion watcher timer with CALLBACK.
+CALLBACK is called with (buffer slave-id duration-secs) on completion."
+  (hive-mcp-swarm-terminal-stop-completion-watcher)
+  (setq hive-mcp-swarm-terminal--completion-callback callback)
+  (setq hive-mcp-swarm-terminal--completion-timer
+        (run-with-timer
+         hive-mcp-swarm-terminal-completion-poll-interval
+         hive-mcp-swarm-terminal-completion-poll-interval
+         #'hive-mcp-swarm-terminal--completion-watcher-tick))
+  (message "[swarm-terminal] Completion watcher started (interval: %.1fs)"
+           hive-mcp-swarm-terminal-completion-poll-interval))
+
+(defun hive-mcp-swarm-terminal-stop-completion-watcher ()
+  "Stop the completion watcher timer."
+  (when hive-mcp-swarm-terminal--completion-timer
+    (cancel-timer hive-mcp-swarm-terminal--completion-timer)
+    (setq hive-mcp-swarm-terminal--completion-timer nil)
+    (setq hive-mcp-swarm-terminal--completion-callback nil)
+    (message "[swarm-terminal] Completion watcher stopped")))
+
+(defun hive-mcp-swarm-terminal-reset-working-state (buffer)
+  "Reset working state for BUFFER.
+Use this to manually clear stale working state."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (setq-local hive-mcp-swarm-terminal--working-p nil)
+      (setq-local hive-mcp-swarm-terminal--task-start-time nil)
+      (setq-local hive-mcp-swarm-terminal--pending-prompt nil))))
 
 (provide 'hive-mcp-swarm-terminal)
 ;;; hive-mcp-swarm-terminal.el ends here

@@ -83,6 +83,10 @@
 (require 'hive-mcp-swarm-tasks)
 (require 'hive-mcp-swarm-hooks)
 
+;; Forward declarations for terminal completion watcher
+(declare-function hive-mcp-swarm-terminal-start-completion-watcher "hive-mcp-swarm-terminal")
+(declare-function hive-mcp-swarm-terminal-stop-completion-watcher "hive-mcp-swarm-terminal")
+
 ;; Soft dependency on channel for push events
 (declare-function hive-mcp-channel-connected-p "hive-mcp-channel")
 (declare-function hive-mcp-channel-send "hive-mcp-channel")
@@ -285,6 +289,9 @@ This alerts the human even when running master Claude in a terminal."
 (defalias 'hive-mcp-swarm--emit-state-changed 'hive-mcp-swarm-events-emit-state-changed)
 (defalias 'hive-mcp-swarm--emit-slave-spawned 'hive-mcp-swarm-events-emit-slave-spawned)
 (defalias 'hive-mcp-swarm--emit-slave-killed 'hive-mcp-swarm-events-emit-slave-killed)
+(defalias 'hive-mcp-swarm--emit-auto-completed 'hive-mcp-swarm-events-emit-auto-completed)
+(defalias 'hive-mcp-swarm--emit-auto-started 'hive-mcp-swarm-events-emit-auto-started)
+(defalias 'hive-mcp-swarm--emit-auto-error 'hive-mcp-swarm-events-emit-auto-error)
 
 ;;;; Hivemind State Sync Handler:
 ;; Updates swarm slave state based on hivemind shout events.
@@ -357,6 +364,68 @@ Maps agent-id to slave-id and updates status accordingly."
   (interactive)
   (hive-mcp-swarm-prompts-stop-watcher)
   (message "[swarm] Auto-approve watcher stopped"))
+
+;;;; Auto-Shout Completion Watcher:
+;; Automatically detects when lings finish tasks and emits hivemind shout.
+;; Uses hive-mcp-swarm-terminal completion detection.
+
+(defun hive-mcp-swarm--on-task-completion (_buffer slave-id duration-secs
+                                                  &optional status error-type error-preview)
+  "Callback when task completion is auto-detected.
+BUFFER is the terminal buffer, SLAVE-ID identifies the ling,
+DURATION-SECS is how long the task took.
+STATUS is \"completed\" or \"error\" (default: \"completed\").
+ERROR-TYPE and ERROR-PREVIEW are set when STATUS is \"error\".
+
+This function:
+1. Updates slave status based on completion type
+2. Increments appropriate counter (tasks-completed or tasks-failed)
+3. Emits state-changed event if status changed
+
+Note: Event emission (auto-completed/auto-error) is now handled by
+the completion watcher tick function directly."
+  (when-let* ((slave (gethash slave-id hive-mcp-swarm--slaves)))
+    (let ((old-status (plist-get slave :status))
+          (is-error (string= status "error")))
+      ;; Update slave state
+      (plist-put slave :status 'idle)
+      (plist-put slave :current-task nil)
+      (plist-put slave :last-activity (format-time-string "%FT%T%z"))
+      ;; Update appropriate counter
+      (if is-error
+          (progn
+            (plist-put slave :tasks-failed
+                       (1+ (or (plist-get slave :tasks-failed) 0)))
+            (plist-put slave :last-error
+                       (list :type error-type
+                             :preview error-preview
+                             :timestamp (format-time-string "%FT%T%z"))))
+        (plist-put slave :tasks-completed
+                   (1+ (or (plist-get slave :tasks-completed) 0))))
+      ;; Emit state-changed event if status changed
+      (unless (eq old-status 'idle)
+        (hive-mcp-swarm--emit-state-changed slave-id old-status 'idle))
+      ;; Log (event emission is now handled by terminal watcher)
+      (if is-error
+          (message "[swarm] Task error: %s (%s, %.1fs)"
+                   slave-id (or error-type "unknown") (or duration-secs 0))
+        (message "[swarm] Task completed: %s (%.1fs)"
+                 slave-id (or duration-secs 0))))))
+
+(defun hive-mcp-swarm-start-completion-watcher ()
+  "Start the auto-shout completion watcher timer."
+  (interactive)
+  (when (fboundp 'hive-mcp-swarm-terminal-start-completion-watcher)
+    (hive-mcp-swarm-terminal-start-completion-watcher
+     #'hive-mcp-swarm--on-task-completion)
+    (message "[swarm] Completion watcher started (auto-shout enabled)")))
+
+(defun hive-mcp-swarm-stop-completion-watcher ()
+  "Stop the auto-shout completion watcher timer."
+  (interactive)
+  (when (fboundp 'hive-mcp-swarm-terminal-stop-completion-watcher)
+    (hive-mcp-swarm-terminal-stop-completion-watcher)
+    (message "[swarm] Completion watcher stopped")))
 
 ;;;; Human Mode - Prompt Hooks:
 ;; Delegated to hive-mcp-swarm-prompts module.
@@ -665,14 +734,17 @@ Returns result plist indicating success or failure."
         (hive-mcp-swarm-prompts-init)
         ;; Register hivemind state sync hooks
         (hive-mcp-swarm--register-hivemind-sync-hooks)
-        ;; Start watcher if enabled
+        ;; Start watchers if enabled
         (when hive-mcp-swarm-auto-approve
           (hive-mcp-swarm-start-auto-approve))
-        (message "hive-mcp-swarm enabled (session: %s, auto-approve: %s)"
+        ;; Start completion watcher for auto-shout
+        (hive-mcp-swarm-start-completion-watcher)
+        (message "hive-mcp-swarm enabled (session: %s, auto-approve: %s, auto-shout: on)"
                  hive-mcp-swarm--session-id
                  (if hive-mcp-swarm-auto-approve "on" "off")))
     ;; Shutdown
     (hive-mcp-swarm-stop-auto-approve)
+    (hive-mcp-swarm-stop-completion-watcher)
     (hive-mcp-swarm-kill-all)
     ;; Unregister hivemind sync hooks
     (hive-mcp-swarm--unregister-hivemind-sync-hooks)
@@ -712,13 +784,16 @@ Returns result plist indicating success or failure."
   (hive-mcp-swarm-prompts-init)
   ;; Register hivemind state sync hooks
   (hive-mcp-swarm--register-hivemind-sync-hooks)
-  ;; Start watcher if enabled
+  ;; Start watchers if enabled
   (when hive-mcp-swarm-auto-approve
-    (hive-mcp-swarm-start-auto-approve)))
+    (hive-mcp-swarm-start-auto-approve))
+  ;; Start completion watcher for auto-shout
+  (hive-mcp-swarm-start-completion-watcher))
 
 (defun hive-mcp-swarm--addon-shutdown ()
   "Shutdown swarm addon - kill all slaves."
   (hive-mcp-swarm-stop-auto-approve)
+  (hive-mcp-swarm-stop-completion-watcher)
   (hive-mcp-swarm-kill-all)
   ;; Unregister hivemind sync hooks
   (hive-mcp-swarm--unregister-hivemind-sync-hooks)

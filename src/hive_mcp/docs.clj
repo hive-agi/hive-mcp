@@ -2,8 +2,7 @@
   "MCP tools for Emacs documentation lookup.
    Leverages hive-mcp-docs.el addon for introspection."
   (:require [hive-mcp.emacsclient :as ec]
-            [hive-mcp.tools :refer [mcp-success mcp-error mcp-json]]
-            [taoensso.timbre :as log]))
+            [hive-mcp.tools.core :refer [mcp-success mcp-error]]))
 
 ;;; Helpers
 

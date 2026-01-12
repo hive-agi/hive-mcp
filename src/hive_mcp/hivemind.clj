@@ -15,7 +15,7 @@
   (:require [hive-mcp.channel :as channel]
             [hive-mcp.channel.websocket :as ws]
             [hive-mcp.channel.piggyback :as piggyback]
-            [clojure.core.async :as async :refer [<!! >!! chan timeout alt!!]]
+            [clojure.core.async :as async :refer [>!! chan timeout alt!!]]
             [clojure.data.json :as json]
             [taoensso.timbre :as log]))
 

@@ -17,7 +17,7 @@
             [hive-mcp.channel :as channel]
             [hive-mcp.emacsclient :as ec]
             [hive-mcp.hivemind :as hivemind]
-            [clojure.core.async :as async :refer [go go-loop <!]]
+            [clojure.core.async :as async :refer [go-loop <!]]
             [clojure.data.json :as json]
             [taoensso.timbre :as log]))
 

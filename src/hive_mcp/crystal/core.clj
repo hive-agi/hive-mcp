@@ -8,8 +8,7 @@
    
    SOLID: Single responsibility - promotion scoring only.
    DDD: Pure domain functions, no side effects."
-  (:require [clojure.string :as str]
-            [taoensso.timbre :as log]))
+  (:require [clojure.string :as str]))
 
 ;; =============================================================================
 ;; Recall Context Weights

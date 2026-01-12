@@ -12,7 +12,6 @@
    SOLID: Single responsibility - graph queries only.
    DDD: Persistence adapter for memory domain."
   (:require [clojure.data.json :as json]
-            [clojure.string :as str]
             [hive-mcp.emacsclient :as ec]
             [hive-mcp.crystal.core :as crystal]
             [hive-mcp.graph.datascript :as ds]

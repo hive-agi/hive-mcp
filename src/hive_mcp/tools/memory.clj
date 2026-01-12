@@ -7,47 +7,40 @@
    Architecture (post-migration):
    - Chroma: Single source of truth for all memory data
    - Clojure: All CRUD operations via chroma.clj
-   - Elisp: Thin API layer (optional, for backward compatibility)"
-  (:require [hive-mcp.tools.core :refer [mcp-success mcp-error mcp-json]]
+   - Elisp: Thin API layer (optional, for backward compatibility)
+
+   SOLID: Handlers delegate to extracted submodules:
+   - memory.core: with-chroma, with-entry macros
+   - memory.duration: duration constants and calculations"
+  (:require [hive-mcp.tools.memory.core :refer [with-chroma with-entry]]
+            [hive-mcp.tools.memory.duration :as dur]
             [hive-mcp.emacsclient :as ec]
-            [hive-mcp.elisp :as el]
             [hive-mcp.chroma :as chroma]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [taoensso.timbre :as log]))
 
 ;; ============================================================
-;; Configuration
-;; ============================================================
-
-(def ^:private duration-days
-  "Duration category to days mapping. nil = permanent (never expires)."
-  {"ephemeral" 1
-   "short" 7
-   "medium" 30
-   "long" 90
-   "permanent" nil})
-
-;; ============================================================
 ;; Helpers
 ;; ============================================================
 
 (defn- get-current-project-id
-  "Get current project ID from Emacs, or 'global' if not in a project."
-  []
-  (try
-    (let [{:keys [success result]} (ec/eval-elisp "(hive-mcp-memory--project-id)")]
-      (if (and success result (not= result "nil"))
-        (str/replace result #"\"" "")
-        "global"))
-    (catch Exception _
-      "global")))
-
-(defn- calculate-expires
-  "Calculate expiration timestamp for given duration."
-  [duration]
-  (when-let [days (get duration-days (or duration "long"))]
-    (str (.plusDays (java.time.ZonedDateTime/now) days))))
+  "Get current project ID from Emacs, or 'global' if not in a project.
+   When directory is provided, uses that path to determine project context
+   instead of relying on Emacs's current buffer."
+  ([]
+   (get-current-project-id nil))
+  ([directory]
+   (try
+     (let [elisp (if directory
+                   (format "(hive-mcp-memory--project-id %s)" (pr-str directory))
+                   "(hive-mcp-memory--project-id)")
+           {:keys [success result]} (ec/eval-elisp elisp)]
+       (if (and success result (not= result "nil"))
+         (str/replace result #"\"" "")
+         "global"))
+     (catch Exception _
+       "global"))))
 
 (defn- inject-project-scope
   "Add project scope tag if not already present."
@@ -82,49 +75,39 @@
   [entry]
   (-> entry
       (update :tags #(or % []))
-      (dissoc :document)))  ; Remove internal field
+      (dissoc :document))) ; Remove internal field
 
 (defn handle-mcp-memory-add
   "Add an entry to project memory (Chroma-only storage).
    Stores full entry in Chroma with content, metadata, and embedding."
   [{:keys [type content tags duration]}]
   (log/info "mcp-memory-add:" type)
-  (if-not (chroma/embedding-configured?)
-    {:type "text"
-     :text (json/write-str {:error "Chroma not configured"
-                            :message "Memory storage requires Chroma with embedding provider"})
-     :isError true}
-    (try
-      (let [project-id (get-current-project-id)
-            tags-with-scope (inject-project-scope (or tags []) project-id)
-            content-hash (chroma/content-hash content)
-            duration-str (or duration "long")
-            expires (calculate-expires duration-str)
-            ;; Check for duplicate
-            existing (chroma/find-duplicate type content-hash :project-id project-id)]
-        (if existing
-          ;; Duplicate found - merge tags and return existing
-          (let [merged-tags (distinct (concat (:tags existing) tags-with-scope))
-                updated (chroma/update-entry! (:id existing) {:tags merged-tags})]
-            (log/info "Duplicate found, merged tags:" (:id existing))
-            {:type "text" :text (json/write-str (entry->json-alist updated))})
-          ;; Create new entry
-          (let [entry-id (chroma/index-memory-entry!
-                          {:type type
-                           :content content
-                           :tags tags-with-scope
-                           :content-hash content-hash
-                           :duration duration-str
-                           :expires (or expires "")
-                           :project-id project-id})
-                created (chroma/get-entry-by-id entry-id)]
-            (log/info "Created memory entry:" entry-id)
-            {:type "text" :text (json/write-str (entry->json-alist created))})))
-      (catch Exception e
-        (log/error "Memory add failed:" (ex-message e))
-        {:type "text"
-         :text (json/write-str {:error (str "Memory add failed: " (ex-message e))})
-         :isError true}))))
+  (with-chroma
+    (let [project-id (get-current-project-id)
+          tags-with-scope (inject-project-scope (or tags []) project-id)
+          content-hash (chroma/content-hash content)
+          duration-str (or duration "long")
+          expires (dur/calculate-expires duration-str)
+          ;; Check for duplicate
+          existing (chroma/find-duplicate type content-hash :project-id project-id)]
+      (if existing
+        ;; Duplicate found - merge tags and return existing
+        (let [merged-tags (distinct (concat (:tags existing) tags-with-scope))
+              updated (chroma/update-entry! (:id existing) {:tags merged-tags})]
+          (log/info "Duplicate found, merged tags:" (:id existing))
+          {:type "text" :text (json/write-str (entry->json-alist updated))})
+        ;; Create new entry
+        (let [entry-id (chroma/index-memory-entry!
+                        {:type type
+                         :content content
+                         :tags tags-with-scope
+                         :content-hash content-hash
+                         :duration duration-str
+                         :expires (or expires "")
+                         :project-id project-id})
+              created (chroma/get-entry-by-id entry-id)]
+          (log/info "Created memory entry:" entry-id)
+          {:type "text" :text (json/write-str (entry->json-alist created))})))))
 
 (defn handle-mcp-memory-query
   "Query project memory by type with scope filtering (Chroma-only).
@@ -135,45 +118,35 @@
     - specific scope tag: filter by that scope"
   [{:keys [type tags limit duration scope]}]
   (log/info "mcp-memory-query:" type "scope:" scope)
-  (if-not (chroma/embedding-configured?)
-    {:type "text"
-     :text (json/write-str {:error "Chroma not configured"
-                            :message "Memory query requires Chroma with embedding provider"})
-     :isError true}
-    (try
-      (let [project-id (get-current-project-id)
-            limit-val (or limit 20)
-            ;; Query from Chroma
-            entries (chroma/query-entries :type type
-                                          :project-id (when (nil? scope) project-id)
-                                          :limit (* limit-val 5))  ; Over-fetch for filtering
-            ;; Apply scope filter
-            scope-filter (cond
-                           (nil? scope) (str "scope:project:" project-id)
-                           (= scope "all") nil
-                           :else scope)
-            filtered (if scope-filter
-                       (filter #(matches-scope? % scope-filter) entries)
-                       entries)
-            ;; Apply tag filter
-            tag-filtered (if (seq tags)
-                           (filter (fn [entry]
-                                     (let [entry-tags (set (:tags entry))]
-                                       (every? #(contains? entry-tags %) tags)))
-                                   filtered)
-                           filtered)
-            ;; Apply duration filter
-            dur-filtered (if duration
-                           (filter #(= (:duration %) duration) tag-filtered)
-                           tag-filtered)
-            ;; Apply limit
-            results (take limit-val dur-filtered)]
-        {:type "text" :text (json/write-str (mapv entry->json-alist results))})
-      (catch Exception e
-        (log/error "Memory query failed:" (ex-message e))
-        {:type "text"
-         :text (json/write-str {:error (str "Memory query failed: " (ex-message e))})
-         :isError true}))))
+  (with-chroma
+    (let [project-id (get-current-project-id)
+          limit-val (or limit 20)
+          ;; Query from Chroma
+          entries (chroma/query-entries :type type
+                                        :project-id (when (nil? scope) project-id)
+                                        :limit (* limit-val 5)) ; Over-fetch for filtering
+          ;; Apply scope filter
+          scope-filter (cond
+                         (nil? scope) (str "scope:project:" project-id)
+                         (= scope "all") nil
+                         :else scope)
+          filtered (if scope-filter
+                     (filter #(matches-scope? % scope-filter) entries)
+                     entries)
+          ;; Apply tag filter
+          tag-filtered (if (seq tags)
+                         (filter (fn [entry]
+                                   (let [entry-tags (set (:tags entry))]
+                                     (every? #(contains? entry-tags %) tags)))
+                                 filtered)
+                         filtered)
+          ;; Apply duration filter
+          dur-filtered (if duration
+                         (filter #(= (:duration %) duration) tag-filtered)
+                         tag-filtered)
+          ;; Apply limit
+          results (take limit-val dur-filtered)]
+      {:type "text" :text (json/write-str (mapv entry->json-alist results))})))
 
 (defn- entry->metadata
   "Convert entry to metadata-only format (id, type, preview, tags, created)."
@@ -205,42 +178,25 @@
   Follow up with mcp_memory_get_full to fetch specific entries."
   [{:keys [type tags limit scope]}]
   (log/info "mcp-memory-query-metadata:" type "scope:" scope)
-  (if-not (chroma/embedding-configured?)
-    {:type "text"
-     :text (json/write-str {:error "Chroma not configured"})
-     :isError true}
-    (try
-      (let [;; Reuse query logic
-            {:keys [text isError]} (handle-mcp-memory-query
-                                    {:type type :tags tags :limit limit :scope scope})]
-        (if isError
-          {:type "text" :text text :isError true}
-          (let [entries (json/read-str text :key-fn keyword)
-                metadata (mapv entry->metadata entries)]
-            {:type "text" :text (json/write-str metadata)})))
-      (catch Exception e
-        (log/error "Memory query-metadata failed:" (ex-message e))
-        {:type "text"
-         :text (json/write-str {:error (str "Query failed: " (ex-message e))})
-         :isError true}))))
+  (with-chroma
+    (let [;; Reuse query logic
+          {:keys [text isError]} (handle-mcp-memory-query
+                                  {:type type :tags tags :limit limit :scope scope})]
+      (if isError
+        {:type "text" :text text :isError true}
+        (let [entries (json/read-str text :key-fn keyword)
+              metadata (mapv entry->metadata entries)]
+          {:type "text" :text (json/write-str metadata)})))))
 
 (defn handle-mcp-memory-get-full
   "Get full content of a memory entry by ID (Chroma-only).
   Use after mcp_memory_query_metadata to fetch specific entries."
   [{:keys [id]}]
   (log/info "mcp-memory-get-full:" id)
-  (if-not (chroma/embedding-configured?)
-    {:type "text"
-     :text (json/write-str {:error "Chroma not configured"})
-     :isError true}
-    (try
-      (if-let [entry (chroma/get-entry-by-id id)]
-        {:type "text" :text (json/write-str (entry->json-alist entry))}
-        {:type "text" :text (json/write-str {:error "Entry not found" :id id}) :isError true})
-      (catch Exception e
-        {:type "text"
-         :text (json/write-str {:error (str "Get failed: " (ex-message e))})
-         :isError true}))))
+  (with-chroma
+    (if-let [entry (chroma/get-entry-by-id id)]
+      {:type "text" :text (json/write-str (entry->json-alist entry))}
+      {:type "text" :text (json/write-str {:error "Entry not found" :id id}) :isError true})))
 
 (defn handle-mcp-memory-search-semantic
   "Search project memory using semantic similarity (vector search).
@@ -280,198 +236,142 @@
                                   :status status})
            :isError true})))))
 
-(def ^:private duration-order
-  "Duration categories in order from shortest to longest."
-  ["ephemeral" "short" "medium" "long" "permanent"])
-
 (defn handle-mcp-memory-set-duration
   "Set duration category for a memory entry (Chroma-only)."
   [{:keys [id duration]}]
   (log/info "mcp-memory-set-duration:" id duration)
-  (if-not (chroma/embedding-configured?)
-    {:type "text" :text (json/write-str {:error "Chroma not configured"}) :isError true}
-    (try
-      (let [expires (calculate-expires duration)
-            updated (chroma/update-entry! id {:duration duration
-                                              :expires (or expires "")})]
-        (if updated
-          {:type "text" :text (json/write-str (entry->json-alist updated))}
-          {:type "text" :text (json/write-str {:error "Entry not found"}) :isError true}))
-      (catch Exception e
-        {:type "text" :text (json/write-str {:error (ex-message e)}) :isError true}))))
+  (with-chroma
+    (let [expires (dur/calculate-expires duration)
+          updated (chroma/update-entry! id {:duration duration
+                                            :expires (or expires "")})]
+      (if updated
+        {:type "text" :text (json/write-str (entry->json-alist updated))}
+        {:type "text" :text (json/write-str {:error "Entry not found"}) :isError true}))))
+
+(defn- shift-entry-duration
+  "Shift entry duration by delta steps. Returns MCP response.
+   SOLID: DRY - Unified promote/demote logic."
+  [id delta boundary-msg]
+  (with-entry [entry id]
+    (let [{:keys [new-duration changed?]} (dur/shift-duration (:duration entry) delta)]
+      (if-not changed?
+        {:type "text" :text (json/write-str {:message boundary-msg
+                                             :duration new-duration})}
+        (let [expires (dur/calculate-expires new-duration)
+              updated (chroma/update-entry! id {:duration new-duration
+                                                :expires (or expires "")})]
+          {:type "text" :text (json/write-str (entry->json-alist updated))})))))
 
 (defn handle-mcp-memory-promote
   "Promote memory entry to longer duration (Chroma-only)."
   [{:keys [id]}]
   (log/info "mcp-memory-promote:" id)
-  (if-not (chroma/embedding-configured?)
-    {:type "text" :text (json/write-str {:error "Chroma not configured"}) :isError true}
-    (try
-      (if-let [entry (chroma/get-entry-by-id id)]
-        (let [current-dur (or (:duration entry) "long")
-              idx (.indexOf duration-order current-dur)
-              next-idx (min (inc idx) (dec (count duration-order)))
-              new-dur (nth duration-order next-idx)]
-          (if (= new-dur current-dur)
-            {:type "text" :text (json/write-str {:message "Already at maximum duration"
-                                                 :duration current-dur})}
-            (let [expires (calculate-expires new-dur)
-                  updated (chroma/update-entry! id {:duration new-dur
-                                                    :expires (or expires "")})]
-              {:type "text" :text (json/write-str (entry->json-alist updated))})))
-        {:type "text" :text (json/write-str {:error "Entry not found"}) :isError true})
-      (catch Exception e
-        {:type "text" :text (json/write-str {:error (ex-message e)}) :isError true}))))
+  (shift-entry-duration id +1 "Already at maximum duration"))
 
 (defn handle-mcp-memory-demote
   "Demote memory entry to shorter duration (Chroma-only)."
   [{:keys [id]}]
   (log/info "mcp-memory-demote:" id)
-  (if-not (chroma/embedding-configured?)
-    {:type "text" :text (json/write-str {:error "Chroma not configured"}) :isError true}
-    (try
-      (if-let [entry (chroma/get-entry-by-id id)]
-        (let [current-dur (or (:duration entry) "long")
-              idx (.indexOf duration-order current-dur)
-              prev-idx (max (dec idx) 0)
-              new-dur (nth duration-order prev-idx)]
-          (if (= new-dur current-dur)
-            {:type "text" :text (json/write-str {:message "Already at minimum duration"
-                                                 :duration current-dur})}
-            (let [expires (calculate-expires new-dur)
-                  updated (chroma/update-entry! id {:duration new-dur
-                                                    :expires (or expires "")})]
-              {:type "text" :text (json/write-str (entry->json-alist updated))})))
-        {:type "text" :text (json/write-str {:error "Entry not found"}) :isError true})
-      (catch Exception e
-        {:type "text" :text (json/write-str {:error (ex-message e)}) :isError true}))))
+  (shift-entry-duration id -1 "Already at minimum duration"))
 
 (defn handle-mcp-memory-cleanup-expired
   "Remove all expired memory entries (Chroma-only)."
   [_]
   (log/info "mcp-memory-cleanup-expired")
-  (if-not (chroma/embedding-configured?)
-    {:type "text" :text (json/write-str {:error "Chroma not configured"}) :isError true}
-    (try
-      (let [count (chroma/cleanup-expired!)]
-        {:type "text" :text (json/write-str {:deleted count})})
-      (catch Exception e
-        {:type "text" :text (json/write-str {:error (ex-message e)}) :isError true}))))
+  (with-chroma
+    (let [count (chroma/cleanup-expired!)]
+      {:type "text" :text (json/write-str {:deleted count})})))
 
 (defn handle-mcp-memory-expiring-soon
   "List memory entries expiring within N days (Chroma-only)."
   [{:keys [days]}]
   (log/info "mcp-memory-expiring-soon:" (or days 7))
-  (if-not (chroma/embedding-configured?)
-    {:type "text" :text (json/write-str {:error "Chroma not configured"}) :isError true}
-    (try
-      (let [project-id (get-current-project-id)
-            entries (chroma/entries-expiring-soon (or days 7) :project-id project-id)]
-        {:type "text" :text (json/write-str (mapv entry->json-alist entries))})
-      (catch Exception e
-        {:type "text" :text (json/write-str {:error (ex-message e)}) :isError true}))))
+  (with-chroma
+    (let [project-id (get-current-project-id)
+          entries (chroma/entries-expiring-soon (or days 7) :project-id project-id)]
+      {:type "text" :text (json/write-str (mapv entry->json-alist entries))})))
 
 (defn handle-mcp-memory-log-access
   "Log access to a memory entry (Chroma-only).
    Increments access-count and updates last-accessed timestamp."
   [{:keys [id]}]
   (log/info "mcp-memory-log-access:" id)
-  (if-not (chroma/embedding-configured?)
-    {:type "text" :text (json/write-str {:error "Chroma not configured"}) :isError true}
-    (try
-      (if-let [entry (chroma/get-entry-by-id id)]
-        (let [new-count (inc (or (:access-count entry) 0))
-              updated (chroma/update-entry! id {:access-count new-count
-                                                :last-accessed (str (java.time.ZonedDateTime/now))})]
-          {:type "text" :text (json/write-str (entry->json-alist updated))})
-        {:type "text" :text (json/write-str {:error "Entry not found"}) :isError true})
-      (catch Exception e
-        {:type "text" :text (json/write-str {:error (ex-message e)}) :isError true}))))
+  (with-chroma
+    (if-let [entry (chroma/get-entry-by-id id)]
+      (let [new-count (inc (or (:access-count entry) 0))
+            updated (chroma/update-entry! id {:access-count new-count
+                                              :last-accessed (str (java.time.ZonedDateTime/now))})]
+        {:type "text" :text (json/write-str (entry->json-alist updated))})
+      {:type "text" :text (json/write-str {:error "Entry not found"}) :isError true})))
 
 (defn handle-mcp-memory-feedback
   "Submit helpfulness feedback for a memory entry (Chroma-only).
    feedback should be 'helpful' or 'unhelpful'."
   [{:keys [id feedback]}]
   (log/info "mcp-memory-feedback:" id feedback)
-  (if-not (chroma/embedding-configured?)
-    {:type "text" :text (json/write-str {:error "Chroma not configured"}) :isError true}
-    (try
-      (if-let [entry (chroma/get-entry-by-id id)]
-        (let [updates (case feedback
-                        "helpful" {:helpful-count (inc (or (:helpful-count entry) 0))}
-                        "unhelpful" {:unhelpful-count (inc (or (:unhelpful-count entry) 0))}
-                        (throw (ex-info "Invalid feedback type" {:feedback feedback})))
-              updated (chroma/update-entry! id updates)]
-          {:type "text" :text (json/write-str (entry->json-alist updated))})
-        {:type "text" :text (json/write-str {:error "Entry not found"}) :isError true})
-      (catch Exception e
-        {:type "text" :text (json/write-str {:error (ex-message e)}) :isError true}))))
+  (with-chroma
+    (if-let [entry (chroma/get-entry-by-id id)]
+      (let [updates (case feedback
+                      "helpful" {:helpful-count (inc (or (:helpful-count entry) 0))}
+                      "unhelpful" {:unhelpful-count (inc (or (:unhelpful-count entry) 0))}
+                      (throw (ex-info "Invalid feedback type" {:feedback feedback})))
+            updated (chroma/update-entry! id updates)]
+        {:type "text" :text (json/write-str (entry->json-alist updated))})
+      {:type "text" :text (json/write-str {:error "Entry not found"}) :isError true})))
 
 (defn handle-mcp-memory-helpfulness-ratio
   "Get helpfulness ratio for a memory entry (Chroma-only).
    Returns helpful/(helpful+unhelpful) or null if no feedback."
   [{:keys [id]}]
   (log/info "mcp-memory-helpfulness-ratio:" id)
-  (if-not (chroma/embedding-configured?)
-    {:type "text" :text (json/write-str {:error "Chroma not configured"}) :isError true}
-    (try
-      (if-let [entry (chroma/get-entry-by-id id)]
-        (let [helpful (or (:helpful-count entry) 0)
-              unhelpful (or (:unhelpful-count entry) 0)
-              total (+ helpful unhelpful)
-              ratio (when (pos? total) (/ (double helpful) total))]
-          {:type "text" :text (json/write-str {:ratio ratio
-                                               :helpful helpful
-                                               :unhelpful unhelpful})})
-        {:type "text" :text (json/write-str {:error "Entry not found"}) :isError true})
-      (catch Exception e
-        {:type "text" :text (json/write-str {:error (ex-message e)}) :isError true}))))
+  (with-chroma
+    (if-let [entry (chroma/get-entry-by-id id)]
+      (let [helpful (or (:helpful-count entry) 0)
+            unhelpful (or (:unhelpful-count entry) 0)
+            total (+ helpful unhelpful)
+            ratio (when (pos? total) (/ (double helpful) total))]
+        {:type "text" :text (json/write-str {:ratio ratio
+                                             :helpful helpful
+                                             :unhelpful unhelpful})})
+      {:type "text" :text (json/write-str {:error "Entry not found"}) :isError true})))
 
 (defn handle-mcp-memory-check-duplicate
   "Check if content already exists in memory (Chroma-only)."
   [{:keys [type content]}]
   (log/info "mcp-memory-check-duplicate:" type)
-  (if-not (chroma/embedding-configured?)
-    {:type "text" :text (json/write-str {:error "Chroma not configured"}) :isError true}
-    (try
-      (let [project-id (get-current-project-id)
-            hash (chroma/content-hash content)
-            existing (chroma/find-duplicate type hash :project-id project-id)]
-        {:type "text" :text (json/write-str {:exists (some? existing)
-                                             :entry (when existing (entry->json-alist existing))
-                                             :content_hash hash})})
-      (catch Exception e
-        {:type "text" :text (json/write-str {:error (ex-message e)}) :isError true}))))
+  (with-chroma
+    (let [project-id (get-current-project-id)
+          hash (chroma/content-hash content)
+          existing (chroma/find-duplicate type hash :project-id project-id)]
+      {:type "text" :text (json/write-str {:exists (some? existing)
+                                           :entry (when existing (entry->json-alist existing))
+                                           :content_hash hash})})))
 
 (defn handle-mcp-memory-migrate-project
   "Migrate memory from one project-id to another (Chroma-only).
    Updates project-id and optionally scope tags for all matching entries."
   [{:keys [old-project-id new-project-id update-scopes]}]
   (log/info "mcp-memory-migrate-project:" old-project-id "->" new-project-id)
-  (if-not (chroma/embedding-configured?)
-    {:type "text" :text (json/write-str {:error "Chroma not configured"}) :isError true}
-    (try
-      (let [entries (chroma/query-entries :project-id old-project-id :limit 10000)
-            migrated (atom 0)
-            updated-scopes (atom 0)]
-        (doseq [entry entries]
-          (let [new-tags (if update-scopes
-                           (mapv (fn [tag]
-                                   (if (= tag (str "scope:project:" old-project-id))
-                                     (do (swap! updated-scopes inc)
-                                         (str "scope:project:" new-project-id))
-                                     tag))
-                                 (:tags entry))
-                           (:tags entry))]
-            (chroma/update-entry! (:id entry) {:project-id new-project-id
-                                               :tags new-tags})
-            (swap! migrated inc)))
-        {:type "text" :text (json/write-str {:migrated @migrated
-                                             :updated-scopes @updated-scopes
-                                             :old-project-id old-project-id
-                                             :new-project-id new-project-id})})
-      (catch Exception e
-        {:type "text" :text (json/write-str {:error (ex-message e)}) :isError true}))))
+  (with-chroma
+    (let [entries (chroma/query-entries :project-id old-project-id :limit 10000)
+          migrated (atom 0)
+          updated-scopes (atom 0)]
+      (doseq [entry entries]
+        (let [new-tags (if update-scopes
+                         (mapv (fn [tag]
+                                 (if (= tag (str "scope:project:" old-project-id))
+                                   (do (swap! updated-scopes inc)
+                                       (str "scope:project:" new-project-id))
+                                   tag))
+                               (:tags entry))
+                         (:tags entry))]
+          (chroma/update-entry! (:id entry) {:project-id new-project-id
+                                             :tags new-tags})
+          (swap! migrated inc)))
+      {:type "text" :text (json/write-str {:migrated @migrated
+                                           :updated-scopes @updated-scopes
+                                           :old-project-id old-project-id
+                                           :new-project-id new-project-id})})))
 
 ;; =============================================================================
 ;; Migration Tool (JSON to Chroma)
@@ -482,61 +382,56 @@
    Reads existing JSON files from Emacs hive-mcp directory and imports to Chroma."
   [{:keys [project-id dry-run]}]
   (log/info "mcp-memory-import-json:" project-id "dry-run:" dry-run)
-  (if-not (chroma/embedding-configured?)
-    {:type "text" :text (json/write-str {:error "Chroma not configured"}) :isError true}
-    (try
-      ;; Get JSON data from elisp
-      (let [pid (or project-id (get-current-project-id))
-            elisp (format "(json-encode (list :notes (hive-mcp-memory-query 'note nil %s 1000 nil t)
-                                              :snippets (hive-mcp-memory-query 'snippet nil %s 1000 nil t)
-                                              :conventions (hive-mcp-memory-query 'convention nil %s 1000 nil t)
-                                              :decisions (hive-mcp-memory-query 'decision nil %s 1000 nil t)))"
-                          (pr-str pid) (pr-str pid) (pr-str pid) (pr-str pid))
-            {:keys [success result error]} (ec/eval-elisp elisp)]
-        (if-not success
-          {:type "text" :text (json/write-str {:error (str "Failed to read JSON: " error)}) :isError true}
-          (let [data (json/read-str result :key-fn keyword)
-                all-entries (concat (:notes data) (:snippets data)
-                                    (:conventions data) (:decisions data))
-                imported (atom 0)
-                skipped (atom 0)]
-            (if dry-run
-              {:type "text" :text (json/write-str {:dry-run true
-                                                   :would-import (count all-entries)
-                                                   :by-type {:notes (count (:notes data))
-                                                             :snippets (count (:snippets data))
-                                                             :conventions (count (:conventions data))
-                                                             :decisions (count (:decisions data))}})}
-              (do
-                (doseq [entry all-entries]
-                  ;; Check for existing entry
-                  (if (chroma/get-entry-by-id (:id entry))
-                    (swap! skipped inc)
-                    (do
-                      (chroma/index-memory-entry!
-                       {:id (:id entry)
-                        :type (:type entry)
-                        :content (:content entry)
-                        :tags (if (vector? (:tags entry))
-                                (vec (:tags entry))
-                                (:tags entry))
-                        :content-hash (or (:content-hash entry)
-                                          (chroma/content-hash (:content entry)))
-                        :created (:created entry)
-                        :updated (:updated entry)
-                        :duration (or (:duration entry) "long")
-                        :expires (or (:expires entry) "")
-                        :access-count (or (:access-count entry) 0)
-                        :helpful-count (or (:helpful-count entry) 0)
-                        :unhelpful-count (or (:unhelpful-count entry) 0)
-                        :project-id pid})
-                      (swap! imported inc))))
-                {:type "text" :text (json/write-str {:imported @imported
-                                                     :skipped @skipped
-                                                     :project-id pid})})))))
-      (catch Exception e
-        (log/error "Import failed:" (ex-message e))
-        {:type "text" :text (json/write-str {:error (ex-message e)}) :isError true}))))
+  (with-chroma
+    ;; Get JSON data from elisp
+    (let [pid (or project-id (get-current-project-id))
+          elisp (format "(json-encode (list :notes (hive-mcp-memory-query 'note nil %s 1000 nil t)
+                                            :snippets (hive-mcp-memory-query 'snippet nil %s 1000 nil t)
+                                            :conventions (hive-mcp-memory-query 'convention nil %s 1000 nil t)
+                                            :decisions (hive-mcp-memory-query 'decision nil %s 1000 nil t)))"
+                        (pr-str pid) (pr-str pid) (pr-str pid) (pr-str pid))
+          {:keys [success result error]} (ec/eval-elisp elisp)]
+      (if-not success
+        {:type "text" :text (json/write-str {:error (str "Failed to read JSON: " error)}) :isError true}
+        (let [data (json/read-str result :key-fn keyword)
+              all-entries (concat (:notes data) (:snippets data)
+                                  (:conventions data) (:decisions data))
+              imported (atom 0)
+              skipped (atom 0)]
+          (if dry-run
+            {:type "text" :text (json/write-str {:dry-run true
+                                                 :would-import (count all-entries)
+                                                 :by-type {:notes (count (:notes data))
+                                                           :snippets (count (:snippets data))
+                                                           :conventions (count (:conventions data))
+                                                           :decisions (count (:decisions data))}})}
+            (do
+              (doseq [entry all-entries]
+                ;; Check for existing entry
+                (if (chroma/get-entry-by-id (:id entry))
+                  (swap! skipped inc)
+                  (do
+                    (chroma/index-memory-entry!
+                     {:id (:id entry)
+                      :type (:type entry)
+                      :content (:content entry)
+                      :tags (if (vector? (:tags entry))
+                              (vec (:tags entry))
+                              (:tags entry))
+                      :content-hash (or (:content-hash entry)
+                                        (chroma/content-hash (:content entry)))
+                      :created (:created entry)
+                      :updated (:updated entry)
+                      :duration (or (:duration entry) "long")
+                      :expires (or (:expires entry) "")
+                      :access-count (or (:access-count entry) 0)
+                      :helpful-count (or (:helpful-count entry) 0)
+                      :unhelpful-count (or (:unhelpful-count entry) 0)
+                      :project-id pid})
+                    (swap! imported inc))))
+              {:type "text" :text (json/write-str {:imported @imported
+                                                   :skipped @skipped
+                                                   :project-id pid})})))))))
 
 ;; =============================================================================
 ;; Tool Definitions

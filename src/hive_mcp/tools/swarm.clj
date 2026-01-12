@@ -8,15 +8,13 @@
    When hive-mcp.channel is available, subscribes to swarm events for
    sub-100ms task completion detection. Falls back to polling if channel
    not connected."
-  (:require [hive-mcp.tools.core :refer [mcp-success mcp-error mcp-json]]
-            [hive-mcp.tools.swarm.jvm :as jvm]
+  (:require [hive-mcp.tools.swarm.jvm :as jvm]
             [hive-mcp.tools.swarm.channel :as channel]
             [hive-mcp.emacsclient :as ec]
             [hive-mcp.validation :as v]
             [hive-mcp.swarm.coordinator :as coord]
             [hive-mcp.hivemind :as hivemind]
             [clojure.data.json :as json]
-            [clojure.java.shell :as shell]
             [clojure.string :as str]
             [taoensso.timbre :as log]))
 

@@ -16,7 +16,6 @@
    [hive-mcp.tools.prompt :as prompt]
    [hive-mcp.tools.presets :as presets-tools]
    [hive-mcp.tools.diff :as diff]
-   [hive-mcp.tools.jvm :as jvm]
    [hive-mcp.tools.kondo :as kondo]
    [hive-mcp.tools.crystal :as crystal]
    [hive-mcp.hivemind :as hivemind]

@@ -199,13 +199,24 @@ Returns the :project-id value from .hive-project.edn, or nil if not found."
   "Return current ISO 8601 timestamp."
   (format-time-string "%FT%T%z"))
 
-(defun hive-mcp-memory--project-id (&optional project-root)
-  "Return unique ID for PROJECT-ROOT (defaults to current project).
+(defun hive-mcp-memory--project-id (&optional directory-or-root)
+  "Return unique ID for project containing DIRECTORY-OR-ROOT.
+DIRECTORY-OR-ROOT can be either a project root path or any path within a project.
+If nil, uses the current buffer's project.
 Resolution order:
   1. Stable :project-id from .hive-project.edn (survives renames)
   2. Fallback: SHA1 hash of absolute path (filesystem-safe)
 Returns \"global\" if not in a project."
-  (let ((root (or project-root (hive-mcp-memory--get-project-root))))
+  (let ((root (or (when directory-or-root
+                    ;; First try as-is (if it's already a project root)
+                    ;; then find containing project
+                    (or (when (file-directory-p directory-or-root)
+                          (let ((default-directory (file-name-as-directory
+                                                    (expand-file-name directory-or-root))))
+                            (when-let* ((proj (project-current nil default-directory)))
+                              (project-root proj))))
+                        directory-or-root))
+                  (hive-mcp-memory--get-project-root))))
     (if root
         (or (hive-mcp-memory--get-stable-project-id root)
             (substring (sha1 (expand-file-name root)) 0 16))
@@ -219,14 +230,23 @@ Use this for migration when you need the path-based hash."
         (substring (sha1 (expand-file-name root)) 0 16)
       "global")))
 
-(defun hive-mcp-memory--get-project-root ()
-  "Get current project root, or nil if not in a project."
-  (when-let* ((proj (project-current)))
-    (project-root proj)))
+(defun hive-mcp-memory--get-project-root (&optional directory)
+  "Get project root for DIRECTORY, or current project if nil.
+When DIRECTORY is provided, finds the project containing that path.
+Returns nil if not in a project."
+  (if directory
+      ;; Use provided directory to find project
+      (let ((default-directory (file-name-as-directory (expand-file-name directory))))
+        (when-let* ((proj (project-current nil default-directory)))
+          (project-root proj)))
+    ;; Fallback to current buffer's project
+    (when-let* ((proj (project-current)))
+      (project-root proj))))
 
-(defun hive-mcp-memory--get-project-name ()
-  "Get current project name (directory basename), or nil if not in a project."
-  (when-let* ((root (hive-mcp-memory--get-project-root)))
+(defun hive-mcp-memory--get-project-name (&optional directory)
+  "Get project name (directory basename) for DIRECTORY, or current project.
+Returns nil if not in a project."
+  (when-let* ((root (hive-mcp-memory--get-project-root directory)))
     (file-name-nondirectory (directory-file-name root))))
 
 ;;; Scope System

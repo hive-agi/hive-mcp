@@ -8,7 +8,6 @@
             [hive-mcp.chroma :as chroma]
             [hive-mcp.channel :as channel]
             [hive-mcp.channel.websocket :as ws-channel]
-            [hive-mcp.hivemind :as hivemind]
             [hive-mcp.swarm.sync :as sync]
             [hive-mcp.embeddings.ollama :as ollama]
             [hive-mcp.agent :as agent]
