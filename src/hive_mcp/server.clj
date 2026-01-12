@@ -12,6 +12,8 @@
             [hive-mcp.embeddings.ollama :as ollama]
             [hive-mcp.agent :as agent]
             [hive-mcp.transport.websocket :as ws]
+            [hive-mcp.hooks :as hooks]
+            [hive-mcp.crystal.hooks :as crystal-hooks]
             [nrepl.server :as nrepl-server]
             [clojure.core.async :as async]
             [taoensso.timbre :as log]
@@ -45,6 +47,13 @@
 ;; Store MCP server context for hot-reload capability
 ;; CLARITY: Telemetry first - expose state for debugging and updates
 (defonce ^:private server-context-atom (atom nil))
+
+;; Global hooks registry for event-driven workflows
+;; CLARITY: Open for extension - allows runtime hook registration
+(defonce ^:private hooks-registry-atom (atom nil))
+
+;; Track if shutdown hook is registered
+(defonce ^:private shutdown-hook-registered? (atom false))
 
 ;; Configure Timbre to write to stderr instead of stdout
 ;; This is CRITICAL for MCP servers - stdout is the JSON-RPC channel
@@ -294,11 +303,77 @@
                 (recur)))
       (log/info "WebSocket channel auto-heal monitor started"))))
 
+;; =============================================================================
+;; Hooks System Initialization
+;; =============================================================================
+
+(defn get-hooks-registry
+  "Get the global hooks registry for external registration."
+  []
+  @hooks-registry-atom)
+
+(defn- trigger-session-end!
+  "Trigger session-end hooks for auto-wrap.
+   Called by JVM shutdown hook.
+
+   CLARITY: Yield safe failure - errors logged but don't break shutdown."
+  [reason]
+  (log/info "Triggering session-end hooks:" reason)
+  (when-let [registry @hooks-registry-atom]
+    (try
+      (let [ctx {:reason reason
+                 :session (System/currentTimeMillis)
+                 :triggered-by "jvm-shutdown"}
+            results (hooks/trigger-hooks registry :session-end ctx)]
+        (log/info "Session-end hooks completed:" (count results) "handlers executed")
+        results)
+      (catch Exception e
+        (log/error e "Session-end hooks failed (non-fatal)")
+        nil))))
+
+(defn- register-shutdown-hook!
+  "Register JVM shutdown hook to trigger session-end for auto-wrap.
+
+   Only registers once. Safe to call multiple times.
+
+   CLARITY: Yield safe failure - hook errors don't break JVM shutdown."
+  []
+  (when-not @shutdown-hook-registered?
+    (.addShutdownHook
+     (Runtime/getRuntime)
+     (Thread.
+      (fn []
+        (log/info "JVM shutdown detected - running session-end hooks")
+        (trigger-session-end! "jvm-shutdown"))))
+    (reset! shutdown-hook-registered? true)
+    (log/info "JVM shutdown hook registered for auto-wrap")))
+
+(defn init-hooks!
+  "Initialize the hooks system and register crystal hooks.
+
+   Creates global registry, registers crystal hooks (auto-wrap),
+   and sets up JVM shutdown hook.
+
+   Should be called early in server startup."
+  []
+  (when-not @hooks-registry-atom
+    (let [registry (hooks/create-registry)]
+      (reset! hooks-registry-atom registry)
+      (log/info "Global hooks registry created")
+      ;; Register crystal hooks (includes auto-wrap on session-end)
+      (crystal-hooks/register-hooks! registry)
+      ;; Register JVM shutdown hook to trigger session-end
+      (register-shutdown-hook!)
+      {:registry registry
+       :hooks-registered true})))
+
 (defn start!
   "Start the MCP server."
   [& _args]
   (let [server-id (random-uuid)]
     (log/info "Starting hive-mcp server:" server-id)
+    ;; Initialize hooks system FIRST - needed for session-end auto-wrap
+    (init-hooks!)
     ;; Start embedded nREPL FIRST - bb-mcp needs this to forward tool calls
     ;; This MUST run in the same JVM as channel server for hivemind to work
     (start-embedded-nrepl!)
