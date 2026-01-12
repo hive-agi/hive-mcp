@@ -6,10 +6,12 @@
 :PROPERTIES:
 :ID: b70720e8-3a52-41ba-a115-964b81369bb5
 :END:
-** TODO Implement bidirectional sync between vibe-kanban and org-kanban
+** DONE Implement bidirectional sync between vibe-kanban and org-kanban
 :PROPERTIES:
 :ID: c75935fb-2f77-49b8-ba0e-2e0db9e4d044
 :VIBE_ID: e54edcbd-3b67-42fd-8ce3-487d22e883fe
+:UPDATED:  2026-01-12 14:45
+:LAST_AGENT: emacs-11246
 :END:
 ** DONE Create projectile addon for emacs-mcp
 CLOSED: [2025-12-30]
@@ -545,6 +547,32 @@ Implementation: Add to presets.el TDD template: "Before committing, run M-x byte
 :AGENT:    emacs-1303659
 :SESSION:  20260111-181048
 :END:
+** TODO Fix unresolved symbol in memory.clj:255
+:PROPERTIES:
+:ID:       896fb88e-d8a8-42af-8fe1-febe2264f949
+:CREATED:  2026-01-12 14:38
+:DESCRIPTION: ERROR: Unresolved symbol `entry` at src/hive_mcp/tools/memory.clj:255. This is breaking static analysis and may cause runtime errors.
+:AGENT:    emacs-11246
+:SESSION:  20260112-143808
+:END:
+** TODO Add missing namespace requires (5 files)
+:PROPERTIES:
+:ID:       458a66e5-e00f-4633-88ad-3286d1a735d4
+:CREATED:  2026-01-12 14:38
+:DESCRIPTION: Missing requires detected by kondo: channel/websocket.clj:86 (aleph.netty), chroma.clj:161 (clojure.string), docs.clj:14 (clojure.string), graph/datascript.clj (clojure.string, clojure.set), transport/websocket.clj:77 (aleph.netty)
+:AGENT:    emacs-11246
+:SESSION:  20260112-143809
+:END:
+** TODO Refactor parser.clj - complexity 93
+:PROPERTIES:
+:ID:       b3528173-b7ee-47bb-bee5-9c451eeafc37
+:CREATED:  2026-01-12 14:38
+:DESCRIPTION: org_clj/parser.clj has highest complexity (93) with 496 code lines. Consider extracting parsing strategies into separate modules to reduce cognitive load.
+:AGENT:    emacs-11246
+:SESSION:  20260112-143809
+:END:
+
+
 
 
 

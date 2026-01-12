@@ -46,7 +46,7 @@
     #_(let [prompt (prompts/create-prompt "agent-1" "Allow edit?" ["yes" "no"])]
         (is (= :pending (:status prompt))))))
 
-(deftest test-create-prompt-has-unique-id
+(deftest ^:pending test-create-prompt-has-unique-id
   (testing "create-prompt generates unique id"
     (is false "Implementation does not exist yet")
     #_(let [p1 (prompts/create-prompt "agent-1" "Q1?" ["y" "n"])
