@@ -1,6 +1,6 @@
 (ns hive-mcp.tools
   "MCP tool definitions for Emacs interaction.
-   
+
    This namespace aggregates tool definitions and their handlers from
    domain-specific modules under hive-mcp.tools.*"
   (:require ;; Domain-specific tool modules (SOLID refactoring)
@@ -17,6 +17,7 @@
    [hive-mcp.tools.presets :as presets-tools]
    [hive-mcp.tools.diff :as diff]
    [hive-mcp.tools.kondo :as kondo]
+   [hive-mcp.tools.scc :as scc]
    [hive-mcp.tools.crystal :as crystal]
    [hive-mcp.hivemind :as hivemind]
    [hive-mcp.channel :as channel]
@@ -42,6 +43,7 @@
                presets-tools/tools
                diff/tools
                kondo/tools
+               scc/tools
                hivemind/tools
                channel/channel-tools
                agent/tools)))
