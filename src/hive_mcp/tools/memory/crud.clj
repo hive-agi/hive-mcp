@@ -91,10 +91,10 @@
           entries (chroma/query-entries :type type
                                         :project-id (when (nil? scope) project-id)
                                         :limit (* limit-val 5)) ; Over-fetch for filtering
-          ;; Apply scope filter
-          scope-filter (scope/derive-scope-filter scope project-id)
+          ;; Apply hierarchical scope filter
+          scope-filter (scope/derive-hierarchy-scope-filter scope)
           filtered (if scope-filter
-                     (filter #(scope/matches-scope? % scope-filter) entries)
+                     (filter #(scope/matches-hierarchy-scopes? % scope-filter) entries)
                      entries)
           ;; Apply tag filter
           tag-filtered (apply-tag-filter filtered tags)
