@@ -1,7 +1,8 @@
 (ns hive-mcp.docs
   "MCP tools for Emacs documentation lookup.
    Leverages hive-mcp-docs.el addon for introspection."
-  (:require [hive-mcp.emacsclient :as ec]
+  (:require [clojure.string :as str]
+            [hive-mcp.emacsclient :as ec]
             [hive-mcp.tools.core :refer [mcp-success mcp-error]]))
 
 ;;; Helpers
@@ -11,7 +12,7 @@
   []
   (try
     (let [{:keys [success result]} (ec/eval-elisp "(featurep 'hive-mcp-docs)")]
-      (and success (= "t" (clojure.string/trim (or result "")))))
+      (and success (= "t" (str/trim (or result "")))))
     (catch Exception _ false)))
 
 ;;; MCP Tool Handlers

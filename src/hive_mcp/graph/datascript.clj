@@ -12,11 +12,13 @@
    
    SOLID: Dependency Inversion - depends on protocol, not concrete stores.
    DDD: Repository pattern for graph persistence."
-  (:require [datascript.core :as d]
+  (:require [clojure.edn :as edn]
+            [clojure.java.io :as io]
+            [clojure.set :as set]
+            [clojure.string :as str]
+            [datascript.core :as d]
             [hive-mcp.graph.protocol :as proto]
             [hive-mcp.graph.schema :as schema]
-            [clojure.edn :as edn]
-            [clojure.java.io :as io]
             [taoensso.timbre :as log]))
 
 ;;; -----------------------------------------------------------------------------
@@ -28,9 +30,9 @@
   [s]
   (when s
     (-> s
-        clojure.string/lower-case
-        clojure.string/trim
-        (clojure.string/replace #"\s+" " "))))
+        str/lower-case
+        str/trim
+        (str/replace #"\s+" " "))))
 
 (defn- word-set
   "Extract set of words from text for comparison."
@@ -38,7 +40,7 @@
   (when s
     (-> s
         normalize-text
-        (clojure.string/split #"\s+")
+        (str/split #"\s+")
         set)))
 
 (defn- jaccard-similarity
@@ -46,8 +48,8 @@
   [set-a set-b]
   (if (or (empty? set-a) (empty? set-b))
     0.0
-    (let [intersection-size (count (clojure.set/intersection set-a set-b))
-          union-size (count (clojure.set/union set-a set-b))]
+    (let [intersection-size (count (set/intersection set-a set-b))
+          union-size (count (set/union set-a set-b))]
       (if (zero? union-size)
         0.0
         (double (/ intersection-size union-size))))))
