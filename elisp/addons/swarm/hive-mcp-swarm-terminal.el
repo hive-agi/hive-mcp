@@ -43,6 +43,7 @@
 (declare-function hive-mcp-swarm-events-emit-auto-error "hive-mcp-swarm-events")
 (declare-function hive-mcp-swarm-events-emit-auto-completed "hive-mcp-swarm-events")
 (declare-function hive-mcp-swarm-events-emit-idle-timeout "hive-mcp-swarm-events")
+(declare-function hive-mcp-swarm-events-emit-ling-ready-for-wrap "hive-mcp-swarm-events")
 
 ;; External state from swarm module
 (defvar hive-mcp-swarm--slaves)
@@ -148,6 +149,15 @@ without shouting progress."
   :type 'float
   :group 'hive-mcp-swarm-terminal)
 
+(defcustom hive-mcp-swarm-terminal-auto-wrap t
+  "If non-nil, automatically trigger wrap when lings complete tasks.
+When a ling finishes a task and becomes idle, the auto-wrap hook will:
+1. Emit ling-ready-for-wrap event to trigger wrap workflow
+2. Only wrap once per session (prevents duplicate wraps)
+3. Emit wrap_notify event for coordinator permeation"
+  :type 'boolean
+  :group 'hive-mcp-swarm-terminal)
+
 ;;;; Completion Watcher State:
 
 (defvar hive-mcp-swarm-terminal--completion-timer nil
@@ -178,6 +188,12 @@ Prevents duplicate idle events for the same stall.")
 (defvar hive-mcp-swarm-terminal--buffer-sizes (make-hash-table :test 'equal)
   "Hash of slave-id -> last-known-buffer-size.
 Used to detect terminal output for activity tracking.")
+
+;;;; Auto-Wrap State (Session Crystallization):
+
+(defvar hive-mcp-swarm-terminal--wrapped-sessions (make-hash-table :test 'equal)
+  "Hash of slave-id -> t for sessions that have already been auto-wrapped.
+Prevents duplicate wraps for the same session.")
 
 ;;;; Backend Detection:
 
@@ -546,7 +562,11 @@ Also tracks buffer output for Layer 2 activity detection."
                (hive-mcp-swarm-events-emit-auto-completed
                 completed-slave-id duration status))
              (message "[swarm-terminal] Auto-shout: %s completed task (%.1fs)"
-                      completed-slave-id (or duration 0)))
+                      completed-slave-id (or duration 0))
+             ;; Auto-wrap hook: trigger wrap on task completion
+             ;; Only for successful completions (not errors)
+             (hive-mcp-swarm-terminal-trigger-auto-wrap
+              completed-slave-id "task-completed"))
            ;; Invoke callback if registered (for backward compatibility)
            (when (functionp hive-mcp-swarm-terminal--completion-callback)
              (funcall hive-mcp-swarm-terminal--completion-callback
@@ -712,6 +732,62 @@ Use this when starting a new session."
   (clrhash hive-mcp-swarm-terminal--last-shout-timestamps)
   (clrhash hive-mcp-swarm-terminal--idle-emitted)
   (clrhash hive-mcp-swarm-terminal--buffer-sizes))
+
+;;;; Auto-Wrap Hook (Session Crystallization on Completion)
+;;
+;; This implements the auto-wrap hook that triggers /wrap when a ling
+;; completes its work:
+;; 1. Detects when a ling becomes idle (no pending tasks)
+;; 2. Automatically triggers wrap workflow
+;; 3. Only wraps once per session (prevents duplicates)
+;; 4. Emits wrap_notify event for coordinator permeation
+
+(defun hive-mcp-swarm-terminal--session-wrapped-p (slave-id)
+  "Check if SLAVE-ID has already been auto-wrapped this session."
+  (gethash slave-id hive-mcp-swarm-terminal--wrapped-sessions))
+
+(defun hive-mcp-swarm-terminal--mark-session-wrapped (slave-id)
+  "Mark SLAVE-ID as having been auto-wrapped."
+  (puthash slave-id t hive-mcp-swarm-terminal--wrapped-sessions))
+
+(defun hive-mcp-swarm-terminal--should-auto-wrap-p (slave-id)
+  "Check if SLAVE-ID should trigger auto-wrap.
+Returns t only if:
+- Auto-wrap is enabled (`hive-mcp-swarm-terminal-auto-wrap')
+- Session hasn't already been wrapped
+- Slave exists and is not currently working"
+  (and hive-mcp-swarm-terminal-auto-wrap
+       (not (hive-mcp-swarm-terminal--session-wrapped-p slave-id))
+       ;; Check slave isn't currently working on something
+       (when (and (boundp 'hive-mcp-swarm--slaves)
+                  (hash-table-p hive-mcp-swarm--slaves))
+         (let ((slave (gethash slave-id hive-mcp-swarm--slaves)))
+           (and slave
+                (not (eq (plist-get slave :status) 'working)))))))
+
+(defun hive-mcp-swarm-terminal-trigger-auto-wrap (slave-id reason)
+  "Trigger auto-wrap for SLAVE-ID with REASON.
+Emits ling-ready-for-wrap event and marks session as wrapped.
+Returns t if wrap was triggered, nil if already wrapped or disabled."
+  (when (hive-mcp-swarm-terminal--should-auto-wrap-p slave-id)
+    ;; Mark as wrapped immediately to prevent duplicates
+    (hive-mcp-swarm-terminal--mark-session-wrapped slave-id)
+    ;; Emit the event to trigger wrap workflow
+    (when (fboundp 'hive-mcp-swarm-events-emit-ling-ready-for-wrap)
+      (hive-mcp-swarm-events-emit-ling-ready-for-wrap slave-id reason))
+    (message "[swarm-terminal] Auto-wrap triggered for %s (reason: %s)"
+             slave-id reason)
+    t))
+
+(defun hive-mcp-swarm-terminal-reset-wrap-state ()
+  "Reset all auto-wrap state.
+Use this when starting a completely new session."
+  (clrhash hive-mcp-swarm-terminal--wrapped-sessions))
+
+(defun hive-mcp-swarm-terminal-clear-slave-wrap-state (slave-id)
+  "Clear wrap state for SLAVE-ID.
+Called when a slave is killed, allowing re-wrap if respawned."
+  (remhash slave-id hive-mcp-swarm-terminal--wrapped-sessions))
 
 (provide 'hive-mcp-swarm-terminal)
 ;;; hive-mcp-swarm-terminal.el ends here

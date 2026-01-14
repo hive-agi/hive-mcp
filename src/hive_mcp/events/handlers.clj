@@ -407,6 +407,37 @@
     (merge base-effects summary-effect notify-effect shout-effect)))
 
 ;; =============================================================================
+;; Handler: :ling/ready-for-wrap (Auto-wrap hook)
+;; =============================================================================
+
+(defn- handle-ling-ready-for-wrap
+  "Handler for :ling/ready-for-wrap events.
+
+   Called when auto-wrap hook detects a ling has completed work and
+   is ready for session crystallization. Dispatches :session/wrap
+   to trigger the wrap workflow.
+
+   Expects event data:
+   {:slave-id   \"swarm-worker-123\"
+    :reason     \"task-completed\" | \"idle-detected\" | \"manual\"
+    :session-id \"session:2026-01-14:worker-123\"}
+
+   Produces effects:
+   - :log      - Log auto-wrap trigger
+   - :dispatch - Dispatch :session/wrap to run wrap workflow"
+  [_coeffects [_ {:keys [slave-id reason session-id]}]]
+  (let [effective-id (or slave-id
+                         (System/getenv "CLAUDE_SWARM_SLAVE_ID")
+                         "unknown-ling")]
+    {:log {:level :info
+           :message (str "Auto-wrap triggered for " effective-id
+                         " (reason: " (or reason "task-completed") ")")}
+     :dispatch [:session/wrap {:session-id session-id
+                               :slave-id effective-id
+                               :triggered-by "auto-wrap"
+                               :reason (or reason "task-completed")}]}))
+
+;; =============================================================================
 ;; Registration
 ;; =============================================================================
 
@@ -423,6 +454,7 @@
    - :git/commit-modified   - Git commit if files changed (P5-2)
    - :ling/started          - Ling spawned (EVENTS-03)
    - :ling/completed        - Ling finished (EVENTS-03)
+   - :ling/ready-for-wrap   - Auto-wrap hook on ling completion
    - :session/end           - Session ending, auto-wrap (EVENTS-06)
    - :session/wrap          - Trigger wrap workflow (P5-3)
    - :kanban/sync           - Sync kanban at session end (P5-4)
@@ -457,6 +489,11 @@
                   [interceptors/debug]
                   handle-ling-completed)
 
+    ;; :ling/ready-for-wrap - Auto-wrap hook on ling completion
+    (ev/reg-event :ling/ready-for-wrap
+                  [interceptors/debug]
+                  handle-ling-ready-for-wrap)
+
     ;; :session/end - Auto-wrap trigger (EVENTS-06)
     (ev/reg-event :session/end
                   [interceptors/debug]
@@ -483,7 +520,7 @@
                   handle-crystal-wrap-request)
 
     (reset! *registered true)
-    (println "[hive-events] Handlers registered: :task/complete :task/shout-complete :git/commit-modified :ling/started :ling/completed :session/end :session/wrap :kanban/sync :kanban/done :crystal/wrap-request")
+    (println "[hive-events] Handlers registered: :task/complete :task/shout-complete :git/commit-modified :ling/started :ling/completed :ling/ready-for-wrap :session/end :session/wrap :kanban/sync :kanban/done :crystal/wrap-request")
     true))
 
 (defn reset-registration!
