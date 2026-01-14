@@ -146,6 +146,60 @@ M-x hive-mcp-swarm-status
 - Java 17+
 - Optional: Ollama (semantic search), vterm/eat (terminal backends)
 
+## Hivemind Operations
+
+### Token-Tiered Hierarchy
+
+```
+Hivemind (premium Claude) ─── Coordinator, spawns lings, receives shouts
+    │
+    └── Lings (Claude instances) ─── Tactical leads, use delegate_drone
+            │
+            └── Drones (OpenRouter free-tier) ─── Heavy lifting, propose diffs
+```
+
+### Hivemind Coordinator Patterns
+
+**DO:**
+- Spawn lings with presets: `swarm_spawn(name, presets: ["ling", "tdd"])`
+- Trust HIVEMIND piggyback messages (arrive on any MCP tool call)
+- Dispatch tasks with clear instructions, then move on
+- Check results once when task should be complete
+- Keep context minimal - delegate reading/exploration to lings
+
+**DON'T (Anti-patterns):**
+- Poll with `mcp_watch_buffer` (blows up tokens)
+- Call `swarm_collect` in loops
+- Call `delegate_drone` directly (bypasses ling coordination)
+- Read large files as coordinator (delegate to lings)
+- Micromanage - trust the hierarchy
+
+### Ling Communication Protocol
+
+Lings MUST shout progress, not just start/end:
+```
+hivemind_shout(event_type: "progress", task: "...", message: "Step 2/4: ...")
+```
+
+**MCP-First Tools** - Lings use hive-mcp tools instead of raw bash:
+
+| Instead of | Use |
+|------------|-----|
+| `cat file` | `mcp__emacs__read_file` |
+| `grep pattern` | `mcp__emacs__grep` |
+| `git status` | `mcp__emacs__magit_status` |
+| Raw file write | `mcp__emacs__file_write` |
+
+### Spawning Lings
+
+```elisp
+;; From coordinator
+swarm_spawn(name: "task-name", presets: ["ling", "tdd", "clarity"])
+swarm_dispatch(slave_id: "swarm-task-name-...", prompt: "...", files: ["..."])
+```
+
+Lings consult `kanban.org` for task guidance and use `delegate_drone` for implementation work.
+
 ## File Conventions
 
 - Module files: `hive-mcp-<module>.el`
