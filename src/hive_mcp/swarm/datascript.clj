@@ -139,7 +139,34 @@
     :db/cardinality :db.cardinality/one}
 
    :claim/created-at
-   {:db/doc "Timestamp when claim was created"}})
+   {:db/doc "Timestamp when claim was created"}
+
+   ;;; =========================================================================
+   ;;; Wrap Queue Entity (Crystal Convergence)
+   ;;; =========================================================================
+
+   :wrap-queue/id
+   {:db/doc "Unique identifier for wrap notification"
+    :db/unique :db.unique/identity}
+
+   :wrap-queue/agent-id
+   {:db/doc "ID of the ling that wrapped"}
+
+   :wrap-queue/session-id
+   {:db/doc "Session tag (e.g., session:2026-01-14:ling-123)"}
+
+   :wrap-queue/created-ids
+   {:db/doc "Memory entry IDs created during this wrap"
+    :db/cardinality :db.cardinality/many}
+
+   :wrap-queue/stats
+   {:db/doc "Map of stats {:notes N :decisions N :conventions N}"}
+
+   :wrap-queue/processed?
+   {:db/doc "Whether coordinator has processed this wrap"}
+
+   :wrap-queue/created-at
+   {:db/doc "Timestamp when wrap occurred"}})
 
 ;;; =============================================================================
 ;;; Connection Management (Thread-Safe Atom)
@@ -562,6 +589,45 @@
                         (dissoc :db/id)
                         (update :task/slave #(when % (:slave/id %)))))))))))
 
+(defn get-completed-tasks
+  "Get all completed tasks, optionally filtered by slave or time range.
+
+   Options:
+   - :slave-id - Filter by specific slave
+   - :since - Only tasks completed after this timestamp (java.util.Date)
+   - :limit - Maximum number to return (default 100)
+
+   Returns:
+     Seq of task maps sorted by completion time (most recent first)"
+  [& {:keys [slave-id since limit] :or {limit 100}}]
+  (let [c (ensure-conn)
+        db @c
+        ;; Query all completed tasks with slave info
+        completed-tasks (d/q '[:find [(pull ?e [* {:task/slave [:slave/id]}]) ...]
+                               :in $ ?status
+                               :where
+                               [?e :task/status ?status]]
+                             db :completed)]
+    (->> completed-tasks
+         ;; Filter by slave-id if provided
+         (filter (fn [task]
+                   (or (nil? slave-id)
+                       (= slave-id (get-in task [:task/slave :slave/id])))))
+         ;; Filter by since timestamp if provided
+         (filter (fn [task]
+                   (or (nil? since)
+                       (and (:task/completed-at task)
+                            (.after (:task/completed-at task) since)))))
+         ;; Sort by completion time (most recent first)
+         (sort-by :task/completed-at #(compare %2 %1))
+         ;; Apply limit
+         (take limit)
+         ;; Clean up the output format
+         (map (fn [task]
+                (-> task
+                    (dissoc :db/id)
+                    (update :task/slave #(when % (:slave/id %)))))))))
+
 (defn get-claims-for-file
   "Get claim info for a file.
 
@@ -647,7 +713,12 @@
      :active-tasks (count (d/q '[:find ?e
                                  :where
                                  [?e :task/status :dispatched]]
-                               db))}))
+                               db))
+     :wrap-queue (count (d/q '[:find ?e :where [?e :wrap-queue/id _]] db))
+     :unprocessed-wraps (count (d/q '[:find ?e
+                                      :where
+                                      [?e :wrap-queue/processed? false]]
+                                    db))}))
 
 (defn dump-db
   "Dump the current database state for debugging."
@@ -658,3 +729,62 @@
                @(ensure-conn))
    :claims (get-all-claims)
    :stats (db-stats)})
+
+;;; =============================================================================
+;;; Wrap Queue Operations (Crystal Convergence)
+;;; =============================================================================
+
+(defn add-wrap-notification!
+  "Record a ling wrap for coordinator permeation.
+
+   Arguments:
+     wrap-id - Unique identifier for this wrap notification
+     opts    - Map with keys:
+               :agent-id    - ID of the ling that wrapped
+               :session-id  - Session tag (e.g., session:2026-01-14:ling-123)
+               :created-ids - Collection of memory entry IDs created
+               :stats       - Map of stats {:notes N :decisions N :conventions N}
+
+   Returns:
+     Transaction report"
+  [wrap-id {:keys [agent-id session-id created-ids stats]}]
+  {:pre [(string? wrap-id)]}
+  (let [c (ensure-conn)]
+    (d/transact! c
+                 [(cond-> {:wrap-queue/id wrap-id
+                           :wrap-queue/processed? false
+                           :wrap-queue/created-at (now)}
+                    agent-id (assoc :wrap-queue/agent-id agent-id)
+                    session-id (assoc :wrap-queue/session-id session-id)
+                    (seq created-ids) (assoc :wrap-queue/created-ids (vec created-ids))
+                    stats (assoc :wrap-queue/stats stats))])))
+
+(defn get-unprocessed-wraps
+  "Get all wrap notifications not yet processed by coordinator.
+
+   Returns:
+     Seq of wrap notification maps"
+  []
+  (let [c (ensure-conn)]
+    (d/q '[:find [(pull ?e [*]) ...]
+           :where
+           [?e :wrap-queue/processed? false]]
+         @c)))
+
+(defn mark-wrap-processed!
+  "Mark a wrap notification as processed.
+
+   Arguments:
+     wrap-id - ID of the wrap notification to mark
+
+   Returns:
+     Transaction report or nil if wrap-id not found"
+  [wrap-id]
+  (let [c (ensure-conn)
+        eid (d/q '[:find ?e .
+                   :in $ ?id
+                   :where [?e :wrap-queue/id ?id]]
+                 @c wrap-id)]
+    (when eid
+      (d/transact! c
+                   [[:db/add eid :wrap-queue/processed? true]]))))
