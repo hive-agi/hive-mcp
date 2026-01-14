@@ -33,7 +33,8 @@
    CLARITY: Inputs are guarded - malli validation at dispatch boundary"
   (:require [clojure.set :as set]
             [hive-mcp.events.schemas :as schemas]
-            [hive-mcp.swarm.datascript :as ds]))
+            [hive-mcp.swarm.datascript :as ds]
+            [hive-mcp.channel.websocket :as ws]))
 
 ;; =============================================================================
 ;; State
@@ -504,9 +505,20 @@
               (fn [coeffects]
                 (assoc coeffects :db-snapshot @(ds/get-conn))))
 
+    ;; =============================================================================
+    ;; Built-in Effects
+    ;; =============================================================================
+
+    ;; POC-05: Channel publish effect
+    ;; Publishes typed events to WebSocket channel for Emacs consumption
+    (reg-fx :channel-publish
+            (fn [{:keys [event data]}]
+              (ws/emit! event data)))
+
     ;; Mark as initialized
     (reset! *initialized true)
-    (println "[hive-events] Event system initialized with coeffects: :now :random :agent-context :db-snapshot"))
+    (println "[hive-events] Event system initialized with coeffects: :now :random :agent-context :db-snapshot")
+    (println "[hive-events] Registered effects: :channel-publish"))
   @*initialized)
 
 (defn handler-registered?
