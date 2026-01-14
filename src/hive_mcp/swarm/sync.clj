@@ -24,7 +24,7 @@
             [hive-mcp.emacsclient :as ec]
             [hive-mcp.hivemind :as hivemind]
             [hive-mcp.hooks :as hooks]
-            [hive-mcp.hooks.handlers :as handlers]
+            ;; MIGRATION NOTE: handlers require removed - using event dispatch instead (P5-5)
             [clojure.core.async :as async :refer [go-loop <!]]
             [clojure.data.json :as json]
             [taoensso.timbre :as log]))
@@ -56,45 +56,41 @@
 ;; Hook Action Execution (Layer 4 - Architectural Guarantee)
 ;; =============================================================================
 
-(defn- execute-shout-action!
-  "Execute a :shout action returned by a hook handler.
-
-   Layer 4 of 4-layer convergence pattern: If ling forgot to shout,
-   this synthetic shout ensures visibility to the coordinator.
-
-   Action shape: {:action :shout :event-type keyword :message string :data map}"
-  [{:keys [action event-type message data]} slave-id]
-  (when (= action :shout)
-    (let [event-kw (if (keyword? event-type) event-type (keyword event-type))
-          shout-data (merge data {:source "layer4-synthetic" :message message})]
-      (hivemind/shout! slave-id event-kw shout-data)
-      (log/debug "Layer4: Executed synthetic shout for" slave-id "->" event-kw))))
-
 (defn- trigger-task-complete-hooks!
-  "Trigger :task-complete hooks and execute resulting shout actions.
+  "Trigger :task-complete hooks via event dispatch.
 
    ARCHITECTURAL GUARANTEE: This function ensures a shout is emitted
    on task completion, regardless of whether the ling explicitly called
    hivemind_shout. Part of 4-layer convergence pattern.
 
-   Returns: Vector of hook results"
+   MIGRATION (P5-5): Uses event dispatch instead of direct handler calls.
+   The :task/shout-complete event produces a :shout effect which is
+   executed by the effects system.
+
+   Returns: Vector of custom hook results"
   [task-id slave-id]
+  ;; Dispatch event - the :task/shout-complete handler produces a :shout effect
+  ;; which is executed by the registered effect handler (Layer 4 guarantee)
+  (try
+    (require '[hive-mcp.events.core :as ev])
+    ((resolve 'hive-mcp.events.core/dispatch)
+     [:task/shout-complete {:task-id task-id
+                            :agent-id slave-id}])
+    (log/debug "Layer4: Dispatched :task/shout-complete for" slave-id)
+    (catch Exception e
+      (log/warn "Layer4: Task shout-complete dispatch failed:" (.getMessage e))))
+
+  ;; Also trigger any custom hooks registered via the registry
+  ;; These receive merged event/context (single-arg handlers)
   (when-let [registry (get-hooks-registry)]
-    ;; Build event/context following handlers.clj contract
     (let [event {:type :task-complete
                  :task-id task-id}
           context {:agent-id slave-id
                    :task-id task-id}
-          ;; Call handlers directly (they expect [event context])
-          handler-result (handlers/shout-completion event context)]
-      ;; Execute the shout action
-      (execute-shout-action! handler-result slave-id)
-      ;; Also trigger any custom hooks registered via the registry
-      ;; These receive just context (single-arg handlers)
-      (let [custom-results (hooks/trigger-hooks registry :task-complete
-                                                (merge event context))]
-        (log/debug "Layer4: Triggered" (count custom-results) "custom hooks")
-        custom-results))))
+          custom-results (hooks/trigger-hooks registry :task-complete
+                                              (merge event context))]
+      (log/debug "Layer4: Triggered" (count custom-results) "custom hooks")
+      custom-results)))
 
 ;; =============================================================================
 ;; Event Handlers
