@@ -15,18 +15,23 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.data.json :as json]
             [hive-mcp.hivemind :as hivemind]
+            [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.tools.swarm.registry :as swarm-registry]))
 
 ;;; Test fixtures
 
 (defn reset-all-registries
-  "Fixture to ensure clean state between tests."
+  "Fixture to ensure clean state between tests.
+   ADR-002: Reset DataScript as primary registry."
   [f]
+  ;; ADR-002: Reset DataScript (primary registry)
+  (ds/reset-conn!)
   ;; Reset hivemind agent-registry
   (reset! @(resolve 'hive-mcp.hivemind/agent-registry) {})
-  ;; Reset swarm lings-registry
+  ;; Reset swarm lings-registry (deprecated, for backward compat)
   (reset! @(resolve 'hive-mcp.tools.swarm.registry/lings-registry) {})
   (f)
+  (ds/reset-conn!)
   (reset! @(resolve 'hive-mcp.hivemind/agent-registry) {})
   (reset! @(resolve 'hive-mcp.tools.swarm.registry/lings-registry) {}))
 
@@ -50,7 +55,8 @@
     (let [status (hivemind/get-status)
           agents (:agents status)]
       (is (contains? agents "spawned-agent-123"))
-      (is (= :spawned (get-in agents ["spawned-agent-123" :status]))))))
+      ;; ADR-002 AMENDED: Status is now :idle (DataScript valid status)
+      (is (= :idle (get-in agents ["spawned-agent-123" :status]))))))
 
 (deftest register-agent!-preserves-metadata-test
   (testing "register-agent! stores spawn metadata"
@@ -59,10 +65,13 @@
                                :presets ["tdd" "clarity"]
                                :cwd "/project/path"})
 
-    (let [agent-data (get @(deref (resolve 'hive-mcp.hivemind/agent-registry))
-                          "agent-with-meta")]
+    ;; ADR-002 AMENDED: Use public API (get-status) instead of internal atom
+    ;; Metadata is now stored in DataScript, not agent-registry atom
+    ;; Note: presets order not preserved (DataScript :db.cardinality/many)
+    (let [status (hivemind/get-status)
+          agent-data (get-in status [:agents "agent-with-meta"])]
       (is (= "my-ling" (:name agent-data)))
-      (is (= ["tdd" "clarity"] (:presets agent-data)))
+      (is (= #{"tdd" "clarity"} (set (:presets agent-data))))
       (is (= "/project/path" (:cwd agent-data))))))
 
 (deftest register-agent!-initializes-messages-empty-test

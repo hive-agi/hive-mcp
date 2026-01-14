@@ -2,7 +2,11 @@
   "Native Catchup workflow implementation.
 
    Gathers session context from Chroma memory with project scoping.
-   Designed for the /catchup skill to restore context at session start."
+   Designed for the /catchup skill to restore context at session start.
+   
+   Priority Loading:
+   - Swarm conventions tagged 'catchup-priority' are surfaced FIRST
+   - These help coordinator trust swarm patterns immediately"
   (:require [hive-mcp.emacsclient :as ec]
             [hive-mcp.chroma :as chroma]
             [clojure.data.json :as json]
@@ -133,6 +137,9 @@
    Uses both project-name and project-id for scope matching to ensure
    compatibility with wrap workflow (which stores using project-name).
 
+   Priority conventions (tagged 'catchup-priority') are surfaced first
+   to help the coordinator trust swarm patterns immediately.
+
    Args can contain :directory to specify the project context explicitly,
    which fixes the issue where Emacs's current buffer determines project
    instead of Claude Code's working directory."
@@ -154,10 +161,19 @@
                        (and project-id (not= project-id project-name))
                        (conj (str "scope:project:" project-id)))
 
+              ;; PRIORITY: Query swarm conventions with catchup-priority tag FIRST
+              ;; These help coordinator trust swarm patterns immediately
+              priority-conventions (query-scoped-entries "convention"
+                                                         ["catchup-priority"]
+                                                         project-name project-id 5)
+
               ;; Query each type from Chroma with scope filtering (pass both name and id)
               sessions (query-scoped-entries "note" ["session-summary"] project-name project-id 3)
               decisions (query-scoped-entries "decision" nil project-name project-id 10)
-              conventions (query-scoped-entries "convention" nil project-name project-id 10)
+              ;; Regular conventions (exclude priority ones to avoid duplicates)
+              all-conventions (query-scoped-entries "convention" nil project-name project-id 15)
+              priority-ids (set (map :id priority-conventions))
+              conventions (remove #(contains? priority-ids (:id %)) all-conventions)
               snippets (query-scoped-entries "snippet" nil project-name project-id 5)
 
               ;; Query expiring entries (all types, filter later)
@@ -177,7 +193,13 @@
               ;; Get git info from Emacs
               git-info (gather-git-info directory)
 
-              ;; Convert to metadata format
+              ;; Convert to metadata format - FULL CONTENT for priority conventions
+              priority-meta (mapv (fn [e]
+                                    {:id (:id e)
+                                     :type "convention"
+                                     :tags (vec (or (:tags e) []))
+                                     :content (:content e)}) ;; Full content!
+                                  priority-conventions)
               sessions-meta (mapv #(entry->catchup-meta % 80) sessions)
               decisions-meta (mapv #(entry->catchup-meta % 80) decisions)
               conventions-meta (mapv #(entry->catchup-meta % 80) conventions)
@@ -190,17 +212,20 @@
                    :project (or project-name project-id "global")
                    :scopes scopes
                    :git git-info
-                   :counts {:sessions (count sessions-meta)
+                   :counts {:priority-conventions (count priority-meta)
+                            :sessions (count sessions-meta)
                             :decisions (count decisions-meta)
                             :conventions (count conventions-meta)
                             :snippets (count snippets-meta)
                             :expiring (count expiring-meta)}
+                   ;; Priority conventions at TOP with FULL content
+                   :priority-conventions priority-meta
                    :context {:sessions sessions-meta
                              :decisions decisions-meta
                              :conventions conventions-meta
                              :snippets snippets-meta
                              :expiring expiring-meta}
-                   :hint "Use mcp_memory_get_full with ID to fetch full content"})})
+                   :hint "Priority conventions loaded with full content. Use mcp_memory_get_full for other entries."})})
         (catch Exception e
           (log/error e "native-catchup failed")
           {:type "text"

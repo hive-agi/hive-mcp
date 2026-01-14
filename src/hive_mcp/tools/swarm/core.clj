@@ -10,7 +10,8 @@
    - Response builders for consistent MCP response format"
   (:require [hive-mcp.emacsclient :as ec]
             [hive-mcp.validation :as v]
-            [clojure.data.json :as json]))
+            [clojure.data.json :as json]
+            [clojure.string :as str]))
 
 ;; ============================================================
 ;; Swarm Addon Check
@@ -114,7 +115,7 @@
    CLARITY: R - Clear intent for elisp string building"
   [items format-item-fn]
   (when (seq items)
-    (format "'(%s)" (clojure.string/join " " (map format-item-fn items)))))
+    (format "'(%s)" (str/join " " (map format-item-fn items)))))
 
 (defn escape-for-elisp
   "Escape a string for safe embedding in elisp.

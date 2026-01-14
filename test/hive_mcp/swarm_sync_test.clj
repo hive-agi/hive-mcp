@@ -2,9 +2,10 @@
   "Tests for ADR-001 Phase 2: Event-driven sync between elisp and Clojure registries.
 
    These tests verify that channel events properly synchronize the lings-registry
-   without requiring manual registration in handle-swarm-spawn."
+   (now backed by DataScript - ADR-002) without requiring manual registration."
   (:require [clojure.test :refer [deftest testing is use-fixtures]]
             [hive-mcp.tools.swarm :as swarm]
+            [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.channel :as ch]
             [clojure.core.async :as async :refer [<!! timeout alts!!]]))
 
@@ -13,12 +14,18 @@
 ;; =============================================================================
 
 (defn with-clean-state [f]
-  "Ensure clean registry state before and after each test."
+  "Ensure clean registry state before and after each test.
+   ADR-002: Reset both DataScript and deprecated atom."
+  ;; Reset DataScript (primary - ADR-002)
+  (ds/reset-conn!)
+  ;; Reset deprecated atom
   (reset! swarm/lings-registry {})
   (ch/stop-server!)
   (Thread/sleep 50)
   (f)
   (ch/stop-server!)
+  ;; Cleanup
+  (ds/reset-conn!)
   (reset! swarm/lings-registry {})
   (Thread/sleep 50))
 

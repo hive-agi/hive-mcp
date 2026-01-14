@@ -1,23 +1,30 @@
 (ns hive-mcp.tools.swarm.registry
   "Lings registry - Track spawned lings for easy lookup.
 
-   ADR-001 Phase 2: Event-Driven Registry Sync
-   Subscribes to channel events from elisp to keep lings-registry in sync.
+   ADR-002 Amendment: DataScript IS the unified registry.
+   This module provides a compatibility layer over DataScript for
+   ling registration/lookup operations.
+
    Events: slave-spawned, slave-killed (from hive-mcp-swarm-events.el)
 
    SOLID: SRP - Single responsibility for ling registration/lookup.
    CLARITY: Y - Yield safe failure with graceful channel fallback."
   (:require [hive-mcp.channel :as ch]
             [hive-mcp.hivemind :as hivemind]
+            [hive-mcp.swarm.datascript :as ds]
             [clojure.core.async :as async :refer [go-loop <!]]
             [taoensso.timbre :as log]))
 
 ;; ============================================================
-;; Lings Registry State
+;; Lings Registry State (Migrated to DataScript - ADR-002)
 ;; ============================================================
 
-;; Atom tracking spawned lings: {slave-id {:name, :presets, :cwd, :spawned-at}}
-(defonce lings-registry (atom {}))
+;; DEPRECATED: The lings-registry atom has been migrated to DataScript.
+;; Use ds/get-all-slaves, ds/add-slave!, ds/remove-slave! directly.
+;; This atom is kept ONLY for backward compatibility with tests
+;; that directly reference @lings-registry. Will be removed in v0.8.0.
+(defonce ^:deprecated lings-registry
+  (atom {}))
 
 ;; State for event-driven registry synchronization.
 (defonce ^:private registry-sync-state
@@ -25,14 +32,35 @@
          :subscriptions []}))
 
 ;; ============================================================
-;; Registry CRUD Operations
+;; Registry CRUD Operations (DataScript-backed - ADR-002)
 ;; ============================================================
+
+(defn- ds-slave->legacy-format
+  "Transform DataScript slave entity to legacy registry format.
+
+   DataScript: {:slave/id :slave/name :slave/presets :slave/cwd :slave/created-at}
+   Legacy:     {slave-id {:name :presets :cwd :spawned-at}}"
+  [slave]
+  {(:slave/id slave)
+   {:name (:slave/name slave)
+    :presets (vec (or (:slave/presets slave) []))
+    :cwd (:slave/cwd slave)
+    :spawned-at (when-let [ts (:slave/created-at slave)]
+                  (.getTime ts))}})
 
 (defn register-ling!
   "Register a spawned ling in the registry.
 
+   ADR-002: Writes to DataScript as primary store.
+   Also updates deprecated atom for backward compatibility.
+
    SOLID: SRP - Only handles registration, not events."
   [slave-id {:keys [name presets cwd]}]
+  ;; Primary: DataScript
+  (ds/add-slave! slave-id {:name name
+                           :presets (vec (or presets []))
+                           :cwd cwd})
+  ;; Deprecated: Atom (for backward compat with tests referencing @lings-registry)
   (swap! lings-registry assoc slave-id
          {:name name
           :presets presets
@@ -42,22 +70,40 @@
 (defn unregister-ling!
   "Remove a ling from the registry.
 
+   ADR-002: Removes from DataScript as primary store.
+   Also updates deprecated atom for backward compatibility.
+
    SOLID: SRP - Only handles unregistration, not events."
   [slave-id]
+  ;; Primary: DataScript
+  (ds/remove-slave! slave-id)
+  ;; Deprecated: Atom
   (swap! lings-registry dissoc slave-id))
 
 (defn get-available-lings
   "Get all registered lings.
 
+   ADR-002: Reads from DataScript as primary source.
+
    Returns: {slave-id {:name, :presets, :cwd, :spawned-at}}"
   []
-  @lings-registry)
+  ;; Primary: Read from DataScript
+  (let [slaves (ds/get-all-slaves)]
+    (if (seq slaves)
+      (reduce merge {} (map ds-slave->legacy-format slaves))
+      ;; Fallback to atom if DataScript is empty (backward compat for tests)
+      @lings-registry)))
 
 (defn clear-registry!
   "Clear all entries from the registry.
 
+   ADR-002: Clears both DataScript and deprecated atom.
+
    Used when killing all slaves."
   []
+  ;; Primary: DataScript
+  (ds/reset-conn!)
+  ;; Deprecated: Atom
   (reset! lings-registry {}))
 
 ;; ============================================================

@@ -8,6 +8,7 @@
   (:require [clojure.test :refer [deftest testing is use-fixtures]]
             [clojure.data.json :as json]
             [hive-mcp.tools.swarm :as swarm]
+            [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.emacsclient :as ec]
             [hive-mcp.hivemind :as hivemind]))
 
@@ -16,11 +17,17 @@
 ;; =============================================================================
 
 (defn reset-registry-fixture
-  "Reset lings-registry and hivemind agent-registry before each test."
+  "Reset lings-registry, DataScript, and hivemind agent-registry before each test.
+   ADR-002: DataScript is now the primary registry."
   [f]
+  ;; Reset DataScript (primary - ADR-002)
+  (ds/reset-conn!)
+  ;; Reset deprecated atom (backward compat)
   (reset! swarm/lings-registry {})
   (reset! hivemind/agent-registry {})
-  (f))
+  (f)
+  ;; Cleanup after test
+  (ds/reset-conn!))
 
 (use-fixtures :each reset-registry-fixture)
 
