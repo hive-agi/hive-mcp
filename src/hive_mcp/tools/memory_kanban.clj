@@ -32,6 +32,21 @@
       {:type "text" :text result}
       {:type "text" :text (str "Error: " error) :isError true})))
 
+;; ============================================================
+;; Slim/Metadata Formatting (Token Optimization)
+;; ============================================================
+
+(defn- task->slim
+  "Convert kanban task to slim format.
+   Returns only id, title, status, priority - strips context bloat.
+   ~10x fewer tokens than full entry."
+  [entry]
+  (let [content (:content entry)]
+    {:id (:id entry)
+     :title (get content :title (get content "title"))
+     :status (get content :status (get content "status"))
+     :priority (get content :priority (get content "priority"))}))
+
 (defn handle-mem-kanban-list
   "List kanban tasks, optionally by status."
   [{:keys [status]}]
@@ -42,6 +57,21 @@
         {:keys [success result error]} (ec/eval-elisp elisp)]
     (if success
       {:type "text" :text result}
+      {:type "text" :text (str "Error: " error) :isError true})))
+
+(defn handle-mem-kanban-list-slim
+  "List kanban tasks with minimal data for token optimization.
+   Returns only id, title, status, priority per entry (~10x fewer tokens)."
+  [{:keys [status]}]
+  (let [elisp (if status
+                (format "(json-encode (hive-mcp-api-kanban-list %s))"
+                        (str "\"" (v/escape-elisp-string status) "\""))
+                "(json-encode (hive-mcp-api-kanban-list))")
+        {:keys [success result error]} (ec/eval-elisp elisp)]
+    (if success
+      (let [entries (try (json/read-str result :key-fn keyword) (catch Exception _ []))
+            slim-entries (mapv task->slim entries)]
+        {:type "text" :text (json/write-str slim-entries)})
       {:type "text" :text (str "Error: " error) :isError true})))
 
 (defn handle-mem-kanban-move
@@ -119,6 +149,12 @@
     :inputSchema {:type "object"
                   :properties {:status {:type "string" :enum ["todo" "doing" "review"] :description "Filter by status"}}}
     :handler handle-mem-kanban-list}
+
+   {:name "mcp_mem_kanban_list_slim"
+    :description "List kanban tasks with minimal data (id, title, status, priority only). Use for token-efficient overviews (~10x fewer tokens than full list)."
+    :inputSchema {:type "object"
+                  :properties {:status {:type "string" :enum ["todo" "doing" "review"] :description "Filter by status"}}}
+    :handler handle-mem-kanban-list-slim}
 
    {:name "mcp_mem_kanban_move"
     :description "Move task to new status. Moving to 'done' DELETES the task from memory"
