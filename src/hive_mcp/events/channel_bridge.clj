@@ -23,15 +23,17 @@
    ## Event Transformation
    
    Channel events (maps with string keys) are transformed to
-   hive-events vectors:
+   hive-events vectors via the bridge.clj multimethod:
    
    Channel: {\"type\" \"task-complete\" \"data\" {...}}
    → Events: [:task/complete {...}]
    
    SOLID: Single Responsibility - channel→event bridging only
+   SOLID: DRY - Uses bridge.clj multimethod for transformations
    CLARITY: Y - Yield safe failure (errors logged, not thrown)"
   (:require [hive-mcp.channel :as channel]
             [hive-mcp.events.core :as ev]
+            [hive-mcp.events.bridge :as bridge]
             [clojure.core.async :as async :refer [go-loop <!]]
             [taoensso.timbre :as log]))
 
@@ -59,14 +61,17 @@
 (defn hook->event
   "Transform a channel event map to a hive-events dispatch vector.
    
+   Uses bridge.clj multimethod for known hook types, with fallback
+   to kebab→namespaced conversion for channel-specific events.
+   
    Channel events arrive as maps with string keys from bencode.
    Transforms to [:event-type data-map] format for dispatch.
    
    Examples:
    - {\"type\" \"task-complete\" \"task-id\" \"123\"} 
-     → [:task/complete {:task-id \"123\"}]
+     → [:task/complete {:task-id \"123\"}]  (via bridge multimethod)
    - {:type :hivemind-progress :data {...}}
-     → [:hivemind/progress {...}]"
+     → [:hivemind/progress {...}]  (via kebab fallback)"
   [channel-event]
   (let [;; Handle both string and keyword keys (channel normalizes to keywords)
         type-val (or (get channel-event :type)
@@ -75,10 +80,18 @@
         data (dissoc channel-event :type "type" :timestamp "timestamp"
                      :client-id "client-id")]
     (when type-val
-      (let [event-kw (if (keyword? type-val)
-                       (kebab->ns-keyword (name type-val))
-                       (kebab->ns-keyword (str type-val)))]
-        [event-kw data]))))
+      (let [;; Convert type to keyword for bridge lookup
+            hook-kw (if (keyword? type-val)
+                      type-val
+                      (keyword (str type-val)))
+            ;; Try bridge multimethod first (authoritative source)
+            bridge-result (bridge/hook->event hook-kw data)]
+        (if bridge-result
+          ;; Bridge knows this hook type
+          bridge-result
+          ;; Fallback: kebab→namespaced conversion for unknown types
+          (let [event-kw (kebab->ns-keyword (name hook-kw))]
+            [event-kw data]))))))
 
 ;; =============================================================================
 ;; Channel Event Handler
