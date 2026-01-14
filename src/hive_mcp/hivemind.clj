@@ -390,9 +390,14 @@ Use this to retrieve message content that agents have broadcast."
                                            :description "Agent identifier to get messages from"}}
                   :required ["agent_id"]}
     :handler (fn [args]
-               ;; Support both keyword and string keys (MCP may pass either)
+               ;; Support both snake_case and kebab-case keys:
+               ;; - :agent_id (snake_case) - if MCP passes keywords unchanged
+               ;; - :agent-id (kebab-case) - jsonrpc4clj converts "agent_id" -> :agent-id
+               ;; Also support string keys as fallback
                (let [agent_id (or (:agent_id args)
-                                  (get args "agent_id"))]
+                                  (:agent-id args)
+                                  (get args "agent_id")
+                                  (get args "agent-id"))]
                  {:type "text"
                   :text (json/write-str
                          (if-let [messages (get-agent-messages agent_id)]
