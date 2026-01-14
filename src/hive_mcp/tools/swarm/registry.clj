@@ -8,6 +8,7 @@
    SOLID: SRP - Single responsibility for ling registration/lookup.
    CLARITY: Y - Yield safe failure with graceful channel fallback."
   (:require [hive-mcp.channel :as ch]
+            [hive-mcp.hivemind :as hivemind]
             [clojure.core.async :as async :refer [go-loop <!]]
             [taoensso.timbre :as log]))
 
@@ -66,29 +67,39 @@
 (defn- handle-ling-registered
   "Handle slave-spawned event from elisp (registry sync).
    Event: {:slave-id :name :presets :cwd}
-   Registers the ling in lings-registry.
+   Registers the ling in BOTH registries:
+   - lings-registry (for swarm operations)
+   - hivemind agent-registry (for hivemind_messages)
 
    CLARITY: I - Inputs are guarded (handles both string and keyword keys)"
   [event]
   (let [slave-id (or (get event "slave-id") (:slave-id event))
         name (or (get event "name") (:name event))
         presets (or (get event "presets") (:presets event) [])
-        cwd (or (get event "cwd") (:cwd event))]
+        cwd (or (get event "cwd") (:cwd event))
+        metadata {:name name :presets presets :cwd cwd}]
     (when slave-id
       (log/info "Registry sync: registering ling" slave-id "via event")
-      (register-ling! slave-id {:name name :presets presets :cwd cwd}))))
+      ;; Register in swarm lings registry
+      (register-ling! slave-id metadata)
+      ;; Also register in hivemind agent-registry (bug fix!)
+      ;; This ensures hivemind_messages works for spawned agents
+      (hivemind/register-agent! slave-id metadata))))
 
 (defn- handle-ling-unregistered
   "Handle slave-killed event from elisp (registry sync).
    Event: {:slave-id}
-   Unregisters the ling from lings-registry.
+   Unregisters the ling from BOTH registries.
 
    CLARITY: I - Inputs are guarded (handles both string and keyword keys)"
   [event]
   (let [slave-id (or (get event "slave-id") (:slave-id event))]
     (when slave-id
       (log/info "Registry sync: unregistering ling" slave-id "via event")
-      (unregister-ling! slave-id))))
+      ;; Unregister from swarm registry
+      (unregister-ling! slave-id)
+      ;; Also clear from hivemind agent-registry
+      (hivemind/clear-agent! slave-id))))
 
 (defn- subscribe-to-registry-event!
   "Subscribe to a registry sync event type with handler.

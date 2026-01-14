@@ -237,6 +237,31 @@
   [agent-id]
   (get-in @agent-registry [agent-id :messages]))
 
+(defn register-agent!
+  "Register an agent in the hivemind registry without requiring a shout.
+
+   Used when agents are spawned - they should be immediately visible
+   in available-agents for hivemind_messages even before they shout.
+
+   agent-id: Unique identifier (typically slave-id from swarm)
+   metadata: Map with optional :name, :presets, :cwd
+
+   SOLID: SRP - Single responsibility for registration
+   CLARITY: I - Inputs are guarded (handles missing metadata gracefully)"
+  [agent-id metadata]
+  (let [now (System/currentTimeMillis)]
+    (swap! agent-registry assoc agent-id
+           {:status :spawned
+            :last-seen now
+            :current-task nil
+            :messages []
+            ;; Preserve spawn metadata
+            :name (:name metadata)
+            :presets (:presets metadata)
+            :cwd (:cwd metadata)})
+    (log/info "Agent registered in hivemind:" agent-id)
+    true))
+
 (defn clear-agent!
   "Remove an agent from the registry (when it terminates)."
   [agent-id]
