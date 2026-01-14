@@ -12,6 +12,7 @@
    - :task-completed   - Mark task complete, release claims, process queue
    - :task-failed      - Mark task failed, release claims, process queue
    - :prompt-shown     - Forward permission prompts to hivemind coordinator
+   - :prompt-stall     - Urgent alert when ling idle with pending prompt
 
    Migration Note (ADR-001):
    - Phase 1: Uses DataScript for swarm state (replacing core.logic pldb)
@@ -205,7 +206,7 @@
 (defn- handle-prompt-shown
   "Handle permission prompt event from Emacs swarm slave.
    Event: {:slave-id :prompt :timestamp :session-id}
-   
+
    Forwards the prompt to hivemind so the coordinator can see it
    via hivemind_status without polling swarm_pending_prompts."
   [event]
@@ -216,6 +217,28 @@
     (when (and slave-id prompt)
       (hivemind/add-swarm-prompt! slave-id prompt session-id timestamp)
       (log/info "Sync: forwarded prompt from" slave-id "to hivemind"))))
+
+(defn- handle-prompt-stall
+  "Handle prompt-stall event from Emacs idle watcher.
+   Event: {:slave-id :idle-duration-secs :prompt-preview :urgency}
+
+   This is emitted when a ling has been idle AND has a pending prompt.
+   Records as a shout so it appears in HIVEMIND piggyback messages,
+   alerting the coordinator that they need to respond urgently."
+  [event]
+  (let [slave-id (or (get event "slave-id") (:slave-id event))
+        idle-secs (or (get event "idle-duration-secs") (:idle-duration-secs event) 0)
+        prompt-preview (or (get event "prompt-preview") (:prompt-preview event) "")
+        urgency (or (get event "urgency") (:urgency event) "high")]
+    (when slave-id
+      ;; Record as a shout so it appears in HIVEMIND piggyback
+      (hivemind/shout! slave-id :prompt-stall
+                       {:task "awaiting-response"
+                        :message (format "STALLED %.0fs waiting for prompt response: %s"
+                                         idle-secs prompt-preview)
+                        :idle-secs idle-secs
+                        :urgency urgency})
+      (log/warn "Sync: prompt-stall from" slave-id "- idle" idle-secs "secs"))))
 
 ;; =============================================================================
 ;; Event Subscription Management
@@ -229,7 +252,8 @@
    :task-dispatched handle-task-dispatched
    :task-completed handle-task-completed
    :task-failed handle-task-failed
-   :prompt-shown handle-prompt-shown})
+   :prompt-shown handle-prompt-shown
+   :prompt-stall handle-prompt-stall})
 
 (defn- subscribe-to-event!
   "Subscribe to a single event type with handler."

@@ -43,6 +43,11 @@
 (declare-function hive-mcp-swarm-events-emit-auto-error "hive-mcp-swarm-events")
 (declare-function hive-mcp-swarm-events-emit-auto-completed "hive-mcp-swarm-events")
 (declare-function hive-mcp-swarm-events-emit-idle-timeout "hive-mcp-swarm-events")
+(declare-function hive-mcp-swarm-events-emit-prompt-stall "hive-mcp-swarm-events")
+
+;; Forward declarations for prompt detection (from hive-mcp-swarm-prompts)
+(declare-function hive-mcp-swarm-prompts-find-pending "hive-mcp-swarm-prompts")
+(declare-function hive-mcp-swarm-prompts--send-desktop-notification "hive-mcp-swarm-prompts")
 (declare-function hive-mcp-swarm-events-emit-ling-ready-for-wrap "hive-mcp-swarm-events")
 
 ;; External state from swarm module
@@ -686,7 +691,11 @@ Called when a slave is killed."
 Called periodically by the idle watcher timer.
 
 For each slave that has gone idle without shouting, emits
-an idle-timeout event to alert the coordinator."
+an idle-timeout event to alert the coordinator.
+
+If the slave has a pending prompt (from hive-mcp-swarm-prompts),
+emits a prompt-stall event instead - this is more urgent as it
+indicates the coordinator needs to respond to unblock the ling."
   (when (and (boundp 'hive-mcp-swarm--slaves)
              (hash-table-p hive-mcp-swarm--slaves))
     (maphash
@@ -698,12 +707,31 @@ an idle-timeout event to alert the coordinator."
          (let* ((activity-time (hive-mcp-swarm-terminal--get-activity-timestamp slave-id))
                 (idle-duration (if activity-time
                                    (- (float-time) activity-time)
-                                 0)))
-           ;; Emit idle-timeout event
-           (when (fboundp 'hive-mcp-swarm-events-emit-idle-timeout)
-             (hive-mcp-swarm-events-emit-idle-timeout slave-id idle-duration))
-           (message "[swarm-terminal] Layer 2: %s idle for %.1fs without shout"
-                    slave-id idle-duration))))
+                                 0))
+                ;; Check for pending prompt (GAP 2: idle + prompt = prompt-stall)
+                (pending-prompt (when (fboundp 'hive-mcp-swarm-prompts-find-pending)
+                                  (hive-mcp-swarm-prompts-find-pending slave-id)))
+                (prompt-text (and pending-prompt (plist-get pending-prompt :prompt))))
+           (if pending-prompt
+               ;; URGENT: Idle with pending prompt - coordinator needs to respond!
+               (progn
+                 (when (fboundp 'hive-mcp-swarm-events-emit-prompt-stall)
+                   (hive-mcp-swarm-events-emit-prompt-stall slave-id idle-duration prompt-text))
+                 ;; Send urgent desktop notification
+                 (when (fboundp 'hive-mcp-swarm-prompts--send-desktop-notification)
+                   (hive-mcp-swarm-prompts--send-desktop-notification
+                    (format "⚠️ STALLED: %s" slave-id)
+                    (format "Waiting %.0fs for response: %s"
+                            idle-duration
+                            (truncate-string-to-width (or prompt-text "") 80))))
+                 (message "[swarm-terminal] Layer 2: %s PROMPT-STALL for %.1fs - coordinator must respond!"
+                          slave-id idle-duration))
+             ;; Regular idle-timeout (no pending prompt)
+             (progn
+               (when (fboundp 'hive-mcp-swarm-events-emit-idle-timeout)
+                 (hive-mcp-swarm-events-emit-idle-timeout slave-id idle-duration))
+               (message "[swarm-terminal] Layer 2: %s idle for %.1fs without shout"
+                        slave-id idle-duration))))))
      hive-mcp-swarm--slaves)))
 
 (defun hive-mcp-swarm-terminal-start-idle-watcher ()
