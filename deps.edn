@@ -46,7 +46,11 @@
         io.github.tonsky/clj-reload {:mvn/version "1.0.0"}
 
         ;; clj-kondo for code analysis (call graphs, linting)
-        clj-kondo/clj-kondo {:mvn/version "2026.01.12"}}
+        clj-kondo/clj-kondo {:mvn/version "2026.01.12"}
+
+        ;; hive-events - re-frame inspired event system for JVM
+        ;; Git submodule for local development
+        io.github.hive/events {:local/root "hive-events"}}
 
  :aliases
  {:mcp
