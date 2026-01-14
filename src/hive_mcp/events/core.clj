@@ -32,6 +32,8 @@
    CLARITY: Composition over modification - chain interceptors
    CLARITY: Inputs are guarded - malli validation at dispatch boundary"
   (:require [clojure.set :as set]
+            [malli.core :as m]
+            [malli.error :as me]
             [hive-mcp.events.schemas :as schemas]
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.channel.websocket :as ws]))
@@ -498,6 +500,76 @@
                (assoc-coeffect context :event (vec (rest event)))))))
 
 ;; =============================================================================
+
+(defn validate-event
+  "Create a validation interceptor that validates event data against a malli schema.
+   
+   The validation interceptor runs in the :before phase and validates:
+   1. Event vector structure (always - uses schemas/Event)
+   2. Event data (optional - if schema is provided)
+   
+   When schema is provided, it validates the event data (second element of
+   the event vector) against the malli schema.
+   
+   Args:
+   - schema (optional) - Malli schema to validate the event data against
+   
+   Usage:
+   ```clojure
+   ;; Basic structure validation only
+   (reg-event :my-event
+     [(validate-event)]
+     handler-fn)
+   
+   ;; Structure + data schema validation
+   (def TaskData [:map [:id :string] [:title :string]])
+   (reg-event :task/create
+     [(validate-event TaskData)]
+     handler-fn)
+   ```
+   
+   On validation failure, throws ex-info with:
+   - :event       - The invalid event
+   - :error       - Humanized error message
+   - :schema-type - :structure or :data (which validation failed)
+   
+   CLARITY Principle: Inputs are guarded at boundaries.
+   POC-14: Validation interceptor for event system."
+  ([]
+   (->interceptor
+    :id :validate-event
+    :comment "Validates event structure"
+    :before (fn [context]
+              (let [event (get-coeffect context :event)]
+                ;; Always validate basic event structure
+                (when-not (schemas/valid-event? event)
+                  (throw (ex-info "Invalid event structure: event must be a vector with keyword first"
+                                  {:event event
+                                   :error (schemas/explain-event event)
+                                   :schema-type :structure})))
+                context))))
+  ([data-schema]
+   (->interceptor
+    :id :validate-event
+    :comment "Validates event structure and data schema"
+    :before (fn [context]
+              (let [event (get-coeffect context :event)]
+                ;; First validate basic event structure
+                (when-not (schemas/valid-event? event)
+                  (throw (ex-info "Invalid event structure: event must be a vector with keyword first"
+                                  {:event event
+                                   :error (schemas/explain-event event)
+                                   :schema-type :structure})))
+                ;; Then validate event data against provided schema
+                (let [event-data (second event)]
+                  (when-not (m/validate data-schema event-data)
+                    (throw (ex-info "Invalid event data: data does not match schema"
+                                    {:event event
+                                     :event-data event-data
+                                     :error (me/humanize (m/explain data-schema event-data))
+                                     :schema-type :data}))))
+                context)))))
+
 ;; Initialization
 ;; =============================================================================
 
