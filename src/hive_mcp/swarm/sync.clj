@@ -127,10 +127,20 @@
 
 (defn- handle-slave-killed
   "Handle slave killed event.
-   Event: {:slave-id}"
+   Event: {:slave-id}
+   
+   EVENTS-07: Dispatches :ling/completed event BEFORE removing from DataScript
+   to allow event handlers to access ling state before cleanup."
   [event]
   (let [slave-id (or (get event "slave-id") (:slave-id event))]
     (when slave-id
+      ;; EVENTS-07: Dispatch BEFORE removal so handlers can access ling state
+      (try
+        (require '[hive-mcp.events.core :as ev])
+        ((resolve 'hive-mcp.events.core/dispatch)
+         [:ling/completed {:slave-id slave-id :reason "terminated"}])
+        (catch Exception e
+          (log/warn "Event dispatch for ling termination failed:" (.getMessage e))))
       ;; ds/remove-slave! handles claim release internally
       (ds/remove-slave! slave-id)
       (log/debug "Sync: removed slave" slave-id))))
@@ -156,13 +166,23 @@
 
    LAYER 4 INTEGRATION: Triggers :task-complete hooks which emit
    a synthetic shout. This is the architectural guarantee - completion
-   is always visible to the coordinator regardless of ling behavior."
+   is always visible to the coordinator regardless of ling behavior.
+   
+   EVENTS-02: Also dispatches to hive-events for unified event processing."
   [event]
   (let [task-id (or (get event "task-id") (:task-id event))
         slave-id (or (get event "slave-id") (:slave-id event))]
     (when task-id
       ;; ds/complete-task! handles status update, claim release, and slave stats
       (ds/complete-task! task-id)
+
+      ;; EVENTS-02: Dispatch to hive-events for unified event processing
+      (try
+        (require '[hive-mcp.events.core :as ev])
+        ((resolve 'hive-mcp.events.core/dispatch)
+         [:task/complete {:task-id task-id :agent-id slave-id :result :completed}])
+        (catch Exception e
+          (log/warn "Event dispatch failed:" (.getMessage e))))
 
       ;; LAYER 4: Trigger hooks for synthetic shout (architectural guarantee)
       ;; Even if ling forgot to call hivemind_shout, this ensures visibility
