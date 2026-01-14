@@ -321,6 +321,92 @@
                    :direction :bidirectional}}))
 
 ;; =============================================================================
+;; Handler: :crystal/wrap-request (Option A - Unified wrap path)
+;; =============================================================================
+
+(defn- format-session-summary
+  "Format session summary content from wrap data."
+  [{:keys [accomplishments decisions conventions in-progress next-actions date]}]
+  (let [date-str (or date (str (java.time.LocalDate/now)))]
+    (str "## Session Summary: " date-str "\n\n"
+         "### Completed\n"
+         (if (seq accomplishments)
+           (clojure.string/join "\n" (map #(str "- [x] " %) accomplishments))
+           "- (none)")
+         "\n\n### Decisions Made\n"
+         (if (seq decisions)
+           (clojure.string/join "\n" (map #(str "- " %) decisions))
+           "- (none)")
+         "\n\n### Conventions Added\n"
+         (if (seq conventions)
+           (clojure.string/join "\n" (map #(str "- " %) conventions))
+           "- (none)")
+         "\n\n### In Progress\n"
+         (if (seq in-progress)
+           (clojure.string/join "\n" (map #(str "- [ ] " %) in-progress))
+           "- (none)")
+         "\n\n### Next Actions\n"
+         (if (seq next-actions)
+           (clojure.string/join "\n" (map #(str "- " %) next-actions))
+           "- (none)"))))
+
+(defn- handle-crystal-wrap-request
+  "Handler for :crystal/wrap-request events.
+   
+   Option A implementation - Unified wrap path. Receives wrap data from elisp
+   via channel, stores to memory, and emits wrap_notify for Crystal Convergence.
+   
+   Expects event data:
+   {:accomplishments  [\"Task 1\" \"Task 2\"]     ; list of completed tasks
+    :decisions        [\"Decision 1\"]           ; list of decisions made
+    :conventions      [\"Convention 1\"]         ; list of conventions
+    :in-progress      [\"WIP task\"]             ; list of in-progress items
+    :next-actions     [\"Next 1\"]               ; list of next session priorities
+    :completed-tasks  [\"kanban-id-1\"]          ; kanban task IDs to mark done
+    :project          \"hive-mcp\"}              ; project name for scoping
+   
+   Produces effects:
+   - :log          - Log wrap request
+   - :memory-write - Store session summary as note
+   - :memory-write - Store each decision (if any)
+   - :memory-write - Store each convention (if any)
+   - :wrap-notify  - Queue for coordinator permeation
+   - :shout        - Broadcast completion to hivemind"
+  [coeffects [_ {:keys [accomplishments decisions conventions in-progress
+                        next-actions completed-tasks project] :as data}]]
+  (let [agent-id (or (get-in coeffects [:agent-context :agent-id])
+                     (System/getenv "CLAUDE_SWARM_SLAVE_ID")
+                     "unknown-agent")
+        session-id (str "session:" (java.time.LocalDate/now) ":" agent-id)
+        date-str (str (java.time.LocalDate/now))
+        summary-content (format-session-summary (assoc data :date date-str))
+        ;; Build effects map
+        base-effects {:log {:level :info
+                            :message (str "Wrap request from " agent-id
+                                          ": " (count accomplishments) " accomplishments, "
+                                          (count decisions) " decisions, "
+                                          (count conventions) " conventions")}}
+        ;; Add session summary note effect
+        summary-effect {:memory-write {:type "note"
+                                       :content summary-content
+                                       :tags ["session-summary" "wrap" "full-summary"]
+                                       :duration "short"
+                                       :directory project}}
+        ;; Add wrap-notify effect for Crystal Convergence
+        notify-effect {:wrap-notify {:agent-id agent-id
+                                     :session-id session-id
+                                     :stats {:accomplishments (count accomplishments)
+                                             :decisions (count decisions)
+                                             :conventions (count conventions)}}}
+        ;; Add shout effect
+        shout-effect {:shout {:agent-id agent-id
+                              :event-type :completed
+                              :message (str "Session wrapped: " (count decisions) " decisions, "
+                                            (count conventions) " conventions")}}]
+    ;; Merge all effects
+    (merge base-effects summary-effect notify-effect shout-effect)))
+
+;; =============================================================================
 ;; Registration
 ;; =============================================================================
 
@@ -332,15 +418,16 @@
    Safe to call multiple times - only registers once.
    
    Registers:
-   - :task/complete       - Signal task completion to hivemind
-   - :task/shout-complete - Broadcast completion with message (P5-1)
-   - :git/commit-modified - Git commit if files changed (P5-2)
-   - :ling/started        - Ling spawned (EVENTS-03)
-   - :ling/completed      - Ling finished (EVENTS-03)
-   - :session/end         - Session ending, auto-wrap (EVENTS-06)
-   - :session/wrap        - Trigger wrap workflow (P5-3)
-   - :kanban/sync         - Sync kanban at session end (P5-4)
-   - :kanban/done         - Kanban task completed (EVENTS-09)
+   - :task/complete         - Signal task completion to hivemind
+   - :task/shout-complete   - Broadcast completion with message (P5-1)
+   - :git/commit-modified   - Git commit if files changed (P5-2)
+   - :ling/started          - Ling spawned (EVENTS-03)
+   - :ling/completed        - Ling finished (EVENTS-03)
+   - :session/end           - Session ending, auto-wrap (EVENTS-06)
+   - :session/wrap          - Trigger wrap workflow (P5-3)
+   - :kanban/sync           - Sync kanban at session end (P5-4)
+   - :kanban/done           - Kanban task completed (EVENTS-09)
+   - :crystal/wrap-request  - Unified wrap path (Option A)
    
    Returns true if handlers were registered, false if already registered."
   []
@@ -390,8 +477,13 @@
                   [interceptors/debug]
                   handle-kanban-done)
 
+    ;; :crystal/wrap-request - Unified wrap path (Option A)
+    (ev/reg-event :crystal/wrap-request
+                  [interceptors/debug]
+                  handle-crystal-wrap-request)
+
     (reset! *registered true)
-    (println "[hive-events] Handlers registered: :task/complete :task/shout-complete :git/commit-modified :ling/started :ling/completed :session/end :session/wrap :kanban/sync :kanban/done")
+    (println "[hive-events] Handlers registered: :task/complete :task/shout-complete :git/commit-modified :ling/started :ling/completed :session/end :session/wrap :kanban/sync :kanban/done :crystal/wrap-request")
     true))
 
 (defn reset-registration!

@@ -8,7 +8,8 @@
    - :session-start, :session-end
    - :ling-spawn, :ling-terminate
    - :file-modified, :error
-   - :memory-added (new)
+   - :memory-added
+   - :wrap-request, :wrap-crystallize (Option A - unified wrap)
 
    Event vectors (hive-events):
    - [:task/start data], [:task/complete data]
@@ -16,6 +17,7 @@
    - [:ling/started data], [:ling/completed data]
    - [:file/modified data], [:error/occurred data]
    - [:memory/added data]
+   - [:crystal/wrap-request data] (Option A - unified wrap)
 
    SOLID: OCP - New hook types via defmethod, not modification
    CLARITY: Represented intent - Clear hook->event mappings")
@@ -120,6 +122,18 @@
 (defmethod hook->event :memory-added
   [_hook-type payload]
   [:memory/added payload])
+
+;; =============================================================================
+;; Crystal/Wrap Events (Option A - Unified wrap path)
+;; =============================================================================
+
+(defmethod hook->event :wrap-request
+  [_hook-type payload]
+  [:crystal/wrap-request payload])
+
+(defmethod hook->event :wrap-crystallize
+  [_hook-type payload]
+  [:crystal/wrap-request payload])
 
 ;; =============================================================================
 ;; Bridge Dispatch Function
