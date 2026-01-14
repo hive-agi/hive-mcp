@@ -358,10 +358,10 @@
                            :cwd (System/getProperty "user.dir")})))
 
     ;; POC-10: :db-snapshot coeffect - DataScript database snapshot
-    ;; Note: Using :db key as per POC spec (core.clj uses :db-snapshot)
+    ;; Injects as :db-snapshot key (consistent with core.clj)
     (ev/reg-cofx :db-snapshot
                  (fn [coeffects]
-                   (assoc coeffects :db @(ds/get-conn))))
+                   (assoc coeffects :db-snapshot @(ds/get-conn))))
 
     ;; ==========================================================================
     ;; Effects
