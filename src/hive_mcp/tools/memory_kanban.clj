@@ -12,7 +12,6 @@
             [hive-mcp.validation :as v]
             [hive-mcp.crystal.hooks :as crystal-hooks]
             [clojure.data.json :as json]
-            [clojure.string :as str]
             [taoensso.timbre :as log]))
 
 ;; Tool handlers

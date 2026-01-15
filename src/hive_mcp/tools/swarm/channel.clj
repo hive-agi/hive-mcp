@@ -8,7 +8,7 @@
    - start-channel-subscriptions! / stop-channel-subscriptions!
    - check-event-journal / clear-event-journal!
    - Event handlers for task-completed, task-failed, prompt-shown"
-  (:require [clojure.core.async :as async :refer [go go-loop <! close!]]
+  (:require [clojure.core.async :as async :refer [go-loop <! close!]]
             [taoensso.timbre :as log]))
 
 ;; ============================================================

@@ -14,7 +14,7 @@
    - Domain: Diff lifecycle (pending → applied/rejected)
    - Application: Handlers coordinate validation + state updates
    - Infra: File I/O via slurp/spit (mocked in tests)"
-  (:require [hive-mcp.tools.core :refer [mcp-success mcp-error mcp-json]]
+  (:require [hive-mcp.tools.core :refer [mcp-json]]
             [hive-mcp.emacsclient :as ec]
             [clojure.data.json :as json]
             [clojure.string :as str]

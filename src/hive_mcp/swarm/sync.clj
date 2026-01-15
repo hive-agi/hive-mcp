@@ -19,7 +19,6 @@
    - Phase 2: Elisp queries DataScript via MCP (future)
    - Phase 3: Single source of truth achieved (future)"
   (:require [hive-mcp.swarm.datascript :as ds]
-            [hive-mcp.swarm.logic :as logic] ;; Keep for coordinator compatibility
             [hive-mcp.swarm.coordinator :as coord]
             [hive-mcp.channel :as channel]
             [hive-mcp.emacsclient :as ec]

@@ -11,7 +11,6 @@
             [hive-mcp.tools.swarm.registry :as registry]
             [hive-mcp.emacsclient :as ec]
             [hive-mcp.validation :as v]
-            [clojure.data.json :as json]
             [clojure.string :as str]))
 
 ;; ============================================================

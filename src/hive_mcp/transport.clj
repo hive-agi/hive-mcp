@@ -130,7 +130,7 @@
         (log/error "UnixTransport connect failed:" (.getMessage e))
         false)))
 
-  (disconnect! [this]
+  (disconnect! [_]
     (when channel
       (try
         (.close ^SocketChannel channel)
@@ -140,7 +140,7 @@
       (set! input-stream nil)
       (log/debug "UnixTransport disconnected from" path)))
 
-  (connected? [this]
+  (connected? [_]
     (and channel (.isConnected ^SocketChannel channel)))
 
   (send! [this msg]
@@ -159,7 +159,7 @@
     (when (and (connected? this) input-stream)
       (decode-msg-from-stream input-stream)))
 
-  (get-stream [this]
+  (get-stream [_]
     nil)) ; Unix transport doesn't use Manifold streams directly
 
 (defn unix-transport
@@ -188,7 +188,7 @@
         (log/error "TCPTransport connect failed:" (.getMessage e))
         false)))
 
-  (disconnect! [this]
+  (disconnect! [_]
     (when channel
       (try
         (.close ^SocketChannel channel)
@@ -198,7 +198,7 @@
       (set! input-stream nil)
       (log/debug "TCPTransport disconnected from" host ":" port)))
 
-  (connected? [this]
+  (connected? [_]
     (and channel (.isConnected ^SocketChannel channel)))
 
   (send! [this msg]
@@ -217,7 +217,7 @@
     (when (and (connected? this) input-stream)
       (decode-msg-from-stream input-stream)))
 
-  (get-stream [this]
+  (get-stream [_]
     nil))
 
 (defn tcp-transport
@@ -267,10 +267,10 @@
 
 (defrecord UnixServer [path server-channel clients running? executor]
   IServer
-  (stop-server! [this]
+  (stop-server! [_]
     (reset! running? false)
     ;; Close all client channels
-    (doseq [[id ch] @clients]
+    (doseq [[_id ch] @clients]
       (try (.close ^SocketChannel ch) (catch Exception _)))
     (reset! clients {})
     ;; Close server channel
@@ -285,10 +285,10 @@
       (catch Exception _))
     (log/info "Unix server stopped:" path))
 
-  (server-running? [this]
+  (server-running? [_]
     @running?)
 
-  (get-clients [this]
+  (get-clients [_]
     @clients)
 
   Closeable
@@ -397,10 +397,10 @@
 
 (defrecord TCPServer [port server-channel clients running? executor]
   IServer
-  (stop-server! [this]
+  (stop-server! [_]
     (reset! running? false)
     ;; Close all client channels
-    (doseq [[id ch] @clients]
+    (doseq [[_id ch] @clients]
       (try (.close ^SocketChannel ch) (catch Exception _)))
     (reset! clients {})
     ;; Close server channel
@@ -411,10 +411,10 @@
       (.shutdownNow ^java.util.concurrent.ExecutorService executor))
     (log/info "TCP server stopped on port" port))
 
-  (server-running? [this]
+  (server-running? [_]
     @running?)
 
-  (get-clients [this]
+  (get-clients [_]
     @clients)
 
   Closeable

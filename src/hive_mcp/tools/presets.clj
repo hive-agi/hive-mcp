@@ -3,8 +3,7 @@
 
    Provides semantic search and management of swarm presets stored in Chroma.
    Presets can be queried by natural language (e.g., 'find testing-focused preset')."
-  (:require [hive-mcp.tools.core :refer [mcp-success mcp-error mcp-json]]
-            [hive-mcp.presets :as presets]
+  (:require [hive-mcp.presets :as presets]
             [hive-mcp.chroma :as chroma]
             [clojure.data.json :as json]
             [clojure.string :as str]

@@ -5,7 +5,7 @@
    - Status, branches, log, diff
    - Stage, commit, push, pull, fetch
    - Feature branch listing for /ship and /ship-pr skills"
-  (:require [hive-mcp.tools.core :refer [mcp-success mcp-error mcp-json]]
+  (:require [hive-mcp.tools.core :refer [mcp-success mcp-error]]
             [hive-mcp.emacsclient :as ec]
             [hive-mcp.elisp :as el]
             [taoensso.timbre :as log]))
