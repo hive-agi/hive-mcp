@@ -162,10 +162,18 @@
           (close! work-ch))
 
         ;; Workers: bounded concurrency
+        ;; NOTE: Exceptions in go blocks are silently swallowed by core.async.
+        ;; We add explicit try/catch to ensure failures are reported.
         (dotimes [_ (min concurrency (count batch-items))]
           (go-loop []
             (when-let [{:keys [item preset cwd]} (<! work-ch)]
-              (let [result (execute-drone-task item preset cwd)]
+              (let [result (try
+                             (execute-drone-task item preset cwd)
+                             (catch Exception e
+                               (log/error e "Uncaught exception in drone worker")
+                               {:success false
+                                :item-id (:change-item/id item)
+                                :error (str "Worker exception: " (.getMessage e))}))]
                 (if (:success result)
                   (do
                     (ds/update-item-status! (:item-id result) :completed
