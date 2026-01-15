@@ -14,7 +14,7 @@
    
    Usage:
      ;; Initialize with embedding provider
-     (set-embedding-provider! (mock-embedder))  ; for testing
+     ;; For testing, use test-fixtures/->MockEmbedder
      
      ;; Index a memory entry
      (index-memory-entry! {:id \"123\" :content \"My note\" :type \"note\"})
@@ -86,8 +86,6 @@
   "Get the current embedding provider. Returns nil if not configured."
   []
   @embedding-provider)
-
-
 
 ;;; ============================================================
 ;;; Collection Management
