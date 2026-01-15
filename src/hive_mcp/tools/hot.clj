@@ -48,16 +48,16 @@
     nil))
 
 (defn watcher-status
-  "Get watcher status if hive-hot.watcher is available."
+  "Get watcher status if hive-hot.core is available."
   []
-  (if-let [status-fn (resolve-fn 'hive-hot.watcher 'status)]
+  (if-let [status-fn (resolve-fn 'hive-hot.core 'watcher-status)]
     (status-fn)
     nil))
 
 (defn watcher-watching-paths
-  "Get watched paths if hive-hot.watcher is available."
+  "Get watched paths if hive-hot.core is available."
   []
-  (if-let [paths-fn (resolve-fn 'hive-hot.watcher 'watching-paths)]
+  (if-let [paths-fn (resolve-fn 'hive-hot.core 'watching-paths)]
     (paths-fn)
     []))
 
@@ -91,7 +91,7 @@
   [_args]
   (try
     (let [watcher-st (watcher-status)
-          watching? (boolean (and watcher-st (:running? watcher-st)))
+          watching? (boolean (and watcher-st (:watching? watcher-st)))
           paths (or (watcher-watching-paths) [])
           pending (debounce-pending-count)
           claims (logic/get-all-claims)
