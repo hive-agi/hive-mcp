@@ -4,10 +4,12 @@
    Provides access to 100+ models via OpenRouter API.
    Uses OpenAI-compatible format with tool calling support.
 
-   CLARITY-T: Full telemetry with timing, metrics, and error tracking."
+   CLARITY-T: Full telemetry with timing, metrics, and error tracking.
+   CLARITY-Y: Validates responses to yield safe failures on empty content."
   (:require [hive-mcp.agent.protocol :as proto]
             [clj-http.client :as http]
             [clojure.data.json :as json]
+            [clojure.string :as str]
             [taoensso.timbre :as log]))
 
 (def ^:private api-url "https://openrouter.ai/api/v1/chat/completions")
@@ -89,6 +91,38 @@
            :name (get-in tc [:function :name])
            :arguments (json/read-str (get-in tc [:function :arguments]) :key-fn keyword)})
         tool-calls))
+
+(defn parse-response
+  "Parse OpenRouter/OpenAI response message into internal format.
+
+   CLARITY-Y: Validates response content to yield safe failures.
+   Returns:
+     {:type :tool_calls :calls [...]} - if tool calls present
+     {:type :text :content \"...\"} - if valid text content
+     {:type :error :error \"...\"}  - if empty/nil/whitespace content
+
+   This prevents silent 0-byte file writes when models return empty responses."
+  [choice]
+  (if (nil? choice)
+    {:type :error :error "OpenRouter returned nil message"}
+    (let [tool-calls (:tool_calls choice)
+          content (:content choice)]
+      (cond
+        ;; Tool calls present - process normally
+        (seq tool-calls)
+        {:type :tool_calls
+         :calls (parse-tool-calls tool-calls)}
+
+        ;; Validate text content is non-empty
+        (str/blank? content)
+        {:type :error
+         :error (str "OpenRouter returned empty response"
+                     (when content " (whitespace-only)"))}
+
+        ;; Valid text response
+        :else
+        {:type :text
+         :content content}))))
 
 (defn- chat-request
   "Make chat completion request to OpenRouter.
@@ -174,14 +208,11 @@
     ;; Telemetry is handled by chat-request
     (let [response (chat-request api-key model messages tools)
           choice (get-in response [:choices 0 :message])
-          tool-calls (:tool_calls choice)
-          result-type (if (seq tool-calls) :tool_calls :text)]
-      (log/debug "OpenRouter response parsed" {:model model :type result-type})
-      (if (seq tool-calls)
-        {:type :tool_calls
-         :calls (parse-tool-calls tool-calls)}
-        {:type :text
-         :content (:content choice)})))
+          result (parse-response choice)]
+      (log/debug "OpenRouter response parsed" {:model model :type (:type result)})
+      (when (= :error (:type result))
+        (log/warn "OpenRouter empty response detected" {:model model :error (:error result)}))
+      result))
 
   (model-name [_] model))
 

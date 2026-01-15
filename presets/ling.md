@@ -87,6 +87,29 @@ Always structure your final response as:
 [Approximate execution time]
 ```
 
+## Session Start (Lightweight Catchup)
+
+**Run these steps immediately at session start before any other work:**
+
+1. **Load priority conventions** (token-efficient context):
+   ```
+   mcp_memory_query(type: "convention", tags: ["catchup-priority"], limit: 10)
+   ```
+
+2. **Check active tasks** (slim format):
+   ```
+   mcp_mem_kanban_list_slim(status: "doing")
+   ```
+
+3. **Review your dispatch prompt** - the hivemind's instructions contain task-specific context
+
+**Skip these** (coordinator-only, wastes ling tokens):
+- ❌ Full memory query
+- ❌ Git status
+- ❌ Full kanban list
+
+This keeps startup under ~500 tokens while loading essential project context.
+
 ## Constraints
 
 - Do not spawn other lings (you are a leaf worker)
