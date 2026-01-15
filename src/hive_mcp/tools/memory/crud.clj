@@ -173,3 +173,20 @@
       {:type "text" :text (json/write-str {:exists (some? existing)
                                            :entry (when existing (fmt/entry->json-alist existing))
                                            :content_hash hash})})))
+
+;; ============================================================
+;; Update Tags Handler
+;; ============================================================
+
+(defn handle-update-tags
+  "Update tags on an existing memory entry (Chroma-only).
+   Replaces existing tags with the new tags list.
+   Returns the updated entry or error if not found."
+  [{:keys [id tags]}]
+  (log/info "mcp-memory-update-tags:" id "tags:" tags)
+  (with-chroma
+    (if-let [_existing (chroma/get-entry-by-id id)]
+      (let [updated (chroma/update-entry! id {:tags (or tags [])})]
+        (log/info "Updated tags for entry:" id)
+        {:type "text" :text (json/write-str (fmt/entry->json-alist updated))})
+      {:type "text" :text (json/write-str {:error "Entry not found" :id id}) :isError true})))

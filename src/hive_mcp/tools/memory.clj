@@ -35,6 +35,7 @@
 (def handle-mcp-memory-query-metadata crud/handle-query-metadata)
 (def handle-mcp-memory-get-full crud/handle-get-full)
 (def handle-mcp-memory-check-duplicate crud/handle-check-duplicate)
+(def handle-mcp-memory-update-tags crud/handle-update-tags)
 
 ;; Search Operations
 (def handle-mcp-memory-search-semantic search/handle-search-semantic)
@@ -125,6 +126,17 @@
                                      :description "ID of the memory entry to retrieve"}}
                   :required ["id"]}
     :handler handle-mcp-memory-get-full}
+
+   {:name "mcp_memory_update_tags"
+    :description "Update tags on an existing memory entry. Replaces existing tags with the new tags list. Use this to add catchup-priority or other tags without recreating entries."
+    :inputSchema {:type "object"
+                  :properties {"id" {:type "string"
+                                     :description "ID of the memory entry to update"}
+                               "tags" {:type "array"
+                                       :items {:type "string"}
+                                       :description "New tags list (replaces existing tags)"}}
+                  :required ["id" "tags"]}
+    :handler handle-mcp-memory-update-tags}
 
    {:name "mcp_memory_search_semantic"
     :description "Search project memory using semantic similarity (vector search). Finds conceptually related entries even without exact keyword matches. Requires Chroma to be configured with an embedding provider."
