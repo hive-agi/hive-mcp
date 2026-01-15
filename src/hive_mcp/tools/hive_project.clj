@@ -9,7 +9,8 @@
 
    Generates project-specific config:
    - :project-id - stable identifier (survives directory renames)
-   - :src-dirs - inferred from project type
+   - :project-type - detected project type as keyword
+   - :watch-dirs - directories to watch for hot-reload
    - :hot-reload - enabled by default for Clojure
    - :presets-path - project-local presets directory"
   (:require [hive-mcp.tools.core :refer [mcp-json mcp-error]]
@@ -26,37 +27,40 @@
 ;; Project Type Inference
 ;; =============================================================================
 
-(def ^:private type->src-dirs
-  "Map of project types to typical source directories."
-  {"clojure"   ["src"]
-   "lein"      ["src"]
-   "deps.edn"  ["src"]
-   "shadow-cljs" ["src"]
-   "npm"       ["src" "lib"]
-   "yarn"      ["src" "lib"]
-   "pnpm"      ["src" "lib"]
-   "cargo"     ["src"]
-   "go-mod"    ["." "cmd" "internal" "pkg"]
-   "maven"     ["src/main/java" "src/main/resources"]
-   "gradle"    ["src/main/java" "src/main/kotlin"]
-   "python"    ["src" "."]
-   "poetry"    ["src" "."]
-   "pipenv"    ["src" "."]
-   "mix"       ["lib"]
-   "rebar3"    ["src"]
-   "cmake"     ["src"]
-   "meson"     ["src"]
-   "make"      ["src"]
-   "generic"   ["src" "lib"]})
+(def ^:private type->watch-dirs
+  "Map of project types to watch directories for hot-reload.
+   Includes test/dev dirs where applicable for Clojure projects."
+  {"clojure"     ["src" "test" "dev"]
+   "lein"        ["src" "test" "dev"]
+   "deps.edn"    ["src" "test" "dev"]
+   "clojure-cli" ["src" "test" "dev"]
+   "shadow-cljs" ["src" "test" "dev"]
+   "npm"         ["src" "lib"]
+   "yarn"        ["src" "lib"]
+   "pnpm"        ["src" "lib"]
+   "cargo"       ["src"]
+   "go-mod"      ["cmd" "pkg" "internal"]
+   "maven"       ["src/main/java" "src/main/resources"]
+   "gradle"      ["src/main/java" "src/main/kotlin"]
+   "python"      ["src" "lib"]
+   "poetry"      ["src" "lib"]
+   "pipenv"      ["src" "lib"]
+   "mix"         ["lib"]
+   "rebar3"      ["src"]
+   "cmake"       ["src"]
+   "meson"       ["src"]
+   "make"        ["src"]
+   "generic"     ["src"]})
 
 (def ^:private clojure-types
   "Project types that benefit from hot-reload."
-  #{"clojure" "lein" "deps.edn" "shadow-cljs"})
+  #{"clojure" "clojure-cli" "lein" "deps.edn" "shadow-cljs"})
 
-(defn- infer-src-dirs
-  "Infer source directories based on project type."
+(defn- infer-watch-dirs
+  "Infer watch directories based on project type.
+   Returns directories to watch for hot-reload."
   [project-type]
-  (get type->src-dirs project-type ["src"]))
+  (get type->watch-dirs project-type ["src"]))
 
 (defn- infer-hot-reload?
   "Determine if hot-reload should be enabled by default."
@@ -102,15 +106,18 @@
 
 (defn- generate-edn-content
   "Generate .hive-project.edn content as formatted string."
-  [{:keys [project-id src-dirs hot-reload presets-path aliases]}]
+  [{:keys [project-id project-type watch-dirs hot-reload presets-path aliases]}]
   (let [lines [(str ";; hive-mcp project configuration")
                (str ";; Generated: " (.toString (Instant/now)))
                (str ";; See: https://github.com/BuddhiLW/hive-mcp")
                ""
                (str "{:project-id \"" project-id "\"")
                ""
-               (str " ;; Source directories for hot-reload watching")
-               (str " :src-dirs " (format-edn-value src-dirs))
+               (str " ;; Detected project type")
+               (str " :project-type " (format-edn-value project-type))
+               ""
+               (str " ;; Watch directories for hot-reload")
+               (str " :watch-dirs " (format-edn-value watch-dirs))
                ""
                (str " ;; Enable/disable hot-reload")
                (str " :hot-reload " (if hot-reload "true" "false"))
@@ -178,11 +185,13 @@
                    :hint "Existing .hive-project.edn found"})
 
         ;; Generate config
-        (let [project-type (or type "generic")
+        (let [project-type-str (or type "generic")
+              project-type-kw (keyword project-type-str)
               config {:project-id (or project_id (generate-project-id name))
-                      :src-dirs (infer-src-dirs project-type)
-                      :hot-reload (infer-hot-reload? project-type)
-                      :presets-path (when (infer-hot-reload? project-type)
+                      :project-type project-type-kw
+                      :watch-dirs (infer-watch-dirs project-type-str)
+                      :hot-reload (infer-hot-reload? project-type-str)
+                      :presets-path (when (infer-hot-reload? project-type-str)
                                       ".hive/presets")}
               edn-content (generate-edn-content config)]
 
@@ -193,7 +202,7 @@
             (mcp-json {:success true
                        :path config-path
                        :config config
-                       :project-type project-type
+                       :project-type project-type-str
                        :project-name name})
             (catch Exception e
               (log/error e "Failed to write .hive-project.edn")
@@ -209,7 +218,7 @@
 (def tools
   "Tool definitions for hive-project generation."
   [{:name "generate_hive_project"
-    :description "Generate .hive-project.edn from Projectile detection. Creates project-specific config with stable ID, inferred source directories, and hot-reload settings based on project type (Clojure, npm, Go, etc.)."
+    :description "Generate .hive-project.edn from Projectile detection. Creates project-specific config with stable ID, project type, inferred watch directories, and hot-reload settings. Clojure projects get [src test dev], Node gets [src lib], Go gets [cmd pkg internal]."
     :inputSchema {:type "object"
                   :properties {"directory" {:type "string"
                                             :description "Project directory (uses current project if not specified)"}
