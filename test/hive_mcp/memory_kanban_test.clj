@@ -93,14 +93,14 @@
   (testing "Task content map must have required fields"
     ;; Document expected content structure
     (let [expected-fields #{:task-type :title :status :priority :created}
-          sample-content {:task-type "kanban"
-                          :title "Test task"
-                          :status "todo"
-                          :priority "medium"
-                          :created 1234567890}]
-      (is (every? #(contains? sample-content %) expected-fields)
+          _content {:task-type "kanban"
+                    :title "Test task"
+                    :status "todo"
+                    :priority "medium"
+                    :created 1234567890}]
+      (is (every? #(contains? _content %) expected-fields)
           "Content must have all required fields")
-      (is (= "kanban" (:task-type sample-content))
+      (is (= "kanban" (:task-type _content))
           ":task-type must be 'kanban'"))))
 
 (deftest test-valid-statuses
@@ -120,8 +120,8 @@
 
 (deftest test-kanban-tag-required
   (testing "All kanban tasks must have 'kanban' tag"
-    (let [expected-tags ["kanban" "todo" "medium"]]
-      (is (= "kanban" (first expected-tags))
+    (let [_tags ["kanban" "todo" "medium"]]
+      (is (= "kanban" (first _tags))
           "First tag must be 'kanban'"))))
 
 (deftest test-duration-is-short-term
@@ -382,11 +382,11 @@
 
 (deftest test-tags-structure-for-todo
   (testing "Tags for 'todo' status task"
-    (let [expected-tags ["kanban" "todo" "medium"]]
-      (is (= 3 (count expected-tags)))
-      (is (= "kanban" (nth expected-tags 0)))
-      (is (= "todo" (nth expected-tags 1)))
-      (is (= "medium" (nth expected-tags 2))))))
+    (let [_tags ["kanban" "todo" "medium"]]
+      (is (= 3 (count _tags)))
+      (is (= "kanban" (nth _tags 0)))
+      (is (= "todo" (nth _tags 1)))
+      (is (= "medium" (nth _tags 2))))))
 
 (deftest test-tags-structure-for-doing-high
   (testing "Tags for 'doing' status with 'high' priority"

@@ -224,6 +224,7 @@
 ;; Handler Collection
 ;; =============================================================================
 
+#_{:clj-kondo/ignore [:deprecated-var]}
 (def ^:deprecated builtin-handlers
   "DEPRECATED: Use hive-mcp.events.handlers/register-handlers! instead.
 

@@ -31,7 +31,7 @@
    task: {:id :title :context :priority :started :status}
    
    Returns: {:success bool :progress-note-id string}"
-  [{:keys [id title context priority started] :as task}]
+  [{:keys [id title _context _priority _started] :as task}]
   (log/info "Kanban DONE hook triggered for task:" id title)
   (let [;; Generate progress note
         progress-note (crystal/task-to-progress-note
@@ -97,7 +97,7 @@
             :project string
             :query-type string  ; 'note', 'decision', etc.
             :tags [string]}"
-  [{:keys [entry-ids source session project] :as params}]
+  [{:keys [entry-ids source session project] :as _params}]
   (let [current-session (or session (crystal/session-id))]
     (doseq [entry-id entry-ids]
       ;; For each entry, we'd ideally look up its session/project
@@ -192,16 +192,16 @@
   (let [progress (harvest-session-progress)
         tasks (harvest-completed-tasks)
         commits (harvest-git-commits)
-        recalls (recall/get-buffered-recalls)]
+        _recalls (recall/get-buffered-recalls)]
     {:progress-notes (:notes progress)
      :completed-tasks (:tasks tasks)
      :git-commits (:commits commits)
-     :recalls recalls
+     :recalls _recalls
      :session (crystal/session-id)
      :summary {:progress-count (:count progress)
                :task-count (:count tasks)
                :commit-count (:count commits)
-               :recall-count (count recalls)}}))
+               :recall-count (count _recalls)}}))
 
 ;; =============================================================================
 ;; Crystallization Hook

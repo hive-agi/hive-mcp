@@ -112,12 +112,12 @@
 
 (defn render-to-file
   "Render diagram spec to a file."
-  [spec output-path & opts]
-  (let [format (keyword (last (str/split output-path #"\.")))
+  [spec _output-path & opts]
+  (let [format (keyword (last (str/split _output-path #"\.")))
         result (apply create-diagram spec :format format opts)]
     (when (:success? result)
-      (spit output-path (:output result)))
-    (assoc result :path output-path)))
+      (spit _output-path (:output result)))
+    (assoc result :path _output-path)))
 
 ;;; Convenience constructors
 
@@ -151,30 +151,30 @@
 
 (defn node
   "Create a node element."
-  [id label & {:keys [style shape] :as opts}]
-  (merge {:id id :label label} opts))
+  [_id label & {:keys [_style _shape] :as opts}]
+  (merge {:id _id :label label} opts))
 
 (defn edge
   "Create an edge/relation."
-  [from to & {:keys [label style] :as opts}]
+  [from to & {:keys [_label _style] :as opts}]
   (merge {:from from :to to} opts))
 
 (defn person
   "Create a C4 person element."
-  [id name & {:keys [desc] :as opts}]
+  [id name & {:keys [_desc] :as opts}]
   (merge {:el :person :id id :name name} opts))
 
 (defn system
   "Create a C4 system element."
-  [id name & {:keys [desc external?] :as opts}]
+  [id name & {:keys [_desc _external?] :as opts}]
   (merge {:el :system :id id :name name} opts))
 
 (defn container
   "Create a C4 container element."
-  [id name tech & {:keys [desc] :as opts}]
+  [id name tech & {:keys [_desc] :as opts}]
   (merge {:el :container :id id :name name :tech tech} opts))
 
 (defn rel
   "Create a C4 relationship."
-  [from to & {:keys [name desc tech] :as opts}]
+  [from to & {:keys [_name _desc _tech] :as opts}]
   (merge {:el :rel :from from :to to} opts))

@@ -35,10 +35,6 @@
 ;; ============================================================
 ;; Tests access these directly from hive-mcp.tools.swarm
 
-(def lings-registry
-  "Atom tracking spawned lings. Re-exported from registry module."
-  registry/lings-registry)
-
 (def register-ling!
   "Register a spawned ling. Re-exported from registry module."
   registry/register-ling!)
