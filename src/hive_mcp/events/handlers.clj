@@ -407,6 +407,83 @@
     (merge base-effects summary-effect notify-effect shout-effect)))
 
 ;; =============================================================================
+;; Handler: :wave/start (dispatch_drone_wave lifecycle)
+;; =============================================================================
+
+(defn- handle-wave-start
+  "Handler for :wave/start events.
+
+   Called when a drone wave execution begins. Publishes event to channel
+   for coordinator monitoring and logs the wave start.
+
+   Expects event data:
+   {:plan-id    \"plan-uuid\"
+    :wave-id    \"wave-uuid\"
+    :item-count 5}
+
+   Produces effects:
+   - :channel-publish - Broadcast wave-started to WebSocket clients
+   - :log             - Log wave start message"
+  [_coeffects [_ {:keys [plan-id wave-id item-count]}]]
+  {:channel-publish {:event :wave-started
+                     :data {:plan-id plan-id
+                            :wave-id wave-id
+                            :item-count item-count}}
+   :log {:level :info
+         :message (str "Wave started: " wave-id " with " item-count " items")}})
+
+;; =============================================================================
+;; Handler: :wave/item-done (dispatch_drone_wave lifecycle)
+;; =============================================================================
+
+(defn- handle-wave-item-done
+  "Handler for :wave/item-done events.
+
+   Called when a single drone task completes (success or failure).
+   Publishes event to channel for real-time monitoring.
+
+   Expects event data:
+   {:item-id \"item-uuid\"
+    :status  :completed | :failed
+    :wave-id \"wave-uuid\"}
+
+   Produces effects:
+   - :channel-publish - Broadcast wave-item-done to WebSocket clients"
+  [_coeffects [_ {:keys [item-id status wave-id]}]]
+  {:channel-publish {:event :wave-item-done
+                     :data {:item-id item-id
+                            :status status
+                            :wave-id wave-id}}})
+
+;; =============================================================================
+;; Handler: :wave/complete (dispatch_drone_wave lifecycle)
+;; =============================================================================
+
+(defn- handle-wave-complete
+  "Handler for :wave/complete events.
+
+   Called when all drone tasks in a wave have finished.
+   Publishes completion event and logs results.
+
+   Expects event data:
+   {:plan-id  \"plan-uuid\"
+    :wave-id  \"wave-uuid\"
+    :results  {:completed N :failed M}}
+
+   Produces effects:
+   - :channel-publish - Broadcast wave-complete to WebSocket clients
+   - :log             - Log wave completion message"
+  [_coeffects [_ {:keys [plan-id wave-id results]}]]
+  (let [{:keys [completed failed]} results]
+    {:channel-publish {:event :wave-complete
+                       :data {:plan-id plan-id
+                              :wave-id wave-id
+                              :results results}}
+     :log {:level :info
+           :message (str "Wave complete: " wave-id
+                         " - " completed " completed, " failed " failed")}}))
+
+;; =============================================================================
 ;; Handler: :ling/ready-for-wrap (Auto-wrap hook)
 ;; =============================================================================
 
@@ -445,9 +522,9 @@
 
 (defn register-handlers!
   "Register all event handlers. Call at startup.
-   
+
    Safe to call multiple times - only registers once.
-   
+
    Registers:
    - :task/complete         - Signal task completion to hivemind
    - :task/shout-complete   - Broadcast completion with message (P5-1)
@@ -460,7 +537,10 @@
    - :kanban/sync           - Sync kanban at session end (P5-4)
    - :kanban/done           - Kanban task completed (EVENTS-09)
    - :crystal/wrap-request  - Unified wrap path (Option A)
-   
+   - :wave/start            - Wave execution started
+   - :wave/item-done        - Wave item completed/failed
+   - :wave/complete         - Wave execution finished
+
    Returns true if handlers were registered, false if already registered."
   []
   (when-not @*registered
@@ -519,8 +599,23 @@
                   [interceptors/debug]
                   handle-crystal-wrap-request)
 
+    ;; :wave/start - Wave execution started (dispatch_drone_wave)
+    (ev/reg-event :wave/start
+                  [interceptors/debug]
+                  handle-wave-start)
+
+    ;; :wave/item-done - Wave item completed/failed (dispatch_drone_wave)
+    (ev/reg-event :wave/item-done
+                  [interceptors/debug]
+                  handle-wave-item-done)
+
+    ;; :wave/complete - Wave execution finished (dispatch_drone_wave)
+    (ev/reg-event :wave/complete
+                  [interceptors/debug]
+                  handle-wave-complete)
+
     (reset! *registered true)
-    (println "[hive-events] Handlers registered: :task/complete :task/shout-complete :git/commit-modified :ling/started :ling/completed :ling/ready-for-wrap :session/end :session/wrap :kanban/sync :kanban/done :crystal/wrap-request")
+    (println "[hive-events] Handlers registered: :task/complete :task/shout-complete :git/commit-modified :ling/started :ling/completed :ling/ready-for-wrap :session/end :session/wrap :kanban/sync :kanban/done :crystal/wrap-request :wave/start :wave/item-done :wave/complete")
     true))
 
 (defn reset-registration!

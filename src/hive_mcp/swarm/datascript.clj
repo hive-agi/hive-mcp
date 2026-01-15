@@ -166,7 +166,95 @@
    {:db/doc "Whether coordinator has processed this wrap"}
 
    :wrap-queue/created-at
-   {:db/doc "Timestamp when wrap occurred"}})
+   {:db/doc "Timestamp when wrap occurred"}
+
+   ;;; =========================================================================
+   ;;; Change Plan Entity (dispatch_drone_wave)
+   ;;; =========================================================================
+
+   :change-plan/id
+   {:db/doc "Unique identifier for the change plan"
+    :db/unique :db.unique/identity}
+
+   :change-plan/status
+   {:db/doc "Plan status: :pending :in-progress :completed :failed"}
+
+   :change-plan/preset
+   {:db/doc "Drone preset for all items (e.g., 'drone-worker')"}
+
+   :change-plan/created-at
+   {:db/doc "Timestamp when plan was created"}
+
+   :change-plan/completed-at
+   {:db/doc "Timestamp when plan completed (nil if pending)"}
+
+   ;;; =========================================================================
+   ;;; Change Item Entity (dispatch_drone_wave items)
+   ;;; =========================================================================
+
+   :change-item/id
+   {:db/doc "Unique identifier for the change item"
+    :db/unique :db.unique/identity}
+
+   :change-item/plan
+   {:db/doc "Reference to parent change plan"
+    :db/valueType :db.type/ref
+    :db/cardinality :db.cardinality/one}
+
+   :change-item/file
+   {:db/doc "File path this item operates on"}
+
+   :change-item/task
+   {:db/doc "Task description for this item"}
+
+   :change-item/status
+   {:db/doc "Item status: :pending :dispatched :completed :failed"}
+
+   :change-item/drone-id
+   {:db/doc "Drone slave-id if dispatched"}
+
+   :change-item/result
+   {:db/doc "Result message on completion/failure"}
+
+   :change-item/created-at
+   {:db/doc "Timestamp when item was created"}
+
+   :change-item/completed-at
+   {:db/doc "Timestamp when item completed"}
+
+   ;;; =========================================================================
+   ;;; Wave Entity (dispatch_drone_wave execution)
+   ;;; =========================================================================
+
+   :wave/id
+   {:db/doc "Unique identifier for the wave execution"
+    :db/unique :db.unique/identity}
+
+   :wave/plan
+   {:db/doc "Reference to change plan being executed"
+    :db/valueType :db.type/ref
+    :db/cardinality :db.cardinality/one}
+
+   :wave/concurrency
+   {:db/doc "Max concurrent drones (default: 3)"}
+
+   :wave/active-count
+   {:db/doc "Currently active drone count"}
+
+   :wave/completed-count
+   {:db/doc "Number of completed items"}
+
+   :wave/failed-count
+   {:db/doc "Number of failed items"}
+
+   :wave/status
+   {:db/doc "Wave status: :running :completed :partial-failure"}
+
+   :wave/started-at
+   {:db/doc "Timestamp when wave started"}
+
+   :wave/completed-at
+   {:db/doc "Timestamp when wave completed"}})
 
 ;;; =============================================================================
 ;;; Connection Management (Thread-Safe Atom)
@@ -788,3 +876,236 @@
     (when eid
       (d/transact! c
                    [[:db/add eid :wrap-queue/processed? true]]))))
+
+;;; =============================================================================
+;;; Change Plan Operations (dispatch_drone_wave)
+;;; =============================================================================
+
+(def plan-statuses
+  "Valid change plan status values."
+  #{:pending :in-progress :completed :failed})
+
+(def item-statuses
+  "Valid change item status values."
+  #{:pending :dispatched :completed :failed})
+
+(def wave-statuses
+  "Valid wave status values."
+  #{:running :completed :partial-failure})
+
+(defn create-plan!
+  "Create a new change plan with items.
+
+   Arguments:
+     tasks  - Collection of {:file \"path\" :task \"description\"}
+     preset - Drone preset name (default: \"drone-worker\")
+
+   Returns:
+     The generated plan-id"
+  [tasks preset]
+  {:pre [(seq tasks)]}
+  (let [c (ensure-conn)
+        plan-id (gen-id "plan")
+        plan-entity {:change-plan/id plan-id
+                     :change-plan/status :pending
+                     :change-plan/preset (or preset "drone-worker")
+                     :change-plan/created-at (now)}
+        item-entities (mapv (fn [{:keys [file task]}]
+                              {:change-item/id (gen-id "item")
+                               :change-item/plan [:change-plan/id plan-id]
+                               :change-item/file file
+                               :change-item/task task
+                               :change-item/status :pending
+                               :change-item/created-at (now)})
+                            tasks)]
+    (log/debug "Creating plan:" plan-id "with" (count tasks) "items")
+    (d/transact! c (into [plan-entity] item-entities))
+    plan-id))
+
+(defn get-plan
+  "Get a change plan by ID.
+
+   Returns:
+     Map with plan attributes or nil if not found"
+  [plan-id]
+  (let [c (ensure-conn)
+        db @c]
+    (when-let [e (d/entity db [:change-plan/id plan-id])]
+      (-> (into {} e)
+          (dissoc :db/id)))))
+
+(defn get-pending-items
+  "Get all pending items for a plan.
+
+   Arguments:
+     plan-id - Plan to get items for
+
+   Returns:
+     Seq of item maps with :pending status"
+  [plan-id]
+  (let [c (ensure-conn)
+        db @c
+        plan-eid (:db/id (d/entity db [:change-plan/id plan-id]))]
+    (when plan-eid
+      (let [eids (d/q '[:find [?e ...]
+                        :in $ ?plan-eid
+                        :where
+                        [?e :change-item/plan ?plan-eid]
+                        [?e :change-item/status :pending]]
+                      db plan-eid)]
+        (->> eids
+             (map #(d/entity db %))
+             (map (fn [e]
+                    (-> (into {} e)
+                        (dissoc :db/id)
+                        (update :change-item/plan (constantly plan-id))))))))))
+
+(defn get-plan-items
+  "Get all items for a plan.
+
+   Arguments:
+     plan-id - Plan to get items for
+
+   Returns:
+     Seq of item maps"
+  [plan-id]
+  (let [c (ensure-conn)
+        db @c
+        plan-eid (:db/id (d/entity db [:change-plan/id plan-id]))]
+    (when plan-eid
+      (let [eids (d/q '[:find [?e ...]
+                        :in $ ?plan-eid
+                        :where
+                        [?e :change-item/plan ?plan-eid]]
+                      db plan-eid)]
+        (->> eids
+             (map #(d/entity db %))
+             (map (fn [e]
+                    (-> (into {} e)
+                        (dissoc :db/id)
+                        (update :change-item/plan (constantly plan-id))))))))))
+
+(defn update-item-status!
+  "Update a change item's status.
+
+   Arguments:
+     item-id - Item to update
+     status  - New status
+     opts    - Optional map with :drone-id :result
+
+   Returns:
+     Transaction report or nil if item not found"
+  [item-id status & [{:keys [drone-id result]}]]
+  {:pre [(contains? item-statuses status)]}
+  (let [c (ensure-conn)
+        db @c]
+    (when-let [eid (:db/id (d/entity db [:change-item/id item-id]))]
+      (let [tx-data (cond-> {:db/id eid
+                             :change-item/status status}
+                      drone-id (assoc :change-item/drone-id drone-id)
+                      result (assoc :change-item/result result)
+                      (#{:completed :failed} status) (assoc :change-item/completed-at (now)))]
+        (log/debug "Updating item:" item-id "to status:" status)
+        (d/transact! c [tx-data])))))
+
+(defn update-plan-status!
+  "Update a change plan's status.
+
+   Arguments:
+     plan-id - Plan to update
+     status  - New status
+
+   Returns:
+     Transaction report or nil if plan not found"
+  [plan-id status]
+  {:pre [(contains? plan-statuses status)]}
+  (let [c (ensure-conn)
+        db @c]
+    (when-let [eid (:db/id (d/entity db [:change-plan/id plan-id]))]
+      (let [tx-data (cond-> {:db/id eid
+                             :change-plan/status status}
+                      (#{:completed :failed} status) (assoc :change-plan/completed-at (now)))]
+        (log/debug "Updating plan:" plan-id "to status:" status)
+        (d/transact! c [tx-data])))))
+
+;;; =============================================================================
+;;; Wave Operations
+;;; =============================================================================
+
+(defn create-wave!
+  "Create a new wave execution for a plan.
+
+   Arguments:
+     plan-id     - Plan to execute
+     concurrency - Max concurrent drones (default: 3)
+
+   Returns:
+     The generated wave-id"
+  [plan-id & [{:keys [concurrency] :or {concurrency 3}}]]
+  (let [c (ensure-conn)
+        wave-id (gen-id "wave")]
+    (d/transact! c [{:wave/id wave-id
+                     :wave/plan [:change-plan/id plan-id]
+                     :wave/concurrency concurrency
+                     :wave/active-count 0
+                     :wave/completed-count 0
+                     :wave/failed-count 0
+                     :wave/status :running
+                     :wave/started-at (now)}])
+    (log/info "Created wave:" wave-id "for plan:" plan-id)
+    wave-id))
+
+(defn get-wave
+  "Get a wave by ID.
+
+   Returns:
+     Map with wave attributes or nil if not found"
+  [wave-id]
+  (let [c (ensure-conn)
+        db @c]
+    (when-let [e (d/entity db [:wave/id wave-id])]
+      (-> (into {} e)
+          (dissoc :db/id)
+          (update :wave/plan #(when % (:change-plan/id %)))))))
+
+(defn update-wave-counts!
+  "Update wave execution counts.
+
+   Arguments:
+     wave-id - Wave to update
+     delta   - Map with delta values {:active +1 :completed +1 :failed 0}
+
+   Returns:
+     Transaction report"
+  [wave-id {:keys [active completed failed] :or {active 0 completed 0 failed 0}}]
+  (let [c (ensure-conn)
+        db @c]
+    (when-let [e (d/entity db [:wave/id wave-id])]
+      (let [eid (:db/id e)
+            new-active (+ (or (:wave/active-count e) 0) active)
+            new-completed (+ (or (:wave/completed-count e) 0) completed)
+            new-failed (+ (or (:wave/failed-count e) 0) failed)]
+        (d/transact! c [{:db/id eid
+                         :wave/active-count new-active
+                         :wave/completed-count new-completed
+                         :wave/failed-count new-failed}])))))
+
+(defn complete-wave!
+  "Mark a wave as completed.
+
+   Arguments:
+     wave-id - Wave to complete
+     status  - Final status (:completed or :partial-failure)
+
+   Returns:
+     Transaction report"
+  [wave-id status]
+  {:pre [(contains? #{:completed :partial-failure} status)]}
+  (let [c (ensure-conn)
+        db @c]
+    (when-let [eid (:db/id (d/entity db [:wave/id wave-id]))]
+      (log/info "Completing wave:" wave-id "with status:" status)
+      (d/transact! c [{:db/id eid
+                       :wave/status status
+                       :wave/active-count 0
+                       :wave/completed-at (now)}]))))
