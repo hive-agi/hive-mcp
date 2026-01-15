@@ -75,12 +75,17 @@
      :created-at (java.time.Instant/now)}))
 
 (defn validate-propose-params
-  "Validate parameters for propose_diff. Returns nil if valid, error message if not."
+  "Validate parameters for propose_diff. Returns nil if valid, error message if not.
+
+   CLARITY-Y: Validates new_content is non-empty to prevent 0-byte file writes
+   when LLMs return empty responses."
   [{:keys [file_path old_content new_content]}]
   (cond
     (str/blank? file_path) "Missing required field: file_path"
     (nil? old_content) "Missing required field: old_content"
     (nil? new_content) "Missing required field: new_content"
+    ;; CLARITY-Y: Prevent empty file writes from LLM empty responses
+    (str/blank? new_content) "new_content cannot be empty or whitespace-only - LLM may have returned empty response"
     :else nil))
 
 (defn get-project-root
@@ -229,7 +234,10 @@
 (defn handle-apply-diff
   "Handle apply_diff tool call.
    Applies the diff by finding and replacing old-content within the file.
-   If old-content is empty and file doesn't exist, creates a new file."
+   If old-content is empty and file doesn't exist, creates a new file.
+
+   CLARITY-Y: Defense-in-depth validation blocks empty new_content even if
+   it passed propose_diff, preventing 0-byte file writes from LLM failures."
   [{:keys [diff_id]}]
   (log/debug "apply_diff called" {:diff_id diff_id})
   (cond
@@ -244,62 +252,72 @@
       (mcp-error-json (str "Diff not found: " diff_id)))
 
     :else
-    (let [{:keys [file-path _old-content _new-content] :as _diff} (get @pending-diffs diff_id)
+    (let [{:keys [file-path old-content new-content]} (get @pending-diffs diff_id)
           file-exists? (.exists (io/file file-path))
-          creating-new-file? (and (str/blank? _old-content) (not file-exists?))]
-      (try
-        (cond
-          ;; Case 1: Creating a new file (old-content empty, file doesn't exist)
-          creating-new-file?
-          (do
-            ;; Ensure parent directory exists
-            (let [parent (.getParentFile (io/file file-path))]
-              (when (and parent (not (.exists parent)))
-                (.mkdirs parent)))
-            (spit file-path _new-content)
-            (swap! pending-diffs dissoc diff_id)
-            (log/info "New file created" {:id diff_id :file file-path})
-            (mcp-json {:id diff_id
-                       :status "applied"
-                       :file-path file-path
-                       :created true
-                       :message "New file created successfully"}))
+          creating-new-file? (and (str/blank? old-content) (not file-exists?))]
+      ;; CLARITY-Y: Defense-in-depth - block empty content even if it passed propose_diff
+      (cond
+        ;; Block empty new_content (prevents 0-byte file writes)
+        (str/blank? new-content)
+        (do
+          (log/warn "apply_diff blocked: empty new_content" {:diff_id diff_id :file file-path})
+          (swap! pending-diffs dissoc diff_id)
+          (mcp-error-json "Cannot apply diff: new_content is empty or whitespace-only. This typically indicates the LLM returned an empty response."))
 
-          ;; Case 2: File doesn't exist but old-content is not empty - error
-          (not file-exists?)
-          (do
-            (log/warn "apply_diff file not found" {:file file-path})
-            (mcp-error-json (str "File not found: " file-path)))
+        ;; Case 1: Creating a new file (old-content empty, file doesn't exist)
+        creating-new-file?
+        (try
+          (let [parent (.getParentFile (io/file file-path))]
+            (when (and parent (not (.exists parent)))
+              (.mkdirs parent)))
+          (spit file-path new-content)
+          (swap! pending-diffs dissoc diff_id)
+          (log/info "New file created" {:id diff_id :file file-path})
+          (mcp-json {:id diff_id
+                     :status "applied"
+                     :file-path file-path
+                     :created true
+                     :message "New file created successfully"})
+          (catch Exception e
+            (log/error e "Failed to create file" {:diff_id diff_id})
+            (mcp-error-json (str "Failed to create file: " (.getMessage e)))))
 
-          ;; Case 3: Normal replacement in existing file
-          :else
+        ;; Case 2: File doesn't exist but old-content is not empty - error
+        (not file-exists?)
+        (do
+          (log/warn "apply_diff file not found" {:file file-path})
+          (mcp-error-json (str "File not found: " file-path)))
+
+        ;; Case 3: Normal replacement in existing file
+        :else
+        (try
           (let [current-content (slurp file-path)]
             (cond
               ;; old-content not found in file
-              (not (str/includes? current-content _old-content))
+              (not (str/includes? current-content old-content))
               (do
                 (log/warn "apply_diff old content not found in file" {:file file-path})
                 (mcp-error-json "Old content not found in file. File may have been modified since diff was proposed."))
 
               ;; Multiple occurrences - ambiguous
-              (> (count (re-seq (re-pattern (java.util.regex.Pattern/quote _old-content)) current-content)) 1)
+              (> (count (re-seq (re-pattern (java.util.regex.Pattern/quote old-content)) current-content)) 1)
               (do
                 (log/warn "apply_diff multiple matches found" {:file file-path})
                 (mcp-error-json "Multiple occurrences of old content found. Cannot apply safely - diff is ambiguous."))
 
               ;; Exactly one match - apply the replacement
               :else
-              (let [updated-content (str/replace-first current-content _old-content _new-content)]
-                (spit file-path updated-content)
+              (do
+                (spit file-path (str/replace-first current-content old-content new-content))
                 (swap! pending-diffs dissoc diff_id)
                 (log/info "Diff applied" {:id diff_id :file file-path})
                 (mcp-json {:id diff_id
                            :status "applied"
                            :file-path file-path
-                           :message "Diff applied successfully"})))))
-        (catch Exception e
-          (log/error e "Failed to apply diff" {:diff_id diff_id})
-          (mcp-error-json (str "Failed to apply diff: " (.getMessage e))))))))
+                           :message "Diff applied successfully"}))))
+          (catch Exception e
+            (log/error e "Failed to apply diff" {:diff_id diff_id})
+            (mcp-error-json (str "Failed to apply diff: " (.getMessage e)))))))))
 
 (defn handle-reject-diff
   "Handle reject_diff tool call.
