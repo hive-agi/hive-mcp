@@ -8,7 +8,8 @@
    - Instruction queue (hivemind → ling)
    - Message cursors (ling reads hivemind broadcasts)"
   (:require [clojure.data.json :as json]
-            [hive-mcp.channel.piggyback :as piggyback]))
+            [hive-mcp.channel.piggyback :as piggyback]
+            [hive-mcp.emacsclient :as ec]))
 
 ;; =============================================================================
 ;; Instruction Queue (delegated to piggyback)
@@ -58,6 +59,44 @@
   [data & {:keys [agent-id]}]
   (-> {:type "text" :text (json/write-str data)}
       (attach-instructions agent-id)))
+
+;; =============================================================================
+;; Elisp Execution Wrapper (DRY Pattern)
+;; =============================================================================
+
+(defmacro call-elisp-safe
+  "Execute elisp and return MCP response. Handles success/error uniformly.
+
+   Eliminates the repeated pattern:
+     (let [{:keys [success result error]} (ec/eval-elisp elisp)]
+       (if success
+         (mcp-json result)
+         (mcp-json {:error error})))
+
+   Usage:
+     ;; Simple case - returns mcp-json wrapped result
+     (call-elisp-safe \"(my-elisp)\")
+
+     ;; With custom success transform
+     (call-elisp-safe \"(my-elisp)\"
+       :on-success #(mcp-json {:transformed (:data %)}))
+
+     ;; With custom error handler
+     (call-elisp-safe \"(my-elisp)\"
+       :on-error #(mcp-error (str \"Custom: \" %)))
+
+   Options:
+     :on-success - Function (fn [result] ...) called on success. Default: mcp-json
+     :on-error   - Function (fn [error-msg] ...) called on error. Default: (mcp-json {:error msg})"
+  [elisp-expr & {:keys [on-success on-error]}]
+  `(let [{:keys [~'success ~'result ~'error]} (ec/eval-elisp ~elisp-expr)]
+     (if ~'success
+       ~(if on-success
+          `(~on-success ~'result)
+          `(mcp-json ~'result))
+       ~(if on-error
+          `(~on-error ~'error)
+          `(mcp-json {:error ~'error})))))
 
 ;; =============================================================================
 ;; Hivemind Message Piggyback (delegated to piggyback)

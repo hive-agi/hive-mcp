@@ -295,8 +295,8 @@
    Returns the conflicting file path."
   [edit-a edit-b file]
   (l/all
-   (edit edit-a file l/_)
-   (edit edit-b file l/_)
+   (edit edit-a file (l/lvar))
+   (edit edit-b file (l/lvar))
    (l/!= edit-a edit-b)))
 
 (defn edit-depends-on-o

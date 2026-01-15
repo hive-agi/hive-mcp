@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <!-- Console appender with colored output -->
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <!-- Format: timestamp hostname LEVEL [logger] - message -->
+      <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSS'Z'} %property{HOSTNAME} %highlight(%-5level) [%cyan(%logger{36})] - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Quieter output for noisy libraries -->
+  <logger name="io.netty" level="WARN"/>
+  <logger name="aleph" level="INFO"/>
+  <logger name="manifold" level="INFO"/>
+  <logger name="io.pedestal" level="WARN"/>
+  <logger name="org.eclipse.jetty" level="WARN"/>
+
+  <!-- Our code at DEBUG for development -->
+  <logger name="hive-mcp" level="DEBUG"/>
+
+  <!-- Root logger -->
+  <root level="INFO">
+    <appender-ref ref="CONSOLE"/>
+  </root>
+</configuration>

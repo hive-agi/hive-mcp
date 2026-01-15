@@ -22,7 +22,11 @@
             [nrepl.server :as nrepl-server]
             [clojure.core.async :as async]
             [taoensso.timbre :as log]
-            [clojure.spec.alpha :as s])
+            [clojure.spec.alpha :as s]
+            [clojure.string :as str]
+            [hive-hot.core :as hot]
+            [hive-hot.events :as hot-events]
+            [hive-mcp.swarm.logic :as logic])
   (:gen-class))
 
 ;; Define specs for tool definitions, responses, and hivemind messages
@@ -120,6 +124,20 @@
 ;; Tool Definition Conversion
 ;; =============================================================================
 
+(defn extract-agent-id
+  "Extract agent-id from args map, handling both snake_case and kebab-case keys.
+
+   DRY: Consolidates 4-way fallback pattern for JSON key variation handling.
+   MCP tools may receive agent_id or agent-id in either keyword or string form.
+
+   Returns default if no agent-id found in args."
+  [args default]
+  (or (:agent_id args)
+      (:agent-id args)
+      (get args "agent_id")
+      (get args "agent-id")
+      default))
+
 ;; Convert our tool definitions to the SDK format
 ;; Wraps handlers to append hivemind piggyback messages to response text
 (s/fdef make-tool
@@ -139,11 +157,7 @@
   [{:keys [name description inputSchema handler]}]
   (let [wrapped-handler (fn [args]
                           (let [result (handler args)
-                                agent-id (or (:agent_id args)
-                                             (:agent-id args)
-                                             (get args "agent_id")
-                                             (get args "agent-id")
-                                             "coordinator")
+                                agent-id (extract-agent-id args "coordinator")
                                 _ (require 'hive-mcp.tools.core)
                                 piggyback ((resolve 'hive-mcp.tools.core/get-hivemind-piggyback) agent-id)
                                 content (normalize-content result)
@@ -436,6 +450,19 @@
       (log/info "Swarm sync started - logic database will track swarm state")
       (catch Exception e
         (log/warn "Swarm sync failed to start (non-fatal):" (.getMessage e))))
+    ;; Initialize hot-reload watcher with claim-aware coordination
+    ;; ADR: State-based debouncing - claimed files buffer until release
+    (try
+      (let [src-dirs (or (some-> (System/getenv "HIVE_MCP_SRC_DIRS")
+                                 (str/split #":"))
+                         ["src"])
+            claim-checker (hot-events/make-claim-checker logic/get-all-claims)]
+        (hot/init-with-watcher! {:dirs src-dirs
+                                 :claim-checker claim-checker
+                                 :debounce-ms 100})
+        (log/info "Hot-reload watcher started:" {:dirs src-dirs}))
+      (catch Exception e
+        (log/warn "Hot-reload watcher failed to start (non-fatal):" (.getMessage e))))
     ;; Start lings registry sync - keeps Clojure registry in sync with elisp
     ;; ADR-001: Event-driven sync for lings_available to return accurate counts
     (try

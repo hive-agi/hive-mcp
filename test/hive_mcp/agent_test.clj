@@ -30,8 +30,10 @@
 
 (def expected-dangerous-tools
   "Combined set of tools that drones MUST NOT have access to.
-   Includes file mutation tools + tier-3 tools that drones specifically lack."
-  #{"file_write" "file_edit" "clojure_edit" "bash" "magit_commit" "magit_push"})
+   Includes file mutation tools + tier-3 tools that drones specifically lack.
+   DRY: Derived from expected-file-mutation-tools + additional dangerous tools."
+  (set/union expected-file-mutation-tools
+             #{"bash" "magit_commit" "magit_push"}))
 
 ;; =============================================================================
 ;; Pinning Tests - Tool Definitions
@@ -79,9 +81,9 @@
 
 (deftest drone-cannot-write-files-directly
   (testing "file mutation tools are excluded from drone-allowed-tools"
-    (let [allowed (set drone/allowed-tools)
-          file-mutation-tools #{"file_write" "file_edit" "clojure_edit"}]
-      (is (empty? (set/intersection allowed file-mutation-tools))
+    (let [allowed (set drone/allowed-tools)]
+      ;; DRY: Use expected-file-mutation-tools instead of inline literal
+      (is (empty? (set/intersection allowed expected-file-mutation-tools))
           "Drones must use propose_diff instead of direct file writes"))))
 
 (deftest drone-cannot-execute-shell
