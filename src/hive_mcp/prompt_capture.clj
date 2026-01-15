@@ -7,7 +7,7 @@
    - Schema validation with Malli (delegated to hive-mcp.prompt.validation)
    - Taxonomy categories (coding, debug, planning, meta, research, config)
    - Quality filtering (success/failure/partial)
-   - Org-mode storage via org-clj
+   - Pluggable storage via PromptStore protocol (CLARITY-L, DIP)
    - Confirmation display after save
 
    Usage:
@@ -16,129 +16,23 @@
      (list-prompts {:category :coding})
      (search-prompts \"keyword\")"
   (:require [clojure.string :as str]
-            [hive-mcp.org-clj.parser :as parser]
-            [hive-mcp.org-clj.writer :as writer]
             [hive-mcp.prompt.validation :as validation]
-            [clojure.java.io :as io])
-  (:import [java.time LocalDateTime]
-           [java.time.format DateTimeFormatter]
-           [java.util UUID]))
+            [hive-mcp.prompt.storage :as storage]))
 
 ;;; ============================================================
-;;; Storage - Org-Mode Integration
+;;; Default Store Instance (DIP - depend on abstraction)
 ;;; ============================================================
 
-(def default-prompts-file
-  "Default location for prompts org file."
-  (str (System/getProperty "user.home") "/.emacs.d/hive-mcp/prompts.org"))
+(def ^:private default-store
+  "Default OrgPromptStore instance using the default file path."
+  (delay (storage/create-org-store)))
 
-(defn generate-id
-  "Generate a unique ID for a prompt entry."
-  []
-  (let [now (LocalDateTime/now)
-        fmt (DateTimeFormatter/ofPattern "yyyyMMddHHmmss")]
-    (str (.format now fmt) "-" (subs (str (UUID/randomUUID)) 0 8))))
-
-(defn now-timestamp
-  "Get current timestamp in ISO format."
-  []
-  (let [now (LocalDateTime/now)
-        fmt (DateTimeFormatter/ofPattern "yyyy-MM-dd'T'HH:mm:ss")]
-    (.format now fmt)))
-
-(defn entry->headline
-  "Convert a prompt entry to an org headline structure."
-  [{:keys [id prompt accomplishes well-structured improvements
-           category tags quality created updated source model context]}]
-  {:level 2
-   :keyword "NOTE"
-   :title (str "[" (name category) "] "
-               (if (> (count prompt) 50)
-                 (str (subs prompt 0 47) "...")
-                 prompt))
-   :tags (mapv name tags)
-   :properties (cond-> {"ID" id
-                        "CATEGORY" (name category)
-                        "QUALITY" (name quality)
-                        "CREATED" created}
-                 updated (assoc "UPDATED" updated)
-                 source (assoc "SOURCE" source)
-                 model (assoc "MODEL" model))
-   ;; Content must be a vector of lines for the org writer
-   :content (vec (concat
-                  ["*** Prompt"
-                   "#+begin_src text"]
-                  (str/split-lines prompt)
-                  ["#+end_src"
-                   ""
-                   "*** What It Accomplishes"]
-                  (str/split-lines accomplishes)
-                  [""
-                   "*** Why Well-Structured"]
-                  (str/split-lines well-structured)
-                  (when improvements
-                    (concat [""
-                             "*** Improvements"]
-                            (str/split-lines improvements)))
-                  (when context
-                    (concat [""
-                             "*** Context"]
-                            (str/split-lines context)))))})
-
-(defn headline->entry
-  "Convert an org headline back to a prompt entry."
-  [{:keys [properties children title tags] :as _headline}]
-  ;; Children are sub-headlines like *** Prompt, *** What It Accomplishes, etc.
-  (let [get-child-content (fn [child-title]
-                            (some->> children
-                                     (filter #(= (:title %) child-title))
-                                     first
-                                     :content
-                                     (remove #(or (str/starts-with? % "#+begin_src")
-                                                  (str/starts-with? % "#+end_src")))
-                                     (str/join "\n")
-                                     str/trim))
-        ;; Extract tags from title if parser put them there
-        title-tags (when (str/includes? (or title "") ":")
-                     (let [tag-match (re-find #":([^:]+(?::[^:]+)*):$" title)]
-                       (when tag-match
-                         (str/split (second tag-match) #":"))))]
-    {:id (get properties :ID)
-     :prompt (get-child-content "Prompt")
-     :accomplishes (get-child-content "What It Accomplishes")
-     :well-structured (get-child-content "Why Well-Structured")
-     :improvements (get-child-content "Improvements")
-     :category (keyword (get properties :CATEGORY "meta"))
-     :tags (vec (or title-tags tags []))
-     :quality (keyword (get properties :QUALITY "untested"))
-     :created (get properties :CREATED)
-     :updated (get properties :UPDATED)
-     :source (get properties :SOURCE)
-     :model (get properties :MODEL)
-     :context (get-child-content "Context")}))
-
-(defn load-prompts-file
-  "Load prompts from org file. Returns vector of entries."
+(defn- get-store
+  "Get store instance, either from file-path or default."
   [file-path]
-  (if (.exists (io/file file-path))
-    (let [doc (parser/parse-document (slurp file-path))
-          headlines (:headlines doc)]
-      (mapv headline->entry headlines))
-    []))
-
-(defn save-prompts-file
-  "Save prompts to org file."
-  [file-path entries]
-  (let [dir (io/file (.getParent (io/file file-path)))]
-    (when-not (.exists dir)
-      (.mkdirs dir)))
-  (let [doc {:properties {"TITLE" "Prompt Engineering Knowledge Base"
-                          "STARTUP" "overview"
-                          "TODO" "NOTE | ARCHIVED"}
-             :headlines (mapv entry->headline entries)}
-        org-text (writer/write-document doc)]
-    (spit file-path org-text)
-    {:saved true :count (count entries) :file file-path}))
+  (if file-path
+    (storage/create-org-store file-path)
+    @default-store))
 
 ;;; ============================================================
 ;;; Core API
@@ -169,12 +63,12 @@
 
 (defn capture-prompt
   "Capture a prompt with analysis. Returns the saved entry with confirmation.
-   
+
    Required keys:
    - :prompt - The prompt text
    - :accomplishes - What the prompt accomplishes
    - :well-structured - Why it's well-structured
-   
+
    Optional keys:
    - :improvements - Suggested improvements
    - :category - Category keyword (auto-inferred if not provided)
@@ -182,19 +76,17 @@
    - :quality - :success, :partial, :failure, or :untested
    - :source - \"user\", \"observed\", \"generated\"
    - :model - Model used (e.g., \"claude-opus-4-5\")
-   - :context - Additional context"
+   - :context - Additional context
+   - :file-path - Custom storage file path"
   [{:keys [prompt accomplishes well-structured improvements
            category tags quality source model context file-path]
     :or {quality :untested
          source "user"
          tags []}}]
-  (let [file (or file-path default-prompts-file)
+  (let [store (get-store file-path)
         inferred-category (or category (validation/infer-category prompt))
         auto-tags (into tags (get validation/category-tags inferred-category []))
-        id (generate-id)
-        now (now-timestamp)
-        entry {:id id
-               :prompt prompt
+        entry {:prompt prompt
                :accomplishes accomplishes
                :well-structured well-structured
                :improvements (or improvements
@@ -202,87 +94,61 @@
                :category inferred-category
                :tags (vec (distinct auto-tags))
                :quality quality
-               :created now
                :source source
                :model model
                :context context}
         validation-result (validation/validate-entry entry)]
     (if (:valid? validation-result)
-      (let [existing (load-prompts-file file)
-            updated (conj existing entry)]
-        (save-prompts-file file updated)
+      (let [save-result (storage/save-prompt! store entry)
+            saved-entry (:entry save-result)]
         {:success true
-         :entry entry
+         :entry saved-entry
          :quality-assessment (validation/assess-prompt-quality prompt)
-         :confirmation (format-confirmation entry)})
+         :confirmation (format-confirmation saved-entry)})
       {:success false
        :errors (:errors validation-result)})))
 
 (defn list-prompts
   "List captured prompts with optional filtering.
-   
+
    Options:
    - :category - Filter by category
    - :quality - Filter by quality rating
    - :tags - Filter by tags (any match)
-   - :limit - Max results"
+   - :limit - Max results
+   - :file-path - Custom storage file path"
   [& [{:keys [category quality tags limit file-path]
        :or {limit 50}}]]
-  (let [file (or file-path default-prompts-file)
-        entries (load-prompts-file file)
-        filtered (cond->> entries
-                   category (filter #(= (:category %) category))
-                   quality (filter #(= (:quality %) quality))
-                   (seq tags) (filter #(some (set (:tags %)) tags))
-                   true (take limit))]
-    {:count (count filtered)
-     :total (count entries)
-     :entries (vec filtered)}))
+  (let [store (get-store file-path)]
+    (storage/list-prompts store {:category category
+                                 :quality quality
+                                 :tags tags
+                                 :limit limit})))
 
 (defn search-prompts
   "Search prompts by keyword in prompt text or accomplishes."
   [query & [{:keys [file-path limit] :or {limit 20}}]]
-  (let [file (or file-path default-prompts-file)
-        entries (load-prompts-file file)
-        query-lower (str/lower-case query)
-        matches (filter (fn [e]
-                          (or (str/includes? (str/lower-case (:prompt e "")) query-lower)
-                              (str/includes? (str/lower-case (:accomplishes e "")) query-lower)))
-                        entries)]
-    {:count (count matches)
-     :query query
-     :entries (vec (take limit matches))}))
+  (let [store (get-store file-path)]
+    (storage/search-prompts store query {:limit limit})))
 
 (defn get-prompt
   "Get a specific prompt by ID."
   [id & [{:keys [file-path]}]]
-  (let [file (or file-path default-prompts-file)
-        entries (load-prompts-file file)]
-    (first (filter #(= (:id %) id) entries))))
+  (let [store (get-store file-path)]
+    (storage/get-prompt store id)))
 
 (defn update-prompt-quality
   "Update the quality rating of a prompt."
   [id new-quality & [{:keys [file-path]}]]
-  (let [file (or file-path default-prompts-file)
-        entries (load-prompts-file file)
-        updated (mapv (fn [e]
-                        (if (= (:id e) id)
-                          (assoc e :quality new-quality :updated (now-timestamp))
-                          e))
-                      entries)]
-    (save-prompts-file file updated)
+  (let [store (get-store file-path)]
+    (storage/update-prompt! store id {:quality new-quality})
     {:updated true :id id :quality new-quality}))
 
 (defn get-statistics
   "Get statistics about captured prompts."
   [& [{:keys [file-path]}]]
-  (let [file (or file-path default-prompts-file)
-        entries (load-prompts-file file)]
-    {:total (count entries)
-     :by-category (frequencies (map :category entries))
-     :by-quality (frequencies (map :quality entries))
-     :by-source (frequencies (map :source entries))
-     :recent (take 5 (reverse (sort-by :created entries)))}))
+  (let [store (get-store file-path)]
+    (storage/get-statistics store)))
 
 ;;; ============================================================
 ;;; MCP Tool Handlers
