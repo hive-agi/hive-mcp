@@ -14,6 +14,7 @@
             [hive-mcp.emacsclient :as ec]
             [hive-mcp.channel :as channel]
             [hive-mcp.hooks :as hooks]
+            [hive-mcp.swarm.datascript :as ds]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [taoensso.timbre :as log]))
@@ -24,15 +25,22 @@
 
 (defn on-kanban-done
   "Hook called when a kanban task moves to DONE.
-   
+
    Creates an ephemeral progress note capturing the completion,
+   registers the task in DataScript for wrap harvesting,
    then the kanban entry can be safely deleted.
-   
+
    task: {:id :title :context :priority :started :status}
-   
+
    Returns: {:success bool :progress-note-id string}"
   [{:keys [id title _context _priority _started] :as task}]
   (log/info "Kanban DONE hook triggered for task:" id title)
+  ;; Register in DataScript for wrap harvesting (CLARITY-T: telemetry)
+  (try
+    (ds/register-completed-task! id {:title title})
+    (log/debug "Registered completed task in DataScript:" id)
+    (catch Exception e
+      (log/warn "Failed to register completed task in DataScript:" (.getMessage e))))
   (let [;; Generate progress note
         progress-note (crystal/task-to-progress-note
                        (assoc task :completed-at (.toString (java.time.Instant/now))))
@@ -141,27 +149,42 @@
 
 (defn harvest-completed-tasks
   "Harvest completed task progress notes for wrap.
-   
-   Queries kanban-tagged notes from current project with ephemeral or short-term duration.
-   Captures task completions automatically without requiring specific 'completed-task' tag.
-   
-   Returns: {:tasks [...] :count int}"
+
+   Queries from TWO sources:
+   1. DataScript registry (primary, reliable)
+   2. Emacs kanban-tagged notes (fallback, may be unreliable)
+
+   Returns: {:tasks [...] :count int :ds-count int :emacs-count int}"
   []
-  (let [;; Query kanban-tagged ephemeral notes
+  ;; Primary source: DataScript registry (added by on-kanban-done)
+  (let [ds-tasks (try
+                   (->> (ds/get-completed-tasks-this-session)
+                        (map (fn [t]
+                               {:id (:completed-task/id t)
+                                :title (:completed-task/title t)
+                                :completed-at (:completed-task/completed-at t)
+                                :agent-id (:completed-task/agent-id t)
+                                :source :datascript})))
+                   (catch Exception e
+                     (log/warn "Failed to query DataScript completed tasks:" (.getMessage e))
+                     []))
+        ;; Fallback source: Emacs memory (kanban-tagged notes)
         elisp-ephemeral "(hive-mcp-memory-query 'note '(\"kanban\") nil 50 'ephemeral nil)"
-        ;; Also query short-term kanban notes (might have been promoted)
         elisp-short "(hive-mcp-memory-query 'note '(\"kanban\") nil 50 'short-term nil)"
-        ;; Combine both queries
         elisp (format "(json-encode (append %s %s))" elisp-ephemeral elisp-short)
-        {:keys [success result error]} (ec/eval-elisp elisp)]
-    (if success
-      (let [tasks (try (json/read-str result :key-fn keyword)
-                       (catch Exception _ []))]
-        {:tasks tasks
-         :count (count tasks)})
-      {:tasks []
-       :count 0
-       :error error})))
+        {:keys [success result]} (ec/eval-elisp elisp)
+        emacs-tasks (if success
+                      (try
+                        (->> (json/read-str result :key-fn keyword)
+                             (map #(assoc % :source :emacs)))
+                        (catch Exception _ []))
+                      [])
+        ;; Combine sources, prefer DataScript (has task IDs)
+        all-tasks (concat ds-tasks emacs-tasks)]
+    {:tasks all-tasks
+     :count (count all-tasks)
+     :ds-count (count ds-tasks)
+     :emacs-count (count emacs-tasks)}))
 
 (defn harvest-git-commits
   "Harvest git commits since session start.

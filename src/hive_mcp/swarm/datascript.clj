@@ -292,7 +292,24 @@
    {:db/doc "Timestamp of last heartbeat"}
 
    :coordinator/status
-   {:db/doc "Current status: :active :stale :terminated"}})
+   {:db/doc "Current status: :active :stale :terminated"}
+
+   ;;; =========================================================================
+   ;;; Completed Task Entity (Session-scoped task completions for wrap)
+   ;;; =========================================================================
+
+   :completed-task/id
+   {:db/doc "Unique identifier for the completed task (e.g., kanban task ID)"
+    :db/unique :db.unique/identity}
+
+   :completed-task/title
+   {:db/doc "Task title/description"}
+
+   :completed-task/agent-id
+   {:db/doc "ID of the ling/agent that completed the task"}
+
+   :completed-task/completed-at
+   {:db/doc "Timestamp when task was completed"}})
 
 ;;; =============================================================================
 ;;; Connection Management (Thread-Safe Atom)
@@ -934,7 +951,8 @@
      :unprocessed-wraps (count (d/q '[:find ?e
                                       :where
                                       [?e :wrap-queue/processed? false]]
-                                    db))}))
+                                    db))
+     :completed-tasks (count (d/q '[:find ?e :where [?e :completed-task/id _]] db))}))
 
 (defn dump-db
   "Dump the current database state for debugging."
@@ -1453,3 +1471,94 @@
     (when-let [eid (:db/id (d/entity db [:coordinator/id coordinator-id]))]
       (log/info "Removing coordinator:" coordinator-id)
       (d/transact! c [[:db/retractEntity eid]]))))
+
+;;; =============================================================================
+;;; Completed Task Registry (Session-scoped for wrap)
+;;; =============================================================================
+
+(defn register-completed-task!
+  "Register a completed task for wrap to harvest.
+
+   Called by on-kanban-done hook when tasks move to DONE.
+   Tasks are session-scoped and cleared after wrap.
+
+   Arguments:
+     task-id - Unique identifier (e.g., kanban task ID)
+     opts    - Map with optional keys:
+               :title    - Task title/description
+               :agent-id - ID of completing agent (auto-detected if not provided)
+
+   Returns:
+     Transaction report
+
+   CLARITY-T: Telemetry for session task completions"
+  [task-id {:keys [title agent-id]}]
+  {:pre [(string? task-id)]}
+  (let [c (ensure-conn)
+        ;; Auto-detect agent-id from environment if not provided
+        auto-agent-id (or agent-id (System/getenv "CLAUDE_SWARM_SLAVE_ID"))
+        tx-data (cond-> {:completed-task/id task-id
+                         :completed-task/completed-at (now)}
+                  title (assoc :completed-task/title title)
+                  auto-agent-id (assoc :completed-task/agent-id auto-agent-id))]
+    (log/debug "Registering completed task:" task-id "title:" title)
+    (d/transact! c [tx-data])))
+
+(defn get-completed-task
+  "Get a completed task by ID.
+
+   Returns:
+     Map with completed-task attributes or nil if not found"
+  [task-id]
+  (let [c (ensure-conn)
+        db @c]
+    (when-let [e (d/entity db [:completed-task/id task-id])]
+      (-> (into {} e)
+          (dissoc :db/id)))))
+
+(defn get-completed-tasks-this-session
+  "Get all completed tasks registered this session.
+
+   Used by wrap to harvest task completions.
+
+   Options:
+   - :agent-id - Filter by specific agent
+
+   Returns:
+     Seq of completed-task maps sorted by completion time (most recent first)"
+  [& {:keys [agent-id]}]
+  (let [c (ensure-conn)
+        db @c
+        ;; Query all completed tasks
+        all-tasks (d/q '[:find [(pull ?e [*]) ...]
+                         :where [?e :completed-task/id _]]
+                       db)]
+    (->> all-tasks
+         ;; Filter by agent-id if provided
+         (filter (fn [task]
+                   (or (nil? agent-id)
+                       (= agent-id (:completed-task/agent-id task)))))
+         ;; Sort by completion time (most recent first)
+         (sort-by :completed-task/completed-at #(compare %2 %1))
+         ;; Clean up output format
+         (map (fn [task]
+                (dissoc task :db/id))))))
+
+(defn clear-completed-tasks!
+  "Clear all completed tasks from the registry.
+
+   Called after wrap to reset for next session.
+
+   Returns:
+     Number of tasks cleared"
+  []
+  (let [c (ensure-conn)
+        db @c
+        eids (d/q '[:find [?e ...]
+                    :where [?e :completed-task/id _]]
+                  db)
+        count-cleared (count eids)]
+    (when (seq eids)
+      (log/debug "Clearing" count-cleared "completed tasks")
+      (d/transact! c (mapv (fn [eid] [:db/retractEntity eid]) eids)))
+    count-cleared))
