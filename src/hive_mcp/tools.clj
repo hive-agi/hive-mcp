@@ -24,6 +24,7 @@
    [hive-mcp.tools.scc :as scc]
    [hive-mcp.tools.crystal :as crystal]
    [hive-mcp.tools.hot :as hot]
+   [hive-mcp.tools.drone-feedback :as drone-feedback]
    [hive-mcp.hivemind :as hivemind]
    [hive-mcp.channel :as channel]
    [hive-mcp.agent :as agent]
@@ -64,6 +65,7 @@
                kondo/tools
                scc/tools
                hot/tools     ; hot reload coordination tools
+               drone-feedback/tools
                hivemind/tools
                channel/channel-tools
                agent/tools)))
@@ -123,6 +125,7 @@
                kondo/tools
                scc/tools
                hot/tools     ; hot reload coordination tools
+               drone-feedback/tools
                hivemind/tools
                channel/channel-tools
                agent/tools)))
