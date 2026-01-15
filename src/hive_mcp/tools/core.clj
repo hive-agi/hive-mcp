@@ -8,6 +8,7 @@
    - Instruction queue (hivemind → ling)
    - Message cursors (ling reads hivemind broadcasts)"
   (:require [clojure.data.json :as json]
+            [clojure.string :as str]
             [hive-mcp.channel.piggyback :as piggyback]
             [hive-mcp.emacsclient :as ec]))
 
@@ -59,6 +60,68 @@
   [data & {:keys [agent-id]}]
   (-> {:type "text" :text (json/write-str data)}
       (attach-instructions agent-id)))
+
+;; =============================================================================
+;; Addon Availability Checks (DRY Pattern)
+;; =============================================================================
+
+(def ^:private addon-feature-map
+  "Maps addon keywords to their Elisp feature names.
+
+   Note: :kanban uses 'hive-mcp-org-kanban (with org- prefix)
+         All others use 'hive-mcp-<addon-name>"
+  {:kanban     "hive-mcp-org-kanban"
+   :docs       "hive-mcp-docs"
+   :swarm      "hive-mcp-swarm"
+   :magit      "hive-mcp-magit"
+   :projectile "hive-mcp-projectile"})
+
+(defn addon-available?
+  "Check if an addon is loaded in Emacs.
+
+   Accepts keyword from addon-feature-map or string for custom features:
+     (addon-available? :kanban)     ; checks 'hive-mcp-org-kanban
+     (addon-available? :swarm)      ; checks 'hive-mcp-swarm
+     (addon-available? \"my-feat\") ; checks 'my-feat
+
+   CLARITY: Y - Yield safe failure (returns false on error/timeout)"
+  [addon-key]
+  (let [feature-name (if (keyword? addon-key)
+                       (get addon-feature-map addon-key
+                            (str "hive-mcp-" (name addon-key)))
+                       addon-key)]
+    (try
+      (let [{:keys [success result]} (ec/eval-elisp (format "(featurep '%s)" feature-name))]
+        (and success (= "t" (str/trim (or result "")))))
+      (catch Exception _ false))))
+
+(defn addon-not-loaded-error
+  "Create error response for unavailable addon.
+
+   Accepts keyword or string, generates appropriate error message."
+  [addon-key]
+  (let [addon-name (if (keyword? addon-key) (name addon-key) addon-key)]
+    (mcp-error (str addon-name " addon not available"))))
+
+(defmacro with-addon
+  "Execute body only if addon is available, else return error.
+
+   DRYs up the repeated pattern:
+     (if (kanban-addon-available?)
+       (do-kanban-thing)
+       (mcp-error \"kanban addon not available\"))
+
+   Usage:
+     (with-addon :kanban
+       (let [result (ec/eval-elisp ...)]
+         (mcp-success result)))
+
+   CLARITY: Y - Yield safe failure (graceful addon check)
+   SOLID: DRY - Centralizes addon validation pattern"
+  [addon-key & body]
+  `(if (addon-available? ~addon-key)
+     (do ~@body)
+     (addon-not-loaded-error ~addon-key)))
 
 ;; =============================================================================
 ;; Elisp Execution Wrapper (DRY Pattern)
