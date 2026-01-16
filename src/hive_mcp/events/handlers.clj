@@ -34,6 +34,7 @@
    - :wave/complete         - Wave execution finished
    - :claim/file-released   - File claim released, notify waiting lings
    - :claim/notify-waiting  - Send targeted shout to waiting ling
+   - :system/error          - Structured error telemetry (Telemetry Phase 1)
 
    SOLID: SRP - Facade delegates to domain-specific modules
    CLARITY: R - Represented intent through clear module structure"
@@ -43,7 +44,8 @@
             [hive-mcp.events.handlers.kanban :as kanban]
             [hive-mcp.events.handlers.crystal :as crystal]
             [hive-mcp.events.handlers.wave :as wave]
-            [hive-mcp.events.handlers.claim :as claim]))
+            [hive-mcp.events.handlers.claim :as claim]
+            [hive-mcp.events.handlers.system :as system]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -67,6 +69,7 @@
    - crystal/register-handlers! - Wrap/crystallize
    - wave/register-handlers!    - Drone waves
    - claim/register-handlers!   - File claims
+   - system/register-handlers!  - System telemetry (Phase 1)
 
    Returns true if handlers were registered, false if already registered."
   []
@@ -79,9 +82,10 @@
     (crystal/register-handlers!)
     (wave/register-handlers!)
     (claim/register-handlers!)
+    (system/register-handlers!)
 
     (reset! *registered true)
-    (println "[hive-events] Handlers registered: :task/complete :task/shout-complete :git/commit-modified :ling/started :ling/completed :ling/ready-for-wrap :session/end :session/wrap :kanban/sync :kanban/done :crystal/wrap-request :crystal/wrap-notify :wave/start :wave/item-done :wave/complete :claim/file-released :claim/notify-waiting")
+    (println "[hive-events] Handlers registered: :task/complete :task/shout-complete :git/commit-modified :ling/started :ling/completed :ling/ready-for-wrap :session/end :session/wrap :kanban/sync :kanban/done :crystal/wrap-request :crystal/wrap-notify :wave/start :wave/item-done :wave/complete :claim/file-released :claim/notify-waiting :system/error")
     true))
 
 (defn reset-registration!

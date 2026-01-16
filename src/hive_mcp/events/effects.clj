@@ -232,6 +232,61 @@
       (log/warn "[METRICS] Unknown metrics destination:" destination))))
 
 ;; =============================================================================
+;; Effect: :emit-system-error (Telemetry Phase 1)
+;; =============================================================================
+
+(defn- handle-emit-system-error
+  "Execute an :emit-system-error effect - emit structured error for telemetry.
+
+   Provides structured error handling for catastrophic failures:
+   1. Logs with structured format for searchability
+   2. Emits to WebSocket channel for Emacs visibility
+   3. Stores in DataScript for post-mortem analysis
+
+   Expected data shape:
+   {:error-type :harvest-failed | :component-failed | :restart-collision | :emacs-unreachable
+    :source     \"hooks/harvest-session-progress\"
+    :message    \"Emacs unreachable\"
+    :context    {:fn \"harvest-session-progress\" :attempt 1}}
+
+   Example:
+   {:emit-system-error {:error-type :harvest-failed
+                        :source \"hooks/harvest-session-progress\"
+                        :message \"Connection refused\"
+                        :context {:fn \"harvest-session-progress\"}}}
+
+   CLARITY Principle: Telemetry first - observable system behavior."
+  [{:keys [error-type source message context] :as data}]
+  (let [timestamp (System/currentTimeMillis)
+        error-data (assoc data :timestamp timestamp)]
+    ;; 1. Log with structured format
+    (log/error "[SYSTEM-ERROR]"
+               {:error-type error-type
+                :source source
+                :message message
+                :context context
+                :timestamp timestamp})
+
+    ;; 2. Emit to WebSocket channel for Emacs visibility
+    (try
+      (when (channel/server-connected?)
+        (channel/emit-event! :system-error error-data))
+      (catch Exception e
+        (log/warn "[SYSTEM-ERROR] Failed to emit to channel:" (.getMessage e))))
+
+    ;; 3. Store in DataScript for post-mortem analysis
+    (try
+      (let [conn (ds/get-conn)]
+        (d/transact! conn [{:error/type :system-error
+                            :error/error-type error-type
+                            :error/source source
+                            :error/message message
+                            :error/context (pr-str context)
+                            :error/timestamp timestamp}]))
+      (catch Exception e
+        (log/warn "[SYSTEM-ERROR] Failed to store in DataScript:" (.getMessage e))))))
+
+;; =============================================================================
 ;; Effect: :dispatch (Event chaining)
 ;; =============================================================================
 
@@ -468,6 +523,7 @@
    - :git-commit      - Stage files and create git commit (P5-2)
    - :kanban-sync     - Synchronize kanban state (P5-4)
    - :dispatch-task   - Dispatch task to swarm slave (POC-07)
+   - :emit-system-error - Structured error telemetry (Telemetry Phase 1)
 
    Coeffects registered (POC-08/09/10/11):
    - :now             - Current timestamp in milliseconds
@@ -550,6 +606,9 @@
     ;; :report-metrics - Report metrics to external system (CLARITY-T: Telemetry)
     (ev/reg-fx :report-metrics handle-report-metrics)
 
+    ;; :emit-system-error - Structured error telemetry (Telemetry Phase 1)
+    (ev/reg-fx :emit-system-error handle-emit-system-error)
+
     ;; :dispatch - Chain events (for :ling/completed -> :session/end)
     (ev/reg-fx :dispatch handle-dispatch)
 
@@ -577,7 +636,7 @@
 
     (reset! *registered true)
     (log/info "[hive-events] Coeffects registered: :now :agent-context :db-snapshot :waiting-lings")
-    (log/info "[hive-events] Effects registered: :shout :targeted-shout :log :ds-transact :wrap-notify :channel-publish :memory-write :report-metrics :dispatch :dispatch-n :git-commit :kanban-sync :dispatch-task :kanban-move-done :wrap-crystallize")
+    (log/info "[hive-events] Effects registered: :shout :targeted-shout :log :ds-transact :wrap-notify :channel-publish :memory-write :report-metrics :emit-system-error :dispatch :dispatch-n :git-commit :kanban-sync :dispatch-task :kanban-move-done :wrap-crystallize")
     true))
 
 (defn reset-registration!

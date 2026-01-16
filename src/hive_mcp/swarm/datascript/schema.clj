@@ -342,4 +342,30 @@
    {:db/doc "File path the ling is waiting for"}
 
    :wait-queue/queued-at
-   {:db/doc "Timestamp when ling started waiting"}})
+   {:db/doc "Timestamp when ling started waiting"}
+
+   ;;; =========================================================================
+   ;;; Health Event Entity (Centralized Error Tracking)
+   ;;; =========================================================================
+
+   :health-event/id
+   {:db/doc "Unique identifier for the health event"
+    :db/unique :db.unique/identity}
+
+   :health-event/type
+   {:db/doc "Type of error (e.g., :harvest-failed, :chroma-unavailable)"}
+
+   :health-event/severity
+   {:db/doc "Severity level: :info :warn :error :fatal"}
+
+   :health-event/message
+   {:db/doc "Human-readable error message"}
+
+   :health-event/context
+   {:db/doc "Additional context map (optional, extra data)"}
+
+   :health-event/timestamp
+   {:db/doc "When the event occurred"}
+
+   :health-event/recoverable?
+   {:db/doc "Whether the error is recoverable"}})

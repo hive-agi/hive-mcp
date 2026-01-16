@@ -6,4 +6,4 @@
  :watch-dirs ["src" "hive-hot/src" "test"]
 
  ;; Enable hot-reload for this Clojure project
- :hot-reload true}
+ :hot-reload false}
