@@ -16,6 +16,7 @@
             [hive-mcp.channel.websocket :as ws]
             [hive-mcp.channel.piggyback :as piggyback]
             [hive-mcp.swarm.datascript :as ds]
+            [hive-mcp.guards :as guards]
             [clojure.core.async :as async :refer [>!! chan timeout alt!!]]
             [clojure.data.json :as json]
             [clojure.set :as set]
@@ -23,7 +24,6 @@
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
-
 
 ;; =============================================================================
 ;; State
@@ -349,6 +349,16 @@
   ;; Clear from DataScript
   (ds/remove-slave! agent-id)
   (log/info "Agent cleared from hivemind:" agent-id))
+
+(defn clear-agent-registry!
+  "Clear agent registry. GUARDED - no-op if coordinator running.
+
+   CLARITY-Y: Yield safe failure - prevents test fixtures from
+   corrupting production hivemind state."
+  []
+  (guards/when-not-coordinator
+   "clear-agent-registry! called"
+   (reset! agent-registry {})))
 
 ;; =============================================================================
 ;; Event Subscriptions (for agents to listen)

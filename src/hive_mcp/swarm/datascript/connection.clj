@@ -10,11 +10,11 @@
    SOLID-D: Dependency Inversion - other modules depend on this abstraction."
   (:require [datascript.core :as d]
             [taoensso.timbre :as log]
-            [hive-mcp.swarm.datascript.schema :as schema]))
+            [hive-mcp.swarm.datascript.schema :as schema]
+            [hive-mcp.guards :as guards]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
-
 
 ;;; =============================================================================
 ;;; Connection Management (Thread-Safe Atom)
@@ -40,10 +40,14 @@
         @conn)))
 
 (defn reset-conn!
-  "Reset the global connection to empty state."
+  "Reset the global connection to empty state.
+
+   CLARITY-Y: Guarded - skipped if coordinator is running to protect production."
   []
-  (reset! conn (create-conn))
-  (log/debug "Swarm DataScript connection reset"))
+  (guards/when-not-coordinator
+   "ds/reset-conn! blocked"
+   (reset! conn (create-conn))
+   (log/debug "Swarm DataScript connection reset")))
 
 (defn ensure-conn
   "Ensure connection exists, return it."

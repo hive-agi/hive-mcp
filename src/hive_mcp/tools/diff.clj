@@ -16,6 +16,7 @@
    - Infra: File I/O via slurp/spit (mocked in tests)"
   (:require [hive-mcp.tools.core :refer [mcp-json]]
             [hive-mcp.emacsclient :as ec]
+            [hive-mcp.guards :as guards]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.java.io :as io]
@@ -23,7 +24,6 @@
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
-
 
 ;; =============================================================================
 ;; Domain: Pending Diffs State
@@ -38,6 +38,16 @@
 
 ;; Atom storing pending diff proposals. Map of diff-id -> diff-data.
 (defonce pending-diffs (atom {}))
+
+(defn clear-pending-diffs!
+  "Clear pending diffs. GUARDED - no-op if coordinator running.
+
+   CLARITY-Y: Yield safe failure - prevents test fixtures from
+   corrupting production diff state."
+  []
+  (guards/when-not-coordinator
+   "clear-pending-diffs! called"
+   (reset! pending-diffs {})))
 
 ;; =============================================================================
 ;; Domain: Diff Operations (Pure Functions)
