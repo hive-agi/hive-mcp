@@ -632,6 +632,29 @@
             (fn [{:keys [event data]}]
               (ws/emit! event data)))
 
+    ;; CLARITY-T: Prometheus metrics effect
+    ;; Handles :prometheus effects from event handlers for drone/wave telemetry
+    ;; Effect shape: {:counter :drone_started :labels {:parent "none"}
+    ;;                :histogram {:name :drone_duration_seconds :value 5.0}}
+    (reg-fx :prometheus
+            (fn [effect-data]
+              (try
+                (prom/handle-prometheus-effect! effect-data)
+                (catch Exception e
+                  (println "[prometheus-fx] Failed to record metric:" (.getMessage e))))))
+
+    ;; CLARITY-T: Log effect
+    ;; Handles :log effects from event handlers for structured logging
+    ;; Effect shape: {:level :info :message "Drone started: drone-123"}
+    (reg-fx :log
+            (fn [{:keys [level message]}]
+              (case level
+                :debug (println "[DEBUG]" message)
+                :info  (println "[INFO]" message)
+                :warn  (println "[WARN]" message)
+                :error (println "[ERROR]" message)
+                (println "[LOG]" message))))
+
     ;; Mark as initialized
     (reset! *initialized true)
     (println "[hive-events] Event system initialized with coeffects: :now :random :agent-context :db-snapshot")

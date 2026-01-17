@@ -169,8 +169,11 @@
           elisp "(json-encode (hive-mcp-memory-query 'note nil nil 50 'ephemeral nil))"
           {:keys [success result error]} (ec/eval-elisp elisp)]
       (if success
-        (let [notes (try (json/read-str result :key-fn keyword)
-                         (catch Exception _ []))]
+        (let [raw-notes (try (json/read-str result :key-fn keyword)
+                             (catch Exception _ []))
+              ;; Guard: filter to maps only to prevent "Key must be integer" error
+              ;; when accessing (:tags item) on non-map items (vectors, strings, etc.)
+              notes (filterv map? (if (sequential? raw-notes) raw-notes []))]
           {:notes notes
            :count (count notes)
            :session session-tag})

@@ -9,7 +9,8 @@
    CLARITY-T: Telemetry first - structured events for monitoring
    SOLID: SRP - Drone lifecycle only"
   (:require [hive-mcp.events.core :as ev]
-            [hive-mcp.events.interceptors :as interceptors]))
+            [hive-mcp.events.interceptors :as interceptors]
+            [clojure.string :as str]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -65,30 +66,39 @@
     :task-id       \"task-drone-1705000000\"
     :parent-id     \"swarm-ling-123\" (optional)
     :files-modified [\"src/foo.clj\"]
-    :files-failed   []
+    :files-failed   [{:file \"path\" :error \"reason\"}]
     :duration-ms   5000}
 
    Produces effects:
    - :channel-publish - Broadcast drone-completed to WebSocket clients
-   - :log             - Log drone completion message
-   - :prometheus      - Increment drone_completed counter, record duration"
+   - :log             - Log drone completion message (includes failure details)
+   - :prometheus      - Increment drone_completed counter, record duration
+
+   CLARITY-T: Diff failures are now included in log for visibility."
   [_coeffects [_ {:keys [drone-id task-id parent-id files-modified files-failed duration-ms]}]]
-  {:channel-publish {:event :drone-completed
-                     :data {:drone-id drone-id
-                            :task-id task-id
-                            :parent-id parent-id
-                            :files-modified files-modified
-                            :files-failed files-failed
-                            :duration-ms duration-ms}}
-   :log {:level :info
-         :message (str "Drone completed: " drone-id
-                       " - " (count files-modified) " files modified"
-                       (when (seq files-failed)
-                         (str ", " (count files-failed) " failed")))}
-   :prometheus {:counter :drone_completed
-                :labels {:parent (or parent-id "none")}
-                :histogram {:name :drone_duration_seconds
-                            :value (when duration-ms (/ duration-ms 1000.0))}}})
+  (let [;; Format failure details for log message (CLARITY-T: escalate diff failures)
+        failure-details (when (seq files-failed)
+                          (->> files-failed
+                               (map #(str (:file %) ": " (:error %)))
+                               (str/join ", ")))]
+    {:channel-publish {:event :drone-completed
+                       :data {:drone-id drone-id
+                              :task-id task-id
+                              :parent-id parent-id
+                              :files-modified files-modified
+                              :files-failed files-failed
+                              :duration-ms duration-ms
+                              ;; Include partial-success flag for coordinator decision
+                              :partial-success (boolean (seq files-failed))}}
+     :log {:level (if (seq files-failed) :warn :info)  ;; Escalate to warn if failures
+           :message (str "Drone completed: " drone-id
+                         " - " (count files-modified) " files modified"
+                         (when failure-details
+                           (str " | DIFF FAILURES: " failure-details)))}
+     :prometheus {:counter :drone_completed
+                  :labels {:parent (or parent-id "none")}
+                  :histogram {:name :drone_duration_seconds
+                              :value (when duration-ms (/ duration-ms 1000.0))}}}))
 
 ;; =============================================================================
 ;; Handler: :drone/failed

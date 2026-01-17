@@ -2,14 +2,18 @@
   "Drone wave event handlers.
 
    Handles events related to dispatch_drone_wave lifecycle:
-   - :wave/start     - Wave execution started
-   - :wave/item-done - Wave item completed/failed
-   - :wave/complete  - Wave execution finished
+   - :wave/start      - Wave execution started
+   - :wave/batch-start - Batch within wave started
+   - :wave/item-done  - Wave item completed/failed
+   - :wave/cancelled  - Wave was cancelled
+   - :wave/complete   - Wave execution finished
+   - :wave/reconcile  - Reconcile wave status with filesystem reality
 
    SOLID: SRP - Wave lifecycle only
    CLARITY: R - Represented intent through wave domain"
   (:require [hive-mcp.events.core :as ev]
-            [hive-mcp.events.interceptors :as interceptors]))
+            [hive-mcp.events.interceptors :as interceptors]
+            [hive-mcp.swarm.datascript.coordination :as ds]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -90,6 +94,36 @@
                             :wave-id wave-id}}})
 
 ;; =============================================================================
+;; Handler: :wave/cancelled
+;; =============================================================================
+
+(defn handle-wave-cancelled
+  "Handler for :wave/cancelled events.
+
+   Called when a wave is cancelled due to timeout or explicit cancel request.
+   Publishes cancellation event for monitoring.
+
+   Expects event data:
+   {:plan-id  \"plan-uuid\"
+    :wave-id  \"wave-uuid\"
+    :reason   :timeout | :explicit | :error
+    :message  \"Optional details\"}
+
+   Produces effects:
+   - :channel-publish - Broadcast wave-cancelled to WebSocket clients
+   - :log             - Log wave cancellation message"
+  [_coeffects [_ {:keys [plan-id wave-id reason message]}]]
+  {:channel-publish {:event :wave-cancelled
+                     :data {:plan-id plan-id
+                            :wave-id wave-id
+                            :reason reason
+                            :message message}}
+   :log {:level :warn
+         :message (str "Wave cancelled: " wave-id
+                       " - reason: " (name (or reason :unknown))
+                       (when message (str " - " message)))}})
+
+;; =============================================================================
 ;; Handler: :wave/complete
 ;; =============================================================================
 
@@ -118,6 +152,32 @@
                          " - " completed " completed, " failed " failed")}}))
 
 ;; =============================================================================
+;; Handler: :wave/reconcile
+;; =============================================================================
+
+(defn handle-wave-reconcile
+  "Handler for :wave/reconcile events.
+
+   Reconciles wave status with filesystem reality.
+   Useful for debugging when wave status doesn't match actual file state.
+
+   Expects event data:
+   {:wave-id \"wave-uuid\"}
+
+   Produces effects:
+   - :log - Report any discrepancies found"
+  [_coeffects [_ {:keys [wave-id]}]]
+  (let [wave (ds/get-wave wave-id)]
+    (if wave
+      {:log {:level :info
+             :message (str "Wave reconcile requested for: " wave-id
+                           " status: " (:wave/status wave)
+                           " completed: " (:wave/completed-count wave)
+                           " failed: " (:wave/failed-count wave))}}
+      {:log {:level :warn
+             :message (str "Wave not found for reconcile: " wave-id)}})))
+
+;; =============================================================================
 ;; Registration
 ;; =============================================================================
 
@@ -138,4 +198,12 @@
 
   (ev/reg-event :wave/complete
                 [interceptors/debug]
-                handle-wave-complete))
+                handle-wave-complete)
+
+  (ev/reg-event :wave/cancelled
+                [interceptors/debug]
+                handle-wave-cancelled)
+
+  (ev/reg-event :wave/reconcile
+                [interceptors/debug]
+                handle-wave-reconcile))

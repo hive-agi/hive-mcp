@@ -59,9 +59,17 @@
    Expected data shape:
    {:agent-id   \"swarm-worker-123\"
     :event-type :progress | :completed | :error | :blocked | :started
-    :data       {:task \"...\" :message \"...\" ...}}"
+    :data       {:task \"...\" :message \"...\" ...}}
+
+   P1 FIX: Fallback chain includes ctx/current-agent-id for drone context."
   [{:keys [agent-id event-type data]}]
-  (let [effective-id (or agent-id
+  ;; P1 FIX: Check context for drone attribution
+  ;; Uses hive-mcp.agent.context (no circular dep) for thread-local agent-id
+  (let [get-ctx-agent-id (try
+                           (requiring-resolve 'hive-mcp.agent.context/current-agent-id)
+                           (catch Exception _ nil))
+        effective-id (or agent-id
+                         (when get-ctx-agent-id (get-ctx-agent-id))
                          (System/getenv "CLAUDE_SWARM_SLAVE_ID")
                          "unknown-agent")]
     (hivemind/shout! effective-id event-type data)))
