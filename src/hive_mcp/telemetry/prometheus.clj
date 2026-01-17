@@ -47,6 +47,17 @@
 (def ^:private hivemind-shouts-total-name :hive-mcp/hivemind-shouts-total)
 (def ^:private chroma-query-seconds-name :hive-mcp/chroma-query-seconds)
 
+;; Drone-specific metrics (CLARITY-T: drone lifecycle telemetry)
+(def ^:private drones-started-total-name :hive-mcp/drones-started-total)
+(def ^:private drones-completed-total-name :hive-mcp/drones-completed-total)
+(def ^:private drones-failed-total-name :hive-mcp/drones-failed-total)
+(def ^:private drone-duration-seconds-name :hive-mcp/drone-duration-seconds)
+
+;; Wave-specific metrics (CLARITY-T: wave orchestration observability)
+(def ^:private wave-success-rate-name :hive-mcp/wave-success-rate)
+(def ^:private wave-items-total-name :hive-mcp/wave-items-total)
+(def ^:private wave-duration-seconds-name :hive-mcp/wave-duration-seconds)
+
 ;;; =============================================================================
 ;;; Collector Definitions
 ;;; =============================================================================
@@ -120,6 +131,55 @@
     :labels [:operation]
     :buckets [0.01 0.05 0.1 0.25 0.5 1.0 2.5 5.0]}))
 
+;; Counter: Drones started (labels: :parent)
+(def ^:private drones-started-total-collector
+  (prometheus/counter
+   drones-started-total-name
+   {:description "Total drones started by parent ling"
+    :labels [:parent]}))
+
+;; Counter: Drones completed (labels: :parent)
+(def ^:private drones-completed-total-collector
+  (prometheus/counter
+   drones-completed-total-name
+   {:description "Total drones completed successfully"
+    :labels [:parent]}))
+
+;; Counter: Drones failed (labels: :parent :error-type)
+(def ^:private drones-failed-total-collector
+  (prometheus/counter
+   drones-failed-total-name
+   {:description "Total drones failed by error type"
+    :labels [:parent :error-type]}))
+
+;; Histogram: Drone execution duration (labels: :parent)
+(def ^:private drone-duration-seconds-collector
+  (prometheus/histogram
+   drone-duration-seconds-name
+   {:description "Drone execution duration distribution"
+    :labels [:parent]
+    :buckets [1.0 5.0 10.0 30.0 60.0 120.0 300.0 600.0]}))
+
+;; Gauge: Wave success rate (0.0 to 1.0)
+(def ^:private wave-success-rate-collector
+  (prometheus/gauge
+   wave-success-rate-name
+   {:description "Success rate of last wave execution (0.0-1.0)"}))
+
+;; Counter: Wave items processed (labels: :status)
+(def ^:private wave-items-total-collector
+  (prometheus/counter
+   wave-items-total-name
+   {:description "Total wave items processed by status"
+    :labels [:status]}))
+
+;; Histogram: Wave execution duration (buckets: 1s to 30m)
+(def ^:private wave-duration-seconds-collector
+  (prometheus/histogram
+   wave-duration-seconds-name
+   {:description "Wave execution duration distribution"
+    :buckets [1.0 5.0 10.0 30.0 60.0 120.0 300.0 600.0 1800.0]}))
+
 ;;; =============================================================================
 ;;; Registry Initialization
 ;;; =============================================================================
@@ -142,7 +202,16 @@
          request-duration-seconds-collector
          memory-ops-total-collector
          hivemind-shouts-total-collector
-         chroma-query-seconds-collector))))
+         chroma-query-seconds-collector
+         ;; Drone lifecycle metrics (CLARITY-T)
+         drones-started-total-collector
+         drones-completed-total-collector
+         drones-failed-total-collector
+         drone-duration-seconds-collector
+         ;; Wave orchestration metrics (CLARITY-T)
+         wave-success-rate-collector
+         wave-items-total-collector
+         wave-duration-seconds-collector))))
 
 ;;; =============================================================================
 ;;; Convenience Functions (SRP: Each function handles one metric type)
@@ -221,6 +290,122 @@
   (prometheus/observe
    (@registry chroma-query-seconds-name {:operation (name operation)})
    seconds))
+
+;;; =============================================================================
+;;; Drone Lifecycle Metrics (CLARITY-T: Telemetry first for drone observability)
+;;; =============================================================================
+
+(defn inc-drones-started!
+  "Increment drones started counter.
+   parent: parent ling ID or \"none\""
+  [parent]
+  (prometheus/inc
+   (@registry drones-started-total-name {:parent (str parent)})))
+
+(defn inc-drones-completed!
+  "Increment drones completed counter.
+   parent: parent ling ID or \"none\""
+  [parent]
+  (prometheus/inc
+   (@registry drones-completed-total-name {:parent (str parent)})))
+
+(defn inc-drones-failed!
+  "Increment drones failed counter.
+   parent: parent ling ID or \"none\"
+   error-type: keyword (:conflict :execution :timeout :unknown)"
+  [parent error-type]
+  (prometheus/inc
+   (@registry drones-failed-total-name {:parent (str parent)
+                                        :error-type (name (or error-type :unknown))})))
+
+(defn observe-drone-duration!
+  "Observe drone execution duration.
+   parent: parent ling ID or \"none\"
+   seconds: duration in seconds (double)"
+  [parent seconds]
+  (when seconds
+    (prometheus/observe
+     (@registry drone-duration-seconds-name {:parent (str parent)})
+     seconds)))
+
+;;; =============================================================================
+;;; Wave Orchestration Metrics (CLARITY-T: Wave-level observability)
+;;; =============================================================================
+
+(defn set-wave-success-rate!
+  "Set wave success rate gauge (0.0 to 1.0).
+   rate: success ratio (completed / total)"
+  [rate]
+  (prometheus/set (@registry wave-success-rate-name) (double rate)))
+
+(defn inc-wave-items!
+  "Increment wave items counter.
+   status: :success or :failed"
+  [status]
+  (prometheus/inc
+   (@registry wave-items-total-name {:status (name status)})))
+
+(defn observe-wave-duration!
+  "Observe wave execution duration.
+   seconds: total wave duration in seconds (double)"
+  [seconds]
+  (when seconds
+    (prometheus/observe
+     (@registry wave-duration-seconds-name)
+     seconds)))
+
+(defmacro with-wave-timing
+  "Execute body and record duration in wave-duration-seconds histogram.
+   Also updates wave-success-rate gauge based on results.
+   Returns the result of body execution.
+
+   Usage:
+     (with-wave-timing
+       (execute-wave! plan-id opts))"
+  [& body]
+  `(let [start# (System/nanoTime)
+         result# (do ~@body)
+         duration# (/ (- (System/nanoTime) start#) 1e9)]
+     (observe-wave-duration! duration#)
+     result#))
+
+;;; =============================================================================
+;;; Generic Effect Handler Support (CLARITY-T: Effect system integration)
+;;; =============================================================================
+
+(defn handle-prometheus-effect!
+  "Handle a :prometheus effect from the event system.
+
+   Supports two styles:
+   1. Counter: {:counter :drone_started :labels {:parent \"none\"}}
+   2. Counter + Histogram: {:counter :drone_completed :labels {...}
+                           :histogram {:name :drone_duration_seconds :value 5.0}}
+
+   Known counters:
+   - :drone_started, :drone_completed, :drone_failed
+   - :events (generic events counter)
+   - :errors (generic errors counter)
+
+   CLARITY-T: Telemetry effect handler for re-frame style event system."
+  [{:keys [counter labels histogram]}]
+  (let [parent (get labels :parent "none")
+        error-type (get labels :error_type)]
+    ;; Handle counter
+    (case counter
+      :drone_started (inc-drones-started! parent)
+      :drone_completed (inc-drones-completed! parent)
+      :drone_failed (inc-drones-failed! parent error-type)
+      ;; Fallback for unknown counters - log and increment generic events
+      (do
+        (log/debug "Unknown prometheus counter:" counter "- using generic events")
+        (inc-events-total! (or counter :unknown) :info)))
+
+    ;; Handle histogram if present
+    (when-let [{:keys [name value]} histogram]
+      (case name
+        :drone_duration_seconds (observe-drone-duration! parent value)
+        ;; Fallback for unknown histograms
+        (log/debug "Unknown prometheus histogram:" name)))))
 
 ;;; =============================================================================
 ;;; Timing Macro (CLARITY-C: Composition - reuse pattern from telemetry.clj)
