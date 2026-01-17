@@ -21,7 +21,6 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-
 ;; ============================================================
 ;; Team Composition Data
 ;; ============================================================
@@ -42,9 +41,9 @@
 
    :refactoring
    {:team-pattern "Analyzer → Refactorer → Verifier"
-    :lings [{:name "analyze-{context}" :presets ["planner-nih" "reviewer"] :sequence 1}
+    :lings [{:name "analyze-{context}" :presets ["analyzer" "clarity"] :sequence 1}
             {:name "refactor-{context}-1" :presets ["ling" "refactorer" "clarity"] :sequence 2}
-            {:name "verify-{context}" :presets ["ling" "tdd" "reviewer"] :sequence 3}]
+            {:name "verify-{context}" :presets ["verifier" "tdd"] :sequence 3}]
     :parallelization {:phase-1 ["analyze-{context}"]
                       :phase-2 ["refactor-{context}-1"]
                       :phase-3 ["verify-{context}"]}
@@ -54,7 +53,7 @@
 
    :greenfield
    {:team-pattern "Architect → Scaffolder → Implementers"
-    :lings [{:name "architect-{context}" :presets ["planner-nih" "clarity" "hivemind"] :sequence 1}
+    :lings [{:name "architect-{context}" :presets ["architect" "clarity"] :sequence 1}
             {:name "scaffold-{context}" :presets ["ling" "tdd"] :sequence 2}
             {:name "impl-{context}-1" :presets ["ling" "tdd" "clarity"] :sequence 3}
             {:name "impl-{context}-2" :presets ["ling" "tdd" "clarity"] :sequence 3}]
@@ -67,9 +66,9 @@
 
    :simplification
    {:team-pattern "Metrics → Simplifier → Validator"
-    :lings [{:name "metrics-{context}" :presets ["ling" "reviewer"] :sequence 1}
+    :lings [{:name "metrics-{context}" :presets ["metrics" "clarity"] :sequence 1}
             {:name "simplify-{context}-1" :presets ["ling" "refactorer" "clarity"] :sequence 2}
-            {:name "validate-{context}" :presets ["ling" "tdd"] :sequence 3}]
+            {:name "validate-{context}" :presets ["verifier" "tdd"] :sequence 3}]
     :parallelization {:phase-1 ["metrics-{context}"]
                       :phase-2 ["simplify-{context}-1"]
                       :phase-3 ["validate-{context}"]}
@@ -79,12 +78,12 @@
 
    :quality-review
    {:team-pattern "Multi-Specialist Review Panel"
-    :lings [{:name "review-solid-{context}" :presets ["ling" "reviewer" "clarity"] :sequence 1}
+    :lings [{:name "review-compliance-{context}" :presets ["compliance" "clarity"] :sequence 1}
             {:name "review-tdd-{context}" :presets ["ling" "tdd" "reviewer"] :sequence 1}
-            {:name "review-ddd-{context}" :presets ["ling" "reviewer"] :sequence 1}]
-    :parallelization {:phase-1 ["review-solid-{context}"
+            {:name "review-metrics-{context}" :presets ["analyzer" "clarity"] :sequence 1}]
+    :parallelization {:phase-1 ["review-compliance-{context}"
                                 "review-tdd-{context}"
-                                "review-ddd-{context}"]}
+                                "review-metrics-{context}"]}
     :coordinator-checklist ["All reviewers run in parallel"
                             "Collect findings as memory entries"
                             "Prioritize fixes by severity"]}

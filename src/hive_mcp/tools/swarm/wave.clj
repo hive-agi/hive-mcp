@@ -14,10 +14,13 @@
    CLARITY: A - Architectural performance via bounded concurrency"
   (:require [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.swarm.logic :as logic]
+            [hive-mcp.swarm.coordinator :as coordinator]
             [hive-mcp.events.core :as ev]
             [hive-mcp.agent :as agent]
+            [hive-mcp.telemetry.prometheus :as prom]
             [clojure.core.async :as async :refer [go go-loop <! >! <!! chan close!]]
             [clojure.string :as str]
+            [clojure.java.io :as io]
             [taoensso.timbre :as log]
             [clojure.data.json :as json]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -35,6 +38,56 @@
 (def ^:const drone-timeout-ms
   "Timeout for individual drone execution (10 minutes)."
   600000)
+
+;;; =============================================================================
+;;; Pre-flight Validation (P0 + P2)
+;;; =============================================================================
+
+(defn ensure-parent-dirs!
+  "Create parent directories for all task files.
+   Called during pre-flight to prevent drone failures from missing directories.
+
+   Arguments:
+     tasks - Collection of maps with :file key
+
+   CLARITY-I: Guard inputs before processing."
+  [tasks]
+  (doseq [{:keys [file]} tasks]
+    (when file
+      (io/make-parents file))))
+
+(defn- valid-parent-path?
+  "Check if parent directory exists.
+   Returns true if:
+   - file-path is nil (no validation needed)
+   - parent directory exists
+
+   Note: This is strict validation. Use ensure-parent-dirs! first
+   to create directories, then validate remaining issues."
+  [file-path]
+  (if (nil? file-path)
+    true
+    (let [parent (.getParentFile (io/file file-path))]
+      (or (nil? parent)
+          (.exists parent)))))
+
+(defn validate-task-paths
+  "Validate all task paths have accessible parent directories.
+   Throws ex-info with :invalid-paths if any paths are invalid.
+
+   Arguments:
+     tasks - Collection of maps with :file key
+
+   CLARITY-I: Fail fast at boundaries."
+  [tasks]
+  (let [invalid (->> tasks
+                     (map :file)
+                     (remove nil?)
+                     (remove valid-parent-path?)
+                     (vec))]
+    (when (seq invalid)
+      (throw (ex-info "Invalid paths in wave"
+                      {:invalid-paths invalid})))))
 
 ;;; =============================================================================
 ;;; Edit Registration and Dependency Inference
@@ -149,73 +202,119 @@
   [item preset cwd]
   {:item item :preset preset :cwd cwd})
 
+;;; =============================================================================
+;;; Batch Execution Helpers (SLAP: Extract functions for single abstraction level)
+;;; =============================================================================
+
+(defn- update-item-state!
+  "Update DataScript state and emit events for a completed item.
+
+   Arguments:
+     result   - Map with :success :item-id :result/:error
+     wave-id  - Wave ID for count updates
+     trace    - Whether to emit events
+
+   CLARITY-Y: Graceful degradation - best-effort status update on failure."
+  [{:keys [success item-id result error]} wave-id trace]
+  (try
+    (if success
+      (do
+        (ds/update-item-status! item-id :completed {:result (str result)})
+        (ds/update-wave-counts! wave-id {:completed 1 :active -1}))
+      (do
+        (ds/update-item-status! item-id :failed {:result error})
+        (ds/update-wave-counts! wave-id {:failed 1 :active -1})))
+
+    (when trace
+      (ev/dispatch [:wave/item-done {:item-id item-id
+                                     :status (if success :completed :failed)
+                                     :wave-id wave-id}]))
+    (catch Exception e
+      (log/error e "Failed to update item status, marking as failed:" item-id)
+      ;; Best-effort status update
+      (try
+        (ds/update-item-status! item-id :failed
+                                {:result (str "Post-execution error: " (.getMessage e))})
+        (ds/update-wave-counts! wave-id {:failed 1 :active -1})
+        (catch Exception _)))))
+
+(defn- spawn-workers!
+  "Spawn worker goroutines for bounded concurrency.
+
+   Arguments:
+     work-ch   - Channel providing work units
+     result-ch - Channel to send results to
+     wave-id   - Wave ID for state updates
+     trace     - Whether to emit events
+     concurrency - Max concurrent workers
+     item-count  - Number of items (for worker count calculation)
+
+   SOLID-SRP: Single responsibility - worker spawning only."
+  [work-ch result-ch wave-id trace concurrency item-count]
+  (dotimes [_ (min concurrency item-count)]
+    (go-loop []
+      (when-let [{:keys [item preset cwd]} (<! work-ch)]
+        (let [item-id (:change-item/id item)
+              exec-result (try
+                            (execute-drone-task item preset cwd)
+                            (catch Exception e
+                              (log/error e "Uncaught exception in drone worker")
+                              {:success false
+                               :item-id item-id
+                               :error (str "Worker exception: " (.getMessage e))}))]
+          ;; Update state (SLAP: delegate to extracted function)
+          (update-item-state! exec-result wave-id trace)
+          (>! result-ch exec-result))
+        (recur)))))
+
+(defn- collect-results
+  "Collect results from worker channels.
+
+   Arguments:
+     result-ch   - Channel receiving results
+     item-count  - Expected number of results
+
+   Returns:
+     Map with :completed and :failed counts.
+
+   SOLID-SRP: Single responsibility - result aggregation only."
+  [result-ch item-count]
+  (go
+    (loop [completed 0 failed 0 n 0]
+      (if (< n item-count)
+        (let [r (<! result-ch)]
+          (recur (if (:success r) (inc completed) completed)
+                 (if-not (:success r) (inc failed) failed)
+                 (inc n)))
+        {:completed completed :failed failed}))))
+
 (defn- execute-batch!
   "Execute a single batch of items with bounded concurrency.
-   Returns channel that emits {:completed N :failed N} when batch is done."
+   Returns channel that emits {:completed N :failed N} when batch is done.
+
+   SLAP: Uses extracted helper functions for single abstraction level:
+   - spawn-workers! handles worker goroutine creation
+   - collect-results handles result aggregation
+   - update-item-state! handles DataScript + event updates"
   [batch-items preset cwd concurrency wave-id trace]
-  (let [result-ch (chan)]
+  (let [result-ch (chan)
+        item-count (count batch-items)]
     (go
       (let [work-ch (chan)
             inner-result-ch (chan)]
 
-        ;; Producer: push all items
+        ;; Producer: push all items to work channel
         (go
           (doseq [item batch-items]
             (>! work-ch (item->work-unit item preset cwd)))
           (close! work-ch))
 
-        ;; Workers: bounded concurrency
-        ;; NOTE: Exceptions in go blocks are silently swallowed by core.async.
-        ;; We add explicit try/catch to ensure failures are reported.
-        ;; CRITICAL: Also wrap result handling to ensure cleanup even on post-execution errors.
-        (dotimes [_ (min concurrency (count batch-items))]
-          (go-loop []
-            (when-let [{:keys [item preset cwd]} (<! work-ch)]
-              (let [item-id (:change-item/id item)
-                    result (try
-                             (execute-drone-task item preset cwd)
-                             (catch Exception e
-                               (log/error e "Uncaught exception in drone worker")
-                               {:success false
-                                :item-id item-id
-                                :error (str "Worker exception: " (.getMessage e))}))]
-                ;; Wrap result handling in try/catch to ensure result always sent to channel
-                ;; CRITICAL: This prevents orphaned state if DataScript ops fail
-                (try
-                  (if (:success result)
-                    (do
-                      (ds/update-item-status! (:item-id result) :completed
-                                              {:result (str (:result result))})
-                      (ds/update-wave-counts! wave-id {:completed 1 :active -1}))
-                    (do
-                      (ds/update-item-status! (:item-id result) :failed
-                                              {:result (:error result)})
-                      (ds/update-wave-counts! wave-id {:failed 1 :active -1})))
+        ;; Spawn workers (SLAP: delegated to extracted function)
+        (spawn-workers! work-ch inner-result-ch wave-id trace concurrency item-count)
 
-                  (when trace
-                    (ev/dispatch [:wave/item-done {:item-id (:item-id result)
-                                                   :status (if (:success result) :completed :failed)
-                                                   :wave-id wave-id}]))
-                  (catch Exception e
-                    (log/error e "Failed to update item status, marking as failed:" item-id)
-                    ;; Best-effort status update
-                    (try
-                      (ds/update-item-status! item-id :failed
-                                              {:result (str "Post-execution error: " (.getMessage e))})
-                      (ds/update-wave-counts! wave-id {:failed 1 :active -1})
-                      (catch Exception _))))
-
-                (>! inner-result-ch result))
-              (recur))))
-
-        ;; Collect results
-        (loop [completed 0 failed 0 n 0]
-          (if (< n (count batch-items))
-            (let [r (<! inner-result-ch)]
-              (recur (if (:success r) (inc completed) completed)
-                     (if-not (:success r) (inc failed) failed)
-                     (inc n)))
-            (>! result-ch {:completed completed :failed failed})))))
+        ;; Collect results and emit to result channel
+        (let [counts (<! (collect-results inner-result-ch item-count))]
+          (>! result-ch counts))))
 
     result-ch))
 
@@ -238,7 +337,8 @@
    all batches complete before returning. Previous async (go) implementation
    returned immediately while execution happened in detached context."
   [plan-id & [{:keys [concurrency trace cwd] :or {concurrency default-concurrency trace true}}]]
-  (let [plan (ds/get-plan plan-id)]
+  (let [wave-start-time (System/nanoTime)  ;; CLARITY-T: Timing for wave duration metric
+        plan (ds/get-plan plan-id)]
     (when-not plan
       (throw (ex-info "Plan not found" {:plan-id plan-id})))
 
@@ -296,12 +396,23 @@
                    batch-num 1]
               (if (empty? remaining-batches)
                 ;; All batches done
-                (let [final-status (if (pos? total-failed) :partial-failure :completed)]
+                (let [final-status (if (pos? total-failed) :partial-failure :completed)
+                      total-items (+ total-completed total-failed)
+                      success-rate (if (pos? total-items)
+                                     (/ (double total-completed) total-items)
+                                     1.0)]
                   ;; CLEANUP: Reset all transient data (edits + task-files)
                   ;; CRITICAL: Use reset-all-transient! to prevent memory leak in task-files
                   (logic/reset-all-transient!)
                   (log/info "Wave complete. Batches:" (count effective-batches)
                             "Completed:" total-completed "Failed:" total-failed)
+
+                  ;; CLARITY-T: Record wave metrics
+                  (let [wave-duration-seconds (/ (- (System/nanoTime) wave-start-time) 1e9)]
+                    (prom/set-wave-success-rate! success-rate)
+                    (dotimes [_ total-completed] (prom/inc-wave-items! :success))
+                    (dotimes [_ total-failed] (prom/inc-wave-items! :failed))
+                    (prom/observe-wave-duration! wave-duration-seconds))
 
                   (ds/complete-wave! wave-id final-status)
                   (ds/update-plan-status! plan-id (if (pos? total-failed) :failed :completed))
@@ -337,6 +448,42 @@
                            (+ total-completed completed)
                            (+ total-failed failed)
                            (inc batch-num))))))))))))
+
+;;; =============================================================================
+;;; Wave Cancellation
+;;; =============================================================================
+
+(defn cancel-wave!
+  "Cancel a running wave.
+
+   Arguments:
+     wave-id - Wave ID to cancel
+     reason  - Keyword reason (:timeout :explicit :error)
+     message - Optional detail message
+
+   Updates wave status in DataScript and emits :wave/cancelled event.
+   Note: Does NOT interrupt running drones - they will complete.
+
+   CLARITY-Y: Graceful degradation - running drones complete, no new ones start."
+  [wave-id & [{:keys [reason message] :or {reason :explicit}}]]
+  (when-let [wave (ds/get-wave wave-id)]
+    (let [plan-id (:wave/plan wave)]
+      ;; Update statuses
+      (ds/complete-wave! wave-id :cancelled)
+      (ds/update-plan-status! plan-id :cancelled)
+
+      ;; Emit cancellation event
+      (ev/dispatch [:wave/cancelled {:plan-id plan-id
+                                     :wave-id wave-id
+                                     :reason reason
+                                     :message message}])
+
+      ;; Cleanup transient state
+      (logic/reset-all-transient!)
+
+      {:cancelled true
+       :wave-id wave-id
+       :reason reason})))
 
 ;;; =============================================================================
 ;;; Status Queries
@@ -412,15 +559,22 @@
   "Handle dispatch_drone_wave MCP tool call.
 
    Parameters:
-     tasks   - Array of {:file :task} objects (required)
-     preset  - Drone preset (default: \"drone-worker\")
-     trace   - Emit progress events (default: true)
-     cwd     - Working directory override for path resolution (optional)
+     tasks          - Array of {:file :task} objects (required)
+     preset         - Drone preset (default: \"drone-worker\")
+     trace          - Emit progress events (default: true)
+     cwd            - Working directory override for path resolution (optional)
+     ensure_dirs    - Create parent directories before dispatch (default: true)
+     validate_paths - Fail fast if paths are invalid (default: true)
+
+   Pre-flight behavior (P0/P2):
+     1. If ensure_dirs is true, creates parent directories for all task files
+     2. If validate_paths is true, validates all file paths have accessible parents
+     3. Then proceeds with plan creation and wave execution
 
    Returns:
      JSON with wave-id for immediate response.
      Actual execution happens asynchronously."
-  [{:keys [tasks preset trace cwd]}]
+  [{:keys [tasks preset trace cwd ensure_dirs validate_paths]}]
   (try
     (when (empty? tasks)
       (throw (ex-info "tasks array is required and must not be empty" {})))
@@ -430,15 +584,28 @@
                                    {:file (or (get t "file") (:file t))
                                     :task (or (get t "task") (:task t))})
                                  tasks)
-          plan-id (create-plan! normalized-tasks preset)
-          wave-id (execute-wave! plan-id {:trace (if (nil? trace) true trace)
-                                          :cwd cwd})]
-      {:type "text"
-       :text (json/write-str {:status "wave_started"
-                              :plan_id plan-id
-                              :wave_id wave-id
-                              :item_count (count tasks)
-                              :message "Wave execution started. Monitor via HIVEMIND piggyback or get_wave_status."})})
+          ;; Pre-flight defaults: both true unless explicitly false
+          do-validate (if (false? validate_paths) false true)
+          do-ensure (if (false? ensure_dirs) false true)]
+
+      ;; P0: Create parent directories FIRST (so validation can pass)
+      (when do-ensure
+        (ensure-parent-dirs! normalized-tasks))
+
+      ;; P2: Validate paths AFTER ensure-dirs (fail fast for remaining issues)
+      (when do-validate
+        (validate-task-paths normalized-tasks))
+
+      ;; Proceed with plan and wave execution
+      (let [plan-id (create-plan! normalized-tasks preset)
+            wave-id (execute-wave! plan-id {:trace (if (nil? trace) true trace)
+                                            :cwd cwd})]
+        {:type "text"
+         :text (json/write-str {:status "wave_started"
+                                :plan_id plan-id
+                                :wave_id wave-id
+                                :item_count (count tasks)
+                                :message "Wave execution started. Monitor via HIVEMIND piggyback or get_wave_status."})}))
     (catch Exception e
       (log/error e "dispatch_drone_wave failed")
       {:type "text"
