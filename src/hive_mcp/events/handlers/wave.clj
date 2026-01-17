@@ -14,7 +14,6 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-
 ;; =============================================================================
 ;; Handler: :wave/start
 ;; =============================================================================
@@ -40,6 +39,32 @@
                             :item-count item-count}}
    :log {:level :info
          :message (str "Wave started: " wave-id " with " item-count " items")}})
+
+;; =============================================================================
+;; Handler: :wave/batch-start
+;; =============================================================================
+
+(defn handle-wave-batch-start
+  "Handler for :wave/batch-start events.
+
+   Called when a batch within a wave begins execution.
+   Publishes event to channel for real-time monitoring.
+
+   Expects event data:
+   {:wave-id    \"wave-uuid\"
+    :batch-num  1
+    :item-count 3}
+
+   Produces effects:
+   - :channel-publish - Broadcast wave-batch-start to WebSocket clients
+   - :log             - Log batch start message"
+  [_coeffects [_ {:keys [wave-id batch-num item-count]}]]
+  {:channel-publish {:event :wave-batch-start
+                     :data {:wave-id wave-id
+                            :batch-num batch-num
+                            :item-count item-count}}
+   :log {:level :info
+         :message (str "Wave batch " batch-num " started with " item-count " items")}})
 
 ;; =============================================================================
 ;; Handler: :wave/item-done
@@ -102,6 +127,10 @@
   (ev/reg-event :wave/start
                 [interceptors/debug]
                 handle-wave-start)
+
+  (ev/reg-event :wave/batch-start
+                [interceptors/debug]
+                handle-wave-batch-start)
 
   (ev/reg-event :wave/item-done
                 [interceptors/debug]

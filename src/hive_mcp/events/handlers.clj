@@ -8,6 +8,7 @@
    - handlers.kanban  - Kanban state (:kanban/done, :kanban/sync)
    - handlers.crystal - Wrap/crystallize (:crystal/wrap-request, :crystal/wrap-notify)
    - handlers.wave    - Drone waves (:wave/start, :wave/item-done, :wave/complete)
+   - handlers.drone   - Drone lifecycle (:drone/started, :drone/completed, :drone/failed)
    - handlers.claim   - File claims (:claim/file-released, :claim/notify-waiting)
 
    ## Usage
@@ -32,6 +33,9 @@
    - :wave/start            - Wave execution started
    - :wave/item-done        - Wave item completed/failed
    - :wave/complete         - Wave execution finished
+   - :drone/started         - Drone spawned and began task (CLARITY-T)
+   - :drone/completed       - Drone finished successfully (CLARITY-T)
+   - :drone/failed          - Drone execution failed (CLARITY-T)
    - :claim/file-released   - File claim released, notify waiting lings
    - :claim/notify-waiting  - Send targeted shout to waiting ling
    - :system/error          - Structured error telemetry (Telemetry Phase 1)
@@ -44,6 +48,7 @@
             [hive-mcp.events.handlers.kanban :as kanban]
             [hive-mcp.events.handlers.crystal :as crystal]
             [hive-mcp.events.handlers.wave :as wave]
+            [hive-mcp.events.handlers.drone :as drone]
             [hive-mcp.events.handlers.claim :as claim]
             [hive-mcp.events.handlers.system :as system]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -68,6 +73,7 @@
    - kanban/register-handlers!  - Kanban state
    - crystal/register-handlers! - Wrap/crystallize
    - wave/register-handlers!    - Drone waves
+   - drone/register-handlers!   - Drone lifecycle (CLARITY-T)
    - claim/register-handlers!   - File claims
    - system/register-handlers!  - System telemetry (Phase 1)
 
@@ -81,11 +87,12 @@
     (kanban/register-handlers!)
     (crystal/register-handlers!)
     (wave/register-handlers!)
+    (drone/register-handlers!)
     (claim/register-handlers!)
     (system/register-handlers!)
 
     (reset! *registered true)
-    (println "[hive-events] Handlers registered: :task/complete :task/shout-complete :git/commit-modified :ling/started :ling/completed :ling/ready-for-wrap :session/end :session/wrap :kanban/sync :kanban/done :crystal/wrap-request :crystal/wrap-notify :wave/start :wave/item-done :wave/complete :claim/file-released :claim/notify-waiting :system/error")
+    (println "[hive-events] Handlers registered: :task/complete :task/shout-complete :git/commit-modified :ling/started :ling/completed :ling/ready-for-wrap :session/end :session/wrap :kanban/sync :kanban/done :crystal/wrap-request :crystal/wrap-notify :wave/start :wave/item-done :wave/complete :drone/started :drone/completed :drone/failed :claim/file-released :claim/notify-waiting :system/error")
     true))
 
 (defn reset-registration!

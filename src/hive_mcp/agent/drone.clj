@@ -11,6 +11,7 @@
             [hive-mcp.tools.diff :as diff]
             [hive-mcp.hivemind :as hivemind]
             [hive-mcp.swarm.coordinator :as coordinator]
+            [hive-mcp.events.core :as ev]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.set]
@@ -18,7 +19,6 @@
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
-
 
 ;;; ============================================================
 ;;; Configuration
@@ -169,70 +169,113 @@
         agent-id (str "drone-" (System/currentTimeMillis))
         task-id (str "task-" agent-id)]
 
-    ;; 1. PRE-FLIGHT: Check for file conflicts
+    ;; 1. ATOMIC ACQUIRE LOCKS (Race-Free)
+    ;; CRITICAL: Uses atomic-claim-files! to prevent race condition where
+    ;; two drones could both pass pre-flight check before either claims.
+    ;; This combines check + claim into a single atomic operation.
     (when (seq files)
-      (let [check (coordinator/pre-flight-check {:slave-id agent-id :files files})]
-        (when-not (:approved? check)
-          (log/warn "Drone file conflicts detected:" (:conflicts check))
+      (let [result (coordinator/atomic-claim-files! task-id agent-id files)]
+        (when-not (:acquired? result)
+          (log/warn "Drone file conflicts detected:" (:conflicts result))
+          ;; Emit failure event for conflict (CLARITY-T)
+          (ev/dispatch [:drone/failed {:drone-id agent-id
+                                       :task-id task-id
+                                       :parent-id effective-parent-id
+                                       :error "File conflicts detected - files locked by another drone"
+                                       :error-type :conflict
+                                       :files files}])
           (throw (ex-info "File conflicts detected - files locked by another drone"
-                          {:conflicts (:conflicts check)
+                          {:conflicts (:conflicts result)
                            :drone-id agent-id
-                           :files files})))))
+                           :files files})))
+        (log/info "Drone acquired file locks:" agent-id "(" (:files-claimed result) "files)")))
 
-    ;; 2. ACQUIRE LOCKS
-    (when (seq files)
-      (coordinator/register-task-claims! task-id agent-id files)
-      (log/info "Drone acquired file locks:" agent-id files))
+    ;; Track start time for duration metrics (CLARITY-T)
+    (let [start-time (System/currentTimeMillis)]
+      ;; 2. EMIT STARTED EVENT (CLARITY-T: Telemetry first)
+      (ev/dispatch [:drone/started {:drone-id agent-id
+                                    :task-id task-id
+                                    :parent-id effective-parent-id
+                                    :files files
+                                    :task task}])
 
-    (try
-      (let [augmented-task (augment-task task files cwd)
-            diffs-before (set (keys @diff/pending-diffs))]
+      (try
+        (let [augmented-task (augment-task task files cwd)
+              diffs-before (set (keys @diff/pending-diffs))]
 
-        ;; Shout started to parent ling
-        (when effective-parent-id
-          (hivemind/shout! effective-parent-id :started
-                           {:task (str "Drone: " (subs task 0 (min 80 (count task))))
-                            :message (format "Delegated drone %s working" agent-id)}))
-
-        ;; 3. EXECUTE
-        (let [result (delegate-fn {:backend :openrouter
-                                   :preset preset
-                                   :task augmented-task
-                                   :tools allowed-tools
-                                   :trace trace})
-              diffs-after (set (keys @diff/pending-diffs))
-              new-diff-ids (clojure.set/difference diffs-after diffs-before)
-              diff-results (auto-apply-diffs agent-id new-diff-ids)]
-
-          ;; Shout completion to parent ling
+          ;; Shout started to parent ling
           (when effective-parent-id
+            (hivemind/shout! effective-parent-id :started
+                             {:task (str "Drone: " (subs task 0 (min 80 (count task))))
+                              :message (format "Delegated drone %s working" agent-id)}))
+
+          ;; 3. EXECUTE
+          (let [result (delegate-fn {:backend :openrouter
+                                     :preset preset
+                                     :task augmented-task
+                                     :tools allowed-tools
+                                     :trace trace})
+                diffs-after (set (keys @diff/pending-diffs))
+                new-diff-ids (clojure.set/difference diffs-after diffs-before)
+                diff-results (auto-apply-diffs agent-id new-diff-ids)
+                duration-ms (- (System/currentTimeMillis) start-time)]
+
+            ;; Shout completion to parent ling
+            (when effective-parent-id
+              (if (= :completed (:status result))
+                (hivemind/shout! effective-parent-id :completed
+                                 {:task (str "Drone: " (subs task 0 (min 80 (count task))))
+                                  :message (format "Drone %s completed. Files: %s"
+                                                   agent-id
+                                                   (str/join ", " (or (:applied diff-results) [])))})
+                (hivemind/shout! effective-parent-id :error
+                                 {:task (str "Drone: " (subs task 0 (min 80 (count task))))
+                                  :message (format "Drone %s failed: %s" agent-id (:result result))})))
+
+            ;; 4. EMIT COMPLETION/FAILURE EVENT (CLARITY-T)
             (if (= :completed (:status result))
-              (hivemind/shout! effective-parent-id :completed
-                               {:task (str "Drone: " (subs task 0 (min 80 (count task))))
-                                :message (format "Drone %s completed. Files: %s"
-                                                 agent-id
-                                                 (str/join ", " (or (:applied diff-results) [])))})
-              (hivemind/shout! effective-parent-id :error
-                               {:task (str "Drone: " (subs task 0 (min 80 (count task))))
-                                :message (format "Drone %s failed: %s" agent-id (:result result))})))
+              (ev/dispatch [:drone/completed {:drone-id agent-id
+                                              :task-id task-id
+                                              :parent-id effective-parent-id
+                                              :files-modified (:applied diff-results)
+                                              :files-failed (:failed diff-results)
+                                              :duration-ms duration-ms}])
+              (ev/dispatch [:drone/failed {:drone-id agent-id
+                                           :task-id task-id
+                                           :parent-id effective-parent-id
+                                           :error (str (:result result))
+                                           :error-type :execution
+                                           :files files}]))
 
-          ;; Record result for coordinator review
-          (hivemind/record-ling-result! agent-id
-                                        {:task task
-                                         :files files
-                                         :result result
-                                         :diff-results diff-results
+            ;; Record result for coordinator review
+            (hivemind/record-ling-result! agent-id
+                                          {:task task
+                                           :files files
+                                           :result result
+                                           :diff-results diff-results
+                                           :parent-id effective-parent-id
+                                           :timestamp (System/currentTimeMillis)})
+            (assoc result
+                   :agent-id agent-id
+                   :task-id task-id
+                   :parent-id effective-parent-id
+                   :files-modified (:applied diff-results)
+                   :files-failed (:failed diff-results)
+                   :duration-ms duration-ms)))
+
+        (catch Exception e
+          ;; 5. EMIT FAILURE EVENT ON EXCEPTION (CLARITY-T)
+          (let [duration-ms (- (System/currentTimeMillis) start-time)]
+            (ev/dispatch [:drone/failed {:drone-id agent-id
+                                         :task-id task-id
                                          :parent-id effective-parent-id
-                                         :timestamp (System/currentTimeMillis)})
-          (assoc result
-                 :agent-id agent-id
-                 :task-id task-id
-                 :parent-id effective-parent-id
-                 :files-modified (:applied diff-results)
-                 :files-failed (:failed diff-results))))
+                                         :error (.getMessage e)
+                                         :error-type :exception
+                                         :files files}])
+            (throw e)))
 
-      (finally
-        ;; 4. RELEASE LOCKS (always, even on error)
-        (when (seq files)
-          (coordinator/release-task-claims! task-id)
-          (log/info "Drone released file locks:" agent-id))))))
+        (finally
+          ;; 6. RELEASE LOCKS (always, even on error)
+          (when (seq files)
+            (coordinator/release-task-claims! task-id)
+            (log/info "Drone released file locks:" agent-id)))))))

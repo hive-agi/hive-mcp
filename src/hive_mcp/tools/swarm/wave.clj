@@ -16,14 +16,13 @@
             [hive-mcp.swarm.logic :as logic]
             [hive-mcp.events.core :as ev]
             [hive-mcp.agent :as agent]
-            [clojure.core.async :as async :refer [go go-loop <! >! chan close!]]
+            [clojure.core.async :as async :refer [go go-loop <! >! <!! chan close!]]
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [clojure.data.json :as json]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
-
 
 ;;; =============================================================================
 ;;; Constants
@@ -128,13 +127,13 @@
                    :preset preset
                    :trace true
                    :cwd cwd})]
-      (if (= :success (:status result))
+      (if (= :completed (:status result))
         {:success true
          :item-id id
          :result (:result result)}
         {:success false
          :item-id id
-         :error (or (:error result) "Drone execution failed")}))
+         :error (or (:result result) "Drone execution failed")}))
     (catch Exception e
       (log/error e "Drone task failed for item:" id)
       {:success false
@@ -168,30 +167,43 @@
         ;; Workers: bounded concurrency
         ;; NOTE: Exceptions in go blocks are silently swallowed by core.async.
         ;; We add explicit try/catch to ensure failures are reported.
+        ;; CRITICAL: Also wrap result handling to ensure cleanup even on post-execution errors.
         (dotimes [_ (min concurrency (count batch-items))]
           (go-loop []
             (when-let [{:keys [item preset cwd]} (<! work-ch)]
-              (let [result (try
+              (let [item-id (:change-item/id item)
+                    result (try
                              (execute-drone-task item preset cwd)
                              (catch Exception e
                                (log/error e "Uncaught exception in drone worker")
                                {:success false
-                                :item-id (:change-item/id item)
+                                :item-id item-id
                                 :error (str "Worker exception: " (.getMessage e))}))]
-                (if (:success result)
-                  (do
-                    (ds/update-item-status! (:item-id result) :completed
-                                            {:result (str (:result result))})
-                    (ds/update-wave-counts! wave-id {:completed 1 :active -1}))
-                  (do
-                    (ds/update-item-status! (:item-id result) :failed
-                                            {:result (:error result)})
-                    (ds/update-wave-counts! wave-id {:failed 1 :active -1})))
+                ;; Wrap result handling in try/catch to ensure result always sent to channel
+                ;; CRITICAL: This prevents orphaned state if DataScript ops fail
+                (try
+                  (if (:success result)
+                    (do
+                      (ds/update-item-status! (:item-id result) :completed
+                                              {:result (str (:result result))})
+                      (ds/update-wave-counts! wave-id {:completed 1 :active -1}))
+                    (do
+                      (ds/update-item-status! (:item-id result) :failed
+                                              {:result (:error result)})
+                      (ds/update-wave-counts! wave-id {:failed 1 :active -1})))
 
-                (when trace
-                  (ev/dispatch [:wave/item-done {:item-id (:item-id result)
-                                                 :status (if (:success result) :completed :failed)
-                                                 :wave-id wave-id}]))
+                  (when trace
+                    (ev/dispatch [:wave/item-done {:item-id (:item-id result)
+                                                   :status (if (:success result) :completed :failed)
+                                                   :wave-id wave-id}]))
+                  (catch Exception e
+                    (log/error e "Failed to update item status, marking as failed:" item-id)
+                    ;; Best-effort status update
+                    (try
+                      (ds/update-item-status! item-id :failed
+                                              {:result (str "Post-execution error: " (.getMessage e))})
+                      (ds/update-wave-counts! wave-id {:failed 1 :active -1})
+                      (catch Exception _))))
 
                 (>! inner-result-ch result))
               (recur))))
@@ -215,92 +227,116 @@
      opts        - Map with :concurrency (default 3), :trace (default true), :cwd (optional)
 
    Returns:
-     Wave-id immediately. Wave executes asynchronously.
-     Monitor via events or get-wave-status.
+     Wave-id after execution completes.
 
    Batching behavior:
      - Items editing the same file are placed in separate batches (conflict prevention)
      - Test files wait for their source files (dependency inference)
-     - Batches execute sequentially; items within a batch execute in parallel"
+     - Batches execute sequentially; items within a batch execute in parallel
+
+   CRITICAL FIX: Uses synchronous execution (<!! blocking take) to ensure
+   all batches complete before returning. Previous async (go) implementation
+   returned immediately while execution happened in detached context."
   [plan-id & [{:keys [concurrency trace cwd] :or {concurrency default-concurrency trace true}}]]
   (let [plan (ds/get-plan plan-id)]
     (when-not plan
       (throw (ex-info "Plan not found" {:plan-id plan-id})))
 
-    (let [items (get-pending-items plan-id)
-          preset (:change-plan/preset plan)
-          wave-id (ds/create-wave! plan-id {:concurrency concurrency})]
+    (let [items (get-pending-items plan-id)]
+      ;; PHASE 1: Validation guards (CLARITY-I: Inputs are guarded)
+      (when (empty? items)
+        (throw (ex-info "No pending items for wave execution"
+                        {:plan-id plan-id
+                         :message "Plan has no items with :pending status"})))
 
-      ;; Update plan status
-      (ds/update-plan-status! plan-id :in-progress)
+      (let [preset (:change-plan/preset plan)
+            wave-id (ds/create-wave! plan-id {:concurrency concurrency})]
 
-      ;; 1. REGISTER EDITS in logic db
-      (register-edits! items)
-      (log/info "Registered" (count items) "edits for batch computation")
+        ;; Update plan status
+        (ds/update-plan-status! plan-id :in-progress)
 
-      ;; 2. INFER DEPENDENCIES (test → source)
-      (infer-test-dependencies! items)
+        ;; PHASE 2: REGISTER EDITS in logic db
+        ;; CRITICAL: Reset stale edits before registering new ones
+        (logic/reset-edits!)
+        (register-edits! items)
+        (log/info "Registered" (count items) "edits for batch computation")
 
-      ;; 3. COMPUTE SAFE BATCHES
-      (let [edit-ids (mapv :change-item/id items)
-            batches (logic/compute-batches edit-ids)
-            item-map (into {} (map (juxt :change-item/id identity) items))]
+        ;; PHASE 3: INFER DEPENDENCIES (test → source)
+        (infer-test-dependencies! items)
 
-        (log/info "Computed" (count batches) "batches for" (count items) "items")
+        ;; PHASE 4: COMPUTE SAFE BATCHES
+        (let [edit-ids (mapv :change-item/id items)
+              batches (logic/compute-batches edit-ids)
+              item-map (into {} (map (juxt :change-item/id identity) items))]
 
-        ;; Emit wave start event
-        (when trace
-          (ev/dispatch [:wave/start {:plan-id plan-id
-                                     :wave-id wave-id
-                                     :item-count (count items)
-                                     :batch-count (count batches)}]))
+          ;; Validation: Batches should not be empty if items exist
+          (when (empty? batches)
+            (log/warn "Empty batches computed for" (count items) "items - forcing single batch"))
+            ;; Fall back to treating all items as single batch
 
-        ;; 4. EXECUTE BATCH-BY-BATCH (sequential batches, parallel within)
-        (go
-          (loop [remaining-batches batches
-                 total-completed 0
-                 total-failed 0
-                 batch-num 1]
-            (if (empty? remaining-batches)
-              ;; All batches done
-              (let [final-status (if (pos? total-failed) :partial-failure :completed)]
-                ;; 5. CLEANUP: Reset edits from logic db
-                (logic/reset-edits!)
-                (log/info "Wave complete. Batches:" (count batches)
-                          "Completed:" total-completed "Failed:" total-failed)
+          (let [effective-batches (if (empty? batches) [edit-ids] batches)]
+            (log/info "Computed" (count effective-batches) "batches for" (count items) "items")
 
-                (ds/complete-wave! wave-id final-status)
-                (ds/update-plan-status! plan-id (if (pos? total-failed) :failed :completed))
+            ;; Emit wave start event
+            (when trace
+              (ev/dispatch [:wave/start {:plan-id plan-id
+                                         :wave-id wave-id
+                                         :item-count (count items)
+                                         :batch-count (count effective-batches)}]))
 
-                (when trace
-                  (ev/dispatch [:wave/complete {:plan-id plan-id
-                                                :wave-id wave-id
-                                                :results {:completed total-completed
-                                                          :failed total-failed
-                                                          :batches (count batches)}}])))
+            ;; PHASE 5: Initialize active-count for the first batch
+            ;; (items get tracked as they're dispatched within execute-batch!)
 
-              ;; Execute current batch
-              (let [batch (first remaining-batches)
-                    batch-items (mapv #(get item-map %) batch)]
+            ;; PHASE 6: EXECUTE BATCH-BY-BATCH (SYNCHRONOUS!)
+            ;; CRITICAL: Use <!! to block until batch completes
+            ;; This is the fix for fire-and-forget async bug
+            (loop [remaining-batches effective-batches
+                   total-completed 0
+                   total-failed 0
+                   batch-num 1]
+              (if (empty? remaining-batches)
+                ;; All batches done
+                (let [final-status (if (pos? total-failed) :partial-failure :completed)]
+                  ;; CLEANUP: Reset all transient data (edits + task-files)
+                  ;; CRITICAL: Use reset-all-transient! to prevent memory leak in task-files
+                  (logic/reset-all-transient!)
+                  (log/info "Wave complete. Batches:" (count effective-batches)
+                            "Completed:" total-completed "Failed:" total-failed)
 
-                (log/info "Executing batch" batch-num "of" (count batches)
-                          "with" (count batch-items) "items")
+                  (ds/complete-wave! wave-id final-status)
+                  (ds/update-plan-status! plan-id (if (pos? total-failed) :failed :completed))
 
-                (when trace
-                  (ev/dispatch [:wave/batch-start {:wave-id wave-id
-                                                   :batch-num batch-num
-                                                   :item-count (count batch-items)}]))
+                  (when trace
+                    (ev/dispatch [:wave/complete {:plan-id plan-id
+                                                  :wave-id wave-id
+                                                  :results {:completed total-completed
+                                                            :failed total-failed
+                                                            :batches (count effective-batches)}}]))
+                  ;; Return wave-id after completion
+                  wave-id)
 
-                ;; Execute batch and await completion
-                (let [{:keys [completed failed]} (<! (execute-batch! batch-items preset cwd
-                                                                     concurrency wave-id trace))]
-                  (recur (rest remaining-batches)
-                         (+ total-completed completed)
-                         (+ total-failed failed)
-                         (inc batch-num))))))))
+                ;; Execute current batch
+                (let [batch (first remaining-batches)
+                      batch-items (mapv #(get item-map %) batch)]
 
-      ;; Return wave-id immediately
-      wave-id)))
+                  (log/info "Executing batch" batch-num "of" (count effective-batches)
+                            "with" (count batch-items) "items")
+
+                  ;; Initialize active count for this batch BEFORE spawning
+                  (ds/update-wave-counts! wave-id {:active (count batch-items)})
+
+                  (when trace
+                    (ev/dispatch [:wave/batch-start {:wave-id wave-id
+                                                     :batch-num batch-num
+                                                     :item-count (count batch-items)}]))
+
+                  ;; Execute batch and BLOCK until completion (<!! instead of <!)
+                  (let [{:keys [completed failed]} (<!! (execute-batch! batch-items preset cwd
+                                                                        concurrency wave-id trace))]
+                    (recur (rest remaining-batches)
+                           (+ total-completed completed)
+                           (+ total-failed failed)
+                           (inc batch-num))))))))))))
 
 ;;; =============================================================================
 ;;; Status Queries

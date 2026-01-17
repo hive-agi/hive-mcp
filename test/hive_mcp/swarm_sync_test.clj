@@ -9,6 +9,8 @@
             [hive-mcp.channel :as ch]
             [clojure.core.async :as async :refer [<!! timeout alts!!]]))
 
+;;; Conflict test - Drone B
+
 ;; =============================================================================
 ;; Test Fixtures
 ;; =============================================================================

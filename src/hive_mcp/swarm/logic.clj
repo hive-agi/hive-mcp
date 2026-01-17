@@ -17,7 +17,6 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-
 ;; =============================================================================
 ;; Database Relations (pldb/db-rel)
 ;; =============================================================================
@@ -65,6 +64,14 @@
 
 (defonce ^:private logic-db
   (atom (pldb/db)))
+
+(defn get-logic-db-atom
+  "Get the logic-db atom for external locking.
+
+   Used by coordinator.clj for atomic check+claim operations.
+   DO NOT use for direct manipulation - use the provided mutation functions instead."
+  []
+  logic-db)
 
 (defn reset-db!
   "Reset the logic database to empty state."
@@ -236,6 +243,31 @@
     (doseq [{:keys [a b]} all-deps]
       (swap! logic-db pldb/db-retraction edit-depends a b))
     (log/debug "Reset edits:" (count all-edits) "edits," (count all-deps) "dependencies")))
+
+(defn reset-task-files!
+  "Clear all task-file associations.
+
+   CRITICAL: This must be called after wave/task completion to prevent memory leak.
+   The task-files relation grows unbounded if not cleaned up, as release-claims-for-task!
+   only releases claims but not the task-files associations themselves."
+  []
+  (let [all-task-files (with-db
+                         (l/run* [q]
+                                 (l/fresh [tid fpath]
+                                          (task-files tid fpath)
+                                          (l/== q {:task-id tid :file fpath}))))]
+    (doseq [{:keys [task-id file]} all-task-files]
+      (swap! logic-db pldb/db-retraction task-files task-id file))
+    (log/debug "Reset task-files:" (count all-task-files) "associations cleared")))
+
+(defn reset-all-transient!
+  "Reset all transient data (edits + task-files).
+
+   Call this at wave completion to ensure clean state for next wave.
+   Combines reset-edits! and reset-task-files! into a single cleanup operation."
+  []
+  (reset-edits!)
+  (reset-task-files!))
 
 ;; =============================================================================
 ;; Core Predicates (Logic Goals)
