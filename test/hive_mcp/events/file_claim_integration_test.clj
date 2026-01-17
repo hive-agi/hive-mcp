@@ -39,8 +39,8 @@
   (effects/reset-registration!)
   (handlers/reset-registration!)
 
-  ;; Clear hivemind state
-  (reset! hivemind/agent-registry {})
+  ;; Clear hivemind state (guarded - safe during coordinator)
+  (hivemind/clear-agent-registry!)
 
   ;; Initialize full stack
   (ev/init!)
@@ -49,10 +49,10 @@
 
   (f)
 
-  ;; Cleanup
+  ;; Cleanup (all guarded - safe during coordinator)
   (ev/reset-all!)
   (ds/reset-conn!)
-  (reset! hivemind/agent-registry {}))
+  (hivemind/clear-agent-registry!))
 
 (use-fixtures :each integration-fixture)
 
