@@ -63,6 +63,13 @@
    :dispatch - Task dispatch in progress"
   #{:wrap :commit :dispatch})
 
+(def olympus-layout-modes
+  "Valid Olympus layout mode values.
+   :auto    - Automatically calculate optimal layout
+   :manual  - User-controlled window positions
+   :stacked - Overlapping/tabbed windows"
+  #{:auto :manual :stacked})
+
 ;;; =============================================================================
 ;;; Schema Definition
 ;;; =============================================================================
@@ -168,6 +175,15 @@
 
    :claim/created-at
    {:db/doc "Timestamp when claim was created"}
+
+   :claim/expires-at
+   {:db/doc "Timestamp when claim should auto-expire (TTL, stored as epoch millis)"}
+
+   :claim/heartbeat-at
+   {:db/doc "Last heartbeat timestamp for liveness tracking"}
+
+   :claim/wave-id
+   {:db/doc "Wave ID that created this claim (for wave-scoped cleanup)"}
 
    ;;; =========================================================================
    ;;; Wrap Queue Entity (Crystal Convergence)
@@ -368,4 +384,26 @@
    {:db/doc "When the event occurred"}
 
    :health-event/recoverable?
-   {:db/doc "Whether the error is recoverable"}})
+   {:db/doc "Whether the error is recoverable"}
+
+   ;;; =========================================================================
+   ;;; Olympus Entity (Grid View State)
+   ;;; =========================================================================
+
+   :olympus/id
+   {:db/doc "Singleton identifier for Olympus state (always 'olympus')"
+    :db/unique :db.unique/identity}
+
+   :olympus/active-tab
+   {:db/doc "Currently active tab index (0-based) for tabbed layouts"}
+
+   :olympus/layout-mode
+   {:db/doc "Layout mode: :auto (optimal), :manual (user-positioned), :stacked (overlapping)"}
+
+   :olympus/focused-ling
+   {:db/doc "Currently focused/maximized ling ID, or nil for grid view"
+    :db/valueType :db.type/ref
+    :db/cardinality :db.cardinality/one}
+
+   :olympus/ling-positions
+   {:db/doc "Map of {ling-id {:tab T :row R :col C}} positions (stored as EDN string)"}})

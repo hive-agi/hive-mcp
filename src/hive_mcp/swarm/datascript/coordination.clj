@@ -18,7 +18,6 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-
 ;;; =============================================================================
 ;;; Wrap Queue Operations (Crystal Convergence)
 ;;; =============================================================================
@@ -498,6 +497,38 @@
         (log/warn "Marking coordinator stale:" coordinator-id)
         (d/transact! c [{:db/id eid :coordinator/status :stale}]))
       (map second stale-eids))))
+
+(defn cleanup-stale-claims!
+  "Remove claims older than threshold with no heartbeat.
+   Call at wave start and completion.
+
+   Arguments:
+     threshold-ms - Age threshold in milliseconds (default: 5 minutes)
+
+   Returns:
+     Count of claims removed
+
+   CLARITY-Y: Graceful degradation - removes stale claims to unblock waves"
+  [& [{:keys [threshold-ms] :or {threshold-ms (* 5 60 1000)}}]]
+  (let [c (conn/ensure-conn)
+        db @c
+        cutoff-ms (- (System/currentTimeMillis) threshold-ms)
+        ;; Find claims with created-at older than cutoff
+        stale-claims (d/q '[:find ?e ?file ?created
+                            :where
+                            [?e :claim/file ?file]
+                            [?e :claim/created-at ?created]]
+                          db)
+        ;; Filter in Clojure (DataScript date comparison)
+        stale-eids (->> stale-claims
+                        (filter (fn [[_ _ created]]
+                                  (< (.getTime created) cutoff-ms)))
+                        (map first))]
+    (when (seq stale-eids)
+      (log/warn "Cleaning up" (count stale-eids) "stale claims")
+      (doseq [eid stale-eids]
+        (d/transact! c [[:db/retractEntity eid]])))
+    (count stale-eids)))
 
 (defn remove-coordinator!
   "Remove a coordinator entity.

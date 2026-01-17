@@ -175,20 +175,25 @@
   (swap! logic-db pldb/db-fact task-files task-id file-path))
 
 (defn release-claims-for-task!
-  "Release all file claims associated with a task."
+  "Release all file claims associated with a task.
+
+   Gets slave-id from claims relation directly, not from task relation.
+   This is necessary because atomic-claim-files! populates task-files and claims
+   but NOT the task relation."
   [task-id]
   (let [files (with-db
                 (l/run* [f]
                         (task-files task-id f)))
-        task-info (first (with-db
-                           (l/run 1 [q]
-                                  (l/fresh [slave status]
-                                           (task task-id slave status)
-                                           (l/== q {:slave slave})))))]
-    (when task-info
-      (doseq [f files]
-        (remove-claim! f (:slave task-info))))
-    (log/debug "Released task claims for:" task-id)))
+        released-count (atom 0)]
+    ;; For each file, find and remove its claim from claims relation directly
+    (doseq [f files]
+      (let [slave-id (first (with-db
+                              (l/run 1 [s]
+                                     (claims f s))))]
+        (when slave-id
+          (remove-claim! f slave-id)
+          (swap! released-count inc))))
+    (log/debug "Released" @released-count "claims for task:" task-id)))
 
 (defn add-dependency!
   "Add a task dependency: task-id depends on dep-task-id."
