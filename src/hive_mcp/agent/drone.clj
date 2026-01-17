@@ -21,6 +21,112 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 ;;; ============================================================
+;;; Error Classification (CLARITY-T: Structured nREPL error telemetry)
+;;; ============================================================
+
+(defn- get-root-cause
+  "Extract root cause from nested exceptions.
+   Checks both Java .getCause() and ex-data :cause key."
+  [ex]
+  (loop [e ex]
+    (let [;; Check Java cause first
+          java-cause (when (instance? Throwable e) (.getCause e))
+          ;; Fall back to ex-data :cause
+          ex-data-cause (when (instance? clojure.lang.IExceptionInfo e)
+                          (:cause (ex-data e)))
+          cause (or java-cause ex-data-cause)]
+      (if cause
+        (recur cause)
+        e))))
+
+(defn- exception-type-name
+  "Get the simple class name of an exception."
+  [ex]
+  (when ex
+    (.getSimpleName (class ex))))
+
+(defn classify-nrepl-error
+  "Classify an exception into structured error categories.
+
+   Returns one of:
+   - :nrepl-connection - Connection failures (refused, not connected)
+   - :nrepl-timeout    - Timeouts (socket timeout, evaluation timeout)
+   - :nrepl-eval-error - Evaluation errors (syntax, runtime, compiler)
+   - :validation       - Input validation errors
+   - :conflict         - File conflict errors
+   - :execution        - General execution errors
+   - :exception        - Unknown/fallback category
+
+   Used by Prometheus drones_failed_total metric with error-type label."
+  [ex]
+  (let [ex-data-map (ex-data ex)
+        message (or (ex-message ex) "")
+        message-lower (str/lower-case message)
+        root-cause (get-root-cause ex)
+        root-type (exception-type-name root-cause)]
+    (cond
+      ;; Check ex-data for explicit type
+      (= :validation (:type ex-data-map))
+      :validation
+
+      (= :conflict (:type ex-data-map))
+      :conflict
+
+      ;; Connection errors
+      (or (= "ConnectException" root-type)
+          (str/includes? message-lower "connection refused")
+          (str/includes? message-lower "cider not connected")
+          (str/includes? message-lower "no nrepl connection")
+          (str/includes? message-lower "failed to connect"))
+      :nrepl-connection
+
+      ;; Timeout errors
+      (or (= "SocketTimeoutException" root-type)
+          (= "TimeoutException" root-type)
+          (str/includes? message-lower "timed out")
+          (str/includes? message-lower "timeout"))
+      :nrepl-timeout
+
+      ;; Evaluation/compilation errors
+      (or (str/includes? message-lower "compilerexception")
+          (str/includes? message-lower "syntax error")
+          (str/includes? message-lower "classnotfoundexception")
+          (str/includes? message-lower "nullpointerexception")
+          (str/includes? message-lower "arithmeticexception")
+          (str/includes? message-lower "unable to resolve symbol"))
+      :nrepl-eval-error
+
+      ;; Fallback
+      :else
+      :exception)))
+
+(defn structure-error
+  "Wrap an exception with structured error data for telemetry.
+
+   Returns a map with:
+   - :error-type  - Classified error category (keyword)
+   - :message     - Human-readable error message
+   - :stacktrace  - Stack trace as string (truncated to 2000 chars)
+   - :ex-data     - Original ex-data from the exception (if any)
+
+   Used for Prometheus metrics and debugging."
+  [ex]
+  (let [error-type (classify-nrepl-error ex)
+        message (or (ex-message ex) (str ex))
+        stacktrace (when ex
+                     (let [sw (java.io.StringWriter.)
+                           pw (java.io.PrintWriter. sw)]
+                       (.printStackTrace ex pw)
+                       (let [trace (str sw)]
+                         ;; Truncate to avoid metric cardinality explosion
+                         (subs trace 0 (min 2000 (count trace))))))
+        ex-data-map (ex-data ex)]
+    {:error-type error-type
+     :message message
+     :stacktrace stacktrace
+     :ex-data ex-data-map}))
+
+;;; ============================================================
 ;;; Configuration
 ;;; ============================================================
 
@@ -112,8 +218,19 @@
 ;;; Diff Management
 ;;; ============================================================
 
+;; LOGGING STRATEGY (CLARITY-T):
+;; This module uses two complementary logging approaches:
+;; 1. Direct log/info/warn for operational details (lock acquisition, diff application)
+;; 2. Events (:drone/*) for lifecycle telemetry (started, completed, failed)
+;; These are NOT redundant - operational logs aid debugging while events provide
+;; structured telemetry for monitoring dashboards and swarm coordination.
+
 (defn- auto-apply-diffs
-  "Auto-apply diffs proposed during drone execution."
+  "Auto-apply diffs proposed during drone execution.
+
+   Returns map with :applied [files] and :failed [{:file :error}].
+
+   CLARITY-T: Logs operational details directly for debugging."
   [drone-id new-diff-ids]
   (when (seq new-diff-ids)
     (let [results (for [diff-id new-diff-ids]
@@ -265,12 +382,19 @@
 
         (catch Exception e
           ;; 5. EMIT FAILURE EVENT ON EXCEPTION (CLARITY-T)
-          (let [duration-ms (- (System/currentTimeMillis) start-time)]
+          ;; Use structured error classification for proper Prometheus labeling
+          (let [duration-ms (- (System/currentTimeMillis) start-time)
+                structured (structure-error e)]
+            (log/warn "Drone execution failed"
+                      {:drone-id agent-id
+                       :error-type (:error-type structured)
+                       :message (:message structured)})
             (ev/dispatch [:drone/failed {:drone-id agent-id
                                          :task-id task-id
                                          :parent-id effective-parent-id
-                                         :error (.getMessage e)
-                                         :error-type :exception
+                                         :error (:message structured)
+                                         :error-type (:error-type structured)
+                                         :stacktrace (:stacktrace structured)
                                          :files files}])
             (throw e)))
 
