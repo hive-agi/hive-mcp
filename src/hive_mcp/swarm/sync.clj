@@ -36,7 +36,6 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-
 ;; =============================================================================
 ;; State
 ;; =============================================================================
@@ -134,16 +133,21 @@
       (log/debug "Sync: removed slave" slave-id))))
 
 (defn- handle-task-dispatched
-  "Handle task dispatch event. Event: {:task-id :slave-id :files}"
+  "Handle task dispatch event. Event: {:task-id :slave-id :files}
+
+   ADR-002 FIX: Updates slave status to :working when task is dispatched.
+   This ensures swarm_status accurately reflects ling activity."
   [event]
   (let [task-id (get-field event :task-id)
         slave-id (get-field event :slave-id)
         files (get-field event :files [])]
     (when (and task-id slave-id)
       (ds/add-task! task-id slave-id {:status :dispatched :files files})
+      ;; ADR-002 FIX: Set slave status to :working on dispatch
+      (ds/update-slave! slave-id {:slave/status :working})
       (doseq [f files]
         (ds/claim-file! f slave-id task-id))
-      (log/debug "Sync: registered task" task-id "with" (count files) "files"))))
+      (log/debug "Sync: registered task" task-id "with" (count files) "files, slave now :working"))))
 
 (defn- handle-task-completed
   "Handle task completion event. Event: {:task-id :slave-id}
