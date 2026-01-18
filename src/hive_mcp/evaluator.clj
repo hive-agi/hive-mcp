@@ -265,27 +265,30 @@
          :error (format "nREPL error on %s:%d - %s" host port (.getMessage e))})))
 
   (connected? [_this]
-    (try
-      (let [socket (doto (Socket.)
-                     (.connect (InetSocketAddress. host (int port)) 500)
-                     (.setSoTimeout 500))
-            out (BufferedOutputStream. (.getOutputStream socket))
-            in (PushbackInputStream. (.getInputStream socket))
-            msg-id (next-msg-id)]
+    ;; Use evaluator's timeout-ms for connect/read, with sensible minimum of 500ms
+    ;; This aligns health check behavior with actual eval-code behavior
+    (let [connect-timeout (max 500 (min timeout-ms 5000))]  ; Cap at 5s for health checks
+      (try
+        (let [socket (doto (Socket.)
+                       (.connect (InetSocketAddress. host (int port)) connect-timeout)
+                       (.setSoTimeout connect-timeout))
+              out (BufferedOutputStream. (.getOutputStream socket))
+              in (PushbackInputStream. (.getInputStream socket))
+              msg-id (next-msg-id)]
 
-        ;; Try describe op to check connection
-        (write-nrepl-msg out {"op" "describe" "id" msg-id})
+          ;; Try describe op to check connection
+          (write-nrepl-msg out {"op" "describe" "id" msg-id})
 
-        (let [msg-stream (message-seq in)
-              decoded (decode-messages msg-stream)
-              filtered (filter #(= (:id %) msg-id) decoded)
-              responses (doall (take 5 filtered))]
-          (.close socket)
-          (boolean (seq responses))))
+          (let [msg-stream (message-seq in)
+                decoded (decode-messages msg-stream)
+                filtered (filter #(= (:id %) msg-id) decoded)
+                responses (doall (take 5 filtered))]
+            (.close socket)
+            (boolean (seq responses))))
 
-      (catch Exception e
-        (log/debug "DirectNreplEvaluator: not connected" (.getMessage e))
-        false)))
+        (catch Exception e
+          (log/debug "DirectNreplEvaluator: not connected" (.getMessage e))
+          false))))
 
   (get-status [this]
     {:connected (connected? this)

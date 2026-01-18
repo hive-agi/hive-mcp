@@ -16,6 +16,7 @@
    [hive-mcp.tools.projectile :as projectile]
    [hive-mcp.tools.kanban :as kanban]
    [hive-mcp.tools.swarm :as swarm]
+   [hive-mcp.tools.swarm.claim :as claim]
    [hive-mcp.tools.org :as org]
    [hive-mcp.tools.prompt :as prompt]
    [hive-mcp.tools.presets :as presets-tools]
@@ -68,6 +69,7 @@
                projectile/tools
                ;; kanban/tools removed - now conditional on Chroma availability
                swarm/tools
+               claim/tools  ; File claim management (claim_list, claim_clear)
                prompt/tools
                presets-tools/tools
                diff/tools
@@ -135,6 +137,7 @@
                projectile/tools
                kanban/tools
                swarm/tools
+               claim/tools  ; File claim management (claim_list, claim_clear)
                org/tools
                prompt/tools
                presets-tools/tools

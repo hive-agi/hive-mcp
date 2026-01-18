@@ -1,0 +1,152 @@
+(ns hive-mcp.tools.swarm.claim
+  "File claim management MCP tools.
+
+   Provides visibility and manual control over file claims:
+   - claim_list: Show all active claims with staleness warnings
+   - claim_clear: Release a claim by file path
+
+   SOLID: SRP - File claim tools only
+   CLARITY: I - Inputs validated at boundary, Y - Safe failure for missing claims"
+  (:require [hive-mcp.swarm.logic :as logic]
+            [hive-mcp.events.core :as events]
+            [clojure.data.json :as json]
+            [taoensso.timbre :as log]))
+;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
+;;
+;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+;; =============================================================================
+;; Claim Timestamps (for staleness detection)
+;; =============================================================================
+;; The core.logic pldb doesn't store timestamps, so we track them separately.
+;; This atom maps file-path -> timestamp-ms when claim was registered.
+
+(defonce ^:private claim-timestamps
+  (atom {}))
+
+(defn record-claim-timestamp!
+  "Record when a claim was made. Called from coordinator when registering claims."
+  [file-path]
+  (swap! claim-timestamps assoc file-path (System/currentTimeMillis)))
+
+(defn remove-claim-timestamp!
+  "Remove timestamp record when claim is released."
+  [file-path]
+  (swap! claim-timestamps dissoc file-path))
+
+(defn get-claim-timestamp
+  "Get timestamp for a claim, or nil if not tracked."
+  [file-path]
+  (get @claim-timestamps file-path))
+
+(defn clear-all-timestamps!
+  "Clear all timestamp records. Call when resetting claims."
+  []
+  (reset! claim-timestamps {}))
+
+;; =============================================================================
+;; Constants
+;; =============================================================================
+
+(def ^:private stale-threshold-ms
+  "Claims older than 10 minutes are considered stale (600,000 ms)."
+  (* 10 60 1000))
+
+;; =============================================================================
+;; Handlers
+;; =============================================================================
+
+(defn- format-claim
+  "Format a claim with timestamp and staleness info."
+  [{:keys [file slave-id]} now]
+  (let [timestamp (get-claim-timestamp file)
+        age-ms (when timestamp (- now timestamp))
+        age-min (when age-ms (/ age-ms 60000.0))
+        stale? (and age-ms (> age-ms stale-threshold-ms))]
+    (cond-> {:file file
+             :owner slave-id}
+      timestamp (assoc :claimed-at timestamp
+                       :age-minutes (when age-min (Math/round ^double age-min)))
+      stale? (assoc :stale true
+                    :warning (str "Claim is " (Math/round ^double age-min) " minutes old (>10 min)")))))
+
+(defn handle-claim-list
+  "Handler for claim_list tool.
+   Lists all active file claims with timestamps and staleness warnings."
+  [_params]
+  (let [claims (logic/get-all-claims)
+        now (System/currentTimeMillis)
+        formatted (mapv #(format-claim % now) claims)
+        stale-count (count (filter :stale formatted))]
+    (log/info "claim_list: " (count claims) " claims, " stale-count " stale")
+    {:type "text"
+     :text (json/write-str
+            {:claims formatted
+             :total (count claims)
+             :stale-count stale-count
+             :stale-threshold-minutes 10})}))
+
+(defn handle-claim-clear
+  "Handler for claim_clear tool.
+   Releases a claim by file path."
+  [{:keys [file_path force]}]
+  (if (empty? file_path)
+    {:type "text"
+     :text (json/write-str {:error "file_path is required"})}
+    (let [claim (logic/get-claim-for-file file_path)]
+      (if claim
+        (let [timestamp (get-claim-timestamp file_path)
+              now (System/currentTimeMillis)
+              age-ms (when timestamp (- now timestamp))
+              age-min (when age-ms (/ age-ms 60000.0))
+              stale? (and age-ms (> age-ms stale-threshold-ms))]
+          ;; Require force flag if claim is not stale (safety measure)
+          (if (or force stale?)
+            (do
+              (logic/release-claim-for-file! file_path)
+              (remove-claim-timestamp! file_path)
+              ;; Emit event for claim release (enables queue processing)
+              (events/dispatch :claim/file-released {:file file_path
+                                                     :released-by "manual-clear"})
+              (log/info "claim_clear: Released claim for" file_path "from" (:slave-id claim))
+              {:type "text"
+               :text (json/write-str
+                      {:success true
+                       :released {:file file_path
+                                  :owner (:slave-id claim)
+                                  :was-stale stale?
+                                  :age-minutes (when age-min (Math/round ^double age-min))}})})
+            {:type "text"
+             :text (json/write-str
+                    {:error "Claim is not stale. Use force=true to override."
+                     :claim {:file file_path
+                             :owner (:slave-id claim)
+                             :age-minutes (when age-min (Math/round ^double age-min))}
+                     :hint "Active claims may be in use. Only force-clear if you're sure the owner is stuck."})}))
+        {:type "text"
+         :text (json/write-str
+                {:success false
+                 :message (str "No claim exists for file: " file_path)})}))))
+
+;; =============================================================================
+;; Tool Definitions
+;; =============================================================================
+
+(def tools
+  "Claim management MCP tool definitions."
+  [{:name "claim_list"
+    :description "List all active file claims with owner, timestamp, and staleness warnings. Claims older than 10 minutes are marked as stale. Use this to diagnose blocked drones."
+    :inputSchema {:type "object"
+                  :properties {}
+                  :required []}
+    :handler handle-claim-list}
+
+   {:name "claim_clear"
+    :description "Release a file claim by path. Requires force=true for non-stale claims (safety). Use when a ling/drone is stuck and holding claims."
+    :inputSchema {:type "object"
+                  :properties {"file_path" {:type "string"
+                                            :description "Absolute or relative file path to release"}
+                               "force" {:type "boolean"
+                                        :description "Force release even if claim is not stale (default: false)"}}
+                  :required ["file_path"]}
+    :handler handle-claim-clear}])

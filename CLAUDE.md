@@ -146,6 +146,99 @@ M-x hive-mcp-swarm-status
 - Java 17+
 - Optional: Ollama (semantic search), vterm/eat (terminal backends)
 
+## Core.Logic vs DataScript
+
+The swarm system uses **two** in-memory databases for different purposes:
+
+### DataScript (`src/hive_mcp/swarm/datascript/`)
+
+**Purpose:** Entity persistence and CRUD operations (Datomic-style)
+
+```clojure
+;; Store/query entities
+(ds/add-slave! "swarm-worker-123" {:status :idle :name "worker"})
+(ds/get-slave "swarm-worker-123")
+(ds/get-all-slaves)
+```
+
+**Entities managed:**
+- `Slave` - Worker agents with status, name, depth, parent
+- `Task` - Work items with status, files, slave assignment
+- `Claim` - File ownership (duplicated in core.logic for different queries)
+- `Coordinator` - Session tracking with heartbeats
+- `Wrap` - Session crystallization queue
+- `Plan/Wave` - Batch execution state
+
+**When to use:** Need to store, update, or query entity attributes.
+
+### Core.Logic (`src/hive_mcp/swarm/logic.clj`)
+
+**Purpose:** Declarative constraint queries (Prolog-style)
+
+```clojure
+;; Constraint queries
+(logic/check-file-conflicts "slave-a" ["/src/core.clj"])  ; Who else owns these?
+(logic/check-would-deadlock "task-1" "task-2")            ; Would this create a cycle?
+(logic/compute-batches ["edit-1" "edit-2" "edit-3"])      ; Safe parallel groups
+```
+
+**Relations (pldb/db-rel):**
+- `claims` - File ownership for conflict detection
+- `depends-on` - Task dependency graph
+- `task-files` - Files associated with tasks
+- `edit` / `edit-depends` - Batch computation for drone waves
+
+**Key predicates:**
+- `file-conflicto` - Succeeds if file is claimed by DIFFERENT slave
+- `reachable-fromo` - Transitive closure (deadlock detection)
+- `would-deadlocko` - Cycle detection before adding dependency
+
+**When to use:** Need transitive queries, negation-as-failure, or constraint checking.
+
+### Why Both?
+
+| Query Type | DataScript | Core.Logic |
+|------------|------------|------------|
+| "Get slave X's status" | ✅ Simple pull | ❌ Overkill |
+| "List all slaves" | ✅ Simple query | ❌ Overkill |
+| "Is file claimed by OTHER slave?" | ❌ Awkward | ✅ Natural negation |
+| "Would adding dep create cycle?" | ❌ Requires recursion | ✅ Transitive closure |
+| "Group edits into safe batches" | ❌ Complex imperative | ✅ Logical grouping |
+
+### Querying/Clearing Claims
+
+```clojure
+;; From REPL or MCP tools
+(require '[hive-mcp.swarm.logic :as logic])
+
+;; View all claims
+(logic/get-all-claims)
+;; => [{:file "/src/core.clj" :slave-id "swarm-worker-123"} ...]
+
+;; Check for conflicts before dispatch
+(logic/check-file-conflicts "new-slave" ["/src/core.clj"])
+;; => [{:file "/src/core.clj" :held-by "swarm-worker-123"}]
+
+;; Clear all claims (use with caution!)
+(logic/reset-db!)
+
+;; Release claims for completed task
+(logic/release-claims-for-task! "task-123")
+```
+
+### File Claiming Flow
+
+```
+1. swarm_dispatch(slave, files: ["/src/foo.clj"])
+2. coordinator/pre-flight-check calls logic/check-file-conflicts
+3. If clear: coordinator/atomic-claim-files! (locks logic-db for race safety)
+4. Task executes...
+5. On completion: logic/release-claims-for-task!
+6. coordinator/process-queue! re-checks waiting tasks
+```
+
+**IMPORTANT:** Claims live in `logic.clj`, NOT DataScript. If lings see "file conflict" errors, the claims are in the core.logic pldb, not the DataScript entities.
+
 ## Hivemind Operations
 
 ### Token-Tiered Hierarchy
