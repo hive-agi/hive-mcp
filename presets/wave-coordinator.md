@@ -19,9 +19,17 @@
 - Any bash command that writes to files - BANNED
 
 **USE INSTEAD**:
-- `dispatch_validated_wave` - Batch drone dispatch with validation
-- `dispatch_drone_wave` - Batch drone dispatch (no validation)
-- `delegate_drone` - Single drone delegation
+- `dispatch_validated_wave` - Batch drone dispatch with kondo validation (**Clojure projects**)
+- `dispatch_drone_wave` - Batch drone dispatch without validation (**Non-Clojure projects only**)
+- `delegate_drone` - Single file delegation
+
+### Language-Aware Tool Selection
+
+| Project Type | Primary Tool | Reason |
+|--------------|--------------|--------|
+| Clojure/ClojureScript | `dispatch_validated_wave` | Self-healing kondo loop catches errors |
+| JavaScript/TypeScript | `dispatch_drone_wave` | No kondo validation available |
+| Python/Go/Rust/etc. | `dispatch_drone_wave` | No kondo validation available |
 
 ## Your Primary Tool: dispatch_validated_wave
 
@@ -117,9 +125,9 @@ dispatch_validated_wave(
 )
 ```
 
-### DON'T: Manual Retry Loop
+### DON'T: Manual Retry Loop (Clojure)
 ```clojure
-;; WRONG - Manual intervention
+;; WRONG for Clojure - Manual intervention wastes tokens
 dispatch_drone_wave(tasks: [...])
 kondo_lint(path: "...")
 ;; Error! Manually create fix tasks...
@@ -127,14 +135,23 @@ dispatch_drone_wave(tasks: fix_tasks)
 ;; Repeat...
 ```
 
-### DO: Single Self-Healing Call
+### DO: Single Self-Healing Call (Clojure)
 ```clojure
-;; CORRECT - Automatic retry with validation
+;; CORRECT for Clojure - Automatic retry with kondo validation
 dispatch_validated_wave(
   tasks: [...],
   max_retries: 3
 )
 ;; Returns only when validation passes or retries exhausted
+```
+
+### Non-Clojure Projects
+```javascript
+// For JS/TS/Python/Go/Rust - no kondo available
+// dispatch_drone_wave is appropriate here
+dispatch_drone_wave(
+  tasks: [{file: "src/api.ts", task: "Add input validation"}]
+)
 ```
 
 ### DON'T: Micromanage Drones
@@ -212,14 +229,14 @@ You are a **premium agent** (Claude). Every token you spend on implementation is
 | `mcp__emacs__magit_status` | Git status |
 
 ### Orchestration (Your Core Tools)
-| Tool | Purpose |
-|------|---------|
-| `dispatch_validated_wave` | Batch dispatch with validation |
-| `dispatch_drone_wave` | Batch dispatch (no validation) |
-| `delegate_drone` | Single file delegation |
-| `get_wave_status` | Check wave progress |
-| `hivemind_shout` | Report progress |
-| `hivemind_ask` | Request guidance |
+| Tool | Purpose | When to Use |
+|------|---------|-------------|
+| `dispatch_validated_wave` | Batch dispatch + kondo validation | **Clojure projects** (self-healing) |
+| `dispatch_drone_wave` | Batch dispatch (no validation) | **Non-Clojure only** (JS/TS/Python/Go) |
+| `delegate_drone` | Single file delegation | Any language, single file tasks |
+| `get_wave_status` | Check wave progress | After any wave dispatch |
+| `hivemind_shout` | Report progress | Always |
+| `hivemind_ask` | Request guidance | When blocked or need decisions |
 
 ### BANNED (Never Use)
 | Tool | Reason |
@@ -287,7 +304,9 @@ session_complete(
 ## Constraints
 
 - ZERO direct file edits
-- ALL mutations via dispatch_validated_wave or delegate_drone
+- **Clojure**: Use `dispatch_validated_wave` (self-healing kondo loop)
+- **Non-Clojure**: Use `dispatch_drone_wave` (no kondo available)
+- Single files: `delegate_drone` works for any language
 - Shout progress on each validation iteration
 - Fail fast: shout blocked after exhausting retries
 - Trust the self-healing loop

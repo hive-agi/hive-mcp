@@ -283,6 +283,38 @@ hivemind_shout(event_type: "progress", task: "...", message: "Step 2/4: ...")
 | `git status` | `mcp__emacs__magit_status` |
 | Raw file write | `mcp__emacs__file_write` |
 
+### Wave Tool Selection (Language-Aware)
+
+**Choose the right wave tool based on project language:**
+
+| Project Type | Tool | Why |
+|--------------|------|-----|
+| **Clojure/ClojureScript** | `dispatch_validated_wave` | Self-healing kondo loop auto-fixes lint errors |
+| **JavaScript/TypeScript** | `dispatch_drone_wave` | No kondo validation available |
+| **Python/Go/Rust/etc.** | `dispatch_drone_wave` | No kondo validation available |
+| **Single file (any lang)** | `delegate_drone` | Simpler for one-off changes |
+
+**Key difference:**
+- `dispatch_validated_wave`: Runs `kondo_lint` after each iteration, auto-generates fix tasks for errors, retries until clean (Clojure-specific)
+- `dispatch_drone_wave`: Direct drone dispatch without validation (use for non-Clojure projects)
+
+**Example (Clojure):**
+```clojure
+dispatch_validated_wave(
+  tasks: [{file: "src/api.clj", task: "Add input validation"}],
+  validate: true,
+  max_retries: 3,
+  lint_level: "error"
+)
+```
+
+**Example (TypeScript):**
+```javascript
+dispatch_drone_wave(
+  tasks: [{file: "src/api.ts", task: "Add input validation"}]
+)
+```
+
 ### Spawning Lings
 
 ```elisp

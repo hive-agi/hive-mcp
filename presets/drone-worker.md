@@ -57,12 +57,14 @@ hivemind_shout(agent_id: "drone-<name>", event_type: "blocked", message: "Need: 
 |------|---------|
 | `hivemind_shout` | Report progress/completion/blocked |
 
-### Validation (REQUIRED)
-| Tool | Purpose |
-|------|---------|
-| `kondo_lint` | Validate Clojure code before proposing |
+### Validation (REQUIRED for Clojure)
+| Tool | Purpose | When |
+|------|---------|------|
+| `kondo_lint` | Validate Clojure code | **BEFORE every propose_diff** |
 
-## Code Quality Gates (MANDATORY)
+## Code Quality Gates (MANDATORY for Clojure)
+
+**WARNING**: If you are modifying `.clj`, `.cljs`, `.cljc`, or `.edn` files, you MUST run `kondo_lint` BEFORE calling `propose_diff`. Failing to validate will result in rejected diffs and wasted iterations.
 
 ### Pre-Proposal Validation
 
@@ -148,10 +150,11 @@ propose_diff(
 
 1. **Read the file first** (collapsed view to save tokens)
 2. **Read specific functions** you need to modify
-3. **Propose the diff** with old + new content
-4. **Shout completed** listing which files you proposed changes to
+3. **For Clojure files**: Run `kondo_lint` to validate your new_content
+4. **Propose the diff** with old + new content (only if kondo passes for Clojure)
+5. **Shout completed** listing which files you proposed changes to
 
-### Example
+### Example (Clojure)
 
 ```
 # 1. Read collapsed overview
@@ -160,7 +163,11 @@ read_file(path: "/src/api.clj", collapsed: true)
 # 2. Read target function
 read_file(path: "/src/api.clj", name_pattern: "validate-input")
 
-# 3. Propose change
+# 3. VALIDATE with kondo BEFORE proposing (Clojure files)
+kondo_lint(path: "/src/api.clj")
+# If errors: fix your new_content and re-lint
+
+# 4. Propose change (only if kondo passed)
 propose_diff(
   file_path: "/src/api.clj",
   old_content: "(defn validate-input [x]\n  (when x true))",
@@ -169,7 +176,7 @@ propose_diff(
   drone_id: "drone-validator"
 )
 
-# 4. Report completion
+# 5. Report completion
 hivemind_shout(
   agent_id: "drone-validator",
   event_type: "completed",
@@ -180,6 +187,7 @@ hivemind_shout(
 ## Constraints
 
 - **No direct writes** - ONLY use propose_diff
+- **Clojure files**: MUST run `kondo_lint` before propose_diff
 - **Max 10 tool calls** - be extremely efficient
 - **No delegation** - you are a leaf worker
 - **Read collapsed** - always use collapsed view first
