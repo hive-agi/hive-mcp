@@ -17,7 +17,6 @@
             [hive-mcp.swarm.coordinator :as coordinator]
             [hive-mcp.events.core :as ev]
             [hive-mcp.agent :as agent]
-            [hive-mcp.evaluator :as evaluator]
             [hive-mcp.telemetry.prometheus :as prom]
             [hive-mcp.telemetry.health :as health]
             [clojure.core.async :as async :refer [go go-loop <! >! <!! chan close!]]
@@ -277,9 +276,17 @@
           ;; Permanent failure or retries exhausted
           :else
           (do
-            (when (> attempt 1)
-              (log/error "Drone task failed after" attempt "attempts for item:" id
-                         {:error (:error result)}))
+            ;; CLARITY-T: Structured JSON logging for Loki
+            (log/error {:event :wave/item-failed
+                        :item-id id
+                        :file file
+                        :task task
+                        :attempts attempt
+                        :error-type (if (transient-nrepl-error? (:error result))
+                                      :nrepl-transient
+                                      :permanent)
+                        :error (:error result)
+                        :retries-exhausted (> attempt 1)})
             result))))))
 
 ;;; =============================================================================
@@ -347,7 +354,14 @@
               exec-result (try
                             (execute-drone-task item preset cwd)
                             (catch Exception e
-                              (log/error e "Uncaught exception in drone worker")
+                              ;; CLARITY-T: Structured JSON logging for Loki
+                              (log/error {:event :wave/worker-exception
+                                          :item-id item-id
+                                          :file (:change-item/file item)
+                                          :wave-id wave-id
+                                          :error-type :uncaught-exception
+                                          :exception-class (.getName (class e))
+                                          :message (.getMessage e)})
                               {:success false
                                :item-id item-id
                                :error (str "Worker exception: " (.getMessage e))}))]
@@ -493,15 +507,40 @@
                   ;; CLEANUP: Reset all transient data (edits + task-files)
                   ;; CRITICAL: Use reset-all-transient! to prevent memory leak in task-files
                   (logic/reset-all-transient!)
-                  (log/info "Wave complete. Batches:" (count effective-batches)
-                            "Completed:" total-completed "Failed:" total-failed)
+
+                  ;; CLARITY-T: Structured JSON logging for Loki
+                  (if (pos? total-failed)
+                    (let [failed-items (->> items
+                                            (filter #(= :failed (:change-item/status %)))
+                                            (mapv #(select-keys % [:change-item/id :change-item/file])))]
+                      (log/error {:event :wave/failure
+                                  :wave-id wave-id
+                                  :plan-id plan-id
+                                  :failed-count total-failed
+                                  :completed-count total-completed
+                                  :batch-count (count effective-batches)
+                                  :success-rate success-rate
+                                  :failed-items failed-items
+                                  :reason (if (= total-completed 0) "all-failed" "partial-failure")}))
+                    (log/info {:event :wave/completed
+                               :wave-id wave-id
+                               :plan-id plan-id
+                               :completed-count total-completed
+                               :batch-count (count effective-batches)
+                               :success-rate success-rate}))
 
                   ;; CLARITY-T: Record wave metrics
                   (let [wave-duration-seconds (/ (- (System/nanoTime) wave-start-time) 1e9)]
                     (prom/set-wave-success-rate! success-rate)
                     (dotimes [_ total-completed] (prom/inc-wave-items! :success))
                     (dotimes [_ total-failed] (prom/inc-wave-items! :failed))
-                    (prom/observe-wave-duration! wave-duration-seconds))
+                    (prom/observe-wave-duration! wave-duration-seconds)
+                    ;; Record wave failures with granular reason
+                    (when (pos? total-failed)
+                      (prom/inc-wave-failures! wave-id
+                                               (if (= total-completed 0)
+                                                 :all-failed
+                                                 :partial-failure))))
 
                   (ds/complete-wave! wave-id final-status)
                   (ds/update-plan-status! plan-id (if (pos? total-failed) :failed :completed))
@@ -560,6 +599,9 @@
       ;; Update statuses
       (ds/complete-wave! wave-id :cancelled)
       (ds/update-plan-status! plan-id :cancelled)
+
+      ;; CLARITY-T: Record wave failure metric for cancellation
+      (prom/inc-wave-failures! wave-id (or reason :cancelled))
 
       ;; Emit cancellation event
       (ev/dispatch [:wave/cancelled {:plan-id plan-id
@@ -644,36 +686,6 @@
       {:type "text"
        :text (json/write-str {:error (.getMessage e)})})))
 
-(defn- check-nrepl-health!
-  "Pre-flight nREPL health check with event emission on failure.
-
-   CLARITY-T: Emits health event when nREPL is unavailable for telemetry.
-   CLARITY-Y: Provides actionable error message with recovery steps.
-
-   Returns:
-     {:healthy true :latency-ms N} on success
-   Throws:
-     ex-info with :type :nrepl-unhealthy and actionable :hint on failure"
-  []
-  (let [{:keys [healthy port error latency-ms]} (evaluator/nrepl-healthy?)]
-    (if healthy
-      (do
-        (log/info "nREPL health check passed" {:port port :latency-ms latency-ms})
-        {:healthy true :latency-ms latency-ms})
-      (do
-        ;; Emit health event for telemetry (CLARITY-T)
-        (health/emit-health-event! {:type :nrepl-disconnect
-                                    :severity :error
-                                    :message (str "nREPL health check failed: " error)
-                                    :context {:port port}
-                                    :recoverable? true})
-        (throw (ex-info (str "nREPL is not available (port " port "): " error)
-                        {:type :nrepl-unhealthy
-                         :port port
-                         :error error
-                         :hint (str "Drones need nREPL for clojure_eval. "
-                                    "Ensure nREPL is running: clojure -M:nrepl or check HIVE_MCP_NREPL_PORT env var.")}))))))
-
 (defn handle-dispatch-drone-wave
   "Handle dispatch_drone_wave MCP tool call.
 
@@ -684,18 +696,16 @@
      cwd            - Working directory override for path resolution (optional)
      ensure_dirs    - Create parent directories before dispatch (default: true)
      validate_paths - Fail fast if paths are invalid (default: true)
-     skip_nrepl_check - Skip nREPL health check (default: false)
 
-   Pre-flight behavior (P0/P2/P3):
+   Pre-flight behavior (P0/P2):
      1. If ensure_dirs is true, creates parent directories for all task files
      2. If validate_paths is true, validates all file paths have accessible parents
-     3. nREPL health check - ensures clojure_eval will work for drones
-     4. Then proceeds with plan creation and wave execution
+     3. Then proceeds with plan creation and wave execution
 
    Returns:
      JSON with wave-id for immediate response.
      Actual execution happens asynchronously."
-  [{:keys [tasks preset trace cwd ensure_dirs validate_paths skip_nrepl_check]}]
+  [{:keys [tasks preset trace cwd ensure_dirs validate_paths]}]
   (try
     (when (empty? tasks)
       (throw (ex-info "tasks array is required and must not be empty" {})))
@@ -717,12 +727,9 @@
       (when do-validate
         (validate-task-paths normalized-tasks))
 
-      ;; P3: nREPL health check - ensure drones can use clojure_eval
-      ;; CLARITY-Y: Fail fast with actionable error instead of drones failing silently
-      (when-not skip_nrepl_check
-        (check-nrepl-health!))
-
       ;; Proceed with plan and wave execution
+      ;; Note: nREPL pre-flight check removed - drones use OpenRouter, not nREPL.
+      ;; clojure_eval is optional; transient nREPL errors handled gracefully at runtime.
       (let [plan-id (create-plan! normalized-tasks preset)
             wave-id (execute-wave! plan-id {:trace (if (nil? trace) true trace)
                                             :cwd cwd})]

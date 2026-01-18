@@ -57,6 +57,7 @@
 (def ^:private wave-success-rate-name :hive-mcp/wave-success-rate)
 (def ^:private wave-items-total-name :hive-mcp/wave-items-total)
 (def ^:private wave-duration-seconds-name :hive-mcp/wave-duration-seconds)
+(def ^:private wave-failures-total-name :hive-mcp/wave-failures-total)
 
 ;;; =============================================================================
 ;;; Collector Definitions
@@ -145,19 +146,21 @@
    {:description "Total drones completed successfully"
     :labels [:parent]}))
 
-;; Counter: Drones failed (labels: :parent :error-type)
+;; Counter: Drones failed (labels: :parent :error-type :drone-id)
+;; CLARITY-T: Added drone-id label per metrics requirements
 (def ^:private drones-failed-total-collector
   (prometheus/counter
    drones-failed-total-name
    {:description "Total drones failed by error type"
-    :labels [:parent :error-type]}))
+    :labels [:parent :error-type :drone-id]}))
 
-;; Histogram: Drone execution duration (labels: :parent)
+;; Histogram: Drone execution duration (labels: :parent :status)
+;; CLARITY-T: Added status label (success/failed) per metrics requirements
 (def ^:private drone-duration-seconds-collector
   (prometheus/histogram
    drone-duration-seconds-name
    {:description "Drone execution duration distribution"
-    :labels [:parent]
+    :labels [:parent :status]
     :buckets [1.0 5.0 10.0 30.0 60.0 120.0 300.0 600.0]}))
 
 ;; Gauge: Wave success rate (0.0 to 1.0)
@@ -179,6 +182,14 @@
    wave-duration-seconds-name
    {:description "Wave execution duration distribution"
     :buckets [1.0 5.0 10.0 30.0 60.0 120.0 300.0 600.0 1800.0]}))
+
+;; Counter: Wave failures (labels: :wave-id :reason)
+;; CLARITY-T: Track individual wave failures with reason for root cause analysis
+(def ^:private wave-failures-total-collector
+  (prometheus/counter
+   wave-failures-total-name
+   {:description "Total wave failures by reason"
+    :labels [:wave-id :reason]}))
 
 ;;; =============================================================================
 ;;; Registry Initialization
@@ -211,7 +222,8 @@
          ;; Wave orchestration metrics (CLARITY-T)
          wave-success-rate-collector
          wave-items-total-collector
-         wave-duration-seconds-collector))))
+         wave-duration-seconds-collector
+         wave-failures-total-collector))))
 
 ;;; =============================================================================
 ;;; Convenience Functions (SRP: Each function handles one metric type)
@@ -312,21 +324,29 @@
 (defn inc-drones-failed!
   "Increment drones failed counter.
    parent: parent ling ID or \"none\"
-   error-type: keyword (:conflict :execution :timeout :unknown)"
-  [parent error-type]
-  (prometheus/inc
-   (@registry drones-failed-total-name {:parent (str parent)
-                                        :error-type (name (or error-type :unknown))})))
+   error-type: keyword (:nrepl-connection :nrepl-timeout :validation :conflict :execution :unknown)
+   drone-id: optional drone identifier (default: \"unknown\")"
+  ([parent error-type]
+   (inc-drones-failed! parent error-type nil))
+  ([parent error-type drone-id]
+   (prometheus/inc
+    (@registry drones-failed-total-name {:parent (str parent)
+                                         :error-type (name (or error-type :unknown))
+                                         :drone-id (str (or drone-id "unknown"))}))))
 
 (defn observe-drone-duration!
   "Observe drone execution duration.
    parent: parent ling ID or \"none\"
-   seconds: duration in seconds (double)"
-  [parent seconds]
-  (when seconds
-    (prometheus/observe
-     (@registry drone-duration-seconds-name {:parent (str parent)})
-     seconds)))
+   seconds: duration in seconds (double)
+   status: :success or :failed (default: :success)"
+  ([parent seconds]
+   (observe-drone-duration! parent seconds :success))
+  ([parent seconds status]
+   (when seconds
+     (prometheus/observe
+      (@registry drone-duration-seconds-name {:parent (str parent)
+                                              :status (name (or status :success))})
+      seconds))))
 
 ;;; =============================================================================
 ;;; Wave Orchestration Metrics (CLARITY-T: Wave-level observability)
@@ -354,6 +374,15 @@
      (@registry wave-duration-seconds-name)
      seconds)))
 
+(defn inc-wave-failures!
+  "Increment wave failures counter.
+   wave-id: wave identifier
+   reason: failure reason keyword (:nrepl-unhealthy :conflict :timeout :validation :execution)"
+  [wave-id reason]
+  (prometheus/inc
+   (@registry wave-failures-total-name {:wave-id (str wave-id)
+                                        :reason (name (or reason :unknown))})))
+
 (defmacro with-wave-timing
   "Execute body and record duration in wave-duration-seconds histogram.
    Also updates wave-success-rate gauge based on results.
@@ -379,31 +408,39 @@
    Supports two styles:
    1. Counter: {:counter :drone_started :labels {:parent \"none\"}}
    2. Counter + Histogram: {:counter :drone_completed :labels {...}
-                           :histogram {:name :drone_duration_seconds :value 5.0}}
+                           :histogram {:name :drone_duration_seconds :value 5.0 :status \"success\"}}
 
    Known counters:
    - :drone_started, :drone_completed, :drone_failed
+   - :wave_failure (with :wave_id and :reason labels)
    - :events (generic events counter)
    - :errors (generic errors counter)
+
+   Known histograms:
+   - :drone_duration_seconds (with :status label)
 
    CLARITY-T: Telemetry effect handler for re-frame style event system."
   [{:keys [counter labels histogram]}]
   (let [parent (get labels :parent "none")
-        error-type (get labels :error_type)]
+        error-type (get labels :error_type)
+        drone-id (get labels :drone_id)
+        wave-id (get labels :wave_id)
+        reason (get labels :reason)]
     ;; Handle counter
     (case counter
       :drone_started (inc-drones-started! parent)
       :drone_completed (inc-drones-completed! parent)
-      :drone_failed (inc-drones-failed! parent error-type)
+      :drone_failed (inc-drones-failed! parent error-type drone-id)
+      :wave_failure (inc-wave-failures! wave-id reason)
       ;; Fallback for unknown counters - log and increment generic events
       (do
         (log/debug "Unknown prometheus counter:" counter "- using generic events")
         (inc-events-total! (or counter :unknown) :info)))
 
     ;; Handle histogram if present
-    (when-let [{:keys [name value]} histogram]
+    (when-let [{:keys [name value status]} histogram]
       (case name
-        :drone_duration_seconds (observe-drone-duration! parent value)
+        :drone_duration_seconds (observe-drone-duration! parent value (or status :success))
         ;; Fallback for unknown histograms
         (log/debug "Unknown prometheus histogram:" name)))))
 

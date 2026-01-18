@@ -98,7 +98,8 @@
      :prometheus {:counter :drone_completed
                   :labels {:parent (or parent-id "none")}
                   :histogram {:name :drone_duration_seconds
-                              :value (when duration-ms (/ duration-ms 1000.0))}}}))
+                              :value (when duration-ms (/ duration-ms 1000.0))
+                              :status :success}}}))
 
 ;; =============================================================================
 ;; Handler: :drone/failed
@@ -111,18 +112,20 @@
    for monitoring and debugging.
 
    Expects event data:
-   {:drone-id   \"drone-1705000000\"
-    :task-id    \"task-drone-1705000000\"
-    :parent-id  \"swarm-ling-123\" (optional)
-    :error      \"Connection timeout\"
-    :error-type :timeout | :conflict | :execution | :unknown
-    :files      [\"src/foo.clj\"]}
+   {:drone-id    \"drone-1705000000\"
+    :task-id     \"task-drone-1705000000\"
+    :parent-id   \"swarm-ling-123\" (optional)
+    :error       \"Connection timeout\"
+    :error-type  :nrepl-connection | :nrepl-timeout | :validation | :conflict | :execution | :unknown
+    :files       [\"src/foo.clj\"]
+    :duration-ms 5000 (optional)}
 
    Produces effects:
    - :channel-publish - Broadcast drone-failed to WebSocket clients
    - :log             - Log drone failure message
-   - :prometheus      - Increment drone_failed counter"
-  [_coeffects [_ {:keys [drone-id task-id parent-id error error-type files]}]]
+   - :prometheus      - Increment drone_failed counter with drone_id label
+                      - Record duration histogram with status=failed"
+  [_coeffects [_ {:keys [drone-id task-id parent-id error error-type files duration-ms]}]]
   {:channel-publish {:event :drone-failed
                      :data {:drone-id drone-id
                             :task-id task-id
@@ -136,7 +139,12 @@
                        (when error-type (str " (" (name error-type) ")")))}
    :prometheus {:counter :drone_failed
                 :labels {:parent (or parent-id "none")
-                         :error_type (name (or error-type :unknown))}}})
+                         :error_type (name (or error-type :unknown))
+                         :drone_id (or drone-id "unknown")}
+                :histogram (when duration-ms
+                             {:name :drone_duration_seconds
+                              :value (/ duration-ms 1000.0)
+                              :status :failed})}})
 
 ;; =============================================================================
 ;; Registration
