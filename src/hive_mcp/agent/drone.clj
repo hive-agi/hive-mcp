@@ -126,6 +126,43 @@
      :stacktrace stacktrace
      :ex-data ex-data-map}))
 
+(defn make-nrepl-error
+  "Create a structured nREPL error response with context and suggestions.
+
+   Arguments:
+     error-type - One of :nrepl-connection, :nrepl-timeout, :nrepl-eval-error
+     details    - Map containing contextual details:
+                  - :drone-id   - ID of the drone that encountered the error
+                  - :port       - nREPL port (if applicable)
+                  - :timeout-ms - Timeout value (if applicable)
+
+   Returns a map suitable for telemetry and user feedback:
+   - :error-type  - The classified error type keyword
+   - :drone-id    - Drone identifier for correlation
+   - :port        - nREPL port (for connection errors)
+   - :timeout-ms  - Timeout value (for timeout errors)
+   - :message     - Human-readable error message
+   - :suggestion  - Actionable suggestion for resolution
+
+   CLARITY-T: Structured error telemetry for Prometheus/Loki integration."
+  [error-type details]
+  {:error-type error-type
+   :drone-id (:drone-id details)
+   :port (:port details)
+   :timeout-ms (:timeout-ms details)
+   :message (case error-type
+              :nrepl-connection "Failed to connect to nREPL server"
+              :nrepl-timeout "nREPL evaluation timed out"
+              :nrepl-eval-error "nREPL evaluation failed"
+              :validation-failed "Input validation failed"
+              "Unknown nREPL error")
+   :suggestion (case error-type
+                 :nrepl-connection "Check if nREPL server is running on port"
+                 :nrepl-timeout "Increase timeout or simplify evaluation"
+                 :nrepl-eval-error "Check code syntax and dependencies"
+                 :validation-failed "Verify input parameters match expected schema"
+                 "Check nREPL server status")})
+
 ;;; ============================================================
 ;;; Configuration
 ;;; ============================================================

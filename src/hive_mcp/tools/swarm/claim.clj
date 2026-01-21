@@ -106,8 +106,8 @@
               (logic/release-claim-for-file! file_path)
               (remove-claim-timestamp! file_path)
               ;; Emit event for claim release (enables queue processing)
-              (events/dispatch :claim/file-released {:file file_path
-                                                     :released-by "manual-clear"})
+              (events/dispatch [:claim/file-released {:file file_path
+                                                      :released-by "manual-clear"}])
               (log/info "claim_clear: Released claim for" file_path "from" (:slave-id claim))
               {:type "text"
                :text (json/write-str

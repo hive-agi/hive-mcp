@@ -42,6 +42,11 @@
     :restart-collision        ; Attempted restart while previous in progress
     :hot-reload-failed        ; Hot reload of namespace failed
     :wrap-crystallize-failed  ; Session crystallization failed
+    ;; Drone nREPL error types (CLARITY-T: structured error telemetry)
+    :nrepl-connection         ; Failed to connect to nREPL server
+    :nrepl-timeout            ; nREPL evaluation timed out
+    :nrepl-eval-error         ; nREPL evaluation failed (syntax, runtime, compiler)
+    :validation-failed        ; Input validation failed
     })
 
 ;;; =============================================================================
