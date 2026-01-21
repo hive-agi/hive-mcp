@@ -124,6 +124,19 @@
     (conn/transact! [[:db/add eid :kg-edge/confidence new-confidence]])
     true))
 
+(defn increment-confidence!
+  "Increment the confidence score of an edge by delta.
+   Clamps result to 0.0-1.0 range.
+   Returns the new confidence score, or nil if edge not found."
+  [edge-id delta]
+  (when-let [edge (get-edge edge-id)]
+    (let [old-confidence (or (:kg-edge/confidence edge) 1.0)
+          new-confidence (-> (+ old-confidence delta)
+                             (max 0.0)
+                             (min 1.0))]
+      (update-edge-confidence! edge-id new-confidence)
+      new-confidence)))
+
 (defn remove-edge!
   "Delete an edge by its ID.
    Returns true if edge was removed, false if not found."
@@ -133,6 +146,19 @@
       (conn/transact! [[:db/retractEntity eid]])
       true)
     false))
+
+(defn remove-edges-for-node!
+  "Remove all edges connected to a node (both incoming and outgoing).
+   Use when deleting a memory entry to clean up its KG relationships.
+   Returns the count of edges removed."
+  [node-id]
+  (let [outgoing (get-edges-from node-id)
+        incoming (get-edges-to node-id)
+        all-edges (distinct (concat outgoing incoming))
+        edge-ids (map :kg-edge/id all-edges)]
+    (doseq [eid edge-ids]
+      (remove-edge! eid))
+    (count edge-ids)))
 
 (defn get-all-edges
   "Get all edges in the KG. Use with caution on large graphs.

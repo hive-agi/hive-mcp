@@ -28,6 +28,7 @@
             [hive-mcp.swarm.coordinator :as coordinator]
             [hive-mcp.channel :as channel]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
+            [hive-mcp.agent.context :as ctx]
             [clojure.java.shell :as shell]
             [datascript.core :as d]
             [taoensso.timbre :as log]))
@@ -742,12 +743,13 @@
    - :agent-context   - Agent ID and current working directory
    - :db-snapshot     - DataScript database snapshot
    - :waiting-lings   - Query lings waiting on a specific file (File Claim Cascade)
+   - :request-ctx     - Current request context from tool execution (agent-id, project-id, directory)
 
    Returns true if effects were registered, false if already registered."
   []
   (when-not @*registered
     ;; ==========================================================================
-    ;; Coeffects (POC-08/09/10)
+    ;; Coeffects (POC-08/09/10/11)
     ;; ==========================================================================
 
     ;; POC-08: :now coeffect - Current timestamp in milliseconds
@@ -789,6 +791,13 @@
                                     {:slave-id slave-id
                                      :task-id task-id})
                                   (or waiting []))))))
+
+    ;; :request-ctx coeffect - Current request context from tool execution
+    ;; Provides access to agent-id, project-id, directory bound during MCP tool execution
+    ;; Uses hive-mcp.agent.context/request-ctx to get the thread-local context
+    (ev/reg-cofx :request-ctx
+                 (fn [coeffects]
+                   (assoc coeffects :request-ctx (ctx/request-ctx))))
 
     ;; ==========================================================================
     ;; Effects
@@ -866,7 +875,7 @@
     ;; defensive stats handling. Do NOT duplicate here.
 
     (reset! *registered true)
-    (log/info "[hive-events] Coeffects registered: :now :agent-context :db-snapshot :waiting-lings")
+    (log/info "[hive-events] Coeffects registered: :now :agent-context :db-snapshot :waiting-lings :request-ctx")
     (log/info "[hive-events] Effects registered: :shout :targeted-shout :log :ds-transact :wrap-notify :channel-publish :memory-write :report-metrics :emit-system-error :dispatch :dispatch-n :git-commit :kanban-sync :dispatch-task :kanban-move-done :wrap-crystallize")
     (log/info "[hive-events] KG effects registered: :kg-add-edge :kg-update-confidence :kg-increment-confidence :kg-remove-edge :kg-remove-edges-for-node")
     true))
