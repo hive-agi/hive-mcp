@@ -14,7 +14,6 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-
 ;; =============================================================================
 ;; Helpers
 ;; =============================================================================
@@ -116,17 +115,18 @@
    Expects event data:
    {:agent-id    \"ling-123\"
     :session-id  \"session:2026-01-15:ling-123\"
+    :project-id  \"hive-mcp\"              ; project ID for scoped permeation
     :created-ids [\"note-id-1\" \"note-id-2\"]
     :stats       {:notes 2 :decisions 1 :conventions 0}}
 
    Produces effects:
    - :log         - Log wrap notification
-   - :wrap-notify - Record to DataScript wrap-queue
+   - :wrap-notify - Record to DataScript wrap-queue (with project-id for scoping)
    - :shout       - Broadcast to HIVEMIND (makes it visible in piggyback)
 
    CLARITY-I: Inputs are guarded - defensive handling for stats structure
    CLARITY-Y: Yield safe failure - graceful fallback for malformed stats"
-  [_coeffects [_ {:keys [agent-id session-id created-ids stats]}]]
+  [_coeffects [_ {:keys [agent-id session-id project-id created-ids stats]}]]
   (let [note-count (count (or created-ids []))
         ;; Defensive: ensure stats is a map before accessing keys
         ;; This prevents "Key must be integer" error if stats is a vector/nil
@@ -139,14 +139,16 @@
                       0)
         message (str "Session wrapped: " decisions " decisions, " conventions " conventions")]
     {:log {:level :info
-           :message (str "Wrap notify from " agent-id ": " note-count " entries")}
+           :message (str "Wrap notify from " agent-id " (project: " project-id "): " note-count " entries")}
      :wrap-notify {:agent-id agent-id
                    :session-id session-id
+                   :project-id project-id
                    :created-ids created-ids
                    :stats safe-stats}
      :shout {:agent-id agent-id
              :event-type "wrap_notify"
              :data {:session-id session-id
+                    :project-id project-id
                     :stats safe-stats
                     :message message}}}))
 

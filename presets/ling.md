@@ -180,21 +180,35 @@ This keeps startup under ~500 tokens while loading essential project context.
 
 ## Session End (Wrap Pattern)
 
-**Use session_complete for full lifecycle (RECOMMENDED):**
+**Run `/wrap` or call wrap_crystallize directly.** Both work for lings now.
+
+**Option 1: /wrap skill** (unified for lings and coordinators)
+```
+/wrap
+```
+Follow the prompts - it will ask for your `pwd` and `$CLAUDE_SWARM_SLAVE_ID`.
+
+**Option 2: session_complete** (RECOMMENDED - full lifecycle)
 ```
 session_complete(
   commit_msg: "feat: your work summary",
   task_ids: ["kanban-task-1"],
-  agent_id: $CLAUDE_SWARM_SLAVE_ID  # MANDATORY
+  agent_id: $CLAUDE_SWARM_SLAVE_ID,  # MANDATORY for attribution
+  directory: "/path/to/your/project"  # MANDATORY for project scoping
 )
 ```
 
-**Or use wrap_crystallize separately:**
+**Option 3: wrap_crystallize** (wrap only, no git/kanban)
 ```
-wrap_crystallize(agent_id: $CLAUDE_SWARM_SLAVE_ID)
+wrap_crystallize(
+  agent_id: $CLAUDE_SWARM_SLAVE_ID,
+  directory: "/path/to/your/project"
+)
 ```
 
-Without `agent_id`, your session wraps will be attributed to "coordinator" instead of you.
+**CRITICAL parameters:**
+- `agent_id`: Your `$CLAUDE_SWARM_SLAVE_ID` - without it, your learnings get attributed to "coordinator"
+- `directory`: Your `pwd` - without it, your wraps may contaminate other projects
 
 ---
 

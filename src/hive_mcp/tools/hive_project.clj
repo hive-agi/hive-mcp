@@ -26,7 +26,6 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-
 ;; =============================================================================
 ;; Project Type Inference
 ;; =============================================================================
@@ -75,8 +74,8 @@
 ;; Project ID Generation
 ;; =============================================================================
 
-(defn- generate-project-id
-  "Generate a stable project ID from project name.
+(defn- generate-base-project-id
+  "Generate a base project ID from project name.
    Format: <name>-<short-hash>
    The hash is based on name + creation timestamp for uniqueness."
   [project-name]
@@ -87,6 +86,59 @@
         hash-hex (apply str (map #(format "%02x" %) (take 4 hash-bytes)))]
     (str (str/lower-case (str/replace project-name #"[^a-zA-Z0-9]+" "-"))
          "-" hash-hex)))
+
+;; =============================================================================
+;; Parent Project Discovery
+;; =============================================================================
+
+(defn- read-parent-project-id
+  "Read :project-id from a .hive-project.edn file.
+   Returns the project-id string or nil on failure."
+  [hive-project-file]
+  (try
+    (let [content (slurp hive-project-file)
+          config (read-string content)]
+      (:project-id config))
+    (catch Exception e
+      (log/debug "Failed to read parent .hive-project.edn:" (.getMessage e))
+      nil)))
+
+(defn- find-parent-project-id
+  "Walk up directories from given path looking for parent .hive-project.edn.
+   Stops at filesystem root or user home directory.
+   Returns the parent's :project-id if found, nil otherwise."
+  [project-dir]
+  (let [home-dir (System/getProperty "user.home")
+        start-dir (io/file project-dir)]
+    (loop [current (.getParentFile start-dir)]
+      (cond
+        ;; No more parents - reached root
+        (nil? current)
+        nil
+
+        ;; Stop at home directory (don't traverse above)
+        (= (.getAbsolutePath current) home-dir)
+        (let [hive-file (io/file current ".hive-project.edn")]
+          (when (.exists hive-file)
+            (read-parent-project-id hive-file)))
+
+        ;; Check for .hive-project.edn in this directory
+        :else
+        (let [hive-file (io/file current ".hive-project.edn")]
+          (if (.exists hive-file)
+            (read-parent-project-id hive-file)
+            (recur (.getParentFile current))))))))
+
+(defn- generate-project-id
+  "Generate a hierarchical project ID.
+   If a parent project exists, returns <parent-id>:<child-id>.
+   Otherwise returns just <child-id>."
+  [project-name project-dir]
+  (let [base-id (generate-base-project-id project-name)
+        parent-id (find-parent-project-id project-dir)]
+    (if parent-id
+      (str parent-id ":" base-id)
+      base-id)))
 
 ;; =============================================================================
 ;; EDN Generation
@@ -109,13 +161,25 @@
     :else (pr-str v)))
 
 (defn- generate-edn-content
-  "Generate .hive-project.edn content as formatted string."
-  [{:keys [project-id project-type watch-dirs hot-reload presets-path aliases]}]
+  "Generate .hive-project.edn content as formatted string.
+   Includes both :parent-id (preferred) and :parent (legacy) for compatibility."
+  [{:keys [project-id parent project-type watch-dirs hot-reload presets-path aliases]}]
   (let [lines [(str ";; hive-mcp project configuration")
                (str ";; Generated: " (.toString (Instant/now)))
                (str ";; See: https://github.com/BuddhiLW/hive-mcp")
                ""
                (str "{:project-id \"" project-id "\"")
+               ""
+               (str " ;; Parent project ID (for hierarchical scoping in Knowledge Graph)")
+               (str " ;; Knowledge Graph uses this for scope inheritance: child sees parent knowledge")
+               (str " :parent-id " (if parent
+                                     (format-edn-value parent)
+                                     "nil"))
+               ""
+               (str " ;; Legacy field (deprecated - use :parent-id)")
+               (str " :parent " (if parent
+                                  (format-edn-value parent)
+                                  "nil"))
                ""
                (str " ;; Detected project type")
                (str " :project-type " (format-edn-value project-type))
@@ -191,7 +255,10 @@
         ;; Generate config
         (let [project-type-str (or type "generic")
               project-type-kw (keyword project-type-str)
-              config {:project-id (or project_id (generate-project-id name))
+              parent-id (find-parent-project-id project-root)
+              generated-id (or project_id (generate-project-id name project-root))
+              config {:project-id generated-id
+                      :parent parent-id
                       :project-type project-type-kw
                       :watch-dirs (infer-watch-dirs project-type-str)
                       :hot-reload (infer-hot-reload? project-type-str)
@@ -207,7 +274,9 @@
                        :path config-path
                        :config config
                        :project-type project-type-str
-                       :project-name name})
+                       :project-name name
+                       :parent parent-id
+                       :hierarchical (boolean parent-id)})
             (catch Exception e
               (log/error e "Failed to write .hive-project.edn")
               (mcp-error (str "Failed to write config: " (.getMessage e))))))))

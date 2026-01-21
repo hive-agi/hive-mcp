@@ -23,6 +23,7 @@
    [hive-mcp.tools.diff :as diff]
    [hive-mcp.tools.kondo :as kondo]
    [hive-mcp.tools.scc :as scc]
+   [hive-mcp.tools.kg :as kg]
    [hive-mcp.tools.crystal :as crystal]
    [hive-mcp.tools.hot :as hot]
    [hive-mcp.tools.health :as health]
@@ -75,6 +76,7 @@
                diff/tools
                kondo/tools
                scc/tools
+               kg/tools      ; Knowledge Graph query and traversal
                hot/tools     ; hot reload coordination tools
                health/tools  ; MCP health check
                drone-feedback/tools
@@ -144,6 +146,7 @@
                diff/tools
                kondo/tools
                scc/tools
+               kg/tools      ; Knowledge Graph query and traversal
                hot/tools     ; hot reload coordination tools
                health/tools  ; MCP health check
                drone-feedback/tools

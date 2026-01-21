@@ -15,7 +15,6 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-
 ;;; =============================================================================
 ;;; Slave Query Functions
 ;;; =============================================================================
@@ -78,6 +77,49 @@
                     (dissoc :db/id)
                     (update :slave/parent #(when % (:slave/id %)))
                     (update :slave/current-task #(when % (:task/id %)))))))))
+
+(defn get-slaves-by-project
+  "Get slaves filtered by project-id.
+
+   Arguments:
+     project-id - Project ID to filter by
+
+   Returns:
+     Seq of slave maps belonging to the project"
+  [project-id]
+  (let [c (conn/ensure-conn)
+        db @c
+        eids (d/q '[:find [?e ...]
+                    :in $ ?project-id
+                    :where
+                    [?e :slave/id _]
+                    [?e :slave/project-id ?project-id]]
+                  db project-id)]
+    (->> eids
+         (map #(d/entity db %))
+         (map (fn [e]
+                (-> (into {} e)
+                    (dissoc :db/id)
+                    (update :slave/parent #(when % (:slave/id %)))
+                    (update :slave/current-task #(when % (:task/id %)))))))))
+
+(defn get-slave-ids-by-project
+  "Get slave IDs for a project (optimized for kill operations).
+
+   Arguments:
+     project-id - Project ID to filter by
+
+   Returns:
+     Seq of slave ID strings"
+  [project-id]
+  (let [c (conn/ensure-conn)
+        db @c]
+    (d/q '[:find [?sid ...]
+           :in $ ?project-id
+           :where
+           [?e :slave/project-id ?project-id]
+           [?e :slave/id ?sid]]
+         db project-id)))
 
 ;;; =============================================================================
 ;;; Task Query Functions

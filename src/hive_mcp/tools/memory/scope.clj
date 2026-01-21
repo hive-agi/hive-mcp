@@ -7,13 +7,17 @@
    Handles:
    - Project ID detection from Emacs
    - Scope tag injection for memory entries
-   - Scope matching for filtering queries"
+   - Scope matching for filtering queries
+
+   NOTE: For hierarchical scope resolution (visible-scopes, get-parent-scope),
+   see hive-mcp.knowledge-graph.scope which provides full Knowledge Graph
+   scope hierarchy support."
   (:require [hive-mcp.emacsclient :as ec]
+            [hive-mcp.knowledge-graph.scope :as kg-scope]
             [clojure.string :as str]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
-
 
 ;; ============================================================
 ;; Project ID Detection
@@ -137,18 +141,20 @@
    Returns a set of valid scope tags:
    - nil if scope is 'all' (no filtering)
    - set including scope + ancestors + global if hierarchical
-   - single scope set if not hierarchical"
+   - single scope set if not hierarchical
+
+   NOTE: This now delegates to hive-mcp.knowledge-graph.scope for full
+   hierarchical support including explicit parent-id from .hive-project.edn.
+   Falls back to string-based inference for backward compatibility."
   [scope]
   (cond
     (= scope "all") nil
     (nil? scope) nil  ;; Let caller handle nil -> auto mode
     (= scope "global") #{"scope:global"}
     :else
-    (let [hierarchy (extract-project-hierarchy scope)
-          ancestors (build-ancestor-scopes hierarchy)]
-      (if (seq ancestors)
-        (set (conj ancestors "scope:global"))
-        #{scope "scope:global"}))))
+    ;; Delegate to knowledge-graph.scope for hierarchical resolution
+    ;; This supports both explicit parent-id and string-based inference
+    (kg-scope/visible-scope-tags scope)))
 
 (defn matches-hierarchy-scopes?
   "Check if entry matches any of the hierarchical scope filters.

@@ -285,15 +285,17 @@
     :handler handle-swarm-list-presets}
 
    {:name "swarm_kill"
-    :description "Kill a slave instance or all slaves."
+    :description "Kill a slave instance or all slaves. When slave_id='all' and directory is provided, only kills lings belonging to that project (project-scoped kill)."
     :inputSchema {:type "object"
                   :properties {"slave_id" {:type "string"
-                                           :description "ID of slave to kill, or \"all\" to kill all slaves"}}
+                                           :description "ID of slave to kill, or \"all\" to kill all slaves"}
+                               "directory" {:type "string"
+                                            :description "Working directory to scope kill (optional). When provided with slave_id='all', only kills lings belonging to that project."}}
                   :required ["slave_id"]}
     :handler handle-swarm-kill}
 
    {:name "lings_available"
-    :description "List all available lings (spawned slaves) with metadata. Use this to find ling IDs without having to remember them. Returns name, presets, cwd, and age for each ling."
+    :description "List all available lings (spawned slaves) with metadata. Use this to find ling IDs without having to remember them. Returns name, presets, cwd, project-id, and age for each ling."
     :inputSchema {:type "object" :properties {}}
     :handler handle-lings-available}
 
