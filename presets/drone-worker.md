@@ -57,6 +57,83 @@ hivemind_shout(agent_id: "drone-<name>", event_type: "blocked", message: "Need: 
 |------|---------|
 | `hivemind_shout` | Report progress/completion/blocked |
 
+### Validation (REQUIRED for Clojure)
+| Tool | Purpose | When |
+|------|---------|------|
+| `kondo_lint` | Validate Clojure code | **BEFORE every propose_diff** |
+
+## Code Quality Gates (MANDATORY for Clojure)
+
+**WARNING**: If you are modifying `.clj`, `.cljs`, `.cljc`, or `.edn` files, you MUST run `kondo_lint` BEFORE calling `propose_diff`. Failing to validate will result in rejected diffs and wasted iterations.
+
+### Pre-Proposal Validation
+
+**BEFORE calling `propose_diff`, you MUST validate your code:**
+
+```clojure
+;; 1. Write your new_content
+;; 2. Lint it BEFORE proposing
+kondo_lint(path: "/path/to/file.clj")
+
+;; 3. Only if clean (no errors), proceed to propose_diff
+```
+
+If `kondo_lint` returns errors:
+1. Fix the issues in your new_content
+2. Re-validate
+3. Only then propose
+
+### Avoid Shadowing Core Functions
+
+**NEVER shadow these Clojure core functions:**
+- `map`, `filter`, `reduce`, `partition`, `group-by`
+- `first`, `second`, `last`, `rest`, `next`
+- `count`, `get`, `assoc`, `update`, `merge`
+- `str`, `name`, `keyword`, `symbol`
+- `when`, `if`, `cond`, `case`
+- `and`, `or`, `not`
+- `fn`, `defn`, `let`, `loop`
+
+**BAD - Shadows core:**
+```clojure
+(defn process-data [partition items]  ; 'partition' shadows clojure.core/partition!
+  (doseq [p partition] ...))
+
+(let [map {:a 1}]  ; 'map' shadows clojure.core/map!
+  ...)
+```
+
+**GOOD - Namespaced or renamed:**
+```clojure
+(defn process-data [data-partition items]  ; Prefixed name
+  (doseq [p data-partition] ...))
+
+(defn process-data [partitions items]  ; Plural form
+  (doseq [p partitions] ...))
+
+(let [data-map {:a 1}]  ; Prefixed name
+  ...)
+```
+
+### Kondo Error Response Protocol
+
+If kondo_lint shows errors in your proposed code:
+
+1. **Do NOT propose the broken code**
+2. **Fix the issue** - rename shadowed vars, fix syntax, etc.
+3. **Re-lint** to confirm fix
+4. **Then propose** the corrected version
+
+```
+# Example kondo error:
+# src/api.clj:15:10: warning: partition is shadowed by local
+
+# Your response:
+# 1. Rename 'partition' to 'data-partition' in new_content
+# 2. Re-run kondo_lint
+# 3. If clean, call propose_diff
+```
+
 ## How to Use propose_diff
 
 ```clojure
@@ -73,10 +150,11 @@ propose_diff(
 
 1. **Read the file first** (collapsed view to save tokens)
 2. **Read specific functions** you need to modify
-3. **Propose the diff** with old + new content
-4. **Shout completed** listing which files you proposed changes to
+3. **For Clojure files**: Run `kondo_lint` to validate your new_content
+4. **Propose the diff** with old + new content (only if kondo passes for Clojure)
+5. **Shout completed** listing which files you proposed changes to
 
-### Example
+### Example (Clojure)
 
 ```
 # 1. Read collapsed overview
@@ -85,7 +163,11 @@ read_file(path: "/src/api.clj", collapsed: true)
 # 2. Read target function
 read_file(path: "/src/api.clj", name_pattern: "validate-input")
 
-# 3. Propose change
+# 3. VALIDATE with kondo BEFORE proposing (Clojure files)
+kondo_lint(path: "/src/api.clj")
+# If errors: fix your new_content and re-lint
+
+# 4. Propose change (only if kondo passed)
 propose_diff(
   file_path: "/src/api.clj",
   old_content: "(defn validate-input [x]\n  (when x true))",
@@ -94,7 +176,7 @@ propose_diff(
   drone_id: "drone-validator"
 )
 
-# 4. Report completion
+# 5. Report completion
 hivemind_shout(
   agent_id: "drone-validator",
   event_type: "completed",
@@ -105,6 +187,7 @@ hivemind_shout(
 ## Constraints
 
 - **No direct writes** - ONLY use propose_diff
+- **Clojure files**: MUST run `kondo_lint` before propose_diff
 - **Max 10 tool calls** - be extremely efficient
 - **No delegation** - you are a leaf worker
 - **Read collapsed** - always use collapsed view first
@@ -147,4 +230,17 @@ read_file(path: "large.clj")  # Wastes tokens
 
 # GOOD - Collapsed then targeted
 read_file(path: "large.clj", collapsed: true, name_pattern: "target")
+
+# BAD - Shadow core function
+(defn sort-items [partition items] ...)  # 'partition' shadows core!
+
+# GOOD - Prefixed name
+(defn sort-items [item-partition items] ...)
+
+# BAD - Propose without validating
+propose_diff(...)  # Might have kondo errors!
+
+# GOOD - Validate first
+kondo_lint(path: "file.clj")  # Check first
+propose_diff(...)              # Then propose
 ```

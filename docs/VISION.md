@@ -323,3 +323,166 @@ The swarm approach delivered:
 - **Strategic bandwidth** for coordinator
 
 This validates the "developer as coordinator" model described in this document.
+
+---
+
+## Case Study: HN Launch Blog Post (2026-01-20)
+
+### Task
+Create an HN-ready blog post announcing hive-mcp with:
+- Competitive analysis (vs Cursor, Aider, Continue, Copilot)
+- Honest methodology for metrics
+- Tool-agnostic architecture patterns
+- Autopoietic demonstration (tool writing about itself)
+
+### Unique Challenge: Quality Through Adversarial Refinement
+
+Unlike code tasks (verifiable by tests), blog posts require subjective quality judgment. Solution: **Nash equilibrium via writer+critic lings**.
+
+### Swarm Composition
+
+| Ling | Role | Task |
+|------|------|------|
+| review-blog-post | Reviewer #1 | Initial critique, 8 action items |
+| review-blog-v2 | Reviewer #2 | Detailed 7-dimension analysis |
+| blog-writer | Writer | Propose changes, iterate on feedback |
+| blog-critic | Critic | Challenge proposals, approve when satisfied |
+
+### Process Flow
+
+```
+Session 1 (~40 min):
+  Coordinator → create initial draft (370 lines)
+  Spawn reviewer-1 → 8 critical edits identified
+  User feedback → keep autopoiesis, add PG quote, add metrics
+  Spawn reviewer-2 → 7 action items, title alternatives
+  Spawn writer+critic → begin Nash iteration
+
+Session 2 (~17 min):
+  /catchup → restore context from memory
+  Find consensus in wrong project scope (Blobing vs hive-mcp)
+  Dispatch writer → apply 10 agreed changes
+  Wrap + smite all 4 lings
+```
+
+### Nash Equilibrium Convergence
+
+```
+Writer Iteration 1:
+  - Cuts ~300 words
+  - New CTA for non-Emacs users
+  - N=47 sessions methodology
+
+Critic Response 1:
+  - "Strong foundation. Not ready yet."
+  - 7 action items: punchier title, results-first opener, etc.
+
+Writer Iteration 2:
+  - 3 title options (chose "8-10x Faster Development...")
+  - Results-first opener
+  - "Honest friction" section
+  - All 7 items addressed
+
+Critic Response 2:
+  - "Nearly there. One clarification needed."
+  - "memory and coordination system" attribution tweak
+
+Writer accepts → CONSENSUS REACHED
+```
+
+**Stopping condition**: Neither party would change anything further.
+
+### Output Produced
+
+| Artifact | Details |
+|----------|---------|
+| Blog post | 323 lines (down from 370) |
+| Title | "8-10x Faster Development with LLM Memory That Persists" |
+| Sections | Problem, Learning, Crystallization, Coordination, Hierarchy, Implementation, Try It |
+| Images | 7 diagrams from arxiv/ |
+| Memory entries | 8 (iterations, critiques, consensus) |
+
+### Time Comparison
+
+| Approach | Time | Quality Assurance |
+|----------|------|-------------------|
+| Solo Claude | 30-40 min | No adversarial critique, blind spots remain |
+| Solo human | 2-4 hours | Self-review only |
+| Swarm (4 lings) | ~57 min total | 2 reviewers + writer/critic Nash equilibrium |
+
+**Note**: Swarm was *slower* than solo Claude for raw output - but produced higher quality through structured disagreement.
+
+### Qualitative Benefits
+
+1. **Adversarial Refinement**
+   - Writer incentive: ship quickly
+   - Critic incentive: improve quality
+   - Equilibrium: optimal stopping point
+
+2. **Cross-Session Memory**
+   - Session 1: lings reached consensus, stored to memory
+   - Session 2: coordinator restored context via /catchup
+   - No re-explanation needed
+
+3. **Multi-Perspective Review**
+   - 2 independent reviewers caught different issues
+   - Reviewer #1: "define MCP", "remove ToC"
+   - Reviewer #2: "lead with 8-10x claim", "add methodology"
+
+4. **Autopoietic Demonstration**
+   - The process validated the claims in the content
+   - Blog describes memory+coordination → blog created using memory+coordination
+   - Meta-level proof of concept
+
+### Communication Pattern
+
+```
+Session 1:
+  Coordinator ──► spawn reviewers ──► critiques via memory
+  Coordinator ──► spawn writer+critic ──► iterate via memory exchange
+
+Session 2:
+  Coordinator ──► /catchup ──► find consensus in memory
+  Coordinator ──► dispatch writer ──► apply changes
+  Lings ──► /wrap ──► hivemind_shout ──► smite
+```
+
+### Lessons Learned
+
+1. **Nash equilibrium as stopping condition** - Better than "iterate until tired"
+2. **Memory scope matters** - Lings saved to Blobing project, had to query with `scope: "all"`
+3. **Quality vs speed tradeoff** - Swarm slower but higher quality for subjective tasks
+4. **Adversarial > solo review** - Structured disagreement catches blind spots
+
+### Cost Analysis (Estimated)
+
+```
+Coordinator (Opus): ~$0.40 - 2 sessions, catchup, dispatch, wrap
+Lings (Sonnet): ~$0.25 - 4 lings × ~$0.06 each
+Total: ~$0.65
+
+vs Solo writing + self-review: ~$0.30-0.40
+
+Premium: ~$0.25-0.35 for adversarial quality assurance
+```
+
+### Benchmark Category: Subjective Quality Tasks
+
+This benchmark demonstrates hive-mcp's applicability beyond code:
+
+| Task Type | Verification | Swarm Benefit |
+|-----------|--------------|---------------|
+| Code implementation | Tests, lint | Parallelization (8-10x speedup) |
+| **Content creation** | **Human judgment** | **Adversarial refinement (quality)** |
+| Research | Comprehensiveness | Parallel exploration |
+| Refactoring | Tests + review | Distributed file ownership |
+
+### Conclusion
+
+The blog post benchmark shows:
+- **Nash equilibrium** as principled stopping condition for subjective tasks
+- **Cross-session memory** enabling multi-day collaborative work
+- **Adversarial refinement** producing higher quality than solo review
+- **Autopoietic validation** - the tool proved itself by creating content about itself
+
+The real test: HN comments. External audience judgment is the ultimate benchmark for content quality.

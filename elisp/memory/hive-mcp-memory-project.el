@@ -20,6 +20,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'project)
 
 ;;;; Customization
@@ -165,9 +166,15 @@ Returns the :project-id value from .hive-project.edn, or nil if not found."
   "Return unique ID for project containing DIRECTORY-OR-ROOT.
 DIRECTORY-OR-ROOT can be either a project root path or any path within a project.
 If nil, uses the current buffer's project.
-Resolution order:
+
+Resolution order for base ID:
   1. Stable :project-id from .hive-project.edn (survives renames)
   2. Fallback: SHA1 hash of absolute path (filesystem-safe)
+
+Hierarchical support:
+  If a parent directory has .hive-project.edn with :project-id,
+  returns \"parent-id:child-id\" format. Supports arbitrary nesting.
+
 Returns \"global\" if not in a project."
   (let ((root (or (when directory-or-root
                     ;; First try as-is (if it's already a project root)
@@ -180,8 +187,13 @@ Returns \"global\" if not in a project."
                         directory-or-root))
                   (hive-mcp-memory-project-get-root))))
     (if root
-        (or (hive-mcp-memory-project--get-stable-id root)
-            (substring (sha1 (expand-file-name root)) 0 16))
+        (let* ((base-id (or (hive-mcp-memory-project--get-stable-id root)
+                            (substring (sha1 (expand-file-name root)) 0 16)))
+               (parent-id (hive-mcp-memory-project--find-parent-project-id root)))
+          ;; Build hierarchical ID if parent exists
+          (if parent-id
+              (concat parent-id ":" base-id)
+            base-id))
       "global")))
 
 (defun hive-mcp-memory-project-id-hash (&optional project-root)
@@ -191,6 +203,49 @@ Use this for migration when you need the path-based hash."
     (if root
         (substring (sha1 (expand-file-name root)) 0 16)
       "global")))
+
+;;;; Hierarchical Project ID Support
+
+(defun hive-mcp-memory-project--find-parent-project-id (project-root)
+  "Find parent project ID by walking up directories from PROJECT-ROOT.
+Looks for .hive-project.edn in parent directories.
+Returns the parent's :project-id if found (which itself may be hierarchical),
+or nil if no parent project exists."
+  (when project-root
+    (let* ((root (directory-file-name (expand-file-name project-root)))
+           (parent-dir (file-name-directory root)))
+      ;; Walk up until we hit filesystem root
+      (while (and parent-dir
+                  (not (string= parent-dir root))
+                  (not (string= parent-dir "/")))
+        (let ((config-path (expand-file-name hive-mcp-memory-project-config-file parent-dir)))
+          (when (file-exists-p config-path)
+            ;; Found a parent project config - extract its project-id
+            (let* ((config (condition-case nil
+                               (hive-mcp-memory-project--parse-edn-string
+                                (with-temp-buffer
+                                  (insert-file-contents config-path)
+                                  (buffer-string)))
+                             (error nil)))
+                   (parent-id (when config
+                                (cdr (assoc :project-id config)))))
+              (when parent-id
+                ;; Recursively check if this parent also has a parent
+                ;; to support arbitrary nesting: grandparent:parent:child
+                (let ((grandparent-id (hive-mcp-memory-project--find-parent-project-id parent-dir)))
+                  (cl-return-from hive-mcp-memory-project--find-parent-project-id
+                    (if grandparent-id
+                        (concat grandparent-id ":" (if (stringp parent-id)
+                                                       parent-id
+                                                     (symbol-name parent-id)))
+                      (if (stringp parent-id)
+                          parent-id
+                        (symbol-name parent-id)))))))))
+        ;; Move up one directory
+        (setq root parent-dir
+              parent-dir (file-name-directory (directory-file-name parent-dir))))
+      ;; No parent found
+      nil)))
 
 ;;;; Cache Management
 

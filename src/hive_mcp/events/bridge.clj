@@ -10,6 +10,8 @@
    - :file-modified, :error
    - :memory-added
    - :wrap-request, :wrap-crystallize (Option A - unified wrap)
+   - :kg-edge-created, :kg-edge-updated, :kg-edge-removed
+   - :kg-node-promoted, :kg-edges-batch-created
 
    Event vectors (hive-events):
    - [:task/start data], [:task/complete data]
@@ -18,13 +20,14 @@
    - [:file/modified data], [:error/occurred data]
    - [:memory/added data]
    - [:crystal/wrap-request data] (Option A - unified wrap)
+   - [:kg/edge-created data], [:kg/edge-updated data], [:kg/edge-removed data]
+   - [:kg/node-promoted data], [:kg/edges-batch-created data]
 
    SOLID: OCP - New hook types via defmethod, not modification
    CLARITY: Represented intent - Clear hook->event mappings")
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
-
 
 ;; =============================================================================
 ;; Multimethod for Hook Type Dispatch
@@ -146,6 +149,30 @@
 (defmethod hook->event :ling-ready-for-wrap
   [_hook-type payload]
   [:ling/ready-for-wrap payload])
+
+;; =============================================================================
+;; Knowledge Graph Events
+;; =============================================================================
+
+(defmethod hook->event :kg-edge-created
+  [_hook-type payload]
+  [:kg/edge-created payload])
+
+(defmethod hook->event :kg-edge-updated
+  [_hook-type payload]
+  [:kg/edge-updated payload])
+
+(defmethod hook->event :kg-edge-removed
+  [_hook-type payload]
+  [:kg/edge-removed payload])
+
+(defmethod hook->event :kg-node-promoted
+  [_hook-type payload]
+  [:kg/node-promoted payload])
+
+(defmethod hook->event :kg-edges-batch-created
+  [_hook-type payload]
+  [:kg/edges-batch-created payload])
 
 ;; =============================================================================
 ;; Bridge Dispatch Function

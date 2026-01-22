@@ -12,12 +12,12 @@
   (:require [hive-mcp.channel :as ch]
             [hive-mcp.hivemind :as hivemind]
             [hive-mcp.swarm.datascript :as ds]
+            [hive-mcp.tools.memory.scope :as scope]
             [clojure.core.async :as async :refer [go-loop <!]]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
-
 
 ;; ============================================================
 ;; Lings Registry State (Migrated to DataScript - ADR-002)
@@ -35,13 +35,14 @@
 (defn- ds-slave->legacy-format
   "Transform DataScript slave entity to legacy registry format.
 
-   DataScript: {:slave/id :slave/name :slave/presets :slave/cwd :slave/created-at}
-   Legacy:     {slave-id {:name :presets :cwd :spawned-at}}"
+   DataScript: {:slave/id :slave/name :slave/presets :slave/cwd :slave/project-id :slave/created-at}
+   Legacy:     {slave-id {:name :presets :cwd :project-id :spawned-at}}"
   [slave]
   {(:slave/id slave)
    {:name (:slave/name slave)
     :presets (vec (or (:slave/presets slave) []))
     :cwd (:slave/cwd slave)
+    :project-id (:slave/project-id slave)
     :spawned-at (when-let [ts (:slave/created-at slave)]
                   (.getTime ts))}})
 
@@ -49,13 +50,17 @@
   "Register a spawned ling in the registry.
 
    ADR-002: Writes to DataScript as primary store.
+   Derives project-id from cwd for project-scoped operations.
 
    SOLID: SRP - Only handles registration, not events."
   [slave-id {:keys [name presets cwd]}]
-  ;; Primary: DataScript
-  (ds/add-slave! slave-id {:name name
-                           :presets (vec (or presets []))
-                           :cwd cwd}))
+  ;; Derive project-id from cwd for project-scoped operations (e.g., swarm_kill 'all')
+  (let [project-id (when cwd (scope/get-current-project-id cwd))]
+    ;; Primary: DataScript
+    (ds/add-slave! slave-id {:name name
+                             :presets (vec (or presets []))
+                             :cwd cwd
+                             :project-id project-id})))
 
 (defn unregister-ling!
   "Remove a ling from the registry.

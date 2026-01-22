@@ -44,3 +44,6 @@ pdfs/
 # Codanna local index
 .codanna/
 .fastembed_cache/
+
+# deprecated kanban
+kanban.org

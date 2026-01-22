@@ -253,89 +253,103 @@
 (defn harvest-git-commits
   "Harvest git commits since session start.
 
+   opts: {:directory string} - Working directory for git operations.
+         If nil, uses Emacs default-directory (may be incorrect for cross-project calls).
+
    Returns: {:commits [string] :count int :error? {...} on failure}
 
    CLARITY: Telemetry first - emits :system/error on failure."
-  []
-  (try
-    (let [;; Get commits from today (session approximation)
-          elisp "(shell-command-to-string \"git log --since='midnight' --oneline 2>/dev/null\")"
-          {:keys [success result error]} (ec/eval-elisp elisp)]
-      (if success
-        (let [commits (when (and result (not (str/blank? result)))
-                        (str/split-lines (str/trim result)))]
-          {:commits (or commits [])
-           :count (count (or commits []))})
-        (do
-          (log/error "harvest-git-commits: Emacs command failed:" error)
-          {:commits []
-           :count 0
-           :error {:type :harvest-failed
-                   :fn "harvest-git-commits"
-                   :msg error}})))
-    (catch Exception e
-      (let [error-data {:type :harvest-failed
-                        :fn "harvest-git-commits"
-                        :msg (.getMessage e)}]
-        (log/error e "harvest-git-commits failed")
+  ([] (harvest-git-commits nil))
+  ([{:keys [directory]}]
+   (try
+     (let [;; Get commits from today (session approximation)
+           ;; Use let-binding to set default-directory when directory is provided
+           elisp (if directory
+                   (format "(let ((default-directory %s)) (shell-command-to-string \"git log --since='midnight' --oneline 2>/dev/null\"))"
+                           (pr-str directory))
+                   "(shell-command-to-string \"git log --since='midnight' --oneline 2>/dev/null\")")
+           {:keys [success result error]} (ec/eval-elisp elisp)]
+       (if success
+         (let [commits (when (and result (not (str/blank? result)))
+                         (str/split-lines (str/trim result)))]
+           {:commits (or commits [])
+            :count (count (or commits []))})
+         (do
+           (log/error "harvest-git-commits: Emacs command failed:" error)
+           {:commits []
+            :count 0
+            :error {:type :harvest-failed
+                    :fn "harvest-git-commits"
+                    :msg error}})))
+     (catch Exception e
+       (let [error-data {:type :harvest-failed
+                         :fn "harvest-git-commits"
+                         :msg (.getMessage e)}]
+         (log/error e "harvest-git-commits failed")
         ;; Emit structured error for telemetry
-        (emit-harvest-error! "harvest-git-commits" (.getMessage e) {})
-        {:commits []
-         :count 0
-         :error error-data}))))
+         (emit-harvest-error! "harvest-git-commits" (.getMessage e) {})
+         {:commits []
+          :count 0
+          :error error-data})))))
 
 (defn harvest-all
   "Harvest all session data for wrap crystallization.
+
+   opts: {:directory string} - Working directory for git operations.
+         Pass caller's cwd to ensure git context comes from correct project.
 
    Returns: {:progress-notes [...]
              :completed-tasks [...]
              :git-commits [...]
              :recalls {...}
              :session string
+             :directory string (if provided)
              :errors [...]}  ; aggregated errors from sub-harvests
 
    CLARITY: Telemetry first - aggregates errors for visibility."
-  []
-  (try
-    (let [progress (harvest-session-progress)
-          tasks (harvest-completed-tasks)
-          commits (harvest-git-commits)
-          recalls (try
-                    (recall/get-buffered-recalls)
-                    (catch Exception e
-                      (log/warn "Failed to get buffered recalls:" (.getMessage e))
-                      {}))
-          ;; Aggregate errors from sub-harvests
-          errors (filterv some? [(:error progress)
-                                 (:error tasks)
-                                 (:error commits)])]
-      {:progress-notes (:notes progress)
-       :completed-tasks (:tasks tasks)
-       :git-commits (:commits commits)
-       :recalls recalls
-       :session (crystal/session-id)
-       :summary {:progress-count (:count progress)
-                 :task-count (:count tasks)
-                 :commit-count (:count commits)
-                 :recall-count (count recalls)}
-       :errors (when (seq errors) errors)})
-    (catch Exception e
-      (let [error-data {:type :harvest-failed
-                        :fn "harvest-all"
-                        :msg (.getMessage e)}]
-        (log/error e "harvest-all failed catastrophically")
+  ([] (harvest-all nil))
+  ([{:keys [directory] :as opts}]
+   (try
+     (let [progress (harvest-session-progress)
+           tasks (harvest-completed-tasks)
+           commits (harvest-git-commits opts)
+           recalls (try
+                     (recall/get-buffered-recalls)
+                     (catch Exception e
+                       (log/warn "Failed to get buffered recalls:" (.getMessage e))
+                       {}))
+           ;; Aggregate errors from sub-harvests
+           errors (filterv some? [(:error progress)
+                                  (:error tasks)
+                                  (:error commits)])]
+       {:progress-notes (:notes progress)
+        :completed-tasks (:tasks tasks)
+        :git-commits (:commits commits)
+        :recalls recalls
+        :session (crystal/session-id)
+        :directory directory
+        :summary {:progress-count (:count progress)
+                  :task-count (:count tasks)
+                  :commit-count (:count commits)
+                  :recall-count (count recalls)}
+        :errors (when (seq errors) errors)})
+     (catch Exception e
+       (let [error-data {:type :harvest-failed
+                         :fn "harvest-all"
+                         :msg (.getMessage e)}]
+         (log/error e "harvest-all failed catastrophically")
         ;; Emit structured error for telemetry
-        (emit-harvest-error! "harvest-all" (.getMessage e) {})
-        {:progress-notes []
-         :completed-tasks []
-         :git-commits []
-         :recalls {}
-         :session (try (crystal/session-id) (catch Exception _ "unknown"))
-         :summary {:progress-count 0
-                   :task-count 0
-                   :commit-count 0
-                   :recall-count 0}
-         :errors [error-data]}))))
+         (emit-harvest-error! "harvest-all" (.getMessage e) {})
+         {:progress-notes []
+          :completed-tasks []
+          :git-commits []
+          :recalls {}
+          :session (try (crystal/session-id) (catch Exception _ "unknown"))
+          :summary {:progress-count 0
+                    :task-count 0
+                    :commit-count 0
+                    :recall-count 0}
+          :errors [error-data]})))))
 
 ;; =============================================================================
 ;; Crystallization Hook

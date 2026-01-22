@@ -1,15 +1,56 @@
 (ns hive-mcp.swarm.logic
   "Logic programming engine for swarm hivemind coordination.
 
-   Uses core.logic pldb (Prolog-style database) to track:
-   - Slave state and ownership
-   - Task state and dependencies
-   - File claims for conflict detection
+   WHY CORE.LOGIC (vs DataScript)?
+   ===============================
+   This module uses core.logic pldb (Prolog-style in-memory database) for
+   **declarative constraint queries** that would be awkward in DataScript:
 
-   Provides predicates for:
-   - File conflict detection
-   - Circular dependency / deadlock detection
-   - Dependency readiness checks"
+   1. Transitive closure (reachability) - deadlock detection via reachable-fromo
+   2. Negation-as-failure - conflict detection (file claimed by DIFFERENT slave)
+   3. Batch computation - Kahn's algorithm with logical conflict grouping
+
+   DataScript (swarm/datascript.clj) handles **entity persistence**:
+   - CRUD operations on slaves, tasks, coordinators, wraps
+   - Datomic-style pull queries for entity attributes
+   - Transaction history and listeners
+
+   WHEN TO USE WHICH:
+   - Need to store/query entity state? → DataScript
+   - Need transitive/recursive queries? → core.logic (this module)
+   - Need conflict/constraint checking? → core.logic (this module)
+
+   RELATIONS (pldb/db-rel)
+   =======================
+   - slave:       (slave-id, status) - Worker agent state
+   - task:        (task-id, slave-id, status) - Task ownership
+   - claims:      (file-path, slave-id) - File ownership for conflict detection
+   - depends-on:  (task-id, dep-task-id) - Task dependencies
+   - task-files:  (task-id, file-path) - Files associated with task
+   - edit:        (edit-id, file-path, type) - Drone wave batch planning
+   - edit-depends: (edit-a, edit-b) - Edit ordering constraints
+
+   KEY PREDICATES
+   ==============
+   - file-conflicto:    Does another slave own this file?
+   - would-deadlocko:   Would adding this dependency create a cycle?
+   - reachable-fromo:   Transitive closure of dependency graph
+
+   BATCH COMPUTATION
+   =================
+   compute-batches: Modified Kahn's algorithm that groups edits into
+   parallel-safe batches respecting both dependencies AND file conflicts.
+
+   THREAD SAFETY
+   =============
+   All mutations go through atom swap! operations. For atomic check+claim,
+   use coordinator/atomic-claim-files! which locks the logic-db atom.
+
+   SEE ALSO
+   ========
+   - swarm/coordinator.clj - High-level API using this module
+   - swarm/datascript.clj  - Entity state management
+   - tools/swarm/wave.clj  - Batch execution using compute-batches"
   (:require [clojure.core.logic :as l]
             [clojure.core.logic.pldb :as pldb]
             [taoensso.timbre :as log]))
@@ -173,6 +214,14 @@
   "Associate a file with a task (for claim tracking)."
   [task-id file-path]
   (swap! logic-db pldb/db-fact task-files task-id file-path))
+
+(defn get-files-for-task
+  "Get all files associated with a task.
+   Returns vector of file paths."
+  [task-id]
+  (vec (with-db
+         (l/run* [f]
+                 (task-files task-id f)))))
 
 (defn release-claims-for-task!
   "Release all file claims associated with a task.
@@ -524,6 +573,27 @@
             (l/fresh [f s]
                      (claims f s)
                      (l/== q {:file f :slave-id s})))))
+
+(defn get-claim-for-file
+  "Get claim info for a specific file path.
+   Returns {:file path :slave-id id} or nil if not claimed."
+  [file-path]
+  (first
+   (with-db
+     (l/run 1 [q]
+            (l/fresh [s]
+                     (claims file-path s)
+                     (l/== q {:file file-path :slave-id s}))))))
+
+(defn release-claim-for-file!
+  "Release a claim for a specific file path, regardless of owner.
+   Returns true if claim was released, false if file wasn't claimed."
+  [file-path]
+  (if-let [claim (get-claim-for-file file-path)]
+    (do
+      (remove-claim! file-path (:slave-id claim))
+      true)
+    false))
 
 (defn get-all-slaves
   "Get all registered slaves. Returns [{:slave-id id :status status} ...]"

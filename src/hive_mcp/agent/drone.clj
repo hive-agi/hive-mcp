@@ -134,6 +134,7 @@
   "Safe tools for drone agents. Drones cannot write files directly - they must use propose_diff."
   ["read_file" "grep" "glob_files" "clojure_eval" "clojure_inspect_project"
    "magit_status" "magit_diff" "magit_log" "magit_branches"
+   "kondo_lint" "kondo_analyze"
    "propose_diff" "hivemind_shout"])
 
 ;;; ============================================================
@@ -293,7 +294,15 @@
     (when (seq files)
       (let [result (coordinator/atomic-claim-files! task-id agent-id files)]
         (when-not (:acquired? result)
-          (log/warn "Drone file conflicts detected:" (:conflicts result))
+          ;; CLARITY-T: Structured JSON logging for Loki
+          (log/error {:event :drone/error
+                      :error-type :conflict
+                      :drone-id agent-id
+                      :task-id task-id
+                      :parent-id effective-parent-id
+                      :files files
+                      :conflicts (:conflicts result)
+                      :message "File conflicts detected - files locked by another drone"})
           ;; Emit failure event for conflict (CLARITY-T)
           (ev/dispatch [:drone/failed {:drone-id agent-id
                                        :task-id task-id
@@ -383,12 +392,20 @@
         (catch Exception e
           ;; 5. EMIT FAILURE EVENT ON EXCEPTION (CLARITY-T)
           ;; Use structured error classification for proper Prometheus labeling
+          ;; JSON-structured logging for Loki ingestion
           (let [duration-ms (- (System/currentTimeMillis) start-time)
                 structured (structure-error e)]
-            (log/warn "Drone execution failed"
-                      {:drone-id agent-id
-                       :error-type (:error-type structured)
-                       :message (:message structured)})
+            ;; CLARITY-T: Structured JSON logging for Loki
+            (log/error {:event :drone/error
+                        :error-type (:error-type structured)
+                        :drone-id agent-id
+                        :task-id task-id
+                        :parent-id effective-parent-id
+                        :files files
+                        :duration-ms duration-ms
+                        :message (:message structured)
+                        :stacktrace (subs (or (:stacktrace structured) "") 0
+                                          (min 500 (count (or (:stacktrace structured) ""))))})
             (ev/dispatch [:drone/failed {:drone-id agent-id
                                          :task-id task-id
                                          :parent-id effective-parent-id

@@ -1,12 +1,42 @@
 (ns hive-mcp.swarm.coordinator
   "High-level coordination API for swarm hivemind.
 
-   Provides:
-   - Pre-flight conflict checking before dispatch
-   - Task queue for conflicting tasks (dispatch when conflict clears)
-   - File claim registration and release
-   - Heuristic file extraction from prompts"
+   USES CORE.LOGIC (not DataScript)
+   ================================
+   This module delegates to swarm/logic.clj for conflict detection
+   and claim management. Core.logic pldb provides:
+
+   - check-file-conflicts: Prolog-style query for files owned by OTHER slaves
+   - atomic-claim-files!:  Atomic check+claim to prevent race conditions
+   - check-would-deadlock: Transitive dependency cycle detection
+
+   WHY NOT DATASCRIPT HERE?
+   DataScript is for entity CRUD. This module needs logical predicates:
+   'Is file X claimed by a slave OTHER than Y?' requires negation-as-failure,
+   which is natural in Prolog/core.logic but awkward in Datalog.
+
+   KEY FUNCTIONS
+   =============
+   - pre-flight-check:     Check conflicts/deadlocks before dispatch
+   - atomic-claim-files!:  Race-free claim acquisition (uses locking)
+   - dispatch-or-queue!:   Unified dispatch entry point
+   - process-queue!:       Re-check queued tasks when claims release
+
+   FILE CLAIMS FLOW
+   ================
+   1. swarm_dispatch called with files list
+   2. pre-flight-check queries logic/check-file-conflicts
+   3. If no conflicts: atomic-claim-files! claims in logic-db
+   4. Task executes...
+   5. On completion: release-task-claims! removes from logic-db
+   6. process-queue! re-checks waiting tasks
+
+   SEE ALSO
+   ========
+   - swarm/logic.clj     - Core.logic predicates and claims storage
+   - swarm/datascript.clj - Entity state (slaves, tasks, coordinators)"
   (:require [hive-mcp.swarm.logic :as logic]
+            [hive-mcp.tools.swarm.claim :as claim-tools]
             [clojure.string :as str]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -127,7 +157,8 @@
           (do
             (doseq [f files]
               (logic/add-claim! f slave-id)
-              (logic/add-task-file! task-id f))
+              (logic/add-task-file! task-id f)
+              (claim-tools/record-claim-timestamp! f))
             {:acquired? true
              :conflicts []
              :files-claimed (count files)}))))))
@@ -195,15 +226,23 @@
   (when (seq files)
     (doseq [f files]
       (logic/add-claim! f slave-id)
-      (logic/add-task-file! task-id f))
+      (logic/add-task-file! task-id f)
+      (claim-tools/record-claim-timestamp! f))
     (log/info "Registered" (count files) "file claims for task" task-id)))
 
 (defn release-task-claims!
   "Release file claims when a task completes.
-   Call this on task completion/failure."
+   Call this on task completion/failure.
+   Also cleans up claim timestamps for staleness tracking."
   [task-id]
-  (logic/release-claims-for-task! task-id)
-  (log/info "Released claims for task" task-id))
+  ;; Get files before releasing
+  (let [files (logic/get-files-for-task task-id)]
+    ;; Release claims in logic-db
+    (logic/release-claims-for-task! task-id)
+    ;; Clean up timestamp tracking
+    (doseq [f files]
+      (claim-tools/remove-claim-timestamp! f))
+    (log/info "Released" (count files) "claims for task" task-id)))
 
 ;; =============================================================================
 ;; Queue Processing (call periodically or on events)

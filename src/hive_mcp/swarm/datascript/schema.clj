@@ -111,6 +111,9 @@
    :slave/cwd
    {:db/doc "Current working directory"}
 
+   :slave/project-id
+   {:db/doc "Project ID derived from cwd (for project-scoped operations like swarm_kill 'all')"}
+
    :slave/current-task
    {:db/doc "Reference to currently executing task"
     :db/valueType :db.type/ref
@@ -198,6 +201,9 @@
 
    :wrap-queue/session-id
    {:db/doc "Session tag (e.g., session:2026-01-14:ling-123)"}
+
+   :wrap-queue/project-id
+   {:db/doc "Project ID for scoping (derived from ling's working directory)"}
 
    :wrap-queue/created-ids
    {:db/doc "Memory entry IDs created during this wrap"

@@ -2,6 +2,16 @@
 
 Restore context from project memory and get up to speed at the start of a new session.
 
+## IMPORTANT: Directory Scoping
+
+**All MCP tools that accept a `directory` parameter MUST receive your current working directory** to ensure operations target YOUR project, not the MCP server's directory.
+
+Get your working directory from:
+- Your prompt path (e.g., `~/PP/funeraria/sisf-web$`)
+- Run `pwd` in bash
+
+Pass it to: `mcp_memory_query`, `mcp_mem_kanban_*`, `magit_*` tools.
+
 ## Instructions
 
 ### 1. Load Context from Memory
@@ -12,6 +22,7 @@ mcp__emacs-mcp__mcp_memory_query
   type: "note"
   tags: ["session-summary"]
   limit: 3
+  directory: "/path/to/your/project"
 ```
 
 **b) Query active decisions:**
@@ -19,6 +30,7 @@ mcp__emacs-mcp__mcp_memory_query
 mcp__emacs-mcp__mcp_memory_query
   type: "decision"
   limit: 10
+  directory: "/path/to/your/project"
 ```
 
 **c) Query code conventions:**
@@ -26,6 +38,7 @@ mcp__emacs-mcp__mcp_memory_query
 mcp__emacs-mcp__mcp_memory_query
   type: "convention"
   limit: 10
+  directory: "/path/to/your/project"
 ```
 
 **d) Query useful snippets (if needed):**
@@ -33,6 +46,7 @@ mcp__emacs-mcp__mcp_memory_query
 mcp__emacs-mcp__mcp_memory_query_metadata
   type: "snippet"
   limit: 5
+  directory: "/path/to/your/project"
 ```
 
 ### 2. Load File Context
@@ -51,8 +65,8 @@ Read CLAUDE.md
 
 **a) Load In-Memory Kanban first:**
 ```
-mcp__emacs-mcp__mcp_mem_kanban_stats
-mcp__emacs-mcp__mcp_mem_kanban_list status:"doing"
+mcp__emacs-mcp__mcp_mem_kanban_stats directory:"/path/to/your/project"
+mcp__emacs-mcp__mcp_mem_kanban_list status:"doing" directory:"/path/to/your/project"
 ```
 
 Show DOING tasks as "In Progress" in the summary.
@@ -75,11 +89,11 @@ mcp__vibe_kanban__list_tasks
 
 ### 4. Check Git State
 
-**Use magit MCP tools:**
+**Use magit MCP tools with your working directory:**
 ```
-mcp__emacs-mcp__magit_status         # Full repo status
-mcp__emacs-mcp__magit_branches       # Branch info
-mcp__emacs-mcp__magit_log            # Recent commits (default: 10)
+mcp__emacs-mcp__magit_status directory:"/path/to/your/project"
+mcp__emacs-mcp__magit_branches directory:"/path/to/your/project"
+mcp__emacs-mcp__magit_log directory:"/path/to/your/project"
 ```
 
 ### 5. Check Memory Health

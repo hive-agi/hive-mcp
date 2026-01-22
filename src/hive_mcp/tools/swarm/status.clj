@@ -17,7 +17,6 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-
 ;; ============================================================
 ;; Elisp Fallback for Lings (ADR-001 Phase 1 Fix)
 ;; ============================================================
@@ -49,11 +48,12 @@
 (defn format-lings-for-response
   "Format lings data for MCP response.
    Accepts either registry map or elisp vector format.
+   Includes project-id for project-scoped operations.
 
    CLARITY: R - Clear transformation of both data formats"
   [lings-data]
   (cond
-    ;; Registry format: {slave-id {:name, :presets, :cwd, :spawned-at}}
+    ;; Registry format: {slave-id {:name, :presets, :cwd, :project-id, :spawned-at}}
     (map? lings-data)
     (into {}
           (map (fn [[id info]]
@@ -71,6 +71,7 @@
                   {:name (:name ling)
                    :presets (:presets ling)
                    :cwd (:cwd ling)
+                   :project-id (:project-id ling)  ;; May be nil for elisp-sourced
                    :status (:status ling)
                    :age-minutes nil}])  ;; Unknown age for elisp-sourced
                lings-data))

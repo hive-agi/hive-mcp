@@ -16,12 +16,14 @@
    [hive-mcp.tools.projectile :as projectile]
    [hive-mcp.tools.kanban :as kanban]
    [hive-mcp.tools.swarm :as swarm]
+   [hive-mcp.tools.swarm.claim :as claim]
    [hive-mcp.tools.org :as org]
    [hive-mcp.tools.prompt :as prompt]
    [hive-mcp.tools.presets :as presets-tools]
    [hive-mcp.tools.diff :as diff]
    [hive-mcp.tools.kondo :as kondo]
    [hive-mcp.tools.scc :as scc]
+   [hive-mcp.tools.kg :as kg]
    [hive-mcp.tools.crystal :as crystal]
    [hive-mcp.tools.hot :as hot]
    [hive-mcp.tools.health :as health]
@@ -29,6 +31,7 @@
    [hive-mcp.tools.session-complete :as session-complete]
    [hive-mcp.tools.hive-project :as hive-project]
    [hive-mcp.tools.telemetry :as telemetry]
+   [hive-mcp.tools.olympus :as olympus]
    [hive-mcp.hivemind :as hivemind]
    [hive-mcp.channel :as channel]
    [hive-mcp.agent :as agent]
@@ -67,17 +70,20 @@
                projectile/tools
                ;; kanban/tools removed - now conditional on Chroma availability
                swarm/tools
+               claim/tools  ; File claim management (claim_list, claim_clear)
                prompt/tools
                presets-tools/tools
                diff/tools
                kondo/tools
                scc/tools
+               kg/tools      ; Knowledge Graph query and traversal
                hot/tools     ; hot reload coordination tools
                health/tools  ; MCP health check
                drone-feedback/tools
                session-complete/tools  ; ling session lifecycle
                hive-project/tools      ; .hive-project.edn generator
                telemetry/tools         ; prometheus_query (CLARITY-T)
+               olympus/tools           ; grid layout for swarm visualization
                hivemind/tools
                channel/channel-tools
                agent/tools)))
@@ -133,17 +139,21 @@
                projectile/tools
                kanban/tools
                swarm/tools
+               claim/tools  ; File claim management (claim_list, claim_clear)
                org/tools
                prompt/tools
                presets-tools/tools
                diff/tools
                kondo/tools
                scc/tools
+               kg/tools      ; Knowledge Graph query and traversal
                hot/tools     ; hot reload coordination tools
                health/tools  ; MCP health check
                drone-feedback/tools
                session-complete/tools  ; ling session lifecycle
                hive-project/tools      ; .hive-project.edn generator
+               telemetry/tools         ; prometheus_query (CLARITY-T)
+               olympus/tools           ; grid layout for swarm visualization
                hivemind/tools
                channel/channel-tools
                agent/tools)))

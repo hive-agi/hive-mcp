@@ -28,7 +28,6 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-
 ;; ============================================================
 ;; Handler Re-exports (Facade)
 ;; ============================================================
@@ -66,7 +65,7 @@
 
 (def tools
   [{:name "mcp_memory_add"
-    :description "Add an entry to project memory (Chroma storage). Types: note, snippet, convention, decision. Optionally specify duration for TTL: ephemeral (1 day), short (7 days), medium (30 days), long (90 days), permanent (never expires)."
+    :description "Add an entry to project memory (Chroma storage). Types: note, snippet, convention, decision. Optionally specify duration for TTL: ephemeral (1 day), short (7 days), medium (30 days), long (90 days), permanent (never expires). For ling attribution, pass agent_id to tag entry with agent:<id>. Knowledge Graph: Use kg_* params to create edges linking this entry to existing entries (implements, supersedes, depends-on, refines)."
     :inputSchema {:type "object"
                   :properties {"type" {:type "string"
                                        :enum ["note" "snippet" "convention" "decision"]
@@ -80,7 +79,21 @@
                                            :enum ["ephemeral" "short" "medium" "long" "permanent"]
                                            :description "Duration/TTL category (default: long)"}
                                "directory" {:type "string"
-                                            :description "Working directory to determine project scope (pass your cwd to ensure correct scoping)"}}
+                                            :description "Working directory to determine project scope (pass your cwd to ensure correct scoping)"}
+                               "agent_id" {:type "string"
+                                           :description "Agent identifier for attribution. Lings should pass CLAUDE_SWARM_SLAVE_ID. Entry will be tagged with agent:<id> for tracking which agent created it."}
+                               "kg_implements" {:type "array"
+                                                :items {:type "string"}
+                                                :description "List of entry IDs this implements. Creates :implements edges in Knowledge Graph."}
+                               "kg_supersedes" {:type "array"
+                                                :items {:type "string"}
+                                                :description "List of entry IDs this supersedes (replaces). Creates :supersedes edges in Knowledge Graph."}
+                               "kg_depends_on" {:type "array"
+                                                :items {:type "string"}
+                                                :description "List of entry IDs this depends on. Creates :depends-on edges in Knowledge Graph."}
+                               "kg_refines" {:type "array"
+                                             :items {:type "string"}
+                                             :description "List of entry IDs this refines (improves without replacing). Creates :refines edges in Knowledge Graph."}}
                   :required ["type" "content"]}
     :handler handle-mcp-memory-add}
 
@@ -124,7 +137,7 @@
     :handler handle-mcp-memory-query-metadata}
 
    {:name "mcp_memory_get_full"
-    :description "Get full content of a memory entry by ID. Use after mcp_memory_query_metadata to fetch specific entries when you need the full content."
+    :description "Get full content of a memory entry by ID. Use after mcp_memory_query_metadata to fetch specific entries when you need the full content. Includes Knowledge Graph edges: kg_outgoing (edges from this entry) and kg_incoming (edges to this entry) when present."
     :inputSchema {:type "object"
                   :properties {"id" {:type "string"
                                      :description "ID of the memory entry to retrieve"}}

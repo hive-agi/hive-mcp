@@ -30,16 +30,17 @@
    Arguments:
      slave-id  - Unique identifier (required)
      opts      - Map with optional keys:
-                 :name    - Human-readable name (defaults to slave-id)
-                 :status  - Initial status (default :idle)
-                 :depth   - Hierarchy depth (default 1 for ling)
-                 :parent  - Parent slave-id string
-                 :presets - Collection of preset names
-                 :cwd     - Working directory
+                 :name       - Human-readable name (defaults to slave-id)
+                 :status     - Initial status (default :idle)
+                 :depth      - Hierarchy depth (default 1 for ling)
+                 :parent     - Parent slave-id string
+                 :presets    - Collection of preset names
+                 :cwd        - Working directory
+                 :project-id - Project ID for scoping (derived from cwd)
 
    Returns:
      Transaction report with :tempids"
-  [slave-id {:keys [name status depth parent presets cwd]
+  [slave-id {:keys [name status depth parent presets cwd project-id]
              :or {status :idle depth 1}}]
   {:pre [(string? slave-id)
          (contains? schema/slave-statuses status)]}
@@ -51,9 +52,10 @@
                          :slave/tasks-completed 0
                          :slave/created-at (conn/now)}
                   cwd (assoc :slave/cwd cwd)
+                  project-id (assoc :slave/project-id project-id)
                   (seq presets) (assoc :slave/presets (vec presets))
                   parent (assoc :slave/parent [:slave/id parent]))]
-    (log/debug "Adding slave:" slave-id "status:" status)
+    (log/debug "Adding slave:" slave-id "status:" status "project-id:" project-id)
     (d/transact! c [tx-data])))
 
 (defn update-slave!

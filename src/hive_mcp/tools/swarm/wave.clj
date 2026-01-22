@@ -18,6 +18,7 @@
             [hive-mcp.events.core :as ev]
             [hive-mcp.agent :as agent]
             [hive-mcp.telemetry.prometheus :as prom]
+            [hive-mcp.telemetry.health :as health]
             [clojure.core.async :as async :refer [go go-loop <! >! <!! chan close!]]
             [clojure.string :as str]
             [clojure.java.io :as io]
@@ -154,11 +155,40 @@
   (ds/get-plan-items plan-id))
 
 ;;; =============================================================================
-;;; Drone Execution
+;;; Drone Execution (with nREPL retry for transient failures)
 ;;; =============================================================================
 
-(defn- execute-drone-task
-  "Execute a single drone task.
+(def ^:private nrepl-error-patterns
+  "Patterns that indicate an nREPL transient failure (worth retrying).
+
+   CLARITY-Y: Yield safe failure - distinguish transient from permanent errors."
+  [#"(?i)connection.*refused"
+   #"(?i)socket.*closed"
+   #"(?i)nrepl.*not.*available"
+   #"(?i)nrepl.*disconnect"
+   #"(?i)timeout"
+   #"(?i)network.*unreachable"
+   #"(?i)connection.*reset"])
+
+(defn- transient-nrepl-error?
+  "Check if error message indicates a transient nREPL failure.
+
+   Returns true if the error matches known transient patterns."
+  [error-msg]
+  (when error-msg
+    (some #(re-find % error-msg) nrepl-error-patterns)))
+
+(def ^:private drone-retry-config
+  "Retry configuration for drone tasks.
+
+   CLARITY-Y: Exponential backoff with bounded retries."
+  {:max-retries 2    ; 1 initial + 2 retries = 3 total attempts
+   :initial-delay-ms 500
+   :backoff-multiplier 2
+   :max-delay-ms 5000})
+
+(defn- execute-drone-task-once
+  "Execute a single drone task without retry.
 
    Arguments:
      item   - Change item map
@@ -168,30 +198,96 @@
    Returns:
      Map with :success :result or :error"
   [{:keys [change-item/id change-item/file change-item/task]} preset cwd]
-  (try
-    (log/info "Executing drone task for item:" id "file:" file "cwd:" cwd)
-    ;; Update status to dispatched
-    (ds/update-item-status! id :dispatched)
-
-    ;; Delegate to drone
-    (let [result (agent/delegate-drone!
-                  {:task (str "File: " file "\n\nTask: " task)
-                   :files [file]
-                   :preset preset
-                   :trace true
-                   :cwd cwd})]
-      (if (= :completed (:status result))
-        {:success true
-         :item-id id
-         :result (:result result)}
-        {:success false
-         :item-id id
-         :error (or (:result result) "Drone execution failed")}))
-    (catch Exception e
-      (log/error e "Drone task failed for item:" id)
+  (let [result (agent/delegate-drone!
+                {:task (str "File: " file "\n\nTask: " task)
+                 :files [file]
+                 :preset preset
+                 :trace true
+                 :cwd cwd})]
+    (if (= :completed (:status result))
+      {:success true
+       :item-id id
+       :result (:result result)}
       {:success false
        :item-id id
-       :error (.getMessage e)})))
+       :error (or (:result result) "Drone execution failed")})))
+
+(defn- execute-drone-task
+  "Execute a single drone task with retry for transient nREPL failures.
+
+   Arguments:
+     item   - Change item map
+     preset - Drone preset
+     cwd    - Optional working directory override for path resolution
+
+   Retry behavior:
+     - Retries up to max-retries times for transient nREPL errors
+     - Exponential backoff between retries
+     - Permanent errors fail immediately without retry
+
+   Returns:
+     Map with :success :result or :error"
+  [{:keys [change-item/id change-item/file change-item/task] :as item} preset cwd]
+  (let [{:keys [max-retries initial-delay-ms backoff-multiplier max-delay-ms]} drone-retry-config]
+    (loop [attempt 1
+           delay-ms initial-delay-ms]
+      (log/info "Executing drone task for item:" id "file:" file "cwd:" cwd
+                {:attempt attempt :max-attempts (inc max-retries)})
+
+      ;; Update status to dispatched (only on first attempt)
+      (when (= attempt 1)
+        (ds/update-item-status! id :dispatched))
+
+      (let [result (try
+                     (execute-drone-task-once item preset cwd)
+                     (catch Exception e
+                       {:success false
+                        :item-id id
+                        :error (.getMessage e)}))]
+
+        (cond
+          ;; Success - return result
+          (:success result)
+          (do
+            (when (> attempt 1)
+              (log/info "Drone task succeeded after" attempt "attempts for item:" id))
+            result)
+
+          ;; Failure - check if transient and we have retries left
+          (and (transient-nrepl-error? (:error result))
+               (<= attempt max-retries))
+          (do
+            (log/warn "Transient nREPL error for item:" id
+                      {:attempt attempt
+                       :error (:error result)
+                       :retry-delay-ms delay-ms})
+            ;; Emit health event for telemetry
+            (try
+              (health/emit-health-event! {:type :nrepl-disconnect
+                                          :severity :warn
+                                          :message (str "Transient nREPL error, retrying: " (:error result))
+                                          :context {:item-id id :attempt attempt}
+                                          :recoverable? true})
+              (catch Exception _))
+            (Thread/sleep delay-ms)
+            (recur (inc attempt)
+                   (min (* delay-ms backoff-multiplier) max-delay-ms)))
+
+          ;; Permanent failure or retries exhausted
+          :else
+          (do
+            ;; CLARITY-T: Structured JSON logging for Loki
+            (log/error {:event :wave/item-failed
+                        :item-id id
+                        :file file
+                        :task task
+                        :attempts attempt
+                        :error-type (if (transient-nrepl-error? (:error result))
+                                      :nrepl-transient
+                                      :permanent)
+                        :error (:error result)
+                        :retries-exhausted (> attempt 1)})
+            result))))))
 
 ;;; =============================================================================
 ;;; Wave Execution (core.async bounded concurrency)
@@ -258,7 +354,14 @@
               exec-result (try
                             (execute-drone-task item preset cwd)
                             (catch Exception e
-                              (log/error e "Uncaught exception in drone worker")
+                              ;; CLARITY-T: Structured JSON logging for Loki
+                              (log/error {:event :wave/worker-exception
+                                          :item-id item-id
+                                          :file (:change-item/file item)
+                                          :wave-id wave-id
+                                          :error-type :uncaught-exception
+                                          :exception-class (.getName (class e))
+                                          :message (.getMessage e)})
                               {:success false
                                :item-id item-id
                                :error (str "Worker exception: " (.getMessage e))}))]
@@ -404,15 +507,40 @@
                   ;; CLEANUP: Reset all transient data (edits + task-files)
                   ;; CRITICAL: Use reset-all-transient! to prevent memory leak in task-files
                   (logic/reset-all-transient!)
-                  (log/info "Wave complete. Batches:" (count effective-batches)
-                            "Completed:" total-completed "Failed:" total-failed)
+
+                  ;; CLARITY-T: Structured JSON logging for Loki
+                  (if (pos? total-failed)
+                    (let [failed-items (->> items
+                                            (filter #(= :failed (:change-item/status %)))
+                                            (mapv #(select-keys % [:change-item/id :change-item/file])))]
+                      (log/error {:event :wave/failure
+                                  :wave-id wave-id
+                                  :plan-id plan-id
+                                  :failed-count total-failed
+                                  :completed-count total-completed
+                                  :batch-count (count effective-batches)
+                                  :success-rate success-rate
+                                  :failed-items failed-items
+                                  :reason (if (= total-completed 0) "all-failed" "partial-failure")}))
+                    (log/info {:event :wave/completed
+                               :wave-id wave-id
+                               :plan-id plan-id
+                               :completed-count total-completed
+                               :batch-count (count effective-batches)
+                               :success-rate success-rate}))
 
                   ;; CLARITY-T: Record wave metrics
                   (let [wave-duration-seconds (/ (- (System/nanoTime) wave-start-time) 1e9)]
                     (prom/set-wave-success-rate! success-rate)
                     (dotimes [_ total-completed] (prom/inc-wave-items! :success))
                     (dotimes [_ total-failed] (prom/inc-wave-items! :failed))
-                    (prom/observe-wave-duration! wave-duration-seconds))
+                    (prom/observe-wave-duration! wave-duration-seconds)
+                    ;; Record wave failures with granular reason
+                    (when (pos? total-failed)
+                      (prom/inc-wave-failures! wave-id
+                                               (if (= total-completed 0)
+                                                 :all-failed
+                                                 :partial-failure))))
 
                   (ds/complete-wave! wave-id final-status)
                   (ds/update-plan-status! plan-id (if (pos? total-failed) :failed :completed))
@@ -471,6 +599,9 @@
       ;; Update statuses
       (ds/complete-wave! wave-id :cancelled)
       (ds/update-plan-status! plan-id :cancelled)
+
+      ;; CLARITY-T: Record wave failure metric for cancellation
+      (prom/inc-wave-failures! wave-id (or reason :cancelled))
 
       ;; Emit cancellation event
       (ev/dispatch [:wave/cancelled {:plan-id plan-id
@@ -597,6 +728,8 @@
         (validate-task-paths normalized-tasks))
 
       ;; Proceed with plan and wave execution
+      ;; Note: nREPL pre-flight check removed - drones use OpenRouter, not nREPL.
+      ;; clojure_eval is optional; transient nREPL errors handled gracefully at runtime.
       (let [plan-id (create-plan! normalized-tasks preset)
             wave-id (execute-wave! plan-id {:trace (if (nil? trace) true trace)
                                             :cwd cwd})]
@@ -606,6 +739,14 @@
                                 :wave_id wave-id
                                 :item_count (count tasks)
                                 :message "Wave execution started. Monitor via HIVEMIND piggyback or get_wave_status."})}))
+    (catch clojure.lang.ExceptionInfo e
+      ;; Structured error - preserve details
+      (let [data (ex-data e)]
+        (log/error e "dispatch_drone_wave failed" {:error-type (:type data)})
+        {:type "text"
+         :text (json/write-str (merge {:error (.getMessage e)}
+                                      (when (:hint data) {:hint (:hint data)})
+                                      (when (:type data) {:error_type (name (:type data))})))}))
     (catch Exception e
       (log/error e "dispatch_drone_wave failed")
       {:type "text"

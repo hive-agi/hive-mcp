@@ -20,7 +20,6 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-
 ;; ============================================================================
 ;; Protocol Definition
 ;; ============================================================================
@@ -266,27 +265,30 @@
          :error (format "nREPL error on %s:%d - %s" host port (.getMessage e))})))
 
   (connected? [_this]
-    (try
-      (let [socket (doto (Socket.)
-                     (.connect (InetSocketAddress. host (int port)) 500)
-                     (.setSoTimeout 500))
-            out (BufferedOutputStream. (.getOutputStream socket))
-            in (PushbackInputStream. (.getInputStream socket))
-            msg-id (next-msg-id)]
+    ;; Use evaluator's timeout-ms for connect/read, with sensible minimum of 500ms
+    ;; This aligns health check behavior with actual eval-code behavior
+    (let [connect-timeout (max 500 (min timeout-ms 5000))]  ; Cap at 5s for health checks
+      (try
+        (let [socket (doto (Socket.)
+                       (.connect (InetSocketAddress. host (int port)) connect-timeout)
+                       (.setSoTimeout connect-timeout))
+              out (BufferedOutputStream. (.getOutputStream socket))
+              in (PushbackInputStream. (.getInputStream socket))
+              msg-id (next-msg-id)]
 
-        ;; Try describe op to check connection
-        (write-nrepl-msg out {"op" "describe" "id" msg-id})
+          ;; Try describe op to check connection
+          (write-nrepl-msg out {"op" "describe" "id" msg-id})
 
-        (let [msg-stream (message-seq in)
-              decoded (decode-messages msg-stream)
-              filtered (filter #(= (:id %) msg-id) decoded)
-              responses (doall (take 5 filtered))]
-          (.close socket)
-          (boolean (seq responses))))
+          (let [msg-stream (message-seq in)
+                decoded (decode-messages msg-stream)
+                filtered (filter #(= (:id %) msg-id) decoded)
+                responses (doall (take 5 filtered))]
+            (.close socket)
+            (boolean (seq responses))))
 
-      (catch Exception e
-        (log/debug "DirectNreplEvaluator: not connected" (.getMessage e))
-        false)))
+        (catch Exception e
+          (log/debug "DirectNreplEvaluator: not connected" (.getMessage e))
+          false))))
 
   (get-status [this]
     {:connected (connected? this)
@@ -422,6 +424,75 @@
   [code]
   (let [evaluator (create-emacs-cider-evaluator)]
     (eval-code evaluator code)))
+
+;; ============================================================================
+;; nREPL Health Checks (CLARITY-T: Telemetry for drone wave reliability)
+;; ============================================================================
+
+(defn nrepl-healthy?
+  "Quick nREPL health check for pre-flight validation.
+
+   Used by drone wave dispatch to fail fast when nREPL is unavailable.
+   Uses short timeout (2s) to avoid blocking wave dispatch.
+
+   Options:
+     :port - nREPL port (default: 7910, or HIVE_MCP_NREPL_PORT env)
+     :host - nREPL host (default: localhost)
+
+   Returns:
+     {:healthy true :port N :latency-ms N} on success
+     {:healthy false :port N :error \"message\"} on failure
+
+   CLARITY-Y: Yield safe failure - never throws, always returns structured data"
+  ([]
+   (nrepl-healthy? {}))
+  ([{:keys [port host]
+     :or {host "localhost"}}]
+   (let [effective-port (or port
+                            (some-> (System/getenv "HIVE_MCP_NREPL_PORT") parse-long)
+                            7910)
+         start-time (System/currentTimeMillis)
+         evaluator (create-direct-nrepl-evaluator {:host host
+                                                   :port effective-port
+                                                   :timeout-ms 2000})]  ; Short timeout for health check
+     (try
+       (if (connected? evaluator)
+         {:healthy true
+          :port effective-port
+          :host host
+          :latency-ms (- (System/currentTimeMillis) start-time)}
+         {:healthy false
+          :port effective-port
+          :host host
+          :error "nREPL server not responding"})
+       (catch Exception e
+         {:healthy false
+          :port effective-port
+          :host host
+          :error (.getMessage e)})))))
+
+(defn ensure-nrepl-healthy!
+  "Assert nREPL is healthy, throwing ex-info if not.
+
+   Used by wave dispatch for pre-flight validation.
+   Provides actionable error messages for common failure modes.
+
+   Options:
+     :port - nREPL port
+     :host - nREPL host
+     :context - Additional context for error message (e.g., {:wave-id \"...\"})"
+  ([]
+   (ensure-nrepl-healthy! {}))
+  ([{:keys [context] :as opts}]
+   (let [{:keys [healthy port error]} (nrepl-healthy? opts)]
+     (when-not healthy
+       (throw (ex-info (str "nREPL health check failed: " error)
+                       (merge {:type :nrepl-unhealthy
+                               :port port
+                               :error error
+                               :hint (str "Ensure nREPL is running on port " port
+                                          ". Start with: clojure -M:nrepl or lein repl :headless :port " port)}
+                              context)))))))
 
 (comment
   ;; Usage examples

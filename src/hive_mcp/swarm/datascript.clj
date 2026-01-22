@@ -31,7 +31,6 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-
 ;;; =============================================================================
 ;;; Re-exports from schema
 ;;; =============================================================================
@@ -105,6 +104,8 @@
 (def get-slave queries/get-slave)
 (def get-all-slaves queries/get-all-slaves)
 (def get-slaves-by-status queries/get-slaves-by-status)
+(def get-slaves-by-project queries/get-slaves-by-project)
+(def get-slave-ids-by-project queries/get-slave-ids-by-project)
 
 ;; Task queries
 (def get-task queries/get-task)
@@ -128,6 +129,8 @@
 ;; Wrap queue
 (def add-wrap-notification! coordination/add-wrap-notification!)
 (def get-unprocessed-wraps coordination/get-unprocessed-wraps)
+(def get-unprocessed-wraps-for-project coordination/get-unprocessed-wraps-for-project)
+(def get-unprocessed-wraps-for-hierarchy coordination/get-unprocessed-wraps-for-hierarchy)
 (def mark-wrap-processed! coordination/mark-wrap-processed!)
 
 ;; Plans

@@ -11,7 +11,33 @@ hive-mcp provides two essential workflows for session continuity:
 | `/catchup` | Restore context from memory | Start of session |
 | `/wrap` | Preserve context to memory | End of session |
 
-These commands invoke hive-mcp workflows that handle memory storage, kanban sync, and git status automatically.
+These commands invoke hive-mcp MCP tools that handle memory storage, kanban sync, and git status.
+
+---
+
+## CRITICAL: Directory Scoping
+
+**All MCP tools that accept a `directory` parameter MUST receive the caller's working directory** to ensure operations target the correct project, not the MCP server's directory.
+
+### Why This Matters
+
+The MCP server runs in its own working directory (typically hive-mcp's directory). When Claude invokes tools like `magit_status` or `mcp_memory_add` without a `directory` parameter, the operations target the MCP server's project instead of the user's project.
+
+### How to Get Directory
+
+In your command instructions, tell Claude to:
+1. Get directory from prompt path (e.g., `~/PP/funeraria/sisf-web$`)
+2. Or run `pwd` in bash
+
+### Example Tool Calls
+
+```
+# WRONG - uses MCP server's directory
+mcp__emacs__magit_status
+
+# CORRECT - uses caller's project
+mcp__emacs__magit_status directory:"/home/user/my-project"
+```
 
 ---
 
@@ -19,98 +45,126 @@ These commands invoke hive-mcp workflows that handle memory storage, kanban sync
 
 ### Step 1: Create Commands Directory
 
-Claude Code looks for custom commands in `~/.claude/commands/`:
+Claude Code looks for custom commands in these locations (in priority order):
+1. `.claude/commands/` in your project root (project-specific)
+2. `~/.claude/commands/` (user-global)
 
 ```bash
+# For project-specific commands
+mkdir -p .claude/commands
+
+# For user-global commands
 mkdir -p ~/.claude/commands
 ```
 
 ### Step 2: Create `/catchup` Command
 
-Create `~/.claude/commands/catchup.md`:
+Create `catchup.md` with direct MCP tool calls:
 
 ```markdown
-# Catch Up
+# Catch Up (Memory-Integrated)
 
-Use the **hive-mcp workflow** to restore context from memory at session start.
+Restore context from project memory at session start.
+
+## IMPORTANT: Directory Scoping
+
+**All MCP tools that accept a `directory` parameter MUST receive your current working directory.**
+
+Get your working directory from your prompt path or run `pwd`.
 
 ## Instructions
 
-Run the hive-mcp `catchup` workflow:
+### 1. Load Context from Memory
+
+**Query recent session notes:**
+\`\`\`
+mcp__emacs__mcp_memory_query
+  type: "note"
+  tags: ["session-summary"]
+  limit: 3
+  directory: "/path/to/your/project"
+\`\`\`
+
+**Query active decisions:**
+\`\`\`
+mcp__emacs__mcp_memory_query
+  type: "decision"
+  limit: 10
+  directory: "/path/to/your/project"
+\`\`\`
+
+### 2. Check Kanban Status
 
 \`\`\`
-mcp__emacs__mcp_run_workflow(name: "catchup")
+mcp__emacs__mcp_mem_kanban_stats directory:"/path/to/your/project"
+mcp__emacs__mcp_mem_kanban_list status:"doing" directory:"/path/to/your/project"
 \`\`\`
 
-## What the Workflow Does
+### 3. Check Git State
 
-1. **Queries Memory** - Retrieves recent session summaries, decisions, conventions
-2. **Checks Kanban** - Lists current tasks by status (todo, doing, review)
-3. **Checks Git** - Reports branch, uncommitted changes, recent commits
-4. **Finds Expiring** - Lists memories expiring soon that may need promotion
-5. **Presents Summary** - Formatted catchup report
+\`\`\`
+mcp__emacs__magit_status directory:"/path/to/your/project"
+mcp__emacs__magit_branches directory:"/path/to/your/project"
+mcp__emacs__magit_log directory:"/path/to/your/project"
+\`\`\`
 
-## After Catchup
+### 4. Present Summary
 
-The workflow returns:
-- Recent session summaries
-- Active decisions and conventions
-- Kanban task counts
-- Git status
-- Recommended starting point
-
-Ask the user: "What would you like to focus on this session?"
-
-## Related Commands
-
-- `/wrap` - End-of-session documentation (stores context for catchup)
-- `/ship` - Merge feature branches to staging
-- `/ship-pr` - Create PRs for feature branches
+Output formatted catchup report and ask: "What would you like to focus on?"
 ```
 
 ### Step 3: Create `/wrap` Command
 
-Create `~/.claude/commands/wrap.md`:
+Create `wrap.md` with direct MCP tool calls:
 
 ```markdown
-# End-of-Session Wrap-up
+# End-of-Session Wrap-up (Memory-Integrated)
 
-Use the **hive-mcp workflow** to preserve session context in memory.
+Preserve session context to memory at session end.
+
+## IMPORTANT: Directory Scoping
+
+**All MCP tools that accept a `directory` parameter MUST receive your current working directory.**
 
 ## Instructions
 
-Run the hive-mcp `wrap` workflow:
+### 1. Document Progress to Memory
 
+**Store session accomplishments:**
 \`\`\`
-mcp__emacs__mcp_run_workflow(
-  name: "wrap",
-  args: {
-    "accomplishments": ["List of completed tasks"],
-    "decisions": ["Key decisions made"],
-    "conventions": ["Patterns/conventions to store permanently"],
-    "in-progress": ["Tasks still in progress"],
-    "next-actions": ["Priority items for next session"],
-    "completed-tasks": ["Kanban task IDs to mark done"]
-  }
-)
+mcp__emacs__mcp_memory_add
+  type: "note"
+  content: "Session YYYY-MM-DD: [accomplishments]"
+  tags: ["session-log", "progress"]
+  directory: "/path/to/your/project"
 \`\`\`
 
-## What the Workflow Does
+**Store important decisions:**
+\`\`\`
+mcp__emacs__mcp_memory_add
+  type: "decision"
+  content: "Decision: [what and why]"
+  tags: ["architecture"]
+  directory: "/path/to/your/project"
+\`\`\`
 
-1. **Stores to Memory** - Accomplishments, decisions, conventions saved with proper scope tags
-2. **Creates Session Summary** - Formatted summary stored for `/catchup` to retrieve
-3. **Syncs Kanban** - Marks specified tasks as done
-4. **Checks Git** - Reports branch status and unmerged feature branches
-5. **Cleans Expired** - Removes old ephemeral memory entries
+### 2. Sync Kanban
 
-## After Wrap
+\`\`\`
+mcp__emacs__mcp_mem_kanban_stats directory:"/path/to/your/project"
+mcp__emacs__mcp_mem_kanban_list status:"doing" directory:"/path/to/your/project"
+\`\`\`
 
-The workflow returns:
-- Count of items stored
-- Git status (branch, uncommitted changes, feature branches)
-- Kanban before/after state
+### 3. Check Git Status
 
-Next session, run `/catchup` to restore this context from memory.
+\`\`\`
+mcp__emacs__magit_status directory:"/path/to/your/project"
+mcp__emacs__magit_feature_branches directory:"/path/to/your/project"
+\`\`\`
+
+### 4. Create Session Summary
+
+Store comprehensive summary for next `/catchup` to retrieve.
 ```
 
 ---
