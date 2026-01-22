@@ -4,12 +4,10 @@
         org.clojure/data.json {:mvn/version "2.5.1"}
         org.clojure/core.async {:mvn/version "1.7.701"}
 
-        ;; MCP SDK - using local fork with async handler fix
-        ;; Original: https://github.com/unravel-team/mcp-clojure-sdk.git
+        ;; MCP SDK - BuddhiLW fork with async handler fix
         ;; Fix: p/promise → p/future + discarding-stdout in jsonrpc4clj
-        ;; Exclude log4j-slf4j2-impl - we use slf4j-timbre instead
-        io.modelcontextprotocol/mcp-clojure-sdk
-        {:local/root "mcp-clojure-sdk"
+        io.github.buddhilw/mcp-clojure-sdk
+        {:git/tag "v0.1.0-hive" :git/sha "4cef9dd"
          :exclusions [org.apache.logging.log4j/log4j-slf4j2-impl]}
 
         ;; nREPL client support
@@ -39,10 +37,9 @@
         ;; Schema validation for org-clj
         metosin/malli {:mvn/version "0.16.4"}
 
-        ;; Chroma vector database client for semantic memory search
-        ;; Using local fork with v2 API support (pending upstream PR)
-        io.github.levand/clojure-chroma-client
-        {:local/root "clojure-chroma-client"}
+        ;; Chroma vector database client - BuddhiLW fork with v2 API support
+        io.github.buddhilw/clojure-chroma-client
+        {:git/tag "v0.1.0-hive" :git/sha "e575d5a"}
 
         ;; for openrouter integration
         clj-http/clj-http {:mvn/version "3.13.1"}
