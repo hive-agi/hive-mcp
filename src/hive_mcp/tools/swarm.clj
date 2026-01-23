@@ -273,7 +273,9 @@
                                "role" {:type "string"
                                        :description "Predefined role (tester, reviewer, documenter, etc.)"}
                                "terminal" {:type "string"
-                                           :description "Terminal type: vterm or eat (default: vterm)"}}
+                                           :description "Terminal type: vterm or eat (default: vterm)"}
+                               "kanban_task_id" {:type "string"
+                                                 :description "Optional kanban task ID to link this ling with. Enables task-aware lifecycle (auto-move task to done when ling wraps via session_complete)."}}
                   :required ["name"]}
     :handler handle-swarm-spawn}
 
@@ -316,12 +318,14 @@
     :handler handle-swarm-list-presets}
 
    {:name "swarm_kill"
-    :description "Kill a slave instance or all slaves. When slave_id='all' and directory is provided, only kills lings belonging to that project (project-scoped kill)."
+    :description "Kill a slave instance or all slaves. When slave_id='all' and directory is provided, only kills lings belonging to that project (project-scoped kill). Cross-project kills are blocked by default for security."
     :inputSchema {:type "object"
                   :properties {"slave_id" {:type "string"
                                            :description "ID of slave to kill, or \"all\" to kill all slaves"}
                                "directory" {:type "string"
-                                            :description "Working directory to scope kill (optional). When provided with slave_id='all', only kills lings belonging to that project."}}
+                                            :description "Working directory to scope kill (optional). When provided with slave_id='all', only kills lings belonging to that project."}
+                               "force_cross_project" {:type "boolean"
+                                                      :description "Allow cross-project kill (default: false). Set to true only when you explicitly need to kill a ling from another project."}}
                   :required ["slave_id"]}
     :handler handle-swarm-kill}
 
