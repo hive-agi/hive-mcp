@@ -41,6 +41,7 @@
 ;; =============================================================================
 
 (defonce ^:private memory-write-handler (atom nil))
+(defonce ^:private wrap-crystallize-handler (atom nil))
 
 (defn set-memory-write-handler!
   "Set the handler function for :memory-write effect.
@@ -50,6 +51,17 @@
      (set-memory-write-handler! memory-crud/handle-add)"
   [f]
   (reset! memory-write-handler f))
+
+(defn set-wrap-crystallize-handler!
+  "Set the handler function for :wrap-crystallize effect.
+   Called during server initialization to wire tools layer.
+
+   DIP: Events layer uses this injection point instead of importing tools/crystal.
+
+   Example:
+     (set-wrap-crystallize-handler! crystal/handle-wrap-crystallize)"
+  [f]
+  (reset! wrap-crystallize-handler f))
 
 ;; =============================================================================
 ;; Effect: :shout
@@ -459,20 +471,22 @@
    Triggers the wrap crystallize workflow to persist session learnings
    to long-term memory. Part of the session_complete workflow.
 
+   DIP: Uses injected handler (set via set-wrap-crystallize-handler!)
+   to avoid layer inversion (events importing tools).
+
    Expected data shape:
    {:agent-id \"ling-123\"}
 
    Example:
    {:wrap-crystallize {:agent-id \"swarm-ling-worker-456\"}}"
   [{:keys [agent-id]}]
-  (try
-    ;; Dynamically require to avoid circular deps
-    (require '[hive-mcp.tools.crystal :as crystal])
-    (when-let [handler (resolve 'hive-mcp.tools.crystal/handle-wrap-crystallize)]
-      (handler {:agent_id agent-id}))
-    (log/info "[EVENT] Wrap crystallize completed for:" agent-id)
-    (catch Exception e
-      (log/error "[EVENT] Wrap crystallize failed:" (.getMessage e)))))
+  (if-let [handler @wrap-crystallize-handler]
+    (try
+      (handler {:agent_id agent-id})
+      (log/info "[EVENT] Wrap crystallize completed for:" agent-id)
+      (catch Exception e
+        (log/error "[EVENT] Wrap crystallize failed:" (.getMessage e))))
+    (log/warn "[EVENT] Wrap crystallize handler not configured - call set-wrap-crystallize-handler! during initialization")))
 
 ;; =============================================================================
 ;; Effect: :dispatch-task (POC-07)
