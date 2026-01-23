@@ -18,6 +18,22 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 ;; =============================================================================
+;; Utility Helpers
+;; =============================================================================
+
+(defn- distinct-by
+  "Return distinct elements from coll by the value of (f item).
+   Keeps the first occurrence of each unique (f item) value."
+  [f coll]
+  (let [seen (volatile! #{})]
+    (filterv (fn [item]
+               (let [key (f item)]
+                 (if (contains? @seen key)
+                   false
+                   (do (vswap! seen conj key) true))))
+             coll)))
+
+;; =============================================================================
 ;; Project Context Helpers
 ;; =============================================================================
 
@@ -87,24 +103,50 @@
         (and id-scope (contains? tags id-scope))
         (contains? tags "scope:global"))))
 
+(defn- filter-by-tags
+  "Filter entries to only those containing all specified tags."
+  [entries tags]
+  (if (seq tags)
+    (filter (fn [entry]
+              (let [entry-tags (set (:tags entry))]
+                (every? #(contains? entry-tags %) tags)))
+            entries)
+    entries))
+
 (defn- query-scoped-entries
   "Query Chroma entries filtered by project scope.
    Uses both project-name and project-id for scope matching."
   [entry-type tags project-name project-id limit]
   (when (chroma/embedding-configured?)
-    (let [;; Query with over-fetch to allow for filtering
-          entries (chroma/query-entries :type entry-type
-                                        :limit (* (or limit 20) 5))
-          ;; Filter by scope (matches name, id, or global)
-          scoped (filter #(matches-project-scope? % project-name project-id) entries)
-          ;; Filter by tags if provided
-          tag-filtered (if (seq tags)
-                         (filter (fn [entry]
-                                   (let [entry-tags (set (:tags entry))]
-                                     (every? #(contains? entry-tags %) tags)))
-                                 scoped)
-                         scoped)]
-      (take (or limit 20) tag-filtered))))
+    (let [limit (or limit 20)
+          entries (chroma/query-entries :type entry-type :limit (* limit 5))
+          scoped (filter #(matches-project-scope? % project-name project-id) entries)]
+      (->> scoped
+           (filter-by-tags tags)
+           (take limit)))))
+
+;; =============================================================================
+;; Expiring Entries
+;; =============================================================================
+
+(defn- entry-expiring-soon?
+  "Check if entry expires within 7 days."
+  [entry]
+  (when-let [exp (:expires entry)]
+    (try
+      (let [exp-time (java.time.ZonedDateTime/parse exp)
+            now (java.time.ZonedDateTime/now)
+            week-later (.plusDays now 7)]
+        (.isBefore exp-time week-later))
+      (catch Exception _ false))))
+
+(defn- query-expiring-entries
+  "Query entries expiring within 7 days, scoped to project."
+  [project-name project-id limit]
+  (->> (chroma/query-entries :limit 50)
+       (filter #(matches-project-scope? % project-name project-id))
+       (filter entry-expiring-soon?)
+       (take (or limit 5))))
 
 ;; =============================================================================
 ;; Git Context
@@ -132,127 +174,146 @@
       {:branch "unknown" :uncommitted false :last-commit "unknown"})))
 
 ;; =============================================================================
+;; Metadata Conversion
+;; =============================================================================
+
+(defn- entry->axiom-meta
+  "Convert entry to axiom metadata with full content."
+  [entry]
+  {:id (:id entry)
+   :type "axiom"
+   :tags (vec (or (:tags entry) []))
+   :content (:content entry)
+   :severity "INVIOLABLE"})
+
+(defn- entry->priority-meta
+  "Convert entry to priority convention metadata with full content."
+  [entry]
+  {:id (:id entry)
+   :type "convention"
+   :tags (vec (or (:tags entry) []))
+   :content (:content entry)})
+
+;; =============================================================================
+;; Entry Queries
+;; =============================================================================
+
+(defn- query-axioms
+  "Query axiom entries (both formal type and legacy tagged conventions)."
+  [project-name project-id]
+  (let [formal (query-scoped-entries "axiom" nil project-name project-id 10)
+        legacy (query-scoped-entries "convention" ["axiom"] project-name project-id 10)]
+    (distinct-by :id (concat formal legacy))))
+
+(defn- query-regular-conventions
+  "Query conventions excluding axioms and priority ones."
+  [project-name project-id axiom-ids priority-ids]
+  (let [all-conventions (query-scoped-entries "convention" nil project-name project-id 15)
+        excluded-ids (set/union axiom-ids priority-ids)]
+    (remove #(contains? excluded-ids (:id %)) all-conventions)))
+
+;; =============================================================================
+;; Response Building
+;; =============================================================================
+
+(defn- build-scopes
+  "Build scope list for display."
+  [project-name project-id]
+  (cond-> ["scope:global"]
+    project-name (conj (str "scope:project:" project-name))
+    (and project-id (not= project-id project-name))
+    (conj (str "scope:project:" project-id))))
+
+(defn- build-catchup-response
+  "Build the final catchup response structure."
+  [{:keys [project-name project-id scopes git-info
+           axioms-meta priority-meta sessions-meta decisions-meta
+           conventions-meta snippets-meta expiring-meta]}]
+  {:type "text"
+   :text (json/write-str
+          {:success true
+           :project (or project-name project-id "global")
+           :scopes scopes
+           :git git-info
+           :counts {:axioms (count axioms-meta)
+                    :priority-conventions (count priority-meta)
+                    :sessions (count sessions-meta)
+                    :decisions (count decisions-meta)
+                    :conventions (count conventions-meta)
+                    :snippets (count snippets-meta)
+                    :expiring (count expiring-meta)}
+           :axioms axioms-meta
+           :priority-conventions priority-meta
+           :context {:sessions sessions-meta
+                     :decisions decisions-meta
+                     :conventions conventions-meta
+                     :snippets snippets-meta
+                     :expiring expiring-meta}
+           :hint "AXIOMS are INVIOLABLE - follow them word-for-word. Priority conventions and axioms loaded with full content. Use mcp_memory_get_full for other entries."})})
+
+(defn- chroma-not-configured-error
+  "Return error response when Chroma is not configured."
+  []
+  {:type "text"
+   :text (json/write-str {:success false
+                          :error "Chroma not configured"
+                          :message "Memory query requires Chroma with embedding provider"})
+   :isError true})
+
+(defn- catchup-error
+  "Return error response for catchup failures."
+  [e]
+  (log/error e "native-catchup failed")
+  {:type "text"
+   :text (json/write-str {:success false :error (.getMessage e)})
+   :isError true})
+
+;; =============================================================================
 ;; Main Catchup Handler
 ;; =============================================================================
 
 (defn handle-native-catchup
   "Native Clojure catchup implementation that queries Chroma directly.
-   Returns structured catchup data with proper project scoping.
-   Uses both project-name and project-id for scope matching to ensure
-   compatibility with wrap workflow (which stores using project-name).
-
-   Priority conventions (tagged 'catchup-priority') are surfaced first
-   to help the coordinator trust swarm patterns immediately.
-
-   Args can contain :directory to specify the project context explicitly,
-   which fixes the issue where Emacs's current buffer determines project
-   instead of Claude Code's working directory."
+   Returns structured catchup data with proper project scoping."
   [args]
   (let [directory (:directory args)]
     (log/info "native-catchup: querying Chroma with project scope" {:directory directory})
+    ;; Guard: early return if Chroma not configured
     (if-not (chroma/embedding-configured?)
-      {:type "text"
-       :text (json/write-str {:success false
-                              :error "Chroma not configured"
-                              :message "Memory query requires Chroma with embedding provider"})
-       :isError true}
+      (chroma-not-configured-error)
       (try
         (let [project-id (get-current-project-id directory)
               project-name (get-current-project-name directory)
-              ;; Include both name and id scopes for display
-              scopes (cond-> ["scope:global"]
-                       project-name (conj (str "scope:project:" project-name))
-                       (and project-id (not= project-id project-name))
-                       (conj (str "scope:project:" project-id)))
+              scopes (build-scopes project-name project-id)
 
-              ;; AXIOMS: Query inviolable rules tagged 'axiom' - these MUST be followed
-              ;; exactly as written. Display at TOP before everything else.
-              axioms (query-scoped-entries "convention"
-                                           ["axiom"]
-                                           project-name project-id 10)
-
-              ;; PRIORITY: Query swarm conventions with catchup-priority tag FIRST
-              ;; These help coordinator trust swarm patterns immediately
-              priority-conventions (query-scoped-entries "convention"
-                                                         ["catchup-priority"]
+              ;; Query entries
+              axioms (query-axioms project-name project-id)
+              priority-conventions (query-scoped-entries "convention" ["catchup-priority"]
                                                          project-name project-id 5)
-
-              ;; Query each type from Chroma with scope filtering (pass both name and id)
               sessions (query-scoped-entries "note" ["session-summary"] project-name project-id 3)
               decisions (query-scoped-entries "decision" nil project-name project-id 10)
-              ;; Regular conventions (exclude axioms and priority ones to avoid duplicates)
-              all-conventions (query-scoped-entries "convention" nil project-name project-id 15)
-              axiom-ids (set (map :id axioms))
-              priority-ids (set (map :id priority-conventions))
-              excluded-ids (set/union axiom-ids priority-ids)
-              conventions (remove #(contains? excluded-ids (:id %)) all-conventions)
+              conventions (query-regular-conventions project-name project-id
+                                                     (set (map :id axioms))
+                                                     (set (map :id priority-conventions)))
               snippets (query-scoped-entries "snippet" nil project-name project-id 5)
-
-              ;; Query expiring entries (all types, filter later)
-              all-expiring (chroma/query-entries :limit 50)
-              expiring (->> all-expiring
-                            (filter #(matches-project-scope? % project-name project-id))
-                            (filter (fn [e]
-                                      (when-let [exp (:expires e)]
-                                        (let [exp-time (try (java.time.ZonedDateTime/parse exp)
-                                                            (catch Exception _ nil))
-                                              now (java.time.ZonedDateTime/now)
-                                              week-later (.plusDays now 7)]
-                                          (and exp-time
-                                               (.isBefore exp-time week-later))))))
-                            (take 5))
-
-              ;; Get git info from Emacs
+              expiring (query-expiring-entries project-name project-id 5)
               git-info (gather-git-info directory)
 
-              ;; Convert to metadata format - FULL CONTENT for axioms and priority conventions
-              ;; AXIOMS: Inviolable rules - MUST be followed word-for-word
-              axioms-meta (mapv (fn [e]
-                                  {:id (:id e)
-                                   :type "axiom"
-                                   :tags (vec (or (:tags e) []))
-                                   :content (:content e)  ;; Full content - these are inviolable!
-                                   :severity "INVIOLABLE"}) ;; Strong marker
-                                axioms)
-              ;; Priority conventions with full content
-              priority-meta (mapv (fn [e]
-                                    {:id (:id e)
-                                     :type "convention"
-                                     :tags (vec (or (:tags e) []))
-                                     :content (:content e)}) ;; Full content!
-                                  priority-conventions)
+              ;; Convert to metadata
+              axioms-meta (mapv entry->axiom-meta axioms)
+              priority-meta (mapv entry->priority-meta priority-conventions)
               sessions-meta (mapv #(entry->catchup-meta % 80) sessions)
               decisions-meta (mapv #(entry->catchup-meta % 80) decisions)
               conventions-meta (mapv #(entry->catchup-meta % 80) conventions)
               snippets-meta (mapv #(entry->catchup-meta % 60) snippets)
               expiring-meta (mapv #(entry->catchup-meta % 80) expiring)]
 
-          {:type "text"
-           :text (json/write-str
-                  {:success true
-                   :project (or project-name project-id "global")
-                   :scopes scopes
-                   :git git-info
-                   :counts {:axioms (count axioms-meta)
-                            :priority-conventions (count priority-meta)
-                            :sessions (count sessions-meta)
-                            :decisions (count decisions-meta)
-                            :conventions (count conventions-meta)
-                            :snippets (count snippets-meta)
-                            :expiring (count expiring-meta)}
-                   ;; AXIOMS at TOP - these are INVIOLABLE, must be followed word-for-word
-                   :axioms axioms-meta
-                   ;; Priority conventions with FULL content
-                   :priority-conventions priority-meta
-                   :context {:sessions sessions-meta
-                             :decisions decisions-meta
-                             :conventions conventions-meta
-                             :snippets snippets-meta
-                             :expiring expiring-meta}
-                   :hint "AXIOMS are INVIOLABLE - follow them word-for-word. Priority conventions and axioms loaded with full content. Use mcp_memory_get_full for other entries."})})
+          (build-catchup-response
+           {:project-name project-name :project-id project-id
+            :scopes scopes :git-info git-info
+            :axioms-meta axioms-meta :priority-meta priority-meta
+            :sessions-meta sessions-meta :decisions-meta decisions-meta
+            :conventions-meta conventions-meta :snippets-meta snippets-meta
+            :expiring-meta expiring-meta}))
         (catch Exception e
-          (log/error e "native-catchup failed")
-          {:type "text"
-           :text (json/write-str {:success false
-                                  :error (.getMessage e)})
-           :isError true})))))
+          (catchup-error e))))))
