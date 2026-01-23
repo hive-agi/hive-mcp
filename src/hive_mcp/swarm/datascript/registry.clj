@@ -47,10 +47,8 @@
   (get-task [_this task-id]
     (queries/get-task task-id))
 
-  (update-task! [_this task-id _updates]
-    ;; Note: lings.clj has complete-task! and fail-task! but not generic update-task!
-    ;; For now, log warning and return nil. Migration may need to add update-task! to lings.
-    (throw (ex-info "update-task! not yet implemented in lings.clj" {:task-id task-id})))
+  (update-task! [_this task-id updates]
+    (lings/update-task! task-id updates))
 
   (get-tasks-for-slave [_this slave-id]
     (queries/get-tasks-for-slave slave-id))
