@@ -163,7 +163,7 @@
                                "limit" {:type "integer"
                                         :description "Maximum number of results to return (default: 10)"}
                                "type" {:type "string"
-                                       :enum ["note" "snippet" "convention" "decision"]
+                                       :enum ["note" "snippet" "convention" "decision" "axiom"]
                                        :description "Optional filter by memory type"}}
                   :required ["query"]}
     :handler handle-mcp-memory-search-semantic}
