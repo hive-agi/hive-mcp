@@ -9,6 +9,9 @@
    - These help coordinator trust swarm patterns immediately"
   (:require [hive-mcp.emacsclient :as ec]
             [hive-mcp.chroma :as chroma]
+            [hive-mcp.crystal.hooks :as crystal-hooks]
+            [hive-mcp.swarm.datascript :as ds]
+            [hive-mcp.tools.memory.scope :as scope]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.set :as set]
@@ -91,18 +94,6 @@
 ;; Scope Filtering
 ;; =============================================================================
 
-(defn- matches-project-scope?
-  "Check if entry matches project scope (project + global).
-   Matches both project-name and project-id for robustness since
-   wrap stores with project-name but we may query with project-id."
-  [entry project-name project-id]
-  (let [tags (set (or (:tags entry) []))
-        name-scope (when project-name (str "scope:project:" project-name))
-        id-scope (when project-id (str "scope:project:" project-id))]
-    (or (and name-scope (contains? tags name-scope))
-        (and id-scope (contains? tags id-scope))
-        (contains? tags "scope:global"))))
-
 (defn- filter-by-tags
   "Filter entries to only those containing all specified tags."
   [entries tags]
@@ -115,15 +106,25 @@
 
 (defn- query-scoped-entries
   "Query Chroma entries filtered by project scope.
-   Uses both project-name and project-id for scope matching."
-  [entry-type tags project-name project-id limit]
+   Uses project-id metadata filtering AND hierarchical scope matching.
+   Aligned with crud.clj approach for consistent behavior."
+  [entry-type tags project-id limit]
   (when (chroma/embedding-configured?)
-    (let [limit (or limit 20)
-          entries (chroma/query-entries :type entry-type :limit (* limit 5))
-          scoped (filter #(matches-project-scope? % project-name project-id) entries)]
-      (->> scoped
-           (filter-by-tags tags)
-           (take limit)))))
+    (let [limit-val (or limit 20)
+          ;; Pass project-id to Chroma for metadata filtering (like crud.clj)
+          entries (chroma/query-entries :type entry-type
+                                        :project-id project-id
+                                        :limit (* limit-val 5))
+          ;; Apply hierarchical scope filter for entries with scope tags
+          ;; nil = auto mode, derives scope from project-id
+          scope-tag (scope/make-scope-tag project-id)
+          scope-filter (scope/derive-hierarchy-scope-filter scope-tag)
+          scoped (if scope-filter
+                   (filter #(scope/matches-hierarchy-scopes? % scope-filter) entries)
+                   entries)
+          ;; NOTE: filter-by-tags has signature [entries tags], so we can't use ->>
+          filtered (filter-by-tags scoped tags)]
+      (take limit-val filtered))))
 
 ;; =============================================================================
 ;; Expiring Entries
@@ -142,11 +143,16 @@
 
 (defn- query-expiring-entries
   "Query entries expiring within 7 days, scoped to project."
-  [project-name project-id limit]
-  (->> (chroma/query-entries :limit 50)
-       (filter #(matches-project-scope? % project-name project-id))
-       (filter entry-expiring-soon?)
-       (take (or limit 5))))
+  [project-id limit]
+  (let [entries (chroma/query-entries :project-id project-id :limit 50)
+        scope-tag (scope/make-scope-tag project-id)
+        scope-filter (scope/derive-hierarchy-scope-filter scope-tag)
+        scoped (if scope-filter
+                 (filter #(scope/matches-hierarchy-scopes? % scope-filter) entries)
+                 entries)]
+    (->> scoped
+         (filter entry-expiring-soon?)
+         (take (or limit 5)))))
 
 ;; =============================================================================
 ;; Git Context
@@ -200,15 +206,15 @@
 
 (defn- query-axioms
   "Query axiom entries (both formal type and legacy tagged conventions)."
-  [project-name project-id]
-  (let [formal (query-scoped-entries "axiom" nil project-name project-id 10)
-        legacy (query-scoped-entries "convention" ["axiom"] project-name project-id 10)]
+  [project-id]
+  (let [formal (query-scoped-entries "axiom" nil project-id 10)
+        legacy (query-scoped-entries "convention" ["axiom"] project-id 10)]
     (distinct-by :id (concat formal legacy))))
 
 (defn- query-regular-conventions
   "Query conventions excluding axioms and priority ones."
-  [project-name project-id axiom-ids priority-ids]
-  (let [all-conventions (query-scoped-entries "convention" nil project-name project-id 15)
+  [project-id axiom-ids priority-ids]
+  (let [all-conventions (query-scoped-entries "convention" nil project-id 15)
         excluded-ids (set/union axiom-ids priority-ids)]
     (remove #(contains? excluded-ids (:id %)) all-conventions)))
 
@@ -226,7 +232,7 @@
 
 (defn- build-catchup-response
   "Build the final catchup response structure."
-  [{:keys [project-name project-id scopes git-info
+  [{:keys [project-name project-id scopes git-info permeation
            axioms-meta priority-meta sessions-meta decisions-meta
            conventions-meta snippets-meta expiring-meta]}]
   {:type "text"
@@ -235,6 +241,7 @@
            :project (or project-name project-id "global")
            :scopes scopes
            :git git-info
+           :permeation permeation  ;; Auto-permeated ling wraps
            :counts {:axioms (count axioms-meta)
                     :priority-conventions (count priority-meta)
                     :sessions (count sessions-meta)
@@ -259,6 +266,35 @@
                           :error "Chroma not configured"
                           :message "Memory query requires Chroma with embedding provider"})
    :isError true})
+
+;; =============================================================================
+;; Auto-Permeation (Architecture > LLM behavior)
+;; =============================================================================
+
+(defn- auto-permeate-wraps
+  "Automatically permeate pending ling wraps during catchup.
+
+   This ensures coordinator always gets ling learnings without explicit call.
+   Architecture-driven: catchup guarantees permeation, no LLM action required.
+
+   Returns map with :permeated count and :agents list."
+  [directory]
+  (try
+    (let [project-id (scope/get-current-project-id directory)
+          ;; Include children for hierarchical projects
+          queue-items (ds/get-unprocessed-wraps-for-hierarchy project-id)
+          processed-count (count queue-items)
+          agent-ids (mapv :wrap-queue/agent-id queue-items)]
+      ;; Mark each as processed
+      (doseq [item queue-items]
+        (ds/mark-wrap-processed! (:wrap-queue/id item)))
+      (when (pos? processed-count)
+        (log/info "catchup auto-permeated" processed-count "ling wraps from agents:" agent-ids))
+      {:permeated processed-count
+       :agents agent-ids})
+    (catch Exception e
+      (log/warn "auto-permeate failed (non-fatal):" (.getMessage e))
+      {:permeated 0 :agents [] :error (.getMessage e)})))
 
 (defn- catchup-error
   "Return error response for catchup failures."
@@ -286,17 +322,17 @@
               project-name (get-current-project-name directory)
               scopes (build-scopes project-name project-id)
 
-              ;; Query entries
-              axioms (query-axioms project-name project-id)
+              ;; Query entries (use project-id for scoping, aligned with crud.clj)
+              axioms (query-axioms project-id)
               priority-conventions (query-scoped-entries "convention" ["catchup-priority"]
-                                                         project-name project-id 5)
-              sessions (query-scoped-entries "note" ["session-summary"] project-name project-id 3)
-              decisions (query-scoped-entries "decision" nil project-name project-id 10)
-              conventions (query-regular-conventions project-name project-id
+                                                         project-id 5)
+              sessions (query-scoped-entries "note" ["session-summary"] project-id 3)
+              decisions (query-scoped-entries "decision" nil project-id 10)
+              conventions (query-regular-conventions project-id
                                                      (set (map :id axioms))
                                                      (set (map :id priority-conventions)))
-              snippets (query-scoped-entries "snippet" nil project-name project-id 5)
-              expiring (query-expiring-entries project-name project-id 5)
+              snippets (query-scoped-entries "snippet" nil project-id 5)
+              expiring (query-expiring-entries project-id 5)
               git-info (gather-git-info directory)
 
               ;; Convert to metadata
@@ -306,14 +342,43 @@
               decisions-meta (mapv #(entry->catchup-meta % 80) decisions)
               conventions-meta (mapv #(entry->catchup-meta % 80) conventions)
               snippets-meta (mapv #(entry->catchup-meta % 60) snippets)
-              expiring-meta (mapv #(entry->catchup-meta % 80) expiring)]
+              expiring-meta (mapv #(entry->catchup-meta % 80) expiring)
+
+              ;; Auto-permeate pending ling wraps (Architecture > LLM behavior)
+              ;; This ensures coordinator always gets ling learnings without explicit call
+              permeation (auto-permeate-wraps directory)]
 
           (build-catchup-response
            {:project-name project-name :project-id project-id
-            :scopes scopes :git-info git-info
+            :scopes scopes :git-info git-info :permeation permeation
             :axioms-meta axioms-meta :priority-meta priority-meta
             :sessions-meta sessions-meta :decisions-meta decisions-meta
             :conventions-meta conventions-meta :snippets-meta snippets-meta
             :expiring-meta expiring-meta}))
         (catch Exception e
           (catchup-error e))))))
+
+(defn handle-native-wrap
+  "Native Clojure wrap implementation that persists to Chroma directly.
+   Uses crystal hooks for harvesting and crystallization."
+  [args]
+  (let [directory (:directory args)
+        agent-id (:agent_id args)]
+    (log/info "native-wrap: crystallizing to Chroma" {:directory directory :agent-id agent-id})
+    (if-not (chroma/embedding-configured?)
+      (chroma-not-configured-error)
+      (try
+        (let [harvested (crystal-hooks/harvest-all {:directory directory})
+              result (crystal-hooks/crystallize-session harvested)
+              project-id (get-current-project-id directory)]
+          (if (:error result)
+            {:type "text"
+             :text (json/write-str {:error (:error result) :session (:session result)})
+             :isError true}
+            {:type "text"
+             :text (json/write-str (assoc result :project-id project-id))}))
+        (catch Exception e
+          (log/error e "native-wrap failed")
+          {:type "text"
+           :text (json/write-str {:error (.getMessage e)})
+           :isError true})))))
