@@ -231,7 +231,7 @@
     {:id (:id d)
      :participants (set (:participants d))
      :topic (:name d)
-     :created-at (java.util.Date. (:created d))
+     :created-at (when-let [ts (:created d)] (java.util.Date. ts))
      :status (:status d)}))
 
 (defn get-dialogue-turns
@@ -245,7 +245,7 @@
                :receiver (:receiver t)
                :message (:message t)
                :signal (:signal t)
-               :timestamp (java.util.Date. (:timestamp t))
+               :timestamp (when-let [ts (:timestamp t)] (java.util.Date. ts))
                :task-id (:task-ref t)}))))
 
 (defn get-last-turn-for
@@ -418,7 +418,7 @@
               {:id (:id d)
                :topic (:name d)
                :status (:status d)
-               :created-at (java.util.Date. (:created d))}))
+               :created-at (when-let [ts (:created d)] (java.util.Date. ts))}))
        (sort-by :created-at)
        reverse))
 

@@ -176,7 +176,8 @@
 
    Returns: keyword status"
   [dialogue-id]
-  (let [config (or (get-dialogue-config dialogue-id) default-config)
+  ;; Merge with defaults to ensure all required keys exist (fixes NPE on nil comparisons)
+  (let [config (merge default-config (get-dialogue-config dialogue-id))
         {:keys [minimum-turns stuck-threshold timeout-turns]} config
         total-turns (turn-count dialogue-id)
         turns-no-change (turns-since-last-proposal dialogue-id)]
@@ -218,7 +219,8 @@
 
    Returns: boolean"
   [dialogue-id]
-  (let [config (or (get-dialogue-config dialogue-id) default-config)
+  ;; Merge with defaults to ensure stuck-threshold exists
+  (let [config (merge default-config (get-dialogue-config dialogue-id))
         {:keys [stuck-threshold]} config
         turns-no-change (turns-since-last-proposal dialogue-id)]
     (and (>= turns-no-change stuck-threshold)
