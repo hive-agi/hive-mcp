@@ -88,19 +88,26 @@
 
    Arguments:
      files        - List of file paths to read
-     project-root - Optional project root override (defaults to diff/get-project-root)"
+     project-root - Optional project root override (defaults to diff/get-project-root)
+   
+   CLARITY-I: Validates paths don't escape project directory before reading."
   [files & [project-root-override]]
   (when (seq files)
     (let [project-root (or project-root-override (diff/get-project-root) "")
           contents (for [f files]
-                     (let [abs-path (if (str/starts-with? f "/")
-                                      f
-                                      (str project-root "/" f))]
-                       (try
-                         (let [content (slurp abs-path)]
-                           (str "### " f "\n```\n" content "```\n"))
-                         (catch Exception e
-                           (str "### " f "\n(File not found or unreadable: " (.getMessage e) ")\n")))))]
+                     ;; SECURITY FIX: Validate path containment before reading
+                     (let [validation (sandbox/validate-path-containment f project-root)]
+                       (if (:valid? validation)
+                         (try
+                           (let [content (slurp (:canonical-path validation))]
+                             (str "### " f "\n```\n" content "```\n"))
+                           (catch Exception e
+                             (str "### " f "\n(File not found or unreadable: " (.getMessage e) ")\n")))
+                         ;; Path escapes project - reject with security warning
+                         (do
+                           (log/warn "Path validation failed in format-file-contents"
+                                     {:file f :error (:error validation)})
+                           (str "### " f "\n(BLOCKED: " (:error validation) ")\n")))))]
       (str "## Current File Contents\n"
            "IMPORTANT: Use this EXACT content as old_content in propose_diff.\n"
            "Do NOT guess or assume file content - use what is provided below.\n\n"
