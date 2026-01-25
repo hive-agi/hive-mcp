@@ -3,15 +3,20 @@
 
    Gathers session context from Chroma memory with project scoping.
    Designed for the /catchup skill to restore context at session start.
-   
+
    Priority Loading:
    - Swarm conventions tagged 'catchup-priority' are surfaced FIRST
-   - These help coordinator trust swarm patterns immediately"
+   - These help coordinator trust swarm patterns immediately
+
+   KG Context (Phase 2):
+   - Decisions/conventions enriched with Knowledge Graph relationships
+   - Surfaces superseded entries, dependencies, and contradictions"
   (:require [hive-mcp.emacsclient :as ec]
             [hive-mcp.chroma :as chroma]
             [hive-mcp.crystal.hooks :as crystal-hooks]
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.tools.memory.scope :as scope]
+            [hive-mcp.knowledge-graph.queries :as kg-queries]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.set :as set]
@@ -219,6 +224,113 @@
     (remove #(contains? excluded-ids (:id %)) all-conventions)))
 
 ;; =============================================================================
+;; Knowledge Graph Context Enrichment
+;; =============================================================================
+
+(defn- extract-kg-relations
+  "Extract meaningful KG relationships from node context.
+
+   Returns map with:
+   - :supersedes - entries this replaces (outgoing :supersedes)
+   - :superseded-by - entries that replace this (incoming :supersedes)
+   - :depends-on - prerequisites (outgoing :depends-on)
+   - :depended-by - entries depending on this (incoming :depends-on)
+   - :derived-from - source materials (outgoing :derived-from)
+   - :contradicts - conflicting knowledge (both directions)"
+  [{:keys [incoming outgoing]}]
+  (let [;; Helper to extract node IDs by relation from edge list
+        extract-by-rel (fn [edges rel from?]
+                         (->> (:edges edges)
+                              (filter #(= (:kg-edge/relation %) rel))
+                              (map #(if from?
+                                      (:kg-edge/from %)
+                                      (:kg-edge/to %)))
+                              (vec)))
+        ;; Outgoing relations (this node → others)
+        supersedes (extract-by-rel outgoing :supersedes false)
+        depends-on (extract-by-rel outgoing :depends-on false)
+        derived-from (extract-by-rel outgoing :derived-from false)
+        ;; Incoming relations (others → this node)
+        superseded-by (extract-by-rel incoming :supersedes true)
+        depended-by (extract-by-rel incoming :depends-on true)
+        ;; Contradictions (both directions)
+        contradicts-out (extract-by-rel outgoing :contradicts false)
+        contradicts-in (extract-by-rel incoming :contradicts true)
+        contradicts (vec (distinct (concat contradicts-out contradicts-in)))]
+    ;; Only include non-empty relations
+    (cond-> {}
+      (seq supersedes) (assoc :supersedes supersedes)
+      (seq superseded-by) (assoc :superseded-by superseded-by)
+      (seq depends-on) (assoc :depends-on depends-on)
+      (seq depended-by) (assoc :depended-by depended-by)
+      (seq derived-from) (assoc :derived-from derived-from)
+      (seq contradicts) (assoc :contradicts contradicts))))
+
+(defn- enrich-entry-with-kg
+  "Enrich a single entry with its KG relationships.
+   Returns entry with :kg key if relationships exist."
+  [entry]
+  (try
+    (when-let [entry-id (:id entry)]
+      (let [context (kg-queries/get-node-context entry-id)
+            relations (extract-kg-relations context)]
+        (if (seq relations)
+          (assoc entry :kg relations)
+          entry)))
+    (catch Exception e
+      (log/debug "KG enrichment failed for" (:id entry) ":" (.getMessage e))
+      entry)))
+
+(defn- enrich-entries-with-kg
+  "Enrich a collection of entries with KG context.
+   Only entries with KG relationships will have :kg key added.
+
+   Returns {:entries [...] :kg-count n :warnings []}"
+  [entries]
+  (try
+    (let [enriched (mapv enrich-entry-with-kg entries)
+          kg-count (count (filter :kg enriched))]
+      (when (pos? kg-count)
+        (log/debug "Enriched" kg-count "entries with KG context"))
+      {:entries enriched
+       :kg-count kg-count})
+    (catch Exception e
+      (log/warn "KG enrichment failed:" (.getMessage e))
+      {:entries entries
+       :kg-count 0
+       :warnings [(.getMessage e)]})))
+
+(defn- gather-kg-insights
+  "Gather high-level KG insights for catchup summary.
+
+   Returns:
+   - :contradictions - entries with conflicts that need attention
+   - :superseded - entries that have been replaced (may need cleanup)
+   - :decision-chains - decisions with dependency relationships"
+  [decisions-meta conventions-meta]
+  (try
+    (let [all-entries (concat decisions-meta conventions-meta)
+          ;; Find entries with concerning relationships
+          contradictions (->> all-entries
+                              (filter #(seq (get-in % [:kg :contradicts])))
+                              (mapv #(select-keys % [:id :preview :kg])))
+          superseded (->> all-entries
+                          (filter #(seq (get-in % [:kg :superseded-by])))
+                          (mapv #(select-keys % [:id :preview :kg])))
+          ;; Find entries with dependencies (decision chains)
+          with-deps (->> all-entries
+                         (filter #(or (seq (get-in % [:kg :depends-on]))
+                                      (seq (get-in % [:kg :depended-by]))))
+                         (count))]
+      (cond-> {}
+        (seq contradictions) (assoc :contradictions contradictions)
+        (seq superseded) (assoc :superseded superseded)
+        (pos? with-deps) (assoc :dependency-chains with-deps)))
+    (catch Exception e
+      (log/warn "KG insights gathering failed:" (.getMessage e))
+      {})))
+
+;; =============================================================================
 ;; Response Building
 ;; =============================================================================
 
@@ -234,7 +346,7 @@
   "Build the final catchup response structure."
   [{:keys [project-name project-id scopes git-info permeation
            axioms-meta priority-meta sessions-meta decisions-meta
-           conventions-meta snippets-meta expiring-meta]}]
+           conventions-meta snippets-meta expiring-meta kg-insights]}]
   {:type "text"
    :text (json/write-str
           {:success true
@@ -256,7 +368,9 @@
                      :conventions conventions-meta
                      :snippets snippets-meta
                      :expiring expiring-meta}
-           :hint "AXIOMS are INVIOLABLE - follow them word-for-word. Priority conventions and axioms loaded with full content. Use mcp_memory_get_full for other entries."})})
+           ;; KG insights surface contradictions and superseded entries
+           :kg-insights kg-insights
+           :hint "AXIOMS are INVIOLABLE - follow them word-for-word. Priority conventions and axioms loaded with full content. Entries with :kg key have Knowledge Graph relationships. Use mcp_memory_get_full for other entries."})})
 
 (defn- chroma-not-configured-error
   "Return error response when Chroma is not configured."
@@ -310,7 +424,9 @@
 
 (defn handle-native-catchup
   "Native Clojure catchup implementation that queries Chroma directly.
-   Returns structured catchup data with proper project scoping."
+   Returns structured catchup data with proper project scoping.
+
+   Phase 2: Enriches decisions/conventions with KG relationships."
   [args]
   (let [directory (:directory args)]
     (log/info "native-catchup: querying Chroma with project scope" {:directory directory})
@@ -339,8 +455,17 @@
               axioms-meta (mapv entry->axiom-meta axioms)
               priority-meta (mapv entry->priority-meta priority-conventions)
               sessions-meta (mapv #(entry->catchup-meta % 80) sessions)
-              decisions-meta (mapv #(entry->catchup-meta % 80) decisions)
-              conventions-meta (mapv #(entry->catchup-meta % 80) conventions)
+
+              ;; Phase 2 KG Integration: Enrich decisions and conventions
+              ;; This surfaces relationships like supersedes, depends-on, contradicts
+              decisions-base (mapv #(entry->catchup-meta % 80) decisions)
+              conventions-base (mapv #(entry->catchup-meta % 80) conventions)
+              decisions-enriched (:entries (enrich-entries-with-kg decisions-base))
+              conventions-enriched (:entries (enrich-entries-with-kg conventions-base))
+
+              ;; Gather KG insights for high-level visibility
+              kg-insights (gather-kg-insights decisions-enriched conventions-enriched)
+
               snippets-meta (mapv #(entry->catchup-meta % 60) snippets)
               expiring-meta (mapv #(entry->catchup-meta % 80) expiring)
 
@@ -352,9 +477,9 @@
            {:project-name project-name :project-id project-id
             :scopes scopes :git-info git-info :permeation permeation
             :axioms-meta axioms-meta :priority-meta priority-meta
-            :sessions-meta sessions-meta :decisions-meta decisions-meta
-            :conventions-meta conventions-meta :snippets-meta snippets-meta
-            :expiring-meta expiring-meta}))
+            :sessions-meta sessions-meta :decisions-meta decisions-enriched
+            :conventions-meta conventions-enriched :snippets-meta snippets-meta
+            :expiring-meta expiring-meta :kg-insights kg-insights}))
         (catch Exception e
           (catchup-error e))))))
 
