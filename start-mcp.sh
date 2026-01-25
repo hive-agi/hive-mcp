@@ -61,6 +61,10 @@ fi
 fuser -k "${HIVE_MCP_CHANNEL_PORT}/tcp" 2>/dev/null || true
 fuser -k "${HIVE_MCP_NREPL_PORT}/tcp" 2>/dev/null || true
 
+# Ensure dependencies are fetched (fast if cached, fetches new deps if added)
+# Use -X:mcp to ensure alias-specific deps are also fetched
+clojure -P -X:mcp 2>> "$LOG_FILE"
+
 # Log startup
 echo "=== Starting hive-mcp at $(date) ===" >> "$LOG_FILE"
 
