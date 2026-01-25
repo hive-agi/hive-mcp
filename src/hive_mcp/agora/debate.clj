@@ -203,8 +203,8 @@
        "Valid signals: propose, counter, approve, no-change, defer\n"
        "- propose: New argument\n"
        "- counter: Disagree with opponent\n"
-       "- approve: Accept opponent's point\n"
-       "- no-change: Maintain your position\n\n"
+       "- approve: Accept OPPONENT's argument (agree with THEIR proposal, not your own)\n"
+       "- no-change: No objection to current state\n\n"
        "YOUR TURN. Output JSON only:"))
 
 ;; =============================================================================
