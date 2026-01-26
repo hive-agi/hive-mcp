@@ -54,6 +54,11 @@
    - Loki: JSON logs with trace-id for request correlation
    - Error categorization: :conflict, :validation, :execution, :unexpected"
   [delegate-drone-fn {:keys [task files preset trace parent_id cwd]}]
+  ;; DEPRECATION WARNING: Prefer unified 'delegate' tool
+  (log/warn {:event :deprecation-warning
+             :tool "delegate_drone"
+             :message "DEPRECATED: Use 'delegate' tool instead. delegate({task: \"...\", files: [...]})"})
+
   ;; CLARITY-T: Generate trace ID for request correlation across logs
   (let [trace-id (str "mcp-" (java.util.UUID/randomUUID))
         start-time-ns (System/nanoTime)

@@ -394,6 +394,11 @@
      )
      # Then: review_wave_diffs(wave_id) → approve_wave_diffs(wave_id)"
   [{:keys [tasks review_mode validate max_retries lint_level preset trace cwd]}]
+  ;; DEPRECATION WARNING: Prefer unified 'delegate' tool
+  (log/warn {:event :deprecation-warning
+             :tool "dispatch_validated_wave"
+             :message "DEPRECATED: Use 'delegate' tool instead. delegate({tasks: [...], validate: true})"})
+
   (try
     (when (empty? tasks)
       (throw (ex-info "tasks array is required and must not be empty" {})))

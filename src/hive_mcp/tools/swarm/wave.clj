@@ -757,6 +757,11 @@
      JSON with wave-id for immediate response.
      Actual execution happens asynchronously."
   [{:keys [tasks preset trace cwd ensure_dirs validate_paths]}]
+  ;; DEPRECATION WARNING: Prefer unified 'delegate' tool
+  (log/warn {:event :deprecation-warning
+             :tool "dispatch_drone_wave"
+             :message "DEPRECATED: Use 'delegate' tool instead. delegate({tasks: [...]})"})
+
   (try
     (when (empty? tasks)
       (throw (ex-info "tasks array is required and must not be empty" {})))

@@ -36,6 +36,7 @@
    [hive-mcp.tools.seeds :as seeds]
    [hive-mcp.tools.cost :as cost]
    [hive-mcp.tools.routing :as routing]
+   [hive-mcp.tools.delegate :as delegate]
    [hive-mcp.hivemind :as hivemind]
    [hive-mcp.channel :as channel]
    [hive-mcp.agent :as agent]
@@ -92,6 +93,7 @@
                seeds/tools             ; Seed memory import from markdown files
                cost/tools              ; Token cost tracking and budget management
                routing/tools           ; Smart model routing for drones
+               delegate/tools          ; Unified delegate API (ADR-20260123161700)
                hivemind/tools
                channel/channel-tools
                agent/tools)))
@@ -166,6 +168,7 @@
                seeds/tools             ; Seed memory import from markdown files
                cost/tools              ; Token cost tracking and budget management
                routing/tools           ; Smart model routing for drones
+               delegate/tools          ; Unified delegate API (ADR-20260123161700)
                hivemind/tools
                channel/channel-tools
                agent/tools)))
