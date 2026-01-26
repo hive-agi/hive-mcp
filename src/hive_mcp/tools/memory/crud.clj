@@ -21,6 +21,7 @@
             [hive-mcp.tools.core :refer [mcp-json mcp-error coerce-int! coerce-vec!]]
             [hive-mcp.chroma :as chroma]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
+            [hive-mcp.knowledge-graph.schema :as kg-schema]
             [hive-mcp.agent.context :as ctx]
             [clojure.data.json :as json]
             [taoensso.timbre :as log]))
@@ -82,6 +83,16 @@
           (create-edges kg_depends_on :depends-on)
           (create-edges kg_refines :refines)))))
 
+(defn- default-abstraction-level
+  "Return default abstraction level for entry type.
+   Levels: 4=axiom/decision, 3=convention, 2=snippet/note."
+  [type]
+  (case type
+    ("axiom" "decision") 4
+    "convention" 3
+    ("snippet" "note") 2
+    2)) ; fallback
+
 (defn handle-add
   "Add an entry to project memory (Chroma-only storage).
    Stores full entry in Chroma with content, metadata, and embedding.
@@ -103,58 +114,62 @@
 
    ELM Principle: Array parameters are coerced with helpful error messages."
   [{:keys [type content tags duration directory agent_id
-           kg_implements kg_supersedes kg_depends_on kg_refines]}]
+           kg_implements kg_supersedes kg_depends_on kg_refines abstraction_level]}]
   (try
-    (let [;; ELM Principle: Coerce array parameters with helpful error messages
-          tags-vec (coerce-vec! tags :tags [])
-          kg-implements-vec (coerce-vec! kg_implements :kg_implements [])
-          kg-supersedes-vec (coerce-vec! kg_supersedes :kg_supersedes [])
-          kg-depends-on-vec (coerce-vec! kg_depends_on :kg_depends_on [])
-          kg-refines-vec (coerce-vec! kg_refines :kg_refines [])
-          directory (or directory (ctx/current-directory))]
-      (log/info "mcp-memory-add:" type "directory:" directory "agent_id:" agent_id)
-      (with-chroma
-        (let [project-id (scope/get-current-project-id directory)
-              agent-id (or agent_id (System/getenv "CLAUDE_SWARM_SLAVE_ID"))
-              agent-tag (when agent-id (str "agent:" agent-id))
-              base-tags tags-vec
-              tags-with-agent (if agent-tag (conj base-tags agent-tag) base-tags)
-              kg-tags (cond-> []
-                        (seq kg-implements-vec) (conj "kg:has-implements")
-                        (seq kg-supersedes-vec) (conj "kg:has-supersedes")
-                        (seq kg-depends-on-vec) (conj "kg:has-depends-on")
-                        (seq kg-refines-vec) (conj "kg:has-refines"))
-              tags-with-kg (into tags-with-agent kg-tags)
-              tags-with-scope (scope/inject-project-scope tags-with-kg project-id)
-              content-hash (chroma/content-hash content)
-              duration-str (or duration "long")
-              expires (dur/calculate-expires duration-str)
-              existing (chroma/find-duplicate type content-hash :project-id project-id)]
-          (if existing
-            (let [merged-tags (distinct (concat (:tags existing) tags-with-scope))
-                  updated (chroma/update-entry! (:id existing) {:tags merged-tags})]
-              (log/info "Duplicate found, merged tags:" (:id existing))
-              (mcp-json (fmt/entry->json-alist updated)))
-            (let [entry-id (chroma/index-memory-entry!
-                            {:type type
-                             :content content
-                             :tags tags-with-scope
-                             :content-hash content-hash
-                             :duration duration-str
-                             :expires (or expires "")
-                             :project-id project-id})
-                  kg-params {:kg_implements kg-implements-vec
-                             :kg_supersedes kg-supersedes-vec
-                             :kg_depends_on kg-depends-on-vec
-                             :kg_refines kg-refines-vec}
-                  edge-ids (create-kg-edges! entry-id kg-params project-id agent-id)
-                  _ (when (seq edge-ids)
-                      (chroma/update-entry! entry-id {:kg-outgoing edge-ids}))
-                  created (chroma/get-entry-by-id entry-id)]
-              (log/info "Created memory entry:" entry-id
-                        (when (seq edge-ids) (str " with " (count edge-ids) " KG edges")))
-              (mcp-json (cond-> (fmt/entry->json-alist created)
-                          (seq edge-ids) (assoc :kg_edges_created edge-ids))))))))
+    (if (and abstraction_level (not (kg-schema/valid-abstraction-level? abstraction_level)))
+      (mcp-error (str "Invalid abstraction_level: " abstraction_level))
+      (let [;; ELM Principle: Coerce array parameters with helpful error messages
+            tags-vec (coerce-vec! tags :tags [])
+            kg-implements-vec (coerce-vec! kg_implements :kg_implements [])
+            kg-supersedes-vec (coerce-vec! kg_supersedes :kg_supersedes [])
+            kg-depends-on-vec (coerce-vec! kg_depends_on :kg_depends_on [])
+            kg-refines-vec (coerce-vec! kg_refines :kg_refines [])
+            directory (or directory (ctx/current-directory))
+            abstraction-level (or abstraction_level (default-abstraction-level type))]
+        (log/info "mcp-memory-add:" type "directory:" directory "agent_id:" agent_id)
+        (with-chroma
+          (let [project-id (scope/get-current-project-id directory)
+                agent-id (or agent_id (System/getenv "CLAUDE_SWARM_SLAVE_ID"))
+                agent-tag (when agent-id (str "agent:" agent-id))
+                base-tags tags-vec
+                tags-with-agent (if agent-tag (conj base-tags agent-tag) base-tags)
+                kg-tags (cond-> []
+                          (seq kg-implements-vec) (conj "kg:has-implements")
+                          (seq kg-supersedes-vec) (conj "kg:has-supersedes")
+                          (seq kg-depends-on-vec) (conj "kg:has-depends-on")
+                          (seq kg-refines-vec) (conj "kg:has-refines"))
+                tags-with-kg (into tags-with-agent kg-tags)
+                tags-with-scope (scope/inject-project-scope tags-with-kg project-id)
+                content-hash (chroma/content-hash content)
+                duration-str (or duration "long")
+                expires (dur/calculate-expires duration-str)
+                existing (chroma/find-duplicate type content-hash :project-id project-id)]
+            (if existing
+              (let [merged-tags (distinct (concat (:tags existing) tags-with-scope))
+                    updated (chroma/update-entry! (:id existing) {:tags merged-tags})]
+                (log/info "Duplicate found, merged tags:" (:id existing))
+                (mcp-json (fmt/entry->json-alist updated)))
+              (let [entry-id (chroma/index-memory-entry!
+                              {:type type
+                               :content content
+                               :tags tags-with-scope
+                               :content-hash content-hash
+                               :duration duration-str
+                               :expires (or expires "")
+                               :project-id project-id
+                               :abstraction-level abstraction-level})
+                    kg-params {:kg_implements kg-implements-vec
+                               :kg_supersedes kg-supersedes-vec
+                               :kg_depends_on kg-depends-on-vec
+                               :kg_refines kg-refines-vec}
+                    edge-ids (create-kg-edges! entry-id kg-params project-id agent-id)
+                    _ (when (seq edge-ids)
+                        (chroma/update-entry! entry-id {:kg-outgoing edge-ids}))
+                    created (chroma/get-entry-by-id entry-id)]
+                (log/info "Created memory entry:" entry-id
+                          (when (seq edge-ids) (str " with " (count edge-ids) " KG edges")))
+                (mcp-json (cond-> (fmt/entry->json-alist created)
+                            (seq edge-ids) (assoc :kg_edges_created edge-ids)))))))))
     (catch clojure.lang.ExceptionInfo e
       (if (= :coercion-error (:type (ex-data e)))
         (mcp-error (.getMessage e))

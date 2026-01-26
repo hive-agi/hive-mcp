@@ -93,7 +93,11 @@
                                                 :description "List of entry IDs this depends on. Creates :depends-on edges in Knowledge Graph."}
                                "kg_refines" {:type "array"
                                              :items {:type "string"}
-                                             :description "List of entry IDs this refines (improves without replacing). Creates :refines edges in Knowledge Graph."}}
+                                             :description "List of entry IDs this refines (improves without replacing). Creates :refines edges in Knowledge Graph."}
+                               "abstraction_level" {:type "integer"
+                                                    :minimum 1
+                                                    :maximum 4
+                                                    :description "Abstraction level (1=Disc/files, 2=Semantic/behavior, 3=Pattern/conventions, 4=Intent/ADRs). Auto-derived from type if not specified: axiom/decision→L4, convention→L3, snippet/note→L2."}}
                   :required ["type" "content"]}
     :handler handle-mcp-memory-add}
 
