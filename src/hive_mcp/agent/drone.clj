@@ -167,6 +167,12 @@
     (str context-str
          (when smart-ctx-str
            (str "\n" smart-ctx-str "\n"))
+         ;; CRITICAL: Inject project root so drones use correct directory in propose_diff
+         (when (seq effective-root)
+           (str "## Project Directory\n"
+                "IMPORTANT: When calling propose_diff, you MUST include:\n"
+                "  directory: \"" effective-root "\"\n"
+                "This ensures paths are validated against YOUR project, not the MCP server.\n\n"))
          "## Task\n" task
          (when (seq files)
            (str "\n\n## Files to modify\n"
@@ -286,7 +292,10 @@
         ;; BUG FIX: Use UUID instead of millis to prevent collision in parallel waves
         agent-id (str "drone-" (java.util.UUID/randomUUID))
         task-id (str "task-" agent-id)
-        ;; Log tool reduction and model selection for observability
+        ;; FRICTION FIX: Calculate step budget based on task complexity
+        ;; Simple tasks like "remove unused namespace" get fewer steps to avoid exhaustion
+        step-budget (decompose/get-step-budget task files)
+        ;; Log tool reduction, model selection, and step budget for observability
         _ (log/info "Drone configuration:"
                     {:drone-id agent-id
                      :task-type effective-task-type
@@ -295,6 +304,7 @@
                      :model-reason (:reason model-selection)
                      :model-fallback model-fallback
                      :tool-count (count minimal-tools)
+                     :max-steps step-budget
                      :reduction (drone-tools/tool-reduction-summary effective-task-type)})]
 
     ;; 0. REGISTER DRONE IN DATASCRIPT
@@ -375,12 +385,27 @@
         (let [augmented-task (augment-task task files {:project-root cwd})
               diffs-before (set (keys @diff/pending-diffs))
               ;; Create sandbox for file scope enforcement (CLARITY-I)
-              drone-sandbox (sandbox/create-sandbox (or files []))]
+              ;; BUG FIX: Pass project-root for path containment validation
+              effective-root (or cwd (diff/get-project-root))
+              drone-sandbox (sandbox/create-sandbox (or files []) effective-root)]
+
+          ;; SECURITY: Fail if any paths were rejected for escaping project directory
+          (when (seq (:rejected-files drone-sandbox))
+            (let [rejected (:rejected-files drone-sandbox)]
+              (log/error {:event :drone/path-escape-blocked
+                          :drone-id agent-id
+                          :project-root effective-root
+                          :rejected-files rejected})
+              (throw (ex-info "File paths escape project directory - blocked for security"
+                              {:error-type :path-escape
+                               :drone-id agent-id
+                               :project-root effective-root
+                               :rejected-files rejected}))))
 
           ;; Log sandbox creation
           (log/info "Drone sandbox created"
                     {:drone-id agent-id
-                     :allowed-files (count (or files []))
+                     :allowed-files (count (:allowed-files drone-sandbox))
                      :blocked-tools (count (:blocked-tools drone-sandbox))})
 
           ;; Shout started to parent ling
@@ -389,12 +414,13 @@
                              {:task (str "Drone: " (subs task 0 (min 80 (count task))))
                               :message (format "Delegated drone %s working" agent-id)}))
 
-          ;; 3. EXECUTE (with sandbox constraints + minimal tools + routed model)
+          ;; 3. EXECUTE (with sandbox constraints + minimal tools + routed model + step budget)
           (let [result (delegate-fn {:backend :openrouter
                                      :preset effective-preset
                                      :model selected-model  ; Smart-routed model selection
                                      :task augmented-task
                                      :tools minimal-tools  ; Task-specific minimal tool set
+                                     :max-steps step-budget  ; FRICTION FIX: Complexity-based step budget
                                      :trace trace
                                      ;; Sandbox config for runtime enforcement
                                      :sandbox {:allowed-files (:allowed-files drone-sandbox)

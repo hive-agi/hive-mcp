@@ -7,12 +7,15 @@
    - Prometheus metric integration (drones_failed_total with error-type label)
    - Preset selection and task classification
    - Parser code extraction and confidence scoring
-   - Validation result structures"
+   - Validation result structures
+   - Sandbox path containment validation"
   (:require [clojure.test :refer :all]
+            [clojure.string :as str]
             [hive-mcp.agent.drone :as drone]
             [hive-mcp.agent.drone.preset :as preset]
             [hive-mcp.agent.drone.parser :as parser]
             [hive-mcp.agent.drone.tools :as tools]
+            [hive-mcp.agent.drone.sandbox :as sandbox]
             [hive-mcp.agent.drone.validation :as validation]
             [hive-mcp.agent.drone.context :as context]))
 
@@ -337,6 +340,84 @@
   (testing "read-surrounding-lines handles missing files gracefully"
     (let [result (context/read-surrounding-lines "/nonexistent/file.clj" 10)]
       (is (nil? result) "Should return nil for missing files"))))
+
+;; =============================================================================
+;; Sandbox Path Containment Tests (BUG FIX: drone path escapes project directory)
+;; =============================================================================
+
+(deftest test-sandbox-path-containment-validation
+  (testing "validate-path-containment catches path traversal attacks"
+    (let [project-root "/home/user/myproject"]
+      ;; Paths that escape project directory should fail
+      (is (not (:valid? (sandbox/validate-path-containment
+                         "../../../etc/passwd" project-root)))
+          "Should reject ../../../etc/passwd")
+      (is (not (:valid? (sandbox/validate-path-containment
+                         "/etc/passwd" project-root)))
+          "Should reject absolute path /etc/passwd")
+      (is (not (:valid? (sandbox/validate-path-containment
+                         "src/../../../etc/passwd" project-root)))
+          "Should reject src/../../../etc/passwd"))))
+
+(deftest test-sandbox-path-containment-allows-valid-paths
+  (testing "validate-path-containment allows valid project paths"
+    (let [project-root (System/getProperty "user.dir")]
+      ;; Relative paths within project should succeed
+      (let [result (sandbox/validate-path-containment "src/foo.clj" project-root)]
+        (is (:valid? result) "Should allow relative paths")
+        (is (some? (:canonical-path result)) "Should return canonical path"))
+      ;; Paths with ../ that still resolve inside project
+      (let [result (sandbox/validate-path-containment "src/../src/bar.clj" project-root)]
+        (is (:valid? result) "Should allow paths that resolve inside project")))))
+
+(deftest test-create-sandbox-rejects-escaping-paths
+  (testing "create-sandbox rejects files that escape project directory"
+    (let [project-root "/home/user/myproject"
+          files ["src/core.clj"          ; valid
+                 "../../../etc/passwd"   ; escape attempt
+                 "/etc/shadow"]          ; absolute path escape
+          sandbox-spec (sandbox/create-sandbox files project-root)]
+      ;; Should have rejected files
+      (is (seq (:rejected-files sandbox-spec))
+          "Should have rejected files list")
+      (is (>= (count (:rejected-files sandbox-spec)) 2)
+          "Should reject at least 2 escape attempts")
+      ;; Rejected should include the escape attempts
+      (let [rejected-paths (set (map :path (:rejected-files sandbox-spec)))]
+        (is (contains? rejected-paths "../../../etc/passwd")
+            "Should reject ../../../etc/passwd")
+        (is (contains? rejected-paths "/etc/shadow")
+            "Should reject /etc/shadow")))))
+
+(deftest test-create-sandbox-allows-valid-paths-only
+  (testing "create-sandbox only includes valid paths in allowed-files"
+    (let [project-root (System/getProperty "user.dir")
+          ;; Mix of valid and invalid paths
+          files ["src/hive_mcp/core.clj"
+                 "test/hive_mcp/core_test.clj"
+                 "../../../etc/passwd"]
+          sandbox-spec (sandbox/create-sandbox files project-root)]
+      ;; Should have allowed files (the valid ones)
+      (is (some? (:allowed-files sandbox-spec))
+          "Should have allowed files")
+      ;; Allowed files should NOT contain the escape path
+      (let [allowed (set (map #(.getPath (java.io.File. %))
+                              (:allowed-files sandbox-spec)))]
+        (is (not (some #(clojure.string/includes? % "passwd") allowed))
+            "Allowed files should not contain escaped paths")))))
+
+(deftest test-sandbox-validates-against-project-root
+  (testing "create-sandbox uses project-root for validation"
+    ;; When no project-root provided, should use user.dir as fallback
+    (let [sandbox-no-root (sandbox/create-sandbox ["../../../etc/passwd"])]
+      (is (seq (:rejected-files sandbox-no-root))
+          "Should reject paths even without explicit project-root"))
+    ;; With explicit project-root
+    (let [sandbox-with-root (sandbox/create-sandbox
+                             ["../../../etc/passwd"]
+                             "/tmp/test-project")]
+      (is (seq (:rejected-files sandbox-with-root))
+          "Should reject paths with explicit project-root"))))
 
 (comment
   ;; Run tests
