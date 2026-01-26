@@ -14,6 +14,7 @@
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.tools.memory.format :as fmt]
             [hive-mcp.tools.memory.duration :as dur]
+            [hive-mcp.tools.core :refer [mcp-error coerce-int!]]
             [hive-mcp.chroma :as chroma]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [clojure.data.json :as json]
@@ -96,8 +97,14 @@
 (defn handle-expiring-soon
   "List memory entries expiring within N days (Chroma-only)."
   [{:keys [days]}]
-  (log/info "mcp-memory-expiring-soon:" (or days 7))
-  (with-chroma
-    (let [project-id (scope/get-current-project-id)
-          entries (chroma/entries-expiring-soon (or days 7) :project-id project-id)]
-      {:type "text" :text (json/write-str (mapv fmt/entry->json-alist entries))})))
+  (try
+    (let [days-val (coerce-int! days :days 7)]
+      (log/info "mcp-memory-expiring-soon:" days-val)
+      (with-chroma
+        (let [project-id (scope/get-current-project-id)
+              entries (chroma/entries-expiring-soon days-val :project-id project-id)]
+          {:type "text" :text (json/write-str (mapv fmt/entry->json-alist entries))})))
+    (catch clojure.lang.ExceptionInfo e
+      (if (= :coercion-error (:type (ex-data e)))
+        (mcp-error (.getMessage e))
+        (throw e)))))

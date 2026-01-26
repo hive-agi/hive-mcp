@@ -557,6 +557,38 @@
         (log/error "[EVENT] Swarm send-prompt error:" (.getMessage e))))))
 
 ;; =============================================================================
+;; Effect: :agora/continue (P0: Async Debate Continuation)
+;; =============================================================================
+
+(defn- handle-agora-continue
+  "Execute an :agora/continue effect - continue debate asynchronously.
+
+   Calls debate/continue-debate! in a future to avoid blocking the event loop.
+   The continue-debate! function will emit another :agora/turn-response event
+   upon completion, creating the event-driven automation loop.
+
+   Expected data shape:
+   {:dialogue-id \"dialogue-uuid\"}
+
+   Example:
+   {:agora/continue {:dialogue-id \"abc-123\"}}
+
+   Axiom: [ax: Drone Medium Limitations] - drones are single-shot,
+   this effect orchestrates the sequence between turns."
+  [{:keys [dialogue-id]}]
+  (when dialogue-id
+    (future
+      (try
+        (require 'hive-mcp.agora.debate)
+        (let [continue-fn (resolve 'hive-mcp.agora.debate/continue-debate!)]
+          (when continue-fn
+            (log/debug "[EVENT] Continuing debate:" dialogue-id)
+            (continue-fn dialogue-id)))
+        (catch Exception e
+          (log/error "[EVENT] Agora continue failed for" dialogue-id ":"
+                     (.getMessage e)))))))
+
+;; =============================================================================
 ;; Registration
 ;; =============================================================================
 
@@ -695,6 +727,9 @@
     ;; :swarm-send-prompt - Send prompt to ling terminal (Agora Turn Relay)
     (ev/reg-fx :swarm-send-prompt handle-swarm-send-prompt)
 
+    ;; :agora/continue - Async debate continuation (P0: Event-Driven Agora)
+    (ev/reg-fx :agora/continue handle-agora-continue)
+
     ;; :kanban-move-done - Move kanban tasks to done (Session Complete)
     (ev/reg-fx :kanban-move-done handle-kanban-move-done)
 
@@ -712,7 +747,7 @@
 
     (reset! *registered true)
     (log/info "[hive-events] Coeffects registered: :now :agent-context :db-snapshot :waiting-lings :request-ctx")
-    (log/info "[hive-events] Effects registered: :shout :targeted-shout :log :ds-transact :wrap-notify :channel-publish :memory-write :report-metrics :emit-system-error :dispatch :dispatch-n :git-commit :kanban-sync :dispatch-task :swarm-send-prompt :kanban-move-done :wrap-crystallize")
+    (log/info "[hive-events] Effects registered: :shout :targeted-shout :log :ds-transact :wrap-notify :channel-publish :memory-write :report-metrics :emit-system-error :dispatch :dispatch-n :git-commit :kanban-sync :dispatch-task :swarm-send-prompt :agora/continue :kanban-move-done :wrap-crystallize")
     true))
 
 (defn reset-registration!

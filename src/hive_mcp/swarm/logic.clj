@@ -198,6 +198,32 @@
       (remove-claim! f slave-id))
     (log/debug "Released" (count files) "claims for slave:" slave-id)))
 
+(defn get-all-claims
+  "Get all file claims from logic-db.
+   Returns vector of {:file path :slave-id id} maps."
+  []
+  (vec (with-db
+         (l/run* [q]
+                 (l/fresh [f s]
+                          (claims f s)
+                          (l/== q {:file f :slave-id s}))))))
+
+(defn reset-claims!
+  "Clear ALL file claims from logic-db.
+
+   GHOST CLAIMS FIX: Use this to clear orphaned claims that weren't
+   properly released due to drone failures or server restarts.
+
+   WARNING: This removes ALL claims - only use when cleaning up after
+   wave failures or during maintenance."
+  []
+  (let [all-claims (get-all-claims)
+        count-before (count all-claims)]
+    (doseq [{:keys [file slave-id]} all-claims]
+      (swap! logic-db pldb/db-retraction claims file slave-id))
+    (log/info "Reset all claims:" count-before "claims cleared from logic-db")
+    {:cleared count-before}))
+
 (defn add-task-file!
   "Associate a file with a task (for claim tracking)."
   [task-id file-path]
@@ -519,6 +545,94 @@
             (l/fresh [tid sid status]
                      (task tid sid status)
                      (l/== q {:task-id tid :slave-id sid :status status})))))
+
+;; =============================================================================
+;; Dispatch Readiness (Race Condition Fix)
+;; =============================================================================
+;; These functions ensure dispatch waits for preset completion.
+;; A slave is only ready for dispatch when status is :idle (preset loaded).
+;; Statuses :spawning and :starting indicate preset is still loading.
+
+(def ^:private dispatch-ready-statuses
+  "Slave statuses that indicate readiness for dispatch.
+   :idle means the slave has completed initialization and preset loading."
+  #{:idle})
+
+(def ^:private dispatch-not-ready-statuses
+  "Slave statuses that indicate the slave is NOT ready for dispatch.
+   :spawning - slave terminal is being created
+   :starting - slave process is starting, preset loading in progress"
+  #{:spawning :starting})
+
+(defn get-slave-status
+  "Get the current status of a slave.
+   Returns status keyword or nil if slave doesn't exist."
+  [slave-id]
+  (first (with-db
+           (l/run 1 [s]
+                  (slave slave-id s)))))
+
+(defn slave-ready-for-dispatch?
+  "Check if a slave is ready to receive dispatch.
+
+   Returns true only if:
+   - Slave exists in logic-db
+   - Slave status is :idle (preset fully loaded)
+
+   DISPATCH RACE CONDITION FIX:
+   This predicate prevents dispatch from proceeding while preset is loading.
+   When a slave is spawned, it starts in :spawning status. The Elisp layer
+   updates status to :idle when the terminal is ready and preset is loaded.
+   Dispatching to a :spawning or :starting slave may result in prompts
+   being lost or executed without the proper system prompt context."
+  [slave-id]
+  (let [status (get-slave-status slave-id)]
+    (contains? dispatch-ready-statuses status)))
+
+(defn check-dispatch-readiness
+  "Check if a slave is ready for dispatch with detailed status.
+
+   Returns map with:
+     :ready?  - true if slave can receive dispatch
+     :status  - current slave status (or nil if not found)
+     :reason  - nil if ready, keyword reason if not:
+                :slave-not-found - slave doesn't exist
+                :preset-loading  - slave is :spawning or :starting
+                :slave-busy      - slave is :working on another task
+
+   USAGE IN PRE-FLIGHT:
+   Call this before dispatch-or-queue! to add readiness check:
+
+   (let [readiness (logic/check-dispatch-readiness slave-id)]
+     (if (:ready? readiness)
+       (dispatch! ...)
+       (handle-not-ready readiness)))"
+  [slave-id]
+  (let [status (get-slave-status slave-id)]
+    (cond
+      ;; Slave doesn't exist
+      (nil? status)
+      {:ready? false
+       :status nil
+       :reason :slave-not-found}
+
+      ;; Slave is ready (idle)
+      (contains? dispatch-ready-statuses status)
+      {:ready? true
+       :status status
+       :reason nil}
+
+      ;; Slave is spawning or starting (preset loading)
+      (contains? dispatch-not-ready-statuses status)
+      {:ready? false
+       :status status
+       :reason :preset-loading}
+
+      ;; Slave is busy (working, blocked, etc.)
+      :else
+      {:ready? false
+       :status status
+       :reason :slave-busy})))
 
 ;; =============================================================================
 ;; Debugging Helpers

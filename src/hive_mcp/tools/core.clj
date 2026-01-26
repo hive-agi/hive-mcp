@@ -193,6 +193,217 @@
      (do ~@body)))
 
 ;; =============================================================================
+;; Parameter Coercion (Elm-style Helpful Errors)
+;; =============================================================================
+
+(defn coerce-int
+  "Coerce value to integer with Elm-style helpful error on failure.
+
+   Returns {:ok value} on success, {:error message} on failure.
+
+   Examples:
+     (coerce-int 42 :limit)         => {:ok 42}
+     (coerce-int \"42\" :limit)       => {:ok 42}
+     (coerce-int \"abc\" :limit)      => {:error \"I was expecting...\"}
+     (coerce-int nil :limit 20)      => {:ok 20}  ; uses default
+
+   CLARITY: Y - Yield safe failure with useful context
+   CLARITY: I - Inputs are guarded at boundary"
+  ([value param-name] (coerce-int value param-name nil))
+  ([value param-name default]
+   (cond
+     ;; nil with default -> use default
+     (nil? value)
+     (if (some? default)
+       {:ok default}
+       {:error (format "I was expecting a number for `%s` but got nothing.
+
+HINT: This parameter is required. Provide an integer value.
+
+    %s: 10    ← example valid value"
+                       (name param-name) (name param-name))})
+
+     ;; Already an integer
+     (integer? value)
+     {:ok value}
+
+     ;; String that looks like a number
+     (string? value)
+     (try
+       {:ok (Long/parseLong value)}
+       (catch NumberFormatException _
+         {:error (format "I was expecting a number for `%s` but got the string \"%s\".
+
+This looks like a string that isn't a valid number.
+
+HINT: Pass an integer, not a string:
+
+    WRONG:  %s: \"%s\"
+    RIGHT:  %s: %s"
+                         (name param-name) value
+                         (name param-name) value
+                         (name param-name) (or default "10"))}))
+
+     ;; Some other type
+     :else
+     {:error (format "I was expecting a number for `%s` but got a %s: %s
+
+HINT: Pass an integer value:
+
+    %s: 10    ← example valid value"
+                     (name param-name)
+                     (.getSimpleName (class value))
+                     (pr-str value)
+                     (name param-name))})))
+
+(defn coerce-int!
+  "Coerce value to integer, throwing on failure with Elm-style message.
+
+   Use in handlers where you want to fail fast with a helpful error.
+
+   Example:
+     (let [limit (coerce-int! limit :limit 20)]
+       ...)  ; limit is guaranteed to be an integer"
+  ([value param-name] (coerce-int! value param-name nil))
+  ([value param-name default]
+   (let [{:keys [ok error]} (coerce-int value param-name default)]
+     (if error
+       (throw (ex-info error {:param param-name :value value :type :coercion-error}))
+       ok))))
+
+;; =============================================================================
+;; Vector/Array Coercion (ELM Principle)
+;; =============================================================================
+
+(defn coerce-vec
+  "Coerce value to vector with Elm-style helpful error on failure.
+
+   Handles:
+   - nil -> default or error
+   - vector/list/seq -> vec
+   - JSON string '[\"a\",\"b\"]' -> parsed vec
+   - other -> error
+
+   Returns {:ok vec} on success, {:error message} on failure.
+
+   ELM Principle: User-facing errors should be helpful, not internal stack traces.
+   CLARITY: Y - Yield safe failure with useful context
+   CLARITY: I - Inputs are guarded at boundary"
+  ([value param-name] (coerce-vec value param-name nil))
+  ([value param-name default]
+   (cond
+     ;; nil with default -> use default
+     (nil? value)
+     (if (some? default)
+       {:ok default}
+       {:ok []})  ; Default to empty vec for optional arrays
+
+     ;; Already a vector
+     (vector? value)
+     {:ok value}
+
+     ;; List or seq -> convert to vec
+     (sequential? value)
+     {:ok (vec value)}
+
+     ;; JSON string -> try to parse
+     (string? value)
+     (if (str/starts-with? (str/trim value) "[")
+       (try
+         (let [parsed (json/read-str value)]
+           (if (sequential? parsed)
+             {:ok (vec parsed)}
+             {:error (format "I was expecting `%s` to be an array, but the JSON parsed to a %s.
+
+HINT: Provide a JSON array like [\"item1\", \"item2\"]
+
+    %s: [\"tag1\", \"tag2\"]    ← correct format"
+                             (name param-name)
+                             (.getSimpleName (class parsed))
+                             (name param-name))}))
+         (catch Exception e
+           {:error (format "I was expecting `%s` to be a valid JSON array, but parsing failed: %s
+
+HINT: Make sure the JSON is properly formatted.
+
+    %s: [\"tag1\", \"tag2\"]    ← correct format
+    %s: %s                      ← your input (invalid)"
+                           (name param-name)
+                           (.getMessage e)
+                           (name param-name)
+                           (name param-name)
+                           (pr-str value))}))
+       {:error (format "I was expecting `%s` to be an array, but got a string that doesn't look like JSON: %s
+
+HINT: Provide a JSON array, not a plain string.
+
+    %s: [\"tag1\", \"tag2\"]    ← correct (JSON array)
+    %s: \"tag1, tag2\"          ← incorrect (plain string)"
+                       (name param-name)
+                       (pr-str (subs value 0 (min 50 (count value))))
+                       (name param-name)
+                       (name param-name))})
+
+     ;; Other types -> error
+     :else
+     {:error (format "I was expecting `%s` to be an array, but got a %s: %s
+
+HINT: Provide a JSON array like [\"item1\", \"item2\"]
+
+    %s: [\"tag1\", \"tag2\"]    ← correct format"
+                     (name param-name)
+                     (.getSimpleName (class value))
+                     (pr-str value)
+                     (name param-name))})))
+
+(defn coerce-vec!
+  "Coerce value to vector, throwing on failure with Elm-style message.
+
+   Use in handlers where you want to fail fast with a helpful error.
+
+   Example:
+     (let [tags (coerce-vec! tags :tags [])]
+       ...)  ; tags is guaranteed to be a vector
+
+   ELM Principle: User-facing errors should be helpful, not internal stack traces."
+  ([value param-name] (coerce-vec! value param-name nil))
+  ([value param-name default]
+   (let [{:keys [ok error]} (coerce-vec value param-name default)]
+     (if error
+       (throw (ex-info error {:param param-name :value value :type :coercion-error}))
+       ok))))
+
+(defmacro with-coerced-params
+  "Coerce multiple parameters with Elm-style errors, returning early on failure.
+
+   Usage:
+     (with-coerced-params [{:keys [limit offset]} params
+                           limit  [:limit 20]
+                           offset [:offset 0]]
+       (query-with limit offset))
+
+   Returns mcp-error response on coercion failure.
+
+   CLARITY: I - Inputs are guarded at boundary
+   CLARITY: Y - Yield safe failure with helpful messages"
+  [[bindings params & coercions] & body]
+  (let [coercion-pairs (partition 2 coercions)
+        coercion-checks (for [[var-name [param-name default]] coercion-pairs]
+                          `(let [result# (coerce-int ~var-name ~param-name ~default)]
+                             (when (:error result#)
+                               (throw (ex-info (:error result#)
+                                               {:param ~param-name :type :coercion-error})))
+                             (:ok result#)))]
+    `(let [~bindings ~params]
+       (try
+         (let [~@(interleave (map first coercion-pairs) coercion-checks)]
+           ~@body)
+         (catch clojure.lang.ExceptionInfo e#
+           (if (= :coercion-error (:type (ex-data e#)))
+             (mcp-error (.getMessage e#))
+             (throw e#)))))))
+
+;; =============================================================================
 ;; Hivemind Message Piggyback (delegated to piggyback)
 ;; =============================================================================
 

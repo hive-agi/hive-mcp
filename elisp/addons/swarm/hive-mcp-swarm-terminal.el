@@ -510,6 +510,10 @@ STATUS is one of:
 - \"error\" - error pattern detected in output"
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
+      ;; Flush vterm process output before inspecting buffer content
+      ;; Without this, events only fire when manually displaying the buffer
+      (when-let* ((proc (get-buffer-process buffer)))
+        (accept-process-output proc 0.01))
       (when (and hive-mcp-swarm-terminal--working-p
                  (hive-mcp-swarm-terminal-ready-p buffer))
         ;; Transition detected: working → ready
@@ -541,6 +545,10 @@ STATUS is one of:
 Updates activity timestamp if output detected.
 Returns t if activity was recorded, nil otherwise."
   (when (buffer-live-p buffer)
+    ;; Flush vterm process output before checking buffer size
+    ;; Without this, activity detection only works when buffer is displayed
+    (when-let* ((proc (get-buffer-process buffer)))
+      (accept-process-output proc 0.01))
     (let* ((current-size (buffer-size buffer))
            (last-size (gethash slave-id hive-mcp-swarm-terminal--buffer-sizes 0)))
       (puthash slave-id current-size hive-mcp-swarm-terminal--buffer-sizes)
@@ -718,6 +726,16 @@ emits a prompt-stall event instead - this is more urgent as it
 indicates the coordinator needs to respond to unblock the ling."
   (when (and (boundp 'hive-mcp-swarm--slaves)
              (hash-table-p hive-mcp-swarm--slaves))
+    ;; First pass: flush all process output so buffer content is fresh
+    ;; Without this, idle detection only works when hovering over buffers
+    (maphash
+     (lambda (_slave-id slave)
+       (when-let* ((buffer (plist-get slave :buffer)))
+         (when (buffer-live-p buffer)
+           (when-let* ((proc (get-buffer-process buffer)))
+             (accept-process-output proc 0.01)))))
+     hive-mcp-swarm--slaves)
+    ;; Second pass: check for idle timeouts with fresh data
     (maphash
      (lambda (slave-id _slave)
        (when (hive-mcp-swarm-terminal--slave-needs-idle-event-p slave-id)

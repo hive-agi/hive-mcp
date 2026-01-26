@@ -176,42 +176,74 @@
 
 (defn handle-claim-cleanup
   "Handler for claim_cleanup tool.
-   Releases all stale claims (auto-expiration)."
-  [{:keys [threshold_minutes dry_run]}]
+   Releases all stale claims (auto-expiration) AND cleans ghost claims.
+
+   GHOST CLAIMS FIX: Also finds claims in logic-db that aren't in DataScript
+   (ghost claims) and removes them. This prevents false 'file already claimed' errors."
+  [{:keys [threshold_minutes dry_run include_ghosts]}]
   (let [threshold-ms (if threshold_minutes
                        (* threshold_minutes 60 1000)
                        lings/default-stale-threshold-ms)
-        stale-claims (lings/get-stale-claims threshold-ms)]
-    (if (empty? stale-claims)
+        stale-claims (lings/get-stale-claims threshold-ms)
+        ;; GHOST CLAIMS: Find claims in logic but not DataScript
+        ds-claims (lings/get-all-claims)
+        ds-files (set (map :file ds-claims))
+        logic-claims (logic/get-all-claims)
+        ghost-claims (->> logic-claims
+                          (remove #(contains? ds-files (:file %)))
+                          vec)
+        ;; Include ghosts by default (opt-out with include_ghosts=false)
+        clean-ghosts? (if (false? include_ghosts) false true)
+        total-to-clean (+ (count stale-claims)
+                          (if clean-ghosts? (count ghost-claims) 0))]
+    (if (zero? total-to-clean)
       {:type "text"
        :text (json/write-str
               {:success true
-               :message "No stale claims found"
-               :threshold-minutes (/ threshold-ms 60000)})}
+               :message "No stale or ghost claims found"
+               :threshold-minutes (/ threshold-ms 60000)
+               :ghost-count 0})}
       (if dry_run
         ;; Dry run - just report what would be cleaned
         {:type "text"
          :text (json/write-str
                 {:dry-run true
-                 :would-release (count stale-claims)
+                 :would-release-stale (count stale-claims)
+                 :would-release-ghosts (if clean-ghosts? (count ghost-claims) 0)
                  :stale-claims (mapv (fn [{:keys [file slave-id age-minutes]}]
                                        {:file file
                                         :owner slave-id
                                         :age-minutes age-minutes})
                                      stale-claims)
+                 :ghost-claims (when clean-ghosts?
+                                 (mapv (fn [{:keys [file slave-id]}]
+                                         {:file file :owner slave-id})
+                                       ghost-claims))
                  :hint "Run with dry_run=false to actually release these claims"})}
         ;; Actual cleanup
-        (let [result (lings/cleanup-stale-claims! threshold-ms)]
+        (let [;; Clean stale claims from DataScript
+              stale-result (lings/cleanup-stale-claims! threshold-ms)
+              ;; GHOST CLAIMS FIX: Clean ghost claims from logic-db
+              ghost-result (when clean-ghosts?
+                             (doseq [{:keys [file slave-id]} ghost-claims]
+                               (logic/remove-claim! file slave-id))
+                             {:ghost-cleared (count ghost-claims)})]
           ;; Emit events for each released claim
-          (doseq [file (:released-files result)]
+          (doseq [file (:released-files stale-result)]
             (events/dispatch [:claim/file-released {:file file
                                                     :released-by "auto-cleanup"}]))
-          (log/info "claim_cleanup: Released" (:released-count result) "stale claims")
+          (doseq [{:keys [file]} ghost-claims]
+            (events/dispatch [:claim/file-released {:file file
+                                                    :released-by "ghost-cleanup"}]))
+          (log/info "claim_cleanup: Released" (:released-count stale-result) "stale claims,"
+                    (or (:ghost-cleared ghost-result) 0) "ghost claims")
           {:type "text"
            :text (json/write-str
                   {:success true
-                   :released-count (:released-count result)
-                   :released-files (:released-files result)
+                   :released-stale (:released-count stale-result)
+                   :released-ghosts (or (:ghost-cleared ghost-result) 0)
+                   :released-files (:released-files stale-result)
+                   :ghost-files (mapv :file ghost-claims)
                    :threshold-minutes (/ threshold-ms 60000)})})))))
 
 ;; =============================================================================
@@ -238,11 +270,13 @@
     :handler handle-claim-clear}
 
    {:name "claim_cleanup"
-    :description "Release all stale claims (auto-expiration). Claims older than threshold are automatically released. Use dry_run=true to preview what would be cleaned."
+    :description "Release all stale claims AND ghost claims. Stale claims are those older than threshold. Ghost claims are orphaned claims in logic-db without DataScript entries (the root cause of false 'file already claimed' errors). Use dry_run=true to preview."
     :inputSchema {:type "object"
                   :properties {"threshold_minutes" {:type "number"
                                                     :description "Staleness threshold in minutes (default: 10)"}
                                "dry_run" {:type "boolean"
-                                          :description "If true, only report stale claims without releasing (default: false)"}}
+                                          :description "If true, only report claims without releasing (default: false)"}
+                               "include_ghosts" {:type "boolean"
+                                                 :description "If false, skip ghost claim cleanup (default: true - clean both stale and ghost)"}}
                   :required []}
     :handler handle-claim-cleanup}])

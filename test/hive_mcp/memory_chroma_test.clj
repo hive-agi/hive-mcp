@@ -465,24 +465,26 @@
 
 (deftest test-index-without-embedding-provider
   (testing "Indexing without embedding provider throws"
-    (let [original @#'chroma/embedding-provider]
-      (reset! #'chroma/embedding-provider nil)
+    (let [the-atom @#'chroma/embedding-provider
+          original @the-atom]
+      (reset! the-atom nil)
       (try
         (is (thrown? clojure.lang.ExceptionInfo
                      (chroma/index-memory-entry!
                       (make-memory-entry :content "Should fail"))))
         (finally
-          (reset! #'chroma/embedding-provider original))))))
+          (reset! the-atom original))))))
 
 (deftest test-search-without-embedding-provider
   (testing "Searching without embedding provider throws"
-    (let [original @#'chroma/embedding-provider]
-      (reset! #'chroma/embedding-provider nil)
+    (let [the-atom @#'chroma/embedding-provider
+          original @the-atom]
+      (reset! the-atom nil)
       (try
         (is (thrown? clojure.lang.ExceptionInfo
                      (chroma/search-similar "query")))
         (finally
-          (reset! #'chroma/embedding-provider original))))))
+          (reset! the-atom original))))))
 
 ;; =============================================================================
 ;; Test: Document Format

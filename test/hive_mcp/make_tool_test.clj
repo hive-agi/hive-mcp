@@ -6,6 +6,7 @@
 
    These tests capture current behavior as executable specification."
   (:require [clojure.test :refer [deftest testing is use-fixtures]]
+            [clojure.string :as str]
             [hive-mcp.server :as server]
             [hive-mcp.hivemind :as hivemind]
             [hive-mcp.channel.piggyback :as piggyback]))
@@ -96,15 +97,15 @@
       ;; Content should have the piggyback appended
       (is (vector? (:content result)) "Content should be vector")
       (let [text (get-in (:content result) [0 :text])]
-        (is (clojure.string/includes? text "---HIVEMIND---")
+        (is (str/includes? text "---HIVEMIND---")
             "Should contain opening marker")
-        (is (clojure.string/includes? text "---/HIVEMIND---")
+        (is (str/includes? text "---/HIVEMIND---")
             "Should contain closing marker")
-        (is (clojure.string/includes? text ":a \"worker\"")
+        (is (str/includes? text ":a \"worker\"")
             "Should contain agent-id")
-        (is (clojure.string/includes? text ":e \"progress\"")
+        (is (str/includes? text ":e \"progress\"")
             "Should contain event type")
-        (is (clojure.string/includes? text ":m \"progress-msg\"")
+        (is (str/includes? text ":m \"progress-msg\"")
             "Should contain message")))))
 
 (deftest test-empty-piggyback-no-markers
@@ -120,7 +121,7 @@
           ;; Second call should definitely have no piggyback
           result ((:handler wrapped) {})]
       (let [text (get-in (:content result) [0 :text])]
-        (is (not (clojure.string/includes? text "---HIVEMIND---"))
+        (is (not (str/includes? text "---HIVEMIND---"))
             "Should NOT contain HIVEMIND markers")
         (is (= "result" text) "Should just be the original result")))))
 
@@ -135,13 +136,13 @@
           wrapped (server/make-tool test-tool)]
       ;; First call gets the piggyback
       (let [result1 ((:handler wrapped) {})]
-        (is (clojure.string/includes? (get-in (:content result1) [0 :text])
-                                      "---HIVEMIND---")
+        (is (str/includes? (get-in (:content result1) [0 :text])
+                           "---HIVEMIND---")
             "First call should have piggyback"))
       ;; Second call should not have it
       (let [result2 ((:handler wrapped) {})]
-        (is (not (clojure.string/includes? (get-in (:content result2) [0 :text])
-                                           "---HIVEMIND---"))
+        (is (not (str/includes? (get-in (:content result2) [0 :text])
+                                "---HIVEMIND---"))
             "Second call should NOT have piggyback")))))
 
 ;; =============================================================================
@@ -161,8 +162,8 @@
           ;; Call with keyword :agent-id
           result ((:handler wrapped) {:agent-id "agent-a"})]
       ;; Should have gotten the piggyback (agent-a hadn't read yet)
-      (is (clojure.string/includes? (get-in (:content result) [0 :text])
-                                    "---HIVEMIND---")
+      (is (str/includes? (get-in (:content result) [0 :text])
+                         "---HIVEMIND---")
           "Agent-a should receive piggyback"))))
 
 (deftest test-agent-id-string-extraction
@@ -176,8 +177,8 @@
           wrapped (server/make-tool test-tool)
           ;; Call with string key "agent-id"
           result ((:handler wrapped) {"agent-id" "agent-b"})]
-      (is (clojure.string/includes? (get-in (:content result) [0 :text])
-                                    "---HIVEMIND---")
+      (is (str/includes? (get-in (:content result) [0 :text])
+                         "---HIVEMIND---")
           "Agent-b should receive piggyback via string key"))))
 
 (deftest test-agent-id-defaults-to-coordinator
@@ -194,8 +195,8 @@
           ;; Now call as "coordinator" - should have no new messages
           result2 ((:handler wrapped) {})]
       ;; The first call consumed as "coordinator", so second call has nothing
-      (is (not (clojure.string/includes? (get-in (:content result2) [0 :text])
-                                         "---HIVEMIND---"))
+      (is (not (str/includes? (get-in (:content result2) [0 :text])
+                              "---HIVEMIND---"))
           "Second coordinator call should have no piggyback (already consumed)"))))
 
 ;; =============================================================================
@@ -226,7 +227,7 @@
       (let [last-text (get-in (:content result) [2 :text])]
         (is (clojure.string/starts-with? last-text "last")
             "Last item starts with original text")
-        (is (clojure.string/includes? last-text "---HIVEMIND---")
+        (is (str/includes? last-text "---HIVEMIND---")
             "Last item has piggyback appended")))))
 
 (deftest test-piggyback-creates-text-item-when-no-text
@@ -249,7 +250,7 @@
       ;; New text item added with piggyback
       (let [new-item (get (:content result) 2)]
         (is (= "text" (:type new-item)) "New item is text type")
-        (is (clojure.string/includes? (:text new-item) "---HIVEMIND---")
+        (is (str/includes? (:text new-item) "---HIVEMIND---")
             "New text item contains piggyback")))))
 
 (deftest test-multiple-piggyback-messages
@@ -268,12 +269,12 @@
           wrapped (server/make-tool test-tool)
           result ((:handler wrapped) {})]
       (let [text (get-in (:content result) [0 :text])]
-        (is (clojure.string/includes? text "agent-1") "Contains agent-1")
-        (is (clojure.string/includes? text "agent-2") "Contains agent-2")
-        (is (clojure.string/includes? text "agent-3") "Contains agent-3")
-        (is (clojure.string/includes? text "msg1") "Contains msg1")
-        (is (clojure.string/includes? text "msg2") "Contains msg2")
-        (is (clojure.string/includes? text "msg3") "Contains msg3")))))
+        (is (str/includes? text "agent-1") "Contains agent-1")
+        (is (str/includes? text "agent-2") "Contains agent-2")
+        (is (str/includes? text "agent-3") "Contains agent-3")
+        (is (str/includes? text "msg1") "Contains msg1")
+        (is (str/includes? text "msg2") "Contains msg2")
+        (is (str/includes? text "msg3") "Contains msg3")))))
 
 ;; =============================================================================
 ;; Edge Cases (DIP: Defensive programming)

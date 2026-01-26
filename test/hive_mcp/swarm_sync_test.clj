@@ -6,8 +6,7 @@
   (:require [clojure.test :refer [deftest testing is use-fixtures]]
             [hive-mcp.tools.swarm :as swarm]
             [hive-mcp.swarm.datascript :as ds]
-            [hive-mcp.channel :as ch]
-            [clojure.core.async :as async :refer [<!! timeout alts!!]]))
+            [hive-mcp.channel :as ch]))
 
 ;;; Conflict test - Drone B
 
@@ -15,9 +14,10 @@
 ;; Test Fixtures
 ;; =============================================================================
 
-(defn with-clean-state [f]
+(defn with-clean-state
   "Ensure clean registry state before and after each test.
    ADR-002: DataScript is now the only registry."
+  [f]
   ;; Reset DataScript (ADR-002 - sole source of truth)
   (ds/reset-conn!)
   (ch/stop-server!)

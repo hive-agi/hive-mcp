@@ -70,7 +70,11 @@
         ;; CLARITY-T: Telemetry first - observable system
         ;; hotspot collector provides JVM metrics (memory, GC, threads)
         clj-commons/iapetos {:mvn/version "0.1.13"}
-        io.prometheus/simpleclient_hotspot {:mvn/version "0.16.0"}}
+        io.prometheus/simpleclient_hotspot {:mvn/version "0.16.0"}
+
+        ;; java-diff-utils for proper unified diff computation (hunks, context)
+        ;; Used by drone diff protocol for token-efficient diff storage
+        io.github.java-diff-utils/java-diff-utils {:mvn/version "4.12"}}
 
  :aliases
  {:mcp

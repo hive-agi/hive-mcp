@@ -6,7 +6,7 @@
    - WebSocket emission (Emacs visibility)
    - DataScript persistence (post-mortem)
    - Circuit breaker state updates"
-  (:require [clojure.test :refer :all]
+  (:require [clojure.test :refer [deftest is testing use-fixtures run-tests]]
             [clojure.string :as str]
             [hive-mcp.telemetry.health :as health]
             [hive-mcp.telemetry.prometheus :as prom]
@@ -18,8 +18,9 @@
 ;;; Test Fixtures
 ;;; =============================================================================
 
-(defn reset-state-fixture [f]
+(defn reset-state-fixture
   "Reset DataScript before each test."
+  [f]
   (ds/reset-conn!)
   (f))
 
@@ -105,17 +106,17 @@
                                                  :severity :error
                                                  :message "Namespace not found"
                                                  :context {:namespace "my.ns"}
-                                                 :recoverable? true})]
-        ;; Query DataScript for the event
-        (let [events (health/get-recent-errors :limit 1)]
-          (is (= 1 (count events)) "Event persisted")
-          (let [event (first events)]
-            (is (= event-id (:health-event/id event)) "Correct event-id")
-            (is (= :hot-reload-failed (:health-event/type event)) "Correct type")
-            (is (= :error (:health-event/severity event)) "Correct severity")
-            (is (= "Namespace not found" (:health-event/message event)) "Correct message")
-            (is (= {:namespace "my.ns"} (:health-event/context event)) "Correct context")
-            (is (true? (:health-event/recoverable? event)) "Correct recoverable flag")))))))
+                                                 :recoverable? true})
+            ;; Query DataScript for the event
+            events (health/get-recent-errors :limit 1)]
+        (is (= 1 (count events)) "Event persisted")
+        (let [event (first events)]
+          (is (= event-id (:health-event/id event)) "Correct event-id")
+          (is (= :hot-reload-failed (:health-event/type event)) "Correct type")
+          (is (= :error (:health-event/severity event)) "Correct severity")
+          (is (= "Namespace not found" (:health-event/message event)) "Correct message")
+          (is (= {:namespace "my.ns"} (:health-event/context event)) "Correct context")
+          (is (true? (:health-event/recoverable? event)) "Correct recoverable flag"))))))
 
 (deftest test-emit-health-event-validates-type
   (testing "emit-health-event! validates error type"
@@ -246,7 +247,7 @@
     (with-redefs [log/error (fn [& _] nil)
                   channel/emit-event! (fn [_ _] nil)]
       ;; Get metrics before
-      (let [metrics-before (prom/metrics-response)]
+      (let [_metrics-before (prom/metrics-response)]
         ;; Emit a health event
         (health/emit-health-event! {:type :harvest-failed
                                     :severity :error

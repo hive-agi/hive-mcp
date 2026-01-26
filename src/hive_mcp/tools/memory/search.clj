@@ -7,13 +7,13 @@
    Handlers:
    - search-semantic: Vector similarity search using Chroma embeddings"
   (:require [hive-mcp.chroma :as chroma]
+            [hive-mcp.tools.core :refer [mcp-error coerce-int!]]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
-
 
 ;; ============================================================
 ;; Result Formatting
@@ -40,25 +40,31 @@
    Requires Chroma to be configured with an embedding provider."
   [{:keys [query limit type]}]
   (log/info "mcp-memory-search-semantic:" query)
-  (let [status (chroma/status)]
-    (if-not (:configured? status)
-      {:type "text"
-       :text (json/write-str
-              {:error "Chroma semantic search not configured"
-               :message "To enable semantic search, configure Chroma with an embedding provider. See hive-mcp.chroma namespace."
-               :status status})
-       :isError true}
-      (try
-        (let [results (chroma/search-similar query
-                                             :limit (or limit 10)
-                                             :type type)
-              formatted (mapv format-search-result results)]
-          {:type "text"
-           :text (json/write-str {:results formatted
-                                  :count (count formatted)
-                                  :query query})})
-        (catch Exception e
-          {:type "text"
-           :text (json/write-str {:error (str "Semantic search failed: " (.getMessage e))
-                                  :status status})
-           :isError true})))))
+  (try
+    (let [limit-val (coerce-int! limit :limit 10)
+          status (chroma/status)]
+      (if-not (:configured? status)
+        {:type "text"
+         :text (json/write-str
+                {:error "Chroma semantic search not configured"
+                 :message "To enable semantic search, configure Chroma with an embedding provider. See hive-mcp.chroma namespace."
+                 :status status})
+         :isError true}
+        (try
+          (let [results (chroma/search-similar query
+                                               :limit limit-val
+                                               :type type)
+                formatted (mapv format-search-result results)]
+            {:type "text"
+             :text (json/write-str {:results formatted
+                                    :count (count formatted)
+                                    :query query})})
+          (catch Exception e
+            {:type "text"
+             :text (json/write-str {:error (str "Semantic search failed: " (.getMessage e))
+                                    :status status})
+             :isError true}))))
+    (catch clojure.lang.ExceptionInfo e
+      (if (= :coercion-error (:type (ex-data e)))
+        (mcp-error (.getMessage e))
+        (throw e)))))

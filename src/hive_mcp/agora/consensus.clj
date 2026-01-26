@@ -127,11 +127,66 @@
 ;; Nash Equilibrium Detection
 ;; =============================================================================
 
-(defn nash-equilibrium?
-  "Check if all participants have signaled :no-change/:approve/:lgtm in their last turn.
+(defn get-active-proposal
+  "Find the most recent :propose or :counter turn in the dialogue.
 
-   Returns true when dialogue has reached Nash equilibrium - no participant
-   would unilaterally change their position given the others' positions.
+   This represents the 'current proposal' that needs approval.
+
+   Returns: {:turn-number N :sender participant-id :message string} or nil"
+  [dialogue-id]
+  (let [turns (schema/get-turns dialogue-id)
+        proposal-turns (filter #(reset-signals (:signal %)) turns)]
+    (last (sort-by :turn-number proposal-turns))))
+
+(defn approvals-aligned?
+  "Check if all equilibrium signals approve the SAME proposal.
+
+   Key insight: An approval only counts toward consensus if:
+   1. It comes AFTER the most recent proposal
+   2. It's from a DIFFERENT participant than the proposer
+
+   This prevents false consensus where each participant 'approves' their own position.
+
+   dialogue-id: identifier for the dialogue
+
+   Returns: boolean"
+  [dialogue-id]
+  (let [active-proposal (get-active-proposal dialogue-id)
+        participants (get-participants dialogue-id)
+        last-turns (map #(last-turn-for dialogue-id %) participants)]
+    (if-not active-proposal
+      ;; No proposal yet - can't have alignment
+      false
+      (let [proposal-turn (:turn-number active-proposal)
+            proposer (:sender active-proposal)
+            ;; Get all equilibrium turns that came AFTER the proposal
+            post-proposal-equilibrium
+            (->> last-turns
+                 (filter some?)
+                 (filter #(equilibrium-signals (:signal %)))
+                 (filter #(> (:turn-number %) proposal-turn)))]
+        ;; Consensus requires:
+        ;; 1. At least one approval from someone OTHER than proposer
+        ;; 2. All participants have equilibrium signals
+        ;; 3. No new proposals after the first approval
+        (and
+         ;; Someone other than proposer approved
+         (some #(not (normalize-participant-match (:sender %) proposer))
+               post-proposal-equilibrium)
+         ;; All last turns are equilibrium signals
+         (every? #(and (some? %)
+                       (equilibrium-signals (:signal %)))
+                 last-turns))))))
+
+(defn nash-equilibrium?
+  "Check if dialogue has reached true Nash equilibrium.
+
+   True consensus requires:
+   1. All participants have equilibrium signals (:approve/:no-change/:lgtm)
+   2. Approvals are ALIGNED - they approve the same proposal, not self-approval
+
+   The alignment check prevents false consensus where each participant
+   'approves' their own position without actually agreeing.
 
    dialogue-id: identifier for the dialogue to check
 
@@ -142,7 +197,8 @@
         signals (map :signal last-turns)]
     (and (seq participants)                          ; Has participants
          (every? some? last-turns)                   ; All have made a turn
-         (every? equilibrium-signals signals))))     ; All in equilibrium state
+         (every? equilibrium-signals signals)        ; All in equilibrium state
+         (approvals-aligned? dialogue-id))))         ; Approvals are for same proposal
 
 ;; =============================================================================
 ;; Threshold-based Consensus (N-party)

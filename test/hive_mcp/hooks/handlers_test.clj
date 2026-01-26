@@ -3,7 +3,7 @@
 
    TDD: Tests written first to define handler contract.
    Handlers are pure functions: (event, context) -> result-map"
-  (:require [clojure.test :refer :all]
+  (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.hooks.handlers :as handlers]))
 
 ;; =============================================================================

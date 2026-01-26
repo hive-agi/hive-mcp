@@ -9,6 +9,11 @@
 ;; It arranges ling terminal buffers in an optimal grid layout and
 ;; provides keybindings for quick navigation.
 ;;
+;; P0 Feature: Real-Time Notifications
+;; - Global notifications for stuck/blocked lings (no buffer visit needed)
+;; - Background monitor that polls every 30s for stuck states
+;; - Unified dashboard buffer showing ALL lings with color-coded status
+;;
 ;; Layout algorithm:
 ;; - n=1: Full screen
 ;; - n=2: Side-by-side (horizontal split)
@@ -18,10 +23,26 @@
 ;;
 ;; Keybindings (hive-mcp-olympus-mode):
 ;; - C-c h o   : Arrange all lings in grid (hive-olympus)
+;; - C-c h d   : Open unified dashboard (hive-mcp-olympus-dashboard)
 ;; - C-c h 1-4 : Focus ling at position (hive-olympus-focus)
 ;; - C-c h n   : Next tab (hive-olympus-tab-next)
 ;; - C-c h p   : Previous tab (hive-olympus-tab-prev)
 ;; - C-c h r   : Restore grid from focused view
+;; - C-c h m   : Start background monitor
+;; - C-c h M   : Stop background monitor
+;;
+;; Dashboard keybindings:
+;; - g     : Refresh dashboard
+;; - RET   : Switch to ling buffer at point
+;; - f     : Focus ling in grid view
+;; - o     : Arrange all lings in grid
+;; - q     : Quit dashboard
+;;
+;; Status colors in dashboard:
+;; - Green  : Working normally
+;; - Gray   : Idle
+;; - Yellow : Blocked (needs attention)
+;; - Red    : Stuck (working > 2min) or Error
 
 ;;; Code:
 
@@ -252,6 +273,7 @@ Maximizes the ling's buffer to full frame."
 (defvar hive-mcp-olympus-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c h o") #'hive-olympus)
+    (define-key map (kbd "C-c h d") #'hive-mcp-olympus-dashboard)
     (define-key map (kbd "C-c h 1") (lambda () (interactive) (hive-olympus-focus 1)))
     (define-key map (kbd "C-c h 2") (lambda () (interactive) (hive-olympus-focus 2)))
     (define-key map (kbd "C-c h 3") (lambda () (interactive) (hive-olympus-focus 3)))
@@ -259,6 +281,8 @@ Maximizes the ling's buffer to full frame."
     (define-key map (kbd "C-c h n") #'hive-olympus-tab-next)
     (define-key map (kbd "C-c h p") #'hive-olympus-tab-prev)
     (define-key map (kbd "C-c h r") #'hive-olympus-restore)
+    (define-key map (kbd "C-c h m") #'hive-mcp-olympus-start-monitor)
+    (define-key map (kbd "C-c h M") #'hive-mcp-olympus-stop-monitor)
     map)
   "Keymap for `hive-mcp-olympus-mode'.")
 
@@ -362,6 +386,431 @@ _EVENT is the event payload (unused, just triggers refresh)."
                  (when (and hive-mcp-olympus-mode
                             (not hive-mcp-olympus--focused-ling))
                    (hive-olympus)))))
+
+;;; =============================================================================
+;;; Global Notification Handlers (P0: Real-time alerts)
+;;; =============================================================================
+
+;; Soft dependency on notify module
+(declare-function hive-mcp-swarm-notify "hive-mcp-swarm-notify")
+(declare-function hive-mcp-swarm-notify-idle "hive-mcp-swarm-notify")
+(declare-function hive-mcp-swarm-notify-prompt-stall "hive-mcp-swarm-notify")
+(declare-function hive-mcp-swarm-notify-blocked "hive-mcp-swarm-notify")
+(declare-function hive-mcp-swarm-notify-error "hive-mcp-swarm-notify")
+
+(defcustom hive-mcp-olympus-notify-enabled t
+  "If non-nil, enable global desktop notifications for stuck lings.
+When enabled, Olympus subscribes to swarm events and fires
+notifications regardless of which buffer is currently active."
+  :type 'boolean
+  :group 'hive-mcp-olympus)
+
+(defcustom hive-mcp-olympus-stuck-threshold 120
+  "Seconds before a working ling is considered stuck.
+Default 120 seconds (2 minutes)."
+  :type 'integer
+  :group 'hive-mcp-olympus)
+
+(defun hive-mcp-olympus--handle-idle-timeout (event)
+  "Handle :idle-timeout EVENT by firing desktop notification."
+  (when hive-mcp-olympus-notify-enabled
+    (let* ((slave-id (cdr (assoc "slave-id" event)))
+           (idle-secs (cdr (assoc "idle-duration-secs" event))))
+      (when (and slave-id idle-secs (> idle-secs hive-mcp-olympus-stuck-threshold))
+        (when (fboundp 'hive-mcp-swarm-notify-idle)
+          (hive-mcp-swarm-notify-idle slave-id idle-secs))))))
+
+(defun hive-mcp-olympus--handle-prompt-stall (event)
+  "Handle :prompt-stall EVENT by firing urgent notification."
+  (when hive-mcp-olympus-notify-enabled
+    (let* ((slave-id (cdr (assoc "slave-id" event)))
+           (idle-secs (cdr (assoc "idle-duration-secs" event)))
+           (prompt-text (cdr (assoc "prompt-preview" event))))
+      (when (and slave-id idle-secs)
+        (when (fboundp 'hive-mcp-swarm-notify-prompt-stall)
+          (hive-mcp-swarm-notify-prompt-stall slave-id idle-secs prompt-text))))))
+
+(defun hive-mcp-olympus--handle-dispatch-dropped (event)
+  "Handle :dispatch-dropped EVENT by firing critical notification."
+  (when hive-mcp-olympus-notify-enabled
+    (let* ((slave-id (cdr (assoc "slave-id" event)))
+           (reason (cdr (assoc "reason" event)))
+           (prompt-preview (cdr (assoc "prompt-preview" event))))
+      (when slave-id
+        (when (fboundp 'hive-mcp-swarm-notify)
+          (hive-mcp-swarm-notify
+           (format "DISPATCH DROPPED: %s" slave-id)
+           (format "%s - %s" reason (or prompt-preview ""))
+           'critical))))))
+
+(defun hive-mcp-olympus--handle-auto-error (event)
+  "Handle :auto-error EVENT by firing notification."
+  (when hive-mcp-olympus-notify-enabled
+    (let* ((slave-id (cdr (assoc "slave-id" event)))
+           (error-type (cdr (assoc "error-type" event)))
+           (error-preview (cdr (assoc "error-preview" event))))
+      (when slave-id
+        (when (fboundp 'hive-mcp-swarm-notify-error)
+          (hive-mcp-swarm-notify-error slave-id error-type error-preview))))))
+
+(defun hive-mcp-olympus--subscribe-notification-events ()
+  "Subscribe to swarm events that should trigger global notifications."
+  (when (fboundp 'hive-mcp-channel-on)
+    ;; Layer 2: Idle timeout (ling went silent)
+    (hive-mcp-channel-on :idle-timeout
+                          #'hive-mcp-olympus--handle-idle-timeout)
+    ;; Layer 2: Prompt stall (ling blocked on unanswered prompt)
+    (hive-mcp-channel-on :prompt-stall
+                          #'hive-mcp-olympus--handle-prompt-stall)
+    ;; Critical: Dispatch dropped (task was lost)
+    (hive-mcp-channel-on :dispatch-dropped
+                          #'hive-mcp-olympus--handle-dispatch-dropped)
+    ;; Error: Task failed with error
+    (hive-mcp-channel-on :auto-error
+                          #'hive-mcp-olympus--handle-auto-error)))
+
+(defun hive-mcp-olympus--unsubscribe-notification-events ()
+  "Unsubscribe from notification events."
+  (when (fboundp 'hive-mcp-channel-off)
+    (hive-mcp-channel-off :idle-timeout
+                           #'hive-mcp-olympus--handle-idle-timeout)
+    (hive-mcp-channel-off :prompt-stall
+                           #'hive-mcp-olympus--handle-prompt-stall)
+    (hive-mcp-channel-off :dispatch-dropped
+                           #'hive-mcp-olympus--handle-dispatch-dropped)
+    (hive-mcp-channel-off :auto-error
+                           #'hive-mcp-olympus--handle-auto-error)))
+
+;;; =============================================================================
+;;; Background Monitor (Timer-based stuck detection)
+;;; =============================================================================
+
+(defvar hive-mcp-olympus--monitor-timer nil
+  "Timer for background monitoring of stuck lings.")
+
+(defcustom hive-mcp-olympus-monitor-interval 30
+  "Interval in seconds between monitor checks.
+Default 30 seconds."
+  :type 'integer
+  :group 'hive-mcp-olympus)
+
+(defvar hive-mcp-olympus--last-notified (make-hash-table :test 'equal)
+  "Hash of ling-id -> timestamp of last notification.
+Used to prevent notification spam.")
+
+(defcustom hive-mcp-olympus-notify-cooldown 300
+  "Seconds between repeated notifications for the same ling.
+Default 5 minutes."
+  :type 'integer
+  :group 'hive-mcp-olympus)
+
+(defun hive-mcp-olympus--should-notify-p (ling-id)
+  "Check if LING-ID should be notified (respects cooldown)."
+  (let ((last-time (gethash ling-id hive-mcp-olympus--last-notified 0)))
+    (> (- (float-time) last-time) hive-mcp-olympus-notify-cooldown)))
+
+(defun hive-mcp-olympus--mark-notified (ling-id)
+  "Mark LING-ID as having been notified."
+  (puthash ling-id (float-time) hive-mcp-olympus--last-notified))
+
+(defun hive-mcp-olympus--get-ling-status-for-monitor ()
+  "Get ling status data for monitoring.
+Returns list of ling plists with :slave-id :name :status :duration."
+  (let ((lings nil))
+    (when (and (boundp 'hive-mcp-swarm--slaves)
+               (hash-table-p hive-mcp-swarm--slaves))
+      (maphash
+       (lambda (id slave)
+         (push (list :slave-id id
+                     :name (plist-get slave :name)
+                     :status (plist-get slave :status)
+                     :current-task (plist-get slave :current-task)
+                     :last-activity (plist-get slave :last-activity))
+               lings))
+       hive-mcp-swarm--slaves))
+    lings))
+
+(defun hive-mcp-olympus--monitor-tick ()
+  "Check all lings for stuck state and fire notifications.
+Called periodically by the monitor timer."
+  (when hive-mcp-olympus-notify-enabled
+    (let ((lings (hive-mcp-olympus--get-ling-status-for-monitor)))
+      (dolist (ling lings)
+        (let ((slave-id (plist-get ling :slave-id))
+              (status (plist-get ling :status))
+              (name (plist-get ling :name)))
+          ;; Check for stuck states
+          (when (and slave-id
+                     (hive-mcp-olympus--should-notify-p slave-id))
+            (pcase status
+              ('blocked
+               (when (fboundp 'hive-mcp-swarm-notify-blocked)
+                 (hive-mcp-swarm-notify-blocked slave-id "Ling is blocked")
+                 (hive-mcp-olympus--mark-notified slave-id)))
+              ('error
+               (when (fboundp 'hive-mcp-swarm-notify-error)
+                 (hive-mcp-swarm-notify-error slave-id "error" "Ling in error state")
+                 (hive-mcp-olympus--mark-notified slave-id))))))))))
+
+;;;###autoload
+(defun hive-mcp-olympus-start-monitor ()
+  "Start background monitoring for stuck lings.
+Monitor runs every `hive-mcp-olympus-monitor-interval' seconds
+and fires notifications for stuck/blocked lings."
+  (interactive)
+  (hive-mcp-olympus-stop-monitor)
+  (setq hive-mcp-olympus--monitor-timer
+        (run-with-timer
+         hive-mcp-olympus-monitor-interval
+         hive-mcp-olympus-monitor-interval
+         #'hive-mcp-olympus--monitor-tick))
+  (message "Olympus monitor started (interval: %ds)" hive-mcp-olympus-monitor-interval))
+
+;;;###autoload
+(defun hive-mcp-olympus-stop-monitor ()
+  "Stop background monitoring."
+  (interactive)
+  (when hive-mcp-olympus--monitor-timer
+    (cancel-timer hive-mcp-olympus--monitor-timer)
+    (setq hive-mcp-olympus--monitor-timer nil)
+    (message "Olympus monitor stopped")))
+
+;;; =============================================================================
+;;; Unified Dashboard Buffer (tabulated-list-mode)
+;;; =============================================================================
+
+(defvar hive-mcp-olympus-dashboard-buffer-name "*Olympus Dashboard*"
+  "Name of the Olympus dashboard buffer.")
+
+(defvar hive-mcp-olympus-dashboard-refresh-timer nil
+  "Timer for auto-refreshing the dashboard.")
+
+(defcustom hive-mcp-olympus-dashboard-refresh-interval 5
+  "Interval in seconds between dashboard auto-refreshes.
+Default 5 seconds."
+  :type 'integer
+  :group 'hive-mcp-olympus)
+
+(defface hive-mcp-olympus-working-face
+  '((t :foreground "green" :weight bold))
+  "Face for working lings in dashboard."
+  :group 'hive-mcp-olympus)
+
+(defface hive-mcp-olympus-idle-face
+  '((t :foreground "gray"))
+  "Face for idle lings in dashboard."
+  :group 'hive-mcp-olympus)
+
+(defface hive-mcp-olympus-stuck-face
+  '((t :foreground "red" :weight bold))
+  "Face for stuck lings in dashboard."
+  :group 'hive-mcp-olympus)
+
+(defface hive-mcp-olympus-blocked-face
+  '((t :foreground "yellow" :weight bold))
+  "Face for blocked lings in dashboard."
+  :group 'hive-mcp-olympus)
+
+(defface hive-mcp-olympus-error-face
+  '((t :foreground "red" :background "black" :weight bold))
+  "Face for errored lings in dashboard."
+  :group 'hive-mcp-olympus)
+
+(defun hive-mcp-olympus--status-to-face (status duration)
+  "Return face for STATUS and DURATION."
+  (cond
+   ((eq status 'error) 'hive-mcp-olympus-error-face)
+   ((eq status 'blocked) 'hive-mcp-olympus-blocked-face)
+   ((and (eq status 'working) (> (or duration 0) hive-mcp-olympus-stuck-threshold))
+    'hive-mcp-olympus-stuck-face)
+   ((eq status 'working) 'hive-mcp-olympus-working-face)
+   (t 'hive-mcp-olympus-idle-face)))
+
+(defun hive-mcp-olympus--format-duration (start-time)
+  "Format duration from START-TIME to now as human-readable string."
+  (if start-time
+      (let* ((now (float-time))
+             (elapsed (- now start-time))
+             (mins (floor (/ elapsed 60)))
+             (secs (mod (floor elapsed) 60)))
+        (if (> mins 0)
+            (format "%dm%02ds" mins secs)
+          (format "%ds" secs)))
+    "-"))
+
+(defun hive-mcp-olympus--get-dashboard-entries ()
+  "Get entries for the dashboard tabulated list.
+Returns list of (ID [ID NAME STATUS DURATION TASK]) entries."
+  (let ((entries nil))
+    (when (and (boundp 'hive-mcp-swarm--slaves)
+               (hash-table-p hive-mcp-swarm--slaves))
+      (maphash
+       (lambda (id slave)
+         (let* ((name (or (plist-get slave :name) "unnamed"))
+                (status (or (plist-get slave :status) 'unknown))
+                (status-str (symbol-name status))
+                (start-time (plist-get slave :task-start-time))
+                (duration-str (hive-mcp-olympus--format-duration start-time))
+                (duration-secs (if start-time (- (float-time) start-time) 0))
+                (task (or (plist-get slave :current-task) "-"))
+                (task-preview (truncate-string-to-width task 40))
+                (face (hive-mcp-olympus--status-to-face status duration-secs)))
+           (push (list id
+                       (vector
+                        (propertize (truncate-string-to-width id 25) 'face face)
+                        (propertize name 'face face)
+                        (propertize status-str 'face face)
+                        (propertize duration-str 'face face)
+                        (propertize task-preview 'face face)))
+                 entries)))
+       hive-mcp-swarm--slaves))
+    (nreverse entries)))
+
+(defun hive-mcp-olympus-dashboard-refresh ()
+  "Refresh the Olympus dashboard buffer."
+  (interactive)
+  (when-let* ((buf (get-buffer hive-mcp-olympus-dashboard-buffer-name)))
+    (with-current-buffer buf
+      (let ((inhibit-read-only t))
+        (setq tabulated-list-entries (hive-mcp-olympus--get-dashboard-entries))
+        (tabulated-list-print t)))))
+
+(defun hive-mcp-olympus-dashboard-focus-ling ()
+  "Focus the ling at point in the dashboard."
+  (interactive)
+  (when-let* ((id (tabulated-list-get-id)))
+    (hive-olympus-focus-by-id id)))
+
+(defun hive-mcp-olympus-dashboard-show-buffer ()
+  "Switch to the buffer of ling at point."
+  (interactive)
+  (when-let* ((id (tabulated-list-get-id)))
+    (when (and (boundp 'hive-mcp-swarm--slaves)
+               (hash-table-p hive-mcp-swarm--slaves))
+      (when-let* ((slave (gethash id hive-mcp-swarm--slaves))
+                  (buffer (plist-get slave :buffer)))
+        (when (buffer-live-p buffer)
+          (switch-to-buffer buffer))))))
+
+(defvar hive-mcp-olympus-dashboard-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "g") #'hive-mcp-olympus-dashboard-refresh)
+    (define-key map (kbd "RET") #'hive-mcp-olympus-dashboard-show-buffer)
+    (define-key map (kbd "f") #'hive-mcp-olympus-dashboard-focus-ling)
+    (define-key map (kbd "o") #'hive-olympus)
+    (define-key map (kbd "q") #'quit-window)
+    map)
+  "Keymap for `hive-mcp-olympus-dashboard-mode'.")
+
+(define-derived-mode hive-mcp-olympus-dashboard-mode tabulated-list-mode
+  "Olympus"
+  "Major mode for viewing all lings in a unified dashboard.
+
+\\{hive-mcp-olympus-dashboard-mode-map}"
+  (setq tabulated-list-format
+        [("ID" 25 t)
+         ("Name" 15 t)
+         ("Status" 10 t)
+         ("Duration" 10 t)
+         ("Task" 40 t)])
+  (setq tabulated-list-sort-key '("Status" . nil))
+  (setq tabulated-list-padding 2)
+  (tabulated-list-init-header)
+  ;; Auto-refresh
+  (add-hook 'kill-buffer-hook
+            #'hive-mcp-olympus--stop-dashboard-refresh nil t))
+
+(defun hive-mcp-olympus--start-dashboard-refresh ()
+  "Start auto-refresh timer for dashboard."
+  (hive-mcp-olympus--stop-dashboard-refresh)
+  (setq hive-mcp-olympus-dashboard-refresh-timer
+        (run-with-timer
+         hive-mcp-olympus-dashboard-refresh-interval
+         hive-mcp-olympus-dashboard-refresh-interval
+         #'hive-mcp-olympus-dashboard-refresh)))
+
+(defun hive-mcp-olympus--stop-dashboard-refresh ()
+  "Stop auto-refresh timer for dashboard."
+  (when hive-mcp-olympus-dashboard-refresh-timer
+    (cancel-timer hive-mcp-olympus-dashboard-refresh-timer)
+    (setq hive-mcp-olympus-dashboard-refresh-timer nil)))
+
+;;;###autoload
+(defun hive-mcp-olympus-dashboard ()
+  "Open the unified Olympus dashboard showing all lings.
+
+The dashboard displays:
+- ID: Ling identifier
+- Name: Display name
+- Status: working/idle/blocked/error (color coded)
+- Duration: How long in current state
+- Task: Current task preview
+
+Keybindings:
+\\{hive-mcp-olympus-dashboard-mode-map}
+
+Colors:
+- Green: Working normally
+- Gray: Idle
+- Yellow: Blocked (needs attention)
+- Red: Stuck (working too long) or Error"
+  (interactive)
+  (let ((buf (get-buffer-create hive-mcp-olympus-dashboard-buffer-name)))
+    (with-current-buffer buf
+      (hive-mcp-olympus-dashboard-mode)
+      (setq tabulated-list-entries (hive-mcp-olympus--get-dashboard-entries))
+      (tabulated-list-print)
+      (hive-mcp-olympus--start-dashboard-refresh))
+    (switch-to-buffer buf)))
+
+;;; =============================================================================
+;;; Enhanced Mode Integration
+;;; =============================================================================
+
+;; Override the mode activation to include notification subscriptions
+(defun hive-mcp-olympus--enhanced-subscribe ()
+  "Subscribe to all events including notifications."
+  (hive-mcp-olympus--subscribe-events)
+  (hive-mcp-olympus--subscribe-notification-events)
+  ;; Start background monitor
+  (hive-mcp-olympus-start-monitor))
+
+(defun hive-mcp-olympus--enhanced-unsubscribe ()
+  "Unsubscribe from all events."
+  (hive-mcp-olympus--unsubscribe-events)
+  (hive-mcp-olympus--unsubscribe-notification-events)
+  ;; Stop background monitor
+  (hive-mcp-olympus-stop-monitor)
+  ;; Stop dashboard refresh
+  (hive-mcp-olympus--stop-dashboard-refresh))
+
+;; Re-define the mode with enhanced subscriptions
+;;;###autoload
+(define-minor-mode hive-mcp-olympus-mode
+  "Minor mode for Olympus grid view with global notifications.
+
+When enabled:
+- Subscribes to swarm events for automatic layout updates
+- Fires global desktop notifications for stuck lings
+- Runs background monitor to detect stuck states
+- Does NOT require visiting ling buffers to receive alerts
+
+\\{hive-mcp-olympus-mode-map}"
+  :lighter " Olympus"
+  :keymap hive-mcp-olympus-mode-map
+  :global t
+  (if hive-mcp-olympus-mode
+      (progn
+        (require 'hive-mcp-swarm nil t)
+        (require 'hive-mcp-swarm-notify nil t)
+        (hive-mcp-olympus--enhanced-subscribe)
+        (message "Olympus mode enabled (notifications: %s, monitor: on)"
+                 (if hive-mcp-olympus-notify-enabled "on" "off")))
+    (hive-mcp-olympus--enhanced-unsubscribe)
+    (setq hive-mcp-olympus--focused-ling nil
+          hive-mcp-olympus--current-tab 0
+          hive-mcp-olympus--positions nil)
+    (message "Olympus mode disabled")))
 
 (provide 'hive-mcp-olympus)
 ;;; hive-mcp-olympus.el ends here

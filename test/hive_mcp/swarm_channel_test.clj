@@ -3,15 +3,15 @@
   (:require [clojure.test :refer [deftest testing is use-fixtures]]
             [hive-mcp.tools.swarm :as swarm]
             [hive-mcp.tools.swarm.channel :as swarm-channel]
-            [hive-mcp.channel :as ch]
-            [clojure.core.async :as async :refer [<!! timeout alts!!]]))
+            [hive-mcp.channel :as ch]))
 
 ;; =============================================================================
 ;; Test Fixtures
 ;; =============================================================================
 
-(defn with-clean-state [f]
+(defn with-clean-state
   "Ensure clean state before and after each test."
+  [f]
   (swarm/clear-event-journal!)
   (swarm/stop-channel-subscriptions!)
   (ch/stop-server!)

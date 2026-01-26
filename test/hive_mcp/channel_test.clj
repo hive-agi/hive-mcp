@@ -208,7 +208,4 @@
 
 (comment
   ;; Run tests
-  (clojure.test/run-tests 'hive-mcp.channel-test)
-
-  ;; Run single test
-  (clojure.test/test-vars [#'client-server-integration-test]))
+  (clojure.test/run-tests 'hive-mcp.channel-test))

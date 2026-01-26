@@ -2,15 +2,18 @@
   "MCP tools for Agora multi-ling dialogue system.
 
    Exposes Nash Equilibrium dialogue infrastructure as MCP tools:
-   - agora_create_dialogue: Create a new dialogue session
+   - agora_create_dialogue: Create a new dialogue session (ling-based)
+   - agora_create_debate: Create auto-orchestrated drone debate (new!)
    - agora_dispatch: Send message within dialogue (with signal parsing)
    - agora_check_consensus: Check Nash equilibrium status
    - agora_list_dialogues: List all dialogues
    - agora_join_dialogue: Add participant to dialogue
+   - agora_debate_status: Get drone debate status (new!)
 
    SOLID: SRP - MCP tool interface for Agora domain.
    CLARITY: L - Layer separation from domain logic (agora.*)."
   (:require [hive-mcp.agora.dialogue :as dialogue]
+            [hive-mcp.agora.debate :as debate]
             [hive-mcp.agora.consensus :as consensus]
             [hive-mcp.agora.schema :as schema]
             [clojure.data.json :as json]
@@ -281,6 +284,95 @@
       (mcp-error (str "Failed to get history: " (.getMessage e))))))
 
 ;; ============================================================
+;; Drone Debate Handlers (ADR 20260124224722-51e4fad6)
+;; ============================================================
+
+(defn handle-agora-create-debate
+  "Create an auto-orchestrated drone debate.
+
+   Spawns drones as debate participants and runs to consensus.
+   No manual dispatch needed - fully automated.
+
+   Arguments:
+   - topic: What the debate is about
+   - roles: Array of {role: string, position: string}
+   - methodology: 'opinion' | 'fact-based' | 'mixed' (default: opinion)
+   - blocking: If true, runs debate to completion (default: false)
+
+   Returns: {:dialogue-id :participants :status}"
+  [{:keys [topic roles methodology blocking]}]
+  (try
+    (when-not topic
+      (throw (ex-info "Missing required parameter: topic" {:type :validation})))
+    (when (or (nil? roles) (< (count roles) 2))
+      (throw (ex-info "Requires at least 2 roles" {:type :validation})))
+    (let [role-maps (mapv (fn [r]
+                            {:role (or (:role r) (get r "role"))
+                             :position (or (:position r) (get r "position"))})
+                          roles)
+          methodology-kw (when methodology (keyword methodology))
+          result (if blocking
+                   ;; Blocking: run to completion
+                   (debate/start-debate! topic role-maps {:methodology methodology-kw})
+                   ;; Non-blocking: create and start first turn
+                   (debate/start-debate-async! topic role-maps {:methodology methodology-kw}))]
+      (log/info "Created drone debate:" (:dialogue-id result)
+                "blocking:" blocking "methodology:" (or methodology-kw :opinion))
+      (mcp-success result))
+    (catch clojure.lang.ExceptionInfo e
+      (log/warn "Create debate failed:" (ex-message e))
+      (mcp-error (str "Create debate failed: " (ex-message e))))
+    (catch Exception e
+      (log/error e "Create debate error")
+      (mcp-error (str "Create debate error: " (.getMessage e))))))
+
+(defn handle-agora-debate-status
+  "Get status of a drone debate.
+
+   Returns: {:dialogue-id :status :turn-count :participants :methodology}"
+  [{:keys [dialogue_id]}]
+  (try
+    (when-not dialogue_id
+      (throw (ex-info "Missing required parameter: dialogue_id" {:type :validation})))
+    (if-let [status (debate/get-debate-status dialogue_id)]
+      (mcp-success status)
+      (mcp-error (str "Debate not found: " dialogue_id)))
+    (catch clojure.lang.ExceptionInfo e
+      (mcp-error (str "Status check failed: " (ex-message e))))
+    (catch Exception e
+      (log/error e "Debate status error")
+      (mcp-error (str "Status error: " (.getMessage e))))))
+
+(defn handle-agora-continue-debate
+  "Continue an async drone debate by executing next turn.
+
+   Use this after start_debate_async to advance turns manually.
+
+   Returns: turn result or consensus status"
+  [{:keys [dialogue_id]}]
+  (try
+    (when-not dialogue_id
+      (throw (ex-info "Missing required parameter: dialogue_id" {:type :validation})))
+    (if-let [result (debate/continue-debate! dialogue_id)]
+      (mcp-success result)
+      (mcp-error (str "Debate not active or not found: " dialogue_id)))
+    (catch clojure.lang.ExceptionInfo e
+      (mcp-error (str "Continue failed: " (ex-message e))))
+    (catch Exception e
+      (log/error e "Continue debate error")
+      (mcp-error (str "Continue error: " (.getMessage e))))))
+
+(defn handle-agora-list-debates
+  "List all active drone debates."
+  [_]
+  (try
+    (let [debates (debate/list-active-debates)]
+      (mcp-success {:debates debates :count (count debates)}))
+    (catch Exception e
+      (log/error e "List debates error")
+      (mcp-error (str "List error: " (.getMessage e))))))
+
+;; ============================================================
 ;; Tool Definitions
 ;; ============================================================
 
@@ -358,4 +450,51 @@
                                :limit {:type "integer"
                                        :description "Optional: limit to last N turns (default: all)"}}
                   :required ["dialogue_id"]}
-    :handler handle-agora-get-history}])
+    :handler handle-agora-get-history}
+
+   ;; ============================================================
+   ;; Drone Debate Tools (ADR 20260124224722-51e4fad6)
+   ;; ============================================================
+
+   {:name "agora_create_debate"
+    :description "Create an auto-orchestrated drone debate. Spawns free-tier drones as participants and runs to Nash equilibrium consensus. No manual dispatch needed - fully automated per [Arch>Bh]p principle."
+    :inputSchema {:type "object"
+                  :properties {:topic {:type "string"
+                                       :description "What the debate is about (e.g., 'Should we use Strategy vs Decorator pattern?')"}
+                               :roles {:type "array"
+                                       :items {:type "object"
+                                               :properties {:role {:type "string"
+                                                                   :description "Role name (e.g., 'advocate', 'skeptic')"}
+                                                            :position {:type "string"
+                                                                       :description "Position to argue (e.g., 'For Strategy pattern')"}}
+                                               :required ["role" "position"]}
+                                       :description "Array of debate roles (minimum 2)"}
+                               :methodology {:type "string"
+                                             :enum ["opinion" "fact-based" "mixed"]
+                                             :description "Debate methodology: opinion (quick), fact-based (evidence required), mixed (both)"}
+                               :blocking {:type "boolean"
+                                          :description "If true, runs debate to completion synchronously (default: false, returns after first turn)"}}
+                  :required ["topic" "roles"]}
+    :handler handle-agora-create-debate}
+
+   {:name "agora_debate_status"
+    :description "Get status of a drone debate including turn count, participants, and consensus state."
+    :inputSchema {:type "object"
+                  :properties {:dialogue_id {:type "string"
+                                             :description "ID of the debate to check"}}
+                  :required ["dialogue_id"]}
+    :handler handle-agora-debate-status}
+
+   {:name "agora_continue_debate"
+    :description "Continue an async drone debate by executing the next turn. Use after agora_create_debate with blocking=false to manually advance turns."
+    :inputSchema {:type "object"
+                  :properties {:dialogue_id {:type "string"
+                                             :description "ID of the debate to continue"}}
+                  :required ["dialogue_id"]}
+    :handler handle-agora-continue-debate}
+
+   {:name "agora_list_debates"
+    :description "List all active drone debates with their status and participant info."
+    :inputSchema {:type "object"
+                  :properties {}}
+    :handler handle-agora-list-debates}])

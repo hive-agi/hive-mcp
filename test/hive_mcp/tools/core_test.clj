@@ -358,3 +358,113 @@
       (is (= "text" (:type result)))
       (let [parsed (json/read-str (:text result) :key-fn keyword)]
         (is (= {:error "complex" :details {:field "x" :code 42}} parsed))))))
+
+;; =============================================================================
+;; Test: Parameter Coercion (Elm-style helpful errors)
+;; =============================================================================
+
+(deftest test-coerce-int-valid-integer
+  (testing "coerce-int returns {:ok value} for valid integer"
+    (is (= {:ok 42} (core/coerce-int 42 :limit)))
+    (is (= {:ok 0} (core/coerce-int 0 :limit)))
+    (is (= {:ok -5} (core/coerce-int -5 :offset)))))
+
+(deftest test-coerce-int-valid-string
+  (testing "coerce-int parses string numbers to integers"
+    (is (= {:ok 42} (core/coerce-int "42" :limit)))
+    (is (= {:ok 0} (core/coerce-int "0" :limit)))
+    (is (= {:ok -10} (core/coerce-int "-10" :offset)))
+    (is (= {:ok 1000000} (core/coerce-int "1000000" :limit)))))
+
+(deftest test-coerce-int-invalid-string
+  (testing "coerce-int returns Elm-style error for non-numeric strings"
+    (let [{:keys [ok error]} (core/coerce-int "abc" :limit)]
+      (is (nil? ok))
+      (is (string? error))
+      (is (re-find #"I was expecting a number" error))
+      (is (re-find #"`limit`" error))
+      (is (re-find #"\"abc\"" error))
+      (is (re-find #"HINT:" error)))))
+
+(deftest test-coerce-int-nil-with-default
+  (testing "coerce-int uses default when value is nil"
+    (is (= {:ok 20} (core/coerce-int nil :limit 20)))
+    (is (= {:ok 0} (core/coerce-int nil :offset 0)))))
+
+(deftest test-coerce-int-nil-without-default
+  (testing "coerce-int returns error when nil and no default"
+    (let [{:keys [ok error]} (core/coerce-int nil :limit)]
+      (is (nil? ok))
+      (is (string? error))
+      (is (re-find #"I was expecting a number" error))
+      (is (re-find #"got nothing" error)))))
+
+(deftest test-coerce-int-wrong-type
+  (testing "coerce-int returns error for wrong types"
+    (let [{:keys [ok error]} (core/coerce-int {:foo "bar"} :limit)]
+      (is (nil? ok))
+      (is (re-find #"I was expecting a number" error))
+      (is (re-find #"PersistentArrayMap" error)))))
+
+(deftest test-coerce-int!-valid-input
+  (testing "coerce-int! returns value directly on valid input"
+    (is (= 42 (core/coerce-int! 42 :limit)))
+    (is (= 42 (core/coerce-int! "42" :limit)))
+    (is (= 20 (core/coerce-int! nil :limit 20)))))
+
+(deftest test-coerce-int!-throws-on-invalid
+  (testing "coerce-int! throws ExceptionInfo on invalid input"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"I was expecting a number"
+         (core/coerce-int! "abc" :limit)))
+
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"I was expecting a number"
+         (core/coerce-int! nil :limit)))))
+
+(deftest test-coerce-int!-exception-data
+  (testing "coerce-int! exception includes useful ex-data"
+    (try
+      (core/coerce-int! "abc" :limit)
+      (is false "Should have thrown")
+      (catch clojure.lang.ExceptionInfo e
+        (let [data (ex-data e)]
+          (is (= :coercion-error (:type data)))
+          (is (= :limit (:param data)))
+          (is (= "abc" (:value data))))))))
+
+(deftest test-coerce-int-edge-cases
+  (testing "coerce-int handles edge cases"
+    ;; Empty string is invalid
+    (is (:error (core/coerce-int "" :limit)))
+
+    ;; Whitespace-only string is invalid
+    (is (:error (core/coerce-int "  " :limit)))
+
+    ;; Float strings are invalid (we want integers)
+    (is (:error (core/coerce-int "3.14" :limit)))
+
+    ;; Very large numbers work
+    (is (= {:ok 9223372036854775807}
+           (core/coerce-int "9223372036854775807" :limit)))))
+
+(deftest test-coerce-int-error-message-quality
+  (testing "Error messages are helpful Elm-style"
+    (let [{:keys [error]} (core/coerce-int "1" :limit)]
+      ;; String "1" should succeed, not error
+      (is (nil? error)))
+
+    (let [{:keys [error]} (core/coerce-int "one" :limit)]
+      ;; Should mention what was expected
+      (is (re-find #"expecting a number" error))
+      ;; Should mention the parameter name
+      (is (re-find #"limit" error))
+      ;; Should show what was received
+      (is (re-find #"one" error))
+      ;; Should have a hint
+      (is (re-find #"HINT" error))
+      ;; Should show right vs wrong
+      (is (re-find #"WRONG" error))
+      (is (re-find #"RIGHT" error)))))

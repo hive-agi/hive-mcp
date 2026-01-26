@@ -15,7 +15,8 @@
    - SRP: All piggyback logic in one module
    - DIP: Message source is injectable, not hardcoded to hivemind"
   (:require [clojure.spec.alpha :as s]
-            [hive-mcp.guards :as guards]))
+            [hive-mcp.guards :as guards]
+            [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -142,6 +143,10 @@
 
    Returns nil if no new messages or message source not registered."
   [agent-id & {:keys [project-id]}]
+  ;; Warn when non-coordinator agent reads hivemind without project-id
+  ;; This helps detect potential cross-project message leakage issues
+  (when (and (nil? project-id) (not= agent-id "coordinator"))
+    (log/warn "Agent" agent-id "reading hivemind without project-id - using global cursor"))
   (when-let [source-fn @message-source-fn]
     (let [;; Use composite key [agent-id project-id] for cursor isolation
           ;; nil project-id falls back to 'global' for backwards compat
@@ -153,11 +158,14 @@
           new-msgs (->> all-msgs
                         (filter (fn [msg]
                                   (and (> (:timestamp msg) last-cursor)
-                                       ;; Filter by project if specified
-                                       (or (nil? project-id)
-                                           (= (:project-id msg) project-id)
-                                           ;; Also include 'global' messages for all projects
-                                           (= (:project-id msg) "global")))))
+                                       ;; Project filtering - STRICT mode
+                                       ;; When project-id specified: only that project + global
+                                       ;; When project-id nil: only truly global messages (no cross-project leakage)
+                                       (if project-id
+                                         (or (= (:project-id msg) project-id)
+                                             (= (:project-id msg) "global"))
+                                         ;; No project-id = only global messages, no project-specific ones
+                                         (= (:project-id msg) "global")))))
                         ;; Sort by timestamp BEFORE map to ensure FIFO order
                         (sort-by :timestamp)
                         vec)

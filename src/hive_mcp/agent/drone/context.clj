@@ -280,42 +280,57 @@
        :related-fns  - Related function signatures
        :lint-issues  - Existing lint warnings
        :conventions  - Relevant coding conventions
-       :formatted    - Pre-formatted string for injection"
+       :formatted    - Pre-formatted string for injection
+   
+   CLARITY-I: Validates paths don't escape project directory."
   [{:keys [file-path task project-root project-id target-line]}]
-  (let [abs-path (if (str/starts-with? file-path "/")
-                   file-path
-                   (str project-root "/" file-path))
-
-        ;; Gather context components
-        snippet (read-surrounding-lines abs-path target-line {:context 20})
-        imports (extract-imports abs-path)
-        related (find-related-symbols abs-path task)
-        lint (get-existing-warnings abs-path {:level :warning})
-        conventions (get-relevant-conventions task project-id)
-
-        ;; Format each section
-        formatted (str
-                   (format-imports-context imports)
-                   "\n"
-                   (when snippet
-                     (str "### File Context (lines " (:start-line snippet)
-                          "-" (:end-line snippet) ")\n"
-                          "```clojure\n"
-                          (:content snippet)
-                          "\n```\n"))
-                   "\n"
-                   (format-related-symbols related)
-                   "\n"
-                   (format-lint-context lint file-path)
-                   "\n"
-                   (format-conventions-context conventions))]
-
-    {:file-snippet snippet
-     :imports imports
-     :related-fns related
-     :lint-issues lint
-     :conventions conventions
-     :formatted formatted}))
+  ;; SECURITY FIX: Validate path containment using canonical resolution
+  (let [file-obj (io/file (if (str/starts-with? file-path "/")
+                            file-path
+                            (str project-root "/" file-path)))
+        abs-path (try
+                   (let [canonical (.getCanonicalPath file-obj)
+                         root-canonical (.getCanonicalPath (io/file project-root))]
+                     (if (str/starts-with? canonical root-canonical)
+                       canonical
+                       (do
+                         (log/warn "Path escapes project directory in build-drone-context"
+                                   {:file file-path :canonical canonical :root root-canonical})
+                         nil)))
+                   (catch Exception e
+                     (log/warn "Path validation failed" {:file file-path :error (.getMessage e)})
+                     nil))]
+    (when-not abs-path
+      (log/warn "Skipping context build for invalid path" {:file file-path}))
+    (when abs-path
+      (let [;; Gather context components
+            snippet (read-surrounding-lines abs-path target-line {:context 20})
+            imports (extract-imports abs-path)
+            related (find-related-symbols abs-path task)
+            lint (get-existing-warnings abs-path {:level :warning})
+            conventions (get-relevant-conventions task project-id)
+            ;; Format each section
+            formatted (str
+                       (format-imports-context imports)
+                       "\n"
+                       (when snippet
+                         (str "### File Context (lines " (:start-line snippet)
+                              "-" (:end-line snippet) ")\n"
+                              "```clojure\n"
+                              (:content snippet)
+                              "\n```\n"))
+                       "\n"
+                       (format-related-symbols related)
+                       "\n"
+                       (format-lint-context lint file-path)
+                       "\n"
+                       (format-conventions-context conventions))]
+        {:file-snippet snippet
+         :imports imports
+         :related-fns related
+         :lint-issues lint
+         :conventions conventions
+         :formatted formatted}))))
 
 (defn format-full-context
   "Format full drone context for task augmentation.

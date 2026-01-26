@@ -8,7 +8,7 @@
    
    Uses with-redefs to mock channel dependencies for isolated unit testing."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
-            [clojure.core.async :as async :refer [chan >!! <!! close! timeout alts!!]]
+            [clojure.core.async :as async :refer [chan]]
             [hive-mcp.tools.swarm :as swarm]
             [hive-mcp.tools.swarm.channel :as channel]))
 

@@ -104,6 +104,19 @@ KANBAN-TASK-ID is the optional kanban task this ling is linked to."
    "slave-killed"
    `(("slave-id" . ,slave-id))))
 
+(defun hive-mcp-swarm-events-emit-slave-ready (slave-id)
+  "Emit slave-ready event for SLAVE-ID.
+This signals that preset injection is complete and the slave is ready
+to receive dispatched tasks.  Transitions the slave from :initializing
+to :idle in the DataScript registry.
+
+This event fixes the dispatch race condition where swarm_dispatch
+arrives before preset injection completes, causing tasks to queue
+but never execute."
+  (hive-mcp-swarm-events-emit
+   "slave-ready"
+   `(("slave-id" . ,slave-id))))
+
 (defun hive-mcp-swarm-events-emit-task-completed (task-id slave-id result)
   "Emit task-completed event for TASK-ID from SLAVE-ID with RESULT."
   (hive-mcp-swarm-events-emit

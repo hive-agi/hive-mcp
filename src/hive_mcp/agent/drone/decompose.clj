@@ -26,6 +26,21 @@
   {:single-drone 5
    :split-2 15})
 
+(def ^:const step-budgets
+  "Max steps based on task complexity.
+   Simple tasks should complete in few steps, complex tasks get more headroom.
+
+   FRICTION FIX: Drones were hitting 50 steps on trivial 'remove unused namespace'
+   tasks. This maps complexity to appropriate step budgets:
+   - :trivial (< 2): 8 steps - single read, lint, propose
+   - :simple (2-5):  15 steps - typical single-file edit
+   - :medium (5-15): 25 steps - multi-function changes
+   - :complex (> 15): 40 steps - large refactoring"
+  {:trivial 8
+   :simple 15
+   :medium 25
+   :complex 40})
+
 (defn estimate-complexity
   "Estimate task complexity based on file size, task description, and operations.
 
@@ -38,7 +53,9 @@
       :file-size       - File size in bytes (0 if not found)
       :task-length     - Task description length
       :operation-count - Count of modification keywords
-      :recommendation  - :single-drone, :split-2, or :split-many}"
+      :recommendation  - :single-drone, :split-2, or :split-many
+      :complexity-tier - :trivial, :simple, :medium, or :complex
+      :max-steps       - Recommended step budget for this complexity}"
   [task file-path]
   (let [file-size (try (count (slurp file-path)) (catch Exception _ 0))
         task-length (count (or task ""))
@@ -51,12 +68,44 @@
         recommendation (cond
                          (< score (:single-drone complexity-thresholds)) :single-drone
                          (< score (:split-2 complexity-thresholds)) :split-2
-                         :else :split-many)]
+                         :else :split-many)
+        ;; FRICTION FIX: Map complexity to step budget
+        complexity-tier (cond
+                          (< score 2) :trivial
+                          (< score (:single-drone complexity-thresholds)) :simple
+                          (< score (:split-2 complexity-thresholds)) :medium
+                          :else :complex)
+        max-steps (get step-budgets complexity-tier 25)]
     {:score score
      :file-size file-size
      :task-length task-length
      :operation-count keywords
-     :recommendation recommendation}))
+     :recommendation recommendation
+     :complexity-tier complexity-tier
+     :max-steps max-steps}))
+
+(defn get-step-budget
+  "Get recommended max-steps for a task based on complexity.
+
+   FRICTION FIX: Simple tasks like 'remove unused namespace' were exhausting
+   50 steps. This function returns an appropriate step budget based on
+   estimated complexity.
+
+   Arguments:
+     task  - Task description string
+     files - List of file paths (uses first for complexity estimation)
+
+   Returns:
+     Integer max-steps value (8-40 based on complexity)"
+  [task files]
+  (let [file (first files)
+        {:keys [max-steps complexity-tier score]} (when file
+                                                    (estimate-complexity task file))]
+    (log/debug "Step budget calculated" {:task (subs task 0 (min 50 (count task)))
+                                         :complexity-tier complexity-tier
+                                         :score score
+                                         :max-steps max-steps})
+    (or max-steps (:simple step-budgets))))
 
 ;;; ============================================================
 ;;; Decomposition Strategies

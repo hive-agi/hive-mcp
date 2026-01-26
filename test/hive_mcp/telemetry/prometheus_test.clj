@@ -11,7 +11,7 @@
    4. Histogram observations
    5. Timing macros
    6. Export format validation"
-  (:require [clojure.test :refer :all]
+  (:require [clojure.test :refer [deftest is run-tests testing use-fixtures]]
             [clojure.string :as str]
             [hive-mcp.telemetry.prometheus :as prom]))
 
@@ -19,8 +19,9 @@
 ;;; Test Fixtures
 ;;; =============================================================================
 
-(defn init-prometheus-fixture [f]
+(defn init-prometheus-fixture
   "Ensure Prometheus registry is initialized before tests."
+  [f]
   (prom/init!)
   (f))
 
@@ -47,7 +48,7 @@
 (deftest test-events-counter
   (testing "events-total counter increments correctly"
     ;; Get initial metrics to establish baseline
-    (let [initial (prom/metrics-response)]
+    (let [_initial (prom/metrics-response)]
       ;; Increment counter
       (prom/inc-events-total! :progress :info)
       (prom/inc-events-total! :completed :info)
@@ -373,7 +374,6 @@
 
 (comment
   ;; Run tests from REPL
-  (require '[clojure.test :refer [run-tests]])
   (run-tests 'hive-mcp.telemetry.prometheus-test)
 
   ;; Run specific test

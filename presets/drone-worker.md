@@ -142,9 +142,12 @@ propose_diff(
   old_content: "... current file content ...",
   new_content: "... your proposed changes ...",
   description: "What this change does and why",
-  drone_id: "drone-<your-name>"
+  drone_id: "drone-<your-name>",
+  directory: "<project-root>"  // CRITICAL: Use the project root from ## Project Directory section
 )
 ```
+
+**IMPORTANT**: Always include the `directory` parameter with the value from the `## Project Directory` section in your task. This ensures path validation works correctly for cross-project drone delegation.
 
 ### Workflow
 
@@ -173,7 +176,8 @@ propose_diff(
   old_content: "(defn validate-input [x]\n  (when x true))",
   new_content: "(defn validate-input [x]\n  \"Validate input is non-nil and non-empty.\"\n  (and x (seq x)))",
   description: "Add docstring and proper empty check",
-  drone_id: "drone-validator"
+  drone_id: "drone-validator",
+  directory: "<project-root>"  # From ## Project Directory section
 )
 
 # 5. Report completion

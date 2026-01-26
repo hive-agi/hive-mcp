@@ -10,6 +10,7 @@
    TDD approach: Tests verify core functionality without external deps."
   (:require [clojure.test :refer [deftest testing is use-fixtures]]
             [clojure.data.json :as json]
+            [clojure.string :as str]
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.tools.swarm.wave :as wave]
             [hive-mcp.events.core :as ev]
@@ -56,9 +57,9 @@
 (deftest create-plan-with-custom-preset-test
   (testing "creates plan with custom preset"
     (let [tasks [{:file "test.clj" :task "test task"}]
-          plan-id (wave/create-plan! tasks "tdd")]
-      (let [plan (ds/get-plan plan-id)]
-        (is (= "tdd" (:change-plan/preset plan)))))))
+          plan-id (wave/create-plan! tasks "tdd")
+          plan (ds/get-plan plan-id)]
+      (is (= "tdd" (:change-plan/preset plan))))))
 
 ;; =============================================================================
 ;; Item Status Tests
@@ -120,9 +121,9 @@
   (testing "creates wave with custom concurrency"
     (let [tasks [{:file "a.clj" :task "task a"}]
           plan-id (wave/create-plan! tasks)
-          wave-id (ds/create-wave! plan-id {:concurrency 5})]
-      (let [wave (ds/get-wave wave-id)]
-        (is (= 5 (:wave/concurrency wave)))))))
+          wave-id (ds/create-wave! plan-id {:concurrency 5})
+          wave (ds/get-wave wave-id)]
+      (is (= 5 (:wave/concurrency wave))))))
 
 (deftest update-wave-counts-test
   (testing "updates wave counts correctly"
@@ -238,10 +239,10 @@
                                        (ds/create-wave! plan-id))]
       (let [result (wave/handle-dispatch-drone-wave
                     {:tasks [{"file" "a.clj" "task" "task"}]
-                     :preset "tdd"})]
-        (let [parsed (json/read-str (:text result) :key-fn keyword)
-              plan (ds/get-plan (:plan_id parsed))]
-          (is (= "tdd" (:change-plan/preset plan))))))))
+                     :preset "tdd"})
+            parsed (json/read-str (:text result) :key-fn keyword)
+            plan (ds/get-plan (:plan_id parsed))]
+        (is (= "tdd" (:change-plan/preset plan)))))))
 
 ;; =============================================================================
 ;; Status Query Tests
@@ -251,23 +252,23 @@
   (testing "returns wave status map"
     (let [tasks [{:file "a.clj" :task "task a"}]
           plan-id (wave/create-plan! tasks)
-          wave-id (ds/create-wave! plan-id)]
-      (let [status (wave/get-wave-status wave-id)]
-        (is (= wave-id (:wave-id status)))
-        (is (= plan-id (:plan-id status)))
-        (is (= :running (:status status)))
-        (is (= 0 (:completed-count status)))
-        (is (= 0 (:failed-count status)))))))
+          wave-id (ds/create-wave! plan-id)
+          status (wave/get-wave-status wave-id)]
+      (is (= wave-id (:wave-id status)))
+      (is (= plan-id (:plan-id status)))
+      (is (= :running (:status status)))
+      (is (= 0 (:completed-count status)))
+      (is (= 0 (:failed-count status))))))
 
 (deftest get-plan-status-test
   (testing "returns plan status with items"
     (let [tasks [{:file "a.clj" :task "task a"}
                  {:file "b.clj" :task "task b"}]
-          plan-id (wave/create-plan! tasks)]
-      (let [status (wave/get-plan-status plan-id)]
-        (is (= plan-id (:plan-id status)))
-        (is (= :pending (:status status)))
-        (is (= 2 (count (:items status))))))))
+          plan-id (wave/create-plan! tasks)
+          status (wave/get-plan-status plan-id)]
+      (is (= plan-id (:plan-id status)))
+      (is (= :pending (:status status)))
+      (is (= 2 (count (:items status)))))))
 
 ;; =============================================================================
 ;; P0: ensure-parent-dirs! Tests
@@ -347,7 +348,7 @@
           (let [invalid-paths (:invalid-paths (ex-data e))]
             ;; Should contain both invalid paths
             (is (= 2 (count invalid-paths)))
-            (is (every? #(clojure.string/starts-with? % "/invalid/") invalid-paths))))))))
+            (is (every? #(str/starts-with? % "/invalid/") invalid-paths))))))))
 
 ;; =============================================================================
 ;; Integration: handle-dispatch-drone-wave with pre-flight options
@@ -360,12 +361,12 @@
       (try
         (with-redefs [wave/execute-wave! (fn [plan-id _opts]
                                            (ds/create-wave! plan-id))]
-          (let [result (wave/handle-dispatch-drone-wave
-                        {:tasks [{"file" (str test-dir "/new/path/file.clj")
-                                  "task" "test"}]
-                         :ensure_dirs true})]
-            ;; Should have created parent directories
-            (is (.exists (java.io.File. (str test-dir "/new/path"))))))
+          (wave/handle-dispatch-drone-wave
+           {:tasks [{"file" (str test-dir "/new/path/file.clj")
+                     "task" "test"}]
+            :ensure_dirs true})
+          ;; Should have created parent directories
+          (is (.exists (java.io.File. (str test-dir "/new/path")))))
         (finally
           (doseq [dir [(str test-dir "/new/path")
                        (str test-dir "/new")
@@ -378,7 +379,7 @@
                   {:tasks [{"file" "/nonexistent/deep/path/file.clj"
                             "task" "test"}]
                    :validate_paths true
-                   :ensure_dirs false})]
-      (let [parsed (json/read-str (:text result) :key-fn keyword)]
-        (is (contains? parsed :error))
-        (is (clojure.string/includes? (:error parsed) "Invalid paths"))))))
+                   :ensure_dirs false})
+          parsed (json/read-str (:text result) :key-fn keyword)]
+      (is (contains? parsed :error))
+      (is (str/includes? (:error parsed) "Invalid paths")))))

@@ -15,7 +15,6 @@
    CLARITY-T: Full telemetry for success rate tracking"
   (:require [hive-mcp.agent.drone.preset :as preset]
             [hive-mcp.agent.drone.feedback :as feedback]
-            [clojure.string :as str]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -57,15 +56,15 @@
                      :secondary "google/gemma-3-4b-it:free"
                      :reason "Devstral excels at test patterns and assertions"}
 
-    :refactoring    {:primary "deepseek/deepseek-chat:free"
+    :refactoring    {:primary "deepseek/deepseek-v3.2"
                      :secondary "mistralai/devstral-2512:free"
                      :reason "DeepSeek strong at understanding code structure"}
 
     :implementation {:primary "mistralai/devstral-2512:free"
-                     :secondary "deepseek/deepseek-chat:free"
+                     :secondary "x-ai/grok-code-fast-1"
                      :reason "Devstral optimized for code generation"}
 
-    :bugfix         {:primary "deepseek/deepseek-chat:free"
+    :bugfix         {:primary "deepseek/deepseek-v3.2"
                      :secondary "mistralai/devstral-2512:free"
                      :reason "DeepSeek good at root cause analysis"}
 
@@ -74,7 +73,7 @@
                      :reason "GPT-OSS excels at natural language"}
 
     :general        {:primary "mistralai/devstral-2512:free"
-                     :secondary "deepseek/deepseek-chat:free"
+                     :secondary "x-ai/grok-code-fast-1"
                      :reason "Devstral as robust default"}}))
 
 (defn get-route
@@ -373,3 +372,77 @@
     (if (= result-class :success)
       (record-success! model task-type opts)
       (record-failure! model task-type result-class opts))))
+
+;;; ============================================================
+;;; Tool Proxy Support
+;;; ============================================================
+
+(def tool-proxy-models
+  "Models that require tool proxy (no native tool_call support).
+
+   These free-tier models return 404 for tool_use but are excellent
+   for reasoning. We use a two-tier architecture:
+   - Tier 1: These models for thinking/code generation
+   - Tier 2: gpt-oss-120b for actual tool execution"
+  #{"mistralai/devstral-2512:free"
+    "mistralai/devstral-small:free"
+    "google/gemma-3-4b-it:free"
+    "google/gemma-2-9b-it:free"
+    "deepseek/deepseek-v3.2"
+    "deepseek/deepseek-chat"})
+
+(def tool-proxy-model
+  "Model to use for actual tool execution (Tier 2).
+   Must support native tool_call via OpenRouter."
+  "openai/gpt-oss-120b:free")
+
+;;; ============================================================
+;;; Tool Proxy Configuration
+;;; ============================================================
+
+(def ^:private tool-proxy-config
+  "Configuration for the tool proxy architecture.
+
+   Options:
+     :enabled        - Enable/disable tool proxy (default: true)
+     :model          - Tier 2 model for tool execution
+     :intent-pattern - Regex to match tool intent markers
+     :max-iterations - Max proxy loops per task (default: 10)
+     :fallback-on-error - Use mock dispatch if real fails (default: true)"
+  (atom {:enabled true
+         :model tool-proxy-model
+         :intent-pattern #"\[TOOL:([a-zA-Z_][a-zA-Z0-9_]*)((?:\s+[a-zA-Z_][a-zA-Z0-9_]*=(?:\"[^\"]*\"|[^\s\]]+))*)\]"
+         :max-iterations 10
+         :fallback-on-error true}))
+
+(defn get-tool-proxy-config
+  "Get current tool proxy configuration."
+  []
+  @tool-proxy-config)
+
+(defn set-tool-proxy-config!
+  "Update tool proxy configuration.
+
+   Example:
+     (set-tool-proxy-config! {:model \"openai/gpt-4o-mini\" :max-iterations 15})"
+  [config]
+  (swap! tool-proxy-config merge config)
+  @tool-proxy-config)
+
+(defn tool-proxy-enabled?
+  "Check if tool proxy is enabled."
+  []
+  (:enabled @tool-proxy-config))
+
+(defn needs-tool-proxy?
+  "Check if a model requires the tool proxy layer.
+
+   Returns true if the model is in tool-proxy-models set,
+   meaning it cannot make native tool_call and needs Tier 2 proxy."
+  [model]
+  (contains? tool-proxy-models model))
+
+(defn get-tool-proxy-model
+  "Get the Tier 2 model for tool execution."
+  []
+  tool-proxy-model)

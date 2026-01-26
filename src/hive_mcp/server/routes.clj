@@ -102,25 +102,77 @@
   "Extract project-id from args map, handling various key formats.
 
    Tries directory-based derivation if explicit project-id not found.
-   Returns nil if no project context available (falls back to 'global' in piggyback).
+   Falls back to ctx/current-directory if no directory in args.
+   Returns nil only if no project context available anywhere.
 
    Key priority:
    1. Explicit project_id/project-id
-   2. Derived from directory parameter via scope/get-current-project-id"
+   2. Derived from directory parameter via scope/get-current-project-id
+   3. Derived from ctx/current-directory (request context fallback)"
   [args]
   (or (:project_id args)
       (:project-id args)
       (get args "project_id")
       (get args "project-id")
-      ;; Derive from directory if present
+      ;; Derive from directory if present, with ctx fallback
       (when-let [dir (or (:directory args)
-                         (get args "directory"))]
+                         (get args "directory")
+                         (ctx/current-directory))]
         (require 'hive-mcp.tools.memory.scope)
         ((resolve 'hive-mcp.tools.memory.scope/get-current-project-id) dir))))
 
 ;; =============================================================================
 ;; Composable Handler Wrappers (SRP: Each wrapper single responsibility)
 ;; =============================================================================
+
+(def ^:const hot-reload-retry-delay-ms
+  "Delay between retries when hot-reload might have invalidated handlers."
+  100)
+
+(def ^:const hot-reload-max-retries
+  "Maximum retries for hot-reload recovery."
+  3)
+
+(defn- hot-reload-error?
+  "Check if exception indicates stale var references from hot-reload.
+   
+   CLARITY-Y: Identify transient errors that can be recovered via retry."
+  [^Throwable e]
+  (let [msg (str (.getMessage e))]
+    (or (re-find #"(?i)var.*not.*found" msg)
+        (re-find #"(?i)unbound|undefined" msg)
+        (re-find #"(?i)no.*protocol.*method" msg)
+        (instance? IllegalStateException e))))
+
+(defn wrap-handler-retry
+  "Wrap handler with retry logic for hot-reload resilience.
+   
+   CLARITY-Y: Yield safe failure via automatic retry on transient errors.
+   
+   When hot-reload occurs, in-flight tool calls may fail because:
+   - Var references point to old, unloaded namespaces
+   - Protocol implementations are temporarily unavailable
+   
+   This wrapper catches these transient errors and retries, giving
+   time for refresh-tools! to complete."
+  [handler]
+  (fn [args]
+    (loop [attempt 1]
+      (let [result (try
+                     {:ok (handler args)}
+                     (catch Exception e
+                       (if (and (hot-reload-error? e)
+                                (< attempt hot-reload-max-retries))
+                         {:retry e}
+                         (throw e))))]
+        (if (:retry result)
+          (do
+            (log/warn "Hot-reload retry" {:attempt attempt 
+                                          :max hot-reload-max-retries
+                                          :error (ex-message (:retry result))})
+            (Thread/sleep hot-reload-retry-delay-ms)
+            (recur (inc attempt)))
+          (:ok result))))))
 
 (defn wrap-handler-context
   "Wrap handler to bind request context for tool execution.
@@ -174,12 +226,20 @@
    embeds in content.
 
    CRITICAL: project-id scoping ensures coordinators only see their
-   project's shouts, preventing cross-project message consumption."
+   project's shouts, preventing cross-project message consumption.
+
+   CURSOR ISOLATION FIX: When no explicit agent-id provided, use
+   'coordinator-{project-id}' to prevent cursor sharing across projects."
   [handler]
   (fn [args]
     (let [content (handler args)
-          agent-id (extract-agent-id args "coordinator")
           project-id (extract-project-id args)
+          ;; Generate project-scoped coordinator ID to prevent cursor sharing
+          ;; Without this, all coordinators would share cursor ["coordinator" "global"]
+          default-agent-id (if project-id
+                             (str "coordinator-" project-id)
+                             "coordinator")
+          agent-id (extract-agent-id args default-agent-id)
           piggyback (get-piggyback-messages agent-id project-id)]
       (wrap-piggyback content piggyback))))
 
@@ -205,18 +265,23 @@
    Wraps handler to attach pending hivemind messages via content embedding.
 
    Uses composable handler wrappers (SRP: each wrapper single responsibility):
+   - wrap-handler-retry: auto-retry on hot-reload transient errors (CLARITY-Y)
    - wrap-handler-context: binds request context for tool execution
    - wrap-handler-normalize: converts result to content array
    - wrap-handler-piggyback: embeds hivemind messages with agent-id extraction
    - wrap-handler-response: builds {:content ...} response
 
    Composition via -> threading enables clear data flow:
-   handler -> context -> normalize -> piggyback -> response"
+   handler -> retry -> context -> normalize -> piggyback -> response
+   
+   CLARITY-Y: wrap-handler-retry is innermost to catch handler exceptions
+   before context/normalize processing."
   [{:keys [name description inputSchema handler]}]
   {:name name
    :description description
    :inputSchema inputSchema
    :handler (-> handler
+                wrap-handler-retry      ; CLARITY-Y: Hot-reload resilience
                 wrap-handler-context
                 wrap-handler-normalize
                 wrap-handler-piggyback

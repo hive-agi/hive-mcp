@@ -1,18 +1,22 @@
 (ns hive-mcp.telemetry.guards-test
   "TDD tests for Telemetry Phase 1: try/catch guards and :system/* events.
-   
+
    Tests verify:
    1. Harvest functions return gracefully on error (no exceptions propagate)
    2. :system/* event schemas validate correctly
    3. :emit-system-error effect emits structured errors
-   
+
    CLARITY Principle: Telemetry first - observable system behavior."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
+            [datascript.core]
+            [hive-mcp.channel]
             [hive-mcp.crystal.hooks :as hooks]
+            [hive-mcp.crystal.recall]
+            [hive-mcp.emacsclient]
             [hive-mcp.events.schemas :as schemas]
             [hive-mcp.events.effects :as effects]
             [hive-mcp.events.core :as ev]
-            [malli.core :as m]))
+            [hive-mcp.swarm.datascript]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later

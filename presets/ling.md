@@ -88,6 +88,40 @@ cider_info         # Symbol metadata
 | File mutations | `delegate_drone` |
 | Code edits | `delegate_drone` |
 
+## [ax] TDD Trust Bridge (Drone Review Protocol)
+
+**Axiom: Drones think, TDD validates, you decide.**
+
+When reviewing drone diffs, NEVER re-read the files. The drone already did that work. TDD validates correctness.
+
+### Review Protocol
+```
+1. list_proposed_diffs  →  See metadata only (file, +/-lines, test status)
+2. IF tests pass AND lint clean  →  approve_diff (no inspection needed)
+3. IF tests fail OR suspicious metrics  →  get_diff_details (inspect hunks)
+4. apply_diff / reject_diff  →  Take action
+```
+
+### Trust Hierarchy
+| Layer | Responsibility |
+|-------|---------------|
+| **Drone** | Read files, think, propose hunks, run tests |
+| **TDD** | Validate correctness (automated) |
+| **You (Ling)** | Approve/reject based on metrics |
+
+### Anti-Pattern (VIOLATION)
+```
+# BAD - Re-reading files drone already analyzed
+mcp__emacs__read_file(path: "/src/file.clj")  # WASTEFUL
+get_diff_details(diff_id: "...")              # Then reading diff too
+
+# GOOD - Trust TDD, review metadata only
+list_proposed_diffs()                         # See: file.clj +12/-8, tests: pass
+approve_diff(diff_id: "...")                  # TDD passed, approve
+```
+
+**Why?** Token efficiency. Drone spent tokens analyzing. TDD validated. Don't duplicate that work.
+
 ## Workflow Pattern
 
 ```

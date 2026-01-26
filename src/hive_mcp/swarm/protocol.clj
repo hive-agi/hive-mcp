@@ -174,12 +174,26 @@
 ;;; =============================================================================
 
 (def slave-statuses
-  "Valid slave status values."
-  #{:idle :busy :blocked :error :terminated})
+  "Valid slave status values.
+
+   :idle       - Available for work
+   :spawning   - Being created
+   :starting   - Starting up
+   :working    - Actively processing a task
+   :blocked    - Waiting on external input
+   :error      - Failed with error
+   :terminated - Killed/stopped"
+  #{:idle :spawning :starting :working :blocked :error :terminated})
 
 (def task-statuses
-  "Valid task status values."
-  #{:dispatched :running :completed :error :timeout :queued})
+  "Valid task status values.
+
+   :queued     - Waiting for dispatch (file conflicts)
+   :dispatched - Sent to slave, in progress
+   :completed  - Successfully finished
+   :timeout    - Timed out waiting
+   :error      - Failed with error"
+  #{:queued :dispatched :completed :timeout :error})
 
 ;;; =============================================================================
 ;;; Public API Wrappers (backward-compatible delegation)

@@ -1,26 +1,35 @@
 (ns hive-mcp.tools.diff
   "Diff-based workflow tools for drone agents.
-   
+
    Drones (OpenRouter free-tier models) cannot safely use file_write/file_edit
    directly due to their lower capability. This module provides a review-based
    workflow where drones propose diffs that the hivemind can review and apply.
-   
+
    Workflow:
    1. Drone calls propose_diff with old/new content and description
-   2. Hivemind reviews with list_proposed_diffs (sees unified diff)
-   3. Hivemind calls apply_diff (applies change) or reject_diff (discards)
-   
+   2. Hivemind reviews with list_proposed_diffs (sees metadata only)
+   3. If needed, get_diff_details shows hunks for inspection
+   4. Hivemind calls apply_diff (applies change) or reject_diff (discards)
+
+   Token-Efficient Three-Tier API (ADR 20260125002853):
+   - Tier 1: list_proposed_diffs → metadata + metrics only (~200 tokens/diff)
+   - Tier 2: get_diff_details → formatted hunks (~500 tokens/diff)
+   - Tier 3: apply_diff → uses stored full content internally
+
    Architecture (DDD/SOLID):
    - Domain: Diff lifecycle (pending → applied/rejected)
    - Application: Handlers coordinate validation + state updates
    - Infra: File I/O via slurp/spit (mocked in tests)"
   (:require [hive-mcp.tools.core :refer [mcp-json]]
+            [hive-mcp.agent.context :as ctx]
             [hive-mcp.emacsclient :as ec]
             [hive-mcp.guards :as guards]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.java.io :as io]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log])
+  (:import [com.github.difflib DiffUtils]
+           [com.github.difflib.patch DeltaType AbstractDelta]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -85,7 +94,10 @@
 
 (defn compute-unified-diff
   "Compute a unified diff between old and new content.
-   Returns a string in unified diff format."
+   Returns a string in unified diff format.
+
+   DEPRECATED: Use compute-hunks for token-efficient diff storage.
+   This naive implementation marks ALL lines as changed."
   [old-content new-content file-path]
   (let [old-lines (str/split-lines old-content)
         new-lines (str/split-lines new-content)
@@ -98,19 +110,133 @@
                     (map #(str "-" %) old-lines)
                     (map #(str "+" %) new-lines))))))
 
+;; =============================================================================
+;; Token-Efficient Hunk-Based Diff (ADR 20260125002853)
+;; =============================================================================
+
+(defn- delta-type->keyword
+  "Convert Java DeltaType enum to Clojure keyword."
+  [^DeltaType dt]
+  (condp = dt
+    DeltaType/CHANGE :change
+    DeltaType/DELETE :delete
+    DeltaType/INSERT :insert
+    DeltaType/EQUAL  :equal
+    :unknown))
+
+(defn- extract-context
+  "Extract context lines around a position.
+   Returns {:before [lines...] :after [lines...]}."
+  [lines position length context-size]
+  (let [before-start (max 0 (- position context-size))
+        after-end (min (count lines) (+ position length context-size))]
+    {:before (vec (subvec (vec lines) before-start position))
+     :after (vec (subvec (vec lines) (+ position length) after-end))}))
+
+(defn- delta->hunk
+  "Convert a java-diff-utils Delta to a hunk map with context."
+  [^AbstractDelta delta old-lines _new-lines context-size]
+  (let [source (.getSource delta)
+        target (.getTarget delta)
+        old-pos (.getPosition source)
+        new-pos (.getPosition target)
+        old-chunk-lines (vec (.getLines source))
+        new-chunk-lines (vec (.getLines target))
+        context (extract-context old-lines old-pos (count old-chunk-lines) context-size)]
+    {:type (delta-type->keyword (.getType delta))
+     :start-old (inc old-pos)  ; 1-indexed for display
+     :start-new (inc new-pos)
+     :old-lines (count old-chunk-lines)
+     :new-lines (count new-chunk-lines)
+     :context-before (:before context)
+     :removed old-chunk-lines
+     :added new-chunk-lines
+     :context-after (:after context)}))
+
+(defn compute-hunks
+  "Compute git-style hunks using java-diff-utils.
+   Returns vector of hunk maps with context.
+
+   Each hunk contains:
+   - :type - :change, :delete, :insert
+   - :start-old, :start-new - 1-indexed line positions
+   - :old-lines, :new-lines - count of lines in each version
+   - :context-before, :context-after - surrounding lines
+   - :removed, :added - actual changed lines
+
+   Options:
+   - :context-lines (default 3) - lines of context around changes"
+  [old-content new-content & [{:keys [context-lines] :or {context-lines 3}}]]
+  (let [old-lines (if (str/blank? old-content) [] (str/split-lines old-content))
+        new-lines (if (str/blank? new-content) [] (str/split-lines new-content))
+        patch (DiffUtils/diff old-lines new-lines)
+        deltas (.getDeltas patch)]
+    (mapv #(delta->hunk % old-lines new-lines context-lines) deltas)))
+
+(defn compute-metrics
+  "Compute diff metrics from hunks.
+   Returns map with :lines-added, :lines-removed, :net-change, :hunks-count."
+  [hunks]
+  (let [added (reduce + (map :new-lines hunks))
+        removed (reduce + (map :old-lines hunks))]
+    {:lines-added added
+     :lines-removed removed
+     :net-change (- added removed)
+     :hunks-count (count hunks)}))
+
+(defn format-hunk-as-unified
+  "Format a single hunk as unified diff text."
+  [{:keys [start-old start-new old-lines new-lines
+           context-before removed added context-after]}]
+  (let [;; Adjust positions for context
+        ctx-before-count (count context-before)
+        display-start-old (max 1 (- start-old ctx-before-count))
+        display-start-new (max 1 (- start-new ctx-before-count))
+        total-old (+ ctx-before-count old-lines (count context-after))
+        total-new (+ ctx-before-count new-lines (count context-after))
+        header (format "@@ -%d,%d +%d,%d @@"
+                       display-start-old total-old
+                       display-start-new total-new)]
+    (str/join "\n"
+              (concat
+               [header]
+               (map #(str " " %) context-before)
+               (map #(str "-" %) removed)
+               (map #(str "+" %) added)
+               (map #(str " " %) context-after)))))
+
+(defn format-hunks-as-unified
+  "Format hunks as human-readable unified diff string.
+   Generates proper unified diff with file headers."
+  [hunks file-path]
+  (if (empty? hunks)
+    (str "--- a/" file-path "\n+++ b/" file-path "\n(no changes)")
+    (str "--- a/" file-path "\n"
+         "+++ b/" file-path "\n"
+         (str/join "\n" (map format-hunk-as-unified hunks)))))
+
 (defn create-diff-proposal
   "Create a diff proposal map from input parameters.
-   Optionally includes wave-id for batch review tracking."
+   Optionally includes wave-id for batch review tracking.
+
+   Token-Efficient Storage (ADR 20260125002853):
+   - Computes and stores :hunks for tier-2 retrieval
+   - Computes and stores :metrics for tier-1 listing
+   - Stores :old-content/:new-content for apply_diff (tier-3, never returned)
+   - :unified-diff removed (replaced by on-demand hunk formatting)"
   [{:keys [file_path old_content new_content description drone_id wave_id]}]
   (let [diff-id (generate-diff-id)
-        unified (compute-unified-diff old_content new_content file_path)]
+        hunks (compute-hunks old_content new_content)
+        metrics (compute-metrics hunks)]
     (cond-> {:id diff-id
              :file-path file_path
-             :old-content old_content
-             :new-content new_content
+             :old-content old_content   ; Tier 3: stored, never returned
+             :new-content new_content   ; Tier 3: stored, never returned
              :description (or description "No description provided")
              :drone-id (or drone_id "unknown")
-             :unified-diff unified
+             :hunks hunks               ; Tier 2: returned by get_diff_details
+             :metrics metrics           ; Tier 1: returned by list_proposed_diffs
+             :tdd-status nil            ; Populated by drone after tests/lint
              :status "pending"
              :created-at (java.time.Instant/now)}
       wave_id (assoc :wave-id wave_id))))
@@ -272,6 +398,36 @@
        {:approved true}))))
 
 ;; =============================================================================
+;; TDD Status Integration (ADR 20260125002853)
+;; =============================================================================
+
+(defn update-diff-tdd-status!
+  "Update a diff's TDD status after drone runs tests/lint.
+
+   Arguments:
+     diff-id    - ID of the diff to update
+     tdd-status - Map with :kondo and/or :tests keys:
+                  {:kondo {:clean true/false :errors [...]}
+                   :tests {:passed true/false :count N :duration-ms N}}
+
+   Returns updated diff or nil if not found.
+
+   Usage by drones:
+   1. Propose diff → get diff-id
+   2. Run kondo lint → update-diff-tdd-status! with :kondo results
+   3. Run tests → update-diff-tdd-status! with :tests results
+   4. Ling reviews → sees TDD status in list_proposed_diffs"
+  [diff-id tdd-status]
+  (when (contains? @pending-diffs diff-id)
+    (swap! pending-diffs update diff-id
+           (fn [diff]
+             (update diff :tdd-status
+                     (fn [existing]
+                       (merge existing tdd-status)))))
+    (log/info "Updated diff TDD status" {:diff-id diff-id :tdd-status tdd-status})
+    (get @pending-diffs diff-id)))
+
+;; =============================================================================
 ;; Wave Batch Operations
 ;; =============================================================================
 
@@ -285,19 +441,24 @@
 (defn review-wave-diffs
   "Get a summary of all diffs proposed by a wave for review.
 
+   Token-Efficient Tier 1 Response (ADR 20260125002853):
+   Returns metadata only - use get_diff_details for hunk inspection.
+
    Returns map with:
      :wave-id     - The wave ID
      :count       - Number of diffs
-     :diffs       - List of diff summaries (without old/new content)
+     :diffs       - List of diff metadata (tier-1: no content/hunks)
      :auto-approve-results - Which diffs would pass auto-approve"
   [wave-id]
   (let [diffs (get-wave-diffs wave-id)
+        ;; Tier 1: metadata only
         summaries (mapv (fn [d]
                           {:id (:id d)
                            :file-path (:file-path d)
                            :description (:description d)
                            :drone-id (:drone-id d)
-                           :unified-diff (:unified-diff d)
+                           :metrics (:metrics d)
+                           :tdd-status (:tdd-status d)
                            :status (:status d)
                            :created-at (str (:created-at d))})
                         diffs)
@@ -397,6 +558,9 @@
 (defn batch-review-diffs
   "Get all pending diffs from multiple drones for batch review.
 
+   Token-Efficient Tier 1 Response (ADR 20260125002853):
+   Returns metadata only - use get_diff_details for hunk inspection.
+
    Arguments:
      drone-ids - Collection of drone IDs (or nil for all pending diffs)
 
@@ -415,7 +579,8 @@
                    :description (:description d)
                    :drone-id (:drone-id d)
                    :wave-id (:wave-id d)
-                   :unified-diff (:unified-diff d)
+                   :metrics (:metrics d)
+                   :tdd-status (:tdd-status d)
                    :created-at (str (:created-at d))
                    :auto-approve-check (auto-approve-diff? d)}))))))
 
@@ -499,45 +664,61 @@
 (defn handle-propose-diff
   "Handle propose_diff tool call.
    Stores a proposed diff for review by the hivemind.
-   Translates sandbox paths and validates file paths."
-  [{:keys [file_path _old_content _new_content _description drone_id] :as params}]
-  (log/debug "propose_diff called" {:file file_path :drone drone_id})
-  (if-let [error (validate-propose-params params)]
-    (do
-      (log/warn "propose_diff validation failed" {:error error})
-      (mcp-error-json error))
-    ;; Translate sandbox paths before validation
-    (let [translated-path (translate-sandbox-path file_path)
-          _ (when (not= translated-path file_path)
-              (log/info "Translated sandbox path" {:from file_path :to translated-path}))
-          path-result (validate-diff-path translated-path)]
-      (if-not (:valid path-result)
-        (do
-          (log/warn "propose_diff path validation failed"
-                    {:file translated-path :original file_path :error (:error path-result) :drone drone_id})
-          (mcp-error-json (:error path-result)))
-        (try
-          ;; Use the resolved path for the proposal
-          (let [resolved-path (:resolved-path path-result)
-                proposal (create-diff-proposal (assoc params :file_path resolved-path))]
-            (swap! pending-diffs assoc (:id proposal) proposal)
-            (log/info "Diff proposed" {:id (:id proposal)
-                                       :file resolved-path
-                                       :original-path file_path
-                                       :drone drone_id})
-            (mcp-json {:id (:id proposal)
-                       :status "pending"
-                       :file-path resolved-path
-                       :original-path (when (not= file_path resolved-path) file_path)
-                       :description (:description proposal)
-                       :message "Diff proposed for review. Hivemind will apply or reject."}))
-          (catch Exception e
-            (log/error e "Failed to propose diff")
-            (mcp-error-json (str "Failed to propose diff: " (.getMessage e)))))))))
+   Translates sandbox paths and validates file paths.
+
+   BUG FIX: Uses directory parameter or ctx/current-directory as project root
+   for path validation. This prevents 'Path escapes project directory' errors
+   when drones work on projects outside the MCP server's working directory."
+  [{:keys [file_path _old_content _new_content _description drone_id directory] :as params}]
+  ;; CRITICAL FIX: Get project root from context or explicit parameter
+  ;; Without this, path validation uses MCP server's cwd, not drone's project
+  (let [project-root (or directory
+                         (ctx/current-directory)
+                         (get-project-root))]
+    (log/debug "propose_diff called" {:file file_path :drone drone_id :project-root project-root})
+    (if-let [error (validate-propose-params params)]
+      (do
+        (log/warn "propose_diff validation failed" {:error error})
+        (mcp-error-json error))
+      ;; Translate sandbox paths before validation
+      (let [translated-path (translate-sandbox-path file_path)
+            _ (when (not= translated-path file_path)
+                (log/info "Translated sandbox path" {:from file_path :to translated-path}))
+            ;; Use project-root from context for path validation
+            path-result (validate-diff-path translated-path project-root)]
+        (if-not (:valid path-result)
+          (do
+            (log/warn "propose_diff path validation failed"
+                      {:file translated-path :original file_path :error (:error path-result) :drone drone_id})
+            (mcp-error-json (:error path-result)))
+          (try
+            ;; Use the resolved path for the proposal
+            (let [resolved-path (:resolved-path path-result)
+                  proposal (create-diff-proposal (assoc params :file_path resolved-path))]
+              (swap! pending-diffs assoc (:id proposal) proposal)
+              (log/info "Diff proposed" {:id (:id proposal)
+                                         :file resolved-path
+                                         :original-path file_path
+                                         :drone drone_id})
+              (mcp-json {:id (:id proposal)
+                         :status "pending"
+                         :file-path resolved-path
+                         :original-path (when (not= file_path resolved-path) file_path)
+                         :description (:description proposal)
+                         :message "Diff proposed for review. Hivemind will apply or reject."}))
+            (catch Exception e
+              (log/error e "Failed to propose diff")
+              (mcp-error-json (str "Failed to propose diff: " (.getMessage e))))))))))
 
 (defn handle-list-proposed-diffs
   "Handle list_proposed_diffs tool call.
-   Returns all pending diffs, optionally filtered by drone_id."
+   Returns all pending diffs, optionally filtered by drone_id.
+
+   Token-Efficient Tier 1 Response (ADR 20260125002853):
+   Returns ONLY metadata: id, file-path, description, drone-id, wave-id,
+   status, created-at, metrics, tdd-status. (~200 tokens/diff)
+
+   Does NOT return: old-content, new-content, hunks, unified-diff."
   [{:keys [drone_id]}]
   (log/debug "list_proposed_diffs called" {:drone_id drone_id})
   (try
@@ -545,11 +726,13 @@
           filtered (if (str/blank? drone_id)
                      all-diffs
                      (filter #(= drone_id (:drone-id %)) all-diffs))
-          ;; Convert to JSON-safe format (remove Instant objects)
+          ;; Tier 1: Metadata only - dissoc content AND hunks
           safe-diffs (map (fn [d]
                             (-> d
                                 (update :created-at str)
-                                (dissoc :old-content :new-content))) ; Save tokens
+                                (dissoc :old-content :new-content  ; Tier 3
+                                        :hunks                     ; Tier 2
+                                        :unified-diff)))           ; Legacy
                           filtered)]
       (log/info "Listed proposed diffs" {:count (count safe-diffs)})
       (mcp-json {:count (count safe-diffs)
@@ -676,7 +859,13 @@
 
 (defn handle-get-diff-details
   "Handle get_diff_details tool call.
-   Returns full details of a specific diff including old/new content."
+   Returns diff details with formatted hunks for review.
+
+   Token-Efficient Tier 2 Response (ADR 20260125002853):
+   Returns: all metadata + :unified-diff (formatted from hunks on-demand)
+   Does NOT return: raw old-content, new-content (tier-3 internal only)
+
+   ~500 tokens/diff - use for detailed inspection before approve/reject."
   [{:keys [diff_id]}]
   (log/debug "get_diff_details called" {:diff_id diff_id})
   (cond
@@ -687,9 +876,13 @@
     (mcp-error-json (str "Diff not found: " diff_id))
 
     :else
-    (let [diff (get @pending-diffs diff_id)]
+    (let [diff (get @pending-diffs diff_id)
+          ;; Format hunks as unified diff on-demand (not stored)
+          formatted-diff (format-hunks-as-unified (:hunks diff) (:file-path diff))]
       (mcp-json (-> diff
-                    (update :created-at str))))))
+                    (update :created-at str)
+                    (dissoc :old-content :new-content)  ; Never expose tier-3
+                    (assoc :unified-diff formatted-diff))))))
 
 (defn handle-review-wave-diffs
   "Handle review_wave_diffs tool call.
@@ -799,7 +992,9 @@
                                "description" {:type "string"
                                               :description "Description of what this change does and why"}
                                "drone_id" {:type "string"
-                                           :description "ID of the drone proposing this change"}}
+                                           :description "ID of the drone proposing this change"}
+                               "directory" {:type "string"
+                                            :description "Working directory for path validation. Pass your cwd to ensure paths are validated against YOUR project, not the MCP server's directory."}}
                   :required ["file_path" "old_content" "new_content"]}
     :handler handle-propose-diff}
 

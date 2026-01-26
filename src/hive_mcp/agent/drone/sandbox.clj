@@ -91,35 +91,110 @@
       (or parent "."))))
 
 (defn- normalize-path
-  "Normalize a file path for comparison."
+  "Normalize a file path for comparison.
+   Uses canonical path resolution to prevent path traversal attacks.
+
+   CLARITY-I: Guards against ../../../ path escaping."
   [path]
   (when path
-    (-> path
-        (str/replace #"^\./" "")
-        (str/replace #"/+" "/")
-        (str/replace #"/$" ""))))
+    (try
+      ;; Use canonical path to resolve .. and symlinks
+      (.getCanonicalPath (io/file path))
+      (catch Exception _
+        ;; If canonicalization fails, use basic normalization as fallback
+        (-> path
+            (str/replace #"^\./" "")
+            (str/replace #"/+" "/")
+            (str/replace #"/$" ""))))))
+
+;;; ============================================================
+;;; Path Containment Validation (MUST be before create-sandbox)
+;;; ============================================================
+
+(defn validate-path-containment
+  "Validate that a path resolves within an allowed root directory.
+
+   CLARITY-I: Central path security validation. Use this when resolving
+   paths from untrusted input (drone file lists, user-provided paths).
+
+   Arguments:
+     path         - Path to validate (absolute or relative)
+     root-dir     - Directory the path must resolve within
+
+   Returns:
+     {:valid? true :canonical-path \"...\"} or
+     {:valid? false :error \"...\"}
+
+   Example:
+     (validate-path-containment \"../../../etc/passwd\" \"/project\")
+     => {:valid? false :error \"Path escapes allowed directory\"}"
+  [path root-dir]
+  (when (and path root-dir)
+    (try
+      (let [root-canonical (.getCanonicalPath (io/file root-dir))
+            file (if (.isAbsolute (io/file path))
+                   (io/file path)
+                   (io/file root-dir path))
+            path-canonical (.getCanonicalPath file)]
+        (if (str/starts-with? path-canonical root-canonical)
+          {:valid? true :canonical-path path-canonical}
+          {:valid? false
+           :error (str "Path '" path "' escapes allowed directory '" root-dir "'. "
+                       "Canonical: " path-canonical)}))
+      (catch Exception e
+        {:valid? false
+         :error (str "Path validation failed: " (.getMessage e))}))))
+
+;;; ============================================================
+;;; Sandbox Creation
+;;; ============================================================
 
 (defn create-sandbox
   "Create a sandbox specification for drone execution.
 
    Arguments:
-     files - List of file paths the drone is allowed to operate on
+     files       - List of file paths the drone is allowed to operate on
+     project-root - Project root directory for path containment validation (optional)
 
    Returns sandbox spec:
-     :allowed-files    - Set of normalized file paths
+     :allowed-files    - Set of validated canonical file paths
      :allowed-dirs     - Set of parent directories for read operations
      :blocked-patterns - Patterns for sensitive files
-     :blocked-tools    - Tools the drone cannot use"
-  [files]
-  (let [normalized (set (map normalize-path files))
-        dirs (set (map parent-dir files))]
-    {:allowed-files normalized
-     :allowed-dirs dirs
-     :blocked-patterns blocked-patterns
-     :blocked-tools blocked-tools}))
+     :blocked-tools    - Tools the drone cannot use
+     :rejected-files   - Files that failed containment validation (if any)
+
+   CLARITY-I: All file paths are validated to be within project-root.
+   Paths that escape the project directory are rejected and logged."
+  ([files] (create-sandbox files nil))
+  ([files project-root]
+   (let [effective-root (or project-root (System/getProperty "user.dir"))
+         ;; Validate each file path for containment
+         validations (for [f files]
+                       (let [result (validate-path-containment f effective-root)]
+                         (assoc result :original-path f)))
+         valid-paths (->> validations
+                          (filter :valid?)
+                          (map :canonical-path))
+         rejected (->> validations
+                       (remove :valid?)
+                       (map (fn [v] {:path (:original-path v)
+                                     :error (:error v)})))]
+     ;; Log rejected paths for security audit
+     (when (seq rejected)
+       (log/warn "Sandbox rejected paths escaping project directory"
+                 {:project-root effective-root
+                  :rejected-count (count rejected)
+                  :rejected rejected}))
+     (let [normalized (set (map normalize-path valid-paths))
+           dirs (set (map parent-dir valid-paths))]
+       {:allowed-files normalized
+        :allowed-dirs dirs
+        :blocked-patterns blocked-patterns
+        :blocked-tools blocked-tools
+        :rejected-files (vec rejected)}))))
 
 ;;; ============================================================
-;;; Path Validation
+;;; Sandbox Validation Helpers
 ;;; ============================================================
 
 (defn- matches-blocked-pattern?
@@ -138,15 +213,22 @@
       (contains? allowed-files normalized))))
 
 (defn- path-in-allowed-dirs?
-  "Check if a path is within any of the allowed directories."
+  "Check if a path is within any of the allowed directories.
+   
+   CLARITY-I: Uses canonical paths for comparison to prevent path traversal.
+   A path like 'src/../../../etc/passwd' will be rejected because its
+   canonical form doesn't start with any allowed directory."
   [path allowed-dirs]
   (when path
-    (let [normalized (normalize-path path)
-          dir (parent-dir normalized)]
-      (or (contains? allowed-dirs dir)
-          (contains? allowed-dirs normalized)
-          ;; Allow if path starts with any allowed dir
-          (some #(str/starts-with? normalized (str % "/")) allowed-dirs)))))
+    (let [canonical (normalize-path path)  ; Now returns canonical path
+          ;; Canonicalize allowed dirs for proper comparison
+          canonical-allowed (set (keep normalize-path allowed-dirs))]
+      (or (contains? canonical-allowed canonical)
+          ;; Check if canonical path starts with any canonical allowed dir
+          (some (fn [allowed-dir]
+                  (and allowed-dir
+                       (str/starts-with? canonical (str allowed-dir "/"))))
+                canonical-allowed)))))
 
 (defn- extract-path-from-args
   "Extract file/directory path from tool arguments."
