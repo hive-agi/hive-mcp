@@ -1,3 +1,4 @@
+;; Cost tracking and budget management tools
 (ns hive-mcp.tools.cost
   "MCP tool definitions for cost tracking and budget management.
 
@@ -8,8 +9,9 @@
    - Resetting tracking data"
   (:require [hive-mcp.agent.cost :as cost]
             [hive-mcp.tools.core :refer [mcp-json mcp-error]]
-            [clojure.data.json :as json]
             [taoensso.timbre :as log]))
+
+;; Module for MCP cost tracking tools - handles budget management, usage reporting, and rate limiting
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
