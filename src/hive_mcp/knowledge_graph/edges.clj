@@ -113,6 +113,40 @@
        (d/q scoped-query @(conn/get-conn) relation scope)
        (d/q base-query @(conn/get-conn) relation)))))
 
+(defn get-edges-by-scope
+  "Query all edges within a specific scope.
+   Returns all edges that have the given scope."
+  [scope]
+  (let [query '[:find [(pull ?e [*]) ...]
+                :in $ ?scope
+                :where
+                [?e :kg-edge/id]
+                [?e :kg-edge/scope ?scope]]]
+    (d/q query @(conn/get-conn) scope)))
+
+(defn find-edge
+  "Find an edge between two nodes.
+   Optional relation filter only returns edge if it matches.
+   Returns the edge entity map or nil if not found."
+  ([from-node-id to-node-id]
+   (find-edge from-node-id to-node-id nil))
+  ([from-node-id to-node-id relation]
+   (let [base-query '[:find [(pull ?e [*]) ...]
+                      :in $ ?from ?to
+                      :where
+                      [?e :kg-edge/from ?from]
+                      [?e :kg-edge/to ?to]]
+         relation-query '[:find [(pull ?e [*]) ...]
+                          :in $ ?from ?to ?rel
+                          :where
+                          [?e :kg-edge/from ?from]
+                          [?e :kg-edge/to ?to]
+                          [?e :kg-edge/relation ?rel]]
+         results (if relation
+                   (d/q relation-query @(conn/get-conn) from-node-id to-node-id relation)
+                   (d/q base-query @(conn/get-conn) from-node-id to-node-id))]
+     (first results))))
+
 (defn update-edge-confidence!
   "Update the confidence score of an edge.
    Returns true on success, throws on validation failure."
