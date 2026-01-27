@@ -299,6 +299,40 @@
             result))))))
 
 ;;; =============================================================================
+;;; nREPL Keepalive (CLARITY-T: Progress visibility)
+;;; =============================================================================
+
+(def ^:const keepalive-interval-ms
+  "Interval between keepalive messages during blocking batch execution.
+   Prevents bb-mcp nREPL socket timeout by writing to *out* periodically."
+  15000)
+
+(defn- blocking-take-with-keepalive!
+  "Block on channel take with periodic keepalive messages to *out*.
+   Prevents nREPL socket timeout by emitting progress every interval-ms.
+
+   Arguments:
+     ch          - core.async channel to take from
+     interval-ms - Milliseconds between keepalive messages
+     progress-fn - Zero-arg function that returns a progress string
+
+   Returns:
+     The value taken from the channel.
+
+   CLARITY-T: Progress visibility for long-running wave operations.
+   Without this, bb-mcp's nREPL socket times out after 30s of silence."
+  [ch interval-ms progress-fn]
+  (loop []
+    (let [timeout-ch (async/timeout interval-ms)
+          [result port] (async/alts!! [ch timeout-ch])]
+      (if (= port ch)
+        result
+        (do
+          (println (progress-fn))
+          (flush)
+          (recur))))))
+
+;;; =============================================================================
 ;;; Wave Execution (core.async bounded concurrency)
 ;;; =============================================================================
 
@@ -366,7 +400,7 @@
      item-count  - Number of items (for worker count calculation)
 
    SOLID-SRP: Single responsibility - worker spawning only."
-  [work-ch result-ch wave-id trace concurrency item-count]
+  [work-ch result-ch _wave-id trace concurrency item-count]
   (dotimes [_ (min concurrency item-count)]
     (go-loop []
       (when-let [{:keys [item preset cwd skip-auto-apply wave-id]} (<! work-ch)]
@@ -477,8 +511,12 @@
 
    CRITICAL FIX: Uses synchronous execution (<!! blocking take) to ensure
    all batches complete before returning. Previous async (go) implementation
-   returned immediately while execution happened in detached context."
-  [plan-id & [{:keys [concurrency trace cwd skip-auto-apply]
+   returned immediately while execution happened in detached context.
+
+   The :wave-id option allows pre-creating the wave for async dispatch
+   (caller creates wave-id, starts execute-wave! in a future, returns wave-id
+   immediately to avoid nREPL socket timeout)."
+  [plan-id & [{:keys [concurrency trace cwd skip-auto-apply wave-id]
                :or {concurrency default-concurrency trace true skip-auto-apply false}}]]
   (let [wave-start-time (System/nanoTime)  ;; CLARITY-T: Timing for wave duration metric
         plan (ds/get-plan plan-id)]
@@ -493,10 +531,19 @@
                          :message "Plan has no items with :pending status"})))
 
       (let [preset (:change-plan/preset plan)
-            wave-id (ds/create-wave! plan-id {:concurrency concurrency})]
+            wave-id (or wave-id (ds/create-wave! plan-id {:concurrency concurrency}))]
 
         ;; PHASE 0: START COST TRACKING (CLARITY-T: Budget management)
         (cost/start-wave-tracking! wave-id)
+
+        ;; PHASE 0.5: CLEANUP STALE CLAIMS (CLARITY-Y: Unblock ghost claims)
+        ;; Previous wave crashes or timeouts may leave orphaned claims
+        (try
+          (let [cleaned (ds/cleanup-stale-claims!)]
+            (when (pos? cleaned)
+              (log/info "Cleaned up" cleaned "stale claims before wave" wave-id)))
+          (catch Exception e
+            (log/warn "Stale claim cleanup failed (non-fatal):" (.getMessage e))))
 
         ;; Update plan status
         (ds/update-plan-status! plan-id :in-progress)
@@ -550,6 +597,13 @@
                   ;; CLEANUP: Reset all transient data (edits + task-files)
                   ;; CRITICAL: Use reset-all-transient! to prevent memory leak in task-files
                   (logic/reset-all-transient!)
+
+                  ;; CLEANUP: Release stale claims from this wave
+                  ;; CLARITY-Y: Prevent ghost claims from blocking subsequent waves
+                  (try
+                    (ds/cleanup-stale-claims!)
+                    (catch Exception e
+                      (log/warn "Post-wave claim cleanup failed (non-fatal):" (.getMessage e))))
 
                   ;; CLARITY-T: Structured JSON logging for Loki
                   (if (pos? total-failed)
@@ -619,14 +673,86 @@
                                                      :batch-num batch-num
                                                      :item-count (count batch-items)}]))
 
-                  ;; Execute batch and BLOCK until completion (<!! instead of <!)
-                  (let [{:keys [completed failed]} (<!! (execute-batch! batch-items preset cwd
-                                                                        concurrency wave-id trace
-                                                                        skip-auto-apply))]
+                  ;; Execute batch and BLOCK until completion with keepalive
+                  ;; CLARITY-T: Periodic progress to *out* prevents nREPL socket timeout
+                  (let [{:keys [completed failed]}
+                        (blocking-take-with-keepalive!
+                         (execute-batch! batch-items preset cwd
+                                         concurrency wave-id trace
+                                         skip-auto-apply)
+                         keepalive-interval-ms
+                         #(format "[wave:%s] batch %d/%d in progress (%d items)..."
+                                  wave-id batch-num (count effective-batches) (count batch-items)))]
                     (recur (rest remaining-batches)
                            (+ total-completed completed)
                            (+ total-failed failed)
                            (inc batch-num))))))))))))
+
+;;; =============================================================================
+;;; Async Wave Execution (CLARITY-A: Non-blocking for nREPL transport)
+;;; =============================================================================
+
+(defn execute-wave-async!
+  "Execute a wave asynchronously in a background thread.
+   Returns immediately with {:wave-id :plan-id :item-count}.
+
+   Creates the wave-id synchronously (so it's available for polling),
+   then starts execution in a background future.
+
+   The caller should use get-wave-status with the returned wave-id
+   to poll for completion.
+
+   Arguments:
+     plan-id - Plan to execute
+     opts    - Same options as execute-wave! plus:
+               :on-complete - Optional callback fn called with wave-id on completion
+
+   Returns:
+     Map with :wave-id :plan-id :item-count for immediate response.
+
+   CLARITY-A: Eliminates nREPL socket timeout class entirely.
+   DIP: Transport layer (bb-mcp) no longer coupled to execution time."
+  [plan-id & [{:keys [concurrency trace cwd skip-auto-apply on-complete]
+               :or {concurrency default-concurrency trace true skip-auto-apply false}
+               :as opts}]]
+  ;; Validate synchronously so errors are reported immediately
+  (let [plan (ds/get-plan plan-id)]
+    (when-not plan
+      (throw (ex-info "Plan not found" {:plan-id plan-id})))
+
+    (let [items (get-pending-items plan-id)]
+      (when (empty? items)
+        (throw (ex-info "No pending items for wave execution"
+                        {:plan-id plan-id
+                         :message "Plan has no items with :pending status"})))
+
+      ;; Create wave-id synchronously for immediate return
+      (let [wave-id (ds/create-wave! plan-id {:concurrency concurrency})
+            item-count (count items)]
+
+        ;; Start execution in background thread
+        (future
+          (try
+            (execute-wave! plan-id {:concurrency concurrency
+                                    :trace trace
+                                    :cwd cwd
+                                    :skip-auto-apply skip-auto-apply
+                                    :wave-id wave-id})
+            (when on-complete
+              (on-complete wave-id))
+            (catch Exception e
+              (log/error e "Async wave execution failed" {:wave-id wave-id :plan-id plan-id})
+              ;; Mark wave as failed in DataScript
+              (try
+                (ds/complete-wave! wave-id :failed)
+                (ds/update-plan-status! plan-id :failed)
+                (catch Exception inner
+                  (log/error inner "Failed to mark wave as failed" {:wave-id wave-id}))))))
+
+        ;; Return immediately
+        {:wave-id wave-id
+         :plan-id plan-id
+         :item-count item-count}))))
 
 ;;; =============================================================================
 ;;; Wave Cancellation
@@ -788,14 +914,16 @@
       ;; Clojure tools (cider_eval_silent, etc.) are optional; transient nREPL errors
       ;; handled gracefully at runtime via retry logic in execute-drone-task.
       (let [plan-id (create-plan! normalized-tasks preset)
-            wave-id (execute-wave! plan-id {:trace (if (nil? trace) true trace)
-                                            :cwd cwd})]
+            {:keys [wave-id item-count]} (execute-wave-async!
+                                          plan-id
+                                          {:trace (if (nil? trace) true trace)
+                                           :cwd cwd})]
         {:type "text"
-         :text (json/write-str {:status "wave_started"
+         :text (json/write-str {:status "dispatched"
                                 :plan_id plan-id
                                 :wave_id wave-id
-                                :item_count (count tasks)
-                                :message "Wave execution started. Monitor via HIVEMIND piggyback or get_wave_status."})}))
+                                :item_count item-count
+                                :message "Wave dispatched to background. Poll get_wave_status(wave_id) for progress."})}))
     (catch clojure.lang.ExceptionInfo e
       ;; Structured error - preserve details
       (let [data (ex-data e)]

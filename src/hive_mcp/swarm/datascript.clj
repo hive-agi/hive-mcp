@@ -160,6 +160,9 @@
 (def cleanup-stale-coordinators! coordination/cleanup-stale-coordinators!)
 (def remove-coordinator! coordination/remove-coordinator!)
 
+;; Stale claim cleanup
+(def cleanup-stale-claims! coordination/cleanup-stale-claims!)
+
 ;; Completed tasks (session-scoped registry)
 (def register-completed-task! coordination/register-completed-task!)
 (def get-completed-task coordination/get-completed-task)

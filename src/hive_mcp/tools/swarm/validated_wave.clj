@@ -25,6 +25,12 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 ;;; =============================================================================
+;;; Forward Declarations
+;;; =============================================================================
+
+(declare execute-review-wave!)
+
+;;; =============================================================================
 ;;; Constants
 ;;; =============================================================================
 
@@ -285,6 +291,108 @@
               (recur fix-tasks (inc iteration) updated-history))))))))
 
 ;;; =============================================================================
+;;; Async Execution with Session Tracking
+;;; =============================================================================
+
+;; Session state for async validated wave executions.
+;; Keyed by session-id, stores progress and final results.
+;; CLARITY-A: Non-blocking architecture — sessions enable polling
+;; instead of blocking the nREPL transport layer.
+(defonce ^:private validated-wave-sessions (atom {}))
+
+(defn execute-validated-wave-async!
+  "Execute a validated wave asynchronously in a background thread.
+   Returns immediately with {:session-id ...} for polling.
+
+   Session state transitions:
+     :running → :success | :partial | :failed
+
+   Poll via get-validated-wave-session to check progress.
+
+   Arguments:
+     tasks - Collection of {:file :task} maps
+     opts  - Same options as execute-validated-wave!
+
+   Returns:
+     Map with :session-id :task-count for immediate response.
+
+   CLARITY-A: Eliminates nREPL socket timeout for validated waves."
+  [tasks opts]
+  (let [session-id (str "vw-" (java.util.UUID/randomUUID))]
+    (swap! validated-wave-sessions assoc session-id
+           {:session-id session-id
+            :status :running
+            :task-count (count tasks)
+            :started-at (System/currentTimeMillis)})
+    (future
+      (try
+        (let [result (execute-validated-wave! tasks opts)]
+          (swap! validated-wave-sessions assoc session-id
+                 (merge result
+                        {:session-id session-id
+                         :completed-at (System/currentTimeMillis)})))
+        (catch Exception e
+          (log/error e "Async validated wave failed" {:session-id session-id})
+          (swap! validated-wave-sessions assoc session-id
+                 {:session-id session-id
+                  :status :failed
+                  :error (.getMessage e)
+                  :completed-at (System/currentTimeMillis)}))))
+    {:session-id session-id
+     :task-count (count tasks)}))
+
+(defn execute-review-wave-async!
+  "Execute a review wave asynchronously in a background thread.
+   Returns immediately with {:session-id ...} for polling.
+
+   Arguments:
+     tasks - Collection of {:file :task} maps
+     opts  - Same options as execute-review-wave!
+
+   Returns:
+     Map with :session-id :task-count for immediate response."
+  [tasks opts]
+  (let [session-id (str "rw-" (java.util.UUID/randomUUID))]
+    (swap! validated-wave-sessions assoc session-id
+           {:session-id session-id
+            :status :running
+            :mode :review
+            :task-count (count tasks)
+            :started-at (System/currentTimeMillis)})
+    (future
+      (try
+        (let [result (execute-review-wave! tasks opts)]
+          (swap! validated-wave-sessions assoc session-id
+                 (merge result
+                        {:session-id session-id
+                         :completed-at (System/currentTimeMillis)})))
+        (catch Exception e
+          (log/error e "Async review wave failed" {:session-id session-id})
+          (swap! validated-wave-sessions assoc session-id
+                 {:session-id session-id
+                  :status :failed
+                  :error (.getMessage e)
+                  :completed-at (System/currentTimeMillis)}))))
+    {:session-id session-id
+     :task-count (count tasks)}))
+
+(defn get-validated-wave-session
+  "Get session state for an async validated wave execution.
+
+   Returns nil if session not found."
+  [session-id]
+  (get @validated-wave-sessions session-id))
+
+(defn list-validated-wave-sessions
+  "List all validated wave sessions (for debugging).
+
+   Returns vector of {:session-id :status :task-count :started-at}."
+  []
+  (->> (vals @validated-wave-sessions)
+       (mapv #(select-keys % [:session-id :status :task-count :started-at :completed-at]))
+       (sort-by :started-at)))
+
+;;; =============================================================================
 ;;; Review-Before-Apply Mode
 ;;; =============================================================================
 
@@ -409,63 +517,125 @@
                                     :task (or (get t "task") (:task t))})
                                  tasks)]
 
-      ;; Route to appropriate mode
+      ;; Route to appropriate mode — both use async execution
+      ;; CLARITY-A: Non-blocking to prevent nREPL socket timeout
       (if review_mode
-        ;; Review-before-apply mode
-        (let [result (execute-review-wave!
-                      normalized-tasks
-                      {:preset (or preset "drone-worker")
-                       :trace (if (nil? trace) true trace)
-                       :cwd cwd})]
+        ;; Review-before-apply mode (async)
+        (let [{:keys [session-id task-count]}
+              (execute-review-wave-async!
+               normalized-tasks
+               {:preset (or preset "drone-worker")
+                :trace (if (nil? trace) true trace)
+                :cwd cwd})]
           {:type "text"
            :text (json/write-str
-                  {:status (name (:status result))
-                   :wave_id (:wave-id result)
-                   :plan_id (:plan-id result)
-                   :completed_tasks (:completed-tasks result)
-                   :failed_tasks (:failed-tasks result)
+                  {:status "dispatched"
+                   :session_id session-id
+                   :task_count task-count
                    :workflow "review-before-apply"
-                   :next_steps (:next-steps result)
-                   :message (str "Wave completed with " (:completed-tasks result) " tasks. "
-                                 "Diffs are proposed but NOT applied. "
-                                 "Use review_wave_diffs, then approve_wave_diffs or auto_approve_wave_diffs.")})})
+                   :message (str "Review wave dispatched to background. "
+                                 "Poll get_validated_wave_status(session_id: \"" session-id "\") for progress. "
+                                 "When complete, use review_wave_diffs/approve_wave_diffs.")})})
 
-        ;; Lint validation mode (default)
-        (let [result (execute-validated-wave!
-                      normalized-tasks
-                      {:validate (if (false? validate) false true)
-                       :max-retries (or max_retries default-max-retries)
-                       :lint-level (or lint_level default-lint-level)
-                       :preset (or preset "drone-worker")
-                       :trace (if (nil? trace) true trace)
-                       :cwd cwd})]
+        ;; Lint validation mode (async)
+        (let [{:keys [session-id task-count]}
+              (execute-validated-wave-async!
+               normalized-tasks
+               {:validate (if (false? validate) false true)
+                :max-retries (or max_retries default-max-retries)
+                :lint-level (or lint_level default-lint-level)
+                :preset (or preset "drone-worker")
+                :trace (if (nil? trace) true trace)
+                :cwd cwd})]
           {:type "text"
            :text (json/write-str
-                  (merge
-                   {:status (name (:status result))
-                    :iterations (:iterations result)
-                    :final_wave_id (:final-wave-id result)
-                    :final_plan_id (:final-plan-id result)
-                    :modified_files (:modified-files result)}
-                   ;; Include execution failures at top level when present
-                   (when-let [exec-failures (:execution-failures result)]
-                     {:execution_failures exec-failures})
-                   ;; Include partial-specific fields (lint failures)
-                   (when (= :partial (:status result))
-                     (merge
-                      {:message (:message result)}
-                      (when (:findings result)
-                        {:remaining_findings (count (:findings result))
-                         :files_with_errors (:files-with-errors result)})))
-                   ;; Always include iteration history for debugging
-                   (when (seq (:history result))
-                     {:iteration_history
-                      (mapv #(select-keys % [:iteration :wave-id :finding-count :execution-failures])
-                            (:history result))})))})))
+                  {:status "dispatched"
+                   :session_id session-id
+                   :task_count task-count
+                   :max_retries (or max_retries default-max-retries)
+                   :message (str "Validated wave dispatched to background. "
+                                 "Poll get_validated_wave_status(session_id: \"" session-id "\") for progress.")})})))
 
     (catch Exception e
       (log/error e "dispatch_validated_wave failed")
       (mcp-error (str "Validated wave failed: " (.getMessage e))))))
+
+;;; =============================================================================
+;;; Validated Wave Status Handler
+;;; =============================================================================
+
+(defn handle-get-validated-wave-status
+  "Handle get_validated_wave_status MCP tool call.
+
+   Returns the current state of an async validated wave session.
+
+   Parameters:
+     session_id - Session ID returned by dispatch_validated_wave (required)
+
+   Returns:
+     JSON with session status. When running: {:status :running, :task-count N}.
+     When complete: full result including iterations, findings, wave IDs."
+  [{:keys [session_id]}]
+  (try
+    (when-not session_id
+      (throw (ex-info "session_id is required" {})))
+
+    (if-let [session (get-validated-wave-session session_id)]
+      (let [running? (= :running (:status session))]
+        {:type "text"
+         :text (json/write-str
+                (if running?
+                  ;; Still running — return minimal status
+                  {:session_id session_id
+                   :status "running"
+                   :task_count (:task-count session)
+                   :started_at (:started-at session)
+                   :message "Validated wave is still executing. Poll again."}
+                  ;; Complete — return full result
+                  (merge
+                   {:session_id session_id
+                    :status (name (:status session))
+                    :task_count (:task-count session)
+                    :started_at (:started-at session)
+                    :completed_at (:completed-at session)}
+                   ;; Include lint-mode fields
+                   (when (:iterations session)
+                     {:iterations (:iterations session)
+                      :final_wave_id (:final-wave-id session)
+                      :final_plan_id (:final-plan-id session)
+                      :modified_files (:modified-files session)})
+                   ;; Include review-mode fields
+                   (when (:wave-id session)
+                     {:wave_id (:wave-id session)
+                      :plan_id (:plan-id session)
+                      :completed_tasks (:completed-tasks session)
+                      :failed_tasks (:failed-tasks session)
+                      :next_steps (:next-steps session)})
+                   ;; Include execution failures
+                   (when-let [exec-failures (:execution-failures session)]
+                     {:execution_failures exec-failures})
+                   ;; Include partial-specific fields
+                   (when (= :partial (:status session))
+                     (merge
+                      {:message (:message session)}
+                      (when (:findings session)
+                        {:remaining_findings (count (:findings session))
+                         :files_with_errors (:files-with-errors session)})))
+                   ;; Include error for failed sessions
+                   (when (:error session)
+                     {:error (:error session)})
+                   ;; Always include history
+                   (when (seq (:history session))
+                     {:iteration_history
+                      (mapv #(select-keys % [:iteration :wave-id :finding-count :execution-failures])
+                            (:history session))}))))})
+      {:type "text"
+       :text (json/write-str {:error "Session not found"
+                              :session_id session_id})})
+    (catch Exception e
+      (log/error e "get_validated_wave_status failed")
+      {:type "text"
+       :text (json/write-str {:error (.getMessage e)})})))
 
 ;;; =============================================================================
 ;;; Tool Definition
@@ -473,7 +643,14 @@
 
 (def tools
   "Tool definitions for validated wave execution."
-  [{:name "dispatch_validated_wave"
+  [{:name "get_validated_wave_status"
+    :description "Get the status of an async validated wave execution. Returns running state or full results when complete. Use the session_id returned by dispatch_validated_wave to poll."
+    :inputSchema {:type "object"
+                  :properties {"session_id" {:type "string"
+                                             :description "Session ID from dispatch_validated_wave response"}}
+                  :required ["session_id"]}
+    :handler handle-get-validated-wave-status}
+   {:name "dispatch_validated_wave"
     :description "Dispatch multiple drones with post-execution validation and self-healing. Runs kondo_lint after each iteration, generates fix tasks for errors, and re-dispatches until validation passes or max retries reached. Use this instead of dispatch_drone_wave when you need quality gates on drone output. Set review_mode=true for review-before-apply workflow where drones propose diffs for human review before applying."
     :inputSchema {:type "object"
                   :properties {"tasks" {:type "array"
