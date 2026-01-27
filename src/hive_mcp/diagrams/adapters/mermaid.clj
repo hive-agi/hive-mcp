@@ -132,7 +132,7 @@
     (format "    participant %s as %s" mid text)))
 
 (defmethod render-element-mermaid :class
-  [_ {:keys [id label name methods attributes]}]
+  [_ {:keys [id _label _name methods attributes]}]
   (let [mid (sanitize-id id)
         method-lines (map #(format "        +%s()" %) (or methods []))
         attr-lines (map #(format "        +%s" %) (or attributes []))]

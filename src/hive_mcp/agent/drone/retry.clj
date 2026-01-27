@@ -338,7 +338,7 @@
                      (fn [exec-opts]
                        (execute-fn exec-opts))
                      (assoc opts
-                            :on-retry (fn [attempt _ex strategy]
+                            :on-retry (fn [_attempt _ex strategy]
                                         (swap! retry-count inc)
                                         (when-let [new-model (:model strategy)]
                                           (swap! models-tried conj new-model)))))]

@@ -59,7 +59,7 @@
      parent_id   - Parent ling's slave-id (string)
      concurrency - Max concurrent drones for batch (int)"
   [{:keys [task tasks files validate review_mode max_retries lint_level
-           preset trace cwd parent_id concurrency]}]
+           preset trace cwd parent_id _concurrency]}]
   ;; CLARITY-T: Log unified API usage for migration tracking
   (log/info {:event :delegate/unified-api-call
              :mode (cond task :single tasks :batch :else :invalid)

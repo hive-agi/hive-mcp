@@ -173,7 +173,7 @@ Signals: propose/counter=reset equilibrium, approve/no-change=toward consensus
    1. Check if consensus was already reached (handled by :agora/consensus)
    2. Check if dialogue still active
    3. If active, dispatch next turn execution"
-  [_coeffects [_ {:keys [dialogue-id participant-id signal turn-num] :as data}]]
+  [_coeffects [_ {:keys [dialogue-id participant-id signal turn-num] :as _data}]]
   (let [dialogue (dialogue/get-dialogue dialogue-id)]
     (cond
       ;; Dialogue not found
