@@ -366,6 +366,39 @@
       (log/error e "kg_reground failed")
       (mcp-error (str "Re-grounding failed: " (.getMessage e))))))
 
+(defn handle-kg-backfill-grounding
+  "Batch-discover and ground all Chroma entries with source-file metadata.
+
+   Scans memory entries, finds those linked to source files, computes
+   current content hashes, and sets grounded-at timestamps. Detects drift
+   where source files have changed since knowledge was abstracted.
+
+   Arguments:
+     project_id   - Filter to specific project (optional, default: all)
+     limit        - Max entries to process (optional, default: 500)
+     force        - Re-ground even if already grounded (optional, default: false)
+     max_age_days - Only re-ground if older than N days (optional, default: 7)"
+  [{:keys [project_id limit force max_age_days]}]
+  (log/info "kg_backfill_grounding" {:project-id project_id :limit limit :force force})
+  (try
+    (let [opts (cond-> {}
+                 project_id (assoc :project-id project_id)
+                 limit (assoc :limit limit)
+                 force (assoc :force? force)
+                 max_age_days (assoc :max-age-days max_age_days))
+          result (grounding/backfill-grounding! opts)]
+      (if (:error result)
+        (mcp-error (str "Backfill failed: " (:error result)))
+        (mcp-json {:success true
+                   :total-scanned (:total-scanned result)
+                   :with-source (:with-source result)
+                   :processed (:processed result)
+                   :by-status (:by-status result)
+                   :drifted-entries (:drifted-entries result)})))
+    (catch Exception e
+      (log/error e "kg_backfill_grounding failed")
+      (mcp-error (str "Backfill grounding failed: " (.getMessage e))))))
+
 ;;; =============================================================================
 ;;; Tool Definitions
 ;;; =============================================================================
@@ -491,4 +524,18 @@
                                "force" {:type "boolean"
                                         :description "Force re-ground even if recently grounded (optional)"}}
                   :required ["entry_id"]}
-    :handler handle-kg-reground}])
+    :handler handle-kg-reground}
+
+   {:name "kg_backfill_grounding"
+    :description "Batch-discover and ground all memory entries with source-file metadata. Scans Chroma, computes content hashes, sets grounded-at timestamps, and detects drift. Use to bootstrap grounding for existing entries or periodically refresh staleness."
+    :inputSchema {:type "object"
+                  :properties {"project_id" {:type "string"
+                                             :description "Filter to specific project (optional, default: all)"}
+                               "limit" {:type "integer"
+                                        :description "Max entries to process (optional, default: 500)"}
+                               "force" {:type "boolean"
+                                        :description "Re-ground even if already grounded (optional, default: false)"}
+                               "max_age_days" {:type "integer"
+                                               :description "Only re-ground entries older than N days (optional, default: 7)"}}
+                  :required []}
+    :handler handle-kg-backfill-grounding}])
