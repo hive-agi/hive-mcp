@@ -8,10 +8,10 @@
    1. Explicit set-backend! call
    2. HIVE_KG_BACKEND env var (:datascript | :datalevin)
    3. :kg-backend in .hive-project.edn
-   4. Default: :datascript (safe, no behavior change)
+   4. Default: :datalevin (persistent — compounding axiom)
 
    CLARITY-T: Logs backend selection on initialization.
-   CLARITY-Y: Auto-initializes DataScript if no store configured."
+   CLARITY-Y: Auto-initializes Datalevin if no store configured."
   (:require [hive-mcp.knowledge-graph.protocol :as proto]
             [hive-mcp.knowledge-graph.store.datascript :as ds-store]
             [clojure.java.io :as io]
@@ -37,14 +37,14 @@
 
 (defn- detect-backend
   "Detect the desired KG backend from configuration sources.
-   Priority: env var > .hive-project.edn > default (:datascript).
+   Priority: env var > .hive-project.edn > default (:datalevin).
    Returns keyword :datascript or :datalevin."
   []
   (let [env-val (System/getenv "HIVE_KG_BACKEND")
         env-backend (when (and env-val (seq env-val))
                       (keyword env-val))
         project-backend (read-project-config)
-        backend (or env-backend project-backend :datascript)]
+        backend (or env-backend project-backend :datalevin)]
     (log/debug "KG backend detection" {:env env-backend
                                        :project project-backend
                                        :selected backend})
