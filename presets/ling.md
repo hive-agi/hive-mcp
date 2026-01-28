@@ -293,17 +293,10 @@ mcp_memory_query_metadata(type: "decision", tags: ["<relevant-tag>"])
 - Build on documented patterns
 - Reference them in your shouts (visibility)
 
-## Session End (Wrap Pattern)
+## Session End (MANDATORY)
 
-**Run `/wrap` or call wrap_crystallize directly.** Both work for lings now.
+**ALWAYS call `session_complete` when your task is done.** This is the single lifecycle endpoint — it handles wrap, crystallization, kanban updates, and attribution in one call.
 
-**Option 1: /wrap skill** (unified for lings and coordinators)
-```
-/wrap
-```
-Follow the prompts - it will ask for your `pwd` and `$CLAUDE_SWARM_SLAVE_ID`.
-
-**Option 2: session_complete** (RECOMMENDED - full lifecycle)
 ```
 session_complete(
   commit_msg: "feat: your work summary",
@@ -313,17 +306,11 @@ session_complete(
 )
 ```
 
-**Option 3: wrap_crystallize** (wrap only, no git/kanban)
-```
-wrap_crystallize(
-  agent_id: $CLAUDE_SWARM_SLAVE_ID,
-  directory: "/path/to/your/project"
-)
-```
-
 **CRITICAL parameters:**
 - `agent_id`: Your `$CLAUDE_SWARM_SLAVE_ID` - without it, your learnings get attributed to "coordinator"
 - `directory`: Your `pwd` - without it, your wraps may contaminate other projects
+
+**Why session_complete?** It subsumes `/wrap` — one call does everything: crystallize learnings, update kanban, commit if needed. Calling `/wrap` separately is redundant.
 
 ---
 
@@ -370,6 +357,30 @@ mcp_memory_add(
    - Tool name/purpose was confusing
 
 3. **Format**: Keep it actionable: `FRICTION: <tool>: tried X, expected Y, got Z`
+
+---
+
+## Memory Discipline
+
+When you spend tokens learning something, FREEZE IT immediately — don't wait for session end:
+
+- **Friction → Solution**: If you tried something that failed and found the fix, freeze it as a convention: "When X happens, do Y because Z"
+- **Codebase Discovery**: If you explored code and found a non-obvious pattern, freeze it as a snippet or convention
+- **Decision Made**: If you chose approach A over B, freeze it as a decision with rationale
+- **Integration Knowledge**: If you learned how services connect, freeze it as a note
+
+```
+mcp_memory_add(
+  type: "convention",
+  content: "When X happens, do Y because Z",
+  tags: ["friction", "solution", "<topic>"],
+  agent_id: $CLAUDE_SWARM_SLAVE_ID,
+  directory: $PWD
+)
+```
+
+Rule of thumb: If you spent >30 seconds figuring something out, it's worth freezing.
+The dogfooding section above covers tool friction specifically — this section covers ALL learnings.
 
 ---
 

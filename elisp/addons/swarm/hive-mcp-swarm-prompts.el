@@ -159,18 +159,26 @@ so status may lag behind actual terminal state."
          (vterm-send-string "y")
          (run-at-time 0.05 nil
                       (lambda ()
-                        (when (buffer-live-p buffer)
-                          (with-current-buffer buffer
-                            (vterm-send-return))))))
+                        (condition-case err
+                            (when (buffer-live-p buffer)
+                              (with-current-buffer buffer
+                                (vterm-send-return)))
+                          (error
+                           (message "[swarm-prompts] Timer error in vterm approval: %s"
+                                    (error-message-string err)))))))
         ('eat
          (when (and (boundp 'eat-terminal) eat-terminal)
            (eat-term-send-string eat-terminal "y")
            (run-at-time 0.05 nil
                         (lambda ()
-                          (when (and (buffer-live-p buffer)
-                                     (boundp 'eat-terminal)
-                                     eat-terminal)
-                            (eat-term-send-string eat-terminal "\r"))))))))))
+                          (condition-case err
+                              (when (and (buffer-live-p buffer)
+                                         (boundp 'eat-terminal)
+                                         eat-terminal)
+                                (eat-term-send-string eat-terminal "\r"))
+                            (error
+                             (message "[swarm-prompts] Timer error in eat approval: %s"
+                                      (error-message-string err))))))))))))
 
 (defun hive-mcp-swarm-prompts--process-auto-approve (slave-id slave get-terminal-fn)
   "Process auto-approve for SLAVE with SLAVE-ID.
@@ -399,10 +407,14 @@ GET-TERMINAL-FN extracts terminal type from slave plist."
         (run-with-timer
          1 2
          (lambda ()
-           (pcase hive-mcp-swarm-prompts-mode
-             ('bypass nil)  ; CLI handles permissions
-             ('auto (hive-mcp-swarm-prompts--auto-tick slaves-hash get-terminal-fn))
-             ('human (hive-mcp-swarm-prompts--human-tick slaves-hash))))))
+           (condition-case err
+               (pcase hive-mcp-swarm-prompts-mode
+                 ('bypass nil)  ; CLI handles permissions
+                 ('auto (hive-mcp-swarm-prompts--auto-tick slaves-hash get-terminal-fn))
+                 ('human (hive-mcp-swarm-prompts--human-tick slaves-hash)))
+             (error
+              (message "[swarm-prompts] Watcher tick error: %s"
+                       (error-message-string err)))))))
   (message "[swarm-prompts] Watcher started (mode: %s)" hive-mcp-swarm-prompts-mode))
 
 (defun hive-mcp-swarm-prompts-stop-watcher ()

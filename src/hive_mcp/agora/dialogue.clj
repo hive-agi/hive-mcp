@@ -39,37 +39,31 @@
    SOLID: SRP - Single responsibility for dialogue dispatch
    CLARITY: L - Layer separation from core dispatch"
   (:require [hive-mcp.agora.schema :as schema]
+            [hive-mcp.agora.signal :as signal]
             [hive-mcp.tools.swarm.dispatch :as dispatch]
             [hive-mcp.channel.websocket :as ws]
             [datascript.core :as d]
             [clojure.data.json :as json]
-            [clojure.string :as str]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 ;; =============================================================================
-;; Signal Definitions (Value Objects)
+;; Signal Definitions - Delegated to signal.clj (Single Source of Truth)
 ;; =============================================================================
 
 (def signals
-  "Valid dialogue turn signal values.
-
-   :propose   - Proposing a change (resets equilibrium)
-   :counter   - Counter-proposal (resets equilibrium)
-   :no-change - No changes needed (toward equilibrium)
-   :approve   - Accepting current state (toward equilibrium)
-   :defer     - No opinion (neutral, doesn't block)"
-  #{:propose :counter :no-change :approve :defer})
+  "Valid dialogue turn signal values. Delegates to signal.clj."
+  signal/signal-types)
 
 (def equilibrium-signals
-  "Signals that contribute to Nash equilibrium."
-  #{:no-change :approve})
+  "Signals that contribute to Nash equilibrium. Delegates to signal.clj."
+  signal/equilibrium-signals)
 
 (def disruption-signals
-  "Signals that reset/disrupt equilibrium."
-  #{:propose :counter})
+  "Signals that reset/disrupt equilibrium. Delegates to signal.clj."
+  signal/disruption-signals)
 
 ;; =============================================================================
 ;; State - Delegated to schema.clj (DataScript)
@@ -80,72 +74,26 @@
 ;; and Nash equilibrium detection on top of schema's CRUD operations.
 
 ;; =============================================================================
-;; Natural Language Signal Detection
-;; =============================================================================
-
-(def natural-approval-patterns
-  "Patterns that indicate natural language approval/agreement."
-  [#"(?i)\bI\s+(?:accept|approve|agree)\b"
-   #"(?i)\blgtm\b"
-   #"(?i)\blooks?\s+good\b"
-   #"(?i)\bconsensus\s+reached\b"
-   #"(?i)\bno\s+(?:changes?|objections?)\b"
-   #"(?i)\bship\s+it\b"
-   #"(?i)\b(?:sounds?|seems?)\s+(?:good|great|fine)\b"])
-
-(def natural-counter-patterns
-  "Patterns that indicate natural language disagreement/objection."
-  [#"(?i)\bI\s+(?:disagree|object|reject)\b"
-   #"(?i)\bhave\s+(?:concerns?|issues?|problems?)\b"
-   #"(?i)\bwon'?t\s+work\b"
-   #"(?i)\bneed\s+(?:to\s+)?(?:change|reconsider|rethink)\b"])
-
-(defn detect-natural-signal
-  "Detect signal from natural language. Returns nil if no match.
-
-   Examples:
-   (detect-natural-signal \"I accept this approach\")  ;=> :approve
-   (detect-natural-signal \"LGTM!\")                   ;=> :approve
-   (detect-natural-signal \"Here is my analysis\")    ;=> nil"
-  [message]
-  (cond
-    (some #(re-find % message) natural-approval-patterns) :approve
-    (some #(re-find % message) natural-counter-patterns) :counter
-    :else nil))
-
-;; =============================================================================
-;; Signal Parsing
+;; Signal Parsing - Delegated to signal.clj
 ;; =============================================================================
 
 (defn parse-signal
-  "Parse signal from message. Priority: prefix > natural-language > default.
+  "Parse signal from message. Delegates to signal/parse-signal.
 
-   Returns tuple: [signal cleaned-message detection-method]
+   Returns tuple: [signal-type cleaned-message detection-method]
+
+   For structured map input, returns the validated signal.
+   For string input, parses via signal/signal-from-legacy.
 
    Examples:
    (parse-signal \"[SIGNAL: propose] Here's my change\")
    => [:propose \"Here's my change\" :prefix]
 
-   (parse-signal \"LGTM, ship it!\")
-   => [:approve \"LGTM, ship it!\" :natural]
-
    (parse-signal \"Here's my analysis\")
    => [:propose \"Here's my analysis\" :default]"
   [message]
-  (if-let [[_ signal-str rest] (re-matches #"(?i)\[SIGNAL:\s*([\w-]+)\]\s*([\s\S]*)" message)]
-    (let [signal (keyword (str/lower-case signal-str))]
-      (if (contains? signals signal)
-        [signal (str/trim rest) :prefix]
-        (do
-          (log/warn "Unknown signal" signal-str "- defaulting to :propose")
-          [:propose message :default])))
-    ;; No signal prefix - try natural language detection
-    (if-let [natural-signal (detect-natural-signal message)]
-      (do
-        (log/debug "Detected natural language signal:" natural-signal "from message:" (subs message 0 (min 50 (count message))))
-        [natural-signal message :natural])
-      ;; No natural language match - default to :propose
-      [:propose message :default])))
+  (let [[signal-map cleaned method] (signal/signal-from-legacy message)]
+    [(:type signal-map) cleaned method]))
 
 (defn format-signal
   "Format a signal into message prefix.

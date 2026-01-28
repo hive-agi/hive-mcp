@@ -498,15 +498,6 @@
     {:ready? (empty? pending)
      :pending (vec pending)}))
 
-(defn get-all-claims
-  "Get all current file claims. Returns [{:file path :slave-id id} ...]"
-  []
-  (with-db
-    (l/run* [q]
-            (l/fresh [f s]
-                     (claims f s)
-                     (l/== q {:file f :slave-id s})))))
-
 (defn get-claim-for-file
   "Get claim info for a specific file path.
    Returns {:file path :slave-id id} or nil if not claimed."

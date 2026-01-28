@@ -191,7 +191,11 @@ AGENT-ID optionally links this session to a swarm agent."
          ;; Create timer and store reference for cleanup
          (timer (run-with-timer 2 1
                                 (lambda ()
-                                  (hive-mcp-cider--try-connect-session name)))))
+                                  (condition-case err
+                                      (hive-mcp-cider--try-connect-session name)
+                                    (error
+                                     (message "[cider] Timer error connecting session %s: %s"
+                                              name (error-message-string err))))))))
     ;; Register session with timer reference
     (puthash name
              (list :port port
@@ -438,8 +442,10 @@ Does not block Emacs startup.  Uses the port from `hive-mcp-cider-nrepl-port'."
 
 (defun hive-mcp-cider--auto-connect-tick ()
   "Timer callback for auto-connect attempts."
-  (setq hive-mcp-cider--connect-attempts (1+ hive-mcp-cider--connect-attempts))
-  (cond
+  (condition-case err
+      (progn
+        (setq hive-mcp-cider--connect-attempts (1+ hive-mcp-cider--connect-attempts))
+        (cond
    ;; Already connected - stop trying
    ((and (featurep 'cider) (cider-connected-p))
     (hive-mcp-cider--stop-auto-connect)
@@ -453,6 +459,9 @@ Does not block Emacs startup.  Uses the port from `hive-mcp-cider-nrepl-port'."
     (hive-mcp-cider--stop-auto-connect)
     (message "hive-mcp-cider: Auto-connect gave up after %d attempts"
              hive-mcp-cider--connect-attempts))))
+    (error
+     (message "[cider] Auto-connect tick error: %s"
+              (error-message-string err)))))
 
 (defun hive-mcp-cider--start-auto-connect ()
   "Start the auto-connect timer."

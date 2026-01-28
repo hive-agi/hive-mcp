@@ -7,6 +7,7 @@
    Handlers:
    - search-semantic: Vector similarity search using Chroma embeddings"
   (:require [hive-mcp.chroma :as chroma]
+            [hive-mcp.knowledge-graph.edges :as kg-edges]
             [hive-mcp.tools.core :refer [mcp-error coerce-int!]]
             [clojure.data.json :as json]
             [clojure.string :as str]
@@ -55,6 +56,15 @@
                                                :limit limit-val
                                                :type type)
                 formatted (mapv format-search-result results)]
+            ;; Record co-access pattern for semantic search results (async, non-blocking)
+            (when (>= (count formatted) 2)
+              (future
+                (try
+                  (kg-edges/record-co-access!
+                   (mapv :id formatted)
+                   {:created-by "system:semantic-search"})
+                  (catch Exception e
+                    (log/debug "Co-access recording failed (non-fatal):" (.getMessage e))))))
             {:type "text"
              :text (json/write-str {:results formatted
                                     :count (count formatted)

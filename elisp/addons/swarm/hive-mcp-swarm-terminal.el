@@ -291,9 +291,13 @@ Searches the last `hive-mcp-swarm-terminal-error-search-lines' lines."
     ;; Schedule return via timer - never blocks
     (run-at-time hive-mcp-swarm-terminal-send-delay nil
                  (lambda ()
-                   (when (buffer-live-p buffer)
-                     (with-current-buffer buffer
-                       (vterm-send-return)))))))
+                   (condition-case err
+                       (when (buffer-live-p buffer)
+                         (with-current-buffer buffer
+                           (vterm-send-return)))
+                     (error
+                      (message "[swarm-terminal] Timer error in vterm send-return: %s"
+                               (error-message-string err))))))))
 
 (defun hive-mcp-swarm-terminal--send-eat (buffer text)
   "Send TEXT to eat BUFFER, then return. Non-blocking."
@@ -303,11 +307,15 @@ Searches the last `hive-mcp-swarm-terminal-error-search-lines' lines."
       ;; Schedule return via timer - never blocks
       (run-at-time hive-mcp-swarm-terminal-send-delay nil
                    (lambda ()
-                     (when (and (buffer-live-p buffer)
-                                (boundp 'eat-terminal)
-                                eat-terminal)
-                       (with-current-buffer buffer
-                         (eat-term-send-string eat-terminal "\r"))))))))
+                     (condition-case err
+                         (when (and (buffer-live-p buffer)
+                                    (boundp 'eat-terminal)
+                                    eat-terminal)
+                           (with-current-buffer buffer
+                             (eat-term-send-string eat-terminal "\r")))
+                       (error
+                        (message "[swarm-terminal] Timer error in eat send-return: %s"
+                                 (error-message-string err)))))))))
 
 (defun hive-mcp-swarm-terminal--send-ollama (buffer text)
   "Send TEXT to Ollama via ellama. Non-blocking.
@@ -429,21 +437,27 @@ CALLBACK receives (buffer success-p) arguments."
           (run-with-timer
            0 check-interval
            (lambda ()
-             (cond
-              ;; Buffer died
-              ((not (buffer-live-p buffer))
-               (cancel-timer timer)
-               (funcall callback buffer nil))
-              ;; Ready!
-              ((hive-mcp-swarm-terminal-ready-p buffer)
-               (cancel-timer timer)
-               (funcall callback buffer t))
-              ;; Timeout
-              ((> (- (float-time) start-time) timeout)
-               (cancel-timer timer)
-               (message "[swarm-terminal] Timeout waiting for ready: %s"
-                        (buffer-name buffer))
-               (funcall callback buffer nil))))))))
+             (condition-case err
+                 (cond
+                  ;; Buffer died
+                  ((not (buffer-live-p buffer))
+                   (cancel-timer timer)
+                   (funcall callback buffer nil))
+                  ;; Ready!
+                  ((hive-mcp-swarm-terminal-ready-p buffer)
+                   (cancel-timer timer)
+                   (funcall callback buffer t))
+                  ;; Timeout
+                  ((> (- (float-time) start-time) timeout)
+                   (cancel-timer timer)
+                   (message "[swarm-terminal] Timeout waiting for ready: %s"
+                            (buffer-name buffer))
+                   (funcall callback buffer nil)))
+               (error
+                (cancel-timer timer)
+                (message "[swarm-terminal] Timer error in wait-ready: %s"
+                         (error-message-string err))
+                (ignore-errors (funcall callback buffer nil)))))))))
 
 ;;;; Buffer Creation:
 
@@ -565,10 +579,11 @@ Detects both successful completions and errors, emitting the
 appropriate auto-shout event for each.
 
 Also tracks buffer output for Layer 2 activity detection."
-  (when (and hive-mcp-swarm-terminal-auto-shout
-             (boundp 'hive-mcp-swarm--slaves)
-             (hash-table-p hive-mcp-swarm--slaves))
-    (maphash
+  (condition-case err
+      (when (and hive-mcp-swarm-terminal-auto-shout
+                 (boundp 'hive-mcp-swarm--slaves)
+                 (hash-table-p hive-mcp-swarm--slaves))
+        (maphash
      (lambda (slave-id slave)
        (when-let* ((buffer (plist-get slave :buffer)))
          ;; Layer 2: Check for buffer activity (output)
@@ -605,7 +620,10 @@ Also tracks buffer output for Layer 2 activity detection."
              (funcall hive-mcp-swarm-terminal--completion-callback
                       buffer completed-slave-id duration status
                       error-type error-preview)))))
-     hive-mcp-swarm--slaves)))
+     hive-mcp-swarm--slaves))
+    (error
+     (message "[swarm-terminal] Completion watcher tick error: %s"
+              (error-message-string err)))))
 
 (defun hive-mcp-swarm-terminal-start-completion-watcher (callback)
   "Start the completion watcher timer with CALLBACK.
@@ -724,8 +742,9 @@ an idle-timeout event to alert the coordinator.
 If the slave has a pending prompt (from hive-mcp-swarm-prompts),
 emits a prompt-stall event instead - this is more urgent as it
 indicates the coordinator needs to respond to unblock the ling."
-  (when (and (boundp 'hive-mcp-swarm--slaves)
-             (hash-table-p hive-mcp-swarm--slaves))
+  (condition-case err
+      (when (and (boundp 'hive-mcp-swarm--slaves)
+                 (hash-table-p hive-mcp-swarm--slaves))
     ;; First pass: flush all process output so buffer content is fresh
     ;; Without this, idle detection only works when hovering over buffers
     (maphash
@@ -770,7 +789,10 @@ indicates the coordinator needs to respond to unblock the ling."
                  (hive-mcp-swarm-events-emit-idle-timeout slave-id idle-duration))
                (message "[swarm-terminal] Layer 2: %s idle for %.1fs without shout"
                         slave-id idle-duration))))))
-     hive-mcp-swarm--slaves)))
+     hive-mcp-swarm--slaves))
+    (error
+     (message "[swarm-terminal] Idle watcher tick error: %s"
+              (error-message-string err)))))
 
 (defun hive-mcp-swarm-terminal-start-idle-watcher ()
   "Start the idle detection watcher timer."

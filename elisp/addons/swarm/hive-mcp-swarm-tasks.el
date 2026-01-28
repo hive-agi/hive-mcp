@@ -244,7 +244,8 @@ Returns:
 Entries for ready terminals are dispatched.
 Entries for non-ready terminals are re-queued with incremented retry count.
 Called periodically by the queue timer."
-  (when hive-mcp-swarm-dispatch-queue
+  (condition-case err
+      (when hive-mcp-swarm-dispatch-queue
     (let ((current-queue hive-mcp-swarm-dispatch-queue)
           (new-queue '()))
       ;; Clear queue atomically before processing
@@ -262,7 +263,10 @@ Called periodically by the queue timer."
       (setq hive-mcp-swarm-dispatch-queue (nreverse new-queue))
       ;; Stop timer if queue empty
       (when (null hive-mcp-swarm-dispatch-queue)
-        (hive-mcp-swarm-stop-queue-processor)))))
+        (hive-mcp-swarm-stop-queue-processor))))
+    (error
+     (message "[swarm-tasks] Queue processor tick error: %s"
+              (error-message-string err)))))
 
 (defun hive-mcp-swarm-start-queue-processor ()
   "Start the queue processor timer if not already running."

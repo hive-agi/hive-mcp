@@ -307,10 +307,14 @@ If HANDLER is nil, remove all handlers for EVENT-TYPE."
 
 (defun hive-mcp-channel-ws--startup-connect ()
   "Attempt connection at startup."
-  (when hive-mcp-channel-ws-auto-connect
-    (setq hive-mcp-channel-ws--degraded-mode nil
-          hive-mcp-channel-ws--reconnect-count 0)
-    (hive-mcp-channel-ws-connect)))
+  (condition-case err
+      (when hive-mcp-channel-ws-auto-connect
+        (setq hive-mcp-channel-ws--degraded-mode nil
+              hive-mcp-channel-ws--reconnect-count 0)
+        (hive-mcp-channel-ws-connect))
+    (error
+     (message "hive-mcp-channel-ws: Startup connect error: %s"
+              (error-message-string err)))))
 
 ;;;###autoload
 (defun hive-mcp-channel-ws-setup ()

@@ -9,9 +9,8 @@
    DDD: Pure domain functions, no side effects.
 
    Depends on: hive-mcp.agora.schema (dialogue state queries)"
-  (:require [clojure.set :as set]
-            [clojure.string :as str]
-            [hive-mcp.agora.schema :as schema]
+  (:require [hive-mcp.agora.schema :as schema]
+            [hive-mcp.agora.signal :as signal]
             [taoensso.timbre :as log]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -19,25 +18,27 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 ;; =============================================================================
-;; Turn Signal Constants
+;; Turn Signal Constants - Delegated to signal.clj (Single Source of Truth)
 ;; =============================================================================
 
 (def equilibrium-signals
   "Signals that indicate participant has reached equilibrium state.
-   These signals count toward Nash equilibrium detection."
-  #{:no-change :approve :lgtm})
+   Delegates to signal.clj."
+  signal/equilibrium-signals)
 
 (def reset-signals
-  "Signals that reset equilibrium - participant proposes a change."
-  #{:propose :counter})
+  "Signals that reset equilibrium - participant proposes a change.
+   Delegates to signal.clj."
+  signal/disruption-signals)
 
 (def neutral-signals
-  "Signals that neither block nor contribute to equilibrium."
-  #{:defer})
+  "Signals that neither block nor contribute to equilibrium.
+   Delegates to signal.clj."
+  signal/neutral-signals)
 
 (def all-valid-signals
-  "All valid turn signals."
-  (set/union equilibrium-signals reset-signals neutral-signals))
+  "All valid turn signals. Delegates to signal.clj."
+  signal/all-valid-signals)
 
 ;; =============================================================================
 ;; Default Configuration
@@ -452,61 +453,28 @@
      :mediator-reason reason}))
 
 ;; =============================================================================
-;; Signal Parsing (from ling dispatches)
+;; Signal Parsing - Delegated to signal.clj
 ;; =============================================================================
-
-(def signal-pattern
-  "Regex pattern for extracting signals from ling messages.
-   Matches [SIGNAL: <signal>] at start of message."
-  #"^\[SIGNAL:\s*(\w+(?:-\w+)*)\]")
 
 (defn parse-signal
   "Extract Nash signal from a ling dispatch message.
+   Delegates to signal/parse-signal.
 
    message: string from swarm_dispatch prompt
 
-   Returns: keyword signal or :propose (default)"
+   Returns: keyword signal type or :propose (default)"
   [message]
-  (if-let [[_ signal-str] (re-find signal-pattern (or message ""))]
-    (let [signal (keyword (str/lower-case signal-str))]
-      (if (all-valid-signals signal)
-        signal
-        :propose))  ; Unknown signal defaults to propose
-    :propose))      ; No signal defaults to propose
+  (let [result (signal/parse-signal (or message ""))]
+    (if (:error result)
+      :propose
+      (:type result))))
 
 (defn signal->equilibrium-contribution
   "Determine if a signal contributes to equilibrium.
+   Delegates to signal/equilibrium-contribution.
 
    signal: keyword
 
    Returns: :positive, :negative, or :neutral"
-  [signal]
-  (cond
-    (equilibrium-signals signal) :positive
-    (reset-signals signal) :negative
-    (neutral-signals signal) :neutral
-    :else :negative))  ; Unknown signals are disruptive
-
-(comment
-  ;; Example usage
-
-  ;; Parse signals from ling messages
-  (parse-signal "[SIGNAL: no-change] LGTM. No further improvements.")
-  ;; => :no-change
-
-  (parse-signal "[SIGNAL: approve] The implementation looks correct.")
-  ;; => :approve
-
-  (parse-signal "[SIGNAL: counter] I disagree with the approach.")
-  ;; => :counter
-
-  (parse-signal "Regular message without signal")
-  ;; => :propose (default)
-
-  ;; Check signal contribution
-  (signal->equilibrium-contribution :no-change)
-  ;; => :positive
-
-  (signal->equilibrium-contribution :counter)
-  ;; => :negative
-  )
+  [signal-kw]
+  (signal/equilibrium-contribution signal-kw))

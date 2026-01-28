@@ -237,7 +237,7 @@
      opts           - Optional map with :directory
 
    Returns the model with highest success rate, or first available if no patterns."
-  [task-type available-models & [{:keys [directory] :as opts}]]
+  [task-type available-models & [{:keys [_directory] :as opts}]]
   (if (empty? available-models)
     nil
     (let [model-stats (for [model available-models]

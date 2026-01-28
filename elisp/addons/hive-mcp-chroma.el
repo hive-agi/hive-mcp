@@ -200,21 +200,31 @@ Checks in order:
 (defun hive-mcp-chroma--wait-for-healthy ()
   "Wait for Chroma to become healthy, then configure."
   (let ((attempts 0)
-        (max-attempts (/ hive-mcp-chroma-startup-timeout 2)))
-    (run-with-timer
-     2 2
-     (lambda ()
-       (setq attempts (1+ attempts))
-       (cond
-        ((hive-mcp-chroma--health-check)
-         (setq hive-mcp-chroma--status 'running)
-         (setq hive-mcp-chroma--fallback-active nil)
-         (hive-mcp-chroma--configure-mcp)
-         (message "Chroma is running and connected"))
-        ((>= attempts max-attempts)
-         (setq hive-mcp-chroma--status 'stopped)
-         (setq hive-mcp-chroma--fallback-active t)
-         (message "Chroma failed to start, using local memory fallback")))))))
+        (max-attempts (/ hive-mcp-chroma-startup-timeout 2))
+        timer)
+    (setq timer
+          (run-with-timer
+           2 2
+           (lambda ()
+             (condition-case err
+                 (progn
+                   (setq attempts (1+ attempts))
+                   (cond
+                    ((hive-mcp-chroma--health-check)
+                     (cancel-timer timer)
+                     (setq hive-mcp-chroma--status 'running)
+                     (setq hive-mcp-chroma--fallback-active nil)
+                     (hive-mcp-chroma--configure-mcp)
+                     (message "Chroma is running and connected"))
+                    ((>= attempts max-attempts)
+                     (cancel-timer timer)
+                     (setq hive-mcp-chroma--status 'stopped)
+                     (setq hive-mcp-chroma--fallback-active t)
+                     (message "Chroma failed to start, using local memory fallback"))))
+               (error
+                (cancel-timer timer)
+                (message "[chroma] Health check timer error: %s"
+                         (error-message-string err)))))))))
 
 (defun hive-mcp-chroma-stop ()
   "Stop the Chroma container."

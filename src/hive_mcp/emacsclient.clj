@@ -1,5 +1,10 @@
 (ns hive-mcp.emacsclient
-  "Shell wrapper for emacsclient communication with running Emacs."
+  "Shell wrapper for emacsclient communication with running Emacs.
+
+   CLARITY-Y: Yield safe failure — daemon crash detection, circuit breaker,
+   and structured telemetry prevent cascading failures when Emacs dies.
+   CLARITY-T: Telemetry first — every crash/recovery event is logged with
+   structured data for observability."
   (:require [clojure.java.shell :refer [sh]]
             [clojure.string :as str]
             [taoensso.timbre :as log]))
@@ -7,13 +12,57 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-
 (def ^:dynamic *emacsclient-path*
   "Path to emacsclient binary."
   (or (System/getenv "EMACSCLIENT") "emacsclient"))
 
+(def ^:dynamic *emacs-socket-name*
+  "Emacs daemon socket name. When set, emacsclient calls include `-s <name>`.
+   Reads from EMACS_SOCKET_NAME env var. nil = default daemon (no -s flag)."
+  (System/getenv "EMACS_SOCKET_NAME"))
+
 (def ^:dynamic *default-timeout-ms*
   "Default timeout for emacsclient calls in milliseconds."
+  5000)
+
+(def ^:dynamic *max-timeout-ms*
+  "Hard ceiling for any emacsclient call. The client layer is the last line of
+   defense — no call may exceed this regardless of what callers request."
+  30000)
+
+;;; =============================================================================
+;;; Crash Telemetry — CLARITY-T + CLARITY-Y
+;;; =============================================================================
+
+(def ^:private daemon-dead-patterns
+  "Stderr patterns from emacsclient that indicate daemon death.
+   Each is [regex-pattern keyword-tag] for structured telemetry."
+  [[#"(?i)can't find socket"           :socket-not-found]
+   [#"(?i)No such file or directory"   :socket-missing]
+   [#"(?i)Connection refused"          :connection-refused]
+   [#"(?i)connection reset"            :connection-reset]
+   [#"(?i)server did not respond"      :server-unresponsive]
+   [#"(?i)socket.*not available"       :socket-unavailable]])
+
+(defonce ^{:private true
+           :doc "Circuit breaker state for emacsclient calls.
+   :alive?        — false when daemon is confirmed dead
+   :tripped-at    — System/currentTimeMillis when circuit opened
+   :crash-count   — total crash detections since JVM start
+   :last-error    — last daemon-death stderr string
+   :last-tag      — last daemon-death keyword tag
+   :recovery-at   — last time circuit was re-closed"}
+  circuit-breaker
+  (atom {:alive? true
+         :tripped-at nil
+         :crash-count 0
+         :last-error nil
+         :last-tag nil
+         :recovery-at nil}))
+
+(def ^:dynamic *circuit-breaker-cooldown-ms*
+  "Minimum time (ms) the circuit stays open before a recovery probe is allowed.
+   Prevents thundering-herd probes right after a crash."
   5000)
 
 (defn- unwrap-emacs-string
@@ -34,21 +83,25 @@
 (defn eval-elisp-with-timeout
   "Execute elisp code with a timeout. Returns immediately if the operation
    takes longer than timeout-ms milliseconds.
-   
+   Clamps timeout-ms to *max-timeout-ms* (30s) as a hard ceiling.
+
    Returns a map with :success, :result or :error keys.
    On timeout, returns {:success false :error \"Timeout...\" :timed-out true}"
   ([code] (eval-elisp-with-timeout code *default-timeout-ms*))
   ([code timeout-ms]
-   (log/debug "Executing elisp with timeout:" timeout-ms "ms -" code)
-   (let [start (System/currentTimeMillis)
-         f (future
-             (try
-               (let [{:keys [exit out err]} (sh *emacsclient-path* "--eval" code)]
-                 (if (zero? exit)
-                   {:success true :result (unwrap-emacs-string (str/trim out))}
-                   {:success false :error (str/trim err)}))
-               (catch Exception e
-                 {:success false :error (str "Failed to execute emacsclient: " (.getMessage e))})))]
+   (let [timeout-ms (min (or timeout-ms *default-timeout-ms*) *max-timeout-ms*)
+         _          (log/debug "Executing elisp with timeout:" timeout-ms "ms -" code)
+         start      (System/currentTimeMillis)
+         f          (future
+                      (try
+                        (let [{:keys [exit out err]} (apply sh (cond-> [*emacsclient-path*]
+                                                                 *emacs-socket-name* (conj "-s" *emacs-socket-name*)
+                                                                 true (conj "--eval" code)))]
+                          (if (zero? exit)
+                            {:success true :result (unwrap-emacs-string (str/trim out))}
+                            {:success false :error (str/trim err)}))
+                        (catch Exception e
+                          {:success false :error (str "Failed to execute emacsclient: " (.getMessage e))})))]
      (try
        (let [result (deref f timeout-ms ::timeout)
              duration (- (System/currentTimeMillis) start)]
@@ -76,48 +129,27 @@
 (defn eval-elisp
   "Execute elisp code in running Emacs and return the result.
    Returns a map with :success, :result or :error keys.
-   Includes timing information for observability."
+   Includes timing information for observability.
+   Enforces *default-timeout-ms* (clamped to *max-timeout-ms*) automatically."
   [code]
-  (log/debug "Executing elisp:" code)
-  (let [start (System/currentTimeMillis)]
-    (try
-      (let [{:keys [exit out err]} (sh *emacsclient-path* "--eval" code)
-            duration (- (System/currentTimeMillis) start)]
-        (if (zero? exit)
-          (do
-            (log/debug :emacsclient-success {:duration-ms duration
-                                             :result-length (count out)})
-            {:success true
-             :result (unwrap-emacs-string (str/trim out))
-             :duration-ms duration})
-          (do
-            (log/warn :emacsclient-failure {:duration-ms duration
-                                            :exit-code exit
-                                            :error err})
-            {:success false
-             :error (str/trim err)
-             :duration-ms duration})))
-      (catch Exception e
-        (let [duration (- (System/currentTimeMillis) start)]
-          (log/error :emacsclient-exception {:duration-ms duration
-                                             :exception (.getMessage e)}
-                     e)
-          {:success false
-           :error (str "Failed to execute emacsclient: " (.getMessage e))
-           :duration-ms duration})))))
+  (eval-elisp-with-timeout code *default-timeout-ms*))
 
 (defn eval-elisp!
-  "Execute elisp and return result string, or throw on error."
+  "Execute elisp and return result string, or throw on non-timeout error.
+   On timeout, returns {:error :timeout :msg \"...\"}  instead of throwing,
+   so callers can degrade gracefully (CLARITY-Y)."
   [code]
-  (let [{:keys [success result error]} (eval-elisp code)]
-    (if success
-      result
-      (throw (ex-info "Elisp evaluation failed" {:error error :code code})))))
+  (let [{:keys [success result error timed-out]} (eval-elisp code)]
+    (cond
+      success           result
+      timed-out         {:error :timeout :msg error}
+      :else             (throw (ex-info "Elisp evaluation failed"
+                                        {:error error :code code})))))
 
 (defn emacs-running?
-  "Check if Emacs server is running."
+  "Check if Emacs server is running. Returns false on timeout."
   []
-  (:success (eval-elisp "t")))
+  (:success (eval-elisp-with-timeout "t" 2000)))
 
 ;; Convenience functions for common operations
 

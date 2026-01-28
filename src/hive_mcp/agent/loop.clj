@@ -14,6 +14,7 @@
             [hive-mcp.agent.routing :as routing]
             [hive-mcp.channel :as channel]
             [clojure.data.json :as json]
+            [clojure.string]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -125,7 +126,7 @@
                                             :intent-count (count intents)})
                       ;; Execute each tool intent via executor
                       tool-results (mapv
-                                    (fn [{:keys [tool params] :as intent}]
+                                    (fn [{:keys [tool params] :as _intent}]
                                       (let [call-id (str "proxy-" (java.util.UUID/randomUUID))
                                             result (executor/execute-tool tool params)]
                                         {:id call-id

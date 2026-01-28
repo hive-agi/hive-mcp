@@ -439,7 +439,8 @@
   [file-path]
   (when-let [claim (get-claim-info file-path)]
     (when-let [created-at (:created-at claim)]
-      (- (conn/now) created-at))))
+      (- (.getTime ^java.util.Date (conn/now))
+         (.getTime ^java.util.Date created-at)))))
 
 (defn claim-stale?
   "Check if a claim is stale (older than threshold).
@@ -467,14 +468,14 @@
   ([]
    (get-stale-claims default-stale-threshold-ms))
   ([threshold-ms]
-   (let [now (conn/now)
+   (let [now-ms (.getTime ^java.util.Date (conn/now))
          all-claims (get-all-claims)]
      (->> all-claims
           (filter (fn [{:keys [created-at]}]
                     (when created-at
-                      (> (- now created-at) threshold-ms))))
+                      (> (- now-ms (.getTime ^java.util.Date created-at)) threshold-ms))))
           (map (fn [{:keys [created-at] :as claim}]
-                 (let [age-ms (- now created-at)]
+                 (let [age-ms (- now-ms (.getTime ^java.util.Date created-at))]
                    (assoc claim
                           :age-ms age-ms
                           :age-minutes (Math/round (/ age-ms 60000.0))))))))))

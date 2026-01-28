@@ -16,6 +16,7 @@
             [hive-mcp.agora.debate :as debate]
             [hive-mcp.agora.consensus :as consensus]
             [hive-mcp.agora.schema :as schema]
+            [hive-mcp.agora.stages :as stages]
             [clojure.data.json :as json]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -373,6 +374,70 @@
       (mcp-error (str "List error: " (.getMessage e))))))
 
 ;; ============================================================
+;; Staged Debate Handlers (Two-Stage Agora)
+;; ============================================================
+
+(defn handle-agora-create-staged-debate
+  "Create a two-stage debate with research + debate phases.
+
+   Stage 1: Research drones gather evidence
+   Stage 2: Debate drones argue with evidence
+
+   Arguments:
+   - topic: What the debate is about
+   - research_roles: Array of {role, focus_area} for research drones
+   - debate_roles: Array of {role, position} for debate drones
+   - methodology: opinion | fact-based | mixed
+
+   Returns: {:dialogue-id :stage :research-participants :debate-participants}"
+  [{:keys [topic research_roles debate_roles methodology]}]
+  (try
+    (when-not topic
+      (throw (ex-info "Missing required parameter: topic" {:type :validation})))
+    (when (or (nil? research_roles) (empty? research_roles))
+      (throw (ex-info "Requires at least 1 research role" {:type :validation})))
+    (when (or (nil? debate_roles) (< (count debate_roles) 2))
+      (throw (ex-info "Requires at least 2 debate roles" {:type :validation})))
+    (let [research-maps (mapv (fn [r]
+                                {:role (or (:role r) (get r "role"))
+                                 :position (or (:focus_area r) (get r "focus_area")
+                                               (:role r) (get r "role"))})
+                              research_roles)
+          debate-maps (mapv (fn [r]
+                              {:role (or (:role r) (get r "role"))
+                               :position (or (:position r) (get r "position"))})
+                            debate_roles)
+          result (stages/create-staged-debate!
+                  topic research-maps debate-maps
+                  {:methodology (when methodology (keyword methodology))})]
+      (log/info "Created staged debate:" (:dialogue-id result)
+                "research:" (count research-maps) "debate:" (count debate-maps))
+      (mcp-success result))
+    (catch clojure.lang.ExceptionInfo e
+      (log/warn "Create staged debate failed:" (ex-message e))
+      (mcp-error (str "Create staged debate failed: " (ex-message e))))
+    (catch Exception e
+      (log/error e "Create staged debate error")
+      (mcp-error (str "Create staged debate error: " (.getMessage e))))))
+
+(defn handle-agora-stage-status
+  "Get stage status for a staged debate.
+
+   Returns: {:dialogue-id :current-stage :evidence-count :all-research-done?}"
+  [{:keys [dialogue_id]}]
+  (try
+    (when-not dialogue_id
+      (throw (ex-info "Missing required parameter: dialogue_id" {:type :validation})))
+    (if-let [status (stages/get-stage-status dialogue_id)]
+      (mcp-success status)
+      (mcp-error (str "Staged debate not found: " dialogue_id)))
+    (catch clojure.lang.ExceptionInfo e
+      (mcp-error (str "Stage status failed: " (ex-message e))))
+    (catch Exception e
+      (log/error e "Stage status error")
+      (mcp-error (str "Stage status error: " (.getMessage e))))))
+
+;; ============================================================
 ;; Tool Definitions
 ;; ============================================================
 
@@ -497,4 +562,43 @@
     :description "List all active drone debates with their status and participant info."
     :inputSchema {:type "object"
                   :properties {}}
-    :handler handle-agora-list-debates}])
+    :handler handle-agora-list-debates}
+
+   ;; ============================================================
+   ;; Two-Stage Agora Tools
+   ;; ============================================================
+
+   {:name "agora_create_staged_debate"
+    :description "Create a two-stage debate. Stage 1: research drones gather evidence. Stage 2: debate drones argue with evidence from Stage 1. Fully automated per [Arch>Bh]p principle."
+    :inputSchema {:type "object"
+                  :properties {:topic {:type "string"
+                                       :description "What the debate is about"}
+                               :research_roles {:type "array"
+                                                :items {:type "object"
+                                                        :properties {:role {:type "string"
+                                                                            :description "Research role name (e.g., 'codebase-analyst')"}
+                                                                     :focus_area {:type "string"
+                                                                                  :description "What to investigate (e.g., 'Current dispatch patterns')"}}
+                                                        :required ["role"]}
+                                                :description "Array of research roles for Stage 1 (minimum 1)"}
+                               :debate_roles {:type "array"
+                                              :items {:type "object"
+                                                      :properties {:role {:type "string"
+                                                                          :description "Debate role name (e.g., 'advocate')"}
+                                                                   :position {:type "string"
+                                                                              :description "Position to argue (e.g., 'For Strategy pattern')"}}
+                                                      :required ["role" "position"]}
+                                              :description "Array of debate roles for Stage 2 (minimum 2)"}
+                               :methodology {:type "string"
+                                             :enum ["opinion" "fact-based" "mixed"]
+                                             :description "Debate methodology (default: fact-based for staged)"}}
+                  :required ["topic" "research_roles" "debate_roles"]}
+    :handler handle-agora-create-staged-debate}
+
+   {:name "agora_stage_status"
+    :description "Get status of a staged debate including current stage, evidence count, and research completion."
+    :inputSchema {:type "object"
+                  :properties {:dialogue_id {:type "string"
+                                             :description "ID of the staged debate to check"}}
+                  :required ["dialogue_id"]}
+    :handler handle-agora-stage-status}])

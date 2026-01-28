@@ -82,7 +82,14 @@
         elisp (format "(hive-mcp-memory-add 'note %s '%s nil 'ephemeral)"
                       (pr-str (:content progress-note))
                       tags-elisp)
-        {:keys [success result error]} (ec/eval-elisp elisp)]
+        {:keys [success result error timed-out]}
+        (try
+          (ec/eval-elisp-with-timeout elisp 10000)
+          (catch Exception e
+            (log/warn "on-kanban-done: elisp eval failed gracefully:" (.getMessage e))
+            {:success false :error (.getMessage e)}))]
+    (when timed-out
+      (log/warn "on-kanban-done: elisp eval timed out for task:" id))
     (if success
       (do
         (log/info "Created progress note for completed task:" id)
@@ -182,7 +189,9 @@
                    (format "(json-encode (hive-mcp-memory-query 'note nil %s 50 'ephemeral nil))"
                            (pr-str project-id))
                    "(json-encode (hive-mcp-memory-query 'note nil nil 50 'ephemeral nil))")
-           {:keys [success result error]} (ec/eval-elisp elisp)]
+           {:keys [success result error timed-out]} (ec/eval-elisp-with-timeout elisp 12000)]
+       (when timed-out
+         (log/warn "harvest-session-progress: elisp eval timed out"))
        (if success
          (let [raw-notes (try (json/read-str result :key-fn keyword)
                               (catch Exception _ []))
@@ -254,7 +263,9 @@
                                  (pr-str project-id))
                          "(hive-mcp-memory-query 'note '(\"kanban\") nil 50 'short-term nil)")
            elisp (format "(json-encode (append %s %s))" elisp-ephemeral elisp-short)
-           {:keys [success result]} (ec/eval-elisp elisp)
+           {:keys [success result timed-out]} (ec/eval-elisp-with-timeout elisp 15000)
+           _ (when timed-out
+               (log/warn "harvest-completed-tasks: elisp eval timed out"))
            emacs-tasks (if success
                          (try
                            (->> (json/read-str result :key-fn keyword)
@@ -303,7 +314,9 @@
                    (format "(let ((default-directory %s)) (shell-command-to-string \"git log --since='midnight' --oneline 2>/dev/null\"))"
                            (pr-str dir))
                    "(shell-command-to-string \"git log --since='midnight' --oneline 2>/dev/null\")")
-           {:keys [success result error]} (ec/eval-elisp elisp)]
+           {:keys [success result error timed-out]} (ec/eval-elisp-with-timeout elisp 10000)]
+       (when timed-out
+         (log/warn "harvest-git-commits: elisp eval timed out"))
        (if success
          (let [commits (when (and result (not (str/blank? result)))
                          (str/split-lines (str/trim result)))]

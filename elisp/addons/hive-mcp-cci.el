@@ -147,8 +147,9 @@
   "Sync task completion status from hivemind coordinator.
 Updates local task records based on hivemind agent messages."
   (interactive)
-  (let ((hivemind-status (hive-mcp-cci--get-hivemind-status))
-        (updated 0))
+  (condition-case err
+      (let ((hivemind-status (hive-mcp-cci--get-hivemind-status))
+            (updated 0))
     (when hivemind-status
       ;; Check each task for completion in hivemind
       (maphash
@@ -183,7 +184,11 @@ Updates local task records based on hivemind agent messages."
        hive-mcp-cci--tasks))
     (when (and (called-interactively-p 'any) (> updated 0))
       (message "[cci] Synced %d task completions from hivemind" updated))
-    updated))
+    updated)
+    (error
+     (message "[cci] Hivemind sync error: %s"
+              (error-message-string err))
+     0)))
 
 (defun hive-mcp-cci--handle-hivemind-completion (task-id status result files)
   "Handle completion of TASK-ID with STATUS, RESULT, and FILES from hivemind."
@@ -294,13 +299,17 @@ Returns ling-id immediately.  Session starts async."
              (run-with-timer
               2 nil
               (lambda ()
-                (when-let* ((ling (gethash ling-id hive-mcp-cci--lings)))
-                  ;; Send system prompt if we have one
-                  (when system-prompt
-                    (claude-code-ide-send-prompt system-prompt))
-                  ;; Update status
-                  (plist-put ling :status 'idle)
-                  (message "[cci] Ling %s ready (hivemind: %s)" ling-id agent-id)))))
+                (condition-case err
+                    (when-let* ((ling (gethash ling-id hive-mcp-cci--lings)))
+                      ;; Send system prompt if we have one
+                      (when system-prompt
+                        (claude-code-ide-send-prompt system-prompt))
+                      ;; Update status
+                      (plist-put ling :status 'idle)
+                      (message "[cci] Ling %s ready (hivemind: %s)" ling-id agent-id))
+                  (error
+                   (message "[cci] Timer error initializing ling %s: %s"
+                            ling-id (error-message-string err)))))))
          (error
           (when-let* ((ling (gethash ling-id hive-mcp-cci--lings)))
             (plist-put ling :status 'error)

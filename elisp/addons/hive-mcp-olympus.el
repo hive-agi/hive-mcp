@@ -383,9 +383,13 @@ _EVENT is the event payload (unused, just triggers refresh)."
   ;; Small delay to let swarm registry update
   (run-at-time 0.5 nil
                (lambda ()
-                 (when (and hive-mcp-olympus-mode
-                            (not hive-mcp-olympus--focused-ling))
-                   (hive-olympus)))))
+                 (condition-case err
+                     (when (and hive-mcp-olympus-mode
+                                (not hive-mcp-olympus--focused-ling))
+                       (hive-olympus))
+                   (error
+                    (message "[olympus] Timer error in slave-change handler: %s"
+                             (error-message-string err)))))))
 
 ;;; =============================================================================
 ;;; Global Notification Handlers (P0: Real-time alerts)
@@ -533,8 +537,9 @@ Returns list of ling plists with :slave-id :name :status :duration."
 (defun hive-mcp-olympus--monitor-tick ()
   "Check all lings for stuck state and fire notifications.
 Called periodically by the monitor timer."
-  (when hive-mcp-olympus-notify-enabled
-    (let ((lings (hive-mcp-olympus--get-ling-status-for-monitor)))
+  (condition-case err
+      (when hive-mcp-olympus-notify-enabled
+        (let ((lings (hive-mcp-olympus--get-ling-status-for-monitor)))
       (dolist (ling lings)
         (let ((slave-id (plist-get ling :slave-id))
               (status (plist-get ling :status))
@@ -550,7 +555,10 @@ Called periodically by the monitor timer."
               ('error
                (when (fboundp 'hive-mcp-swarm-notify-error)
                  (hive-mcp-swarm-notify-error slave-id "error" "Ling in error state")
-                 (hive-mcp-olympus--mark-notified slave-id))))))))))
+                 (hive-mcp-olympus--mark-notified slave-id)))))))))
+    (error
+     (message "[olympus] Monitor tick error: %s"
+              (error-message-string err)))))
 
 ;;;###autoload
 (defun hive-mcp-olympus-start-monitor ()
@@ -669,11 +677,15 @@ Returns list of (ID [ID NAME STATUS DURATION TASK]) entries."
 (defun hive-mcp-olympus-dashboard-refresh ()
   "Refresh the Olympus dashboard buffer."
   (interactive)
-  (when-let* ((buf (get-buffer hive-mcp-olympus-dashboard-buffer-name)))
-    (with-current-buffer buf
-      (let ((inhibit-read-only t))
-        (setq tabulated-list-entries (hive-mcp-olympus--get-dashboard-entries))
-        (tabulated-list-print t)))))
+  (condition-case err
+      (when-let* ((buf (get-buffer hive-mcp-olympus-dashboard-buffer-name)))
+        (with-current-buffer buf
+          (let ((inhibit-read-only t))
+            (setq tabulated-list-entries (hive-mcp-olympus--get-dashboard-entries))
+            (tabulated-list-print t))))
+    (error
+     (message "[olympus] Dashboard refresh error: %s"
+              (error-message-string err)))))
 
 (defun hive-mcp-olympus-dashboard-focus-ling ()
   "Focus the ling at point in the dashboard."

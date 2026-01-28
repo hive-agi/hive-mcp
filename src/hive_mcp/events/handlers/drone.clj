@@ -81,7 +81,7 @@
    CLARITY-T: Diff failures are now included in log for visibility.
    CLARITY-Y: Records pattern for smart routing decisions."
   [_coeffects [_ {:keys [drone-id task-id parent-id files-modified files-failed
-                         duration-ms model task-type] :as event-data}]]
+                         duration-ms model task-type] :as _event-data}]]
   (let [;; Format failure details for log message (CLARITY-T: escalate diff failures)
         failure-details (when (seq files-failed)
                           (->> files-failed
@@ -145,7 +145,7 @@
 
    CLARITY-Y: Records failure pattern for smart routing decisions."
   [_coeffects [_ {:keys [drone-id task-id parent-id error error-type files
-                         duration-ms model task-type] :as event-data}]]
+                         duration-ms model task-type] :as _event-data}]]
 
   ;; CLARITY-Y: Record failure pattern for feedback loop
   (when (and model task-type)

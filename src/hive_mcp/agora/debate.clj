@@ -18,7 +18,7 @@
    SOLID-S: SRP - Debate orchestration only
    CLARITY-L: Layer separation from dialogue.clj"
   (:require [hive-mcp.agora.schema :as schema]
-            [hive-mcp.agora.dialogue :as dialogue]
+            [hive-mcp.agora.signal :as signal]
             [hive-mcp.agora.consensus :as consensus]
             [hive-mcp.channel.websocket :as ws]
             [hive-mcp.events.core :as ev]
@@ -163,7 +163,9 @@
           :methodology (or methodology :opinion)
           :topic topic
           :current-turn 0
-          :turn-order (mapv participant-id participants)}))
+          :turn-order (mapv participant-id participants)
+          :participant-types (into {} (map (fn [p] [(participant-id p) (participant-type p)])
+                                           participants))}))
 
 (defn- get-debate
   "Get debate state by dialogue-id."
@@ -212,10 +214,12 @@
 ;; =============================================================================
 
 (defn parse-drone-response
-  "Parse structured JSON response from drone.
+  "Parse structured JSON response from drone via signal.clj.
 
-   Expects: {\"signal\": \"...\", \"message\": \"...\", \"confidence\": N}
-   Returns: {:signal :keyword :message string :confidence float}
+   Expects: {\"signal\": \"...\", \"message\": \"...\", \"confidence\": N,
+             \"target\": \"...\" (optional), \"evidence\": [...] (optional)}
+   Returns: {:signal :keyword :message string :confidence float
+             :target string :evidence vector}
 
    Returns {:error ...} if parsing fails."
   [response]
@@ -228,13 +232,21 @@
                          str/trim)
                      (str/trim response))
           parsed (json/read-str json-str :key-fn keyword)
-          signal (keyword (:signal parsed))]
-      (if (contains? dialogue/signals signal)
-        {:signal signal
-         :message (:message parsed)
-         :confidence (or (:confidence parsed) 1.0)}
-        {:error (str "Invalid signal: " (:signal parsed))
-         :raw response}))
+          ;; Use signal.clj for structured parsing
+          signal-map (signal/signal-from-map
+                      {:type (keyword (:signal parsed))
+                       :message (:message parsed)
+                       :confidence (:confidence parsed)
+                       :target (:target parsed)
+                       :evidence (:evidence parsed)})]
+      (if (:error signal-map)
+        {:error (:error signal-map)
+         :raw response}
+        {:signal (:type signal-map)
+         :message (:message signal-map)
+         :confidence (:strength signal-map)
+         :target (:target signal-map)
+         :evidence (:evidence signal-map)}))
     (catch Exception e
       (log/warn "Failed to parse drone response:" (.getMessage e))
       {:error (str "JSON parse error: " (.getMessage e))
@@ -321,7 +333,7 @@
             {:success false :error (:error parsed) :raw (:raw parsed)})
 
           ;; Success - record turn and check consensus
-          (let [{:keys [signal message confidence]} parsed
+          (let [{:keys [signal message confidence target evidence]} parsed
                 ;; Determine receiver (next participant or "all")
                 next-participant (get-next-participant dialogue-id)
                 receiver (if next-participant
@@ -335,13 +347,15 @@
             (advance-turn! dialogue-id)
 
             ;; Emit turn event to WebSocket (for Emacs UI)
-            (ws/emit! :agora/turn-response
+            (ws/emit! :agora/turn-completed
                       {:dialogue-id dialogue-id
                        :participant-id participant-pid
                        :participant-type (participant-type participant)
                        :signal signal
                        :message message
                        :confidence confidence
+                       :target target
+                       :evidence evidence
                        :turn-num turn-num})
 
             ;; Check consensus
@@ -365,13 +379,13 @@
                   (catch Exception e
                     (log/warn "Event dispatch failed for consensus:" (.getMessage e)))))
 
-              ;; Dispatch turn-response through event system for auto-continuation
+              ;; Dispatch turn-completed through event system for auto-continuation
               ;; Only dispatch if NOT consensus (consensus handler takes over)
               (when-not reached?
                 (try
-                  (ev/dispatch [:agora/turn-response turn-data])
+                  (ev/dispatch [:agora/turn-completed turn-data])
                   (catch Exception e
-                    (log/warn "Event dispatch failed for turn-response:" (.getMessage e)))))
+                    (log/warn "Event dispatch failed for turn-completed:" (.getMessage e)))))
 
               {:success true
                :signal signal
@@ -433,14 +447,22 @@
                           :topic topic})
     (log/info "Created debate:" id "with" (count participants) "participants"
               "types:" (mapv participant-type participants))
-    (ws/emit! :agora/debate-created {:dialogue-id id
-                                     :topic topic
-                                     :participants (mapv (fn [p]
-                                                           {:id (participant-id p)
-                                                            :type (participant-type p)
-                                                            :role (get-role p)})
-                                                         participants)
-                                     :methodology (or methodology :opinion)})
+    (let [participant-info (mapv (fn [p]
+                                   {:id (participant-id p)
+                                    :type (participant-type p)
+                                    :role (get-role p)})
+                                 participants)]
+      (ws/emit! :agora/debate-created {:dialogue-id id
+                                       :topic topic
+                                       :participants participant-info
+                                       :methodology (or methodology :opinion)})
+      ;; Emit debate-started event for auto-kick of first turn
+      (try
+        (ev/dispatch [:agora/debate-started {:dialogue-id id
+                                             :topic topic
+                                             :participants participant-info}])
+        (catch Exception e
+          (log/warn "Event dispatch failed for debate-started:" (.getMessage e)))))
     {:dialogue-id id
      :participants (mapv (fn [p]
                            {:id (participant-id p)

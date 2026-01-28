@@ -196,6 +196,20 @@
     (filter #(= (:duration %) duration) entries)
     entries))
 
+(defn- record-batch-co-access!
+  "Record co-access pattern for batch query results.
+   Non-blocking and fail-safe (CLARITY-Y).
+   Only records when 2+ entries are returned."
+  [result-ids scope]
+  (when (>= (count result-ids) 2)
+    (future
+      (try
+        (kg-edges/record-co-access!
+         result-ids
+         {:scope scope :created-by "system:batch-recall"})
+        (catch Exception e
+          (log/debug "Co-access recording failed (non-fatal):" (.getMessage e)))))))
+
 (defn handle-query
   "Query project memory by type with scope filtering (Chroma-only).
    SCOPE controls which memories are returned:
@@ -205,7 +219,10 @@
      - specific scope tag: filter by that scope
 
    When directory is provided, uses that path to determine project scope
-   instead of relying on Emacs's current buffer (fixes /wrap scoping issue)."
+   instead of relying on Emacs's current buffer (fixes /wrap scoping issue).
+
+   Co-access tracking: When multiple entries are returned, records co-access
+   edges between them in the Knowledge Graph (async, non-blocking)."
   [{:keys [type tags limit duration scope directory]}]
   (let [directory (or directory (ctx/current-directory))]
     (log/info "mcp-memory-query:" type "scope:" scope "directory:" directory)
@@ -228,6 +245,8 @@
                 dur-filtered (apply-duration-filter tag-filtered duration)
                 ;; Apply limit
                 results (take limit-val dur-filtered)]
+            ;; Record co-access pattern asynchronously (CLARITY-Y: non-blocking)
+            (record-batch-co-access! (mapv :id results) project-id)
             (mcp-json (mapv fmt/entry->json-alist results)))))
       (catch clojure.lang.ExceptionInfo e
         (if (= :coercion-error (:type (ex-data e)))
@@ -265,14 +284,16 @@
 (defn- edge->json-map
   "Convert KG edge to JSON-safe map format."
   [edge]
-  {:id (:kg-edge/id edge)
-   :from (:kg-edge/from edge)
-   :to (:kg-edge/to edge)
-   :relation (name (:kg-edge/relation edge))
-   :confidence (:kg-edge/confidence edge)
-   :scope (:kg-edge/scope edge)
-   :created_by (:kg-edge/created-by edge)
-   :created_at (str (:kg-edge/created-at edge))})
+  (cond-> {:id (:kg-edge/id edge)
+           :from (:kg-edge/from edge)
+           :to (:kg-edge/to edge)
+           :relation (name (:kg-edge/relation edge))
+           :confidence (:kg-edge/confidence edge)
+           :scope (:kg-edge/scope edge)
+           :created_by (:kg-edge/created-by edge)
+           :created_at (str (:kg-edge/created-at edge))}
+    (:kg-edge/last-verified edge) (assoc :last_verified (str (:kg-edge/last-verified edge)))
+    (:kg-edge/source-type edge) (assoc :source_type (name (:kg-edge/source-type edge)))))
 
 (defn- get-kg-edges-for-entry
   "Get KG edges for a memory entry.

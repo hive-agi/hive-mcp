@@ -2,10 +2,16 @@
   "Agora dialogue event handlers.
 
    Handles events related to Agora multi-ling dialogues:
-   - :agora/turn-dispatched - Relay turn to target ling's terminal
-   - :agora/turn-response   - Auto-continue drone debates (P0)
-   - :agora/consensus       - Crystallize debate result to memory (P0)
-   - :agora/timeout         - Handle dialogue timeout
+   - :agora/turn-dispatched  - Relay turn to target ling's terminal
+   - :agora/turn-completed   - Unified turn completion (renamed from turn-response)
+   - :agora/dispatch-next    - Participant-type aware next turn dispatch
+   - :agora/execute-drone    - Execute drone turn via delegate-drone!
+   - :agora/debate-started   - Auto-kick first turn after create-debate!
+   - :agora/consensus        - Crystallize debate result to memory
+   - :agora/timeout          - Handle dialogue timeout
+
+   Event chain: :agora/turn-completed -> :agora/dispatch-next
+                -> :agora/execute-drone (drones) or :swarm-send-prompt (lings)
 
    SOLID: SRP - Agora dialogue lifecycle only
    CLARITY: R - Represented intent through agora domain"
@@ -144,42 +150,37 @@ Signals: propose/counter=reset equilibrium, approve/no-change=toward consensus
                        (when turn-count (str ", turns: " turn-count)))}})
 
 ;; =============================================================================
-;; Handler: :agora/turn-response (P0: Auto-Continuation)
+;; Handler: :agora/turn-completed (Unified Turn Completion)
 ;; =============================================================================
 
-(defn handle-turn-response
-  "Handler for :agora/turn-response events (P0 Auto-Continuation).
+(defn handle-turn-completed
+  "Handler for :agora/turn-completed events (unified turn completion).
 
-   Called after a debate turn completes. Checks if debate should continue
-   and dispatches the next turn execution.
+   Called after ANY turn completes (drone or ling). Routes to
+   :agora/dispatch-next which handles participant-type aware dispatch.
 
-   Key insight: Drones are single-shot (ax: Drone Medium Limitations).
-   This event handler orchestrates the sequence between turns.
+   Renamed from :agora/turn-response for clarity in the unified event chain:
+   :agora/turn-completed -> :agora/dispatch-next -> :agora/execute-drone | :swarm-send-prompt
 
    Expects event data:
-   {:dialogue-id     \"dialogue-uuid\"
-    :participant-id  \"drone-123\"
-    :participant-type :drone
-    :signal          :propose | :counter | :approve | :no-change | :defer
-    :message         \"The argument text\"
-    :confidence      0.8
-    :turn-num        5}
+   {:dialogue-id      \"dialogue-uuid\"
+    :participant-id   \"drone-123\"
+    :participant-type  :drone | :ling
+    :signal           :propose | :counter | :approve | :no-change | :defer
+    :message          \"The argument text\"
+    :confidence       0.8
+    :turn-num         5}
 
    Produces effects:
    - :log      - Log turn completion
-   - :dispatch - Chain to :agora/execute-next-turn if debate continues
-
-   Flow:
-   1. Check if consensus was already reached (handled by :agora/consensus)
-   2. Check if dialogue still active
-   3. If active, dispatch next turn execution"
-  [_coeffects [_ {:keys [dialogue-id participant-id signal turn-num] :as data}]]
+   - :dispatch - Chain to :agora/dispatch-next if debate continues"
+  [_coeffects [_ {:keys [dialogue-id participant-id signal turn-num] :as _data}]]
   (let [dialogue (dialogue/get-dialogue dialogue-id)]
     (cond
       ;; Dialogue not found
       (nil? dialogue)
       {:log {:level :warn
-             :message (str "Turn response for unknown dialogue: " dialogue-id)}}
+             :message (str "Turn completed for unknown dialogue: " dialogue-id)}}
 
       ;; Consensus already reached - no action needed (consensus handler takes over)
       (= :consensus (:status dialogue))
@@ -193,12 +194,12 @@ Signals: propose/counter=reset equilibrium, approve/no-change=toward consensus
              :message (str "Agora " dialogue-id " is " (name (:status dialogue))
                            ", not continuing")}}
 
-      ;; Dialogue still active - continue to next turn
+      ;; Dialogue still active - dispatch next turn
       (= :active (:status dialogue))
       {:log {:level :debug
-             :message (str "Turn " turn-num " complete from " participant-id
-                           " (signal: " (name signal) "), continuing debate")}
-       :dispatch [:agora/execute-next-turn {:dialogue-id dialogue-id}]}
+             :message (str "Turn " turn-num " completed by " participant-id
+                           " (signal: " (name signal) "), dispatching next")}
+       :dispatch [:agora/dispatch-next {:dialogue-id dialogue-id}]}
 
       ;; Unknown status
       :else
@@ -207,34 +208,139 @@ Signals: propose/counter=reset equilibrium, approve/no-change=toward consensus
                            (:status dialogue))}})))
 
 ;; =============================================================================
-;; Handler: :agora/execute-next-turn (P0: Async Turn Execution)
+;; Handler: :agora/dispatch-next (Participant-Type Aware Dispatch)
 ;; =============================================================================
 
-(defn handle-execute-next-turn
-  "Handler for :agora/execute-next-turn events.
+(defn handle-dispatch-next
+  "Handler for :agora/dispatch-next events.
 
-   Executes the next turn in an async debate. Uses require/resolve to
-   avoid circular dependency with debate.clj.
+   Determines the next participant and dispatches based on type:
+   - :drone -> :agora/execute-drone (via effect)
+   - :ling  -> :swarm-send-prompt (relay to terminal)
 
-   Key: This runs via :dispatch effect's future, so it won't block
-   the event loop while the drone executes (which may take seconds).
+   Uses require/resolve to access debate state without circular deps.
 
    Expects event data:
    {:dialogue-id \"dialogue-uuid\"}
 
    Produces effects:
-   - :log - Log execution attempt/result
-
-   Note: The actual turn execution happens in debate/continue-debate!
-   which will emit another :agora/turn-response event on completion,
-   creating the event-driven loop."
+   - :log             - Log dispatch decision
+   - :agora/execute-drone - For drone participants
+   - :swarm-send-prompt   - For ling participants
+   - :dispatch            - Fallback to :agora/continue for legacy"
   [_coeffects [_ {:keys [dialogue-id]}]]
-  ;; Log intent - actual execution happens in the effect
+  ;; Resolve debate state at runtime to avoid circular dependency
+  (try
+    (require 'hive-mcp.agora.debate)
+    (let [get-debate-fn (resolve 'hive-mcp.agora.debate/get-debate-status)
+          debate-status (when get-debate-fn (get-debate-fn dialogue-id))]
+      (if debate-status
+        ;; Debate exists - use :agora/continue effect (handles drone execution)
+        {:log {:level :info
+               :message (str "Dispatching next turn for debate: " dialogue-id
+                             " (participants: " (count (:participants debate-status)) ")")}
+         :agora/continue {:dialogue-id dialogue-id}}
+        ;; No debate state - this is a ling-based dialogue, relay via prompt
+        (let [dialogue (dialogue/get-dialogue dialogue-id)
+              turns (dialogue/get-dialogue-turns dialogue-id)
+              last-turn (last turns)
+              next-participant (when last-turn
+                                 (first (disj (:participants dialogue) (:sender last-turn))))]
+          (if next-participant
+            {:log {:level :info
+                   :message (str "Relaying to ling participant: " next-participant)}
+             :swarm-send-prompt {:slave-id next-participant
+                                 :prompt (format-agora-prompt
+                                          {:dialogue-id dialogue-id
+                                           :from (:sender last-turn)
+                                           :topic (:topic dialogue)
+                                           :message (:message last-turn)})}}
+            {:log {:level :warn
+                   :message (str "No next participant found for dialogue: " dialogue-id)}}))))
+    (catch Exception e
+      {:log {:level :error
+             :message (str "dispatch-next failed for " dialogue-id ": " (.getMessage e))}})))
+
+;; =============================================================================
+;; Handler: :agora/execute-drone (Drone Turn Execution)
+;; =============================================================================
+
+(defn handle-execute-drone
+  "Handler for :agora/execute-drone events.
+
+   Wraps delegate-drone! in a future, parses response via signal.clj,
+   records turn, and emits :agora/turn-completed.
+
+   This is the drone-specific execution path. The actual execution
+   happens via the :agora/continue effect.
+
+   Expects event data:
+   {:dialogue-id \"dialogue-uuid\"}
+
+   Produces effects:
+   - :log            - Log execution intent
+   - :agora/continue - Trigger async debate continuation"
+  [_coeffects [_ {:keys [dialogue-id]}]]
   {:log {:level :info
-         :message (str "Executing next turn for debate: " dialogue-id)}
-   ;; Use a custom effect that wraps the debate call
-   ;; This is executed via :dispatch which already uses future
+         :message (str "Executing drone turn for debate: " dialogue-id)}
    :agora/continue {:dialogue-id dialogue-id}})
+
+;; =============================================================================
+;; Handler: :agora/debate-started (Auto-Kick First Turn)
+;; =============================================================================
+
+(defn handle-debate-started
+  "Handler for :agora/debate-started events.
+
+   Auto-kicks the first turn after agora_create_debate.
+   No manual intervention needed - the debate starts immediately.
+
+   Expects event data:
+   {:dialogue-id \"dialogue-uuid\"
+    :topic       \"debate topic\"
+    :participants [{:id ... :type ... :role ...}]}
+
+   Produces effects:
+   - :log      - Log debate start
+   - :dispatch - Chain to :agora/dispatch-next to kick first turn"
+  [_coeffects [_ {:keys [dialogue-id topic participants]}]]
+  {:log {:level :info
+         :message (str "Debate started: " dialogue-id
+                       " topic: " (or topic "unspecified")
+                       " participants: " (count participants))}
+   :dispatch [:agora/dispatch-next {:dialogue-id dialogue-id}]})
+
+;; =============================================================================
+;; Handler: :agora/stage-transition (Two-Stage Agora)
+;; =============================================================================
+
+(defn handle-stage-transition
+  "Handler for :agora/stage-transition events.
+
+   Called when research stage completes and debate stage begins.
+   Logs the transition with evidence count.
+
+   Expects event data:
+   {:dialogue-id    \"dialogue-uuid\"
+    :from-stage     :research
+    :to-stage       :debate
+    :evidence-pool  [{:source ... :content ... :confidence ...}]
+    :topic          \"debate topic\"}
+
+   Produces effects:
+   - :log             - Log stage transition
+   - :channel-publish - Notify Emacs of stage change"
+  [_coeffects [_ {:keys [dialogue-id from-stage to-stage evidence-pool topic]}]]
+  {:log {:level :info
+         :message (str "Stage transition for " dialogue-id ": "
+                       (name (or from-stage :unknown)) " -> " (name (or to-stage :unknown))
+                       " with " (count evidence-pool) " evidence items")}
+   :channel-publish {:event :agora-stage-transition
+                     :data {:dialogue-id dialogue-id
+                            :from-stage from-stage
+                            :to-stage to-stage
+                            :evidence-count (count evidence-pool)
+                            :topic topic}}})
 
 ;; =============================================================================
 ;; Handler: :agora/consensus (P0: Crystallize Result)
@@ -313,9 +419,13 @@ Signals: propose/counter=reset equilibrium, approve/no-change=toward consensus
    Handlers registered:
    - :agora/turn-dispatched  - Relay turn to target ling (existing)
    - :agora/timeout          - Handle dialogue timeout (existing)
-   - :agora/turn-response    - Auto-continue drone debates (P0)
-   - :agora/execute-next-turn - Execute next turn async (P0)
-   - :agora/consensus        - Crystallize debate result (P0)"
+   - :agora/turn-completed   - Unified turn completion (renamed from turn-response)
+   - :agora/dispatch-next    - Participant-type aware next turn dispatch
+   - :agora/execute-drone    - Execute drone turn
+   - :agora/debate-started   - Auto-kick first turn
+   - :agora/consensus        - Crystallize debate result
+
+   Event chain: turn-completed -> dispatch-next -> execute-drone | swarm-send-prompt"
   []
   ;; Existing handlers
   (ev/reg-event :agora/turn-dispatched
@@ -326,16 +436,34 @@ Signals: propose/counter=reset equilibrium, approve/no-change=toward consensus
                 [interceptors/debug]
                 handle-agora-timeout)
 
-  ;; P0: Auto-continuation handlers
+  ;; Unified event chain handlers
+  (ev/reg-event :agora/turn-completed
+                [interceptors/debug]
+                handle-turn-completed)
+
+  ;; Backward compat: :agora/turn-response -> :agora/turn-completed
   (ev/reg-event :agora/turn-response
                 [interceptors/debug]
-                handle-turn-response)
+                handle-turn-completed)
 
-  (ev/reg-event :agora/execute-next-turn
+  (ev/reg-event :agora/dispatch-next
                 [interceptors/debug]
-                handle-execute-next-turn)
+                handle-dispatch-next)
 
-  ;; P0: Consensus crystallization
+  (ev/reg-event :agora/execute-drone
+                [interceptors/debug]
+                handle-execute-drone)
+
+  (ev/reg-event :agora/debate-started
+                [interceptors/debug]
+                handle-debate-started)
+
+  ;; Stage transition (Two-Stage Agora)
+  (ev/reg-event :agora/stage-transition
+                [interceptors/debug]
+                handle-stage-transition)
+
+  ;; Consensus crystallization
   (ev/reg-event :agora/consensus
                 [interceptors/debug]
                 handle-consensus))

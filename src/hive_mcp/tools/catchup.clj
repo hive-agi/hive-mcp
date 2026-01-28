@@ -18,6 +18,7 @@
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.knowledge-graph.queries :as kg-queries]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
+            [hive-mcp.knowledge-graph.disc :as kg-disc]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.set :as set]
@@ -55,8 +56,8 @@
      (let [elisp (if directory
                    (format "(hive-mcp-memory--project-id %s)" (pr-str directory))
                    "(hive-mcp-memory--project-id)")
-           {:keys [success result]} (ec/eval-elisp elisp)]
-       (if (and success result (not= result "nil"))
+           {:keys [success result timed-out]} (ec/eval-elisp-with-timeout elisp 10000)]
+       (if (and success result (not= result "nil") (not timed-out))
          (str/replace result #"\"" "")
          "global"))
      (catch Exception _
@@ -71,8 +72,8 @@
      (let [elisp (if directory
                    (format "(hive-mcp-memory--get-project-name %s)" (pr-str directory))
                    "(hive-mcp-memory--get-project-name)")
-           {:keys [success result]} (ec/eval-elisp elisp)]
-       (if (and success result (not= result "nil"))
+           {:keys [success result timed-out]} (ec/eval-elisp-with-timeout elisp 10000)]
+       (if (and success result (not= result "nil") (not timed-out))
          (str/replace result #"\"" "")
          nil))
      (catch Exception _
@@ -179,8 +180,8 @@
                          (list :branch (string-trim (shell-command-to-string \"git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'none'\"))
                                :uncommitted (not (string-empty-p (shell-command-to-string \"git status --porcelain 2>/dev/null\")))
                                :last-commit (string-trim (shell-command-to-string \"git log -1 --format='%h - %s' 2>/dev/null || echo 'none'\"))))")
-          {:keys [success result]} (ec/eval-elisp git-elisp)]
-      (when success
+          {:keys [success result timed-out]} (ec/eval-elisp-with-timeout git-elisp 30000)]
+      (when (and success (not timed-out))
         (json/read-str result :key-fn keyword)))
     (catch Exception _
       {:branch "unknown" :uncommitted false :last-commit "unknown"})))
@@ -303,6 +304,45 @@
       (log/debug "Ungrounded count failed:" (.getMessage e))
       0)))
 
+(defn- find-co-accessed-suggestions
+  "Find memory entries frequently co-accessed with the given entries.
+   Uses :co-accessed edges in the Knowledge Graph to surface related entries
+   that aren't already in the catchup result set.
+
+   Arguments:
+     entry-ids       - IDs of entries already surfaced in catchup
+     exclude-ids     - IDs to exclude from suggestions (already visible)
+
+   Returns vector of {:entry-id <id> :confidence <score>}"
+  [entry-ids exclude-ids]
+  (when (seq entry-ids)
+    (try
+      (let [excluded (set exclude-ids)
+            ;; For each entry, find co-accessed entries
+            co-accessed (->> entry-ids
+                             (mapcat (fn [eid]
+                                       (kg-edges/get-co-accessed eid)))
+                             ;; Exclude entries already in the result set
+                             (remove #(contains? excluded (:entry-id %)))
+                             ;; Group by entry-id and take max confidence
+                             (group-by :entry-id)
+                             (map (fn [[eid entries]]
+                                    {:entry-id eid
+                                     :confidence (apply max (map :confidence entries))
+                                     :co-access-count (count entries)}))
+                             ;; Sort by co-access count * confidence for relevance
+                             (sort-by (fn [{:keys [confidence co-access-count]}]
+                                        (* confidence co-access-count))
+                                      >)
+                             (take 5)
+                             vec)]
+        (when (seq co-accessed)
+          (log/debug "Found" (count co-accessed) "co-accessed suggestions"))
+        co-accessed)
+      (catch Exception e
+        (log/debug "Co-access suggestions failed:" (.getMessage e))
+        []))))
+
 (defn- extract-kg-relations
   "Extract meaningful KG relationships from node context.
 
@@ -417,7 +457,14 @@
           with-deps (->> all-entries
                          (filter #(or (seq (get-in % [:kg :depends-on]))
                                       (seq (get-in % [:kg :depended-by]))))
-                         (count))]
+                         (count))
+
+          ;; L1 Disc: Surface stale files (staleness > 0.5) for catchup awareness
+          stale-files (try
+                        (kg-disc/top-stale-files :n 10 :project-id project-id :threshold 0.5)
+                        (catch Exception e
+                          (log/debug "KG insights stale-files query failed:" (.getMessage e))
+                          []))]
 
       ;; Build insights map - always include edge-count for visibility
       (cond-> {:edge-count edge-count}
@@ -427,7 +474,8 @@
         (pos? with-deps) (assoc :dependency-chains with-deps)
         (seq related-from-sessions) (assoc :session-derived related-from-sessions)
         (seq related-decisions) (assoc :related-decisions related-decisions)
-        (pos? ungrounded-count) (assoc :ungrounded-count ungrounded-count)))
+        (pos? ungrounded-count) (assoc :ungrounded-count ungrounded-count)
+        (seq stale-files) (assoc :stale-files stale-files)))
     (catch Exception e
       (log/warn "KG insights gathering failed:" (.getMessage e))
       {:edge-count 0 :error (.getMessage e)})))
@@ -521,6 +569,160 @@
    :isError true})
 
 ;; =============================================================================
+;; Spawn Context Injection (Architecture > LLM behavior)
+;; =============================================================================
+
+(defn- format-spawn-axioms
+  "Format axioms section for spawn context markdown."
+  [axioms]
+  (when (seq axioms)
+    (let [lines (map-indexed
+                 (fn [idx ax]
+                   (format "%d. %s" (inc idx) (:content ax)))
+                 axioms)]
+      (str "### Axioms (INVIOLABLE — follow word-for-word)\n\n"
+           (str/join "\n\n" lines)
+           "\n\n"))))
+
+(defn- format-spawn-priorities
+  "Format priority conventions section for spawn context markdown."
+  [conventions]
+  (when (seq conventions)
+    (let [lines (map-indexed
+                 (fn [idx conv]
+                   (format "%d. %s" (inc idx) (:content conv)))
+                 conventions)]
+      (str "### Priority Conventions\n\n"
+           (str/join "\n\n" lines)
+           "\n\n"))))
+
+(defn- format-spawn-decisions
+  "Format active decisions section for spawn context markdown."
+  [decisions]
+  (when (seq decisions)
+    (let [lines (map (fn [d] (format "- %s" (:preview d))) decisions)]
+      (str "### Active Decisions\n\n"
+           (str/join "\n" lines)
+           "\n\n"))))
+
+(defn- format-spawn-git
+  "Format git status section for spawn context markdown."
+  [git-info]
+  (when git-info
+    (str "### Git Status\n\n"
+         (format "- **Branch**: %s\n" (or (:branch git-info) "unknown"))
+         (when (:uncommitted git-info)
+           "- **Uncommitted changes**: yes\n")
+         (format "- **Last commit**: %s\n" (or (:last-commit git-info) "unknown")))))
+
+(defn- format-spawn-stale-files
+  "Format stale files section for spawn context markdown.
+   Surfaces top-N most stale disc entities as files needing re-grounding."
+  [stale-files]
+  (when (seq stale-files)
+    (let [lines (map (fn [{:keys [path score days-since-read hash-mismatch?]}]
+                       (format "- `%s` (staleness: %.1f%s%s)"
+                               path
+                               (float score)
+                               (if days-since-read
+                                 (format ", last read %dd ago" days-since-read)
+                                 ", never read")
+                               (if hash-mismatch?
+                                 ", content changed"
+                                 "")))
+                     stale-files)]
+      (str "### Files Needing Re-Grounding (L1 Disc)\n\n"
+           (str/join "\n" lines)
+           "\n\n"))))
+
+(defn- serialize-spawn-context
+  "Serialize spawn context data to markdown string.
+   Formats as a '## Project Context (Auto-Injected)' section."
+  [{:keys [axioms priority-conventions decisions git-info project-name stale-files]}]
+  (str "## Project Context (Auto-Injected)\n\n"
+       (format "**Project**: %s\n\n" (or project-name "unknown"))
+       (format-spawn-axioms axioms)
+       (format-spawn-priorities priority-conventions)
+       (format-spawn-decisions decisions)
+       (format-spawn-stale-files stale-files)
+       (format-spawn-git git-info)))
+
+(def ^:private max-spawn-context-chars
+  "Maximum characters for spawn context injection (~3K tokens)."
+  12000)
+
+(defn spawn-context
+  "Generate a compact context payload for ling spawn injection.
+
+   Architecture > LLM behavior: inject context at spawn time rather than
+   relying on lings to /catchup themselves.
+
+   Returns a markdown string with:
+   - Axioms (full content, INVIOLABLE)
+   - Priority conventions (full content, tagged catchup-priority)
+   - Active decisions (preview only, limited to 5)
+   - Git status (branch + last commit)
+
+   Returns nil if:
+   - Chroma not configured
+   - No relevant context found
+   - Any error occurs (graceful degradation)
+
+   CLARITY-C: Composes from existing catchup query helpers.
+   CLARITY-I: Validates payload size (< 3K tokens / ~12K chars)."
+  [directory]
+  (when (chroma/embedding-configured?)
+    (try
+      (let [project-id (get-current-project-id directory)
+            project-name (get-current-project-name directory)
+
+            ;; Query core context (reuses existing private helpers)
+            axioms (query-axioms project-id)
+            priority-conventions (query-scoped-entries "convention" ["catchup-priority"]
+                                                       project-id 5)
+            decisions (query-scoped-entries "decision" nil project-id 5)
+            git-info (gather-git-info directory)
+
+            ;; L1 Disc: Surface top-N most stale files needing re-grounding
+            stale-files (try
+                          (kg-disc/top-stale-files :n 5 :project-id project-id)
+                          (catch Exception e
+                            (log/debug "spawn-context stale-files query failed:" (.getMessage e))
+                            []))
+
+            ;; Transform to metadata
+            axioms-meta (mapv entry->axiom-meta axioms)
+            priority-meta (mapv entry->priority-meta priority-conventions)
+            decisions-meta (mapv #(entry->catchup-meta % 80) decisions)
+
+            ;; Serialize to markdown
+            context-str (serialize-spawn-context
+                         {:axioms axioms-meta
+                          :priority-conventions priority-meta
+                          :decisions decisions-meta
+                          :stale-files stale-files
+                          :git-info git-info
+                          :project-name (or project-name project-id "global")})]
+
+        ;; CLARITY-I: Validate payload size
+        (if (> (count context-str) max-spawn-context-chars)
+          (do
+            (log/warn "spawn-context exceeds token budget:"
+                      (count context-str) "chars, truncating decisions + stale-files")
+            ;; Truncate: keep axioms + priority conventions, drop decisions + stale files
+            (serialize-spawn-context
+             {:axioms axioms-meta
+              :priority-conventions priority-meta
+              :decisions []
+              :stale-files []
+              :git-info git-info
+              :project-name (or project-name project-id "global")}))
+          context-str))
+      (catch Exception e
+        (log/warn "spawn-context failed (non-fatal):" (.getMessage e))
+        nil))))
+
+;; =============================================================================
 ;; Main Catchup Handler
 ;; =============================================================================
 
@@ -569,6 +771,16 @@
               ;; Pass sessions-meta and project-id for traversal queries
               kg-insights (gather-kg-insights decisions-enriched conventions-enriched
                                               sessions-meta project-id)
+
+              ;; Phase 3: Co-access suggestions
+              ;; Surface entries frequently recalled alongside current context
+              all-entry-ids (mapv :id (concat axioms priority-conventions
+                                              decisions conventions sessions))
+              co-access-suggestions (find-co-accessed-suggestions
+                                     all-entry-ids all-entry-ids)
+              kg-insights (if (seq co-access-suggestions)
+                            (assoc kg-insights :co-access-suggestions co-access-suggestions)
+                            kg-insights)
 
               snippets-meta (mapv #(entry->catchup-meta % 60) snippets)
               expiring-meta (mapv #(entry->catchup-meta % 80) expiring)

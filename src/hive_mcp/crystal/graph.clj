@@ -21,7 +21,6 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-
 ;; =============================================================================
 ;; Database State (Datascript GraphStore)
 ;; =============================================================================
@@ -212,7 +211,12 @@
   [entry-type]
   (let [elisp (format "(json-encode (hive-mcp-api-memory-query %s nil 1000 \"all\"))"
                       (pr-str entry-type))
-        {:keys [success result error]} (ec/eval-elisp elisp)]
+        {:keys [success result error timed-out]}
+        (try
+          (ec/eval-elisp-with-timeout elisp 15000)
+          (catch Exception e
+            (log/warn "Memory query eval failed:" (.getMessage e))
+            {:success false :error (.getMessage e)}))]
     (if success
       (try
         (json/read-str result :key-fn keyword)
@@ -220,7 +224,7 @@
           (log/warn "Failed to parse memory query result:" (.getMessage e))
           nil))
       (do
-        (log/warn "Memory query failed:" error)
+        (log/warn "Memory query failed:" error (when timed-out "(timed out)"))
         nil))))
 
 (defn rebuild-from-memory!

@@ -510,7 +510,7 @@
      - drone_model_retry_total (counter)
 
    CLARITY-T: Retry telemetry for observability of recovery patterns."
-  [{:keys [drone-id attempt error-category action model]}]
+  [{:keys [_drone-id _attempt error-category action model]}]
   (let [reason (or error-category :unknown)]
     (when model
       (inc-drone-model-retry! model reason))
