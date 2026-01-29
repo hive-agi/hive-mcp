@@ -36,7 +36,10 @@
    - swarm/logic.clj     - Core.logic predicates and claims storage
    - swarm/datascript.clj - Entity state (slaves, tasks, coordinators)"
   (:require [hive-mcp.swarm.logic :as logic]
+            [hive-mcp.swarm.datascript.lings :as lings]
+            [hive-mcp.knowledge-graph.disc :as disc]
             [hive-mcp.tools.swarm.claim :as claim-tools]
+            [clojure.java.io :as io]
             [clojure.string :as str]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -141,6 +144,9 @@
    claiming files. This prevents race conditions where drones are in DataScript
    but not in logic-db, causing ghost claims and conflict detection failures.
 
+   CC.3 PRIOR HASH: Computes file content hash at acquire time and stores it
+   in DataScript claim record. This enables change detection on release.
+
    Arguments:
    - task-id:  Unique task identifier
    - slave-id: Slave/drone claiming the files
@@ -166,9 +172,15 @@
              :files-claimed 0}
             (do
               (doseq [f files]
+                ;; Core.logic claims for conflict detection
                 (logic/add-claim! f slave-id)
                 (logic/add-task-file! task-id f)
-                (claim-tools/record-claim-timestamp! f slave-id))
+                (claim-tools/record-claim-timestamp! f slave-id)
+                ;; CC.3: Compute prior-hash and store in DataScript
+                (let [prior-hash (when (.exists (io/file f))
+                                   (:hash (disc/file-content-hash f)))]
+                  (lings/claim-file! f slave-id {:task-id task-id
+                                                 :prior-hash prior-hash})))
               {:acquired? true
                :conflicts []
                :files-claimed (count files)})))))))

@@ -314,7 +314,9 @@
    Arguments:
      file-path - Path to claim (must be unique)
      slave-id  - Slave making the claim
-     task-id   - Task associated with claim (optional)
+     opts      - Optional map with:
+                 :task-id    - Task associated with claim
+                 :prior-hash - File content hash at acquire time (CC.3)
 
    Returns:
      Transaction report
@@ -322,15 +324,17 @@
    Note: Due to :db/unique on :claim/file, attempting to claim
    an already-claimed file will upsert (update the existing claim).
    Use has-conflict? to check first if you want to prevent this."
-  [file-path slave-id & [task-id]]
+  [file-path slave-id & [{:keys [task-id prior-hash]}]]
   {:pre [(string? file-path)
          (string? slave-id)]}
   (let [c (conn/ensure-conn)
         tx-data (cond-> {:claim/file file-path
                          :claim/slave [:slave/id slave-id]
                          :claim/created-at (conn/now)}
-                  task-id (assoc :claim/task [:task/id task-id]))]
-    (log/debug "Claiming file:" file-path "for slave:" slave-id)
+                  task-id (assoc :claim/task [:task/id task-id])
+                  prior-hash (assoc :claim/prior-hash prior-hash))]
+    (log/debug "Claiming file:" file-path "for slave:" slave-id
+               (when prior-hash (str "hash:" (subs prior-hash 0 8) "...")))
     (d/transact! c [tx-data])))
 
 (defn release-claim!
