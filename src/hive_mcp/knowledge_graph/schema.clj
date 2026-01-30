@@ -124,19 +124,111 @@
 ;; verification without re-reading files. When a memory entry is grounded,
 ;; it references a disc entity as proof of verification.
 
+;; Volatility classes for Bayesian certainty decay
+(def volatility-classes
+  "Valid volatility classes for disc certainty tracking.
+   Affects how quickly certainty decays over time.
+
+   - :stable    - Rarely changes (config, deps, infrastructure)
+   - :moderate  - Changes occasionally (business logic, handlers)
+   - :volatile  - Changes frequently (tests, UI, hot paths)"
+  #{:stable :moderate :volatile})
+
 (def disc-schema
   "DataScript schema for disc (file) state tracking.
 
    Disc entities represent the L1 abstraction level - actual files on disk.
-   Used as grounding targets for higher-level knowledge entries."
-  {:disc/path         {:db/unique :db.unique/identity
-                       :db/doc "File path (unique identity for the disc entity)"}
-   :disc/content-hash {:db/doc "SHA256 hash of file content"}
-   :disc/analyzed-at  {:db/doc "Timestamp of last kondo/analysis (inst)"}
-   :disc/git-commit   {:db/doc "Git commit hash when analyzed"}
-   :disc/project-id   {:db/doc "Project scope (for multi-project support)"}
-   :disc/last-read-at {:db/doc "Timestamp of last file read by any agent (inst)"}
-   :disc/read-count   {:db/doc "Number of times this file has been read by agents"}})
+   Used as grounding targets for higher-level knowledge entries.
+
+   Bayesian Certainty Fields:
+   - certainty-alpha/beta form a Beta distribution for probabilistic staleness
+   - Mean certainty = alpha / (alpha + beta)
+   - Higher alpha = more confident the knowledge is fresh
+   - Higher beta = more observations of staleness
+   - volatility-class affects decay rate between observations"
+  {:disc/path              {:db/unique :db.unique/identity
+                            :db/doc "File path (unique identity for the disc entity)"}
+   :disc/content-hash      {:db/doc "SHA256 hash of file content"}
+   :disc/analyzed-at       {:db/doc "Timestamp of last kondo/analysis (inst)"}
+   :disc/git-commit        {:db/doc "Git commit hash when analyzed"}
+   :disc/project-id        {:db/doc "Project scope (for multi-project support)"}
+   :disc/last-read-at      {:db/doc "Timestamp of last file read by any agent (inst)"}
+   :disc/read-count        {:db/doc "Number of times this file has been read by agents"}
+   ;; Bayesian certainty fields
+   :disc/certainty-alpha   {:db/doc "Beta distribution alpha parameter (float, default 5.0)"}
+   :disc/certainty-beta    {:db/doc "Beta distribution beta parameter (float, default 2.0)"}
+   :disc/volatility-class  {:db/doc "Volatility class: :stable, :moderate, or :volatile"}
+   :disc/last-observation  {:db/doc "Timestamp when certainty was last updated (inst)"}})
+
+(defn valid-volatility-class?
+  "Check if volatility class is valid."
+  [volatility-class]
+  (contains? volatility-classes volatility-class))
+
+(defn valid-certainty-alpha?
+  "Check if certainty alpha is valid (positive number)."
+  [alpha]
+  (and (number? alpha) (pos? alpha)))
+
+(defn valid-certainty-beta?
+  "Check if certainty beta is valid (positive number)."
+  [beta]
+  (and (number? beta) (pos? beta)))
+
+;; =============================================================================
+;; Malli Specs for Disc Certainty Fields
+;; =============================================================================
+
+(def DiscCertaintyAlpha
+  "Malli spec for Beta distribution alpha parameter."
+  [:and :double [:> 0]])
+
+(def DiscCertaintyBeta
+  "Malli spec for Beta distribution beta parameter."
+  [:and :double [:> 0]])
+
+(def DiscVolatilityClass
+  "Malli spec for volatility class enum."
+  [:enum :stable :moderate :volatile])
+
+(def DiscLastObservation
+  "Malli spec for last observation timestamp."
+  inst?)
+
+(def DiscCertaintyFields
+  "Malli spec for the complete set of Bayesian certainty fields."
+  [:map
+   [:disc/certainty-alpha {:optional true} DiscCertaintyAlpha]
+   [:disc/certainty-beta {:optional true} DiscCertaintyBeta]
+   [:disc/volatility-class {:optional true} DiscVolatilityClass]
+   [:disc/last-observation {:optional true} DiscLastObservation]])
+
+;; =============================================================================
+;; Default Values for New Disc Entities
+;; =============================================================================
+
+(def disc-certainty-defaults
+  "Default values for Bayesian certainty fields on new disc entities.
+
+   Alpha=5, Beta=2 gives:
+   - Mean certainty: 5/(5+2) = 0.714 (moderately confident)
+   - Variance: relatively low, reflecting prior belief
+   - Represents 'reasonably fresh but not certain' starting state"
+  {:disc/certainty-alpha  5.0
+   :disc/certainty-beta   2.0
+   :disc/volatility-class :moderate})
+
+(defn disc-certainty-defaults-with-timestamp
+  "Returns disc certainty defaults with current timestamp for last-observation."
+  []
+  (assoc disc-certainty-defaults
+         :disc/last-observation (java.util.Date.)))
+
+(defn apply-disc-certainty-defaults
+  "Apply default certainty values to a disc entity map.
+   Only sets values for keys not already present."
+  [disc-entity]
+  (merge (disc-certainty-defaults-with-timestamp) disc-entity))
 
 ;; =============================================================================
 ;; Abstraction Level Helpers
