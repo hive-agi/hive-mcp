@@ -282,8 +282,10 @@ INJECTED-CONTEXT is optional pre-generated catchup context
     (pcase term-backend
       ('claude-code-ide (unless (require 'claude-code-ide nil t)
                           (error "Claude-code-ide is required but not available")))
-      ('vterm (unless (require 'vterm nil t)
-                (error "Vterm is required but not available")))
+      ('vterm (unless (and (require 'vterm nil t)
+                          (fboundp 'vterm-mode)
+                          (fboundp 'vterm-send-string))
+                (error "Vterm is required but not available (vterm-mode not bound)")))
       ('eat (unless (require 'eat nil t)
               (error "Eat is required but not available")))
       ('ollama (unless (require 'hive-mcp-ellama nil t)
