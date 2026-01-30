@@ -520,3 +520,45 @@
       (log/debug "Refreshing claim timestamp:" file-path)
       (d/transact! c [{:db/id eid
                        :claim/heartbeat-at (conn/now)}]))))
+
+;;; =============================================================================
+;;; Claim History Functions (CC.6)
+;;; =============================================================================
+
+(defn archive-claim-to-history!
+  "CC.6: Archive a claim to history when releasing with changes.
+
+   Called by coordinator/contextual-claim-release! when a file was modified
+   during the claim period. Records:
+   - Prior and released content hashes
+   - Lines added/removed (if provided)
+   - Release timestamp
+
+   Arguments:
+     file-path - Path of the file being released
+     opts      - Map with:
+                 :slave-id      - ID of the slave that held the claim (required)
+                 :prior-hash    - Content hash at acquire time
+                 :released-hash - Content hash at release time
+                 :lines-added   - Number of lines added (optional)
+                 :lines-removed - Number of lines removed (optional)
+
+   Returns:
+     Transaction report"
+  [file-path {:keys [slave-id prior-hash released-hash lines-added lines-removed]}]
+  {:pre [(string? file-path)
+         (string? slave-id)]}
+  (let [c (conn/ensure-conn)
+        history-id (conn/gen-id "claim-history")
+        tx-data (cond-> {:claim-history/id history-id
+                         :claim-history/file file-path
+                         :claim-history/slave-id slave-id
+                         :claim-history/released-at (conn/now)}
+                  prior-hash (assoc :claim-history/prior-hash prior-hash)
+                  released-hash (assoc :claim-history/released-hash released-hash)
+                  lines-added (assoc :claim-history/lines-added lines-added)
+                  lines-removed (assoc :claim-history/lines-removed lines-removed))]
+    (log/debug "Archiving claim to history:" file-path "slave:" slave-id
+               (when (and lines-added lines-removed)
+                 (str "+/- " lines-added "/" lines-removed)))
+    (d/transact! c [tx-data])))
