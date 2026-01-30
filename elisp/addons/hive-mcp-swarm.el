@@ -730,18 +730,23 @@ CONTEXT-FILE is an optional path to a temp file containing pre-generated
 catchup context to inject into the system prompt (Architecture > LLM behavior).
 The file is read and deleted after use.
 Returns slave-id on success, or error plist on failure."
-  (let ((injected-context
-         (when (and context-file (file-exists-p context-file))
-           (prog1
-               (with-temp-buffer
-                 (insert-file-contents context-file)
-                 (buffer-string))
-             ;; Clean up temp file after reading
-             (ignore-errors (delete-file context-file))))))
+  ;; CLARITY-I: Validate all optional string params before use
+  ;; (fix for 'stringp, 1' error when MCP passes non-string values)
+  (let* ((valid-cwd (when (stringp cwd) cwd))
+         (valid-kanban-id (when (stringp kanban-task-id) kanban-task-id))
+         (injected-context
+          (when (and context-file (stringp context-file) (file-exists-p context-file))
+            (prog1
+                (with-temp-buffer
+                  (insert-file-contents context-file)
+                  (buffer-string))
+              ;; Clean up temp file after reading
+              (ignore-errors (delete-file context-file))))))
     (hive-mcp-with-fallback
-        (hive-mcp-swarm-spawn name :presets presets :cwd cwd
-                              :terminal (when terminal (intern terminal))
-                              :kanban-task-id kanban-task-id
+        (hive-mcp-swarm-spawn name :presets presets :cwd valid-cwd
+                              ;; CLARITY-I: Guard intern against non-string terminal values
+                              :terminal (when (and terminal (stringp terminal)) (intern terminal))
+                              :kanban-task-id valid-kanban-id
                               :injected-context injected-context)
       `(:error "spawn-failed" :name ,name :reason "unknown"))))
 
