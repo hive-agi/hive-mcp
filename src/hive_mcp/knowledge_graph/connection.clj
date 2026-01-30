@@ -38,7 +38,7 @@
 (defn- detect-backend
   "Detect the desired KG backend from configuration sources.
    Priority: env var > .hive-project.edn > default (:datalevin).
-   Returns keyword :datascript or :datalevin."
+   Returns keyword :datascript, :datalevin, or :datahike."
   []
   (let [env-val (System/getenv "HIVE_KG_BACKEND")
         env-backend (when (and env-val (seq env-val))
@@ -70,6 +70,21 @@
                 (proto/set-store! (ds-store/create-store)))))
           (catch Exception e
             (log/warn "Failed to initialize Datalevin, falling back to DataScript"
+                      {:error (.getMessage e)})
+            (proto/set-store! (ds-store/create-store))))
+
+        :datahike
+        (try
+          (require 'hive-mcp.knowledge-graph.store.datahike)
+          (let [create-fn (resolve 'hive-mcp.knowledge-graph.store.datahike/create-store)
+                store (create-fn)]
+            (if store
+              (proto/set-store! store)
+              (do
+                (log/warn "Datahike store creation returned nil, falling back to DataScript")
+                (proto/set-store! (ds-store/create-store)))))
+          (catch Exception e
+            (log/warn "Failed to initialize Datahike, falling back to DataScript"
                       {:error (.getMessage e)})
             (proto/set-store! (ds-store/create-store))))
 
@@ -156,9 +171,10 @@
   "Configure the KG storage backend.
 
    Arguments:
-     backend - :datascript or :datalevin
+     backend - :datascript, :datalevin, or :datahike
      opts    - Backend-specific options:
                :datalevin {:db-path \"data/kg/datalevin\"}
+               :datahike  {:db-path \"data/kg/datahike\" :backend :file}
 
    CLARITY-T: Logs backend selection."
   [backend & [opts]]
@@ -179,9 +195,21 @@
           (log/warn "Datalevin store creation failed, falling back to DataScript")
           (proto/set-store! (ds-store/create-store)))))
 
+    :datahike
+    (let [;; Require datahike store dynamically to avoid hard dep
+          _ (require 'hive-mcp.knowledge-graph.store.datahike)
+          create-fn (resolve 'hive-mcp.knowledge-graph.store.datahike/create-store)
+          store (create-fn opts)]
+      (if store
+        (proto/set-store! store)
+        ;; CLARITY-Y: Fall back to DataScript if Datahike fails
+        (do
+          (log/warn "Datahike store creation failed, falling back to DataScript")
+          (proto/set-store! (ds-store/create-store)))))
+
     ;; Unknown backend
     (throw (ex-info "Unknown KG backend" {:backend backend
-                                          :valid #{:datascript :datalevin}}))))
+                                          :valid #{:datascript :datalevin :datahike}}))))
 
 ;; =============================================================================
 ;; ID and Timestamp Utilities
