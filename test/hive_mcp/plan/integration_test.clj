@@ -32,6 +32,7 @@
             [hive-test.isolation :as iso]
             [hive-mcp.isolation-methods]
             [hive-mcp.test.stub.memory-store :as mem-stub]
+            [hive-mcp.test.stub.kanban :as kport]
             [clojure.data.json]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -80,6 +81,7 @@
 
 (use-fixtures :each
   mem-stub/with-stub-store
+  kport/with-core-kanban
   (iso/with-isolations :kg-conn)
   integration-fixture)
 
