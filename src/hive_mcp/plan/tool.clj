@@ -9,16 +9,15 @@
    5. Create KG edges: task --depends-on--> task (from step dependencies)"
 
   (:require [hive-mcp.tools.core :refer [mcp-json mcp-error]]
-            [hive-mcp.tools.memory-kanban :as mem-kanban]
+            [hive-contracts.registry :as contracts]
             [hive-mcp.plan.fsm :as plan-fsm]
             [hive-mcp.plan.kg-degraded :as kg-degraded]
             [hive-mcp.vectordb.facade :as facade]
             [hive-mcp.knowledge-graph.connection :as kg-conn]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [hive-mcp.agent.context :as ctx]
-            [clojure.data.json :as json]
             [clojure.string :as str]
-            [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
+            [taoensso.timbre :as log]
             [hive-mcp.plan.schema :as schema]
             [hive-spi.schema.derive :as derive]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -115,32 +114,24 @@
    tag is added so `kanban list :tags [\"wave:1\"]` filters to a wave
    (audit kanban 20260429203429 + 20260429203455 — wave-aware kanban).
 
+   Creates through the IKanbanWrite port resolved at call time.
+
    Returns {:ok task-id} or {:error message}"
   [{:keys [title description priority]} directory & {:keys [wave]}]
   (try
     (let [priority-str (if (keyword? priority) (name priority) (str priority))
           wave-tag     (when (some? wave) (str "wave:" wave))
-          base-params  (cond-> {:title title
+          request      (cond-> {:title title
                                 :priority priority-str
                                 :directory directory}
                          description (assoc :description description)
                          wave-tag    (assoc :tags [wave-tag]))
-          result       (mem-kanban/handle-mem-kanban-create base-params)]
-      (if (:isError result)
-        {:error (:text result)}
-        (let [parsed (rescue nil (json/read-str (:text result) :key-fn keyword))]
-          (cond
-            (and (map? parsed) (false? (:success? parsed)))
-            {:error (str "kanban backend rejected: " (:error parsed)
-                         (when-let [r (:retry-after parsed)]
-                           (str " (retry after " r "ms)")))}
-
-            (or (:id parsed) (get parsed "id"))
-            {:ok (or (:id parsed) (get parsed "id"))}
-
-            :else
-            {:error (str "Failed to get task ID from kanban create response: "
-                         (pr-str (:text result)))}))))
+          {:keys [ok err]} (contracts/create-task! request)]
+      (cond
+        (:id ok) {:ok (:id ok)}
+        err      {:error (str "kanban backend rejected: " (:message err)
+                              " (" (some-> (:error err) name) ")")}
+        :else    {:error "Failed to get task ID from kanban create response"}))
     (catch Exception e
       {:error (str "Failed to create kanban task: " (.getMessage e))})))
 

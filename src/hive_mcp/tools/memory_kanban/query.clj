@@ -8,7 +8,7 @@
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.vectordb.kanban-facade :as kanban-facade]))
 
-(declare query-kanban-entries resolve-project-ids-with-descendants resolve-visible-project-ids effective-dir stats* filter-kanban-by-tags list-slim*)
+(declare query-kanban-entries resolve-project-ids-with-descendants resolve-visible-project-ids effective-dir stats* filter-kanban-by-tags list-slim* list-slim-data)
 
 (defn query-kanban-entries
   "Fetch kanban entries from the underlying memory store.
@@ -154,6 +154,11 @@
    Collect (this fn) -> Promote (`plan/plan`) -> Boundary (`*board-source*`)
    -> Promote (`plan/shape`). The store window comes from the plan, so the
    caller's limit, offset and filters can never be cut by a fixed window."
+  [params]
+  (mcp-json (list-slim-data params)))
+
+(defn list-slim-data
+  "The slim board rows `list-slim*` serializes, as data. Same params."
   [{:keys [include_descendants project_id scope]
     :or   {include_descendants true}
     :as   params}]
@@ -168,4 +173,4 @@
                            :include-descendants? include_descendants
                            :scope                scope}
                           fetch-plan)]
-    (mcp-json (plan/shape fetch-plan entries multi-project?))))
+    (plan/shape fetch-plan entries multi-project?)))

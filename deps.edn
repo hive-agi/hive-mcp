@@ -131,6 +131,11 @@
         ;; lets this host make one of its own. See hive-spi's CHANGELOG.
         io.github.hive-agi/hive-spi {:mvn/version "1.0.0"}
 
+        ;; hive-contracts: first-party ports between closed components. The
+        ;; kernel resolves the kanban board (IKanbanRead / IKanbanWrite) through
+        ;; its registry; core registers its own provider, an addon may replace it.
+        io.github.hive-agi/hive-contracts {:mvn/version "0.2.6"}
+
         ;; NO CONCRETE BACKEND BELONGS HERE. hive-milvus / hive-qdrant /
         ;; clj-qdrant depend on hive-mcp for their addon surface, so declaring
         ;; them back was a release CYCLE — three cycle members plus five
