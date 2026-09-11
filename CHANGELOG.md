@@ -35,6 +35,43 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+### Fixed
+
+- An addon tool can no longer silently shadow a host tool of the same name.
+  Which contribution holds a name is now decided by one pure namespace,
+  `hive-mcp.addons.tool-claims`, in registration order:
+
+  1. An addon that both PROVIDES a name and lists it in `excluded-tools`
+     CLAIMS it, over a core tool of that name and over every other addon.
+  2. An `excluded-tools` entry with no provider refuses other addons' tool of
+     that name, and never removes a core tool.
+  3. Otherwise a core tool of that name wins and the addon's is refused as
+     `:shadows-core`. The legacy supertool form is preserved: a `:native`
+     addon's `:consolidated` tool still stands in for a `:consolidated` core
+     root of the same name.
+  4. Otherwise the first provider holds it; later ones are `:duplicate`.
+
+  Registration order is read from a monotonic counter stamped at
+  `register-addon!`, not from the registry map's hash order, so the
+  first-wins rules are deterministic across restarts.
+
+  Every refused tool is reported rather than dropped in silence:
+  `hive-mcp.addons.core/resolve-addon-tools` returns `:installed`,
+  `:refused` (each with a reason and the holder) and `:claims`.
+  `active-addon-tools` returns just `:installed`, as before.
+
+  A claim also DROPS the host's own tool of that name when the surface is
+  built, in `build-server-spec` and `refresh-tools!`. Previously both were
+  concatenated, so a claimed name appeared twice and which one answered
+  depended on fold order.
+
+### Changed
+
+- `hive-mcp.tools.registry/core-tools` is now public: the host's own tool
+  defs (channel tools + domain roots), independent of the caller's role, so a
+  name the child-ling set leaves out still counts as a core name when addon
+  tools are resolved against it.
+
 ## [1.1.2]
 
 A patch release. The tool surface, the manifest format and the ports are

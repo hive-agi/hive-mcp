@@ -9,6 +9,7 @@
    - registry-status / reset-registry!"
   (:require [clojure.set]
             [hive-addon.protocol :as proto]
+            [hive-mcp.addons.tool-claims :as claims]
             [hive-mcp.dns.result :as r]
             [hive-mcp.extensions.registry :as ext]
             [taoensso.timbre :as log]
@@ -19,6 +20,22 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defonce ^:private addon-registry (atom {}))
+
+(defonce ^:private registration-seq (atom 0))
+
+(defn- registry-core-tools
+  "The host's core tool defs from hive-mcp.tools.registry, resolved at call
+   time. [] (with an error logged) when the registry cannot be loaded."
+  []
+  (if-let [f (r/rescue nil (requiring-resolve 'hive-mcp.tools.registry/core-tools))]
+    (vec (f))
+    (do (log/error "Core tool registry unavailable; addon tools are resolved against no core names")
+        [])))
+
+(def ^:dynamic *core-tools*
+  "Port: 0-arity fn answering the host's core tool defs, read on every tool
+   resolution. Addon tools are resolved against the names it returns."
+  registry-core-tools)
 
 (defn register-addon!
   "Register an addon in the global registry."
@@ -36,6 +53,7 @@
                {:addon addon
                 :state :registered
                 :registered-at (java.time.Instant/now)
+                :reg-seq (swap! registration-seq inc)
                 :init-time nil
                 :init-result nil})
         (log/info "Addon registered" {:addon id
@@ -301,30 +319,49 @@
   [addon]
   (r/rescue #{} (proto/excluded-tools addon)))
 
-(defn active-addon-tools
-  "Get all MCP tools from active addons.
-   Respects excluded-tools declarations: when addon A excludes tool name X,
-   tools named X from all OTHER addons are filtered out."
+(defn active-contributions
+  "Active tool-capable addons as `tool-claims` Contributions, in REGISTRATION
+   order. Order is the tie-breaker for every first-wins rule, so it is taken
+   from the monotonic `:reg-seq` stamped at register-addon! time, never from
+   the registry map's own (hash) order."
   []
-  (let [active (->> @addon-registry
-                    (filter (fn [[_id {:keys [state addon]}]]
-                              (and (= state :active)
-                                   (contains? (proto/capabilities addon) :tools)))))
-        ;; {tool-name -> declaring-addon-id} — who declared each exclusion
-        exclusions (->> active
-                        (mapcat (fn [[id {:keys [addon]}]]
-                                  (map (fn [tn] [tn id])
-                                       (safe-excluded-tools addon))))
-                        (into {}))]
-    (->> active
-         (mapcat (fn [[id {:keys [addon]}]]
-                   (->> (proto/tools addon)
-                        ;; Remove tools excluded by ANOTHER addon
-                        (remove (fn [t]
-                                  (when-let [excluder (get exclusions (:name t))]
-                                    (not= excluder id))))
-                        (map #(assoc % :addon-source id)))))
-         vec)))
+  (->> @addon-registry
+       (filter (fn [[_id {:keys [state addon]}]]
+                 (and (= state :active)
+                      (contains? (proto/capabilities addon) :tools))))
+       (sort-by (fn [[_id entry]] (or (:reg-seq entry) 0)))
+       (mapv (fn [[id {:keys [addon]}]]
+               {:addon-id   id
+                :addon-type (r/rescue nil (proto/addon-type addon))
+                :tools      (vec (r/rescue [] (proto/tools addon)))
+                :excluded   (set (safe-excluded-tools addon))}))))
+
+(defn resolve-addon-tools
+  "Full resolution of active addon tools against the host's core tools: a
+   `tool-claims` Resolution (`:installed` / `:refused` / `:claims`). The
+   diagnostic form of `active-addon-tools`, which returns only `:installed`."
+  []
+  (claims/resolve-claims ((or *core-tools* registry-core-tools))
+                         (active-contributions)))
+
+(defn claimed-core-names
+  "Tool names an addon holds OVER a core tool of the same name, from a
+   `resolve-addon-tools` Resolution. Re-exported so the server seam talks to
+   this namespace only; the rule itself lives in `tool-claims`."
+  [resolution]
+  (claims/claimed-core-names resolution))
+
+(defn active-addon-tools
+  "Get all MCP tools from active addons, each tagged `:addon-source`.
+
+   Names are resolved by `hive-mcp.addons.tool-claims`: an addon that both
+   PROVIDES a name and lists it in `excluded-tools` CLAIMS it, over a core
+   tool of that name and over every other addon; an exclusion without a
+   provider only refuses other addons; otherwise a core tool of that name
+   wins and the addon tool is refused as `:shadows-core`. Refusals are
+   dropped here: use `resolve-addon-tools` to see them."
+  []
+  (:installed (resolve-addon-tools)))
 
 (defn addon-tools-by-name
   "Get MCP tools contributed by a specific addon."
