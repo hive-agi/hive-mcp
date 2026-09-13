@@ -196,10 +196,10 @@
 ;; =============================================================================
 
 (def entity-id-remaps
-  "Verbs whose advertised `id` param names an entity the handler reads, keyed
-   by [tool command]. The batch compiler owns an op's :id (its \"$N\" label) and
-   the executor strips :id before calling the handler, so these verbs must carry
-   the entity id under another key.
+  "Verbs whose advertised `id` param is rewritten into a different handler
+   shape, keyed by [tool command]. Every other verb keeps its `id`: the batch
+   compiler moves it to `pd/entity-id-key` before assigning the op's \"$N\"
+   label, and the executor hands it back to the handler as :id.
 
    Each entry is {:unless k :rewrite (fn [op id] op')}: skipped when the op
    already holds k; otherwise :rewrite receives the op without :id."
@@ -266,12 +266,20 @@
 
 (defn- compile-paragraph-local
   "Local fallback: assign sequential IDs and collect $ref dependencies.
-   Used when extension is not available."
+   Used when extension is not available.
+
+   A parsed op that still holds an `id` param keeps it as its entity id under
+   `pd/entity-id-key` (unless one is already set) before :id becomes the
+   \"$N\" label; a `$ref:` there is collected as a dependency."
   [sentences]
   (let [parsed (parse-dsl sentences)]
     (mapv (fn [idx op]
             (let [id         (str "$" idx)
-                  op-with-id (assoc op :id id)]
+                  op-with-id (-> op
+                                 (cond-> (and (contains? op :id)
+                                              (not (contains? op pd/entity-id-key)))
+                                   (assoc pd/entity-id-key (:id op)))
+                                 (assoc :id id))]
               (if (:error op)
                 op-with-id
                 (let [ref-deps     (collect-refs op-with-id)
