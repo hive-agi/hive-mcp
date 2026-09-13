@@ -151,9 +151,22 @@
 
 ;;; --- IMemoryStoreMetadataWrite (no-embed metadata writes) ---
 
-(do
-  (def IMemoryStoreMetadataWrite ports/IMemoryStoreMetadataWrite)
-  (def update-metadata! ports/update-metadata!))
+(def IMemoryStoreMetadataWrite ports/IMemoryStoreMetadataWrite)
+
+(defn update-metadata!
+  "Update non-content fields on entry ID without re-embedding. See
+   `hive-spi.memory.ports/update-metadata!`.
+
+   A wrapper, not `(def update-metadata! ports/update-metadata!)`: that form
+   captures the protocol fn VALUE, and when `hive-spi.memory.ports` is
+   evaluated again after this ns loads, the captured fn dispatches on a
+   protocol object that no `extend` reaches. Measured 2026-09-11: every
+   migrate-scoped call failed with `No implementation of method:
+   :update-metadata!` for MilvusMemoryStore while `metadata-write-store?`
+   (which checks `ports/` directly) said true. Resolving at call time keeps
+   the check and the call on the same protocol."
+  [store id updates]
+  (ports/update-metadata! store id updates))
 
 (defn metadata-write-store?
   "Check if the store supports the no-embed metadata write surface."
