@@ -18,6 +18,18 @@
   "Batch plumbing keys — excluded from ref collection AND substitution."
   #{:id :tool :command :depends_on :wave})
 
+(def entity-id-key
+  "Op key carrying a caller's entity id beside the op's batch label (:id).
+   The executor hands its value to the handler as :id. Not a meta key: a
+   `$ref:` value here is collected and resolved like any other param."
+  :entity_id)
+
+(defn op-label?
+  "True when `id` is a compiler-owned op label (a string starting with `$`),
+   which names an op and never an entity."
+  [id]
+  (and (string? id) (.startsWith ^String id "$")))
+
 (def prose-param-keys
   "Params that carry prose. A `$ref:` inside is quotation, not a reference."
   #{:content :description :title :message :prompt :query :text :task
