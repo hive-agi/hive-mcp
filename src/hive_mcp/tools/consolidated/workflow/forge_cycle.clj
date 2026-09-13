@@ -28,12 +28,15 @@
              opts defaults))
 
 (defn- make-agent-ops
-  "Build the agent-ops map for forge-belt FSM resources."
-  [{:keys [spawn-mode model preset seeds ctx-refs kg-node-ids cleanup-scope]}]
+  "Build the agent-ops map for forge-belt FSM resources.
+   `ports` {:spark spark!-ports :smite smite!-ports}; absent keys use each fn's defaults."
+  [{:keys [spawn-mode model preset seeds ctx-refs kg-node-ids cleanup-scope]} ports]
   (let [defaults {:spawn-mode spawn-mode :model model :preset preset
-                  :seeds seeds :ctx-refs ctx-refs :kg-node-ids kg-node-ids}]
+                  :seeds seeds :ctx-refs ctx-refs :kg-node-ids kg-node-ids}
+        spark-ports (:spark ports {})
+        smite-ports (:smite ports {})]
     {:kill-fn  (fn [dir _project-id]
-                 (forge-ops/smite! (assoc cleanup-scope :directory dir)))
+                 (forge-ops/smite! (assoc cleanup-scope :directory dir) smite-ports))
      :spawn-fn (fn [opts]
                  (spawn/spark!
                   (-> opts
@@ -45,7 +48,8 @@
                        (or (:ctx-refs opts) (:ctx-refs defaults))
                         (assoc :ctx_refs (or (:ctx-refs opts) (:ctx-refs defaults)))
                         (or (:kg-node-ids opts) (:kg-node-ids defaults))
-                        (assoc :kg_node_ids (or (:kg-node-ids opts) (:kg-node-ids defaults)))))))
+                        (assoc :kg_node_ids (or (:kg-node-ids opts) (:kg-node-ids defaults)))))
+                  spark-ports))
      :drone-dispatch-fn
      (fn [opts]
        (spawn/dispatch-drone-tasks!
@@ -65,29 +69,34 @@
 
 (defn build-fsm-resources
   "Build the resources map for the Forge Belt FSM.
-   Extra keys in params flow through to survey via kanban-ops/list-fn (OCP)."
-  [{:keys [directory max_slots presets spawn_mode model
-           preset seeds ctx_refs kg_node_ids] :as params}]
-  (let [effective-spawn-mode (when spawn_mode (keyword spawn_mode))
-        survey-opts          (dissoc params :directory :max_slots :presets :spawn_mode :model
-                                     :preset :seeds :ctx_refs :kg_node_ids)]
-    {:directory directory
-     :config    {:max-slots   (or max_slots 10)
-                 :presets     (or presets ["ling" "mcp-first" "saa"])
-                 :spawn-mode  effective-spawn-mode
-                 :model       model
-                 :preset      preset
-                 :seeds       seeds
-                 :ctx-refs    ctx_refs
-                 :kg-node-ids kg_node_ids}
-     :agent-ops (make-agent-ops {:cleanup-scope (select-keys params [:plan_id :task_ids])
-                                 :spawn-mode effective-spawn-mode :model model
-                                 :preset preset :seeds seeds
-                                 :ctx-refs ctx_refs :kg-node-ids kg_node_ids})
-     :kanban-ops (make-kanban-ops survey-opts)
-     :scope-fn   (fn [dir]
-                   (when dir (scope/get-current-project-id dir)))
-     :clock-fn   #(java.time.Instant/now)}))
+   Extra keys in params flow through to survey via kanban-ops/list-fn (OCP).
+   `ports` {:spark spark!-ports :smite smite!-ports} reaches the agent-ops effects;
+   the 1-arity passes {} so every effect uses its default."
+  ([params] (build-fsm-resources params {}))
+  ([{:keys [directory max_slots presets spawn_mode model
+            preset seeds ctx_refs kg_node_ids] :as params}
+    ports]
+   (let [effective-spawn-mode (when spawn_mode (keyword spawn_mode))
+         survey-opts          (dissoc params :directory :max_slots :presets :spawn_mode :model
+                                      :preset :seeds :ctx_refs :kg_node_ids)]
+     {:directory directory
+      :config    {:max-slots   (or max_slots 10)
+                  :presets     (or presets ["ling" "mcp-first" "saa"])
+                  :spawn-mode  effective-spawn-mode
+                  :model       model
+                  :preset      preset
+                  :seeds       seeds
+                  :ctx-refs    ctx_refs
+                  :kg-node-ids kg_node_ids}
+      :agent-ops (make-agent-ops {:cleanup-scope (select-keys params [:plan_id :task_ids])
+                                  :spawn-mode effective-spawn-mode :model model
+                                  :preset preset :seeds seeds
+                                  :ctx-refs ctx_refs :kg-node-ids kg_node_ids}
+                                 ports)
+      :kanban-ops (make-kanban-ops survey-opts)
+      :scope-fn   (fn [dir]
+                    (when dir (scope/get-current-project-id dir)))
+      :clock-fn   #(java.time.Instant/now)})))
 
 ;; ── Forge Strike: Legacy (Imperative) ─────────────────────────────────────────
 
