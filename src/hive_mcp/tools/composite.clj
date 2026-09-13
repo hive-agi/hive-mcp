@@ -22,12 +22,18 @@
 
 (defn- addon-commands->handlers
   "Convert addon command contributions to keyword->fn handler map.
-   Supports both flat handlers and nested handler trees."
+   Supports both flat handlers and nested handler trees.
+
+   When an :addon/wrap-handler extension is registered, every handler is passed
+   through it as (wrap addon-id handler)."
   [tool-name]
   (when-let [commands (ext/get-contributed-commands tool-name)]
-    (into {} (map (fn [[cmd {:keys [handler]}]]
-                    [(keyword cmd) handler])
-                  commands))))
+    (let [wrap (ext/get-extension :addon/wrap-handler)]
+      (into {} (map (fn [[cmd {:keys [handler addon]}]]
+                      [(keyword cmd) (if (and wrap (fn? handler))
+                                       (wrap addon handler)
+                                       handler)]))
+            commands))))
 
 (defn lazy-resolve-handlers
   "Lazily resolve a consolidated tool's `handlers` map by fully-qualified
