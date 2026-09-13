@@ -215,6 +215,8 @@
     :plan-only?  false                         ; optional, default false
     :store-plan? false                         ; optional, default false: persist the
                                                ; plan through the :saa/plan-store port
+    :execution-mode :dag-wave                  ; optional: the :saa/dispatch-mode the
+                                               ; Act phase dispatches through
     :run-id      \"wf-run-42\"                   ; optional, wave run id
     :resources   {...}}                        ; optional, override resources map
 
@@ -223,7 +225,7 @@
 
    Note: Runs in a future to avoid blocking the event loop.
    Dispatches :saa/completed or :saa/failed events on completion."
-  [{:keys [task agent-id directory plan-only? run-id resources] :as data}]
+  [{:keys [task agent-id directory plan-only? run-id execution-mode resources] :as data}]
   (when (and task agent-id)
     (future
       (try
@@ -235,7 +237,8 @@
               opts (cond-> {:task task
                             :agent-id agent-id
                             :directory directory}
-                     run-id (assoc :run-id run-id))
+                     run-id (assoc :run-id run-id)
+                     execution-mode (assoc :execution-mode (keyword execution-mode)))
               result (run-fn effective-resources opts)]
           (when-let [dispatch-fn (requiring-resolve 'hive-mcp.events.core/dispatch)]
             (dispatch-fn [:saa/completed (merge (select-keys result

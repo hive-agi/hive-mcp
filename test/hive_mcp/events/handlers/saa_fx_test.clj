@@ -289,3 +289,49 @@
     (testing "the default resource ports are always present"
       (is (every? (saa-fx/default-resources "/p" {})
                   [:scope-fn :shout-fn :dispatch-fn :clock-fn])))))
+
+(defn- offline-saa-resources
+  "SAA FSM resources that keep every phase offline and leave :store-plan-fn and
+   :dispatch-fn to saa-fx/default-resources."
+  []
+  {:scope-fn           (constantly "test-project")
+   :catchup-fn         (fn [_agent-id _directory] {:axioms [] :conventions [] :decisions []})
+   :explore-fn         (fn [_task _agent-id obs]
+                         {:observations (conj (vec obs) {:type :file :content "found foo.clj"})
+                          :files-read   3
+                          :discoveries  1})
+   :score-grounding-fn (fn [_obs _files-read] 1.0)
+   :synthesize-fn      (fn [task _obs _context]
+                         {:id    "plan-fx-1"
+                          :title (str "Plan for: " task)
+                          :steps [{:id "step-1" :title "First step" :depends-on []}]})
+   :validate-plan-fn   (fn [_plan] {:valid? true :errors []})
+   :verify-fn          (fn [_result _plan] {:passed? true :details {}})
+   :shout-fn           (fn [_agent-id _phase _message] nil)})
+
+(deftest run-workflow-forwards-execution-mode
+  (testing ":execution-mode on the effect selects the contributed mode; its ctx carries the stored plan id"
+    (saa-fx/register-saa-fx!)
+    (let [calls (atom [])]
+      (registry/register-by-key!
+       :test :saa/dispatch-mode
+       [(types/saa-registry-entry :saa/dispatch-mode
+                                  {:mode :test-mode :dispatch (recording-dispatch calls) :owner :test})])
+      (registry/register-by-key!
+       :test :saa/plan-store
+       [(types/saa-registry-entry :saa/plan-store
+                                  {:store (fn [_plan _agent-id _directory]
+                                            {:memory-id "mem-fx-1" :kanban-ids ["k1"] :kg-edges 1})
+                                   :owner :test})])
+      (is (not= ::timeout
+                (deref ((ev/get-fx-handler :saa/run-workflow)
+                        {:task           "t"
+                         :agent-id       "agent-fx"
+                         :directory      "/p"
+                         :store-plan?    true
+                         :execution-mode :test-mode
+                         :resources      (offline-saa-resources)})
+                       20000 ::timeout)))
+      (is (= 1 (count @calls)))
+      (is (= {:plan-memory-id "mem-fx-1" :directory "/p"}
+             (select-keys (:ctx (first @calls)) [:plan-memory-id :directory]))))))
