@@ -24,7 +24,8 @@
             [clojure.string :as str]
             [hive-mcp.memory.ids :as ids]
             [hive-spi.memory.ports :as ports]
-            [hive-spi.memory.registry :as registry]))
+            [hive-spi.memory.registry :as registry]
+            [clojure.data.json :as json]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -94,6 +95,25 @@
       (count (set/intersection qt (into (tokens (:content entry))
                                         (mapcat tokens (:tags entry))))))))
 
+(defn- decode-content
+  "ENTRY with a JSON-object string :content decoded to a keyword-keyed map.
+   Any other :content, or a string that does not parse, is returned unchanged."
+  [entry]
+  (let [c (:content entry)]
+    (if (and (string? c) (str/starts-with? (str/triml c) "{"))
+      (try
+        (assoc entry :content (json/read-str c :key-fn keyword))
+        (catch Exception _ entry))
+      entry)))
+
+(defn- read-view
+  "ENTRY as a read answers it: decoded when the store was built with
+   :decode-content?, untouched otherwise. nil stays nil."
+  [state entry]
+  (if (and entry (:decode-content? @state))
+    (decode-content entry)
+    entry))
+
 ;; =============================================================================
 ;; The stub
 ;; =============================================================================
@@ -128,7 +148,7 @@
   (get-entry [_this id]
     (if-let [f (:get-entry-fn @state)]
       (f id)
-      (get-in @state [:entries id])))
+      (read-view state (get-in @state [:entries id]))))
 
   (update-entry! [_this id updates]
     (when (get-in @state [:entries id])
@@ -143,7 +163,7 @@
           hit (->> (vals (:entries @state))
                    (filter #(matches? % opts now))
                    (apply-order-by (:order-by opts)))]
-      (vec (if-let [n (:limit opts)] (take n hit) hit))))
+      (mapv #(read-view state %) (if-let [n (:limit opts)] (take n hit) hit))))
 
   (search-similar [_this query-text opts]
     (let [now (System/currentTimeMillis)]
@@ -154,7 +174,7 @@
                      (when (pos? s) (assoc e :score s)))))
            (sort-by :score #(compare %2 %1))
            (take (or (:limit opts) 10))
-           vec)))
+           (mapv #(read-view state %)))))
 
   (supports-semantic-search? [_this] true)
 
@@ -197,7 +217,7 @@
   ports/IMemoryStoreBatch
 
   (get-entries [_this ids]
-    (into [] (keep #(get-in @state [:entries %])) ids))
+    (into [] (keep #(read-view state (get-in @state [:entries %]))) ids))
 
   ports/IMemoryStoreWithAnalytics
 
@@ -324,14 +344,19 @@
      :get-entry-fn — when supplied, `get-entry` answers from this fn and the
                     store's own entry map is not consulted for reads. For a
                     test that already owns its entry table and needs only the
-                    port to read from it."
+                    port to read from it.
+     :decode-content? — when true, get-entry, get-entries, query-entries and
+                    search-similar answer a JSON-object string :content as a
+                    keyword-keyed map, the shape a JSON-writing backend returns
+                    on read. Stored entries are not changed."
   ([] (->stub nil nil))
   ([entries] (->stub entries nil))
-  ([entries {:keys [id-fn get-entry-fn]}]
+  ([entries {:keys [id-fn get-entry-fn decode-content?]}]
    (let [store (->StubMemoryStore (atom (cond-> {:entries    {}
                                                  :connected? true
                                                  :id-fn      (or id-fn ids/generate-id)}
-                                          get-entry-fn (assoc :get-entry-fn get-entry-fn))))]
+                                          get-entry-fn (assoc :get-entry-fn get-entry-fn)
+                                          decode-content? (assoc :decode-content? true))))]
      (doseq [e entries] (ports/add-entry! store e))
      store)))
 

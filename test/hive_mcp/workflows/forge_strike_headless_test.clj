@@ -149,6 +149,16 @@
         parse-mcp-result
         (get-in [:forge :last-fsm-result :ok]))))
 
+(defn synthetic-cards
+  "Store-entry port (:task-entry-fn) answering each synthetic kanban list row as a
+   todo kanban card. Survey reads every selected task back by id and blocks one it
+   cannot read, so a strike over list rows with no stored card passes this."
+  [rows]
+  (into {} (map (fn [row]
+                  [(:id row) {:id (:id row)
+                              :content (merge {:task-type "kanban" :status "todo"} row)}]))
+        rows))
+
 ;; =============================================================================
 ;; Section 1: FSM Layer — Pure Handlers with Headless Config
 ;;
@@ -301,7 +311,10 @@
   (testing "Deprecated imperative forge-strike with headless mode: smite→survey→spark"
     (let [spawn-calls (atom [])
           dispatch-calls (atom [])
-          kanban-updates (atom [])]
+          kanban-updates (atom [])
+          rows [{:id "task-42"
+                 :title "Implement headless feature"
+                 :priority "high"}]]
 
       ;; Pre-populate DataScript with a ling to be smited
       ;; Note: add-slave! validates against schema/slave-statuses, so use :error
@@ -318,9 +331,7 @@
                     (fn [params]
                       (cond
                         (= "list" (:command params))
-                        {:text (json/write-str [{:id "task-42"
-                                                 :title "Implement headless feature"
-                                                 :priority "high"}])}
+                        {:text (json/write-str rows)}
                         (= "update" (:command params))
                         (do (swap! kanban-updates conj params) nil)
                         :else nil))
@@ -347,7 +358,8 @@
                        {:directory "/tmp/test"
                         :spawn_mode "headless"
                         :max_slots 5
-                        :presets ["ling" "mcp-first" "saa"]}))]
+                        :presets ["ling" "mcp-first" "saa"]
+                        :task-entry-fn (synthetic-cards rows)}))]
 
           ;; Verify overall success
           (is (true? (:success result)) "Strike should succeed")
@@ -417,53 +429,55 @@
                                                :cwd "/tmp/fsm"
                                                :project-id "test-project"})
 
-    (with-redefs [scope/get-current-project-id (constantly "test-project")
+    (let [rows [{:id "task-99"
+                 :title "FSM headless test task"
+                 :priority "medium"}]]
+      (with-redefs [scope/get-current-project-id (constantly "test-project")
 
-                  c-kanban/handle-kanban
-                  (fn [params]
-                    (case (:command params)
-                      "list" {:text (json/write-str [{:id "task-99"
-                                                      :title "FSM headless test task"
-                                                      :priority "medium"}])}
-                      "update" nil
-                      nil))
+                    c-kanban/handle-kanban
+                    (fn [params]
+                      (case (:command params)
+                        "list" {:text (json/write-str rows)}
+                        "update" nil
+                        nil))
 
-                  spawn/handle-spawn
-                  (fn [params]
-                    {:text (json/write-str {:agent-id "forja-fsm-hl-001"
-                                            :spawn-mode "headless"
-                                            :success true})})
+                    spawn/handle-spawn
+                    (fn [params]
+                      {:text (json/write-str {:agent-id "forja-fsm-hl-001"
+                                              :spawn-mode "headless"
+                                              :success true})})
 
-                  readiness/ling-cli-ready? (constantly true)
+                    readiness/ling-cli-ready? (constantly true)
 
-                  dispatch/handle-dispatch
-                  (fn [_] {:text (json/write-str {:success true})})]
+                    dispatch/handle-dispatch
+                    (fn [_] {:text (json/write-str {:success true})})]
 
-      (let [ack (parse-mcp-result
-                 (workflow/handle-forge-strike-fsm
-                  {:directory "/tmp/fsm"
-                   :spawn_mode "headless"
-                   :max_slots 3}))
-            result (await-fsm-strike!)]
+        (let [ack (parse-mcp-result
+                   (workflow/handle-forge-strike-fsm
+                    {:directory "/tmp/fsm"
+                     :spawn_mode "headless"
+                     :max_slots 3
+                     :task-entry-fn (synthetic-cards rows)}))
+              result (await-fsm-strike!)]
 
-        (is (true? (:queued ack)) "Strike is acked immediately and runs async")
+          (is (true? (:queued ack)) "Strike is acked immediately and runs async")
 
-        (is (true? (:success result)) "FSM strike should succeed")
-        (is (= "fsm" (:mode result)) "Should report FSM mode")
-        (is (= "headless" (:spawn-mode result))
-            "Should reflect headless in result")
+          (is (true? (:success result)) "FSM strike should succeed")
+          (is (= "fsm" (:mode result)) "Should report FSM mode")
+          (is (= "headless" (:spawn-mode result))
+              "Should reflect headless in result")
 
-        (is (some? (:smite result)))
-        (is (= 1 (:count (:smite result)))
-            "Should have smited the terminal forja ling")
+          (is (some? (:smite result)))
+          (is (= 1 (:count (:smite result)))
+              "Should have smited the terminal forja ling")
 
-        (is (= 1 (:todo-count (:survey result)))
-            "Should find the single todo task")
-        (is (= ["FSM headless test task"] (:task-titles (:survey result))))
+          (is (= 1 (:todo-count (:survey result)))
+              "Should find the single todo task")
+          (is (= ["FSM headless test task"] (:task-titles (:survey result))))
 
-        (is (some? (:spark result)))
-        (is (= 1 (:count (:spark result)))
-            "Should have sparked 1 ling for the todo task")))))
+          (is (some? (:spark result)))
+          (is (= 1 (:count (:spark result)))
+              "Should have sparked 1 ling for the todo task"))))))
 
 ;; =============================================================================
 ;; Section 4b: Verify default handle-forge-strike IS FSM
@@ -477,73 +491,77 @@
                                                   :cwd "/tmp/fsm-check"
                                                   :project-id "test-project"})
 
-    (with-redefs [scope/get-current-project-id (constantly "test-project")
+    (let [rows [{:id "task-fsm-check"
+                 :title "Verify FSM default"}]]
+      (with-redefs [scope/get-current-project-id (constantly "test-project")
 
-                  c-kanban/handle-kanban
-                  (fn [params]
-                    (case (:command params)
-                      "list" {:text (json/write-str [{:id "task-fsm-check"
-                                                      :title "Verify FSM default"}])}
-                      "update" nil
-                      nil))
+                    c-kanban/handle-kanban
+                    (fn [params]
+                      (case (:command params)
+                        "list" {:text (json/write-str rows)}
+                        "update" nil
+                        nil))
 
-                  spawn/handle-spawn
-                  (fn [_] {:text (json/write-str {:agent-id "forja-fsm-verify"
-                                                  :spawn-mode "headless"
-                                                  :success true})})
+                    spawn/handle-spawn
+                    (fn [_] {:text (json/write-str {:agent-id "forja-fsm-verify"
+                                                    :spawn-mode "headless"
+                                                    :success true})})
 
-                  readiness/ling-cli-ready? (constantly true)
+                    readiness/ling-cli-ready? (constantly true)
 
-                  dispatch/handle-dispatch
-                  (fn [_] {:text (json/write-str {:success true})})]
+                    dispatch/handle-dispatch
+                    (fn [_] {:text (json/write-str {:success true})})]
 
-      (let [ack (parse-mcp-result
-                 (workflow/handle-forge-strike
-                  {:directory "/tmp/fsm-check"
-                   :spawn_mode "headless"
-                   :max_slots 3}))
-            result (await-fsm-strike!)]
-        (is (true? (:queued ack)) "Strike is acked immediately and runs async")
-        (is (true? (:success result)) "Default strike should succeed")
-        (is (= "fsm" (:mode result))
-            "Default handle-forge-strike MUST report 'fsm' mode (not imperative)")
-        (is (nil? (:deprecated result))
-            "Default path should NOT be deprecated")))))
+        (let [ack (parse-mcp-result
+                   (workflow/handle-forge-strike
+                    {:directory "/tmp/fsm-check"
+                     :spawn_mode "headless"
+                     :max_slots 3
+                     :task-entry-fn (synthetic-cards rows)}))
+              result (await-fsm-strike!)]
+          (is (true? (:queued ack)) "Strike is acked immediately and runs async")
+          (is (true? (:success result)) "Default strike should succeed")
+          (is (= "fsm" (:mode result))
+              "Default handle-forge-strike MUST report 'fsm' mode (not imperative)")
+          (is (nil? (:deprecated result))
+              "Default path should NOT be deprecated"))))))
 
 (deftest imperative-forge-strike-reports-deprecated
   (testing "handle-forge-strike-imperative flags output as deprecated"
-    (with-redefs [scope/get-current-project-id (constantly "test-project")
+    (let [rows [{:id "dep-task"
+                 :title "Deprecation check"}]]
+      (with-redefs [scope/get-current-project-id (constantly "test-project")
 
-                  c-kanban/handle-kanban
-                  (fn [params]
-                    (case (:command params)
-                      "list" {:text (json/write-str [{:id "dep-task"
-                                                      :title "Deprecation check"}])}
-                      "update" nil
-                      nil))
+                    c-kanban/handle-kanban
+                    (fn [params]
+                      (case (:command params)
+                        "list" {:text (json/write-str rows)}
+                        "update" nil
+                        nil))
 
-                  spawn/handle-spawn
-                  (fn [_] {:text (json/write-str {:agent-id "forja-dep"
-                                                  :spawn-mode "headless"
-                                                  :success true})})
+                    spawn/handle-spawn
+                    (fn [_] {:text (json/write-str {:agent-id "forja-dep"
+                                                    :spawn-mode "headless"
+                                                    :success true})})
 
-                  readiness/ling-cli-ready? (constantly true)
+                    readiness/ling-cli-ready? (constantly true)
 
-                  dispatch/handle-dispatch
-                  (fn [_] {:text (json/write-str {:success true})})]
+                    dispatch/handle-dispatch
+                    (fn [_] {:text (json/write-str {:success true})})]
 
-      (let [result (parse-mcp-result
-                    (workflow/handle-forge-strike-imperative
-                     {:directory "/tmp/deprecated"
-                      :spawn_mode "headless"
-                      :max_slots 3}))]
-        (is (true? (:success result)) "Imperative strike should succeed")
-        (is (true? (:deprecated result))
-            "Imperative path MUST flag :deprecated true")
-        (is (= "imperative" (:mode result))
-            "Imperative path should report 'imperative' mode")
-        (is (str/includes? (:summary result) "DEPRECATED")
-            "Summary should contain DEPRECATED warning")))))
+        (let [result (parse-mcp-result
+                      (workflow/handle-forge-strike-imperative
+                       {:directory "/tmp/deprecated"
+                        :spawn_mode "headless"
+                        :max_slots 3
+                        :task-entry-fn (synthetic-cards rows)}))]
+          (is (true? (:success result)) "Imperative strike should succeed")
+          (is (true? (:deprecated result))
+              "Imperative path MUST flag :deprecated true")
+          (is (= "imperative" (:mode result))
+              "Imperative path should report 'imperative' mode")
+          (is (str/includes? (:summary result) "DEPRECATED")
+              "Summary should contain DEPRECATED warning"))))))
 
 ;; =============================================================================
 ;; Section 5: Edge Cases
@@ -595,17 +613,17 @@
     (ds-lings/add-slave! "active-ling-3" {:status :working :depth 1 :cwd "/tmp"
                                           :project-id "test-project"})
 
-    (let [spawn-calls (atom 0)]
+    (let [spawn-calls (atom 0)
+          ;; 5 tasks available but only 2 slots free (max 5 - 3 active)
+          rows (mapv #(do {:id (str "t" %)
+                           :title (str "Task " %)
+                           :priority "medium"})
+                     (range 1 6))]
       (with-redefs [scope/get-current-project-id (constantly "test-project")
                     c-kanban/handle-kanban
                     (fn [params]
                       (case (:command params)
-                        ;; 5 tasks available but only 2 slots free (max 5 - 3 active)
-                        "list" {:text (json/write-str
-                                       (mapv #(do {:id (str "t" %)
-                                                   :title (str "Task " %)
-                                                   :priority "medium"})
-                                             (range 1 6)))}
+                        "list" {:text (json/write-str rows)}
                         "update" nil
                         nil))
                     spawn/handle-spawn
@@ -621,7 +639,8 @@
                       (workflow/handle-forge-strike-imperative
                        {:directory "/tmp/slots"
                         :spawn_mode "headless"
-                        :max_slots 5}))]
+                        :max_slots 5
+                        :task-entry-fn (synthetic-cards rows)}))]
           (is (true? (:success result)))
           ;; Only 2 slots available (5 max - 3 active)
           (is (= 2 @spawn-calls)
@@ -631,41 +650,44 @@
 
 (deftest headless-forge-strike-spawn-failure-resilience
   (testing "Headless forge-strike (deprecated imperative) handles spawn failure gracefully"
-    (with-redefs [scope/get-current-project-id (constantly "test-project")
-                  c-kanban/handle-kanban
-                  (fn [params]
-                    (case (:command params)
-                      "list" {:text (json/write-str [{:id "fail-task"
-                                                      :title "Doomed task"
-                                                      :priority "high"}])}
-                      "update" nil
-                      nil))
-                  spawn/handle-spawn
-                  (fn [_] (throw (ex-info "Headless spawn failed: no claude binary" {})))
-                  readiness/ling-cli-ready? (constantly true)
-                  dispatch/handle-dispatch (fn [_] nil)]
-
-      (let [result (parse-mcp-result
-                    (workflow/handle-forge-strike-imperative
-                     {:directory "/tmp/fail"
-                      :spawn_mode "headless"
-                      :max_slots 5}))]
-        (is (true? (:success result))
-            "Strike should succeed even if individual spawn fails")
-        (is (= 0 (:count (:spark result)))
-            "No lings should be reported as spawned")
-        (is (pos? (count (:failed (:spark result))))
-            "Should report the failed spawn")))))
-
-(deftest headless-forge-strike-mixed-results
-  (testing "Deprecated imperative forge-strike reports partial outcome when some spawns fail"
-    (let [spawn-count (atom 0)]
+    (let [rows [{:id "fail-task"
+                 :title "Doomed task"
+                 :priority "high"}]]
       (with-redefs [scope/get-current-project-id (constantly "test-project")
                     c-kanban/handle-kanban
                     (fn [params]
                       (case (:command params)
-                        "list" {:text (json/write-str [{:id "t1" :title "Good task" :priority "high"}
-                                                       {:id "t2" :title "Bad task" :priority "medium"}])}
+                        "list" {:text (json/write-str rows)}
+                        "update" nil
+                        nil))
+                    spawn/handle-spawn
+                    (fn [_] (throw (ex-info "Headless spawn failed: no claude binary" {})))
+                    readiness/ling-cli-ready? (constantly true)
+                    dispatch/handle-dispatch (fn [_] nil)]
+
+        (let [result (parse-mcp-result
+                      (workflow/handle-forge-strike-imperative
+                       {:directory "/tmp/fail"
+                        :spawn_mode "headless"
+                        :max_slots 5
+                        :task-entry-fn (synthetic-cards rows)}))]
+          (is (true? (:success result))
+              "Strike should succeed even if individual spawn fails")
+          (is (= 0 (:count (:spark result)))
+              "No lings should be reported as spawned")
+          (is (pos? (count (:failed (:spark result))))
+              "Should report the failed spawn"))))))
+
+(deftest headless-forge-strike-mixed-results
+  (testing "Deprecated imperative forge-strike reports partial outcome when some spawns fail"
+    (let [spawn-count (atom 0)
+          rows [{:id "t1" :title "Good task" :priority "high"}
+                {:id "t2" :title "Bad task" :priority "medium"}]]
+      (with-redefs [scope/get-current-project-id (constantly "test-project")
+                    c-kanban/handle-kanban
+                    (fn [params]
+                      (case (:command params)
+                        "list" {:text (json/write-str rows)}
                         "update" nil
                         nil))
                     spawn/handle-spawn
@@ -682,7 +704,8 @@
                       (workflow/handle-forge-strike-imperative
                        {:directory "/tmp/mixed"
                         :spawn_mode "headless"
-                        :max_slots 5}))]
+                        :max_slots 5
+                        :task-entry-fn (synthetic-cards rows)}))]
           (is (true? (:success result))
               "Partial success is still success=true")
           (is (= 1 (:count (:spark result)))
@@ -698,37 +721,40 @@
 
 (deftest headless-forge-state-accumulation
   (testing "Forge state accumulates across multiple headless strikes (imperative)"
-    (with-redefs [scope/get-current-project-id (constantly "test-project")
-                  c-kanban/handle-kanban
-                  (fn [params]
-                    (case (:command params)
-                      "list" {:text (json/write-str [{:id "acc-task"
-                                                      :title "Accumulation test"}])}
-                      "update" nil
-                      nil))
-                  spawn/handle-spawn
-                  (fn [_] {:text (json/write-str {:agent-id "forja-acc"
-                                                  :spawn-mode "headless"
-                                                  :success true})})
-                  readiness/ling-cli-ready? (constantly true)
-                  dispatch/handle-dispatch (fn [_] {:text (json/write-str {:success true})})]
+    (let [rows [{:id "acc-task"
+                 :title "Accumulation test"}]]
+      (with-redefs [scope/get-current-project-id (constantly "test-project")
+                    c-kanban/handle-kanban
+                    (fn [params]
+                      (case (:command params)
+                        "list" {:text (json/write-str rows)}
+                        "update" nil
+                        nil))
+                    spawn/handle-spawn
+                    (fn [_] {:text (json/write-str {:agent-id "forja-acc"
+                                                    :spawn-mode "headless"
+                                                    :success true})})
+                    readiness/ling-cli-ready? (constantly true)
+                    dispatch/handle-dispatch (fn [_] {:text (json/write-str {:success true})})]
 
-      ;; Run two headless strikes via imperative path (avoids DS readiness poll)
-      (workflow/handle-forge-strike-imperative {:directory "/tmp/acc"
-                                                :spawn_mode "headless"
-                                                :max_slots 5})
-      (workflow/handle-forge-strike-imperative {:directory "/tmp/acc"
-                                                :spawn_mode "headless"
-                                                :max_slots 5})
+        ;; Run two headless strikes via imperative path (avoids DS readiness poll)
+        (workflow/handle-forge-strike-imperative {:directory "/tmp/acc"
+                                                  :spawn_mode "headless"
+                                                  :max_slots 5
+                                                  :task-entry-fn (synthetic-cards rows)})
+        (workflow/handle-forge-strike-imperative {:directory "/tmp/acc"
+                                                  :spawn_mode "headless"
+                                                  :max_slots 5
+                                                  :task-entry-fn (synthetic-cards rows)})
 
-      (let [forge-atom (deref #'workflow/forge-state)
-            state (deref forge-atom)]
-        (is (= 2 (:total-strikes state))
-            "Should have 2 total strikes")
-        (is (= 2 (:total-sparked state))
-            "Should have sparked 2 lings total")
-        (is (some? (:last-strike state))
-            "Should have recorded last strike time")))))
+        (let [forge-atom (deref #'workflow/forge-state)
+              state (deref forge-atom)]
+          (is (= 2 (:total-strikes state))
+              "Should have 2 total strikes")
+          (is (= 2 (:total-sparked state))
+              "Should have sparked 2 lings total")
+          (is (some? (:last-strike state))
+              "Should have recorded last strike time"))))))
 
 ;; =============================================================================
 ;; Section 7: Real Subprocess E2E (echo command)
@@ -781,34 +807,36 @@
 
 (deftest headless-forge-strike-summary-format
   (testing "Default forge-strike (FSM) summary mentions headless mode and model"
-    (with-redefs [scope/get-current-project-id (constantly "test-project")
-                  c-kanban/handle-kanban
-                  (fn [params]
-                    (case (:command params)
-                      "list" {:text (json/write-str [{:id "sum-task"
-                                                      :title "Summary test"}])}
-                      "update" nil
-                      nil))
-                  spawn/handle-spawn
-                  (fn [_] {:text (json/write-str {:agent-id "forja-sum"
-                                                  :spawn-mode "headless"
-                                                  :success true})})
-                  readiness/ling-cli-ready? (constantly true)
-                  dispatch/handle-dispatch (fn [_] {:text (json/write-str {:success true})})]
+    (let [rows [{:id "sum-task"
+                 :title "Summary test"}]]
+      (with-redefs [scope/get-current-project-id (constantly "test-project")
+                    c-kanban/handle-kanban
+                    (fn [params]
+                      (case (:command params)
+                        "list" {:text (json/write-str rows)}
+                        "update" nil
+                        nil))
+                    spawn/handle-spawn
+                    (fn [_] {:text (json/write-str {:agent-id "forja-sum"
+                                                    :spawn-mode "headless"
+                                                    :success true})})
+                    readiness/ling-cli-ready? (constantly true)
+                    dispatch/handle-dispatch (fn [_] {:text (json/write-str {:success true})})]
 
-      (let [_ack   (workflow/handle-forge-strike
-                    {:directory "/tmp/summary"
-                     :spawn_mode "headless"
-                     :model "deepseek/deepseek-chat"})
-            result (await-fsm-strike!)]
-        (is (true? (:success result)) "FSM strike should succeed")
-        (is (= "fsm" (:mode result)) "Should report FSM mode")
-        (is (str/includes? (:summary result) "headless")
-            "Summary should mention headless mode")
-        (is (str/includes? (:summary result) "deepseek/deepseek-chat")
-            "Summary should mention model")
-        (is (= "deepseek/deepseek-chat" (:model result))
-            "Result should include model field")))))
+        (let [_ack   (workflow/handle-forge-strike
+                      {:directory "/tmp/summary"
+                       :spawn_mode "headless"
+                       :model "deepseek/deepseek-chat"
+                       :task-entry-fn (synthetic-cards rows)})
+              result (await-fsm-strike!)]
+          (is (true? (:success result)) "FSM strike should succeed")
+          (is (= "fsm" (:mode result)) "Should report FSM mode")
+          (is (str/includes? (:summary result) "headless")
+              "Summary should mention headless mode")
+          (is (str/includes? (:summary result) "deepseek/deepseek-chat")
+              "Summary should mention model")
+          (is (= "deepseek/deepseek-chat" (:model result))
+              "Result should include model field"))))))
 
 (comment
   ;; Run all forge-strike headless tests

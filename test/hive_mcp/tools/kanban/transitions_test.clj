@@ -2,7 +2,8 @@
   "Unit + golden tests for pure kanban transition derivation."
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.tools.kanban.predicates :as kp]
-            [hive-mcp.tools.kanban.transitions :as kt]))
+            [hive-mcp.tools.kanban.transitions :as kt]
+            [clojure.data.json :as json]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -50,6 +51,44 @@
   (testing "multi-project flag adds :project"
     (is (= "hive-mcp"
            (:project (kt/task->slim fixture-entry true))))))
+
+(def ^:private routed-context
+  {:plan-step-id "s1"
+   :execution {:provider "ollama-compat" :model "qwen2.5:3b-instruct"
+               :spawn-mode "hive-agent" :presets ["ling"]
+               :persona {:caps {:decisions 2}}}})
+
+(deftest entry-content-decodes-what-a-store-may-return
+  (is (= (:content fixture-entry) (kt/entry-content fixture-entry)))
+  (is (= {:task-type "kanban" :title "t"}
+         (kt/entry-content {:content "{\"task-type\":\"kanban\",\"title\":\"t\"}"})))
+  (is (nil? (kt/entry-content {:content "not json"})))
+  (is (nil? (kt/entry-content {:content "[1,2]"})))
+  (is (nil? (kt/entry-content {}))))
+
+(deftest task->detail-keeps-description-and-context
+  (let [entry (update fixture-entry :content assoc
+                      :description "body" :context routed-context)
+        detail (kt/task->detail entry)]
+    (testing "the slim keys of the detail are the slim shape"
+      (is (= (kt/task->slim entry) (select-keys detail (keys (kt/task->slim entry))))))
+    (is (= "body" (:description detail)))
+    (is (= routed-context (:context detail)))
+    (testing "multi-project adds :project as slim does"
+      (is (= "hive-mcp" (:project (kt/task->detail entry true))))))
+  (testing "JSON-string content is decoded"
+    (let [entry {:id "x" :content (json/write-str {:task-type "kanban" :title "t" :status "todo"
+                                                   :priority "low" :description "body"
+                                                   :context routed-context})}]
+      (is (= {:id "x" :title "t" :status "todo" :priority "low"
+              :description "body" :context routed-context}
+             (kt/task->detail entry)))))
+  (testing "string-keyed context comes back keyword-keyed"
+    (let [entry {:id "x" :content {"title" "t" "context" (json/read-str (json/write-str routed-context))}}]
+      (is (= routed-context (:context (kt/task->detail entry))))))
+  (testing "absent or non-map context and absent description add nothing"
+    (is (= (kt/task->slim fixture-entry) (kt/task->detail fixture-entry)))
+    (is (not (contains? (kt/task->detail (assoc-in fixture-entry [:content :context] "x")) :context)))))
 
 (deftest compute-new-content-stamps
   (testing "doing stamps :started"
