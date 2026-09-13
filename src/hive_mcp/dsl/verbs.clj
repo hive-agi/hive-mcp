@@ -195,13 +195,32 @@
 ;; Sentence Parsing
 ;; =============================================================================
 
+(def entity-id-remaps
+  "Verbs whose advertised `id` param names an entity the handler reads, keyed
+   by [tool command]. The batch compiler owns an op's :id (its \"$N\" label) and
+   the executor strips :id before calling the handler, so these verbs must carry
+   the entity id under another key.
+
+   Each entry is {:unless k :rewrite (fn [op id] op')}: skipped when the op
+   already holds k; otherwise :rewrite receives the op without :id."
+  {["kanban" "update"] {:unless  :task_id
+                        :rewrite (fn [op id] (assoc op :task_id id))}
+   ["kanban" "delete"] {:unless  :task_id
+                        :rewrite (fn [op id] (assoc op :task_id id))}
+   ["memory" "get"]    {:unless  :ids
+                        :rewrite (fn [op id]
+                                   (assoc op
+                                          :command "batch-get"
+                                          :ids (if (sequential? id) (vec id) [id])))}})
+
 (defn parse-sentence
   "Parse a DSL sentence [verb params-map] into a standard operation map.
    Resolves verb code to {:tool :command}, expands parameter aliases.
 
-   For kanban task-keyed verbs (b> update, b- delete) the advertised `id`
-   alias is remapped to :task_id — the key those handlers require — and the
-   op-local :id is freed so the batch compiler can assign its \"$N\" ref id.
+   For verbs listed in `entity-id-remaps` the advertised `id` param is moved
+   to the key the handler reads (b> update / b- delete -> :task_id, m@ get ->
+   batch-get :ids) and the op-local :id is freed so the batch compiler can
+   assign its \"$N\" ref id.
 
    Returns expanded operation map, or {:error \"...\" :verb verb} for unknowns.
 
@@ -212,17 +231,20 @@
      (parse-sentence [\"b>\" {\"id\" \"20260101-abcd\" \"new_status\" \"done\"}])
      ;=> {:tool \"kanban\" :command \"update\" :task_id \"20260101-abcd\" :new_status \"done\"}
 
+     (parse-sentence [\"m@\" {\"id\" \"20260101-abcd\"}])
+     ;=> {:tool \"memory\" :command \"batch-get\" :ids [\"20260101-abcd\"]}
+
      (parse-sentence [\"zz\" {}])
      ;=> {:error \"Unknown verb: zz\" :verb \"zz\"}"
   [[verb params]]
   (if-let [{:keys [tool command]} (get verb-table verb)]
-    (let [op (merge {:tool tool :command command}
-                    (expand-params params))]
-      (if (and (= tool "kanban")
-               (contains? #{"update" "delete"} command)
+    (let [op                      (merge {:tool tool :command command}
+                                         (expand-params params))
+          {:keys [unless rewrite]} (get entity-id-remaps [tool command])]
+      (if (and rewrite
                (contains? op :id)
-               (not (contains? op :task_id)))
-        (-> op (assoc :task_id (:id op)) (dissoc :id))
+               (not (contains? op unless)))
+        (rewrite (dissoc op :id) (:id op))
         op))
     {:error (str "Unknown verb: " verb)
      :verb  verb}))
