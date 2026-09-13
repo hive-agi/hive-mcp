@@ -35,7 +35,8 @@
             [malli.core :as m]
             [malli.error :as me]
             [clojure.string :as str]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [hive-mcp.addons.core :as addon-core])
   (:import [java.util.jar JarFile]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -341,40 +342,44 @@
           keyword))
 
 (defn prepare-config
-  "Prepare a manifest's config for addon initialization.
+  "Prepare a manifest's config for addon initialization. This is the host's
+   config resolver: every manifest mount path hands it to hive-addon's mount
+   boundary as :resolve-config (startup mount-compose, hot inject, hot reload)
+   or calls it directly (init-from-manifest!), so all of them resolve the same
+   effective config.
 
-   Applies:
-   1. Merge config.edn :services values (authoritative literal overrides)
-   2. Strip pure ${VAR} placeholders so the addon's hive-di defconfig resolves
-      env-sourced fields directly (typed coercion + blank->nil + Result errors)
-   3. Inject :addon/id and :addon/type for context
-   4. Inject host-neutral function adapters under :runtime/ports (DIP)
+   Layers, weakest first (later wins):
+   1. manifest :addon/config (the addon author's defaults)
+   2. config.edn :services <service-key> literal values
+   3. the host's per-addon declaration, global config :addons <addon-id>
+      (read through hive-mcp.addons.core/addon-declared-config)
 
-   Config precedence (highest wins, after addon defconfig resolution):
-     manifest :addon/config literal > config.edn :services > env vars > defaults
-
-   Pure ${VAR} placeholders are dropped here, not expanded — env resolution is
-   the addon's responsibility via its (defconfig …) field registry. Literal
-   non-template values in :addon/config remain authoritative overrides.
+   Then:
+   - pure ${VAR} placeholders are dropped so the addon's hive-di defconfig
+     resolves env-sourced fields directly (typed coercion + blank->nil)
+   - :addon/id and :addon/type are injected for context
+   - host-neutral function adapters are injected under :runtime/ports (DIP)
 
    Arguments:
-     manifest - Validated manifest map
+     manifest - Validated manifest map (or MountSpec)
 
    Returns:
-     Config map ready for (initialize! addon config)"
+     Config map ready for the constructor and (initialize! addon config)"
   [manifest]
-  (let [raw-config  (or (:addon/config manifest) {})
-        service-key (addon-id->service-key (:addon/id manifest))
+  (let [addon-id    (:addon/id manifest)
+        raw-config  (or (:addon/config manifest) {})
+        service-key (addon-id->service-key addon-id)
         file-config (when service-key
                       (try
                         (require 'hive-mcp.config.core)
                         (let [get-svc (resolve 'hive-mcp.config.core/get-service-config)]
                           (when get-svc
                             (dissoc (get-svc service-key) :mode)))
-                        (catch Exception _ nil)))]
-    (-> (merge raw-config file-config)
+                        (catch Exception _ nil)))
+        declared    (if addon-id (addon-core/addon-declared-config addon-id) {})]
+    (-> (merge raw-config file-config declared)
         strip-env-templates
-        (assoc :addon/id (:addon/id manifest)
+        (assoc :addon/id addon-id
                :addon/type (:addon/type manifest)
                :runtime/ports (runtime-ports/runtime-ports)))))
 
