@@ -75,9 +75,24 @@
         "an explicit :task_id is preserved, never overwritten by :id")
     (is (nil? (:id (verbs/parse-sentence ["b>" {"id" "t-1"}])))
         ":id is freed so the batch compiler assigns its own $N ref id"))
-  (testing "non-kanban verbs keep :id (memory get, kg node)"
-    (is (= {:tool "memory" :command "get" :id "mem-1"}
-           (verbs/parse-sentence ["m@" {"id" "mem-1"}])))))
+  (testing "verbs without an entity-id remap keep :id"
+    (is (= {:tool "kg" :command "traverse" :id "node-1"}
+           (verbs/parse-sentence ["k^" {"id" "node-1"}])))))
+
+(deftest memory-get-entity-id-survives-compile-test
+  (testing "m@ moves the entity `id` off the op-label key (regression: nil id)"
+    (is (= {:tool "memory" :command "batch-get" :ids ["mem-1"]}
+           (verbs/parse-sentence ["m@" {"id" "mem-1"}])))
+    (is (= {:tool "memory" :command "batch-get" :ids ["a" "b"]}
+           (verbs/parse-sentence ["m@" {"id" ["a" "b"]}]))
+        "a vector id is passed through as :ids"))
+  (testing "after compile-paragraph assigns $N labels the entity id is still present"
+    (let [[get-op upd-op] (verbs/compile-paragraph [["m@" {"id" "mem-1"}]
+                                                   ["b>" {"id" "t-1" "new_status" "done"}]])]
+      (is (= "$0" (:id get-op)))
+      (is (= ["mem-1"] (:ids get-op)))
+      (is (= "$1" (:id upd-op)))
+      (is (= "t-1" (:task_id upd-op))))))
 
 (deftest session-verbs-test
   (testing "session verb family"
