@@ -29,6 +29,7 @@
    :path               kg-handlers/handle-kg-find-path
    :context            kg-handlers/handle-kg-node-context
    :promote            kg-handlers/handle-kg-promote
+   :remove-edge        kg-handlers/handle-kg-remove-edge
    :reground           kg-handlers/handle-kg-reground
    :cleanup-synthetics kg-handlers/handle-kg-cleanup-synthetics
    :batch-edge         handle-batch-edge
@@ -44,7 +45,8 @@
    :relations   [:vec]
    :threshold   [:double]
    :limit       [:int]
-   :dry_run     [:boolean]})
+   :dry_run     [:boolean]
+   :i_mean_it   [:boolean]})
 
 (def handle-kg
   (make-cli-handler handlers coerce-schema))
@@ -52,10 +54,10 @@
 (def tool-def
   {:name "kg"
    :consolidated true
-   :description "Knowledge Graph operations: traverse (walk graph), edge (add relationship), impact (find dependents), subgraph (extract scope), stats (counts), path (shortest path), context (node details), promote (bubble up scope), reground (verify source), cleanup-synthetics (prune dead synthetic patterns). Batch: batch-edge (multiple edges), batch-traverse (multiple traversals). Use command='help' to list all."
+   :description "Knowledge Graph operations: traverse (walk graph), edge (add relationship), impact (find dependents), subgraph (extract scope), stats (counts), path (shortest path), context (node details), promote (bubble up scope), remove-edge (delete one edge by edge_id; requires i_mean_it true), reground (verify source), cleanup-synthetics (prune dead synthetic patterns). Batch: batch-edge (multiple edges), batch-traverse (multiple traversals). Use command='help' to list all."
    :inputSchema {:type "object"
                  :properties {"command" {:type "string"
-                                         :enum ["traverse" "edge" "impact" "subgraph" "stats" "path" "context" "promote" "reground" "cleanup-synthetics" "batch-edge" "batch-traverse" "help"]
+                                         :enum ["traverse" "edge" "impact" "subgraph" "stats" "path" "context" "promote" "remove-edge" "reground" "cleanup-synthetics" "batch-edge" "batch-traverse" "help"]
                                          :description "KG operation to perform"}
                               "start_node" {:type "string"
                                             :description "Node ID to start traversal from"}
@@ -91,7 +93,9 @@
                               "to_node" {:type "string"
                                          :description "Target node for path finding"}
                               "edge_id" {:type "string"
-                                         :description "Edge ID to promote"}
+                                         :description "Edge ID to promote or remove"}
+                              "i_mean_it" {:type "boolean"
+                                           :description "remove-edge: must be true, or nothing is deleted"}
                               "to_scope" {:type "string"
                                           :description "Target scope for promotion"}
                               "entry_id" {:type "string"

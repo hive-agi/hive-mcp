@@ -162,11 +162,16 @@
       (is (contains? commands :path))
       (is (contains? commands :context))
       (is (contains? commands :promote))
+      (is (contains? commands :remove-edge))
       (is (contains? commands :reground))
       (is (contains? commands :cleanup-synthetics))
       (is (contains? commands :batch-edge))
       (is (contains? commands :batch-traverse))
-      (is (= 12 (count commands)) "12 consolidated commands"))))
+      (is (= 13 (count commands)) "13 consolidated commands")))
+  (testing "every wired command is advertised in the tool's command enum"
+    (let [advertised (set (get-in consolidated-kg/tool-def
+                                  [:inputSchema :properties "command" :enum]))]
+      (is (every? #(contains? advertised (name %)) (keys consolidated-kg/handlers))))))
 
 (deftest consolidated-handlers-resolve-correctly
   (testing "Consolidated handler map resolves to sub-namespace fns"
@@ -190,9 +195,13 @@
   (testing "validate-node-id returns error for invalid inputs"
     (is (some? (kg-queries/validate-node-id nil "test"))    "nil is invalid")
     (is (some? (kg-queries/validate-node-id "" "test"))     "empty is invalid")
-    (is (some? (kg-queries/validate-node-id 123 "test"))    "non-string is invalid"))
+    (is (some? (kg-queries/validate-node-id 123 "test"))    "non-string is invalid")
+    (is (some? (kg-queries/validate-node-id "$ref:m1.data.id" "test"))
+        "an unresolved $ref literal is not a node id"))
   (testing "validate-node-id returns nil for valid inputs"
-    (is (nil? (kg-queries/validate-node-id "node-1" "test")) "non-empty string is valid")))
+    (is (nil? (kg-queries/validate-node-id "node-1" "test")) "non-empty string is valid")
+    (is (nil? (kg-queries/validate-node-id "hive-mcp.batch/ref?" "test"))
+        "a qualified name that merely mentions ref is valid")))
 
 (deftest parse-relations-filter-tests
   (testing "parse-relations-filter handles various inputs"

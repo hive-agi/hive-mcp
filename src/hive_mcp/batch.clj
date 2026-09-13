@@ -324,12 +324,15 @@
 
      - the source op-id is missing from results (`ref-not-found`), OR
      - the resolved value is literally `nil`, OR
+     - its path is exactly `id` (`:op-label`): that walks the op-result
+       envelope, whose :id is the op's own label, never the entity the op
+       created. It carries a `:hint` naming `$ref:<op>.data.id`, OR
      - no parser answered for it (`:unparsed`): without a `:bx/a` extension
        the host cannot resolve any ref, and the literal string must not
        reach a handler as a value.
 
    Returns `nil` when all refs OK (or no refs); otherwise
-   `{:broken-refs [{:ref str :reason kw} ...]}`."
+   `{:broken-refs [{:ref str :reason kw :hint str?} ...]}`."
   [original-op results-by-id]
   (let [refs (atom [])
         walk! (fn walk! [v]
@@ -341,7 +344,10 @@
                         (identical? resolved ref-not-found)
                         (swap! refs conj {:ref v :reason :unresolved})
                         (nil? resolved)
-                        (swap! refs conj {:ref v :reason :nil-resolved})))
+                        (swap! refs conj {:ref v :reason :nil-resolved})
+                        (= ["id"] (mapv name (:path parsed)))
+                        (swap! refs conj {:ref v :reason :op-label
+                                          :hint (str "$ref:" (:op-id parsed) ".data.id")})))
                     ;; No parser answered (no :bx/a extension, or a malformed
                     ;; ref). A ref that cannot be parsed cannot be resolved
                     ;; either, so the literal "$ref:..." string would reach the
@@ -371,8 +377,10 @@
      :command (:command op)
      :success false
      :error   (str "Skipped: broken-ref — "
-                   (str/join ", " (mapv (fn [{:keys [ref reason]}]
-                                          (str ref " (" (name reason) ")"))
+                   (str/join ", " (mapv (fn [{:keys [ref reason hint]}]
+                                          (str ref " (" (name reason)
+                                               (when hint (str "; use " hint))
+                                               ")"))
                                         broken-refs)))}))
 
 (defn- normalize-exec-result
