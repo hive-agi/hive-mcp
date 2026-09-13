@@ -151,8 +151,10 @@
                      (is (= "search term" (:query (parse-sentence ["m?" {"q" "search term"}])))))
                    (testing "n → name"
                      (is (= "ling" (:name (parse-sentence ["p@" {"n" "ling"}])))))
-                   (testing "id → id (passthrough)"
-                     (is (= "entry-123" (:id (parse-sentence ["m@" {"id" "entry-123"}])))))
+                   (testing "id → id (passthrough for verbs without an entity-id remap)"
+                     (is (= "entry-123" (:id (parse-sentence ["k^" {"id" "entry-123"}])))))
+                   (testing "id → :ids on m@ (entity id kept off the op-label key)"
+                     (is (= ["entry-123"] (:ids (parse-sentence ["m@" {"id" "entry-123"}])))))
                    (testing "p → prompt"
                      (is (= "do the thing" (:prompt (parse-sentence ["a!" {"p" "do the thing"}])))))
                    (testing "f → files"
