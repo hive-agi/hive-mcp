@@ -138,6 +138,28 @@
     (is (string? (get-in (stage-by-name report :lifecycle-smoke)
                          [:evidence :health :details :opaque])))))
 
+(deftest live-functions-and-sets-fold-to-the-stable-wire-shape
+  (let [manifest (spec)
+        instance (fake-addon "hive.emacs" :native #{:tools :editor}
+                             {:status :ok
+                              :details {:callback (fn [] :called)
+                                        :tags #{:b :a}}})
+        ports (assoc (healthy-ports manifest)
+                     :get-entry-fn
+                     (constantly {:addon instance
+                                  :state :active
+                                  :init-result {:success? true}}))
+        report (:ok (doctor/run-doctor {:addon-id "hive.emacs"} ports))
+        details (get-in (stage-by-name report :lifecycle-smoke)
+                        [:evidence :health :details])]
+    (is (= "#fn" (:callback details)))
+    (is (= [:a :b] (:tags details)))
+    (is (= details
+           (get-in (stage-by-name
+                    (:ok (doctor/run-doctor {:addon-id "hive.emacs"} ports))
+                    :lifecycle-smoke)
+                   [:evidence :health :details])))))
+
 (deftest invalid-input-is-a-domain-error
   (let [result (doctor/run-doctor {:addon-id ""
                                    :emacs-features ["bad feature"]})]
