@@ -4,8 +4,9 @@
    entries that back every provider-scoped tool resolution, and the :dag-wave
    dispatch mode over the kernel DAG scheduler. No plan store is seeded.
 
-   Runs at namespace load via a `defonce` guard so the seed is idempotent and the
-   registry is populated before any addon `(hooks [this])` walk arrives.
+   Seeds on every load of this namespace, so the registry is populated before any
+   addon `(hooks [this])` walk arrives. Registering under :saa/core is a same-owner
+   replace, so each load leaves the :saa/core entries this code builds.
 
    External addons can never deregister `:saa/core` entries because
    `deregister-by-owner!` is invoked only with the addon's own id."
@@ -101,31 +102,27 @@
                                :owner core-owner})])
   1)
 
-(defonce ^{:doc "Seed runs once on namespace load. Idempotent — re-loading the
-                 namespace is a no-op because defonce guards the side effect.
-                 Call `install!` from a REPL to force re-seed."}
-  installed
-  (let [providers (seed-phase-provider!)
-        scorers (seed-scorer!)
-        planners (seed-planner!)
-        tool-intents (seed-tool-intents!)
-        dispatch-modes (seed-dispatch-modes!)]
-    (log/info "[saa.core-seed] seeded :saa/core owner"
-              {:providers providers :scorers scorers
-               :planners planners :tool-intents tool-intents
-               :dispatch-modes dispatch-modes})
-    {:providers providers :scorers scorers
-     :planners planners :tool-intents tool-intents
-     :dispatch-modes dispatch-modes}))
+(defn- seed!
+  "Register every :saa/core seed. Returns the count registered per child registry."
+  []
+  {:providers      (seed-phase-provider!)
+   :scorers        (seed-scorer!)
+   :planners       (seed-planner!)
+   :tool-intents   (seed-tool-intents!)
+   :dispatch-modes (seed-dispatch-modes!)})
+
+(def installed
+  "Counts registered per child registry by the latest load of this namespace.
+   Evaluating it seeds :saa/core, so every load re-seeds."
+  (let [result (seed!)]
+    (log/info "[saa.core-seed] seeded :saa/core owner" result)
+    result))
 
 (defn install!
-  "Force re-seed (test/REPL). Production code relies on the defonce guard above."
+  "Deregister every :saa/core entry, then seed again (test/REPL). Returns the
+   count registered per child registry."
   []
   (registry/deregister-by-owner! core-owner)
-  (let [result {:providers (seed-phase-provider!)
-                :scorers (seed-scorer!)
-                :planners (seed-planner!)
-                :tool-intents (seed-tool-intents!)
-                :dispatch-modes (seed-dispatch-modes!)}]
+  (let [result (seed!)]
     (log/info "[saa.core-seed] re-seeded :saa/core owner" result)
     result))
