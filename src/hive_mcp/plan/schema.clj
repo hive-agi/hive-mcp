@@ -91,6 +91,11 @@
      [:presets {:optional true} [:vector :string]]
      [:persona {:optional true} :map]]]])
 
+(def step-keys
+  "Set of top-level keys the core Step schema declares, read off Step itself.
+   Addon-registered step fields (plan.field-registry) are not included."
+  (into #{} (map first) (m/children Step)))
+
 ;; =============================================================================
 ;; Plan Schema
 ;; =============================================================================
