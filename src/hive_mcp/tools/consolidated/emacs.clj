@@ -4,7 +4,7 @@
    Absorbs all buffer.clj and docs.clj functionality into a single
    consolidated tool. Docs are nested under a :docs subtree
    (e.g. emacs docs describe-function)."
-  (:require [hive-mcp.tools.cli :refer [make-cli-handler]]
+  (:require [hive-mcp.tools.composite :as composite]
             [hive-mcp.tools.result-bridge :as rb]
             [hive-mcp.dns.result :as result]
             [hive-mcp.emacs-ext.client :as ec]
@@ -140,7 +140,11 @@
           :list-packages      docs/handle-list-packages}})
 
 (def handle-emacs
-  (make-cli-handler handlers))
+  "Routes core commands plus whatever addons contribute under \"emacs\".
+   An addon tool that is itself named \"emacs\" is dropped by the registry
+   (it collides with this root), so a contribution is the only way an addon
+   verb such as hive.emacs's `answer` becomes reachable here."
+  (composite/build-merged-handler "emacs" handlers))
 
 (def tool-def
   {:name "emacs"
