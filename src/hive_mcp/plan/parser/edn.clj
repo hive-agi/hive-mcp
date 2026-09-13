@@ -315,12 +315,13 @@
     step))
 
 (def ^:private known-step-keys
-  "Step keys recognized by the parser (post strip-namespaces, post-aliasing).
-   Anything outside this set triggers a warn — surfaces silent drops like :wave."
-  #{:id :title :description :depends-on :priority :files :estimate :tags
-    :dependencies :blockedBy :file
-    :why :validation :details :deliverable :est-tokens
-    :files-read :files-write})
+  "Step keys recognized by the parser (post strip-namespaces, post-aliasing):
+   the core Step schema keys plus the aliases and informational keys this
+   parser accepts. Anything outside this set triggers a warn."
+  (into schema/step-keys
+        #{:dependencies :blockedBy :file
+          :why :validation :details :deliverable :est-tokens
+          :files-read :files-write}))
 
 (defn- warn-unknown-keys
   "Log warn for step keys not in known-step-keys nor registered by an addon
