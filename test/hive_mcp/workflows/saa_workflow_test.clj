@@ -470,15 +470,25 @@
                                                {:wave-id "w" :result {:status :completed}})})]
       (sut/handle-act-dispatch res (merge base-data {:plan {:id "p1"}
                                                      :run-id "wf-run-42"}))
-      (is (= {:run-id "wf-run-42"} @seen))))
+      (is (= {:run-id "wf-run-42" :plan-memory-id nil} @seen))))
 
-  (testing "ctx carries nil :run-id when data has none"
+  (testing "forwards :plan-memory-id set by store-plan to dispatch-fn ctx"
+    (let [seen (atom nil)
+          res  (mock-resources {:dispatch-fn (fn [_plan _mode _agent-id ctx]
+                                               (reset! seen ctx)
+                                               {:wave-id "w" :result {:status :completed}})})]
+      (sut/handle-act-dispatch res (merge base-data {:plan {:id "p1"}
+                                                     :run-id "wf-run-42"
+                                                     :plan-memory-id "plan-mem-7"}))
+      (is (= {:run-id "wf-run-42" :plan-memory-id "plan-mem-7"} @seen))))
+
+  (testing "ctx carries nil :run-id and :plan-memory-id when data has none"
     (let [seen (atom :unset)
           res  (mock-resources {:dispatch-fn (fn [_plan _mode _agent-id ctx]
                                                (reset! seen ctx)
                                                {:wave-id "w" :result {:status :completed}})})]
       (sut/handle-act-dispatch res (merge base-data {:plan {:id "p1"}}))
-      (is (= {:run-id nil} @seen)))))
+      (is (= {:run-id nil :plan-memory-id nil} @seen)))))
 
 (deftest handle-act-verify-test
   (testing "verifies execution results"

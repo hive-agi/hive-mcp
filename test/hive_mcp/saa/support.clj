@@ -20,10 +20,13 @@
   (core-seed/install!))
 
 (defn with-fresh-registry
-  "use-fixtures :each fixture: pristine :saa/core seed per test."
+  "use-fixtures :each fixture: pristine :saa/core seed per test. Snapshots every
+   child SAA registry first and restores that snapshot on teardown, so the
+   process keeps whatever it held before the test."
   [f]
-  (reset+seed!)
-  (try (f) (finally (registry/reset-for-test!))))
+  (let [before (registry/snapshot)]
+    (reset+seed!)
+    (try (f) (finally (registry/restore! before)))))
 
 (defrecord MockSession [id raws]
   bridge/IAgentSession
