@@ -32,10 +32,13 @@ registry. Use configured provider/model IDs; omitted fields use strike defaults
 and existing provider resolution. No new provider or model is selected by these
 examples. Per-step presets replace the default preset vector.
 
-Mixed mode sends every card to lings, honoring explicit execution settings.
-Orchestrator mode rejects these settings instead of ignoring them: per-task
-settings do not route orchestrator subagents. The former drone mode is removed
-and refused with `:execution/unsupported-mode`.
+Mixed mode sends every card to lings, honoring explicit execution settings, and
+allocates slots in the survey's order. Orchestrator mode rejects cards with
+explicit settings instead of ignoring them: each one is left undispatched and
+reported in the spark result's `:failed` with `:type :execution/unsupported-mode`,
+while the strike's other cards proceed. When every card is rejected, nothing is
+spawned. Per-task settings do not route orchestrator subagents. The former drone
+mode is removed and refused with `:execution/unsupported-mode`.
 
 `:persona` is a catchup lens map, not a named profile. Before starting the CLI,
 forge registers it under the generated agent ID through hive-agent's

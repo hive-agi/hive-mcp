@@ -9,6 +9,7 @@
 
    Extracted from workflow.clj to reduce cyclomatic complexity."
   (:require [hive-mcp.tools.consolidated.workflow.readiness :as ready]
+            [hive-mcp.tools.consolidated.workflow.execution-routing :as routing]
             [hive-mcp.tools.agent.spawn :as spawn]
             [hive-mcp.tools.agent.dispatch :as dispatch]
             [hive-mcp.tools.consolidated.kanban :as c-kanban]
@@ -447,6 +448,10 @@
    Routes: :claude (Emacs), :vterm, :headless/:agent-sdk/:openrouter,
    :orchestrator (single ling + Task subagents), :mixed (default: fill vterm slots,
    overflow to headless).
+   A task carrying per-task execution goes to a ling in every ling mode, in task order.
+   :orchestrator cannot honor it: such a task is not dispatched and is reported in
+   :failed as :execution/unsupported-mode while the other tasks proceed; when every
+   task is rejected, nothing is spawned.
    Ling spawn, readiness, dispatch, in-progress marking, agent listing and project
    resolution go through `ports` (keys of default-spark-ports); the 1-arity uses the defaults.
    The :dispatch-fn, :wait-ready-fn and :update-fn keys of `opts` are not ports and are ignored."
@@ -460,15 +465,14 @@
              (throw (ex-info "Drone spawn mode was removed: lings are the forge execution unit"
                              {:type :execution/unsupported-mode
                               :spawn-mode effective-spawn-mode
-                              :fix "Use spawn_mode mixed, claude, vterm or a headless mode"})))
-         _ (when (and (= :orchestrator effective-spawn-mode)
-                      (some #(seq (get-in % [:context :execution])) tasks))
-             (throw (ex-info "Per-task execution requires a ling spawn mode"
-                             {:type :execution/unsupported-mode
-                              :spawn-mode effective-spawn-mode})))]
+                              :fix "Use spawn_mode mixed, claude, vterm or a headless mode"})))]
      (if (= :orchestrator effective-spawn-mode)
-       (spawn-orchestrator! {:tasks tasks :directory directory :model model
-                             :context-result context-result :ports ports})
+       (let [{:keys [accepted rejected]} (routing/reject-execution-routed :orchestrator tasks)]
+         (update (if (and (seq rejected) (empty? accepted))
+                   {:spawned [] :failed [] :count 0 :mode :orchestrator}
+                   (spawn-orchestrator! {:tasks accepted :directory directory :model model
+                                         :context-result context-result :ports ports}))
+                 :failed (fnil into []) rejected))
        (let [ling-tasks      (vec tasks)
              effective-dir   (or directory (ctx/current-directory) (System/getProperty "user.dir"))
              project-id      (when effective-dir ((:project-id-fn ports) effective-dir))
