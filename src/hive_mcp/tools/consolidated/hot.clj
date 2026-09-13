@@ -391,6 +391,53 @@
 ;; Tool definition
 ;; =============================================================================
 
+(def ^:private lifecycle-off-msg
+  "Addon lifecycle is not running. Enable it with {:addons {:lifecycle {:enabled? true}}} in config.edn (or HIVE_MCP_ADDON_LIFECYCLE=1) and restart, or the hive-addon on the classpath predates hive-addon.lifecycle.")
+
+(defn- lifecycle-manager []
+  (when-let [f (soft 'hive-addon.lifecycle/installed-manager)] (f)))
+
+(defn- with-manager
+  [f]
+  (if-let [mgr (lifecycle-manager)]
+    (f mgr)
+    (mcp-error lifecycle-off-msg)))
+
+(defn handle-lifecycle
+  "Per-addon lifecycle phase, policy, last use and parts."
+  [_params]
+  (with-manager #(mcp-json ((soft 'hive-addon.lifecycle/status) %))))
+
+(defn handle-activate
+  "Mount a dormant addon now, with the dependencies it lacks."
+  [{:keys [addon]}]
+  (if-not addon
+    (mcp-error "addon is required, e.g. {:command \"activate\" :addon \"hive.carto\"}")
+    (with-manager #(mcp-json ((soft 'hive-addon.lifecycle/activate!) % addon)))))
+
+(defn handle-evict
+  "Release an addon to dormant stubs."
+  [{:keys [addon force]}]
+  (if-not addon
+    (mcp-error "addon is required, e.g. {:command \"evict\" :addon \"hive.carto\"}")
+    (with-manager #(mcp-json ((soft 'hive-addon.lifecycle/evict!) % addon {:force? (true? force)})))))
+
+(defn handle-pin
+  "Set an addon's lifecycle policy at runtime (default :pinned)."
+  [{:keys [addon policy idle_ms]}]
+  (if-not addon
+    (mcp-error "addon is required, e.g. {:command \"pin\" :addon \"hive.carto\" :policy \"lazy\"}")
+    (with-manager
+      #(mcp-json {:addon/id addon
+                  :lifecycle ((soft 'hive-addon.lifecycle/set-policy!) % addon
+                              (cond-> {:policy (keyword (or policy "pinned"))}
+                                (pos-int? idle_ms) (assoc :idle-ms idle_ms)))}))))
+
+(defn handle-sweep
+  "Evict every idle lazy addon and close idle parts now."
+  [_params]
+  (with-manager #(mcp-json (update ((soft 'hive-addon.lifecycle/sweep!) %) :plan dissoc :kept))))
+
 (def canonical-handlers
   {:reload     handle-reload
    :reload-all handle-reload-all
@@ -399,7 +446,13 @@
    :unwatch    handle-unwatch
    :list       handle-list
    :status     handle-status
-   :strategies handle-strategies})
+   :strategies handle-strategies
+   :lifecycle  handle-lifecycle
+   :activate   handle-activate
+   :evict      handle-evict
+   :pin        handle-pin
+   :sweep      handle-sweep})
+
 
 (def handlers canonical-handlers)
 
@@ -417,12 +470,17 @@
         "(per-addon strategy + source-kind + whether it is reloadable at all), "
         "status, strategies. Only addons wired as :local/root deps have reloadable "
         "source; jar-backed addons report :restart-required. "
+        "Addon lifecycle (when :addons :lifecycle :enabled?): lifecycle (per-addon phase, "
+        "policy, idle time, parts), activate (mount a dormant addon now), evict (release "
+        "an addon to dormant stubs; force for pinned/eager), pin (set policy at runtime), "
+        "sweep (evict every idle lazy addon and close idle parts now). "
         "Use command='help' to list all.")
    :inputSchema
    {:type "object"
     :properties
     {"command" {:type "string"
-                :enum ["reload" "reload-all" "inject" "watch" "unwatch" "list" "status" "strategies" "help"]
+                :enum ["reload" "reload-all" "inject" "watch" "unwatch" "list" "status" "strategies"
+                       "lifecycle" "activate" "evict" "pin" "sweep" "help"]
                 :description "Hot-reload operation to perform"}
      "addon" {:type "string"
               :description "[reload] Addon id to reload, e.g. \"hive.carto\". Dependents cascade automatically."}
@@ -433,7 +491,14 @@
      "path" {:type "string"
              :description "[inject] Absolute path of the addon to mount: a project dir (its deps.edn :paths go on the classpath), a source dir, or a jar. Its META-INF/hive-addons manifests are discovered and mounted; addons already mounted are left alone."}
      "resolve_deps" {:type "boolean"
-                     :description "[inject] Also hand the project's deps.edn :deps to clojure.repl.deps/add-libs before mounting (needs a tools.deps basis in the running image). Default false."}}
+                     :description "[inject] Also hand the project's deps.edn :deps to clojure.repl.deps/add-libs before mounting (needs a tools.deps basis in the running image). Default false."}
+     "force" {:type "boolean"
+              :description "[evict] Also evict a pinned or eager addon. Default false."}
+     "policy" {:type "string"
+               :enum ["eager" "lazy" "pinned"]
+               :description "[pin] Lifecycle policy to set at runtime; pin defaults to \"pinned\"."}
+     "idle_ms" {:type "integer"
+                :description "[pin] Idle time in ms before a lazy addon may be evicted."}}
     :required ["command"]}
    :handler (composite/build-merged-handler "hot" canonical-handlers)})
 
