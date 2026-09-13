@@ -76,5 +76,10 @@
   (let [s @state]
     {:version (hash s) :data s}))
 
+(defn restore!
+  "Replace the registry state with a prior `snapshot` value. Test-only."
+  [{:keys [data]}]
+  (reset! state (or data {:by-id {} :by-owner {}})))
+
 (defn reset-for-test! []
   (reset! state {:by-id {} :by-owner {}}))

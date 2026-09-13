@@ -1,7 +1,8 @@
 (ns hive-mcp.saa.core-seed
   "Seed the SAA registry as the synthetic `:saa/core` owner: the DefaultPhaseProvider,
-   DefaultObservationScorer, NoopPlanSynthesizer, and the neutral DEFAULT tool-intent
-   entries that back every provider-scoped tool resolution.
+   DefaultObservationScorer, NoopPlanSynthesizer, the neutral DEFAULT tool-intent
+   entries that back every provider-scoped tool resolution, and the :dag-wave
+   dispatch mode over the kernel DAG scheduler. No plan store is seeded.
 
    Runs at namespace load via a `defonce` guard so the seed is idempotent and the
    registry is populated before any addon `(hooks [this])` walk arrives.
@@ -69,6 +70,37 @@
                                 {:intent intent :tools tools :owner core-owner})]))
   (count default-tool-intents))
 
+(defn dag-wave-dispatch-fn
+  "Build the :dag-wave dispatch fn over a scheduler port.
+   `start-dag!` is (fn [plan-id opts]) => {:plan-id _ ...}.
+   The returned fn is (fn [plan agent-id ctx]) => {:wave-id _ :result _}: it
+   starts the plan with {:cwd (:directory ctx)} plus :run-id when ctx has one;
+   the wave id is the run id, else the scheduler's plan id."
+  [start-dag!]
+  (fn [plan _agent-id ctx]
+    (let [rid (:run-id ctx)
+          res (start-dag! (:id plan)
+                          (cond-> {:cwd (:directory ctx)}
+                            rid (assoc :run-id rid)))]
+      {:wave-id (or rid (str (:plan-id res)))
+       :result  (assoc res :status :dispatched)})))
+
+(defn- scheduler-start-dag!
+  "The kernel DAG scheduler's start-dag!, resolved when a wave is dispatched."
+  [plan-id opts]
+  ((requiring-resolve 'hive-mcp.scheduler.dag-waves/start-dag!) plan-id opts))
+
+(defn- seed-dispatch-modes!
+  "Seed the kernel's own :dag-wave execution mode."
+  []
+  (registry/register-by-key!
+   core-owner :saa/dispatch-mode
+   [(types/saa-registry-entry :saa/dispatch-mode
+                              {:mode :dag-wave
+                               :dispatch (dag-wave-dispatch-fn scheduler-start-dag!)
+                               :owner core-owner})])
+  1)
+
 (defonce ^{:doc "Seed runs once on namespace load. Idempotent — re-loading the
                  namespace is a no-op because defonce guards the side effect.
                  Call `install!` from a REPL to force re-seed."}
@@ -76,12 +108,15 @@
   (let [providers (seed-phase-provider!)
         scorers (seed-scorer!)
         planners (seed-planner!)
-        tool-intents (seed-tool-intents!)]
+        tool-intents (seed-tool-intents!)
+        dispatch-modes (seed-dispatch-modes!)]
     (log/info "[saa.core-seed] seeded :saa/core owner"
               {:providers providers :scorers scorers
-               :planners planners :tool-intents tool-intents})
+               :planners planners :tool-intents tool-intents
+               :dispatch-modes dispatch-modes})
     {:providers providers :scorers scorers
-     :planners planners :tool-intents tool-intents}))
+     :planners planners :tool-intents tool-intents
+     :dispatch-modes dispatch-modes}))
 
 (defn install!
   "Force re-seed (test/REPL). Production code relies on the defonce guard above."
@@ -90,6 +125,7 @@
   (let [result {:providers (seed-phase-provider!)
                 :scorers (seed-scorer!)
                 :planners (seed-planner!)
-                :tool-intents (seed-tool-intents!)}]
+                :tool-intents (seed-tool-intents!)
+                :dispatch-modes (seed-dispatch-modes!)}]
     (log/info "[saa.core-seed] re-seeded :saa/core owner" result)
     result))

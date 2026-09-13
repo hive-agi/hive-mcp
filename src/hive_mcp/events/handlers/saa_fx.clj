@@ -20,7 +20,8 @@
    ```"
 
   (:require [hive-mcp.events.core :as ev]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.saa.registry :as saa-registry]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -144,28 +145,57 @@
 (defn default-dispatch-fn
   "Build the default SAA :dispatch-fn for a project directory.
    Returns (fn [plan mode agent-id ctx]) => {:wave-id :result}.
-   :dag-wave mode starts the DAG scheduler threading (:run-id ctx);
-   other modes return {:status :no-dispatch-for-mode}."
+   Resolves `mode` from the :saa/dispatch-mode registry and calls the
+   contributed fn with (plan agent-id ctx+{:directory directory}).
+   An unregistered mode returns {:status :no-dispatch-for-mode :mode mode};
+   a contributed fn that throws returns {:status :dispatch-failed :mode :error}."
   [directory]
-  (fn [plan mode _agent-id ctx]
-    (if (= :dag-wave mode)
+  (fn [plan mode agent-id ctx]
+    (if-let [dispatch (saa-registry/lookup-dispatch-mode mode)]
       (try
-        (let [start! (requiring-resolve
-                      'hive-mcp.scheduler.dag-waves/start-dag!)
-              rid    (:run-id ctx)
-              res    (start! (:id plan)
-                             (cond-> {:cwd directory}
-                               rid (assoc :run-id rid)))]
-          {:wave-id (or rid (str (:plan-id res)))
-           :result  (assoc res :status :dispatched)})
+        (dispatch plan agent-id (assoc ctx :directory directory))
         (catch Exception e
-          (log/warn "[saa-fx] dag-wave dispatch failed:" (.getMessage e))
+          (log/warn "[saa-fx] dispatch failed" {:mode mode :error (.getMessage e)})
           {:wave-id nil
            :result  {:status :dispatch-failed
+                     :mode   mode
                      :error  (.getMessage e)}}))
       {:wave-id nil
        :result  {:status :no-dispatch-for-mode
                  :mode   mode}})))
+
+(defn- scope-port
+  "Resolve a directory to its project id; \"unknown\" when resolution fails."
+  [dir]
+  (try
+    ((requiring-resolve 'hive-mcp.swarm.scope/get-current-project-id) dir)
+    (catch Exception e
+      (log/trace "[saa-fx] scope-fn resolution failed:" (.getMessage e))
+      "unknown")))
+
+(defn- shout-port
+  "Report SAA phase progress to the hivemind; nil when the shout fails."
+  [aid phase msg]
+  (try
+    (when-let [shout! (requiring-resolve 'hive-mcp.hivemind.core/shout!)]
+      (shout! aid :progress {:workflow :saa :phase phase :message msg}))
+    (catch Exception e
+      (log/trace "[saa-fx] shout-fn resolution failed:" (.getMessage e))
+      nil)))
+
+(defn default-resources
+  "Default SAA FSM resources for a run in `directory`.
+   Always supplies :scope-fn :shout-fn :dispatch-fn :clock-fn.
+   Supplies :store-plan-fn only when the run opts in with `:store-plan? true`
+   AND an owner fills the :saa/plan-store port; otherwise store-plan skips, so
+   exploratory runs never persist plans."
+  [directory {:keys [store-plan?]}]
+  (let [store (when (true? store-plan?) (saa-registry/lookup-plan-store))]
+    (cond-> {:scope-fn    scope-port
+             :shout-fn    shout-port
+             :dispatch-fn (default-dispatch-fn directory)
+             :clock-fn    #(java.time.Instant/now)}
+      store (assoc :store-plan-fn store))))
 
 ;; =============================================================================
 ;; Effect: :saa/run-workflow
@@ -179,19 +209,21 @@
    the inline spec if the registry isn't available.
 
    Expected data shape:
-   {:task       \\\"Fix auth bug in login flow\\\"  ; required
-    :agent-id   \\\"swarm-ling-123\\\"              ; required
-    :directory  \\\"/path/to/project\\\"            ; required
-    :plan-only? false                           ; optional, default false
-    :run-id     \\\"wf-run-42\\\"                   ; optional, wave run id
-    :resources  {...}}                          ; optional, override resources map
+   {:task        \"Fix auth bug in login flow\"  ; required
+    :agent-id    \"swarm-ling-123\"              ; required
+    :directory   \"/path/to/project\"            ; required
+    :plan-only?  false                         ; optional, default false
+    :store-plan? false                         ; optional, default false: persist the
+                                               ; plan through the :saa/plan-store port
+    :run-id      \"wf-run-42\"                   ; optional, wave run id
+    :resources   {...}}                        ; optional, override resources map
 
-   Default :dispatch-fn is (default-dispatch-fn directory); override via
-   :resources.
+   Default resources are (default-resources directory data); override any
+   of them via :resources.
 
    Note: Runs in a future to avoid blocking the event loop.
    Dispatches :saa/completed or :saa/failed events on completion."
-  [{:keys [task agent-id directory plan-only? run-id resources] :as _data}]
+  [{:keys [task agent-id directory plan-only? run-id resources] :as data}]
   (when (and task agent-id)
     (future
       (try
@@ -199,31 +231,12 @@
         (let [run-fn (if plan-only?
                        (resolve 'hive-mcp.workflows.saa-workflow/run-plan-only)
                        (resolve 'hive-mcp.workflows.saa-workflow/run-full-saa))
-              ;; Build minimal resources if not provided
-              default-resources {:scope-fn (fn [dir]
-                                             (try
-                                               (let [scope-fn (requiring-resolve
-                                                               'hive-mcp.swarm.scope/get-current-project-id)]
-                                                 (scope-fn dir))
-                                               (catch Exception e (log/trace "[saa-fx] scope-fn resolution failed:" (.getMessage e)) "unknown")))
-                                 :shout-fn (fn [aid phase msg]
-                                             (try
-                                               (when-let [shout! (requiring-resolve
-                                                                  'hive-mcp.hivemind.core/shout!)]
-                                                 (shout! aid :progress
-                                                         {:workflow :saa
-                                                          :phase phase
-                                                          :message msg}))
-                                               (catch Exception e (log/trace "[saa-fx] shout-fn resolution failed:" (.getMessage e)) nil)))
-                                 :dispatch-fn (default-dispatch-fn directory)
-                                 :clock-fn #(java.time.Instant/now)}
-              effective-resources (merge default-resources resources)
+              effective-resources (merge (default-resources directory data) resources)
               opts (cond-> {:task task
                             :agent-id agent-id
                             :directory directory}
                      run-id (assoc :run-id run-id))
               result (run-fn effective-resources opts)]
-          ;; Dispatch completion event
           (when-let [dispatch-fn (requiring-resolve 'hive-mcp.events.core/dispatch)]
             (dispatch-fn [:saa/completed (merge (select-keys result
                                                              [:agent-id :task :plan-memory-id
@@ -232,7 +245,6 @@
                                                 {:agent-id agent-id})])))
         (catch Throwable e
           (log/error "[saa-fx] SAA workflow failed:" (.getMessage e))
-          ;; Dispatch failure event
           (try
             (when-let [dispatch-fn (requiring-resolve 'hive-mcp.events.core/dispatch)]
               (dispatch-fn [:saa/failed {:agent-id agent-id
