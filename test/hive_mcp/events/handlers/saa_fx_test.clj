@@ -249,7 +249,7 @@
 
 (deftest default-dispatch-fn-runs-dag-wave-through-seed
   (testing ":dag-wave resolves to the :saa/core seeded entry"
-    (is (= :saa/core (:owner (hive-mcp.saa.registry.dispatch-modes/lookup :dag-wave)))))
+    (is (= :saa/core (:owner (r-dispatch/lookup :dag-wave)))))
 
   (testing "the seeded :dag-wave builder is what the default dispatch reaches"
     (let [calls (atom [])]
