@@ -22,7 +22,8 @@
             [clojure.string :as str]
             [hive-mcp.vectordb.facade :as memory]
             [hive-mcp.vectordb.kanban-facade :as kanban]
-            [hive-mcp.plan.parser :as plan-parser]))
+            [hive-mcp.plan.parser :as plan-parser]
+            [hive-mcp.tools.kanban.transitions :as kt]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -187,16 +188,57 @@
                         {:plan-id plan-id :task-id id :dependency-step dependency}))))
     ids))
 
+(defn- hydrate-task
+  "Outcome of filling a ready task from its stored card read through `lookup`:
+   {:task task-merged-with-card-detail}, or {:blocked {:task-id :state ...}} with
+   :state :missing, :invalid, :not-todo (card no longer todo) or :lookup-error."
+  [task lookup]
+  (let [id (:id task)]
+    (try
+      (let [entry (lookup id)
+            state (vulcan/entry-state entry)
+            detail (when-not (#{:missing :invalid} state) (kt/task->detail entry))
+            status (some-> (:status detail) name)]
+        (cond
+          (#{:missing :invalid} state) {:blocked {:task-id id :state state}}
+          (not= "todo" status) {:blocked {:task-id id :state :not-todo :status status}}
+          :else {:task (merge task (dissoc detail :id))}))
+      (catch Exception e
+        {:blocked {:task-id id :state :lookup-error :error (ex-message e)}}))))
+
+(defn- hydrate-selection
+  "Fill every ready task of a prioritized selection from its stored card.
+   Tasks that cannot be filled leave :tasks for :blocked; :count and
+   :blocked-count follow. Task order is kept."
+  [{:keys [tasks] :as prioritized} lookup]
+  (let [outcomes (mapv #(hydrate-task % lookup) tasks)
+        ready (vec (keep :task outcomes))
+        blocked (keep :blocked outcomes)]
+    (-> prioritized
+        (assoc :tasks ready :count (count ready))
+        (update :blocked (fnil into []) blocked)
+        (update :blocked-count (fnil + 0) (count blocked)))))
+
 (defn survey
   "Query ready todo tasks. A supplied plan_id must resolve a complete conversion.
    task_ids intersects the plan scope; an explicit empty whitelist selects nothing.
-   Selection status distinguishes ready, blocked, no-ready, and proven plan completion."
+   Every ready task is filled from its stored card (kt/task->detail over the entry
+   read through :task-entry-fn, default kanban-facade/get-entry-by-id), so it carries
+   :description and :context; a card that is missing, unreadable, not a kanban card
+   or no longer todo is moved to :blocked instead of being selected. A plan card is
+   read at most twice. Selection status distinguishes ready, blocked, no-ready, and
+   proven plan completion."
   [{:keys [directory plan_id task_ids task_filter] :as opts}]
   (try
     (let [plan-ids (when (contains? opts :plan_id) (plan-task-ids plan_id opts))
           entry-fn (or (:task-entry-fn opts) kanban/get-entry-by-id)
-          plan-states (when plan-ids (into {} (map (fn [id] [id (vulcan/entry-state (entry-fn id))])) plan-ids))
+          plan-entries (when plan-ids (into {} (map (fn [id] [id (entry-fn id)])) plan-ids))
+          plan-states (when plan-entries
+                        (into {} (map (fn [[id entry]] [id (vulcan/entry-state entry)])) plan-entries))
           plan-complete? (boolean (and (seq plan-states) (every? #{:done} (vals plan-states))))
+          lookup (if plan-entries
+                   (fn [id] (if (contains? plan-entries id) (get plan-entries id) (entry-fn id)))
+                   entry-fn)
           response (c-kanban/handle-kanban {:command "list" :status "todo" :directory directory})
           _ (when (:isError response)
               (throw (ex-info "Forge kanban lookup failed" {:response response})))
@@ -207,7 +249,7 @@
                   (some? task_filter) (filterv #(str/starts-with? (or (:title %) "") task_filter)))
           prioritized (vulcan/prioritize-tasks
                        tasks #{} (dissoc opts :directory :plan_id :task_ids :task_filter))
-          filtered (apply-milestone-boundary-filter prioritized)
+          filtered (apply-milestone-boundary-filter (hydrate-selection prioritized lookup))
           selection-status (cond
                              (pos? (:count filtered 0)) :ready
                              (pos? (:blocked-count filtered 0)) :blocked
@@ -224,6 +266,25 @@
         (throw (ex-info "Forge plan survey failed; no tasks selected"
                         {:plan-id plan_id :error (ex-message e)} e))
         {:tasks [] :count 0 :selection-status :error :error (ex-message e)}))))
+
+(defn survey-view
+  "A survey result shaped for an MCP answer. Each task keeps :id :title :priority
+   :project :wave-number, gains :execution (its card's provider, model, spawn-mode
+   and presets) and :persona? true when the card routes it, and drops every other
+   key, card :description and :context included. Keys outside :tasks are unchanged."
+  [survey-result]
+  (cond-> survey-result
+    (contains? survey-result :tasks)
+    (update :tasks
+            (fn [tasks]
+              (mapv (fn [task]
+                      (let [execution (get-in task [:context :execution])]
+                        (cond-> (select-keys task [:id :title :priority :project :wave-number])
+                          (seq execution)
+                          (assoc :execution (select-keys execution [:provider :model :spawn-mode :presets]))
+                          (:persona execution)
+                          (assoc :persona? true))))
+                    tasks)))))
 
 ;; ── Forge Status ────────────────────────────────────────────────────────────
 

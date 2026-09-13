@@ -120,7 +120,8 @@
    gap because `forge survey` fell through :_handler to the belt dashboard and
    answered with global kanban totals instead.
 
-   Contract: forge-ops/survey returns a plain selection map, so it is wrapped in
+   Contract: forge-ops/survey returns a plain selection map; it is shaped by
+   forge-ops/survey-view (each task's routing, no card bodies) and wrapped in
    result/ok before the bridge; a successful survey is a non-error JSON payload,
    a thrown survey is an MCP error naming the failure.
 
@@ -128,7 +129,7 @@
    status reports the BELT, survey reports the SELECTION."
   [params]
   (rb/result->mcp (rb/try-result :forge/survey-failed
-                                 #(result/ok (forge-ops/survey params)))))
+                                 #(result/ok (forge-ops/survey-view (forge-ops/survey params))))))
 
 ;; ── Forge Quench ────────────────────────────────────────────────────────────
 

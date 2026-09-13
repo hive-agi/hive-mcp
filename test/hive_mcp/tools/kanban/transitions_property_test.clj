@@ -10,7 +10,8 @@
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
             [hive-mcp.tools.kanban.predicates :as kp]
-            [hive-mcp.tools.kanban.transitions :as kt]))
+            [hive-mcp.tools.kanban.transitions :as kt]
+            [clojure.data.json :as json]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -79,3 +80,30 @@
                  project-id gen-project-id]
     (let [{:keys [title]} (kt/transition entry status project-id)]
       (= (get-in entry [:content :title]) title))))
+
+(def gen-context
+  (gen/let [step-id  gen-title
+            provider gen-title
+            presets  (gen/vector gen-title 0 2)]
+    {:plan-step-id step-id
+     :execution {:provider provider :presets presets}}))
+
+(def gen-detail-entry
+  (gen/let [entry       gen-entry
+            description (gen/one-of [(gen/return nil) gen-title])
+            context     (gen/one-of [(gen/return nil) gen-context])]
+    (update entry :content assoc :description description :context context)))
+
+(defspec task->slim-is-the-slim-keys-of-task->detail 200
+  (prop/for-all [entry          gen-detail-entry
+                 multi-project? gen/boolean]
+    (let [slim   (kt/task->slim entry multi-project?)
+          detail (kt/task->detail entry multi-project?)]
+      (and (= slim (select-keys detail (keys slim)))
+           (= (get-in entry [:content :context]) (:context detail))
+           (= (get-in entry [:content :description]) (:description detail))))))
+
+(defspec task->detail-survives-a-json-content-roundtrip 200
+  (prop/for-all [entry gen-detail-entry]
+    (= (kt/task->detail entry)
+       (kt/task->detail (update entry :content json/write-str)))))

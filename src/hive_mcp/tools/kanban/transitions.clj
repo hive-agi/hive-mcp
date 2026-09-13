@@ -7,7 +7,9 @@
    No side effects. Safe to property-test."
   (:require [hive-mcp.tools.kanban.predicates :as pred]
             [hive-mcp.tools.memory.scope :as scope]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [clojure.data.json :as json]
+            [clojure.walk :as walk])
   (:import [java.time ZonedDateTime]
            [java.time.format DateTimeFormatter]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -57,6 +59,33 @@
               :status   (content-val content :status nil)
               :priority (content-val content :priority nil)}
        multi-project? (assoc :project (extract-project-id-from-tags entry))))))
+
+(defn entry-content
+  "Content map of a kanban entry. Map content passes through; a JSON-object
+   string is decoded with keyword keys; anything else, including a string that
+   does not decode to a map, is nil."
+  [entry]
+  (let [raw (:content entry)]
+    (cond
+      (map? raw) raw
+      (string? raw) (let [v (try (json/read-str raw :key-fn keyword)
+                                 (catch Exception _ nil))]
+                      (when (map? v) v))
+      :else nil)))
+
+(defn task->detail
+  "Project a kanban entry to its detail shape: the slim shape over the decoded
+   content, plus :description when present and :context, with keyword keys at
+   every depth, when it is a map. The slim shape of a map-content entry is
+   exactly the slim keys of its detail."
+  ([entry] (task->detail entry false))
+  ([entry multi-project?]
+   (let [content     (entry-content entry)
+         description (content-val content :description nil)
+         context     (content-val content :context nil)]
+     (cond-> (task->slim (assoc entry :content content) multi-project?)
+       (some? description) (assoc :description description)
+       (map? context)      (assoc :context (walk/keywordize-keys context))))))
 
 (defn compute-new-content
   "Pure: derive the new content map for a status transition.
