@@ -35,6 +35,49 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-09-14
+
+Released as a minor by decision, although it removes tool roots and commands
+and makes model configuration required, which the promise above classes as
+major. Read **Removed** and **Configuration now required** before upgrading.
+
+### Removed
+
+- Drones. The only worker model is the agentic ling; cheap parallel work is a
+  ling-wave (hive-agent) on a configured model. Gone: the `:drone` agent type
+  and `hive-mcp.agent.drone*`, the `agent.core` delegation facade,
+  `agent.routing`, `agent.config` task-models, `agent.task-classifier`,
+  `agent.cost` and `tools.cost`, `IAgent/upgrade!`.
+- The `wave` tool root (dispatch, dispatch-validated, status, review, approve,
+  auto-approve, reject), `swarm wave`, and the DSL verbs `w!`, `w?`, `wy`, `wn`.
+- The `diff` tools (propose / review / approve / apply).
+- Agora debates: `debate`, `debate-status`, `continue`, `staged`,
+  `stage-status`, `list type=debate`. Ling `dialogue`, `dispatch`, `consensus`,
+  `list`, `join` and `history` stay.
+- Change-plan / change-item / wave DataScript storage, the Olympus waves view
+  and `GET /api/waves`, drone NATS subjects and callbacks, Prometheus drone
+  metrics, the drone presets and `wave-coordinator`.
+- Forge drone mode: `spawn_mode drone` is refused with
+  `:execution/unsupported-mode`.
+
+### Configuration now required
+
+hive-mcp chooses no model in code. Missing values fail loudly naming the key:
+
+- `agent-defaults.<type>` for every agent type spawned without a model
+  (e.g. `hive config set agent-defaults.ling '{:provider :venice :model "<id>"}'`).
+- `llm-providers.<provider>.default-model` for a provider used without an
+  explicit model.
+- `embeddings.<provider>.model` (Ollama, and OpenRouter when its key is set).
+- `services.forge.budget-tier-models` when `services.forge.budget-routing` is on.
+
+Removed keys (`agent-defaults.drone`, `services.drone`, `models.task-models`,
+`models.routing`) are no longer re-written into `config.edn` by the defaults.
+
+### Changed
+
+- `hive-mcp.agent.drone.error-summary` is now `hive-mcp.agent.error-summary`.
+
 ### Fixed
 
 - An addon tool can no longer silently shadow a host tool of the same name.
