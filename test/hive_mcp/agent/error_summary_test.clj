@@ -1,5 +1,5 @@
-(ns hive-mcp.agent.drone.error-summary-test
-  "Unit + property tests for the pure drone-error summarizer.
+(ns hive-mcp.agent.error-summary-test
+  "Unit + property tests for the pure agent-error summarizer.
 
    Coverage:
    - NPE input → class/message/5-frame summary
@@ -13,7 +13,7 @@
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
             [clojure.test.check.clojure-test :refer [defspec]]
-            [hive-mcp.agent.drone.error-summary :as es]))
+            [hive-mcp.agent.error-summary :as es]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

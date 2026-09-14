@@ -141,11 +141,6 @@
   [task-id event-data]
   (bput! event-journal (str task-id) event-data))
 
-(defn record-nats-event!
-  "Record an event received from NATS into the JVM event journal."
-  [task-id event-data]
-  (write-to-journal! task-id event-data))
-
 (defn record-task-result!
   "Write a task result directly to the JVM event journal.
    Works without NATS or Emacs. Used by headless backends."

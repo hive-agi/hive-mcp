@@ -1,9 +1,8 @@
 (ns hive-mcp.agent.executor-test
-  "Tests for tool executor: agent-id attribution and allowlist enforcement.
+  "Tests for tool executor: agent-id attribution and batch execution.
 
    CLARITY-T: Verifies that agent-id propagates through tool execution
-   so that hivemind_shout and similar tools can identify the calling agent.
-   CLARITY-I: Verifies that allowlist enforcement rejects disallowed tools."
+   so that hivemind_shout and similar tools can identify the calling agent."
   (:require [clojure.test :refer :all]
             [hive-mcp.agent.executor :as executor]
             [hive-mcp.agent.context :as ctx]
@@ -45,11 +44,11 @@
     (reset! captured-agent-id nil)
 
     (let [calls [{:id "call-1" :name "test_capture_agent" :arguments {}}]
-          drone-id "drone-test-12345"]
-      (executor/execute-tool-calls drone-id calls #{:auto-approve})
+          agent-id "agent-test-12345"]
+      (executor/execute-tool-calls agent-id calls #{:auto-approve})
 
-      ;; The tool should have captured the drone-id
-      (is (= drone-id @captured-agent-id)
+      ;; The tool should have captured the agent-id
+      (is (= agent-id @captured-agent-id)
           "Tool handler should see the correct agent-id via current-agent-id"))))
 
 (deftest agent-id-isolated-between-executions
@@ -58,17 +57,17 @@
 
     ;; Execute with first agent
     (reset! captured-agent-id nil)
-    (executor/execute-tool-calls "drone-A"
+    (executor/execute-tool-calls "agent-A"
                                  [{:id "c1" :name "test_capture_agent" :arguments {}}]
                                  #{:auto-approve})
-    (is (= "drone-A" @captured-agent-id))
+    (is (= "agent-A" @captured-agent-id))
 
     ;; Execute with second agent
     (reset! captured-agent-id nil)
-    (executor/execute-tool-calls "drone-B"
+    (executor/execute-tool-calls "agent-B"
                                  [{:id "c2" :name "test_capture_agent" :arguments {}}]
                                  #{:auto-approve})
-    (is (= "drone-B" @captured-agent-id))
+    (is (= "agent-B" @captured-agent-id))
 
     ;; After execution, should be nil again
     (is (nil? (executor/current-agent-id)))))
@@ -79,30 +78,30 @@
 
 (deftest hivemind-shout-uses-context-agent-id
   (testing "hivemind_shout uses execution context agent-id when not provided"
-    ;; This test verifies the fix for P1: drone error attribution
-    ;; When a drone calls hivemind_shout without explicit agent_id,
+    ;; This test verifies the fix for P1: agent error attribution
+    ;; When an agent calls hivemind_shout without explicit agent_id,
     ;; it should use the agent-id from the execution context (current-agent-id)
 
     ;; Skip if hivemind_shout isn't registered (unit test environment)
     (when-let [tool (registry/get-tool "hivemind_shout")]
-      (let [drone-id "drone-attribution-test-123"
+      (let [agent-id "agent-attribution-test-123"
             calls [{:id "call-shout"
                     :name "hivemind_shout"
                     :arguments {:event_type "progress"
                                 :message "Test message"}}]
             ;; Note: We're not providing agent_id in arguments
             ;; The tool should get it from current-agent-id
-            results (executor/execute-tool-calls drone-id calls #{:auto-approve})]
+            results (executor/execute-tool-calls agent-id calls #{:auto-approve})]
 
-        ;; Result should show the drone-id was used
+        ;; Result should show the agent-id was used
         (is (some? results))))))
 
 ;; =============================================================================
-;; Allowlist Enforcement Tests
+;; Batch Execution Tests
 ;; =============================================================================
 
 (defn setup-test-tools!
-  "Register multiple test tools for allowlist testing."
+  "Register multiple test tools for batch execution testing."
   []
   (registry/register!
    [{:name "test_allowed_tool"
@@ -119,55 +118,22 @@
      :handler (fn [_] {:type "text" :text "another-ok"})}]))
 
 (deftest execute-tool-calls-backward-compatible
-  (testing "3-arity call still works (no allowlist = no filtering)"
+  (testing "3-arity call executes every call"
     (setup-test-tools!)
     (let [calls [{:id "c1" :name "test_allowed_tool" :arguments {}}
                  {:id "c2" :name "test_blocked_tool" :arguments {}}]
-          results (executor/execute-tool-calls "drone-1" calls #{:auto-approve})]
-      ;; Both should execute (no allowlist filtering)
+          results (executor/execute-tool-calls "agent-1" calls #{:auto-approve})]
+      ;; Both should execute
       (is (= 2 (count results)))
       (is (every? #(= "tool" (:role %)) results))
       ;; Neither should have "TOOL REJECTED" in content
       (is (not-any? #(.contains (:content %) "TOOL REJECTED") results)))))
 
-(deftest execute-tool-calls-with-allowlist-filters
-  (testing "4-arity call with allowlist rejects disallowed tools"
-    (setup-test-tools!)
-    (let [calls [{:id "c1" :name "test_allowed_tool" :arguments {}}
-                 {:id "c2" :name "test_blocked_tool" :arguments {}}
-                 {:id "c3" :name "test_another_allowed" :arguments {}}]
-          results (executor/execute-tool-calls
-                   "drone-1" calls #{:auto-approve}
-                   {:tool-allowlist #{"test_allowed_tool" "test_another_allowed"}})]
-      ;; Should have 3 results total (1 rejected + 2 executed)
-      (is (= 3 (count results)))
-      ;; First result should be the rejection (rejected comes first)
-      (let [rejected (first results)]
-        (is (= "test_blocked_tool" (:name rejected)))
-        (is (.contains (:content rejected) "TOOL REJECTED")))
-      ;; Last two should be successful executions
-      (let [executed (rest results)]
-        (is (= 2 (count executed)))
-        (is (every? #(not (.contains (:content %) "TOOL REJECTED")) executed))))))
-
-(deftest execute-tool-calls-with-empty-allowlist-rejects-all
-  (testing "Empty explicit allowlist rejects all tools"
+(deftest execute-tool-calls-nil-opts
+  (testing "4-arity call with nil opts executes every call"
     (setup-test-tools!)
     (let [calls [{:id "c1" :name "test_allowed_tool" :arguments {}}]
-          ;; Note: empty set is truthy but has no tools
-          ;; resolve-allowlist with empty seq falls through to default
-          ;; So we test with a set containing only an unrelated tool
-          results (executor/execute-tool-calls
-                   "drone-1" calls #{:auto-approve}
-                   {:tool-allowlist #{"some_other_tool"}})]
-      (is (= 1 (count results)))
-      (is (.contains (:content (first results)) "TOOL REJECTED")))))
-
-(deftest execute-tool-calls-nil-opts-no-filtering
-  (testing "nil opts means no allowlist filtering"
-    (setup-test-tools!)
-    (let [calls [{:id "c1" :name "test_allowed_tool" :arguments {}}]
-          results (executor/execute-tool-calls "drone-1" calls #{:auto-approve} nil)]
+          results (executor/execute-tool-calls "agent-1" calls #{:auto-approve} nil)]
       (is (= 1 (count results)))
       (is (not (.contains (:content (first results)) "TOOL REJECTED"))))))
 
@@ -176,7 +142,7 @@
   [calls]
   (let [seen (atom ::none)]
     (executor/execute-tool-calls
-     "drone-1" calls #{:auto-approve}
+     "agent-1" calls #{:auto-approve}
      {:drain-fn (fn [_agent-id _project-id ctx] (reset! seen ctx) nil)})
     @seen))
 

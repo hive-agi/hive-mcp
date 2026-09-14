@@ -7,13 +7,10 @@
    - handlers.session - Session lifecycle (:session/end, :session/wrap)
    - handlers.kanban  - Kanban state (:kanban/done, :kanban/sync)
    - handlers.crystal - Wrap/crystallize (:crystal/wrap-request, :crystal/wrap-notify)
-   - handlers.wave    - Drone waves (:wave/start, :wave/item-done, :wave/complete)
-   - handlers.validated-wave - Validated waves (:validated-wave/start, :validated-wave/success, etc.)
-   - handlers.drone   - Drone lifecycle (:drone/started, :drone/completed, :drone/failed)
    - handlers.claim   - File claims (:claim/file-released, :claim/notify-waiting)
    - handlers.hot-reload - Hot reload lifecycle (:hot/reload-start, :hot/reload-success, :file/changed)
    - handlers.kg     - Knowledge Graph (:kg/edge-created, :kg/edge-updated, :kg/edge-removed, :kg/node-promoted)
-   - handlers.agora  - Agora events (:agora/turn-dispatched, :agora/timeout, :agora/turn-completed, :agora/dispatch-next, :agora/execute-drone, :agora/debate-started, :agora/stage-transition, :agora/consensus)
+   - handlers.agora  - Agora dialogue events (:agora/turn-dispatched, :agora/timeout, :agora/turn-completed, :agora/dispatch-next, :agora/consensus)
    - handlers.saa    - SAA workflow (:saa/started, :saa/phase-complete, :saa/completed, :saa/failed)
    - handlers.lifecycle - GC lifecycle (:lifecycle/sweep)
 
@@ -36,17 +33,6 @@
    - :kanban/sync           - Sync kanban at session end (P5-4)
    - :crystal/wrap-request  - Unified wrap path (Option A)
    - :crystal/wrap-notify   - Wrap notification for HIVEMIND piggyback
-   - :wave/start            - Wave execution started
-   - :wave/item-done        - Wave item completed/failed
-   - :wave/complete         - Wave execution finished
-   - :validated-wave/start  - Validated wave started
-   - :validated-wave/iteration-start - Validation iteration started
-   - :validated-wave/success - Validated wave completed successfully
-   - :validated-wave/partial - Max retries reached, partial success
-   - :validated-wave/retry  - Validation failed, retrying
-   - :drone/started         - Drone spawned and began task
-   - :drone/completed       - Drone finished successfully
-   - :drone/failed          - Drone execution failed
    - :claim/file-released   - File claim released, notify waiting lings
    - :claim/notify-waiting  - Send targeted shout to waiting ling
    - :system/error          - Structured error telemetry (Telemetry Phase 1)
@@ -59,12 +45,9 @@
    - :kg/node-promoted      - Knowledge promoted to parent scope
    - :agora/turn-dispatched   - Agora turn dispatched to ling
    - :agora/timeout           - Agora timeout
-   - :agora/turn-completed    - Unified turn completion (drones + lings)
-   - :agora/dispatch-next     - Participant-type aware next turn dispatch
-   - :agora/execute-drone     - Execute drone turn via delegate-drone!
-   - :agora/debate-started    - Auto-kick first turn after create-debate!
-   - :agora/stage-transition  - Research -> debate stage transition
-   - :agora/consensus         - Crystallize debate result to memory
+   - :agora/turn-completed    - Unified ling turn completion
+   - :agora/dispatch-next     - Relay the next turn to a ling participant
+   - :agora/consensus         - Crystallize dialogue result to memory
    - :saa/started             - SAA workflow initiated
    - :saa/phase-complete      - SAA phase transition (Silence->Abstract->Act)
    - :saa/completed           - SAA workflow finished successfully
@@ -76,9 +59,6 @@
             [hive-mcp.events.handlers.session :as session]
             [hive-mcp.events.handlers.kanban :as kanban]
             [hive-mcp.events.handlers.crystal :as crystal]
-            [hive-mcp.events.handlers.wave :as wave]
-            [hive-mcp.events.handlers.validated-wave :as validated-wave]
-            [hive-mcp.events.handlers.drone :as drone]
             [hive-mcp.events.handlers.claim :as claim]
             [hive-mcp.events.handlers.system :as system]
             [hive-mcp.events.handlers.hot-reload :as hot-reload]
@@ -109,17 +89,12 @@
     :session/end :session/wrap
     :kanban/done :kanban/sync
     :crystal/wrap-request :crystal/wrap-notify
-    :wave/start :wave/item-done :wave/complete
-    :validated-wave/start :validated-wave/iteration-start
-    :validated-wave/success :validated-wave/partial :validated-wave/retry
-    :drone/started :drone/completed :drone/failed
     :claim/file-released :claim/notify-waiting
     :system/error
     :hot/reload-start :hot/reload-success :file/changed
     :kg/edge-created :kg/edge-updated :kg/edge-removed :kg/node-promoted
     :agora/turn-dispatched :agora/timeout :agora/turn-completed
-    :agora/dispatch-next :agora/execute-drone :agora/debate-started
-    :agora/stage-transition :agora/consensus
+    :agora/dispatch-next :agora/consensus
     :saa/started :saa/phase-complete :saa/completed :saa/failed
     :memory/query :memory/search :memory/get
     :lifecycle/sweep
@@ -154,9 +129,6 @@
    - session/register-handlers! - Session lifecycle
    - kanban/register-handlers!  - Kanban state
    - crystal/register-handlers! - Wrap/crystallize
-   - wave/register-handlers!    - Drone waves
-   - validated-wave/register-handlers! - Validated waves
-   - drone/register-handlers!   - Drone lifecycle
    - claim/register-handlers!   - File claims
    - system/register-handlers!  - System telemetry (Phase 1)
    - hot-reload/register-handlers! - Hot reload lifecycle
@@ -174,9 +146,6 @@
     (session/register-handlers!)
     (kanban/register-handlers!)
     (crystal/register-handlers!)
-    (wave/register-handlers!)
-    (validated-wave/register-handlers!)
-    (drone/register-handlers!)
     (claim/register-handlers!)
     (system/register-handlers!)
     (hot-reload/register-handlers!)
@@ -189,7 +158,7 @@
 
     (verify-handlers!)
     (reset! *registered true)
-    (println "[hive-events] Handlers registered: :task/complete :task/shout-complete :git/commit-modified :ling/started :ling/completed :ling/ready-for-wrap :session/end :session/wrap :kanban/sync :kanban/done :crystal/wrap-request :crystal/wrap-notify :wave/start :wave/item-done :wave/complete :validated-wave/start :validated-wave/iteration-start :validated-wave/success :validated-wave/partial :validated-wave/retry :drone/started :drone/completed :drone/failed :claim/file-released :claim/notify-waiting :system/error :hot/reload-start :hot/reload-success :file/changed :kg/edge-created :kg/edge-updated :kg/edge-removed :kg/node-promoted :agora/turn-dispatched :agora/timeout :agora/turn-completed :agora/dispatch-next :agora/execute-drone :agora/debate-started :agora/stage-transition :agora/consensus :saa/started :saa/phase-complete :saa/completed :saa/failed :memory/query :memory/search :memory/get :lifecycle/sweep")
+    (println "[hive-events] Handlers registered: :task/complete :task/shout-complete :git/commit-modified :ling/started :ling/completed :ling/ready-for-wrap :session/end :session/wrap :kanban/sync :kanban/done :crystal/wrap-request :crystal/wrap-notify :claim/file-released :claim/notify-waiting :system/error :hot/reload-start :hot/reload-success :file/changed :kg/edge-created :kg/edge-updated :kg/edge-removed :kg/node-promoted :agora/turn-dispatched :agora/timeout :agora/turn-completed :agora/dispatch-next :agora/consensus :saa/started :saa/phase-complete :saa/completed :saa/failed :memory/query :memory/search :memory/get :lifecycle/sweep")
     true))
 
 (defn reset-registration!

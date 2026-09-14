@@ -89,13 +89,13 @@
     (let [env    {"CLAUDE_SWARM_SLAVE_ID"  "ling-42"
                   "CLAUDE_SWARM_PARENT_ID" "coordinator"
                   "CLAUDE_SWARM_DEPTH"     "3"
-                  "CLAUDE_SWARM_ROLE"      "drone"}
+                  "CLAUDE_SWARM_ROLE"      "ling"}
           result (resolve-EventsAgentConfig {} {:env-fn env})]
       (is (r/ok? result))
       (is (= "ling-42"     (-> result :ok :agent-id)))
       (is (= "coordinator" (-> result :ok :parent-id)))
       (is (= 3             (-> result :ok :depth)))
-      (is (= "drone"       (-> result :ok :role))))))
+      (is (= "ling"        (-> result :ok :role))))))
 
 (deftest agent-overrides-beat-env-vars
   (testing "Explicit overrides win over env-fn"

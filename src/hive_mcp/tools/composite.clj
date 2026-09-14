@@ -174,8 +174,8 @@
 (defn- union-property
   "Fold an addon's schema property onto the core's under the same name.
    Equal specs collapse to one; different specs become an anyOf carrying both,
-   descriptions joined — so `tasks` can be the drone wave's [{file task}] AND
-   the ling-wave's [string] without either side losing its shape. A plain
+   descriptions joined, so a core `tasks` of [{file task}] and an addon's
+   [string] can coexist without either side losing its shape. A plain
    merge here would let the addon silently retype a core parameter."
   [core addon]
   (cond

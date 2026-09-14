@@ -11,7 +11,8 @@
    - Integration with hooks.budget via requiring-resolve"
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.agent.budget-router :as br]
-            [hive-mcp.agent.hooks.budget :as budget]))
+            [hive-mcp.agent.hooks.budget :as budget]
+            [hive-mcp.config.test-support :as cfg-test]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -28,10 +29,19 @@
 
 (use-fixtures :each clean-budgets-fixture)
 
-;; Macro: run body with :forge.budget-routing gate ON (no disk writes).
+;; The downgrade candidates this suite declares. The router ships none.
+(def test-tier-models
+  {:free     ["test/free-model:free"]
+   :economy  ["test/deepseek-economy"]
+   :standard ["test/sonnet-standard"]
+   :premium  ["test/opus-premium"]})
+
+;; Macro: run body with :forge.budget-routing gate ON and the tier models
+;; declared in an in-memory config (no disk reads or writes).
 (defmacro with-routing-enabled [& body]
-  `(with-redefs [br/enabled? (constantly true)]
-     ~@body))
+  `(cfg-test/with-config {:services {:forge {:budget-tier-models test-tier-models}}}
+     (with-redefs [br/enabled? (constantly true)]
+       ~@body)))
 
 ;; =============================================================================
 ;; Model Tier Classification
@@ -57,7 +67,7 @@
   (testing "premium tier models"
     (is (= :premium (br/classify-model-tier "anthropic/claude-opus"))))
 
-  (testing "nil defaults to standard (matches 'claude')"
+  (testing "nil classifies as standard"
     (is (= :standard (br/classify-model-tier nil))))
 
   (testing "unknown model defaults to standard"
@@ -272,12 +282,28 @@
 
     (testing "model downgraded when budget is tight"
       (budget/register-budget! "agent-budget-2" 0.01)
-      ;; Spend almost all budget
-      (budget/record-usage! "agent-budget-2" 0.009)
+      ;; Spend 99% of the budget (0.009/0.01 is 89.99..% in floating point,
+      ;; just under the 90% free-only threshold)
+      (budget/record-usage! "agent-budget-2" 0.0099)
       (let [result (br/route-model "agent-budget-2" "anthropic/claude-opus")]
-        ;; At 90% used, max tier = :free, so opus should be downgraded
-        (is (not= "anthropic/claude-opus" (:model result)))
+        ;; At 90%+ used, max tier = :free, so opus is downgraded to the
+        ;; configured free-tier model
+        (is (= (first (:free test-tier-models)) (:model result)))
+        (is (= "anthropic/claude-opus" (:original-model result)))
         (is (true? (:downgraded? result)))))))
+
+(deftest route-model-downgrade-without-tier-models-fails-loudly-test
+  (testing "a downgrade with no configured tier model throws naming the config key"
+    (cfg-test/with-config {:services {:forge {}}}
+      (with-redefs [br/enabled? (constantly true)]
+        (budget/register-budget! "agent-no-tiers" 0.01)
+        (budget/record-usage! "agent-no-tiers" 0.0099)
+        (let [ex (try (br/route-model "agent-no-tiers" "anthropic/claude-opus")
+                      nil
+                      (catch clojure.lang.ExceptionInfo e e))]
+          (is (some? ex))
+          (is (= :model-not-configured (:error (ex-data ex))))
+          (is (= "services.forge.budget-tier-models.free" (:config-key (ex-data ex)))))))))
 
 (deftest route-model-return-shape-test
   (with-routing-enabled
@@ -296,10 +322,10 @@
 
 (deftest suggest-model-default-test
   (with-routing-enabled
-    (testing "suggests standard tier with default budget"
+    (testing "suggests standard tier with default budget, leaving the model to agent-defaults"
       (let [result (br/suggest-model)]
         (is (keyword? (:tier result)))
-        (is (string? (:model result)))
+        (is (nil? (:model result)))
         (is (string? (:reason result)))
         (is (number? (:projected-tasks result)))
         (is (map? (:fleet-status result)))))))
@@ -320,7 +346,8 @@
       (let [result (br/suggest-model {:budget-usd 5.0
                                       :preferred-tier :premium})]
         ;; At 90% fleet usage, max-tier is :free
-        (is (= :free (:tier result)))))))
+        (is (= :free (:tier result)))
+        (is (= (first (:free test-tier-models)) (:model result)))))))
 
 (deftest suggest-model-per-agent-share-test
   (with-routing-enabled
@@ -448,8 +475,14 @@
       (is (number? (:order data)) (str tier " missing :order"))
       (is (number? (:cost-per-1m data)) (str tier " missing :cost-per-1m"))
       (is (string? (:label data)) (str tier " missing :label"))
-      (is (set? (:models data)) (str tier " missing :models"))
-      (is (seq (:models data)) (str tier " has empty :models")))))
+      (is (not (contains? data :models)) (str tier " must not ship model ids")))))
+
+(deftest tier-models-read-from-config-test
+  (testing "tier-models answers the configured vector, and [] when absent"
+    (cfg-test/with-config {:services {:forge {:budget-tier-models test-tier-models}}}
+      (is (= ["test/deepseek-economy"] (br/tier-models :economy))))
+    (cfg-test/with-config {:services {:forge {}}}
+      (is (= [] (br/tier-models :economy))))))
 
 ;; =============================================================================
 ;; Config Gate: disabled passthrough (default behavior)

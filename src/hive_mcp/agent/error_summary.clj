@@ -1,5 +1,5 @@
-(ns hive-mcp.agent.drone.error-summary
-  "Pure summarizer for drone error payloads.
+(ns hive-mcp.agent.error-summary
+  "Pure summarizer for agent error payloads.
 
    Produces a bounded, structured map safe to ship through hivemind shouts and
    piggyback blocks. Guards against raw exception dumps (stack trace + cause

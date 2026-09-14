@@ -158,7 +158,7 @@
 
    Options:
      :host        - Ollama server URL (default: http://localhost:11434)
-     :model       - Embedding model (default: nomic-embed-text)
+     :model       - Embedding model (required: :model, OLLAMA_MODEL, or embeddings.ollama.model)
      :declared    - Partial ModelSpec from config {:dimension :num-ctx :vram-mb}.
                     Any key present overrides the built-in default for it.
      :catalog     - An IModelCatalog to resolve the model against. Defaults to
@@ -167,6 +167,11 @@
   ([] (->provider {}))
   ([overrides]
    (let [{:keys [host model]} (resolve-config! (select-keys overrides [:host :model]))
+         _           (when-not model
+                       (throw (ex-info (str "No Ollama embedding model configured. Pass :model, "
+                                            "set OLLAMA_MODEL, or `hive config set embeddings.ollama.model <model-id>`")
+                                       {:type :embeddings/model-not-configured
+                                        :config-key "embeddings.ollama.model"})))
          catalog     (or (:catalog overrides)
                          (spec/layered (spec/built-in-catalog)
                                        (spec/table-catalog {(str model) (:declared overrides)})))

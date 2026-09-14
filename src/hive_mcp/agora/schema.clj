@@ -112,20 +112,7 @@
     :db/cardinality :db.cardinality/one}
 
    :agora.turn/turn-number
-   {:db/doc "Sequence number within the dialogue (1-indexed)"}
-
-   ;;; =========================================================================
-   ;;; Stage Support (Two-Stage Agora)
-   ;;; =========================================================================
-
-   :agora.dialogue/stage
-   {:db/doc "Current stage: :research or :debate (default :debate for non-staged)"}
-
-   :agora.dialogue/stage-config
-   {:db/doc "Stage configuration (EDN string): {:research {:focus-areas [...]} :debate {:use-evidence true}}"}
-
-   :agora.dialogue/evidence-pool
-   {:db/doc "Accumulated evidence from research stage (EDN string): [{:source :content :confidence}]"}})
+   {:db/doc "Sequence number within the dialogue (1-indexed)"}})
 
 
 (defonce ^:private conn (atom nil))

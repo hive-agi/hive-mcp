@@ -5,19 +5,20 @@
 (ns hive-mcp.agent.budget-router
   "Budget-aware model routing for agent spawn and task dispatch.
 
-   Composes with agent.routing (task-type routing) and hooks.budget (USD tracking)
-   to apply cost constraints on model selection. Routes agents to the cheapest
-   model tier that can complete the task within budget.
+   Composes with hooks.budget (USD tracking) to apply cost constraints on model
+   selection. Routes agents to the cheapest model tier that can complete the
+   task within budget.
 
-   Model tiers (ascending cost):
-     :free     — $0 (free-tier OpenRouter models)
-     :economy  — sub-$1/M tokens (DeepSeek, Kimi, Haiku, Devstral)
-     :standard — $3-15/M tokens (Sonnet, Grok)
-     :premium  — $15-75/M tokens (Opus)
+   Model tiers (ascending cost): :free, :economy, :standard, :premium.
+   `classify-model-tier` describes which tier a model id belongs to. Which
+   model to DOWNGRADE to is never chosen here: it is read from config.
 
    Config integration:
-     :services.forge.budget-routing  — enable/disable (default false)
-     :services.forge.fleet-budget    — fleet-wide USD cap (default 20.0)"
+     :services.forge.budget-routing      enable/disable (default false)
+     :services.forge.fleet-budget        fleet-wide USD cap (default 20.0)
+     :services.forge.budget-tier-models  {tier [model-id ...]}, the models a
+                                         downgrade may pick, cheapest tier first.
+                                         Required once routing downgrades."
   (:require [hive-mcp.config.core :as config]
             [hive-dsl.result :as r]
             [taoensso.timbre :as log]))
@@ -46,49 +47,58 @@
 
 (def model-tiers
   "Ordered model tiers from cheapest to most expensive.
-   Each tier has a representative cost-per-1M-tokens (blended input+output)
-   and candidate model IDs."
+   Each tier has a representative cost-per-1M-tokens (blended input+output).
+   Candidate models per tier live in config, see `tier-models`."
   {:free     {:order          0
               :cost-per-1m    0.0
-              :label          "Free tier"
-              :models         #{"mistralai/devstral-2512:free"
-                                "mistralai/devstral-small:free"
-                                "google/gemma-3-4b-it:free"
-                                "google/gemma-2-9b-it:free"}}
+              :label          "Free tier"}
    :economy  {:order          1
               :cost-per-1m    0.40
-              :label          "Economy (DeepSeek/Kimi/Haiku/Devstral)"
-              :models         #{"deepseek/deepseek-v3.2"
-                                "deepseek/deepseek-chat"
-                                "moonshotai/kimi-k2.5"
-                                "mistralai/devstral-small:24b"}}
+              :label          "Economy"}
    :standard {:order          2
               :cost-per-1m    9.0
-              :label          "Standard (Sonnet/Grok)"
-              :models         #{"anthropic/claude-sonnet"
-                                "claude"
-                                "x-ai/grok-code-fast-1"}}
+              :label          "Standard"}
    :premium  {:order          3
               :cost-per-1m    45.0
-              :label          "Premium (Opus)"
-              :models         #{"anthropic/claude-opus"}}})
+              :label          "Premium"}})
 
 (def tier-order
   "Tiers sorted cheapest-first. Useful for iteration and display."
   [:free :economy :standard :premium])
 
+(defn tier-models
+  "The configured candidate model ids for `tier`, from
+   :services.forge.budget-tier-models. Empty when none are configured."
+  [tier]
+  (let [by-tier (config/get-service-value :forge :budget-tier-models :default nil)
+        models  (when (map? by-tier) (get by-tier tier))]
+    (if (sequential? models) (vec models) [])))
+
+(defn- tier-fallback-model!
+  "First configured model for `tier`, or throw naming the config key to set."
+  [tier]
+  (or (first (tier-models tier))
+      (throw (ex-info (str "Budget routing needs a " (name tier) " model: set services.forge.budget-tier-models")
+                      {:error      :model-not-configured
+                       :tier       tier
+                       :config-key (str "services.forge.budget-tier-models." (name tier))
+                       :fix        (str "hive config set services.forge.budget-tier-models '{"
+                                        tier " [\"<model-id>\"]}'")}))))
+
 (defn classify-model-tier
-  "Classify a model string into a cost tier keyword."
+  "Classify a model string into a cost tier keyword. A non-string model
+   classifies as :standard."
   [model]
-  (let [m (or model "claude")]
+  (if-not (string? model)
+    :standard
     (cond
-      (re-find #":free$" m)                        :free
-      (re-find #"(?i)deepseek" m)                  :economy
-      (re-find #"(?i)kimi|moonshot" m)             :economy
-      (re-find #"(?i)devstral" m)                  :economy
-      (re-find #"(?i)haiku" m)                     :economy
-      (re-find #"(?i)opus" m)                      :premium
-      (re-find #"(?i)sonnet|claude|grok" m)        :standard
+      (re-find #":free$" model)                    :free
+      (re-find #"(?i)deepseek" model)              :economy
+      (re-find #"(?i)kimi|moonshot" model)         :economy
+      (re-find #"(?i)devstral" model)              :economy
+      (re-find #"(?i)haiku" model)                 :economy
+      (re-find #"(?i)opus" model)                  :premium
+      (re-find #"(?i)sonnet|claude|grok" model)    :standard
       :else                                        :standard)))
 
 (defn tier-cost-per-1m
@@ -219,7 +229,8 @@
 (defn route-model
   "Route to a specific model within the selected tier.
    Prefers the requested model if it's in the allowed tier; otherwise picks
-   a default from the target tier.
+   the first configured model of the target tier, and throws when that tier
+   has none configured (:services.forge.budget-tier-models).
 
    When budget routing is disabled, returns the requested model as-is.
 
@@ -252,9 +263,8 @@
         ;; Requested model is within budget — use it directly
         (assoc tier-selection :model requested-model)
 
-        ;; Downgraded — pick a default model from the target tier
-        (let [tier-models (get-in model-tiers [target-tier :models])
-              fallback    (first tier-models)]
+        ;; Downgraded: pick the configured model of the target tier
+        (let [fallback (tier-fallback-model! target-tier)]
           (log/info "[budget-router] Model downgraded"
                     {:agent-id        agent-id
                      :requested       requested-model
@@ -263,7 +273,7 @@
                      :fallback        fallback
                      :pct-used        (:pct-used (:budget-status tier-selection))})
           (assoc tier-selection
-                 :model           (or fallback requested-model)
+                 :model           fallback
                  :original-model  requested-model))))))
 
 (defn suggest-model
@@ -273,18 +283,23 @@
    the number of active agents to recommend an appropriate tier for a
    new agent.
 
-   When budget routing is disabled, returns a passthrough with the preferred
-   model or default.
+   When budget routing is disabled, returns a passthrough of the requested
+   model (possibly nil).
+
+   When the requested model does not fit the budget tier, or none was
+   requested and the tier was lowered, the first configured model of that tier
+   is used; throws when the tier has none (:services.forge.budget-tier-models).
+   No model requested and no downgrade leaves :model nil (agent-defaults decide).
 
    Returns {:model :tier :reason :projected-tasks}."
   [& [{:keys [budget-usd model preferred-tier active-agents]}]]
   (if-not (enabled?)
-    ;; Budget routing off — use requested model/tier as-is
+    ;; Budget routing off: use requested model/tier as-is
     (let [tier (if model
                  (classify-model-tier model)
                  (or preferred-tier :standard))]
       {:tier            tier
-       :model           (or model (first (get-in model-tiers [tier :models])))
+       :model           model
        :reason          "Budget routing disabled"
        :max-tier        :premium
        :projected-tasks Long/MAX_VALUE
@@ -305,10 +320,11 @@
                             preferred
                             max-tier)
           projected       (project-remaining-tasks fleet-remaining effective-tier)
-          ;; Select model: prefer requested if it fits the tier, else pick tier default
-          effective-model (if (and model (= effective-tier (classify-model-tier model)))
-                            model
-                            (first (get-in model-tiers [effective-tier :models])))]
+          ;; Select model: prefer requested if it fits the tier, else the tier's configured model
+          effective-model (cond
+                            (and model (= effective-tier (classify-model-tier model))) model
+                            (and (nil? model) (= effective-tier preferred))           nil
+                            :else (tier-fallback-model! effective-tier))]
 
       (log/debug "[budget-router] Suggest model"
                  {:fleet-spent     fleet-spent

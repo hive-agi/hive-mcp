@@ -10,8 +10,8 @@
    - Completed multi-async batches
    - Event journal old entries
    - Completed SAA states
-   - Drone KG stores for dead drones
-   - Bounded atom GC sweep (TTL + capacity eviction)"
+   - Bounded atom GC sweep (TTL + capacity eviction)
+   - Terminal liveness sweep and ledger cold sweep"
   (:require [hive-mcp.dns.result :as result]
             [hive-mcp.config.core :as config]
             [taoensso.timbre :as log])
@@ -106,12 +106,12 @@
          'hive-mcp.swarm.lifecycle.terminal-sweep/sweep-once!
          #(%) {:checked 0 :zombified 0 :alive 0 :errors []})
 
-        ;; Ledger cold sweep — retract terminal tasks/waves/claim-history from the
+        ;; Ledger cold sweep: retract terminal tasks and claim-history from the
         ;; hot DataScript store once past the retain window (durable in the ledger).
         ledger-cold-result
         (resolve-and-call
          'hive-mcp.swarm.datascript.coordination.cleanup/sweep-ledger-cold!
-         #(%) {:tasks 0 :waves 0 :claim-history 0})
+         #(%) {:tasks 0 :claim-history 0})
 
         ;; 6. JVM GC hint — nudge G1GC to collect old gen AND return committed
         ;; heap to the OS.

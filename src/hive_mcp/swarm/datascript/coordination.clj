@@ -3,8 +3,6 @@
 
    Sub-namespaces (split 2026-04-30, refactor/coordination-srp):
      coordination.wrap-queue       — wrap notifications (crystal convergence)
-     coordination.plan             — change-plan + change-item CRUD (dispatch_drone_wave)
-     coordination.wave             — wave execution lifecycle
      coordination.coordinator      — coordinator CRUD + lifecycle marks
      coordination.cleanup          — stale coordinator + stale claim sweeps
      coordination.session-registry — completed-task + kanban-movement registries
@@ -16,8 +14,6 @@
 
    DDD: Application Service layer for multi-agent coordination."
   (:require [hive-mcp.swarm.datascript.coordination.wrap-queue :as wrap-queue]
-            [hive-mcp.swarm.datascript.coordination.plan :as plan]
-            [hive-mcp.swarm.datascript.coordination.wave :as wave]
             [hive-mcp.swarm.datascript.coordination.coordinator :as coordinator]
             [hive-mcp.swarm.datascript.coordination.cleanup :as cleanup]
             [hive-mcp.swarm.datascript.coordination.session-registry :as session-registry]))
@@ -34,27 +30,6 @@
 (def get-unprocessed-wraps-for-project   wrap-queue/get-unprocessed-wraps-for-project)
 (def get-unprocessed-wraps-for-hierarchy wrap-queue/get-unprocessed-wraps-for-hierarchy)
 (def mark-wrap-processed!                wrap-queue/mark-wrap-processed!)
-
-;; =============================================================================
-;; Change Plan (dispatch_drone_wave)
-;; =============================================================================
-
-(def create-plan!         plan/create-plan!)
-(def get-plan             plan/get-plan)
-(def get-pending-items    plan/get-pending-items)
-(def get-plan-items       plan/get-plan-items)
-(def update-item-status!  plan/update-item-status!)
-(def update-plan-status!  plan/update-plan-status!)
-
-;; =============================================================================
-;; Wave Execution
-;; =============================================================================
-
-(def create-wave!        wave/create-wave!)
-(def get-wave            wave/get-wave)
-(def get-all-waves       wave/get-all-waves)
-(def update-wave-counts! wave/update-wave-counts!)
-(def complete-wave!      wave/complete-wave!)
 
 ;; =============================================================================
 ;; Coordinator Lifecycle

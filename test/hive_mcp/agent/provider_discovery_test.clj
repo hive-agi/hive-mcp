@@ -133,6 +133,45 @@
           (is (= [:groq] (mapv :provider (:checked (ex-data e))))
               "a config-removed provider must not appear in the diagnostic"))))))
 
+;; =============================================================================
+;; No shipped model: a missing :agent-defaults entry fails loudly
+;; =============================================================================
+
+(defn- resolve-error
+  "The ex-data of the throw `resolve-provider-model` raises for `request`, or nil."
+  [request]
+  (try (openrouter/resolve-provider-model request)
+       nil
+       (catch clojure.lang.ExceptionInfo e (ex-data e))))
+
+(deftest missing-agent-defaults-fails-loudly-test
+  (testing "a discovered provider with no configured model names both keys that would supply one"
+    (with-redefs [config/get-config-value
+                  (stub-config {"llm-providers"         {:acme (dissoc acme-entry :default-model)}
+                                "llm-provider-priority" [:acme]})
+                  config/get-secret (fn [k] (when (= k :acme-api-key) "sk-acme"))]
+      (let [err (resolve-error {:agent-type :ling})]
+        (is (= :model-not-configured (:error err)))
+        (is (= ["agent-defaults.ling" "llm-providers.acme.default-model"] (:config-keys err)))
+        (is (re-find #"hive config set agent-defaults\.ling" (:fix err))))))
+
+  (testing "with no provider reachable at all the error names agent-defaults.<type>"
+    (with-redefs [config/get-config-value (stub-config {"llm-provider-priority" []})
+                  config/get-secret       (fn [_] nil)]
+      (let [err (resolve-error {:agent-type :ling})]
+        (is (= :provider-not-configured (:error err)))
+        (is (= ["agent-defaults.ling"] (:config-keys err))))))
+
+  (testing "a seeded provider named explicitly still needs a configured model"
+    (with-redefs [config/get-config-value (stub-config {})]
+      (is (= :model-not-configured (:error (resolve-error {:provider :venice :agent-type :ling}))))))
+
+  (testing "a declared :agent-defaults entry resolves with nothing shipped"
+    (with-redefs [config/get-config-value
+                  (stub-config {"agent-defaults" {:ling {:provider :venice :model "test-model"}}})]
+      (is (= {:provider :venice :model "test-model"}
+             (openrouter/resolve-provider-model {:agent-type :ling}))))))
+
 (comment
   (require '[clojure.test :refer [run-tests]])
   (run-tests 'hive-mcp.agent.provider-discovery-test))

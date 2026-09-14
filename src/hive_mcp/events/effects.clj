@@ -11,7 +11,6 @@
    - hive-mcp.events.effects.dispatch         -- event chaining (dispatch, dispatch-n)
    - hive-mcp.events.effects.infrastructure   -- ds-transact, git, kanban, metrics
    - hive-mcp.events.effects.kg               -- knowledge graph edges
-   - hive-mcp.events.effects.drone-loop       -- drone-loop FSM side effects
    - hive-mcp.events.effects.lifecycle        -- GC lifecycle sweep (gc-fix-4)
 
    Usage:
@@ -27,7 +26,6 @@
             [hive-mcp.events.effects.dispatch :as dispatch-effects]
             [hive-mcp.events.effects.infrastructure :as infra-effects]
             [hive-mcp.events.effects.kg :as kg-effects]
-            [hive-mcp.events.effects.drone-loop :as drone-loop-effects]
             [hive-mcp.events.effects.lifecycle :as lifecycle-effects]
             [hive-mcp.server.guards :as guards]
             [taoensso.timbre :as log]))
@@ -63,11 +61,10 @@
    Delegates to domain-specific submodules:
    - notification: :shout :targeted-shout :log :channel-publish :emit-system-error :olympus-broadcast
    - memory:       :memory-write :wrap-notify :wrap-crystallize
-   - agent:        :dispatch-task :swarm-send-prompt :agora/continue :agora/execute-drone :saa/run-workflow
+   - agent:        :dispatch-task :swarm-send-prompt :saa/run-workflow
    - dispatch:     :dispatch :dispatch-n
    - infrastructure: :ds-transact :git-commit :kanban-sync :kanban-move-done :report-metrics :tool-registry-refresh
    - kg:           :kg-add-edge :kg-update-confidence :kg-increment-confidence :kg-remove-edge :kg-remove-edges-for-node
-   - drone-loop:   :drone/seed-session :drone/emit :drone/record-obs :drone/record-reason
    - lifecycle:    :lifecycle/sweep-fx (gc-fix-4)
 
    Coeffects registered (POC-08/09/10/11):
@@ -96,7 +93,6 @@
     (dispatch-effects/register-dispatch-effects!)
     (infra-effects/register-infrastructure-effects!)
     (kg-effects/register-kg-effects!)
-    (drone-loop-effects/register-drone-loop-effects!)
     (lifecycle-effects/register-lifecycle-effects!)
 
     ;; NOTE: :crystal/wrap-notify event handler is registered in
@@ -104,7 +100,7 @@
     ;; defensive stats handling. Do NOT duplicate here.
 
     (reset! *registered true)
-    (log/info "[hive-events] All effect/coeffect submodules registered (coeffect, notification, memory, agent, dispatch, infrastructure, kg, drone-loop, lifecycle)")
+    (log/info "[hive-events] All effect/coeffect submodules registered (coeffect, notification, memory, agent, dispatch, infrastructure, kg, lifecycle)")
     true))
 
 (defn reset-registration!

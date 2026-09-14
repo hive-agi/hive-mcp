@@ -67,9 +67,12 @@
    model-name auto-detection, then this agent-type's config default, then the
    best available provider. The fallback is only collected when the earlier
    steps left the provider open, so a routed spawn costs no secret lookups.
+   The model comes from the request, `:agent-defaults <agent-type>`, or the
+   provider's configured `:default-model`; hive-mcp supplies none itself.
 
-   Throws on an unknown provider; an unknown model only warns, since a provider
-   that declares no :available-models accepts anything."
+   Throws when no provider or no model resolves (ex-data names the config keys
+   to set) and on an unknown provider; an unknown model only warns, since a
+   provider that declares no :available-models accepts anything."
   [{:keys [provider model agent-type]}]
   (let [registry (effective-registry)
         request  {:provider      provider
@@ -82,8 +85,12 @@
                       registry
                       (assoc request :fallback-provider (best-available-provider)))))
         {:keys [provider model]} resolved]
-    (when-let [err (policy/validate-provider registry provider)]
-      (throw (ex-info (str "Unknown provider: " (some-> provider name)) err)))
+    (when-let [err (and provider (policy/validate-provider registry provider))]
+      (throw (ex-info (str "Unknown provider: " (name provider)) err)))
+    (when-let [err (policy/unresolved-routing agent-type resolved)]
+      (throw (ex-info (str "No " (if provider "model" "provider") " configured for agent type "
+                           (if agent-type (name agent-type) "<none>") ": " (:fix err))
+                      err)))
     (when-let [err (policy/validate-model registry provider model)]
       (log/warn "Model not in available-models list" err))
     resolved))

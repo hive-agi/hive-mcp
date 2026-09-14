@@ -20,7 +20,7 @@
                      :presets ["research" "clojure"]
                      :terminal "vterm"}))
     (is (m/validate tools/AgentSpawnParams
-                    {:name "drone-1"
+                    {:name "ling-1"
                      :kanban_task_id "task-123"})))
 
   (testing "missing name rejected"

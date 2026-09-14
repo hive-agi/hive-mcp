@@ -436,7 +436,7 @@
                            reactive/composite-descriptions)]
       (doseq [t composite-tools]
         (ext/register-tool! t)
-        ;; Also register in agent registry for drone agentic loop
+        ;; Also register in agent registry for the in-process agentic loop
         (rescue nil
                 (when-let [reg-fn (requiring-resolve 'hive-mcp.agent.registry/register!)]
                   (reg-fn [t]))))

@@ -4,11 +4,11 @@
    Key refactorings from parent workflow.clj:
    - spawn-one! unifies spawn-one-vterm! and spawn-one-headless! (DRY)
    - spark! decomposed into compute-route-batches + execute-spawn-batches
-   - Drone dispatch extracted to workflow.drone namespace
+
+   Lings are the only forge execution unit.
 
    Extracted from workflow.clj to reduce cyclomatic complexity."
   (:require [hive-mcp.tools.consolidated.workflow.readiness :as ready]
-            [hive-mcp.tools.consolidated.workflow.drone :as drone]
             [hive-mcp.tools.agent.spawn :as spawn]
             [hive-mcp.tools.agent.dispatch :as dispatch]
             [hive-mcp.tools.consolidated.kanban :as c-kanban]
@@ -30,12 +30,6 @@
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
-
-;; ── Re-exports for backward compat ──────────────────────────────────────────
-
-(def dispatch-drone-tasks!
-  "Re-export from workflow.drone for callers that expect it here."
-  drone/dispatch-drone-tasks!)
 
 ;; ── Constants ───────────────────────────────────────────────────────────────
 
@@ -135,7 +129,7 @@
     :prompt   (str (or (:title task) (:id task) "untitled")
                    (when-let [desc (:description task)]
                      (str "\n\n" desc))
-                   "\n\nDO NOT spawn drones. Implement directly.")}))
+                   "\n\nImplement directly.")}))
 
 (defn- dispatch-to-ling!
   "Send task prompt to a ready ling and update kanban status through `ports`.
@@ -200,7 +194,7 @@
   "Pure: assemble success result map after dispatch."
   [{:keys [agent-id title task-id route model spawn-mode best-effort?]}]
   (cond-> {:agent-id agent-id :task-title title :task-id task-id
-           :spawned true :route route :model (or model "claude")}
+           :spawned true :route route :model model}
     (not= :claude route) (assoc :spawn-mode spawn-mode)
     best-effort?         (assoc :best-effort true)))
 
@@ -261,7 +255,7 @@
                                  {:agent agent-id :task title :error err})
                        (assoc base-result :agent-id agent-id :error err))
                    (do (log/info (str "SPARK[" (name route) "]: spawned+dispatched")
-                                 {:agent agent-id :task title :model (or model "claude")})
+                                 {:agent agent-id :task title :model model})
                        (handle-ready-ling {:agent-id agent-id :title title :task-id task-id
                                            :route route :model model
                                            :spawn-mode (:spawn-mode sw)}))))
@@ -343,13 +337,11 @@
 
 (defn- build-spark-response
   "Merge spawn batch results into unified spark! response."
-  [{:keys [vt-results hl-results drone-result active-counts max-slots]}]
-  (let [all-ling    (concat vt-results hl-results)
-        dr-spawned  (get drone-result :spawned [])
-        all-results (concat all-ling dr-spawned)]
-    {:spawned       (filterv :spawned all-results)
-     :failed        (into (filterv (complement :spawned) all-ling) (get drone-result :failed []))
-     :count         (+ (count (filter :spawned all-ling)) (get drone-result :count 0))
+  [{:keys [vt-results hl-results active-counts max-slots]}]
+  (let [all-ling (concat vt-results hl-results)]
+    {:spawned       (filterv :spawned all-ling)
+     :failed        (filterv (complement :spawned) all-ling)
+     :count         (count (filter :spawned all-ling))
      :routes        {:vterm    {:spawned (filterv :spawned vt-results)
                                 :count (count (filter :spawned vt-results))
                                 :active-before (:active-vterm active-counts)
@@ -357,10 +349,7 @@
                      :headless {:spawned (filterv :spawned hl-results)
                                 :count (count (filter :spawned hl-results))
                                 :active-before (:active-headless active-counts)
-                                :max-slots (or max-slots 10)}
-                     :drone    {:count (get drone-result :count 0)
-                                :wave-id (:wave-id drone-result)
-                                :spawned dr-spawned}}
+                                :max-slots (or max-slots 10)}}
      :slots-used    (count (filter :spawned all-ling))
      :active-before (:active-total active-counts)
      :max-slots     (or max-slots 10)}))
@@ -372,8 +361,7 @@
    :routes {:vterm {:count 0 :active-before (:active-vterm active-counts)
                     :max-slots vterm-max-slots}
             :headless {:count 0 :active-before (:active-headless active-counts)
-                       :max-slots (or max-slots 10)}
-            :drone {:count 0}}
+                       :max-slots (or max-slots 10)}}
    :slots-used 0
    :active-before (:active-total active-counts)
    :max-slots (or max-slots 10)})
@@ -455,47 +443,33 @@
 ;; ── Spark! Orchestrator ─────────────────────────────────────────────────────
 
 (defn spark!
-  "Spawn lings or dispatch drones for ready tasks.
-   Routes: :drone (wave all), :claude (default Emacs), :vterm, :headless/:agent-sdk/:openrouter,
-   :orchestrator (single ling + Task subagents), :mixed (default, classify + split).
+  "Spawn lings for ready tasks.
+   Routes: :claude (Emacs), :vterm, :headless/:agent-sdk/:openrouter,
+   :orchestrator (single ling + Task subagents), :mixed (default: fill vterm slots,
+   overflow to headless).
    Ling spawn, readiness, dispatch, in-progress marking, agent listing and project
    resolution go through `ports` (keys of default-spark-ports); the 1-arity uses the defaults.
    The :dispatch-fn, :wait-ready-fn and :update-fn keys of `opts` are not ports and are ignored."
   ([opts] (spark! opts {}))
-  ([{:keys [directory max_slots presets tasks spawn_mode spawn-mode model
-            preset seeds ctx_refs kg_node_ids context-result]}
+  ([{:keys [directory max_slots presets tasks spawn_mode spawn-mode model context-result]}
     ports]
    (let [ports                (spark-ports ports)
          model                (budget-route-model model)
          effective-spawn-mode (keyword (or spawn_mode spawn-mode :mixed))
-         _ (when (and (#{:drone :orchestrator} effective-spawn-mode)
+         _ (when (= :drone effective-spawn-mode)
+             (throw (ex-info "Drone spawn mode was removed: lings are the forge execution unit"
+                             {:type :execution/unsupported-mode
+                              :spawn-mode effective-spawn-mode
+                              :fix "Use spawn_mode mixed, claude, vterm or a headless mode"})))
+         _ (when (and (= :orchestrator effective-spawn-mode)
                       (some #(seq (get-in % [:context :execution])) tasks))
              (throw (ex-info "Per-task execution requires a ling spawn mode"
                              {:type :execution/unsupported-mode
-                              :spawn-mode effective-spawn-mode})))
-         drone-params         {:directory directory :tasks tasks :model model
-                               :preset (or preset (first presets) "drone-worker")
-                               :seeds seeds :ctx_refs ctx_refs :kg_node_ids kg_node_ids
-                               :max_slots max_slots}]
-     (cond
-       (= :orchestrator effective-spawn-mode)
+                              :spawn-mode effective-spawn-mode})))]
+     (if (= :orchestrator effective-spawn-mode)
        (spawn-orchestrator! {:tasks tasks :directory directory :model model
                              :context-result context-result :ports ports})
-
-       (= :drone effective-spawn-mode)
-       (drone/dispatch-drone-tasks! drone-params)
-
-       :else
-       (let [{:keys [drone-tasks ling-tasks]}
-             (if (= :mixed effective-spawn-mode)
-               (let [explicit (filter #(seq (get-in % [:context :execution])) tasks)
-                     automatic (remove #(seq (get-in % [:context :execution])) tasks)
-                     classified (drone/classify-and-split-tasks automatic)]
-                 (update classified :ling-tasks #(vec (concat % explicit))))
-               {:drone-tasks [] :ling-tasks tasks})
-
-             drone-result    (when (seq drone-tasks)
-                               (drone/dispatch-drone-tasks! (assoc drone-params :tasks drone-tasks)))
+       (let [ling-tasks      (vec tasks)
              effective-dir   (or directory (ctx/current-directory) (System/getProperty "user.dir"))
              project-id      (when effective-dir ((:project-id-fn ports) effective-dir))
              active-counts   (count-project-lings project-id (:agents-fn ports))
@@ -508,7 +482,7 @@
 
              headless-spawn-mode (if (headless-modes effective-spawn-mode)
                                    effective-spawn-mode :headless)]
-         (if (and (empty? vterm-tasks) (empty? headless-tasks) (nil? drone-result))
+         (if (and (empty? vterm-tasks) (empty? headless-tasks))
            (empty-spark-response active-counts max_slots)
            (let [batch-results (execute-spawn-batches
                                 {:vterm-tasks vterm-tasks :headless-tasks headless-tasks
@@ -516,6 +490,5 @@
                                  :model model :headless-spawn-mode headless-spawn-mode
                                  :ports ports})]
              (build-spark-response (assoc batch-results
-                                          :drone-result drone-result
                                           :active-counts active-counts
                                           :max-slots max_slots)))))))))

@@ -44,7 +44,7 @@
   "Handle incoming message from Olympus client.
 
    Supported commands:
-   {:type :subscribe :views [:agents :waves]}  - Filter events (future)
+   {:type :subscribe :views [:agents :kg]}     - Filter events (future)
    {:type :request-snapshot :view :kg}         - Request fresh snapshot"
   [client msg]
   (result/rescue nil
@@ -55,7 +55,6 @@
                      (let [view (keyword (:view parsed))
                            snapshot (case view
                                       :agents {:type :agents :data (snap/build-agents-snapshot)}
-                                      :waves {:type :waves :data (snap/build-waves-snapshot)}
                                       :kg {:type :kg-snapshot :data (snap/build-kg-snapshot)}
                                       :project-tree {:type :project-tree :data (snap/build-project-tree-snapshot)}
                                       {:type :error :message (str "Unknown view: " view)})]
@@ -104,7 +103,6 @@
 
    Event should match Olympus protocol:
    {:type :agents :data [...]}
-   {:type :wave-update :wave-id \"...\" :task-idx 0 :status :completed}
    {:type :hivemind-shout :agent-id \"...\" :event-type \"progress\" :message \"...\"}
    {:type :kg-entry-added :entry {...}}"
   [event]
@@ -142,16 +140,6 @@
   [event-type agent-data]
   (emit! event-type {:agent agent-data}))
 
-(defn emit-wave-event!
-  "Emit wave lifecycle event in Olympus protocol.
-
-   Event types:
-   - :wave-dispatched -> full wave data
-   - :wave-task-update -> task progress
-   - :wave-completed -> final status"
-  [event-type wave-data]
-  (emit! event-type wave-data))
-
 (defn emit-hivemind-shout!
   "Emit hivemind shout in Olympus protocol.
    Called from hivemind/shout! to keep Olympus in sync."
@@ -177,7 +165,7 @@
 
    Called from server.clj during startup. Registers the :olympus-broadcast
    effect with the re-frame-style event system so that event handlers
-   (wave, drone, ling, KG, memory) can include {:olympus-broadcast {...}}
+   (ling, KG, memory) can include {:olympus-broadcast {...}}
    in their effects map and have it automatically broadcast to all
    connected Olympus WebSocket clients.
 

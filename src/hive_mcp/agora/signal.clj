@@ -60,7 +60,7 @@
 (defn signal-from-map
   "Construct a validated signal from a structured map.
 
-   Used by drones emitting structured JSON responses.
+   Used by participants emitting structured JSON responses.
 
    Input map keys:
    - :type or :signal  - Signal keyword (required)
@@ -188,7 +188,7 @@
   (str "[SIGNAL: " (name signal-type) "] " message))
 
 (defn signal->json-schema
-  "Return the expected JSON schema for drone signal output.
+  "Return the expected JSON schema for structured participant signal output.
    Used to inject into prompts."
   []
   {:type "object"
