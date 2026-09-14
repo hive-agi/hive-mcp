@@ -225,8 +225,7 @@
 (defn register-tools-for-delegation!
   "Register tools for agent delegation with role-based filtering."
   []
-  (require 'hive-mcp.agent.core)
-  (let [register-tools! (resolve 'hive-mcp.agent.core/register-tools!)
+  (let [register-tools! (requiring-resolve 'hive-mcp.agent.registry/register!)
         child? (guards/child-ling?)
         selected-tools (select-base-tools-for-role)
         deprecated-count (if child?

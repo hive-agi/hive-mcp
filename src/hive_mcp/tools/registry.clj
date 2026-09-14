@@ -17,7 +17,6 @@
    '{:linters
      {:unused-namespace
       {:exclude [hive-mcp.tools.consolidated.agent
-                 hive-mcp.tools.consolidated.wave
                  hive-mcp.tools.consolidated.hivemind
                  hive-mcp.tools.consolidated.agora
                  hive-mcp.tools.consolidated.olympus
@@ -43,7 +42,6 @@
             [hive-mcp.tools.consolidated.multi :as c-multi]
    ;; Keep old modules loaded for backward compat (multi routing)
             [hive-mcp.tools.consolidated.agent :as c-agent]
-            [hive-mcp.tools.consolidated.wave :as c-wave]
             [hive-mcp.tools.consolidated.hivemind :as c-hivemind]
             [hive-mcp.tools.consolidated.agora :as c-agora]
             [hive-mcp.tools.consolidated.olympus :as c-olympus]
@@ -174,7 +172,7 @@
 (def child-excluded-tool-names
   "Tool names excluded from child ling MCP servers.
    Prevents recursive spawning and coordinator-only operations."
-  #{"swarm"     ;; contains agent spawn/kill, wave dispatch, olympus
+  #{"swarm"     ;; contains agent spawn/kill, olympus
     "multi"     ;; meta-facade routes to excluded tools
     "emacs"})   ;; Emacs grid control — coordinator-only
 

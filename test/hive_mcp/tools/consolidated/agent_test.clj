@@ -2,7 +2,7 @@
   "Tests for consolidated agent CLI tool handlers.
 
    Test Coverage:
-   1. handle-spawn - Spawns ling/drone, returns agent-id, validation
+   1. handle-spawn - Spawns ling, returns agent-id, validation
    2. handle-status - All agents, filter by agent_id/type/project
    3. handle-kill - Kills agent, force option, confirmation
    4. handle-dispatch - Creates task, returns task-id, file claims
@@ -14,7 +14,6 @@
             [hive-mcp.tools.cli :as cli]
             [hive-mcp.agent.protocol :as proto]
             [hive-mcp.agent.ling :as ling]
-            [hive-mcp.agent.drone :as drone]
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.swarm.datascript.connection :as conn]
             [hive-mcp.swarm.datascript.lings :as ds-lings]
@@ -25,6 +24,7 @@
             [hive-mcp.events.core :as events]
             [hive-mcp.scheduler.dag-waves :as dag-waves]
             [hive-mcp.server.guards :as guards]
+            [hive-mcp.agent.provider.collect :as provider-collect]
             [hive-test.isolation :as iso]
             [hive-mcp.test.stub.terminal-addon :as stub-term]
             [hive-mcp.isolation-methods]))
@@ -34,10 +34,13 @@
 ;; =============================================================================
 
 (defn- logic-and-redefs-fixture
-  "Reset logic db and stub swarm-addon-available? for each test."
+  "Reset logic db, stub swarm-addon-available?, and declare the ling default
+   this test's config would carry (hive-mcp ships no model default)."
   [f]
   (logic/reset-db!)
-  (with-redefs [swarm-core/swarm-addon-available? (constantly false)]
+  (with-redefs [swarm-core/swarm-addon-available? (constantly false)
+                provider-collect/agent-type-defaults
+                (constantly {:provider :anthropic :model "claude-test-model"})]
     (try (f) (finally (logic/reset-db!)))))
 
 (use-fixtures :each
@@ -120,28 +123,6 @@
           (is (= "/tmp/project" (:cwd parsed)))
           (is (= ["coordinator"] (:presets parsed))))))))
 
-(deftest test-handle-spawn-drone-type-accepted
-  (testing "spawn accepts 'drone' as valid type"
-    ;; Note: Full drone spawn requires event handlers and OpenRouter
-    ;; This test verifies the handler ACCEPTS drone type (vs rejecting as invalid)
-    ;; The actual spawn may fail due to missing event handlers, but that's
-    ;; different from type validation failure
-    (try
-      (let [result (agent/handle-spawn {:type "drone"
-                                        :name "test-drone-1"
-                                        :cwd "/tmp/project"
-                                        :files ["src/core.clj"]})]
-        ;; The handler should return a map (either success or error)
-        (is (map? result))
-        ;; Should NOT be a type validation error
-        (when (:isError result)
-          (is (not (re-find #"must be 'ling' or 'drone'" (:text result))))))
-      (catch Exception e
-        ;; If an exception escapes, the test still passes if it's not a type error
-        ;; The drone spawn has complex dependencies that may throw
-        (is (not (re-find #"must be 'ling' or 'drone'" (ex-message e)))
-            "Exception should not be about invalid type")))))
-
 (deftest test-handle-spawn-auto-generates-id
   (testing "spawn auto-generates agent-id when name not provided"
     ;; The vterm strategy uses (:result resp) as the slave-id.
@@ -176,7 +157,7 @@
 
 (deftest test-handle-spawn-with-initial-task
   (testing "spawn with initial task dispatches after spawn"
-    ;; Note: Initial task dispatch is handled by the ling/drone implementation
+    ;; Note: Initial task dispatch is handled by the ling implementation
     ;; during spawn!, not by the handler directly. This test verifies the
     ;; handler accepts the task parameter without error.
     (with-redefs [ec/eval-elisp-with-timeout (fn [_elisp _timeout]
@@ -225,15 +206,14 @@
     ;; Add test slaves
     (add-test-slave! "ling-1" {:depth 1 :status :idle})
     (add-test-slave! "ling-2" {:depth 1 :status :working})
-    (add-test-slave! "drone-1" {:depth 2 :status :idle})
+    (add-test-slave! "ling-3" {:depth 1 :status :idle})
 
     (let [result (agent/handle-status {})
           parsed (parse-response result)]
       (is (not (:isError result)))
       (is (= 3 (:count parsed)))
       (is (= 3 (count (:agents parsed))))
-      (is (= 2 (get (:by-type parsed) :ling)))
-      (is (= 1 (get (:by-type parsed) :drone))))))
+      (is (= 3 (get (:by-type parsed) :ling))))))
 
 (deftest test-handle-status-by-agent-id
   (testing "status filters by agent_id when provided"
@@ -257,7 +237,6 @@
   (testing "status filters by type=ling"
     (add-test-slave! "ling-1" {:depth 1 :status :idle})
     (add-test-slave! "ling-2" {:depth 1 :status :working})
-    (add-test-slave! "drone-1" {:depth 2 :status :idle})
 
     (let [result (agent/handle-status {:type "ling"})
           parsed (parse-response result)]
@@ -266,24 +245,11 @@
       ;; JSON returns strings, not keywords
       (is (every? #(= "ling" (:type %)) (:agents parsed))))))
 
-(deftest test-handle-status-by-type-drone
-  (testing "status filters by type=drone"
-    (add-test-slave! "ling-1" {:depth 1 :status :idle})
-    (add-test-slave! "drone-1" {:depth 2 :status :idle})
-    (add-test-slave! "drone-2" {:depth 2 :status :working})
-
-    (let [result (agent/handle-status {:type "drone"})
-          parsed (parse-response result)]
-      (is (not (:isError result)))
-      (is (= 2 (:count parsed)))
-      ;; JSON returns strings, not keywords
-      (is (every? #(= "drone" (:type %)) (:agents parsed))))))
-
 (deftest test-handle-status-by-project-id
   (testing "status filters by project_id"
     (add-test-slave! "ling-1" {:depth 1 :project-id "project-a"})
     (add-test-slave! "ling-2" {:depth 1 :project-id "project-b"})
-    (add-test-slave! "drone-1" {:depth 2 :project-id "project-a"})
+    (add-test-slave! "ling-3" {:depth 1 :project-id "project-a"})
 
     (let [result (agent/handle-status {:project_id "project-a"})
           parsed (parse-response result)]
@@ -341,21 +307,6 @@
         (is (:killed? parsed))
         (is (= "ling-to-kill" (:id parsed)))))))
 
-(deftest test-handle-kill-drone-returns-result
-  (testing "kill drone returns a structured result"
-    (add-test-slave! "drone-to-kill" {:depth 2 :status :working})
-
-    ;; Note: Drone kill triggers events that may not have handlers in tests.
-    ;; This test verifies the handler returns a proper result structure
-    ;; (success or error), not that it necessarily succeeds.
-    (let [result (agent/handle-kill {:agent_id "drone-to-kill"})]
-      ;; Should return a map response
-      (is (map? result))
-      ;; If not error, check killed status
-      (when-not (:isError result)
-        (let [parsed (parse-response result)]
-          (is (contains? parsed :killed?)))))))
-
 (deftest test-handle-kill-exception-handling
   (testing "an addon exception is reported in-band, not as a tool error"
     (add-test-slave! "ling-error" {:depth 1 :status :idle})
@@ -412,25 +363,6 @@
       (is (re-find #"^task-" (:task-id parsed)))
       (is (= ["src/core.clj"] (:files parsed))))))
 
-(deftest test-handle-dispatch-drone-handler-accepts-params
-  (testing "dispatch to drone accepts parameters"
-    (add-test-slave! "drone-for-dispatch" {:depth 2 :status :idle})
-
-    ;; Note: Drone dispatch requires delegate-fn which isn't set in tests.
-    ;; This test verifies the handler validates params and attempts dispatch.
-    ;; The actual dispatch may fail, but that's different from param validation.
-    ;; We check it returns a map result (success or error) without crashing.
-    (let [result (agent/handle-dispatch {:agent_id "drone-for-dispatch"
-                                         :prompt "Write tests"})]
-      ;; Should return a map response (success or spawn error)
-      (is (map? result))
-      ;; If not error, check success structure
-      (when-not (:isError result)
-        (let [parsed (parse-response result)]
-          (is (:success parsed))
-          ;; task-id may be a string or a map depending on drone execution path
-          (is (some? (:task-id parsed))))))))
-
 (deftest test-handle-dispatch-default-priority
   (testing "dispatch uses normal priority by default"
     (add-test-slave! "ling-priority" {:depth 1 :status :idle})
@@ -471,7 +403,7 @@
     ;; Add claims to logic database
     (logic/add-claim! "/project/src/core.clj" "ling-1")
     (logic/add-claim! "/project/src/util.clj" "ling-1")
-    (logic/add-claim! "/project/test/core_test.clj" "drone-1")
+    (logic/add-claim! "/project/test/core_test.clj" "ling-2")
 
     (let [result (agent/handle-claims {})
           parsed (parse-response result)]
@@ -481,13 +413,13 @@
       ;; Check by-owner grouping (JSON keys may be strings or keywords)
       (let [by-owner (:by-owner parsed)]
         (is (= 2 (or (get by-owner "ling-1") (get by-owner :ling-1))))
-        (is (= 1 (or (get by-owner "drone-1") (get by-owner :drone-1))))))))
+        (is (= 1 (or (get by-owner "ling-2") (get by-owner :ling-2))))))))
 
 (deftest test-handle-claims-by-agent-id
   (testing "claims filters by agent_id"
     (logic/add-claim! "/project/src/core.clj" "ling-1")
     (logic/add-claim! "/project/src/util.clj" "ling-1")
-    (logic/add-claim! "/project/test/core_test.clj" "drone-1")
+    (logic/add-claim! "/project/test/core_test.clj" "ling-2")
 
     (let [result (agent/handle-claims {:agent_id "ling-1"})
           parsed (parse-response result)]
@@ -524,7 +456,7 @@
 (deftest test-handle-list-delegates-to-status
   (testing "list delegates to status handler"
     (add-test-slave! "ling-list-1" {:depth 1})
-    (add-test-slave! "drone-list-1" {:depth 2})
+    (add-test-slave! "ling-list-1b" {:depth 1})
 
     (let [result (agent/handle-list {})
           parsed (parse-response result)]
@@ -537,7 +469,6 @@
 (deftest test-handle-list-with-type-filter
   (testing "list respects type filter"
     (add-test-slave! "ling-list-2" {:depth 1})
-    (add-test-slave! "drone-list-2" {:depth 2})
 
     (let [result (agent/handle-list {:type "ling"})
           parsed (parse-response result)]
@@ -651,7 +582,6 @@
   (testing "status filters by both type and project_id"
     (add-test-slave! "ling-p1" {:depth 1 :project-id "project-1"})
     (add-test-slave! "ling-p2" {:depth 1 :project-id "project-2"})
-    (add-test-slave! "drone-p1" {:depth 2 :project-id "project-1"})
 
     (let [result (agent/handle-status {:type "ling" :project_id "project-1"})
           parsed (parse-response result)]
@@ -663,9 +593,9 @@
 (deftest test-format-agent-with-parent
   (testing "format-agent includes parent when present"
     (add-test-slave! "parent-ling" {:depth 1})
-    (add-test-slave! "child-drone" {:depth 2 :parent "parent-ling"})
+    (add-test-slave! "child-ling" {:depth 2 :parent "parent-ling"})
 
-    (let [result (agent/handle-status {:agent_id "child-drone"})
+    (let [result (agent/handle-status {:agent_id "child-ling"})
           parsed (parse-response result)]
       (is (not (:isError result)))
       (is (= "parent-ling" (get-in parsed [:agent :parent]))))))

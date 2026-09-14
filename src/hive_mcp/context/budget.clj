@@ -56,18 +56,6 @@
                                 :remaining    (or total-budget 0)}}
                     [input]))
 
-(defn allocate-drone-context
-  "Allocate token budget across drone context sections.
-   Delegates to extension if available."
-  [{:keys [total-budget kg-context file-contents] :as input}]
-  (delegate-or-noop :cb/d
-                    {:kg-context    (or kg-context "")
-                     :file-contents (or file-contents "")
-                     :metadata      {:total-budget (or total-budget 0)
-                                     :total-tokens 0
-                                     :remaining    (or total-budget 0)}}
-                    [input]))
-
 (defn allocate-unified-entries
   "Allocate token budget across entry vectors.
    Delegates to extension if available."

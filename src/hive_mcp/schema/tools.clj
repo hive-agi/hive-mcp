@@ -39,7 +39,7 @@
 
 (def AgentType
   "Agent type for spawning."
-  [:enum "ling" "drone"])
+  [:enum "ling"])
 
 (def TerminalType
   "Terminal type for agent spawn."

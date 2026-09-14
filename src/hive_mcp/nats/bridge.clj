@@ -2,12 +2,13 @@
   "Universal event backbone bridge — routes hive events through IEventBackbone.
 
    Subject hierarchy (v1):
-     hive.v1.drone.{completed|failed}.{task-id}   — drone lifecycle
-     hive.v1.shout.{project}.{agent-id}            — hivemind shouts
-     hive.v1.event.{type}                           — system events
-     hive.v1.tool.{tool-name}                       — tool notifications
+     hive.v1.shout.{project}.{agent-id}          : hivemind shouts
+     hive.v1.event.{type}                         : system events
+     hive.v1.tool.{tool-name}                     : tool notifications
+     hive.v1.agent.{completed|failed}.{ling-id}  : headless ling lifecycle
+     hive.v1.wave.{run-id}.completed.{task-id}   : wave-scoped ling completion
 
-   Publisher side: called from shout!, effect handlers, drone bridge.
+   Publisher side: called from shout!, effect handlers, headless ling adapters.
    Subscriber side: delegates fanout to IDeliveryChannel registry.
 
    Design: backbone is protocol-mediated (IEventBackbone). All fanout
@@ -16,9 +17,8 @@
 
   (:require [hive-mcp.protocols.event-backbone :as eb]
             [hive-mcp.protocols.delivery-channel :as dc]
-            [hive-mcp.tools.swarm.channel :as channel]
             [hive-mcp.channel.core :as channel-core]
-            [hive-mcp.agent.drone.error-summary :as es]
+            [hive-mcp.agent.error-summary :as es]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -52,9 +52,6 @@
 ;; Subject Hierarchy — Canonical Subject Definitions
 ;; =============================================================================
 
-;; Drone subjects (existing)
-(def ^:private drone-prefix "hive.v1.drone")
-
 ;; Hivemind subjects (M1 — new)
 (def ^:private shout-prefix "hive.v1.shout")
 
@@ -63,20 +60,6 @@
 
 ;; Tool notification subjects (M1 — new)
 (def ^:private tool-prefix "hive.v1.tool")
-
-;; --- Drone subjects ---
-
-(defn task-subject
-  "Build subject for a specific drone task event.
-   E.g. hive.v1.drone.completed.task-123"
-  [task-id event-type]
-  (str drone-prefix "." (name event-type) "." task-id))
-
-(defn wildcard-subject
-  "Build wildcard subject for all drone events of a type.
-   E.g. hive.v1.drone.completed.>"
-  [event-type]
-  (str drone-prefix "." (name event-type) ".>"))
 
 ;; --- Subject token guard ---
 
@@ -145,15 +128,8 @@
   (str tool-prefix ".>"))
 
 ;; =============================================================================
-;; Publisher Side — Drone Events (called from :nats-publish effect)
+;; Publisher Side: Wave-scoped Ling Completions
 ;; =============================================================================
-
-(defn publish-drone-event!
-  "Publish drone event via IEventBackbone. Called by :nats-publish effect handler."
-  [{:keys [event-type task-id] :as payload}]
-  (let [backbone (eb/get-backbone)
-        subject (task-subject task-id event-type)]
-    (eb/publish! backbone subject payload)))
 
 (defn wave-subject
   "Build subject for a wave-scoped completion event.
@@ -254,28 +230,13 @@
     (log/debug "[Bridge] Published agent event on" subject)))
 
 ;; =============================================================================
-;; Callback Bridge (requiring-resolve to avoid circular deps)
-;; =============================================================================
-
-(defn- fire-callback-if-registered!
-  "Fire callback for task if registered. Uses requiring-resolve to avoid
-   circular dependency on hive-mcp.swarm.callback."
-  [task-id event-data]
-  (try
-    (when-let [notify! (requiring-resolve 'hive-mcp.swarm.callback/notify-completion!)]
-      (notify! task-id event-data))
-    (catch Exception e
-      (log/debug "[Bridge] Callback fire failed for" task-id (.getMessage e)))))
-
-;; =============================================================================
-;; Error summarization — cap drone error payloads before shouting
+;; Error summarization: cap agent error payloads before shouting
 ;; =============================================================================
 ;;
-;; Throwable case delegates to hive-mcp.agent.drone.error-summary to keep the
-;; top-level exception class + ex-message (≤512 chars), first 5 stack frames
-;; and top cause — then renders as a bounded single line. The rest of the
-;; cases (string / map / coll / fallback) retain the existing 300-char cap to
-;; avoid breaking in-flight drones echoing whole JSON payloads as :error.
+;; Throwable case delegates to hive-mcp.agent.error-summary to keep the
+;; top-level exception class + ex-message (at most 512 chars), first 5 stack
+;; frames and top cause, rendered as a bounded single line. The other cases
+;; (string / map / coll / fallback) use a 300-char cap.
 
 (def ^:private ^:const max-summary-len 300)
 (def ^:private ^:const throwable-line-budget 512)
@@ -288,9 +249,10 @@
       s
       (str (subs s 0 max-summary-len) "…"))))
 
-(defn- summarize-drone-error
-  "Summarize a drone error payload for shouting — never emit > throwable-line-budget
-   chars for Throwables (stack trace + cause chain bounded) or >~300 chars otherwise.
+(defn- summarize-error
+  "Summarize an agent error payload for shouting. Never emits more than
+   throwable-line-budget chars for Throwables (stack trace + cause chain
+   bounded) or more than about 300 chars otherwise.
 
    Rules:
    - string             → first 300 chars + '…' (if longer)
@@ -300,8 +262,8 @@
    - collection > 5     → '<N items, first: <truncated>>'
    - fallback           → truncated (pr-str x)
 
-   Guards against drones echoing whole JSON arrays or raw stack traces as their
-   error — that floods piggyback blocks and wastes coordinator context."
+   Guards against agents echoing whole JSON arrays or raw stack traces as their
+   error, which floods piggyback blocks and wastes coordinator context."
   [error]
   (cond
     (nil? error)
@@ -338,31 +300,13 @@
     (truncate-str (pr-str error))))
 
 ;; =============================================================================
-;; Hivemind Auto-Shout (drone visibility via piggyback)
-;; =============================================================================
-
-(defn- auto-shout-drone-event!
-  "Auto-shout drone completion/failure to hivemind for visibility.
-   Makes drone wave results appear in ---HIVEMIND--- piggyback blocks.
-   Uses requiring-resolve to avoid circular dep on hivemind.messaging."
-  [task-id event-type summary-msg]
-  (try
-    (when-let [shout-fn (requiring-resolve 'hive-mcp.hivemind.core/shout!)]
-      (shout-fn (str "drone:" task-id)
-                event-type
-                {:message summary-msg
-                 :task (str "drone-task:" task-id)}))
-    (catch Exception e
-      (log/debug "[Bridge] Auto-shout failed for" task-id (.getMessage e)))))
-
-;; =============================================================================
 ;; Hivemind Auto-Shout — Agent (Headless Ling) Events
 ;; =============================================================================
 
 (defn- auto-shout-agent-event!
   "Auto-shout headless ling completion/failure to hivemind for visibility.
    Makes agent results appear in ---HIVEMIND--- piggyback blocks.
-   Mirrors auto-shout-drone-event! pattern.
+   Uses requiring-resolve to avoid a circular dep on hivemind.core.
 
    BUG FIX: Uses bare ling-id (not \"agent:\"-prefixed) so that shout!
    can resolve the slave in DataScript. The slave is registered under
@@ -427,7 +371,7 @@
   (log/info "[Bridge] agent failed:" ling-id)
   (auto-shout-agent-event!
    ling-id :error
-   (str "Agent " ling-id " failed: " (or error "unknown error")))
+   (str "Agent " ling-id " failed: " (summarize-error error)))
   (when task-id
     (republish-lifecycle-locally! {:type :task-failed
                                    :slave-id ling-id
@@ -437,46 +381,6 @@
   (republish-lifecycle-locally! {:type :slave-killed
                                  :slave-id ling-id
                                  :timestamp (System/currentTimeMillis)}))
-
-;; =============================================================================
-;; Subscriber Side — Drone Events (existing)
-;; =============================================================================
-
-(defn- handle-drone-completed
-  "Handle drone completion — write to event journal, fire callback, and auto-shout."
-  [{:keys [task-id parent-id result] :as _msg}]
-  (log/info "[Bridge] drone completed:" task-id)
-  (let [files-modified (get result :files-modified [])
-        files-failed (get result :files-failed [])
-        duration-ms (get result :duration-ms)
-        event-data {:status "completed"
-                    :result result
-                    :slave-id parent-id
-                    :timestamp (System/currentTimeMillis)
-                    :via "backbone-push"}]
-    (channel/record-nats-event! task-id event-data)
-    (fire-callback-if-registered! task-id event-data)
-    (auto-shout-drone-event!
-     task-id :completed
-     (str "Drone " task-id " completed: "
-          (count files-modified) " files modified"
-          (when (seq files-failed) (str ", " (count files-failed) " failed"))
-          (when duration-ms (str " (" duration-ms "ms)"))))))
-
-(defn- handle-drone-failed
-  "Handle drone failure — write to event journal, fire callback, and auto-shout."
-  [{:keys [task-id parent-id error] :as _msg}]
-  (log/info "[Bridge] drone failed:" task-id)
-  (let [event-data {:status "failed"
-                    :error error
-                    :slave-id parent-id
-                    :timestamp (System/currentTimeMillis)
-                    :via "backbone-push"}]
-    (channel/record-nats-event! task-id event-data)
-    (fire-callback-if-registered! task-id event-data)
-    (auto-shout-drone-event!
-     task-id :error
-     (str "Drone " task-id " failed: " (summarize-drone-error error)))))
 
 ;; =============================================================================
 ;; Subscriber Side — Hivemind Shout Fanout (M1, protocol-mediated)
@@ -518,17 +422,14 @@
 
 (defn start-subscriptions!
   "Subscribe to all event subjects via IEventBackbone.
-   Drone events + hivemind shout fanout + tool notification fanout.
+   Hivemind shout fanout + tool notification fanout + headless ling lifecycle.
    No-op if backbone is not connected."
   []
   (let [backbone (eb/get-backbone)]
     (when (eb/connected? backbone)
-      ;; Drone subscriptions (existing)
       ;; Use var-deref (#'fn) so REPL :reload updates the live dispatcher
       ;; behavior (incident 2026-05-11: subscriber closures captured pre-fix
       ;; fanout fns and kept the wrap-loop alive after reload).
-      (eb/subscribe! backbone (wildcard-subject :completed) #'handle-drone-completed)
-      (eb/subscribe! backbone (wildcard-subject :failed) #'handle-drone-failed)
       ;; Shout fanout subscription (M1 — protocol-mediated)
       (eb/subscribe! backbone (shout-wildcard) #'handle-shout-fanout!)
       ;; Tool notification fanout subscription (M1)
@@ -536,14 +437,12 @@
       ;; Agent (headless ling) lifecycle subscriptions
       (eb/subscribe! backbone (agent-wildcard :completed) #'handle-agent-completed)
       (eb/subscribe! backbone (agent-wildcard :failed) #'handle-agent-failed)
-      (log/info "[Bridge] Subscriptions started (drone + shout + tool + agent fanout)"))))
+      (log/info "[Bridge] Subscriptions started (shout + tool + agent fanout)"))))
 
 (defn stop-subscriptions!
   "Unsubscribe from all event subjects via IEventBackbone."
   []
   (let [backbone (eb/get-backbone)]
-    (eb/unsubscribe! backbone (wildcard-subject :completed))
-    (eb/unsubscribe! backbone (wildcard-subject :failed))
     (eb/unsubscribe! backbone (shout-wildcard))
     (eb/unsubscribe! backbone (tool-wildcard))
     (eb/unsubscribe! backbone (agent-wildcard :completed))

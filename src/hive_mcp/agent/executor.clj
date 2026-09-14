@@ -1,8 +1,7 @@
 (ns hive-mcp.agent.executor
-  "Tool execution with permission gates and allowlist enforcement."
+  "Tool execution with permission gates."
   (:require [hive-mcp.agent.registry :as registry]
             [hive-mcp.agent.context :as ctx]
-            [hive-mcp.agent.drone.tool-allowlist :as allowlist]
             [hive-mcp.channel.piggyback-tap :as tap]
             [hive-mcp.hivemind.core :as hivemind]
             [hive-mcp.server.permissions :as permissions]
@@ -82,7 +81,7 @@
   (or drain-fn tap/drain-all!))
 
 (defn execute-tool-calls
-  "Execute a batch of tool calls, respecting allowlist and permissions.
+  "Execute a batch of tool calls, respecting permissions.
    After execution, drains all piggyback channels (hivemind, memory, async,
    catchup) and appends to the last tool result — ensures headless/OpenRouter
    lings receive hivemind shouts that would otherwise be lost.
@@ -93,31 +92,24 @@
    opts may carry `:drain-fn` to supply the piggyback drain; see drain-fn-for."
   ([agent-id tool-calls permissions]
    (execute-tool-calls agent-id tool-calls permissions nil))
-  ([agent-id tool-calls permissions {:keys [tool-allowlist task-type project-id] :as opts}]
+  ([agent-id tool-calls permissions {:keys [project-id] :as opts}]
    (ctx/with-request-context {:agent-id agent-id :project-id project-id}
-     (let [effective-allowlist (when (or tool-allowlist task-type)
-                                 (allowlist/resolve-allowlist opts))
-           {:keys [allowed rejected]}
-           (if effective-allowlist
-             (allowlist/enforce-allowlist tool-calls effective-allowlist)
-             {:allowed tool-calls :rejected []})
-           executed (mapv (fn [{:keys [id name arguments]}]
-                            (let [approved? (or (not (requires-approval? name permissions))
-                                                (request-approval! agent-id name arguments))]
-                              (if approved?
-                                (let [result (execute-tool name arguments)]
-                                  (format-tool-result id name result))
-                                (format-tool-result id name
-                                                    {:success false :error "Rejected by human"}))))
-                          allowed)
-           all-results (into (vec rejected) executed)
+     (let [all-results (mapv (fn [{:keys [id name arguments]}]
+                               (let [approved? (or (not (requires-approval? name permissions))
+                                                   (request-approval! agent-id name arguments))]
+                                 (if approved?
+                                   (let [result (execute-tool name arguments)]
+                                     (format-tool-result id name result))
+                                   (format-tool-result id name
+                                                       {:success false :error "Rejected by human"}))))
+                             tool-calls)
            cues (into #{}
                      (comp (mapcat (fn [{:keys [name arguments]}]
                                      (task-signal/cues name arguments)))
                            (take task-signal/max-tokens))
-                     allowed)
+                     tool-calls)
            drain-ctx (activation/drain-ctx
-                      {:tool-name (when (= 1 (count allowed)) (:name (first allowed)))
+                      {:tool-name (when (= 1 (count tool-calls)) (:name (first tool-calls)))
                        :cues cues
                        :caller-id agent-id})
            ;; Drain piggyback channels — bridges hivemind shouts to agentic loop

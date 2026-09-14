@@ -51,7 +51,6 @@
 
 (defn cleanup-stale-claims!
   "Remove claims older than threshold with no heartbeat.
-   Call at wave start and completion.
 
    Arguments:
      threshold-ms - Age threshold in milliseconds
@@ -90,7 +89,6 @@
   3600000)
 
 (def ^:private terminal-task-statuses #{:completed :error :timeout})
-(def ^:private terminal-wave-statuses #{:completed :partial-failure :failed :cancelled})
 
 (defn- retract-old!
   "Retract entities whose Date-valued timestamp precedes cutoff-ms.
@@ -125,26 +123,6 @@
     (when (pos? n) (log/debug "Ledger sweep: retracted" n "terminal tasks"))
     n))
 
-(defn cleanup-completed-waves!
-  "Retract terminal waves older than the retain window. Running waves are kept.
-   The :wave/completed-at gate is set only by complete-wave! (which appends to
-   the ledger). Returns count retracted."
-  [& [{:keys [threshold-ms] :or {threshold-ms default-ledger-retain-ms}}]]
-  (let [c (conn/ensure-conn)
-        db @c
-        cutoff (- (System/currentTimeMillis) threshold-ms)
-        rows (->> (d/q '[:find ?e ?status ?done
-                         :where
-                         [?e :wave/id _]
-                         [?e :wave/status ?status]
-                         [?e :wave/completed-at ?done]]
-                       db)
-                  (filter (fn [[_ status _]] (contains? terminal-wave-statuses status)))
-                  (map (fn [[eid _ done]] [eid done])))
-        n (retract-old! c cutoff rows)]
-    (when (pos? n) (log/debug "Ledger sweep: retracted" n "completed waves"))
-    n))
-
 (defn cleanup-old-claim-history!
   "Retract claim-history rows older than the retain window. Every row is durable
    in the ledger (archive-claim-to-history! appends). Returns count retracted."
@@ -167,5 +145,4 @@
    Terminal-state guarded — live entities are never swept. Returns a summary map."
   [& [opts]]
   {:tasks         (cleanup-terminal-tasks! opts)
-   :waves         (cleanup-completed-waves! opts)
    :claim-history (cleanup-old-claim-history! opts)})

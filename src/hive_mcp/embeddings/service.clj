@@ -34,9 +34,9 @@
             [hive-mcp.embeddings.cache :as embed-cache]
             ;; DIP: depend on the EmbeddingProvider protocol boundary, not
             ;; chroma.core (which re-aggregates concrete Chroma CRUD and
-            ;; transitively pulls hive-mcp.plan.plans → tools.memory.crud
-            ;; → agent.drone.feedback → agent.routing, creating a load
-            ;; cycle at test time). chroma.embeddings is the protocol-only
+            ;; transitively pulls hive-mcp.plan.plans and tools.memory.crud,
+            ;; which historically closed a load cycle at test time).
+            ;; chroma.embeddings is the protocol-only
             ;; seam — safe to depend on from the embedding domain service.
             [hive-mcp.chroma.embeddings :as chroma]
             [hive-mcp.config.core :as global-config]
@@ -479,6 +479,16 @@
   (clojure.core/reset! initialized? false)
   (log/info "EmbeddingService reset"))
 
+(defn- configured-embedding-config
+  "EmbeddingConfig for `provider` (:ollama or :openrouter) using the model the
+   user configured at `embeddings.<provider>.model`. The factory throws, naming
+   that key, when it is absent: no model is chosen in code."
+  [provider]
+  (let [model (global-config/get-config-value (str "embeddings." (name provider) ".model"))]
+    (case provider
+      :ollama     (config/ollama-config {:model model})
+      :openrouter (config/openrouter-config {:model model}))))
+
 (defn configure-defaults!
   "Configure default providers for well-known collections.
 
@@ -501,7 +511,7 @@
    {:collection   "hive-mcp-memory"
     :default      :ollama
     :to-id        :ollama
-    :configure-fn #(configure-collection! "hive-mcp-memory" (config/ollama-config))
+    :configure-fn #(configure-collection! "hive-mcp-memory" (configured-embedding-config :ollama))
     :reason       "fast local 768-dim embeddings for memory"})
 
   ;; Presets: OpenRouter when the key is present; Ollama fallback. Both
@@ -511,13 +521,13 @@
      {:collection   "hive-mcp-presets"
       :default      :ollama
       :to-id        :openrouter
-      :configure-fn #(configure-collection! "hive-mcp-presets" (config/openrouter-config))
+      :configure-fn #(configure-collection! "hive-mcp-presets" (configured-embedding-config :openrouter))
       :reason       "OpenRouter — accurate 4096-dim semantic search for presets"})
     (routing/apply-collection-flip!
      {:collection   "hive-mcp-presets"
       :default      :ollama
       :to-id        :ollama
-      :configure-fn #(configure-collection! "hive-mcp-presets" (config/ollama-config))
+      :configure-fn #(configure-collection! "hive-mcp-presets" (configured-embedding-config :ollama))
       :reason       "Ollama fallback (no OPENROUTER_API_KEY)"}))
 
   ;; Plans: OpenRouter when key present (1000-5000+ char plans exceed
@@ -527,13 +537,13 @@
      {:collection   "hive-mcp-plans"
       :default      :ollama
       :to-id        :openrouter
-      :configure-fn #(configure-collection! "hive-mcp-plans" (config/openrouter-config))
+      :configure-fn #(configure-collection! "hive-mcp-plans" (configured-embedding-config :openrouter))
       :reason       "OpenRouter — long EDN plans exceed Ollama 1500-char ceiling"})
     (do (routing/apply-collection-flip!
           {:collection   "hive-mcp-plans"
            :default      :ollama
            :to-id        :ollama
-           :configure-fn #(configure-collection! "hive-mcp-plans" (config/ollama-config))
+           :configure-fn #(configure-collection! "hive-mcp-plans" (configured-embedding-config :ollama))
            :reason       "Ollama fallback (no OPENROUTER_API_KEY)"})
         (log/warn "Plans collection on Ollama — entries >1500 chars may be truncated")))
 

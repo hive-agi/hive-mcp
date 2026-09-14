@@ -8,10 +8,11 @@
    - dimension: Embedding dimension (for Chroma collection creation)
    - options: Provider-specific options (host, api-key, etc.)
 
-   Factory functions provide easy config creation:
-     (ollama-config)                     ; Default Ollama config
-     (openrouter-config)                 ; OpenRouter with env API key
-     (openai-config {:model \"text-embedding-3-large\"})
+   Factory functions provide easy config creation. :model is required: hive-mcp
+   chooses no embedding model, so a call without one throws naming the config key.
+     (ollama-config {:model <model-id>})
+     (openrouter-config {:model <model-id>})   ; OpenRouter with env API key
+     (openai-config {:model <model-id>})
 
    Usage with EmbeddingService:
      (service/configure-collection! \"my-collection\" (config/ollama-config))"
@@ -85,20 +86,29 @@
     :venice     (get venice-models model 4096)     ; Default for unknown Venice models
     nil))
 
+(defn- require-model!
+  "Return `model`, or throw naming the config key that supplies it."
+  [model provider-type]
+  (or model
+      (let [config-key (str "embeddings." (name provider-type) ".model")]
+        (throw (ex-info (str "No " (name provider-type) " embedding model: pass :model or set " config-key)
+                        {:error      :model-not-configured
+                         :provider   provider-type
+                         :config-key config-key
+                         :fix        (str "hive config set " config-key " <model-id>")})))))
 
 (defn ollama-config
   "Create Ollama embedding configuration.
 
    Options:
-     :model - Embedding model (default: qwen3-embedding:4b, the memory lane's
-              model; nomic-embed-text is retired)
+     :model - Embedding model (required; throws when absent)
      :host - Ollama server URL (default: from OLLAMA_HOST or localhost)
 
    Returns EmbeddingConfig record."
   ([] (ollama-config {}))
-  ([{:keys [model host]
-     :or {model "qwen3-embedding:4b"}}]
-   (let [host (or host
+  ([{:keys [model host]}]
+   (let [model (require-model! model :ollama)
+         host (or host
                   (global-config/get-service-value :ollama :host
                                                    :env "OLLAMA_HOST"
                                                    :default "http://localhost:11434"))
@@ -112,14 +122,14 @@
   "Create OpenAI embedding configuration.
 
    Options:
-     :model - Embedding model (default: text-embedding-3-small)
+     :model - Embedding model (required; throws when absent)
      :api-key - API key (default: from OPENAI_API_KEY env)
 
    Returns EmbeddingConfig record."
   ([] (openai-config {}))
-  ([{:keys [model api-key]
-     :or {model "text-embedding-3-small"}}]
-   (let [api-key (or api-key (global-config/get-secret :openai-api-key))
+  ([{:keys [model api-key]}]
+   (let [model (require-model! model :openai)
+         api-key (or api-key (global-config/get-secret :openai-api-key))
          dimension (or (get openai-models model)
                        (throw (ex-info (str "Unknown OpenAI model: " model
                                             ". Supported: " (keys openai-models))
@@ -133,14 +143,14 @@
   "Create OpenRouter embedding configuration.
 
    Options:
-     :model - Embedding model (default: qwen/qwen3-embedding-8b - FREE!)
+     :model - Embedding model (required; throws when absent)
      :api-key - API key (default: from OPENROUTER_API_KEY env)
 
    Returns EmbeddingConfig record."
   ([] (openrouter-config {}))
-  ([{:keys [model api-key]
-     :or {model "qwen/qwen3-embedding-8b"}}]
-   (let [api-key (or api-key (global-config/get-secret :openrouter-api-key))
+  ([{:keys [model api-key]}]
+   (let [model (require-model! model :openrouter)
+         api-key (or api-key (global-config/get-secret :openrouter-api-key))
          dimension (get openrouter-models model 4096)] ; Default dimension for unknown models
      (when-not api-key
        (throw (ex-info "OpenRouter API key required. Set OPENROUTER_API_KEY env var or pass :api-key option."
@@ -151,14 +161,14 @@
   "Create Venice embedding configuration.
 
    Options:
-     :model - Embedding model (default: text-embedding-qwen3-8b)
+     :model - Embedding model (required; throws when absent)
      :api-key - API key (default: from VENICE_API_KEY env)
 
    Returns EmbeddingConfig record."
   ([] (venice-config {}))
-  ([{:keys [model api-key]
-     :or {model "text-embedding-qwen3-8b"}}]
-   (let [api-key (or api-key (global-config/get-secret :venice-api-key))
+  ([{:keys [model api-key]}]
+   (let [model (require-model! model :venice)
+         api-key (or api-key (global-config/get-secret :venice-api-key))
          dimension (get venice-models model 4096)] ; Default dimension for unknown models
      (when-not api-key
        (throw (ex-info "Venice API key required. Set VENICE_API_KEY env var or pass :api-key option."

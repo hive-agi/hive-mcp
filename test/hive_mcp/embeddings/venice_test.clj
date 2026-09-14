@@ -91,7 +91,7 @@
       (is (thrown-with-msg?
             clojure.lang.ExceptionInfo
             #"(?i)venice api key required"
-            (venice/->provider {}))))))
+            (venice/->provider {:model "text-embedding-qwen3-8b"}))))))
 
 (deftest provider-honours-explicit-key-and-overrides
   (testing "->provider takes :api-key + :model overrides without env"

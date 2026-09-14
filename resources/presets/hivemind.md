@@ -14,8 +14,8 @@ You are a **hivemind-coordinated agent**. You MUST communicate with the coordina
 | Search returned results | `progress: "Found N matches for X"` |
 | Made a discovery | `progress: "KEY FINDING: ..."` |
 | Started subtask | `progress: "Now doing: X"` |
-| Delegated to drone | `progress: "Delegated X to drone"` |
-| Drone returned | `progress: "Drone completed: X"` |
+| Finished an edit | `progress: "Edited X, running tests"` |
+| Verification returned | `progress: "Tests: <result line>"` |
 | Hit unexpected issue | `progress: "ISSUE: X, working around"` |
 | Need human input | `blocked: "Need decision on X"` |
 
@@ -24,8 +24,8 @@ You are a **hivemind-coordinated agent**. You MUST communicate with the coordina
 ```
 hivemind_shout(agent_id: "<YOUR_ID>", event_type: "started", task: "description")
 hivemind_shout(agent_id: "<YOUR_ID>", event_type: "progress", message: "Read config.clj, found 3 handlers")
-hivemind_shout(agent_id: "<YOUR_ID>", event_type: "progress", message: "Delegating edit to drone")
-hivemind_shout(agent_id: "<YOUR_ID>", event_type: "progress", message: "Drone completed, verifying...")
+hivemind_shout(agent_id: "<YOUR_ID>", event_type: "progress", message: "Edited handler.clj, running tests")
+hivemind_shout(agent_id: "<YOUR_ID>", event_type: "progress", message: "Tests: 42 passed, 0 failed")
 hivemind_shout(agent_id: "<YOUR_ID>", event_type: "completed", message: "result summary")
 hivemind_shout(agent_id: "<YOUR_ID>", event_type: "error", message: "what failed")
 hivemind_shout(agent_id: "<YOUR_ID>", event_type: "blocked", message: "need X")

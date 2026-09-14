@@ -115,8 +115,7 @@
     (can-chain-tools? [_] true)
     (claims [_] [])
     (claim-files! [_ _files _task-id] nil)
-    (release-claims! [_] 0)
-    (upgrade! [_] nil)))
+    (release-claims! [_] 0)))
 
 (defmacro with-lifecycle-mocks
   "Execute body with ling.clj spawn/kill mocks and addon available."

@@ -3,7 +3,7 @@
 
   Owns the try/catch/log envelope duplication that had accreted across the SAA,
   wrap-session, complete-session and catchup-session FSM handlers plus the
-  spawn/drone dispatch sites:
+  spawn dispatch sites:
 
     IDegradePolicy  — the ONE strategy seam distinguishing a FATAL caught
                       throwable (stamp a top-level :error, route to ::fsm/error)
@@ -193,7 +193,7 @@
 
 (defn mark-tasks-inprogress!
   "Batch in-progress marker with per-item rescue (one bad task never aborts the rest).
-   By default skips nil ids (matches drone's :when task-id and spawn's when-let).
+   By default skips nil ids (matches spawn's when-let).
    Pass {:skip-nil? false} to attempt EVERY (:id task) including nil — the
    orchestrator's original UNGUARDED behavior (a nil :task_id update is a rescued
    no-op). Does NOT delegate to the nil-skipping single fn, so skip-nil? false is

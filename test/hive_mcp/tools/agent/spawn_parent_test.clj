@@ -14,6 +14,7 @@
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.swarm.logic :as logic]
             [hive-mcp.tools.swarm.core :as swarm-core]
+            [hive-mcp.agent.provider.collect :as provider-collect]
             [hive-test.isolation :as iso]
             [hive-mcp.isolation-methods]
             [hive-mcp.test.stub.terminal-addon :as term-stub]))
@@ -24,7 +25,10 @@
   [f]
   (logic/reset-db!)
   (with-redefs [swarm-core/swarm-addon-available? (constantly false)
-                guards/child-ling? (constantly false)]
+                guards/child-ling? (constantly false)
+                ;; hive-mcp ships no model default: declare the ling default
+                provider-collect/agent-type-defaults
+                (constantly {:provider :anthropic :model "claude-test-model"})]
     (try (term-stub/with-terminal f)
          (finally (logic/reset-db!)))))
 

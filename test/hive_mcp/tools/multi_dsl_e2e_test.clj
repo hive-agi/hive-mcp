@@ -76,7 +76,7 @@
 
 (def ^:private mock-preset-handler
   (fn [_params]
-    (json-ok {:presets ["ling" "drone-worker" "saa" "tdd"]
+    (json-ok {:presets ["ling" "coordinator" "saa" "tdd"]
               :count 4})))
 
 (def ^:private standard-mock-handlers
@@ -158,7 +158,7 @@
                    (testing "p → prompt"
                      (is (= "do the thing" (:prompt (parse-sentence ["a!" {"p" "do the thing"}])))))
                    (testing "f → files"
-                     (is (= ["a.clj" "b.clj"] (:files (parse-sentence ["w!" {"f" ["a.clj" "b.clj"]}]))))))))
+                     (is (= ["a.clj" "b.clj"] (:files (parse-sentence ["g+" {"f" ["a.clj" "b.clj"]}]))))))))
 
 (deftest dsl-ref-threading-prev-test
   (testing "$ref:$0 threading: m+ creates -> k> uses $ref:$0.data.id"
@@ -592,18 +592,6 @@
                      "g+" "magit" "stage"
                      "g!" "magit" "commit"
                      "g>" "magit" "push"))))
-
-(deftest verb-table-wave-verbs-test
-  (testing "Wave verbs: w! → dispatch, w? → status, wy → approve, wn → reject"
-    (when-resolved parse-sentence hive-mcp.dsl.verbs/parse-sentence
-                   (are [verb expected-tool expected-cmd]
-                        (let [op (parse-sentence [verb {}])]
-                          (and (= expected-tool (:tool op))
-                               (= expected-cmd (:command op))))
-                     "w!" "wave" "dispatch"
-                     "w?" "wave" "status"
-                     "wy" "wave" "approve"
-                     "wn" "wave" "reject"))))
 
 (deftest verb-table-hivemind-verbs-test
   (testing "Hivemind verbs: h! → shout, h? → ask"

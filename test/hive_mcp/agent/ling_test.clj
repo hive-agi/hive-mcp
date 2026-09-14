@@ -424,16 +424,6 @@
       (is (= 0 released-count)))))
 
 ;; =============================================================================
-;; Section 9: upgrade! Tests
-;; =============================================================================
-
-(deftest ling-upgrade-is-noop
-  (testing "upgrade! returns nil for lings (already full capability)"
-    (let [ling (ling/->ling "upgrade-ling" {})]
-      (is (nil? (proto/upgrade! ling))
-          "Ling upgrade! should be no-op"))))
-
-;; =============================================================================
 ;; Section 10: Query Function Tests
 ;; =============================================================================
 
@@ -461,8 +451,8 @@
     ;; add-live-slave!, not add-slave! — get-all-slaves filters on liveness.
     (rows/add-live-slave! "ling-1" {:status :idle :depth 1})
     (rows/add-live-slave! "ling-2" {:status :working :depth 1})
-    ;; A drone (depth 2) — should be filtered out
-    (rows/add-live-slave! "drone-1" {:status :idle :depth 2})
+    ;; A nested slave (depth 2) should be filtered out
+    (rows/add-live-slave! "nested-1" {:status :idle :depth 2})
 
     (let [lings (ling/list-lings)]
       (is (= 2 (count lings)) "Should return only lings (depth 1)")

@@ -17,8 +17,8 @@
 ;; =============================================================================
 
 (deftest verb-table-structure-test
-  (testing "verb-table has 41 verbs"
-    (is (= 41 (count verbs/verb-table))))
+  (testing "verb-table has 37 verbs"
+    (is (= 37 (count verbs/verb-table))))
   (testing "all keys are strings"
     (is (every? string? (keys verbs/verb-table))))
   (testing "all values have :tool and :command"
@@ -27,7 +27,7 @@
                 (vals verbs/verb-table))))
   (testing "all tool names match consolidated tool-handlers"
     (let [known-tools #{"memory" "kg" "agent" "kanban" "session"
-                        "magit" "wave" "hivemind" "preset" "config"}]
+                        "magit" "hivemind" "preset" "config"}]
       (is (every? #(contains? known-tools (:tool %))
                   (vals verbs/verb-table))))))
 
@@ -110,13 +110,10 @@
       "g!" "commit"
       "g>" "push")))
 
-(deftest wave-verbs-test
-  (testing "wave verb family"
-    (are [verb cmd] (= {:tool "wave" :command cmd} (get verbs/verb-table verb))
-      "w!" "dispatch"
-      "w?" "status"
-      "wy" "approve"
-      "wn" "reject")))
+(deftest wave-verbs-removed-test
+  (testing "the drone-wave verb family is gone"
+    (doseq [verb ["w!" "w?" "wy" "wn"]]
+      (is (nil? (get verbs/verb-table verb)) verb))))
 
 (deftest hivemind-verbs-test
   (testing "hivemind verb family"
@@ -272,7 +269,7 @@
 (deftest collect-refs-deeply-nested-test
   (testing "collects refs from deep nesting"
     (is (= #{"$0" "$2"}
-           (verbs/collect-refs {:tool "wave" :command "dispatch"
+           (verbs/collect-refs {:tool "agent" :command "dispatch"
                                 :tasks [{"file" "$ref:$0.data.path"
                                          "task" "$ref:$2.data.task"}]})))))
 
@@ -358,7 +355,6 @@
       "b+" "kanban"   "create"
       "s." "session"  "complete"
       "g?" "magit"    "status"
-      "w!" "wave"     "dispatch"
       "h!" "hivemind" "shout"
       "p?" "preset"   "list"
       "c?" "config"   "get")))

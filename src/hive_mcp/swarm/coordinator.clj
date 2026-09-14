@@ -133,15 +133,15 @@
   "Atomically check for conflicts AND acquire claims.
 
    CRITICAL: This prevents the race condition where:
-   1. Drone A checks files - no conflicts
-   2. Drone B checks same files - no conflicts
-   3. Drone A claims files
-   4. Drone B claims same files (conflict not detected!)
+   1. Agent A checks files - no conflicts
+   2. Agent B checks same files - no conflicts
+   3. Agent A claims files
+   4. Agent B claims same files (conflict not detected!)
 
    Uses locking on logic-db to ensure check+claim is atomic.
 
    DUAL DB SYNC FIX: Ensures slave is registered in core.logic pldb BEFORE
-   claiming files. This prevents race conditions where drones are in DataScript
+   claiming files. This prevents race conditions where agents are in DataScript
    but not in logic-db, causing ghost claims and conflict detection failures.
 
    CC.3 PRIOR HASH: Computes file content hash at acquire time and stores it
@@ -149,7 +149,7 @@
 
    Arguments:
    - task-id:  Unique task identifier
-   - slave-id: Slave/drone claiming the files
+   - slave-id: Slave claiming the files
    - files:    List of file paths to claim
 
    Returns:
@@ -250,7 +250,7 @@
    propagates staleness to dependent KG entries via disc/propagate-staleness!.
 
    This enables the knowledge graph to track which files were modified by
-   which drones, and automatically marks dependent knowledge as potentially
+   which agents, and automatically marks dependent knowledge as potentially
    stale when source files change.
 
    Arguments:

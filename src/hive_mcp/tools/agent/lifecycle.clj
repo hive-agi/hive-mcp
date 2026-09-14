@@ -31,7 +31,7 @@
     (let [ds-agents (queries/get-all-slaves)
           elisp-lings (or (helpers/query-elisp-lings) [])
           elisp-ids (set (map :slave/id elisp-lings))
-          ;; Only check lings (depth=1), drones are JVM-side
+          ;; Only check top-level lings (depth=1), the ones Emacs tracks
           orphan-lings (->> ds-agents
                             (filter #(= 1 (:slave/depth %)))
                             (filter #(not (elisp-ids (:slave/id %))))

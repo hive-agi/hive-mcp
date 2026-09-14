@@ -43,7 +43,7 @@
 ;; =============================================================================
 
 (def sample-axioms
-  [{:id "ax-1" :content "Never spawn drones from lings"}
+  [{:id "ax-1" :content "Never spawn lings from lings"}
    {:id "ax-2" :content "Cap 5-6 lings per Emacs daemon"}])
 
 (defn- recording-enrich

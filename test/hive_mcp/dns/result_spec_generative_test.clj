@@ -34,7 +34,7 @@
   "Generator for error category keywords (qualified)."
   (gen/elements [:io/timeout :sdk/invalid-request :kg/node-not-found
                  :chroma/connection-failed :parse/invalid-json
-                 :effect/exception :transport/timeout :drone/spawn-failed
+                 :effect/exception :transport/timeout :emacs/timeout
                  :emacs/not-connected :io/read-failure]))
 
 (def gen-err-result

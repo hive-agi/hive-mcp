@@ -8,7 +8,7 @@
    - ISwarmRegistry   — Slave + Task CRUD
    - IClaimStore      — File claim lifecycle
    - ICriticalOps     — Kill guard operations
-   - ICoordination    — Wrap queue, plans, waves, coordinators
+   - ICoordination    : Wrap queue, coordinators, session registries
    - ISwarmDb         — Low-level DB access boundary
 
    Design: Functional DDD Repository pattern.
@@ -27,7 +27,7 @@
    may block. Read operations (get-*, list-*) should be fast and preferably non-blocking.
 
    Entity types managed:
-   - Slave: Ling/drone instances with status, presets, project scope
+   - Slave: Ling instances with status, presets, project scope
    - Task: Work units assigned to slaves with status lifecycle"
 
   ;;; =========================================================================
@@ -180,7 +180,7 @@
 (defprotocol IClaimStore
   "File claim management: acquire, release, conflict detection, history.
 
-   Claims enforce mutual exclusion on files across lings/drones.
+   Claims enforce mutual exclusion on files across lings.
    Implementations must handle:
    - Upsert semantics on claim-file! (same file = update existing)
    - Cascading release on slave/task removal
@@ -189,7 +189,7 @@
   (-claim-file! [this file-path slave-id]
     [this file-path slave-id opts]
     "Acquire a file claim. Upserts if claim exists.
-     opts: {:task-id string, :prior-hash string, :wave-id string}")
+     opts: {:task-id string, :prior-hash string}")
 
   (-release-claim! [this file-path]
     "Release a file claim and dispatch :claim/file-released event.")
@@ -254,11 +254,11 @@
      Returns {:can-kill? bool :blocking-ops #{...}}."))
 
 ;;; =============================================================================
-;;; ICoordination — Wrap queue, plans, waves, coordinators (ISP)
+;;; ICoordination — Wrap queue, coordinators (ISP)
 ;;; =============================================================================
 
 (defprotocol ICoordination
-  "Multi-agent coordination: wrap queue, change plans, waves, coordinators.
+  "Multi-agent coordination: wrap queue, coordinators, session registries.
 
    Application Service layer for swarm orchestration.
    Manages the lifecycle of coordination entities that span
@@ -281,45 +281,6 @@
 
   (-mark-wrap-processed! [this wrap-id]
     "Mark a wrap notification as processed.")
-
-  ;;; --- Change Plans ---
-
-  (-create-plan! [this tasks preset]
-    "Create a change plan with items. Returns plan-id.")
-
-  (-get-plan [this plan-id]
-    "Get a change plan by ID.")
-
-  (-get-pending-items [this plan-id]
-    "Get pending items for a plan.")
-
-  (-get-plan-items [this plan-id]
-    "Get all items for a plan.")
-
-  (-update-item-status! [this item-id status]
-    [this item-id status opts]
-    "Update a change item's status. opts: {:drone-id :result}")
-
-  (-update-plan-status! [this plan-id status]
-    "Update a change plan's status.")
-
-  ;;; --- Waves ---
-
-  (-create-wave! [this plan-id]
-    [this plan-id opts]
-    "Create a wave execution. opts: {:concurrency N}. Returns wave-id.")
-
-  (-get-wave [this wave-id]
-    "Get a wave by ID.")
-
-  (-get-all-waves [this]
-    "Get all waves.")
-
-  (-update-wave-counts! [this wave-id delta]
-    "Update wave counts. delta: {:active N :completed N :failed N}")
-
-  (-complete-wave! [this wave-id status]
-    "Mark a wave as completed with final status.")
 
   ;;; --- Coordinators ---
 

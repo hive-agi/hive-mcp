@@ -41,15 +41,6 @@
     :transport/connection-refused :transport/timeout
     :transport/protocol-error :transport/serialization-error
 
-    ;; Drone execution
-    :drone/spawn-failed :drone/timeout :drone/budget-exceeded
-    :drone/model-error :drone/diff-invalid
-    ;; Drone health monitoring
-    :drone/kill-failed :drone/claim-release-failed
-    :drone/health-status-failed :drone/recover-failed
-    :drone/health-control-failed :drone/retry-queue-failed
-    :drone/pop-retry-failed
-
     ;; Parsing
     :parse/invalid-json :parse/invalid-edn :parse/malformed-input
     :parse/schema-violation

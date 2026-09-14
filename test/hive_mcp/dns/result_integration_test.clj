@@ -434,8 +434,8 @@
     (is (tax/known-error? :chroma/connection-failed))
     ;; Transport
     (is (tax/known-error? :transport/timeout))
-    ;; Drone
-    (is (tax/known-error? :drone/spawn-failed))))
+    ;; Emacs
+    (is (tax/known-error? :emacs/not-connected))))
 
 (deftest e2e-taxonomy-unknown-not-matched
   (testing "Unknown categories are correctly rejected"

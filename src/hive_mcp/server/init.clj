@@ -89,7 +89,9 @@
   1. ~/.config/hive-mcp/config.edn :embeddings section
   2. ~/.config/hive-mcp/config.edn :services / :secrets sections
   3. Environment variables (OLLAMA_HOST, OPENROUTER_API_KEY, etc.) as fallback
-  4. Built-in defaults"
+  4. Built-in endpoint defaults (hosts only). Embedding models have no default:
+     embeddings.ollama.model / embeddings.openrouter.model must be set, and a
+     missing one is logged as an error naming the key."
   []
   (result/rescue false
     ;; Load global config to get :embeddings section
@@ -107,72 +109,62 @@
       ;; Initialize EmbeddingService for per-collection routing
                    (embedding-service/init!)
 
-      ;; Read Ollama host/model from :embeddings > :services > env vars > defaults
+      ;; Ollama host from :embeddings > :services > env vars > default endpoint.
+      ;; Embedding models come from :embeddings only; there is no default model.
                    (let [ollama-host (or (:host ollama-cfg)
                                          (global-config/get-service-value :ollama :host
                                                                           :env "OLLAMA_HOST"
                                                                           :default "http://localhost:11434"))
-                         ollama-model (or (:model ollama-cfg) "qwen3-embedding:4b")
-                         openrouter-model (or (:model openrouter-cfg) "qwen/qwen3-embedding-8b")]
+                         ollama-model (:model ollama-cfg)
+                         openrouter-key? (boolean (global-config/get-secret :openrouter-api-key))
+                         openrouter-model (when openrouter-key? (:model openrouter-cfg))
+                         ollama-emb-cfg (when ollama-model
+                                          (result/rescue nil
+                                                         (embedding-config/ollama-config {:host ollama-host :model ollama-model})))
+                         configure-ollama! (fn [collection]
+                                             (when ollama-emb-cfg
+                                               (result/rescue nil
+                                                              (embedding-service/configure-collection! collection ollama-emb-cfg))))
+                         configure-openrouter! (fn [collection]
+                                                 (boolean
+                                                  (and openrouter-model
+                                                       (result/rescue false
+                                                                      (embedding-service/configure-collection!
+                                                                       collection
+                                                                       (embedding-config/openrouter-config {:model openrouter-model}))
+                                                                      true))))]
 
-        ;; Configure per-collection embedding providers
-        ;; Memory collection: Ollama (fast, local, 768 dims)
-                     (result/rescue nil
-                                    (embedding-service/configure-collection!
-                                     "hive-mcp-memory"
-                                     (embedding-config/ollama-config {:host ollama-host :model ollama-model})))
+                     (when-not ollama-model
+                       (log/error "No Ollama embedding model configured: set embeddings.ollama.model"
+                                  "(hive config set embeddings.ollama.model <model-id>)."
+                                  "Ollama-backed collections and the global fallback provider are left unconfigured."))
+                     (when (and openrouter-key? (not openrouter-model))
+                       (log/error "OPENROUTER_API_KEY is set but no OpenRouter embedding model is configured:"
+                                  "set embeddings.openrouter.model (hive config set embeddings.openrouter.model <model-id>)."
+                                  "OpenRouter-backed collections fall back to Ollama."))
 
-        ;; Presets collection: OpenRouter (accurate, 4096 dims) if API key available
-                     (when (global-config/get-secret :openrouter-api-key)
-                       (let [configured? (result/rescue false
-                                                        (embedding-service/configure-collection!
-                                                         "hive-mcp-presets"
-                                                         (embedding-config/openrouter-config {:model openrouter-model}))
-                                                        true)]
-                         (if configured?
-                           (log/info "Presets collection configured with OpenRouter (4096 dims)")
-              ;; Fallback: use Ollama for presets too
-                           (result/rescue nil
-                                          (embedding-service/configure-collection!
-                                           "hive-mcp-presets"
-                                           (embedding-config/ollama-config {:host ollama-host :model ollama-model}))))))
+        ;; Memory collection: Ollama
+                     (configure-ollama! "hive-mcp-memory")
 
-        ;; Plans collection: OpenRouter (4096 dims) for large plan entries (1000-5000+ chars)
-        ;; Plans exceed Ollama's ~1500 char embedding limit, so OpenRouter is preferred
-                     (if (global-config/get-secret :openrouter-api-key)
-                       (let [configured? (result/rescue false
-                                                        (embedding-service/configure-collection!
-                                                         "hive-mcp-plans"
-                                                         (embedding-config/openrouter-config {:model openrouter-model}))
-                                                        true)]
-                         (if configured?
-                           (log/info "Plans collection configured with OpenRouter (4096 dims)")
-                           (do
-                ;; Fallback: use Ollama (truncation risk for large plans, but works)
-                             (result/rescue nil
-                                            (embedding-service/configure-collection!
-                                             "hive-mcp-plans"
-                                             (embedding-config/ollama-config {:host ollama-host :model ollama-model})))
-                             (log/warn "Plans collection using Ollama - entries >1500 chars may be truncated"))))
-          ;; No OpenRouter key - use Ollama with warning
+        ;; Presets collection: OpenRouter when configured, else Ollama
+                     (if (configure-openrouter! "hive-mcp-presets")
+                       (log/info "Presets collection configured with OpenRouter")
+                       (configure-ollama! "hive-mcp-presets"))
+
+        ;; Plans collection: OpenRouter when configured, else Ollama with a truncation warning
+                     (if (configure-openrouter! "hive-mcp-plans")
+                       (log/info "Plans collection configured with OpenRouter")
                        (do
-                         (result/rescue nil
-                                        (embedding-service/configure-collection!
-                                         "hive-mcp-plans"
-                                         (embedding-config/ollama-config {:host ollama-host :model ollama-model})))
-                         (log/warn "Plans collection using Ollama (no OPENROUTER_API_KEY) - entries >1500 chars may be truncated")))
+                         (configure-ollama! "hive-mcp-plans")
+                         (log/warn "Plans collection using Ollama - entries >1500 chars may be truncated")))
 
-        ;; Ingest collection: OpenRouter (same model used by hive-ingestor OpenRouterEmbedder)
-                     (when (global-config/get-secret :openrouter-api-key)
-                       (result/rescue nil
-                                      (embedding-service/configure-collection!
-                                       "hive-ingest"
-                                       (embedding-config/openrouter-config {:model openrouter-model})))
+        ;; Ingest collection: OpenRouter when configured
+                     (when (configure-openrouter! "hive-ingest")
                        (log/info "Ingest collection configured with OpenRouter"))
 
-        ;; Set global fallback provider (Ollama) for backward compatibility
-                     (let [provider (ollama/->provider {:host ollama-host})]
-                       (chroma/set-embedding-provider! provider)
+        ;; Global fallback provider (Ollama), only with a configured model
+                     (when ollama-model
+                       (chroma/set-embedding-provider! (ollama/->provider {:host ollama-host :model ollama-model}))
                        (log/info "Global fallback embedding provider: Ollama at" ollama-host))
 
                      (log/info "Embedding config from config.edn:" {:ollama-host ollama-host

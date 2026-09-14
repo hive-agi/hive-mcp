@@ -5,7 +5,7 @@
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
-            [hive-mcp.tools.consolidated.workflow.spawn]))
+            [hive-mcp.tools.consolidated.workflow.spawn :as spawn]))
 
 ;; Access private functions via var deref
 (def ^:private compute-route-batches
@@ -131,7 +131,6 @@
                  hl-results gen-spawn-results]
                 (let [resp (build-spark-response {:vt-results vt-results
                                                   :hl-results hl-results
-                                                  :drone-result nil
                                                   :active-counts {:active-vterm 0 :active-headless 0 :active-total 0}
                                                   :max-slots 10})]
                   (= (:count resp)
@@ -142,7 +141,6 @@
                  hl-results gen-spawn-results]
                 (let [resp (build-spark-response {:vt-results vt-results
                                                   :hl-results hl-results
-                                                  :drone-result nil
                                                   :active-counts {:active-vterm 0 :active-headless 0 :active-total 0}
                                                   :max-slots 10})]
                   (and (contains? resp :spawned)
@@ -156,7 +154,6 @@
                  hl-results gen-spawn-results]
                 (let [resp (build-spark-response {:vt-results vt-results
                                                   :hl-results hl-results
-                                                  :drone-result nil
                                                   :active-counts {:active-vterm 0 :active-headless 0 :active-total 0}
                                                   :max-slots 10})
                       all-ling (concat vt-results hl-results)]
@@ -174,14 +171,24 @@
       (is (empty? vt))
       (is (empty? hl)))))
 
-(deftest build-spark-response-with-drone-result
-  (testing "drone results merge into response"
-    (let [resp (build-spark-response {:vt-results []
+(deftest build-spark-response-routes-are-lings-only
+  (testing "the response reports vterm and headless routes and nothing else"
+    (let [resp (build-spark-response {:vt-results [{:spawned true :route :claude}]
                                       :hl-results []
-                                      :drone-result {:spawned [{:spawned true :route :drone}]
-                                                     :count 1
-                                                     :wave-id "w-1"}
                                       :active-counts {:active-vterm 0 :active-headless 0 :active-total 0}
                                       :max-slots 10})]
       (is (= 1 (:count resp)))
-      (is (= 1 (get-in resp [:routes :drone :count]))))))
+      (is (= #{:vterm :headless} (set (keys (:routes resp))))))))
+
+(deftest spark-rejects-drone-spawn-mode
+  (testing "spawn mode :drone is refused before any spawn port runs"
+    (let [spawned (atom 0)
+          ports   {:spawn-agent-fn (fn [_] (swap! spawned inc) nil)
+                   :agents-fn      (constantly [])
+                   :project-id-fn  (constantly "p")}
+          ex      (try (spawn/spark! {:spawn_mode "drone" :tasks [{:id "t1"}] :directory "/tmp"} ports)
+                       nil
+                       (catch clojure.lang.ExceptionInfo e e))]
+      (is (some? ex))
+      (is (= :execution/unsupported-mode (:type (ex-data ex))))
+      (is (zero? @spawned)))))
