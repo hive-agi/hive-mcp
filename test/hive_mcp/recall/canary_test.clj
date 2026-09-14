@@ -248,3 +248,20 @@
   (testing "when no regression, cur is returned =`=`"
     (let [cur {:ok? true :passed 1 :faults [] :skipped [{:label :b :reason "no store"}]}]
       (is (= cur (canary/with-regressions {:ran-labels #{:a}} cur))))))
+
+(deftest a-probe-that-stays-dark-keeps-faulting
+  (testing "the tick a probe goes dark it is a regression, and it STAYS one on
+            every later dark tick because with-regressions carries the regressed
+            labels into :ran-labels; only running again clears the fault"
+    (let [t1 (canary/verdict [(canary/outcome :probe-a nil)])
+          t2 (canary/with-regressions
+              t1 (canary/verdict [(canary/outcome :probe-a nil "no store")]))
+          t3 (canary/with-regressions
+              t2 (canary/verdict [(canary/outcome :probe-a nil "no store")]))]
+      (is (= [:recall/probe-went-dark] (mapv :fault (:faults t2))))
+      (is (= [:recall/probe-went-dark] (mapv :fault (:faults t3)))
+          "the second dark tick must fault too, not look like a quiet skip")
+      (let [t4 (canary/with-regressions
+                t3 (canary/verdict [(canary/outcome :probe-a nil)]))]
+        (is (empty? (mapv :fault (:faults t4))))
+        (is (:ok? t4))))))

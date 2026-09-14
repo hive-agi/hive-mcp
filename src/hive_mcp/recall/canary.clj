@@ -256,7 +256,7 @@
     []
     (let [prev-ran (:ran-labels prev #{})
           cur-skipped (into {} (map (juxt :label :reason)) (:skipped cur))]
-      (->> (clojure.set/intersection prev-ran (set (keys cur-skipped)))
+      (->> (set/intersection prev-ran (set (keys cur-skipped)))
            (sort)
            (mapv (fn [label]
                    {:fault :recall/probe-went-dark
@@ -265,12 +265,16 @@
 
 (defn with-regressions
   "Return `cur` with skip-regressions faults appended to :faults when any are
-   detected. :ok? is set to false when regressions exist. Returns cur unchanged
-   (=`=) when there are no regressions."
+   detected. :ok? is set to false when regressions exist, and the regressed
+   labels are ADDED to :ran-labels so the next tick still treats them as
+   expected-to-run: a probe that stays dark keeps faulting every tick until it
+   actually runs again, instead of going quiet after one tick. Returns cur
+   unchanged when there are no regressions."
   [prev cur]
   (let [regressions (skip-regressions prev cur)]
     (if (seq regressions)
       (-> cur
           (update :faults into regressions)
+          (update :ran-labels (fnil into #{}) (map :label regressions))
           (assoc :ok? false))
       cur)))
