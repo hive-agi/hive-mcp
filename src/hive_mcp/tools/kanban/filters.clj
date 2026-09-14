@@ -49,9 +49,26 @@
         ;; default :all
         (every? #(contains? entry-tags %) extra-tags)))))
 
+(defn ^:private ->instant
+  "Parse an ISO-8601 timestamp string to `java.time.Instant`. Accepts:
+    - ZonedDateTime strings with a `[Zone/Id]` suffix,
+    - OffsetDateTime strings (no zone id, e.g. `2026-08-21T16:55:25-03:00`),
+    - Instant strings (ending in `Z`).
+   Returns nil for unparseable input (preserves the existing contract)."
+  [s]
+  (when (string? s)
+    (try (-> (java.time.ZonedDateTime/parse s) (.toInstant))
+         (catch Exception _
+           (try (-> (java.time.OffsetDateTime/parse s) (.toInstant))
+                (catch Exception _
+                  (try (java.time.Instant/parse s)
+                       (catch Exception _ nil))))))))
+
 (defn entry-after-ts?
   "True iff the entry's timestamp for `kind` (:created or :updated) is
-   strictly greater than `threshold` (ISO-8601 string compare).
+   strictly greater than `threshold` (ISO-8601 string).  Parses both
+   sides to `java.time.Instant` before comparing, so cross-offset pairs
+   like `...16:55-03:00` vs `...19:18:00Z` are handled correctly.
    Nil threshold => match all."
   [entry kind threshold]
   (or (nil? threshold)
@@ -63,9 +80,11 @@
                               (kt/content-val content :updated nil)
                               (kt/content-val content :started nil)
                               (kt/content-val content :completed nil))
-                 nil)]
-        (boolean (and ts
-                      (pos? (compare (str ts) (str threshold))))))))
+                 nil)
+            ts-inst    (->instant (str ts))
+            thresh-inst (->instant (str threshold))]
+        (boolean (and ts-inst thresh-inst
+                      (.isAfter ts-inst thresh-inst))))))
 
 (defn paginate
   "Skip `offset` then take `limit`. Both optional, both positive numbers
