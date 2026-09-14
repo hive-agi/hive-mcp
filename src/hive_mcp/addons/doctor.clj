@@ -19,7 +19,8 @@
             [hive-mcp.addons.core :as registry]
             [hive-mcp.emacs-ext.client :as emacs]
             [malli.core :as m]
-            [malli.error :as me])
+            [malli.error :as me]
+            [hive-addon.wire :as wire])
   (:import [java.io PushbackReader]
            [java.time Instant]))
 
@@ -92,30 +93,6 @@
   [xs]
   (->> xs (sort-by str) vec))
 
-(defn- json-safe
-  "Fold arbitrary addon evidence into values clojure.data.json can encode.
-   Unknown live objects become strings; functions and host records never leak
-   through a doctor report.
-
-   DUPLICATE, deliberately, until hive-addon ships. The canonical fold now lives
-   in hive-addon.wire/json-safe, one layer down, so addon reports can use it
-   without depending on hive-mcp. This copy cannot delegate yet: hive-mcp's
-   deps.edn pins hive-addon at :mvn/version 1.0.0, which predates that ns, so
-   requiring it breaks the build for anyone without a local.deps.edn override.
-   Collapse this into a delegation when the hive-addon release lands."
-  [x]
-  (cond
-    (or (nil? x) (string? x) (boolean? x) (number? x) (keyword? x)) x
-    (symbol? x) (str x)
-    (map? x) (into {}
-                   (map (fn [[k v]]
-                          [(if (or (string? k) (keyword? k)) k (str k))
-                           (json-safe v)]))
-                   x)
-    (set? x) (mapv json-safe (sort-by str x))
-    (sequential? x) (mapv json-safe x)
-    :else (str x)))
-
 (defn- manifest-evidence
   "Select non-secret manifest fields. :addon/config is intentionally omitted."
   [spec]
@@ -135,7 +112,7 @@
   {:stage stage-name
    :status status
    :summary summary
-   :evidence (json-safe (or evidence {}))})
+   :evidence (wire/json-safe (or evidence {}))})
 
 (defn- skipped
   [stage-name summary]

@@ -111,6 +111,26 @@
                        ", or add via: hive config set llm-providers." (name provider)
                        ".available-models [...]")})))
 
+(defn unresolved-routing
+  "nil when `resolved` names both a provider and a model, else an error map
+   naming the config keys that would supply the missing value.
+
+   hive-mcp ships no model or provider choice, so an absent value is an
+   error to fix in config, never a fallback."
+  [agent-type {:keys [provider model]}]
+  (when-not (and provider model)
+    (let [type-key (if agent-type (name agent-type) "<agent-type>")
+          cfg-keys (cond-> [(str "agent-defaults." type-key)]
+                     provider (conj (str "llm-providers." (name provider) ".default-model")))]
+      {:error       (if provider :model-not-configured :provider-not-configured)
+       :agent-type  agent-type
+       :provider    provider
+       :config-keys cfg-keys
+       :fix         (str "Pass provider and model explicitly, or set one of "
+                         (str/join ", " cfg-keys)
+                         ", e.g. hive config set agent-defaults." type-key
+                         " '{:provider :venice :model \"<model-id>\"}'")})))
+
 ;;; ---------------------------------------------------------------------------
 ;;; Model-name policy
 ;;; ---------------------------------------------------------------------------

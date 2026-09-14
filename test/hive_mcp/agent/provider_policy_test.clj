@@ -147,6 +147,25 @@
   (testing "with nothing to go on the provider stays open for the caller to fill"
     (is (nil? (:provider (policy/resolve-routing seed {}))))))
 
+(deftest unresolved-routing-test
+  (testing "a resolved provider and model is not an error"
+    (is (nil? (policy/unresolved-routing :ling {:provider :alpha :model "alpha-1"}))))
+
+  (testing "no provider names the agent-defaults key only"
+    (let [err (policy/unresolved-routing :ling {:provider nil :model nil})]
+      (is (= :provider-not-configured (:error err)))
+      (is (= ["agent-defaults.ling"] (:config-keys err)))))
+
+  (testing "a provider without a model also names that provider's default-model key"
+    (let [err (policy/unresolved-routing "compressor" {:provider :alpha :model nil})]
+      (is (= :model-not-configured (:error err)))
+      (is (= ["agent-defaults.compressor" "llm-providers.alpha.default-model"] (:config-keys err)))))
+
+  (testing "routing over a registry with no default model leaves the model open"
+    (is (nil? (:model (policy/resolve-routing {:bare {:api-url "https://bare.test/v1/chat/completions"
+                                                      :secret-key nil}}
+                                              {:provider :bare}))))))
+
 ;; =============================================================================
 ;; domain predicates
 ;; =============================================================================

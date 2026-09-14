@@ -18,8 +18,7 @@
     (can-chain-tools? [_] true)
     (claims [_] [])
     (claim-files! [_ _files _task-id] nil)
-    (release-claims! [_] nil)
-    (upgrade! [_] nil)))
+    (release-claims! [_] nil)))
 
 (deftest sweep-once-zombifies-dead-terminal-lings
   (let [txs (atom [])

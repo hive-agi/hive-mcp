@@ -9,7 +9,6 @@
             [hive-mcp.transport.a2a.schema :as schema]
             [hive-mcp.agent.protocol :as proto]
             [hive-mcp.agent.ling :as ling]
-            [hive-mcp.agent.drone :as drone]
             [hive-mcp.swarm.datascript.queries :as ds-queries]
             [hive-mcp.protocols.dispatch :as dispatch-ctx]
             [taoensso.timbre :as log]))
@@ -36,15 +35,10 @@
   (when-let [agent-data (or (ds-queries/get-slave agent-id)
                             (ds-queries/get-slave-by-name agent-id))]
     (let [sid (:slave/id agent-data)
-          agent-type (if (= 1 (:slave/depth agent-data)) :ling :drone)
-          agent (case agent-type
-                  :ling (ling/->ling sid {:cwd (:slave/cwd agent-data)
-                                          :presets (:slave/presets agent-data)
-                                          :project-id (:slave/project-id agent-data)
-                                          :spawn-mode (or (:ling/spawn-mode agent-data) :claude)})
-                  :drone (drone/->drone sid {:cwd (:slave/cwd agent-data)
-                                             :parent-id (:slave/parent agent-data)
-                                             :project-id (:slave/project-id agent-data)}))]
+          agent (ling/->ling sid {:cwd (:slave/cwd agent-data)
+                                  :presets (:slave/presets agent-data)
+                                  :project-id (:slave/project-id agent-data)
+                                  :spawn-mode (or (:ling/spawn-mode agent-data) :claude)})]
       [agent agent-data])))
 
 (defn- generate-task-id
@@ -57,16 +51,6 @@
   [params]
   (or (:contextId params)
       (str "ctx-" (System/currentTimeMillis))))
-
-;; =============================================================================
-;; Lazy require for delegate-fn (avoid circular dep)
-;; =============================================================================
-
-(defn- get-delegate-fn
-  "Lazily resolve hive-mcp.agent.core/delegate-agentic-drone!"
-  []
-  (require 'hive-mcp.agent.core)
-  (resolve 'hive-mcp.agent.core/delegate-agentic-drone!))
 
 ;; =============================================================================
 ;; SendMessage Handler
@@ -101,11 +85,9 @@
           (let [prompt (extract-text-from-parts parts)
                 ctx (dispatch-ctx/ensure-context prompt)
                 resolved-prompt (:prompt (dispatch-ctx/resolve-context ctx))
-                task-opts (cond-> {:task resolved-prompt
-                                   :dispatch-context ctx
-                                   :priority :normal}
-                            (= :drone (proto/agent-type agent))
-                            (assoc :delegate-fn (get-delegate-fn)))
+                task-opts {:task resolved-prompt
+                           :dispatch-context ctx
+                           :priority :normal}
                 task-id (proto/dispatch! agent task-opts)
                 context-id (generate-context-id params)
                 a2a-task (schema/make-task

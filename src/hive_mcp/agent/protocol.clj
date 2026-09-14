@@ -5,7 +5,7 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defprotocol IAgent
-  "Unified agent lifecycle protocol for lings and drones"
+  "Unified agent lifecycle protocol for lings"
   (spawn! [this opts]
     "Spawn the agent. Returns agent-id.")
   (dispatch! [this task-opts]
@@ -15,17 +15,15 @@
   (status [this]
     "Get current agent status map.")
   (agent-type [this]
-    "Returns :ling or :drone")
+    "Returns the agent type keyword (e.g. :ling)")
   (can-chain-tools? [this]
-    "Returns true if agent can chain multiple tool calls (lings only)")
+    "Returns true if agent can chain multiple tool calls")
   (claims [this]
     "Get list of files currently claimed by this agent.")
   (claim-files! [this files task-id]
     "Claim files for exclusive access during task.")
   (release-claims! [this]
-    "Release all file claims held by this agent.")
-  (upgrade! [this]
-    "Upgrade drone to ling when task requires tool chaining. No-op for lings."))
+    "Release all file claims held by this agent."))
 
 (defprotocol IAgentRegistry
   "Registry for tracking all active agents."
@@ -38,7 +36,7 @@
   (list-agents [this]
     "List all agents")
   (list-agents-by-type [this agent-type]
-    "List agents filtered by :ling or :drone"))
+    "List agents filtered by agent type keyword (e.g. :ling)"))
 
 (defprotocol LLMBackend
   "Protocol for LLM backends that support tool calling."

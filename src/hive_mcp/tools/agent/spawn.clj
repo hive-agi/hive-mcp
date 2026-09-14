@@ -1,5 +1,5 @@
 (ns hive-mcp.tools.agent.spawn
-  "Agent spawn handler for creating new ling and drone agents.
+  "Agent spawn handler for creating new ling agents.
 
    Includes defense-in-depth guard: child lings (spawned agents) are
    denied from spawning further agents to prevent recursive self-call
@@ -8,7 +8,6 @@
             [hive-mcp.tools.agent.helpers :as helpers]
             [hive-mcp.agent.protocol :as proto]
             [hive-mcp.agent.ling :as ling]
-            [hive-mcp.agent.drone :as drone]
             [hive-mcp.agent.type-registry :as agent-type-registry]
             [hive-mcp.agent.spawn-mode-registry :as spawn-registry]
             [hive-mcp.agent.openrouter :as llm-registry]
@@ -58,7 +57,7 @@
    Returns a {:level :heap-pct} map when a new spawn should be DEFERRED
    (JVM heap fraction >= the soft watermark), or nil to ADMIT.
 
-   Lings/drones launch inside (or alongside) this nREPL JVM; N concurrent
+   Lings launch inside (or alongside) this nREPL JVM; N concurrent
    heavy spawns atop the multi-GB KG floor have driven kernel OOMs. We shed
    *new* spawns under pressure rather than hard-kill live agents.
 
@@ -110,7 +109,7 @@
           caller))))
 
 (defn handle-spawn
-  "Spawn a new agent (ling or drone).
+  "Spawn a new ling agent.
 
    Defense-in-depth: denies spawn when called from a child ling process
    (HIVE_MCP_ROLE=child-ling). This prevents recursive agent spawning.
@@ -120,7 +119,7 @@
 
    The full request map rides on opts under :spawn/request for the
    :spawn/opts-overlay extension seam, and is stripped before planning."
-  [{:keys [type name cwd presets model provider task files project_id kanban_task_id spawn_mode agents max_budget_usd kg_compress sliding_window_size verbose llm_retries] :as params}]
+  [{:keys [type name cwd presets model provider task project_id kanban_task_id spawn_mode agents max_budget_usd kg_compress sliding_window_size verbose llm_retries] :as params}]
   ;; Layer 3: Defense-in-depth spawn guard
   (if-let [_ (when (guards/child-ling?) :denied)]
     (do
@@ -215,36 +214,7 @@
                            :model effective-model
                            :cwd cwd
                            :presets presets-vec
-                           :project-id effective-project-id}))
-
-              :drone
-              (let [drone-agent (drone/->drone agent-id {:cwd cwd
-                                                         :model effective-model
-                                                         :provider effective-provider
-                                                         :parent-id parent
-                                                         :project-id effective-project-id})]
-                (proto/spawn! drone-agent {:files files})
-                ;; Auto-dispatch when task provided (matches ling spawn behavior)
-                (let [task-id (when task
-                                (let [delegate-fn @(requiring-resolve 'hive-mcp.agent.core/delegate-agentic-drone!)]
-                                  (proto/dispatch! drone-agent {:task task
-                                                                :files files
-                                                                :delegate-fn delegate-fn})))]
-                  (log/info "Spawned drone" {:id agent-id :cwd cwd
-                                              :parent parent
-                                              :provider effective-provider
-                                              :model effective-model
-                                              :auto-dispatched? (some? task-id)})
-                  (cond-> {:success true
-                           :agent-id agent-id
-                           :type :drone
-                           :parent parent
-                           :provider effective-provider
-                           :model effective-model
-                           :cwd cwd
-                           :files files}
-                    task-id (assoc :task-id task-id)
-                    :always mcp-json)))))
+                           :project-id effective-project-id}))))
           (catch Exception e
             (log/error "Failed to spawn agent" {:type agent-type :error (ex-message e)})
             (mcp-error (str "Failed to spawn " (clojure.core/name agent-type) ": " (ex-message e))))))))))

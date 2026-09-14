@@ -33,7 +33,6 @@
 
 (def swarm-subdomain-tools
   '[hive-mcp.tools.consolidated.agent/tools
-    hive-mcp.tools.consolidated.wave/tools
     hive-mcp.tools.consolidated.hivemind/tools
     hive-mcp.tools.consolidated.agora/tools
     hive-mcp.tools.consolidated.olympus/tools
@@ -61,7 +60,7 @@
    :inputSchema {:type "object"
                  :properties {"command" {:type "string"}
                               "tasks"   {:type "array" :items {:type "object"}
-                                         :description "drone tasks"}}}})
+                                         :description "core tasks"}}}})
 
 (defn- with-contribution [params f]
   (ext/contribute-commands! "merged-test-root" :merged-test-addon
@@ -80,7 +79,7 @@
           (is (= {:type "array" :description "members"} (get props "providers"))))
         (testing "a colliding param unions both shapes instead of retyping the core's"
           (is (= 2 (count (get-in props ["tasks" :anyOf]))))
-          (is (= "drone tasks | ling tasks" (get-in props ["tasks" :description]))))
+          (is (= "core tasks | ling tasks" (get-in props ["tasks" :description]))))
         (testing "a free-text `command` does not acquire an enum of addon names"
           (is (nil? (get-in props ["command" :enum]))))))))
 

@@ -18,8 +18,8 @@
   10000)
 
 (def ^:const default-ling-budget
-  "Default token budget for ling catchup context.
-   Lings get more context than drones (8000 vs 4000)."
+  "Default token budget for ling catchup context (twice the generic
+   context/budget default-total-budget of 4000)."
   8000)
 
 (defn- budget-truncate-string

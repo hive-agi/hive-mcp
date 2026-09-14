@@ -149,10 +149,10 @@
 
 (deftest test-mcp-json-with-agent-id-has-instructions
   (testing "mcp-json with agent-id includes pending_instructions"
-    (core/push-instruction! "ling-1" {:action "redirect" :target "drone-2"})
+    (core/push-instruction! "ling-1" {:action "redirect" :target "ling-2"})
     (let [response (core/mcp-json {:status "ok"} :agent-id "ling-1")]
       (is (= 1 (count (:pending_instructions response))))
-      (is (= {:action "redirect" :target "drone-2"}
+      (is (= {:action "redirect" :target "ling-2"}
              (first (:pending_instructions response)))))))
 
 (deftest test-mcp-json-drains-queue

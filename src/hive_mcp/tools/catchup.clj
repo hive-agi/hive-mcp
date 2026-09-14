@@ -43,7 +43,8 @@
             [hive-mcp.vectordb.kanban-facade :as kanban-facade]
             [hive-mcp.tools.catchup.outcome :as outcome]
             [clojure.string :as str]
-            [hive-mcp.tools.kanban.list.plan :as list-plan]))
+            [hive-mcp.tools.kanban.list.plan :as list-plan]
+            [hive-mcp.tools.catchup.caller :as catchup-caller]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -209,7 +210,7 @@
               ;; addons attach status fields to the response without the
               ;; core knowing about them — DIP.
               bundle-profile (when-let [profile-fn (ext/get-extension :catchup/bundle-profile)]
-                               (profile-fn (or (:_caller_id args) "coordinator") project-id))
+                               (catchup-caller/resolve-for-caller profile-fn (:_caller_id args) project-id))
               f-bundle (pool/with-io ((tt/timed-query "catchup/bundle-total"
                                                       #(if (seq (:caps bundle-profile))
                                                          (catchup-scope/query-catchup-bundle project-id bundle-profile)
@@ -313,7 +314,7 @@
               ;; coerces the EDN at the :catchup/lens seam below.
               persona-lens-fn (ext/get-extension :catchup/persona-lens)
               persona-lens    (when persona-lens-fn
-                                (rescue nil (persona-lens-fn raw-caller-id project-id)))
+                                (rescue nil (catchup-caller/resolve-for-caller persona-lens-fn raw-caller-id project-id)))
               relevance-ctx
               (cond-> (relevance/build-context
                        {:project-id project-id

@@ -2,12 +2,11 @@
   "Property + example tests for the hive-di-backed embedder configs.
 
    Properties:
-   - P1: resolve-*Config is TOTAL — never throws for any override map
-   - P2: defaults suffice — (resolve-*Config {}) returns {:ok ...} with all fields
+   - P1: resolve-*Config is TOTAL, never throws for any override map
    - P3: explicit override wins over defaults
 
    Examples:
-   - E1: each provider's default resolves to documented values
+   - E1: endpoint defaults resolve; no embedding model is shipped
    - E2: override for one field leaves other fields at defaults"
   (:require [clojure.test :refer [deftest testing is]]
             [clojure.test.check.clojure-test :refer [defspec]]
@@ -93,29 +92,34 @@
 ;; Example / unit tests
 ;; =============================================================================
 
-(deftest e1-defaults-resolve-cleanly
-  (testing "OllamaConfig defaults"
+(deftest e1-endpoint-defaults-resolve-and-no-model-is-shipped
+  (testing "OllamaConfig: endpoint default, model optional and absent"
     (let [r (:ok (ec/resolve-OllamaConfig))]
       (is (= "http://localhost:11434" (:host r)))
-      (is (= "nomic-embed-text" (:model r)))))
+      (is (nil? (:model r)))))
 
-  (testing "OpenAIConfig defaults"
-    (let [r (:ok (ec/resolve-OpenAIConfig))]
-      (is (= "https://api.openai.com/v1" (:api-base r)))
-      (is (= "text-embedding-3-small" (:model r)))))
+  (testing "OpenAIConfig: a model is required, its absence is an error, not a default"
+    (let [r (ec/resolve-OpenAIConfig)]
+      (is (nil? (:ok r)))
+      (is (some? (:error r)))))
 
-  (testing "OpenRouterConfig defaults"
-    (let [r (:ok (ec/resolve-OpenRouterConfig))]
-      (is (= "https://openrouter.ai/api/v1" (:api-base r)))
-      (is (= "qwen/qwen3-embedding-8b" (:model r))))))
+  (testing "OpenRouterConfig: a model is required, its absence is an error, not a default"
+    (let [r (ec/resolve-OpenRouterConfig)]
+      (is (nil? (:ok r)))
+      (is (some? (:error r))))))
 
 (deftest e2-partial-override-preserves-other-defaults
-  (testing "Ollama — override :host, :model stays default"
+  (testing "Ollama: override :host, :model stays absent"
     (let [r (:ok (ec/resolve-OllamaConfig {:host "http://custom:1234"}))]
       (is (= "http://custom:1234" (:host r)))
-      (is (= "nomic-embed-text" (:model r)))))
+      (is (nil? (:model r)))))
 
-  (testing "OpenAI — override :model, :api-base stays default"
+  (testing "OpenRouter: override :model, :api-base stays default"
+    (let [r (:ok (ec/resolve-OpenRouterConfig {:model "test/embedding-model"}))]
+      (is (= "https://openrouter.ai/api/v1" (:api-base r)))
+      (is (= "test/embedding-model" (:model r)))))
+
+  (testing "OpenAI: override :model, :api-base stays default"
     (let [r (:ok (ec/resolve-OpenAIConfig {:model "text-embedding-3-large"}))]
       (is (= "https://api.openai.com/v1" (:api-base r)))
       (is (= "text-embedding-3-large" (:model r))))))

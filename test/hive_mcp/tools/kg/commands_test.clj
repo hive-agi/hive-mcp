@@ -88,6 +88,25 @@
                 rows)
           "promoted edge (broader scope) must be durable on return"))))
 
+(deftest remove-edge-requires-explicit-consent-test
+  (let [id (edges/add-edge! {:from "rm-a" :to "rm-b" :relation :implements})
+        _  (conn/flush-pending!)]
+    (testing "without i_mean_it nothing is removed"
+      (is (:isError (cmd/handle-kg-remove-edge {:edge_id id})))
+      (is (:isError (cmd/handle-kg-remove-edge {:edge_id id :i_mean_it "yes"}))
+          "only a literal true consents")
+      (is (= #{["rm-b"]} (edges-from "rm-a"))))
+    (testing "with i_mean_it the edge is gone on return and the response names what was removed"
+      (let [resp (cmd/handle-kg-remove-edge {:edge_id id :i_mean_it true})]
+        (is (not (:isError resp)))
+        (is (re-find #"rm-a" (pr-str resp)))
+        (is (re-find #"rm-b" (pr-str resp)))
+        (is (empty? (edges-from "rm-a")))))
+    (testing "an unknown edge id is an error, not a silent success"
+      (is (:isError (cmd/handle-kg-remove-edge {:edge_id "no-such-edge" :i_mean_it true}))))
+    (testing "a missing edge_id is an error"
+      (is (:isError (cmd/handle-kg-remove-edge {:i_mean_it true}))))))
+
 ;; =============================================================================
 ;; Boundary-decorator Wiring
 ;; =============================================================================

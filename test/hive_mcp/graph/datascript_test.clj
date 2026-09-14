@@ -105,7 +105,7 @@
 (deftest test-query-with-args
   (testing "query with arguments works correctly"
     (proto/transact! *test-store* [(schema/make-agent {:id "agent-x" :type :ling})])
-    (proto/transact! *test-store* [(schema/make-agent {:id "agent-y" :type :drone})])
+    (proto/transact! *test-store* [(schema/make-agent {:id "agent-y" :type :coordinator})])
 
     (let [results (proto/query *test-store*
                                '[:find ?id
@@ -113,7 +113,7 @@
                                  :where
                                  [?e :agent/type ?type]
                                  [?e :agent/id ?id]]
-                               [:drone])]
+                               [:coordinator])]
       (is (= 1 (count results)))
       (is (= "agent-y" (ffirst results))))))
 
@@ -285,7 +285,7 @@
 (deftest test-persist-nil-path
   (testing "persist! with nil path is a no-op"
     (let [inmem-store (ds/create-default-store nil)]
-      (proto/transact! inmem-store [(schema/make-agent {:id "inmem-test" :type :drone})])
+      (proto/transact! inmem-store [(schema/make-agent {:id "inmem-test" :type :ling})])
       (is (nil? (proto/persist! inmem-store))))))
 
 ;; =============================================================================

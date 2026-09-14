@@ -16,8 +16,24 @@
       (is (= "localhost" (:host svc)))
       (is (= 6333 (:port svc)))
       (is (= "carto-snippets" (:collection svc)))
-      (is (= :ollama (get-in svc [:embedding :provider])))
-      (is (= "nomic-embed-code" (get-in svc [:embedding :model]))))))
+      (is (not (contains? svc :embedding))
+          "the carto embedding provider and model come from user config, not defaults"))))
+
+(deftest default-config-ships-no-model-choice
+  (testing "no model id, model list or provider choice lives in default-config"
+    (is (not (contains? merge/default-config :agent-defaults)))
+    (is (not (contains? merge/default-config :models)))
+    (is (not (contains? (:services merge/default-config) :drone)))
+    (is (not (contains? (get-in merge/default-config [:services :ollama]) :model)))
+    (is (not (contains? (:embedder merge/default-config) :default)))
+    (is (not (contains? (:embedder merge/default-config) :providers)))
+    (is (nil? (get-in merge/default-config [:embeddings :ollama :model])))
+    (is (not (contains? (:embeddings merge/default-config) :openrouter))))
+
+  (testing "so a user's own model choices are the only ones after deep-merge"
+    (let [user   {:agent-defaults {:ling {:provider :venice :model "user-model"}}}
+          merged (merge/deep-merge merge/default-config user)]
+      (is (= user (select-keys merged [:agent-defaults]))))))
 
 (deftest default-config-has-carto-store
   (testing ":services :carto-store defaults to :qdrant-carto backend"
@@ -36,7 +52,5 @@
       (is (= 16333 (:port svc)))
       ;; defaults still filled in
       (is (= "carto-snippets" (:collection svc)))
-      (is (= :ollama (get-in svc [:embedding :provider])))
-      (is (= "nomic-embed-code" (get-in svc [:embedding :model])))
       ;; carto-store backend default still present
       (is (= :qdrant-carto (get-in merged [:services :carto-store :backend]))))))

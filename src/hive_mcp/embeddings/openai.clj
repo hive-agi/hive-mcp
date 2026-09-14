@@ -111,13 +111,11 @@
      :api-key  - OpenAI API key (default: global-config :openai-api-key)
      :api-base - API base URL (default: config [:embeddings :openai :api-base]
                  or https://api.openai.com/v1)
-     :model    - Embedding model (default: config [:embeddings :openai :model]
-                 or text-embedding-3-small)
+     :model    - Embedding model (required: :model, OPENAI_EMBEDDING_MODEL, or
+                 config [:embeddings :openai :model])
 
-   Models:
-     - text-embedding-3-small (1536 dims, cheapest, recommended)
-     - text-embedding-3-large (3072 dims, higher quality)
-     - text-embedding-ada-002 (1536 dims, legacy)"
+   Known dimensions: text-embedding-3-small 1536, text-embedding-3-large 3072,
+   text-embedding-ada-002 1536."
   ([] (->provider {}))
   ([{:keys [api-key] :as overrides}]
    (let [{:keys [api-base model]} (resolve-config! (select-keys overrides [:api-base :model]))

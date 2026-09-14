@@ -78,7 +78,7 @@
        "  op id refers to that op's result id: \"$0\" expands to \"$ref:$0.data.id\".\n"
        "  Verbs: m+ m? m@ m/ (memory), k> k^ k! k# (kg), a+ a? a! ax (agent),\n"
        "         b+ b> b? b# (kanban), s. s~ s? s< (session), g? g+ g! g> (magit),\n"
-       "         w! w? wy wn (wave), h! h? (hivemind), p? p@ p/ (preset), c? c! c* (config)\n"
+       "         h! h? (hivemind), p? p@ p/ (preset), c? c! c* (config)\n"
        "  Param aliases: c→content, t→type, #→tags, d→directory, q→query, n→name, f→files\n\n"
        "== Async Execution ==\n"
        "  multi {\"operations\": [...], \"async\": true}       → returns {\"batch_id\": \"...\"}\n"
@@ -356,7 +356,6 @@
                      "agent: type, cwd, spawn_mode, presets, task, model, provider, max_budget_usd, parent, kanban_task_id; "
                      "memory: duration, abstraction_level, scope, exclude_tags, limit, verbosity, feedback; "
                      "kg: start_node, node_id, from, to, relation, direction, max_depth, from_node, to_node, confidence; "
-                     "wave: tasks, validate, lint_level, wave_id, mode, model, seeds, ctx_refs, kg_node_ids; "
                      "session: commit_msg, task_ids, ctx_id, data, ttl_ms, scope; "
                      "magit: target, count, all, set_upstream, remote; "
                      "emacs: code, buffer, file, line, text, level, function_name, variable_name, pattern. DSL aliases: c=content, t=type, #=tags, d=directory, q=query, n=name, id=id, p=prompt, f=files.")
@@ -385,7 +384,7 @@
                               "content"    {:type "string"
                                             :description "Content for add/create operations"}
                               "type"       {:type "string"
-                                            :description "Entity type (note, snippet, ling, drone, etc.)"}
+                                            :description "Entity type (note, snippet, ling, etc.)"}
                               "tags"       {:type "array"
                                             :items {:type "string"}
                                             :description "Tags for categorization/filtering"}
@@ -414,7 +413,6 @@
                                                               "b+ (kanban create), b> (update), b? (list), b# (status), "
                                                               "s. (session complete), s~ (wrap), s? (whoami), s< (catchup), "
                                                               "g? (git status), g+ (stage), g! (commit), g> (push), "
-                                                              "w! (wave dispatch), w? (status), wy (approve), wn (reject), "
                                                               "h! (hivemind shout), h? (ask), "
                                                               "p? (preset list), p@ (get), p/ (search), "
                                                               "c? (config get), c! (set), c* (list). "
@@ -456,7 +454,7 @@
                                            :description "[events enable/disable] Agent IDs to filter on"}
                               "kg_node_ids" {:type "array"
                                              :items {:type "string"}
-                                             :description "[agent/session/wave] KG node IDs for context resolution seeds"}
+                                             :description "[agent/session] KG node IDs for context resolution seeds"}
                               "kg_depends_on" {:type "array"
                                                :items {:type "string"}
                                                :description "[memory add] Entry IDs this depends on (KG edge)"}
@@ -492,13 +490,7 @@
                                       :description "[kg] Already-visited node IDs for frontier"}
                               "seeds" {:type "array"
                                        :items {:type "string"}
-                                       :description "[kg connect] Node IDs (>=2) / [wave] domain topic seeds"}
-                              "diff_ids" {:type "array"
-                                          :items {:type "string"}
-                                          :description "[wave approve] Specific diff IDs to approve"}
-                              "tasks" {:type "array"
-                                       :items {:type "object"}
-                                       :description "[wave dispatch] Array of {file, task} objects"}
+                                       :description "[kg connect] Node IDs (>=2)"}
                               "roles" {:type "array"
                                        :items {:type "object"}
                                        :description "[agora] Debate roles"}
@@ -511,7 +503,7 @@
                               "inputs" {:type "array"
                                         :description "[kg datalog] Additional Datalog inputs bound by the query's :in clause"}
                               "ctx_refs" {:type "object"
-                                          :description "[agent/session/wave] Map of category->ctx-id for compressed context"}
+                                          :description "[agent/session] Map of category->ctx-id for compressed context"}
                               "agents" {:type "object"
                                         :description "[agent spawn] Map of agent-name to Claude Agent SDK subagent definition"}
                               "config" {:type "object"

@@ -4,8 +4,6 @@
    Effects implemented:
    - :dispatch-task       - Dispatch task to swarm slave (POC-07)
    - :swarm-send-prompt   - Send prompt to ling terminal (Agora Turn Relay)
-   - :agora/continue      - Continue debate asynchronously (P0)
-   - :agora/execute-drone - Execute drone turn (alias for :agora/continue)
 
    SAA effects delegated to saa-fx for SRP compliance:
    - :saa/run-workflow    - Run SAA workflow via FSM (async)
@@ -88,35 +86,6 @@
         (log/error "[EVENT] Swarm send-prompt error:" (.getMessage e))))))
 
 ;; =============================================================================
-;; Effect: :agora/continue (P0: Async Debate Continuation)
-;; =============================================================================
-
-(defn- handle-agora-continue
-  "Execute an :agora/continue effect - continue debate asynchronously.
-
-   Calls debate/continue-debate! in a future to avoid blocking the event loop.
-   The continue-debate! function will emit another :agora/turn-completed event
-   upon completion, creating the event-driven automation loop.
-
-   Expected data shape:
-   {:dialogue-id \"dialogue-uuid\"}
-
-   Axiom: [ax: Drone Medium Limitations] - drones are single-shot,
-   this effect orchestrates the sequence between turns."
-  [{:keys [dialogue-id]}]
-  (when dialogue-id
-    (future
-      (try
-        (require 'hive-mcp.agora.debate)
-        (let [continue-fn (resolve 'hive-mcp.agora.debate/continue-debate!)]
-          (when continue-fn
-            (log/debug "[EVENT] Continuing debate:" dialogue-id)
-            (continue-fn dialogue-id)))
-        (catch Exception e
-          (log/error "[EVENT] Agora continue failed for" dialogue-id ":"
-                     (.getMessage e)))))))
-
-;; =============================================================================
 ;; Registration
 ;; =============================================================================
 
@@ -126,8 +95,6 @@
    Effects registered:
    - :dispatch-task       - Dispatch task to swarm slave (POC-07)
    - :swarm-send-prompt   - Send prompt to ling terminal (Agora Turn Relay)
-   - :agora/continue      - Async debate continuation (P0)
-   - :agora/execute-drone - Execute drone turn (alias for :agora/continue)
 
    SAA effects delegated to saa-fx.clj for SRP compliance:
    - :saa/run-workflow    - Run SAA workflow via FSM (async)
@@ -139,8 +106,6 @@
   []
   (ev/reg-fx :dispatch-task handle-dispatch-task)
   (ev/reg-fx :swarm-send-prompt handle-swarm-send-prompt)
-  (ev/reg-fx :agora/continue handle-agora-continue)
-  (ev/reg-fx :agora/execute-drone handle-agora-continue)
   ;; SAA FX (all SAA effects delegated to saa_fx.clj for SRP compliance)
   (saa-fx/register-saa-fx!)
-  (log/info "[hive-events.agent] Agent effects registered: :dispatch-task :swarm-send-prompt :agora/continue :agora/execute-drone + SAA FX (4)"))
+  (log/info "[hive-events.agent] Agent effects registered: :dispatch-task :swarm-send-prompt + SAA FX (4)"))

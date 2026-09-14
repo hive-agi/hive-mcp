@@ -51,6 +51,9 @@
 
 (use-fixtures :each with-clean-service)
 
+;; The embedding model this suite declares. hive-mcp ships no default.
+(def ^:private test-ollama-model "qwen3-embedding:4b")
+
 ;; =============================================================================
 ;; Test: Initialization
 ;; =============================================================================
@@ -80,7 +83,7 @@
 
 (deftest test-config-ollama-valid
   (testing "Ollama config creation"
-    (let [cfg (config/ollama-config)]
+    (let [cfg (config/ollama-config {:model test-ollama-model})]
       (is (config/valid-config? cfg))
       (is (= :ollama (:provider-type cfg)))
       (is (= "qwen3-embedding:4b" (:model cfg)))
@@ -92,6 +95,16 @@
       (is (config/valid-config? cfg))
       (is (= "mxbai-embed-large" (:model cfg)))
       (is (= 1024 (:dimension cfg))))))
+
+(deftest test-config-without-model-fails-loudly
+  (testing "every factory refuses to pick a model and names the config key"
+    (doseq [[factory k] [[config/ollama-config "embeddings.ollama.model"]
+                         [config/openai-config "embeddings.openai.model"]
+                         [config/openrouter-config "embeddings.openrouter.model"]
+                         [config/venice-config "embeddings.venice.model"]]]
+      (let [ex (try (factory {}) nil (catch clojure.lang.ExceptionInfo e e))]
+        (is (some? ex) (str k " should be required"))
+        (is (= k (:config-key (ex-data ex))))))))
 
 (deftest test-config-ollama-invalid-model
   (testing "Ollama config with invalid model throws"
@@ -107,8 +120,8 @@
 
 (deftest test-config-same-dimension
   (testing "Check if two configs have same dimension"
-    (let [cfg1 (config/ollama-config)
-          cfg2 (config/ollama-config)]
+    (let [cfg1 (config/ollama-config {:model test-ollama-model})
+          cfg2 (config/ollama-config {:model test-ollama-model})]
       (is (config/same-dimension? cfg1 cfg2)))
 
     (let [cfg1 (config/ollama-config {:model "nomic-embed-text"})       ; 768
@@ -117,7 +130,7 @@
 
 (deftest test-config-describe
   (testing "Human-readable config description"
-    (let [cfg (config/ollama-config)]
+    (let [cfg (config/ollama-config {:model test-ollama-model})]
       (is (= "ollama/qwen3-embedding:4b (2560 dims)" (config/describe cfg))))))
 
 ;; =============================================================================
@@ -126,7 +139,7 @@
 
 (deftest test-configure-collection
   (testing "Configure collection with valid config"
-    (let [cfg (config/ollama-config)]
+    (let [cfg (config/ollama-config {:model test-ollama-model})]
       (service/configure-collection! "test-collection" cfg)
       (is (= cfg (service/get-collection-config "test-collection"))))))
 
@@ -137,7 +150,7 @@
 
 (deftest test-unconfigure-collection
   (testing "Remove collection configuration"
-    (let [cfg (config/ollama-config)]
+    (let [cfg (config/ollama-config {:model test-ollama-model})]
       (service/configure-collection! "test-collection" cfg)
       (is (some? (service/get-collection-config "test-collection")))
       (service/unconfigure-collection! "test-collection")
@@ -145,7 +158,7 @@
 
 (deftest test-list-configured-collections
   (testing "List all configured collections"
-    (service/configure-collection! "collection-a" (config/ollama-config))
+    (service/configure-collection! "collection-a" (config/ollama-config {:model test-ollama-model}))
     (service/configure-collection! "collection-b" (config/ollama-config {:model "mxbai-embed-large"}))
     (let [collections (service/list-configured-collections)]
       (is (= 2 (count collections)))
@@ -184,7 +197,7 @@
 
 (deftest test-get-dimension-for-collection
   (testing "Get dimension for configured collection"
-    (service/configure-collection! "dim-test" (config/ollama-config))
+    (service/configure-collection! "dim-test" (config/ollama-config {:model test-ollama-model}))
     (is (= 2560 (service/get-dimension-for "dim-test"))))
 
   (testing "Get dimension for unconfigured collection (fallback)"
@@ -193,14 +206,14 @@
 
 (deftest test-embed-for-collection
   (testing "Embed text using collection's provider"
-    (service/configure-collection! "embed-test" (config/ollama-config))
+    (service/configure-collection! "embed-test" (config/ollama-config {:model test-ollama-model}))
     (let [embedding (service/embed-for-collection "embed-test" "test text")]
       (is (vector? embedding))
       (is (= 2560 (count embedding))))))
 
 (deftest test-embed-batch-for-collection
   (testing "Batch embed using collection's provider"
-    (service/configure-collection! "batch-test" (config/ollama-config))
+    (service/configure-collection! "batch-test" (config/ollama-config {:model test-ollama-model}))
     (let [embeddings (service/embed-batch-for-collection "batch-test" ["one" "two" "three"])]
       (is (= 3 (count embeddings)))
       (is (every? #(= 2560 (count %)) embeddings)))))
@@ -211,7 +224,7 @@
 
 (deftest test-provider-available-for-configured
   (testing "Provider available for configured collection"
-    (service/configure-collection! "avail-test" (config/ollama-config))
+    (service/configure-collection! "avail-test" (config/ollama-config {:model test-ollama-model}))
     (is (service/provider-available-for? "avail-test"))))
 
 (deftest test-provider-available-for-unconfigured-with-fallback
@@ -220,7 +233,7 @@
 
 (deftest test-collection-embedding-status
   (testing "Get detailed status for collection"
-    (service/configure-collection! "status-test" (config/ollama-config))
+    (service/configure-collection! "status-test" (config/ollama-config {:model test-ollama-model}))
     (let [status (service/collection-embedding-status "status-test")]
       (is (= "status-test" (:collection status)))
       (is (:has-config? status))
@@ -240,7 +253,7 @@
 
 (deftest test-registry-cache
   (testing "Registry caches provider instances"
-    (let [cfg (config/ollama-config)]
+    (let [cfg (config/ollama-config {:model test-ollama-model})]
       (let [p1 (registry/get-provider cfg)
             p2 (registry/get-provider cfg)]
         ;; Same instance from cache
@@ -253,7 +266,7 @@
 
 (deftest test-registry-cache-clear
   (testing "Clear registry cache"
-    (let [cfg (config/ollama-config)
+    (let [cfg (config/ollama-config {:model test-ollama-model})
           _ (registry/get-provider cfg)]
       (is (pos? (:cached-count (registry/cache-stats))))
       (registry/clear-cache!)
@@ -272,7 +285,7 @@
 
 (deftest test-chroma-embed-text-for
   (testing "chroma/embed-text-for uses collection's provider"
-    (service/configure-collection! "embed-via-chroma" (config/ollama-config))
+    (service/configure-collection! "embed-via-chroma" (config/ollama-config {:model test-ollama-model}))
     (let [embedding (chroma/embed-text-for "embed-via-chroma" "test")]
       (is (= 2560 (count embedding))))))
 
@@ -288,7 +301,7 @@
 (deftest test-multi-collection-different-dimensions
   (testing "Different collections can have different dimensions (config-level)"
     ;; Configure with different dimension configs
-    (service/configure-collection! "hive-mcp-memory" (config/ollama-config))
+    (service/configure-collection! "hive-mcp-memory" (config/ollama-config {:model test-ollama-model}))
     (service/configure-collection! "hive-mcp-presets" (config/ollama-config {:model "mxbai-embed-large"}))
 
     ;; Verify different dimensions from config (not from actual embedding)
@@ -308,7 +321,7 @@
 
 (deftest test-service-reset
   (testing "Reset clears all state"
-    (service/configure-collection! "will-be-cleared" (config/ollama-config))
+    (service/configure-collection! "will-be-cleared" (config/ollama-config {:model test-ollama-model}))
     (is (some? (service/get-collection-config "will-be-cleared")))
 
     (service/reset-service!)

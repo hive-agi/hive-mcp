@@ -9,9 +9,7 @@
    - swarm.dispatch  - Dispatch handler with coordinator
    - swarm.collect   - Collect handler with push/poll
    - swarm.status    - Status, lings-available, broadcast
-   - swarm.channel   - Channel event management
-   - swarm.wave      - Batch drone wave execution
-   - swarm.validated-wave - Validated wave with self-healing"
+   - swarm.channel   - Channel event management"
 
   (:require [hive-mcp.tools.swarm.core :as core]
             [hive-mcp.tools.swarm.registry :as registry]
@@ -20,9 +18,7 @@
             [hive-mcp.tools.swarm.dispatch :as dispatch]
             [hive-mcp.tools.swarm.collect :as collect]
             [hive-mcp.tools.swarm.status :as status]
-            [hive-mcp.tools.swarm.channel :as channel]
-            [hive-mcp.tools.swarm.wave :as wave]
-            [hive-mcp.tools.swarm.validated-wave :as validated-wave]))
+            [hive-mcp.tools.swarm.channel :as channel]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -123,15 +119,3 @@
 (def handle-swarm-broadcast
   "Broadcast to all slaves. Delegated to status module."
   status/handle-swarm-broadcast)
-
-(def handle-dispatch-drone-wave
-  "Dispatch batch drone wave. Delegated to wave module."
-  wave/handle-dispatch-drone-wave)
-
-(def handle-get-wave-status
-  "Get wave execution status. Delegated to wave module."
-  wave/handle-get-wave-status)
-
-(def handle-dispatch-validated-wave
-  "Dispatch validated wave with self-healing. Delegated to validated-wave module."
-  validated-wave/handle-dispatch-validated-wave)

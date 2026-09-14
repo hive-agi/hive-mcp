@@ -17,7 +17,6 @@
    '{:linters
      {:unused-namespace
       {:exclude [hive-mcp.tools.consolidated.agent
-                 hive-mcp.tools.consolidated.wave
                  hive-mcp.tools.consolidated.hivemind
                  hive-mcp.tools.consolidated.agora
                  hive-mcp.tools.consolidated.olympus
@@ -43,7 +42,6 @@
             [hive-mcp.tools.consolidated.multi :as c-multi]
    ;; Keep old modules loaded for backward compat (multi routing)
             [hive-mcp.tools.consolidated.agent :as c-agent]
-            [hive-mcp.tools.consolidated.wave :as c-wave]
             [hive-mcp.tools.consolidated.hivemind :as c-hivemind]
             [hive-mcp.tools.consolidated.agora :as c-agora]
             [hive-mcp.tools.consolidated.olympus :as c-olympus]
@@ -124,6 +122,32 @@
            tools)
      (vec tools))))
 
+(defn- domain-roots
+  "The domain-grouped tool roots hive-mcp itself defines."
+  []
+  (vec (concat c-code/tools
+               c-swarm/tools
+               ;; fn, not a static vec: the memory tool's `relation` enum is
+               ;; registry-backed and must resolve at advertisement time.
+               (c-memory/tool-defs)
+               c-project/tools
+               c-fs/tools
+               c-git/tools
+               c-emacs/tools
+               c-preset/tools
+               c-web/tools
+               c-events/tools
+               c-multi/tools
+               c-hot/tools
+               c-migrate-kanban/tools)))
+
+(defn core-tools
+  "The host's OWN tool defs: channel tools + domain roots, never an
+   extension- or addon-registered tool. Independent of the caller's role, so
+   a name the child-ling set leaves out is still a core name."
+  []
+  (vec (concat channel/channel-tools (domain-roots))))
+
 (defn ^:private get-base-tools
   "Get domain-grouped tool roots + channel tools + addon-registered tools.
 
@@ -134,37 +158,21 @@
 
    Novel addon tools that pass all three filters appear as additional roots."
   []
-  (let [domain-roots (vec (concat c-code/tools
-                                  c-swarm/tools
-                                  ;; fn, not a static vec: the memory tool's `relation` enum is
-                                  ;; registry-backed and must resolve at advertisement time.
-                                  (c-memory/tool-defs)
-                                  c-project/tools
-                                  c-fs/tools
-                                  c-git/tools
-                                  c-emacs/tools
-                                  c-preset/tools
-                                  c-web/tools
-                                  c-events/tools
-                                  c-multi/tools
-                                  c-hot/tools
-                                  c-migrate-kanban/tools))
-        domain-names   (into #{} (map :name) domain-roots)
+  (let [core           (core-tools)
+        domain-names   (into #{} (map :name) core)
         cfg-absorbed   (config-absorbed-names)
         addon-tools    (->> (ext/get-registered-tools)
                             (remove #(or (domain-names (:name %))
                                          (:consolidated %)
                                          (cfg-absorbed (:name %)))))]
-    (vec (concat channel/channel-tools
-                 domain-roots
-                 addon-tools))))
+    (vec (concat core addon-tools))))
 
 (declare get-all-tools)
 
 (def child-excluded-tool-names
   "Tool names excluded from child ling MCP servers.
    Prevents recursive spawning and coordinator-only operations."
-  #{"swarm"     ;; contains agent spawn/kill, wave dispatch, olympus
+  #{"swarm"     ;; contains agent spawn/kill, olympus
     "multi"     ;; meta-facade routes to excluded tools
     "emacs"})   ;; Emacs grid control — coordinator-only
 

@@ -7,7 +7,8 @@
    HTTP, no sibling stratum. `hive-mcp.agent.provider.strata-test` gates that.
 
    Vocabulary:
-     provider entry  — how to reach one provider (endpoint, secret, default model)
+     provider entry: how to reach one provider (endpoint, secret, dispatch kind);
+                     its :default-model and :available-models come from config only
      registry        — provider keyword -> entry
      dispatch-routed — an entry that is NOT an OpenAI-compat endpoint and must
                        be reached through its own client (e.g. Anthropic OAuth)"
@@ -41,20 +42,20 @@
      REQUIRED and must end in \"/chat/completions\"; :secret-key may be nil
      (nil = no auth needed, e.g. :ollama-compat).
 
-   Both branches are open maps: config overrides may add keys such as
-   :available-models."
+   Both branches are open maps. :default-model and :available-models are
+   optional: the seed carries neither, config `:llm-providers` supplies them."
   [:multi {:dispatch :dispatch}
    [:anthropic-oauth
     [:map
      [:dispatch [:= :anthropic-oauth]]
      [:secret-key :keyword]
-     [:default-model :string]
+     [:default-model {:optional true} :string]
      [:available-models {:optional true} [:sequential :string]]]]
    [::m/default
     [:map
      [:api-url ChatCompletionsUrl]
      [:secret-key [:maybe :keyword]]
-     [:default-model :string]
+     [:default-model {:optional true} :string]
      [:available-models {:optional true} [:sequential :string]]]]])
 
 (def ProviderRegistry
@@ -93,46 +94,29 @@
    overrides and REMOVES entries through `hive-mcp.agent.provider/effective-registry`,
    so a new provider is a config entry, never an edit here.
 
+   Entries are endpoint DESCRIPTORS only (api-url, secret-key, dispatch kind).
+   No model id lives here: `:default-model` and `:available-models` are set
+   per provider in config, e.g.
+     hive config set llm-providers.venice.default-model <model-id>
+
    It is also the ONE literal: `hive-mcp.config.merge/default-config`
    carries this var under `:llm-providers` rather than a second copy."
   {:anthropic     {:dispatch      :anthropic-oauth
-                   :secret-key    :anthropic-api-key
-                   :default-model "claude-sonnet-4-6"}
+                   :secret-key    :anthropic-api-key}
    :openrouter    {:api-url       "https://openrouter.ai/api/v1/chat/completions"
-                   :secret-key    :openrouter-api-key
-                   :default-model "anthropic/claude-opus-4-7"
-                   :available-models ["moonshotai/kimi-k2.5"
-                                      "qwen/qwen3.6-plus"
-                                      "z-ai/glm-5.1"
-                                      "xiaomi/mimo-v2-pro"
-                                      "anthropic/claude-opus-4-7"
-                                      "anthropic/claude-opus-4-6"
-                                      "anthropic/claude-sonnet-4-6"]}
+                   :secret-key    :openrouter-api-key}
    :venice        {:api-url       "https://api.venice.ai/api/v1/chat/completions"
-                   :secret-key    :venice-api-key
-                   :default-model "venice-uncensored"
-                   :available-models ["venice-uncensored"
-                                      "qwen-3-6-plus"]}
+                   :secret-key    :venice-api-key}
    :groq          {:api-url       "https://api.groq.com/openai/v1/chat/completions"
-                   :secret-key    :groq-api-key
-                   :default-model "llama-3.3-70b-versatile"
-                   :available-models ["llama-3.3-70b-versatile"]}
+                   :secret-key    :groq-api-key}
    :together      {:api-url       "https://api.together.xyz/v1/chat/completions"
-                   :secret-key    :together-api-key
-                   :default-model "meta-llama/Llama-3.3-70B-Instruct-Turbo"
-                   :available-models ["meta-llama/Llama-3.3-70B-Instruct-Turbo"]}
+                   :secret-key    :together-api-key}
    :fireworks     {:api-url       "https://api.fireworks.ai/inference/v1/chat/completions"
-                   :secret-key    :fireworks-api-key
-                   :default-model "accounts/fireworks/models/llama-v3p3-70b-instruct"
-                   :available-models ["accounts/fireworks/models/llama-v3p3-70b-instruct"]}
+                   :secret-key    :fireworks-api-key}
    :openai        {:api-url       "https://api.openai.com/v1/chat/completions"
-                   :secret-key    :openai-api-key
-                   :default-model "gpt-4o-mini"
-                   :available-models ["gpt-4o-mini" "gpt-4o"]}
+                   :secret-key    :openai-api-key}
    :ollama-compat {:api-url       "http://localhost:11434/v1/chat/completions"
-                   :secret-key    nil
-                   :default-model "devstral-small:24b"
-                   :available-models ["devstral-small:24b"]}})
+                   :secret-key    nil}})
 
 (def seed-priority
   "SEED preference order for auto-discovery — not the order that runs.

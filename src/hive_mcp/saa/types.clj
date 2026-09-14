@@ -18,15 +18,25 @@
 
 (adt/defadt SaaRegistryEntry
   "Addon contribution routed by key namespace through the SAA registry.
+   An addon returns these from `(hooks [this])` under any `:saa/*` key.
 
    :saa/phase-provider — registers an IPhaseProvider implementation
    :saa/scorer         — registers an IObservationScorer implementation
    :saa/planner        — registers an IPlanSynthesizer implementation
-   :saa/tool-intent     — maps a neutral tool-intent keyword to a concrete tool set"
+   :saa/tool-intent    — maps a neutral tool-intent keyword to a concrete tool set
+   :saa/plan-store     — the store-plan port: :store is
+                         (fn [plan agent-id directory])
+                         => {:memory-id _ :kanban-ids _ :kg-edges _}.
+                         Used only by runs that opt in with :store-plan? true.
+   :saa/dispatch-mode  — one Act execution mode, keyed by :mode (open set):
+                         :dispatch is (fn [plan agent-id ctx]) => {:wave-id _ :result _},
+                         ctx carries :run-id, :plan-memory-id and :directory."
   [:saa/phase-provider {:provider (constantly true) :owner keyword?}]
   [:saa/scorer         {:scorer (constantly true) :owner keyword?}]
   [:saa/planner        {:planner (constantly true) :owner keyword?}]
-  [:saa/tool-intent    {:intent keyword? :tools coll? :owner keyword?}])
+  [:saa/tool-intent    {:intent keyword? :tools coll? :owner keyword?}]
+  [:saa/plan-store     {:store ifn? :owner keyword?}]
+  [:saa/dispatch-mode  {:mode keyword? :dispatch ifn? :owner keyword?}])
 
 ;; =============================================================================
 ;; PhaseMessage — streamed envelopes on a phase out-ch

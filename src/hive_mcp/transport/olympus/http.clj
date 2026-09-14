@@ -136,14 +136,6 @@
                   :timestamp (System/currentTimeMillis)
                   :data (snap/build-agents-snapshot)}))
 
-(defn- route-waves
-  "Waves snapshot: GET /api/waves"
-  []
-  (json-response 200
-                 {:type :waves
-                  :timestamp (System/currentTimeMillis)
-                  :data (snap/build-waves-snapshot)}))
-
 (defn- route-kg
   "KG/Memory snapshot: GET /api/kg"
   []
@@ -207,7 +199,6 @@
      GET /health        -> route-health
      GET /api/snapshot  -> route-snapshot
      GET /api/agents    -> route-agents
-     GET /api/waves     -> route-waves
      GET /api/kg        -> route-kg
      GET /api/project-tree -> route-project-tree
      GET /api/stats     -> route-stats
@@ -223,7 +214,6 @@
       (and (= method :get) (= uri "/health"))           (route-health)
       (and (= method :get) (= uri "/api/snapshot"))     (route-snapshot)
       (and (= method :get) (= uri "/api/agents"))       (route-agents)
-      (and (= method :get) (= uri "/api/waves"))        (route-waves)
       (and (= method :get) (= uri "/api/kg"))           (route-kg)
       (and (= method :get) (= uri "/api/project-tree")) (route-project-tree)
       (and (= method :get) (= uri "/api/stats"))        (route-stats)

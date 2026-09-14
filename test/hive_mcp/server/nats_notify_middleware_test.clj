@@ -54,7 +54,7 @@
                  ["kg"      "edge"]
                  ["hivemind" "shout"]
                  ["magit"   "status"]
-                 ["wave"    "start"]
+                 ["preset"  "list"]
                  ["config"  "get"]]))
 
 (def gen-handler-result

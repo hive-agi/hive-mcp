@@ -126,26 +126,17 @@
   []
   (.list-agents-by-type agent-registry :ling))
 
-(defn list-drones
-  "List all drone agents."
-  []
-  (.list-agents-by-type agent-registry :drone))
-
 (defn sync-from-datascript!
   "Sync agent registry with DataScript slave state."
   []
   (let [ling-ns (requiring-resolve 'hive-mcp.agent.ling/->ling)
-        drone-ns (requiring-resolve 'hive-mcp.agent.drone/->drone)
         slaves (ds-queries/get-all-slaves)
         agents-created (for [slave slaves]
                          (let [id (:slave/id slave)
-                               depth (:slave/depth slave)
                                opts {:cwd (:slave/cwd slave)
                                      :project-id (:slave/project-id slave)
                                      :presets (:slave/presets slave)}]
-                           (if (= 1 depth)
-                             (ling-ns id opts)
-                             (drone-ns id opts))))]
+                           (ling-ns id opts)))]
     (doseq [agent agents-created]
       (register-agent! agent))
     (log/info "Synced agent registry from DataScript:" (count agents-created) "agents")

@@ -87,12 +87,6 @@
    "g!" {:tool "magit"    :command "commit"}
    "g>" {:tool "magit"    :command "push"}
 
-   ;; Wave (w)
-   "w!" {:tool "wave"     :command "dispatch"}
-   "w?" {:tool "wave"     :command "status"}
-   "wy" {:tool "wave"     :command "approve"}
-   "wn" {:tool "wave"     :command "reject"}
-
    ;; Hivemind (h)
    "h!" {:tool "hivemind" :command "shout"}
    "h?" {:tool "hivemind" :command "ask"}
@@ -195,13 +189,32 @@
 ;; Sentence Parsing
 ;; =============================================================================
 
+(def entity-id-remaps
+  "Verbs whose advertised `id` param is rewritten into a different handler
+   shape, keyed by [tool command]. Every other verb keeps its `id`: the batch
+   compiler moves it to `pd/entity-id-key` before assigning the op's \"$N\"
+   label, and the executor hands it back to the handler as :id.
+
+   Each entry is {:unless k :rewrite (fn [op id] op')}: skipped when the op
+   already holds k; otherwise :rewrite receives the op without :id."
+  {["kanban" "update"] {:unless  :task_id
+                        :rewrite (fn [op id] (assoc op :task_id id))}
+   ["kanban" "delete"] {:unless  :task_id
+                        :rewrite (fn [op id] (assoc op :task_id id))}
+   ["memory" "get"]    {:unless  :ids
+                        :rewrite (fn [op id]
+                                   (assoc op
+                                          :command "batch-get"
+                                          :ids (if (sequential? id) (vec id) [id])))}})
+
 (defn parse-sentence
   "Parse a DSL sentence [verb params-map] into a standard operation map.
    Resolves verb code to {:tool :command}, expands parameter aliases.
 
-   For kanban task-keyed verbs (b> update, b- delete) the advertised `id`
-   alias is remapped to :task_id — the key those handlers require — and the
-   op-local :id is freed so the batch compiler can assign its \"$N\" ref id.
+   For verbs listed in `entity-id-remaps` the advertised `id` param is moved
+   to the key the handler reads (b> update / b- delete -> :task_id, m@ get ->
+   batch-get :ids) and the op-local :id is freed so the batch compiler can
+   assign its \"$N\" ref id.
 
    Returns expanded operation map, or {:error \"...\" :verb verb} for unknowns.
 
@@ -212,17 +225,20 @@
      (parse-sentence [\"b>\" {\"id\" \"20260101-abcd\" \"new_status\" \"done\"}])
      ;=> {:tool \"kanban\" :command \"update\" :task_id \"20260101-abcd\" :new_status \"done\"}
 
+     (parse-sentence [\"m@\" {\"id\" \"20260101-abcd\"}])
+     ;=> {:tool \"memory\" :command \"batch-get\" :ids [\"20260101-abcd\"]}
+
      (parse-sentence [\"zz\" {}])
      ;=> {:error \"Unknown verb: zz\" :verb \"zz\"}"
   [[verb params]]
   (if-let [{:keys [tool command]} (get verb-table verb)]
-    (let [op (merge {:tool tool :command command}
-                    (expand-params params))]
-      (if (and (= tool "kanban")
-               (contains? #{"update" "delete"} command)
+    (let [op                      (merge {:tool tool :command command}
+                                         (expand-params params))
+          {:keys [unless rewrite]} (get entity-id-remaps [tool command])]
+      (if (and rewrite
                (contains? op :id)
-               (not (contains? op :task_id)))
-        (-> op (assoc :task_id (:id op)) (dissoc :id))
+               (not (contains? op unless)))
+        (rewrite (dissoc op :id) (:id op))
         op))
     {:error (str "Unknown verb: " verb)
      :verb  verb}))
@@ -244,12 +260,20 @@
 
 (defn- compile-paragraph-local
   "Local fallback: assign sequential IDs and collect $ref dependencies.
-   Used when extension is not available."
+   Used when extension is not available.
+
+   A parsed op that still holds an `id` param keeps it as its entity id under
+   `pd/entity-id-key` (unless one is already set) before :id becomes the
+   \"$N\" label; a `$ref:` there is collected as a dependency."
   [sentences]
   (let [parsed (parse-dsl sentences)]
     (mapv (fn [idx op]
             (let [id         (str "$" idx)
-                  op-with-id (assoc op :id id)]
+                  op-with-id (-> op
+                                 (cond-> (and (contains? op :id)
+                                              (not (contains? op pd/entity-id-key)))
+                                   (assoc pd/entity-id-key (:id op)))
+                                 (assoc :id id))]
               (if (:error op)
                 op-with-id
                 (let [ref-deps     (collect-refs op-with-id)

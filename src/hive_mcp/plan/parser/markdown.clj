@@ -204,34 +204,35 @@
       [value (when-not (str/blank? rest-content) rest-content)]
       [nil  (when-not (str/blank? content) content)])))
 
+(defn- overlay-step-fields
+  "Entries of an inline EDN overlay that name a step field: a key the core
+   Step schema declares (schema/step-keys) or an addon-registered step field
+   (plan.field-registry). Nil-valued entries are dropped."
+  [overlay]
+  (into {}
+        (remove (comp nil? val))
+        (select-keys overlay (into schema/step-keys
+                                   (field-registry/step-field-keys)))))
+
 (defn- section->step
   "Convert a markdown section to a plan step. Precedence for each field:
      inline EDN overlay > [key: value] annotation > inferred default.
-   Addon-registered step fields (plan.field-registry) are carried from the
-   inline EDN overlay."
+   The overlay carries every core Step schema key and every addon-registered
+   step field; other overlay keys are ignored."
   [section index]
   (let [title-text  (:header section)
         [overlay description] (extract-edn-overlay (:content-lines section))
-        base {:id          (or (:id overlay)
-                               (extract-id title-text)
+        base {:id          (or (extract-id title-text)
                                (generate-step-id title-text index))
               :title       (clean-title title-text)
-              :description (or (:description overlay) description)
-              :depends-on  (or (:depends-on overlay)
-                               (extract-depends title-text)
-                               [])
-              :priority    (or (:priority overlay)
-                               (extract-priority title-text)
-                               :medium)
-              :estimate    (or (:estimate overlay)
-                               (extract-estimate title-text)
-                               :medium)
-              :files       (or (:files overlay)
-                               (extract-files title-text)
-                               [])
-              :tags        (or (:tags overlay) [])}]
+              :description description
+              :depends-on  (or (extract-depends title-text) [])
+              :priority    (or (extract-priority title-text) :medium)
+              :estimate    (or (extract-estimate title-text) :medium)
+              :files       (or (extract-files title-text) [])
+              :tags        []}]
     (schema/normalize-step
-     (merge base (select-keys overlay (field-registry/step-field-keys))))))
+     (merge base (overlay-step-fields overlay)))))
 
 (defn- extract-plan-title
   "Extract plan title from first # header or return default."

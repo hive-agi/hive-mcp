@@ -323,10 +323,12 @@
                    static entry's :default-model) is honoured here too
      :api-url    - explicit URL (overrides provider registry)
      :api-key    - explicit API key (overrides secret resolution)
-     :model      - model string
+     :model      - model string; absent, the provider's configured
+                   :default-model is used
      :secret-key - config secret key for API key resolution
 
-   Throws when the named provider is dispatch-routed (`:dispatch` in its
+   Throws when neither :model nor the provider's configured :default-model is
+   set (ex-data names the config key). Throws when the named provider is dispatch-routed (`:dispatch` in its
    registry entry, e.g. :anthropic) and no :api-url override is supplied —
    such a provider has no chat-completions endpoint."
   [{:keys [provider api-url api-key model secret-key]}]
@@ -336,7 +338,7 @@
         effective-sk   (or secret-key (:secret-key reg-entry))
         effective-key  (or api-key
                            (when effective-sk (global-config/get-secret effective-sk)))
-        effective-model (or model (:default-model reg-entry) "anthropic/claude-3-haiku")
+        effective-model (or model (:default-model reg-entry))
         prov-name      (or (some-> provider name) "custom")]
     (when (and dispatch (not api-url))
       (throw (ex-info (str prov-name " is not an OpenAI-compat provider (dispatch: "
@@ -351,6 +353,14 @@
                       {:provider provider :secret-key effective-sk
                        :env (when effective-sk
                               (-> (name effective-sk) (str/replace "-" "_") str/upper-case))})))
+    (when-not effective-model
+      (throw (ex-info (str "No model for " prov-name ": pass :model or set llm-providers."
+                           prov-name ".default-model")
+                      {:error      :model-not-configured
+                       :provider   provider
+                       :config-key (str "llm-providers." prov-name ".default-model")
+                       :fix        (str "hive config set llm-providers." prov-name
+                                        ".default-model <model-id>")})))
     (->OpenAICompatBackend effective-url (or effective-key "") effective-model prov-name)))
 
 (defn auto-backend
@@ -365,6 +375,7 @@
                     {:checked (provider/provider-diagnostic)}))))
 
 (defn openrouter-backend
-  "Create an OpenRouter backend. Backward-compatible factory."
-  [{:keys [api-key model] :or {model "anthropic/claude-3-haiku"}}]
+  "Create an OpenRouter backend. Backward-compatible factory.
+   Without :model, config llm-providers.openrouter.default-model is used."
+  [{:keys [api-key model]}]
   (openai-compat-backend {:provider :openrouter :api-key api-key :model model}))

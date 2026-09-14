@@ -169,7 +169,9 @@
   [[:saa/phase-provider {:provider :PROV    :owner :o}]
    [:saa/scorer         {:scorer   :SCORER  :owner :o}]
    [:saa/planner        {:planner  :PLANNER :owner :o}]
-   [:saa/tool-intent    {:intent :read :tools ["read"] :owner :o}]])
+   [:saa/tool-intent    {:intent :read :tools ["read"] :owner :o}]
+   [:saa/plan-store     {:store (fn [_ _ _] {}) :owner :o}]
+   [:saa/dispatch-mode  {:mode :m :dispatch (fn [_ _ _] {}) :owner :o}]])
 
 (deftest c5-registry-entry-variants-roundtrip
   (testing "every SaaRegistryEntry variant constructs and is recognized"

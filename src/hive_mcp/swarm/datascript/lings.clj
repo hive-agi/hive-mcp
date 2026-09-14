@@ -346,7 +346,7 @@
   (let [c (conn/ensure-conn)
         db @c
         ;; Only use lookup ref if task entity exists in DataScript.
-        ;; Drone tasks (task-drone-*) are generated but never transacted as entities,
+        ;; Some callers pass generated task-ids that are never transacted as entities,
         ;; so the [:task/id ...] ref would fail with "Nothing found for entity id".
         task-ref (when task-id
                    (when (:db/id (d/entity db [:task/id task-id]))
