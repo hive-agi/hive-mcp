@@ -246,6 +246,11 @@
              spawn headless with openrouter-compatible CLI or API call."
     :db/index true}
 
+   :ling/provider
+   {:db/doc "Explicit LLM provider name the ling was spawned with (e.g. \"venice\",
+             \"openrouter\"). Absent when the spawn named none and routing chose.
+             Lets swarm observers (Olympus) show which provider each agent runs on."}
+
    ;;; =========================================================================
    ;;; Task Entity
    ;;; =========================================================================
