@@ -27,6 +27,7 @@
   (:require [hive-mcp.memory.write-events :as write-events]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.tools.catchup.axiom-cache :as axc]
+            [hive-mcp.tools.catchup.bucket-types :as bt]
             [hive-mcp.dns.result :refer [rescue rescue-log]]
             [clojure.tools.logging :as log])
   (:import [java.lang.ref WeakReference]))
@@ -55,8 +56,9 @@
 
 (def bundle-types
   "Memory types that can land in a catchup bucket (see bundle/split-by-type).
-   A write of any other type leaves the bundle tier alone."
-  #{"axiom" "axiom-candidate" "principle" "convention" "decision" "snippet" "note"})
+   A write of any other type leaves the bundle tier alone.
+   Alias of bucket-types/all, the single definition."
+  bt/all)
 
 (defn now-ms
   "Clock. with-redefs this in tests."
@@ -271,7 +273,7 @@
   (when id (swap! content dissoc id))
   (when (bundle-relevant? write)
     (reset! bundles {}))
-  (when (contains? #{"axiom" "convention"} (some-> memory-type name))
+  (when (contains? #{bt/axiom bt/convention} (some-> memory-type name))
     (axc/invalidate-axioms-cache!))
   nil)
 
