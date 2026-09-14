@@ -15,7 +15,12 @@
    4. 2 and 3 hold for an unscoped strike too.
    5. survey fails closed on a listed card it cannot read back as todo, and
       reads a plan card at most twice.
-   6. The forge survey verb reports each task's routing and no card body."
+   6. The forge survey verb reports each task's routing and no card body.
+   7. An orchestrator strike, and spark! in orchestrator mode, reports the
+      routed card in :failed as :execution/unsupported-mode, dispatches the
+      plain card, and spawns nothing when only routed cards remain. The removed
+      drone mode is refused outright.
+   8. In :mixed mode slots go in survey order and every card goes to a ling."
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
@@ -30,6 +35,7 @@
             [hive-mcp.tools.consolidated.workflow :as wf]
             [hive-mcp.tools.consolidated.workflow.forge-cycle :as cycle]
             [hive-mcp.tools.consolidated.workflow.forge-ops :as forge-ops]
+            [hive-mcp.tools.consolidated.workflow.spawn :as spawn]
             [hive-mcp.vectordb.facade :as memory]
             [hive-mcp.vectordb.kanban-facade :as kanban-store]
             [hive-mcp.workflows.forge-belt :as belt]
@@ -286,3 +292,88 @@
     (is (nil? (:execution plain)))
     (is (not-any? #(contains? % :description) (:tasks body)))
     (is (not-any? #(contains? % :context) (:tasks body)))))
+
+;; ── Modes that cannot honor per-task execution ──────────────────────────────
+
+(defn- rejected
+  "The rejection keys spark reports for a routed card in `route`."
+  [route]
+  {:type :execution/unsupported-mode :route route :spawned false})
+
+(defn- rejection-for
+  "The :failed entry of a spark result for card-id, reduced to its rejection keys."
+  [spark-result card-id]
+  (some-> (first (filter #(= card-id (:task-id %)) (:failed spark-result)))
+          (select-keys [:type :route :spawned])))
+
+(defn- kanban-marked
+  "Task ids the kanban port was asked to move, in order."
+  []
+  (keep (fn [[k cmd]] (when (= :kanban k) (:task_id cmd))) @events))
+
+(deftest orchestrator-strike-rejects-only-the-routed-card
+  (let [{:keys [cards]} (convert-plan!)
+        routed (get cards "step-1")
+        plain (get cards "step-2")
+        spark (:spark-result (strike! {:spawn_mode "orchestrator"}))
+        orchestrator (first (spawns))]
+    (testing "one orchestrator is spawned, for the plain card only"
+      (is (= 1 (count (spawns))))
+      (is (= ["orchestrator" "ling" "mcp-first"] (:presets orchestrator)))
+      (is (= [1] (mapv :task-count (:spawned spark))))
+      (let [prompt (str (prompt-for (:name orchestrator)))]
+        (is (str/includes? prompt plain))
+        (is (not (str/includes? prompt routed))))
+      (is (= [plain] (kanban-marked))))
+    (testing "the routed card is reported as rejected, not bundled"
+      (is (= (rejected :orchestrator) (rejection-for spark routed)))
+      (is (nil? (rejection-for spark plain)))
+      (is (nil? (position #(= :register (first %))))))))
+
+(deftest spark-rejects-routed-cards-in-orchestrator-mode
+  (let [{:keys [cards]} (convert-plan!)
+        routed (get cards "step-1")
+        plain (get cards "step-2")
+        tasks (:tasks (forge-ops/survey {:directory dir}))
+        routed-task (first (filter #(= routed (:id %)) tasks))]
+    (is (= #{routed plain} (set (map :id tasks))))
+    (testing "orchestrator over both cards"
+      (reset! events [])
+      (let [r (spawn/spark! {:directory dir :spawn-mode :orchestrator :tasks tasks} (spark-ports))]
+        (is (= (rejected :orchestrator) (rejection-for r routed)))
+        (is (nil? (rejection-for r plain)))))
+    (testing "orchestrator over the routed card alone spawns nothing"
+      (reset! events [])
+      (let [r (spawn/spark! {:directory dir :spawn-mode :orchestrator :tasks [routed-task]} (spark-ports))]
+        (is (empty? (spawns)))
+        (is (= 0 (:count r)))
+        (is (= [routed] (mapv :task-id (:failed r))))))
+    (testing "the removed drone mode is refused"
+      (let [ex (try (spawn/spark! {:directory dir :spawn-mode :drone :tasks tasks} (spark-ports))
+                    nil
+                    (catch clojure.lang.ExceptionInfo e e))]
+        (is (= :execution/unsupported-mode (:type (ex-data ex))))
+        (is (empty? (spawns)))))))
+
+;; ── Slot order ──────────────────────────────────────────────────────────────
+
+(deftest mixed-strike-gives-slots-in-survey-order
+  (let [{:keys [cards]} (convert-plan!)
+        routed (get cards "step-1")
+        plain (get cards "step-2")
+        r (strike! {:max_slots 1})]
+    (is (= [routed plain] (mapv :id (get-in r [:survey-result :tasks])))
+        "survey ranks the high-priority routed card first")
+    (is (= [routed] (mapv :kanban_task_id (spawns)))
+        "the only slot goes to the first-ranked card")))
+
+(deftest mixed-spark-sends-every-card-to-a-ling
+  (let [{:keys [cards]} (convert-plan!)
+        routed (get cards "step-1")
+        plain (get cards "step-2")
+        tasks (:tasks (forge-ops/survey {:directory dir}))
+        r (spawn/spark! {:directory dir :tasks tasks :max_slots 10} (spark-ports))]
+    (is (= #{routed plain} (set (map :kanban_task_id (spawns)))))
+    (is (= {:provider "ollama-compat" :model "qwen2.5:3b-instruct" :spawn_mode "hive-agent"}
+           (select-keys (spawn-for routed) [:provider :model :spawn_mode])))
+    (is (empty? (:failed r)))))
