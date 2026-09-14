@@ -8,7 +8,8 @@
    limit / offset / fields. Composed by `list-slim*` after the store
    query + tag pre-filter, before slim projection."
   (:require [clojure.string :as str]
-            [hive-mcp.tools.kanban.transitions :as kt]))
+            [hive-mcp.tools.kanban.transitions :as kt]
+            [hive-mcp.dns.result :refer [rescue]]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -49,9 +50,23 @@
         ;; default :all
         (every? #(contains? entry-tags %) extra-tags)))))
 
+(defn ^:private ->instant
+  "Parse an ISO-8601 timestamp string to `java.time.Instant`. Accepts:
+    - ZonedDateTime strings with a `[Zone/Id]` suffix,
+    - OffsetDateTime strings (no zone id, e.g. `2026-08-21T16:55:25-03:00`),
+    - Instant strings (ending in `Z`).
+   Returns nil for unparseable input (preserves the existing contract)."
+  [s]
+  (when (string? s)
+    (or (rescue nil (.toInstant (java.time.ZonedDateTime/parse s)))
+        (rescue nil (.toInstant (java.time.OffsetDateTime/parse s)))
+        (rescue nil (java.time.Instant/parse s)))))
+
 (defn entry-after-ts?
   "True iff the entry's timestamp for `kind` (:created or :updated) is
-   strictly greater than `threshold` (ISO-8601 string compare).
+   strictly greater than `threshold` (ISO-8601 string).  Parses both
+   sides to `java.time.Instant` before comparing, so cross-offset pairs
+   like `...16:55-03:00` vs `...19:18:00Z` are handled correctly.
    Nil threshold => match all."
   [entry kind threshold]
   (or (nil? threshold)
@@ -63,9 +78,11 @@
                               (kt/content-val content :updated nil)
                               (kt/content-val content :started nil)
                               (kt/content-val content :completed nil))
-                 nil)]
-        (boolean (and ts
-                      (pos? (compare (str ts) (str threshold))))))))
+                 nil)
+            ts-inst    (->instant (str ts))
+            thresh-inst (->instant (str threshold))]
+        (boolean (and ts-inst thresh-inst
+                      (.isAfter ts-inst thresh-inst))))))
 
 (defn paginate
   "Skip `offset` then take `limit`. Both optional, both positive numbers
