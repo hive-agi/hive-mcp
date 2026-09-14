@@ -50,17 +50,27 @@
         ;; default :all
         (every? #(contains? entry-tags %) extra-tags)))))
 
+(def ^:private basic-offset-fmt
+  "ISO local date-time with a COLONLESS offset (`-0300`). This is the shape
+   hive's own kanban entries store, and `OffsetDateTime/parse` rejects it —
+   its default formatter demands `-03:00`."
+  (java.time.format.DateTimeFormatter/ofPattern
+   "yyyy-MM-dd'T'HH:mm:ss[.SSS]Z"))
+
 (defn ^:private ->instant
   "Parse an ISO-8601 timestamp string to `java.time.Instant`. Accepts:
     - ZonedDateTime strings with a `[Zone/Id]` suffix,
     - OffsetDateTime strings (no zone id, e.g. `2026-08-21T16:55:25-03:00`),
-    - Instant strings (ending in `Z`).
+    - Instant strings (ending in `Z`),
+    - colonless-offset strings (e.g. `2026-04-26T00:00:00-0300`), which is
+      what kanban `:created` / `:updated` actually carry.
    Returns nil for unparseable input (preserves the existing contract)."
   [s]
   (when (string? s)
     (or (rescue nil (.toInstant (java.time.ZonedDateTime/parse s)))
         (rescue nil (.toInstant (java.time.OffsetDateTime/parse s)))
-        (rescue nil (java.time.Instant/parse s)))))
+        (rescue nil (java.time.Instant/parse s))
+        (rescue nil (.toInstant (java.time.OffsetDateTime/parse s basic-offset-fmt))))))
 
 (defn entry-after-ts?
   "True iff the entry's timestamp for `kind` (:created or :updated) is
