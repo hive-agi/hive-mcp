@@ -66,6 +66,7 @@
                            :db/index     true}
    :ling/model            {:db/valueType :db.type/string
                            :db/index     true}
+   :ling/provider         {:db/valueType :db.type/string}
 
    ;; Universal lifecycle metadata (added 2026-04-27 — registry-ghost fix).
    ;; Indexed: :slave/last-active-at + :slave/alive? for stale-sweep query speed.
