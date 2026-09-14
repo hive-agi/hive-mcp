@@ -8,7 +8,8 @@
    limit / offset / fields. Composed by `list-slim*` after the store
    query + tag pre-filter, before slim projection."
   (:require [clojure.string :as str]
-            [hive-mcp.tools.kanban.transitions :as kt]))
+            [hive-mcp.tools.kanban.transitions :as kt]
+            [hive-mcp.dns.result :refer [rescue]]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -57,12 +58,9 @@
    Returns nil for unparseable input (preserves the existing contract)."
   [s]
   (when (string? s)
-    (try (-> (java.time.ZonedDateTime/parse s) (.toInstant))
-         (catch Exception _
-           (try (-> (java.time.OffsetDateTime/parse s) (.toInstant))
-                (catch Exception _
-                  (try (java.time.Instant/parse s)
-                       (catch Exception _ nil))))))))
+    (or (rescue nil (.toInstant (java.time.ZonedDateTime/parse s)))
+        (rescue nil (.toInstant (java.time.OffsetDateTime/parse s)))
+        (rescue nil (java.time.Instant/parse s)))))
 
 (defn entry-after-ts?
   "True iff the entry's timestamp for `kind` (:created or :updated) is
