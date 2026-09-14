@@ -131,18 +131,22 @@
 (defn- apply-milestone-boundary-filter
   "Post-filter: exclude tasks from milestones whose prerequisites are incomplete.
    Config-gated via [:forge :milestone-boundary]. Graceful degradation."
-  [prioritized]
-  (if (config/get-service-value :forge :milestone-boundary :default false)
-    (result/rescue prioritized
-                   (when-let [filter-fn (ext/get-extension :fb/milestone-boundary-filter)]
-                     (let [{:keys [tasks excluded-count reason]} (filter-fn (:tasks prioritized))]
-                       (when (pos? (or excluded-count 0))
-                         (log/info "SURVEY: milestone-boundary excluded" excluded-count "tasks:" reason))
-                       (-> prioritized
-                           (assoc :tasks tasks)
-                           (assoc :count (count tasks))
-                           (update :blocked-count + (or excluded-count 0))))))
-    prioritized))
+  ([prioritized]
+   (apply-milestone-boundary-filter
+    prioritized
+    {:enabled?  (config/get-service-value :forge :milestone-boundary :default false)
+     :filter-fn (ext/get-extension :fb/milestone-boundary-filter)}))
+  ([prioritized {:keys [enabled? filter-fn]}]
+   (if (and enabled? filter-fn)
+     (result/rescue prioritized
+                    (let [{:keys [tasks excluded-count reason]} (filter-fn (:tasks prioritized))]
+                      (when (pos? (or excluded-count 0))
+                        (log/info "SURVEY: milestone-boundary excluded" excluded-count "tasks:" reason))
+                      (-> prioritized
+                          (assoc :tasks tasks)
+                          (assoc :count (count tasks))
+                          (update :blocked-count + (or excluded-count 0)))))
+     prioritized)))
 
 (defn plan-task-ids
   "Resolve a complete converted plan to its kanban IDs. Missing membership or dependency edges fail closed.
