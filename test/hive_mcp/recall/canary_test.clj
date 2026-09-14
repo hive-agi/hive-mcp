@@ -182,3 +182,69 @@
                              (canary/outcome :b nil "no store")])]
       (is (zero? (:passed v)))
       (is (= 2 (count (:skipped v)))))))
+
+;; =============================================================================
+;; verdict carries :ran-labels
+;; =============================================================================
+
+(deftest verdict-carries-ran-labels
+  (testing ":ran-labels has ok and fault labels, not skipped ones"
+    (let [v (canary/verdict [(canary/outcome :a nil)
+                             (canary/outcome :b {:fault :recall/probe-empty})
+                             (canary/outcome :c nil "no store")])]
+      (is (= #{:a :b} (:ran-labels v))))))
+
+;; =============================================================================
+;; skip-regressions
+;; =============================================================================
+
+(deftest nil-prev-returns-empty-for-skip-regressions
+  (testing "first tick, prev nil -> []"
+    (is (empty? (canary/skip-regressions nil {:skipped [{:label :x :reason "r"}]})))))
+
+(deftest label-ran-then-skipped-is-a-regression
+  (testing "a probe that ran in prev and skips in cur returns one went-dark"
+    (let [prev {:ran-labels #{:a :b}}
+          cur  {:skipped [{:label :a :reason "no store"}
+                          {:label :c :reason "no carto"}]}
+          regs (canary/skip-regressions prev cur)]
+      (is (= 1 (count regs)))
+      (is (= :recall/probe-went-dark (:fault (first regs))))
+      (is (= :a (:label (first regs))))
+      (is (= "no store" (:reason (first regs)))))))
+
+(deftest label-skipped-both-times-is-not-a-regression
+  (testing "persistent skip is not a regression — it never ran"
+    (let [prev {:ran-labels #{:b}}
+          cur  {:skipped [{:label :a :reason "no carto"}]}]
+      (is (empty? (canary/skip-regressions prev cur))))))
+
+(deftest label-ran-both-times-is-not-a-regression
+  (testing "stable runner"
+    (let [prev {:ran-labels #{:a :b}}
+          cur  {:skipped []}]
+      (is (empty? (canary/skip-regressions prev cur))))))
+
+(deftest label-newly-skipped-that-never-ran-is-not-a-regression
+  (testing "a new gap that never ran is not a regression"
+    (let [prev {:ran-labels #{:a}}
+          cur  {:skipped [{:label :b :reason "no carto"}]}]
+      (is (empty? (canary/skip-regressions prev cur))))))
+
+;; =============================================================================
+;; with-regressions
+;; =============================================================================
+
+(deftest regression-flips-ok-and-appends-faults
+  (testing "a regression makes :ok? false and appends to :faults"
+    (let [v (canary/with-regressions
+             {:ran-labels #{:a}}
+             {:ok? true :passed 1 :faults [] :skipped [{:label :a :reason "no store"}]})]
+      (is (false? (:ok? v)))
+      (is (= 1 (count (:faults v))))
+      (is (= :recall/probe-went-dark (:fault (first (:faults v))))))))
+
+(deftest no-regression-returns-cur-unchanged
+  (testing "when no regression, cur is returned =`=`"
+    (let [cur {:ok? true :passed 1 :faults [] :skipped [{:label :b :reason "no store"}]}]
+      (is (= cur (canary/with-regressions {:ran-labels #{:a}} cur))))))

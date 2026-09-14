@@ -224,16 +224,53 @@
 (defn verdict
   "Fold probe outcomes into a report.
 
-   {:ok? :ran :passed :faults :skipped}. `:ok?` is false the moment ANY probe
-   faults; skipped probes never make it true and never make it false — they are
-   counted so a canary that quietly stopped running is visible."
+   {:ok? :ran :passed :faults :skipped :ran-labels}. `:ok?` is false the moment
+   ANY probe faults; skipped probes never make it true and never make it false
+   — they are counted so a canary that quietly stopped running is visible.
+   `:ran-labels` is the SET of labels whose status is :ok or :fault."
   [outcomes]
   (let [os      (vec outcomes)
         faults  (filterv #(= :fault (:status %)) os)
         skipped (filterv #(= :skipped (:status %)) os)
         passed  (filterv #(= :ok (:status %)) os)]
-    {:ok?     (empty? faults)
-     :ran     (count os)
-     :passed  (count passed)
-     :faults  (mapv :fault faults)
-     :skipped (mapv #(select-keys % [:label :reason]) skipped)}))
+    {:ok?       (empty? faults)
+     :ran       (count os)
+     :passed    (count passed)
+     :faults    (mapv :fault faults)
+     :skipped   (mapv #(select-keys % [:label :reason]) skipped)
+     :ran-labels (set (map :label (concat passed faults)))}))
+;; =============================================================================
+;; Skip regression detection — a probe that ran last tick and skips now is a fault
+;; =============================================================================
+
+(defn skip-regressions
+  "Returns a vector of fault maps, one per label that ran in `prev` and is
+   skipped in `cur`. Each fault map:
+
+     {:fault :recall/probe-went-dark :label <label> :reason <cur skip reason>}
+
+   Returns [] when prev is nil (first tick). Order is by label name for
+   determinism."
+  [prev cur]
+  (if (nil? prev)
+    []
+    (let [prev-ran (:ran-labels prev #{})
+          cur-skipped (into {} (map (juxt :label :reason)) (:skipped cur))]
+      (->> (clojure.set/intersection prev-ran (set (keys cur-skipped)))
+           (sort)
+           (mapv (fn [label]
+                   {:fault :recall/probe-went-dark
+                    :label label
+                    :reason (get cur-skipped label)}))))))
+
+(defn with-regressions
+  "Return `cur` with skip-regressions faults appended to :faults when any are
+   detected. :ok? is set to false when regressions exist. Returns cur unchanged
+   (=`=) when there are no regressions."
+  [prev cur]
+  (let [regressions (skip-regressions prev cur)]
+    (if (seq regressions)
+      (-> cur
+          (update :faults into regressions)
+          (assoc :ok? false))
+      cur)))
