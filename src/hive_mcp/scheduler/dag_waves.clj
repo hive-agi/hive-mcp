@@ -33,7 +33,7 @@
          :opts       {}}))   ; original start opts
 
 (defn- wave-progress-payload
-  "Current DAG parity snapshot for the drone-roster panel."
+  "Current DAG parity snapshot for the swarm roster panel."
   []
   (let [s @dag-state]
     {:run-id        (str (:plan-id s))

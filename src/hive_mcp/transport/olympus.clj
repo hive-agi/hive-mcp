@@ -8,7 +8,6 @@
 
    Event Protocol (what Olympus expects):
    {:type :agents :data [{:id \"...\" :status :working ...}]}
-   {:type :wave-update :wave-id \"...\" :task-idx 0 :status :completed}
    {:type :kg-snapshot :entries [...] :edges [...]}
 
    Lifecycle:
@@ -53,7 +52,6 @@
 (def broadcast!            stream/broadcast!)
 (def emit!                 stream/emit!)
 (def emit-agent-event!     stream/emit-agent-event!)
-(def emit-wave-event!      stream/emit-wave-event!)
 (def emit-hivemind-shout!  stream/emit-hivemind-shout!)
 (def emit-kg-event!        stream/emit-kg-event!)
 (def wire-hivemind-events! stream/wire-hivemind-events!)

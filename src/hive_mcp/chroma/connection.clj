@@ -124,10 +124,14 @@
     (registry-clear)
     (registry-init))
 
-  (let [provider (case provider-type
-                   :ollama ((resolve 'hive-mcp.embeddings.ollama/->provider))
-                   :openai ((resolve 'hive-mcp.embeddings.openai/->provider))
-                   :openrouter ((resolve 'hive-mcp.embeddings.openrouter/->provider)))]
+  (let [config-value (requiring-resolve 'hive-mcp.config.core/get-config-value)
+        opts         (if-let [model (config-value (str "embeddings." (name provider-type) ".model"))]
+                       {:model model}
+                       {})
+        provider (case provider-type
+                   :ollama ((resolve 'hive-mcp.embeddings.ollama/->provider) opts)
+                   :openai ((resolve 'hive-mcp.embeddings.openai/->provider) opts)
+                   :openrouter ((resolve 'hive-mcp.embeddings.openrouter/->provider) opts))]
     (emb/set-embedding-provider! provider)
 
     (let [fixed? (satisfies? emb/EmbeddingProvider provider)]

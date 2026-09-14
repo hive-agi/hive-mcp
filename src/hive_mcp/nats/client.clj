@@ -1,5 +1,5 @@
 (ns hive-mcp.nats.client
-  "NATS client wrapper for push-based drone notifications, enabling real-time
+  "NATS client wrapper for push-based agent notifications, enabling real-time
    communication in the Hive system. Manages connection lifecycle, publish,
    subscribe, and health checks.
 

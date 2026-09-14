@@ -78,7 +78,7 @@
   "Drain all 5 piggyback channels for an agent.
 
    Arguments:
-   - agent-id:   The ling/drone identity (e.g. \"ling-xyz\")
+   - agent-id:   The ling identity (e.g. \"ling-xyz\")
    - project-id: Project scope string (e.g. \"hive-mcp\"), or nil for global
    - ctx:        Drain ctx forwarded to the MEMORY channel, or nil for FIFO
 

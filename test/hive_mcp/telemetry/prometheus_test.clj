@@ -132,14 +132,6 @@
       (is (str/includes? metrics "5.0")
           "gauge value is 5.0"))))
 
-(deftest test-drones-gauge
-  (testing "drones-active gauge can be set"
-    (prom/set-drones-active! 3)
-
-    (let [metrics (prom/metrics-response)]
-      (is (str/includes? metrics "hive_mcp_drones_active")
-          "drones-active gauge present"))))
-
 (deftest test-ws-clients-gauge
   (testing "ws-clients gauge can be set"
     (prom/set-ws-clients! 2)
@@ -275,44 +267,6 @@
       (is (str/includes? metrics "jvm_threads") "JVM threads metrics present"))))
 
 ;;; =============================================================================
-;;; Drone Error Metrics Tests (CLARITY-T: Enhanced error tracking)
-;;; =============================================================================
-
-(deftest test-drones-failed-with-drone-id
-  (testing "drones-failed-total counter includes drone_id label"
-    (prom/inc-drones-failed! "parent-ling-1" :nrepl-connection "drone-123")
-    (prom/inc-drones-failed! "parent-ling-1" :nrepl-timeout "drone-456")
-    (prom/inc-drones-failed! "parent-ling-2" :validation)  ;; Without drone-id
-
-    (let [metrics (prom/metrics-response)]
-      (is (str/includes? metrics "hive_mcp_drones_failed_total")
-          "drones-failed-total counter present")
-      (is (str/includes? metrics "drone_id=\"drone-123\"")
-          "drone_id label with specific value present")
-      (is (str/includes? metrics "drone_id=\"drone-456\"")
-          "second drone_id label present")
-      (is (str/includes? metrics "error_type=\"nrepl-connection\"")
-          "nrepl-connection error type present")
-      (is (str/includes? metrics "error_type=\"nrepl-timeout\"")
-          "nrepl-timeout error type present")
-      (is (str/includes? metrics "error_type=\"validation\"")
-          "validation error type present"))))
-
-(deftest test-drone-duration-with-status
-  (testing "drone-duration-seconds histogram includes status label"
-    (prom/observe-drone-duration! "parent-1" 5.0 :success)
-    (prom/observe-drone-duration! "parent-1" 3.0 :failed)
-    (prom/observe-drone-duration! "parent-2" 2.5) ;; Default status=success
-
-    (let [metrics (prom/metrics-response)]
-      (is (str/includes? metrics "hive_mcp_drone_duration_seconds")
-          "drone-duration-seconds histogram present")
-      (is (str/includes? metrics "status=\"success\"")
-          "success status label present")
-      (is (str/includes? metrics "status=\"failed\"")
-          "failed status label present"))))
-
-;;; =============================================================================
 ;;; Wave Failure Metrics Tests (CLARITY-T: Wave-level error tracking)
 ;;; =============================================================================
 
@@ -341,32 +295,16 @@
 ;;; Effect Handler Tests (CLARITY-T: Event system integration)
 ;;; =============================================================================
 
-(deftest test-handle-prometheus-effect-drone-failed
-  (testing "handle-prometheus-effect! handles drone_failed with all labels"
+(deftest test-handle-prometheus-effect-unknown-counter-falls-back-to-events
+  (testing "handle-prometheus-effect! routes unknown counters to the generic events counter"
     (prom/handle-prometheus-effect!
-     {:counter :drone_failed
-      :labels {:parent "ling-1"
-               :error_type "nrepl-connection"
-               :drone_id "drone-789"}})
+     {:counter :effect_fallback_probe
+      :labels {}
+      :histogram {:name :unknown_histogram :value 1.0}})
 
     (let [metrics (prom/metrics-response)]
-      (is (str/includes? metrics "parent=\"ling-1\"")
-          "parent label from effect")
-      (is (str/includes? metrics "drone_id=\"drone-789\"")
-          "drone_id label from effect"))))
-
-(deftest test-handle-prometheus-effect-drone-duration-with-status
-  (testing "handle-prometheus-effect! handles histogram with status"
-    (prom/handle-prometheus-effect!
-     {:counter :drone_completed
-      :labels {:parent "ling-2"}
-      :histogram {:name :drone_duration_seconds
-                  :value 4.5
-                  :status :success}})
-
-    (let [metrics (prom/metrics-response)]
-      (is (str/includes? metrics "hive_mcp_drone_duration_seconds")
-          "duration histogram recorded via effect"))))
+      (is (str/includes? metrics "type=\"effect_fallback_probe\"")
+          "unknown counter recorded as a generic event type"))))
 
 (deftest test-handle-prometheus-effect-wave-failure
   (testing "handle-prometheus-effect! handles wave_failure counter"

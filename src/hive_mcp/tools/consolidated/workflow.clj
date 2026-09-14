@@ -4,7 +4,7 @@
    Thin facade that routes MCP commands to sub-namespace implementations:
    - workflow.forge-ops: smite, survey, forge-status
    - workflow.forge-cycle: build-fsm-resources, forge-strike logic
-   - workflow.spawn: spawn, spark, drone dispatch
+   - workflow.spawn: spawn, spark
    - workflow.readiness: agent readiness checks
 
    Includes defense-in-depth guard: child lings (spawned agents) are

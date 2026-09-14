@@ -38,8 +38,6 @@
    Currently used by:
    - tools/swarm/state.clj:35        - get-slave-working-status
    - tools/swarm/lifecycle.clj:113   - check-kill-cross-project-guard
-   - tools/swarm/health.clj:182      - recover-drone!
-   - agent/drone.clj (implicit via proto/get-slave)
 
    Phase 2: Delegates to (proto/get-slave registry slave-id)
 
@@ -136,7 +134,6 @@
 
    Currently used by:
    - tools/swarm/registry.clj:60     - register-ling!
-   - agent/drone.clj:298             - register-drone-agent
 
    Phase 2: Delegates to (proto/add-slave! registry slave-id opts)
 
@@ -188,8 +185,6 @@
 
    Currently used by:
    - tools/swarm/registry.clj:74     - unregister-ling!
-   - tools/swarm/health.clj:183      - recover-drone!
-   - agent/drone.clj:551             - cleanup on timeout/error
 
    Phase 2: Delegates to (proto/remove-slave! registry slave-id)
 
@@ -372,10 +367,6 @@
 ;;; Migration Notes
 ;;; =============================================================================
 
-;; Wave/Plan operations (ds/create-plan!, ds/get-wave, etc.) are NOT wrapped here.
-;; They are coordination-specific and used only by tools/swarm/wave.clj.
-;; These may get their own protocol (IWaveCoordinator) or remain DataScript-specific.
-;;
 ;; Critical ops (ds/enter-critical-op!, ds/with-critical-op) are also not wrapped.
 ;; They are DataScript-specific transaction semantics.
 ;;

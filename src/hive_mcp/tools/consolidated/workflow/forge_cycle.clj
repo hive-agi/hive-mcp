@@ -50,11 +50,6 @@
                         (or (:kg-node-ids opts) (:kg-node-ids defaults))
                         (assoc :kg_node_ids (or (:kg-node-ids opts) (:kg-node-ids defaults)))))
                   spark-ports))
-     :drone-dispatch-fn
-     (fn [opts]
-       (spawn/dispatch-drone-tasks!
-        (merge-spawn-opts opts {:preset preset :model model :seeds seeds
-                                :ctx_refs ctx-refs :kg_node_ids kg-node-ids})))
      :dispatch-fn   (fn [_agent-id _task] true)
      :wait-ready-fn (fn [_agent-id] true)}))
 
@@ -119,7 +114,7 @@
   (log/info "FORGE STRIKE (legacy): Starting cycle" {:directory  directory
                                                      :max-slots  max_slots
                                                      :spawn-mode (or spawn_mode "claude")
-                                                     :model      (or model "claude")})
+                                                     :model      model})
   (let [smite-result  (forge-ops/smite! params)
         _             (log/info "FORGE STRIKE: SMITE complete" {:killed (:count smite-result)})
         survey-result (forge-ops/survey params)
@@ -135,7 +130,7 @@
                 :mode       :imperative
                 :deprecated true
                 :spawn-mode (or spawn_mode "claude")
-                :model      (or model "claude")
+                :model      model
                 :smite      smite-result
                 :survey     {:todo-count   (:count survey-result)
                              :task-titles  (mapv :title (:tasks survey-result))}
@@ -144,7 +139,7 @@
                                  ", surveyed " (:count survey-result) " tasks"
                                  ", sparked " (:count spark-result) " lings"
                                  " (mode: " (or spawn_mode "claude")
-                                 ", model: " (or model "claude") ")")})))
+                                 ", model: " (or model "agent-defaults") ")")})))
 
 ;; ── Forge Strike: FSM ─────────────────────────────────────────────────────────
 
@@ -155,7 +150,7 @@
   (log/info "FORGE STRIKE: Starting FSM cycle" {:directory  directory
                                                 :max-slots  max_slots
                                                 :spawn-mode (or spawn_mode "claude")
-                                                :model      (or model "claude")})
+                                                :model      model})
   (let [resources  (build-fsm-resources params)
         fsm-result (forge-belt/run-single-strike resources)
         survey     (:survey-result fsm-result)
@@ -180,7 +175,7 @@
                 :outcome    outcome
                 :mode       :fsm
                 :spawn-mode (or spawn_mode "claude")
-                :model      (or model "claude")
+                :model      model
                 :smite      (:smite-result fsm-result)
                 :survey     (assoc (select-keys survey [:blocked :blocked-count :scoped-count
                                                      :plan-id :plan-task-count :plan-states
@@ -200,4 +195,4 @@
                                  ", surveyed " (get-in fsm-result [:survey-result :count] 0) " tasks"
                                  ", sparked " (:total-sparked fsm-result 0) " lings"
                                  " (mode: " (or spawn_mode "claude")
-                                 ", model: " (or model "claude") ")")})))
+                                 ", model: " (or model "agent-defaults") ")")})))

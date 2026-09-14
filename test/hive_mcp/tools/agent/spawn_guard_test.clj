@@ -5,7 +5,7 @@
    agents, preventing recursive self-call chains.
 
    Test Coverage:
-   1. Guard denies spawn for child lings (ling and drone types)
+   1. Guard denies spawn for child lings
    2. Guard allows spawn for coordinator (normal path)
    3. Error message includes role, depth, and guidance
    4. Guard works with batch-spawn routing
@@ -19,6 +19,7 @@
             [hive-mcp.swarm.datascript.connection :as conn]
             [hive-mcp.swarm.logic :as logic]
             [hive-mcp.tools.swarm.core :as swarm-core]
+            [hive-mcp.agent.provider.collect :as provider-collect]
             [hive-test.isolation :as iso]
             [hive-mcp.isolation-methods]
             [hive-mcp.test.stub.terminal-addon :as term-stub]))
@@ -28,10 +29,13 @@
 ;; =============================================================================
 
 (defn- logic-and-redefs-fixture
-  "Reset logic db and stub swarm-addon-available? for each test."
+  "Reset logic db, stub swarm-addon-available?, and declare the ling default
+   this test's config would carry (hive-mcp ships no model default)."
   [f]
   (logic/reset-db!)
-  (with-redefs [swarm-core/swarm-addon-available? (constantly false)]
+  (with-redefs [swarm-core/swarm-addon-available? (constantly false)
+                provider-collect/agent-type-defaults
+                (constantly {:provider :anthropic :model "claude-test-model"})]
     (try (f) (finally (logic/reset-db!)))))
 
 (use-fixtures :each
@@ -65,19 +69,6 @@
         (is (re-find #"SPAWN DENIED" (:text result))
             "Error should contain SPAWN DENIED")))))
 
-(deftest test-spawn-guard-denies-drone-spawn-from-child
-  (testing "child ling is denied from spawning a drone"
-    (with-redefs [guards/child-ling? (constantly true)
-                  guards/get-role    (constantly "child-ling")
-                  guards/ling-depth  (constantly 1)]
-      (let [result (spawn/handle-spawn {:type "drone"
-                                        :name "test-drone"
-                                        :cwd "/tmp/project"
-                                        :files ["src/core.clj"]})]
-        (is (:isError result)
-            "Drone spawn should also be denied for child lings")
-        (is (re-find #"SPAWN DENIED" (:text result)))))))
-
 (deftest test-spawn-guard-denies-at-depth-2
   (testing "child ling at depth 2 is denied"
     (with-redefs [guards/child-ling? (constantly true)
@@ -94,11 +85,11 @@
                   guards/get-role    (constantly "child-ling")
                   guards/ling-depth  (constantly 1)]
       (let [result (spawn/handle-spawn {:type "invalid" :cwd "/tmp"})]
-        ;; Should get SPAWN DENIED, not "must be ling or drone"
+        ;; Should get SPAWN DENIED, not the type validation error
         (is (:isError result))
         (is (re-find #"SPAWN DENIED" (:text result))
             "Guard should fire before type validation")
-        (is (not (re-find #"must be 'ling' or 'drone'" (:text result)))
+        (is (not (re-find #"type must be one of" (:text result)))
             "Type validation should NOT have been reached")))))
 
 ;; =============================================================================

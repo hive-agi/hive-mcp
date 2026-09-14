@@ -45,31 +45,29 @@
   (can-chain-tools? [_] true)
   (claims [_] [])
   (claim-files! [_ _ _] nil)
-  (release-claims! [_] 0)
-  (upgrade! [_] nil))
+  (release-claims! [_] 0))
 
-(defrecord MockDrone [id status]
+(defrecord MockOtherAgent [id status]
   IAgent
   (spawn! [_ _] id)
   (dispatch! [_ _] (str "task-" id))
   (kill! [_] {:killed? true})
   (status [_] {:slave/id id :slave/status status})
-  (agent-type [_] :drone)
+  (agent-type [_] :test-other)
   (can-chain-tools? [_] false)
   (claims [_] [])
   (claim-files! [_ _ _] nil)
-  (release-claims! [_] 0)
-  (upgrade! [_] nil))
+  (release-claims! [_] 0))
 
 (defn make-mock-ling
   "Create a mock ling for testing."
   [id & [status]]
   (->MockLing id (or status :idle)))
 
-(defn make-mock-drone
-  "Create a mock drone for testing."
+(defn make-mock-other
+  "Create a mock agent of a non-ling type, for type-filter tests."
   [id & [status]]
-  (->MockDrone id (or status :idle)))
+  (->MockOtherAgent id (or status :idle)))
 
 ;;; =============================================================================
 ;;; Tool Registry Tests
@@ -158,45 +156,28 @@
         (is (= "ling-test" result-id) "Should return agent ID")
         (is (some? (reg/get-agent-by-id "ling-test")))))))
 
-(deftest agent-registry-register-drone
-  (testing "Register a drone agent"
-    (let [drone (make-mock-drone "drone-test")]
-      (let [result-id (reg/register-agent! drone)]
-        (is (= "drone-test" result-id) "Should return agent ID")
-        (is (some? (reg/get-agent-by-id "drone-test")))))))
-
 (deftest agent-registry-list-all-agents
   (testing "List all registered agents"
     (let [ling1 (make-mock-ling "ling-1")
           ling2 (make-mock-ling "ling-2")
-          drone1 (make-mock-drone "drone-1")]
+          other1 (make-mock-other "other-1")]
       (reg/register-agent! ling1)
       (reg/register-agent! ling2)
-      (reg/register-agent! drone1)
+      (reg/register-agent! other1)
       (let [agents (reg/list-all-agents)]
         (is (= 3 (count agents)))
-        (is (= #{"ling-1" "ling-2" "drone-1"}
+        (is (= #{"ling-1" "ling-2" "other-1"}
                (set (map :id agents))))))))
 
 (deftest agent-registry-list-lings-only
   (testing "List only ling agents"
     (reg/register-agent! (make-mock-ling "ling-a"))
     (reg/register-agent! (make-mock-ling "ling-b"))
-    (reg/register-agent! (make-mock-drone "drone-a"))
+    (reg/register-agent! (make-mock-other "other-a"))
     (let [lings (reg/list-lings)]
       (is (= 2 (count lings)) "Should only have 2 lings")
       (is (every? #(= :ling (agent-type %)) lings)
           "All should be lings"))))
-
-(deftest agent-registry-list-drones-only
-  (testing "List only drone agents"
-    (reg/register-agent! (make-mock-ling "ling-x"))
-    (reg/register-agent! (make-mock-drone "drone-x"))
-    (reg/register-agent! (make-mock-drone "drone-y"))
-    (let [drones (reg/list-drones)]
-      (is (= 2 (count drones)) "Should only have 2 drones")
-      (is (every? #(= :drone (agent-type %)) drones)
-          "All should be drones"))))
 
 (deftest agent-registry-deregister
   (testing "Deregister an agent"
@@ -216,7 +197,7 @@
 (deftest agent-registry-clear-all
   (testing "Clear all agents"
     (reg/register-agent! (make-mock-ling "ling-clear-1"))
-    (reg/register-agent! (make-mock-drone "drone-clear-1"))
+    (reg/register-agent! (make-mock-other "other-clear-1"))
     (is (= 2 (count (reg/list-all-agents))))
     (reg/clear-agents!)
     (is (empty? (reg/list-all-agents))
@@ -245,10 +226,10 @@
   (testing "Filter agents by status via agent status method"
     (let [idle-ling (make-mock-ling "ling-idle" :idle)
           working-ling (make-mock-ling "ling-working" :working)
-          error-drone (make-mock-drone "drone-error" :error)]
+          error-ling (make-mock-ling "ling-error" :error)]
       (reg/register-agent! idle-ling)
       (reg/register-agent! working-ling)
-      (reg/register-agent! error-drone)
+      (reg/register-agent! error-ling)
       ;; Filter by status using agent's status method
       (let [all-agents (reg/list-all-agents)
             idle-agents (filter #(= :idle (:slave/status (.status %))) all-agents)
@@ -259,7 +240,7 @@
         (is (= 1 (count error-agents)))
         (is (= "ling-idle" (:id (first idle-agents))))
         (is (= "ling-working" (:id (first working-agents))))
-        (is (= "drone-error" (:id (first error-agents))))))))
+        (is (= "ling-error" (:id (first error-agents))))))))
 
 ;;; =============================================================================
 ;;; sync-from-datascript Tests (Integration)
@@ -298,8 +279,7 @@
 (deftest agent-registry-empty-list
   (testing "Empty agent registry returns empty list"
     (is (empty? (reg/list-all-agents)))
-    (is (empty? (reg/list-lings)))
-    (is (empty? (reg/list-drones)))))
+    (is (empty? (reg/list-lings)))))
 
 (deftest tool-registry-multiple-handlers
   (testing "Multiple tools with different handlers work independently"

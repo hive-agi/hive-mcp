@@ -51,18 +51,6 @@
    :terminated - Gracefully shutdown"
   #{:active :stale :terminated})
 
-(def plan-statuses
-  "Valid change plan status values."
-  #{:pending :in-progress :completed :failed :cancelled})
-
-(def item-statuses
-  "Valid change item status values."
-  #{:pending :dispatched :completed :failed})
-
-(def wave-statuses
-  "Valid wave status values."
-  #{:running :completed :partial-failure :failed :cancelled})
-
 (def critical-op-types
   "Valid critical operation types that block kill.
    :wrap    - Session crystallization in progress
@@ -96,9 +84,8 @@
 
 (def agent-types
   "Valid agent type values (IAgent discrimination).
-   :ling  - Persistent Claude Code instance (can chain tools)
-   :drone - Ephemeral API call (single task, stateless)"
-  #{:ling :drone})
+   :ling  - Agentic worker instance (can chain tools)"
+  #{:ling})
 
 (def spawn-modes
   "Valid ling spawn mode values. Derived from spawn-mode-registry."
@@ -125,7 +112,7 @@
                (str/starts-with? model "claude-")))))
 
 (def task-types
-  "Valid task type values for drone routing.
+  "Valid task type values for task classification.
    :coding  - Code implementation tasks
    :docs    - Documentation tasks
    :review  - Code review tasks
@@ -160,7 +147,7 @@
    {:db/doc "Current status: :idle :spawning :starting :working :error"}
 
    :slave/depth
-   {:db/doc "Hierarchy depth: 0=hivemind, 1=ling, 2=drone"}
+   {:db/doc "Hierarchy depth: 0=hivemind, 1+=ling (nesting level)"}
 
    :slave/parent
    {:db/doc "Reference to parent slave (for hierarchy)"
@@ -199,23 +186,14 @@
 
    ;; Agent type discrimination (IAgent support)
    :slave/agent-type
-   {:db/doc "Agent type: :ling (persistent Claude Code) or :drone (ephemeral API)"
+   {:db/doc "Agent type: :ling"
     :db/index true}
 
    :slave/model
-   {:db/doc "OpenRouter model ID for drones (e.g., 'anthropic/claude-sonnet-4')"}
+   {:db/doc "Model identifier the agent runs on"}
 
    :slave/task-type
-   {:db/doc "Task type for routing: :coding, :docs, :review, etc."}
-
-   :slave/max-steps
-   {:db/doc "Maximum step budget for drones (limits API calls)"}
-
-   :slave/sandbox
-   {:db/doc "Sandbox constraints EDN map (e.g., {:allow-write false :allow-bash false})"}
-
-   :slave/upgraded-from
-   {:db/doc "Original drone-id if this ling was upgraded from a drone"}
+   {:db/doc "Task type classification: :coding, :docs, :review, etc."}
 
    ;; Multi-daemon support (ADR-010)
    :slave/daemon
@@ -324,9 +302,6 @@
    :claim/heartbeat-at
    {:db/doc "Last heartbeat timestamp for liveness tracking"}
 
-   :claim/wave-id
-   {:db/doc "Wave ID that created this claim (for wave-scoped cleanup)"}
-
    ;; Contextual claim fields (hash tracking and change history)
    :claim/prior-hash
    {:db/doc "File content hash at claim acquisition time"}
@@ -425,94 +400,6 @@
 
    :wrap-queue/created-at
    {:db/doc "Timestamp when wrap occurred"}
-
-   ;;; =========================================================================
-   ;;; Change Plan Entity (dispatch_drone_wave)
-   ;;; =========================================================================
-
-   :change-plan/id
-   {:db/doc "Unique identifier for the change plan"
-    :db/unique :db.unique/identity}
-
-   :change-plan/status
-   {:db/doc "Plan status: :pending :in-progress :completed :failed"}
-
-   :change-plan/preset
-   {:db/doc "Drone preset for all items (e.g., 'drone-worker')"}
-
-   :change-plan/created-at
-   {:db/doc "Timestamp when plan was created"}
-
-   :change-plan/completed-at
-   {:db/doc "Timestamp when plan completed (nil if pending)"}
-
-   ;;; =========================================================================
-   ;;; Change Item Entity (dispatch_drone_wave items)
-   ;;; =========================================================================
-
-   :change-item/id
-   {:db/doc "Unique identifier for the change item"
-    :db/unique :db.unique/identity}
-
-   :change-item/plan
-   {:db/doc "Reference to parent change plan"
-    :db/valueType :db.type/ref
-    :db/cardinality :db.cardinality/one}
-
-   :change-item/file
-   {:db/doc "File path this item operates on"}
-
-   :change-item/task
-   {:db/doc "Task description for this item"}
-
-   :change-item/status
-   {:db/doc "Item status: :pending :dispatched :completed :failed"}
-
-   :change-item/drone-id
-   {:db/doc "Drone slave-id if dispatched"}
-
-   :change-item/result
-   {:db/doc "Result message on completion/failure"}
-
-   :change-item/created-at
-   {:db/doc "Timestamp when item was created"}
-
-   :change-item/completed-at
-   {:db/doc "Timestamp when item completed"}
-
-   ;;; =========================================================================
-   ;;; Wave Entity (dispatch_drone_wave execution)
-   ;;; =========================================================================
-
-   :wave/id
-   {:db/doc "Unique identifier for the wave execution"
-    :db/unique :db.unique/identity}
-
-   :wave/plan
-   {:db/doc "Reference to change plan being executed"
-    :db/valueType :db.type/ref
-    :db/cardinality :db.cardinality/one}
-
-   :wave/concurrency
-   {:db/doc "Max concurrent drones (default: 3)"}
-
-   :wave/active-count
-   {:db/doc "Currently active drone count"}
-
-   :wave/completed-count
-   {:db/doc "Number of completed items"}
-
-   :wave/failed-count
-   {:db/doc "Number of failed items"}
-
-   :wave/status
-   {:db/doc "Wave status: :running :completed :partial-failure :failed :cancelled"}
-
-   :wave/started-at
-   {:db/doc "Timestamp when wave started"}
-
-   :wave/completed-at
-   {:db/doc "Timestamp when wave completed"}
 
    ;;; =========================================================================
    ;;; Coordinator Entity (Multi-coordinator lifecycle management)

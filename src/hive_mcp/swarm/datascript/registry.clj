@@ -130,45 +130,6 @@
   (-mark-wrap-processed! [_ wrap-id]
     (coordination/mark-wrap-processed! wrap-id))
 
-  (-create-plan! [_ tasks preset]
-    (coordination/create-plan! tasks preset))
-
-  (-get-plan [_ plan-id]
-    (coordination/get-plan plan-id))
-
-  (-get-pending-items [_ plan-id]
-    (coordination/get-pending-items plan-id))
-
-  (-get-plan-items [_ plan-id]
-    (coordination/get-plan-items plan-id))
-
-  (-update-item-status! [_ item-id status]
-    (coordination/update-item-status! item-id status))
-
-  (-update-item-status! [_ item-id status opts]
-    (coordination/update-item-status! item-id status opts))
-
-  (-update-plan-status! [_ plan-id status]
-    (coordination/update-plan-status! plan-id status))
-
-  (-create-wave! [_ plan-id]
-    (coordination/create-wave! plan-id))
-
-  (-create-wave! [_ plan-id opts]
-    (coordination/create-wave! plan-id opts))
-
-  (-get-wave [_ wave-id]
-    (coordination/get-wave wave-id))
-
-  (-get-all-waves [_]
-    (coordination/get-all-waves))
-
-  (-update-wave-counts! [_ wave-id delta]
-    (coordination/update-wave-counts! wave-id delta))
-
-  (-complete-wave! [_ wave-id status]
-    (coordination/complete-wave! wave-id status))
-
   (-register-coordinator! [_ coordinator-id opts]
     (coordination/register-coordinator! coordinator-id opts))
 

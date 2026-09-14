@@ -80,7 +80,7 @@
 (def tool-def
   {:name "agent"
    :consolidated true
-   :description "Unified agent operations: spawn (create ling/drone), status (query agents), digest (compact per-agent progress roster — turn, last event, idle time — the PULL view now that shouts reach only the spawner; pass agent_id for just your own children, verbose for rendered text), kill (terminate), kill-batch (terminate multiple agents in one call), batch-spawn (spawn multiple agents at once via operations array), dispatch (send task — also the way to STEER a running agent), interrupt (interrupt current query of agent-sdk ling), claims (file ownership), list (deprecated alias for status), collect (get task result), broadcast (prompt all), cleanup (remove orphan agents after Emacs restart). Type: 'ling' (Claude Code instance) or 'drone' (OpenRouter leaf worker). Nested: dag (start/stop/status DAGWave scheduler). Use command='help' to list all."
+   :description "Unified agent operations: spawn (create ling), status (query agents), digest (compact per-agent progress roster — turn, last event, idle time — the PULL view now that shouts reach only the spawner; pass agent_id for just your own children, verbose for rendered text), kill (terminate), kill-batch (terminate multiple agents in one call), batch-spawn (spawn multiple agents at once via operations array), dispatch (send task — also the way to STEER a running agent), interrupt (interrupt current query of agent-sdk ling), claims (file ownership), list (deprecated alias for status), collect (get task result), broadcast (prompt all), cleanup (remove orphan agents after Emacs restart). Type: 'ling' (agentic worker). Nested: dag (start/stop/status DAGWave scheduler). Use command='help' to list all."
    :inputSchema {:type "object"
                  :properties {"command" {:type "string"
                                          :enum ["spawn" "status" "digest" "kill" "kill-batch" "batch-spawn" "dispatch" "interrupt" "claims" "list" "collect" "broadcast" "cleanup" "dag start" "dag stop" "dag status" "help"]
@@ -97,7 +97,7 @@
                                          :items {:type "string"}
                                          :description "Preset names for ling (ling only)"}
                               "model" {:type "string"
-                                       :description "Model override for drone or ling. For drones: OpenAI-compat model ID. For lings: 'claude' (default, Claude Code CLI) or OpenAI-compat model ID (auto-forces headless spawn mode). Supports 'provider:model' prefix, e.g. 'venice:qwen3-coder-480b-a35b-instruct', 'groq:llama-3.3-70b-versatile', 'moonshotai/kimi-k2.5' (bare → openrouter)."}
+                                       :description "Model override for the ling: 'claude' (default, Claude Code CLI) or OpenAI-compat model ID (auto-forces headless spawn mode). Supports 'provider:model' prefix, e.g. 'venice:qwen3-coder-480b-a35b-instruct', 'groq:llama-3.3-70b-versatile', 'moonshotai/kimi-k2.5' (bare → openrouter)."}
                               "provider" {:type "string"
                                           :enum ["openrouter" "venice" "groq" "together" "fireworks" "openai" "ollama-compat"]
                                           :description "Explicit OpenAI-compat LLM provider (overrides any 'provider:' prefix in model). Anthropic routing is automatic from model names (claude-*, anthropic/*)."}
@@ -137,7 +137,7 @@
                                         :description "Task prompt for dispatch or broadcast"}
                               "files" {:type "array"
                                        :items {:type "string"}
-                                       :description "Files for drone or dispatch"}
+                                       :description "Files for dispatch"}
                               "priority" {:type "string"
                                           :enum ["low" "normal" "high"]
                                           :description "Task priority for dispatch"}

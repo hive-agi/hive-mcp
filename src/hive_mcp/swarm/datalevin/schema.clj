@@ -20,9 +20,6 @@
 (def slave-statuses ds-schema/slave-statuses)
 (def task-statuses ds-schema/task-statuses)
 (def coordinator-statuses ds-schema/coordinator-statuses)
-(def plan-statuses ds-schema/plan-statuses)
-(def item-statuses ds-schema/item-statuses)
-(def wave-statuses ds-schema/wave-statuses)
 (def critical-op-types ds-schema/critical-op-types)
 (def daemon-statuses ds-schema/daemon-statuses)
 (def daemon-health-levels ds-schema/daemon-health-levels)
@@ -115,22 +112,6 @@
                            :db/unique    :db.unique/identity}
    :wrap-queue/created-ids {:db/valueType   :db.type/string
                             :db/cardinality :db.cardinality/many}
-
-   ;;; Change Plan Entity
-   :change-plan/id        {:db/valueType :db.type/string
-                           :db/unique    :db.unique/identity}
-
-   ;;; Change Item Entity
-   :change-item/id        {:db/valueType :db.type/string
-                           :db/unique    :db.unique/identity}
-   :change-item/plan      {:db/valueType   :db.type/ref
-                           :db/cardinality :db.cardinality/one}
-
-   ;;; Wave Entity
-   :wave/id               {:db/valueType :db.type/string
-                           :db/unique    :db.unique/identity}
-   :wave/plan             {:db/valueType   :db.type/ref
-                           :db/cardinality :db.cardinality/one}
 
    ;;; Coordinator Entity
    :coordinator/id        {:db/valueType :db.type/string

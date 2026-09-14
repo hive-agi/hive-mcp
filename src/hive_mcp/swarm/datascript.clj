@@ -10,7 +10,7 @@
    - hive-mcp.swarm.datascript.connection  - Connection management
    - hive-mcp.swarm.datascript.lings       - Slave/Task/Claim CRUD
    - hive-mcp.swarm.datascript.queries     - Read-only queries
-   - hive-mcp.swarm.datascript.coordination - Coordinators/Wrap/Plans
+   - hive-mcp.swarm.datascript.coordination - Coordinators/Wrap queue
 
    DDD: Repository pattern for swarm entity persistence."
   (:require [hive-mcp.swarm.datascript.connection :as connection]
@@ -82,21 +82,6 @@
 (def get-unprocessed-wraps-for-project coordination/get-unprocessed-wraps-for-project)
 (def get-unprocessed-wraps-for-hierarchy coordination/get-unprocessed-wraps-for-hierarchy)
 (def mark-wrap-processed! coordination/mark-wrap-processed!)
-
-;; Plans
-(def create-plan! coordination/create-plan!)
-(def get-plan coordination/get-plan)
-(def get-pending-items coordination/get-pending-items)
-(def get-plan-items coordination/get-plan-items)
-(def update-item-status! coordination/update-item-status!)
-(def update-plan-status! coordination/update-plan-status!)
-
-;; Waves
-(def create-wave! coordination/create-wave!)
-(def get-wave coordination/get-wave)
-(def get-all-waves coordination/get-all-waves)
-(def update-wave-counts! coordination/update-wave-counts!)
-(def complete-wave! coordination/complete-wave!)
 
 ;; Coordinators (used via resolve in server/init.clj and server/lifecycle.clj)
 (def register-coordinator! coordination/register-coordinator!)

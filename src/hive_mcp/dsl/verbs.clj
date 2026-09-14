@@ -87,12 +87,6 @@
    "g!" {:tool "magit"    :command "commit"}
    "g>" {:tool "magit"    :command "push"}
 
-   ;; Wave (w)
-   "w!" {:tool "wave"     :command "dispatch"}
-   "w?" {:tool "wave"     :command "status"}
-   "wy" {:tool "wave"     :command "approve"}
-   "wn" {:tool "wave"     :command "reject"}
-
    ;; Hivemind (h)
    "h!" {:tool "hivemind" :command "shout"}
    "h?" {:tool "hivemind" :command "ask"}

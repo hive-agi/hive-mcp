@@ -8,7 +8,7 @@
    Adding a new agent type = adding one entry here. All downstream
    validation, MCP schemas, depth mappings, and capabilities derive automatically.
 
-   Sum type variants: coordinator, ling, drone.")
+   Sum type variants: coordinator, ling.")
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -23,7 +23,7 @@
 
    Each type has:
    - :description     Human-readable description
-   - :depth           DataScript slave depth (0=coordinator, 1=ling, 2+=drone)
+   - :depth           DataScript slave depth (0=coordinator, 1+=ling)
    - :spawn-modes     Set of statically-known supported spawn modes
                       (nil = not spawnable). Addon-contributed modes
                       (e.g. :hive-agent, :tmux) are also accepted at
@@ -67,22 +67,6 @@
                  :model-tier   :standard
                  :mcp?         true
                  :can-chain?   true
-                 :readiness    {:requires-emacs? false}}
-
-   ;; === Drone (depth 2+) — leaf worker ===
-   :drone       {:description  "Lightweight leaf worker"
-                 :depth        2
-                 :spawn-modes  #{:headless}
-                 :capabilities #{:read :propose-diff :search}
-                 :permissions  {:can-spawn?        false
-                                :can-delegate?     false
-                                :can-kill?         false
-                                :can-broadcast?    false
-                                :can-approve-diffs? false}
-                 :slot-limit   nil ;; unlimited (100-1000 scale target)
-                 :model-tier   :economy
-                 :mcp?         true
-                 :can-chain?   false
                  :readiness    {:requires-emacs? false}}))
 
 ;; =============================================================================
@@ -109,7 +93,7 @@
 
 (def depth->type
   "Map of DataScript depth -> agent type keyword.
-   For depth >= 2, defaults to :drone."
+   Depths absent from this map resolve to :ling via depth->agent-type."
   (into {} (map (fn [[k v]] [(:depth v) k])) registry))
 
 (def type->capabilities
@@ -146,17 +130,17 @@
     (contains? all-types kw)))
 
 (defn type-depth
-  "Get the DataScript depth for an agent type. Default: 2 (drone)."
+  "Get the DataScript depth for an agent type. Default: 1 (ling)."
   [t]
   (let [kw (if (keyword? t) t (keyword t))]
-    (get type->depth kw 2)))
+    (get type->depth kw 1)))
 
 (defn depth->agent-type
   "Resolve DataScript depth to agent type keyword.
-   Depth 0=coordinator, 1=ling, 2+=drone."
+   Depth 0=coordinator, any other depth=ling."
   [depth]
   (or (get depth->type depth)
-      :drone))
+      :ling))
 
 (defn spawnable?
   "Check if an agent type can be spawned (has spawn-modes)."
@@ -173,7 +157,8 @@
       hive-mcp.agent.spawn-mode-registry/register-mode! AND is NOT
       claimed by any OTHER type's static set. Addon modes are global —
       they're not pinned to one type — but a mode statically owned by
-      :ling (e.g., :claude) does not implicitly become valid for :drone.
+      one type (e.g., :ling's :claude) does not implicitly become valid
+      for any other type.
 
    Coordinator stays restricted (its :spawn-modes is nil → not spawnable).
 

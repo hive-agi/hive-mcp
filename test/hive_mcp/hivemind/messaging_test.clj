@@ -3,7 +3,7 @@
 
    Why: a single oversized shout fans out across (per-agent ring × backbone
    subscribers × N consumers). Observed: a kanban-list dump (~50 entries
-   serialized as JSON) emitted as a drone error message bloated every
+   serialized as JSON) emitted as an agent error message bloated every
    downstream context window. Bound at canonical ingestion in shout!.
 
    Unit-level contract for `cap-message` is covered in cap_test.clj;

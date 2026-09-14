@@ -2,7 +2,7 @@
   "DataScript -> WebSocket state bridge for Olympus.
 
    Listens on the swarm DataScript connection, classifies which entity
-   domains changed (:agents / :waves), batches changes within a 200ms
+   domains changed (:agents), batches changes within a 200ms
    throttle window, and pushes :state-patch events to all connected
    Olympus clients via the stream module.
 
@@ -70,14 +70,13 @@
   "Classify which entity types changed in a DataScript transaction.
    Examines tx-report datoms and returns a set of changed domains.
 
-   Returns: #{:agents :waves} (subset based on what actually changed)"
+   Returns: #{:agents} (subset based on what actually changed)"
   [tx-report]
   (let [datoms (:tx-data tx-report)]
     (reduce (fn [acc datom]
               (let [attr-ns (some-> (.-a datom) namespace)]
                 (case attr-ns
                   "slave" (conj acc :agents)
-                  "wave"  (conj acc :waves)
                   ;; Ignore other namespaces (olympus, kanban, etc.)
                   acc)))
             #{}
@@ -91,8 +90,7 @@
   (when (and (seq changed-domains) (seq (clients-snapshot)))
     (result/rescue nil
                    (let [data (cond-> {}
-                                (:agents changed-domains) (assoc :agents (snap/build-agents-snapshot))
-                                (:waves changed-domains)  (assoc :waves (snap/build-waves-snapshot)))]
+                                (:agents changed-domains) (assoc :agents (snap/build-agents-snapshot)))]
                      (when (seq data)
                        (broadcast! {:type :state-patch
                                     :timestamp (System/currentTimeMillis)
@@ -166,14 +164,14 @@
   "Install DataScript listener that auto-pushes state changes to Olympus clients.
 
    Uses d/listen! on the swarm DataScript connection to detect transactions
-   affecting agents (:slave/*) and waves (:wave/*). Changes are batched
+   affecting agents (:slave/*). Changes are batched
    within a 200ms window and pushed as :state-patch events.
 
    Event format pushed to clients:
    {:type :state-patch
     :timestamp <ms>
-    :data {:agents [...] :waves {...}}   ;; only changed domains included
-    :changed [:agents :waves]}           ;; which domains changed
+    :data {:agents [...]}   ;; only changed domains included
+    :changed [:agents]}     ;; which domains changed
 
    Called from wire-hivemind-events! during server startup."
   []

@@ -441,10 +441,7 @@
   (release-claims! [_this]
     (let [released-count (ds-lings/release-claims-for-slave! id)]
       (log/info "Released claims" {:ling-id id :count released-count})
-      released-count))
-
-  (upgrade! [_]
-    nil))
+      released-count)))
 
 (defn ->ling
   "Create a new Ling agent instance.

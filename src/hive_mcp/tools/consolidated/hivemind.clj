@@ -15,7 +15,7 @@
   "MIDFLIGHT NUDGE: Shout your current state via mcp__hive__hivemind event='progress' — what phase you're in (survey/implement/verify), what you've done recently, what you're currently working on, any blockers. Then continue your task. Report progress at checkpoints per your instructions; don't batch everything into a final shout.")
 
 (defn handle-nudge
-  "Nudge a silent ling/drone into shouting its current state.
+  "Nudge a silent ling into shouting its current state.
    Composes over agent dispatch — sends nudge prompt to running agent."
   [{:keys [agent_id message]}]
   (cond

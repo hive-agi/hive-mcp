@@ -54,7 +54,7 @@ Both are plain requests to the model, not slash commands — it reaches for the 
 |---|---|---|
 | **Knowledge Graph** | Structural edges - how knowledge relate? | Flat key-value or vector-only |
 | **Session Continuity** | `/wrap` crystallizes, `/catchup` reconstructs — zero-down re-explaining across sessions | Manual copy-paste or lost |
-| **Multi-Agent Coordination** | Lings (planners) + drones (executors) with file claims, hivemind shouts, and a continuous production belt | Single-agent only |
+| **Multi-Agent Coordination** | Agentic lings with file claims, hivemind shouts, and a continuous production belt | Single-agent only |
 | **Scoped Memory** | Hierarchical Context Retrieval (HCR) - project scoping - with TTL decay | Global namespace or none |
 | **Extension Architecture** | `requiring-resolve` stubs with noop fallbacks - plug your extensions and play | Monolithic |
 
@@ -176,7 +176,7 @@ Three words circulate for systems in this space, and they aren't synonyms:
 
 - **Harness** — the scaffolding that drives a model: prompt loop, tool dispatch, context
   management. Claude Code is a harness. hive-mcp is a harness *for the agents it spawns* —
-  lings and drones get their loop, presets, budget and context from it — but it is not the
+  lings get their loop, presets, budget and context from it — but it is not the
   harness you talk to.
 - **MCP server** — the wire protocol. True, but that's transport, not architecture.
 - **Host** — the runtime addons mount into and are amalgamated by. This is the load-bearing one.
@@ -204,8 +204,7 @@ Tools are grouped into **domain roots**, each a namespace with subcommands (`mem
 |---|---|
 | `memory` | Persistent entries with semantic search, TTL decay, scoping |
 | `kg` | Knowledge Graph — edges, subgraphs |
-| `agent` | Spawn/kill/dispatch lings and drones |
-| `wave` | Parallel drone dispatch with validation |
+| `agent` | Spawn/kill/dispatch lings |
 | `hivemind` | Shout/ask coordination between agents |
 | `session` | Wrap, catchup, whoami, context store |
 | `workflow` | Forge belt, FSM-driven production cycles |
@@ -218,7 +217,7 @@ Tools are grouped into **domain roots**, each a namespace with subcommands (`mem
 | `project` | Projectile — files, search, hierarchy scan |
 | `emacs` | Eval elisp, buffers, notifications |
 | `olympus` | Grid layout control for multi-agent UI |
-| `agora` | Multi-agent deliberation and debates |
+| `agora` | Multi-agent dialogue and consensus |
 | `config` | Runtime configuration management |
 | `migration` | KG/memory backup, restore, backend switching |
 | `multi` | Meta-facade — batches any of the above into one call |
@@ -244,7 +243,7 @@ just leave `tools/list`.
 │                                                          │
 │   Memory  ──►  Chroma vectors + scoped entries           │
 │   KG      ──►  DataScript / Datalevin / Datahike         │
-│   Swarm   ──►  lings + drones + hivemind                 │
+│   Swarm   ──►  lings + hivemind                          │
 │   Session ──►  catchup / wrap rituals                    │
 │                                                          │
 │   protocols · registries · orchestrators · noop defaults │
@@ -354,9 +353,9 @@ Definitions resolve from four sources — `:user` (`~/.claude/agents/`) override
 can shadow any of them without editing them. Installing is a file copy; sharing is a
 `git clone` into `~/.claude/agents/`, or an addon that contributes definitions for a whole team.
 
-**38 presets ship built-in** across methodology (`tdd`, `solid`, `ddd`, `clarity`), roles
+**47 presets ship built-in** across methodology (`tdd`, `solid`, `ddd`, `clarity`), roles
 (`reviewer`, `debugger`, `security-auditor`, `researcher`) and coordination
-(`task-coordinator`, `wave-coordinator`, `hivemind`). The `preset` tool handles the whole
+(`task-coordinator`, `hivemind`). The `preset` tool handles the whole
 lifecycle — `list`, `get`, `add`, `delete`, and **semantic `search`**, so you can find one
 by describing the job rather than knowing its name.
 
@@ -396,7 +395,7 @@ Everything else:
 | [ADR-0007](https://github.com/hive-agi/hive-mcp/wiki/ADR-0007-hive-addons-architecture) | Why the addon architecture looks like this |
 | [Addon Classpath Discovery](https://github.com/hive-agi/hive-mcp/wiki/Addon-Classpath-Discovery) | How manifests are found and loaded |
 | [Tools Reference](https://github.com/hive-agi/hive-mcp/wiki/Tools-Reference) | Tool surface and DSL verbs |
-| [Presets](https://github.com/hive-agi/hive-mcp/wiki/Presets) | System prompts for ling/drone specialization |
+| [Presets](https://github.com/hive-agi/hive-mcp/wiki/Presets) | System prompts for ling specialization |
 | [Session Continuity](https://github.com/hive-agi/hive-mcp/wiki/Session-Continuity) | catchup and wrap |
 | [Emacs Configuration](https://github.com/hive-agi/hive-mcp/wiki/Emacs-Configuration) | Optional Emacs surface |
 | [Troubleshooting](https://github.com/hive-agi/hive-mcp/wiki/Troubleshooting) | Common issues |

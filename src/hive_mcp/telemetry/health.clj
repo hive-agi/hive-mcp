@@ -38,7 +38,7 @@
     :restart-collision        ; Attempted restart while previous in progress
     :hot-reload-failed        ; Hot reload of namespace failed
     :wrap-crystallize-failed  ; Session crystallization failed
-    ;; Drone nREPL error types
+    ;; nREPL evaluation error types
     :nrepl-connection         ; Failed to connect to nREPL server
     :nrepl-timeout            ; nREPL evaluation timed out
     :nrepl-eval-error         ; nREPL evaluation failed (syntax, runtime, compiler)

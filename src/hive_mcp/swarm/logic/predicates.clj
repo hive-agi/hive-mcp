@@ -50,20 +50,6 @@
 (pldb/db-rel task-files ^:index task-id file-path)
 
 ;; =============================================================================
-;; Edit Relations (for drone wave batch computation)
-;; =============================================================================
-
-;; Edit entity: represents a planned file mutation in a wave
-;; edit-id: unique identifier (e.g., "edit-123")
-;; file-path: the file being edited
-;; edit-type: :create :modify :delete
-(pldb/db-rel edit ^:index edit-id file-path edit-type)
-
-;; Edit dependencies: edit-a must complete before edit-b
-;; (typically inferred from file read/write patterns)
-(pldb/db-rel edit-depends ^:index edit-a edit-b)
-
-;; =============================================================================
 ;; Core Predicates (Logic Goals)
 ;; =============================================================================
 
@@ -115,31 +101,3 @@
    somehow depends on task-b, so making task-a depend on task-b creates a loop)."
   [task-a task-b]
   (reachable-fromo task-b task-a))
-
-;; =============================================================================
-;; Edit Predicates (for drone wave batching)
-;; =============================================================================
-
-(defn edit-conflicto
-  "Goal: succeeds if two edits conflict (same file, different edit-id).
-   Returns the conflicting file path."
-  [edit-a edit-b file]
-  (l/all
-   (edit edit-a file (l/lvar))
-   (edit edit-b file (l/lvar))
-   (l/!= edit-a edit-b)))
-
-(defn edit-depends-on-o
-  "Goal: succeeds if edit-a must complete before edit-b (direct dependency)."
-  [edit-a edit-b]
-  (edit-depends edit-a edit-b))
-
-(defn edit-reachable-fromo
-  "Goal: succeeds if edit-b is reachable from edit-a via edit-depends.
-   Transitive closure of edit dependencies."
-  [source target]
-  (l/conde
-   [(edit-depends source target)]
-   [(l/fresh [mid]
-             (edit-depends source mid)
-             (edit-reachable-fromo mid target))]))

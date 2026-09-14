@@ -37,9 +37,9 @@
     :event-type :progress | :completed | :error | :blocked | :started
     :data       {:task \"...\" :message \"...\" ...}}
 
-   P1 FIX: Fallback chain includes ctx/current-agent-id for drone context."
+   P1 FIX: Fallback chain includes ctx/current-agent-id for in-process agent context."
   [{:keys [agent-id event-type data]}]
-  ;; P1 FIX: Check context for drone attribution
+  ;; P1 FIX: Check context for in-process agent attribution
   ;; Uses hive-mcp.agent.context (no circular dep) for thread-local agent-id
   (let [get-ctx-agent-id (try
                            (requiring-resolve 'hive-mcp.agent.context/current-agent-id)
@@ -198,7 +198,7 @@
    - If NATS connected: publish as tool notification → OlympusChannel receives via fanout
    - If NATS disconnected: fallback to direct transport.olympus/broadcast! (pre-M1 behavior)
 
-   Expected data shape: {:type :wave-update :wave-id \"...\" ...}"
+   Expected data shape: {:type <event-type-keyword> ...}"
   [event-data]
   (if (nats-backbone-connected?)
     ;; M1: Route through NATS — OlympusChannel in delivery registry handles it
@@ -209,26 +209,6 @@
         (broadcast-fn event-data))
       (catch Exception e
         (log/debug "[EVENT] Olympus broadcast failed (non-fatal):" (.getMessage e))))))
-
-;; =============================================================================
-;; Effect: :nats-publish (Push-based drone notifications)
-;; =============================================================================
-
-(defn- handle-nats-publish
-  "Execute a :nats-publish effect — publish to NATS for push-based collection.
-   Uses requiring-resolve to avoid hard dependency on NATS client.
-   When the payload carries a :run-id, ALSO publishes a wave-scoped completion
-   event (hive.v1.wave.<run-id>.completed.<task-id>) so the zero-token
-   wave-watch.sh counter advances. Both publishes are non-fatal."
-  [payload]
-  (try
-    (when-let [publish-fn (requiring-resolve 'hive-mcp.nats.bridge/publish-drone-event!)]
-      (publish-fn payload))
-    (when (:run-id payload)
-      (when-let [wave-fn (requiring-resolve 'hive-mcp.nats.bridge/publish-wave-event!)]
-        (wave-fn payload)))
-    (catch Exception e
-      (log/debug "[EVENT] NATS publish failed (non-fatal):" (.getMessage e)))))
 
 ;; =============================================================================
 ;; Registration
@@ -253,5 +233,4 @@
   (ev/reg-fx :channel-publish handle-channel-publish)
   (ev/reg-fx :emit-system-error handle-emit-system-error)
   (ev/reg-fx :olympus-broadcast handle-olympus-broadcast)
-  (ev/reg-fx :nats-publish handle-nats-publish)
-  (log/info "[hive-events.notification] Notification effects registered: :shout :targeted-shout :log :channel-publish :emit-system-error :olympus-broadcast :nats-publish"))
+  (log/info "[hive-events.notification] Notification effects registered: :shout :targeted-shout :log :channel-publish :emit-system-error :olympus-broadcast"))
