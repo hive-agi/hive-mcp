@@ -26,8 +26,12 @@
     (is (every? fn? (vals ports)))))
 
 (deftest the-host-answers-whether-this-jvm-is-shared-by-every-agent
+  (testing "the port answers, whatever this JVM is"
+    ;; Not (false? ...): another test in the same suite run may have started a
+    ;; system, and then `true` is the correct answer. The injected cases below
+    ;; pin the meaning without depending on suite order.
+    (is (boolean? ((:host/shared-jvm? (runtime-ports/runtime-ports))))))
   (testing "no system up: a dev, test or worker JVM, so an addon may run code here"
-    (is (false? ((:host/shared-jvm? (runtime-ports/runtime-ports)))))
     (is (false? (runtime-ports/shared-jvm? (constantly nil))) "server ns not loaded")
     (is (false? (runtime-ports/shared-jvm? (constantly (atom nil)))) "system halted"))
   (testing "a running system means this process serves every agent"
