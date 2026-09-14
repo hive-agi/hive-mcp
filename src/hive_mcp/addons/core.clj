@@ -359,9 +359,18 @@
    tool of that name and over every other addon; an exclusion without a
    provider only refuses other addons; otherwise a core tool of that name
    wins and the addon tool is refused as `:shadows-core`. Refusals are
-   dropped here: use `resolve-addon-tools` to see them."
+   dropped here: use `resolve-addon-tools` to see them.
+
+   When an :addon/wrap-handler extension is registered, each tool's :handler
+   is passed through it as (wrap addon-source handler)."
   []
-  (:installed (resolve-addon-tools)))
+  (let [installed (:installed (resolve-addon-tools))]
+    (if-let [wrap (ext/get-extension :addon/wrap-handler)]
+      (mapv (fn [t] (if (ifn? (:handler t))
+                      (update t :handler #(wrap (:addon-source t) %))
+                      t))
+            installed)
+      installed)))
 
 (defn addon-tools-by-name
   "Get MCP tools contributed by a specific addon."
