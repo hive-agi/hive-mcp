@@ -35,6 +35,46 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-09-14
+
+A belt wave of four reviewed cards, plus one regression the review caught and
+one the review missed and CI caught. Minor rather than patch to stay consistent
+with every prior release; nothing in the promised seam moved, so 1.4.1 would
+have been defensible too.
+
+### Fixed
+
+- `kanban list :created_after` / `:updated_after` compared timestamps
+  lexicographically, so a threshold spelled in UTC mis-selected against an
+  entry stored at an offset: `2026-08-21T16:55-03:00` is 19:55Z, but `16` vs
+  `19` reads as earlier. Both sides now parse to `java.time.Instant`.
+- The same change then broke every query it was meant to fix.
+  `OffsetDateTime/parse` demands `-03:00`, and kanban stores a **colonless**
+  offset (`2026-04-26T00:00:00-0300`). Unparseable became nil, nil made the
+  predicate false, and the filters silently matched nothing, a quieter failure
+  than the bug being fixed. A colonless-offset parse arm was added. When
+  touching a timestamp predicate here, feed it both offset spellings.
+
+### Added
+
+- `recall.canary/skip-regressions` and `with-regressions`: a probe that ran on
+  the previous tick and skips on this one is now a `:recall/probe-went-dark`
+  fault, and it keeps faulting on every later dark tick instead of going quiet
+  after one. `verdict` gained `:ran-labels` to carry the comparison.
+- `tools.catchup.bucket-types`: one definition of the seven memory types that
+  can land in a catchup bucket. `bundle-cache/bundle-types` now aliases it
+  rather than restating the literal set, and a test asserts the two are
+  `identical?`, not merely equal.
+
+### Changed
+
+- The SAA orchestrator test exercises the `IObservationScorer` port and the
+  `:es/score` extension layering, instead of `requiring-resolve`-ing a
+  `hive-claude` symbol that was severed from src and left the test asserting
+  `(= observations observations)`.
+- Timestamp parsing in `tools.kanban.filters` goes through `rescue` instead of
+  three nested `(catch Exception _ ...)`.
+
 ## [1.4.0] - 2026-09-14
 
 Released as a minor by decision, although it removes tool roots and commands
