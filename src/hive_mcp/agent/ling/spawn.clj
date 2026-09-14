@@ -192,9 +192,19 @@
                               (assoc (initial-slave-attrs plan enriched-task)
                                      :requested-id ling-id)))))
 
+(defn- provider-name
+  "The explicit LLM provider of a spawn PLAN as a string, or nil."
+  [plan]
+  (let [p (get-in plan [:ctx :provider])]
+    (cond
+      (keyword? p) (name p)
+      (and (string? p) (not (str/blank? p))) p
+      :else nil)))
+
 (defn- stamp-spawn-metadata!
-  [{:keys [mode effective-model]} slave-id headless?]
-  (let [now (System/currentTimeMillis)]
+  [{:keys [mode effective-model] :as plan} slave-id headless?]
+  (let [now (System/currentTimeMillis)
+        provider (provider-name plan)]
     (spawn-store/update-slave! (spawn-store/get-store)
                                slave-id
                                (cond-> {:ling/spawn-mode mode
@@ -202,6 +212,8 @@
                                          :slave/alive? true
                                          :slave/spawned-at now
                                          :slave/last-active-at now}
+                                 provider
+                                 (assoc :ling/provider provider)
                                  headless?
                                  (assoc :ling/process-alive? true)))))
 

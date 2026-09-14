@@ -237,6 +237,21 @@
             (is (some? slave))
             (is (= :claude-sdk (:ling/spawn-mode slave)))))))))
 
+(deftest facade-spawn-stamps-the-explicit-provider
+  (testing "a spawn that names a provider records it on the slave row, one that does not leaves it absent"
+    (let [backend (make-mock-headless-backend :claude-sdk)]
+      (headless-reg/register-headless! :claude-sdk backend)
+      (proto/spawn! (ling/->ling "provider-named" {:cwd "/tmp" :project-id "test" :spawn-mode :headless})
+                    {:depth 1 :provider :venice :model "deepseek-v4-flash"})
+      (proto/spawn! (ling/->ling "provider-routed" {:cwd "/tmp" :project-id "test" :spawn-mode :headless})
+                    {:depth 1})
+      (let [named (ds-queries/get-slave "provider-named")
+            routed (ds-queries/get-slave "provider-routed")]
+        (is (= "venice" (:ling/provider named)))
+        (is (= "deepseek-v4-flash" (:ling/model named)))
+        (is (some? routed))
+        (is (not (contains? routed :ling/provider)))))))
+
 (deftest facade-non-claude-model-does-not-mutate-spawn-mode
   (testing "Non-claude models no longer auto-mutate spawn-mode (seam cleanup)"
     (let [ling (ling/->ling "deepseek-ling"

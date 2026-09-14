@@ -24,6 +24,20 @@
       (throw (ex-info "Host tool unavailable." {:error :addon/tool-unavailable})))
     ((:handler spec) arguments)))
 
+(defn shared-jvm?
+  "True when an Integrant system is up in THIS JVM: the process that serves
+   every agent. An addon must not run code under analysis here (instrumenting a
+   var or load-file'ing a patch hits every other agent), so it routes that work
+   to a worker JVM instead. Only the host can answer this; an addon that probed
+   for hive-mcp namespaces itself would be coupled to one host.
+
+   Resolves the system var only if `hive-mcp.server.core` is ALREADY loaded: a
+   dev, test or worker JVM must not load the server (and its store components)
+   just to be told it is not the server. Arity 1 injects the var lookup."
+  ([] (shared-jvm? #(some-> (find-ns 'hive-mcp.server.core) (ns-resolve 'system))))
+  ([system-var-fn]
+   (boolean (some-> (system-var-fn) deref))))
+
 (defn runtime-ports
   "Return a fresh map of host-neutral function ports for addon injection."
   []
@@ -71,6 +85,9 @@
       (call 'hive-mcp.knowledge-graph.slots/query slot query))
      ([slot query inputs]
       (call 'hive-mcp.knowledge-graph.slots/query slot query inputs)))
+
+   :host/shared-jvm?
+   (fn [] (shared-jvm?))
 
    :extension/get
    (fn [k]

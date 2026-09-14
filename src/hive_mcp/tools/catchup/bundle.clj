@@ -21,7 +21,8 @@
             [clojure.tools.logging :as log]
             [clojure.set :as set]
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
-            [hive-mcp.tools.catchup.bundle-cache :as bc]))
+            [hive-mcp.tools.catchup.bundle-cache :as bc]
+            [hive-mcp.tools.catchup.bucket-types :as bt]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -208,7 +209,7 @@
 (defn query-regular-conventions
   "Query conventions excluding axioms and priority ones."
   [project-id axiom-ids priority-ids]
-  (let [all-conventions (query-scoped-entries "convention" nil project-id 50)
+  (let [all-conventions (query-scoped-entries bt/convention nil project-id 50)
         excluded-ids (set/union axiom-ids priority-ids)]
     (remove #(contains? excluded-ids (:id %)) all-conventions)))
 
@@ -253,7 +254,7 @@
                                        #(with-resilience
                                           (mem-proto/query-entries
                                             store
-                                            {:type "axiom"
+                                            {:type bt/axiom
                                              :limit bundle-axioms-limit
                                              :output-fields hier/metadata-projection})))
                           []]
@@ -265,7 +266,7 @@
                                        #(with-resilience
                                           (mem-proto/query-entries
                                             store
-                                            {:type "axiom-candidate"
+                                            {:type bt/axiom-candidate
                                              :limit bundle-axiom-candidates-limit
                                              :output-fields hier/metadata-projection})))
                           []]
@@ -274,7 +275,7 @@
                                        #(with-resilience
                                           (mem-proto/query-entries
                                             store
-                                            {:type "principle"
+                                            {:type bt/principle
                                              :limit bundle-principles-limit
                                              :output-fields hier/metadata-projection})))
                           []]
@@ -283,7 +284,7 @@
                                        #(with-resilience
                                           (mem-proto/query-entries
                                             store
-                                            {:type "principle"
+                                            {:type bt/principle
                                              :tags ["catchup-priority"]
                                              :limit bundle-priority-principles-limit
                                              :output-fields hier/metadata-projection})))
@@ -293,7 +294,7 @@
                                        #(with-resilience
                                           (mem-proto/query-entries
                                             store
-                                            {:type "note"
+                                            {:type bt/note
                                              :tags ["session-summary"]
                                              :limit bundle-sessions-fresh-limit
                                              :created-after fresh-window-cutoff
@@ -305,7 +306,7 @@
                                        #(with-resilience
                                           (mem-proto/query-entries
                                             store
-                                            {:type "note"
+                                            {:type bt/note
                                              :tags ["wrap-generated"]
                                              :limit bundle-recent-wraps-limit
                                              :created-after fresh-window-cutoff
@@ -369,28 +370,28 @@
         tagged    (fn [t tag limit]
                     (vec (take limit
                                (filter #(hydr/has-tag? % tag) (get by-type t [])))))
-        has-priority? (some #(hydr/has-tag? % "catchup-priority") (get by-type "principle" []))
-        prio-principles (tagged "principle" "catchup-priority" (cap :priority-principles 50))]
-    {:axioms               (take-type "axiom" 100)
+        has-priority? (some #(hydr/has-tag? % "catchup-priority") (get by-type bt/principle []))
+        prio-principles (tagged bt/principle "catchup-priority" (cap :priority-principles 50))]
+    {:axioms               (take-type bt/axiom 100)
      ;; Nominations awaiting human review. Small cap on purpose: this is a
      ;; to-do list for a person, not a context lane for an agent.
-     :axiom-candidates     (take-type "axiom-candidate" 25)
+     :axiom-candidates     (take-type bt/axiom-candidate 25)
      :priority-principles  (if has-priority?
                              prio-principles
-                             (take-type "principle" (cap :priority-principles 50)))
+                             (take-type bt/principle (cap :priority-principles 50)))
      :principles           (if has-priority?
                              (vec (take (cap :principles 50)
                                         (remove #(hydr/has-tag? % "catchup-priority")
-                                                (get by-type "principle" []))))
+                                                (get by-type bt/principle []))))
                              [])
-     :priority-conventions (tagged    "convention" "catchup-priority" (cap :priority-conventions 50))
-     :sessions             (tagged    "note" "session-summary" (cap :sessions 25))
-     :recent-wraps         (tagged    "note" "wrap-generated" (cap :recent-wraps 10))
-     :decisions            (take-type "decision" (cap :decisions 50))
+     :priority-conventions (tagged    bt/convention "catchup-priority" (cap :priority-conventions 50))
+     :sessions             (tagged    bt/note "session-summary" (cap :sessions 25))
+     :recent-wraps         (tagged    bt/note "wrap-generated" (cap :recent-wraps 10))
+     :decisions            (take-type bt/decision (cap :decisions 50))
      :conventions          (vec (take (cap :conventions 50)
                                       (remove #(hydr/has-tag? % "catchup-priority")
-                                              (get by-type "convention" []))))
-     :snippets             (take-type "snippet" (cap :snippets 20))
+                                              (get by-type bt/convention []))))
+     :snippets             (take-type bt/snippet (cap :snippets 20))
      :expiring             (vec (take (cap :expiring 20) (filter sf/entry-expiring-soon? all)))})))
 
 (defn query-catchup-bundle
