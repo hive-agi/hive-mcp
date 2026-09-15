@@ -305,21 +305,51 @@
       (is (str/includes? text "carto scan") "the regression this fixes")
       (is (str/includes? text "clojure scan"))))
 
-  (testing "the stuttering carto_* form names exactly one subdomain"
+  (testing "the stuttering carto_* form names exactly one subdomain, so it is
+            dispatched there instead of refused"
     (let [handlers (with-meta {:clojure  {:_handler (fn [_] :clojure)}
                                :analysis {:_handler (fn [_] :analysis)}
-                               :carto    (fn [_] :carto)}
+                               :carto    (fn [p] [:carto (:command p)])}
                      {:hive-mcp.tools.cli/opaque-roots #{:carto}})
-          text     (:text ((cli/make-cli-handler handlers)
-                           {:command "carto_definition"}))]
-      (is (str/includes? text "carto carto_definition"))
-      (is (not (str/includes? text "clojure carto_definition")))
-      (is (not (str/includes? text "analysis carto_definition")))))
+          result   ((cli/make-cli-handler handlers)
+                    {:command "carto_definition"})]
+      (is (= [:carto "carto carto_definition"] result))))
 
   (testing "an unmarked leaf fn is still never offered as a subdomain"
     (let [text (:text ((cli/make-cli-handler {:status (fn [_] :status)})
                        {:command "scan"}))]
       (is (not (str/includes? text "SUBCOMMAND"))))))
+
+(deftest bare-subcommand-auto-routes-only-to-a-single-nameable-owner
+  (testing "an enumerable root that alone registers the token owns it"
+    (let [handlers {:kanban {:list (fn [_] :kanban-list)}
+                    :carto  {:_handler (fn [_] :carto)}}]
+      (is (= :kanban-list ((cli/make-cli-handler handlers) {:command "list"})))))
+
+  (testing "the handler sees the qualified spelling, so a subdomain router that
+            strips its own prefix still works"
+    (let [handlers {:memory {:_handler (fn [p] (:command p))}}]
+      (is (= "memory memory_add"
+             ((cli/make-cli-handler handlers) {:command "memory_add"})))))
+
+  (testing "two enumerable owners stay an error that names both"
+    (let [handlers {:kanban  {:list (fn [_] :k)}
+                    :session {:list (fn [_] :s)}}
+          result   ((cli/make-cli-handler handlers) {:command "list"})]
+      (is (:isError result))
+      (is (str/includes? (:text result) "kanban list"))
+      (is (str/includes? (:text result) "session list"))))
+
+  (testing "a lone opaque root is NOT guessed for a token it does not spell"
+    (let [handlers {:carto {:_handler (fn [_] :carto)}}
+          result   ((cli/make-cli-handler handlers) {:command "scan"})]
+      (is (:isError result))
+      (is (str/includes? (:text result) "carto scan"))))
+
+  (testing "coercion still runs on the auto-qualified call"
+    (let [handlers {:carto {:_handler (fn [p] (:limit p))}}
+          handler  (cli/make-cli-handler handlers {:limit [:int]})]
+      (is (= 7 (handler {:command "carto_search" :limit "7"}))))))
 
 (deftest unknown-command-names-exact-owners-when-enumerable
   (testing "a subcommand this tree CAN see is named precisely, never guessed"

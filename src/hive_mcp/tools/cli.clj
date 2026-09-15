@@ -147,14 +147,14 @@
 (defn- qualification-hints
   "Root keys to offer as CMD's qualifying subdomain, most precise first.
 
-   Cascade — the first non-empty stage wins:
-     1. roots whose ENUMERABLE subtree registers CMD exactly (all of them)
-     2. opaque roots whose name is CMD's leading segment under separator
-        folding (`carto_definition` -> `carto`)
-     3. every opaque root, capped at `max-subdomain-hints`
+   Cascade, the first non-empty stage wins and is named in :stage:
+     :exact     roots whose ENUMERABLE subtree registers CMD exactly (all of them)
+     :lead      opaque roots whose name is CMD's leading segment under separator
+                folding (`carto_definition` -> `carto`)
+     :fallback  every opaque root, capped at `max-subdomain-hints`
 
-   Returns {:roots [kw ...] :exact? bool}; :roots is empty when the tree offers
-   nothing. :exact? is true only for stage 1."
+   Returns {:roots [kw ...] :exact? bool :stage kw}; :roots is empty when the
+   tree offers nothing. :exact? is true only for :exact."
   [cmd handlers]
   (let [opaque  (delegating-subdomains handlers)
         cmd-low (str/lower-case cmd)
@@ -167,14 +167,27 @@
                      distinct
                      (sort-by name)
                      vec)
-        lead    (first (remove str/blank? (str/split cmd-low #"[-_\s]+")))
+        lead    (first (remove str/blank? (str/split cmd-low #"[-_\\s]+")))
         by-lead (when (and lead (not= lead cmd-low))
                   (vec (filter #(= lead (str/lower-case (name %))) opaque)))]
     (cond
-      (seq owners)  {:roots owners  :exact? true}
-      (seq by-lead) {:roots by-lead :exact? false}
+      (seq owners)  {:roots owners  :exact? true  :stage :exact}
+      (seq by-lead) {:roots by-lead :exact? false :stage :lead}
       :else         {:roots (vec (take max-subdomain-hints opaque))
-                     :exact? false})))
+                     :exact? false
+                     :stage :fallback})))
+
+(defn- auto-qualified-command
+  "CMD spelled under the ONE root that can own it, or nil.
+
+   Only a root the tree can name qualifies: an enumerable root that registers
+   CMD, or the opaque root CMD's leading segment spells (`carto_callers` ->
+   `carto carto_callers`). Several candidates, or the fallback list of every
+   opaque root, is a guess and stays an error."
+  [cmd handlers]
+  (let [{:keys [roots stage]} (qualification-hints cmd handlers)]
+    (when (and (contains? #{:exact :lead} stage) (= 1 (count roots)))
+      (str (name (first roots)) " " cmd))))
 
 (defn- nearest-commands
   "Command paths in HANDLERS within Levenshtein distance
@@ -239,21 +252,31 @@
    When provided, string params are coerced to declared types before dispatch.
    See hive-dsl.coerce/coerce-map for type-spec syntax.
 
-   An unresolvable command names the valid roots, the subdomains that could own
-   the token, and the nearest known commands by edit distance. Roots addons
-   contributed are treated as opaque via the ::opaque-roots key in `handlers`
-   metadata (written by hive-mcp.tools.composite).
+   A command the tree cannot resolve is first re-spelled under the ONE root
+   that can own it (`auto-qualified-command`): `carto_callers` dispatches as
+   `carto carto_callers`, and the handler sees the qualified :command. When no
+   single owner exists the error names the valid roots, the subdomains that
+   could own the token, and the nearest known commands by edit distance. Roots
+   addons contributed are treated as opaque via the ::opaque-roots key in
+   `handlers` metadata (written by hive-mcp.tools.composite).
 
    Returns: fn that dispatches to appropriate handler"
   ([handlers] (make-cli-handler handlers nil))
   ([handlers coerce-schema]
    (let [coerce-fn (when coerce-schema
-                     (requiring-resolve 'hive-dsl.coerce/coerce-map))]
+                     (requiring-resolve 'hive-dsl.coerce/coerce-map))
+         run       (fn [handler params]
+                     (if coerce-fn
+                       (let [coerced (coerce-fn coerce-schema params)]
+                         (if (:ok coerced)
+                           (handler (:ok coerced))
+                           (mcp-error (str "Parameter error: " (:message coerced)))))
+                       (handler params)))]
      (fn [{:keys [command] :as params}]
        (let [cmd-str (normalize-command command)
-             path (parse-command cmd-str)]
+             path    (parse-command cmd-str)]
          (cond
-           ;; No command or empty → error
+           ;; No command or empty -> error
            (nil? path)
            (unknown-command-error command handlers)
 
@@ -263,16 +286,14 @@
 
            ;; Normal dispatch via n-depth resolve-handler
            :else
-           (let [result (resolve-handler handlers path)]
-             (if-let [handler (:handler result)]
-               ;; Apply boundary coercion when schema is present
-               (if coerce-fn
-                 (let [coerced (coerce-fn coerce-schema params)]
-                   (if (:ok coerced)
-                     (handler (:ok coerced))
-                     (mcp-error (str "Parameter error: " (:message coerced)))))
-                 (handler params))
-               (unknown-command-error command handlers)))))))))
+           (if-let [handler (:handler (resolve-handler handlers path))]
+             (run handler params)
+             (let [qualified (auto-qualified-command (str/trim cmd-str) handlers)
+                   owner     (when qualified
+                               (:handler (resolve-handler handlers (parse-command qualified))))]
+               (if owner
+                 (run owner (assoc params :command qualified))
+                 (unknown-command-error command handlers))))))))))
 
 ;; =============================================================================
 ;; Batch Handler Factory (generic batch middleware)
