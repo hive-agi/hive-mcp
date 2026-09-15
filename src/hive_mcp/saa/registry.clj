@@ -211,4 +211,18 @@
   (rescue
    {:status :failed :reason "core-seed load threw — :saa/core entries absent"}
    (require 'hive-mcp.saa.core-seed)
+   ;; `require` alone is not enough, and the difference only shows up after a
+   ;; reload. Loading core-seed seeds as a side effect of evaluating its
+   ;; `installed` def, so on a COLD load the require does the seeding. But a
+   ;; tools.namespace-style refresh recreates this namespace (so this defonce
+   ;; runs again) while leaving core-seed in *loaded-libs* (so the require is a
+   ;; no-op) -- and the child stores, being defonce vars that were also
+   ;; recreated, come back EMPTY. The live symptom is :dag-wave silently
+   ;; missing after a hot reload, which fails an Act dispatch rather than
+   ;; anything that looks like a load error.
+   ;; install! deregisters :saa/core and seeds again, so it is idempotent on a
+   ;; cold load and corrective on a warm one. Calling it makes "after this var
+   ;; is bound, :saa/core is seeded" true unconditionally instead of true only
+   ;; when require happened to do work.
+   ((requiring-resolve 'hive-mcp.saa.core-seed/install!))
    {:status :ok}))

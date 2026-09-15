@@ -101,3 +101,24 @@
       (load-core-seed!)
       (is (= pristine (core-seed-view)))
       (is (not (identical? stale-dispatch (registry/lookup-dispatch-mode :dag-wave)))))))
+
+(deftest r3-a-plain-require-cannot-reseed-so-the-bootstrap-must-install
+  (testing "R1 and R1b both reload with :reload, which always re-evaluates
+            core-seed's `installed` def and therefore always re-seeds. The live
+            failure is the case they cannot reach: hive-mcp.saa.registry's
+            bootstrap defonce runs again after its namespace is recreated, but
+            core-seed is still in *loaded-libs*, so its plain `require` does
+            nothing while the child stores -- defonce vars recreated alongside
+            it -- come back empty. :dag-wave then goes missing with no load
+            error, and an Act dispatch fails instead. The bootstrap therefore
+            cannot rely on require having been effectful; it calls install!."
+    (let [pristine (core-seed-view)]
+      (assert-seeded! pristine)
+      (registry/reset-for-test!)
+      (require 'hive-mcp.saa.core-seed)
+      (is (nil? (registry/lookup-dispatch-mode :dag-wave))
+          "a plain require of an already-loaded lib does no work, so the wipe stands")
+      ((requiring-resolve 'hive-mcp.saa.core-seed/install!))
+      (is (= pristine (core-seed-view))
+          "install! is what actually converges the seed, on a cold load and a warm one alike")
+      (is (ifn? (registry/lookup-dispatch-mode :dag-wave))))))
