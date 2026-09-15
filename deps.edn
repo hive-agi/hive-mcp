@@ -379,11 +379,20 @@
    ;; metadata filter runs, so the backend-coupled suites (namespace prefix
    ;; hive-mcp.backends, under test/hive_mcp/backends) are kept out by
    ;; namespace regex; the :test-backends alias selects exactly them.
+   ;;
+   ;; The regex is anchored to `hive-mcp.` deliberately. It used to be
+   ;; `^(?!hive-mcp\.backends\.).*-test$`, which excludes the backend suites
+   ;; and admits EVERYTHING ELSE ending in -test, from anywhere on the paths.
+   ;; Measured 2026-09-15: a stray untracked `test/vtranslate/...-test` was
+   ;; therefore selected, and since the runner requires before it filters, its
+   ;; missing dependency took down every cold run of this repo, CI included.
+   ;; A completeness gate must draw its universe from what it OWNS, not from
+   ;; everything minus a known exception.
    ;; KG test isolation: force ephemeral in-memory DataScript so a cold test
    ;; JVM never opens (and konserve-lock-contends) the prod datahike store.
    :jvm-opts ["-Dhive.kg.backend=datascript"]
    :main-opts ["-m" "cognitect.test-runner"
-               "-r" "^(?!hive-mcp\\.backends\\.).*-test$"]}
+               "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]}
 
   ;; CI-friendly: Run only unit tests (excludes tests requiring Emacs)
   ;; :extra-paths and :extra-deps MUST track :test. Anything :test can load, this
@@ -404,10 +413,10 @@
                 io.github.hive-agi/hive-schemas {:mvn/version "0.1.34"}}
    :jvm-opts ["-Dhive.kg.backend=datascript"]
    :main-opts ["-m" "cognitect.test-runner" "-e" ":integration"
-               "-r" "^(?!hive-mcp\\.backends\\.).*-test$"]
+               "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]
    :exec-fn cognitect.test-runner.api/test
    :exec-args {:excludes [:integration]
-               :patterns ["^(?!hive-mcp\\.backends\\.).*-test$"]}}
+               :patterns ["^hive-mcp\\.(?!backends\\.).*-test$"]}}
 
   ;; Run only integration tests (requires Emacs with emacs-mcp loaded)
   :test-integration
@@ -421,10 +430,10 @@
                 io.github.hive-agi/hive-schemas {:mvn/version "0.1.34"}}
    :jvm-opts ["-Dhive.kg.backend=datascript"]
    :main-opts ["-m" "cognitect.test-runner" "-i" ":integration"
-               "-r" "^(?!hive-mcp\\.backends\\.).*-test$"]
+               "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]
    :exec-fn cognitect.test-runner.api/test
    :exec-args {:includes [:integration]
-               :patterns ["^(?!hive-mcp\\.backends\\.).*-test$"]}}
+               :patterns ["^hive-mcp\\.(?!backends\\.).*-test$"]}}
 
   ;; Line/form coverage over the unit gate. Composes with :test-unit rather
   ;; than replacing it, so the measured suite is the CI suite:
