@@ -46,11 +46,94 @@
                          " chars.")
                     {:type :invalid-type :value t}))))
 
+(def edit-params
+  "Params an edit acts on."
+  #{:id :type :content :find :replace :tags :duration :abstraction_level :reason})
+
+(def envelope-params
+  "Routing/transport params a call may carry that the edit itself ignores.
+   Keys whose name starts with `_` (e.g. :_caller_id, :_caller_cwd) are
+   transport-injected and are accepted as well."
+  #{:command :tool :directory :agent_id :project_id :project-id
+    :async :async-timeout-ms :timeout_ms :compact :depends_on})
+
+(defn- injected-param?
+  [k]
+  (str/starts-with? (if (keyword? k) (name k) (str k)) "_"))
+
+(defn unrecognised-params
+  "Sorted vector of the param names in `params` that are neither edit params,
+   envelope params, nor transport-injected. Empty when every key is known."
+  [params]
+  (->> (keys params)
+       (remove #(or (edit-params %) (envelope-params %) (injected-param? %)))
+       (map #(if (keyword? %) (name %) (str %)))
+       sort
+       vec))
+
+(defn- unrecognised-params-message
+  [unknown]
+  (str "Unrecognised edit param(s): " (str/join ", " unknown)
+       ". memory edit accepts: "
+       (str/join ", " (sort (map name edit-params)))
+       "."))
+
+(defn- invalid-edit!
+  [msg data]
+  (throw (ex-info msg (assoc data :type :invalid-edit))))
+
+(defn- find-replace
+  "Replace the single occurrence of `find` in `text` with `replace`.
+   Throws ex-info {:type :invalid-edit} when `find` occurs zero or more than
+   one time (overlapping occurrences count)."
+  [text find replace]
+  (let [i (.indexOf ^String text ^String find)]
+    (cond
+      (neg? i)
+      (invalid-edit! "find text not found in entry content" {:find find})
+
+      (not (neg? (.indexOf ^String text ^String find (int (inc i)))))
+      (invalid-edit! (str "find text matches more than once in entry content;"
+                          " extend it until it is unique")
+                     {:find find})
+
+      :else
+      (str (subs text 0 i) replace (subs text (+ i (count find)))))))
+
+(defn- resolve-content
+  "Effective new content of an edit: `:content` verbatim, or `:find`/`:replace`
+   applied to the existing content (exact substring, unique match). Nil when
+   the edit does not touch content. Throws ex-info {:type :invalid-edit} when
+   :find/:replace are incomplete, non-string, blank :find, combined with
+   :content, or :find is not a unique match."
+  [existing {:keys [content find replace] :as params}]
+  (let [find?    (contains? params :find)
+        replace? (contains? params :replace)]
+    (cond
+      (not (or find? replace?))
+      content
+
+      (some? content)
+      (invalid-edit! "content and find/replace are mutually exclusive" {})
+
+      (not (and find? replace?))
+      (invalid-edit! "find and replace must be given together" {})
+
+      (not (and (string? find) (not (str/blank? find))))
+      (invalid-edit! "find must be a non-blank string" {:find find})
+
+      (not (string? replace))
+      (invalid-edit! "replace must be a string" {:replace replace})
+
+      :else
+      (find-replace (or (:content existing) "") find replace))))
+
 (defn- build-updates
   "Compute the partial-update map from the incoming edit params against the
    existing entry. Returns [updates content-changed?]."
-  [existing {:keys [type content tags duration abstraction_level]}]
-  (let [;; Same write gate as the add path: an edit may not launder an entry
+  [existing {:keys [type tags duration abstraction_level] :as params}]
+  (let [content (resolve-content existing params)
+        ;; Same write gate as the add path: an edit may not launder an entry
         ;; into a human-gated type either. Parking rewrites BOTH the type and
         ;; the tags, merging onto the entry's existing tags when the edit did
         ;; not supply its own.
@@ -151,15 +234,24 @@
      :id                 — required, entry to edit
      :type               — optional, new memory type (validated against registry)
      :content            — optional, new content (triggers re-embed)
+     :find / :replace    — optional pair, exclusive with :content: replace the
+                           one exact occurrence of :find in the content; zero
+                           or multiple occurrences is an error
      :tags               — optional, replaces existing tags
      :duration           — optional, new TTL category
      :abstraction_level  — optional, new abstraction level 1-4
      :reason             — optional, logged for audit; stored later as KG
-                           edit-event node once audit-trail slice lands"
+                           edit-event node once audit-trail slice lands
+
+   Any other param (outside envelope-params and `_`-prefixed transport keys)
+   is rejected with an error naming it; nothing is written."
   [{:keys [id type] :as params}]
   (cond
     (or (nil? id) (str/blank? id))
     (mcp-error "id is required (non-blank string)")
+
+    (seq (unrecognised-params params))
+    (mcp-error (unrecognised-params-message (unrecognised-params params)))
 
     :else
     (try
@@ -188,6 +280,8 @@
 (defn- batch-op-result
   [op]
   (try
+    (when-let [unknown (seq (unrecognised-params op))]
+      (invalid-edit! (unrecognised-params-message unknown) {}))
     (validate-type! (:type op))
     (if-let [r (apply-edit! op)]
       (cond
@@ -231,8 +325,12 @@
     dry-run
     (mcp-json {:dry_run  true
                :op_count (count operations)
-               :preview  (mapv #(select-keys % [:id :type :content :tags
-                                                :duration :abstraction_level :reason])
+               :preview  (mapv (fn [op]
+                                 (let [unknown (unrecognised-params op)]
+                                   (cond-> (select-keys op [:id :type :content :find :replace
+                                                            :tags :duration
+                                                            :abstraction_level :reason])
+                                     (seq unknown) (assoc :unrecognised_params unknown))))
                                operations)})
 
     :else
