@@ -80,9 +80,6 @@
         ;; YAML parsing for seed memory frontmatter
         clj-commons/clj-yaml {:mvn/version "1.0.30"}
 
-        ;; D-Bus client for native desktop notifications
-        com.lambdaisland/dbus-client {:mvn/version "0.4.30"}
-
         ;; Development - tracing (hot reload via hive-hot)
         org.clojure/tools.trace {:mvn/version "0.9.0"}
 
