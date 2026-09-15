@@ -61,6 +61,13 @@
    spend the whole response."
   4000)
 
+(def max-response-chars
+  "Total block chars one response may carry, across every emitter.
+
+   `max-blocks` x `max-body-chars` is 24000, which is a ceiling no response
+   should ever spend on commentary. This is the limit that actually binds."
+  6000)
+
 (defn emitter-keys
   "Registered block-emitter keys, sorted, so block ORDER in a response is
    deterministic rather than a function of registration order."
@@ -94,12 +101,49 @@
       (log/debug t "blocks: emitter" k "failed; its block is skipped")
       nil)))
 
+(defn- cue-hits
+  "How many of `cues` appear in `body`. The relevance signal for ordering."
+  [body cues]
+  (let [hay (str/lower-case (str body))]
+    (count (filter (fn [c]
+                     (let [s (str/lower-case (str c))]
+                       (and (>= (count s) 3) (str/includes? hay s))))
+                   cues))))
+
 (defn render
-  "`[[tag body] ...]` for every registered emitter that produced something,
-   at most `max-blocks`. Never throws."
+  "`[[tag body] ...]` for every registered emitter that produced something.
+
+   Three limits apply, in order: `max-body-chars` per emitter, `max-blocks`
+   per response, and `max-response-chars` across the whole response.
+
+   The response budget exists because the per-block cap alone is not one:
+   `max-blocks` x `max-body-chars` is the real ceiling a response carries, and
+   it is paid on EVERY call for the rest of the session (principle
+   20260727233018-067f33a2), so a registry that makes blocks cheap to add
+   needs a ceiling that does not grow with the number of addons installed.
+
+   Blocks are ordered by how many of this call's `:cues` they mention before
+   the budget is applied, so when something must be cut it is the block with
+   the least to do with this call rather than the one whose key sorts last.
+   The highest-ranked block is always kept, so a single large block degrades
+   the response rather than emptying it. Never throws."
   [ctx]
   (try
-    (into [] (comp (keep #(emit-one % ctx)) (take max-blocks)) (emitter-keys))
+    (let [emitted (into [] (comp (keep #(emit-one % ctx)) (take max-blocks))
+                        (emitter-keys))
+          cues (:cues ctx)
+          ordered (if (seq cues)
+                    (vec (sort-by (fn [[tag body]] [(- (cue-hits body cues)) tag])
+                                  emitted))
+                    emitted)]
+      (first
+       (reduce (fn [[acc used] [tag body :as blk]]
+                 (let [size (count body)]
+                   (if (or (empty? acc) (<= (+ used size) max-response-chars))
+                     [(conj acc blk) (+ used size)]
+                     (reduced [acc used]))))
+               [[] 0]
+               ordered)))
     (catch Throwable t
       (log/debug t "blocks: render failed; response carries no blocks")
       [])))

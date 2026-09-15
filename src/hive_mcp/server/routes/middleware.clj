@@ -299,6 +299,25 @@
    (require 'hive-mcp.channel.memory-piggyback)
    ((resolve 'hive-mcp.channel.memory-piggyback/drain!) caller-id ctx)))
 
+(defn- drain-catchup-piggyback
+  "Drain the `:cu/piggyback-drain` enrichment channel for this response.
+
+   The provider is an addon, so its arity is not something the host may assume.
+   A ctx-aware provider gets `request-ctx` and returns only a budgeted, cue-
+   ordered slice, leaving the rest buffered for a later call; a provider that
+   still takes the caller alone is called that way and drains one-shot, as
+   before. Neither shape is allowed to fail the response."
+  [caller-id request-ctx]
+  (when-let [drain-fn (ext/get-extension :cu/piggyback-drain)]
+    (try
+      (try
+        (drain-fn caller-id request-ctx)
+        (catch clojure.lang.ArityException _
+          (drain-fn caller-id)))
+      (catch Exception e
+        (log/debug "catchup-piggyback drain failed:" (.getMessage e))
+        nil))))
+
 (defn wrap-handler-piggybacks
   "Unified piggyback wrapper: drains all 4 channels in a single pass.
    Task cues harvested from the request args steer the MEMORY drain that rides
@@ -323,11 +342,7 @@
            ;; block is an addon plus a config entry rather than a commit here.
            extra-blocks (blocks/render request-ctx)
            memory-drain (drain-memory-piggyback caller-id act-ctx)
-           catchup-blocks (when-let [drain-fn (ext/get-extension :cu/piggyback-drain)]
-                            (try (drain-fn caller-id)
-                                 (catch Exception e
-                                   (log/debug "catchup-piggyback drain failed:" (.getMessage e))
-                                   nil)))
+           catchup-blocks (drain-catchup-piggyback caller-id request-ctx)
            caller (id/extract-caller-identity args)
            scope (id/extract-project-scope args)
            hm-agent-id (ctx-id/make-piggyback-agent-id caller scope)

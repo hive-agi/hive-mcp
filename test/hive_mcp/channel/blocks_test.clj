@@ -87,3 +87,39 @@
 (deftest a-non-string-body-is-printed
   (ext/register! :block/data (fn [_] [{:id "a"}]))
   (is (= [["DATA" (pr-str [{:id "a"}])]] (blocks/render ctx))))
+
+;; =============================================================================
+;; The response budget — the per-block cap is not one
+;; =============================================================================
+
+(deftest the-whole-response-is-budgeted-not-just-each-block
+  (testing "max-blocks x max-body-chars is a ceiling no response should spend"
+    (doseq [i (range 4)]
+      (ext/register! (keyword "block" (str "big" i))
+                     (fn [_] (apply str (repeat 4000 "z")))))
+    (let [rendered (blocks/render ctx)
+          total (reduce + (map (comp count second) rendered))]
+      (is (<= total blocks/max-response-chars))
+      (is (< (count rendered) 4) "blocks past the budget are cut"))))
+
+(deftest the-top-ranked-block-survives-an-oversized-body
+  (testing "a single huge block degrades the response, never empties it"
+    (ext/register! :block/huge (fn [_] (apply str (repeat 9000 "z"))))
+    (is (= 1 (count (blocks/render ctx))))))
+
+(deftest the-budget-cuts-the-least-relevant-block-not-the-last-alphabetically
+  (testing "ordering by cue hits is what makes the cut defensible"
+    (ext/register! :block/aaa-irrelevant
+                   (fn [_] (apply str (repeat 4000 "z"))))
+    (ext/register! :block/zzz-relevant
+                   (fn [_] (str "carto " (apply str (repeat 3000 "y")))))
+    (let [tags (mapv first (blocks/render ctx))]
+      (is (= ["ZZZ-RELEVANT"] tags)
+          "the cue-matching block is kept and the alphabetically-first one is cut"))))
+
+(deftest with-no-cues-ordering-stays-alphabetical
+  (testing "no cues must not reshuffle anything"
+    (ext/register! :block/zebra (fn [_] "z"))
+    (ext/register! :block/alpha (fn [_] "a"))
+    (is (= ["ALPHA" "ZEBRA"]
+           (mapv first (blocks/render {:tool-name "code" :caller-id "c1"}))))))
