@@ -2,7 +2,7 @@
   "hive-events FSM spec for the Wrap Session (crystallization) workflow.
 
    The wrap workflow crystallizes session learnings into long-term memory:
-     ::fsm/start -> ::gather -> ::crystallize -> ::kg-edges -> ::notify -> ::evict -> ::end
+     ::fsm/start -> ::gather -> ::adopt -> ::crystallize -> ::kg-edges -> ::notify -> ::evict -> ::end
 
    This is the Clojure handler implementation matching resources/fsm/wrap-session.edn.
    The EDN spec uses keyword handlers (:start, :gather, :crystallize, etc.) that are
@@ -23,6 +23,13 @@
      :kg-edge-fn     -- (fn [summary-id source-ids project-id agent-id] -> {:created-count N})
      :notify-fn      -- (fn [agent-id session-id project-id stats] -> nil)
      :evict-fn       -- (fn [agent-id] -> {:evicted N})
+     :session-ref-fn -- (fn [{:agent-id :project-id}] -> SessionRef) — the
+                        identity this wrap runs as (hive-mcp.session.identity).
+                        Absent: the wrap runs unscoped, as it did before.
+     :adopt-fn       -- (fn [session-ref] -> [absorbed-wrap ...]) — this
+                        coordinator's own lings' wraps plus adopted ad-hoc
+                        sessions, each marked processed so it is consumed once.
+     :parent-of      -- session-id -> parent session-id, for ownership walks
      :scope-fn       -- (fn [directory] -> project-id)
      :source-ids-fn  -- (fn [harvested] -> [string])
      :directory      -- string (working directory for project scoping)
@@ -88,16 +95,54 @@
 
 (defn handle-start
   "Initialize a wrap session.
-   Resolves agent-id and directory, derives project-id.
-   EDN handler key: :start"
+   Resolves agent-id and directory, derives project-id, and resolves the
+   SessionRef this wrap runs as.
+   EDN handler key: :start
+
+   The SessionRef is what scopes everything downstream: which rows this wrap may
+   harvest, which ling wraps it absorbs, and which rows it is allowed to clear.
+   :session-ref-fn is injected (DIP) so the FSM stays testable without a swarm;
+   when absent the wrap runs unscoped, exactly as it did before."
   [resources data]
   (let [{:keys [agent-id directory project-id]}
-        (support/resolve-session-identity resources data)]
+        (support/resolve-session-identity resources data)
+        session-ref-fn (:session-ref-fn resources)
+        session-ref (when session-ref-fn
+                      (session-ref-fn {:agent-id agent-id :project-id project-id}))]
     (assoc data
            :agent-id agent-id
            :directory directory
            :project-id project-id
+           :session-ref session-ref
+           :parent-of (or (:parent-of resources) {})
            :error nil)))
+
+(defn handle-adopt
+  "Absorb the wraps this session OWNS before crystallizing.
+   EDN handler key: :adopt
+
+   Two sources, both scoped by the SessionRef from :start:
+     - the wraps of this coordinator's own lings (by parent-session-id, not by
+       project: two coordinators share a project and would eat each other's);
+     - ad-hoc sessions this coordinator adopts under the HCR rules.
+
+   Each absorbed wrap is marked processed, so it is consumed exactly once. A
+   ling adopts nothing: its own wrap permeates UP instead.
+
+   Degraded mode: adoption is additive context, never the point of the wrap, so
+   a failure here leaves :adopted empty and the flow continues."
+  [resources data]
+  (let [adopt-fn (:adopt-fn resources)
+        ref (:session-ref data)]
+    (support/boundary-step data
+      {:present? (boolean (and adopt-fn ref (= :coordinator (:session/kind ref))))
+       :run    (fn [d] (assoc d :adopted (adopt-fn ref)))
+       :absent (fn [d] (assoc d :adopted []))
+       :policy support/continue
+       :spec   {:log-msg "wrap-session: adopt failed — continuing without child wraps:"
+                :delta (fn [t] {:adopted []
+                                :adopt-degraded true
+                                :adopt-error (ex-message t)})}})))
 
 (defn handle-gather
   "Harvest session data for crystallization.
@@ -205,8 +250,9 @@
    Includes :notify-degraded/:notify-error when the notify step ran in
    degraded mode (see 'Git Commit Optional' decision 20260213005110)."
   [_resources {:keys [data]}]
-  (select-keys data [:agent-id :project-id :crystal-result
+  (select-keys data [:agent-id :project-id :session-ref :crystal-result
                      :kg-result :notify-sent? :notify-degraded :notify-error
+                     :adopted :adopt-degraded :adopt-error
                      :eviction]))
 
 (def handle-error
@@ -224,6 +270,7 @@
    Used by registry/register-handlers! for EDN spec compilation."
   {:start       handle-start
    :gather      handle-gather
+   :adopt       handle-adopt
    :crystallize handle-crystallize
    :kg-edges    handle-kg-edges
    :notify      handle-notify
@@ -241,9 +288,9 @@
 
    State graph:
    ```
-   ::fsm/start --> ::gather --> ::crystallize -+--> ::kg-edges --> ::notify --> ::evict --> ::end
-                                               |
-                                               +--> ::error (crystal error)
+   ::fsm/start --> ::gather --> ::adopt --> ::crystallize -+--> ::kg-edges --> ::notify --> ::evict --> ::end
+                                                           |
+                                                           +--> ::error (crystal error)
    ```"
   {:fsm
    {::fsm/start
@@ -254,8 +301,12 @@
 
     ::gather
     {:handler    handle-gather
-     :dispatches [[::crystallize harvested?]
+     :dispatches [[::adopt harvested?]
                   [::fsm/error always]]}
+
+    ::adopt
+    {:handler    handle-adopt
+     :dispatches [[::crystallize always]]}
 
     ::crystallize
     {:handler    handle-crystallize

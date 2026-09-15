@@ -81,6 +81,7 @@
 (def add-wrap-notification! coordination/add-wrap-notification!)
 (def get-unprocessed-wraps-for-project coordination/get-unprocessed-wraps-for-project)
 (def get-unprocessed-wraps-for-hierarchy coordination/get-unprocessed-wraps-for-hierarchy)
+(def get-unprocessed-wraps-for-session coordination/get-unprocessed-wraps-for-session)
 (def mark-wrap-processed! coordination/mark-wrap-processed!)
 
 ;; Coordinators (used via resolve in server/init.clj and server/lifecycle.clj)

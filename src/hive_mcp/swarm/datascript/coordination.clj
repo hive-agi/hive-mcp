@@ -29,6 +29,7 @@
 (def get-unprocessed-wraps               wrap-queue/get-unprocessed-wraps)
 (def get-unprocessed-wraps-for-project   wrap-queue/get-unprocessed-wraps-for-project)
 (def get-unprocessed-wraps-for-hierarchy wrap-queue/get-unprocessed-wraps-for-hierarchy)
+(def get-unprocessed-wraps-for-session   wrap-queue/get-unprocessed-wraps-for-session)
 (def mark-wrap-processed!                wrap-queue/mark-wrap-processed!)
 
 ;; =============================================================================
