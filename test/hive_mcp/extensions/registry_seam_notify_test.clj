@@ -84,3 +84,27 @@
         "a throwing host listener must not break the contribution, whichever
          notifier delivered the event")
     (is (= ["lint"] (keys (registry/get-contributed-commands tool))))))
+
+(deftest install-arms-the-seam-with-no-facade-call-first
+  (testing "the test above had to call the facade once to arm the seam. A fleet
+            that has finished migrating never calls the facade at all, so that
+            arming would never happen and every migrated addon would contribute
+            into a store nothing watches. install! must arm it up front."
+    (if (seam-available?)
+      (let [seen (atom [])]
+        ((requiring-resolve 'hive-mcp.extensions.reactive/install!))
+        (is (true? (registry/ensure-seam-listener!))
+            "with hive-addon's seam on the classpath, the host is registered on it")
+        (is (contains? (set ((requiring-resolve 'hive-addon.registry.commands/listener-ids)))
+                       :hive-mcp.extensions.registry/host-surface)
+            "the structural contract, independent of what any other test in this
+             JVM already forced: after install! the host IS one of hive-addon's
+             listeners, so a contribution that never touches the facade is still
+             announced")
+        (registry/add-contribution-listener! ::probe (fn [e] (swap! seen conj e)))
+        (addon-cmds/contribute! tool :cljs {"build" {:handler identity}})
+        (is (= 1 (count @seen))
+            "a direct seam contribution reaches the host without the facade ever
+             having been called")
+        (is (= :cljs (:addon-id (first @seen)))))
+      (is true "hive-addon on this classpath predates the seam; nothing to assert"))))
