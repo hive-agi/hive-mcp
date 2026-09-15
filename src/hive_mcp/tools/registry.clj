@@ -156,7 +156,20 @@
    2. Dynamic: addon tool marked :consolidated (legacy standalone)
    3. Config:  tool name listed in :tool-roots :absorbed in config.edn
 
-   Novel addon tools that pass all three filters appear as additional roots."
+   Novel addon tools that pass all three filters appear as additional roots,
+   ORDERED BY NAME. `core` is a concat of literal vectors and is deterministic
+   already, but the addon tail arrives as the vals of a PersistentHashMap, so
+   its order is incidental: it follows the hash layout of whichever key set
+   happens to be registered. Register or drop a single addon tool and the whole
+   tail can reshuffle without one tool actually changing.
+
+   That is expensive, because the tool array is the FIRST span of an LLM
+   request, ahead of the system prompt and ahead of the messages. A provider
+   caches a prefix on its BYTES, so re-advertising the same tools in a
+   different order invalidates every cached span behind them and the caller
+   re-pays for the entire prompt. Sorting makes a genuinely changed tool SET
+   the only thing that can cost anything, which is the same reason
+   hive-agent's catalog/delegated-schemas sorts."
   []
   (let [core           (core-tools)
         domain-names   (into #{} (map :name) core)
@@ -164,7 +177,8 @@
         addon-tools    (->> (ext/get-registered-tools)
                             (remove #(or (domain-names (:name %))
                                          (:consolidated %)
-                                         (cfg-absorbed (:name %)))))]
+                                         (cfg-absorbed (:name %))))
+                            (sort-by :name))]
     (vec (concat core addon-tools))))
 
 (declare get-all-tools)
