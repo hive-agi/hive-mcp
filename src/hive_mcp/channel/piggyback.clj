@@ -106,11 +106,13 @@
    Normalizes to the same shape as message-source-fn output.
    Events with nil agent-id (e.g. coordinator tool-executed) are silently dropped.
    Preserves :shout-id for cross-path dedup when present, :parent-id /
-   :broadcast? so hive-mcp.channel.audience can route the remote path exactly
-   as it routes the local one, and :deliberate? so the digest spares the remote
-   path exactly as it spares the local one."
+   :broadcast? / :to so hive-mcp.channel.audience can route the remote path
+   exactly as it routes the local one, :context-id so a remote message stays in
+   its A2A conversation, :ref so an elided payload is still fetchable, and
+   :deliberate? so the digest spares the remote path exactly as it spares the
+   local one."
   [{:keys [agent-id event-type message task timestamp project-id shout-id
-           parent-id broadcast? deliberate?]}]
+           parent-id broadcast? deliberate? to context-id ref]}]
   (when agent-id
     (let [normalized (cond-> {:agent-id    agent-id
                               :event-type  event-type
@@ -121,6 +123,9 @@
                        shout-id (assoc :shout-id shout-id)
                        parent-id (assoc :parent-id parent-id)
                        broadcast? (assoc :broadcast? true)
+                       to (assoc :to to)
+                       context-id (assoc :context-id context-id)
+                       ref (assoc :ref ref)
                        deliberate? (assoc :deliberate? true))]
       (swap! backbone-buffer
              (fn [buf]
@@ -179,13 +184,18 @@
   []
   (swap! message-id-counter inc))
 
+(s/def ::session-id (s/nilable string?))
+
+(s/def ::context-id (s/nilable string?))
+
 (s/def ::project-id (s/nilable string?))
 
 (s/def ::additional-project-ids (s/nilable (s/coll-of string? :kind set?)))
 
 (s/fdef get-messages
   :args (s/cat :agent-id ::agent-id
-               :kwargs (s/keys* :opt-un [::project-id ::additional-project-ids]))
+               :kwargs (s/keys* :opt-un [::project-id ::additional-project-ids
+                                         ::session-id ::context-id]))
   :ret ::messages)
 
 (defn- config-value
@@ -214,7 +224,7 @@
   "Get new hivemind messages since last call for this agent+project.
    Dual-path: merges messages from atom-based source and backbone buffer.
 
-   Four stages, in order: cursor -> project -> audience -> digest.
+   Five stages, in order: cursor -> project -> context -> audience -> digest.
 
    CURSOR is per [reader project], with one exception that is the whole
    point: a \"global\" shout is read against ONE cursor per SESSION, whatever
@@ -230,10 +240,23 @@
    the caller without its project, when the caller supplies one; a caller
    that does not is keyed by its reader id as before.
 
-   AUDIENCE is what keeps one ling's turns out of every other ling's context:
-   a shout reaches the agent that spawned its author and nobody else (see
+   CONTEXT scopes a read to ONE A2A conversation (`:context-id`). It is opt-in:
+   without it every conversation is read, exactly as before. Cursors advance
+   over what the CONTEXT filter accepted, never over what it excluded —
+   otherwise a read scoped to one conversation would silently consume the
+   messages of every other one.
+
+   AUDIENCE is what keeps one ling's turns out of every other ling's context.
+   A message that names a recipient (`:to`) reaches THAT agent and nobody
+   else; absent one, it reaches the agent that spawned its author (see
    hive-mcp.channel.audience). Set config [:hivemind :piggyback-routing] to
    :project to restore the legacy project-wide broadcast.
+
+   Directed peer traffic never enters a coordinator's context — that omission
+   is the saving directed addressing exists for. So a coordinator reader also
+   gets `peer-traffic-digest` rows: one line per conversation saying how many
+   turns passed between whom, and the contextId to read them by. It keeps
+   supervision without paying for the transcript.
 
    DIGEST collapses a burst of per-turn :progress rows from one agent into a
    single row carrying the count, so the reader learns the state without
@@ -249,8 +272,9 @@
                                 descendant shouts). Messages from these projects are
                                 included alongside the primary project's messages.
      :session-id              - The caller id without its project suffix; owns the
-                                global cursor. Defaults to the reader id."
-  [agent-id & {:keys [project-id additional-project-ids session-id]}]
+                                global cursor. Defaults to the reader id.
+     :context-id              - Read only this A2A conversation."
+  [agent-id & {:keys [project-id additional-project-ids session-id context-id]}]
   (when (and (nil? project-id) (not= agent-id "coordinator"))
     (log/warn "Agent" agent-id "reading hivemind without project-id - using global cursor"))
   (let [all-msgs (merged-messages)]
@@ -273,36 +297,52 @@
                          (and (contains? accepted-pids (:project-id msg))
                               (> timestamp project-cursor))))
             new-msgs (->> all-msgs (filter fresh?) (sort-by :timestamp) vec)
-            ;; Cursors advance over everything the project filter accepted, NOT
-            ;; only over what this reader is addressed by; otherwise a shout
-            ;; dropped by the audience filter would be re-examined forever.
+            ;; A read may scope itself to one A2A conversation.
+            in-context (if context-id
+                         (filterv #(= context-id (:context-id %)) new-msgs)
+                         new-msgs)
+            ;; Cursors advance over everything the project AND context filters
+            ;; accepted, NOT only over what this reader is addressed by;
+            ;; otherwise a shout dropped by the audience filter would be
+            ;; re-examined forever. They must NOT advance over a conversation
+            ;; this read excluded, which is still wanted by a later read.
             max-ts   (fn [msgs] (when (seq msgs) (apply max (map :timestamp msgs))))
-            max-global  (max-ts (filter global? new-msgs))
-            max-project (max-ts (remove global? new-msgs))
+            max-global  (max-ts (filter global? in-context))
+            max-project (max-ts (remove global? in-context))
             addressed (if (spawner-routing?)
-                        (audience/filter-messages agent-id new-msgs)
-                        new-msgs)
+                        (audience/filter-messages agent-id in-context)
+                        in-context)
+            peer-rows (if (spawner-routing?)
+                        (audience/peer-traffic-digest agent-id in-context)
+                        [])
             ;; :deliberate? rides along only as far as the digest, which is the
             ;; one stage that reads it; the row a reader sees never carries it.
-            formatted-msgs (mapv (fn [{:keys [agent-id event-type message task deliberate?]}]
+            ;; :to is deliberately NOT rendered: a directed message reaches its
+            ;; recipient and nobody else, so its mere arrival says who it is for,
+            ;; and spelling that out again is tokens for nothing.
+            formatted-msgs (mapv (fn [{:keys [agent-id event-type message task deliberate?
+                                              context-id ref]}]
                                    (cond-> {:a agent-id
                                             :e (if (keyword? event-type)
                                                  (name event-type)
                                                  event-type)
                                             :m message}
                                      task (assoc :t task)
+                                     context-id (assoc :ctx context-id)
+                                     ref (assoc :ref ref)
                                      deliberate? (assoc :deliberate? true)))
                                  addressed)
             digested (mapv #(dissoc % :deliberate?)
                            (if (progress-digest?)
                              (audience/digest formatted-msgs)
-                             formatted-msgs))]
+                             formatted-msgs))
+            rows (into (vec digested) peer-rows)]
         (when max-global
           (swap! agent-read-cursors assoc global-key max-global))
         (when max-project
           (swap! agent-read-cursors assoc project-key max-project))
-        (when (seq digested)
-          digested)))))
+        (when (seq rows)
+          rows)))))
 
 (defn fetch-history
   "Get hivemind messages without marking as read.
@@ -326,6 +366,33 @@
                         :ts timestamp
                         :p project-id}
                  task (assoc :t task))))))
+
+(defn fetch-conversation
+  "Every message of one A2A conversation, oldest first, WITHOUT moving any cursor.
+
+   This is the other half of directed addressing. A coordinator is deliberately
+   not shown directed traffic; it is shown a `peer-traffic-digest` row naming
+   the contextId instead. That row is only worth its characters if the id it
+   names can actually be redeemed, so this is the redemption: pass the id, get
+   the exchange.
+
+   Reading is not receiving, so no cursor advances. Two reads of the same
+   conversation answer the same thing, and reading one here does not hide a
+   message from the ordinary drain."
+  [context-id & {:keys [limit] :or {limit 100}}]
+  (when-not (str/blank? (str context-id))
+    (->> (merged-messages)
+         (filter #(= context-id (:context-id %)))
+         (sort-by :timestamp)
+         (take limit)
+         (mapv (fn [{:keys [agent-id event-type message task timestamp to ref]}]
+                 (cond-> {:a agent-id
+                          :e (if (keyword? event-type) (name event-type) event-type)
+                          :m message
+                          :ts timestamp}
+                   to (assoc :to to)
+                   task (assoc :t task)
+                   ref (assoc :ref ref)))))))
 
 (defn reset-cursor!
   "Reset read cursor for an agent+project. Next get-messages returns all messages.

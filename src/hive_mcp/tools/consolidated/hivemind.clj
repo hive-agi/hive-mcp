@@ -43,7 +43,9 @@
 (def tool-def
   {:name "hivemind"
    :consolidated true
-   :description "Hivemind coordination: shout (broadcast status), ask (request decision), status (coordinator state), respond (answer ask), messages (agent history), nudge (wake silent ling into shouting state). Use command='help' to list all."
+   :description "Hivemind coordination: shout (send a message), ask (request decision), status (coordinator state), respond (answer ask), messages (agent history), nudge (wake silent ling into shouting state). Use command='help' to list all.
+
+Addressing, for shout: `to` names ONE peer and the message reaches that agent and nobody else, which is the cheap path and the right default for anything that concerns one peer. Without `to` it goes to whoever spawned you. `broadcast` reaches everyone and is an exception that requires `broadcast_reason`."
    :inputSchema {:type "object"
                  :properties {"command" {:type "string"
                                          :enum ["shout" "ask" "status" "respond" "messages" "nudge" "help"]
@@ -55,6 +57,15 @@
                                       :description "Current task description"}
                               "message" {:type "string"
                                          :description "Status message"}
+                              "to" {:type "string"
+                                    :description "shout: address ONE peer by agent id. The message reaches that agent and nobody else - not the coordinator, not your spawner. Prefer this over broadcasting for anything that concerns a single peer."}
+                              "context_id" {:type "string"
+                                            :description "The A2A conversation id. On shout, continue an existing exchange (omit to start one; the reply carries the new id). On messages, read only that conversation."}
+                              "broadcast" {:type "boolean"
+                                           :description "shout: ask to reach every reader. Requires broadcast_reason, and is refused without an admissible one."}
+                              "broadcast_reason" {:type "string"
+                                                  :enum ["halt" "membership" "shared-discovery" "coordinator-directive"]
+                                                  :description "Why every reader needs this. halt: peers must stop. membership: the roster changed. shared-discovery: a finding that invalidates a shared assumption. coordinator-directive: the coordinator addressing its swarm."}
                               "data" {:type "object"
                                       :description "Additional event data"}
                               "directory" {:type "string"

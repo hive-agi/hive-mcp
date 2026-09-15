@@ -13,7 +13,9 @@
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.hivemind.messaging :as msg]
             [hive-mcp.hivemind.state :as state]
-            [hive-dsl.bounded-atom :refer [bget]]))
+            [hive-dsl.bounded-atom :refer [bget]]
+            [hive-mcp.channel.payload-ref :as pref]
+            [hive-mcp.channel.context-store :as ctx-store]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -32,17 +34,61 @@
   (apply str (repeat n "x")))
 
 (deftest cap-oversized-message
-  (testing "Oversized :message stored ≤ configured cap with ellipsis suffix"
+  (testing "Oversized :message is bounded AND its tail stays recoverable"
+    ;; The contract CHANGED 2026-09-15. An over-cap :message used to be
+    ;; truncated with an ellipsis, which bounded the cost and DESTROYED the
+    ;; tail: nothing anywhere held what was cut. It is now elided to a
+    ;; context-store id, which costs the same handful of characters on the
+    ;; wire and loses nothing.
+    ;;
+    ;; The bound is asserted as before. The recovery is asserted too, because
+    ;; the bound alone passes for BOTH behaviours, and the whole point of the
+    ;; change is the half the bound cannot see.
     (let [agent-id (str "test-shout-cap-" (random-uuid))
           cap msg/default-shout-message-cap
-          payload-size (* 3 cap)
-          _ (msg/shout! agent-id :progress {:message (big-string payload-size)})
+          payload (big-string (* 3 cap))
+          _ (msg/shout! agent-id :progress {:message payload})
           stored (read-back-message agent-id)]
       (is (some? stored))
       (is (<= (count stored) cap)
-          (str "stored len=" (count stored) ", expected ≤ " cap))
-      (is (.endsWith ^String stored ellipsis)
-          "truncated shout payload must end with ellipsis marker"))))
+          (str "stored len=" (count stored) ", expected <= " cap))
+      (is (.contains ^String stored ellipsis)
+          "an elided payload must show that it was cut")
+      (let [ref (pref/parse-ref stored)]
+        (is (some? ref)
+            "an elided payload must carry the id its tail can be fetched by")
+        (is (= payload (:data (ctx-store/context-get ref)))
+            "and that id must return the ORIGINAL payload, not the visible head")))))
+
+(deftest directed-shout-reports-an-unknown-recipient-test
+  ;; Directed addressing has exactly one way to lose a message outright: a `to`
+  ;; nobody answers to matches no reader, so it reaches NOBODY, where the
+  ;; spawner route would at least have reached the coordinator.
+  ;;
+  ;; The routing is deliberately NOT changed on this evidence, because the
+  ;; roster is authoritative about slaves and silent about coordinator lanes
+  ;; and peers registered elsewhere; downgrading on it would break valid
+  ;; delivery to catch a typo. So the VERDICT carries the warning, in the same
+  ;; tool result the sender reads.
+  (testing "an unregistered recipient is reported, and delivery is unchanged"
+    (let [v (msg/shout-with-verdict! (str "test-unknown-to-" (random-uuid))
+                                     :progress
+                                     {:message "peer question" :to "ling-does-not-exist"})]
+      (is (true? (:delivered v)))
+      (is (= :direct (:routing v)) "the address the sender gave is still honoured")
+      (is (= "ling-does-not-exist" (:to-unresolved v))
+          "and the sender is told the recipient was not recognised")))
+  (testing "a coordinator lane is a legitimate recipient, not an unknown one"
+    (let [v (msg/shout-with-verdict! (str "test-coord-to-" (random-uuid))
+                                     :progress
+                                     {:message "for the coordinator" :to "coordinator:7"})]
+      (is (nil? (:to-unresolved v))
+          "warning on a coordinator lane would cry wolf on every valid reply")))
+  (testing "an undirected shout is never accused of a bad recipient"
+    (let [v (msg/shout-with-verdict! (str "test-no-to-" (random-uuid))
+                                     :progress {:message "my own status"})]
+      (is (= :spawner (:routing v)))
+      (is (nil? (:to-unresolved v))))))
 
 (deftest short-message-untouched
   (testing "Sub-cap :message passes through verbatim"
