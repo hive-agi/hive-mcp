@@ -1,12 +1,12 @@
 (ns hive-mcp.channel.audience
   "Audience routing and progress digest for the HIVEMIND piggyback channel.
 
-   Pure calculations — no I/O, no state, no requires beyond clojure.string.
+   Pure calculations: no I/O, no state, no requires beyond clojure.string.
    Two questions:
 
-   - `addressed-to?` / `filter-messages` — does a shout belong in THIS
+   - `addressed-to?` / `filter-messages`: does a shout belong in THIS
      reader's context?
-   - `digest` — collapse a burst of per-turn :progress rows into one row.
+   - `digest`: collapse a burst of per-turn :progress rows into one row.
 
    Delivery contract. A shout reaches the agent that SPAWNED the shouter and
    nobody else:
@@ -18,10 +18,17 @@
      :parent-id set    -> that reader alone
      :parent-id absent -> root-level, coordinator readers only
 
+   A coordinator lane is ONE Claude window. The MCP transport spells it
+   `coordinator:<session>`, optionally suffixed `-<project>`, and two lanes
+   with different sessions are different readers: what one window's lings
+   say never enters another window's context. A lane spelled without a
+   session (`coordinator`, `coordinator-hive`: the legacy and Emacs paths)
+   still matches every lane, so nothing that used to arrive stops arriving.
+
    Digest contract. Rows whose :e is digestible collapse, per agent, into ONE
    row carrying the burst count under :n and the LAST message under :m, sitting
-   at the position of that agent's last such row. Every other event — started,
-   completed, error, aborted, ask — passes through verbatim and in place."
+   at the position of that agent's last such row. Every other event (started,
+   completed, error, aborted, ask) passes through verbatim and in place."
   (:require [clojure.string :as str]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -44,15 +51,31 @@
   (or (nil? reader-id)
       (str/starts-with? (str reader-id) coordinator-prefix)))
 
+(defn coordinator-session
+  "The session token of a coordinator-lane id, or nil when the id names the
+   lane without one (\"coordinator\", \"coordinator-hive\"). The MCP lane
+   spells a session `coordinator:<session>` and may suffix `-<project>`; a
+   session token never contains a dash
+   (hive-dsl.context.identity/session-id-shape?), so the first dash ends it."
+  [id]
+  (when (and (some? id) (coordinator-reader? id))
+    (second (re-find #"^coordinator:([^-]+)" (str id)))))
+
 (defn same-agent?
   "Do two ids name the same reader? Tolerates the coordinator lane's
-   \"coordinator-<project>\" suffixing, so a shout whose :parent-id is the bare
-   \"coordinator\" still reaches reader \"coordinator-hive\"."
+   \"-<project>\" suffixing, so a shout whose :parent-id is
+   \"coordinator:7\" reaches reader \"coordinator:7-hive\". Two coordinator
+   ids carrying DIFFERENT sessions are different readers. An id that names
+   the lane with no session at all still matches every lane."
   [reader-id other-id]
   (let [r (str reader-id)
         o (str other-id)]
     (or (= r o)
-        (and (coordinator-reader? r) (coordinator-reader? o)))))
+        (and (coordinator-reader? r)
+             (coordinator-reader? o)
+             (let [rs (coordinator-session r)
+                   os (coordinator-session o)]
+               (or (nil? rs) (nil? os) (= rs os)))))))
 
 ;; =============================================================================
 ;; Audience

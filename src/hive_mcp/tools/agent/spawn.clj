@@ -98,15 +98,19 @@
 (defn effective-parent
   "The parent a spawn is attributed to. An explicit non-blank `parent` wins.
    Otherwise the calling agent (`:_caller_id`, stamped on every MCP request by
-   the transport) is the parent — except a coordinator-lane caller, whose
-   spawns stay root-level (nil), the lane the audience layer already routes to
-   coordinator readers."
+   the transport) is the parent. A coordinator-lane caller counts only when
+   it names a SESSION (`coordinator:<session>`), so the spawn's shouts reach
+   that one window; a lane spelled without a session (`coordinator`,
+   `coordinator-hive`) leaves the spawn root-level, the lane the audience
+   layer routes to every coordinator reader."
   [{:keys [parent _caller_id]}]
   (let [explicit (when-not (str/blank? (str parent)) parent)
         caller   (when-not (str/blank? (str _caller_id)) (str _caller_id))]
     (or explicit
-        (when (and caller (not (audience/coordinator-reader? caller)))
-          caller))))
+        (when caller
+          (if (audience/coordinator-reader? caller)
+            (when (audience/coordinator-session caller) caller)
+            caller)))))
 
 (defn handle-spawn
   "Spawn a new ling agent.

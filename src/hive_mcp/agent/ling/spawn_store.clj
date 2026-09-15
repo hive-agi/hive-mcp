@@ -6,7 +6,8 @@
    DataScript backend."
   (:require [hive-mcp.protocols.registry :as reg]
             [hive-mcp.swarm.datascript.lings :as ds-lings]
-            [hive-mcp.swarm.datascript.queries :as ds-queries]))
+            [hive-mcp.swarm.datascript.queries :as ds-queries]
+            [hive-mcp.channel.audience :as audience]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -48,6 +49,19 @@
 (defn get-store
   []
   (reg/current slot))
+
+(defn ensure-coordinator-session!
+  "Give a coordinator SESSION (`coordinator:<session>`) a depth-0 row in
+   `store` when it has none, so a spawn parented to it can be written:
+   `:slave/parent` is a lookup ref and resolves only against an existing
+   row. A bare `coordinator`, a ling id, nil, or a session that already has
+   a row is left alone. -> the id when a row was added, else nil."
+  [store parent-id]
+  (when (and (string? parent-id)
+             (audience/coordinator-session parent-id)
+             (nil? (ds-queries/get-slave parent-id)))
+    (add-slave! store parent-id {:status :idle :depth 0})
+    parent-id))
 
 (defn reset-store!
   "Restore the default swarm-backed store. Intended for tests."

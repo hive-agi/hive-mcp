@@ -282,13 +282,16 @@
         (log/debug "Piggyback: descendant project-id resolution failed (non-fatal):" (.getMessage e))
         nil))))
 
-(defn- get-piggyback-messages [agent-id project-id]
-  (require 'hive-mcp.channel.piggyback)
-  (let [child-pids (resolve-child-project-ids project-id)]
-    ((resolve 'hive-mcp.channel.piggyback/get-messages)
-     agent-id
-     :project-id project-id
-     :additional-project-ids child-pids)))
+(defn- get-piggyback-messages
+  ([agent-id project-id] (get-piggyback-messages agent-id project-id nil))
+  ([agent-id project-id session-id]
+   (require 'hive-mcp.channel.piggyback)
+   (let [child-pids (resolve-child-project-ids project-id)]
+     ((resolve 'hive-mcp.channel.piggyback/get-messages)
+      agent-id
+      :project-id project-id
+      :additional-project-ids child-pids
+      :session-id session-id))))
 
 (defn- drain-memory-piggyback
   ([caller-id] (drain-memory-piggyback caller-id nil))
@@ -297,11 +300,15 @@
    ((resolve 'hive-mcp.channel.memory-piggyback/drain!) caller-id ctx)))
 
 (defn wrap-handler-piggybacks
-  "Unified piggyback wrapper — drains all 4 channels in a single pass.
+  "Unified piggyback wrapper: drains all 4 channels in a single pass.
    Task cues harvested from the request args steer the MEMORY drain that rides
    this response; they are empty unless task-signal/enabled?. The cues then feed
    `activation/drain-ctx`, which an activation provider may extend with pinned
-   entry ids — absent a provider the ctx is the cues alone."
+   entry ids; absent a provider the ctx is the cues alone.
+
+   The HIVEMIND read is keyed two ways: the reader id (caller plus project)
+   owns the project cursor, and the caller alone owns the global cursor, so
+   a session that touches several repos reads each global shout once."
   ([handler] (wrap-handler-piggybacks handler nil))
   ([handler tool-name]
    (fn [args]
@@ -325,7 +332,8 @@
            scope (id/extract-project-scope args)
            hm-agent-id (ctx-id/make-piggyback-agent-id caller scope)
            hm-project-id (ctx-id/project-scope-string scope)
-           hivemind-msgs (get-piggyback-messages hm-agent-id hm-project-id)]
+           hivemind-msgs (get-piggyback-messages hm-agent-id hm-project-id
+                                                 (ctx-id/caller-id-string caller))]
 
        (cond-> content
          async-drain

@@ -176,21 +176,29 @@
    :project-id project-id
    :kanban-task-id kanban-task-id})
 
+(defn- register-slave-row!
+  "Persist a slave row through the spawn store, first making sure its parent
+   can be referenced: a coordinator session named as parent gets its own row
+   on demand."
+  [store slave-id attrs]
+  (spawn-store/ensure-coordinator-session! store (:parent attrs))
+  (spawn-store/add-slave! store slave-id attrs))
+
 (defn- register-requested-slave!
   [{:keys [ling-id] :as plan} enriched-task]
-  (spawn-store/add-slave! (spawn-store/get-store)
-                          ling-id
-                          (initial-slave-attrs plan enriched-task)))
+  (register-slave-row! (spawn-store/get-store)
+                       ling-id
+                       (initial-slave-attrs plan enriched-task)))
 
 (defn- reconcile-spawned-slave!
   [{:keys [ling-id] :as plan} slave-id enriched-task]
   (when (not= slave-id ling-id)
     (let [store (spawn-store/get-store)]
       (spawn-store/remove-slave! store ling-id)
-      (spawn-store/add-slave! store
-                              slave-id
-                              (assoc (initial-slave-attrs plan enriched-task)
-                                     :requested-id ling-id)))))
+      (register-slave-row! store
+                           slave-id
+                           (assoc (initial-slave-attrs plan enriched-task)
+                                  :requested-id ling-id)))))
 
 (defn- provider-name
   "The explicit LLM provider of a spawn PLAN as a string, or nil."

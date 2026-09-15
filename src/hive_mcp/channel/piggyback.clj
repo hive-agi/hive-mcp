@@ -217,13 +217,18 @@
    Four stages, in order: cursor -> project -> audience -> digest.
 
    CURSOR is per [reader project], with one exception that is the whole
-   point: a \"global\" shout is read against the reader's [reader \"global\"]
-   cursor WHATEVER project the read asked for. Every project-scoped read
-   accepts global shouts, so with a cursor per project each first read under
-   a new project-id (a git call against another repo, a kanban call for a
-   sibling) replayed the entire global history from timestamp 0 — the
-   repeating-shouts symptom of kanban 20260519145332-0c5878a5, measured again
-   2026-09-07 when two commits in two repos each redelivered 54 wave shouts.
+   point: a \"global\" shout is read against ONE cursor per SESSION, whatever
+   project the read asked for. Every project-scoped read accepts global
+   shouts, so with a cursor per project each first read under a new
+   project-id (a git call against another repo, a kanban call for a sibling)
+   replayed the entire global history from timestamp 0: the repeating-shouts
+   symptom of kanban 20260519145332-0c5878a5, measured again 2026-09-07 when
+   two commits in two repos each redelivered 54 wave shouts, and again
+   2026-09-14 when one window re-read 30 wave shouts once per repo it
+   touched. The reader id the MCP lane derives already carries the project
+   (\"coordinator:7-hive\"), so the global cursor is keyed by :session-id,
+   the caller without its project, when the caller supplies one; a caller
+   that does not is keyed by its reader id as before.
 
    AUDIENCE is what keeps one ling's turns out of every other ling's context:
    a shout reaches the agent that spawned its author and nobody else (see
@@ -242,15 +247,17 @@
      :project-id              - Primary project scope for filtering
      :additional-project-ids  - Set of extra project-ids to include (for cross-project
                                 descendant shouts). Messages from these projects are
-                                included alongside the primary project's messages."
-  [agent-id & {:keys [project-id additional-project-ids]}]
+                                included alongside the primary project's messages.
+     :session-id              - The caller id without its project suffix; owns the
+                                global cursor. Defaults to the reader id."
+  [agent-id & {:keys [project-id additional-project-ids session-id]}]
   (when (and (nil? project-id) (not= agent-id "coordinator"))
     (log/warn "Agent" agent-id "reading hivemind without project-id - using global cursor"))
   (let [all-msgs (merged-messages)]
     (when (seq all-msgs)
       (let [effective-project (or project-id "global")
             project-key    [agent-id effective-project]
-            global-key     [agent-id "global"]
+            global-key     [(or session-id agent-id) "global"]
             cursors        @agent-read-cursors
             project-cursor (get cursors project-key 0)
             global-cursor  (get cursors global-key 0)
@@ -267,7 +274,7 @@
                               (> timestamp project-cursor))))
             new-msgs (->> all-msgs (filter fresh?) (sort-by :timestamp) vec)
             ;; Cursors advance over everything the project filter accepted, NOT
-            ;; only over what this reader is addressed by — otherwise a shout
+            ;; only over what this reader is addressed by; otherwise a shout
             ;; dropped by the audience filter would be re-examined forever.
             max-ts   (fn [msgs] (when (seq msgs) (apply max (map :timestamp msgs))))
             max-global  (max-ts (filter global? new-msgs))

@@ -57,6 +57,34 @@
     (is (aud/addressed-to? "coordinator-hive" msg))
     (is (aud/addressed-to? "any-ling" msg))))
 
+(deftest coordinator-sessions-are-distinct-readers-test
+  (testing "the session token is read off the MCP lane's spellings"
+    (is (= "1269206" (aud/coordinator-session "coordinator:1269206")))
+    (is (= "1269206" (aud/coordinator-session "coordinator:1269206-hive-assay")))
+    (is (= "a1b2c3d4" (aud/coordinator-session "coordinator:a1b2c3d4-hive")))
+    (is (nil? (aud/coordinator-session "coordinator")))
+    (is (nil? (aud/coordinator-session "coordinator-hive")))
+    (is (nil? (aud/coordinator-session "ling-7")))
+    (is (nil? (aud/coordinator-session nil))))
+  (testing "a ling spawned by one window reaches that window under any project
+            suffix, and no other window"
+    (let [msg {:agent-id "wave-x-m0" :parent-id "coordinator:1269206"}]
+      (is (aud/addressed-to? "coordinator:1269206-hive" msg))
+      (is (aud/addressed-to? "coordinator:1269206-hive-mcp" msg))
+      (is (aud/addressed-to? "coordinator:1269206" msg))
+      (is (not (aud/addressed-to? "coordinator:1343228-hive" msg)))
+      (is (not (aud/addressed-to? "coordinator:1343228" msg)))
+      (is (not (aud/addressed-to? "ling-b" msg)))))
+  (testing "a lane spelled without a session still matches every lane, so the
+            legacy and Emacs paths keep receiving"
+    (let [msg {:agent-id "ling-a" :parent-id "coordinator"}]
+      (is (aud/addressed-to? "coordinator:1269206-hive" msg))
+      (is (aud/addressed-to? "coordinator-hive" msg)))
+    (is (aud/addressed-to? "coordinator-hive" {:agent-id "ling-a" :parent-id "coordinator:1269206"})))
+  (testing "root-level shouts (no parent) still reach every coordinator lane"
+    (is (aud/addressed-to? "coordinator:1269206-hive" {:agent-id "orphan"}))
+    (is (aud/addressed-to? "coordinator:1343228-hive" {:agent-id "orphan"}))))
+
 (deftest no-self-echo-for-lings-test
   (testing "a ling does not read back its own shout"
     (is (not (aud/addressed-to? "ling-a" {:agent-id "ling-a" :parent-id "coordinator"}))))
