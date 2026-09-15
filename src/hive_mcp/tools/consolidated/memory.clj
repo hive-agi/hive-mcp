@@ -254,7 +254,12 @@
         base (update-in tool-def [:inputSchema :properties]
                         #(merge subdomain-props %))]
     (try
-      (let [relation-names (mapv name ((requiring-resolve 'hive-mcp.knowledge-graph.schema/relation-types)))]
+      ;; Sorted, because this enum lands in the tools span: the FIRST span of
+      ;; an LLM request, which a provider caches on its BYTES. relation-types
+      ;; answers a SET, so its iteration order shifts the moment an addon
+      ;; registers a relation, and an unsorted enum would invalidate the whole
+      ;; cached prefix without one relation actually changing.
+      (let [relation-names (vec (sort (map name ((requiring-resolve 'hive-mcp.knowledge-graph.schema/relation-types)))))]
         [(-> base
              (assoc-in [:inputSchema :properties "relation" :enum] relation-names)
              (assoc-in [:inputSchema :properties "predicate"]

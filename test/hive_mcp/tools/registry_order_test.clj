@@ -18,7 +18,9 @@
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as tc-prop]
             [hive-mcp.extensions.registry :as ext]
-            [hive-mcp.tools.registry :as reg]))
+            [hive-mcp.tools.registry :as reg]
+            [hive-mcp.tools.consolidated.memory :as c-memory]
+            [hive-mcp.knowledge-graph.schema :as kg-schema]))
 
 (defn- mk-tool
   "Minimal tool-def. The `zz-addon-` prefix keeps generated names clear of
@@ -71,3 +73,41 @@
           core  (set (mapv :name (reg/core-tools)))]
       (= (into core (map :name) tools)
          (set (advertised-names (shuffle tools)))))))
+
+;; =============================================================================
+;; Registry-backed enums inside a tool schema
+;; =============================================================================
+;;
+;; The memory tool's `relation` enum is resolved at advertisement time from
+;; kg-schema/relation-types, which answers a SET. Its iteration order follows
+;; the hash layout of whatever is registered, so before this was sorted an
+;; addon registering one relation could reorder the whole enum and invalidate
+;; every prefix cached behind the tools span.
+
+(defn- relation-enum []
+  (get-in (first (c-memory/tool-defs))
+          [:inputSchema :properties "relation" :enum]))
+
+(deftest the-relation-enum-is-sorted
+  (testing "advertised relation types come out in a defined order"
+    (let [enum (relation-enum)]
+      (is (seq enum) "the enum resolved at all")
+      (is (= (vec (sort enum)) (vec enum)))
+      (is (= (count (distinct enum)) (count enum)) "no duplicates"))))
+
+(deftest registering-a-relation-cannot-reorder-the-others
+  (testing "an addon's new relation slots into place instead of reshuffling"
+    (let [before (relation-enum)]
+      (try
+        (kg-schema/register-relation-type! :zz-order-test-relation)
+        (let [after (relation-enum)]
+          (is (= (vec (sort after)) (vec after))
+              "still sorted after an addon registers")
+          (is (some #{"zz-order-test-relation"} after)
+              "the new relation is advertised")
+          (is (= (vec before) (vec (remove #{"zz-order-test-relation"} after)))
+              "every other relation kept its exact position"))
+        (finally
+          (swap! @(ns-resolve 'hive-mcp.knowledge-graph.schema
+                              'relation-type-extensions)
+                 disj :zz-order-test-relation))))))
