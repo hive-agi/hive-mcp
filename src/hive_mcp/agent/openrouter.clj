@@ -11,7 +11,8 @@
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.agent.provider :as provider]
-            [hive-mcp.agent.provider.model :as model]))
+            [hive-mcp.agent.provider.model :as model]
+            [hive-mcp.agent.cache :as cache]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -201,14 +202,23 @@
          :content content}))))
 
 (defn- chat-request
-  "Make chat completion request to an OpenAI-compatible endpoint."
+  "Make chat completion request to an OpenAI-compatible endpoint.
+
+   Prompt-cache breakpoints are placed on the way out when this provider
+   forwards them to a model that honours them (see `hive-mcp.agent.cache`).
+   Without them a ling re-sends its system prompt at full price on every turn;
+   with them the stable prefix is read back at a tenth of it. A provider that
+   declares no cache dialect is sent the array untouched."
   [endpoint-url api-key model messages tools provider-name]
   (let [start-ms (System/currentTimeMillis)
+        entry (get (effective-provider-registry) (keyword provider-name))
+        messages (cache/maybe-mark entry model messages)
         msg-count (count messages)
         tool-count (count tools)]
 
     (log/debug (str provider-name " request starting")
-               {:model model :messages msg-count :tools tool-count})
+               {:model model :messages msg-count :tools tool-count
+                :cache-blocks (cache/marker-count messages)})
     (record-request!)
 
     (try
