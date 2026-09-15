@@ -244,14 +244,14 @@
 
 (defn- heap-pressure-level
   "Best-effort heap-pressure level -> :ok | :soft | :hard. Never throws.
-   Prefers the canonical hive-knowledge mem-guard when its ns is on the
-   classpath (live combined JVM); hive-mcp must NOT compile-depend on the
-   addon, so it is resolved dynamically. Falls back to an inline Runtime heap
-   fraction against the same default watermarks {:soft 0.80 :hard 0.92}."
+   Prefers the canonical hive-cache.mem-guard governor when its ns is on the
+   classpath; hive-mcp does not compile-depend on hive-cache, so it is
+   resolved dynamically. Falls back to an inline Runtime heap fraction against
+   the same default watermarks {:soft 0.80 :hard 0.92}."
   []
   (or
    (try
-     (when-let [check (requiring-resolve 'hive-knowledge.cache.mem-guard/check)]
+     (when-let [check (requiring-resolve 'hive-cache.mem-guard/check)]
        (:level (check nil nil)))
      (catch Throwable _ nil))
    (try
