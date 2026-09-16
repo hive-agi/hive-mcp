@@ -348,7 +348,12 @@
   ;; The coordinator is shown a peer-traffic row naming a contextId instead of
   ;; the messages. That row is only worth its characters if the id can be
   ;; cashed in; an id nothing can redeem is decoration.
-  (let [msgs [{:agent-id "ling-a" :to "ling-b" :context-id "c-1" :event-type :progress
+  (let [;; Capture the source this JVM actually had. Installing a constant
+        ;; `(fn [] [])` on the way out is not a restore: it leaves every later
+        ;; namespace reading an empty hivemind, which is the shape the other
+        ;; piggyback suites avoid with the same binding.
+        original-source @pb/message-source-fn
+        msgs [{:agent-id "ling-a" :to "ling-b" :context-id "c-1" :event-type :progress
                :message "q1" :timestamp 10 :project-id "p"}
               {:agent-id "ling-b" :to "ling-a" :context-id "c-1" :event-type :progress
                :message "a1" :timestamp 11 :project-id "p"}
@@ -376,5 +381,6 @@
         (is (nil? (pb/fetch-conversation "")))
         (is (nil? (pb/fetch-conversation nil))))
       (finally
-        (pb/register-message-source! (fn [] []))
-        (pb/reset-all-cursors!)))))
+        (pb/reset-all-cursors!)
+        (pb/clear-backbone-buffer!)
+        (pb/register-message-source! original-source)))))

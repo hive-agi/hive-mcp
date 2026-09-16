@@ -50,7 +50,7 @@
    reader. That is the wire cost, with no estimation in it. Tokens are reported
    as chars/4 and labelled an estimate, because no tokenizer is on this
    classpath and inventing precision would be worse than not having it."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.channel.audience :as aud]
             [hive-mcp.channel.broadcast-ledger :as bledger]
             [hive-mcp.channel.broadcast-policy :as bp]
@@ -62,6 +62,21 @@
 ;; =============================================================================
 ;; Workload
 ;; =============================================================================
+
+;; This suite installs a message source to drive its workload. Without a
+;; restore the LAST source it installs stays live for the rest of the JVM, and
+;; every later namespace reads its bench messages instead of its own. The
+;; sibling piggyback suites all carry this binding; this one did not.
+(use-fixtures :each
+  (fn [f]
+    (let [original-source @pb/message-source-fn]
+      (pb/reset-all-cursors!)
+      (pb/clear-backbone-buffer!)
+      (try (f)
+           (finally
+             (pb/reset-all-cursors!)
+             (pb/clear-backbone-buffer!)
+             (pb/register-message-source! original-source))))))
 
 (def ^:private swarm-size 6)
 (def ^:private turns-per-ling 8)
