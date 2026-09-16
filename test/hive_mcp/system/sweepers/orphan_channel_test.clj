@@ -42,16 +42,42 @@
   (swap! registered conj (ports/owner-id owner))
   (reg/register-resource-owner! owner))
 
-(defn- clean-registry [f]
+(defn- clean-registry
+  "Give each test a registry containing ONLY the owners it registers itself.
+
+   The resource-owner registry is process-global, and a sweep acts on EVERY
+   owner in it. Sibling suites leave their own owners behind, so a test that
+   asserts a sweep COUNT is silently asserting about their owners too: this
+   namespace passed standalone and then reported `(not (= 1 10))` in the full
+   suite, where nine foreign owners had accumulated ahead of it.
+
+   So the fixture lifts the foreign owners out for the duration and puts them
+   back afterwards, which is the snapshot-and-restore that axiom
+   20260629165653-461fcd11 requires of any fixture that touches global state.
+   Restoring in a `finally` is the part that matters: leaving them out would
+   break whichever suite runs next, which is the same cross-suite damage in the
+   opposite direction.
+
+   A foreign owner whose own `owner-id` throws cannot be removed by id and is
+   left alone, since there is nothing to key the removal on."
+  [f]
   (reset! registered #{})
-  (try
-    (f)
-    (finally
-      ;; Only ids this namespace registered. The registry is process-global and
-      ;; sibling suites hold their own owners (axiom 20260629165653-461fcd11).
-      (doseq [id @registered]
-        (reg/unregister-resource-owner! id))
-      (reset! registered #{}))))
+  (let [foreign (vec (reg/registered-resource-owners))
+        id-of   (fn [impl] (try (ports/owner-id impl) (catch Throwable _ nil)))]
+    (doseq [impl foreign
+            :let [id (id-of impl)]
+            :when id]
+      (reg/unregister-resource-owner! id))
+    (try
+      (f)
+      (finally
+        ;; Only ids this namespace registered. The registry is process-global and
+        ;; sibling suites hold their own owners (axiom 20260629165653-461fcd11).
+        (doseq [id @registered]
+          (reg/unregister-resource-owner! id))
+        (reset! registered #{})
+        (doseq [impl foreign]
+          (try (reg/register-resource-owner! impl) (catch Throwable _ nil)))))))
 
 (use-fixtures :each clean-registry)
 

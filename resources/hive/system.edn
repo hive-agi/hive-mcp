@@ -1,4 +1,4 @@
-;; Integrant system map — base config (all 22 keys).
+;; Integrant system map — base config (all 23 keys).
 ;; Profiles (desktop.edn, k8s-headless.edn, k8s-minimal.edn) merge over this
 ;; via meta-merge to add/remove/override keys per deployment target.
 ;;
@@ -70,6 +70,12 @@
  :hive/registry-sync   {:swarm-sync #ig/ref :hive/swarm-sync}
  :hive/decay-scheduler {:embedding #ig/ref :hive/embedding}
  :hive/housekeeping    {}
+ ;; Heartbeat for the ISweepable registry. Separate from :hive/housekeeping,
+ ;; which runs its own HARDCODED task list on a 5 minute timer; this one runs
+ ;; whatever has registered, at each sweep's own interval. Until this key
+ ;; existed the coordinator was never started, so every registry-based sweep
+ ;; was inert while housekeeping's hardcoded ones ran.
+ :hive/sweep-coordinator {}
  ;; :extensions edge: the MCP tools/list snapshot (build-server-spec → make-tool
  ;; merge of addon schema-extensions) is frozen at :hive/mcp-stdio init. It MUST
  ;; run AFTER addon register-schema! or the served `code` tool loses all carto

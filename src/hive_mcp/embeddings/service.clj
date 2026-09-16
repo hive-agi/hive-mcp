@@ -38,7 +38,7 @@
             ;; which historically closed a load cycle at test time).
             ;; chroma.embeddings is the protocol-only
             ;; seam — safe to depend on from the embedding domain service.
-            [hive-mcp.chroma.embeddings :as chroma]
+            [hive-mcp.embeddings.active :as chroma]
             [hive-mcp.config.core :as global-config]
             [hive-mcp.dns.result :refer [rescue]]
             [taoensso.timbre :as log]

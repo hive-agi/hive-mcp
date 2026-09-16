@@ -39,7 +39,8 @@
             [hive-hot.events :as hot-events]
             [taoensso.timbre :as log]
             [clojure.string :as str] [hive-dsl.result :refer [rescue]]
-            [hive-mcp.hot.self :as hot-self]))
+            [hive-mcp.hot.self :as hot-self]
+            [hive-mcp.protocols.vector :as vec-proto]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -292,17 +293,38 @@
                 "chroma")]
     (-> b name clojure.string/lower-case)))
 
-(defn wire-memory-store!
-  "Wire the active IMemoryStore backend based on global config.
+(defn- wire-vector-store!
+  "Install the vector-collection backend.
 
-   Dispatch: :services :memory-store :backend (fallback :memory :default-store).
-     - \"milvus\": defer to hive-milvus addon. Its initialize! calls set-store!
+   Resolved LAZILY, and that is the point: the composition root NAMES a
+   provider, it does not link one. A static require here would also be a
+   kernel -> non-kernel edge needing a waiver, and kernel.edn says its waiver
+   list may only shrink. When chroma becomes the hive-chroma IAddon, the addon
+   registers itself and this fallback is what stops existing."
+  [backend-id]
+  (result/rescue-log "wire-vector-store!" nil
+                     (if-let [make (requiring-resolve 'hive-mcp.chroma.vector-store/chroma-vector-store)]
+                       (do (vec-proto/set-store! (make))
+                           (log/info "Chroma wired as the IVectorCollectionStore"
+                                     {:backend backend-id}))
+                       (log/warn "No vector-collection backend available"
+                                 {:backend backend-id}))))
+
+(defn wire-memory-store!
+  "Select and wire the memory backend.
+
+     - milvus: defer to the hive-milvus addon, which registers its own store
        during Phase 4.5 (load-extensions!).
      - anything else: wire ChromaMemoryStore immediately (legacy behavior).
 
    Must run AFTER init-embedding-provider! since Chroma config is set there.
    A post-extensions fallback in `ensure-memory-store!` guarantees a live
-   store even when the selected addon fails to register."
+   store even when the selected addon fails to register.
+
+   This is the COMPOSITION ROOT, and the one place allowed to name a concrete
+   backend. It wires two INDEPENDENT seams: the memory-entry store
+   (protocols.memory) and the named-collection store (protocols.vector) that
+   plan.plans and presets.core drive."
   []
   (result/rescue-log "wire-memory-store!" nil
                  (let [backend (resolve-memory-backend)]
@@ -313,6 +335,7 @@
 
                      (let [store (chroma-store/create-store)]
                        (mem-proto/set-store! store)
+                       (wire-vector-store! backend)
                        (log/info "ChromaMemoryStore wired as active IMemoryStore backend"
                                  {:backend backend}))))))
 
@@ -321,13 +344,21 @@
 
    Called in Phase 4.6 (after load-extensions!). If the configured backend's
    addon failed to register a store, wire ChromaMemoryStore as a safety
-   fallback so memory queries don't throw 'No memory store configured'."
+   fallback so memory queries don't throw 'No memory store configured'.
+
+   The vector-collection store gets the same treatment, and SEPARATELY: an
+   addon may satisfy one seam and not the other, so a single `store-set?`
+   check over both would leave whichever it did not name unwired."
   []
   (result/rescue-log "ensure-memory-store!" nil
                  (when-not (mem-proto/store-set?)
                    (log/warn "ensure-memory-store!: no store after extensions; wiring Chroma fallback")
                    (let [store (chroma-store/create-store)]
-                     (mem-proto/set-store! store)))))
+                     (mem-proto/set-store! store)))
+                 (when-not (vec-proto/store-set?)
+                   (log/warn "ensure-memory-store!: no vector-collection store after extensions;"
+                             "wiring fallback")
+                   (wire-vector-store! :fallback))))
 
 ;; =============================================================================
 ;; Channel Bridge + Sync

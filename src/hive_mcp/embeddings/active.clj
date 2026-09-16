@@ -1,4 +1,4 @@
-(ns hive-mcp.chroma.embeddings
+(ns hive-mcp.embeddings.active
   "Embedding provider management (atom-backed registry, routing helpers).
 
    The EmbeddingProvider protocol itself has moved to

@@ -7,7 +7,7 @@
    - P3: all 3 embedder records satisfy the protocol"
   (:require [clojure.test :refer [deftest testing is]]
             [hive-mcp.embeddings.protocol :as proto]
-            [hive-mcp.chroma.embeddings :as chroma-emb]
+            [hive-mcp.embeddings.active :as chroma-emb]
             ;; The three embedder impls must be required HERE, at ns level.
             ;; A runtime (require ...) inside a deftest body does not help:
             ;; fully-qualified symbols in the body are resolved at COMPILE

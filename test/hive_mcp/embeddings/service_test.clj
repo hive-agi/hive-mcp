@@ -14,7 +14,7 @@
             [hive-mcp.embeddings.config :as config]
             [hive-mcp.embeddings.registry :as registry]
             [hive-mcp.chroma.core :as chroma]
-            [hive-mcp.chroma.embeddings :as chroma-emb]
+            [hive-mcp.embeddings.active :as chroma-emb]
             [hive-mcp.test-fixtures :as fixtures]))
 
 ;; =============================================================================

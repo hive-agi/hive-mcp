@@ -61,11 +61,11 @@
 
    :embedding/provider
    (fn []
-     (call 'hive-mcp.chroma.embeddings/get-embedding-provider))
+     (call 'hive-mcp.embeddings.active/get-embedding-provider))
 
    :embedding/configured?
    (fn []
-     (call 'hive-mcp.chroma.embeddings/embedding-configured?))
+     (call 'hive-mcp.embeddings.active/embedding-configured?))
 
    :kg/register-schema!
    (fn [schema]

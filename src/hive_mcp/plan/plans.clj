@@ -42,12 +42,13 @@
 
      ;; Query plans by project
      (query-plans :project-id \"hive-mcp\" :limit 10)"
-  (:require [hive-mcp.chroma.core :as chroma]
-            [hive-mcp.dns.result :as result]
+  (:require [hive-mcp.dns.result :as result]
             [hive-weave.safe :as ws]
-            [hive-mcp.chroma.client :as chroma-api]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-spi.embeddings.ports :as embed]
+            [hive-mcp.protocols.vector :as vp]
+            [hive-mcp.embeddings.active :as active]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -76,14 +77,14 @@
   "Try to get existing collection. Returns nil on failure."
   []
   (result/rescue nil
-                 (ws/deref-safe! (chroma-api/get-collection collection-name) 15000)))
+                 (vp/-get-collection (vp/require-store) collection-name)))
 
 (defn- delete-collection!
   "Delete the plans collection. Returns true on success."
   []
   (result/rescue false
                  (when-let [coll (try-get-existing-collection)]
-                   (ws/deref-safe! (chroma-api/delete-collection coll) 30000)
+                   (vp/-delete-collection (vp/require-store) coll)
                    (Thread/sleep 50))
                  true))
 
@@ -96,12 +97,11 @@
     (log/warn "Stale plans collection found after delete, forcing re-delete")
     (delete-collection!))
   ;; Create the collection
-  (ws/deref-safe! (chroma-api/create-collection
-                    collection-name
-                    {:metadata {:dimension dim
-                                :created-by "hive-mcp"
-                                :purpose "plan-memory-entries"}})
-                  30000)
+  (vp/-create-collection (vp/require-store)
+                         collection-name
+                         {:metadata {:dimension dim
+                                     :created-by "hive-mcp"
+                                     :purpose "plan-memory-entries"}})
   ;; Get fresh reference
   (Thread/sleep 50)
   (or (try-get-existing-collection)
@@ -136,12 +136,12 @@
   []
   (if-let [coll @collection-cache]
     coll
-    (let [provider (chroma/get-provider-for collection-name)]
+    (let [provider (active/get-provider-for collection-name)]
       (when-not provider
         (throw (ex-info "Embedding provider not configured for plans collection."
                         {:type :no-embedding-provider
                          :collection collection-name})))
-      (let [required-dim (chroma/embedding-dimension provider)
+      (let [required-dim (embed/embedding-dimension provider)
             existing (try-get-existing-collection)]
         (if existing
           ;; Check dimension match
@@ -224,7 +224,7 @@
                                  (or knowledge-gaps ""))))))
 
 (defn index-plan!
-  "Index a plan entry in the plans Chroma collection.
+  "Index a plan entry in the plans collection.
 
    Entry map keys:
      :type       - 'plan' (default: 'plan')
@@ -245,19 +245,19 @@
    COLLECTION-AWARE: Uses collection-specific embedding provider."
   [{:keys [id type] :as entry}]
   (let [coll (get-or-create-collection)
-        provider (chroma/get-provider-for collection-name)
+        provider (active/get-provider-for collection-name)
         entry-id (or id (let [ts (java.time.LocalDateTime/now)
                               fmt (java.time.format.DateTimeFormatter/ofPattern "yyyyMMddHHmmss")]
                           (str (.format ts fmt) "-" (subs (str (java.util.UUID/randomUUID)) 0 8))))
         doc-text (entry-to-document entry)
-        embedding (chroma/embed-text provider doc-text)
+        embedding (embed/embed-text provider doc-text)
         metadata (extract-entry-metadata entry)]
-    (ws/deref-safe! (chroma-api/add coll [{:id entry-id
-                                           :embedding embedding
-                                           :document doc-text
-                                           :metadata metadata}]
-                                    :upsert? true)
-                    30000)
+    (vp/-add (vp/require-store) coll
+             [{:id entry-id
+               :embedding embedding
+               :document doc-text
+               :metadata metadata}]
+             {:upsert? true})
     (log/info "Indexed" (or type "plan") "in plans collection:" entry-id
               (when (:plan-status metadata) (str "status:" (:plan-status metadata)))
               (when (:steps-count metadata) (str "steps:" (:steps-count metadata))))
@@ -277,17 +277,15 @@
    Returns seq of {:id, :type, :tags, :project-id, :plan-status, :distance, :preview}"
   [query-text & {:keys [limit project-id type plan-status] :or {limit 5}}]
   (let [coll (get-or-create-collection)
-        provider (chroma/get-provider-for collection-name)
-        query-embedding (chroma/embed-text provider query-text)
+        provider (active/get-provider-for collection-name)
+        query-embedding (embed/embed-text provider query-text)
         where-clause (cond-> nil
                        type (assoc :type type)
                        project-id (assoc :project-id project-id)
                        plan-status (assoc :plan-status plan-status))
-        results (ws/deref-safe! (chroma-api/query coll query-embedding
-                                                  :num-results limit
-                                                  :where where-clause
-                                                  :include #{:documents :metadatas :distances})
-                               15000)]
+        results (vp/-query (vp/require-store) coll query-embedding
+                           {:n-results limit
+                            :where where-clause})]
     (log/debug "Plan search for:" (subs query-text 0 (min 50 (count query-text)))
                "found:" (count results))
     (mapv (fn [{:keys [id document metadata distance]}]
@@ -312,8 +310,9 @@
   [plan-id]
   (result/rescue nil
                  (let [coll (get-or-create-collection)
-                       results (ws/deref-safe! (chroma-api/get coll :ids [plan-id] :include #{:documents :metadatas})
-                                               15000)]
+                       results (vp/-get (vp/require-store) coll
+                                        {:ids [plan-id]
+                                         :include #{:documents :metadatas}})]
                    (when-let [{:keys [id document metadata]} (first results)]
                      {:id id
                       :type (get metadata :type "plan")
@@ -352,11 +351,10 @@
                                       type (assoc :type type)
                                       project-id (assoc :project-id project-id)
                                       plan-status (assoc :plan-status plan-status))
-                       results (ws/deref-safe! (chroma-api/get coll
-                                                              :where where-clause
-                                                              :include #{:metadatas :documents}
-                                                              :limit limit)
-                                             15000)]
+                       results (vp/-get (vp/require-store) coll
+                                        {:where where-clause
+                                         :include #{:metadatas :documents}
+                                         :limit limit})]
                    (->> results
                         (map (fn [{:keys [id metadata document]}]
                                {:id id
@@ -372,7 +370,8 @@
                                 :duration (get metadata :duration)
                                 :preview (when document
                                            (subs document 0 (min 200 (count document))))}))
-           ;; Apply tag filter in memory (Chroma where doesn't support substring matching on tags)
+           ;; Tag filter runs in memory: the backend's `where` is equality over
+           ;; metadata and cannot match a substring inside the joined tag string.
                         (filter (fn [entry]
                                   (if (seq tags)
                                     (let [entry-tags (set (:tags entry))]
@@ -392,9 +391,9 @@
                      :status new-status})))
   (result/rescue nil
                  (let [coll (get-or-create-collection)]
-                   (ws/deref-safe! (chroma-api/update coll [{:id plan-id
-                                                              :metadata {:plan-status new-status}}])
-                                   30000)
+                   (vp/-update (vp/require-store) coll
+                               [{:id plan-id
+                                 :metadata {:plan-status new-status}}])
                    (log/info "Updated plan status:" plan-id "->" new-status)
                    plan-id)))
 
@@ -402,16 +401,16 @@
   "Delete a plan from the plans collection."
   [plan-id]
   (let [coll (get-or-create-collection)]
-    (ws/deref-safe! (chroma-api/delete coll :ids [plan-id]) 30000)
-    (log/debug "Deleted plan from Chroma:" plan-id)
+    (vp/-delete (vp/require-store) coll {:ids [plan-id]})
+    (log/debug "Deleted plan:" plan-id)
     plan-id))
 
 (defn status
   "Get plans collection integration status."
   []
   (let [base {:collection collection-name
-              :chroma-configured? (chroma/embedding-configured?)}]
-    (if (chroma/embedding-configured?)
+              :chroma-configured? (active/embedding-configured?)}]
+    (if (active/embedding-configured?)
       (let [plans (query-plans)
             rescue-err (some-> plans meta ::result/error)]
         (if rescue-err

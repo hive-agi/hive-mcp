@@ -108,5 +108,26 @@
        :errors (:errors result)
        :result result})))
 
-(defonce registered?
-  (do (reg/register-sweep! (->TerminalLivenessSweep)) true))
+(def registered?
+  "False BY DESIGN: `:hive/housekeeping` owns terminal liveness, not the sweep
+   registry.
+
+   This used to be a `defonce` that called `reg/register-sweep!` on load, which
+   made ownership depend on WHEN the namespace happened to be required. With the
+   sweep coordinator now running, that produced a real double sweep: housekeeping
+   calls `sweep-once!` on its own 5 minute timer, and the registration made the
+   coordinator call it again at the 60s interval this record declares. Two timers
+   over the same DataScript rows make a zombification unattributable, and the
+   shorter interval silently wins the cadence.
+
+   Unregistering at coordinator start could not fix it, because the registration
+   had not happened yet: housekeeping's own `resolve-and-call` is what loads this
+   namespace, so the `defonce` fired AFTER the unregister and re-armed the
+   duplicate. Ownership cannot be enforced by timing; the registration itself had
+   to go.
+
+   `TerminalLivenessSweep` is kept: it is a correct ISweepable and is the shape
+   to use if ownership ever moves to the registry deliberately. Moving it means
+   registering it somewhere explicit AND dropping the housekeeping task, in one
+   change."
+  false)

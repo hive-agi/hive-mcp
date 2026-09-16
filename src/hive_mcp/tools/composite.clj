@@ -11,7 +11,8 @@
   (:require [hive-mcp.extensions.registry :as ext]
             [hive-mcp.tools.cli :as cli]
             [clojure.string :as str]
-            [hive-mcp.dispatch.handler :as dispatch]))
+            [hive-mcp.dispatch.handler :as dispatch]
+            [hive-addon.registry.commands :as acmds]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -34,7 +35,7 @@
    log. A silent loss of the addon wrapper is worse than a refusal, because
    nothing downstream can tell the unwrapped handler from a wrapped one."
   [tool-name]
-  (when-let [commands (ext/get-contributed-commands tool-name)]
+  (when-let [commands (acmds/get-commands tool-name)]
     (let [wrap (ext/get-extension :addon/wrap-handler)]
       (into {} (map (fn [[cmd {:keys [handler addon]}]]
                       [(keyword cmd) (if (and wrap (dispatch/handler? handler))
@@ -175,7 +176,7 @@
    description-prefix: e.g. \"Code analysis\"
    Returns tool-def map identical in shape to other consolidated tools."
   [tool-name description-prefix]
-  (let [commands (ext/get-contributed-commands tool-name)
+  (let [commands (acmds/get-commands tool-name)
         cmd-names (vec (sort (keys commands)))
         all-params (apply merge-with merge (map :params (vals commands)))
         handler (build-composite-handler tool-name)]
@@ -231,7 +232,7 @@
    enum made of addon names alone, which would refuse every core command."
   [core-tool-def]
   (let [tool-name       (:name core-tool-def)
-        addon-cmds      (ext/get-contributed-commands tool-name)
+        addon-cmds      (acmds/get-commands tool-name)
         addon-cmd-names (vec (sort (keys (or addon-cmds {}))))
         addon-params    (apply merge-with union-property
                                (keep :params (vals (or addon-cmds {}))))
@@ -258,7 +259,7 @@
   "Build handler map for registry introspection (consolidated-handler-maps).
    Returns keyword->fn map compatible with cli/extract-commands."
   [tool-name]
-  (let [commands (ext/get-contributed-commands tool-name)]
+  (let [commands (acmds/get-commands tool-name)]
     (into {:help (fn [_] {:type "text" :text "help"})}
           (map (fn [[cmd {:keys [handler]}]]
                  [(keyword cmd) handler])
@@ -290,7 +291,7 @@
    `memory` whose 41 canonical verbs would disappear from dispatch — leaving
    only addon-contributed verbs callable."
   [descriptions]
-  (vec (for [tool-name (ext/contributed-tool-names)
+  (vec (for [tool-name (acmds/contributed-tool-names)
              :when (contains? descriptions tool-name)
              :let [desc (get descriptions tool-name)]]
          (build-composite-tool tool-name desc))))

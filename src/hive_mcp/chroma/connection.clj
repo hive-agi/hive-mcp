@@ -1,7 +1,7 @@
 (ns hive-mcp.chroma.connection
   "Chroma connection configuration, collection management, and health status."
   (:require [hive-mcp.chroma.client :as chroma]
-            [hive-mcp.chroma.embeddings :as emb]
+            [hive-mcp.embeddings.active :as emb]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>

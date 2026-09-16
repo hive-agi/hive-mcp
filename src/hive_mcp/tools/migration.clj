@@ -23,10 +23,10 @@
             [hive-mcp.knowledge-graph.connection :as kg-conn]
             [hive-mcp.knowledge-graph.migration :as kg-mig]
             [hive-mcp.tools.memory.scope :as scope]
-            [hive-mcp.chroma.core :as chroma]
             [clojure.java.io :as io]
             [clojure.edn :as edn]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.vectordb.facade :as facade]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -75,7 +75,7 @@
    Returns {:entries [...] :counts {:note N :snippet N ...} :total N}"
   []
   (let [;; Get all entries including expired for complete backup
-        entries (chroma/query-entries :limit 50000 :include-expired? true)
+        entries (facade/query-entries :limit 50000 :include-expired? true)
         ;; Remove :document field (regenerated on import from content)
         clean-entries (mapv #(dissoc % :document) entries)
         ;; Group by type for counts

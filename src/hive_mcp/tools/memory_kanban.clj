@@ -32,7 +32,8 @@
             [taoensso.timbre :as log]
             [hive-mcp.tools.kanban.filters :as kf]
             [hive-mcp.vectordb.kanban-facade :as kanban-facade]
-            [hive-mcp.tools.memory-kanban.query :as query]))
+            [hive-mcp.tools.memory-kanban.query :as query]
+            [hive-mcp.session.current :as session]))
 
 (declare query-kanban-entries resolve-project-ids-with-descendants effective-dir stats* filter-kanban-by-tags list-slim*)
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -56,10 +57,16 @@
 ;; ============================================================
 
 (defn- track-movement!
+  "Record a kanban status transition for wrap harvest. Non-fatal.
+
+   Stamps the writing session's id so a scoped wrap can tell whose row it is
+   (see tools.kanban.effects/track-movement!). Kanban 20260915164015-7e057e5b."
   [{:keys [task-id title from to project-id]}]
   (try
     (ds/register-kanban-movement!
-     {:task-id task-id :title title :from from :to to :project-id project-id})
+     {:task-id task-id :title title :from from :to to :project-id project-id
+      :session-id (try (session/session-id {:project-id project-id})
+                       (catch Throwable _ nil))})
     (catch Exception e
       (log/debug "track-movement! failed (non-fatal):" (.getMessage e)))))
 

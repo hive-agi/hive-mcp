@@ -21,6 +21,16 @@
   "A var whose value is data, to prove the var arm checks the VALUE."
   42)
 
+(def ^:private an-alias
+  "A var whose value is ANOTHER VAR — the shape an alias re-export takes once
+   both the alias and the table that names it are var-quoted:
+
+     (def has-plan? #'pred/has-plan?)     ; the alias
+     {:has-plan? #'has-plan?}             ; the table entry
+
+   Two seams stacked, not an abuse."
+  #'a-handler)
+
 (deftest a-plain-function-is-a-handler
   (is (dispatch/handler? a-handler))
   (is (dispatch/handler? (fn [_] nil)))
@@ -58,6 +68,37 @@
             "the registry kept the same var and still saw the new value")
         (is (= :rebound (held {}))
             "and invoking the var directly agrees, which is the seam working")))))
+
+(deftest current-follows-a-chain-of-vars-to-a-fixed-point
+  (testing "one deref is not enough once an alias is also a var"
+    (is (identical? a-handler (dispatch/current #'an-alias))
+        "table entry -> alias -> function, resolved in one call")
+    (is (identical? a-handler (dispatch/current an-alias))
+        "and entering the chain one link down lands in the same place"))
+  (testing "a chain still reads through at CALL time, at every link"
+    (let [held #'an-alias]
+      (is (= :answered ((dispatch/current held) {})))
+      (with-redefs [a-handler (fn [_] :rebound)]
+        (is (= :rebound ((dispatch/current held) {}))
+            "a reload at the END of the chain reaches a reader holding its HEAD")))))
+
+(deftest handler?-accepts-a-var-chain
+  (testing "the predicate agrees with current, because it is stated through it"
+    (is (dispatch/handler? #'an-alias))
+    (is (dispatch/handler? an-alias))))
+
+(deftest a-cyclic-var-chain-is-refused-rather-than-hanging
+  (testing "the hop bound turns a pathological cycle into a refusal"
+    (let [ns' (the-ns 'hive-mcp.dispatch.handler-test)
+          v   (intern ns' 'a-cyclic-var)]
+      (try
+        (alter-var-root v (constantly v))
+        (is (var? (dispatch/current v))
+            "current gives up and hands back a var, still un-dereferenced")
+        (is (not (dispatch/handler? v))
+            "so the caller's own gate reports an uninvocable handler")
+        (finally
+          (ns-unmap ns' 'a-cyclic-var))))))
 
 (defn- compose
   "A stand-in for `build-middleware-chain`: wrap `h` in a closure the way the
