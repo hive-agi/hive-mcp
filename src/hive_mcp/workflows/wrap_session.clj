@@ -18,9 +18,15 @@
      trace-log-enter / always / default-handle-error).
 
    Resources map (injected at run time):
-     :harvest-fn     -- (fn [directory] -> harvested-data)
+     :harvest-fn     -- (fn [{:directory :agent-id :session-ref :parent-of}]
+                        -> harvested-data). Takes the OPTS MAP so the
+                        SessionRef reaches the harvest and its reads come back
+                        scoped to the rows this wrap owns.
      :crystallize-fn -- (fn [harvested] -> {:summary-id str, :stats map, ...})
      :kg-edge-fn     -- (fn [summary-id source-ids project-id agent-id] -> {:created-count N})
+     :contains-edge-fn -- (fn [summary-id child-ids project-id agent-id] -> {:created-count N})
+                        Links this summary to the entries of the wraps it
+                        ADOPTED, with :contains. Absent: no nesting edges.
      :notify-fn      -- (fn [agent-id session-id project-id stats] -> nil)
      :evict-fn       -- (fn [agent-id] -> {:evicted N})
      :session-ref-fn -- (fn [{:agent-id :project-id}] -> SessionRef) — the
@@ -148,14 +154,22 @@
   "Harvest session data for crystallization.
    EDN handler key: :gather
 
+   harvest-fn takes the OPTS MAP, not a bare directory, so the SessionRef
+   resolved at ::start reaches the harvest and the reads come back scoped to
+   the rows this wrap owns. A harvest given no ref stays fleet-wide, which is
+   the pre-2026-09-15 behaviour. Kanban 20260915164015-7e057e5b.
+
    Degraded mode: if harvest-fn throws (e.g. nREPL/HTTP down), logs a
    warning, marks :harvested as {:degraded true}, and attaches an empty
    placeholder so the FSM can continue."
   [resources data]
   (let [harvest-fn (:harvest-fn resources)
-        directory (:directory data)]
+        {:keys [directory session-ref parent-of agent-id]} data]
     (support/boundary-step data
-      {:run   (fn [d] (assoc d :harvested (harvest-fn directory)))
+      {:run   (fn [d] (assoc d :harvested (harvest-fn {:directory directory
+                                                       :agent-id agent-id
+                                                       :session-ref session-ref
+                                                       :parent-of parent-of})))
        :policy support/continue
        :spec  {:log-msg "wrap-session: harvest failed — continuing in degraded mode:"
                :delta (fn [t] {:harvested {:degraded true
@@ -190,27 +204,62 @@
                                                 :stats {}}
                                :source-ids []})}})))
 
+(defn adopted-entry-ids
+  "Memory entry ids carried by the wraps this coordinator absorbed.
+
+   A wrap-queue row records what its ling created as :wrap-queue/created-ids;
+   those entries are what the coordinator's summary CONTAINS. Pure, so the
+   nesting rule is testable without a store. Kanban 20260915164015-7e057e5b."
+  [adopted]
+  (->> adopted
+       (mapcat (fn [w] (or (:wrap-queue/created-ids w) (:created-ids w))))
+       (remove nil?)
+       distinct
+       vec))
+
 (defn handle-kg-edges
-  "Create :derived-from KG edges linking summary to source entries.
+  "Create :derived-from KG edges linking summary to source entries, and
+   :contains edges linking this summary to the wraps it ADOPTED.
    EDN handler key: :kg-edges
 
-   Degraded mode: if kg-edge-fn throws, marks :kg-result as
-   {:skipped true :degraded true} and keeps the flow going."
+   The two are separate obligations. :derived-from says the summary was built
+   from these entries; :contains says this coordinator's session nests those
+   ling sessions, which is what makes a coordinator summary readable as the
+   root of its subtree instead of a sibling of it. A ling adopts nothing, so
+   :contains-result is simply skipped there.
+
+   Degraded mode: each leg degrades on its own -- a :contains failure must not
+   cost the :derived-from edges, which are the ones the summary needs to be
+   reachable at all."
   [resources data]
-  (let [{:keys [project-id agent-id]} data
+  (let [{:keys [project-id agent-id adopted]} data
         summary-id (get-in data [:crystal-result :summary-id])
         source-ids (:source-ids data)
-        kg-edge-fn (:kg-edge-fn resources)]
-    (support/boundary-step data
-      {:present? (boolean (and kg-edge-fn summary-id (seq source-ids)))
-       :run    (fn [d] (assoc d :kg-result (kg-edge-fn summary-id source-ids project-id agent-id)))
-       :absent (fn [d] (assoc d :kg-result {:created-count 0 :skipped true}))
+        kg-edge-fn (:kg-edge-fn resources)
+        contains-fn (:contains-edge-fn resources)
+        child-ids (adopted-entry-ids adopted)
+        with-derived
+        (support/boundary-step data
+          {:present? (boolean (and kg-edge-fn summary-id (seq source-ids)))
+           :run    (fn [d] (assoc d :kg-result (kg-edge-fn summary-id source-ids project-id agent-id)))
+           :absent (fn [d] (assoc d :kg-result {:created-count 0 :skipped true}))
+           :policy support/continue
+           :spec   {:log-msg "wrap-session: kg-edges failed — continuing in degraded mode:"
+                    :delta (fn [t] {:kg-result {:created-count 0
+                                                :skipped true
+                                                :degraded true
+                                                :error (ex-message t)}})}})]
+    (support/boundary-step with-derived
+      {:present? (boolean (and contains-fn summary-id (seq child-ids)))
+       :run    (fn [d] (assoc d :contains-result
+                              (contains-fn summary-id child-ids project-id agent-id)))
+       :absent (fn [d] (assoc d :contains-result {:created-count 0 :skipped true}))
        :policy support/continue
-       :spec   {:log-msg "wrap-session: kg-edges failed — continuing in degraded mode:"
-                :delta (fn [t] {:kg-result {:created-count 0
-                                            :skipped true
-                                            :degraded true
-                                            :error (ex-message t)}})}})))
+       :spec   {:log-msg "wrap-session: contains-edges failed — continuing in degraded mode:"
+                :delta (fn [t] {:contains-result {:created-count 0
+                                                  :skipped true
+                                                  :degraded true
+                                                  :error (ex-message t)}})}})))
 
 (defn handle-notify
   "Emit wrap_notify event for hivemind permeation.
@@ -248,10 +297,12 @@
    EDN handler key: :end
 
    Includes :notify-degraded/:notify-error when the notify step ran in
-   degraded mode (see 'Git Commit Optional' decision 20260213005110)."
+   degraded mode (see 'Git Commit Optional' decision 20260213005110), and
+   :contains-result for the adoption nesting edges."
   [_resources {:keys [data]}]
   (select-keys data [:agent-id :project-id :session-ref :crystal-result
-                     :kg-result :notify-sent? :notify-degraded :notify-error
+                     :kg-result :contains-result
+                     :notify-sent? :notify-degraded :notify-error
                      :adopted :adopt-degraded :adopt-error
                      :eviction]))
 
@@ -379,7 +430,7 @@
    Example:
    ```clojure
    (run-wrap-session
-     {:harvest-fn     (fn [dir] (collect/harvest-all {:directory dir}))
+     {:harvest-fn     collect/harvest-all
       :crystallize-fn (fn [h] (synthesis/synthesize h))
       :kg-edge-fn     create-derived-from-edges!
       :notify-fn      emit-wrap-notify!

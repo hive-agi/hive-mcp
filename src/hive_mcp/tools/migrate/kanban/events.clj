@@ -66,11 +66,17 @@
 (defonce ^:private initialized? (atom false))
 
 (defn init!
-  "One-shot setup. Safe to call repeatedly."
+  "Setup. Safe to call repeatedly, and re-running RE-REGISTERS. Returns :ok.
+
+   `register-default-handlers!` already documents itself as replacing on
+   re-run; the gate defeated exactly that. Both registries here are
+   key-addressed (`reg-fx` / `reg-event-fx`), so the body is unconditional
+   and the flag only records that registration has happened at least once.
+   Kanban 20260916134011-1246379c."
   []
-  (when (compare-and-set! initialized? false true)
-    (register-default-fx!)
-    (register-default-handlers!))
+  (register-default-fx!)
+  (register-default-handlers!)
+  (reset! initialized? true)
   :ok)
 
 (defn emit

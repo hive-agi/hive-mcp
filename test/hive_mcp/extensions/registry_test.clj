@@ -9,7 +9,8 @@
    - clear-all! resets all registries
    - Precondition enforcement"
   (:require [clojure.test :refer [deftest testing is use-fixtures]]
-            [hive-mcp.extensions.registry :as ext]))
+            [hive-mcp.extensions.registry :as ext]
+            [hive-addon.registry.commands :as acmds]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -161,7 +162,7 @@
   (ext/add-contribution-listener! :boom (fn [_] (throw (ex-info "boom" {}))))
   (try
     (is (map? (ext/contribute-commands! "analysis" :probe {"lint" {:handler identity}})))
-    (is (contains? (ext/get-contributed-commands "analysis") "lint"))
+    (is (contains? (acmds/get-commands "analysis") "lint"))
     (finally
       (ext/remove-contribution-listener! :boom))))
 

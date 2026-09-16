@@ -319,7 +319,12 @@
     "Get completed tasks. opts: {:agent-id :project-id}")
 
   (-clear-completed-tasks! [this]
-    "Clear all completed tasks. Returns count cleared.")
+    [this task-ids]
+    "Clear completed tasks. The 1-arity retracts only `task-ids` -- the ids a
+     wrap actually harvested -- and is what a wrap must use. The 0-arity clears
+     EVERY row regardless of owner: it is the reset button, and running it at
+     the end of a wrap destroys concurrent sessions' unharvested records.
+     Returns count cleared.")
 
   ;;; --- Kanban Movements (session-scoped status transitions) ---
 
@@ -331,7 +336,9 @@
     "Get kanban movements. opts: {:agent-id :project-id}")
 
   (-clear-kanban-movements! [this]
-    "Clear all kanban movements. Returns count cleared."))
+    [this movement-ids]
+    "Clear kanban movements. The 1-arity retracts only `movement-ids`, exactly
+     as in -clear-completed-tasks!. Returns count cleared."))
 
 ;;; =============================================================================
 ;;; ISwarmDb — Low-level DB access boundary
