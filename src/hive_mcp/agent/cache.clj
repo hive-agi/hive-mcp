@@ -19,12 +19,16 @@
 
      1. the system message, which carries the preset and the primed context and
         is the largest span that does not change between turns;
-     2. the most recent completed user exchanges, newest first.
+     2. the TAIL, whatever its role, so the newest turn is written to cache
+        instead of re-read at full price on the next call;
+     3. the most recent completed user exchanges, newest first.
 
-   A `role: tool` message is NOT marked. The gateway translates it into a
-   tool_result block and no published contract says the marker survives that
-   translation, so the one span whose caching cannot be verified from here is
-   left alone.
+   A `role: tool` message used to be excluded, on the grounds that the gateway
+   rewrites it into a tool_result block and no published contract says the
+   marker survives. Measured 2026-09-15 on anthropic/claude-sonnet-5 through
+   OpenRouter: it survives, and the exclusion was costing 4852 tokens per turn
+   on an 11k prompt. See `mark-messages` for the two-arm numbers.
+
 
    Marking is an ANNOTATION, never an edit. String content is lifted into a
    one-block array so the marker has somewhere to sit, and the text itself is
@@ -97,23 +101,41 @@
 (defn mark-messages
   "Place cache breakpoints in an OpenAI-shaped message array.
 
-   The system message first (the stable prefix), then user messages from the end
-   backwards, never exceeding `max-breakpoints` in total.
+   The system message first (the stable prefix), then the TAIL, then user
+   messages from the end backwards, never exceeding `max-breakpoints`.
+
+   The tail is marked WHATEVER its role, `tool` included. That exclusion used to
+   live here, on the grounds that the gateway rewrites a tool message into a
+   tool_result block and no published contract says the marker survives the
+   rewrite. It does. Measured 2026-09-15 against anthropic/claude-sonnet-5
+   through OpenRouter, two arms identical but for that one marker, reading
+   `usage.prompt_tokens_details.cached_tokens` on the second call:
+
+       tool message marked     cached 11024 of an 11041-token prompt
+       tool message untouched  cached  6172   (the system span alone)
+
+   4852 tokens, the whole newest turn, re-read at full price on every turn for
+   want of one marker. In a ling loop the newest turn IS the tool output and is
+   usually the largest single span, which is why the tail gets a breakpoint of
+   its own instead of waiting for some later user message to cover it.
 
    Index 0 is walked like any other when it is NOT the system message: a history
    that opens on the user's task would otherwise leave its most stable span, the
    task itself, outside every cached prefix."
   [messages]
   (let [msgs (vec messages)
-        n    (count msgs)
-        system? (= "system" (:role (first msgs)))]
+        n    (count msgs)]
     (if (zero? n)
       messages
-      (let [[acc used] (if system?
+      (let [system?    (= "system" (:role (first msgs)))
+            floor      (if system? 1 0)
+            [acc used] (if system?
                          (if-let [m (mark-at msgs 0)] [m 1] [msgs 0])
                          [msgs 0])
-            floor (if system? 1 0)]
-        (loop [i (dec n), marked used, acc acc]
+            [acc used] (if (>= (dec n) floor)
+                         (if-let [m (mark-at acc (dec n))] [m (inc used)] [acc used])
+                         [acc used])]
+        (loop [i (- n 2), marked used, acc acc]
           (if (or (< i floor) (>= marked max-breakpoints))
             acc
             (if (= "user" (:role (nth acc i)))

@@ -61,28 +61,52 @@
            (:content (first marked)))
         "string content is lifted to a block array so the marker has a home")))
 
-(deftest a-tool-result-is-never-marked
-  (testing "the gateway rewrites role=tool into a tool_result block and no
-            contract says the marker survives, so it is left alone"
+(deftest the-tail-is-marked-even-when-it-is-a-tool-result
+  (testing "measured 2026-09-15 on anthropic/claude-sonnet-5 through OpenRouter:
+            the marker DOES survive the gateway's tool_result rewrite. Two arms
+            identical but for this one marker read back 11024 against 6172
+            cached tokens of an 11041-token prompt, so the old exclusion left
+            the whole newest turn uncached on every turn."
     (let [marked (cache/mark-messages (convo 3))
-          tool-msgs (filter #(= "tool" (:role %)) marked)]
-      (is (seq tool-msgs))
-      (is (every? #(string? (:content %)) tool-msgs)))))
+          tail   (last marked)]
+      (is (= "tool" (:role tail)))
+      (is (= [{:type "text" :text "output 2" :cache_control {:type "ephemeral"}}]
+             (:content tail)))))
+  (testing "the TAIL tool result only, not every one of them: an interior tool
+            message is already inside a cached prefix and a marker there buys
+            nothing while spending budget"
+    (let [marked (cache/mark-messages (convo 3))
+          interior (filter #(and (= "tool" (:role %)) (string? (:content %))) marked)]
+      (is (= 2 (count interior))))))
 
 (deftest an-unmarked-message-keeps-its-string-content
-  (let [marked (cache/mark-messages [{:role "system" :content "sys"}
-                                     {:role "user" :content "u"}
-                                     {:role "assistant" :content "a"}])]
-    (is (= "a" (:content (last marked))))))
+  (testing "the system message, the tail and completed user turns are marked;
+            an assistant turn in the middle is left byte-identical, string
+            content and all"
+    (let [marked   (cache/mark-messages (convo 3))
+          interior (nth marked 5)]
+      (is (= "assistant" (:role interior)))
+      (is (string? (:content interior)) "never lifted to a block array"))))
 
 (deftest an-empty-array-is-returned-untouched
   (is (= [] (cache/mark-messages [])))
   (is (zero? (cache/marker-count (cache/mark-messages [])))))
 
 (deftest a-history-with-no-system-message-still-marks-exchanges
-  (let [marked (cache/mark-messages [{:role "user" :content "u1"}
-                                     {:role "assistant" :content "a1"}])]
-    (is (= 1 (cache/marker-count marked)))))
+  (testing "index 0 is walked like any other when it is not a system message,
+            so the task itself does not sit outside every cached prefix"
+    (let [marked (cache/mark-messages [{:role "user" :content "u1"}
+                                       {:role "assistant" :content "a1"}])]
+      (is (= 2 (cache/marker-count marked))
+          "the tail, plus the user turn behind it"))))
+
+(deftest the-tail-is-marked-once-when-it-is-a-user-message
+  (testing "the tail pass and the user-history walk must not both claim the
+            same message, or a two-message request burns three of four markers"
+    (let [marked (cache/mark-messages [{:role "system" :content "sys"}
+                                       {:role "user" :content "u"}])]
+      (is (= 2 (cache/marker-count marked))
+          "the system message and the tail, not the tail twice"))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Invariants
