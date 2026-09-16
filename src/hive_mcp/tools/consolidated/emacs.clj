@@ -112,32 +112,39 @@
   (rb/result->mcp (rb/try-result :emacs/current-buffer-failed #(current-buffer* params))))
 
 (def handlers
-  {:eval            handle-eval
-   :buffers         handle-buffers
-   :notify          handle-notify
-   :status          handle-status
-   :switch          handle-switch-buffer
-   :find            handle-find-file
-   :save            handle-save
-   :current         handle-current-buffer
+  "The `emacs` verbs, stored as VARS so a reload reaches this table
+   (20260817195749-0d407e9c).
+
+   `:docs` stays a LITERAL map with var-quoted leaves rather than becoming a
+   var itself, the same way `agent/:dag` was done. Both spellings dispatch
+   correctly now that the walker derefs, but a literal map is still `map?` to
+   every OTHER reader of this tree, and the walker is not the only one."
+  {:eval            #'handle-eval
+   :buffers         #'handle-buffers
+   :notify          #'handle-notify
+   :status          #'handle-status
+   :switch          #'handle-switch-buffer
+   :find            #'handle-find-file
+   :save            #'handle-save
+   :current         #'handle-current-buffer
    ;; Absorbed from buffer.clj
-   :goto-line       buffer/handle-goto-line
-   :insert          buffer/handle-insert-text
-   :project-root    buffer/handle-project-root
-   :recent          buffer/handle-recent-files
-   :context         buffer/handle-mcp-get-context
-   :capabilities    buffer/handle-mcp-capabilities
-   :workflows       buffer/handle-mcp-list-workflows
-   :special-buffers buffer/handle-mcp-list-special-buffers
-   :buffer-info     buffer/handle-mcp-buffer-info
+   :goto-line       #'buffer/handle-goto-line
+   :insert          #'buffer/handle-insert-text
+   :project-root    #'buffer/handle-project-root
+   :recent          #'buffer/handle-recent-files
+   :context         #'buffer/handle-mcp-get-context
+   :capabilities    #'buffer/handle-mcp-capabilities
+   :workflows       #'buffer/handle-mcp-list-workflows
+   :special-buffers #'buffer/handle-mcp-list-special-buffers
+   :buffer-info     #'buffer/handle-mcp-buffer-info
    ;; Absorbed from docs.clj (nested subtree)
-   :docs {:describe-function  docs/handle-describe-function
-          :describe-variable  docs/handle-describe-variable
-          :apropos            docs/handle-apropos
-          :package-functions  docs/handle-package-functions
-          :find-keybindings   docs/handle-find-keybindings
-          :package-commentary docs/handle-package-commentary
-          :list-packages      docs/handle-list-packages}})
+   :docs {:describe-function  #'docs/handle-describe-function
+          :describe-variable  #'docs/handle-describe-variable
+          :apropos            #'docs/handle-apropos
+          :package-functions  #'docs/handle-package-functions
+          :find-keybindings   #'docs/handle-find-keybindings
+          :package-commentary #'docs/handle-package-commentary
+          :list-packages      #'docs/handle-list-packages}})
 
 (def handle-emacs
   "Routes core commands plus whatever addons contribute under \"emacs\".

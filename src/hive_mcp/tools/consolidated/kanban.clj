@@ -74,20 +74,27 @@
     (inner (assoc params :operations (with-default-command operations "retag")))))
 
 (def ^:private canonical-handlers
-  {:list           mem-kanban/handle-mem-kanban-list-slim
-   :get            mem-kanban/handle-mem-kanban-get
-   :create         mem-kanban/handle-mem-kanban-create
-   :update         mem-kanban/handle-mem-kanban-move
-   :delete         mem-kanban/handle-mem-kanban-delete
-   :status         mem-kanban/handle-mem-kanban-stats
-   :retag          mem-kanban/handle-mem-kanban-retag
+  "The `kanban` verbs, stored as VARS so a reload reaches this table
+   (20260817195749-0d407e9c). The deprecated aliases below read their target
+   out of here and close over it; closing over a var is what makes an alias
+   forward to the CURRENT handler rather than to the one this load interned.
+
+   `:sync` is the one entry with nothing to quote: an inline `fn` returning a
+   constant, because this backend has nothing to sync."
+  {:list           #'mem-kanban/handle-mem-kanban-list-slim
+   :get            #'mem-kanban/handle-mem-kanban-get
+   :create         #'mem-kanban/handle-mem-kanban-create
+   :update         #'mem-kanban/handle-mem-kanban-move
+   :delete         #'mem-kanban/handle-mem-kanban-delete
+   :status         #'mem-kanban/handle-mem-kanban-stats
+   :retag          #'mem-kanban/handle-mem-kanban-retag
    :sync           (fn [_] {:success true :message "Memory kanban is single-backend, no sync needed"})
-   :plan-to-kanban plan-tool/handle-plan-to-kanban
-   :plan-schema    plan-tool/handle-plan-schema
-   :batch-update   handle-batch-update
-   :batch-delete   handle-batch-delete
-   :batch-create   handle-batch-create
-   :batch-retag    handle-batch-retag})
+   :plan-to-kanban #'plan-tool/handle-plan-to-kanban
+   :plan-schema    #'plan-tool/handle-plan-schema
+   :batch-update   #'handle-batch-update
+   :batch-delete   #'handle-batch-delete
+   :batch-create   #'handle-batch-create
+   :batch-retag    #'handle-batch-retag})
 
 (def ^:private deprecated-aliases
   {:move     :update
