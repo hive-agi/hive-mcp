@@ -79,7 +79,7 @@
 ;; Re-exports — context helpers
 ;; =============================================================================
 
-(def get-coeffect    ctx/get-coeffect)
+(def get-coeffect    #'ctx/get-coeffect)
 (def assoc-coeffect  ctx/assoc-coeffect)
 (def update-coeffect ctx/update-coeffect)
 (def get-effect      ctx/get-effect)

@@ -19,8 +19,8 @@
 
 ;; Re-export the two pure frontmatter entry points so the façade (and any
 ;; external caller holding an `ad/` alias) can keep using them here.
-(def parse-frontmatter      fm/parse-frontmatter)
-(def frontmatter->agent-def fm/frontmatter->agent-def)
+(def parse-frontmatter      #'fm/parse-frontmatter)
+(def frontmatter->agent-def #'fm/frontmatter->agent-def)
 
 ;; =============================================================================
 ;; Markdown File Loading
