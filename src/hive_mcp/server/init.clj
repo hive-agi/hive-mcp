@@ -39,7 +39,9 @@
             [hive-hot.events :as hot-events]
             [taoensso.timbre :as log]
             [clojure.string :as str] [hive-dsl.result :refer [rescue]]
-            [hive-mcp.hot.self :as hot-self]))
+            [hive-mcp.hot.self :as hot-self]
+            [hive-mcp.protocols.vector :as vec-proto]
+            [hive-mcp.chroma.vector-store :as chroma-vec]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -293,16 +295,21 @@
     (-> b name clojure.string/lower-case)))
 
 (defn wire-memory-store!
-  "Wire the active IMemoryStore backend based on global config.
+  "Select and wire the memory backend.
 
-   Dispatch: :services :memory-store :backend (fallback :memory :default-store).
-     - \"milvus\": defer to hive-milvus addon. Its initialize! calls set-store!
+     - milvus: defer to the hive-milvus addon, which registers its own store
        during Phase 4.5 (load-extensions!).
      - anything else: wire ChromaMemoryStore immediately (legacy behavior).
 
    Must run AFTER init-embedding-provider! since Chroma config is set there.
    A post-extensions fallback in `ensure-memory-store!` guarantees a live
-   store even when the selected addon fails to register."
+   store even when the selected addon fails to register.
+
+   This is the COMPOSITION ROOT, and the one place allowed to name a concrete
+   backend. It wires two independent seams: the memory-entry store
+   (protocols.memory) and the named-collection store (protocols.vector) that
+   plan.plans and presets.core drive. Both are ports; only this function knows
+   which vendor satisfies them."
   []
   (result/rescue-log "wire-memory-store!" nil
                  (let [backend (resolve-memory-backend)]
@@ -313,7 +320,9 @@
 
                      (let [store (chroma-store/create-store)]
                        (mem-proto/set-store! store)
-                       (log/info "ChromaMemoryStore wired as active IMemoryStore backend"
+                       (vec-proto/set-store! (chroma-vec/chroma-vector-store))
+                       (log/info "ChromaMemoryStore wired as active IMemoryStore backend,"
+                                 "and Chroma wired as the IVectorCollectionStore"
                                  {:backend backend}))))))
 
 (defn ensure-memory-store!
@@ -321,13 +330,21 @@
 
    Called in Phase 4.6 (after load-extensions!). If the configured backend's
    addon failed to register a store, wire ChromaMemoryStore as a safety
-   fallback so memory queries don't throw 'No memory store configured'."
+   fallback so memory queries don't throw 'No memory store configured'.
+
+   The vector-collection store gets the same treatment, and separately: an
+   addon may satisfy one seam and not the other, so a single `store-set?`
+   check over both would leave whichever it did not name unwired."
   []
   (result/rescue-log "ensure-memory-store!" nil
                  (when-not (mem-proto/store-set?)
                    (log/warn "ensure-memory-store!: no store after extensions; wiring Chroma fallback")
                    (let [store (chroma-store/create-store)]
-                     (mem-proto/set-store! store)))))
+                     (mem-proto/set-store! store)))
+                 (when-not (vec-proto/store-set?)
+                   (log/warn "ensure-memory-store!: no vector-collection store after extensions;"
+                             "wiring Chroma fallback")
+                   (vec-proto/set-store! (chroma-vec/chroma-vector-store)))))
 
 ;; =============================================================================
 ;; Channel Bridge + Sync

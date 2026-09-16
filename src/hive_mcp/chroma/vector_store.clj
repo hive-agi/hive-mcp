@@ -1,21 +1,22 @@
 (ns hive-mcp.chroma.vector-store
   "Chroma as an `IVectorCollectionStore`.
 
-   This is the ADAPTER, and it is the one place allowed to know both sides:
-   the port in `hive-mcp.protocols.vector` and the vendor transport in
+   This is the ADAPTER, and the one place allowed to know both sides: the port
+   in `hive-mcp.protocols.vector` and the vendor transport in
    `hive-mcp.chroma.client`. It lives under `chroma.*` on purpose, because a
    provider is where naming a vendor is correct. Callers depend on the port.
 
-   The two protocols already have the same nine methods and the same arities,
-   so two things are translated here, and they are the two the callers were
-   each repeating by hand:
+   The vendor client is already record-oriented: `add` takes embedding records,
+   `get` and `query` return them, and `query` is documented as ordered by
+   increasing distance. So this adapter does NOT reshape payloads. It absorbs
+   the two things every call site was otherwise repeating by hand:
 
-   - the vendor returns DEREF-ABLE values, so every call site wrapped itself in
-     `ws/deref-safe!` with its own timeout. The adapter owns that now; the port
-     returns values.
-   - the vendor returns a COLUMN-oriented result (parallel :ids / :documents /
-     :metadatas / :embeddings / :distances vectors) and the port promises a seq
-     of RECORD MAPS. `rows` is that transposition."
+   - the client returns FUTURES, so each caller wrapped itself in
+     `ws/deref-safe!` with its own timeout. Reads were 15s and writes 30s at
+     the call sites; those are kept, so nothing's timeout changes.
+   - the client's option names are its own (`:num-results`, `:get-or-create`).
+     The port speaks `:n-results` and `:get-or-create?`, and translating
+     between the two is exactly why an adapter exists rather than an alias."
   (:require [hive-mcp.chroma.client :as client]
             [hive-mcp.protocols.vector :as vp]
             [hive-weave.safe :as ws]))
@@ -24,60 +25,26 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-(def ^:private read-timeout-ms
-  "Reads were 15s at the call sites; writes and deletes were 30s. Kept as they
-   were rather than unified, so this refactor changes no timeout."
-  15000)
-
+(def ^:private read-timeout-ms 15000)
 (def ^:private write-timeout-ms 30000)
+
+(def ^:private default-include
+  "What a read asks the vendor to return. The port always promises the record
+   fields, so a caller never has to remember this set."
+  #{:documents :metadatas :distances})
 
 (defn- await!
   "Resolve a vendor result to a value.
 
    Three shapes, because three things produce them: the real client returns a
    `Future`, which must be bounded (`deref-safe!` casts to Future and is the
-   only form that can time out); a test transport may return any other IDeref,
-   which is already realised or cheap; and a stub may return the value itself."
+   only form that can time out); a test transport may return another IDeref;
+   and a stub may return the value itself."
   [v timeout-ms]
   (cond
     (instance? java.util.concurrent.Future v) (ws/deref-safe! v timeout-ms)
     (instance? clojure.lang.IDeref v)         @v
     :else                                     v))
-
-(defn- unwrap
-  "Chroma nests a single query's results one level deep (a batch of one), and
-   returns them flat for a plain get. Take the inner vector when it is there."
-  [v]
-  (if (and (sequential? v) (sequential? (first v))) (first v) v))
-
-(defn- rows
-  "Transpose a column-oriented Chroma result into record maps.
-
-   Key names are normalised to the port's singular spelling, and a column the
-   vendor omitted simply contributes no key, rather than a vector of nils."
-  [result]
-  (let [ids   (unwrap (:ids result))
-        docs  (unwrap (:documents result))
-        metas (unwrap (:metadatas result))
-        embs  (unwrap (:embeddings result))
-        dists (unwrap (:distances result))]
-    (vec
-     (map-indexed
-      (fn [i id]
-        (cond-> {:id id}
-          (seq docs)  (assoc :document  (nth docs i nil))
-          (seq metas) (assoc :metadata  (nth metas i nil))
-          (seq embs)  (assoc :embedding (nth embs i nil))
-          (seq dists) (assoc :distance  (nth dists i nil))))
-      ids))))
-
-(defn- ->vendor-records
-  "Port records -> the vendor's column-oriented add/update payload."
-  [records]
-  {:ids        (mapv :id records)
-   :documents  (mapv :document records)
-   :metadatas  (mapv :metadata records)
-   :embeddings (mapv :embedding records)})
 
 (defrecord ChromaVectorStore [transport]
   vp/IVectorCollectionStore
@@ -93,7 +60,7 @@
              transport coll-name
              (cond-> {}
                (:metadata opts)       (assoc :metadata (:metadata opts))
-               (:get-or-create? opts) (assoc :get_or_create true)))
+               (:get-or-create? opts) (assoc :get-or-create true)))
             write-timeout-ms))
 
   (-delete-collection [_ coll]
@@ -101,29 +68,30 @@
     nil)
 
   (-add [_ coll records opts]
-    (await! (client/-add transport coll (->vendor-records records) (or opts {}))
+    (await! (client/-add transport coll (vec records)
+                         (select-keys (or opts {}) [:upsert?]))
             write-timeout-ms)
     nil)
 
-  (-get [_ coll {:keys [ids where limit]}]
-    (rows (await! (client/-get transport coll
-                               (cond-> {}
-                                 (seq ids) (assoc :ids (vec ids))
-                                 where     (assoc :where where)
-                                 limit     (assoc :limit limit)))
-                  read-timeout-ms)))
+  (-get [_ coll {:keys [ids where limit include]}]
+    (vec (await! (client/-get transport coll
+                              (cond-> {:include (or include default-include)}
+                                (seq ids) (assoc :ids (vec ids))
+                                where     (assoc :where where)
+                                limit     (assoc :limit limit)))
+                 read-timeout-ms)))
 
-  (-query [_ coll embedding {:keys [n-results where]}]
-    ;; The port promises NEAREST FIRST on an ascending :distance. Chroma
-    ;; already returns that order, so this sorts defensively rather than
-    ;; trusting it: a backend that ever returned a similarity here would
-    ;; otherwise reverse every caller's results silently.
+  (-query [_ coll embedding {:keys [n-results where include]}]
+    ;; The port promises NEAREST FIRST on an ascending :distance, and the
+    ;; vendor documents that order. Sorting anyway is the cheap guard: a
+    ;; backend that ever passed a cosine SIMILARITY through :distance would
+    ;; otherwise reverse every caller, which reads as slightly worse results
+    ;; and never as a bug.
     (->> (await! (client/-query transport coll embedding
-                                (cond-> {}
-                                  n-results (assoc :n-results n-results)
+                                (cond-> {:include (or include default-include)}
+                                  n-results (assoc :num-results n-results)
                                   where     (assoc :where where)))
                  read-timeout-ms)
-         rows
          (sort-by #(or (:distance %) 0))
          vec))
 
@@ -136,8 +104,7 @@
     nil)
 
   (-update [_ coll records]
-    (await! (client/-update transport coll (->vendor-records records))
-            write-timeout-ms)
+    (await! (client/-update transport coll (vec records)) write-timeout-ms)
     nil))
 
 (defn chroma-vector-store

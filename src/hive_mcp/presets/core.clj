@@ -25,14 +25,14 @@
 
      ;; Get specific preset
      (get-preset \"tdd\")"
-  (:require [hive-mcp.chroma.core :as chroma]
-            [hive-mcp.dns.result :as result]
+  (:require [hive-mcp.dns.result :as result]
             [hive-weave.safe :as ws]
-            [hive-mcp.chroma.client :as chroma-api]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-spi.embeddings.ports :as embed]))
+            [hive-spi.embeddings.ports :as embed]
+            [hive-mcp.embeddings.active :as active]
+            [hive-mcp.protocols.vector :as vp]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -60,15 +60,15 @@
 (defn- try-get-existing-collection
   "Try to get existing collection. Returns nil on failure."
   []
-  (result/rescue nil (ws/deref-safe! (chroma-api/get-collection collection-name) 15000)))
+  (result/rescue nil (vp/-get-collection (vp/require-store) collection-name)))
 
 (defn- delete-collection!
   "Delete the presets collection. Returns true on success."
   []
   (result/rescue false
                  (when-let [coll (try-get-existing-collection)]
-                   (ws/deref-safe! (chroma-api/delete-collection coll) 30000)
-      ;; Give Chroma time to process the deletion
+                   (vp/-delete-collection (vp/require-store) coll)
+      ;; Give the backend time to process the deletion
                    (Thread/sleep 50))
                  true))
 
@@ -81,15 +81,14 @@
     (log/warn "Stale collection found after delete, forcing re-delete")
     (delete-collection!))
   ;; Create the collection
-  (ws/deref-safe! (chroma-api/create-collection
-                   collection-name
-                   {:metadata {:dimension dim
-                               :created-by "hive-mcp"
-                               :purpose "swarm-presets"}})
-                  30000)
-  ;; IMPORTANT: Get fresh reference - chroma client may cache stale references
-  ;; The create-collection return value may reference the old collection ID
-  (Thread/sleep 50) ;; Allow Chroma to settle
+  (vp/-create-collection (vp/require-store)
+                         collection-name
+                         {:metadata {:dimension dim
+                                     :created-by "hive-mcp"
+                                     :purpose "swarm-presets"}})
+  ;; IMPORTANT: Get fresh reference - a backend client may cache stale ones,
+  ;; and the create return value can reference the old collection id.
+  (Thread/sleep 50) ;; Allow the backend to settle
   (or (try-get-existing-collection)
       (throw (ex-info "Failed to get collection after creation"
                       {:collection collection-name :dimension dim}))))
@@ -108,7 +107,7 @@
   []
   (if-let [coll @collection-cache]
     coll
-    (let [provider (chroma/get-provider-for collection-name)]
+    (let [provider (active/get-provider-for collection-name)]
       (when-not provider
         (throw (ex-info "Embedding provider not configured for presets collection."
                         {:type :no-embedding-provider
@@ -222,26 +221,26 @@
        content))
 
 (defn index-preset!
-  "Index a single preset in Chroma.
+  "Index a single preset in the presets collection.
    Returns preset ID on success.
 
    COLLECTION-AWARE: Uses collection-specific embedding provider."
   [{:keys [id name title _content category tags source file-path] :as preset}]
   (let [coll (get-or-create-collection)
-        provider (chroma/get-provider-for collection-name)
+        provider (active/get-provider-for collection-name)
         doc-text (preset-to-document preset)
         embedding (embed/embed-text provider doc-text)]
-    (ws/deref-safe! (chroma-api/add coll [{:id id
-                                          :embedding embedding
-                                          :document doc-text
-                                          :metadata {:name name
-                                                     :title (or title name)
-                                                     :category category
-                                                     :tags (or tags "")
-                                                     :source source
-                                                     :file-path (or file-path "")}}]
-                                        :upsert? true)
-                    30000)
+    (vp/-add (vp/require-store) coll
+             [{:id id
+               :embedding embedding
+               :document doc-text
+               :metadata {:name name
+                          :title (or title name)
+                          :category category
+                          :tags (or tags "")
+                          :source source
+                          :file-path (or file-path "")}}]
+             {:upsert? true})
     (log/debug "Indexed preset:" id)
     id))
 
@@ -251,7 +250,7 @@
    COLLECTION-AWARE: Uses collection-specific embedding provider."
   [presets]
   (let [coll (get-or-create-collection)
-        provider (chroma/get-provider-for collection-name)
+        provider (active/get-provider-for collection-name)
         docs (mapv preset-to-document presets)
         embeddings (embed/embed-batch provider docs)
         records (mapv (fn [preset doc emb]
@@ -265,7 +264,7 @@
                                     :source (:source preset)
                                     :file-path (or (:file-path preset) "")}})
                       presets docs embeddings)]
-    (ws/deref-safe! (chroma-api/add coll records :upsert? true) 30000)
+    (vp/-add (vp/require-store) coll records {:upsert? true})
     (log/info "Indexed" (count presets) "presets")
     (mapv :id presets)))
 
@@ -309,14 +308,12 @@
    Returns seq of {:id, :name, :title, :category, :tags, :distance, :preview}"
   [query-text & {:keys [limit category] :or {limit 5}}]
   (let [coll (get-or-create-collection)
-        provider (chroma/get-provider-for collection-name)
+        provider (active/get-provider-for collection-name)
         query-embedding (embed/embed-text provider query-text)
         where-clause (when category {:category category})
-        results (ws/deref-safe! (chroma-api/query coll query-embedding
-                                                  :num-results limit
-                                                  :where where-clause
-                                                  :include #{:documents :metadatas :distances})
-                               15000)]
+        results (vp/-query (vp/require-store) coll query-embedding
+                           {:n-results limit
+                            :where where-clause})]
     (log/debug "Preset search for:" (subs query-text 0 (min 50 (count query-text)))
                "found:" (count results))
     (mapv (fn [{:keys [id document metadata distance]}]
@@ -338,12 +335,14 @@
 ;;; ============================================================
 
 (defn get-preset
-  "Get a specific preset by ID/name from Chroma.
+  "Get a specific preset by ID/name.
    Returns full content or nil if not found."
   [preset-id]
   (result/rescue nil
                  (let [coll (get-or-create-collection)
-                       results (ws/deref-safe! (chroma-api/get coll :ids [preset-id] :include #{:documents :metadatas}) 15000)]
+                       results (vp/-get (vp/require-store) coll
+                                        {:ids [preset-id]
+                                         :include #{:documents :metadatas}})]
                    (when-let [{:keys [id document metadata]} (first results)]
                      {:id id
                       :name (get metadata :name)
@@ -356,12 +355,13 @@
                       :_content document}))))
 
 (defn list-presets
-  "List all presets in Chroma collection.
+  "List all presets in the presets collection.
    Returns seq of {:id :name :title :category :source}"
   []
   (result/rescue []
                  (let [coll (get-or-create-collection)
-                       results (ws/deref-safe! (chroma-api/get coll :include [:metadatas]) 15000)]
+                       results (vp/-get (vp/require-store) coll
+                                        {:include #{:metadatas}})]
                    (mapv (fn [{:keys [id metadata]}]
                            {:id id
                             :name (get metadata :name)
@@ -389,8 +389,8 @@
   "Get presets integration status."
   []
   (let [base {:collection collection-name
-              :chroma-configured? (chroma/embedding-configured?)}]
-    (if (chroma/embedding-configured?)
+              :chroma-configured? (active/embedding-configured?)}]
+    (if (active/embedding-configured?)
       (let [r (result/try-effect* :chroma/status-failed
                                   (list-presets))]
         (if (result/ok? r)
@@ -403,11 +403,11 @@
       base)))
 
 (defn delete-preset!
-  "Delete a preset from the Chroma index."
+  "Delete a preset from the presets index."
   [preset-id]
   (let [coll (get-or-create-collection)]
-    (ws/deref-safe! (chroma-api/delete coll :ids [preset-id]) 30000)
-    (log/debug "Deleted preset from Chroma:" preset-id)
+    (vp/-delete (vp/require-store) coll {:ids [preset-id]})
+    (log/debug "Deleted preset:" preset-id)
     preset-id))
 
 ;;; ============================================================

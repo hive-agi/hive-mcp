@@ -2,7 +2,7 @@
   "Semantic search operations for Chroma memory entries."
   (:require [hive-mcp.chroma.client :as chroma]
             [hive-mcp.chroma.connection :as conn]
-            [hive-mcp.chroma.embeddings :as emb]
+            [hive-mcp.embeddings.active :as emb]
             [hive-mcp.chroma.gate :as gate]
             [hive-mcp.embeddings.service :as embedding-service]
             [hive-dsl.result :as r]
