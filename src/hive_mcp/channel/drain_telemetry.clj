@@ -20,7 +20,8 @@
                                            register-sweepable!]]
             [hive-spi.memory.ports :as ports]
             [hive-spi.memory.registry :as mp]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.channel.drain-metrics :as dm]))
 
 (defonce ^{:doc "Map of memory entry id -> {:offers :delivered :last-seq}."}
   ledger
@@ -29,13 +30,26 @@
                  :eviction-policy :lru}))
 (register-sweepable! ledger :drain-telemetry)
 
+(def ^:const max-drains
+  "How many drains of commitment metrics to retain. Bounded because this
+   accumulates on the drain path, which runs on every tool call."
+  200)
+
+(defonce ^:private drains (atom []))
+
 (defn record!
   "Fold one drain outcome into the ledger.
 
    `offered-ids` are ids ranked into the order but not taken this drain;
    `delivered-ids` are ids that rode the batch. Both may be nil. `seq-num` is
-   the drain sequence number, stored as :last-seq. Returns nil."
-  [{:keys [offered-ids delivered-ids seq-num]}]
+   the drain sequence number, stored as :last-seq.
+
+   When `batch` is supplied it is the PROJECTED batch as it goes on the wire,
+   and its Context Codec metrics are appended to the bounded drain log. Passing
+   the unprojected entries would report on a payload nobody receives.
+
+   Returns nil."
+  [{:keys [offered-ids delivered-ids seq-num batch]}]
   (letfn [(bump! [k id]
             (when id
               (let [prior (or (bget ledger id) {:offers 0 :delivered 0})]
@@ -44,7 +58,36 @@
                                      (assoc :last-seq seq-num))))))]
     (run! (partial bump! :offers) offered-ids)
     (run! (partial bump! :delivered) delivered-ids)
+    (when (seq batch)
+      (swap! drains (fn [ds]
+                      (->> (conj ds (assoc (dm/metrics batch) :seq-num seq-num))
+                           (take-last max-drains)
+                           vec))))
     nil))
+
+(defn commitment-log
+  "The retained per-drain Context Codec metrics, oldest first."
+  []
+  @drains)
+
+(defn commitment-summary
+  "Aggregate of the retained drains. `:worst-critical-atom-recall` is the
+   alarm: anything below 1.0 means a safety boundary went out as a pointer,
+   which the projection is supposed to make impossible.
+
+   nil for :worst-critical-atom-recall when no drain carried a critical atom."
+  []
+  (let [ds @drains
+        cars (keep :critical-atom-recall ds)
+        wars (keep :weighted-atom-recall ds)
+        recs (keep :round-trip-recoverability ds)
+        avg (fn [xs] (when (seq xs) (/ (reduce + 0.0 xs) (count xs))))]
+    {:drains (count ds)
+     :worst-critical-atom-recall (when (seq cars) (apply min cars))
+     :mean-weighted-atom-recall (avg wars)
+     :worst-round-trip-recoverability (when (seq recs) (apply min recs))
+     :mean-commitment-density (avg (keep :commitment-density ds))
+     :withheld-by-class (apply merge-with + {} (map :withheld-by-class ds))}))
 
 (defn snapshot
   "Ledger as a plain map of id -> {:offers :delivered :last-seq}."
@@ -54,9 +97,12 @@
              @(:atom ledger)))
 
 (defn reset!
-  "Clear the ledger. For testing and for starting a fresh measurement window."
+  "Clear the ledger and the drain log. For testing and for starting a fresh
+   measurement window."
   []
-  (bclear! ledger))
+  (bclear! ledger)
+  (swap! drains empty)
+  nil)
 
 (defn store-lookup
   "Store-backed `lookup` for `shelf-report`: id -> {:access-count :helpful-count

@@ -168,6 +168,7 @@
              hint (proj/pull-hint batch)]
          (telemetry/record!
           {:seq-num new-seq
+           :batch batch
            :delivered-ids (into [] (keep :id) batch)
            :offered-ids (when ranked
                           (into [] (comp (keep :id) (remove taken-ids)) pending))})

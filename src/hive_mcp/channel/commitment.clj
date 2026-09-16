@@ -78,11 +78,17 @@
   [t]
   (contains? type->class (rank/kw t)))
 
+(def critical-classes
+  "Classes whose atoms Critical Atom Recall must score at 1.0. Widening this
+   set is a behaviour change, not a tuning knob: it is asserted equal to
+   `drain-rank/floor-types` by test."
+  #{:safety-boundary})
+
 (defn critical?
   "True when `t` is a critical atom: one whose Critical Atom Recall must
    read 1.0."
   [t]
-  (= :safety-boundary (classify t)))
+  (contains? critical-classes (classify t)))
 
 (defn class-weight
   "Weighted Atom Recall weight of commitment class `cls`: 1.0 for the most
