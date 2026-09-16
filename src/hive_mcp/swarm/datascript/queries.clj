@@ -473,8 +473,14 @@
   "Get all current file claims.
 
    Returns:
-     Seq of {:file :slave-id :task-id :prior-hash} maps.
-     :prior-hash is the file content hash captured at claim acquire time (CC.3)."
+     Seq of {:file :slave-id :task-id :created-at :prior-hash :qn :mode} maps.
+     :prior-hash is the file content hash captured at claim acquire time (CC.3).
+
+   :qn and :mode describe a SPAN claim (see hive-mcp.swarm.claim.span) and are
+   nil for a whole-file claim. They are projected explicitly because this map
+   is a closed list: an attribute absent here is invisible to every caller no
+   matter what the entity holds, which is how span modes were being persisted
+   and then silently read back as :body."
   []
   (let [c (conn/ensure-conn)
         db @c
@@ -488,7 +494,9 @@
                  :slave-id (get-in e [:claim/slave :slave/id])
                  :task-id (get-in e [:claim/task :task/id])
                  :created-at (:claim/created-at e)
-                 :prior-hash (:claim/prior-hash e)})))))
+                 :prior-hash (:claim/prior-hash e)
+                 :qn (:claim/qn e)
+                 :mode (:claim/mode e)})))))
 
 (defn has-conflict?
   "Check if a file claim would conflict with existing claims.

@@ -66,19 +66,68 @@
            :claim/slave (:claim/slave row)
            :claim/key   k)))
 
-(defn held-spans
-  "Every live claim as a span carrying its holder."
-  []
-  (mapv (fn [row]
-          (row->span (cond-> row
-                       ;; get-all-claims projects :file/:slave-id rather than
-                       ;; the raw attributes, so accept both shapes.
-                       (and (:file row) (not (:claim/file row)))
-                       (assoc :claim/file (:file row))
+(defn- created-ms
+  "Epoch millis of a claim row's creation, or nil when it has none.
 
-                       (and (:slave-id row) (not (:claim/slave row)))
-                       (assoc :claim/slave (:slave-id row)))))
-        (lings/get-all-claims)))
+   `:claim/created-at` is written as an inst by `conn/now`, but rows arrive
+   from tests and from older writers as a bare long. Reading only one of the
+   two would make every row of the other shape look ageless, which fails OPEN:
+   an ageless claim is never stale and blocks its form forever."
+  [row]
+  (let [v (or (:created-at row) (:claim/created-at row))]
+    (cond
+      (nil? v)     nil
+      (number? v)  (long v)
+      (inst? v)    (inst-ms v)
+      :else        nil)))
+
+(defn- stale-row?
+  "True when a claim is older than `threshold-ms`.
+
+   A row with no readable timestamp is NOT stale. That is the conservative
+   direction: keeping a claim whose age is unknown costs one agent a wait,
+   while dropping it hands the form to a second editor while the first may
+   still be in it."
+  [row now-ms threshold-ms]
+  (if-let [created (created-ms row)]
+    (> (- now-ms created) threshold-ms)
+    false))
+
+(defn held-spans
+  "Live claims as spans, each carrying its holder.
+
+   Stale claims are DROPPED by default. A ling that died holding a span would
+   otherwise fence that form off forever, and since a claim is advisory (carto
+   refuses a stale fingerprint regardless) honouring a dead one buys no safety
+   and costs every later agent. `:include-stale?` keeps them, for the claim
+   listing tools that exist to show exactly that."
+  ([] (held-spans nil))
+  ([{:keys [include-stale? threshold-ms now-ms]
+     :or   {include-stale? false}}]
+   (let [threshold (or threshold-ms lings/default-stale-threshold-ms)
+         now       (or now-ms (System/currentTimeMillis))]
+     (into []
+           (comp
+            (map (fn [row]
+                   ;; get-all-claims projects :file/:slave-id/:qn/:mode rather
+                   ;; than raw attributes, so accept both shapes.
+                   (cond-> row
+                     (and (:file row) (not (:claim/file row)))
+                     (assoc :claim/file (:file row))
+
+                     (and (:slave-id row) (not (:claim/slave row)))
+                     (assoc :claim/slave (:slave-id row))
+
+                     (and (:qn row) (not (:claim/qn row)))
+                     (assoc :claim/qn (:qn row))
+
+                     (and (:mode row) (not (:claim/mode row)))
+                     (assoc :claim/mode (:mode row)))))
+            (remove (fn [row]
+                      (and (not include-stale?)
+                           (stale-row? row now threshold))))
+            (map row->span))
+           (lings/get-all-claims)))))
 
 ;; =============================================================================
 ;; Conflict check
@@ -106,13 +155,21 @@
 (defn claim-span!
   "Record a claim on `s` for `slave-id`, unconditionally.
 
+   Persists `:claim/qn` and `:claim/mode` beside the key. The key alone cannot
+   carry mode (a :body and a :signature claim on one form must share a key so
+   they collide on :db/unique), so a claim that stored only its key read back
+   as :body and the signature-versus-caller rule never fired on real data.
+
    The caller is responsible for having checked conflicts; `acquire!` is the
    version that does both under one lock."
   [s slave-id & [{:keys [task-id prior-hash]}]]
-  (let [sp  (span/span s)
-        k   (span/key-of sp)]
-    (log/debug "claiming span" k "for" slave-id)
-    (lings/claim-file! k slave-id {:task-id task-id :prior-hash prior-hash})))
+  (let [sp (span/span s)
+        k  (span/key-of sp)]
+    (log/debug "claiming span" k "mode" (:span/mode sp) "for" slave-id)
+    (lings/claim-file! k slave-id {:task-id    task-id
+                                   :prior-hash prior-hash
+                                   :qn         (:span/qn sp)
+                                   :mode       (:span/mode sp)})))
 
 (defn release-span!
   "Release the claim on `s`."
