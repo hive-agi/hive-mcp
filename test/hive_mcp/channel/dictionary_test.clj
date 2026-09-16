@@ -68,14 +68,33 @@
     (is (= 1 (count d)) "the two-char line cannot repay a token")
     (is (= #{"0123456789012345678901234567890123456789"} (set (vals d))))))
 
-(deftest repeated-words-pay-when-no-whole-line-repeats
-  (testing "the shape real tool output actually has: shared template, varying field"
+(deftest short-repeated-units-are-declined-even-though-they-save-characters
+  (testing "identifier-shaped repetition: char-positive, token-negative, so refused"
     (let [s (str/join "\n" (for [i (range 60)]
                              (str "hive-mcp.channel.drain-projection-test/case-" i)))
           out (dict/compress s)]
-      (is (dict/compressed? out) "a line-only encoder would decline here")
+      (is (not (dict/compressed? out))
+          "the repeated units here are 'channel' and 'projection', both under min-unit-chars")
       (is (= s (dict/decode out)))
-      (is (< 0.1 (dict/ratio s)) (str "ratio was " (dict/ratio s))))))
+      (is (zero? (dict/ratio s))))))
+
+(deftest long-repeated-lines-are-still-encoded
+  (testing "the log case: identical long lines recurring, as stack frames do across threads"
+    (let [frame "\tat hive_mcp.channel.drain_projection$project_entry.invoke(drain_projection.clj:42)"
+          s (str/join "\n" (mapcat (fn [i] [(str "Thread-" i " prio=5 tid=0x00007f runnable") frame frame])
+                                   (range 30)))
+          out (dict/compress s)]
+      (is (dict/compressed? out))
+      (is (= s (dict/decode out)))
+      (is (< 0.2 (dict/ratio s)) (str "ratio was " (dict/ratio s))))))
+
+(deftest a-repeated-multi-word-span-is-NOT-captured
+  (testing "known gap: no pass detects a repeated span that is longer than a word and shorter than a line"
+    (let [s (str/join "\n" (for [i (range 60)]
+                             (str "at hive_mcp.channel.drain_projection$project_entry.invoke(f.clj:" i ")")))]
+      (is (not (dict/compressed? (dict/compress s)))
+          "the shared prefix spans several words, so lines differ and words differ")
+      (is (= s (dict/decode (dict/compress s)))))))
 
 (defspec round-trip-is-exact-for-log-shaped-text 300
   (prop/for-all [s gen-log]

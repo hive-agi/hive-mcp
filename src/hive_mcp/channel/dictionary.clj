@@ -1,12 +1,19 @@
 (ns hive-mcp.channel.dictionary
-  "Lossless dictionary encoding for repetitive tool output.
+  "Lossless dictionary encoding for log-shaped output.
 
-   `compress` returns either an encoded map or the input string unchanged,
-   whichever serializes smaller. `decode` accepts both, so
-   `(decode (compress s))` is `s` for every string, byte for byte.
+   `compress` returns an encoded map or the input string unchanged, whichever
+   is smaller by at least `min-ratio`. `decode` accepts both, so
+   `(decode (compress s))` is `s` for every string, byte for byte. The
+   dictionary travels WITH the payload: the reader never needs prior state.
 
-   Repetition is the only source of savings here, which is why this is aimed
-   at test runs, carto dumps and build logs and never at memory entries.
+   Captures repeated whole lines, whitespace-delimited words, and alphanumeric
+   runs, each at least `min-unit-chars` long. It does NOT capture a repeated
+   multi-word SPAN shorter than a line, which is the usual shape of a log
+   template; such input is declined rather than partly encoded.
+
+   Scope is narrow on purpose. Savings come from repetition, and only input
+   whose long lines actually recur clears `min-ratio`: a JVM crash log does,
+   `git log` and a directory listing do not.
 
    Pure, deterministic, no IO. Plan: memory 20260916002132-51330a59, step-6."
   (:require [clojure.string :as str]
@@ -47,6 +54,14 @@
   [s]
   (str/split s #"\n" -1))
 
+(def ^:const min-unit-chars
+  "Shortest unit that may earn a dictionary entry. A sentinel is about three
+   BPE tokens, so replacing a unit below this length can cost tokens while
+   saving characters. Measured: dropping the limit roughly doubles the
+   character ratio on tool output and sources it almost entirely from units
+   too short to be token-positive."
+  20)
+
 (defn- worth-encoding
   "Units of `units` that repay a dictionary entry, most profitable first."
   [units]
@@ -55,7 +70,9 @@
                (let [gain (- (* (dec freq) (count unit))
                              (* (inc freq) est-token-chars)
                              est-entry-overhead)]
-                 (when (and (> freq 1) (pos? gain))
+                 (when (and (> freq 1)
+                            (>= (count unit) min-unit-chars)
+                            (pos? gain))
                    [unit gain]))))
        (sort-by (comp - second))
        (mapv first)))
@@ -115,12 +132,22 @@
         text
         (str/replace text token-re #(get d % %))))))
 
+(def ^:const min-ratio
+  "Smallest saving worth encoding for. Below it the payload is returned
+   unchanged: a few percent of characters does not justify handing the reader
+   a substitution table it has to apply."
+  0.05)
+
 (defn compress
-  "Encode `s` when that serializes smaller than `s` itself, else return `s`."
+  "Encode `s` when that saves at least `min-ratio` of its serialized size,
+   else return `s` unchanged."
   [s]
   (let [src (str s)
-        encoded (encode src)]
-    (if (< (count (pr-str encoded)) (count (pr-str src)))
+        encoded (encode src)
+        before (count (pr-str src))
+        after (count (pr-str encoded))]
+    (if (and (pos? before)
+             (<= min-ratio (- 1.0 (/ (double after) before))))
       encoded
       src)))
 
