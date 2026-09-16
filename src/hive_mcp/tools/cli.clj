@@ -6,7 +6,8 @@
   (:require [hive-mcp.tools.core :refer [mcp-error]]
             [clojure.data.json :as json]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.dispatch.handler :as dispatch]))
 
 ;; =============================================================================
 ;; Command Normalization
@@ -27,26 +28,32 @@
 (defn- collect-command-paths
   "Collect all command paths from a handler tree.
    Returns a seq of keyword vectors like [[:status] [:status :list]].
-   Skips :_handler entries but includes parent path when :_handler exists."
+   Skips :_handler entries but includes parent path when :_handler exists.
+
+   Classifies each value through `dispatch/current`, so a var-registered
+   handler is LISTED rather than silently dropped. Before that it fell through
+   to the `:else acc` arm — help omitted the command and nothing said why,
+   which is the quiet half of the cost of registering by var."
   [handlers prefix]
   (reduce-kv
    (fn [acc k v]
      (if (= k :_handler)
        acc
-       (cond
-         (fn? v)
-         (conj acc (conj prefix k))
+       (let [node (dispatch/current v)]
+         (cond
+           (dispatch/handler? v)
+           (conj acc (conj prefix k))
 
-         (map? v)
-         (let [nested (collect-command-paths v (conj prefix k))
-               ;; If subtree has _handler, also list the parent path as valid
-               with-default (if (contains? v :_handler)
-                              (into [(conj prefix k)] nested)
-                              nested)]
-           (into acc with-default))
+           (map? node)
+           (let [nested (collect-command-paths node (conj prefix k))
+                 ;; If subtree has _handler, also list the parent path as valid
+                 with-default (if (contains? node :_handler)
+                                (into [(conj prefix k)] nested)
+                                nested)]
+             (into acc with-default))
 
-         :else acc)))
-   [] handlers))
+           :else acc))))
+   [] (dispatch/current handlers)))
 
 (defn format-help
   "Format help text listing all available commands.
@@ -80,39 +87,47 @@
    Returns {:handler fn :path-used [...] :remaining [...]}
 
    Supports:
-   - Leaf handlers (fn)
+   - Leaf handlers (fn, multimethod, or a VAR holding one)
    - Nested maps with :_handler for defaults
-   - Partial matches falling back to :_handler"
+   - Partial matches falling back to :_handler
+
+   Every node is CLASSIFIED through `dispatch/current` and RETURNED unresolved.
+   The distinction is the whole point: a var holding a subtree must be seen as
+   a map so the walk descends into it, while a var holding a handler must be
+   handed on AS THE VAR, because dereferencing it here would re-freeze the
+   value one call before invocation and undo the seam
+   (20260817195749-0d407e9c)."
   [handlers path]
   (loop [tree handlers
          used []
          remaining path]
-    (cond
-      ;; No more path - check for _handler or return tree
-      (empty? remaining)
-      (if-let [h (or (when (fn? tree) tree)
-                     (get tree :_handler))]
-        {:handler h :path-used used :remaining []}
-        {:tree tree :path-used used})
+    (let [node (dispatch/current tree)]
+      (cond
+        ;; No more path - check for _handler or return tree
+        (empty? remaining)
+        (if-let [h (or (when (dispatch/handler? tree) tree)
+                       (get node :_handler))]
+          {:handler h :path-used used :remaining []}
+          {:tree node :path-used used})
 
-      ;; Try next segment
-      :else
-      (let [seg (first remaining)
-            next-node (get tree seg)]
-        (cond
-          ;; Leaf handler found
-          (fn? next-node)
-          {:handler next-node :path-used (conj used seg) :remaining (vec (rest remaining))}
+        ;; Try next segment
+        :else
+        (let [seg       (first remaining)
+              next-node (get node seg)]
+          (cond
+            ;; Leaf handler found
+            (dispatch/handler? next-node)
+            {:handler next-node :path-used (conj used seg) :remaining (vec (rest remaining))}
 
-          ;; Subtree found - recurse
-          (map? next-node)
-          (recur next-node (conj used seg) (rest remaining))
+            ;; Subtree found - recurse
+            (map? (dispatch/current next-node))
+            (recur next-node (conj used seg) (rest remaining))
 
-          ;; Not found - check for _handler fallback
-          :else
-          (if-let [default (get tree :_handler)]
-            {:handler default :path-used used :remaining (vec remaining)}
-            {:error :not-found :path-used used :remaining (vec remaining)}))))))
+            ;; Not found - check for _handler fallback
+            :else
+            (if-let [default (get node :_handler)]
+              {:handler default :path-used used :remaining (vec remaining)}
+              {:error :not-found :path-used used :remaining (vec remaining)})))))))
 
 ;; =============================================================================
 ;; CLI Handler Factory (n-depth dispatch)
@@ -128,14 +143,16 @@
        contributions, marked by hive-mcp.tools.composite)
 
    A plain leaf fn with no metadata marker is NOT delegating. Returns a vector
-   sorted by name."
+   sorted by name. Subtrees are recognised through `dispatch/current` for the
+   same reason the walk is: a var holding a map is a map."
   [handlers]
   (let [marked (set (::opaque-roots (meta handlers)))]
     (->> handlers
          (keep (fn [[k v]]
-                 (when (or (and (map? v) (contains? v :_handler))
-                           (contains? marked k))
-                   k)))
+                 (let [node (dispatch/current v)]
+                   (when (or (and (map? node) (contains? node :_handler))
+                             (contains? marked k))
+                     k))))
          (sort-by name)
          vec)))
 
