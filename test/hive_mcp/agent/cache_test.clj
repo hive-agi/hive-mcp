@@ -108,6 +108,36 @@
       (is (= 2 (cache/marker-count marked))
           "the system message and the tail, not the tail twice"))))
 
+(deftest the-default-lifetime-is-spelled-by-omitting-the-field
+  (testing "Anthropic reads a missing ttl as 5m, so :5m must not send one"
+    (let [marked (cache/mark-messages (convo 1))]
+      (is (= {:type "ephemeral"} (:cache_control (first (:content (first marked)))))))))
+
+(deftest an-hour-lifetime-reaches-the-marker
+  (testing "measured 2026-09-15: OpenRouter forwards the ttl field and needs no
+            beta header for it. The same 6166-token write billed 0.01528362 at
+            5m and 0.02441934 at 1h, a ratio of 1.598, which is 1.25x against
+            2x over one base."
+    (let [marked (cache/mark-messages (convo 1) :1h)]
+      (is (= {:type "ephemeral" :ttl "1h"}
+             (:cache_control (first (:content (first marked))))))
+      (is (= 3 (cache/marker-count marked)) "every marker placed, not just the first"))))
+
+(deftest the-lifetime-is-declared-per-provider
+  (testing "whether a gateway forwards ttl is a property of the gateway, so it
+            is read off the registry entry like the dialect itself"
+    (is (= :5m (cache/ttl-of openrouter)) "nothing declared means the cheap default")
+    (is (= :1h (cache/ttl-of (assoc openrouter :cache-ttl :1h))))
+    (is (= :5m (cache/ttl-of (assoc openrouter :cache-ttl :nonsense)))
+        "an unknown lifetime falls back rather than reaching the wire")
+    (is (= :5m (cache/ttl-of nil)))))
+
+(deftest an-hour-lifetime-travels-through-maybe-mark
+  (let [entry (assoc openrouter :cache-ttl :1h)
+        marked (cache/maybe-mark entry "anthropic/claude-sonnet-5" (convo 1))]
+    (is (= {:type "ephemeral" :ttl "1h"}
+           (:cache_control (first (:content (first marked))))))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; Invariants
 ;;; ---------------------------------------------------------------------------

@@ -175,6 +175,51 @@
         r2     (send! key model (prepare follow))]
     {:mark-tool? mark-tool? :call-1 r1 :call-2 r2}))
 
+(defn ttl-arm
+  "Does the gateway honour an extended TTL on the marker?
+
+   A 1h write costs 2x base where a 5m write costs 1.25x, so the question is
+   answerable in a minute without waiting an hour: send the same stable prefix
+   under each TTL and compare what the WRITE cost. A gateway that drops the
+   field bills both arms the same."
+  [key model nonce ttl]
+  (let [mark (fn [msgs]
+               (let [v (vec msgs)
+                     c (:content (first v))]
+                 (assoc-in v [0 :content]
+                           [{:type "text" :text c
+                             :cache_control (cond-> {:type "ephemeral"} ttl (assoc :ttl ttl))}])))
+        msgs [{:role "system" :content (system-text nonce)}
+              {:role "user" :content "Reply with the digit 1."}]
+        resp (http/post chat-endpoint
+                        {:headers {"Authorization" (str "Bearer " key)
+                                   "Content-Type" "application/json"}
+                         :body (json/write-str {:model model
+                                                :messages (mark msgs)
+                                                :max_tokens 4
+                                                :usage {:include true}})
+                         :throw-exceptions false
+                         :socket-timeout 180000
+                         :connection-timeout 30000})
+        body (:body resp)]
+    (if (= 200 (:status resp))
+      (let [u (:usage (json/read-str body :key-fn keyword))]
+        {:ttl ttl :prompt (:prompt_tokens u) :cost (:cost u)
+         :cached (or (get-in u [:prompt_tokens_details :cached_tokens]) 0)})
+      {:ttl ttl :error (:status resp)
+       :message (when body (subs body 0 (min 300 (count body))))})))
+
+(defn ttl-report
+  "Both TTL arms, on distinct nonces so neither reads the other's entry."
+  [& _]
+  (if-let [key (api-key)]
+    (let [model (or (pick-model key) "anthropic/claude-sonnet-5")
+          nonce (str (System/currentTimeMillis))]
+      {:model model
+       :five-minute (ttl-arm key model (str nonce "-5m") nil)
+       :one-hour    (ttl-arm key model (str nonce "-1h") "1h")})
+    {:key :absent}))
+
 (defn -main
   "Run both arms and report. Prints usage rows only."
   [& _]
