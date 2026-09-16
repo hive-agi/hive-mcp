@@ -209,45 +209,45 @@
 ;; Temporal Query Facade (W3)
 ;; =============================================================================
 
-(def temporal-store? temporal/temporal-store?)
+(def temporal-store? #'temporal/temporal-store?)
 
-(def history-db temporal/history-db)
+(def history-db #'temporal/history-db)
 
-(def as-of-db temporal/as-of-db)
+(def as-of-db #'temporal/as-of-db)
 
-(def since-db temporal/since-db)
+(def since-db #'temporal/since-db)
 
-(def query-history temporal/query-history)
+(def query-history #'temporal/query-history)
 
-(def query-as-of temporal/query-as-of)
+(def query-as-of #'temporal/query-as-of)
 
-(def ^:private store-live? hive-mcp.knowledge-graph.connection.store/store-live?)
+(def ^:private store-live? #'hive-mcp.knowledge-graph.connection.store/store-live?)
 
-(def ^:private ensure-store! hive-mcp.knowledge-graph.connection.store/ensure-store!)
+(def ^:private ensure-store! #'hive-mcp.knowledge-graph.connection.store/ensure-store!)
 
-(def get-conn hive-mcp.knowledge-graph.connection.store/get-conn)
+(def get-conn #'hive-mcp.knowledge-graph.connection.store/get-conn)
 
-(def ensure-conn! hive-mcp.knowledge-graph.connection.store/ensure-conn!)
+(def ensure-conn! #'hive-mcp.knowledge-graph.connection.store/ensure-conn!)
 
 (def ensure-conn hive-mcp.knowledge-graph.connection.store/ensure-conn)
 
-(def backend-health hive-mcp.knowledge-graph.connection.store/backend-health)
+(def backend-health #'hive-mcp.knowledge-graph.connection.store/backend-health)
 
-(def reset-conn! hive-mcp.knowledge-graph.connection.store/reset-conn!)
+(def reset-conn! #'hive-mcp.knowledge-graph.connection.store/reset-conn!)
 
-(def delete-database! hive-mcp.knowledge-graph.connection.store/delete-database!)
+(def delete-database! #'hive-mcp.knowledge-graph.connection.store/delete-database!)
 
-(def close! hive-mcp.knowledge-graph.connection.store/close!)
+(def close! #'hive-mcp.knowledge-graph.connection.store/close!)
 
-(def set-backend! hive-mcp.knowledge-graph.connection.store/set-backend!)
+(def set-backend! #'hive-mcp.knowledge-graph.connection.store/set-backend!)
 
-(def ^:private ensure-writer! hive-mcp.knowledge-graph.connection.writer/ensure-writer!)
+(def ^:private ensure-writer! #'hive-mcp.knowledge-graph.connection.writer/ensure-writer!)
 
-(def stop-writer! hive-mcp.knowledge-graph.connection.writer/stop-writer!)
+(def stop-writer! #'hive-mcp.knowledge-graph.connection.writer/stop-writer!)
 
-(def writer-stats hive-mcp.knowledge-graph.connection.writer/writer-stats)
+(def writer-stats #'hive-mcp.knowledge-graph.connection.writer/writer-stats)
 
-(def flush-pending! hive-mcp.knowledge-graph.connection.writer/flush-pending!)
+(def flush-pending! #'hive-mcp.knowledge-graph.connection.writer/flush-pending!)
 
 ;; in-flight: re-exported (^:private) because hive-ingestor's writer_guard
 ;; requiring-resolves connection/in-flight to observe queue depth; the canonical

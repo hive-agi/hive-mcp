@@ -80,37 +80,37 @@
 ;; =============================================================================
 
 (def get-coeffect    #'ctx/get-coeffect)
-(def assoc-coeffect  ctx/assoc-coeffect)
-(def update-coeffect ctx/update-coeffect)
-(def get-effect      ctx/get-effect)
-(def assoc-effect    ctx/assoc-effect)
-(def update-effect   ctx/update-effect)
+(def assoc-coeffect  #'ctx/assoc-coeffect)
+(def update-coeffect #'ctx/update-coeffect)
+(def get-effect      #'ctx/get-effect)
+(def assoc-effect    #'ctx/assoc-effect)
+(def update-effect   #'ctx/update-effect)
 
 ;; =============================================================================
 ;; Re-exports — metrics
 ;; =============================================================================
 
 (def metrics            mt/metrics)
-(def get-metrics        mt/get-metrics)
-(def reset-metrics!     mt/reset-metrics!)
-(def configure-metrics! mt/configure-metrics!)
+(def get-metrics        #'mt/get-metrics)
+(def reset-metrics!     #'mt/reset-metrics!)
+(def configure-metrics! #'mt/configure-metrics!)
 
 ;; =============================================================================
 ;; Re-exports — registry
 ;; =============================================================================
 
-(def reg-event               registry/reg-event)
-(def append-interceptor!     registry/append-interceptor!)
-(def get-interceptors        registry/get-interceptors)
-(def handler-registered?     registry/handler-registered?)
-(def unreg-event             registry/unreg-event)
-(def unreg-fx                registry/unreg-fx)
-(def unreg-cofx              registry/unreg-cofx)
-(def registered-events       registry/registered-events)
-(def registered-effects      registry/registered-effects)
-(def registered-coeffects    registry/registered-coeffects)
-(def handler-registry-status registry/handler-registry-status)
-(def reset-all!              registry/reset-all!)
+(def reg-event               #'registry/reg-event)
+(def append-interceptor!     #'registry/append-interceptor!)
+(def get-interceptors        #'registry/get-interceptors)
+(def handler-registered?     #'registry/handler-registered?)
+(def unreg-event             #'registry/unreg-event)
+(def unreg-fx                #'registry/unreg-fx)
+(def unreg-cofx              #'registry/unreg-cofx)
+(def registered-events       #'registry/registered-events)
+(def registered-effects      #'registry/registered-effects)
+(def registered-coeffects    #'registry/registered-coeffects)
+(def handler-registry-status #'registry/handler-registry-status)
+(def reset-all!              #'registry/reset-all!)
 
 (defmacro with-clean-registry
   "Re-export of hive-mcp.events.registry/with-clean-registry."
@@ -121,13 +121,13 @@
 ;; Re-exports — dispatch
 ;; =============================================================================
 
-(def interceptor?   dispatch/interceptor?)
-(def execute        dispatch/execute)
-(def do-fx          dispatch/do-fx)
-(def dispatch       dispatch/dispatch)
-(def dispatch-sync  dispatch/dispatch-sync)
+(def interceptor?   #'dispatch/interceptor?)
+(def execute        #'dispatch/execute)
+(def do-fx          #'dispatch/do-fx)
+(def dispatch       #'dispatch/dispatch)
+(def dispatch-sync  #'dispatch/dispatch-sync)
 (def debug          dispatch/debug)
-(def validate-event dispatch/validate-event)
+(def validate-event #'dispatch/validate-event)
 
 ;; =============================================================================
 ;; Initialization (hive-mcp specific)

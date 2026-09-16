@@ -446,20 +446,20 @@
   "REMOVED: Flat mem-kanban tools no longer exposed. Use consolidated `kanban` tool."
   [])
 
-(def ^:private query-kanban-entries hive-mcp.tools.memory-kanban.query/query-kanban-entries)
+(def ^:private query-kanban-entries #'hive-mcp.tools.memory-kanban.query/query-kanban-entries)
 
-(def ^:private resolve-project-ids-with-descendants hive-mcp.tools.memory-kanban.query/resolve-project-ids-with-descendants)
+(def ^:private resolve-project-ids-with-descendants #'hive-mcp.tools.memory-kanban.query/resolve-project-ids-with-descendants)
 
-(def ^:private resolve-visible-project-ids hive-mcp.tools.memory-kanban.query/resolve-visible-project-ids)
+(def ^:private resolve-visible-project-ids #'hive-mcp.tools.memory-kanban.query/resolve-visible-project-ids)
 
-(def ^:private effective-dir hive-mcp.tools.memory-kanban.query/effective-dir)
+(def ^:private effective-dir #'hive-mcp.tools.memory-kanban.query/effective-dir)
 
 (defn- stats*
   "Call-through to the query ns (resolved per call, so a reload takes effect)."
   [params]
   (query/stats* params))
 
-(def ^:private filter-kanban-by-tags hive-mcp.tools.memory-kanban.query/filter-kanban-by-tags)
+(def ^:private filter-kanban-by-tags #'hive-mcp.tools.memory-kanban.query/filter-kanban-by-tags)
 
 (defn- list-slim*
   "Call-through to the query ns (resolved per call, so a reload takes effect)."

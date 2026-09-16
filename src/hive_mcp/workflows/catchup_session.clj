@@ -442,7 +442,7 @@
 
 (def always
   "Dispatch predicate — always true. Shared seam (support/always)."
-  support/always)
+  #'support/always)
 
 (def catchup-session-spec
   "hive-events FSM spec for the catchup session workflow.

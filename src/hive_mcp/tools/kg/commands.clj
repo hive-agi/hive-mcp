@@ -250,7 +250,7 @@
 (def handle-kg-cleanup-synthetics
   "Delete or demote synthetic-pattern nodes whose targets are mostly
    expired/missing memory entries. See `synthetics/cleanup-synthetics!`."
-  synthetics/handle-kg-cleanup-synthetics)
+  #'synthetics/handle-kg-cleanup-synthetics)
 
 (defn handle-kg-backfill-grounding
   "Batch-discover and ground all Chroma entries with source-file metadata."

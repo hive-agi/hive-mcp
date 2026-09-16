@@ -11,7 +11,8 @@
             [hive-mcp.events.effects.agent :as agent-fx]
             [hive-mcp.events.effects.dispatch :as dispatch-fx]
             [hive-mcp.events.effects.infrastructure :as infra]
-            [hive-mcp.events.core :as ev]))
+            [hive-mcp.events.core :as ev]
+            [hive-mcp.dispatch.handler :as dh]))
 
 ;; =============================================================================
 ;; Test fixture: Reset registration before each test
@@ -99,8 +100,12 @@
 
 (deftest facade-reexports-handler-setters-test
   (testing "Facade re-exports set-memory-write-handler! and set-wrap-crystallize-handler!"
-    (is (fn? effects/set-memory-write-handler!) "set-memory-write-handler! exported")
-    (is (fn? effects/set-wrap-crystallize-handler!) "set-wrap-crystallize-handler! exported")
+    ;; `handler?` rather than `fn?`: the re-exports hold VARS so a reload of
+    ;; the memory submodule reaches the facade (20260817195749-0d407e9c), and
+    ;; `fn?` is false for a var. The delegation assertion below is the one that
+    ;; matters and is unaffected, because a var is IFn.
+    (is (dh/handler? effects/set-memory-write-handler!) "set-memory-write-handler! exported")
+    (is (dh/handler? effects/set-wrap-crystallize-handler!) "set-wrap-crystallize-handler! exported")
     ;; Test that they actually delegate to the memory submodule
     (let [called (atom false)]
       (effects/set-memory-write-handler! (fn [_] (reset! called true)))

@@ -27,7 +27,7 @@
 (def agent-types ds-schema/agent-types)
 (def spawn-modes ds-schema/spawn-modes)
 (def ling-model-default ds-schema/ling-model-default)
-(def claude-model? ds-schema/claude-model?)
+(def claude-model? #'ds-schema/claude-model?)
 (def task-types ds-schema/task-types)
 
 ;;; =============================================================================

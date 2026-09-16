@@ -469,12 +469,12 @@
 (def get-claim-info
   "Get claim information for a file path.
    Delegates to queries/get-claims-for-file."
-  queries/get-claims-for-file)
+  #'queries/get-claims-for-file)
 
 (def get-all-claims
   "Get all active claims with their metadata.
    Delegates to queries/get-all-claims."
-  queries/get-all-claims)
+  #'queries/get-all-claims)
 
 (defn claim-age-ms
   "Get the age of a claim in milliseconds.

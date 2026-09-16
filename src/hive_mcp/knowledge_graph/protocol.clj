@@ -51,15 +51,15 @@
 ;; Active Store Management (delegates to protocols.kg)
 ;; =============================================================================
 
-(def set-store! kg/set-store!)
-(def get-store kg/get-store)
-(def store-set? kg/store-set?)
-(def clear-store! kg/clear-store!)
+(def set-store! #'kg/set-store!)
+(def get-store #'kg/get-store)
+(def store-set? #'kg/store-set?)
+(def clear-store! #'kg/clear-store!)
 
 ;; =============================================================================
 ;; Helper Functions
 ;; =============================================================================
 
 (def temporal-store? kg/temporal-store?)
-(def active-temporal? kg/active-temporal?)
+(def active-temporal? #'kg/active-temporal?)
 (def kg-store? kg/kg-store?)

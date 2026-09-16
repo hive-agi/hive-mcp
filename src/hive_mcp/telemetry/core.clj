@@ -208,15 +208,15 @@
 
 (def emit-health-event!
   "Emit a catastrophic health event. See hive-mcp.telemetry.health for details."
-  health/emit-health-event!)
+  #'health/emit-health-event!)
 
 (def get-recent-errors
   "Query recent health errors. See hive-mcp.telemetry.health for details."
-  health/get-recent-errors)
+  #'health/get-recent-errors)
 
 (def health-summary
   "Get health summary. See hive-mcp.telemetry.health for details."
-  health/health-summary)
+  #'health/health-summary)
 
 (def health-severities
   "Valid severity levels: #{:info :warn :error :fatal}"

@@ -13,7 +13,7 @@
 
    Returns the same `{:results :summary}` envelope as before (decision
    20260429230453-7e7627cc)."
-  kg-handlers/handle-kg-add-edges)
+  #'kg-handlers/handle-kg-add-edges)
 
 (def handle-batch-traverse
   "Batch traversal via the `Batchable` protocol."

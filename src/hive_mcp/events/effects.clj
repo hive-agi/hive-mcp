@@ -40,12 +40,12 @@
 (def set-memory-write-handler!
   "Set the handler function for :memory-write effect.
    Called during server initialization to wire infrastructure layer."
-  mem-effects/set-memory-write-handler!)
+  #'mem-effects/set-memory-write-handler!)
 
 (def set-wrap-crystallize-handler!
   "Set the handler function for :wrap-crystallize effect.
    Called during server initialization to wire tools layer."
-  mem-effects/set-wrap-crystallize-handler!)
+  #'mem-effects/set-wrap-crystallize-handler!)
 
 ;; =============================================================================
 ;; Registration

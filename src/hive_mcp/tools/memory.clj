@@ -36,60 +36,60 @@
 ;; ============================================================
 
 ;; CRUD Operations
-(def handle-mcp-memory-add crud/handle-add)
-(def handle-mcp-memory-query crud/handle-query)
-(def handle-mcp-memory-query-metadata crud/handle-query-metadata)
-(def handle-mcp-memory-get-full crud/handle-get-full)
-(def handle-mcp-memory-get-metadata crud/handle-get-metadata)
-(def handle-mcp-memory-batch-get crud/handle-batch-get)
-(def handle-mcp-memory-check-duplicate crud/handle-check-duplicate)
-(def handle-mcp-memory-update-tags crud/handle-update-tags)
+(def handle-mcp-memory-add #'crud/handle-add)
+(def handle-mcp-memory-query #'crud/handle-query)
+(def handle-mcp-memory-query-metadata #'crud/handle-query-metadata)
+(def handle-mcp-memory-get-full #'crud/handle-get-full)
+(def handle-mcp-memory-get-metadata #'crud/handle-get-metadata)
+(def handle-mcp-memory-batch-get #'crud/handle-batch-get)
+(def handle-mcp-memory-check-duplicate #'crud/handle-check-duplicate)
+(def handle-mcp-memory-update-tags #'crud/handle-update-tags)
 
 (def handle-mcp-memory-edit
   "Edit a memory entry in place (ID preserved → KG edges preserved)."
-  crud/handle-edit)
+  #'crud/handle-edit)
 
 (def handle-mcp-memory-batch-edit
   "Batch memory edit. Sequential per-op; summary + per-op results."
-  crud/handle-batch-edit)
+  #'crud/handle-batch-edit)
 
 (def handle-mcp-memory-review
   "List or resolve the human review queue for write-gated types.
    No id => list pending. id + verdict => approve (lands the requested type)
    or reject (lands :as, default principle)."
-  review/handle-review)
+  #'review/handle-review)
 
 (def handle-mcp-memory-reembed
   "Re-embed a memory entry by id without rewriting content."
-  crud/handle-reembed)
+  #'crud/handle-reembed)
 
 (def handle-mcp-memory-batch-reembed
   "Batch re-embed; sequential per-op; summary + per-op results."
-  crud/handle-batch-reembed)
+  #'crud/handle-batch-reembed)
 
 ;; Search Operations
-(def handle-mcp-memory-search-semantic search/handle-search-semantic)
+(def handle-mcp-memory-search-semantic #'search/handle-search-semantic)
 
 ;; Lifecycle Operations
-(def handle-mcp-memory-set-duration lifecycle/handle-set-duration)
-(def handle-mcp-memory-promote lifecycle/handle-promote)
-(def handle-mcp-memory-demote lifecycle/handle-demote)
-(def handle-mcp-memory-cleanup-expired lifecycle/handle-cleanup-expired)
-(def handle-mcp-memory-expiring-soon lifecycle/handle-expiring-soon)
-(def handle-mcp-memory-expire lifecycle/handle-expire)
-(def handle-mcp-memory-decay lifecycle/handle-decay)
-(def handle-mcp-memory-xpoll-promote lifecycle/handle-xpoll-promote)
+(def handle-mcp-memory-set-duration #'lifecycle/handle-set-duration)
+(def handle-mcp-memory-promote #'lifecycle/handle-promote)
+(def handle-mcp-memory-demote #'lifecycle/handle-demote)
+(def handle-mcp-memory-cleanup-expired #'lifecycle/handle-cleanup-expired)
+(def handle-mcp-memory-expiring-soon #'lifecycle/handle-expiring-soon)
+(def handle-mcp-memory-expire #'lifecycle/handle-expire)
+(def handle-mcp-memory-decay #'lifecycle/handle-decay)
+(def handle-mcp-memory-xpoll-promote #'lifecycle/handle-xpoll-promote)
 
 ;; Analytics Operations
-(def handle-mcp-memory-log-access analytics/handle-log-access)
-(def handle-mcp-memory-feedback analytics/handle-feedback)
-(def handle-mcp-memory-helpfulness-ratio analytics/handle-helpfulness-ratio)
+(def handle-mcp-memory-log-access #'analytics/handle-log-access)
+(def handle-mcp-memory-feedback #'analytics/handle-feedback)
+(def handle-mcp-memory-helpfulness-ratio #'analytics/handle-helpfulness-ratio)
 
 ;; Migration Operations
-(def handle-mcp-memory-migrate-project migration/handle-migrate-project)
-(def handle-mcp-memory-migrate-scoped migration/handle-migrate-scoped)
-(def handle-mcp-memory-import-json migration/handle-import-json)
-(def handle-mcp-memory-rename-project migration/handle-rename-project)
+(def handle-mcp-memory-migrate-project #'migration/handle-migrate-project)
+(def handle-mcp-memory-migrate-scoped #'migration/handle-migrate-scoped)
+(def handle-mcp-memory-import-json #'migration/handle-import-json)
+(def handle-mcp-memory-rename-project #'migration/handle-rename-project)
 
 ;; ============================================================
 ;; Tool Definitions

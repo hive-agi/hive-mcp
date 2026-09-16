@@ -23,11 +23,11 @@
 
 (def push-instruction!
   "Push an instruction to an agent's queue. Delegates to piggyback module."
-  piggyback/push-instruction!)
+  #'piggyback/push-instruction!)
 
 (def drain-instructions!
   "Drain all pending instructions for an agent. Delegates to piggyback module."
-  piggyback/drain-instructions!)
+  #'piggyback/drain-instructions!)
 
 (defn- attach-instructions
   "Attach pending instructions to a response if agent-id provided and instructions exist."
@@ -463,7 +463,7 @@ HINT: Provide a JSON array like [\"item1\", \"item2\"]
 
 (def fetch-hivemind-history
   "Get hivemind messages without marking as read. Delegates to piggyback module."
-  piggyback/fetch-history)
+  #'piggyback/fetch-history)
 
 (defn mcp-success+hm
   "MCP success response with hivemind piggyback for coordinator.

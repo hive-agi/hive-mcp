@@ -46,8 +46,8 @@
 (def ^:private claims pred/claims)
 (def ^:private task-files pred/task-files)
 
-(def ^:private file-conflicto pred/file-conflicto)
-(def ^:private would-deadlocko pred/would-deadlocko)
+(def ^:private file-conflicto #'pred/file-conflicto)
+(def ^:private would-deadlocko #'pred/would-deadlocko)
 
 ;; =============================================================================
 ;; Database State (Thread-Safe Atom)

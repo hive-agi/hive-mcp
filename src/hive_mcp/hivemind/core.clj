@@ -24,26 +24,26 @@
 (def ling-results state/ling-results)
 
 ;; State accessors
-(def record-ling-result! state/record-ling-result!)
-(def get-pending-ling-results state/get-pending-ling-results)
-(def mark-ling-reviewed! state/mark-ling-reviewed!)
-(def clear-ling-results! state/clear-ling-results!)
-(def add-swarm-prompt! state/add-swarm-prompt!)
-(def remove-swarm-prompt! state/remove-swarm-prompt!)
-(def get-swarm-prompts state/get-swarm-prompts)
-(def clear-agent-registry! state/clear-agent-registry!)
+(def record-ling-result! #'state/record-ling-result!)
+(def get-pending-ling-results #'state/get-pending-ling-results)
+(def mark-ling-reviewed! #'state/mark-ling-reviewed!)
+(def clear-ling-results! #'state/clear-ling-results!)
+(def add-swarm-prompt! #'state/add-swarm-prompt!)
+(def remove-swarm-prompt! #'state/remove-swarm-prompt!)
+(def get-swarm-prompts #'state/get-swarm-prompts)
+(def clear-agent-registry! #'state/clear-agent-registry!)
 
 ;; Messaging
-(def shout! messaging/shout!)
-(def ask! messaging/ask!)
-(def respond-ask! messaging/respond-ask!)
+(def shout! #'messaging/shout!)
+(def ask! #'messaging/ask!)
+(def respond-ask! #'messaging/respond-ask!)
 
 ;; Status & lifecycle
-(def get-status status/get-status)
-(def get-agent-messages status/get-agent-messages)
-(def register-agent! status/register-agent!)
-(def clear-agent! status/clear-agent!)
+(def get-status #'status/get-status)
+(def get-agent-messages #'status/get-agent-messages)
+(def register-agent! #'status/register-agent!)
+(def clear-agent! #'status/clear-agent!)
 
 ;; Tools
 (def tools hm-tools/tools)
-(def register-tools! hm-tools/register-tools!)
+(def register-tools! #'hm-tools/register-tools!)

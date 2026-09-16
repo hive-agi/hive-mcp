@@ -24,8 +24,8 @@
 (def create-ring-buffer #'rb/create-ring-buffer)
 (def ring-buffer-append! #'rb/ring-buffer-append!)
 (def ring-buffer-contents #'rb/ring-buffer-contents)
-(def ring-buffer-contents-since rb/ring-buffer-contents-since)
-(def ring-buffer-stats rb/ring-buffer-stats)
+(def ring-buffer-contents-since #'rb/ring-buffer-contents-since)
+(def ring-buffer-stats #'rb/ring-buffer-stats)
 
 ;; ===========================================================================
 ;; Process Registry

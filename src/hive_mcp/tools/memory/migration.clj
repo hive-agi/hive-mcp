@@ -24,21 +24,21 @@
 ;; =============================================================================
 
 ;; Project migration
-(def handle-migrate-project core/handle-migrate-project)
-(def handle-migrate-scoped  core/handle-migrate-scoped)
-(def handle-rename-project  core/handle-rename-project)
+(def handle-migrate-project #'core/handle-migrate-project)
+(def handle-migrate-scoped  #'core/handle-migrate-scoped)
+(def handle-rename-project  #'core/handle-rename-project)
 
 ;; Scope-tag migration
-(def handle-detect-orphaned mig-scope/handle-detect-orphaned)
-(def handle-migrate-scope   mig-scope/handle-migrate-scope)
-(def hash-scope?            helpers/hash-scope?)
+(def handle-detect-orphaned #'mig-scope/handle-detect-orphaned)
+(def handle-migrate-scope   #'mig-scope/handle-migrate-scope)
+(def hash-scope?            #'helpers/hash-scope?)
 
 ;; JSON import
-(def handle-import-json mig-import/handle-import-json)
-(def import-entry!      mig-import/import-entry!)
+(def handle-import-json #'mig-import/handle-import-json)
+(def import-entry!      #'mig-import/import-entry!)
 
 ;; Backend migration
-(def migrate-backend! backend/migrate-backend!)
+(def migrate-backend! #'backend/migrate-backend!)
 
 ;; =============================================================================
 ;; Tool registrations

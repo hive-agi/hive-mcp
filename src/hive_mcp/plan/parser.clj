@@ -30,11 +30,11 @@
 
 (def contains-edn-block?
   "Check if content contains any ```edn ... ``` blocks."
-  edn-parser/contains-edn-block?)
+  #'edn-parser/contains-edn-block?)
 
 (def contains-edn-plan?
   "Check if content contains EDN plan (raw or in blocks)."
-  edn-parser/contains-edn-plan?)
+  #'edn-parser/contains-edn-plan?)
 
 (def parse-edn-plan
   "Parse plan from EDN content or EDN blocks.
@@ -44,7 +44,7 @@
    2. Extract balanced {} containing :steps from mixed content
    3. Find single ```edn block with :steps
    4. Collect multiple ```edn phase blocks and flatten to unified :steps"
-  edn-parser/parse-edn-plan)
+  #'edn-parser/parse-edn-plan)
 
 ;; =============================================================================
 ;; Re-exported Markdown API
@@ -57,7 +57,7 @@
    [depends: step-1] syntax for dependencies
    [priority: high] syntax for priority
    [id: custom-id] syntax for explicit step IDs"
-  md-parser/parse-markdown-plan)
+  #'md-parser/parse-markdown-plan)
 
 ;; =============================================================================
 ;; Unified Plan Parsing
@@ -115,10 +115,10 @@
    Useful for feeding into mcp_mem_kanban_create.
 
    Returns: vector of task spec maps ready for kanban creation"
-  util/plan->task-specs)
+  #'util/plan->task-specs)
 
 (def validate-dependencies
   "Validate that all depends-on references exist as step IDs.
 
    Returns: {:valid true} or {:valid false :missing [...] :step ...}"
-  util/validate-dependencies)
+  #'util/validate-dependencies)
