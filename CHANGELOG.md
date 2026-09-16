@@ -35,6 +35,74 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-09-16
+
+Three threads: the dispatch tree stopped freezing handler values, the channel
+grew a real response budget, and a wrap finally knows which session it belongs
+to. Minor rather than patch: commands were added to the tool surface and
+nothing in the promised seam was removed or renamed.
+
+### Fixed
+
+- **A hot reload could not rewire a tool handler.** The dispatch tree stored
+  the handler's VALUE, so every table held the closure compiled at load time
+  and a reload changed nothing the router could see. Handlers are now stored
+  as vars and the walker derefs at call time; 55 tables were converted, and a
+  ratchet test keeps a referenced handler from regressing to a bare value.
+  `dispatch.handler/handler?` is the one definition of what is invocable, and
+  it admits a var.
+- **The same defect in the event registries.** `reg-fx` / `reg-cofx` /
+  `reg-event` guarded by `defonce` or a gate atom captured the pre-reload
+  closure and never re-ran. Registration is unconditional wherever the
+  registry is key-addressed, which is every site touched here; a gate is
+  correct only where registration ACCUMULATES. `hive.events/stale-registrations`
+  names whatever is left pointing at replaced code.
+- `async-result/drain!` destroyed results enqueued while it was running.
+- One coordinator window is one audience, and one global cursor, so a session
+  touching several repos no longer reads a global shout once per project.
+- A project-scoped reader could not match its own directed `:to`.
+- `extensions`: the hive-addon listener seam is armed at `install!`, not on the
+  first facade call, so an addon that registers before the facade is touched is
+  no longer invisible.
+- `saa.core-seed` installs instead of trusting `require` to do the work.
+- `swarm`: the signature rule was dead in the stored path, and stale spans
+  fenced a file forever.
+- Sweepers never release an owner the sweep cannot name.
+- `kernel.edn` claims `dispatch`, `hot` and `session`; four namespaces were
+  unowned and five kernel edges unwaived.
+- `init` logs boot-boundary failures through `rescue-log` instead of
+  swallowing them.
+
+### Added
+
+- **Session identity and HCR ownership.** `crystal/session-id` was the calendar
+  date, so every concurrent session on a box shared one tag and the first wrap
+  to run destroyed the others' unharvested records. `session.identity` is the
+  pure algebra (a SessionRef resolved against a world snapshot, plus the
+  ownership rules); `session.current` is the thin impure adapter. A coordinator
+  owns its descendants, a ling owns only itself, and a row with no session id
+  belongs to nobody and is never cleared.
+- **Channel response budget.** The budget covers the whole response rather than
+  each block in isolation, reports what the drain WITHHELD rather than only
+  what it saved, and sends pool memories as pointers instead of bodies. The
+  normative split is exported as LLMLingua-2 control tags, and the dictionary
+  declines what it cannot honestly compress.
+- Directed ling-to-ling delivery over A2A envelopes, with broadcasts metered
+  and a directed exchange threaded across turns.
+- `registry`: an opt-in compact projection of the advertised tool schemas.
+- `cli`: a bare subcommand dispatches to the one root that can own it.
+- Prompt caching on the OpenAI-compat wire, tool results included, and a
+  provider may buy the 1h cache.
+- `swarm`: claim a span of a file rather than the whole file.
+
+### Changed
+
+- Dictionary encoding moved out of `channel.core` into `hive-prompt`.
+- Every memory type is classified as a Context Codec commitment.
+- The dev REPL alias (`bb repl`, `clj -M:dev-repl`) binds an OS-assigned port
+  and can no longer land on the serving nREPL port; `bb serve` is the explicit
+  act of booting the server.
+
 ## [1.5.0] - 2026-09-14
 
 A belt wave of four reviewed cards, plus one regression the review caught and
