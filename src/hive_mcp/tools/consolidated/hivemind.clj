@@ -38,7 +38,7 @@
    :nudge    handle-nudge})
 
 (def handle-hivemind
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 (def tool-def
   {:name "hivemind"

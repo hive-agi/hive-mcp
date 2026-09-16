@@ -403,8 +403,8 @@
              :migration migration/handlers
              :agent     agent/handlers}]
       (doseq [[k v] handlers-map]
-        (is (or (fn? v) (map? v))
-            (str tool-key "/" k " should be a function or nested handler map"))))))
+        (is (or (dispatch/handler? v) (map? (dispatch/current v)))
+            (str tool-key "/" k " should be dispatchable or a nested handler map"))))))
 
 (deftest test-handler-map-commands-match-enum
   (testing "handler map keys match tool-def command enum (minus 'help')"
@@ -561,9 +561,9 @@
     (is (contains? kg/handlers :batch-traverse))))
 
 (deftest test-kg-batch-handlers-are-functions
-  (testing "KG batch handlers are valid functions"
-    (is (fn? (:batch-edge kg/handlers)))
-    (is (fn? (:batch-traverse kg/handlers)))))
+  (testing "KG batch handlers are dispatchable"
+    (is (dispatch/handler? (:batch-edge kg/handlers)))
+    (is (dispatch/handler? (:batch-traverse kg/handlers)))))
 
 (deftest test-kg-batch-edge-rejects-empty-operations
   (testing "batch-edge rejects empty operations"
@@ -728,8 +728,8 @@
     (is (contains? magit/handlers :batch-commit))))
 
 (deftest test-magit-batch-commit-is-function
-  (testing "magit batch-commit handler is a function"
-    (is (fn? (:batch-commit magit/handlers)))))
+  (testing "magit batch-commit handler is dispatchable"
+    (is (dispatch/handler? (:batch-commit magit/handlers)))))
 
 (deftest test-magit-batch-commit-rejects-empty-operations
   (testing "magit batch-commit rejects empty operations"
@@ -952,9 +952,9 @@
     (is (contains? session/handlers :context-reconstruct))))
 
 (deftest test-session-handlers-are-functions
-  (testing "all session handlers are functions"
+  (testing "all session handlers are dispatchable"
     (doseq [[k v] session/handlers]
-      (is (fn? v) (str "session handler " k " should be a function")))))
+      (is (dispatch/handler? v) (str "session handler " k " should be dispatchable")))))
 
 (deftest test-session-tool-def-schema-params
   (testing "session tool-def schema has key params"
@@ -1051,9 +1051,9 @@
     (is (contains? migration/handlers :adapters))))
 
 (deftest test-migration-handlers-are-functions
-  (testing "all migration handlers are functions"
+  (testing "all migration handlers are dispatchable"
     (doseq [[k v] migration/handlers]
-      (is (fn? v) (str "migration handler " k " should be a function")))))
+      (is (dispatch/handler? v) (str "migration handler " k " should be dispatchable")))))
 
 (deftest test-migration-tool-def-schema-params
   (testing "migration tool-def schema has key params"

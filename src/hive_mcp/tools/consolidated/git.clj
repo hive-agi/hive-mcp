@@ -19,17 +19,22 @@
       (batch-fn (assoc params :operations ops-with-command)))))
 
 (def canonical-handlers
-  {:status   magit-handlers/handle-magit-status
-   :stage    magit-handlers/handle-magit-stage
-   :commit   magit-handlers/handle-magit-commit
-   :push     magit-handlers/handle-magit-push
-   :branches magit-handlers/handle-magit-branches
-   :log      magit-handlers/handle-magit-log
-   :diff     magit-handlers/handle-magit-diff
-   :pull     magit-handlers/handle-magit-pull
-   :fetch    magit-handlers/handle-magit-fetch
-   :feature-branches magit-handlers/handle-magit-feature-branches
-   :batch-commit handle-batch-commit})
+  "The `git` verbs, stored as VARS so a reload of the magit handler namespace
+   reaches this table (20260817195749-0d407e9c). Every value here names a var in
+   ANOTHER namespace, which is the shape that made the freeze hardest to see: a
+   reload of `hive-mcp.tools.magit` rebinds each of those vars and this map went
+   on holding the functions the previous load interned, with nothing to say so."
+  {:status   #'magit-handlers/handle-magit-status
+   :stage    #'magit-handlers/handle-magit-stage
+   :commit   #'magit-handlers/handle-magit-commit
+   :push     #'magit-handlers/handle-magit-push
+   :branches #'magit-handlers/handle-magit-branches
+   :log      #'magit-handlers/handle-magit-log
+   :diff     #'magit-handlers/handle-magit-diff
+   :pull     #'magit-handlers/handle-magit-pull
+   :fetch    #'magit-handlers/handle-magit-fetch
+   :feature-branches #'magit-handlers/handle-magit-feature-branches
+   :batch-commit #'handle-batch-commit})
 
 (def handlers canonical-handlers)
 

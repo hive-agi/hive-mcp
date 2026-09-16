@@ -15,7 +15,7 @@
   canonical-handlers)
 
 (def handle-agora
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 (def tool-def
   {:name "agora"

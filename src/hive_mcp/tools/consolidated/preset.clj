@@ -49,7 +49,7 @@
                     {} deprecated-aliases)))
 
 (def handle-preset
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 (def tool-def
   {:name "preset"

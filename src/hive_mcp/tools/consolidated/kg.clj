@@ -21,19 +21,27 @@
                           :cmd-kw :traverse}))
 
 (def handlers
-  {:traverse           kg-handlers/handle-kg-traverse
-   :edge               kg-handlers/handle-kg-add-edge
-   :impact             kg-handlers/handle-kg-impact-analysis
-   :subgraph           kg-handlers/handle-kg-subgraph
-   :stats              kg-handlers/handle-kg-stats
-   :path               kg-handlers/handle-kg-find-path
-   :context            kg-handlers/handle-kg-node-context
-   :promote            kg-handlers/handle-kg-promote
-   :remove-edge        kg-handlers/handle-kg-remove-edge
-   :reground           kg-handlers/handle-kg-reground
-   :cleanup-synthetics kg-handlers/handle-kg-cleanup-synthetics
-   :batch-edge         handle-batch-edge
-   :batch-traverse     handle-batch-traverse})
+  "The `kg` verbs, stored as VARS so a reload of `hive-mcp.tools.kg` reaches
+   this table (20260817195749-0d407e9c).
+
+   `:batch-edge` and `:batch-traverse` point at the two local defs above, which
+   are themselves aliases holding a captured value. Quoting them here closes the
+   seam at the TABLE; the alias defs are their own freeze and are converted with
+   the rest of them, not ad hoc, because an alias that holds a var makes a var
+   CHAIN and nothing derefs to a fixed point yet."
+  {:traverse           #'kg-handlers/handle-kg-traverse
+   :edge               #'kg-handlers/handle-kg-add-edge
+   :impact             #'kg-handlers/handle-kg-impact-analysis
+   :subgraph           #'kg-handlers/handle-kg-subgraph
+   :stats              #'kg-handlers/handle-kg-stats
+   :path               #'kg-handlers/handle-kg-find-path
+   :context            #'kg-handlers/handle-kg-node-context
+   :promote            #'kg-handlers/handle-kg-promote
+   :remove-edge        #'kg-handlers/handle-kg-remove-edge
+   :reground           #'kg-handlers/handle-kg-reground
+   :cleanup-synthetics #'kg-handlers/handle-kg-cleanup-synthetics
+   :batch-edge         #'handle-batch-edge
+   :batch-traverse     #'handle-batch-traverse})
 
 (def ^:private coerce-schema
   "MCP boundary coercion — string params to declared types."
@@ -49,7 +57,7 @@
    :i_mean_it   [:boolean]})
 
 (def handle-kg
-  (make-cli-handler handlers coerce-schema))
+  (make-cli-handler #'handlers coerce-schema))
 
 (def tool-def
   {:name "kg"

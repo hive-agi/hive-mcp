@@ -58,7 +58,7 @@
    :reset   cmd-reset})
 
 (def handle-migrate-kanban
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 ;; =============================================================================
 ;; Tool definition

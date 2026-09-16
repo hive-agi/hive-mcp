@@ -10,7 +10,7 @@
    :status  olympus-handlers/handle-olympus-status})
 
 (def handle-olympus
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 (def tool-def
   {:name "olympus"

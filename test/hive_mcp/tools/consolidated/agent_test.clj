@@ -521,17 +521,18 @@
     (is (contains? agent/handlers :list))))
 
 (deftest test-handlers-are-functions
-  (testing "all top-level handlers are functions or nested handler maps"
+  (testing "all top-level handlers are dispatchable, or nested handler maps"
     (doseq [[k v] agent/handlers]
-      (is (or (fn? v) (map? v))
-          (str "Handler " k " should be a function or nested handler map"))))
+      (is (or (dispatch/handler? v) (map? (dispatch/current v)))
+          (str "Handler " k " should be dispatchable or a nested handler map"))))
 
-  (testing "nested handler maps contain only functions and :_handler"
+  (testing "nested handler maps contain only dispatchable values and :_handler"
     (doseq [[k v] agent/handlers
-            :when (map? v)]
-      (doseq [[sub-k sub-v] v]
-        (is (fn? sub-v)
-            (str "Nested handler " k " " sub-k " should be a function"))))))
+            :let  [node (dispatch/current v)]
+            :when (map? node)]
+      (doseq [[sub-k sub-v] node]
+        (is (dispatch/handler? sub-v)
+            (str "Nested handler " k " " sub-k " should be dispatchable"))))))
 
 ;; =============================================================================
 ;; Integration Tests (handler routing)
@@ -819,16 +820,16 @@
 
 (deftest test-dag-handlers-in-handlers-map
   (testing "handlers map contains :dag subtree with nested handlers"
-    (is (map? (:dag agent/handlers))
+    (is (map? (dispatch/current (:dag agent/handlers)))
         "handlers should have :dag as a map (subtree)")
-    (is (fn? (get-in agent/handlers [:dag :start]))
-        ":dag :start should be a function")
-    (is (fn? (get-in agent/handlers [:dag :stop]))
-        ":dag :stop should be a function")
-    (is (fn? (get-in agent/handlers [:dag :status]))
-        ":dag :status should be a function")
-    (is (fn? (get-in agent/handlers [:dag :_handler]))
-        ":dag :_handler should be a function (defaults to status)")))
+    (is (dispatch/handler? (get-in agent/handlers [:dag :start]))
+        ":dag :start should be dispatchable")
+    (is (dispatch/handler? (get-in agent/handlers [:dag :stop]))
+        ":dag :stop should be dispatchable")
+    (is (dispatch/handler? (get-in agent/handlers [:dag :status]))
+        ":dag :status should be dispatchable")
+    (is (dispatch/handler? (get-in agent/handlers [:dag :_handler]))
+        ":dag :_handler should be dispatchable (defaults to status)")))
 
 (deftest test-help-includes-dag-subcommands
   (testing "help output includes dag subcommands"

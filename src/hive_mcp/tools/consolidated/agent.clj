@@ -37,22 +37,29 @@
           (batch-fn (assoc params :operations ops-with-command)))))))
 
 (def canonical-handlers
-  {:spawn       spawn/handle-spawn
-   :status      status/handle-status
-   :digest      status/handle-digest
-   :kill        kill/handle-kill
-   :kill-batch  kill/handle-kill-batch
-   :interrupt   lifecycle/handle-interrupt
-   :batch-spawn batch-spawn-handler
-   :dispatch    dispatch/handle-dispatch
-   :claims      lifecycle/handle-claims
-   :collect     lifecycle/handle-collect
-   :broadcast   lifecycle/handle-broadcast
-   :cleanup     lifecycle/handle-cleanup
-   :dag         {:start    dag/handle-dag-start
-                 :stop     dag/handle-dag-stop
-                 :status   dag/handle-dag-status
-                 :_handler dag/handle-dag-status}})
+  "The `agent` verbs, stored as VARS so a reload of any agent.* module reaches
+   this table (20260817195749-0d407e9c).
+
+   The `:dag` value stays a LITERAL map with var-quoted leaves rather than
+   becoming a var itself. Both spellings dispatch correctly now that the walker
+   derefs, but a literal map is still `map?` to every OTHER reader of this tree
+   — and this table is read by more than the walker."
+  {:spawn       #'spawn/handle-spawn
+   :status      #'status/handle-status
+   :digest      #'status/handle-digest
+   :kill        #'kill/handle-kill
+   :kill-batch  #'kill/handle-kill-batch
+   :interrupt   #'lifecycle/handle-interrupt
+   :batch-spawn #'batch-spawn-handler
+   :dispatch    #'dispatch/handle-dispatch
+   :claims      #'lifecycle/handle-claims
+   :collect     #'lifecycle/handle-collect
+   :broadcast   #'lifecycle/handle-broadcast
+   :cleanup     #'lifecycle/handle-cleanup
+   :dag         {:start    #'dag/handle-dag-start
+                 :stop     #'dag/handle-dag-stop
+                 :status   #'dag/handle-dag-status
+                 :_handler #'dag/handle-dag-status}})
 
 (def handlers
   (merge canonical-handlers
@@ -63,7 +70,7 @@
                     {} deprecated-aliases)))
 
 (def handle-agent
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 ;; Re-exports for direct handler access (used by tests and internal callers)
 (def handle-spawn spawn/handle-spawn)

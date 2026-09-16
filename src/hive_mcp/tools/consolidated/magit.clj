@@ -16,20 +16,24 @@
       (batch-fn (assoc params :operations ops-with-command)))))
 
 (def handlers
-  {:status   magit-handlers/handle-magit-status
-   :stage    magit-handlers/handle-magit-stage
-   :commit   magit-handlers/handle-magit-commit
-   :push     magit-handlers/handle-magit-push
-   :branches magit-handlers/handle-magit-branches
-   :log      magit-handlers/handle-magit-log
-   :diff     magit-handlers/handle-magit-diff
-   :pull     magit-handlers/handle-magit-pull
-   :fetch    magit-handlers/handle-magit-fetch
-   :feature-branches magit-handlers/handle-magit-feature-branches
-   :batch-commit handle-batch-commit})
+  "The `magit` verbs, stored as VARS so a reload of `hive-mcp.tools.magit`
+   reaches this table (20260817195749-0d407e9c). Same eleven entries as
+   `consolidated.git/canonical-handlers`, converted in the same pass: two copies
+   of one table that disagree about the seam is worse than either spelling."
+  {:status   #'magit-handlers/handle-magit-status
+   :stage    #'magit-handlers/handle-magit-stage
+   :commit   #'magit-handlers/handle-magit-commit
+   :push     #'magit-handlers/handle-magit-push
+   :branches #'magit-handlers/handle-magit-branches
+   :log      #'magit-handlers/handle-magit-log
+   :diff     #'magit-handlers/handle-magit-diff
+   :pull     #'magit-handlers/handle-magit-pull
+   :fetch    #'magit-handlers/handle-magit-fetch
+   :feature-branches #'magit-handlers/handle-magit-feature-branches
+   :batch-commit #'handle-batch-commit})
 
 (def handle-magit
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 (def tool-def
   {:name "magit"

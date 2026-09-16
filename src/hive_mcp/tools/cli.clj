@@ -261,7 +261,22 @@
 (defn make-cli-handler
   "Create a CLI-style handler that dispatches on :command param.
 
-   handlers: map of keyword -> handler-fn (flat) or nested handler tree.
+   handlers: map of keyword -> handler-fn (flat) or nested handler tree, or —
+   preferred in this repo — the VAR holding one. The var spelling is what makes
+   a consolidated tool's ROOT reload-transparent: the returned closure then
+   holds an indirection rather than the map that existed when the consolidated
+   namespace last loaded.
+
+   The root is resolved ONCE, inside the returned fn, and every inspector below
+   is handed the MAP. That placement is the whole design. Resolving it in the
+   outer `let` would re-freeze the root, which is the capture this exists to
+   undo (20260817195749-0d407e9c); resolving it per inspector instead would ask
+   each of `format-help`, `unknown-command-error`, `qualification-hints`,
+   `nearest-commands` and `auto-qualified-command` to know about vars, and the
+   one that was forgotten would fail as a missing command rather than as a type
+   error. `resolve-handler` derefs nodes further down on its own, because a
+   SUBTREE may be behind a var too.
+
    Supports n-depth command dispatch: \"status list\" walks {:status {:list fn}}.
    Single-word commands remain backward compatible.
 
@@ -290,8 +305,9 @@
                            (mcp-error (str "Parameter error: " (:message coerced)))))
                        (handler params)))]
      (fn [{:keys [command] :as params}]
-       (let [cmd-str (normalize-command command)
-             path    (parse-command cmd-str)]
+       (let [handlers (dispatch/current handlers)
+             cmd-str  (normalize-command command)
+             path     (parse-command cmd-str)]
          (cond
            ;; No command or empty -> error
            (nil? path)

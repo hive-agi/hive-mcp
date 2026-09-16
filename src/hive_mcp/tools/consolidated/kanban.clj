@@ -115,7 +115,7 @@
                     deprecated-aliases)))
 
 (def handle-kanban
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 (def tool-def
   {:name "kanban"

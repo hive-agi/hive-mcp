@@ -228,7 +228,7 @@
 (def handlers canonical-handlers)
 
 (def handle-workflow
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 (def tool-def
   {:name "workflow"

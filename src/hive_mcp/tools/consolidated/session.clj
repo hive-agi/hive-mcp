@@ -231,19 +231,26 @@
     result))
 
 (def handlers
-  {:complete             handle-complete
-   :wrap                 handle-wrap
-   :whoami               handle-whoami
-   :catchup              handle-catchup
-   :context-put          handle-context-put
-   :context-get          handle-context-get
-   :context-query        handle-context-query
-   :context-evict        handle-context-evict
-   :context-stats        handle-context-stats
-   :context-reconstruct  handle-context-reconstruct})
+  "The `session` verbs, stored as VARS so a reload of THIS namespace reaches the
+   table (20260817195749-0d407e9c). Every value is a local def, which is the
+   case where the freeze is easiest to miss: reloading the file rebinds each
+   `handle-*` and rebuilds this map in the same pass, so the table looks fresh.
+   It is fresh only because the whole file reloaded — a targeted reload of one
+   handler, or a table captured by a caller that did not reload, still sees the
+   old function."
+  {:complete             #'handle-complete
+   :wrap                 #'handle-wrap
+   :whoami               #'handle-whoami
+   :catchup              #'handle-catchup
+   :context-put          #'handle-context-put
+   :context-get          #'handle-context-get
+   :context-query        #'handle-context-query
+   :context-evict        #'handle-context-evict
+   :context-stats        #'handle-context-stats
+   :context-reconstruct  #'handle-context-reconstruct})
 
 (def handle-session
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 (def tool-def
   {:name "session"

@@ -31,7 +31,7 @@
   {:doctor handle-doctor})
 
 (def handle-addon
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 (def tool-def
   {:name "addon"

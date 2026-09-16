@@ -65,9 +65,9 @@
     (is (contains? session/handlers :context-reconstruct))))
 
 (deftest test-handlers-are-functions
-  (testing "all handlers are functions"
+  (testing "all handlers are dispatchable"
     (doseq [[k v] session/handlers]
-      (is (fn? v) (str "Handler " k " should be a function")))))
+      (is (dispatch/handler? v) (str "Handler " k " should be dispatchable")))))
 
 ;; =============================================================================
 ;; CLI Handler Tests (backward compat)

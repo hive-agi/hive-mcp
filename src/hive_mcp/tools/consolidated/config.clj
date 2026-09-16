@@ -136,7 +136,7 @@
    :validate handle-validate})
 
 (def handle-config
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 (def tool-def
   {:name "config"
