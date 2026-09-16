@@ -47,7 +47,8 @@
             [hive-weave.safe :as ws]
             [hive-mcp.chroma.client :as chroma-api]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-spi.embeddings.ports :as embed]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -141,7 +142,7 @@
         (throw (ex-info "Embedding provider not configured for plans collection."
                         {:type :no-embedding-provider
                          :collection collection-name})))
-      (let [required-dim (chroma/embedding-dimension provider)
+      (let [required-dim (embed/embedding-dimension provider)
             existing (try-get-existing-collection)]
         (if existing
           ;; Check dimension match
@@ -250,7 +251,7 @@
                               fmt (java.time.format.DateTimeFormatter/ofPattern "yyyyMMddHHmmss")]
                           (str (.format ts fmt) "-" (subs (str (java.util.UUID/randomUUID)) 0 8))))
         doc-text (entry-to-document entry)
-        embedding (chroma/embed-text provider doc-text)
+        embedding (embed/embed-text provider doc-text)
         metadata (extract-entry-metadata entry)]
     (ws/deref-safe! (chroma-api/add coll [{:id entry-id
                                            :embedding embedding
@@ -278,7 +279,7 @@
   [query-text & {:keys [limit project-id type plan-status] :or {limit 5}}]
   (let [coll (get-or-create-collection)
         provider (chroma/get-provider-for collection-name)
-        query-embedding (chroma/embed-text provider query-text)
+        query-embedding (embed/embed-text provider query-text)
         where-clause (cond-> nil
                        type (assoc :type type)
                        project-id (assoc :project-id project-id)

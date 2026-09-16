@@ -31,7 +31,8 @@
             [hive-mcp.chroma.client :as chroma-api]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-spi.embeddings.ports :as embed]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -112,7 +113,7 @@
         (throw (ex-info "Embedding provider not configured for presets collection."
                         {:type :no-embedding-provider
                          :collection collection-name})))
-      (let [required-dim (chroma/embedding-dimension provider)
+      (let [required-dim (embed/embedding-dimension provider)
             existing (try-get-existing-collection)]
         (if existing
           ;; Check dimension match
@@ -229,7 +230,7 @@
   (let [coll (get-or-create-collection)
         provider (chroma/get-provider-for collection-name)
         doc-text (preset-to-document preset)
-        embedding (chroma/embed-text provider doc-text)]
+        embedding (embed/embed-text provider doc-text)]
     (ws/deref-safe! (chroma-api/add coll [{:id id
                                           :embedding embedding
                                           :document doc-text
@@ -252,7 +253,7 @@
   (let [coll (get-or-create-collection)
         provider (chroma/get-provider-for collection-name)
         docs (mapv preset-to-document presets)
-        embeddings (chroma/embed-batch provider docs)
+        embeddings (embed/embed-batch provider docs)
         records (mapv (fn [preset doc emb]
                         {:id (:id preset)
                          :embedding emb
@@ -309,7 +310,7 @@
   [query-text & {:keys [limit category] :or {limit 5}}]
   (let [coll (get-or-create-collection)
         provider (chroma/get-provider-for collection-name)
-        query-embedding (chroma/embed-text provider query-text)
+        query-embedding (embed/embed-text provider query-text)
         where-clause (when category {:category category})
         results (ws/deref-safe! (chroma-api/query coll query-embedding
                                                   :num-results limit
