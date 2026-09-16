@@ -40,10 +40,17 @@
       "Apply backend-level configuration. Returns THIS.")
 
     (-get-collection [this coll-name]
-      "The collection named COLL-NAME, or nil when it does not exist.")
+      "A HANDLE for the collection named COLL-NAME, or nil when it does not
+       exist.
+
+       The handle is opaque to callers except for one guarantee: when the
+       backend records collection metadata, the handle carries it under
+       `:metadata`. Callers rely on that to detect an embedding-dimension
+       change, so a backend that returned a bare name would silently recreate
+       the collection on every read.")
 
     (-create-collection [this coll-name opts]
-      "Create COLL-NAME and return it. `opts` may carry :metadata and
+      "Create COLL-NAME and return its handle. `opts` may carry :metadata and
        :get-or-create?; with :get-or-create? true an existing collection is
        returned rather than an error.")
 
