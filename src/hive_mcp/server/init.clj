@@ -38,7 +38,8 @@
             [hive-hot.core :as hot]
             [hive-hot.events :as hot-events]
             [taoensso.timbre :as log]
-            [clojure.string :as str] [hive-dsl.result :refer [rescue]]))
+            [clojure.string :as str] [hive-dsl.result :refer [rescue]]
+            [hive-mcp.hot.self :as hot-self]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -413,6 +414,17 @@
 
    ADR: State-based debouncing - claimed files buffer until release.
 
+   The watcher has always covered hive-mcp's OWN src and has always refreshed
+   the tool table on a successful reload (see register-hot-reload-listener!).
+   What it never passed was `:no-reload`, which `init-with-watcher!` has
+   accepted all along. Without it, a reload of a core namespace that DEFINES a
+   protocol orphans every reify and defrecord instance built against the old
+   protocol object, and `satisfies?` then answers false for a class that
+   plainly implements it (axiom 20260822010805-57856ae1). The set is derived
+   from the live image by hive-mcp.hot.self, never listed, because a written
+   list of the thirty-seven namespaces that define protocols today is correct
+   only until somebody adds or moves one.
+
    Parameters:
      server-context-atom - atom containing MCP server context
      project-config      - map from read-project-config (or nil)"
@@ -425,11 +437,15 @@
                                                                          :parse #(str/split % #":"))
                                         (:watch-dirs project-config)
                                         ["src"])
-                           claim-checker (hot-events/make-claim-checker logic/get-all-claims)]
+                           claim-checker (hot-events/make-claim-checker logic/get-all-claims)
+                           no-reload (hot-self/protocol-namespaces)]
                        (hot/init-with-watcher! {:dirs src-dirs
                                                 :claim-checker claim-checker
+                                                :no-reload no-reload
                                                 :debounce-ms 100})
-                       (log/info "Hot-reload watcher started:" {:dirs src-dirs})
+                       (log/info "Hot-reload watcher started:"
+                                 {:dirs src-dirs
+                                  :protocol-namespaces-protected (count no-reload)})
           ;; Register MCP auto-heal listener to refresh tools after reload
                        (register-hot-reload-listener! server-context-atom)
           ;; Register state protection for DataScript state validation
