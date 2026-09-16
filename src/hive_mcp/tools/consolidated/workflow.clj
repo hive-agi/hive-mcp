@@ -301,6 +301,6 @@
                               "restart" {:type "boolean"
                                          :description "[forge quench] Restart the belt instead of stopping it, making forge strike available again."}}
                  :required ["command"]}
-   :handler handle-workflow})
+   :handler #'handle-workflow})
 
 (def tools [tool-def])

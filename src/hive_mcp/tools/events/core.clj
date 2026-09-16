@@ -94,6 +94,6 @@
                               "fx-id" {:type "string"
                                        :description "[unreg-fx] FX id to remove"}}
                  :required ["command"]}
-   :handler handle})
+   :handler #'handle})
 
 (def tools [tool-def])

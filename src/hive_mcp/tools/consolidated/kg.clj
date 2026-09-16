@@ -119,6 +119,6 @@
                               "dry_run" {:type "boolean"
                                          :description "cleanup-synthetics: preview without mutating (default: false)"}}
                  :required ["command"]}
-   :handler handle-kg})
+   :handler #'handle-kg})
 
 (def tools [tool-def])

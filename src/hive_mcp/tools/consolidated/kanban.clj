@@ -197,6 +197,6 @@
                               "parallel" {:type "boolean"
                                           :description "Run batch operations in parallel (default: false)"}}
                  :required ["command"]}
-   :handler handle-kanban})
+   :handler #'handle-kanban})
 
 (def tools [tool-def])

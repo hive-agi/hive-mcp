@@ -213,6 +213,6 @@
                               "parallel" {:type "boolean"
                                           :description "Run batch operations in parallel (default: false)"}}
                  :required ["command"]}
-   :handler handle-project})
+   :handler #'handle-project})
 
 (def tools [tool-def])

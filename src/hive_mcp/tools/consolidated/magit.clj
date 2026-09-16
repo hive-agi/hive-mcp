@@ -67,6 +67,6 @@
                               git-files-property
                               emacs-timeout-ms-property)
                  :required ["command"]}
-   :handler handle-magit})
+   :handler #'handle-magit})
 
 (def tools [tool-def])

@@ -170,6 +170,6 @@
                               "max_slots" {:type "integer"
                                            :description "Max concurrent lings for dag scheduler (default: 5)"}}
                  :required ["command"]}
-   :handler handle-agent})
+   :handler #'handle-agent})
 
 (def tools [tool-def])

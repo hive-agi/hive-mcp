@@ -202,6 +202,6 @@
                               "package_name" {:type "string"
                                               :description "Package name for docs package-commentary"}}
                  :required ["command"]}
-   :handler handle-emacs})
+   :handler #'handle-emacs})
 
 (def tools [tool-def])

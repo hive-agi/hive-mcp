@@ -84,6 +84,6 @@
                               "directory" {:type "string"
                                            :description "Path to directory containing .md preset files"}}
                  :required ["command"]}
-   :handler handle-preset})
+   :handler #'handle-preset})
 
 (def tools [tool-def])

@@ -222,7 +222,7 @@
                               "entry-ids" {:type "array" :items {:type "string"} :description "[migrate-scoped] Entry IDs"}
                               "tag-filter" {:type "string" :description "[migrate-scoped] Tag filter"}}
                  :required ["command"]}
-   :handler handle-memory})
+   :handler #'handle-memory})
 
 (defn tool-defs
   "Advertisement-time tool-defs for the memory supertool.

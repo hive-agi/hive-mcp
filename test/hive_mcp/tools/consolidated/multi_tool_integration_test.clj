@@ -39,7 +39,8 @@
             [hive-mcp.tools.consolidated.migration :as migration]
             [hive-mcp.tools.consolidated.agent :as agent]
             ;; Multi meta-facade
-            [hive-mcp.tools.consolidated.multi :as multi]))
+            [hive-mcp.tools.consolidated.multi :as multi]
+            [hive-mcp.dispatch.handler :as dispatch]))
 
 ;; =============================================================================
 ;; Helpers
@@ -321,7 +322,7 @@
           (str tool-key " missing :description"))
       (is (map? (:inputSchema tool-def))
           (str tool-key " missing :inputSchema"))
-      (is (fn? (:handler tool-def))
+      (is (dispatch/handler? (:handler tool-def))
           (str tool-key " missing :handler")))))
 
 (deftest test-all-tool-defs-are-consolidated
@@ -1150,7 +1151,7 @@
     (is (true? (:consolidated multi/tool-def)))
     (is (string? (:description multi/tool-def)))
     (is (map? (:inputSchema multi/tool-def)))
-    (is (fn? (:handler multi/tool-def)))))
+    (is (dispatch/handler? (:handler multi/tool-def)))))
 
 (deftest test-multi-tool-def-no-required-params
   (testing "multi tool-def has no required params (batch mode doesn't need tool)"

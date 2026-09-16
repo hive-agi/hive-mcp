@@ -83,6 +83,6 @@
                               "force-cross-project" {:type "boolean"
                                                      :description "Allow restoring backup from different project (default: false)"}}
                  :required ["command"]}
-   :handler handle-migration})
+   :handler #'handle-migration})
 
 (def tools [tool-def])

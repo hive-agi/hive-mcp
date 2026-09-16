@@ -283,6 +283,6 @@
                               "scope" {:type "string"
                                        :description "[context-reconstruct] Project scope for KG traversal"}}
                  :required ["command"]}
-   :handler handle-session})
+   :handler #'handle-session})
 
 (def tools [tool-def])

@@ -522,6 +522,6 @@
                                             :description "Batch mode: validate and plan without executing"}}
                  :additionalProperties true
                  :required []}
-   :handler handle-multi})
+   :handler #'handle-multi})
 
 (def tools [tool-def])

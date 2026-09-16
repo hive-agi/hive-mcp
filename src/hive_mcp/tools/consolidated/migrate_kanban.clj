@@ -84,6 +84,6 @@
                    "max_steps"  {:type "integer"
                                  :description "Cap on step iterations for run (default 50)"}}
                   :required ["command"]}
-   :handler      handle-migrate-kanban})
+   :handler      #'handle-migrate-kanban})
 
 (def tools [tool-def])

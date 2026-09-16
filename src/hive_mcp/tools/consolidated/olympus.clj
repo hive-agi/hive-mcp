@@ -35,6 +35,6 @@
                               "tab" {:type "integer"
                                      :description "Specific tab number to jump to (0-indexed)"}}
                  :required ["command"]}
-   :handler handle-olympus})
+   :handler #'handle-olympus})
 
 (def tools [tool-def])

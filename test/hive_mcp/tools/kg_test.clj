@@ -13,7 +13,8 @@
             [hive-mcp.tools.kg :as kg]
             [hive-mcp.tools.kg.queries :as kg-queries]
             [hive-mcp.tools.kg.commands :as kg-commands]
-            [hive-mcp.tools.consolidated.kg :as consolidated-kg]))
+            [hive-mcp.tools.consolidated.kg :as consolidated-kg]
+            [hive-mcp.dispatch.handler :as dispatch]))
 
 ;;; =============================================================================
 ;;; Helpers
@@ -136,7 +137,7 @@
 (deftest every-tool-has-handler
   (testing "Every tool definition has a :handler function"
     (doseq [tool kg/all-tools]
-      (is (fn? (:handler tool))
+      (is (dispatch/handler? (:handler tool))
           (str "Tool " (:name tool) " missing :handler")))))
 
 (deftest every-tool-has-input-schema

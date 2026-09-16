@@ -27,7 +27,8 @@
             [hive-mcp.agent.provider.collect :as provider-collect]
             [hive-test.isolation :as iso]
             [hive-mcp.test.stub.terminal-addon :as stub-term]
-            [hive-mcp.isolation-methods]))
+            [hive-mcp.isolation-methods]
+            [hive-mcp.dispatch.handler :as dispatch]))
 
 ;; =============================================================================
 ;; Test Fixtures
@@ -486,7 +487,7 @@
     (is (= "agent" (:name agent/tool-def)))
     (is (string? (:description agent/tool-def)))
     (is (map? (:inputSchema agent/tool-def)))
-    (is (fn? (:handler agent/tool-def)))))
+    (is (dispatch/handler? (:handler agent/tool-def)))))
 
 (deftest test-tool-definition-input-schema
   (testing "inputSchema has expected properties"

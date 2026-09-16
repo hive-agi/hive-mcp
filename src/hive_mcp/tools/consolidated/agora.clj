@@ -56,6 +56,6 @@
                               "limit" {:type "integer"
                                        :description "Limit to last N turns"}}
                  :required ["command"]}
-   :handler handle-agora})
+   :handler #'handle-agora})
 
 (def tools [tool-def])
