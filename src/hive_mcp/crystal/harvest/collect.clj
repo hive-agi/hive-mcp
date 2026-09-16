@@ -225,7 +225,13 @@
 
    :session-ref scopes the DataScript read to the rows this wrap OWNS. Without
    it the read is fleet-wide and a wrap reports another session's completions
-   as its own. Kanban 20260915164015-7e057e5b."
+   as its own. Kanban 20260915164015-7e057e5b.
+
+   Reports :count alongside :tasks. Every sibling harvester reports a count and
+   assemble-harvest-result reads (:count tasks) for :summary/:task-count, but
+   this one set :count only on its FAILURE fallback -- so a SUCCESSFUL task
+   harvest reported nil and a failed one reported 0, which is backwards. The nil
+   then threw out of the >= comparison in golden-harvest-rich-keys."
   [{:keys [directory session-ref parent-of]}]
   (result/rescue {:tasks [] :count 0 :ds-count 0 :chroma-count 0}
                  (let [dir (or directory (ctx/current-directory))
@@ -255,6 +261,9 @@
                    (log/info "harvest-tasks-direct:" (count all-tasks) "tasks in" ms "ms"
                              "(ds:" (count ds-tasks) "chroma:" (count chroma-tasks) ")")
                    {:tasks all-tasks
+                    :count (count all-tasks)
+                    :ds-count (count ds-tasks)
+                    :chroma-count (count chroma-tasks)
                     :project-id project-id})))
 
 (defn- harvest-commits-direct
