@@ -93,49 +93,70 @@
               "tool:" (:tool result-map) "status:" (:status result-map)
               "buffer:" buffer-key)))
 
+(defn- next-batch
+  "The batch one drain would take from `buf`, as [entries new-cursor]. PURE.
+
+   Kept pure and total so it can be applied twice on the same value: once
+   inside the `swap!` that advances the cursor, and once outside it to build
+   the caller's payload. Both applications see the same buffer value, so the
+   payload cannot disagree with the cursor that was committed.
+
+   At least one entry is always taken, even when that single entry is over
+   budget, or an oversized result would wedge the buffer forever."
+  [{:keys [entries cursor]}]
+  (let [total (count entries)]
+    (loop [batch [] chars 0 idx cursor]
+      (if (>= idx total)
+        [batch idx]
+        (let [output-entry (dissoc (nth entries idx) :timestamp :content-hash)
+              new-chars    (+ chars (count (pr-str output-entry)))]
+          (if (and (seq batch) (> new-chars drain-char-budget))
+            [batch idx]
+            (recur (conj batch output-entry) new-chars (inc idx))))))))
+
+(defn- drainable?
+  "True when `buf` exists and holds an entry the caller has not been given."
+  [buf]
+  (boolean (and buf (< (:cursor buf) (count (:entries buf))))))
+
 (defn drain!
-  "Drain next batch of async results within char budget for a caller session."
+  "Drain next batch of async results within char budget for a caller session.
+
+   The cursor advance is ONE atomic step. It used to be a read-modify-write:
+   the buffer was snapshotted with `@buffers`, the batch computed from that
+   snapshot, and the snapshot then written back with `assoc` (or the whole key
+   `dissoc`ed when the snapshot looked fully drained). A result enqueued in
+   that window was destroyed -- clobbered by the stale snapshot, or deleted
+   with the buffer -- and since the ack had already gone out as
+   `{:queued true}`, the caller was never told. A batch of concurrent async
+   calls is exactly the case that loses results this way, including the
+   `:status :error` results that are the only report a failed write ever makes.
+
+   `swap-vals!` gives the value the winning attempt actually saw, so the
+   payload is rebuilt from that same value with the same pure `next-batch`.
+   The buffer is dropped only when it is empty AT THE INSTANT of the swap, not
+   when a stale copy looked empty."
   [caller-id]
   (let [buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))
-        buf (get @buffers buffer-key)]
-    (when (and buf (< (:cursor buf) (count (:entries buf))))
-      (let [{:keys [entries cursor]} buf
-            total (count entries)
-            ;; Collect entries within char budget
-            [batch new-cursor]
-            (loop [batch []
-                   chars 0
-                   idx cursor]
-              (if (>= idx total)
-                [batch idx]
-                (let [entry (nth entries idx)
-                      ;; Format for output (strip internal fields)
-                      output-entry (dissoc entry :timestamp :content-hash)
-                      entry-str (pr-str output-entry)
-                      entry-chars (count entry-str)
-                      new-chars (+ chars entry-chars)]
-                  (if (and (seq batch) (> new-chars drain-char-budget))
-                    ;; Over budget and we have at least one entry
-                    [batch idx]
-                    ;; Add entry (always add at least one even if over budget)
-                    (recur (conj batch output-entry)
-                           new-chars
-                           (inc idx))))))
-            is-done (>= new-cursor total)
-            delivered new-cursor
-            remaining (- total new-cursor)]
-        ;; Update buffer state
-        (if is-done
-          ;; All delivered - remove buffer
-          (swap! buffers dissoc buffer-key)
-          ;; Advance cursor
-          (swap! buffers assoc buffer-key
-                 (assoc buf :cursor new-cursor)))
-        (cond-> {:results batch
-                 :remaining remaining
-                 :total total
-                 :delivered delivered}
-          is-done (assoc :done true))))))
+        [old _new] (swap-vals!
+                    buffers
+                    (fn [bufs]
+                      (let [buf (get bufs buffer-key)]
+                        (if-not (drainable? buf)
+                          bufs
+                          (let [[_ new-cursor] (next-batch buf)]
+                            (if (>= new-cursor (count (:entries buf)))
+                              (dissoc bufs buffer-key)
+                              (assoc bufs buffer-key (assoc buf :cursor new-cursor))))))))
+        buf (get old buffer-key)]
+    (when (drainable? buf)
+      (let [[batch new-cursor] (next-batch buf)
+            total              (count (:entries buf))]
+        (cond-> {:results   batch
+                 :remaining (- total new-cursor)
+                 :total     total
+                 :delivered new-cursor}
+          (>= new-cursor total) (assoc :done true))))))
 
 (defn has-pending?
   "Check if a caller session has undrained async results."

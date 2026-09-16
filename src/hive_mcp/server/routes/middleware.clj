@@ -171,6 +171,14 @@
    `:async` and never reaches the handler, for the same reason `:async` does
    not: it addresses THIS wrapper, not the tool.
 
+   The failure arm catches Throwable, not Exception. The caller has already
+   been acknowledged with `{:queued true}`, so the buffered result is the ONLY
+   report this call will ever make. An AssertionError from a malli check, a
+   StackOverflowError, an OutOfMemoryError: under `catch Exception` each of
+   those enqueued nothing, and the caller waited forever on an ack for work
+   that had already died. Errors are rethrown after being reported, so the
+   pool still sees them and nothing here pretends to recover from an OOM.
+
    NOTE for addon authors: a top-level `:async` is consumed here and is gone
    before any handler runs, so a tool must not name a parameter `async` and
    expect to receive it. Spell such a flag `background` (see
@@ -204,7 +212,16 @@
                             (log/error e "async-result: background execution failed for task" task-id)
                             (async-buf/enqueue-result! caller-id
                                                        {:task-id task-id :tool tool-name
-                                                        :status :error :error (.getMessage e)}))))})
+                                                        :status :error :error (.getMessage e)}))
+                          (catch Throwable t
+                            ;; Not an Exception, so nothing below would have
+                            ;; reported it and the ack would never be answered.
+                            (log/error t "async-result: background execution died for task" task-id)
+                            (async-buf/enqueue-result! caller-id
+                                                       {:task-id task-id :tool tool-name
+                                                        :status :error
+                                                        :error (str (.getName (class t)) ": " (.getMessage t))})
+                            (throw t))))})
         [{:type "text"
           :text (pr-str (cond-> {:queued true :task-id task-id :tool tool-name}
                           timeout-ms (assoc :timeout-ms timeout-ms)))}])
