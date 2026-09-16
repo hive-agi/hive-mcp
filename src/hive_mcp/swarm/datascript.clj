@@ -26,78 +26,78 @@
 ;;; Re-exports from connection (actively used in production)
 ;;; =============================================================================
 
-(def get-conn connection/get-conn)
-(def reset-conn! connection/reset-conn!)
+(def get-conn #'connection/get-conn)
+(def reset-conn! #'connection/reset-conn!)
 
 ;;; =============================================================================
 ;;; Re-exports from lings (actively used in production)
 ;;; =============================================================================
 
 ;; Slave operations
-(def add-slave! lings/add-slave!)
-(def update-slave! lings/update-slave!)
-(def remove-slave! lings/remove-slave!)
+(def add-slave! #'lings/add-slave!)
+(def update-slave! #'lings/update-slave!)
+(def remove-slave! #'lings/remove-slave!)
 
 ;; Critical ops guard
-(def can-kill? lings/can-kill?)
+(def can-kill? #'lings/can-kill?)
 
 ;; Task operations
-(def add-task! lings/add-task!)
+(def add-task! #'lings/add-task!)
 
 ;; Claim operations
-(def claim-file! lings/claim-file!)
-(def release-claim! lings/release-claim!)
+(def claim-file! #'lings/claim-file!)
+(def release-claim! #'lings/release-claim!)
 
 ;; Task lifecycle
-(def complete-task! lings/complete-task!)
+(def complete-task! #'lings/complete-task!)
 
 ;;; =============================================================================
 ;;; Re-exports from queries (actively used in production)
 ;;; =============================================================================
 
 ;; Slave queries
-(def get-slave queries/get-slave)
-(def get-all-slaves queries/get-all-slaves)
-(def get-slaves-by-status queries/get-slaves-by-status)
-(def get-slaves-by-project queries/get-slaves-by-project)
-(def get-slave-ids-by-project queries/get-slave-ids-by-project)
+(def get-slave #'queries/get-slave)
+(def get-all-slaves #'queries/get-all-slaves)
+(def get-slaves-by-status #'queries/get-slaves-by-status)
+(def get-slaves-by-project #'queries/get-slaves-by-project)
+(def get-slave-ids-by-project #'queries/get-slave-ids-by-project)
 
 ;; Claim queries
-(def has-conflict? queries/has-conflict?)
-(def check-file-conflicts queries/check-file-conflicts)
-(def get-claims-for-file queries/get-claims-for-file)
+(def has-conflict? #'queries/has-conflict?)
+(def check-file-conflicts #'queries/check-file-conflicts)
+(def get-claims-for-file #'queries/get-claims-for-file)
 
 ;; Task queries
-(def get-task queries/get-task)
+(def get-task #'queries/get-task)
 
 ;; Stats
-(def db-stats queries/db-stats)
+(def db-stats #'queries/db-stats)
 
 ;;; =============================================================================
 ;;; Re-exports from coordination (actively used in production)
 ;;; =============================================================================
 
 ;; Wrap queue
-(def add-wrap-notification! coordination/add-wrap-notification!)
-(def get-unprocessed-wraps-for-project coordination/get-unprocessed-wraps-for-project)
-(def get-unprocessed-wraps-for-hierarchy coordination/get-unprocessed-wraps-for-hierarchy)
-(def get-unprocessed-wraps-for-session coordination/get-unprocessed-wraps-for-session)
-(def mark-wrap-processed! coordination/mark-wrap-processed!)
+(def add-wrap-notification! #'coordination/add-wrap-notification!)
+(def get-unprocessed-wraps-for-project #'coordination/get-unprocessed-wraps-for-project)
+(def get-unprocessed-wraps-for-hierarchy #'coordination/get-unprocessed-wraps-for-hierarchy)
+(def get-unprocessed-wraps-for-session #'coordination/get-unprocessed-wraps-for-session)
+(def mark-wrap-processed! #'coordination/mark-wrap-processed!)
 
 ;; Coordinators (used via resolve in server/init.clj and server/lifecycle.clj)
-(def register-coordinator! coordination/register-coordinator!)
-(def mark-coordinator-terminated! coordination/mark-coordinator-terminated!)
+(def register-coordinator! #'coordination/register-coordinator!)
+(def mark-coordinator-terminated! #'coordination/mark-coordinator-terminated!)
 
 ;; Stale claim cleanup
-(def cleanup-stale-claims! coordination/cleanup-stale-claims!)
+(def cleanup-stale-claims! #'coordination/cleanup-stale-claims!)
 
 ;; Completed tasks (session-scoped registry)
-(def register-completed-task! coordination/register-completed-task!)
-(def get-completed-task coordination/get-completed-task)
-(def get-completed-tasks-this-session coordination/get-completed-tasks-this-session)
-(def clear-completed-tasks! coordination/clear-completed-tasks!)
+(def register-completed-task! #'coordination/register-completed-task!)
+(def get-completed-task #'coordination/get-completed-task)
+(def get-completed-tasks-this-session #'coordination/get-completed-tasks-this-session)
+(def clear-completed-tasks! #'coordination/clear-completed-tasks!)
 
 ;; Kanban movements (session-scoped status transitions)
-(def register-kanban-movement! coordination/register-kanban-movement!)
-(def get-kanban-movements-this-session coordination/get-kanban-movements-this-session)
-(def clear-kanban-movements! coordination/clear-kanban-movements!)
+(def register-kanban-movement! #'coordination/register-kanban-movement!)
+(def get-kanban-movements-this-session #'coordination/get-kanban-movements-this-session)
+(def clear-kanban-movements! #'coordination/clear-kanban-movements!)

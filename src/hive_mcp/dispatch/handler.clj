@@ -54,32 +54,65 @@
   (or (fn? v)
       (instance? clojure.lang.MultiFn v)))
 
+(def ^:private max-var-hops
+  "How many times `current` will follow a var before giving up.
+
+   Not a tuning knob. Real chains in this codebase are two hops (table entry
+   -> alias -> function); sixteen is far past anything an author would write
+   and still bounded, which is the only property that matters here."
+  16)
+
+(defn current
+  "The callable `x` denotes RIGHT NOW: follow vars to a FIXED POINT, or return
+   `x` itself.
+
+   For the caller that must hold a function rather than merely something
+   invocable: introspection, an identity comparison, a test double, or a
+   consumer that will mis-handle a var. Read it at CALL time and never at
+   wiring time. Reading it early is precisely the value-capture this namespace
+   exists to undo, and a `current` hoisted into a `let` at build time
+   reintroduces the defect with this function's blessing.
+
+   FIXED POINT, not one hop. A single `deref` was enough while only dispatch
+   TABLES held vars. It stops being enough the moment an alias is also a var:
+
+     (def has-plan? #'pred/has-plan?)     ; the alias re-export
+     {:has-plan? #'has-plan?}             ; the table entry
+
+   is a var whose value is a var, and one hop hands the next reader a var it
+   will mis-handle. Both seams are worth having — the alias so a reload of the
+   predicate namespace reaches the alias, the table so a reload of the alias
+   namespace reaches the table — so the chain is a consequence of doing the
+   thing correctly twice, not an abuse to be forbidden.
+
+   Bounded rather than trusting. A var chain is finite in every non-pathological
+   case, but `(alter-var-root #'a (constantly #'a))` is expressible, and a seam
+   that HANGS is worse than one that refuses: exhausting the bound returns the
+   var still un-dereferenced, so `handler?` answers false and the caller's own
+   gate reports an uninvocable handler instead of spinning."
+  [x]
+  (loop [v x, hops 0]
+    (if (and (var? v) (< hops max-var-hops))
+      (recur (deref v) (inc hops))
+      v)))
+
 (defn handler?
   "Is `x` invocable as a handler?
 
-   Invocable code, or a VAR whose current value is invocable code. The var arm
-   is the whole point: it is the rebind seam, and it is what lets a reload of
-   the defining namespace reach dispatch.
+   Invocable code, or a var (or chain of vars) whose current value is invocable
+   code. The var arm is the whole point: it is the rebind seam, and it is what
+   lets a reload of the defining namespace reach dispatch.
 
-   The two arms ask the SAME question of `x` and of `@x`, which is the part an
-   earlier draft of this function got wrong. It spelled the direct arm `fn?`
-   and the var arm `ifn?`, so a bare multimethod was refused while a var
-   holding that same multimethod was accepted. A predicate that disagrees with
-   itself about one value depending on how it is wrapped is not a predicate,
-   it is two. The test `a-plain-function-is-a-handler` is what caught it."
+   Stated THROUGH `current` rather than beside it, so the two cannot disagree
+   about which values are callable. An earlier draft spelled the arms
+   separately — the direct arm `fn?` and the var arm `ifn?` — so a bare
+   multimethod was refused while a var holding that same multimethod was
+   accepted. A predicate that disagrees with itself about one value depending
+   on how it is wrapped is not a predicate, it is two. The test
+   `a-plain-function-is-a-handler` is what caught it; asking `current` is what
+   stops it recurring, because there is no longer a second arm to forget when
+   `current` learns a new way to hold a callable."
   [x]
-  (or (code? x)
-      (and (var? x) (code? (deref x)))))
+  (code? (current x)))
 
 (s/def ::handler handler?)
-
-(defn current
-  "The callable `x` denotes RIGHT NOW: a var's current value, or `x` itself.
-
-   For the caller that must hold a function rather than merely something
-   invocable: introspection, an identity comparison, a test double. Read it at
-   CALL time and never at wiring time. Reading it early is precisely the
-   value-capture this namespace exists to undo, and a `current` hoisted into a
-   `let` at build time reintroduces the defect with this function's blessing."
-  [x]
-  (if (var? x) (deref x) x))
