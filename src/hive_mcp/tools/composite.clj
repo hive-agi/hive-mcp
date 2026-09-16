@@ -10,7 +10,8 @@
    Re-resolves contributions on each call for hot-reload support."
   (:require [hive-mcp.extensions.registry :as ext]
             [hive-mcp.tools.cli :as cli]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [hive-mcp.dispatch.handler :as dispatch]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -25,12 +26,18 @@
    Supports both flat handlers and nested handler trees.
 
    When an :addon/wrap-handler extension is registered, every handler is passed
-   through it as (wrap addon-id handler)."
+   through it as (wrap addon-id handler).
+
+   The gate is `dispatch/handler?` and NOT `fn?`, and this is the site where
+   that mattered most: `fn?` is false for a var, so a var-registered handler
+   took the else branch and skipped wrapping ENTIRELY, with no throw and no
+   log. A silent loss of the addon wrapper is worse than a refusal, because
+   nothing downstream can tell the unwrapped handler from a wrapped one."
   [tool-name]
   (when-let [commands (ext/get-contributed-commands tool-name)]
     (let [wrap (ext/get-extension :addon/wrap-handler)]
       (into {} (map (fn [[cmd {:keys [handler addon]}]]
-                      [(keyword cmd) (if (and wrap (fn? handler))
+                      [(keyword cmd) (if (and wrap (dispatch/handler? handler))
                                        (wrap addon handler)
                                        handler)]))
             commands))))
