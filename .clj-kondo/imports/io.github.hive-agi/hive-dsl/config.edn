@@ -15,7 +15,9 @@
    hive-dsl.result/ok->>                  hive-dsl.hooks.macros/ok->>
    hive-dsl.result/guard                  hive-dsl.hooks.result/guard
    hive-dsl.result/rescue                 hive-dsl.hooks.result/rescue
+   hive-dsl.result/rescue-ex              hive-dsl.hooks.result/rescue
    hive-dsl.result/rescue-log             hive-dsl.hooks.result/rescue-log
+   hive-dsl.result/rescue-ex-log          hive-dsl.hooks.result/rescue-log
    hive-dsl.result/rescue-interrupt       hive-dsl.hooks.result/rescue-interrupt
    hive-dsl.result/try-effect             hive-dsl.hooks.result/try-effect
    hive-dsl.result/try-effect*            hive-dsl.hooks.result/try-effect*
