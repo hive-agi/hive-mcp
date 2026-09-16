@@ -5,22 +5,22 @@
 
    Usage:
      (require '[hive-mcp.embeddings.openrouter :as openrouter])
-     (require '[hive-mcp.chroma.core :as chroma])
+     (require '[hive-mcp.embeddings.active :as active])
 
      ;; API key from config/env, model from OPENROUTER_EMBEDDING_MODEL
-     (chroma/set-embedding-provider! (openrouter/->provider))
+     (active/set-embedding-provider! (openrouter/->provider))
 
      ;; Or with explicit key and model
-     (chroma/set-embedding-provider!
+     (active/set-embedding-provider!
        (openrouter/->provider {:api-key \"sk-or-...\"
                                :model \"<model-id>\"}))"
-  (:require [hive-mcp.chroma.core :as chroma]
-            [hive-mcp.config.core :as global-config]
+  (:require [hive-mcp.config.core :as global-config]
             [hive-mcp.embeddings.env-config :as env-cfg]
             [hive-mcp.embeddings.http-client :as http]
             [hive-mcp.embeddings.protocol :as emb-proto]
             [clojure.data.json :as json]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [hive-mcp.embeddings.active :as active])
   (:import [java.net URI]
            [java.net.http HttpClient HttpRequest HttpRequest$BodyPublishers HttpResponse$BodyHandlers]
            [java.time Duration]))
@@ -137,5 +137,5 @@
    The model comes from opts :model or OPENROUTER_EMBEDDING_MODEL."
   ([] (set-as-default! {}))
   ([opts]
-   (chroma/set-embedding-provider! (->provider opts))
+   (active/set-embedding-provider! (->provider opts))
    (log/info "OpenRouter embeddings enabled with" (or (:model opts) (:model (resolve-config! {}))))))
