@@ -59,12 +59,27 @@
         "and the orphan channel sweep, which nothing used to require")))
 
 (deftest terminal-liveness-has-exactly-one-owner
-  (testing "housekeeping keeps it, so the registry must not run it too"
-    (ig/init-key :hive/sweep-coordinator {})
+  ;; This test USED TO PASS VACUOUSLY. It asserted the sweep was absent from the
+  ;; registry without loading the namespace that registers it, so it was really
+  ;; asserting "not loaded yet" -- and in the live server the namespace loaded
+  ;; later, when housekeeping's resolve-and-call reached it, re-arming a
+  ;; duplicate that ran three times before it was caught by hand.
+  ;;
+  ;; Loading the namespace FIRST is the whole point: it is the only version of
+  ;; this test that can fail.
+  (require 'hive-mcp.swarm.lifecycle.terminal-sweep :reload)
+  (is (some? (find-ns 'hive-mcp.swarm.lifecycle.terminal-sweep))
+      "precondition: the namespace that used to self-register is loaded")
+  (testing "loading it must not put it in the registry"
     (is (not (contains? (sweep-names) "lings/terminal-liveness"))
-        (str "housekeeping already sweeps terminal liveness on its own timer; "
-             "two timers over the same DataScript rows makes a zombification "
-             "unattributable"))))
+        (str "housekeeping owns terminal liveness on its own 5 minute timer; "
+             "a registration here means two timers over the same DataScript "
+             "rows, and the 60s interval silently winning the cadence"))
+    (is (false? @(resolve 'hive-mcp.swarm.lifecycle.terminal-sweep/registered?))
+        "and the namespace says so in the open, rather than by omission"))
+  (testing "starting the coordinator does not acquire it either"
+    (ig/init-key :hive/sweep-coordinator {})
+    (is (not (contains? (sweep-names) "lings/terminal-liveness")))))
 
 (deftest halting-the-component-stops-the-heartbeat
   (let [state (ig/init-key :hive/sweep-coordinator {})]

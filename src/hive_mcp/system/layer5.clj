@@ -24,8 +24,7 @@
             [hive-mcp.dns.result :as result]
             [clojure.core.async :as async]
             [taoensso.timbre :as log]
-            [hive-mcp.system.sweep-coordinator :as sweep-coordinator]
-            [hive-mcp.system.registry :as reg]))
+            [hive-mcp.system.sweep-coordinator :as sweep-coordinator]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -116,15 +115,14 @@
     (doseq [sweeper-ns '[hive-mcp.system.sweepers.orphan-channel
                          hive-mcp.system.sweepers.async-result]]
       (require sweeper-ns))
-    ;; ONE OWNER PER SWEEP. :hive/housekeeping already calls terminal-sweep on
-    ;; its own 5 minute timer, and that path is proven in production, so the
-    ;; registry must not run it as well: two timers sweeping the same
-    ;; DataScript rows makes any zombification unattributable, and the 60s
-    ;; interval the record declares would silently take over the cadence.
-    ;; Housekeeping keeps it; unregistering here is what keeps that true even
-    ;; though the registration happens incidentally, when agent.headless and
-    ;; the terminal-sweep namespace load for unrelated reasons.
-    (reg/unregister-sweep! "lings/terminal-liveness")
+    ;; ONE OWNER PER SWEEP, enforced at the REGISTRATION SITE, not here.
+    ;; :hive/housekeeping owns terminal liveness on its own 5 minute timer, so
+    ;; hive-mcp.swarm.lifecycle.terminal-sweep deliberately does not register.
+    ;; This used to unregister it at start instead, which silently did nothing:
+    ;; the registration had not happened yet, because housekeeping's own
+    ;; resolve-and-call is what loads that namespace, so the defonce fired
+    ;; afterwards and re-armed the duplicate. Ownership cannot be enforced by
+    ;; timing.
     (sweep-coordinator/start!))
   {:status :running})
 
