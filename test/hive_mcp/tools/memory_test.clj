@@ -201,22 +201,26 @@
 
 (deftest memory-facade-handlers-exist-test
   (testing "all handlers are defined and callable"
-    (is (fn? memory/handle-mcp-memory-add))
-    (is (fn? memory/handle-mcp-memory-query))
-    (is (fn? memory/handle-mcp-memory-query-metadata))
-    (is (fn? memory/handle-mcp-memory-get-full))
-    (is (fn? memory/handle-mcp-memory-update-tags))
-    (is (fn? memory/handle-mcp-memory-search-semantic))
-    (is (fn? memory/handle-mcp-memory-set-duration))
-    (is (fn? memory/handle-mcp-memory-promote))
-    (is (fn? memory/handle-mcp-memory-demote))
-    (is (fn? memory/handle-mcp-memory-cleanup-expired))
-    (is (fn? memory/handle-mcp-memory-expiring-soon))
-    (is (fn? memory/handle-mcp-memory-log-access))
-    (is (fn? memory/handle-mcp-memory-feedback))
-    (is (fn? memory/handle-mcp-memory-helpfulness-ratio))
-    (is (fn? memory/handle-mcp-memory-migrate-project))
-    (is (fn? memory/handle-mcp-memory-import-json))))
+    ;; `handler?` rather than `fn?`: these re-exports hold VARS so a reload of
+    ;; the crud/lifecycle/analytics slices reaches the facade
+    ;; (20260817195749-0d407e9c), and `fn?` is false for a var while the var
+    ;; itself is still IFn and still callable.
+    (is (dispatch/handler? memory/handle-mcp-memory-add))
+    (is (dispatch/handler? memory/handle-mcp-memory-query))
+    (is (dispatch/handler? memory/handle-mcp-memory-query-metadata))
+    (is (dispatch/handler? memory/handle-mcp-memory-get-full))
+    (is (dispatch/handler? memory/handle-mcp-memory-update-tags))
+    (is (dispatch/handler? memory/handle-mcp-memory-search-semantic))
+    (is (dispatch/handler? memory/handle-mcp-memory-set-duration))
+    (is (dispatch/handler? memory/handle-mcp-memory-promote))
+    (is (dispatch/handler? memory/handle-mcp-memory-demote))
+    (is (dispatch/handler? memory/handle-mcp-memory-cleanup-expired))
+    (is (dispatch/handler? memory/handle-mcp-memory-expiring-soon))
+    (is (dispatch/handler? memory/handle-mcp-memory-log-access))
+    (is (dispatch/handler? memory/handle-mcp-memory-feedback))
+    (is (dispatch/handler? memory/handle-mcp-memory-helpfulness-ratio))
+    (is (dispatch/handler? memory/handle-mcp-memory-migrate-project))
+    (is (dispatch/handler? memory/handle-mcp-memory-import-json))))
 
 (deftest memory-tools-have-handlers-test
   (testing "each tool definition has a handler"

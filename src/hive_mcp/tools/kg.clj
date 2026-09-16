@@ -38,12 +38,12 @@
 (def handle-kg-stats           #'kg-queries/handle-kg-stats)
 
 ;; Command handlers
-(def handle-kg-add-edge            kg-commands/handle-kg-add-edge)
+(def handle-kg-add-edge            #'kg-commands/handle-kg-add-edge)
 
 (def handle-kg-add-edges           #'kg-commands/handle-kg-add-edges)
-(def handle-kg-promote             kg-commands/handle-kg-promote)
+(def handle-kg-promote             #'kg-commands/handle-kg-promote)
 
-(def handle-kg-remove-edge         kg-commands/handle-kg-remove-edge)
+(def handle-kg-remove-edge         #'kg-commands/handle-kg-remove-edge)
 (def handle-kg-reground            #'kg-commands/handle-kg-reground)
 (def handle-kg-backfill-grounding  #'kg-commands/handle-kg-backfill-grounding)
 (def handle-kg-cleanup-synthetics  #'kg-commands/handle-kg-cleanup-synthetics)
