@@ -1,7 +1,8 @@
 (ns hive-mcp.channel.async-result
   "Async tool result buffer for piggyback delivery with cursor+budget drain."
   (:require [taoensso.timbre :as log]
-            [hive-dsl.context.identity :as ctx-id])
+            [hive-dsl.context.identity :as ctx-id]
+            [hive-mcp.channel.async-result-journal :as journal])
   (:import [java.time Instant]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -94,8 +95,11 @@
    update function, so a contended retry double-counted; the count now comes
    from the before/after values `swap-vals!` returns.
 
-   Nothing in the tree calls this yet. `stats` reports the buffer sizes a
-   scheduler would act on."
+   Compaction rides along here rather than on a sweep of its own, because this
+   is the moment the set of owed results shrinks: reclaiming the heap copy and
+   reclaiming the disk copy are the same event seen twice, and giving them
+   separate timers would let the journal describe a state the buffers had
+   already left."
   []
   (let [now-secs  (now-epoch-seconds)
         lost      (volatile! [])
@@ -120,18 +124,32 @@
                 "second grace period; task-ids:" (mapv :task-id orphaned)))
     (when (pos? total)
       (log/info "async-result: GC removed" total "expired entries"))
+    (journal/compact! new)
     total))
 
 ;; Public API
 
 (defn enqueue-result!
   "Enqueue a completed async result into the buffer with content-hash dedup.
-   Session-scoped: keyed by caller-id only (no project dimension)."
+   Session-scoped: keyed by caller-id only (no project dimension).
+
+   The JOURNAL WRITE HAPPENS FIRST, before the atom is touched, so the result
+   is on disk before anything claims to hold it. A crash in between loses
+   nothing: replay restores the entry and the caller is served from the
+   journal instead. The other order would leave a window in which the buffer
+   is the only copy, which is the entire bug this is closing.
+
+   Dedup is by content-hash while the journal is keyed by task-id, so a
+   result deduped away still leaves a journal record behind, and replay may
+   restore one extra copy of an identical payload after a crash. Handing a
+   caller the same content twice is a far smaller fault than dropping it, and
+   that is the trade this ordering buys."
   [caller-id result-map]
   (let [buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))
         entry (assoc result-map
                      :timestamp (now-epoch-seconds)
                      :content-hash (content-hash result-map))]
+    (journal/record-result! buffer-key (:task-id result-map) entry)
     (swap! buffers update buffer-key
            (fn [buf]
              (let [buf (or buf {:entries [] :cursor 0})
@@ -188,7 +206,11 @@
    `swap-vals!` gives the value the winning attempt actually saw, so the
    payload is rebuilt from that same value with the same pure `next-batch`.
    The buffer is dropped only when it is empty AT THE INSTANT of the swap, not
-   when a stale copy looked empty."
+   when a stale copy looked empty.
+
+   The delivery is journalled AFTER the cursor has moved, so a crash between
+   the two re-delivers rather than drops. At-least-once is the correct
+   direction to fail for something the caller has already been promised."
   [caller-id]
   (let [buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))
         [old _new] (swap-vals!
@@ -205,6 +227,7 @@
     (when (drainable? buf)
       (let [[batch new-cursor] (next-batch buf)
             total              (count (:entries buf))]
+        (journal/record-delivered! buffer-key (keep :task-id batch))
         (cond-> {:results   batch
                  :remaining (- total new-cursor)
                  :total     total
@@ -238,6 +261,49 @@
   "Reset all buffers. For testing."
   []
   (reset! buffers {}))
+
+(defn restore!
+  "Restore undelivered results from the journal into `buffers`.
+
+   Called once at startup, BEFORE anything can enqueue. Everything the
+   journal still carries is by definition undelivered, so it is restored at
+   `:cursor 0` and the caller is served on its next drain exactly as if the
+   process had never died.
+
+   Anything already in memory wins over the journal, so calling this twice,
+   or late, cannot clobber a live buffer with a stale disk copy.
+
+   Returns the number of entries restored. A positive count is logged at WARN
+   because it means the previous process did not shut down cleanly, which is
+   worth noticing even though it was survived."
+  []
+  (let [restored (journal/restore)
+        n (reduce + 0 (map (comp count :entries val) restored))]
+    (when (pos? n)
+      (log/warn "async-result: restored" n
+                "undelivered result(s) from the journal; the previous process"
+                "did not shut down cleanly"
+                {:callers (vec (keys restored))}))
+    (swap! buffers #(merge restored %))
+    n))
+
+(defn record-submission!
+  "Journal that an async task was accepted for `caller-id`, before its ack.
+
+   Exists so the caller id is NORMALISED through the same
+   `ctx-id/caller-id-key` that `enqueue-result!` and `drain!` use. The
+   journal itself knows nothing about caller-id parsing, and the middleware
+   holds the raw id; if either recorded the raw form, a replayed submission
+   would land under a key the caller never drains, and an `:interrupted`
+   result would be restored into a buffer nobody reads.
+
+   Returns true when the record reached disk, which is what the ack reports
+   as `:durable`."
+  [caller-id task-id tool]
+  (journal/record-submitted!
+   (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))
+   task-id
+   tool))
 
 (defn stats
   "Get buffer statistics. For monitoring/debugging."

@@ -179,6 +179,18 @@
    that had already died. Errors are rethrown after being reported, so the
    pool still sees them and nothing here pretends to recover from an OOM.
 
+   THE SUBMISSION IS JOURNALLED BEFORE THE ACK GOES OUT, so the promise is
+   backed by something that outlives the process making it. The result is
+   journalled too, by `enqueue-result!`, but that is not sufficient on its
+   own: the case this tool is named for is a task accepted, acknowledged, and
+   then killed BEFORE any result exists. Only the submission record turns
+   that into an `:interrupted` result the caller is eventually handed,
+   instead of silence against an ack it already holds.
+
+   When the journal cannot be written the ack says `:durable false` rather
+   than lying by omission. The happy path is byte-identical to before, so no
+   client has to learn a new shape to keep working.
+
    NOTE for addon authors: a top-level `:async` is consumed here and is gone
    before any handler runs, so a tool must not name a parameter `async` and
    expect to receive it. Spell such a flag `background` (see
@@ -188,7 +200,8 @@
     (if (:async args)
       (let [task-id    (str "atask-" (random-uuid))
             caller-id  (or (:_caller_id args) "coordinator")
-            timeout-ms (:async-timeout-ms args)]
+            timeout-ms (:async-timeout-ms args)
+            durable?   (async-buf/record-submission! caller-id task-id tool-name)]
         (async-tasks/submit!
          {:task-id    task-id
           :tool       tool-name
@@ -224,7 +237,8 @@
                             (throw t))))})
         [{:type "text"
           :text (pr-str (cond-> {:queued true :task-id task-id :tool tool-name}
-                          timeout-ms (assoc :timeout-ms timeout-ms)))}])
+                          timeout-ms     (assoc :timeout-ms timeout-ms)
+                          (not durable?) (assoc :durable false)))}])
       (handler args))))
 
 (defn- guard-refusal

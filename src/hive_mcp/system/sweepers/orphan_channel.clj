@@ -112,5 +112,14 @@
 ;; Auto-registration
 ;; =============================================================================
 
-(defonce ^:private -registered?
+(def ^:private -registered?
+  "Auto-registration. `def`, deliberately NOT `defonce`.
+
+   `registry/register-sweep!` is keyed by sweep-name and documents that
+   re-registering the same name silently overwrites, so repeated loads cannot
+   produce a duplicate. `defonce` bought nothing against that and cost the one
+   thing that matters: it never fires again, so a hot reload loads new sweep
+   code and leaves the OLD record in the registry, and anything that
+   unregisters this sweep unregisters it permanently -- no reload, not even
+   `:reload`, can put it back (kanban 20260916134011-1246379c)."
   (do (reg/register-sweep! (->OrphanChannelSweep nil)) true))

@@ -10,7 +10,8 @@
             [hive-mcp.protocols.lifecycle :as lifecycle]
             [hive-mcp.system.registry :as reg]
             [hive-mcp.system.sweep-coordinator :as sc]
-            [hive-mcp.system.sweepers.async-result :as sweeper]))
+            [hive-mcp.system.sweepers.async-result :as sweeper]
+            [hive-mcp.channel.async-result-journal :as journal]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -41,7 +42,19 @@
         (reset! run-counts {})
         (doseq [s saved] (reg/register-sweep! s))))))
 
-(use-fixtures :each (fn [t] (ar/reset-all!) (isolate-registry t) (ar/reset-all!)))
+(defn- with-temp-journal
+  "Point the durability journal at a throwaway file.
+
+   The sweep calls the real `gc-expired!`, which now compacts the journal, so
+   without this a test run would rewrite the REAL coordinator's journal at
+   ~/.config/hive-mcp/data."
+  [t]
+  (let [p (str (System/getProperty "java.io.tmpdir") "/hive-async-sweep-test-" (random-uuid) ".edn")]
+    (binding [journal/*journal-path* p]
+      (try (t) (finally (.delete (java.io.File. p)))))))
+
+(use-fixtures :each
+  (fn [t] (with-temp-journal #(do (ar/reset-all!) (isolate-registry t) (ar/reset-all!)))))
 
 (defn- register-counting-sweep!
   "Register the sweep with a counting stand-in for the reclaim, and return the
