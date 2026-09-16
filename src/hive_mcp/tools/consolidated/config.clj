@@ -150,6 +150,6 @@
                                      :description "Dotted key path (e.g. \"embeddings.ollama.host\"). For validate: section name (e.g. \"memory\")"}
                               "value" {:description "Value to set (string, number, boolean, or object)"}}
                  :required ["command"]}
-   :handler handle-config})
+   :handler #'handle-config})
 
 (def tools [tool-def])
