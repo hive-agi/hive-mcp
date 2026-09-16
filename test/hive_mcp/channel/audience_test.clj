@@ -85,13 +85,7 @@
     (is (aud/addressed-to? "coordinator:1269206-hive" {:agent-id "orphan"}))
     (is (aud/addressed-to? "coordinator:1343228-hive" {:agent-id "orphan"}))))
 
-;; --- directed delivery to a project-scoped reader (PIGGYBACK-READER-ID) -----
-;;
-;; Every reader id is suffixed with its project scope, but only a coordinator
-;; lane used to be forgiven that suffix, so a ling could never match its own
-;; :to. The reader is matched by COMPOSING the scope onto the recipient name,
-;; never by stripping it off the reader: composition is total, stripping is
-;; ambiguous for a ling whose own name ends in a project.
+;; --- directed delivery to a project-scoped reader --------------------------
 
 (defn- scoped-id
   "Stands in for hive-dsl.context.identity/make-piggyback-agent-id."
@@ -136,17 +130,13 @@
       (is (not (aud/addressed-to? "coordinator:1-hive-mcp"
                                   {:agent-id "peer-a" :to "inbox-b"}
                                   in-hive-mcp))))
-    (testing "the scope is consulted for the DIRECTED rule ALONE: spawner and
-              self-echo matching are left exactly as they were, because
-              widening them changes who reads whose turns"
+    (testing "the scope is consulted for the directed rule alone"
       (is (not (aud/addressed-to? "ling-parent-hive-mcp"
                                   {:agent-id "ling-child" :parent-id "ling-parent"}
-                                  in-hive-mcp))
-          "spawner routing is unchanged by the scope")
+                                  in-hive-mcp)))
       (is (aud/addressed-to? "ling-parent"
                              {:agent-id "ling-child" :parent-id "ling-parent"}
-                             in-hive-mcp)
-          "and still works on the bare id"))))
+                             in-hive-mcp)))))
 
 (deftest filter-messages-honours-the-scope-test
   (let [in-hive-mcp (scoped-id "hive-mcp")

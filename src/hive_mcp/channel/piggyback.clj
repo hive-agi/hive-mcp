@@ -223,8 +223,7 @@
 
 (defn- scoped-id-fn
   "A 1-arg composer from a bare agent name to this read's project-scoped
-   reader id, or nil when the read carries no project scope. The scope is
-   parsed once and closed over, not per message."
+   reader id, or nil when the read carries no project scope."
   [project-id]
   (when project-id
     (let [pscope (ctx-id/parse-project-scope project-id)]

@@ -83,11 +83,7 @@
    the lane with no session at all still matches every lane.
 
    `scoped-id`, when given, is a 1-arg fn composing a bare agent name onto
-   this read's project scope. EVERY reader id carries that suffix, not only a
-   coordinator's, so without it a ling cannot match its own name. The scope is
-   COMPOSED onto `other-id` rather than stripped off `reader-id`: composition
-   is total, while stripping cannot tell a ling named \"worker\" in project
-   \"p\" from one named \"worker-p\"."
+   this read's project scope; it is applied to `other-id`."
   ([reader-id other-id] (same-agent? reader-id other-id nil))
   ([reader-id other-id scoped-id]
    (let [r (str reader-id)
@@ -109,10 +105,7 @@
    the namespace docstring for the contract.
 
    `scoped-id` composes a bare agent name onto this read's project scope, and
-   is consulted for the DIRECTED rule alone. Spawner and self-echo matching
-   already resolve without it, and widening them changes who reads whose
-   turns; addressing is the one rule a project-suffixed reader could not
-   satisfy for itself."
+   is consulted for the DIRECTED rule only."
   ([reader-id msg] (addressed-to? reader-id msg nil))
   ([reader-id {:keys [agent-id parent-id broadcast? to]} scoped-id]
    (let [coord? (coordinator-reader? reader-id)]
