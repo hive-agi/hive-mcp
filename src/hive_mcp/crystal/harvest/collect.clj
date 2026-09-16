@@ -29,7 +29,8 @@
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.crystal.harvest.attribution :as attr]
-            [hive-mcp.crystal.harvest.partition :as part]))
+            [hive-mcp.crystal.harvest.partition :as part]
+            [hive-mcp.session.current :as session]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -220,15 +221,21 @@
                     :project-id project-id})))
 
 (defn- harvest-tasks-direct
-  "Harvest completed tasks from DataScript + Chroma (no Emacs roundtrip)."
-  [{:keys [directory]}]
+  "Harvest completed tasks from DataScript + Chroma (no Emacs roundtrip).
+
+   :session-ref scopes the DataScript read to the rows this wrap OWNS. Without
+   it the read is fleet-wide and a wrap reports another session's completions
+   as its own. Kanban 20260915164015-7e057e5b."
+  [{:keys [directory session-ref parent-of]}]
   (result/rescue {:tasks [] :count 0 :ds-count 0 :chroma-count 0}
                  (let [dir (or directory (ctx/current-directory))
                        project-id (when dir (scope/get-current-project-id dir))
                        t0 (System/currentTimeMillis)
                        ds-tasks (result/rescue []
                                                (->> (ds/get-completed-tasks-this-session
-                                                     :project-id project-id)
+                                                     :project-id project-id
+                                                     :session-ref session-ref
+                                                     :parent-of parent-of)
                                                     (mapv (fn [t]
                                                             {:id (:completed-task/id t)
                                                              :title (:completed-task/title t)
@@ -248,9 +255,6 @@
                    (log/info "harvest-tasks-direct:" (count all-tasks) "tasks in" ms "ms"
                              "(ds:" (count ds-tasks) "chroma:" (count chroma-tasks) ")")
                    {:tasks all-tasks
-                    :count (count all-tasks)
-                    :ds-count (count ds-tasks)
-                    :chroma-count (count chroma-tasks)
                     :project-id project-id})))
 
 (defn- harvest-commits-direct
@@ -305,15 +309,19 @@
                     :project-id project-id})))
 
 (defn- harvest-kanban-activity
-  "Harvest kanban task activity for the session window."
-  [{:keys [directory]}]
+  "Harvest kanban task activity for the session window.
+
+   Scoped by :session-ref the same way harvest-tasks-direct is."
+  [{:keys [directory session-ref parent-of]}]
   (result/rescue {:tasks-completed [] :completed-count 0}
                  (let [dir (or directory (ctx/current-directory))
                        project-id (when dir (scope/get-current-project-id dir))
                        t0 (System/currentTimeMillis)
                        completed (result/rescue []
                                    (let [raw (ds/get-completed-tasks-this-session
-                                              :project-id project-id)]
+                                              :project-id project-id
+                                              :session-ref session-ref
+                                              :parent-of parent-of)]
                                      (->> raw
                                           (mapv (fn [t]
                                                   {:id (or (:completed-task/id t) (:id t))
@@ -362,15 +370,19 @@
                        {:edges [] :count 0 :by-relation {}})))))
 
 (defn- harvest-kanban-movements-direct
-  "Harvest kanban status transitions from DataScript (session-scoped)."
-  [{:keys [directory]}]
+  "Harvest kanban status transitions from DataScript (session-scoped).
+
+   Scoped by :session-ref the same way harvest-tasks-direct is."
+  [{:keys [directory session-ref parent-of]}]
   (result/rescue {:movements [] :count 0 :transitions {}}
                  (let [dir (or directory (ctx/current-directory))
                        project-id (when dir (scope/get-current-project-id dir))
                        t0 (System/currentTimeMillis)
                        movements (result/rescue []
                                    (ds/get-kanban-movements-this-session
-                                    :project-id project-id))
+                                    :project-id project-id
+                                    :session-ref session-ref
+                                    :parent-of parent-of))
                        transitions (reduce (fn [acc mv]
                                              (let [k (str (or (:kanban-movement/from mv) "nil")
                                                           "->"
@@ -444,10 +456,19 @@
    :session, :directory, :agent-id, :summary, :errors.
 
    Opts:
-     :directory  -- working directory for project scoping
-     :agent-id   -- agent identity for per-agent session timing"
+     :directory   -- working directory for project scoping
+     :agent-id    -- agent identity for per-agent session timing
+     :session-ref -- SessionRef of the wrap running this harvest. With it, the
+                     three DataScript reads return only the rows this session
+                     OWNS (its own subtree plus what it adopted); without it
+                     they stay fleet-wide, which is the pre-2026-09-15
+                     behaviour and is what every non-wrap caller still gets.
+                     Kanban 20260915164015-7e057e5b.
+     :parent-of   -- session-id -> parent session-id, for the ownership walk.
+                     Derived from the swarm world when a ref is given and this
+                     is absent."
   ([] (harvest-all nil))
-  ([{:keys [directory agent-id] :as _opts}]
+  ([{:keys [directory agent-id session-ref parent-of] :as _opts}]
    (result/rescue {:progress-notes []
                    :completed-tasks []
                    :git-commits []
@@ -475,15 +496,22 @@
                   (let [dir (or directory (ctx/current-directory))
                         effective-agent (or agent-id (ctx/current-agent-id))
                         project-id (when dir (scope/get-current-project-id dir))
+                        ;; Read the world ONCE for the whole harvest: a coordinator
+                        ;; owns a row by walking this map upward, and paying for it
+                        ;; per source would read the store three times.
+                        parent-of (or parent-of
+                                      (when session-ref
+                                        (result/rescue {} (session/parent-of))))
+                        scoped {:directory dir :session-ref session-ref :parent-of parent-of}
                         t0 (System/currentTimeMillis)
                         f-progress   (pool/with-io (harvest-progress-direct {:directory dir}))
-                        f-tasks      (pool/with-io (harvest-tasks-direct {:directory dir}))
+                        f-tasks      (pool/with-io (harvest-tasks-direct scoped))
                         f-commits    (pool/with-io (harvest-commits-direct {:directory dir :agent-id effective-agent}))
                         f-recalls    (pool/with-io (result/rescue {} (recall/get-buffered-recalls)))
                         f-hivemind   (pool/with-io (harvest-hivemind-messages {:directory dir :agent-id effective-agent}))
-                        f-kanban     (pool/with-io (harvest-kanban-activity {:directory dir}))
+                        f-kanban     (pool/with-io (harvest-kanban-activity scoped))
                         f-kg-edges   (pool/with-io (harvest-kg-edges-direct {:directory dir :agent-id effective-agent}))
-                        f-kanban-mvs (pool/with-io (harvest-kanban-movements-direct {:directory dir}))
+                        f-kanban-mvs (pool/with-io (harvest-kanban-movements-direct scoped))
                         harvest-timeout 10000
                         progress   (deref f-progress harvest-timeout {:notes [] :count 0 :error {:type :harvest-timeout :fn "harvest-session-progress"}})
                         tasks      (deref f-tasks harvest-timeout {:tasks [] :count 0 :error {:type :harvest-timeout :fn "harvest-completed-tasks"}})
@@ -499,7 +527,8 @@
                                     "hivemind:" (:count hivemind)
                                     "kanban:" (:completed-count kanban)
                                     "kg-edges:" (:count kg-edges)
-                                    "kanban-mvs:" (:count kanban-mvs))
+                                    "kanban-mvs:" (:count kanban-mvs)
+                                    "scoped-to:" (:session/id session-ref))
                         session-start (or (crystal/get-session-start effective-agent)
                                           (crystal/get-session-start "_global")
                                           (crystal/get-session-start nil))
@@ -521,22 +550,29 @@
                                                (:error kg-edges)
                                                (:error kanban-mvs)])
                         session (crystal/session-id)]
-                    (assemble-harvest-result
-                     {:progress            progress
-                      :tasks               tasks
-                      :commits             commits
-                      :recalls             recalls
-                      :hivemind            hivemind
-                      :kanban              kanban
-                      :kg-edges            kg-edges
-                      :kanban-mvs          kanban-mvs
-                      :session-timing      session-timing
-                      :memory-ids-created  memory-ids-created
-                      :memory-ids-accessed memory-ids-accessed
-                      :dir                 dir
-                      :effective-agent     effective-agent
-                      :errors              errors
-                      :session             session})))))
+                    (assoc
+                     (assemble-harvest-result
+                      {:progress            progress
+                       :tasks               tasks
+                       :commits             commits
+                       :recalls             recalls
+                       :hivemind            hivemind
+                       :kanban              kanban
+                       :kg-edges            kg-edges
+                       :kanban-mvs          kanban-mvs
+                       :session-timing      session-timing
+                       :memory-ids-created  memory-ids-created
+                       :memory-ids-accessed memory-ids-accessed
+                       :dir                 dir
+                       :effective-agent     effective-agent
+                       :errors              errors
+                       :session             session})
+                     ;; What this harvest actually consumed, so the wrap can clear
+                     ;; exactly that and leave a concurrent session's rows alone.
+                     :harvested-task-ids     (vec (distinct (keep :id (:tasks tasks))))
+                     :harvested-movement-ids (vec (distinct (keep :kanban-movement/id
+                                                                 (:movements kanban-mvs))))
+                     :session-ref            session-ref)))))
 
 (defn harvest-all-by-scope
   "Per-scope variant of `harvest-all`. Returns a `HarvestByScope` shape

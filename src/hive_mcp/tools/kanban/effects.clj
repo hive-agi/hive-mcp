@@ -21,17 +21,23 @@
             [hive-mcp.memory.temporal :as temporal]
             [hive-mcp.swarm.datascript :as ds]
             [taoensso.timbre :as log]
-            [hive-mcp.vectordb.kanban-facade :as kanban-facade]))
+            [hive-mcp.vectordb.kanban-facade :as kanban-facade]
+            [hive-mcp.session.current :as session]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defn- track-movement!
   "Record a kanban status transition in DataScript for wrap harvest.
-   Non-fatal — movement tracking failure must not block kanban ops."
+   Non-fatal — movement tracking failure must not block kanban ops.
+
+   The row carries the id of the session that wrote it. Without it the row is
+   owned by nobody: a scoped wrap will not harvest it and will not clear it,
+   which is the whole point of the ownership rules. Kanban 20260915164015-7e057e5b."
   [{:keys [task-id title from to project-id]}]
   (try
     (ds/register-kanban-movement!
-     {:task-id task-id :title title :from from :to to :project-id project-id})
+     {:task-id task-id :title title :from from :to to :project-id project-id
+      :session-id (rescue nil (session/session-id {:project-id project-id}))})
     (catch Exception e
       (log/debug "track-movement! failed (non-fatal):" (.getMessage e)))))
 
