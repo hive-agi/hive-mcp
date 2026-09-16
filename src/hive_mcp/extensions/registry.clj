@@ -276,16 +276,6 @@
       (notify-once! {:type :retract :tool-name tn :addon-id addon-id}))
     (all-contributions)))
 
-(defn get-contributed-commands
-  "Get contributed commands for a composite tool name."
-  [tool-name]
-  (addon-cmds/get-commands tool-name))
-
-(defn contributed-tool-names
-  "Return vector of tool names that have command contributions."
-  []
-  (addon-cmds/contributed-tool-names))
-
 (def ExtensionFn
   "Schema for a registered extension value: any invokable."
   [:fn ifn?])

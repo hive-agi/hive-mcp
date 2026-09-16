@@ -83,7 +83,7 @@
     (is (some? (registry/contribute-commands! tool :kondo {"lint" {:handler identity}}))
         "a throwing host listener must not break the contribution, whichever
          notifier delivered the event")
-    (is (= ["lint"] (keys (registry/get-contributed-commands tool))))))
+    (is (= ["lint"] (keys (addon-cmds/get-commands tool))))))
 
 (deftest install-arms-the-seam-with-no-facade-call-first
   (testing "the test above had to call the facade once to arm the seam. A fleet
