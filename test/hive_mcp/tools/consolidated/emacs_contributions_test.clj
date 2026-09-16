@@ -8,7 +8,8 @@
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.server.routes :as routes]
-            [hive-mcp.tools.consolidated.emacs :as emacs]))
+            [hive-mcp.tools.consolidated.emacs :as emacs]
+            [hive-addon.registry.commands :as acmds]))
 
 (def ^:private contributor :emacs-contributions-test)
 
@@ -36,7 +37,7 @@
     (finally (ext/retract-commands! "emacs" contributor))))
 
 (deftest core-commands-still-route-without-contributions
-  (is (not (contains? (ext/get-contributed-commands "emacs") "answer"))
+  (is (not (contains? (acmds/get-commands "emacs") "answer"))
       "precondition: nothing contributed")
   (let [reply (emacs/handle-emacs {:command "nope"})]
     (is (re-find #"(?i)unknown" (str reply)))))

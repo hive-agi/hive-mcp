@@ -31,7 +31,8 @@
             [hive-mcp.extensions.reactive :as reactive]
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.tools.core :refer [mcp-error]]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-addon.registry.commands :as acmds]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -54,7 +55,7 @@
 ;; =============================================================================
 
 (defn- all-contributions []
-  (into {} (map (fn [t] [t (ext/get-contributed-commands t)])) (ext/contributed-tool-names)))
+  (into {} (map (fn [t] [t (acmds/get-commands t)])) (acmds/contributed-tool-names)))
 
 (defn observe-surface
   "The Surface mounted ADDON-ID shows now, or nil when it is not registered."
@@ -74,7 +75,7 @@
 
 (defn- real-command-handler
   [tool-name cmd addon-id]
-  (let [spec (get (ext/get-contributed-commands tool-name) cmd)]
+  (let [spec (get (acmds/get-commands tool-name) cmd)]
     (when (= addon-id (:addon spec))
       (:handler spec))))
 
@@ -126,8 +127,8 @@
    addon is left alone."
   [addon-id]
   (let [owner (stub-owner addon-id)]
-    (doseq [tool-name (ext/contributed-tool-names)
-            :when (some #(= owner (:addon %)) (vals (ext/get-contributed-commands tool-name)))]
+    (doseq [tool-name (acmds/contributed-tool-names)
+            :when (some #(= owner (:addon %)) (vals (acmds/get-commands tool-name)))]
       (ext/retract-commands! tool-name owner))
     (let [stubs (filter #(= addon-id (get % stub-marker)) (ext/get-registered-tools))]
       (doseq [t stubs] (ext/deregister-tool! (:name t)))

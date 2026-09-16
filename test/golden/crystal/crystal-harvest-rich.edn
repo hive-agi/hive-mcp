@@ -44,4 +44,7 @@
   :created-count 2,
   :accessed-count 2,
   :created-by-type {}},
- :errors nil}
+ :errors nil
+ :session-ref nil
+ :harvested-task-ids ["task-1"]
+ :harvested-movement-ids []}

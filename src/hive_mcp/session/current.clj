@@ -101,6 +101,26 @@
   ([] (:session/id (session-ref)))
   ([opts] (:session/id (session-ref opts))))
 
+(defn parent-of
+  "Map a session id to its PARENT session id, for the ownership walk in
+   hive-mcp.session.identity. Built from the same world snapshot session-ref
+   resolves against, so a caller that already has one should pass it rather
+   than paying for a second read.
+
+   A coordinator owns a row only by walking this map upward from the row's
+   session to its own; with an empty map a coordinator owns nothing but its
+   own rows, which is the safe degradation and is what a host with no swarm
+   store gets. Kanban 20260915164015-7e057e5b."
+  ([] (parent-of (world-snapshot)))
+  ([{:keys [slaves] :as _world}]
+   (into {}
+         (keep (fn [[_ s]]
+                 (let [child  (:slave/session-id s)
+                       parent (some-> (:slave/parent-id s) slaves :slave/session-id)]
+                   (when (and child parent (not= child parent))
+                     [child parent]))))
+         slaves)))
+
 (defn parent-of-fn
   "A session-id -> parent-session-id lookup over a world snapshot, for the
    ownership walks in hive-mcp.session.identity."
