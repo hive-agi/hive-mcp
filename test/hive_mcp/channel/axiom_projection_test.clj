@@ -102,6 +102,11 @@
     (is (<= (count (str (:C (ax/compact-entry tiny))))
             (count (str (:C tiny)))))))
 
+(def gen-line
+  "A body line that is never mistaken for a markdown heading."
+  (gen/such-that #(not (re-find #"^#{1,4}\s" %))
+                 (gen/not-empty gen/string-alphanumeric)))
+
 (defspec compaction-is-exact-identity-when-nothing-is-withheld 200
   (prop/for-all [title (gen/not-empty gen/string-alphanumeric)
                  body (gen/vector gen-line 1 8)
@@ -110,9 +115,6 @@
                  (str/join "\n" body)
                  (when trailing "\n"))]
       (= c (ax/compact c "id")))))
-
-(def gen-line (gen/such-that #(not (re-find #"^#{1,4}\s" %))
-                             (gen/not-empty gen/string-alphanumeric)))
 
 (defspec every-kept-line-survives-byte-identical 200
   (prop/for-all [title (gen/not-empty gen/string-alphanumeric)
