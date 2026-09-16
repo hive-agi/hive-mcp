@@ -248,6 +248,30 @@
     (assoc tool :inputSchema (update inputSchema :properties merge schema-ext))
     tool))
 
+(defn- subcommand-scoped?
+  "True when a property documents itself as belonging to particular subcommands,
+   by the leading `[subcommand]` tag the consolidated tools use in :description."
+  [prop]
+  (boolean (re-find #"^\s*\[" (str (:description prop)))))
+
+(defn- compact-schema
+  "Drop subcommand-scoped properties from one tool's :inputSchema, keeping every
+   required one. Property keys are STRINGS on this surface, so membership is
+   tested through `name` rather than against a keyword set.
+
+   Narrows what is ADVERTISED only. Dispatch still accepts every dropped param."
+  [tool]
+  (let [required (set (get-in tool [:inputSchema :required]))
+        props    (get-in tool [:inputSchema :properties])]
+    (if (empty? props)
+      tool
+      (assoc-in tool [:inputSchema :properties]
+                (into (empty props)
+                      (remove (fn [[k v]]
+                                (and (not (contains? required (name k)))
+                                     (subcommand-scoped? v))))
+                      props)))))
+
 (defn get-advertised-tools
   "Canonical MCP surface for external loaders (e.g. the bb-mcp dynamic loader).
 
@@ -260,13 +284,21 @@
    Single-sources the gate: build-server-spec, refresh-tools! and any external
    loader all derive their surface from `apply-visibility-gate`, so the
    advertised set can no longer drift from the gate config. Schema-ext merge
-   keeps this surface in sync with the stdio/server-context path (make-tool)."
-  []
-  (mapv merge-schema-ext
-        (apply-visibility-gate
-         (distinct-by-name
-          (concat (get-consolidated-tools)
-                  (ext/get-registered-tools))))))
+   keeps this surface in sync with the stdio/server-context path (make-tool).
+
+   With opts {:compact-schema? true} each advertised :inputSchema omits its
+   subcommand-scoped params. Opt-in per request; the zero-arity surface and
+   every dispatch path are unchanged."
+  ([] (get-advertised-tools nil))
+  ([{:keys [compact-schema?]}]
+   (let [tools (mapv merge-schema-ext
+                     (apply-visibility-gate
+                      (distinct-by-name
+                       (concat (get-consolidated-tools)
+                               (ext/get-registered-tools)))))]
+     (if compact-schema?
+       (mapv compact-schema tools)
+       tools))))
 
 (def tools
   "Static aggregation (deprecated — use get-filtered-tools)."
