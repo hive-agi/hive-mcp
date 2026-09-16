@@ -11,7 +11,24 @@
 
 (def ^:const drain-char-budget "Max chars per drain batch (~8K tokens)." 32000)
 
-(def ^:const ttl-seconds "TTL for async results in seconds." 300)
+(def ^:const ttl-seconds
+  "TTL for DELIVERED async results in seconds.
+
+   A delivered entry is a receipt: the caller already holds the payload, so the
+   copy left in the buffer exists only for dedup and may be reclaimed promptly."
+  300)
+
+(def ^:const undelivered-ttl-seconds
+  "Grace period for results the caller has NEVER been given, in seconds.
+
+   Deliberately far longer than `ttl-seconds`. An undelivered entry is the only
+   copy of a result whose acknowledgement already went out as `{:queued true}`,
+   so reclaiming one is data loss rather than housekeeping, and the
+   `:status :error` entries are exactly the ones a caller cannot reconstruct.
+   It still has a bound, because a caller that never drains must not grow its
+   buffer forever, but the bound is a day rather than five minutes and passing
+   it is never silent."
+  86400)
 
 ;; Buffer State
 
@@ -32,42 +49,78 @@
   (hash (select-keys result-map [:task-id :tool :status :result])))
 
 (defn- expired?
-  "Check if an entry has expired based on TTL."
-  [entry now-secs]
-  (> (- now-secs (:timestamp entry 0)) ttl-seconds))
+  "True when `entry` is past the TTL that applies to it.
+
+   Which TTL applies depends on whether the caller has already been given the
+   entry: `delivered?` selects `ttl-seconds` over `undelivered-ttl-seconds`.
+   Collection status, not age alone, is what makes an entry safe to drop."
+  [entry now-secs delivered?]
+  (> (- now-secs (:timestamp entry 0))
+     (if delivered? ttl-seconds undelivered-ttl-seconds)))
 
 ;; Garbage Collection
 
+(defn- gc-buffer
+  "One buffer with its expired entries removed. PURE.
+
+   Returns `[buf' dropped-undelivered]`. `buf'` is nil when nothing survives, so
+   the caller can drop the key. `dropped-undelivered` is the entries reclaimed
+   WITHOUT ever having been handed to the caller, which are the ones whose loss
+   has to be reported rather than merely counted."
+  [{:keys [entries cursor] :as buf} now-secs]
+  (let [tagged     (map-indexed vector entries)
+        delivered? (fn [[idx _]] (< idx cursor))
+        keep?      (fn [[idx e]] (not (expired? e now-secs (< idx cursor))))
+        kept       (filterv keep? tagged)
+        live       (mapv second kept)
+        ;; The cursor must still point just past the last DELIVERED survivor, or
+        ;; a survivor is re-delivered or skipped.
+        new-cursor (count (filter delivered? kept))]
+    [(when (seq live) (assoc buf :entries live :cursor new-cursor))
+     (mapv second (remove delivered? (remove keep? tagged)))]))
+
 (defn gc-expired!
-  "Remove expired entries from all buffers, returns count removed."
+  "Reclaim expired entries from every buffer; returns the count removed.
+
+   A DELIVERED entry (one before its buffer's cursor) expires at `ttl-seconds`.
+   An UNDELIVERED entry expires only at `undelivered-ttl-seconds`, and its
+   removal is logged at WARN with the task-ids, because that is the one path
+   where a caller loses a result it was promised and would otherwise never be
+   told.
+
+   This used to expire every entry at `ttl-seconds` regardless of whether it had
+   been collected, which destroyed results no drain had yet reached. It also
+   counted removals by `swap!`ing a side-effecting atom from INSIDE the `swap!`
+   update function, so a contended retry double-counted; the count now comes
+   from the before/after values `swap-vals!` returns.
+
+   Nothing in the tree calls this yet. `stats` reports the buffer sizes a
+   scheduler would act on."
   []
-  (let [now-secs (now-epoch-seconds)
-        removed (atom 0)]
-    (swap! buffers
-           (fn [bufs]
-             (reduce-kv
-              (fn [acc buffer-key {:keys [entries cursor] :as buf}]
-                (let [live-entries (vec (remove #(expired? % now-secs) entries))
-                      removed-count (- (count entries) (count live-entries))
-                      ;; Adjust cursor: count how many removed entries were before cursor
-                      removed-before-cursor (count (filter
-                                                    (fn [idx]
-                                                      (expired? (nth entries idx) now-secs))
-                                                    (range (min cursor (count entries)))))
-                      new-cursor (max 0 (- cursor removed-before-cursor))]
-                  (swap! removed + removed-count)
-                  (if (empty? live-entries)
-                    acc ;; Remove empty buffer entirely
-                    (assoc acc buffer-key
-                           (assoc buf
-                                  :entries live-entries
-                                  :cursor new-cursor)))))
-              {}
-              bufs)))
-    (let [total @removed]
-      (when (pos? total)
-        (log/info "async-result: GC removed" total "expired entries"))
-      total)))
+  (let [now-secs  (now-epoch-seconds)
+        lost      (volatile! [])
+        [old new] (swap-vals!
+                   buffers
+                   (fn [bufs]
+                     (vreset! lost [])
+                     (reduce-kv
+                      (fn [acc buffer-key buf]
+                        (let [[buf' dropped] (gc-buffer buf now-secs)]
+                          (when (seq dropped)
+                            (vswap! lost into dropped))
+                          (cond-> acc buf' (assoc buffer-key buf'))))
+                      {}
+                      bufs)))
+        n-entries (fn [bufs] (reduce + 0 (map (comp count :entries val) bufs)))
+        total     (- (n-entries old) (n-entries new))
+        orphaned  @lost]
+    (when (seq orphaned)
+      (log/warn "async-result: GC dropped" (count orphaned)
+                "UNDELIVERED result(s) past the" undelivered-ttl-seconds
+                "second grace period; task-ids:" (mapv :task-id orphaned)))
+    (when (pos? total)
+      (log/info "async-result: GC removed" total "expired entries"))
+    total))
 
 ;; Public API
 
