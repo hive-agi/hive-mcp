@@ -70,4 +70,7 @@
       (is (= :hive-mcp.workflows.wrap-session/crystallize
              (ffirst (:dispatches (get spec :hive-mcp.workflows.wrap-session/adopt))))))
     (testing "the EDN handler-map carries it too, or the EDN spec would not compile"
-      (is (= wrap/handle-adopt (:adopt wrap/handler-map))))))
+      ;; The map holds the VAR, not the value it had at load time — that is what
+      ;; lets a reload rewire this handler. Asserting equality against the fn
+      ;; would pin the frozen spelling this table was converted away from.
+      (is (identical? #'wrap/handle-adopt (:adopt wrap/handler-map))))))
