@@ -484,6 +484,25 @@
                         "--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED"
                         "--add-opens=java.base/java.nio=ALL-UNNAMED"]}
   :fast-boot {:extra-paths ["target/boot-classes"]}
+  ;; Scratch dev REPL. `bb repl` uses THIS, not :nrepl.
+  ;;
+  ;; Deliberately NOT `-m hive-mcp.server.core`: that main boots a full
+  ;; coordinator whose :hive/nrepl component binds HIVE_MCP_NREPL_PORT
+  ;; (default 7910), the port bb-mcp forwards live tool calls to. A developer
+  ;; reaching for a scratch REPL would land inside the SERVING image believing
+  ;; it was throwaway. Port 0 asks the OS for a free port, so this alias
+  ;; cannot reach the production listener even if 7910 is idle.
+  ;;
+  ;; Wanting the serving REPL is fine, but it has to be named: `bb serve`,
+  ;; or -M:nrepl, or connect to 7910 by hand.
+  :dev-repl
+  {:extra-paths ["dev" "test"]
+   :extra-deps {nrepl/nrepl {:mvn/version "1.7.0"}
+                cider/cider-nrepl {:mvn/version "0.62.2"}
+                refactor-nrepl/refactor-nrepl {:mvn/version "3.14.0"}}
+   :main-opts ["-m" "nrepl.cmdline"
+               "--port" "0"
+               "--middleware" "[cider.nrepl/cider-middleware,refactor-nrepl.middleware/wrap-refactor]"]}
 
   ;; Sibling :local/root overrides go in a gitignored local.deps.edn, merged
   ;; by the launcher via `clj -Sdeps` at startup. Use the top-level :deps key.
