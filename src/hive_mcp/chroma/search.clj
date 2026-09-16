@@ -111,12 +111,12 @@
                                         :limit limit :type type
                                         :project-ids project-ids
                                         :exclude-tags exclude-tags)
-        ingest-results  (when-let [search-fn (resolve-ingest-search)]
+        ingest-results  (when-let [search-fn (ingest-search/resolve-ingest-search)]
                           (r/guard Exception nil
                             (let [result (search-fn query-text {:limit limit})]
                               (when (and (map? result) (:ok result))
-                                (normalize-ingest-results (:ok result))))))
-        merged (merge-and-rerank default-results ingest-results limit)]
+                                (ingest-search/normalize-ingest-results (:ok result))))))
+        merged (ingest-search/merge-and-rerank default-results ingest-results limit)]
     (log/debug "Federated search:" (count default-results) "default +"
                (count ingest-results) "ingest =" (count merged) "merged")
     merged))
