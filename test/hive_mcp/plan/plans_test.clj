@@ -11,7 +11,8 @@
      network / Chroma server required."
   (:require [clojure.test :refer [deftest testing is use-fixtures]]
             [hive-mcp.plan.plans :as plans]
-            [hive-mcp.chroma.core :as chroma]))
+            [hive-mcp.embeddings.active :as active]
+            [hive-spi.embeddings.ports :as embed]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -79,8 +80,8 @@
           called-ext  (atom false)
           called-crt  (atom false)]
       (reset! @collection-cache cached)
-      (with-redefs [chroma/get-provider-for                        (fn [_] (reset! called-prov true) :mock-provider)
-                    chroma/embedding-dimension                     (fn [_] (reset! called-prov true) 768)
+      (with-redefs [active/get-provider-for                        (fn [_] (reset! called-prov true) :mock-provider)
+                    embed/embedding-dimension                     (fn [_] (reset! called-prov true) 768)
                     hive-mcp.plan.plans/try-get-existing-collection (fn [] (reset! called-ext true) nil)
                     hive-mcp.plan.plans/create-collection-with-dimension (fn [_] (reset! called-crt true) nil)]
         (is (= cached (get-or-create-collection)))
@@ -93,8 +94,8 @@
     (plans/reset-collection-cache!)
     (let [fresh       {:id "fresh" :metadata {:dimension 4096}}
           create-args (atom nil)]
-      (with-redefs [chroma/get-provider-for                             (fn [_] :mock-provider)
-                    chroma/embedding-dimension                          (fn [_] 4096)
+      (with-redefs [active/get-provider-for                             (fn [_] :mock-provider)
+                    embed/embedding-dimension                          (fn [_] 4096)
                     hive-mcp.plan.plans/try-get-existing-collection     (fn [] nil)
                     hive-mcp.plan.plans/create-collection-with-dimension (fn [dim]
                                                                            (reset! create-args dim)
@@ -113,8 +114,8 @@
           called-del   (atom false)
           create-args  (atom nil)
           ext-calls    (atom 0)]
-      (with-redefs [chroma/get-provider-for                             (fn [_] :mock-provider)
-                    chroma/embedding-dimension                          (fn [_] 4096)
+      (with-redefs [active/get-provider-for                             (fn [_] :mock-provider)
+                    embed/embedding-dimension                          (fn [_] 4096)
                     hive-mcp.plan.plans/try-get-existing-collection     (fn []
                                                                           (swap! ext-calls inc)
                                                                           stale)
@@ -136,8 +137,8 @@
     (let [existing   {:id "existing" :metadata {:dimension 4096}}
           called-crt (atom false)
           called-del (atom false)]
-      (with-redefs [chroma/get-provider-for                             (fn [_] :mock-provider)
-                    chroma/embedding-dimension                          (fn [_] 4096)
+      (with-redefs [active/get-provider-for                             (fn [_] :mock-provider)
+                    embed/embedding-dimension                          (fn [_] 4096)
                     hive-mcp.plan.plans/try-get-existing-collection     (fn [] existing)
                     hive-mcp.plan.plans/delete-collection!              (fn [] (reset! called-del true) true)
                     hive-mcp.plan.plans/create-collection-with-dimension (fn [_] (reset! called-crt true) nil)]
