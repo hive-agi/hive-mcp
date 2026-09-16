@@ -24,14 +24,21 @@
     {:id id :T t :C c :tags tags}))
 
 (deftest an-axiom-is-never-projected
-  (testing "floor entries pass through whole under every policy"
+  (testing "a floor entry is never reduced to a POINTER under any pool policy"
     (let [ax {:id "a1" :T :axiom :C "# AXIOM\n\nbody that must survive verbatim" :tags ["x"]}]
       (doseq [policy [:full :index]]
-        (is (= ax (proj/project-entry ax {:policy policy}))
-            (str "axiom altered under " policy)))))
-  (testing "a pinned pool entry is promoted to the floor and so is not projected"
+        (let [out (proj/project-entry ax {:policy policy :axiom-policy :compact})]
+          (is (nil? (:ref out))
+              (str "axiom turned into a pointer under " policy))
+          (is (str/includes? (str (:C out)) "body that must survive verbatim")
+              "the normative body must survive byte-identical")))))
+  (testing "with the floor policy :full the entry is untouched"
+    (let [ax {:id "a1" :T :axiom :C "# AXIOM\n\n## Why\n\nstory" :tags ["x"]}]
+      (is (= ax (proj/project-entry ax {:policy :index :axiom-policy :full})))))
+  (testing "a pinned pool entry is promoted to the floor and so is not pointerised"
     (let [e {:id "p1" :T :convention :C "# Title\n\nbody" :tags []}]
-      (is (= e (proj/project-entry e {:policy :index :pins #{"p1"}})))
+      (is (nil? (:ref (proj/project-entry e {:policy :index :pins #{"p1"}
+                                             :axiom-policy :full}))))
       (is (:ref (proj/project-entry e {:policy :index :pins #{"other"}}))
           "unpinned pool entry should have been projected"))))
 
@@ -107,8 +114,14 @@
     (let [once (proj/project es {:policy :index})]
       (= once (proj/project once {:policy :index})))))
 
-(defspec axioms-survive-projection-verbatim 200
+(defspec axioms-are-never-turned-into-pointers 200
+  (prop/for-all [es (gen/vector gen-entry 0 40)]
+    (let [out (proj/project es {:policy :index})]
+      (every? #(nil? (:ref %)) (filter #(= :axiom (:T %)) out)))))
+
+(defspec axioms-are-untouched-under-the-full-floor-policy 200
   (prop/for-all [es (gen/vector gen-entry 0 40)]
     (let [axioms (filterv #(= :axiom (:T %)) es)
-          out (filterv #(= :axiom (:T %)) (proj/project es {:policy :index}))]
+          out (filterv #(= :axiom (:T %))
+                       (proj/project es {:policy :index :axiom-policy :full}))]
       (= axioms out))))

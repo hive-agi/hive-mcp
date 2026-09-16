@@ -17,7 +17,8 @@
    `hive-mcp.channel.drain-rank/lane`, so `floor-types` and `:pins` stay the
    single definition of what must never be summarised."
   (:require [clojure.string :as str]
-            [hive-mcp.channel.drain-rank :as rank]))
+            [hive-mcp.channel.drain-rank :as rank]
+            [hive-mcp.channel.axiom-projection :as ax]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -71,25 +72,69 @@
            :ref true}
     (seq (:tags entry)) (assoc :tags (vec (take index-tags (:tags entry))))))
 
+(def axiom-policies
+  "The closed set of floor-lane policies. `:compact` withholds rationale and
+   guard source; `:full` sends the entry whole."
+  #{:full :compact})
+
+(def ^:const default-axiom-policy
+  "Policy applied to the floor lane when config names none."
+  :compact)
+
+(defn resolve-axiom-policy
+  "Floor-lane policy for this drain, read from
+   `:services.catchup.axiom-policy` at request time.
+
+   Deliberately SEPARATE from the pool policy. The two carry different risk:
+   an over-eager pool policy costs a pull, an over-eager floor policy could
+   withhold something binding. Separate knobs mean the floor can be restored to
+   `:full` without giving up the pool saving, which is the rollback anyone
+   would actually want under suspicion."
+  ([] (resolve-axiom-policy nil))
+  ([override]
+   (let [cfg-val (try
+                   (when-let [f (requiring-resolve 'hive-mcp.config.core/get-in-config)]
+                     (f [:services :catchup :axiom-policy]))
+                   (catch Throwable _ nil))
+         raw (or override cfg-val default-axiom-policy)
+         kw (if (keyword? raw)
+              raw
+              (keyword (str/replace (str/trim (str raw)) #"^:" "")))]
+     (if (contains? axiom-policies kw) kw default-axiom-policy))))
+
 (defn project-entry
   "ENTRY as POLICY sends it, given the lane it falls in.
 
-   A floor entry is returned untouched under every policy.
+   The two lanes are treated differently on purpose, and the difference is the
+   whole design:
+
+   - a POOL entry may become a POINTER, losing its body entirely, because the
+     caller can pull it back on demand;
+   - a FLOOR entry may NEVER become a pointer. It is compacted at most, which
+     withholds rationale and guard source while leaving every normative line
+     byte-identical. See `hive-mcp.channel.axiom-projection`.
 
    A pool entry is projected only when the pointer is actually SMALLER than the
    entry. A very short entry costs more as a pointer than as itself, because
    `:ref true` outweighs the body it replaces, and sending a pointer that costs
    more than the content defeats the purpose and forces a pull for nothing.
    Checking is cheaper than reasoning about where the crossover sits."
-  [entry {:keys [policy pins] :or {policy default-policy}}]
-  (if (or (not= :index policy)
-          (= :floor (rank/lane entry (or pins #{})))
-          (:ref entry))
-    entry
-    (let [row (index-entry entry)]
-      (if (< (count (pr-str row)) (count (pr-str entry)))
-        row
-        entry))))
+  [entry {:keys [policy pins axiom-policy]
+          :or {policy default-policy}}]
+  (let [floor? (= :floor (rank/lane entry (or pins #{})))
+        axiom-policy (or axiom-policy (resolve-axiom-policy))]
+    (cond
+      floor?
+      (if (= :compact axiom-policy) (ax/compact-entry entry) entry)
+
+      (or (not= :index policy) (:ref entry))
+      entry
+
+      :else
+      (let [row (index-entry entry)]
+        (if (< (count (pr-str row)) (count (pr-str entry)))
+          row
+          entry)))))
 
 (defn project
   "ENTRIES as POLICY sends them.
