@@ -31,6 +31,19 @@
    receives anything, so the coordination does not happen. The relay is what
    makes the comparison fair.
 
+   ## The fourth measurement: what METERING is worth on its own
+
+   `metered-report` runs the :broadcast workload past the live volume gate
+   (hive-mcp.channel.broadcast-policy plus broadcast-ledger) instead of letting
+   every request through. It answers a different question from the three
+   regimes: not \"is addressing a peer cheaper than shouting\" but \"how much
+   damage can a swarm that shouts anyway still do\". The answer is a constant
+   set by the budget rather than a function of how chatty the swarm is.
+
+   It deliberately also asserts that metered broadcasting is STILL dearer than
+   directed delivery. The gate bounds a bad habit; it does not make the habit
+   right, and a test that only showed the saving would read as though it did.
+
    ## What is measured
 
    EXACT CHARACTERS of the rows each reader's drain returns, summed over every
@@ -39,6 +52,8 @@
    classpath and inventing precision would be worse than not having it."
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.channel.audience :as aud]
+            [hive-mcp.channel.broadcast-ledger :as bledger]
+            [hive-mcp.channel.broadcast-policy :as bp]
             [hive-mcp.channel.piggyback :as pb]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -167,6 +182,88 @@
             :ratio-directed-vs-spawner
             (double (/ (get-in by-regime [:directed :chars])
                        (get-in by-regime [:spawner :chars])))))))
+
+(defn- meter-broadcasts
+  "Run a broadcast workload past the live policy and a fresh ledger, in
+   timestamp order, and return what actually reaches the wire.
+
+   This is the gate as it behaves in the shout pipeline, not a model of it:
+   the same `decide` and the same ledger arithmetic. A refused broadcast is
+   DOWNGRADED rather than dropped, so it keeps its :parent-id and reaches the
+   coordinator alone — which is why the saving shows up as cost moving off N
+   readers and onto one, and never as information going missing."
+  [msgs]
+  (let [window (bledger/window-ms)]
+    (first
+     (reduce
+      (fn [[out ledger] {:keys [broadcast? project-id timestamp] :as m}]
+        (if-not broadcast?
+          [(conj out m) ledger]
+          (let [spent (bledger/spent ledger project-id timestamp window)
+                {:keys [verdict]} (bp/decide {:broadcast? true
+                                              :broadcast-reason :shared-discovery}
+                                             {:recent-broadcasts spent})]
+            (if (= :broadcast verdict)
+              [(conj out m) (bledger/spend ledger project-id timestamp window)]
+              [(conj out (dissoc m :broadcast?)) ledger]))))
+      [[] {}]
+      msgs))))
+
+(defn metered-report
+  "What the volume gate saves a swarm that broadcasts every peer turn.
+
+   The :broadcast regime is the honest worst case of today's behaviour, and it
+   is UNBOUNDED: every extra turn is another N-reader copy. The gate makes the
+   broadcast share O(1) in the number of turns — a constant set by the budget,
+   not by how chatty the swarm is — and moves the rest onto the single reader
+   a downgrade addresses."
+  []
+  (let [raw (build-messages :broadcast :all)
+        metered (meter-broadcasts raw)
+        chars (fn [ms] (reduce + 0 (vals (drain-all ms))))]
+    {:attempted (count (filterv :broadcast? raw))
+     :admitted (count (filterv :broadcast? metered))
+     :budget bp/default-budget
+     :chars-unmetered (chars raw)
+     :chars-metered (chars metered)}))
+
+(deftest the-volume-gate-bounds-what-a-chatty-swarm-can-cost-test
+  ;; Measured 2026-09-15 on this workload (6 lings, 8 turns each, every turn a
+  ;; peer turn): 48 broadcasts attempted, 8 admitted, 46039 chars -> 13159.
+  ;; Thresholds are set from that measurement with headroom and annotated with
+  ;; it, so a regression moves a number a reader can compare against the one
+  ;; written here.
+  (let [{:keys [attempted admitted budget chars-unmetered chars-metered]} (metered-report)
+        directed (:chars (measure :directed :all))
+        ratio (double (/ chars-metered chars-unmetered))]
+
+    (testing "the admitted count is the budget, whatever the swarm attempts"
+      (is (= 48 attempted) "the workload really does try to broadcast every turn")
+      (is (= budget admitted)
+          "that is the bound: broadcasts are O(1) in turns, not O(turns)")
+      (is (< admitted (quot attempted 4))
+          "and the bound is well below what was asked for, or it bounds nothing"))
+
+    (testing "the refused ones are downgraded, so nothing goes missing"
+      ;; Every attempt still reaches a reader; the cheap ones reach one reader
+      ;; instead of six. If a refusal dropped the message this number would
+      ;; fall much further, which is why the saving alone is not the assertion.
+      (is (pos? chars-metered) "a swarm that is entirely refused still says things")
+      (is (> chars-metered (* 0.1 chars-unmetered))
+          "a collapse to near zero would mean refusal is dropping, not downgrading"))
+
+    (testing "and it costs a lot less (measured 0.286)"
+      (is (< ratio 0.35)
+          (str "metered/unmetered was " ratio ", measured 0.286 on 2026-09-15")))
+
+    (testing "but the gate is NOT a substitute for addressing a peer"
+      ;; This is the claim that keeps the feature honest. Metering bounds the
+      ;; damage a broadcast habit does; it does not make broadcasting the right
+      ;; call. Directed delivery is still cheaper, because a downgraded
+      ;; broadcast reaches the coordinator, and the coordinator is not who the
+      ;; sender needed.
+      (is (< directed chars-metered)
+          (str "directed " directed " vs metered broadcast " chars-metered)))))
 
 ;; =============================================================================
 ;; The ratchet
