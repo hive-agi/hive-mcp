@@ -96,6 +96,8 @@
 
 (deftest cursor-tracking-test
   (testing "sequential drains advance cursor correctly"
+    ;; Policy pinned to :full — under :index all four entries project to
+    ;; pointers that fit a single batch, and there is no second drain.
     (let [entries (mapv (fn [i]
                           {:id (str "e-" i) :type "note"
                            :content (apply str (repeat 12000 "a"))
@@ -104,16 +106,30 @@
       (mp/enqueue! "agent-c" entries)
 
       ;; First drain
-      (let [r1 (mp/drain! "agent-c")]
+      (let [r1 (mp/drain! "agent-c" {:policy :full})]
         (is (= 1 (:seq r1)))
         (is (pos? (:delivered r1)))
         (let [first-batch-count (count (:batch r1))]
 
           ;; Second drain picks up where first left off
-          (let [r2 (mp/drain! "agent-c")]
+          (let [r2 (mp/drain! "agent-c" {:policy :full})]
             (is (= 2 (:seq r2)))
             (is (= (+ first-batch-count (count (:batch r2)))
                    (:delivered r2)))))))))
+
+(deftest index-policy-collapses-the-same-buffer-into-one-drain
+  (testing "every id still reaches the caller, as a pointer"
+    (let [entries (mapv (fn [i]
+                          {:id (str "p-" i) :type "note"
+                           :content (apply str (repeat 12000 "a"))
+                           :tags []})
+                        (range 4))]
+      (mp/enqueue! "agent-c-index" entries)
+      (let [r (mp/drain! "agent-c-index" {:policy :index})]
+        (is (= 4 (count (:batch r))) "no id is dropped")
+        (is (:done r) "and the buffer is exhausted in one pass")
+        (is (every? :ref (:batch r)) "every pool entry is a pointer")
+        (is (= (mapv :id entries) (mapv :id (:batch r))))))))
 
 ;; =============================================================================
 ;; Idempotent Enqueue
