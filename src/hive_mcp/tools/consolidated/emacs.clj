@@ -144,7 +144,7 @@
    An addon tool that is itself named \"emacs\" is dropped by the registry
    (it collides with this root), so a contribution is the only way an addon
    verb such as hive.emacs's `answer` becomes reachable here."
-  (composite/build-merged-handler "emacs" handlers))
+  (composite/build-merged-handler "emacs" #'handlers))
 
 (def tool-def
   {:name "emacs"

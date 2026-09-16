@@ -40,6 +40,13 @@
 ;; =============================================================================
 
 ;; Collect all params from sub-tools for schema union
+(def handle-swarm
+  "Routes the core `swarm` commands plus whatever addons contribute under
+   \"swarm\". Named, so the tool-def can register it BY VAR: a handler folded
+   into the tool map by value never sees a reload of its own namespace
+   (20260817195749-0d407e9c)."
+  (composite/build-merged-handler "swarm" #'canonical-handlers))
+
 (def tool-def
   ;; Every subdomain's advertised params fold into the root through the one
   ;; shared resolver (composite/lazy-resolve-schema-props) — the same seam the
@@ -62,6 +69,6 @@
                                 ;; Include all params from sub-tools
                                 (dissoc all-props "command"))
                    :required ["command"]}
-     :handler (composite/build-merged-handler "swarm" canonical-handlers)}))
+     :handler #'handle-swarm}))
 
 (def tools [tool-def])

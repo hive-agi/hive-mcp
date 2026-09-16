@@ -109,7 +109,7 @@
     :reembed :batch-reembed})
 
 (def handle-memory
-  (composite/build-merged-handler "memory" canonical-handlers))
+  (composite/build-merged-handler "memory" #'canonical-handlers))
 
 ;; =============================================================================
 ;; Tool Definition

@@ -86,6 +86,6 @@ Addressing, for shout: `to` names ONE peer and the message reaches that agent an
                               "agent_id" {:type "string"
                                           :description "Agent identifier"}}
                  :required ["command"]}
-   :handler handle-hivemind})
+   :handler #'handle-hivemind})
 
 (def tools [tool-def])

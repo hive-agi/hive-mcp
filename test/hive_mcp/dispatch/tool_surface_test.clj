@@ -16,24 +16,21 @@
 
 (def ^:private constructed-handlers
   "Tools whose :handler is CONSTRUCTED by a call rather than referenced by
-   name, today `(composite/build-merged-handler \"x\" canonical-handlers)`.
+   name, and so cannot be var-quoted at the registration site.
 
-   An exemption with a reason, not a skip list. `#'` cannot be written in
-   front of a call: there is no var to quote, because the handler is a fresh
-   closure built at load time over the `canonical-handlers` map. Making these
-   reloadable is a DIFFERENT change from var-quoting a reference, since the
-   closure has to resolve the handler map at call time instead. Until that
-   lands, these are known-stale on reload and are listed here so the number is
-   visible rather than implied.
+   EMPTY, and that is the point. It held six — code, fs, git, hot, swarm, web
+   — each registering `(composite/build-merged-handler \"x\" canonical-handlers)`
+   inline in its tool-def. The closure was unreachable two ways at once: the
+   tool map froze the closure, and the closure froze the handler MAP. Both are
+   gone. Each of the six now names its merged handler in a `def` the tool-def
+   registers by var, and passes `#'canonical-handlers` so the core half of the
+   tree resolves at call time as the addon half always did.
 
-   `hivemind` is deliberately NOT listed, even though its handler is still a
-   value. It is a plain symbol reference and belongs in the converted set; it
-   is unconverted only because another session holds that file as in-flight
-   WIP, and editing a file someone else is mid-change on trades a reload for a
-   merge conflict. Listing it here would be the rot this namespace's last test
-   exists to catch, since the reason is temporary and has nothing to do with
-   the handler being constructed."
-  #{"code" "fs" "git" "hot" "swarm" "web"})
+   The set stays, because the exemption it expresses is legitimate: a handler
+   genuinely built by a call has no var to quote, and listing it WITH a reason
+   is better than widening the assertion. What it must never become again is a
+   parking space for a handler that is merely inconvenient to convert."
+  #{})
 
 (defn- tool-defs []
   (registry/get-all-tools :include-deprecated? false))

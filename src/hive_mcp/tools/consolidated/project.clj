@@ -118,7 +118,7 @@
 (def handlers canonical-handlers)
 
 (def handle-project
-  (composite/build-merged-handler "project" canonical-handlers))
+  (composite/build-merged-handler "project" #'canonical-handlers))
 
 ;; =============================================================================
 ;; Tool Definition

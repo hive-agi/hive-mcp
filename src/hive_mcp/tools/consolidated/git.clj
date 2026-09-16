@@ -33,6 +33,13 @@
 
 (def handlers canonical-handlers)
 
+(def handle-git
+  "Routes the core `git` commands plus whatever addons contribute under
+   \"git\". Named, so the tool-def can register it BY VAR: a handler folded
+   into the tool map by value never sees a reload of its own namespace
+   (20260817195749-0d407e9c)."
+  (composite/build-merged-handler "git" #'canonical-handlers))
+
 (def tool-def
   {:name "git"
    :consolidated true
@@ -69,6 +76,6 @@
                               git-files-property
                               emacs-timeout-ms-property)
                  :required ["command"]}
-   :handler (composite/build-merged-handler "git" canonical-handlers)})
+   :handler #'handle-git})
 
 (def tools [tool-def])

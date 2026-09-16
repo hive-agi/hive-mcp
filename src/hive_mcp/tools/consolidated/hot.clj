@@ -456,6 +456,14 @@
 
 (def handlers canonical-handlers)
 
+(def handle-hot
+  "Routes the core `hot` commands plus whatever addons contribute under
+   \"hot\". Named, so the tool-def can register it BY VAR: a handler folded
+   into the tool map by value never sees a reload of its own namespace
+   (20260817195749-0d407e9c). The tool that performs reloads is the one it
+   would be most absurd to leave unreloadable."
+  (composite/build-merged-handler "hot" #'canonical-handlers))
+
 (def tool-def
   {:name "hot"
    :consolidated true
@@ -500,6 +508,6 @@
      "idle_ms" {:type "integer"
                 :description "[pin] Idle time in ms before a lazy addon may be evicted."}}
     :required ["command"]}
-   :handler (composite/build-merged-handler "hot" canonical-handlers)})
+   :handler #'handle-hot})
 
 (def tools [tool-def])

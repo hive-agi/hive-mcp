@@ -122,22 +122,38 @@
    with the commands addons have contributed under TOOL-NAME (addon wins).
    Re-resolved on every call, so a contribution registered later is visible.
 
+   CANONICAL-HANDLERS may be the map itself or the VAR that holds it, and
+   passing the var is what makes the core half of the tree reloadable too.
+   Before this arm the addon half was re-resolved per call while the core half
+   was whatever map existed when the consolidated namespace last loaded — so a
+   reload of a leaf handler namespace reached dispatch only if the consolidated
+   namespace above it happened to reload as well. `dispatch/current` is read
+   HERE, at call time, and never hoisted: reading it at build time is the
+   value-capture this exists to undo (20260817195749-0d407e9c).
+
    Contributed root keys are recorded under ::cli/opaque-roots in the returned
    map's METADATA: a contributed handler receives the whole :command and routes
    the remainder itself, so this tree cannot enumerate what lives beneath it.
    The map value itself is identical to the plain merge."
   [tool-name canonical-handlers]
-  (if-let [addon-cmds (addon-commands->handlers tool-name)]
-    (vary-meta (merge canonical-handlers addon-cmds)
-               update ::cli/opaque-roots (fnil into #{}) (keys addon-cmds))
-    canonical-handlers))
+  (let [canonical (dispatch/current canonical-handlers)]
+    (if-let [addon-cmds (addon-commands->handlers tool-name)]
+      (vary-meta (merge canonical addon-cmds)
+                 update ::cli/opaque-roots (fnil into #{}) (keys addon-cmds))
+      canonical)))
 
 (defn build-merged-handler
   "Build a handler fn that merges core handlers with addon contributions.
    Addon handlers override core handlers with the same name (addon wins).
    Re-resolves addon contributions on each call for hot-reload.
 
-   canonical-handlers: keyword->fn map (or nested tree) from consolidated tool.
+   canonical-handlers: keyword->fn map (or nested tree) from a consolidated
+   tool, or — preferred in this repo — the VAR holding it. The var spelling is
+   what makes the CORE half of the tree reload-transparent: the returned
+   closure then holds an indirection rather than a snapshot of the map, so a
+   reload reaches dispatch without the consolidated namespace having to be
+   reloaded in the same pass. See `effective-handlers`.
+
    tool-name: string name used for addon contribution lookup.
 
    Optional coerce-schema: passed through to cli/make-cli-handler."
@@ -250,12 +266,15 @@
 
 (defn build-merged-handlers
   "Build handler map merging core + addon for registry introspection.
-   canonical-handlers: keyword->fn map from consolidated tool."
+   canonical-handlers: keyword->fn map from a consolidated tool, or the VAR
+   that holds it — resolved here, at call time, for the same reason
+   `effective-handlers` resolves it."
   [tool-name canonical-handlers]
-  (let [addon-cmds (addon-commands->handlers tool-name)]
+  (let [canonical  (dispatch/current canonical-handlers)
+        addon-cmds (addon-commands->handlers tool-name)]
     (if addon-cmds
-      (merge canonical-handlers addon-cmds)
-      canonical-handlers)))
+      (merge canonical addon-cmds)
+      canonical)))
 
 ;; =============================================================================
 ;; Batch Builder
