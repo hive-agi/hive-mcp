@@ -115,9 +115,16 @@
 (defonce ^:private *registered (atom false))
 
 (defn register-handlers!
-  "Register conversation event handlers. Idempotent."
+  "Register conversation event handlers.
+
+   Safe to call multiple times, and it REGISTERS every time: `reg-event` is
+   addressed by key and last-writer-wins. The `defonce`'d flag used to skip the
+   body, which meant a hot reload could not rewire these handlers. Kanban
+   20260916134011-1246379c.
+
+   Returns true."
   []
-  (when-not @*registered
+  (let [first? (not @*registered)]
     (ev/reg-event :conversation/tell
                   cix/conversation-chain
                   handle-conversation-tell)
@@ -131,7 +138,8 @@
                   handle-conversation-respond)
 
     (reset! *registered true)
-    (log/info "[hive-events] Conversation handlers registered: :conversation/tell :conversation/ask :conversation/respond")
+    (when first?
+      (log/info "[hive-events] Conversation handlers registered: :conversation/tell :conversation/ask :conversation/respond"))
     true))
 
 (defn reset-registration!

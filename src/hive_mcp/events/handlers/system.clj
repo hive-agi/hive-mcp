@@ -43,12 +43,19 @@
    Handlers registered:
    - :system/error - Structured error telemetry
 
-   Safe to call multiple times."
+   Safe to call multiple times, and it REGISTERS every time: `reg-event` is
+   addressed by key and last-writer-wins. The `defonce`'d flag used to skip the
+   body, which meant a hot reload could not rewire this handler -- the namespace
+   loaded, the registry kept the old closure, and nothing said so. Kanban
+   20260916134011-1246379c.
+
+   Returns true."
   []
-  (when-not @*registered
+  (let [first? (not @*registered)]
     (ev/reg-event :system/error [] handle-system-error)
     (reset! *registered true)
-    (log/info "[hive-events] System handlers registered: :system/error")
+    (when first?
+      (log/info "[hive-events] System handlers registered: :system/error"))
     true))
 
 (defn reset-registration!

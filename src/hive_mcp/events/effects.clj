@@ -56,7 +56,7 @@
 (defn register-effects!
   "Register all concrete effect handlers and coeffects.
 
-   Safe to call multiple times - only registers once.
+   Safe to call multiple times, and it REGISTERS every time.
 
    Delegates to domain-specific submodules:
    - notification: :shout :targeted-shout :log :channel-publish :emit-system-error :olympus-broadcast
@@ -74,9 +74,21 @@
    - :waiting-lings   - Query lings waiting on a specific file (File Claim Cascade)
    - :request-ctx     - Current request context from tool execution
 
-   Returns true if effects were registered, false if already registered."
+   It used to skip the whole body when `*registered` was already true. That atom
+   is a `defonce`, which clj-reload preserves, so after a hot reload the flag
+   still read true, this function did nothing, and every effect kept running the
+   closure compiled before the reload. Kanban 20260916134011-1246379c.
+
+   Every effect below is registered BY KEY and last-writer-wins, so re-running is
+   free. The flag now says only whether this is the first registration, which is
+   what the log line and the return value were always about.
+
+   Returns true.
+
+   NOTE: this is the ROOT of a two-level fan-out, and some submodules carry their
+   own `defonce` gate. A gate at either level keeps the old closures."
   []
-  (when-not @*registered
+  (let [first? (not @*registered)]
     ;; ==========================================================================
     ;; Coeffects (delegated to coeffect submodule)
     ;; ==========================================================================
@@ -100,7 +112,9 @@
     ;; defensive stats handling. Do NOT duplicate here.
 
     (reset! *registered true)
-    (log/info "[hive-events] All effect/coeffect submodules registered (coeffect, notification, memory, agent, dispatch, infrastructure, kg, lifecycle)")
+    (if first?
+      (log/info "[hive-events] All effect/coeffect submodules registered (coeffect, notification, memory, agent, dispatch, infrastructure, kg, lifecycle)")
+      (log/debug "[hive-events] Effect/coeffect submodules re-registered"))
     true))
 
 (defn reset-registration!

@@ -70,12 +70,18 @@
    Handlers registered:
    - :lifecycle/sweep - Bounded atom GC sweep
 
-   Safe to call multiple times."
+   Safe to call multiple times, and it REGISTERS every time: `reg-event` is
+   addressed by key and last-writer-wins. The `defonce`'d flag used to skip the
+   body, which meant a hot reload could not rewire this handler. Kanban
+   20260916134011-1246379c.
+
+   Returns true."
   []
-  (when-not @*registered
+  (let [first? (not @*registered)]
     (ev/reg-event :lifecycle/sweep [] handle-lifecycle-sweep)
     (reset! *registered true)
-    (log/info "[hive-events] Lifecycle handlers registered: :lifecycle/sweep")
+    (when first?
+      (log/info "[hive-events] Lifecycle handlers registered: :lifecycle/sweep"))
     true))
 
 (defn reset-registration!
