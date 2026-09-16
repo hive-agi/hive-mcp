@@ -113,7 +113,8 @@
     ;; register incidentally, because their host namespaces load for unrelated
     ;; reasons. That is not a design, it is how it happens to work today.
     (doseq [sweeper-ns '[hive-mcp.system.sweepers.orphan-channel
-                         hive-mcp.system.sweepers.async-result]]
+                         hive-mcp.system.sweepers.async-result
+                         hive-mcp.system.sweepers.heap-pressure]]
       (require sweeper-ns))
     ;; ONE OWNER PER SWEEP, enforced at the REGISTRATION SITE, not here.
     ;; :hive/housekeeping owns terminal liveness on its own 5 minute timer, so

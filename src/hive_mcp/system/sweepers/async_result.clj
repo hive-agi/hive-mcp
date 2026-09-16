@@ -7,13 +7,13 @@
    atom for the lifetime of the JVM. `gc-expired!` is the reclamation half, and
    this is the thing that calls it.
 
-   DORMANT AS WRITTEN. Registering a sweep is not the same as running one:
-   `hive-mcp.system.sweep-coordinator/start!` has no caller anywhere in the
-   source tree, so the coordinator never starts, and this namespace is not
-   required by anything, so even the registration below never executes. Both
-   gaps are tracked on the kanban card. The code is here, correct and tested,
-   so that turning the subsystem on is a wiring decision rather than a
-   development one."
+   LIVE since `:hive/sweep-coordinator` was added to system.edn. Registering
+   a sweep is not the same as running one, and neither is requiring the
+   namespace: the `defonce` below only fires because the coordinator's
+   init-key requires this namespace by name, and the coordinator only sweeps
+   because an Integrant key starts it. Drop either and this sweep goes quiet
+   with no other symptom. Confirmed on the live process 2026-09-16: the
+   coordinator's :run-counts carried \"channels/async-result-gc\"."
   (:require [hive-mcp.channel.async-result :as async-result]
             [hive-mcp.protocols.lifecycle :as lifecycle]
             [hive-mcp.system.registry :as reg]
