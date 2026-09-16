@@ -27,7 +27,13 @@ ADDRESS IT. `to` names one peer and the message reaches that agent and nobody
 else - not the coordinator, not your spawner. That is the cheap path and the
 right default for anything that concerns one peer:
 - Ask a peer: (hivemind_shout :progress {:to \"ling-b\" :message \"is :order/total a string on purpose?\"})
-- Continue an exchange: pass the context_id the previous reply carried.
+
+REPLY IN THE THREAD. A row that arrived with a `:ctx` was addressed to you
+privately, and `:a` is who sent it. Answer that peer, in that conversation:
+- (hivemind_shout :progress {:to <the row's :a> :context_id <the row's :ctx> :message \"..\"})
+Answering without `to` sends your reply to your spawner instead, so the peer
+who asked never sees it. Answering without `context_id` starts a second
+conversation about the same subject, and neither half can be read whole.
 
 WITHOUT `to` the message goes to whoever spawned you, which is the right address
 for your own status:
@@ -40,7 +46,10 @@ BROADCAST IS AN EXCEPTION, not a delivery mode. It copies your sentence into
 every reader's context, so it needs `broadcast_reason`, one of: halt,
 membership, shared-discovery, coordinator-directive. Without an admissible
 reason the broadcast is REFUSED and the message is delivered by its ordinary
-route instead; the reply tells you so.
+route instead; the reply tells you so. An admissible reason is not a standing
+permission either: broadcasts are metered per project, and past the budget you
+get broadcast_refused=budget-exhausted and the ordinary route. Address the
+peers who need it instead.
 
 IMPORTANT: Lings MUST pass agent_id explicitly (use your $CLAUDE_SWARM_SLAVE_ID).
 The env var fallback reads from MCP server process, NOT your ling process!"
@@ -57,9 +66,9 @@ The env var fallback reads from MCP server process, NOT your ling process!"
                                "to" {:type "string"
                                      :description "Address ONE peer by agent id. The message reaches that agent and nobody else. Prefer this over broadcasting for anything that concerns a single peer."}
                                "context_id" {:type "string"
-                                             :description "Continue an existing conversation (A2A contextId). Omit to start one; the reply carries the new id."}
+                                             :description "The A2A conversation this message belongs to. Replying to a row you received: pass that row's :ctx. Starting an exchange: omit it, and the reply carries the new id."}
                                "broadcast" {:type "boolean"
-                                            :description "Ask to reach every reader. Requires broadcast_reason, and is refused without an admissible one."}
+                                            :description "Ask to reach every reader. Requires broadcast_reason, is refused without an admissible one, and is refused on volume once the project's broadcast budget is spent."}
                                "broadcast_reason" {:type "string"
                                                    :enum ["halt" "membership" "shared-discovery" "coordinator-directive"]
                                                    :description "Why every reader needs this. halt: peers must stop. membership: the roster changed. shared-discovery: a finding that invalidates a shared assumption. coordinator-directive: the coordinator addressing its swarm."}

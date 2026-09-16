@@ -60,9 +60,9 @@ Addressing, for shout: `to` names ONE peer and the message reaches that agent an
                               "to" {:type "string"
                                     :description "shout: address ONE peer by agent id. The message reaches that agent and nobody else - not the coordinator, not your spawner. Prefer this over broadcasting for anything that concerns a single peer."}
                               "context_id" {:type "string"
-                                            :description "The A2A conversation id. On shout, continue an existing exchange (omit to start one; the reply carries the new id). On messages, read only that conversation."}
+                                            :description "The A2A conversation id. On shout, replying to a row you received means passing that row's :ctx (omit it to start an exchange; the reply carries the new id). On messages, read only that conversation."}
                               "broadcast" {:type "boolean"
-                                           :description "shout: ask to reach every reader. Requires broadcast_reason, and is refused without an admissible one."}
+                                           :description "shout: ask to reach every reader. Requires broadcast_reason, is refused without an admissible one, and is refused on volume once the project's broadcast budget is spent."}
                               "broadcast_reason" {:type "string"
                                                   :enum ["halt" "membership" "shared-discovery" "coordinator-directive"]
                                                   :description "Why every reader needs this. halt: peers must stop. membership: the roster changed. shared-discovery: a finding that invalidates a shared assumption. coordinator-directive: the coordinator addressing its swarm."}

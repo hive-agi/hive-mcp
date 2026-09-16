@@ -23,7 +23,8 @@
             [hive-mcp.channel.broadcast-policy :as bpolicy]
             [hive-mcp.channel.payload-ref :as pref]
             [hive-mcp.channel.context-store :as ctx-store]
-            [hive-mcp.channel.audience :as audience])
+            [hive-mcp.channel.audience :as audience]
+            [hive-mcp.channel.broadcast-ledger :as bledger])
   (:import [java.lang Exception]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -37,12 +38,20 @@
    them, and a projection that dropped them would silently broadcast. :to and
    :context-id ride along for the same reason one level up: :to is the DIRECTED
    address, so a projection that dropped it would turn a message meant for one
-   peer back into a message for the whole audience."
+   peer back into a message for the whole audience.
+
+   :deliberate? rides along because the digest reads it, and this projection is
+   the LOCAL path — the one in use whenever the backbone is disconnected, which
+   is the fallback and every cold run. It was missing here while the backbone
+   path carried it, so the 2026-09-07 fix (a wave member's own shout folded
+   into its turn telemetry) held on one of the two paths and not the other.
+   Measured again 2026-09-15: two directed turns from the same peer collapsed
+   into one row, so the recipient of a conversation lost a turn of it."
   []
   (mapcat (fn [[_agent-id entry]]
             (let [{:keys [messages]} (:data entry)]
               (for [{:keys [event-type message task timestamp project-id shout-id
-                            parent-id broadcast? to context-id ref]} messages]
+                            parent-id broadcast? deliberate? to context-id ref]} messages]
                 (cond-> {:agent-id _agent-id
                          :event-type event-type
                          :message (or message task "")
@@ -54,7 +63,8 @@
                   broadcast? (assoc :broadcast? true)
                   to (assoc :to to)
                   context-id (assoc :context-id context-id)
-                  ref (assoc :ref ref)))))
+                  ref (assoc :ref ref)
+                  deliberate? (assoc :deliberate? true)))))
           @(:atom state/agent-registry)))
 
 (piggyback/register-message-source! all-hivemind-messages)
@@ -201,7 +211,17 @@
         ;; Routing is DECIDED, not taken from whoever set the flag. A broadcast
         ;; without an admissible argument is downgraded to its ordinary route
         ;; rather than dropped — hive-mcp.channel.broadcast-policy.
-        routed (bpolicy/apply-policy (select-keys data [:broadcast? :broadcast-reason :to]))
+        ;; Whether this sender is METERED is decided here, not in the policy:
+        ;; identity lives at the call site. A coordinator lane addressing its
+        ;; own swarm is above the readers rather than beside them, and its
+        ;; directives are how a wave is driven, so metering it would let a busy
+        ;; wave silence its own scheduler. Peers are metered, because peers are
+        ;; what the budget exists to keep from repeating an admissible reason.
+        metered? (not (audience/coordinator-reader? agent-id))
+        routed (bpolicy/apply-policy
+                (select-keys data [:broadcast? :broadcast-reason :to])
+                (when metered?
+                  {:recent-broadcasts (bledger/spent-recently project-id now)}))
         to (some-> (:to routed) str)
         broadcast? (boolean (:broadcast? routed))
         broadcast-reason (:broadcast-reason routed)
@@ -273,6 +293,11 @@
                            context-id (assoc :context-id context-id)
                            payload-ref (assoc :ref payload-ref)
                            deliberate? (assoc :deliberate? true))]
+    ;; 0. Charge the budget — only for a broadcast the policy ADMITTED. A
+    ;; refused one costs the readers nothing, so charging for it would let a
+    ;; rejected request push a later legitimate one over the edge.
+    (when (and metered? broadcast?)
+      (bledger/record-broadcast! project-id now))
     ;; 1. Local state — always (bounded-atom for piggyback reads)
     (let [current (or (bget state/agent-registry agent-id) {:messages [] :last-seen nil})
           messages (or (:messages current) [])
@@ -321,6 +346,13 @@
                        Without an admissible one the broadcast is REFUSED and
                        the message is delivered by its ordinary route instead;
                        :broadcast-refused on the verdict says why.
+
+   A broadcast passes two gates, not one. An admissible reason is not a
+   standing permission to repeat it: a peer sender is metered per project over
+   a sliding window (hive-mcp.channel.broadcast-ledger), and past the budget
+   the verdict comes back :broadcast-refused :budget-exhausted, downgraded to
+   its ordinary route like any other refusal. A :halt is exempt from the
+   volume gate; a coordinator lane is not metered at all.
 
    -> {:delivered true :routing :direct|:broadcast|:spawner :shout-id s
        :context-id s? :to s? :ref s? :broadcast-refused kw?}

@@ -21,7 +21,21 @@
    An open set of reasons is a free-text field, and a free-text justification
    gate is satisfied by typing anything. The four admitted reasons are the four
    cases where a fact genuinely concerns every reader; anything outside them
-   concerns somebody in particular, which is what `:to` is for."
+   concerns somebody in particular, which is what `:to` is for.
+
+   ## Two gates, because a closed set does not bound REPETITION
+
+   The reason gate stops a caller inventing a justification. It does not stop
+   one repeating an admissible one, and `:shared-discovery` five hundred times
+   is five hundred admissible broadcasts. So a caller that tracks volume may
+   pass `:recent-broadcasts`, and `decide` refuses on count alone once the
+   budget is gone — see hive-mcp.channel.broadcast-ledger, which keeps that
+   count per project over a sliding window.
+
+   The gates are independent on purpose. Volume cannot admit what the reason
+   set refused, and an admissible reason does not buy unlimited repetition.
+   The one message exempt from volume is a halt, for the reason spelled out on
+   `volume-exempt-reasons`."
   (:require [clojure.string :as str]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -55,6 +69,25 @@
   [x]
   (contains? admissible-reasons (as-reason x)))
 
+(def volume-exempt-reasons
+  "Arguments the VOLUME gate never refuses, however many went before.
+
+   A halt is the message that makes every peer's current work wrong or unsafe
+   to continue. Refusing it to save tokens spends the saving on work done
+   against a premise already known to be false, which costs more than the
+   broadcast did. The reason gate still applies: an inadmissible reason is
+   still refused, so this exempts a halt from volume, not from argument.
+
+   Deliberately NOT exempt: :shared-discovery and :membership, which are the
+   repeatable ones, and the two a chatty swarm reaches for. Exempting them
+   would leave the gate policing nothing."
+  #{:halt})
+
+(defn volume-exempt?
+  "Is this an argument the volume gate must not refuse?"
+  [x]
+  (contains? volume-exempt-reasons (as-reason x)))
+
 (def default-budget
   "Broadcasts admitted per window before the policy starts refusing on volume
    alone. Chosen to be small on purpose: a swarm that legitimately needs to tell
@@ -79,7 +112,11 @@
 
    `opts` may carry {:recent-broadcasts n :budget n} to apply the volume gate.
    Without them only the reason gate applies, which is the pure-function case
-   every test exercises."
+   every test exercises. Deciding WHETHER to meter a sender is the caller's
+   judgement, not this namespace's: identity lives at the call site, and a
+   coordinator addressing its own swarm is not the chatter the budget exists
+   to stop. What is intrinsic to the MESSAGE is decided here, which is why the
+   halt exemption is, and the coordinator one is not."
   ([msg] (decide msg nil))
   ([{:keys [broadcast? broadcast-reason to]} {:keys [recent-broadcasts budget]}]
    (let [budget (or budget default-budget)
@@ -99,7 +136,9 @@
                                   :no-reason-given
                                   :reason-not-admissible))
 
-       (and (number? recent-broadcasts) (>= recent-broadcasts budget))
+       (and (number? recent-broadcasts)
+            (>= recent-broadcasts budget)
+            (not (volume-exempt? broadcast-reason)))
        (assoc fallback :refused :budget-exhausted)
 
        :else

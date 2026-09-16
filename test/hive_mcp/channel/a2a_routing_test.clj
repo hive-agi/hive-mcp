@@ -168,12 +168,29 @@
 
 (deftest policy-budget-gate-test
   (testing "volume alone refuses, once a caller tracks it"
-    (is (= :broadcast (:verdict (bp/decide {:broadcast? true :broadcast-reason :halt}
+    (is (= :broadcast (:verdict (bp/decide {:broadcast? true :broadcast-reason :shared-discovery}
                                            {:recent-broadcasts 2 :budget 8}))))
-    (is (= :budget-exhausted (:refused (bp/decide {:broadcast? true :broadcast-reason :halt}
+    (is (= :budget-exhausted (:refused (bp/decide {:broadcast? true :broadcast-reason :shared-discovery}
                                                   {:recent-broadcasts 8 :budget 8})))))
   (testing "a caller that does not track volume is never bitten by it"
-    (is (= :broadcast (:verdict (bp/decide {:broadcast? true :broadcast-reason :halt} nil))))))
+    (is (= :broadcast (:verdict (bp/decide {:broadcast? true :broadcast-reason :shared-discovery} nil)))))
+  (testing "a halt is exempt from volume, and only from volume"
+    ;; Refusing a stop-work order to save tokens spends the saving on work
+    ;; done against a premise already known false. The REASON gate still
+    ;; applies to it, which is why the exemption is not a hole.
+    (is (= :broadcast (:verdict (bp/decide {:broadcast? true :broadcast-reason :halt}
+                                           {:recent-broadcasts 10000 :budget 8}))))
+    (is (= :broadcast (:verdict (bp/decide {:broadcast? true :broadcast-reason "halt"}
+                                           {:recent-broadcasts 10000 :budget 8})))
+        "the MCP transport's string spelling is exempt too")
+    (is (= :no-reason-given (:refused (bp/decide {:broadcast? true}
+                                                 {:recent-broadcasts 0 :budget 8})))))
+  (testing "the repeatable reasons are deliberately NOT exempt"
+    (doseq [r (disj bp/admissible-reasons :halt)]
+      (is (= :budget-exhausted
+             (:refused (bp/decide {:broadcast? true :broadcast-reason r}
+                                  {:recent-broadcasts 8 :budget 8})))
+          (str r " must still be gated on volume, or the budget polices nothing")))))
 
 ;; =============================================================================
 ;; Payload elision — bounded AND lossless
@@ -301,11 +318,23 @@
       (is (re-find #"(?i)\bto\b" d))
       (is (re-find #"(?i)nobody\s+else" d))
       (is (re-find #"(?i)not the coordinator" d)))
+    (testing "it tells a RECIPIENT how to answer in the same conversation"
+      ;; Turn one is addressed by the sender; turn two is addressed by whoever
+      ;; received turn one. A description that teaches only the sender buys a
+      ;; directed message and a broadcast reply. The two facts a recipient
+      ;; needs are both on the row it already has: :a is the peer, :ctx is the
+      ;; conversation.
+      (is (re-find #":ctx" d) "the row key that carries the conversation id")
+      (is (re-find #":a\b" d) "the row key that names who to answer")
+      (is (re-find #"(?i)context_id" d)))
     (testing "it frames broadcast as an exception that must be argued for"
       (is (re-find #"(?i)exception" d))
       (is (re-find #"broadcast_reason" d))
       (doseq [r ["halt" "membership" "shared-discovery" "coordinator-directive"]]
         (is (re-find (re-pattern r) d) (str "admissible reason " r " not offered to the model"))))
+    (testing "and it says an admissible reason is not unlimited repetition"
+      (is (re-find #"(?i)budget" d)
+          "a sender that can be refused on volume has to be told volume is gated"))
     (testing "and the reasons it offers are exactly the ones the policy admits"
       (is (= (set (map name bp/admissible-reasons))
              (set (get-in (shout-tool) [:inputSchema :properties "broadcast_reason" :enum])))
