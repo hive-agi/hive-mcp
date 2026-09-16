@@ -51,11 +51,13 @@
   (result->mcp (mig-api/reset!)))
 
 (def handlers
-  {:init    cmd-init
-   :step    cmd-step
-   :run     cmd-run
-   :status  cmd-status
-   :reset   cmd-reset})
+  "The `migrate-kanban` verbs, stored as VARS so a reload of THIS namespace
+   reaches the table (20260817195749-0d407e9c)."
+  {:init    #'cmd-init
+   :step    #'cmd-step
+   :run     #'cmd-run
+   :status  #'cmd-status
+   :reset   #'cmd-reset})
 
 (def handle-migrate-kanban
   (make-cli-handler #'handlers))

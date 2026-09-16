@@ -69,9 +69,9 @@
     (is (contains? config-tool/handlers :reload))))
 
 (deftest test-handlers-are-functions
-  (testing "all handlers are functions"
+  (testing "all handlers are dispatchable"
     (doseq [[k v] config-tool/handlers]
-      (is (fn? v) (str "Handler " k " should be a function")))))
+      (is (dispatch/handler? v) (str "Handler " k " should be dispatchable")))))
 
 ;; =============================================================================
 ;; CLI Handler Tests

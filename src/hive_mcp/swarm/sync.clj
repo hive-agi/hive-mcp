@@ -449,16 +449,27 @@
 ;; =============================================================================
 
 (def ^:private event-handlers
-  {:slave-spawned handle-slave-spawned
-   :slave-ready handle-slave-ready
-   :slave-status handle-slave-status
-   :slave-killed handle-slave-killed
-   :task-dispatched handle-task-dispatched
-   :task-completed handle-task-completed
-   :task-failed handle-task-failed
-   :prompt-shown handle-prompt-shown
-   :prompt-stall handle-prompt-stall
-   :dispatch-dropped handle-dispatch-dropped})
+  "The swarm event subscriptions, stored as VARS so a reload of THIS namespace
+   reaches them (20260817195749-0d407e9c).
+
+   The freeze here outlives an ordinary one: `subscribe-to-event!` starts a
+   go-loop that closes over the handler and runs for the life of the process,
+   so the function captured at subscription time is the one every later event
+   reaches, however many times the namespace reloads. A var is IFn, the
+   go-loop calls straight through it, and the lookup moves to per-event.
+
+   Cleared to convert by the 2026-09-16 consumer audit (20260916133344-05d7e65b):
+   `subscribe-to-event!` only CALLS the handler and never inspects it."
+  {:slave-spawned #'handle-slave-spawned
+   :slave-ready #'handle-slave-ready
+   :slave-status #'handle-slave-status
+   :slave-killed #'handle-slave-killed
+   :task-dispatched #'handle-task-dispatched
+   :task-completed #'handle-task-completed
+   :task-failed #'handle-task-failed
+   :prompt-shown #'handle-prompt-shown
+   :prompt-stall #'handle-prompt-stall
+   :dispatch-dropped #'handle-dispatch-dropped})
 
 (defn- subscribe-to-event!
   "Subscribe to a single event type with handler."

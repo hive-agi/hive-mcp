@@ -984,9 +984,9 @@
     (is (contains? config/handlers :reload))))
 
 (deftest test-config-handlers-are-functions
-  (testing "all config handlers are functions"
+  (testing "all config handlers are dispatchable"
     (doseq [[k v] config/handlers]
-      (is (fn? v) (str "config handler " k " should be a function")))))
+      (is (dispatch/handler? v) (str "config handler " k " should be dispatchable")))))
 
 (deftest test-config-tool-def-schema-params
   (testing "config tool-def schema has key params"

@@ -4,10 +4,12 @@
             [hive-mcp.tools.olympus :as olympus-handlers]))
 
 (def handlers
-  {:focus   olympus-handlers/handle-olympus-focus
-   :arrange olympus-handlers/handle-olympus-arrange
-   :tab     olympus-handlers/handle-olympus-tab
-   :status  olympus-handlers/handle-olympus-status})
+  "The `olympus` verbs, stored as VARS so a reload of the olympus handler
+   namespace reaches this table (20260817195749-0d407e9c)."
+  {:focus   #'olympus-handlers/handle-olympus-focus
+   :arrange #'olympus-handlers/handle-olympus-arrange
+   :tab     #'olympus-handlers/handle-olympus-tab
+   :status  #'olympus-handlers/handle-olympus-status})
 
 (def handle-olympus
   (make-cli-handler #'handlers))

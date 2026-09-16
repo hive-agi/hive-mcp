@@ -128,12 +128,14 @@
   (rb/result->mcp (rb/try-result :config/validate-failed #(validate* params))))
 
 (def handlers
-  {:get      handle-get
-   :set      handle-set
-   :list     handle-list
-   :reload   handle-reload
-   :path     handle-path
-   :validate handle-validate})
+  "The `config` verbs, stored as VARS so a reload of THIS namespace reaches the
+   table (20260817195749-0d407e9c)."
+  {:get      #'handle-get
+   :set      #'handle-set
+   :list     #'handle-list
+   :reload   #'handle-reload
+   :path     #'handle-path
+   :validate #'handle-validate})
 
 (def handle-config
   (make-cli-handler #'handlers))

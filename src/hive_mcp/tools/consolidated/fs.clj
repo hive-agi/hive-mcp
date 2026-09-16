@@ -43,10 +43,12 @@
 ;; =============================================================================
 
 (def canonical-handlers
-  {:read  handle-read
-   :write handle-write
-   :glob  handle-glob
-   :grep  handle-grep})
+  "The `fs` verbs, stored as VARS so a reload of THIS namespace reaches the
+   table (20260817195749-0d407e9c)."
+  {:read  #'handle-read
+   :write #'handle-write
+   :glob  #'handle-glob
+   :grep  #'handle-grep})
 
 (def handlers canonical-handlers)
 

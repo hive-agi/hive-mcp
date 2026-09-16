@@ -4,12 +4,14 @@
             [hive-mcp.tools.agora :as agora-handlers]))
 
 (def canonical-handlers
-  {:dialogue       agora-handlers/handle-agora-create-dialogue
-   :dispatch       agora-handlers/handle-agora-dispatch
-   :consensus      agora-handlers/handle-agora-check-consensus
-   :list           agora-handlers/handle-agora-list-dialogues
-   :join           agora-handlers/handle-agora-join-dialogue
-   :history        agora-handlers/handle-agora-get-history})
+  "The `agora` verbs, stored as VARS so a reload of the agora handler namespace
+   reaches this table (20260817195749-0d407e9c)."
+  {:dialogue       #'agora-handlers/handle-agora-create-dialogue
+   :dispatch       #'agora-handlers/handle-agora-dispatch
+   :consensus      #'agora-handlers/handle-agora-check-consensus
+   :list           #'agora-handlers/handle-agora-list-dialogues
+   :join           #'agora-handlers/handle-agora-join-dialogue
+   :history        #'agora-handlers/handle-agora-get-history})
 
 (def handlers
   canonical-handlers)
