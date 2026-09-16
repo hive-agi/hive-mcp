@@ -23,7 +23,9 @@
             [hive-mcp.server.lifecycle :as lifecycle]
             [hive-mcp.dns.result :as result]
             [clojure.core.async :as async]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.system.sweep-coordinator :as sweep-coordinator]
+            [hive-mcp.system.registry :as reg]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -94,6 +96,45 @@
     (result/rescue nil
       (init/stop-housekeeping-scheduler!)
       (log/info ":hive/housekeeping stopped"))))
+
+;; =============================================================================
+;; :hive/sweep-coordinator — ISweepable registry heartbeat
+;; =============================================================================
+
+(defmethod ig/init-key :hive/sweep-coordinator
+  [_ config]
+  (log/info ":hive/sweep-coordinator init — starting sweep coordinator" config)
+  (result/rescue nil
+    ;; A sweeper registers from the `defonce` in its OWN namespace, so a sweeper
+    ;; nobody requires never registers and is silently absent from the
+    ;; heartbeat. Requiring them here is what puts them on the load path.
+    ;; Deleting a line below deletes a sweep, with no other symptom.
+    ;;
+    ;; The two sweeps NOT listed here (headless/watchdog, lings/terminal-liveness)
+    ;; register incidentally, because their host namespaces load for unrelated
+    ;; reasons. That is not a design, it is how it happens to work today.
+    (doseq [sweeper-ns '[hive-mcp.system.sweepers.orphan-channel
+                         hive-mcp.system.sweepers.async-result]]
+      (require sweeper-ns))
+    ;; ONE OWNER PER SWEEP. :hive/housekeeping already calls terminal-sweep on
+    ;; its own 5 minute timer, and that path is proven in production, so the
+    ;; registry must not run it as well: two timers sweeping the same
+    ;; DataScript rows makes any zombification unattributable, and the 60s
+    ;; interval the record declares would silently take over the cadence.
+    ;; Housekeeping keeps it; unregistering here is what keeps that true even
+    ;; though the registration happens incidentally, when agent.headless and
+    ;; the terminal-sweep namespace load for unrelated reasons.
+    (reg/unregister-sweep! "lings/terminal-liveness")
+    (sweep-coordinator/start!))
+  {:status :running})
+
+(defmethod ig/halt-key! :hive/sweep-coordinator
+  [_ state]
+  (when (= :running (:status state))
+    (log/info ":hive/sweep-coordinator halt — stopping sweep coordinator")
+    (result/rescue nil
+      (sweep-coordinator/stop!)
+      (log/info ":hive/sweep-coordinator stopped"))))
 
 ;; =============================================================================
 ;; :hive/registry-sync — Lings registry sync (elisp ↔ Clojure)
