@@ -6,7 +6,8 @@
   (:require [hive-mcp.tools.core :refer [mcp-error]]
             [clojure.data.json :as json]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.dispatch.handler :as dispatch]))
 
 ;; =============================================================================
 ;; Command Normalization
@@ -27,26 +28,32 @@
 (defn- collect-command-paths
   "Collect all command paths from a handler tree.
    Returns a seq of keyword vectors like [[:status] [:status :list]].
-   Skips :_handler entries but includes parent path when :_handler exists."
+   Skips :_handler entries but includes parent path when :_handler exists.
+
+   Classifies each value through `dispatch/current`, so a var-registered
+   handler is LISTED rather than silently dropped. Before that it fell through
+   to the `:else acc` arm — help omitted the command and nothing said why,
+   which is the quiet half of the cost of registering by var."
   [handlers prefix]
   (reduce-kv
    (fn [acc k v]
      (if (= k :_handler)
        acc
-       (cond
-         (fn? v)
-         (conj acc (conj prefix k))
+       (let [node (dispatch/current v)]
+         (cond
+           (dispatch/handler? v)
+           (conj acc (conj prefix k))
 
-         (map? v)
-         (let [nested (collect-command-paths v (conj prefix k))
-               ;; If subtree has _handler, also list the parent path as valid
-               with-default (if (contains? v :_handler)
-                              (into [(conj prefix k)] nested)
-                              nested)]
-           (into acc with-default))
+           (map? node)
+           (let [nested (collect-command-paths node (conj prefix k))
+                 ;; If subtree has _handler, also list the parent path as valid
+                 with-default (if (contains? node :_handler)
+                                (into [(conj prefix k)] nested)
+                                nested)]
+             (into acc with-default))
 
-         :else acc)))
-   [] handlers))
+           :else acc))))
+   [] (dispatch/current handlers)))
 
 (defn format-help
   "Format help text listing all available commands.
@@ -80,39 +87,47 @@
    Returns {:handler fn :path-used [...] :remaining [...]}
 
    Supports:
-   - Leaf handlers (fn)
+   - Leaf handlers (fn, multimethod, or a VAR holding one)
    - Nested maps with :_handler for defaults
-   - Partial matches falling back to :_handler"
+   - Partial matches falling back to :_handler
+
+   Every node is CLASSIFIED through `dispatch/current` and RETURNED unresolved.
+   The distinction is the whole point: a var holding a subtree must be seen as
+   a map so the walk descends into it, while a var holding a handler must be
+   handed on AS THE VAR, because dereferencing it here would re-freeze the
+   value one call before invocation and undo the seam
+   (20260817195749-0d407e9c)."
   [handlers path]
   (loop [tree handlers
          used []
          remaining path]
-    (cond
-      ;; No more path - check for _handler or return tree
-      (empty? remaining)
-      (if-let [h (or (when (fn? tree) tree)
-                     (get tree :_handler))]
-        {:handler h :path-used used :remaining []}
-        {:tree tree :path-used used})
+    (let [node (dispatch/current tree)]
+      (cond
+        ;; No more path - check for _handler or return tree
+        (empty? remaining)
+        (if-let [h (or (when (dispatch/handler? tree) tree)
+                       (get node :_handler))]
+          {:handler h :path-used used :remaining []}
+          {:tree node :path-used used})
 
-      ;; Try next segment
-      :else
-      (let [seg (first remaining)
-            next-node (get tree seg)]
-        (cond
-          ;; Leaf handler found
-          (fn? next-node)
-          {:handler next-node :path-used (conj used seg) :remaining (vec (rest remaining))}
+        ;; Try next segment
+        :else
+        (let [seg       (first remaining)
+              next-node (get node seg)]
+          (cond
+            ;; Leaf handler found
+            (dispatch/handler? next-node)
+            {:handler next-node :path-used (conj used seg) :remaining (vec (rest remaining))}
 
-          ;; Subtree found - recurse
-          (map? next-node)
-          (recur next-node (conj used seg) (rest remaining))
+            ;; Subtree found - recurse
+            (map? (dispatch/current next-node))
+            (recur next-node (conj used seg) (rest remaining))
 
-          ;; Not found - check for _handler fallback
-          :else
-          (if-let [default (get tree :_handler)]
-            {:handler default :path-used used :remaining (vec remaining)}
-            {:error :not-found :path-used used :remaining (vec remaining)}))))))
+            ;; Not found - check for _handler fallback
+            :else
+            (if-let [default (get node :_handler)]
+              {:handler default :path-used used :remaining (vec remaining)}
+              {:error :not-found :path-used used :remaining (vec remaining)})))))))
 
 ;; =============================================================================
 ;; CLI Handler Factory (n-depth dispatch)
@@ -128,14 +143,16 @@
        contributions, marked by hive-mcp.tools.composite)
 
    A plain leaf fn with no metadata marker is NOT delegating. Returns a vector
-   sorted by name."
+   sorted by name. Subtrees are recognised through `dispatch/current` for the
+   same reason the walk is: a var holding a map is a map."
   [handlers]
   (let [marked (set (::opaque-roots (meta handlers)))]
     (->> handlers
          (keep (fn [[k v]]
-                 (when (or (and (map? v) (contains? v :_handler))
-                           (contains? marked k))
-                   k)))
+                 (let [node (dispatch/current v)]
+                   (when (or (and (map? node) (contains? node :_handler))
+                             (contains? marked k))
+                     k))))
          (sort-by name)
          vec)))
 
@@ -147,14 +164,14 @@
 (defn- qualification-hints
   "Root keys to offer as CMD's qualifying subdomain, most precise first.
 
-   Cascade — the first non-empty stage wins:
-     1. roots whose ENUMERABLE subtree registers CMD exactly (all of them)
-     2. opaque roots whose name is CMD's leading segment under separator
-        folding (`carto_definition` -> `carto`)
-     3. every opaque root, capped at `max-subdomain-hints`
+   Cascade, the first non-empty stage wins and is named in :stage:
+     :exact     roots whose ENUMERABLE subtree registers CMD exactly (all of them)
+     :lead      opaque roots whose name is CMD's leading segment under separator
+                folding (`carto_definition` -> `carto`)
+     :fallback  every opaque root, capped at `max-subdomain-hints`
 
-   Returns {:roots [kw ...] :exact? bool}; :roots is empty when the tree offers
-   nothing. :exact? is true only for stage 1."
+   Returns {:roots [kw ...] :exact? bool :stage kw}; :roots is empty when the
+   tree offers nothing. :exact? is true only for :exact."
   [cmd handlers]
   (let [opaque  (delegating-subdomains handlers)
         cmd-low (str/lower-case cmd)
@@ -167,14 +184,27 @@
                      distinct
                      (sort-by name)
                      vec)
-        lead    (first (remove str/blank? (str/split cmd-low #"[-_\s]+")))
+        lead    (first (remove str/blank? (str/split cmd-low #"[-_\\s]+")))
         by-lead (when (and lead (not= lead cmd-low))
                   (vec (filter #(= lead (str/lower-case (name %))) opaque)))]
     (cond
-      (seq owners)  {:roots owners  :exact? true}
-      (seq by-lead) {:roots by-lead :exact? false}
+      (seq owners)  {:roots owners  :exact? true  :stage :exact}
+      (seq by-lead) {:roots by-lead :exact? false :stage :lead}
       :else         {:roots (vec (take max-subdomain-hints opaque))
-                     :exact? false})))
+                     :exact? false
+                     :stage :fallback})))
+
+(defn- auto-qualified-command
+  "CMD spelled under the ONE root that can own it, or nil.
+
+   Only a root the tree can name qualifies: an enumerable root that registers
+   CMD, or the opaque root CMD's leading segment spells (`carto_callers` ->
+   `carto carto_callers`). Several candidates, or the fallback list of every
+   opaque root, is a guess and stays an error."
+  [cmd handlers]
+  (let [{:keys [roots stage]} (qualification-hints cmd handlers)]
+    (when (and (contains? #{:exact :lead} stage) (= 1 (count roots)))
+      (str (name (first roots)) " " cmd))))
 
 (defn- nearest-commands
   "Command paths in HANDLERS within Levenshtein distance
@@ -231,7 +261,22 @@
 (defn make-cli-handler
   "Create a CLI-style handler that dispatches on :command param.
 
-   handlers: map of keyword -> handler-fn (flat) or nested handler tree.
+   handlers: map of keyword -> handler-fn (flat) or nested handler tree, or —
+   preferred in this repo — the VAR holding one. The var spelling is what makes
+   a consolidated tool's ROOT reload-transparent: the returned closure then
+   holds an indirection rather than the map that existed when the consolidated
+   namespace last loaded.
+
+   The root is resolved ONCE, inside the returned fn, and every inspector below
+   is handed the MAP. That placement is the whole design. Resolving it in the
+   outer `let` would re-freeze the root, which is the capture this exists to
+   undo (20260817195749-0d407e9c); resolving it per inspector instead would ask
+   each of `format-help`, `unknown-command-error`, `qualification-hints`,
+   `nearest-commands` and `auto-qualified-command` to know about vars, and the
+   one that was forgotten would fail as a missing command rather than as a type
+   error. `resolve-handler` derefs nodes further down on its own, because a
+   SUBTREE may be behind a var too.
+
    Supports n-depth command dispatch: \"status list\" walks {:status {:list fn}}.
    Single-word commands remain backward compatible.
 
@@ -239,21 +284,32 @@
    When provided, string params are coerced to declared types before dispatch.
    See hive-dsl.coerce/coerce-map for type-spec syntax.
 
-   An unresolvable command names the valid roots, the subdomains that could own
-   the token, and the nearest known commands by edit distance. Roots addons
-   contributed are treated as opaque via the ::opaque-roots key in `handlers`
-   metadata (written by hive-mcp.tools.composite).
+   A command the tree cannot resolve is first re-spelled under the ONE root
+   that can own it (`auto-qualified-command`): `carto_callers` dispatches as
+   `carto carto_callers`, and the handler sees the qualified :command. When no
+   single owner exists the error names the valid roots, the subdomains that
+   could own the token, and the nearest known commands by edit distance. Roots
+   addons contributed are treated as opaque via the ::opaque-roots key in
+   `handlers` metadata (written by hive-mcp.tools.composite).
 
    Returns: fn that dispatches to appropriate handler"
   ([handlers] (make-cli-handler handlers nil))
   ([handlers coerce-schema]
    (let [coerce-fn (when coerce-schema
-                     (requiring-resolve 'hive-dsl.coerce/coerce-map))]
+                     (requiring-resolve 'hive-dsl.coerce/coerce-map))
+         run       (fn [handler params]
+                     (if coerce-fn
+                       (let [coerced (coerce-fn coerce-schema params)]
+                         (if (:ok coerced)
+                           (handler (:ok coerced))
+                           (mcp-error (str "Parameter error: " (:message coerced)))))
+                       (handler params)))]
      (fn [{:keys [command] :as params}]
-       (let [cmd-str (normalize-command command)
-             path (parse-command cmd-str)]
+       (let [handlers (dispatch/current handlers)
+             cmd-str  (normalize-command command)
+             path     (parse-command cmd-str)]
          (cond
-           ;; No command or empty → error
+           ;; No command or empty -> error
            (nil? path)
            (unknown-command-error command handlers)
 
@@ -263,16 +319,14 @@
 
            ;; Normal dispatch via n-depth resolve-handler
            :else
-           (let [result (resolve-handler handlers path)]
-             (if-let [handler (:handler result)]
-               ;; Apply boundary coercion when schema is present
-               (if coerce-fn
-                 (let [coerced (coerce-fn coerce-schema params)]
-                   (if (:ok coerced)
-                     (handler (:ok coerced))
-                     (mcp-error (str "Parameter error: " (:message coerced)))))
-                 (handler params))
-               (unknown-command-error command handlers)))))))))
+           (if-let [handler (:handler (resolve-handler handlers path))]
+             (run handler params)
+             (let [qualified (auto-qualified-command (str/trim cmd-str) handlers)
+                   owner     (when qualified
+                               (:handler (resolve-handler handlers (parse-command qualified))))]
+               (if owner
+                 (run owner (assoc params :command qualified))
+                 (unknown-command-error command handlers))))))))))
 
 ;; =============================================================================
 ;; Batch Handler Factory (generic batch middleware)

@@ -156,7 +156,20 @@
    2. Dynamic: addon tool marked :consolidated (legacy standalone)
    3. Config:  tool name listed in :tool-roots :absorbed in config.edn
 
-   Novel addon tools that pass all three filters appear as additional roots."
+   Novel addon tools that pass all three filters appear as additional roots,
+   ORDERED BY NAME. `core` is a concat of literal vectors and is deterministic
+   already, but the addon tail arrives as the vals of a PersistentHashMap, so
+   its order is incidental: it follows the hash layout of whichever key set
+   happens to be registered. Register or drop a single addon tool and the whole
+   tail can reshuffle without one tool actually changing.
+
+   That is expensive, because the tool array is the FIRST span of an LLM
+   request, ahead of the system prompt and ahead of the messages. A provider
+   caches a prefix on its BYTES, so re-advertising the same tools in a
+   different order invalidates every cached span behind them and the caller
+   re-pays for the entire prompt. Sorting makes a genuinely changed tool SET
+   the only thing that can cost anything, which is the same reason
+   hive-agent's catalog/delegated-schemas sorts."
   []
   (let [core           (core-tools)
         domain-names   (into #{} (map :name) core)
@@ -164,7 +177,8 @@
         addon-tools    (->> (ext/get-registered-tools)
                             (remove #(or (domain-names (:name %))
                                          (:consolidated %)
-                                         (cfg-absorbed (:name %)))))]
+                                         (cfg-absorbed (:name %))))
+                            (sort-by :name))]
     (vec (concat core addon-tools))))
 
 (declare get-all-tools)
@@ -234,6 +248,30 @@
     (assoc tool :inputSchema (update inputSchema :properties merge schema-ext))
     tool))
 
+(defn- subcommand-scoped?
+  "True when a property documents itself as belonging to particular subcommands,
+   by the leading `[subcommand]` tag the consolidated tools use in :description."
+  [prop]
+  (boolean (re-find #"^\s*\[" (str (:description prop)))))
+
+(defn- compact-schema
+  "Drop subcommand-scoped properties from one tool's :inputSchema, keeping every
+   required one. Property keys are STRINGS on this surface, so membership is
+   tested through `name` rather than against a keyword set.
+
+   Narrows what is ADVERTISED only. Dispatch still accepts every dropped param."
+  [tool]
+  (let [required (set (get-in tool [:inputSchema :required]))
+        props    (get-in tool [:inputSchema :properties])]
+    (if (empty? props)
+      tool
+      (assoc-in tool [:inputSchema :properties]
+                (into (empty props)
+                      (remove (fn [[k v]]
+                                (and (not (contains? required (name k)))
+                                     (subcommand-scoped? v))))
+                      props)))))
+
 (defn get-advertised-tools
   "Canonical MCP surface for external loaders (e.g. the bb-mcp dynamic loader).
 
@@ -246,13 +284,21 @@
    Single-sources the gate: build-server-spec, refresh-tools! and any external
    loader all derive their surface from `apply-visibility-gate`, so the
    advertised set can no longer drift from the gate config. Schema-ext merge
-   keeps this surface in sync with the stdio/server-context path (make-tool)."
-  []
-  (mapv merge-schema-ext
-        (apply-visibility-gate
-         (distinct-by-name
-          (concat (get-consolidated-tools)
-                  (ext/get-registered-tools))))))
+   keeps this surface in sync with the stdio/server-context path (make-tool).
+
+   With opts {:compact-schema? true} each advertised :inputSchema omits its
+   subcommand-scoped params. Opt-in per request; the zero-arity surface and
+   every dispatch path are unchanged."
+  ([] (get-advertised-tools nil))
+  ([{:keys [compact-schema?]}]
+   (let [tools (mapv merge-schema-ext
+                     (apply-visibility-gate
+                      (distinct-by-name
+                       (concat (get-consolidated-tools)
+                               (ext/get-registered-tools)))))]
+     (if compact-schema?
+       (mapv compact-schema tools)
+       tools))))
 
 (def tools
   "Static aggregation (deprecated — use get-filtered-tools)."

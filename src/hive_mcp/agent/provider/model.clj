@@ -104,7 +104,13 @@
   {:anthropic     {:dispatch      :anthropic-oauth
                    :secret-key    :anthropic-api-key}
    :openrouter    {:api-url       "https://openrouter.ai/api/v1/chat/completions"
-                   :secret-key    :openrouter-api-key}
+                   :secret-key    :openrouter-api-key
+                   ;; OpenRouter forwards a `cache_control` block marker to an
+                   ;; Anthropic model unchanged, so breakpoints placed on the
+                   ;; way out are honoured end to end. Read by
+                   ;; `hive-mcp.agent.cache/cache-control-style`, which also
+                   ;; requires the model to be one that honours the marker.
+                   :cache-control :anthropic-style}
    :venice        {:api-url       "https://api.venice.ai/api/v1/chat/completions"
                    :secret-key    :venice-api-key}
    :groq          {:api-url       "https://api.groq.com/openai/v1/chat/completions"

@@ -13,7 +13,8 @@
             [hive-mcp.tools.kg :as kg]
             [hive-mcp.tools.kg.queries :as kg-queries]
             [hive-mcp.tools.kg.commands :as kg-commands]
-            [hive-mcp.tools.consolidated.kg :as consolidated-kg]))
+            [hive-mcp.tools.consolidated.kg :as consolidated-kg]
+            [hive-mcp.dispatch.handler :as dispatch]))
 
 ;;; =============================================================================
 ;;; Helpers
@@ -136,7 +137,7 @@
 (deftest every-tool-has-handler
   (testing "Every tool definition has a :handler function"
     (doseq [tool kg/all-tools]
-      (is (fn? (:handler tool))
+      (is (dispatch/handler? (:handler tool))
           (str "Tool " (:name tool) " missing :handler")))))
 
 (deftest every-tool-has-input-schema
@@ -175,17 +176,22 @@
 
 (deftest consolidated-handlers-resolve-correctly
   (testing "Consolidated handler map resolves to sub-namespace fns"
-    ;; Queries
-    (is (= (:traverse consolidated-kg/handlers) kg-queries/handle-kg-traverse))
-    (is (= (:impact consolidated-kg/handlers)   kg-queries/handle-kg-impact-analysis))
-    (is (= (:path consolidated-kg/handlers)     kg-queries/handle-kg-find-path))
-    (is (= (:subgraph consolidated-kg/handlers) kg-queries/handle-kg-subgraph))
-    (is (= (:context consolidated-kg/handlers)  kg-queries/handle-kg-node-context))
-    (is (= (:stats consolidated-kg/handlers)    kg-queries/handle-kg-stats))
-    ;; Commands
-    (is (= (:edge consolidated-kg/handlers)     kg-commands/handle-kg-add-edge))
-    (is (= (:promote consolidated-kg/handlers)  kg-commands/handle-kg-promote))
-    (is (= (:reground consolidated-kg/handlers) kg-commands/handle-kg-reground))))
+    ;; Read through `dispatch/current`: the table holds VARS so a reload of
+    ;; hive-mcp.tools.kg reaches it, and a var is never `=` to the function it
+    ;; holds. What is worth asserting is WHICH function each command reaches,
+    ;; and that survives whatever the seam is spelled as next.
+    (let [h #(dispatch/current (get consolidated-kg/handlers %))]
+      ;; Queries
+      (is (= (h :traverse) kg-queries/handle-kg-traverse))
+      (is (= (h :impact)   kg-queries/handle-kg-impact-analysis))
+      (is (= (h :path)     kg-queries/handle-kg-find-path))
+      (is (= (h :subgraph) kg-queries/handle-kg-subgraph))
+      (is (= (h :context)  kg-queries/handle-kg-node-context))
+      (is (= (h :stats)    kg-queries/handle-kg-stats))
+      ;; Commands
+      (is (= (h :edge)     kg-commands/handle-kg-add-edge))
+      (is (= (h :promote)  kg-commands/handle-kg-promote))
+      (is (= (h :reground) kg-commands/handle-kg-reground)))))
 
 ;;; =============================================================================
 ;;; Validation Helper Tests

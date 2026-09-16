@@ -14,7 +14,8 @@
             [hive-mcp.addons.core :as addons]
             [taoensso.timbre :as log]
             [clojure.spec.alpha :as s]
-            [hive-mcp.tools.composite :as composite]))
+            [hive-mcp.tools.composite :as composite]
+            [hive-mcp.dispatch.handler :as dispatch]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -57,7 +58,7 @@
 (s/def ::name string?)
 (s/def ::description string?)
 (s/def ::inputSchema map?)
-(s/def ::handler fn?)
+(s/def ::handler dispatch/handler?)
 
 (s/def ::tool-response
   (s/keys :req-un [::content]))

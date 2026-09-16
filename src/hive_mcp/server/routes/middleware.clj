@@ -171,6 +171,14 @@
    `:async` and never reaches the handler, for the same reason `:async` does
    not: it addresses THIS wrapper, not the tool.
 
+   The failure arm catches Throwable, not Exception. The caller has already
+   been acknowledged with `{:queued true}`, so the buffered result is the ONLY
+   report this call will ever make. An AssertionError from a malli check, a
+   StackOverflowError, an OutOfMemoryError: under `catch Exception` each of
+   those enqueued nothing, and the caller waited forever on an ack for work
+   that had already died. Errors are rethrown after being reported, so the
+   pool still sees them and nothing here pretends to recover from an OOM.
+
    NOTE for addon authors: a top-level `:async` is consumed here and is gone
    before any handler runs, so a tool must not name a parameter `async` and
    expect to receive it. Spell such a flag `background` (see
@@ -204,7 +212,16 @@
                             (log/error e "async-result: background execution failed for task" task-id)
                             (async-buf/enqueue-result! caller-id
                                                        {:task-id task-id :tool tool-name
-                                                        :status :error :error (.getMessage e)}))))})
+                                                        :status :error :error (.getMessage e)}))
+                          (catch Throwable t
+                            ;; Not an Exception, so nothing below would have
+                            ;; reported it and the ack would never be answered.
+                            (log/error t "async-result: background execution died for task" task-id)
+                            (async-buf/enqueue-result! caller-id
+                                                       {:task-id task-id :tool tool-name
+                                                        :status :error
+                                                        :error (str (.getName (class t)) ": " (.getMessage t))})
+                            (throw t))))})
         [{:type "text"
           :text (pr-str (cond-> {:queued true :task-id task-id :tool tool-name}
                           timeout-ms (assoc :timeout-ms timeout-ms)))}])
@@ -282,13 +299,16 @@
         (log/debug "Piggyback: descendant project-id resolution failed (non-fatal):" (.getMessage e))
         nil))))
 
-(defn- get-piggyback-messages [agent-id project-id]
-  (require 'hive-mcp.channel.piggyback)
-  (let [child-pids (resolve-child-project-ids project-id)]
-    ((resolve 'hive-mcp.channel.piggyback/get-messages)
-     agent-id
-     :project-id project-id
-     :additional-project-ids child-pids)))
+(defn- get-piggyback-messages
+  ([agent-id project-id] (get-piggyback-messages agent-id project-id nil))
+  ([agent-id project-id session-id]
+   (require 'hive-mcp.channel.piggyback)
+   (let [child-pids (resolve-child-project-ids project-id)]
+     ((resolve 'hive-mcp.channel.piggyback/get-messages)
+      agent-id
+      :project-id project-id
+      :additional-project-ids child-pids
+      :session-id session-id))))
 
 (defn- drain-memory-piggyback
   ([caller-id] (drain-memory-piggyback caller-id nil))
@@ -296,12 +316,35 @@
    (require 'hive-mcp.channel.memory-piggyback)
    ((resolve 'hive-mcp.channel.memory-piggyback/drain!) caller-id ctx)))
 
+(defn- drain-catchup-piggyback
+  "Drain the `:cu/piggyback-drain` enrichment channel for this response.
+
+   The provider is an addon, so its arity is not something the host may assume.
+   A ctx-aware provider gets `request-ctx` and returns only a budgeted, cue-
+   ordered slice, leaving the rest buffered for a later call; a provider that
+   still takes the caller alone is called that way and drains one-shot, as
+   before. Neither shape is allowed to fail the response."
+  [caller-id request-ctx]
+  (when-let [drain-fn (ext/get-extension :cu/piggyback-drain)]
+    (try
+      (try
+        (drain-fn caller-id request-ctx)
+        (catch clojure.lang.ArityException _
+          (drain-fn caller-id)))
+      (catch Exception e
+        (log/debug "catchup-piggyback drain failed:" (.getMessage e))
+        nil))))
+
 (defn wrap-handler-piggybacks
-  "Unified piggyback wrapper — drains all 4 channels in a single pass.
+  "Unified piggyback wrapper: drains all 4 channels in a single pass.
    Task cues harvested from the request args steer the MEMORY drain that rides
    this response; they are empty unless task-signal/enabled?. The cues then feed
    `activation/drain-ctx`, which an activation provider may extend with pinned
-   entry ids — absent a provider the ctx is the cues alone."
+   entry ids; absent a provider the ctx is the cues alone.
+
+   The HIVEMIND read is keyed two ways: the reader id (caller plus project)
+   owns the project cursor, and the caller alone owns the global cursor, so
+   a session that touches several repos reads each global shout once."
   ([handler] (wrap-handler-piggybacks handler nil))
   ([handler tool-name]
    (fn [args]
@@ -316,16 +359,13 @@
            ;; block is an addon plus a config entry rather than a commit here.
            extra-blocks (blocks/render request-ctx)
            memory-drain (drain-memory-piggyback caller-id act-ctx)
-           catchup-blocks (when-let [drain-fn (ext/get-extension :cu/piggyback-drain)]
-                            (try (drain-fn caller-id)
-                                 (catch Exception e
-                                   (log/debug "catchup-piggyback drain failed:" (.getMessage e))
-                                   nil)))
+           catchup-blocks (drain-catchup-piggyback caller-id request-ctx)
            caller (id/extract-caller-identity args)
            scope (id/extract-project-scope args)
            hm-agent-id (ctx-id/make-piggyback-agent-id caller scope)
            hm-project-id (ctx-id/project-scope-string scope)
-           hivemind-msgs (get-piggyback-messages hm-agent-id hm-project-id)]
+           hivemind-msgs (get-piggyback-messages hm-agent-id hm-project-id
+                                                 (ctx-id/caller-id-string caller))]
 
        (cond-> content
          async-drain

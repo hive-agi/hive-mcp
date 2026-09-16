@@ -44,6 +44,13 @@
 ;; Tool Definition
 ;; =============================================================================
 
+(def handle-web
+  "Routes the core `web` commands plus whatever addons contribute under
+   \"web\". Named, so the tool-def can register it BY VAR: a handler folded
+   into the tool map by value never sees a reload of its own namespace
+   (20260817195749-0d407e9c)."
+  (composite/build-merged-handler "web" #'canonical-handlers))
+
 (def tool-def
   {:name         "web"
    :consolidated true
@@ -61,6 +68,6 @@
                                "max_results" {:type "integer"
                                               :description "[search] Max results to return"}}
                   :required   ["command"]}
-   :handler      (composite/build-merged-handler "web" canonical-handlers)})
+   :handler      #'handle-web})
 
 (def tools [tool-def])

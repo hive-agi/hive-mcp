@@ -37,22 +37,29 @@
           (batch-fn (assoc params :operations ops-with-command)))))))
 
 (def canonical-handlers
-  {:spawn       spawn/handle-spawn
-   :status      status/handle-status
-   :digest      status/handle-digest
-   :kill        kill/handle-kill
-   :kill-batch  kill/handle-kill-batch
-   :interrupt   lifecycle/handle-interrupt
-   :batch-spawn batch-spawn-handler
-   :dispatch    dispatch/handle-dispatch
-   :claims      lifecycle/handle-claims
-   :collect     lifecycle/handle-collect
-   :broadcast   lifecycle/handle-broadcast
-   :cleanup     lifecycle/handle-cleanup
-   :dag         {:start    dag/handle-dag-start
-                 :stop     dag/handle-dag-stop
-                 :status   dag/handle-dag-status
-                 :_handler dag/handle-dag-status}})
+  "The `agent` verbs, stored as VARS so a reload of any agent.* module reaches
+   this table (20260817195749-0d407e9c).
+
+   The `:dag` value stays a LITERAL map with var-quoted leaves rather than
+   becoming a var itself. Both spellings dispatch correctly now that the walker
+   derefs, but a literal map is still `map?` to every OTHER reader of this tree
+   — and this table is read by more than the walker."
+  {:spawn       #'spawn/handle-spawn
+   :status      #'status/handle-status
+   :digest      #'status/handle-digest
+   :kill        #'kill/handle-kill
+   :kill-batch  #'kill/handle-kill-batch
+   :interrupt   #'lifecycle/handle-interrupt
+   :batch-spawn #'batch-spawn-handler
+   :dispatch    #'dispatch/handle-dispatch
+   :claims      #'lifecycle/handle-claims
+   :collect     #'lifecycle/handle-collect
+   :broadcast   #'lifecycle/handle-broadcast
+   :cleanup     #'lifecycle/handle-cleanup
+   :dag         {:start    #'dag/handle-dag-start
+                 :stop     #'dag/handle-dag-stop
+                 :status   #'dag/handle-dag-status
+                 :_handler #'dag/handle-dag-status}})
 
 (def handlers
   (merge canonical-handlers
@@ -63,7 +70,7 @@
                     {} deprecated-aliases)))
 
 (def handle-agent
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 ;; Re-exports for direct handler access (used by tests and internal callers)
 (def handle-spawn spawn/handle-spawn)
@@ -110,8 +117,7 @@
                                         :description "[spawn] Subagent definitions for Claude Agent SDK sessions. Map of agent-name to agent definition object. Each definition: {description: string, prompt: string, tools?: string[], model?: 'sonnet'|'opus'|'haiku'|'inherit'}. Only effective when the resolved spawn mode is :agent-sdk (either spawn_mode='agent-sdk' directly, or spawn_mode='headless' when agent-sdk is the registry-resolved default backend). Ignored by other headless backends (e.g. :hive-agent)."}
                               "max_budget_usd" {:type "number"
                                                 :description "[spawn] Maximum USD spend for this agent. When set, registers a budget guardrail hook that denies+interrupts tool calls when cumulative cost exceeds the limit. E.g. 2.0 = $2 max."}
-                              "kg_compress" {:type "boolean"
-                                             :description "[spawn] Enable KG-compression between turns (default: true). Rewrites message history into compressed KG-derived context to keep context constant-size for long-running lings. SET TO FALSE for weaker models (qwen/qwen3.6-plus, z-ai/glm-5.1) that plan-paralyze on compressed context — they loop on identical tool calls because they can't infer 'already did X' from KG summaries. Strong models (claude, deepseek, kimi, gpt-5) handle kg_compress=true fine."}
+                              "kg_compress" {:type "boolean", :description "[spawn] Enable per-turn KG-compression (default: FALSE since 2026-09-14, on measurement). Rewrites the whole message history into a KG-derived summary every turn. Measured on a 15-symbol documentation sweep, n=20 per arm, same setpoint and seeds: raw history passed 6/20, per-turn KG 0/20 (sign test p=0.031) while spending 2.4x the input tokens (+67k, 95% CI [+45k, +89k]). Weak models also plan-paralyze under it (qwen/qwen3.6-plus, z-ai/glm-5.1 loop on identical tool calls). Prefer context_strategy=epoch, which tied raw at n=20, if you want compression at all."}
                               "sliding_window_size" {:type "integer"
                                                      :description "[spawn] Number of recent raw conversation turns to keep in context alongside KG-compressed summaries. Default 5. Only effective when kg_compress=true. Larger = more coherent short-term recall, lower compression ratio. Planned: not yet implemented — reconstructor extension pending (kanban 20260415160150-4fd21a2a)."}
                               "verbose" {:type "boolean"
@@ -171,6 +177,6 @@
                               "max_slots" {:type "integer"
                                            :description "Max concurrent lings for dag scheduler (default: 5)"}}
                  :required ["command"]}
-   :handler handle-agent})
+   :handler #'handle-agent})
 
 (def tools [tool-def])

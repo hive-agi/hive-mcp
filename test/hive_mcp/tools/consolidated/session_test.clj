@@ -17,7 +17,8 @@
             [hive-mcp.tools.catchup :as catchup]
             [hive-mcp.channel.context-store :as ctx-store]
             [hive-mcp.test.stub.extensions :as ext-stub]
-            [hive-mcp.chroma.core :as chroma]))
+            [hive-mcp.chroma.core :as chroma]
+            [hive-mcp.dispatch.handler :as dispatch]))
 
 ;; =============================================================================
 ;; Helper Functions
@@ -64,9 +65,9 @@
     (is (contains? session/handlers :context-reconstruct))))
 
 (deftest test-handlers-are-functions
-  (testing "all handlers are functions"
+  (testing "all handlers are dispatchable"
     (doseq [[k v] session/handlers]
-      (is (fn? v) (str "Handler " k " should be a function")))))
+      (is (dispatch/handler? v) (str "Handler " k " should be dispatchable")))))
 
 ;; =============================================================================
 ;; CLI Handler Tests (backward compat)
@@ -341,7 +342,7 @@
     (is (= "session" (:name session/tool-def)))
     (is (string? (:description session/tool-def)))
     (is (map? (:inputSchema session/tool-def)))
-    (is (fn? (:handler session/tool-def)))))
+    (is (dispatch/handler? (:handler session/tool-def)))))
 
 (deftest test-tool-definition-includes-all-commands
   (testing "tool-def enum includes all commands"

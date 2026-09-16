@@ -198,37 +198,48 @@
 ;; ── CLI Handler + Tool Definition ───────────────────────────────────────────
 
 (def canonical-handlers
-  {:catchup    c-session/handle-catchup
-   :wrap       c-session/handle-wrap
+  "The `workflow` verbs, stored as VARS so a reload reaches this table
+   (20260817195749-0d407e9c).
+
+   Nested maps stay LITERAL with var-quoted leaves, as in `agent/:dag` and
+   `emacs/:docs`: the walker derefs a var-held subtree now, but a literal map
+   is still `map?` to every other reader, and the walker is not the only one.
+
+   `:complete` is the one entry with nothing to quote. It is an inline `fn`
+   that re-enters the session router with a rewritten :command, so it has no
+   var of its own. It reaches `handle-session` THROUGH the `c-session` alias
+   at call time, which is the same indirection by another spelling."
+  {:catchup    #'c-session/handle-catchup
+   :wrap       #'c-session/handle-wrap
    :complete   (fn [params] (c-session/handle-session (assoc params :command "complete")))
-   :plan-goal  goal/handle-plan-goal
-   :goal-schema goal/handle-goal-schema
-   :forge      {:strike             handle-forge-strike
-                :strike-imperative  handle-forge-strike-imperative
-                :status             handle-forge-status
-                :survey             handle-forge-survey
-                :quench             handle-forge-quench
-                :multi-front        {:start    handle-multi-front-start
-                                     :status   handle-multi-front-status
-                                     :stop     handle-multi-front-stop
-                                     :_handler handle-multi-front-status}
-                :_handler           handle-forge-status}
-   :ir         {:list       ir/handle-list
-                :get        ir/handle-get
-                :describe   ir/handle-describe
-                :author     ir/handle-author
-                :register   ir/handle-register
-                :run        ir/handle-run
-                :status     ir/handle-status
-                :cancel     ir/handle-cancel
-                :method     ir/handle-describe-method
-                :vocabulary ir/handle-describe-vocabulary
-                :_handler   ir/handle-list}})
+   :plan-goal  #'goal/handle-plan-goal
+   :goal-schema #'goal/handle-goal-schema
+   :forge      {:strike             #'handle-forge-strike
+                :strike-imperative  #'handle-forge-strike-imperative
+                :status             #'handle-forge-status
+                :survey             #'handle-forge-survey
+                :quench             #'handle-forge-quench
+                :multi-front        {:start    #'handle-multi-front-start
+                                     :status   #'handle-multi-front-status
+                                     :stop     #'handle-multi-front-stop
+                                     :_handler #'handle-multi-front-status}
+                :_handler           #'handle-forge-status}
+   :ir         {:list       #'ir/handle-list
+                :get        #'ir/handle-get
+                :describe   #'ir/handle-describe
+                :author     #'ir/handle-author
+                :register   #'ir/handle-register
+                :run        #'ir/handle-run
+                :status     #'ir/handle-status
+                :cancel     #'ir/handle-cancel
+                :method     #'ir/handle-describe-method
+                :vocabulary #'ir/handle-describe-vocabulary
+                :_handler   #'ir/handle-list}})
 
 (def handlers canonical-handlers)
 
 (def handle-workflow
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 (def tool-def
   {:name "workflow"
@@ -301,6 +312,6 @@
                               "restart" {:type "boolean"
                                          :description "[forge quench] Restart the belt instead of stopping it, making forge strike available again."}}
                  :required ["command"]}
-   :handler handle-workflow})
+   :handler #'handle-workflow})
 
 (def tools [tool-def])

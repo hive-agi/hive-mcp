@@ -16,7 +16,8 @@
             [hive-mcp.tools.migration :as migration-handlers]
             [hive-mcp.migration.core :as core]
             [hive-mcp.migration.adapter :as adapter]
-            [hive-mcp.knowledge-graph.migration]))
+            [hive-mcp.knowledge-graph.migration]
+            [hive-mcp.dispatch.handler :as dispatch]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -53,7 +54,7 @@
     (is (= "migration" (:name c-migration/tool-def)))
     (is (string? (:description c-migration/tool-def)))
     (is (map? (:inputSchema c-migration/tool-def)))
-    (is (fn? (:handler c-migration/tool-def)))))
+    (is (dispatch/handler? (:handler c-migration/tool-def)))))
 
 (deftest test-tool-def-consolidated-flag
   (testing "tool-def has :consolidated true"
@@ -116,22 +117,26 @@
     (is (contains? c-migration/handlers :adapters))))
 
 (deftest test-handlers-are-functions
-  (testing "all handlers are functions"
+  (testing "all handlers are dispatchable"
     (doseq [[k v] c-migration/handlers]
-      (is (fn? v) (str "Handler " k " should be a function")))))
+      (is (dispatch/handler? v) (str "Handler " k " should be dispatchable")))))
 
 (deftest test-handlers-map-delegates-to-migration-handlers
   (testing "handlers map points to migration-handlers namespace fns"
-    (is (= migration-handlers/cmd-status (:status c-migration/handlers)))
-    (is (= migration-handlers/cmd-backup (:backup c-migration/handlers)))
-    (is (= migration-handlers/cmd-restore (:restore c-migration/handlers)))
-    (is (= migration-handlers/cmd-list (:list c-migration/handlers)))
-    (is (= migration-handlers/cmd-switch (:switch c-migration/handlers)))
-    (is (= migration-handlers/cmd-sync (:sync c-migration/handlers)))
-    (is (= migration-handlers/cmd-export (:export c-migration/handlers)))
-    (is (= migration-handlers/cmd-import (:import c-migration/handlers)))
-    (is (= migration-handlers/cmd-validate (:validate c-migration/handlers)))
-    (is (= migration-handlers/cmd-adapters (:adapters c-migration/handlers)))))
+    ;; Compared through `dispatch/current`, because the table holds the VARS and
+    ;; a var is never `=` to the function it holds. Resolving first keeps the
+    ;; assertion about WHICH function each command reaches, which is the thing
+    ;; worth asserting, and lets it survive the next spelling of the seam too.
+    (is (= migration-handlers/cmd-status (dispatch/current (:status c-migration/handlers))))
+    (is (= migration-handlers/cmd-backup (dispatch/current (:backup c-migration/handlers))))
+    (is (= migration-handlers/cmd-restore (dispatch/current (:restore c-migration/handlers))))
+    (is (= migration-handlers/cmd-list (dispatch/current (:list c-migration/handlers))))
+    (is (= migration-handlers/cmd-switch (dispatch/current (:switch c-migration/handlers))))
+    (is (= migration-handlers/cmd-sync (dispatch/current (:sync c-migration/handlers))))
+    (is (= migration-handlers/cmd-export (dispatch/current (:export c-migration/handlers))))
+    (is (= migration-handlers/cmd-import (dispatch/current (:import c-migration/handlers))))
+    (is (= migration-handlers/cmd-validate (dispatch/current (:validate c-migration/handlers))))
+    (is (= migration-handlers/cmd-adapters (dispatch/current (:adapters c-migration/handlers))))))
 
 ;; =============================================================================
 ;; CLI Handler Routing Tests
@@ -319,7 +324,7 @@
 
 (deftest test-tool-def-handler-is-handle-migration
   (testing "tool-def :handler is the consolidated handle-migration fn"
-    (is (= c-migration/handle-migration (:handler c-migration/tool-def)))))
+    (is (identical? c-migration/handle-migration (dispatch/current (:handler c-migration/tool-def))))))
 
 (deftest test-tool-def-handler-routes-help
   (testing "tool-def handler routes help command correctly"
@@ -347,7 +352,7 @@
       (is (string? (:name tool)) "name required for make-tool")
       (is (string? (:description tool)) "description required for make-tool")
       (is (map? (:inputSchema tool)) "inputSchema required for make-tool")
-      (is (fn? (:handler tool)) "handler required for make-tool")
+      (is (dispatch/handler? (:handler tool)) "handler required for make-tool")
       (is (true? (:consolidated tool)) "consolidated flag needed for get-consolidated-tools"))))
 
 (deftest test-tools-vector-is-valid-for-concat
@@ -356,5 +361,5 @@
     (is (sequential? c-migration/tools))
     (is (pos? (count c-migration/tools)))
     (is (every? #(and (string? (:name %))
-                      (fn? (:handler %)))
+                      (dispatch/handler? (:handler %)))
                 c-migration/tools))))

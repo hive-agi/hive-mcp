@@ -2,7 +2,7 @@
   (:require [datascript.core :as d]
             [hive-mcp.swarm.datascript.connection :as conn]))
 
-(declare add-wrap-notification! get-unprocessed-wraps get-unprocessed-wraps-for-project get-unprocessed-wraps-for-hierarchy mark-wrap-processed!)
+(declare add-wrap-notification! get-unprocessed-wraps get-unprocessed-wraps-for-project get-unprocessed-wraps-for-hierarchy get-unprocessed-wraps-for-session mark-wrap-processed!)
 
 (defn add-wrap-notification!
   "Record a ling wrap for coordinator permeation.
@@ -15,10 +15,16 @@
                :project-id  - Project ID for scoping (derived from ling's directory)
                :created-ids - Collection of memory entry IDs created
                :stats       - Map of stats {:notes N :decisions N :conventions N}
+               :parent-session-id - Session of the coordinator this wrap
+                              permeates INTO. This is what lets a coordinator
+                              select its OWN lings' wraps; project-id cannot,
+                              because two coordinators share a project.
+               :depth       - Hierarchy depth of the wrapping session
 
    Returns:
      Transaction report"
-  [wrap-id {:keys [agent-id session-id project-id created-ids stats]}]
+  [wrap-id {:keys [agent-id session-id project-id created-ids stats
+                   parent-session-id depth]}]
   {:pre [(string? wrap-id)]}
   (let [c (conn/ensure-conn)]
     (d/transact! c
@@ -28,8 +34,27 @@
                     agent-id (assoc :wrap-queue/agent-id agent-id)
                     session-id (assoc :wrap-queue/session-id session-id)
                     project-id (assoc :wrap-queue/project-id project-id)
+                    parent-session-id (assoc :wrap-queue/parent-session-id parent-session-id)
+                    (some? depth) (assoc :wrap-queue/depth depth)
                     (seq created-ids) (assoc :wrap-queue/created-ids (vec created-ids))
                     stats (assoc :wrap-queue/stats stats))])))
+
+(defn get-unprocessed-wraps-for-session
+  "Unprocessed wraps that permeate into `parent-session-id` -- the wraps of the
+   lings this coordinator actually owns.
+
+   This is the session-scoped counterpart of get-unprocessed-wraps-for-project.
+   Prefer it: a project-id match cannot separate two coordinators running in
+   the same project, and each would consume the other's lings' wraps."
+  [parent-session-id]
+  (when parent-session-id
+    (let [c (conn/ensure-conn)]
+      (d/q '[:find [(pull ?e [*]) ...]
+             :in $ ?psid
+             :where
+             [?e :wrap-queue/processed? false]
+             [?e :wrap-queue/parent-session-id ?psid]]
+           @c parent-session-id))))
 
 (defn get-unprocessed-wraps
   "Get all wrap notifications not yet processed by coordinator.

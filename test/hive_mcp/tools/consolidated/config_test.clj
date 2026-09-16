@@ -16,7 +16,8 @@
             [clojure.java.io :as io]
             [hive-mcp.tools.consolidated.config :as config-tool]
             [hive-mcp.config.core :as config]
-            [hive-mcp.config.io :as config-io]))
+            [hive-mcp.config.io :as config-io]
+            [hive-mcp.dispatch.handler :as dispatch]))
 
 ;; =============================================================================
 ;; Helpers
@@ -68,9 +69,9 @@
     (is (contains? config-tool/handlers :reload))))
 
 (deftest test-handlers-are-functions
-  (testing "all handlers are functions"
+  (testing "all handlers are dispatchable"
     (doseq [[k v] config-tool/handlers]
-      (is (fn? v) (str "Handler " k " should be a function")))))
+      (is (dispatch/handler? v) (str "Handler " k " should be dispatchable")))))
 
 ;; =============================================================================
 ;; CLI Handler Tests
@@ -219,7 +220,7 @@
     (is (true? (:consolidated config-tool/tool-def)))
     (is (string? (:description config-tool/tool-def)))
     (is (map? (:inputSchema config-tool/tool-def)))
-    (is (fn? (:handler config-tool/tool-def)))))
+    (is (dispatch/handler? (:handler config-tool/tool-def)))))
 
 (deftest test-tool-definition-enum
   (testing "tool-def enum includes all commands"

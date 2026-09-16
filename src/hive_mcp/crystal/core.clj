@@ -207,8 +207,44 @@
   ([] (delegate :cc/session-tag session-tag-fallback []))
   ([date-str] (delegate :cc/session-tag session-tag-fallback [date-str])))
 
+;; session-id above is the calendar DATE, and it stays that way: `session:<date>`
+;; is what every existing recall query matches on. It is NOT an identity — every
+;; concurrent session on a box shares it — so anything that needs to know WHOSE
+;; session a row belongs to uses the uid below instead. See
+;; hive-mcp.session.identity for the ownership rules built on it.
+
+(defn session-uid
+  "The id of THIS session, distinct from every other session running today.
+   Resolved by hive-mcp.session.current; nil if that namespace is unavailable,
+   in which case callers simply omit the tag rather than inventing one."
+  []
+  (try
+    (when-let [f (requiring-resolve 'hive-mcp.session.current/session-id)]
+      (f))
+    (catch Throwable _ nil)))
+
+(defn session-uid-tag
+  "`session-uid:<id>` for the current session, or nil. Carried ALONGSIDE
+   session-tag, never instead of it, so existing date queries keep working."
+  []
+  (when-let [uid (session-uid)]
+    (str "session-uid:" uid)))
+
+(defn session-tags
+  "The session tags a wrap-generated entry should carry: the date tag always,
+   the uid tag when this session has an identity."
+  []
+  (into [(session-tag)] (remove nil?) [(session-uid-tag)]))
+
 (defn- extract-session-fallback [tags]
   (some #(when (str/starts-with? % "session:") (subs % 8)) tags))
+
+(defn extract-session-uid-from-tags
+  "Pull the owning session's uid back out of an entry's tags. Returns nil for an
+   entry written before uid tagging, which is exactly the 'unowned' case the
+   ownership rules refuse to guess about."
+  [tags]
+  (some #(when (str/starts-with? % "session-uid:") (subs % 12)) tags))
 
 (defn extract-session-from-tags
   "Extract session identifier from tags."
@@ -423,8 +459,9 @@
                      duration-str "\nCompleted: " completed-at)]
     {:type :note
      :content content
-     :tags [(session-tag) "session-progress" "completed-task"
-            (str "priority-" (or priority "medium"))]
+     :tags (into (session-tags)
+                 ["session-progress" "completed-task"
+                  (str "priority-" (or priority "medium"))])
      :duration :ephemeral}))
 
 (defn task-to-progress-note
@@ -471,7 +508,7 @@
                        (str "\n\n### KG Connections: " kg-edge-count))
                      (when (pos? kanban-mvs-count)
                        (str "\n\n### Kanban Movements: " kanban-mvs-count)))
-       :tags [(session-tag) "session-summary" "wrap-generated"]
+       :tags (into (session-tags) ["session-summary" "wrap-generated"])
        :duration :short})))
 
 (defn summarize-session-progress
@@ -489,7 +526,7 @@
                    "### Memory Activity\n"
                    "- Memories created: " (or created 0) "\n"
                    "- Memories accessed: " (or accessed 0) "\n")
-     :tags [(session-tag) "session-summary" "wrap-generated" "coordinator"]
+     :tags (into (session-tags) ["session-summary" "wrap-generated" "coordinator"])
      :duration :short}))
 
 (defn summarize-memory-activity

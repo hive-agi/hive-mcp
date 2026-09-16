@@ -439,22 +439,39 @@
   (with-manager #(mcp-json (update ((soft 'hive-addon.lifecycle/sweep!) %) :plan dissoc :kept))))
 
 (def canonical-handlers
-  {:reload     handle-reload
-   :reload-all handle-reload-all
-   :inject     handle-inject
-   :watch      handle-watch
-   :unwatch    handle-unwatch
-   :list       handle-list
-   :status     handle-status
-   :strategies handle-strategies
-   :lifecycle  handle-lifecycle
-   :activate   handle-activate
-   :evict      handle-evict
-   :pin        handle-pin
-   :sweep      handle-sweep})
+  "The `hot` verbs, stored as VARS so a reload of this namespace reaches the
+   table (20260817195749-0d407e9c). The first of hive-mcp's 55 dispatch maps to
+   be converted, and the worked example the rest follow: flat, every value a
+   bare symbol naming a local defn, nothing here that inspects a handler rather
+   than calling it.
+
+   Reading it through a var is safe because `tools/cli.clj` classifies every
+   tree node through `dispatch/current` (commit cdd876f7). It was NOT safe
+   before that, which is the precondition the conversion card names."
+  {:reload     #'handle-reload
+   :reload-all #'handle-reload-all
+   :inject     #'handle-inject
+   :watch      #'handle-watch
+   :unwatch    #'handle-unwatch
+   :list       #'handle-list
+   :status     #'handle-status
+   :strategies #'handle-strategies
+   :lifecycle  #'handle-lifecycle
+   :activate   #'handle-activate
+   :evict      #'handle-evict
+   :pin        #'handle-pin
+   :sweep      #'handle-sweep})
 
 
 (def handlers canonical-handlers)
+
+(def handle-hot
+  "Routes the core `hot` commands plus whatever addons contribute under
+   \"hot\". Named, so the tool-def can register it BY VAR: a handler folded
+   into the tool map by value never sees a reload of its own namespace
+   (20260817195749-0d407e9c). The tool that performs reloads is the one it
+   would be most absurd to leave unreloadable."
+  (composite/build-merged-handler "hot" #'canonical-handlers))
 
 (def tool-def
   {:name "hot"
@@ -500,6 +517,6 @@
      "idle_ms" {:type "integer"
                 :description "[pin] Idle time in ms before a lazy addon may be evicted."}}
     :required ["command"]}
-   :handler (composite/build-merged-handler "hot" canonical-handlers)})
+   :handler #'handle-hot})
 
 (def tools [tool-def])

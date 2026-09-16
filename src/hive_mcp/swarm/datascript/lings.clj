@@ -328,11 +328,22 @@
   "Create a file claim for a slave/task.
 
    Arguments:
-     file-path - Path to claim (must be unique)
+     file-path - Key to claim (must be unique). A whole-file claim keys on the
+                 path; a span claim keys on `path#qn` (see
+                 hive-mcp.swarm.claim.span/key-of).
      slave-id  - Slave making the claim
      opts      - Optional map with:
                  :task-id    - Task associated with claim
                  :prior-hash - File content hash at acquire time (CC.3)
+                 :qn         - Qualified name, when the claim is on one form
+                 :mode       - :file, :body or :signature
+
+   `:qn` and `:mode` are what make a span claim legible on the way BACK out.
+   Without them a stored row can only be decoded by parsing its key, and a key
+   deliberately excludes mode (a :body and a :signature claim on one form must
+   collide on :db/unique, so they share a key). A claim that does not persist
+   its mode therefore reads back as :body, which silently disables the
+   signature-versus-caller rule for every stored claim. Measured: it did.
 
    Returns:
      Transaction report
@@ -340,7 +351,7 @@
    Note: Due to :db/unique on :claim/file, attempting to claim
    an already-claimed file will upsert (update the existing claim).
    Use has-conflict? to check first if you want to prevent this."
-  [file-path slave-id & [{:keys [task-id prior-hash]}]]
+  [file-path slave-id & [{:keys [task-id prior-hash qn mode]}]]
   {:pre [(string? file-path)
          (string? slave-id)]}
   (let [c (conn/ensure-conn)
@@ -355,7 +366,9 @@
                          :claim/slave [:slave/id slave-id]
                          :claim/created-at (conn/now)}
                   task-ref (assoc :claim/task task-ref)
-                  prior-hash (assoc :claim/prior-hash prior-hash))]
+                  prior-hash (assoc :claim/prior-hash prior-hash)
+                  qn (assoc :claim/qn qn)
+                  mode (assoc :claim/mode mode))]
     (log/debug "Claiming file:" file-path "for slave:" slave-id
                (when prior-hash (str "hash:" (subs prior-hash 0 8) "...")))
     (d/transact! c [tx-data])))

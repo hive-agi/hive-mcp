@@ -43,16 +43,25 @@
 ;; =============================================================================
 
 (def canonical-handlers
-  {:read  handle-read
-   :write handle-write
-   :glob  handle-glob
-   :grep  handle-grep})
+  "The `fs` verbs, stored as VARS so a reload of THIS namespace reaches the
+   table (20260817195749-0d407e9c)."
+  {:read  #'handle-read
+   :write #'handle-write
+   :glob  #'handle-glob
+   :grep  #'handle-grep})
 
 (def handlers canonical-handlers)
 
 ;; =============================================================================
 ;; Tool Definition
 ;; =============================================================================
+
+(def handle-fs
+  "Routes the core `fs` commands plus whatever addons contribute under
+   \"fs\". Named, so the tool-def can register it BY VAR: a handler folded
+   into the tool map by value never sees a reload of its own namespace
+   (20260817195749-0d407e9c)."
+  (composite/build-merged-handler "fs" #'canonical-handlers))
 
 (def tool-def
   {:name        "fs"
@@ -79,6 +88,6 @@
                               "max_results" {:type "integer"
                                              :description "Max results (default: 100)"}}
                  :required   ["command"]}
-   :handler     (composite/build-merged-handler "fs" canonical-handlers)})
+   :handler     #'handle-fs})
 
 (def tools [tool-def])

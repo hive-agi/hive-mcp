@@ -38,7 +38,8 @@
             [hive-hot.core :as hot]
             [hive-hot.events :as hot-events]
             [taoensso.timbre :as log]
-            [clojure.string :as str] [hive-dsl.result :refer [rescue]]))
+            [clojure.string :as str] [hive-dsl.result :refer [rescue]]
+            [hive-mcp.hot.self :as hot-self]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -93,7 +94,7 @@
      embeddings.ollama.model / embeddings.openrouter.model must be set, and a
      missing one is logged as an error naming the key."
   []
-  (result/rescue false
+  (result/rescue-log "init-embedding-provider!" false
     ;; Load global config to get :embeddings section
                  (let [cfg (global-config/get-global-config)
                        embed-cfg (get cfg :embeddings {})
@@ -181,7 +182,7 @@
   "Emit health event via WebSocket channel after hot-reload.
    Lings can listen for this to confirm MCP is operational."
   [loaded-ns unloaded-ns ms]
-  (result/rescue nil
+  (result/rescue-log "emit-mcp-health-event!" nil
                  (ws-channel/emit! :mcp-health-restored
                                    {:loaded (count loaded-ns)
                                     :unloaded (count unloaded-ns)
@@ -199,7 +200,7 @@
   [server-context-atom {:keys [loaded unloaded ms]}]
   (log/info "Hot-reload completed:" (count loaded) "loaded," (count unloaded) "unloaded in" ms "ms")
   ;; Refresh MCP tool handlers to point to new var values
-  (result/rescue nil
+  (result/rescue-log "handle-hot-reload-success!" nil
                  (when @server-context-atom
                    (routes/refresh-tools! server-context-atom)
                    (log/info "MCP tools refreshed after hot-reload")))
@@ -233,7 +234,7 @@
   "Initialize hive-events system (re-frame inspired event dispatch).
    EVENTS-01: Event system must init after hooks but before channel."
   []
-  (result/rescue nil
+  (result/rescue-log "init-events!" nil
                  (ev/init!)
                  (effects/register-effects!)
                  (ev-handlers/register-handlers!)
@@ -250,7 +251,7 @@
    Parameters:
      coordinator-id-atom - atom to store coordinator project-id"
   [coordinator-id-atom]
-  (result/rescue nil
+  (result/rescue-log "register-coordinator!" nil
                  (require 'hive-mcp.swarm.datascript)
                  (require 'hive-mcp.swarm.datascript.lings)
                  (let [register! (resolve 'hive-mcp.swarm.datascript/register-coordinator!)
@@ -284,7 +285,7 @@
    invoked in Phase 4, before Phase 5.5's explicit load-global-config!.
    Returns a lowercase string (e.g. \"milvus\", \"chroma\")."
   []
-  (result/rescue nil (global-config/load-global-config!))
+  (result/rescue-log "resolve-memory-backend" nil (global-config/load-global-config!))
   (let [cfg (global-config/get-global-config)
         b   (or (get-in cfg [:services :memory-store :backend])
                 (get-in cfg [:memory :default-store])
@@ -303,7 +304,7 @@
    A post-extensions fallback in `ensure-memory-store!` guarantees a live
    store even when the selected addon fails to register."
   []
-  (result/rescue nil
+  (result/rescue-log "wire-memory-store!" nil
                  (let [backend (resolve-memory-backend)]
                    (case backend
                      "milvus"
@@ -322,7 +323,7 @@
    addon failed to register a store, wire ChromaMemoryStore as a safety
    fallback so memory queries don't throw 'No memory store configured'."
   []
-  (result/rescue nil
+  (result/rescue-log "ensure-memory-store!" nil
                  (when-not (mem-proto/store-set?)
                    (log/warn "ensure-memory-store!: no store after extensions; wiring Chroma fallback")
                    (let [store (chroma-store/create-store)]
@@ -336,7 +337,7 @@
   "Initialize channel bridge - wires channel events to hive-events dispatch.
    EVENTS-01: Must init after both channel server and event system."
   []
-  (result/rescue nil
+  (result/rescue-log "init-channel-bridge!" nil
                  (channel-bridge/init!)
                  (log/info "Channel bridge initialized - channel events will dispatch to hive-events")))
 
@@ -413,6 +414,17 @@
 
    ADR: State-based debouncing - claimed files buffer until release.
 
+   The watcher has always covered hive-mcp's OWN src and has always refreshed
+   the tool table on a successful reload (see register-hot-reload-listener!).
+   What it never passed was `:no-reload`, which `init-with-watcher!` has
+   accepted all along. Without it, a reload of a core namespace that DEFINES a
+   protocol orphans every reify and defrecord instance built against the old
+   protocol object, and `satisfies?` then answers false for a class that
+   plainly implements it (axiom 20260822010805-57856ae1). The set is derived
+   from the live image by hive-mcp.hot.self, never listed, because a written
+   list of the thirty-seven namespaces that define protocols today is correct
+   only until somebody adds or moves one.
+
    Parameters:
      server-context-atom - atom containing MCP server context
      project-config      - map from read-project-config (or nil)"
@@ -425,11 +437,15 @@
                                                                          :parse #(str/split % #":"))
                                         (:watch-dirs project-config)
                                         ["src"])
-                           claim-checker (hot-events/make-claim-checker logic/get-all-claims)]
+                           claim-checker (hot-events/make-claim-checker logic/get-all-claims)
+                           no-reload (hot-self/protocol-namespaces)]
                        (hot/init-with-watcher! {:dirs src-dirs
                                                 :claim-checker claim-checker
+                                                :no-reload no-reload
                                                 :debounce-ms 100})
-                       (log/info "Hot-reload watcher started:" {:dirs src-dirs})
+                       (log/info "Hot-reload watcher started:"
+                                 {:dirs src-dirs
+                                  :protocol-namespaces-protected (count no-reload)})
           ;; Register MCP auto-heal listener to refresh tools after reload
                        (register-hot-reload-listener! server-context-atom)
           ;; Register state protection for DataScript state validation
@@ -452,7 +468,7 @@
   "Start lings registry sync - keeps Clojure registry in sync with elisp.
    ADR-001: Event-driven sync for lings_available to return accurate counts."
   []
-  (result/rescue nil
+  (result/rescue-log "start-registry-sync!" nil
                  (swarm/start-registry-sync!)
                  (log/info "Lings registry sync started - lings_available will track elisp lings")))
 
@@ -471,7 +487,7 @@
    Non-fatal: if scheduler fails to start, system continues without it.
    Decay still runs on wrap/catchup hooks as before."
   []
-  (result/rescue nil
+  (result/rescue-log "start-decay-scheduler!" nil
                  (require 'hive-mcp.scheduler.decay)
                  (let [start-fn (resolve 'hive-mcp.scheduler.decay/start!)]
                    (when start-fn
@@ -518,7 +534,7 @@
 (defn stop-decay-scheduler!
   "Stop the periodic decay scheduler. Called during shutdown."
   []
-  (result/rescue nil
+  (result/rescue-log "stop-decay-scheduler!" nil
                  (require 'hive-mcp.scheduler.decay)
                  (when-let [stop-fn (resolve 'hive-mcp.scheduler.decay/stop!)]
                    (stop-fn))))
@@ -540,7 +556,7 @@
    Non-fatal: if either fails to start, system continues without it.
    GC sweep still runs on session wrap/complete as before."
   []
-  (result/rescue nil
+  (result/rescue-log "start-housekeeping-scheduler!" nil
                  (require 'hive-mcp.scheduler.housekeeping)
                  (let [start-fn (resolve 'hive-mcp.scheduler.housekeeping/start!)]
                    (when start-fn
@@ -548,7 +564,7 @@
                        (if (:started result)
                          (log/info "Housekeeping scheduler started:" result)
                          (log/info "Housekeeping scheduler not started:" (:reason result)))))))
-  (result/rescue nil
+  (result/rescue-log "start-housekeeping-scheduler!" nil
                  (require 'hive-mcp.channel.context-store)
                  (when-let [reaper-start! (resolve 'hive-mcp.channel.context-store/start-reaper!)]
                    (reaper-start!))))
@@ -557,11 +573,11 @@
   "Stop the periodic housekeeping scheduler and the context-store TTL reaper.
    Called during shutdown."
   []
-  (result/rescue nil
+  (result/rescue-log "stop-housekeeping-scheduler!" nil
                  (require 'hive-mcp.scheduler.housekeeping)
                  (when-let [stop-fn (resolve 'hive-mcp.scheduler.housekeeping/stop!)]
                    (stop-fn)))
-  (result/rescue nil
+  (result/rescue-log "stop-housekeeping-scheduler!" nil
                  (require 'hive-mcp.channel.context-store)
                  (when-let [reaper-stop! (resolve 'hive-mcp.channel.context-store/stop-reaper!)]
                    (reaper-stop!))))
@@ -591,7 +607,7 @@
    so headless hosts still get a working delivery surface even when NATS
    is disabled."
   []
-  (result/rescue nil
+  (result/rescue-log "init-nats!" nil
                  (let [nats-config (global-config/get-service-config :nats)]
                    (when (:enabled nats-config)
                      (let [start! (requiring-resolve 'hive-mcp.nats.client/start!)
@@ -633,14 +649,14 @@
 
    Must run AFTER embedding/memory services (extensions may use Chroma)."
   []
-  (result/rescue nil
+  (result/rescue-log "load-extensions!" nil
                  (require 'hive-mcp.extensions.loader)
                  (let [load-fn (resolve 'hive-mcp.extensions.loader/load-extensions!)]
                    (when load-fn
                      (let [result (load-fn)]
                        (log/info "Extension loading complete:" result)))))
   ;; Post-init multi-dispatch coherence check (WARN-only)
-  (result/rescue nil
+  (result/rescue-log "load-extensions!" nil
                  (let [get-adv (requiring-resolve 'hive-mcp.tools.registry/get-advertised-tools)
                        check!  (requiring-resolve 'hive-mcp.multi.registry/check-dispatch-coherence!)]
                    (when (and get-adv check!)
@@ -659,7 +675,7 @@
    Must run AFTER embedding/memory services (handlers may need them at runtime).
    Non-fatal: if initialization fails, NoopWorkflowEngine remains as fallback."
   []
-  (result/rescue nil
+  (result/rescue-log "init-workflow-engine!" nil
                  (require 'hive-mcp.workflows.registry)
                  (require 'hive-mcp.workflows.fsm-engine)
                  (require 'hive-mcp.protocols.workflow)

@@ -61,11 +61,10 @@
    heavy spawns atop the multi-GB KG floor have driven kernel OOMs. We shed
    *new* spawns under pressure rather than hard-kill live agents.
 
-   Reuses the self-contained hive-knowledge.cache.mem-guard governor,
-   lazily resolved — hive-mcp does NOT statically depend on hive-knowledge
-   (the dep is inverted). FAIL-OPEN: a missing governor, any sampling error,
-   or config opt-out all ADMIT (return nil), so the guard can never wedge the
-   spawn path.
+   Reuses the self-contained hive-cache.mem-guard governor, lazily resolved —
+   hive-mcp does NOT statically depend on hive-cache. FAIL-OPEN: a missing
+   governor, any sampling error, or config opt-out all ADMIT (return nil), so
+   the guard can never wedge the spawn path.
 
    Config — note hive-mcp.config.resolve/get-service-value uses (or val default)
    which swallows boolean false, so the kill switch is a default-FALSE *disable*
@@ -80,7 +79,7 @@
                                         :env "HIVE_MCP_SWARM_HEAP_ADMISSION_DISABLED"
                                         :parse #(Boolean/parseBoolean %)
                                         :default false)
-      (when-let [check (requiring-resolve 'hive-knowledge.cache.mem-guard/check)]
+      (when-let [check (requiring-resolve 'hive-cache.mem-guard/check)]
         (let [soft (config/get-service-value :swarm :heap-admission-soft
                                              :env "HIVE_MCP_SWARM_HEAP_ADMISSION_SOFT"
                                              :parse parse-double
@@ -98,15 +97,19 @@
 (defn effective-parent
   "The parent a spawn is attributed to. An explicit non-blank `parent` wins.
    Otherwise the calling agent (`:_caller_id`, stamped on every MCP request by
-   the transport) is the parent — except a coordinator-lane caller, whose
-   spawns stay root-level (nil), the lane the audience layer already routes to
-   coordinator readers."
+   the transport) is the parent. A coordinator-lane caller counts only when
+   it names a SESSION (`coordinator:<session>`), so the spawn's shouts reach
+   that one window; a lane spelled without a session (`coordinator`,
+   `coordinator-hive`) leaves the spawn root-level, the lane the audience
+   layer routes to every coordinator reader."
   [{:keys [parent _caller_id]}]
   (let [explicit (when-not (str/blank? (str parent)) parent)
         caller   (when-not (str/blank? (str _caller_id)) (str _caller_id))]
     (or explicit
-        (when (and caller (not (audience/coordinator-reader? caller)))
-          caller))))
+        (when caller
+          (if (audience/coordinator-reader? caller)
+            (when (audience/coordinator-session caller) caller)
+            caller)))))
 
 (defn handle-spawn
   "Spawn a new ling agent.

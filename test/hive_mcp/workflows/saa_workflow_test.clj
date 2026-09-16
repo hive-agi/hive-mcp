@@ -1096,6 +1096,7 @@
           execute-wf     @(ns-resolve 'hive-mcp.protocols.workflow 'execute-workflow)
           get-status     @(ns-resolve 'hive-mcp.protocols.workflow 'get-status)
           loaded         (load-wf engine :saa-workflow {})]
+      (is (true? (:loaded? loaded)) (str "SAA workflow should load: " (:errors loaded)))
       (when (:loaded? loaded)
         (let [resources (mock-resources)
               result    (execute-wf engine loaded
@@ -1103,7 +1104,8 @@
                                      :initial-data base-data})]
           (is (true? (:success? result)) "Execution should succeed")
           (is (some? (:workflow-id result)))
-          (is (pos? (:duration-ms result)))
+          (is (nat-int? (:duration-ms result))
+              "duration-ms is an elapsed whole-millisecond count; 0 is valid for a sub-ms run")
           ;; Check tracked status
           (let [status (get-status engine (:workflow-id result))]
             (is (= :completed (:status status)))))))))

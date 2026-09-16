@@ -121,7 +121,7 @@
 (defn register-handlers!
   "Register all event handlers. Call at startup.
 
-   Safe to call multiple times - only registers once.
+   Safe to call multiple times, and it REGISTERS every time.
 
    Delegates to domain-specific modules:
    - task/register-handlers!    - Task lifecycle
@@ -137,9 +137,23 @@
    - saa/register-handlers!      - SAA workflow lifecycle
    - lifecycle/register-handlers! - GC lifecycle sweep (gc-fix-4)
 
-   Returns true if handlers were registered, false if already registered."
+   It used to skip the whole body when `*registered` was already true. That
+   atom is a `defonce`, which clj-reload preserves, so after a hot reload the
+   flag still read true, this function did nothing, and the event registry kept
+   dispatching to handler closures compiled before the reload. Kanban
+   20260916134011-1246379c.
+
+   Every handler below is registered BY KEY and last-writer-wins, so re-running
+   is free. The flag now says only whether this is the first registration, which
+   is what the log line and the return value were always about.
+
+   Returns true.
+
+   NOTE: this is the ROOT of a two-level fan-out. Several of the delegates carry
+   their own `defonce` gate, and a gate at either level is enough to keep the
+   old closures. Fixing this one alone changes nothing."
   []
-  (when-not @*registered
+  (let [first? (not @*registered)]
     ;; Register all domain handlers
     (task/register-handlers!)
     (ling/register-handlers!)
@@ -158,7 +172,8 @@
 
     (verify-handlers!)
     (reset! *registered true)
-    (println "[hive-events] Handlers registered: :task/complete :task/shout-complete :git/commit-modified :ling/started :ling/completed :ling/ready-for-wrap :session/end :session/wrap :kanban/sync :kanban/done :crystal/wrap-request :crystal/wrap-notify :claim/file-released :claim/notify-waiting :system/error :hot/reload-start :hot/reload-success :file/changed :kg/edge-created :kg/edge-updated :kg/edge-removed :kg/node-promoted :agora/turn-dispatched :agora/timeout :agora/turn-completed :agora/dispatch-next :agora/consensus :saa/started :saa/phase-complete :saa/completed :saa/failed :memory/query :memory/search :memory/get :lifecycle/sweep")
+    (when first?
+      (println "[hive-events] Handlers registered: :task/complete :task/shout-complete :git/commit-modified :ling/started :ling/completed :ling/ready-for-wrap :session/end :session/wrap :kanban/sync :kanban/done :crystal/wrap-request :crystal/wrap-notify :claim/file-released :claim/notify-waiting :system/error :hot/reload-start :hot/reload-success :file/changed :kg/edge-created :kg/edge-updated :kg/edge-removed :kg/node-promoted :agora/turn-dispatched :agora/timeout :agora/turn-completed :agora/dispatch-next :agora/consensus :saa/started :saa/phase-complete :saa/completed :saa/failed :memory/query :memory/search :memory/get :lifecycle/sweep"))
     true))
 
 (defn reset-registration!

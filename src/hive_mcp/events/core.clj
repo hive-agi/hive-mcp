@@ -150,9 +150,22 @@
                         pollution in MCP context)
    - :mcp-response    - Data-only effect read by dispatch-sync callers
 
-   Safe to call multiple times; idempotent via registry/*initialized."
+   Safe to call multiple times, and it REGISTERS every time.
+
+   It used to skip the whole body when `registry/*initialized` was already
+   true. That atom is a `defonce`, which clj-reload preserves, so after a hot
+   reload the flag still read true and this function did nothing while the
+   registries kept the closures compiled before the reload. Nothing reported
+   it: every handler here is anonymous, so it has no var to be compared
+   against, and the reload-staleness scan cannot see these at all. Kanban
+   20260916134011-1246379c.
+
+   Every registration below is addressed by key and last-writer-wins, so
+   re-running is free. The flag now carries only two things it can still be
+   honest about: whether this is the FIRST initialization (so the log stays
+   one line per process) and the return value callers already depend on."
   []
-  (when-not @registry/*initialized
+  (let [first? (not @registry/*initialized)]
     (reg-cofx :now
               (fn [coeffects]
                 (assoc coeffects :now (java.time.Instant/now))))
@@ -182,6 +195,9 @@
                 (log/info message))))
     (reg-fx :mcp-response (fn [_] nil))
     (reset! registry/*initialized true)
-    (log/info "Event system initialized with coeffects: :now :random :agent-context :db-snapshot")
-    (log/info "Registered effects: :channel-publish :mcp-response"))
+    (if first?
+      (do
+        (log/info "Event system initialized with coeffects: :now :random :agent-context :db-snapshot")
+        (log/info "Registered effects: :channel-publish :mcp-response"))
+      (log/debug "Event system re-initialized: built-in coeffects and effects re-registered")))
   @registry/*initialized)

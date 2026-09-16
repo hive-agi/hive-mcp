@@ -32,43 +32,80 @@
        (catch Throwable _ nil)))
 
 (defn- orphan?
-  "Return true iff `owner`'s ling-id fails to resolve through find-ling.
+  "Return true iff `id` fails to resolve through find-ling.
    When find-ling itself is nil (spawn ns not loaded) return false so no
-   owner is ever falsely orphaned."
-  [find-ling owner]
+   owner is ever falsely orphaned.
+
+   Takes the ID rather than the owner: the id is asked for ONCE per sweep, by
+   `owner-id*`, and carried from there. Asking twice let the two calls disagree
+   about whether the owner even has one."
+  [find-ling id]
   (if (nil? find-ling)
     false
-    (let [id (lifecycle/owner-id owner)]
-      (try
-        (not (boolean (find-ling id)))
-        (catch Throwable t
-          (log/warn t "orphan-channel sweep: find-ling threw; assuming alive"
-                    {:owner-id id})
-          false)))))
+    (try
+      (not (boolean (find-ling id)))
+      (catch Throwable t
+        (log/warn t "orphan-channel sweep: find-ling threw; assuming alive"
+                  {:owner-id id})
+        false))))
+
+(defn- owner-id*
+  "The owner's id, or nil when asking for it THREW.
+
+   Asked once per sweep and carried with the owner, because the id is the key
+   `unregister-resource-owner!` removes by. Releasing an owner's resources and
+   then unregistering `nil` removes nothing: the owner stays registered, the
+   next sweep finds the same dead owner, and it is released again every five
+   minutes forever, with every log line naming `:owner-id nil` so the loop is
+   not even attributable.
+
+   So a failure here is a CONDITION the caller must branch on, not a value to
+   substitute (20260829145644-2dc45bb1). It is logged rather than swallowed,
+   and the caller skips the owner instead of acting on a half-known one."
+  [owner]
+  (try
+    (lifecycle/owner-id owner)
+    (catch Throwable t
+      (log/error t "orphan-channel sweep: owner-id threw; owner left registered")
+      nil)))
 
 ;; =============================================================================
 ;; ISweepable impl
 ;; =============================================================================
 
-(defrecord OrphanChannelSweep []
+(defrecord OrphanChannelSweep [find-ling-fn]
   lifecycle/ISweepable
   (sweep-interval-s [_] 300)            ; 5 minutes
   (sweep-name [_] "channels/orphan")
   (sweep! [_ _ctx]
-    (let [find-ling (resolve-find-ling)
-          owners    (reg/registered-resource-owners)
-          orphaned  (filter (partial orphan? find-ling) owners)
-          errors    (volatile! [])]
-      (doseq [o orphaned]
-        (let [id (try (lifecycle/owner-id o) (catch Throwable _ nil))]
-          (try
-            (lifecycle/release-all! o)
-            (reg/unregister-resource-owner! id)
-            (catch Throwable t
-              (log/error t "orphan-channel sweep: release failed"
-                         {:owner-id id})
-              (vswap! errors conj {:owner-id id
-                                   :error    (.getMessage t)})))))
+    ;; Three passes, deliberately separate: IDENTIFY every owner, DECIDE which
+    ;; are orphaned, then ACT. The identify pass is what makes the decision
+    ;; total -- an owner whose id cannot be read is neither released nor
+    ;; counted as swept, because releasing it would strand it registered.
+    ;;
+    ;; `find-ling-fn` is a constructor-injected seam, nil in production so the
+    ;; probe is resolved per sweep as before. It exists because a test needs to
+    ;; choose who is alive, and the alternative is `with-redefs` standing in
+    ;; for a collaborator the record could simply hold (20260726172005-562432b9).
+    (let [find-ling  (or find-ling-fn (resolve-find-ling))
+          errors     (volatile! [])
+          identified (mapv (juxt identity owner-id*)
+                           (reg/registered-resource-owners))
+          unknown    (filterv (comp nil? second) identified)
+          orphaned   (filterv (fn [[_ id]] (orphan? find-ling id))
+                              (filterv (comp some? second) identified))]
+      (doseq [_ unknown]
+        (vswap! errors conj {:owner-id nil
+                             :error    "owner-id threw; owner left registered"}))
+      (doseq [[o id] orphaned]
+        (try
+          (lifecycle/release-all! o)
+          (reg/unregister-resource-owner! id)
+          (catch Throwable t
+            (log/error t "orphan-channel sweep: release failed"
+                       {:owner-id id})
+            (vswap! errors conj {:owner-id id
+                                 :error    (.getMessage t)}))))
       {:swept (count orphaned) :errors @errors})))
 
 ;; =============================================================================
@@ -76,4 +113,4 @@
 ;; =============================================================================
 
 (defonce ^:private -registered?
-  (do (reg/register-sweep! (->OrphanChannelSweep)) true))
+  (do (reg/register-sweep! (->OrphanChannelSweep nil)) true))

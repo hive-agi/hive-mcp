@@ -156,9 +156,13 @@
 
 (defn KGRelationType
   "Valid KG edge relation types.
-   Derives dynamically from schema/relation-types to include registered extensions."
+   Derives dynamically from schema/relation-types to include registered
+   extensions, and SORTS them. relation-types answers a set, so its iteration
+   order follows the hash layout of whatever is registered. Order means nothing
+   to malli, but this schema is one derivation away from an advertised JSON
+   enum, and there the order is bytes in the first span of every request."
   []
-  (into [:enum] (map name (kg-schema/relation-types))))
+  (into [:enum] (sort (map name (kg-schema/relation-types)))))
 
 (def KGSourceType
   "How an edge was established."

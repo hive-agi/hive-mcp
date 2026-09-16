@@ -49,7 +49,11 @@
   (testing "a ling caller becomes the parent when none is given"
     (is (= "ling-a" (spawn/effective-parent {:_caller_id "ling-a"})))
     (is (= "ling-a" (spawn/effective-parent {:parent "" :_caller_id "ling-a"}))))
-  (testing "a coordinator-lane caller leaves the spawn root-level"
+  (testing "a coordinator-lane caller with a SESSION becomes the parent, so the
+            spawn's shouts reach that one window"
+    (is (= "coordinator:1269206" (spawn/effective-parent {:_caller_id "coordinator:1269206"})))
+    (is (= "coordinator:a1b2c3d4" (spawn/effective-parent {:_caller_id "coordinator:a1b2c3d4"}))))
+  (testing "a coordinator-lane caller without a session leaves the spawn root-level"
     (is (nil? (spawn/effective-parent {:_caller_id "coordinator"})))
     (is (nil? (spawn/effective-parent {:_caller_id "coordinator-hive"}))))
   (testing "no caller and no parent is root-level"
@@ -65,6 +69,25 @@
       (is (nil? (:slave/parent row)))
       (is (aud/addressed-to? "coordinator-hive" shout))
       (is (not (aud/addressed-to? "ling-b" shout))))))
+
+(deftest coordinator-session-spawn-is-parented-to-that-window-test
+  (testing "a spawn from a sessioned coordinator lane persists that session as
+            :slave/parent, creating the session's own row on demand, and its
+            shouts reach that window and no other"
+    (is (nil? (queries/get-slave "coordinator:1269206")) "no session row before the spawn")
+    (spawn-ling! {:name "ling-a" :_caller_id "coordinator:1269206"})
+    (let [row     (queries/get-slave "ling-a")
+          session (queries/get-slave "coordinator:1269206")
+          shout   {:agent-id "ling-a" :parent-id (:slave/parent row)}]
+      (is (= "coordinator:1269206" (:slave/parent row)))
+      (is (some? session) "the session row was created so the lookup ref resolves")
+      (is (= 0 (:slave/depth session)))
+      (is (aud/addressed-to? "coordinator:1269206-hive" shout))
+      (is (not (aud/addressed-to? "coordinator:1343228-hive" shout)))
+      (is (not (aud/addressed-to? "ling-b" shout)))))
+  (testing "a second spawn from the same window reuses the session row"
+    (spawn-ling! {:name "ling-b" :_caller_id "coordinator:1269206"})
+    (is (= "coordinator:1269206" (:slave/parent (queries/get-slave "ling-b"))))))
 
 (deftest ling-spawned-child-is-parented-to-the-ling-test
   (testing "a ling spawning without `parent` is recorded as :slave/parent, so the grandchild's shout stops at the ling"

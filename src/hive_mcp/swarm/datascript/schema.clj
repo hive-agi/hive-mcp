@@ -154,6 +154,11 @@
     :db/valueType :db.type/ref
     :db/cardinality :db.cardinality/one}
 
+   :slave/session-id
+   {:db/doc "Stable session id for this slave's run. The coordinator counterpart
+             is :coordinator/session-id; a ling's wrap permeates into its root
+             slave's session. See hive-mcp.session.identity."}
+
    :slave/presets
    {:db/doc "Applied presets (e.g., 'tdd', 'reviewer')"
     :db/cardinality :db.cardinality/many}
@@ -406,6 +411,15 @@
    :wrap-queue/created-at
    {:db/doc "Timestamp when wrap occurred"}
 
+   :wrap-queue/parent-session-id
+   {:db/doc "Session id of the coordinator this wrap permeates INTO. Lets a
+             coordinator select its own lings' wraps instead of matching on a
+             project-id prefix, which cannot tell two coordinators in one
+             project apart. See hive-mcp.session.identity."}
+
+   :wrap-queue/depth
+   {:db/doc "Hierarchy depth of the wrapping session (0 = coordinator, 1+ = ling)"}
+
    ;;; =========================================================================
    ;;; Coordinator Entity (Multi-coordinator lifecycle management)
    ;;; =========================================================================
@@ -452,6 +466,11 @@
    :completed-task/completed-at
    {:db/doc "Timestamp when task was completed"}
 
+   :completed-task/session-id
+   {:db/doc "Session that recorded this completion. Without it a wrap cannot
+             tell its own rows from a concurrent session's, and clearing is
+             indiscriminate. See hive-mcp.session.identity."}
+
    ;;; =========================================================================
    ;;; Kanban Movement Entity (Session-scoped status transitions for wrap)
    ;;; =========================================================================
@@ -477,6 +496,9 @@
 
    :kanban-movement/agent-id
    {:db/doc "Agent that triggered the move"}
+
+   :kanban-movement/session-id
+   {:db/doc "Session that recorded this movement (see :completed-task/session-id)"}
 
    :kanban-movement/project-id
    {:db/doc "Project scope"}

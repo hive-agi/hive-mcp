@@ -119,3 +119,4 @@ dev/artifacts/
 
 # Claude Code transient worktree state (parallel to the ignored /.worktrees/).
 .claude/worktrees/
+local.deps.edn.bak-*

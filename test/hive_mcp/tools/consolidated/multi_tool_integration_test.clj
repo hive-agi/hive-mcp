@@ -39,7 +39,8 @@
             [hive-mcp.tools.consolidated.migration :as migration]
             [hive-mcp.tools.consolidated.agent :as agent]
             ;; Multi meta-facade
-            [hive-mcp.tools.consolidated.multi :as multi]))
+            [hive-mcp.tools.consolidated.multi :as multi]
+            [hive-mcp.dispatch.handler :as dispatch]))
 
 ;; =============================================================================
 ;; Helpers
@@ -321,7 +322,7 @@
           (str tool-key " missing :description"))
       (is (map? (:inputSchema tool-def))
           (str tool-key " missing :inputSchema"))
-      (is (fn? (:handler tool-def))
+      (is (dispatch/handler? (:handler tool-def))
           (str tool-key " missing :handler")))))
 
 (deftest test-all-tool-defs-are-consolidated
@@ -402,8 +403,8 @@
              :migration migration/handlers
              :agent     agent/handlers}]
       (doseq [[k v] handlers-map]
-        (is (or (fn? v) (map? v))
-            (str tool-key "/" k " should be a function or nested handler map"))))))
+        (is (or (dispatch/handler? v) (map? (dispatch/current v)))
+            (str tool-key "/" k " should be dispatchable or a nested handler map"))))))
 
 (deftest test-handler-map-commands-match-enum
   (testing "handler map keys match tool-def command enum (minus 'help')"
@@ -560,9 +561,9 @@
     (is (contains? kg/handlers :batch-traverse))))
 
 (deftest test-kg-batch-handlers-are-functions
-  (testing "KG batch handlers are valid functions"
-    (is (fn? (:batch-edge kg/handlers)))
-    (is (fn? (:batch-traverse kg/handlers)))))
+  (testing "KG batch handlers are dispatchable"
+    (is (dispatch/handler? (:batch-edge kg/handlers)))
+    (is (dispatch/handler? (:batch-traverse kg/handlers)))))
 
 (deftest test-kg-batch-edge-rejects-empty-operations
   (testing "batch-edge rejects empty operations"
@@ -727,8 +728,8 @@
     (is (contains? magit/handlers :batch-commit))))
 
 (deftest test-magit-batch-commit-is-function
-  (testing "magit batch-commit handler is a function"
-    (is (fn? (:batch-commit magit/handlers)))))
+  (testing "magit batch-commit handler is dispatchable"
+    (is (dispatch/handler? (:batch-commit magit/handlers)))))
 
 (deftest test-magit-batch-commit-rejects-empty-operations
   (testing "magit batch-commit rejects empty operations"
@@ -951,9 +952,9 @@
     (is (contains? session/handlers :context-reconstruct))))
 
 (deftest test-session-handlers-are-functions
-  (testing "all session handlers are functions"
+  (testing "all session handlers are dispatchable"
     (doseq [[k v] session/handlers]
-      (is (fn? v) (str "session handler " k " should be a function")))))
+      (is (dispatch/handler? v) (str "session handler " k " should be dispatchable")))))
 
 (deftest test-session-tool-def-schema-params
   (testing "session tool-def schema has key params"
@@ -983,9 +984,9 @@
     (is (contains? config/handlers :reload))))
 
 (deftest test-config-handlers-are-functions
-  (testing "all config handlers are functions"
+  (testing "all config handlers are dispatchable"
     (doseq [[k v] config/handlers]
-      (is (fn? v) (str "config handler " k " should be a function")))))
+      (is (dispatch/handler? v) (str "config handler " k " should be dispatchable")))))
 
 (deftest test-config-tool-def-schema-params
   (testing "config tool-def schema has key params"
@@ -1050,9 +1051,9 @@
     (is (contains? migration/handlers :adapters))))
 
 (deftest test-migration-handlers-are-functions
-  (testing "all migration handlers are functions"
+  (testing "all migration handlers are dispatchable"
     (doseq [[k v] migration/handlers]
-      (is (fn? v) (str "migration handler " k " should be a function")))))
+      (is (dispatch/handler? v) (str "migration handler " k " should be dispatchable")))))
 
 (deftest test-migration-tool-def-schema-params
   (testing "migration tool-def schema has key params"
@@ -1150,7 +1151,7 @@
     (is (true? (:consolidated multi/tool-def)))
     (is (string? (:description multi/tool-def)))
     (is (map? (:inputSchema multi/tool-def)))
-    (is (fn? (:handler multi/tool-def)))))
+    (is (dispatch/handler? (:handler multi/tool-def)))))
 
 (deftest test-multi-tool-def-no-required-params
   (testing "multi tool-def has no required params (batch mode doesn't need tool)"

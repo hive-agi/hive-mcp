@@ -69,15 +69,19 @@
 ;; ── Core project handlers ────────────────────────────────────────────────
 
 (def project-handlers
-  {:info      projectile-handlers/handle-projectile-info
-   :files     projectile-handlers/handle-projectile-files
-   :search    projectile-handlers/handle-projectile-search
-   :find      projectile-handlers/handle-projectile-find-file
-   :recent    projectile-handlers/handle-projectile-recent
-   :list      projectile-handlers/handle-projectile-list-projects
-   :scan      handle-project-scan
-   :tree      handle-project-tree
-   :staleness handle-project-staleness})
+  "The projectile-backed `project` verbs, stored as VARS so a reload reaches
+   this table (20260817195749-0d407e9c). This subtree is folded into
+   `canonical-handlers`, so converting it here un-freezes the same nine
+   entries in the root above."
+  {:info      #'projectile-handlers/handle-projectile-info
+   :files     #'projectile-handlers/handle-projectile-files
+   :search    #'projectile-handlers/handle-projectile-search
+   :find      #'projectile-handlers/handle-projectile-find-file
+   :recent    #'projectile-handlers/handle-projectile-recent
+   :list      #'projectile-handlers/handle-projectile-list-projects
+   :scan      #'handle-project-scan
+   :tree      #'handle-project-tree
+   :staleness #'handle-project-staleness})
 
 ;; =============================================================================
 ;; Canonical Handlers — project flat + kanban/config/session/workflow nested
@@ -118,7 +122,7 @@
 (def handlers canonical-handlers)
 
 (def handle-project
-  (composite/build-merged-handler "project" canonical-handlers))
+  (composite/build-merged-handler "project" #'canonical-handlers))
 
 ;; =============================================================================
 ;; Tool Definition
@@ -213,6 +217,6 @@
                               "parallel" {:type "boolean"
                                           :description "Run batch operations in parallel (default: false)"}}
                  :required ["command"]}
-   :handler handle-project})
+   :handler #'handle-project})
 
 (def tools [tool-def])

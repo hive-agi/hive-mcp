@@ -23,7 +23,8 @@
             [hive-mcp.batch :as batch]
             [hive-mcp.batch.protocol :as proto]
             [hive-mcp.dns.result :refer [rescue]]
-            [hive-mcp.tools.cli :as cli]))
+            [hive-mcp.tools.cli :as cli]
+            [hive-mcp.dispatch.handler :as dispatch]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -45,7 +46,7 @@
     (let [canonical (str/replace (str tool-name) #"\." " ")
           path      (cli/parse-command canonical)
           resolved  (cli/resolve-handler handlers path)]
-      (when (fn? (:handler resolved))
+      (when (dispatch/handler? (:handler resolved))
         (:handler resolved)))))
 
 (defn- default-emit-fx

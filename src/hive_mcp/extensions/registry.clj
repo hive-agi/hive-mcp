@@ -213,6 +213,21 @@
        (try (add! ::host-surface notify-contribution!) true
             (catch Throwable _ false))))))
 
+(defn ensure-seam-listener!
+  "Register this host's notifier with hive-addon's listener seam NOW, and
+   return true when that seam is in play.
+
+   Idempotent, and the reason it is public: `seam-registered?` is a delay that
+   only `notify-once!` forces, and `notify-once!` runs only inside a call to
+   this facade. An addon that has migrated off the facade and calls
+   hive-addon.registry.commands/contribute! directly would therefore contribute
+   into a store no listener watches: the commands land, and the advertised tool
+   surface never rebuilds. The host must start listening at install time,
+   before any addon mounts, rather than on the first call to the very facade
+   the migration exists to stop using."
+  []
+  @seam-registered?)
+
 (defn- notify-once!
   "Notify the host's contribution listeners exactly once.
 

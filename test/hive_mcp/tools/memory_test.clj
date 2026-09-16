@@ -15,7 +15,8 @@
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.tools.memory.format :as fmt]
             [hive-mcp.tools.memory.duration :as dur]
-            [hive-dsl.adt :as adt]))
+            [hive-dsl.adt :as adt]
+            [hive-mcp.dispatch.handler :as dispatch]))
 
 ;; ============================================================
 ;; Scope Module Tests
@@ -220,7 +221,7 @@
 (deftest memory-tools-have-handlers-test
   (testing "each tool definition has a handler"
     (doseq [tool memory/tools]
-      (is (fn? (:handler tool))
+      (is (dispatch/handler? (:handler tool))
           (str "Tool " (:name tool) " should have a handler function")))))
 
 (deftest memory-tools-have-input-schemas-test

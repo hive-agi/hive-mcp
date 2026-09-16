@@ -12,7 +12,8 @@
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.data.json :as json]
             [clojure.string :as str]
-            [hive-mcp.tools.cli :as cli]))
+            [hive-mcp.tools.cli :as cli]
+            [hive-mcp.dispatch.handler :as dispatch]))
 
 ;; =============================================================================
 ;; Test Helpers
@@ -216,7 +217,7 @@
 
   (testing "kanban handlers map has :batch-update key"
     (let [handlers @(resolve 'hive-mcp.tools.consolidated.kanban/handlers)]
-      (is (fn? (get handlers :batch-update)) ":batch-update handler is a function"))))
+      (is (dispatch/handler? (get handlers :batch-update)) ":batch-update handler is dispatchable"))))
 
 (deftest agent-batch-spawn-wiring
   (testing "agent tool-def has batch-spawn in schema"
@@ -230,7 +231,7 @@
 
   (testing "agent canonical-handlers has :batch-spawn key"
     (let [handlers @(resolve 'hive-mcp.tools.consolidated.agent/canonical-handlers)]
-      (is (fn? (get handlers :batch-spawn)) ":batch-spawn handler is a function"))))
+      (is (dispatch/handler? (get handlers :batch-spawn)) ":batch-spawn handler is dispatchable"))))
 
 (deftest kg-batch-commands-wiring
   (testing "kg tool-def has batch-edge and batch-traverse in schema"
@@ -245,8 +246,8 @@
 
   (testing "kg handlers map has both batch keys"
     (let [handlers @(resolve 'hive-mcp.tools.consolidated.kg/handlers)]
-      (is (fn? (get handlers :batch-edge)) ":batch-edge handler is a function")
-      (is (fn? (get handlers :batch-traverse)) ":batch-traverse handler is a function"))))
+      (is (dispatch/handler? (get handlers :batch-edge)) ":batch-edge handler is dispatchable")
+      (is (dispatch/handler? (get handlers :batch-traverse)) ":batch-traverse handler is dispatchable"))))
 
 (deftest memory-batch-commands-wiring
   (testing "memory advertises batch-add and batch-feedback on its command surface"
@@ -269,7 +270,7 @@
       (doseq [cmd [:batch-add :batch-feedback]]
         (let [{:keys [handler error]} (cli/resolve-handler handlers [cmd])]
           (is (nil? error) (str cmd " resolves through the command router"))
-          (is (fn? handler) (str cmd " handler is a function")))))))
+          (is (dispatch/handler? handler) (str cmd " handler is dispatchable")))))))
 
 (deftest magit-batch-commit-wiring
   (testing "magit tool-def has batch-commit in schema"
@@ -283,7 +284,7 @@
 
   (testing "magit handlers map has :batch-commit key"
     (let [handlers @(resolve 'hive-mcp.tools.consolidated.magit/handlers)]
-      (is (fn? (get handlers :batch-commit)) ":batch-commit handler is a function"))))
+      (is (dispatch/handler? (get handlers :batch-commit)) ":batch-commit handler is dispatchable"))))
 
 ;; =============================================================================
 ;; Per-Tool Batch Handler Invocation (using echo stubs where possible)

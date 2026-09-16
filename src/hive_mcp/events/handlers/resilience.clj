@@ -47,15 +47,23 @@
 (defonce ^:private *registered (atom false))
 
 (defn register-handlers!
-  "Register resilience-layer event handlers. Idempotent.
+  "Register resilience-layer event handlers.
 
    Handlers registered:
-   - :resilience/dim-mismatch — advisory dim-drift observer (L1.4)."
+   - :resilience/dim-mismatch -- advisory dim-drift observer (L1.4).
+
+   Safe to call multiple times, and it REGISTERS every time: `reg-event` is
+   addressed by key and last-writer-wins. The `defonce`'d flag used to skip the
+   body, which meant a hot reload could not rewire this handler. Kanban
+   20260916134011-1246379c.
+
+   Returns true."
   []
-  (when-not @*registered
+  (let [first? (not @*registered)]
     (ev/reg-event :resilience/dim-mismatch [] handle-dim-mismatch)
     (reset! *registered true)
-    (log/info "[hive-events] Resilience handlers registered: :resilience/dim-mismatch")
+    (when first?
+      (log/info "[hive-events] Resilience handlers registered: :resilience/dim-mismatch"))
     true))
 
 (defn reset-registration!
