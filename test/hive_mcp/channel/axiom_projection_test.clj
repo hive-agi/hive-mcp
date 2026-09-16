@@ -107,6 +107,56 @@
   (gen/such-that #(not (re-find #"^#{1,4}\s" %))
                  (gen/not-empty gen/string-alphanumeric)))
 
+(deftest llmlingua-marks-the-rule-as-uncompressible-and-the-story-as-cheap
+  (let [c (str "# AXIOM: terse\n\n"
+               "## The rule\n\nDo the thing.\n\n"
+               "## Why\n\nBecause of a long story.\n")
+        out (ax/llmlingua c)]
+    (is (str/includes? out "<llmlingua, compress=False>\n## The rule")
+        "the binding section refuses compression outright")
+    (is (str/includes? out "<llmlingua, rate=0.4>\n## Why")
+        "the rationale is offered a rate instead")
+    (is (= c (ax/strip-llmlingua out)) "tagging is exactly reversible")))
+
+(deftest the-headerless-preamble-is-never-marked-compressible
+  (let [c "# AXIOM: terse\n\nThe opening statement.\n\n## Why\n\nStory.\n"
+        out (ax/llmlingua c)]
+    (is (str/starts-with? out "<llmlingua, compress=False>\n# AXIOM: terse"))
+    (is (= c (ax/strip-llmlingua out)))))
+
+(deftest llmlingua-and-compact-agree-on-what-is-rationale
+  (let [c (str "# AXIOM: t\n\n## The rule\n\nKeep.\n\n"
+               "## Why\n\nDrop.\n\n## Examples\n\nAlso drop.\n")
+        tagged (ax/llmlingua c)
+        rated (count (re-seq #"<llmlingua, rate=" tagged))
+        compacted (ax/compact c "id")]
+    (is (= 2 rated) "Why and Examples, the same two compact withholds")
+    (is (not (str/includes? compacted "Drop.")))
+    (is (str/includes? tagged "Drop.")
+        "tagging DELEGATES the decision, it does not take it")))
+
+(deftest a-custom-rate-is-honoured
+  (is (str/includes? (ax/llmlingua "# t\n\n## Why\n\nx\n" 0.15)
+                     "<llmlingua, rate=0.15>")))
+
+(defspec tagging-is-exactly-reversible 200
+  (prop/for-all [title (gen/not-empty gen/string-alphanumeric)
+                 rule-lines (gen/vector gen-line 1 5)
+                 why-lines (gen/vector gen-line 1 5)
+                 trailing gen/boolean]
+    (let [c (str "# " title "\n\n## The rule\n\n"
+                 (str/join "\n" rule-lines)
+                 "\n\n## Why\n\n" (str/join "\n" why-lines)
+                 (when trailing "\n"))]
+      (= c (ax/strip-llmlingua (ax/llmlingua c))))))
+
+(defspec every-source-line-survives-tagging-byte-identical 200
+  (prop/for-all [title (gen/not-empty gen/string-alphanumeric)
+                 body (gen/vector gen-line 1 8)]
+    (let [c (str "# " title "\n\n## The rule\n\n" (str/join "\n" body) "\n")
+          out (ax/llmlingua c)]
+      (every? #(str/includes? out %) body))))
+
 (defspec compaction-is-exact-identity-when-nothing-is-withheld 200
   (prop/for-all [title (gen/not-empty gen/string-alphanumeric)
                  body (gen/vector gen-line 1 8)

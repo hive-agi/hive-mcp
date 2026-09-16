@@ -99,6 +99,56 @@
         (or (some #(str/includes? (str %) rationale-marker) (take 2 body))
             (explanatory-header? header)))))
 
+(def ^:const llmlingua-rate
+  "Rate offered for a rationale span. Normative spans are never given a rate;
+   they are marked compress=False, which is a refusal, not a low number."
+  0.4)
+
+(def ^:const llmlingua-close "</llmlingua>")
+
+(def ^:private llmlingua-tag-re #"</?llmlingua(,[^>]*)?>")
+
+(defn- llmlingua-open
+  [rationale? rate]
+  (if rationale?
+    (str "<llmlingua, rate=" rate ">")
+    "<llmlingua, compress=False>"))
+
+(defn llmlingua
+  "CONTENT annotated with LLMLingua-2 per-segment control tags.
+
+   Normative spans are wrapped `<llmlingua, compress=False>` and rationale
+   spans `<llmlingua, rate=N>`, using the same split `compact` withholds by.
+   Every source line survives in order and unchanged; only tag lines are
+   added, so `strip-llmlingua` is an exact inverse.
+
+   This hands an external compressor the safety decision already made here,
+   rather than letting it rediscover which spans are binding."
+  ([content] (llmlingua content llmlingua-rate))
+  ([content rate]
+   (let [src (str content)
+         out (->> (sections src)
+                  (mapcat (fn [{:keys [header body] :as section}]
+                            (concat [(llmlingua-open (withhold? section) rate)]
+                                    (when header [header])
+                                    body
+                                    [llmlingua-close])))
+                  (str/join "\n"))]
+     (if (str/ends-with? src "\n")
+       (str out "\n")
+       out))))
+
+(defn strip-llmlingua
+  "Inverse of `llmlingua`: drop the control-tag lines and return the source."
+  [tagged]
+  (let [src (str tagged)
+        out (->> (str/split-lines src)
+                 (remove #(re-matches llmlingua-tag-re %))
+                 (str/join "\n"))]
+    (if (str/ends-with? src "\n")
+      (str out "\n")
+      out)))
+
 (defn strip-guard-blocks
   "TEXT with every fenced ```guard-rule``` block replaced by a one-line pointer.
 
