@@ -13,8 +13,13 @@
             [malli.core :as m]))
 
 (def ^:const marker
-  "Sentinel bounding a meta-token. A source containing it is left unencoded."
-  "")
+  "Sentinel bounding a meta-token. A source containing it is left unencoded.
+   Must stay ASCII: JSON escapes every control and non-ASCII codepoint to a
+   6-char \\uXXXX sequence, which costs more on the wire than it saves."
+  "~~")
+
+(def ^:private quoted-marker
+  (java.util.regex.Pattern/quote marker))
 
 (def ^:private est-token-chars 5)
 
@@ -56,10 +61,11 @@
        (mapv first)))
 
 (def ^:private word-re
-  #"\d+|\s+|\S+")
+  (re-pattern (str quoted-marker "\\d+" quoted-marker "|\\s+|\\S+")))
 
 (def ^:private subword-re
-  #"\d+|\s+|[A-Za-z0-9]+|[^\sA-Za-z0-9]+")
+  (re-pattern (str quoted-marker "\\d+" quoted-marker
+                   "|\\s+|[A-Za-z0-9]+|[^\\sA-Za-z0-9]+")))
 
 (defn- pass
   "One dictionary pass over `text`, splitting on `split-re` and numbering new
@@ -95,7 +101,7 @@
          :t text}))))
 
 (def ^:private token-re
-  #"\d+")
+  (re-pattern (str quoted-marker "\\d+" quoted-marker)))
 
 (defn decode
   "Reconstruct the source of `x`, which may be an encoded payload or an

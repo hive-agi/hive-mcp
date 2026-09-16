@@ -75,7 +75,7 @@
           out (dict/compress s)]
       (is (dict/compressed? out) "a line-only encoder would decline here")
       (is (= s (dict/decode out)))
-      (is (< 0.2 (dict/ratio s)) (str "ratio was " (dict/ratio s))))))
+      (is (< 0.1 (dict/ratio s)) (str "ratio was " (dict/ratio s))))))
 
 (defspec round-trip-is-exact-for-log-shaped-text 300
   (prop/for-all [s gen-log]
