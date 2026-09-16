@@ -85,6 +85,79 @@
     (is (aud/addressed-to? "coordinator:1269206-hive" {:agent-id "orphan"}))
     (is (aud/addressed-to? "coordinator:1343228-hive" {:agent-id "orphan"}))))
 
+;; --- directed delivery to a project-scoped reader (PIGGYBACK-READER-ID) -----
+;;
+;; Every reader id is suffixed with its project scope, but only a coordinator
+;; lane used to be forgiven that suffix, so a ling could never match its own
+;; :to. The reader is matched by COMPOSING the scope onto the recipient name,
+;; never by stripping it off the reader: composition is total, stripping is
+;; ambiguous for a ling whose own name ends in a project.
+
+(defn- scoped-id
+  "Stands in for hive-dsl.context.identity/make-piggyback-agent-id."
+  [project]
+  (fn [id] (str id "-" project)))
+
+(deftest directed-message-reaches-a-project-scoped-reader-test
+  (let [in-hive-mcp (scoped-id "hive-mcp")
+        msg         {:agent-id "peer-a" :to "inbox-b"}]
+    (testing "the bare reader matches, exactly as before"
+      (is (aud/addressed-to? "inbox-b" msg)))
+    (testing "the project-scoped reader matches its own :to"
+      (is (aud/addressed-to? "inbox-b-hive-mcp" msg in-hive-mcp)))
+    (testing "another ling in the same project does not"
+      (is (not (aud/addressed-to? "other-ling-hive-mcp" msg in-hive-mcp))))
+    (testing "a reader in a DIFFERENT project does not match a scope it is not in"
+      (is (not (aud/addressed-to? "inbox-b-hive-mcp" msg (scoped-id "vtranslate")))))))
+
+(deftest composing-the-scope-beats-stripping-it-test
+  (testing "a ling whose own name ends in the project scope stays distinct"
+    (let [in-hive-mcp (scoped-id "hive-mcp")]
+      ;; ling literally named "worker-hive-mcp" reads as "worker-hive-mcp-hive-mcp"
+      (is (aud/addressed-to? "worker-hive-mcp-hive-mcp"
+                             {:agent-id "peer-a" :to "worker-hive-mcp"}
+                             in-hive-mcp))
+      ;; and a message for plain "worker" must NOT reach it
+      (is (not (aud/addressed-to? "worker-hive-mcp-hive-mcp"
+                                  {:agent-id "peer-a" :to "worker"}
+                                  in-hive-mcp)))
+      ;; while plain "worker" still gets its own
+      (is (aud/addressed-to? "worker-hive-mcp"
+                             {:agent-id "peer-a" :to "worker"}
+                             in-hive-mcp)))))
+
+(deftest scoped-reader-still-obeys-every-other-rule-test
+  (let [in-hive-mcp (scoped-id "hive-mcp")]
+    (testing "a scoped ling still receives a broadcast"
+      (is (aud/addressed-to? "ling-a-hive-mcp"
+                             {:agent-id "peer-b" :broadcast? true}
+                             in-hive-mcp)))
+    (testing "a directed message still excludes the coordinator"
+      (is (not (aud/addressed-to? "coordinator:1-hive-mcp"
+                                  {:agent-id "peer-a" :to "inbox-b"}
+                                  in-hive-mcp))))
+    (testing "the scope is consulted for the DIRECTED rule ALONE: spawner and
+              self-echo matching are left exactly as they were, because
+              widening them changes who reads whose turns"
+      (is (not (aud/addressed-to? "ling-parent-hive-mcp"
+                                  {:agent-id "ling-child" :parent-id "ling-parent"}
+                                  in-hive-mcp))
+          "spawner routing is unchanged by the scope")
+      (is (aud/addressed-to? "ling-parent"
+                             {:agent-id "ling-child" :parent-id "ling-parent"}
+                             in-hive-mcp)
+          "and still works on the bare id"))))
+
+(deftest filter-messages-honours-the-scope-test
+  (let [in-hive-mcp (scoped-id "hive-mcp")
+        msgs [{:agent-id "peer-a" :to "inbox-b" :message "for b"}
+              {:agent-id "peer-a" :to "someone-else" :message "not for b"}
+              {:agent-id "peer-c" :broadcast? true :message "for everyone"}]]
+    (is (= ["for b" "for everyone"]
+           (mapv :message (aud/filter-messages "inbox-b-hive-mcp" msgs in-hive-mcp))))
+    (is (= ["for everyone"]
+           (mapv :message (aud/filter-messages "inbox-b-hive-mcp" msgs))))))
+
 (deftest no-self-echo-for-lings-test
   (testing "a ling does not read back its own shout"
     (is (not (aud/addressed-to? "ling-a" {:agent-id "ling-a" :parent-id "coordinator"}))))

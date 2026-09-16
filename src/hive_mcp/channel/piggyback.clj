@@ -13,7 +13,8 @@
             [hive-mcp.server.guards :as guards]
             [taoensso.timbre :as log]
             [hive-mcp.channel.audience :as audience]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [hive-dsl.context.identity :as ctx-id]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -220,6 +221,16 @@
   []
   (not (false? (config-value [:hivemind :progress-digest]))))
 
+(defn- scoped-id-fn
+  "A 1-arg composer from a bare agent name to this read's project-scoped
+   reader id, or nil when the read carries no project scope. The scope is
+   parsed once and closed over, not per message."
+  [project-id]
+  (when project-id
+    (let [pscope (ctx-id/parse-project-scope project-id)]
+      (fn [id]
+        (ctx-id/make-piggyback-agent-id (ctx-id/parse-caller-id id) pscope)))))
+
 (defn get-messages
   "Get new hivemind messages since last call for this agent+project.
    Dual-path: merges messages from atom-based source and backbone buffer.
@@ -310,7 +321,7 @@
             max-global  (max-ts (filter global? in-context))
             max-project (max-ts (remove global? in-context))
             addressed (if (spawner-routing?)
-                        (audience/filter-messages agent-id in-context)
+                        (audience/filter-messages agent-id in-context (scoped-id-fn project-id))
                         in-context)
             peer-rows (if (spawner-routing?)
                         (audience/peer-traffic-digest agent-id in-context)

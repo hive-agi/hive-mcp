@@ -80,16 +80,25 @@
    \"-<project>\" suffixing, so a shout whose :parent-id is
    \"coordinator:7\" reaches reader \"coordinator:7-hive\". Two coordinator
    ids carrying DIFFERENT sessions are different readers. An id that names
-   the lane with no session at all still matches every lane."
-  [reader-id other-id]
-  (let [r (str reader-id)
-        o (str other-id)]
-    (or (= r o)
-        (and (coordinator-reader? r)
-             (coordinator-reader? o)
-             (let [rs (coordinator-session r)
-                   os (coordinator-session o)]
-               (or (nil? rs) (nil? os) (= rs os)))))))
+   the lane with no session at all still matches every lane.
+
+   `scoped-id`, when given, is a 1-arg fn composing a bare agent name onto
+   this read's project scope. EVERY reader id carries that suffix, not only a
+   coordinator's, so without it a ling cannot match its own name. The scope is
+   COMPOSED onto `other-id` rather than stripped off `reader-id`: composition
+   is total, while stripping cannot tell a ling named \"worker\" in project
+   \"p\" from one named \"worker-p\"."
+  ([reader-id other-id] (same-agent? reader-id other-id nil))
+  ([reader-id other-id scoped-id]
+   (let [r (str reader-id)
+         o (str other-id)]
+     (or (= r o)
+         (and scoped-id (= r (str (scoped-id o))))
+         (and (coordinator-reader? r)
+              (coordinator-reader? o)
+              (let [rs (coordinator-session r)
+                    os (coordinator-session o)]
+                (or (nil? rs) (nil? os) (= rs os))))))))
 
 ;; =============================================================================
 ;; Audience
@@ -97,23 +106,33 @@
 
 (defn addressed-to?
   "Is `msg` part of `reader-id`'s audience? First rule that matches wins; see
-   the namespace docstring for the contract."
-  [reader-id {:keys [agent-id parent-id broadcast? to]}]
-  (let [coord? (coordinator-reader? reader-id)]
-    (cond
-      ;; DIRECTED beats every other rule. Naming a recipient is an act of
-      ;; address, and the whole value of naming one is that nobody else pays
-      ;; for the message -- not the coordinator, not the sender's spawner.
-      (some? to) (same-agent? reader-id to)
-      broadcast? true
-      (and (not coord?) (same-agent? reader-id agent-id)) false
-      (some? parent-id) (same-agent? reader-id parent-id)
-      :else coord?)))
+   the namespace docstring for the contract.
+
+   `scoped-id` composes a bare agent name onto this read's project scope, and
+   is consulted for the DIRECTED rule alone. Spawner and self-echo matching
+   already resolve without it, and widening them changes who reads whose
+   turns; addressing is the one rule a project-suffixed reader could not
+   satisfy for itself."
+  ([reader-id msg] (addressed-to? reader-id msg nil))
+  ([reader-id {:keys [agent-id parent-id broadcast? to]} scoped-id]
+   (let [coord? (coordinator-reader? reader-id)]
+     (cond
+       ;; DIRECTED beats every other rule. Naming a recipient is an act of
+       ;; address, and the whole value of naming one is that nobody else pays
+       ;; for the message -- not the coordinator, not the sender's spawner.
+       (some? to) (same-agent? reader-id to scoped-id)
+       broadcast? true
+       (and (not coord?) (same-agent? reader-id agent-id)) false
+       (some? parent-id) (same-agent? reader-id parent-id)
+       :else coord?))))
 
 (defn filter-messages
-  "Keep only the messages addressed to `reader-id`, in order. Returns a vector."
-  [reader-id msgs]
-  (filterv #(addressed-to? reader-id %) msgs))
+  "Keep only the messages addressed to `reader-id`, in order. Returns a vector.
+   `scoped-id` composes a bare agent name onto this read's project scope; see
+   `same-agent?`."
+  ([reader-id msgs] (filter-messages reader-id msgs nil))
+  ([reader-id msgs scoped-id]
+   (filterv #(addressed-to? reader-id % scoped-id) msgs)))
 
 (defn directed?
   "Does this message name a recipient?"
