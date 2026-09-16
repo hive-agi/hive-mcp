@@ -12,11 +12,16 @@
    make no sense per-op. Adding more commands here is a deliberate decision.
 
    PR4.4 — :create added so batch-create can sweep many task titles at once.
-   :retag added — scope-move + ±tags batches preserve entry id + KG edges."
-  {:update mem-kanban/handle-mem-kanban-move
-   :delete mem-kanban/handle-mem-kanban-delete
-   :create mem-kanban/handle-mem-kanban-create
-   :retag  mem-kanban/handle-mem-kanban-retag})
+   :retag added — scope-move + ±tags batches preserve entry id + KG edges.
+
+   Stored as VARS so a reload reaches the table (20260817195749-0d407e9c).
+   `make-batch-handler` reads `(keys handlers)` for its deprecation warning,
+   routes through `resolve-handler`, and calls what it finds, so all three
+   sites take a var."
+  {:update #'mem-kanban/handle-mem-kanban-move
+   :delete #'mem-kanban/handle-mem-kanban-delete
+   :create #'mem-kanban/handle-mem-kanban-create
+   :retag  #'mem-kanban/handle-mem-kanban-retag})
 
 (defn- with-default-command
   "Set :command on each op only when missing. Never overwrites a caller's

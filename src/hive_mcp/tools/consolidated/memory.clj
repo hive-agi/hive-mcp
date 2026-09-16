@@ -28,7 +28,17 @@
       :memory/get-metadata (mem/handle-mcp-memory-get-metadata params))))
 
 (def handlers
-  {:add         mem/handle-mcp-memory-add
+  "The `memory` verbs, stored as VARS so a reload of `hive-mcp.tools.memory`
+   reaches this table (20260817195749-0d407e9c). Almost every entry there is
+   itself an alias def onto a deeper crud/retrieve namespace, so this seam is
+   the first of two: quoting here makes the TABLE follow a reload of the facade,
+   and the facade's own alias defs are a separate freeze, converted with the
+   rest of them rather than ad hoc.
+
+   The four read verbs keep their inline `fn`: they route through
+   `dispatch-memory-read` rather than naming a handler, so there is no var to
+   quote and the indirection is already at call time."
+  {:add         #'mem/handle-mcp-memory-add
    :query       (fn [params] (dispatch-memory-read :memory/query params))
    ;; `metadata` is an alias onto the QUERY path, which cannot consume an :id
    ;; (handle-query's destructuring drops it) — so an id-bearing call must be
@@ -41,31 +51,31 @@
                                           (assoc params :verbosity "metadata"))))
    :get         (fn [params] (dispatch-memory-read :memory/get params))
    :search      (fn [params] (dispatch-memory-read :memory/search params))
-   :duration    mem/handle-mcp-memory-set-duration
-   :promote     mem/handle-mcp-memory-promote
-   :demote      mem/handle-mcp-memory-demote
-   :log_access  mem/handle-mcp-memory-log-access
-   :feedback    mem/handle-mcp-memory-feedback
-   :helpfulness mem/handle-mcp-memory-helpfulness-ratio
-   :tags        mem/handle-mcp-memory-update-tags
-   :cleanup     mem/handle-mcp-memory-cleanup-expired
-   :expiring    mem/handle-mcp-memory-expiring-soon
-   :expire      mem/handle-mcp-memory-expire
-   :migrate     mem/handle-mcp-memory-migrate-project
-   :migrate-scoped mem/handle-mcp-memory-migrate-scoped
-   :import      mem/handle-mcp-memory-import-json
-   :decay             mem/handle-mcp-memory-decay
-   :xpoll             mem/handle-mcp-memory-xpoll-promote
-   :rename            mem/handle-mcp-memory-rename-project
-   :batch-get         mem/handle-mcp-memory-batch-get
-   :edit              mem/handle-mcp-memory-edit
-   :batch-edit        mem/handle-mcp-memory-batch-edit
-   :reembed           mem/handle-mcp-memory-reembed
-   :batch-reembed     mem/handle-mcp-memory-batch-reembed
+   :duration    #'mem/handle-mcp-memory-set-duration
+   :promote     #'mem/handle-mcp-memory-promote
+   :demote      #'mem/handle-mcp-memory-demote
+   :log_access  #'mem/handle-mcp-memory-log-access
+   :feedback    #'mem/handle-mcp-memory-feedback
+   :helpfulness #'mem/handle-mcp-memory-helpfulness-ratio
+   :tags        #'mem/handle-mcp-memory-update-tags
+   :cleanup     #'mem/handle-mcp-memory-cleanup-expired
+   :expiring    #'mem/handle-mcp-memory-expiring-soon
+   :expire      #'mem/handle-mcp-memory-expire
+   :migrate     #'mem/handle-mcp-memory-migrate-project
+   :migrate-scoped #'mem/handle-mcp-memory-migrate-scoped
+   :import      #'mem/handle-mcp-memory-import-json
+   :decay             #'mem/handle-mcp-memory-decay
+   :xpoll             #'mem/handle-mcp-memory-xpoll-promote
+   :rename            #'mem/handle-mcp-memory-rename-project
+   :batch-get         #'mem/handle-mcp-memory-batch-get
+   :edit              #'mem/handle-mcp-memory-edit
+   :batch-edit        #'mem/handle-mcp-memory-batch-edit
+   :reembed           #'mem/handle-mcp-memory-reembed
+   :batch-reembed     #'mem/handle-mcp-memory-batch-reembed
    ;; Human review queue for write-gated types. Deliberately NOT in
    ;; write-commands: a reviewer wants the verdict applied and reported in the
    ;; same turn, not queued behind an async task.
-   :review            mem/handle-mcp-memory-review})
+   :review            #'mem/handle-mcp-memory-review})
 
 (defn- make-single-command-batch
   "Wrap make-batch-handler for batch ops targeting one command."

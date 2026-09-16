@@ -267,16 +267,24 @@
 
 (def handler-map
   "Maps EDN keyword handlers to implementation functions.
-   Used by registry/register-handlers! for EDN spec compilation."
-  {:start       handle-start
-   :gather      handle-gather
-   :adopt       handle-adopt
-   :crystallize handle-crystallize
-   :kg-edges    handle-kg-edges
-   :notify      handle-notify
-   :evict       handle-evict
-   :end         handle-end
-   :error       handle-error})
+   Used by registry/register-handlers! for EDN spec compilation.
+
+   Stored as VARS so a reload of this namespace reaches the table
+   (20260817195749-0d407e9c). Cleared by the same trace that cleared
+   complete-session/handler-map: `hive.events.fsm/compile` only does
+   `(get handlers-map handler)` and rejects nil, `validate-state-spec` only
+   asks `(nil? handler)`, and `normalize-handler` calls
+   `(handler resources data)`. Nothing on the HANDLER path tests `fn?`. The
+   predicate path is a different story, see 20260916133344-05d7e65b."
+  {:start       #'handle-start
+   :gather      #'handle-gather
+   :adopt       #'handle-adopt
+   :crystallize #'handle-crystallize
+   :kg-edges    #'handle-kg-edges
+   :notify      #'handle-notify
+   :evict       #'handle-evict
+   :end         #'handle-end
+   :error       #'handle-error})
 
 ;; =============================================================================
 ;; In-Code FSM Spec (inline functions, no EDN needed)
