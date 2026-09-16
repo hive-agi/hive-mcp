@@ -8,7 +8,8 @@
             [hive-mcp.addons.core :as addon-core]
             [hive-mcp.extensions.lifecycle :as lcm]
             [hive-mcp.extensions.registry :as ext]
-            [hive-mcp.tools.composite :as composite]))
+            [hive-mcp.tools.composite :as composite]
+            [hive-addon.registry.commands :as acmds]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -77,7 +78,7 @@
   ((composite/build-merged-handler "code" {}) {:command cmd}))
 
 (defn- command-owner [cmd]
-  (:addon (get (ext/get-contributed-commands "code") cmd)))
+  (:addon (get (acmds/get-commands "code") cmd)))
 
 (defn- registered-tool [n]
   (first (filter #(= n (:name %)) (ext/get-registered-tools))))

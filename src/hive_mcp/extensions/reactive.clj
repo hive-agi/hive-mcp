@@ -14,7 +14,8 @@
             [hive-mcp.dns.result :refer [rescue]]
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.tools.composite :as composite]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-addon.registry.commands :as acmds]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -35,7 +36,7 @@
    Returns the tool-def, or nil."
   [tool-name]
   (when-let [desc (get composite-descriptions tool-name)]
-    (if (empty? (ext/get-contributed-commands tool-name))
+    (if (empty? (acmds/get-commands tool-name))
       (do (ext/deregister-tool! tool-name) nil)
       (let [t (composite/build-composite-tool tool-name desc)]
         (ext/register-tool! t)

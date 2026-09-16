@@ -156,10 +156,17 @@
 (defonce ^:private initialized? (atom false))
 
 (defn init!
-  "Register everything once per JVM. Safe to call repeatedly."
+  "Register everything, every time. Returns true.
+
+   Every registration `register-all!` performs is KEY-ADDRESSED (`reg-cofx`,
+   `reg-fx`, `reg-event-fx`), so re-running REPLACES rather than accumulates.
+   Gating the body pinned the closures compiled at load time, and a reload
+   could not rewire them. The flag survives only to record that registration
+   has happened at least once. Kanban 20260916134011-1246379c."
   []
-  (when (compare-and-set! initialized? false true)
-    (register-all!)))
+  (register-all!)
+  (reset! initialized? true)
+  true)
 
 (defn dispatch-move!
   "Public boundary entry point. Synchronously dispatch a move event and

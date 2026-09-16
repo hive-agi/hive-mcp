@@ -18,7 +18,8 @@
             [hive-mcp.agent.context :as ctx]      ;; on-session-end
             [hive-mcp.dns.result :as result]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.session.current :as session]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -32,11 +33,18 @@
 
    Writes the progress note through `mem-proto/add-entry!` (via
    crystal.persist). Returns {:success true :progress-note-id id :task task}
-   or {:success false :error msg :task task}."
+   or {:success false :error msg :task task}.
+
+   The completed-task row is stamped with the writing session's id, so a
+   scoped wrap harvests and clears its own rows and leaves a concurrent
+   session's alone. Kanban 20260915164015-7e057e5b."
   [{:keys [id title project-id _context _priority _started] :as task}]
   (log/info "Kanban DONE hook triggered for task:" id title "project-id:" project-id)
   (result/rescue nil
-                 (do (ds/register-completed-task! id {:title title :project-id project-id})
+                 (do (ds/register-completed-task!
+                      id {:title title
+                          :project-id project-id
+                          :session-id (result/rescue nil (session/session-id {:project-id project-id}))})
                      (log/debug "Registered completed task in DataScript:" id "project-id:" project-id)))
   (let [progress-note (crystal/task-to-progress-note
                        (assoc task :completed-at (.toString (java.time.Instant/now))))
@@ -102,15 +110,50 @@
 ;; Auto-Wrap Session-End Handler
 ;; =============================================================================
 
+(defn clear-harvested!
+  "Retract exactly the session-registry rows this wrap consumed.
+
+   `harvest-all` reports what it actually read as :harvested-task-ids and
+   :harvested-movement-ids, and the 1-arity clears retract only those. The
+   0-arity clears are the reset button -- they retract every row in the store
+   regardless of owner, and calling them at the end of a wrap is what let the
+   first session to finish destroy everyone else's unharvested records.
+
+   Refuses to clear anything when the harvest was UNSCOPED (no session-ref):
+   an unscoped harvest read rows it does not own, so clearing what it read
+   would delete another session's rows by a different route.
+   Kanban 20260915164015-7e057e5b."
+  [session-ref harvested]
+  (if-not (:session/id session-ref)
+    (do (log/debug "clear-harvested!: unscoped harvest, clearing nothing")
+        {:tasks 0 :movements 0 :skipped :unscoped})
+    (let [task-ids (vec (:harvested-task-ids harvested))
+          mv-ids   (vec (:harvested-movement-ids harvested))
+          tasks    (result/rescue 0 (ds/clear-completed-tasks! task-ids))
+          mvs      (result/rescue 0 (ds/clear-kanban-movements! mv-ids))]
+      (log/info "clear-harvested!: retracted" tasks "tasks and" mvs
+                "movements for session" (:session/id session-ref))
+      {:tasks tasks :movements mvs})))
+
 (defn- on-session-end
-  "Handler for session-end event."
+  "Handler for session-end event.
+
+   This is the LIVE wrap path. It resolves the SessionRef this process runs as
+   and hands it to the harvest, so the wrap reads only the rows it owns; then it
+   clears EXACTLY the ids it harvested. Before that pairing, the first wrap on a
+   box harvested the whole store and cleared the whole store, destroying every
+   concurrent session's unharvested records. Kanban 20260915164015-7e057e5b."
   [event-ctx]
   (log/info "Auto-wrap triggered on session-end:" (:reason event-ctx "shutdown"))
   (let [r (result/try-effect* :crystal/session-end-failed
             (let [dir (or (:directory event-ctx) (ctx/current-directory))
                   agent-id (or (:agent-id event-ctx) (ctx/current-agent-id))
-                  harvested (collect/harvest-all {:directory dir :agent-id agent-id})
+                  ref (result/rescue nil (session/session-ref {:project-id (:project-id event-ctx)}))
+                  harvested (collect/harvest-all {:directory dir
+                                                  :agent-id agent-id
+                                                  :session-ref ref})
                   result (synthesis/synthesize harvested)]
+              (clear-harvested! ref harvested)
               (when (channel/server-connected?)
                 (channel/broadcast! {:type "session-ended"
                                      :wrap-completed true
