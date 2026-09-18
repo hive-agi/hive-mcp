@@ -4,7 +4,8 @@
    Memory's own commands stay flat (add, query, search, etc.).
    Core subdomains use nested prefixes: 'kg edge', 'migration backup'.
    Addons extend via contribute-commands! \"memory\" (OCP)."
-  (:require [clojure.string :as str]
+  (:require [clojure.data.json :as json]
+            [clojure.string :as str]
             [hive-mcp.events.core :as ev]
             [hive-mcp.memory.type-registry :as type-registry]
             [hive-mcp.tools.cli :refer [make-batch-handler]]
@@ -79,23 +80,54 @@
    :review            #'mem/handle-mcp-memory-review})
 
 (defn- make-single-command-batch
-  "Wrap make-batch-handler for batch ops targeting one command."
+  "Wrap make-batch-handler for batch ops targeting one command.
+
+   Only an op whose :command names CMD-KW reaches the wrapped handler, and its
+   :command is set to `(name cmd-kw)` first — the behaviour a valid op has
+   always had. An op naming anything else — a nested sub-domain like \"kg edge\",
+   or an unknown verb — is answered per-op WITHOUT invoking the handler.
+
+   Rewriting EVERY op's :command (the 20260803 behaviour) coerced nine `memory
+   batch-add :command \"kg edge\"` ops into nine `add` calls that each answered
+   \"Invalid memory type: nil\", while the envelope still reported
+   {:success true} for all nine and summary {:total 9 :success 9 :failed 0}."
   [cmd-kw handler-fn]
-  (let [batch-name (str "batch-" (name cmd-kw))
-        batch-fn   (make-batch-handler {cmd-kw handler-fn})]
+  (let [cmd-name (name cmd-kw)
+        batch-fn (make-batch-handler {cmd-kw handler-fn})
+        targets? (fn [op] (= (some-> (:command op) (str/trim) (str/lower-case)) cmd-name))
+        rejection (fn [op]
+                    {:success false
+                     :command (:command op)
+                     :error (str "batch-" cmd-name " only accepts '" cmd-name
+                                 "' operations; got: " (pr-str (:command op))
+                                 ". Use the multi tool's operations batch for mixed-command batches.")})]
     (fn [{:keys [operations] :as params}]
-      (batch-fn
-       (assoc params :operations
-              (mapv (fn [op]
-                      (let [cmd (:command op)
-                            norm (some-> cmd (str/trim) (str/lower-case))]
-                        (if (= norm (name cmd-kw))
-                          op
-                          (assoc op :command "__rejected__"
-                                 :__rejection__
-                                 (format "%s only accepts '%s' operations; got: %s. Use the multi tool's operations batch for mixed-command batches."
-                                         batch-name (name cmd-kw) (pr-str cmd))))))
-                    operations))))))
+      (if (or (nil? operations) (empty? operations))
+        (batch-fn params)
+        (let [accepted (into [] (comp (filter targets?)
+                                      (map #(assoc % :command cmd-name)))
+                             operations)
+              ;; Only accepted ops reach the wrapped handler, so its results
+              ;; vector is aligned with ACCEPTED, not with OPERATIONS. Zip it
+              ;; back onto the positions the caller supplied.
+              by-index (if (empty? accepted)
+                         {}
+                         (zipmap (->> operations
+                                      (map-indexed (fn [i op] (when (targets? op) i)))
+                                      (remove nil?))
+                                 (:results (json/read-str
+                                            (:text (batch-fn (assoc params :operations accepted)))
+                                            :key-fn keyword))))
+              results (mapv (fn [i op]
+                              (if (targets? op) (get by-index i) (rejection op)))
+                            (range) operations)
+              succeeded (count (filter :success results))]
+          {:type "text"
+           :text (json/write-str
+                  {:results results
+                   :summary {:total   (count operations)
+                             :success succeeded
+                             :failed  (- (count operations) succeeded)}})})))))
 
 ;; =============================================================================
 ;; Canonical Handlers — memory flat + kg/migration nested (core-owned)

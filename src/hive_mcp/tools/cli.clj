@@ -113,7 +113,11 @@
         ;; Try next segment
         :else
         (let [seg       (first remaining)
-              next-node (get node seg)]
+              next-node (or (get node seg)
+                            (when (keyword? seg)
+                              (get node (name seg)))
+                            (when (string? seg)
+                              (get node (keyword seg))))]
           (cond
             ;; Leaf handler found
             (dispatch/handler? next-node)
@@ -392,11 +396,13 @@
                                    (let [resolved (resolve-handler handlers path)]
                                      (if-let [handler (:handler resolved)]
                                        (let [merged (merge shared-params (dissoc op :command))
-                                             result (handler (assoc merged :command (:command op)))]
-                                         {:success (not (mcp-error-result? result))
-                                          :command (:command op) :result result
-                                          :error (when (mcp-error-result? result)
-                                                   (or (and (map? result) (:error result)) "operation returned an error envelope"))})
+                                             result (handler (assoc merged :command (:command op)))
+                                             failed? (mcp-error-result? result)]
+                                         (cond-> {:success (not failed?)
+                                                  :command (:command op)
+                                                  :result result}
+                                           failed? (assoc :error (or (:error result)
+                                                                     "operation returned an error envelope"))))
                                        (if-let [rej (:__rejection__ op)]
                                          {:success false :command (:command op) :error rej}
                                          {:success false :command (:command op)
