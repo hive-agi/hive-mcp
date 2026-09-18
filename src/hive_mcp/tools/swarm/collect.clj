@@ -94,6 +94,12 @@
   [parsed]
   (contains? #{"completed" "timeout" "error"} (:status parsed)))
 
+(defn- unknown-to-emacs?
+  "True when Emacs answered that it holds no such task."
+  [parsed]
+  (and (= "error" (:status parsed))
+       (= "Task not found" (:error parsed))))
+
 (defn- parse-collect-result
   "Parse raw Elisp JSON string. Returns keyword-keyed map or nil on failure."
   [raw]
@@ -124,6 +130,7 @@
       (let [parsed (parse-collect-result result)]
         (cond
           (nil? parsed)          (build-parse-error-response task_id elapsed result)
+          (unknown-to-emacs? parsed) nil  ;; not Emacs's task: keep polling the journal
           (terminal-status? parsed) (core/mcp-success parsed)
           (= "polling" (:status parsed)) nil  ;; continue polling
           :else                  (build-timeout-response task_id elapsed "unknown-status"))))))
