@@ -18,7 +18,7 @@
 
    FP: pure functions for schema and tx-data construction; side effects
    (connect, transact) confined to the record methods."
-  (:require [hive-mcp.swarm.bootstrap.protocol :as proto]
+  (:require [hive-spi.swarm.bootstrap :as proto]
             [clojure.java.io :as io]
             [taoensso.timbre :as log]
             [hive-mcp.swarm.bootstrap.datahike-driver :as d]))

@@ -7,7 +7,7 @@
 
    DDD: Null Object pattern keeps consumers branch-free.
    FP: all methods are pure (return `this`), no side effects."
-  (:require [hive-mcp.swarm.bootstrap.protocol :as proto]
+  (:require [hive-spi.swarm.bootstrap :as proto]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

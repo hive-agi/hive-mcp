@@ -12,7 +12,7 @@
             [hive-mcp.swarm.sync :as sync]
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.swarm.bootstrap.datahike :as dh]
-            [hive-mcp.swarm.bootstrap.protocol :as proto]
+            [hive-spi.swarm.bootstrap :as proto]
             [hive-mcp.channel.core :as channel])
   (:import [java.nio.file Files]
            [java.nio.file.attribute FileAttribute]))

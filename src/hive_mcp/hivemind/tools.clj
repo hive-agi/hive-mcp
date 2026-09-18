@@ -6,7 +6,7 @@
             [hive-mcp.hivemind.status :as status]
             [hive-mcp.hivemind.event-registry :as event-registry]
             [hive-mcp.agent.context :as ctx]
-            [hive-mcp.swarm.protocol :as proto]
+            [hive-spi.swarm.protocol :as proto]
             [hive-mcp.swarm.datascript.registry :as registry]
             [hive-mcp.tools.memory.scope :as mem-scope]
             [clojure.data.json :as json]

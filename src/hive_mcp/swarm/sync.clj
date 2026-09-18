@@ -28,7 +28,7 @@
    - `get-field`: Unified event field extraction (string or keyword keys)
    - `dispatch-event!`: Safe event dispatch with error handling
    - Handler functions use consistent field extraction pattern"
-  (:require [hive-mcp.swarm.protocol :as proto]
+  (:require [hive-spi.swarm.protocol :as proto]
             [hive-mcp.swarm.bootstrap.factory :as bootstrap]
             [hive-mcp.swarm.bootstrap.noop :as bootstrap-noop]
             [hive-mcp.swarm.datascript.registry :as registry]
