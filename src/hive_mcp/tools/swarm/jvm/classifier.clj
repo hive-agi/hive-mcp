@@ -3,7 +3,7 @@
   (:require [clojure.java.shell :as shell]
             [clojure.string :as str]
             [hive-mcp.tools.swarm.jvm.parser :as parser]
-            [hive-mcp.dns.result :refer [rescue]]))
+            [hive-dsl.result :refer [rescue]]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later

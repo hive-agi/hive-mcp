@@ -22,7 +22,7 @@
   (:require [clojure.string :as str]
             [hive-mcp.batch :as batch]
             [hive-mcp.batch.protocol :as proto]
-            [hive-mcp.dns.result :refer [rescue]]
+            [hive-dsl.result :refer [rescue]]
             [hive-mcp.tools.cli :as cli]
             [hive-mcp.dispatch.handler :as dispatch]))
 

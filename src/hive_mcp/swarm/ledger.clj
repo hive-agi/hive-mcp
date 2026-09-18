@@ -10,7 +10,7 @@
    Store construction is explicit (DIP): callers hold an ILedgerStore and pass
    it in. Reads cap result size via :limit (default 500) — never load all rows."
   (:require [clojure.edn :as edn]
-            [hive-mcp.dns.result :refer [rescue]]
+            [hive-dsl.result :refer [rescue]]
             [taoensso.timbre :as log]
             [hive-mcp.swarm.datalevin.driver :as dl]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
