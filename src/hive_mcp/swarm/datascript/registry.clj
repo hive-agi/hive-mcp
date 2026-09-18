@@ -1,7 +1,7 @@
 (ns hive-mcp.swarm.datascript.registry
   "DataScript implementation of all ISP-segregated swarm protocols."
   (:require [datascript.core :as d]
-            [hive-mcp.swarm.protocol :as proto]
+            [hive-spi.swarm.protocol :as proto]
             [hive-mcp.swarm.datascript.connection :as conn]
             [hive-mcp.swarm.datascript.lings :as lings]
             [hive-mcp.swarm.datascript.queries :as queries]

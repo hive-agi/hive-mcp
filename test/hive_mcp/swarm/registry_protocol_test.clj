@@ -12,7 +12,7 @@
 
    CLARITY-L: Tests protocol boundary, not implementation internals."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
-            [hive-mcp.swarm.protocol :as proto]
+            [hive-spi.swarm.protocol :as proto]
             [hive-mcp.swarm.datascript.registry :as registry]
             [hive-mcp.swarm.datascript.connection :as conn]
             [hive-test.isolation :as iso]

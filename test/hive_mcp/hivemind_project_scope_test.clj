@@ -14,7 +14,7 @@
             [hive-dsl.bounded-atom :refer [bclear! bget]]
             [hive-mcp.hivemind.core :as hivemind]
             [hive-mcp.channel.piggyback :as piggyback]
-            [hive-mcp.swarm.protocol :as proto]
+            [hive-spi.swarm.protocol :as proto]
             [hive-mcp.swarm.datascript.registry :as registry]
             [hive-mcp.swarm.datascript.connection :as conn]
             [hive-mcp.tools.memory.scope :as mem-scope]

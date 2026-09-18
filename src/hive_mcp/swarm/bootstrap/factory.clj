@@ -9,7 +9,7 @@
      1. explicit `:source` arg (e.g. from integrant config)
      2. `services.swarm-sync.source` in config.edn
      3. fallback default — `:emacs` (preserves legacy behavior)"
-  (:require [hive-mcp.swarm.bootstrap.protocol :as proto]
+  (:require [hive-spi.swarm.bootstrap :as proto]
             [hive-mcp.swarm.bootstrap.emacs :as emacs]
             [hive-mcp.swarm.bootstrap.noop :as noop]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]))

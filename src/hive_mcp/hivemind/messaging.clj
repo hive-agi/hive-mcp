@@ -16,7 +16,7 @@
             [hive-mcp.protocols.vessel :as vessel]
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.swarm.datascript.registry :as registry]
-            [hive-mcp.swarm.protocol :as proto]
+            [hive-spi.swarm.protocol :as proto]
             [hive-mcp.tools.memory.scope :as mem-scope]
             [taoensso.timbre :as log]
             [hive-mcp.channel.a2a :as a2a]

@@ -7,7 +7,7 @@
             [hive-mcp.hivemind.state :as state]
             [hive-mcp.swarm.datascript.registry :as registry]
             [hive-mcp.swarm.logic :as logic]
-            [hive-mcp.swarm.protocol :as proto]
+            [hive-spi.swarm.protocol :as proto]
             [hive-mcp.tools.memory.scope :as mem-scope]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>

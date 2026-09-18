@@ -16,7 +16,7 @@
             [clojure.java.io :as io]
             [hive-test.trifecta :refer [deftest-facets]]
             [hive-mcp.swarm.bootstrap.datahike :as dh]
-            [hive-mcp.swarm.bootstrap.protocol :as proto])
+            [hive-spi.swarm.bootstrap :as proto])
   (:import [java.nio.file Files Path]
            [java.nio.file.attribute FileAttribute]))
 
