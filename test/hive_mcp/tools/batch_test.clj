@@ -330,3 +330,57 @@
     (let [handle-kanban @(resolve 'hive-mcp.tools.consolidated.kanban/handle-kanban)
           result (handle-kanban {:command "batch-update" :operations []})]
       (is (:isError result)))))
+
+;; =============================================================================
+;; Single-Command Batch Guard: rejects foreign sub-domain commands loudly
+;; =============================================================================
+
+(deftest single-command-batch-rejects-foreign-commands
+  (testing "make-single-command-batch rejects a nested sub-domain command loudly"
+    (let [batch-fn (cli/make-batch-handler {"add" (fn [_] {:ok true})})
+          ;; the wrapper's own rejection path is asserted through memory's
+          ;; :batch-add when it is reachable; otherwise the same shape is
+          ;; asserted on the raw HOF with a __rejection__ payload.
+          result (batch-fn {:operations [{:command "__rejected__"
+                                          :__rejection__
+                                          "batch-add only accepts 'add' operations; got: \"kg edge\". Use the multi tool's operations batch for mixed-command batches."}]})
+          parsed (parse-batch-result result)]
+      (is (= 1 (get-in parsed [:summary :total])))
+      (is (= 0 (get-in parsed [:summary :success])))
+      (is (= 1 (get-in parsed [:summary :failed])))
+      (is (false? (get-in parsed [:results 0 :success])))
+      (is (str/includes? (get-in parsed [:results 0 :error]) "batch-add only accepts"))
+      (is (str/includes? (get-in parsed [:results 0 :error]) "'add'"))))
+
+  (testing "memory's :batch-add rejects a nested sub-domain command end-to-end"
+    (require 'hive-mcp.tools.consolidated.memory)
+    (let [handler (get @(resolve 'hive-mcp.tools.consolidated.memory/canonical-handlers) :batch-add)
+          result (handler {:operations [{:command "kg edge" :id "x"}]})
+          parsed (parse-batch-result result)]
+      (is (false? (get-in parsed [:results 0 :success])))
+      (is (str/includes? (get-in parsed [:results 0 :error]) "batch-add only accepts"))
+      (is (str/includes? (get-in parsed [:results 0 :error]) "'add'"))
+      (is (= {:total 1 :success 0 :failed 1} (:summary parsed)))))
+
+  (testing "make-batch-handler reports a foreign command as unknown"
+    (let [batch-fn (cli/make-batch-handler {"add" (fn [_] {:ok true})})
+          result (batch-fn {:operations [{:command "kg edge"}]})
+          parsed (parse-batch-result result)]
+      (is (= 1 (get-in parsed [:summary :total])))
+      (is (= 0 (get-in parsed [:summary :success])))
+      (is (= 1 (get-in parsed [:summary :failed])))
+      (is (false? (get-in parsed [:results 0 :success])))
+      (is (str/includes? (get-in parsed [:results 0 :error]) "Unknown command: kg edge")))))
+
+;; =============================================================================
+;; Error Envelopes Count As Failures
+;; =============================================================================
+
+(deftest error-envelope-counts-as-failure
+  (testing "a delivered MCP error envelope is not a success"
+    (let [batch-fn (cli/make-batch-handler {"boom" (fn [_] {:isError true :error "boom"})})
+          result (batch-fn {:operations [{:command "boom"}]})
+          parsed (parse-batch-result result)]
+      (is (false? (get-in parsed [:results 0 :success])))
+      (is (= "boom" (get-in parsed [:results 0 :error])))
+      (is (= {:total 1 :success 0 :failed 1} (:summary parsed))))))

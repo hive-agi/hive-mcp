@@ -4,7 +4,8 @@
    Memory's own commands stay flat (add, query, search, etc.).
    Core subdomains use nested prefixes: 'kg edge', 'migration backup'.
    Addons extend via contribute-commands! \"memory\" (OCP)."
-  (:require [hive-mcp.events.core :as ev]
+  (:require [clojure.string :as str]
+            [hive-mcp.events.core :as ev]
             [hive-mcp.memory.type-registry :as type-registry]
             [hive-mcp.tools.cli :refer [make-batch-handler]]
             [hive-mcp.tools.composite :as composite]
@@ -80,10 +81,21 @@
 (defn- make-single-command-batch
   "Wrap make-batch-handler for batch ops targeting one command."
   [cmd-kw handler-fn]
-  (let [batch-fn (make-batch-handler {cmd-kw handler-fn})]
+  (let [batch-name (str "batch-" (name cmd-kw))
+        batch-fn   (make-batch-handler {cmd-kw handler-fn})]
     (fn [{:keys [operations] :as params}]
-      (batch-fn (assoc params :operations
-                       (mapv #(assoc % :command (name cmd-kw)) operations))))))
+      (batch-fn
+       (assoc params :operations
+              (mapv (fn [op]
+                      (let [cmd (:command op)
+                            norm (some-> cmd (str/trim) (str/lower-case))]
+                        (if (= norm (name cmd-kw))
+                          op
+                          (assoc op :command "__rejected__"
+                                 :__rejection__
+                                 (format "%s only accepts '%s' operations; got: %s. Use the multi tool's operations batch for mixed-command batches."
+                                         batch-name (name cmd-kw) (pr-str cmd))))))
+                    operations))))))
 
 ;; =============================================================================
 ;; Canonical Handlers — memory flat + kg/migration nested (core-owned)

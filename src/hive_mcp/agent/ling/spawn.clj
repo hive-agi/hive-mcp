@@ -25,7 +25,8 @@
    :presets (:slave/presets slave)
    :project-id (:slave/project-id slave)
    :spawn-mode (or (:ling/spawn-mode slave) :claude)
-   :model (:ling/model slave)})
+   :model (:ling/model slave)
+   :token-budget (:ling/token-budget slave)})
 
 (declare ->ling)
 
@@ -51,6 +52,7 @@
      :cwd (:cwd ling)
      :project-id (:project-id ling)
      :ling-id (:id ling)
+     :token-budget (:token-budget ling)
      :max-budget-usd (or (:max-budget-usd opts) (:max-budget-usd ling))
      :task (:task opts)}))
 
@@ -210,16 +212,18 @@
       :else nil)))
 
 (defn- stamp-spawn-metadata!
-  [{:keys [mode effective-model] :as plan} slave-id headless?]
+  [{:keys [mode effective-model token-budget] :as plan} slave-id headless?]
   (let [now (System/currentTimeMillis)
         provider (provider-name plan)]
     (spawn-store/update-slave! (spawn-store/get-store)
                                slave-id
                                (cond-> {:ling/spawn-mode mode
-                                         :ling/model (or effective-model "claude")
-                                         :slave/alive? true
-                                         :slave/spawned-at now
-                                         :slave/last-active-at now}
+                                        :ling/model (or effective-model "claude")
+                                        :slave/alive? true
+                                        :slave/spawned-at now
+                                        :slave/last-active-at now}
+                                 (some? token-budget)
+                                 (assoc :ling/token-budget token-budget)
                                  provider
                                  (assoc :ling/provider provider)
                                  headless?
@@ -319,7 +323,7 @@
       (dispatch-when-ready! plan slave-id enriched-task headless?)
       slave-id)))
 
-(defrecord Ling [id cwd presets project-id spawn-mode model provider kg-compress? sliding-window-size agents max-budget-usd]
+(defrecord Ling [id cwd presets project-id spawn-mode model provider token-budget kg-compress? sliding-window-size agents max-budget-usd]
   IAgent
 
   (spawn! [this opts]
@@ -478,6 +482,7 @@
                         :spawn-mode effective-spawn-mode
                         :model model-val}
                  (:provider opts)           (assoc :provider (:provider opts))
+                 (:token-budget opts)       (assoc :token-budget (:token-budget opts))
                  (some? (:kg-compress? opts)) (assoc :kg-compress? (:kg-compress? opts))
                  (some? (:verbose? opts))   (assoc :verbose? (:verbose? opts))
                  (:llm-retries opts)        (assoc :llm-retries (:llm-retries opts))

@@ -350,6 +350,12 @@
        "hive-mcp.multi.batchables/{memory,kg,kanban}-batchable for the pattern."
        {:commands (sort (map name (keys handlers)))}))))
 
+(defn- mcp-error-result?
+  "True when a handler result is an MCP error envelope (delivered, but failed)."
+  [result]
+  (or (and (map? result) (true? (:isError result)))
+      (and (map? result) (some? (:error result)))))
+
 (defn make-batch-handler
   "Higher-order function: takes a handlers map (same as make-cli-handler),
    returns a handler that accepts {:operations [{:command ... :param1 ...}, ...], :parallel bool}.
@@ -387,9 +393,14 @@
                                      (if-let [handler (:handler resolved)]
                                        (let [merged (merge shared-params (dissoc op :command))
                                              result (handler (assoc merged :command (:command op)))]
-                                         {:success true :command (:command op) :result result})
-                                       {:success false :command (:command op)
-                                        :error (str "Unknown command: " (:command op))}))))
+                                         {:success (not (mcp-error-result? result))
+                                          :command (:command op) :result result
+                                          :error (when (mcp-error-result? result)
+                                                   (or (and (map? result) (:error result)) "operation returned an error envelope"))})
+                                       (if-let [rej (:__rejection__ op)]
+                                         {:success false :command (:command op) :error rej}
+                                         {:success false :command (:command op)
+                                          :error (str "Unknown command: " (:command op))})))))
                                (catch Exception e
                                  {:success false :command (:command op) :error (ex-message e)})))
                            operations)]

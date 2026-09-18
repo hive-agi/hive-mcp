@@ -256,6 +256,10 @@
              \"openrouter\"). Absent when the spawn named none and routing chose.
              Lets swarm observers (Olympus) show which provider each agent runs on."}
 
+   :ling/token-budget
+   {:db/doc "Positive token ceiling used when reconstructing this ling's context.
+             Persisted so later dispatches preserve the cheap/frontier budget split."}
+
    ;;; =========================================================================
    ;;; Task Entity
    ;;; =========================================================================

@@ -90,6 +90,7 @@
     (some? (:kg-compress? ling)) (assoc :kg-compress? (:kg-compress? ling))
     (some? (:verbose? ling)) (assoc :verbose? (:verbose? ling))
     (:llm-retries ling) (assoc :llm-retries (:llm-retries ling))
+    (:token-budget ling) (assoc :token-budget (:token-budget ling))
     (:sliding-window-size ling) (assoc :sliding-window-size (:sliding-window-size ling))
     (:agents ling) (assoc :agents (:agents ling))))
 

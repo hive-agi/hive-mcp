@@ -111,6 +111,27 @@
             (when (audience/coordinator-session caller) caller)
             caller)))))
 
+(defn- normalize-tier
+  "Normalize the optional economy role. cheap delegates model selection to the
+   configured ling default; frontier permits an explicit model."
+  [v]
+  (when (some? v)
+    (let [tier (if (keyword? v) v (keyword (str v)))]
+      (if (contains? #{:cheap :frontier} tier)
+        tier
+        (throw (ex-info "tier must be cheap or frontier"
+                        {:param "tier" :value v}))))))
+
+(defn- normalize-token-budget
+  "Normalize a positive context-reconstruction budget from MCP JSON."
+  [v]
+  (when (some? v)
+    (let [n (if (string? v) (parse-long v) v)]
+      (if (and (integer? n) (pos? n))
+        (long n)
+        (throw (ex-info "token_budget must be a positive integer"
+                        {:param "token_budget" :value v}))))))
+
 (defn handle-spawn
   "Spawn a new ling agent.
 
@@ -122,7 +143,7 @@
 
    The full request map rides on opts under :spawn/request for the
    :spawn/opts-overlay extension seam, and is stripped before planning."
-  [{:keys [type name cwd presets model provider task project_id kanban_task_id spawn_mode agents max_budget_usd kg_compress sliding_window_size verbose llm_retries] :as params}]
+  [{:keys [type name cwd presets model provider tier token_budget task project_id kanban_task_id spawn_mode agents max_budget_usd kg_compress sliding_window_size verbose llm_retries] :as params}]
   ;; Layer 3: Defense-in-depth spawn guard
   (if-let [_ (when (guards/child-ling?) :denied)]
     (do
@@ -149,8 +170,12 @@
         (try
           ;; Resolve provider+model via registry chain
           (let [parent (effective-parent params)
+                worker-tier (normalize-tier tier)
+                token-budget (normalize-token-budget token_budget)
                 resolved (llm-registry/resolve-provider-model
-                           {:provider provider :model model :agent-type agent-type})
+                           {:provider provider
+                            :model (if (= :cheap worker-tier) nil model)
+                            :agent-type agent-type})
                 effective-model (:model resolved)
                 effective-provider (:provider resolved)
                 agent-id (or name (helpers/generate-agent-id agent-type))
@@ -191,6 +216,7 @@
                                                        llm_retries       (assoc :llm-retries (if (string? llm_retries)
                                                                                                (parse-long llm_retries)
                                                                                                llm_retries))
+                                                       token-budget      (assoc :token-budget token-budget)
                                                        sliding_window_size (assoc :sliding-window-size sliding_window_size)))
                     slave-id (proto/spawn! ling-agent (cond-> {:task task
                                                                :parent parent
@@ -206,6 +232,8 @@
                                           :spawn-mode (:spawn-mode ling-agent)
                                           :provider effective-provider
                                           :model effective-model
+                                          :tier worker-tier
+                                          :token-budget token-budget
                                           :cwd cwd :presets presets-vec
                                           :project-id effective-project-id})
                 (mcp-json {:success true
@@ -215,6 +243,8 @@
                            :spawn-mode (:spawn-mode ling-agent)
                            :provider effective-provider
                            :model effective-model
+                           :tier worker-tier
+                           :token-budget token-budget
                            :cwd cwd
                            :presets presets-vec
                            :project-id effective-project-id}))))
