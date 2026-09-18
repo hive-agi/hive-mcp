@@ -354,11 +354,24 @@
        "hive-mcp.multi.batchables/{memory,kg,kanban}-batchable for the pattern."
        {:commands (sort (map name (keys handlers)))}))))
 
-(defn- mcp-error-result?
-  "True when a handler result is an MCP error envelope (delivered, but failed)."
+(defn- body-failure
+  "The JSON body of a text envelope when it is a map whose :success is
+   false, else nil."
   [result]
-  (or (and (map? result) (true? (:isError result)))
-      (and (map? result) (some? (:error result)))))
+  (let [t (:text result)]
+    (when (and (string? t) (str/starts-with? (str/triml t) "{"))
+      (let [body (try (json/read-str t :key-fn keyword) (catch Exception _ nil))]
+        (when (and (map? body) (false? (:success body)))
+          body)))))
+
+(defn- mcp-error-result?
+  "True when a handler result is an MCP error envelope, or a text envelope
+   whose JSON body reports :success false (delivered, but failed)."
+  [result]
+  (and (map? result)
+       (or (true? (:isError result))
+           (some? (:error result))
+           (some? (body-failure result)))))
 
 (defn make-batch-handler
   "Higher-order function: takes a handlers map (same as make-cli-handler),
@@ -402,6 +415,9 @@
                                                   :command (:command op)
                                                   :result result}
                                            failed? (assoc :error (or (:error result)
+                                                                     (some-> (body-failure result)
+                                                                             ((some-fn :error :reason :message))
+                                                                             str)
                                                                      "operation returned an error envelope"))))
                                        (if-let [rej (:__rejection__ op)]
                                          {:success false :command (:command op) :error rej}
