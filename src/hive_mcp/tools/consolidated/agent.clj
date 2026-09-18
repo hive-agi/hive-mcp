@@ -114,7 +114,7 @@
                                           :enum ["openrouter" "venice" "groq" "together" "fireworks" "openai" "ollama-compat"]
                                           :description "Explicit OpenAI-compat LLM provider (overrides any 'provider:' prefix in model). Anthropic routing is automatic from model names (claude-*, anthropic/*)."}
                               "task" {:type "string"
-                                      :description "Initial task to dispatch on spawn"}
+                                      :description "Initial task to dispatch on spawn (prompt is accepted as an alias). Without one the ling idles; the response then carries task-attached false and a warning."}
                               "spawn_mode" {:type "string"
                                             :enum (spawn-registry/mcp-enum)
                                             :description "Spawn mode for lings: 'vterm' (default, Emacs buffer) or 'headless' (OS subprocess, no Emacs required). Headless mode captures stdout to ring buffer and supports stdin dispatch. NOTE: 'headless' is ABSTRACT — the concrete backend (:agent-sdk, :hive-agent, …) is resolved at spawn time via the headless-registry: operator override in ~/.config/hive-mcp/config.edn [:headless :default-backend] wins, otherwise priority-ranked addon-contributed backends are tried in registration order. The response's :spawn-mode reflects the resolved backend, not the requested 'headless' alias. To force a specific backend, pass spawn_mode directly (e.g. 'agent-sdk' or 'hive-agent') instead of 'headless'."}
@@ -145,7 +145,7 @@
                                             :description "Project ID filter for status"}
                               ;; dispatch params
                               "prompt" {:type "string"
-                                        :description "Task prompt for dispatch or broadcast"}
+                                        :description "Task prompt for dispatch or broadcast. On spawn, an alias of task (they must agree when both are given)."}
                               "files" {:type "array"
                                        :items {:type "string"}
                                        :description "Files for dispatch"}
