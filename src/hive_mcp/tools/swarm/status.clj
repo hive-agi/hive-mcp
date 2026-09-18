@@ -7,7 +7,7 @@
             [hive-mcp.dns.validation :as v]
             [clojure.data.json :as json]
             [taoensso.timbre :as log]
-            [hive-mcp.dns.result :refer [rescue]]))
+            [hive-dsl.result :refer [rescue]]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later

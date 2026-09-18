@@ -2,7 +2,7 @@
   "Channel-based event management for swarm task tracking via core.async and NATS."
   (:require [clojure.core.async :as async :refer [go-loop <!]]
             [hive-dsl.bounded-atom :refer [bounded-atom bput! bget bclear! register-sweepable!]]
-            [hive-mcp.dns.result :refer [rescue]]
+            [hive-dsl.result :refer [rescue]]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
