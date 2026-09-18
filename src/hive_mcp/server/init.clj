@@ -295,11 +295,12 @@
 
 (defn- vector-store-adapter-sym
   "The adapter the deployment chose for the vector-collection seam, as a
-   fully-qualified factory symbol under :services :vector-store :adapter
-   (e.g. hive-mcp.milvus.vector-store/milvus-vector-store). Open extension:
-   supporting a NEW backend means writing an adapter that satisfies
+   fully-qualified factory symbol under :services :vector-store :adapter.
+   The symbol names a vendor adapter module OUTSIDE this repo; supporting a
+   NEW backend means writing an adapter that satisfies
    protocols.vector/IVectorCollectionStore and naming it here in config —
-   this composition root never enumerates backends (OCP)."
+   this composition root never enumerates backends, nor mentions any vendor
+   by name (OCP + no-host-vendor-rule)."
   []
   (some-> (get-in (global-config/get-global-config)
                   [:services :vector-store :adapter])
