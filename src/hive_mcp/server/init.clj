@@ -293,22 +293,50 @@
                 "chroma")]
     (-> b name clojure.string/lower-case)))
 
-(defn- wire-vector-store!
-  "Install the vector-collection backend.
+(defn- vector-store-adapter-sym
+  "The adapter the deployment chose for the vector-collection seam, as a
+   fully-qualified factory symbol under :services :vector-store :adapter.
+   The symbol names a vendor adapter module OUTSIDE this repo; supporting a
+   NEW backend means writing an adapter that satisfies
+   protocols.vector/IVectorCollectionStore and naming it here in config —
+   this composition root never enumerates backends, nor mentions any vendor
+   by name (OCP + no-host-vendor-rule)."
+  []
+  (some-> (get-in (global-config/get-global-config)
+                  [:services :vector-store :adapter])
+          symbol))
 
-   Resolved LAZILY, and that is the point: the composition root NAMES a
-   provider, it does not link one. A static require here would also be a
-   kernel -> non-kernel edge needing a waiver, and kernel.edn says its waiver
-   list may only shrink. When chroma becomes the hive-chroma IAddon, the addon
-   registers itself and this fallback is what stops existing."
+(defn- wire-vector-store!
+  "Install the vector-collection backend. THREE sources, first wins:
+
+    1. an IAddon already installed one (the addon path is the primary
+       extension mechanism: a vendor addon registers its own store and this
+       root never learns the vendor's name);
+    2. the deployment's configured adapter symbol
+       (:services :vector-store :adapter) — resolved LAZILY, because a
+       static require here would be a kernel -> non-kernel edge needing a
+       waiver, and kernel.edn says its waiver list may only shrink. A missing
+       jar fails at the call with a reason, not at compile;
+    3. the legacy chroma fallback, kept until every deployment names an
+       adapter (or the hive-chroma IAddon exists and stops it)."
   [backend-id]
   (result/rescue-log "wire-vector-store!" nil
-                     (if-let [make (requiring-resolve 'hive-mcp.chroma.vector-store/chroma-vector-store)]
-                       (do (vec-proto/set-store! (make))
-                           (log/info "Chroma wired as the IVectorCollectionStore"
-                                     {:backend backend-id}))
-                       (log/warn "No vector-collection backend available"
-                                 {:backend backend-id}))))
+                     (if (vec-proto/store-set?)
+                       (log/info "Vector-collection store already wired by an addon; not overriding"
+                                 {:backend backend-id})
+                       (if-let [adapter-sym (vector-store-adapter-sym)]
+                         (if-let [make (requiring-resolve adapter-sym)]
+                           (do (vec-proto/set-store! (make))
+                               (log/info "Vector-collection store wired"
+                                         {:backend backend-id :adapter (str adapter-sym)}))
+                           (log/warn "Configured vector-collection adapter not on classpath"
+                                     {:backend backend-id :adapter (str adapter-sym)}))
+                         (if-let [make (requiring-resolve 'hive-mcp.chroma.vector-store/chroma-vector-store)]
+                           (do (vec-proto/set-store! (make))
+                               (log/info "Chroma wired as the IVectorCollectionStore (legacy fallback)"
+                                         {:backend backend-id}))
+                           (log/warn "No vector-collection backend available"
+                                     {:backend backend-id}))))))
 
 (defn wire-memory-store!
   "Select and wire the memory backend.
@@ -358,7 +386,7 @@
                  (when-not (vec-proto/store-set?)
                    (log/warn "ensure-memory-store!: no vector-collection store after extensions;"
                              "wiring fallback")
-                   (wire-vector-store! :fallback))))
+                   (wire-vector-store! (resolve-memory-backend)))))
 
 ;; =============================================================================
 ;; Channel Bridge + Sync

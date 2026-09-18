@@ -37,6 +37,9 @@
         (let [agent (ling/->ling agent_id {:cwd (:slave/cwd agent-data)
                                            :presets (:slave/presets agent-data)
                                            :project-id (:slave/project-id agent-data)
+                                           :model (:ling/model agent-data)
+                                           :provider (:ling/provider agent-data)
+                                           :token-budget (:ling/token-budget agent-data)
                                            :spawn-mode (or (:ling/spawn-mode agent-data) :claude)})
               ctx (build-dispatch-context prompt ctx_refs kg_node_ids
                                           (or scope (:slave/project-id agent-data)))

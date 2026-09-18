@@ -7,12 +7,25 @@
    them runs the pre-fix implementation to show what it did to an undelivered
    result."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
-            [hive-mcp.channel.async-result :as ar]))
+            [hive-mcp.channel.async-result :as ar]
+            [hive-mcp.channel.async-result-journal :as journal]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-(use-fixtures :each (fn [t] (ar/reset-all!) (t) (ar/reset-all!)))
+(defn- with-temp-journal
+  "Point the durability journal at a throwaway file.
+
+   `enqueue-result!` now writes to the journal and `gc-expired!` compacts it,
+   so without this a test run would rewrite the REAL coordinator's journal at
+   ~/.config/hive-mcp/data and could discard results a live process still owes."
+  [t]
+  (let [p (str (System/getProperty "java.io.tmpdir") "/hive-async-gc-test-" (random-uuid) ".edn")]
+    (binding [journal/*journal-path* p]
+      (ar/reset-all!)
+      (try (t) (finally (ar/reset-all!) (.delete (java.io.File. p)))))))
+
+(use-fixtures :each with-temp-journal)
 
 (def ^:private caller "gc-test-caller")
 

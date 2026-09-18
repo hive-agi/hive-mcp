@@ -52,5 +52,11 @@
           {:swept 0 :errors [{:sweep "channels/async-result-gc"
                               :error (str (.getName (class t)) ": " (.getMessage t))}]})))))
 
-(defonce ^:private -registered?
+(def ^:private -registered?
+  "Auto-registration. `def`, deliberately NOT `defonce`.
+
+   Registration is keyed by sweep-name and overwrites, so a repeated load
+   cannot duplicate this sweep. `defonce` only guaranteed that a hot reload
+   would keep running the OLD code, and that an unregister could never be
+   undone (kanban 20260916134011-1246379c)."
   (do (reg/register-sweep! (->AsyncResultSweep nil)) true))

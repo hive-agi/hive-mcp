@@ -16,14 +16,28 @@
    about having been that bug once. These tests fail if it becomes one
    again."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
-            [hive-mcp.channel.async-result :as ar]))
+            [hive-mcp.channel.async-result :as ar]
+            [hive-mcp.channel.async-result-journal :as journal]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (def ^:private gc-buffer @#'ar/gc-buffer)
 
-(use-fixtures :each (fn [t] (ar/reset-all!) (t) (ar/reset-all!)))
+(defn- with-temp-journal
+  "Point the durability journal at a throwaway file.
+
+   The race test drives thousands of enqueues and drains, each of which now
+   appends a journal record, and the sweep compacts. Bound here so a test run
+   cannot rewrite the REAL coordinator's journal. `future` conveys dynamic
+   bindings, so the producer, consumer and sweep threads all see this path."
+  [t]
+  (let [p (str (System/getProperty "java.io.tmpdir") "/hive-async-race-test-" (random-uuid) ".edn")]
+    (binding [journal/*journal-path* p]
+      (ar/reset-all!)
+      (try (t) (finally (ar/reset-all!) (.delete (java.io.File. p)))))))
+
+(use-fixtures :each with-temp-journal)
 
 (defn- now-s [] (long (/ (System/currentTimeMillis) 1000)))
 

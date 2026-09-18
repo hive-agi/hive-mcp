@@ -27,7 +27,7 @@
 (def agent-types ds-schema/agent-types)
 (def spawn-modes ds-schema/spawn-modes)
 (def ling-model-default ds-schema/ling-model-default)
-(def claude-model? ds-schema/claude-model?)
+(def claude-model? #'ds-schema/claude-model?)
 (def task-types ds-schema/task-types)
 
 ;;; =============================================================================
@@ -67,6 +67,7 @@
    :ling/model            {:db/valueType :db.type/string
                            :db/index     true}
    :ling/provider         {:db/valueType :db.type/string}
+   :ling/token-budget     {:db/valueType :db.type/long}
 
    ;; Universal lifecycle metadata (added 2026-04-27 — registry-ghost fix).
    ;; Indexed: :slave/last-active-at + :slave/alive? for stale-sweep query speed.

@@ -1,7 +1,8 @@
 (ns hive-mcp.protocols.memory-test
   "TDD tests for multi-store registry in hive-mcp.protocols.memory."
   (:require [clojure.test :refer [deftest testing is use-fixtures]]
-            [hive-mcp.protocols.memory :as proto]))
+            [hive-mcp.protocols.memory :as proto]
+            [hive-spi.memory.ports :as ports]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -78,3 +79,54 @@
       (proto/set-store! s)
       (is (= :legacy (:id (proto/get-store))))
       (is (= :legacy (:id (proto/get-store :default)))))))
+
+(defrecord LateStore [])
+
+(deftest re-exports-dispatch-to-impls-extended-after-this-ns-loaded
+  (testing "a map-based `extend` registered after hive-mcp.protocols.memory loaded is reachable through every re-exported method"
+    (let [late (fn [& _] ::late)
+          all (fn [ks] (zipmap ks (repeat late)))]
+      (extend LateStore
+        ports/IMemoryStore
+        (all [:connect! :disconnect! :connected? :health-check :add-entry! :get-entry
+              :update-entry! :delete-entry! :query-entries :search-similar
+              :supports-semantic-search? :cleanup-expired! :entries-expiring-soon
+              :find-duplicate :store-status :reset-store!])
+        ports/IMemoryStoreWithAnalytics (all [:log-access! :record-feedback! :get-helpfulness-ratio])
+        ports/IMemoryStoreBatch (all [:get-entries])
+        ports/IMemoryStoreMetadataWrite (all [:update-metadata!])
+        ports/IMemoryStoreWithStaleness (all [:update-staleness! :get-stale-entries :propagate-staleness!])
+        ports/IMemoryStoreWithRouting (all [:target-collection-for :relocate-entry!])
+        ports/IMemoryStoreTemporal (all [:asof-entry :history-entry :asof-query :between-query]))
+      (let [s (->LateStore)]
+        (doseq [[method f args] [["connect!" proto/connect! [s {}]]
+                                 ["disconnect!" proto/disconnect! [s]]
+                                 ["connected?" proto/connected? [s]]
+                                 ["health-check" proto/health-check [s]]
+                                 ["add-entry!" proto/add-entry! [s {}]]
+                                 ["get-entry" proto/get-entry [s "id"]]
+                                 ["update-entry!" proto/update-entry! [s "id" {}]]
+                                 ["delete-entry!" proto/delete-entry! [s "id"]]
+                                 ["query-entries" proto/query-entries [s {}]]
+                                 ["search-similar" proto/search-similar [s "q" {}]]
+                                 ["supports-semantic-search?" proto/supports-semantic-search? [s]]
+                                 ["cleanup-expired!" proto/cleanup-expired! [s]]
+                                 ["entries-expiring-soon" proto/entries-expiring-soon [s 7 {}]]
+                                 ["find-duplicate" proto/find-duplicate [s "note" "hash" {}]]
+                                 ["store-status" proto/store-status [s]]
+                                 ["reset-store!" proto/reset-store! [s]]
+                                 ["log-access!" proto/log-access! [s "id"]]
+                                 ["record-feedback!" proto/record-feedback! [s "id" :helpful]]
+                                 ["get-helpfulness-ratio" proto/get-helpfulness-ratio [s "id"]]
+                                 ["get-entries" proto/get-entries [s ["id"]]]
+                                 ["update-metadata!" proto/update-metadata! [s "id" {}]]
+                                 ["update-staleness!" proto/update-staleness! [s "id" {}]]
+                                 ["get-stale-entries" proto/get-stale-entries [s 0.5 {}]]
+                                 ["propagate-staleness!" proto/propagate-staleness! [s "id" 1]]
+                                 ["target-collection-for" proto/target-collection-for [s {}]]
+                                 ["relocate-entry!" proto/relocate-entry! [s "id"]]
+                                 ["asof-entry" proto/asof-entry [s "id" "t"]]
+                                 ["history-entry" proto/history-entry [s "id"]]
+                                 ["asof-query" proto/asof-query [s {} "t"]]
+                                 ["between-query" proto/between-query [s {} "t1" "t2"]]]]
+          (is (= ::late (apply f args)) method))))))

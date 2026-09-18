@@ -180,19 +180,19 @@
 (def handle-decay
   "Run scheduled staleness decay on memory entries.
    Delegated to hive-mcp.tools.memory.decay."
-  decay/handle-decay)
+  #'decay/handle-decay)
 
 (def handle-xpoll-promote
   "Scan and auto-promote entries accessed across multiple projects.
    Delegated to hive-mcp.tools.memory.promotion."
-  promo/handle-xpoll-promote)
+  #'promo/handle-xpoll-promote)
 
 (def run-decay-cycle!
   "Bounded, idempotent decay cycle for crystallize-session hooks.
    Delegated to hive-mcp.tools.memory.decay."
-  decay/run-decay-cycle!)
+  #'decay/run-decay-cycle!)
 
 (def run-xpoll-cycle!
   "Run bounded xpoll auto-promotion cycle for crystallize-session hooks.
    Delegated to hive-mcp.tools.memory.promotion."
-  promo/run-xpoll-cycle!)
+  #'promo/run-xpoll-cycle!)

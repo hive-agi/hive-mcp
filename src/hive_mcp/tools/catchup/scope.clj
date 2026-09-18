@@ -60,23 +60,23 @@
 ;; Re-exports — scope_filter helpers
 ;; =============================================================================
 
-(def distinct-by           sf/distinct-by)
-(def filter-by-tags        sf/filter-by-tags)
-(def entry-expiring-soon?  sf/entry-expiring-soon?)
+(def distinct-by           #'sf/distinct-by)
+(def filter-by-tags        #'sf/filter-by-tags)
+(def entry-expiring-soon?  #'sf/entry-expiring-soon?)
 
 ;; =============================================================================
 ;; Re-exports — axiom_cache
 ;; =============================================================================
 
-(def query-axioms              axc/query-axioms)
-(def invalidate-axioms-cache!  axc/invalidate-axioms-cache!)
+(def query-axioms              #'axc/query-axioms)
+(def invalidate-axioms-cache!  #'axc/invalidate-axioms-cache!)
 
 ;; =============================================================================
 ;; Re-exports — bundle orchestrators
 ;; =============================================================================
 
-(def query-scoped-entries       bundle/query-scoped-entries)
-(def query-expiring-entries     bundle/query-expiring-entries)
-(def query-regular-conventions  bundle/query-regular-conventions)
-(def query-all-scoped           bundle/query-all-scoped)
-(def query-catchup-bundle       bundle/query-catchup-bundle)
+(def query-scoped-entries       #'bundle/query-scoped-entries)
+(def query-expiring-entries     #'bundle/query-expiring-entries)
+(def query-regular-conventions  #'bundle/query-regular-conventions)
+(def query-all-scoped           #'bundle/query-all-scoped)
+(def query-catchup-bundle       #'bundle/query-catchup-bundle)

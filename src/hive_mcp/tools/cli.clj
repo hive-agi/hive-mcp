@@ -113,7 +113,11 @@
         ;; Try next segment
         :else
         (let [seg       (first remaining)
-              next-node (get node seg)]
+              next-node (or (get node seg)
+                            (when (keyword? seg)
+                              (get node (name seg)))
+                            (when (string? seg)
+                              (get node (keyword seg))))]
           (cond
             ;; Leaf handler found
             (dispatch/handler? next-node)
@@ -350,6 +354,12 @@
        "hive-mcp.multi.batchables/{memory,kg,kanban}-batchable for the pattern."
        {:commands (sort (map name (keys handlers)))}))))
 
+(defn- mcp-error-result?
+  "True when a handler result is an MCP error envelope (delivered, but failed)."
+  [result]
+  (or (and (map? result) (true? (:isError result)))
+      (and (map? result) (some? (:error result)))))
+
 (defn make-batch-handler
   "Higher-order function: takes a handlers map (same as make-cli-handler),
    returns a handler that accepts {:operations [{:command ... :param1 ...}, ...], :parallel bool}.
@@ -386,10 +396,17 @@
                                    (let [resolved (resolve-handler handlers path)]
                                      (if-let [handler (:handler resolved)]
                                        (let [merged (merge shared-params (dissoc op :command))
-                                             result (handler (assoc merged :command (:command op)))]
-                                         {:success true :command (:command op) :result result})
-                                       {:success false :command (:command op)
-                                        :error (str "Unknown command: " (:command op))}))))
+                                             result (handler (assoc merged :command (:command op)))
+                                             failed? (mcp-error-result? result)]
+                                         (cond-> {:success (not failed?)
+                                                  :command (:command op)
+                                                  :result result}
+                                           failed? (assoc :error (or (:error result)
+                                                                     "operation returned an error envelope"))))
+                                       (if-let [rej (:__rejection__ op)]
+                                         {:success false :command (:command op) :error rej}
+                                         {:success false :command (:command op)
+                                          :error (str "Unknown command: " (:command op))})))))
                                (catch Exception e
                                  {:success false :command (:command op) :error (ex-message e)})))
                            operations)]

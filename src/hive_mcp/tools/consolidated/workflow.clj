@@ -189,11 +189,11 @@
 
 (def handle-forge-strike-fsm
   "DEPRECATED alias: FSM is now the default path via handle-forge-strike."
-  handle-forge-strike)
+  #'handle-forge-strike)
 
 (def handle-forge-strike-imperative
   "DEPRECATED alias: renamed to handle-forge-strike-legacy."
-  handle-forge-strike-legacy)
+  #'handle-forge-strike-legacy)
 
 ;; ── CLI Handler + Tool Definition ───────────────────────────────────────────
 

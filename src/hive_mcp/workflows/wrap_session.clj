@@ -90,7 +90,7 @@
 
 (def always
   "Dispatch predicate — always true. Shared seam (support/always)."
-  support/always)
+  #'support/always)
 
 ;; =============================================================================
 ;; Handlers (pure functions: resources x data -> data')

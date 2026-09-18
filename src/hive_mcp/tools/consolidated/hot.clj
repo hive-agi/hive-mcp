@@ -25,7 +25,8 @@
             [hive-mcp.addons.manifest :as manifest]
             [hive-mcp.tools.composite :as composite]
             [hive-mcp.tools.core :refer [mcp-json mcp-error]]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.hot.core :as core-hot]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -438,6 +439,42 @@
   [_params]
   (with-manager #(mcp-json (update ((soft 'hive-addon.lifecycle/sweep!) %) :plan dissoc :kept))))
 
+(defn- core-remounter
+  "The addon widening a core reload hands hive-mcp.hot.core: remount every
+   mounted addon whose constructor namespace the pass loaded, plus its
+   dependents, through the same bridge `reload` uses. nil when no addon is
+   mounted, so the core reload proceeds without widening."
+  []
+  (let [{:keys [specs host error]} (prepared)]
+    (when-not error
+      (fn [loaded]
+        (let [loaded (set loaded)
+              seeds  (into #{}
+                           (comp (filter #(contains? loaded (str (:addon/init-ns %))))
+                                 (map :addon/id))
+                           specs)]
+          (if (seq seeds)
+            (summarize ((soft 'hive-addon.hot/reload-seeds!) host specs seeds
+                        (assoc (reload-opts) :ns-reloaded? true :trigger :core-reload)))
+            {:seeds [] :note "no mounted addon's constructor namespace was loaded"}))))))
+
+(defn handle-core-plan
+  "What a reload of hive-mcp's own source would do: the pending namespaces,
+   the cascade, what the interlock pins and what state it keeps. Effect-free
+   apart from extending hive-hot with core's root."
+  [_params]
+  (mcp-json (core-hot/plan)))
+
+(defn handle-core-reload
+  "Reload the changes under hive-mcp's own source root: protocol definers
+   pinned, state holders kept, then the tool table and the surface refreshed
+   and every addon whose constructor namespace was loaded remounted."
+  [_params]
+  (let [report (core-hot/reload! {:ports (assoc (core-hot/default-ports)
+                                                :host/remount! (core-remounter))})]
+    (log/info "hot core-reload" (select-keys report [:ok? :loaded :failed :error :ms]))
+    (mcp-json report)))
+
 (def canonical-handlers
   "The `hot` verbs, stored as VARS so a reload of this namespace reaches the
    table (20260817195749-0d407e9c). The first of hive-mcp's 55 dispatch maps to
@@ -448,19 +485,21 @@
    Reading it through a var is safe because `tools/cli.clj` classifies every
    tree node through `dispatch/current` (commit cdd876f7). It was NOT safe
    before that, which is the precondition the conversion card names."
-  {:reload     #'handle-reload
-   :reload-all #'handle-reload-all
-   :inject     #'handle-inject
-   :watch      #'handle-watch
-   :unwatch    #'handle-unwatch
-   :list       #'handle-list
-   :status     #'handle-status
-   :strategies #'handle-strategies
-   :lifecycle  #'handle-lifecycle
-   :activate   #'handle-activate
-   :evict      #'handle-evict
-   :pin        #'handle-pin
-   :sweep      #'handle-sweep})
+  {:reload      #'handle-reload
+   :reload-all  #'handle-reload-all
+   :inject      #'handle-inject
+   :watch       #'handle-watch
+   :unwatch     #'handle-unwatch
+   :list        #'handle-list
+   :status      #'handle-status
+   :strategies  #'handle-strategies
+   :core-plan   #'handle-core-plan
+   :core-reload #'handle-core-reload
+   :lifecycle   #'handle-lifecycle
+   :activate    #'handle-activate
+   :evict       #'handle-evict
+   :pin         #'handle-pin
+   :sweep       #'handle-sweep})
 
 
 (def handlers canonical-handlers)
@@ -487,6 +526,10 @@
         "(per-addon strategy + source-kind + whether it is reloadable at all), "
         "status, strategies. Only addons wired as :local/root deps have reloadable "
         "source; jar-backed addons report :restart-required. "
+        "core-plan / core-reload: hive-mcp's OWN source, the same way. core-plan lists the "
+        "pending namespaces, the cascade, what the interlock pins (protocol definers) and "
+        "keeps (state holders); core-reload runs it, then refreshes the tool table and the "
+        "surface and remounts any addon whose constructor namespace was loaded. "
         "Addon lifecycle (when :addons :lifecycle :enabled?): lifecycle (per-addon phase, "
         "policy, idle time, parts), activate (mount a dormant addon now), evict (release "
         "an addon to dormant stubs; force for pinned/eager), pin (set policy at runtime), "
@@ -497,6 +540,7 @@
     :properties
     {"command" {:type "string"
                 :enum ["reload" "reload-all" "inject" "watch" "unwatch" "list" "status" "strategies"
+                       "core-plan" "core-reload"
                        "lifecycle" "activate" "evict" "pin" "sweep" "help"]
                 :description "Hot-reload operation to perform"}
      "addon" {:type "string"

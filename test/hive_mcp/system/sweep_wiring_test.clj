@@ -20,13 +20,33 @@
 (defn- sweep-names []
   (set (map lifecycle/sweep-name (reg/registered-sweeps))))
 
+(def ^:private sweeper-namespaces
+  "The sweepers :hive/sweep-coordinator is responsible for putting on the
+   load path. Kept here so the fixture can rebuild a real world before it
+   snapshots one."
+  '[hive-mcp.system.sweepers.orphan-channel
+    hive-mcp.system.sweepers.async-result
+    hive-mcp.system.sweepers.heap-pressure])
+
 (defn- restore-world
-  "Start from a stopped coordinator and put the sweep registry back afterwards.
+  "Start from a stopped coordinator and a genuinely registered world, and put
+   the sweep registry back afterwards.
 
    The key under test both starts a real timer and unregisters a sweep, so a
    test that does not restore leaks a running executor into the rest of the
-   suite."
+   suite.
+
+   The RELOAD is what makes this test honest on a second run in the same JVM.
+   A sweeper registers from a top-level form in its own namespace, and
+   `init-key` only `require`s, which is a no-op once the namespace is loaded.
+   So the first run registered the sweeps, the `finally` below restored a
+   snapshot taken BEFORE they existed, and every later run asserted against a
+   registry the suite itself had emptied -- a test that passes exactly once
+   per JVM. Reloading first is only possible because those registrations are
+   `def` and not `defonce`; under `defonce` an unregistered sweep could not be
+   brought back at all (kanban 20260916134011-1246379c)."
   [f]
+  (doseq [n sweeper-namespaces] (require n :reload))
   (let [saved (vec (reg/registered-sweeps))]
     (sc/stop!)
     (try

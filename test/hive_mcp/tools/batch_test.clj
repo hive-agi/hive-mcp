@@ -12,7 +12,10 @@
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.data.json :as json]
             [clojure.string :as str]
+            [hive-mcp.protocols.memory :as mem-proto]
+            [hive-mcp.test.stub.memory-store :as stub]
             [hive-mcp.tools.cli :as cli]
+            [hive-mcp.tools.consolidated.memory :as cmem]
             [hive-mcp.dispatch.handler :as dispatch]))
 
 ;; =============================================================================
@@ -330,3 +333,128 @@
     (let [handle-kanban @(resolve 'hive-mcp.tools.consolidated.kanban/handle-kanban)
           result (handle-kanban {:command "batch-update" :operations []})]
       (is (:isError result)))))
+
+;; =============================================================================
+;; Single-Command Batch Guard: rejects foreign sub-domain commands loudly
+;; =============================================================================
+
+(deftest single-command-batch-rejects-foreign-commands
+  (testing "a foreign sub-domain op is refused WITHOUT reaching the handler"
+    (let [calls    (atom 0)
+          batch-fn (#'cmem/make-single-command-batch :add
+                                                     (fn [_] (swap! calls inc) {:ok true}))
+          parsed   (parse-batch-result (batch-fn {:operations [{:command "kg edge"
+                                                                :from "a" :to "b"}]}))]
+      (is (= 0 @calls) "the wrapped handler must not be invoked for a foreign op")
+      (is (= {:total 1 :success 0 :failed 1} (:summary parsed)))
+      (is (false? (get-in parsed [:results 0 :success])))
+      (is (= "kg edge" (get-in parsed [:results 0 :command])) "the caller's command is preserved")
+      (is (str/includes? (get-in parsed [:results 0 :error]) "batch-add only accepts"))
+      (is (str/includes? (get-in parsed [:results 0 :error]) "'add'"))))
+
+  (testing "the refusal names the batch command that was actually called"
+    (let [batch-fn (#'cmem/make-single-command-batch :feedback (fn [_] {:ok true}))
+          parsed   (parse-batch-result (batch-fn {:operations [{:command "kg edge"}]}))]
+      (is (str/includes? (get-in parsed [:results 0 :error]) "batch-feedback only accepts"))
+      (is (str/includes? (get-in parsed [:results 0 :error]) "'feedback'"))))
+
+  (testing "memory's :batch-add rejects a nested sub-domain command end-to-end"
+    (let [handler (get @#'cmem/canonical-handlers :batch-add)
+          parsed  (parse-batch-result (handler {:operations [{:command "kg edge" :id "x"}]}))]
+      (is (false? (get-in parsed [:results 0 :success])))
+      (is (str/includes? (get-in parsed [:results 0 :error]) "batch-add only accepts"))
+      (is (str/includes? (get-in parsed [:results 0 :error]) "'add'"))
+      (is (= {:total 1 :success 0 :failed 1} (:summary parsed)))))
+
+  (testing "make-batch-handler still reports a foreign command as unknown"
+    (let [batch-fn (cli/make-batch-handler {"add" (fn [_] {:ok true})})
+          parsed   (parse-batch-result (batch-fn {:operations [{:command "kg edge"}]}))]
+      (is (= 1 (get-in parsed [:summary :total])))
+      (is (= 0 (get-in parsed [:summary :success])))
+      (is (= 1 (get-in parsed [:summary :failed])))
+      (is (str/includes? (get-in parsed [:results 0 :error]) "Unknown command: kg edge")))))
+
+(deftest single-command-batch-still-accepts-its-own-command
+  (testing "a valid add op succeeds end to end and actually stores the entry"
+    (stub/with-stub-store
+      (fn []
+        (let [handler (get @#'cmem/canonical-handlers :batch-add)
+              parsed  (parse-batch-result
+                       (handler {:operations [{:command "add"
+                                               :type "note"
+                                               :content "batch add still works"}]}))]
+          (is (= {:total 1 :success 1 :failed 0} (:summary parsed)))
+          (is (true? (get-in parsed [:results 0 :success])))
+          (is (nil? (get-in parsed [:results 0 :error])))
+          (is (= 1 (count (stub/entries (mem-proto/get-store))))
+              "the entry reached the store")))))
+
+  (testing "an op that omits :command still defaults to the batch command"
+    (stub/with-stub-store
+      (fn []
+        (let [handler (get @#'cmem/canonical-handlers :batch-add)
+              parsed  (parse-batch-result (handler {:operations [{:type "note"
+                                                                  :content "defaulted"}]}))]
+          (is (true? (get-in parsed [:results 0 :success])))
+          (is (= 1 (count (stub/entries (mem-proto/get-store)))))))))
+
+  (testing "a mixed batch stores the accepted ops and fails only the foreign one"
+    (stub/with-stub-store
+      (fn []
+        (let [handler (get @#'cmem/canonical-handlers :batch-add)
+              parsed  (parse-batch-result
+                       (handler {:operations [{:command "add" :type "note" :content "one"}
+                                              {:type "note" :content "two"}
+                                              {:command "kg edge" :from "a" :to "b"}]}))]
+          (is (= {:total 3 :success 2 :failed 1} (:summary parsed)))
+          (is (true? (get-in parsed [:results 0 :success])))
+          (is (true? (get-in parsed [:results 1 :success])))
+          (is (false? (get-in parsed [:results 2 :success])))
+          (is (= 2 (count (stub/entries (mem-proto/get-store))))))))))
+
+;; =============================================================================
+;; Error Envelopes Count As Failures
+;; =============================================================================
+
+(deftest error-envelope-counts-as-failure
+  (testing "a delivered MCP error envelope is not a success"
+    (let [batch-fn (cli/make-batch-handler
+                    {"boom" (fn [_] {:type "text" :text "Invalid memory type: nil"
+                                     :isError true})})
+          parsed   (parse-batch-result (batch-fn {:operations [{:command "boom"}]}))]
+      (is (false? (get-in parsed [:results 0 :success])))
+      (is (= {:total 1 :success 0 :failed 1} (:summary parsed)))
+      (is (some? (get-in parsed [:results 0 :error])))
+      (is (= "Invalid memory type: nil" (get-in parsed [:results 0 :result :text]))
+          "the envelope is still handed back for inspection")))
+
+  (testing "a bare :error key counts as a failure too"
+    (let [batch-fn (cli/make-batch-handler {"bad" (fn [_] {:error "went wrong"})})
+          parsed   (parse-batch-result (batch-fn {:operations [{:command "bad"}]}))]
+      (is (false? (get-in parsed [:results 0 :success])))
+      (is (= "went wrong" (get-in parsed [:results 0 :error])))
+      (is (= {:total 1 :success 0 :failed 1} (:summary parsed)))))
+
+  (testing "a successful envelope is not mistaken for an error"
+    (let [batch-fn (cli/make-batch-handler
+                    {"ok" (fn [_] {:type "text" :text "fine" :isError false})})
+          parsed   (parse-batch-result (batch-fn {:operations [{:command "ok"}]}))]
+      (is (true? (get-in parsed [:results 0 :success])))
+      (is (nil? (get-in parsed [:results 0 :error])))
+      (is (= {:total 1 :success 1 :failed 0} (:summary parsed)))))
+
+  (testing "a normal map result is a success"
+    (let [batch-fn (cli/make-batch-handler {"add" (fn [_] {:type "text" :text "ok"})})
+          parsed   (parse-batch-result (batch-fn {:operations [{:command "add"}]}))]
+      (is (true? (get-in parsed [:results 0 :success])))
+      (is (= {:total 1 :success 1 :failed 0} (:summary parsed)))))
+
+  (testing "an error envelope and a success in one batch are counted apart"
+    (let [batch-fn (cli/make-batch-handler
+                    {"boom" (fn [_] {:isError true :text "nope"})
+                     "fine" (fn [_] {:text "yep"})})
+          parsed   (parse-batch-result (batch-fn {:operations [{:command "boom"}
+                                                               {:command "fine"}]}))]
+      (is (= {:total 2 :success 1 :failed 1} (:summary parsed)))
+      (is (false? (get-in parsed [:results 0 :success])))
+      (is (true? (get-in parsed [:results 1 :success]))))))

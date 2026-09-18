@@ -129,17 +129,17 @@
   "Sentinel for unresolvable reference (kept at this namespace for back-compat)."
   batch/ref-not-found)
 
-(def ref? batch/ref?)
-(def parse-ref batch/parse-ref)
-(def extract-result-data batch/extract-result-data)
-(def enrich-op-result batch/enrich-op-result)
-(def resolve-ref batch/resolve-ref)
-(def resolve-refs-in-value batch/resolve-refs-in-value)
-(def resolve-op-refs batch/resolve-op-refs)
-(def collect-ref-op-ids batch/collect-ref-op-ids)
-(def normalize-op batch/normalize-op)
-(def validate-ops batch/validate-ops)
-(def assign-waves batch/assign-waves)
+(def ref? #'batch/ref?)
+(def parse-ref #'batch/parse-ref)
+(def extract-result-data #'batch/extract-result-data)
+(def enrich-op-result #'batch/enrich-op-result)
+(def resolve-ref #'batch/resolve-ref)
+(def resolve-refs-in-value #'batch/resolve-refs-in-value)
+(def resolve-op-refs #'batch/resolve-op-refs)
+(def collect-ref-op-ids #'batch/collect-ref-op-ids)
+(def normalize-op #'batch/normalize-op)
+(def validate-ops #'batch/validate-ops)
+(def assign-waves #'batch/assign-waves)
 
 (defn execute-op
   "Execute a single op using the hive-mcp resolve-tool-handler.

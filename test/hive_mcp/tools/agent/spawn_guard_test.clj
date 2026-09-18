@@ -174,3 +174,37 @@
         (is (:isError result))
         (is (re-find #"type must be one of" (:text result))
             "Depth 0 = coordinator, should pass through guard")))))
+
+(deftest economy-role-and-context-budget-normalize
+  (let [normalize-tier  @#'spawn/normalize-tier
+        normalize-budget @#'spawn/normalize-token-budget]
+    (is (= :cheap (normalize-tier "cheap")))
+    (is (= :frontier (normalize-tier :frontier)))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"tier must be cheap or frontier"
+                          (normalize-tier "unknown")))
+    (is (= 1800 (normalize-budget "1800")))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"positive integer"
+                          (normalize-budget 0)))))
+
+(deftest economy-tier-controls-model-selection
+  (term-stub/with-terminal
+    (fn []
+      (with-redefs [guards/child-ling? (constantly false)]
+        (let [cheap (parse-response
+                     (spawn/handle-spawn {:type "ling"
+                                          :name "cheap-tier"
+                                          :cwd "/tmp/project"
+                                          :tier "cheap"
+                                          :model "premium-model"
+                                          :token_budget "1200"}))
+              frontier (parse-response
+                        (spawn/handle-spawn {:type "ling"
+                                             :name "frontier-tier"
+                                             :cwd "/tmp/project"
+                                             :tier "frontier"
+                                             :model "frontier-model"}))]
+          (is (= "claude-test-model" (:model cheap)))
+          (is (= 1200 (:token-budget cheap)))
+          (is (= "frontier-model" (:model frontier))))))))

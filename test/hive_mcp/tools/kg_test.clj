@@ -33,38 +33,42 @@
 
 (deftest facade-re-exports-query-handlers
   (testing "Facade re-exports all query handler vars"
-    (is (fn? kg/handle-kg-traverse)        "traverse re-exported")
-    (is (fn? kg/handle-kg-impact-analysis) "impact-analysis re-exported")
-    (is (fn? kg/handle-kg-find-path)       "find-path re-exported")
-    (is (fn? kg/handle-kg-subgraph)        "subgraph re-exported")
-    (is (fn? kg/handle-kg-contradictions)  "contradictions re-exported")
-    (is (fn? kg/handle-kg-node-context)    "node-context re-exported")
-    (is (fn? kg/handle-kg-stats)           "stats re-exported")))
+    ;; `handler?` rather than `fn?`: the re-exports hold VARS so a reload of
+    ;; kg.queries reaches the facade (20260817195749-0d407e9c).
+    (is (dispatch/handler? kg/handle-kg-traverse)        "traverse re-exported")
+    (is (dispatch/handler? kg/handle-kg-impact-analysis) "impact-analysis re-exported")
+    (is (dispatch/handler? kg/handle-kg-find-path)       "find-path re-exported")
+    (is (dispatch/handler? kg/handle-kg-subgraph)        "subgraph re-exported")
+    (is (dispatch/handler? kg/handle-kg-contradictions)  "contradictions re-exported")
+    (is (dispatch/handler? kg/handle-kg-node-context)    "node-context re-exported")
+    (is (dispatch/handler? kg/handle-kg-stats)           "stats re-exported")))
 
 (deftest facade-re-exports-command-handlers
   (testing "Facade re-exports all command handler vars"
-    (is (fn? kg/handle-kg-add-edge)            "add-edge re-exported")
-    (is (fn? kg/handle-kg-promote)             "promote re-exported")
-    (is (fn? kg/handle-kg-reground)            "reground re-exported")
-    (is (fn? kg/handle-kg-backfill-grounding)  "backfill-grounding re-exported")
-    (is (fn? kg/handle-kg-cleanup-synthetics)  "cleanup-synthetics re-exported")))
+    (is (dispatch/handler? kg/handle-kg-add-edge)            "add-edge re-exported")
+    (is (dispatch/handler? kg/handle-kg-promote)             "promote re-exported")
+    (is (dispatch/handler? kg/handle-kg-reground)            "reground re-exported")
+    (is (dispatch/handler? kg/handle-kg-backfill-grounding)  "backfill-grounding re-exported")
+    (is (dispatch/handler? kg/handle-kg-cleanup-synthetics)  "cleanup-synthetics re-exported")))
 
 (deftest facade-re-exports-point-to-sub-namespaces
   (testing "Facade vars delegate to sub-namespace implementations"
-    ;; Query handlers should be the same fn objects as in kg.queries
-    (is (= kg/handle-kg-traverse        kg-queries/handle-kg-traverse))
-    (is (= kg/handle-kg-impact-analysis kg-queries/handle-kg-impact-analysis))
-    (is (= kg/handle-kg-find-path       kg-queries/handle-kg-find-path))
-    (is (= kg/handle-kg-subgraph        kg-queries/handle-kg-subgraph))
-    (is (= kg/handle-kg-contradictions  kg-queries/handle-kg-contradictions))
-    (is (= kg/handle-kg-node-context    kg-queries/handle-kg-node-context))
-    (is (= kg/handle-kg-stats           kg-queries/handle-kg-stats))
-    ;; Command handlers should be the same fn objects as in kg.commands
-    (is (= kg/handle-kg-add-edge            kg-commands/handle-kg-add-edge))
-    (is (= kg/handle-kg-promote             kg-commands/handle-kg-promote))
-    (is (= kg/handle-kg-reground            kg-commands/handle-kg-reground))
-    (is (= kg/handle-kg-backfill-grounding  kg-commands/handle-kg-backfill-grounding))
-    (is (= kg/handle-kg-cleanup-synthetics  kg-commands/handle-kg-cleanup-synthetics))))
+    ;; The facade now holds the sub-namespace's VAR rather than a copy of its
+    ;; fn value, which is the whole point: a copy cannot see a reload. So this
+    ;; asserts var IDENTITY, which is strictly stronger than the value equality
+    ;; it replaced -- it pins the exact target, not merely an equal function.
+    (is (= kg/handle-kg-traverse        #'kg-queries/handle-kg-traverse))
+    (is (= kg/handle-kg-impact-analysis #'kg-queries/handle-kg-impact-analysis))
+    (is (= kg/handle-kg-find-path       #'kg-queries/handle-kg-find-path))
+    (is (= kg/handle-kg-subgraph        #'kg-queries/handle-kg-subgraph))
+    (is (= kg/handle-kg-contradictions  #'kg-queries/handle-kg-contradictions))
+    (is (= kg/handle-kg-node-context    #'kg-queries/handle-kg-node-context))
+    (is (= kg/handle-kg-stats           #'kg-queries/handle-kg-stats))
+    (is (= kg/handle-kg-add-edge            #'kg-commands/handle-kg-add-edge))
+    (is (= kg/handle-kg-promote             #'kg-commands/handle-kg-promote))
+    (is (= kg/handle-kg-reground            #'kg-commands/handle-kg-reground))
+    (is (= kg/handle-kg-backfill-grounding  #'kg-commands/handle-kg-backfill-grounding))
+    (is (= kg/handle-kg-cleanup-synthetics  #'kg-commands/handle-kg-cleanup-synthetics))))
 
 ;;; =============================================================================
 ;;; CQRS Separation Tests
