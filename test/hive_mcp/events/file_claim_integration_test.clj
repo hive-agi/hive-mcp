@@ -36,26 +36,28 @@
   "Fresh DataScript conn, empty agent-registry, full handler/effect stack.
 
    Both globals are reached through the seam their owning namespace exposes —
-   `*test-conn*` for the swarm conn, `bclear!` for the registry — never by
+   `with-test-conn` for the swarm conn, `bclear!` for the registry — never by
    redefining a var: `hive-mcp.swarm.datascript` and `hive-mcp.hivemind.core`
    both re-export by VALUE, so a redef of the source var splits readers from
    writers."
   [f]
-  (binding [conn/*test-conn* (conn/create-conn)]
-    (bclear! hivemind/agent-registry)
-    (ev/reset-all!)
-    (effects/reset-registration!)
-    (handlers/reset-registration!)
+  (conn/with-test-conn
+   (conn/create-conn)
+   (fn []
+     (bclear! hivemind/agent-registry)
+     (ev/reset-all!)
+     (effects/reset-registration!)
+     (handlers/reset-registration!)
 
-    (ev/init!)
-    (effects/register-effects!)
-    (handlers/register-handlers!)
+     (ev/init!)
+     (effects/register-effects!)
+     (handlers/register-handlers!)
 
-    (try
-      (f)
-      (finally
-        (bclear! hivemind/agent-registry)
-        (ev/reset-all!)))))
+     (try
+       (f)
+       (finally
+         (bclear! hivemind/agent-registry)
+         (ev/reset-all!))))))
 
 (use-fixtures :each integration-fixture)
 

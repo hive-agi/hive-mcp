@@ -26,10 +26,9 @@
 (def ^:dynamic *test-conn*
   "Per-thread override for the global swarm connection.
    When non-nil, get-conn returns this instead of the global atom.
-   Bound by hive-mcp.test-fixtures/with-isolated-swarm so tests run
-   against a fresh in-memory conn without polluting prod state when
-   evaluated inside the live MCP server's nREPL.
-   Honors axiom 20260122235103-7151cc29 (Test Isolation Silent Server Death)."
+   Set through `with-test-conn` (the :swarm-ds isolation in
+   hive-mcp.isolation-methods) so tests run against a fresh in-memory conn
+   without polluting prod state. Honors axiom 20260122235103-7151cc29."
   nil)
 
 (defn create-conn
@@ -48,6 +47,17 @@
         (reset! conn (create-conn))
         (log/info "Created swarm DataScript connection")
         @conn)))
+
+(defn with-test-conn
+  "Run (F) with TEST-CONN as this thread's swarm connection."
+  [test-conn f]
+  (binding [*test-conn* test-conn]
+    (f)))
+
+(defn current-test-conn
+  "This thread's test connection override, or nil."
+  []
+  *test-conn*)
 
 (defn reset-conn!
   "Reset the global connection to empty state."
