@@ -7,7 +7,8 @@
             [clojure.data.json :as json]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.dispatch.handler :as dispatch]))
+            [hive-mcp.dispatch.handler :as dispatch]
+            [hive-mcp.tools.op-outcome :as op-outcome]))
 
 ;; =============================================================================
 ;; Command Normalization
@@ -354,25 +355,6 @@
        "hive-mcp.multi.batchables/{memory,kg,kanban}-batchable for the pattern."
        {:commands (sort (map name (keys handlers)))}))))
 
-(defn- body-failure
-  "The JSON body of a text envelope when it is a map whose :success is
-   false, else nil."
-  [result]
-  (let [t (:text result)]
-    (when (and (string? t) (str/starts-with? (str/triml t) "{"))
-      (let [body (try (json/read-str t :key-fn keyword) (catch Exception _ nil))]
-        (when (and (map? body) (false? (:success body)))
-          body)))))
-
-(defn- mcp-error-result?
-  "True when a handler result is an MCP error envelope, or a text envelope
-   whose JSON body reports :success false (delivered, but failed)."
-  [result]
-  (and (map? result)
-       (or (true? (:isError result))
-           (some? (:error result))
-           (some? (body-failure result)))))
-
 (defn make-batch-handler
   "Higher-order function: takes a handlers map (same as make-cli-handler),
    returns a handler that accepts {:operations [{:command ... :param1 ...}, ...], :parallel bool}.
@@ -410,15 +392,11 @@
                                      (if-let [handler (:handler resolved)]
                                        (let [merged (merge shared-params (dissoc op :command))
                                              result (handler (assoc merged :command (:command op)))
-                                             failed? (mcp-error-result? result)]
-                                         (cond-> {:success (not failed?)
+                                             outcome (op-outcome/op-outcome result)]
+                                         (cond-> {:success (not (:failed? outcome))
                                                   :command (:command op)
                                                   :result result}
-                                           failed? (assoc :error (or (:error result)
-                                                                     (some-> (body-failure result)
-                                                                             ((some-fn :error :reason :message))
-                                                                             str)
-                                                                     "operation returned an error envelope"))))
+                                           (:failed? outcome) (assoc :error (:message outcome))))
                                        (if-let [rej (:__rejection__ op)]
                                          {:success false :command (:command op) :error rej}
                                          {:success false :command (:command op)
