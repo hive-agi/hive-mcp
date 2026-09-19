@@ -128,7 +128,7 @@
     (stop-dag! [_this]
       (try
         (dag-waves/stop-dag!)
-        (catch Exception _ nil)))
+        (catch Exception e {:stopped false :error (ex-message e)})))
     (dag-status [_this]
       (try
         (dag-waves/dag-status)
