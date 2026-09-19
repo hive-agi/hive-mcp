@@ -1,7 +1,7 @@
 (ns hive-mcp.hivemind.state
   "Hivemind state atoms and direct accessors."
 
-  (:require [hive-mcp.server.guards :as guards]
+  (:require [hive-spi.swarm.guards :as guards]
             [taoensso.timbre :as log]
             [hive-dsl.bounded-atom :refer [bounded-atom bput! bget bounded-swap!
                                            bclear! register-sweepable!]]))

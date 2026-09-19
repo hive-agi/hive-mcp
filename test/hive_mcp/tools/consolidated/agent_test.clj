@@ -23,7 +23,7 @@
             [hive-mcp.tools.swarm.core :as swarm-core]
             [hive-mcp.events.core :as events]
             [hive-mcp.scheduler.dag-waves :as dag-waves]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [hive-mcp.agent.provider.collect :as provider-collect]
             [hive-test.isolation :as iso]
             [hive-mcp.test.stub.terminal-addon :as stub-term]

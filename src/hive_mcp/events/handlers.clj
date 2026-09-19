@@ -68,7 +68,7 @@
             [hive-mcp.events.handlers.memory-read :as memory-read]
             [hive-mcp.events.handlers.lifecycle :as lifecycle]
             [hive-mcp.events.registry :as registry]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [clojure.set :as set]
             [hive-mcp.events.handlers.resilience :as resilience]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>

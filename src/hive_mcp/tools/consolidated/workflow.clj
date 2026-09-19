@@ -19,7 +19,7 @@
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.dns.result :as result]
             [hive-mcp.config.core :as config]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [taoensso.timbre :as log]
             [hive-mcp.tools.consolidated.workflow.ir :as ir]
             [hive-mcp.tools.consolidated.workflow.goal :as goal]))

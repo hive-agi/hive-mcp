@@ -11,7 +11,7 @@
 
    halt-key! reverses init-key (guards down, hooks triggered, coordinator marked)."
   (:require [integrant.core :as ig]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [hive-mcp.server.lifecycle :as lifecycle]
             [hive-mcp.server.init :as init]
             [hive-mcp.dns.result :as result]

@@ -9,7 +9,7 @@
   (:require [datascript.core :as d]
             [taoensso.timbre :as log]
             [hive-mcp.swarm.datascript.schema :as schema]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

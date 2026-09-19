@@ -10,7 +10,7 @@
             [clojure.data.json :as json]
             [hive-mcp.tools.agent.spawn :as spawn]
             [hive-mcp.channel.audience :as aud]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.swarm.logic :as logic]
             [hive-mcp.tools.swarm.core :as swarm-core]
