@@ -51,6 +51,7 @@
   hive-mcp.tools.registry
   hive-mcp.tools.composite
   hive-mcp.tools.cli
+  hive-mcp.tools.op-outcome
   hive-mcp.tools.result-bridge
   hive-mcp.tools.multi
   hive-mcp.tools.multi-async
