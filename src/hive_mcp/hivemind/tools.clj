@@ -56,9 +56,7 @@ The env var fallback reads from MCP server process, NOT your ling process!"
     :inputSchema {:type "object"
                   :properties {"agent_id" {:type "string"
                                            :description "REQUIRED for lings: Pass your $CLAUDE_SWARM_SLAVE_ID. Without this, status sync will fail."}
-                               "event_type" {:type "string"
-                                             :enum (event-registry/mcp-enum)
-                                             :description "Type of event"}
+                               "event_type" (event-registry/event-type-schema "Type of event")
                                "task" {:type "string"
                                        :description "Current task description"}
                                "message" {:type "string"

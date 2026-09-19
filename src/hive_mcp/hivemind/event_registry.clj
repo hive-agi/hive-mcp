@@ -27,6 +27,16 @@
   [& args]
   (apply (impl 'mcp-enum) args))
 
+(defn event-type-schema
+  "JSON schema for an event_type tool parameter described by DESCRIPTION.
+   Carries the :enum of known event types when the swarm addon is loaded, and
+   omits it otherwise, so a host without hive-agent still builds its tool
+   schemas at load."
+  [description]
+  (cond-> {:type "string" :description description}
+    (delegate/available? "hive-agent.swarm.hivemind.event-registry")
+    (assoc :enum (mcp-enum))))
+
 (def mcp-event-types @(impl 'mcp-event-types))
 
 (def registry @(impl 'registry))

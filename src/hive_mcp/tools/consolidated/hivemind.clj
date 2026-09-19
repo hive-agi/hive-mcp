@@ -50,9 +50,7 @@ Addressing, for shout: `to` names ONE peer and the message reaches that agent an
                  :properties {"command" {:type "string"
                                          :enum ["shout" "ask" "status" "respond" "messages" "nudge" "help"]
                                          :description "Hivemind operation to perform"}
-                              "event_type" {:type "string"
-                                            :enum (event-registry/mcp-enum)
-                                            :description "Type of event for shout"}
+                              "event_type" (event-registry/event-type-schema "Type of event for shout")
                               "task" {:type "string"
                                       :description "Current task description"}
                               "message" {:type "string"
