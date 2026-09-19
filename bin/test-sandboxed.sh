@@ -110,6 +110,26 @@ fi
 SDEPS=()
 [[ -n "$SDEPS_EDN" ]] && SDEPS=(-Sdeps "$SDEPS_EDN")
 
+# A -n namespace that lives in the OTHER tree is not an error to the runner: it
+# scans only its own -d dir, finds nothing, runs zero tests and exits 0. That
+# green is a lie, so refuse it here and say which spelling reaches the suite.
+TREE="test"; OTHER="test-swarm"; OTHER_HINT="add --swarm"
+if [[ "$SWARM" -eq 1 ]]; then TREE="test-swarm"; OTHER="test"; OTHER_HINT="drop --swarm"; fi
+ns_file_in() {  # ns_file_in <namespace> <tree>
+  local rel="${1//./\/}"; rel="${rel//-/_}"
+  [[ -f "$PROJECT_DIR/$2/$rel.clj" || -f "$PROJECT_DIR/$2/$rel.cljc" ]]
+}
+for ((i = 0; i < ${#RUNNER_ARGS[@]}; i++)); do
+  case "${RUNNER_ARGS[i]}" in
+    -n|--namespace) NS="${RUNNER_ARGS[i+1]:-}" ;;
+    --namespace=*)  NS="${RUNNER_ARGS[i]#*=}" ;;
+    *)              NS="" ;;
+  esac
+  if [[ -n "$NS" ]] && ! ns_file_in "$NS" "$TREE" && ns_file_in "$NS" "$OTHER"; then
+    die "$NS lives under $OTHER/, which this run does not scan; $OTHER_HINT"
+  fi
+done
+
 # ── Create the sandbox root (the ONLY path this script ever deletes) ────────
 SBX="$(mktemp -d "$TMPROOT/hive-mcp-test-sbx.XXXXXXXX")"
 
