@@ -17,4 +17,5 @@
  :hive/nats             {:enabled true}
  :hive/swarm-sync       {:source         :datahike
                          :event-backbone :nats}
- :hive/keepalive        {:signal :sigterm}}
+ :hive/keepalive        {:signal :sigterm}
+ :hive/channel-bridge   ^:replace {:events #ig/ref :hive/events}}
