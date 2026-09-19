@@ -61,14 +61,7 @@
 (defn isolated-ds-fixture
   "Each test gets a fresh DataScript connection."
   [f]
-  (let [conn-atom  @#'conn/conn
-        test-conn  (d/create-conn schema/schema)
-        saved-conn @conn-atom]
-    (reset! conn-atom test-conn)
-    (try
-      (f)
-      (finally
-        (reset! conn-atom saved-conn)))))
+  (conn/with-test-conn (d/create-conn schema/schema) f))
 
 (defn reset-forge-state-fixture
   "Reset forge state between tests."

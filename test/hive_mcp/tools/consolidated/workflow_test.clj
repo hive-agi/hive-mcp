@@ -52,18 +52,11 @@
 (def ^:dynamic *test-conn* nil)
 
 (defn isolated-ds-fixture
-  "Each test gets a fresh DataScript connection.
-   Swaps the value inside the private conn atom, preserving production conn."
+  "Each test gets a fresh DataScript connection, set as the swarm test conn."
   [f]
-  (let [conn-atom  @#'conn/conn          ;; The atom itself (defonce ^:private conn (atom nil))
-        test-conn  (d/create-conn schema/schema)
-        saved-conn @conn-atom]            ;; Save current DS connection
-    (reset! conn-atom test-conn)
+  (let [test-conn (d/create-conn schema/schema)]
     (binding [*test-conn* test-conn]
-      (try
-        (f)
-        (finally
-          (reset! conn-atom saved-conn))))))
+      (conn/with-test-conn test-conn f))))
 
 (use-fixtures :each isolated-ds-fixture)
 
