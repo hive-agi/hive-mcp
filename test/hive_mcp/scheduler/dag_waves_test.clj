@@ -2,7 +2,8 @@
   "Tests for the DAGWave scheduler.
    
    Tests the core scheduling logic with mocked dependencies:
-   - Kanban queries mocked via with-redefs
+   - Kanban reached through the hive-contracts ports: a table-backed
+     IKanbanRead/IKanbanWrite double is installed in the registry
    - KG edge queries mocked via with-redefs
    - Ling spawning mocked (no actual processes)
    - Channel subscription mocked (no pub/sub)
@@ -16,7 +17,9 @@
    6. Edge cases (cycles, failures, dry-run)"
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.scheduler.dag-waves :as dag]
-            [hive-mcp.tools.memory-kanban :as mem-kanban]
+            [hive-contracts.kanban :as kanban]
+            [hive-contracts.registry :as contracts]
+            [hive-mcp.test.stub.kanban :as kport]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [hive-mcp.agent.ling :as ling]
             [hive-mcp.hivemind.core :as hivemind]
@@ -97,14 +100,15 @@
 ;; Mock Helpers
 ;; =============================================================================
 
-(defn mock-kanban-list-slim
-  "Mock kanban list that returns tasks from *chroma-entries."
-  [{:keys [status directory]}]
-  (let [entries (vals @*chroma-entries)
-        filtered (if status
-                   (filter #(= status (:status %)) entries)
-                   entries)]
-    {:type "text" :text (json/write-str filtered)}))
+(defn mock-kanban-list
+  "Board rows from *chroma-entries, filtered by the query's :status. The
+   installed kanban double calls this through the var, so a test rebinds it
+   to answer from another table."
+  [{:keys [status]}]
+  (let [entries (vals @*chroma-entries)]
+    (vec (if status
+           (filter #(= status (:status %)) entries)
+           entries))))
 
 (defn mock-get-edges-from
   "Mock KG edge query."
@@ -125,6 +129,34 @@
   (when (= new_status "done")
     (swap! *chroma-entries dissoc task_id))
   {:type "text" :text (json/write-str {:id task_id :status new_status})})
+
+(defrecord TableKanban []
+  kanban/IKanbanRead
+  (list-tasks [_ query] (mock-kanban-list query))
+  (get-task [_ id] (mock-get-entry-by-id id))
+  kanban/IKanbanWrite
+  (transition! [_ {:keys [task-id new-status]}]
+    (mock-kanban-move {:task_id task-id :new_status new-status})
+    {:ok {:id task-id :status new-status}})
+  (create-task! [_ _] {:err {:error :kanban/read-only :message "test double"}}))
+
+(defn with-kanban-port
+  "clojure.test fixture: the table-backed double answers both kanban ports.
+   The scheduler resolves the provider through hive-contracts.registry on
+   every call, so the double is installed there, never captured."
+  [f]
+  (let [prior (into {} (for [p [:IKanbanRead :IKanbanWrite] :when (contracts/registered? p)]
+                         [p (contracts/provider p)]))
+        double (->TableKanban)]
+    (try
+      (contracts/register! :IKanbanRead double)
+      (contracts/register! :IKanbanWrite double)
+      (f)
+      (finally
+        (doseq [p [:IKanbanRead :IKanbanWrite]]
+          (if-let [impl (get prior p)]
+            (contracts/register! p impl)
+            (contracts/unregister! p)))))))
 
 (def ^:private *spawned-lings (atom []))
 
@@ -180,9 +212,7 @@
                               "task-c" task-c
                               "task-d" task-d})
      (reset! *spawned-lings [])
-     (with-redefs [mem-kanban/handle-mem-kanban-list-slim mock-kanban-list-slim
-                   mem-kanban/handle-mem-kanban-move mock-kanban-move
-                   kg-edges/get-edges-from mock-get-edges-from
+     (with-redefs [kg-edges/get-edges-from mock-get-edges-from
                    ling/create-ling! mock-create-ling!
                    hivemind/shout! mock-shout!
                    channel/subscribe! mock-subscribe!
@@ -209,7 +239,7 @@
         (sreg/reset-registry!)
         (doseq [[k s] prior] (sreg/register-store! k s))))))
 
-(use-fixtures :each reset-dag-state-fixture with-task-store)
+(use-fixtures :each reset-dag-state-fixture with-task-store with-kanban-port)
 
 ;; =============================================================================
 ;; Tests: find-ready-tasks
@@ -258,8 +288,7 @@
 
 (deftest find-ready-tasks-empty-dag
   (testing "No tasks returns empty vector"
-    (with-redefs [mem-kanban/handle-mem-kanban-list-slim
-                  (fn [_] {:type "text" :text "[]"})
+    (with-redefs [mock-kanban-list (fn [_] [])
                   kg-edges/get-edges-from (fn [& _] [])
                   mock-get-entry-by-id (fn [_] nil)]
       (let [ready (dag/find-ready-tasks test-directory #{} {} #{})]
@@ -642,13 +671,7 @@
     ;; Extended DAG: A->B->D, A->C->D, E (independent, no deps)
     (let [task-e {:id "task-e" :title "Independent task" :status "todo" :priority "low"}
           extended-edges (assoc mock-edges "task-e" [])]
-      (with-redefs [mem-kanban/handle-mem-kanban-list-slim
-                    (fn [{:keys [status]}]
-                      (let [entries (vals @*chroma-entries)
-                            filtered (if status (filter #(= status (:status %)) entries) entries)]
-                        {:type "text" :text (json/write-str filtered)}))
-                    mem-kanban/handle-mem-kanban-move mock-kanban-move
-                    kg-edges/get-edges-from (fn ([tid] (get extended-edges tid []))
+      (with-redefs [kg-edges/get-edges-from (fn ([tid] (get extended-edges tid []))
                                               ([tid _] (get extended-edges tid [])))
                     ling/create-ling! mock-create-ling!
                     hivemind/shout! mock-shout!
@@ -821,11 +844,10 @@
           cycle-edges {"task-x" [{:kg-edge/from "task-x" :kg-edge/to "task-z" :kg-edge/relation :depends-on}]
                        "task-y" [{:kg-edge/from "task-y" :kg-edge/to "task-x" :kg-edge/relation :depends-on}]
                        "task-z" [{:kg-edge/from "task-z" :kg-edge/to "task-y" :kg-edge/relation :depends-on}]}]
-      (with-redefs [mem-kanban/handle-mem-kanban-list-slim
+      (with-redefs [mock-kanban-list
                     (fn [{:keys [status]}]
-                      (let [entries [task-x task-y task-z]
-                            filtered (if status (filter #(= status (:status %)) entries) entries)]
-                        {:type "text" :text (json/write-str filtered)}))
+                      (let [entries [task-x task-y task-z]]
+                        (vec (if status (filter #(= status (:status %)) entries) entries))))
                     kg-edges/get-edges-from (fn ([tid] (get cycle-edges tid []))
                                               ([tid _] (get cycle-edges tid [])))
                     mock-get-entry-by-id (fn [tid]
@@ -841,13 +863,7 @@
           mixed-edges (merge mock-edges
                              {"task-x" [{:kg-edge/from "task-x" :kg-edge/to "task-y" :kg-edge/relation :depends-on}]
                               "task-y" [{:kg-edge/from "task-y" :kg-edge/to "task-x" :kg-edge/relation :depends-on}]})]
-      (with-redefs [mem-kanban/handle-mem-kanban-list-slim
-                    (fn [{:keys [status]}]
-                      (let [entries (concat (vals @*chroma-entries) [task-x task-y])
-                            filtered (if status (filter #(= status (:status %)) entries) entries)]
-                        {:type "text" :text (json/write-str filtered)}))
-                    mem-kanban/handle-mem-kanban-move mock-kanban-move
-                    kg-edges/get-edges-from (fn ([tid] (get mixed-edges tid []))
+      (with-redefs [kg-edges/get-edges-from (fn ([tid] (get mixed-edges tid []))
                                               ([tid _] (get mixed-edges tid [])))
                     ling/create-ling! mock-create-ling!
                     hivemind/shout! mock-shout!
@@ -921,11 +937,9 @@
                       {:id "ft-3" :title "Task 3" :status "todo" :priority "medium"}
                       {:id "ft-4" :title "Task 4" :status "todo" :priority "medium"}]
           no-edges (zipmap (map :id flat-tasks) (repeat []))]
-      (with-redefs [mem-kanban/handle-mem-kanban-list-slim
+      (with-redefs [mock-kanban-list
                     (fn [{:keys [status]}]
-                      (let [filtered (if status (filter #(= status (:status %)) flat-tasks) flat-tasks)]
-                        {:type "text" :text (json/write-str filtered)}))
-                    mem-kanban/handle-mem-kanban-move mock-kanban-move
+                      (vec (if status (filter #(= status (:status %)) flat-tasks) flat-tasks)))
                     kg-edges/get-edges-from (fn ([tid] (get no-edges tid []))
                                               ([tid _] (get no-edges tid [])))
                     mock-get-entry-by-id (fn [tid]
@@ -954,11 +968,9 @@
                       {:id "ft-3" :title "Task 3" :status "todo" :priority "medium"}
                       {:id "ft-4" :title "Task 4" :status "todo" :priority "medium"}]
           no-edges (zipmap (map :id flat-tasks) (repeat []))]
-      (with-redefs [mem-kanban/handle-mem-kanban-list-slim
+      (with-redefs [mock-kanban-list
                     (fn [{:keys [status]}]
-                      (let [filtered (if status (filter #(= status (:status %)) flat-tasks) flat-tasks)]
-                        {:type "text" :text (json/write-str filtered)}))
-                    mem-kanban/handle-mem-kanban-move mock-kanban-move
+                      (vec (if status (filter #(= status (:status %)) flat-tasks) flat-tasks)))
                     kg-edges/get-edges-from (fn ([tid] (get no-edges tid []))
                                               ([tid _] (get no-edges tid [])))
                     mock-get-entry-by-id (fn [tid]
@@ -1075,9 +1087,7 @@
                         "task-b" [{:kg-edge/from "task-b" :kg-edge/to "task-a" :kg-edge/relation :depends-on}]
                         "task-c" [{:kg-edge/from "task-c" :kg-edge/to "task-b" :kg-edge/relation :depends-on}]
                         "task-d" [{:kg-edge/from "task-d" :kg-edge/to "task-c" :kg-edge/relation :depends-on}]}]
-      (with-redefs [mem-kanban/handle-mem-kanban-list-slim mock-kanban-list-slim
-                    mem-kanban/handle-mem-kanban-move mock-kanban-move
-                    kg-edges/get-edges-from (fn ([tid] (get linear-edges tid []))
+      (with-redefs [kg-edges/get-edges-from (fn ([tid] (get linear-edges tid []))
                                               ([tid _] (get linear-edges tid [])))
                     ling/create-ling! mock-create-ling!
                     hivemind/shout! mock-shout!
@@ -1123,7 +1133,9 @@
   ;; in the completed set. The buggy read went through vectordb.facade (the
   ;; :default / vector slot), returned nil for a kanban-slot card, and so
   ;; kanban-task-done? reported EVERY dependency done -> dependency ordering
-  ;; silently collapsed. The fix reads through vectordb.kanban-facade.
+  ;; silently collapsed. The fix reads through vectordb.kanban-facade, which
+  ;; core's real kanban provider (installed here in place of the table double)
+  ;; still does behind the IKanbanRead port.
   (let [kanban-id    "kanban-slot-only-task"
         kanban-card  {:id kanban-id :content {:title "lives in :kanban slot" :status "todo"}}
         prior-kanban (get (sreg/registered-stores) :kanban)]
@@ -1131,14 +1143,16 @@
       ;; Card resolvable ONLY through the :kanban slot; force :kanban routing.
       (sreg/register-store!
        :kanban (stub/->stub nil {:get-entry-fn (fn [id] (when (= id kanban-id) kanban-card))}))
-      (with-redefs [kanban-facade/mode (constantly :kanban)]
-        (testing "kanban-slot card is not done, and is resolved via the :kanban slot"
-          (is (some? (#'dag/get-kanban-task kanban-id))
-              "get-kanban-task must resolve the card through the :kanban slot")
-          (is (false? (#'dag/kanban-task-done? kanban-id #{}))
-              "wrong-facade regression: a live kanban card must read as NOT done"))
-        (testing "the same card counts as done once its id is in the completed set"
-          (is (true? (#'dag/kanban-task-done? kanban-id #{kanban-id})))))
+      (kport/with-core-kanban
+        (fn []
+          (with-redefs [kanban-facade/mode (constantly :kanban)]
+            (testing "kanban-slot card is not done, and is resolved via the :kanban slot"
+              (is (some? (#'dag/get-kanban-task kanban-id))
+                  "get-kanban-task must resolve the card through the :kanban slot")
+              (is (false? (#'dag/kanban-task-done? kanban-id #{}))
+                  "wrong-facade regression: a live kanban card must read as NOT done"))
+            (testing "the same card counts as done once its id is in the completed set"
+              (is (true? (#'dag/kanban-task-done? kanban-id #{kanban-id})))))))
       (finally
         (if prior-kanban
           (sreg/register-store! :kanban prior-kanban)

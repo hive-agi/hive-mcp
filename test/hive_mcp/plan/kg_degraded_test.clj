@@ -23,6 +23,7 @@
             [hive-test.isolation :as iso]
             [hive-mcp.isolation-methods]
             [hive-mcp.test.stub.memory-store :as mem-stub]
+            [hive-mcp.test.stub.kanban :as kport]
             [hive-mcp.plan.schema :as schema]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -36,8 +37,10 @@
   ;; The kanban collaborator is reached through its real port: an
   ;; atom-backed IMemoryStore stub registered in the store registry, so
   ;; the integration tests drive the production create path instead of a
-  ;; hand-rolled fn whose arity can drift.
+  ;; hand-rolled fn whose arity can drift. Core's IKanbanWrite provider
+  ;; sits in front of that store, resolved through hive-contracts.registry.
   mem-stub/with-stub-store
+  kport/with-core-kanban
   (iso/with-isolations :kg-conn)
   (fn [f]
     ;; 200ms is fast enough to keep tests sub-second yet generous enough
