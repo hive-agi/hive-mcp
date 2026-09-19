@@ -7,7 +7,7 @@
             [hive-mcp.swarm.datascript.lings :as ds-lings]
             [hive-mcp.tools.memory.scope :as scope]
             [taoensso.timbre :as log]
-            [hive-mcp.emacs-ext.client :as ec]))
+            [hive-spi.editor.services :as svc]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -17,9 +17,7 @@
    Fallback when headless strategy can't reach the Emacs buffer."
   [agent-id]
   (try
-    (let [elisp (format "(when (fboundp 'hive-mcp-swarm-slaves-kill) (hive-mcp-swarm-slaves-kill \"%s\"))"
-                        agent-id)
-          result (ec/eval-elisp elisp)]
+    (let [result (svc/invoke :vessel :dispatch {:op :swarm/kill, :slave-id agent-id} 5000)]
       (log/info "Emacs kill result" {:agent-id agent-id :result result})
       (when (:success result)
         (try (ds-lings/remove-slave! agent-id) (catch Exception _))

@@ -3,7 +3,7 @@
   (:require [hive-mcp.agent.protocol :as proto]
             [hive-mcp.agent.ollama :as ollama]
             [hive-mcp.agent.openrouter :as openrouter]
-            [hive-mcp.emacs-ext.client :as ec]
+            [hive-spi.editor.services :as svc]
             [clojure.data.json :as json]
             [taoensso.timbre :as log])
   (:import [java.util.concurrent ArrayBlockingQueue TimeUnit]))
@@ -18,9 +18,7 @@
 (defn- spawn-session!
   "Spawn a new CIDER session via Emacs."
   [session-name]
-  (let [elisp (format "(json-encode (hive-mcp-cider-spawn-session \"%s\" nil nil))"
-                      session-name)
-        {:keys [success result error]} (ec/eval-elisp elisp)]
+  (let [{:keys [success result error]} (svc/invoke :vessel :dispatch {:op :cider/spawn-session, :name session-name} 5000)]
     (if success
       (let [data (json/read-str result :key-fn keyword)]
         (log/info "Spawned CIDER session:" session-name "port:" (:port data))
@@ -35,8 +33,7 @@
 (defn- kill-session!
   "Kill a CIDER session via Emacs."
   [session-name]
-  (let [elisp (format "(hive-mcp-cider-kill-session \"%s\")" session-name)
-        {:keys [success]} (ec/eval-elisp elisp)]
+  (let [{:keys [success]} (svc/invoke :vessel :dispatch {:op :cider/kill-session, :name session-name} 5000)]
     (when success
       (log/info "Killed CIDER session:" session-name))
     success))

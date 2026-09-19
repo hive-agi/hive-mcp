@@ -14,7 +14,7 @@
    DDD: Infrastructure service — IO collection from multiple sources."
   (:require [hive-mcp.crystal.core :as crystal]
             [hive-mcp.crystal.recall :as recall]
-            [hive-mcp.emacs-ext.client :as ec]
+            [hive-spi.editor.services :as svc]
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.agent.context :as ctx]
             [hive-mcp.tools.memory.scope :as scope]
@@ -39,15 +39,16 @@
 ;; Helpers
 ;; =============================================================================
 
-(defn- eval-elisp-safe
-  "Eval elisp with timeout. Returns {:success :result :error :timed-out}."
-  [elisp timeout-ms]
+(defn- dispatch-safe
+  "Dispatch OP through the :vessel :dispatch capability with timeout.
+   Returns {:success :result :error :timed-out}."
+  [op timeout-ms]
   (let [r (result/try-effect* :elisp/eval-failed
-                              (ec/eval-elisp-with-timeout elisp timeout-ms))]
+                              (svc/invoke :vessel :dispatch op timeout-ms))]
     (if (result/ok? r)
       (let [v (:ok r)]
         (when (:timed-out v)
-          (log/warn "eval-elisp-safe: timed out"))
+          (log/warn "dispatch-safe: timed out"))
         v)
       {:success false :error (:message r)})))
 
@@ -95,11 +96,9 @@
                   (let [dir (or directory (ctx/current-directory))
                         project-id (when dir (scope/get-current-project-id dir))
                         session-tag (crystal/session-tag)
-                        elisp (if project-id
-                                (format "(json-encode (hive-mcp-memory-query 'note nil %s 50 'ephemeral nil))"
-                                        (pr-str project-id))
-                                "(json-encode (hive-mcp-memory-query 'note nil nil 50 'ephemeral nil))")
-                        {:keys [success result error]} (eval-elisp-safe elisp 12000)]
+                        op (cond-> {:op :crystal/session-notes}
+                             project-id (assoc :project-id project-id))
+                        {:keys [success result error]} (dispatch-safe op 12000)]
                     (if success
                       (let [raw-notes (parse-json-safe result)
                             notes (filterv map? (if (sequential? raw-notes) raw-notes []))]
@@ -133,16 +132,9 @@
                                                  :source :datascript}))))
                         ds-ok? (result/ok? ds-result)
                         ds-tasks (if ds-ok? (:ok ds-result) [])
-                        elisp-ephemeral (if project-id
-                                          (format "(hive-mcp-memory-query 'note '(\"kanban\") %s 50 'ephemeral nil)"
-                                                  (pr-str project-id))
-                                          "(hive-mcp-memory-query 'note '(\"kanban\") nil 50 'ephemeral nil)")
-                        elisp-short (if project-id
-                                      (format "(hive-mcp-memory-query 'note '(\"kanban\") %s 50 'short-term nil)"
-                                              (pr-str project-id))
-                                      "(hive-mcp-memory-query 'note '(\"kanban\") nil 50 'short-term nil)")
-                        elisp (format "(json-encode (append %s %s))" elisp-ephemeral elisp-short)
-                        {:keys [success result error]} (eval-elisp-safe elisp 15000)
+                        op (cond-> {:op :crystal/kanban-notes}
+                             project-id (assoc :project-id project-id))
+                        {:keys [success result error]} (dispatch-safe op 15000)
                         emacs-tasks (if success
                                       (let [parsed (parse-json-safe result)]
                                         (->> (if (sequential? parsed) parsed [])
@@ -177,11 +169,9 @@
                                   (crystal/get-session-start "_global")
                                   (crystal/get-session-start nil))
                         since (if start (.toString start) "midnight")
-                        elisp (if dir
-                                (format "(let ((default-directory %s)) (shell-command-to-string \"git log --since='%s' --oneline 2>/dev/null\"))"
-                                        (pr-str dir) since)
-                                (format "(shell-command-to-string \"git log --since='%s' --oneline 2>/dev/null\")" since))
-                        {:keys [success result error]} (eval-elisp-safe elisp 10000)]
+                        op (cond-> {:op :crystal/git-commits :since since}
+                             dir (assoc :directory dir))
+                        {:keys [success result error]} (dispatch-safe op 10000)]
                     (if success
                       (let [commits (when (and result (not (str/blank? result)))
                                       (str/split-lines (str/trim result)))]
