@@ -29,11 +29,22 @@
             [hive-mcp.channel.broadcast-ledger :as ledger]
             [hive-mcp.channel.payload-ref :as payload-ref]
             [hive-mcp.channel.context-store :as context-store]
-            [hive-mcp.protocols.delivery-channel :as dc]))
+            [hive-mcp.protocols.delivery-channel :as dc]
+            [taoensso.timbre :as log]))
 
 ;;; ============================================================================
 ;;; The adapter: every method delegates to an existing hive-mcp var
 ;;; ============================================================================
+
+(defn- emit-leg!
+  "Run one transport's emit THUNK. A throw is logged under TRANSPORT and
+   dropped, so the remaining legs still run and the port never throws."
+  [transport thunk]
+  (try
+    (thunk)
+    (catch Exception e
+      (log/warn "frontend push:" transport "leg failed:" (.getMessage e))))
+  nil)
 
 (defn make-adapter
   "The messaging port implementation backed by the live hive-mcp fabric."
@@ -53,14 +64,15 @@
       (channel/broadcast! msg))
       ;; TODO: IFrontendPush covers both transports: also mirror MSG to
       ;; hive-mcp.channel.websocket/broadcast! once the swarm call sites
-      ;; that conflate the two surfaces are migrated; today callers that
-      ;; want the websocket surface call ws/emit! directly.
+      ;; that conflate the two surfaces are migrated. emit! already does.
     (emit! [_ event-type data]
-      (channel/emit-event! event-type data))
-      ;; TODO: also emit on the websocket transport
-      ;; (hive-mcp.channel.websocket/emit!): emit-event! covers the
-      ;; channel socket + local bus; agora.dialogue today emits to ws
-      ;; separately. Until that merges, this is the closest single verb.
+      ;; One verb, both transports: emit-event! covers the channel socket
+      ;; and the local bus, ws/emit! the browser clients. Each leg is
+      ;; guarded on its own, so a failing transport neither throws through
+      ;; the port nor silences the other one: UI clients are spectators.
+      (emit-leg! :channel #(channel/emit-event! event-type data))
+      (emit-leg! :websocket #(ws/emit! event-type data))
+      nil)
     (frontend-status [_]
       {:channel-connected? (boolean (channel/server-connected?))
        :ws-connected? (boolean (ws/connected?))

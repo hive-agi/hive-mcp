@@ -39,7 +39,7 @@
   (:require [hive-mcp.agora.schema :as schema]
             [hive-mcp.agora.signal :as signal]
             [hive-mcp.tools.swarm.dispatch :as dispatch]
-            [hive-mcp.channel.websocket :as ws]
+            [hive-spi.swarm.ports.messaging :as push]
             [datascript.core :as d]
             [clojure.data.json :as json]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]))
@@ -62,6 +62,13 @@
 (def disruption-signals
   "Signals that reset/disrupt equilibrium. Delegates to signal.clj."
   signal/disruption-signals)
+
+(defn- emit!
+  "Push a dialogue event to the UI clients through the host's frontend port.
+   With no host adapter installed the port's noop drops it: dialogue state
+   never depends on a spectator being connected."
+  [event-type data]
+  (push/emit! (push/get-messaging) event-type data))
 
 ;; =============================================================================
 ;; State - Delegated to schema.clj (DataScript)
@@ -153,9 +160,9 @@
                        :name (or topic "Unspecified topic")
                        :config {:threshold 0.8 :timeout-ms 300000}})]
     ;; Emit event
-    (ws/emit! :agora/created {:dialogue-id id
-                              :participants participants
-                              :topic topic})
+    (emit! :agora/created {:dialogue-id id
+                           :participants participants
+                           :topic topic})
     id))
 
 (defn join-dialogue
@@ -172,8 +179,8 @@
       (d/transact! c [{:db/id eid
                        :agora.dialogue/participants slave-id}])
       (log/info "Participant" slave-id "joined dialogue" dialogue-id)
-      (ws/emit! :agora/participant-joined {:dialogue-id dialogue-id
-                                           :slave-id slave-id})
+      (emit! :agora/participant-joined {:dialogue-id dialogue-id
+                                        :slave-id slave-id})
       true)
     (do
       (log/warn "Cannot join - dialogue not found:" dialogue-id)
@@ -194,8 +201,8 @@
       ;; Retract the participant
       (d/transact! c [[:db/retract eid :agora.dialogue/participants slave-id]])
       (log/info "Participant" slave-id "left dialogue" dialogue-id)
-      (ws/emit! :agora/participant-left {:dialogue-id dialogue-id
-                                         :slave-id slave-id})
+      (emit! :agora/participant-left {:dialogue-id dialogue-id
+                                      :slave-id slave-id})
       ;; Check if dialogue should end (< 2 participants)
       (let [updated (schema/get-dialogue dialogue-id)
             remaining (count (:participants updated))]
@@ -345,18 +352,18 @@
     (let [turn (last (get-dialogue-turns dialogue-id))]
 
       ;; Emit turn event
-      (ws/emit! :agora/turn {:dialogue-id dialogue-id
-                             :turn-num (:turn-num turn)
-                             :from sender-id
-                             :to to
-                             :signal final-signal})
+      (emit! :agora/turn {:dialogue-id dialogue-id
+                          :turn-num (:turn-num turn)
+                          :from sender-id
+                          :to to
+                          :signal final-signal})
 
       ;; Check for Nash equilibrium after recording turn
       (when (nash-equilibrium? dialogue-id)
         (schema/update-dialogue-status! dialogue-id :consensus)
         (log/info "Dialogue" dialogue-id "reached Nash equilibrium (CONSENSUS)")
-        (ws/emit! :agora/consensus {:dialogue-id dialogue-id
-                                    :turns (count (get-dialogue-turns dialogue-id))}))
+        (emit! :agora/consensus {:dialogue-id dialogue-id
+                                 :turns (count (get-dialogue-turns dialogue-id))}))
 
       ;; Delegate to standard swarm dispatch
       (let [dispatch-result (dispatch/handle-swarm-dispatch
@@ -366,19 +373,18 @@
                               :files files})]
 
         ;; Emit turn-dispatched event for relay handler
-        (ws/emit! :agora/turn-dispatched
-                  {:dialogue-id dialogue-id
-                   :from sender-id
-                   :to to
-                   :turn-num (:turn-num turn)
-                   :signal final-signal
-                   :message cleaned-message
-                   :topic (:topic (get-dialogue dialogue-id))})
+        (emit! :agora/turn-dispatched {:dialogue-id dialogue-id
+                                       :from sender-id
+                                       :to to
+                                       :turn-num (:turn-num turn)
+                                       :signal final-signal
+                                       :message cleaned-message
+                                       :topic (:topic (get-dialogue dialogue-id))})
 
         ;; Update turn with task-id from result (if available)
         (when-let [task-id (rescue nil (some-> dispatch-result :result
-                                     (json/read-str :key-fn keyword)
-                                     :task-id))]
+                                               (json/read-str :key-fn keyword)
+                                               :task-id))]
           (update-turn-task-id! dialogue-id (:id turn) task-id))
 
         ;; Return enriched result
