@@ -52,8 +52,8 @@
 
 (def ^:private valid-ops
   "Valid mutation operation types."
-  #{:feedback :kanban-done :kanban-move :kanban-delete :expire :decay
-    :promote :reground :migrate :log-access :cleanup})
+  #{:feedback :kanban-done :kanban-move :kanban-delete :kanban-retag :kanban-edit
+    :expire :decay :promote :reground :migrate :log-access :cleanup})
 
 (def ^:private ephemeral-ops
   "Mutation ops NOT written to the durable trail (access telemetry; the signal
@@ -264,12 +264,37 @@
              :else          :ok))
      (catch Throwable _ :ok))))
 
+(def retained-ops
+  "Mutation ops prune-mutations! never retracts: the task lifecycle record."
+  #{:kanban-move :kanban-done :kanban-delete :kanban-retag :kanban-edit})
+
+(defn prune-victims
+  "Pure victim selection for prune-mutations!.
+   rows: [eid entry-id timestamp op] tuples. Rows whose op is in retained-ops
+   are never selected and do not count toward :max-per-entry.
+   Returns a vector of at most :batch-cap entity ids that are older than
+   `cutoff` or beyond the newest :max-per-entry events of their entry-id."
+  [rows cutoff {:keys [max-per-entry batch-cap]}]
+  (let [prunable (remove (fn [[_ _ _ op]] (contains? retained-ops op)) rows)
+        aged     (filter (fn [[_ _ ts]] (neg? (compare ts cutoff))) prunable)
+        overflow (mapcat (fn [[_ es]]
+                           (->> es
+                                (sort-by #(nth % 2))
+                                (drop-last max-per-entry)))
+                         (group-by second prunable))]
+    (->> (concat aged overflow)
+         (map first)
+         distinct
+         (take batch-cap)
+         vec)))
+
 (defn prune-mutations!
   "GUARDED prune of the :mem-mutation audit trail. Best-effort, non-fatal.
 
    Retracts mutation entities that exceed the retention bound:
      - older than :max-age-ms (TTL age-out), OR
      - beyond the newest :max-per-entry events for their entry-id.
+   Ops in retained-ops (the kanban lifecycle) are never retracted.
    Retractions are capped at :batch-cap per call.
 
    Heap-gated: by default only runs when heap pressure is :soft/:hard
@@ -294,23 +319,15 @@
       (let [level (heap-pressure-level)]
         (if (and (not force?) (= :ok level))
           {:ok true :pruned 0 :level level :skipped :no-pressure}
-          (let [cutoff   (java.util.Date. (- (System/currentTimeMillis) (long max-age-ms)))
-                rows     (kg-conn/query '[:find ?e ?eid ?ts
-                                          :where
-                                          [?e :mem-mutation/id _]
-                                          [?e :mem-mutation/entry-id ?eid]
-                                          [?e :mem-mutation/timestamp ?ts]])
-                aged     (filter (fn [[_ _ ts]] (neg? (compare ts cutoff))) rows)
-                overflow (mapcat (fn [[_ es]]
-                                   (->> es
-                                        (sort-by #(nth % 2))
-                                        (drop-last max-per-entry)))
-                                 (group-by second rows))
-                victims  (->> (concat aged overflow)
-                              (map first)
-                              distinct
-                              (take batch-cap)
-                              vec)]
+          (let [cutoff  (java.util.Date. (- (System/currentTimeMillis) (long max-age-ms)))
+                rows    (kg-conn/query '[:find ?e ?eid ?ts ?op
+                                         :where
+                                         [?e :mem-mutation/id _]
+                                         [?e :mem-mutation/entry-id ?eid]
+                                         [?e :mem-mutation/timestamp ?ts]
+                                         [?e :mem-mutation/op ?op]])
+                victims (prune-victims rows cutoff {:max-per-entry max-per-entry
+                                                    :batch-cap     batch-cap})]
             (when (seq victims)
               (kg-conn/transact! (mapv (fn [eid] [:db/retractEntity eid]) victims)))
             (log/info "Pruned :mem-mutation trail"
