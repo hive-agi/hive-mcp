@@ -58,6 +58,14 @@ bump, not a quiet minor, because a consumer's storage would change under it.
   var on every invocation, so a reload or a redef of the kernel reaches a
   caller that still spells the old name. Fifteen kernel census waivers are
   retired (90 to 75 of the baseline 100).
+- **Two more swarm-side host calls go through hive-spi ports.** Agora
+  dialogue events reach UI clients through `IFrontendPush/emit!`, and the
+  hive-mcp messaging adapter's `emit!` now covers the websocket as well as
+  the channel socket, each transport guarded on its own. Swarm dispatch reads
+  file staleness through `IDiscStaleness` and no longer requires
+  `hive-mcp.knowledge-graph.disc`, which retires one more census waiver
+  (75 to 74). With no host adapter installed both degrade to the port's
+  noop: no push, no staleness warning, no throw.
 
 ### Fixed
 

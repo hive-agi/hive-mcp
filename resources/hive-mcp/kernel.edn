@@ -215,7 +215,6 @@
   {:from hive-mcp.server.init, :to hive-mcp.memory.store.chroma, :since "2026-09-07", :retired-by "E6c"}
   {:from hive-mcp.swarm.coordinator, :to hive-mcp.knowledge-graph.disc, :since "2026-09-07", :retired-by "E6c"}
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.kg, :since "2026-09-07", :retired-by "E6c"}
-  {:from hive-mcp.tools.swarm.dispatch, :to hive-mcp.knowledge-graph.disc, :since "2026-09-07", :retired-by "E6c"}
   {:from hive-mcp.events.effects, :to hive-mcp.events.effects.agent, :since "2026-09-07", :retired-by "E7"}
   {:from hive-mcp.events.handlers, :to hive-mcp.events.handlers.ling, :since "2026-09-07", :retired-by "E7"}
   {:from hive-mcp.tools.catchup.spawn, :to hive-mcp.agent.hints, :since "2026-09-07", :retired-by "E7"}
