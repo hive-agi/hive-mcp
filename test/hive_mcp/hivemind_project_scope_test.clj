@@ -30,18 +30,17 @@
 
    Resets:
    - hivemind agent-registry (message history)
-   - DataScript connection (slave registry)
+   - DataScript connection (slave registry): a fresh test conn per test
    - Piggyback cursors"
   [f]
   ;; agent-registry is a bounded-atom (LRU/TTL), not an atom — clear it with bclear!.
-  (let [conn-atom (var-get #'conn/conn)
-        reset-state! (fn []
+  (let [reset-state! (fn []
                        (bclear! hivemind/agent-registry)
-                       (piggyback/reset-all-cursors!)
-                       (reset! conn-atom nil))]
+                       (piggyback/reset-all-cursors!))]
     (reset-state!)
-    (conn/ensure-conn)
-    (try (f) (finally (reset-state!)))))
+    (conn/with-test-conn
+     (conn/create-conn)
+     (fn [] (try (f) (finally (reset-state!)))))))
 
 (use-fixtures :each
   reset-hivemind-and-datascript-state
