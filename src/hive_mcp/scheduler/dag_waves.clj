@@ -1,16 +1,14 @@
 (ns hive-mcp.scheduler.dag-waves
   "DAGWave scheduler for dependency-ordered task dispatch."
-  (:require [hive-mcp.dns.result :as result]
+  (:require [hive-mcp.spi.kanban.registry :as kanban-port]
+            [hive-mcp.dns.result :as result]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
-            [hive-mcp.tools.memory-kanban :as mem-kanban]
-            [hive-mcp.vectordb.kanban-facade :as kanban-facade]
             [hive-mcp.agent.ling :as ling]
             [hive-mcp.hivemind.core :as hivemind]
             [hive-mcp.channel.core :as channel]
             [hive-mcp.swarm.datascript.queries :as ds-queries]
             [hive-mcp.tools.memory.scope :as scope]
             [clojure.core.async :as async :refer [go-loop <! close!]]
-            [clojure.data.json :as json]
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive.events :as ev]))
@@ -55,19 +53,16 @@
 ;; =============================================================================
 
 (defn- get-kanban-todos
-  "Get all kanban tasks with status 'todo' for the given project."
+  "Every task with status todo for the given project, through the kanban
+   read port resolved at call time."
   [directory]
   (result/rescue []
-                 (let [r (mem-kanban/handle-mem-kanban-list-slim
-                          {:status "todo" :directory directory})]
-                   (when-not (:isError r)
-                     (let [parsed (json/read-str (:text r) :key-fn keyword)]
-                       (if (sequential? parsed) parsed []))))))
+                 (vec (kanban-port/list-tasks {:status "todo" :directory directory}))))
 
 (defn- get-kanban-task
-  "Get a kanban task by ID from the kanban store."
+  "The task with TASK-ID through the kanban read port, or nil."
   [task-id]
-  (result/rescue nil (kanban-facade/get-entry-by-id task-id)))
+  (result/rescue nil (kanban-port/get-task task-id)))
 
 (defn- kanban-task-done?
   "Check if a kanban task has been completed."
@@ -79,8 +74,9 @@
   "Move a kanban task to 'done' status."
   [task-id directory]
   (result/rescue nil
-                 (mem-kanban/handle-mem-kanban-move
-                  {:task_id task-id :new_status "done" :directory directory})))
+                 (kanban-port/transition!
+                  {:task-id task-id :new-status "done" :directory directory})))
+
 
 ;; =============================================================================
 ;; KG Dependency Helpers

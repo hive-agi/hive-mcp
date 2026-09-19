@@ -98,6 +98,21 @@ bump, not a quiet minor, because a consumer's storage would change under it.
   `hive-mcp.knowledge-graph.disc`, which retires one more census waiver
   (75 to 74). With no host adapter installed both degrade to the port's
   noop: no push, no staleness warning, no throw.
+- **The kanban board is a port the kernel resolves, not a namespace it
+  requires.** `IKanbanRead` (list/get) and `IKanbanWrite` (transition/create)
+  live in `hive-mcp.spi.kanban` with a registry in
+  `hive-mcp.spi.kanban.registry`; `hive-mcp.tools.kanban.port` registers
+  core's provider over the existing kanban domain, and the scheduler, the
+  plan-to-kanban pipeline and `memory_kanban/query` reach the board through
+  the registry on every call, so an addon that owns the board replaces the
+  provider without the callers changing. Catchup no longer gathers the board
+  itself: contributors register a block with `hive-mcp.spi.catchup-registry`
+  and catchup composes whatever is registered, keyed by `:block/id`, which is
+  how `hive-mcp.tools.kanban.catchup-block` supplies the `:kanban` summary.
+  Two kernel census waivers are retired (61 to 59 of the baseline 100). The
+  port and the block registry are HOST-LOCAL for now; they belong in
+  hive-contracts and hive-spi, which have not released them, and the kernel
+  does not depend on an unreleased coordinate.
 
 ### Fixed
 

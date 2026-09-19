@@ -215,8 +215,6 @@
   {:from hive-mcp.tools.catchup, :to hive-mcp.crystal.fanout, :since "2026-09-07", :retired-by "K1"}
   {:from hive-mcp.tools.catchup, :to hive-mcp.crystal.harvest.collect, :since "2026-09-07", :retired-by "K1"}
   {:from hive-mcp.tools.catchup, :to hive-mcp.crystal.persist, :since "2026-09-07", :retired-by "K1"}
-  {:from hive-mcp.tools.catchup, :to hive-mcp.tools.kanban.list.plan, :since "2026-09-07", :retired-by "K1"}
-  {:from hive-mcp.tools.catchup, :to hive-mcp.vectordb.kanban-facade, :since "2026-09-07", :retired-by "K1"}
   {:from hive-mcp.tools.catchup.axiom-cache, :to hive-mcp.vectordb.resilience, :since "2026-09-07", :retired-by "K1"}
   {:from hive-mcp.tools.catchup.bundle, :to hive-mcp.vectordb.resilience, :since "2026-09-07", :retired-by "K1"}
   {:from hive-mcp.tools.catchup.bundle-cache, :to hive-mcp.memory.write-events, :since "2026-09-07", :retired-by "K1"}
