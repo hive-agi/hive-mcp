@@ -35,6 +35,15 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+### Added
+
+- **`agent spawn` takes `sandbox`.** An optional boolean that rides from the
+  tool call through the ling's opts to the headless backend's ctx unchanged.
+  The host does not interpret it: hive-agent resolves it against its own
+  default (`[:services :agent :sandbox]`), so an omitted flag leaves the key
+  out and an explicit `false` survives as an opt-out. A new optional argument,
+  so minor.
+
 ### Changed
 
 - **The test tree is two trees.** `test/` loads and runs from the committed

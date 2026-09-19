@@ -158,7 +158,7 @@
 
    The full request map rides on opts under :spawn/request for the
    :spawn/opts-overlay extension seam, and is stripped before planning."
-  [{:keys [type name cwd presets model provider tier token_budget project_id kanban_task_id spawn_mode agents max_budget_usd kg_compress sliding_window_size verbose llm_retries] :as params}]
+  [{:keys [type name cwd presets model provider tier token_budget project_id kanban_task_id spawn_mode agents max_budget_usd kg_compress sliding_window_size verbose llm_retries sandbox] :as params}]
   ;; Layer 3: Defense-in-depth spawn guard
   (if-let [_ (when (guards/child-ling?) :denied)]
     (do
@@ -233,7 +233,10 @@
                                                                                                (parse-long llm_retries)
                                                                                                llm_retries))
                                                        token-budget      (assoc :token-budget token-budget)
-                                                       sliding_window_size (assoc :sliding-window-size sliding_window_size)))
+                                                       sliding_window_size (assoc :sliding-window-size sliding_window_size)
+                                                       (some? sandbox)   (assoc :sandbox (if (string? sandbox)
+                                                                                           (= "true" sandbox)
+                                                                                           (boolean sandbox)))))
                     slave-id (proto/spawn! ling-agent (cond-> {:task brief
                                                                :parent parent
                                                                :kanban-task-id kanban_task_id

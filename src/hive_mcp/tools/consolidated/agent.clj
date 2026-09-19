@@ -129,6 +129,8 @@
                                          :description "[spawn] When true, bb-ling lings shout the full per-turn LLM exchange (last request message + response, truncated) to hivemind piggyback. Default false — exchange is always persisted to the agent's transcript store (Datalevin) and queryable post-hoc via the `transcript` MCP tool (list/search)."}
                               "llm_retries" {:type "integer"
                                              :description "[spawn] Max bb-ling loop-level retries on transient LLM failures (rate-limit/overload/timeout). Default 3, exponential backoff."}
+                              "sandbox" {:type "boolean"
+                                         :description "[spawn] Headless lings: run the ling's tools inside the host sandbox (bwrap). bash/grep/clojure_eval run with no network, no host home and a clean environment; file tools stay below cwd; delegated host tools are refused unless allowlisted. Omitted = the host default ([:services :agent :sandbox] in config.edn). false opts out."}
                               ;; common params
                               "agent_id" {:type "string"
                                           :description "Agent ID for status/kill/dispatch/claims"}

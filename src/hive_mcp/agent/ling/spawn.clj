@@ -490,7 +490,8 @@
                  (:llm-retries opts)        (assoc :llm-retries (:llm-retries opts))
                  (:sliding-window-size opts) (assoc :sliding-window-size (:sliding-window-size opts))
                  (:agents opts)             (assoc :agents (:agents opts))
-                 (:max-budget-usd opts)     (assoc :max-budget-usd (:max-budget-usd opts))))))
+                 (:max-budget-usd opts)     (assoc :max-budget-usd (:max-budget-usd opts))
+                 (some? (:sandbox opts))    (assoc :sandbox (:sandbox opts))))))
 
 (defn create-ling!
   "Create and spawn a new ling agent."
