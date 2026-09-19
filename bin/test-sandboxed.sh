@@ -23,9 +23,17 @@
 #   bin/test-sandboxed.sh -n hive-mcp.knowledge-graph.edges-test   # native flag
 #   bin/test-sandboxed.sh -r 'knowledge-graph.*'          # namespace regex
 #   bin/test-sandboxed.sh --keep-sandbox --focus <ns>     # don't delete sandbox
+#   bin/test-sandboxed.sh --swarm                          # the test-swarm/ suites
+#   bin/test-sandboxed.sh --swarm --focus hive-mcp.swarm.sync-test
 #   bin/test-sandboxed.sh --help
 #
-# Any arg other than --focus/--keep-sandbox/--help is passed THROUGH verbatim to
+# --swarm runs the swarm-coupled suites under test-swarm/ (:test:test-swarm).
+# They need the swarm addon (hive-agent, hive-datascript), which the committed
+# deps.edn never names, so --swarm reads it from the untracked local.deps.edn
+# and refuses to run without that file. Without --swarm the classpath is the
+# public one and only test/ is selected.
+#
+# Any arg other than --focus/--keep-sandbox/--swarm/--help is passed THROUGH verbatim to
 # cognitect.test-runner (-n/--namespace, -r/--namespace-regex, -v/--var,
 # -i/--include, -e/--exclude, -d/--dir ...). --focus <ns> is sugar for -n <ns>.
 # A -n/-r selector REPLACES the whole-suite regex; it no longer adds to it.
@@ -54,11 +62,13 @@ command -v clojure >/dev/null 2>&1 || die "clojure CLI not found on PATH"
 # ── Argument parsing: --focus => -n, else pass through ──────────────────────
 KEEP_SANDBOX=0
 SELECTS_NS=0
+SWARM=0
 RUNNER_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --help|-h)      usage ;;
     --keep-sandbox) KEEP_SANDBOX=1; shift ;;
+    --swarm)        SWARM=1; shift ;;
     --focus)        SELECTS_NS=1; RUNNER_ARGS+=("-n" "${2:?--focus requires a namespace}"); shift 2 ;;
     --focus=*)      SELECTS_NS=1; RUNNER_ARGS+=("-n" "${1#*=}"); shift ;;
     -n|--namespace|-r|--namespace-regex)
@@ -73,12 +83,32 @@ done
 # runner UNIONS namespace selectors, so a bare `-n x` still ran the alias's
 # whole-suite `-r`. A namespace selector therefore swaps in an alias whose
 # :main-opts carry no -r (the last alias's :main-opts win).
+#
+# --swarm composes :test-swarm (its path, and -d test-swarm) and takes the addon
+# from local.deps.edn. The CLI reads ONE -Sdeps map, so when a selector also
+# needs the :sbx-focus alias the two are merged as EDN (bb), never as text: a
+# local.deps.edn that already has :aliases would otherwise get a duplicate key.
 ALIASES=":test"
-SDEPS=()
-if [[ "$SELECTS_NS" -eq 1 ]]; then
-  ALIASES=":test:sbx-focus"
-  SDEPS=(-Sdeps '{:aliases {:sbx-focus {:main-opts ["-m" "cognitect.test-runner"]}}}')
+FOCUS_ALIAS='{:main-opts ["-m" "cognitect.test-runner"]}'
+SDEPS_EDN=""
+if [[ "$SWARM" -eq 1 ]]; then
+  LOCAL_DEPS="$PROJECT_DIR/local.deps.edn"
+  [[ -f "$LOCAL_DEPS" ]] || die "--swarm needs $LOCAL_DEPS to supply the swarm addon (hive-agent, hive-datascript)"
+  ALIASES=":test:test-swarm"
+  FOCUS_ALIAS='{:main-opts ["-m" "cognitect.test-runner" "-d" "test-swarm"]}'
+  SDEPS_EDN="$(cat "$LOCAL_DEPS")"
 fi
+if [[ "$SELECTS_NS" -eq 1 ]]; then
+  ALIASES="$ALIASES:sbx-focus"
+  if [[ -n "$SDEPS_EDN" ]]; then
+    command -v bb >/dev/null 2>&1 || die "--swarm with a namespace selector needs bb to merge local.deps.edn with the focus alias"
+    SDEPS_EDN="$(bb -e '(let [[f a] *command-line-args*] (prn (assoc-in (clojure.edn/read-string (slurp f)) [:aliases :sbx-focus] (clojure.edn/read-string a))))' "$LOCAL_DEPS" "$FOCUS_ALIAS")"
+  else
+    SDEPS_EDN="{:aliases {:sbx-focus $FOCUS_ALIAS}}"
+  fi
+fi
+SDEPS=()
+[[ -n "$SDEPS_EDN" ]] && SDEPS=(-Sdeps "$SDEPS_EDN")
 
 # ── Create the sandbox root (the ONLY path this script ever deletes) ────────
 SBX="$(mktemp -d "$TMPROOT/hive-mcp-test-sbx.XXXXXXXX")"
@@ -171,6 +201,7 @@ test-sandboxed: ISOLATION ENV -------------------------------------------------
   CLJ_CONFIG(shared): $CLJ_CONFIG
   live store guard  : NOT $REAL_KG_STORE
   runner            : clojure -M$ALIASES  (cognitect.test-runner)
+  classpath         : $([[ "$SWARM" -eq 1 ]] && echo "deps.edn + local.deps.edn (swarm addon)" || echo "deps.edn only (public)")
   runner args       : ${RUNNER_ARGS[*]:-<none: whole suite>}
 -------------------------------------------------------------------------------
 AUDIT
