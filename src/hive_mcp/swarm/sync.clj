@@ -63,7 +63,7 @@
 ;; ISwarmBootstrap instance — durable projection of slave identity.
 ;; Defaults to NoopBootstrap (event-stream only) until explicitly injected.
 ;; The integrant init in server/init.clj injects the configured backend.
-(defonce ^:private swarm-bootstrap-atom (atom (bootstrap-noop/make-noop-bootstrap)))
+(defonce ^:private swarm-bootstrap-atom (atom nil))
 
 (defn set-swarm-registry!
   "Inject the swarm registry implementation.
@@ -87,9 +87,14 @@
   (log/info "Sync: swarm bootstrap injected"))
 
 (defn get-swarm-bootstrap
-  "Get the injected ISwarmBootstrap (defaults to NoopBootstrap)."
+  "Get the injected ISwarmBootstrap (defaults to NoopBootstrap).
+
+   The default is built on first use, not at load: NoopBootstrap lives in
+   hive-agent, and building it at load would stop this namespace, and every
+   server layer that requires it, from loading without the swarm addon."
   []
-  @swarm-bootstrap-atom)
+  (or @swarm-bootstrap-atom
+      (swap! swarm-bootstrap-atom #(or % (bootstrap-noop/make-noop-bootstrap)))))
 
 (defn set-hooks-registry!
   "Inject the hooks registry from server.clj to avoid cyclic dependency."

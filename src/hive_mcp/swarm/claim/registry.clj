@@ -176,15 +176,20 @@
   [s]
   (lings/release-claim! (span/key-of s)))
 
-(def ^:private claim-lock
-  "THE claim lock, resolved once and shared.
+(defn- claim-lock
+  "THE claim lock, resolved per call and shared.
 
    This is deliberately the very atom `coordinator/atomic-claim-files!` locks,
    not a second one. Two mutexes guarding one invariant is not mutual
    exclusion: while both the file-granular and the span-granular path are live,
    a claim taken through either has to serialize against the other, and they
    only do if they contend on one object. Held identical across calls, which
-   `registry-test` asserts rather than assumes."
+   `registry-test` asserts rather than assumes.
+
+   A fn, not a def: resolving it at load would require the swarm addon for
+   this namespace to load at all, so public hive-mcp without hive-agent could
+   not start."
+  []
   (logic/get-logic-db-atom))
 
 (defn acquire!
@@ -200,7 +205,7 @@
   (let [spans (mapv span/span wanted)]
     (if (empty? spans)
       {:acquired? true :conflicts [] :spans-claimed 0}
-      (locking claim-lock
+      (locking (claim-lock)
         (let [callers (graph/callers-fn scope)
               held    (held-spans)
               found   (vec (mapcat #(span/conflicts callers held % slave-id) spans))]
