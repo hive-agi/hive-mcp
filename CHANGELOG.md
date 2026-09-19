@@ -45,6 +45,19 @@ bump, not a quiet minor, because a consumer's storage would change under it.
   runner requires every namespace its regex selects before any var-level
   filter runs and does not catch a throwing fixture, so a single addon-coupled
   suite under `test/` used to abort the whole public run.
+- **Project identity is kernel code: `hive-mcp.project.scope`.** The scope
+  hierarchy (`visible-scopes`, `infer-scope-from-path`, the alias registry)
+  and `get-current-project-id` read `.hive-project.edn` files and nothing
+  else, but they lived in `hive-mcp.knowledge-graph.scope` and
+  `hive-mcp.tools.memory.scope`, two namespaces that leave with hive-memory.
+  So the kernel reached into a slice it is meant to outlive to learn which
+  project it was in. The code moved to `hive-mcp.project.scope`; hivemind,
+  the swarm registry and sync, catchup and the route identity layer require
+  it directly, and the swarm memory-scope adapter no longer needs a degrade
+  path for it. The two old names stay as facades that call through the kernel
+  var on every invocation, so a reload or a redef of the kernel reaches a
+  caller that still spells the old name. Fifteen kernel census waivers are
+  retired (90 to 75 of the baseline 100).
 
 ### Fixed
 

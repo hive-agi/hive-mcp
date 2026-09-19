@@ -17,7 +17,7 @@
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.swarm.datascript.registry :as registry]
             [hive-spi.swarm.protocol :as proto]
-            [hive-mcp.tools.memory.scope :as mem-scope]
+            [hive-mcp.project.scope :as project-scope]
             [taoensso.timbre :as log]
             [hive-mcp.channel.a2a :as a2a]
             [hive-mcp.channel.broadcast-policy :as bpolicy]
@@ -200,7 +200,7 @@
         ;; Priority: explicit > vessel > directory > global
         project-id (or explicit-project-id
                        (:project-id vessel-ctx)
-                       (when directory (mem-scope/get-current-project-id directory))
+                       (when directory (project-scope/get-current-project-id directory))
                        "global")
         ;; Spawner identity — the reader whose context this shout enters when
         ;; nothing more specific addresses it. hive-mcp.channel.audience routes

@@ -3,7 +3,7 @@
   (:require [hive-mcp.channel.core :as ch]
             [hive-mcp.hivemind.core :as hivemind]
             [hive-mcp.swarm.datascript :as ds]
-            [hive-mcp.tools.memory.scope :as scope]
+            [hive-mcp.project.scope :as project-scope]
             [clojure.core.async :as async :refer [go-loop <!]]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -28,7 +28,7 @@
 (defn register-ling!
   "Register a spawned ling in DataScript."
   [slave-id {:keys [name presets cwd kanban-task-id]}]
-  (let [project-id (when cwd (scope/get-current-project-id cwd))]
+  (let [project-id (when cwd (project-scope/get-current-project-id cwd))]
     (ds/add-slave! slave-id {:name name
                              :presets (vec (or presets []))
                              :cwd cwd

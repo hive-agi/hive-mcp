@@ -9,7 +9,8 @@
 
    SECURITY: These tests verify that multi-project hivemind sessions
    maintain isolation between projects."
-  (:require [clojure.test :refer [deftest is testing use-fixtures]]
+  (:require [hive-mcp.project.scope]
+            [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.data.json :as json]
             [hive-dsl.bounded-atom :refer [bclear! bget]]
             [hive-mcp.hivemind.core :as hivemind]
@@ -17,7 +18,6 @@
             [hive-spi.swarm.protocol :as proto]
             [hive-mcp.swarm.datascript.registry :as registry]
             [hive-mcp.swarm.datascript.connection :as conn]
-            [hive-mcp.tools.memory.scope :as mem-scope]
             [datascript.core :as d]
             [hive-mcp.test.stub.vessel :as vessel-stub]))
 
@@ -73,7 +73,7 @@
 (deftest shout-tags-messages-with-project-id-from-directory-test
   (testing "hivemind_shout derives project-id from directory parameter"
     ;; Mock the scope resolution to return predictable project-id
-    (with-redefs [mem-scope/get-current-project-id
+    (with-redefs [hive-mcp.project.scope/get-current-project-id
                   (fn [dir]
                     (cond
                       (= dir "/projects/alpha") "project-alpha"
@@ -90,7 +90,7 @@
 
 (deftest shout-falls-back-to-slave-cwd-for-project-id-test
   (testing "hivemind_shout uses slave's cwd when directory not provided"
-    (with-redefs [mem-scope/get-current-project-id
+    (with-redefs [hive-mcp.project.scope/get-current-project-id
                   (fn [dir]
                     (when (= dir "/tmp/projects/beta-project")
                       "beta-project"))]
@@ -106,7 +106,7 @@
 
 (deftest shout-defaults-to-global-when-no-project-derivable-test
   (testing "hivemind_shout defaults to 'global' when project can't be derived"
-    (with-redefs [mem-scope/get-current-project-id (constantly nil)]
+    (with-redefs [hive-mcp.project.scope/get-current-project-id (constantly nil)]
       ;; Shout from unregistered agent without directory
       (hivemind/shout! "orphan-agent" :progress {:task "solo" :message "alone"})
 
@@ -145,7 +145,7 @@
 
 (deftest status-tool-uses-directory-for-filtering-test
   (testing "hivemind_status tool handler derives project-id from directory"
-    (with-redefs [mem-scope/get-current-project-id
+    (with-redefs [hive-mcp.project.scope/get-current-project-id
                   (fn [dir]
                     (when (= dir "/projects/gamma")
                       "project-gamma"))]
@@ -168,7 +168,7 @@
 
 (deftest piggyback-filters-messages-by-project-test
   (testing "piggyback get-messages returns only messages from specified project"
-    (with-redefs [mem-scope/get-current-project-id
+    (with-redefs [hive-mcp.project.scope/get-current-project-id
                   (fn [dir]
                     (cond
                       (= dir "/projects/x") "project-x"
@@ -189,7 +189,7 @@
 
 (deftest piggyback-includes-global-messages-for-all-projects-test
   (testing "piggyback includes 'global' messages regardless of project filter"
-    (with-redefs [mem-scope/get-current-project-id (constantly nil)]
+    (with-redefs [hive-mcp.project.scope/get-current-project-id (constantly nil)]
       ;; Shout a global message (no project derivable)
       (hivemind/shout! "global-agent" :progress {:task "global" :message "for everyone"})
 
@@ -200,7 +200,7 @@
 
 (deftest piggyback-cursors-are-per-project-test
   (testing "piggyback maintains separate cursors per agent+project"
-    (with-redefs [mem-scope/get-current-project-id
+    (with-redefs [hive-mcp.project.scope/get-current-project-id
                   (fn [dir]
                     (cond
                       (= dir "/projects/p1") "project-1"
@@ -242,7 +242,7 @@
 
 (deftest no-cross-project-message-leak-test
   (testing "SECURITY: Messages from project-X are not delivered to project-Y coordinator"
-    (with-redefs [mem-scope/get-current-project-id
+    (with-redefs [hive-mcp.project.scope/get-current-project-id
                   (fn [dir]
                     (cond
                       (= dir "/secret") "secret-project"
@@ -259,7 +259,7 @@
 
 (deftest secret-coordinator-sees-own-messages-test
   (testing "SECURITY: Secret project coordinator CAN see their own messages"
-    (with-redefs [mem-scope/get-current-project-id
+    (with-redefs [hive-mcp.project.scope/get-current-project-id
                   (fn [dir]
                     (when (= dir "/secret") "secret-project"))]
       ;; Secret shout (use :progress to avoid event dispatch bug with :completed)
@@ -277,7 +277,7 @@
 
 (deftest messages-tool-filters-available-agents-by-project-test
   (testing "hivemind_messages available-agents respects project filter"
-    (with-redefs [mem-scope/get-current-project-id
+    (with-redefs [hive-mcp.project.scope/get-current-project-id
                   (fn [dir]
                     (when (= dir "/proj-a") "proj-a"))]
       ;; Register and shout from different projects
@@ -304,7 +304,7 @@
 
 (deftest piggyback-includes-cross-project-descendant-shouts-test
   (testing "Coordinator sees shouts from lings spawned into a different project"
-    (with-redefs [mem-scope/get-current-project-id
+    (with-redefs [hive-mcp.project.scope/get-current-project-id
                   (fn [dir]
                     (cond
                       (= dir "/projects/coordinator") "proj-coord"
@@ -343,7 +343,7 @@
 
 (deftest cross-project-descendant-isolation-test
   (testing "SECURITY: Unrelated coordinator does NOT see another coordinator's descendants"
-    (with-redefs [mem-scope/get-current-project-id
+    (with-redefs [hive-mcp.project.scope/get-current-project-id
                   (fn [dir]
                     (cond
                       (= dir "/alpha") "proj-alpha"

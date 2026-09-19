@@ -16,7 +16,7 @@
             [clojure.string :as str]
             [datascript.core :as d]
             [hive-mcp.dns.result :refer [rescue]]
-            [hive-mcp.knowledge-graph.scope :as scope]
+            [hive-mcp.project.scope :as project-scope]
             [hive-weave.parallel :as wp]
             [taoensso.timbre :as log])
   (:import [java.time Instant]))
@@ -455,7 +455,7 @@
           ;; Register configs in scope cache for HCR resolution
           _ (doseq [{:keys [config]} discovered]
               (when-let [project-id (:project-id config)]
-                (scope/register-project-config! project-id config)))
+                (project-scope/register-project-config! project-id config)))
 
           ;; Persist to DataScript
           persist-result (persist-project-entities! entities)]

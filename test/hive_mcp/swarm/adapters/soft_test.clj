@@ -70,17 +70,18 @@
                    (soft/host-or 'any.ns/f (constantly :fallback)))))))
 
 ;; =============================================================================
-;; memory-scope: all five methods are soft
+;; memory-scope: project identity is kernel, the three disc methods are soft
 ;; =============================================================================
 
 (deftest memory-scope-answers-the-noop-once-hive-memory-has-left
   (binding [soft/*resolve* host-gone]
     (let [adapter (memory-scope/make-adapter)
           noop scope-spi/noop]
-      (is (= (scope-spi/project-id-for-path noop "/p")
-             (scope-spi/project-id-for-path adapter "/p")))
-      (is (= (scope-spi/infer-scope-from-path noop "/p")
-             (scope-spi/infer-scope-from-path adapter "/p")))
+      (testing "project identity is kernel code: it answers with every soft host gone"
+        (is (= "no-such-project-dir"
+               (scope-spi/project-id-for-path adapter "/no-such-root/no-such-project-dir")))
+        (is (= "global"
+               (scope-spi/infer-scope-from-path adapter "/no-such-root/no-such-project-dir"))))
       (is (= (scope-spi/staleness-warnings noop ["/p/a.clj"])
              (scope-spi/staleness-warnings adapter ["/p/a.clj"])))
       (is (= (scope-spi/format-staleness-warnings noop [{:path "a"}])
@@ -90,31 +91,25 @@
 
 (deftest memory-scope-passes-host-answers-through
   (let [calls (atom [])
-        answers {'hive-mcp.tools.memory.scope/get-current-project-id "hive"
-                 'hive-mcp.knowledge-graph.scope/infer-scope-from-path "hive:sub"
-                 'hive-mcp.knowledge-graph.disc/staleness-warnings [{:path "a" :stale true}]
+        answers {'hive-mcp.knowledge-graph.disc/staleness-warnings [{:path "a" :stale true}]
                  'hive-mcp.knowledge-graph.disc/format-staleness-warnings "1 stale"
                  'hive-mcp.knowledge-graph.disc/kg-first-context {:kg-known ["a"]}}]
     (binding [soft/*resolve* (host-stub calls answers)]
       (let [adapter (memory-scope/make-adapter)]
-        (is (= "hive" (scope-spi/project-id-for-path adapter "/p")))
-        (is (= "hive:sub" (scope-spi/infer-scope-from-path adapter "/p/sub")))
         (is (= [{:path "a" :stale true}] (scope-spi/staleness-warnings adapter ["a"])))
         (is (= "1 stale" (scope-spi/format-staleness-warnings adapter [:w])))
         (is (= {:kg-known ["a"]} (scope-spi/kg-first-context adapter ["a"])))))
-    (is (= [['hive-mcp.tools.memory.scope/get-current-project-id ["/p"]]
-            ['hive-mcp.knowledge-graph.scope/infer-scope-from-path ["/p/sub"]]
-            ['hive-mcp.knowledge-graph.disc/staleness-warnings [["a"]]]
+    (is (= [['hive-mcp.knowledge-graph.disc/staleness-warnings [["a"]]]
             ['hive-mcp.knowledge-graph.disc/format-staleness-warnings [[:w]]]
             ['hive-mcp.knowledge-graph.disc/kg-first-context [["a"]]]]
            @calls))))
 
 (deftest memory-scope-does-not-swallow-a-host-throw
   ;; The adapter never caught before it went soft; going soft must not add a
-  ;; catch, or a broken scope read would start reading as "global".
+  ;; catch, or a broken disc read would start reading as "nothing is stale".
   (binding [soft/*resolve* (constantly boom)]
     (is (thrown? clojure.lang.ExceptionInfo
-                 (scope-spi/project-id-for-path (memory-scope/make-adapter) "/p")))))
+                 (scope-spi/staleness-warnings (memory-scope/make-adapter) ["/p/a.clj"])))))
 
 ;; =============================================================================
 ;; ling-host: catchup is soft, and never throws

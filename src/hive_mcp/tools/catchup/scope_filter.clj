@@ -4,7 +4,7 @@
    No I/O, no caches — given entries + scope data, return filtered entries.
    Deliberately keyword-only so the caller can pre-compute
    `full-hierarchy-scope-tags` once and share it across branches."
-  (:require [hive-mcp.knowledge-graph.scope :as kg-scope]
+  (:require [hive-mcp.project.scope :as project-scope]
             [hive-mcp.dns.result :refer [rescue]]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -40,7 +40,7 @@
   "Compute full hierarchy scope tags for in-memory safety-net filtering."
   [project-id]
   (let [in-project? (and project-id (not= project-id "global"))]
-    (cond-> (kg-scope/full-hierarchy-scope-tags project-id)
+    (cond-> (project-scope/full-hierarchy-scope-tags project-id)
       in-project? (disj "scope:global"))))
 
 (defn scope-filter-entries

@@ -19,9 +19,8 @@
             [hive-mcp.tools.consolidated.memory :as c-mem]
             [hive-mcp.tools.memory.crud.query :as query]
             [hive-mcp.protocols.memory :as mem-proto]
-            [hive-mcp.knowledge-graph.scope :as kg-scope]
+            [hive-mcp.project.scope :as kg-scope]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
-            [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.agent.context :as ctx]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -73,7 +72,7 @@
                  kg-scope/visible-scope-tags (constantly #{"scope:hive-mcp"})
                  kg-scope/full-hierarchy-scope-tags (constantly #{"scope:hive-mcp"})
                  kg-scope/descendant-scopes (constantly [])
-                 scope/get-current-project-id (constantly "hive-mcp")
+                 hive-mcp.project.scope/get-current-project-id (constantly "hive-mcp")
                  ctx/current-directory (constantly "/home/leibniz/PP/hive/hive-mcp")]
      ~@body))
 

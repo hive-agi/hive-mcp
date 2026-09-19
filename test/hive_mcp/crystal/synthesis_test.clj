@@ -5,7 +5,8 @@
    Property tests: any valid input → required structural invariants
 
    All mocks follow the crystallize-session mock pattern from golden_test.clj."
-  (:require [clojure.test :refer [deftest testing is]]
+  (:require [hive-mcp.project.scope]
+            [clojure.test :refer [deftest testing is]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
             [clojure.test.check.clojure-test :refer [defspec]]
@@ -117,7 +118,7 @@
              :session-end "2026-01-15T12:00:00Z"
              :duration-minutes 0})
 
-          scope/get-current-project-id
+          hive-mcp.project.scope/get-current-project-id
           (fn [_#] "synth-project")
 
           scope/inject-project-scope
@@ -484,7 +485,7 @@
                                                 {:session-start "2026-04-18T10:00:00Z"
                                                  :session-end   "2026-04-18T12:00:00Z"
                                                  :duration-minutes 120})
-           scope/get-current-project-id       (fn [_] "red-project")
+           hive-mcp.project.scope/get-current-project-id       (fn [_] "red-project")
            scope/inject-project-scope         (fn [tags _] tags)
            dur/calculate-expires              (fn [_] "2026-06-18T00:00:00Z")
            ctx/current-directory              (fn [] "/tmp/red-test")
@@ -611,7 +612,7 @@
                           :session-end   "2026-04-24T12:00:00Z"
                           :duration-minutes 120})
 
-          scope/get-current-project-id
+          hive-mcp.project.scope/get-current-project-id
           (fn [_#] "cwd-project")
 
           scope/inject-project-scope

@@ -1,17 +1,17 @@
 (ns hive-mcp.server.routes-identity-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [hive-mcp.project.scope]
+            [clojure.test :refer [deftest is testing]]
             [hive-mcp.agent.context :as ctx]
             [hive-mcp.crystal.core :as crystal]
             [hive-mcp.protocols.vessel :as vessel]
             [hive-mcp.server.routes.identity :as identity]
-            [hive-mcp.server.routes.middleware :as middleware]
-            [hive-mcp.tools.memory.scope :as scope]))
+            [hive-mcp.server.routes.middleware :as middleware]))
 
 (deftest directory-derived-project-wins-over-vessel-project
   (testing "caller working directory outranks vessel project-id"
     (with-redefs [vessel/resolve-agent-context
                   (constantly {:cwd "/work/vessel" :project-id "stale-project"})
-                  scope/get-current-project-id identity]
+                  hive-mcp.project.scope/get-current-project-id identity]
       (is (= "/work/caller"
              (identity/extract-project-id
               {:directory "/work/caller" :_caller_id "agent-1"}))))))
@@ -20,7 +20,7 @@
   (testing "vessel cwd supplies HCR project when caller cwd is absent"
     (with-redefs [vessel/resolve-agent-context
                   (constantly {:cwd "/work/vessel" :project-id "stale-project"})
-                  scope/get-current-project-id identity]
+                  hive-mcp.project.scope/get-current-project-id identity]
       (is (= "/work/vessel"
              (identity/extract-project-id {:_caller_id "agent-1"})))
       (is (= "/work/vessel"
