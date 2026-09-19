@@ -13,7 +13,8 @@
             [clojure.string :as str]
             [hive-dsl.result :as r]
             [taoensso.timbre :as log]
-            [hive-mcp.extensions.registry :as ext]))
+            [hive-mcp.extensions.registry :as ext]
+            [hive-mcp.tools.swarm.channel :as swarm-channel]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -345,6 +346,7 @@
                    :claude)
           strat (lifecycle/resolve-strategy mode)]
       (ds-lings/update-slave! id {:slave/status :working})
+      (swarm-channel/record-dispatched-task! task-id)
       (ds-lings/add-task! task-id id {:status :dispatched
                                       :prompt resolved-task
                                       :files files})
