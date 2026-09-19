@@ -26,7 +26,10 @@
 
    Effect map invariants:
      * `:kanban/facade-update` is ALWAYS present (the soft commit)
-     * `:kanban/notify-done` and `:kanban/archive-external` ONLY for `done`
+     * a move whose target equals the current status is NOT a transition: it
+       still commits, but emits no temporal record, no movement, no hooks
+     * `:kanban/notify-done` and `:kanban/archive-external` ONLY for a
+       transition INTO `done`
      * both carry the POST-transition entry: the archive is a record of the
        COMPLETED task, so it must not be handed the coeffect snapshot whose
        tags and content still say `todo`
@@ -35,22 +38,22 @@
   (when (and entry (pred/kanban-entry? entry))
     (let [{:keys [old-status new-status new-content new-tags title]}
           (kt/transition entry new-status project-id)
-          done?     (pred/done? new-status)
-          moved-entry (assoc entry :tags new-tags :content new-content)
-          base {:kanban/track-movement {:task-id task-id :title title
-                                        :from old-status :to new-status
-                                        :project-id project-id}
-                :kanban/temporal-record {:entry-id   task-id
-                                         :op         (if done? :kanban-done :kanban-move)
-                                         :data       {:old-status old-status
-                                                      :new-status new-status}
-                                         :project-id project-id}
-                :kanban/facade-update   {:task-id task-id
-                                         :payload {:content new-content
-                                                   :tags    new-tags}}}]
-      (cond-> base
-        done? (assoc :kanban/notify-done      {:entry moved-entry :task-id task-id}
-                     :kanban/archive-external {:entry moved-entry :task-id task-id})))))
+          moved?    (not= (pred/normalize-status old-status) new-status)
+          done?     (and moved? (pred/done? new-status))
+          moved-entry (assoc entry :tags new-tags :content new-content)]
+      (cond-> {:kanban/facade-update {:task-id task-id
+                                      :payload {:content new-content
+                                                :tags    new-tags}}}
+        moved? (assoc :kanban/track-movement {:task-id task-id :title title
+                                              :from old-status :to new-status
+                                              :project-id project-id}
+                      :kanban/temporal-record {:entry-id   task-id
+                                               :op         (if done? :kanban-done :kanban-move)
+                                               :data       {:old-status old-status
+                                                            :new-status new-status}
+                                               :project-id project-id})
+        done?  (assoc :kanban/notify-done      {:entry moved-entry :task-id task-id}
+                      :kanban/archive-external {:entry moved-entry :task-id task-id})))))
 
 (defn retag-fx
   "Pure handler. Given coeffects (entry) and an event, return the effect map
@@ -156,10 +159,17 @@
 (defonce ^:private initialized? (atom false))
 
 (defn init!
-  "Register everything once per JVM. Safe to call repeatedly."
+  "Register everything, every time. Returns true.
+
+   Every registration `register-all!` performs is KEY-ADDRESSED (`reg-cofx`,
+   `reg-fx`, `reg-event-fx`), so re-running REPLACES rather than accumulates.
+   Gating the body pinned the closures compiled at load time, and a reload
+   could not rewire them. The flag survives only to record that registration
+   has happened at least once. Kanban 20260916134011-1246379c."
   []
-  (when (compare-and-set! initialized? false true)
-    (register-all!)))
+  (register-all!)
+  (reset! initialized? true)
+  true)
 
 (defn dispatch-move!
   "Public boundary entry point. Synchronously dispatch a move event and

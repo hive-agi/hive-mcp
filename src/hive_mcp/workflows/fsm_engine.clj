@@ -34,6 +34,12 @@
   [workflow-name]
   (str (name workflow-name) "-" (System/currentTimeMillis) "-" (rand-int 10000)))
 
+(defn- elapsed-ms
+  "Whole milliseconds elapsed since `start-nanos`, a System/nanoTime reading.
+   Monotonic, so never negative; 0 for a sub-millisecond interval."
+  [start-nanos]
+  (quot (- (System/nanoTime) start-nanos) 1000000))
+
 (defn- update-status!
   "Update tracking status for a workflow instance."
   [workflow-id status-map]
@@ -180,7 +186,7 @@
          :dependency-order []})))
 
   (execute-step [_ workflow step-id opts]
-    (let [start-time (System/currentTimeMillis)]
+    (let [start-time (System/nanoTime)]
       (try
         (let [compiled   (:_compiled workflow)
               resources  (or (:resources opts) (:context opts) {})
@@ -191,7 +197,7 @@
                               :current-state-id state-kw
                               :data             (or (:context opts) {})})
               result     (fsm/step halted-fsm resources)
-              duration   (- (System/currentTimeMillis) start-time)]
+              duration   (elapsed-ms start-time)]
           {:success?    true
            :step-id     step-id
            :result      result
@@ -202,12 +208,12 @@
           {:success?    false
            :step-id     step-id
            :result      nil
-           :duration-ms (- (System/currentTimeMillis) start-time)
+           :duration-ms (elapsed-ms start-time)
            :errors      [(ex-message e)]
            :context     (or (:context opts) {})}))))
 
   (execute-workflow [_ workflow opts]
-    (let [start-time  (System/currentTimeMillis)
+    (let [start-time  (System/nanoTime)
           workflow-id (:workflow-id workflow)]
       (try
         (let [compiled     (:_compiled workflow)
@@ -229,7 +235,7 @@
                            :progress        0.0})
           ;; Execute the FSM
           (let [result   (fsm/run compiled resources {:data initial-data})
-                duration (- (System/currentTimeMillis) start-time)]
+                duration (elapsed-ms start-time)]
             ;; Update status to completed
             (update-status! workflow-id
                             {:workflow-id     workflow-id
@@ -254,7 +260,7 @@
              :errors         []
              :final-context  result}))
         (catch Throwable e
-          (let [duration (- (System/currentTimeMillis) start-time)]
+          (let [duration (elapsed-ms start-time)]
             ;; Update status to failed
             (update-status! workflow-id
                             (merge (or (get-tracked-status workflow-id) {})

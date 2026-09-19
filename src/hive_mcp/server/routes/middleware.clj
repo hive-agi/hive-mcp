@@ -13,6 +13,7 @@
             [hive-mcp.agent.context :as ctx]
             [hive-mcp.crystal.core :as crystal]
             [hive-mcp.channel.async-result :as async-buf]
+            [hive-mcp.server.routes.async-tasks :as async-tasks]
             [hive-mcp.dsl.response :as compress]
             [hive-mcp.extensions.registry :as ext]
             [hive-dsl.context.identity :as ctx-id]
@@ -21,6 +22,7 @@
             [clojure.string :as str]
             [hive-mcp.channel.task-signal :as task-signal]
             [hive-mcp.channel.activation :as activation]
+            [hive-mcp.channel.blocks :as blocks]
             [hive-spi.guard.ports :as gp]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -157,26 +159,86 @@
                  should-default? (assoc :async true))))))
 
 (defn wrap-handler-async
-  "Intercept async:true calls — return ack, spawn future for real execution."
+  "Intercept async:true calls: return an ack, run the work on the async pool.
+
+   The work goes to `async-tasks/submit!`, NOT to a bare `future`, so the
+   handle is retained. A bare future's handle was discarded, which left a
+   long-running call impossible to list, bound or stop by any API: the only
+   remedy was killing the JVM, and on a shared coordinator that ends every
+   other agent's work too.
+
+   `:async-timeout-ms` bounds one call. It is consumed here alongside
+   `:async` and never reaches the handler, for the same reason `:async` does
+   not: it addresses THIS wrapper, not the tool.
+
+   The failure arm catches Throwable, not Exception. The caller has already
+   been acknowledged with `{:queued true}`, so the buffered result is the ONLY
+   report this call will ever make. An AssertionError from a malli check, a
+   StackOverflowError, an OutOfMemoryError: under `catch Exception` each of
+   those enqueued nothing, and the caller waited forever on an ack for work
+   that had already died. Errors are rethrown after being reported, so the
+   pool still sees them and nothing here pretends to recover from an OOM.
+
+   THE SUBMISSION IS JOURNALLED BEFORE THE ACK GOES OUT, so the promise is
+   backed by something that outlives the process making it. The result is
+   journalled too, by `enqueue-result!`, but that is not sufficient on its
+   own: the case this tool is named for is a task accepted, acknowledged, and
+   then killed BEFORE any result exists. Only the submission record turns
+   that into an `:interrupted` result the caller is eventually handed,
+   instead of silence against an ack it already holds.
+
+   When the journal cannot be written the ack says `:durable false` rather
+   than lying by omission. The happy path is byte-identical to before, so no
+   client has to learn a new shape to keep working.
+
+   NOTE for addon authors: a top-level `:async` is consumed here and is gone
+   before any handler runs, so a tool must not name a parameter `async` and
+   expect to receive it. Spell such a flag `background` (see
+   `hive-ingestor.addon.registry/dispatcher-shadowed-params`)."
   [handler tool-name]
   (fn [args]
     (if (:async args)
-      (let [task-id (str "atask-" (random-uuid))
-            caller-id (or (:_caller_id args) "coordinator")]
-        (future
-          (try
-            (let [clean-args (dissoc args :async)
-                  result (handler clean-args)]
-              (async-buf/enqueue-result! caller-id
-                                         {:task-id task-id :tool tool-name
-                                          :status :completed :result result}))
-            (catch Exception e
-              (log/error e "async-result: background execution failed for task" task-id)
-              (async-buf/enqueue-result! caller-id
-                                         {:task-id task-id :tool tool-name
-                                          :status :error :error (.getMessage e)}))))
+      (let [task-id    (str "atask-" (random-uuid))
+            caller-id  (or (:_caller_id args) "coordinator")
+            timeout-ms (:async-timeout-ms args)
+            durable?   (async-buf/record-submission! caller-id task-id tool-name)]
+        (async-tasks/submit!
+         {:task-id    task-id
+          :tool       tool-name
+          :caller-id  caller-id
+          :timeout-ms timeout-ms
+          :f          (fn []
+                        (try
+                          (let [clean-args (dissoc args :async :async-timeout-ms)
+                                result (handler clean-args)]
+                            (async-buf/enqueue-result! caller-id
+                                                       {:task-id task-id :tool tool-name
+                                                        :status :completed :result result}))
+                          (catch InterruptedException _
+                            ;; Cancelled on purpose. Say so rather than
+                            ;; reporting it as a failure of the work.
+                            (log/info "async-result: task cancelled" {:task-id task-id})
+                            (async-buf/enqueue-result! caller-id
+                                                       {:task-id task-id :tool tool-name
+                                                        :status :cancelled}))
+                          (catch Exception e
+                            (log/error e "async-result: background execution failed for task" task-id)
+                            (async-buf/enqueue-result! caller-id
+                                                       {:task-id task-id :tool tool-name
+                                                        :status :error :error (.getMessage e)}))
+                          (catch Throwable t
+                            ;; Not an Exception, so nothing below would have
+                            ;; reported it and the ack would never be answered.
+                            (log/error t "async-result: background execution died for task" task-id)
+                            (async-buf/enqueue-result! caller-id
+                                                       {:task-id task-id :tool tool-name
+                                                        :status :error
+                                                        :error (str (.getName (class t)) ": " (.getMessage t))})
+                            (throw t))))})
         [{:type "text"
-          :text (pr-str {:queued true :task-id task-id :tool tool-name})}])
+          :text (pr-str (cond-> {:queued true :task-id task-id :tool tool-name}
+                          timeout-ms     (assoc :timeout-ms timeout-ms)
+                          (not durable?) (assoc :durable false)))}])
       (handler args))))
 
 (defn- guard-refusal
@@ -242,7 +304,7 @@
   [project-id]
   (when project-id
     (try
-      (when-let [desc-fn (requiring-resolve 'hive-mcp.knowledge-graph.scope/descendant-scopes)]
+      (when-let [desc-fn (requiring-resolve 'hive-mcp.project.scope/descendant-scopes)]
         (let [child-pids (desc-fn project-id)]
           (when (seq child-pids)
             (log/debug "Piggyback: including descendant project-ids for" project-id ":" child-pids)
@@ -251,13 +313,16 @@
         (log/debug "Piggyback: descendant project-id resolution failed (non-fatal):" (.getMessage e))
         nil))))
 
-(defn- get-piggyback-messages [agent-id project-id]
-  (require 'hive-mcp.channel.piggyback)
-  (let [child-pids (resolve-child-project-ids project-id)]
-    ((resolve 'hive-mcp.channel.piggyback/get-messages)
-     agent-id
-     :project-id project-id
-     :additional-project-ids child-pids)))
+(defn- get-piggyback-messages
+  ([agent-id project-id] (get-piggyback-messages agent-id project-id nil))
+  ([agent-id project-id session-id]
+   (require 'hive-mcp.channel.piggyback)
+   (let [child-pids (resolve-child-project-ids project-id)]
+     ((resolve 'hive-mcp.channel.piggyback/get-messages)
+      agent-id
+      :project-id project-id
+      :additional-project-ids child-pids
+      :session-id session-id))))
 
 (defn- drain-memory-piggyback
   ([caller-id] (drain-memory-piggyback caller-id nil))
@@ -265,12 +330,35 @@
    (require 'hive-mcp.channel.memory-piggyback)
    ((resolve 'hive-mcp.channel.memory-piggyback/drain!) caller-id ctx)))
 
+(defn- drain-catchup-piggyback
+  "Drain the `:cu/piggyback-drain` enrichment channel for this response.
+
+   The provider is an addon, so its arity is not something the host may assume.
+   A ctx-aware provider gets `request-ctx` and returns only a budgeted, cue-
+   ordered slice, leaving the rest buffered for a later call; a provider that
+   still takes the caller alone is called that way and drains one-shot, as
+   before. Neither shape is allowed to fail the response."
+  [caller-id request-ctx]
+  (when-let [drain-fn (ext/get-extension :cu/piggyback-drain)]
+    (try
+      (try
+        (drain-fn caller-id request-ctx)
+        (catch clojure.lang.ArityException _
+          (drain-fn caller-id)))
+      (catch Exception e
+        (log/debug "catchup-piggyback drain failed:" (.getMessage e))
+        nil))))
+
 (defn wrap-handler-piggybacks
-  "Unified piggyback wrapper — drains all 4 channels in a single pass.
+  "Unified piggyback wrapper: drains all 4 channels in a single pass.
    Task cues harvested from the request args steer the MEMORY drain that rides
    this response; they are empty unless task-signal/enabled?. The cues then feed
    `activation/drain-ctx`, which an activation provider may extend with pinned
-   entry ids — absent a provider the ctx is the cues alone."
+   entry ids; absent a provider the ctx is the cues alone.
+
+   The HIVEMIND read is keyed two ways: the reader id (caller plus project)
+   owns the project cursor, and the caller alone owns the global cursor, so
+   a session that touches several repos reads each global shout once."
   ([handler] (wrap-handler-piggybacks handler nil))
   ([handler tool-name]
    (fn [args]
@@ -278,21 +366,20 @@
            content (handler args)
            caller-id (or (:_caller_id args) "coordinator")
            async-drain (async-buf/drain! caller-id)
-           memory-drain (drain-memory-piggyback
-                         caller-id
-                         (activation/drain-ctx {:tool-name tool-name
-                                                :cues task-tokens
-                                                :caller-id caller-id}))
-           catchup-blocks (when-let [drain-fn (ext/get-extension :cu/piggyback-drain)]
-                            (try (drain-fn caller-id)
-                                 (catch Exception e
-                                   (log/debug "catchup-piggyback drain failed:" (.getMessage e))
-                                   nil)))
+           request-ctx {:tool-name tool-name :cues task-tokens :caller-id caller-id}
+           act-ctx (activation/drain-ctx request-ctx)
+           ;; Blocks are an OPEN set: whatever addons registered under
+           ;; :block/*, rendered by tag. The host names none of them, so a new
+           ;; block is an addon plus a config entry rather than a commit here.
+           extra-blocks (blocks/render request-ctx)
+           memory-drain (drain-memory-piggyback caller-id act-ctx)
+           catchup-blocks (drain-catchup-piggyback caller-id request-ctx)
            caller (id/extract-caller-identity args)
            scope (id/extract-project-scope args)
            hm-agent-id (ctx-id/make-piggyback-agent-id caller scope)
            hm-project-id (ctx-id/project-scope-string scope)
-           hivemind-msgs (get-piggyback-messages hm-agent-id hm-project-id)]
+           hivemind-msgs (get-piggyback-messages hm-agent-id hm-project-id
+                                                 (ctx-id/caller-id-string caller))]
 
        (cond-> content
          async-drain
@@ -300,6 +387,10 @@
 
          memory-drain
          (id/wrap-memory-piggyback-content memory-drain)
+
+         (seq extra-blocks)
+         (as-> c (reduce (fn [acc [tag body]] (id/wrap-delimited-block acc tag body))
+                         c extra-blocks))
 
          (seq catchup-blocks)
          (as-> c (reduce-kv

@@ -8,13 +8,14 @@
   (:require [hive-mcp.server.routes.identity :as id]
             [hive-mcp.server.routes.middleware :as mw]
             [hive-mcp.tools.registry :as tools]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [hive-mcp.server.registration]              ; side-effect: tools/list defmethod
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.addons.core :as addons]
             [taoensso.timbre :as log]
             [clojure.spec.alpha :as s]
-            [hive-mcp.tools.composite :as composite]))
+            [hive-mcp.tools.composite :as composite]
+            [hive-mcp.dispatch.handler :as dispatch]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -24,27 +25,27 @@
 ;; Re-exports for backward compatibility
 ;; =============================================================================
 
-(def normalize-content              id/normalize-content)
-(def find-last-text-idx             id/find-last-text-idx)
-(def wrap-delimited-block           id/wrap-delimited-block)
-(def wrap-piggyback                 id/wrap-piggyback)
-(def wrap-memory-piggyback-content  id/wrap-memory-piggyback-content)
-(def extract-agent-id               id/extract-agent-id)
-(def extract-caller-id              id/extract-caller-id)
-(def extract-project-id             id/extract-project-id)
-(def extract-caller-identity        id/extract-caller-identity)
-(def extract-project-scope          id/extract-project-scope)
+(def normalize-content              #'id/normalize-content)
+(def find-last-text-idx             #'id/find-last-text-idx)
+(def wrap-delimited-block           #'id/wrap-delimited-block)
+(def wrap-piggyback                 #'id/wrap-piggyback)
+(def wrap-memory-piggyback-content  #'id/wrap-memory-piggyback-content)
+(def extract-agent-id               #'id/extract-agent-id)
+(def extract-caller-id              #'id/extract-caller-id)
+(def extract-project-id             #'id/extract-project-id)
+(def extract-caller-identity        #'id/extract-caller-identity)
+(def extract-project-scope          #'id/extract-project-scope)
 
-(def wrap-handler-retry             mw/wrap-handler-retry)
-(def wrap-handler-nats-notify       mw/wrap-handler-nats-notify)
-(def wrap-handler-context           mw/wrap-handler-context)
-(def wrap-handler-normalize         mw/wrap-handler-normalize)
-(def wrap-handler-compress          mw/wrap-handler-compress)
-(def wrap-handler-response          mw/wrap-handler-response)
-(def wrap-handler-default-async-for-commands mw/wrap-handler-default-async-for-commands)
-(def wrap-handler-async             mw/wrap-handler-async)
-(def wrap-handler-piggybacks        mw/wrap-handler-piggybacks)
-(def build-middleware-chain         mw/build-middleware-chain)
+(def wrap-handler-retry             #'mw/wrap-handler-retry)
+(def wrap-handler-nats-notify       #'mw/wrap-handler-nats-notify)
+(def wrap-handler-context           #'mw/wrap-handler-context)
+(def wrap-handler-normalize         #'mw/wrap-handler-normalize)
+(def wrap-handler-compress          #'mw/wrap-handler-compress)
+(def wrap-handler-response          #'mw/wrap-handler-response)
+(def wrap-handler-default-async-for-commands #'mw/wrap-handler-default-async-for-commands)
+(def wrap-handler-async             #'mw/wrap-handler-async)
+(def wrap-handler-piggybacks        #'mw/wrap-handler-piggybacks)
+(def build-middleware-chain         #'mw/build-middleware-chain)
 
 
 ;; =============================================================================
@@ -57,7 +58,7 @@
 (s/def ::name string?)
 (s/def ::description string?)
 (s/def ::inputSchema map?)
-(s/def ::handler fn?)
+(s/def ::handler dispatch/handler?)
 
 (s/def ::tool-response
   (s/keys :req-un [::content]))
@@ -126,10 +127,22 @@
 
 (defn- gated-tool-set
   "Fold dynamic (extension) + addon tools onto the base set and apply the
-   visibility gate, yielding the <=10-root surface with old names still callable."
-  [base-tools dynamic-tools addon-tools]
-  (tools/apply-visibility-gate
-   (concat base-tools dynamic-tools addon-tools)))
+   visibility gate, yielding the <=10-root surface with old names still callable.
+
+   `claimed` are names an addon holds OVER a core tool of the same name
+   (`hive-mcp.addons.tool-claims`). The core tool of each is DROPPED: the
+   addon's tool is installed under that name, and keeping both would put two
+   tools with one name on the wire, leaving which one answers to the order
+   they happen to be folded in."
+  ([base-tools dynamic-tools addon-tools]
+   (gated-tool-set base-tools dynamic-tools addon-tools #{}))
+  ([base-tools dynamic-tools addon-tools claimed]
+   (tools/apply-visibility-gate
+    (concat (if (seq claimed)
+              (remove #(contains? claimed (:name %)) base-tools)
+              base-tools)
+            dynamic-tools
+            addon-tools))))
 
 
 ;; =============================================================================
@@ -144,9 +157,11 @@
    - Child ling (HIVE_MCP_ROLE=child-ling): Restricted tool set"
   []
   (let [dynamic-tools (ext/get-registered-tools)
-        addon-tools   (addons/active-addon-tools)
+        resolution    (addons/resolve-addon-tools)
+        addon-tools   (:installed resolution)
         base          (select-base-tools-for-role)
-        gated         (gated-tool-set base dynamic-tools addon-tools)]
+        gated         (gated-tool-set base dynamic-tools addon-tools
+                                      (addons/claimed-core-names resolution))]
     (if (guards/child-ling?)
       (let [role (guards/get-role)
             depth (guards/ling-depth)]
@@ -178,9 +193,11 @@
     (let [tools-atom (:tools context)
           child? (guards/child-ling?)
           base-tools (select-base-tools-for-role)
+          resolution (addons/resolve-addon-tools)
           selected-tools (gated-tool-set base-tools
                                          (ext/get-registered-tools)
-                                         (addons/active-addon-tools))
+                                         (:installed resolution)
+                                         (addons/claimed-core-names resolution))
           new-tools (mapv make-tool selected-tools)
           deprecated-count (if child?
                              0
@@ -209,8 +226,7 @@
 (defn register-tools-for-delegation!
   "Register tools for agent delegation with role-based filtering."
   []
-  (require 'hive-mcp.agent.core)
-  (let [register-tools! (resolve 'hive-mcp.agent.core/register-tools!)
+  (let [register-tools! (requiring-resolve 'hive-mcp.agent.registry/register!)
         child? (guards/child-ling?)
         selected-tools (select-base-tools-for-role)
         deprecated-count (if child?

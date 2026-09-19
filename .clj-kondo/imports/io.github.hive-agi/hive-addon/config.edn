@@ -1,0 +1,1 @@
+{:hooks {:analyze-call {hive-addon.host/defsoft hive-addon.hooks.host/defsoft}}}

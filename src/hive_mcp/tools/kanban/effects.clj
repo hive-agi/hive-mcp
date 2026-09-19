@@ -21,19 +21,49 @@
             [hive-mcp.memory.temporal :as temporal]
             [hive-mcp.swarm.datascript :as ds]
             [taoensso.timbre :as log]
-            [hive-mcp.vectordb.kanban-facade :as kanban-facade]))
+            [hive-mcp.vectordb.kanban-facade :as kanban-facade]
+            [hive-mcp.session.current :as session]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defn- track-movement!
   "Record a kanban status transition in DataScript for wrap harvest.
-   Non-fatal — movement tracking failure must not block kanban ops."
+   Non-fatal — movement tracking failure must not block kanban ops.
+
+   The row carries the id of the session that wrote it. Without it the row is
+   owned by nobody: a scoped wrap will not harvest it and will not clear it,
+   which is the whole point of the ownership rules. Kanban 20260915164015-7e057e5b."
   [{:keys [task-id title from to project-id]}]
   (try
     (ds/register-kanban-movement!
-     {:task-id task-id :title title :from from :to to :project-id project-id})
+     {:task-id task-id :title title :from from :to to :project-id project-id
+      :session-id (rescue nil (session/session-id {:project-id project-id}))})
     (catch Exception e
       (log/debug "track-movement! failed (non-fatal):" (.getMessage e)))))
+
+(defn archive-task-data
+  "Pure: kanban entry -> :da/archive! payload (no clock, no session)."
+  [entry task-id]
+  (let [content (:content entry)
+        tags (or (:tags entry) [])
+        scope (some (fn [tag]
+                      (when (and (string? tag)
+                                 (str/starts-with? tag "scope:project:"))
+                        (subs tag (count "scope:project:"))))
+                    tags)]
+    {:id task-id
+     :title (or (get content :title)
+                (get content :description)
+                (str task-id))
+     :description (or (get content :description) (:description entry))
+     :priority (or (get content :priority) (:priority entry))
+     :scope scope
+     :agent-id (get content :agent-id)
+     :files (get content :files)
+     :created-at (get content :created)
+     :started-at (get content :started)
+     :context (get content :context)
+     :tags (filterv #(not (and (string? %) (str/starts-with? % "scope:"))) tags)}))
 
 (defn- archive-external!
   "Archive task data via extension registry. Non-blocking, non-fatal.
@@ -41,29 +71,14 @@
   [{:keys [entry task-id]}]
   (try
     (when-let [archive-fn (ext/get-extension :da/archive!)]
-      (let [content (:content entry)
-            scope (some (fn [tag]
-                          (when (and (string? tag)
-                                     (str/starts-with? tag "scope:project:"))
-                            (subs tag (count "scope:project:"))))
-                        (:tags entry))
-            task-data {:id task-id
-                       :title (or (get content :title)
-                                  (get content :description)
-                                  (str task-id))
-                       :scope scope
-                       :agent-id (get content :agent-id)
-                       :files (get content :files)
-                       :completed-at (java.util.Date.)
-                       :session-id (rescue nil
-                                           (when-let [sid (requiring-resolve
-                                                           'hive-mcp.crystal.core/session-id)]
-                                             (sid)))
-                       :context (get content :context)
-                       :tags (filterv #(not (str/starts-with? % "scope:"))
-                                      (or (:tags entry) []))}]
-        (archive-fn task-data)
-        (log/info "Archived done task via extension:" task-id)))
+      (archive-fn
+       (assoc (archive-task-data entry task-id)
+              :completed-at (java.util.Date.)
+              :session-id (rescue nil
+                                  (when-let [sid (requiring-resolve
+                                                  'hive-mcp.crystal.core/session-id)]
+                                    (sid)))))
+      (log/info "Archived done task via extension:" task-id))
     (catch Exception e
       (log/debug "Done-archive extension not available (non-fatal):"
                  (.getMessage e)))))

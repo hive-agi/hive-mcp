@@ -1,6 +1,6 @@
 (ns hive-mcp.scheduler.dag-waves
   "DAGWave scheduler for dependency-ordered task dispatch."
-  (:require [hive-contracts.registry :as contracts]
+  (:require [hive-mcp.spi.kanban.registry :as kanban-port]
             [hive-mcp.dns.result :as result]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [hive-mcp.agent.ling :as ling]
@@ -31,7 +31,7 @@
          :opts       {}}))   ; original start opts
 
 (defn- wave-progress-payload
-  "Current DAG parity snapshot for the drone-roster panel."
+  "Current DAG parity snapshot for the swarm roster panel."
   []
   (let [s @dag-state]
     {:run-id        (str (:plan-id s))
@@ -57,12 +57,12 @@
    read port resolved at call time."
   [directory]
   (result/rescue []
-                 (vec (contracts/list-tasks {:status "todo" :directory directory}))))
+                 (vec (kanban-port/list-tasks {:status "todo" :directory directory}))))
 
 (defn- get-kanban-task
   "The task with TASK-ID through the kanban read port, or nil."
   [task-id]
-  (result/rescue nil (contracts/get-task task-id)))
+  (result/rescue nil (kanban-port/get-task task-id)))
 
 (defn- kanban-task-done?
   "Check if a kanban task has been completed."
@@ -74,8 +74,9 @@
   "Move a kanban task to 'done' status."
   [task-id directory]
   (result/rescue nil
-                 (contracts/transition!
+                 (kanban-port/transition!
                   {:task-id task-id :new-status "done" :directory directory})))
+
 
 ;; =============================================================================
 ;; KG Dependency Helpers

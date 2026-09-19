@@ -128,7 +128,7 @@
   []
   (get-conn))
 
-(def ensure-conn ensure-conn!)
+(def ensure-conn #'ensure-conn!)
 
 (defn reset-conn!
   "Close and reopen the active KG connection. NON-DESTRUCTIVE — does NOT

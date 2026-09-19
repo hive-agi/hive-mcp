@@ -27,10 +27,27 @@ running server already holds.
 ## Checks before you open a PR
 
 ```bash
-clj-kondo --lint src test --config-dir .clj-kondo --fail-level error
+clj-kondo --lint src test test-swarm --config-dir .clj-kondo --fail-level error
 clojure -M:test-unit
 bb dev/foss_compliance.clj hive-mcp        # packaging, versions, licence, deps
 ```
+
+`test/` is the addon-free tree: it loads and runs green from the committed
+`deps.edn` alone, and it is what CI runs. Suites that exercise the swarm addon
+(hive-agent, hive-datascript) live in `test-swarm/` and run only where the
+addon is on the classpath, through `local.deps.edn`:
+
+```bash
+clj -Sdeps "$(cat local.deps.edn)" -M:test:test-swarm
+```
+
+A new test that needs a swarm store or a live ling belongs in `test-swarm/`.
+The runner requires every namespace its `-r` regex selects before any
+var-level filter (`-e :integration`) runs, and it does not catch a throwing
+fixture. So one namespace under `test/` that cannot load without the addon, or
+whose fixture reaches the swarm, aborts the whole CI run instead of failing
+one suite. A suite that passes on both classpaths stays in `test/`: check by
+running it addon-free before moving it.
 
 ## Writing an addon
 

@@ -21,7 +21,7 @@
             [integrant.core :as ig]
             [meta-merge.core :refer [meta-merge]]
             [hive-mcp.server.core :as core]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [hive-mcp.server.lifecycle :as lifecycle]
             [hive-mcp.server.init :as init]
             [hive-mcp.server.transport :as transport]
@@ -145,8 +145,16 @@
           (is (pos? (count config))))))))
 
 (deftest profile-resolution-precedence
-  (testing "resolve-profile defaults to :desktop"
-    (is (= :desktop (core/resolve-profile))))
+  ;; The precedence is asserted on the pure fn. Asserting the :desktop default
+  ;; through `resolve-profile` reads the ambient HIVE_PROFILE, which
+  ;; bin/test-sandboxed.sh sets on purpose, so that spelling was red in the
+  ;; sandbox and green everywhere else.
+  (testing "nothing given defaults to :desktop"
+    (is (= :desktop (core/profile-from nil nil))))
+  (testing "HIVE_PROFILE beats the default"
+    (is (= :k8s-minimal (core/profile-from nil "k8s-minimal"))))
+  (testing "an explicit arg beats HIVE_PROFILE"
+    (is (= :k8s-headless (core/profile-from "k8s-headless" "k8s-minimal"))))
   (testing "resolve-profile with explicit arg"
     (is (= :k8s-headless (core/resolve-profile "k8s-headless")))
     (is (= :k8s-minimal (core/resolve-profile "k8s-minimal")))))

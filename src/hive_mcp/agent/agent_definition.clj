@@ -127,10 +127,10 @@
 ;; Re-exports: validate
 ;; =============================================================================
 
-(def validate           validate/validate)
-(def valid?             validate/valid?)
-(def explain            validate/explain)
-(def validate-or-throw! validate/validate-or-throw!)
+(def validate           #'validate/validate)
+(def valid?             #'validate/valid?)
+(def explain            #'validate/explain)
+(def validate-or-throw! #'validate/validate-or-throw!)
 
 (defn make-agent-def
   "Validate a plain map and convert to an AgentDef record.
@@ -160,19 +160,19 @@
 ;; Re-exports: compose (frontmatter, loaders, merge, lookup, summary)
 ;; =============================================================================
 
-(def parse-frontmatter      compose/parse-frontmatter)
-(def frontmatter->agent-def compose/frontmatter->agent-def)
-(def load-agent-file        compose/load-agent-file)
-(def load-agents-dir        compose/load-agents-dir)
-(def find-agent-dirs        compose/find-agent-dirs)
-(def load-all-custom-agents compose/load-all-custom-agents)
-(def merge-definitions      compose/merge-definitions)
-(def active-agents          compose/active-agents)
-(def find-by-type           compose/find-by-type)
-(def built-in?              compose/built-in?)
-(def custom?                compose/custom?)
-(def plugin?                compose/plugin?)
-(def has-all-tools?         compose/has-all-tools?)
-(def get-system-prompt      compose/get-system-prompt)
-(def summarize              compose/summarize)
-(def list-summary           compose/list-summary)
+(def parse-frontmatter      #'compose/parse-frontmatter)
+(def frontmatter->agent-def #'compose/frontmatter->agent-def)
+(def load-agent-file        #'compose/load-agent-file)
+(def load-agents-dir        #'compose/load-agents-dir)
+(def find-agent-dirs        #'compose/find-agent-dirs)
+(def load-all-custom-agents #'compose/load-all-custom-agents)
+(def merge-definitions      #'compose/merge-definitions)
+(def active-agents          #'compose/active-agents)
+(def find-by-type           #'compose/find-by-type)
+(def built-in?              #'compose/built-in?)
+(def custom?                #'compose/custom?)
+(def plugin?                #'compose/plugin?)
+(def has-all-tools?         #'compose/has-all-tools?)
+(def get-system-prompt      #'compose/get-system-prompt)
+(def summarize              #'compose/summarize)
+(def list-summary           #'compose/list-summary)

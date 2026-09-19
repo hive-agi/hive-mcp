@@ -16,7 +16,8 @@
             [clojure.java.io :as io]
             [hive-mcp.tools.consolidated.config :as config-tool]
             [hive-mcp.config.core :as config]
-            [hive-mcp.config.io :as config-io]))
+            [hive-mcp.config.io :as config-io]
+            [hive-mcp.dispatch.handler :as dispatch]))
 
 ;; =============================================================================
 ;; Helpers
@@ -68,9 +69,9 @@
     (is (contains? config-tool/handlers :reload))))
 
 (deftest test-handlers-are-functions
-  (testing "all handlers are functions"
+  (testing "all handlers are dispatchable"
     (doseq [[k v] config-tool/handlers]
-      (is (fn? v) (str "Handler " k " should be a function")))))
+      (is (dispatch/handler? v) (str "Handler " k " should be dispatchable")))))
 
 ;; =============================================================================
 ;; CLI Handler Tests
@@ -219,7 +220,7 @@
     (is (true? (:consolidated config-tool/tool-def)))
     (is (string? (:description config-tool/tool-def)))
     (is (map? (:inputSchema config-tool/tool-def)))
-    (is (fn? (:handler config-tool/tool-def)))))
+    (is (dispatch/handler? (:handler config-tool/tool-def)))))
 
 (deftest test-tool-definition-enum
   (testing "tool-def enum includes all commands"
@@ -250,7 +251,6 @@
       (is (map? (:embeddings cfg)))
       (is (map? (get-in cfg [:embeddings :ollama])))
       (is (= "http://localhost:11434" (get-in cfg [:embeddings :ollama :host])))
-      (is (= "qwen3-embedding:4b" (get-in cfg [:embeddings :ollama :model]))
-          "the memory lane's model; nomic-embed-text is retired")
-      (is (map? (get-in cfg [:embeddings :openrouter])))
-      (is (= "qwen/qwen3-embedding-8b" (get-in cfg [:embeddings :openrouter :model]))))))
+      (is (nil? (get-in cfg [:embeddings :ollama :model]))
+          "no embedding model is chosen in code; the user configures embeddings.ollama.model")
+      (is (nil? (get-in cfg [:embeddings :openrouter :model]))))))

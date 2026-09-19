@@ -99,12 +99,16 @@
     (doseq [p (sample gen-plan/gen-plan 30)]
       (is (contains? #{:edn :markdown} (:source-format p)))
       (is (pos? (count (:steps p))))
-      (let [ids (mapv :id (:steps p))
-            index (zipmap ids (range))]
-        (doseq [step (:steps p)
-                dep  (:depends-on step)]
-          (is (contains? index dep) (str "unknown dep: " dep))
-          (is (< (index dep) (index (:id step))) (str "forward dep: " dep)))))))
+      (let [ids        (mapv :id (:steps p))
+            index      (zipmap ids (range))
+            violations (for [step (:steps p)
+                             dep  (:depends-on step)
+                             :let [problem (cond
+                                             (not (contains? index dep)) :unknown-dep
+                                             (>= (index dep) (index (:id step))) :forward-dep)]
+                             :when problem]
+                         {:step (:id step) :dep dep :problem problem})]
+        (is (empty? violations) (str "DAG violations: " (vec violations)))))))
 
 (deftest gen-plan-schema-test
   (testing "gen-plan output satisfies schema/valid-plan? and has no cycles"

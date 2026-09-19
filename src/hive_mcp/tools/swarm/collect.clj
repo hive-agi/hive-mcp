@@ -85,6 +85,17 @@
                              :elapsed_ms elapsed})
    :isError true})
 
+(defn- build-unknown-task-response
+  "Build MCP response for a task id neither the journal, Emacs nor the
+   dispatched-task registry knows."
+  [task_id elapsed]
+  {:type    "text"
+   :text    (json/write-str {:task_id    task_id
+                             :status     "error"
+                             :error      (str "Unknown task id: " task_id)
+                             :elapsed_ms elapsed})
+   :isError true})
+
 ;; =============================================================================
 ;; Domain predicates — named, single-purpose (CLARITY + SLAP)
 ;; =============================================================================
@@ -93,6 +104,12 @@
   "True when the parsed Elisp result represents a final (non-polling) state."
   [parsed]
   (contains? #{"completed" "timeout" "error"} (:status parsed)))
+
+(defn- unknown-to-emacs?
+  "True when Emacs answered that it holds no such task."
+  [parsed]
+  (and (= "error" (:status parsed))
+       (= "Task not found" (:error parsed))))
 
 (defn- parse-collect-result
   "Parse raw Elisp JSON string. Returns keyword-keyed map or nil on failure."
@@ -106,6 +123,8 @@
 (defn- poll-once
   "Execute one Elisp poll against the swarm addon.
    Returns a final response map when done, nil when should keep polling.
+   \"Task not found\" keeps polling only for an id the JVM dispatched;
+   an id unknown to both Emacs and the JVM fails at once.
    SLAP: operates at infrastructure level — Elisp I/O only."
   [task_id timeout_ms start-time elisp-timeout]
   (let [elapsed (- (System/currentTimeMillis) start-time)
@@ -124,6 +143,8 @@
       (let [parsed (parse-collect-result result)]
         (cond
           (nil? parsed)          (build-parse-error-response task_id elapsed result)
+          (unknown-to-emacs? parsed) (when-not (channel/dispatched-task? task_id)
+                                       (build-unknown-task-response task_id elapsed))
           (terminal-status? parsed) (core/mcp-success parsed)
           (= "polling" (:status parsed)) nil  ;; continue polling
           :else                  (build-timeout-response task_id elapsed "unknown-status"))))))
@@ -134,7 +155,8 @@
 
 (defn- jvm-poll-loop
   "Poll event journal with exponential backoff. No Emacs dependency.
-   Starts at 100ms, doubles up to 2000ms ceiling."
+   Starts at 100ms, doubles up to 2000ms ceiling.
+   An id with no journal entry that was never dispatched fails at once."
   [task_id timeout-ms start-time]
   (let [poll-interval (atom 100)
         max-interval  2000]
@@ -142,8 +164,14 @@
       (if-let [ev (channel/check-event-journal task_id)]
         (build-journal-response task_id ev start-time "journal-jvm-poll")
         (let [elapsed (- (System/currentTimeMillis) start-time)]
-          (if (>= elapsed timeout-ms)
+          (cond
+            (not (channel/dispatched-task? task_id))
+            (build-unknown-task-response task_id elapsed)
+
+            (>= elapsed timeout-ms)
             (build-timeout-response task_id elapsed "jvm-poll")
+
+            :else
             (do (Thread/sleep @poll-interval)
                 (swap! poll-interval #(min max-interval (* 2 %)))
                 (recur))))))))

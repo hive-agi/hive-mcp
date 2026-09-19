@@ -21,10 +21,10 @@
 (defn- get-active-lings
   "Query all active lings from DataScript.
    Returns sequence of ling maps with :slave/id, :slave/name.
-   Filters to lings at depth=1 (not drones) that aren't in error state."
+   Filters to lings at depth=1 that aren't in error state."
   []
   (->> (ds-queries/get-all-slaves)
-       ;; Filter to lings (depth 1) - not hivemind (0) or drones (2)
+       ;; Filter to lings (depth 1), excluding the hivemind (depth 0)
        (filter #(= 1 (:slave/depth %)))
        ;; Exclude errored slaves
        (filter #(not= :error (:slave/status %)))

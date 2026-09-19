@@ -32,7 +32,8 @@
    Memory access tracking:
    - P15: on-memory-accessed tracked count equals entry-ids count
    - P16: on-memory-accessed explicit? detection by source"
-  (:require [clojure.test.check.generators :as gen]
+  (:require [hive-mcp.project.scope]
+            [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
             [clojure.test.check.clojure-test :refer [defspec]]
             [hive-mcp.crystal.hooks :as hooks]
@@ -40,7 +41,6 @@
             [hive-mcp.crystal.synthesis :as synthesis]
             [hive-mcp.crystal.core :as crystal]
             [hive-mcp.crystal.recall :as recall]
-            [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.tools.memory.duration :as dur]
             [hive-mcp.dns.result :as result]
             [clojure.data.json :as json]
@@ -336,7 +336,7 @@
                        (fn [& _#] ~summary-result)
                        crystal/session-id
                        (fn [] "prop-test-session")
-                       scope/get-current-project-id
+                       hive-mcp.project.scope/get-current-project-id
                        (fn [_#] "prop-test-project")
                        dur/calculate-expires
                        (fn [_#] "2026-12-31T00:00:00Z")]

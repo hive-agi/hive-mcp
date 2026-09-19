@@ -1,6 +1,6 @@
 (ns hive-mcp.tools.catchup.format
   "Formatting and rendering functions for catchup workflow."
-  (:require [hive-mcp.knowledge-graph.scope :as kg-scope]
+  (:require [hive-mcp.project.scope :as project-scope]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [taoensso.timbre :as log]
@@ -70,7 +70,7 @@
                (and project-id (not= project-id project-name) (not= project-id "global"))
                (conj (str "scope:project:" project-id)))
         descendants (when (and project-id in-project?)
-                      (kg-scope/descendant-scopes project-id))]
+                      (project-scope/descendant-scopes project-id))]
     (if (seq descendants)
       (into base (map #(str "scope:project:" %) descendants))
       base)))

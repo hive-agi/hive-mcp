@@ -79,38 +79,38 @@
 ;; Re-exports — context helpers
 ;; =============================================================================
 
-(def get-coeffect    ctx/get-coeffect)
-(def assoc-coeffect  ctx/assoc-coeffect)
-(def update-coeffect ctx/update-coeffect)
-(def get-effect      ctx/get-effect)
-(def assoc-effect    ctx/assoc-effect)
-(def update-effect   ctx/update-effect)
+(def get-coeffect    #'ctx/get-coeffect)
+(def assoc-coeffect  #'ctx/assoc-coeffect)
+(def update-coeffect #'ctx/update-coeffect)
+(def get-effect      #'ctx/get-effect)
+(def assoc-effect    #'ctx/assoc-effect)
+(def update-effect   #'ctx/update-effect)
 
 ;; =============================================================================
 ;; Re-exports — metrics
 ;; =============================================================================
 
 (def metrics            mt/metrics)
-(def get-metrics        mt/get-metrics)
-(def reset-metrics!     mt/reset-metrics!)
-(def configure-metrics! mt/configure-metrics!)
+(def get-metrics        #'mt/get-metrics)
+(def reset-metrics!     #'mt/reset-metrics!)
+(def configure-metrics! #'mt/configure-metrics!)
 
 ;; =============================================================================
 ;; Re-exports — registry
 ;; =============================================================================
 
-(def reg-event               registry/reg-event)
-(def append-interceptor!     registry/append-interceptor!)
-(def get-interceptors        registry/get-interceptors)
-(def handler-registered?     registry/handler-registered?)
-(def unreg-event             registry/unreg-event)
-(def unreg-fx                registry/unreg-fx)
-(def unreg-cofx              registry/unreg-cofx)
-(def registered-events       registry/registered-events)
-(def registered-effects      registry/registered-effects)
-(def registered-coeffects    registry/registered-coeffects)
-(def handler-registry-status registry/handler-registry-status)
-(def reset-all!              registry/reset-all!)
+(def reg-event               #'registry/reg-event)
+(def append-interceptor!     #'registry/append-interceptor!)
+(def get-interceptors        #'registry/get-interceptors)
+(def handler-registered?     #'registry/handler-registered?)
+(def unreg-event             #'registry/unreg-event)
+(def unreg-fx                #'registry/unreg-fx)
+(def unreg-cofx              #'registry/unreg-cofx)
+(def registered-events       #'registry/registered-events)
+(def registered-effects      #'registry/registered-effects)
+(def registered-coeffects    #'registry/registered-coeffects)
+(def handler-registry-status #'registry/handler-registry-status)
+(def reset-all!              #'registry/reset-all!)
 
 (defmacro with-clean-registry
   "Re-export of hive-mcp.events.registry/with-clean-registry."
@@ -121,13 +121,13 @@
 ;; Re-exports — dispatch
 ;; =============================================================================
 
-(def interceptor?   dispatch/interceptor?)
-(def execute        dispatch/execute)
-(def do-fx          dispatch/do-fx)
-(def dispatch       dispatch/dispatch)
-(def dispatch-sync  dispatch/dispatch-sync)
+(def interceptor?   #'dispatch/interceptor?)
+(def execute        #'dispatch/execute)
+(def do-fx          #'dispatch/do-fx)
+(def dispatch       #'dispatch/dispatch)
+(def dispatch-sync  #'dispatch/dispatch-sync)
 (def debug          dispatch/debug)
-(def validate-event dispatch/validate-event)
+(def validate-event #'dispatch/validate-event)
 
 ;; =============================================================================
 ;; Initialization (hive-mcp specific)
@@ -150,9 +150,22 @@
                         pollution in MCP context)
    - :mcp-response    - Data-only effect read by dispatch-sync callers
 
-   Safe to call multiple times; idempotent via registry/*initialized."
+   Safe to call multiple times, and it REGISTERS every time.
+
+   It used to skip the whole body when `registry/*initialized` was already
+   true. That atom is a `defonce`, which clj-reload preserves, so after a hot
+   reload the flag still read true and this function did nothing while the
+   registries kept the closures compiled before the reload. Nothing reported
+   it: every handler here is anonymous, so it has no var to be compared
+   against, and the reload-staleness scan cannot see these at all. Kanban
+   20260916134011-1246379c.
+
+   Every registration below is addressed by key and last-writer-wins, so
+   re-running is free. The flag now carries only two things it can still be
+   honest about: whether this is the FIRST initialization (so the log stays
+   one line per process) and the return value callers already depend on."
   []
-  (when-not @registry/*initialized
+  (let [first? (not @registry/*initialized)]
     (reg-cofx :now
               (fn [coeffects]
                 (assoc coeffects :now (java.time.Instant/now))))
@@ -182,6 +195,9 @@
                 (log/info message))))
     (reg-fx :mcp-response (fn [_] nil))
     (reset! registry/*initialized true)
-    (log/info "Event system initialized with coeffects: :now :random :agent-context :db-snapshot")
-    (log/info "Registered effects: :channel-publish :mcp-response"))
+    (if first?
+      (do
+        (log/info "Event system initialized with coeffects: :now :random :agent-context :db-snapshot")
+        (log/info "Registered effects: :channel-publish :mcp-response"))
+      (log/debug "Event system re-initialized: built-in coeffects and effects re-registered")))
   @registry/*initialized)

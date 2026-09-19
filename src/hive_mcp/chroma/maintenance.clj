@@ -3,7 +3,7 @@
   (:require [hive-mcp.chroma.client :as chroma]
             [hive-mcp.chroma.connection :as conn]
             [hive-mcp.chroma.crud :as crud]
-            [hive-mcp.chroma.embeddings :as emb]
+            [hive-mcp.embeddings.active :as emb]
             [hive-mcp.chroma.gate :as gate]
             [hive-mcp.chroma.helpers :as h]
             [taoensso.timbre :as log]))

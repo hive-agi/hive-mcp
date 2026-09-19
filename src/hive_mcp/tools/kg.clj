@@ -29,22 +29,24 @@
 ;;; =============================================================================
 
 ;; Query handlers
-(def handle-kg-traverse        kg-queries/handle-kg-traverse)
-(def handle-kg-impact-analysis kg-queries/handle-kg-impact-analysis)
-(def handle-kg-find-path       kg-queries/handle-kg-find-path)
-(def handle-kg-subgraph        kg-queries/handle-kg-subgraph)
-(def handle-kg-contradictions  kg-queries/handle-kg-contradictions)
-(def handle-kg-node-context    kg-queries/handle-kg-node-context)
-(def handle-kg-stats           kg-queries/handle-kg-stats)
+(def handle-kg-traverse        #'kg-queries/handle-kg-traverse)
+(def handle-kg-impact-analysis #'kg-queries/handle-kg-impact-analysis)
+(def handle-kg-find-path       #'kg-queries/handle-kg-find-path)
+(def handle-kg-subgraph        #'kg-queries/handle-kg-subgraph)
+(def handle-kg-contradictions  #'kg-queries/handle-kg-contradictions)
+(def handle-kg-node-context    #'kg-queries/handle-kg-node-context)
+(def handle-kg-stats           #'kg-queries/handle-kg-stats)
 
 ;; Command handlers
-(def handle-kg-add-edge            kg-commands/handle-kg-add-edge)
+(def handle-kg-add-edge            #'kg-commands/handle-kg-add-edge)
 
-(def handle-kg-add-edges           kg-commands/handle-kg-add-edges)
-(def handle-kg-promote             kg-commands/handle-kg-promote)
-(def handle-kg-reground            kg-commands/handle-kg-reground)
-(def handle-kg-backfill-grounding  kg-commands/handle-kg-backfill-grounding)
-(def handle-kg-cleanup-synthetics  kg-commands/handle-kg-cleanup-synthetics)
+(def handle-kg-add-edges           #'kg-commands/handle-kg-add-edges)
+(def handle-kg-promote             #'kg-commands/handle-kg-promote)
+
+(def handle-kg-remove-edge         #'kg-commands/handle-kg-remove-edge)
+(def handle-kg-reground            #'kg-commands/handle-kg-reground)
+(def handle-kg-backfill-grounding  #'kg-commands/handle-kg-backfill-grounding)
+(def handle-kg-cleanup-synthetics  #'kg-commands/handle-kg-cleanup-synthetics)
 
 ;;; =============================================================================
 ;;; Tool Definitions (merged from sub-namespaces)

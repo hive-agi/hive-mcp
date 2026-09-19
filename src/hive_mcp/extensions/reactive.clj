@@ -14,7 +14,8 @@
             [hive-mcp.dns.result :refer [rescue]]
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.tools.composite :as composite]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-addon.registry.commands :as acmds]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -35,7 +36,7 @@
    Returns the tool-def, or nil."
   [tool-name]
   (when-let [desc (get composite-descriptions tool-name)]
-    (if (empty? (ext/get-contributed-commands tool-name))
+    (if (empty? (acmds/get-commands tool-name))
       (do (ext/deregister-tool! tool-name) nil)
       (let [t (composite/build-composite-tool tool-name desc)]
         (ext/register-tool! t)
@@ -81,14 +82,27 @@
    :server-tools (refresh-server-tools!)})
 
 (defn install!
-  "Subscribe to the registry's contribution events. Idempotent."
+  "Subscribe to the registry's contribution events. Idempotent.
+   Returns the listener id, as it always has.
+
+   Two things are subscribed, not one. The facade's own listener list is what
+   a contribution through hive-mcp.extensions.registry notifies. The hive-addon
+   listener seam is what a contribution made DIRECTLY to
+   hive-addon.registry.commands notifies, and an addon that has migrated off
+   the facade makes exactly that kind of contribution. That seam was armed by a
+   delay which only a facade call forced, so a fully migrated fleet would have
+   armed it never: commands would land in the store and the advertised surface
+   would never rebuild. Arming it here, at install time, is what makes the
+   migration safe to perform one addon at a time."
   []
-  (ext/add-contribution-listener!
-   :reactive-surface
-   (fn [{:keys [type tool-name addon-id]}]
-     (let [out (refresh-surface! tool-name)]
-       (log/debug "Contribution reached the surface"
-                  {:type type :tool tool-name :addon addon-id :refresh out})))))
+  (let [id (ext/add-contribution-listener!
+            :reactive-surface
+            (fn [{:keys [type tool-name addon-id]}]
+              (let [out (refresh-surface! tool-name)]
+                (log/debug "Contribution reached the surface"
+                           {:type type :tool tool-name :addon addon-id :refresh out}))))]
+    (rescue nil (ext/ensure-seam-listener!))
+    id))
 
 (defn uninstall!
   "Unsubscribe. For tests."

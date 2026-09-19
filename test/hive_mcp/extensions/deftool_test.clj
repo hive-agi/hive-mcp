@@ -28,10 +28,18 @@
                   (catch clojure.lang.ExceptionInfo e (:error (ex-data e)))))))))
 
 (deftest deftool-registers-a-schema-projected-tool
+  ;; The extension registry is process-global. The tool is deregistered AFTER
+  ;; the assertions as well as before them: its handler is a fn value, not a
+  ;; var, so leaving it behind fails any later suite that quantifies over the
+  ;; whole tool surface (dispatch.tool-surface-test), in whatever order the
+  ;; filesystem hands the runner its namespaces.
   (ereg/deregister-tool! "greet-reg")
-  (dt/deftool "greet-reg" {:description "greets" :schema ::greet :handler greet-handler})
-  (let [t (first (filter #(= "greet-reg" (:name %)) (ereg/get-registered-tools)))]
-    (testing "the macro projects + registers the tool through register-tool!"
-      (is (some? t))
-      (is (= "object" (get-in t [:inputSchema :type])))
-      (is (= {:greeting "hi al "} ((:handler t) {:name "al"}))))))
+  (try
+    (dt/deftool "greet-reg" {:description "greets" :schema ::greet :handler greet-handler})
+    (let [t (first (filter #(= "greet-reg" (:name %)) (ereg/get-registered-tools)))]
+      (testing "the macro projects + registers the tool through register-tool!"
+        (is (some? t))
+        (is (= "object" (get-in t [:inputSchema :type])))
+        (is (= {:greeting "hi al "} ((:handler t) {:name "al"})))))
+    (finally
+      (ereg/deregister-tool! "greet-reg"))))

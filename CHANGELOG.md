@@ -35,6 +35,259 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+### Added
+
+- **`agent spawn` takes `sandbox`.** An optional boolean that rides from the
+  tool call through the ling's opts to the headless backend's ctx unchanged.
+  The host does not interpret it: hive-agent resolves it against its own
+  default (`[:services :agent :sandbox]`), so an omitted flag leaves the key
+  out and an explicit `false` survives as an opt-out. A new optional argument,
+  so minor.
+
+### Changed
+
+- **The test tree is two trees.** `test/` loads and runs from the committed
+  `deps.edn` alone, with no hive-agent and no hive-datascript on the classpath;
+  it is what CI runs. The 53 suites that exercise the swarm addon moved to
+  `test-swarm/` and run through `-M:test:test-swarm` with the addon supplied by
+  `local.deps.edn`, or sandboxed with `bin/test-sandboxed.sh --swarm`. The
+  runner requires every namespace its regex selects before any var-level
+  filter runs and does not catch a throwing fixture, so a single addon-coupled
+  suite under `test/` used to abort the whole public run.
+- **Project identity is kernel code: `hive-mcp.project.scope`.** The scope
+  hierarchy (`visible-scopes`, `infer-scope-from-path`, the alias registry)
+  and `get-current-project-id` read `.hive-project.edn` files and nothing
+  else, but they lived in `hive-mcp.knowledge-graph.scope` and
+  `hive-mcp.tools.memory.scope`, two namespaces that leave with hive-memory.
+  So the kernel reached into a slice it is meant to outlive to learn which
+  project it was in. The code moved to `hive-mcp.project.scope`; hivemind,
+  the swarm registry and sync, catchup and the route identity layer require
+  it directly, and the swarm memory-scope adapter no longer needs a degrade
+  path for it. The two old names stay as facades that call through the kernel
+  var on every invocation, so a reload or a redef of the kernel reaches a
+  caller that still spells the old name. Fifteen kernel census waivers are
+  retired (90 to 75 of the baseline 100).
+- **Two more swarm-side host calls go through hive-spi ports.** Agora
+  dialogue events reach UI clients through `IFrontendPush/emit!`, and the
+  hive-mcp messaging adapter's `emit!` now covers the websocket as well as
+  the channel socket, each transport guarded on its own. Swarm dispatch reads
+  file staleness through `IDiscStaleness` and no longer requires
+  `hive-mcp.knowledge-graph.disc`, which retires one more census waiver
+  (75 to 74). With no host adapter installed both degrade to the port's
+  noop: no push, no staleness warning, no throw.
+- **The kanban board is a port the kernel resolves, not a namespace it
+  requires.** `IKanbanRead` (list/get) and `IKanbanWrite` (transition/create)
+  live in `hive-mcp.spi.kanban` with a registry in
+  `hive-mcp.spi.kanban.registry`; `hive-mcp.tools.kanban.port` registers
+  core's provider over the existing kanban domain, and the scheduler, the
+  plan-to-kanban pipeline and `memory_kanban/query` reach the board through
+  the registry on every call, so an addon that owns the board replaces the
+  provider without the callers changing. Catchup no longer gathers the board
+  itself: contributors register a block with `hive-mcp.spi.catchup-registry`
+  and catchup composes whatever is registered, keyed by `:block/id`, which is
+  how `hive-mcp.tools.kanban.catchup-block` supplies the `:kanban` summary.
+  Two kernel census waivers are retired (73 to 71 of the baseline 100). The
+  port and the block registry are HOST-LOCAL for now; they belong in
+  hive-contracts and hive-spi, which have not released them, and the kernel
+  does not depend on an unreleased coordinate.
+
+### Fixed
+
+- **The swarm host adapters no longer pin the kernel to namespaces that are
+  leaving it.** Four adapters statically required hive-memory, hive-workflows,
+  hive-observability and hive-agent extraction targets, which the kernel census
+  gate counts as unwaived kernel edges. They now resolve those host functions
+  by symbol on the call, and answer what the port's Noop answers once the
+  namespace is gone.
+
+## [1.6.0] - 2026-09-16
+
+Three threads: the dispatch tree stopped freezing handler values, the channel
+grew a real response budget, and a wrap finally knows which session it belongs
+to. Minor rather than patch: commands were added to the tool surface and
+nothing in the promised seam was removed or renamed.
+
+### Fixed
+
+- **A hot reload could not rewire a tool handler.** The dispatch tree stored
+  the handler's VALUE, so every table held the closure compiled at load time
+  and a reload changed nothing the router could see. Handlers are now stored
+  as vars and the walker derefs at call time; 55 tables were converted, and a
+  ratchet test keeps a referenced handler from regressing to a bare value.
+  `dispatch.handler/handler?` is the one definition of what is invocable, and
+  it admits a var.
+- **The same defect in the event registries.** `reg-fx` / `reg-cofx` /
+  `reg-event` guarded by `defonce` or a gate atom captured the pre-reload
+  closure and never re-ran. Registration is unconditional wherever the
+  registry is key-addressed, which is every site touched here; a gate is
+  correct only where registration ACCUMULATES. `hive.events/stale-registrations`
+  names whatever is left pointing at replaced code.
+- `async-result/drain!` destroyed results enqueued while it was running.
+- One coordinator window is one audience, and one global cursor, so a session
+  touching several repos no longer reads a global shout once per project.
+- A project-scoped reader could not match its own directed `:to`.
+- `extensions`: the hive-addon listener seam is armed at `install!`, not on the
+  first facade call, so an addon that registers before the facade is touched is
+  no longer invisible.
+- `saa.core-seed` installs instead of trusting `require` to do the work.
+- `swarm`: the signature rule was dead in the stored path, and stale spans
+  fenced a file forever.
+- Sweepers never release an owner the sweep cannot name.
+- `kernel.edn` claims `dispatch`, `hot` and `session`; four namespaces were
+  unowned and five kernel edges unwaived.
+- `init` logs boot-boundary failures through `rescue-log` instead of
+  swallowing them.
+
+### Added
+
+- **Session identity and HCR ownership.** `crystal/session-id` was the calendar
+  date, so every concurrent session on a box shared one tag and the first wrap
+  to run destroyed the others' unharvested records. `session.identity` is the
+  pure algebra (a SessionRef resolved against a world snapshot, plus the
+  ownership rules); `session.current` is the thin impure adapter. A coordinator
+  owns its descendants, a ling owns only itself, and a row with no session id
+  belongs to nobody and is never cleared.
+- **Channel response budget.** The budget covers the whole response rather than
+  each block in isolation, reports what the drain WITHHELD rather than only
+  what it saved, and sends pool memories as pointers instead of bodies. The
+  normative split is exported as LLMLingua-2 control tags, and the dictionary
+  declines what it cannot honestly compress.
+- Directed ling-to-ling delivery over A2A envelopes, with broadcasts metered
+  and a directed exchange threaded across turns.
+- `registry`: an opt-in compact projection of the advertised tool schemas.
+- `cli`: a bare subcommand dispatches to the one root that can own it.
+- Prompt caching on the OpenAI-compat wire, tool results included, and a
+  provider may buy the 1h cache.
+- `swarm`: claim a span of a file rather than the whole file.
+
+### Changed
+
+- Dictionary encoding moved out of `channel.core` into `hive-prompt`.
+- Every memory type is classified as a Context Codec commitment.
+- The dev REPL alias (`bb repl`, `clj -M:dev-repl`) binds an OS-assigned port
+  and can no longer land on the serving nREPL port; `bb serve` is the explicit
+  act of booting the server.
+
+## [1.5.0] - 2026-09-14
+
+A belt wave of four reviewed cards, plus one regression the review caught and
+one the review missed and CI caught. Minor rather than patch to stay consistent
+with every prior release; nothing in the promised seam moved, so 1.4.1 would
+have been defensible too.
+
+### Fixed
+
+- `kanban list :created_after` / `:updated_after` compared timestamps
+  lexicographically, so a threshold spelled in UTC mis-selected against an
+  entry stored at an offset: `2026-08-21T16:55-03:00` is 19:55Z, but `16` vs
+  `19` reads as earlier. Both sides now parse to `java.time.Instant`.
+- The same change then broke every query it was meant to fix.
+  `OffsetDateTime/parse` demands `-03:00`, and kanban stores a **colonless**
+  offset (`2026-04-26T00:00:00-0300`). Unparseable became nil, nil made the
+  predicate false, and the filters silently matched nothing, a quieter failure
+  than the bug being fixed. A colonless-offset parse arm was added. When
+  touching a timestamp predicate here, feed it both offset spellings.
+
+### Added
+
+- `recall.canary/skip-regressions` and `with-regressions`: a probe that ran on
+  the previous tick and skips on this one is now a `:recall/probe-went-dark`
+  fault, and it keeps faulting on every later dark tick instead of going quiet
+  after one. `verdict` gained `:ran-labels` to carry the comparison.
+- `tools.catchup.bucket-types`: one definition of the seven memory types that
+  can land in a catchup bucket. `bundle-cache/bundle-types` now aliases it
+  rather than restating the literal set, and a test asserts the two are
+  `identical?`, not merely equal.
+
+### Changed
+
+- The SAA orchestrator test exercises the `IObservationScorer` port and the
+  `:es/score` extension layering, instead of `requiring-resolve`-ing a
+  `hive-claude` symbol that was severed from src and left the test asserting
+  `(= observations observations)`.
+- Timestamp parsing in `tools.kanban.filters` goes through `rescue` instead of
+  three nested `(catch Exception _ ...)`.
+
+## [1.4.0] - 2026-09-14
+
+Released as a minor by decision, although it removes tool roots and commands
+and makes model configuration required, which the promise above classes as
+major. Read **Removed** and **Configuration now required** before upgrading.
+
+### Removed
+
+- Drones. The only worker model is the agentic ling; cheap parallel work is a
+  ling-wave (hive-agent) on a configured model. Gone: the `:drone` agent type
+  and `hive-mcp.agent.drone*`, the `agent.core` delegation facade,
+  `agent.routing`, `agent.config` task-models, `agent.task-classifier`,
+  `agent.cost` and `tools.cost`, `IAgent/upgrade!`.
+- The `wave` tool root (dispatch, dispatch-validated, status, review, approve,
+  auto-approve, reject), `swarm wave`, and the DSL verbs `w!`, `w?`, `wy`, `wn`.
+- The `diff` tools (propose / review / approve / apply).
+- Agora debates: `debate`, `debate-status`, `continue`, `staged`,
+  `stage-status`, `list type=debate`. Ling `dialogue`, `dispatch`, `consensus`,
+  `list`, `join` and `history` stay.
+- Change-plan / change-item / wave DataScript storage, the Olympus waves view
+  and `GET /api/waves`, drone NATS subjects and callbacks, Prometheus drone
+  metrics, the drone presets and `wave-coordinator`.
+- Forge drone mode: `spawn_mode drone` is refused with
+  `:execution/unsupported-mode`.
+
+### Configuration now required
+
+hive-mcp chooses no model in code. Missing values fail loudly naming the key:
+
+- `agent-defaults.<type>` for every agent type spawned without a model
+  (e.g. `hive config set agent-defaults.ling '{:provider :venice :model "<id>"}'`).
+- `llm-providers.<provider>.default-model` for a provider used without an
+  explicit model.
+- `embeddings.<provider>.model` (Ollama, and OpenRouter when its key is set).
+- `services.forge.budget-tier-models` when `services.forge.budget-routing` is on.
+
+Removed keys (`agent-defaults.drone`, `services.drone`, `models.task-models`,
+`models.routing`) are no longer re-written into `config.edn` by the defaults.
+
+### Changed
+
+- `hive-mcp.agent.drone.error-summary` is now `hive-mcp.agent.error-summary`.
+
+### Fixed
+
+- An addon tool can no longer silently shadow a host tool of the same name.
+  Which contribution holds a name is now decided by one pure namespace,
+  `hive-mcp.addons.tool-claims`, in registration order:
+
+  1. An addon that both PROVIDES a name and lists it in `excluded-tools`
+     CLAIMS it, over a core tool of that name and over every other addon.
+  2. An `excluded-tools` entry with no provider refuses other addons' tool of
+     that name, and never removes a core tool.
+  3. Otherwise a core tool of that name wins and the addon's is refused as
+     `:shadows-core`. The legacy supertool form is preserved: a `:native`
+     addon's `:consolidated` tool still stands in for a `:consolidated` core
+     root of the same name.
+  4. Otherwise the first provider holds it; later ones are `:duplicate`.
+
+  Registration order is read from a monotonic counter stamped at
+  `register-addon!`, not from the registry map's hash order, so the
+  first-wins rules are deterministic across restarts.
+
+  Every refused tool is reported rather than dropped in silence:
+  `hive-mcp.addons.core/resolve-addon-tools` returns `:installed`,
+  `:refused` (each with a reason and the holder) and `:claims`.
+  `active-addon-tools` returns just `:installed`, as before.
+
+  A claim also DROPS the host's own tool of that name when the surface is
+  built, in `build-server-spec` and `refresh-tools!`. Previously both were
+  concatenated, so a claimed name appeared twice and which one answered
+  depended on fold order.
+
+### Changed
+
+- `hive-mcp.tools.registry/core-tools` is now public: the host's own tool
+  defs (channel tools + domain roots), independent of the caller's role, so a
+  name the child-ling set leaves out still counts as a core name when addon
+  tools are resolved against it.
+
 ## [1.1.2]
 
 A patch release. The tool surface, the manifest format and the ports are

@@ -206,9 +206,17 @@
 (defonce ^:private *registered (atom false))
 
 (defn register-conversation-effects!
-  "Register all conversation effect handlers. Idempotent."
+  "Register all conversation effect handlers.
+
+   Safe to call multiple times, and it REGISTERS every time: `reg-fx` is
+   addressed by key and last-writer-wins. The `defonce`'d flag used to skip the
+   body, which meant a hot reload could not rewire these effects -- and these
+   are NAMED handlers, so the registry held the pre-reload fn objects while the
+   vars carried the new code. Kanban 20260916134011-1246379c.
+
+   Returns true."
   []
-  (when-not @*registered
+  (let [first? (not @*registered)]
     (ev/reg-fx :conversation/publish-tell    handle-publish-tell)
     (ev/reg-fx :conversation/publish-ask     handle-publish-ask)
     (ev/reg-fx :conversation/publish-respond handle-publish-respond)
@@ -221,10 +229,11 @@
     (ev/reg-fx :conversation/deliver-ask     handle-publish-ask)
     (ev/reg-fx :conversation/deliver-respond handle-publish-respond)
     (reset! *registered true)
-    (log/info "[hive-events] Conversation effects registered:"
-              ":publish-tell :publish-ask :publish-respond :register-ask"
-              ":deliver-response :inbox-push :timeout-ask"
-              "(+ deliver-{tell,ask,respond} aliases)")
+    (when first?
+      (log/info "[hive-events] Conversation effects registered:"
+                ":publish-tell :publish-ask :publish-respond :register-ask"
+                ":deliver-response :inbox-push :timeout-ask"
+                "(+ deliver-{tell,ask,respond} aliases)"))
     true))
 
 (defn reset-registration!

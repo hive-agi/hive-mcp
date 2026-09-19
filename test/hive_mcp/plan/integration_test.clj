@@ -485,6 +485,29 @@ Please review and approve before implementation begins.")
               ["test/hive_mcp/plan/parser_property_test.clj"]]
              (mapv :files (:steps plan)))))))
 
+(deftest markdown-overlay-execution-reaches-card-context-test
+  (testing "Hybrid markdown overlay :execution is written into the kanban card :context"
+    (let [execution {:provider "openai" :model "test-model"
+                     :spawn-mode "headless" :presets ["saa"]}
+          plan-md   (str "# Hybrid Plan: routed step\n\n"
+                         "## Routed work\n"
+                         (pr-str {:id "routed-1" :priority :high :execution execution})
+                         "\n\nWork that must run on the declared provider.")
+          memory-id (create-test-memory! plan-md)
+          result    (tool/handle-plan-to-kanban {:plan_id memory-id
+                                                 :directory project-root})
+          parsed    (parse-json-result result)
+          task-id   (get-in parsed [:step-mapping "routed-1"])
+          entry     (clojure.data.json/read-str
+                     (:text (mem-kanban/handle-mem-kanban-get {:task_id task-id}))
+                     :key-fn keyword)
+          content   (let [c (:content entry)]
+                      (if (string? c) (clojure.data.json/read-str c :key-fn keyword) c))]
+      (is (not (:isError result)) "Should not return error")
+      (is (string? task-id) "step-mapping carries the overlay :id")
+      (is (= {:plan-step-id "routed-1" :execution execution}
+             (:context content))))))
+
 ;; =============================================================================
 ;; Test c) Dependency Cycle Detection
 ;; =============================================================================

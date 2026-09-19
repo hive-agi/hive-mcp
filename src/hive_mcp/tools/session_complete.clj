@@ -34,7 +34,7 @@
             [hive-mcp.agent.context :as ctx]
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.vectordb.facade :as facade]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [clojure.string :as str]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -277,15 +277,20 @@
 (defonce ^:private *handler-registered (atom false))
 
 (defn register-handler!
-  "Register the :ling/session-complete event handler.
-   Safe to call multiple times."
+  "Register the :ling/session-complete event handler. Returns true.
+
+   `ev/reg-event` is key-addressed, so re-running REPLACES the handler.
+   The registration is therefore unconditional - gating it pinned the
+   closure compiled at load time and a reload could not rewire it. The
+   flag survives only to keep the log line firing once."
   []
-  (when-not @*handler-registered
+  (let [first? (not @*handler-registered)]
     (ev/reg-event :ling/session-complete
                   [interceptors/debug]
                   handle-ling-session-complete)
     (reset! *handler-registered true)
-    (log/info "[session-complete] Handler registered: :ling/session-complete")
+    (when first?
+      (log/info "[session-complete] Handler registered: :ling/session-complete"))
     true))
 
 (defn reset-registration!

@@ -12,10 +12,11 @@
    Uses MockEmbedder for deterministic testing without external dependencies."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.plan.plans :as plans]
-            [hive-mcp.chroma.core :as chroma]
             [hive-mcp.test-fixtures :as fixtures]
-            [clojure-chroma-client.api :as chroma-api]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.protocols.vector :as vp]
+            [hive-mcp.vectordb.memory-store :as mem-store]
+            [hive-mcp.embeddings.active :as active]))
 
 ;; =============================================================================
 ;; Constants and Helpers
@@ -27,25 +28,27 @@
   "Delete the test collection if it exists."
   []
   (try
-    (when-let [coll (try @(chroma-api/get-collection test-collection-name)
-                         (catch Exception _ nil))]
-      @(chroma-api/delete-collection coll)
-      (Thread/sleep 100))
+    (when-let [coll (vp/-get-collection (vp/require-store) test-collection-name)]
+      (vp/-delete-collection (vp/require-store) coll))
     (catch Exception _ nil)))
 
 (defn setup-embedder!
   "Configure embedding provider with given dimension."
   [dim]
-  (chroma/set-embedding-provider! (fixtures/->MockEmbedder dim))
-  (chroma/configure! {:host "localhost" :port 8000})
+  (active/set-embedding-provider! (fixtures/->MockEmbedder dim))
   (plans/reset-collection-cache!))
 
 (defn get-collection-dimension
-  "Get the dimension metadata from collection, if it exists."
+  "The dimension recorded on the collection, if it exists.
+
+   Read through the port's handle rather than the vendor's object. That the
+   handle carries :metadata is a contract the port states, and this is the
+   assertion that holds a backend to it: without it the dimension-mismatch
+   branch can never fire."
   []
   (try
-    (let [coll @(chroma-api/get-collection test-collection-name)]
-      (get-in coll [:metadata :dimension]))
+    (get-in (vp/-get-collection (vp/require-store) test-collection-name)
+            [:metadata :dimension])
     (catch Exception _ nil)))
 
 ;; =============================================================================
@@ -53,17 +56,24 @@
 ;; =============================================================================
 
 (defn with-clean-state
-  "Fixture that ensures clean state before each test."
+  "Fixture that ensures clean state before each test.
+
+   Installs an in-memory IVectorCollectionStore, so this suite no longer needs
+   Chroma listening on localhost:8000 before a single test can run. It restores
+   the PRIOR store rather than clearing: a fixture that ends by installing a
+   constant is a write dressed as a cleanup, and it leaves every later
+   namespace in this JVM reading the wrong store."
   [f]
-  (let [original-provider (chroma/get-embedding-provider)]
+  (let [original-provider (active/get-embedding-provider)
+        prior-store (vp/get-store)]
+    (vp/set-store! (mem-store/in-memory-store))
     (try
-      (delete-test-collection!)
       (plans/reset-collection-cache!)
       (f)
       (finally
-        (delete-test-collection!)
         (plans/reset-collection-cache!)
-        (chroma/set-embedding-provider! original-provider)))))
+        (active/set-embedding-provider! original-provider)
+        (if prior-store (vp/set-store! prior-store) (vp/clear-store!))))))
 
 (use-fixtures :each with-clean-state)
 

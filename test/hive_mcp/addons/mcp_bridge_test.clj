@@ -13,7 +13,8 @@
             [hive-mcp.addons.protocol :as proto]
             [hive-mcp.addons.core :as addon]
             [hive-mcp.addons.mcp-bridge :as bridge]
-            [hive-mcp.addons.stdio-bridge :as stdio]))
+            [hive-mcp.addons.stdio-bridge :as stdio]
+            [hive-mcp.dispatch.handler :as dispatch]))
 
 ;; =============================================================================
 ;; Fixtures
@@ -107,7 +108,7 @@
       (is (= (:inputSchema remote-tool) (:inputSchema proxy))))
 
     (testing "handler is a function"
-      (is (fn? (:handler proxy))))
+      (is (dispatch/handler? (:handler proxy))))
 
     (testing "bridge-source set"
       (is (= "test" (:bridge-source proxy))))

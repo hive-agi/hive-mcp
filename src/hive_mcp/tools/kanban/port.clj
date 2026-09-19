@@ -1,16 +1,16 @@
 (ns hive-mcp.tools.kanban.port
-  "Core's provider for the hive-contracts kanban ports.
+  "Core's provider for the kanban ports (hive-mcp.spi.kanban).
 
    `CoreKanban` implements IKanbanRead and IKanbanWrite over the kanban
    domain (list plan, facade, move event bus, create handler) and speaks the
    port's public status vocabulary. `register!` installs it under
-   :IKanbanRead and :IKanbanWrite in hive-contracts.registry; consumers
+   :IKanbanRead and :IKanbanWrite in hive-mcp.spi.kanban.registry; consumers
    resolve the provider through that registry on every call."
   (:require [clojure.data.json :as json]
             [clojure.set :as set]
             [clojure.string :as str]
-            [hive-contracts.kanban :as kanban]
-            [hive-contracts.registry :as contracts]
+            [hive-mcp.spi.kanban :as kanban]
+            [hive-mcp.spi.kanban.registry :as registry]
             [hive-dsl.result :as r :refer [rescue]]
             [hive-mcp.tools.kanban.events :as kanban-events]
             [hive-mcp.tools.kanban.predicates :as kp]
@@ -41,13 +41,16 @@
     (contains? slim :status) (update :status public-status)))
 
 (defn- entry->task
-  "A full store entry in the port's Task shape."
+  "A full store entry in the port's Task shape.
+
+   Projects through `kt/task->detail`, which DECODES the content: a store
+   hands back the JSON-object string it was given, and the slim projection
+   reads keys off a map."
   [entry]
-  (let [content (:content entry)]
-    (-> (kt/task->slim entry true)
-        ->task
-        (assoc :description (kt/content-val content :description nil)
-               :tags (vec (:tags entry))))))
+  (-> (kt/task->detail entry true)
+      ->task
+      (assoc :tags (vec (:tags entry)))))
+
 
 ;; =============================================================================
 ;; Read side
@@ -99,14 +102,15 @@
 
 (defn- create-params
   "CreateRequest -> the create handler's parameter map."
-  [{:keys [title description priority status tags directory agent-id]}]
+  [{:keys [title description priority status tags context directory agent-id]}]
   (cond-> {:title title}
-    description (assoc :description description)
-    priority    (assoc :priority priority)
-    status      (assoc :status status)
-    (seq tags)  (assoc :tags (vec tags))
-    directory   (assoc :directory directory)
-    agent-id    (assoc :agent_id agent-id)))
+    description   (assoc :description description)
+    priority      (assoc :priority priority)
+    status        (assoc :status status)
+    (seq tags)    (assoc :tags (vec tags))
+    (seq context) (assoc :context context)
+    directory     (assoc :directory directory)
+    agent-id      (assoc :agent_id agent-id)))
 
 ;; =============================================================================
 ;; Provider
@@ -129,8 +133,12 @@
                                                :new-status new-status
                                                :directory  directory})]
         (if (r/ok? res)
-          (let [{:keys [content tags]} (get-in res [:ok :kanban/facade-update :payload])]
-            {:ok (->task (kt/task->slim {:id task-id :content content :tags tags}))})
+          ;; The move only happened if the chain emitted a board update:
+          ;; a missing or non-kanban entry still yields an ok effect map.
+          (if-let [{:keys [content tags]} (get-in res [:ok :kanban/facade-update :payload])]
+            {:ok (->task (kt/task->slim {:id task-id :content content :tags tags}))}
+            {:err {:error   :kanban/invalid-task
+                   :message (str "Entry not found or not a kanban task: " task-id)}})
           (write-error :kanban/move-failed res)))
       (catch Throwable t
         {:err {:error :kanban/move-failed :message (or (ex-message t) (str (class t)))}})))
@@ -147,6 +155,6 @@
   "Install core's provider under :IKanbanRead and :IKanbanWrite. Returns it."
   []
   (let [impl (->CoreKanban)]
-    (contracts/register! :IKanbanRead impl)
-    (contracts/register! :IKanbanWrite impl)
+    (registry/register! :IKanbanRead impl)
+    (registry/register! :IKanbanWrite impl)
     impl))

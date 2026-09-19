@@ -1,31 +1,27 @@
 (ns hive-mcp.agent.protocol
-  "Protocols for agent lifecycle, registry, and LLM backends.")
+  "Protocols for agent lifecycle, registry, and LLM backends.
+
+   IAgent lives in hive-spi.swarm.agent; re-exported here as a compat shim.
+   IAgentRegistry and LLMBackend remain hive-mcp concerns."
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-(defprotocol IAgent
-  "Unified agent lifecycle protocol for lings and drones"
-  (spawn! [this opts]
-    "Spawn the agent. Returns agent-id.")
-  (dispatch! [this task-opts]
-    "Send a task to the agent. Returns task-id.")
-  (kill! [this]
-    "Terminate the agent and release resources.")
-  (status [this]
-    "Get current agent status map.")
-  (agent-type [this]
-    "Returns :ling or :drone")
-  (can-chain-tools? [this]
-    "Returns true if agent can chain multiple tool calls (lings only)")
-  (claims [this]
-    "Get list of files currently claimed by this agent.")
-  (claim-files! [this files task-id]
-    "Claim files for exclusive access during task.")
-  (release-claims! [this]
-    "Release all file claims held by this agent.")
-  (upgrade! [this]
-    "Upgrade drone to ling when task requires tool chaining. No-op for lings."))
+  (:require [hive-spi.swarm.agent :as spi-agent]))
+
+;; NOTE: IAgent lives in hive-spi.swarm.agent (lifted); the defs below are
+;; a backward-compat shim — no re-pointing of callers required.
+
+(def IAgent spi-agent/IAgent)
+(def spawn! spi-agent/spawn!)
+(def dispatch! spi-agent/dispatch!)
+(def kill! spi-agent/kill!)
+(def status spi-agent/status)
+(def agent-type spi-agent/agent-type)
+(def can-chain-tools? spi-agent/can-chain-tools?)
+(def claims spi-agent/claims)
+(def claim-files! spi-agent/claim-files!)
+(def release-claims! spi-agent/release-claims!)
 
 (defprotocol IAgentRegistry
   "Registry for tracking all active agents."
@@ -38,7 +34,7 @@
   (list-agents [this]
     "List all agents")
   (list-agents-by-type [this agent-type]
-    "List agents filtered by :ling or :drone"))
+    "List agents filtered by agent type keyword (e.g. :ling)"))
 
 (defprotocol LLMBackend
   "Protocol for LLM backends that support tool calling."

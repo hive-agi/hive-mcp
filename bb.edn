@@ -6,8 +6,15 @@
  {test {:doc "Run tests"
         :task (shell "clojure -M:test")}
 
-  repl {:doc "Start nREPL for development"
-        :task (shell "clojure -M:nrepl")}
+  repl {:doc "Start a scratch dev nREPL on an OS-assigned port (never 7910)"
+        :task (shell "clojure -M:dev-repl")}
+
+  ;; The SERVING image. This boots hive-mcp.server.core, whose :hive/nrepl
+  ;; component binds HIVE_MCP_NREPL_PORT (default 7910) — the port bb-mcp
+  ;; forwards tool calls to. Naming this task is the explicit act; `bb repl`
+  ;; must never land here by accident.
+  serve {:doc "Start the hive-mcp SERVER (binds the serving nREPL port)"
+         :task (shell "clojure -M:nrepl")}
 
   mcp {:doc "Start MCP server"
        :task (shell "clojure -X:mcp")}

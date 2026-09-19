@@ -1,7 +1,7 @@
 (ns hive-mcp.tools.registry
   "MCP tool definitions registry — aggregates consolidated tool definitions.
 
-   Domain-grouped tool roots: code, swarm, memory, project, fs, git, emacs, web, preset, multi.
+   Domain-grouped tool roots: code, swarm, memory, project, fs, git, web, preset, multi.
    Core subdomains are statically defined. Addon subdomains injected at runtime (OCP).
 
    The advertised surface is shrunk to <=10 roots via a visibility gate
@@ -17,7 +17,6 @@
    '{:linters
      {:unused-namespace
       {:exclude [hive-mcp.tools.consolidated.agent
-                 hive-mcp.tools.consolidated.wave
                  hive-mcp.tools.consolidated.hivemind
                  hive-mcp.tools.consolidated.agora
                  hive-mcp.tools.consolidated.olympus
@@ -37,13 +36,11 @@
             [hive-mcp.tools.consolidated.project :as c-project]
             [hive-mcp.tools.consolidated.fs :as c-fs]
             [hive-mcp.tools.consolidated.git :as c-git]
-            [hive-mcp.tools.consolidated.emacs :as c-emacs]
             [hive-mcp.tools.consolidated.preset :as c-preset]
             [hive-mcp.tools.consolidated.web :as c-web]
             [hive-mcp.tools.consolidated.multi :as c-multi]
    ;; Keep old modules loaded for backward compat (multi routing)
             [hive-mcp.tools.consolidated.agent :as c-agent]
-            [hive-mcp.tools.consolidated.wave :as c-wave]
             [hive-mcp.tools.consolidated.hivemind :as c-hivemind]
             [hive-mcp.tools.consolidated.agora :as c-agora]
             [hive-mcp.tools.consolidated.olympus :as c-olympus]
@@ -124,6 +121,31 @@
            tools)
      (vec tools))))
 
+(defn- domain-roots
+  "The domain-grouped tool roots hive-mcp itself defines."
+  []
+  (vec (concat c-code/tools
+               c-swarm/tools
+               ;; fn, not a static vec: the memory tool's `relation` enum is
+               ;; registry-backed and must resolve at advertisement time.
+               (c-memory/tool-defs)
+               c-project/tools
+               c-fs/tools
+               c-git/tools
+               c-preset/tools
+               c-web/tools
+               c-events/tools
+               c-multi/tools
+               c-hot/tools
+               c-migrate-kanban/tools)))
+
+(defn core-tools
+  "The host's OWN tool defs: channel tools + domain roots, never an
+   extension- or addon-registered tool. Independent of the caller's role, so
+   a name the child-ling set leaves out is still a core name."
+  []
+  (vec (concat channel/channel-tools (domain-roots))))
+
 (defn ^:private get-base-tools
   "Get domain-grouped tool roots + channel tools + addon-registered tools.
 
@@ -132,39 +154,37 @@
    2. Dynamic: addon tool marked :consolidated (legacy standalone)
    3. Config:  tool name listed in :tool-roots :absorbed in config.edn
 
-   Novel addon tools that pass all three filters appear as additional roots."
+   Novel addon tools that pass all three filters appear as additional roots,
+   ORDERED BY NAME. `core` is a concat of literal vectors and is deterministic
+   already, but the addon tail arrives as the vals of a PersistentHashMap, so
+   its order is incidental: it follows the hash layout of whichever key set
+   happens to be registered. Register or drop a single addon tool and the whole
+   tail can reshuffle without one tool actually changing.
+
+   That is expensive, because the tool array is the FIRST span of an LLM
+   request, ahead of the system prompt and ahead of the messages. A provider
+   caches a prefix on its BYTES, so re-advertising the same tools in a
+   different order invalidates every cached span behind them and the caller
+   re-pays for the entire prompt. Sorting makes a genuinely changed tool SET
+   the only thing that can cost anything, which is the same reason
+   hive-agent's catalog/delegated-schemas sorts."
   []
-  (let [domain-roots (vec (concat c-code/tools
-                                  c-swarm/tools
-                                  ;; fn, not a static vec: the memory tool's `relation` enum is
-                                  ;; registry-backed and must resolve at advertisement time.
-                                  (c-memory/tool-defs)
-                                  c-project/tools
-                                  c-fs/tools
-                                  c-git/tools
-                                  c-emacs/tools
-                                  c-preset/tools
-                                  c-web/tools
-                                  c-events/tools
-                                  c-multi/tools
-                                  c-hot/tools
-                                  c-migrate-kanban/tools))
-        domain-names   (into #{} (map :name) domain-roots)
+  (let [core           (core-tools)
+        domain-names   (into #{} (map :name) core)
         cfg-absorbed   (config-absorbed-names)
         addon-tools    (->> (ext/get-registered-tools)
                             (remove #(or (domain-names (:name %))
                                          (:consolidated %)
-                                         (cfg-absorbed (:name %)))))]
-    (vec (concat channel/channel-tools
-                 domain-roots
-                 addon-tools))))
+                                         (cfg-absorbed (:name %))))
+                            (sort-by :name))]
+    (vec (concat core addon-tools))))
 
 (declare get-all-tools)
 
 (def child-excluded-tool-names
   "Tool names excluded from child ling MCP servers.
    Prevents recursive spawning and coordinator-only operations."
-  #{"swarm"     ;; contains agent spawn/kill, wave dispatch, olympus
+  #{"swarm"     ;; contains agent spawn/kill, olympus
     "multi"     ;; meta-facade routes to excluded tools
     "emacs"})   ;; Emacs grid control — coordinator-only
 
@@ -226,6 +246,30 @@
     (assoc tool :inputSchema (update inputSchema :properties merge schema-ext))
     tool))
 
+(defn- subcommand-scoped?
+  "True when a property documents itself as belonging to particular subcommands,
+   by the leading `[subcommand]` tag the consolidated tools use in :description."
+  [prop]
+  (boolean (re-find #"^\s*\[" (str (:description prop)))))
+
+(defn- compact-schema
+  "Drop subcommand-scoped properties from one tool's :inputSchema, keeping every
+   required one. Property keys are STRINGS on this surface, so membership is
+   tested through `name` rather than against a keyword set.
+
+   Narrows what is ADVERTISED only. Dispatch still accepts every dropped param."
+  [tool]
+  (let [required (set (get-in tool [:inputSchema :required]))
+        props    (get-in tool [:inputSchema :properties])]
+    (if (empty? props)
+      tool
+      (assoc-in tool [:inputSchema :properties]
+                (into (empty props)
+                      (remove (fn [[k v]]
+                                (and (not (contains? required (name k)))
+                                     (subcommand-scoped? v))))
+                      props)))))
+
 (defn get-advertised-tools
   "Canonical MCP surface for external loaders (e.g. the bb-mcp dynamic loader).
 
@@ -238,13 +282,21 @@
    Single-sources the gate: build-server-spec, refresh-tools! and any external
    loader all derive their surface from `apply-visibility-gate`, so the
    advertised set can no longer drift from the gate config. Schema-ext merge
-   keeps this surface in sync with the stdio/server-context path (make-tool)."
-  []
-  (mapv merge-schema-ext
-        (apply-visibility-gate
-         (distinct-by-name
-          (concat (get-consolidated-tools)
-                  (ext/get-registered-tools))))))
+   keeps this surface in sync with the stdio/server-context path (make-tool).
+
+   With opts {:compact-schema? true} each advertised :inputSchema omits its
+   subcommand-scoped params. Opt-in per request; the zero-arity surface and
+   every dispatch path are unchanged."
+  ([] (get-advertised-tools nil))
+  ([{:keys [compact-schema?]}]
+   (let [tools (mapv merge-schema-ext
+                     (apply-visibility-gate
+                      (distinct-by-name
+                       (concat (get-consolidated-tools)
+                               (ext/get-registered-tools)))))]
+     (if compact-schema?
+       (mapv compact-schema tools)
+       tools))))
 
 (def tools
   "Static aggregation (deprecated — use get-filtered-tools)."

@@ -57,6 +57,97 @@
     (is (aud/addressed-to? "coordinator-hive" msg))
     (is (aud/addressed-to? "any-ling" msg))))
 
+(deftest coordinator-sessions-are-distinct-readers-test
+  (testing "the session token is read off the MCP lane's spellings"
+    (is (= "1269206" (aud/coordinator-session "coordinator:1269206")))
+    (is (= "1269206" (aud/coordinator-session "coordinator:1269206-hive-assay")))
+    (is (= "a1b2c3d4" (aud/coordinator-session "coordinator:a1b2c3d4-hive")))
+    (is (nil? (aud/coordinator-session "coordinator")))
+    (is (nil? (aud/coordinator-session "coordinator-hive")))
+    (is (nil? (aud/coordinator-session "ling-7")))
+    (is (nil? (aud/coordinator-session nil))))
+  (testing "a ling spawned by one window reaches that window under any project
+            suffix, and no other window"
+    (let [msg {:agent-id "wave-x-m0" :parent-id "coordinator:1269206"}]
+      (is (aud/addressed-to? "coordinator:1269206-hive" msg))
+      (is (aud/addressed-to? "coordinator:1269206-hive-mcp" msg))
+      (is (aud/addressed-to? "coordinator:1269206" msg))
+      (is (not (aud/addressed-to? "coordinator:1343228-hive" msg)))
+      (is (not (aud/addressed-to? "coordinator:1343228" msg)))
+      (is (not (aud/addressed-to? "ling-b" msg)))))
+  (testing "a lane spelled without a session still matches every lane, so the
+            legacy and Emacs paths keep receiving"
+    (let [msg {:agent-id "ling-a" :parent-id "coordinator"}]
+      (is (aud/addressed-to? "coordinator:1269206-hive" msg))
+      (is (aud/addressed-to? "coordinator-hive" msg)))
+    (is (aud/addressed-to? "coordinator-hive" {:agent-id "ling-a" :parent-id "coordinator:1269206"})))
+  (testing "root-level shouts (no parent) still reach every coordinator lane"
+    (is (aud/addressed-to? "coordinator:1269206-hive" {:agent-id "orphan"}))
+    (is (aud/addressed-to? "coordinator:1343228-hive" {:agent-id "orphan"}))))
+
+;; --- directed delivery to a project-scoped reader --------------------------
+
+(defn- scoped-id
+  "Stands in for hive-dsl.context.identity/make-piggyback-agent-id."
+  [project]
+  (fn [id] (str id "-" project)))
+
+(deftest directed-message-reaches-a-project-scoped-reader-test
+  (let [in-hive-mcp (scoped-id "hive-mcp")
+        msg         {:agent-id "peer-a" :to "inbox-b"}]
+    (testing "the bare reader matches, exactly as before"
+      (is (aud/addressed-to? "inbox-b" msg)))
+    (testing "the project-scoped reader matches its own :to"
+      (is (aud/addressed-to? "inbox-b-hive-mcp" msg in-hive-mcp)))
+    (testing "another ling in the same project does not"
+      (is (not (aud/addressed-to? "other-ling-hive-mcp" msg in-hive-mcp))))
+    (testing "a reader in a DIFFERENT project does not match a scope it is not in"
+      (is (not (aud/addressed-to? "inbox-b-hive-mcp" msg (scoped-id "vtranslate")))))))
+
+(deftest composing-the-scope-beats-stripping-it-test
+  (testing "a ling whose own name ends in the project scope stays distinct"
+    (let [in-hive-mcp (scoped-id "hive-mcp")]
+      ;; ling literally named "worker-hive-mcp" reads as "worker-hive-mcp-hive-mcp"
+      (is (aud/addressed-to? "worker-hive-mcp-hive-mcp"
+                             {:agent-id "peer-a" :to "worker-hive-mcp"}
+                             in-hive-mcp))
+      ;; and a message for plain "worker" must NOT reach it
+      (is (not (aud/addressed-to? "worker-hive-mcp-hive-mcp"
+                                  {:agent-id "peer-a" :to "worker"}
+                                  in-hive-mcp)))
+      ;; while plain "worker" still gets its own
+      (is (aud/addressed-to? "worker-hive-mcp"
+                             {:agent-id "peer-a" :to "worker"}
+                             in-hive-mcp)))))
+
+(deftest scoped-reader-still-obeys-every-other-rule-test
+  (let [in-hive-mcp (scoped-id "hive-mcp")]
+    (testing "a scoped ling still receives a broadcast"
+      (is (aud/addressed-to? "ling-a-hive-mcp"
+                             {:agent-id "peer-b" :broadcast? true}
+                             in-hive-mcp)))
+    (testing "a directed message still excludes the coordinator"
+      (is (not (aud/addressed-to? "coordinator:1-hive-mcp"
+                                  {:agent-id "peer-a" :to "inbox-b"}
+                                  in-hive-mcp))))
+    (testing "the scope is consulted for the directed rule alone"
+      (is (not (aud/addressed-to? "ling-parent-hive-mcp"
+                                  {:agent-id "ling-child" :parent-id "ling-parent"}
+                                  in-hive-mcp)))
+      (is (aud/addressed-to? "ling-parent"
+                             {:agent-id "ling-child" :parent-id "ling-parent"}
+                             in-hive-mcp)))))
+
+(deftest filter-messages-honours-the-scope-test
+  (let [in-hive-mcp (scoped-id "hive-mcp")
+        msgs [{:agent-id "peer-a" :to "inbox-b" :message "for b"}
+              {:agent-id "peer-a" :to "someone-else" :message "not for b"}
+              {:agent-id "peer-c" :broadcast? true :message "for everyone"}]]
+    (is (= ["for b" "for everyone"]
+           (mapv :message (aud/filter-messages "inbox-b-hive-mcp" msgs in-hive-mcp))))
+    (is (= ["for everyone"]
+           (mapv :message (aud/filter-messages "inbox-b-hive-mcp" msgs))))))
+
 (deftest no-self-echo-for-lings-test
   (testing "a ling does not read back its own shout"
     (is (not (aud/addressed-to? "ling-a" {:agent-id "ling-a" :parent-id "coordinator"}))))

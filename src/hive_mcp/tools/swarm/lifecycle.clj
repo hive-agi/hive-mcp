@@ -6,7 +6,7 @@
             [hive-mcp.hivemind.core :as hivemind]
             [hive-mcp.agent.ling :as ling]
             [hive-mcp.agent.protocol :as proto]
-            [hive-mcp.tools.memory.scope :as scope]
+            [hive-mcp.project.scope :as project-scope]
             [hive-mcp.agent.context :as ctx]
             [clojure.string :as str]
             [taoensso.timbre :as log]
@@ -25,7 +25,7 @@
     (let [effective-cwd (or cwd (ctx/current-directory))
           validated-cwd (when (and effective-cwd (string? effective-cwd) (not (str/blank? effective-cwd)))
                           effective-cwd)
-          project-id (when validated-cwd (scope/get-current-project-id validated-cwd))]
+          project-id (when validated-cwd (project-scope/get-current-project-id validated-cwd))]
       (try
         (let [slave-id (ling/create-ling! (or name "slave")
                                           {:cwd validated-cwd
@@ -133,7 +133,7 @@
   [{:keys [slave_id directory force_cross_project]}]
   (core/with-swarm
     (let [effective-dir (or directory (ctx/current-directory))
-          caller-project-id (when effective-dir (scope/get-current-project-id effective-dir))
+          caller-project-id (when effective-dir (project-scope/get-current-project-id effective-dir))
           force? (boolean force_cross_project)]
       (if (= slave_id "all")
         (let [slave-ids (if caller-project-id

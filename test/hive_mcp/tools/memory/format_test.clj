@@ -117,7 +117,7 @@
   (testing "description param to kanban create flows through to format envelope"
     (let [create* (requiring-resolve 'hive-mcp.tools.memory-kanban/create*)
           captured (atom nil)
-          long-desc (apply str (repeat 40 "Drone-dispatched kanban step body. "))]
+          long-desc (apply str (repeat 40 "Ling-dispatched kanban step body. "))]
       (with-redefs [mem-crud/handle-add
                     (fn [args]
                       (reset! captured args)

@@ -18,7 +18,7 @@
    - spawn-context          — re-export from catchup.spawn"
   (:require [hive-mcp.agent.context :as ctx]
             [hive-mcp.protocols.memory :as mem-proto]
-            [hive-mcp.tools.memory.scope :as scope]
+            [hive-mcp.project.scope :as project-scope]
             [hive-mcp.crystal.harvest.collect :as coll]
             [hive-mcp.crystal.fanout :as fan]
             [hive-mcp.crystal.persist :as persist]
@@ -27,7 +27,6 @@
             [hive-mcp.tools.catchup.git :as catchup-git]
             [hive-mcp.tools.catchup.spawn :as catchup-spawn]
             [hive-mcp.tools.catchup.scope-filter :as sf]
-            [hive-mcp.knowledge-graph.scope :as kg-scope]
             [hive-mcp.channel.memory-piggyback :as memory-piggyback]
             [hive-mcp.channel.piggyback :as piggyback]
             [hive-mcp.channel.context-store :as context-store]
@@ -41,7 +40,8 @@
             [taoensso.timbre :as log]
             [hive-mcp.tools.catchup.relevance :as relevance]
             [hive-mcp.tools.catchup.outcome :as outcome]
-            [hive-spi.catchup.registry :as blocks]))
+            [hive-mcp.tools.catchup.caller :as catchup-caller]
+            [hive-mcp.spi.catchup-registry :as blocks]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -133,18 +133,18 @@
         ;;   2. :project-id from .hive-project.edn in the exact dir
         ;;   3. Walk up the path finding the nearest .hive-project.edn
         ;;      (covers calls from deep subdirs of a hive project — without
-        ;;      this, scope/get-current-project-id returns the last path
+        ;;      this, project-scope/get-current-project-id returns the last path
         ;;      segment, producing a bogus project scope like "catchup".)
         ;;   4. Legacy fallback: last-path-segment / "global"
         (let [ctx-pid          (ctx/current-project-id)
               direct-cfg-pid   (when directory
-                                 (rescue nil (:project-id (kg-scope/read-direct-project-config directory))))
+                                 (rescue nil (:project-id (project-scope/read-direct-project-config directory))))
               walked-pid       (when (and directory (not direct-cfg-pid))
-                                 (rescue nil (kg-scope/infer-scope-from-path directory)))
+                                 (rescue nil (project-scope/infer-scope-from-path directory)))
               project-id       (or ctx-pid
                                    direct-cfg-pid
                                    (when (and walked-pid (not= walked-pid "global")) walked-pid)
-                                   (scope/get-current-project-id directory))
+                                   (project-scope/get-current-project-id directory))
               project-name (catchup-scope/get-current-project-name directory)
               scopes (fmt/build-scopes project-name project-id)
 
@@ -160,8 +160,12 @@
               ;; The :catchup/status-providers extension lets registered
               ;; addons attach status fields to the response without the
               ;; core knowing about them — DIP.
+              bundle-profile (when-let [profile-fn (ext/get-extension :catchup/bundle-profile)]
+                               (catchup-caller/resolve-for-caller profile-fn (:_caller_id args) project-id))
               f-bundle (pool/with-io ((tt/timed-query "catchup/bundle-total"
-                                                      #(catchup-scope/query-catchup-bundle project-id))))
+                                                      #(if (seq (:caps bundle-profile))
+                                                         (catchup-scope/query-catchup-bundle project-id bundle-profile)
+                                                         (catchup-scope/query-catchup-bundle project-id)))))
               f-git    (pool/with-io ((tt/timed-query "catchup/git-total"
                                                       #(catchup-git/gather-git-info directory))))
               status-providers (or (ext/get-extension :catchup/status-providers) {})
@@ -170,7 +174,7 @@
                                                                     (assoc acc k
                                                                            (rescue nil (provider-fn project-id))))
                                                                   {} status-providers))))
-              ;; Contributed blocks (hive-spi.catchup.registry): core's own
+              ;; Contributed blocks (hive-mcp.spi.catchup-registry): core's own
               ;; domains and addons register {:block/id :block/fn :block/order};
               ;; catchup composes them without naming a contributor.
               f-blocks (pool/with-io ((tt/timed-query "catchup/blocks-total"
@@ -267,7 +271,7 @@
               ;; coerces the EDN at the :catchup/lens seam below.
               persona-lens-fn (ext/get-extension :catchup/persona-lens)
               persona-lens    (when persona-lens-fn
-                                (rescue nil (persona-lens-fn raw-caller-id project-id)))
+                                (rescue nil (catchup-caller/resolve-for-caller persona-lens-fn raw-caller-id project-id)))
               relevance-ctx
               (cond-> (relevance/build-context
                        {:project-id project-id

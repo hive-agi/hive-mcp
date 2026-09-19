@@ -124,7 +124,7 @@
 
 (def always
   "Dispatch predicate — always true. Shared seam (hive-mcp.workflows.support/always)."
-  support/always)
+  #'support/always)
 
 
 ;; =============================================================================
@@ -138,8 +138,8 @@
 
 (def trace-log-enter
   "Pre-interceptor: append :enter trace entry (clock-injectable via support/now-str)."
-  support/trace-log-enter)
+  #'support/trace-log-enter)
 
 (def trace-log-exit
   "Post-interceptor: append :exit trace entry (clock-injectable via support/now-str)."
-  support/trace-log-exit)
+  #'support/trace-log-exit)

@@ -26,7 +26,8 @@
             [hive-mcp.extensions.delegate :refer [delegate-or-noop]]
             [taoensso.timbre :as log]
             [hive-mcp.dsl.param-domain :as pd]
-            [hive.events.multi :as ev-multi]))
+            [hive.events.multi :as ev-multi]
+            [hive-mcp.tools.op-outcome :as op-outcome]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -42,12 +43,23 @@
 
 (defn normalize-op
   "Normalize a single operation map from MCP JSON format.
-   Converts string keys to keywords. Ensures :id and :tool are present."
+   Converts string keys to keywords. Ensures :id and :tool are present.
+
+   :id is the op's batch label. A caller-supplied :id that is not a `$N`
+   compiler label is also recorded as the op's entity id under
+   `pd/entity-id-key`, unless the op already carries one; a generated :id is
+   never an entity id."
   [op]
-  (let [normalized (into {} (map (fn [[k v]] [(keyword k) v]) op))]
+  (let [normalized (into {} (map (fn [[k v]] [(keyword k) v]) op))
+        caller-id  (:id normalized)]
     (cond-> normalized
-      (str/blank? (:id normalized))
+      (str/blank? caller-id)
       (assoc :id (str "op-" (java.util.UUID/randomUUID)))
+
+      (and (not (str/blank? caller-id))
+           (not (pd/op-label? caller-id))
+           (not (contains? normalized pd/entity-id-key)))
+      (assoc pd/entity-id-key caller-id)
 
       (:depends_on normalized)
       (update :depends_on (fn [deps]
@@ -96,48 +108,16 @@
 (defn enrich-op-result
   "Enrich an execute-op result with `:data` (parsed handler result) and a
    composed cross-layer `:success`. Only ever downgrades `:success`, never
-   upgrades: a handler that did not throw but whose data signals failure
-   (inner `:success` false, explicit `:isError`/`:ok` false, a bare `:error`,
-   or a creation tool returning a nil id) is reclassified as failed. An op
-   that already threw keeps its original `:error`."
+   upgrades: a handler that did not throw but whose data is failed under
+   `hive-mcp.tools.op-outcome/op-outcome` (with the creation tool's id key
+   arming the nil-id rule) is reclassified as failed, with the classifier's
+   message as `:error`. An op that already threw keeps its original `:error`."
   [{:keys [tool result success] :as op-result}]
-  (let [data                  (extract-result-data result)
-        inner-success-false?  (and (map? data)
-                                   (contains? data :success)
-                                   (false? (:success data)))
-        explicit-error-flag?  (and (map? data)
-                                   (or (true? (:isError data))
-                                       (false? (:ok data))))
-        bare-error?           (and (map? data)
-                                   (some? (:error data))
-                                   (not (contains? data :success)))
-        id-key                (creation-id-key tool)
-        null-id-on-create?    (and id-key
-                                   (map? data)
-                                   (contains? data id-key)
-                                   (nil? (get data id-key)))
-        downgrade?            (and success
-                                   (or inner-success-false?
-                                       explicit-error-flag?
-                                       bare-error?
-                                       null-id-on-create?))
-        downgrade-msg         (cond
-                                inner-success-false?
-                                (or (some-> data :errors first)
-                                    (some-> data :error str)
-                                    "tool reported failure (inner :success false)")
-                                bare-error?
-                                (some-> data :error str)
-                                explicit-error-flag?
-                                (or (some-> data :error str)
-                                    (some-> data :text str)
-                                    "tool reported failure (:isError/:ok false)")
-                                null-id-on-create?
-                                (str "creation tool returned nil id — degraded backend?")
-                                :else nil)]
+  (let [data    (extract-result-data result)
+        outcome (op-outcome/op-outcome data {:null-id-key (creation-id-key tool)})]
     (cond-> (assoc op-result :data data)
-      downgrade? (-> (assoc :success false)
-                     (assoc :error downgrade-msg)))))
+      (and success (:failed? outcome))
+      (assoc :success false :error (:message outcome)))))
 
 (defn resolve-ref
   "Delegate to extension for reference resolution."
@@ -266,6 +246,10 @@
   "Execute a single operation with error isolation, using an injected
    `resolve-handler` fn (tool-name -> handler-fn-or-nil).
 
+   The handler receives the op without batch plumbing: :id, :tool,
+   :depends_on and :wave are removed, and the op's entity id
+   (`pd/entity-id-key`), when present, is handed over as :id.
+
    Returns {:id op-id :tool tool-name :command cmd :success bool :result map}
         or {:id op-id :tool tool-name :command cmd :success false :error string}.
 
@@ -276,8 +260,10 @@
       (if-not handler
         {:id id :tool tool :command command :success false
          :error (str "Tool not found: " tool)}
-        (let [meta-keys #{:id :tool :depends_on :wave}
+        (let [meta-keys    #{:id :tool :depends_on :wave pd/entity-id-key}
+              entity-id    (get op pd/entity-id-key)
               handler-args (-> (apply dissoc op meta-keys)
+                               (cond-> (some? entity-id) (assoc :id entity-id))
                                (update :command #(if (keyword? %) (name %) %)))
               result (handler handler-args)]
           {:id id :tool tool :command command :success true :result result})))
@@ -324,12 +310,15 @@
 
      - the source op-id is missing from results (`ref-not-found`), OR
      - the resolved value is literally `nil`, OR
+     - its path is exactly `id` (`:op-label`): that walks the op-result
+       envelope, whose :id is the op's own label, never the entity the op
+       created. It carries a `:hint` naming `$ref:<op>.data.id`, OR
      - no parser answered for it (`:unparsed`): without a `:bx/a` extension
        the host cannot resolve any ref, and the literal string must not
        reach a handler as a value.
 
    Returns `nil` when all refs OK (or no refs); otherwise
-   `{:broken-refs [{:ref str :reason kw} ...]}`."
+   `{:broken-refs [{:ref str :reason kw :hint str?} ...]}`."
   [original-op results-by-id]
   (let [refs (atom [])
         walk! (fn walk! [v]
@@ -341,7 +330,10 @@
                         (identical? resolved ref-not-found)
                         (swap! refs conj {:ref v :reason :unresolved})
                         (nil? resolved)
-                        (swap! refs conj {:ref v :reason :nil-resolved})))
+                        (swap! refs conj {:ref v :reason :nil-resolved})
+                        (= ["id"] (mapv name (:path parsed)))
+                        (swap! refs conj {:ref v :reason :op-label
+                                          :hint (str "$ref:" (:op-id parsed) ".data.id")})))
                     ;; No parser answered (no :bx/a extension, or a malformed
                     ;; ref). A ref that cannot be parsed cannot be resolved
                     ;; either, so the literal "$ref:..." string would reach the
@@ -371,8 +363,10 @@
      :command (:command op)
      :success false
      :error   (str "Skipped: broken-ref — "
-                   (str/join ", " (mapv (fn [{:keys [ref reason]}]
-                                          (str ref " (" (name reason) ")"))
+                   (str/join ", " (mapv (fn [{:keys [ref reason hint]}]
+                                          (str ref " (" (name reason)
+                                               (when hint (str "; use " hint))
+                                               ")"))
                                         broken-refs)))}))
 
 (defn- normalize-exec-result

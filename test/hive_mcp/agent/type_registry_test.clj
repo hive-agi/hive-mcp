@@ -11,13 +11,13 @@
 ;; =============================================================================
 
 (deftest registry-has-all-variants
-  (testing "Registry contains exactly the 3 sum type variants"
-    (is (= #{:coordinator :ling :drone} atr/all-types))
-    (is (= 3 (count atr/registry)))))
+  (testing "Registry contains exactly the 2 sum type variants"
+    (is (= #{:coordinator :ling} atr/all-types))
+    (is (= 2 (count atr/registry)))))
 
 (deftest registry-preserves-order
-  (testing "array-map preserves insertion order (coordinator > ling > drone)"
-    (is (= [:coordinator :ling :drone] (keys atr/registry)))))
+  (testing "array-map preserves insertion order (coordinator > ling)"
+    (is (= [:coordinator :ling] (keys atr/registry)))))
 
 (deftest every-variant-has-required-keys
   (testing "All variants have the required metadata keys"
@@ -35,22 +35,21 @@
 ;; =============================================================================
 
 (deftest all-types-derived
-  (is (= #{:coordinator :ling :drone} atr/all-types)))
+  (is (= #{:coordinator :ling} atr/all-types)))
 
 (deftest all-type-strings-derived
-  (is (= #{"coordinator" "ling" "drone"} atr/all-type-strings)))
+  (is (= #{"coordinator" "ling"} atr/all-type-strings)))
 
 (deftest mcp-types-excludes-coordinator
   (testing "MCP enum only includes spawnable types (not coordinator)"
     (is (not (some #{"coordinator"} atr/mcp-types)))
-    (is (some #{"ling"} atr/mcp-types))
-    (is (some #{"drone"} atr/mcp-types))))
+    (is (some #{"ling"} atr/mcp-types))))
 
 (deftest type->depth-mapping
-  (is (= {:coordinator 0 :ling 1 :drone 2} atr/type->depth)))
+  (is (= {:coordinator 0 :ling 1} atr/type->depth)))
 
 (deftest depth->type-mapping
-  (is (= {0 :coordinator 1 :ling 2 :drone} atr/depth->type)))
+  (is (= {0 :coordinator 1 :ling} atr/depth->type)))
 
 (deftest type->capabilities-not-empty
   (doseq [[k caps] atr/type->capabilities]
@@ -73,13 +72,13 @@
 (deftest valid-type?-test
   (testing "Keywords"
     (is (true? (atr/valid-type? :ling)))
-    (is (true? (atr/valid-type? :drone)))
+    (is (false? (atr/valid-type? :drone)))
     (is (true? (atr/valid-type? :coordinator)))
     (is (false? (atr/valid-type? :invalid)))
     (is (false? (atr/valid-type? :hivemind))))
   (testing "Strings"
     (is (true? (atr/valid-type? "ling")))
-    (is (true? (atr/valid-type? "drone")))
+    (is (false? (atr/valid-type? "drone")))
     (is (true? (atr/valid-type? "coordinator")))
     (is (false? (atr/valid-type? "invalid"))))
   (testing "Nil returns false"
@@ -88,17 +87,15 @@
 (deftest type-depth-test
   (is (= 0 (atr/type-depth :coordinator)))
   (is (= 1 (atr/type-depth :ling)))
-  (is (= 2 (atr/type-depth :drone)))
-  (testing "Unknown type defaults to 2 (drone depth)"
-    (is (= 2 (atr/type-depth :unknown)))))
+  (testing "Unknown type defaults to 1 (ling depth)"
+    (is (= 1 (atr/type-depth :unknown)))))
 
 (deftest depth->agent-type-test
   (is (= :coordinator (atr/depth->agent-type 0)))
   (is (= :ling (atr/depth->agent-type 1)))
-  (is (= :drone (atr/depth->agent-type 2)))
-  (testing "Depth 3+ defaults to drone"
-    (is (= :drone (atr/depth->agent-type 3)))
-    (is (= :drone (atr/depth->agent-type 99)))))
+  (testing "Depth 2+ resolves to ling (nested lings)"
+    (is (= :ling (atr/depth->agent-type 2)))
+    (is (= :ling (atr/depth->agent-type 99)))))
 
 ;; =============================================================================
 ;; Spawn modes
@@ -107,7 +104,7 @@
 (deftest spawnable?-test
   (is (false? (atr/spawnable? :coordinator)))
   (is (true? (atr/spawnable? :ling)))
-  (is (true? (atr/spawnable? :drone))))
+  (is (false? (atr/spawnable? :drone))))
 
 (deftest valid-spawn-mode?-test
   (testing "Ling spawn modes"
@@ -117,13 +114,8 @@
     (is (true? (atr/valid-spawn-mode? :ling :agent-sdk)))
     (is (false? (atr/valid-spawn-mode? :ling :openrouter))
         ":openrouter is a provider, not a spawn-mode"))
-  (testing "Drone spawn modes"
-    (is (true? (atr/valid-spawn-mode? :drone :headless)))
-    (is (false? (atr/valid-spawn-mode? :drone :openrouter))
-        ":openrouter is no longer a drone spawn-mode (it's a provider)")
-    (is (false? (atr/valid-spawn-mode? :drone :claude)))
-    (is (false? (atr/valid-spawn-mode? :drone :vterm)))
-    (is (false? (atr/valid-spawn-mode? :drone :agent-sdk))))
+  (testing "Unregistered type has no spawn modes"
+    (is (false? (atr/valid-spawn-mode? :drone :headless))))
   (testing "Coordinator has no spawn modes"
     (is (false? (atr/valid-spawn-mode? :coordinator :claude))))
   (testing "Addon-contributed mode is accepted via registry fallback"
@@ -136,8 +128,6 @@
       (try
         (is (true? (atr/valid-spawn-mode? :ling :test-addon-mode))
             "Ling accepts addon-contributed modes")
-        (is (true? (atr/valid-spawn-mode? :drone :test-addon-mode))
-            "Drone accepts addon-contributed modes")
         (finally
           (dereg! :test-addon-mode))))))
 
@@ -155,12 +145,7 @@
     (is (true? (atr/has-capability? :ling :write)))
     (is (true? (atr/has-capability? :ling :delegate)))
     (is (false? (atr/has-capability? :ling :spawn)))
-    (is (false? (atr/has-capability? :ling :kill))))
-  (testing "Drone capabilities"
-    (is (true? (atr/has-capability? :drone :read)))
-    (is (true? (atr/has-capability? :drone :propose-diff)))
-    (is (false? (atr/has-capability? :drone :write)))
-    (is (false? (atr/has-capability? :drone :delegate)))))
+    (is (false? (atr/has-capability? :ling :kill)))))
 
 (deftest has-permission?-test
   (testing "Coordinator permissions"
@@ -168,11 +153,7 @@
     (is (true? (atr/has-permission? :coordinator :can-approve-diffs?))))
   (testing "Ling anti-cascade: cannot spawn"
     (is (false? (atr/has-permission? :ling :can-spawn?)))
-    (is (true? (atr/has-permission? :ling :can-delegate?))))
-  (testing "Drone: most restricted"
-    (is (false? (atr/has-permission? :drone :can-spawn?)))
-    (is (false? (atr/has-permission? :drone :can-delegate?)))
-    (is (false? (atr/has-permission? :drone :can-kill?)))))
+    (is (true? (atr/has-permission? :ling :can-delegate?)))))
 
 ;; =============================================================================
 ;; Tool chaining
@@ -181,7 +162,6 @@
 (deftest can-chain-tools?-test
   (is (true? (atr/can-chain-tools? :coordinator)))
   (is (true? (atr/can-chain-tools? :ling)))
-  (is (false? (atr/can-chain-tools? :drone)))
   (testing "Unknown type defaults to false"
     (is (false? (atr/can-chain-tools? :unknown)))))
 
@@ -191,8 +171,7 @@
 
 (deftest slot-limit-test
   (is (= 1 (atr/slot-limit :coordinator)))
-  (is (= 6 (atr/slot-limit :ling)))
-  (is (nil? (atr/slot-limit :drone))))
+  (is (= 6 (atr/slot-limit :ling))))
 
 ;; =============================================================================
 ;; Model tier defaults
@@ -201,7 +180,6 @@
 (deftest default-model-tier-test
   (is (= :premium (atr/default-model-tier :coordinator)))
   (is (= :standard (atr/default-model-tier :ling)))
-  (is (= :economy (atr/default-model-tier :drone)))
   (testing "Unknown defaults to :standard"
     (is (= :standard (atr/default-model-tier :unknown)))))
 
@@ -214,7 +192,7 @@
     (is (vector? enums))
     (is (every? string? enums))
     (is (some #{"ling"} enums))
-    (is (some #{"drone"} enums))
+    (is (not (some #{"drone"} enums)))
     (is (not (some #{"coordinator"} enums)))))
 
 ;; =============================================================================
@@ -224,5 +202,4 @@
 (deftest describe-test
   (is (string? (atr/describe :coordinator)))
   (is (string? (atr/describe :ling)))
-  (is (string? (atr/describe :drone)))
   (is (nil? (atr/describe :nonexistent))))

@@ -3,7 +3,8 @@
            hive-schemas.proven/deftrifecta-csimp    clojure.test/deftest
            hive-schemas.verified/deftrifecta-verified clojure.test/deftest
            hive-schemas.coverage/deftest-contract-coverage clojure.test/deftest
-           hive-schemas.instrument/deftest-instrumented-check clojure.test/deftest}
+           hive-schemas.instrument/deftest-instrumented-check clojure.test/deftest
+           hive-schemas.evolution/deftest-schema-compat clojure.test/deftest}
  :hooks
  {:analyze-call
   {hive-schemas.test/deftrifecta-from-schema hive-schemas.hooks.test/deftrifecta-from-schema

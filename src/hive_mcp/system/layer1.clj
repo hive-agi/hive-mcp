@@ -11,11 +11,12 @@
 
    halt-key! reverses init-key (guards down, hooks triggered, coordinator marked)."
   (:require [integrant.core :as ig]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [hive-mcp.server.lifecycle :as lifecycle]
             [hive-mcp.server.init :as init]
             [hive-mcp.dns.result :as result]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.channel.async-result :as async-result]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -121,13 +122,20 @@
 (defmethod ig/init-key :hive/delivery-channels
   [_ config]
   (log/info ":hive/delivery-channels init — registering IDeliveryChannel fanout endpoints" config)
-  (let [registered (result/rescue nil
+  ;; Restore BEFORE registering, and from layer 1, because the async
+  ;; middleware that can enqueue does not exist until :hive/mcp-stdio in
+  ;; layer 5. Anything the journal still carries is a result some caller was
+  ;; promised and never received, so it has to be back in the buffers before
+  ;; the first drain can fail to find it.
+  (let [restored   (result/rescue 0 (async-result/restore!))
+        registered (result/rescue nil
                      (init/init-delivery-channels!)
                      (require 'hive-mcp.protocols.delivery-channel)
                      (let [get-fn (resolve 'hive-mcp.protocols.delivery-channel/get-channels)
                            ch-id  (resolve 'hive-mcp.protocols.delivery-channel/channel-id)]
                        (mapv ch-id (get-fn))))]
     {:registered registered
+     :restored   restored
      :status     (if (seq registered) :running :degraded)}))
 
 (defmethod ig/halt-key! :hive/delivery-channels

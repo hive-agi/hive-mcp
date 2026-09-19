@@ -17,12 +17,11 @@
             [clojure.data.json :as json]
             [hive-mcp.tools.memory.search :as search]
             [hive-mcp.protocols.memory :as mem-proto]
-            [hive-mcp.chroma.search :as chroma-search]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
-            [hive-mcp.knowledge-graph.scope :as kg-scope]
-            [hive-mcp.tools.memory.scope :as scope]
+            [hive-mcp.project.scope :as kg-scope]
             [hive-mcp.agent.context :as ctx]
-            [hive-mcp.plan.plans :as plans]))
+            [hive-mcp.plan.plans :as plans]
+            [hive-mcp.memory.ingest-search :as ingest-search]))
 
 ;; =============================================================================
 ;; Stub IMemoryStore
@@ -74,9 +73,9 @@
   (with-redefs [kg-edges/record-co-access! (constantly nil)
                 kg-scope/visible-scopes    (constantly ["test-proj"])
                 kg-scope/descendant-scopes (constantly [])
-                scope/get-current-project-id (constantly "test-proj")
+                hive-mcp.project.scope/get-current-project-id (constantly "test-proj")
                 ctx/current-directory       (constantly "/tmp/test")
-                chroma-search/resolve-ingest-search (constantly nil)
+                ingest-search/resolve-ingest-search (constantly nil)
                 plans/high-abstraction-type? (constantly false)]
     (f)))
 

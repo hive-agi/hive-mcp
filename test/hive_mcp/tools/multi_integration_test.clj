@@ -153,10 +153,10 @@
 ;; =============================================================================
 
 (deftest get-tool-handler-all-registered-test
-  (testing "get-tool-handler resolves all 17 registered tools"
+  (testing "get-tool-handler resolves all 15 registered tools"
     (doseq [tool-name ["agent" "memory" "kg" "hivemind" "magit"
                        "kanban" "preset" "olympus" "agora" "analysis"
-                       "project" "session" "emacs" "wave" "migration"
+                       "project" "session" "migration"
                        "config" "workflow"]]
       (is (fn? (c-multi/get-tool-handler tool-name))
           (str "Tool '" tool-name "' should resolve to a handler fn")))))
@@ -769,12 +769,12 @@
 ;; =============================================================================
 
 (deftest multi-help-lists-all-tools-test
-  (testing "Multi help text lists all 17 tool names"
+  (testing "Multi help text lists all 15 tool names"
     (let [result (c-multi/handle-multi {})]
       (is (not (:isError result)))
       (doseq [tool ["agent" "memory" "kg" "hivemind" "magit"
                     "kanban" "preset" "olympus" "agora" "analysis"
-                    "project" "session" "emacs" "wave" "migration"
+                    "project" "session" "migration"
                     "config" "workflow"]]
         (is (str/includes? (:text result) tool)
             (str "Help should list tool: " tool))))))

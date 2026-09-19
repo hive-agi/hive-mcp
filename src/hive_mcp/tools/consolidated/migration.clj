@@ -25,20 +25,22 @@
           keyword-params))
 
 (def handlers
-  {:status   migration-handlers/cmd-status
-   :backup   migration-handlers/cmd-backup
-   :restore  migration-handlers/cmd-restore
-   :list     migration-handlers/cmd-list
-   :switch   migration-handlers/cmd-switch
-   :sync     migration-handlers/cmd-sync
-   :export   migration-handlers/cmd-export
-   :import   migration-handlers/cmd-import
-   :validate migration-handlers/cmd-validate
-   :adapters migration-handlers/cmd-adapters})
+  "The `migration` verbs, stored as VARS so a reload of
+   `hive-mcp.tools.migration` reaches this table (20260817195749-0d407e9c)."
+  {:status   #'migration-handlers/cmd-status
+   :backup   #'migration-handlers/cmd-backup
+   :restore  #'migration-handlers/cmd-restore
+   :list     #'migration-handlers/cmd-list
+   :switch   #'migration-handlers/cmd-switch
+   :sync     #'migration-handlers/cmd-sync
+   :export   #'migration-handlers/cmd-export
+   :import   #'migration-handlers/cmd-import
+   :validate #'migration-handlers/cmd-validate
+   :adapters #'migration-handlers/cmd-adapters})
 
 (def handle-migration
   "Coerces string params to keywords before dispatch for MCP compatibility."
-  (let [cli-handler (make-cli-handler handlers)]
+  (let [cli-handler (make-cli-handler #'handlers)]
     (fn [params]
       (cli-handler (coerce-params params)))))
 
@@ -83,6 +85,6 @@
                               "force-cross-project" {:type "boolean"
                                                      :description "Allow restoring backup from different project (default: false)"}}
                  :required ["command"]}
-   :handler handle-migration})
+   :handler #'handle-migration})
 
 (def tools [tool-def])

@@ -4,13 +4,15 @@
             [hive-mcp.tools.olympus :as olympus-handlers]))
 
 (def handlers
-  {:focus   olympus-handlers/handle-olympus-focus
-   :arrange olympus-handlers/handle-olympus-arrange
-   :tab     olympus-handlers/handle-olympus-tab
-   :status  olympus-handlers/handle-olympus-status})
+  "The `olympus` verbs, stored as VARS so a reload of the olympus handler
+   namespace reaches this table (20260817195749-0d407e9c)."
+  {:focus   #'olympus-handlers/handle-olympus-focus
+   :arrange #'olympus-handlers/handle-olympus-arrange
+   :tab     #'olympus-handlers/handle-olympus-tab
+   :status  #'olympus-handlers/handle-olympus-status})
 
 (def handle-olympus
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 (def tool-def
   {:name "olympus"
@@ -35,6 +37,6 @@
                               "tab" {:type "integer"
                                      :description "Specific tab number to jump to (0-indexed)"}}
                  :required ["command"]}
-   :handler handle-olympus})
+   :handler #'handle-olympus})
 
 (def tools [tool-def])

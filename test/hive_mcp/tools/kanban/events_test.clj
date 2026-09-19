@@ -86,6 +86,17 @@
       (is (= (get-in fx [:kanban/facade-update :payload :tags]) (:tags arch))
           "archive and the store commit agree on the tags"))))
 
+(deftest same-status-move-is-not-a-transition
+  (doseq [s ["todo" "doing" "review" "done"]]
+    (let [entry {:id      "20260101000000-deadbeef"
+                 :tags    ["kanban" s "priority-high" "scope:project:hive"]
+                 :content {:task-type "kanban" :title "x" :status s :priority "high"}}
+          fx    (events/move-fx
+                 {:kanban/entry entry :kanban/project-id "hive"}
+                 [:kanban/move {:task-id (:id entry) :new-status s}])]
+      (is (= #{:kanban/facade-update} (set (keys fx)))
+          (str s " -> " s " commits but records no mutation, movement or hook")))))
+
 ;; --- properties ---
 
 (def gen-status (gen/elements (vec kp/valid-statuses)))

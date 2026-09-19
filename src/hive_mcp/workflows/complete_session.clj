@@ -73,7 +73,7 @@
 
 (def always
   "Dispatch predicate — always true. Shared seam (support/always)."
-  support/always)
+  #'support/always)
 
 ;; =============================================================================
 ;; Handlers (pure functions: resources x data -> data')
@@ -218,16 +218,29 @@
 
 (def handler-map
   "Maps EDN keyword handlers to implementation functions.
-   Used by registry/register-handlers! for EDN spec compilation."
-  {:start       handle-start
-   :commit      handle-commit
-   :kanban      handle-kanban
-   :crystallize handle-crystallize
-   :shout       handle-shout
-   :plan-check  handle-plan-check
-   :evict       handle-evict
-   :end         handle-end
-   :error       handle-error})
+   Used by registry/register-handlers! for EDN spec compilation.
+
+   Stored as VARS so a reload of this namespace reaches the table
+   (20260817195749-0d407e9c). Audited through the whole compile path before
+   converting, because this map leaves hive-mcp: `hive.events.fsm/compile`
+   only asks `(get handlers-map handler)` and rejects nil, `validate-state-spec`
+   only asks `(nil? handler)`, and `normalize-handler` calls
+   `(handler resources data)`. Nothing on that path tests `fn?`, and a var is
+   both non-nil and IFn.
+
+   The PREDICATE half of the same spec is a different story and is not
+   convertible: `compile-state-handler` sends anything not `fn?` to
+   `sci/eval-form`, and hive-workflows' own resolve-pred answers `(boolean p)`
+   for it. See 20260916133344-05d7e65b."
+  {:start       #'handle-start
+   :commit      #'handle-commit
+   :kanban      #'handle-kanban
+   :crystallize #'handle-crystallize
+   :shout       #'handle-shout
+   :plan-check  #'handle-plan-check
+   :evict       #'handle-evict
+   :end         #'handle-end
+   :error       #'handle-error})
 
 ;; =============================================================================
 ;; In-Code FSM Spec (inline functions, no EDN needed)

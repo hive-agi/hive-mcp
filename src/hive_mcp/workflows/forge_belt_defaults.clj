@@ -145,42 +145,30 @@
            :context-result result)))
 
 (defn- handle-spark*
-  "fb/h4: Spawn lings or dispatch drones via agent-ops.
-   When spawn-mode is :drone, delegates to :drone-dispatch-fn.
-   Otherwise delegates to :spawn-fn for ling spawning."
+  "fb/h4: Spawn lings for the surveyed tasks via (:spawn-fn (:agent-ops resources))."
   [resources data]
   (let [{:keys [agent-ops kanban-ops config directory]} resources
-        {:keys [spawn-fn drone-dispatch-fn dispatch-fn wait-ready-fn]} agent-ops
+        {:keys [spawn-fn dispatch-fn wait-ready-fn]} agent-ops
         {:keys [update-fn]} kanban-ops
         {:keys [max-slots presets spawn-mode model
                 preset seeds ctx-refs kg-node-ids]} config
         tasks          (get-in data [:survey-result :tasks] [])
         context-result (:context-result data)
-        result (if (and (= :drone spawn-mode) drone-dispatch-fn)
-                 (drone-dispatch-fn
-                  (cond-> {:directory directory
-                           :tasks     tasks}
-                    max-slots   (assoc :max_slots max-slots)
-                    model       (assoc :model model)
-                    preset      (assoc :preset preset)
-                    seeds       (assoc :seeds seeds)
-                    ctx-refs    (assoc :ctx_refs ctx-refs)
-                    kg-node-ids (assoc :kg_node_ids kg-node-ids)))
-                 (spawn-fn
-                  (cond-> {:directory      directory
-                           :max_slots      (or max-slots 10)
-                           :presets        (or presets ["ling" "mcp-first" "saa"])
-                           :tasks          tasks
-                           :dispatch-fn    dispatch-fn
-                           :wait-ready-fn  wait-ready-fn
-                           :update-fn      update-fn}
-                    spawn-mode     (assoc :spawn-mode spawn-mode)
-                    model          (assoc :model model)
-                    preset         (assoc :preset preset)
-                    seeds          (assoc :seeds seeds)
-                    ctx-refs       (assoc :ctx_refs ctx-refs)
-                    kg-node-ids    (assoc :kg_node_ids kg-node-ids)
-                    context-result (assoc :context-result context-result))))]
+        result (spawn-fn
+                (cond-> {:directory      directory
+                         :max_slots      (or max-slots 10)
+                         :presets        (or presets ["ling" "mcp-first" "saa"])
+                         :tasks          tasks
+                         :dispatch-fn    dispatch-fn
+                         :wait-ready-fn  wait-ready-fn
+                         :update-fn      update-fn}
+                  spawn-mode     (assoc :spawn-mode spawn-mode)
+                  model          (assoc :model model)
+                  preset         (assoc :preset preset)
+                  seeds          (assoc :seeds seeds)
+                  ctx-refs       (assoc :ctx_refs ctx-refs)
+                  kg-node-ids    (assoc :kg_node_ids kg-node-ids)
+                  context-result (assoc :context-result context-result)))]
     (-> data
         (assoc :phase ::cycle-complete
                :spark-result result

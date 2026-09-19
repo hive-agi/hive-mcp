@@ -3,19 +3,12 @@
   (:require [hive-mcp.tools.core :refer [mcp-error mcp-json]]
             [hive-mcp.agent.protocol :as proto]
             [hive-mcp.agent.ling :as ling]
-            [hive-mcp.agent.drone :as drone]
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.protocols.dispatch :as dispatch-ctx]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
-
-(defn- get-delegate-fn
-  "Lazily resolve delegate-agentic-drone! to avoid circular dep."
-  []
-  (require 'hive-mcp.agent.core)
-  (resolve 'hive-mcp.agent.core/delegate-agentic-drone!))
 
 (defn- build-dispatch-context
   "Build an IDispatchContext from dispatch parameters."
@@ -41,24 +34,20 @@
     :else
     (try
       (if-let [agent-data (queries/get-slave agent_id)]
-        (let [agent-type (if (= 1 (:slave/depth agent-data)) :ling :drone)
-              agent (case agent-type
-                      :ling (ling/->ling agent_id {:cwd (:slave/cwd agent-data)
-                                                   :presets (:slave/presets agent-data)
-                                                   :project-id (:slave/project-id agent-data)
-                                                   :spawn-mode (or (:ling/spawn-mode agent-data) :claude)})
-                      :drone (drone/->drone agent_id {:cwd (:slave/cwd agent-data)
-                                                      :parent-id (:slave/parent agent-data)
-                                                      :project-id (:slave/project-id agent-data)}))
+        (let [agent (ling/->ling agent_id {:cwd (:slave/cwd agent-data)
+                                           :presets (:slave/presets agent-data)
+                                           :project-id (:slave/project-id agent-data)
+                                           :model (:ling/model agent-data)
+                                           :provider (:ling/provider agent-data)
+                                           :token-budget (:ling/token-budget agent-data)
+                                           :spawn-mode (or (:ling/spawn-mode agent-data) :claude)})
               ctx (build-dispatch-context prompt ctx_refs kg_node_ids
                                           (or scope (:slave/project-id agent-data)))
               resolved-prompt (:prompt (dispatch-ctx/resolve-context ctx))
-              task-opts (cond-> {:task resolved-prompt
-                                 :dispatch-context ctx
-                                 :files files
-                                 :priority (keyword (or priority "normal"))}
-                          (= agent-type :drone)
-                          (assoc :delegate-fn (get-delegate-fn)))
+              task-opts {:task resolved-prompt
+                         :dispatch-context ctx
+                         :files files
+                         :priority (keyword (or priority "normal"))}
               task-id (proto/dispatch! agent task-opts)]
           (log/info "Dispatched task to agent" {:agent_id agent_id
                                                 :task-id task-id

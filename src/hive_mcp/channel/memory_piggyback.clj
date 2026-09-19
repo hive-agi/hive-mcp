@@ -4,10 +4,11 @@
             [hive-dsl.bounded-atom :refer [bounded-atom bput! bget bounded-swap!
                                            bclear! register-sweepable!]]
             [hive-dsl.context.identity :as ctx-id]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [hive-mcp.channel.drain-rank :as rank]
             [hive-mcp.channel.drain-telemetry :as telemetry]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [hive-mcp.channel.drain-projection :as proj]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -100,13 +101,24 @@
    ctx without :tokens, is FIFO — identical to the 1-arity in both the returned
    batch and the buffer written back.
 
+   The WIRE POLICY is resolved first and applied to the whole buffer, so the
+   char budget is spent on what is actually sent. Under :index every pool entry
+   becomes an id-and-title pointer while floor entries (axioms, pins) pass
+   through whole; the projection is idempotent, so writing a projected buffer
+   back is safe. ctx :policy overrides the configured one. When the batch
+   carries pointers the result gains :pull, the instruction for turning them
+   back into entries.
+
    Every drain folds its offered / delivered ids into `drain-telemetry`."
   ([caller-id] (drain! caller-id nil))
   ([caller-id ctx]
    (let [buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))
          buf (bget buffers buffer-key)]
      (when (and buf (not (:done buf)))
-       (let [{:keys [entries cursor seq-num context-refs refs-delivered? sent offers]} buf
+       (let [{:keys [cursor seq-num context-refs refs-delivered? sent offers]} buf
+             policy (proj/resolve-policy (:policy ctx))
+             entries (proj/project (:entries buf) {:policy policy
+                                                   :pins (:pins ctx)})
              total (count entries)
              tokens (:tokens ctx)
              pending (when (seq tokens)
@@ -152,9 +164,11 @@
                                          m)))
                                    (or offers {})
                                    pending)
-                           offers)]
+                           offers)
+             hint (proj/pull-hint batch)]
          (telemetry/record!
           {:seq-num new-seq
+           :batch batch
            :delivered-ids (into [] (keep :id) batch)
            :offered-ids (when ranked
                           (into [] (comp (keep :id) (remove taken-ids)) pending))})
@@ -182,7 +196,8 @@
                   :delivered delivered
                   :seq new-seq}
            is-done (assoc :done true)
-           send-refs? (assoc :context-refs context-refs)))))))
+           send-refs? (assoc :context-refs context-refs)
+           hint (assoc :pull hint)))))))
 
 (defn has-pending?
   "Check if a caller session has undrained memory entries."

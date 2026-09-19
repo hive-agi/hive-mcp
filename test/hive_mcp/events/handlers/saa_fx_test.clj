@@ -8,7 +8,12 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.events.handlers.saa-fx :as saa-fx]
             [hive-mcp.events.core :as ev]
-            [hive-mcp.hivemind.core]))
+            [hive-mcp.hivemind.core]
+            [hive-mcp.saa.registry :as registry]
+            [hive-mcp.saa.types :as types]
+            [hive-mcp.saa.support :as saa-support]
+            [hive-mcp.saa.core-seed :as core-seed]
+            [hive-mcp.saa.registry.dispatch-modes :as r-dispatch]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -19,7 +24,7 @@
 
 (defn clean-registry-fixture [f]
   (ev/with-clean-registry
-    (f)))
+    (saa-support/with-fresh-registry f)))
 
 (use-fixtures :each clean-registry-fixture)
 
@@ -205,3 +210,128 @@
     (let [f (saa-fx/default-dispatch-fn "/test/project")]
       (is (fn? f))
       (is (map? (f {:id "p1"} :direct "agent-1" nil))))))
+
+(defn- recording-dispatch
+  "Dispatch-mode stub that records every call into `calls`."
+  [calls]
+  (fn [plan agent-id ctx]
+    (swap! calls conj {:plan plan :agent-id agent-id :ctx ctx})
+    {:wave-id "contributed-wave" :result {:status :dispatched}}))
+
+(deftest default-dispatch-fn-resolves-contributed-mode
+  (testing "a mode contributed through the registry is dispatched with ctx + directory"
+    (let [calls (atom [])]
+      (registry/register-by-key!
+       :addon-t :saa/dispatch-mode
+       [(types/saa-registry-entry :saa/dispatch-mode
+                                  {:mode :forge-like :dispatch (recording-dispatch calls)
+                                   :owner :addon-t})])
+      (is (= {:wave-id "contributed-wave" :result {:status :dispatched}}
+             ((saa-fx/default-dispatch-fn "/test/project")
+              {:id "p1"} :forge-like "agent-1" {:run-id "r1" :plan-memory-id "m1"})))
+      (is (= [{:plan {:id "p1"} :agent-id "agent-1"
+               :ctx {:run-id "r1" :plan-memory-id "m1" :directory "/test/project"}}]
+             @calls))))
+
+  (testing "an unknown mode still answers :no-dispatch-for-mode"
+    (is (= {:wave-id nil :result {:status :no-dispatch-for-mode :mode :unknown-mode}}
+           ((saa-fx/default-dispatch-fn "/test/project")
+            {:id "p1"} :unknown-mode "agent-1" {}))))
+
+  (testing "a throwing mode degrades to :dispatch-failed"
+    (registry/register-by-key!
+     :addon-t :saa/dispatch-mode
+     [(types/saa-registry-entry :saa/dispatch-mode
+                                {:mode :boom :dispatch (fn [_ _ _] (throw (Exception. "boom")))
+                                 :owner :addon-t})])
+    (is (= {:wave-id nil :result {:status :dispatch-failed :mode :boom :error "boom"}}
+           ((saa-fx/default-dispatch-fn "/test/project") {:id "p1"} :boom "agent-1" {})))))
+
+(deftest default-dispatch-fn-runs-dag-wave-through-seed
+  (testing ":dag-wave resolves to the :saa/core seeded entry"
+    (is (= :saa/core (:owner (r-dispatch/lookup :dag-wave)))))
+
+  (testing "the seeded :dag-wave builder is what the default dispatch reaches"
+    (let [calls (atom [])]
+      (registry/register-by-key!
+       :saa/core :saa/dispatch-mode
+       [(types/saa-registry-entry :saa/dispatch-mode
+                                  {:mode :dag-wave
+                                   :dispatch (core-seed/dag-wave-dispatch-fn
+                                              (fn [plan-id opts]
+                                                (swap! calls conj [plan-id opts])
+                                                {:plan-id plan-id}))
+                                   :owner :saa/core})])
+      (is (= {:wave-id "r9" :result {:plan-id "p1" :status :dispatched}}
+             ((saa-fx/default-dispatch-fn "/test/project")
+              {:id "p1"} :dag-wave "agent-1" {:run-id "r9"})))
+      (is (= [["p1" {:cwd "/test/project" :run-id "r9"}]] @calls)))))
+
+(deftest default-resources-store-plan-fn-requires-store-and-opt-in
+  (let [store (fn [_plan _agent-id _dir] {:memory-id "m" :kanban-ids [] :kg-edges 0})]
+    (testing "no registered store, no opt-in: absent"
+      (is (not (contains? (saa-fx/default-resources "/p" {}) :store-plan-fn))))
+
+    (testing "no registered store, opt-in: absent"
+      (is (not (contains? (saa-fx/default-resources "/p" {:store-plan? true}) :store-plan-fn))))
+
+    (registry/register-by-key!
+     :addon-s :saa/plan-store
+     [(types/saa-registry-entry :saa/plan-store {:store store :owner :addon-s})])
+
+    (testing "registered store, no opt-in: absent (exploratory runs never persist)"
+      (is (not (contains? (saa-fx/default-resources "/p" {}) :store-plan-fn)))
+      (is (not (contains? (saa-fx/default-resources "/p" {:store-plan? false}) :store-plan-fn))))
+
+    (testing "registered store and opt-in: the registered store is supplied"
+      (is (= store (:store-plan-fn (saa-fx/default-resources "/p" {:store-plan? true})))))
+
+    (testing "the default resource ports are always present"
+      (is (every? (saa-fx/default-resources "/p" {})
+                  [:scope-fn :shout-fn :dispatch-fn :clock-fn])))))
+
+(defn- offline-saa-resources
+  "SAA FSM resources that keep every phase offline and leave :store-plan-fn and
+   :dispatch-fn to saa-fx/default-resources."
+  []
+  {:scope-fn           (constantly "test-project")
+   :catchup-fn         (fn [_agent-id _directory] {:axioms [] :conventions [] :decisions []})
+   :explore-fn         (fn [_task _agent-id obs]
+                         {:observations (conj (vec obs) {:type :file :content "found foo.clj"})
+                          :files-read   3
+                          :discoveries  1})
+   :score-grounding-fn (fn [_obs _files-read] 1.0)
+   :synthesize-fn      (fn [task _obs _context]
+                         {:id    "plan-fx-1"
+                          :title (str "Plan for: " task)
+                          :steps [{:id "step-1" :title "First step" :depends-on []}]})
+   :validate-plan-fn   (fn [_plan] {:valid? true :errors []})
+   :verify-fn          (fn [_result _plan] {:passed? true :details {}})
+   :shout-fn           (fn [_agent-id _phase _message] nil)})
+
+(deftest run-workflow-forwards-execution-mode
+  (testing ":execution-mode on the effect selects the contributed mode; its ctx carries the stored plan id"
+    (saa-fx/register-saa-fx!)
+    (let [calls (atom [])]
+      (registry/register-by-key!
+       :test :saa/dispatch-mode
+       [(types/saa-registry-entry :saa/dispatch-mode
+                                  {:mode :test-mode :dispatch (recording-dispatch calls) :owner :test})])
+      (registry/register-by-key!
+       :test :saa/plan-store
+       [(types/saa-registry-entry :saa/plan-store
+                                  {:store (fn [_plan _agent-id _directory]
+                                            {:memory-id "mem-fx-1" :kanban-ids ["k1"] :kg-edges 1})
+                                   :owner :test})])
+      (is (not= ::timeout
+                (deref ((ev/get-fx-handler :saa/run-workflow)
+                        {:task           "t"
+                         :agent-id       "agent-fx"
+                         :directory      "/p"
+                         :store-plan?    true
+                         :execution-mode :test-mode
+                         :resources      (offline-saa-resources)})
+                       20000 ::timeout)))
+      (is (= 1 (count @calls)))
+      (is (= {:plan-memory-id "mem-fx-1" :directory "/p"}
+             (select-keys (:ctx (first @calls)) [:plan-memory-id :directory]))))))

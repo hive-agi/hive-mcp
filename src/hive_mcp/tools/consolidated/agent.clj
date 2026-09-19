@@ -37,22 +37,29 @@
           (batch-fn (assoc params :operations ops-with-command)))))))
 
 (def canonical-handlers
-  {:spawn       spawn/handle-spawn
-   :status      status/handle-status
-   :digest      status/handle-digest
-   :kill        kill/handle-kill
-   :kill-batch  kill/handle-kill-batch
-   :interrupt   lifecycle/handle-interrupt
-   :batch-spawn batch-spawn-handler
-   :dispatch    dispatch/handle-dispatch
-   :claims      lifecycle/handle-claims
-   :collect     lifecycle/handle-collect
-   :broadcast   lifecycle/handle-broadcast
-   :cleanup     lifecycle/handle-cleanup
-   :dag         {:start    dag/handle-dag-start
-                 :stop     dag/handle-dag-stop
-                 :status   dag/handle-dag-status
-                 :_handler dag/handle-dag-status}})
+  "The `agent` verbs, stored as VARS so a reload of any agent.* module reaches
+   this table (20260817195749-0d407e9c).
+
+   The `:dag` value stays a LITERAL map with var-quoted leaves rather than
+   becoming a var itself. Both spellings dispatch correctly now that the walker
+   derefs, but a literal map is still `map?` to every OTHER reader of this tree
+   — and this table is read by more than the walker."
+  {:spawn       #'spawn/handle-spawn
+   :status      #'status/handle-status
+   :digest      #'status/handle-digest
+   :kill        #'kill/handle-kill
+   :kill-batch  #'kill/handle-kill-batch
+   :interrupt   #'lifecycle/handle-interrupt
+   :batch-spawn #'batch-spawn-handler
+   :dispatch    #'dispatch/handle-dispatch
+   :claims      #'lifecycle/handle-claims
+   :collect     #'lifecycle/handle-collect
+   :broadcast   #'lifecycle/handle-broadcast
+   :cleanup     #'lifecycle/handle-cleanup
+   :dag         {:start    #'dag/handle-dag-start
+                 :stop     #'dag/handle-dag-stop
+                 :status   #'dag/handle-dag-status
+                 :_handler #'dag/handle-dag-status}})
 
 (def handlers
   (merge canonical-handlers
@@ -63,24 +70,24 @@
                     {} deprecated-aliases)))
 
 (def handle-agent
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 ;; Re-exports for direct handler access (used by tests and internal callers)
-(def handle-spawn spawn/handle-spawn)
-(def handle-status status/handle-status)
-(def handle-kill kill/handle-kill)
-(def handle-kill-batch kill/handle-kill-batch)
-(def handle-dispatch dispatch/handle-dispatch)
-(def handle-claims lifecycle/handle-claims)
-(def handle-collect lifecycle/handle-collect)
-(def handle-broadcast lifecycle/handle-broadcast)
-(def handle-cleanup lifecycle/handle-cleanup)
+(def handle-spawn #'spawn/handle-spawn)
+(def handle-status #'status/handle-status)
+(def handle-kill #'kill/handle-kill)
+(def handle-kill-batch #'kill/handle-kill-batch)
+(def handle-dispatch #'dispatch/handle-dispatch)
+(def handle-claims #'lifecycle/handle-claims)
+(def handle-collect #'lifecycle/handle-collect)
+(def handle-broadcast #'lifecycle/handle-broadcast)
+(def handle-cleanup #'lifecycle/handle-cleanup)
 (def handle-list (get handlers :list))
 
 (def tool-def
   {:name "agent"
    :consolidated true
-   :description "Unified agent operations: spawn (create ling/drone), status (query agents), digest (compact per-agent progress roster — turn, last event, idle time — the PULL view now that shouts reach only the spawner; pass agent_id for just your own children, verbose for rendered text), kill (terminate), kill-batch (terminate multiple agents in one call), batch-spawn (spawn multiple agents at once via operations array), dispatch (send task — also the way to STEER a running agent), interrupt (interrupt current query of agent-sdk ling), claims (file ownership), list (deprecated alias for status), collect (get task result), broadcast (prompt all), cleanup (remove orphan agents after Emacs restart). Type: 'ling' (Claude Code instance) or 'drone' (OpenRouter leaf worker). Nested: dag (start/stop/status DAGWave scheduler). Use command='help' to list all."
+   :description "Unified agent operations: spawn (create ling), status (query agents), digest (compact per-agent progress roster — turn, last event, idle time — the PULL view now that shouts reach only the spawner; pass agent_id for just your own children, verbose for rendered text), kill (terminate), kill-batch (terminate multiple agents in one call), batch-spawn (spawn multiple agents at once via operations array), dispatch (send task — also the way to STEER a running agent), interrupt (interrupt current query of agent-sdk ling), claims (file ownership), list (deprecated alias for status), collect (get task result), broadcast (prompt all), cleanup (remove orphan agents after Emacs restart). Type: 'ling' (agentic worker). Nested: dag (start/stop/status DAGWave scheduler). Use command='help' to list all."
    :inputSchema {:type "object"
                  :properties {"command" {:type "string"
                                          :enum ["spawn" "status" "digest" "kill" "kill-batch" "batch-spawn" "dispatch" "interrupt" "claims" "list" "collect" "broadcast" "cleanup" "dag start" "dag stop" "dag status" "help"]
@@ -97,12 +104,17 @@
                                          :items {:type "string"}
                                          :description "Preset names for ling (ling only)"}
                               "model" {:type "string"
-                                       :description "Model override for drone or ling. For drones: OpenAI-compat model ID. For lings: 'claude' (default, Claude Code CLI) or OpenAI-compat model ID (auto-forces headless spawn mode). Supports 'provider:model' prefix, e.g. 'venice:qwen3-coder-480b-a35b-instruct', 'groq:llama-3.3-70b-versatile', 'moonshotai/kimi-k2.5' (bare → openrouter)."}
+                                       :description "Model override for the ling: 'claude' (default, Claude Code CLI) or OpenAI-compat model ID (auto-forces headless spawn mode). Supports 'provider:model' prefix, e.g. 'venice:qwen3-coder-480b-a35b-instruct', 'groq:llama-3.3-70b-versatile', 'moonshotai/kimi-k2.5' (bare → openrouter)."}
+                              "tier" {:type "string"
+                                      :enum ["cheap" "frontier"]
+                                      :description "[spawn] Economy role. cheap delegates model selection to configured ling defaults; frontier permits explicit model selection. Omit to preserve legacy direct-spawn behavior."}
+                              "token_budget" {:type "integer"
+                                               :description "[spawn] Context-reconstruction token ceiling for this ling."}
                               "provider" {:type "string"
                                           :enum ["openrouter" "venice" "groq" "together" "fireworks" "openai" "ollama-compat"]
                                           :description "Explicit OpenAI-compat LLM provider (overrides any 'provider:' prefix in model). Anthropic routing is automatic from model names (claude-*, anthropic/*)."}
                               "task" {:type "string"
-                                      :description "Initial task to dispatch on spawn"}
+                                      :description "Initial task to dispatch on spawn (prompt is accepted as an alias). Without one the ling idles; the response then carries task-attached false and a warning."}
                               "spawn_mode" {:type "string"
                                             :enum (spawn-registry/mcp-enum)
                                             :description "Spawn mode for lings: 'vterm' (default, Emacs buffer) or 'headless' (OS subprocess, no Emacs required). Headless mode captures stdout to ring buffer and supports stdin dispatch. NOTE: 'headless' is ABSTRACT — the concrete backend (:agent-sdk, :hive-agent, …) is resolved at spawn time via the headless-registry: operator override in ~/.config/hive-mcp/config.edn [:headless :default-backend] wins, otherwise priority-ranked addon-contributed backends are tried in registration order. The response's :spawn-mode reflects the resolved backend, not the requested 'headless' alias. To force a specific backend, pass spawn_mode directly (e.g. 'agent-sdk' or 'hive-agent') instead of 'headless'."}
@@ -110,14 +122,15 @@
                                         :description "[spawn] Subagent definitions for Claude Agent SDK sessions. Map of agent-name to agent definition object. Each definition: {description: string, prompt: string, tools?: string[], model?: 'sonnet'|'opus'|'haiku'|'inherit'}. Only effective when the resolved spawn mode is :agent-sdk (either spawn_mode='agent-sdk' directly, or spawn_mode='headless' when agent-sdk is the registry-resolved default backend). Ignored by other headless backends (e.g. :hive-agent)."}
                               "max_budget_usd" {:type "number"
                                                 :description "[spawn] Maximum USD spend for this agent. When set, registers a budget guardrail hook that denies+interrupts tool calls when cumulative cost exceeds the limit. E.g. 2.0 = $2 max."}
-                              "kg_compress" {:type "boolean"
-                                             :description "[spawn] Enable KG-compression between turns (default: true). Rewrites message history into compressed KG-derived context to keep context constant-size for long-running lings. SET TO FALSE for weaker models (qwen/qwen3.6-plus, z-ai/glm-5.1) that plan-paralyze on compressed context — they loop on identical tool calls because they can't infer 'already did X' from KG summaries. Strong models (claude, deepseek, kimi, gpt-5) handle kg_compress=true fine."}
+                              "kg_compress" {:type "boolean", :description "[spawn] Enable per-turn KG-compression (default: FALSE since 2026-09-14, on measurement). Rewrites the whole message history into a KG-derived summary every turn. Measured on a 15-symbol documentation sweep, n=20 per arm, same setpoint and seeds: raw history passed 6/20, per-turn KG 0/20 (sign test p=0.031) while spending 2.4x the input tokens (+67k, 95% CI [+45k, +89k]). Weak models also plan-paralyze under it (qwen/qwen3.6-plus, z-ai/glm-5.1 loop on identical tool calls). Prefer context_strategy=epoch, which tied raw at n=20, if you want compression at all."}
                               "sliding_window_size" {:type "integer"
                                                      :description "[spawn] Number of recent raw conversation turns to keep in context alongside KG-compressed summaries. Default 5. Only effective when kg_compress=true. Larger = more coherent short-term recall, lower compression ratio. Planned: not yet implemented — reconstructor extension pending (kanban 20260415160150-4fd21a2a)."}
                               "verbose" {:type "boolean"
                                          :description "[spawn] When true, bb-ling lings shout the full per-turn LLM exchange (last request message + response, truncated) to hivemind piggyback. Default false — exchange is always persisted to the agent's transcript store (Datalevin) and queryable post-hoc via the `transcript` MCP tool (list/search)."}
                               "llm_retries" {:type "integer"
                                              :description "[spawn] Max bb-ling loop-level retries on transient LLM failures (rate-limit/overload/timeout). Default 3, exponential backoff."}
+                              "sandbox" {:type "boolean"
+                                         :description "[spawn] Headless lings: run the ling's tools inside the host sandbox (bwrap). bash/grep/clojure_eval run with no network, no host home and a clean environment; file tools stay below cwd; delegated host tools are refused unless allowlisted. Omitted = the host default ([:services :agent :sandbox] in config.edn). false opts out."}
                               ;; common params
                               "agent_id" {:type "string"
                                           :description "Agent ID for status/kill/dispatch/claims"}
@@ -134,10 +147,10 @@
                                             :description "Project ID filter for status"}
                               ;; dispatch params
                               "prompt" {:type "string"
-                                        :description "Task prompt for dispatch or broadcast"}
+                                        :description "Task prompt for dispatch or broadcast. On spawn, an alias of task (they must agree when both are given)."}
                               "files" {:type "array"
                                        :items {:type "string"}
-                                       :description "Files for drone or dispatch"}
+                                       :description "Files for dispatch"}
                               "priority" {:type "string"
                                           :enum ["low" "normal" "high"]
                                           :description "Task priority for dispatch"}
@@ -171,6 +184,6 @@
                               "max_slots" {:type "integer"
                                            :description "Max concurrent lings for dag scheduler (default: 5)"}}
                  :required ["command"]}
-   :handler handle-agent})
+   :handler #'handle-agent})
 
 (def tools [tool-def])

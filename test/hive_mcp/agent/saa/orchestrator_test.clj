@@ -7,7 +7,10 @@
   (:require [clojure.test :refer [deftest testing is use-fixtures]]
             [clojure.core.async :as async :refer [<!! >!! chan close! go put!]]
             [hive-mcp.agent.saa.orchestrator :as saa]
-            [hive-mcp.protocols.agent-bridge :as bridge]))
+            [hive-mcp.protocols.agent-bridge :as bridge]
+            [hive-mcp.protocols.saa :as psaa]
+            [hive-mcp.saa.scorer :as scorer]
+            [hive-mcp.test.stub.extensions :as ext-stub]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -382,29 +385,60 @@
         (is (= :phase-complete (:type (last msgs))))))))
 
 ;;; =============================================================================
-;;; Score Observations Fallback Tests
+;;; Observation Scorer Port Tests
 ;;; =============================================================================
 
-(deftest test-score-observations-fallback
-  (testing "score-observations falls back gracefully when SDK addon not on classpath"
-    ;; With SDK moved to hive-claude addon, score-observations resolves at runtime.
-    ;; When addon not present, falls back to returning observations as-is.
+(def ^:private stub-scorer
+  "A stub IObservationScorer that maps each observation to a fixed score."
+  (reify psaa/IObservationScorer
+    (score [_ observations]
+      (vec (map (fn [o] {:observation o :score 0.5}) observations)))
+    (grounding-score [_ _ _] 0.5)))
+
+(deftest score-observations-uses-the-scorer-port
+  (testing "score-observations-enhanced calls through the injected scorer port"
     (let [observations [{:data "found a bug in auth.clj"}
                         {:data "read the README"}
                         {:data "discovered a pattern for validation"}]
-          score-fn (try (requiring-resolve 'hive-claude.sdk.saa/score-observations)
-                        (catch Exception _ nil))]
-      (if score-fn
-        ;; SDK on classpath — full scoring
-        (let [scored (score-fn observations)]
-          (is (vector? scored))
-          (is (= 3 (count scored)))
-          (doseq [entry scored]
-            (is (contains? entry :observation))
-            (is (contains? entry :score))
-            (is (number? (:score entry)))))
-        ;; SDK not on classpath — graceful fallback
-        (is (= observations observations) "Fallback: observations passed through")))))
+          result (#'hive-mcp.agent.saa.orchestrator/score-observations-enhanced
+                  stub-scorer observations)]
+      (is (= [{:observation {:data "found a bug in auth.clj"} :score 0.5}
+              {:observation {:data "read the README"} :score 0.5}
+              {:observation {:data "discovered a pattern for validation"} :score 0.5}]
+             result)))))
+
+(deftest score-observations-layers-the-es-score-extension
+  (testing "score-observations-enhanced layers the :es/score extension over port output"
+    (let [observations [{:data "found a bug in auth.clj"}
+                        {:data "read the README"}
+                        {:data "discovered a pattern for validation"}]]
+      (ext-stub/with-extensions
+        {:es/score (fn [scored]
+                     (mapv #(assoc % :boosted true) scored))}
+        (fn []
+          (let [result (#'hive-mcp.agent.saa.orchestrator/score-observations-enhanced
+                        stub-scorer observations)]
+            (is (= 3 (count result)))
+            (doseq [entry result]
+              (is (true? (:boosted entry))
+                  "Each entry should have :boosted true from the extension")
+              (is (= 0.5 (:score entry))
+                  "Original :score from the port should be preserved"))))))))
+
+(deftest score-observations-with-real-scorer
+  (testing "DefaultObservationScorer returns scored observations"
+    (let [observations [{:data "found a bug in auth.clj"}
+                        {:data "read the README"}
+                        {:data "discovered a pattern for validation"}]
+          real-scorer (scorer/->default-scorer)
+          result (#'hive-mcp.agent.saa.orchestrator/score-observations-enhanced
+                  real-scorer observations)]
+      (is (vector? result))
+      (is (= 3 (count result)))
+      (doseq [entry result]
+        (is (contains? entry :observation))
+        (is (contains? entry :score))
+        (is (number? (:score entry)))))))
 
 (comment
   ;; Run all tests in this namespace via nREPL:

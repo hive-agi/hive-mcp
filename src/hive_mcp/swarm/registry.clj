@@ -21,7 +21,7 @@
   (:require [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.swarm.datascript.connection :as conn]
             [hive-mcp.swarm.datascript.queries :as queries]
-            [hive-mcp.tools.memory.scope :as scope]))
+            [hive-mcp.project.scope :as project-scope]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -38,8 +38,6 @@
    Currently used by:
    - tools/swarm/state.clj:35        - get-slave-working-status
    - tools/swarm/lifecycle.clj:113   - check-kill-cross-project-guard
-   - tools/swarm/health.clj:182      - recover-drone!
-   - agent/drone.clj (implicit via proto/get-slave)
 
    Phase 2: Delegates to (proto/get-slave registry slave-id)
 
@@ -136,7 +134,6 @@
 
    Currently used by:
    - tools/swarm/registry.clj:60     - register-ling!
-   - agent/drone.clj:298             - register-drone-agent
 
    Phase 2: Delegates to (proto/add-slave! registry slave-id opts)
 
@@ -158,7 +155,7 @@
   (let [;; Derive project-id from cwd if not explicitly provided
         cwd (:cwd opts)
         project-id (or (:project-id opts)
-                       (when cwd (scope/get-current-project-id cwd)))]
+                       (when cwd (project-scope/get-current-project-id cwd)))]
     (ds/add-slave! slave-id (assoc opts :project-id project-id))))
 
 (defn update-slave!
@@ -188,8 +185,6 @@
 
    Currently used by:
    - tools/swarm/registry.clj:74     - unregister-ling!
-   - tools/swarm/health.clj:183      - recover-drone!
-   - agent/drone.clj:551             - cleanup on timeout/error
 
    Phase 2: Delegates to (proto/remove-slave! registry slave-id)
 
@@ -372,10 +367,6 @@
 ;;; Migration Notes
 ;;; =============================================================================
 
-;; Wave/Plan operations (ds/create-plan!, ds/get-wave, etc.) are NOT wrapped here.
-;; They are coordination-specific and used only by tools/swarm/wave.clj.
-;; These may get their own protocol (IWaveCoordinator) or remain DataScript-specific.
-;;
 ;; Critical ops (ds/enter-critical-op!, ds/with-critical-op) are also not wrapped.
 ;; They are DataScript-specific transaction semantics.
 ;;

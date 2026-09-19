@@ -135,11 +135,11 @@
    The taxonomy moved to src so the RUNTIME canary and this suite cannot drift
    into two definitions of the same fault. Historical
    `hive-mcp.recall.golden/recall-fault` call sites keep resolving here."
-  canary/recall-fault)
+  #'canary/recall-fault)
 
 (def rank-fault
   "Alias of `hive-mcp.recall.canary/rank-fault`. See `recall-fault`."
-  canary/rank-fault)
+  #'canary/rank-fault)
 
 ;; =============================================================================
 ;; The golden store — with a bug switch

@@ -30,12 +30,12 @@
 
 (def compute-hash
   "Compute SHA-256 hash of a string."
-  hash/compute-hash)
+  #'hash/compute-hash)
 
 (def file-content-hash
   "Read file and compute content hash.
    Returns {:hash \"..\" :exists? true} or {:exists? false}."
-  hash/file-content-hash)
+  #'hash/file-content-hash)
 
 ;; =============================================================================
 ;; Re-exports: Volatility Constants (disc.volatility)
@@ -47,7 +47,7 @@
 
 (def format-staleness-warnings
   "Format staleness warnings as a text block for injection into task prompts."
-  vol/format-staleness-warnings)
+  #'vol/format-staleness-warnings)
 
 ;; =============================================================================
 ;; Re-exports: CRUD (disc.crud)
@@ -55,40 +55,40 @@
 
 (def add-disc!
   "Add or update a disc entity."
-  crud/add-disc!)
+  #'crud/add-disc!)
 
 (def get-disc
   "Get disc entity by file path."
-  crud/get-disc)
+  #'crud/get-disc)
 
 (def remove-disc!
   "Remove a disc entity by path."
-  crud/remove-disc!)
+  #'crud/remove-disc!)
 
 (def update-disc!
   "Update an existing disc entity by path with given attribute map."
-  crud/update-disc!)
+  #'crud/update-disc!)
 
 (def disc-exists?
   "Check if a disc entity exists for the given path."
-  crud/disc-exists?)
+  #'crud/disc-exists?)
 
 (def get-all-discs
   "Get all disc entities, with optional project-id filter."
-  crud/get-all-discs)
+  #'crud/get-all-discs)
 
 (def disc-stats
   "Return summary statistics for all disc entities."
-  crud/disc-stats)
+  #'crud/disc-stats)
 
 (def touch-disc!
   "Record that a file was read by an agent."
-  crud/touch-disc!)
+  #'crud/touch-disc!)
 
 (def batch-update-discs!
   "Batch-update multiple disc entities in a single transaction.
    Takes seq of [path updates-map] pairs."
-  crud/batch-update-discs!)
+  #'crud/batch-update-discs!)
 
 ;; =============================================================================
 ;; Re-exports: Staleness Surfacing (disc.staleness)
@@ -96,19 +96,19 @@
 
 (def staleness-score
   "Compute staleness score for a disc entity (impure, reads file)."
-  staleness/staleness-score)
+  #'staleness/staleness-score)
 
 (def staleness-warnings
   "Generate staleness warnings for a collection of file paths."
-  staleness/staleness-warnings)
+  #'staleness/staleness-warnings)
 
 (def top-stale-files
   "Query top-N most stale disc entities."
-  staleness/top-stale-files)
+  #'staleness/top-stale-files)
 
 (def kg-first-context
   "Consult the KG before file reads — the Structural Differential principle."
-  staleness/kg-first-context)
+  #'staleness/kg-first-context)
 
 ;; =============================================================================
 ;; Re-exports: Propagation & Certainty Wiring (disc.propagation)
@@ -116,8 +116,8 @@
 
 (def apply-time-decay-to-all-discs!
   "Apply time decay to all disc entities in DataScript."
-  propagation/apply-time-decay-to-all-discs!)
+  #'propagation/apply-time-decay-to-all-discs!)
 
 (def propagate-staleness!
   "Propagate staleness from a disc to dependent labels via KG edges."
-  propagation/propagate-staleness!)
+  #'propagation/propagate-staleness!)

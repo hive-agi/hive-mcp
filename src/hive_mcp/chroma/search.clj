@@ -2,11 +2,12 @@
   "Semantic search operations for Chroma memory entries."
   (:require [hive-mcp.chroma.client :as chroma]
             [hive-mcp.chroma.connection :as conn]
-            [hive-mcp.chroma.embeddings :as emb]
+            [hive-mcp.embeddings.active :as emb]
             [hive-mcp.chroma.gate :as gate]
             [hive-mcp.embeddings.service :as embedding-service]
             [hive-dsl.result :as r]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.memory.ingest-search :as ingest-search]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -101,54 +102,6 @@
 
 ;; --- Federated Search (default + ingest collections) ---
 
-(defn resolve-ingest-search
-  "Runtime-resolve ingest cross-collection search. Zero compile-time coupling."
-  []
-  (r/guard Exception nil
-    (requiring-resolve 'hive-ingestor.storage.chroma/search-across-collections!)))
-
-(defn normalize-ingest-results
-  "Normalize ingest search results to match search-similar output shape."
-  [raw-results]
-  (when (sequential? raw-results)
-    (->> raw-results
-         (mapcat (fn [coll-result]
-                   (let [coll-name (:collection coll-result)
-                         ids       (:ids coll-result)
-                         docs      (:documents coll-result)
-                         metas     (:metadatas coll-result)
-                         dists     (:distances coll-result)]
-                     (when (and ids docs)
-                       (map (fn [id doc meta dist]
-                              {:id id
-                               :document doc
-                               :metadata (or meta {})
-                               :distance (or dist 999.0)
-                               :collection coll-name})
-                            (first ids) (first docs) (first metas) (first dists))))))
-         (remove nil?)
-         vec)))
-
-(defn merge-and-rerank
-  "Merge two result sequences, deduplicate by :id keeping closest distance, sort ascending.
-   Pure function — no IO."
-  [results-a results-b limit]
-  (->> (concat results-a results-b)
-       (reduce (fn [acc entry]
-                 (let [id (:id entry)]
-                   (if (contains? acc id)
-                     (let [existing-dist (or (:distance (get acc id)) 999.0)
-                           new-dist      (or (:distance entry) 999.0)]
-                       (if (< new-dist existing-dist)
-                         (assoc acc id entry)
-                         acc))
-                     (assoc acc id entry))))
-               {})
-       vals
-       (sort-by #(or (:distance %) 999.0))
-       (take limit)
-       vec))
-
 (defn search-federated
   "Search default memory collection + all ingest collections.
    Merges results, deduplicates by ID, re-ranks by distance (ascending).
@@ -158,12 +111,12 @@
                                         :limit limit :type type
                                         :project-ids project-ids
                                         :exclude-tags exclude-tags)
-        ingest-results  (when-let [search-fn (resolve-ingest-search)]
+        ingest-results  (when-let [search-fn (ingest-search/resolve-ingest-search)]
                           (r/guard Exception nil
                             (let [result (search-fn query-text {:limit limit})]
                               (when (and (map? result) (:ok result))
-                                (normalize-ingest-results (:ok result))))))
-        merged (merge-and-rerank default-results ingest-results limit)]
+                                (ingest-search/normalize-ingest-results (:ok result))))))
+        merged (ingest-search/merge-and-rerank default-results ingest-results limit)]
     (log/debug "Federated search:" (count default-results) "default +"
                (count ingest-results) "ingest =" (count merged) "merged")
     merged))

@@ -4,13 +4,13 @@
    Provides semantic search and management of swarm presets stored in Chroma.
    Presets can be queried by natural language (e.g., 'find testing-focused preset')."
   (:require [hive-mcp.presets.core :as presets]
-            [hive-mcp.chroma.core :as chroma]
             [hive-mcp.config.core :as config]
             [hive-mcp.tools.swarm.prompt :as prompt]
             [hive-mcp.tools.result-bridge :as rb]
             [hive-mcp.dns.result :as result]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.embeddings.active :as active]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -29,14 +29,14 @@
     (presets/get-preset-from-file preset-dir name)))
 
 (defn- search* [{:keys [query limit category]}]
-  (if-not (chroma/embedding-configured?)
+  (if-not (active/embedding-configured?)
     (result/err :preset/chroma-not-configured
                 {:message "Chroma not configured. Semantic search requires Chroma with embedding provider."})
     (let [results (presets/search-presets query :limit (or limit 5) :category category)]
       (result/ok {:results results :count (count results) :query query}))))
 
 (defn- get* [{:keys [name]}]
-  (if-not (chroma/embedding-configured?)
+  (if-not (active/embedding-configured?)
     (if-let [preset (file-fallback-preset name)]
       (result/ok {:preset preset :source "file-fallback"})
       (result/err :preset/not-found {:message (str "Preset not found: " name)}))
@@ -48,7 +48,7 @@
                     {:message (str "Preset not found: " name ". Try preset_list to see available presets")})))))
 
 (defn- list-presets* [_]
-  (if-not (chroma/embedding-configured?)
+  (if-not (active/embedding-configured?)
     (result/ok {:error "Chroma not configured"
                 :message "Use file-based presets via swarm_list_presets"})
     (let [presets (presets/list-presets)]
@@ -60,7 +60,7 @@
                 :count (count presets)})))
 
 (defn- core* [{:keys [name]}]
-  (if-not (chroma/embedding-configured?)
+  (if-not (active/embedding-configured?)
     (if-let [preset (file-fallback-preset name)]
       (result/ok {:core (presets/extract-preset-core preset)
                   :name name :source "file-fallback"})
@@ -106,7 +106,7 @@
                     :missing (when (seq missing) missing)})))))
 
 (defn- migrate* [{:keys [directory]}]
-  (if-not (chroma/embedding-configured?)
+  (if-not (active/embedding-configured?)
     (result/err :preset/chroma-not-configured
                 {:message "Chroma not configured. Configure Chroma with embedding provider before migration."})
     (result/ok (presets/migrate-presets-from-dir! directory))))
@@ -115,21 +115,31 @@
   (result/ok (presets/status)))
 
 (defn- add* [{:keys [name content category tags]}]
-  (if-not (chroma/embedding-configured?)
+  (if-not (active/embedding-configured?)
     (result/err :preset/chroma-not-configured {:message "Chroma not configured"})
     (let [preset {:id name :name name :title name
                   :content content
                   :category (or category "custom")
                   :tags (if (coll? tags) (str/join "," tags) (or tags name))
                   :source "custom"}
-          id (presets/index-preset! preset)]
-      (result/ok {:success true :id id :message (str "Added preset: " name)}))))
+          r (presets/index-preset! preset)]
+      (if (result/ok? r)
+        (result/ok {:success true :id (:ok r) :message (str "Added preset: " name)})
+        (result/err :preset/add-failed
+                    {:message (str "Failed to add preset: " name ": "
+                                   (or (:message r) (:error r)))
+                     :cause (:error r)})))))
 
 (defn- delete* [{:keys [name]}]
-  (if-not (chroma/embedding-configured?)
+  (if-not (active/embedding-configured?)
     (result/err :preset/chroma-not-configured {:message "Chroma not configured"})
-    (do (presets/delete-preset! name)
-        (result/ok {:success true :message (str "Deleted preset: " name)}))))
+    (let [r (presets/delete-preset! name)]
+      (if (result/ok? r)
+        (result/ok {:success true :message (str "Deleted preset: " name)})
+        (result/err :preset/delete-failed
+                    {:message (str "Failed to delete preset: " name ": "
+                                   (or (:message r) (:error r)))
+                     :cause (:error r)})))))
 
 ;;; ============================================================
 ;;; Handlers (MCP boundary)

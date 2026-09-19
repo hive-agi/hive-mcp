@@ -1,7 +1,8 @@
 (ns hive-mcp.config.merge
   "Pure config transformations — no IO, no atoms, no logging.
    Collect/Promote layer: defaults, deep-merge, key-path parsing."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [hive-mcp.agent.provider.model :as model]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -13,6 +14,12 @@
 (def default-kg-backend
   "Canonical default KG backend. Referenced by config defaults and connection fallback."
   :datahike)
+
+(def default-secret-slots
+  "One nil-valued slot per secret key the seeded providers name.
+   Derived, so a provider added to the seed cannot arrive without its slot."
+  (into {} (comp (keep :secret-key) (map (fn [k] [k nil])))
+        (vals model/seed-registry)))
 
 (def default-config
   "Default configuration. Used as base — user config.edn is deep-merged on top."
@@ -74,25 +81,20 @@
                      ;;            :host "localhost"
                      ;;            :port 50051}
                      }}
-   :embeddings {:ollama {:host "http://localhost:11434"
-                         :model "qwen3-embedding:4b"}
-                :openrouter {:model "qwen/qwen3-embedding-8b"}}
-   :embedder {:default :ollama-qwen3-4b
-              ;; Memory types that are structurally addressed (fetched by
+   ;; Contract: these defaults carry no model id, model list or provider
+   ;; choice (:agent-defaults, :models, embedding models). The user's
+   ;; config.edn is the only source of those.
+   :embeddings {:ollama {:host "http://localhost:11434"}}
+   :embedder {;; Memory types that are structurally addressed (fetched by
               ;; tag/id/project-id, never semantic search) — the write path
               ;; skips embedding them. hive-di-configurable per profile; addons
               ;; may also self-register via embeddings.service/register-no-embed-type!
               :no-embed-types #{}
               ;; Every type embeds into one space. A configured provider is also
               ;; a searched collection, so adding one here fans reads out over it.
-              :routes {}
-              :providers {:ollama-qwen3-4b {:impl :ollama
-                                            :model "qwen3-embedding:4b"
-                                            :max-tokens 8192
-                                            :dimension 2560
-                                            :host "http://localhost:11434"}}}
+              :routes {}}
    :services {:chroma {:mode :local :host "localhost" :port 8000}
-              :ollama {:mode :local :host "http://localhost:11434" :model "qwen3-embedding:4b"}
+              :ollama {:mode :local :host "http://localhost:11434"}
               :datahike {:mode :local :path "data/kg"}
               :nrepl {:mode :local :port 7910}
               :prometheus {:mode :local :url "http://localhost:9090"}
@@ -112,7 +114,6 @@
                       ;; to start, so 60s is the safe default. Configurable via:
                       ;;   {:services {:forge {:readiness-timeout-ms 90000}}}
                       :readiness-timeout-ms 60000}
-              :drone {:mode :local :default-model "devstral-small:24b"}
               :nats {:mode :local
                      :enabled false
                      :url "nats://localhost:4222"
@@ -125,55 +126,17 @@
               :qdrant-carto {:mode :local
                              :host "localhost"
                              :port 6333
-                             :collection "carto-snippets"
-                             :embedding {:provider :ollama
-                                         :model "nomic-embed-code"}}
+                             :collection "carto-snippets"}
               :carto-store {:backend :qdrant-carto}}
    :cartography {:sentinel-path (str (System/getProperty "user.home")
                                      "/.config/hive-mcp/data/carto/preferred-backend.edn")
                  :strict-mode?  true}
-   :secrets {:openrouter-api-key nil
-             :openai-api-key nil
-             :anthropic-api-key nil
-             :venice-api-key nil
-             :groq-api-key nil
-             :together-api-key nil
-             :fireworks-api-key nil}
-   :llm-providers {:openrouter {:api-url       "https://openrouter.ai/api/v1/chat/completions"
-                                :secret-key    :openrouter-api-key
-                                :default-model "anthropic/claude-opus-4-7"
-                                :available-models ["moonshotai/kimi-k2.5"
-                                                   "qwen/qwen3.6-plus"
-                                                   "z-ai/glm-5.1"
-                                                   "xiaomi/mimo-v2-pro"
-                                                   "anthropic/claude-opus-4-7"
-                                                   "anthropic/claude-opus-4-6"
-                                                   "anthropic/claude-sonnet-4-6"]}
-                   :venice     {:api-url       "https://api.venice.ai/api/v1/chat/completions"
-                                :secret-key    :venice-api-key
-                                :default-model "venice-uncensored"
-                                :available-models ["venice-uncensored"
-                                                   "qwen-3-6-plus"]}
-                   :groq       {:api-url       "https://api.groq.com/openai/v1/chat/completions"
-                                :secret-key    :groq-api-key
-                                :default-model "llama-3.3-70b-versatile"
-                                :available-models ["llama-3.3-70b-versatile"]}
-                   :together   {:api-url       "https://api.together.xyz/v1/chat/completions"
-                                :secret-key    :together-api-key
-                                :default-model "meta-llama/Llama-3.3-70B-Instruct-Turbo"
-                                :available-models ["meta-llama/Llama-3.3-70B-Instruct-Turbo"]}
-                   :fireworks  {:api-url       "https://api.fireworks.ai/inference/v1/chat/completions"
-                                :secret-key    :fireworks-api-key
-                                :default-model "accounts/fireworks/models/llama-v3p3-70b-instruct"
-                                :available-models ["accounts/fireworks/models/llama-v3p3-70b-instruct"]}
-                   :openai     {:api-url       "https://api.openai.com/v1/chat/completions"
-                                :secret-key    :openai-api-key
-                                :default-model "gpt-4o-mini"
-                                :available-models ["gpt-4o-mini" "gpt-4o"]}
-                   :ollama-compat {:api-url       "http://localhost:11434/v1/chat/completions"
-                                   :secret-key    nil
-                                   :default-model "devstral-small:24b"
-                                   :available-models ["devstral-small:24b"]}}
+   ;; Both keys are PROJECTIONS of the provider seed, never a second copy:
+   ;; the slot a provider's key occupies and the entry itself come from
+   ;; `hive-mcp.agent.provider.model/seed-registry`. A user config.edn is
+   ;; deep-merged over this, and `provider/effective-registry` re-reads it.
+   :secrets default-secret-slots
+   :llm-providers model/seed-registry
    :hivemind {;; Max chars preserved in a shout :message / :task before truncation.
               ;; One bad shout fans out (per-agent ring × backbone × subscribers),
               ;; so aggressive bound protects every downstream context window.
@@ -184,30 +147,7 @@
               ;; via META-INF/hive-addons/*.edn + register-headless!.
               ;; hive-mcp source MUST NOT name concrete backends — keywords here
               ;; are inert operator data.
-              :default-backend :auto}
-   :agent-defaults {:ling       {:provider :openrouter :model "anthropic/claude-opus-4-7"}
-                    :drone      {:provider :openrouter :model "qwen/qwen3.6-plus"}
-                    :compressor {:provider :venice     :model "venice-uncensored"}}
-   :models {:task-models {:coding     "moonshotai/kimi-k2.5"
-                          :coding-alt "qwen/qwen3.6-plus"
-                          :testing    "moonshotai/kimi-k2.5"
-                          :bugfix     "moonshotai/kimi-k2.5"
-                          :general    "moonshotai/kimi-k2.5"
-                          :arch       "qwen/qwen3.6-plus"
-                          :docs       "z-ai/glm-5.1"}
-            :routing {:testing        {:primary "moonshotai/kimi-k2.5"
-                                       :secondary "qwen/qwen3.6-plus"}
-                      :refactoring    {:primary "moonshotai/kimi-k2.5"
-                                       :secondary "qwen/qwen3.6-plus"}
-                      :implementation {:primary "moonshotai/kimi-k2.5"
-                                       :secondary "qwen/qwen3.6-plus"}
-                      :bugfix         {:primary "moonshotai/kimi-k2.5"
-                                       :secondary "qwen/qwen3.6-plus"}
-                      :documentation  {:primary "z-ai/glm-5.1"
-                                       :secondary "qwen/qwen3.6-plus"}
-                      :general        {:primary "moonshotai/kimi-k2.5"
-                                       :secondary "qwen/qwen3.6-plus"}}
-            :default-model "moonshotai/kimi-k2.5"}})
+              :default-backend :auto}})
 
 ;; =============================================================================
 ;; Pure Transformations

@@ -4,7 +4,7 @@
             [hive-mcp.agent.ring-buffer :as rb]
             [hive-dsl.result :as result]
             [hive-mcp.protocols.lifecycle :as lifecycle]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [hive-mcp.system.registry :as reg]
             [taoensso.timbre :as log])
   (:import [java.lang ProcessBuilder]
@@ -21,11 +21,11 @@
 ;; ===========================================================================
 
 (def ^:const default-buffer-capacity rb/default-buffer-capacity)
-(def create-ring-buffer rb/create-ring-buffer)
-(def ring-buffer-append! rb/ring-buffer-append!)
-(def ring-buffer-contents rb/ring-buffer-contents)
-(def ring-buffer-contents-since rb/ring-buffer-contents-since)
-(def ring-buffer-stats rb/ring-buffer-stats)
+(def create-ring-buffer #'rb/create-ring-buffer)
+(def ring-buffer-append! #'rb/ring-buffer-append!)
+(def ring-buffer-contents #'rb/ring-buffer-contents)
+(def ring-buffer-contents-since #'rb/ring-buffer-contents-since)
+(def ring-buffer-stats #'rb/ring-buffer-stats)
 
 ;; ===========================================================================
 ;; Process Registry

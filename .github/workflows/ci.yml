@@ -2,13 +2,20 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # staging is a GATE, not a mirror. Without it here, landing on staging ran
+    # nothing, so "merge staging, then promote to main if CI is green" had no
+    # CI to be green: the first real signal arrived only once main had already
+    # taken the change. release.yml deliberately still lists main alone, so
+    # staging is where the suite runs and never where a version is published.
+    branches: [main, staging]
     paths-ignore:
       - '**.md'
       - 'resources/presets/**'
       - 'docs/**'
   pull_request:
-    branches: [main]
+    # PRs INTO staging need the same gate, or a promotion PR is first graded
+    # only on its eventual PR into main.
+    branches: [main, staging]
     paths-ignore:
       - '**.md'
       - 'resources/presets/**'
@@ -35,9 +42,11 @@ jobs:
           cli: '1.12.5.1664'
           clj-kondo: '2026.07.24'
 
+      # test-swarm/ is linted here although :test-unit never loads it: the
+      # lint is static, so it needs no swarm addon on a classpath.
       - name: Lint with clj-kondo
         run: |
-          clj-kondo --lint src test \
+          clj-kondo --lint src test test-swarm \
             --config-dir .clj-kondo \
             --fail-level error
 

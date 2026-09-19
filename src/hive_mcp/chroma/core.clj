@@ -11,7 +11,7 @@
 
    All public vars are re-exported here as the canonical entry point.
    Require as: [hive-mcp.chroma.core :as chroma]."
-  (:require [hive-mcp.chroma.embeddings :as emb]
+  (:require [hive-mcp.embeddings.active :as emb]
             [hive-mcp.chroma.connection :as conn]
             [hive-mcp.chroma.gate :as gate]
             [hive-mcp.chroma.helpers :as h]
@@ -31,26 +31,26 @@
 (def embed-text emb/embed-text)
 (def embed-batch emb/embed-batch)
 (def embedding-dimension emb/embedding-dimension)
-(def set-embedding-provider! emb/set-embedding-provider!)
-(def embedding-configured? emb/embedding-configured?)
-(def get-embedding-provider emb/get-embedding-provider)
-(def reset-embedding-provider! emb/reset-embedding-provider!)
+(def set-embedding-provider! #'emb/set-embedding-provider!)
+(def embedding-configured? #'emb/embedding-configured?)
+(def get-embedding-provider #'emb/get-embedding-provider)
+(def reset-embedding-provider! #'emb/reset-embedding-provider!)
 
 ;;; --- Collection-Aware Embedding API ---
-(def get-provider-for emb/get-provider-for)
-(def embed-text-for emb/embed-text-for)
-(def embed-batch-for emb/embed-batch-for)
-(def get-dimension-for emb/get-dimension-for)
+(def get-provider-for #'emb/get-provider-for)
+(def embed-text-for #'emb/embed-text-for)
+(def embed-batch-for #'emb/embed-batch-for)
+(def get-dimension-for #'emb/get-dimension-for)
 
 ;;; --- Configuration & Connection ---
-(def configure! conn/configure!)
-(def reset-collection-cache! conn/reset-collection-cache!)
-(def status conn/status)
-(def chroma-available? conn/chroma-available?)
-(def reinitialize-embeddings! conn/reinitialize-embeddings!)
+(def configure! #'conn/configure!)
+(def reset-collection-cache! #'conn/reset-collection-cache!)
+(def status #'conn/status)
+(def chroma-available? #'conn/chroma-available?)
+(def reinitialize-embeddings! #'conn/reinitialize-embeddings!)
 
 ;;; --- Content Hashing ---
-(def content-hash h/content-hash)
+(def content-hash #'h/content-hash)
 
 ;;; --- CRUD Operations (dispatch via IMemoryStore when active store set) ---
 ;;; Legacy kwarg/positional signatures preserved. Active store → protocol.
@@ -99,10 +99,10 @@
     (apply crud/find-duplicate type content-hash (mapcat identity (or opts {})))))
 
 ;;; Not yet in IMemoryStore protocol — keep concrete chroma.crud:
-(def query-grounded-from crud/query-grounded-from)
-(def update-staleness! crud/update-staleness!)
-(def index-memory-entries! crud/index-memory-entries!)
-(def collection-stats crud/collection-stats)
+(def query-grounded-from #'crud/query-grounded-from)
+(def update-staleness! #'crud/update-staleness!)
+(def index-memory-entries! #'crud/index-memory-entries!)
+(def collection-stats #'crud/collection-stats)
 
 ;;; --- Semantic Search ---
 
@@ -113,7 +113,7 @@
     (pmem/search-similar (pmem/get-store) query-text (or opts {}))
     (apply search/search-similar query-text (mapcat identity (or opts {})))))
 
-(def search-by-id search/search-by-id)
+(def search-by-id #'search/search-by-id)
 
 ;;; --- Maintenance ---
 
@@ -132,4 +132,4 @@
     (apply maint/entries-expiring-soon days (mapcat identity (or opts {})))))
 
 ;;; --- Concurrency Gate ---
-(def gate-stats gate/gate-stats)
+(def gate-stats #'gate/gate-stats)

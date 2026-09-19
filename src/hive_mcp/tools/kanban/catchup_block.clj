@@ -1,12 +1,12 @@
 (ns hive-mcp.tools.kanban.catchup-block
   "The kanban contribution to catchup: bucket counts and the most recent
-   todos for the caller's project, registered as a hive-spi catchup block
-   under :kanban."
+   todos for the caller's project, registered as a catchup block
+   (hive-mcp.spi.catchup-registry) under :kanban."
   (:require [clojure.string :as str]
             [hive-dsl.result :refer [ok ok? let-ok try-effect* ok->]]
             [hive-mcp.tools.kanban.list.plan :as list-plan]
             [hive-mcp.vectordb.kanban-facade :as kanban-facade]
-            [hive-spi.catchup.registry :as blocks]))
+            [hive-mcp.spi.catchup-registry :as blocks]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later

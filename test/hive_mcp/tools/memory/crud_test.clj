@@ -42,7 +42,7 @@
 
 (deftest content-keyword-level-detects-l4-axiom-marker
   (testing "[ax] marker triggers L4"
-    (is (= 4 (content-keyword-level "[ax] TDD Trust Bridge: Drones think, TDD validates")))
+    (is (= 4 (content-keyword-level "[ax] TDD Trust Bridge: Lings think, TDD validates")))
     (is (= 4 (content-keyword-level "Rule [ax] must be followed")))))
 
 (deftest content-keyword-level-detects-l4-must-always
@@ -72,7 +72,7 @@
     (is (= 3 (content-keyword-level "# Convention: always use kebab-case")))
     (is (= 3 (content-keyword-level "## Pattern: Facade + Domain decomposition")))
     (is (= 3 (content-keyword-level "# Workflow: SAA (Silence-Abstract-Act)")))
-    (is (= 3 (content-keyword-level "## Recipe: TDD loop for drone tasks")))
+    (is (= 3 (content-keyword-level "## Recipe: TDD loop for ling tasks")))
     (is (= 3 (content-keyword-level "# Guideline: Keep functions under 20 lines")))))
 
 (deftest content-keyword-level-detects-l3-behavior-patterns

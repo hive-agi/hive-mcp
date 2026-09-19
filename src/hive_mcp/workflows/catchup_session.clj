@@ -422,16 +422,19 @@
 
 (def handler-map
   "Maps EDN keyword handlers to implementation functions.
-   Used by registry/register-handlers! for EDN spec compilation."
-  {:start         handle-start
-   :scope-resolve handle-scope-resolve
-   :query-memory  handle-query-memory
-   :transform handle-transform
-   :addon-pass    handle-addon-pass
-   :maintenance   handle-maintenance
-   :deliver       handle-deliver
-   :end           handle-end
-   :error         handle-error})
+   Used by registry/register-handlers! for EDN spec compilation.
+
+   Stored as VARS for the same reason, and cleared by the same trace, as
+   wrap-session/handler-map (20260817195749-0d407e9c)."
+  {:start         #'handle-start
+   :scope-resolve #'handle-scope-resolve
+   :query-memory  #'handle-query-memory
+   :transform #'handle-transform
+   :addon-pass    #'handle-addon-pass
+   :maintenance   #'handle-maintenance
+   :deliver       #'handle-deliver
+   :end           #'handle-end
+   :error         #'handle-error})
 
 ;; =============================================================================
 ;; In-Code FSM Spec (inline functions, no EDN needed)
@@ -439,7 +442,7 @@
 
 (def always
   "Dispatch predicate — always true. Shared seam (support/always)."
-  support/always)
+  #'support/always)
 
 (def catchup-session-spec
   "hive-events FSM spec for the catchup session workflow.

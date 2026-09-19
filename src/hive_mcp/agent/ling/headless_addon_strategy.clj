@@ -8,8 +8,8 @@
    spawn!/dispatch! let exceptions propagate (critical path).
    status/kill!/interrupt! use rescue with safe fallbacks (non-critical)."
   (:require [hive-mcp.agent.ling.strategy :refer [ILingStrategy]]
-            [hive-mcp.addons.headless :as headless]
-            [hive-mcp.dns.result :refer [rescue]]
+            [hive-spi.addon.headless :as headless]
+            [hive-dsl.result :refer [rescue]]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

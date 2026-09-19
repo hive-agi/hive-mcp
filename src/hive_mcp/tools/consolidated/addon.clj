@@ -31,7 +31,7 @@
   {:doctor handle-doctor})
 
 (def handle-addon
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 (def tool-def
   {:name "addon"
@@ -56,7 +56,7 @@
                    :maximum 30000
                    :description "Per-feature live Emacs probe timeout (default 3000)"}}
     :required ["command"]}
-   :handler handle-addon})
+   :handler #'handle-addon})
 
 (def tools [tool-def])
 

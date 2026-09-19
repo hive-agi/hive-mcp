@@ -19,14 +19,19 @@
 ;; =============================================================================
 
 (def ^:private handlers
-  {:enable           cmd/handle-enable
-   :disable          cmd/handle-disable
-   :tail             cmd/handle-tail
-   :dump             cmd/handle-dump
-   :stats            cmd/handle-stats
-   :register-handler cmd/handle-register-handler
-   :unreg-fx         cmd/handle-unreg-fx
-   :help             cmd/handle-help})
+  "The `events` verbs, stored as VARS so a reload of
+   hive-mcp.tools.events.commands reaches this table (20260817195749-0d407e9c).
+
+   `handle` only asks whether the looked-up value is nil and then calls it, and
+   reads `(keys handlers)` for the error message, so a var passes both."
+  {:enable           #'cmd/handle-enable
+   :disable          #'cmd/handle-disable
+   :tail             #'cmd/handle-tail
+   :dump             #'cmd/handle-dump
+   :stats            #'cmd/handle-stats
+   :register-handler #'cmd/handle-register-handler
+   :unreg-fx         #'cmd/handle-unreg-fx
+   :help             #'cmd/handle-help})
 
 (defn- normalize-command
   [cmd]
@@ -94,6 +99,6 @@
                               "fx-id" {:type "string"
                                        :description "[unreg-fx] FX id to remove"}}
                  :required ["command"]}
-   :handler handle})
+   :handler #'handle})
 
 (def tools [tool-def])

@@ -248,6 +248,29 @@
       (is (:success result))
       (is (= "Untitled Plan" (-> result :plan :title))))))
 
+(deftest markdown-overlay-carries-core-step-keys-test
+  (testing "a core Step key in a hybrid markdown overlay survives parse"
+    (let [execution {:provider "openai" :model "test-model"
+                     :spawn-mode "headless" :presets ["saa"]
+                     :persona {:priority-tags ["security"]}}
+          content (str "# Plan\n\n## Route step\n"
+                       (pr-str {:id "s1" :execution execution})
+                       "\n\nDo the routed work.")
+          {:keys [success plan]} (parser/parse-plan content {:prefer-format :markdown})
+          step (first (:steps plan))]
+      (is success)
+      (is (= :markdown (:source-format plan)))
+      (is (= execution (:execution step)))
+      (is (schema/valid-step? step))))
+  (testing "every key the core Step schema declares is carried from the overlay"
+    (let [overlay {:id "s1" :title "Overlay title" :description "d"
+                   :depends-on ["s0"] :priority :high :files ["src/a.clj"]
+                   :estimate :small :tags ["t"] :execution {:model "m"}}
+          content (str "# Plan\n\n## Header title\n" (pr-str overlay))
+          step (-> (parser/parse-plan content {:prefer-format :markdown})
+                   :plan :steps first)]
+      (is (= overlay (select-keys step (keys overlay)))))))
+
 ;; =============================================================================
 ;; Unified Parsing Tests
 ;; =============================================================================

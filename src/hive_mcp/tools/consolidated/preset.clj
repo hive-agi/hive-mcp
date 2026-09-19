@@ -30,14 +30,18 @@
     (handler-fn (merge params param-overrides))))
 
 (def canonical-handlers
-  {:list      handle-list
-   :get       handle-get
-   :header    preset-handlers/handle-preset-header
-   :search    preset-handlers/handle-preset-search
-   :add       preset-handlers/handle-preset-add
-   :delete    preset-handlers/handle-preset-delete
-   :status    preset-handlers/handle-preset-status
-   :migrate   preset-handlers/handle-preset-migrate})
+  "The `preset` verbs, stored as VARS so a reload reaches this table
+   (20260817195749-0d407e9c). The deprecated aliases below read their target
+   out of here and close over it; closing over a var is what makes the alias
+   forward to the CURRENT handler rather than to the one this load interned."
+  {:list      #'handle-list
+   :get       #'handle-get
+   :header    #'preset-handlers/handle-preset-header
+   :search    #'preset-handlers/handle-preset-search
+   :add       #'preset-handlers/handle-preset-add
+   :delete    #'preset-handlers/handle-preset-delete
+   :status    #'preset-handlers/handle-preset-status
+   :migrate   #'preset-handlers/handle-preset-migrate})
 
 (def handlers
   (merge canonical-handlers
@@ -49,7 +53,7 @@
                     {} deprecated-aliases)))
 
 (def handle-preset
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 (def tool-def
   {:name "preset"
@@ -84,6 +88,6 @@
                               "directory" {:type "string"
                                            :description "Path to directory containing .md preset files"}}
                  :required ["command"]}
-   :handler handle-preset})
+   :handler #'handle-preset})
 
 (def tools [tool-def])

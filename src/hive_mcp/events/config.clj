@@ -61,7 +61,7 @@
   :role      (env "CLAUDE_SWARM_ROLE"
                   :type :string
                   :required false
-                  :doc "Agent role label (e.g. ling, drone, coordinator)"))
+                  :doc "Agent role label (e.g. ling, coordinator)"))
 
 ;; =============================================================================
 ;; Resolver helpers — pure surface used by events/core.clj

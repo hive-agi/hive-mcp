@@ -2,7 +2,7 @@
   "hive-events FSM spec for the Wrap Session (crystallization) workflow.
 
    The wrap workflow crystallizes session learnings into long-term memory:
-     ::fsm/start -> ::gather -> ::crystallize -> ::kg-edges -> ::notify -> ::evict -> ::end
+     ::fsm/start -> ::gather -> ::adopt -> ::crystallize -> ::kg-edges -> ::notify -> ::evict -> ::end
 
    This is the Clojure handler implementation matching resources/fsm/wrap-session.edn.
    The EDN spec uses keyword handlers (:start, :gather, :crystallize, etc.) that are
@@ -18,11 +18,24 @@
      trace-log-enter / always / default-handle-error).
 
    Resources map (injected at run time):
-     :harvest-fn     -- (fn [directory] -> harvested-data)
+     :harvest-fn     -- (fn [{:directory :agent-id :session-ref :parent-of}]
+                        -> harvested-data). Takes the OPTS MAP so the
+                        SessionRef reaches the harvest and its reads come back
+                        scoped to the rows this wrap owns.
      :crystallize-fn -- (fn [harvested] -> {:summary-id str, :stats map, ...})
      :kg-edge-fn     -- (fn [summary-id source-ids project-id agent-id] -> {:created-count N})
+     :contains-edge-fn -- (fn [summary-id child-ids project-id agent-id] -> {:created-count N})
+                        Links this summary to the entries of the wraps it
+                        ADOPTED, with :contains. Absent: no nesting edges.
      :notify-fn      -- (fn [agent-id session-id project-id stats] -> nil)
      :evict-fn       -- (fn [agent-id] -> {:evicted N})
+     :session-ref-fn -- (fn [{:agent-id :project-id}] -> SessionRef) — the
+                        identity this wrap runs as (hive-mcp.session.identity).
+                        Absent: the wrap runs unscoped, as it did before.
+     :adopt-fn       -- (fn [session-ref] -> [absorbed-wrap ...]) — this
+                        coordinator's own lings' wraps plus adopted ad-hoc
+                        sessions, each marked processed so it is consumed once.
+     :parent-of      -- session-id -> parent session-id, for ownership walks
      :scope-fn       -- (fn [directory] -> project-id)
      :source-ids-fn  -- (fn [harvested] -> [string])
      :directory      -- string (working directory for project scoping)
@@ -77,7 +90,7 @@
 
 (def always
   "Dispatch predicate — always true. Shared seam (support/always)."
-  support/always)
+  #'support/always)
 
 ;; =============================================================================
 ;; Handlers (pure functions: resources x data -> data')
@@ -88,29 +101,75 @@
 
 (defn handle-start
   "Initialize a wrap session.
-   Resolves agent-id and directory, derives project-id.
-   EDN handler key: :start"
+   Resolves agent-id and directory, derives project-id, and resolves the
+   SessionRef this wrap runs as.
+   EDN handler key: :start
+
+   The SessionRef is what scopes everything downstream: which rows this wrap may
+   harvest, which ling wraps it absorbs, and which rows it is allowed to clear.
+   :session-ref-fn is injected (DIP) so the FSM stays testable without a swarm;
+   when absent the wrap runs unscoped, exactly as it did before."
   [resources data]
   (let [{:keys [agent-id directory project-id]}
-        (support/resolve-session-identity resources data)]
+        (support/resolve-session-identity resources data)
+        session-ref-fn (:session-ref-fn resources)
+        session-ref (when session-ref-fn
+                      (session-ref-fn {:agent-id agent-id :project-id project-id}))]
     (assoc data
            :agent-id agent-id
            :directory directory
            :project-id project-id
+           :session-ref session-ref
+           :parent-of (or (:parent-of resources) {})
            :error nil)))
+
+(defn handle-adopt
+  "Absorb the wraps this session OWNS before crystallizing.
+   EDN handler key: :adopt
+
+   Two sources, both scoped by the SessionRef from :start:
+     - the wraps of this coordinator's own lings (by parent-session-id, not by
+       project: two coordinators share a project and would eat each other's);
+     - ad-hoc sessions this coordinator adopts under the HCR rules.
+
+   Each absorbed wrap is marked processed, so it is consumed exactly once. A
+   ling adopts nothing: its own wrap permeates UP instead.
+
+   Degraded mode: adoption is additive context, never the point of the wrap, so
+   a failure here leaves :adopted empty and the flow continues."
+  [resources data]
+  (let [adopt-fn (:adopt-fn resources)
+        ref (:session-ref data)]
+    (support/boundary-step data
+      {:present? (boolean (and adopt-fn ref (= :coordinator (:session/kind ref))))
+       :run    (fn [d] (assoc d :adopted (adopt-fn ref)))
+       :absent (fn [d] (assoc d :adopted []))
+       :policy support/continue
+       :spec   {:log-msg "wrap-session: adopt failed — continuing without child wraps:"
+                :delta (fn [t] {:adopted []
+                                :adopt-degraded true
+                                :adopt-error (ex-message t)})}})))
 
 (defn handle-gather
   "Harvest session data for crystallization.
    EDN handler key: :gather
+
+   harvest-fn takes the OPTS MAP, not a bare directory, so the SessionRef
+   resolved at ::start reaches the harvest and the reads come back scoped to
+   the rows this wrap owns. A harvest given no ref stays fleet-wide, which is
+   the pre-2026-09-15 behaviour. Kanban 20260915164015-7e057e5b.
 
    Degraded mode: if harvest-fn throws (e.g. nREPL/HTTP down), logs a
    warning, marks :harvested as {:degraded true}, and attaches an empty
    placeholder so the FSM can continue."
   [resources data]
   (let [harvest-fn (:harvest-fn resources)
-        directory (:directory data)]
+        {:keys [directory session-ref parent-of agent-id]} data]
     (support/boundary-step data
-      {:run   (fn [d] (assoc d :harvested (harvest-fn directory)))
+      {:run   (fn [d] (assoc d :harvested (harvest-fn {:directory directory
+                                                       :agent-id agent-id
+                                                       :session-ref session-ref
+                                                       :parent-of parent-of})))
        :policy support/continue
        :spec  {:log-msg "wrap-session: harvest failed — continuing in degraded mode:"
                :delta (fn [t] {:harvested {:degraded true
@@ -145,27 +204,62 @@
                                                 :stats {}}
                                :source-ids []})}})))
 
+(defn adopted-entry-ids
+  "Memory entry ids carried by the wraps this coordinator absorbed.
+
+   A wrap-queue row records what its ling created as :wrap-queue/created-ids;
+   those entries are what the coordinator's summary CONTAINS. Pure, so the
+   nesting rule is testable without a store. Kanban 20260915164015-7e057e5b."
+  [adopted]
+  (->> adopted
+       (mapcat (fn [w] (or (:wrap-queue/created-ids w) (:created-ids w))))
+       (remove nil?)
+       distinct
+       vec))
+
 (defn handle-kg-edges
-  "Create :derived-from KG edges linking summary to source entries.
+  "Create :derived-from KG edges linking summary to source entries, and
+   :contains edges linking this summary to the wraps it ADOPTED.
    EDN handler key: :kg-edges
 
-   Degraded mode: if kg-edge-fn throws, marks :kg-result as
-   {:skipped true :degraded true} and keeps the flow going."
+   The two are separate obligations. :derived-from says the summary was built
+   from these entries; :contains says this coordinator's session nests those
+   ling sessions, which is what makes a coordinator summary readable as the
+   root of its subtree instead of a sibling of it. A ling adopts nothing, so
+   :contains-result is simply skipped there.
+
+   Degraded mode: each leg degrades on its own -- a :contains failure must not
+   cost the :derived-from edges, which are the ones the summary needs to be
+   reachable at all."
   [resources data]
-  (let [{:keys [project-id agent-id]} data
+  (let [{:keys [project-id agent-id adopted]} data
         summary-id (get-in data [:crystal-result :summary-id])
         source-ids (:source-ids data)
-        kg-edge-fn (:kg-edge-fn resources)]
-    (support/boundary-step data
-      {:present? (boolean (and kg-edge-fn summary-id (seq source-ids)))
-       :run    (fn [d] (assoc d :kg-result (kg-edge-fn summary-id source-ids project-id agent-id)))
-       :absent (fn [d] (assoc d :kg-result {:created-count 0 :skipped true}))
+        kg-edge-fn (:kg-edge-fn resources)
+        contains-fn (:contains-edge-fn resources)
+        child-ids (adopted-entry-ids adopted)
+        with-derived
+        (support/boundary-step data
+          {:present? (boolean (and kg-edge-fn summary-id (seq source-ids)))
+           :run    (fn [d] (assoc d :kg-result (kg-edge-fn summary-id source-ids project-id agent-id)))
+           :absent (fn [d] (assoc d :kg-result {:created-count 0 :skipped true}))
+           :policy support/continue
+           :spec   {:log-msg "wrap-session: kg-edges failed — continuing in degraded mode:"
+                    :delta (fn [t] {:kg-result {:created-count 0
+                                                :skipped true
+                                                :degraded true
+                                                :error (ex-message t)}})}})]
+    (support/boundary-step with-derived
+      {:present? (boolean (and contains-fn summary-id (seq child-ids)))
+       :run    (fn [d] (assoc d :contains-result
+                              (contains-fn summary-id child-ids project-id agent-id)))
+       :absent (fn [d] (assoc d :contains-result {:created-count 0 :skipped true}))
        :policy support/continue
-       :spec   {:log-msg "wrap-session: kg-edges failed — continuing in degraded mode:"
-                :delta (fn [t] {:kg-result {:created-count 0
-                                            :skipped true
-                                            :degraded true
-                                            :error (ex-message t)}})}})))
+       :spec   {:log-msg "wrap-session: contains-edges failed — continuing in degraded mode:"
+                :delta (fn [t] {:contains-result {:created-count 0
+                                                  :skipped true
+                                                  :degraded true
+                                                  :error (ex-message t)}})}})))
 
 (defn handle-notify
   "Emit wrap_notify event for hivemind permeation.
@@ -203,10 +297,13 @@
    EDN handler key: :end
 
    Includes :notify-degraded/:notify-error when the notify step ran in
-   degraded mode (see 'Git Commit Optional' decision 20260213005110)."
+   degraded mode (see 'Git Commit Optional' decision 20260213005110), and
+   :contains-result for the adoption nesting edges."
   [_resources {:keys [data]}]
-  (select-keys data [:agent-id :project-id :crystal-result
-                     :kg-result :notify-sent? :notify-degraded :notify-error
+  (select-keys data [:agent-id :project-id :session-ref :crystal-result
+                     :kg-result :contains-result
+                     :notify-sent? :notify-degraded :notify-error
+                     :adopted :adopt-degraded :adopt-error
                      :eviction]))
 
 (def handle-error
@@ -221,15 +318,24 @@
 
 (def handler-map
   "Maps EDN keyword handlers to implementation functions.
-   Used by registry/register-handlers! for EDN spec compilation."
-  {:start       handle-start
-   :gather      handle-gather
-   :crystallize handle-crystallize
-   :kg-edges    handle-kg-edges
-   :notify      handle-notify
-   :evict       handle-evict
-   :end         handle-end
-   :error       handle-error})
+   Used by registry/register-handlers! for EDN spec compilation.
+
+   Stored as VARS so a reload of this namespace reaches the table
+   (20260817195749-0d407e9c). Cleared by the same trace that cleared
+   complete-session/handler-map: `hive.events.fsm/compile` only does
+   `(get handlers-map handler)` and rejects nil, `validate-state-spec` only
+   asks `(nil? handler)`, and `normalize-handler` calls
+   `(handler resources data)`. Nothing on the HANDLER path tests `fn?`. The
+   predicate path is a different story, see 20260916133344-05d7e65b."
+  {:start       #'handle-start
+   :gather      #'handle-gather
+   :adopt       #'handle-adopt
+   :crystallize #'handle-crystallize
+   :kg-edges    #'handle-kg-edges
+   :notify      #'handle-notify
+   :evict       #'handle-evict
+   :end         #'handle-end
+   :error       #'handle-error})
 
 ;; =============================================================================
 ;; In-Code FSM Spec (inline functions, no EDN needed)
@@ -241,9 +347,9 @@
 
    State graph:
    ```
-   ::fsm/start --> ::gather --> ::crystallize -+--> ::kg-edges --> ::notify --> ::evict --> ::end
-                                               |
-                                               +--> ::error (crystal error)
+   ::fsm/start --> ::gather --> ::adopt --> ::crystallize -+--> ::kg-edges --> ::notify --> ::evict --> ::end
+                                                           |
+                                                           +--> ::error (crystal error)
    ```"
   {:fsm
    {::fsm/start
@@ -254,8 +360,12 @@
 
     ::gather
     {:handler    handle-gather
-     :dispatches [[::crystallize harvested?]
+     :dispatches [[::adopt harvested?]
                   [::fsm/error always]]}
+
+    ::adopt
+    {:handler    handle-adopt
+     :dispatches [[::crystallize always]]}
 
     ::crystallize
     {:handler    handle-crystallize
@@ -320,7 +430,7 @@
    Example:
    ```clojure
    (run-wrap-session
-     {:harvest-fn     (fn [dir] (collect/harvest-all {:directory dir}))
+     {:harvest-fn     collect/harvest-all
       :crystallize-fn (fn [h] (synthesis/synthesize h))
       :kg-edge-fn     create-derived-from-edges!
       :notify-fn      emit-wrap-notify!

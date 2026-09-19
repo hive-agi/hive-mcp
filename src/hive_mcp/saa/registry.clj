@@ -1,23 +1,29 @@
 (ns hive-mcp.saa.registry
-  "Façade over the four child SAA registries
-   (phase-providers / scorers / planners / tool-intents).
+  "Façade over the six child SAA registries
+   (phase-providers / scorers / planners / tool-intents / plan-stores /
+   dispatch-modes).
 
    Single SOLID-clean dispatch surface for SAA addon contributions: any
    `(hooks [this])` map entry whose key namespace is \"saa\" routes here via
-   `register-by-key!` / `deregister-by-owner!`.
+   `register-by-key!` / `deregister-by-owner!`. The accepted values are the
+   `hive-mcp.saa.types/SaaRegistryEntry` variants.
 
    Owner = addon-id keyword (or :saa/core for boot-seeded entries).
    Per-owner ownership tagging means `deregister-by-owner!` is O(owner-keys)
    and never clobbers another addon's entries.
 
-   Resolvers always return a satisfying record (LSP): the boot-seeded
+   Protocol resolvers always return a satisfying record (LSP): the boot-seeded
    :saa/default entries back every lookup so the caller cannot tell a default
-   from an addon contribution."
+   from an addon contribution. The two Act port resolvers answer nil when
+   nothing fills the port: `lookup-plan-store` (no store seeded) and
+   `lookup-dispatch-mode` (unknown mode)."
   (:require [hive-mcp.saa.types :as types :refer [SaaRegistryEntry]]
             [hive-mcp.saa.registry.phase-providers :as r-providers]
             [hive-mcp.saa.registry.scorers :as r-scorers]
             [hive-mcp.saa.registry.planners :as r-planners]
             [hive-mcp.saa.registry.tool-intents :as r-intents]
+            [hive-mcp.saa.registry.plan-stores :as r-stores]
+            [hive-mcp.saa.registry.dispatch-modes :as r-dispatch]
             [hive-mcp.saa.adapters :as adapters]
             [hive-mcp.saa.scorer :as scorer]
             [hive-mcp.saa.planner :as planner]
@@ -42,7 +48,9 @@
     :saa/phase-provider (r-providers/register! owner default-id {:provider (:provider entry)})
     :saa/scorer         (r-scorers/register!   owner default-id {:scorer (:scorer entry)})
     :saa/planner        (r-planners/register!  owner default-id {:planner (:planner entry)})
-    :saa/tool-intent    (r-intents/register!   owner (:intent entry) {:tools (:tools entry)})))
+    :saa/tool-intent    (r-intents/register!   owner (:intent entry) {:tools (:tools entry)})
+    :saa/plan-store     (r-stores/register!    owner default-id {:store (:store entry)})
+    :saa/dispatch-mode  (r-dispatch/register!  owner (:mode entry) {:dispatch (:dispatch entry)})))
 
 (defn register-by-key!
   "Route SAA addon `(hooks)` entries to the right child registry.
@@ -80,15 +88,19 @@
     :saa/scorer         (r-scorers/deregister-by-owner! owner)
     :saa/planner        (r-planners/deregister-by-owner! owner)
     :saa/tool-intent    (r-intents/deregister-by-owner! owner)
+    :saa/plan-store     (r-stores/deregister-by-owner! owner)
+    :saa/dispatch-mode  (r-dispatch/deregister-by-owner! owner)
     nil))
 
 (defn deregister-by-owner!
-  "Clear every entry across all four child registries owned by `owner`."
+  "Clear every entry across all six child registries owned by `owner`."
   [owner]
-  {:providers    (r-providers/deregister-by-owner! owner)
-   :scorers      (r-scorers/deregister-by-owner! owner)
-   :planners     (r-planners/deregister-by-owner! owner)
-   :tool-intents (r-intents/deregister-by-owner! owner)})
+  {:providers      (r-providers/deregister-by-owner! owner)
+   :scorers        (r-scorers/deregister-by-owner! owner)
+   :planners       (r-planners/deregister-by-owner! owner)
+   :tool-intents   (r-intents/deregister-by-owner! owner)
+   :plan-stores    (r-stores/deregister-by-owner! owner)
+   :dispatch-modes (r-dispatch/deregister-by-owner! owner)})
 
 ;; =============================================================================
 ;; Resolvers — ALWAYS return a satisfying record (LSP)
@@ -132,30 +144,60 @@
         provider-slice (r-intents/lookup-owner-slice provider-id capability)]
     (vec (sort (into (set core-slice) provider-slice)))))
 
+(defn lookup-plan-store
+  "Return the registered plan-store fn (fn [plan agent-id directory]), or nil
+   when no owner fills the :saa/plan-store port. The kernel seeds none."
+  ([] (lookup-plan-store default-id))
+  ([store-id]
+   (some-> (r-stores/lookup store-id) :store)))
+
+(defn lookup-dispatch-mode
+  "Return the dispatch fn (fn [plan agent-id ctx]) registered for `mode`, or nil
+   when no owner contributed that mode."
+  [mode]
+  (some-> (r-dispatch/lookup mode) :dispatch))
+
 ;; =============================================================================
 ;; Snapshot — pure value across all four child registries
 ;; =============================================================================
 
 (defn snapshot
-  "Immutable snapshot across all four child SAA registries.
+  "Immutable snapshot across all six child SAA registries.
 
    `:version` is a hash callers can stamp onto compiled plans."
   []
   (let [providers (r-providers/snapshot)
         scorers   (r-scorers/snapshot)
         planners  (r-planners/snapshot)
-        intents   (r-intents/snapshot)]
+        intents   (r-intents/snapshot)
+        stores    (r-stores/snapshot)
+        dispatch  (r-dispatch/snapshot)]
     {:providers providers :scorers scorers :planners planners :tool-intents intents
+     :plan-stores stores :dispatch-modes dispatch
      :version (hash [(:version providers) (:version scorers)
-                     (:version planners) (:version intents)])}))
+                     (:version planners) (:version intents)
+                     (:version stores) (:version dispatch)])}))
 
 (defn reset-for-test!
-  "Clear all four child registries. Test-only."
+  "Clear all six child registries. Test-only."
   []
   (r-providers/reset-for-test!)
   (r-scorers/reset-for-test!)
   (r-planners/reset-for-test!)
-  (r-intents/reset-for-test!))
+  (r-intents/reset-for-test!)
+  (r-stores/reset-for-test!)
+  (r-dispatch/reset-for-test!))
+
+(defn restore!
+  "Put every child registry back to the state captured by a prior `snapshot`.
+   Test-only: fixtures snapshot before a test and restore after it."
+  [snap]
+  (r-providers/restore! (:providers snap))
+  (r-scorers/restore! (:scorers snap))
+  (r-planners/restore! (:planners snap))
+  (r-intents/restore! (:tool-intents snap))
+  (r-stores/restore! (:plan-stores snap))
+  (r-dispatch/restore! (:dispatch-modes snap)))
 
 ;; =============================================================================
 ;; Bootstrap: seed :saa/core owner before first registration arrives
@@ -169,4 +211,18 @@
   (rescue
    {:status :failed :reason "core-seed load threw — :saa/core entries absent"}
    (require 'hive-mcp.saa.core-seed)
+   ;; `require` alone is not enough, and the difference only shows up after a
+   ;; reload. Loading core-seed seeds as a side effect of evaluating its
+   ;; `installed` def, so on a COLD load the require does the seeding. But a
+   ;; tools.namespace-style refresh recreates this namespace (so this defonce
+   ;; runs again) while leaving core-seed in *loaded-libs* (so the require is a
+   ;; no-op) -- and the child stores, being defonce vars that were also
+   ;; recreated, come back EMPTY. The live symptom is :dag-wave silently
+   ;; missing after a hot reload, which fails an Act dispatch rather than
+   ;; anything that looks like a load error.
+   ;; install! deregisters :saa/core and seeds again, so it is idempotent on a
+   ;; cold load and corrective on a warm one. Calling it makes "after this var
+   ;; is bound, :saa/core is seeded" true unconditionally instead of true only
+   ;; when require happened to do work.
+   ((requiring-resolve 'hive-mcp.saa.core-seed/install!))
    {:status :ok}))
