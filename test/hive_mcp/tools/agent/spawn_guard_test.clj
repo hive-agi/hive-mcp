@@ -13,7 +13,7 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.data.json :as json]
             [hive-mcp.tools.agent.spawn :as spawn]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [hive-mcp.agent.protocol :as proto]
             [hive-mcp.emacs.client :as ec]
             [hive-mcp.swarm.datascript.connection :as conn]

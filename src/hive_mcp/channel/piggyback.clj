@@ -10,7 +10,7 @@
    subscription."
   (:require [clojure.spec.alpha :as s]
             [hive-mcp.channel.instruction-store :as istore]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [taoensso.timbre :as log]
             [hive-mcp.channel.audience :as audience]
             [clojure.string :as str]

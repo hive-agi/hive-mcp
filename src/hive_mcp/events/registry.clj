@@ -16,7 +16,7 @@
             [hive.events.cofx :as cofx]
             [hive.events.router :as router]
             [hive-mcp.events.metrics :as metrics]
-            [hive-mcp.server.guards :as guards]))
+            [hive-spi.swarm.guards :as guards]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later

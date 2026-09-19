@@ -13,7 +13,7 @@
             [hive-mcp.agent.openrouter :as llm-registry]
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.knowledge-graph.scope :as kg-scope]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [hive-mcp.config.core :as config]
             [taoensso.timbre :as log]
             [clojure.string :as str]

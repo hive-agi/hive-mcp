@@ -13,7 +13,7 @@
             [clojure.string :as str]
             [clojure.test.check.generators :as gen]
             [hive-test.trifecta :refer [deftrifecta]]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [hive-mcp.tools.registry :as registry]))
 
 (def ^:private child-ling-excluded? registry/child-ling-excluded?)

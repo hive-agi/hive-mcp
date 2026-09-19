@@ -27,7 +27,7 @@
             [hive-mcp.events.effects.infrastructure :as infra-effects]
             [hive-mcp.events.effects.kg :as kg-effects]
             [hive-mcp.events.effects.lifecycle :as lifecycle-effects]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

@@ -4,7 +4,7 @@
             [hive-mcp.agent.ring-buffer :as rb]
             [hive-dsl.result :as result]
             [hive-mcp.protocols.lifecycle :as lifecycle]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [hive-mcp.system.registry :as reg]
             [taoensso.timbre :as log])
   (:import [java.lang ProcessBuilder]

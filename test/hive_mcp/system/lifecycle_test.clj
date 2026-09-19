@@ -21,7 +21,7 @@
             [integrant.core :as ig]
             [meta-merge.core :refer [meta-merge]]
             [hive-mcp.server.core :as core]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [hive-mcp.server.lifecycle :as lifecycle]
             [hive-mcp.server.init :as init]
             [hive-mcp.server.transport :as transport]

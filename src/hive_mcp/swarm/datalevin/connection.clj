@@ -13,7 +13,7 @@
 
   (:require [taoensso.timbre :as log]
             [hive-mcp.swarm.datalevin.schema :as schema]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [hive-mcp.swarm.datalevin.driver :as dl]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

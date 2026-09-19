@@ -34,7 +34,7 @@
             [hive-mcp.agent.context :as ctx]
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.vectordb.facade :as facade]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [clojure.string :as str]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
