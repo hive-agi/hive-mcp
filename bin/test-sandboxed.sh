@@ -28,6 +28,7 @@
 # Any arg other than --focus/--keep-sandbox/--help is passed THROUGH verbatim to
 # cognitect.test-runner (-n/--namespace, -r/--namespace-regex, -v/--var,
 # -i/--include, -e/--exclude, -d/--dir ...). --focus <ns> is sugar for -n <ns>.
+# A -n/-r selector REPLACES the whole-suite regex; it no longer adds to it.
 #
 # Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
@@ -52,16 +53,32 @@ command -v clojure >/dev/null 2>&1 || die "clojure CLI not found on PATH"
 
 # ── Argument parsing: --focus => -n, else pass through ──────────────────────
 KEEP_SANDBOX=0
+SELECTS_NS=0
 RUNNER_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --help|-h)      usage ;;
     --keep-sandbox) KEEP_SANDBOX=1; shift ;;
-    --focus)        RUNNER_ARGS+=("-n" "${2:?--focus requires a namespace}"); shift 2 ;;
-    --focus=*)      RUNNER_ARGS+=("-n" "${1#*=}"); shift ;;
+    --focus)        SELECTS_NS=1; RUNNER_ARGS+=("-n" "${2:?--focus requires a namespace}"); shift 2 ;;
+    --focus=*)      SELECTS_NS=1; RUNNER_ARGS+=("-n" "${1#*=}"); shift ;;
+    -n|--namespace|-r|--namespace-regex)
+                    SELECTS_NS=1; RUNNER_ARGS+=("$1" "${2:?$1 requires a value}"); shift 2 ;;
+    --namespace=*|--namespace-regex=*)
+                    SELECTS_NS=1; RUNNER_ARGS+=("$1"); shift ;;
     *)              RUNNER_ARGS+=("$1"); shift ;;
   esac
 done
+
+# The CLI APPENDS these args after the :test alias's :main-opts, and the
+# runner UNIONS namespace selectors, so a bare `-n x` still ran the alias's
+# whole-suite `-r`. A namespace selector therefore swaps in an alias whose
+# :main-opts carry no -r (the last alias's :main-opts win).
+ALIASES=":test"
+SDEPS=()
+if [[ "$SELECTS_NS" -eq 1 ]]; then
+  ALIASES=":test:sbx-focus"
+  SDEPS=(-Sdeps '{:aliases {:sbx-focus {:main-opts ["-m" "cognitect.test-runner"]}}}')
+fi
 
 # ── Create the sandbox root (the ONLY path this script ever deletes) ────────
 SBX="$(mktemp -d "$TMPROOT/hive-mcp-test-sbx.XXXXXXXX")"
@@ -153,7 +170,7 @@ test-sandboxed: ISOLATION ENV -------------------------------------------------
   GITLIBS (shared)  : $GITLIBS
   CLJ_CONFIG(shared): $CLJ_CONFIG
   live store guard  : NOT $REAL_KG_STORE
-  runner            : clojure -M:test  (cognitect.test-runner)
+  runner            : clojure -M$ALIASES  (cognitect.test-runner)
   runner args       : ${RUNNER_ARGS[*]:-<none: whole suite>}
 -------------------------------------------------------------------------------
 AUDIT
@@ -161,7 +178,7 @@ AUDIT
 # ── Run (NOT exec — so the EXIT trap fires and the sandbox is cleaned up) ────
 cd "$PROJECT_DIR"
 set +e
-clojure "${JVM_OPTS[@]}" -M:test ${RUNNER_ARGS[@]+"${RUNNER_ARGS[@]}"}
+clojure "${JVM_OPTS[@]}" ${SDEPS[@]+"${SDEPS[@]}"} "-M$ALIASES" ${RUNNER_ARGS[@]+"${RUNNER_ARGS[@]}"}
 rc=$?
 set -e
 echo "test-sandboxed: runner exited rc=$rc" >&2
