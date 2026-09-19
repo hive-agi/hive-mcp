@@ -46,6 +46,18 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ### Changed
 
+- **Event effects and handlers read the swarm store through a facade, not
+  `datascript.core`.** `hive-mcp.swarm.datascript` gained `transact!`,
+  `current-db`, `q`, `q-db`, `pull`, `listen!` and `unlisten!`. Writes,
+  snapshots and listeners go through `hive-spi.swarm.protocol/ISwarmDb`, so
+  they follow whatever store the swarm slot holds and honour the test-conn
+  isolation seam; the query legs still call datascript on the db value the port
+  hands back, because `ISwarmDb` carries no query method yet. Four kernel
+  namespaces (`events.effects.coeffect`, `events.effects.infrastructure`,
+  `events.effects.notification`, `events.handlers.claim`) no longer name a
+  store vendor, and their `kernel.edn` waivers are gone. `datascript.core` now
+  enters the swarm path in exactly one namespace, the one `kernel.edn` already
+  names its owner.
 - **The test tree is two trees.** `test/` loads and runs from the committed
   `deps.edn` alone, with no hive-agent and no hive-datascript on the classpath;
   it is what CI runs. The 53 suites that exercise the swarm addon moved to

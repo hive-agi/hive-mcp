@@ -10,7 +10,6 @@
 
   (:require [hive-mcp.events.core :as ev]
             [hive-mcp.events.interceptors :as interceptors]
-            [datascript.core :as d]
             [hive-mcp.swarm.datascript :as ds]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -22,7 +21,8 @@
 ;; =============================================================================
 
 (defn- query-waiting-lings
-  "Query DataScript for lings with queued tasks waiting on a specific file.
+  "Query the swarm store snapshot for lings with queued tasks waiting on a
+   specific file.
 
    Returns a sequence of maps with :slave-id and :task-id for each waiting ling.
 
@@ -30,15 +30,16 @@
    then filters for :queued status tasks."
   [db file-path]
   (when (and db file-path)
-    (let [results (d/q '[:find ?slave-id ?task-id
-                         :in $ ?file
-                         :where
-                         [?t :task/files ?file]
-                         [?t :task/status :queued]
-                         [?t :task/id ?task-id]
-                         [?t :task/slave ?s]
-                         [?s :slave/id ?slave-id]]
-                       db file-path)]
+    (let [results (ds/q-db db
+                           '[:find ?slave-id ?task-id
+                             :in $ ?file
+                             :where
+                             [?t :task/files ?file]
+                             [?t :task/status :queued]
+                             [?t :task/id ?task-id]
+                             [?t :task/slave ?s]
+                             [?s :slave/id ?slave-id]]
+                           file-path)]
       (mapv (fn [[slave-id task-id]]
               {:slave-id slave-id
                :task-id task-id})
@@ -64,7 +65,7 @@
    - :log          - Log the release
    - :dispatch-n   - Dispatch notify events for all waiting lings"
   [coeffects [_ {:keys [file released-by]}]]
-  (let [db (or (:db-snapshot coeffects) @(ds/get-conn))
+  (let [db (or (:db-snapshot coeffects) (ds/current-db))
         waiting-lings (query-waiting-lings db file)
         waiting-count (count waiting-lings)]
 
