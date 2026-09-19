@@ -8,7 +8,7 @@
    - openrouter: always ready (stateless API)
 
    Extracted from workflow.clj to reduce cyclomatic complexity."
-  (:require [hive-mcp.emacs-ext.client :as ec]
+  (:require [hive-spi.editor.services :as svc]
             [hive-mcp.agent.headless :as headless]
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.config.core :as config]
@@ -53,13 +53,18 @@
 ;; ── Per-Mode Readiness Checks ───────────────────────────────────────────────
 
 (defn vterm-ready?
-  "Check if a vterm ling's CLI is ready for input."
+  "Check if a vterm ling's CLI is ready for input.
+   Emits the :swarm/slave-ready? hive-vessel op and dispatches it through
+   the :vessel :dispatch capability; with no vessel registered the
+   unavailable envelope answers and the ling reads not-ready."
   [agent-id]
   (result/rescue false
-                 (let [elisp (format "(if (hive-mcp-swarm-tasks--slave-ready-p \"%s\") \"t\" \"nil\")" agent-id)
-                       result (ec/eval-elisp-with-timeout elisp 2000)]
-                   (and (:success result)
-                        (= "t" (:result result))))))
+                 (let [{:keys [success result]}
+                       (svc/invoke :vessel
+                                   :dispatch
+                                   {:op :swarm/slave-ready? :slave-id agent-id}
+                                   2000)]
+                   (and success (= "t" result)))))
 
 (defn headless-ready?
   "Check if a headless ling's process is alive.

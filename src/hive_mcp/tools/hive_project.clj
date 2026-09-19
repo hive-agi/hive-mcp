@@ -13,8 +13,7 @@
    - :hot-reload - enabled by default for Clojure
    - :presets-path - project-local presets directory"
   (:require [hive-mcp.tools.core :refer [mcp-json mcp-error]]
-            [hive-mcp.emacs-ext.client :as ec]
-            [hive-mcp.emacs-ext.elisp :as el]
+            [hive-spi.editor.services :as svc]
             [hive-mcp.agent.context :as ctx]
             [hive-mcp.config.core :as config]
             [clojure.data.json :as json]
@@ -360,17 +359,15 @@
 ;; =============================================================================
 
 (defn- get-projectile-info
-  "Get project info from Projectile via Emacs.
-   Returns {:name \"...\" :root \"...\" :type \"...\"} or nil on error."
+  "Get project info from Projectile via the editor vessel.
+   Emits the :project/info hive-vessel op (with the optional :directory
+   binding) and dispatches it through the :vessel :dispatch capability.
+   Returns {:name \"...\" :root \"...\" :type \"...\"} or nil on error —
+   including when no vessel is registered (unavailable envelope)."
   [directory]
-  (let [elisp (if directory
-                (format "(let ((default-directory %s))
-                          (require 'hive-mcp-projectile)
-                          (hive-mcp-projectile-api-project-info))"
-                        (pr-str (str directory "/")))
-                (el/require-and-call-json 'hive-mcp-projectile
-                                          'hive-mcp-projectile-api-project-info))
-        {:keys [success result]} (ec/eval-elisp elisp)]
+  (let [op (cond-> {:op :project/info}
+             directory (assoc :directory directory))
+        {:keys [success result]} (svc/invoke :vessel :dispatch op 5000)]
     (when success
       (rescue nil
               (json/read-str result :key-fn keyword)))))
