@@ -26,7 +26,8 @@
   (:require [clojure.test :refer [deftest testing is]]
             [hive-mcp.batch.protocol :as bproto]
             [hive-mcp.multi.registry :as multi-registry]
-            [hive-mcp.multi.registry.tools :as r-tools]))
+            [hive-mcp.multi.registry.tools :as r-tools]
+            [hive-mcp.tools.consolidated.roster :as roster]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -75,11 +76,17 @@
 ;; =============================================================================
 
 (deftest registry-populated
-  (testing "core-seed has registered the expected consolidated tool set"
-    (let [names (r-tools/all-names)]
-      (is (>= (count names) 20)
-          (str "Expected ≥20 registered tools, got " (count names) ": "
-               (vec names))))))
+  ;; The expectation is the roster, the list core-seed itself seeds from. It
+  ;; used to be a count (>= 20), a second copy of the roster's size that went
+  ;; red the day the `emacs` root left core for hive-emacs, and would again
+  ;; at every tool a kernel extraction step moves out.
+  (testing "core-seed has registered every tool the roster declares"
+    (let [declared (roster/tool-names)
+          registered (set (r-tools/all-names))]
+      (is (seq declared) "an empty roster would make this test vacuous")
+      (is (empty? (remove registered declared))
+          (str "declared in the roster but not registered: "
+               (vec (remove registered declared)))))))
 
 (deftest every-tool-has-resolvable-handler
   (testing "Every name from r-tools/all-names resolves to a callable handler"
