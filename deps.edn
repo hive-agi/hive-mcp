@@ -3,10 +3,11 @@
 ;; as hive-knowledge require them from the published jar, and a jar carries
 ;; :paths only. :paths is kept in step with :src-dirs in version.edn.
 ;;
-;; The test tree is ONE directory, test/. Suites that need a real backend
+;; The addon-free test tree is test/. Suites that need a real backend
 ;; driver (datahike, datalevin) sit under the namespace prefix
 ;; hive-mcp.backends and are selected or excluded by that prefix; see the
-;; :test-backends alias.
+;; :test-backends alias. Suites that need the swarm addon (hive-agent,
+;; hive-datascript) live in test-swarm/; see the :test-swarm alias.
 {:paths ["src" "resources"]
 
  :deps {org.clojure/clojure {:mvn/version "1.12.5"}
@@ -461,6 +462,21 @@
   :test-backends
   {:main-opts ["-m" "cognitect.test-runner"
                "-r" "^hive-mcp\\.backends\\..*-test$"]}
+
+  ;; Swarm-coupled suites: hive-mcp's integration tests of the swarm addon,
+  ;; kept under test-swarm/ so :test loads and runs with no hive-agent or
+  ;; hive-datascript on the classpath (the public build). Compose with :test
+  ;; for the shared infra and supply the addon through local.deps.edn, the
+  ;; same way :test-backends gets its drivers:
+  ;;   clj -Sdeps "$(cat local.deps.edn)" -M:test:test-swarm
+  ;; In a REPL the last alias's :main-opts win, so name this one BEFORE the
+  ;; REPL alias (-M:test-swarm:dev-repl); a `cider spawn` with aliases
+  ;; ["test" "test-swarm"] supplies its own main and is unaffected.
+  :test-swarm
+  {:extra-paths ["test-swarm"]
+   :main-opts ["-m" "cognitect.test-runner"
+               "-d" "test-swarm"
+               "-r" "^hive-mcp\\..*-test$"]}
 
   ;; Build via hive-build (io.github.hive-agi/hive-build), the same release
   ;; path every other hive library uses. Version = the repo's VERSION file;

@@ -4,7 +4,8 @@
    Why: one oversized shout fans out across (per-agent ring × backbone ×
    subscribers) and inflates every downstream context window. cap-message is
    applied at canonical ingestion in shout!. These tests cover the pure
-   boundary contract; integration coverage lives in messaging_test.clj."
+   boundary contract; integration coverage lives in
+   test-swarm/hive_mcp/hivemind/messaging_test.clj (it needs the swarm addon)."
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.hivemind.messaging :as msg]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>

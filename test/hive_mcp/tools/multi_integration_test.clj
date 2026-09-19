@@ -4,7 +4,8 @@
    Tests the FULL stack: handle-multi (consolidated/multi.clj)
    → tools/multi.clj batch engine → real consolidated tool handlers.
 
-   Unlike multi_test.clj (unit tests) and multi_tool_integration_test.clj
+   Unlike multi_test.clj (unit tests) and
+   test-swarm/.../consolidated/multi_tool_integration_test.clj
    (structural/schema tests), these tests exercise actual tool invocations
    through the multi facade with real MCP-style params.
 
