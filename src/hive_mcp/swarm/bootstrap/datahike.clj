@@ -7,10 +7,11 @@
    Datahike store at `data/swarm/datahike` (separate from the KG store).
 
    Compat shim: moved to hive-agent.swarm.bootstrap.datahike in hive-agent. Every public var delegates there
-   through requiring-resolve; hive-mcp does not compile-depend on hive-agent.")
+   through requiring-resolve; hive-mcp does not compile-depend on hive-agent."
+  (:require [hive-mcp.swarm.delegate :as delegate]))
 
 (defn- impl [sym]
-  (requiring-resolve (symbol "hive-agent.swarm.bootstrap.datahike" (name sym))))
+  (delegate/resolve-var "hive-agent.swarm.bootstrap.datahike" sym))
 
 (defn ->DatahikeBootstrap
   {:arglists '([conn-atom cfg])}

@@ -6,10 +6,11 @@
   "Late-bound facade over datahike.api for the swarm bootstrap store.
 
    Compat shim: moved to hive-agent.swarm.bootstrap.datahike-driver in hive-agent. Every public var delegates there
-   through requiring-resolve; hive-mcp does not compile-depend on hive-agent.")
+   through requiring-resolve; hive-mcp does not compile-depend on hive-agent."
+  (:require [hive-mcp.swarm.delegate :as delegate]))
 
 (defn- impl [sym]
-  (requiring-resolve (symbol "hive-agent.swarm.bootstrap.datahike-driver" (name sym))))
+  (delegate/resolve-var "hive-agent.swarm.bootstrap.datahike-driver" sym))
 
 (defn create-database {:arglists '([& args])} [& args] (apply (impl 'create-database) args))
 (defn connect {:arglists '([& args])} [& args] (apply (impl 'connect) args))

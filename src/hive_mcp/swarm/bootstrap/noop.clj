@@ -6,10 +6,11 @@
   "NoopBootstrap - explicit Null Object for swarm bootstrap.
 
    Compat shim: moved to hive-agent.swarm.bootstrap.noop in hive-agent. Every public var delegates there
-   through requiring-resolve; hive-mcp does not compile-depend on hive-agent.")
+   through requiring-resolve; hive-mcp does not compile-depend on hive-agent."
+  (:require [hive-mcp.swarm.delegate :as delegate]))
 
 (defn- impl [sym]
-  (requiring-resolve (symbol "hive-agent.swarm.bootstrap.noop" (name sym))))
+  (delegate/resolve-var "hive-agent.swarm.bootstrap.noop" sym))
 
 (defn ->NoopBootstrap
   {:arglists '([])}
