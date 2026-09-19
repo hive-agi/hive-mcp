@@ -22,7 +22,7 @@
             [hive-mcp.tools.memory :as memory]
             [hive-mcp.chroma.core :as chroma]
             [hive-mcp.emacs.client :as ec]
-            [hive-mcp.emacs.elisp :as el]
+            [hive-spi.editor.elisp :as el]
             [hive-mcp.test.stub.memory-store :as stub]
             [hive-spi.memory.registry :as registry]
             [hive-mcp.protocols.memory :as mem-proto]))
