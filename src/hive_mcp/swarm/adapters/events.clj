@@ -128,7 +128,6 @@
     (stop-dag! [_this]
       (try
         (dag-waves/stop-dag!)
-        nil
         (catch Exception _ nil)))
     (dag-status [_this]
       (try
