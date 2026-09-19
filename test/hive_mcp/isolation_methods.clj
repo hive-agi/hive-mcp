@@ -34,8 +34,7 @@
 
 (defmethod iso/emit-isolation :swarm-ds [_]
   (fn [f]
-    (binding [ds-conn/*test-conn* (ds-conn/create-conn)]
-      (f))))
+    (ds-conn/with-test-conn (ds-conn/create-conn) f)))
 
 ;; =============================================================================
 ;; :agent-registry — hivemind agent registry clear-on-bracket

@@ -16,12 +16,12 @@
 (defn reset-isolated-swarm!
   "Clear the per-test DataScript conn in place.
 
-   Only valid inside a body where `ds-conn/*test-conn*` is bound (e.g.
-   under `(iso/with-isolations :swarm-ds)`). Mutates the bound atom
+   Only valid inside a body where a test conn is set (e.g. under
+   `(iso/with-isolations :swarm-ds)`). Mutates the bound atom
    to an empty db value, preserving references the test holds to it.
    Use sparingly — prefer one deftest per scenario over mid-test resets."
   []
-  (when-let [tc ds-conn/*test-conn*]
+  (when-let [tc (ds-conn/current-test-conn)]
     (reset! tc @(ds-conn/create-conn))))
 
 ;;; ============================================================
