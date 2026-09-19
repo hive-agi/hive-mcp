@@ -26,7 +26,7 @@
   (or @store-atom
       (when-not @opened?
         (reset! opened? true)
-        (if-let [make (try (requiring-resolve 'hive-mcp.swarm.ledger/make-store)
+        (if-let [make (try (requiring-resolve 'hive-agent.swarm.ledger/make-store)
                            (catch Throwable _ nil))]
           (let [s (make {:stream "swarm"})]
             (if (:error s)
@@ -41,7 +41,7 @@
   [event]
   (try
     (when-let [s (ensure-store)]
-      (when-let [ap (requiring-resolve 'hive-mcp.swarm.ledger/append!)]
+      (when-let [ap (requiring-resolve 'hive-spi.swarm.ledger/append!)]
         (ap s event)))
     (catch Throwable t
       (log/warn "Swarm ledger append failed:" (.getMessage t))
@@ -56,7 +56,7 @@
   "Close and clear the default store, re-arming lazy open. For tests."
   []
   (when-let [s @store-atom]
-    (try (when-let [cl (requiring-resolve 'hive-mcp.swarm.ledger/close!)]
+    (try (when-let [cl (requiring-resolve 'hive-spi.swarm.ledger/close!)]
            (cl s))
          (catch Throwable _ nil)))
   (reset! store-atom nil)
