@@ -10,7 +10,7 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defn- impl [sym]
-  (delegate/resolve-var "hive-agent.swarm.datascript.queries" sym))
+  (delegate/resolve-var "hive-datascript.swarm.queries" sym))
 
 (defn check-file-conflicts {:arglists '([requesting-slave files])} [& args] (apply (impl 'check-file-conflicts) args))
 (defn db-stats {:arglists '([])} [& args] (apply (impl 'db-stats) args))

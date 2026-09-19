@@ -20,7 +20,8 @@
             [hive-mcp.swarm.adapters.ling-host :as ling-host]
             [hive-mcp.swarm.adapters.memory-scope :as memory-scope]
             [hive-mcp.swarm.adapters.messaging :as messaging]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.swarm.adapters.store-hooks :as store-hooks]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -35,6 +36,7 @@
   (memory-scope/install!)
   (messaging/install!)
   (piggyback-sink/install!)
+  (store-hooks/install!)
   (log/debug "swarm host adapters installed")
   :installed)
 

@@ -9,7 +9,7 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defn- impl [sym]
-  (delegate/resolve-var "hive-agent.swarm.datascript.coordination.config" sym))
+  (delegate/resolve-var "hive-datascript.swarm.coordination.config" sym))
 
 (defn ->coordination-config
   {:arglists '([kw__31536__auto__])}

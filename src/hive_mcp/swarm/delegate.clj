@@ -25,14 +25,17 @@
                  (io/resource (str base "__init.class"))))))
 
 (defn addon-missing
-  "The ex-info a shim raises when NS-STR's addon is not on the classpath."
+  "The ex-info a shim raises when NS-STR's library is not on the classpath.
+   The library is named after NS-STR's first segment (hive-agent,
+   hive-datascript)."
   [ns-str sym]
-  (ex-info (str "The swarm is provided by the hive-agent addon, which is not on the classpath ("
-                ns-str "/" (name sym) ")")
-           {:swarm/addon-missing true
-            :addon "hive-agent"
-            :ns ns-str
-            :var (name sym)}))
+  (let [lib (first (.split ^String ns-str "\\."))]
+    (ex-info (str "The swarm needs " lib ", which is not on the classpath ("
+                  ns-str "/" (name sym) ")")
+             {:swarm/addon-missing true
+              :addon lib
+              :ns ns-str
+              :var (name sym)})))
 
 (defonce ^:private warned (atom #{}))
 
