@@ -16,7 +16,10 @@
   (:require [hive-mcp.swarm.datascript.connection :as connection]
             [hive-mcp.swarm.datascript.lings :as lings]
             [hive-mcp.swarm.datascript.queries :as queries]
-            [hive-mcp.swarm.datascript.coordination :as coordination])
+            [hive-mcp.swarm.datascript.coordination :as coordination]
+            [datascript.core :as d]
+            [hive-spi.swarm.protocol :as proto]
+            [hive-mcp.swarm.datascript.registry :as registry])
   (:refer-clojure :exclude []))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -101,3 +104,57 @@
 (def register-kanban-movement! #'coordination/register-kanban-movement!)
 (def get-kanban-movements-this-session #'coordination/get-kanban-movements-this-session)
 (def clear-kanban-movements! #'coordination/clear-kanban-movements!)
+
+;;; =============================================================================
+;;; Swarm store facade (consumers query the store without datascript.core)
+;;; =============================================================================
+;;;
+;;; Writes, snapshots and listeners go through hive-spi.swarm.protocol/ISwarmDb,
+;;; so they follow whatever store the :swarm slot holds and honour the test-conn
+;;; isolation seam. The query legs (q / q-db / pull) call datascript.core on the
+;;; db VALUE the port hands back, because ISwarmDb carries no query method yet;
+;;; this namespace is kernel.edn's declared owner of datascript.core, so the
+;;; dependency stops here instead of reaching every consumer.
+
+(defn db-handle
+  "The default ISwarmDb for the swarm coordination store."
+  []
+  (registry/get-default-db))
+
+(defn transact!
+  "Transact tx-data against the swarm store. Returns the tx-report."
+  [tx-data]
+  (proto/-transact! (db-handle) tx-data))
+
+(defn current-db
+  "Snapshot (db value) of the swarm store."
+  []
+  (proto/-current-db (db-handle)))
+
+(defn q
+  "Datalog query against the current swarm store snapshot; inputs follow the
+   db in :in."
+  [query & inputs]
+  (apply d/q query (current-db) inputs))
+
+(defn q-db
+  "Datalog query against db, a snapshot from current-db or a :db-snapshot
+   coeffect; inputs follow the db in :in."
+  [db query & inputs]
+  (apply d/q query db inputs))
+
+(defn pull
+  "Pull pattern for eid (entity id or lookup ref) from the swarm store.
+   Returns nil when the entity does not exist."
+  [pattern eid]
+  (d/pull (current-db) pattern eid))
+
+(defn listen!
+  "Register a tx listener under key on the swarm store. Returns key."
+  [key callback]
+  (proto/-listen! (db-handle) key callback))
+
+(defn unlisten!
+  "Remove the tx listener registered under key on the swarm store."
+  [key]
+  (proto/-unlisten! (db-handle) key))

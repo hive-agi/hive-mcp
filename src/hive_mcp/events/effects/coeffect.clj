@@ -19,7 +19,6 @@
   (:require [hive-mcp.events.core :as ev]
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.agent.context :as ctx]
-            [datascript.core :as d]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -56,11 +55,11 @@
 ;; =============================================================================
 
 (defn- handle-db-snapshot
-  "Inject DataScript database snapshot (dereferenced connection).
+  "Inject a snapshot of the swarm store (current db value).
 
    Returns coeffects map with :db-snapshot key added."
   [coeffects]
-  (assoc coeffects :db-snapshot @(ds/get-conn)))
+  (assoc coeffects :db-snapshot (ds/current-db)))
 
 ;; =============================================================================
 ;; Coeffect: :waiting-lings (POC-11)
@@ -73,17 +72,16 @@
    Returns coeffects map with :waiting-lings key added as a vector
    of {:slave-id \"...\" :task-id \"...\"} maps."
   [coeffects file-path]
-  (let [db @(ds/get-conn)
-        waiting (when (and db file-path)
-                  (d/q '[:find ?slave-id ?task-id
-                         :in $ ?file
-                         :where
-                         [?t :task/files ?file]
-                         [?t :task/status :queued]
-                         [?t :task/id ?task-id]
-                         [?t :task/slave ?s]
-                         [?s :slave/id ?slave-id]]
-                       db file-path))]
+  (let [waiting (when file-path
+                  (ds/q '[:find ?slave-id ?task-id
+                          :in $ ?file
+                          :where
+                          [?t :task/files ?file]
+                          [?t :task/status :queued]
+                          [?t :task/id ?task-id]
+                          [?t :task/slave ?s]
+                          [?s :slave/id ?slave-id]]
+                        file-path))]
     (assoc coeffects :waiting-lings
            (mapv (fn [[slave-id task-id]]
                    {:slave-id slave-id
