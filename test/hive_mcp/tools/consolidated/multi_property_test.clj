@@ -12,7 +12,7 @@
 
 (def gen-tool-name
   (gen/elements ["memory" "kg" "agent" "kanban" "session" "config"
-                 "preset" "magit" "emacs" "hivemind"]))
+                 "preset" "magit" "hivemind"]))
 
 (def gen-string-keyed-params
   "Simulates raw MCP JSON params with string keys."

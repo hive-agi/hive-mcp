@@ -128,11 +128,9 @@
   "tools.agent" :hive-agent
   "tools.agora" :hive-agora
   "tools.analysis-bridge" :hive-emacs
-  "tools.buffer" :hive-emacs
   "tools.consolidated.agent" :hive-agent
   "tools.consolidated.agora" :hive-agora
   "tools.consolidated.analysis" :hive-emacs
-  "tools.consolidated.emacs" :hive-emacs
   "tools.consolidated.git" :hive-emacs
   "tools.consolidated.kanban" :hive-kanban
   "tools.consolidated.kg" :hive-memory
@@ -147,7 +145,6 @@
   "tools.consolidated.workflow" :hive-workflows
   "tools.cost" :hive-agent
   "tools.crystal" :hive-memory
-  "tools.docs" :hive-emacs
   "tools.kanban" :hive-kanban
   "tools.kg" :hive-memory
   "tools.magit" :hive-emacs
@@ -181,7 +178,6 @@
   {:from hive-mcp.tools.core, :to hive-mcp.emacs-ext.client, :since "2026-09-07", :retired-by "E3"}
   {:from hive-mcp.tools.hive-project, :to hive-mcp.emacs-ext.client, :since "2026-09-07", :retired-by "E3"}
   {:from hive-mcp.tools.hive-project, :to hive-mcp.emacs-ext.elisp, :since "2026-09-07", :retired-by "E3"}
-  {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.emacs, :since "2026-09-07", :retired-by "E3"}
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.git, :since "2026-09-07", :retired-by "E3"}
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.magit, :since "2026-09-07", :retired-by "E3"}
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.olympus, :since "2026-09-07", :retired-by "E3"}
