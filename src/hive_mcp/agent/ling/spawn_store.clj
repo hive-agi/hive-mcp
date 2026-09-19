@@ -1,10 +1,10 @@
 (ns hive-mcp.agent.ling.spawn-store
   "Spawn-time Ling registration port.
 
-   The default implementation delegates to the current swarm store, but callers
-   depend on this protocol so spawn orchestration is not coupled to a concrete
-   DataScript backend."
-  (:require [hive-mcp.protocols.registry :as reg]
+   The protocol and its slot live in hive-spi.swarm.spawn-store; the aliases
+   below are the same objects. This namespace holds the DataScript default,
+   installed on first `get-store` when nothing else is."
+  (:require [hive-spi.swarm.spawn-store :as spi]
             [hive-mcp.swarm.datascript.lings :as ds-lings]
             [hive-mcp.swarm.datascript.queries :as ds-queries]
             [hive-mcp.channel.audience :as audience]))
@@ -13,11 +13,11 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-(defprotocol ISpawnStore
-  (add-slave! [this slave-id attrs])
-  (remove-slave! [this slave-id])
-  (update-slave! [this slave-id updates])
-  (claims-for-slave [this slave-id]))
+(def ISpawnStore spi/ISpawnStore)
+(def add-slave! spi/add-slave!)
+(def remove-slave! spi/remove-slave!)
+(def update-slave! spi/update-slave!)
+(def claims-for-slave spi/claims-for-slave)
 
 (defrecord DataScriptSpawnStore []
   ISpawnStore
@@ -36,19 +36,18 @@
          (map :file)
          vec)))
 
-(defonce ^:private slot
-  (reg/single-slot {:validate #(satisfies? ISpawnStore %)
-                    :initial (->DataScriptSpawnStore)}))
-
 (defn set-store!
   "Install a spawn registration store. Intended for addons/tests that provide a
    non-DataScript implementation."
   [store]
-  (reg/install! slot store))
+  (spi/set-store! store))
 
 (defn get-store
+  "The installed spawn registration store, installing the DataScript default
+   when none is."
   []
-  (reg/current slot))
+  (or (spi/get-store)
+      (spi/set-store! (->DataScriptSpawnStore))))
 
 (defn ensure-coordinator-session!
   "Give a coordinator SESSION (`coordinator:<session>`) a depth-0 row in
