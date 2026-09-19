@@ -9,10 +9,9 @@
    - olympus_tab: Navigate between tabs"
   (:require [hive-mcp.emacs-ext.olympus :as olympus]
             [hive-mcp.swarm.datascript.queries :as ds-queries]
-            [hive-mcp.swarm.datascript.connection :as ds-conn]
             [hive-mcp.events.core :as ev]
-            [datascript.core :as d]
-            [clojure.edn :as edn] [hive-dsl.result :refer [rescue]]))
+            [clojure.edn :as edn] [hive-dsl.result :refer [rescue]]
+            [hive-mcp.swarm.datascript :as ds]))
 
 ;;; =============================================================================
 ;;; DataScript Queries
@@ -32,38 +31,36 @@
        (map #(select-keys % [:slave/id :slave/name :slave/status :slave/cwd]))))
 
 (defn- get-olympus-state
-  "Query current Olympus state from DataScript.
+  "Query current Olympus state from the swarm store.
    Returns {:active-tab :layout-mode :ling-positions :focused-ling}.
    Creates default state if singleton doesn't exist."
   []
-  (let [conn (ds-conn/ensure-conn)
-        db @conn]
-    (if-let [e (d/entity db [:olympus/id "olympus"])]
-      ;; Existing state - parse ling-positions from EDN string
-      {:active-tab (or (:olympus/active-tab e) 0)
-       :layout-mode (or (:olympus/layout-mode e) :auto)
-       :focused-ling (when-let [ref (:olympus/focused-ling e)]
-                       (:slave/id ref))
-       :ling-positions (if-let [pos-str (:olympus/ling-positions e)]
-                         (try (edn/read-string pos-str)
-                              (catch Exception _ {}))
-                         {})}
-      ;; Default state
-      {:active-tab 0
-       :layout-mode :auto
-       :focused-ling nil
-       :ling-positions {}})))
+  (if-let [e (ds/pull '[* {:olympus/focused-ling [:slave/id]}]
+                      [:olympus/id "olympus"])]
+    ;; Existing state - parse ling-positions from EDN string
+    {:active-tab (or (:olympus/active-tab e) 0)
+     :layout-mode (or (:olympus/layout-mode e) :auto)
+     :focused-ling (when-let [ref (:olympus/focused-ling e)]
+                     (:slave/id ref))
+     :ling-positions (if-let [pos-str (:olympus/ling-positions e)]
+                       (try (edn/read-string pos-str)
+                            (catch Exception _ {}))
+                       {})}
+    ;; Default state
+    {:active-tab 0
+     :layout-mode :auto
+     :focused-ling nil
+     :ling-positions {}}))
 
 (defn- save-olympus-state!
-  "Persist Olympus state to DataScript.
+  "Persist Olympus state to the swarm store.
 
    Arguments:
    - state: Map with :active-tab :layout-mode :ling-positions :focused-ling
 
    Uses upsert pattern - singleton is created if it doesn't exist."
   [state]
-  (let [conn (ds-conn/ensure-conn)
-        {:keys [active-tab layout-mode ling-positions focused-ling]} state
+  (let [{:keys [active-tab layout-mode ling-positions focused-ling]} state
         ;; Build transaction data
         tx-data (cond-> {:olympus/id "olympus"
                          :olympus/active-tab (or active-tab 0)
@@ -74,7 +71,7 @@
                   ;; Handle focused-ling ref
                   focused-ling
                   (assoc :olympus/focused-ling [:slave/id focused-ling]))]
-    (d/transact! conn [tx-data])
+    (ds/transact! [tx-data])
     state))
 
 ;;; =============================================================================
