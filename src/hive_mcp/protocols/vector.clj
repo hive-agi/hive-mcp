@@ -24,7 +24,14 @@
    Reload-safety: `defprotocol` is not idempotent, so the declaration is
    guarded. That guard is CORRECT here for the reason a registration guard
    usually is not: re-running `defprotocol` does not re-register a handler, it
-   mints a new interface and orphans every existing implementation.")
+   mints a new interface and orphans every existing implementation.
+
+   Write-outcome contract: `-add`/`-delete` signal failure by throw as
+   primary; a backend may ALSO report failure by value (an :error-carrying
+   map, e.g. a hive-dsl err Result). `error-outcome?` and
+   `write-outcome->result` are the single classification point, so every
+   caller handles both channels identically."
+  (:require [hive-dsl.result :as result]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -59,7 +66,12 @@
 
     (-add [this coll records opts]
       "Add RECORDS to COLL. Each record is a map of :id, :embedding,
-       :document and :metadata. Returns nil.")
+       :document and :metadata.
+
+       Outcome contract (see `error-outcome?`): an implementation signals
+       failure EITHER by throwing OR by returning a map carrying :error
+       (a failure BY VALUE, e.g. a hive-dsl err Result). Any other return,
+       including nil, is success. Callers must consult both channels.")
 
     (-get [this coll opts]
       "Records of COLL selected by `opts` (:ids, :where, :limit), in the same
@@ -71,12 +83,39 @@
        ASCENDING distance and never a similarity.")
 
     (-delete [this coll opts]
-      "Delete records of COLL selected by `opts` (:ids, :where). Returns nil.")
+      "Delete records of COLL selected by `opts` (:ids, :where).
+
+       Outcome contract (see `error-outcome?`): failure by throw or by an
+       :error-carrying map. A nil return means the delete was ACCEPTED, not
+       that anything matched — a backend that cannot tell reports acceptance
+       for a missing id too, so callers wanting not-found detection must
+       read the collection themselves.")
 
     (-update [this coll records]
       "Update RECORDS of COLL, matched by :id. Returns nil.")))
 
 (defonce ^:private -store (atom nil))
+
+(defn error-outcome?
+  "True when OUTCOME is a failure BY VALUE, per the port's write-outcome
+   contract: a map carrying :error (e.g. a hive-dsl err Result). A throw
+   is the other failure channel and propagates before this is ever called;
+   nil and every other value mean success."
+  [outcome]
+  (and (map? outcome) (contains? outcome :error)))
+
+(defn write-outcome->result
+  "Normalize a port write return into a hive-dsl Result.
+
+   A throw from the backend has already propagated by the time this runs.
+   What remains is the by-value channel: an :error-carrying map stays the
+   failure it reports; anything else (nil included) is `success-val`."
+  [outcome success-val]
+  (if (error-outcome? outcome)
+    (result/err (or (:error outcome) ::write-failed)
+                (select-keys outcome [:message :data]))
+    (result/ok success-val)))
+
 
 (defn set-store!
   "Install STORE as the active vector-collection store. Returns STORE.
