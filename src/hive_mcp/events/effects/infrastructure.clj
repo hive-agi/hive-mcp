@@ -18,7 +18,7 @@
   (:require [hive-mcp.events.core :as ev]
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.channel.core :as channel]
-            [hive-mcp.emacs-ext.client :as ec]
+            [hive-spi.editor.services :as svc]
             [clojure.java.shell :as shell]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -110,14 +110,10 @@
   (when (seq task-ids)
     (doseq [task-id task-ids]
       (try
-        ;; Use emacsclient to call the kanban move function
-        (let [dir-arg (if directory
-                        (str "\"" directory "\"")
-                        "nil")
-              elisp (format "(json-encode (hive-mcp-api-kanban-move %s \"done\" %s))"
-                            (str "\"" task-id "\"")
-                            dir-arg)
-              {:keys [success error timed-out]} (ec/eval-elisp-with-timeout elisp 10000)]
+        ;; Move the task via the editor vessel's kanban op
+        (let [op (cond-> {:op :kanban/move-to-done :task-id task-id}
+                   directory (assoc :directory directory))
+              {:keys [success error timed-out]} (svc/invoke :vessel :dispatch op 10000)]
           (cond
             timed-out (log/warn "[EVENT] Kanban move for" task-id "timed out (10s) - continuing")
             success   (log/info "[EVENT] Kanban task moved to done:" task-id)

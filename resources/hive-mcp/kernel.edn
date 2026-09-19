@@ -170,13 +170,10 @@
   {:from hive-mcp.events.dispatch, :to hive-mcp.telemetry.prometheus, :since "2026-09-07", :retired-by "E2"}
   {:from hive-mcp.tools.swarm.lifecycle, :to hive-mcp.telemetry.prometheus, :since "2026-09-07", :retired-by "E2"}
   {:from hive-mcp.addons.doctor, :to hive-mcp.emacs-ext.client, :since "2026-09-07", :retired-by "E3"}
-  {:from hive-mcp.events.effects.infrastructure, :to hive-mcp.emacs-ext.client, :since "2026-09-07", :retired-by "E3"}
   {:from hive-mcp.server.transport.olympus-ws, :to hive-mcp.transport.olympus, :since "2026-09-07", :retired-by "E3"}
   {:from hive-mcp.swarm.sync, :to hive-mcp.emacs-ext.daemon-store, :since "2026-09-07", :retired-by "E3"}
   {:from hive-mcp.tools.consolidated.project, :to hive-mcp.tools.projectile, :since "2026-09-07", :retired-by "E3"}
   {:from hive-mcp.tools.core, :to hive-mcp.emacs-ext.client, :since "2026-09-07", :retired-by "E3"}
-  {:from hive-mcp.tools.hive-project, :to hive-mcp.emacs-ext.client, :since "2026-09-07", :retired-by "E3"}
-  {:from hive-mcp.tools.hive-project, :to hive-mcp.emacs-ext.elisp, :since "2026-09-07", :retired-by "E3"}
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.git, :since "2026-09-07", :retired-by "E3"}
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.magit, :since "2026-09-07", :retired-by "E3"}
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.olympus, :since "2026-09-07", :retired-by "E3"}
