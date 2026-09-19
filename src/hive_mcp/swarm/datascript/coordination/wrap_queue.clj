@@ -10,7 +10,7 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defn- impl [sym]
-  (delegate/resolve-var "hive-agent.swarm.datascript.coordination.wrap-queue" sym))
+  (delegate/resolve-var "hive-datascript.swarm.coordination.wrap-queue" sym))
 
 (defn add-wrap-notification! {:arglists '([wrap-id {:keys [agent-id session-id project-id created-ids stats parent-session-id depth]}])} [& args] (apply (impl 'add-wrap-notification!) args))
 (defn get-unprocessed-wraps {:arglists '([])} [& args] (apply (impl 'get-unprocessed-wraps) args))

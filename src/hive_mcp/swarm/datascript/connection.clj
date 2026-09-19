@@ -11,7 +11,7 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defn- impl [sym]
-  (delegate/resolve-var "hive-agent.swarm.datascript.connection" sym))
+  (delegate/resolve-var "hive-datascript.swarm.connection" sym))
 
 (def DSConn @(impl 'DSConn))
 (defn create-conn {:arglists '([])} [& args] (apply (impl 'create-conn) args))

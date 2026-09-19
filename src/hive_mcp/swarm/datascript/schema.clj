@@ -9,7 +9,7 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defn- impl [sym]
-  (delegate/resolve-var "hive-agent.swarm.datascript.schema" sym))
+  (delegate/resolve-var "hive-datascript.swarm.schema" sym))
 
 (defn- impl!
   "impl, after making sure the host adapters fill the swarm port slots.
