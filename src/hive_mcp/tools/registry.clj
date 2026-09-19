@@ -1,7 +1,7 @@
 (ns hive-mcp.tools.registry
   "MCP tool definitions registry — aggregates consolidated tool definitions.
 
-   Domain-grouped tool roots: code, swarm, memory, project, fs, git, emacs, web, preset, multi.
+   Domain-grouped tool roots: code, swarm, memory, project, fs, git, web, preset, multi.
    Core subdomains are statically defined. Addon subdomains injected at runtime (OCP).
 
    The advertised surface is shrunk to <=10 roots via a visibility gate
@@ -36,7 +36,6 @@
             [hive-mcp.tools.consolidated.project :as c-project]
             [hive-mcp.tools.consolidated.fs :as c-fs]
             [hive-mcp.tools.consolidated.git :as c-git]
-            [hive-mcp.tools.consolidated.emacs :as c-emacs]
             [hive-mcp.tools.consolidated.preset :as c-preset]
             [hive-mcp.tools.consolidated.web :as c-web]
             [hive-mcp.tools.consolidated.multi :as c-multi]
@@ -133,7 +132,6 @@
                c-project/tools
                c-fs/tools
                c-git/tools
-               c-emacs/tools
                c-preset/tools
                c-web/tools
                c-events/tools
