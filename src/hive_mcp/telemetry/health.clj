@@ -10,9 +10,9 @@
    No more scattered try/catches that swallow errors silently."
   (:require [taoensso.timbre :as log]
             [hive-mcp.channel.core :as channel]
-            [datascript.core :as d]
             [hive-mcp.swarm.datascript.connection :as conn]
-            [hive-mcp.telemetry.prometheus :as prom]))
+            [hive-mcp.telemetry.prometheus :as prom]
+            [hive-mcp.swarm.datascript :as ds]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -113,12 +113,10 @@
                         :timestamp timestamp}))
 
 (defn- persist-to-datascript!
-  "Store health event in DataScript for post-mortem analysis.
-   Note: DataScript doesn't allow nil values, so we filter them out."
+  "Store health event in the swarm store for post-mortem analysis.
+   Note: the store rejects nil values, so they are filtered out."
   [{:keys [type severity message context recoverable? event-id timestamp]}]
-  (let [db-conn (conn/get-conn)
-        ;; Build entity map, excluding nil values (DataScript doesn't allow nil)
-        base-entity {:health-event/id event-id
+  (let [base-entity {:health-event/id event-id
                      :health-event/type type
                      :health-event/severity severity
                      :health-event/message message
@@ -128,7 +126,7 @@
         entity (if context
                  (assoc base-entity :health-event/context context)
                  base-entity)]
-    (d/transact! db-conn [entity])))
+    (ds/transact! [entity])))
 
 
 (defn emit-health-event!
@@ -183,29 +181,23 @@
     event-id))
 
 (defn get-recent-errors
-  "Query recent errors from DataScript for debugging.
+  "Query recent errors from the swarm store for debugging.
 
    Options:
    - :limit - Maximum number of errors to return (default: 20)
    - :type  - Filter by error type keyword
    - :since - Filter by timestamp (java.util.Date)"
   [& {:keys [limit type since] :or {limit 20}}]
-  (let [db-conn (conn/get-conn)
-        db @db-conn
-        ;; Build query based on filters
-        base-query '[:find [(pull ?e [*]) ...]
-                     :in $
-                     :where [?e :health-event/id _]]
-        type-query (if type
-                     '[:find [(pull ?e [*]) ...]
-                       :in $ ?type
-                       :where
-                       [?e :health-event/id _]
-                       [?e :health-event/type ?type]]
-                     base-query)
-        results (if type
-                  (d/q type-query db type)
-                  (d/q base-query db))
+  (let [results (if type
+                  (ds/q '[:find [(pull ?e [*]) ...]
+                          :in $ ?type
+                          :where
+                          [?e :health-event/id _]
+                          [?e :health-event/type ?type]]
+                        type)
+                  (ds/q '[:find [(pull ?e [*]) ...]
+                          :in $
+                          :where [?e :health-event/id _]]))
         ;; Sort by timestamp descending
         sorted (->> results
                     (sort-by :health-event/timestamp)
@@ -226,11 +218,8 @@
     :total-errors 7
     :severity-counts {:error 5, :warn 2, ...}}"
   []
-  (let [db-conn (conn/get-conn)
-        db @db-conn
-        all-events (d/q '[:find [(pull ?e [*]) ...]
-                          :where [?e :health-event/id _]]
-                        db)]
+  (let [all-events (ds/q '[:find [(pull ?e [*]) ...]
+                           :where [?e :health-event/id _]])]
     {:error-counts
      (->> all-events
           (group-by :health-event/type)

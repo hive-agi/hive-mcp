@@ -20,7 +20,6 @@
             [hive-mcp.channel.core :as channel]
             [hive-mcp.emacs-ext.client :as ec]
             [clojure.java.shell :as shell]
-            [datascript.core :as d]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -31,7 +30,7 @@
 ;; =============================================================================
 
 (defn- handle-ds-transact
-  "Execute a :ds-transact effect - DataScript transaction.
+  "Execute a :ds-transact effect - swarm store transaction.
 
    Expected data: vector of transaction data (datoms or tx-maps).
 
@@ -39,8 +38,7 @@
    {:ds-transact [{:slave/id \"worker-1\" :slave/status :working}]}"
   [tx-data]
   (when (seq tx-data)
-    (let [conn (ds/get-conn)]
-      (d/transact! conn tx-data))))
+    (ds/transact! tx-data)))
 
 ;; =============================================================================
 ;; Effect: :git-commit (P5-2)
