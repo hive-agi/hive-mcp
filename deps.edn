@@ -126,7 +126,7 @@
         ;; local.deps.edn :local/root override.
         ;; 1.0.0: the ports carry a published stability promise, which is what
         ;; lets this host make one of its own. See hive-spi's CHANGELOG.
-        io.github.hive-agi/hive-spi {:mvn/version "1.1.1"}
+        io.github.hive-agi/hive-spi {:mvn/version "1.2.0"}
 
         ;; NO CONCRETE BACKEND BELONGS HERE. hive-milvus / hive-qdrant /
         ;; clj-qdrant depend on hive-mcp for their addon surface, so declaring
