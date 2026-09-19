@@ -488,6 +488,8 @@
   ;;        clj -T:build jar-aot          ; AOT jar, metadata elided
   ;;        clj -T:build bump :level :patch
   ;;        clj -T:build deploy           ; jar -> Clojars (needs CLOJARS_* env)
+  ;;        clj -T:build kondo :paths '["src" "test" "test-swarm"]'
+  ;;                                      ; bare `kondo` lints src + test only
   ;; There is NO `uber` task; the server runs from source everywhere,
   ;; including the container (see Dockerfile and bin/docker-entrypoint.sh).
   :build

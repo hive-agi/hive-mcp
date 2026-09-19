@@ -105,10 +105,20 @@
   ((resolve 'clojure.test/run-tests) ns-sym))
 
 (defn run-all-tests
-  "Run all tests in test directory."
+  "Run the addon-free tree (test/), selected the way the :test alias selects
+   it: anchored to hive-mcp. and without the backend-coupled suites."
   []
   (require 'cognitect.test-runner.api)
-  ((resolve 'cognitect.test-runner.api/test) {}))
+  ((resolve 'cognitect.test-runner.api/test)
+   {:patterns ["^hive-mcp\\.(?!backends\\.).*-test$"]}))
+
+(defn run-swarm-tests
+  "Run the swarm-coupled tree (test-swarm/). Needs a REPL started with the
+   swarm addon and the path: -M:test:test-swarm:dev-repl plus local.deps.edn."
+  []
+  (require 'cognitect.test-runner.api)
+  ((resolve 'cognitect.test-runner.api/test)
+   {:dirs ["test-swarm"] :patterns ["^hive-mcp\\..*-test$"]}))
 
 ;; ============================================================
 ;; Debugging Helpers
