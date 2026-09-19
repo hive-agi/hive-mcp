@@ -39,11 +39,12 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 - **The test tree is two trees.** `test/` loads and runs from the committed
   `deps.edn` alone, with no hive-agent and no hive-datascript on the classpath;
-  it is what CI runs. The 55 suites that exercise the swarm addon moved to
+  it is what CI runs. The 53 suites that exercise the swarm addon moved to
   `test-swarm/` and run through `-M:test:test-swarm` with the addon supplied by
   `local.deps.edn`, or sandboxed with `bin/test-sandboxed.sh --swarm`. The
-  runner loads every namespace on its path before it selects any, so a single
-  addon-coupled suite under `test/` used to take the whole public run down.
+  runner requires every namespace its regex selects before any var-level
+  filter runs and does not catch a throwing fixture, so a single addon-coupled
+  suite under `test/` used to abort the whole public run.
 
 ### Fixed
 

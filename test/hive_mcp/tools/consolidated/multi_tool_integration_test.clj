@@ -616,9 +616,19 @@
       (is (contains? props "directory")))))
 
 (deftest test-hivemind-event-type-enum
-  (testing "hivemind event_type has correct enum values"
-    (let [enum (get-in hivemind/tool-def [:inputSchema :properties "event_type" :enum])]
-      (is (= #{"progress" "completed" "error" "blocked" "started"} (set enum))))))
+  ;; The event-type vocabulary lives in the swarm addon. With it on the
+  ;; classpath the schema advertises the enum; without it the schema OMITS
+  ;; :enum, because an empty or nil :enum makes an MCP client reject every
+  ;; value. This tree runs on both classpaths, so the assertion is the one
+  ;; that holds on both; the addon-present value is pinned in
+  ;; test-swarm/hive_mcp/tools/consolidated/hivemind_event_type_enum_test.clj.
+  (testing "hivemind event_type advertises the full vocabulary or no enum at all"
+    (let [event-type (get-in hivemind/tool-def [:inputSchema :properties "event_type"])]
+      (is (or (not (contains? event-type :enum))
+              (= #{"progress" "completed" "error" "blocked" "started"}
+                 (set (:enum event-type))))
+          (str "event_type :enum is present but is not the vocabulary: "
+               (pr-str (:enum event-type)))))))
 
 ;; =============================================================================
 ;; Part 9: Kanban Consolidated Tool Integration Tests

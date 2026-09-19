@@ -42,8 +42,12 @@ clj -Sdeps "$(cat local.deps.edn)" -M:test:test-swarm
 ```
 
 A new test that needs a swarm store or a live ling belongs in `test-swarm/`.
-One namespace under `test/` that cannot load without the addon fails the whole
-CI run, because the runner loads every namespace before it selects any.
+The runner requires every namespace its `-r` regex selects before any
+var-level filter (`-e :integration`) runs, and it does not catch a throwing
+fixture. So one namespace under `test/` that cannot load without the addon, or
+whose fixture reaches the swarm, aborts the whole CI run instead of failing
+one suite. A suite that passes on both classpaths stays in `test/`: check by
+running it addon-free before moving it.
 
 ## Writing an addon
 
