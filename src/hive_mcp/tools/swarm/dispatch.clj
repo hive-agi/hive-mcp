@@ -25,7 +25,8 @@
             [hive-mcp.agent.ling.terminal-registry :as terminal-reg]
             [hive-mcp.agent.ling.strategy :as strategy]
             [hive-dsl.result :as result]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [hive-mcp.tools.swarm.channel :as channel]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -211,8 +212,10 @@
     :slave_id slave_id}))
 
 (defn- handle-queued-dispatch
-  "Handle queued dispatch due to file conflicts."
+  "Handle queued dispatch due to file conflicts.
+   Records the queue task id as dispatched so collect keeps polling for it."
   [preflight slave_id]
+  (channel/record-dispatched-task! (:task-id preflight))
   (core/mcp-success
    {:status "queued"
     :task_id (:task-id preflight)

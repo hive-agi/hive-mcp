@@ -452,6 +452,8 @@
     ;; collect deliberately has NO addon gate — an absent addon routes to the
     ;; JVM poll rather than short-circuiting. `:timeout_ms` is mandatory here:
     ;; the default is 300000, i.e. five minutes of polling per suite run.
+    ;; A dispatched id: an id nobody dispatched fails fast instead.
+    (swarm-channel/record-dispatched-task! "task-001")
     (with-addon-unavailable
       (let [result (swarm/handle-swarm-collect {:task_id "task-001" :timeout_ms 1})]
         (is (= "text" (:type result)))
@@ -596,6 +598,8 @@
   (testing "swarm-collect is NOT addon-gated — it reports a poll timeout instead"
     ;; collect is JVM-first by design. `:timeout_ms` is mandatory: the default
     ;; is 300000, so an unbounded call burns five minutes per suite run.
+    ;; A dispatched id: an id nobody dispatched fails fast instead.
+    (swarm-channel/record-dispatched-task! "t")
     (with-addon-unavailable
       (let [result (swarm/handle-swarm-collect {:task_id "t" :timeout_ms 1})
             parsed (json/read-str (:text result) :key-fn keyword)]
