@@ -39,11 +39,9 @@
             [clojure.data.json :as json]
             [taoensso.timbre :as log]
             [hive-mcp.tools.catchup.relevance :as relevance]
-            [hive-mcp.vectordb.kanban-facade :as kanban-facade]
             [hive-mcp.tools.catchup.outcome :as outcome]
-            [clojure.string :as str]
-            [hive-mcp.tools.kanban.list.plan :as list-plan]
-            [hive-mcp.tools.catchup.caller :as catchup-caller]))
+            [hive-mcp.tools.catchup.caller :as catchup-caller]
+            [hive-mcp.spi.catchup-registry :as blocks]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -94,64 +92,18 @@
    until the Milvus batch-get path is itself optimized."
   300000)
 
-(defn- gather-kanban-summary
-  "Direct kanban-facade query for catchup summary scoped to project-id.
-   Returns {:counts {:todo n :inprogress n :inreview n :done n}
-            :recent-todos [{:id :title} ...] (top 10 by updated desc)
-            :scope-tag str-or-nil}.
+(def ^:private empty-kanban-summary
+  "The kanban block's value when no contributor registered one."
+  {:counts {} :recent-todos []})
 
-   Routes via `kanban-facade/query-entries` so the active store-routing
-   mode is honored (`:default` legacy milvus, `:kanban` qdrant cutover,
-   `:dual-read` soak). Reaching past the facade is a DIP one-seam
-   violation and was the 2026-05-04 catchup regression: the call site
-   read milvus while live writes had moved to qdrant, producing stale
-   bucket counts that did not reconcile with `kanban list`.
-
-   Bucket counts read the whole scoped board (`list-plan/whole-board`);
-   a smaller window reports the window, not the count.
-
-   Railway-ROP: each facade query is wrapped in `try-effect*` so a
-   single bad query short-circuits via `ok->` rather than throwing
-   through the whole computation. The full empty result is the
-   fallback when any leg errors. The caller (safe-deref) still expects
-   a plain map, so the Result is unwrapped at the seam."
-  [project-id]
-  (let [scope-tag    (when project-id (str "scope:project:" project-id))
-        base-tags    (cond-> ["kanban"] scope-tag (conj scope-tag))
-        empty-result {:counts {} :recent-todos [] :scope-tag scope-tag}
-        count-into   (fn [acc bucket tag]
-                       (let-ok [n (try-effect* :kanban/count-failed
-                                    (count (kanban-facade/query-entries
-                                            :type "note"
-                                            :tags (conj base-tags tag)
-                                            :limit list-plan/whole-board
-                                            :output-fields ["id"])))]
-                         (ok (assoc-in acc [:counts bucket] n))))
-        attach-recent (fn [acc]
-                        (let-ok [rows (try-effect* :kanban/recent-failed
-                                        (kanban-facade/query-entries
-                                         :type "note"
-                                         :tags (conj base-tags "todo")
-                                         :limit 10
-                                         :order-by [:updated :desc]
-                                         :output-fields ["id" "content" "tags"]
-                                         :include-content? true))]
-                          (ok (assoc acc :recent-todos
-                                     (mapv (fn [e]
-                                             {:id    (:id e)
-                                              :title (or (get-in e [:content :title])
-                                                         (when (string? (:content e))
-                                                           (first (clojure.string/split-lines (:content e))))
-                                                         "(no title)")
-                                              :tags  (:tags e)})
-                                           rows)))))
-        result (ok-> (ok empty-result)
-                     (count-into :todo       "todo")
-                     (count-into :inprogress "doing")
-                     (count-into :inreview   "review")
-                     (count-into :done       "done")
-                     attach-recent)]
-    (if (ok? result) (:ok result) empty-result)))
+(defn- compose-blocks
+  "Every registered catchup block's value for CTX, keyed by block id.
+   A contributor that throws is logged and omitted; the others still land."
+  [ctx]
+  (let [{:keys [blocks failed]} (blocks/compose ctx)]
+    (when (seq failed)
+      (log/warn "catchup: contributed blocks failed" failed))
+    blocks))
 
 ;; =============================================================================
 ;; Main Catchup Handler
@@ -222,14 +174,20 @@
                                                                     (assoc acc k
                                                                            (rescue nil (provider-fn project-id))))
                                                                   {} status-providers))))
-              f-kanban (pool/with-io ((tt/timed-query "catchup/kanban-summary-total"
-                                                      #(gather-kanban-summary project-id))))
+              ;; Contributed blocks (hive-mcp.spi.catchup-registry): core's own
+              ;; domains and addons register {:block/id :block/fn :block/order};
+              ;; catchup composes them without naming a contributor.
+              f-blocks (pool/with-io ((tt/timed-query "catchup/blocks-total"
+                                                      #(compose-blocks {:project-id project-id
+                                                                        :directory  directory
+                                                                        :caller-id  (:_caller_id args)}))))
 
               bundle        (safe-deref f-bundle query-timeout-ms "bundle")
               git-info      (outcome/value-or (safe-deref f-git query-timeout-ms "git-info") {})
               addon-status  (outcome/value-or (safe-deref f-status query-timeout-ms "addon-status") {})
               carto-status  (:carto-status addon-status)
-              kanban-summary (outcome/value-or (safe-deref f-kanban query-timeout-ms "kanban-summary") {:counts {}, :recent-todos []})
+              contributed   (outcome/value-or (safe-deref f-blocks query-timeout-ms "blocks") {})
+              kanban-summary (or (:kanban contributed) empty-kanban-summary)
 
               axioms               (:axioms (outcome/value-or bundle {}) [])
               axiom-candidates     (:axiom-candidates (outcome/value-or bundle {}) [])
