@@ -35,6 +35,25 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+### Changed
+
+- **The test tree is two trees.** `test/` loads and runs from the committed
+  `deps.edn` alone, with no hive-agent and no hive-datascript on the classpath;
+  it is what CI runs. The 55 suites that exercise the swarm addon moved to
+  `test-swarm/` and run through `-M:test:test-swarm` with the addon supplied by
+  `local.deps.edn`, or sandboxed with `bin/test-sandboxed.sh --swarm`. The
+  runner loads every namespace on its path before it selects any, so a single
+  addon-coupled suite under `test/` used to take the whole public run down.
+
+### Fixed
+
+- **The swarm host adapters no longer pin the kernel to namespaces that are
+  leaving it.** Four adapters statically required hive-memory, hive-workflows,
+  hive-observability and hive-agent extraction targets, which the kernel census
+  gate counts as unwaived kernel edges. They now resolve those host functions
+  by symbol on the call, and answer what the port's Noop answers once the
+  namespace is gone.
+
 ## [1.6.0] - 2026-09-16
 
 Three threads: the dispatch tree stopped freezing handler values, the channel

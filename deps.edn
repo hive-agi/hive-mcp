@@ -469,9 +469,11 @@
   ;; for the shared infra and supply the addon through local.deps.edn, the
   ;; same way :test-backends gets its drivers:
   ;;   clj -Sdeps "$(cat local.deps.edn)" -M:test:test-swarm
-  ;; In a REPL the last alias's :main-opts win, so name this one BEFORE the
-  ;; REPL alias (-M:test-swarm:dev-repl); a `cider spawn` with aliases
-  ;; ["test" "test-swarm"] supplies its own main and is unaffected.
+  ;; In a REPL the last alias's :main-opts win, so name the REPL alias LAST
+  ;; and keep :test in the chain (-M:test:test-swarm:dev-repl): :test carries
+  ;; the test deps and -Dhive.kg.backend=datascript, without which a test JVM
+  ;; opens the real KG store. A `cider spawn` with aliases ["test" "test-swarm"]
+  ;; supplies its own main and is unaffected.
   :test-swarm
   {:extra-paths ["test-swarm"]
    :main-opts ["-m" "cognitect.test-runner"
