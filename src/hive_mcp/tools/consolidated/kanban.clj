@@ -3,8 +3,8 @@
 
    Loading this namespace is what makes core the kanban CONTRIBUTOR: it
    installs core's IKanbanRead / IKanbanWrite provider in
-   hive-contracts.registry and the :kanban catchup block in
-   hive-spi.catchup.registry. An addon that owns the board does the same at
+   hive-mcp.spi.kanban.registry and the :kanban catchup block in
+   hive-mcp.spi.catchup-registry. An addon that owns the board does the same at
    its initialize! and replaces both."
   (:require [clojure.tools.logging :as log]
             [hive-mcp.tools.cli :refer [make-cli-handler make-batch-handler]]
@@ -23,11 +23,16 @@
    make no sense per-op. Adding more commands here is a deliberate decision.
 
    PR4.4 — :create added so batch-create can sweep many task titles at once.
-   :retag added — scope-move + ±tags batches preserve entry id + KG edges."
-  {:update mem-kanban/handle-mem-kanban-move
-   :delete mem-kanban/handle-mem-kanban-delete
-   :create mem-kanban/handle-mem-kanban-create
-   :retag  mem-kanban/handle-mem-kanban-retag})
+   :retag added — scope-move + ±tags batches preserve entry id + KG edges.
+
+   Stored as VARS so a reload reaches the table (20260817195749-0d407e9c).
+   `make-batch-handler` reads `(keys handlers)` for its deprecation warning,
+   routes through `resolve-handler`, and calls what it finds, so all three
+   sites take a var."
+  {:update #'mem-kanban/handle-mem-kanban-move
+   :delete #'mem-kanban/handle-mem-kanban-delete
+   :create #'mem-kanban/handle-mem-kanban-create
+   :retag  #'mem-kanban/handle-mem-kanban-retag})
 
 (defn- with-default-command
   "Set :command on each op only when missing. Never overwrites a caller's
@@ -85,20 +90,27 @@
     (inner (assoc params :operations (with-default-command operations "retag")))))
 
 (def ^:private canonical-handlers
-  {:list           mem-kanban/handle-mem-kanban-list-slim
-   :get            mem-kanban/handle-mem-kanban-get
-   :create         mem-kanban/handle-mem-kanban-create
-   :update         mem-kanban/handle-mem-kanban-move
-   :delete         mem-kanban/handle-mem-kanban-delete
-   :status         mem-kanban/handle-mem-kanban-stats
-   :retag          mem-kanban/handle-mem-kanban-retag
+  "The `kanban` verbs, stored as VARS so a reload reaches this table
+   (20260817195749-0d407e9c). The deprecated aliases below read their target
+   out of here and close over it; closing over a var is what makes an alias
+   forward to the CURRENT handler rather than to the one this load interned.
+
+   `:sync` is the one entry with nothing to quote: an inline `fn` returning a
+   constant, because this backend has nothing to sync."
+  {:list           #'mem-kanban/handle-mem-kanban-list-slim
+   :get            #'mem-kanban/handle-mem-kanban-get
+   :create         #'mem-kanban/handle-mem-kanban-create
+   :update         #'mem-kanban/handle-mem-kanban-move
+   :delete         #'mem-kanban/handle-mem-kanban-delete
+   :status         #'mem-kanban/handle-mem-kanban-stats
+   :retag          #'mem-kanban/handle-mem-kanban-retag
    :sync           (fn [_] {:success true :message "Memory kanban is single-backend, no sync needed"})
-   :plan-to-kanban plan-tool/handle-plan-to-kanban
-   :plan-schema    plan-tool/handle-plan-schema
-   :batch-update   handle-batch-update
-   :batch-delete   handle-batch-delete
-   :batch-create   handle-batch-create
-   :batch-retag    handle-batch-retag})
+   :plan-to-kanban #'plan-tool/handle-plan-to-kanban
+   :plan-schema    #'plan-tool/handle-plan-schema
+   :batch-update   #'handle-batch-update
+   :batch-delete   #'handle-batch-delete
+   :batch-create   #'handle-batch-create
+   :batch-retag    #'handle-batch-retag})
 
 (def ^:private deprecated-aliases
   {:move     :update
@@ -126,7 +138,7 @@
                     deprecated-aliases)))
 
 (def handle-kanban
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 (def tool-def
   {:name "kanban"
@@ -208,6 +220,6 @@
                               "parallel" {:type "boolean"
                                           :description "Run batch operations in parallel (default: false)"}}
                  :required ["command"]}
-   :handler handle-kanban})
+   :handler #'handle-kanban})
 
 (def tools [tool-def])

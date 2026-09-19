@@ -10,7 +10,7 @@
 
    Thread-safety: atom + swap! (all operations atomic).
    Idempotent: Re-registering the same key replaces silently (last-write-wins)."
-  (:require [hive-mcp.addons.terminal :as terminal]
+  (:require [hive-addon.terminal :as terminal]
             [hive-mcp.agent.ling.terminal-addon-strategy :as terminal-strat]
             [taoensso.timbre :as log]))
 

@@ -76,6 +76,13 @@
 ;; Tool Definition
 ;; =============================================================================
 
+(def handle-code
+  "Routes the core `code` commands plus whatever addons contribute under
+   \"code\". Named, so the tool-def can register it BY VAR: a handler folded
+   into the tool map by value never sees a reload of its own namespace
+   (20260817195749-0d407e9c)."
+  (composite/build-merged-handler "code" #'canonical-handlers))
+
 (def tool-def
   {:name "code"
    :consolidated true
@@ -109,6 +116,6 @@
                               "limit"     {:type "integer"
                                            :description "Max results"}}
                  :required ["command"]}
-   :handler (composite/build-merged-handler "code" canonical-handlers)})
+   :handler #'handle-code})
 
 (def tools [tool-def])

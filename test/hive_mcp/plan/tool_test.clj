@@ -10,7 +10,8 @@
             [hive-mcp.plan.tool :as sut]
             [hive-mcp.plan.schema :as schema]
             [hive-mcp.plan.parser :as parser]
-            [hive-mcp.tools.consolidated.kanban :as c-kanban]))
+            [hive-mcp.tools.consolidated.kanban :as c-kanban]
+            [hive-mcp.dispatch.handler :as dispatch]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -155,7 +156,7 @@ Some details about the second task."
       (is (some? tool))
       (is (string? (:description tool)))
       (is (map? schema))
-      (is (fn? (:handler tool))))
+      (is (dispatch/handler? (:handler tool))))
 
     (testing "plan-to-kanban is an accepted command"
       (is (some #{"plan-to-kanban"} (get-in props ["command" :enum]))

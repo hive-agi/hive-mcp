@@ -12,7 +12,7 @@
    8. Multi meta-facade routing (handle-multi)
 
    Then per-tool integration tests for tools lacking dedicated test files:
-   - memory, kg, hivemind, kanban, preset, wave, magit, emacs, analysis,
+   - memory, kg, hivemind, kanban, preset, magit, emacs, analysis,
      agora, olympus, project, session, config, workflow, migration, agent"
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.string :as str]
@@ -26,9 +26,7 @@
             [hive-mcp.tools.consolidated.hivemind :as hivemind]
             [hive-mcp.tools.consolidated.kanban :as kanban]
             [hive-mcp.tools.consolidated.preset :as preset]
-            [hive-mcp.tools.consolidated.wave :as wave]
             [hive-mcp.tools.consolidated.magit :as magit]
-            [hive-mcp.tools.consolidated.emacs :as emacs]
             [hive-mcp.tools.composite :as composite]
             [hive-mcp.tools.consolidated.agora :as agora]
             [hive-mcp.tools.consolidated.olympus :as olympus]
@@ -40,7 +38,8 @@
             [hive-mcp.tools.consolidated.migration :as migration]
             [hive-mcp.tools.consolidated.agent :as agent]
             ;; Multi meta-facade
-            [hive-mcp.tools.consolidated.multi :as multi]))
+            [hive-mcp.tools.consolidated.multi :as multi]
+            [hive-mcp.dispatch.handler :as dispatch]))
 
 ;; =============================================================================
 ;; Helpers
@@ -286,9 +285,7 @@
    :hivemind  hivemind/tool-def
    :kanban    kanban/tool-def
    :preset    preset/tool-def
-   :wave      wave/tool-def
    :magit     magit/tool-def
-   :emacs     emacs/tool-def
    ;; :analysis — composite tool, tested separately
    :agora     agora/tool-def
    :olympus   olympus/tool-def
@@ -323,7 +320,7 @@
           (str tool-key " missing :description"))
       (is (map? (:inputSchema tool-def))
           (str tool-key " missing :inputSchema"))
-      (is (fn? (:handler tool-def))
+      (is (dispatch/handler? (:handler tool-def))
           (str tool-key " missing :handler")))))
 
 (deftest test-all-tool-defs-are-consolidated
@@ -362,9 +359,7 @@
              :hivemind  {:tools-var #'hivemind/tools}
              :kanban    {:tools-var #'kanban/tools}
              :preset    {:tools-var #'preset/tools}
-             :wave      {:tools-var #'wave/tools}
              :magit     {:tools-var #'magit/tools}
-             :emacs     {:tools-var #'emacs/tools}
              ;; :analysis — composite tool, no static tools var
              :agora     {:tools-var #'agora/tools}
              :olympus   {:tools-var #'olympus/tools}
@@ -393,9 +388,7 @@
              :hivemind  hivemind/handlers
              :kanban    kanban/handlers
              :preset    preset/handlers
-             :wave      wave/handlers
              :magit     magit/handlers
-             :emacs     emacs/handlers
              ;; :analysis — composite tool, handlers built dynamically
              :agora     agora/handlers
              :olympus   olympus/handlers
@@ -406,8 +399,8 @@
              :migration migration/handlers
              :agent     agent/handlers}]
       (doseq [[k v] handlers-map]
-        (is (or (fn? v) (map? v))
-            (str tool-key "/" k " should be a function or nested handler map"))))))
+        (is (or (dispatch/handler? v) (map? (dispatch/current v)))
+            (str tool-key "/" k " should be dispatchable or a nested handler map"))))))
 
 (deftest test-handler-map-commands-match-enum
   (testing "handler map keys match tool-def command enum (minus 'help')"
@@ -416,9 +409,7 @@
              :addon     {:handlers-map addon/handlers :tool-def-val addon/tool-def}
              :kg        {:handlers-map kg/handlers :tool-def-val kg/tool-def}
              :hivemind  {:handlers-map hivemind/handlers :tool-def-val hivemind/tool-def}
-             :wave      {:handlers-map wave/handlers :tool-def-val wave/tool-def}
              :magit     {:handlers-map magit/handlers :tool-def-val magit/tool-def}
-             :emacs     {:handlers-map emacs/handlers :tool-def-val emacs/tool-def}
              ;; :analysis — composite tool, tested separately
              :session   {:handlers-map session/handlers :tool-def-val session/tool-def}
              :config    {:handlers-map config/handlers :tool-def-val config/tool-def}
@@ -450,9 +441,7 @@
              :hivemind  hivemind/handle-hivemind
              :kanban    kanban/handle-kanban
              :preset    preset/handle-preset
-             :wave      wave/handle-wave
              :magit     magit/handle-magit
-             :emacs     emacs/handle-emacs
              :analysis  (composite/build-composite-handler "analysis")
              :agora     agora/handle-agora
              :olympus   olympus/handle-olympus
@@ -481,9 +470,7 @@
              :hivemind  hivemind/handle-hivemind
              :kanban    kanban/handle-kanban
              :preset    preset/handle-preset
-             :wave      wave/handle-wave
              :magit     magit/handle-magit
-             :emacs     emacs/handle-emacs
              :analysis  (composite/build-composite-handler "analysis")
              :agora     agora/handle-agora
              :olympus   olympus/handle-olympus
@@ -567,9 +554,9 @@
     (is (contains? kg/handlers :batch-traverse))))
 
 (deftest test-kg-batch-handlers-are-functions
-  (testing "KG batch handlers are valid functions"
-    (is (fn? (:batch-edge kg/handlers)))
-    (is (fn? (:batch-traverse kg/handlers)))))
+  (testing "KG batch handlers are dispatchable"
+    (is (dispatch/handler? (:batch-edge kg/handlers)))
+    (is (dispatch/handler? (:batch-traverse kg/handlers)))))
 
 (deftest test-kg-batch-edge-rejects-empty-operations
   (testing "batch-edge rejects empty operations"
@@ -629,9 +616,19 @@
       (is (contains? props "directory")))))
 
 (deftest test-hivemind-event-type-enum
-  (testing "hivemind event_type has correct enum values"
-    (let [enum (get-in hivemind/tool-def [:inputSchema :properties "event_type" :enum])]
-      (is (= #{"progress" "completed" "error" "blocked" "started"} (set enum))))))
+  ;; The event-type vocabulary lives in the swarm addon. With it on the
+  ;; classpath the schema advertises the enum; without it the schema OMITS
+  ;; :enum, because an empty or nil :enum makes an MCP client reject every
+  ;; value. This tree runs on both classpaths, so the assertion is the one
+  ;; that holds on both; the addon-present value is pinned in
+  ;; test-swarm/hive_mcp/tools/consolidated/hivemind_event_type_enum_test.clj.
+  (testing "hivemind event_type advertises the full vocabulary or no enum at all"
+    (let [event-type (get-in hivemind/tool-def [:inputSchema :properties "event_type"])]
+      (is (or (not (contains? event-type :enum))
+              (= #{"progress" "completed" "error" "blocked" "started"}
+                 (set (:enum event-type))))
+          (str "event_type :enum is present but is not the vocabulary: "
+               (pr-str (:enum event-type)))))))
 
 ;; =============================================================================
 ;; Part 9: Kanban Consolidated Tool Integration Tests
@@ -716,38 +713,6 @@
       (is (= #{"full" "slim" "core"} (set (:enum verbosity)))))))
 
 ;; =============================================================================
-;; Part 11: Wave Consolidated Tool Integration Tests
-;; =============================================================================
-
-(deftest test-wave-handlers-completeness
-  (testing "wave handlers has all expected commands"
-    (is (contains? wave/handlers :dispatch))
-    (is (contains? wave/handlers :dispatch-validated))
-    (is (contains? wave/handlers :status))
-    (is (contains? wave/handlers :review))
-    (is (contains? wave/handlers :approve))
-    (is (contains? wave/handlers :reject))
-    (is (contains? wave/handlers :auto-approve))))
-
-(deftest test-wave-tool-def-schema-params
-  (testing "wave tool-def schema has key params"
-    (let [props (get-in wave/tool-def [:inputSchema :properties])]
-      (is (contains? props "tasks"))
-      (is (contains? props "preset"))
-      (is (contains? props "trace"))
-      (is (contains? props "validate"))
-      (is (contains? props "max_retries"))
-      (is (contains? props "wave_id"))
-      (is (contains? props "diff_ids"))
-      (is (contains? props "reason"))
-      (is (contains? props "mode")))))
-
-(deftest test-wave-dispatch-validates-mode-enum
-  (testing "wave dispatch mode enum is correct"
-    (let [enum (get-in wave/tool-def [:inputSchema :properties "mode" :enum])]
-      (is (= #{"delegate" "agentic"} (set enum))))))
-
-;; =============================================================================
 ;; Part 12: Magit Consolidated Tool Integration Tests
 ;; =============================================================================
 
@@ -766,8 +731,8 @@
     (is (contains? magit/handlers :batch-commit))))
 
 (deftest test-magit-batch-commit-is-function
-  (testing "magit batch-commit handler is a function"
-    (is (fn? (:batch-commit magit/handlers)))))
+  (testing "magit batch-commit handler is dispatchable"
+    (is (dispatch/handler? (:batch-commit magit/handlers)))))
 
 (deftest test-magit-batch-commit-rejects-empty-operations
   (testing "magit batch-commit rejects empty operations"
@@ -792,36 +757,6 @@
   (testing "magit diff target enum is correct"
     (let [enum (get-in magit/tool-def [:inputSchema :properties "target" :enum])]
       (is (= #{"staged" "unstaged" "all"} (set enum))))))
-
-;; =============================================================================
-;; Part 13: Emacs Consolidated Tool Integration Tests
-;; =============================================================================
-
-(deftest test-emacs-handlers-completeness
-  (testing "emacs handlers has all expected commands"
-    (is (contains? emacs/handlers :eval))
-    (is (contains? emacs/handlers :buffers))
-    (is (contains? emacs/handlers :notify))
-    (is (contains? emacs/handlers :status))
-    (is (contains? emacs/handlers :switch))
-    (is (contains? emacs/handlers :find))
-    (is (contains? emacs/handlers :save))
-    (is (contains? emacs/handlers :current))))
-
-(deftest test-emacs-tool-def-schema-params
-  (testing "emacs tool-def schema has key params"
-    (let [props (get-in emacs/tool-def [:inputSchema :properties])]
-      (is (contains? props "code"))
-      (is (contains? props "message"))
-      (is (contains? props "level"))
-      (is (contains? props "buffer"))
-      (is (contains? props "file"))
-      (is (contains? props "all")))))
-
-(deftest test-emacs-notification-level-enum
-  (testing "emacs notification level enum is correct"
-    (let [enum (get-in emacs/tool-def [:inputSchema :properties "level" :enum])]
-      (is (= #{"info" "warn" "error"} (set enum))))))
 
 ;; =============================================================================
 ;; Part 14: Analysis Composite Tool Integration Tests
@@ -860,27 +795,16 @@
 ;; =============================================================================
 
 (deftest test-agora-handlers-completeness
-  (testing "agora handlers has canonical + deprecated commands"
-    ;; Canonical
+  (testing "agora handlers cover the ling dialogue commands"
     (is (contains? agora/handlers :dialogue))
     (is (contains? agora/handlers :dispatch))
     (is (contains? agora/handlers :consensus))
     (is (contains? agora/handlers :list))
     (is (contains? agora/handlers :join))
-    (is (contains? agora/handlers :history))
-    (is (contains? agora/handlers :debate))
-    (is (contains? agora/handlers :debate-status))
-    (is (contains? agora/handlers :continue))
-    ;; Deprecated aliases
-    (is (contains? agora/handlers :list-debates))
-    (is (contains? agora/handlers :staged))
-    (is (contains? agora/handlers :stage-status))))
-
-(deftest test-agora-canonical-handlers-no-deprecated
-  (testing "agora canonical-handlers does not contain deprecated aliases"
-    (is (not (contains? agora/canonical-handlers :list-debates)))
-    (is (not (contains? agora/canonical-handlers :staged)))
-    (is (not (contains? agora/canonical-handlers :stage-status)))))
+    (is (contains? agora/handlers :history)))
+  (testing "the drone-backed debate commands are gone"
+    (doseq [k [:debate :debate-status :continue :list-debates :staged :stage-status]]
+      (is (not (contains? agora/handlers k)) (str k)))))
 
 (deftest test-agora-tool-def-schema-params
   (testing "agora tool-def schema has key params"
@@ -889,11 +813,11 @@
       (is (contains? props "topic"))
       (is (contains? props "dialogue_id"))
       (is (contains? props "message"))
-      (is (contains? props "signal"))
-      (is (contains? props "roles"))
-      (is (contains? props "methodology"))
-      (is (contains? props "staged"))
-      (is (contains? props "type")))))
+      (is (contains? props "signal")))
+    (testing "debate-only params are gone"
+      (let [props (get-in agora/tool-def [:inputSchema :properties])]
+        (doseq [p ["roles" "methodology" "staged" "research_roles" "debate_roles"]]
+          (is (not (contains? props p)) p))))))
 
 (deftest test-agora-signal-enum
   (testing "agora signal enum is correct"
@@ -1001,9 +925,9 @@
     (is (contains? session/handlers :context-reconstruct))))
 
 (deftest test-session-handlers-are-functions
-  (testing "all session handlers are functions"
+  (testing "all session handlers are dispatchable"
     (doseq [[k v] session/handlers]
-      (is (fn? v) (str "session handler " k " should be a function")))))
+      (is (dispatch/handler? v) (str "session handler " k " should be dispatchable")))))
 
 (deftest test-session-tool-def-schema-params
   (testing "session tool-def schema has key params"
@@ -1033,9 +957,9 @@
     (is (contains? config/handlers :reload))))
 
 (deftest test-config-handlers-are-functions
-  (testing "all config handlers are functions"
+  (testing "all config handlers are dispatchable"
     (doseq [[k v] config/handlers]
-      (is (fn? v) (str "config handler " k " should be a function")))))
+      (is (dispatch/handler? v) (str "config handler " k " should be dispatchable")))))
 
 (deftest test-config-tool-def-schema-params
   (testing "config tool-def schema has key params"
@@ -1100,9 +1024,9 @@
     (is (contains? migration/handlers :adapters))))
 
 (deftest test-migration-handlers-are-functions
-  (testing "all migration handlers are functions"
+  (testing "all migration handlers are dispatchable"
     (doseq [[k v] migration/handlers]
-      (is (fn? v) (str "migration handler " k " should be a function")))))
+      (is (dispatch/handler? v) (str "migration handler " k " should be dispatchable")))))
 
 (deftest test-migration-tool-def-schema-params
   (testing "migration tool-def schema has key params"
@@ -1183,7 +1107,7 @@
 (deftest test-agent-type-enum
   (testing "agent type enum is correct"
     (let [enum (get-in agent/tool-def [:inputSchema :properties "type" :enum])]
-      (is (= #{"ling" "drone"} (set enum))))))
+      (is (= #{"ling"} (set enum))))))
 
 (deftest test-agent-spawn-mode-enum
   (testing "agent advertises exactly the abstract spawn modes"
@@ -1200,7 +1124,7 @@
     (is (true? (:consolidated multi/tool-def)))
     (is (string? (:description multi/tool-def)))
     (is (map? (:inputSchema multi/tool-def)))
-    (is (fn? (:handler multi/tool-def)))))
+    (is (dispatch/handler? (:handler multi/tool-def)))))
 
 (deftest test-multi-tool-def-no-required-params
   (testing "multi tool-def has no required params (batch mode doesn't need tool)"
@@ -1214,9 +1138,8 @@
       (is (contains? enum "hivemind"))
       (is (contains? enum "kanban"))
       (is (contains? enum "preset"))
-      (is (contains? enum "wave"))
+      (is (not (contains? enum "wave")))
       (is (contains? enum "magit"))
-      (is (contains? enum "emacs"))
       (is (contains? enum "analysis"))
       (is (contains? enum "agora"))
       (is (contains? enum "olympus"))

@@ -182,3 +182,86 @@
                              (canary/outcome :b nil "no store")])]
       (is (zero? (:passed v)))
       (is (= 2 (count (:skipped v)))))))
+
+;; =============================================================================
+;; verdict carries :ran-labels
+;; =============================================================================
+
+(deftest verdict-carries-ran-labels
+  (testing ":ran-labels has ok and fault labels, not skipped ones"
+    (let [v (canary/verdict [(canary/outcome :a nil)
+                             (canary/outcome :b {:fault :recall/probe-empty})
+                             (canary/outcome :c nil "no store")])]
+      (is (= #{:a :b} (:ran-labels v))))))
+
+;; =============================================================================
+;; skip-regressions
+;; =============================================================================
+
+(deftest nil-prev-returns-empty-for-skip-regressions
+  (testing "first tick, prev nil -> []"
+    (is (empty? (canary/skip-regressions nil {:skipped [{:label :x :reason "r"}]})))))
+
+(deftest label-ran-then-skipped-is-a-regression
+  (testing "a probe that ran in prev and skips in cur returns one went-dark"
+    (let [prev {:ran-labels #{:a :b}}
+          cur  {:skipped [{:label :a :reason "no store"}
+                          {:label :c :reason "no carto"}]}
+          regs (canary/skip-regressions prev cur)]
+      (is (= 1 (count regs)))
+      (is (= :recall/probe-went-dark (:fault (first regs))))
+      (is (= :a (:label (first regs))))
+      (is (= "no store" (:reason (first regs)))))))
+
+(deftest label-skipped-both-times-is-not-a-regression
+  (testing "persistent skip is not a regression — it never ran"
+    (let [prev {:ran-labels #{:b}}
+          cur  {:skipped [{:label :a :reason "no carto"}]}]
+      (is (empty? (canary/skip-regressions prev cur))))))
+
+(deftest label-ran-both-times-is-not-a-regression
+  (testing "stable runner"
+    (let [prev {:ran-labels #{:a :b}}
+          cur  {:skipped []}]
+      (is (empty? (canary/skip-regressions prev cur))))))
+
+(deftest label-newly-skipped-that-never-ran-is-not-a-regression
+  (testing "a new gap that never ran is not a regression"
+    (let [prev {:ran-labels #{:a}}
+          cur  {:skipped [{:label :b :reason "no carto"}]}]
+      (is (empty? (canary/skip-regressions prev cur))))))
+
+;; =============================================================================
+;; with-regressions
+;; =============================================================================
+
+(deftest regression-flips-ok-and-appends-faults
+  (testing "a regression makes :ok? false and appends to :faults"
+    (let [v (canary/with-regressions
+             {:ran-labels #{:a}}
+             {:ok? true :passed 1 :faults [] :skipped [{:label :a :reason "no store"}]})]
+      (is (false? (:ok? v)))
+      (is (= 1 (count (:faults v))))
+      (is (= :recall/probe-went-dark (:fault (first (:faults v))))))))
+
+(deftest no-regression-returns-cur-unchanged
+  (testing "when no regression, cur is returned =`=`"
+    (let [cur {:ok? true :passed 1 :faults [] :skipped [{:label :b :reason "no store"}]}]
+      (is (= cur (canary/with-regressions {:ran-labels #{:a}} cur))))))
+
+(deftest a-probe-that-stays-dark-keeps-faulting
+  (testing "the tick a probe goes dark it is a regression, and it STAYS one on
+            every later dark tick because with-regressions carries the regressed
+            labels into :ran-labels; only running again clears the fault"
+    (let [t1 (canary/verdict [(canary/outcome :probe-a nil)])
+          t2 (canary/with-regressions
+              t1 (canary/verdict [(canary/outcome :probe-a nil "no store")]))
+          t3 (canary/with-regressions
+              t2 (canary/verdict [(canary/outcome :probe-a nil "no store")]))]
+      (is (= [:recall/probe-went-dark] (mapv :fault (:faults t2))))
+      (is (= [:recall/probe-went-dark] (mapv :fault (:faults t3)))
+          "the second dark tick must fault too, not look like a quiet skip")
+      (let [t4 (canary/with-regressions
+                t3 (canary/verdict [(canary/outcome :probe-a nil)]))]
+        (is (empty? (mapv :fault (:faults t4))))
+        (is (:ok? t4))))))

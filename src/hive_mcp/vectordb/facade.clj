@@ -199,7 +199,7 @@
    Delegates to chroma.embeddings/get-embedding-provider (embedding
    config is backend-independent — lives outside IMemoryStore)."
   []
-  (when-let [f (rescue nil (requiring-resolve 'hive-mcp.chroma.embeddings/get-embedding-provider))]
+  (when-let [f (rescue nil (requiring-resolve 'hive-mcp.embeddings.active/get-embedding-provider))]
     (f)))
 
 (defn embedding-configured?
@@ -207,7 +207,7 @@
    Delegates to chroma.embeddings/embedding-configured? (embedding
    config is backend-independent — lives outside IMemoryStore)."
   []
-  (when-let [f (rescue nil (requiring-resolve 'hive-mcp.chroma.embeddings/embedding-configured?))]
+  (when-let [f (rescue nil (requiring-resolve 'hive-mcp.embeddings.active/embedding-configured?))]
     (f)))
 
 (defn cleanup-expired!

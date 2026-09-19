@@ -1,7 +1,7 @@
 (ns hive-mcp.channel.context-store
   "Ephemeral context store for pass-by-reference agent communication with TTL auto-eviction."
   (:require [taoensso.timbre :as log]
-            [hive-mcp.server.guards :as guards])
+            [hive-spi.swarm.guards :as guards])
   (:import [java.util.concurrent ConcurrentHashMap ScheduledExecutorService
             Executors TimeUnit]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>

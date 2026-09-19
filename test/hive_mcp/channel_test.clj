@@ -1,7 +1,7 @@
 (ns hive-mcp.channel-test
   "Tests for bidirectional channel infrastructure."
   (:require [clojure.test :refer [deftest testing is use-fixtures]]
-            [clojure.core.async :as async :refer [<!! >!! timeout alts!! go]]
+            [clojure.core.async :as async :refer [timeout alts!!]]
             [hive-mcp.channel.core :as ch]))
 
 ;; =============================================================================
@@ -47,19 +47,21 @@
 ;; Event Bus Tests
 ;; =============================================================================
 
+(def ^:private delivery-ms
+  "Upper bound on a delivery. Only a failing test ever waits it out."
+  5000)
+
+(defn- take-within
+  "Take from `ch`, or nil when nothing arrives within `ms`."
+  [ch ms]
+  (let [[v port] (alts!! [ch (timeout ms)])]
+    (when (= port ch) v)))
+
 (deftest event-publish-subscribe-test
   (testing "Event pub/sub works"
-    (let [received (atom nil)
-          sub-ch (ch/subscribe! :test-event)]
-      ;; Start consumer in background
-      (go
-        (when-let [event (<!! sub-ch)]
-          (reset! received event)))
-      ;; Publish event
+    (let [sub-ch (ch/subscribe! :test-event)]
       (ch/publish! {:type :test-event :data "hello"})
-      ;; Wait for delivery
-      (Thread/sleep 100)
-      (is (= "hello" (:data @received)))
+      (is (= "hello" (:data (take-within sub-ch delivery-ms))))
       (ch/unsubscribe! :test-event sub-ch))))
 
 (deftest event-requires-type-test
@@ -69,18 +71,11 @@
 
 (deftest multiple-subscribers-test
   (testing "Multiple subscribers receive events"
-    (let [received1 (atom nil)
-          received2 (atom nil)
-          sub1 (ch/subscribe! :multi-test)
+    (let [sub1 (ch/subscribe! :multi-test)
           sub2 (ch/subscribe! :multi-test)]
-      ;; Start consumers
-      (go (when-let [e (<!! sub1)] (reset! received1 e)))
-      (go (when-let [e (<!! sub2)] (reset! received2 e)))
-      ;; Publish
       (ch/publish! {:type :multi-test :data "broadcast"})
-      (Thread/sleep 100)
-      (is (= "broadcast" (:data @received1)))
-      (is (= "broadcast" (:data @received2)))
+      (is (= "broadcast" (:data (take-within sub1 delivery-ms))))
+      (is (= "broadcast" (:data (take-within sub2 delivery-ms))))
       (ch/unsubscribe! :multi-test sub1)
       (ch/unsubscribe! :multi-test sub2))))
 
@@ -128,21 +123,12 @@
 
 (deftest emit-event-adds-timestamp-test
   (testing "emit-event! adds timestamp"
-    (let [received (promise)
-          ;; Envelope keys are owned by the source, never restated here.
+    (let [;; Envelope keys are owned by the source, never restated here.
           ts-key (:timestamp ch/envelope-keys)
           type-key (:type ch/envelope-keys)
           sub (ch/subscribe! :timestamped)]
-      ;; Start async receiver first
-      (async/go
-        (when-let [e (async/<! sub)]
-          (deliver received e)))
-      ;; Brief pause to ensure go block is waiting
-      (Thread/sleep 10)
-      ;; Emit event
       (ch/emit-event! :timestamped {:data "test"})
-      ;; Wait for result with timeout
-      (let [result (deref received 1000 nil)]
+      (let [result (take-within sub delivery-ms)]
         (is (some? result) "Should receive event")
         (when result
           (is (number? (get result ts-key)))

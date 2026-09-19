@@ -12,7 +12,8 @@
   (:require [clojure.test :refer [deftest testing is use-fixtures]]
             [clojure.string]
             [hive-mcp.addons.protocol :as proto]
-            [hive-mcp.addons.core :as addons]))
+            [hive-mcp.addons.core :as addons]
+            [hive-mcp.dispatch.handler :as dispatch]))
 
 ;; =============================================================================
 ;; Test Fixtures
@@ -244,7 +245,7 @@
         (is (= "my-example_ping" (:name (first tools))))
         (is (string? (:description (first tools))))
         (is (map? (:inputSchema (first tools))))
-        (is (fn? (:handler (first tools))))))
+        (is (dispatch/handler? (:handler (first tools))))))
 
     (testing "tool handler works"
       (let [handler (:handler (first (proto/tools addon)))

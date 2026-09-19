@@ -82,7 +82,19 @@
    [:priority {:optional true :default :medium} Priority]
    [:files {:optional true :default []} [:vector :string]]
    [:estimate {:optional true :default :medium} Estimate]
-   [:tags {:optional true :default []} [:vector :string]]])
+   [:tags {:optional true :default []} [:vector :string]]
+   [:execution {:optional true}
+    [:map
+     [:model {:optional true} :string]
+     [:provider {:optional true} :string]
+     [:spawn-mode {:optional true} :string]
+     [:presets {:optional true} [:vector :string]]
+     [:persona {:optional true} :map]]]])
+
+(def step-keys
+  "Set of top-level keys the core Step schema declares, read off Step itself.
+   Addon-registered step fields (plan.field-registry) are not included."
+  (into #{} (map first) (m/children Step)))
 
 ;; =============================================================================
 ;; Plan Schema

@@ -38,7 +38,9 @@
             [hive-hot.core :as hot]
             [hive-hot.events :as hot-events]
             [taoensso.timbre :as log]
-            [clojure.string :as str] [hive-dsl.result :refer [rescue]]))
+            [clojure.string :as str] [hive-dsl.result :refer [rescue]]
+            [hive-mcp.hot.self :as hot-self]
+            [hive-mcp.protocols.vector :as vec-proto]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -89,9 +91,11 @@
   1. ~/.config/hive-mcp/config.edn :embeddings section
   2. ~/.config/hive-mcp/config.edn :services / :secrets sections
   3. Environment variables (OLLAMA_HOST, OPENROUTER_API_KEY, etc.) as fallback
-  4. Built-in defaults"
+  4. Built-in endpoint defaults (hosts only). Embedding models have no default:
+     embeddings.ollama.model / embeddings.openrouter.model must be set, and a
+     missing one is logged as an error naming the key."
   []
-  (result/rescue false
+  (result/rescue-log "init-embedding-provider!" false
     ;; Load global config to get :embeddings section
                  (let [cfg (global-config/get-global-config)
                        embed-cfg (get cfg :embeddings {})
@@ -107,72 +111,62 @@
       ;; Initialize EmbeddingService for per-collection routing
                    (embedding-service/init!)
 
-      ;; Read Ollama host/model from :embeddings > :services > env vars > defaults
+      ;; Ollama host from :embeddings > :services > env vars > default endpoint.
+      ;; Embedding models come from :embeddings only; there is no default model.
                    (let [ollama-host (or (:host ollama-cfg)
                                          (global-config/get-service-value :ollama :host
                                                                           :env "OLLAMA_HOST"
                                                                           :default "http://localhost:11434"))
-                         ollama-model (or (:model ollama-cfg) "qwen3-embedding:4b")
-                         openrouter-model (or (:model openrouter-cfg) "qwen/qwen3-embedding-8b")]
+                         ollama-model (:model ollama-cfg)
+                         openrouter-key? (boolean (global-config/get-secret :openrouter-api-key))
+                         openrouter-model (when openrouter-key? (:model openrouter-cfg))
+                         ollama-emb-cfg (when ollama-model
+                                          (result/rescue nil
+                                                         (embedding-config/ollama-config {:host ollama-host :model ollama-model})))
+                         configure-ollama! (fn [collection]
+                                             (when ollama-emb-cfg
+                                               (result/rescue nil
+                                                              (embedding-service/configure-collection! collection ollama-emb-cfg))))
+                         configure-openrouter! (fn [collection]
+                                                 (boolean
+                                                  (and openrouter-model
+                                                       (result/rescue false
+                                                                      (embedding-service/configure-collection!
+                                                                       collection
+                                                                       (embedding-config/openrouter-config {:model openrouter-model}))
+                                                                      true))))]
 
-        ;; Configure per-collection embedding providers
-        ;; Memory collection: Ollama (fast, local, 768 dims)
-                     (result/rescue nil
-                                    (embedding-service/configure-collection!
-                                     "hive-mcp-memory"
-                                     (embedding-config/ollama-config {:host ollama-host :model ollama-model})))
+                     (when-not ollama-model
+                       (log/error "No Ollama embedding model configured: set embeddings.ollama.model"
+                                  "(hive config set embeddings.ollama.model <model-id>)."
+                                  "Ollama-backed collections and the global fallback provider are left unconfigured."))
+                     (when (and openrouter-key? (not openrouter-model))
+                       (log/error "OPENROUTER_API_KEY is set but no OpenRouter embedding model is configured:"
+                                  "set embeddings.openrouter.model (hive config set embeddings.openrouter.model <model-id>)."
+                                  "OpenRouter-backed collections fall back to Ollama."))
 
-        ;; Presets collection: OpenRouter (accurate, 4096 dims) if API key available
-                     (when (global-config/get-secret :openrouter-api-key)
-                       (let [configured? (result/rescue false
-                                                        (embedding-service/configure-collection!
-                                                         "hive-mcp-presets"
-                                                         (embedding-config/openrouter-config {:model openrouter-model}))
-                                                        true)]
-                         (if configured?
-                           (log/info "Presets collection configured with OpenRouter (4096 dims)")
-              ;; Fallback: use Ollama for presets too
-                           (result/rescue nil
-                                          (embedding-service/configure-collection!
-                                           "hive-mcp-presets"
-                                           (embedding-config/ollama-config {:host ollama-host :model ollama-model}))))))
+        ;; Memory collection: Ollama
+                     (configure-ollama! "hive-mcp-memory")
 
-        ;; Plans collection: OpenRouter (4096 dims) for large plan entries (1000-5000+ chars)
-        ;; Plans exceed Ollama's ~1500 char embedding limit, so OpenRouter is preferred
-                     (if (global-config/get-secret :openrouter-api-key)
-                       (let [configured? (result/rescue false
-                                                        (embedding-service/configure-collection!
-                                                         "hive-mcp-plans"
-                                                         (embedding-config/openrouter-config {:model openrouter-model}))
-                                                        true)]
-                         (if configured?
-                           (log/info "Plans collection configured with OpenRouter (4096 dims)")
-                           (do
-                ;; Fallback: use Ollama (truncation risk for large plans, but works)
-                             (result/rescue nil
-                                            (embedding-service/configure-collection!
-                                             "hive-mcp-plans"
-                                             (embedding-config/ollama-config {:host ollama-host :model ollama-model})))
-                             (log/warn "Plans collection using Ollama - entries >1500 chars may be truncated"))))
-          ;; No OpenRouter key - use Ollama with warning
+        ;; Presets collection: OpenRouter when configured, else Ollama
+                     (if (configure-openrouter! "hive-mcp-presets")
+                       (log/info "Presets collection configured with OpenRouter")
+                       (configure-ollama! "hive-mcp-presets"))
+
+        ;; Plans collection: OpenRouter when configured, else Ollama with a truncation warning
+                     (if (configure-openrouter! "hive-mcp-plans")
+                       (log/info "Plans collection configured with OpenRouter")
                        (do
-                         (result/rescue nil
-                                        (embedding-service/configure-collection!
-                                         "hive-mcp-plans"
-                                         (embedding-config/ollama-config {:host ollama-host :model ollama-model})))
-                         (log/warn "Plans collection using Ollama (no OPENROUTER_API_KEY) - entries >1500 chars may be truncated")))
+                         (configure-ollama! "hive-mcp-plans")
+                         (log/warn "Plans collection using Ollama - entries >1500 chars may be truncated")))
 
-        ;; Ingest collection: OpenRouter (same model used by hive-ingestor OpenRouterEmbedder)
-                     (when (global-config/get-secret :openrouter-api-key)
-                       (result/rescue nil
-                                      (embedding-service/configure-collection!
-                                       "hive-ingest"
-                                       (embedding-config/openrouter-config {:model openrouter-model})))
+        ;; Ingest collection: OpenRouter when configured
+                     (when (configure-openrouter! "hive-ingest")
                        (log/info "Ingest collection configured with OpenRouter"))
 
-        ;; Set global fallback provider (Ollama) for backward compatibility
-                     (let [provider (ollama/->provider {:host ollama-host})]
-                       (chroma/set-embedding-provider! provider)
+        ;; Global fallback provider (Ollama), only with a configured model
+                     (when ollama-model
+                       (chroma/set-embedding-provider! (ollama/->provider {:host ollama-host :model ollama-model}))
                        (log/info "Global fallback embedding provider: Ollama at" ollama-host))
 
                      (log/info "Embedding config from config.edn:" {:ollama-host ollama-host
@@ -189,7 +183,7 @@
   "Emit health event via WebSocket channel after hot-reload.
    Lings can listen for this to confirm MCP is operational."
   [loaded-ns unloaded-ns ms]
-  (result/rescue nil
+  (result/rescue-log "emit-mcp-health-event!" nil
                  (ws-channel/emit! :mcp-health-restored
                                    {:loaded (count loaded-ns)
                                     :unloaded (count unloaded-ns)
@@ -207,7 +201,7 @@
   [server-context-atom {:keys [loaded unloaded ms]}]
   (log/info "Hot-reload completed:" (count loaded) "loaded," (count unloaded) "unloaded in" ms "ms")
   ;; Refresh MCP tool handlers to point to new var values
-  (result/rescue nil
+  (result/rescue-log "handle-hot-reload-success!" nil
                  (when @server-context-atom
                    (routes/refresh-tools! server-context-atom)
                    (log/info "MCP tools refreshed after hot-reload")))
@@ -241,7 +235,7 @@
   "Initialize hive-events system (re-frame inspired event dispatch).
    EVENTS-01: Event system must init after hooks but before channel."
   []
-  (result/rescue nil
+  (result/rescue-log "init-events!" nil
                  (ev/init!)
                  (effects/register-effects!)
                  (ev-handlers/register-handlers!)
@@ -258,7 +252,7 @@
    Parameters:
      coordinator-id-atom - atom to store coordinator project-id"
   [coordinator-id-atom]
-  (result/rescue nil
+  (result/rescue-log "register-coordinator!" nil
                  (require 'hive-mcp.swarm.datascript)
                  (require 'hive-mcp.swarm.datascript.lings)
                  (let [register! (resolve 'hive-mcp.swarm.datascript/register-coordinator!)
@@ -292,26 +286,75 @@
    invoked in Phase 4, before Phase 5.5's explicit load-global-config!.
    Returns a lowercase string (e.g. \"milvus\", \"chroma\")."
   []
-  (result/rescue nil (global-config/load-global-config!))
+  (result/rescue-log "resolve-memory-backend" nil (global-config/load-global-config!))
   (let [cfg (global-config/get-global-config)
         b   (or (get-in cfg [:services :memory-store :backend])
                 (get-in cfg [:memory :default-store])
                 "chroma")]
     (-> b name clojure.string/lower-case)))
 
-(defn wire-memory-store!
-  "Wire the active IMemoryStore backend based on global config.
+(defn- vector-store-adapter-sym
+  "The adapter the deployment chose for the vector-collection seam, as a
+   fully-qualified factory symbol under :services :vector-store :adapter.
+   The symbol names a vendor adapter module OUTSIDE this repo; supporting a
+   NEW backend means writing an adapter that satisfies
+   protocols.vector/IVectorCollectionStore and naming it here in config —
+   this composition root never enumerates backends, nor mentions any vendor
+   by name (OCP + no-host-vendor-rule)."
+  []
+  (some-> (get-in (global-config/get-global-config)
+                  [:services :vector-store :adapter])
+          symbol))
 
-   Dispatch: :services :memory-store :backend (fallback :memory :default-store).
-     - \"milvus\": defer to hive-milvus addon. Its initialize! calls set-store!
+(defn- wire-vector-store!
+  "Install the vector-collection backend. THREE sources, first wins:
+
+    1. an IAddon already installed one (the addon path is the primary
+       extension mechanism: a vendor addon registers its own store and this
+       root never learns the vendor's name);
+    2. the deployment's configured adapter symbol
+       (:services :vector-store :adapter) — resolved LAZILY, because a
+       static require here would be a kernel -> non-kernel edge needing a
+       waiver, and kernel.edn says its waiver list may only shrink. A missing
+       jar fails at the call with a reason, not at compile;
+    3. the legacy chroma fallback, kept until every deployment names an
+       adapter (or the hive-chroma IAddon exists and stops it)."
+  [backend-id]
+  (result/rescue-log "wire-vector-store!" nil
+                     (if (vec-proto/store-set?)
+                       (log/info "Vector-collection store already wired by an addon; not overriding"
+                                 {:backend backend-id})
+                       (if-let [adapter-sym (vector-store-adapter-sym)]
+                         (if-let [make (requiring-resolve adapter-sym)]
+                           (do (vec-proto/set-store! (make))
+                               (log/info "Vector-collection store wired"
+                                         {:backend backend-id :adapter (str adapter-sym)}))
+                           (log/warn "Configured vector-collection adapter not on classpath"
+                                     {:backend backend-id :adapter (str adapter-sym)}))
+                         (if-let [make (requiring-resolve 'hive-mcp.chroma.vector-store/chroma-vector-store)]
+                           (do (vec-proto/set-store! (make))
+                               (log/info "Chroma wired as the IVectorCollectionStore (legacy fallback)"
+                                         {:backend backend-id}))
+                           (log/warn "No vector-collection backend available"
+                                     {:backend backend-id}))))))
+
+(defn wire-memory-store!
+  "Select and wire the memory backend.
+
+     - milvus: defer to the hive-milvus addon, which registers its own store
        during Phase 4.5 (load-extensions!).
      - anything else: wire ChromaMemoryStore immediately (legacy behavior).
 
    Must run AFTER init-embedding-provider! since Chroma config is set there.
    A post-extensions fallback in `ensure-memory-store!` guarantees a live
-   store even when the selected addon fails to register."
+   store even when the selected addon fails to register.
+
+   This is the COMPOSITION ROOT, and the one place allowed to name a concrete
+   backend. It wires two INDEPENDENT seams: the memory-entry store
+   (protocols.memory) and the named-collection store (protocols.vector) that
+   plan.plans and presets.core drive."
   []
-  (result/rescue nil
+  (result/rescue-log "wire-memory-store!" nil
                  (let [backend (resolve-memory-backend)]
                    (case backend
                      "milvus"
@@ -320,6 +363,7 @@
 
                      (let [store (chroma-store/create-store)]
                        (mem-proto/set-store! store)
+                       (wire-vector-store! backend)
                        (log/info "ChromaMemoryStore wired as active IMemoryStore backend"
                                  {:backend backend}))))))
 
@@ -328,13 +372,21 @@
 
    Called in Phase 4.6 (after load-extensions!). If the configured backend's
    addon failed to register a store, wire ChromaMemoryStore as a safety
-   fallback so memory queries don't throw 'No memory store configured'."
+   fallback so memory queries don't throw 'No memory store configured'.
+
+   The vector-collection store gets the same treatment, and SEPARATELY: an
+   addon may satisfy one seam and not the other, so a single `store-set?`
+   check over both would leave whichever it did not name unwired."
   []
-  (result/rescue nil
+  (result/rescue-log "ensure-memory-store!" nil
                  (when-not (mem-proto/store-set?)
                    (log/warn "ensure-memory-store!: no store after extensions; wiring Chroma fallback")
                    (let [store (chroma-store/create-store)]
-                     (mem-proto/set-store! store)))))
+                     (mem-proto/set-store! store)))
+                 (when-not (vec-proto/store-set?)
+                   (log/warn "ensure-memory-store!: no vector-collection store after extensions;"
+                             "wiring fallback")
+                   (wire-vector-store! (resolve-memory-backend)))))
 
 ;; =============================================================================
 ;; Channel Bridge + Sync
@@ -344,7 +396,7 @@
   "Initialize channel bridge - wires channel events to hive-events dispatch.
    EVENTS-01: Must init after both channel server and event system."
   []
-  (result/rescue nil
+  (result/rescue-log "init-channel-bridge!" nil
                  (channel-bridge/init!)
                  (log/info "Channel bridge initialized - channel events will dispatch to hive-events")))
 
@@ -421,6 +473,17 @@
 
    ADR: State-based debouncing - claimed files buffer until release.
 
+   The watcher has always covered hive-mcp's OWN src and has always refreshed
+   the tool table on a successful reload (see register-hot-reload-listener!).
+   What it never passed was `:no-reload`, which `init-with-watcher!` has
+   accepted all along. Without it, a reload of a core namespace that DEFINES a
+   protocol orphans every reify and defrecord instance built against the old
+   protocol object, and `satisfies?` then answers false for a class that
+   plainly implements it (axiom 20260822010805-57856ae1). The set is derived
+   from the live image by hive-mcp.hot.self, never listed, because a written
+   list of the thirty-seven namespaces that define protocols today is correct
+   only until somebody adds or moves one.
+
    Parameters:
      server-context-atom - atom containing MCP server context
      project-config      - map from read-project-config (or nil)"
@@ -433,11 +496,15 @@
                                                                          :parse #(str/split % #":"))
                                         (:watch-dirs project-config)
                                         ["src"])
-                           claim-checker (hot-events/make-claim-checker logic/get-all-claims)]
+                           claim-checker (hot-events/make-claim-checker logic/get-all-claims)
+                           no-reload (hot-self/protocol-namespaces)]
                        (hot/init-with-watcher! {:dirs src-dirs
                                                 :claim-checker claim-checker
+                                                :no-reload no-reload
                                                 :debounce-ms 100})
-                       (log/info "Hot-reload watcher started:" {:dirs src-dirs})
+                       (log/info "Hot-reload watcher started:"
+                                 {:dirs src-dirs
+                                  :protocol-namespaces-protected (count no-reload)})
           ;; Register MCP auto-heal listener to refresh tools after reload
                        (register-hot-reload-listener! server-context-atom)
           ;; Register state protection for DataScript state validation
@@ -460,7 +527,7 @@
   "Start lings registry sync - keeps Clojure registry in sync with elisp.
    ADR-001: Event-driven sync for lings_available to return accurate counts."
   []
-  (result/rescue nil
+  (result/rescue-log "start-registry-sync!" nil
                  (swarm/start-registry-sync!)
                  (log/info "Lings registry sync started - lings_available will track elisp lings")))
 
@@ -479,7 +546,7 @@
    Non-fatal: if scheduler fails to start, system continues without it.
    Decay still runs on wrap/catchup hooks as before."
   []
-  (result/rescue nil
+  (result/rescue-log "start-decay-scheduler!" nil
                  (require 'hive-mcp.scheduler.decay)
                  (let [start-fn (resolve 'hive-mcp.scheduler.decay/start!)]
                    (when start-fn
@@ -526,7 +593,7 @@
 (defn stop-decay-scheduler!
   "Stop the periodic decay scheduler. Called during shutdown."
   []
-  (result/rescue nil
+  (result/rescue-log "stop-decay-scheduler!" nil
                  (require 'hive-mcp.scheduler.decay)
                  (when-let [stop-fn (resolve 'hive-mcp.scheduler.decay/stop!)]
                    (stop-fn))))
@@ -548,7 +615,7 @@
    Non-fatal: if either fails to start, system continues without it.
    GC sweep still runs on session wrap/complete as before."
   []
-  (result/rescue nil
+  (result/rescue-log "start-housekeeping-scheduler!" nil
                  (require 'hive-mcp.scheduler.housekeeping)
                  (let [start-fn (resolve 'hive-mcp.scheduler.housekeeping/start!)]
                    (when start-fn
@@ -556,7 +623,7 @@
                        (if (:started result)
                          (log/info "Housekeeping scheduler started:" result)
                          (log/info "Housekeeping scheduler not started:" (:reason result)))))))
-  (result/rescue nil
+  (result/rescue-log "start-housekeeping-scheduler!" nil
                  (require 'hive-mcp.channel.context-store)
                  (when-let [reaper-start! (resolve 'hive-mcp.channel.context-store/start-reaper!)]
                    (reaper-start!))))
@@ -565,11 +632,11 @@
   "Stop the periodic housekeeping scheduler and the context-store TTL reaper.
    Called during shutdown."
   []
-  (result/rescue nil
+  (result/rescue-log "stop-housekeeping-scheduler!" nil
                  (require 'hive-mcp.scheduler.housekeeping)
                  (when-let [stop-fn (resolve 'hive-mcp.scheduler.housekeeping/stop!)]
                    (stop-fn)))
-  (result/rescue nil
+  (result/rescue-log "stop-housekeeping-scheduler!" nil
                  (require 'hive-mcp.channel.context-store)
                  (when-let [reaper-stop! (resolve 'hive-mcp.channel.context-store/stop-reaper!)]
                    (reaper-stop!))))
@@ -599,7 +666,7 @@
    so headless hosts still get a working delivery surface even when NATS
    is disabled."
   []
-  (result/rescue nil
+  (result/rescue-log "init-nats!" nil
                  (let [nats-config (global-config/get-service-config :nats)]
                    (when (:enabled nats-config)
                      (let [start! (requiring-resolve 'hive-mcp.nats.client/start!)
@@ -641,14 +708,14 @@
 
    Must run AFTER embedding/memory services (extensions may use Chroma)."
   []
-  (result/rescue nil
+  (result/rescue-log "load-extensions!" nil
                  (require 'hive-mcp.extensions.loader)
                  (let [load-fn (resolve 'hive-mcp.extensions.loader/load-extensions!)]
                    (when load-fn
                      (let [result (load-fn)]
                        (log/info "Extension loading complete:" result)))))
   ;; Post-init multi-dispatch coherence check (WARN-only)
-  (result/rescue nil
+  (result/rescue-log "load-extensions!" nil
                  (let [get-adv (requiring-resolve 'hive-mcp.tools.registry/get-advertised-tools)
                        check!  (requiring-resolve 'hive-mcp.multi.registry/check-dispatch-coherence!)]
                    (when (and get-adv check!)
@@ -667,7 +734,7 @@
    Must run AFTER embedding/memory services (handlers may need them at runtime).
    Non-fatal: if initialization fails, NoopWorkflowEngine remains as fallback."
   []
-  (result/rescue nil
+  (result/rescue-log "init-workflow-engine!" nil
                  (require 'hive-mcp.workflows.registry)
                  (require 'hive-mcp.workflows.fsm-engine)
                  (require 'hive-mcp.protocols.workflow)

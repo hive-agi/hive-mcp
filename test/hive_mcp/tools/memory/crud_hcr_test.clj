@@ -7,7 +7,7 @@
    - Backward compatibility (default false)
    - resolve-project-scope for agent spawn integration"
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
-            [hive-mcp.knowledge-graph.scope :as kg-scope]
+            [hive-mcp.project.scope :as kg-scope]
             [hive-mcp.tools.memory.crud]
             [hive-mcp.tools.consolidated.agent]
             [hive-mcp.tools.agent.spawn]))

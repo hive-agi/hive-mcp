@@ -59,5 +59,5 @@
        (enrich-context ctx-refs kg-node-ids scope opts)))))
 
 ;; Backwards-compatible aliases (build-l2-envelope removed — use enrich-context directly)
-(def build-spawn-envelope prepare-spawn-context)
-(def envelope-from-dispatch-context from-dispatch-context)
+(def build-spawn-envelope #'prepare-spawn-context)
+(def envelope-from-dispatch-context #'from-dispatch-context)

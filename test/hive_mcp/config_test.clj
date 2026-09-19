@@ -417,49 +417,38 @@
       (is (= ["/v2"] (config/get-project-roots))))))
 
 ;; =============================================================================
-;; Test: default-drone-model / default-drone-backend
+;; Test: shipped defaults carry no model or provider choice
 ;; =============================================================================
 
-(deftest test-default-drone-model-from-config
-  (testing "default-drone-model reads from :services :drone :default-model"
-    (let [path (write-temp-config!
-                {:services {:drone {:mode :local
-                                    :default-model "custom/test-model"
-                                    :default-backend :openrouter}}})]
-      (config/load-global-config! path)
-      (is (= "custom/test-model" (config/default-drone-model))))))
+(deftest test-defaults-carry-no-model-choice
+  (testing "Loading with no user config materializes no model, model list or drone key"
+    (let [result (config/load-global-config! (temp-path "no-models.edn"))]
+      (is (not (contains? result :agent-defaults)))
+      (is (not (contains? result :models)))
+      (is (not (contains? (:services result) :drone)))
+      (is (nil? (get-in result [:embedder :default])))
+      (is (nil? (get-in result [:embedder :providers])))
+      (is (nil? (get-in result [:embeddings :ollama :model])))
+      (is (every? #(not (or (contains? % :default-model) (contains? % :available-models)))
+                  (vals (:llm-providers result)))
+          "seed provider entries are endpoint descriptors only")))
 
-(deftest test-default-drone-model-fallback
-  (testing "default-drone-model falls back to hardcoded default when :drone missing"
-    (let [path (write-temp-config! {:services {}})]
-      (config/load-global-config! path)
-      (is (= "devstral-small:24b" (config/default-drone-model))))))
+  (testing "A key the user removed from config.edn stays removed after load"
+    (let [path (write-temp-config! {:project-roots []})
+          result (config/load-global-config! path)]
+      (is (not (contains? result :agent-defaults)))
+      (is (not (contains? (:services result) :drone))))))
 
-(deftest test-default-drone-model-returns-string
-  (testing "default-drone-model always returns a string"
-    (is (string? (config/default-drone-model)))))
-
-(deftest test-default-drone-backend-from-config
-  (testing "default-drone-backend reads from :services :drone :default-backend"
-    (let [path (write-temp-config!
-                {:services {:drone {:mode :local
-                                    :default-model "model"
-                                    :default-backend :custom-backend}}})]
-      (config/load-global-config! path)
-      (is (= :custom-backend (config/default-drone-backend))))))
-
-(deftest test-default-drone-backend-fallback
-  (testing "default-drone-backend falls back to :agentic-loop when :drone missing"
-    (let [path (write-temp-config! {:services {}})]
-      (config/load-global-config! path)
-      (is (= :agentic-loop (config/default-drone-backend))))))
-
-(deftest test-default-drone-model-config-override
-  (testing "User config.edn :drone :default-model overrides defaults"
-    (let [path (write-temp-config!
-                {:services {:drone {:default-model "my-org/my-model:latest"}}})]
-      (config/load-global-config! path)
-      (is (= "my-org/my-model:latest" (config/default-drone-model))))))
+(deftest test-user-model-config-survives-load
+  (testing "Model choices declared in config.edn are read back unchanged"
+    (let [declared {:agent-defaults {:ling {:provider :venice :model "test-model"}}
+                    :llm-providers  {:venice {:default-model "test-model"}}}
+          path (write-temp-config! declared)
+          result (config/load-global-config! path)]
+      (is (= {:ling {:provider :venice :model "test-model"}} (:agent-defaults result)))
+      (is (= "test-model" (get-in result [:llm-providers :venice :default-model])))
+      (is (string? (get-in result [:llm-providers :venice :api-url]))
+          "the endpoint descriptor still merges under the user's model"))))
 
 ;; =============================================================================
 ;; Meta-test: prove the safety net itself works

@@ -2,7 +2,8 @@
   "Tests for spawn context injection — :full, :hints, and :ref modes.
 
    W3 Task 2.2: Validates :ref mode alongside existing :full/:hints."
-  (:require [clojure.test :refer [deftest is testing use-fixtures]]
+  (:require [hive-mcp.project.scope]
+            [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.string :as str]
             [hive-mcp.tools.catchup.spawn :as spawn]
             [hive-mcp.channel.context-store :as ctx-store]
@@ -40,7 +41,7 @@
    The memory store is NOT mocked here — the stub fixture registers a real
    one through the port, so `mem-proto/store-set?` answers truthfully."
   [project-id & body]
-  `(with-redefs [hive-mcp.tools.memory.scope/get-current-project-id (fn [~'_] ~project-id)
+  `(with-redefs [hive-mcp.project.scope/get-current-project-id (fn [~'_] ~project-id)
                  hive-mcp.tools.catchup.scope/get-current-project-name (fn [~'_] ~project-id)
                  hive-mcp.tools.catchup.git/gather-git-info (fn [~'_] mock-git-info)]
      ~@body))
@@ -48,7 +49,7 @@
 (defmacro with-full-mode-mocks
   "with-base-mocks plus the query seams the :full renderer fans out to."
   [project-id axioms & body]
-  `(with-redefs [hive-mcp.tools.memory.scope/get-current-project-id (fn [~'_] ~project-id)
+  `(with-redefs [hive-mcp.project.scope/get-current-project-id (fn [~'_] ~project-id)
                  hive-mcp.tools.catchup.scope/get-current-project-name (fn [~'_] ~project-id)
                  hive-mcp.tools.catchup.scope/query-axioms (fn [~'_] ~axioms)
                  hive-mcp.tools.catchup.scope/query-scoped-entries (fn [~'_ ~'_ ~'_ ~'_] [])
@@ -164,7 +165,7 @@
 
 (deftest test-hints-mode-backward-compat
   (testing ":hints mode still works after :ref addition"
-    (with-redefs [hive-mcp.tools.memory.scope/get-current-project-id (fn [_] "tp")
+    (with-redefs [hive-mcp.project.scope/get-current-project-id (fn [_] "tp")
                   hive-mcp.tools.catchup.scope/get-current-project-name (fn [_] "tp")
                   hive-mcp.agent.hints/query-axioms
                   (fn [_] [{:id "ax-1"}])

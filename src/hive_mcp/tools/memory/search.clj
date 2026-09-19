@@ -30,7 +30,6 @@
   (:require [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [hive-mcp.knowledge-graph.scope :as kg-scope]
-            [hive-mcp.chroma.search :as chroma-search]
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.memory.domain :as domain]
             [hive-mcp.tools.core :refer [coerce-int!]]
@@ -43,7 +42,8 @@
             [hive-mcp.agent.context :as ctx]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.vectordb.resilience :refer [with-resilience]]))
+            [hive-mcp.vectordb.resilience :refer [with-resilience]]
+            [hive-mcp.memory.ingest-search :as ingest-search]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -241,11 +241,11 @@
   (safe/safe-future-call
    {:timeout-ms (budget :vectordb) :name "memory-search/ingest"}
    (fn []
-     (if-let [search-fn (chroma-search/resolve-ingest-search)]
+     (if-let [search-fn (ingest-search/resolve-ingest-search)]
        (rescue []
                (let [raw (search-fn query {:limit limit-val})]
                  (if (and (map? raw) (:ok raw))
-                   (chroma-search/normalize-ingest-results (:ok raw))
+                   (ingest-search/normalize-ingest-results (:ok raw))
                    [])))
        []))))
 
@@ -258,9 +258,7 @@
    {:timeout-ms (budget :post-filter) :name "memory-search/post"}
    (fn []
      (let [normalized-store (mapv store-entry->normalized (or store-results []))
-           merged (chroma-search/merge-and-rerank normalized-store
-                                                  (or ingest-results [])
-                                                  limit-val)]
+           merged (ingest-search/merge-and-rerank normalized-store (or ingest-results []) limit-val)]
        (mapv format-search-result merged)))))
 
 (def ^:private default-exclude-tags

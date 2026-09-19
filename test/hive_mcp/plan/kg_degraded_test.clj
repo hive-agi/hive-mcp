@@ -38,7 +38,7 @@
   ;; atom-backed IMemoryStore stub registered in the store registry, so
   ;; the integration tests drive the production create path instead of a
   ;; hand-rolled fn whose arity can drift. Core's IKanbanWrite provider
-  ;; sits in front of that store, resolved through hive-contracts.registry.
+  ;; sits in front of that store, resolved through the kanban registry.
   mem-stub/with-stub-store
   kport/with-core-kanban
   (iso/with-isolations :kg-conn)

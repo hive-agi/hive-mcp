@@ -26,7 +26,7 @@
    - hive-mcp.agent.ling.terminal-registry        -- Analogous pattern for terminals
    - hive-mcp.addons.headless                      -- IHeadlessBackend protocol
    - hive-mcp.agent.ling.headless-addon-strategy   -- Bridge adapter"
-  (:require [hive-mcp.addons.headless :as headless]
+  (:require [hive-spi.addon.headless :as headless]
             [hive-mcp.agent.ling.headless-addon-strategy :as headless-strat]
             [taoensso.timbre :as log]
             [hive-mcp.config.headless-defaults :as headless-defaults]))

@@ -222,6 +222,46 @@
           (install! (deref open))
           (log/info "Licence gate: open, this host runs its own artifacts"))))))
 
+(defn load-extensions-via-lifecycle!
+  "Boot manifest-discovered addons under hive-addon.lifecycle: eager addons
+   mount now, lazy ones are advertised by stubs and mount on first use, and
+   idle lazy addons are released by a sweeper.
+
+   Gate: :addons service config {:lifecycle {:enabled? true ...}}, overridable
+   by env HIVE_MCP_ADDON_LIFECYCLE=1|true|0|false. Returns nil when disabled or
+   when the lifecycle namespaces are not resolvable, and the caller falls back
+   to load-extensions-via-mount!.
+
+   Returns a map shaped like the composer's :ok ({:report MountReport ...}) plus
+   :lifecycle {:eager [...] :dormant [...] :downgraded {...}}, or nil on failure
+   (logged)."
+  []
+  (let [svc-cfg  (rescue {} ((requiring-resolve 'hive-mcp.config.core/get-service-config) :addons))
+        env-flag (System/getenv "HIVE_MCP_ADDON_LIFECYCLE")
+        enabled? (if (some? env-flag)
+                   (contains? #{"1" "true"} env-flag)
+                   (true? (get-in svc-cfg [:lifecycle :enabled?])))]
+    (when enabled?
+      (install-license-gate! svc-cfg)
+      (if-let [boot! (try-resolve 'hive-mcp.extensions.lifecycle/boot!)]
+        (let [result (rescue nil (boot! svc-cfg {:on-event mount-event-logger}))]
+          (if-let [boot (:boot result)]
+            (let [report (or (:mount boot) {:mounted [] :order [] :skipped #{} :ok? true})]
+              (log/info "Lifecycle loaded addons"
+                        {:eager (:eager boot) :dormant (:dormant boot)
+                         :downgraded (:downgraded boot) :ok? (:ok? boot)})
+              (doseq [f (remove :success? (:mounted report))]
+                (log/warn "Lifecycle: addon failed to mount"
+                          {:addon/id (:addon/id f) :phase (:phase f) :errors (:errors f)}))
+              (assoc (:compose result)
+                     :report report
+                     :lifecycle (select-keys boot [:eager :dormant :downgraded])))
+            (do (log/warn "Addon lifecycle boot failed, falling back to mount-compose"
+                          {:error (or (:error result) result)})
+                nil)))
+        (do (log/warn "Addon lifecycle enabled but hive-mcp.extensions.lifecycle is not resolvable")
+            nil)))))
+
 (defn load-extensions-via-mount!
   "Mount manifest-discovered addons through hive-addon.mount.compose (MQ-ADOPT).
 
@@ -314,7 +354,7 @@
 
         ;; Step 1.5 (MQ-ADOPT): gated mount-compose delegate — nil when disabled
         ;; or unavailable, in which case the legacy path below is authoritative.
-        mount-result (load-extensions-via-mount!)
+        mount-result (or (load-extensions-via-lifecycle!) (load-extensions-via-mount!))
         mounted?     (some? mount-result)
         manifest-ns  (into #{} (map (comp symbol :addon/init-ns)) ordered)
 
@@ -396,7 +436,7 @@
                            reactive/composite-descriptions)]
       (doseq [t composite-tools]
         (ext/register-tool! t)
-        ;; Also register in agent registry for drone agentic loop
+        ;; Also register in agent registry for the in-process agentic loop
         (rescue nil
                 (when-let [reg-fn (requiring-resolve 'hive-mcp.agent.registry/register!)]
                   (reg-fn [t]))))

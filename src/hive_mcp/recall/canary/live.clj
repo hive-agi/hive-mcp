@@ -236,6 +236,8 @@
 ;; The pass
 ;; =============================================================================
 
+(defonce ^:private last-verdict (atom nil))
+
 (defn run!
   "Run every canary probe once and return the verdict.
 
@@ -256,7 +258,9 @@
                                  (canary/outcome :supersession nil "no :default IMemoryStore registered"))
                  carto?    (conj (probe-carto-tag scope) (probe-carto-semantic scope)))
           v (canary/verdict outs)
-          v (cond-> v (seq (:created ids)) (assoc :fixtures-created (:created ids)))]
+          v (cond-> v (seq (:created ids)) (assoc :fixtures-created (:created ids)))
+          v (canary/with-regressions @last-verdict v)
+          _ (reset! last-verdict v)]
       (if (:ok? v)
         (log/info "Recall canary OK:" (select-keys v [:ran :passed :skipped]))
         (do (log/error "RECALL CANARY FAULT — retrieval is not trustworthy:" (:faults v))

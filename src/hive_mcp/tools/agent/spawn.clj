@@ -1,5 +1,5 @@
 (ns hive-mcp.tools.agent.spawn
-  "Agent spawn handler for creating new ling and drone agents.
+  "Agent spawn handler for creating new ling agents.
 
    Includes defense-in-depth guard: child lings (spawned agents) are
    denied from spawning further agents to prevent recursive self-call
@@ -8,13 +8,12 @@
             [hive-mcp.tools.agent.helpers :as helpers]
             [hive-mcp.agent.protocol :as proto]
             [hive-mcp.agent.ling :as ling]
-            [hive-mcp.agent.drone :as drone]
             [hive-mcp.agent.type-registry :as agent-type-registry]
             [hive-mcp.agent.spawn-mode-registry :as spawn-registry]
             [hive-mcp.agent.openrouter :as llm-registry]
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.knowledge-graph.scope :as kg-scope]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [hive-mcp.config.core :as config]
             [taoensso.timbre :as log]
             [clojure.string :as str]
@@ -58,15 +57,14 @@
    Returns a {:level :heap-pct} map when a new spawn should be DEFERRED
    (JVM heap fraction >= the soft watermark), or nil to ADMIT.
 
-   Lings/drones launch inside (or alongside) this nREPL JVM; N concurrent
+   Lings launch inside (or alongside) this nREPL JVM; N concurrent
    heavy spawns atop the multi-GB KG floor have driven kernel OOMs. We shed
    *new* spawns under pressure rather than hard-kill live agents.
 
-   Reuses the self-contained hive-knowledge.cache.mem-guard governor,
-   lazily resolved — hive-mcp does NOT statically depend on hive-knowledge
-   (the dep is inverted). FAIL-OPEN: a missing governor, any sampling error,
-   or config opt-out all ADMIT (return nil), so the guard can never wedge the
-   spawn path.
+   Reuses the self-contained hive-cache.mem-guard governor, lazily resolved —
+   hive-mcp does NOT statically depend on hive-cache. FAIL-OPEN: a missing
+   governor, any sampling error, or config opt-out all ADMIT (return nil), so
+   the guard can never wedge the spawn path.
 
    Config — note hive-mcp.config.resolve/get-service-value uses (or val default)
    which swallows boolean false, so the kill switch is a default-FALSE *disable*
@@ -81,7 +79,7 @@
                                         :env "HIVE_MCP_SWARM_HEAP_ADMISSION_DISABLED"
                                         :parse #(Boolean/parseBoolean %)
                                         :default false)
-      (when-let [check (requiring-resolve 'hive-knowledge.cache.mem-guard/check)]
+      (when-let [check (requiring-resolve 'hive-cache.mem-guard/check)]
         (let [soft (config/get-service-value :swarm :heap-admission-soft
                                              :env "HIVE_MCP_SWARM_HEAP_ADMISSION_SOFT"
                                              :parse parse-double
@@ -99,18 +97,54 @@
 (defn effective-parent
   "The parent a spawn is attributed to. An explicit non-blank `parent` wins.
    Otherwise the calling agent (`:_caller_id`, stamped on every MCP request by
-   the transport) is the parent — except a coordinator-lane caller, whose
-   spawns stay root-level (nil), the lane the audience layer already routes to
-   coordinator readers."
+   the transport) is the parent. A coordinator-lane caller counts only when
+   it names a SESSION (`coordinator:<session>`), so the spawn's shouts reach
+   that one window; a lane spelled without a session (`coordinator`,
+   `coordinator-hive`) leaves the spawn root-level, the lane the audience
+   layer routes to every coordinator reader."
   [{:keys [parent _caller_id]}]
   (let [explicit (when-not (str/blank? (str parent)) parent)
         caller   (when-not (str/blank? (str _caller_id)) (str _caller_id))]
     (or explicit
-        (when (and caller (not (audience/coordinator-reader? caller)))
-          caller))))
+        (when caller
+          (if (audience/coordinator-reader? caller)
+            (when (audience/coordinator-session caller) caller)
+            caller)))))
+
+(defn- normalize-tier
+  "Normalize the optional economy role. cheap delegates model selection to the
+   configured ling default; frontier permits an explicit model."
+  [v]
+  (when (some? v)
+    (let [tier (if (keyword? v) v (keyword (str v)))]
+      (if (contains? #{:cheap :frontier} tier)
+        tier
+        (throw (ex-info "tier must be cheap or frontier"
+                        {:param "tier" :value v}))))))
+
+(defn- normalize-token-budget
+  "Normalize a positive context-reconstruction budget from MCP JSON."
+  [v]
+  (when (some? v)
+    (let [n (if (string? v) (parse-long v) v)]
+      (if (and (integer? n) (pos? n))
+        (long n)
+        (throw (ex-info "token_budget must be a positive integer"
+                        {:param "token_budget" :value v}))))))
+
+(defn spawn-brief
+  "The initial task a spawn carries: `task`, else `prompt`. Blank counts as
+   absent. Throws ex-info when both are given and differ."
+  [{:keys [task prompt]}]
+  (let [t (when-not (str/blank? task) task)
+        p (when-not (str/blank? prompt) prompt)]
+    (if (and t p (not= t p))
+      (throw (ex-info "task and prompt disagree: pass one initial brief"
+                      {:param "prompt"}))
+      (or t p))))
 
 (defn handle-spawn
-  "Spawn a new agent (ling or drone).
+  "Spawn a new ling agent.
 
    Defense-in-depth: denies spawn when called from a child ling process
    (HIVE_MCP_ROLE=child-ling). This prevents recursive agent spawning.
@@ -118,9 +152,13 @@
    The spawn's parent is `effective-parent`: the `parent` param when given,
    else the calling agent — so grandchild routing needs no priming.
 
+   The initial brief is `spawn-brief`: `task`, else `prompt`. The response
+   reports `:task-attached` and carries a `:warning` when the ling starts
+   with no brief.
+
    The full request map rides on opts under :spawn/request for the
    :spawn/opts-overlay extension seam, and is stripped before planning."
-  [{:keys [type name cwd presets model provider task files project_id kanban_task_id spawn_mode agents max_budget_usd kg_compress sliding_window_size verbose llm_retries] :as params}]
+  [{:keys [type name cwd presets model provider tier token_budget project_id kanban_task_id spawn_mode agents max_budget_usd kg_compress sliding_window_size verbose llm_retries sandbox] :as params}]
   ;; Layer 3: Defense-in-depth spawn guard
   (if-let [_ (when (guards/child-ling?) :denied)]
     (do
@@ -147,8 +185,13 @@
         (try
           ;; Resolve provider+model via registry chain
           (let [parent (effective-parent params)
+                worker-tier (normalize-tier tier)
+                token-budget (normalize-token-budget token_budget)
+                brief (spawn-brief params)
                 resolved (llm-registry/resolve-provider-model
-                           {:provider provider :model model :agent-type agent-type})
+                           {:provider provider
+                            :model (if (= :cheap worker-tier) nil model)
+                            :agent-type agent-type})
                 effective-model (:model resolved)
                 effective-provider (:provider resolved)
                 agent-id (or name (helpers/generate-agent-id agent-type))
@@ -189,8 +232,12 @@
                                                        llm_retries       (assoc :llm-retries (if (string? llm_retries)
                                                                                                (parse-long llm_retries)
                                                                                                llm_retries))
-                                                       sliding_window_size (assoc :sliding-window-size sliding_window_size)))
-                    slave-id (proto/spawn! ling-agent (cond-> {:task task
+                                                       token-budget      (assoc :token-budget token-budget)
+                                                       sliding_window_size (assoc :sliding-window-size sliding_window_size)
+                                                       (some? sandbox)   (assoc :sandbox (if (string? sandbox)
+                                                                                           (= "true" sandbox)
+                                                                                           (boolean sandbox)))))
+                    slave-id (proto/spawn! ling-agent (cond-> {:task brief
                                                                :parent parent
                                                                :kanban-task-id kanban_task_id
                                                                :spawn-mode (:spawn-mode ling-agent)
@@ -204,47 +251,27 @@
                                           :spawn-mode (:spawn-mode ling-agent)
                                           :provider effective-provider
                                           :model effective-model
+                                          :tier worker-tier
+                                          :token-budget token-budget
+                                          :task-attached (some? brief)
                                           :cwd cwd :presets presets-vec
                                           :project-id effective-project-id})
-                (mcp-json {:success true
-                           :agent-id slave-id
-                           :type :ling
-                           :parent parent
-                           :spawn-mode (:spawn-mode ling-agent)
-                           :provider effective-provider
-                           :model effective-model
-                           :cwd cwd
-                           :presets presets-vec
-                           :project-id effective-project-id}))
-
-              :drone
-              (let [drone-agent (drone/->drone agent-id {:cwd cwd
-                                                         :model effective-model
-                                                         :provider effective-provider
-                                                         :parent-id parent
-                                                         :project-id effective-project-id})]
-                (proto/spawn! drone-agent {:files files})
-                ;; Auto-dispatch when task provided (matches ling spawn behavior)
-                (let [task-id (when task
-                                (let [delegate-fn @(requiring-resolve 'hive-mcp.agent.core/delegate-agentic-drone!)]
-                                  (proto/dispatch! drone-agent {:task task
-                                                                :files files
-                                                                :delegate-fn delegate-fn})))]
-                  (log/info "Spawned drone" {:id agent-id :cwd cwd
-                                              :parent parent
-                                              :provider effective-provider
-                                              :model effective-model
-                                              :auto-dispatched? (some? task-id)})
-                  (cond-> {:success true
-                           :agent-id agent-id
-                           :type :drone
-                           :parent parent
-                           :provider effective-provider
-                           :model effective-model
-                           :cwd cwd
-                           :files files}
-                    task-id (assoc :task-id task-id)
-                    :always mcp-json)))))
+                (mcp-json (cond-> {:success true
+                                   :agent-id slave-id
+                                   :type :ling
+                                   :parent parent
+                                   :spawn-mode (:spawn-mode ling-agent)
+                                   :provider effective-provider
+                                   :model effective-model
+                                   :tier worker-tier
+                                   :token-budget token-budget
+                                   :task-attached (some? brief)
+                                   :cwd cwd
+                                   :presets presets-vec
+                                   :project-id effective-project-id}
+                            (nil? brief)
+                            (assoc :warning (str "Spawned with no task: the ling has no brief "
+                                                 "and will idle until `agent dispatch` sends one.")))))))
           (catch Exception e
             (log/error "Failed to spawn agent" {:type agent-type :error (ex-message e)})
             (mcp-error (str "Failed to spawn " (clojure.core/name agent-type) ": " (ex-message e))))))))))

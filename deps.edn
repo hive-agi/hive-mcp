@@ -3,10 +3,11 @@
 ;; as hive-knowledge require them from the published jar, and a jar carries
 ;; :paths only. :paths is kept in step with :src-dirs in version.edn.
 ;;
-;; The test tree is ONE directory, test/. Suites that need a real backend
+;; The addon-free test tree is test/. Suites that need a real backend
 ;; driver (datahike, datalevin) sit under the namespace prefix
 ;; hive-mcp.backends and are selected or excluded by that prefix; see the
-;; :test-backends alias.
+;; :test-backends alias. Suites that need the swarm addon (hive-agent,
+;; hive-datascript) live in test-swarm/; see the :test-swarm alias.
 {:paths ["src" "resources"]
 
  :deps {org.clojure/clojure {:mvn/version "1.12.5"}
@@ -30,7 +31,7 @@
         nrepl/nrepl {:mvn/version "1.7.0"}
 
         ;; Aleph for robust async TCP/networking (replaces custom sockets)
-        aleph/aleph {:mvn/version "0.9.10"}
+        aleph/aleph {:mvn/version "0.9.11"}
         manifold/manifold {:mvn/version "0.5.0"}
 
         ;; Logic programming for swarm hivemind coordination
@@ -78,10 +79,7 @@
         clj-http/clj-http {:mvn/version "3.13.1"}
 
         ;; YAML parsing for seed memory frontmatter
-        clj-commons/clj-yaml {:mvn/version "1.0.29"}
-
-        ;; D-Bus client for native desktop notifications
-        com.lambdaisland/dbus-client {:mvn/version "0.2.15"}
+        clj-commons/clj-yaml {:mvn/version "1.0.30"}
 
         ;; Development - tracing (hot reload via hive-hot)
         org.clojure/tools.trace {:mvn/version "0.9.0"}
@@ -96,11 +94,11 @@
         ;; 0.5.10 publishes the router registry API (get-event, get-interceptors,
         ;; append-interceptor!, get-fx) that hive-mcp.events.registry delegates to.
         io.github.hive-agi/hive-events
-        {:mvn/version "0.5.10"}
+        {:mvn/version "0.5.16"}
 
         ;; hive-hot - unified hot-reload with events integration
         io.github.hive-agi/hive-hot
-        {:mvn/version "0.1.9"}
+        {:mvn/version "0.1.17"}
 
         ;; Prometheus metrics - iapetos wrapper; hotspot collector adds
         ;; JVM metrics (memory, GC, threads).
@@ -108,7 +106,7 @@
         io.prometheus/simpleclient_hotspot {:mvn/version "0.16.0"}
 
         ;; NATS client for push-based drone notifications
-        io.nats/jnats {:mvn/version "2.26.2"}
+        io.nats/jnats {:mvn/version "2.26.3"}
 
         ;; java-diff-utils for proper unified diff computation (hunks, context)
         ;; Used by drone diff protocol for token-efficient diff storage
@@ -120,7 +118,7 @@
 
         ;; hive-dsl — Result monad, rescue/guard DSL, error taxonomy
         io.github.hive-agi/hive-dsl
-        {:mvn/version "0.5.21"}
+        {:mvn/version "0.5.29"}
 
         ;; hive-spi — pure SPI contract leaf (protocols + schemas + ADTs).
         ;; Required at compile time by core namespaces. Pinned to the published
@@ -129,12 +127,7 @@
         ;; local.deps.edn :local/root override.
         ;; 1.0.0: the ports carry a published stability promise, which is what
         ;; lets this host make one of its own. See hive-spi's CHANGELOG.
-        io.github.hive-agi/hive-spi {:mvn/version "1.0.0"}
-
-        ;; hive-contracts: first-party ports between closed components. The
-        ;; kernel resolves the kanban board (IKanbanRead / IKanbanWrite) through
-        ;; its registry; core registers its own provider, an addon may replace it.
-        io.github.hive-agi/hive-contracts {:mvn/version "0.2.6"}
+        io.github.hive-agi/hive-spi {:mvn/version "1.2.0"}
 
         ;; NO CONCRETE BACKEND BELONGS HERE. hive-milvus / hive-qdrant /
         ;; clj-qdrant depend on hive-mcp for their addon surface, so declaring
@@ -156,32 +149,32 @@
         ;; hive-help — required directly by hive-mcp.embeddings.routing. It used
         ;; to arrive transitively through hive-milvus; once the backend left
         ;; :deps that route vanished, so the real dependency is declared here.
-        io.github.hive-agi/hive-help {:mvn/version "0.1.0"}
+        io.github.hive-agi/hive-help {:mvn/version "0.1.4"}
 
         ;; hive-addon — standalone IAddon contract (leaf lib) + plug/mount/compose.
         ;; hive-mcp.addons.protocol re-exports it via def-aliases so the ~30
         ;; monorepo addon implementors can depend on hive-addon instead of
         ;; compile-depending on hive-mcp.
-        io.github.hive-agi/hive-addon {:mvn/version "1.0.0"}
+        io.github.hive-agi/hive-addon {:mvn/version "1.0.12"}
 
         ;; hive-di — declarative typed config resolution (defconfig/env/literal)
         ;; Used by hive-mcp.embeddings.env-config and downstream addons.
-        io.github.hive-agi/hive-di {:mvn/version "0.4.8"}
+        io.github.hive-agi/hive-di {:mvn/version "0.4.14"}
 
         ;; hive-weave — Parallel utilities (bounded-pmap) used by project/tree.clj;
         ;; hive-weave.retry/with-recovery used by knowledge-graph/store/datahike.clj
         ;; (first released in 0.2.6 — 0.2.5 does not contain the retry ns).
-        io.github.hive-agi/hive-weave {:mvn/version "0.3.6"}
+        io.github.hive-agi/hive-weave {:mvn/version "0.3.14"}
 
         ;; hive-schemas — pinned at the TOP level, not only in :test/:test-unit.
         ;; Transitive callers can pull 0.1.6, which exists on Gitea only (404 on
         ;; Clojars and Central), so the default tree cannot resolve from a public
         ;; runner. :use-top makes this pin win everywhere.
-        io.github.hive-agi/hive-schemas {:mvn/version "0.1.29"}
+        io.github.hive-agi/hive-schemas {:mvn/version "0.1.35"}
 
         ;; hive-ttracking — telemetry/timing (timed-query, track*, bench*).
         ;; Consumed by catchup.clj and siblings (bundle/hydration/hierarchy).
-        io.github.hive-agi/hive-ttracking {:mvn/version "0.1.13"}
+        io.github.hive-agi/hive-ttracking {:mvn/version "0.1.20"}
 
         ;; hive-system — system-level abstractions (IProcess, INetwork,
         ;; process liveness, secrets, shell, redaction).
@@ -373,13 +366,13 @@
                 ;; Generative testing for spec validation
                 org.clojure/test.check {:mvn/version "1.1.3"}
                 ;; Trifecta macro: golden + property + mutation facets
-                io.github.hive-agi/hive-test {:mvn/version "0.4.0"}
+                io.github.hive-agi/hive-test {:mvn/version "0.4.7"}
                 ;; hive-schemas.test — a malli schema drives hive-test property +
                 ;; mutation facets with no hand-written generator, oracle, or
                 ;; mutant. Must come from the JAR, not :local/root — the macros
                 ;; live in src/synth, which ships but is not on the project's
                 ;; :paths.
-                io.github.hive-agi/hive-schemas {:mvn/version "0.1.29"}}
+                io.github.hive-agi/hive-schemas {:mvn/version "0.1.35"}}
                 ;; hive-spi now lives in :deps (core nses require it) — no
                 ;; :test-alias override needed.
    ;; Backend drivers are NOT here — the default cold-CI test path is
@@ -387,11 +380,20 @@
    ;; metadata filter runs, so the backend-coupled suites (namespace prefix
    ;; hive-mcp.backends, under test/hive_mcp/backends) are kept out by
    ;; namespace regex; the :test-backends alias selects exactly them.
+   ;;
+   ;; The regex is anchored to `hive-mcp.` deliberately. It used to be
+   ;; `^(?!hive-mcp\.backends\.).*-test$`, which excludes the backend suites
+   ;; and admits EVERYTHING ELSE ending in -test, from anywhere on the paths.
+   ;; Measured 2026-09-15: a stray untracked `test/vtranslate/...-test` was
+   ;; therefore selected, and since the runner requires before it filters, its
+   ;; missing dependency took down every cold run of this repo, CI included.
+   ;; A completeness gate must draw its universe from what it OWNS, not from
+   ;; everything minus a known exception.
    ;; KG test isolation: force ephemeral in-memory DataScript so a cold test
    ;; JVM never opens (and konserve-lock-contends) the prod datahike store.
    :jvm-opts ["-Dhive.kg.backend=datascript"]
    :main-opts ["-m" "cognitect.test-runner"
-               "-r" "^(?!hive-mcp\\.backends\\.).*-test$"]}
+               "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]}
 
   ;; CI-friendly: Run only unit tests (excludes tests requiring Emacs)
   ;; :extra-paths and :extra-deps MUST track :test. Anything :test can load, this
@@ -403,19 +405,19 @@
    :extra-deps {io.github.cognitect-labs/test-runner
                 {:git/tag "v0.5.1" :git/sha "dfb30dd"}
                 org.clojure/test.check {:mvn/version "1.1.3"}
-                io.github.hive-agi/hive-test {:mvn/version "0.4.0"}
+                io.github.hive-agi/hive-test {:mvn/version "0.4.7"}
                 ;; Must match :test. The runner LOADS every test namespace before
                 ;; it filters by selector, so a test ns requiring hive-schemas.test
                 ;; aborts this whole alias — all 405 namespaces — if the dep is
                 ;; only declared on :test. This is the CI alias; it is the one that
                 ;; must not be able to fail at load.
-                io.github.hive-agi/hive-schemas {:mvn/version "0.1.29"}}
+                io.github.hive-agi/hive-schemas {:mvn/version "0.1.35"}}
    :jvm-opts ["-Dhive.kg.backend=datascript"]
    :main-opts ["-m" "cognitect.test-runner" "-e" ":integration"
-               "-r" "^(?!hive-mcp\\.backends\\.).*-test$"]
+               "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]
    :exec-fn cognitect.test-runner.api/test
    :exec-args {:excludes [:integration]
-               :patterns ["^(?!hive-mcp\\.backends\\.).*-test$"]}}
+               :patterns ["^hive-mcp\\.(?!backends\\.).*-test$"]}}
 
   ;; Run only integration tests (requires Emacs with emacs-mcp loaded)
   :test-integration
@@ -423,16 +425,16 @@
    :extra-deps {io.github.cognitect-labs/test-runner
                 {:git/tag "v0.5.1" :git/sha "dfb30dd"}
                 org.clojure/test.check {:mvn/version "1.1.3"}
-                io.github.hive-agi/hive-test {:mvn/version "0.4.0"}
+                io.github.hive-agi/hive-test {:mvn/version "0.4.7"}
                 ;; Same reason as :test-unit — this alias also puts test/ on the
                 ;; path, so it loads every test ns before selecting :integration.
-                io.github.hive-agi/hive-schemas {:mvn/version "0.1.29"}}
+                io.github.hive-agi/hive-schemas {:mvn/version "0.1.35"}}
    :jvm-opts ["-Dhive.kg.backend=datascript"]
    :main-opts ["-m" "cognitect.test-runner" "-i" ":integration"
-               "-r" "^(?!hive-mcp\\.backends\\.).*-test$"]
+               "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]
    :exec-fn cognitect.test-runner.api/test
    :exec-args {:includes [:integration]
-               :patterns ["^(?!hive-mcp\\.backends\\.).*-test$"]}}
+               :patterns ["^hive-mcp\\.(?!backends\\.).*-test$"]}}
 
   ;; Line/form coverage over the unit gate. Composes with :test-unit rather
   ;; than replacing it, so the measured suite is the CI suite:
@@ -461,6 +463,23 @@
   {:main-opts ["-m" "cognitect.test-runner"
                "-r" "^hive-mcp\\.backends\\..*-test$"]}
 
+  ;; Swarm-coupled suites: hive-mcp's integration tests of the swarm addon,
+  ;; kept under test-swarm/ so :test loads and runs with no hive-agent or
+  ;; hive-datascript on the classpath (the public build). Compose with :test
+  ;; for the shared infra and supply the addon through local.deps.edn, the
+  ;; same way :test-backends gets its drivers:
+  ;;   clj -Sdeps "$(cat local.deps.edn)" -M:test:test-swarm
+  ;; In a REPL the last alias's :main-opts win, so name the REPL alias LAST
+  ;; and keep :test in the chain (-M:test:test-swarm:dev-repl): :test carries
+  ;; the test deps and -Dhive.kg.backend=datascript, without which a test JVM
+  ;; opens the real KG store. A `cider spawn` with aliases ["test" "test-swarm"]
+  ;; supplies its own main and is unaffected.
+  :test-swarm
+  {:extra-paths ["test-swarm"]
+   :main-opts ["-m" "cognitect.test-runner"
+               "-d" "test-swarm"
+               "-r" "^hive-mcp\\..*-test$"]}
+
   ;; Build via hive-build (io.github.hive-agi/hive-build), the same release
   ;; path every other hive library uses. Version = the repo's VERSION file;
   ;; coordinates and :publish come from version.edn.
@@ -469,10 +488,12 @@
   ;;        clj -T:build jar-aot          ; AOT jar, metadata elided
   ;;        clj -T:build bump :level :patch
   ;;        clj -T:build deploy           ; jar -> Clojars (needs CLOJARS_* env)
+  ;;        clj -T:build kondo :paths '["src" "test" "test-swarm"]'
+  ;;                                      ; bare `kondo` lints src + test only
   ;; There is NO `uber` task; the server runs from source everywhere,
   ;; including the container (see Dockerfile and bin/docker-entrypoint.sh).
   :build
-  {:deps {io.github.hive-agi/hive-build {:mvn/version "0.1.10"}}
+  {:deps {io.github.hive-agi/hive-build {:mvn/version "0.1.19"}}
    :ns-default hive-build.api}
   :aot-boot {:extra-paths ["target/boot-classes"]
              :exec-fn hive-mcp.scripts.aot-boot/compile-boot-closure!
@@ -483,6 +504,25 @@
                         "--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED"
                         "--add-opens=java.base/java.nio=ALL-UNNAMED"]}
   :fast-boot {:extra-paths ["target/boot-classes"]}
+  ;; Scratch dev REPL. `bb repl` uses THIS, not :nrepl.
+  ;;
+  ;; Deliberately NOT `-m hive-mcp.server.core`: that main boots a full
+  ;; coordinator whose :hive/nrepl component binds HIVE_MCP_NREPL_PORT
+  ;; (default 7910), the port bb-mcp forwards live tool calls to. A developer
+  ;; reaching for a scratch REPL would land inside the SERVING image believing
+  ;; it was throwaway. Port 0 asks the OS for a free port, so this alias
+  ;; cannot reach the production listener even if 7910 is idle.
+  ;;
+  ;; Wanting the serving REPL is fine, but it has to be named: `bb serve`,
+  ;; or -M:nrepl, or connect to 7910 by hand.
+  :dev-repl
+  {:extra-paths ["dev" "test"]
+   :extra-deps {nrepl/nrepl {:mvn/version "1.7.0"}
+                cider/cider-nrepl {:mvn/version "0.62.2"}
+                refactor-nrepl/refactor-nrepl {:mvn/version "3.14.0"}}
+   :main-opts ["-m" "nrepl.cmdline"
+               "--port" "0"
+               "--middleware" "[cider.nrepl/cider-middleware,refactor-nrepl.middleware/wrap-refactor]"]}
 
   ;; Sibling :local/root overrides go in a gitignored local.deps.edn, merged
   ;; by the launcher via `clj -Sdeps` at startup. Use the top-level :deps key.

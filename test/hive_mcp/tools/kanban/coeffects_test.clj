@@ -1,7 +1,7 @@
 (ns hive-mcp.tools.kanban.coeffects-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [hive-mcp.project.scope]
+            [clojure.test :refer [deftest is testing]]
             [hive-mcp.tools.kanban.coeffects :as coeffects]
-            [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.vectordb.kanban-facade :as kanban-facade]))
 
 (def ^:private project-id-cofx #'coeffects/project-id-cofx)
@@ -12,7 +12,7 @@
     (let [entry {:id "task-1"
                  :tags ["kanban" "todo" "priority-high" "scope:project:hive-mcp"]
                  :content {:task-type "kanban" :status "todo"}}
-          result (with-redefs [scope/get-current-project-id (fn [_] "hive")]
+          result (with-redefs [hive-mcp.project.scope/get-current-project-id (fn [_] "hive")]
                    (project-id-cofx {:event [:kanban/move {:task-id "task-1"
                                                            :directory "/home/leibniz/PP/hive"}]
                                      :kanban/entry entry}))]
@@ -23,7 +23,7 @@
     (let [entry {:id "task-1"
                  :tags ["kanban" "todo" "priority-high"]
                  :content {:task-type "kanban" :status "todo"}}
-          result (with-redefs [scope/get-current-project-id (fn [_] "hive")]
+          result (with-redefs [hive-mcp.project.scope/get-current-project-id (fn [_] "hive")]
                    (project-id-cofx {:event [:kanban/move {:task-id "task-1"
                                                            :directory "/home/leibniz/PP/hive"}]
                                      :kanban/entry entry}))]

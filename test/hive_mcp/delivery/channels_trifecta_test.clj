@@ -11,7 +11,7 @@
    Tests are pure where possible; the `register-default-channels!`
    assertion is a single deftest (side-effectful) outside the trifecta
    to keep the property/golden/mutation triad clean."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.test.check.generators :as gen]
             [hive-test.trifecta :refer [deftrifecta]]
             [hive-mcp.delivery.channels :as ch]
@@ -97,6 +97,19 @@
 ;; =============================================================================
 ;; Side-effect: register-default-channels! brings up the agnostic impls
 ;; =============================================================================
+
+;; The delivery channel registry ACCUMULATES: register-channel! appends, it does
+;; not replace by key. Registering the defaults here and walking away leaves a
+;; :piggyback channel live for the rest of the JVM, and every later namespace's
+;; shouts fan out through it instead of the source the drain reads. Snapshot and
+;; restore, so this suite's registration ends when the suite does.
+(use-fixtures :each
+  (fn [f]
+    (let [original (vec (dc/get-channels))]
+      (try (f)
+           (finally
+             (dc/clear-channels!)
+             (doseq [ch original] (dc/register-channel! ch)))))))
 
 (deftest register-default-channels-headless-agnostic
   (testing "Even with no editor frontend, register-default-channels! brings up

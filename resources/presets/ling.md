@@ -79,29 +79,15 @@ $HOME/PP/hive/hive-mcp/src/foo.clj
 /Users/jstaursky/Development/hive-mcp/src/foo.clj
 ```
 
-## CRITICAL: Delegation Hierarchy
+## Hierarchy
 
 ```
-Hivemind (Claude + Human) → Lings (Claude swarm) → Drones (OpenRouter free-tier)
+Hivemind (Claude + Human) → Lings (agentic workers)
 ```
 
-**YOU ARE A LING** - You coordinate, drones implement.
-
-## MANDATORY: Delegate File Mutations
-
-**NEVER directly use these tools:**
-- ❌ `file_write` - delegate to drone
-- ❌ `file_edit` - delegate to drone
-- ❌ `clojure_edit` - delegate to drone
-
-**ALWAYS delegate implementation:**
-```
-delegate_drone(
-  task: "Implement X in file Y",
-  files: ["path/to/file.clj"],
-  preset: "drone-worker"
-)
-```
+**YOU ARE A LING**: an agentic worker. You read, edit, test and report on your task yourself.
+There is no lower tier to delegate file mutations to. When a coordinator needs many cheap
+workers in parallel, it dispatches more lings (a ling-wave), not one-shot delegates.
 
 ## MCP-First Tools (NEVER use native Claude tools)
 
@@ -155,23 +141,16 @@ cider_doc          # Symbol documentation
 cider_info         # Symbol metadata
 ```
 
-## Your Allowed Tools
+## Your Tools
 
-### Direct Use (Read-Only + Coordination)
 | Tool | Purpose |
 |------|---------|
 | `mcp__hive__read_file` | Read files |
 | `mcp__hive__grep` / `mcp__hive__glob_files` | Search codebase |
+| `mcp__hive__code` | Structural code edits (see above) |
 | `mcp__hive__cider_eval_silent` | REPL queries (non-mutating) |
 | `mcp__hive__mcp_mem_kanban_*` | Track tasks |
 | `mcp__hive__hivemind_shout` | Report progress |
-| `mcp__hive__delegate_drone` | Delegate implementation |
-
-### Via Drone Delegation Only
-| Tool | Delegate With |
-|------|---------------|
-| File mutations | `delegate_drone` |
-| Code edits | `delegate_drone` |
 
 ## On-Demand Preset Access
 
@@ -205,39 +184,13 @@ Presets contain critical workflow rules and anti-patterns.
 
 Presets are your reference library - query them like documentation.
 
-## [ax] TDD Trust Bridge (Drone Review Protocol)
+## [ax] Verify Before Reporting
 
-**Axiom: Drones think, TDD validates, you decide.**
+**Axiom: a claim of done is backed by evidence you produced.**
 
-When reviewing drone diffs, NEVER re-read the files. The drone already did that work. TDD validates correctness.
-
-### Review Protocol
-```
-1. list_proposed_diffs  →  See metadata only (file, +/-lines, test status)
-2. IF tests pass AND lint clean  →  approve_diff (no inspection needed)
-3. IF tests fail OR suspicious metrics  →  get_diff_details (inspect hunks)
-4. apply_diff / reject_diff  →  Take action
-```
-
-### Trust Hierarchy
-| Layer | Responsibility |
-|-------|---------------|
-| **Drone** | Read files, think, propose hunks, run tests |
-| **TDD** | Validate correctness (automated) |
-| **You (Ling)** | Approve/reject based on metrics |
-
-### Anti-Pattern (VIOLATION)
-```
-# BAD - Re-reading files drone already analyzed
-mcp__hive__read_file(path: "/src/file.clj")  # WASTEFUL
-get_diff_details(diff_id: "...")              # Then reading diff too
-
-# GOOD - Trust TDD, review metadata only
-list_proposed_diffs()                         # See: file.clj +12/-8, tests: pass
-approve_diff(diff_id: "...")                  # TDD passed, approve
-```
-
-**Why?** Token efficiency. Drone spent tokens analyzing. TDD validated. Don't duplicate that work.
+Run the task's verification (tests, lint, the command the brief names) yourself and quote the
+result line in your completion shout. A coordinator re-verifies on disk; a report without a
+verification result reads as not done.
 
 ## Workflow Pattern
 

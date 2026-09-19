@@ -13,7 +13,7 @@
             [clojure.string :as str]
             [clojure.test.check.generators :as gen]
             [hive-test.trifecta :refer [deftrifecta]]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [hive-mcp.tools.registry :as registry]))
 
 (def ^:private child-ling-excluded? registry/child-ling-excluded?)
@@ -155,7 +155,7 @@
   (testing "deprecated swarm_*/delegate_*/lings_* shims are excluded"
     (let [tools           (registry/get-child-ling-tools)
           ;; Only check deprecated tools — non-deprecated tools with matching
-          ;; prefixes (e.g. delegate_drone) are filtered by exact name, not prefix
+          ;; prefixes (e.g. delegate_task) are filtered by exact name, not prefix
           deprecated-names (->> tools
                                 (filter :deprecated)
                                 (map :name)
@@ -219,7 +219,7 @@
     ;; The deprecated swarm_*/delegate_*/lings_* shims this suite used to pin
     ;; no longer exist; the guard is a set-membership test on the CONSOLIDATED
     ;; root name, so prefixed names must NOT be swept in.
-    (doseq [name ["swarm_spawn" "swarm_status" "delegate_drone"
+    (doseq [name ["swarm_spawn" "swarm_status" "delegate_task"
                   "lings_available" "multi_thing" "emacs_ext"]]
       (is (not (child-ling-excluded? {:name name}))
           (str name " is a prefix, not a member — must not be excluded")))

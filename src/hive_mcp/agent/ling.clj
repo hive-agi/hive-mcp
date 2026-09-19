@@ -18,15 +18,15 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 ;; --- Construction / spawn ----------------------------------------------------
-(def ->ling              spawn/->ling)
-(def create-ling!        spawn/create-ling!)
+(def ->ling              #'spawn/->ling)
+(def create-ling!        #'spawn/create-ling!)
 
 ;; --- Status / queries --------------------------------------------------------
-(def get-ling            status/get-ling)
-(def list-lings          status/list-lings)
-(def get-ling-for-task   status/get-ling-for-task)
-(def interrupt-ling!     status/interrupt-ling!)
+(def get-ling            #'status/get-ling)
+(def list-lings          #'status/list-lings)
+(def get-ling-for-task   #'status/get-ling-for-task)
+(def interrupt-ling!     #'status/interrupt-ling!)
 
 ;; --- Lifecycle helpers -------------------------------------------------------
-(def resolve-effective-mode lifecycle/resolve-effective-mode)
-(def with-critical-op       lifecycle/with-critical-op)
+(def resolve-effective-mode #'lifecycle/resolve-effective-mode)
+(def with-critical-op       #'lifecycle/with-critical-op)

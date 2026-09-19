@@ -368,3 +368,28 @@
         (is (= ["in B"] (mapv :m (pb/get-messages "coordinator" :project-id "proj-B"))))
         (is (nil? (pb/get-messages "coordinator" :project-id "proj-A"))
             "B's shout is not A's")))))
+
+(deftest global-cursor-is-owned-by-the-session-not-the-reader-id-test
+  (testing "measured 2026-09-14: the MCP lane's reader id carries the project
+            (coordinator:7-hive, coordinator:7-hive-mcp), so a window that
+            touched five repos re-read the same 30 global wave shouts five
+            times. With :session-id the global cursor is one per window."
+    (let [messages (atom [{:agent-id "wave-m0" :event-type :completed :message "PONG"
+                           :timestamp 1000 :project-id "global"}])]
+      (pb/register-message-source! (fn [] @messages))
+      (is (= ["PONG"] (mapv :m (pb/get-messages "coordinator:7-hive" :project-id "hive"
+                                                :session-id "coordinator:7")))
+          "first read under the first repo delivers the global shout")
+      (is (nil? (pb/get-messages "coordinator:7-hive-mcp" :project-id "hive-mcp"
+                                 :session-id "coordinator:7"))
+          "a read under another repo, same window, does not replay it")
+      (is (= ["PONG"] (mapv :m (pb/get-messages "coordinator:9-hive" :project-id "hive"
+                                                :session-id "coordinator:9")))
+          "another window still gets it once")
+      (swap! messages conj {:agent-id "wave-m1" :event-type :completed :message "again"
+                            :timestamp 1001 :project-id "global"})
+      (is (= ["again"] (mapv :m (pb/get-messages "coordinator:7-hive-carto" :project-id "hive-carto"
+                                                 :session-id "coordinator:7")))
+          "a NEW global shout reaches the window once, under whichever repo it reads next")
+      (is (nil? (pb/get-messages "coordinator:7-hive" :project-id "hive"
+                                 :session-id "coordinator:7"))))))

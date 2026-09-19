@@ -8,7 +8,7 @@
 
    These events enable swarm coordination around hot-reload:
    - Lings can pause work during reload
-   - Coordinator can track file changes across drones
+   - Coordinator can track file changes across lings
    - Telemetry captures reload latency and success rates"
 
   (:require [hive-mcp.events.core :as ev]

@@ -3,7 +3,6 @@
   (:require [hive-mcp.tools.core :refer [mcp-error mcp-json]]
             [hive-mcp.agent.protocol :as proto]
             [hive-mcp.agent.ling :as ling]
-            [hive-mcp.agent.drone :as drone]
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.swarm.datascript.lings :as ds-lings]
             [hive-mcp.tools.memory.scope :as scope]
@@ -45,19 +44,13 @@
           {:error (format "Agent '%s' belongs to project '%s', not '%s'. Pass force_cross_project=true to kill cross-project."
                           agent-id target-project-id caller-project-id)
            :id agent-id}
-          (let [agent-type (if (= 1 (:slave/depth agent-data)) :ling :drone)
-                agent (case agent-type
-                        :ling (ling/->ling agent-id {:cwd (:slave/cwd agent-data)
-                                                     :presets (:slave/presets agent-data)
-                                                     :project-id (:slave/project-id agent-data)
-                                                     :spawn-mode (or (:ling/spawn-mode agent-data) :claude)})
-                        :drone (drone/->drone agent-id {:cwd (:slave/cwd agent-data)
-                                                        :parent-id (:slave/parent agent-data)
-                                                        :project-id (:slave/project-id agent-data)}))
+          (let [agent (ling/->ling agent-id {:cwd (:slave/cwd agent-data)
+                                             :presets (:slave/presets agent-data)
+                                             :project-id (:slave/project-id agent-data)
+                                             :spawn-mode (or (:ling/spawn-mode agent-data) :claude)})
                 result (proto/kill! agent)
                 ;; Fallback: if headless kill failed, try Emacs for vterm lings
-                result (if (and (not (:killed? result))
-                                (= agent-type :ling))
+                result (if (not (:killed? result))
                          (or (kill-via-emacs! agent-id) result)
                          result)]
             (log/info "Kill agent result" {:agent_id agent-id

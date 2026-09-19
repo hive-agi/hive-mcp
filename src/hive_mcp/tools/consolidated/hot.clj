@@ -25,7 +25,8 @@
             [hive-mcp.addons.manifest :as manifest]
             [hive-mcp.tools.composite :as composite]
             [hive-mcp.tools.core :refer [mcp-json mcp-error]]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.hot.core :as core-hot]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -197,9 +198,9 @@
                                :hot/torn-down :hot/cycles :hot/widened
                                :hot/ns-reloaded :hot/ns-skipped :hot/ns-dragged
                                :hot/ns-unchanged? :hot/multi-file :hot/stale-ctors
-                               :ok? :errors :teardown/data-preserved?])
+                               :ok? :errors :diagnostic :diagnostics :teardown/data-preserved?])
     (seq (:mounted report))
-    (assoc :mounted (mapv #(select-keys % [:addon/id :success? :phase :errors])
+    (assoc :mounted (mapv #(select-keys % [:addon/id :success? :phase :errors :diagnostic])
                           (:mounted report)))))
 
 (defn- surface-refreshed!
@@ -290,9 +291,9 @@
                                                :hot/discovered :hot/already-mounted
                                                :hot/injected :hot/affected :hot/torn-down
                                                :hot/missing :hot/dirs-added :hot/registered
-                                               :hot/deps :discovery-errors :ok? :errors
+                                               :hot/deps :discovery-errors :ok? :errors :diagnostic :diagnostics
                                                :teardown/data-preserved?])
-                          (assoc :mounted (mapv #(select-keys % [:addon/id :success? :phase :errors])
+                          (assoc :mounted (mapv #(select-keys % [:addon/id :success? :phase :errors :diagnostic])
                                                 (:mounted report))
                                  :hive-hot hot-init
                                  :surface surface))))))
@@ -391,17 +392,125 @@
 ;; Tool definition
 ;; =============================================================================
 
+(def ^:private lifecycle-off-msg
+  "Addon lifecycle is not running. Enable it with {:addons {:lifecycle {:enabled? true}}} in config.edn (or HIVE_MCP_ADDON_LIFECYCLE=1) and restart, or the hive-addon on the classpath predates hive-addon.lifecycle.")
+
+(defn- lifecycle-manager []
+  (when-let [f (soft 'hive-addon.lifecycle/installed-manager)] (f)))
+
+(defn- with-manager
+  [f]
+  (if-let [mgr (lifecycle-manager)]
+    (f mgr)
+    (mcp-error lifecycle-off-msg)))
+
+(defn handle-lifecycle
+  "Per-addon lifecycle phase, policy, last use and parts."
+  [_params]
+  (with-manager #(mcp-json ((soft 'hive-addon.lifecycle/status) %))))
+
+(defn handle-activate
+  "Mount a dormant addon now, with the dependencies it lacks."
+  [{:keys [addon]}]
+  (if-not addon
+    (mcp-error "addon is required, e.g. {:command \"activate\" :addon \"hive.carto\"}")
+    (with-manager #(mcp-json ((soft 'hive-addon.lifecycle/activate!) % addon)))))
+
+(defn handle-evict
+  "Release an addon to dormant stubs."
+  [{:keys [addon force]}]
+  (if-not addon
+    (mcp-error "addon is required, e.g. {:command \"evict\" :addon \"hive.carto\"}")
+    (with-manager #(mcp-json ((soft 'hive-addon.lifecycle/evict!) % addon {:force? (true? force)})))))
+
+(defn handle-pin
+  "Set an addon's lifecycle policy at runtime (default :pinned)."
+  [{:keys [addon policy idle_ms]}]
+  (if-not addon
+    (mcp-error "addon is required, e.g. {:command \"pin\" :addon \"hive.carto\" :policy \"lazy\"}")
+    (with-manager
+      #(mcp-json {:addon/id addon
+                  :lifecycle ((soft 'hive-addon.lifecycle/set-policy!) % addon
+                              (cond-> {:policy (keyword (or policy "pinned"))}
+                                (pos-int? idle_ms) (assoc :idle-ms idle_ms)))}))))
+
+(defn handle-sweep
+  "Evict every idle lazy addon and close idle parts now."
+  [_params]
+  (with-manager #(mcp-json (update ((soft 'hive-addon.lifecycle/sweep!) %) :plan dissoc :kept))))
+
+(defn- core-remounter
+  "The addon widening a core reload hands hive-mcp.hot.core: remount every
+   mounted addon whose constructor namespace the pass loaded, plus its
+   dependents, through the same bridge `reload` uses. nil when no addon is
+   mounted, so the core reload proceeds without widening."
+  []
+  (let [{:keys [specs host error]} (prepared)]
+    (when-not error
+      (fn [loaded]
+        (let [loaded (set loaded)
+              seeds  (into #{}
+                           (comp (filter #(contains? loaded (str (:addon/init-ns %))))
+                                 (map :addon/id))
+                           specs)]
+          (if (seq seeds)
+            (summarize ((soft 'hive-addon.hot/reload-seeds!) host specs seeds
+                        (assoc (reload-opts) :ns-reloaded? true :trigger :core-reload)))
+            {:seeds [] :note "no mounted addon's constructor namespace was loaded"}))))))
+
+(defn handle-core-plan
+  "What a reload of hive-mcp's own source would do: the pending namespaces,
+   the cascade, what the interlock pins and what state it keeps. Effect-free
+   apart from extending hive-hot with core's root."
+  [_params]
+  (mcp-json (core-hot/plan)))
+
+(defn handle-core-reload
+  "Reload the changes under hive-mcp's own source root: protocol definers
+   pinned, state holders kept, then the tool table and the surface refreshed
+   and every addon whose constructor namespace was loaded remounted."
+  [_params]
+  (let [report (core-hot/reload! {:ports (assoc (core-hot/default-ports)
+                                                :host/remount! (core-remounter))})]
+    (log/info "hot core-reload" (select-keys report [:ok? :loaded :failed :error :ms]))
+    (mcp-json report)))
+
 (def canonical-handlers
-  {:reload     handle-reload
-   :reload-all handle-reload-all
-   :inject     handle-inject
-   :watch      handle-watch
-   :unwatch    handle-unwatch
-   :list       handle-list
-   :status     handle-status
-   :strategies handle-strategies})
+  "The `hot` verbs, stored as VARS so a reload of this namespace reaches the
+   table (20260817195749-0d407e9c). The first of hive-mcp's 55 dispatch maps to
+   be converted, and the worked example the rest follow: flat, every value a
+   bare symbol naming a local defn, nothing here that inspects a handler rather
+   than calling it.
+
+   Reading it through a var is safe because `tools/cli.clj` classifies every
+   tree node through `dispatch/current` (commit cdd876f7). It was NOT safe
+   before that, which is the precondition the conversion card names."
+  {:reload      #'handle-reload
+   :reload-all  #'handle-reload-all
+   :inject      #'handle-inject
+   :watch       #'handle-watch
+   :unwatch     #'handle-unwatch
+   :list        #'handle-list
+   :status      #'handle-status
+   :strategies  #'handle-strategies
+   :core-plan   #'handle-core-plan
+   :core-reload #'handle-core-reload
+   :lifecycle   #'handle-lifecycle
+   :activate    #'handle-activate
+   :evict       #'handle-evict
+   :pin         #'handle-pin
+   :sweep       #'handle-sweep})
+
 
 (def handlers canonical-handlers)
+
+(def handle-hot
+  "Routes the core `hot` commands plus whatever addons contribute under
+   \"hot\". Named, so the tool-def can register it BY VAR: a handler folded
+   into the tool map by value never sees a reload of its own namespace
+   (20260817195749-0d407e9c). The tool that performs reloads is the one it
+   would be most absurd to leave unreloadable."
+  (composite/build-merged-handler "hot" #'canonical-handlers))
 
 (def tool-def
   {:name "hot"
@@ -417,12 +526,22 @@
         "(per-addon strategy + source-kind + whether it is reloadable at all), "
         "status, strategies. Only addons wired as :local/root deps have reloadable "
         "source; jar-backed addons report :restart-required. "
+        "core-plan / core-reload: hive-mcp's OWN source, the same way. core-plan lists the "
+        "pending namespaces, the cascade, what the interlock pins (protocol definers) and "
+        "keeps (state holders); core-reload runs it, then refreshes the tool table and the "
+        "surface and remounts any addon whose constructor namespace was loaded. "
+        "Addon lifecycle (when :addons :lifecycle :enabled?): lifecycle (per-addon phase, "
+        "policy, idle time, parts), activate (mount a dormant addon now), evict (release "
+        "an addon to dormant stubs; force for pinned/eager), pin (set policy at runtime), "
+        "sweep (evict every idle lazy addon and close idle parts now). "
         "Use command='help' to list all.")
    :inputSchema
    {:type "object"
     :properties
     {"command" {:type "string"
-                :enum ["reload" "reload-all" "inject" "watch" "unwatch" "list" "status" "strategies" "help"]
+                :enum ["reload" "reload-all" "inject" "watch" "unwatch" "list" "status" "strategies"
+                       "core-plan" "core-reload"
+                       "lifecycle" "activate" "evict" "pin" "sweep" "help"]
                 :description "Hot-reload operation to perform"}
      "addon" {:type "string"
               :description "[reload] Addon id to reload, e.g. \"hive.carto\". Dependents cascade automatically."}
@@ -433,8 +552,15 @@
      "path" {:type "string"
              :description "[inject] Absolute path of the addon to mount: a project dir (its deps.edn :paths go on the classpath), a source dir, or a jar. Its META-INF/hive-addons manifests are discovered and mounted; addons already mounted are left alone."}
      "resolve_deps" {:type "boolean"
-                     :description "[inject] Also hand the project's deps.edn :deps to clojure.repl.deps/add-libs before mounting (needs a tools.deps basis in the running image). Default false."}}
+                     :description "[inject] Also hand the project's deps.edn :deps to clojure.repl.deps/add-libs before mounting (needs a tools.deps basis in the running image). Default false."}
+     "force" {:type "boolean"
+              :description "[evict] Also evict a pinned or eager addon. Default false."}
+     "policy" {:type "string"
+               :enum ["eager" "lazy" "pinned"]
+               :description "[pin] Lifecycle policy to set at runtime; pin defaults to \"pinned\"."}
+     "idle_ms" {:type "integer"
+                :description "[pin] Idle time in ms before a lazy addon may be evicted."}}
     :required ["command"]}
-   :handler (composite/build-merged-handler "hot" canonical-handlers)})
+   :handler #'handle-hot})
 
 (def tools [tool-def])

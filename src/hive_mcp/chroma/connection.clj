@@ -1,7 +1,7 @@
 (ns hive-mcp.chroma.connection
   "Chroma connection configuration, collection management, and health status."
   (:require [hive-mcp.chroma.client :as chroma]
-            [hive-mcp.chroma.embeddings :as emb]
+            [hive-mcp.embeddings.active :as emb]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -124,10 +124,14 @@
     (registry-clear)
     (registry-init))
 
-  (let [provider (case provider-type
-                   :ollama ((resolve 'hive-mcp.embeddings.ollama/->provider))
-                   :openai ((resolve 'hive-mcp.embeddings.openai/->provider))
-                   :openrouter ((resolve 'hive-mcp.embeddings.openrouter/->provider)))]
+  (let [config-value (requiring-resolve 'hive-mcp.config.core/get-config-value)
+        opts         (if-let [model (config-value (str "embeddings." (name provider-type) ".model"))]
+                       {:model model}
+                       {})
+        provider (case provider-type
+                   :ollama ((resolve 'hive-mcp.embeddings.ollama/->provider) opts)
+                   :openai ((resolve 'hive-mcp.embeddings.openai/->provider) opts)
+                   :openrouter ((resolve 'hive-mcp.embeddings.openrouter/->provider) opts))]
     (emb/set-embedding-provider! provider)
 
     (let [fixed? (satisfies? emb/EmbeddingProvider provider)]

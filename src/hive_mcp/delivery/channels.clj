@@ -242,14 +242,19 @@
 (def ^:private channel-factories
   "Static DI table for IDeliveryChannel impls.
    Each entry: channel-id -> 0-arity factory fn returning IDeliveryChannel.
-   New impls slot in here without touching register-default-channels!."
-  {:websocket         create-websocket-channel
-   :core-async        create-core-async-channel
-   :channel-broadcast create-channel-broadcast-channel
-   :olympus           create-olympus-channel
-   :piggyback         create-piggyback-channel
-   :nats              create-nats-channel
-   :file-tail         create-file-tail-channel})
+   New impls slot in here without touching register-default-channels!.
+
+   Stored as VARS so a reload of this namespace reaches the table
+   (20260817195749-0d407e9c). Its two consumers both survive that: one reads
+   `(keys channel-factories)`, the other destructures each entry and calls
+   `(factory)`, and a var is IFn."
+  {:websocket         #'create-websocket-channel
+   :core-async        #'create-core-async-channel
+   :channel-broadcast #'create-channel-broadcast-channel
+   :olympus           #'create-olympus-channel
+   :piggyback         #'create-piggyback-channel
+   :nats              #'create-nats-channel
+   :file-tail         #'create-file-tail-channel})
 
 (def default-fallback-order
   "Frontend-agnostic ordering: highest-priority (most-broadcast) first.

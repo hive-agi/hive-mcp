@@ -223,28 +223,6 @@
   (resolve/get-secret (get-global-config) secret-key))
 
 ;; =============================================================================
-;; Drone Defaults (Convenience Accessors)
-;; =============================================================================
-
-(defn default-drone-model
-  "Resolve default drone model from config, env, or hardcoded fallback."
-  []
-  (get-service-value :drone :default-model
-                     :env "DRONE_DEFAULT_MODEL"
-                     :default "devstral-small:24b"))
-
-(defn default-drone-backend
-  "Resolve default drone backend from config, env, or hardcoded fallback.
-   Falls back to :agentic-loop (the provider-agnostic drone execution
-   backend, post-:openrouter-loop rename) when no config/env value is
-   set so that downstream dispatch always has a usable backend keyword."
-  []
-  (get-service-value :drone :default-backend
-                     :env "DRONE_DEFAULT_BACKEND"
-                     :parse keyword
-                     :default :agentic-loop))
-
-;; =============================================================================
 ;; Dotted Key Path Access
 ;; =============================================================================
 

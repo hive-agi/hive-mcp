@@ -5,16 +5,23 @@
             [hive-mcp.knowledge-graph.edges :as edges]
             [hive-mcp.knowledge-graph.queries :as queries]
             [hive-mcp.knowledge-graph.scope :as scope]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.knowledge-graph.schema :as kg-schema]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defn validate-node-id
-  "Validate node ID is a non-empty string."
+  "Validate node ID is a non-empty string that kg-schema/NodeId accepts, so an
+   unresolved $ref or $placeholder is refused at the tool boundary."
   [node-id param-name]
-  (when (or (nil? node-id) (not (string? node-id)) (empty? node-id))
-    {:error (str param-name " must be a non-empty string")}))
+  (cond
+    (or (nil? node-id) (not (string? node-id)) (empty? node-id))
+    {:error (str param-name " must be a non-empty string")}
+
+    (not (kg-schema/valid-node-id? node-id))
+    {:error (str param-name " is an unresolved reference or placeholder ("
+                 node-id "), not a node id")}))
 
 (defn parse-relations-filter
   "Parse relations filter from string or array to set of keywords."

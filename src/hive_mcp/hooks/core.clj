@@ -8,7 +8,8 @@
    - HookRegistry: Atom containing map of event-type -> [handlers]
    - Handlers: Functions (fn [context]) that receive event context
    - Events: Keywords from the hook-events set"
-  (:require [taoensso.timbre :as log]))
+  (:require [taoensso.timbre :as log]
+            [hive-mcp.dispatch.handler :as dispatch]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -44,11 +45,16 @@
                      :valid-events hook-events}))))
 
 (defn- validate-handler!
-  "Validates that handler is a function.
-   Throws ExceptionInfo if invalid."
+  "Validates that handler is INVOCABLE.
+   Throws ExceptionInfo if invalid.
+
+   `dispatch/handler?` rather than `fn?` so a hook may be registered BY VAR
+   (`#'my-hook`), which is what lets a reload of the defining namespace reach
+   an already-registered hook instead of leaving the frozen value in place
+   (Capture-by-Var, 20260817195749-0d407e9c)."
   [handler]
-  (when-not (fn? handler)
-    (throw (ex-info (str "Hook handler must be a function, got: " (type handler))
+  (when-not (dispatch/handler? handler)
+    (throw (ex-info (str "Hook handler must be invocable, got: " (type handler))
                     {:handler handler
                      :type (type handler)}))))
 

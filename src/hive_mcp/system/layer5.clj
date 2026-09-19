@@ -23,7 +23,8 @@
             [hive-mcp.server.lifecycle :as lifecycle]
             [hive-mcp.dns.result :as result]
             [clojure.core.async :as async]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.system.sweep-coordinator :as sweep-coordinator]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -94,6 +95,45 @@
     (result/rescue nil
       (init/stop-housekeeping-scheduler!)
       (log/info ":hive/housekeeping stopped"))))
+
+;; =============================================================================
+;; :hive/sweep-coordinator — ISweepable registry heartbeat
+;; =============================================================================
+
+(defmethod ig/init-key :hive/sweep-coordinator
+  [_ config]
+  (log/info ":hive/sweep-coordinator init — starting sweep coordinator" config)
+  (result/rescue nil
+    ;; A sweeper registers from the `defonce` in its OWN namespace, so a sweeper
+    ;; nobody requires never registers and is silently absent from the
+    ;; heartbeat. Requiring them here is what puts them on the load path.
+    ;; Deleting a line below deletes a sweep, with no other symptom.
+    ;;
+    ;; The two sweeps NOT listed here (headless/watchdog, lings/terminal-liveness)
+    ;; register incidentally, because their host namespaces load for unrelated
+    ;; reasons. That is not a design, it is how it happens to work today.
+    (doseq [sweeper-ns '[hive-mcp.system.sweepers.orphan-channel
+                         hive-mcp.system.sweepers.async-result
+                         hive-mcp.system.sweepers.heap-pressure]]
+      (require sweeper-ns))
+    ;; ONE OWNER PER SWEEP, enforced at the REGISTRATION SITE, not here.
+    ;; :hive/housekeeping owns terminal liveness on its own 5 minute timer, so
+    ;; hive-mcp.swarm.lifecycle.terminal-sweep deliberately does not register.
+    ;; This used to unregister it at start instead, which silently did nothing:
+    ;; the registration had not happened yet, because housekeeping's own
+    ;; resolve-and-call is what loads that namespace, so the defonce fired
+    ;; afterwards and re-armed the duplicate. Ownership cannot be enforced by
+    ;; timing.
+    (sweep-coordinator/start!))
+  {:status :running})
+
+(defmethod ig/halt-key! :hive/sweep-coordinator
+  [_ state]
+  (when (= :running (:status state))
+    (log/info ":hive/sweep-coordinator halt — stopping sweep coordinator")
+    (result/rescue nil
+      (sweep-coordinator/stop!)
+      (log/info ":hive/sweep-coordinator stopped"))))
 
 ;; =============================================================================
 ;; :hive/registry-sync — Lings registry sync (elisp ↔ Clojure)

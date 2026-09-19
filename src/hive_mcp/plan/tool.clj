@@ -9,7 +9,7 @@
    5. Create KG edges: task --depends-on--> task (from step dependencies)"
 
   (:require [hive-mcp.tools.core :refer [mcp-json mcp-error]]
-            [hive-contracts.registry :as contracts]
+            [hive-mcp.spi.kanban.registry :as kanban-port]
             [hive-mcp.plan.fsm :as plan-fsm]
             [hive-mcp.plan.kg-degraded :as kg-degraded]
             [hive-mcp.vectordb.facade :as facade]
@@ -117,16 +117,21 @@
    Creates through the IKanbanWrite port resolved at call time.
 
    Returns {:ok task-id} or {:error message}"
-  [{:keys [title description priority]} directory & {:keys [wave]}]
+  [{:keys [id title description priority tags files execution]} directory & {:keys [wave]}]
   (try
     (let [priority-str (if (keyword? priority) (name priority) (str priority))
-          wave-tag     (when (some? wave) (str "wave:" wave))
+          task-context (cond-> {:plan-step-id id}
+                         (seq files) (assoc :files files)
+                         execution (assoc :execution execution))
+          task-tags    (vec (distinct (cond-> (vec tags)
+                                        (some? wave) (conj (str "wave:" wave)))))
           request      (cond-> {:title title
                                 :priority priority-str
-                                :directory directory}
-                         description (assoc :description description)
-                         wave-tag    (assoc :tags [wave-tag]))
-          {:keys [ok err]} (contracts/create-task! request)]
+                                :directory directory
+                                :context task-context}
+                         description     (assoc :description description)
+                         (seq task-tags) (assoc :tags task-tags))
+          {:keys [ok err]} (kanban-port/create-task! request)]
       (cond
         (:id ok) {:ok (:id ok)}
         err      {:error (str "kanban backend rejected: " (:message err)

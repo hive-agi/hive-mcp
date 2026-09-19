@@ -194,6 +194,42 @@
    Durable-on-return via with-kg-flush."
   (with-kg-flush promote*))
 
+(defn- remove-edge*
+  "Delete one edge by id. Refuses unless :i_mean_it is literally true, and
+   answers with the removed edge's endpoints. Raw impl; the public
+   handle-kg-remove-edge wraps it with with-kg-flush."
+  [{:keys [edge_id i_mean_it]}]
+  (log/warn "kg_remove_edge requested" {:edge edge_id :i-mean-it i_mean_it})
+  (try
+    (cond
+      (or (not (string? edge_id)) (empty? edge_id))
+      (mcp-error "edge_id is required")
+
+      (not (true? i_mean_it))
+      (mcp-error (str "Refusing to remove edge " edge_id
+                      ": pass i_mean_it true to confirm the deletion"))
+
+      :else
+      (if-let [edge (edges/get-edge edge_id)]
+        (let [removed {:edge-id  edge_id
+                       :from     (:kg-edge/from edge)
+                       :to       (:kg-edge/to edge)
+                       :relation (:kg-edge/relation edge)}]
+          (edges/remove-edge! edge_id)
+          (log/warn "kg_remove_edge removed" removed)
+          (mcp-json (assoc removed
+                           :success true
+                           :message (str "Removed edge " edge_id))))
+        (mcp-error (str "Edge not found: " edge_id))))
+    (catch Exception e
+      (log/error e "kg_remove_edge failed")
+      (mcp-error (str "Failed to remove edge: " (.getMessage e))))))
+
+(def handle-kg-remove-edge
+  "Delete one edge by id, only with :i_mean_it true. Durable-on-return via
+   with-kg-flush."
+  (with-kg-flush remove-edge*))
+
 (defn handle-kg-reground
   "Re-ground a knowledge entry by verifying against its source file."
   [{:keys [entry_id force]}]
@@ -214,7 +250,7 @@
 (def handle-kg-cleanup-synthetics
   "Delete or demote synthetic-pattern nodes whose targets are mostly
    expired/missing memory entries. See `synthetics/cleanup-synthetics!`."
-  synthetics/handle-kg-cleanup-synthetics)
+  #'synthetics/handle-kg-cleanup-synthetics)
 
 (defn handle-kg-backfill-grounding
   "Batch-discover and ground all Chroma entries with source-file metadata."

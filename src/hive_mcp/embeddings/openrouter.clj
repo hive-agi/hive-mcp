@@ -1,28 +1,26 @@
 (ns hive-mcp.embeddings.openrouter
   "OpenRouter embedding provider for semantic memory search.
 
-   Uses OpenRouter's embedding models - includes free tier options!
-
-   Recommended: qwen/qwen3-embedding-8b (33k context, free tier)
+   The model is required: pass :model or set OPENROUTER_EMBEDDING_MODEL.
 
    Usage:
      (require '[hive-mcp.embeddings.openrouter :as openrouter])
-     (require '[hive-mcp.chroma.core :as chroma])
+     (require '[hive-mcp.embeddings.active :as active])
 
-     ;; Create provider with API key from env
-     (chroma/set-embedding-provider! (openrouter/->provider))
+     ;; API key from config/env, model from OPENROUTER_EMBEDDING_MODEL
+     (active/set-embedding-provider! (openrouter/->provider))
 
      ;; Or with explicit key and model
-     (chroma/set-embedding-provider!
+     (active/set-embedding-provider!
        (openrouter/->provider {:api-key \"sk-or-...\"
-                               :model \"qwen/qwen3-embedding-8b\"}))"
-  (:require [hive-mcp.chroma.core :as chroma]
-            [hive-mcp.config.core :as global-config]
+                               :model \"<model-id>\"}))"
+  (:require [hive-mcp.config.core :as global-config]
             [hive-mcp.embeddings.env-config :as env-cfg]
             [hive-mcp.embeddings.http-client :as http]
             [hive-mcp.embeddings.protocol :as emb-proto]
             [clojure.data.json :as json]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [hive-mcp.embeddings.active :as active])
   (:import [java.net URI]
            [java.net.http HttpClient HttpRequest HttpRequest$BodyPublishers HttpResponse$BodyHandlers]
            [java.time Duration]))
@@ -41,13 +39,15 @@
    "cohere/embed-multilingual-v3.0" 1024})
 
 (defn- resolve-config!
-  "Resolve OpenRouter api-base + model via hive-di (env → overrides → defaults).
-   Throws ex-info on :config/invalid."
+  "Resolve OpenRouter api-base + model via hive-di (overrides, then env, then
+   endpoint defaults). Throws ex-info when invalid, including a missing model."
   [overrides]
   (let [result (env-cfg/resolve-OpenRouterConfig overrides)]
     (or (:ok result)
-        (throw (ex-info "Invalid OpenRouter config"
-                        {:type :invalid-config :result result})))))
+        (throw (ex-info "Invalid OpenRouter embedding config: pass :model or set OPENROUTER_EMBEDDING_MODEL"
+                        {:type :invalid-config
+                         :env  "OPENROUTER_EMBEDDING_MODEL"
+                         :result result})))))
 
 (defn- embeddings-url
   "Return the full /embeddings URL for a given api-base."
@@ -116,13 +116,10 @@
      :api-key  - OpenRouter API key (default: global-config :openrouter-api-key)
      :api-base - API base URL (default: config [:embeddings :openrouter :api-base]
                  or https://openrouter.ai/api/v1)
-     :model    - Embedding model (default: config [:embeddings :openrouter :model]
-                 or qwen/qwen3-embedding-8b)
+     :model    - Embedding model (required: this option or OPENROUTER_EMBEDDING_MODEL)
 
-   Recommended models:
-     - qwen/qwen3-embedding-8b (4096 dims, 33k context, FREE!)
-     - openai/text-embedding-3-small (1536 dims, paid)
-     - cohere/embed-english-v3.0 (1024 dims, paid)"
+   Dimensions for known models come from the `models` spec table; an unknown
+   model is assumed 4096-dimensional."
   ([] (->provider {}))
   ([{:keys [api-key] :as overrides}]
    (let [{:keys [api-base model]} (resolve-config! (select-keys overrides [:api-base :model]))
@@ -137,8 +134,8 @@
 
 (defn set-as-default!
   "Convenience function to set OpenRouter as the default embedding provider.
-   Uses qwen/qwen3-embedding-8b (33k context, free tier)."
+   The model comes from opts :model or OPENROUTER_EMBEDDING_MODEL."
   ([] (set-as-default! {}))
   ([opts]
-   (chroma/set-embedding-provider! (->provider opts))
+   (active/set-embedding-provider! (->provider opts))
    (log/info "OpenRouter embeddings enabled with" (or (:model opts) (:model (resolve-config! {}))))))

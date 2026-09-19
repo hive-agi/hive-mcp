@@ -127,37 +127,50 @@
      (->CiderBackend (:name sess) (:port sess) timeout-ms)
      (throw (ex-info "No CIDER session available" {:pool (pool-status)})))))
 
+(defn- require-model!
+  "Return `model`, or throw naming the option the caller must supply.
+   hive-mcp ships no default model."
+  [model option]
+  (or model
+      (throw (ex-info (str "No Ollama model given: pass " option
+                           " (read it from your config.edn, e.g. llm-providers.ollama-compat.default-model)")
+                      {:error  :model-not-configured
+                       :option option}))))
+
 (defn hybrid-backend
-  "Create a hybrid backend: Ollama for reasoning, CIDER for execution."
+  "Create a hybrid backend: Ollama for reasoning, CIDER for execution.
+   :ollama-model is required."
   [{:keys [ollama-model cider-session timeout-ms]
-    :or {ollama-model "devstral-small-2:latest"
-         timeout-ms 60000}}]
-  {:ollama (ollama/->OllamaBackend "http://localhost:11434" ollama-model)
+    :or {timeout-ms 60000}}]
+  {:ollama (ollama/->OllamaBackend "http://localhost:11434"
+                                   (require-model! ollama-model :ollama-model))
    :cider (cider-backend {:timeout-ms timeout-ms :session cider-session})})
 
 (defn make-backend
   "Factory function for creating LLM backends.
 
    Named types: :ollama :cider :openrouter :openai-compat :auto.
-   Any other keyword that names a provider in
-   openrouter/provider-registry (e.g. :venice :groq :together :fireworks
-   :openai :ollama-compat) is routed through openai-compat-backend with
-   that :provider, so config keys like :models.synthesis-backend can
-   select a provider directly without a bespoke case."
+   Any other keyword that names a provider in the effective provider
+   registry (static openrouter/provider-registry merged with config
+   :llm-providers — e.g. :venice :axon :groq :together :fireworks :openai
+   :ollama-compat) is routed through openai-compat-backend with that
+   :provider, so config keys like :models.synthesis-backend can select a
+   provider directly without a bespoke case."
   ([type] (make-backend type {}))
   ([type opts]
    (case type
      :ollama (ollama/->OllamaBackend
               (or (:host opts) "http://localhost:11434")
-              (or (:model opts) "devstral-small:24b"))
+              (require-model! (:model opts) :model))
      :cider (cider-backend opts)
      :openrouter (openrouter/openrouter-backend opts)
      :openai-compat (openrouter/openai-compat-backend opts)
      :auto (openrouter/auto-backend opts)
-     (if (contains? openrouter/provider-registry type)
-       (openrouter/openai-compat-backend (assoc opts :provider type))
-       (throw (ex-info "Unknown backend type"
-                       {:type type
-                        :available (into [:ollama :cider :openrouter
-                                          :openai-compat :auto]
-                                         (keys openrouter/provider-registry))}))))))
+     (let [registry (openrouter/effective-provider-registry)]
+       (if (contains? registry type)
+         (openrouter/openai-compat-backend (assoc opts :provider type))
+         (throw (ex-info "Unknown backend type"
+                         {:type type
+                          :available (into [:ollama :cider :openrouter
+                                            :openai-compat :auto]
+                                           (keys registry))})))))))

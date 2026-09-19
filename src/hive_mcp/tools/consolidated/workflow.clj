@@ -4,7 +4,7 @@
    Thin facade that routes MCP commands to sub-namespace implementations:
    - workflow.forge-ops: smite, survey, forge-status
    - workflow.forge-cycle: build-fsm-resources, forge-strike logic
-   - workflow.spawn: spawn, spark, drone dispatch
+   - workflow.spawn: spawn, spark
    - workflow.readiness: agent readiness checks
 
    Includes defense-in-depth guard: child lings (spawned agents) are
@@ -19,7 +19,7 @@
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.dns.result :as result]
             [hive-mcp.config.core :as config]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [taoensso.timbre :as log]
             [hive-mcp.tools.consolidated.workflow.ir :as ir]
             [hive-mcp.tools.consolidated.workflow.goal :as goal]))
@@ -51,12 +51,6 @@
                :quenched? true})
     (rb/result->mcp (rb/try-result :forge/strike-legacy-failed
                                    #(forge-cycle/forge-strike-legacy* params forge-state)))))
-
-(defn- do-forge-strike-fsm
-  "FSM-driven forge strike."
-  [params]
-  (rb/result->mcp (rb/try-result :forge/strike-failed
-                                 #(forge-cycle/fsm-forge-strike* params forge-state))))
 
 (defn handle-forge-strike
   "Execute ONE forge cycle, FSM-driven by default with legacy config gate.
@@ -111,6 +105,31 @@
   [params]
   (rb/result->mcp (rb/try-result :forge/status-failed
                                  #(forge-ops/forge-status* params forge-state))))
+
+;; ── Forge Survey ────────────────────────────────────────────────────────────
+
+(defn handle-forge-survey
+  "Read-only: which tasks a strike WOULD select, and why.
+
+   forge-ops/survey computes plan membership, per-card states, dependency
+   readiness and a :selection-status of :ready / :blocked / :no-ready /
+   :complete. Until this verb existed, that computation was reachable only by
+   running a STRIKE: its two non-test callers are both on the strike path. So
+   the only way to ask 'what would this plan do' was to make it do it, and every
+   attempt to verify plan scoping read-only came back looking like a deployment
+   gap because `forge survey` fell through :_handler to the belt dashboard and
+   answered with global kanban totals instead.
+
+   Contract: forge-ops/survey returns a plain selection map; it is shaped by
+   forge-ops/survey-view (each task's routing, no card bodies) and wrapped in
+   result/ok before the bridge; a successful survey is a non-error JSON payload,
+   a thrown survey is an MCP error naming the failure.
+
+   Mutates nothing. `forge status` keeps its own shape and its own meaning:
+   status reports the BELT, survey reports the SELECTION."
+  [params]
+  (rb/result->mcp (rb/try-result :forge/survey-failed
+                                 #(result/ok (forge-ops/survey-view (forge-ops/survey params))))))
 
 ;; ── Forge Quench ────────────────────────────────────────────────────────────
 
@@ -170,57 +189,70 @@
 
 (def handle-forge-strike-fsm
   "DEPRECATED alias: FSM is now the default path via handle-forge-strike."
-  handle-forge-strike)
+  #'handle-forge-strike)
 
 (def handle-forge-strike-imperative
   "DEPRECATED alias: renamed to handle-forge-strike-legacy."
-  handle-forge-strike-legacy)
+  #'handle-forge-strike-legacy)
 
 ;; ── CLI Handler + Tool Definition ───────────────────────────────────────────
 
 (def canonical-handlers
-  {:catchup    c-session/handle-catchup
-   :wrap       c-session/handle-wrap
+  "The `workflow` verbs, stored as VARS so a reload reaches this table
+   (20260817195749-0d407e9c).
+
+   Nested maps stay LITERAL with var-quoted leaves, as in `agent/:dag` and
+   `emacs/:docs`: the walker derefs a var-held subtree now, but a literal map
+   is still `map?` to every other reader, and the walker is not the only one.
+
+   `:complete` is the one entry with nothing to quote. It is an inline `fn`
+   that re-enters the session router with a rewritten :command, so it has no
+   var of its own. It reaches `handle-session` THROUGH the `c-session` alias
+   at call time, which is the same indirection by another spelling."
+  {:catchup    #'c-session/handle-catchup
+   :wrap       #'c-session/handle-wrap
    :complete   (fn [params] (c-session/handle-session (assoc params :command "complete")))
-   :plan-goal  goal/handle-plan-goal
-   :goal-schema goal/handle-goal-schema
-   :forge      {:strike             handle-forge-strike
-                :strike-imperative  handle-forge-strike-imperative
-                :status             handle-forge-status
-                :quench             handle-forge-quench
-                :multi-front        {:start    handle-multi-front-start
-                                     :status   handle-multi-front-status
-                                     :stop     handle-multi-front-stop
-                                     :_handler handle-multi-front-status}
-                :_handler           handle-forge-status}
-   :ir         {:list       ir/handle-list
-                :get        ir/handle-get
-                :describe   ir/handle-describe
-                :author     ir/handle-author
-                :register   ir/handle-register
-                :run        ir/handle-run
-                :status     ir/handle-status
-                :cancel     ir/handle-cancel
-                :method     ir/handle-describe-method
-                :vocabulary ir/handle-describe-vocabulary
-                :_handler   ir/handle-list}})
+   :plan-goal  #'goal/handle-plan-goal
+   :goal-schema #'goal/handle-goal-schema
+   :forge      {:strike             #'handle-forge-strike
+                :strike-imperative  #'handle-forge-strike-imperative
+                :status             #'handle-forge-status
+                :survey             #'handle-forge-survey
+                :quench             #'handle-forge-quench
+                :multi-front        {:start    #'handle-multi-front-start
+                                     :status   #'handle-multi-front-status
+                                     :stop     #'handle-multi-front-stop
+                                     :_handler #'handle-multi-front-status}
+                :_handler           #'handle-forge-status}
+   :ir         {:list       #'ir/handle-list
+                :get        #'ir/handle-get
+                :describe   #'ir/handle-describe
+                :author     #'ir/handle-author
+                :register   #'ir/handle-register
+                :run        #'ir/handle-run
+                :status     #'ir/handle-status
+                :cancel     #'ir/handle-cancel
+                :method     #'ir/handle-describe-method
+                :vocabulary #'ir/handle-describe-vocabulary
+                :_handler   #'ir/handle-list}})
 
 (def handlers canonical-handlers)
 
 (def handle-workflow
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 (def tool-def
   {:name "workflow"
    :consolidated true
-   :description "Forja Belt workflow: catchup (restore context), wrap (crystallize), complete (full lifecycle), forge-strike (FSM-driven smite->survey->spark cycle), forge-strike-imperative (DEPRECATED legacy path), forge-status (belt dashboard), forge-quench (graceful stop). HWF2 combinator IR: ir list/get/describe/author/register/run/status/cancel, ir method (describe method strategies), ir vocabulary (describe effect verbs). Goal-directed synthesis: goal-schema (project the GoalSpec contract + example for authoring), plan-goal (synthesize + soundness-check a Plan-EDN from a GoalSpec; author=true persists). Use command='help' to list all."
+   :description "Forja Belt workflow: catchup (restore context), wrap (crystallize), complete (full lifecycle), forge-strike (FSM-driven smite->survey->spark cycle), forge-strike-imperative (DEPRECATED legacy path), forge-status (belt dashboard), forge-survey (read-only: which tasks a strike WOULD select, with plan membership, per-card states and dependency readiness; takes plan_id/task_ids/task_filter and mutates nothing), forge-quench (graceful stop). HWF2 combinator IR: ir list/get/describe/author/register/run/status/cancel, ir method (describe method strategies), ir vocabulary (describe effect verbs). Goal-directed synthesis: goal-schema (project the GoalSpec contract + example for authoring), plan-goal (synthesize + soundness-check a Plan-EDN from a GoalSpec; author=true persists). Use command='help' to list all."
    :inputSchema {:type "object"
                  :properties {"command" {:type "string"
                                          :enum ["catchup" "wrap" "complete"
                                                 "plan-goal" "goal-schema"
                                                 "forge strike"
                                                 "forge strike-imperative"
-                                                "forge status" "forge quench"
+                                                "forge status" "forge survey"
+                                                "forge quench"
                                                 "forge multi-front start"
                                                 "forge multi-front status"
                                                 "forge multi-front stop"
@@ -235,6 +267,8 @@
                               "task_ids" {:type "array"
                                           :items {:type "string"}
                                           :description "Kanban task IDs. For complete: marks done. For forge-strike: survey whitelist."}
+                              "plan_id" {:type "string"
+                                         :description "[forge strike] Restrict to this converted plan memory. Incomplete or missing conversion links reject the strike."}
                               "task_filter" {:type "string"
                                              :description "Title prefix filter for survey. E.g. 'result-dsl:' matches all tasks starting with that prefix. More LLM-friendly than exact task_ids."}
                               "agent_id" {:type "string"
@@ -278,6 +312,6 @@
                               "restart" {:type "boolean"
                                          :description "[forge quench] Restart the belt instead of stopping it, making forge strike available again."}}
                  :required ["command"]}
-   :handler handle-workflow})
+   :handler #'handle-workflow})
 
 (def tools [tool-def])

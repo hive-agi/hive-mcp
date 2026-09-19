@@ -18,7 +18,8 @@
   (:require [clojure.test :refer [deftest testing is are]]
             [hive-mcp.workflows.saa-workflow :as sut]
             [hive.events.fsm :as fsm]
-            [clojure.edn]))
+            [clojure.edn]
+            [hive-mcp.dispatch.handler :as dh]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -470,15 +471,25 @@
                                                {:wave-id "w" :result {:status :completed}})})]
       (sut/handle-act-dispatch res (merge base-data {:plan {:id "p1"}
                                                      :run-id "wf-run-42"}))
-      (is (= {:run-id "wf-run-42"} @seen))))
+      (is (= {:run-id "wf-run-42" :plan-memory-id nil} @seen))))
 
-  (testing "ctx carries nil :run-id when data has none"
+  (testing "forwards :plan-memory-id set by store-plan to dispatch-fn ctx"
+    (let [seen (atom nil)
+          res  (mock-resources {:dispatch-fn (fn [_plan _mode _agent-id ctx]
+                                               (reset! seen ctx)
+                                               {:wave-id "w" :result {:status :completed}})})]
+      (sut/handle-act-dispatch res (merge base-data {:plan {:id "p1"}
+                                                     :run-id "wf-run-42"
+                                                     :plan-memory-id "plan-mem-7"}))
+      (is (= {:run-id "wf-run-42" :plan-memory-id "plan-mem-7"} @seen))))
+
+  (testing "ctx carries nil :run-id and :plan-memory-id when data has none"
     (let [seen (atom :unset)
           res  (mock-resources {:dispatch-fn (fn [_plan _mode _agent-id ctx]
                                                (reset! seen ctx)
                                                {:wave-id "w" :result {:status :completed}})})]
       (sut/handle-act-dispatch res (merge base-data {:plan {:id "p1"}}))
-      (is (= {:run-id nil} @seen)))))
+      (is (= {:run-id nil :plan-memory-id nil} @seen)))))
 
 (deftest handle-act-verify-test
   (testing "verifies execution results"
@@ -728,9 +739,11 @@
                      :abstract :validate-plan :store-plan
                      :act-dispatch :act-verify :end :error}]
       (is (= required (set (keys sut/handler-map))))
-      ;; All values are functions
+      ;; All values are invocable. `handler?` rather than `fn?`: the entries
+      ;; are VARS so a reload of saa.handlers reaches this table, and `fn?` is
+      ;; false for a var (20260817195749-0d407e9c).
       (doseq [[k v] sut/handler-map]
-        (is (fn? v) (str "Handler " k " should be a function"))))))
+        (is (dh/handler? v) (str "Handler " k " should be invocable"))))))
 
 ;; =============================================================================
 ;; Shout Tracking Tests
@@ -809,8 +822,8 @@
 (deftest saa-spec-has-pre-post-hooks-test
   (testing "saa-workflow-spec has pre and post hooks in opts"
     (let [opts (get-in sut/saa-workflow-spec [:opts])]
-      (is (fn? (:pre opts)) "Should have a pre hook function")
-      (is (fn? (:post opts)) "Should have a post hook function"))))
+      (is (dh/handler? (:pre opts)) "Should have a pre hook")
+      (is (dh/handler? (:post opts)) "Should have a post hook"))))
 
 (deftest saa-spec-has-subscriptions-test
   (testing "saa-workflow-spec tracks key state paths via subscriptions"
@@ -929,18 +942,49 @@
       (is (= 11 (count spec-states))))))
 
 (deftest saa-workflow-spec-all-handlers-are-functions-test
-  (testing "every :handler in saa-workflow-spec is a function"
+  (testing "every :handler in saa-workflow-spec is invocable"
     (doseq [[state-id state-def] (:fsm sut/saa-workflow-spec)]
-      (is (fn? (:handler state-def))
-          (str "Handler for state " state-id " should be a function")))))
+      (is (dh/handler? (:handler state-def))
+          (str "Handler for state " state-id " should be invocable")))))
 
 (deftest saa-workflow-spec-all-dispatch-predicates-are-functions-test
-  (testing "every dispatch predicate in saa-workflow-spec is a function"
+  (testing "every dispatch predicate in saa-workflow-spec is invocable"
     (doseq [[state-id state-def] (:fsm sut/saa-workflow-spec)
             :when (:dispatches state-def)]
       (doseq [[target pred] (:dispatches state-def)]
-        (is (fn? pred)
-            (str "Dispatch predicate " state-id " -> " target " should be a function"))))))
+        (is (dh/handler? pred)
+            (str "Dispatch predicate " state-id " -> " target " should be invocable"))))))
+
+(deftest resolve-spec-derefs-predicates-and-keeps-handler-vars-test
+  (testing "resolve-spec deref asymmetry: predicates become plain fns, handlers stay vars"
+    ;; This is the contract the whole var-seam conversion turns on, and it is
+    ;; asymmetric on purpose.
+    ;;
+    ;; PREDICATES must be plain `fn?` by the time they reach
+    ;; `hive.events.fsm/compile-state-handler`, whose gate reads
+    ;;   [target (if (fn? pred) pred (sci/eval-form sci-ctx pred))]
+    ;; so a var would be handed to SCI as an unevaluated form rather than
+    ;; called.
+    ;;
+    ;; HANDLERS must STILL BE VARS, because `fsm/run` invokes them directly
+    ;; and a var is IFn. Derefing them would re-freeze, at compile time, the
+    ;; exact seam the var exists to open.
+    ;;
+    ;; Both specs are checked: the EDN one is the happy path, the inline one is
+    ;; the fallback taken only when the EDN load fails, which is precisely when
+    ;; nobody is watching.
+    (doseq [[label spec] [["inline" sut/saa-workflow-spec]
+                          ["edn"    (sut/load-edn-spec)]]]
+      (let [resolved (#'sut/resolve-spec spec)]
+        (doseq [[state-id state-def] (:fsm resolved)]
+          (is (var? (:handler state-def))
+              (str label " spec: handler for " state-id
+                   " should still be a var after resolve-spec — derefing it"
+                   " here closes the rebind seam early"))
+          (doseq [[target pred] (:dispatches state-def)]
+            (is (fn? pred)
+                (str label " spec: dispatch " state-id " -> " target
+                     " must be a plain fn, got " (pr-str (type pred))))))))))
 
 (deftest saa-workflow-spec-dispatch-targets-are-valid-states-test
   (testing "all dispatch targets reference existing states"
@@ -1086,6 +1130,7 @@
           execute-wf     @(ns-resolve 'hive-mcp.protocols.workflow 'execute-workflow)
           get-status     @(ns-resolve 'hive-mcp.protocols.workflow 'get-status)
           loaded         (load-wf engine :saa-workflow {})]
+      (is (true? (:loaded? loaded)) (str "SAA workflow should load: " (:errors loaded)))
       (when (:loaded? loaded)
         (let [resources (mock-resources)
               result    (execute-wf engine loaded
@@ -1093,7 +1138,8 @@
                                      :initial-data base-data})]
           (is (true? (:success? result)) "Execution should succeed")
           (is (some? (:workflow-id result)))
-          (is (pos? (:duration-ms result)))
+          (is (nat-int? (:duration-ms result))
+              "duration-ms is an elapsed whole-millisecond count; 0 is valid for a sub-ms run")
           ;; Check tracked status
           (let [status (get-status engine (:workflow-id result))]
             (is (= :completed (:status status)))))))))

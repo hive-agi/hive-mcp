@@ -237,21 +237,24 @@
                 :delta skip}})))
 
 (defn handle-act-dispatch
-  "Dispatch plan execution via DAG-Wave, ling spawn, or direct execution.
+  "Dispatch plan execution through the resources :dispatch-fn.
    Contract: (dispatch-fn plan mode agent-id ctx) — ctx is a map carrying
-   :run-id (wave run id, nil when not running under a workflow wave).
+   :run-id (wave run id, nil when not running under a workflow wave) and
+   :plan-memory-id (set by store-plan, nil when the plan was not stored).
    EDN handler key: :act-dispatch"
   [resources data]
-  (let [{:keys [plan agent-id execution-mode run-id]} data
+  (let [{:keys [plan agent-id execution-mode run-id plan-memory-id]} data
         dispatch-fn (:dispatch-fn resources)
         mode (or execution-mode :direct)]
-    (log/info "[saa-fsm] Act dispatch" {:mode mode :agent-id agent-id :run-id run-id})
+    (log/info "[saa-fsm] Act dispatch" {:mode mode :agent-id agent-id :run-id run-id
+                                        :plan-memory-id plan-memory-id})
     (support/shout! resources agent-id :act-dispatch
                     (str "Act phase: dispatching execution (mode: " (name mode) ")"))
     (support/boundary-step data
       {:present? (some? dispatch-fn)
        :run    (fn [d]
-                 (let [{:keys [wave-id result]} (dispatch-fn plan mode agent-id {:run-id run-id})]
+                 (let [ctx {:run-id run-id :plan-memory-id plan-memory-id}
+                       {:keys [wave-id result]} (dispatch-fn plan mode agent-id ctx)]
                    (assoc d
                           :phase :act-dispatch
                           :execution-mode mode

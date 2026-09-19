@@ -1,13 +1,12 @@
 (ns hive-mcp.protocols.memory
-  "IMemoryStore protocol family — re-exported from hive-spi.memory.ports.
+  "IMemoryStore protocol family, re-exported from hive-spi.memory.ports.
 
-   The protocols moved to the hive-spi SPI leaf so storage backends can
-   implement them without compile-depending on hive-mcp. Every historical
-   hive-mcp.protocols.memory/* qualified name still resolves via the plain
-   `def` ALIASES below (never a second defprotocol). Predicates + the
-   registry validator call `satisfies?` on the CANONICAL ports vars, not the
-   local aliases: a protocol extended via extend-protocol mutates the ports
-   var's root, so an alias snapshot would miss those impls.
+   The protocols live in the hive-spi SPI leaf so storage backends implement
+   them without compile-depending on hive-mcp. Every historical
+   hive-mcp.protocols.memory/* name still resolves here: each protocol is a
+   `def` alias of the ports protocol, each METHOD is a defn delegating to the
+   ports var at call time. Predicates call `satisfies?` on the canonical ports
+   vars, never on the local aliases.
 
    Registry (register-store!/get-store/set-store!) + id utils stay here."
   (:require [clojure.string]
@@ -21,27 +20,94 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 ;;; ============================================================================
-;;; Protocol re-exports (def aliases of hive-spi.memory.ports — NOT defprotocol)
+;;; Protocol re-exports: each protocol a def alias, each METHOD a defn
 ;;; ============================================================================
+;;;
+;;; A `def` alias of a protocol method freezes the fn built at alias time; its
+;;; dispatch cache never sees an impl `extend`ed after this ns loaded. A defn
+;;; resolves the ports var per call. Memory 20260728135559-5c7368e6.
 
-(do
-  (def IMemoryStore ports/IMemoryStore)
-  (def connect! ports/connect!)
-  (def disconnect! ports/disconnect!)
-  (def connected? ports/connected?)
-  (def health-check ports/health-check)
-  (def add-entry! ports/add-entry!)
-  (def get-entry ports/get-entry)
-  (def update-entry! ports/update-entry!)
-  (def delete-entry! ports/delete-entry!)
-  (def query-entries ports/query-entries)
-  (def search-similar ports/search-similar)
-  (def supports-semantic-search? ports/supports-semantic-search?)
-  (def cleanup-expired! ports/cleanup-expired!)
-  (def entries-expiring-soon ports/entries-expiring-soon)
-  (def find-duplicate ports/find-duplicate)
-  (def store-status ports/store-status)
-  (def reset-store! ports/reset-store!))
+(def IMemoryStore ports/IMemoryStore)
+
+(defn connect!
+  "See `hive-spi.memory.ports/connect!`."
+  [store config]
+  (ports/connect! store config))
+
+(defn disconnect!
+  "See `hive-spi.memory.ports/disconnect!`."
+  [store]
+  (ports/disconnect! store))
+
+(defn connected?
+  "See `hive-spi.memory.ports/connected?`."
+  [store]
+  (ports/connected? store))
+
+(defn health-check
+  "See `hive-spi.memory.ports/health-check`."
+  [store]
+  (ports/health-check store))
+
+(defn add-entry!
+  "See `hive-spi.memory.ports/add-entry!`."
+  [store entry]
+  (ports/add-entry! store entry))
+
+(defn get-entry
+  "See `hive-spi.memory.ports/get-entry`."
+  [store id]
+  (ports/get-entry store id))
+
+(defn update-entry!
+  "See `hive-spi.memory.ports/update-entry!`."
+  [store id updates]
+  (ports/update-entry! store id updates))
+
+(defn delete-entry!
+  "See `hive-spi.memory.ports/delete-entry!`."
+  [store id]
+  (ports/delete-entry! store id))
+
+(defn query-entries
+  "See `hive-spi.memory.ports/query-entries`."
+  [store opts]
+  (ports/query-entries store opts))
+
+(defn search-similar
+  "See `hive-spi.memory.ports/search-similar`."
+  [store query-text opts]
+  (ports/search-similar store query-text opts))
+
+(defn supports-semantic-search?
+  "See `hive-spi.memory.ports/supports-semantic-search?`."
+  [store]
+  (ports/supports-semantic-search? store))
+
+(defn cleanup-expired!
+  "See `hive-spi.memory.ports/cleanup-expired!`."
+  [store]
+  (ports/cleanup-expired! store))
+
+(defn entries-expiring-soon
+  "See `hive-spi.memory.ports/entries-expiring-soon`."
+  [store days opts]
+  (ports/entries-expiring-soon store days opts))
+
+(defn find-duplicate
+  "See `hive-spi.memory.ports/find-duplicate`."
+  [store entry-type content-hash opts]
+  (ports/find-duplicate store entry-type content-hash opts))
+
+(defn store-status
+  "See `hive-spi.memory.ports/store-status`."
+  [store]
+  (ports/store-status store))
+
+(defn reset-store!
+  "See `hive-spi.memory.ports/reset-store!`."
+  [store]
+  (ports/reset-store! store))
 
 ;;; ============================================================================
 ;;; Store Registry (Multi-Store)
@@ -127,22 +193,50 @@
 
 ;;; --- IMemoryStoreWithAnalytics ---
 
-(do
-  (def IMemoryStoreWithAnalytics ports/IMemoryStoreWithAnalytics)
-  (def log-access! ports/log-access!)
-  (def record-feedback! ports/record-feedback!)
-  (def get-helpfulness-ratio ports/get-helpfulness-ratio))
+(def IMemoryStoreWithAnalytics ports/IMemoryStoreWithAnalytics)
+
+(defn log-access!
+  "See `hive-spi.memory.ports/log-access!`."
+  [store id]
+  (ports/log-access! store id))
+
+(defn record-feedback!
+  "See `hive-spi.memory.ports/record-feedback!`."
+  [store id feedback]
+  (ports/record-feedback! store id feedback))
+
+(defn get-helpfulness-ratio
+  "See `hive-spi.memory.ports/get-helpfulness-ratio`."
+  [store id]
+  (ports/get-helpfulness-ratio store id))
 
 (defn analytics-store?
   "Check if the store supports analytics tracking."
   [store]
   (satisfies? ports/IMemoryStoreWithAnalytics store))
 
+;;; --- IMemoryStoreBatch (batched reads) ---
+
+(def IMemoryStoreBatch ports/IMemoryStoreBatch)
+
+(defn get-entries
+  "See `hive-spi.memory.ports/get-entries`."
+  [store ids]
+  (ports/get-entries store ids))
+
+(defn batch-read-store?
+  "Check if the store can fetch many entries in one backend round-trip."
+  [store]
+  (satisfies? ports/IMemoryStoreBatch store))
+
 ;;; --- IMemoryStoreMetadataWrite (no-embed metadata writes) ---
 
-(do
-  (def IMemoryStoreMetadataWrite ports/IMemoryStoreMetadataWrite)
-  (def update-metadata! ports/update-metadata!))
+(def IMemoryStoreMetadataWrite ports/IMemoryStoreMetadataWrite)
+
+(defn update-metadata!
+  "See `hive-spi.memory.ports/update-metadata!`."
+  [store id updates]
+  (ports/update-metadata! store id updates))
 
 (defn metadata-write-store?
   "Check if the store supports the no-embed metadata write surface."
@@ -151,22 +245,27 @@
 
 ;;; --- IMemoryStoreWithStaleness ---
 
-(do
-  (def IMemoryStoreWithStaleness ports/IMemoryStoreWithStaleness)
-  (def update-staleness! ports/update-staleness!)
-  (def get-stale-entries ports/get-stale-entries)
-  (def propagate-staleness! ports/propagate-staleness!))
+(def IMemoryStoreWithStaleness ports/IMemoryStoreWithStaleness)
+
+(defn update-staleness!
+  "See `hive-spi.memory.ports/update-staleness!`."
+  [store id staleness-opts]
+  (ports/update-staleness! store id staleness-opts))
+
+(defn get-stale-entries
+  "See `hive-spi.memory.ports/get-stale-entries`."
+  [store threshold opts]
+  (ports/get-stale-entries store threshold opts))
+
+(defn propagate-staleness!
+  "See `hive-spi.memory.ports/propagate-staleness!`."
+  [store source-id depth]
+  (ports/propagate-staleness! store source-id depth))
 
 (defn staleness-store?
   "Check if the store supports staleness tracking."
   [store]
   (satisfies? ports/IMemoryStoreWithStaleness store))
-
-;;; --- IMemoryStoreBatch (batched reads) ---
-
-(do
-  (def IMemoryStoreBatch ports/IMemoryStoreBatch)
-  (def get-entries ports/get-entries))
 
 (defn batch-store?
   "Check if the store supports batched reads."
@@ -191,10 +290,17 @@
 
 ;;; --- IMemoryStoreWithRouting (multi-container routing) ---
 
-(do
-  (def IMemoryStoreWithRouting ports/IMemoryStoreWithRouting)
-  (def target-collection-for ports/target-collection-for)
-  (def relocate-entry! ports/relocate-entry!))
+(def IMemoryStoreWithRouting ports/IMemoryStoreWithRouting)
+
+(defn target-collection-for
+  "See `hive-spi.memory.ports/target-collection-for`."
+  [store entry]
+  (ports/target-collection-for store entry))
+
+(defn relocate-entry!
+  "See `hive-spi.memory.ports/relocate-entry!`."
+  [store id]
+  (ports/relocate-entry! store id))
 
 (defn routing-store?
   "Check if the store supports container-routing introspection + relocation."
@@ -203,12 +309,27 @@
 
 ;;; --- IMemoryStoreTemporal (bitemporal queries) ---
 
-(do
-  (def IMemoryStoreTemporal ports/IMemoryStoreTemporal)
-  (def asof-entry ports/asof-entry)
-  (def history-entry ports/history-entry)
-  (def asof-query ports/asof-query)
-  (def between-query ports/between-query))
+(def IMemoryStoreTemporal ports/IMemoryStoreTemporal)
+
+(defn asof-entry
+  "See `hive-spi.memory.ports/asof-entry`."
+  [store id timestamp]
+  (ports/asof-entry store id timestamp))
+
+(defn history-entry
+  "See `hive-spi.memory.ports/history-entry`."
+  [store id]
+  (ports/history-entry store id))
+
+(defn asof-query
+  "See `hive-spi.memory.ports/asof-query`."
+  [store criteria timestamp]
+  (ports/asof-query store criteria timestamp))
+
+(defn between-query
+  "See `hive-spi.memory.ports/between-query`."
+  [store criteria t1 t2]
+  (ports/between-query store criteria t1 t2))
 
 (defn temporal-store?
   "Check if the store supports bitemporal queries."

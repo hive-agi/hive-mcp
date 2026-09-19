@@ -18,7 +18,8 @@
 
   (:require [hive-mcp.events.core :as ev]
             [hive-mcp.swarm.datascript :as ds]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.session.current :as session]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -100,15 +101,30 @@
     :session-id  \"session:2026-01-14:ling-123\"
     :project-id  \"hive-mcp\"
     :created-ids [\"note-1\" \"note-2\"]
-    :stats       {:notes 2 :decisions 0}}"
-  [{:keys [wrap-id agent-id session-id project-id created-ids stats]}]
-  (let [wid (or wrap-id (str "wrap-" (java.util.UUID/randomUUID)))]
+    :stats       {:notes 2 :decisions 0}}
+
+   The row also carries WHERE it permeates to: :parent-session-id and :depth,
+   taken from this ling's own SessionRef unless the caller supplied them. Only
+   parent-session-id lets a coordinator select its OWN lings' wraps -- a
+   project-id match cannot, because two coordinators share a project and each
+   would consume the other's. A row written without it is invisible to
+   get-unprocessed-wraps-for-session, which is where it has to land.
+   Kanban 20260915164015-7e057e5b."
+  [{:keys [wrap-id agent-id session-id project-id created-ids stats
+           parent-session-id depth]}]
+  (let [wid (or wrap-id (str "wrap-" (java.util.UUID/randomUUID)))
+        ref (when (or (nil? parent-session-id) (nil? depth))
+              (try (session/session-ref {:project-id project-id})
+                   (catch Throwable _ nil)))]
     (ds/add-wrap-notification! wid
                                {:agent-id agent-id
                                 :session-id session-id
                                 :project-id project-id
                                 :created-ids created-ids
-                                :stats stats})))
+                                :stats stats
+                                :parent-session-id (or parent-session-id
+                                                       (:session/parent-id ref))
+                                :depth (or depth (:session/depth ref))})))
 
 ;; =============================================================================
 ;; Effect: :wrap-crystallize (Session Complete)

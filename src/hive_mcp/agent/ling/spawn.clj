@@ -13,7 +13,8 @@
             [clojure.string :as str]
             [hive-dsl.result :as r]
             [taoensso.timbre :as log]
-            [hive-mcp.extensions.registry :as ext]))
+            [hive-mcp.extensions.registry :as ext]
+            [hive-mcp.tools.swarm.channel :as swarm-channel]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -25,7 +26,8 @@
    :presets (:slave/presets slave)
    :project-id (:slave/project-id slave)
    :spawn-mode (or (:ling/spawn-mode slave) :claude)
-   :model (:ling/model slave)})
+   :model (:ling/model slave)
+   :token-budget (:ling/token-budget slave)})
 
 (declare ->ling)
 
@@ -51,6 +53,7 @@
      :cwd (:cwd ling)
      :project-id (:project-id ling)
      :ling-id (:id ling)
+     :token-budget (:token-budget ling)
      :max-budget-usd (or (:max-budget-usd opts) (:max-budget-usd ling))
      :task (:task opts)}))
 
@@ -176,32 +179,54 @@
    :project-id project-id
    :kanban-task-id kanban-task-id})
 
+(defn- register-slave-row!
+  "Persist a slave row through the spawn store, first making sure its parent
+   can be referenced: a coordinator session named as parent gets its own row
+   on demand."
+  [store slave-id attrs]
+  (spawn-store/ensure-coordinator-session! store (:parent attrs))
+  (spawn-store/add-slave! store slave-id attrs))
+
 (defn- register-requested-slave!
   [{:keys [ling-id] :as plan} enriched-task]
-  (spawn-store/add-slave! (spawn-store/get-store)
-                          ling-id
-                          (initial-slave-attrs plan enriched-task)))
+  (register-slave-row! (spawn-store/get-store)
+                       ling-id
+                       (initial-slave-attrs plan enriched-task)))
 
 (defn- reconcile-spawned-slave!
   [{:keys [ling-id] :as plan} slave-id enriched-task]
   (when (not= slave-id ling-id)
     (let [store (spawn-store/get-store)]
       (spawn-store/remove-slave! store ling-id)
-      (spawn-store/add-slave! store
-                              slave-id
-                              (assoc (initial-slave-attrs plan enriched-task)
-                                     :requested-id ling-id)))))
+      (register-slave-row! store
+                           slave-id
+                           (assoc (initial-slave-attrs plan enriched-task)
+                                  :requested-id ling-id)))))
+
+(defn- provider-name
+  "The explicit LLM provider of a spawn PLAN as a string, or nil."
+  [plan]
+  (let [p (get-in plan [:ctx :provider])]
+    (cond
+      (keyword? p) (name p)
+      (and (string? p) (not (str/blank? p))) p
+      :else nil)))
 
 (defn- stamp-spawn-metadata!
-  [{:keys [mode effective-model]} slave-id headless?]
-  (let [now (System/currentTimeMillis)]
+  [{:keys [mode effective-model token-budget] :as plan} slave-id headless?]
+  (let [now (System/currentTimeMillis)
+        provider (provider-name plan)]
     (spawn-store/update-slave! (spawn-store/get-store)
                                slave-id
                                (cond-> {:ling/spawn-mode mode
-                                         :ling/model (or effective-model "claude")
-                                         :slave/alive? true
-                                         :slave/spawned-at now
-                                         :slave/last-active-at now}
+                                        :ling/model (or effective-model "claude")
+                                        :slave/alive? true
+                                        :slave/spawned-at now
+                                        :slave/last-active-at now}
+                                 (some? token-budget)
+                                 (assoc :ling/token-budget token-budget)
+                                 provider
+                                 (assoc :ling/provider provider)
                                  headless?
                                  (assoc :ling/process-alive? true)))))
 
@@ -299,7 +324,7 @@
       (dispatch-when-ready! plan slave-id enriched-task headless?)
       slave-id)))
 
-(defrecord Ling [id cwd presets project-id spawn-mode model provider kg-compress? sliding-window-size agents max-budget-usd]
+(defrecord Ling [id cwd presets project-id spawn-mode model provider token-budget kg-compress? sliding-window-size agents max-budget-usd]
   IAgent
 
   (spawn! [this opts]
@@ -321,6 +346,7 @@
                    :claude)
           strat (lifecycle/resolve-strategy mode)]
       (ds-lings/update-slave! id {:slave/status :working})
+      (swarm-channel/record-dispatched-task! task-id)
       (ds-lings/add-task! task-id id {:status :dispatched
                                       :prompt resolved-task
                                       :files files})
@@ -441,10 +467,7 @@
   (release-claims! [_this]
     (let [released-count (ds-lings/release-claims-for-slave! id)]
       (log/info "Released claims" {:ling-id id :count released-count})
-      released-count))
-
-  (upgrade! [_]
-    nil))
+      released-count)))
 
 (defn ->ling
   "Create a new Ling agent instance.
@@ -461,12 +484,14 @@
                         :spawn-mode effective-spawn-mode
                         :model model-val}
                  (:provider opts)           (assoc :provider (:provider opts))
+                 (:token-budget opts)       (assoc :token-budget (:token-budget opts))
                  (some? (:kg-compress? opts)) (assoc :kg-compress? (:kg-compress? opts))
                  (some? (:verbose? opts))   (assoc :verbose? (:verbose? opts))
                  (:llm-retries opts)        (assoc :llm-retries (:llm-retries opts))
                  (:sliding-window-size opts) (assoc :sliding-window-size (:sliding-window-size opts))
                  (:agents opts)             (assoc :agents (:agents opts))
-                 (:max-budget-usd opts)     (assoc :max-budget-usd (:max-budget-usd opts))))))
+                 (:max-budget-usd opts)     (assoc :max-budget-usd (:max-budget-usd opts))
+                 (some? (:sandbox opts))    (assoc :sandbox (:sandbox opts))))))
 
 (defn create-ling!
   "Create and spawn a new ling agent."

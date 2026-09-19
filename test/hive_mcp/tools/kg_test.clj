@@ -13,7 +13,8 @@
             [hive-mcp.tools.kg :as kg]
             [hive-mcp.tools.kg.queries :as kg-queries]
             [hive-mcp.tools.kg.commands :as kg-commands]
-            [hive-mcp.tools.consolidated.kg :as consolidated-kg]))
+            [hive-mcp.tools.consolidated.kg :as consolidated-kg]
+            [hive-mcp.dispatch.handler :as dispatch]))
 
 ;;; =============================================================================
 ;;; Helpers
@@ -32,38 +33,42 @@
 
 (deftest facade-re-exports-query-handlers
   (testing "Facade re-exports all query handler vars"
-    (is (fn? kg/handle-kg-traverse)        "traverse re-exported")
-    (is (fn? kg/handle-kg-impact-analysis) "impact-analysis re-exported")
-    (is (fn? kg/handle-kg-find-path)       "find-path re-exported")
-    (is (fn? kg/handle-kg-subgraph)        "subgraph re-exported")
-    (is (fn? kg/handle-kg-contradictions)  "contradictions re-exported")
-    (is (fn? kg/handle-kg-node-context)    "node-context re-exported")
-    (is (fn? kg/handle-kg-stats)           "stats re-exported")))
+    ;; `handler?` rather than `fn?`: the re-exports hold VARS so a reload of
+    ;; kg.queries reaches the facade (20260817195749-0d407e9c).
+    (is (dispatch/handler? kg/handle-kg-traverse)        "traverse re-exported")
+    (is (dispatch/handler? kg/handle-kg-impact-analysis) "impact-analysis re-exported")
+    (is (dispatch/handler? kg/handle-kg-find-path)       "find-path re-exported")
+    (is (dispatch/handler? kg/handle-kg-subgraph)        "subgraph re-exported")
+    (is (dispatch/handler? kg/handle-kg-contradictions)  "contradictions re-exported")
+    (is (dispatch/handler? kg/handle-kg-node-context)    "node-context re-exported")
+    (is (dispatch/handler? kg/handle-kg-stats)           "stats re-exported")))
 
 (deftest facade-re-exports-command-handlers
   (testing "Facade re-exports all command handler vars"
-    (is (fn? kg/handle-kg-add-edge)            "add-edge re-exported")
-    (is (fn? kg/handle-kg-promote)             "promote re-exported")
-    (is (fn? kg/handle-kg-reground)            "reground re-exported")
-    (is (fn? kg/handle-kg-backfill-grounding)  "backfill-grounding re-exported")
-    (is (fn? kg/handle-kg-cleanup-synthetics)  "cleanup-synthetics re-exported")))
+    (is (dispatch/handler? kg/handle-kg-add-edge)            "add-edge re-exported")
+    (is (dispatch/handler? kg/handle-kg-promote)             "promote re-exported")
+    (is (dispatch/handler? kg/handle-kg-reground)            "reground re-exported")
+    (is (dispatch/handler? kg/handle-kg-backfill-grounding)  "backfill-grounding re-exported")
+    (is (dispatch/handler? kg/handle-kg-cleanup-synthetics)  "cleanup-synthetics re-exported")))
 
 (deftest facade-re-exports-point-to-sub-namespaces
   (testing "Facade vars delegate to sub-namespace implementations"
-    ;; Query handlers should be the same fn objects as in kg.queries
-    (is (= kg/handle-kg-traverse        kg-queries/handle-kg-traverse))
-    (is (= kg/handle-kg-impact-analysis kg-queries/handle-kg-impact-analysis))
-    (is (= kg/handle-kg-find-path       kg-queries/handle-kg-find-path))
-    (is (= kg/handle-kg-subgraph        kg-queries/handle-kg-subgraph))
-    (is (= kg/handle-kg-contradictions  kg-queries/handle-kg-contradictions))
-    (is (= kg/handle-kg-node-context    kg-queries/handle-kg-node-context))
-    (is (= kg/handle-kg-stats           kg-queries/handle-kg-stats))
-    ;; Command handlers should be the same fn objects as in kg.commands
-    (is (= kg/handle-kg-add-edge            kg-commands/handle-kg-add-edge))
-    (is (= kg/handle-kg-promote             kg-commands/handle-kg-promote))
-    (is (= kg/handle-kg-reground            kg-commands/handle-kg-reground))
-    (is (= kg/handle-kg-backfill-grounding  kg-commands/handle-kg-backfill-grounding))
-    (is (= kg/handle-kg-cleanup-synthetics  kg-commands/handle-kg-cleanup-synthetics))))
+    ;; The facade now holds the sub-namespace's VAR rather than a copy of its
+    ;; fn value, which is the whole point: a copy cannot see a reload. So this
+    ;; asserts var IDENTITY, which is strictly stronger than the value equality
+    ;; it replaced -- it pins the exact target, not merely an equal function.
+    (is (= kg/handle-kg-traverse        #'kg-queries/handle-kg-traverse))
+    (is (= kg/handle-kg-impact-analysis #'kg-queries/handle-kg-impact-analysis))
+    (is (= kg/handle-kg-find-path       #'kg-queries/handle-kg-find-path))
+    (is (= kg/handle-kg-subgraph        #'kg-queries/handle-kg-subgraph))
+    (is (= kg/handle-kg-contradictions  #'kg-queries/handle-kg-contradictions))
+    (is (= kg/handle-kg-node-context    #'kg-queries/handle-kg-node-context))
+    (is (= kg/handle-kg-stats           #'kg-queries/handle-kg-stats))
+    (is (= kg/handle-kg-add-edge            #'kg-commands/handle-kg-add-edge))
+    (is (= kg/handle-kg-promote             #'kg-commands/handle-kg-promote))
+    (is (= kg/handle-kg-reground            #'kg-commands/handle-kg-reground))
+    (is (= kg/handle-kg-backfill-grounding  #'kg-commands/handle-kg-backfill-grounding))
+    (is (= kg/handle-kg-cleanup-synthetics  #'kg-commands/handle-kg-cleanup-synthetics))))
 
 ;;; =============================================================================
 ;;; CQRS Separation Tests
@@ -136,7 +141,7 @@
 (deftest every-tool-has-handler
   (testing "Every tool definition has a :handler function"
     (doseq [tool kg/all-tools]
-      (is (fn? (:handler tool))
+      (is (dispatch/handler? (:handler tool))
           (str "Tool " (:name tool) " missing :handler")))))
 
 (deftest every-tool-has-input-schema
@@ -162,25 +167,35 @@
       (is (contains? commands :path))
       (is (contains? commands :context))
       (is (contains? commands :promote))
+      (is (contains? commands :remove-edge))
       (is (contains? commands :reground))
       (is (contains? commands :cleanup-synthetics))
       (is (contains? commands :batch-edge))
       (is (contains? commands :batch-traverse))
-      (is (= 12 (count commands)) "12 consolidated commands"))))
+      (is (= 13 (count commands)) "13 consolidated commands")))
+  (testing "every wired command is advertised in the tool's command enum"
+    (let [advertised (set (get-in consolidated-kg/tool-def
+                                  [:inputSchema :properties "command" :enum]))]
+      (is (every? #(contains? advertised (name %)) (keys consolidated-kg/handlers))))))
 
 (deftest consolidated-handlers-resolve-correctly
   (testing "Consolidated handler map resolves to sub-namespace fns"
-    ;; Queries
-    (is (= (:traverse consolidated-kg/handlers) kg-queries/handle-kg-traverse))
-    (is (= (:impact consolidated-kg/handlers)   kg-queries/handle-kg-impact-analysis))
-    (is (= (:path consolidated-kg/handlers)     kg-queries/handle-kg-find-path))
-    (is (= (:subgraph consolidated-kg/handlers) kg-queries/handle-kg-subgraph))
-    (is (= (:context consolidated-kg/handlers)  kg-queries/handle-kg-node-context))
-    (is (= (:stats consolidated-kg/handlers)    kg-queries/handle-kg-stats))
-    ;; Commands
-    (is (= (:edge consolidated-kg/handlers)     kg-commands/handle-kg-add-edge))
-    (is (= (:promote consolidated-kg/handlers)  kg-commands/handle-kg-promote))
-    (is (= (:reground consolidated-kg/handlers) kg-commands/handle-kg-reground))))
+    ;; Read through `dispatch/current`: the table holds VARS so a reload of
+    ;; hive-mcp.tools.kg reaches it, and a var is never `=` to the function it
+    ;; holds. What is worth asserting is WHICH function each command reaches,
+    ;; and that survives whatever the seam is spelled as next.
+    (let [h #(dispatch/current (get consolidated-kg/handlers %))]
+      ;; Queries
+      (is (= (h :traverse) kg-queries/handle-kg-traverse))
+      (is (= (h :impact)   kg-queries/handle-kg-impact-analysis))
+      (is (= (h :path)     kg-queries/handle-kg-find-path))
+      (is (= (h :subgraph) kg-queries/handle-kg-subgraph))
+      (is (= (h :context)  kg-queries/handle-kg-node-context))
+      (is (= (h :stats)    kg-queries/handle-kg-stats))
+      ;; Commands
+      (is (= (h :edge)     kg-commands/handle-kg-add-edge))
+      (is (= (h :promote)  kg-commands/handle-kg-promote))
+      (is (= (h :reground) kg-commands/handle-kg-reground)))))
 
 ;;; =============================================================================
 ;;; Validation Helper Tests
@@ -190,9 +205,13 @@
   (testing "validate-node-id returns error for invalid inputs"
     (is (some? (kg-queries/validate-node-id nil "test"))    "nil is invalid")
     (is (some? (kg-queries/validate-node-id "" "test"))     "empty is invalid")
-    (is (some? (kg-queries/validate-node-id 123 "test"))    "non-string is invalid"))
+    (is (some? (kg-queries/validate-node-id 123 "test"))    "non-string is invalid")
+    (is (some? (kg-queries/validate-node-id "$ref:m1.data.id" "test"))
+        "an unresolved $ref literal is not a node id"))
   (testing "validate-node-id returns nil for valid inputs"
-    (is (nil? (kg-queries/validate-node-id "node-1" "test")) "non-empty string is valid")))
+    (is (nil? (kg-queries/validate-node-id "node-1" "test")) "non-empty string is valid")
+    (is (nil? (kg-queries/validate-node-id "hive-mcp.batch/ref?" "test"))
+        "a qualified name that merely mentions ref is valid")))
 
 (deftest parse-relations-filter-tests
   (testing "parse-relations-filter handles various inputs"

@@ -28,7 +28,7 @@
    - `get-field`: Unified event field extraction (string or keyword keys)
    - `dispatch-event!`: Safe event dispatch with error handling
    - Handler functions use consistent field extraction pattern"
-  (:require [hive-mcp.swarm.protocol :as proto]
+  (:require [hive-spi.swarm.protocol :as proto]
             [hive-mcp.swarm.bootstrap.factory :as bootstrap]
             [hive-mcp.swarm.bootstrap.noop :as bootstrap-noop]
             [hive-mcp.swarm.datascript.registry :as registry]
@@ -40,7 +40,7 @@
             [hive-mcp.emacs-ext.daemon-store :as daemon-store]
             [hive-mcp.hivemind.core :as hivemind]
             [hive-mcp.hooks.core :as hooks]
-            [hive-mcp.tools.memory.scope :as scope]
+            [hive-mcp.project.scope :as project-scope]
             [clojure.core.async :as async :refer [go-loop <!]]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -63,7 +63,7 @@
 ;; ISwarmBootstrap instance — durable projection of slave identity.
 ;; Defaults to NoopBootstrap (event-stream only) until explicitly injected.
 ;; The integrant init in server/init.clj injects the configured backend.
-(defonce ^:private swarm-bootstrap-atom (atom (bootstrap-noop/make-noop-bootstrap)))
+(defonce ^:private swarm-bootstrap-atom (atom nil))
 
 (defn set-swarm-registry!
   "Inject the swarm registry implementation.
@@ -87,9 +87,14 @@
   (log/info "Sync: swarm bootstrap injected"))
 
 (defn get-swarm-bootstrap
-  "Get the injected ISwarmBootstrap (defaults to NoopBootstrap)."
+  "Get the injected ISwarmBootstrap (defaults to NoopBootstrap).
+
+   The default is built on first use, not at load: NoopBootstrap lives in
+   hive-agent, and building it at load would stop this namespace, and every
+   server layer that requires it, from loading without the swarm addon."
   []
-  @swarm-bootstrap-atom)
+  (or @swarm-bootstrap-atom
+      (swap! swarm-bootstrap-atom #(or % (bootstrap-noop/make-noop-bootstrap)))))
 
 (defn set-hooks-registry!
   "Inject the hooks registry from server.clj to avoid cyclic dependency."
@@ -204,7 +209,7 @@
         depth (get-field event :depth 1)
         parent-id (get-field event :parent-id)
         cwd (get-field event :cwd)
-        project-id (when cwd (scope/get-current-project-id cwd))
+        project-id (when cwd (project-scope/get-current-project-id cwd))
         reg (get-swarm-registry)
         ;; Multi-Daemon W1: Select best daemon instead of hardcoded default
         ;; Ensures default daemon is registered before selection
@@ -449,16 +454,27 @@
 ;; =============================================================================
 
 (def ^:private event-handlers
-  {:slave-spawned handle-slave-spawned
-   :slave-ready handle-slave-ready
-   :slave-status handle-slave-status
-   :slave-killed handle-slave-killed
-   :task-dispatched handle-task-dispatched
-   :task-completed handle-task-completed
-   :task-failed handle-task-failed
-   :prompt-shown handle-prompt-shown
-   :prompt-stall handle-prompt-stall
-   :dispatch-dropped handle-dispatch-dropped})
+  "The swarm event subscriptions, stored as VARS so a reload of THIS namespace
+   reaches them (20260817195749-0d407e9c).
+
+   The freeze here outlives an ordinary one: `subscribe-to-event!` starts a
+   go-loop that closes over the handler and runs for the life of the process,
+   so the function captured at subscription time is the one every later event
+   reaches, however many times the namespace reloads. A var is IFn, the
+   go-loop calls straight through it, and the lookup moves to per-event.
+
+   Cleared to convert by the 2026-09-16 consumer audit (20260916133344-05d7e65b):
+   `subscribe-to-event!` only CALLS the handler and never inspects it."
+  {:slave-spawned #'handle-slave-spawned
+   :slave-ready #'handle-slave-ready
+   :slave-status #'handle-slave-status
+   :slave-killed #'handle-slave-killed
+   :task-dispatched #'handle-task-dispatched
+   :task-completed #'handle-task-completed
+   :task-failed #'handle-task-failed
+   :prompt-shown #'handle-prompt-shown
+   :prompt-stall #'handle-prompt-stall
+   :dispatch-dropped #'handle-dispatch-dropped})
 
 (defn- subscribe-to-event!
   "Subscribe to a single event type with handler."
@@ -487,7 +503,7 @@
         depth (or (:depth slave) 1)
         cwd (:cwd slave)
         project-id (or (:project-id slave)
-                       (when cwd (scope/get-current-project-id cwd)))
+                       (when cwd (project-scope/get-current-project-id cwd)))
         reg (get-swarm-registry)]
     (proto/add-slave! reg slave-id {:status status :name name :depth depth
                                     :cwd cwd :project-id project-id})

@@ -10,6 +10,7 @@
             [hive-mcp.agent.openrouter :as openrouter]
             [hive-mcp.agent.protocol :as proto]
             [hive-mcp.config.core :as config]
+            [hive-mcp.config.test-support :as cfg-test]
             [hive-schemas.test :as hst]
             [malli.core :as m]
             [malli.error :as me]))
@@ -60,14 +61,31 @@
                            {:provider :anthropic :api-key "sk-test"}))))
 
   (testing "an explicit :api-url still overrides it (relay escape hatch)"
-    (let [b (openrouter/openai-compat-backend
-             {:provider :anthropic
-              :api-url  "https://relay.test/v1/chat/completions"
-              :api-key  "sk-test"})]
-      (is (satisfies? proto/LLMBackend b))
-      (is (= "https://relay.test/v1/chat/completions" (:api-url b)))
-      (is (= "claude-sonnet-4-6" (proto/model-name b))
-          "the dispatch-routed entry still supplies its :default-model"))))
+    (cfg-test/with-config {:llm-providers {:anthropic {:default-model "test-claude-model"}}}
+      (let [b (openrouter/openai-compat-backend
+               {:provider :anthropic
+                :api-url  "https://relay.test/v1/chat/completions"
+                :api-key  "sk-test"})]
+        (is (satisfies? proto/LLMBackend b))
+        (is (= "https://relay.test/v1/chat/completions" (:api-url b)))
+        (is (= "test-claude-model" (proto/model-name b))
+            "the dispatch-routed entry still supplies its configured :default-model")))))
+
+(deftest seed-registry-ships-no-model-test
+  (testing "seed entries are endpoint descriptors: no :default-model, no :available-models"
+    (doseq [[k entry] openrouter/provider-registry]
+      (is (not (contains? entry :default-model)) (str k " ships a :default-model"))
+      (is (not (contains? entry :available-models)) (str k " ships :available-models")))))
+
+(deftest openai-compat-backend-without-model-fails-loudly-test
+  (testing "no :model and no configured :default-model throws naming the config key"
+    (cfg-test/with-config {}
+      (let [ex (try (openrouter/openai-compat-backend {:provider :groq :api-key "sk-test"})
+                    nil
+                    (catch clojure.lang.ExceptionInfo e e))]
+        (is (some? ex))
+        (is (= :model-not-configured (:error (ex-data ex))))
+        (is (= "llm-providers.groq.default-model" (:config-key (ex-data ex))))))))
 
 (deftest provider-registry-secret-keys-test
   (testing "ollama-compat has nil secret-key (no auth needed)"
@@ -150,10 +168,36 @@
       (is (= "custom" (:provider-name b))))))
 
 (deftest openai-compat-backend-uses-defaults-test
-  (testing "Falls back to provider default model"
-    (let [b (openrouter/openai-compat-backend
-             {:provider :groq :api-key "sk-test"})]
-      (is (= "llama-3.3-70b-versatile" (proto/model-name b))))))
+  (testing "Falls back to the provider's configured default model"
+    (cfg-test/with-config {:llm-providers {:groq {:default-model "test-groq-model"}}}
+      (let [b (openrouter/openai-compat-backend
+               {:provider :groq :api-key "sk-test"})]
+        (is (= "test-groq-model" (proto/model-name b)))))))
+
+(deftest openai-compat-backend-reads-the-effective-registry-test
+  (testing "a config override of a static entry's :default-model is honoured"
+    (with-redefs [config/get-config-value
+                  (fn [k] (when (= k "llm-providers")
+                            {:venice {:default-model "e2ee-deepseek-v4-flash"}}))]
+      (is (= "e2ee-deepseek-v4-flash"
+             (proto/model-name (openrouter/openai-compat-backend
+                                {:provider :venice :api-key "sk-test"}))))))
+  (testing "a provider that exists only in config is constructible"
+    (with-redefs [config/get-config-value
+                  (fn [k] (when (= k "llm-providers")
+                            {:acme {:api-url "https://acme.test/v1/chat/completions"
+                                    :secret-key :acme-api-key
+                                    :default-model "acme-1"}}))]
+      (let [b (openrouter/openai-compat-backend {:provider :acme :api-key "sk-test"})]
+        (is (= "https://acme.test/v1/chat/completions" (:api-url b)))
+        (is (= "acme-1" (proto/model-name b)))
+        (is (= "acme" (:provider-name b))))
+      (is (nil? (openrouter/validate-provider :acme)))
+      (is (= {:provider :acme :model "acme-2"}
+             (openrouter/resolve-provider-model {:model "acme:acme-2" :agent-type :ling}))
+          "the <provider>:<model> prefix resolves for a config-only provider too")))
+  (testing "nothing in the static registry names a provider that only config should"
+    (is (not (contains? openrouter/provider-registry :axon)))))
 
 (deftest openai-compat-backend-ollama-no-key-test
   (testing "ollama-compat works without API key"

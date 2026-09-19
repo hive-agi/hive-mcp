@@ -2,7 +2,7 @@
   "Tests for the DAGWave scheduler.
    
    Tests the core scheduling logic with mocked dependencies:
-   - Kanban reached through the hive-contracts ports: a table-backed
+   - Kanban reached through the kanban ports: a table-backed
      IKanbanRead/IKanbanWrite double is installed in the registry
    - KG edge queries mocked via with-redefs
    - Ling spawning mocked (no actual processes)
@@ -15,17 +15,17 @@
    4. start-dag!/stop-dag! (lifecycle)
    5. dag-status (query)
    6. Edge cases (cycles, failures, dry-run)"
-  (:require [clojure.test :refer [deftest is testing use-fixtures]]
+  (:require [hive-mcp.project.scope]
+            [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.scheduler.dag-waves :as dag]
-            [hive-contracts.kanban :as kanban]
-            [hive-contracts.registry :as contracts]
+            [hive-mcp.spi.kanban :as kanban]
+            [hive-mcp.spi.kanban.registry :as kanban-port]
             [hive-mcp.test.stub.kanban :as kport]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [hive-mcp.agent.ling :as ling]
             [hive-mcp.hivemind.core :as hivemind]
             [hive-mcp.channel.core :as channel]
             [hive-mcp.swarm.datascript.queries :as ds-queries]
-            [hive-mcp.tools.memory.scope :as scope]
             [clojure.data.json :as json]
             [clojure.core.async :as async]
             [hive-mcp.test.stub.memory-store :as stub]
@@ -142,21 +142,22 @@
 
 (defn with-kanban-port
   "clojure.test fixture: the table-backed double answers both kanban ports.
-   The scheduler resolves the provider through hive-contracts.registry on
-   every call, so the double is installed there, never captured."
+   The scheduler resolves the provider through hive-mcp.spi.kanban.registry
+   on every call, so the double is installed there, never captured."
   [f]
-  (let [prior (into {} (for [p [:IKanbanRead :IKanbanWrite] :when (contracts/registered? p)]
-                         [p (contracts/provider p)]))
+  (let [prior (into {} (for [p [:IKanbanRead :IKanbanWrite] :when (kanban-port/registered? p)]
+                         [p (kanban-port/provider p)]))
         double (->TableKanban)]
     (try
-      (contracts/register! :IKanbanRead double)
-      (contracts/register! :IKanbanWrite double)
+      (kanban-port/register! :IKanbanRead double)
+      (kanban-port/register! :IKanbanWrite double)
       (f)
       (finally
         (doseq [p [:IKanbanRead :IKanbanWrite]]
           (if-let [impl (get prior p)]
-            (contracts/register! p impl)
-            (contracts/unregister! p)))))))
+            (kanban-port/register! p impl)
+            (kanban-port/unregister! p)))))))
+
 
 (def ^:private *spawned-lings (atom []))
 
@@ -217,7 +218,7 @@
                    hivemind/shout! mock-shout!
                    channel/subscribe! mock-subscribe!
                    channel/unsubscribe! mock-unsubscribe!
-                   scope/get-current-project-id mock-get-scope
+                   hive-mcp.project.scope/get-current-project-id mock-get-scope
                    ds-queries/get-slave mock-get-slave]
        ~@body)))
 
@@ -677,7 +678,7 @@
                     hivemind/shout! mock-shout!
                     channel/subscribe! mock-subscribe!
                     channel/unsubscribe! mock-unsubscribe!
-                    scope/get-current-project-id mock-get-scope
+                    hive-mcp.project.scope/get-current-project-id mock-get-scope
                     ds-queries/get-slave mock-get-slave]
         ;; Add task-e to the entry table
         (reset! *chroma-entries {"task-a" task-a "task-b" task-b
@@ -869,7 +870,7 @@
                     hivemind/shout! mock-shout!
                     channel/subscribe! mock-subscribe!
                     channel/unsubscribe! mock-unsubscribe!
-                    scope/get-current-project-id mock-get-scope
+                    hive-mcp.project.scope/get-current-project-id mock-get-scope
                     ds-queries/get-slave mock-get-slave]
         (reset! *chroma-entries {"task-a" task-a "task-b" task-b
                                  "task-c" task-c "task-d" task-d
@@ -948,7 +949,7 @@
                     hivemind/shout! mock-shout!
                     channel/subscribe! mock-subscribe!
                     channel/unsubscribe! mock-unsubscribe!
-                    scope/get-current-project-id mock-get-scope
+                    hive-mcp.project.scope/get-current-project-id mock-get-scope
                     ds-queries/get-slave mock-get-slave]
         (reset! *spawned-lings [])
 
@@ -979,7 +980,7 @@
                     hivemind/shout! mock-shout!
                     channel/subscribe! mock-subscribe!
                     channel/unsubscribe! mock-unsubscribe!
-                    scope/get-current-project-id mock-get-scope
+                    hive-mcp.project.scope/get-current-project-id mock-get-scope
                     ds-queries/get-slave mock-get-slave]
         (reset! *spawned-lings [])
 
@@ -1093,7 +1094,7 @@
                     hivemind/shout! mock-shout!
                     channel/subscribe! mock-subscribe!
                     channel/unsubscribe! mock-unsubscribe!
-                    scope/get-current-project-id mock-get-scope
+                    hive-mcp.project.scope/get-current-project-id mock-get-scope
                     ds-queries/get-slave mock-get-slave]
         (reset! *chroma-entries {"task-a" task-a "task-b" task-b
                                  "task-c" task-c "task-d" task-d})

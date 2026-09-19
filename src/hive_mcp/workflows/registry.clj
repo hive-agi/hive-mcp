@@ -32,7 +32,8 @@
   (:require [clojure.java.io :as io]
             [hive.events.fsm :as fsm]
             [sci.core :as sci]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [hive-mcp.dispatch.handler :as dh])
   (:import [java.io PushbackReader]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -151,7 +152,19 @@
 
    Here `(fn ...)` list forms are SCI-compiled and keywords are looked up in
    REF-MAP. Values already functions — and keywords absent from REF-MAP —
-   pass through unchanged."
+   pass through unchanged.
+
+   A dispatch predicate is additionally resolved through `dh/current` to an
+   actual FUNCTION. `fsm/compile-state-handler` spells its gate `(if (fn? pred)
+   pred (sci/eval-form sci-ctx pred))`, so a var-held predicate is not passed
+   through but handed to SCI as though it were an unevaluated form. This is
+   the second of the two places a var must not survive; the other is
+   `saa-workflow/resolve-dispatches`, and both exist because REF-MAP entries
+   may now be vars.
+
+   Handlers, `:pre`, `:post` and subscription handlers are deliberately left
+   alone: `fsm/run` invokes each directly, a var is IFn, and keeping the var
+   means a reload reaches them at invocation rather than at compile."
   [spec ref-map]
   (let [sci-ctx (sci/init {})
         resolve-val (fn [v]
@@ -161,9 +174,10 @@
                         :else        v))
         resolve-dispatches (fn [dispatches]
                              (mapv (fn [[state pred]]
-                                     [state (if (keyword? pred)
-                                              (get ref-map pred pred)
-                                              pred)])
+                                     [state (dh/current
+                                             (if (keyword? pred)
+                                               (get ref-map pred pred)
+                                               pred))])
                                    dispatches))]
     (cond-> (update spec :fsm
                     (fn [states]

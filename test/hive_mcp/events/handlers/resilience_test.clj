@@ -1,7 +1,8 @@
 (ns hive-mcp.events.handlers.resilience-test
   "Tests for :resilience/dim-mismatch handler (ENGINE-L1.4)."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
-            [hive-mcp.events.handlers.resilience :as res]))
+            [hive-mcp.events.handlers.resilience :as res]
+            [hive.events :as ev]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -49,7 +50,21 @@
 ;; register-handlers! — idempotent registration guard
 ;; =============================================================================
 
-(deftest test-register-handlers-is-idempotent
-  (testing "first call registers, subsequent calls no-op"
+(deftest test-register-handlers-re-registers
+  (testing "every call registers, so a reload can rewire the handler"
     (is (true? (res/register-handlers!)) "first registration returns true")
-    (is (nil? (res/register-handlers!)) "second call no-ops (returns nil)")))
+    (is (true? (res/register-handlers!)) "and so does every call after it"))
+
+  (testing "the registry holds what the namespace defines NOW"
+    ;; This is the assertion the old test inverted. It used to demand that a
+    ;; second call no-op and return nil, which froze the defect: the gate is a
+    ;; `defonce`'d atom, so after a hot reload it still read true, this function
+    ;; did nothing, and the registry kept dispatching to the closure compiled
+    ;; before the reload. `reg-event` is addressed by key and last-writer-wins,
+    ;; so re-registering is free and is the whole repair.
+    ;; Kanban 20260916134011-1246379c.
+    (res/register-handlers!)
+    (is (identical? @(ns-resolve (find-ns 'hive-mcp.events.handlers.resilience)
+                                 'handle-dim-mismatch)
+                    (:handler (ev/get-event :resilience/dim-mismatch)))
+        "a gate here would leave the pre-reload closure registered")))

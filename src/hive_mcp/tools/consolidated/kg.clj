@@ -13,7 +13,7 @@
 
    Returns the same `{:results :summary}` envelope as before (decision
    20260429230453-7e7627cc)."
-  kg-handlers/handle-kg-add-edges)
+  #'kg-handlers/handle-kg-add-edges)
 
 (def handle-batch-traverse
   "Batch traversal via the `Batchable` protocol."
@@ -21,18 +21,27 @@
                           :cmd-kw :traverse}))
 
 (def handlers
-  {:traverse           kg-handlers/handle-kg-traverse
-   :edge               kg-handlers/handle-kg-add-edge
-   :impact             kg-handlers/handle-kg-impact-analysis
-   :subgraph           kg-handlers/handle-kg-subgraph
-   :stats              kg-handlers/handle-kg-stats
-   :path               kg-handlers/handle-kg-find-path
-   :context            kg-handlers/handle-kg-node-context
-   :promote            kg-handlers/handle-kg-promote
-   :reground           kg-handlers/handle-kg-reground
-   :cleanup-synthetics kg-handlers/handle-kg-cleanup-synthetics
-   :batch-edge         handle-batch-edge
-   :batch-traverse     handle-batch-traverse})
+  "The `kg` verbs, stored as VARS so a reload of `hive-mcp.tools.kg` reaches
+   this table (20260817195749-0d407e9c).
+
+   `:batch-edge` and `:batch-traverse` point at the two local defs above, which
+   are themselves aliases holding a captured value. Quoting them here closes the
+   seam at the TABLE; the alias defs are their own freeze and are converted with
+   the rest of them, not ad hoc, because an alias that holds a var makes a var
+   CHAIN and nothing derefs to a fixed point yet."
+  {:traverse           #'kg-handlers/handle-kg-traverse
+   :edge               #'kg-handlers/handle-kg-add-edge
+   :impact             #'kg-handlers/handle-kg-impact-analysis
+   :subgraph           #'kg-handlers/handle-kg-subgraph
+   :stats              #'kg-handlers/handle-kg-stats
+   :path               #'kg-handlers/handle-kg-find-path
+   :context            #'kg-handlers/handle-kg-node-context
+   :promote            #'kg-handlers/handle-kg-promote
+   :remove-edge        #'kg-handlers/handle-kg-remove-edge
+   :reground           #'kg-handlers/handle-kg-reground
+   :cleanup-synthetics #'kg-handlers/handle-kg-cleanup-synthetics
+   :batch-edge         #'handle-batch-edge
+   :batch-traverse     #'handle-batch-traverse})
 
 (def ^:private coerce-schema
   "MCP boundary coercion — string params to declared types."
@@ -44,18 +53,19 @@
    :relations   [:vec]
    :threshold   [:double]
    :limit       [:int]
-   :dry_run     [:boolean]})
+   :dry_run     [:boolean]
+   :i_mean_it   [:boolean]})
 
 (def handle-kg
-  (make-cli-handler handlers coerce-schema))
+  (make-cli-handler #'handlers coerce-schema))
 
 (def tool-def
   {:name "kg"
    :consolidated true
-   :description "Knowledge Graph operations: traverse (walk graph), edge (add relationship), impact (find dependents), subgraph (extract scope), stats (counts), path (shortest path), context (node details), promote (bubble up scope), reground (verify source), cleanup-synthetics (prune dead synthetic patterns). Batch: batch-edge (multiple edges), batch-traverse (multiple traversals). Use command='help' to list all."
+   :description "Knowledge Graph operations: traverse (walk graph), edge (add relationship), impact (find dependents), subgraph (extract scope), stats (counts), path (shortest path), context (node details), promote (bubble up scope), remove-edge (delete one edge by edge_id; requires i_mean_it true), reground (verify source), cleanup-synthetics (prune dead synthetic patterns). Batch: batch-edge (multiple edges), batch-traverse (multiple traversals). Use command='help' to list all."
    :inputSchema {:type "object"
                  :properties {"command" {:type "string"
-                                         :enum ["traverse" "edge" "impact" "subgraph" "stats" "path" "context" "promote" "reground" "cleanup-synthetics" "batch-edge" "batch-traverse" "help"]
+                                         :enum ["traverse" "edge" "impact" "subgraph" "stats" "path" "context" "promote" "remove-edge" "reground" "cleanup-synthetics" "batch-edge" "batch-traverse" "help"]
                                          :description "KG operation to perform"}
                               "start_node" {:type "string"
                                             :description "Node ID to start traversal from"}
@@ -91,7 +101,9 @@
                               "to_node" {:type "string"
                                          :description "Target node for path finding"}
                               "edge_id" {:type "string"
-                                         :description "Edge ID to promote"}
+                                         :description "Edge ID to promote or remove"}
+                              "i_mean_it" {:type "boolean"
+                                           :description "remove-edge: must be true, or nothing is deleted"}
                               "to_scope" {:type "string"
                                           :description "Target scope for promotion"}
                               "entry_id" {:type "string"
@@ -115,6 +127,6 @@
                               "dry_run" {:type "boolean"
                                          :description "cleanup-synthetics: preview without mutating (default: false)"}}
                  :required ["command"]}
-   :handler handle-kg})
+   :handler #'handle-kg})
 
 (def tools [tool-def])

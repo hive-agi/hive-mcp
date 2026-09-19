@@ -19,7 +19,8 @@
    - F1: One source erroring doesn't affect others in harvest-all
 
    Wave 2, Crystal refactor."
-  (:require [clojure.test :refer [deftest testing is use-fixtures]]
+  (:require [hive-mcp.project.scope]
+            [clojure.test :refer [deftest testing is use-fixtures]]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
@@ -31,7 +32,6 @@
             [hive-mcp.crystal.pipeline :as pipeline]
             [hive-mcp.crystal.core :as crystal]
             [hive-mcp.agent.context :as ctx]
-            [hive-mcp.tools.memory.scope :as scope]
             [taoensso.timbre :as log]
             [clojure.java.shell]))
 
@@ -49,7 +49,7 @@
      (with-redefs
        [ctx/current-directory    (fn [] (get opts# :directory "/tmp/contract-test"))
         ctx/current-agent-id     (fn [] (get opts# :agent-id "contract-agent"))
-        scope/get-current-project-id (fn [_#] (get opts# :project-id "contract-project"))
+        hive-mcp.project.scope/get-current-project-id (fn [_#] (get opts# :project-id "contract-project"))
         crystal/get-session-start (fn [& _#] (get opts# :session-start mock-session-start))]
        ~@body)))
 

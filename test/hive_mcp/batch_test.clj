@@ -6,7 +6,8 @@
             [clojure.data.json :as json]
             [hive-mcp.batch :as batch]
             [hive-mcp.batch.protocol :as bp]
-            [hive-mcp.extensions.registry :as ext]))
+            [hive-mcp.extensions.registry :as ext]
+            [hive-mcp.test.stub.batch-extensions :as stub]))
 
 (defn- stub-handler
   "Simple in-process handler registry keyed by :tool keyword."
@@ -217,6 +218,34 @@
       (is (re-find #"unparsed" (or (:error k1) "")))
       (is (not-any? #(and (string? %) (re-find #"^\$ref:" %)) @seen)
           "no handler ever received the literal $ref string"))))
+
+(deftest a-ref-to-the-op-label-is-broken-not-an-entity-id
+  (testing "$ref:<op>.id walks the op-result ENVELOPE, whose :id is the op's own
+            label, so it can never name what the op created. It is refused and
+            the error points at .data.id; the .data.id spelling still resolves."
+    (stub/with-batch-extensions
+      (fn []
+        (let [seen     (atom [])
+              handlers {"kanban" (fn [_] {:type "text" :text "{\"id\": \"20260913-created\"}"})
+                        "kg"     (fn [args]
+                                   (swap! seen conj (:to args))
+                                   {:type "text" :text "{\"success\": true}"})}
+              result   (batch/run-operations
+                        [{:id "kdone" :tool "kanban" :command "create" :title "x"}
+                         {:id "e-label" :tool "kg" :command "edge" :from "n"
+                          :to "$ref:kdone.id" :relation "implements" :depends_on ["kdone"]}
+                         {:id "e-data" :tool "kg" :command "edge" :from "n"
+                          :to "$ref:kdone.data.id" :relation "implements" :depends_on ["kdone"]}]
+                        {:resolve-handler (partial stub-handler handlers)})
+              by-id    (into {} (map (juxt :id identity))
+                             (mapcat :results (vals (:waves result))))]
+          (is (false? (:success (by-id "e-label"))))
+          (is (re-find #"op-label" (or (:error (by-id "e-label")) "")))
+          (is (re-find #"\$ref:kdone\.data\.id" (or (:error (by-id "e-label")) ""))
+              "the refusal names the spelling that works")
+          (is (true? (:success (by-id "e-data"))))
+          (is (= ["20260913-created"] @seen)
+              "the handler never received the op label \"kdone\" as a node id"))))))
 
 (deftest nil-exec-result-normalized-to-failed
   (testing "nil entries returned by the wave executor become failed op-results

@@ -128,15 +128,17 @@
   (rb/result->mcp (rb/try-result :config/validate-failed #(validate* params))))
 
 (def handlers
-  {:get      handle-get
-   :set      handle-set
-   :list     handle-list
-   :reload   handle-reload
-   :path     handle-path
-   :validate handle-validate})
+  "The `config` verbs, stored as VARS so a reload of THIS namespace reaches the
+   table (20260817195749-0d407e9c)."
+  {:get      #'handle-get
+   :set      #'handle-set
+   :list     #'handle-list
+   :reload   #'handle-reload
+   :path     #'handle-path
+   :validate #'handle-validate})
 
 (def handle-config
-  (make-cli-handler handlers))
+  (make-cli-handler #'handlers))
 
 (def tool-def
   {:name "config"
@@ -150,6 +152,6 @@
                                      :description "Dotted key path (e.g. \"embeddings.ollama.host\"). For validate: section name (e.g. \"memory\")"}
                               "value" {:description "Value to set (string, number, boolean, or object)"}}
                  :required ["command"]}
-   :handler handle-config})
+   :handler #'handle-config})
 
 (def tools [tool-def])

@@ -26,15 +26,18 @@
   "resilience"
   "diag"
   "hooks"
+  "dispatch"
   "nrepl"
   "gc"
   "schema"
   "context"
+  "session"
   "engine"
   "storage"
   "project"
   "analysis"
   "kernel"
+  "hot"
   "agent"
   "scripts.aot-boot"
   "scheduler.housekeeping"
@@ -48,6 +51,7 @@
   hive-mcp.tools.registry
   hive-mcp.tools.composite
   hive-mcp.tools.cli
+  hive-mcp.tools.op-outcome
   hive-mcp.tools.result-bridge
   hive-mcp.tools.multi
   hive-mcp.tools.multi-async
@@ -73,10 +77,7 @@
  :extraction
  {"agent.budget-router" :hive-agent
   "agent.cider" :hive-agent
-  "agent.config" :hive-agent
-  "agent.core" :hive-agent
   "agent.cost" :hive-agent
-  "agent.drone" :hive-agent
   "agent.executor" :hive-agent
   "agent.headless" :hive-agent
   "agent.headless-capability" :hive-agent
@@ -85,10 +86,8 @@
   "agent.mcp" :hive-agent
   "agent.ollama" :hive-agent
   "agent.openrouter" :hive-agent
-  "agent.routing" :hive-agent
   "agent.saa" :hive-agent
   "agent.session-state" :hive-agent
-  "agent.task-classifier" :hive-agent
   "agent.transcript-query" :hive-agent
   "agora" :hive-agora
   "chroma" :hive-memory
@@ -98,12 +97,10 @@
   "embedder" :hive-memory
   "embeddings" :hive-memory
   "events.effects.agent" :hive-agent
-  "events.effects.drone-loop" :hive-agent
   "events.effects.kg" :hive-memory
   "events.effects.memory" :hive-memory
   "events.handlers.agora" :hive-agora
   "events.handlers.crystal" :hive-memory
-  "events.handlers.drone" :hive-agent
   "events.handlers.kanban" :hive-kanban
   "events.handlers.kg" :hive-memory
   "events.handlers.ling" :hive-agent
@@ -113,8 +110,6 @@
   "events.handlers.saa-fx" :hive-workflows
   "events.handlers.session" :hive-memory
   "events.handlers.task" :hive-workflows
-  "events.handlers.validated-wave" :hive-workflows
-  "events.handlers.wave" :hive-workflows
   "graph" :hive-memory
   "knowledge-graph" :hive-memory
   "memory" :hive-memory
@@ -133,11 +128,9 @@
   "tools.agent" :hive-agent
   "tools.agora" :hive-agora
   "tools.analysis-bridge" :hive-emacs
-  "tools.buffer" :hive-emacs
   "tools.consolidated.agent" :hive-agent
   "tools.consolidated.agora" :hive-agora
   "tools.consolidated.analysis" :hive-emacs
-  "tools.consolidated.emacs" :hive-emacs
   "tools.consolidated.git" :hive-emacs
   "tools.consolidated.kanban" :hive-kanban
   "tools.consolidated.kg" :hive-memory
@@ -149,12 +142,9 @@
   "tools.consolidated.preset" :hive-memory
   "tools.consolidated.session" :hive-memory
   "tools.consolidated.transcript" :hive-memory
-  "tools.consolidated.wave" :hive-workflows
   "tools.consolidated.workflow" :hive-workflows
   "tools.cost" :hive-agent
   "tools.crystal" :hive-memory
-  "tools.diff" :hive-agent
-  "tools.docs" :hive-emacs
   "tools.kanban" :hive-kanban
   "tools.kg" :hive-memory
   "tools.magit" :hive-emacs
@@ -166,8 +156,6 @@
   "tools.presets" :hive-memory
   "tools.projectile" :hive-emacs
   "tools.session-complete" :hive-memory
-  "tools.swarm.validated-wave" :hive-workflows
-  "tools.swarm.wave" :hive-workflows
   "transport.olympus" :hive-emacs
   "vectordb" :hive-memory
   "vectordb.kanban-facade" :hive-kanban
@@ -190,7 +178,6 @@
   {:from hive-mcp.tools.core, :to hive-mcp.emacs-ext.client, :since "2026-09-07", :retired-by "E3"}
   {:from hive-mcp.tools.hive-project, :to hive-mcp.emacs-ext.client, :since "2026-09-07", :retired-by "E3"}
   {:from hive-mcp.tools.hive-project, :to hive-mcp.emacs-ext.elisp, :since "2026-09-07", :retired-by "E3"}
-  {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.emacs, :since "2026-09-07", :retired-by "E3"}
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.git, :since "2026-09-07", :retired-by "E3"}
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.magit, :since "2026-09-07", :retired-by "E3"}
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.olympus, :since "2026-09-07", :retired-by "E3"}
@@ -204,12 +191,7 @@
   {:from hive-mcp.agent.ling.spawn, :to hive-mcp.workflows.catchup-ling, :since "2026-09-07", :retired-by "E5"}
   {:from hive-mcp.events.handlers, :to hive-mcp.events.handlers.saa, :since "2026-09-07", :retired-by "E5"}
   {:from hive-mcp.events.handlers, :to hive-mcp.events.handlers.task, :since "2026-09-07", :retired-by "E5"}
-  {:from hive-mcp.events.handlers, :to hive-mcp.events.handlers.validated-wave, :since "2026-09-07", :retired-by "E5"}
-  {:from hive-mcp.events.handlers, :to hive-mcp.events.handlers.wave, :since "2026-09-07", :retired-by "E5"}
-  {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.wave, :since "2026-09-07", :retired-by "E5"}
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.workflow, :since "2026-09-07", :retired-by "E5"}
-  {:from hive-mcp.tools.swarm, :to hive-mcp.tools.swarm.validated-wave, :since "2026-09-07", :retired-by "E5"}
-  {:from hive-mcp.tools.swarm, :to hive-mcp.tools.swarm.wave, :since "2026-09-07", :retired-by "E5"}
   {:from hive-mcp.events.handlers, :to hive-mcp.events.handlers.crystal, :since "2026-09-07", :retired-by "E6a"}
   {:from hive-mcp.events.handlers, :to hive-mcp.events.handlers.session, :since "2026-09-07", :retired-by "E6a"}
   {:from hive-mcp.server.lifecycle, :to hive-mcp.crystal.hooks, :since "2026-09-07", :retired-by "E6a"}
@@ -217,22 +199,14 @@
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.session, :since "2026-09-07", :retired-by "E6a"}
   {:from hive-mcp.events.effects, :to hive-mcp.events.effects.memory, :since "2026-09-07", :retired-by "E6b"}
   {:from hive-mcp.events.handlers, :to hive-mcp.events.handlers.memory-read, :since "2026-09-07", :retired-by "E6b"}
-  {:from hive-mcp.hivemind.messaging, :to hive-mcp.tools.memory.scope, :since "2026-09-07", :retired-by "E6b"}
-  {:from hive-mcp.hivemind.status, :to hive-mcp.tools.memory.scope, :since "2026-09-07", :retired-by "E6b"}
-  {:from hive-mcp.hivemind.tools, :to hive-mcp.tools.memory.scope, :since "2026-09-07", :retired-by "E6b"}
   {:from hive-mcp.schema.memory, :to hive-mcp.memory.type-registry, :since "2026-09-07", :retired-by "E6b"}
-  {:from hive-mcp.swarm.registry, :to hive-mcp.tools.memory.scope, :since "2026-09-07", :retired-by "E6b"}
-  {:from hive-mcp.swarm.sync, :to hive-mcp.tools.memory.scope, :since "2026-09-07", :retired-by "E6b"}
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.memory, :since "2026-09-07", :retired-by "E6b"}
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.migration, :since "2026-09-07", :retired-by "E6b"}
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.preset, :since "2026-09-07", :retired-by "E6b"}
-  {:from hive-mcp.tools.swarm.lifecycle, :to hive-mcp.tools.memory.scope, :since "2026-09-07", :retired-by "E6b"}
-  {:from hive-mcp.tools.swarm.registry, :to hive-mcp.tools.memory.scope, :since "2026-09-07", :retired-by "E6b"}
   {:from hive-mcp.delivery.fanout, :to hive-mcp.knowledge-graph.slots.breaker, :since "2026-09-07", :retired-by "E6c"}
   {:from hive-mcp.events.effects, :to hive-mcp.events.effects.kg, :since "2026-09-07", :retired-by "E6c"}
   {:from hive-mcp.events.handlers, :to hive-mcp.events.handlers.kg, :since "2026-09-07", :retired-by "E6c"}
   {:from hive-mcp.multi.batchables, :to hive-mcp.tools.kg.batch, :since "2026-09-07", :retired-by "E6c"}
-  {:from hive-mcp.project.tree, :to hive-mcp.knowledge-graph.scope, :since "2026-09-07", :retired-by "E6c"}
   {:from hive-mcp.schema.tools, :to hive-mcp.knowledge-graph.schema, :since "2026-09-07", :retired-by "E6c"}
   {:from hive-mcp.server.init, :to hive-mcp.chroma.core, :since "2026-09-07", :retired-by "E6c"}
   {:from hive-mcp.server.init, :to hive-mcp.embeddings.config, :since "2026-09-07", :retired-by "E6c"}
@@ -241,33 +215,21 @@
   {:from hive-mcp.server.init, :to hive-mcp.memory.store.chroma, :since "2026-09-07", :retired-by "E6c"}
   {:from hive-mcp.swarm.coordinator, :to hive-mcp.knowledge-graph.disc, :since "2026-09-07", :retired-by "E6c"}
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.kg, :since "2026-09-07", :retired-by "E6c"}
-  {:from hive-mcp.tools.swarm.dispatch, :to hive-mcp.knowledge-graph.disc, :since "2026-09-07", :retired-by "E6c"}
   {:from hive-mcp.events.effects, :to hive-mcp.events.effects.agent, :since "2026-09-07", :retired-by "E7"}
-  {:from hive-mcp.events.effects, :to hive-mcp.events.effects.drone-loop, :since "2026-09-07", :retired-by "E7"}
-  {:from hive-mcp.events.handlers, :to hive-mcp.events.handlers.drone, :since "2026-09-07", :retired-by "E7"}
   {:from hive-mcp.events.handlers, :to hive-mcp.events.handlers.ling, :since "2026-09-07", :retired-by "E7"}
-  {:from hive-mcp.nats.bridge, :to hive-mcp.agent.drone.error-summary, :since "2026-09-07", :retired-by "E7"}
   {:from hive-mcp.tools.catchup.spawn, :to hive-mcp.agent.hints, :since "2026-09-07", :retired-by "E7"}
   {:from hive-mcp.tools.consolidated.hivemind, :to hive-mcp.tools.agent.dispatch, :since "2026-09-07", :retired-by "E7"}
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.agent, :since "2026-09-07", :retired-by "E7"}
-  {:from hive-mcp.transport.a2a.handlers, :to hive-mcp.agent.drone, :since "2026-09-07", :retired-by "E7"}
   {:from hive-mcp.tools.catchup, :to hive-mcp.crystal.fanout, :since "2026-09-07", :retired-by "K1"}
   {:from hive-mcp.tools.catchup, :to hive-mcp.crystal.harvest.collect, :since "2026-09-07", :retired-by "K1"}
   {:from hive-mcp.tools.catchup, :to hive-mcp.crystal.persist, :since "2026-09-07", :retired-by "K1"}
-  {:from hive-mcp.tools.catchup, :to hive-mcp.knowledge-graph.scope, :since "2026-09-07", :retired-by "K1"}
-  {:from hive-mcp.tools.catchup, :to hive-mcp.tools.memory.scope, :since "2026-09-07", :retired-by "K1"}
   {:from hive-mcp.tools.catchup.axiom-cache, :to hive-mcp.vectordb.resilience, :since "2026-09-07", :retired-by "K1"}
   {:from hive-mcp.tools.catchup.bundle, :to hive-mcp.vectordb.resilience, :since "2026-09-07", :retired-by "K1"}
   {:from hive-mcp.tools.catchup.bundle-cache, :to hive-mcp.memory.write-events, :since "2026-09-07", :retired-by "K1"}
-  {:from hive-mcp.tools.catchup.format, :to hive-mcp.knowledge-graph.scope, :since "2026-09-07", :retired-by "K1"}
   {:from hive-mcp.tools.catchup.format, :to hive-mcp.memory.type-registry, :since "2026-09-07", :retired-by "K1"}
-  {:from hive-mcp.tools.catchup.hierarchy, :to hive-mcp.knowledge-graph.scope, :since "2026-09-07", :retired-by "K1"}
   {:from hive-mcp.tools.catchup.hierarchy, :to hive-mcp.vectordb.resilience, :since "2026-09-07", :retired-by "K1"}
   {:from hive-mcp.tools.catchup.hydration, :to hive-mcp.vectordb.resilience, :since "2026-09-07", :retired-by "K1"}
-  {:from hive-mcp.tools.catchup.scope, :to hive-mcp.knowledge-graph.scope, :since "2026-09-07", :retired-by "K1"}
-  {:from hive-mcp.tools.catchup.scope-filter, :to hive-mcp.knowledge-graph.scope, :since "2026-09-07", :retired-by "K1"}
   {:from hive-mcp.tools.catchup.spawn, :to hive-mcp.knowledge-graph.disc, :since "2026-09-07", :retired-by "K1"}
-  {:from hive-mcp.tools.catchup.spawn, :to hive-mcp.tools.memory.scope, :since "2026-09-07", :retired-by "K1"}
   {:from hive-mcp.events.effects.coeffect, :to datascript.core, :since "2026-09-07", :retired-by "K2"}
   {:from hive-mcp.events.effects.infrastructure, :to datascript.core, :since "2026-09-07", :retired-by "K2"}
   {:from hive-mcp.events.effects.notification, :to datascript.core, :since "2026-09-07", :retired-by "K2"}

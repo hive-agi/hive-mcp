@@ -8,7 +8,6 @@
 
    Event Protocol (what Olympus expects):
    {:type :agents :data [{:id \"...\" :status :working ...}]}
-   {:type :wave-update :wave-id \"...\" :task-idx 0 :status :completed}
    {:type :kg-snapshot :entries [...] :edges [...]}
 
    Lifecycle:
@@ -37,34 +36,33 @@
 ;; Re-exports - Snapshots
 ;; =============================================================================
 
-(def build-full-snapshot snap/build-full-snapshot)
+(def build-full-snapshot #'snap/build-full-snapshot)
 
 ;; =============================================================================
 ;; Re-exports - DataScript state bridge
 ;; =============================================================================
 
-(def wire-ds-state-bridge! state-bridge/wire-ds-state-bridge!)
-(def stop-ds-state-bridge! state-bridge/stop-ds-state-bridge!)
+(def wire-ds-state-bridge! #'state-bridge/wire-ds-state-bridge!)
+(def stop-ds-state-bridge! #'state-bridge/stop-ds-state-bridge!)
 
 ;; =============================================================================
 ;; Re-exports - Event broadcasting / emitters
 ;; =============================================================================
 
-(def broadcast!            stream/broadcast!)
-(def emit!                 stream/emit!)
-(def emit-agent-event!     stream/emit-agent-event!)
-(def emit-wave-event!      stream/emit-wave-event!)
-(def emit-hivemind-shout!  stream/emit-hivemind-shout!)
-(def emit-kg-event!        stream/emit-kg-event!)
-(def wire-hivemind-events! stream/wire-hivemind-events!)
+(def broadcast!            #'stream/broadcast!)
+(def emit!                 #'stream/emit!)
+(def emit-agent-event!     #'stream/emit-agent-event!)
+(def emit-hivemind-shout!  #'stream/emit-hivemind-shout!)
+(def emit-kg-event!        #'stream/emit-kg-event!)
+(def wire-hivemind-events! #'stream/wire-hivemind-events!)
 
 ;; =============================================================================
 ;; Re-exports - Server lifecycle
 ;; =============================================================================
 
-(def start!  http/start!)
-(def stop!   http/stop!)
-(def status  http/status)
+(def start!  #'http/start!)
+(def stop!   #'http/stop!)
+(def status  #'http/status)
 
 (comment
   ;; REPL testing

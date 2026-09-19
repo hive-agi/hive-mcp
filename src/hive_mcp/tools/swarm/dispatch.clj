@@ -20,12 +20,13 @@
   (:require [hive-mcp.tools.swarm.core :as core]
             [hive-mcp.swarm.coordinator :as coord]
             [hive-mcp.swarm.datascript.queries :as queries]
-            [hive-mcp.knowledge-graph.disc :as kg-disc]
+            [hive-spi.swarm.ports.memory-scope :as scope-port]
             [hive-mcp.protocols.dispatch :as dispatch-ctx]
             [hive-mcp.agent.ling.terminal-registry :as terminal-reg]
             [hive-mcp.agent.ling.strategy :as strategy]
             [hive-dsl.result :as result]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [hive-mcp.tools.swarm.channel :as channel]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -113,12 +114,15 @@
     prompt))
 
 (defn inject-staleness-context
-  "Inject staleness warnings given disc context. Pure: string * map -> string."
+  "Inject staleness warnings given disc context: string * map -> string.
+   The host's disc port words the warnings; with no host installed its noop
+   answers nil and the prompt passes through unchanged."
   [prompt {:keys [stale]}]
   (if (seq stale)
-    (let [warnings (kg-disc/staleness-warnings stale)
+    (let [port (scope-port/get-memory-scope)
+          warnings (scope-port/staleness-warnings port stale)
           warning-text (when (seq warnings)
-                         (kg-disc/format-staleness-warnings warnings))]
+                         (scope-port/format-staleness-warnings port warnings))]
       (if warning-text
         (str warning-text "\n" prompt)
         prompt))
@@ -144,7 +148,7 @@
   (let [effective-files (or (seq files) (extract-file-paths prompt))]
     (if (empty? effective-files)
       {}
-      (kg-disc/kg-first-context effective-files))))
+      (scope-port/kg-first-context (scope-port/get-memory-scope) effective-files))))
 
 (defn enhance-prompt
   "Prompt enhancement pipeline: staleness → recent changes → shout reminder.
@@ -211,8 +215,10 @@
     :slave_id slave_id}))
 
 (defn- handle-queued-dispatch
-  "Handle queued dispatch due to file conflicts."
+  "Handle queued dispatch due to file conflicts.
+   Records the queue task id as dispatched so collect keeps polling for it."
   [preflight slave_id]
+  (channel/record-dispatched-task! (:task-id preflight))
   (core/mcp-success
    {:status "queued"
     :task_id (:task-id preflight)

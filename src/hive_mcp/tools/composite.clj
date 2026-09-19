@@ -10,7 +10,9 @@
    Re-resolves contributions on each call for hot-reload support."
   (:require [hive-mcp.extensions.registry :as ext]
             [hive-mcp.tools.cli :as cli]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [hive-mcp.dispatch.handler :as dispatch]
+            [hive-addon.registry.commands :as acmds]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -22,12 +24,24 @@
 
 (defn- addon-commands->handlers
   "Convert addon command contributions to keyword->fn handler map.
-   Supports both flat handlers and nested handler trees."
+   Supports both flat handlers and nested handler trees.
+
+   When an :addon/wrap-handler extension is registered, every handler is passed
+   through it as (wrap addon-id handler).
+
+   The gate is `dispatch/handler?` and NOT `fn?`, and this is the site where
+   that mattered most: `fn?` is false for a var, so a var-registered handler
+   took the else branch and skipped wrapping ENTIRELY, with no throw and no
+   log. A silent loss of the addon wrapper is worse than a refusal, because
+   nothing downstream can tell the unwrapped handler from a wrapped one."
   [tool-name]
-  (when-let [commands (ext/get-contributed-commands tool-name)]
-    (into {} (map (fn [[cmd {:keys [handler]}]]
-                    [(keyword cmd) handler])
-                  commands))))
+  (when-let [commands (acmds/get-commands tool-name)]
+    (let [wrap (ext/get-extension :addon/wrap-handler)]
+      (into {} (map (fn [[cmd {:keys [handler addon]}]]
+                      [(keyword cmd) (if (and wrap (dispatch/handler? handler))
+                                       (wrap addon handler)
+                                       handler)]))
+            commands))))
 
 (defn lazy-resolve-handlers
   "Lazily resolve a consolidated tool's `handlers` map by fully-qualified
@@ -109,22 +123,38 @@
    with the commands addons have contributed under TOOL-NAME (addon wins).
    Re-resolved on every call, so a contribution registered later is visible.
 
+   CANONICAL-HANDLERS may be the map itself or the VAR that holds it, and
+   passing the var is what makes the core half of the tree reloadable too.
+   Before this arm the addon half was re-resolved per call while the core half
+   was whatever map existed when the consolidated namespace last loaded — so a
+   reload of a leaf handler namespace reached dispatch only if the consolidated
+   namespace above it happened to reload as well. `dispatch/current` is read
+   HERE, at call time, and never hoisted: reading it at build time is the
+   value-capture this exists to undo (20260817195749-0d407e9c).
+
    Contributed root keys are recorded under ::cli/opaque-roots in the returned
    map's METADATA: a contributed handler receives the whole :command and routes
    the remainder itself, so this tree cannot enumerate what lives beneath it.
    The map value itself is identical to the plain merge."
   [tool-name canonical-handlers]
-  (if-let [addon-cmds (addon-commands->handlers tool-name)]
-    (vary-meta (merge canonical-handlers addon-cmds)
-               update ::cli/opaque-roots (fnil into #{}) (keys addon-cmds))
-    canonical-handlers))
+  (let [canonical (dispatch/current canonical-handlers)]
+    (if-let [addon-cmds (addon-commands->handlers tool-name)]
+      (vary-meta (merge canonical addon-cmds)
+                 update ::cli/opaque-roots (fnil into #{}) (keys addon-cmds))
+      canonical)))
 
 (defn build-merged-handler
   "Build a handler fn that merges core handlers with addon contributions.
    Addon handlers override core handlers with the same name (addon wins).
    Re-resolves addon contributions on each call for hot-reload.
 
-   canonical-handlers: keyword->fn map (or nested tree) from consolidated tool.
+   canonical-handlers: keyword->fn map (or nested tree) from a consolidated
+   tool, or — preferred in this repo — the VAR holding it. The var spelling is
+   what makes the CORE half of the tree reload-transparent: the returned
+   closure then holds an indirection rather than a snapshot of the map, so a
+   reload reaches dispatch without the consolidated namespace having to be
+   reloaded in the same pass. See `effective-handlers`.
+
    tool-name: string name used for addon contribution lookup.
 
    Optional coerce-schema: passed through to cli/make-cli-handler."
@@ -146,7 +176,7 @@
    description-prefix: e.g. \"Code analysis\"
    Returns tool-def map identical in shape to other consolidated tools."
   [tool-name description-prefix]
-  (let [commands (ext/get-contributed-commands tool-name)
+  (let [commands (acmds/get-commands tool-name)
         cmd-names (vec (sort (keys commands)))
         all-params (apply merge-with merge (map :params (vals commands)))
         handler (build-composite-handler tool-name)]
@@ -168,8 +198,8 @@
 (defn- union-property
   "Fold an addon's schema property onto the core's under the same name.
    Equal specs collapse to one; different specs become an anyOf carrying both,
-   descriptions joined — so `tasks` can be the drone wave's [{file task}] AND
-   the ling-wave's [string] without either side losing its shape. A plain
+   descriptions joined, so a core `tasks` of [{file task}] and an addon's
+   [string] can coexist without either side losing its shape. A plain
    merge here would let the addon silently retype a core parameter."
   [core addon]
   (cond
@@ -202,7 +232,7 @@
    enum made of addon names alone, which would refuse every core command."
   [core-tool-def]
   (let [tool-name       (:name core-tool-def)
-        addon-cmds      (ext/get-contributed-commands tool-name)
+        addon-cmds      (acmds/get-commands tool-name)
         addon-cmd-names (vec (sort (keys (or addon-cmds {}))))
         addon-params    (apply merge-with union-property
                                (keep :params (vals (or addon-cmds {}))))
@@ -229,7 +259,7 @@
   "Build handler map for registry introspection (consolidated-handler-maps).
    Returns keyword->fn map compatible with cli/extract-commands."
   [tool-name]
-  (let [commands (ext/get-contributed-commands tool-name)]
+  (let [commands (acmds/get-commands tool-name)]
     (into {:help (fn [_] {:type "text" :text "help"})}
           (map (fn [[cmd {:keys [handler]}]]
                  [(keyword cmd) handler])
@@ -237,12 +267,15 @@
 
 (defn build-merged-handlers
   "Build handler map merging core + addon for registry introspection.
-   canonical-handlers: keyword->fn map from consolidated tool."
+   canonical-handlers: keyword->fn map from a consolidated tool, or the VAR
+   that holds it — resolved here, at call time, for the same reason
+   `effective-handlers` resolves it."
   [tool-name canonical-handlers]
-  (let [addon-cmds (addon-commands->handlers tool-name)]
+  (let [canonical  (dispatch/current canonical-handlers)
+        addon-cmds (addon-commands->handlers tool-name)]
     (if addon-cmds
-      (merge canonical-handlers addon-cmds)
-      canonical-handlers)))
+      (merge canonical addon-cmds)
+      canonical)))
 
 ;; =============================================================================
 ;; Batch Builder
@@ -258,7 +291,7 @@
    `memory` whose 41 canonical verbs would disappear from dispatch — leaving
    only addon-contributed verbs callable."
   [descriptions]
-  (vec (for [tool-name (ext/contributed-tool-names)
+  (vec (for [tool-name (acmds/contributed-tool-names)
              :when (contains? descriptions tool-name)
              :let [desc (get descriptions tool-name)]]
          (build-composite-tool tool-name desc))))

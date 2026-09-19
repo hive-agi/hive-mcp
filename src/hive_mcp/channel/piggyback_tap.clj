@@ -54,17 +54,19 @@
    lings remain visible to the parent coordinator."
   [project-id]
   (when project-id
-    (rescue nil (when-let [desc-fn (requiring-resolve 'hive-mcp.knowledge-graph.scope/descendant-scopes)]
+    (rescue nil (when-let [desc-fn (requiring-resolve 'hive-mcp.project.scope/descendant-scopes)]
         (let [child-pids (desc-fn project-id)]
           (when (seq child-pids) (set child-pids)))))))
 
 (defn- drain-hivemind-piggyback
   "Drain hivemind messages for an agent+project. Returns formatted messages or nil.
-   Includes shouts from cross-project descendants via child project-id resolution."
-  [agent-id project-id]
+   Includes shouts from cross-project descendants via child project-id resolution.
+   `session-id` (the caller without its project) owns the global cursor."
+  [agent-id project-id session-id]
   (piggyback/get-messages agent-id
                           :project-id project-id
-                          :additional-project-ids (resolve-child-project-ids project-id)))
+                          :additional-project-ids (resolve-child-project-ids project-id)
+                          :session-id session-id))
 
 (defn- format-block
   "Format a single piggyback block as delimited text."
@@ -78,16 +80,16 @@
   "Drain all 5 piggyback channels for an agent.
 
    Arguments:
-   - agent-id:   The ling/drone identity (e.g. \"ling-xyz\")
+   - agent-id:   The ling identity (e.g. \"ling-xyz\")
    - project-id: Project scope string (e.g. \"hive-mcp\"), or nil for global
    - ctx:        Drain ctx forwarded to the MEMORY channel, or nil for FIFO
 
    Channels (in render order):
-     1. TOOLRESULT — async completion results
-     2. MEMORY — axioms, conventions, enrichment batches
-     3. INBOX — per-agent conversation envelopes (tell/ask/respond)
+     1. TOOLRESULT: async completion results
+     2. MEMORY: axioms, conventions, enrichment batches
+     3. INBOX: per-agent conversation envelopes (tell/ask/respond)
      4. Catchup enrichment blocks
-     5. HIVEMIND — agent shouts
+     5. HIVEMIND: agent shouts
 
    Returns a string of concatenated delimited blocks, or nil if all channels empty.
    Designed to be appended to tool observation text in the agentic loop."
@@ -112,12 +114,13 @@
            ;; 4. Catchup enrichment blocks
            catchup-blocks (drain-catchup-piggyback caller-id)
 
-           ;; 5. Hivemind (project-scoped cursor)
+           ;; 5. Hivemind (project-scoped cursor, session-scoped global cursor)
            hm-caller (ctx-id/parse-caller-id agent-id)
            hm-scope (ctx-id/parse-project-scope project-id)
            hm-agent-id (ctx-id/make-piggyback-agent-id hm-caller hm-scope)
            hm-project-id (ctx-id/project-scope-string hm-scope)
-           hivemind-msgs (drain-hivemind-piggyback hm-agent-id hm-project-id)
+           hivemind-msgs (drain-hivemind-piggyback hm-agent-id hm-project-id
+                                                   (ctx-id/caller-id-string hm-caller))
 
            ;; Build concatenated blocks
            blocks (cond-> []

@@ -6,10 +6,8 @@
 
    Split from transport/olympus.clj (hotspot #14 refactor, plan
    refactor-hotspots-p0.md line 99-104)."
-  (:require [datascript.core :as d-core]
-            [hive-mcp.dns.result :as result]
+  (:require [hive-mcp.dns.result :as result]
             [hive-mcp.swarm.datascript.queries :as ds-queries]
-            [hive-mcp.swarm.datascript.connection :as ds-conn]
             [hive-mcp.project.tree :as project-tree]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -27,14 +25,6 @@
       (.format java.time.format.DateTimeFormatter/ISO_INSTANT
                (.toInstant ^java.util.Date d))
       (str d))))
-
-(defn serialize-ref
-  "Convert DataScript entity ref to ID string."
-  [ref]
-  (cond
-    (nil? ref) nil
-    (map? ref) (or (:db/id ref) (str ref))
-    :else (str ref)))
 
 ;; =============================================================================
 ;; Snapshot Builders (Query DataScript for current state)
@@ -60,35 +50,6 @@
                               :tasks-completed (or (:slave/tasks-completed slave) 0)
                               :created-at (serialize-date (:slave/created-at slave))}))
                       vec)))
-
-(defn build-waves-snapshot
-  "Build waves snapshot from DataScript.
-   Returns map of wave-id -> wave state.
-   All values are JSON-serializable."
-  []
-  (result/rescue {}
-    ;; Query all waves from DataScript
-                 (let [c (ds-conn/ensure-conn)
-                       db @c
-                       wave-eids (d-core/q '[:find [?e ...]
-                                             :where [?e :wave/id _]]
-                                           db)]
-                   (->> wave-eids
-                        (map #(d-core/entity db %))
-                        (map (fn [e]
-                               (let [wave-id (:wave/id e)]
-                                 [wave-id
-                                  {:id wave-id
-                                   :plan-id (serialize-ref (:wave/plan e))
-                                   :total-tasks (:wave/total-tasks e)
-                                   :concurrency (:wave/concurrency e)
-                                   :active-count (or (:wave/active-count e) 0)
-                                   :completed-count (or (:wave/completed-count e) 0)
-                                   :failed-count (or (:wave/failed-count e) 0)
-                                   :status (some-> (:wave/status e) name)
-                                   :started-at (serialize-date (:wave/started-at e))
-                                   :completed-at (serialize-date (:wave/completed-at e))}])))
-                        (into {})))))
 
 (defn build-kg-snapshot
   "Build knowledge graph snapshot.
@@ -141,11 +102,10 @@
    Returns:
    {:type :init-snapshot
     :timestamp <ms>
-    :data {:agents [...] :waves {...} :kg {...} :project-tree {...}}}"
+    :data {:agents [...] :kg {...} :project-tree {...}}}"
   []
   {:type :init-snapshot
    :timestamp (System/currentTimeMillis)
    :data {:agents (build-agents-snapshot)
-          :waves (build-waves-snapshot)
           :kg (build-kg-snapshot)
           :project-tree (build-project-tree-snapshot)}})
