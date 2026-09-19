@@ -9,6 +9,7 @@ target/
 # Development
 dev/
 test/
+test-swarm/
 .nrepl-port
 .nrepl-history
 *.swp

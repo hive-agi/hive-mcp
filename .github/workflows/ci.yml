@@ -42,9 +42,11 @@ jobs:
           cli: '1.12.5.1664'
           clj-kondo: '2026.07.24'
 
+      # test-swarm/ is linted here although :test-unit never loads it: the
+      # lint is static, so it needs no swarm addon on a classpath.
       - name: Lint with clj-kondo
         run: |
-          clj-kondo --lint src test \
+          clj-kondo --lint src test test-swarm \
             --config-dir .clj-kondo \
             --fail-level error
 
