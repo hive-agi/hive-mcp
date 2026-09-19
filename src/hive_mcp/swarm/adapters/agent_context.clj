@@ -11,7 +11,10 @@
    - IBudgetGuardrail delegates to hive-mcp.agent.hooks.budget — the same
      surface the spawn pipeline already reaches via soft requiring-resolve
      (agent/ling/spawn.clj), so budget behaviour is unchanged; the adapter
-     simply formalizes that seam into the port.
+     simply formalizes that seam into the port. The budget hook is a
+     hive-agent extraction target in the kernel census, so it stays soft here
+     too (hive-mcp.swarm.adapters.soft): absent, the methods answer the
+     port's Noop (nil, budgets unenforced).
 
    Install at addon init (the same moment headless/terminal strategies
    register): (install!) — sets the port slot via
@@ -23,7 +26,7 @@
   ;; SPDX-License-Identifier: AGPL-3.0-or-later
   (:require [hive-spi.swarm.ports.agent-context :as spi]
             [hive-mcp.agent.context :as ctx]
-            [hive-mcp.agent.hooks.budget :as budget]))
+            [hive-mcp.swarm.adapters.soft :as soft]))
 
 (defn make-adapter
   "An IAgentCallContext + IBudgetGuardrail reify delegating to hive-mcp's
@@ -37,11 +40,15 @@
     spi/IBudgetGuardrail
     (register-budget! [_this agent-id max-budget-usd opts]
       (try
-        (budget/register-budget! agent-id max-budget-usd opts)
+        (soft/host-or 'hive-mcp.agent.hooks.budget/register-budget!
+                      #(spi/register-budget! spi/noop agent-id max-budget-usd opts)
+                      agent-id max-budget-usd opts)
         (catch Exception _ nil)))
     (deregister-budget! [_this agent-id]
       (try
-        (budget/deregister-budget! agent-id)
+        (soft/host-or 'hive-mcp.agent.hooks.budget/deregister-budget!
+                      #(spi/deregister-budget! spi/noop agent-id)
+                      agent-id)
         (catch Exception _ nil)))))
 
 (defn install!

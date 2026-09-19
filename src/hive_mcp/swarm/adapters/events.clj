@@ -29,9 +29,14 @@
                                         swarm/sync.clj's `(when-let [registry ...])`
    - ISwarmTelemetry/set-lings-active!
                                      -> hive-mcp.telemetry.prometheus/
-                                        set-lings-active!
+                                        set-lings-active! (a hive-observability
+                                        extraction target in the kernel census:
+                                        resolved by symbol on the call, Noop
+                                        answer once the namespace has left)
    - IDagWaveScheduler/*             -> hive-mcp.scheduler.dag-waves/start-dag!,
-                                        /stop-dag!, /dag-status. Note the host
+                                        /stop-dag!, /dag-status (a hive-workflows
+                                        extraction target, resolved by symbol
+                                        the same way). Note the host
                                         start-dag! THROWS on an already-active
                                         plan; the adapter keeps that signal and
                                         returns {:started false ...} instead so
@@ -53,9 +58,8 @@
             [clojure.tools.logging :as log]
             [hive-mcp.events.core :as events]
             [hive-mcp.hooks.core :as hooks]
-            [hive-mcp.telemetry.prometheus :as prom]
-            [hive-mcp.scheduler.dag-waves :as dag-waves]
             [hive-mcp.protocols.vessel :as vessel]
+            [hive-mcp.swarm.adapters.soft :as soft]
             [hive-mcp.swarm.sync :as sync]))
 
 (defn make-adapter
@@ -110,7 +114,9 @@
     spi/ISwarmTelemetry
     (set-lings-active! [_this n]
       (try
-        (prom/set-lings-active! n)
+        (soft/host-or 'hive-mcp.telemetry.prometheus/set-lings-active!
+                      #(spi/set-lings-active! spi/noop n)
+                      n)
         (catch Exception _ nil)))
 
     spi/IDagWaveScheduler
@@ -118,20 +124,24 @@
       ;; The host start-dag! throws when a plan is already active; the port
       ;; must not. Report the refusal in the return value so a caller cannot
       ;; distinguish a refusal from the Noop's :no-scheduler case by control
-      ;; flow — only by the payload.
-      (try
-        (let [result (dag-waves/start-dag! plan-id opts)]
-          (assoc result :active true))
-        (catch Exception e
-          {:started false :active false :plan-id plan-id :reason :already-active
-           :error (ex-message e)})))
+      ;; flow — only by the payload. With no scheduler namespace on the
+      ;; classpath the answer IS the Noop's.
+      (if-let [start! (soft/resolve-soft 'hive-mcp.scheduler.dag-waves/start-dag!)]
+        (try
+          (assoc (start! plan-id opts) :active true)
+          (catch Exception e
+            {:started false :active false :plan-id plan-id :reason :already-active
+             :error (ex-message e)}))
+        (spi/start-dag! spi/noop plan-id opts)))
     (stop-dag! [_this]
       (try
-        (dag-waves/stop-dag!)
+        (soft/host-or 'hive-mcp.scheduler.dag-waves/stop-dag!
+                      #(spi/stop-dag! spi/noop))
         (catch Exception e {:stopped false :error (ex-message e)})))
     (dag-status [_this]
       (try
-        (dag-waves/dag-status)
+        (soft/host-or 'hive-mcp.scheduler.dag-waves/dag-status
+                      #(spi/dag-status spi/noop))
         (catch Exception _ {:active false})))
 
     spi/IAgentEventBroadcaster

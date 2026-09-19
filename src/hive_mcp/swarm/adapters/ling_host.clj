@@ -18,15 +18,16 @@
      and avoiding load cycles at addon init.
    - ILingCatchup/ling-catchup -> hive-mcp.workflows.catchup-ling/
      ling-catchup (keeps the extension-layer requiring-resolve and the
-     token-budget truncation host-side). The original call site
-     (agent.ling.spawn/enrich-task) required this statically, so a static
-     require here mirrors it.
+     token-budget truncation host-side). hive-mcp.workflows is a
+     hive-workflows extraction target in the kernel census, so it is resolved
+     by symbol on the call (hive-mcp.swarm.adapters.soft) and answers the
+     port's Noop (nil) once the namespace has left.
 
    Install at addon init via install!. A standalone process without this
    adapter runs on the SPI's Noop (readiness: {:ready? false :phase
    :no-host ...}; catchup: nil)."
   (:require [hive-spi.swarm.ports.ling-host :as spi]
-            [hive-mcp.workflows.catchup-ling :as catchup-ling]))
+            [hive-mcp.swarm.adapters.soft :as soft]))
 
 (def ^:private wait-for-ling-ready-sym
   'hive-mcp.tools.consolidated.workflow.readiness/wait-for-ling-ready)
@@ -45,7 +46,9 @@
     spi/ILingCatchup
     (ling-catchup [_this opts]
       (try
-        (catchup-ling/ling-catchup opts)
+        (soft/host-or 'hive-mcp.workflows.catchup-ling/ling-catchup
+                      #(spi/ling-catchup spi/noop opts)
+                      opts)
         (catch Throwable _ nil)))))
 
 (defn install!
