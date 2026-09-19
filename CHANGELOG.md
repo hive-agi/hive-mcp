@@ -58,6 +58,17 @@ bump, not a quiet minor, because a consumer's storage would change under it.
   store vendor, and their `kernel.edn` waivers are gone. `datascript.core` now
   enters the swarm path in exactly one namespace, the one `kernel.edn` already
   names its owner.
+- **Telemetry health, the Olympus tool and the Olympus state bridge read the
+  swarm store through the same facade.** `telemetry.health` persists and queries
+  health events, `tools.olympus` pulls and upserts the Olympus singleton, and
+  `transport.olympus.state-bridge` registers its tx listener, all without
+  naming `datascript.core` or reaching for a raw connection. The three are
+  prerequisites for the telemetry and elisp extractions, which cannot move a
+  namespace that holds a store vendor by hand. Requirers of `datascript.core`
+  under `src/` drop from 12 to 6, and what remains is the KG store
+  (`graph.datascript`, `knowledge-graph.connection`,
+  `knowledge-graph.store.datascript`), `agora.dialogue`, the private project
+  tree store, and the swarm facade itself.
 - **The test tree is two trees.** `test/` loads and runs from the committed
   `deps.edn` alone, with no hive-agent and no hive-datascript on the classpath;
   it is what CI runs. The 53 suites that exercise the swarm addon moved to
