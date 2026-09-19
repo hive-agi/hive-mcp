@@ -8,7 +8,7 @@
             [hive-mcp.agent.context :as ctx]
             [hive-spi.swarm.protocol :as proto]
             [hive-mcp.swarm.datascript.registry :as registry]
-            [hive-mcp.tools.memory.scope :as mem-scope]
+            [hive-mcp.project.scope :as project-scope]
             [clojure.data.json :as json]
             [clojure.set :as set]
             [taoensso.timbre :as log]
@@ -179,7 +179,7 @@ The env var fallback reads from MCP server process, NOT your ling process!"
                      effective-dir (or directory
                                        (ctx/current-directory))
                      effective-project-id (or project_id
-                                              (when effective-dir (mem-scope/get-current-project-id effective-dir)))
+                                              (when effective-dir (project-scope/get-current-project-id effective-dir)))
                      result (messaging/ask! effective-id question options
                                             :timeout-ms (or timeout_ms 300000))]
                  {:type "text"
@@ -210,7 +210,7 @@ This prevents cross-project pollution in multi-project hivemind sessions."
     :handler (fn [{:keys [directory project_id]}]
                (let [effective-dir (or directory (ctx/current-directory))
                      project-id (or project_id
-                                    (when effective-dir (mem-scope/get-current-project-id effective-dir)))]
+                                    (when effective-dir (project-scope/get-current-project-id effective-dir)))]
                  {:type "text"
                   :text (json/write-str (status/get-status project-id))}))}
 
@@ -288,7 +288,7 @@ The specific agent lookup is still allowed even if agent is from another project
                                            (get args "directory")
                                            (ctx/current-directory))
                          project-id (or explicit-project-id
-                                        (when effective-dir (mem-scope/get-current-project-id effective-dir)))
+                                        (when effective-dir (project-scope/get-current-project-id effective-dir)))
                          ds-agents (if project-id
                                      (clojure.core/set (map :slave/id (proto/get-slaves-by-project registry/default-registry project-id)))
                                      (clojure.core/set (map :slave/id (proto/get-all-slaves registry/default-registry))))

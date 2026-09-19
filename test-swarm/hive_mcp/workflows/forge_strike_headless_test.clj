@@ -15,7 +15,8 @@
    All tests use isolated DataScript connections to avoid cross-contamination.
 
    CLARITY: T — Telemetry validates forge-strike correctness with headless mode."
-  (:require [clojure.test :refer [deftest is testing use-fixtures]]
+  (:require [hive-mcp.project.scope]
+            [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [datascript.core :as d]
@@ -39,7 +40,6 @@
             ;;                 smite reports 0)
             [hive-mcp.test.stub.forge-belt :as stub-belt]
             [hive-mcp.test.stub.terminal-addon :as stub-term]
-            [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.tools.consolidated.workflow.forge-cycle :as forge-cycle]
             ;; Since the workflow.clj decomposition (commit bb40986), `spark!` and
             ;; `ling-cli-ready?` no longer live in hive-mcp.tools.consolidated.workflow:
@@ -317,7 +317,7 @@
                                                 :project-id "test-project"})
 
       (with-redefs [;; Mock scope to return our test project
-                    scope/get-current-project-id (constantly "test-project")
+                    hive-mcp.project.scope/get-current-project-id (constantly "test-project")
 
                     ;; Mock kanban survey
                     c-kanban/handle-kanban
@@ -425,7 +425,7 @@
     (let [rows [{:id "task-99"
                  :title "FSM headless test task"
                  :priority "medium"}]]
-      (with-redefs [scope/get-current-project-id (constantly "test-project")
+      (with-redefs [hive-mcp.project.scope/get-current-project-id (constantly "test-project")
 
                     c-kanban/handle-kanban
                     (fn [params]
@@ -486,7 +486,7 @@
 
     (let [rows [{:id "task-fsm-check"
                  :title "Verify FSM default"}]]
-      (with-redefs [scope/get-current-project-id (constantly "test-project")
+      (with-redefs [hive-mcp.project.scope/get-current-project-id (constantly "test-project")
 
                     c-kanban/handle-kanban
                     (fn [params]
@@ -523,7 +523,7 @@
   (testing "handle-forge-strike-imperative flags output as deprecated"
     (let [rows [{:id "dep-task"
                  :title "Deprecation check"}]]
-      (with-redefs [scope/get-current-project-id (constantly "test-project")
+      (with-redefs [hive-mcp.project.scope/get-current-project-id (constantly "test-project")
 
                     c-kanban/handle-kanban
                     (fn [params]
@@ -562,7 +562,7 @@
 
 (deftest headless-forge-strike-no-tasks
   (testing "Headless forge-strike (deprecated imperative) with no kanban tasks ends early"
-    (with-redefs [scope/get-current-project-id (constantly "test-project")
+    (with-redefs [hive-mcp.project.scope/get-current-project-id (constantly "test-project")
                   c-kanban/handle-kanban
                   (fn [_] {:text (json/write-str [])})
                   spawn/handle-spawn (fn [_] (throw (ex-info "Should not spawn!" {})))
@@ -612,7 +612,7 @@
                            :title (str "Task " %)
                            :priority "medium"})
                      (range 1 6))]
-      (with-redefs [scope/get-current-project-id (constantly "test-project")
+      (with-redefs [hive-mcp.project.scope/get-current-project-id (constantly "test-project")
                     c-kanban/handle-kanban
                     (fn [params]
                       (case (:command params)
@@ -646,7 +646,7 @@
     (let [rows [{:id "fail-task"
                  :title "Doomed task"
                  :priority "high"}]]
-      (with-redefs [scope/get-current-project-id (constantly "test-project")
+      (with-redefs [hive-mcp.project.scope/get-current-project-id (constantly "test-project")
                     c-kanban/handle-kanban
                     (fn [params]
                       (case (:command params)
@@ -676,7 +676,7 @@
     (let [spawn-count (atom 0)
           rows [{:id "t1" :title "Good task" :priority "high"}
                 {:id "t2" :title "Bad task" :priority "medium"}]]
-      (with-redefs [scope/get-current-project-id (constantly "test-project")
+      (with-redefs [hive-mcp.project.scope/get-current-project-id (constantly "test-project")
                     c-kanban/handle-kanban
                     (fn [params]
                       (case (:command params)
@@ -716,7 +716,7 @@
   (testing "Forge state accumulates across multiple headless strikes (imperative)"
     (let [rows [{:id "acc-task"
                  :title "Accumulation test"}]]
-      (with-redefs [scope/get-current-project-id (constantly "test-project")
+      (with-redefs [hive-mcp.project.scope/get-current-project-id (constantly "test-project")
                     c-kanban/handle-kanban
                     (fn [params]
                       (case (:command params)
@@ -802,7 +802,7 @@
   (testing "Default forge-strike (FSM) summary mentions headless mode and model"
     (let [rows [{:id "sum-task"
                  :title "Summary test"}]]
-      (with-redefs [scope/get-current-project-id (constantly "test-project")
+      (with-redefs [hive-mcp.project.scope/get-current-project-id (constantly "test-project")
                     c-kanban/handle-kanban
                     (fn [params]
                       (case (:command params)

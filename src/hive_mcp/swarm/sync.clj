@@ -40,7 +40,7 @@
             [hive-mcp.emacs-ext.daemon-store :as daemon-store]
             [hive-mcp.hivemind.core :as hivemind]
             [hive-mcp.hooks.core :as hooks]
-            [hive-mcp.tools.memory.scope :as scope]
+            [hive-mcp.project.scope :as project-scope]
             [clojure.core.async :as async :refer [go-loop <!]]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -209,7 +209,7 @@
         depth (get-field event :depth 1)
         parent-id (get-field event :parent-id)
         cwd (get-field event :cwd)
-        project-id (when cwd (scope/get-current-project-id cwd))
+        project-id (when cwd (project-scope/get-current-project-id cwd))
         reg (get-swarm-registry)
         ;; Multi-Daemon W1: Select best daemon instead of hardcoded default
         ;; Ensures default daemon is registered before selection
@@ -503,7 +503,7 @@
         depth (or (:depth slave) 1)
         cwd (:cwd slave)
         project-id (or (:project-id slave)
-                       (when cwd (scope/get-current-project-id cwd)))
+                       (when cwd (project-scope/get-current-project-id cwd)))
         reg (get-swarm-registry)]
     (proto/add-slave! reg slave-id {:status status :name name :depth depth
                                     :cwd cwd :project-id project-id})

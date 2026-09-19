@@ -14,7 +14,8 @@
    4. start-dag!/stop-dag! (lifecycle)
    5. dag-status (query)
    6. Edge cases (cycles, failures, dry-run)"
-  (:require [clojure.test :refer [deftest is testing use-fixtures]]
+  (:require [hive-mcp.project.scope]
+            [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.scheduler.dag-waves :as dag]
             [hive-mcp.tools.memory-kanban :as mem-kanban]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
@@ -22,7 +23,6 @@
             [hive-mcp.hivemind.core :as hivemind]
             [hive-mcp.channel.core :as channel]
             [hive-mcp.swarm.datascript.queries :as ds-queries]
-            [hive-mcp.tools.memory.scope :as scope]
             [clojure.data.json :as json]
             [clojure.core.async :as async]
             [hive-mcp.test.stub.memory-store :as stub]
@@ -187,7 +187,7 @@
                    hivemind/shout! mock-shout!
                    channel/subscribe! mock-subscribe!
                    channel/unsubscribe! mock-unsubscribe!
-                   scope/get-current-project-id mock-get-scope
+                   hive-mcp.project.scope/get-current-project-id mock-get-scope
                    ds-queries/get-slave mock-get-slave]
        ~@body)))
 
@@ -654,7 +654,7 @@
                     hivemind/shout! mock-shout!
                     channel/subscribe! mock-subscribe!
                     channel/unsubscribe! mock-unsubscribe!
-                    scope/get-current-project-id mock-get-scope
+                    hive-mcp.project.scope/get-current-project-id mock-get-scope
                     ds-queries/get-slave mock-get-slave]
         ;; Add task-e to the entry table
         (reset! *chroma-entries {"task-a" task-a "task-b" task-b
@@ -853,7 +853,7 @@
                     hivemind/shout! mock-shout!
                     channel/subscribe! mock-subscribe!
                     channel/unsubscribe! mock-unsubscribe!
-                    scope/get-current-project-id mock-get-scope
+                    hive-mcp.project.scope/get-current-project-id mock-get-scope
                     ds-queries/get-slave mock-get-slave]
         (reset! *chroma-entries {"task-a" task-a "task-b" task-b
                                  "task-c" task-c "task-d" task-d
@@ -934,7 +934,7 @@
                     hivemind/shout! mock-shout!
                     channel/subscribe! mock-subscribe!
                     channel/unsubscribe! mock-unsubscribe!
-                    scope/get-current-project-id mock-get-scope
+                    hive-mcp.project.scope/get-current-project-id mock-get-scope
                     ds-queries/get-slave mock-get-slave]
         (reset! *spawned-lings [])
 
@@ -967,7 +967,7 @@
                     hivemind/shout! mock-shout!
                     channel/subscribe! mock-subscribe!
                     channel/unsubscribe! mock-unsubscribe!
-                    scope/get-current-project-id mock-get-scope
+                    hive-mcp.project.scope/get-current-project-id mock-get-scope
                     ds-queries/get-slave mock-get-slave]
         (reset! *spawned-lings [])
 
@@ -1083,7 +1083,7 @@
                     hivemind/shout! mock-shout!
                     channel/subscribe! mock-subscribe!
                     channel/unsubscribe! mock-unsubscribe!
-                    scope/get-current-project-id mock-get-scope
+                    hive-mcp.project.scope/get-current-project-id mock-get-scope
                     ds-queries/get-slave mock-get-slave]
         (reset! *chroma-entries {"task-a" task-a "task-b" task-b
                                  "task-c" task-c "task-d" task-d})

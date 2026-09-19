@@ -1,5 +1,9 @@
-(ns hive-mcp.knowledge-graph.scope
-  "Scope hierarchy for Knowledge Graph.
+(ns hive-mcp.project.scope
+  "Project identity and the scope hierarchy built on it.
+
+   Kernel: everything here is derived from `.hive-project.edn` files and
+   scope strings, with no store behind it. The memory and knowledge-graph
+   slices read it; it reads neither.
 
    Inheritance Rules:
    - Down (parent→child): Automatic - child sees parent knowledge
@@ -14,7 +18,8 @@
             [clojure.string :as str]
             [clojure.edn :as edn]
             [clojure.set]
-            [hive-mcp.dns.result :refer [rescue]]))
+            [hive-mcp.dns.result :refer [rescue]]
+            [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -272,6 +277,39 @@
       (do (register-project-config! pid config) pid)
       "global")
     "global"))
+
+(defn- last-path-segment
+  "Extract last non-blank path segment from a directory path."
+  [directory]
+  (let [parts (str/split directory #"/")
+        project-name (last parts)]
+    (when (and project-name (not (str/blank? project-name)))
+      project-name)))
+
+(defn get-current-project-id
+  "Get current project ID from directory path, returning 'global' when nil."
+  ([]
+   (get-current-project-id nil))
+  ([directory]
+   (if (and directory (not (str/blank? (str/trim directory))))
+     ;; Priority 1: Check THIS directory's .hive-project.edn (no parent walk)
+     (let [direct-config (read-direct-project-config directory)
+           direct-pid (:project-id direct-config)]
+       (if (and direct-pid (not= direct-pid "global"))
+         ;; Found .hive-project.edn in THIS directory — use its project-id
+         (let [resolved (resolve-project-id direct-pid)]
+           (log/trace "get-current-project-id: resolved via direct .hive-project.edn ->"
+                      direct-pid (when (not= resolved direct-pid)
+                                   (str " (alias -> " resolved ")")))
+           resolved)
+         ;; No .hive-project.edn in this dir — fall back to last path segment
+         (let [segment (last-path-segment directory)]
+           (or (when segment (resolve-project-id segment))
+               "global"))))
+     ;; No directory = global scope (Go context pattern)
+     (do
+       (log/debug "get-current-project-id: no directory provided, using global scope")
+       "global"))))
 
 ;; ============================================================
 ;; Scope Tag Utilities

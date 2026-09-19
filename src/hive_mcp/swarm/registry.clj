@@ -21,7 +21,7 @@
   (:require [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.swarm.datascript.connection :as conn]
             [hive-mcp.swarm.datascript.queries :as queries]
-            [hive-mcp.tools.memory.scope :as scope]))
+            [hive-mcp.project.scope :as project-scope]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -155,7 +155,7 @@
   (let [;; Derive project-id from cwd if not explicitly provided
         cwd (:cwd opts)
         project-id (or (:project-id opts)
-                       (when cwd (scope/get-current-project-id cwd)))]
+                       (when cwd (project-scope/get-current-project-id cwd)))]
     (ds/add-slave! slave-id (assoc opts :project-id project-id))))
 
 (defn update-slave!

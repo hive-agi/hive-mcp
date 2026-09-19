@@ -1,4 +1,4 @@
-(ns hive-mcp.knowledge-graph.scope-property-test
+(ns hive-mcp.project.scope-property-test
   "Property-based tests for KG scope hierarchy.
 
    Properties proven:
@@ -15,7 +15,7 @@
             [clojure.test.check.properties :as prop]
             [clojure.string :as str]
             [clojure.set]
-            [hive-mcp.knowledge-graph.scope :as scope]))
+            [hive-mcp.project.scope :as scope]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -36,10 +36,10 @@
 ;; ============================================================
 
 (def ^:private normalize-scope
-  @#'hive-mcp.knowledge-graph.scope/normalize-scope)
+  @#'hive-mcp.project.scope/normalize-scope)
 
 (def ^:private global-or-nil?
-  @#'hive-mcp.knowledge-graph.scope/global-or-nil?)
+  @#'hive-mcp.project.scope/global-or-nil?)
 
 ;; ============================================================
 ;; Generators

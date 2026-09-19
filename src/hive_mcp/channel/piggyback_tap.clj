@@ -54,7 +54,7 @@
    lings remain visible to the parent coordinator."
   [project-id]
   (when project-id
-    (rescue nil (when-let [desc-fn (requiring-resolve 'hive-mcp.knowledge-graph.scope/descendant-scopes)]
+    (rescue nil (when-let [desc-fn (requiring-resolve 'hive-mcp.project.scope/descendant-scopes)]
         (let [child-pids (desc-fn project-id)]
           (when (seq child-pids) (set child-pids)))))))
 

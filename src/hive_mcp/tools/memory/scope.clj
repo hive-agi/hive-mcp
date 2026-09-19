@@ -1,48 +1,21 @@
 (ns hive-mcp.tools.memory.scope
   "Project scope utilities for memory operations with hierarchical resolution."
   (:require [hive-mcp.knowledge-graph.scope :as kg-scope]
+            [hive-mcp.project.scope :as project-scope]
             [hive-mcp.memory.domain :as domain]
             [hive-dsl.adt :refer [adt-case]]
             [clojure.set]
             [clojure.string :as str]
-            [taoensso.timbre :as log]
             [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-(defn- last-path-segment
-  "Extract last non-blank path segment from a directory path."
-  [directory]
-  (let [parts (str/split directory #"/")
-        project-name (last parts)]
-    (when (and project-name (not (str/blank? project-name)))
-      project-name)))
-
 (defn get-current-project-id
-  "Get current project ID from directory path, returning 'global' when nil."
-  ([]
-   (get-current-project-id nil))
-  ([directory]
-   (if (and directory (not (str/blank? (str/trim directory))))
-     ;; Priority 1: Check THIS directory's .hive-project.edn (no parent walk)
-     (let [direct-config (kg-scope/read-direct-project-config directory)
-           direct-pid (:project-id direct-config)]
-       (if (and direct-pid (not= direct-pid "global"))
-         ;; Found .hive-project.edn in THIS directory — use its project-id
-         (let [resolved (kg-scope/resolve-project-id direct-pid)]
-           (log/trace "get-current-project-id: resolved via direct .hive-project.edn ->"
-                      direct-pid (when (not= resolved direct-pid)
-                                   (str " (alias -> " resolved ")")))
-           resolved)
-         ;; No .hive-project.edn in this dir — fall back to last path segment
-         (let [segment (last-path-segment directory)]
-           (or (when segment (kg-scope/resolve-project-id segment))
-               "global"))))
-     ;; No directory = global scope (Go context pattern)
-     (do
-       (log/debug "get-current-project-id: no directory provided, using global scope")
-       "global"))))
+  "Get current project ID from directory path, returning 'global' when nil.
+   The resolution is kernel code: `hive-mcp.project.scope/get-current-project-id`."
+  ([] (project-scope/get-current-project-id))
+  ([directory] (project-scope/get-current-project-id directory)))
 
 (defn inject-project-scope
   "Add project scope tag if not already present."

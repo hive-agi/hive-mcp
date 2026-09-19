@@ -19,7 +19,7 @@
    resolves the current project from `.hive-project.edn` or the directory
    path — it sits at a different layer (project discovery) from the query
    orchestration below."
-  (:require [hive-mcp.knowledge-graph.scope :as kg-scope]
+  (:require [hive-mcp.project.scope :as project-scope]
             [hive-mcp.dns.result :refer [rescue]]
             [hive-mcp.tools.catchup.scope-filter :as sf]
             [hive-mcp.tools.catchup.axiom-cache :as axc]
@@ -47,10 +47,10 @@
            (when directory
              (or
               ;; Priority 1: :name from .hive-project.edn in exact dir
-              (let [config (kg-scope/read-direct-project-config directory)]
+              (let [config (project-scope/read-direct-project-config directory)]
                 (or (:name config) (:project-id config)))
               ;; Priority 2: walk up for nearest .hive-project.edn
-              (let [walked (kg-scope/infer-scope-from-path directory)]
+              (let [walked (project-scope/infer-scope-from-path directory)]
                 (when (and walked (not= walked "global")) walked))
               ;; Priority 3: last path segment
               (let [parts (str/split (str directory) #"/")]

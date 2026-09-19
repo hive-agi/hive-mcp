@@ -1,7 +1,7 @@
 (ns hive-mcp.tools.catchup.spawn
   "Spawn context injection for ling priming."
   (:require [hive-mcp.protocols.memory :as mem-proto]
-            [hive-mcp.tools.memory.scope :as scope]
+            [hive-mcp.project.scope :as project-scope]
             [hive-mcp.tools.catchup.scope :as catchup-scope]
             [hive-mcp.tools.catchup.git :as catchup-git]
             [hive-mcp.tools.catchup.format :as fmt]
@@ -86,7 +86,7 @@
   ([directory {:keys [mode task task-id] :or {mode :full}}]
    (when (mem-proto/store-set?)
      (rescue nil
-             (let [project-id (scope/get-current-project-id directory)
+             (let [project-id (project-scope/get-current-project-id directory)
                    project-name (catchup-scope/get-current-project-name directory)]
 
                (case mode

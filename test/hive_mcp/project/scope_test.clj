@@ -1,4 +1,4 @@
-(ns hive-mcp.knowledge-graph.scope-test
+(ns hive-mcp.project.scope-test
   "Unit tests for Knowledge Graph scope hierarchy.
 
    Tests cover:
@@ -12,7 +12,7 @@
    - Up (child→parent): NOT automatic - requires explicit promotion
    - Across (sibling→sibling): Via common ancestor only"
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
-            [hive-mcp.knowledge-graph.scope :as scope]
+            [hive-mcp.project.scope :as scope]
             [clojure.set]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

@@ -15,7 +15,8 @@
    
    UPDATED: Tests now mock Chroma functions instead of emacsclient,
    reflecting the Chroma-only storage architecture."
-  (:require [clojure.test :refer [deftest is testing use-fixtures]]
+  (:require [hive-mcp.project.scope]
+            [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.string :as str]
             [clojure.data.json :as json]
             [hive-mcp.tools.core :as core]
@@ -90,7 +91,7 @@
   "The project-id the memory handlers resolve when no :directory is passed.
    Computed rather than hard-coded so the suite does not depend on the JVM's cwd."
   []
-  ((requiring-resolve 'hive-mcp.tools.memory.scope/get-current-project-id)
+  ((requiring-resolve 'hive-mcp.project.scope/get-current-project-id)
    ((requiring-resolve 'hive-mcp.agent.context/current-directory))))
 
 (defn call-with-stub-store

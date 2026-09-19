@@ -7,7 +7,8 @@
    DDD: Value Object layer — content formatting and identity ADTs."
   (:require [hive-mcp.agent.context :as ctx]
             [hive-dsl.context.identity :as ctx-id]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.project.scope :as project-scope]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -142,10 +143,7 @@
   (when directory
     (ctx/request-memoize
      [:project-id directory]
-     (fn []
-       (require 'hive-mcp.tools.memory.scope)
-       ((resolve 'hive-mcp.tools.memory.scope/get-current-project-id)
-        directory)))))
+     #(project-scope/get-current-project-id directory))))
 
 (defn extract-project-id
   "Resolve project-id from an explicit override, working directory, caller
