@@ -5,16 +5,17 @@
 (ns hive-mcp.swarm.bootstrap.datahike-driver
   "Late-bound facade over datahike.api for the swarm bootstrap store.
 
-   Each fn resolves its datahike.api target at call time so
-   hive-mcp.swarm.bootstrap.datahike compiles and loads with NO datahike on
-   the classpath. The driver enters only when the swarm bootstrap store runs
-   a store op; absent the jar, the first call throws at this boundary.")
+   Compat shim: moved to hive-agent.swarm.bootstrap.datahike-driver in hive-agent. Every public var delegates there
+   through requiring-resolve; hive-mcp does not compile-depend on hive-agent.")
 
-(defn create-database  [& args] (apply (requiring-resolve 'datahike.api/create-database) args))
-(defn connect          [& args] (apply (requiring-resolve 'datahike.api/connect) args))
-(defn transact         [& args] (apply (requiring-resolve 'datahike.api/transact) args))
-(defn q                [& args] (apply (requiring-resolve 'datahike.api/q) args))
-(defn pull             [& args] (apply (requiring-resolve 'datahike.api/pull) args))
-(defn db               [& args] (apply (requiring-resolve 'datahike.api/db) args))
-(defn release          [& args] (apply (requiring-resolve 'datahike.api/release) args))
-(defn database-exists? [& args] (apply (requiring-resolve 'datahike.api/database-exists?) args))
+(defn- impl [sym]
+  (requiring-resolve (symbol "hive-agent.swarm.bootstrap.datahike-driver" (name sym))))
+
+(defn create-database {:arglists '([& args])} [& args] (apply (impl 'create-database) args))
+(defn connect {:arglists '([& args])} [& args] (apply (impl 'connect) args))
+(defn transact {:arglists '([& args])} [& args] (apply (impl 'transact) args))
+(defn q {:arglists '([& args])} [& args] (apply (impl 'q) args))
+(defn pull {:arglists '([& args])} [& args] (apply (impl 'pull) args))
+(defn db {:arglists '([& args])} [& args] (apply (impl 'db) args))
+(defn release {:arglists '([& args])} [& args] (apply (impl 'release) args))
+(defn database-exists? {:arglists '([& args])} [& args] (apply (impl 'database-exists?) args))
