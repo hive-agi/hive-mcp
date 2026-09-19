@@ -3,24 +3,24 @@
    journal, an id nobody dispatched fails at once, on both poll paths."
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.data.json :as json]
-            [clojure.string :as str]
             [hive-mcp.tools.swarm.collect :as collect]
             [hive-mcp.tools.swarm.channel :as channel]
-            [hive-mcp.test.stub.elisp :as elisp-stub]))
+            [hive-mcp.test.stub.swarm-host :as sh]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defn- emacs-answering
-  "Elisp transport: the swarm addon is loaded, and every collect answers
+  "Swarm host: the swarm addon is loaded, and every collect answers
    COLLECT-JSON after running ON-COLLECT."
   [collect-json on-collect]
-  (fn [code]
-    (cond
-      (str/includes? code "featurep") {:success true :result "t"}
-      (str/includes? code "swarm-api-collect") (do (on-collect) {:success true :result collect-json})
-      :else {:success false :error (str "unexpected elisp: " code)})))
+  (sh/answering {:swarm/collect (fn [_op] (on-collect) {:success true :result collect-json})}))
+
+(defn- with-host
+  "Run F with RESPOND published as the :swarm-host capabilities."
+  [respond f]
+  (sh/with-swarm-host [_host respond] (f)))
 
 (defn- body [resp] (json/read-str (:text resp) :key-fn keyword))
 
@@ -30,7 +30,7 @@
           not-found "{\"status\":\"error\",\"error\":\"Task not found\"}"
           polls     (atom 0)
           _         (channel/record-dispatched-task! task-id)
-          resp      (elisp-stub/with-eval-elisp
+          resp      (with-host
                       (emacs-answering not-found
                                        #(when (= 2 (swap! polls inc))
                                           (channel/record-task-result!
@@ -45,7 +45,7 @@
   (testing "unknown to the journal, to Emacs and to the dispatched-task registry"
     (let [task-id (str "bogus-" (random-uuid))
           t0      (System/currentTimeMillis)
-          resp    (elisp-stub/with-eval-elisp
+          resp    (with-host
                     (emacs-answering "{\"status\":\"error\",\"error\":\"Task not found\"}" (fn []))
                     #(collect/handle-swarm-collect {:task_id task-id :timeout_ms 10000}))
           elapsed (- (System/currentTimeMillis) t0)]
@@ -59,24 +59,21 @@
     (doseq [dispatched? [false true]]
       (let [task-id (str "vterm-" (random-uuid))
             _       (when dispatched? (channel/record-dispatched-task! task-id))
-            resp    (elisp-stub/with-eval-elisp
+            resp    (with-host
                       (emacs-answering "{\"status\":\"error\",\"error\":\"Task crashed\"}" (fn []))
                       #(collect/handle-swarm-collect {:task_id task-id :timeout_ms 5000}))]
         (is (= "error" (:status (body resp))))
         (is (= "Task crashed" (:error (body resp))))))))
 
-(defn- emacs-absent
-  "Elisp transport: Emacs answers, but the swarm addon is not loaded, so
-   collect takes the JVM poll path. Any collect call is a test failure."
-  [code]
-  (if (str/includes? code "featurep")
-    {:success true :result "nil"}
-    {:success false :error (str "unexpected elisp: " code)}))
+(def ^:private emacs-absent
+  "Swarm host: registered, but the swarm addon is not loaded, so collect
+   takes the JVM poll path. Any collect call answers an unscripted failure."
+  (sh/answering {:swarm/available? sh/addon-unloaded}))
 
 (deftest jvm-poll-fails-fast-for-an-id-nobody-dispatched
   (let [task-id (str "bogus-" (random-uuid))
         t0      (System/currentTimeMillis)
-        resp    (elisp-stub/with-eval-elisp
+        resp    (with-host
                   emacs-absent
                   #(collect/handle-swarm-collect {:task_id task-id :timeout_ms 10000}))
         elapsed (- (System/currentTimeMillis) t0)]
@@ -91,7 +88,7 @@
         lands   (future (Thread/sleep 400)
                         (channel/record-task-result!
                          task-id {:status "completed" :result "late" :slave-id "w"}))
-        resp    (elisp-stub/with-eval-elisp
+        resp    (with-host
                   emacs-absent
                   #(collect/handle-swarm-collect {:task_id task-id :timeout_ms 10000}))]
     @lands

@@ -8,12 +8,8 @@
   (:require [clojure.test :refer [deftest testing is use-fixtures]]
             [clojure.data.json :as json]
             [hive-mcp.tools.swarm :as swarm]
-            [hive-mcp.tools.swarm.core :as swarm-core]
             [hive-mcp.swarm.datascript :as ds]
-            ;; The swarm handlers moved to emacs-ext.client; redefining the old
-            ;; hive-mcp.emacs.client left every mock in this ns INERT while the
-            ;; assertions still read correctly.
-            [hive-mcp.emacs-ext.client :as ec]
+            [hive-mcp.test.stub.swarm-host :as sh]
             [hive-mcp.hivemind.core :as hivemind]
             [hive-dsl.bounded-atom :refer [bput! bget bclear!]]
             [hive-test.isolation :as iso]
@@ -30,6 +26,12 @@
 (use-fixtures :each
   (iso/with-isolations :swarm-ds :agent-registry)
   terminal-stub/with-terminal)
+
+(defn- answers
+  "A :swarm-host responder: the swarm addon is present and every other
+   capability is answered by (F cap)."
+  [f]
+  (fn [op _timeout-ms] (if (= :swarm/available? (:op op)) sh/available (f (:op op)))))
 
 ;; =============================================================================
 ;; Bug 1: handle-lings-available Elisp Fallback
@@ -64,13 +66,12 @@
                         :cwd "/tmp/test"
                         :status "working"}]
           elisp-json (json/write-str elisp-lings)]
-      (with-redefs [swarm-core/swarm-addon-available? (constantly true)
-                    ec/eval-elisp-with-timeout
-                    (fn [elisp _timeout]
-                      ;; Check it's calling the lings list function
-                      (if (re-find #"hive-mcp-swarm-list-lings" elisp)
-                        {:success true :result elisp-json :timed-out false}
-                        {:success true :result "t" :timed-out false}))]
+      (sh/with-swarm-host [_host (answers
+                                  (fn [cap]
+                                    ;; Check it's calling the lings list capability
+                                    (if (= :swarm/list-lings cap)
+                                      {:success true :result elisp-json :timed-out false}
+                                      {:success true :result "t" :timed-out false})))]
         (let [result (swarm/handle-lings-available {})
               parsed (json/read-str (:text result) :key-fn keyword)]
           (is (= "text" (:type result)))
@@ -82,10 +83,7 @@
 
 (deftest lings-available-elisp-fallback-graceful-degradation-test
   (testing "Returns empty gracefully when both registry and elisp have no lings"
-    (with-redefs [swarm-core/swarm-addon-available? (constantly true)
-                  ec/eval-elisp-with-timeout
-                  (fn [_elisp _timeout]
-                    {:success true :result "[]" :timed-out false})]
+    (sh/with-swarm-host [_host (answers (fn [_cap] {:success true :result "[]" :timed-out false}))]
       (let [result (swarm/handle-lings-available {})
             parsed (json/read-str (:text result) :key-fn keyword)]
         (is (= "text" (:type result)))
@@ -95,12 +93,11 @@
 (deftest lings-available-elisp-fallback-error-handling-test
   (testing "Handles elisp fallback errors gracefully"
     ;; Registry is empty, elisp fails
-    (with-redefs [swarm-core/swarm-addon-available? (constantly true)
-                  ec/eval-elisp-with-timeout
-                  (fn [elisp _timeout]
-                    (if (re-find #"hive-mcp-swarm-list-lings" elisp)
-                      {:success false :error "Emacs not responding" :timed-out true}
-                      {:success true :result "t" :timed-out false}))]
+    (sh/with-swarm-host [_host (answers
+                                (fn [cap]
+                                  (if (= :swarm/list-lings cap)
+                                    {:success false :error "Emacs not responding" :timed-out true}
+                                    {:success true :result "t" :timed-out false})))]
       (let [result (swarm/handle-lings-available {})
             parsed (json/read-str (:text result) :key-fn keyword)]
         ;; Should return empty (from registry) rather than error
@@ -119,10 +116,7 @@
                         :slaves-detail [{:slave-id "slave-1" :name "worker-1" :status "idle"}
                                         {:slave-id "slave-2" :name "worker-2" :status "busy"}
                                         {:slave-id "slave-3" :name "worker-3" :status "idle"}]})]
-      (with-redefs [swarm-core/swarm-addon-available? (constantly true)
-                    ec/eval-elisp-with-timeout
-                    (fn [_elisp _timeout]
-                      {:success true :result status-json :timed-out false})]
+      (sh/with-swarm-host [_host (answers (fn [_cap] {:success true :result status-json :timed-out false}))]
         (let [result (swarm/handle-swarm-status {})
               parsed (json/read-str (:text result) :key-fn keyword)]
           (is (= "text" (:type result)))
@@ -146,10 +140,7 @@
                         :slaves-detail [{:slave-id "slave-1" :name "worker-1" :status "idle"}
                                         {:slave-id "slave-2" :name "worker-2" :status "idle"}
                                         {:slave-id "slave-3" :name "worker-3" :status "idle"}]})]
-      (with-redefs [swarm-core/swarm-addon-available? (constantly true)
-                    ec/eval-elisp-with-timeout
-                    (fn [_elisp _timeout]
-                      {:success true :result status-json :timed-out false})]
+      (sh/with-swarm-host [_host (answers (fn [_cap] {:success true :result status-json :timed-out false}))]
         (let [result (swarm/handle-swarm-status {})
               parsed (json/read-str (:text result) :key-fn keyword)
               slaves-by-id (into {} (map (juxt :slave-id identity)
@@ -168,10 +159,7 @@
 (deftest swarm-status-handles-nil-slaves-detail-test
   (testing "Handles nil slaves-detail gracefully"
     (let [status-json (json/write-str {:slaves-count 0})]
-      (with-redefs [swarm-core/swarm-addon-available? (constantly true)
-                    ec/eval-elisp-with-timeout
-                    (fn [_elisp _timeout]
-                      {:success true :result status-json :timed-out false})]
+      (sh/with-swarm-host [_host (answers (fn [_cap] {:success true :result status-json :timed-out false}))]
         (let [result (swarm/handle-swarm-status {})
               parsed (json/read-str (:text result) :key-fn keyword)]
           (is (= "text" (:type result)))
@@ -181,10 +169,7 @@
 (deftest swarm-status-handles-empty-slaves-detail-test
   (testing "Handles empty slaves-detail vector gracefully"
     (let [status-json (json/write-str {:slaves-count 0 :slaves-detail []})]
-      (with-redefs [swarm-core/swarm-addon-available? (constantly true)
-                    ec/eval-elisp-with-timeout
-                    (fn [_elisp _timeout]
-                      {:success true :result status-json :timed-out false})]
+      (sh/with-swarm-host [_host (answers (fn [_cap] {:success true :result status-json :timed-out false}))]
         (let [result (swarm/handle-swarm-status {})
               parsed (json/read-str (:text result) :key-fn keyword)]
           (is (= "text" (:type result)))
@@ -200,10 +185,7 @@
                             (range 10))
           status-json (json/write-str {:slaves-count 10
                                        :slaves-detail many-slaves})]
-      (with-redefs [swarm-core/swarm-addon-available? (constantly true)
-                    ec/eval-elisp-with-timeout
-                    (fn [_elisp _timeout]
-                      {:success true :result status-json :timed-out false})]
+      (sh/with-swarm-host [_host (answers (fn [_cap] {:success true :result status-json :timed-out false}))]
         (let [result (swarm/handle-swarm-status {})
               parsed (json/read-str (:text result) :key-fn keyword)]
           (is (= 10 (count (:slaves-detail parsed)))
@@ -269,11 +251,7 @@
             "Agent should be in hivemind_status before kill"))
 
       ;; Kill the ling via the handler (mocking elisp call success)
-      ;; Note: Must mock swarm-core/swarm-addon-available? since with-swarm macro uses it
-      (with-redefs [swarm-core/swarm-addon-available? (constantly true)
-                    ec/eval-elisp-with-timeout
-                    (fn [_elisp _timeout]
-                      {:success true :result "{\"killed\": true}" :timed-out false})]
+      (sh/with-swarm-host [_host (answers (fn [_cap] {:success true :result "{\"killed\": true}" :timed-out false}))]
         (swarm/handle-swarm-kill {:slave_id slave-id}))
 
       ;; Verify agent is removed from hivemind_status
@@ -298,11 +276,7 @@
           "All 3 agents should be in hivemind_status before kill"))
 
     ;; Kill all via the handler
-    ;; Note: Must mock swarm-core/swarm-addon-available? since with-swarm macro uses it
-    (with-redefs [swarm-core/swarm-addon-available? (constantly true)
-                  ec/eval-elisp-with-timeout
-                  (fn [_elisp _timeout]
-                    {:success true :result "{\"killed\": 3}" :timed-out false})]
+    (sh/with-swarm-host [_host (answers (fn [_cap] {:success true :result "{\"killed\": 3}" :timed-out false}))]
       (swarm/handle-swarm-kill {:slave_id "all"}))
 
     ;; Verify all agents are removed from hivemind_status

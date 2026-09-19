@@ -1,8 +1,7 @@
 (ns hive-mcp.tools.swarm.prompt
   "Swarm prompt handlers for human-in-the-loop prompt management and lazy preset headers."
   (:require [hive-mcp.tools.swarm.core :as core]
-            [hive-mcp.emacs-ext.client :as ec]
-            [hive-mcp.dns.validation :as v]
+            [hive-spi.editor.services :as svc]
             [hive-mcp.channel.core :as channel]
             [clojure.data.json :as json]
             [clojure.string :as str]
@@ -37,8 +36,7 @@
   [_]
   (core/with-swarm
     (let [{:keys [success result error timed-out]}
-          (ec/eval-elisp-with-timeout
-           "(json-encode (hive-mcp-swarm-api-pending-prompts))" 5000)]
+          (svc/invoke :vessel :dispatch {:op :swarm/pending-prompts} 5000)]
       (cond
         timed-out
         (core/mcp-timeout-error "Pending prompts check")
@@ -55,11 +53,8 @@
   "Send a response to a pending prompt from a specific slave."
   [{:keys [slave_id response]}]
   (core/with-swarm
-    (let [elisp (format "(json-encode (hive-mcp-swarm-api-respond-prompt \"%s\" \"%s\"))"
-                        (v/escape-elisp-string slave_id)
-                        (v/escape-elisp-string response))
-          {:keys [success result error timed-out]}
-          (ec/eval-elisp-with-timeout elisp 5000)]
+    (let [{:keys [success result error timed-out]}
+          (svc/invoke :vessel :dispatch {:op :swarm/respond-prompt, :slave-id slave_id, :response response} 5000)]
       (cond
         timed-out
         (core/mcp-timeout-error "Respond prompt" :extra-data {:slave_id slave_id})

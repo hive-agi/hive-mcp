@@ -32,7 +32,7 @@
             [hive-mcp.agent.ling.strategy :as strategy]
             [hive-mcp.knowledge-graph.disc :as kg-disc]
             [hive-mcp.telemetry.prometheus :as prom]
-            [hive-mcp.test.stub.emacs-ext :as se]))
+            [hive-mcp.test.stub.swarm-host :as sh]))
 
 ;; =============================================================================
 ;; Test Helpers
@@ -68,36 +68,26 @@
   (fn [_elisp]
     {:success true :result "nil" :duration-ms 5 :timed-out false}))
 
+(defn host-answering
+  "A :swarm-host responder: the swarm addon is present, and every other
+   capability is answered by (RESPONSE-MOCK (str cap))."
+  [response-mock]
+  (fn [op _timeout-ms]
+    (if (= :swarm/available? (:op op)) sh/available (response-mock (str (:op op))))))
+
 (defmacro with-addon-available
-  "Execute body with the swarm addon reported available, and every elisp eval
-   answered by `response-mock` (a fn of the elisp source).
-
-   Elisp is injected at the extension registry — the swarm handlers reach
-   Emacs through hive-mcp.emacs-ext.client, which resolves :emacs/eval-elisp*
-   there. A with-redefs on an emacs client namespace binds a var they no
-   longer call, so every response comes back as the registry-miss error.
-
-   The availability predicate is stubbed directly instead of letting it consume
-   an elisp call. It previously counted calls and answered the FIRST one with
-   \"t\" on the assumption that the first eval is always
-   core/swarm-addon-available?'s `(featurep 'hive-mcp-swarm)` probe. That bound
-   the mock to the exact number and order of elisp calls each handler happens
-   to make: as soon as the count slipped, the availability probe consumed a
-   *response* instead of \"t\", swarm-addon-available? returned false, and
-   collect fell back to :strategy/jvm — polling to the 300000ms default and
-   stalling the suite for five minutes per test. Bind the seam, not the call
-   ordinal."
+  "Execute body with a :swarm-host that reports the swarm addon available and
+   answers every other capability with `response-mock`, a fn of the
+   capability name (e.g. \":status\")."
   [response-mock & body]
-  `(with-redefs [core/swarm-addon-available? (constantly true)]
-     (se/with-stub-emacs [_# {:default-response ~response-mock}]
-       ~@body)))
+  `(sh/with-swarm-host [_# (host-answering ~response-mock)]
+     ~@body))
 
 (defmacro with-addon-unavailable
-  "Execute body with swarm addon unavailable."
+  "Execute body with a :swarm-host that reports the swarm addon unloaded."
   [& body]
-  `(with-redefs [core/swarm-addon-available? (constantly false)]
-     (se/with-stub-emacs [_# {:default-response (mock-addon-unavailable)}]
-       ~@body)))
+  `(sh/with-swarm-host [_# (sh/answering {:swarm/available? sh/addon-unloaded})]
+     ~@body))
 
 ;; -- Spawn/Kill lifecycle mocks (ling.clj delegation) --
 
@@ -227,7 +217,7 @@
       (let [result (swarm/handle-swarm-spawn {:name "test-slave"})]
         (is (= "text" (:type result)))
         (is (true? (:isError result)))
-        (is (str/includes? (:text result) "not loaded"))))))
+        (is (str/includes? (:text result) "unavailable"))))))
 
 ;; =============================================================================
 ;; handle-swarm-dispatch Tests
@@ -303,7 +293,7 @@
                                                  :prompt "Test"})]
         (is (= "text" (:type result)))
         (is (true? (:isError result)))
-        (is (str/includes? (:text result) "not loaded"))))))
+        (is (str/includes? (:text result) "unavailable"))))))
 
 ;; =============================================================================
 ;; handle-swarm-status Tests
@@ -365,7 +355,7 @@
       (let [result (swarm/handle-swarm-status {})]
         (is (= "text" (:type result)))
         (is (true? (:isError result)))
-        (is (str/includes? (:text result) "not loaded"))))))
+        (is (str/includes? (:text result) "unavailable"))))))
 
 ;; =============================================================================
 ;; handle-swarm-collect Tests
@@ -515,31 +505,18 @@
       (let [result (swarm/handle-swarm-kill {:slave_id "slave-1"})]
         (is (= "text" (:type result)))
         (is (true? (:isError result)))
-        (is (str/includes? (:text result) "not loaded"))))))
+        (is (str/includes? (:text result) "unavailable"))))))
 
 ;; =============================================================================
 ;; Elisp Generation Verification Tests
 ;; =============================================================================
 
-(deftest elisp-status-generation-test
-  (testing "Verifies correct elisp is generated for status"
-    ;; core/swarm-addon-available?, not the swarm facade's re-export: the
-    ;; facade binds it with `def`, so status.clj's with-swarm guard reads the
-    ;; value captured at load and never sees a redef of the alias.
-    (with-redefs [core/swarm-addon-available? (constantly true)]
-
-      ;; Without slave_id
-      (se/with-stub-emacs [emacs {:default-response (mock-elisp-timeout-success "{}")}]
-        (swarm/handle-swarm-status {})
-        (is (str/includes? (ffirst (se/calls-of emacs :emacs/eval-elisp-with-timeout))
-                           "hive-mcp-swarm-api-status")))
-
-      ;; With slave_id
-      (se/with-stub-emacs [emacs {:default-response (mock-elisp-timeout-success "{}")}]
-        (swarm/handle-swarm-status {:slave_id "slave-1"})
-        (let [elisp (ffirst (se/calls-of emacs :emacs/eval-elisp-with-timeout))]
-          (is (str/includes? elisp "hive-mcp-swarm-status"))
-          (is (str/includes? elisp "slave-1")))))))
+(deftest status-asks-the-swarm-host-for-the-right-slave-test
+  (testing "status passes slave_id (or nil for the whole swarm) to the :status capability"
+    (sh/with-swarm-host [host (host-answering (mock-elisp-timeout-success "{}"))]
+      (swarm/handle-swarm-status {})
+      (swarm/handle-swarm-status {:slave_id "slave-1"})
+      (is (= [[{:op :swarm/status, :slave-id nil} 5000] [{:op :swarm/status, :slave-id "slave-1"} 5000]] (sh/calls-of host :swarm/status))))))
 
 ;; =============================================================================
 ;; Response Format Consistency Tests
@@ -566,8 +543,8 @@
                   terminal-reg/resolve-terminal-strategy (constantly (mock-ling-strategy))
                   queries/get-recent-claim-history (constantly [])
                   kg-disc/kg-first-context (constantly {})]
-      ;; Status/collect still use elisp — injected at the extension registry
-      (se/with-stub-emacs [_ {:default-response (mock-elisp-timeout-success "{}")}]
+      ;; Status/collect reach the swarm host through :swarm-host capabilities
+      (sh/with-swarm-host [_ (host-answering (mock-elisp-timeout-success "{}"))]
         ;; Test each handler returns :type "text"
         (doseq [handler-fn [#(swarm/handle-swarm-spawn {:name "s"})
                             #(swarm/handle-swarm-dispatch {:slave_id "s" :prompt "p"})
@@ -592,7 +569,7 @@
               (str name " must return :type \"text\" on error"))
           (is (true? (:isError result))
               (str name " must return :isError true on error"))
-          (is (str/includes? (:text result) "not loaded")
+          (is (str/includes? (:text result) "unavailable")
               (str name " must indicate addon not loaded"))))))
 
   (testing "swarm-collect is NOT addon-gated — it reports a poll timeout instead"
@@ -605,7 +582,7 @@
             parsed (json/read-str (:text result) :key-fn keyword)]
         (is (= "text" (:type result)))
         (is (= "timeout" (:status parsed)))
-        (is (not (str/includes? (:text result) "not loaded"))
+        (is (not (str/includes? (:text result) "unavailable"))
             "collect must not claim a missing addon it does not need")))))
 
 ;; =============================================================================
