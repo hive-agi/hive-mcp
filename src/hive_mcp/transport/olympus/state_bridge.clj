@@ -11,11 +11,10 @@
 
    Split from transport/olympus.clj (hotspot #14 refactor, plan
    refactor-hotspots-p0.md line 99-104)."
-  (:require [datascript.core :as d-core]
-            [taoensso.timbre :as log]
+  (:require [taoensso.timbre :as log]
             [hive-mcp.dns.result :as result]
-            [hive-mcp.swarm.datascript.connection :as ds-conn]
-            [hive-mcp.transport.olympus.snapshots :as snap]))
+            [hive-mcp.transport.olympus.snapshots :as snap]
+            [hive-mcp.swarm.datascript :as ds]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -163,9 +162,9 @@
 (defn wire-ds-state-bridge!
   "Install DataScript listener that auto-pushes state changes to Olympus clients.
 
-   Uses d/listen! on the swarm DataScript connection to detect transactions
-   affecting agents (:slave/*). Changes are batched
-   within a 200ms window and pushed as :state-patch events.
+   Listens on the swarm store to detect transactions affecting agents
+   (:slave/*). Changes are batched within a 200ms window and pushed as
+   :state-patch events.
 
    Event format pushed to clients:
    {:type :state-patch
@@ -177,16 +176,14 @@
   []
   (result/rescue nil
                  (start-bridge-loop!)
-                 (let [conn (ds-conn/ensure-conn)]
-                   (d-core/listen! conn :olympus-state-bridge on-ds-transaction!)
-                   (log/info "Olympus DS state bridge wired - auto-pushing DataScript changes"))))
+                 (ds/listen! :olympus-state-bridge on-ds-transaction!)
+                 (log/info "Olympus DS state bridge wired - auto-pushing swarm store changes")))
 
 (defn stop-ds-state-bridge!
-  "Remove DataScript listener and stop bridge loop.
+  "Remove the swarm store listener and stop bridge loop.
    Called from stop! during server shutdown."
   []
   (result/rescue nil
-                 (when-let [conn (result/rescue nil (ds-conn/get-conn))]
-                   (d-core/unlisten! conn :olympus-state-bridge))
+                 (result/rescue nil (ds/unlisten! :olympus-state-bridge))
                  (stop-bridge-loop!)
                  (log/debug "DS state bridge stopped")))

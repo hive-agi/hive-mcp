@@ -11,8 +11,7 @@
    - Strategy domain  → PollStrategy ADT (closed variant set)"
   (:require [hive-mcp.tools.swarm.core    :as core]
             [hive-mcp.tools.swarm.channel :as channel]
-            [hive-mcp.emacs-ext.client :as ec]
-            [hive-mcp.dns.validation      :as v]
+            [hive-spi.editor.services     :as svc]
             [hive-dsl.adt                 :refer [defadt adt-case]]
             [clojure.data.json            :as json]
             [taoensso.timbre              :as log]
@@ -128,10 +127,8 @@
    SLAP: operates at infrastructure level — Elisp I/O only."
   [task_id timeout_ms start-time elisp-timeout]
   (let [elapsed (- (System/currentTimeMillis) start-time)
-        elisp   (format "(json-encode (hive-mcp-swarm-api-collect \"%s\" %s))"
-                        (v/escape-elisp-string task_id)
-                        (or timeout_ms "nil"))
-        {:keys [success result error timed-out]} (ec/eval-elisp-with-timeout elisp elisp-timeout)]
+        {:keys [success result error timed-out]}
+        (svc/invoke :vessel :dispatch {:op :swarm/collect :task-id task_id :timeout-ms timeout_ms} elisp-timeout)]
     (cond
       timed-out
       (build-elisp-timeout-response task_id elapsed)

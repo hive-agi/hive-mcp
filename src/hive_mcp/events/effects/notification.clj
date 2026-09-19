@@ -19,7 +19,6 @@
             [hive-mcp.hivemind.core :as hivemind]
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.channel.core :as channel]
-            [datascript.core :as d]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -149,7 +148,7 @@
    Provides structured error handling for catastrophic failures:
    1. Logs with structured format for searchability
    2. Emits to WebSocket channel for Emacs visibility
-   3. Stores in DataScript for post-mortem analysis
+   3. Stores in the swarm store for post-mortem analysis
 
    Expected data shape:
    {:error-type :harvest-failed | :component-failed | :restart-collision | :emacs-unreachable
@@ -175,17 +174,16 @@
       (catch Exception e
         (log/warn "[SYSTEM-ERROR] Failed to emit to channel:" (.getMessage e))))
 
-    ;; 3. Store in DataScript for post-mortem analysis
+    ;; 3. Store in the swarm store for post-mortem analysis
     (try
-      (let [conn (ds/get-conn)]
-        (d/transact! conn [{:error/type :system-error
-                            :error/error-type error-type
-                            :error/source source
-                            :error/message message
-                            :error/context (pr-str context)
-                            :error/timestamp timestamp}]))
+      (ds/transact! [{:error/type :system-error
+                      :error/error-type error-type
+                      :error/source source
+                      :error/message message
+                      :error/context (pr-str context)
+                      :error/timestamp timestamp}])
       (catch Exception e
-        (log/warn "[SYSTEM-ERROR] Failed to store in DataScript:" (.getMessage e))))))
+        (log/warn "[SYSTEM-ERROR] Failed to store in the swarm store:" (.getMessage e))))))
 
 ;; =============================================================================
 ;; Effect: :olympus-broadcast

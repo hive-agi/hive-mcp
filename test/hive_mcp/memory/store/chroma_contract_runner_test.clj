@@ -8,20 +8,44 @@
    that binds the same factory to MilvusMemoryStore/create-store."
   (:require [clojure.test :refer [deftest testing is use-fixtures]]
             [hive-test.memory.store-contract :as contract]
+            [hive-mcp.chroma.connection :as chroma-conn]
+            [hive-mcp.embeddings.active :as active]
             [hive-mcp.memory.store.chroma :as chroma-store]
-            [hive-mcp.protocols.memory :as proto]))
+            [hive-mcp.protocols.memory :as proto]
+            [hive-mcp.test-fixtures :as fixtures]
+            [hive-mcp.test-support.chroma :as chroma]))
 
 ;; =============================================================================
-;; Factory Binding
+;; Fixtures
 ;; =============================================================================
+
+(defn stub-embedding-fixture
+  "Install a deterministic stub embedding provider for the duration of each
+   test and restore the previous provider afterwards. The mock lives in
+   test-fixtures (hash-based, deterministic). Also resets the Chroma
+   collection cache so no stale collection handle leaks between tests."
+  [f]
+  (let [original-provider (active/get-embedding-provider)]
+    (active/set-embedding-provider! (fixtures/->MockEmbedder 384))
+    (try
+      (f)
+      (finally
+        (chroma-conn/reset-collection-cache!)
+        (active/set-embedding-provider! original-provider)))))
 
 (defn bind-chroma-factory
-  "Fixture: bind *store-factory* to ChromaMemoryStore for the duration of tests."
+  "Fixture: bind *store-factory* to ChromaMemoryStore for the duration of tests.
+   Availability is handled upstream by the chroma/skip-unless-reachable fixture
+   (composed first in use-fixtures below), so this fixture can assume the live
+   Chroma server on localhost:8000 is reachable."
   [f]
   (binding [contract/*store-factory* #(chroma-store/create-store)]
     (f)))
 
-(use-fixtures :each bind-chroma-factory)
+(use-fixtures :each
+  (chroma/skip-unless-reachable "chroma-contract")
+  bind-chroma-factory
+  stub-embedding-fixture)
 
 ;; =============================================================================
 ;; Protocol Satisfaction (runner-specific — verify Chroma implements all 3)

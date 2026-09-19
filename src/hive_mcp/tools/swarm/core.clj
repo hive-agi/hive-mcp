@@ -1,18 +1,15 @@
 (ns hive-mcp.tools.swarm.core
   "Core utilities for swarm tool handlers including response builders and swarm availability check."
-  (:require [hive-mcp.emacs-ext.client :as ec]
-            [hive-mcp.dns.validation :as v]
-            [clojure.data.json :as json]
-            [clojure.string :as str]))
+  (:require [hive-spi.editor.services :as svc]
+            [clojure.data.json :as json]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defn swarm-addon-available?
-  "Check if hive-mcp-swarm addon is loaded in Emacs."
+  "True when a :vessel :dispatch capability is registered and reports the swarm addon loaded."
   []
-  (let [{:keys [success result timed-out]} (ec/eval-elisp-with-timeout "(featurep 'hive-mcp-swarm)" 2000)]
-    (and success (not timed-out) (= result "t"))))
+  (= "t" (:result (svc/invoke :vessel :dispatch {:op :swarm/available?} 2000))))
 
 (defn mcp-success
   "Build a successful MCP response."
@@ -38,9 +35,9 @@
     {:type "text" :text (json/write-str data) :isError true}))
 
 (defn addon-not-loaded-error
-  "Return standard error when swarm addon not loaded."
+  "Return the standard error when no swarm host answers."
   []
-  {:type "text" :text "hive-mcp-swarm addon not loaded. Run (require 'hive-mcp-swarm)" :isError true})
+  {:type "text" :text "Swarm host unavailable: no :vessel :dispatch capability is registered, or the vessel reports its swarm addon unloaded." :isError true})
 
 (defmacro with-swarm
   "Execute body only if swarm addon is available."
@@ -48,23 +45,3 @@
   `(if (swarm-addon-available?)
      (do ~@body)
      (addon-not-loaded-error)))
-
-(defn eval-elisp-safe
-  "Evaluate elisp with timeout and structured response handling."
-  [elisp timeout-ms]
-  (let [{:keys [success result error timed-out]} (ec/eval-elisp-with-timeout elisp timeout-ms)]
-    (cond
-      timed-out {:ok false :error "Elisp evaluation timed out" :timed-out true}
-      (not success) {:ok false :error error :timed-out false}
-      :else {:ok true :result result})))
-
-(defn format-elisp-list
-  "Format a Clojure sequence as elisp list."
-  [items format-item-fn]
-  (when (seq items)
-    (format "'(%s)" (str/join " " (map format-item-fn items)))))
-
-(defn escape-for-elisp
-  "Escape a string for safe embedding in elisp."
-  [s]
-  (v/escape-elisp-string s))
