@@ -68,7 +68,7 @@ ENV HIVE_PROFILE=k8s-headless
 # nREPL is the first server up and the last down; a TCP probe on it is
 # the readiness signal. bash /dev/tcp needs no extra package.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
-  CMD bash -c "echo > /dev/tcp/localhost/7910" || exit 1
+  CMD bash -c ": < /dev/tcp/localhost/7910" || exit 1
 
 # The JVM shutdown hook handles Olympus stop, coordinator marking and
 # session auto-wrap on SIGTERM.
