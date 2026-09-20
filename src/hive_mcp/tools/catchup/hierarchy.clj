@@ -12,7 +12,7 @@
             [hive-mcp.dns.result :refer [rescue]]
             [hive-weave.parallel :as wpar]
             [clojure.tools.logging :as log]
-            [hive-mcp.vectordb.resilience :refer [with-resilience]]))
+            [hive-mcp.resilience.store :refer [with-resilience]]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later

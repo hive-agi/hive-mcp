@@ -11,7 +11,7 @@
             [hive-mcp.tools.catchup.scope-filter :as sf]
             [hive-weave.parallel :as wpar]
             [clojure.tools.logging :as log]
-            [hive-mcp.vectordb.resilience :refer [with-resilience]]
+            [hive-mcp.resilience.store :refer [with-resilience]]
             [hive-mcp.tools.catchup.bundle-cache :as bc]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

@@ -24,7 +24,7 @@
 
    A bundle whose buckets are all empty is returned but never stored.
    `now-ms` is the clock; tests pin it with with-redefs."
-  (:require [hive-mcp.memory.write-events :as write-events]
+  (:require [hive-mcp.events.write-events :as write-events]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.tools.catchup.axiom-cache :as axc]
             [hive-mcp.tools.catchup.bucket-types :as bt]

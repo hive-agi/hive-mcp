@@ -11,7 +11,7 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-spi.memory.ports :as ports]
             [hive-spi.memory.registry :as registry]
-            [hive-mcp.vectordb.resilience :as resilience]))
+            [hive-mcp.resilience.store :as resilience]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

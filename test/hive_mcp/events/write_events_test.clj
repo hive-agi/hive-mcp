@@ -1,11 +1,11 @@
-(ns hive-mcp.memory.write-events-test
+(ns hive-mcp.events.write-events-test
   "The write vocabulary round-trips, the bridge table covers every op, and
    notify! lands on the channel bus."
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.core.async :as async]
             [hive-mcp.channel.core :as channel]
             [hive-mcp.events.bridge :as bridge]
-            [hive-mcp.memory.write-events :as we]))
+            [hive-mcp.events.write-events :as we]))
 
 (deftest vocabulary-round-trips-test
   (doseq [op (keys we/op->channel-type)]
