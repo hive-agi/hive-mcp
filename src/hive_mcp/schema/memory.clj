@@ -2,7 +2,7 @@
   "Malli schemas for memory entries and related types."
 
   (:require [malli.core :as m]
-            [hive-mcp.memory.type-registry :as type-registry]))
+            [hive-mcp.schema.type-token :as token]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -21,7 +21,7 @@
    (charset + bounded length) is enforced here so an unsafe token never
    reaches storage, vector-DB filter expressions, or keyword interning."
   [:fn {:error/message "must be a safe type token: starts with a letter, then [a-z0-9_-], max 64 chars"}
-   type-registry/safe-type?])
+   token/safe-type?])
 
 (def MemoryDuration
   "Valid duration values for memory entries.

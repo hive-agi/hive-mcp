@@ -4,7 +4,7 @@
             [clojure.data.json :as json]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.memory.type-registry :as type-registry]
+            [hive-mcp.schema.type-token :as token]
             [hive-mcp.tools.catchup.outcome :as outcome]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -44,7 +44,7 @@
   [entry]
   (let [content   (str (:content entry))
         tags      (vec (or (:tags entry) []))
-        requested (or (type-registry/requested-type-of tags) "axiom")]
+        requested (or (token/requested-type-of tags) "axiom")]
     {:id        (:id entry)
      :requested requested
      :tags      (vec (remove #(str/starts-with? (str %) "scope:") tags))
