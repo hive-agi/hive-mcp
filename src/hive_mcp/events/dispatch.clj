@@ -10,7 +10,7 @@
             [hive-mcp.events.metrics :as metrics]
             [hive-mcp.events.registry :as registry]
             [hive-mcp.events.schemas :as schemas]
-            [hive-mcp.telemetry.prometheus :as prom]
+            [hive-mcp.spi.metrics :as metrics-port]
             [taoensso.timbre :as log]
             [hive.events.observer :as observer]
             [hive.events.router :as router]))
@@ -171,12 +171,10 @@
   (schemas/validate-event! event)
   (let [event-id (first event)
         start-ns (System/nanoTime)]
-    (prom/inc-events-total! event-id :info)
+    (metrics-port/inc-events! event-id :info)
     (if-let [result (router/dispatch-sync event)]
       (do
-        (prom/observe-request-duration!
-         (str "event-dispatch-" (name event-id))
-         (/ (- (System/nanoTime) start-ns) 1e9))
+        (metrics-port/observe-request-duration! (str "event-dispatch-" (name event-id)) (/ (- (System/nanoTime) start-ns) 1e9))
         result)
       (throw (ex-info (str "No handler registered for event: " event-id)
                       {:event event})))))

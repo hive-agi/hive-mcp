@@ -10,7 +10,7 @@
             [hive-mcp.agent.context :as ctx]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.telemetry.prometheus :as prom]
+            [hive-mcp.spi.metrics :as metrics-port]
             [hive-dsl.bounded-atom :refer [bclear!]]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -34,7 +34,7 @@
                                            :spawn-mode (keyword (or terminal "claude"))
                                            :kanban-task-id kanban_task_id})]
           (let [current-count (count (registry/get-available-lings))]
-            (prom/set-lings-active! (inc current-count)))
+            (metrics-port/set-lings-active! (inc current-count)))
           (core/mcp-success {:slave_id slave-id
                              :status "spawned"
                              :cwd validated-cwd
@@ -160,7 +160,7 @@
                   killed (filter :success results)
                   failed (remove :success results)]
               (let [current-count (count (registry/get-available-lings))]
-                (prom/set-lings-active! (max 0 (- current-count (count killed)))))
+                (metrics-port/set-lings-active! (max 0 (- current-count (count killed)))))
               (core/mcp-success {:killed (count killed)
                                  :failed (count failed)
                                  :project-id caller-project-id
@@ -173,7 +173,7 @@
                   failed (remove :success results)]
               (when (every? :success results)
                 (bclear! hivemind/agent-registry))
-              (prom/set-lings-active! (max 0 (- (count slave-ids) (count killed))))
+              (metrics-port/set-lings-active! (max 0 (- (count slave-ids) (count killed))))
               (core/mcp-success {:killed (count killed)
                                  :failed (count failed)
                                  :details {:killed (mapv :slave-id killed)
@@ -182,7 +182,7 @@
           (if success
             (do
               (let [current-count (count (registry/get-available-lings))]
-                (prom/set-lings-active! (max 0 (dec current-count))))
+                (metrics-port/set-lings-active! (max 0 (dec current-count))))
               (core/mcp-success (:result result)))
             (core/mcp-error
              (format "KILL BLOCKED: Cannot kill slave '%s' - %s"

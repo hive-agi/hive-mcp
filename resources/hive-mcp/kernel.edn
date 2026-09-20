@@ -166,9 +166,6 @@
  :waivers
  [{:from hive-mcp.events.handlers, :to hive-mcp.events.handlers.agora, :since "2026-09-07", :retired-by "E1"}
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.agora, :since "2026-09-07", :retired-by "E1"}
-  {:from hive-mcp.events.core, :to hive-mcp.telemetry.prometheus, :since "2026-09-07", :retired-by "E2"}
-  {:from hive-mcp.events.dispatch, :to hive-mcp.telemetry.prometheus, :since "2026-09-07", :retired-by "E2"}
-  {:from hive-mcp.tools.swarm.lifecycle, :to hive-mcp.telemetry.prometheus, :since "2026-09-07", :retired-by "E2"}
   {:from hive-mcp.addons.doctor, :to hive-mcp.emacs-ext.client, :since "2026-09-07", :retired-by "E3"}
   {:from hive-mcp.server.transport.olympus-ws, :to hive-mcp.transport.olympus, :since "2026-09-07", :retired-by "E3"}
   {:from hive-mcp.swarm.sync, :to hive-mcp.emacs-ext.daemon-store, :since "2026-09-07", :retired-by "E3"}
