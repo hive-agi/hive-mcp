@@ -164,4 +164,4 @@
  :waiver-baseline 100
 
  :waivers
- [{:from hive-mcp.project.tree, :to datascript.core, :since "2026-09-07", :retired-by "K2"}]}
+ []}
