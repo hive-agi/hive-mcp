@@ -21,7 +21,6 @@
             [hive-mcp.events.handlers :as ev-handlers]
             [hive-mcp.events.channel-bridge :as channel-bridge]
             [hive-mcp.tools.swarm :as swarm]
-            [hive-mcp.memory.store.chroma :as chroma-store]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.swarm.sync :as sync]
             [hive-mcp.swarm.bootstrap.factory :as bootstrap-factory]
@@ -273,12 +272,29 @@
                            (log/warn "No vector-collection backend available"
                                      {:backend backend-id}))))))
 
+(defn- create-chroma-store
+  "The legacy Chroma memory store, resolved BY SYMBOL.
+
+   This is the composition root, the one place allowed to name a backend, but
+   naming is not requiring: `hive-mcp.memory.store.chroma` is a hive-memory
+   extraction target and the axiom 20260711221408-2ae3b6ae wants no backend
+   compiled into the kernel. The same file already resolves
+   `chroma.vector-store/chroma-vector-store` this way.
+
+   Returns nil when Chroma is not in this build, which leaves the store unset
+   for an addon to register."
+  []
+  (if-let [create (soft/resolve-soft 'hive-mcp.memory.store.chroma/create-store)]
+    (create)
+    (log/warn "no Chroma store in this build; leaving the memory store for an addon to register")))
+
 (defn wire-memory-store!
   "Select and wire the memory backend.
 
      - milvus: defer to the hive-milvus addon, which registers its own store
        during Phase 4.5 (load-extensions!).
-     - anything else: wire ChromaMemoryStore immediately (legacy behavior).
+     - anything else: wire ChromaMemoryStore immediately (legacy behavior),
+       when Chroma is present in the build.
 
    Must run AFTER init-embedding-provider! since Chroma config is set there.
    A post-extensions fallback in `ensure-memory-store!` guarantees a live
@@ -290,38 +306,40 @@
    plan.plans and presets.core drive."
   []
   (result/rescue-log "wire-memory-store!" nil
-                 (let [backend (resolve-memory-backend)]
-                   (case backend
-                     "milvus"
-                     (log/info "wire-memory-store!: deferring to hive-milvus addon"
-                               {:backend backend})
+                     (let [backend (resolve-memory-backend)]
+                       (case backend
+                         "milvus"
+                         (log/info "wire-memory-store!: deferring to hive-milvus addon"
+                                   {:backend backend})
 
-                     (let [store (chroma-store/create-store)]
-                       (mem-proto/set-store! store)
-                       (wire-vector-store! backend)
-                       (log/info "ChromaMemoryStore wired as active IMemoryStore backend"
-                                 {:backend backend}))))))
+                         (when-let [store (create-chroma-store)]
+                           (mem-proto/set-store! store)
+                           (wire-vector-store! backend)
+                           (log/info "ChromaMemoryStore wired as active IMemoryStore backend"
+                                     {:backend backend}))))))
 
 (defn ensure-memory-store!
   "Guarantee an active IMemoryStore after addon loading.
 
    Called in Phase 4.6 (after load-extensions!). If the configured backend's
    addon failed to register a store, wire ChromaMemoryStore as a safety
-   fallback so memory queries don't throw 'No memory store configured'.
+   fallback so memory queries don't throw 'No memory store configured'. With
+   no Chroma in the build there is no fallback to wire, and the warning stands
+   on its own: a store nobody registered is the honest answer.
 
    The vector-collection store gets the same treatment, and SEPARATELY: an
    addon may satisfy one seam and not the other, so a single `store-set?`
    check over both would leave whichever it did not name unwired."
   []
   (result/rescue-log "ensure-memory-store!" nil
-                 (when-not (mem-proto/store-set?)
-                   (log/warn "ensure-memory-store!: no store after extensions; wiring Chroma fallback")
-                   (let [store (chroma-store/create-store)]
-                     (mem-proto/set-store! store)))
-                 (when-not (vec-proto/store-set?)
-                   (log/warn "ensure-memory-store!: no vector-collection store after extensions;"
-                             "wiring fallback")
-                   (wire-vector-store! (resolve-memory-backend)))))
+                     (when-not (mem-proto/store-set?)
+                       (log/warn "ensure-memory-store!: no store after extensions; wiring Chroma fallback")
+                       (when-let [store (create-chroma-store)]
+                         (mem-proto/set-store! store)))
+                     (when-not (vec-proto/store-set?)
+                       (log/warn "ensure-memory-store!: no vector-collection store after extensions;"
+                                 "wiring fallback")
+                       (wire-vector-store! (resolve-memory-backend)))))
 
 ;; =============================================================================
 ;; Channel Bridge + Sync

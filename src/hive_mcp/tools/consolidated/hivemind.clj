@@ -3,9 +3,9 @@
   (:require [hive-mcp.tools.cli :refer [make-cli-handler]]
             [hive-mcp.hivemind.core :as hm]
             [hive-mcp.hivemind.event-registry :as event-registry]
-            [hive-mcp.tools.agent.dispatch :as dispatch]
             [hive-mcp.tools.core :refer [mcp-error]]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [hive-mcp.swarm.adapters.soft :as soft]))
 
 (def ^:private tools-by-name
   (into {} (map (fn [t] [(keyword (str/replace (:name t) "hivemind_" "")) (:handler t)])
@@ -25,8 +25,8 @@
     :else
     (let [nudge-prompt (or (when-not (str/blank? message) message)
                            default-nudge-template)
-          result (dispatch/handle-dispatch {:agent_id agent_id
-                                            :prompt   nudge-prompt})]
+          result (if-let [handle-dispatch (soft/resolve-soft 'hive-mcp.tools.agent.dispatch/handle-dispatch)] (handle-dispatch {:agent_id agent_id
+                                            :prompt   nudge-prompt}) (mcp-error "nudge needs the agent domain (hive-agent)"))]
       result)))
 
 (def handlers

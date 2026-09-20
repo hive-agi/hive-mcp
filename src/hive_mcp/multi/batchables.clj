@@ -22,10 +22,10 @@
    Decision: 20260429230453-7e7627cc"
   (:require [hive-mcp.batch.cli-adapter :as bca]
             [hive-mcp.batch.protocol :as bproto]
-            [hive-mcp.tools.kg.batch :as kg-batch]
             [hive-dsl.result :as r :refer [rescue]]
             [clojure.data.json :as json]
-            [hive-mcp.multi.util :as util]))
+            [hive-mcp.multi.util :as util]
+            [hive-mcp.swarm.adapters.soft :as soft]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -175,11 +175,22 @@
 ;; KgBatchable
 ;; =============================================================================
 
+(defn- kg-run-batch
+  "The KG batch runner, resolved by symbol: `hive-mcp.tools.kg.batch` is a
+   hive-memory extraction target, so the kernel's batchable registry may not
+   require it. With no KG domain the batch reports that rather than throwing
+   an unresolved-var error mid-batch."
+  [& args]
+  (if-let [run (soft/resolve-soft 'hive-mcp.tools.kg.batch/run-batch)]
+    (apply run args)
+    {:error "kg batch unavailable: this build has no KG domain (hive-memory)"
+     :isError true}))
+
 (def ^:private kg-edge-handler
-  (delay (bca/cli-batch-handler {:run-fn kg-batch/run-batch :cmd-kw :edge})))
+  (delay (bca/cli-batch-handler {:run-fn kg-run-batch :cmd-kw :edge})))
 
 (def ^:private kg-traverse-handler
-  (delay (bca/cli-batch-handler {:run-fn kg-batch/run-batch :cmd-kw :traverse})))
+  (delay (bca/cli-batch-handler {:run-fn kg-run-batch :cmd-kw :traverse})))
 
 (defn- kg-handlers []
   {:edge     @kg-edge-handler

@@ -164,9 +164,4 @@
  :waiver-baseline 100
 
  :waivers
- [{:from hive-mcp.agent.ling.spawn, :to hive-mcp.workflows.catchup-ling, :since "2026-09-07", :retired-by "E5"}
-  {:from hive-mcp.multi.batchables, :to hive-mcp.tools.kg.batch, :since "2026-09-07", :retired-by "E6c"}
-  {:from hive-mcp.server.init, :to hive-mcp.memory.store.chroma, :since "2026-09-07", :retired-by "E6c"}
-  {:from hive-mcp.tools.catchup.spawn, :to hive-mcp.agent.hints, :since "2026-09-07", :retired-by "E7"}
-  {:from hive-mcp.tools.consolidated.hivemind, :to hive-mcp.tools.agent.dispatch, :since "2026-09-07", :retired-by "E7"}
-  {:from hive-mcp.project.tree, :to datascript.core, :since "2026-09-07", :retired-by "K2"}]}
+ [{:from hive-mcp.project.tree, :to datascript.core, :since "2026-09-07", :retired-by "K2"}]}
