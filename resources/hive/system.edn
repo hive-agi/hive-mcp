@@ -47,6 +47,10 @@
  :hive/ws-channel      {:port 9999}
  :hive/olympus         {}
  :hive/a2a-gateway     {:enabled false}
+ ;; MCP over HTTP for remote clients. The ref only orders it after the
+ ;; addons, so the tool set it serves is complete.
+ :hive/mcp-http        {:enabled    false
+                        :extensions #ig/ref :hive/extensions}
  :hive/legacy-channel  {:port 9998}
  :hive/channel-bridge  {:events     #ig/ref :hive/events
                         :ws-channel #ig/ref :hive/ws-channel}

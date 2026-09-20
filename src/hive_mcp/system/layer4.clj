@@ -26,7 +26,8 @@
             [hive-mcp.server.transport.legacy :as legacy-ch]
             [hive-mcp.server.init :as init]
             [hive-mcp.dns.result :as result]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.server.transport.mcp-http :as mcp-http]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -105,6 +106,27 @@
       (when-let [stop! (requiring-resolve 'hive-mcp.transport.a2a/stop!)]
         (stop!)
         (log/info ":hive/a2a-gateway stopped")))))
+
+;; =============================================================================
+;; :hive/mcp-http: MCP over HTTP for remote clients (opt-in)
+;; =============================================================================
+
+(defmethod ig/init-key :hive/mcp-http
+  [_ config]
+  (log/info ":hive/mcp-http init" (select-keys config [:enabled :port :bind]))
+  (let [started (result/rescue nil
+                  (mcp-http/start-mcp-http! config))]
+    {:enabled (:enabled config)
+     :port    (:port started (:port config))
+     :status  (:status started :disabled)}))
+
+(defmethod ig/halt-key! :hive/mcp-http
+  [_ state]
+  (when (= :running (:status state))
+    (result/rescue nil
+      (when-let [stop! (requiring-resolve 'hive-mcp.transport.mcp-http/stop!)]
+        (stop!)
+        (log/info ":hive/mcp-http stopped")))))
 
 ;; =============================================================================
 ;; :hive/legacy-channel — Legacy TCP channel (deprecated, backward compat)
