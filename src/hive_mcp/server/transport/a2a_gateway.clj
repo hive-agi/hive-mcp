@@ -13,8 +13,9 @@
   "Start the A2A JSON-RPC gateway.
 
    Enabled when the system component config says so, or when the runtime
-   config / HIVE_MCP_A2A_ENABLED does. Port and api-key come from the
-   component config first, the runtime config second.
+   config / HIVE_MCP_A2A_ENABLED does. Port, bind host and api-key come from
+   the component config first, the runtime config second. Without an api-key
+   the gateway listens on loopback only, whatever bind host was asked for.
 
    Returns nil when not enabled, {:status :running :port n} when the gateway
    is listening, {:status :failed :port n} when the start threw. Never throws."
@@ -29,12 +30,16 @@
                       (config/get-service-value :a2a :port
                                                 :env "HIVE_MCP_A2A_PORT"
                                                 :parse parse-long
-                                                :default 7912))]
+                                                :default 7912))
+         bind     (or (:bind component-config)
+                      (config/get-service-value :a2a :bind
+                                                :env "HIVE_MCP_A2A_BIND"))]
      (when enabled?
        (let [started (result/rescue ::failed
                                     (require 'hive-mcp.transport.a2a)
                                     ((resolve 'hive-mcp.transport.a2a/start!)
                                      {:port    port
+                                      :bind    bind
                                       :api-key (config/get-service-value :a2a :api-key
                                                                          :env "HIVE_MCP_A2A_API_KEY")})
                                     :started)]
