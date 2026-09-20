@@ -8,7 +8,7 @@
    - JVM shutdown hooks (auto-wrap, coordinator cleanup)
    - Project configuration (.hive-project.edn)"
   (:require [hive-mcp.hooks.core :as hooks]
-            [hive-mcp.crystal.hooks :as crystal-hooks]
+            [hive-mcp.spi.session :as crystal-hooks]
             [hive-mcp.dns.result :as result]
             [hive-mcp.protocols.lifecycle :as lifecycle]
             [hive-mcp.swarm.sync :as sync]
@@ -190,7 +190,7 @@
       ;; This enables architectural guarantee of synthetic shouts on task completion
       (sync/set-hooks-registry! registry)
       ;; Register crystal hooks (includes auto-wrap on session-end)
-      (crystal-hooks/register-hooks! registry)
+      (crystal-hooks/register-session-hooks! registry)
       ;; Register JVM shutdown hook to trigger session-end
       (register-shutdown-hook! shutdown-hook-registered? coordinator-id-atom hooks-registry-atom)
       {:registry registry

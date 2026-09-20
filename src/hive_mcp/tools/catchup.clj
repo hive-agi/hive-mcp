@@ -19,9 +19,6 @@
   (:require [hive-mcp.agent.context :as ctx]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.project.scope :as project-scope]
-            [hive-mcp.crystal.harvest.collect :as coll]
-            [hive-mcp.crystal.fanout :as fan]
-            [hive-mcp.crystal.persist :as persist]
             [hive-mcp.tools.catchup.scope :as catchup-scope]
             [hive-mcp.tools.catchup.format :as fmt]
             [hive-mcp.tools.catchup.git :as catchup-git]
@@ -41,7 +38,8 @@
             [hive-mcp.tools.catchup.relevance :as relevance]
             [hive-mcp.tools.catchup.outcome :as outcome]
             [hive-mcp.tools.catchup.caller :as catchup-caller]
-            [hive-mcp.spi.catchup-registry :as blocks]))
+            [hive-mcp.spi.catchup-registry :as blocks]
+            [hive-mcp.swarm.adapters.soft :as soft]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -366,17 +364,14 @@
 ;; =============================================================================
 
 (defn handle-native-wrap
-  "Native multi-scope wrap implementation — Step 8 of plan
-   `20260504173159-46dc47f1`.
+  "Native multi-scope wrap: harvest a session, fan it out per scope, persist
+   the entries. This is the kernel's ENTRY POINT; the pipeline itself is
+   memory domain work in `hive-mcp.crystal.wrap-handler` and is resolved by
+   symbol, so the kernel names the wrap without requiring the crystal
+   namespaces.
 
-   Pipeline (no extension delegation):
-     1. `coll/harvest-all-by-scope` — flat harvest → attribution → partition
-        → `HarvestByScope`.
-     2. `fan/synthesize-wraps` — fan-out one entry per touched scope plus
-        an umbrella; each entry carries an explicit `scope:project:<pid>`
-        (or `scope:multi-project`) tag from step-6 `with-scope-tag`.
-     3. `persist/persist-wraps!` — direct `mem-proto/add-entry!` per entry
-        with explicit `:project-id` from `:pid` (no pwd derivation).
+   With the memory domain absent there is nothing to harvest INTO, so the
+   answer is an error naming what is missing rather than an empty success.
 
    Returns MCP text payload with aggregate shape:
      {:session   <session-id>
@@ -386,30 +381,9 @@
       :failed    <count>
       :wraps     [{:pid :project-id :id :success? :error?} ...]}"
   [args]
-  (let [directory (ctx/resolve-caller-directory args)
-        agent-id (:agent_id args)]
-    (log/info "native-wrap: per-scope chain" {:directory directory :agent-id agent-id})
-    (if-not (mem-proto/store-set?)
-      (fmt/store-not-configured-error)
-      (try
-        (let [hbs            (coll/harvest-all-by-scope {:directory directory
-                                                          :agent-id  agent-id})
-              wraps          (fan/synthesize-wraps hbs)
-              persist-result (persist/persist-wraps! wraps)]
-          (log/info "native-wrap: completed"
-                    {:total     (:total persist-result)
-                     :persisted (:persisted persist-result)
-                     :failed    (:failed persist-result)})
-          {:type "text"
-           :text (json/write-str
-                   {:session   (:session hbs)
-                    :directory directory
-                    :total     (:total persist-result)
-                    :persisted (:persisted persist-result)
-                    :failed    (:failed persist-result)
-                    :wraps     (:results persist-result)})})
-        (catch Exception e
-          (log/error e "native-wrap failed")
-          {:type "text"
-           :text (json/write-str {:error (.getMessage e)})
-           :isError true})))))
+  (if-let [h (soft/resolve-soft 'hive-mcp.crystal.wrap-handler/handle-native-wrap)]
+    (h args)
+    {:type "text"
+     :text (json/write-str
+            {:error "wrap unavailable: this build has no memory domain (hive-memory)"})
+     :isError true}))
