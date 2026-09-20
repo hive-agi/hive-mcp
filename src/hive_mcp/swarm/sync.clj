@@ -37,7 +37,7 @@
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.swarm.coordinator :as coord]
             [hive-mcp.channel.core :as channel]
-            [hive-mcp.emacs-ext.daemon-store :as daemon-store]
+            [hive-mcp.spi.emacs :as daemon-store]
             [hive-mcp.hivemind.core :as hivemind]
             [hive-mcp.hooks.core :as hooks]
             [hive-mcp.project.scope :as project-scope]

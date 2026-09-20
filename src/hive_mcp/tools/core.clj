@@ -10,7 +10,7 @@
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
             [hive-mcp.channel.piggyback :as piggyback]
-            [hive-mcp.emacs-ext.client :as ec]
+            [hive-mcp.spi.emacs :as ec]
             [hive-mcp.tools.diagnostics :as diag]
             [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>

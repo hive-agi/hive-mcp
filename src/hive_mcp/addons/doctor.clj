@@ -17,7 +17,7 @@
             [hive-addon.schema :as addon-schema]
             [hive-dsl.result :as r]
             [hive-mcp.addons.core :as registry]
-            [hive-mcp.emacs-ext.client :as emacs]
+            [hive-mcp.spi.emacs :as emacs]
             [malli.core :as m]
             [malli.error :as me]
             [hive-addon.wire :as wire])
