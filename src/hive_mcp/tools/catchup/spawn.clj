@@ -6,7 +6,7 @@
             [hive-mcp.tools.catchup.git :as catchup-git]
             [hive-mcp.tools.catchup.format :as fmt]
             [hive-mcp.agent.hints :as hints]
-            [hive-mcp.knowledge-graph.disc :as kg-disc]
+            [hive-mcp.spi.disc :as disc-port]
             [hive-mcp.channel.context-store :as context-store]
             [hive-mcp.context.reconstruction :as reconstruction]
             [hive-mcp.dns.result :refer [rescue]]
@@ -152,7 +152,7 @@
                        git-info (catchup-git/gather-git-info directory)
 
                        stale-files (rescue []
-                                           (kg-disc/top-stale-files :n 5 :project-id project-id))
+                                           (disc-port/top-stale-files {:n 5, :project-id project-id}))
 
                        axioms-meta (mapv fmt/entry->axiom-meta axioms)
                        priority-meta (mapv fmt/entry->priority-meta priority-conventions)

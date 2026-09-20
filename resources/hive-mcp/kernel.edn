@@ -201,7 +201,6 @@
   {:from hive-mcp.server.init, :to hive-mcp.embeddings.ollama, :since "2026-09-07", :retired-by "E6c"}
   {:from hive-mcp.server.init, :to hive-mcp.embeddings.service, :since "2026-09-07", :retired-by "E6c"}
   {:from hive-mcp.server.init, :to hive-mcp.memory.store.chroma, :since "2026-09-07", :retired-by "E6c"}
-  {:from hive-mcp.swarm.coordinator, :to hive-mcp.knowledge-graph.disc, :since "2026-09-07", :retired-by "E6c"}
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.kg, :since "2026-09-07", :retired-by "E6c"}
   {:from hive-mcp.events.effects, :to hive-mcp.events.effects.agent, :since "2026-09-07", :retired-by "E7"}
   {:from hive-mcp.events.handlers, :to hive-mcp.events.handlers.ling, :since "2026-09-07", :retired-by "E7"}
@@ -212,5 +211,4 @@
   {:from hive-mcp.tools.catchup, :to hive-mcp.crystal.harvest.collect, :since "2026-09-07", :retired-by "K1"}
   {:from hive-mcp.tools.catchup, :to hive-mcp.crystal.persist, :since "2026-09-07", :retired-by "K1"}
   {:from hive-mcp.tools.catchup.format, :to hive-mcp.memory.type-registry, :since "2026-09-07", :retired-by "K1"}
-  {:from hive-mcp.tools.catchup.spawn, :to hive-mcp.knowledge-graph.disc, :since "2026-09-07", :retired-by "K1"}
   {:from hive-mcp.project.tree, :to datascript.core, :since "2026-09-07", :retired-by "K2"}]}
