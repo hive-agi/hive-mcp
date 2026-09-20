@@ -35,7 +35,7 @@
 
 (deftest a-contribution-registers-and-can-be-forgotten
   (let [ran (atom 0)]
-    (contrib/contribute! :handlers ::probe {:register! #(swap! ran inc)
+    (contrib/contribute! :handlers ::probe {:install! #(swap! ran inc)
                                             :events #{:probe/one :probe/two}})
     (is (= #{:probe/one :probe/two} (contrib/declared-events)))
     (is (= {:ran [::probe] :failed {}} (contrib/register-all! :handlers)))
@@ -47,8 +47,8 @@
 
 (deftest one-failing-contributor-does-not-stop-the-others
   (let [ok (atom 0)]
-    (contrib/contribute! :handlers ::boom {:register! #(throw (ex-info "boom" {}))})
-    (contrib/contribute! :handlers ::fine {:register! #(swap! ok inc)})
+    (contrib/contribute! :handlers ::boom {:install! #(throw (ex-info "boom" {}))})
+    (contrib/contribute! :handlers ::fine {:install! #(swap! ok inc)})
     (let [{:keys [ran failed]} (contrib/register-all! :handlers)]
       (is (= 1 @ok) "the healthy contributor still registered")
       (is (= [::fine] ran))
@@ -73,10 +73,11 @@
   (let [manifest (contrib/read-manifest)]
     (is (seq (:handlers manifest)))
     (doseq [kind [:handlers :effects]
-            {:keys [key register]} (get manifest kind)]
-      (testing (str kind " " key)
-        (is (some? (requiring-resolve register))
-            (str register " does not resolve; the manifest drifted from the build"))))))
+            entry (get manifest kind)]
+      (let [{:keys [key] sym :install!} entry]
+        (testing (str kind " " key)
+          (is (some? (requiring-resolve sym))
+              (str sym " does not resolve; the manifest drifted from the build")))))))
 
 (deftest a-declared-event-set-matches-what-the-domain-registers
   (contrib/load-manifest!)
@@ -90,6 +91,6 @@
 
 (deftest expected-events-is-the-kernel-set-plus-what-contributed
   (contrib/reset!!)
-  (contrib/contribute! :handlers ::probe {:register! (constantly true)
+  (contrib/contribute! :handlers ::probe {:install! (constantly true)
                                           :events #{:probe/one}})
   (is (= (conj handlers/kernel-events :probe/one) (handlers/expected-events))))
