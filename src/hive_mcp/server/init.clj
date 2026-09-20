@@ -12,12 +12,8 @@
    - Channel bridge + swarm sync + registry sync
    - decay scheduler (periodic memory/edge/disc decay)
    - housekeeping scheduler (periodic GC sweep + stale resource cleanup)"
-  (:require [hive-mcp.chroma.core :as chroma]
-            [hive-mcp.channel.websocket :as ws-channel]
+  (:require [hive-mcp.channel.websocket :as ws-channel]
             [hive-mcp.dns.result :as result]
-            [hive-mcp.embeddings.ollama :as ollama]
-            [hive-mcp.embeddings.service :as embedding-service]
-            [hive-mcp.embeddings.config :as embedding-config]
             [hive-mcp.config.core :as global-config]
             [hive-mcp.server.routes :as routes]
             [hive-mcp.events.core :as ev]
@@ -40,7 +36,9 @@
             [taoensso.timbre :as log]
             [clojure.string :as str] [hive-dsl.result :refer [rescue]]
             [hive-mcp.hot.self :as hot-self]
-            [hive-mcp.protocols.vector :as vec-proto]))
+            [hive-mcp.protocols.vector :as vec-proto]
+            [hive-mcp.spi.contributions :as contrib]
+            [hive-mcp.swarm.adapters.soft :as soft]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -56,12 +54,17 @@
    model loading). Subsequent calls are ~50ms. This pre-loads the model so
    the first real catchup or memory search does not pay the cold start penalty.
 
-   Non-blocking: runs in a future so it does not delay server startup."
+   Non-blocking: runs in a future so it does not delay server startup. The
+   embedding service is memory domain, so it is resolved BY SYMBOL: with no
+   memory domain in the build there is nothing to warm and the future is a
+   no-op."
   []
   (future
     (try
-      (embedding-service/embed-for-collection "hive-mcp-memory" "warmup")
-      (log/info "Ollama embedding model warmed up")
+      (if-let [embed (soft/resolve-soft 'hive-mcp.embeddings.service/embed-for-collection)]
+        (do (embed "hive-mcp-memory" "warmup")
+            (log/info "Ollama embedding model warmed up"))
+        (log/debug "no embedding service in this build; skipping warmup"))
       (catch Exception e
         (log/warn "Embedding warmup failed (non-fatal):" (ex-message e))))))
 
@@ -76,104 +79,36 @@
 ;; Embedding Provider Initialization
 ;; =============================================================================
 
-(defn init-embedding-provider!
-  "Initialize embedding providers for semantic memory search.
+(def boot-manifest-resource
+  "Classpath resource naming the boot steps still shipped inside core."
+  "hive-mcp/boot-contributions.edn")
 
-  Sets up:
-  1. Chroma connection (vector database)
-  2. EmbeddingService (per-collection routing)
-  3. Per-collection embedding configuration:
-     - hive-mcp-memory: Ollama (768 dims, fast, local)
-     - hive-mcp-presets: OpenRouter (4096 dims, accurate) if API key available
-  4. Global fallback provider (Ollama)
-
-  Configuration priority (highest to lowest):
-  1. ~/.config/hive-mcp/config.edn :embeddings section
-  2. ~/.config/hive-mcp/config.edn :services / :secrets sections
-  3. Environment variables (OLLAMA_HOST, OPENROUTER_API_KEY, etc.) as fallback
-  4. Built-in endpoint defaults (hosts only). Embedding models have no default:
-     embeddings.ollama.model / embeddings.openrouter.model must be set, and a
-     missing one is logged as an error naming the key."
+(defn load-boot-contributions!
+  "Contribute the in-core boot steps. Idempotent: re-running picks up a domain
+   that arrived since the last call and leaves the rest alone."
   []
-  (result/rescue-log "init-embedding-provider!" false
-    ;; Load global config to get :embeddings section
-                 (let [cfg (global-config/get-global-config)
-                       embed-cfg (get cfg :embeddings {})
-                       ollama-cfg (get embed-cfg :ollama {})
-                       openrouter-cfg (get embed-cfg :openrouter {})]
+  (contrib/load-manifest! boot-manifest-resource))
 
-      ;; Configure Chroma connection - config.edn :services > env vars > defaults
-                   (let [chroma-host (global-config/get-service-value :chroma :host :env "CHROMA_HOST" :default "localhost")
-                         chroma-port (global-config/get-service-value :chroma :port :env "CHROMA_PORT" :parse parse-long :default 8000)]
-                     (chroma/configure! {:host chroma-host :port chroma-port})
-                     (log/info "Chroma configured:" chroma-host ":" chroma-port))
+(defn init-embedding-provider!
+  "Run the :embeddings boot step: the Chroma connection, the EmbeddingService
+   and the per-collection provider routing.
 
-      ;; Initialize EmbeddingService for per-collection routing
-                   (embedding-service/init!)
+   The kernel keeps the ENTRY POINT and nothing else. The step itself is memory
+   domain work and lives in `hive-mcp.embeddings.boot` while it ships inside
+   core (declared in `boot-manifest-resource`), or in the hive-memory addon,
+   which contributes it at `initialize!`.
 
-      ;; Ollama host from :embeddings > :services > env vars > default endpoint.
-      ;; Embedding models come from :embeddings only; there is no default model.
-                   (let [ollama-host (or (:host ollama-cfg)
-                                         (global-config/get-service-value :ollama :host
-                                                                          :env "OLLAMA_HOST"
-                                                                          :default "http://localhost:11434"))
-                         ollama-model (:model ollama-cfg)
-                         openrouter-key? (boolean (global-config/get-secret :openrouter-api-key))
-                         openrouter-model (when openrouter-key? (:model openrouter-cfg))
-                         ollama-emb-cfg (when ollama-model
-                                          (result/rescue nil
-                                                         (embedding-config/ollama-config {:host ollama-host :model ollama-model})))
-                         configure-ollama! (fn [collection]
-                                             (when ollama-emb-cfg
-                                               (result/rescue nil
-                                                              (embedding-service/configure-collection! collection ollama-emb-cfg))))
-                         configure-openrouter! (fn [collection]
-                                                 (boolean
-                                                  (and openrouter-model
-                                                       (result/rescue false
-                                                                      (embedding-service/configure-collection!
-                                                                       collection
-                                                                       (embedding-config/openrouter-config {:model openrouter-model}))
-                                                                      true))))]
-
-                     (when-not ollama-model
-                       (log/error "No Ollama embedding model configured: set embeddings.ollama.model"
-                                  "(hive config set embeddings.ollama.model <model-id>)."
-                                  "Ollama-backed collections and the global fallback provider are left unconfigured."))
-                     (when (and openrouter-key? (not openrouter-model))
-                       (log/error "OPENROUTER_API_KEY is set but no OpenRouter embedding model is configured:"
-                                  "set embeddings.openrouter.model (hive config set embeddings.openrouter.model <model-id>)."
-                                  "OpenRouter-backed collections fall back to Ollama."))
-
-        ;; Memory collection: Ollama
-                     (configure-ollama! "hive-mcp-memory")
-
-        ;; Presets collection: OpenRouter when configured, else Ollama
-                     (if (configure-openrouter! "hive-mcp-presets")
-                       (log/info "Presets collection configured with OpenRouter")
-                       (configure-ollama! "hive-mcp-presets"))
-
-        ;; Plans collection: OpenRouter when configured, else Ollama with a truncation warning
-                     (if (configure-openrouter! "hive-mcp-plans")
-                       (log/info "Plans collection configured with OpenRouter")
-                       (do
-                         (configure-ollama! "hive-mcp-plans")
-                         (log/warn "Plans collection using Ollama - entries >1500 chars may be truncated")))
-
-        ;; Ingest collection: OpenRouter when configured
-                     (when (configure-openrouter! "hive-ingest")
-                       (log/info "Ingest collection configured with OpenRouter"))
-
-        ;; Global fallback provider (Ollama), only with a configured model
-                     (when ollama-model
-                       (chroma/set-embedding-provider! (ollama/->provider {:host ollama-host :model ollama-model}))
-                       (log/info "Global fallback embedding provider: Ollama at" ollama-host))
-
-                     (log/info "Embedding config from config.edn:" {:ollama-host ollama-host
-                                                                    :ollama-model ollama-model
-                                                                    :openrouter-model openrouter-model})
-                     (log/info "EmbeddingService status:" (embedding-service/status))
-                     true))))
+   Returns true when a step ran, false when none is contributed or it failed.
+   A kernel-only build takes the false branch: there is nothing to embed with,
+   and saying so beats pretending the wiring happened."
+  []
+  (load-boot-contributions!)
+  (let [{:keys [ran failed]} (contrib/register-all! :boot)]
+    (when (seq failed)
+      (log/error "boot contributions failed:" (sort (keys failed))))
+    (when (empty? ran)
+      (log/info "no embedding boot step contributed; semantic search is unconfigured"))
+    (boolean (and (seq ran) (empty? failed)))))
 
 ;; =============================================================================
 ;; Hot-Reload Auto-Healing
