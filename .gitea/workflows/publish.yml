@@ -25,6 +25,7 @@ on:
       - 'resources/**'
       - 'deps.edn'
       - 'starter.deps.edn'
+      - 'cluster.deps.edn'
       - 'Dockerfile'
       - 'bin/docker-entrypoint.sh'
       - 'VERSION'
@@ -72,9 +73,21 @@ jobs:
 
       # The COMMIT tag is what the manifest pins. A moving tag makes a rollback
       # unrepeatable and a deploy invisible.
+      # The cluster pack, not the starter pack: this image is the cluster side
+      # of a split deployment, so it carries no editor vessel. The Maven
+      # settings go in as a BuildKit secret (prep time only, in no layer), so a
+      # pack that names the private registry resolves without a second change
+      # here.
       - name: Build
         run: |
-          docker build \
+          umask 077
+          settings="$(mktemp)"
+          trap 'rm -f "$settings"' EXIT
+          printf '<settings><servers><server><id>hive-gitea</id><username>%s</username><password>%s</password></server></servers></settings>' \
+            "${{ secrets.MAVEN_USERNAME }}" "${{ secrets.MAVEN_TOKEN }}" > "$settings"
+          DOCKER_BUILDKIT=1 docker build \
+            --build-arg DEPS_OVERLAY=cluster.deps.edn \
+            --secret "id=m2settings,src=${settings}" \
             --tag "${{ steps.tags.outputs.image }}:${GITHUB_SHA}" \
             --tag "${{ steps.tags.outputs.image }}:latest" \
             .

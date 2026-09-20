@@ -8,6 +8,9 @@
 # Build:
 #   docker build -t hive-mcp .                                   # starter pack
 #   docker build --build-arg DEPS_OVERLAY= -t hive-mcp:core .    # bare core
+#   docker build --build-arg DEPS_OVERLAY=cluster.deps.edn \
+#     --secret id=m2settings,src=$HOME/.m2/settings.xml \
+#     -t hive-mcp:cluster .                                      # cluster side
 #
 # Run:
 #   docker run -p 7910:7910 -p 9999:9999 -p 7911:7911 -p 7912:7912 hive-mcp
@@ -46,13 +49,24 @@ WORKDIR /app
 USER hive
 
 # ---- Layer 1: dependency cache (changes rarely) ----
-COPY --chown=hive:hive deps.edn VERSION version.edn starter.deps.edn ./
+COPY --chown=hive:hive deps.edn VERSION version.edn starter.deps.edn cluster.deps.edn ./
 ENV HIVE_DEPS_OVERLAY=${DEPS_OVERLAY}
-RUN if [ -n "$HIVE_DEPS_OVERLAY" ]; then \
-      clojure -Sdeps "$(cat "$HIVE_DEPS_OVERLAY")" -P -M:mcp; \
-    else \
-      clojure -P -M:mcp; \
-    fi
+# An overlay naming a private registry (cluster.deps.edn) needs a Maven
+# settings.xml at PREP time only: the jars land in ~/.m2 and the boot resolves
+# offline. It comes in as a BuildKit secret, so it is in no layer and no
+# history; the symlink that points at it is removed in the same step.
+#   docker build --secret id=m2settings,src=$HOME/.m2/settings.xml ...
+RUN --mount=type=secret,id=m2settings,mode=0444,required=false \
+    mkdir -p /home/hive/.m2 \
+    && if [ -f /run/secrets/m2settings ]; then \
+         ln -sf /run/secrets/m2settings /home/hive/.m2/settings.xml; \
+       fi \
+    && if [ -n "$HIVE_DEPS_OVERLAY" ]; then \
+         clojure -Sdeps "$(cat "$HIVE_DEPS_OVERLAY")" -P -M:mcp; \
+       else \
+         clojure -P -M:mcp; \
+       fi \
+    && rm -f /home/hive/.m2/settings.xml
 
 # ---- Layer 2: source (changes often) ----
 COPY --chown=hive:hive src/ src/
