@@ -1,0 +1,141 @@
+name: publish
+
+# Build the hive-mcp server image in-cluster, push it to Gitea's own registry,
+# then pin it into k8s-agi so ArgoCD deploys the cluster core
+# (contexts/home-lab/hive-mcp-core).
+#
+# Same shape as hive-mcp-ad's and hive-mcp-www's publish workflows on purpose.
+# The long reasons live there; the short version:
+#
+#   - The runner reaches Gitea at the ClusterIP service. The public hostname
+#     sits behind Cloudflare Access, which no docker client can satisfy.
+#   - MAVEN_USERNAME / MAVEN_TOKEN (org-wide, write:package) push the image.
+#   - CI_USERNAME / CI_TOKEN (org-wide, hive-agi-ci) commit the pin.
+#
+# This repository's home is GitHub; hive-agi/hive-mcp on Gitea is a mirror that
+# exists so this workflow has a runner and the org secrets. Push the branch you
+# want built to that mirror. staging is built as well as main because staging
+# is the branch the cluster core tracks while main waits on promotion.
+
+on:
+  push:
+    branches: [main, staging]
+    paths:
+      - 'src/**'
+      - 'resources/**'
+      - 'deps.edn'
+      - 'starter.deps.edn'
+      - 'Dockerfile'
+      - 'bin/docker-entrypoint.sh'
+      - 'VERSION'
+      - '.gitea/workflows/**'
+  workflow_dispatch:
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY: gitea.gitea.svc.cluster.local:3000
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tags
+        id: tags
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "image=${REGISTRY}/${GITHUB_REPOSITORY}" >> "$GITHUB_OUTPUT"
+          echo "Publishing ${GITHUB_REPOSITORY}:${GITHUB_SHA} (version ${version})"
+
+      - name: Preflight
+        run: |
+          missing=""
+          [ -z "${{ secrets.MAVEN_USERNAME }}" ] && missing="$missing MAVEN_USERNAME"
+          [ -z "${{ secrets.MAVEN_TOKEN }}" ] && missing="$missing MAVEN_TOKEN"
+          [ -z "${{ secrets.CI_USERNAME }}" ] && missing="$missing CI_USERNAME"
+          [ -z "${{ secrets.CI_TOKEN }}" ] && missing="$missing CI_TOKEN"
+          if [ -n "$missing" ]; then
+            echo "unset secret(s):$missing" >&2
+            echo "All four are ORG-WIDE on hive-agi." >&2
+            exit 1
+          fi
+          echo "secrets present"
+
+      - name: Log in to the in-cluster registry
+        run: |
+          echo "${{ secrets.MAVEN_TOKEN }}" | docker login "$REGISTRY" \
+            --username "${{ secrets.MAVEN_USERNAME }}" --password-stdin
+
+      # The COMMIT tag is what the manifest pins. A moving tag makes a rollback
+      # unrepeatable and a deploy invisible.
+      - name: Build
+        run: |
+          docker build \
+            --tag "${{ steps.tags.outputs.image }}:${GITHUB_SHA}" \
+            --tag "${{ steps.tags.outputs.image }}:latest" \
+            .
+
+      # Boot the image the way the cluster will, minus the stores: k8s-minimal
+      # needs no milvus and no ollama, so it proves the classpath resolves and
+      # the Integrant system starts. nREPL on 7910 comes up last, so an open
+      # 7910 is the readiness signal. Probed with docker exec, not a published
+      # port: the job drives the host's docker daemon through a mounted socket,
+      # so localhost here is not the container.
+      - name: Check the built image boots
+        run: |
+          set -euo pipefail
+          docker run -d --name core -e HIVE_PROFILE=k8s-minimal -e HIVE_HEAP=1g \
+            "${{ steps.tags.outputs.image }}:${GITHUB_SHA}"
+          for i in $(seq 1 60); do
+            if docker exec core bash -c ': < /dev/tcp/127.0.0.1/7910' 2>/dev/null; then
+              echo "booted after ~$((i * 5))s"
+              exit 0
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' core)" != "true" ]; then
+              echo "container exited during boot" >&2
+              docker logs --tail 80 core >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "no nREPL on 7910 after 300s" >&2
+          docker logs --tail 80 core >&2
+          exit 1
+
+      - name: Stop the container
+        if: always()
+        run: docker rm -f core || true
+
+      - name: Push
+        run: |
+          docker push "${{ steps.tags.outputs.image }}:${GITHUB_SHA}"
+          docker push "${{ steps.tags.outputs.image }}:latest"
+
+      # The tag in k8s-agi is the only thing deciding which image runs. ArgoCD
+      # syncs contexts/home-lab/hive-mcp-core from main once the ApplicationSet
+      # lists it, so this commit IS the deploy; no step here touches the
+      # cluster.
+      - name: Pin the new image in k8s-agi
+        run: |
+          set -euo pipefail
+          git clone --depth 1 \
+            "http://${{ secrets.CI_USERNAME }}:${{ secrets.CI_TOKEN }}@gitea.gitea.svc.cluster.local:3000/hive-agi/k8s-agi.git" \
+            /tmp/k8s-agi
+          cd /tmp/k8s-agi
+          f=contexts/home-lab/hive-mcp-core/kustomization.yaml
+          sed -i "s|^    newTag: .*|    newTag: ${GITHUB_SHA}|" "$f"
+          if git diff --quiet; then
+            echo "already pinned to ${GITHUB_SHA}"
+            exit 0
+          fi
+          # Two -m rather than one message with embedded newlines: a blank line
+          # followed by an unindented one ENDS a YAML block scalar.
+          git -c user.name="hive-mcp publish" \
+              -c user.email="ci@hive-mcp.com" \
+              commit -am "build: pin hive-mcp-core to ${GITHUB_SHA}" \
+              -m "Updates gitea.hive-mcp.com/${GITHUB_REPOSITORY} to the image built from ${GITHUB_REPOSITORY}@${GITHUB_SHA}. Written by that repository's publish workflow; ArgoCD syncs contexts/home-lab/hive-mcp-core from main."
+          git push origin HEAD:main
