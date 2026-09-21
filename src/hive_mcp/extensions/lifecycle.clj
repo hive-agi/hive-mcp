@@ -32,7 +32,8 @@
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.tools.core :refer [mcp-error]]
             [taoensso.timbre :as log]
-            [hive-addon.registry.commands :as acmds]))
+            [hive-addon.registry.commands :as acmds]
+            [hive-mcp.extensions.runtime :as runtime]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -143,7 +144,8 @@
   lport/ILifecycleHost
   (-mount! [_ specs peers]
     (boundary/mount! {:ordered specs} mount-host
-                     {:resolve-config resolve-config :on-event on-event :peer-specs peers}))
+                     (merge {:resolve-config resolve-config :on-event on-event :peer-specs peers}
+                            (runtime/mount-opts))))
   (-unmount! [_ addon-id]
     (let [sd (addon-core/shutdown-addon! addon-id)
           ur (addon-core/unregister-addon! addon-id)
@@ -186,7 +188,8 @@
     (when (hot-initialized?)
       (rescue nil (hot/hot! (mount-host/addon-registry-host)
                             (filterv #(contains? ids (:addon/id %)) @(:specs mgr))
-                            {:mount-opts {:resolve-config manifest/prepare-config}}))))
+                            {:mount-opts (merge {:resolve-config manifest/prepare-config}
+                                                (runtime/mount-opts))}))))
   (rescue nil (reactive/refresh-surface! nil)))
 
 (defn- on-evicted! [mgr id]

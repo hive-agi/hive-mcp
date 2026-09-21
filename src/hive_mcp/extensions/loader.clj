@@ -13,7 +13,8 @@
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.tools.composite :as composite]
             [taoensso.timbre :as log]
-            [hive-mcp.extensions.reactive :as reactive]))
+            [hive-mcp.extensions.reactive :as reactive]
+            [hive-mcp.extensions.runtime :as runtime]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -277,6 +278,10 @@
    merge on top inside the composer. :layer-paths come from the :addons
    service config (missing files are skipped by the composer).
 
+   compose! does not thread :provision to mount!, so each addon it mounted
+   has its client runtime provisioned afterwards (hive-mcp.extensions.runtime)
+   and the report lands on its mount result as :runtime.
+
    Returns the composer's :ok map ({:plan .. :report MountReport ..}) on
    success; nil on any failure (logged)."
   []
@@ -294,7 +299,9 @@
                          (seq (:layer-paths svc-cfg))
                          (assoc :layer-paths (mapv str (:layer-paths svc-cfg))))
                 result (rescue nil (compose (host-ctor) opts))]
-            (if-let [ok (:ok result)]
+            (if-let [ok (some-> (:ok result)
+                                (update :report runtime/provision-mounted!
+                                        (get-in result [:ok :plan :ordered])))]
               (let [report (:report ok)
                     failed (remove :success? (:mounted report))]
                 (log/info "Mount-compose loaded addons"
