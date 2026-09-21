@@ -95,19 +95,20 @@ cancel_requested() {
 terminal_meta_edn() {
     bb -e '
       (let [[status project-root project-id job-id timestamp completed duration
-             exit-code extracted queue-latency] *command-line-args*]
+             exit-code extracted queue-latency degraded] *command-line-args*]
         (print
          (pr-str
-          {:timestamp (parse-long timestamp)
-           :completed-at-ms (parse-long completed)
-           :duration-ms (parse-long duration)
-           :queue-latency-ms (parse-long queue-latency)
-           :project-root project-root
-           :project-id project-id
-           :job-id job-id
-           :status (keyword status)
-           :exit-code (parse-long exit-code)
-           :extracted (= "true" extracted)})))' "$@"
+          (cond-> {:timestamp (parse-long timestamp)
+                   :completed-at-ms (parse-long completed)
+                   :duration-ms (parse-long duration)
+                   :queue-latency-ms (parse-long queue-latency)
+                   :project-root project-root
+                   :project-id project-id
+                   :job-id job-id
+                   :status (keyword status)
+                   :exit-code (parse-long exit-code)
+                   :extracted (= "true" extracted)}
+            (seq degraded) (assoc :degraded (keyword degraded))))))' "$@"
 }
 
 finish_job() {
@@ -120,6 +121,7 @@ finish_job() {
     local queue_latency_ms=$7
     local exit_code=$8
     local extracted=$9
+    local degraded=${10:-}
     local cache_path="$CACHE_DIR/$project_id"
     local job_path="$cache_path/job.edn"
     local cancel_path="$cache_path/cancel.edn"
@@ -128,14 +130,14 @@ finish_job() {
     local patch
     completed_at_ms=$(date +%s%3N)
     duration_ms=$(( completed_at_ms - started_at_ms ))
-    patch="{:status :$status :completed-at-ms $completed_at_ms :duration-ms $duration_ms :queue-latency-ms $queue_latency_ms :exit-code $exit_code :extracted $extracted}"
+    patch="{:status :$status :completed-at-ms $completed_at_ms :duration-ms $duration_ms :queue-latency-ms $queue_latency_ms :exit-code $exit_code :extracted $extracted${degraded:+ :degraded :$degraded}}"
 
     if update_job_state "$job_path" "$job_id" "$patch"; then
         write_edn_atomic \
             "$cache_path/meta.edn" \
             "$(terminal_meta_edn "$status" "$project_root" "$project_id" \
                 "$job_id" "$timestamp" "$completed_at_ms" "$duration_ms" \
-                "$exit_code" "$extracted" "$queue_latency_ms")"
+                "$exit_code" "$extracted" "$queue_latency_ms" "$degraded")"
         if cancel_requested "$cancel_path" "$job_id"; then
             rm -f "$cancel_path"
         fi
@@ -259,6 +261,62 @@ settings_for_project() {
     fi
 }
 
+# True when a dump failed because the project's classpath could not be built:
+# an uncached dependency with no network, an unreachable private registry, a
+# git dep behind a host the container cannot reach. The project's own sources
+# are still readable, so this failure is worth a source-only retry; any other
+# failure (OOM, a crash in analysis) is not.
+classpath_lookup_failed() {
+    local log=$1
+    [ -f "$log" ] && grep -q 'Classpath lookup failed' "$log"
+}
+
+# clojure-lsp settings that analyze the project's own source paths without
+# running any classpath command. Paths come from deps.edn :paths when present
+# (default ["src"]), plus test/ when it exists. External references are still
+# recorded as usages; only their definitions are missing.
+source_only_settings() {
+    local project_root=$1
+    bb -e '
+      (require (quote [babashka.fs :as fs])
+               (quote [clojure.edn :as edn]))
+      (let [[root] *command-line-args*
+            deps (fs/path root "deps.edn")
+            paths (or (when (fs/exists? deps)
+                        (try
+                          (seq (filter string?
+                                       (:paths (edn/read-string (slurp (str deps))))))
+                          (catch Exception _ nil)))
+                      ["src"])
+            paths (cond-> (set paths)
+                    (fs/directory? (fs/path root "test")) (conj "test"))]
+        (print (pr-str {:project-specs [] :source-paths paths})))' \
+       "$project_root"
+}
+
+# One clojure-lsp dump with SETTINGS. Runs inside analyze_project and uses its
+# locals (project_root, cache_path, job_path, job_id, java_opts): it sets
+# analysis_pid while the dump runs, so the cancel trap can reach it, and leaves
+# the dump's status in exit_code.
+run_dump() {
+    local dump_settings=$1
+    timeout --signal=TERM --kill-after=15s "${PROJECT_TIMEOUT}s" \
+        java "${java_opts[@]}" -jar "$LSP_JAR" dump --project-root "$project_root" \
+        --output '{:format :edn :filter-keys [:analysis :dep-graph]}' \
+        --analysis '{:type :project-only}' \
+        --settings "$dump_settings" \
+        2>"$cache_path/dump.log" \
+        > "$cache_path/dump.edn.raw" &
+    analysis_pid=$!
+    update_job_state "$job_path" "$job_id" "{:process-pid $analysis_pid}" || true
+    if wait "$analysis_pid"; then
+        exit_code=0
+    else
+        exit_code=$?
+    fi
+    analysis_pid=""
+}
+
 analyze_project() {
     local project_root=$1
     local project_id=$2
@@ -277,6 +335,7 @@ analyze_project() {
     local analysis_pid=""
     local exit_code=0
     local extracted=false
+    local degraded=""
     local old_term old_int
     start_time=$(date +%s)
     started_at_ms=$(date +%s%3N)
@@ -325,21 +384,18 @@ analyze_project() {
         read -r -a java_opts <<< "$JAVA_OPTS"
     fi
 
-    timeout --signal=TERM --kill-after=15s "${PROJECT_TIMEOUT}s" \
-        java "${java_opts[@]}" -jar "$LSP_JAR" dump --project-root "$project_root" \
-        --output '{:format :edn :filter-keys [:analysis :dep-graph]}' \
-        --analysis '{:type :project-only}' \
-        --settings "$settings" \
-        2>"$cache_path/dump.log" \
-        > "$cache_path/dump.edn.raw" &
-    analysis_pid=$!
-    update_job_state "$job_path" "$job_id" "{:process-pid $analysis_pid}" || true
-    if wait "$analysis_pid"; then
-        exit_code=0
+    run_dump "$settings"
+
+    if (( exit_code != 0 && cancel_signal == 0 )) \
+       && ! cancel_requested "$cancel_path" "$job_id" \
+       && classpath_lookup_failed "$cache_path/dump.log"; then
+        echo "Classpath unavailable for $project_id; retrying with project sources only"
+        mv "$cache_path/dump.log" "$cache_path/dump.classpath.log"
+        degraded=classpath-unavailable
+        run_dump "$(source_only_settings "$project_root")"
     else
-        exit_code=$?
+        rm -f "$cache_path/dump.classpath.log"
     fi
-    analysis_pid=""
 
     if (( cancel_signal == 1 )) || cancel_requested "$cancel_path" "$job_id"; then
         rm -f "$cache_path/dump.edn.raw" "$cache_path/dump.edn.tmp"
@@ -366,14 +422,16 @@ analyze_project() {
                 "$start_time" "$started_at_ms" "$queue_latency_ms" 143 "$extracted"
         else
             finish_job "$project_root" "$project_id" "$job_id" ok \
-                "$start_time" "$started_at_ms" "$queue_latency_ms" 0 "$extracted"
-            echo "Analysis + extraction successful for $project_id"
+                "$start_time" "$started_at_ms" "$queue_latency_ms" 0 "$extracted" \
+                "$degraded"
+            echo "Analysis + extraction successful for $project_id${degraded:+ (degraded: $degraded)}"
         fi
     else
         (( exit_code == 0 )) && exit_code=65
         rm -f "$cache_path/dump.edn.raw" "$cache_path/dump.edn.tmp"
         finish_job "$project_root" "$project_id" "$job_id" error \
-            "$start_time" "$started_at_ms" "$queue_latency_ms" "$exit_code" false
+            "$start_time" "$started_at_ms" "$queue_latency_ms" "$exit_code" false \
+            "$degraded"
         echo "Analysis failed for $project_id with exit code $exit_code"
     fi
 
