@@ -9,7 +9,7 @@
    Single try-result boundary at each handler level. Zero nested try-catch."
   (:require [hive-mcp.dns.result :as result]
             [hive-mcp.tools.core :refer [mcp-json mcp-error]]
-            [hive-mcp.emacs-ext.client :as ec]
+            [hive-spi.editor.services :as svc]
             [hive-mcp.crystal.core :as crystal]
             [hive-mcp.crystal.harvest.collect :as collect]
             [hive-mcp.crystal.synthesis :as synthesis]
@@ -58,7 +58,7 @@
 (defn- hive-mcp-el-available?
   "Check if hive-mcp.el is loaded in Emacs."
   []
-  (let [{:keys [success result]} (ec/eval-elisp "(featurep 'hive-mcp)")]
+  (let [{:keys [success result]} (svc/invoke :vessel :dispatch {:op :crystal/available?} 5000)]
     (and success (= result "t"))))
 
 (defn- resolve-agent
@@ -81,10 +81,10 @@
   "Fetch wrap data from elisp side. Returns data map or nil."
   [effective-dir]
   (when (hive-mcp-el-available?)
-    (let [elisp-call (if effective-dir
-                       (format "(json-encode (hive-mcp-api-wrap-gather \"%s\"))" effective-dir)
-                       "(json-encode (hive-mcp-api-wrap-gather))")
-          {:keys [success result]} (ec/eval-elisp elisp-call)]
+    (let [{:keys [success result]} (svc/invoke :vessel :dispatch
+                                             (cond-> {:op :crystal/wrap-gather}
+                                               effective-dir (assoc :directory effective-dir))
+                                             5000)]
       (when success
         (rescue nil (json/read-str result :key-fn keyword))))))
 

@@ -7,7 +7,8 @@
    - xpoll-stats appears in return map for both no-content and content paths
    - Xpoll failure does NOT block crystallization
    - Correct args passed to lifecycle/run-xpoll-cycle!"
-  (:require [clojure.test :refer [deftest testing is are]]
+  (:require [hive-mcp.project.scope]
+            [clojure.test :refer [deftest testing is are]]
             [hive-mcp.crystal.harvest.collect :as collect]
             [hive-mcp.crystal.synthesis :as synthesis]
             [hive-mcp.crystal.core :as crystal]
@@ -48,7 +49,7 @@
      :memory-decay   - return value for :ch/d extension
      :memory-decay-fn - custom fn for memory decay (overrides :memory-decay)
      :entry-id      - return value for chroma/index-memory-entry!
-     :project-id    - return value for scope/get-current-project-id"
+     :project-id    - return value for hive-mcp.project.scope/get-current-project-id"
   [opts & body]
   `(let [opts# ~opts
          xpoll-calls# (atom [])
@@ -86,7 +87,7 @@
                      crystal/session-id
                      (fn [] "test-session-123")
 
-                     scope/get-current-project-id
+                     hive-mcp.project.scope/get-current-project-id
                      (fn [_#] (get opts# :project-id "test-project"))
 
                      scope/inject-project-scope
@@ -277,7 +278,7 @@
       (try
         (with-redefs [crystal/summarize-session-progress (fn [& _] nil)
                       crystal/session-id (fn [] "test-session")
-                      scope/get-current-project-id (fn [_] "test-proj")
+                      hive-mcp.project.scope/get-current-project-id (fn [_] "test-proj")
                       ctx/current-directory (fn [] "/tmp")]
           (synthesis/synthesize base-harvested))
         (is (= #{:ch-a :ch-b :ch-c :ch-d} (set @call-order))
@@ -516,7 +517,7 @@
       (with-redefs [crystal/summarize-session-progress
                     (fn [& _] {:content "## Session Summary: test\n\nSome work" :tags ["wrap"]})
                     crystal/session-id (fn [] "test-session")
-                    scope/get-current-project-id (fn [_] "test-project")
+                    hive-mcp.project.scope/get-current-project-id (fn [_] "test-project")
                     scope/inject-project-scope (fn [tags _] tags)
                     dur/calculate-expires (fn [_] "2026-02-13T00:00:00Z")
                     ctx/current-directory (fn [] "/tmp/test")]
@@ -543,7 +544,7 @@
       (with-redefs [crystal/summarize-session-progress
                     (fn [& _] {:content "Summary" :tags ["wrap"]})
                     crystal/session-id (fn [] "test-session")
-                    scope/get-current-project-id (fn [_] "test-project")
+                    hive-mcp.project.scope/get-current-project-id (fn [_] "test-project")
                     scope/inject-project-scope (fn [tags _] tags)
                     dur/calculate-expires (fn [_] "2026-02-13T00:00:00Z")
                     ctx/current-directory (fn [] "/tmp/test")]
@@ -569,7 +570,7 @@
       (with-redefs [crystal/summarize-session-progress
                     (fn [& _] {:content "Summary" :tags ["wrap"]})
                     crystal/session-id (fn [] "test-session")
-                    scope/get-current-project-id (fn [_] "test-project")
+                    hive-mcp.project.scope/get-current-project-id (fn [_] "test-project")
                     scope/inject-project-scope (fn [tags _] tags)
                     dur/calculate-expires (fn [_] "2026-02-13T00:00:00Z")
                     ctx/current-directory (fn [] "/tmp/test")]
@@ -593,7 +594,7 @@
       (with-redefs [crystal/summarize-session-progress
                     (fn [& _] {:content "Summary" :tags ["wrap"]})
                     crystal/session-id (fn [] "test-session")
-                    scope/get-current-project-id (fn [_] "test-project")
+                    hive-mcp.project.scope/get-current-project-id (fn [_] "test-project")
                     scope/inject-project-scope (fn [tags _] tags)
                     dur/calculate-expires (fn [_] "2026-02-13T00:00:00Z")
                     ctx/current-directory (fn [] "/tmp/test")]

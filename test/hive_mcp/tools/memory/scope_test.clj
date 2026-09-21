@@ -16,7 +16,7 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.java.io :as io]
             [hive-mcp.tools.memory.scope :as scope]
-            [hive-mcp.knowledge-graph.scope :as kg-scope]))
+            [hive-mcp.project.scope :as kg-scope]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later

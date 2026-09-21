@@ -5,7 +5,7 @@
    - Configuration helpers
    - Child ling detection and role/depth env handling"
   (:require [clojure.test :refer [deftest testing is use-fixtures]]
-            [hive-mcp.server.guards :as guards]))
+            [hive-spi.swarm.guards :as guards]))
 
 ;;; =============================================================================
 ;;; Test Fixtures

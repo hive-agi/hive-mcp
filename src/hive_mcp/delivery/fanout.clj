@@ -25,7 +25,7 @@
    downstream telemetry can correlate per-channel outcomes back to a
    single fanout invocation."
   (:require [hive-dsl.result :as r :refer [rescue]]
-            [hive-mcp.knowledge-graph.slots.breaker :as cb]
+            [hive-mcp.resilience.breaker :as cb]
             [hive-mcp.protocols.delivery-channel :as dc]
             [hive-weave.safe :as ws]
             [taoensso.timbre :as log]))

@@ -114,7 +114,7 @@
                                           :enum ["openrouter" "venice" "groq" "together" "fireworks" "openai" "ollama-compat"]
                                           :description "Explicit OpenAI-compat LLM provider (overrides any 'provider:' prefix in model). Anthropic routing is automatic from model names (claude-*, anthropic/*)."}
                               "task" {:type "string"
-                                      :description "Initial task to dispatch on spawn"}
+                                      :description "Initial task to dispatch on spawn (prompt is accepted as an alias). Without one the ling idles; the response then carries task-attached false and a warning."}
                               "spawn_mode" {:type "string"
                                             :enum (spawn-registry/mcp-enum)
                                             :description "Spawn mode for lings: 'vterm' (default, Emacs buffer) or 'headless' (OS subprocess, no Emacs required). Headless mode captures stdout to ring buffer and supports stdin dispatch. NOTE: 'headless' is ABSTRACT — the concrete backend (:agent-sdk, :hive-agent, …) is resolved at spawn time via the headless-registry: operator override in ~/.config/hive-mcp/config.edn [:headless :default-backend] wins, otherwise priority-ranked addon-contributed backends are tried in registration order. The response's :spawn-mode reflects the resolved backend, not the requested 'headless' alias. To force a specific backend, pass spawn_mode directly (e.g. 'agent-sdk' or 'hive-agent') instead of 'headless'."}
@@ -129,6 +129,8 @@
                                          :description "[spawn] When true, bb-ling lings shout the full per-turn LLM exchange (last request message + response, truncated) to hivemind piggyback. Default false — exchange is always persisted to the agent's transcript store (Datalevin) and queryable post-hoc via the `transcript` MCP tool (list/search)."}
                               "llm_retries" {:type "integer"
                                              :description "[spawn] Max bb-ling loop-level retries on transient LLM failures (rate-limit/overload/timeout). Default 3, exponential backoff."}
+                              "sandbox" {:type "boolean"
+                                         :description "[spawn] Headless lings: run the ling's tools inside the host sandbox (bwrap). bash/grep/clojure_eval run with no network, no host home and a clean environment; file tools stay below cwd; delegated host tools are refused unless allowlisted. Omitted = the host default ([:services :agent :sandbox] in config.edn). false opts out."}
                               ;; common params
                               "agent_id" {:type "string"
                                           :description "Agent ID for status/kill/dispatch/claims"}
@@ -145,7 +147,7 @@
                                             :description "Project ID filter for status"}
                               ;; dispatch params
                               "prompt" {:type "string"
-                                        :description "Task prompt for dispatch or broadcast"}
+                                        :description "Task prompt for dispatch or broadcast. On spawn, an alias of task (they must agree when both are given)."}
                               "files" {:type "array"
                                        :items {:type "string"}
                                        :description "Files for dispatch"}

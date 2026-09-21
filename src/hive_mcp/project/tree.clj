@@ -1,12 +1,13 @@
 (ns hive-mcp.project.tree
   "Project tree discovery and persistence for HCR Wave 2.
 
-   Scans filesystem for .hive-project.edn files, builds parent-child
-   relationships, and persists to DataScript/Datalevin for fast queries.
+   Scans the filesystem for .hive-project.edn files, builds parent-child
+   relationships, and holds them in a private in-memory index keyed by
+   project-id.
 
    - C: Composition - builds on scope.clj, hive_project.clj
    - L: Layers pure - scan logic separated from persistence
-   - A: Abstractions honored - uses IGraphStore protocol
+   - A: Abstractions honored - the index is private; no store is exposed
    - R: Represented intent - hierarchical project tree
    - I: Inputs guarded - validates paths and configs
    - T: Traceability - logs discovery and persistence
@@ -14,9 +15,8 @@
   (:require [clojure.java.io :as io]
             [clojure.edn :as edn]
             [clojure.string :as str]
-            [datascript.core :as d]
             [hive-mcp.dns.result :refer [rescue]]
-            [hive-mcp.knowledge-graph.scope :as scope]
+            [hive-mcp.project.scope :as project-scope]
             [hive-weave.parallel :as wp]
             [taoensso.timbre :as log])
   (:import [java.time Instant]))
@@ -25,39 +25,15 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 ;; =============================================================================
-;; DataScript Schema for Project Hierarchy
+;; Project Hierarchy Index
 ;; =============================================================================
 
-(def project-schema
-  "DataScript schema for project hierarchy tracking.
-
-   Attributes:
-   - :project/id        - Unique project identifier (from .hive-project.edn)
-   - :project/path      - Absolute filesystem path
-   - :project/type      - Project type keyword (:workspace, :service, :frontend, :library)
-   - :project/parent-id - Parent project ID (for hierarchy)
-   - :project/tags      - Set of tags from config
-   - :project/last-scanned - Timestamp of last scan
-   - :project/git-root  - Git repository root (if applicable)
-   - :project/config    - Full config EDN as string (for metadata)"
-  {:project/id           {:db/unique :db.unique/identity
-                          :db/doc "Unique project identifier"}
-   :project/path         {:db/doc "Absolute filesystem path"}
-   :project/type         {:db/doc "Project type: :workspace, :service, :frontend, :library, :generic"}
-   :project/parent-id    {:db/doc "Parent project ID for hierarchy"}
-   :project/tags         {:db/cardinality :db.cardinality/many
-                          :db/doc "Tags from config"}
-   :project/last-scanned {:db/doc "Timestamp of last scan (inst)"}
-   :project/git-root     {:db/doc "Git repository root path"}
-   :project/config       {:db/doc "Full config EDN as string"}})
-
-;; =============================================================================
-;; Connection Management (Separate from Swarm DataScript)
-;; =============================================================================
-
-;; Project tree DataScript connection.
-;; Separate from swarm connection to avoid schema conflicts.
-(defonce ^:private conn (atom nil))
+;; project-id -> project entity. Sorted, so every enumeration of the index is
+;; deterministic rather than a function of scan order.
+;; Entity attributes:
+;;   :project/id :project/path :project/type :project/parent-id :project/tags
+;;   :project/last-scanned :project/git-root :project/config
+(defonce ^:private index (atom (sorted-map)))
 
 ;; Cached project tree structure.
 ;; Populated by scan-project-tree!, queried by get-cached-tree.
@@ -65,26 +41,25 @@
 ;; Invalidated on rescan.
 (defonce ^:private tree-cache (atom nil))
 
-(defn- get-conn
-  "Get or create the project tree DataScript connection."
-  []
-  (or @conn
-      (do
-        (reset! conn (d/create-conn project-schema))
-        (log/info "Created project tree DataScript connection")
-        @conn)))
-
-(defn- transact!
-  "Transact entities to project tree DataScript."
+(defn- upsert!
+  "Merge ENTITIES into the index under their :project/id. An entity with no id
+   is dropped. Returns the new index."
   [entities]
-  (d/transact! (get-conn) entities))
+  (swap! index
+         (fn [idx]
+           (reduce (fn [acc e]
+                     (if-let [pid (:project/id e)]
+                       (update acc pid merge e)
+                       acc))
+                   idx
+                   entities))))
 
-(defn- query
-  "Query project tree DataScript."
-  ([q]
-   (d/q q @(get-conn)))
-  ([q & inputs]
-   (apply d/q q @(get-conn) inputs)))
+(defn reset-index!
+  "Drop every indexed project and the cached tree. Returns nil."
+  []
+  (reset! index (sorted-map))
+  (reset! tree-cache nil)
+  nil)
 
 ;; =============================================================================
 ;; Filesystem Discovery
@@ -293,42 +268,32 @@
 ;; =============================================================================
 
 (defn persist-project-entities!
-  "Persist project entities to DataScript.
-   Uses upsert semantics - existing projects are updated."
+  "Upsert project entities into the hierarchy index, keyed by :project/id.
+   Returns {:success true :count n}, or {:success false :error msg} on failure."
   [entities]
   (when (seq entities)
     (try
-      ;; Transact to local project tree DataScript
-      (transact! entities)
-      (log/info "Persisted" (count entities) "project entities to DataScript")
+      (upsert! entities)
+      (log/info "Persisted" (count entities) "project entities")
       {:success true :count (count entities)}
       (catch Exception e
         (log/error "Failed to persist project entities:" (.getMessage e))
         {:success false :error (.getMessage e)}))))
 
 (defn query-all-projects
-  "Query all project entities from DataScript."
+  "Every indexed project entity, ordered by project-id."
   []
-  (rescue []
-          (query '[:find [(pull ?e [*]) ...]
-                   :where [?e :project/id _]])))
+  (rescue [] (vec (vals @index))))
 
 (defn query-project-by-id
-  "Query a single project by ID."
+  "The project entity for PROJECT-ID, or nil when it is not indexed."
   [project-id]
-  (first
-   (query '[:find [(pull ?e [*]) ...]
-            :in $ ?pid
-            :where [?e :project/id ?pid]]
-          project-id)))
+  (get @index project-id))
 
 (defn query-project-children
-  "Query direct children of a project."
+  "Direct children of PROJECT-ID, ordered by project-id."
   [project-id]
-  (query '[:find [(pull ?e [*]) ...]
-           :in $ ?parent-id
-           :where [?e :project/parent-id ?parent-id]]
-         project-id))
+  (filterv #(= project-id (:project/parent-id %)) (vals @index)))
 
 ;; =============================================================================
 ;; Tree Cache (HCR Wave 5: Avoid re-traversal)
@@ -398,7 +363,7 @@
 (defn get-descendant-scopes
   "Get all descendant project IDs for a given project-id.
 
-   HCR Wave 3+5: Uses cached tree for O(1) lookup instead of re-querying DataScript.
+   HCR Wave 3+5: Uses cached tree for O(1) lookup instead of re-querying the index.
    Lower-level function that returns raw project IDs, not scope tags.
    Use get-descendant-scope-tags for memory query filtering.
 
@@ -417,7 +382,7 @@
 ;; =============================================================================
 
 (defn scan-project-tree!
-  "Scan filesystem for project hierarchy and persist to DataScript.
+  "Scan filesystem for project hierarchy and persist it to the index.
 
    This is the main entry point for HCR Wave 2 project discovery.
 
@@ -434,7 +399,7 @@
       :tree {...}}
 
    Side effects:
-     - Persists project entities to DataScript
+     - Persists project entities to the index
      - Registers configs in scope.clj cache"
   [root-path & [{:keys [max-depth] :or {max-depth 5}}]]
   (log/info "Scanning project tree from:" root-path {:max-depth max-depth})
@@ -455,9 +420,9 @@
           ;; Register configs in scope cache for HCR resolution
           _ (doseq [{:keys [config]} discovered]
               (when-let [project-id (:project-id config)]
-                (scope/register-project-config! project-id config)))
+                (project-scope/register-project-config! project-id config)))
 
-          ;; Persist to DataScript
+          ;; Persist to the index
           persist-result (persist-project-entities! entities)]
 
       (if (:success persist-result)
@@ -487,7 +452,7 @@
   "Check if project tree needs re-scanning.
 
    Returns true if:
-   - No projects in DataScript
+   - No projects in the index
    - Any project was scanned > staleness-threshold-hours ago
    - Root path doesn't match any existing project paths"
   [root-path]

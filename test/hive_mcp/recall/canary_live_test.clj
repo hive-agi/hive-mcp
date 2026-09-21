@@ -8,11 +8,10 @@
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.agent.context :as ctx]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
-            [hive-mcp.knowledge-graph.scope :as kg-scope]
+            [hive-mcp.project.scope :as kg-scope]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.recall.canary.live :as cl]
             [hive-mcp.recall.golden :as g]
-            [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.tools.memory.search :as search]
             [hive-mcp.memory.ingest-search :as ingest-search]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -69,7 +68,7 @@
   (with-redefs [kg-edges/record-co-access!            (constantly nil)
                 kg-scope/visible-scopes               (constantly ["hive"])
                 kg-scope/descendant-scopes            (constantly [])
-                scope/get-current-project-id          (constantly "hive")
+                hive-mcp.project.scope/get-current-project-id          (constantly "hive")
                 ctx/current-directory                 (constantly "/tmp/recall")
                 ingest-search/resolve-ingest-search   (constantly nil)]
     (f)))

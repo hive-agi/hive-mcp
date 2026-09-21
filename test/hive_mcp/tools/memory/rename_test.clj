@@ -16,7 +16,7 @@
             [clojure.java.io :as io]
             [clojure.edn :as edn]
             [hive-mcp.tools.memory.migration :as migration]
-            [hive-mcp.knowledge-graph.scope :as kg-scope]
+            [hive-mcp.project.scope :as kg-scope]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [hive-spi.memory.ports :as ports]
             [hive-spi.memory.registry :as registry]

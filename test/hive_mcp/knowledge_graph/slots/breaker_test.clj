@@ -8,7 +8,7 @@
    are exercised via in-memory atoms, and `maybe-recover` is tested with
    explicit timestamps to keep the wall-clock out of assertions."
   (:require [clojure.test :refer [deftest is testing]]
-            [hive-mcp.knowledge-graph.slots.breaker :as cb]))
+            [hive-mcp.resilience.breaker :as cb]))
 
 (def ^:private fast-policy
   {:max-failures        2

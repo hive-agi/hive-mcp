@@ -1,0 +1,51 @@
+;; Consolidated tool namespaces that still ship INSIDE hive-mcp core. Read by
+;; hive-mcp.tools.registry through hive-mcp.spi.contributions/load-manifest!,
+;; which resolves each symbol at boot instead of requiring it, so the kernel
+;; declares these tool domains without depending on them.
+;;
+;; :load      a symbol in the namespace to bring in. Resolving it IS the load,
+;;            and loading is what registers that namespace's handlers: the
+;;            consolidated namespaces register at load time and multi routing
+;;            resolves them by name afterwards.
+;; :tool-defs present only for a domain that also contributes tool ROOTS. It
+;;            resolves to a vector of tool defs, or to a 0-arg fn returning
+;;            one (the memory root's `relation` enum is registry-backed and
+;;            must be built at advertisement time). Roots are appended in the
+;;            order written here, so the advertised tool array stays
+;;            byte-stable across boots: a reshuffled array costs the caller
+;;            its whole cached prompt prefix.
+;;
+;; An entry leaves this file the day its addon registers its own tools at
+;; initialize!. :addon names where each is going; resources/hive-mcp/kernel.edn
+;; :extraction is the authority on that mapping.
+{:tools
+ [{:key :memory
+   :load hive-mcp.tools.consolidated.memory/tool-defs
+   :tool-defs hive-mcp.tools.consolidated.memory/tool-defs
+   :addon :hive-memory}
+
+  {:key :git
+   :load hive-mcp.tools.consolidated.git/tools
+   :tool-defs hive-mcp.tools.consolidated.git/tools
+   :addon :hive-emacs}
+
+  {:key :preset
+   :load hive-mcp.tools.consolidated.preset/tools
+   :tool-defs hive-mcp.tools.consolidated.preset/tools
+   :addon :hive-memory}
+
+  {:key :migrate-kanban
+   :load hive-mcp.tools.consolidated.migrate-kanban/tools
+   :tool-defs hive-mcp.tools.consolidated.migrate-kanban/tools
+   :addon :hive-kanban}
+
+  ;; Loaded for their REGISTRATION side effect only: no root of their own.
+  {:key :agent      :load hive-mcp.tools.consolidated.agent/tools      :addon :hive-agent}
+  {:key :agora      :load hive-mcp.tools.consolidated.agora/tools      :addon :hive-agora}
+  {:key :kanban     :load hive-mcp.tools.consolidated.kanban/tools     :addon :hive-kanban}
+  {:key :kg         :load hive-mcp.tools.consolidated.kg/tools         :addon :hive-memory}
+  {:key :magit      :load hive-mcp.tools.consolidated.magit/tools      :addon :hive-emacs}
+  {:key :migration  :load hive-mcp.tools.consolidated.migration/tools  :addon :hive-memory}
+  {:key :olympus    :load hive-mcp.tools.consolidated.olympus/tools    :addon :hive-emacs}
+  {:key :session    :load hive-mcp.tools.consolidated.session/tools    :addon :hive-memory}
+  {:key :workflow   :load hive-mcp.tools.consolidated.workflow/tools   :addon :hive-workflows}]}

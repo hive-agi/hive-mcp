@@ -1,0 +1,59 @@
+{;; hive-mcp CLUSTER pack: the addon set for the cluster side of a split
+ ;; deployment. Same composition seam as starter.deps.edn and local.deps.edn:
+ ;; merged on top of deps.edn through -Sdeps, selected in the image build with
+ ;;
+ ;;   docker build --build-arg DEPS_OVERLAY=cluster.deps.edn ...
+ ;;
+ ;; Placement rule: what is heavy and location-free mounts HERE (memory store,
+ ;; KG, carto, code intelligence, headless lings). What is bound to a machine
+ ;; stays in the starter/local packs on the workstation: the Emacs and tmux
+ ;; vessels, editor bridges, GIMP, kdenlive. A vessel whose host is absent
+ ;; only stays dormant, so listing one here would not break the boot, but it
+ ;; would say the cluster owns something it cannot reach.
+ ;;
+ ;; It must start with "{": the clojure CLI reads any other -Sdeps argument
+ ;; as a file path.
+ ;;
+ ;; Like the starter pack, every coordinate in :deps was MEASURED to mount,
+ ;; here by booting the built image under k8s-minimal (2026-09-19).
+ :deps
+ {;; --- knowledge graph persistence ------------------------------------
+  io.github.hive-agi/hive-datahike {:mvn/version "0.1.2"}
+
+  ;; --- code intelligence ------------------------------------------------
+  io.github.hive-agi/lsp-mcp         {:mvn/version "0.6.5"}
+  io.github.hive-agi/clj-kondo-mcp   {:mvn/version "0.2.5"}
+  io.github.hive-agi/scc-mcp         {:mvn/version "0.1.7"}
+  io.github.hive-agi/basic-tools-mcp {:mvn/version "0.3.14"}
+
+  ;; --- lings --------------------------------------------------------------
+  ;; Headless backend only; the terminal backend stays dormant without a tty.
+  io.github.hive-agi/hive-claude {:mvn/version "0.1.19"}}
+
+ ;; --- pending: the heavy half, with the measured reason --------------------
+ ;; These are the point of a cluster core and none of them mounts from its
+ ;; published jar today. Measured 2026-09-19 against the exact versions named,
+ ;; no local roots, in the built image and again in a REPL on the same jars.
+ ;;
+ ;; hive-knowledge 0.7.580 and hive-carto 0.1.371 (Gitea Maven, proprietary;
+ ;; they need :mvn/repos {"hive-gitea" {:url
+ ;; "https://gitea.hive-mcp.com/api/packages/hive-agi/maven"}} and the
+ ;; Dockerfile's m2settings BuildKit secret). Both are AOT jars that PACKAGE
+ ;; their own copy of hive_addon/protocol/IAddon.class (:aot/package-protocols).
+ ;; The host loads hive-addon from source, so its IAddon interface is generated
+ ;; at runtime in the DynamicClassLoader, while the addon's reify implements
+ ;; the packaged copy loaded by the AppClassLoader. Same name, two classes:
+ ;; (satisfies? IAddon addon) is false and the loader logs "Constructor did not
+ ;; return IAddon". hive-shape 0.5.172 fails the same way. hive-knowledge also
+ ;; dies earlier, on NoClassDefFoundError
+ ;; hive_spi/memory/ports/IMemoryStoreLiveness: an AOT class implements a
+ ;; hive-spi protocol interface that exists only after ports.clj is evaluated,
+ ;; and then only in the dynamic loader. The repair is one owner per protocol
+ ;; interface (the library that defines it ships it compiled), not a copy per
+ ;; consumer.
+ ;;
+ ;; hive-milvus 0.4.17 (Clojars) resolves, but its jar carries an EMPTY
+ ;; META-INF/hive-addons/ directory, so the host never discovers it.
+ ;;
+ ;; hive-agent is not published anywhere, so the swarm shims stay nil.
+ }

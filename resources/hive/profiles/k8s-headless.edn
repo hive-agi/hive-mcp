@@ -10,6 +10,7 @@
 {:hive/mcp-stdio      nil
  :hive/legacy-channel  nil
  :hive/a2a-gateway    {:enabled true :port 7912}
+ :hive/mcp-http       {:enabled true :port 7921}
  :hive/websocket-mcp  {:enabled true :port 7920}
  :hive/nats           {:enabled true}
  :hive/swarm-sync     {:source         :datahike

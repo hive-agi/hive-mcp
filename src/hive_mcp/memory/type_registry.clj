@@ -10,7 +10,8 @@
 
    Extension point: addons can register additional types via
    register-memory-type! / register-memory-types! before tool handlers run."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [hive-mcp.schema.type-token :as token]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -130,36 +131,20 @@
 ;; intern memory growth, EDN key pollution. We never trust a raw type — it
 ;; must reduce to a SAFE token before it is stored or interned.
 
-(def ^:const max-type-length
-  "Upper bound on a sanitized type token (chars). Bounds keyword interning
-   and config growth; long enough for any legitimate type name."
-  64)
-
-(def ^:private safe-type-re
-  "A safe type token: starts with a letter, then letters/digits/_/-.
-   Lowercase-only by construction (sanitize-type lowercases first)."
-  #"[a-z][a-z0-9_-]*")
+(def max-type-length
+  "See `hive-mcp.schema.type-token/max-type-length`."
+  token/max-type-length)
 
 (defn sanitize-type
-  "Normalize a raw type (string or keyword) to its canonical token form:
-   trimmed + lowercased. Returns nil when the input is not a non-blank
-   string/keyword. Does NOT enforce the safe charset — see safe-type?."
+  "See `hive-mcp.schema.type-token/sanitize-type`. The token's safety is
+   kernel business; the TAXONOMY below is this namespace's."
   [t]
-  (when (or (string? t) (keyword? t))
-    (let [s (-> (if (keyword? t) (name t) t) str/trim str/lower-case)]
-      (when-not (str/blank? s) s))))
+  (token/sanitize-type t))
 
 (defn safe-type?
-  "True when `t` reduces to a safe type token: non-blank, length <=
-   max-type-length, matching ^[a-z][a-z0-9_-]*$ after sanitization. Rejects
-   whitespace, quotes, EDN/reader chars, path separators, filter-expression
-   operators, and oversized input. This is the security gate that replaced
-   the old closed-enum membership check."
+  "See `hive-mcp.schema.type-token/safe-type?`."
   [t]
-  (boolean
-   (when-let [s (sanitize-type t)]
-     (and (<= (count s) max-type-length)
-          (re-matches safe-type-re s)))))
+  (token/safe-type? t))
 
 ;; =============================================================================
 ;; Extension registry (addon- + user-contributed types) + persistence
@@ -417,9 +402,9 @@
           {:type target :requested requested :queued? true :gate gate}
           {:type requested :requested requested :queued? false :gate nil})))))
 
-(def ^:const requested-type-tag-prefix
-  "Prefix of the tag recording which gated type a parked entry asked for."
-  "requested-type:")
+(def requested-type-tag-prefix
+  "See `hive-mcp.schema.type-token/requested-type-tag-prefix`."
+  token/requested-type-tag-prefix)
 
 (defn queued-tags
   "Tags for an entry parked behind `gate` after requesting `requested`:
@@ -445,14 +430,9 @@
                  tags))))
 
 (defn requested-type-of
-  "Read back the gated type a parked entry originally requested, from its tags.
-   Returns nil when no requested-type marker is present."
+  "See `hive-mcp.schema.type-token/requested-type-of`."
   [tags]
-  (some (fn [t]
-          (let [s (str t)]
-            (when (str/starts-with? s requested-type-tag-prefix)
-              (subs s (count requested-type-tag-prefix)))))
-        tags))
+  (token/requested-type-of tags))
 
 (defn abstraction-level
   "Get the abstraction level for a type (string or keyword). Default: 2."

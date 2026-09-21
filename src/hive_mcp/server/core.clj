@@ -61,14 +61,19 @@
 ;; Profile-Aware Config Loading
 ;; =============================================================================
 
+(defn profile-from
+  "The profile keyword for a CLI --profile value and a HIVE_PROFILE value,
+   either of which may be nil. Precedence: CLI > env > :desktop. Pure, so the
+   precedence can be tested under any ambient environment."
+  [cli-profile env-profile]
+  (keyword (or cli-profile env-profile "desktop")))
+
 (defn resolve-profile
   "Resolve profile keyword from CLI --profile arg, HIVE_PROFILE env, or :desktop.
    Precedence: explicit arg > env > default."
   ([] (resolve-profile nil))
   ([cli-profile]
-   (keyword (or cli-profile
-                (System/getenv "HIVE_PROFILE")
-                "desktop"))))
+   (profile-from cli-profile (System/getenv "HIVE_PROFILE"))))
 
 (defn read-base-config
   "Read and parse the base system.edn config with Integrant readers."

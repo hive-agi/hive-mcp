@@ -3,11 +3,10 @@
   (:require [hive-mcp.tools.swarm.core :as core]
             [hive-mcp.tools.swarm.registry :as registry]
             [hive-mcp.tools.swarm.state :as state]
-            [hive-mcp.emacs-ext.client :as ec]
-            [hive-mcp.dns.validation :as v]
+            [hive-spi.editor.services :as svc]
             [clojure.data.json :as json]
             [taoensso.timbre :as log]
-            [hive-mcp.dns.result :refer [rescue]]))
+            [hive-dsl.result :refer [rescue]]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -17,8 +16,7 @@
   []
   (when (core/swarm-addon-available?)
     (let [{:keys [success result timed-out]}
-          (ec/eval-elisp-with-timeout
-           "(json-encode (hive-mcp-swarm-list-lings))" 3000)]
+          (svc/invoke :vessel :dispatch {:op :swarm/list-lings} 3000)]
       (when (and success (not timed-out))
         (rescue nil
                 (let [parsed (json/read-str result :key-fn keyword)]
@@ -56,10 +54,7 @@
   "Get swarm status including all slaves and their states."
   [{:keys [slave_id]}]
   (core/with-swarm
-    (let [elisp (if slave_id
-                  (format "(json-encode (hive-mcp-swarm-status \"%s\"))" slave_id)
-                  "(json-encode (hive-mcp-swarm-api-status))")
-          {:keys [success result error timed-out]} (ec/eval-elisp-with-timeout elisp 5000)]
+    (let [{:keys [success result error timed-out]} (svc/invoke :vessel :dispatch {:op :swarm/status, :slave-id slave_id} 5000)]
       (cond
         timed-out
         (core/mcp-timeout-error "Status check")
@@ -99,9 +94,7 @@
   "Broadcast a prompt to all slaves."
   [{:keys [prompt]}]
   (core/with-swarm
-    (let [elisp (format "(json-encode (hive-mcp-swarm-broadcast \"%s\"))"
-                        (v/escape-elisp-string prompt))
-          {:keys [success result error timed-out]} (ec/eval-elisp-with-timeout elisp 5000)]
+    (let [{:keys [success result error timed-out]} (svc/invoke :vessel :dispatch {:op :swarm/broadcast, :prompt prompt} 5000)]
       (cond
         timed-out
         (core/mcp-timeout-error "Broadcast operation")
@@ -132,7 +125,7 @@
   [_]
   (core/with-swarm
     (let [{:keys [success result error timed-out]}
-          (ec/eval-elisp-with-timeout "(json-encode (hive-mcp-swarm-api-list-presets))" 5000)]
+          (svc/invoke :vessel :dispatch {:op :swarm/list-presets} 5000)]
       (cond
         timed-out
         (core/mcp-timeout-error "List presets")

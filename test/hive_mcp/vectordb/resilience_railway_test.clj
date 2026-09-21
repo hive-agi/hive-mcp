@@ -14,7 +14,7 @@
       actionable error rather than the raw Milvus log line)."
   (:require [clojure.test :refer [deftest is testing]]
             [hive-dsl.result :as r]
-            [hive-mcp.vectordb.resilience :as res]))
+            [hive-mcp.resilience.store :as res]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

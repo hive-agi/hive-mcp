@@ -1,63 +1,43 @@
 (ns hive-mcp.tools.registry
   "MCP tool definitions registry — aggregates consolidated tool definitions.
 
-   Domain-grouped tool roots: code, swarm, memory, project, fs, git, emacs, web, preset, multi.
+   Domain-grouped tool roots: code, swarm, memory, project, fs, git, web, preset, multi.
    Core subdomains are statically defined. Addon subdomains injected at runtime (OCP).
 
    The advertised surface is shrunk to <=10 roots via a visibility gate
    (apply-visibility-gate + config [:tool-roots :visible]): non-allowlisted
    tools are marked :deprecated so tools/list hides them while tools/call
    keeps them callable (back-compat)."
-  ;; The legacy consolidated namespaces below are loaded for their
-  ;; REGISTRATION side effect: each registers its handlers at load time and
-  ;; multi routing resolves them by name, so nothing here calls them through
-  ;; their alias. Excluded by name rather than by switching the linter off, so
-  ;; a genuinely dead require in this ns still reports.
+  ;; The two consolidated namespaces below are loaded for their REGISTRATION
+  ;; side effect: each registers its handlers at load time and multi routing
+  ;; resolves them by name, so nothing here calls them through their alias.
+  ;; Excluded by name rather than by switching the linter off, so a genuinely
+  ;; dead require in this ns still reports. The domain namespaces that used to
+  ;; be listed here are declared in resources/hive-mcp/tool-contributions.edn
+  ;; and resolved at load instead of required.
   {:clj-kondo/config
    '{:linters
      {:unused-namespace
-      {:exclude [hive-mcp.tools.consolidated.agent
-                 hive-mcp.tools.consolidated.hivemind
-                 hive-mcp.tools.consolidated.agora
-                 hive-mcp.tools.consolidated.olympus
-                 hive-mcp.tools.consolidated.kanban
+      {:exclude [hive-mcp.tools.consolidated.hivemind
                  hive-mcp.tools.consolidated.config
-                 hive-mcp.tools.consolidated.session
-                 hive-mcp.tools.consolidated.workflow
-                 hive-mcp.tools.consolidated.kg
-                 hive-mcp.tools.consolidated.migration
-                 hive-mcp.tools.consolidated.magit
                  hive-mcp.tools.composite]}}}}
   (:require [hive-mcp.channel.core :as channel]
    ;; Domain-grouped tool roots
             [hive-mcp.tools.consolidated.code :as c-code]
             [hive-mcp.tools.consolidated.swarm :as c-swarm]
-            [hive-mcp.tools.consolidated.memory :as c-memory]
             [hive-mcp.tools.consolidated.project :as c-project]
             [hive-mcp.tools.consolidated.fs :as c-fs]
-            [hive-mcp.tools.consolidated.git :as c-git]
-            [hive-mcp.tools.consolidated.emacs :as c-emacs]
-            [hive-mcp.tools.consolidated.preset :as c-preset]
             [hive-mcp.tools.consolidated.web :as c-web]
             [hive-mcp.tools.consolidated.multi :as c-multi]
    ;; Keep old modules loaded for backward compat (multi routing)
-            [hive-mcp.tools.consolidated.agent :as c-agent]
             [hive-mcp.tools.consolidated.hivemind :as c-hivemind]
-            [hive-mcp.tools.consolidated.agora :as c-agora]
-            [hive-mcp.tools.consolidated.olympus :as c-olympus]
-            [hive-mcp.tools.consolidated.kanban :as c-kanban]
             [hive-mcp.tools.consolidated.config :as c-config]
-            [hive-mcp.tools.consolidated.session :as c-session]
-            [hive-mcp.tools.consolidated.workflow :as c-workflow]
-            [hive-mcp.tools.consolidated.kg :as c-kg]
-            [hive-mcp.tools.consolidated.migration :as c-migration]
-            [hive-mcp.tools.consolidated.magit :as c-magit]
             [hive-mcp.tools.events.core :as c-events]
             [hive-mcp.tools.composite :as composite]
             [hive-mcp.extensions.registry :as ext]
             [taoensso.timbre :as log]
-            [hive-mcp.tools.consolidated.migrate-kanban :as c-migrate-kanban]
-            [hive-mcp.tools.consolidated.hot :as c-hot]))
+            [hive-mcp.tools.consolidated.hot :as c-hot]
+            [hive-mcp.spi.contributions :as contrib]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -122,24 +102,61 @@
            tools)
      (vec tools))))
 
-(defn- domain-roots
-  "The domain-grouped tool roots hive-mcp itself defines."
+(def tool-manifest-resource
+  "Classpath resource naming the consolidated tool domains still shipped
+   inside core."
+  "hive-mcp/tool-contributions.edn")
+
+(defonce ^:private manifest-loaded
+  ^{:doc "Outcome of the one manifest load, for diag/tests. Resolving a
+          domain's symbol is what loads it, and loading is what registers its
+          handlers, so this happens once at namespace load."}
+  (delay (contrib/load-manifest! tool-manifest-resource
+                                 {:resolve-keys #{:load :tool-defs}
+                                  :required-key :load})))
+
+(defn loaded-tool-domains
+  "{:contributed [key ...] :absent [key ...]} for the in-core tool manifest.
+   An absent key is a domain that has left for its addon."
   []
+  (get @manifest-loaded :tools {}))
+
+(defn- defs-of
+  "Tool defs behind a contributed :tool-defs value: a var is dereferenced, a
+   fn is called (the memory root builds its registry-backed enum at
+   advertisement time), a vector is itself."
+  [x]
+  (let [v (if (var? x) @x x)]
+    (if (fn? v) (v) v)))
+
+(defn contributed-roots
+  "Tool roots contributed by the in-core domains, in manifest order. Empty for
+   a domain that is not in this build, which is how a root disappears together
+   with its addon instead of throwing."
+  []
+  (into [] (comp (filter (comp some? :tool-defs val))
+                 (mapcat (fn [[_ entry]] (defs-of (:tool-defs entry)))))
+        (contrib/ordered :tools)))
+
+(defn- domain-roots
+  "The domain-grouped tool roots this build advertises: the KERNEL's own,
+   then whatever the in-core tool domains contributed (see
+   `tool-manifest-resource`). Deterministic in both halves, which is what the
+   caller's prompt cache depends on.
+
+   Dereferencing `manifest-loaded` is what loads those domains, and loading is
+   what registers their handlers, so it must happen before the roots are read."
+  []
+  @manifest-loaded
   (vec (concat c-code/tools
                c-swarm/tools
-               ;; fn, not a static vec: the memory tool's `relation` enum is
-               ;; registry-backed and must resolve at advertisement time.
-               (c-memory/tool-defs)
                c-project/tools
                c-fs/tools
-               c-git/tools
-               c-emacs/tools
-               c-preset/tools
                c-web/tools
                c-events/tools
                c-multi/tools
                c-hot/tools
-               c-migrate-kanban/tools)))
+               (contributed-roots))))
 
 (defn core-tools
   "The host's OWN tool defs: channel tools + domain roots, never an

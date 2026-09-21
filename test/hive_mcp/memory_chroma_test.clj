@@ -17,7 +17,8 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.string :as str]
             [hive-mcp.chroma.core :as chroma]
-            [hive-mcp.test-fixtures :as fixtures]))
+            [hive-mcp.test-fixtures :as fixtures]
+            [hive-mcp.test-support.chroma :as test-chroma]))
 
 ;; =============================================================================
 ;; Test Fixtures and Helpers
@@ -39,7 +40,9 @@
         (chroma/reset-collection-cache!)
         (chroma/set-embedding-provider! original-provider)))))
 
-(use-fixtures :each with-mock-embedder)
+(use-fixtures :each
+  (test-chroma/skip-unless-reachable "memory-chroma")
+  with-mock-embedder)
 
 (defn gen-test-id
   "Generate unique test ID."

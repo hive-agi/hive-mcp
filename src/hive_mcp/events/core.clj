@@ -29,7 +29,7 @@
             [hive-mcp.events.dispatch :as dispatch]
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.channel.websocket :as ws]
-            [hive-mcp.telemetry.prometheus :as prom]
+            [hive-mcp.spi.metrics :as metrics-port]
             [hive-mcp.dns.result :refer [rescue]]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -184,7 +184,7 @@
               (ws/emit! event data)))
     (reg-fx :prometheus
             (fn [effect-data]
-              (rescue nil (prom/handle-prometheus-effect! effect-data))))
+              (rescue nil (metrics-port/handle-effect! effect-data))))
     (reg-fx :log
             (fn [{:keys [level message]}]
               (case level

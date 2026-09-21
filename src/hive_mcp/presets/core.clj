@@ -222,30 +222,33 @@
 
 (defn index-preset!
   "Index a single preset in the presets collection.
-   Returns preset ID on success.
+   Returns a hive-dsl Result: ok carries the preset ID; err reflects the
+   store's own failure-by-value report (a throw from the store propagates).
 
    COLLECTION-AWARE: Uses collection-specific embedding provider."
   [{:keys [id name title _content category tags source file-path] :as preset}]
   (let [coll (get-or-create-collection)
         provider (active/get-provider-for collection-name)
         doc-text (preset-to-document preset)
-        embedding (embed/embed-text provider doc-text)]
-    (vp/-add (vp/require-store) coll
-             [{:id id
-               :embedding embedding
-               :document doc-text
-               :metadata {:name name
-                          :title (or title name)
-                          :category category
-                          :tags (or tags "")
-                          :source source
-                          :file-path (or file-path "")}}]
-             {:upsert? true})
+        embedding (embed/embed-text provider doc-text)
+        outcome (vp/-add (vp/require-store) coll
+                         [{:id id
+                           :embedding embedding
+                           :document doc-text
+                           :metadata {:name name
+                                      :title (or title name)
+                                      :category category
+                                      :tags (or tags "")
+                                      :source source
+                                      :file-path (or file-path "")}}]
+                         {:upsert? true})]
     (log/debug "Indexed preset:" id)
-    id))
+    (vp/write-outcome->result outcome id)))
 
 (defn index-presets!
   "Index multiple presets in batch.
+   Returns a hive-dsl Result: ok carries the vector of preset IDs; err
+   reflects the store's own failure-by-value report.
 
    COLLECTION-AWARE: Uses collection-specific embedding provider."
   [presets]
@@ -263,10 +266,10 @@
                                     :tags (or (:tags preset) "")
                                     :source (:source preset)
                                     :file-path (or (:file-path preset) "")}})
-                      presets docs embeddings)]
-    (vp/-add (vp/require-store) coll records {:upsert? true})
+                      presets docs embeddings)
+        outcome (vp/-add (vp/require-store) coll records {:upsert? true})]
     (log/info "Indexed" (count presets) "presets")
-    (mapv :id presets)))
+    (vp/write-outcome->result outcome (mapv :id presets))))
 
 ;;; ============================================================
 ;;; Migration
@@ -280,17 +283,19 @@
   (let [presets (scan-presets-dir dir-path)]
     (if (empty? presets)
       {:migrated [] :failed [] :message "No preset files found"}
-      (let [r (result/try-effect* :chroma/migrate-failed
-                                  (index-presets! presets))]
+      (let [thrown (result/try-effect* :chroma/migrate-failed
+                                       (index-presets! presets))
+            r      (if (result/ok? thrown) (:ok thrown) thrown)]
         (if (result/ok? r)
           (let [ids (:ok r)]
             {:migrated ids
              :failed []
              :count (count ids)
              :message (str "Successfully migrated " (count ids) " presets")})
-          {:migrated []
-           :failed (mapv (fn [p] {:name (:name p) :error (:message r)}) presets)
-           :message (str "Migration failed: " (:message r))})))))
+          (let [msg (or (:message r) (str (:error r)))]
+            {:migrated []
+             :failed (mapv (fn [p] {:name (:name p) :error msg}) presets)
+             :message (str "Migration failed: " msg)}))))))
 
 ;;; ============================================================
 ;;; Semantic Search
@@ -403,12 +408,18 @@
       base)))
 
 (defn delete-preset!
-  "Delete a preset from the presets index."
+  "Delete a preset from the presets index.
+   Returns a hive-dsl Result: ok carries the preset ID; err is
+   :preset/not-found when the index holds no such id, else the store's own
+   failure-by-value report."
   [preset-id]
-  (let [coll (get-or-create-collection)]
-    (vp/-delete (vp/require-store) coll {:ids [preset-id]})
-    (log/debug "Deleted preset:" preset-id)
-    preset-id))
+  (let [store (vp/require-store)
+        coll  (get-or-create-collection)]
+    (if (empty? (vp/-get store coll {:ids [preset-id]}))
+      (result/err :preset/not-found {:message (str "No such preset: " preset-id)})
+      (let [outcome (vp/-delete store coll {:ids [preset-id]})]
+        (log/debug "Deleted preset:" preset-id)
+        (vp/write-outcome->result outcome preset-id)))))
 
 ;;; ============================================================
 ;;; Preset Core Extraction (Lazy Loading)

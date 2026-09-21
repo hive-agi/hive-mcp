@@ -31,6 +31,8 @@
            hive-mcp.tools.memory.core/with-entry clojure.core/let
            ;; stub emacs binds [sym opts] — one pair, exactly let-shaped
            hive-mcp.test.stub.emacs-ext/with-stub-emacs clojure.core/let
+           ;; stub swarm host binds [sym respond]: one pair, let-shaped
+           hive-mcp.test.stub.swarm-host/with-swarm-host clojure.core/let
            ;; manifold.deferred macros - let-flow binds like let
            manifold.deferred/let-flow clojure.core/let
            manifold.deferred/let-flow' clojure.core/let

@@ -8,7 +8,8 @@
    Run with UPDATE_GOLDEN=true to regenerate snapshots after intentional changes.
 
    Golden files: test/golden/crystal/"
-  (:require [clojure.test :refer [deftest testing is]]
+  (:require [hive-mcp.project.scope]
+            [clojure.test :refer [deftest testing is]]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
             [hive-test.golden :refer [deftest-golden]]
@@ -63,7 +64,7 @@
      (with-redefs
        [ctx/current-directory   (fn [] "/tmp/golden-test")
         ctx/current-agent-id    (fn [] "golden-agent")
-        scope/get-current-project-id (fn [_#] "golden-project")
+        hive-mcp.project.scope/get-current-project-id (fn [_#] "golden-project")
 
         crystal/session-id      (fn [] "test-session-golden")
         crystal/get-session-start
@@ -137,7 +138,7 @@
           crystal/session-id
           (fn [] "test-session-golden")
 
-          scope/get-current-project-id
+          hive-mcp.project.scope/get-current-project-id
           (fn [_#] "golden-project")
 
           scope/inject-project-scope

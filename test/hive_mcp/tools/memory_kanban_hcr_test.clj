@@ -10,14 +10,14 @@
 
    These tests verify the pure helper functions using mock data,
    without requiring a live Chroma connection."
-  (:require [clojure.data.json :as json]
+  (:require [hive-mcp.project.scope]
+            [clojure.data.json :as json]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.project.tree :as tree]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.tools.kanban.predicates :as kp]
             [hive-mcp.tools.kanban.transitions :as kt]
-            [hive-mcp.tools.memory-kanban :as mem-kanban]
-            [hive-mcp.tools.memory.scope :as scope]))
+            [hive-mcp.tools.memory-kanban :as mem-kanban]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -156,9 +156,9 @@
    visible-scopes walks UP through it. Snapshots any pre-existing configs and
    restores them after — so this never clobbers a warm REPL / scanned registry."
   [& body]
-  `(let [get# (requiring-resolve 'hive-mcp.knowledge-graph.scope/get-project-config)
-         reg# (requiring-resolve 'hive-mcp.knowledge-graph.scope/register-project-config!)
-         dreg# (requiring-resolve 'hive-mcp.knowledge-graph.scope/deregister-project-config!)
+  `(let [get# (requiring-resolve 'hive-mcp.project.scope/get-project-config)
+         reg# (requiring-resolve 'hive-mcp.project.scope/register-project-config!)
+         dreg# (requiring-resolve 'hive-mcp.project.scope/deregister-project-config!)
          prev-hive#     (get# "hive")
          prev-hive-mcp# (get# "hive-mcp")]
      (reg# "hive"     {:project-id "hive"})
@@ -448,7 +448,7 @@
           store (make-store state)]
       (with-redefs [mem-proto/store-set?           (constantly true)
                     mem-proto/get-store            (constantly store)
-                    scope/get-current-project-id   (constantly "hive-mcp")]
+                    hive-mcp.project.scope/get-current-project-id   (constantly "hive-mcp")]
         (let [resp     (mem-kanban/handle-mem-kanban-list-slim
                         {:status              "done"
                          :directory           "/fake/hive-mcp"
@@ -485,7 +485,7 @@
           store (make-store state)]
       (with-redefs [mem-proto/store-set?           (constantly true)
                     mem-proto/get-store            (constantly store)
-                    scope/get-current-project-id   (constantly "hive-agent-bridge")]
+                    hive-mcp.project.scope/get-current-project-id   (constantly "hive-agent-bridge")]
         (let [resp   (mem-kanban/handle-mem-kanban-list-slim
                       {:status              "done"
                        :directory           "/fake/hive-agent-bridge"
@@ -529,7 +529,7 @@
                      (reset-store! [_] (reset! state [])))]
       (with-redefs [mem-proto/store-set?           (constantly true)
                     mem-proto/get-store            (constantly store)
-                    scope/get-current-project-id   (constantly "hive-mcp")]
+                    hive-mcp.project.scope/get-current-project-id   (constantly "hive-mcp")]
         (mem-kanban/handle-mem-kanban-list-slim
          {:status              "done"
           :directory           "/fake/hive-mcp"
@@ -565,7 +565,7 @@
   `(let [store# (make-store ~state)]
      (with-redefs [mem-proto/store-set?         (constantly true)
                    mem-proto/get-store          (constantly store#)
-                   scope/get-current-project-id (constantly ~pid)]
+                   hive-mcp.project.scope/get-current-project-id (constantly ~pid)]
        ~@body)))
 
 ;; Pure-predicate behavior is pinned via deftrifecta in
@@ -601,7 +601,7 @@
                      (reset-store! [_] (reset! state [])))]
       (with-redefs [mem-proto/store-set?         (constantly true)
                     mem-proto/get-store          (constantly store)
-                    scope/get-current-project-id (constantly "hive-mcp")]
+                    hive-mcp.project.scope/get-current-project-id (constantly "hive-mcp")]
         (mem-kanban/handle-mem-kanban-list-slim
          {:tags ["priority-high"] :tag_match "all"
           :directory "/fake/hive-mcp"

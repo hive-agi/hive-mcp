@@ -4,7 +4,7 @@
             [hive-dsl.bounded-atom :refer [bounded-atom bput! bget bounded-swap!
                                            bclear! register-sweepable!]]
             [hive-dsl.context.identity :as ctx-id]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [hive-mcp.channel.drain-rank :as rank]
             [hive-mcp.channel.drain-telemetry :as telemetry]
             [clojure.string :as str]

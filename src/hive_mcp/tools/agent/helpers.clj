@@ -2,7 +2,7 @@
   "Shared helper functions for agent tool handlers."
   (:require [hive-mcp.tools.swarm.core :as swarm-core]
             [hive-mcp.agent.type-registry :as agent-type-registry]
-            [hive-mcp.emacs-ext.client :as ec]
+            [hive-spi.editor.services :as svc]
             [taoensso.timbre :as log]
             [clojure.data.json :as json]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -45,8 +45,7 @@
   []
   (when (swarm-core/swarm-addon-available?)
     (let [{:keys [success result timed-out]}
-          (ec/eval-elisp-with-timeout
-           "(json-encode (hive-mcp-swarm-list-lings))" 3000)]
+          (svc/invoke :vessel :dispatch {:op :swarm/list-lings} 3000)]
       (when (and success (not timed-out))
         (try
           (let [parsed (json/read-str result :key-fn keyword)]

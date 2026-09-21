@@ -26,7 +26,8 @@
             [hive-mcp.extensions.delegate :refer [delegate-or-noop]]
             [taoensso.timbre :as log]
             [hive-mcp.dsl.param-domain :as pd]
-            [hive.events.multi :as ev-multi]))
+            [hive.events.multi :as ev-multi]
+            [hive-mcp.tools.op-outcome :as op-outcome]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -107,48 +108,16 @@
 (defn enrich-op-result
   "Enrich an execute-op result with `:data` (parsed handler result) and a
    composed cross-layer `:success`. Only ever downgrades `:success`, never
-   upgrades: a handler that did not throw but whose data signals failure
-   (inner `:success` false, explicit `:isError`/`:ok` false, a bare `:error`,
-   or a creation tool returning a nil id) is reclassified as failed. An op
-   that already threw keeps its original `:error`."
+   upgrades: a handler that did not throw but whose data is failed under
+   `hive-mcp.tools.op-outcome/op-outcome` (with the creation tool's id key
+   arming the nil-id rule) is reclassified as failed, with the classifier's
+   message as `:error`. An op that already threw keeps its original `:error`."
   [{:keys [tool result success] :as op-result}]
-  (let [data                  (extract-result-data result)
-        inner-success-false?  (and (map? data)
-                                   (contains? data :success)
-                                   (false? (:success data)))
-        explicit-error-flag?  (and (map? data)
-                                   (or (true? (:isError data))
-                                       (false? (:ok data))))
-        bare-error?           (and (map? data)
-                                   (some? (:error data))
-                                   (not (contains? data :success)))
-        id-key                (creation-id-key tool)
-        null-id-on-create?    (and id-key
-                                   (map? data)
-                                   (contains? data id-key)
-                                   (nil? (get data id-key)))
-        downgrade?            (and success
-                                   (or inner-success-false?
-                                       explicit-error-flag?
-                                       bare-error?
-                                       null-id-on-create?))
-        downgrade-msg         (cond
-                                inner-success-false?
-                                (or (some-> data :errors first)
-                                    (some-> data :error str)
-                                    "tool reported failure (inner :success false)")
-                                bare-error?
-                                (some-> data :error str)
-                                explicit-error-flag?
-                                (or (some-> data :error str)
-                                    (some-> data :text str)
-                                    "tool reported failure (:isError/:ok false)")
-                                null-id-on-create?
-                                (str "creation tool returned nil id — degraded backend?")
-                                :else nil)]
+  (let [data    (extract-result-data result)
+        outcome (op-outcome/op-outcome data {:null-id-key (creation-id-key tool)})]
     (cond-> (assoc op-result :data data)
-      downgrade? (-> (assoc :success false)
-                     (assoc :error downgrade-msg)))))
+      (and success (:failed? outcome))
+      (assoc :success false :error (:message outcome)))))
 
 (defn resolve-ref
   "Delegate to extension for reference resolution."

@@ -9,8 +9,9 @@
      1. explicit `:source` arg (e.g. from integrant config)
      2. `services.swarm-sync.source` in config.edn
      3. fallback default — `:emacs` (preserves legacy behavior)"
-  (:require [hive-mcp.swarm.bootstrap.protocol :as proto]
-            [hive-mcp.swarm.bootstrap.emacs :as emacs]
+  (:require [hive-spi.swarm.bootstrap :as proto]
+            [hive-spi.editor.services :as svc]
+            [clojure.data.json :as json]
             [hive-mcp.swarm.bootstrap.noop :as noop]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -32,9 +33,24 @@
   "Open extension point: dispatch on :source to construct the impl."
   (fn [source _opts] source))
 
+(defn- parse-slaves
+  "Slave maps from a swarm status JSON payload; [] when it does not parse."
+  [json-str]
+  (or (rescue nil (:slaves-detail (json/read-str json-str :key-fn keyword))) []))
+
 (defmethod build-bootstrap :emacs
-  [_ opts]
-  (emacs/make-emacs-bootstrap opts))
+  [_ {:keys [timeout-ms] :or {timeout-ms 5000}}]
+  (reify proto/ISwarmBootstrap
+    (-load-slaves [_this]
+      (let [{:keys [success result error]}
+            (svc/invoke :vessel :dispatch {:op :swarm/status :slave-id nil} timeout-ms)]
+        (if success
+          (parse-slaves result)
+          (do (log/warn "swarm.bootstrap.factory: swarm vessel status unavailable:" error)
+              []))))
+    (-snapshot-slave! [this _slave-id _slave-data] this)
+    (-forget-slave! [this _slave-id] this)
+    (-close! [_this] nil)))
 
 (defmethod build-bootstrap :datahike
   [_ opts]

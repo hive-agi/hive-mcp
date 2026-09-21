@@ -73,11 +73,11 @@
 
    :kg/infer-scope
    (fn [path]
-     (call 'hive-mcp.knowledge-graph.scope/infer-scope-from-path path))
+     (call 'hive-mcp.project.scope/infer-scope-from-path path))
 
    :kg/resolve-project-id
    (fn [project-id]
-     (call 'hive-mcp.knowledge-graph.scope/resolve-project-id project-id))
+     (call 'hive-mcp.project.scope/resolve-project-id project-id))
 
    :kg/query
    (fn

@@ -7,8 +7,8 @@
             [hive-mcp.hivemind.state :as state]
             [hive-mcp.swarm.datascript.registry :as registry]
             [hive-mcp.swarm.logic :as logic]
-            [hive-mcp.swarm.protocol :as proto]
-            [hive-mcp.tools.memory.scope :as mem-scope]
+            [hive-spi.swarm.protocol :as proto]
+            [hive-mcp.project.scope :as project-scope]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -114,7 +114,7 @@
             :last-seen now})
     (when-not (proto/get-slave registry/default-registry agent-id)
       (let [cwd (:cwd metadata)
-            project-id (when cwd (mem-scope/get-current-project-id cwd))]
+            project-id (when cwd (project-scope/get-current-project-id cwd))]
         (proto/add-slave! registry/default-registry agent-id
                           {:name (or (:name metadata) agent-id)
                            :status :idle

@@ -3,7 +3,7 @@
 
   (:require [malli.core :as m]
             [hive-mcp.schema.memory :as mem]
-            [hive-mcp.knowledge-graph.schema :as kg-schema]))
+            [hive-mcp.swarm.adapters.soft :as soft]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -156,13 +156,23 @@
 
 (defn KGRelationType
   "Valid KG edge relation types.
-   Derives dynamically from schema/relation-types to include registered
-   extensions, and SORTS them. relation-types answers a set, so its iteration
-   order follows the hash layout of whatever is registered. Order means nothing
-   to malli, but this schema is one derivation away from an advertised JSON
-   enum, and there the order is bytes in the first span of every request."
+
+   The relation VOCABULARY is the knowledge graph's, not the kernel's, and
+   `hive-mcp.knowledge-graph.schema` is a hive-memory extraction target, so it
+   is resolved BY SYMBOL rather than required: with the KG domain present this
+   is the enum it has always been, and without it the schema opens up to any
+   non-blank string. Validating against an enum nobody defines would be the
+   dishonest branch, not the permissive one.
+
+   Derives dynamically to include registered extensions, and SORTS them.
+   relation-types answers a set, so its iteration order follows the hash
+   layout of whatever is registered. Order means nothing to malli, but this
+   schema is one derivation away from an advertised JSON enum, and there the
+   order is bytes in the first span of every request."
   []
-  (into [:enum] (sort (map name (kg-schema/relation-types)))))
+  (if-let [relation-types (soft/resolve-soft 'hive-mcp.knowledge-graph.schema/relation-types)]
+    (into [:enum] (sort (map name (relation-types))))
+    [:string {:min 1}]))
 
 (def KGSourceType
   "How an edge was established."

@@ -7,7 +7,8 @@
             [clojure.data.json :as json]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.dispatch.handler :as dispatch]))
+            [hive-mcp.dispatch.handler :as dispatch]
+            [hive-mcp.tools.op-outcome :as op-outcome]))
 
 ;; =============================================================================
 ;; Command Normalization
@@ -354,12 +355,6 @@
        "hive-mcp.multi.batchables/{memory,kg,kanban}-batchable for the pattern."
        {:commands (sort (map name (keys handlers)))}))))
 
-(defn- mcp-error-result?
-  "True when a handler result is an MCP error envelope (delivered, but failed)."
-  [result]
-  (or (and (map? result) (true? (:isError result)))
-      (and (map? result) (some? (:error result)))))
-
 (defn make-batch-handler
   "Higher-order function: takes a handlers map (same as make-cli-handler),
    returns a handler that accepts {:operations [{:command ... :param1 ...}, ...], :parallel bool}.
@@ -397,12 +392,11 @@
                                      (if-let [handler (:handler resolved)]
                                        (let [merged (merge shared-params (dissoc op :command))
                                              result (handler (assoc merged :command (:command op)))
-                                             failed? (mcp-error-result? result)]
-                                         (cond-> {:success (not failed?)
+                                             outcome (op-outcome/op-outcome result)]
+                                         (cond-> {:success (not (:failed? outcome))
                                                   :command (:command op)
                                                   :result result}
-                                           failed? (assoc :error (or (:error result)
-                                                                     "operation returned an error envelope"))))
+                                           (:failed? outcome) (assoc :error (:message outcome))))
                                        (if-let [rej (:__rejection__ op)]
                                          {:success false :command (:command op) :error rej}
                                          {:success false :command (:command op)

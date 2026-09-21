@@ -39,7 +39,7 @@
    the bundle returns)."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.protocols.memory :as mem-proto]
-            [hive-mcp.knowledge-graph.scope :as kg-scope]
+            [hive-mcp.project.scope :as kg-scope]
             [hive-mcp.tools.catchup.bundle :as bundle]))
 
 ;; =============================================================================

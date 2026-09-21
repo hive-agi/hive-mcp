@@ -14,21 +14,52 @@
             [hive-mcp.addons.core :as addon]
             [hive-mcp.addons.mcp-bridge :as bridge]
             [hive-mcp.addons.stdio-bridge :as stdio]
-            [hive-mcp.dispatch.handler :as dispatch]))
+            [hive-mcp.dispatch.handler :as dispatch]
+            [hive-mcp.extensions.registry :as ext]))
 
 ;; =============================================================================
 ;; Fixtures
 ;; =============================================================================
 
 (defn reset-fixture
-  "Reset addon + bridge registries before/after each test."
+  "Reset addon + bridge registries before/after each test.
+
+   init-addon! registers every addon tool into the PROCESS-WIDE
+   hive-mcp.extensions.registry tool-slot (via ext/register-tool!), and
+   unregister-bridge! only dissoc's the addon entry — it never deregisters
+   those tools. Without snapshot/restore here the proxy handlers built by
+   wrap-proxy-strip-params leak into every later test in the same JVM and
+   break hive-mcp.dispatch.tool-surface-test's by-var ratchet.
+
+   The snapshot is taken AFTER the pre-test reset, and the finally clause
+   restores exactly the saved tool defs (by name): tools the tests added are
+   removed, tools the tests overwrote are re-registered to their saved value.
+   Never installs an empty registry — that would be a wipe dressed as a
+   restore and would break the host's own core surface in a shared JVM."
   [f]
   (addon/reset-registry!)
-  (f)
-  ;; Cleanup any lingering bridges
-  (doseq [{:keys [name]} (bridge/list-bridges)]
-    (bridge/unregister-bridge! name))
-  (addon/reset-registry!))
+  (let [saved-tools (ext/get-registered-tools)
+        saved-names (set (map :name saved-tools))]
+    (try
+      (f)
+      (finally
+        ;; Cleanup any lingering bridges
+        (doseq [{:keys [name]} (bridge/list-bridges)]
+          (bridge/unregister-bridge! name))
+        (addon/reset-registry!)
+        ;; Restore the ext tool registry to the pre-test snapshot.
+        (let [current (ext/get-registered-tools)]
+          ;; Remove tools the tests added.
+          (doseq [t current
+                  :when (not (contains? saved-names (:name t)))]
+            (ext/deregister-tool! (:name t)))
+          ;; Re-install saved defs the tests overwrote (last-write-wins
+          ;; by name, so identical defs are already correct; only clobbered
+          ;; ones need restoring).
+          (let [current-by-name (into {} (map (juxt :name identity)) current)]
+            (doseq [t saved-tools
+                    :when (not= t (get current-by-name (:name t)))]
+              (ext/register-tool! t))))))))
 
 (use-fixtures :each reset-fixture)
 

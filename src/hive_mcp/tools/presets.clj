@@ -122,14 +122,24 @@
                   :category (or category "custom")
                   :tags (if (coll? tags) (str/join "," tags) (or tags name))
                   :source "custom"}
-          id (presets/index-preset! preset)]
-      (result/ok {:success true :id id :message (str "Added preset: " name)}))))
+          r (presets/index-preset! preset)]
+      (if (result/ok? r)
+        (result/ok {:success true :id (:ok r) :message (str "Added preset: " name)})
+        (result/err :preset/add-failed
+                    {:message (str "Failed to add preset: " name ": "
+                                   (or (:message r) (:error r)))
+                     :cause (:error r)})))))
 
 (defn- delete* [{:keys [name]}]
   (if-not (active/embedding-configured?)
     (result/err :preset/chroma-not-configured {:message "Chroma not configured"})
-    (do (presets/delete-preset! name)
-        (result/ok {:success true :message (str "Deleted preset: " name)}))))
+    (let [r (presets/delete-preset! name)]
+      (if (result/ok? r)
+        (result/ok {:success true :message (str "Deleted preset: " name)})
+        (result/err :preset/delete-failed
+                    {:message (str "Failed to delete preset: " name ": "
+                                   (or (:message r) (:error r)))
+                     :cause (:error r)})))))
 
 ;;; ============================================================
 ;;; Handlers (MCP boundary)

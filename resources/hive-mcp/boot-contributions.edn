@@ -1,0 +1,16 @@
+;; Boot steps that still ship INSIDE hive-mcp core. Read by
+;; hive-mcp.server.init through hive-mcp.spi.contributions/load-manifest!,
+;; which resolves each :install! symbol at boot instead of requiring it, so
+;; the kernel runs a domain's boot step without depending on the domain.
+;;
+;; Each :install! is a 0-arg fn the kernel calls once, in the order written
+;; here. An entry that does not resolve is ABSENT: the domain is not in this
+;; build, the step is skipped, and boot says so rather than failing.
+;;
+;; An entry leaves this file the day its addon runs the step from its own
+;; initialize!. :addon names where each is going; resources/hive-mcp/kernel.edn
+;; :extraction is the authority on that mapping.
+{:boot
+ [{:key :embeddings
+   :install! hive-mcp.embeddings.boot/init-embedding-provider!
+   :addon :hive-memory}]}

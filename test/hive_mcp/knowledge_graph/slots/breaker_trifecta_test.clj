@@ -7,7 +7,7 @@
    guards the LMDB slot the conn-init fix protects, so its transitions
    must remain correct under refactor pressure."
   (:require [clojure.test.check.generators :as gen]
-            [hive-mcp.knowledge-graph.slots.breaker :as breaker]
+            [hive-mcp.resilience.breaker :as breaker]
             [hive-test.trifecta :refer [deftrifecta]]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

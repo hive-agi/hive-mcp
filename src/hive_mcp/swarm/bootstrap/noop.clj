@@ -1,28 +1,28 @@
-(ns hive-mcp.swarm.bootstrap.noop
-  "NoopBootstrap — explicit Null Object for swarm bootstrap.
-
-   Use when no durable projection is desired: the registry starts empty,
-   writes are discarded, and nothing is persisted. Event stream is the
-   only source of truth.
-
-   DDD: Null Object pattern keeps consumers branch-free.
-   FP: all methods are pure (return `this`), no side effects."
-  (:require [hive-mcp.swarm.bootstrap.protocol :as proto]
-            [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-(defrecord NoopBootstrap []
-  proto/ISwarmBootstrap
-  (-load-slaves [_this]
-    (log/info "NoopBootstrap: no slaves to load (event-stream only)")
-    [])
-  (-snapshot-slave! [this _slave-id _slave-data] this)
-  (-forget-slave! [this _slave-id] this)
-  (-close! [_this] nil))
+(ns hive-mcp.swarm.bootstrap.noop
+  "NoopBootstrap - explicit Null Object for swarm bootstrap.
+
+   Compat shim: moved to hive-agent.swarm.bootstrap.noop in hive-agent. Every public var delegates there
+   through requiring-resolve; hive-mcp does not compile-depend on hive-agent."
+  (:require [hive-mcp.swarm.delegate :as delegate]))
+
+(defn- impl [sym]
+  (delegate/resolve-var "hive-agent.swarm.bootstrap.noop" sym))
+
+(defn ->NoopBootstrap
+  {:arglists '([])}
+  [& args]
+  (apply (impl '->NoopBootstrap) args))
+
+(defn map->NoopBootstrap
+  {:arglists '([m])}
+  [& args]
+  (apply (impl 'map->NoopBootstrap) args))
 
 (defn make-noop-bootstrap
-  "Construct a NoopBootstrap. No options."
-  []
-  (->NoopBootstrap))
+  {:arglists '([])}
+  [& args]
+  (apply (impl 'make-noop-bootstrap) args))

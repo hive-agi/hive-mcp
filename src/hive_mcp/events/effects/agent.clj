@@ -20,8 +20,7 @@
   (:require [hive-mcp.events.core :as ev]
             [hive-mcp.events.handlers.saa-fx :as saa-fx]
             [hive-mcp.swarm.coordinator :as coordinator]
-            [hive-mcp.dns.validation :as v]
-            [hive-mcp.emacs-ext.client :as ec]
+            [hive-spi.editor.services :as svc]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -74,10 +73,8 @@
   [{:keys [slave-id prompt]}]
   (when (and slave-id prompt)
     (try
-      (let [elisp (format "(hive-mcp-swarm-send-to-terminal \"%s\" \"%s\")"
-                          (v/escape-elisp-string slave-id)
-                          (v/escape-elisp-string prompt))
-            {:keys [success error timed-out]} (ec/eval-elisp-with-timeout elisp 10000)]
+      (let [{:keys [success error timed-out]}
+            (svc/invoke :vessel :dispatch {:op :swarm/send-prompt, :slave-id slave-id, :prompt prompt} 10000)]
         (cond
           timed-out (log/warn "[EVENT] Agora prompt to" slave-id "timed out (10s) - continuing")
           success   (log/info "[EVENT] Sent Agora prompt to ling:" slave-id)

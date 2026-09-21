@@ -8,7 +8,7 @@
   (:require [hive-mcp.server.routes.identity :as id]
             [hive-mcp.server.routes.middleware :as mw]
             [hive-mcp.tools.registry :as tools]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [hive-mcp.server.registration]              ; side-effect: tools/list defmethod
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.addons.core :as addons]

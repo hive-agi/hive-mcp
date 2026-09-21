@@ -35,6 +35,96 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-09-21
+
+### Added
+
+- **`agent spawn` takes `sandbox`.** An optional boolean that rides from the
+  tool call through the ling's opts to the headless backend's ctx unchanged.
+  The host does not interpret it: hive-agent resolves it against its own
+  default (`[:services :agent :sandbox]`), so an omitted flag leaves the key
+  out and an explicit `false` survives as an opt-out. A new optional argument,
+  so minor.
+
+### Changed
+
+- **Event effects and handlers read the swarm store through a facade, not
+  `datascript.core`.** `hive-mcp.swarm.datascript` gained `transact!`,
+  `current-db`, `q`, `q-db`, `pull`, `listen!` and `unlisten!`. Writes,
+  snapshots and listeners go through `hive-spi.swarm.protocol/ISwarmDb`, so
+  they follow whatever store the swarm slot holds and honour the test-conn
+  isolation seam; the query legs still call datascript on the db value the port
+  hands back, because `ISwarmDb` carries no query method yet. Four kernel
+  namespaces (`events.effects.coeffect`, `events.effects.infrastructure`,
+  `events.effects.notification`, `events.handlers.claim`) no longer name a
+  store vendor, and their `kernel.edn` waivers are gone. `datascript.core` now
+  enters the swarm path in exactly one namespace, the one `kernel.edn` already
+  names its owner.
+- **Telemetry health, the Olympus tool and the Olympus state bridge read the
+  swarm store through the same facade.** `telemetry.health` persists and queries
+  health events, `tools.olympus` pulls and upserts the Olympus singleton, and
+  `transport.olympus.state-bridge` registers its tx listener, all without
+  naming `datascript.core` or reaching for a raw connection. The three are
+  prerequisites for the telemetry and elisp extractions, which cannot move a
+  namespace that holds a store vendor by hand. Requirers of `datascript.core`
+  under `src/` drop from 12 to 6, and what remains is the KG store
+  (`graph.datascript`, `knowledge-graph.connection`,
+  `knowledge-graph.store.datascript`), `agora.dialogue`, the private project
+  tree store, and the swarm facade itself.
+- **The test tree is two trees.** `test/` loads and runs from the committed
+  `deps.edn` alone, with no hive-agent and no hive-datascript on the classpath;
+  it is what CI runs. The 53 suites that exercise the swarm addon moved to
+  `test-swarm/` and run through `-M:test:test-swarm` with the addon supplied by
+  `local.deps.edn`, or sandboxed with `bin/test-sandboxed.sh --swarm`. The
+  runner requires every namespace its regex selects before any var-level
+  filter runs and does not catch a throwing fixture, so a single addon-coupled
+  suite under `test/` used to abort the whole public run.
+- **Project identity is kernel code: `hive-mcp.project.scope`.** The scope
+  hierarchy (`visible-scopes`, `infer-scope-from-path`, the alias registry)
+  and `get-current-project-id` read `.hive-project.edn` files and nothing
+  else, but they lived in `hive-mcp.knowledge-graph.scope` and
+  `hive-mcp.tools.memory.scope`, two namespaces that leave with hive-memory.
+  So the kernel reached into a slice it is meant to outlive to learn which
+  project it was in. The code moved to `hive-mcp.project.scope`; hivemind,
+  the swarm registry and sync, catchup and the route identity layer require
+  it directly, and the swarm memory-scope adapter no longer needs a degrade
+  path for it. The two old names stay as facades that call through the kernel
+  var on every invocation, so a reload or a redef of the kernel reaches a
+  caller that still spells the old name. Fifteen kernel census waivers are
+  retired (90 to 75 of the baseline 100).
+- **Two more swarm-side host calls go through hive-spi ports.** Agora
+  dialogue events reach UI clients through `IFrontendPush/emit!`, and the
+  hive-mcp messaging adapter's `emit!` now covers the websocket as well as
+  the channel socket, each transport guarded on its own. Swarm dispatch reads
+  file staleness through `IDiscStaleness` and no longer requires
+  `hive-mcp.knowledge-graph.disc`, which retires one more census waiver
+  (75 to 74). With no host adapter installed both degrade to the port's
+  noop: no push, no staleness warning, no throw.
+- **The kanban board is a port the kernel resolves, not a namespace it
+  requires.** `IKanbanRead` (list/get) and `IKanbanWrite` (transition/create)
+  live in `hive-mcp.spi.kanban` with a registry in
+  `hive-mcp.spi.kanban.registry`; `hive-mcp.tools.kanban.port` registers
+  core's provider over the existing kanban domain, and the scheduler, the
+  plan-to-kanban pipeline and `memory_kanban/query` reach the board through
+  the registry on every call, so an addon that owns the board replaces the
+  provider without the callers changing. Catchup no longer gathers the board
+  itself: contributors register a block with `hive-mcp.spi.catchup-registry`
+  and catchup composes whatever is registered, keyed by `:block/id`, which is
+  how `hive-mcp.tools.kanban.catchup-block` supplies the `:kanban` summary.
+  Two kernel census waivers are retired (61 to 59 of the baseline 100). The
+  port and the block registry are HOST-LOCAL for now; they belong in
+  hive-contracts and hive-spi, which have not released them, and the kernel
+  does not depend on an unreleased coordinate.
+
+### Fixed
+
+- **The swarm host adapters no longer pin the kernel to namespaces that are
+  leaving it.** Four adapters statically required hive-memory, hive-workflows,
+  hive-observability and hive-agent extraction targets, which the kernel census
+  gate counts as unwaived kernel edges. They now resolve those host functions
+  by symbol on the call, and answer what the port's Noop answers once the
+  namespace is gone.
+
 ## [1.6.0] - 2026-09-16
 
 Three threads: the dispatch tree stopped freezing handler values, the channel

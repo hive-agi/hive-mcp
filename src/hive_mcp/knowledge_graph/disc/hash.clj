@@ -1,50 +1,30 @@
 (ns hive-mcp.knowledge-graph.disc.hash
-  "Hash computation utilities for disc entities."
-  (:require [clojure.java.io :as io]
-            [hive-dsl.result :as r]
-            [taoensso.timbre :as log])
-  (:import [java.security MessageDigest]))
+  "DEPRECATED facade. File content hashing is kernel code and lives in
+   `hive-mcp.storage.file-hash`; this name call-throughs to it and dies with
+   the hive-memory extraction.
+
+   Every fn delegates through the kernel VAR, never `(def f fh/f)`: a
+   def-alias captures the fn value at load, so a hot reload or `with-redefs`
+   of the kernel var would not reach callers of this name, and the cache the
+   kernel namespace owns must stay single-source. See memory
+   20260919135346-7838bb58."
+  (:require [hive-mcp.storage.file-hash :as fh]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defn compute-hash
-  "Compute SHA-256 hash of content string.
-   Returns hex string."
+  "See `hive-mcp.storage.file-hash/compute-hash`."
   [content]
-  (let [md (MessageDigest/getInstance "SHA-256")
-        hash-bytes (.digest md (.getBytes (str content) "UTF-8"))]
-    (apply str (map #(format "%02x" (bit-and % 0xff)) hash-bytes))))
-
-;; ── mtime-keyed hash cache ──────────────────────────────────────────
-;; Keyed by [path mtime-ms]. Only recomputes hash when file mtime changes.
-;; Prevents redundant SHA-256 reads for unchanged files across staleness scans.
-(def ^:private hash-cache
-  "Cache of {[path mtime-ms] {:hash \"..\" :exists? true}}."
-  (atom {}))
+  (fh/compute-hash content))
 
 (defn clear-hash-cache!
-  "Clear the mtime-keyed hash cache. Useful for testing or memory pressure."
+  "See `hive-mcp.storage.file-hash/clear-hash-cache!`."
   []
-  (reset! hash-cache {}))
+  (fh/clear-hash-cache!))
 
 (defn file-content-hash
-  "Read file and compute content hash with mtime-based caching.
-   Returns {:hash \"..\" :exists? true} or {:exists? false}.
-   Caches by [path mtime] — skips SHA-256 if file unchanged since last call."
+  "See `hive-mcp.storage.file-hash/file-content-hash`."
   [path]
-  (let [result (r/guard Exception {:exists? false}
-                        (let [file (io/file path)]
-                          (if (.exists file)
-                            (let [mtime (.lastModified file)
-                                  cache-key [path mtime]]
-                              (if-let [cached (get @hash-cache cache-key)]
-                                cached
-                                (let [entry {:hash (compute-hash (slurp file)) :exists? true}]
-                                  (swap! hash-cache assoc cache-key entry)
-                                  entry)))
-                            {:exists? false})))]
-    (when-let [err (::r/error (meta result))]
-      (log/warn "Failed to hash file" {:path path :error (:message err)}))
-    result))
+  (fh/file-content-hash path))

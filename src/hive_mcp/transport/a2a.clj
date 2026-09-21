@@ -84,12 +84,25 @@
 
 (defn- verify-api-key
   "Check Authorization: Bearer <key> header.
-   Returns true if api-key is nil (no auth) or key matches."
+   Returns true if api-key is blank (no auth) or the key matches. The
+   comparison is constant-time so a caller cannot learn the key by timing."
   [req api-key]
-  (if (nil? api-key)
+  (if (str/blank? api-key)
     true
     (let [auth-header (get-in req [:headers "authorization"] "")]
-      (= auth-header (str "Bearer " api-key)))))
+      (java.security.MessageDigest/isEqual
+       (.getBytes ^String (str auth-header) "UTF-8")
+       (.getBytes (str "Bearer " api-key) "UTF-8")))))
+
+(defn bind-host
+  "The interface the gateway listens on. Without an api-key the gateway
+   answers anyone who can reach it, so it is only ever bound to loopback,
+   whatever was requested. With a key the requested host wins, default all
+   interfaces."
+  [api-key requested]
+  (if (str/blank? api-key)
+    "127.0.0.1"
+    (if (str/blank? requested) "0.0.0.0" requested)))
 
 ;; =============================================================================
 ;; JSON-RPC Dispatcher
@@ -268,8 +281,14 @@
         ;; SSE stream for task
         (and (= method :get) (str/starts-with? uri "/sse/"))
         (let [task-id (subs uri 5)]
-          (if (empty? task-id)
+          (cond
+            (not (verify-api-key req api-key))
+            (json-response 401 {:error "Invalid or missing API key"})
+
+            (empty? task-id)
             (json-response 400 {:error "task-id required in path"})
+
+            :else
             (handle-sse-stream task-id)))
 
         ;; JSON-RPC endpoint
@@ -307,25 +326,34 @@
 
    Options:
      :port    - Port number (default: 7912)
-     :api-key - API key for Bearer auth (nil = no auth)
+     :api-key - API key for Bearer auth (blank = no auth)
+     :bind    - Interface to listen on when an api-key is set (default
+                0.0.0.0). Ignored without a key: see `bind-host`.
 
    Returns the actual port number."
   ([] (start! {}))
-  ([{:keys [port api-key]}]
-   (let [port (or port 7912)]
+  ([{:keys [port api-key bind]}]
+   (let [port    (or port 7912)
+         api-key (when-not (str/blank? api-key) api-key)
+         host    (bind-host api-key bind)]
      (if @server-atom
        (do
          (log/warn "A2A gateway already running on port" (:port @server-atom))
          (:port @server-atom))
        (result/rescue nil
                       (let [handler (make-http-handler api-key)
-                            server (http/start-server handler {:port port})
+                            server (http/start-server
+                                    handler
+                                    {:socket-address (java.net.InetSocketAddress. ^String host (int port))})
                             actual-port (netty/port server)]
                         (reset! server-atom {:server server
                                              :port actual-port
+                                             :bind host
                                              :api-key (some? api-key)})
-                        (log/info "A2A gateway started on port" actual-port
-                                  (if api-key "(auth enabled)" "(no auth)"))
+                        (log/info "A2A gateway started on" (str host ":" actual-port)
+                                  (if api-key
+                                    "(auth enabled)"
+                                    "(no auth, loopback only)"))
                         actual-port))))))
 
 (defn stop!
@@ -346,6 +374,7 @@
   []
   {:running? (boolean @server-atom)
    :port (:port @server-atom)
+   :bind (:bind @server-atom)
    :clients (count @sse-clients)
    :auth? (:api-key @server-atom false)})
 

@@ -2,7 +2,7 @@
   "Channel-based event management for swarm task tracking via core.async and NATS."
   (:require [clojure.core.async :as async :refer [go-loop <!]]
             [hive-dsl.bounded-atom :refer [bounded-atom bput! bget bclear! register-sweepable!]]
-            [hive-mcp.dns.result :refer [rescue]]
+            [hive-dsl.result :refer [rescue]]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -15,6 +15,14 @@
                  :ttl-ms 3600000    ;; 1 hour
                  :eviction-policy :fifo}))
 (register-sweepable! event-journal :event-journal)
+
+;; Dispatched-task registry — ids minted by a JVM-side dispatch.
+;; FIFO eviction, 1000 entries, 24hr TTL. Presence only; no payload.
+(defonce ^:private dispatched-tasks
+  (bounded-atom {:max-entries 1000
+                 :ttl-ms 86400000   ;; 24 hours
+                 :eviction-policy :fifo}))
+(register-sweepable! dispatched-tasks :dispatched-tasks)
 
 ;; Channel subscriptions — keyed by event-type keyword.
 ;; Max 50 entries (typically only 3 event types). No TTL — subs live until stop.
@@ -146,3 +154,23 @@
    Works without NATS or Emacs. Used by headless backends."
   [task-id result-map]
   (write-to-journal! task-id result-map))
+
+;; =============================================================================
+;; Dispatched-task registry port — which task ids this JVM handed out
+;; =============================================================================
+
+(defn record-dispatched-task!
+  "Record TASK-ID as handed out by a JVM-side dispatch.
+   Bounded: FIFO eviction past 1000 ids, 24hr TTL."
+  [task-id]
+  (bput! dispatched-tasks (str task-id) {:dispatched-at (System/currentTimeMillis)}))
+
+(defn dispatched-task?
+  "True when TASK-ID was recorded by `record-dispatched-task!` and not evicted."
+  [task-id]
+  (some? (bget dispatched-tasks (str task-id))))
+
+(defn clear-dispatched-tasks!
+  "Clear all entries from the dispatched-task registry."
+  []
+  (bclear! dispatched-tasks))

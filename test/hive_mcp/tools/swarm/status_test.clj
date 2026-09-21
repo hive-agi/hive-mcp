@@ -8,8 +8,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.tools.swarm.status :as status]
             [clojure.data.json :as json]
-            [hive-mcp.test.stub.emacs-ext :as emacs]
-            [hive-mcp.test.stub.extensions :as ext-stub]))
+            [hive-mcp.test.stub.swarm-host :as sh]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -18,20 +17,18 @@
 ;; handle-swarm-broadcast Tests
 ;; =============================================================================
 
-(defn- broadcast-responses
-  "Scripted `:emacs/eval-elisp-with-timeout` answers for a broadcast round-trip:
-   the hive-mcp-swarm feature reports present, and the broadcast call answers
-   with ANSWER (a full {:success :result :timed-out} envelope)."
+(defn- broadcast-host
+  "A swarm host whose addon reports present and whose broadcast answers
+   ANSWER (a full {:success :result :timed-out} envelope)."
   [answer]
-  [["featurep" {:success true :result "t"}]
-   ["hive-mcp-swarm-broadcast" answer]])
+  (sh/answering {:swarm/broadcast answer}))
 
 (deftest handle-swarm-broadcast-no-targets-returns-error
   (testing "broadcast returns error when no slaves available (bug fix)"
-    (emacs/with-stub-emacs
-      [stub {:responses (broadcast-responses
-                         ;; elisp returns an empty list: no slaves
-                         {:success true :result "[]" :timed-out false})}]
+    (sh/with-swarm-host
+      [host (broadcast-host
+             ;; the host returns an empty list: no slaves
+             {:success true :result "[]" :timed-out false})]
       (let [result (status/handle-swarm-broadcast {:prompt "test prompt"})
             parsed (json/read-str (:text result) :key-fn keyword)]
         ;; Should be an error, not success
@@ -43,18 +40,17 @@
             "Delivered count should be 0")
         (is (string? (:message parsed))
             "Should have helpful error message")
-        (is (some #(re-find #"test prompt" (first %))
-                  (emacs/calls-of stub :emacs/eval-elisp-with-timeout))
-            "Prompt should reach the elisp transport")))))
+        (is (= [[{:op :swarm/broadcast, :prompt "test prompt"} 5000]] (sh/calls-of host :swarm/broadcast))
+            "Prompt should reach the swarm host")))))
 
 (deftest handle-swarm-broadcast-success-returns-count
   (testing "broadcast returns delivery count on success"
-    (emacs/with-stub-emacs
-      [stub {:responses (broadcast-responses
-                         ;; elisp returns a list of task-ids
-                         {:success true
-                          :result "[\"task-1\", \"task-2\", \"task-3\"]"
-                          :timed-out false})}]
+    (sh/with-swarm-host
+      [host (broadcast-host
+             ;; the host returns a list of task-ids
+             {:success true
+              :result "[\"task-1\", \"task-2\", \"task-3\"]"
+              :timed-out false})]
       (let [result (status/handle-swarm-broadcast {:prompt "test prompt"})
             parsed (json/read-str (:text result) :key-fn keyword)]
         ;; Should NOT be an error
@@ -66,14 +62,14 @@
             "Should include task IDs")
         (is (string? (:message parsed))
             "Should have success message")
-        (is (= 2 (count (emacs/calls-of stub :emacs/eval-elisp-with-timeout)))
-            "Availability probe then broadcast, both over the extension seam")))))
+        (is (= [:swarm/available? :swarm/broadcast] (sh/ops host))
+            "Availability probe then broadcast, both through the swarm host")))))
 
 (deftest handle-swarm-broadcast-timeout
-  (testing "broadcast returns timeout error when elisp times out"
-    (emacs/with-stub-emacs
-      [_stub {:responses (broadcast-responses
-                          {:success false :result nil :timed-out true})}]
+  (testing "broadcast returns timeout error when the host times out"
+    (sh/with-swarm-host
+      [_host (broadcast-host
+              {:success false :result nil :timed-out true})]
       (let [result (status/handle-swarm-broadcast {:prompt "test"})
             parsed (json/read-str (:text result) :key-fn keyword)]
         (is (:isError result)
@@ -82,20 +78,23 @@
             "Status should be timeout")))))
 
 (deftest handle-swarm-broadcast-addon-not-loaded
-  (testing "broadcast returns error when the swarm feature is absent from Emacs"
-    (emacs/with-stub-emacs
-      [_stub {:responses [["featurep" {:success true :result "nil"}]]}]
+  (testing "broadcast returns error when the host reports the swarm addon absent"
+    (sh/with-swarm-host
+      [host (sh/answering {:swarm/available? sh/addon-unloaded})]
       (let [result (status/handle-swarm-broadcast {:prompt "test"})]
         (is (:isError result)
             "Should return error when addon not loaded")
-        (is (re-find #"not loaded" (:text result))
-            "Should mention addon not loaded"))))
-  (testing "broadcast returns error when the elisp transport itself is absent"
-    (ext-stub/without-extensions
-     [:emacs/eval-elisp-with-timeout]
-     (fn []
-       (let [result (status/handle-swarm-broadcast {:prompt "test"})]
-         (is (:isError result)
-             "Should return error when hive-emacs is not loaded")
-         (is (re-find #"not loaded" (:text result))
-             "Should mention addon not loaded"))))))
+        (is (re-find #"unavailable" (:text result))
+            "Should say the swarm host is unavailable")
+        (is (empty? (sh/calls-of host :swarm/broadcast))
+            "Nothing is broadcast when the addon is absent"))))
+  (testing "broadcast returns error when no swarm host is registered at all"
+    (let [prior (sh/install! (sh/->host (sh/answering {})))]
+      (try
+        (sh/restore! nil)
+        (let [result (status/handle-swarm-broadcast {:prompt "test"})]
+          (is (:isError result)
+              "Should return error when hive-emacs is not mounted")
+          (is (re-find #"unavailable" (:text result))
+              "Should say the swarm host is unavailable"))
+        (finally (sh/restore! prior))))))

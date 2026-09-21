@@ -8,7 +8,6 @@
 
    CLARITY Principle: Telemetry first - observable system behavior."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
-            [datascript.core]
             [hive-mcp.channel.core]
             [hive-mcp.crystal.harvest.collect :as collect]
             [hive-mcp.crystal.recall :as recall]
@@ -203,24 +202,6 @@
           (is (= :system-error (:type @emitted)) "Should emit :system-error event")
           (is (= :component-failed (get-in @emitted [:data :error-type]))
               "Should pass error-type in data"))))))
-
-(deftest emit-system-error-stores-in-datascript
-  (testing ":emit-system-error stores in DataScript for post-mortem analysis"
-    (effects/register-effects!)
-    (let [transacted (atom nil)]
-      (with-redefs [hive-mcp.swarm.datascript/get-conn
-                    (fn [] (atom {}))
-                    datascript.core/transact!
-                    (fn [_conn tx-data]
-                      (reset! transacted tx-data))]
-        (let [handler (ev/get-fx-handler :emit-system-error)]
-          (handler {:error-type :restart-collision
-                    :source "server/start"
-                    :message "Port 7910 already in use"
-                    :context {:port 7910 :existing-pid 12345}})
-          (is (some? @transacted) "Should transact to DataScript")
-          (is (some #(= :system-error (:error/type %)) @transacted)
-              "Transaction should include error entity"))))))
 
 ;; =============================================================================
 ;; Integration: Harvest → System Event Flow

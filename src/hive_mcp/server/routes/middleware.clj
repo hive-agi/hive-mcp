@@ -11,7 +11,7 @@
    DDD: Application Service layer — request processing pipeline."
   (:require [hive-mcp.server.routes.identity :as id]
             [hive-mcp.agent.context :as ctx]
-            [hive-mcp.crystal.core :as crystal]
+            [hive-mcp.spi.session :as crystal]
             [hive-mcp.channel.async-result :as async-buf]
             [hive-mcp.server.routes.async-tasks :as async-tasks]
             [hive-mcp.dsl.response :as compress]
@@ -304,7 +304,7 @@
   [project-id]
   (when project-id
     (try
-      (when-let [desc-fn (requiring-resolve 'hive-mcp.knowledge-graph.scope/descendant-scopes)]
+      (when-let [desc-fn (requiring-resolve 'hive-mcp.project.scope/descendant-scopes)]
         (let [child-pids (desc-fn project-id)]
           (when (seq child-pids)
             (log/debug "Piggyback: including descendant project-ids for" project-id ":" child-pids)

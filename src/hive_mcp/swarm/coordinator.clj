@@ -37,11 +37,12 @@
    - swarm/datascript.clj - Entity state (slaves, tasks, coordinators)"
   (:require [hive-mcp.swarm.logic :as logic]
             [hive-mcp.swarm.datascript.lings :as lings]
-            [hive-mcp.knowledge-graph.disc :as disc]
+            [hive-mcp.storage.file-hash :as file-hash]
             [hive-mcp.tools.swarm.claim :as claim-tools]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.spi.disc :as disc-port]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -178,7 +179,7 @@
                 (claim-tools/record-claim-timestamp! f slave-id)
                 ;; CC.3: Compute prior-hash and store in DataScript
                 (let [prior-hash (when (.exists (io/file f))
-                                   (:hash (disc/file-content-hash f)))]
+                                   (:hash (file-hash/file-content-hash f)))]
                   (lings/claim-file! f slave-id {:task-id task-id
                                                  :prior-hash prior-hash})))
               {:acquired? true
@@ -247,7 +248,9 @@
 
    Compares the prior-hash (captured at acquire time via CC.3) with the
    current file content hash. If the content changed during the claim period,
-   propagates staleness to dependent KG entries via disc/propagate-staleness!.
+   propagates staleness to dependent KG entries through the disc port
+   (hive-mcp.spi.disc), which answers a no-op tally when no disc knowledge
+   is mounted.
 
    This enables the knowledge graph to track which files were modified by
    which agents, and automatically marks dependent knowledge as potentially
@@ -268,7 +271,7 @@
       (let [prior-hash (:prior-hash claim-info)
             slave-id (:slave-id claim-info)
             ;; Compute current hash
-            {:keys [hash exists?]} (disc/file-content-hash file-path)
+            {:keys [hash exists?]} (file-hash/file-content-hash file-path)
             changed? (and exists?
                           prior-hash
                           hash
@@ -280,9 +283,7 @@
                         {:file file-path
                          :prior-hash (when prior-hash (subs prior-hash 0 8))
                          :current-hash (when hash (subs hash 0 8))})
-              (disc/propagate-staleness! file-path
-                                         (:hash-mismatch disc/base-staleness-values)
-                                         :hash-mismatch))
+              (disc-port/propagate-staleness! file-path (disc-port/staleness-value :hash-mismatch) :hash-mismatch))
             ;; CC.6: Archive to claim-history when changed
             archived? (when changed?
                         (lings/archive-claim-to-history!

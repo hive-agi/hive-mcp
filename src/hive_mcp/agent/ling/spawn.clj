@@ -6,14 +6,15 @@
             [hive-mcp.agent.ling.headless-registry :as headless-reg]
             [hive-mcp.agent.ling.lifecycle :as lifecycle]
             [hive-mcp.agent.ling.spawn-store :as spawn-store]
-            [hive-mcp.workflows.catchup-ling :as catchup-ling]
             [hive-mcp.swarm.datascript.lings :as ds-lings]
             [hive-mcp.swarm.datascript.queries :as ds-queries]
             [hive-mcp.protocols.dispatch :as dispatch-ctx]
             [clojure.string :as str]
             [hive-dsl.result :as r]
             [taoensso.timbre :as log]
-            [hive-mcp.extensions.registry :as ext]))
+            [hive-mcp.extensions.registry :as ext]
+            [hive-mcp.tools.swarm.channel :as swarm-channel]
+            [hive-mcp.swarm.adapters.soft :as soft]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -137,10 +138,9 @@
   [{:keys [task cwd kanban-task-id]}]
   (when task
     (let [ling-context-str (r/rescue nil
-                             (catchup-ling/ling-catchup
-                              {:directory cwd
+                             (when-let [ling-catchup (soft/resolve-soft 'hive-mcp.workflows.catchup-ling/ling-catchup)] (ling-catchup {:directory cwd
                                :task task
-                               :kanban-task-id kanban-task-id}))]
+                               :kanban-task-id kanban-task-id})))]
       (if ling-context-str
         (str ling-context-str "\n\n---\n\n" task)
         task))))
@@ -345,6 +345,7 @@
                    :claude)
           strat (lifecycle/resolve-strategy mode)]
       (ds-lings/update-slave! id {:slave/status :working})
+      (swarm-channel/record-dispatched-task! task-id)
       (ds-lings/add-task! task-id id {:status :dispatched
                                       :prompt resolved-task
                                       :files files})
@@ -488,7 +489,8 @@
                  (:llm-retries opts)        (assoc :llm-retries (:llm-retries opts))
                  (:sliding-window-size opts) (assoc :sliding-window-size (:sliding-window-size opts))
                  (:agents opts)             (assoc :agents (:agents opts))
-                 (:max-budget-usd opts)     (assoc :max-budget-usd (:max-budget-usd opts))))))
+                 (:max-budget-usd opts)     (assoc :max-budget-usd (:max-budget-usd opts))
+                 (some? (:sandbox opts))    (assoc :sandbox (:sandbox opts))))))
 
 (defn create-ling!
   "Create and spawn a new ling agent."

@@ -12,7 +12,7 @@
             [hive-mcp.dns.result :refer [rescue rescue-interrupt rescue-log]]
             [hive-mcp.tools.catchup.hierarchy :as hier]
             [clojure.tools.logging :as log]
-            [hive-mcp.vectordb.resilience :refer [with-resilience]]
+            [hive-mcp.resilience.store :refer [with-resilience]]
             [hive-mcp.tools.catchup.scope-filter :as sf])
   (:import [java.util.concurrent Future TimeUnit TimeoutException]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>

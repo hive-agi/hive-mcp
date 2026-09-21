@@ -1,17 +1,17 @@
 (ns hive-mcp.tools.catchup.spawn
   "Spawn context injection for ling priming."
   (:require [hive-mcp.protocols.memory :as mem-proto]
-            [hive-mcp.tools.memory.scope :as scope]
+            [hive-mcp.project.scope :as project-scope]
             [hive-mcp.tools.catchup.scope :as catchup-scope]
             [hive-mcp.tools.catchup.git :as catchup-git]
             [hive-mcp.tools.catchup.format :as fmt]
-            [hive-mcp.agent.hints :as hints]
-            [hive-mcp.knowledge-graph.disc :as kg-disc]
+            [hive-mcp.spi.disc :as disc-port]
             [hive-mcp.channel.context-store :as context-store]
             [hive-mcp.context.reconstruction :as reconstruction]
             [hive-mcp.dns.result :refer [rescue]]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.swarm.adapters.soft :as soft]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -86,7 +86,7 @@
   ([directory {:keys [mode task task-id] :or {mode :full}}]
    (when (mem-proto/store-set?)
      (rescue nil
-             (let [project-id (scope/get-current-project-id directory)
+             (let [project-id (project-scope/get-current-project-id directory)
                    project-name (catchup-scope/get-current-project-name directory)]
 
                (case mode
@@ -123,26 +123,36 @@
                        (spawn-context directory {:mode :full :task task :task-id task-id}))))
 
                  :hints
-                 (let [hint-data (hints/generate-hints project-id {:task task})
-                       task-hints (when task-id
-                                    (rescue nil
-                                            (hints/generate-task-hints {:task-id task-id :depth 2})))
-                       enriched-hints (if task-hints
-                                        (update hint-data :memory-hints
-                                                (fn [mh]
-                                                  (cond-> mh
-                                                    (seq (:l1-ids task-hints))
-                                                    (update :read-ids (fnil into []) (:l1-ids task-hints))
-                                                    (seq (:l2-queries task-hints))
-                                                    (update :queries (fnil into []) (:l2-queries task-hints))
-                                                    (seq (:l3-seeds task-hints))
-                                                    (assoc :kg-seeds (mapv :id (:l3-seeds task-hints))
-                                                           :kg-depth (get (first (:l3-seeds task-hints)) :depth 2)))))
-                                        hint-data)
-                       git-info (catchup-git/gather-git-info directory)]
-                   (hints/serialize-hints enriched-hints
-                                          :project-name (or project-name project-id "global")
-                                          :git-info git-info))
+                 (if-let [generate (soft/resolve-soft 'hive-mcp.agent.hints/generate-hints)]
+                   (let [hint-data (generate project-id {:task task})
+                         task-hints (when task-id
+                                      (rescue nil
+                                              (when-let [gen-task (soft/resolve-soft 'hive-mcp.agent.hints/generate-task-hints)]
+                                                (gen-task {:task-id task-id :depth 2}))))
+                         enriched-hints (if task-hints
+                                          (update hint-data :memory-hints
+                                                  (fn [mh]
+                                                    (cond-> mh
+                                                      (seq (:l1-ids task-hints))
+                                                      (update :read-ids (fnil into []) (:l1-ids task-hints))
+                                                      (seq (:l2-queries task-hints))
+                                                      (update :queries (fnil into []) (:l2-queries task-hints))
+                                                      (seq (:l3-seeds task-hints))
+                                                      (assoc :kg-seeds (mapv :id (:l3-seeds task-hints))
+                                                             :kg-depth (get (first (:l3-seeds task-hints)) :depth 2)))))
+                                          hint-data)
+                         git-info (catchup-git/gather-git-info directory)
+                         serialize (soft/resolve-soft 'hive-mcp.agent.hints/serialize-hints)]
+                     (serialize enriched-hints
+                                :project-name (or project-name project-id "global")
+                                :git-info git-info))
+                   ;; The hint generator is agent domain (hive-agent). Without
+                   ;; it there are no hints to serialize, so answer the fuller
+                   ;; context rather than an empty hint block, exactly as the
+                   ;; :ref branch above falls back when its cache is cold.
+                   (do
+                     (log/info "spawn-context :hints mode needs the agent domain, falling back to :full")
+                     (spawn-context directory {:mode :full :task task :task-id task-id})))
 
            ;; :full and default case
                  (let [axioms (catchup-scope/query-axioms project-id)
@@ -152,7 +162,7 @@
                        git-info (catchup-git/gather-git-info directory)
 
                        stale-files (rescue []
-                                           (kg-disc/top-stale-files :n 5 :project-id project-id))
+                                           (disc-port/top-stale-files {:n 5, :project-id project-id}))
 
                        axioms-meta (mapv fmt/entry->axiom-meta axioms)
                        priority-meta (mapv fmt/entry->priority-meta priority-conventions)

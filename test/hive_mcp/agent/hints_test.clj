@@ -1,6 +1,7 @@
 (ns hive-mcp.agent.hints-test
   "Tests for memory hints: generation, serialization, deserialization, execution."
-  (:require [clojure.test :refer [deftest testing is are use-fixtures]]
+  (:require [hive-mcp.project.scope]
+            [clojure.test :refer [deftest testing is are use-fixtures]]
             [hive-mcp.agent.hints :as hints]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.tools.catchup :as catchup]
@@ -352,7 +353,7 @@
   (testing "spawn-context with :hints mode returns compact markdown"
     (with-redefs [mem-proto/store-set? (fn [] true)
                   mem-proto/get-store (fn ([] (stub-store {})) ([_] (stub-store {})))
-                  hive-mcp.tools.memory.scope/get-current-project-id (fn [_] "test-project")
+                  hive-mcp.project.scope/get-current-project-id (fn [_] "test-project")
                   ;; Sprint 2: get-current-project-name moved to catchup.scope
                   hive-mcp.tools.catchup.scope/get-current-project-name (fn [_] "test-project")
                   ;; :hints mode resolves the PRIVATE hints/query-axioms (hints.clj:39),
@@ -380,7 +381,7 @@
   (testing "spawn-context without opts retains full mode behavior"
     (with-redefs [mem-proto/store-set? (fn [] true)
                   mem-proto/get-store (fn ([] (stub-store {})) ([_] (stub-store {})))
-                  hive-mcp.tools.memory.scope/get-current-project-id (fn [_] "test-project")
+                  hive-mcp.project.scope/get-current-project-id (fn [_] "test-project")
                   ;; Sprint 2: moved to catchup.scope
                   hive-mcp.tools.catchup.scope/get-current-project-name (fn [_] "test-project")
                   ;; Sprint 2: moved to catchup.scope

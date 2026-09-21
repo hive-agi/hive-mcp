@@ -3,12 +3,20 @@
 ;; as hive-knowledge require them from the published jar, and a jar carries
 ;; :paths only. :paths is kept in step with :src-dirs in version.edn.
 ;;
-;; The test tree is ONE directory, test/. Suites that need a real backend
+;; The addon-free test tree is test/. Suites that need a real backend
 ;; driver (datahike, datalevin) sit under the namespace prefix
 ;; hive-mcp.backends and are selected or excluded by that prefix; see the
-;; :test-backends alias.
+;; :test-backends alias. Suites that need the swarm addon (hive-agent,
+;; hive-datascript) live in test-swarm/; see the :test-swarm alias.
 {:paths ["src" "resources"]
 
+ ;; PINNED to 1.12.5 on purpose: uncomplicate/deep-diamond 0.47.1 (in via
+ ;; hive-carto / hive-knowledge) ships AOT classes compiled against 1.12.5 that
+ ;; hard-reference clojure.core$seq_QMARK___5492, which 1.12.6 renumbers to
+ ;; ___5490. This is the ROOT project, so its coordinate wins the whole
+ ;; classpath: on 1.12.6 the server dies loading clojure.core.async with
+ ;; NoClassDefFoundError before a single namespace finishes. Lift this only
+ ;; together with a deep-diamond build made against the newer Clojure.
  :deps {org.clojure/clojure {:mvn/version "1.12.5"}
         org.clojure/data.json {:mvn/version "2.5.2"}
         org.clojure/core.async {:mvn/version "1.9.865"}
@@ -93,11 +101,11 @@
         ;; 0.5.10 publishes the router registry API (get-event, get-interceptors,
         ;; append-interceptor!, get-fx) that hive-mcp.events.registry delegates to.
         io.github.hive-agi/hive-events
-        {:mvn/version "0.5.16"}
+        {:mvn/version "0.5.17"}
 
         ;; hive-hot - unified hot-reload with events integration
         io.github.hive-agi/hive-hot
-        {:mvn/version "0.1.17"}
+        {:mvn/version "0.1.19"}
 
         ;; Prometheus metrics - iapetos wrapper; hotspot collector adds
         ;; JVM metrics (memory, GC, threads).
@@ -117,7 +125,7 @@
 
         ;; hive-dsl — Result monad, rescue/guard DSL, error taxonomy
         io.github.hive-agi/hive-dsl
-        {:mvn/version "0.5.29"}
+        {:mvn/version "0.5.31"}
 
         ;; hive-spi — pure SPI contract leaf (protocols + schemas + ADTs).
         ;; Required at compile time by core namespaces. Pinned to the published
@@ -126,7 +134,7 @@
         ;; local.deps.edn :local/root override.
         ;; 1.0.0: the ports carry a published stability promise, which is what
         ;; lets this host make one of its own. See hive-spi's CHANGELOG.
-        io.github.hive-agi/hive-spi {:mvn/version "1.1.1"}
+        io.github.hive-agi/hive-spi {:mvn/version "1.3.0"}
 
         ;; NO CONCRETE BACKEND BELONGS HERE. hive-milvus / hive-qdrant /
         ;; clj-qdrant depend on hive-mcp for their addon surface, so declaring
@@ -154,26 +162,26 @@
         ;; hive-mcp.addons.protocol re-exports it via def-aliases so the ~30
         ;; monorepo addon implementors can depend on hive-addon instead of
         ;; compile-depending on hive-mcp.
-        io.github.hive-agi/hive-addon {:mvn/version "1.0.12"}
+        io.github.hive-agi/hive-addon {:mvn/version "1.0.14"}
 
         ;; hive-di — declarative typed config resolution (defconfig/env/literal)
         ;; Used by hive-mcp.embeddings.env-config and downstream addons.
-        io.github.hive-agi/hive-di {:mvn/version "0.4.14"}
+        io.github.hive-agi/hive-di {:mvn/version "0.4.16"}
 
         ;; hive-weave — Parallel utilities (bounded-pmap) used by project/tree.clj;
         ;; hive-weave.retry/with-recovery used by knowledge-graph/store/datahike.clj
         ;; (first released in 0.2.6 — 0.2.5 does not contain the retry ns).
-        io.github.hive-agi/hive-weave {:mvn/version "0.3.14"}
+        io.github.hive-agi/hive-weave {:mvn/version "0.3.16"}
 
         ;; hive-schemas — pinned at the TOP level, not only in :test/:test-unit.
         ;; Transitive callers can pull 0.1.6, which exists on Gitea only (404 on
         ;; Clojars and Central), so the default tree cannot resolve from a public
         ;; runner. :use-top makes this pin win everywhere.
-        io.github.hive-agi/hive-schemas {:mvn/version "0.1.35"}
+        io.github.hive-agi/hive-schemas {:mvn/version "0.1.37"}
 
         ;; hive-ttracking — telemetry/timing (timed-query, track*, bench*).
         ;; Consumed by catchup.clj and siblings (bundle/hydration/hierarchy).
-        io.github.hive-agi/hive-ttracking {:mvn/version "0.1.20"}
+        io.github.hive-agi/hive-ttracking {:mvn/version "0.1.22"}
 
         ;; hive-system — system-level abstractions (IProcess, INetwork,
         ;; process liveness, secrets, shell, redaction).
@@ -365,13 +373,13 @@
                 ;; Generative testing for spec validation
                 org.clojure/test.check {:mvn/version "1.1.3"}
                 ;; Trifecta macro: golden + property + mutation facets
-                io.github.hive-agi/hive-test {:mvn/version "0.4.7"}
+                io.github.hive-agi/hive-test {:mvn/version "0.4.9"}
                 ;; hive-schemas.test — a malli schema drives hive-test property +
                 ;; mutation facets with no hand-written generator, oracle, or
                 ;; mutant. Must come from the JAR, not :local/root — the macros
                 ;; live in src/synth, which ships but is not on the project's
                 ;; :paths.
-                io.github.hive-agi/hive-schemas {:mvn/version "0.1.35"}}
+                io.github.hive-agi/hive-schemas {:mvn/version "0.1.37"}}
                 ;; hive-spi now lives in :deps (core nses require it) — no
                 ;; :test-alias override needed.
    ;; Backend drivers are NOT here — the default cold-CI test path is
@@ -404,13 +412,13 @@
    :extra-deps {io.github.cognitect-labs/test-runner
                 {:git/tag "v0.5.1" :git/sha "dfb30dd"}
                 org.clojure/test.check {:mvn/version "1.1.3"}
-                io.github.hive-agi/hive-test {:mvn/version "0.4.7"}
+                io.github.hive-agi/hive-test {:mvn/version "0.4.9"}
                 ;; Must match :test. The runner LOADS every test namespace before
                 ;; it filters by selector, so a test ns requiring hive-schemas.test
                 ;; aborts this whole alias — all 405 namespaces — if the dep is
                 ;; only declared on :test. This is the CI alias; it is the one that
                 ;; must not be able to fail at load.
-                io.github.hive-agi/hive-schemas {:mvn/version "0.1.35"}}
+                io.github.hive-agi/hive-schemas {:mvn/version "0.1.37"}}
    :jvm-opts ["-Dhive.kg.backend=datascript"]
    :main-opts ["-m" "cognitect.test-runner" "-e" ":integration"
                "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]
@@ -424,10 +432,10 @@
    :extra-deps {io.github.cognitect-labs/test-runner
                 {:git/tag "v0.5.1" :git/sha "dfb30dd"}
                 org.clojure/test.check {:mvn/version "1.1.3"}
-                io.github.hive-agi/hive-test {:mvn/version "0.4.7"}
+                io.github.hive-agi/hive-test {:mvn/version "0.4.9"}
                 ;; Same reason as :test-unit — this alias also puts test/ on the
                 ;; path, so it loads every test ns before selecting :integration.
-                io.github.hive-agi/hive-schemas {:mvn/version "0.1.35"}}
+                io.github.hive-agi/hive-schemas {:mvn/version "0.1.37"}}
    :jvm-opts ["-Dhive.kg.backend=datascript"]
    :main-opts ["-m" "cognitect.test-runner" "-i" ":integration"
                "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]
@@ -462,6 +470,23 @@
   {:main-opts ["-m" "cognitect.test-runner"
                "-r" "^hive-mcp\\.backends\\..*-test$"]}
 
+  ;; Swarm-coupled suites: hive-mcp's integration tests of the swarm addon,
+  ;; kept under test-swarm/ so :test loads and runs with no hive-agent or
+  ;; hive-datascript on the classpath (the public build). Compose with :test
+  ;; for the shared infra and supply the addon through local.deps.edn, the
+  ;; same way :test-backends gets its drivers:
+  ;;   clj -Sdeps "$(cat local.deps.edn)" -M:test:test-swarm
+  ;; In a REPL the last alias's :main-opts win, so name the REPL alias LAST
+  ;; and keep :test in the chain (-M:test:test-swarm:dev-repl): :test carries
+  ;; the test deps and -Dhive.kg.backend=datascript, without which a test JVM
+  ;; opens the real KG store. A `cider spawn` with aliases ["test" "test-swarm"]
+  ;; supplies its own main and is unaffected.
+  :test-swarm
+  {:extra-paths ["test-swarm"]
+   :main-opts ["-m" "cognitect.test-runner"
+               "-d" "test-swarm"
+               "-r" "^hive-mcp\\..*-test$"]}
+
   ;; Build via hive-build (io.github.hive-agi/hive-build), the same release
   ;; path every other hive library uses. Version = the repo's VERSION file;
   ;; coordinates and :publish come from version.edn.
@@ -470,10 +495,12 @@
   ;;        clj -T:build jar-aot          ; AOT jar, metadata elided
   ;;        clj -T:build bump :level :patch
   ;;        clj -T:build deploy           ; jar -> Clojars (needs CLOJARS_* env)
+  ;;        clj -T:build kondo :paths '["src" "test" "test-swarm"]'
+  ;;                                      ; bare `kondo` lints src + test only
   ;; There is NO `uber` task; the server runs from source everywhere,
   ;; including the container (see Dockerfile and bin/docker-entrypoint.sh).
   :build
-  {:deps {io.github.hive-agi/hive-build {:mvn/version "0.1.19"}}
+  {:deps {io.github.hive-agi/hive-build {:mvn/version "0.1.22"}}
    :ns-default hive-build.api}
   :aot-boot {:extra-paths ["target/boot-classes"]
              :exec-fn hive-mcp.scripts.aot-boot/compile-boot-closure!

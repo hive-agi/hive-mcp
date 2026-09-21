@@ -10,7 +10,7 @@
 
    Registry (register-store!/get-store/set-store!) + id utils stay here."
   (:require [clojure.string]
-            [hive-mcp.memory.ids :as ids]
+            [hive-spi.memory.ids :as ids]
             [hive-spi.memory.ports :as ports]
             [malli.core :as m]
             [hive-spi.memory.registry :as sreg]))

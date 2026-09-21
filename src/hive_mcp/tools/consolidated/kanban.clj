@@ -1,9 +1,20 @@
 (ns hive-mcp.tools.consolidated.kanban
-  "Consolidated Kanban CLI tool."
+  "Consolidated Kanban CLI tool.
+
+   Loading this namespace is what makes core the kanban CONTRIBUTOR: it
+   installs core's IKanbanRead / IKanbanWrite provider in
+   hive-mcp.spi.kanban.registry and the :kanban catchup block in
+   hive-mcp.spi.catchup-registry. An addon that owns the board does the same at
+   its initialize! and replaces both."
   (:require [clojure.tools.logging :as log]
             [hive-mcp.tools.cli :refer [make-cli-handler make-batch-handler]]
+            [hive-mcp.tools.kanban.catchup-block :as catchup-block]
+            [hive-mcp.tools.kanban.port :as port]
             [hive-mcp.tools.memory-kanban :as mem-kanban]
             [hive-mcp.plan.tool :as plan-tool]))
+
+(port/register!)
+(catchup-block/register!)
 
 (def ^:private batch-allowed-handlers
   "Handlers reachable from a kanban batch operation.

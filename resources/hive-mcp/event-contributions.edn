@@ -1,0 +1,74 @@
+;; Domains that still ship INSIDE hive-mcp core and contribute event handlers
+;; or effects. Read by hive-mcp.events.contributions/load-manifest!, which
+;; resolves each :install! symbol at boot instead of requiring it, so the
+;; kernel declares these domains without depending on them.
+;;
+;; An entry leaves this file the day its addon contributes for itself at
+;; initialize! (hive-mcp.events.contributions/contribute!). When both vectors
+;; are empty the kernel carries no domain events at all, which is the
+;; HIVE-KERNEL 2.0.0 end state. :addon names where each one is going; the
+;; kernel census (resources/hive-mcp/kernel.edn :extraction) is the authority
+;; on that mapping.
+;;
+;; :events must list exactly what that domain's register fn installs. It is
+;; what events.handlers/expected-events promises at boot, so a drift here is
+;; reported by verify-handlers! as a missing handler.
+{:handlers
+ [{:key :task
+   :install! hive-mcp.events.handlers.task/register-handlers!
+   :events #{:task/complete :task/shout-complete :git/commit-modified}
+   :addon :hive-workflows}
+
+  {:key :ling
+   :install! hive-mcp.events.handlers.ling/register-handlers!
+   :events #{:ling/started :ling/completed :ling/ready-for-wrap}
+   :addon :hive-agent}
+
+  {:key :session
+   :install! hive-mcp.events.handlers.session/register-handlers!
+   :events #{:session/end :session/wrap}
+   :addon :hive-memory}
+
+  {:key :kanban
+   :install! hive-mcp.events.handlers.kanban/register-handlers!
+   :events #{:kanban/done :kanban/sync}
+   :addon :hive-kanban}
+
+  {:key :crystal
+   :install! hive-mcp.events.handlers.crystal/register-handlers!
+   :events #{:crystal/wrap-request :crystal/wrap-notify}
+   :addon :hive-memory}
+
+  {:key :kg
+   :install! hive-mcp.events.handlers.kg/register-handlers!
+   :events #{:kg/edge-created :kg/edge-updated :kg/edge-removed :kg/node-promoted}
+   :addon :hive-memory}
+
+  {:key :agora
+   :install! hive-mcp.events.handlers.agora/register-handlers!
+   :events #{:agora/turn-dispatched :agora/timeout :agora/turn-completed
+             :agora/dispatch-next :agora/consensus}
+   :addon :hive-agora}
+
+  {:key :saa
+   :install! hive-mcp.events.handlers.saa/register-handlers!
+   :events #{:saa/started :saa/phase-complete :saa/completed :saa/failed}
+   :addon :hive-workflows}
+
+  {:key :memory-read
+   :install! hive-mcp.events.handlers.memory-read/register-handlers!
+   :events #{:memory/query :memory/search :memory/get}
+   :addon :hive-memory}]
+
+ :effects
+ [{:key :memory
+   :install! hive-mcp.events.effects.memory/register-memory-effects!
+   :addon :hive-memory}
+
+  {:key :agent
+   :install! hive-mcp.events.effects.agent/register-agent-effects!
+   :addon :hive-agent}
+
+  {:key :kg
+   :install! hive-mcp.events.effects.kg/register-kg-effects!
+   :addon :hive-memory}]}

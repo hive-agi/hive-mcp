@@ -8,11 +8,11 @@
    index is faster on `==` than IN-list. Pure infrastructure — no cache, no
    side effects besides Milvus RPCs."
   (:require [hive-mcp.protocols.memory :as mem-proto]
-            [hive-mcp.knowledge-graph.scope :as kg-scope]
+            [hive-mcp.project.scope :as project-scope]
             [hive-mcp.dns.result :refer [rescue]]
             [hive-weave.parallel :as wpar]
             [clojure.tools.logging :as log]
-            [hive-mcp.vectordb.resilience :refer [with-resilience]]))
+            [hive-mcp.resilience.store :refer [with-resilience]]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -71,8 +71,8 @@
   [project-id]
   (let [in-project? (and project-id (not= project-id "global"))]
     (when in-project?
-      (let [visible (kg-scope/visible-scopes project-id)
-            descendants (kg-scope/descendant-scopes project-id)
+      (let [visible (project-scope/visible-scopes project-id)
+            descendants (project-scope/descendant-scopes project-id)
             all-ids (distinct (concat visible descendants))]
         (vec (remove #(= "global" %) all-ids))))))
 

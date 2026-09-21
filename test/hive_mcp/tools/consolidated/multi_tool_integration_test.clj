@@ -27,7 +27,6 @@
             [hive-mcp.tools.consolidated.kanban :as kanban]
             [hive-mcp.tools.consolidated.preset :as preset]
             [hive-mcp.tools.consolidated.magit :as magit]
-            [hive-mcp.tools.consolidated.emacs :as emacs]
             [hive-mcp.tools.composite :as composite]
             [hive-mcp.tools.consolidated.agora :as agora]
             [hive-mcp.tools.consolidated.olympus :as olympus]
@@ -287,7 +286,6 @@
    :kanban    kanban/tool-def
    :preset    preset/tool-def
    :magit     magit/tool-def
-   :emacs     emacs/tool-def
    ;; :analysis — composite tool, tested separately
    :agora     agora/tool-def
    :olympus   olympus/tool-def
@@ -362,7 +360,6 @@
              :kanban    {:tools-var #'kanban/tools}
              :preset    {:tools-var #'preset/tools}
              :magit     {:tools-var #'magit/tools}
-             :emacs     {:tools-var #'emacs/tools}
              ;; :analysis — composite tool, no static tools var
              :agora     {:tools-var #'agora/tools}
              :olympus   {:tools-var #'olympus/tools}
@@ -392,7 +389,6 @@
              :kanban    kanban/handlers
              :preset    preset/handlers
              :magit     magit/handlers
-             :emacs     emacs/handlers
              ;; :analysis — composite tool, handlers built dynamically
              :agora     agora/handlers
              :olympus   olympus/handlers
@@ -414,7 +410,6 @@
              :kg        {:handlers-map kg/handlers :tool-def-val kg/tool-def}
              :hivemind  {:handlers-map hivemind/handlers :tool-def-val hivemind/tool-def}
              :magit     {:handlers-map magit/handlers :tool-def-val magit/tool-def}
-             :emacs     {:handlers-map emacs/handlers :tool-def-val emacs/tool-def}
              ;; :analysis — composite tool, tested separately
              :session   {:handlers-map session/handlers :tool-def-val session/tool-def}
              :config    {:handlers-map config/handlers :tool-def-val config/tool-def}
@@ -447,7 +442,6 @@
              :kanban    kanban/handle-kanban
              :preset    preset/handle-preset
              :magit     magit/handle-magit
-             :emacs     emacs/handle-emacs
              :analysis  (composite/build-composite-handler "analysis")
              :agora     agora/handle-agora
              :olympus   olympus/handle-olympus
@@ -477,7 +471,6 @@
              :kanban    kanban/handle-kanban
              :preset    preset/handle-preset
              :magit     magit/handle-magit
-             :emacs     emacs/handle-emacs
              :analysis  (composite/build-composite-handler "analysis")
              :agora     agora/handle-agora
              :olympus   olympus/handle-olympus
@@ -623,9 +616,19 @@
       (is (contains? props "directory")))))
 
 (deftest test-hivemind-event-type-enum
-  (testing "hivemind event_type has correct enum values"
-    (let [enum (get-in hivemind/tool-def [:inputSchema :properties "event_type" :enum])]
-      (is (= #{"progress" "completed" "error" "blocked" "started"} (set enum))))))
+  ;; The event-type vocabulary lives in the swarm addon. With it on the
+  ;; classpath the schema advertises the enum; without it the schema OMITS
+  ;; :enum, because an empty or nil :enum makes an MCP client reject every
+  ;; value. This tree runs on both classpaths, so the assertion is the one
+  ;; that holds on both; the addon-present value is pinned in
+  ;; test-swarm/hive_mcp/tools/consolidated/hivemind_event_type_enum_test.clj.
+  (testing "hivemind event_type advertises the full vocabulary or no enum at all"
+    (let [event-type (get-in hivemind/tool-def [:inputSchema :properties "event_type"])]
+      (is (or (not (contains? event-type :enum))
+              (= #{"progress" "completed" "error" "blocked" "started"}
+                 (set (:enum event-type))))
+          (str "event_type :enum is present but is not the vocabulary: "
+               (pr-str (:enum event-type)))))))
 
 ;; =============================================================================
 ;; Part 9: Kanban Consolidated Tool Integration Tests
@@ -754,36 +757,6 @@
   (testing "magit diff target enum is correct"
     (let [enum (get-in magit/tool-def [:inputSchema :properties "target" :enum])]
       (is (= #{"staged" "unstaged" "all"} (set enum))))))
-
-;; =============================================================================
-;; Part 13: Emacs Consolidated Tool Integration Tests
-;; =============================================================================
-
-(deftest test-emacs-handlers-completeness
-  (testing "emacs handlers has all expected commands"
-    (is (contains? emacs/handlers :eval))
-    (is (contains? emacs/handlers :buffers))
-    (is (contains? emacs/handlers :notify))
-    (is (contains? emacs/handlers :status))
-    (is (contains? emacs/handlers :switch))
-    (is (contains? emacs/handlers :find))
-    (is (contains? emacs/handlers :save))
-    (is (contains? emacs/handlers :current))))
-
-(deftest test-emacs-tool-def-schema-params
-  (testing "emacs tool-def schema has key params"
-    (let [props (get-in emacs/tool-def [:inputSchema :properties])]
-      (is (contains? props "code"))
-      (is (contains? props "message"))
-      (is (contains? props "level"))
-      (is (contains? props "buffer"))
-      (is (contains? props "file"))
-      (is (contains? props "all")))))
-
-(deftest test-emacs-notification-level-enum
-  (testing "emacs notification level enum is correct"
-    (let [enum (get-in emacs/tool-def [:inputSchema :properties "level" :enum])]
-      (is (= #{"info" "warn" "error"} (set enum))))))
 
 ;; =============================================================================
 ;; Part 14: Analysis Composite Tool Integration Tests
@@ -1167,7 +1140,6 @@
       (is (contains? enum "preset"))
       (is (not (contains? enum "wave")))
       (is (contains? enum "magit"))
-      (is (contains? enum "emacs"))
       (is (contains? enum "analysis"))
       (is (contains? enum "agora"))
       (is (contains? enum "olympus"))

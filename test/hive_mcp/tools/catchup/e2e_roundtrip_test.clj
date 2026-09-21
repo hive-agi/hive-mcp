@@ -37,7 +37,7 @@
             [hive-mcp.channel.context-store :as context-store]
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.concurrency.pool :as pool]
-            [hive-mcp.knowledge-graph.scope :as kg-scope]
+            [hive-mcp.project.scope :as kg-scope]
             [hive-mcp.knowledge-graph.edges :as kg-edges]))
 
 ;; =============================================================================
@@ -151,7 +151,7 @@
      [;; -- Identity / Context --------------------------------------------------
       ctx/current-directory   (constantly test-directory)
       ctx/current-agent-id   (constantly test-agent)
-      scope/get-current-project-id (constantly test-project)
+      hive-mcp.project.scope/get-current-project-id (constantly test-project)
 
       ;; -- Crystal core (deterministic session + timing) -----------------------
       crystal/session-id     (constantly test-session)

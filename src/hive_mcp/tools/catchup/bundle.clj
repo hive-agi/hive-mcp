@@ -20,7 +20,7 @@
             [hive-weave.parallel :as wpar]
             [clojure.tools.logging :as log]
             [clojure.set :as set]
-            [hive-mcp.vectordb.resilience :refer [with-resilience]]
+            [hive-mcp.resilience.store :refer [with-resilience]]
             [hive-mcp.tools.catchup.bundle-cache :as bc]
             [hive-mcp.tools.catchup.bucket-types :as bt]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>

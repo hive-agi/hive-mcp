@@ -13,7 +13,7 @@
             [hive-mcp.agent.openrouter :as llm-registry]
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.knowledge-graph.scope :as kg-scope]
-            [hive-mcp.server.guards :as guards]
+            [hive-spi.swarm.guards :as guards]
             [hive-mcp.config.core :as config]
             [taoensso.timbre :as log]
             [clojure.string :as str]
@@ -132,6 +132,17 @@
         (throw (ex-info "token_budget must be a positive integer"
                         {:param "token_budget" :value v}))))))
 
+(defn spawn-brief
+  "The initial task a spawn carries: `task`, else `prompt`. Blank counts as
+   absent. Throws ex-info when both are given and differ."
+  [{:keys [task prompt]}]
+  (let [t (when-not (str/blank? task) task)
+        p (when-not (str/blank? prompt) prompt)]
+    (if (and t p (not= t p))
+      (throw (ex-info "task and prompt disagree: pass one initial brief"
+                      {:param "prompt"}))
+      (or t p))))
+
 (defn handle-spawn
   "Spawn a new ling agent.
 
@@ -141,9 +152,13 @@
    The spawn's parent is `effective-parent`: the `parent` param when given,
    else the calling agent — so grandchild routing needs no priming.
 
+   The initial brief is `spawn-brief`: `task`, else `prompt`. The response
+   reports `:task-attached` and carries a `:warning` when the ling starts
+   with no brief.
+
    The full request map rides on opts under :spawn/request for the
    :spawn/opts-overlay extension seam, and is stripped before planning."
-  [{:keys [type name cwd presets model provider tier token_budget task project_id kanban_task_id spawn_mode agents max_budget_usd kg_compress sliding_window_size verbose llm_retries] :as params}]
+  [{:keys [type name cwd presets model provider tier token_budget project_id kanban_task_id spawn_mode agents max_budget_usd kg_compress sliding_window_size verbose llm_retries sandbox] :as params}]
   ;; Layer 3: Defense-in-depth spawn guard
   (if-let [_ (when (guards/child-ling?) :denied)]
     (do
@@ -172,6 +187,7 @@
           (let [parent (effective-parent params)
                 worker-tier (normalize-tier tier)
                 token-budget (normalize-token-budget token_budget)
+                brief (spawn-brief params)
                 resolved (llm-registry/resolve-provider-model
                            {:provider provider
                             :model (if (= :cheap worker-tier) nil model)
@@ -217,8 +233,11 @@
                                                                                                (parse-long llm_retries)
                                                                                                llm_retries))
                                                        token-budget      (assoc :token-budget token-budget)
-                                                       sliding_window_size (assoc :sliding-window-size sliding_window_size)))
-                    slave-id (proto/spawn! ling-agent (cond-> {:task task
+                                                       sliding_window_size (assoc :sliding-window-size sliding_window_size)
+                                                       (some? sandbox)   (assoc :sandbox (if (string? sandbox)
+                                                                                           (= "true" sandbox)
+                                                                                           (boolean sandbox)))))
+                    slave-id (proto/spawn! ling-agent (cond-> {:task brief
                                                                :parent parent
                                                                :kanban-task-id kanban_task_id
                                                                :spawn-mode (:spawn-mode ling-agent)
@@ -234,20 +253,25 @@
                                           :model effective-model
                                           :tier worker-tier
                                           :token-budget token-budget
+                                          :task-attached (some? brief)
                                           :cwd cwd :presets presets-vec
                                           :project-id effective-project-id})
-                (mcp-json {:success true
-                           :agent-id slave-id
-                           :type :ling
-                           :parent parent
-                           :spawn-mode (:spawn-mode ling-agent)
-                           :provider effective-provider
-                           :model effective-model
-                           :tier worker-tier
-                           :token-budget token-budget
-                           :cwd cwd
-                           :presets presets-vec
-                           :project-id effective-project-id}))))
+                (mcp-json (cond-> {:success true
+                                   :agent-id slave-id
+                                   :type :ling
+                                   :parent parent
+                                   :spawn-mode (:spawn-mode ling-agent)
+                                   :provider effective-provider
+                                   :model effective-model
+                                   :tier worker-tier
+                                   :token-budget token-budget
+                                   :task-attached (some? brief)
+                                   :cwd cwd
+                                   :presets presets-vec
+                                   :project-id effective-project-id}
+                            (nil? brief)
+                            (assoc :warning (str "Spawned with no task: the ling has no brief "
+                                                 "and will idle until `agent dispatch` sends one.")))))))
           (catch Exception e
             (log/error "Failed to spawn agent" {:type agent-type :error (ex-message e)})
             (mcp-error (str "Failed to spawn " (clojure.core/name agent-type) ": " (ex-message e))))))))))

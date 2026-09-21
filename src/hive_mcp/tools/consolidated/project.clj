@@ -10,7 +10,6 @@
             [hive-mcp.project.tree :as tree]
             [hive-mcp.tools.composite :as composite]
             [hive-mcp.tools.core :as tcore]
-            [hive-mcp.tools.projectile :as projectile-handlers]
             [hive-mcp.tools.result-bridge :as rb]
             [taoensso.timbre :as log]))
 
@@ -68,17 +67,35 @@
 
 ;; ── Core project handlers ────────────────────────────────────────────────
 
+(defn- lazy-verb
+  "A verb whose implementation is resolved by SYMBOL at call time.
+
+   The projectile verbs are backed by `hive-mcp.tools.projectile`, a
+   hive-emacs extraction target, so the kernel may not require it. Lazy
+   resolution also keeps the property the var table had: a reload reaches the
+   handler, because nothing is captured (20260817195749-0d407e9c).
+
+   With the Emacs domain absent the verb answers an mcp-error naming what is
+   missing, rather than throwing an unresolved-symbol error at load."
+  [sym]
+  (fn [params]
+    (if-let [h (try (requiring-resolve sym) (catch Throwable _ nil))]
+      (h params)
+      (tcore/mcp-error (str "project verb unavailable: " sym
+                            " needs the Emacs domain (hive-emacs)")))))
+
 (def project-handlers
-  "The projectile-backed `project` verbs, stored as VARS so a reload reaches
+  "The `project` verbs. The projectile-backed ones resolve lazily by symbol
+   (see `lazy-verb`); the kernel's own three stay VARS so a reload reaches
    this table (20260817195749-0d407e9c). This subtree is folded into
    `canonical-handlers`, so converting it here un-freezes the same nine
    entries in the root above."
-  {:info      #'projectile-handlers/handle-projectile-info
-   :files     #'projectile-handlers/handle-projectile-files
-   :search    #'projectile-handlers/handle-projectile-search
-   :find      #'projectile-handlers/handle-projectile-find-file
-   :recent    #'projectile-handlers/handle-projectile-recent
-   :list      #'projectile-handlers/handle-projectile-list-projects
+  {:info      (lazy-verb 'hive-mcp.tools.projectile/handle-projectile-info)
+   :files     (lazy-verb 'hive-mcp.tools.projectile/handle-projectile-files)
+   :search    (lazy-verb 'hive-mcp.tools.projectile/handle-projectile-search)
+   :find      (lazy-verb 'hive-mcp.tools.projectile/handle-projectile-find-file)
+   :recent    (lazy-verb 'hive-mcp.tools.projectile/handle-projectile-recent)
+   :list      (lazy-verb 'hive-mcp.tools.projectile/handle-projectile-list-projects)
    :scan      #'handle-project-scan
    :tree      #'handle-project-tree
    :staleness #'handle-project-staleness})

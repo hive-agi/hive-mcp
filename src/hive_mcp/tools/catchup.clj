@@ -18,16 +18,12 @@
    - spawn-context          — re-export from catchup.spawn"
   (:require [hive-mcp.agent.context :as ctx]
             [hive-mcp.protocols.memory :as mem-proto]
-            [hive-mcp.tools.memory.scope :as scope]
-            [hive-mcp.crystal.harvest.collect :as coll]
-            [hive-mcp.crystal.fanout :as fan]
-            [hive-mcp.crystal.persist :as persist]
+            [hive-mcp.project.scope :as project-scope]
             [hive-mcp.tools.catchup.scope :as catchup-scope]
             [hive-mcp.tools.catchup.format :as fmt]
             [hive-mcp.tools.catchup.git :as catchup-git]
             [hive-mcp.tools.catchup.spawn :as catchup-spawn]
             [hive-mcp.tools.catchup.scope-filter :as sf]
-            [hive-mcp.knowledge-graph.scope :as kg-scope]
             [hive-mcp.channel.memory-piggyback :as memory-piggyback]
             [hive-mcp.channel.piggyback :as piggyback]
             [hive-mcp.channel.context-store :as context-store]
@@ -40,11 +36,10 @@
             [clojure.data.json :as json]
             [taoensso.timbre :as log]
             [hive-mcp.tools.catchup.relevance :as relevance]
-            [hive-mcp.vectordb.kanban-facade :as kanban-facade]
             [hive-mcp.tools.catchup.outcome :as outcome]
-            [clojure.string :as str]
-            [hive-mcp.tools.kanban.list.plan :as list-plan]
-            [hive-mcp.tools.catchup.caller :as catchup-caller]))
+            [hive-mcp.tools.catchup.caller :as catchup-caller]
+            [hive-mcp.spi.catchup-registry :as blocks]
+            [hive-mcp.swarm.adapters.soft :as soft]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -95,64 +90,18 @@
    until the Milvus batch-get path is itself optimized."
   300000)
 
-(defn- gather-kanban-summary
-  "Direct kanban-facade query for catchup summary scoped to project-id.
-   Returns {:counts {:todo n :inprogress n :inreview n :done n}
-            :recent-todos [{:id :title} ...] (top 10 by updated desc)
-            :scope-tag str-or-nil}.
+(def ^:private empty-kanban-summary
+  "The kanban block's value when no contributor registered one."
+  {:counts {} :recent-todos []})
 
-   Routes via `kanban-facade/query-entries` so the active store-routing
-   mode is honored (`:default` legacy milvus, `:kanban` qdrant cutover,
-   `:dual-read` soak). Reaching past the facade is a DIP one-seam
-   violation and was the 2026-05-04 catchup regression: the call site
-   read milvus while live writes had moved to qdrant, producing stale
-   bucket counts that did not reconcile with `kanban list`.
-
-   Bucket counts read the whole scoped board (`list-plan/whole-board`);
-   a smaller window reports the window, not the count.
-
-   Railway-ROP: each facade query is wrapped in `try-effect*` so a
-   single bad query short-circuits via `ok->` rather than throwing
-   through the whole computation. The full empty result is the
-   fallback when any leg errors. The caller (safe-deref) still expects
-   a plain map, so the Result is unwrapped at the seam."
-  [project-id]
-  (let [scope-tag    (when project-id (str "scope:project:" project-id))
-        base-tags    (cond-> ["kanban"] scope-tag (conj scope-tag))
-        empty-result {:counts {} :recent-todos [] :scope-tag scope-tag}
-        count-into   (fn [acc bucket tag]
-                       (let-ok [n (try-effect* :kanban/count-failed
-                                    (count (kanban-facade/query-entries
-                                            :type "note"
-                                            :tags (conj base-tags tag)
-                                            :limit list-plan/whole-board
-                                            :output-fields ["id"])))]
-                         (ok (assoc-in acc [:counts bucket] n))))
-        attach-recent (fn [acc]
-                        (let-ok [rows (try-effect* :kanban/recent-failed
-                                        (kanban-facade/query-entries
-                                         :type "note"
-                                         :tags (conj base-tags "todo")
-                                         :limit 10
-                                         :order-by [:updated :desc]
-                                         :output-fields ["id" "content" "tags"]
-                                         :include-content? true))]
-                          (ok (assoc acc :recent-todos
-                                     (mapv (fn [e]
-                                             {:id    (:id e)
-                                              :title (or (get-in e [:content :title])
-                                                         (when (string? (:content e))
-                                                           (first (clojure.string/split-lines (:content e))))
-                                                         "(no title)")
-                                              :tags  (:tags e)})
-                                           rows)))))
-        result (ok-> (ok empty-result)
-                     (count-into :todo       "todo")
-                     (count-into :inprogress "doing")
-                     (count-into :inreview   "review")
-                     (count-into :done       "done")
-                     attach-recent)]
-    (if (ok? result) (:ok result) empty-result)))
+(defn- compose-blocks
+  "Every registered catchup block's value for CTX, keyed by block id.
+   A contributor that throws is logged and omitted; the others still land."
+  [ctx]
+  (let [{:keys [blocks failed]} (blocks/compose ctx)]
+    (when (seq failed)
+      (log/warn "catchup: contributed blocks failed" failed))
+    blocks))
 
 ;; =============================================================================
 ;; Main Catchup Handler
@@ -182,18 +131,18 @@
         ;;   2. :project-id from .hive-project.edn in the exact dir
         ;;   3. Walk up the path finding the nearest .hive-project.edn
         ;;      (covers calls from deep subdirs of a hive project — without
-        ;;      this, scope/get-current-project-id returns the last path
+        ;;      this, project-scope/get-current-project-id returns the last path
         ;;      segment, producing a bogus project scope like "catchup".)
         ;;   4. Legacy fallback: last-path-segment / "global"
         (let [ctx-pid          (ctx/current-project-id)
               direct-cfg-pid   (when directory
-                                 (rescue nil (:project-id (kg-scope/read-direct-project-config directory))))
+                                 (rescue nil (:project-id (project-scope/read-direct-project-config directory))))
               walked-pid       (when (and directory (not direct-cfg-pid))
-                                 (rescue nil (kg-scope/infer-scope-from-path directory)))
+                                 (rescue nil (project-scope/infer-scope-from-path directory)))
               project-id       (or ctx-pid
                                    direct-cfg-pid
                                    (when (and walked-pid (not= walked-pid "global")) walked-pid)
-                                   (scope/get-current-project-id directory))
+                                   (project-scope/get-current-project-id directory))
               project-name (catchup-scope/get-current-project-name directory)
               scopes (fmt/build-scopes project-name project-id)
 
@@ -223,14 +172,20 @@
                                                                     (assoc acc k
                                                                            (rescue nil (provider-fn project-id))))
                                                                   {} status-providers))))
-              f-kanban (pool/with-io ((tt/timed-query "catchup/kanban-summary-total"
-                                                      #(gather-kanban-summary project-id))))
+              ;; Contributed blocks (hive-mcp.spi.catchup-registry): core's own
+              ;; domains and addons register {:block/id :block/fn :block/order};
+              ;; catchup composes them without naming a contributor.
+              f-blocks (pool/with-io ((tt/timed-query "catchup/blocks-total"
+                                                      #(compose-blocks {:project-id project-id
+                                                                        :directory  directory
+                                                                        :caller-id  (:_caller_id args)}))))
 
               bundle        (safe-deref f-bundle query-timeout-ms "bundle")
               git-info      (outcome/value-or (safe-deref f-git query-timeout-ms "git-info") {})
               addon-status  (outcome/value-or (safe-deref f-status query-timeout-ms "addon-status") {})
               carto-status  (:carto-status addon-status)
-              kanban-summary (outcome/value-or (safe-deref f-kanban query-timeout-ms "kanban-summary") {:counts {}, :recent-todos []})
+              contributed   (outcome/value-or (safe-deref f-blocks query-timeout-ms "blocks") {})
+              kanban-summary (or (:kanban contributed) empty-kanban-summary)
 
               axioms               (:axioms (outcome/value-or bundle {}) [])
               axiom-candidates     (:axiom-candidates (outcome/value-or bundle {}) [])
@@ -409,17 +364,14 @@
 ;; =============================================================================
 
 (defn handle-native-wrap
-  "Native multi-scope wrap implementation — Step 8 of plan
-   `20260504173159-46dc47f1`.
+  "Native multi-scope wrap: harvest a session, fan it out per scope, persist
+   the entries. This is the kernel's ENTRY POINT; the pipeline itself is
+   memory domain work in `hive-mcp.crystal.wrap-handler` and is resolved by
+   symbol, so the kernel names the wrap without requiring the crystal
+   namespaces.
 
-   Pipeline (no extension delegation):
-     1. `coll/harvest-all-by-scope` — flat harvest → attribution → partition
-        → `HarvestByScope`.
-     2. `fan/synthesize-wraps` — fan-out one entry per touched scope plus
-        an umbrella; each entry carries an explicit `scope:project:<pid>`
-        (or `scope:multi-project`) tag from step-6 `with-scope-tag`.
-     3. `persist/persist-wraps!` — direct `mem-proto/add-entry!` per entry
-        with explicit `:project-id` from `:pid` (no pwd derivation).
+   With the memory domain absent there is nothing to harvest INTO, so the
+   answer is an error naming what is missing rather than an empty success.
 
    Returns MCP text payload with aggregate shape:
      {:session   <session-id>
@@ -429,30 +381,9 @@
       :failed    <count>
       :wraps     [{:pid :project-id :id :success? :error?} ...]}"
   [args]
-  (let [directory (ctx/resolve-caller-directory args)
-        agent-id (:agent_id args)]
-    (log/info "native-wrap: per-scope chain" {:directory directory :agent-id agent-id})
-    (if-not (mem-proto/store-set?)
-      (fmt/store-not-configured-error)
-      (try
-        (let [hbs            (coll/harvest-all-by-scope {:directory directory
-                                                          :agent-id  agent-id})
-              wraps          (fan/synthesize-wraps hbs)
-              persist-result (persist/persist-wraps! wraps)]
-          (log/info "native-wrap: completed"
-                    {:total     (:total persist-result)
-                     :persisted (:persisted persist-result)
-                     :failed    (:failed persist-result)})
-          {:type "text"
-           :text (json/write-str
-                   {:session   (:session hbs)
-                    :directory directory
-                    :total     (:total persist-result)
-                    :persisted (:persisted persist-result)
-                    :failed    (:failed persist-result)
-                    :wraps     (:results persist-result)})})
-        (catch Exception e
-          (log/error e "native-wrap failed")
-          {:type "text"
-           :text (json/write-str {:error (.getMessage e)})
-           :isError true})))))
+  (if-let [h (soft/resolve-soft 'hive-mcp.crystal.wrap-handler/handle-native-wrap)]
+    (h args)
+    {:type "text"
+     :text (json/write-str
+            {:error "wrap unavailable: this build has no memory domain (hive-memory)"})
+     :isError true}))
