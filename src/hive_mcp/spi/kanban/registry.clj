@@ -10,9 +10,9 @@
 
    The facade resolves the provider on EVERY call, so a later registration
    (an addon at initialize!, a test fixture) is what the next call answers
-   from — a captured value would freeze the seam.
+   from. A captured value would freeze the seam.
 
-   HOST-LOCAL: the kernel's copy of hive-contracts.registry's kanban arm.
+   HOST-LOCAL: the kernel's copy of hive-spi.kanban.registry.
    See hive-mcp.spi.kanban."
   (:require [hive-mcp.spi.kanban :as kanban]
             [taoensso.timbre :as log]))

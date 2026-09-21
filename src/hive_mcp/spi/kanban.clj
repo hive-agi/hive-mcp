@@ -16,9 +16,11 @@
    not mint fresh protocol objects, which would orphan already-registered
    implementations.
 
-   HOST-LOCAL: this is the kernel's copy of the port. It moves to
-   hive-contracts (ns hive-contracts.kanban) once that library releases it;
-   until then the kernel cannot require an unreleased coordinate."
+   HOST-LOCAL: this is the kernel's copy of the port. Its library home is
+   hive-spi (ns hive-spi.kanban, on hive-spi main since 2026-09-21), not
+   hive-contracts, which is proprietary. It moves there once hive-spi
+   releases it; until then the kernel cannot require an unreleased
+   coordinate."
   (:require [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
