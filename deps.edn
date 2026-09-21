@@ -10,7 +10,14 @@
 ;; hive-datascript) live in test-swarm/; see the :test-swarm alias.
 {:paths ["src" "resources"]
 
- :deps {org.clojure/clojure {:mvn/version "1.12.6"}
+ ;; PINNED to 1.12.5 on purpose: uncomplicate/deep-diamond 0.47.1 (in via
+ ;; hive-carto / hive-knowledge) ships AOT classes compiled against 1.12.5 that
+ ;; hard-reference clojure.core$seq_QMARK___5492, which 1.12.6 renumbers to
+ ;; ___5490. This is the ROOT project, so its coordinate wins the whole
+ ;; classpath: on 1.12.6 the server dies loading clojure.core.async with
+ ;; NoClassDefFoundError before a single namespace finishes. Lift this only
+ ;; together with a deep-diamond build made against the newer Clojure.
+ :deps {org.clojure/clojure {:mvn/version "1.12.5"}
         org.clojure/data.json {:mvn/version "2.5.2"}
         org.clojure/core.async {:mvn/version "1.9.865"}
 
