@@ -35,6 +35,8 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-09-21
+
 ### Added
 
 - **`agent spawn` takes `sandbox`.** An optional boolean that rides from the
