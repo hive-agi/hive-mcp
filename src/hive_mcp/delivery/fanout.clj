@@ -28,7 +28,8 @@
             [hive-mcp.resilience.breaker :as cb]
             [hive-mcp.protocols.delivery-channel :as dc]
             [hive-weave.safe :as ws]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-weave.pool :as wp]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -56,6 +57,19 @@
            :doc "channel-id -> breaker map. Lives for the JVM. Reset via
                  `reset-breakers!` (tests / operator)."}
   *breakers (atom {}))
+
+(defonce ^:private io-pool
+  ;; Both calls below are socket IO: they wait on a client, they compute
+  ;; nothing, and the only scarce thing is the thread doing the waiting. On
+  ;; `clojure.core/future` a timed-out deliver! keeps its platform thread until
+  ;; the channel gives up, which measured as 52 live threads after 200 timed-out
+  ;; calls. On virtual threads the abandoned work parks instead of pinning a
+  ;; 1 MB stack, so the leak costs a continuation rather than a thread.
+  ;;
+  ;; No gate: nothing here is rationed except the thread, and one fanout is one
+  ;; envelope per connected channel. A per-channel limit, if it is ever wanted,
+  ;; belongs in a gate keyed by channel, not in this executor's size.
+  (delay (wp/io-executor {:name "delivery-fanout"})))
 
 (defn reset-breakers!
   "Clear all per-channel breaker state. Tests / ops surface."
@@ -174,7 +188,8 @@
          envelope (wrap-envelope event)
          env-id   (::id envelope)
          timeout  (:per-channel-timeout-ms policy)
-         av-to    (:availability-timeout-ms policy)]
+         av-to    (:availability-timeout-ms policy)
+         pool     @io-pool]
      (reduce
       (fn [acc ch]
         (let [chan-id (dc/channel-id ch)]
@@ -186,6 +201,7 @@
             :else
             (let [av-result (ws/safe-future-call
                              {:timeout-ms av-to
+                              :pool pool
                               :name (str "ch/" (name chan-id) "/available?")}
                              #(dc/available? ch))
                   [av-tag av-val] (classify av-result)]
@@ -206,6 +222,7 @@
                   (assoc acc chan-id :unavailable)
                   (let [d-result (ws/safe-future-call
                                   {:timeout-ms timeout
+                                   :pool pool
                                    :name (str "ch/" (name chan-id) "/deliver!")}
                                   #(dc/deliver! ch envelope))
                         [d-tag d-val] (classify d-result)]

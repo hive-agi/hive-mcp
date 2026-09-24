@@ -23,7 +23,8 @@
             [hive-mcp.channel.task-signal :as task-signal]
             [hive-mcp.channel.activation :as activation]
             [hive-mcp.channel.blocks :as blocks]
-            [hive-spi.guard.ports :as gp]))
+            [hive-spi.guard.ports :as gp])
+(:import [java.util.concurrent RejectedExecutionException]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -191,6 +192,13 @@
    than lying by omission. The happy path is byte-identical to before, so no
    client has to learn a new shape to keep working.
 
+   A SATURATED POOL IS ANSWERED, NOT ABSORBED. The pool refuses rather than
+   handing the work back to the submitting thread, and the submitting thread
+   here is the one serving the request. The refusal becomes an error the
+   caller can act on, and the journalled submission is closed with the same
+   verdict, so a record written a line earlier does not later resurface as an
+   `:interrupted` result for work that never started.
+
    NOTE for addon authors: a top-level `:async` is consumed here and is gone
    before any handler runs, so a tool must not name a parameter `async` and
    expect to receive it. Spell such a flag `background` (see
@@ -202,43 +210,56 @@
             caller-id  (or (:_caller_id args) "coordinator")
             timeout-ms (:async-timeout-ms args)
             durable?   (async-buf/record-submission! caller-id task-id tool-name)]
-        (async-tasks/submit!
-         {:task-id    task-id
-          :tool       tool-name
-          :caller-id  caller-id
-          :timeout-ms timeout-ms
-          :f          (fn []
-                        (try
-                          (let [clean-args (dissoc args :async :async-timeout-ms)
-                                result (handler clean-args)]
-                            (async-buf/enqueue-result! caller-id
-                                                       {:task-id task-id :tool tool-name
-                                                        :status :completed :result result}))
-                          (catch InterruptedException _
-                            ;; Cancelled on purpose. Say so rather than
-                            ;; reporting it as a failure of the work.
-                            (log/info "async-result: task cancelled" {:task-id task-id})
-                            (async-buf/enqueue-result! caller-id
-                                                       {:task-id task-id :tool tool-name
-                                                        :status :cancelled}))
-                          (catch Exception e
-                            (log/error e "async-result: background execution failed for task" task-id)
-                            (async-buf/enqueue-result! caller-id
-                                                       {:task-id task-id :tool tool-name
-                                                        :status :error :error (.getMessage e)}))
-                          (catch Throwable t
-                            ;; Not an Exception, so nothing below would have
-                            ;; reported it and the ack would never be answered.
-                            (log/error t "async-result: background execution died for task" task-id)
-                            (async-buf/enqueue-result! caller-id
-                                                       {:task-id task-id :tool tool-name
-                                                        :status :error
-                                                        :error (str (.getName (class t)) ": " (.getMessage t))})
-                            (throw t))))})
-        [{:type "text"
-          :text (pr-str (cond-> {:queued true :task-id task-id :tool tool-name}
-                          timeout-ms     (assoc :timeout-ms timeout-ms)
-                          (not durable?) (assoc :durable false)))}])
+        (try
+          (async-tasks/submit!
+           {:task-id    task-id
+            :tool       tool-name
+            :caller-id  caller-id
+            :timeout-ms timeout-ms
+            :f          (fn []
+                          (try
+                            (let [clean-args (dissoc args :async :async-timeout-ms)
+                                  result (handler clean-args)]
+                              (async-buf/enqueue-result! caller-id
+                                                         {:task-id task-id :tool tool-name
+                                                          :status :completed :result result}))
+                            (catch InterruptedException _
+                              ;; Cancelled on purpose. Say so rather than
+                              ;; reporting it as a failure of the work.
+                              (log/info "async-result: task cancelled" {:task-id task-id})
+                              (async-buf/enqueue-result! caller-id
+                                                         {:task-id task-id :tool tool-name
+                                                          :status :cancelled}))
+                            (catch Exception e
+                              (log/error e "async-result: background execution failed for task" task-id)
+                              (async-buf/enqueue-result! caller-id
+                                                         {:task-id task-id :tool tool-name
+                                                          :status :error :error (.getMessage e)}))
+                            (catch Throwable t
+                              ;; Not an Exception, so nothing below would have
+                              ;; reported it and the ack would never be answered.
+                              (log/error t "async-result: background execution died for task" task-id)
+                              (async-buf/enqueue-result! caller-id
+                                                         {:task-id task-id :tool tool-name
+                                                          :status :error
+                                                          :error (str (.getName (class t)) ": " (.getMessage t))})
+                              (throw t))))})
+          [{:type "text"
+            :text (pr-str (cond-> {:queued true :task-id task-id :tool tool-name}
+                            timeout-ms     (assoc :timeout-ms timeout-ms)
+                            (not durable?) (assoc :durable false)))}]
+          (catch RejectedExecutionException _
+            (log/warn "async call refused: pool saturated"
+                      {:tool tool-name :task-id task-id :caller-id caller-id})
+            (async-buf/enqueue-result! caller-id
+                                       {:task-id task-id :tool tool-name
+                                        :status :rejected
+                                        :error "async pool saturated"})
+            [{:type "text"
+              :isError true
+              :text (pr-str {:queued false :rejected true :task-id task-id
+                             :tool tool-name
+                             :error "async pool saturated: nothing was started, retry shortly"})}])))
       (handler args))))
 
 (defn- guard-refusal

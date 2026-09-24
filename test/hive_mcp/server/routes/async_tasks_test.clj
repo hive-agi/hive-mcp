@@ -7,8 +7,9 @@
    unsatisfiable against that design, which is what makes them worth having."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.server.routes.async-tasks :as at]
-            [hive-mcp.server.routes.async-task.state :as st])
-  (:import [java.util.concurrent CountDownLatch TimeUnit]))
+            [hive-mcp.server.routes.async-task.state :as st]
+            [hive-weave.pool :as wpool])
+  (:import [java.util.concurrent CountDownLatch TimeUnit RejectedExecutionException]))
 
 (defn- clean-registry [f]
   (at/reset-registry!)
@@ -52,6 +53,47 @@
     (is (true? @ran))
     (is (= :task/done (:state (at/get-task "t-ok")))
         "a task that reached its own end is :done")))
+
+;; =============================================================================
+;; A saturated pool answers instead of absorbing
+;; =============================================================================
+
+(deftest a-saturated-pool-refuses-rather-than-running-on-the-caller
+  (testing "the submitting thread keeps going; the work is refused, not inherited"
+    ;; The submitter in production is the thread serving the MCP request. Under
+    ;; CallerRunsPolicy a saturated pool hands it an async tool call, which is
+    ;; the class of work that runs for hours, and the request never answers.
+    ;; This is that scenario at size 1: one slot, one queue seat, one refusal.
+    (let [pool    (wpool/make-pool {:name "test-async-abort"
+                                    :size 1
+                                    :queue-capacity 1
+                                    :rejection :abort})
+          release (CountDownLatch. 1)
+          started (CountDownLatch. 1)
+          ran-on-caller? (atom false)
+          caller (Thread/currentThread)]
+      (try
+        (reset! at/runner (at/->WeavePoolRunner pool))
+        ;; Occupies the single thread until we let it go.
+        (at/submit! {:task-id "t-hog" :tool "memory" :caller-id "test"
+                     :f (fn [] (.countDown started) (.await release 30 TimeUnit/SECONDS))})
+        (is (.await started 5000 TimeUnit/MILLISECONDS) "the first task should be running")
+        ;; Takes the single queue seat.
+        (at/submit! {:task-id "t-queued" :tool "memory" :caller-id "test" :f (fn [] nil)})
+        ;; Nowhere left to put this one.
+        (is (thrown? RejectedExecutionException
+                     (at/submit! {:task-id "t-refused" :tool "memory" :caller-id "test"
+                                  :f (fn []
+                                       (when (= caller (Thread/currentThread))
+                                         (reset! ran-on-caller? true)))})))
+        (is (false? @ran-on-caller?)
+            "a refusal that runs the work on the caller is not a refusal")
+        (is (nil? (at/get-task "t-refused"))
+            "a task nobody will ever run must not be left listed as queued")
+        (finally
+          (.countDown release)
+          (reset! at/runner nil)
+          (wpool/shutdown! pool))))))
 
 ;; =============================================================================
 ;; It can be seen while running

@@ -17,7 +17,8 @@
             [hive-weave.safe :as safe]
             [hive-mcp.server.routes.async-task.state :as st]
             [taoensso.timbre :as log])
-  (:import [java.util.concurrent Future]))
+  (:import [java.util.concurrent Future]
+[java.util.concurrent RejectedExecutionException]))
 
 ;; =============================================================================
 ;; Execution port (DIP)
@@ -41,10 +42,17 @@
   8)
 
 (def default-queue-capacity
-  "Queued calls before the submitting thread runs the task itself.
+  "Queued calls before the pool starts REFUSING new ones.
 
-   Reaching it turns an async call synchronous, which is correct backpressure
-   and a bad surprise, so it should take a pathological backlog."
+   It used to be the point where the submitting thread ran the task itself.
+   That is the right shape for a caller that can afford to wait, and this
+   caller cannot: the submitter here is the thread serving the MCP request,
+   and the work it would inherit is an async tool call, i.e. the calls that
+   run for hours. CallerRuns turned a saturated pool into a request that never
+   answers, which is the one failure the async surface exists to prevent.
+
+   Refusing says so in milliseconds and leaves the caller free to retry, so it
+   should still take a pathological backlog before it fires."
   256)
 
 (defrecord WeavePoolRunner [pool]
@@ -61,7 +69,8 @@
 (defonce ^:private default-runner
   (delay (->WeavePoolRunner (pool/make-pool {:name           "mcp-async"
                                              :size           default-pool-size
-                                             :queue-capacity default-queue-capacity}))))
+                                             :queue-capacity default-queue-capacity
+                                             :rejection      :abort}))))
 
 (defonce ^{:doc "The active ITaskRunner. Rebind to substitute execution."}
   runner
@@ -147,7 +156,12 @@
                      m))))
 
 (defn submit!
-  "Run `f` under `task-id`, registering a cancellable handle. Returns the handle."
+  "Run `f` under `task-id`, registering a cancellable handle. Returns the handle.
+
+   Throws `RejectedExecutionException` when the pool is saturated. The row this
+   function wrote a moment earlier is removed first, because a registry that
+   lists a queued task nobody will ever run is worse than no row at all: it is
+   a task `list-tasks` reports, `cancel!` accepts, and nothing completes."
   [{:keys [task-id tool caller-id timeout-ms f]}]
   (bput! tasks task-id {:tool       tool
                         :caller-id  caller-id
@@ -156,13 +170,19 @@
                         :timeout-ms timeout-ms
                         :handle-obj nil})
   (let [body   (bounded-body task-id f timeout-ms)
-        handle (-run (current-runner)
-                     (fn []
-                       (set-state! task-id :task/running)
-                       (try
-                         (body)
-                         (finally
-                           (complete-state! task-id)))))]
+        handle (try
+                 (-run (current-runner)
+                       (fn []
+                         (set-state! task-id :task/running)
+                         (try
+                           (body)
+                           (finally
+                             (complete-state! task-id)))))
+                 (catch RejectedExecutionException e
+                   (bounded-swap! tasks #(dissoc % task-id))
+                   (log/warn "async task refused: pool saturated"
+                             {:task-id task-id :tool tool})
+                   (throw e)))]
     (when-let [e (bget tasks task-id)]
       (bput! tasks task-id (assoc e :handle-obj handle)))
     handle))

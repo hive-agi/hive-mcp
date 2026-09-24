@@ -108,6 +108,69 @@ cancel_queue_latency=$(read_job_field "$cancel_job" queue-latency-ms)
 test "$cancel_queue_latency" = \
     "$(read_job_field "$CACHE_DIR/cancel/meta.edn" queue-latency-ms)"
 
+# Offline: the classpath cannot be built, so the dump retries on the project's
+# own sources and the result is marked degraded rather than failed.
+# The fake java fails like clojure-lsp does when `clojure -Spath` fails, unless
+# it is handed the source-only settings; project "crash" fails for another
+# reason, and project "stubborn" fails even source-only.
+mkdir -p "$tmp/offline-bin" "$WORKSPACE/offline/src" "$WORKSPACE/offline/test" \
+    "$WORKSPACE/crash" "$WORKSPACE/stubborn"
+printf '%s\n' '{:paths ["src" "resources"] :deps {demo/uncached {:mvn/version "9.9.9"}}}' \
+    > "$WORKSPACE/offline/deps.edn"
+settings_seen="$tmp/settings-seen"
+printf '%s\n' '#!/usr/bin/env bash' \
+    'root="" settings=""' \
+    'while [ $# -gt 0 ]; do' \
+    '  case "$1" in --project-root) root=$2; shift ;; --settings) settings=$2; shift ;; esac' \
+    '  shift' \
+    'done' \
+    "printf '%s\\n' \"\$settings\" >> \"$settings_seen\"" \
+    'case "$root" in' \
+    '  */crash) echo "java.lang.OutOfMemoryError: Java heap space" >&2; exit 1 ;;' \
+    'esac' \
+    'if [[ "$settings" == *":project-specs []"* && "$root" != */stubborn ]]; then' \
+    '  printf '\''{:analysis {} :dep-graph {}}\n'\''' \
+    '  exit 0' \
+    'fi' \
+    'echo "[ERROR] Classpath lookup failed when running \`clojure -Spath\`." >&2' \
+    'exit 1' \
+    > "$tmp/offline-bin/java"
+chmod +x "$tmp/offline-bin/java"
+saved_path=$PATH
+PATH="$tmp/offline-bin:$PATH"
+
+# shellcheck disable=SC2218  # analyze_project comes from the sourced analyze.sh; the stub below replaces it only later
+analyze_project "$WORKSPACE/offline" offline
+test "$(read_job_field "$CACHE_DIR/offline/meta.edn" status)" = ':ok'
+test "$(read_job_field "$CACHE_DIR/offline/meta.edn" degraded)" = ':classpath-unavailable'
+test "$(read_job_field "$CACHE_DIR/offline/job.edn" degraded)" = ':classpath-unavailable'
+test -s "$CACHE_DIR/offline/dump.edn"
+grep -q 'Classpath lookup failed' "$CACHE_DIR/offline/dump.classpath.log"
+test "$(wc -l < "$settings_seen")" -eq 2
+retry_settings=$(sed -n '2p' "$settings_seen")
+[[ "$retry_settings" == *':project-specs []'* ]]
+[[ "$retry_settings" == *'"src"'* ]]
+[[ "$retry_settings" == *'"resources"'* ]]
+[[ "$retry_settings" == *'"test"'* ]]
+test "$(source_only_settings "$WORKSPACE/crash")" = '{:project-specs [], :source-paths #{"src"}}'
+
+: > "$settings_seen"
+# shellcheck disable=SC2218  # analyze_project comes from the sourced analyze.sh; the stub below replaces it only later
+analyze_project "$WORKSPACE/crash" crash
+test "$(read_job_field "$CACHE_DIR/crash/meta.edn" status)" = ':error'
+test -z "$(read_job_field "$CACHE_DIR/crash/meta.edn" degraded || true)"
+test "$(wc -l < "$settings_seen")" -eq 1
+test ! -e "$CACHE_DIR/crash/dump.classpath.log"
+
+: > "$settings_seen"
+# shellcheck disable=SC2218  # analyze_project comes from the sourced analyze.sh; the stub below replaces it only later
+analyze_project "$WORKSPACE/stubborn" stubborn
+test "$(read_job_field "$CACHE_DIR/stubborn/meta.edn" status)" = ':error'
+test "$(read_job_field "$CACHE_DIR/stubborn/meta.edn" degraded)" = ':classpath-unavailable'
+test "$(wc -l < "$settings_seen")" -eq 2
+
+PATH=$saved_path
+
 seen="$tmp/seen"
 analyze_project() {
     if [ "$2" = "a" ]; then
