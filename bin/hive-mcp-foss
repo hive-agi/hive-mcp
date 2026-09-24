@@ -40,7 +40,10 @@ WAIT_TIMEOUT="${WAIT_TIMEOUT:-90}"
 
 export CHROMA_HOST CHROMA_PORT NATS_HOST NATS_PORT OLLAMA_HOST HIVE_NREPL_PORT
 
-log()  { printf 'hive-mcp: %s\n' "$*"; }
+# Everything this script says goes to stderr. It is launched as a STDIO MCP
+# server, so stdout is the JSON-RPC channel: one log line there and the client
+# reads garbage and drops the connection.
+log()  { printf 'hive-mcp: %s\n' "$*" >&2; }
 warn() { printf 'hive-mcp: WARNING %s\n' "$*" >&2; }
 die()  { printf 'hive-mcp: ERROR %s\n' "$*" >&2; exit 1; }
 
@@ -66,12 +69,38 @@ start_services() {
     return 0
   fi
 
+  ensure_mount_sources
+
   log "starting FOSS services: ${FOSS_SERVICES[*]}"
-  docker compose up -d "${FOSS_SERVICES[@]}"
+  docker compose up -d "${FOSS_SERVICES[@]}" >&2
 
   if [ "${HIVE_TELEMETRY:-0}" = "1" ]; then
     log "starting telemetry profile (Prometheus, Grafana, Loki, promtail)"
-    docker compose --profile telemetry up -d
+    docker compose --profile telemetry up -d >&2
+  fi
+}
+
+# docker-compose.yml bind-mounts paths under $HOME into the lsp-sidecar. When a
+# source path does not exist, Docker creates it, as root, and as a DIRECTORY.
+# On a fresh machine that turned ~/.gitconfig into a directory, after which
+# every git call failed ("unable to access ~/.gitconfig: Is a directory") and
+# the classpath could not be built. Create each source first, as this user,
+# with the type the mount expects. Nothing that exists is touched.
+ensure_mount_sources() {
+  mkdir -p "$HOME/.cache/hive-lsp" "$HOME/.ssh" "$HOME/.gitlibs" "$HOME/.m2" "$HOME/.clojure"
+  [ -e "$HOME/.gitconfig" ] || : > "$HOME/.gitconfig"
+  [ -e "$HOME/.clojure/deps.edn" ] || printf '{}\n' > "$HOME/.clojure/deps.edn"
+  if [ -d "$HOME/.gitconfig" ] || [ -d "$HOME/.clojure/deps.edn" ]; then
+    warn "~/.gitconfig or ~/.clojure/deps.edn is a directory, left by an earlier docker run."
+    warn "  git and the clojure CLI cannot read it. Remove it (it is empty and root-owned):"
+    warn "    sudo rmdir ~/.gitconfig ~/.clojure/deps.edn 2>/dev/null; then re-run"
+  fi
+  # The sidecar's workspace defaults to ~/PP, a layout of this repo's authors.
+  # Where that does not exist, mount the hive-mcp checkout instead of letting
+  # Docker invent an empty root-owned ~/PP. Point it at your projects with
+  # HIVE_LSP_WORKSPACE_ROOT.
+  if [ -z "${HIVE_LSP_WORKSPACE_ROOT:-}" ] && [ ! -d "$HOME/PP" ]; then
+    export HIVE_LSP_WORKSPACE_ROOT="$REPO_ROOT"
   fi
 }
 
@@ -143,12 +172,41 @@ log "  claude mcp add hive -- $REPO_ROOT/bin/hive-mcp-foss"
 # --- starter pack ----------------------------------------------------------
 #
 # starter.deps.edn carries the FOSS addons: vessels, harness bridge, code
-# tools, KG store. It is merged through -Sdeps, the seam bin/hive-mcp uses
-# for local.deps.edn. HIVE_STARTER=0 boots the bare core instead.
+# tools, KG store. local.deps.edn (gitignored) is the personal overlay, and it
+# is where a subscriber's licensed coordinates and the hive-store repo go.
+# Both reach the host through -Sdeps. HIVE_STARTER=0 boots without the starter
+# pack; local.deps.edn still applies.
+#
+# The clojure CLI takes ONE -Sdeps map, so when both files exist they are
+# merged first: top-level keys (:deps, :mvn/repos, :aliases) are merged one
+# level deep, the overlay winning, so a local pin replaces a starter pin.
+# That merge runs in a bare JVM outside this repo, so it resolves no project
+# classpath and costs about a second, only on boots that have an overlay.
+
+STARTER="$REPO_ROOT/starter.deps.edn"
+LOCAL="$REPO_ROOT/local.deps.edn"
+[ "${HIVE_STARTER:-1}" = "0" ] && STARTER=""
+[ -n "$STARTER" ] && [ ! -f "$STARTER" ] && STARTER=""
+[ -f "$LOCAL" ] || LOCAL=""
 
 SDEPS_ARG=()
-if [ "${HIVE_STARTER:-1}" != "0" ] && [ -f "$REPO_ROOT/starter.deps.edn" ]; then
-  SDEPS_ARG=(-Sdeps "$(cat "$REPO_ROOT/starter.deps.edn")")
+if [ -n "$LOCAL" ]; then
+  # Read through the EDN reader even when there is no starter pack: a hand-written
+  # overlay may open with a comment, and -Sdeps takes anything not starting with
+  # "{" as a file path.
+  merged="$(cd "${TMPDIR:-/tmp}" && HIVE_A="${STARTER:-}" HIVE_B="$LOCAL" clojure -Srepro -M -e '
+    (let [r #(if-let [f (not-empty (System/getenv %))] (clojure.edn/read-string (slurp f)) {})
+          both (fn [a b] (if (and (map? a) (map? b)) (merge a b) b))]
+      (prn (merge-with both (r "HIVE_A") (r "HIVE_B"))))')" \
+    || die "could not read local.deps.edn (merged over starter.deps.edn); check it is one valid EDN map"
+  SDEPS_ARG=(-Sdeps "$merged")
+  if [ -n "$STARTER" ]; then
+    log "merging starter.deps.edn + local.deps.edn (HIVE_STARTER=0 to skip the starter pack)"
+  else
+    log "merging local.deps.edn"
+  fi
+elif [ -n "$STARTER" ]; then
+  SDEPS_ARG=(-Sdeps "$(cat "$STARTER")")
   log "merging starter.deps.edn (HIVE_STARTER=0 to skip)"
 fi
 
