@@ -99,6 +99,11 @@
   []
   (:session-id *request-ctx*))
 
+(defn current-caller-id
+  "The MCP caller (`_caller_id`) of the request in flight, or nil."
+  []
+  (:caller-id *request-ctx*))
+
 (defn current-timestamp
   "Get the request timestamp from execution context."
   []
@@ -116,10 +121,11 @@
 
 (defn make-request-ctx
   "Create a new request context map from the given options."
-  [{:keys [agent-id project-id directory session-id timestamp depth]
+  [{:keys [agent-id caller-id project-id directory session-id timestamp depth]
     :or {timestamp (java.util.Date.)
          depth 1}}]
   {:agent-id   agent-id
+   :caller-id  caller-id
    :project-id project-id
    :directory  directory
    :session-id session-id

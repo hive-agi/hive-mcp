@@ -39,6 +39,17 @@
                 :directory "/work/vessel"}
                (handler {:_caller_id "agent-1"})))))))
 
+(deftest handler-context-binds-the-caller-id
+  (testing "each MCP session is told apart, even when agent-id is nil for all of them"
+    (let [handler (middleware/wrap-handler-context
+                   (fn [_] {:caller (ctx/current-caller-id) :agent (ctx/current-agent-id)}))
+          call    (fn [caller] (handler {:_caller_id caller :directory "/w" :project_id "p"}))]
+      (is (= {:caller "coordinator:111" :agent nil} (call "coordinator:111")))
+      (is (= {:caller "coordinator:222" :agent nil} (call "coordinator:222")))
+      (is (nil? (:caller (handler {:directory "/w" :project_id "p"})))
+          "no transport stamp, no caller: never a shared default")
+      (is (nil? (ctx/current-caller-id)) "nothing leaks out of the request"))))
+
 ;; =============================================================================
 ;; wrap-delimited-block — the content ARRAY contract
 ;;
