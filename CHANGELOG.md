@@ -35,6 +35,35 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+## [1.6.3] - 2026-09-25
+
+### Added
+
+- **The MCP caller id is in the request context.** `wrap-handler-context`
+  binds the transport's `_caller_id` as `:caller-id` and
+  `ctx/current-caller-id` reads it, so code below a tool handler can tell two
+  plain sessions apart. The async pool conveys the binding.
+
+### Changed
+
+- **Delivery fanout runs on the IO executor.** Per-channel presence checks and
+  writes moved off `clojure.core/future` onto virtual threads, so a timed-out
+  `deliver!` parks instead of pinning a platform thread. hive-weave 0.4.0.
+
+### Fixed
+
+- **A saturated async pool refuses instead of stalling the request.** The
+  `mcp-async` pool no longer runs `CallerRunsPolicy`; past capacity the caller
+  gets a fast, retryable error, and the registry row and journalled submission
+  are closed rather than left dangling.
+- **`hive-mcp-foss` connects on a fresh machine.** The launcher writes only to
+  stderr (stdout is the JSON-RPC channel), pre-creates the lsp-sidecar's bind
+  mount sources as the user so Docker cannot make `~/.gitconfig` a root-owned
+  directory, and merges `local.deps.edn` over `starter.deps.edn`.
+- **An unbuildable classpath degrades the LSP sidecar scan instead of failing
+  it.** On a classpath lookup failure the dump retries with the project's own
+  source paths and marks the result `:degraded :classpath-unavailable`.
+
 ## [1.6.2] - 2026-09-21
 
 ### Added
