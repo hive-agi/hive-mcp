@@ -103,7 +103,10 @@
 ;; =============================================================================
 
 (defn wrap-handler-context
-  "Bind request context: keywordize args, resolve identity, bind ctx vars."
+  "Bind request context: keywordize args, resolve identity, bind ctx vars.
+   `:caller-id` is the transport's `:_caller_id`: the MCP session making the
+   call, shared by its subagents, distinct per session even when every
+   session's agent-id is nil."
   [handler]
   (fn [args]
     (let [args (walk/keywordize-keys args)]
@@ -113,6 +116,7 @@
               directory (id/extract-directory args)]
           (crystal/record-session-start! agent-id)
           (ctx/with-request-context {:agent-id agent-id
+                                     :caller-id (:_caller_id args)
                                      :project-id project-id
                                      :directory directory}
             (handler args)))))))
