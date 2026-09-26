@@ -189,7 +189,26 @@
     (is (= {:provider :anthropic :model "claude-sonnet-4-6"}
            (policy/resolve-routing seed {:model "anthropic/claude-sonnet-4-6"}))))
 
-  (testing "explicit routing beats Claude auto-detection (the privacy escape hatch)"
+  (testing "a bare Claude alias routes to :anthropic at that entry's default model"
+    (let [reg (assoc seed :anthropic {:dispatch :anthropic-oauth
+                                      :default-model "claude-sonnet-4-6"})]
+      (is (= {:provider :anthropic :model "claude-sonnet-4-6"}
+             (policy/resolve-routing reg {:model "claude"
+                                          :type-defaults {:provider :alpha :model "alpha-9"}}))
+          "the alias beats the agent-type default provider")
+      (is (= {:provider :anthropic :model "claude-sonnet-4-6"}
+             (policy/resolve-routing reg {:model " Claude "})))
+      (is (= {:provider :anthropic :model "claude-sonnet-4-6"}
+             (policy/resolve-routing reg {:type-defaults {:provider :alpha :model "claude"}})))
+      (is (= {:provider :anthropic :model "claude-sonnet-4-6"}
+             (policy/resolve-routing reg {:provider :anthropic :model "anthropic"})))
+      (is (= {:provider :alpha :model "claude"}
+             (policy/resolve-routing reg {:model "alpha:claude"}))
+          "explicit routing keeps the alias verbatim")
+      (is (some? (policy/model-refusal reg :alpha "claude"))
+          "and a keyed provider refuses it")))
+
+  (testing "explicit routing beats Claude auto-detection; model-refusal then judges it"
     (is (= {:provider :alpha :model "claude-sonnet-4-6"}
            (policy/resolve-routing seed {:provider :alpha :model "claude-sonnet-4-6"})))
     (is (= {:provider :alpha :model "claude-sonnet-4-6"}

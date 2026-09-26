@@ -185,6 +185,17 @@
                   model)]
       (boolean (re-find #"^claude-" clean)))))
 
+(def claude-aliases
+  "Bare model names that mean Claude at the :anthropic entry's :default-model."
+  #{"claude" "anthropic"})
+
+(defn claude-alias?
+  "True if `model` is one of `claude-aliases`, ignoring case and surrounding
+   whitespace."
+  [model]
+  (and (string? model)
+       (contains? claude-aliases (str/lower-case (str/trim model)))))
+
 (defn strip-anthropic-prefix
   "Strip the `anthropic/` prefix from a model name so native Anthropic API
    receives `claude-sonnet-4-6` rather than `anthropic/claude-sonnet-4-6`
@@ -208,9 +219,12 @@
    Resolution order (first match wins):
      0. explicit :provider                    caller forced routing
      1. '<provider>:<model>' prefix in :model  e.g. 'venice:qwen3-...'
-     2. Claude model-name auto-detection       routes to :anthropic OAuth
+     2. Claude model name or bare alias        routes to :anthropic OAuth
      3. type-defaults :provider from config
      4. fallback-provider
+
+   A bare alias (`claude-alias?`) that lands on :anthropic resolves to that
+   entry's :default-model.
 
    Explicit routing (steps 0 and 1) always wins over Claude auto-detection,
    but routing is not permission: a keyed OpenAI-compat provider refuses the
@@ -224,15 +238,22 @@
         [prefix-prov clean-model] (parse-model-prefix registry model)
         candidate-model           (or clean-model (:model type-defaults))
         explicit-routing?         (or explicit-prov prefix-prov)
+        alias?                    (claude-alias? candidate-model)
         claude?                   (and (not explicit-routing?)
-                                       (claude-model-name? candidate-model))
+                                       (or alias? (claude-model-name? candidate-model)))
         eff-provider              (or explicit-prov
                                       prefix-prov
                                       (when claude? :anthropic)
                                       (some-> type-defaults :provider keyword)
                                       fallback-provider)]
     {:provider eff-provider
-     :model    (if claude?
+     :model    (cond
+                 (and alias? (= :anthropic eff-provider))
+                 (:default-model (get registry :anthropic))
+
+                 claude?
                  (strip-anthropic-prefix candidate-model)
+
+                 :else
                  (or candidate-model
                      (:default-model (get registry eff-provider))))}))
