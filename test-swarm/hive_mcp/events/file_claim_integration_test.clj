@@ -353,9 +353,12 @@
     ;; Wait for async
     (wait-for-async)
 
-    ;; Assert: ling-2 notified
-    (is (some? (await-file-available-message "ling-2" "src/cascade.clj"))
-        "Completing task should trigger claim release and notify waiting ling")))
+    ;; Assert: ling-2 notified, by the ling whose task released the claim
+    (let [msg (await-file-available-message "ling-2" "src/cascade.clj")]
+      (is (some? msg)
+          "Completing task should trigger claim release and notify waiting ling")
+      (is (= "ling-1" (:agent-id msg))
+          "the wake-up is sent from the releasing ling, not the coordinator"))))
 
 ;; =============================================================================
 ;; Test 7: The wake-up is DIRECTED at the waiter, from the releaser

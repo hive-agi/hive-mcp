@@ -238,10 +238,9 @@
   (let [woken (await-message-to "ling-b" :file-available
                                 #(= "src/held.clj" (get-in % [:data :file]))
                                 5000)]
-    ;; Not asserted: the sender. release-claim! (hive-datascript) dispatches
-    ;; :claim/file-released without :released-by, so a task-completion
-    ;; release is sent as "coordinator".
-    (is (some? woken) "B receives :file-available"))
+    (is (some? woken) "B receives :file-available")
+    (is (= "ling-a" (:agent-id woken))
+        "the wake-up comes from A, the holder whose task released the file"))
   (let [deadline (+ (System/currentTimeMillis) 5000)]
     (while (and (seq (wait-queue "ling-b"))
                 (< (System/currentTimeMillis) deadline))
