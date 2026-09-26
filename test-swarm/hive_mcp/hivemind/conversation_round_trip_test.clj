@@ -17,7 +17,7 @@
 (defn- conversation-fixture
   [f]
   (inbox/reset-all!)
-  (reset! conv/pending-asks {})
+  (conv/clear-pending!)
   (reset! @#'hive-mcp.events.handlers.conversation/*registered false)
   (reset! @#'hive-mcp.events.effects.conversation/*registered false)
   (conv-fx/register-conversation-effects!)
@@ -70,7 +70,7 @@
           "deliver-response! cleans the pending entry"))))
 
 (deftest respond-without-pending-ask-does-not-throw
-  (testing "respond with unknown ask-id is logged + dropped; sender still gets inbox copy"
+  (testing "respond with unknown ask-id is buffered, not thrown; sender still gets inbox copy"
     (is (some? (ev/dispatch [:conversation/respond
                              {:from "ling-b" :to "ling-a"
                               :ask-id "ask-unknown" :answer "late"}])))
@@ -78,3 +78,14 @@
           respond (first (:respond drained))]
       (is (= "ask-unknown" (:ask-id respond)))
       (is (= "late"        (:answer respond))))))
+
+(deftest a-respond-that-overtakes-its-ask-still-reaches-the-asker
+  (testing "HIVEMIND-ASK-WINDOW: the respond event is handled before the ask event"
+    (ev/dispatch [:conversation/respond
+                  {:from "ling-b" :to "ling-a"
+                   :ask-id "ask-overtaken" :answer "early"}])
+    (ev/dispatch [:conversation/ask
+                  {:from "ling-a" :to "ling-b"
+                   :ask-id "ask-overtaken" :question "ready?"}])
+    (is (= "early" (conv/await-response! "ask-overtaken" :timeout-ms 500))
+        "the buffered answer is handed to the ask when it registers")))
