@@ -190,13 +190,13 @@
 
    `:pattern` (case-insensitive regex) claims the family's model ids, which
    keep their name minus any `:strip` prefix. `:aliases` are bare names
-   (case-insensitive) that mean the provider's :default-model."
+   (case-insensitive) that mean the provider's :default-model. `:families`
+   are bare size names resolved through the provider's :model-aliases."
   [{:provider :anthropic
     :pattern  "^(anthropic/)?claude-"
     :strip    "^anthropic/"
-    :aliases  #{"claude" "anthropic"}}
-   {:provider :claude
-    :pattern  "^(opus|sonnet|haiku|fable)$"}
+    :aliases  #{"claude" "anthropic"}
+    :families #{"opus" "sonnet" "haiku" "fable"}}
    {:provider :chatgpt
     :pattern  "^(openai/)?(chatgpt|codex-|gpt-(?!oss)|o[1-9](-|$))"
     :strip    "^openai/"
@@ -208,18 +208,24 @@
 (defn subscription-route
   "The {:provider :model} a subscription-only `model` routes to, or nil.
 
-   The first `subscription-routes` entry that claims `model` wins. A bare alias
-   takes `registry`'s :default-model for that provider; a model id keeps its
-   name, minus the entry's `:strip` prefix."
+   The first `subscription-routes` entry that claims `model` wins. A bare
+   `:aliases` name takes `registry`'s :default-model for that provider; a
+   `:families` name takes that provider's :model-aliases entry for it, or
+   stays as given; a model id keeps its name, minus the entry's `:strip`
+   prefix."
   [registry model]
   (when (string? model)
     (let [m     (str/trim model)
           lower (str/lower-case m)]
-      (some (fn [{:keys [provider pattern strip aliases]}]
+      (some (fn [{:keys [provider pattern strip aliases families]}]
               (cond
                 (contains? aliases lower)
                 {:provider provider
                  :model    (:default-model (get registry provider))}
+
+                (contains? families lower)
+                {:provider provider
+                 :model    (get-in registry [provider :model-aliases lower] m)}
 
                 (and pattern (re-find (re-pattern (str "(?i)" pattern)) m))
                 {:provider provider

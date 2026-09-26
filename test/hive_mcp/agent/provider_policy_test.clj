@@ -232,8 +232,8 @@
 (deftest subscription-route-test
   (let [reg   (assoc seed
                      :anthropic {:dispatch :anthropic-oauth :secret-key :k
-                                 :default-model "claude-sonnet-4-6"}
-                     :claude    {:dispatch :subscription}
+                                 :default-model "claude-sonnet-4-6"
+                                 :model-aliases {"opus" "claude-opus-5-5" "sonnet" "claude-sonnet-5"}}
                      :chatgpt   {:dispatch :chatgpt-oauth :default-model "gpt-6-sol"}
                      :kimi      {:dispatch :subscription :default-model "kimi-code/k3"})
         route #(policy/resolve-routing reg {:model %
@@ -243,9 +243,9 @@
               [["claude"               {:provider :anthropic :model "claude-sonnet-4-6"}]
                ["claude-opus-4-8"      {:provider :anthropic :model "claude-opus-4-8"}]
                ["anthropic/claude-x-1" {:provider :anthropic :model "claude-x-1"}]
-               ["opus"                 {:provider :claude :model "opus"}]
-               ["Sonnet"               {:provider :claude :model "Sonnet"}]
-               ["haiku"                {:provider :claude :model "haiku"}]
+               ["opus"                 {:provider :anthropic :model "claude-opus-5-5"}]
+               ["Sonnet"               {:provider :anthropic :model "claude-sonnet-5"}]
+               ["haiku"                {:provider :anthropic :model "haiku"}]
                ["chatgpt"              {:provider :chatgpt :model "gpt-6-sol"}]
                ["codex"                {:provider :chatgpt :model "gpt-6-sol"}]
                ["gpt-5.5"              {:provider :chatgpt :model "gpt-5.5"}]
@@ -266,6 +266,8 @@
     (testing "explicit routing to the same provider still shapes the model"
       (is (= {:provider :chatgpt :model "gpt-6-sol"}
              (policy/resolve-routing reg {:provider :chatgpt :model "codex"})))
+      (is (= {:provider :anthropic :model "claude-opus-5-5"}
+             (policy/resolve-routing reg {:provider :anthropic :model "opus"})))
       (is (= {:provider :kimi :model "kimi-code/k3"}
              (policy/resolve-routing reg {:model "kimi:kimi"}))))
 
@@ -276,7 +278,7 @@
         (is (some? (policy/model-refusal reg :alpha m)) m)))
 
     (testing "the OAuth entries themselves refuse nothing"
-      (doseq [p [:anthropic :claude :chatgpt :kimi]]
+      (doseq [p [:anthropic :chatgpt :kimi]]
         (is (nil? (policy/model-refusal reg p "gpt-5.5")) (str p))))))
 
 (deftest unresolved-routing-test

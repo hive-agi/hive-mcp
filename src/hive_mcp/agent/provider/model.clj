@@ -52,7 +52,8 @@
      [:dispatch [:= :anthropic-oauth]]
      [:secret-key :keyword]
      [:default-model {:optional true} :string]
-     [:available-models {:optional true} [:sequential :string]]]]
+     [:available-models {:optional true} [:sequential :string]]
+     [:model-aliases {:optional true} [:map-of :string :string]]]]
    [:chatgpt-oauth
     [:map
      [:dispatch [:= :chatgpt-oauth]]
@@ -115,11 +116,13 @@
    Dispatch-routed entries run on a subscription through hive-agent and are
    never an OpenAI-compat endpoint:
      :anthropic-oauth  `:anthropic`, the Anthropic Messages API client, which
-                       takes the Claude subscription OAuth token only.
+                       takes the Claude subscription OAuth token only. Its
+                       optional :model-aliases maps a bare size name
+                       (opus, sonnet, haiku, fable) to a model id.
      :chatgpt-oauth    `:chatgpt`, the ChatGPT backend client, which takes the
                        codex login's OAuth token only.
      :subscription     a hive-agent subscription runtime of the same name
-                       (`:claude`, `:codex`, `:kimi`), run as its own CLI.
+                       (`:codex`, `:kimi`), run as its own CLI.
    All others hit OpenAI-compat /v1/chat/completions endpoints.
 
    This is a SEED, not the definition: config `:llm-providers` extends,
@@ -140,8 +143,6 @@
   {:anthropic     {:dispatch      :anthropic-oauth
                    :secret-key    :anthropic-api-key}
    :chatgpt       {:dispatch      :chatgpt-oauth
-                   :secret-key    nil}
-   :claude        {:dispatch      :subscription
                    :secret-key    nil}
    :codex         {:dispatch      :subscription
                    :secret-key    nil}
