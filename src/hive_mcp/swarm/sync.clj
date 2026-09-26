@@ -361,7 +361,7 @@
       (proto/update-slave! reg slave-id {:slave/status :working})
       ;; claim-file! is not in ISwarmRegistry - use lings directly
       (doseq [f files]
-        (lings/claim-file! f slave-id task-id))
+        (lings/claim-file! f slave-id {:task-id task-id}))
       (log/debug "Sync: registered task" task-id "with" (count files) "files, slave now :working"))))
 
 (defn- handle-task-completed

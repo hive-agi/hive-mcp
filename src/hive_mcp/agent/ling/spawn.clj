@@ -460,7 +460,7 @@
               (log/warn "File already claimed by another agent"
                         {:file f :held-by held-by :requesting id})
               (ds-lings/add-to-wait-queue! id f))
-            (ds-lings/claim-file! f id task-id))))
+            (ds-lings/claim-file! f id {:task-id task-id}))))
       (log/info "Files claimed" {:ling-id id :count (count files)})))
 
   (release-claims! [_this]
