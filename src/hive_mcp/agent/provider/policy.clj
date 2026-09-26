@@ -185,16 +185,47 @@
                   model)]
       (boolean (re-find #"^claude-" clean)))))
 
-(def claude-aliases
-  "Bare model names that mean Claude at the :anthropic entry's :default-model."
-  #{"claude" "anthropic"})
+(def subscription-routes
+  "Where each subscription-only model family runs, first match wins.
 
-(defn claude-alias?
-  "True if `model` is one of `claude-aliases`, ignoring case and surrounding
-   whitespace."
-  [model]
-  (and (string? model)
-       (contains? claude-aliases (str/lower-case (str/trim model)))))
+   `:pattern` (case-insensitive regex) claims the family's model ids, which
+   keep their name minus any `:strip` prefix. `:aliases` are bare names
+   (case-insensitive) that mean the provider's :default-model."
+  [{:provider :anthropic
+    :pattern  "^(anthropic/)?claude-"
+    :strip    "^anthropic/"
+    :aliases  #{"claude" "anthropic"}}
+   {:provider :claude
+    :pattern  "^(opus|sonnet|haiku|fable)$"}
+   {:provider :chatgpt
+    :pattern  "^(openai/)?(chatgpt|codex-|gpt-(?!oss)|o[1-9](-|$))"
+    :strip    "^openai/"
+    :aliases  #{"chatgpt" "gpt" "codex" "openai"}}
+   {:provider :kimi
+    :pattern  "^(moonshotai/)?kimi-"
+    :aliases  #{"kimi" "moonshot"}}])
+
+(defn subscription-route
+  "The {:provider :model} a subscription-only `model` routes to, or nil.
+
+   The first `subscription-routes` entry that claims `model` wins. A bare alias
+   takes `registry`'s :default-model for that provider; a model id keeps its
+   name, minus the entry's `:strip` prefix."
+  [registry model]
+  (when (string? model)
+    (let [m     (str/trim model)
+          lower (str/lower-case m)]
+      (some (fn [{:keys [provider pattern strip aliases]}]
+              (cond
+                (contains? aliases lower)
+                {:provider provider
+                 :model    (:default-model (get registry provider))}
+
+                (and pattern (re-find (re-pattern (str "(?i)" pattern)) m))
+                {:provider provider
+                 :model    (cond-> m
+                             strip (str/replace (re-pattern (str "(?i)" strip)) ""))}))
+            subscription-routes))))
 
 (defn strip-anthropic-prefix
   "Strip the `anthropic/` prefix from a model name so native Anthropic API
@@ -219,15 +250,16 @@
    Resolution order (first match wins):
      0. explicit :provider                    caller forced routing
      1. '<provider>:<model>' prefix in :model  e.g. 'venice:qwen3-...'
-     2. Claude model name or bare alias        routes to :anthropic OAuth
+     2. `subscription-route`                   Claude, ChatGPT, Kimi to OAuth
      3. type-defaults :provider from config
      4. fallback-provider
 
-   A bare alias (`claude-alias?`) that lands on :anthropic resolves to that
-   entry's :default-model.
+   A subscription route also shapes the model (vendor prefix stripped, a bare
+   alias resolved to its entry's :default-model) when routing was explicit to
+   that same provider.
 
-   Explicit routing (steps 0 and 1) always wins over Claude auto-detection,
-   but routing is not permission: a keyed OpenAI-compat provider refuses the
+   Explicit routing (steps 0 and 1) to another provider wins over step 2, but
+   routing is not permission: a keyed OpenAI-compat provider refuses the
    subscription-only families at `model-refusal`, so `venice:claude-...` or
    `:provider :openrouter` with a Claude model resolves here and is refused
    by the caller.
@@ -237,23 +269,17 @@
   (let [explicit-prov             (some-> provider keyword)
         [prefix-prov clean-model] (parse-model-prefix registry model)
         candidate-model           (or clean-model (:model type-defaults))
-        explicit-routing?         (or explicit-prov prefix-prov)
-        alias?                    (claude-alias? candidate-model)
-        claude?                   (and (not explicit-routing?)
-                                       (or alias? (claude-model-name? candidate-model)))
-        eff-provider              (or explicit-prov
-                                      prefix-prov
-                                      (when claude? :anthropic)
+        explicit                  (or explicit-prov prefix-prov)
+        routed                    (subscription-route registry candidate-model)
+        sub-route                 (when (or (nil? explicit)
+                                            (= explicit (:provider routed)))
+                                    routed)
+        eff-provider              (or explicit
+                                      (:provider sub-route)
                                       (some-> type-defaults :provider keyword)
                                       fallback-provider)]
     {:provider eff-provider
-     :model    (cond
-                 (and alias? (= :anthropic eff-provider))
-                 (:default-model (get registry :anthropic))
-
-                 claude?
-                 (strip-anthropic-prefix candidate-model)
-
-                 :else
+     :model    (if sub-route
+                 (:model sub-route)
                  (or candidate-model
                      (:default-model (get registry eff-provider))))}))

@@ -35,20 +35,34 @@
 (def ProviderEntry
   "Malli schema for one registry entry, dispatched on `:dispatch`.
 
-   :anthropic-oauth branch — native Anthropic Messages API. Carries NO
-     :api-url: it is not an OpenAI-compat chat-completions endpoint, and
-     `openai-compat-backend` refuses it.
-   default branch (no :dispatch) — OpenAI-compat provider: :api-url is
+   :anthropic-oauth, :chatgpt-oauth and :subscription branches: a
+     subscription run through hive-agent (see `seed-registry`). None carries
+     an :api-url: none is an OpenAI-compat chat-completions endpoint, and
+     `openai-compat-backend` refuses them. :chatgpt-oauth and :subscription
+     entries hold `:secret-key nil`; an API key cannot be attached to them.
+   default branch (no :dispatch): OpenAI-compat provider. :api-url is
      REQUIRED and must end in \"/chat/completions\"; :secret-key may be nil
      (nil = no auth needed, e.g. :ollama-compat).
 
-   Both branches are open maps. :default-model and :available-models are
+   All branches are open maps. :default-model and :available-models are
    optional: the seed carries neither, config `:llm-providers` supplies them."
   [:multi {:dispatch :dispatch}
    [:anthropic-oauth
     [:map
      [:dispatch [:= :anthropic-oauth]]
      [:secret-key :keyword]
+     [:default-model {:optional true} :string]
+     [:available-models {:optional true} [:sequential :string]]]]
+   [:chatgpt-oauth
+    [:map
+     [:dispatch [:= :chatgpt-oauth]]
+     [:secret-key :nil]
+     [:default-model {:optional true} :string]
+     [:available-models {:optional true} [:sequential :string]]]]
+   [:subscription
+    [:map
+     [:dispatch [:= :subscription]]
+     [:secret-key :nil]
      [:default-model {:optional true} :string]
      [:available-models {:optional true} [:sequential :string]]]]
    [::m/default
@@ -87,19 +101,26 @@
    Max OAuth, the ChatGPT subscription, the Kimi subscription), never through
    an API key. Regex strings, matched case-insensitively anywhere in the model
    id. Every keyed OpenAI-compat entry refuses them unless it names its own
-   :deny-models."
-  ["claude" "anthropic"
+   :deny-models.
+
+   Keep in step with `hive-agent.llm.provider.model/subscription-only-models`."
+  ["claude" "anthropic" "^(opus|sonnet|haiku|fable)$"
    "(^|/)(openai-)?gpt-(?!oss)" "^openai/(?!gpt-oss)" "(^|/)(openai-)?o[1-9](-|$)"
+   "chatgpt" "codex"
    "kimi" "moonshot"])
 
 (def seed-registry
   "Known LLM providers, as a SEED.
 
-   `:anthropic` is special — it uses Anthropic's native Messages API
-   (OAuth when available, else API key) via hive-agent.llm.anthropic.
-   The `:dispatch :anthropic-oauth` marker tells the spawn plumbing to
-   route through the anthropic HTTP client rather than the OpenAI-compat
-   path. All others hit OpenAI-compat /v1/chat/completions endpoints.
+   Dispatch-routed entries run on a subscription through hive-agent and are
+   never an OpenAI-compat endpoint:
+     :anthropic-oauth  `:anthropic`, the Anthropic Messages API client, which
+                       takes the Claude subscription OAuth token only.
+     :chatgpt-oauth    `:chatgpt`, the ChatGPT backend client, which takes the
+                       codex login's OAuth token only.
+     :subscription     a hive-agent subscription runtime of the same name
+                       (`:claude`, `:codex`, `:kimi`), run as its own CLI.
+   All others hit OpenAI-compat /v1/chat/completions endpoints.
 
    This is a SEED, not the definition: config `:llm-providers` extends,
    overrides and REMOVES entries through `hive-mcp.agent.provider/effective-registry`,
@@ -118,6 +139,14 @@
    carries this var under `:llm-providers` rather than a second copy."
   {:anthropic     {:dispatch      :anthropic-oauth
                    :secret-key    :anthropic-api-key}
+   :chatgpt       {:dispatch      :chatgpt-oauth
+                   :secret-key    nil}
+   :claude        {:dispatch      :subscription
+                   :secret-key    nil}
+   :codex         {:dispatch      :subscription
+                   :secret-key    nil}
+   :kimi          {:dispatch      :subscription
+                   :secret-key    nil}
    :openrouter    {:api-url       "https://openrouter.ai/api/v1/chat/completions"
                    :secret-key    :openrouter-api-key
                    ;; OpenRouter forwards a `cache_control` block marker to an

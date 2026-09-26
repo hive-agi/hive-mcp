@@ -97,12 +97,20 @@
         (is (= "llm-providers.groq.default-model" (:config-key (ex-data ex))))))))
 
 (deftest provider-registry-secret-keys-test
-  (testing "ollama-compat has nil secret-key (no auth needed)"
-    (is (nil? (get-in openrouter/provider-registry [:ollama-compat :secret-key]))))
-  (testing "All other providers have non-nil secret-key"
-    (doseq [[k entry] (dissoc openrouter/provider-registry :ollama-compat)]
-      (is (keyword? (:secret-key entry))
-          (str k " should have a keyword :secret-key")))))
+  (let [oauth-only #{:chatgpt-oauth :subscription}]
+    (testing "ollama-compat has nil secret-key (no auth needed)"
+      (is (nil? (get-in openrouter/provider-registry [:ollama-compat :secret-key]))))
+    (testing "an OAuth-only subscription entry names no API key, and cannot be given one"
+      (doseq [[k entry] openrouter/provider-registry
+              :when (oauth-only (:dispatch entry))]
+        (is (nil? (:secret-key entry)) (str k))
+        (is (not (openrouter/valid-provider-entry? (assoc entry :secret-key :some-api-key)))
+            (str k " must refuse an API key"))))
+    (testing "All other providers have non-nil secret-key"
+      (doseq [[k entry] (dissoc openrouter/provider-registry :ollama-compat)
+              :when (not (oauth-only (:dispatch entry)))]
+        (is (keyword? (:secret-key entry))
+            (str k " should have a keyword :secret-key"))))))
 
 ;; =============================================================================
 ;; Provider Discovery
