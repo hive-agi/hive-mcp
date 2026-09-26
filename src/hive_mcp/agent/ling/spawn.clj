@@ -14,7 +14,8 @@
             [taoensso.timbre :as log]
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.tools.swarm.channel :as swarm-channel]
-            [hive-mcp.swarm.adapters.soft :as soft]))
+            [hive-mcp.swarm.adapters.soft :as soft]
+            [hive-mcp.swarm.claim.negotiate :as claim-negotiate]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -451,17 +452,22 @@
            (map :file)
            vec)))
 
-  (claim-files! [_this files task-id]
+  (claim-files! [this files task-id]
+    ;; All or nothing, under the claim lock, through the span registry. The
+    ;; per-file has-conflict?-then-claim this replaced was not atomic, and the
+    ;; store's upsert let an unchecked claim take another ling's file. A
+    ;; refusal parks this ling on the held keys (the release wakes it) and
+    ;; sends each holder one yield request; the result says so.
     (when (seq files)
-      (doseq [f files]
-        (let [{:keys [conflict? held-by]} (ds-queries/has-conflict? f id)]
-          (if conflict?
-            (do
-              (log/warn "File already claimed by another agent"
-                        {:file f :held-by held-by :requesting id})
-              (ds-lings/add-to-wait-queue! id f))
-            (ds-lings/claim-file! f id {:task-id task-id}))))
-      (log/info "Files claimed" {:ling-id id :count (count files)})))
+      (let [result (claim-negotiate/acquire-for-ling!
+                    id files {:task-id task-id :cwd (:cwd this)})]
+        (if (:acquired? result)
+          (log/info "Files claimed" {:ling-id id :count (count files)})
+          (log/warn "Files not claimed; parked until released"
+                    {:ling-id id :task-id task-id :parked (:parked result)
+                     :conflicts (mapv #(select-keys % [:file :qn :held-by :reason])
+                                      (:conflicts result))}))
+        result)))
 
   (release-claims! [_this]
     (let [released-count (ds-lings/release-claims-for-slave! id)]

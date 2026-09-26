@@ -42,7 +42,8 @@
             [hive-mcp.hooks.core :as hooks]
             [hive-mcp.project.scope :as project-scope]
             [clojure.core.async :as async :refer [go-loop <!]]
-            [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]))
+            [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
+            [hive-mcp.swarm.claim.negotiate :as claim-negotiate]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -359,9 +360,13 @@
       (proto/add-task! reg task-id slave-id {:status :dispatched :files files})
       ;; ADR-002 FIX: Set slave status to :working on dispatch
       (proto/update-slave! reg slave-id {:slave/status :working})
-      ;; claim-file! is not in ISwarmRegistry - use lings directly
-      (doseq [f files]
-        (lings/claim-file! f slave-id {:task-id task-id}))
+      ;; All or nothing through the span registry, as Ling.claim-files! does:
+      ;; a refusal parks the ling and asks each holder to yield, never upserts
+      ;; over a live holder.
+      (when (seq files)
+        (claim-negotiate/acquire-for-ling!
+         slave-id files {:task-id task-id
+                         :cwd     (:slave/cwd (queries/get-slave slave-id))}))
       (log/debug "Sync: registered task" task-id "with" (count files) "files, slave now :working"))))
 
 (defn- handle-task-completed

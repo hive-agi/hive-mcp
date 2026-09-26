@@ -198,25 +198,36 @@
    All-or-nothing on purpose: a partial acquisition leaves an agent holding
    half a refactor and blocking somebody else with it.
 
-   Returns {:acquired? bool :conflicts [...] :spans-claimed n}. Each conflict
-   carries :file :qn :mode :held-by :reason plus a rendered :message, so the
-   refusal tells an agent which form to wait on rather than which file."
-  [wanted slave-id & [{:keys [task-id scope]}]]
-  (let [spans (mapv span/span wanted)]
+   `ctx` (optional, from `span/context-for`) anchors the comparison at the
+   claimant's working directory. With a hive-agent that understands it, a hold
+   on the same file through ANOTHER worktree is reported under :warnings and
+   does not refuse; without one, :warnings is always empty.
+
+   Returns {:acquired? bool :conflicts [...] :warnings [...] :spans-claimed n}.
+   Each conflict and warning carries :file :qn :mode :held-by :reason plus a
+   rendered :message, so the refusal tells an agent which form to wait on
+   rather than which file."
+  [wanted slave-id & [{:keys [task-id scope ctx]}]]
+  (let [spans  (mapv span/span wanted)
+        render (fn [xs] (mapv #(assoc % :message (span/explain %)) xs))]
     (if (empty? spans)
-      {:acquired? true :conflicts [] :spans-claimed 0}
+      {:acquired? true :conflicts [] :warnings [] :spans-claimed 0}
       (locking (claim-lock)
-        (let [callers (graph/callers-fn scope)
-              held    (held-spans)
-              found   (vec (mapcat #(span/conflicts callers held % slave-id) spans))]
+        (let [callers  (graph/callers-fn scope)
+              held     (held-spans)
+              assessed (mapv #(span/assess callers held % slave-id ctx) spans)
+              found    (vec (mapcat :conflicts assessed))
+              warned   (render (distinct (mapcat :warnings assessed)))]
           (if (seq found)
             (do (log/info "claim refused for" slave-id "on" (count spans)
                           "spans:" (count found) "conflicts")
                 {:acquired?     false
                  :spans-claimed 0
-                 :conflicts     (mapv #(assoc % :message (span/explain %)) found)})
+                 :conflicts     (render found)
+                 :warnings      warned})
             (do (doseq [s spans]
                   (claim-span! s slave-id {:task-id task-id}))
                 {:acquired?     true
                  :conflicts     []
+                 :warnings      warned
                  :spans-claimed (count spans)})))))))
