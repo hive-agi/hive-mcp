@@ -113,21 +113,27 @@
 
 (defn model-refusal
   "nil when `provider`'s entry in `registry` permits `model`, else an error map
-   naming the first of the entry's :deny-models patterns the model matched.
-   Patterns are regex source strings, matched case-insensitively anywhere in
-   the model id. Unlike `validate-model` this is a REFUSAL, never a warning."
+   naming the first refusing pattern the model matched. Patterns are regex
+   source strings, matched case-insensitively anywhere in the model id: the
+   entry's own :deny-models when it names that field,
+   `model/subscription-only-models` otherwise. Only a keyed OpenAI-compat
+   entry refuses; a dispatch-routed or keyless one refuses nothing. Unlike
+   `validate-model` this is a REFUSAL, never a warning."
   [registry provider model]
-  (when (string? model)
-    (when-let [pattern (some #(when (re-find (re-pattern (str "(?i)" %)) model) %)
-                             (:deny-models (get registry provider)))]
-      {:error    :model-denied-for-provider
-       :provider provider
-       :model    model
-       :pattern  pattern
-       :fix      (str "Route " model " through its own subscription (a bare "
-                      "claude-* model goes to :anthropic OAuth), or remove the "
-                      "pattern via: hive config set llm-providers."
-                      (name provider) ".deny-models [...]")})))
+  (let [entry (get registry provider)]
+    (when (and (string? model)
+               (model/openai-compat? entry)
+               (some? (:secret-key entry)))
+      (when-let [pattern (some #(when (re-find (re-pattern (str "(?i)" %)) model) %)
+                               (get entry :deny-models model/subscription-only-models))]
+        {:error    :model-denied-for-provider
+         :provider provider
+         :model    model
+         :pattern  pattern
+         :fix      (str "Route " model " through its own subscription (a bare "
+                        "claude-* model goes to :anthropic OAuth; ChatGPT and Kimi "
+                        "run on their subscription runtimes), or name "
+                        "llm-providers." (name provider) ".deny-models [...]")}))))
 
 (defn unresolved-routing
   "nil when `resolved` names both a provider and a model, else an error map

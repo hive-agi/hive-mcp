@@ -112,28 +112,46 @@
       (is (nil? (policy/validate-model reg :alpha "alpha-1")))
       (is (= :unknown-model-for-provider (:error (policy/validate-model reg :alpha "alpha-9")))))))
 
-(deftest deny-models-test
-  (let [reg model/seed-registry]
-    (testing "the seeded Venice entry refuses the Claude and GPT families"
-      (doseq [m ["claude-sonnet-5" "claude-opus-4-8" "Claude-Opus-5-5" "anthropic/claude-opus-4-7"
-                 "openai-gpt-6-sol" "openai-gpt-55-pro" "gpt-6-luna" "o3" "openai-o4-mini"]]
-        (is (= :model-denied-for-provider (:error (policy/model-refusal reg :venice m)))
-            (str m " must not be billable to a Venice key"))))
+(deftest subscription-only-models-test
+  (let [reg       model/seed-registry
+        expensive ["claude-sonnet-5" "claude-opus-4-8" "Claude-Opus-5-5" "anthropic/claude-opus-4-7"
+                   "openai-gpt-6-sol" "openai-gpt-55-pro" "gpt-6-luna" "openai/gpt-5.5" "o3"
+                   "openai-o4-mini" "openai/o3-mini" "kimi-k3" "kimi-k2-7-code"
+                   "moonshotai/kimi-k2.6" "moonshot-v1-8k"]
+        cheap     ["z-ai-glm-5-3-flash" "deepseek-v4-1-flash" "openai-gpt-oss-120b" "openai/gpt-oss-120b"
+                   "qwen3-coder-480b-a35b-instruct-turbo" "mistral-small-3-2-24b-instruct"
+                   "deepseek/deepseek-v3.2" "z-ai/glm-5.1" "minimax/minimax-m2.7" "gemini-3-8-flash"]
+        keyed     (for [[k e] reg :when (and (model/openai-compat? e) (:secret-key e))] k)]
 
-    (testing "and admits the cheap models it is configured for"
-      (doseq [m ["z-ai-glm-5-3-flash" "deepseek-v4-1-flash" "openai-gpt-oss-120b"
-                 "qwen3-coder-480b-a35b-instruct-turbo" "kimi-k2-7-code" "mistral-small-3-2-24b-instruct"]]
-        (is (nil? (policy/model-refusal reg :venice m)) m)))
+    (testing "every keyed OpenAI-compat entry refuses the Claude, GPT and Kimi families"
+      (is (seq keyed))
+      (doseq [k keyed m expensive]
+        (is (= :model-denied-for-provider (:error (policy/model-refusal reg k m)))
+            (str m " must not be billable to " k "'s API key"))))
 
-    (testing "a ling whose agent-type default is Venice cannot carry a GPT or Claude alias there"
-      (doseq [m ["gpt-6-sol" "openai-gpt-54" "venice:claude-opus-4-8"]]
+    (testing "and admits the cheap models"
+      (doseq [k [:venice :openrouter] m cheap]
+        (is (nil? (policy/model-refusal reg k m)) (str k " " m))))
+
+    (testing "a ling whose agent-type default is Venice cannot carry a GPT, Claude or Kimi alias there"
+      (doseq [m ["gpt-6-sol" "openai-gpt-54" "venice:claude-opus-4-8" "kimi-k3"]]
         (let [{:keys [provider model]} (policy/resolve-routing
                                         reg {:model m :type-defaults {:provider :venice
                                                                       :model "z-ai-glm-5-3-flash"}})]
           (is (= :venice provider) m)
           (is (some? (policy/model-refusal reg provider model)) m))))
 
-    (testing "a bare Claude model still reaches :anthropic, which refuses nothing"
+    (testing "an explicit OpenRouter spawn cannot reach Claude or Kimi either"
+      (doseq [m ["openrouter:anthropic/claude-sonnet-4.6" "openrouter:moonshotai/kimi-k2.6"]]
+        (let [{:keys [provider model]} (policy/resolve-routing reg {:model m})]
+          (is (= :openrouter provider) m)
+          (is (some? (policy/model-refusal reg provider model)) m)))
+      (let [hosted (policy/overlay reg {:openrouter {:default-model "anthropic/claude-sonnet-4.6"}})
+            {:keys [provider model]} (policy/resolve-routing hosted {:provider :openrouter})]
+        (is (some? (policy/model-refusal hosted provider model))
+            "a host default-model from the refused families is refused too")))
+
+    (testing "a bare Claude model still reaches :anthropic OAuth, which refuses nothing"
       (let [{:keys [provider model]} (policy/resolve-routing
                                       reg {:model "claude-opus-4-8"
                                            :type-defaults {:provider :venice}})]
@@ -146,8 +164,9 @@
       (is (nil? (policy/model-refusal (policy/overlay reg {:venice {:deny-models []}})
                                       :venice "claude-sonnet-5"))))
 
-    (testing "an entry declaring no :deny-models refuses nothing"
-      (is (nil? (policy/model-refusal seed :alpha "claude-opus-4-8")))
+    (testing "keyless and dispatch-routed entries refuse nothing"
+      (is (nil? (policy/model-refusal seed :local "claude-opus-4-8")))
+      (is (nil? (policy/model-refusal seed :native "claude-opus-4-8")))
       (is (nil? (policy/model-refusal reg :venice nil))))))
 
 ;; =============================================================================

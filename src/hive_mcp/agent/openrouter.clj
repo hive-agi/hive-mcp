@@ -371,6 +371,10 @@
                        :config-key (str "llm-providers." prov-name ".default-model")
                        :fix        (str "hive config set llm-providers." prov-name
                                         ".default-model <model-id>")})))
+    (when-let [err (and provider (provider/model-refusal provider effective-model))]
+      (throw (ex-info (str "Model " effective-model " is denied on provider " prov-name
+                           ": " (:fix err))
+                      err)))
     (->OpenAICompatBackend effective-url (or effective-key "") effective-model prov-name)))
 
 (defn auto-backend

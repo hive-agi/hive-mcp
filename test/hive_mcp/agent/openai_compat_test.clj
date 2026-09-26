@@ -242,11 +242,29 @@
 
 (deftest openrouter-backend-backward-compat-test
   (testing "openrouter-backend still works as before"
-    (let [b (openrouter/openrouter-backend {:api-key "sk-test" :model "gpt-4o"})]
+    (let [b (openrouter/openrouter-backend {:api-key "sk-test" :model "deepseek/deepseek-v3.2"})]
       (is (satisfies? proto/LLMBackend b))
-      (is (= "gpt-4o" (proto/model-name b)))
+      (is (= "deepseek/deepseek-v3.2" (proto/model-name b)))
       (is (= "openrouter" (:provider-name b)))
       (is (= "https://openrouter.ai/api/v1/chat/completions" (:api-url b))))))
+
+(deftest keyed-backend-refuses-subscription-only-models-test
+  (testing "a keyed provider cannot be built for a Claude, GPT or Kimi model"
+    (doseq [[provider model] [[:openrouter "anthropic/claude-sonnet-4.6"]
+                              [:openrouter "moonshotai/kimi-k2.6"]
+                              [:openrouter "openai/gpt-5.5"]
+                              [:venice "claude-opus-4-8"]
+                              [:venice "kimi-k3"]]]
+      (let [e (try (openrouter/openai-compat-backend {:provider provider :api-key "sk-test"
+                                                      :model model})
+                   nil
+                   (catch clojure.lang.ExceptionInfo ex ex))]
+        (is (= :model-denied-for-provider (:error (ex-data e))) (str provider " " model)))))
+
+  (testing "the keyless local provider refuses nothing"
+    (is (satisfies? proto/LLMBackend
+                    (openrouter/openai-compat-backend {:provider :ollama-compat
+                                                       :model "claude-local-finetune"})))))
 
 (comment
   (require '[clojure.test :refer [run-tests]])

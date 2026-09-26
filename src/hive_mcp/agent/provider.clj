@@ -60,6 +60,12 @@
   [provider model]
   (policy/validate-model (effective-registry) provider model))
 
+(defn model-refusal
+  "nil when the provider may carry the model, else the error map of
+   `policy/model-refusal` over the effective registry."
+  [provider model]
+  (policy/model-refusal (effective-registry) provider model))
+
 (defn resolve-provider-model
   "Resolve {:provider :model} for an agent spawn or wave.
 
