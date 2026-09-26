@@ -111,6 +111,24 @@
                        ", or add via: hive config set llm-providers." (name provider)
                        ".available-models [...]")})))
 
+(defn model-refusal
+  "nil when `provider`'s entry in `registry` permits `model`, else an error map
+   naming the first of the entry's :deny-models patterns the model matched.
+   Patterns are regex source strings, matched case-insensitively anywhere in
+   the model id. Unlike `validate-model` this is a REFUSAL, never a warning."
+  [registry provider model]
+  (when (string? model)
+    (when-let [pattern (some #(when (re-find (re-pattern (str "(?i)" %)) model) %)
+                             (:deny-models (get registry provider)))]
+      {:error    :model-denied-for-provider
+       :provider provider
+       :model    model
+       :pattern  pattern
+       :fix      (str "Route " model " through its own subscription (a bare "
+                      "claude-* model goes to :anthropic OAuth), or remove the "
+                      "pattern via: hive config set llm-providers."
+                      (name provider) ".deny-models [...]")})))
+
 (defn unresolved-routing
   "nil when `resolved` names both a provider and a model, else an error map
    naming the config keys that would supply the missing value.

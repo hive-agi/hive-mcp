@@ -112,6 +112,44 @@
       (is (nil? (policy/validate-model reg :alpha "alpha-1")))
       (is (= :unknown-model-for-provider (:error (policy/validate-model reg :alpha "alpha-9")))))))
 
+(deftest deny-models-test
+  (let [reg model/seed-registry]
+    (testing "the seeded Venice entry refuses the Claude and GPT families"
+      (doseq [m ["claude-sonnet-5" "claude-opus-4-8" "Claude-Opus-5-5" "anthropic/claude-opus-4-7"
+                 "openai-gpt-6-sol" "openai-gpt-55-pro" "gpt-6-luna" "o3" "openai-o4-mini"]]
+        (is (= :model-denied-for-provider (:error (policy/model-refusal reg :venice m)))
+            (str m " must not be billable to a Venice key"))))
+
+    (testing "and admits the cheap models it is configured for"
+      (doseq [m ["z-ai-glm-5-3-flash" "deepseek-v4-1-flash" "openai-gpt-oss-120b"
+                 "qwen3-coder-480b-a35b-instruct-turbo" "kimi-k2-7-code" "mistral-small-3-2-24b-instruct"]]
+        (is (nil? (policy/model-refusal reg :venice m)) m)))
+
+    (testing "a ling whose agent-type default is Venice cannot carry a GPT or Claude alias there"
+      (doseq [m ["gpt-6-sol" "openai-gpt-54" "venice:claude-opus-4-8"]]
+        (let [{:keys [provider model]} (policy/resolve-routing
+                                        reg {:model m :type-defaults {:provider :venice
+                                                                      :model "z-ai-glm-5-3-flash"}})]
+          (is (= :venice provider) m)
+          (is (some? (policy/model-refusal reg provider model)) m))))
+
+    (testing "a bare Claude model still reaches :anthropic, which refuses nothing"
+      (let [{:keys [provider model]} (policy/resolve-routing
+                                      reg {:model "claude-opus-4-8"
+                                           :type-defaults {:provider :venice}})]
+        (is (= :anthropic provider))
+        (is (nil? (policy/model-refusal reg provider model)))))
+
+    (testing "config keeps the guard unless it names the field"
+      (is (some? (policy/model-refusal (policy/overlay reg {:venice {:default-model "x"}})
+                                       :venice "claude-sonnet-5")))
+      (is (nil? (policy/model-refusal (policy/overlay reg {:venice {:deny-models []}})
+                                      :venice "claude-sonnet-5"))))
+
+    (testing "an entry declaring no :deny-models refuses nothing"
+      (is (nil? (policy/model-refusal seed :alpha "claude-opus-4-8")))
+      (is (nil? (policy/model-refusal reg :venice nil))))))
+
 ;; =============================================================================
 ;; routing
 ;; =============================================================================

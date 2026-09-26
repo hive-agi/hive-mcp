@@ -56,7 +56,8 @@
      [:api-url ChatCompletionsUrl]
      [:secret-key [:maybe :keyword]]
      [:default-model {:optional true} :string]
-     [:available-models {:optional true} [:sequential :string]]]]])
+     [:available-models {:optional true} [:sequential :string]]
+     [:deny-models {:optional true} [:sequential :string]]]]])
 
 (def ProviderRegistry
   "Malli schema for the provider registry: provider keyword -> ProviderEntry."
@@ -98,6 +99,9 @@
    No model id lives here: `:default-model` and `:available-models` are set
    per provider in config, e.g.
      hive config set llm-providers.venice.default-model <model-id>
+   `:deny-models` is a refusal list, not a choice: regex strings a model id
+   must not match on that provider (see `policy/model-refusal`). Config
+   replaces it by naming the field.
 
    It is also the ONE literal: `hive-mcp.config.merge/default-config`
    carries this var under `:llm-providers` rather than a second copy."
@@ -112,7 +116,10 @@
                    ;; requires the model to be one that honours the marker.
                    :cache-control :anthropic-style}
    :venice        {:api-url       "https://api.venice.ai/api/v1/chat/completions"
-                   :secret-key    :venice-api-key}
+                   :secret-key    :venice-api-key
+                   :deny-models   ["claude" "^anthropic"
+                                   "^(openai-)?gpt-(?!oss)"
+                                   "^(openai-)?o[1-9](-|$)"]}
    :groq          {:api-url       "https://api.groq.com/openai/v1/chat/completions"
                    :secret-key    :groq-api-key}
    :together      {:api-url       "https://api.together.xyz/v1/chat/completions"
