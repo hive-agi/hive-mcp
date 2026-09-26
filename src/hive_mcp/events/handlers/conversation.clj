@@ -80,33 +80,35 @@
 (defn handle-conversation-respond
   "Pure handler for :conversation/respond.
 
-   Uses the :conversation/correlated-ask coeffect injected by the
-   `correlate-ask-id` interceptor. If matched, emit deliver-response
-   to fulfill the local promise-chan AND publish on NATS so the sender's
-   process (possibly remote) can also resolve. If unmatched, log + drop.
+   ALWAYS emits :conversation/deliver-response, correlated or not. The
+   :conversation/correlated-ask coeffect (from `correlate-ask-id`) is a
+   snapshot taken before this handler ran, so an unmatched respond may be
+   one that overtook its own ask (an in-process responder answering inside
+   publish, or a NATS respond racing the local ask event). Dropping it here
+   was the ask window: the asker registered a moment later and parked until
+   its timeout. deliver-response! buffers an answer for an unknown ask-id
+   (bounded, TTL) and hands it over when the ask registers; for a sender on
+   another node the buffered entry simply expires.
 
    Effects:
-     - :conversation/deliver-response (when correlated-ask present)
-     - :conversation/publish-respond  (always — remote sender may be parked)
+     - :conversation/deliver-response (always)
+     - :conversation/publish-respond  (always, a remote sender may be parked)
      - :conversation/inbox-push       (so sender can also see the answer in piggyback)
      - :log"
   [coeffects [_ payload]]
-  (let [envelope        (conv/respond-envelope payload)
-        ask-id          (:ask-id envelope)
-        correlated      (:conversation/correlated-ask coeffects)
-        base-effects    {:conversation/publish-respond {:envelope envelope}
-                         :conversation/inbox-push      {:agent-id (:to envelope)
-                                                        :envelope envelope}}]
-    (if correlated
-      (assoc base-effects
-             :conversation/deliver-response
-             {:ask-id ask-id :answer (:answer envelope)}
-             :log {:level :debug
-                   :message (str "respond delivered locally for ask-id " ask-id)})
-      (assoc base-effects
-             :log {:level :info
-                   :message (str "respond received but no local ask-id "
-                                 ask-id " — forwarding via publish only")}))))
+  (let [envelope   (conv/respond-envelope payload)
+        ask-id     (:ask-id envelope)
+        correlated (:conversation/correlated-ask coeffects)]
+    {:conversation/deliver-response {:ask-id ask-id :answer (:answer envelope)}
+     :conversation/publish-respond  {:envelope envelope}
+     :conversation/inbox-push       {:agent-id (:to envelope)
+                                     :envelope envelope}
+     :log (if correlated
+            {:level :debug
+             :message (str "respond delivered locally for ask-id " ask-id)}
+            {:level :debug
+             :message (str "respond for ask-id " ask-id
+                           " has no local ask yet; buffered and published")})}))
 
 ;; =============================================================================
 ;; Registration

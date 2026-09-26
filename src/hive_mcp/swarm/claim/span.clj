@@ -72,3 +72,39 @@
   {:arglists '([a b])}
   [& args]
   (apply (impl! 'widen) args))
+
+(defn- optional-impl
+  "The hive-agent span var `sym` when the LOADED version defines it, else nil.
+
+   `impl` cannot answer this: when the namespace is on the classpath it
+   requiring-resolves, which yields nil for a var that version lacks, but when
+   the namespace is absent it hands back a stand-in that throws on call. A
+   feature probe must say 'no' in both cases, so it checks presence first."
+  [sym]
+  (when (delegate/available? "hive-agent.swarm.claim.span")
+    (requiring-resolve (symbol "hive-agent.swarm.claim.span" (name sym)))))
+
+(defn context-for
+  "A span context anchored at `cwd`, or nil when the loaded hive-agent predates
+   worktree identity.
+
+   Forward compatible on purpose: a hive-agent that ships
+   `default-context` canonicalizes both sides of a comparison (so one file seen
+   through two worktrees meets, as a warning); one that does not keeps today's
+   path comparison, and nil is how that is spelled downstream."
+  [cwd]
+  (when-let [f (optional-impl 'default-context)]
+    (f cwd)))
+
+(defn assess
+  "{:conflicts [...] :warnings [...]} for `wanted` against `held`.
+
+   With a `ctx` and a hive-agent that has `assess`, cross-worktree overlaps come
+   back as :warnings instead of blocking. Otherwise every collision is a
+   conflict and :warnings is empty, which is exactly the pre-worktree
+   behaviour."
+  [callers-fn held wanted slave-id ctx]
+  (if-let [f (when ctx (optional-impl 'assess))]
+    (f callers-fn held wanted slave-id ctx)
+    {:conflicts (conflicts callers-fn held wanted slave-id)
+     :warnings  []}))

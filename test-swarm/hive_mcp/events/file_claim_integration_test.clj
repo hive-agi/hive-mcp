@@ -26,7 +26,10 @@
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.swarm.datascript.connection :as conn]
             [hive-mcp.hivemind.core :as hivemind]
-            [hive-dsl.bounded-atom :refer [bounded-atom bget bcount bclear!]]))
+            [hive-mcp.channel.audience :as aud]
+            [hive-mcp.swarm.registry :as swarm-registry]
+            [hive-datascript.swarm.lings :as ds-lings]
+            [hive-dsl.bounded-atom :refer [bounded-atom bget bkeys bcount bclear!]]))
 
 ;; =============================================================================
 ;; Test Fixtures
@@ -78,12 +81,34 @@
     (:messages agent-data)))
 
 (defn find-file-available-message
-  "Find a :file-available message for a specific file in agent's messages."
+  "The :file-available message the reader `agent-id` is ADDRESSED by.
+
+   A shout is stored under its SENDER. What makes it the waiter's is `:to`,
+   read the way the piggyback reader reads it (audience/addressed-to?).
+   Looking in the waiter's own slot found the note only while the effect
+   mislabelled the waiter as its author, and that message never reached the
+   waiter at all."
   [agent-id file-path]
-  (->> (get-agent-messages agent-id)
+  (->> (bkeys hivemind/agent-registry)
+       (mapcat (fn [sender]
+                 (map #(assoc % :agent-id sender) (get-agent-messages sender))))
        (filter #(= :file-available (:event-type %)))
        (filter #(= file-path (get-in % [:data :file])))
+       (filter #(aud/addressed-to? agent-id %))
        first))
+
+(defn await-file-available-message
+  "Poll for the waiter's message instead of trusting one fixed sleep: each
+   waiter is a separate async dispatch, so a loaded box can land the second
+   after a sleep that covered the first. Returns nil after `timeout-ms`."
+  ([agent-id file-path] (await-file-available-message agent-id file-path 5000))
+  ([agent-id file-path timeout-ms]
+   (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
+     (loop []
+       (or (find-file-available-message agent-id file-path)
+           (when (< (System/currentTimeMillis) deadline)
+             (Thread/sleep 25)
+             (recur)))))))
 
 ;; =============================================================================
 ;; Test 1: Full Cascade - File Release Notifies Waiting Ling
@@ -118,7 +143,7 @@
     (wait-for-async)
 
     ;; Assert: ling-2 should have received a :file-available message
-    (let [message (find-file-available-message "ling-2" "src/foo.clj")]
+    (let [message (await-file-available-message "ling-2" "src/foo.clj")]
       (is (some? message) "ling-2 should receive :file-available notification")
       (when message
         (is (= :file-available (:event-type message)))
@@ -218,8 +243,8 @@
     (wait-for-async)
 
     ;; Assert: Both lings should have received notification
-    (let [msg-2 (find-file-available-message "ling-2" "src/shared.clj")
-          msg-3 (find-file-available-message "ling-3" "src/shared.clj")]
+    (let [msg-2 (await-file-available-message "ling-2" "src/shared.clj")
+          msg-3 (await-file-available-message "ling-3" "src/shared.clj")]
       (is (some? msg-2) "ling-2 should receive notification")
       (is (some? msg-3) "ling-3 should receive notification"))))
 
@@ -288,7 +313,7 @@
     (wait-for-async)
 
     ;; Only queued task should be notified
-    (is (some? (find-file-available-message "ling-queued" "src/status-test.clj"))
+    (is (some? (await-file-available-message "ling-queued" "src/status-test.clj"))
         "Queued task should be notified")
     (is (nil? (find-file-available-message "ling-dispatched" "src/status-test.clj"))
         "Dispatched task should NOT be notified")
@@ -328,6 +353,79 @@
     ;; Wait for async
     (wait-for-async)
 
-    ;; Assert: ling-2 notified
-    (is (some? (find-file-available-message "ling-2" "src/cascade.clj"))
-        "Completing task should trigger claim release and notify waiting ling")))
+    ;; Assert: ling-2 notified, by the ling whose task released the claim
+    (let [msg (await-file-available-message "ling-2" "src/cascade.clj")]
+      (is (some? msg)
+          "Completing task should trigger claim release and notify waiting ling")
+      (is (= "ling-1" (:agent-id msg))
+          "the wake-up is sent from the releasing ling, not the coordinator"))))
+
+;; =============================================================================
+;; Test 7: The wake-up is DIRECTED at the waiter, from the releaser
+;; =============================================================================
+
+(deftest wake-up-is-directed-at-the-waiter
+  (testing "the note names the waiter in :to and comes from the releasing ling"
+    (ds/add-slave! "ling-1" {:name "worker-1" :status :working})
+    (ds/add-slave! "ling-2" {:name "worker-2" :status :idle})
+    (ds/add-slave! "ling-3" {:name "bystander" :status :idle})
+    (ds/add-task! "task-1" "ling-1" {:status :dispatched :files ["src/direct.clj"]})
+    (ds/claim-file! "src/direct.clj" "ling-1" {:task-id "task-1"})
+    (ds/add-task! "task-2" "ling-2" {:status :queued :files ["src/direct.clj"]})
+
+    (ds/release-claim! "src/direct.clj")
+    (wait-for-async)
+
+    (let [msg (await-file-available-message "ling-2" "src/direct.clj")]
+      (is (some? msg) "the waiter is addressed")
+      (is (= "ling-2" (:to msg)))
+      (is (not= "ling-2" (:agent-id msg))
+          "the waiter must not be recorded as the AUTHOR of its own wake-up")
+      (is (nil? (find-file-available-message "ling-3" "src/direct.clj"))
+          "a bystander is not addressed"))))
+
+;; =============================================================================
+;; Test 8: A ling PARKED in the wait queue is woken, then dequeued
+;; =============================================================================
+
+(defn- wait-queue-rows [file]
+  (ds/q '[:find ?ling :in $ ?f :where [?w :wait-queue/file ?f] [?w :wait-queue/ling-id ?ling]]
+        file))
+
+(deftest parked-ling-is-woken-and-dequeued
+  (testing "a refused claimant (wait queue, :dispatched task) is woken on release"
+    (ds/add-slave! "ling-1" {:name "holder" :status :working})
+    (ds/add-slave! "ling-2" {:name "parked" :status :working})
+    (ds/add-task! "task-1" "ling-1" {:status :dispatched :files ["src/parked.clj"]})
+    (ds/claim-file! "src/parked.clj" "ling-1" {:task-id "task-1"})
+    ;; What Ling.claim-files! does when the file is taken: the ling keeps its
+    ;; :dispatched task and parks in the wait queue.
+    (ds/add-task! "task-2" "ling-2" {:status :dispatched :files ["src/parked.clj"]})
+    (ds-lings/add-to-wait-queue! "ling-2" "src/parked.clj")
+    (is (= #{["ling-2"]} (wait-queue-rows "src/parked.clj")))
+
+    (ds/release-claim! "src/parked.clj")
+    (wait-for-async)
+
+    (is (some? (await-file-available-message "ling-2" "src/parked.clj"))
+        "the parked ling is woken although its task is not :queued")
+    (is (empty? (wait-queue-rows "src/parked.clj"))
+        "and taken off the wait queue, so a later release does not wake it again")))
+
+;; =============================================================================
+;; Test 9: A claim taken WITH a task is released when that task completes
+;; =============================================================================
+
+(deftest registry-claim-is-released-when-its-task-completes
+  (testing "swarm.registry/claim-file! links the claim to its task"
+    (ds/add-slave! "ling-1" {:name "worker-1" :status :working})
+    (ds/add-task! "task-1" "ling-1" {:status :dispatched :files ["src/linked.clj"]})
+    ;; The positional task-id used to fall into claim-file!'s OPTS slot and be
+    ;; destructured away, so the claim had no :claim/task and outlived its task.
+    (swarm-registry/claim-file! "src/linked.clj" "ling-1" "task-1")
+    (is (seq (ds/get-claims-for-file "src/linked.clj")))
+
+    (ds/complete-task! "task-1")
+
+    (is (empty? (ds/get-claims-for-file "src/linked.clj"))
+        "completing the task releases the claim it took")))

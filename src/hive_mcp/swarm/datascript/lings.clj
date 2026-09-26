@@ -5,7 +5,8 @@
    Every public var delegates there; see hive-mcp.swarm.delegate for behavior
    without the addon. `with-critical-op` expands to this namespace's
    enter/exit fns, which delegate."
-  (:require [hive-mcp.swarm.delegate :as delegate]))
+  (:require [hive-mcp.swarm.delegate :as delegate]
+            [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -28,7 +29,57 @@
 (defn archive-claim-to-history! {:arglists '([file-path {:keys [slave-id prior-hash released-hash lines-added lines-removed]}])} [& args] (apply (impl! 'archive-claim-to-history!) args))
 (defn can-kill? {:arglists '([slave-id])} [& args] (apply (impl! 'can-kill?) args))
 (defn claim-age-ms {:arglists '([file-path])} [& args] (apply (impl! 'claim-age-ms) args))
-(defn claim-file! {:arglists '([file-path slave-id & [{:keys [task-id prior-hash qn mode]}]])} [& args] (apply (impl! 'claim-file!) args))
+(def ^:private dead-statuses
+  "Slave statuses whose claims no longer protect anything."
+  #{:terminated :dead :killed :zombie})
+
+(defn- live-foreign-holder
+  "The id of the LIVE slave other than `slave-id` holding `file-path`, or nil.
+
+   Live means registered, not in a dead status, and holding a claim that is not
+   stale. A dead or stale holder is exactly the case the upsert exists for (a
+   ling that died holding a file must not fence it off forever), so only a live
+   one refuses."
+  [file-path slave-id]
+  (let [{holder :slave-id} ((impl! 'get-claim-info) file-path)]
+    (when (and holder (not= holder slave-id))
+      (let [slave ((delegate/resolve-var "hive-datascript.swarm.queries" 'get-slave)
+                   holder)]
+        (when (and slave
+                   (not (contains? dead-statuses (:slave/status slave)))
+                   (not ((impl! 'claim-stale?) file-path)))
+          holder)))))
+
+(defn- claim-lock
+  "The one claim lock (the logic-db atom `coordinator/atomic-claim-files!` and
+   `claim.registry/acquire!` hold), resolved late: a static require would
+   close a load cycle. Reentrant, so taking it under either of those is free."
+  []
+  (if-let [f (try (requiring-resolve 'hive-mcp.swarm.logic/get-logic-db-atom)
+                  (catch Throwable _ nil))]
+    (f)
+    ::no-logic-lock))
+
+(defn claim-file!
+  "Claim `file-path` (a claim key) for `slave-id`.
+
+   The store's claim-file! UPSERTS on the unique key, so an unchecked call used
+   to hand another live ling's claim to the caller without a word
+   (SWARM-CLAIM-STEAL). This shim refuses that case under the claim lock and
+   returns {:claimed? false :refused :held-by-live-slave :file :held-by}
+   instead of writing. Re-claiming one's own key, or taking over a key held by
+   a dead or stale slave, still upserts as before."
+  {:arglists '([file-path slave-id & [{:keys [task-id prior-hash qn mode]}]])}
+  [file-path slave-id & more]
+  (locking (claim-lock)
+    (if-let [holder (live-foreign-holder file-path slave-id)]
+      (do (log/warn "claim refused: held by a live slave"
+                    {:file file-path :held-by holder :requesting slave-id})
+          {:claimed? false
+           :refused  :held-by-live-slave
+           :file     file-path
+           :held-by  holder})
+      (apply (impl! 'claim-file!) file-path slave-id more))))
 (defn claim-stale? {:arglists '([file-path] [file-path threshold-ms])} [& args] (apply (impl! 'claim-stale?) args))
 (defn cleanup-stale-claims! {:arglists '([] [threshold-ms])} [& args] (apply (impl! 'cleanup-stale-claims!) args))
 (defn cleanup-stdout-buffer! {:arglists '([slave-id])} [& args] (apply (impl! 'cleanup-stdout-buffer!) args))

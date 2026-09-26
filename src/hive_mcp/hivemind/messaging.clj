@@ -6,7 +6,7 @@
    Local state (atom, DataScript) still updated synchronously for consistency."
 
   (:require [clojure.core.async :as async :refer [>!! chan timeout alt!!]]
-            [hive-dsl.bounded-atom :refer [bput! bget]]
+            [hive-dsl.bounded-atom :refer [bounded-swap!]]
             [hive-mcp.channel.core :as channel]
             [hive-mcp.channel.piggyback :as piggyback]
             [hive-mcp.hivemind.event-registry :as event-registry]
@@ -299,12 +299,18 @@
     (when (and metered? broadcast?)
       (bledger/record-broadcast! project-id now))
     ;; 1. Local state — always (bounded-atom for piggyback reads)
-    (let [current (or (bget state/agent-registry agent-id) {:messages [] :last-seen nil})
-          messages (or (:messages current) [])
-          new-messages (vec (take-last 10 (conj messages message)))]
-      (bput! state/agent-registry agent-id
-             {:messages new-messages
-              :last-seen now}))
+    ;; ONE swap, not a read then a put: two shouts from the same sender in
+    ;; flight together (a release waking two waiters, both sent as the
+    ;; releaser) would each read the old ring and the second put would drop
+    ;; the first message.
+    (bounded-swap! state/agent-registry
+                   (fn [entries]
+                     (let [messages (or (get-in entries [agent-id :data :messages]) [])]
+                       (assoc entries agent-id
+                              {:data {:messages (vec (take-last 10 (conj messages message)))
+                                      :last-seen now}
+                               :created-at (or (get-in entries [agent-id :created-at]) now)
+                               :last-accessed now}))))
     ;; 2. DataScript slave status — always
     (when resolved-slave
       (proto/update-slave! registry/default-registry resolved-slave-id
