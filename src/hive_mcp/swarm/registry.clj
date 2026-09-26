@@ -308,7 +308,7 @@
    Returns:
      Transaction report."
   [file-path slave-id task-id]
-  (ds/claim-file! file-path slave-id task-id))
+  (ds/claim-file! file-path slave-id {:task-id task-id}))
 
 (defn has-conflict?
   "Check if files have existing claims.

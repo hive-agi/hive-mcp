@@ -150,9 +150,10 @@
 ;; =============================================================================
 
 (defn handle-deliver-response
-  "Deliver an answer to a locally-pending ask's promise-chan. No-op if no
-   such ask is registered (e.g. respond arrived from NATS for a sender on
-   another node — that node delivers, this one drops)."
+  "Deliver an answer to a locally-pending ask's promise-chan. When no such
+   ask is registered yet, the protocol layer buffers the answer (bounded,
+   TTL) and hands it over if the ask registers; a respond for a sender on
+   another node just expires there."
   [{:keys [ask-id answer]}]
   (when ask-id
     (conv/deliver-response! ask-id answer)))

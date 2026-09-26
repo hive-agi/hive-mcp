@@ -54,19 +54,26 @@
 ;; =============================================================================
 
 (defn- handle-targeted-shout
-  "Execute a :targeted-shout effect - send shout to specific agent.
+  "Execute a :targeted-shout effect - send a DIRECTED shout to one agent.
 
-   Like :shout but explicitly targets a specific agent-id rather than
-   using the current agent from environment. Used for notifying lings
-   about events that affect them (e.g., file availability).
+   Used for notifying a ling about an event that affects it (e.g. a file it
+   waited on became available).
+
+   `hivemind/shout!` takes the SENDER as its first argument and addresses a
+   single peer through `:to` in the data. Passing the target as the first
+   argument made the waiter look like the author, so the note reached the
+   waiter's spawner and never the waiter itself.
 
    Expected data shape:
    {:target-agent-id \"ling-worker-123\"
+    :sender-id       \"ling-worker-7\"   ; optional, defaults to \"coordinator\"
     :event-type      :file-available
     :data            {:file \"...\" ...}}"
-  [{:keys [target-agent-id event-type data]}]
+  [{:keys [target-agent-id sender-id event-type data]}]
   (when target-agent-id
-    (hivemind/shout! target-agent-id event-type data)))
+    (hivemind/shout! (or sender-id "coordinator")
+                     event-type
+                     (assoc data :to target-agent-id))))
 
 ;; =============================================================================
 ;; Effect: :log
