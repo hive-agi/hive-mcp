@@ -62,9 +62,12 @@
 
 (defn model-refusal
   "nil when the provider may carry the model, else the error map of
-   `policy/model-refusal` over the effective registry."
-  [provider model]
-  (policy/model-refusal (effective-registry) provider model))
+   `policy/model-refusal`: over the effective registry, or over ENTRY when
+   the caller built the endpoint itself (explicit :api-url, custom provider)."
+  ([provider model]
+   (policy/model-refusal (effective-registry) provider model))
+  ([provider model entry]
+   (policy/model-refusal {provider entry} provider model)))
 
 (defn resolve-provider-model
   "Resolve {:provider :model} for an agent spawn or wave.

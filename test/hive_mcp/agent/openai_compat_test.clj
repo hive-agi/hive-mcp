@@ -60,16 +60,25 @@
                           (openrouter/openai-compat-backend
                            {:provider :anthropic :api-key "sk-test"}))))
 
-  (testing "an explicit :api-url still overrides it (relay escape hatch)"
-    (cfg-test/with-config {:llm-providers {:anthropic {:default-model "test-claude-model"}}}
-      (let [b (openrouter/openai-compat-backend
-               {:provider :anthropic
-                :api-url  "https://relay.test/v1/chat/completions"
-                :api-key  "sk-test"})]
-        (is (satisfies? proto/LLMBackend b))
-        (is (= "https://relay.test/v1/chat/completions" (:api-url b)))
-        (is (= "test-claude-model" (proto/model-name b))
-            "the dispatch-routed entry still supplies its configured :default-model")))))
+  (testing "an explicit :api-url relay cannot carry Claude on an API key"
+    (cfg-test/with-config {:llm-providers {:anthropic {:default-model "claude-sonnet-4-6"}}}
+      (let [e (try (openrouter/openai-compat-backend
+                    {:provider :anthropic
+                     :api-url  "https://relay.test/v1/chat/completions"
+                     :api-key  "sk-test"})
+                   nil
+                   (catch clojure.lang.ExceptionInfo ex ex))]
+        (is (= :model-denied-for-provider (:error (ex-data e)))
+            "the dispatch-routed entry's Claude default is refused on the relay"))))
+
+  (testing "the :api-url override itself still works for a model outside the refused families"
+    (let [b (openrouter/openai-compat-backend
+             {:provider :anthropic
+              :api-url  "https://relay.test/v1/chat/completions"
+              :api-key  "sk-test"
+              :model    "deepseek/deepseek-v3.2"})]
+      (is (satisfies? proto/LLMBackend b))
+      (is (= "https://relay.test/v1/chat/completions" (:api-url b))))))
 
 (deftest seed-registry-ships-no-model-test
   (testing "seed entries are endpoint descriptors: no :default-model, no :available-models"
@@ -265,6 +274,29 @@
     (is (satisfies? proto/LLMBackend
                     (openrouter/openai-compat-backend {:provider :ollama-compat
                                                        :model "claude-local-finetune"})))))
+
+(deftest hand-built-endpoint-refuses-subscription-only-models-test
+  (let [refusal (fn [opts]
+                  (try (openrouter/openai-compat-backend opts) nil
+                       (catch clojure.lang.ExceptionInfo ex (:error (ex-data ex)))))]
+    (testing "a raw :api-url with a key is a keyed endpoint like any other"
+      (is (= :model-denied-for-provider
+             (refusal {:api-url "https://gateway.test/v1/chat/completions" :api-key "sk-test"
+                       :model "claude-opus-4-8"}))))
+
+    (testing "an :api-url override cannot launder a dispatch-routed or registered provider"
+      (is (= :model-denied-for-provider
+             (refusal {:provider :anthropic :api-url "https://gateway.test/v1/chat/completions"
+                       :api-key "sk-test" :model "claude-opus-4-8"})))
+      (is (= :model-denied-for-provider
+             (refusal {:provider :openrouter :api-url "https://gateway.test/v1/chat/completions"
+                       :api-key "sk-test" :model "moonshotai/kimi-k2.6"}))))
+
+    (testing "a hand-built endpoint still carries the cheap models"
+      (is (satisfies? proto/LLMBackend
+                      (openrouter/openai-compat-backend
+                       {:api-url "https://gateway.test/v1/chat/completions" :api-key "sk-test"
+                        :model "deepseek/deepseek-v3.2"}))))))
 
 (comment
   (require '[clojure.test :refer [run-tests]])

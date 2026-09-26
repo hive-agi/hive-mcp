@@ -212,11 +212,11 @@
      3. type-defaults :provider from config
      4. fallback-provider
 
-   Explicit routing (steps 0 and 1) always wins over Claude auto-detection.
-   This is the privacy escape hatch: callers who need Claude models called
-   through an anonymity-preserving relay (e.g. Venice, OpenRouter) can pass
-   either `:provider :venice` OR prefix the model as `venice:claude-...`, and
-   both bypass the OAuth shortcut. Normal use keeps in-plan Claude billing.
+   Explicit routing (steps 0 and 1) always wins over Claude auto-detection,
+   but routing is not permission: a keyed OpenAI-compat provider refuses the
+   subscription-only families at `model-refusal`, so `venice:claude-...` or
+   `:provider :openrouter` with a Claude model resolves here and is refused
+   by the caller.
 
    Returns {:provider kw :model str}; validation belongs to the caller."
   [registry {:keys [provider model type-defaults fallback-provider]}]
