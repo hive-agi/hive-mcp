@@ -58,7 +58,18 @@
 ;; =============================================================================
 
 (defn register-headless!
-  "Register a headless backend with optional :provides, :priority and :capabilities."
+  "Register a headless backend under a keyword identifier.
+   Validates that backend satisfies IHeadlessBackend protocol.
+   Idempotent: re-registration replaces the previous backend (last-write-wins).
+
+   Optional 3-arg form accepts metadata:
+     :provides     — set of provider keywords this backend serves (e.g. #{:claude})
+     :priority     — integer; higher wins in best-headless-for-provider tie-breaks
+     :capabilities — extra capability keywords (e.g. #{:chat-points}), unioned
+                     with the backend's own `headless/capabilities`
+
+   Returns {:registered? true  :headless-id id} on success,
+           {:registered? false :headless-id id :errors [...]} on failure."
   ([headless-id backend] (register-headless! headless-id backend nil))
   ([headless-id backend opts]
    {:pre [(keyword? headless-id)]}
@@ -96,7 +107,9 @@
   (get @registry headless-id))
 
 (defn headless-capabilities
-  "Declared capability set of a registered backend; nil when absent."
+  "Get declared capabilities for a registered headless backend: the
+   protocol set unioned with registration :capabilities.
+   Returns the capability set, or nil if headless-id not registered."
   [headless-id]
   (when (get @registry headless-id)
     (get-in @metadata [headless-id :capabilities])))

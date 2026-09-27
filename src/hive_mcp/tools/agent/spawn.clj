@@ -159,12 +159,15 @@
       chat_run_id (assoc :chat-run-id chat_run_id))))
 
 (defn normalize-resume
-  "The MCP resume object as the kebab map the headless backend reads."
+  "The MCP `resume` object as the kebab map the headless backend reads:
+   {:run-id str :at {:seq n}|{:turn t}|absent :prompt str?}. nil in, nil out."
   [v]
   (:resume (loop-opts {:resume v})))
 
 (defn chat-point-refusal
-  "Pure: explain when a resolved mode cannot read chat-point params."
+  "Pure: an error message when OPTS carry chat-point params that the
+   resolved spawn MODE would silently drop, else nil. CAPABILITIES is the
+   set MODE's backend declared at registration; only :chat-points reads them."
   [mode opts capabilities]
   (when-let [given (seq (filter #(contains? opts %) [:resume :chat-run-id]))]
     (when-not (contains? capabilities :chat-points)
@@ -183,4 +186,137 @@
                       {:param "prompt"}))
       (or t p))))
 
-(defn handle-spawn "Spawn a new ling agent.\n\n   Defense-in-depth: denies spawn when called from a child ling process\n   (HIVE_MCP_ROLE=child-ling). This prevents recursive agent spawning.\n\n   The spawn's parent is `effective-parent`: the `parent` param when given,\n   else the calling agent — so grandchild routing needs no priming.\n\n   The initial brief is `spawn-brief`: `task`, else `prompt`. The response\n   reports `:task-attached` and carries a `:warning` when the ling starts\n   with no brief.\n\n   The full request map rides on opts under :spawn/request for the\n   :spawn/opts-overlay extension seam, and is stripped before planning." [{:keys [type name cwd presets model provider tier token_budget project_id kanban_task_id spawn_mode agents max_budget_usd kg_compress sliding_window_size verbose sandbox], :as params}] (if-let [_ (when (guards/child-ling?) :denied)] (do (log/warn "Spawn denied: child ling attempted agent spawn" {:role (guards/get-role), :depth (guards/ling-depth)}) (mcp-error (build-spawn-denied-message))) (if-let [defer (heap-pressure-defer)] (do (log/warn "Spawn deferred: heap pressure backpressure" defer) (mcp-json {:success false, :deferred true, :reason "heap-pressure", :level (clojure.core/name (:level defer)), :heap-pct (:heap-pct defer), :message (str "Spawn deferred: JVM heap at " (:heap-pct defer) "% (>= soft watermark). Best-effort OOM " "backpressure — existing agents keep running; " "retry once active lings drain.")})) (let [agent-type (keyword type)] (if-not (and (agent-type-registry/valid-type? agent-type) (agent-type-registry/spawnable? agent-type)) (mcp-error (str "type must be one of: " (pr-str (agent-type-registry/mcp-enum)))) (try (let [parent (effective-parent params) worker-tier (normalize-tier tier) token-budget (normalize-token-budget token_budget) loop-params (loop-opts params) brief (spawn-brief params) resolved (llm-registry/resolve-provider-model {:provider provider, :model (if (= :cheap worker-tier) nil model), :agent-type agent-type}) effective-model (:model resolved) effective-provider (:provider resolved) agent-id (or name (helpers/generate-agent-id agent-type)) effective-project-id (resolve-project-scope project_id cwd parent)] (case agent-type :ling (let [presets-vec (cond (nil? presets) [] (string? presets) [presets] (sequential? presets) (vec presets) :else [presets]) effective-spawn-mode (keyword (or spawn_mode "claude")) _ (when-not (spawn-registry/valid-mode? effective-spawn-mode) (throw (ex-info (str "spawn_mode must be one of: " (pr-str spawn-registry/mcp-modes)) {:spawn-mode spawn_mode}))) normalized-agents (when (map? agents) (reduce-kv (fn [m agent-name agent-spec] (assoc m (clojure.core/name agent-name) (if (map? agent-spec) (reduce-kv (fn [m2 k v] (assoc m2 (keyword k) v)) {} agent-spec) agent-spec))) {} agents)) ling-agent (ling/->ling agent-id (cond-> {:cwd cwd, :presets presets-vec, :project-id effective-project-id, :spawn-mode effective-spawn-mode, :model effective-model, :provider effective-provider} normalized-agents (assoc :agents normalized-agents) max_budget_usd (assoc :max-budget-usd max_budget_usd) (some? kg_compress) (assoc :kg-compress? kg_compress) (some? verbose) (assoc :verbose? (if (string? verbose) (= "true" verbose) (boolean verbose))) (seq loop-params) (merge loop-params) token-budget (assoc :token-budget token-budget) sliding_window_size (assoc :sliding-window-size sliding_window_size) (some? sandbox) (assoc :sandbox (if (string? sandbox) (= "true" sandbox) (boolean sandbox))))) _ (when-let [refusal (chat-point-refusal (:spawn-mode ling-agent) loop-params (headless-registry/headless-capabilities (:spawn-mode ling-agent)))] (throw (ex-info refusal {:spawn-mode (:spawn-mode ling-agent)}))) slave-id (proto/spawn! ling-agent (cond-> {:task brief, :parent parent, :kanban-task-id kanban_task_id, :spawn-mode (:spawn-mode ling-agent), :model effective-model, :provider effective-provider, :spawn/request params} max_budget_usd (assoc :max-budget-usd max_budget_usd)))] (log/info "Spawned ling" {:tier worker-tier, :parent parent, :token-budget token-budget, :cwd cwd, :presets presets-vec, :requested-id agent-id, :spawn-mode (:spawn-mode ling-agent), :slave-id slave-id, :task-attached (some? brief), :project-id effective-project-id, :provider effective-provider, :model effective-model}) (mcp-json (cond-> {:tier worker-tier, :parent parent, :agent-id slave-id, :token-budget token-budget, :cwd cwd, :type :ling, :presets presets-vec, :success true, :spawn-mode (:spawn-mode ling-agent), :task-attached (some? brief), :project-id effective-project-id, :provider effective-provider, :model effective-model} (nil? brief) (assoc :warning (str "Spawned with no task: the ling has no brief " "and will idle until `agent dispatch` sends one."))))))) (catch Exception e (log/error "Failed to spawn agent" {:type agent-type, :error (ex-message e)}) (mcp-error (str "Failed to spawn " (clojure.core/name agent-type) ": " (ex-message e))))))))))
+(defn handle-spawn
+  "Spawn a new ling agent.
+
+   Defense-in-depth: denies spawn when called from a child ling process
+   (HIVE_MCP_ROLE=child-ling). This prevents recursive agent spawning.
+
+   The spawn's parent is `effective-parent`: the `parent` param when given,
+   else the calling agent — so grandchild routing needs no priming.
+
+   The initial brief is `spawn-brief`: `task`, else `prompt`. The response
+   reports `:task-attached` and carries a `:warning` when the ling starts
+   with no brief.
+
+   The full request map rides on opts under :spawn/request for the
+   :spawn/opts-overlay extension seam, and is stripped before planning."
+  [{:keys [type name cwd presets model provider tier token_budget project_id kanban_task_id spawn_mode agents max_budget_usd kg_compress sliding_window_size verbose sandbox] :as params}]
+  ;; Layer 3: Defense-in-depth spawn guard
+  (if-let [_ (when (guards/child-ling?) :denied)]
+    (do
+      (log/warn "Spawn denied: child ling attempted agent spawn"
+                {:role (guards/get-role) :depth (guards/ling-depth)})
+      (mcp-error (build-spawn-denied-message)))
+    (if-let [defer (heap-pressure-defer)]
+      ;; Layer 4: heap-headroom backpressure — defer rather than launch.
+      (do
+        (log/warn "Spawn deferred: heap pressure backpressure" defer)
+        (mcp-json {:success  false
+                   :deferred true
+                   :reason   "heap-pressure"
+                   :level    (clojure.core/name (:level defer))
+                   :heap-pct (:heap-pct defer)
+                   :message  (str "Spawn deferred: JVM heap at " (:heap-pct defer)
+                                  "% (>= soft watermark). Best-effort OOM "
+                                  "backpressure — existing agents keep running; "
+                                  "retry once active lings drain.")}))
+      (let [agent-type (keyword type)]
+      (if-not (and (agent-type-registry/valid-type? agent-type)
+                   (agent-type-registry/spawnable? agent-type))
+        (mcp-error (str "type must be one of: " (pr-str (agent-type-registry/mcp-enum))))
+        (try
+          ;; Resolve provider+model via registry chain
+          (let [parent (effective-parent params)
+                worker-tier (normalize-tier tier)
+                token-budget (normalize-token-budget token_budget)
+                loop-params (loop-opts params)
+                brief (spawn-brief params)
+                resolved (llm-registry/resolve-provider-model
+                           {:provider provider
+                            :model (if (= :cheap worker-tier) nil model)
+                            :agent-type agent-type})
+                effective-model (:model resolved)
+                effective-provider (:provider resolved)
+                agent-id (or name (helpers/generate-agent-id agent-type))
+                effective-project-id (resolve-project-scope project_id cwd parent)]
+            (case agent-type
+              :ling
+              (let [presets-vec (cond
+                                  (nil? presets) []
+                                  (string? presets) [presets]
+                                  (sequential? presets) (vec presets)
+                                  :else [presets])
+                    effective-spawn-mode (keyword (or spawn_mode "claude"))
+                    _ (when-not (spawn-registry/valid-mode? effective-spawn-mode)
+                        (throw (ex-info (str "spawn_mode must be one of: " (pr-str spawn-registry/mcp-modes))
+                                        {:spawn-mode spawn_mode})))
+                    normalized-agents (when (map? agents)
+                                        (reduce-kv
+                                         (fn [m agent-name agent-spec]
+                                           (assoc m (clojure.core/name agent-name)
+                                                  (if (map? agent-spec)
+                                                    (reduce-kv (fn [m2 k v]
+                                                                 (assoc m2 (keyword k) v))
+                                                               {} agent-spec)
+                                                    agent-spec)))
+                                         {} agents))
+                    ling-agent (ling/->ling agent-id (cond-> {:cwd cwd
+                                                              :presets presets-vec
+                                                              :project-id effective-project-id
+                                                              :spawn-mode effective-spawn-mode
+                                                              :model effective-model
+                                                              :provider effective-provider}
+                                                       normalized-agents (assoc :agents normalized-agents)
+                                                       max_budget_usd    (assoc :max-budget-usd max_budget_usd)
+                                                       (some? kg_compress) (assoc :kg-compress? kg_compress)
+                                                       (some? verbose)   (assoc :verbose? (if (string? verbose)
+                                                                                            (= "true" verbose)
+                                                                                            (boolean verbose)))
+                                                       (seq loop-params) (merge loop-params)
+                                                       token-budget      (assoc :token-budget token-budget)
+                                                       sliding_window_size (assoc :sliding-window-size sliding_window_size)
+                                                       (some? sandbox)   (assoc :sandbox (if (string? sandbox)
+                                                                                           (= "true" sandbox)
+                                                                                           (boolean sandbox)))))
+                    _ (when-let [refusal (chat-point-refusal (:spawn-mode ling-agent) loop-params
+                                                             (headless-registry/headless-capabilities (:spawn-mode ling-agent)))]
+                        (throw (ex-info refusal {:spawn-mode (:spawn-mode ling-agent)})))
+                    slave-id (proto/spawn! ling-agent (cond-> {:task brief
+                                                               :parent parent
+                                                               :kanban-task-id kanban_task_id
+                                                               :spawn-mode (:spawn-mode ling-agent)
+                                                               :model effective-model
+                                                               :provider effective-provider
+                                                               :spawn/request params}
+                                                        max_budget_usd (assoc :max-budget-usd max_budget_usd)))]
+                (log/info "Spawned ling" {:requested-id agent-id
+                                          :slave-id slave-id
+                                          :parent parent
+                                          :spawn-mode (:spawn-mode ling-agent)
+                                          :provider effective-provider
+                                          :model effective-model
+                                          :tier worker-tier
+                                          :token-budget token-budget
+                                          :task-attached (some? brief)
+                                          :cwd cwd :presets presets-vec
+                                          :project-id effective-project-id})
+                (mcp-json (cond-> {:success true
+                                   :agent-id slave-id
+                                   :type :ling
+                                   :parent parent
+                                   :spawn-mode (:spawn-mode ling-agent)
+                                   :provider effective-provider
+                                   :model effective-model
+                                   :tier worker-tier
+                                   :token-budget token-budget
+                                   :task-attached (some? brief)
+                                   :cwd cwd
+                                   :presets presets-vec
+                                   :project-id effective-project-id}
+                            (nil? brief)
+                            (assoc :warning (str "Spawned with no task: the ling has no brief "
+                                                 "and will idle until `agent dispatch` sends one.")))))))
+          (catch Exception e
+            (log/error "Failed to spawn agent" {:type agent-type :error (ex-message e)})
+            (mcp-error (str "Failed to spawn " (clojure.core/name agent-type) ": " (ex-message e))))))))))
