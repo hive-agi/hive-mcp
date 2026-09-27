@@ -104,7 +104,10 @@
                    task-id {:status "completed" :result "ok" :slave-id "w"
                             :chat-point {:run-id "run-9" :tip 12 :resumable? true :extra 1}})
           resp    (collect/handle-swarm-collect {:task_id task-id :timeout_ms 1000})]
-      (is (= {:run-id "run-9" :tip 12 :resumable? true} (:chat_point (body resp))))))
+      (is (= {:run_id "run-9" :tip 12 :resumable true} (:chat_point (body resp))))))
+  (testing "chat_point.run_id is what spawn resume.run_id takes"
+    (is (= {:run_id "run-9" :tip 3 :resumable false}
+           (collect/chat-point->response {:run-id "run-9" :tip 3}))))
   (testing "no chat point, no key"
     (let [task-id (str "nocp-" (random-uuid))
           _       (channel/record-task-result! task-id {:status "completed" :result "ok" :slave-id "w"})
