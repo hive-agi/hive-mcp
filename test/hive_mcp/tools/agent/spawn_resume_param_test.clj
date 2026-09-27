@@ -56,6 +56,14 @@
       (is (some? e) (pr-str run-id))
       (is (re-find #"run_id" (ex-message e))))))
 
+(deftest null-branch-keys-are-absent
+  (is (= {:run-id "r" :at {:seq 1}}
+         (spawn/normalize-resume {:run_id "r" :at {:seq 1 :turn nil}})))
+  (is (= {:run-id "r" :at {:turn 2}}
+         (spawn/normalize-resume {:run_id "r" :at {"seq" nil "turn" 2}})))
+  (is (= {:run-id "r"}
+         (spawn/normalize-resume {:run_id "r" :at {:seq nil}}))))
+
 (deftest a-misspelled-branch-point-is-refused-not-resumed
   (doseq [typo [{:run_id "r" :fork_at {:seq 3}}
                 {"run_id" "r" "at_seq" 3}

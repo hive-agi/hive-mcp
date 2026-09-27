@@ -76,6 +76,13 @@
         (is (= field (:param (ex-data e))))
         (is (re-find (re-pattern (str "^" field " is invalid")) (ex-message e)))))))
 
+(deftest null-branch-key-coercion
+  (let [coerce (tools/param-coercer "resume" tools/ResumeParam)]
+    (is (= {:run_id "r" :at {:seq 1}}
+           (coerce {:run_id "r" :at {:seq 1 :turn nil}})))
+    (is (= {:run_id "r"}
+           (coerce {:run_id "r" :at {:turn nil}})))))
+
 (deftest agent-dispatch-params-test
   (testing "valid dispatch params"
     (is (m/validate tools/AgentDispatchParams

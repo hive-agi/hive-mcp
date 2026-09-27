@@ -61,13 +61,14 @@
   (if (and (string? s) (str/blank? s)) nil s))
 
 (defn- drop-absent-resume-keys
-  "Decode rule: JSON null or {} for `at`, and null or blank for `prompt`,
-   mean the key was not given."
+  "Decode null branch keys and empty branch points as absent."
   [m]
   (if (map? m)
-    (cond-> m
-      (and (contains? m :at) (contains? #{nil {}} (:at m))) (dissoc :at)
-      (and (contains? m :prompt) (nil? (blank->nil (:prompt m)))) (dissoc :prompt))
+    (let [at (:at m)
+          at (if (map? at) (into {} (remove (comp nil? val)) at) at)]
+      (cond-> (assoc m :at at)
+        (or (nil? at) (= {} at)) (dissoc :at)
+        (and (contains? m :prompt) (nil? (blank->nil (:prompt m)))) (dissoc :prompt)))
     m))
 
 (def ChatPointAt
