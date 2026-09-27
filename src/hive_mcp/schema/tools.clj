@@ -4,6 +4,10 @@
   (:require [malli.core :as m]
             [malli.error :as me]
             [malli.transform :as mt]
+            [malli.util :as mu]
+            [malli.json-schema :as json-schema]
+            [clojure.string :as str]
+            [clojure.walk :as walk]
             [hive-mcp.schema.memory :as mem]
             [hive-mcp.swarm.adapters.soft :as soft]))
 
@@ -47,32 +51,57 @@
   "Terminal type for agent spawn."
   [:enum "vterm" "eat"])
 
+(defn- blank->nil
+  "Decode rule: a blank JSON string means the param was not given."
+  [s]
+  (if (and (string? s) (str/blank? s)) nil s))
+
+(defn- drop-absent-resume-keys
+  "Decode rule: JSON null or {} for `at`, and null or blank for `prompt`,
+   mean the key was not given."
+  [m]
+  (if (map? m)
+    (cond-> m
+      (and (contains? m :at) (contains? #{nil {}} (:at m))) (dissoc :at)
+      (and (contains? m :prompt) (nil? (blank->nil (:prompt m)))) (dissoc :prompt))
+    m))
+
 (def ChatPointAt
   "Branch point inside a recorded chat-point run: a history seq OR a turn."
-  [:or
-   [:map {:closed true} [:seq nat-int?]]
-   [:map {:closed true} [:turn nat-int?]]])
+  [:or {:json-schema/description "Optional branch point: give seq OR turn. Omitted = resume at the run's tip."}
+   [:map {:closed true}
+    [:seq {:json-schema/description "Fork from this recorded history seq."} nat-int?]]
+   [:map {:closed true}
+    [:turn {:json-schema/description "Fork from the end of this recorded turn."} nat-int?]]])
 
 (def ResumeParam
   "Spawn `resume`: continue run_id at its tip, or fork it at `at`."
+  [:map {:closed true
+         :decode/string {:leave drop-absent-resume-keys}}
+   [:run_id {:json-schema/description "Chat-point run id to continue: a prior collect's chat_point.run_id, or the transcript tool's runs command."}
+    NonEmptyString]
+   [:at {:optional true} ChatPointAt]
+   [:prompt {:optional true :json-schema/description "Optional message appended at the resume/branch point."}
+    :string]])
+
+(def SpawnLoopParams
+  "Spawn params read only by a chat-point capable headless loop."
   [:map
-   [:run_id NonEmptyString]
-   [:at {:optional true} [:maybe {:decode/string (fn [at] (when-not (= {} at) at))}
-                          ChatPointAt]]
-   [:prompt {:optional true} OptionalString]])
+   [:llm_retries {:optional true} [:maybe nat-int?]]
+   [:resume {:optional true} [:maybe ResumeParam]]
+   [:chat_run_id {:optional true} [:maybe {:decode/string blank->nil} NonEmptyString]]])
 
 (def AgentSpawnParams
   "Parameters for agent spawn."
-  [:map
-   [:name NonEmptyString]
-   [:presets {:optional true} [:maybe [:vector NonEmptyString]]]
-   [:cwd {:optional true} OptionalString]
-   [:role {:optional true} OptionalString]
-   [:terminal {:optional true} [:maybe TerminalType]]
-   [:kanban_task_id {:optional true} OptionalString]
-   [:llm_retries {:optional true} [:maybe nat-int?]]
-   [:resume {:optional true} [:maybe ResumeParam]]
-   [:chat_run_id {:optional true} OptionalString]])
+  (mu/merge
+   [:map
+    [:name NonEmptyString]
+    [:presets {:optional true} [:maybe [:vector NonEmptyString]]]
+    [:cwd {:optional true} OptionalString]
+    [:role {:optional true} OptionalString]
+    [:terminal {:optional true} [:maybe TerminalType]]
+    [:kanban_task_id {:optional true} OptionalString]]
+   SpawnLoopParams))
 
 (def AgentDispatchParams
   "Parameters for agent dispatch."
@@ -356,6 +385,19 @@
                (let [errors (me/humanize explain)]
                  (throw (ex-info (str param " is invalid: " (pr-str errors))
                                  {:param param :errors errors}))))))
+
+(defn json-schema
+  "The MCP inputSchema projection of a malli `schema`, string-keyed like the
+   hand-written tool schemas, so advertised and validated shape are one
+   definition."
+  [schema]
+  (walk/postwalk (fn [node]
+                   (if (map? node)
+                     (cond-> node
+                       (map? (:properties node)) (update :properties update-keys name)
+                       (:required node)          (update :required #(mapv name %)))
+                     node))
+                 (json-schema/transform schema)))
 
 (defn coerce-and-validate
   "Coerce and validate parameters."

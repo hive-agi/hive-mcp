@@ -44,7 +44,23 @@
   (testing "malformed resume rejected"
     (is (not (m/validate tools/AgentSpawnParams {:name "w" :resume {:at {:seq 1}}})))
     (is (not (m/validate tools/AgentSpawnParams {:name "w" :resume {:run_id "r" :at {:seq 1 :turn 2}}})))
-    (is (not (m/validate tools/AgentSpawnParams {:name "w" :resume {:run_id "r" :at {:seq -1}}})))))
+    (is (not (m/validate tools/AgentSpawnParams {:name "w" :resume {:run_id "r" :at {:seq -1}}}))))
+
+  (testing "resume is closed: a misspelled branch point is refused, never read as a resume at the tip"
+    (is (not (m/validate tools/ResumeParam {:run_id "r" :fork_at {:seq 3}})))
+    (is (not (m/validate tools/ResumeParam {:run_id "r" :at_seq 3})))
+    (is (not (m/validate tools/ResumeParam {:run_id "r" :at {:sequence 3}}))))
+
+  (testing "chat_run_id must be a non-empty string"
+    (is (not (m/validate tools/AgentSpawnParams {:name "w" :chat_run_id 5})))
+    (is (not (m/validate tools/AgentSpawnParams {:name "w" :chat_run_id ""})))))
+
+(deftest resume-json-schema-derives-from-resume-param
+  (let [js (tools/json-schema tools/ResumeParam)]
+    (is (= "object" (:type js)))
+    (is (= ["run_id"] (:required js)))
+    (is (false? (:additionalProperties js)))
+    (is (= #{"run_id" "at" "prompt"} (set (keys (:properties js)))))))
 
 (deftest agent-dispatch-params-test
   (testing "valid dispatch params"

@@ -133,26 +133,51 @@
         (throw (ex-info "token_budget must be a positive integer"
                         {:param "token_budget" :value v}))))))
 
-(def ^:private coerce-resume
-  "Raw MCP `resume` JSON -> a valid ResumeParam, or ex-info. nil passes."
-  (schema/param-coercer "resume" [:maybe schema/ResumeParam]))
+(def ^:private coerce-loop-params
+  "Raw MCP llm_retries/resume/chat_run_id -> valid SpawnLoopParams, or ex-info."
+  (schema/param-coercer "spawn" schema/SpawnLoopParams))
 
 (defn- resume->backend
-  "Pure: a valid ResumeParam as the kebab map the headless backend reads,
-   dropping an absent branch point and a blank prompt."
+  "Pure: a valid ResumeParam as the kebab map the headless backend reads."
   [{:keys [run_id at prompt]}]
   (cond-> {:run-id run_id}
-    at                        (assoc :at at)
-    (not (str/blank? prompt)) (assoc :prompt prompt)))
+    at     (assoc :at at)
+    prompt (assoc :prompt prompt)))
+
+(defn loop-opts
+  "Validate the loop params of a spawn request once, by SpawnLoopParams, and
+   return them as ling opts: {:llm-retries n :resume {...} :chat-run-id s},
+   absent keys omitted. A malformed value throws ex-info with the humanized
+   errors."
+  [params]
+  (let [{:keys [llm_retries resume chat_run_id]}
+        (coerce-loop-params (select-keys params [:llm_retries :resume :chat_run_id]))]
+    (cond-> {}
+      llm_retries (assoc :llm-retries llm_retries)
+      resume      (assoc :resume (resume->backend resume))
+      chat_run_id (assoc :chat-run-id chat_run_id))))
 
 (defn normalize-resume
-  "Normalize the MCP `resume` object to the kebab map the headless backend
-   reads: {:run-id str :at {:seq n}|{:turn t}|absent :prompt str?}.
-   Without :at the run continues at its tip; with :at it forks from that
-   earlier point. nil in, nil out. The value is validated once, by
-   ResumeParam; a malformed one throws ex-info with the humanized errors."
+  "The MCP `resume` object as the kebab map the headless backend reads:
+   {:run-id str :at {:seq n}|{:turn t}|absent :prompt str?}. nil in, nil out."
   [v]
-  (some-> (coerce-resume v) resume->backend))
+  (:resume (loop-opts {:resume v})))
+
+(def chat-point-modes
+  "Resolved spawn modes whose backend reads :resume and :chat-run-id."
+  #{:hive-agent})
+
+(defn chat-point-refusal
+  "Pure: an error message when OPTS carry chat-point params that the
+   resolved spawn MODE would silently drop, else nil."
+  [mode opts]
+  (when-let [given (seq (filter #(contains? opts %) [:resume :chat-run-id]))]
+    (when-not (contains? chat-point-modes mode)
+      (str (str/join " and " (map {:resume "resume" :chat-run-id "chat_run_id"} given))
+           " need a chat-point headless backend (spawn_mode "
+           (str/join "|" (map name (sort chat-point-modes)))
+           ", or headless resolving to it); this spawn resolved to "
+           (pr-str mode) ", which would drop them."))))
 
 (defn spawn-brief
   "The initial task a spawn carries: `task`, else `prompt`. Blank counts as
@@ -180,7 +205,7 @@
 
    The full request map rides on opts under :spawn/request for the
    :spawn/opts-overlay extension seam, and is stripped before planning."
-  [{:keys [type name cwd presets model provider tier token_budget project_id kanban_task_id spawn_mode agents max_budget_usd kg_compress sliding_window_size verbose llm_retries sandbox resume chat_run_id] :as params}]
+  [{:keys [type name cwd presets model provider tier token_budget project_id kanban_task_id spawn_mode agents max_budget_usd kg_compress sliding_window_size verbose sandbox] :as params}]
   ;; Layer 3: Defense-in-depth spawn guard
   (if-let [_ (when (guards/child-ling?) :denied)]
     (do
@@ -209,8 +234,7 @@
           (let [parent (effective-parent params)
                 worker-tier (normalize-tier tier)
                 token-budget (normalize-token-budget token_budget)
-                resume-opts (normalize-resume resume)
-                chat-run-id (when-not (str/blank? chat_run_id) chat_run_id)
+                loop-params (loop-opts params)
                 brief (spawn-brief params)
                 resolved (llm-registry/resolve-provider-model
                            {:provider provider
@@ -253,16 +277,14 @@
                                                        (some? verbose)   (assoc :verbose? (if (string? verbose)
                                                                                             (= "true" verbose)
                                                                                             (boolean verbose)))
-                                                       llm_retries       (assoc :llm-retries (if (string? llm_retries)
-                                                                                               (parse-long llm_retries)
-                                                                                               llm_retries))
-                                                       resume-opts       (assoc :resume resume-opts)
-                                                       chat-run-id       (assoc :chat-run-id chat-run-id)
+                                                       (seq loop-params) (merge loop-params)
                                                        token-budget      (assoc :token-budget token-budget)
                                                        sliding_window_size (assoc :sliding-window-size sliding_window_size)
                                                        (some? sandbox)   (assoc :sandbox (if (string? sandbox)
                                                                                            (= "true" sandbox)
                                                                                            (boolean sandbox)))))
+                    _ (when-let [refusal (chat-point-refusal (:spawn-mode ling-agent) loop-params)]
+                        (throw (ex-info refusal {:spawn-mode (:spawn-mode ling-agent)})))
                     slave-id (proto/spawn! ling-agent (cond-> {:task brief
                                                                :parent parent
                                                                :kanban-task-id kanban_task_id

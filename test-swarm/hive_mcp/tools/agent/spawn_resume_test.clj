@@ -48,3 +48,30 @@
     (is (:isError resp))
     (is (re-find #"run_id" (:text resp)))
     (is (nil? ctx))))
+
+(deftest resume-on-a-backend-that-drops-it-is-refused
+  (testing "a headless backend other than the chat-point one spawns nothing"
+    (let [b    (hb/->backend :test-headless)
+          resp (hb/with-backend :test-headless b
+                 (spawn/handle-spawn {:type "ling" :name "resume-elsewhere" :task "x"
+                                      :cwd "/tmp/spawn-resume" :spawn_mode "headless"
+                                      :model "venice:test-model"
+                                      :resume {:run_id "run-a"}}))
+          ctx  (some-> (hb/calls-of b :spawn!) first first)]
+      (is (:isError resp))
+      (is (re-find #"resume" (:text resp)))
+      (is (nil? ctx))))
+  (testing "a terminal spawn refuses chat_run_id before launching anything"
+    (let [resp (spawn/handle-spawn {:type "ling" :name "resume-vterm" :task "x"
+                                    :cwd "/tmp/spawn-resume" :spawn_mode "claude"
+                                    :model "venice:test-model"
+                                    :chat_run_id "run-b"})]
+      (is (:isError resp))
+      (is (re-find #"chat_run_id" (:text resp))))))
+
+(deftest a-mistyped-chat-run-id-is-a-clear-error
+  (let [b (hb/->backend :hive-agent)
+        [resp ctx] (spawn-headless b {:name "resume-num" :task "x" :chat_run_id 42})]
+    (is (:isError resp))
+    (is (re-find #"chat_run_id" (:text resp)))
+    (is (nil? ctx))))
