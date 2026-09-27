@@ -44,15 +44,19 @@
 (defn- build-journal-response
   "Build MCP response from event-journal entry."
   [task_id journal-event start-time via]
-  (let [{:keys [status result error slave-id]} journal-event]
+  (let [{:keys [status result error slave-id chat-point]} journal-event]
     (core/mcp-success
-     {:task_id   task_id
-      :status    status
-      :result    result
-      :error     error
-      :slave_id  slave-id
-      :via       via
-      :elapsed_ms (- (System/currentTimeMillis) start-time)})))
+     (cond-> {:task_id   task_id
+              :status    status
+              :result    result
+              :error     error
+              :slave_id  slave-id
+              :via       via
+              :elapsed_ms (- (System/currentTimeMillis) start-time)}
+       ;; A bb-ling backend that records chat points may put the run's
+       ;; {:run-id :tip :resumable?} on the journal event; surface it so a
+       ;; coordinator can resume or fork (spawn resume={run_id, at}).
+       chat-point (assoc :chat_point (select-keys chat-point [:run-id :tip :resumable?]))))))
 
 (defn- build-timeout-response
   "Build MCP response for collection timeout. `via` names the polling path."
