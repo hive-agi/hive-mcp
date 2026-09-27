@@ -157,6 +157,19 @@
      :turns       (or (apply max 0 (keep #(or (:turn %) (:transcript/turn %)) entries)) 0)
      :total-cost  (reduce + 0.0 costs)}))
 
+(defn- with-int-param
+  "Coerce an integer MCP param, then call `f` with it.
+
+   Params arrive as JSON numbers from a direct call but as strings through
+   `multi`, and `clojure.core/int` on a String throws ClassCastException
+   (String -> Character). A value that is not a number becomes an MCP error
+   naming the param, never an exception out of the handler."
+  [value param-name default f]
+  (let [{:keys [ok error]} (tcore/coerce-int value param-name default)]
+    (if error
+      (tcore/mcp-error error)
+      (f (int ok)))))
+
 ;; =============================================================================
 ;; MCP Command Router (SLAP: intent layer)
 ;; =============================================================================
@@ -204,20 +217,24 @@
           (tcore/mcp-error (:message result))))
 
       "tail"
-      (let [result (execute-query (tq/transcript-query :query/tail {:agent-id agent-id :n (int (or n 10))}))]
-        (if (r/ok? result)
-          (tcore/mcp-json {:entries (mapv format-entry-compact (:ok result))
-                           :count   (count (:ok result))
-                           :agent-id agent-id})
-          (tcore/mcp-error (:message result))))
+      (with-int-param n :n 10
+        (fn [n]
+          (let [result (execute-query (tq/transcript-query :query/tail {:agent-id agent-id :n n}))]
+            (if (r/ok? result)
+              (tcore/mcp-json {:entries (mapv format-entry-compact (:ok result))
+                               :count   (count (:ok result))
+                               :agent-id agent-id})
+              (tcore/mcp-error (:message result))))))
 
       "since"
-      (let [result (execute-query (tq/transcript-query :query/since {:agent-id agent-id :turn (int (or turn 0))}))]
-        (if (r/ok? result)
-          (tcore/mcp-json {:entries (mapv format-entry-compact (:ok result))
-                           :count   (count (:ok result))
-                           :agent-id agent-id})
-          (tcore/mcp-error (:message result))))
+      (with-int-param turn :turn 0
+        (fn [turn]
+          (let [result (execute-query (tq/transcript-query :query/since {:agent-id agent-id :turn turn}))]
+            (if (r/ok? result)
+              (tcore/mcp-json {:entries (mapv format-entry-compact (:ok result))
+                               :count   (count (:ok result))
+                               :agent-id agent-id})
+              (tcore/mcp-error (:message result))))))
 
       "stats"
       (let [result (execute-query (tq/transcript-query :query/by-agent {:agent-id agent-id}))]
