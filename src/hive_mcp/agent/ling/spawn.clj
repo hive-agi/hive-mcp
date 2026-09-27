@@ -493,6 +493,8 @@
                  (some? (:kg-compress? opts)) (assoc :kg-compress? (:kg-compress? opts))
                  (some? (:verbose? opts))   (assoc :verbose? (:verbose? opts))
                  (:llm-retries opts)        (assoc :llm-retries (:llm-retries opts))
+                 (:resume opts)             (assoc :resume (:resume opts))
+                 (:chat-run-id opts)        (assoc :chat-run-id (:chat-run-id opts))
                  (:sliding-window-size opts) (assoc :sliding-window-size (:sliding-window-size opts))
                  (:agents opts)             (assoc :agents (:agents opts))
                  (:max-budget-usd opts)     (assoc :max-budget-usd (:max-budget-usd opts))

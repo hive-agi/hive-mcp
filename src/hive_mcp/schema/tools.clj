@@ -45,6 +45,19 @@
   "Terminal type for agent spawn."
   [:enum "vterm" "eat"])
 
+(def ChatPointAt
+  "Branch point inside a recorded chat-point run: a history seq OR a turn."
+  [:or
+   [:map {:closed true} [:seq nat-int?]]
+   [:map {:closed true} [:turn nat-int?]]])
+
+(def ResumeParam
+  "Spawn `resume`: continue run_id at its tip, or fork it at `at`."
+  [:map
+   [:run_id NonEmptyString]
+   [:at {:optional true} [:maybe ChatPointAt]]
+   [:prompt {:optional true} OptionalString]])
+
 (def AgentSpawnParams
   "Parameters for agent spawn."
   [:map
@@ -53,7 +66,10 @@
    [:cwd {:optional true} OptionalString]
    [:role {:optional true} OptionalString]
    [:terminal {:optional true} [:maybe TerminalType]]
-   [:kanban_task_id {:optional true} OptionalString]])
+   [:kanban_task_id {:optional true} OptionalString]
+   [:llm_retries {:optional true} [:maybe nat-int?]]
+   [:resume {:optional true} [:maybe ResumeParam]]
+   [:chat_run_id {:optional true} OptionalString]])
 
 (def AgentDispatchParams
   "Parameters for agent dispatch."

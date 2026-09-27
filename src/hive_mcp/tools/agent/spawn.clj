@@ -132,6 +132,53 @@
         (throw (ex-info "token_budget must be a positive integer"
                         {:param "token_budget" :value v}))))))
 
+(defn- param-get
+  "Read `k` from a JSON-decoded map whose keys may be keywords or strings."
+  [m k]
+  (let [v (get m (keyword k))]
+    (if (some? v) v (get m k))))
+
+(defn- ->int
+  [param v]
+  (let [n (if (string? v) (parse-long v) v)]
+    (if (and (integer? n) (not (neg? n)))
+      (long n)
+      (throw (ex-info (str param " must be a non-negative integer")
+                      {:param param :value v})))))
+
+(defn normalize-resume
+  "Normalize the MCP `resume` object to the kebab map the headless backend
+   reads: {:run-id str :at {:seq n}|{:turn t}|absent :prompt str?}.
+   Without :at the run continues at its tip; with :at it forks from that
+   earlier point. nil in, nil out. Throws ex-info on a malformed value."
+  [v]
+  (when (some? v)
+    (when-not (map? v)
+      (throw (ex-info "resume must be an object {run_id, at?, prompt?}"
+                      {:param "resume" :value v})))
+    (let [run-id (or (param-get v "run_id") (param-get v "run-id"))
+          at     (param-get v "at")
+          prompt (param-get v "prompt")
+          at'    (when (some? at)
+                   (when-not (map? at)
+                     (throw (ex-info "resume.at must be an object {seq} or {turn}"
+                                     {:param "resume.at" :value at})))
+                   (let [sq (param-get at "seq")
+                         tn (param-get at "turn")]
+                     (cond
+                       (and (some? sq) (some? tn))
+                       (throw (ex-info "resume.at takes seq or turn, not both"
+                                       {:param "resume.at" :value at}))
+                       (some? sq) {:seq (->int "resume.at.seq" sq)}
+                       (some? tn) {:turn (->int "resume.at.turn" tn)}
+                       :else nil)))]
+      (when (str/blank? (some-> run-id str))
+        (throw (ex-info "resume.run_id is required"
+                        {:param "resume.run_id" :value v})))
+      (cond-> {:run-id (str run-id)}
+        at'                         (assoc :at at')
+        (not (str/blank? prompt))   (assoc :prompt prompt)))))
+
 (defn spawn-brief
   "The initial task a spawn carries: `task`, else `prompt`. Blank counts as
    absent. Throws ex-info when both are given and differ."
@@ -158,7 +205,7 @@
 
    The full request map rides on opts under :spawn/request for the
    :spawn/opts-overlay extension seam, and is stripped before planning."
-  [{:keys [type name cwd presets model provider tier token_budget project_id kanban_task_id spawn_mode agents max_budget_usd kg_compress sliding_window_size verbose llm_retries sandbox] :as params}]
+  [{:keys [type name cwd presets model provider tier token_budget project_id kanban_task_id spawn_mode agents max_budget_usd kg_compress sliding_window_size verbose llm_retries sandbox resume chat_run_id] :as params}]
   ;; Layer 3: Defense-in-depth spawn guard
   (if-let [_ (when (guards/child-ling?) :denied)]
     (do
@@ -187,6 +234,8 @@
           (let [parent (effective-parent params)
                 worker-tier (normalize-tier tier)
                 token-budget (normalize-token-budget token_budget)
+                resume-opts (normalize-resume resume)
+                chat-run-id (when-not (str/blank? chat_run_id) chat_run_id)
                 brief (spawn-brief params)
                 resolved (llm-registry/resolve-provider-model
                            {:provider provider
@@ -232,6 +281,8 @@
                                                        llm_retries       (assoc :llm-retries (if (string? llm_retries)
                                                                                                (parse-long llm_retries)
                                                                                                llm_retries))
+                                                       resume-opts       (assoc :resume resume-opts)
+                                                       chat-run-id       (assoc :chat-run-id chat-run-id)
                                                        token-budget      (assoc :token-budget token-budget)
                                                        sliding_window_size (assoc :sliding-window-size sliding_window_size)
                                                        (some? sandbox)   (assoc :sandbox (if (string? sandbox)

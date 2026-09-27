@@ -30,7 +30,21 @@
 
   (testing "empty name rejected"
     (is (not (m/validate tools/AgentSpawnParams
-                         {:name ""})))))
+                         {:name ""}))))
+
+  (testing "resume continues at the tip or forks at seq/turn; chat_run_id is a string"
+    (is (m/validate tools/AgentSpawnParams
+                    {:name "w" :llm_retries 3 :chat_run_id "run-b"
+                     :resume {:run_id "run-a"}}))
+    (is (m/validate tools/AgentSpawnParams
+                    {:name "w" :resume {:run_id "run-a" :at {:seq 4} :prompt "p"}}))
+    (is (m/validate tools/AgentSpawnParams
+                    {:name "w" :resume {:run_id "run-a" :at {:turn 2}}})))
+
+  (testing "malformed resume rejected"
+    (is (not (m/validate tools/AgentSpawnParams {:name "w" :resume {:at {:seq 1}}})))
+    (is (not (m/validate tools/AgentSpawnParams {:name "w" :resume {:run_id "r" :at {:seq 1 :turn 2}}})))
+    (is (not (m/validate tools/AgentSpawnParams {:name "w" :resume {:run_id "r" :at {:seq -1}}})))))
 
 (deftest agent-dispatch-params-test
   (testing "valid dispatch params"

@@ -129,6 +129,21 @@
                                          :description "[spawn] When true, bb-ling lings shout the full per-turn LLM exchange (last request message + response, truncated) to hivemind piggyback. Default false — exchange is always persisted to the agent's transcript store (Datalevin) and queryable post-hoc via the `transcript` MCP tool (list/search)."}
                               "llm_retries" {:type "integer"
                                              :description "[spawn] Max bb-ling loop-level retries on transient LLM failures (rate-limit/overload/timeout). Default 3, exponential backoff."}
+                              "resume" {:type "object"
+                                        :properties {"run_id" {:type "string"
+                                                               :description "Chat-point run id to continue (a prior result's chat-point.run-id, or the transcript tool's runs command)."}
+                                                     "at" {:type "object"
+                                                           :properties {"seq" {:type "integer"
+                                                                               :description "Fork from this recorded history seq."}
+                                                                        "turn" {:type "integer"
+                                                                                :description "Fork from the end of this recorded turn."}}
+                                                           :description "Optional branch point: give seq OR turn. Omitted = resume at the run's tip."}
+                                                     "prompt" {:type "string"
+                                                               :description "Optional message appended at the resume/branch point."}}
+                                        :required ["run_id"]
+                                        :description "[spawn] bb-ling (hive-agent headless) only: start from a recorded chat point instead of a blank history. {run_id} RESUMES the run at its tip (a fresh turn lease for the same work); {run_id, at:{seq|turn}} FORKS a new branch from that earlier point; prompt adds a message there. The child records its own run whose parent is that point."}
+                              "chat_run_id" {:type "string"
+                                             :description "[spawn] bb-ling only: explicit chat-point run id to record this ling's history under (default: generated). The run id is reported back as chat-point.run-id."}
                               "sandbox" {:type "boolean"
                                          :description "[spawn] Headless lings: run the ling's tools inside the host sandbox (bwrap). bash/grep/clojure_eval run with no network, no host home and a clean environment; file tools stay below cwd; delegated host tools are refused unless allowlisted. Omitted = the host default ([:services :agent :sandbox] in config.edn). false opts out."}
                               ;; common params
@@ -140,7 +155,7 @@
                               ;; batch-spawn params
                               "operations" {:type "array"
                                             :items {:type "object"}
-                                            :description "Array of spawn parameter objects for batch-spawn. Each object: {type, name, cwd, presets, model, task, spawn_mode, parent, kanban_task_id}"}
+                                            :description "Array of spawn parameter objects for batch-spawn. Each object: {type, name, cwd, presets, model, task, spawn_mode, parent, kanban_task_id, llm_retries, resume, chat_run_id}"}
                               "parallel" {:type "boolean"
                                           :description "Run batch operations in parallel (default: false)"}
                               "project_id" {:type "string"
