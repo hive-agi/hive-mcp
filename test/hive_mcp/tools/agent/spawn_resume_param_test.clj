@@ -72,10 +72,15 @@
   (testing "absent or blank is omitted"
     (is (= {} (spawn/loop-opts {})))
     (is (= {} (spawn/loop-opts {:chat_run_id " " :resume nil :llm_retries nil}))))
-  (testing "wrong types are an ex-info naming the param, not a ClassCastException"
-    (doseq [bad [{:chat_run_id 5} {:llm_retries "x"} {:llm_retries -1}]]
+  (testing "coercer names the failing param, not spawn"
+    (doseq [[bad param] [[{:chat_run_id 5} "chat_run_id"]
+                         [{:llm_retries "x"} "llm_retries"]
+                         [{:llm_retries -1} "llm_retries"]
+                         [{:resume {:run_id " "}} "resume"]]]
       (let [e (try (spawn/loop-opts bad) nil (catch Exception e e))]
-        (is (instance? clojure.lang.ExceptionInfo e) (pr-str bad))))))
+        (is (instance? clojure.lang.ExceptionInfo e) (pr-str bad))
+        (is (= param (:param (ex-data e))))
+        (is (re-find (re-pattern (str "^" param " is invalid")) (ex-message e)))))))
 
 (deftest chat-point-params-need-a-chat-point-backend
   (testing "no chat-point params, nothing to refuse"

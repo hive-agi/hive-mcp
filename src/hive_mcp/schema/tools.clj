@@ -380,15 +380,16 @@
   (mt/transformer (mt/key-transformer {:decode keyword}) mt/string-transformer))
 
 (defn param-coercer
-  "A fn that decodes raw MCP JSON for `param` with `schema` and validates it
-   once: returns the valid value, or throws ex-info carrying the humanized
-   explanation (:param, :errors)."
+  "Decode raw MCP JSON and validate once; error identifies the failing field."
   [param schema]
   (m/coercer schema json-params-transformer identity
              (fn [{:keys [explain]}]
-               (let [errors (me/humanize explain)]
-                 (throw (ex-info (str param " is invalid: " (pr-str errors))
-                                 {:param param :errors errors}))))))
+               (let [errors (me/humanize explain)
+                     field (if (and (map? errors) (= 1 (count errors)))
+                             (name (ffirst errors))
+                             param)]
+                 (throw (ex-info (str field " is invalid: " (pr-str errors))
+                                 {:param field :errors errors}))))))
 
 (defn json-schema
   "The MCP inputSchema projection of a malli `schema`, string-keyed like the

@@ -67,6 +67,15 @@
     (is (not (m/validate tools/ResumeParam {:run_id id})) (pr-str id)))
   (is (m/validate tools/ResumeParam {:run_id "run-1"})))
 
+(deftest param-coercer-names-failing-field
+  (let [coerce (tools/param-coercer "spawn" tools/SpawnLoopParams)]
+    (doseq [[bad field] [[{:chat_run_id 8} "chat_run_id"]
+                         [{:llm_retries -1} "llm_retries"]
+                         [{:resume {:run_id " "}} "resume"]]]
+      (let [e (try (coerce bad) nil (catch clojure.lang.ExceptionInfo e e))]
+        (is (= field (:param (ex-data e))))
+        (is (re-find (re-pattern (str "^" field " is invalid")) (ex-message e)))))))
+
 (deftest agent-dispatch-params-test
   (testing "valid dispatch params"
     (is (m/validate tools/AgentDispatchParams

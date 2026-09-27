@@ -136,7 +136,7 @@
 
 (def ^:private coerce-loop-params
   "Raw MCP llm_retries/resume/chat_run_id -> valid SpawnLoopParams, or ex-info."
-  (schema/param-coercer "spawn" schema/SpawnLoopParams))
+  (schema/param-coercer "llm_retries/resume/chat_run_id" schema/SpawnLoopParams))
 
 (defn- resume->backend
   "Pure: a valid ResumeParam as the kebab map the headless backend reads."
