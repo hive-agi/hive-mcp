@@ -23,6 +23,10 @@
   "Non-empty string type."
   [:string {:min 1}])
 
+(def NonBlankString
+  "String with at least one non-whitespace character."
+  [:and NonEmptyString [:re #"(?s).*\S.*"]])
+
 (def OptionalString
   "Optional string (may be nil or string)."
   [:maybe :string])
@@ -79,7 +83,7 @@
   [:map {:closed true
          :decode/string {:leave drop-absent-resume-keys}}
    [:run_id {:json-schema/description "Chat-point run id to continue: a prior collect's chat_point.run_id, or the transcript tool's runs command."}
-    NonEmptyString]
+    NonBlankString]
    [:at {:optional true} ChatPointAt]
    [:prompt {:optional true :json-schema/description "Optional message appended at the resume/branch point."}
     :string]])

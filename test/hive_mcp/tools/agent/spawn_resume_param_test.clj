@@ -49,6 +49,13 @@
     (is (thrown? clojure.lang.ExceptionInfo (spawn/normalize-resume {:run_id "r" :at {:seq 1 :turn 1}})))
     (is (thrown? clojure.lang.ExceptionInfo (spawn/normalize-resume {:run_id "r" :at {:seq -1}})))))
 
+(deftest whitespace-only-run-id-is-invalid
+  (doseq [run-id ["" "  \t  "]]
+    (let [e (try (spawn/normalize-resume {:run_id run-id}) nil
+                 (catch clojure.lang.ExceptionInfo e e))]
+      (is (some? e) (pr-str run-id))
+      (is (re-find #"run_id" (ex-message e))))))
+
 (deftest a-misspelled-branch-point-is-refused-not-resumed
   (doseq [typo [{:run_id "r" :fork_at {:seq 3}}
                 {"run_id" "r" "at_seq" 3}

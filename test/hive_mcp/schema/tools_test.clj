@@ -62,6 +62,11 @@
     (is (false? (:additionalProperties js)))
     (is (= #{"run_id" "at" "prompt"} (set (keys (:properties js)))))))
 
+(deftest resume-run-id-rejects-whitespace
+  (doseq [id ["" " \t " "\n"]]
+    (is (not (m/validate tools/ResumeParam {:run_id id})) (pr-str id)))
+  (is (m/validate tools/ResumeParam {:run_id "run-1"})))
+
 (deftest agent-dispatch-params-test
   (testing "valid dispatch params"
     (is (m/validate tools/AgentDispatchParams
