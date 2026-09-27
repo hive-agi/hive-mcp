@@ -35,6 +35,36 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+### Added
+
+- **Sealed memory (with the hive-knowledge addon).** Memories, kanban tasks
+  and session wraps can be encrypted at rest. The addon wraps every memory
+  store slot in switchable seal layers:
+  - a **work** tier, transparent while its keyring is unlocked, which refuses
+    writes while locked;
+  - a **vault** tier, opened only with an operator's consent and a stated
+    reason;
+  - per-session **enclaves**.
+
+  Search and the KG keep working over sealed entries. The `memory` tool gains
+  these commands: `seal-status`, `seal-mode`, `seal`, `unseal`, `work-init`,
+  `work-unlock`, `work-lock`, `work-install`, `work-uninstall`,
+  `work-seal-existing`, `rekey`, the `enclave-*` commands and the
+  `work-handoff-*` commands. They are additive; existing arguments are
+  unchanged.
+
+  The work tier is opt-in: `memory seal-mode action=set layers="work=on"`
+  for the running process, or `:services.seal.work-enabled? true` in
+  `config.edn` to keep it on across restarts. Ids, type, tags and timestamps
+  stay plaintext, embeddings are computed from plaintext, and KG edges are
+  not sealed.
+
+### Known issues
+
+- **`migrate-kanban` bypasses sealing.** It writes to Qdrant through the raw
+  client (`hive-mcp.tools.migrate.kanban.qdrant/QdrantEntryWriter`), so rows
+  it migrates are stored in plaintext even when the work tier is on.
+
 ## [1.6.3] - 2026-09-25
 
 ### Added
