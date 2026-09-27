@@ -72,11 +72,11 @@
 
 (deftest chat-point-params-need-a-chat-point-backend
   (testing "no chat-point params, nothing to refuse"
-    (is (nil? (spawn/chat-point-refusal :vterm {:llm-retries 3}))))
-  (testing "a chat-point backend takes them"
-    (is (nil? (spawn/chat-point-refusal :hive-agent {:resume {:run-id "r"} :chat-run-id "c"}))))
-  (testing "any other resolved mode refuses, naming what it would drop"
-    (let [msg (spawn/chat-point-refusal :claude {:resume {:run-id "r"} :chat-run-id "c"})]
-      (is (re-find #"resume and chat_run_id" msg))
+    (is (nil? (spawn/chat-point-refusal :vterm {:llm-retries 3} #{}))))
+  (testing "a declared capability takes them regardless of backend name"
+    (is (nil? (spawn/chat-point-refusal :custom-loop {:resume {:run-id "r"} :chat-run-id "c"} #{:chat-points}))))
+  (testing "a missing capability refuses even if mode is known"
+    (let [msg (spawn/chat-point-refusal :claude {:resume {:run-id "r"} :chat-run-id "c"} #{})]
+      (is (re-find #"resume and chat_run_id needs" msg))
       (is (re-find #":claude" msg)))
-    (is (re-find #"chat_run_id" (spawn/chat-point-refusal :agent-sdk {:chat-run-id "c"})))))
+    (is (re-find #"chat_run_id" (spawn/chat-point-refusal :agent-sdk {:chat-run-id "c"} nil)))))
