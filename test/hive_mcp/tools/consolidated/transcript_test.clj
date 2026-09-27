@@ -7,29 +7,34 @@
    stubbed: nothing here reads a transcript on disk."
   (:require [clojure.test :refer [deftest is testing]]
             [hive-dsl.result :as r]
-            [hive-mcp.tools.consolidated.transcript :as transcript]))
+            [hive-mcp.tools.consolidated.transcript :as transcript]
+            [hive-mcp.agent.transcript-source :as src]))
+
+(defrecord RecordingSource [calls]
+  src/TranscriptSource
+  (list-transcripts [_] (r/ok []))
+  (read-entries [_ agent-id]
+    (swap! calls conj [:read agent-id])
+    (r/ok (mapv (fn [t] {:turn t :role "user" :content (str t)}) (range 1 21)))))
 
 (defn- run
-  "Run `params` through the handler with both JSONL readers stubbed.
-   Returns {:response ... :calls [[reader & args] ...]}."
+  "Run `params` through the handler against a recording stub source.
+   Returns {:response ... :calls [[:read agent-id] ...]}."
   [params]
-  (let [calls (atom [])]
-    {:response (with-redefs [transcript/query-jsonl
-                             (fn [& args] (swap! calls conj (into [:query] args)) (r/ok []))
-                             transcript/query-jsonl-tail
-                             (fn [& args] (swap! calls conj (into [:tail] args)) (r/ok []))]
-                 (transcript/handle-transcript params))
-     :calls @calls}))
+  (let [calls  (atom [])
+        source (->RecordingSource calls)]
+    {:response (transcript/handle-transcript source params)
+     :calls    @calls}))
 
 (deftest tail-takes-n-as-a-number-or-a-numeric-string
   (doseq [n [8 "8"]]
     (testing (pr-str n)
       (let [{:keys [response calls]} (run {:command "tail" :agent_id "a" :n n})]
         (is (not (:isError response)))
-        (is (= [[:tail "a" 8]] calls))
-        (is (int? (last (first calls)))))))
+        (is (= [[:read "a"]] calls))
+        (is (re-find #"\"count\":8" (:text response))))))
   (testing "absent n falls back to 10"
-    (is (= [[:tail "a" 10]] (:calls (run {:command "tail" :agent_id "a"}))))))
+    (is (re-find #"\"count\":10" (:text (:response (run {:command "tail" :agent_id "a"})))))))
 
 (deftest since-takes-turn-as-a-number-or-a-numeric-string
   (doseq [turn [36 "36"]]
