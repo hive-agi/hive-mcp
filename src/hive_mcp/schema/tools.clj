@@ -25,7 +25,7 @@
 
 (def NonBlankString
   "String with at least one non-whitespace character."
-  [:and NonEmptyString [:re #"(?s).*\S.*"]])
+  [:and {:json-schema/type "string"} NonEmptyString [:re #"(?s).*\S.*"]])
 
 (def OptionalString
   "Optional string (may be nil or string)."

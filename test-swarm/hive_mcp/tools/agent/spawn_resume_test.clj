@@ -5,7 +5,8 @@
             [hive-mcp.tools.agent.spawn :as spawn]
             [hive-mcp.test.stub.headless-backend :as hb]
             [hive-test.isolation :as iso]
-            [hive-mcp.isolation-methods]))
+            [hive-mcp.isolation-methods]
+            [hive-mcp.agent.ling.headless-registry :as headless-registry]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -14,9 +15,11 @@
 (use-fixtures :each (iso/with-isolations :swarm-ds))
 
 (defn- spawn-headless
-  "Spawn through the handler against stub backend B; [response ctx-seen]."
+  "Spawn through the handler against a chat-point capable stub backend."
   [b params]
   (hb/with-backend :hive-agent b
+    (headless-registry/register-headless! :hive-agent b
+                                          {:priority 1000 :capabilities #{:chat-points}})
     (let [resp (spawn/handle-spawn (merge {:type "ling"
                                            :cwd "/tmp/spawn-resume"
                                            :spawn_mode "headless"
