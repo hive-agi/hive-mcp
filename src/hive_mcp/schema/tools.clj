@@ -2,6 +2,8 @@
   "Malli schemas for MCP tool parameters."
 
   (:require [malli.core :as m]
+            [malli.error :as me]
+            [malli.transform :as mt]
             [hive-mcp.schema.memory :as mem]
             [hive-mcp.swarm.adapters.soft :as soft]))
 
@@ -55,7 +57,8 @@
   "Spawn `resume`: continue run_id at its tip, or fork it at `at`."
   [:map
    [:run_id NonEmptyString]
-   [:at {:optional true} [:maybe ChatPointAt]]
+   [:at {:optional true} [:maybe {:decode/string (fn [at] (when-not (= {} at) at))}
+                          ChatPointAt]]
    [:prompt {:optional true} OptionalString]])
 
 (def AgentSpawnParams
@@ -337,6 +340,22 @@
     {:valid true}
     {:valid false
      :errors (m/explain schema params)}))
+
+(def json-params-transformer
+  "Decodes an MCP JSON param: string keys become keywords, numeric strings
+   become numbers. Schema-declared :decode/string rules run here too."
+  (mt/transformer (mt/key-transformer {:decode keyword}) mt/string-transformer))
+
+(defn param-coercer
+  "A fn that decodes raw MCP JSON for `param` with `schema` and validates it
+   once: returns the valid value, or throws ex-info carrying the humanized
+   explanation (:param, :errors)."
+  [param schema]
+  (m/coercer schema json-params-transformer identity
+             (fn [{:keys [explain]}]
+               (let [errors (me/humanize explain)]
+                 (throw (ex-info (str param " is invalid: " (pr-str errors))
+                                 {:param param :errors errors}))))))
 
 (defn coerce-and-validate
   "Coerce and validate parameters."
