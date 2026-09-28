@@ -160,7 +160,7 @@
         ;; ensure-conn! and surface a typed factory-failed init instead.
         (let [b (cb/attempt breakers slot breaker-policy)]
           (if (= :block (cb/decision b))
-            (do (log-init (breaker-blocked slot))
+            (do (log/debug "kg-slot blocked by open breaker" {:slot slot})
                 (breaker-blocked slot))
             (let [init (build-slot resolver factory slot)
                   variant (adt/adt-variant init)]

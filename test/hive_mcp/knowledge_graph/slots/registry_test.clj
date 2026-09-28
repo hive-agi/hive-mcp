@@ -10,7 +10,8 @@
             [hive-mcp.knowledge-graph.slots.config :as cfg]
             [hive-mcp.knowledge-graph.slots.factory :as fact]
             [hive-mcp.knowledge-graph.slots.registry :as reg]
-            [hive-mcp.protocols.kg :as pkg]))
+            [hive-mcp.protocols.kg :as pkg]
+            [taoensso.timbre :as log]))
 
 ;; -----------------------------------------------------------------------------
 ;; Stub IKGStore (mirrors factory_test) + builders
@@ -124,3 +125,23 @@
         (is (= :breaker-open (:reason init))))
       (is (= 2 @calls)
           "factory NOT invoked while breaker is :open — retry storm prevented"))))
+
+(deftest breaker-blocked-reads-do-not-log-errors
+  (testing "an open breaker short-circuits without an ERROR per blocked read"
+    (let [entries (atom [])
+          r       (reg/->registry
+                    (cfg/->resolver (constantly nil) {:carto :datalevin})
+                    (fact/->factory (constantly nil))
+                    {:max-failures 1 :initial-cooldown-ms 60000})]
+      (log/with-merged-config
+        {:min-level :trace
+         :appenders {:println {:enabled? false}
+                     :record  {:enabled? true
+                               :fn (fn [{:keys [level vargs]}]
+                                     (swap! entries conj [level (first vargs)]))}}}
+        (p/describe-slot r :carto)
+        (reset! entries [])
+        (dotimes [_ 50] (p/describe-slot r :carto)))
+      (is (= 50 (count @entries)) "each blocked read is still traced")
+      (is (every? #(= :debug (first %)) @entries)
+          "blocked reads log at debug; the trip itself is the one error"))))

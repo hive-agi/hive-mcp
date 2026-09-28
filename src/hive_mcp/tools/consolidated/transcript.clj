@@ -1,136 +1,57 @@
 (ns hive-mcp.tools.consolidated.transcript
-  "MCP transcript supertool — query agent conversation transcripts.
+  "MCP transcript supertool: query agent conversation transcripts.
 
-   DDD Application Service layer: orchestrates ITranscriptStore domain calls
-   through an ROP pipeline (hive-dsl.result/let-ok).
+   Commands: help, list, query, tail, since, stats, replay.
 
-   Commands: list, query, tail, since, stats, replay
-
-   Architecture:
-     MCP transport → this ns (application) → ITranscriptStore (domain, hive-agent)
-
-   All public fns return Result<map> for uniform error handling."
+   Reads go through the `TranscriptSource` port
+   (hive-mcp.agent.transcript-source), which covers legacy JSONL files and
+   the Datalevin stores headless hive-agent lings write. Params are coerced
+   at this boundary (strings and numbers alike), and every failure, thrown
+   or returned, leaves as an MCP error envelope."
   (:require [hive-mcp.agent.transcript-query :as tq]
+            [hive-mcp.agent.transcript-source :as src]
             [hive-dsl.adt :refer [adt-case]]
             [hive-dsl.result :as r]
-            [clojure.data.json :as json]
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.tools.core :as tcore]))
 
 ;; =============================================================================
-;; Store Resolution (SLAP: mechanism layer)
+;; Query Execution
 ;; =============================================================================
-
-(defn- resolve-transcript-store
-  "Resolve ITranscriptStore for agent-id via hive-agent config.
-   Returns Result<ITranscriptStore>."
-  [agent-id]
-  (r/try-effect
-   (if-let [f (requiring-resolve 'hive-agent.config/resolve-transcript-store)]
-     (let [res (f {:agent-id agent-id})]
-       (if (and (map? res) (contains? res :ok))
-         (:ok res)
-         (throw (ex-info "Store resolution returned non-ok" {:result res}))))
-     (throw (ex-info "hive-agent not on classpath" {})))))
-
-(defn- list-jsonl-transcripts
-  "Scan JSONL transcript dir for available agent transcripts. Pure-ish (reads fs)."
-  []
-  (try
-    (let [dir (java.io.File. "/tmp/hive-transcripts")]
-      (if (.exists dir)
-        (->> (.listFiles dir)
-             (filter #(str/ends-with? (.getName %) ".jsonl"))
-             (mapv (fn [f]
-                     (let [name (.getName f)
-                           agent-id (str/replace name #"\.jsonl$" "")
-                           lines (count (str/split-lines (slurp f)))]
-                       {:agent-id  agent-id
-                        :source    :jsonl
-                        :entries   lines
-                        :size-kb   (/ (.length f) 1024.0)
-                        :modified  (.lastModified f)}))))
-        []))
-    (catch Exception e
-      (log/warn "[transcript] JSONL scan failed:" (ex-message e))
-      [])))
-
-(defn- list-datalevin-transcripts
-  "Scan Datalevin transcript dir for available agent stores."
-  []
-  (try
-    (let [dir (java.io.File. "/tmp/hive-transcripts/datalevin")]
-      (if (.exists dir)
-        (->> (.listFiles dir)
-             (filter #(.isDirectory %))
-             (mapv (fn [d]
-                     {:agent-id (.getName d)
-                      :source   :datalevin
-                      :size-kb  (->> (file-seq d)
-                                     (filter #(.isFile %))
-                                     (map #(.length %))
-                                     (reduce + 0)
-                                     (* (/ 1.0 1024)))
-                      :modified (.lastModified d)})))
-        []))
-    (catch Exception e
-      (log/warn "[transcript] Datalevin scan failed:" (ex-message e))
-      [])))
-
-;; =============================================================================
-;; Query Execution (SLAP: mechanism layer)
-;; =============================================================================
-
-(defn- query-jsonl
-  "Read and parse JSONL transcript file for agent-id.
-   Returns Result<vector<entry>>."
-  [agent-id & {:keys [limit offset] :or {limit 100 offset 0}}]
-  (r/try-effect
-   (let [path (str "/tmp/hive-transcripts/" agent-id ".jsonl")
-         file (java.io.File. path)]
-     (if (.exists file)
-       (->> (str/split-lines (slurp file))
-            (drop offset)
-            (take limit)
-            (mapv #(json/read-str % :key-fn keyword)))
-       (throw (ex-info "Transcript not found" {:agent-id agent-id :path path}))))))
-
-(defn- query-jsonl-tail
-  "Last N entries from JSONL file."
-  [agent-id n]
-  (r/try-effect
-   (let [path (str "/tmp/hive-transcripts/" agent-id ".jsonl")
-         file (java.io.File. path)]
-     (if (.exists file)
-       (->> (str/split-lines (slurp file))
-            (take-last n)
-            (mapv #(json/read-str % :key-fn keyword)))
-       (throw (ex-info "Transcript not found" {:agent-id agent-id}))))))
 
 (defn- execute-query
-  "Dispatch on TranscriptQuery ADT. Returns Result<vector<entry>>.
-   Currently uses JSONL backend (auto source). Datalevin path pending
-   dual-write fix in loop/core.clj record-turn!."
-  [query]
+  "Run a TranscriptQuery against `source`. Returns Result<vector<entry>>."
+  [source query]
   (adt-case tq/TranscriptQuery query
-    :query/by-agent (query-jsonl (:agent-id query))
+    :query/by-agent (src/read-entries source (:agent-id query))
     :query/by-time  (r/err :transcript/not-implemented
-                           {:msg "time-range query requires datalevin dual-write"})
-    :query/since    (r/try-effect
-                     (let [entries (:ok (query-jsonl (:agent-id query) :limit 10000))]
-                       (filterv #(> (or (:turn %) 0) (:turn query)) entries)))
-    :query/tail     (query-jsonl-tail (:agent-id query) (:n query))))
+                           {:message "time-range query is not implemented"})
+    :query/since    (r/map-ok (src/read-entries source (:agent-id query))
+                              (fn [es] (filterv #(> (src/entry-turn %) (:turn query)) es)))
+    :query/tail     (r/map-ok (src/read-entries source (:agent-id query))
+                              (fn [es] (vec (take-last (:n query) es))))))
+
+(defn- err-message
+  "Human text for an err Result."
+  [res]
+  (or (:message res) (pr-str res)))
 
 ;; =============================================================================
-;; Response Formatting (SLAP: mechanism layer)
+;; Response Formatting
 ;; =============================================================================
+
+(defn- entry-role [e]
+  (or (:role e) (some-> (:transcript/role e) name)))
+
+(defn- entry-content [e]
+  (str (or (:content e) (:transcript/content e) "")))
 
 (defn- format-entry-compact
   "Compact entry for list responses."
   [entry]
-  (let [content (str (or (:content entry) (:transcript/content entry) ""))]
-    {:role    (or (:role entry) (some-> (:transcript/role entry) name))
+  (let [content (entry-content entry)]
+    {:role    (entry-role entry)
      :turn    (or (:turn entry) (:transcript/turn entry))
      :preview (subs content 0 (min 120 (count content)))}))
 
@@ -139,100 +60,125 @@
   [entries agent-id]
   (let [header (format "## Transcript: %s (%d entries)\n\n" agent-id (count entries))]
     (->> entries
-         (map (fn [e]
-                (let [role (or (:role e) (some-> (:transcript/role e) name) "?")
-                      content (or (:content e) (:transcript/content e) "")]
-                  (format "**[%s]** %s\n" role content))))
+         (map #(format "**[%s]** %s\n" (or (entry-role %) "?") (entry-content %)))
          (str/join "\n")
          (str header))))
 
 (defn- compute-stats
   "Compute transcript statistics from entries."
   [entries agent-id]
-  (let [roles (frequencies (map #(or (:role %) (some-> (:transcript/role %) name)) entries))
-        costs (keep #(or (:cost_usd %) (:transcript/cost-usd %)) entries)]
-    {:agent-id    agent-id
-     :total       (count entries)
-     :by-role     roles
-     :turns       (or (apply max 0 (keep #(or (:turn %) (:transcript/turn %)) entries)) 0)
-     :total-cost  (reduce + 0.0 costs)}))
+  {:agent-id   agent-id
+   :total      (count entries)
+   :by-role    (frequencies (map entry-role entries))
+   :turns      (apply max 0 (keep #(or (:turn %) (:transcript/turn %)) entries))
+   :total-cost (reduce + 0.0 (keep #(or (:cost_usd %) (:transcript/cost-usd %)) entries))})
+
+(defn- entries-response [agent-id entries]
+  (tcore/mcp-json {:entries  (mapv format-entry-compact entries)
+                   :count    (count entries)
+                   :agent-id agent-id}))
 
 ;; =============================================================================
-;; MCP Command Router (SLAP: intent layer)
+;; Param coercion
 ;; =============================================================================
+
+(defn- with-int-param
+  "Coerce an integer MCP param, then call `f` with it.
+   A number or numeric string becomes an int, nil takes `default`, anything
+   else is an MCP error naming the param."
+  [value param-name default f]
+  (let [{:keys [ok error]} (tcore/coerce-int value param-name default)]
+    (if error
+      (tcore/mcp-error error)
+      (f (int ok)))))
+
+(defn- with-agent-id
+  "Call `f` with a non-blank agent id string, else an MCP error naming agent_id."
+  [agent-id f]
+  (let [s (some-> agent-id str str/trim)]
+    (if (str/blank? s)
+      (tcore/mcp-error "transcript: `agent_id` is required")
+      (f s))))
+
+(defn- run-query
+  "Execute `query` and render the ok value with `render`, or an MCP error."
+  [source query render]
+  (let [res (execute-query source query)]
+    (if (r/ok? res)
+      (render (:ok res))
+      (tcore/mcp-error (err-message res)))))
+
+;; =============================================================================
+;; MCP Command Router
+;; =============================================================================
+
+(def ^:private help-response
+  {:tool     "transcript"
+   :commands [{:command "list"   :params []                  :description "Available transcripts (JSONL + Datalevin)"}
+              {:command "query"  :params ["agent_id"]        :description "Full conversation entries"}
+              {:command "tail"   :params ["agent_id" "n"]    :description "Last N entries (default 10)"}
+              {:command "since"  :params ["agent_id" "turn"] :description "Entries after turn"}
+              {:command "stats"  :params ["agent_id"]        :description "Turn count, cost, role breakdown"}
+              {:command "replay" :params ["agent_id"]        :description "Formatted markdown conversation"}]})
+
+(defn- list-response [source]
+  (let [res (src/list-transcripts source)]
+    (if-not (r/ok? res)
+      (tcore/mcp-error (err-message res))
+      (let [all (->> (:ok res)
+                     (group-by :agent-id)
+                     (map (fn [[_ rows]]
+                            (assoc (apply max-key #(or (:modified %) 0) rows)
+                                   :sources (vec (distinct (map :source rows))))))
+                     (sort-by #(or (:modified %) 0) >)
+                     vec)]
+        (tcore/mcp-json {:transcripts all :count (count all)})))))
+
+(defn- dispatch [source {:keys [command agent-id agent_id id n turn]}]
+  (let [agent-id (or agent-id agent_id id)
+        by-agent (fn [render]
+                   (with-agent-id agent-id
+                     (fn [aid]
+                       (run-query source (tq/transcript-query :query/by-agent {:agent-id aid})
+                                  #(render aid %)))))]
+    (case command
+      "help"   (tcore/mcp-json help-response)
+      "list"   (list-response source)
+      "query"  (by-agent entries-response)
+      "stats"  (by-agent #(tcore/mcp-json (compute-stats %2 %1)))
+      "replay" (by-agent #(tcore/mcp-json {:markdown (format-replay %2 %1) :agent-id %1}))
+      "tail"   (with-agent-id agent-id
+                 (fn [aid]
+                   (with-int-param n :n 10
+                     (fn [n]
+                       (run-query source (tq/transcript-query :query/tail {:agent-id aid :n n})
+                                  #(entries-response aid %))))))
+      "since"  (with-agent-id agent-id
+                 (fn [aid]
+                   (with-int-param turn :turn 0
+                     (fn [turn]
+                       (run-query source (tq/transcript-query :query/since {:agent-id aid :turn turn})
+                                  #(entries-response aid %))))))
+      (tcore/mcp-error (str "Unknown transcript command: " command)))))
 
 (defn handle-transcript
-  "Route transcript MCP commands. Returns an MCP-envelope result.
+  "Route transcript MCP commands. Returns an MCP-envelope result, never throws.
+
+   ([params])        reads `src/default-source`.
+   ([source params]) reads the given TranscriptSource.
 
    Commands:
-     help                     — This command list
-     list                     — Available transcripts (JSONL + Datalevin)
-     query  {:agent-id}       — Full conversation entries
-     tail   {:agent-id :n?}   — Last N entries (default 10)
-     since  {:agent-id :turn} — Entries after turn
-     stats  {:agent-id}       — Turn count, cost, role breakdown
-     replay {:agent-id}       — Formatted markdown conversation"
-  [{:keys [command agent-id agent_id id n turn] :as _params}]
-  (let [agent-id (or agent-id agent_id id)]
-    (case command
-      "help"
-      (tcore/mcp-json
-       {:tool     "transcript"
-        :commands [{:command "list"   :params []                  :description "Available transcripts (JSONL + Datalevin)"}
-                   {:command "query"  :params ["agent_id"]        :description "Full conversation entries"}
-                   {:command "tail"   :params ["agent_id" "n"]    :description "Last N entries (default 10)"}
-                   {:command "since"  :params ["agent_id" "turn"] :description "Entries after turn"}
-                   {:command "stats"  :params ["agent_id"]        :description "Turn count, cost, role breakdown"}
-                   {:command "replay" :params ["agent_id"]        :description "Formatted markdown conversation"}]})
-
-      "list"
-      (let [jsonl (list-jsonl-transcripts)
-            dl    (list-datalevin-transcripts)
-            all   (->> (concat jsonl dl)
-                       (group-by :agent-id)
-                       (map (fn [[id sources]] (assoc (first sources) :sources (mapv :source sources))))
-                       (sort-by :modified >)
-                       vec)]
-        (tcore/mcp-json {:transcripts all :count (count all)}))
-
-      "query"
-      (let [result (execute-query (tq/transcript-query :query/by-agent {:agent-id agent-id}))]
-        (if (r/ok? result)
-          (tcore/mcp-json {:entries (mapv format-entry-compact (:ok result))
-                           :count   (count (:ok result))
-                           :agent-id agent-id})
-          (tcore/mcp-error (:message result))))
-
-      "tail"
-      (let [result (execute-query (tq/transcript-query :query/tail {:agent-id agent-id :n (int (or n 10))}))]
-        (if (r/ok? result)
-          (tcore/mcp-json {:entries (mapv format-entry-compact (:ok result))
-                           :count   (count (:ok result))
-                           :agent-id agent-id})
-          (tcore/mcp-error (:message result))))
-
-      "since"
-      (let [result (execute-query (tq/transcript-query :query/since {:agent-id agent-id :turn (int (or turn 0))}))]
-        (if (r/ok? result)
-          (tcore/mcp-json {:entries (mapv format-entry-compact (:ok result))
-                           :count   (count (:ok result))
-                           :agent-id agent-id})
-          (tcore/mcp-error (:message result))))
-
-      "stats"
-      (let [result (execute-query (tq/transcript-query :query/by-agent {:agent-id agent-id}))]
-        (if (r/ok? result)
-          (tcore/mcp-json (compute-stats (:ok result) agent-id))
-          (tcore/mcp-error (:message result))))
-
-      "replay"
-      (let [result (execute-query (tq/transcript-query :query/by-agent {:agent-id agent-id}))]
-        (if (r/ok? result)
-          (tcore/mcp-json {:markdown (format-replay (:ok result) agent-id)
-                           :agent-id agent-id})
-          (tcore/mcp-error (:message result))))
-
-      ;; Unknown command — surface as MCP error envelope so cross-impl
-      ;; contract test (registry-contract-test/every-tool-help-shape-compliant)
-      ;; sees uniform shape across every consolidated tool.
-      (tcore/mcp-error (str "Unknown transcript command: " command)))))
+     help                     This command list
+     list                     Available transcripts (JSONL + Datalevin)
+     query  {:agent-id}       Full conversation entries
+     tail   {:agent-id :n?}   Last N entries (default 10)
+     since  {:agent-id :turn} Entries after turn
+     stats  {:agent-id}       Turn count, cost, role breakdown
+     replay {:agent-id}       Formatted markdown conversation"
+  ([params] (handle-transcript (src/default-source) params))
+  ([source params]
+   (try
+     (dispatch source params)
+     (catch Throwable e
+       (log/warn e "[transcript] command failed" (:command params))
+       (tcore/mcp-error (str "transcript " (:command params) " failed: " (ex-message e)))))))
