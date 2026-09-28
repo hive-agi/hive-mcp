@@ -35,6 +35,8 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-09-27
+
 ### Added
 
 - **Sealed memory (with the hive-knowledge addon).** Memories, kanban tasks
@@ -59,11 +61,47 @@ bump, not a quiet minor, because a consumer's storage would change under it.
   stay plaintext, embeddings are computed from plaintext, and KG edges are
   not sealed.
 
+### Fixed
+
+- **An open KG-slot breaker no longer floods the log.** Each read blocked by
+  an open circuit breaker logged an ERROR; it now logs at DEBUG. The breaker
+  opening is still logged once as an ERROR.
+- **`transcript` reads hive-agent's Datalevin stores.** `list`, `query`,
+  `tail` and `since` read the per-agent stores hive-agent writes.
+- **`transcript tail` and `since` accept `n` and `turn` as strings.**
+
 ### Known issues
 
 - **`migrate-kanban` bypasses sealing.** It writes to Qdrant through the raw
   client (`hive-mcp.tools.migrate.kanban.qdrant/QdrantEntryWriter`), so rows
   it migrates are stored in plaintext even when the work tier is on.
+
+## [1.6.4] - 2026-09-26
+
+### Added
+
+- **Claims are acquired all-or-nothing and negotiated.** A ling acquiring a
+  file set either gets every file or none; a file held by a live foreign ling
+  is refused under the claim lock instead of being stolen. On refusal the
+  ling parks on the wait queue and the holder receives a yield request
+  (deduplicated), so contention is resolved by asking, not by overwriting.
+
+### Fixed
+
+- **Claims are released with their task, and the waiter is woken directly.**
+  The wake-up is a directed message from the releasing ling to the waiting
+  one, and a parked ling is dequeued when it is woken. Previously the
+  message was stored under the waiter's own key and never reached it.
+- **Concurrent shouts no longer lose messages.** `shout!*` appended with a
+  read-then-write pair; two senders could overwrite each other. It now uses
+  a single atomic swap.
+- **An uncorrelated conversation respond is delivered, not dropped.** An
+  answer that arrives before its ask is registered reaches the asker.
+
+### Changed
+
+- Third-party dependencies upgraded at patch level; hive-agi internal
+  coordinates synced.
 
 ## [1.6.3] - 2026-09-25
 
