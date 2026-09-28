@@ -30,5 +30,7 @@
     (finally (ext/retract-commands! "contrib-params-root" :contrib-params-test))))
 
 (deftest make-tool-leaves-a-non-consolidated-tool-alone
-  (let [t (routes/make-tool (dissoc core :consolidated))]
-    (is (= {"command" {:type "string"}} (get-in t [:inputSchema :properties])))))
+  (testing "no contribution fold; only the async params every tool carries are added"
+    (let [t (routes/make-tool (dissoc core :consolidated))]
+      (is (= {"command" {:type "string"}}
+             (dissoc (get-in t [:inputSchema :properties]) "async" "async-timeout-ms"))))))
