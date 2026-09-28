@@ -35,6 +35,8 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-09-27
+
 ### Added
 
 - **Sealed memory (with the hive-knowledge addon).** Memories, kanban tasks
@@ -64,6 +66,9 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 - **An open KG-slot breaker no longer floods the log.** Each read blocked by
   an open circuit breaker logged an ERROR; it now logs at DEBUG. The breaker
   opening is still logged once as an ERROR.
+- **`transcript` reads hive-agent's Datalevin stores.** `list`, `query`,
+  `tail` and `since` read the per-agent stores hive-agent writes.
+- **`transcript tail` and `since` accept `n` and `turn` as strings.**
 
 ### Known issues
 
