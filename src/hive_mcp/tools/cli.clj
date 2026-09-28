@@ -175,17 +175,23 @@
                 folding (`carto_definition` -> `carto`)
      :fallback  every opaque root, capped at `max-subdomain-hints`
 
+   A root CMD already starts with (its first whitespace word) is never
+   offered: CMD is already qualified by it, and `ss ss help` names nothing.
+
    Returns {:roots [kw ...] :exact? bool :stage kw}; :roots is empty when the
    tree offers nothing. :exact? is true only for :exact."
   [cmd handlers]
-  (let [opaque  (delegating-subdomains handlers)
-        cmd-low (str/lower-case cmd)
+  (let [cmd-low (str/lower-case cmd)
+        head    (first (remove str/blank? (str/split cmd-low #"\s+")))
+        own?    #(= head (str/lower-case (name %)))
+        opaque  (vec (remove own? (delegating-subdomains handlers)))
         owners  (->> (collect-command-paths handlers [])
                      (filter #(and (> (count %) 1)
                                    (= cmd-low
                                       (str/lower-case
                                        (str/join " " (map name (rest %)))))))
                      (map first)
+                     (remove own?)
                      distinct
                      (sort-by name)
                      vec)
@@ -263,6 +269,36 @@
                     (when (seq near)
                       (str ". Did you mean: " (str/join ", " near) "?"))))))
 
+(defn- subtree-at
+  "The node PATH names in HANDLERS, every level resolved through
+   `dispatch/current`; nil when PATH leaves the tree."
+  [handlers path]
+  (reduce (fn [node seg] (when (map? node) (dispatch/current (get node seg))))
+          (dispatch/current handlers)
+          path))
+
+(defn- subdomain-help-handler
+  "The subdomain at PATH's own `help` leaf, called with the qualified
+   `<subdomain> help` command; nil when PATH is not a subtree or registers no
+   `help`."
+  [handlers path]
+  (let [node (subtree-at handlers path)
+        own  (when (map? node) (get node :help))]
+    (when (dispatch/handler? own)
+      (fn [params]
+        (own (assoc params :command (str (str/join " " (map name path)) " help")))))))
+
+(defn- with-subtree-listing
+  "ERR with the commands the subtree at PATH routes appended, when PATH names
+   an enumerable subtree; ERR unchanged otherwise."
+  [err handlers path]
+  (let [node  (when (seq path) (subtree-at handlers path))
+        paths (when (map? node) (collect-command-paths node []))]
+    (if (seq paths)
+      (update err :text str ". '" (str/join " " (map name path)) "' routes: "
+              (str/join ", " (sort (map #(str/join " " (map name (concat path %))) paths))))
+      err)))
+
 (defn make-cli-handler
   "Create a CLI-style handler that dispatches on :command param.
 
@@ -284,6 +320,11 @@
 
    Supports n-depth command dispatch: \"status list\" walks {:status {:list fn}}.
    Single-word commands remain backward compatible.
+
+   A bare subdomain (`ss`) or `<subdomain> help` its subtree does not route
+   itself answers the subtree's own `help` leaf when it registers one
+   (`subdomain-help-handler`); without one the error lists what the subtree
+   routes (`with-subtree-listing`).
 
    Optional coerce-schema: map of {field-key [type-spec]} for MCP boundary coercion.
    When provided, string params are coerced to declared types before dispatch.
@@ -324,14 +365,21 @@
 
            ;; Normal dispatch via n-depth resolve-handler
            :else
-           (if-let [handler (:handler (resolve-handler handlers path))]
-             (run handler params)
-             (let [qualified (auto-qualified-command (str/trim cmd-str) handlers)
-                   owner     (when qualified
-                               (:handler (resolve-handler handlers (parse-command qualified))))]
-               (if owner
-                 (run owner (assoc params :command qualified))
-                 (unknown-command-error command handlers))))))))))
+           (let [{:keys [handler tree path-used remaining]} (resolve-handler handlers path)
+                 sub-help (when (and (not handler) (seq path-used)
+                                     (or tree (= [:help] remaining)))
+                            (subdomain-help-handler handlers path-used))]
+             (cond
+               handler  (run handler params)
+               sub-help (run sub-help params)
+               :else
+               (let [qualified (auto-qualified-command (str/trim cmd-str) handlers)
+                     owner     (when qualified
+                                 (:handler (resolve-handler handlers (parse-command qualified))))]
+                 (if owner
+                   (run owner (assoc params :command qualified))
+                   (with-subtree-listing (unknown-command-error command handlers)
+                     handlers path-used)))))))))))
 
 ;; =============================================================================
 ;; Batch Handler Factory (generic batch middleware)
