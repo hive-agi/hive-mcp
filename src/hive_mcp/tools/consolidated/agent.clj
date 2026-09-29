@@ -10,6 +10,7 @@
             [hive-mcp.tools.agent.lifecycle :as lifecycle]
             [hive-mcp.agent.type-registry :as agent-type-registry]
             [hive-mcp.agent.spawn-mode-registry :as spawn-registry]
+            [hive-mcp.schema.tools :as schema]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -104,15 +105,15 @@
                                          :items {:type "string"}
                                          :description "Preset names for ling (ling only)"}
                               "model" {:type "string"
-                                       :description "Model override for the ling: 'claude' (default, Claude Code CLI) or OpenAI-compat model ID (auto-forces headless spawn mode). Supports 'provider:model' prefix, e.g. 'venice:qwen3-coder-480b-a35b-instruct', 'groq:llama-3.3-70b-versatile', 'moonshotai/kimi-k2.5' (bare → openrouter)."}
+                                       :description "Model override for the ling: 'claude' (default, Claude Code CLI) or a model ID (auto-forces headless spawn mode). Claude, ChatGPT and Kimi names run only on their OAuth subscriptions: claude-*, claude, opus, sonnet, haiku, fable -> :anthropic; gpt-*, o3, chatgpt, codex -> :chatgpt; kimi-*, kimi -> :kimi. Supports 'provider:model' prefix, e.g. 'venice:qwen3-coder-480b-a35b-instruct', 'groq:llama-3.3-70b-versatile'; a keyed provider refuses the subscription-only families."}
                               "tier" {:type "string"
                                       :enum ["cheap" "frontier"]
                                       :description "[spawn] Economy role. cheap delegates model selection to configured ling defaults; frontier permits explicit model selection. Omit to preserve legacy direct-spawn behavior."}
                               "token_budget" {:type "integer"
                                                :description "[spawn] Context-reconstruction token ceiling for this ling."}
                               "provider" {:type "string"
-                                          :enum ["openrouter" "venice" "groq" "together" "fireworks" "openai" "ollama-compat"]
-                                          :description "Explicit OpenAI-compat LLM provider (overrides any 'provider:' prefix in model). Anthropic routing is automatic from model names (claude-*, anthropic/*)."}
+                                          :enum ["openrouter" "venice" "groq" "together" "fireworks" "openai" "ollama-compat" "anthropic" "chatgpt" "codex" "kimi"]
+                                          :description "Explicit LLM provider (overrides any 'provider:' prefix in model). anthropic, chatgpt, codex and kimi are OAuth subscriptions; the others are API-key providers, which refuse Claude, GPT and Kimi models. Usually unnecessary: the subscription families route from the model name."}
                               "task" {:type "string"
                                       :description "Initial task to dispatch on spawn (prompt is accepted as an alias). Without one the ling idles; the response then carries task-attached false and a warning."}
                               "spawn_mode" {:type "string"
@@ -129,6 +130,10 @@
                                          :description "[spawn] When true, bb-ling lings shout the full per-turn LLM exchange (last request message + response, truncated) to hivemind piggyback. Default false — exchange is always persisted to the agent's transcript store (Datalevin) and queryable post-hoc via the `transcript` MCP tool (list/search)."}
                               "llm_retries" {:type "integer"
                                              :description "[spawn] Max bb-ling loop-level retries on transient LLM failures (rate-limit/overload/timeout). Default 3, exponential backoff."}
+                              "resume" (assoc (schema/json-schema schema/ResumeParam)
+                                              :description "[spawn] Chat-point headless backend (spawn_mode hive-agent, or headless resolving to it) only; refused elsewhere. Start from a recorded chat point instead of a blank history. {run_id} RESUMES the run at its tip (a fresh turn lease for the same work); {run_id, at:{seq|turn}} FORKS a new branch from that earlier point; prompt adds a message there. The child records its own run whose parent is that point. Unknown keys are rejected.")
+                              "chat_run_id" {:type "string"
+                                             :description "[spawn] Chat-point headless backend only; refused elsewhere. Explicit chat-point run id to record this ling's history under (default: generated). Reported back by collect as chat_point.run_id, which is what resume.run_id takes."}
                               "sandbox" {:type "boolean"
                                          :description "[spawn] Headless lings: run the ling's tools inside the host sandbox (bwrap). bash/grep/clojure_eval run with no network, no host home and a clean environment; file tools stay below cwd; delegated host tools are refused unless allowlisted. Omitted = the host default ([:services :agent :sandbox] in config.edn). false opts out."}
                               ;; common params
@@ -140,7 +145,7 @@
                               ;; batch-spawn params
                               "operations" {:type "array"
                                             :items {:type "object"}
-                                            :description "Array of spawn parameter objects for batch-spawn. Each object: {type, name, cwd, presets, model, task, spawn_mode, parent, kanban_task_id}"}
+                                            :description "Array of spawn parameter objects for batch-spawn. Each object: {type, name, cwd, presets, model, task, spawn_mode, parent, kanban_task_id, llm_retries, resume, chat_run_id}"}
                               "parallel" {:type "boolean"
                                           :description "Run batch operations in parallel (default: false)"}
                               "project_id" {:type "string"

@@ -56,11 +56,24 @@
       (is (contains? props "async"))
       (is (= "boolean" (:type (get props "async")))))))
 
-(deftest tools-without-default-async-do-not-advertise-async
-  (testing "the property is injected only where the middleware can act on it"
+(deftest every-tool-advertises-async-opt-in
+  (testing "wrap-handler-async runs in every tool's chain, so every tool declares
+            `async`; without the declaration a client can never send it and a long
+            call holds the agent loop"
     (let [tool  (routes/make-tool (dissoc cmem/tool-def :default-async-commands))
           props (:properties (:inputSchema tool))]
-      (is (not (contains? props "async"))))))
+      (is (= "boolean" (:type (get props "async"))))
+      (is (re-find #"background" (:description (get props "async")))
+          "a sync-by-default tool gets the opt-in wording")
+      (is (= "integer" (:type (get props "async-timeout-ms")))))))
+
+(deftest a-tool-declaring-its-own-async-keeps-it
+  (let [own  {:type "boolean" :description "tool-specific"}
+        tool (routes/make-tool {:name "t" :description "d"
+                                :inputSchema {:type "object"
+                                              :properties {"async" own}}
+                                :handler (fn [_] "ok")})]
+    (is (= own (get-in tool [:inputSchema :properties "async"])))))
 
 (deftest leaves-read-commands-synchronous
   (testing "read commands (not in set) pass through without :async key"

@@ -30,7 +30,58 @@
 
   (testing "empty name rejected"
     (is (not (m/validate tools/AgentSpawnParams
-                         {:name ""})))))
+                         {:name ""}))))
+
+  (testing "resume continues at the tip or forks at seq/turn; chat_run_id is a string"
+    (is (m/validate tools/AgentSpawnParams
+                    {:name "w" :llm_retries 3 :chat_run_id "run-b"
+                     :resume {:run_id "run-a"}}))
+    (is (m/validate tools/AgentSpawnParams
+                    {:name "w" :resume {:run_id "run-a" :at {:seq 4} :prompt "p"}}))
+    (is (m/validate tools/AgentSpawnParams
+                    {:name "w" :resume {:run_id "run-a" :at {:turn 2}}})))
+
+  (testing "malformed resume rejected"
+    (is (not (m/validate tools/AgentSpawnParams {:name "w" :resume {:at {:seq 1}}})))
+    (is (not (m/validate tools/AgentSpawnParams {:name "w" :resume {:run_id "r" :at {:seq 1 :turn 2}}})))
+    (is (not (m/validate tools/AgentSpawnParams {:name "w" :resume {:run_id "r" :at {:seq -1}}}))))
+
+  (testing "resume is closed: a misspelled branch point is refused, never read as a resume at the tip"
+    (is (not (m/validate tools/ResumeParam {:run_id "r" :fork_at {:seq 3}})))
+    (is (not (m/validate tools/ResumeParam {:run_id "r" :at_seq 3})))
+    (is (not (m/validate tools/ResumeParam {:run_id "r" :at {:sequence 3}}))))
+
+  (testing "chat_run_id must be a non-empty string"
+    (is (not (m/validate tools/AgentSpawnParams {:name "w" :chat_run_id 5})))
+    (is (not (m/validate tools/AgentSpawnParams {:name "w" :chat_run_id ""})))))
+
+(deftest resume-json-schema-derives-from-resume-param
+  (let [js (tools/json-schema tools/ResumeParam)]
+    (is (= "object" (:type js)))
+    (is (= ["run_id"] (:required js)))
+    (is (false? (:additionalProperties js)))
+    (is (= #{"run_id" "at" "prompt"} (set (keys (:properties js)))))))
+
+(deftest resume-run-id-rejects-whitespace
+  (doseq [id ["" " \t " "\n"]]
+    (is (not (m/validate tools/ResumeParam {:run_id id})) (pr-str id)))
+  (is (m/validate tools/ResumeParam {:run_id "run-1"})))
+
+(deftest param-coercer-names-failing-field
+  (let [coerce (tools/param-coercer "spawn" tools/SpawnLoopParams)]
+    (doseq [[bad field] [[{:chat_run_id 8} "chat_run_id"]
+                         [{:llm_retries -1} "llm_retries"]
+                         [{:resume {:run_id " "}} "resume"]]]
+      (let [e (try (coerce bad) nil (catch clojure.lang.ExceptionInfo e e))]
+        (is (= field (:param (ex-data e))))
+        (is (re-find (re-pattern (str "^" field " is invalid")) (ex-message e)))))))
+
+(deftest null-branch-key-coercion
+  (let [coerce (tools/param-coercer "resume" tools/ResumeParam)]
+    (is (= {:run_id "r" :at {:seq 1}}
+           (coerce {:run_id "r" :at {:seq 1 :turn nil}})))
+    (is (= {:run_id "r"}
+           (coerce {:run_id "r" :at {:turn nil}})))))
 
 (deftest agent-dispatch-params-test
   (testing "valid dispatch params"

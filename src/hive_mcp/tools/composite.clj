@@ -213,12 +213,42 @@
       (cond-> {:anyOf alts}
         (seq descs) (assoc :description (str/join " | " descs))))))
 
+(def ^:private max-summary-chars 200)
+
+(defn contribution-summary
+  "One-line purpose of a command contribution SPEC: its :summary, else the
+   first line of its :description, capped at `max-summary-chars`; nil when
+   it declares neither."
+  [{:keys [summary description]}]
+  (let [s (or (when-not (str/blank? summary) summary)
+              (when-not (str/blank? description) (first (str/split-lines description))))]
+    (when-not (str/blank? s)
+      (let [s (str/trim s)]
+        (if (> (count s) max-summary-chars)
+          (str (subs s 0 (dec max-summary-chars)) "…")
+          s)))))
+
+(defn contributed-commands-text
+  "ADDON-CMDS (command name -> contribution spec) as one sentence for a tool
+   description: every contributed command with its one-line purpose. nil when
+   there are none."
+  [addon-cmds]
+  (when (seq addon-cmds)
+    (str "Addon-contributed (`<name> help` lists a subdomain's verbs): "
+         (str/join "; " (for [[cmd spec] (sort-by key addon-cmds)]
+                          (if-let [s (contribution-summary spec)]
+                            (str cmd " - " s)
+                            (str cmd))))
+         ".")))
+
 (defn build-merged-tool
   "Fold the current addon contributions to TOOL-NAME into a consolidated
-   tool-def's advertised inputSchema: every contributed command's :params
-   joins the properties, and the `command` enum — when the core declares one —
-   grows the contributed command names. Returns the tool-def unchanged when
-   nothing has been contributed.
+   tool-def's advertised surface: every contributed command's :params joins
+   the inputSchema properties, the `command` enum — when the core declares
+   one — grows the contributed command names, and the description gains one
+   line naming each contributed command with its purpose
+   (`contributed-commands-text`). Returns the tool-def unchanged when nothing
+   has been contributed.
 
    Routing already folded contributions in (effective-handlers); this is the
    SCHEMA half. The MCP layer forwards only the params a tool declares, so a
@@ -247,6 +277,9 @@
         (seq addon-params)
         (update-in [:inputSchema :properties]
                    #(merge-with union-property % addon-params))
+
+        true
+        (update :description #(str/join " " (remove str/blank? [% (contributed-commands-text addon-cmds)])))
 
         true
         (assoc :composite true)))))

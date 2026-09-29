@@ -195,24 +195,31 @@
   "Parent env vars to explicitly forward to child ProcessBuilder.
    These are critical for child ling operation and would be lost
    if the child's env were ever constructed fresh (not inherited)."
-  ["ANTHROPIC_API_KEY"
-   "OPENROUTER_API_KEY"
+  ["OPENROUTER_API_KEY"
    "BB_MCP_NREPL_PORT"
    "OLLAMA_HOST"
    "HOME"
    "PATH"
    "TERM"])
 
+(def withheld-env-vars
+  "Env vars a child ling never receives, inherited or forwarded: each one
+   would move a Claude, OpenAI or Kimi CLI off its OAuth subscription onto
+   API-key billing or onto another endpoint."
+  ["ANTHROPIC_API_KEY" "ANTHROPIC_AUTH_TOKEN" "ANTHROPIC_BASE_URL"
+   "OPENAI_API_KEY" "MOONSHOT_API_KEY" "KIMI_API_KEY"])
+
 (defn build-child-env
   "Build environment variable map for a child ling process (pure calculation).
 
    Merges (in priority order, later wins):
-   1. Forwarded parent env vars (ANTHROPIC_API_KEY, OPENROUTER_API_KEY, etc.)
+   1. Forwarded parent env vars (OPENROUTER_API_KEY, etc.)
    2. Child-ling guard vars (HIVE_MCP_ROLE, HIVE_LING_DEPTH)
    3. Project dir (BB_MCP_PROJECT_DIR from cwd)
    4. Agent identity (CLAUDE_SWARM_SLAVE_ID)
    5. Model override (OPENROUTER_MODEL when non-claude)
-   6. Caller-provided env-extra (highest priority override)"
+   6. Caller-provided env-extra (highest priority override)
+   and then drops every `withheld-env-vars` name, env-extra included."
   [ling-id {:keys [cwd env-extra model]}]
   (let [parent-vars (reduce (fn [m var-name]
                               (if-let [v (System/getenv var-name)]
@@ -221,22 +228,26 @@
                             {}
                             forwarded-env-vars)
         guard-vars (guards/child-ling-env)]
-    (cond-> (merge parent-vars
-                   guard-vars
-                   {"CLAUDE_SWARM_SLAVE_ID" ling-id})
-      cwd (assoc "BB_MCP_PROJECT_DIR" cwd)
-      (and model (not= model "claude")) (assoc "OPENROUTER_MODEL" model)
-      env-extra (as-> m (reduce-kv (fn [acc k v] (assoc acc (name k) (str v)))
-                                   m env-extra)))))
+    (-> (cond-> (merge parent-vars
+                       guard-vars
+                       {"CLAUDE_SWARM_SLAVE_ID" ling-id})
+          cwd (assoc "BB_MCP_PROJECT_DIR" cwd)
+          (and model (not= model "claude")) (assoc "OPENROUTER_MODEL" model)
+          env-extra (as-> m (reduce-kv (fn [acc k v] (assoc acc (name k) (str v)))
+                                       m env-extra)))
+        (#(apply dissoc % withheld-env-vars)))))
 
 (defn- configure-process-env!
   "Set up ProcessBuilder environment variables.
 
-   Uses build-child-env (pure calculation) to compute the env map,
-   then applies it to the ProcessBuilder's mutable environment."
+   Removes `withheld-env-vars` from the inherited environment, then applies
+   build-child-env (pure calculation) to the ProcessBuilder's mutable
+   environment."
   [^ProcessBuilder pb ling-id opts]
   (let [env (.environment pb)
         child-env (build-child-env ling-id opts)]
+    (doseq [k withheld-env-vars]
+      (.remove env k))
     (doseq [[k v] child-env]
       (.put env k v))))
 

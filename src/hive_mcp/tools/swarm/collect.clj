@@ -41,18 +41,25 @@
 ;; Response builders — one level of abstraction, one concern each (SRP)
 ;; =============================================================================
 
+(defn chat-point->response
+  "Pure: a journal event's chat point {:run-id :tip :resumable?} in the
+   response's snake_case, shaped so run_id feeds spawn `resume` unchanged."
+  [{:keys [run-id tip resumable?]}]
+  {:run_id run-id :tip tip :resumable (boolean resumable?)})
+
 (defn- build-journal-response
   "Build MCP response from event-journal entry."
   [task_id journal-event start-time via]
-  (let [{:keys [status result error slave-id]} journal-event]
+  (let [{:keys [status result error slave-id chat-point]} journal-event]
     (core/mcp-success
-     {:task_id   task_id
-      :status    status
-      :result    result
-      :error     error
-      :slave_id  slave-id
-      :via       via
-      :elapsed_ms (- (System/currentTimeMillis) start-time)})))
+     (cond-> {:task_id   task_id
+              :status    status
+              :result    result
+              :error     error
+              :slave_id  slave-id
+              :via       via
+              :elapsed_ms (- (System/currentTimeMillis) start-time)}
+       chat-point (assoc :chat_point (chat-point->response chat-point))))))
 
 (defn- build-timeout-response
   "Build MCP response for collection timeout. `via` names the polling path."
