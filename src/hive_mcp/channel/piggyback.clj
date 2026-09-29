@@ -14,9 +14,7 @@
             [taoensso.timbre :as log]
             [hive-mcp.channel.audience :as audience]
             [clojure.string :as str]
-            [hive-dsl.context.identity :as ctx-id]
-            [hive-mcp.channel.digest :as digest]
-            [hive-mcp.channel.digest.llm :as digest-llm]))
+            [hive-dsl.context.identity :as ctx-id]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -223,38 +221,6 @@
   []
   (not (false? (config-value [:hivemind :progress-digest]))))
 
-(def ^:dynamic *digest-settings*
-  "Overrides [:hivemind :digest] when bound."
-  nil)
-
-(def ^:dynamic *terminal-digester*
-  "ITerminalDigester overriding the configured model when bound."
-  nil)
-
-(defn digest-settings
-  "[:hivemind :digest] config: {:enabled? :max-words :error-chars :model}. Opt-in."
-  []
-  (or *digest-settings* (config-value [:hivemind :digest])))
-
-(defn- run-digest
-  "Coalesce, then model-digest terminal rows when configured. Disabled or on any
-   failure, rows come back in today's shape."
-  [rows]
-  (let [cfg (digest-settings)
-        plain (fn [] (mapv digest/strip rows))]
-    (if-not (:enabled? cfg)
-      (plain)
-      (try
-        (let [opts (digest/settings cfg)
-              digester (or *terminal-digester* (digest-llm/configured-digester (:model cfg)))]
-          (->> rows
-               (digest/coalesce-rows opts)
-               (digest-llm/digest-rows digester opts)
-               (mapv digest/finalize)))
-        (catch Throwable t
-          (log/warn "piggyback: hivemind digest failed, delivering raw rows:" (ex-message t))
-          (plain))))))
-
 (defn- scoped-id-fn
   "A 1-arg composer from a bare agent name to this read's project-scoped
    reader id, or nil when the read carries no project scope."
@@ -365,7 +331,7 @@
             ;; recipient and nobody else, so its mere arrival says who it is for,
             ;; and spelling that out again is tokens for nothing.
             formatted-msgs (mapv (fn [{:keys [agent-id event-type message task deliberate?
-                                              context-id ref timestamp]}]
+                                              context-id ref]}]
                                    (cond-> {:a agent-id
                                             :e (if (keyword? event-type)
                                                  (name event-type)
@@ -374,14 +340,12 @@
                                      task (assoc :t task)
                                      context-id (assoc :ctx context-id)
                                      ref (assoc :ref ref)
-                                     timestamp (assoc :ts timestamp)
                                      deliberate? (assoc :deliberate? true)))
                                  addressed)
             digested (mapv #(dissoc % :deliberate?)
-                           (run-digest
-                            (if (progress-digest?)
-                              (audience/digest formatted-msgs)
-                              formatted-msgs)))
+                           (if (progress-digest?)
+                             (audience/digest formatted-msgs)
+                             formatted-msgs))
             rows (into (vec digested) peer-rows)]
         (when max-global
           (swap! agent-read-cursors assoc global-key max-global))
@@ -392,14 +356,11 @@
 
 (defn fetch-history
   "Get hivemind messages without marking as read.
-   Dual-path: merges messages from atom-based source and backbone buffer.
-   :agent-id narrows to one author; with :since (dec ts) it redeems the raw
-   text behind a digested row."
-  [& {:keys [since limit project-id agent-id] :or {since 0 limit 100}}]
+   Dual-path: merges messages from atom-based source and backbone buffer."
+  [& {:keys [since limit project-id] :or {since 0 limit 100}}]
   (->> (merged-messages)
        (filter (fn [msg]
                  (and (> (:timestamp msg) since)
-                      (or (nil? agent-id) (= agent-id (:agent-id msg)))
                       (or (nil? project-id)
                           (= (:project-id msg) project-id)
                           (= (:project-id msg) "global")))))
