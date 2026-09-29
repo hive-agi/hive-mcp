@@ -60,6 +60,15 @@
   [provider model]
   (policy/validate-model (effective-registry) provider model))
 
+(defn model-refusal
+  "nil when the provider may carry the model, else the error map of
+   `policy/model-refusal`: over the effective registry, or over ENTRY when
+   the caller built the endpoint itself (explicit :api-url, custom provider)."
+  ([provider model]
+   (policy/model-refusal (effective-registry) provider model))
+  ([provider model entry]
+   (policy/model-refusal {provider entry} provider model)))
+
 (defn resolve-provider-model
   "Resolve {:provider :model} for an agent spawn or wave.
 
@@ -71,8 +80,9 @@
    provider's configured `:default-model`; hive-mcp supplies none itself.
 
    Throws when no provider or no model resolves (ex-data names the config keys
-   to set) and on an unknown provider; an unknown model only warns, since a
-   provider that declares no :available-models accepts anything."
+   to set), on an unknown provider, and on a model the provider's :deny-models
+   refuses; a model outside :available-models only warns, since a provider
+   that declares no :available-models accepts anything."
   [{:keys [provider model agent-type]}]
   (let [registry (effective-registry)
         request  {:provider      provider
@@ -90,6 +100,10 @@
     (when-let [err (policy/unresolved-routing agent-type resolved)]
       (throw (ex-info (str "No " (if provider "model" "provider") " configured for agent type "
                            (if agent-type (name agent-type) "<none>") ": " (:fix err))
+                      err)))
+    (when-let [err (policy/model-refusal registry provider model)]
+      (throw (ex-info (str "Model " model " is denied on provider " (name provider)
+                           ": " (:fix err))
                       err)))
     (when-let [err (policy/validate-model registry provider model)]
       (log/warn "Model not in available-models list" err))

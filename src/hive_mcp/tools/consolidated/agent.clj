@@ -105,15 +105,15 @@
                                          :items {:type "string"}
                                          :description "Preset names for ling (ling only)"}
                               "model" {:type "string"
-                                       :description "Model override for the ling: 'claude' (default, Claude Code CLI) or OpenAI-compat model ID (auto-forces headless spawn mode). Supports 'provider:model' prefix, e.g. 'venice:qwen3-coder-480b-a35b-instruct', 'groq:llama-3.3-70b-versatile', 'moonshotai/kimi-k2.5' (bare → openrouter)."}
+                                       :description "Model override for the ling: 'claude' (default, Claude Code CLI) or a model ID (auto-forces headless spawn mode). Claude, ChatGPT and Kimi names run only on their OAuth subscriptions: claude-*, claude, opus, sonnet, haiku, fable -> :anthropic; gpt-*, o3, chatgpt, codex -> :chatgpt; kimi-*, kimi -> :kimi. Supports 'provider:model' prefix, e.g. 'venice:qwen3-coder-480b-a35b-instruct', 'groq:llama-3.3-70b-versatile'; a keyed provider refuses the subscription-only families."}
                               "tier" {:type "string"
                                       :enum ["cheap" "frontier"]
                                       :description "[spawn] Economy role. cheap delegates model selection to configured ling defaults; frontier permits explicit model selection. Omit to preserve legacy direct-spawn behavior."}
                               "token_budget" {:type "integer"
                                                :description "[spawn] Context-reconstruction token ceiling for this ling."}
                               "provider" {:type "string"
-                                          :enum ["openrouter" "venice" "groq" "together" "fireworks" "openai" "ollama-compat"]
-                                          :description "Explicit OpenAI-compat LLM provider (overrides any 'provider:' prefix in model). Anthropic routing is automatic from model names (claude-*, anthropic/*)."}
+                                          :enum ["openrouter" "venice" "groq" "together" "fireworks" "openai" "ollama-compat" "anthropic" "chatgpt" "codex" "kimi"]
+                                          :description "Explicit LLM provider (overrides any 'provider:' prefix in model). anthropic, chatgpt, codex and kimi are OAuth subscriptions; the others are API-key providers, which refuse Claude, GPT and Kimi models. Usually unnecessary: the subscription families route from the model name."}
                               "task" {:type "string"
                                       :description "Initial task to dispatch on spawn (prompt is accepted as an alias). Without one the ling idles; the response then carries task-attached false and a warning."}
                               "spawn_mode" {:type "string"
