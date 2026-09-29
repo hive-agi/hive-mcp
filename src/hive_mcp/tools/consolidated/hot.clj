@@ -26,7 +26,8 @@
             [hive-mcp.tools.composite :as composite]
             [hive-mcp.tools.core :refer [mcp-json mcp-error]]
             [taoensso.timbre :as log]
-            [hive-mcp.hot.core :as core-hot]))
+            [hive-mcp.hot.core :as core-hot]
+            [hive-mcp.extensions.runtime :as runtime]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -159,9 +160,13 @@
    `code carto \u2026` subdomain entirely.
 
    manifest/prepare-config is what the original mount used; anything less hands
-   a remounted addon a thinner config than its first mount received."
+   a remounted addon a thinner config than its first mount received.
+
+   :provision (hive-mcp.extensions.runtime/mount-opts) rides along so a reload
+   or an inject refreshes the addon's client runtime too."
   []
-  {:mount-opts {:resolve-config manifest/prepare-config}})
+  {:mount-opts (merge {:resolve-config manifest/prepare-config}
+                      (runtime/mount-opts))})
 
 (defn- prepared
   "Resolve specs + host + plan and make sure hive-hot is initialized correctly.
