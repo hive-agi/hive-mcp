@@ -2,6 +2,12 @@
   "Malli schemas for MCP tool parameters."
 
   (:require [malli.core :as m]
+            [malli.error :as me]
+            [malli.transform :as mt]
+            [malli.util :as mu]
+            [malli.json-schema :as json-schema]
+            [clojure.string :as str]
+            [clojure.walk :as walk]
             [hive-mcp.schema.memory :as mem]
             [hive-mcp.swarm.adapters.soft :as soft]))
 
@@ -16,6 +22,10 @@
 (def NonEmptyString
   "Non-empty string type."
   [:string {:min 1}])
+
+(def NonBlankString
+  "String with at least one non-whitespace character."
+  [:and {:json-schema/type "string"} NonEmptyString [:re #"(?s).*\S.*"]])
 
 (def OptionalString
   "Optional string (may be nil or string)."
@@ -45,15 +55,58 @@
   "Terminal type for agent spawn."
   [:enum "vterm" "eat"])
 
+(defn- blank->nil
+  "Decode rule: a blank JSON string means the param was not given."
+  [s]
+  (if (and (string? s) (str/blank? s)) nil s))
+
+(defn- drop-absent-resume-keys
+  "Decode null branch keys and empty branch points as absent."
+  [m]
+  (if (map? m)
+    (let [at (:at m)
+          at (if (map? at) (into {} (remove (comp nil? val)) at) at)]
+      (cond-> (assoc m :at at)
+        (or (nil? at) (= {} at)) (dissoc :at)
+        (and (contains? m :prompt) (nil? (blank->nil (:prompt m)))) (dissoc :prompt)))
+    m))
+
+(def ChatPointAt
+  "Branch point inside a recorded chat-point run: a history seq OR a turn."
+  [:or {:json-schema/description "Optional branch point: give seq OR turn. Omitted = resume at the run's tip."}
+   [:map {:closed true}
+    [:seq {:json-schema/description "Fork from this recorded history seq."} nat-int?]]
+   [:map {:closed true}
+    [:turn {:json-schema/description "Fork from the end of this recorded turn."} nat-int?]]])
+
+(def ResumeParam
+  "Spawn `resume`: continue run_id at its tip, or fork it at `at`."
+  [:map {:closed true
+         :decode/string {:leave drop-absent-resume-keys}}
+   [:run_id {:json-schema/description "Chat-point run id to continue: a prior collect's chat_point.run_id, or the transcript tool's runs command."}
+    NonBlankString]
+   [:at {:optional true} ChatPointAt]
+   [:prompt {:optional true :json-schema/description "Optional message appended at the resume/branch point."}
+    :string]])
+
+(def SpawnLoopParams
+  "Spawn params read only by a chat-point capable headless loop."
+  [:map
+   [:llm_retries {:optional true} [:maybe nat-int?]]
+   [:resume {:optional true} [:maybe ResumeParam]]
+   [:chat_run_id {:optional true} [:maybe {:decode/string blank->nil} NonEmptyString]]])
+
 (def AgentSpawnParams
   "Parameters for agent spawn."
-  [:map
-   [:name NonEmptyString]
-   [:presets {:optional true} [:maybe [:vector NonEmptyString]]]
-   [:cwd {:optional true} OptionalString]
-   [:role {:optional true} OptionalString]
-   [:terminal {:optional true} [:maybe TerminalType]]
-   [:kanban_task_id {:optional true} OptionalString]])
+  (mu/merge
+   [:map
+    [:name NonEmptyString]
+    [:presets {:optional true} [:maybe [:vector NonEmptyString]]]
+    [:cwd {:optional true} OptionalString]
+    [:role {:optional true} OptionalString]
+    [:terminal {:optional true} [:maybe TerminalType]]
+    [:kanban_task_id {:optional true} OptionalString]]
+   SpawnLoopParams))
 
 (def AgentDispatchParams
   "Parameters for agent dispatch."
@@ -321,6 +374,36 @@
     {:valid true}
     {:valid false
      :errors (m/explain schema params)}))
+
+(def json-params-transformer
+  "Decodes an MCP JSON param: string keys become keywords, numeric strings
+   become numbers. Schema-declared :decode/string rules run here too."
+  (mt/transformer (mt/key-transformer {:decode keyword}) mt/string-transformer))
+
+(defn param-coercer
+  "Decode raw MCP JSON and validate once; error identifies the failing field."
+  [param schema]
+  (m/coercer schema json-params-transformer identity
+             (fn [{:keys [explain]}]
+               (let [errors (me/humanize explain)
+                     field (if (and (map? errors) (= 1 (count errors)))
+                             (name (ffirst errors))
+                             param)]
+                 (throw (ex-info (str field " is invalid: " (pr-str errors))
+                                 {:param field :errors errors}))))))
+
+(defn json-schema
+  "The MCP inputSchema projection of a malli `schema`, string-keyed like the
+   hand-written tool schemas, so advertised and validated shape are one
+   definition."
+  [schema]
+  (walk/postwalk (fn [node]
+                   (if (map? node)
+                     (cond-> node
+                       (map? (:properties node)) (update :properties update-keys name)
+                       (:required node)          (update :required #(mapv name %)))
+                     node))
+                 (json-schema/transform schema)))
 
 (defn coerce-and-validate
   "Coerce and validate parameters."

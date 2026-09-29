@@ -126,12 +126,18 @@
 ;; =============================================================================
 
 (defspec capability-consistency 100
-  (prop/for-all [id gen-headless-id
-                 caps gen-capability-set]
-                (do (reg/clear-registry!)
-                    (let [backend (make-mock-backend id caps)]
-                      (reg/register-headless! id backend)
-                      (= caps (reg/headless-capabilities id))))))
+  (prop/for-all [id gen-headless-id caps gen-capability-set]
+    (do (reg/clear-registry!)
+        (let [backend (make-mock-backend id caps)]
+          (reg/register-headless! id backend)
+          (= caps (reg/headless-capabilities id))))))
+
+(deftest registration-declares-chat-points
+  (let [backend (make-mock-backend :test-loop #{:cap/transcript})]
+    (reg/register-headless! :test-loop backend {:capabilities #{:chat-points}})
+    (is (= #{:cap/transcript :chat-points} (reg/headless-capabilities :test-loop)))
+    (reg/deregister-headless! :test-loop)
+    (is (nil? (reg/headless-capabilities :test-loop)))))
 
 ;; =============================================================================
 ;; Deterministic unit tests

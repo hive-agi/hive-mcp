@@ -63,32 +63,31 @@
    Idempotent: re-registration replaces the previous backend (last-write-wins).
 
    Optional 3-arg form accepts metadata:
-     :provides — set of provider keywords this backend serves (e.g. #{:claude})
-     :priority — integer; higher wins in best-headless-for-provider tie-breaks
+     :provides     — set of provider keywords this backend serves (e.g. #{:claude})
+     :priority     — integer; higher wins in best-headless-for-provider tie-breaks
+     :capabilities — extra capability keywords (e.g. #{:chat-points}), unioned
+                     with the backend's own `headless/capabilities`
 
    Returns {:registered? true  :headless-id id} on success,
            {:registered? false :headless-id id :errors [...]} on failure."
-  ([headless-id backend]
-   (register-headless! headless-id backend nil))
+  ([headless-id backend] (register-headless! headless-id backend nil))
   ([headless-id backend opts]
    {:pre [(keyword? headless-id)]}
    (if-not (satisfies? headless/IHeadlessBackend backend)
-     (do (log/warn "Cannot register headless: does not satisfy IHeadlessBackend"
-                   {:headless-id headless-id})
-         {:registered? false
-          :headless-id headless-id
-          :errors ["Object does not satisfy IHeadlessBackend protocol"]})
-     (let [{:keys [provides priority]} opts
-           meta-entry (cond-> {:priority (or priority default-priority)}
+     (do (log/warn "Cannot register headless: does not satisfy IHeadlessBackend" {:headless-id headless-id})
+         {:registered? false :headless-id headless-id :errors ["Object does not satisfy IHeadlessBackend protocol"]})
+     (let [{:keys [provides priority capabilities]} opts
+           declared (set (headless/capabilities backend))
+           meta-entry (cond-> {:priority (or priority default-priority)
+                               :capabilities (into declared capabilities)}
                         (seq provides) (assoc :provides (set provides)))]
        (swap! registry assoc headless-id backend)
        (swap! metadata assoc headless-id meta-entry)
        (log/info "Headless backend registered" {:headless-id headless-id
-                                                :capabilities (headless/capabilities backend)
-                                                :provides    (:provides meta-entry)
-                                                :priority    (:priority meta-entry)})
-       {:registered? true
-        :headless-id headless-id}))))
+                                                 :capabilities (:capabilities meta-entry)
+                                                 :provides (:provides meta-entry)
+                                                 :priority (:priority meta-entry)})
+       {:registered? true :headless-id headless-id}))))
 
 (defn resolve-headless-strategy
   "Look up headless-id in registry and wrap as ILingStrategy.
@@ -108,11 +107,12 @@
   (get @registry headless-id))
 
 (defn headless-capabilities
-  "Get declared capabilities for a registered headless backend.
+  "Get declared capabilities for a registered headless backend: the
+   protocol set unioned with registration :capabilities.
    Returns the capability set, or nil if headless-id not registered."
   [headless-id]
-  (when-let [backend (get @registry headless-id)]
-    (headless/capabilities backend)))
+  (when (get @registry headless-id)
+    (get-in @metadata [headless-id :capabilities])))
 
 (defn headless-metadata
   "Get the registered metadata map for a headless-id, or nil.

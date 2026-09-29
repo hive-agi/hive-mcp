@@ -15,9 +15,11 @@
             [hive-mcp.knowledge-graph.scope :as kg-scope]
             [hive-spi.swarm.guards :as guards]
             [hive-mcp.config.core :as config]
+            [hive-mcp.schema.tools :as schema]
             [taoensso.timbre :as log]
             [clojure.string :as str]
-            [hive-mcp.channel.audience :as audience]))
+            [hive-mcp.channel.audience :as audience]
+            [hive-mcp.agent.ling.headless-registry :as headless-registry]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -132,6 +134,47 @@
         (throw (ex-info "token_budget must be a positive integer"
                         {:param "token_budget" :value v}))))))
 
+(def ^:private coerce-loop-params
+  "Raw MCP llm_retries/resume/chat_run_id -> valid SpawnLoopParams, or ex-info."
+  (schema/param-coercer "llm_retries/resume/chat_run_id" schema/SpawnLoopParams))
+
+(defn- resume->backend
+  "Pure: a valid ResumeParam as the kebab map the headless backend reads."
+  [{:keys [run_id at prompt]}]
+  (cond-> {:run-id run_id}
+    at     (assoc :at at)
+    prompt (assoc :prompt prompt)))
+
+(defn loop-opts
+  "Validate the loop params of a spawn request once, by SpawnLoopParams, and
+   return them as ling opts: {:llm-retries n :resume {...} :chat-run-id s},
+   absent keys omitted. A malformed value throws ex-info with the humanized
+   errors."
+  [params]
+  (let [{:keys [llm_retries resume chat_run_id]}
+        (coerce-loop-params (select-keys params [:llm_retries :resume :chat_run_id]))]
+    (cond-> {}
+      llm_retries (assoc :llm-retries llm_retries)
+      resume      (assoc :resume (resume->backend resume))
+      chat_run_id (assoc :chat-run-id chat_run_id))))
+
+(defn normalize-resume
+  "The MCP `resume` object as the kebab map the headless backend reads:
+   {:run-id str :at {:seq n}|{:turn t}|absent :prompt str?}. nil in, nil out."
+  [v]
+  (:resume (loop-opts {:resume v})))
+
+(defn chat-point-refusal
+  "Pure: an error message when OPTS carry chat-point params that the
+   resolved spawn MODE would silently drop, else nil. CAPABILITIES is the
+   set MODE's backend declared at registration; only :chat-points reads them."
+  [mode opts capabilities]
+  (when-let [given (seq (filter #(contains? opts %) [:resume :chat-run-id]))]
+    (when-not (contains? capabilities :chat-points)
+      (str (str/join " and " (map {:resume "resume" :chat-run-id "chat_run_id"} given))
+           " needs a chat-point capable headless backend; this spawn resolved to "
+           (pr-str mode) ", which would drop them."))))
+
 (defn spawn-brief
   "The initial task a spawn carries: `task`, else `prompt`. Blank counts as
    absent. Throws ex-info when both are given and differ."
@@ -158,7 +201,7 @@
 
    The full request map rides on opts under :spawn/request for the
    :spawn/opts-overlay extension seam, and is stripped before planning."
-  [{:keys [type name cwd presets model provider tier token_budget project_id kanban_task_id spawn_mode agents max_budget_usd kg_compress sliding_window_size verbose llm_retries sandbox] :as params}]
+  [{:keys [type name cwd presets model provider tier token_budget project_id kanban_task_id spawn_mode agents max_budget_usd kg_compress sliding_window_size verbose sandbox] :as params}]
   ;; Layer 3: Defense-in-depth spawn guard
   (if-let [_ (when (guards/child-ling?) :denied)]
     (do
@@ -187,6 +230,7 @@
           (let [parent (effective-parent params)
                 worker-tier (normalize-tier tier)
                 token-budget (normalize-token-budget token_budget)
+                loop-params (loop-opts params)
                 brief (spawn-brief params)
                 resolved (llm-registry/resolve-provider-model
                            {:provider provider
@@ -229,14 +273,15 @@
                                                        (some? verbose)   (assoc :verbose? (if (string? verbose)
                                                                                             (= "true" verbose)
                                                                                             (boolean verbose)))
-                                                       llm_retries       (assoc :llm-retries (if (string? llm_retries)
-                                                                                               (parse-long llm_retries)
-                                                                                               llm_retries))
+                                                       (seq loop-params) (merge loop-params)
                                                        token-budget      (assoc :token-budget token-budget)
                                                        sliding_window_size (assoc :sliding-window-size sliding_window_size)
                                                        (some? sandbox)   (assoc :sandbox (if (string? sandbox)
                                                                                            (= "true" sandbox)
                                                                                            (boolean sandbox)))))
+                    _ (when-let [refusal (chat-point-refusal (:spawn-mode ling-agent) loop-params
+                                                             (headless-registry/headless-capabilities (:spawn-mode ling-agent)))]
+                        (throw (ex-info refusal {:spawn-mode (:spawn-mode ling-agent)})))
                     slave-id (proto/spawn! ling-agent (cond-> {:task brief
                                                                :parent parent
                                                                :kanban-task-id kanban_task_id
