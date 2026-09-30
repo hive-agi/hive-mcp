@@ -393,7 +393,9 @@
 
    Loopback gates (incident 2026-05-11):
      1. `self-publish?` drops shouts we just emitted (NATS re-delivers our own
-        publishes back to us; the local atom path already feeds piggyback).
+        publishes back to us; the emitter already fanned them out to every
+        in-process channel, marked :via :local-origin — see
+        hive-mcp.hivemind.messaging/route-shout!).
      2. `:via :nats-inbound` marker propagates to NatsChannel.deliver! so it
         does NOT re-publish; otherwise the channel ping-pongs to NATS, NATS
         echoes back, fanout fans out, NatsChannel re-publishes — 100Hz

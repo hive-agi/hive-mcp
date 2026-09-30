@@ -143,11 +143,31 @@
     (catch Exception e
       (log/debug "[Backbone] Shout publish failed (non-fatal):" (.getMessage e)))))
 
-(defn- fanout-shout-direct!
-  "Direct fanout via IDeliveryChannel registry when backbone is unavailable.
+(def ^:const local-origin
+  "`:via` marker on a shout fanned out to in-process IDeliveryChannels by the
+   process that emitted it. A backbone-republishing channel skips it: the
+   emitter publishes to the backbone itself, exactly once."
+  :local-origin)
+
+(defn- fanout-shout-locally!
+  "Fan a shout out to every in-process IDeliveryChannel, marked as local.
    Protocol-mediated — no hardcoded transport calls."
   [payload]
-  (dc/fanout! payload))
+  (dc/fanout! (assoc payload :via local-origin)))
+
+(defn- route-shout!
+  "Deliver a shout to its readers: in-process channels ALWAYS, the backbone
+   too when it is connected.
+
+   The local fanout is not a fallback. The bridge drops the backbone's echo
+   of our own publishes (self-publish gate), so a process that only
+   published while connected never delivered its own shouts to its own
+   in-process channels — every same-JVM reader went deaf the moment the
+   backbone connected."
+  [backbone payload]
+  (fanout-shout-locally! payload)
+  (when (eb/connected? backbone)
+    (publish-shout-to-backbone! payload)))
 
 (defn- blank-payload-value?
   "True iff `v` carries no signal: nil, empty string, or empty coll."
@@ -315,11 +335,8 @@
     (when resolved-slave
       (proto/update-slave! registry/default-registry resolved-slave-id
                            {:slave/status (event-type->slave-status event-type)}))
-    ;; 3. Backbone publish OR direct fanout (protocol-mediated)
-    (let [backbone (eb/get-backbone)]
-      (if (eb/connected? backbone)
-        (publish-shout-to-backbone! backbone-payload)
-        (fanout-shout-direct! backbone-payload)))
+    ;; 3. Local fanout always, backbone publish when connected
+    (route-shout! (eb/get-backbone) backbone-payload)
     ;; 4. Log
     (log/info "Hivemind shout:" agent-id event-type "project:" project-id
               (cond to (str "-> " to) broadcast? "-> ALL" :else ""))
@@ -376,8 +393,9 @@
 
    M1 Architecture (protocol-first):
    - Local state (atom + DataScript) updated synchronously
-   - If backbone connected: single publish → backbone subscribers handle fanout
-   - If backbone disconnected: direct fanout via IDeliveryChannel registry
+   - Always: local fanout via IDeliveryChannel registry (:via :local-origin)
+   - If backbone connected: also a single publish for OTHER processes (this
+     process drops its own echo at the bridge)
    - Domain events (:ling/completed) are NOT dispatched here — callers
      that need domain side-effects dispatch them explicitly. This avoids
      a feedback loop: shout! → :ling/completed handler → :shout effect → shout!
