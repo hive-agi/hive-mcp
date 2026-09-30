@@ -34,18 +34,24 @@
       (init/init-hot-reload-watcher! project-config))
     @captured))
 
-(deftest the-default-watch-dirs-are-absolute-core-roots
-  (testing "core's classpath roots, as given"
-    (is (= ["/r/src"] (init/default-watch-dirs ["/r/src"]))))
+(deftest the-watch-dirs-are-absolute-and-anchored-on-core
+  (testing "nothing configured: core's classpath roots, as given"
+    (is (= ["/r/src"] (init/watch-dirs nil ["/r/src"])))
+    (is (= ["/r/src"] (init/watch-dirs [] ["/r/src"]))))
+  (testing "a relative configured dir resolves against core's project dir, not the cwd"
+    (is (= ["/r/src" "/r/dev"] (init/watch-dirs ["src" "dev"] ["/r/src"]))))
+  (testing "an absolute configured dir is kept"
+    (is (= ["/elsewhere/src"] (init/watch-dirs ["/elsewhere/src"] ["/r/src"]))))
   (testing "a jar-backed core falls back to ./src made absolute, never a relative \"src\""
-    (let [[d & more] (init/default-watch-dirs [])]
+    (let [[d & more] (init/watch-dirs nil [])]
       (is (nil? more))
       (is (.isAbsolute (java.io.File. ^String d)))
       (is (.endsWith ^String d "src"))))
-  (testing "in this JVM the default is core's own source root"
-    (let [dirs (init/default-watch-dirs (hot-core/core-roots))]
-      (is (every? #(.isAbsolute (java.io.File. ^String %)) dirs))
-      (is (.exists (java.io.File. ^String (first dirs) "hive_mcp/hot/core.clj"))))))
+  (testing "in this JVM the stock \"src\" names core's own source root"
+    (let [roots (hot-core/core-roots)]
+      (is (= (mapv str roots) (init/watch-dirs ["src"] roots)))
+      (is (.exists (java.io.File. ^String (first (init/watch-dirs ["src"] roots))
+                                  "hive_mcp/hot/core.clj"))))))
 
 (deftest the-watcher-is-handed-the-protocol-interlock
   (let [opts (captured-watcher-opts {:hot-reload true})]

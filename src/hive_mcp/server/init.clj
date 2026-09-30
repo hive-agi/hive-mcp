@@ -434,16 +434,26 @@
 ;; Hot-Reload Watcher
 ;; =============================================================================
 
-(defn default-watch-dirs
-  "The directories the watcher covers when neither config nor env names any:
-   core's classpath source roots (hive-mcp.hot.core/core-roots), absolute, so
-   the answer does not depend on the JVM's working directory. `roots` is what
-   core-roots answered; empty (core runs from a jar) falls back to ./src made
-   absolute."
-  [roots]
-  (if (seq roots)
-    (mapv str roots)
-    [(.getAbsolutePath (java.io.File. "src"))]))
+(defn watch-dirs
+  "The ABSOLUTE directories the watcher covers, never relative to the JVM's
+   working directory.
+
+   `configured` is what config / env / .hive-project.edn named (nil or empty
+   when nothing did); `roots` is core's classpath source roots
+   (hive-mcp.hot.core/core-roots), [] when core runs from a jar. With nothing
+   configured the roots are the answer. A relative configured dir resolves
+   against core's project directory (the parent of its first root), so the
+   stock \"src\" names core's own source root wherever the JVM was started.
+   Only a jar-backed core, with no root to anchor on, falls back to the
+   working directory."
+  [configured roots]
+  (let [base    (some-> (first roots) str java.io.File. .getParentFile)
+        resolve (fn [d]
+                  (let [f (java.io.File. (str d))]
+                    (cond (.isAbsolute f) (.getPath f)
+                          base            (.getPath (java.io.File. ^java.io.File base (str d)))
+                          :else           (.getAbsolutePath f))))]
+    (mapv resolve (or (seq configured) (seq roots) ["src"]))))
 
 (defn init-hot-reload-watcher!
   "Initialize hot-reload watcher with claim-aware coordination.
@@ -461,8 +471,9 @@
    list of the thirty-seven namespaces that define protocols today is correct
    only until somebody adds or moves one.
 
-   The default directories are core's ABSOLUTE source roots
-   (`default-watch-dirs`), never a cwd-relative \"src\".
+   The directories are ABSOLUTE (`watch-dirs`): core's source roots by
+   default, and a relative configured dir resolves against core's project
+   directory, never against the JVM's working directory.
 
    Parameters:
      project-config      - map from read-project-config (or nil)"
@@ -470,11 +481,11 @@
   (let [hot-reload-enabled? (get project-config :hot-reload true)]
     (if hot-reload-enabled?
       (result/rescue nil
-                     (let [src-dirs (or (global-config/get-service-value :project :src-dirs
-                                                                         :env "HIVE_MCP_SRC_DIRS"
-                                                                         :parse #(str/split % #":"))
-                                        (:watch-dirs project-config)
-                                        (default-watch-dirs (hot-core/core-roots)))
+                     (let [src-dirs (watch-dirs (or (global-config/get-service-value :project :src-dirs
+                                                                                     :env "HIVE_MCP_SRC_DIRS"
+                                                                                     :parse #(str/split % #":"))
+                                                    (:watch-dirs project-config))
+                                                (hot-core/core-roots))
                            claim-checker (hot-events/make-claim-checker logic/get-all-claims)
                            no-reload (hot-self/protocol-namespaces)]
                        (hot/init-with-watcher! {:dirs src-dirs
