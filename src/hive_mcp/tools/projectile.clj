@@ -18,12 +18,6 @@
 ;; Projectile Integration Handlers (requires hive-mcp-projectile addon)
 ;; =============================================================================
 
-(defn projectile-addon-available?
-  "Check if hive-mcp-projectile addon is loaded."
-  []
-  (let [{:keys [success result]} (ec/eval-elisp "(featurep 'hive-mcp-projectile)")]
-    (and success (= result "t"))))
-
 (defn- eval-projectile
   "Evaluate projectile elisp, returning MCP response."
   [elisp]
