@@ -147,100 +147,174 @@
              :handler (mw/build-middleware-chain handler name default-async-commands)}
       deprecated (assoc :deprecated true))))
 
-(defn- select-base-tools-for-role
-  "Role-appropriate base tool set: the restricted set for a child ling,
-   otherwise the full coordinator set including deprecated shims."
+(defn collect-surface-inputs
+  "COLLECT: read every source of the advertised surface once, into a
+   `tools/SurfaceInputs` value. The only impure step of the table; everything
+   after it is `tools/advertised-tools`.
+
+   A child ling sees the same layers with `tools/child-excluded-tool-names`
+   dropped, whichever layer would have supplied them."
   []
-  (if (guards/child-ling?)
-    (tools/get-child-ling-tools)
-    (tools/get-all-tools :include-deprecated? true)))
+  {:base     (tools/core-tools)
+   :dynamic  (vec (ext/get-registered-tools))
+   :addon    (vec (:installed (addons/resolve-addon-tools)))
+   :absorbed (tools/absorbed-root-names)
+   :excluded (if (guards/child-ling?) tools/child-excluded-tool-names #{})
+   :visible  (tools/visible-root-names)})
 
-(defn- gated-tool-set
-  "Fold dynamic (extension) + addon tools onto the base set and apply the
-   visibility gate, yielding the <=10-root surface with old names still callable.
-
-   `claimed` are names an addon holds OVER a core tool of the same name
-   (`hive-mcp.addons.tool-claims`). The core tool of each is DROPPED: the
-   addon's tool is installed under that name, and keeping both would put two
-   tools with one name on the wire, leaving which one answers to the order
-   they happen to be folded in."
-  ([base-tools dynamic-tools addon-tools]
-   (gated-tool-set base-tools dynamic-tools addon-tools #{}))
-  ([base-tools dynamic-tools addon-tools claimed]
-   (tools/apply-visibility-gate
-    (concat (if (seq claimed)
-              (remove #(contains? claimed (:name %)) base-tools)
-              base-tools)
-            dynamic-tools
-            addon-tools))))
-
+(defn advertised-tool-defs
+  "The advertised tool defs (raw handlers), deduped and gated: the one surface
+   boot, every refresh, every transport and agent delegation agree on."
+  []
+  (tools/advertised-tools (collect-surface-inputs)))
 
 ;; =============================================================================
 ;; Server Spec Building
 ;; =============================================================================
 
-(defn build-server-spec
-  "Build MCP server spec with role-based and capability-based tool filtering.
+(defn tool-table
+  "PROMOTE: SDK-format tools (make-tool output) -> the table a transport's
+   `:tools` atom holds, {name {:tool <def sans handler> :handler h}}. Pure."
+  [made-tools]
+  (into {} (map (fn [t] [(:name t) {:tool (dissoc t :handler) :handler (:handler t)}]))
+        made-tools))
 
-   ROLE BRANCHING (Self-Call Prevention):
-   - Coordinator (default): Full tool set including deprecated shims
-   - Child ling (HIVE_MCP_ROLE=child-ling): Restricted tool set"
+(defn build-server-spec
+  "Build the MCP server spec from the ONE advertised surface
+   (`advertised-tool-defs`), so a transport created from it starts with
+   exactly the table every refresh installs.
+
+   ROLE BRANCHING (Self-Call Prevention) lives in `collect-surface-inputs`:
+   a child ling gets the child-excluded names dropped."
   []
-  (let [dynamic-tools (ext/get-registered-tools)
-        resolution    (addons/resolve-addon-tools)
-        addon-tools   (:installed resolution)
-        base          (select-base-tools-for-role)
-        gated         (gated-tool-set base dynamic-tools addon-tools
-                                      (addons/claimed-core-names resolution))]
-    (if (guards/child-ling?)
-      (let [role (guards/get-role)
-            depth (guards/ling-depth)]
-        (log/info "Building CHILD LING server spec with" (count gated) "tools"
-                  "(role:" role "depth:" depth
-                  "excluded:" (count tools/child-excluded-tool-names) "tool categories)"
-                  "dynamic:" (count dynamic-tools) "addon:" (count addon-tools))
-        {:name "hive-mcp"
-         :version "0.1.0"
-         :tools (mapv make-tool gated)})
-      (let [deprecated-count (count (filter :deprecated gated))
-            visible-count (- (count gated) deprecated-count)]
-        (log/info "Building server spec with" (count gated) "tools"
-                  "(" visible-count "visible," deprecated-count "deprecated/gated)"
-                  "dynamic:" (count dynamic-tools) "addon:" (count addon-tools))
-        {:name "hive-mcp"
-         :version "0.1.0"
-         :tools (mapv make-tool gated)}))))
+  (let [defs  (advertised-tool-defs)
+        hidden (count (filter :deprecated defs))]
+    (log/info "Building server spec with" (count defs) "tools"
+              "(" (- (count defs) hidden) "visible," hidden "deprecated/gated)"
+              (if (guards/child-ling?)
+                (str "child-ling role " (guards/get-role) " depth " (guards/ling-depth))
+                "coordinator"))
+    {:name    "hive-mcp"
+     :version "0.1.0"
+     :tools   (mapv make-tool defs)}))
 
 
 ;; =============================================================================
 ;; Hot Reload & Debug
 ;; =============================================================================
 
+;; =============================================================================
+;; Live tool surfaces: every transport reads ONE advertised table
+;;
+;; A transport (stdio, MCP-HTTP, the nREPL server-context, ...) serves tools
+;; out of its own SDK context's `:tools` atom. Each registers that atom here as
+;; a SURFACE; `refresh-surfaces!` computes the table once and installs it into
+;; every registered surface with a single reset! apiece. Adding a transport is
+;; a `register-surface!` call; adding a new KIND of surface is a defmethod of
+;; `install-table!`. Surfaces are plain data dispatched through a multimethod,
+;; so a reload of this namespace reaches the entries a defonce already holds.
+;; =============================================================================
+
+(def ToolSurface
+  "A registered surface: its :surface/kind selects the `install-table!`
+   method, the rest is that kind's own data."
+  [:map [:surface/kind :keyword]])
+
+(defonce ^:private tool-surfaces
+  (atom {}))
+
+(defonce ^:private advertised-view
+  ;; name -> tool def (sans handler) of the table last installed. What
+  ;; `refresh-surfaces!` diffs against to report the changed names.
+  (atom {}))
+
+(defmulti install-table!
+  "Install TABLE ({name {:tool .. :handler ..}}) into SURFACE with ONE atomic
+   write. Returns truthy when installed, nil when the surface has nowhere to
+   install right now (e.g. its context is not up yet)."
+  (fn [surface _table] (:surface/kind surface)))
+
+(defmethod install-table! :tools-atom
+  [{:surface/keys [tools-atom]} table]
+  (reset! tools-atom table)
+  true)
+
+(defmethod install-table! :context-atom
+  [{:surface/keys [context-atom]} table]
+  (when-let [tools-atom (some-> context-atom deref :tools)]
+    (reset! tools-atom table)
+    true))
+
+(defn register-surface!
+  "Register SURFACE (a ToolSurface) under ID, replacing any previous one of
+   that id. Idempotent. Returns ID."
+  [id surface]
+  (swap! tool-surfaces assoc id surface)
+  id)
+
+(defn unregister-surface!
+  "Forget the surface registered under ID. Returns ID."
+  [id]
+  (swap! tool-surfaces dissoc id)
+  id)
+
+(defn registered-surfaces
+  "id -> surface, for diagnostics and tests."
+  []
+  @tool-surfaces)
+
+(defn changed-tool-names
+  "Names whose advertised def differs between OLD and NEW (name -> def), added
+   and removed ones included. Pure; sorted."
+  [old new]
+  (into (sorted-set)
+        (remove #(= (get old %) (get new %)))
+        (concat (keys old) (keys new))))
+
+(defn- install-everywhere!
+  "BOUNDARY: install TABLE into every registered surface. A surface that
+   throws is logged and reported, and does not stop the others."
+  [table]
+  (reduce (fn [acc [id surface]]
+            (try
+              (if (install-table! surface table)
+                (update acc :surfaces conj id)
+                acc)
+              (catch Throwable t
+                (log/warn "tool surface install failed" {:surface id :error (ex-message t)})
+                (update acc :failed conj id))))
+          {:surfaces [] :failed []}
+          @tool-surfaces))
+
+(defn refresh-surfaces!
+  "Compute the advertised table ONCE and install it into every registered
+   surface. Returns {:count unique-tools :changed [names] :surfaces [ids]
+   :failed [ids]}; :changed is relative to the previously installed table."
+  []
+  (let [table (tool-table (mapv make-tool (advertised-tool-defs)))
+        view  (update-vals table :tool)
+        out   (install-everywhere! table)
+        [old] (reset-vals! advertised-view view)
+        res   (assoc out
+                     :count   (count table)
+                     :changed (vec (changed-tool-names old view)))]
+    (log/info "Tool surfaces refreshed:" (:count res) "tools,"
+              (count (:changed res)) "changed, into" (:surfaces res))
+    res))
+
 (defn refresh-tools!
-  "Hot-reload all tools in the running server."
+  "Hot-reload all tools in the running server.
+
+   SERVER-CONTEXT-ATOM's context is registered as a surface (idempotent, keyed
+   by the atom's identity) so every later refresh reaches it too, then every
+   registered surface is refreshed from the one table. Returns what
+   `refresh-surfaces!` returns, nil when the atom holds no context."
   [server-context-atom]
-  (when-let [context @server-context-atom]
-    (let [tools-atom (:tools context)
-          child? (guards/child-ling?)
-          base-tools (select-base-tools-for-role)
-          resolution (addons/resolve-addon-tools)
-          selected-tools (gated-tool-set base-tools
-                                         (ext/get-registered-tools)
-                                         (:installed resolution)
-                                         (addons/claimed-core-names resolution))
-          new-tools (mapv make-tool selected-tools)
-          deprecated-count (if child?
-                             0
-                             (count (filter :deprecated selected-tools)))]
-      (reset! tools-atom {})
-      (doseq [tool new-tools]
-        (swap! tools-atom assoc (:name tool) {:tool (dissoc tool :handler)
-                                              :handler (:handler tool)}))
-      (if child?
-        (log/info "Hot-reloaded" (count new-tools) "tools (child-ling restricted)")
-        (log/info "Hot-reloaded" (count new-tools) "tools"
-                  "(including" deprecated-count "deprecated shims for backward compat)"))
-      (count new-tools))))
+  (when @server-context-atom
+    (register-surface! [:context-atom (System/identityHashCode server-context-atom)]
+                       {:surface/kind :context-atom
+                        :surface/context-atom server-context-atom})
+    (refresh-surfaces!)))
 
 (defn debug-tool-handler
   "Get info about a registered tool handler (for debugging)."
@@ -254,17 +328,13 @@
          :tool-keys (keys (:tool tool-entry))}))))
 
 (defn register-tools-for-delegation!
-  "Register tools for agent delegation with role-based filtering."
+  "Register the advertised surface for agent delegation. Same table as every
+   transport (`advertised-tool-defs`), so a delegated call and an MCP call
+   resolve a name to the same tool."
   []
   (let [register-tools! (requiring-resolve 'hive-mcp.agent.registry/register!)
-        child? (guards/child-ling?)
-        selected-tools (select-base-tools-for-role)
-        deprecated-count (if child?
-                           0
-                           (count (filter :deprecated selected-tools)))]
+        selected-tools  (advertised-tool-defs)]
     (register-tools! selected-tools)
-    (if child?
-      (log/info "Registered" (count selected-tools) "tools for child-ling delegation (restricted)")
-      (log/info "Registered" (count selected-tools) "tools for agent delegation"
-                "(including" deprecated-count "deprecated shims)"))
+    (log/info "Registered" (count selected-tools) "tools for agent delegation"
+              (if (guards/child-ling?) "(child-ling restricted)" ""))
     (count selected-tools)))

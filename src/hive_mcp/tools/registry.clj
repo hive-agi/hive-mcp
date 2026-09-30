@@ -47,10 +47,11 @@
 ;; 9 Domain-Grouped Tool Roots
 ;; =============================================================================
 
-(defn- config-absorbed-names
+(defn absorbed-root-names
   "Read absorbed tool names from config.edn :tool-roots :absorbed.
    These are addon tool names that should not appear as standalone roots
-   because they are contributed as subcommands to domain roots instead."
+   because they are contributed as subcommands to domain roots instead.
+   Returns a set, #{} when unconfigured or unreadable."
   []
   (try
     (let [cfg ((requiring-resolve 'hive-mcp.config.core/get-global-config))
@@ -190,7 +191,7 @@
   []
   (let [core           (core-tools)
         domain-names   (into #{} (map :name) core)
-        cfg-absorbed   (config-absorbed-names)
+        cfg-absorbed   (absorbed-root-names)
         addon-tools    (->> (ext/get-registered-tools)
                             (remove #(or (domain-names (:name %))
                                          (:consolidated %)
@@ -316,6 +317,72 @@
      (if compact-schema?
        (mapv compact-schema tools)
        tools))))
+
+;; =============================================================================
+;; The advertised surface: ONE pure function (Collect -> PROMOTE)
+;;
+;; Every transport, the agent-delegation registry and every refresh derive the
+;; tool table from `advertised-tools`. Its input is a SurfaceInputs value the
+;; caller collected; nothing in here reads config, registries or the role.
+;; =============================================================================
+
+(def ToolDef
+  "A tool definition as the surface folds it. Open: only :name is load-bearing
+   for the fold, the rest travels untouched."
+  [:map [:name :string]])
+
+(def SurfaceInputs
+  "Everything the advertised surface is computed from.
+
+   :base / :dynamic / :addon are the source layers (see `surface-precedence`).
+   :absorbed are names contributed as subcommands of a domain root, and
+   :excluded names the caller's role may not see; both are DROPPED from the
+   surface. :visible is the visibility allowlist, nil for no gating."
+  [:map
+   [:base     [:sequential ToolDef]]
+   [:dynamic  [:sequential ToolDef]]
+   [:addon    [:sequential ToolDef]]
+   [:absorbed [:set :string]]
+   [:excluded [:set :string]]
+   [:visible  [:maybe [:set :string]]]])
+
+(def surface-precedence
+  "Source layers, LOWEST precedence first. A tool in a later layer replaces a
+   same-named tool of an earlier one: addon > dynamic > base. An addon that
+   claims a core name therefore holds it by precedence alone."
+  [:base :dynamic :addon])
+
+(defn- winners-by-name
+  "name -> the highest-precedence tool of that name."
+  [inputs]
+  (reduce (fn [acc t] (assoc acc (:name t) t))
+          {}
+          (sequence (comp (mapcat #(get inputs %))
+                          (filter (comp string? :name)))
+                    surface-precedence)))
+
+(defn- surface-order
+  "Deterministic name order: the base layer's own order, then every other name
+   sorted. A provider caches the tool array by its bytes, so the order may only
+   change when the set does."
+  [inputs winners]
+  (let [base-names (into [] (comp (keep :name) (filter winners) (distinct))
+                         (:base inputs))
+        in-base    (set base-names)]
+    (into base-names (sort (remove in-base (keys winners))))))
+
+(defn advertised-tools
+  "The advertised tool surface for INPUTS (a SurfaceInputs): every name once,
+   the highest-precedence tool of each name, absorbed and excluded names
+   dropped, the visibility gate applied. Pure; returns a vector of tool defs
+   (handlers untouched)."
+  [{:keys [absorbed excluded visible] :as inputs}]
+  (let [winners (winners-by-name inputs)
+        dropped (into (set absorbed) excluded)]
+    (apply-visibility-gate
+     (into [] (comp (remove dropped) (map winners))
+           (surface-order inputs winners))
+     visible)))
 
 (def tools
   "Static aggregation (deprecated — use get-filtered-tools)."

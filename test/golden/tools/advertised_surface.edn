@@ -1,0 +1,17 @@
+{:absorbed-composite-is-dropped-from-every-layer
+ [["code" :base nil] ["overarch" :dynamic nil]],
+ :addon-tool-appears-three-times-once-advertised
+ [["code" :base nil] ["carto" :addon nil]],
+ :child-excluded-names-dropped-whichever-layer-supplies-them
+ [["code" :base nil]],
+ :empty-surface [],
+ :precedence-addon-over-dynamic-over-base
+ [["code" :base nil]
+  ["memory" :addon nil]
+  ["git" :addon nil]
+  ["kanban" :dynamic nil]],
+ :visibility-gate-marks-not-drops
+ [["code" :base nil]
+  ["fs" :base true]
+  ["alpha" :dynamic true]
+  ["zeta" :dynamic nil]]}
