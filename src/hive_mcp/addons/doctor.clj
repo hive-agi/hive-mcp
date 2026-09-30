@@ -469,10 +469,13 @@
   "Ask the vessel whether FEATURE is loaded, through the closed probe op
    {:op :editor/feature? :feature FEATURE} on (svc/invoke :vessel :dispatch).
    No elisp is built here: the vessel addon lowers the op. With no vessel
-   registered, or one without the :editor/* translators, the failure envelope
-   reads as unreachable with its error as evidence."
+   registered the failure envelope reads as unreachable with its error as
+   evidence. A vessel that answers but has no :editor/* translator is
+   reachable and reported :unsupported?, so the finding names the real cause.
+   The name gate matches the translator's: same charset, at most 256 chars."
   [feature timeout-ms]
   (if-not (and (string? feature)
+               (<= (count feature) 256)
                (re-matches #"[A-Za-z0-9][A-Za-z0-9+*./_:@~-]*" feature))
     {:feature (str feature)
      :reachable? false
@@ -483,10 +486,13 @@
             (svc/invoke :vessel :dispatch
                         {:op :editor/feature? :feature feature}
                         timeout-ms)
-            loaded? (and success (= "t" (str/trim (str result))))]
+            loaded? (and success (= "t" (str/trim (str result))))
+            unsupported? (and (map? error)
+                              (= :unsupported (:failure/reason error)))]
         (cond-> {:feature feature
-                 :reachable? (boolean success)
+                 :reachable? (boolean (or success unsupported?))
                  :loaded? (boolean loaded?)}
+          unsupported? (assoc :unsupported? true)
           timed-out (assoc :timed-out? true)
           (and (not loaded?) error) (assoc :error (str error))))
       (catch Throwable t

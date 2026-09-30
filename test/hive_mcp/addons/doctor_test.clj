@@ -157,7 +157,24 @@
                             [:evidence :features])]
         (is (doctor/report-valid? report))
         (is (false? (:loaded? probe)))
+        (testing "the vessel answered, so the finding names the missing op, not an unreachable Emacs"
+          (is (true? (:reachable? probe)))
+          (is (true? (:unsupported? probe))))
         (is (re-find #"unsupported" (:error probe)))))))
+
+(deftest a-feature-name-over-the-translator-cap-is-invalid-not-unreachable
+  ;; Refused either at the input boundary or as an invalid probe; what must
+  ;; never happen is the name reaching the vessel and coming back "unreachable".
+  (sh/with-swarm-host [host (feature-host "t")]
+    (let [too-long (apply str (repeat 257 "a"))
+          result (doctor/run-doctor {:addon-id "hive.emacs"
+                                     :emacs-features [too-long]}
+                                    (healthy-ports (spec)))]
+      (when (r/ok? result)
+        (let [[probe] (get-in (stage-by-name (:ok result) :emacs-features)
+                              [:evidence :features])]
+          (is (= "invalid Emacs feature symbol" (:error probe)))))
+      (is (empty? (sh/calls host)) "an over-long name never reaches the vessel"))))
 
 (deftest opaque-live-health-details-are-folded-to-json-safe-evidence
   (let [manifest (spec)
