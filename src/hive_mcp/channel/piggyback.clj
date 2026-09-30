@@ -15,7 +15,8 @@
             [hive-mcp.channel.audience :as audience]
             [clojure.string :as str]
             [hive-dsl.context.identity :as ctx-id]
-            [hive-mcp.channel.row-transforms :as row-transforms]))
+            [hive-mcp.channel.row-transforms :as row-transforms]
+            [hive-mcp.channel.piggyback.sources :as sources]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -86,9 +87,26 @@
   (atom nil))
 
 (defn register-message-source!
-  "Register function that provides hivemind messages."
+  "Fill the DEFAULT source slot, replacing whatever filled it.
+
+   This is the single-slot API the swarm has always used (through
+   IConversationStore/register-message-source!), and it is now just one entry
+   of the open registry, `default-source-id`. A contributor that is not the
+   swarm's own ring registers beside it with
+   hive-mcp.channel.piggyback.sources/register! instead, and never displaces
+   it. Pass a var (#'f) so a reload of f is seen by the next read."
   [source-fn]
   (reset! message-source-fn source-fn))
+
+(def default-source-id
+  "SourceId of the legacy single slot, `message-source-fn`."
+  :piggyback.source/default)
+
+;; The slot is registered BY VAR: the registry derefs #'message-source-fn and
+;; then the atom on every read, so neither a reload of this ns nor a later
+;; register-message-source! is missed. With nothing in the slot it yields no
+;; rows, which is how core reads with the swarm absent.
+(sources/register! default-source-id #'message-source-fn)
 
 ;; Backbone Buffer (events received via IDeliveryChannel from NATS backbone)
 ;; Dual-path: supplements atom-based message-source-fn with backbone-mediated events.
@@ -164,10 +182,15 @@
              msgs)))
 
 (defn- merged-messages
-  "Merge messages from message-source-fn and backbone-buffer with dedup.
-   Source-fn messages take precedence (appear first in concat)."
+  "Merge rows from every registered piggyback source with the backbone buffer,
+   deduplicated. Source rows take precedence (appear first in concat).
+
+   Sources come from the open registry in hive-mcp.channel.piggyback.sources;
+   this reader names none of them. A source that throws is rescued there and
+   contributes nothing to this read, so a missing or broken contributor (the
+   swarm addon absent, say) never fails the tools/call this read rides on."
   []
-  (let [source-msgs  (when-let [sfn @message-source-fn] (sfn))
+  (let [source-msgs   (sources/collect-messages)
         backbone-msgs @backbone-buffer]
     (dedupe-messages (concat source-msgs backbone-msgs))))
 
