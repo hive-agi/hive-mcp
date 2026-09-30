@@ -55,6 +55,21 @@
     (is (not (m/validate tools/AgentSpawnParams {:name "w" :chat_run_id 5})))
     (is (not (m/validate tools/AgentSpawnParams {:name "w" :chat_run_id ""})))))
 
+(deftest non-blank-string-json-schema-test
+  (testing "validates like a non-blank check"
+    (is (m/validate tools/NonBlankString "run-1"))
+    (is (m/validate tools/NonBlankString "  run-1  "))
+    (is (not (m/validate tools/NonBlankString "   ")))
+    (is (not (m/validate tools/NonBlankString "\t\n"))))
+  (testing "advertises only JSON values, the pattern as an ECMA-262 string"
+    (let [json-leaf? (fn json-leaf? [x]
+                       (cond (map? x)  (every? (fn [[k v]] (and (or (keyword? k) (string? k)) (json-leaf? v))) x)
+                             (coll? x) (every? json-leaf? x)
+                             :else     (or (nil? x) (string? x) (number? x) (boolean? x) (keyword? x))))
+          resume (tools/json-schema tools/ResumeParam)]
+      (is (json-leaf? resume))
+      (is (string? (get-in resume [:properties "run_id" :allOf 1 :pattern]))))))
+
 (deftest resume-json-schema-derives-from-resume-param
   (let [js (tools/json-schema tools/ResumeParam)]
     (is (= "object" (:type js)))
