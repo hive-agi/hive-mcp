@@ -34,3 +34,8 @@
   "Of `secret-keys`, the set that actually resolves to a configured secret."
   [secret-keys]
   (into #{} (filter #(some? (global-config/get-secret %))) secret-keys))
+
+(defn secret-value
+  "The configured secret named `secret-key`, or nil."
+  [secret-key]
+  (global-config/get-secret secret-key))
