@@ -1,0 +1,6 @@
+{:anon-shadowed {"path" {:type "string"}},
+ :empty nil,
+ :later-wins {"path" {:type "integer"}},
+ :one-owner {"path" {:type "string"}},
+ :re-register {"path" {:type "string"}, "mode" {:type "string"}},
+ :two-owners {"path" {:type "string"}, "limit" {:type "integer"}}}
