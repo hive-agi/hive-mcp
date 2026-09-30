@@ -393,3 +393,28 @@
           "a NEW global shout reaches the window once, under whichever repo it reads next")
       (is (nil? (pb/get-messages "coordinator:7-hive" :project-id "hive"
                                  :session-id "coordinator:7"))))))
+
+;; =============================================================================
+;; fetch-history
+;; =============================================================================
+
+(deftest fetch-history-filters-by-agent-id-test
+  (let [msgs [{:agent-id "ling-a" :event-type :progress :message "a1"
+               :timestamp 1000 :project-id "proj"}
+              {:agent-id "ling-b" :event-type :progress :message "b1"
+               :timestamp 1001 :project-id "proj"}
+              {:agent-id "ling-a" :event-type :completed :message "a2"
+               :timestamp 1002 :project-id "global"}
+              {:agent-id "ling-a" :event-type :progress :message "a-other"
+               :timestamp 1003 :project-id "other"}]]
+    (pb/register-message-source! (constantly msgs))
+    (testing "without :agent-id every author is returned, as before"
+      (is (= ["a1" "b1" "a2" "a-other"] (mapv :m (pb/fetch-history)))))
+    (testing ":agent-id keeps only that author's shouts, oldest first"
+      (is (= ["a1" "a2" "a-other"] (mapv :m (pb/fetch-history :agent-id "ling-a")))))
+    (testing ":agent-id composes with :project-id and :since"
+      (is (= ["a1" "a2"] (mapv :m (pb/fetch-history :agent-id "ling-a" :project-id "proj"))))
+      (is (= ["a2" "a-other"] (mapv :m (pb/fetch-history :agent-id "ling-a" :since 1000)))))
+    (testing "an unknown author yields nothing, and no cursor moves"
+      (is (= [] (pb/fetch-history :agent-id "nobody")))
+      (is (= {} @pb/agent-read-cursors)))))

@@ -60,6 +60,15 @@
   [provider model]
   (policy/validate-model (effective-registry) provider model))
 
+(defn model-refusal
+  "nil when the provider may carry the model, else the error map of
+   `policy/model-refusal`: over the effective registry, or over ENTRY when
+   the caller built the endpoint itself (explicit :api-url, custom provider)."
+  ([provider model]
+   (policy/model-refusal (effective-registry) provider model))
+  ([provider model entry]
+   (policy/model-refusal {provider entry} provider model)))
+
 (defn resolve-provider-model
   "Resolve {:provider :model} for an agent spawn or wave.
 
@@ -71,8 +80,10 @@
    provider's configured `:default-model`; hive-mcp supplies none itself.
 
    Throws when no provider or no model resolves (ex-data names the config keys
-   to set) and on an unknown provider; an unknown model only warns, since a
-   provider that declares no :available-models accepts anything."
+   to set), on an unknown provider, on a model the provider cannot serve
+   (`policy/routing-refusal`), and on a model the provider's :deny-models
+   refuses; a model outside :available-models only warns, since a provider
+   that declares no :available-models accepts anything."
   [{:keys [provider model agent-type]}]
   (let [registry (effective-registry)
         request  {:provider      provider
@@ -91,9 +102,42 @@
       (throw (ex-info (str "No " (if provider "model" "provider") " configured for agent type "
                            (if agent-type (name agent-type) "<none>") ": " (:fix err))
                       err)))
+    (when-let [err (policy/routing-refusal registry provider model)]
+      (throw (ex-info (str "Model " model " cannot run on provider " (name provider)
+                           ": " (:fix err))
+                      err)))
+    (when-let [err (policy/model-refusal registry provider model)]
+      (throw (ex-info (str "Model " model " is denied on provider " (name provider)
+                           ": " (:fix err))
+                      err)))
     (when-let [err (policy/validate-model registry provider model)]
       (log/warn "Model not in available-models list" err))
     resolved))
+
+(defn missing-secret
+  "nil when `provider` needs no secret or has its secret configured, else the
+   error map of `policy/missing-secret`."
+  [provider]
+  (let [registry   (effective-registry)
+        secret-key (:secret-key (get registry provider))]
+    (policy/missing-secret registry provider
+                           (collect/present-secret-keys (remove nil? [secret-key])))))
+
+(defn credential-probe
+  "What a credential probe of `provider` needs: {:probe <entry :auth-probe>
+   :secret <configured secret>}, or nil when the entry declares no probe map
+   or its secret is not configured."
+  [provider]
+  (let [{:keys [auth-probe secret-key]} (get (effective-registry) provider)]
+    (when (and (map? auth-probe) secret-key)
+      (when-let [secret (collect/secret-value secret-key)]
+        {:probe auth-probe :secret secret}))))
+
+(defn credential-refusal
+  "nil when a probe answer shows a usable credential, else the error map of
+   `policy/credential-refusal`."
+  [provider probe-answer]
+  (policy/credential-refusal provider probe-answer))
 
 (defn provider-diagnostic
   "What auto-discovery checked, for a \"no provider configured\" error."

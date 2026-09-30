@@ -112,6 +112,69 @@
       (is (nil? (policy/validate-model reg :alpha "alpha-1")))
       (is (= :unknown-model-for-provider (:error (policy/validate-model reg :alpha "alpha-9")))))))
 
+(deftest subscription-only-models-test
+  (let [reg       model/seed-registry
+        expensive ["claude-sonnet-5" "claude-opus-4-8" "Claude-Opus-5-5" "anthropic/claude-opus-4-7"
+                   "openai-gpt-6-sol" "openai-gpt-55-pro" "gpt-6-luna" "openai/gpt-5.5" "o3"
+                   "openai-o4-mini" "openai/o3-mini" "kimi-k3" "kimi-k2-7-code"
+                   "moonshotai/kimi-k2.6" "moonshot-v1-8k"]
+        cheap     ["z-ai-glm-5-3-flash" "deepseek-v4-1-flash" "openai-gpt-oss-120b" "openai/gpt-oss-120b"
+                   "qwen3-coder-480b-a35b-instruct-turbo" "mistral-small-3-2-24b-instruct"
+                   "deepseek/deepseek-v3.2" "z-ai/glm-5.1" "minimax/minimax-m2.7" "gemini-3-8-flash"]
+        keyed     (for [[k e] reg :when (and (model/openai-compat? e) (:secret-key e))] k)]
+
+    (testing "every keyed OpenAI-compat entry refuses the Claude, GPT and Kimi families"
+      (is (seq keyed))
+      (doseq [k keyed m expensive]
+        (is (= :model-denied-for-provider (:error (policy/model-refusal reg k m)))
+            (str m " must not be billable to " k "'s API key"))))
+
+    (testing "and admits the cheap models"
+      (doseq [k [:venice :openrouter] m cheap]
+        (is (nil? (policy/model-refusal reg k m)) (str k " " m))))
+
+    (testing "a ling whose agent-type default is Venice sends the families to OAuth, never to Venice"
+      (doseq [[m oauth] [["gpt-6-sol" :chatgpt] ["kimi-k3" :kimi] ["claude-opus-4-8" :anthropic]]]
+        (let [{:keys [provider model]} (policy/resolve-routing
+                                        reg {:model m :type-defaults {:provider :venice
+                                                                      :model "z-ai-glm-5-3-flash"}})]
+          (is (= oauth provider) m)
+          (is (nil? (policy/model-refusal reg provider model)) m)))
+      (doseq [m ["openai-gpt-54" "venice:claude-opus-4-8" "venice:kimi-k3"]]
+        (let [{:keys [provider model]} (policy/resolve-routing
+                                        reg {:model m :type-defaults {:provider :venice
+                                                                      :model "z-ai-glm-5-3-flash"}})]
+          (is (= :venice provider) m)
+          (is (some? (policy/model-refusal reg provider model)) m))))
+
+    (testing "an explicit OpenRouter spawn cannot reach Claude or Kimi either"
+      (doseq [m ["openrouter:anthropic/claude-sonnet-4.6" "openrouter:moonshotai/kimi-k2.6"]]
+        (let [{:keys [provider model]} (policy/resolve-routing reg {:model m})]
+          (is (= :openrouter provider) m)
+          (is (some? (policy/model-refusal reg provider model)) m)))
+      (let [hosted (policy/overlay reg {:openrouter {:default-model "anthropic/claude-sonnet-4.6"}})
+            {:keys [provider model]} (policy/resolve-routing hosted {:provider :openrouter})]
+        (is (some? (policy/model-refusal hosted provider model))
+            "a host default-model from the refused families is refused too")))
+
+    (testing "a bare Claude model still reaches :anthropic OAuth, which refuses nothing"
+      (let [{:keys [provider model]} (policy/resolve-routing
+                                      reg {:model "claude-opus-4-8"
+                                           :type-defaults {:provider :venice}})]
+        (is (= :anthropic provider))
+        (is (nil? (policy/model-refusal reg provider model)))))
+
+    (testing "config keeps the guard unless it names the field"
+      (is (some? (policy/model-refusal (policy/overlay reg {:venice {:default-model "x"}})
+                                       :venice "claude-sonnet-5")))
+      (is (nil? (policy/model-refusal (policy/overlay reg {:venice {:deny-models []}})
+                                      :venice "claude-sonnet-5"))))
+
+    (testing "keyless and dispatch-routed entries refuse nothing"
+      (is (nil? (policy/model-refusal seed :local "claude-opus-4-8")))
+      (is (nil? (policy/model-refusal seed :native "claude-opus-4-8")))
+      (is (nil? (policy/model-refusal reg :venice nil))))))
+
 ;; =============================================================================
 ;; routing
 ;; =============================================================================
@@ -132,7 +195,26 @@
     (is (= {:provider :anthropic :model "claude-sonnet-4-6"}
            (policy/resolve-routing seed {:model "anthropic/claude-sonnet-4-6"}))))
 
-  (testing "explicit routing beats Claude auto-detection (the privacy escape hatch)"
+  (testing "a bare Claude alias routes to :anthropic at that entry's default model"
+    (let [reg (assoc seed :anthropic {:dispatch :anthropic-oauth
+                                      :default-model "claude-sonnet-4-6"})]
+      (is (= {:provider :anthropic :model "claude-sonnet-4-6"}
+             (policy/resolve-routing reg {:model "claude"
+                                          :type-defaults {:provider :alpha :model "alpha-9"}}))
+          "the alias beats the agent-type default provider")
+      (is (= {:provider :anthropic :model "claude-sonnet-4-6"}
+             (policy/resolve-routing reg {:model " Claude "})))
+      (is (= {:provider :anthropic :model "claude-sonnet-4-6"}
+             (policy/resolve-routing reg {:type-defaults {:provider :alpha :model "claude"}})))
+      (is (= {:provider :anthropic :model "claude-sonnet-4-6"}
+             (policy/resolve-routing reg {:provider :anthropic :model "anthropic"})))
+      (is (= {:provider :alpha :model "claude"}
+             (policy/resolve-routing reg {:model "alpha:claude"}))
+          "explicit routing keeps the alias verbatim")
+      (is (some? (policy/model-refusal reg :alpha "claude"))
+          "and a keyed provider refuses it")))
+
+  (testing "explicit routing beats Claude auto-detection; model-refusal then judges it"
     (is (= {:provider :alpha :model "claude-sonnet-4-6"}
            (policy/resolve-routing seed {:provider :alpha :model "claude-sonnet-4-6"})))
     (is (= {:provider :alpha :model "claude-sonnet-4-6"}
@@ -146,6 +228,58 @@
 
   (testing "with nothing to go on the provider stays open for the caller to fill"
     (is (nil? (:provider (policy/resolve-routing seed {}))))))
+
+(deftest subscription-route-test
+  (let [reg   (assoc seed
+                     :anthropic {:dispatch :anthropic-oauth :secret-key :k
+                                 :default-model "claude-sonnet-4-6"
+                                 :model-aliases {"opus" "claude-opus-5-5" "sonnet" "claude-sonnet-5"}}
+                     :chatgpt   {:dispatch :chatgpt-oauth :default-model "gpt-6-sol"}
+                     :kimi      {:dispatch :subscription :default-model "kimi-code/k3"})
+        route #(policy/resolve-routing reg {:model %
+                                            :type-defaults {:provider :alpha :model "alpha-9"}})]
+    (testing "every subscription-only family lands on its OAuth entry, over the type default"
+      (doseq [[model expected]
+              [["claude"               {:provider :anthropic :model "claude-sonnet-4-6"}]
+               ["claude-opus-4-8"      {:provider :anthropic :model "claude-opus-4-8"}]
+               ["anthropic/claude-x-1" {:provider :anthropic :model "claude-x-1"}]
+               ["opus"                 {:provider :anthropic :model "claude-opus-5-5"}]
+               ["Sonnet"               {:provider :anthropic :model "claude-sonnet-5"}]
+               ["haiku"                {:provider :anthropic :model "haiku"}]
+               ["chatgpt"              {:provider :chatgpt :model "gpt-6-sol"}]
+               ["codex"                {:provider :chatgpt :model "gpt-6-sol"}]
+               ["gpt-5.5"              {:provider :chatgpt :model "gpt-5.5"}]
+               ["openai/gpt-5"         {:provider :chatgpt :model "gpt-5"}]
+               ["o3"                   {:provider :chatgpt :model "o3"}]
+               ["chatgpt-4o-latest"    {:provider :chatgpt :model "chatgpt-4o-latest"}]
+               ["codex-mini-latest"    {:provider :chatgpt :model "codex-mini-latest"}]
+               ["kimi"                 {:provider :kimi :model "kimi-code/k3"}]
+               ["kimi-k2-7-code"       {:provider :kimi :model "kimi-k2-7-code"}]
+               ["moonshotai/kimi-k2"   {:provider :kimi :model "moonshotai/kimi-k2"}]]]
+        (is (= expected (route model)) model)))
+
+    (testing "open-weight and unrelated models keep the type default"
+      (doseq [model ["gpt-oss-120b" "openai/gpt-oss-20b" "deepseek-v3.2"
+                     "z-ai-glm-5-3-flash" "ollama3" "opus-lite"]]
+        (is (= {:provider :alpha :model model} (route model)) model)))
+
+    (testing "explicit routing to the same provider still shapes the model"
+      (is (= {:provider :chatgpt :model "gpt-6-sol"}
+             (policy/resolve-routing reg {:provider :chatgpt :model "codex"})))
+      (is (= {:provider :anthropic :model "claude-opus-5-5"}
+             (policy/resolve-routing reg {:provider :anthropic :model "opus"})))
+      (is (= {:provider :kimi :model "kimi-code/k3"}
+             (policy/resolve-routing reg {:model "kimi:kimi"}))))
+
+    (testing "explicit routing elsewhere is kept, and a keyed provider refuses it"
+      (doseq [m ["gpt-5.5" "chatgpt-4o-latest" "codex-mini-latest" "kimi" "opus" "claude"]]
+        (is (= {:provider :alpha :model m}
+               (policy/resolve-routing reg {:provider :alpha :model m})))
+        (is (some? (policy/model-refusal reg :alpha m)) m)))
+
+    (testing "the OAuth entries themselves refuse nothing"
+      (doseq [p [:anthropic :chatgpt :kimi]]
+        (is (nil? (policy/model-refusal reg p "gpt-5.5")) (str p))))))
 
 (deftest unresolved-routing-test
   (testing "a resolved provider and model is not an error"

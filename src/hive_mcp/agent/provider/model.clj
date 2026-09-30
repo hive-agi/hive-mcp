@@ -35,14 +35,16 @@
 (def ProviderEntry
   "Malli schema for one registry entry, dispatched on `:dispatch`.
 
-   :anthropic-oauth branch — native Anthropic Messages API. Carries NO
-     :api-url: it is not an OpenAI-compat chat-completions endpoint, and
-     `openai-compat-backend` refuses it.
-   default branch (no :dispatch) — OpenAI-compat provider: :api-url is
+   :anthropic-oauth, :chatgpt-oauth and :subscription branches: a
+     subscription run through hive-agent (see `seed-registry`). None carries
+     an :api-url: none is an OpenAI-compat chat-completions endpoint, and
+     `openai-compat-backend` refuses them. :chatgpt-oauth and :subscription
+     entries hold `:secret-key nil`; an API key cannot be attached to them.
+   default branch (no :dispatch): OpenAI-compat provider. :api-url is
      REQUIRED and must end in \"/chat/completions\"; :secret-key may be nil
      (nil = no auth needed, e.g. :ollama-compat).
 
-   Both branches are open maps. :default-model and :available-models are
+   All branches are open maps. :default-model and :available-models are
    optional: the seed carries neither, config `:llm-providers` supplies them."
   [:multi {:dispatch :dispatch}
    [:anthropic-oauth
@@ -50,13 +52,28 @@
      [:dispatch [:= :anthropic-oauth]]
      [:secret-key :keyword]
      [:default-model {:optional true} :string]
+     [:available-models {:optional true} [:sequential :string]]
+     [:model-aliases {:optional true} [:map-of :string :string]]]]
+   [:chatgpt-oauth
+    [:map
+     [:dispatch [:= :chatgpt-oauth]]
+     [:secret-key :nil]
+     [:default-model {:optional true} :string]
+     [:available-models {:optional true} [:sequential :string]]]]
+   [:subscription
+    [:map
+     [:dispatch [:= :subscription]]
+     [:secret-key :nil]
+     [:default-model {:optional true} :string]
      [:available-models {:optional true} [:sequential :string]]]]
    [::m/default
     [:map
      [:api-url ChatCompletionsUrl]
      [:secret-key [:maybe :keyword]]
      [:default-model {:optional true} :string]
-     [:available-models {:optional true} [:sequential :string]]]]])
+     [:available-models {:optional true} [:sequential :string]]
+     [:deny-models {:optional true} [:sequential :string]]
+     [:auth-probe {:optional true} [:or [:= false] [:map [:kind :keyword] [:url :string]]]]]]])
 
 (def ProviderRegistry
   "Malli schema for the provider registry: provider keyword -> ProviderEntry."
@@ -81,14 +98,33 @@
 ;;; Seeds
 ;;; ---------------------------------------------------------------------------
 
+(def subscription-only-models
+  "Model families reached only through their vendor's subscription (Claude
+   Max OAuth, the ChatGPT subscription, the Kimi subscription), never through
+   an API key. Regex strings, matched case-insensitively anywhere in the model
+   id. Every keyed OpenAI-compat entry refuses them unless it names its own
+   :deny-models.
+
+   Keep in step with `hive-agent.llm.provider.model/subscription-only-models`."
+  ["claude" "anthropic" "^(opus|sonnet|haiku|fable)$"
+   "(^|/)(openai-)?gpt-(?!oss)" "^openai/(?!gpt-oss)" "(^|/)(openai-)?o[1-9](-|$)"
+   "chatgpt" "codex"
+   "kimi" "moonshot"])
+
 (def seed-registry
   "Known LLM providers, as a SEED.
 
-   `:anthropic` is special — it uses Anthropic's native Messages API
-   (OAuth when available, else API key) via hive-agent.llm.anthropic.
-   The `:dispatch :anthropic-oauth` marker tells the spawn plumbing to
-   route through the anthropic HTTP client rather than the OpenAI-compat
-   path. All others hit OpenAI-compat /v1/chat/completions endpoints.
+   Dispatch-routed entries run on a subscription through hive-agent and are
+   never an OpenAI-compat endpoint:
+     :anthropic-oauth  `:anthropic`, the Anthropic Messages API client, which
+                       takes the Claude subscription OAuth token only. Its
+                       optional :model-aliases maps a bare size name
+                       (opus, sonnet, haiku, fable) to a model id.
+     :chatgpt-oauth    `:chatgpt`, the ChatGPT backend client, which takes the
+                       codex login's OAuth token only.
+     :subscription     a hive-agent subscription runtime of the same name
+                       (`:codex`, `:kimi`), run as its own CLI.
+   All others hit OpenAI-compat /v1/chat/completions endpoints.
 
    This is a SEED, not the definition: config `:llm-providers` extends,
    overrides and REMOVES entries through `hive-mcp.agent.provider/effective-registry`,
@@ -98,11 +134,21 @@
    No model id lives here: `:default-model` and `:available-models` are set
    per provider in config, e.g.
      hive config set llm-providers.venice.default-model <model-id>
+   `:deny-models` is a refusal list, not a choice: regex strings a model id
+   must not match on that provider (see `policy/model-refusal`). A keyed
+   OpenAI-compat entry that names none refuses `subscription-only-models`;
+   config replaces that by naming the field.
 
    It is also the ONE literal: `hive-mcp.config.merge/default-config`
    carries this var under `:llm-providers` rather than a second copy."
   {:anthropic     {:dispatch      :anthropic-oauth
                    :secret-key    :anthropic-api-key}
+   :chatgpt       {:dispatch      :chatgpt-oauth
+                   :secret-key    nil}
+   :codex         {:dispatch      :subscription
+                   :secret-key    nil}
+   :kimi          {:dispatch      :subscription
+                   :secret-key    nil}
    :openrouter    {:api-url       "https://openrouter.ai/api/v1/chat/completions"
                    :secret-key    :openrouter-api-key
                    ;; OpenRouter forwards a `cache_control` block marker to an
@@ -110,7 +156,9 @@
                    ;; way out are honoured end to end. Read by
                    ;; `hive-mcp.agent.cache/cache-control-style`, which also
                    ;; requires the model to be one that honours the marker.
-                   :cache-control :anthropic-style}
+                   :cache-control :anthropic-style
+                   :auth-probe    {:kind :openrouter-key-info
+                                   :url  "https://openrouter.ai/api/v1/key"}}
    :venice        {:api-url       "https://api.venice.ai/api/v1/chat/completions"
                    :secret-key    :venice-api-key}
    :groq          {:api-url       "https://api.groq.com/openai/v1/chat/completions"

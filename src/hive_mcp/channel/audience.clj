@@ -216,21 +216,33 @@
    Rows are the formatted piggyback shape {:a agent :e event :m message
    :t task}; a collapsed row gains :n, the number of rows it stands for. A
    burst of one is left untouched — :n only appears where something was
-   actually dropped."
+   actually dropped.
+
+   When the rows carry :ts, a collapsed row keeps the EARLIEST :ts of its
+   burst rather than its own, so it says how far back the history it stands
+   for reaches."
   [rows]
   (let [rows (vec rows)
         indexed (map-indexed vector rows)
         last-idx (reduce (fn [acc [i row]]
                            (if (digestible? row) (assoc acc (:a row) i) acc))
                          {} indexed)
-        counts (frequencies (keep #(when (digestible? %) (:a %)) rows))]
+        counts (frequencies (keep #(when (digestible? %) (:a %)) rows))
+        min-ts (reduce (fn [acc row]
+                         (if-let [ts (and (digestible? row) (:ts row))]
+                           (update acc (:a row) (fnil min ts) ts)
+                           acc))
+                       {} rows)]
     (into []
           (keep-indexed
            (fn [i row]
              (cond
                (not (digestible? row)) row
                (= i (get last-idx (:a row)))
-               (let [n (get counts (:a row) 1)]
-                 (cond-> row (> n 1) (assoc :n n)))
+               (let [n (get counts (:a row) 1)
+                     ts (get min-ts (:a row))]
+                 (cond-> row
+                   (> n 1) (assoc :n n)
+                   (and (> n 1) ts) (assoc :ts ts)))
                :else nil)))
           rows)))

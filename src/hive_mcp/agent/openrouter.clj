@@ -371,6 +371,14 @@
                        :config-key (str "llm-providers." prov-name ".default-model")
                        :fix        (str "hive config set llm-providers." prov-name
                                         ".default-model <model-id>")})))
+    (when-let [err (if (and provider reg-entry (not api-url))
+                     (provider/model-refusal provider effective-model)
+                     (provider/model-refusal (or provider :custom) effective-model
+                                             {:api-url    effective-url
+                                              :secret-key (when (seq effective-key) :explicit-api-key)}))]
+      (throw (ex-info (str "Model " effective-model " is denied on provider " prov-name
+                           ": " (:fix err))
+                      err)))
     (->OpenAICompatBackend effective-url (or effective-key "") effective-model prov-name)))
 
 (defn auto-backend

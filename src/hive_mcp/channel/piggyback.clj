@@ -14,7 +14,8 @@
             [taoensso.timbre :as log]
             [hive-mcp.channel.audience :as audience]
             [clojure.string :as str]
-            [hive-dsl.context.identity :as ctx-id]))
+            [hive-dsl.context.identity :as ctx-id]
+            [hive-mcp.channel.row-transforms :as row-transforms]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -221,6 +222,35 @@
   []
   (not (false? (config-value [:hivemind :progress-digest]))))
 
+(def progress-fold-key
+  "Reserved row-transform key of core's built-in default policy, the
+   :progress fold, :hivemind.rows/00-progress-fold. It is a CORE transform
+   (hive-mcp.channel.row-transforms/register-core-transform!), so it runs
+   before every registered transform whatever their keys sort as, and no
+   extension registered or deregistered under this key replaces or removes
+   it. Built with `keyword` because the reader refuses a literal whose name
+   starts with a digit."
+  (keyword "hivemind.rows" "00-progress-fold"))
+
+(defn- progress-fold
+  "Core's default row transform: hive-mcp.channel.audience/digest, gated by
+   [:hivemind :progress-digest]. The flag is read on every call rather than
+   at registration, so flipping it in config takes effect on the next read,
+   exactly as it did before the fold moved behind the seam."
+  [rows _read-ctx]
+  (if (progress-digest?)
+    (audience/digest rows)
+    rows))
+
+(defn register-default-row-transforms!
+  "Install core's default row transforms as core transforms. Idempotent.
+   Runs at load time. They live outside the extension registry, so an
+   :hive/extensions halt (which clears that registry) does not remove them."
+  []
+  (row-transforms/register-core-transform! progress-fold-key #'progress-fold))
+
+(register-default-row-transforms!)
+
 (defn- scoped-id-fn
   "A 1-arg composer from a bare agent name to this read's project-scoped
    reader id, or nil when the read carries no project scope."
@@ -234,7 +264,8 @@
   "Get new hivemind messages since last call for this agent+project.
    Dual-path: merges messages from atom-based source and backbone buffer.
 
-   Five stages, in order: cursor -> project -> context -> audience -> digest.
+   Five stages, in order: cursor -> project -> context -> audience ->
+   transforms. Peer-traffic rows are appended after the last stage.
 
    CURSOR is per [reader project], with one exception that is the whole
    point: a \"global\" shout is read against ONE cursor per SESSION, whatever
@@ -262,19 +293,27 @@
    hive-mcp.channel.audience). Set config [:hivemind :piggyback-routing] to
    :project to restore the legacy project-wide broadcast.
 
+   TRANSFORMS reshape the rows the reader earned: every extension registered
+   under a \"hivemind.rows\" key, in sorted key order (see
+   hive-mcp.channel.row-transforms for the contract). They run after the
+   cursor maxima are computed, so no transform can move a cursor, and they
+   see :ts and :deliberate?, which are both stripped from every row once the
+   chain is done. Core's own default is the first link,
+   :hivemind.rows/00-progress-fold: it collapses a burst of per-turn :progress
+   rows from one agent into a single row carrying the count, so the reader
+   learns the state without reading the transcript. A row the agent shouted
+   DELIBERATELY (through the hivemind tool, carried as :deliberate?) is never
+   collapsed: measured 2026-09-07, a wave member's own `hivemind shout` was
+   folded into the runtime's `bb-ling turn 2` telemetry row and the reader
+   never saw what the member said. Disable the fold via
+   [:hivemind :progress-digest] false.
+
    Directed peer traffic never enters a coordinator's context — that omission
    is the saving directed addressing exists for. So a coordinator reader also
    gets `peer-traffic-digest` rows: one line per conversation saying how many
    turns passed between whom, and the contextId to read them by. It keeps
-   supervision without paying for the transcript.
-
-   DIGEST collapses a burst of per-turn :progress rows from one agent into a
-   single row carrying the count, so the reader learns the state without
-   reading the transcript. A row the agent shouted DELIBERATELY (through the
-   hivemind tool, carried as :deliberate?) is never collapsed: measured
-   2026-09-07, a wave member's own `hivemind shout` was folded into the
-   runtime's `bb-ling turn 2` telemetry row and the reader never saw what the
-   member said. Disable digesting entirely via [:hivemind :progress-digest] false.
+   supervision without paying for the transcript. These rows are appended
+   after the transforms and never pass through them.
 
    Options:
      :project-id              - Primary project scope for filtering
@@ -325,28 +364,32 @@
             peer-rows (if (spawner-routing?)
                         (audience/peer-traffic-digest agent-id in-context)
                         [])
-            ;; :deliberate? rides along only as far as the digest, which is the
-            ;; one stage that reads it; the row a reader sees never carries it.
-            ;; :to is deliberately NOT rendered: a directed message reaches its
-            ;; recipient and nobody else, so its mere arrival says who it is for,
-            ;; and spelling that out again is tokens for nothing.
+            ;; :ts and :deliberate? ride along only as far as the transform
+            ;; chain, which is the one stage that reads them; the row a reader
+            ;; sees never carries either. :to is deliberately NOT rendered: a
+            ;; directed message reaches its recipient and nobody else, so its
+            ;; mere arrival says who it is for, and spelling that out again is
+            ;; tokens for nothing.
             formatted-msgs (mapv (fn [{:keys [agent-id event-type message task deliberate?
-                                              context-id ref]}]
+                                              context-id ref timestamp]}]
                                    (cond-> {:a agent-id
                                             :e (if (keyword? event-type)
                                                  (name event-type)
                                                  event-type)
-                                            :m message}
+                                            :m message
+                                            :ts timestamp}
                                      task (assoc :t task)
                                      context-id (assoc :ctx context-id)
                                      ref (assoc :ref ref)
                                      deliberate? (assoc :deliberate? true)))
                                  addressed)
-            digested (mapv #(dissoc % :deliberate?)
-                           (if (progress-digest?)
-                             (audience/digest formatted-msgs)
-                             formatted-msgs))
-            rows (into (vec digested) peer-rows)]
+            transformed (row-transforms/apply-transforms
+                         formatted-msgs
+                         {:reader agent-id
+                          :project-id project-id
+                          :session-id session-id
+                          :context-id context-id})
+            rows (into (mapv #(dissoc % :deliberate? :ts) transformed) peer-rows)]
         (when max-global
           (swap! agent-read-cursors assoc global-key max-global))
         (when max-project
@@ -356,14 +399,20 @@
 
 (defn fetch-history
   "Get hivemind messages without marking as read.
-   Dual-path: merges messages from atom-based source and backbone buffer."
-  [& {:keys [since limit project-id] :or {since 0 limit 100}}]
+   Dual-path: merges messages from atom-based source and backbone buffer.
+
+   Options: :since (exclusive timestamp, default 0), :limit (default 100),
+   :project-id (that project plus global shouts), :agent-id (only that
+   author's shouts)."
+  [& {:keys [since limit project-id agent-id] :or {since 0 limit 100}}]
   (->> (merged-messages)
        (filter (fn [msg]
                  (and (> (:timestamp msg) since)
                       (or (nil? project-id)
                           (= (:project-id msg) project-id)
-                          (= (:project-id msg) "global")))))
+                          (= (:project-id msg) "global"))
+                      (or (nil? agent-id)
+                          (= agent-id (:agent-id msg))))))
        ;; Sort by timestamp BEFORE map for consistent FIFO order
        (sort-by :timestamp)
        (take limit)

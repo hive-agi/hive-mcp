@@ -15,7 +15,8 @@
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.tools.swarm.channel :as swarm-channel]
             [hive-mcp.swarm.adapters.soft :as soft]
-            [hive-mcp.swarm.claim.negotiate :as claim-negotiate]))
+            [hive-mcp.swarm.claim.negotiate :as claim-negotiate]
+            [hive-mcp.agent.ling.start-preflight :as start-preflight]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -308,6 +309,7 @@
    that happens, otherwise completion handlers hit a deregistration race (H2
    fix)."
   [plan opts]
+  (start-preflight/ensure-startable! (:mode plan) (:cwd plan))
   (let [{:keys [strat ctx]} plan
         enriched-task (enrich-task plan)
         headless-inputs (resolve-headless-inputs plan)
@@ -493,6 +495,8 @@
                  (some? (:kg-compress? opts)) (assoc :kg-compress? (:kg-compress? opts))
                  (some? (:verbose? opts))   (assoc :verbose? (:verbose? opts))
                  (:llm-retries opts)        (assoc :llm-retries (:llm-retries opts))
+                 (:resume opts)             (assoc :resume (:resume opts))
+                 (:chat-run-id opts)        (assoc :chat-run-id (:chat-run-id opts))
                  (:sliding-window-size opts) (assoc :sliding-window-size (:sliding-window-size opts))
                  (:agents opts)             (assoc :agents (:agents opts))
                  (:max-budget-usd opts)     (assoc :max-budget-usd (:max-budget-usd opts))
