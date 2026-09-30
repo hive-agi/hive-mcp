@@ -229,12 +229,53 @@
        :skipped-count skipped})))
 
 ;; =============================================================================
+;; Ling Outcome (data)
+;; =============================================================================
+
+(def ^:private ling-event-outcomes
+  "Ling event -> how the DAG reads it. Rows marked :terminal? are the events
+   a ling ends its run with; the listener subscribes to exactly those. A new
+   terminal event is a new row here, nothing else.
+   :blocked is not terminal (the ling may resume) but, when handed to
+   `on-ling-complete`, still counts as a failure."
+  {:completed     {:outcome :succeeded :terminal? true}
+   :truncated     {:outcome :failed    :terminal? true}
+   :error         {:outcome :failed    :terminal? true}
+   :context-death {:outcome :failed    :terminal? true}
+   :blocked       {:outcome :failed    :terminal? false}})
+
+(defn terminal-event-types
+  "The ling event types that end a run, i.e. the ones the scheduler listens to."
+  []
+  (->> ling-event-outcomes
+       (keep (fn [[event-type {:keys [terminal?]}]] (when terminal? event-type)))
+       sort
+       vec))
+
+(defn event-channel-topic
+  "The hive-mcp.channel.core topic a hivemind event of EVENT-TYPE is published
+   on — the same `hivemind-<name>` naming the delivery channels use."
+  [event-type]
+  (keyword (str "hivemind-" (name event-type))))
+
+(defn ling-outcome
+  "Pure: :succeeded or :failed for a ling event of EVENT-TYPE carrying DATA.
+   An explicit `:result \"failure\"` in the data fails any event; an unknown
+   event type reads as success, as the completed channel always did."
+  [event-type data]
+  (if (= "failure" (str (:result data)))
+    :failed
+    (get-in ling-event-outcomes [event-type :outcome] :succeeded)))
+
+;; =============================================================================
 ;; Completion Handler
 ;; =============================================================================
 
 (defn on-ling-complete
-  "Handle ling completion event and auto-dispatch next wave."
-  [{:keys [agent-id _project-id data]}]
+  "Handle a terminal ling event and auto-dispatch the next wave on success.
+   EVENT-TYPE is the ling event that arrived (:completed, :truncated, ...);
+   an older caller that put it in DATA as :event-type is still honoured."
+  [{:keys [agent-id _project-id event-type data]}]
   (when (:active @dag-state)
     (let [;; Find the kanban-task-id for this ling
           slave (ds-queries/get-slave agent-id)
@@ -247,12 +288,12 @@
 
         ;; Only handle tasks that are in our dispatched set
         (when (contains? (:dispatched @dag-state) kanban-task-id)
-          (log/info "DAGWaves: ling" agent-id "completed task" kanban-task-id)
+          (log/info "DAGWaves: ling" agent-id "ended task" kanban-task-id
+                    "with" (or event-type (:event-type data)))
 
           ;; Check if this is a success or failure
-          (let [is-failure? (or (= (:event-type data) :error)
-                                (= (:event-type data) :blocked)
-                                (= (str (:result data)) "failure"))]
+          (let [is-failure? (= :failed (ling-outcome (or event-type (:event-type data))
+                                                     data))]
 
             (if is-failure?
               ;; Failed: move to failed set, don't mark kanban done
@@ -313,33 +354,36 @@
 ;; Channel Subscription (core.async pub/sub)
 ;; =============================================================================
 
-(defonce ^:private dag-sub-channel (atom nil))
+(defonce ^:private dag-sub-channels (atom {}))  ; {event-type -> ch}
 
 (defn- start-event-listener!
-  "Start a go-loop listening for completion events."
+  "Subscribe to the hivemind channel of every terminal ling event and route
+   each arrival to `on-ling-complete`, tagged with the event that arrived."
   []
-  (let [ch (channel/subscribe! :hivemind-completed)]
-    (reset! dag-sub-channel ch)
-    (go-loop []
-      (when-let [event (<! ch)]
-        (when (:active @dag-state)
-          (result/rescue nil
-                         (on-ling-complete {:agent-id  (:agent-id event)
-                                            :project-id (:project-id event)
-                                            :data       (:data event)})))
-        (recur)))
-    (log/info "DAGWaves event listener started")))
+  (doseq [event-type (terminal-event-types)]
+    (let [ch (channel/subscribe! (event-channel-topic event-type))]
+      (swap! dag-sub-channels assoc event-type ch)
+      (go-loop []
+        (when-let [event (<! ch)]
+          (when (:active @dag-state)
+            (result/rescue nil
+                           (on-ling-complete {:agent-id   (:agent-id event)
+                                              :project-id (:project-id event)
+                                              :event-type event-type
+                                              :data       (:data event)})))
+          (recur)))))
+  (log/info "DAGWaves event listener started"))
 
 (defn- stop-event-listener!
-  "Stop the event listener go-loop."
+  "Stop every terminal-event listener go-loop."
   []
-  (when-let [ch @dag-sub-channel]
+  (doseq [[event-type ch] @dag-sub-channels]
     (let [r (result/try-effect* :dag/unsubscribe-failed
-                                (channel/unsubscribe! :hivemind-completed ch))]
+                                (channel/unsubscribe! (event-channel-topic event-type) ch))]
       (when (result/err? r)
-        (result/rescue nil (close! ch))))
-    (reset! dag-sub-channel nil)
-    (log/info "DAGWaves event listener stopped")))
+        (result/rescue nil (close! ch)))))
+  (reset! dag-sub-channels {})
+  (log/info "DAGWaves event listener stopped"))
 
 ;; =============================================================================
 ;; Lifecycle Functions

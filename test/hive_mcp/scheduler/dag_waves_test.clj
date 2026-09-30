@@ -1158,3 +1158,129 @@
         (if prior-kanban
           (sreg/register-store! :kanban prior-kanban)
           (sreg/unregister-store! :kanban))))))
+
+;; =============================================================================
+;; Tests: terminal ling events beyond :completed
+;; =============================================================================
+;; A ling stopped by a limit shouts :truncated; a failed one :error or
+;; :context-death. The scheduler used to hear only :hivemind-completed, so such
+;; a task stayed :dispatched forever and held its slot, stalling the wave.
+
+(def ^:private real-subscribe! channel/subscribe!)
+(def ^:private real-unsubscribe! channel/unsubscribe!)
+
+(defn- dispatched-state
+  "dag-state with TASK-ID dispatched to LING-ID."
+  [task-id ling-id]
+  {:active true
+   :plan-id "terminal-events"
+   :max-slots 5
+   :wave-log []
+   :dispatched {task-id ling-id}
+   :completed #{}
+   :failed #{}
+   :opts {:cwd test-directory
+          :presets ["ling"]
+          :project-id test-project-id}})
+
+(defn- slave-for
+  "A get-slave stub answering LING-ID with TASK-ID."
+  [ling-id task-id]
+  (fn [agent-id]
+    (when (= agent-id ling-id)
+      {:slave/id ling-id
+       :slave/kanban-task-id task-id
+       :slave/cwd test-directory})))
+
+(deftest ling-outcome-reads-the-event-table
+  (is (= :succeeded (dag/ling-outcome :completed {})))
+  (doseq [et [:truncated :error :context-death :blocked]]
+    (is (= :failed (dag/ling-outcome et {})) (str et " is a failure")))
+  (is (= :failed (dag/ling-outcome :completed {:result "failure"}))
+      "an explicit failure result fails even a :completed event")
+  (is (= :succeeded (dag/ling-outcome nil {}))
+      "an untagged event keeps the old completed-channel reading"))
+
+(deftest listener-covers-every-terminal-event
+  (is (= [:completed :context-death :error :truncated] (dag/terminal-event-types)))
+  (is (= #{:hivemind-completed :hivemind-truncated :hivemind-error
+           :hivemind-context-death}
+         (set (map dag/event-channel-topic (dag/terminal-event-types)))))
+  (testing "start-dag! subscribes to each topic and stop-dag! releases each"
+    (with-dag-mocks
+      (let [subs (atom []) unsubs (atom [])]
+        (with-redefs [channel/subscribe! (fn [t] (swap! subs conj t) (async/chan 1))
+                      channel/unsubscribe! (fn [t _] (swap! unsubs conj t))]
+          (dag/start-dag! "listen-plan" {:cwd test-directory :max-slots 0})
+          (dag/stop-dag!))
+        (is (= #{:hivemind-completed :hivemind-truncated :hivemind-error
+                 :hivemind-context-death}
+               (set @subs)))
+        (is (= (set @subs) (set @unsubs)))))))
+
+(deftest truncated-event-fails-the-task-and-frees-its-slot
+  (with-dag-mocks
+    (reset! dag/dag-state (dispatched-state "task-a" "swarm-dag-trunc-1"))
+    (with-redefs [ds-queries/get-slave (slave-for "swarm-dag-trunc-1" "task-a")]
+      (dag/on-ling-complete {:agent-id "swarm-dag-trunc-1"
+                             :project-id test-project-id
+                             :event-type :truncated
+                             :data {:termination :max-turns}}))
+    (is (not (contains? (:dispatched @dag/dag-state) "task-a"))
+        "a truncated task must leave :dispatched")
+    (is (contains? (:failed @dag/dag-state) "task-a"))
+    (is (not (contains? (:completed @dag/dag-state) "task-a")))
+    (is (some? (get @*chroma-entries "task-a")) "kanban card is not moved to done")
+    (is (= :failed (:event (last (:wave-log @dag/dag-state)))))
+    (is (empty? @*spawned-lings) "dependents of a failed task are not dispatched")))
+
+(deftest error-and-context-death-events-fail-the-task
+  (doseq [et [:error :context-death]]
+    (with-dag-mocks
+      (reset! dag/dag-state (dispatched-state "task-a" "swarm-dag-err-1"))
+      (with-redefs [ds-queries/get-slave (slave-for "swarm-dag-err-1" "task-a")]
+        (dag/on-ling-complete {:agent-id "swarm-dag-err-1"
+                               :project-id test-project-id
+                               :event-type et
+                               :data {}}))
+      (is (contains? (:failed @dag/dag-state) "task-a") (str et))
+      (is (empty? (:dispatched @dag/dag-state)) (str et)))))
+
+(deftest completed-event-still-succeeds
+  (with-dag-mocks
+    (reset! dag/dag-state (dispatched-state "task-a" "swarm-dag-ok-1"))
+    (with-redefs [ds-queries/get-slave (slave-for "swarm-dag-ok-1" "task-a")]
+      (dag/on-ling-complete {:agent-id "swarm-dag-ok-1"
+                             :project-id test-project-id
+                             :event-type :completed
+                             :data {}}))
+    (is (contains? (:completed @dag/dag-state) "task-a"))
+    (is (not (contains? (:failed @dag/dag-state) "task-a")))
+    (is (= 2 (count @*spawned-lings)) "B and C are auto-dispatched")))
+
+(defn- await-state
+  "Poll dag-state until PRED holds or ~2s pass. -> final truthiness."
+  [pred]
+  (loop [n 0]
+    (cond (pred @dag/dag-state) true
+          (> n 200) false
+          :else (do (Thread/sleep 10) (recur (inc n))))))
+
+(deftest truncated-shout-on-the-bus-reaches-the-scheduler
+  (testing "a :hivemind-truncated event published on the channel bus fails the task"
+    (with-dag-mocks
+      (with-redefs [channel/subscribe! real-subscribe!
+                    channel/unsubscribe! real-unsubscribe!
+                    ds-queries/get-slave (slave-for "swarm-dag-bus-1" "task-a")]
+        (reset! dag/dag-state (dispatched-state "task-a" "swarm-dag-bus-1"))
+        (#'dag/start-event-listener!)
+        (try
+          (channel/publish! {:type :hivemind-truncated
+                             :agent-id "swarm-dag-bus-1"
+                             :project-id test-project-id
+                             :data {:termination :max-turns}})
+          (is (await-state #(contains? (:failed %) "task-a"))
+              "the truncated task moves to :failed")
+          (is (empty? (:dispatched @dag/dag-state)))
+          (finally
+            (#'dag/stop-event-listener!)))))))
