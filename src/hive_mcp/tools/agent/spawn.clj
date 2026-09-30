@@ -11,6 +11,7 @@
             [hive-mcp.agent.type-registry :as agent-type-registry]
             [hive-mcp.agent.spawn-mode-registry :as spawn-registry]
             [hive-mcp.agent.openrouter :as llm-registry]
+            [hive-mcp.agent.provider.preflight :as provider-preflight]
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.knowledge-graph.scope :as kg-scope]
             [hive-spi.swarm.guards :as guards]
@@ -175,6 +176,17 @@
            " needs a chat-point capable headless backend; this spawn resolved to "
            (pr-str mode) ", which would drop them."))))
 
+(defn provider-preflight-refusal
+  "An error map when the resolved spawn MODE would call PROVIDER with a
+   credential that cannot work (secret missing, key rejected, credit
+   exhausted), else nil. Only a registered headless backend calls the provider
+   through hive's configured key; a terminal mode runs its own CLI and is not
+   checked. The provider checks themselves live in
+   `hive-mcp.agent.provider.preflight` and read the open provider registry."
+  [mode provider]
+  (when (and provider (contains? (headless-registry/registered-headless) mode))
+    (provider-preflight/refusal provider)))
+
 (defn spawn-brief
   "The initial task a spawn carries: `task`, else `prompt`. Blank counts as
    absent. Throws ex-info when both are given and differ."
@@ -282,6 +294,10 @@
                     _ (when-let [refusal (chat-point-refusal (:spawn-mode ling-agent) loop-params
                                                              (headless-registry/headless-capabilities (:spawn-mode ling-agent)))]
                         (throw (ex-info refusal {:spawn-mode (:spawn-mode ling-agent)})))
+                    _ (when-let [err (provider-preflight-refusal (:spawn-mode ling-agent) effective-provider)]
+                        (throw (ex-info (str "Provider " (clojure.core/name effective-provider)
+                                             " cannot serve this spawn: " (:fix err))
+                                        err)))
                     slave-id (proto/spawn! ling-agent (cond-> {:task brief
                                                                :parent parent
                                                                :kanban-task-id kanban_task_id
