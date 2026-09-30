@@ -11,7 +11,9 @@
    - Event journal old entries
    - Completed SAA states
    - Bounded atom GC sweep (TTL + capacity eviction)
-   - Terminal liveness sweep and ledger cold sweep"
+   - Terminal liveness sweep and ledger cold sweep
+   - KG GC lane (synthetic cleanup), self-gated to its own interval; see
+     hive-mcp.scheduler.kg-gc"
   (:require [hive-mcp.dns.result :as result]
             [hive-mcp.config.core :as config]
             [taoensso.timbre :as log])
@@ -113,6 +115,13 @@
          'hive-mcp.swarm.datascript.coordination.cleanup/sweep-ledger-cold!
          #(%) {:tasks 0 :claim-history 0})
 
+        ;; KG GC lane. Ticks every sweep but runs only on its own interval
+        ;; (default 60 min) and reports what it could not see; see kg-gc ns.
+        kg-gc-result
+        (resolve-and-call
+         'hive-mcp.scheduler.kg-gc/run-lane!
+         #(%) {:skipped true :reason "kg-gc lane failed"})
+
         ;; 6. JVM GC hint — nudge G1GC to collect old gen AND return committed
         ;; heap to the OS.
         ;;
@@ -149,6 +158,7 @@
                 :gc-sweep gc-sweep-result
                 :terminal-liveness terminal-liveness-result
                 :ledger-cold ledger-cold-result
+                :kg-gc kg-gc-result
                 :gc-hint gc-hint-result
                 :sweep-number sweep-num
                 :duration-ms elapsed-ms

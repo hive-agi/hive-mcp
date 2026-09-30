@@ -429,3 +429,89 @@
         (is (= 1 (:errors result)))
         (is (string? (:error result)))
         (is (= 3 (count (edges/get-edges-from sid))) "nothing is mutated on refusal")))))
+
+;; =============================================================================
+;; Orphaned-record class ([SYNTH-GC-BLIND], card 20260830173550-3d6c1593)
+;; =============================================================================
+
+(defn- register-record!
+  "Give synth-id a :kg-synthetic/id node record."
+  [sid]
+  (conn/transact! [{:kg-synthetic/id sid}])
+  (conn/flush-pending!)
+  sid)
+
+(deftest orphan-with-live-targets-is-collected-test
+  (testing "an orphan whose targets are all alive is collected, not scored healthy"
+    (let [live     (repeatedly 3 raw-id)
+          orphan   (wire-synth! live)
+          healthy  (register-record! (wire-synth! live))]
+      (set-live! live)
+      (let [r (synthetics/cleanup-synthetics!)]
+        (is (= 1 (:orphaned r)))
+        (is (= 1 (:preserved r)))
+        (is (= [] (:blind r)) "record layer observable, nothing blind")
+        (is (= {:sources 2 :orphans 1 :registered 1 :projection-edges 6}
+               (:universe r)))
+        (is (empty? (edges/get-edges-from orphan)))
+        (is (= 3 (count (edges/get-edges-from healthy))))))))
+
+(deftest orphans-decided-without-memory-store-test
+  (testing "orphans need no liveness read, so they are collected with no store;
+            the registered class is reported blind"
+    (mem-proto/reset-registry!)
+    (let [orphan (wire-synth! (repeatedly 2 raw-id))
+          reg    (register-record! (wire-synth! (repeatedly 2 raw-id)))
+          r      (synthetics/cleanup-synthetics!)]
+      (is (= 1 (:orphaned r)))
+      (is (= 1 (:scanned r)))
+      (is (some #(= :liveness (:class %)) (:blind r)))
+      (is (empty? (edges/get-edges-from orphan)))
+      (is (= 2 (count (edges/get-edges-from reg)))))))
+
+(deftest no-records-at-all-is-blind-not-orphaned-test
+  (testing "zero records while synth- sources exist cannot be told from an
+            unloaded record layer: nothing is reaped as orphan, class is blind"
+    (let [live (repeatedly 3 raw-id)
+          sid  (wire-synth! live)]
+      (set-live! live)
+      (let [r (synthetics/cleanup-synthetics!)]
+        (is (= 0 (:orphaned r)))
+        (is (= 1 (:preserved r)))
+        (is (some #(= :orphaned-record (:class %)) (:blind r)))
+        (is (= 3 (count (edges/get-edges-from sid))))))))
+
+(deftest edge-budget-bounds-deletion-test
+  (testing "deletion stops at the edge budget; the partial orphan keeps its
+            record-less status and is finished next call"
+    (let [live (repeatedly 2 raw-id)]
+      (set-live! live)
+      (register-record! (wire-synth! live)))
+    (let [orphan (wire-synth! (repeatedly 7 raw-id))
+          r1     (synthetics/cleanup-synthetics! {:edge-budget 3 :chunk-size 2})]
+      (is (= 1 (count (:partial r1))))
+      (is (= 4 (count (edges/get-edges-from orphan))))
+      (let [r2 (synthetics/cleanup-synthetics! {:edge-budget 100})]
+        (is (empty? (:partial r2)))
+        (is (empty? (edges/get-edges-from orphan)))))))
+
+(deftest continue-guard-stops-deletion-test
+  (testing ":continue? returning a reason stops before the next chunk"
+    (register-record! (wire-synth! (repeatedly 2 raw-id)))
+    (let [orphan (wire-synth! (repeatedly 4 raw-id))
+          r      (synthetics/cleanup-synthetics! {:continue? (constantly :heap-pressure)})]
+      (is (= :heap-pressure (:stopped (first (:partial r)))))
+      (is (= 4 (count (edges/get-edges-from orphan)))))))
+
+(deftest collected-record-is-retracted-test
+  (testing "a pruned registered synthetic loses its record too, no inverse ghost"
+    (let [sid (register-record! (wire-synth! (repeatedly 3 raw-id)))]
+      (set-live! [])
+      (synthetics/cleanup-synthetics!)
+      (is (not (contains? (synthetics/synthetic-record-ids) sid))))))
+
+(deftest cursor-rotates-coverage-test
+  (testing "rotate-after walks past the cursor and wraps"
+    (is (= ["c" "d" "a" "b"] (synthetics/rotate-after ["a" "b" "c" "d"] "b")))
+    (is (= ["a" "b"] (synthetics/rotate-after ["a" "b"] nil)))
+    (is (= ["a" "b"] (synthetics/rotate-after ["a" "b"] "z")))))
