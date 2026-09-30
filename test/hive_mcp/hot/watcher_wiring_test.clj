@@ -13,7 +13,8 @@
   (:require [clojure.test :refer [deftest is testing]]
             [hive-hot.core :as hot]
             [hive-mcp.protocols.dispatch]
-            [hive-mcp.server.init :as init]))
+            [hive-mcp.server.init :as init]
+            [hive-mcp.hot.core :as hot-core]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -30,8 +31,21 @@
   [project-config]
   (let [captured (atom ::never-called)]
     (with-redefs [hot/init-with-watcher! (fn [opts] (reset! captured opts) nil)]
-      (init/init-hot-reload-watcher! (atom nil) project-config))
+      (init/init-hot-reload-watcher! project-config))
     @captured))
+
+(deftest the-default-watch-dirs-are-absolute-core-roots
+  (testing "core's classpath roots, as given"
+    (is (= ["/r/src"] (init/default-watch-dirs ["/r/src"]))))
+  (testing "a jar-backed core falls back to ./src made absolute, never a relative \"src\""
+    (let [[d & more] (init/default-watch-dirs [])]
+      (is (nil? more))
+      (is (.isAbsolute (java.io.File. ^String d)))
+      (is (.endsWith ^String d "src"))))
+  (testing "in this JVM the default is core's own source root"
+    (let [dirs (init/default-watch-dirs (hot-core/core-roots))]
+      (is (every? #(.isAbsolute (java.io.File. ^String %)) dirs))
+      (is (.exists (java.io.File. ^String (first dirs) "hive_mcp/hot/core.clj"))))))
 
 (deftest the-watcher-is-handed-the-protocol-interlock
   (let [opts (captured-watcher-opts {:hot-reload true})]

@@ -37,7 +37,9 @@
             [hive-mcp.hot.self :as hot-self]
             [hive-mcp.protocols.vector :as vec-proto]
             [hive-mcp.spi.contributions :as contrib]
-            [hive-mcp.swarm.adapters.soft :as soft]))
+            [hive-mcp.swarm.adapters.soft :as soft]
+            [hive-mcp.hot.core :as hot-core]
+            [hive-mcp.hot.reseat :as reseat]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -66,13 +68,6 @@
         (log/debug "no embedding service in this build; skipping warmup"))
       (catch Exception e
         (log/warn "Embedding warmup failed (non-fatal):" (ex-message e))))))
-
-;; =============================================================================
-;; Hot-Reload State
-;; =============================================================================
-
-;; Track if hot-reload listener is registered (private, module-scoped)
-(defonce ^:private hot-reload-listener-registered? (atom false))
 
 ;; =============================================================================
 ;; Embedding Provider Initialization
@@ -129,37 +124,55 @@
 (defn- handle-hot-reload-success!
   "Handler for successful hot-reload - refreshes tools and emits health event.
 
-
    Parameters:
-     server-context-atom - atom containing MCP server context"
+     server-context-atom - atom containing MCP server context, or nil when
+                           no server has been started in this image"
   [server-context-atom {:keys [loaded unloaded ms]}]
   (log/info "Hot-reload completed:" (count loaded) "loaded," (count unloaded) "unloaded in" ms "ms")
   ;; Refresh MCP tool handlers to point to new var values
   (result/rescue-log "handle-hot-reload-success!" nil
-                 (when @server-context-atom
-                   (routes/refresh-tools! server-context-atom)
-                   (log/info "MCP tools refreshed after hot-reload")))
+                     (when (some-> server-context-atom deref)
+                       (routes/refresh-tools! server-context-atom)
+                       (log/info "MCP tools refreshed after hot-reload")))
   ;; Emit health event for lings
   (emit-mcp-health-event! loaded unloaded ms))
 
-(defn- register-hot-reload-listener!
-  "Register listener with hive-hot to auto-heal MCP after reload.
+(def server-context-var
+  "The var holding THE server context atom. server.core requires this
+   namespace, so it is named, never required, and resolved per call."
+  'hive-mcp.server.core/server-context-atom)
 
-   Only registers once. Safe to call multiple times.
+(defn server-context-atom
+  "The live server context atom, read through its var NOW; nil before
+   hive-mcp.server.core is loaded."
+  []
+  (some-> (resolve server-context-var) deref))
 
-   Parameters:
-     server-context-atom - atom containing MCP server context"
-  [server-context-atom]
-  (when-not @hot-reload-listener-registered?
-    (result/rescue nil
-                   (require 'hive-hot.core)
-                   (let [add-listener! (resolve 'hive-hot.core/add-listener!)]
-                     (add-listener! :mcp-auto-heal
-                                    (fn [event]
-                                      (when (= (:type event) :reload-success)
-                                        (handle-hot-reload-success! server-context-atom event))))
-                     (reset! hot-reload-listener-registered? true)
-                     (log/info "Registered hot-reload listener for MCP auto-healing")))))
+(defn on-hot-reload-event!
+  "The :mcp-auto-heal listener body: on :reload-success, refresh the tools of
+   the server context current at the time of the event."
+  [event]
+  (when (= :reload-success (:type event))
+    (handle-hot-reload-success! (server-context-atom) event)))
+
+(def auto-heal-listener-id
+  "The key the auto-heal listener is registered under in hive-hot."
+  :mcp-auto-heal)
+
+(defn register-hot-reload-listener!
+  "Register the MCP auto-heal listener with hive-hot. Keyed, so a re-run
+   (a reboot, a reload of this namespace) REPLACES the entry: idempotent with
+   no guard to go stale. The listener reaches `on-hot-reload-event!` through
+   its var on every event (hive-mcp.hot.reseat/via-var), so a reload of this
+   namespace is followed, and the event reads the server context current at
+   that moment instead of one captured at boot.
+
+   `add-listener!` is the registration port, (fn [id f]); hive-hot's by default."
+  ([] (register-hot-reload-listener! hot/add-listener!))
+  ([add-listener!]
+   (add-listener! auto-heal-listener-id (reseat/via-var `on-hot-reload-event!))
+   (log/info "Registered hot-reload listener for MCP auto-healing")
+   auto-heal-listener-id))
 
 ;; =============================================================================
 ;; Event System Initialization
@@ -421,6 +434,17 @@
 ;; Hot-Reload Watcher
 ;; =============================================================================
 
+(defn default-watch-dirs
+  "The directories the watcher covers when neither config nor env names any:
+   core's classpath source roots (hive-mcp.hot.core/core-roots), absolute, so
+   the answer does not depend on the JVM's working directory. `roots` is what
+   core-roots answered; empty (core runs from a jar) falls back to ./src made
+   absolute."
+  [roots]
+  (if (seq roots)
+    (mapv str roots)
+    [(.getAbsolutePath (java.io.File. "src"))]))
+
 (defn init-hot-reload-watcher!
   "Initialize hot-reload watcher with claim-aware coordination.
 
@@ -437,10 +461,12 @@
    list of the thirty-seven namespaces that define protocols today is correct
    only until somebody adds or moves one.
 
+   The default directories are core's ABSOLUTE source roots
+   (`default-watch-dirs`), never a cwd-relative \"src\".
+
    Parameters:
-     server-context-atom - atom containing MCP server context
      project-config      - map from read-project-config (or nil)"
-  [server-context-atom project-config]
+  [project-config]
   (let [hot-reload-enabled? (get project-config :hot-reload true)]
     (if hot-reload-enabled?
       (result/rescue nil
@@ -448,7 +474,7 @@
                                                                          :env "HIVE_MCP_SRC_DIRS"
                                                                          :parse #(str/split % #":"))
                                         (:watch-dirs project-config)
-                                        ["src"])
+                                        (default-watch-dirs (hot-core/core-roots)))
                            claim-checker (hot-events/make-claim-checker logic/get-all-claims)
                            no-reload (hot-self/protocol-namespaces)]
                        (hot/init-with-watcher! {:dirs src-dirs
@@ -459,7 +485,7 @@
                                  {:dirs src-dirs
                                   :protocol-namespaces-protected (count no-reload)})
           ;; Register MCP auto-heal listener to refresh tools after reload
-                       (register-hot-reload-listener! server-context-atom)
+                       (register-hot-reload-listener!)
           ;; Register state protection for DataScript state validation
                        (result/rescue nil
                                       (require 'hive-mcp.hot.state)
@@ -713,7 +739,11 @@
 
    CRITICAL: Uses routes/make-tool to wrap handlers with the full middleware
    chain (piggyback, context, normalize, etc.). Without make-tool, bb-mcp
-   gets raw handlers and no ---MEMORY---/---HIVEMIND--- blocks are attached."
+   gets raw handlers and no ---MEMORY---/---HIVEMIND--- blocks are attached.
+
+   A context already in the atom (the stdio server's, wired by :hive/mcp-stdio)
+   KEEPS its identity and gets the table in its own :tools atom, so bb-mcp,
+   the stdio server and the auto-heal listener all read one context."
   []
   (require 'hive-mcp.server.core)
   (require 'hive-mcp.tools.registry)
@@ -722,8 +752,10 @@
         extensions   ((resolve 'hive-mcp.extensions.registry/get-registered-tools))
         wrapped      (mapv routes/make-tool (concat consolidated extensions))
         tools        (into {} (map tool->registry-entry wrapped))
-        ctx-atom     (deref (resolve 'hive-mcp.server.core/server-context-atom))]
-    (swap! ctx-atom (fn [_] {:tools (atom tools)}))
+        ctx-atom     (server-context-atom)]
+    (if-let [tools-atom (:tools @ctx-atom)]
+      (reset! tools-atom tools)
+      (reset! ctx-atom {:tools (atom tools)}))
     (log/info "server-context populated:" (count tools) "tools (middleware-wrapped)")))
 
 (defn nrepl-init!
