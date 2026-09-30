@@ -9,8 +9,7 @@
    Result DSL: Internal logic returns Result maps ({:ok val} or {:error category}).
    Single try-result boundary at each handler level. Zero nested try-catch."
   (:require [hive-mcp.dns.result :as result]
-            [hive-mcp.tools.core :refer [mcp-success mcp-error addon-available?
-                                         emacs-timeout-ms]]
+            [hive-mcp.tools.core :refer [mcp-success mcp-error emacs-timeout-ms]]
             [hive-mcp.emacs-ext.client :as ec]
             [hive-mcp.emacs-ext.elisp :as el]
             [hive-mcp.agent.context :as ctx]
@@ -102,12 +101,6 @@
 ;; ============================================================
 ;; Magit Integration Tools (requires hive-mcp-magit addon)
 ;; ============================================================
-
-(defn magit-addon-available?
-  "Check if the magit addon is loaded in Emacs.
-   Delegates to tools.core/addon-available? for DRY addon checks."
-  []
-  (addon-available? :magit))
 
 ;;; =============================================================================
 ;;; Elisp Builders (for handlers requiring custom elisp)
