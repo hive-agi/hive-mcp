@@ -75,6 +75,15 @@
   [event-type]
   (event-registry/slave-status event-type))
 
+(defn shout-slave-status
+  "Pure: the slave status a shout of `event-type` with `data` sets, or nil
+   when the shout is `:status-neutral?` — an announcement ABOUT the agent
+   (e.g. an ask timeout it already resumed from) rather than a transition
+   OF it."
+  [event-type data]
+  (when-not (:status-neutral? data)
+    (event-type->slave-status event-type)))
+
 (def ^:const default-shout-message-cap
   "Fallback cap when config is unloaded or missing :hivemind/:shout-message-cap.
    One bad shout fans out across (per-agent ring × backbone × subscribers), so
@@ -143,11 +152,31 @@
     (catch Exception e
       (log/debug "[Backbone] Shout publish failed (non-fatal):" (.getMessage e)))))
 
-(defn- fanout-shout-direct!
-  "Direct fanout via IDeliveryChannel registry when backbone is unavailable.
+(def ^:const local-origin
+  "`:via` marker on a shout fanned out to in-process IDeliveryChannels by the
+   process that emitted it. A backbone-republishing channel skips it: the
+   emitter publishes to the backbone itself, exactly once."
+  :local-origin)
+
+(defn- fanout-shout-locally!
+  "Fan a shout out to every in-process IDeliveryChannel, marked as local.
    Protocol-mediated — no hardcoded transport calls."
   [payload]
-  (dc/fanout! payload))
+  (dc/fanout! (assoc payload :via local-origin)))
+
+(defn- route-shout!
+  "Deliver a shout to its readers: in-process channels ALWAYS, the backbone
+   too when it is connected.
+
+   The local fanout is not a fallback. The bridge drops the backbone's echo
+   of our own publishes (self-publish gate), so a process that only
+   published while connected never delivered its own shouts to its own
+   in-process channels — every same-JVM reader went deaf the moment the
+   backbone connected."
+  [backbone payload]
+  (fanout-shout-locally! payload)
+  (when (eb/connected? backbone)
+    (publish-shout-to-backbone! payload)))
 
 (defn- blank-payload-value?
   "True iff `v` carries no signal: nil, empty string, or empty coll."
@@ -261,7 +290,7 @@
         capped-task (cap-message (:task data))
         payload-data (dissoc data :task :message :directory :project-id
                              :parent-id :broadcast? :broadcast-reason
-                             :deliberate? :to :context-id)
+                             :deliberate? :to :context-id :status-neutral?)
         message (cond-> {:event-type event-type
                          :timestamp now
                          :project-id project-id
@@ -311,15 +340,12 @@
                                       :last-seen now}
                                :created-at (or (get-in entries [agent-id :created-at]) now)
                                :last-accessed now}))))
-    ;; 2. DataScript slave status — always
-    (when resolved-slave
+    ;; 2. DataScript slave status — unless the shout is status-neutral
+    (when-let [status (and resolved-slave (shout-slave-status event-type data))]
       (proto/update-slave! registry/default-registry resolved-slave-id
-                           {:slave/status (event-type->slave-status event-type)}))
-    ;; 3. Backbone publish OR direct fanout (protocol-mediated)
-    (let [backbone (eb/get-backbone)]
-      (if (eb/connected? backbone)
-        (publish-shout-to-backbone! backbone-payload)
-        (fanout-shout-direct! backbone-payload)))
+                           {:slave/status status}))
+    ;; 3. Local fanout always, backbone publish when connected
+    (route-shout! (eb/get-backbone) backbone-payload)
     ;; 4. Log
     (log/info "Hivemind shout:" agent-id event-type "project:" project-id
               (cond to (str "-> " to) broadcast? "-> ALL" :else ""))
@@ -376,8 +402,9 @@
 
    M1 Architecture (protocol-first):
    - Local state (atom + DataScript) updated synchronously
-   - If backbone connected: single publish → backbone subscribers handle fanout
-   - If backbone disconnected: direct fanout via IDeliveryChannel registry
+   - Always: local fanout via IDeliveryChannel registry (:via :local-origin)
+   - If backbone connected: also a single publish for OTHER processes (this
+     process drops its own echo at the bridge)
    - Domain events (:ling/completed) are NOT dispatched here — callers
      that need domain side-effects dispatch them explicitly. This avoids
      a feedback loop: shout! → :ling/completed handler → :shout effect → shout!
@@ -396,26 +423,85 @@
   [agent-id event-type data]
   (boolean (:delivered (shout-with-verdict! agent-id event-type data))))
 
+(defn- asker-parent-id
+  "Spawner of `agent-id` per the slave registry, or nil when unknown."
+  [agent-id]
+  (try
+    (:slave/parent (queries/get-slave-by-name-or-id agent-id))
+    (catch Exception _ nil)))
+
+(defn pending-ask-entry
+  "Pure: the pending-asks entry for one ask. Carries who asked, for which
+   project and spawner, and when — what a timeout needs to tell the asker's
+   reader that the ask went unanswered."
+  [{:keys [agent-id question options response-chan project-id parent-id asked-at]}]
+  (cond-> {:question question
+           :options options
+           :agent-id agent-id
+           :response-chan response-chan
+           :asked-at asked-at}
+    project-id (assoc :project-id project-id)
+    parent-id (assoc :parent-id parent-id)))
+
+(defn ask-timeout-shout
+  "Pure: the :blocked shout data announcing that ask `ask-id` timed out.
+   Status-neutral: by the time this is heard the asker has already resumed
+   with the timeout answer, so the shout must not park its slave :blocked.
+   -> data for (shout! agent-id :blocked data)"
+  [ask-id {:keys [question project-id parent-id asked-at]} timeout-ms]
+  (cond-> {:reason :ask-timeout
+           :ask-id ask-id
+           :message (str "Ask timed out after " timeout-ms "ms with no answer: "
+                         question)
+           :timeout-ms timeout-ms
+           :status-neutral? true}
+    asked-at (assoc :asked-at asked-at)
+    project-id (assoc :project-id project-id)
+    parent-id (assoc :parent-id parent-id)))
+
+(defn- announce-ask-timeout!
+  "Shout the asker :blocked so its reader hears the unanswered ask.
+   Non-fatal: a failed shout must not turn a timeout into an exception."
+  [ask-id entry timeout-ms]
+  (try
+    (shout! (:agent-id entry) :blocked (ask-timeout-shout ask-id entry timeout-ms))
+    (catch Exception e
+      (log/debug "Hivemind ask-timeout shout failed (non-fatal):" (.getMessage e)))))
+
 (defn ask!
-  "Request a decision from the human coordinator, blocking until response or timeout."
-  [agent-id question options & {:keys [timeout-ms] :or {timeout-ms 300000}}]
+  "Request a decision from the human coordinator, blocking until response or timeout.
+
+   The pending entry records :project-id, :parent-id (resolved from the slave
+   registry when not given) and :asked-at. On TIMEOUT the asker is shouted
+   :blocked with {:reason :ask-timeout :ask-id ...} before the entry is
+   dropped — an answered ask and an unanswered one used to leave identical
+   traces, so nobody heard that an agent stalled waiting."
+  [agent-id question options & {:keys [timeout-ms project-id parent-id]
+                                :or {timeout-ms 300000}}]
   (let [ask-id (str (random-uuid))
         response-chan (chan 1)
+        asked-at (System/currentTimeMillis)
+        entry (pending-ask-entry {:agent-id agent-id
+                                  :question question
+                                  :options options
+                                  :response-chan response-chan
+                                  :project-id project-id
+                                  :parent-id (or parent-id (asker-parent-id agent-id))
+                                  :asked-at asked-at})
         ask-event {:type :hivemind-ask
                    :ask-id ask-id
                    :agent-id agent-id
                    :question question
                    :options options
-                   :timestamp (System/currentTimeMillis)}]
-    (swap! state/pending-asks assoc ask-id {:question question
-                                            :options options
-                                            :agent-id agent-id
-                                            :response-chan response-chan})
+                   :timestamp asked-at}]
+    (swap! state/pending-asks assoc ask-id entry)
     (channel/broadcast! ask-event)
     (log/info "Hivemind ask:" agent-id question)
     (let [result (alt!!
                    response-chan ([v] v)
                    (timeout timeout-ms) {:timeout true :ask-id ask-id})]
+      (when (:timeout result)
+        (announce-ask-timeout! ask-id entry timeout-ms))
       (swap! state/pending-asks dissoc ask-id)
       result)))
 

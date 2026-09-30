@@ -181,7 +181,8 @@ The env var fallback reads from MCP server process, NOT your ling process!"
                      effective-project-id (or project_id
                                               (when effective-dir (project-scope/get-current-project-id effective-dir)))
                      result (messaging/ask! effective-id question options
-                                            :timeout-ms (or timeout_ms 300000))]
+                                            :timeout-ms (or timeout_ms 300000)
+                                            :project-id effective-project-id)]
                  {:type "text"
                   :text (json/write-str
                          (if (:timeout result)
