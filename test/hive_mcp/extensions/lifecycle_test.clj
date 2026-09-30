@@ -9,7 +9,8 @@
             [hive-mcp.extensions.lifecycle :as lcm]
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.tools.composite :as composite]
-            [hive-addon.registry.commands :as acmds]))
+            [hive-addon.registry.commands :as acmds]
+            [hive-mcp.hot.reseat :as reseat]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -150,3 +151,38 @@
       (is (:isError out))
       (is (re-find #"could not be activated" (:text out))))
     (is (= "probe.lc#dormant" (command-owner "probe-lc")))))
+
+(deftest a-reload-of-the-host-namespace-is-re-seated-keeping-the-manager-state
+  (let [{:keys [mgr]} (world)]
+    (binding [*mgr* mgr]
+      (lc/boot! mgr)
+      (lc/start-sweeper! mgr {:interval-ms 3600000})
+      (let [old-class (class (:host mgr))]
+        (is (not (lcm/stale-host? (:host mgr))) "a host built by the current constructor is current")
+        (is (= {:reseated? false :reason :current} (lcm/reseat-host! [])))
+        ;; What a core reload does to this namespace: a new McpLifecycleHost class.
+        (require 'hive-mcp.extensions.lifecycle :reload)
+        (is (lcm/stale-host? (:host (lc/installed-manager))) "the installed host is now the OLD class")
+        (let [report (first (reseat/reseat! ["hive-mcp.other" "hive-mcp.extensions.lifecycle"]))
+              mgr'   (lc/installed-manager)]
+          (testing "the registry ran the re-seater the reloaded namespace registered"
+            (is (= "hive-mcp.extensions.lifecycle" (:ns report)))
+            (is (true? (get-in report [:result :reseated?])))
+            (is (= ["probe.lc"] (get-in report [:result :rearmed])) "the dormant addon's stubs were re-armed"))
+          (testing "the installed host is the NEW record class, carrying the old fields"
+            (is (identical? (class (lcm/host)) (class (:host mgr'))))
+            (is (not (identical? old-class (class (:host mgr')))))
+            (is (= (into {} (:host mgr)) (into {} (:host mgr')))))
+          (testing "no state was copied: the manager's atoms are the same objects"
+            (is (identical? (:states mgr) (:states mgr')))
+            (is (identical? (:specs mgr) (:specs mgr')))
+            (is (some? @(:sweeper mgr')) "the sweeper moved to the re-seated manager"))
+          (testing "activate and evict still work through the re-seated host"
+            (binding [*mgr* mgr']
+              (is (= "pong 1" (:text (code-call "probe-lc"))) "the re-armed stub activates")
+              (is (= :active (lc/phase mgr' "probe.lc")))
+              (is (:evicted? (lc/evict! mgr' "probe.lc")))
+              (is (= "probe.lc#dormant" (command-owner "probe-lc")))
+              (is (= "pong 2" (:text (code-call "probe-lc"))) "and re-activates a fresh instance")))
+          (is (= {:reseated? false :reason :current} (lcm/reseat-host! []))
+              "a second run finds nothing stale"))))))

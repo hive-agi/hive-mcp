@@ -5,7 +5,8 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [hive-mcp.hot.core :as core]))
+            [hive-mcp.hot.core :as core]
+            [hive-mcp.hot.reseat :as reseat]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -85,6 +86,7 @@
       :hot/reload-scoped!    (fn [roots] (swap! log conj [:reload-scoped! [roots]]) reload-result)
       :hot/reload-pending!   (fn [] (swap! log conj [:reload-pending! []]) reload-result)
       :host/remount!         (fn [loaded] (swap! log conj [:remount! [loaded]]) {:remounted (count loaded)})
+      :host/reseat!          (fn [loaded] (swap! log conj [:reseat! [loaded]]) [{:ns "hive-mcp.other" :result :seated}])
       :host/refresh-tools!   (fn [] (swap! log conj [:refresh-tools! []]) 42)
       :host/refresh-surface! (rec :refresh-surface!)})))
 
@@ -105,9 +107,10 @@
       (is (= [:scope-plan :prepare-pass! :reload-scoped!] (map first (take 3 (rest @log)))))
       (is (= ["hive-mcp." ['hive-mcp.hot.core-test 'hive-mcp.other]] (second (nth @log 2))))
       (is (= [["/r/src"]] (second (nth @log 3)))))
-    (testing "the repairs run after the reload, remount first, on what was loaded"
-      (is (= [:remount! :refresh-tools! :refresh-surface!] (map first (drop 4 @log))))
-      (is (= [(mapv str loaded)] (second (nth @log 4)))))
+    (testing "the repairs run after the reload: remount, re-seat, then the table over re-seated holders"
+      (is (= [:remount! :reseat! :refresh-tools! :refresh-surface!] (map first (drop 4 @log))))
+      (is (= [(mapv str loaded)] (second (nth @log 4))))
+      (is (= [(mapv str loaded)] (second (nth @log 5))) "the re-seat port is handed what was loaded"))
     (testing "the report"
       (is (true? (:ok? report)))
       (is (= :scoped (:pass report)))
@@ -118,10 +121,37 @@
       (is (= ["hive-mcp.hot.core-test"] (:kept-state report)) "kept-state = loaded ∩ state holders")
       (is (= ["hive-mcp.hot.core-test"] (:records-redefined report)))
       (is (= {:remounted 2} (:remount report)))
+      (is (= [{:ns "hive-mcp.other" :result :seated}] (:reseated report)))
       (is (= 42 (:tools-refreshed report)))
       (is (= 7 (:ms report)))
       (is (= ["x.y"] (:skipped report)))
       (is (= {:initialized? true :fresh? false} (:hive-hot report))))))
+
+(deftest the-default-re-seat-port-runs-the-registry-for-loaded-namespaces-only-in-order
+  (let [log    (atom [])
+        seated (atom [])
+        rec    (fn [n] (fn [loaded] (swap! seated conj [n loaded]) n))
+        nses   '[hive-mcp.hot.core-test.seat-a hive-mcp.hot.core-test.seat-b hive-mcp.hot.core-test.seat-c]
+        loaded ['hive-mcp.hot.core-test.seat-c 'hive-mcp.other 'hive-mcp.hot.core-test.seat-a]]
+    (try
+      (doseq [n nses] (reseat/register-reseater! n (rec n)))
+      (let [ports  (assoc (recording-ports log {:success true :loaded loaded :unloaded []})
+                          :host/reseat! (:host/reseat! (core/default-ports)))
+            report (core/reload! {:ports ports :roots ["/r/src"]})]
+        (is (= [['hive-mcp.hot.core-test.seat-c (mapv str loaded)]
+                ['hive-mcp.hot.core-test.seat-a (mapv str loaded)]]
+               @seated)
+            "seat-b was not loaded; c ran before a because it loaded first")
+        (is (= [{:ns "hive-mcp.hot.core-test.seat-c" :result 'hive-mcp.hot.core-test.seat-c}
+                {:ns "hive-mcp.hot.core-test.seat-a" :result 'hive-mcp.hot.core-test.seat-a}]
+               (:reseated report))))
+      (testing "a failed reload re-seats nothing"
+        (reset! seated [])
+        (core/reload! {:ports (assoc (recording-ports log {:success false :loaded [] :unloaded []})
+                                     :host/reseat! (:host/reseat! (core/default-ports)))
+                       :roots ["/r/src"]})
+        (is (= [] @seated)))
+      (finally (doseq [n nses] (reseat/unregister-reseater! n))))))
 
 (deftest a-failed-reload-repairs-nothing-and-says-why
   (let [log    (atom [])
@@ -153,7 +183,7 @@
         report (core/reload! {:ports ports :roots ["/r/src"]})]
     (is (true? (:ok? report)))
     (is (= :pending (:pass report)))
-    (is (= [:ensure-init! :prepare-pass! :reload-pending! :remount! :refresh-tools! :refresh-surface!]
+    (is (= [:ensure-init! :prepare-pass! :reload-pending! :remount! :reseat! :refresh-tools! :refresh-surface!]
            (map first @log))
         "the pending pass replaces the scoped one and is repaired like any other")
     (is (= ["hive-mcp.holder"] (:forced-unload report)))
