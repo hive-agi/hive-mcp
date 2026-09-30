@@ -1,0 +1,168 @@
+{:core-reload-while-dormant
+ #:trace{:baseline
+         #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+               :phases
+               {"a.tools" :active,
+                "b.pinned" :active,
+                "c.hooks" :active}},
+         :steps
+         [#:step{:op #:op{:kind :evict, :addon "a.tools"},
+                 :outcome :applied,
+                 :obs
+                 #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+                       :phases
+                       {"a.tools" :dormant,
+                        "b.pinned" :active,
+                        "c.hooks" :active}}}
+          #:step{:op #:op{:kind :core-reload},
+                 :outcome :applied,
+                 :obs
+                 #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+                       :phases
+                       {"a.tools" :dormant,
+                        "b.pinned" :active,
+                        "c.hooks" :active}}}
+          #:step{:op #:op{:kind :activate, :addon "a.tools"},
+                 :outcome :applied,
+                 :obs
+                 #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+                       :phases
+                       {"a.tools" :active,
+                        "b.pinned" :active,
+                        "c.hooks" :active}}}]},
+ :core-reload-with-addons-mounted
+ #:trace{:baseline
+         #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+               :phases
+               {"a.tools" :active,
+                "b.pinned" :active,
+                "c.hooks" :active}},
+         :steps
+         [#:step{:op #:op{:kind :core-reload},
+                 :outcome :applied,
+                 :obs
+                 #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+                       :phases
+                       {"a.tools" :active,
+                        "b.pinned" :active,
+                        "c.hooks" :active}}}
+          #:step{:op #:op{:kind :core-reload},
+                 :outcome :applied,
+                 :obs
+                 #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+                       :phases
+                       {"a.tools" :active,
+                        "b.pinned" :active,
+                        "c.hooks" :active}}}]},
+ :evict-then-activate-roundtrip
+ #:trace{:baseline
+         #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+               :phases
+               {"a.tools" :active,
+                "b.pinned" :active,
+                "c.hooks" :active}},
+         :steps
+         [#:step{:op #:op{:kind :evict, :addon "a.tools"},
+                 :outcome :applied,
+                 :obs
+                 #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+                       :phases
+                       {"a.tools" :dormant,
+                        "b.pinned" :active,
+                        "c.hooks" :active}}}
+          #:step{:op #:op{:kind :activate, :addon "a.tools"},
+                 :outcome :applied,
+                 :obs
+                 #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+                       :phases
+                       {"a.tools" :active,
+                        "b.pinned" :active,
+                        "c.hooks" :active}}}
+          #:step{:op #:op{:kind :activate, :addon "a.tools"},
+                 :outcome :noop,
+                 :obs
+                 #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+                       :phases
+                       {"a.tools" :active,
+                        "b.pinned" :active,
+                        "c.hooks" :active}}}]},
+ :evict-then-call-remounts
+ #:trace{:baseline
+         #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+               :phases
+               {"a.tools" :active,
+                "b.pinned" :active,
+                "c.hooks" :active}},
+         :steps
+         [#:step{:op #:op{:kind :evict, :addon "a.tools"},
+                 :outcome :applied,
+                 :obs
+                 #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+                       :phases
+                       {"a.tools" :dormant,
+                        "b.pinned" :active,
+                        "c.hooks" :active}}}
+          #:step{:op #:op{:kind :call, :addon "a.tools"},
+                 :outcome :applied,
+                 :obs
+                 #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+                       :phases
+                       {"a.tools" :active,
+                        "b.pinned" :active,
+                        "c.hooks" :active}}}]},
+ :hook-only-refuses-eviction
+ #:trace{:baseline
+         #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+               :phases
+               {"a.tools" :active,
+                "b.pinned" :active,
+                "c.hooks" :active}},
+         :steps
+         [#:step{:op #:op{:kind :evict, :addon "c.hooks"},
+                 :outcome :refused,
+                 :obs
+                 #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+                       :phases
+                       {"a.tools" :active,
+                        "b.pinned" :active,
+                        "c.hooks" :active}}}]},
+ :pinned-refuses-eviction
+ #:trace{:baseline
+         #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+               :phases
+               {"a.tools" :active,
+                "b.pinned" :active,
+                "c.hooks" :active}},
+         :steps
+         [#:step{:op #:op{:kind :evict, :addon "b.pinned"},
+                 :outcome :refused,
+                 :obs
+                 #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+                       :phases
+                       {"a.tools" :active,
+                        "b.pinned" :active,
+                        "c.hooks" :active}}}]},
+ :reload-needs-a-mounted-addon
+ #:trace{:baseline
+         #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+               :phases
+               {"a.tools" :active,
+                "b.pinned" :active,
+                "c.hooks" :active}},
+         :steps
+         [#:step{:op #:op{:kind :evict, :addon "a.tools"},
+                 :outcome :applied,
+                 :obs
+                 #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+                       :phases
+                       {"a.tools" :dormant,
+                        "b.pinned" :active,
+                        "c.hooks" :active}}}
+          #:step{:op #:op{:kind :addon-reload, :addon "a.tools"},
+                 :outcome :refused,
+                 :obs
+                 #:obs{:tools ["alpha" "beta" "code" "hot" "memory"],
+                       :phases
+                       {"a.tools" :dormant,
+                        "b.pinned" :active,
+                        "c.hooks" :active}}}]}}

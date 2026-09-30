@@ -1,0 +1,24 @@
+{:failing-middle
+ {:messages
+  [{:agent-id "a", :timestamp 1}
+   {:agent-id "b", :timestamp 2}
+   {:agent-id "b", :timestamp 3}],
+  :failures
+  [{:error :piggyback.source/failed,
+    :message "boom",
+    :source-id :s/c}]},
+ :one-failing
+ {:messages [],
+  :failures
+  [{:error :piggyback.source/failed,
+    :message "boom",
+    :source-id :s/c}]},
+ :one-healthy
+ {:messages [{:agent-id "a", :timestamp 1}], :failures []},
+ :two-healthy
+ {:messages
+  [{:agent-id "a", :timestamp 1}
+   {:agent-id "b", :timestamp 2}
+   {:agent-id "b", :timestamp 3}],
+  :failures []},
+ :zero-sources {:messages [], :failures []}}

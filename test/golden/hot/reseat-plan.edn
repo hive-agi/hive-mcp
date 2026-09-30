@@ -1,0 +1,6 @@
+{:each-once [[a.one :one]],
+ :load-order-wins [[a.three :three] [a.one :one] [a.two :two]],
+ :nothing-loaded [],
+ :nothing-registered [],
+ :only-loaded-run [[b.two :two]],
+ :symbols-accepted [[a.one :one]]}

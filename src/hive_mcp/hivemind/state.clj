@@ -27,7 +27,21 @@
   [& args]
   (apply (impl! 'add-swarm-prompt!) args))
 
-(def agent-registry @(impl 'agent-registry))
+(def agent-registry
+  "LOAD-TIME SNAPSHOT of the swarm's agent registry: nil when hive-agent was
+   absent at load, and never refreshed. Kept for existing callers only. Code
+   that must work with the swarm absent, or after hive-agent reloads, reads
+   `current-agent-registry` instead."
+  @(impl 'agent-registry))
+
+(defn current-agent-registry
+  "The swarm's agent registry (a bounded atom) resolved through the delegate
+   on EVERY call, or nil when hive-agent is not on the classpath.
+
+   Nothing is captured at load: the var is looked up per call (Capture-by-Var),
+   so a hive-agent that arrives or reloads later is seen by the next call."
+  []
+  @(impl 'agent-registry))
 
 (defn clear-agent-messages!
   {:arglists '([agent-id])}

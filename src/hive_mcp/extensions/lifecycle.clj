@@ -33,7 +33,8 @@
             [hive-mcp.tools.core :refer [mcp-error]]
             [taoensso.timbre :as log]
             [hive-addon.registry.commands :as acmds]
-            [hive-mcp.extensions.runtime :as runtime]))
+            [hive-mcp.extensions.runtime :as runtime]
+            [hive-mcp.hot.reseat :as reseat]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -197,6 +198,75 @@
   (rescue nil (reactive/refresh-surface! nil)))
 
 ;; =============================================================================
+;; Re-seat after a core reload
+;;
+;; A reload of this namespace redefines McpLifecycleHost. The installed
+;; manager (hive-addon, never reloaded) still holds the instance built from the
+;; OLD class, and every stub it armed closes over the old manager value. The
+;; re-seater rebuilds the host from the CURRENT constructor, carrying its
+;; fields, and swaps it into the manager, keeping every state atom.
+;; =============================================================================
+
+(defn stale-host?
+  "Was HOST built from an earlier definition of McpLifecycleHost? Same class
+   name, different class object: exactly what a namespace reload leaves. The
+   current class is read off the constructor var, never a class literal
+   compiled into this fn."
+  [host]
+  (let [c   (class host)
+        now (class (map->McpLifecycleHost {}))]
+    (and (not (identical? c now))
+         (= (.getName ^Class c) (.getName ^Class now)))))
+
+(defn rebuild-host
+  "HOST's fields in a host built by the current constructor."
+  [host]
+  (map->McpLifecycleHost (into {} host)))
+
+(defn reseat-manager
+  "MGR on HOST. Every atom (specs, states, surfaces, sweeper), the lock and
+   the opts are shared with MGR, so no state is copied and none is lost; the
+   :on-activated/:on-evicted hooks only read the shared :specs atom."
+  [mgr host]
+  (assoc mgr :host host))
+
+(defn- rearm-stubs!
+  "Re-advertise every dormant addon's stubs through MGR's host, activating
+   through the manager INSTALLED at call time rather than a captured one."
+  [mgr]
+  (let [dormant (filterv #(lc/dormant? mgr %) (map :addon/id @(:specs mgr)))]
+    (doseq [id dormant
+            :let [[s] (lc/surface-of mgr id)]
+            :when s]
+      (lport/-install-stubs! (:host mgr) id s
+                             #(lc/activate! (or (lc/installed-manager) mgr) id)))
+    dormant))
+
+(defn reseat-host!
+  "Re-seater for hive-mcp.hot.reseat: when the installed manager's host is
+   stale, install a manager on a rebuilt host, move the sweeper to it and
+   re-arm the dormant stubs. Answers what it did."
+  [_loaded]
+  (let [mgr (lc/installed-manager)]
+    (cond
+      (nil? mgr)                     {:reseated? false :reason :no-manager}
+      (not (stale-host? (:host mgr))) {:reseated? false :reason :current}
+      :else
+      (let [mgr'    (reseat-manager mgr (rebuild-host (:host mgr)))
+            sweeper @(:sweeper mgr)]
+        (lc/install! mgr')
+        (when sweeper
+          (lc/stop-sweeper! mgr)
+          (lc/start-sweeper! mgr' {:interval-ms (:interval-ms sweeper)}))
+        {:reseated? true
+         :host      (.getName (class (:host mgr')))
+         :sweeper?  (boolean sweeper)
+         :rearmed   (rearm-stubs! mgr')}))))
+
+(reseat/register-reseater! 'hive-mcp.extensions.lifecycle
+                           (reseat/via-var `reseat-host!))
+
+;; =============================================================================
 ;; Boot
 ;; =============================================================================
 
@@ -214,7 +284,11 @@
   "Discover, compose and boot the classpath addons under the lifecycle.
    Eager addons mount now; lazy ones get stubs. Installs the manager, the
    dispatch wrap and the sweeper. Returns {:manager m :boot BootReport
-   :compose {...}} or {:error ...}."
+   :compose {...}} or {:error ...}.
+
+   The dispatch wrap and the manager hooks are reached THROUGH their vars
+   (hive-mcp.hot.reseat/via-var): a reload of this namespace re-creates them,
+   and a value captured here would keep running the old code."
   [svc-cfg {:keys [on-event]}]
   (let [cfg                        (config svc-cfg)
         {:keys [specs errors]}     (boundary/discover-specs)
@@ -223,6 +297,8 @@
     (if-not (:ok planned)
       {:error planned}
       (let [{:keys [plan config-by-id dropped]} (:ok planned)
+            activated (reseat/via-var `on-activated!)
+            evicted   (reseat/via-var `on-evicted!)
             h   (host {:resolve-config (compose/compose-config-resolver manifest/prepare-config config-by-id)
                        :on-event on-event})
             mgr (lc/manager {:host h
@@ -230,10 +306,10 @@
                              :defaults (:defaults cfg)
                              :overrides (:overrides cfg)
                              :surface-store (store/edn-dir-store (or (:surface-dir cfg) (surface-dir)))})
-            mgr (assoc-in mgr [:opts :on-activated] #(on-activated! mgr %))
-            mgr (assoc-in mgr [:opts :on-evicted] #(on-evicted! mgr %))]
+            mgr (assoc-in mgr [:opts :on-activated] #(activated mgr %))
+            mgr (assoc-in mgr [:opts :on-evicted] #(evicted mgr %))]
         (lc/install! mgr)
-        (ext/register! wrap-handler-key wrap-handler)
+        (ext/register! wrap-handler-key (reseat/via-var `wrap-handler))
         (let [boot (lc/boot! mgr)]
           (lc/start-sweeper! mgr {:interval-ms (:sweep-interval-ms cfg)})
           (log/info "Addon lifecycle booted"

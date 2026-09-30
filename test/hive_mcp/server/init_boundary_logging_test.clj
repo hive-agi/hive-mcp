@@ -33,9 +33,10 @@
     ;; The invariant is that nothing NESTED was converted to rescue-log, not
     ;; that a particular file holds them. Three of the original eight moved
     ;; with init-embedding-provider! when the embedding wiring left the kernel
-    ;; for hive-mcp.embeddings.boot, so the count is asserted across both
-    ;; files and still totals eight.
-    (is (= 5 (count (filter #(re-find nested-rescue-re %) @lines))))
+    ;; for hive-mcp.embeddings.boot. One was DELETED, not converted: the
+    ;; auto-heal listener registration is now a keyed, idempotent call whose
+    ;; failure lands in init-hot-reload-watcher!'s own rescue, so seven remain.
+    (is (= 4 (count (filter #(re-find nested-rescue-re %) @lines))))
     (is (= 3 (count (filter #(re-find nested-rescue-re %) @moved-lines))))
-    (is (= 8 (+ (count (filter #(re-find nested-rescue-re %) @lines))
+    (is (= 7 (+ (count (filter #(re-find nested-rescue-re %) @lines))
                 (count (filter #(re-find nested-rescue-re %) @moved-lines)))))))
