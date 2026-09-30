@@ -1284,3 +1284,94 @@
           (is (empty? (:dispatched @dag/dag-state)))
           (finally
             (#'dag/stop-event-listener!)))))))
+
+;; =============================================================================
+;; Tests: the failure path advances the plan
+;; =============================================================================
+;; A failed task used to stop at bookkeeping: no newly ready task was
+;; dispatched and no completion check ran, so a failed last task left the plan
+;; open forever and independent work waiting for a slot stalled.
+
+(def ^:private task-e {:id "task-e" :title "Independent task" :status "todo" :priority "low"})
+
+(defn- edges-with-e
+  "mock-edges plus an independent task-e."
+  ([tid] (get (assoc mock-edges "task-e" []) tid []))
+  ([tid _] (edges-with-e tid)))
+
+(defn- capture-shouts
+  "A shout! stub recording [agent-id event-type data] into SINK."
+  [sink]
+  (fn [agent-id event-type data] (swap! sink conj [agent-id event-type data]) true))
+
+(deftest blocked-task-ids-is-transitive
+  (let [graph {"task-b" #{"task-a"} "task-c" #{"task-a"}
+               "task-d" #{"task-b" "task-c"} "task-e" #{}}]
+    (is (= #{"task-b" "task-c" "task-d"} (dag/blocked-task-ids graph #{"task-a"})))
+    (is (= #{} (dag/blocked-task-ids graph #{})))
+    (is (= #{"task-d"} (dag/blocked-task-ids graph #{"task-b"})))))
+
+(deftest plan-summary-reports-failed-and-skipped
+  (let [s (dag/plan-summary {:plan-id "p" :completed #{"task-e"} :failed #{"task-a"}
+                             :opts {:run-id "r"}}
+                            #{"task-b" "task-c"})]
+    (is (= {:plan-id "p" :run-id "r" :result "failure" :completed 1 :failed 1 :skipped 2
+            :failed-ids ["task-a"] :skipped-ids ["task-b" "task-c"]}
+           (dissoc s :message)))
+    (is (= "success" (:result (dag/plan-summary {:completed #{"x"} :failed #{}} #{}))))))
+
+(deftest failing-a-task-dispatches-an-independent-ready-task
+  (with-dag-mocks
+    (swap! *chroma-entries assoc "task-e" task-e)
+    (with-redefs [kg-edges/get-edges-from edges-with-e
+                  ds-queries/get-slave (slave-for "swarm-dag-a-1" "task-a")]
+      (reset! dag/dag-state (assoc (dispatched-state "task-a" "swarm-dag-a-1") :max-slots 1))
+      (dag/on-ling-complete {:agent-id "swarm-dag-a-1" :project-id test-project-id
+                             :event-type :error :data {}}))
+    (is (contains? (:failed @dag/dag-state) "task-a"))
+    (is (= ["task-e"] (mapv #(get-in % [:opts :kanban-task-id]) @*spawned-lings))
+        "the slot freed by the failure goes to the independent task, not to A's dependents")
+    (is (:active @dag/dag-state) "task-e is in flight, so the plan is still open")))
+
+(deftest failing-the-last-in-flight-task-completes-the-plan
+  (with-dag-mocks
+    (let [shouts (atom [])]
+      (with-redefs [hivemind/shout! (capture-shouts shouts)
+                    ds-queries/get-slave (slave-for "swarm-dag-last-1" "task-a")]
+        (reset! dag/dag-state (dispatched-state "task-a" "swarm-dag-last-1"))
+        (dag/on-ling-complete {:agent-id "swarm-dag-last-1" :project-id test-project-id
+                               :event-type :truncated :data {:termination :max-turns}}))
+      (is (empty? @*spawned-lings) "dependents of the failed task are not dispatched")
+      (is (false? (:active @dag/dag-state)) "the plan is finished")
+      (let [[agent-id event-type data] (last @shouts)]
+        (is (= ["coordinator" :completed] [agent-id event-type]))
+        (is (= {:result "failure" :completed 0 :failed 1 :skipped 3
+                :failed-ids ["task-a"] :skipped-ids ["task-b" "task-c" "task-d"]}
+               (select-keys data [:result :completed :failed :skipped
+                                  :failed-ids :skipped-ids])))
+        (is (= "All tasks complete. 0 succeeded, 1 failed, 3 skipped." (:message data)))))))
+
+(deftest a-failed-spawn-after-a-failure-still-finishes-the-plan
+  (with-dag-mocks
+    (swap! *chroma-entries assoc "task-e" task-e)
+    (let [shouts (atom [])]
+      (with-redefs [kg-edges/get-edges-from edges-with-e
+                    ling/create-ling! (fn [_ _] (throw (ex-info "no capacity" {})))
+                    hivemind/shout! (capture-shouts shouts)
+                    ds-queries/get-slave (slave-for "swarm-dag-a-2" "task-a")]
+        (reset! dag/dag-state (dispatched-state "task-a" "swarm-dag-a-2"))
+        (dag/on-ling-complete {:agent-id "swarm-dag-a-2" :project-id test-project-id
+                               :event-type :context-death :data {}}))
+      (is (= #{"task-a" "task-e"} (:failed @dag/dag-state))
+          "the independent task was tried and its spawn failure recorded")
+      (is (false? (:active @dag/dag-state))
+          "nothing is left in flight, so the advance step finishes the plan")
+      (let [[_ event-type data] (last @shouts)]
+        (is (= :completed event-type))
+        (is (= {:result "failure" :failed 2 :skipped 3}
+               (select-keys data [:result :failed :skipped])))))))
+
+(deftest plan-finished-needs-nothing-ready-and-nothing-in-flight
+  (is (dag/plan-finished? [] {}))
+  (is (not (dag/plan-finished? [{:task-id "x"}] {})))
+  (is (not (dag/plan-finished? [] {"x" "ling-x"}))))

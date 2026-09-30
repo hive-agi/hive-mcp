@@ -271,84 +271,129 @@
 ;; Completion Handler
 ;; =============================================================================
 
+(defn record-outcome
+  "Pure: STATE after TASK-ID, run by LING-ID, ended with OUTCOME
+   (:succeeded or :failed) at TS. The task leaves :dispatched, joins
+   :completed or :failed, and the wave log gains the matching event."
+  [state task-id ling-id outcome ts]
+  (let [event (if (= :failed outcome) :failed :completed)]
+    (-> state
+        (update :dispatched dissoc task-id)
+        (update event conj task-id)
+        (update :wave-log conj {:event     event
+                                :task-id   task-id
+                                :ling-id   ling-id
+                                :timestamp ts}))))
+
+(defn plan-finished?
+  "Pure: a plan is finished when nothing is ready and nothing is in flight.
+   Dependents of a failed task never become ready, so they do not hold it open."
+  [ready in-flight]
+  (and (empty? ready) (empty? in-flight)))
+
+(defn- depends-on-any?
+  "True when some id in DEPS is in UNSATISFIABLE."
+  [unsatisfiable deps]
+  (boolean (some #(contains? unsatisfiable %) deps)))
+
+(defn blocked-task-ids
+  "Pure: ids in DEP-GRAPH {task-id -> #{dep-id}} that depend, directly or
+   transitively, on a task in FAILED. These are the plan's skipped tasks."
+  [dep-graph failed]
+  (loop [blocked #{}]
+    (let [unsatisfiable (into (set failed) blocked)
+          grown (into blocked
+                      (keep (fn [[task-id deps]]
+                              (when (depends-on-any? unsatisfiable deps) task-id)))
+                      dep-graph)]
+      (if (= grown blocked) blocked (recur grown)))))
+
+(defn plan-summary
+  "Pure: the final report of a finished plan STATE with SKIPPED task ids."
+  [{:keys [plan-id completed failed opts]} skipped]
+  (let [n-ok (count completed) n-failed (count failed) n-skipped (count skipped)]
+    {:plan-id     plan-id
+     :run-id      (:run-id opts)
+     :result      (if (and (zero? n-failed) (zero? n-skipped)) "success" "failure")
+     :completed   n-ok
+     :failed      n-failed
+     :skipped     n-skipped
+     :failed-ids  (vec (sort failed))
+     :skipped-ids (vec (sort skipped))
+     :message     (str "All tasks complete. " n-ok " succeeded, " n-failed " failed, "
+                       n-skipped " skipped.")}))
+
+(defn- remaining-dep-graph
+  "{task-id -> #{dep-id}} for every todo task the plan never handled."
+  [directory {:keys [completed failed dispatched]}]
+  (let [handled (into (set (keys dispatched)) (into completed failed))]
+    (into {}
+          (comp (map :id)
+                (remove handled)
+                (map (juxt identity get-task-dependencies)))
+          (get-kanban-todos directory))))
+
+(defn- announce-plan-complete!
+  "Shout the finished plan's summary (with failed and skipped counts) and
+   deactivate the scheduler."
+  [directory]
+  (let [state   @dag-state
+        skipped (blocked-task-ids (remaining-dep-graph directory state) (:failed state))
+        summary (plan-summary state skipped)]
+    (log/info "DAGWaves: plan" (:plan-id state) "finished:" (:message summary))
+    (hivemind/shout! "coordinator" :completed
+                     (merge {:task (str "DAGWaves plan " (:plan-id state))
+                             :project-id (get-in state [:opts :project-id])}
+                            summary))
+    (swap! dag-state assoc :active false)
+    summary))
+
+(defn- advance-dag!
+  "Dispatch every task made ready by the latest outcome within the slot limit,
+   then announce the plan when nothing is ready or in flight. A wave whose
+   every spawn failed leaves nothing in flight, so the advance repeats; each
+   round moves at least one ready task to :failed, so it terminates."
+  [directory]
+  (loop []
+    (let [s         @dag-state
+          ready     (find-ready-tasks directory (:completed s) (:dispatched s) (:failed s))
+          wave      (when (seq ready) (dispatch-wave! ready (:max-slots s) (:opts s)))
+          in-flight (:dispatched @dag-state)]
+      (cond
+        (plan-finished? ready in-flight)                        (announce-plan-complete! directory)
+        (and (empty? in-flight) (seq (:dispatched-tasks wave))) (recur)
+        :else                                                   wave))))
+
+(defn- settle-task!
+  "Record TASK-ID's OUTCOME. A success moves its kanban card to done; a
+   failure leaves the card open, which keeps its dependents unready."
+  [task-id ling-id outcome directory]
+  (if (= :failed outcome)
+    (log/warn "DAGWaves: task" task-id "FAILED via" ling-id)
+    (move-kanban-done! task-id directory))
+  (swap! dag-state record-outcome task-id ling-id outcome (System/currentTimeMillis)))
+
 (defn on-ling-complete
-  "Handle a terminal ling event and auto-dispatch the next wave on success.
+  "Handle a terminal ling event: settle the task, then advance the plan.
+   Success and failure share the advance step, so a failure still dispatches
+   independent ready work and a failed last task still finishes the plan.
    EVENT-TYPE is the ling event that arrived (:completed, :truncated, ...);
    an older caller that put it in DATA as :event-type is still honoured."
-  [{:keys [agent-id _project-id event-type data]}]
+  [{:keys [agent-id event-type data]}]
   (when (:active @dag-state)
-    (let [;; Find the kanban-task-id for this ling
-          slave (ds-queries/get-slave agent-id)
+    (let [slave          (ds-queries/get-slave agent-id)
           kanban-task-id (:slave/kanban-task-id slave)
-          directory (or (:slave/cwd slave)
-                        (get-in @dag-state [:opts :cwd]))]
+          directory      (or (:slave/cwd slave) (get-in @dag-state [:opts :cwd]))
+          event-type*    (or event-type (:event-type data))]
+      (cond
+        (nil? kanban-task-id)
+        (log/debug "DAGWaves: ling" agent-id "ended but has no kanban-task-id (not a DAG task)")
 
-      (if-not kanban-task-id
-        (log/debug "DAGWaves: ling" agent-id "completed but no kanban-task-id (not a DAG task)")
-
-        ;; Only handle tasks that are in our dispatched set
-        (when (contains? (:dispatched @dag-state) kanban-task-id)
-          (log/info "DAGWaves: ling" agent-id "ended task" kanban-task-id
-                    "with" (or event-type (:event-type data)))
-
-          ;; Check if this is a success or failure
-          (let [is-failure? (= :failed (ling-outcome (or event-type (:event-type data))
-                                                     data))]
-
-            (if is-failure?
-              ;; Failed: move to failed set, don't mark kanban done
-              (do
-                (swap! dag-state (fn [s]
-                                   (-> s
-                                       (update :dispatched dissoc kanban-task-id)
-                                       (update :failed conj kanban-task-id)
-                                       (update :wave-log conj
-                                               {:event :failed
-                                                :task-id kanban-task-id
-                                                :ling-id agent-id
-                                                :timestamp (System/currentTimeMillis)}))))
-                (log/warn "DAGWaves: task" kanban-task-id "FAILED via" agent-id)
-                (emit-wave! :workflow/wave-completed))
-
-              ;; Success: mark done, dispatch next wave
-              (do
-                ;; Move kanban to done
-                (move-kanban-done! kanban-task-id directory)
-
-                ;; Update state
-                (swap! dag-state (fn [s]
-                                   (-> s
-                                       (update :dispatched dissoc kanban-task-id)
-                                       (update :completed conj kanban-task-id)
-                                       (update :wave-log conj
-                                               {:event :completed
-                                                :task-id kanban-task-id
-                                                :ling-id agent-id
-                                                :timestamp (System/currentTimeMillis)}))))
-
-                (emit-wave! :workflow/wave-completed)
-
-                ;; Auto-dispatch next wave
-                (let [ready (find-ready-tasks directory
-                                              (:completed @dag-state)
-                                              (:dispatched @dag-state)
-                                              (:failed @dag-state))
-                      max-slots (:max-slots @dag-state)]
-                  (when (seq ready)
-                    (log/info "DAGWaves: auto-dispatching" (count ready)
-                              "newly ready tasks after" kanban-task-id)
-                    (dispatch-wave! ready max-slots (:opts @dag-state)))
-
-                  ;; Check if DAG is complete
-                  (when (and (empty? ready)
-                             (empty? (:dispatched @dag-state)))
-                    (log/info "DAGWaves: ALL TASKS COMPLETE for plan" (:plan-id @dag-state))
-                    (hivemind/shout! "coordinator" :completed
-                                     {:task (str "DAGWaves plan " (:plan-id @dag-state))
-                                      :message (str "All tasks complete. "
-                                                    (count (:completed @dag-state)) " succeeded, "
-                                                    (count (:failed @dag-state)) " failed.")})
-                    (swap! dag-state assoc :active false)))))))))))
+        (contains? (:dispatched @dag-state) kanban-task-id)
+        (do (log/info "DAGWaves: ling" agent-id "ended task" kanban-task-id "with" event-type*)
+            (settle-task! kanban-task-id agent-id (ling-outcome event-type* data) directory)
+            (emit-wave! :workflow/wave-completed)
+            (advance-dag! directory))))))
 
 ;; =============================================================================
 ;; Channel Subscription (core.async pub/sub)
