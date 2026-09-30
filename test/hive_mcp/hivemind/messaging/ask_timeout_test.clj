@@ -93,3 +93,21 @@
     (is (= "yes" (:decision result)))
     (is (empty? shouts))
     (is (empty? after))))
+
+;; =============================================================================
+;; Status neutrality
+;; =============================================================================
+;; The asker has already resumed with the timeout answer when this shout is
+;; heard, so it must not park the asker's slave :blocked.
+
+(deftest timeout-shout-is-status-neutral
+  (let [d (msg/ask-timeout-shout "ask-1" {:question "q?"} 10)]
+    (is (true? (:status-neutral? d)))
+    (is (nil? (msg/shout-slave-status :blocked d))
+        "a status-neutral shout sets no slave status")))
+
+(deftest ordinary-shout-still-sets-slave-status
+  (with-redefs [hive-mcp.hivemind.event-registry/slave-status
+                (fn [et] (get {:blocked :blocked :completed :idle} et))]
+    (is (= :blocked (msg/shout-slave-status :blocked {:message "stuck"})))
+    (is (= :idle (msg/shout-slave-status :completed {})))))

@@ -75,6 +75,15 @@
   [event-type]
   (event-registry/slave-status event-type))
 
+(defn shout-slave-status
+  "Pure: the slave status a shout of `event-type` with `data` sets, or nil
+   when the shout is `:status-neutral?` — an announcement ABOUT the agent
+   (e.g. an ask timeout it already resumed from) rather than a transition
+   OF it."
+  [event-type data]
+  (when-not (:status-neutral? data)
+    (event-type->slave-status event-type)))
+
 (def ^:const default-shout-message-cap
   "Fallback cap when config is unloaded or missing :hivemind/:shout-message-cap.
    One bad shout fans out across (per-agent ring × backbone × subscribers), so
@@ -281,7 +290,7 @@
         capped-task (cap-message (:task data))
         payload-data (dissoc data :task :message :directory :project-id
                              :parent-id :broadcast? :broadcast-reason
-                             :deliberate? :to :context-id)
+                             :deliberate? :to :context-id :status-neutral?)
         message (cond-> {:event-type event-type
                          :timestamp now
                          :project-id project-id
@@ -331,10 +340,10 @@
                                       :last-seen now}
                                :created-at (or (get-in entries [agent-id :created-at]) now)
                                :last-accessed now}))))
-    ;; 2. DataScript slave status — always
-    (when resolved-slave
+    ;; 2. DataScript slave status — unless the shout is status-neutral
+    (when-let [status (and resolved-slave (shout-slave-status event-type data))]
       (proto/update-slave! registry/default-registry resolved-slave-id
-                           {:slave/status (event-type->slave-status event-type)}))
+                           {:slave/status status}))
     ;; 3. Local fanout always, backbone publish when connected
     (route-shout! (eb/get-backbone) backbone-payload)
     ;; 4. Log
@@ -436,13 +445,16 @@
 
 (defn ask-timeout-shout
   "Pure: the :blocked shout data announcing that ask `ask-id` timed out.
+   Status-neutral: by the time this is heard the asker has already resumed
+   with the timeout answer, so the shout must not park its slave :blocked.
    -> data for (shout! agent-id :blocked data)"
   [ask-id {:keys [question project-id parent-id asked-at]} timeout-ms]
   (cond-> {:reason :ask-timeout
            :ask-id ask-id
            :message (str "Ask timed out after " timeout-ms "ms with no answer: "
                          question)
-           :timeout-ms timeout-ms}
+           :timeout-ms timeout-ms
+           :status-neutral? true}
     asked-at (assoc :asked-at asked-at)
     project-id (assoc :project-id project-id)
     parent-id (assoc :parent-id parent-id)))
