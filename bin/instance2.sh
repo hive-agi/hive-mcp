@@ -27,6 +27,8 @@
 # Several instances may run side by side: INSTANCE names the sandbox, and
 # NREPL_PORT / HTTP_PORT pick its ports (defaults: instance2, 7950, 7951).
 #   INSTANCE=probe-a NREPL_PORT=7960 HTTP_PORT=7961 bin/instance2.sh start
+# LOCAL_ROOTS swaps a library for a checkout (space-separated lib=dir):
+#   LOCAL_ROOTS="io.github.hive-agi/hive-addon=$HOME/PP/hive/hive-addon" bin/instance2.sh start
 #
 # Addons are sibling repositories mounted as :local/root, so hive-hot can
 # reload them. Default: hive-compose hive-rss hive-guard (small, core deps only).
@@ -110,6 +112,14 @@ cmd_start() {
   for a in "${addons[@]}"; do
     [[ -f "$FLEET_DIR/$a/deps.edn" ]] || die "addon repo not found: $FLEET_DIR/$a"
     deps+=" io.github.hive-agi/$a {:local/root \"$FLEET_DIR/$a\"}"
+  done
+  # LOCAL_ROOTS="lib=dir ..." overrides a library with a checkout (e.g. a
+  # hive-addon or hive-hot worktree branch not yet released).
+  local lr lib dir
+  for lr in ${LOCAL_ROOTS:-}; do
+    lib="${lr%%=*}"; dir="${lr#*=}"
+    [[ "$lib" =~ ^[A-Za-z0-9._/-]+$ && -f "$dir/deps.edn" ]] || die "bad LOCAL_ROOTS entry: $lr"
+    deps+=" $lib {:local/root \"$dir\"}"
   done
 
   local real_home="${HOME:?HOME must be set}"
