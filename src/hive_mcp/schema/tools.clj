@@ -9,7 +9,8 @@
             [clojure.string :as str]
             [clojure.walk :as walk]
             [hive-mcp.schema.memory :as mem]
-            [hive-mcp.swarm.adapters.soft :as soft]))
+            [hive-mcp.swarm.adapters.soft :as soft]
+            [hive-system.pattern.construct.api :as pattern]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -23,9 +24,26 @@
   "Non-empty string type."
   [:string {:min 1}])
 
+(defn- construct-expr
+  "The regex source of hive-system construct FORM in DIALECT (:java | :ecma).
+   A construct the dialect cannot express fails loudly at load time."
+  [dialect form]
+  (let [{:keys [ok error] :as result} (pattern/->expr dialect form)]
+    (when-not ok
+      (throw (ex-info "construct has no expression in dialect"
+                      {:dialect dialect :form form :error (or error result)})))
+    ok))
+
 (def NonBlankString
-  "String with at least one non-whitespace character."
-  [:and {:json-schema/type "string"} NonEmptyString [:re #"(?s).*\S.*"]])
+  "String with at least one non-whitespace character.
+   One hive-system construct, projected twice: the :java expression is the
+   regex malli validates with, the :ecma expression is the string JSON Schema
+   advertises (JSON Schema patterns are ECMA-262). Without the :ecma override
+   malli puts the raw java.util.regex.Pattern into the tool's inputSchema,
+   which no MCP transport can serialize."
+  [:and {:json-schema/type "string"} NonEmptyString
+   [:re {:json-schema/pattern (construct-expr :ecma :non-whitespace)}
+    (re-pattern (construct-expr :java :non-whitespace))]])
 
 (def OptionalString
   "Optional string (may be nil or string)."
