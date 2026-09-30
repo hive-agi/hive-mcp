@@ -72,7 +72,8 @@
      [:secret-key [:maybe :keyword]]
      [:default-model {:optional true} :string]
      [:available-models {:optional true} [:sequential :string]]
-     [:deny-models {:optional true} [:sequential :string]]]]])
+     [:deny-models {:optional true} [:sequential :string]]
+     [:auth-probe {:optional true} [:or [:= false] [:map [:kind :keyword] [:url :string]]]]]]])
 
 (def ProviderRegistry
   "Malli schema for the provider registry: provider keyword -> ProviderEntry."
@@ -155,7 +156,9 @@
                    ;; way out are honoured end to end. Read by
                    ;; `hive-mcp.agent.cache/cache-control-style`, which also
                    ;; requires the model to be one that honours the marker.
-                   :cache-control :anthropic-style}
+                   :cache-control :anthropic-style
+                   :auth-probe    {:kind :openrouter-key-info
+                                   :url  "https://openrouter.ai/api/v1/key"}}
    :venice        {:api-url       "https://api.venice.ai/api/v1/chat/completions"
                    :secret-key    :venice-api-key}
    :groq          {:api-url       "https://api.groq.com/openai/v1/chat/completions"
