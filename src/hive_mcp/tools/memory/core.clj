@@ -1,7 +1,8 @@
 (ns hive-mcp.tools.memory.core
   "Core utilities and macros for memory tool handlers."
   (:require [hive-mcp.tools.core :refer [mcp-error]]
-            [hive-mcp.protocols.memory :as mem-proto]))
+            [hive-mcp.protocols.memory :as mem-proto]
+            [hive-mcp.addons.boot-health :as boot-health]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -11,7 +12,7 @@
    Guards on store-set? (DIP: abstracts over any IMemoryStore backend)."
   [& body]
   `(if-not (mem-proto/store-set?)
-     (mcp-error "Memory store not configured")
+     (mcp-error (boot-health/with-notice "Memory store not configured"))
      (try
        ~@body
        (catch Exception e#

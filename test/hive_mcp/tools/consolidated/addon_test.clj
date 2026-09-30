@@ -10,11 +10,12 @@
   (is (= "addon" (:name tool/tool-def)))
   (is (:consolidated tool/tool-def))
   (is (= ["command"] (get-in tool/tool-def [:inputSchema :required])))
-  (is (= ["doctor" "help"]
+  (is (= ["doctor" "readiness" "help"]
          (get-in tool/tool-def
                  [:inputSchema :properties "command" :enum])))
   (is (= [tool/tool-def] tool/tools))
-  (is (contains? tool/handlers :doctor)))
+  (is (contains? tool/handlers :doctor))
+  (is (contains? tool/handlers :readiness)))
 
 (deftest doctor-handler-normalizes-json-style-parameters
   (let [seen (atom nil)]
