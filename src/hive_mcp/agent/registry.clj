@@ -14,6 +14,18 @@
 
 (defonce ^:private initialized? (atom false))
 
+(defn- advertised-tools
+  "The advertised surface, resolved through its var per call so a reload of
+   the routes namespace is seen here. Loading it is a require, never a
+   :reload: hive-hot is the only reload authority."
+  []
+  ((requiring-resolve 'hive-mcp.server.routes/advertised-tool-defs)))
+
+(defn- by-name
+  "tools -> {name tool}. Pure."
+  [tools]
+  (into {} (map (juxt :name identity)) tools))
+
 (defn ensure-registered!
   "Lazily initialize tool registry on first use."
   []
@@ -22,10 +34,7 @@
     (reset! initialized? true)
     (let [v (r/guard Exception nil
                      (log/info "Auto-registering tools for agent delegation...")
-                     (require 'hive-mcp.tools.registry)
-                     (let [tools-var (resolve 'hive-mcp.tools.registry/tools)]
-                       (when tools-var
-                         (register! @tools-var))))]
+                     (register! (advertised-tools)))]
       (when-let [err (::r/error (meta v))]
         (log/warn "Failed to auto-register tools:" (:message err))))))
 
@@ -56,18 +65,17 @@
   (keys @registry))
 
 (defn refresh!
-  "Clear and re-register all tools from hive-mcp.tools."
+  "Replace the delegation registry with the advertised surface, in ONE reset!
+   (no empty window a concurrent lookup could fall into). Returns the tool
+   count, 0 when the surface could not be computed (the registry is then left
+   as it was)."
   []
-  (reset! registry {})
   (reset! initialized? true)
   (let [result (r/try-effect* :agent/tool-refresh-failed
-                              (log/info "[hot-reload] Refreshing tool registry...")
-                              (require 'hive-mcp.tools.registry :reload)
-                              (let [tools-var (resolve 'hive-mcp.tools.registry/tools)]
-                                (when tools-var
-                                  (register! @tools-var))
-                                (log/info "[hot-reload] Tool registry refreshed:" (count @registry) "tools")
-                                (count @registry)))]
+                              (let [table (by-name (advertised-tools))]
+                                (reset! registry table)
+                                (log/info "[hot-reload] Tool registry refreshed:" (count table) "tools")
+                                (count table)))]
     (if (r/ok? result)
       (:ok result)
       (do (log/error "[hot-reload] Failed to refresh tools:" (:message result))

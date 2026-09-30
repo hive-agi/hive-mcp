@@ -9,13 +9,27 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
+(def surface-id
+  "The id MCP-HTTP's tool surface is registered under in
+   `hive-mcp.server.routes`."
+  :mcp-http)
+
 (defn- build-dispatch
-  "The live tool set behind the SDK method table."
+  "The live tool set behind the SDK method table.
+
+   The SDK context is created once, but its `:tools` atom is registered as a
+   tool SURFACE, so every refresh (inject, evict, activate, remount, core
+   reload) installs the current advertised table into it. MCP-HTTP therefore
+   serves the same table as every other transport, never the closures of the
+   addon instances that were live when it started."
   []
-  (let [build-spec  (requiring-resolve 'hive-mcp.server.routes/build-server-spec)
-        create-ctx! (requiring-resolve 'io.modelcontext.clojure-sdk.server/create-context!)
-        sdk-dispatch (requiring-resolve 'hive-mcp.transport.mcp-http/sdk-dispatch)]
-    (sdk-dispatch (create-ctx! (assoc (build-spec) :server-id (random-uuid))))))
+  (let [build-spec   (requiring-resolve 'hive-mcp.server.routes/build-server-spec)
+        register!    (requiring-resolve 'hive-mcp.server.routes/register-surface!)
+        create-ctx!  (requiring-resolve 'io.modelcontext.clojure-sdk.server/create-context!)
+        sdk-dispatch (requiring-resolve 'hive-mcp.transport.mcp-http/sdk-dispatch)
+        context      (create-ctx! (assoc (build-spec) :server-id (random-uuid)))]
+    (register! surface-id {:surface/kind :tools-atom :surface/tools-atom (:tools context)})
+    (sdk-dispatch context)))
 
 (defn start-mcp-http!
   "Start the MCP HTTP transport.

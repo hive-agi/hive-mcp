@@ -302,6 +302,28 @@
       (is (= :working (:slave/status (.status (reg/get-agent-by-id "same-id"))))
           "Second registration should overwrite"))))
 
+;;; =============================================================================
+;;; refresh! follows the ONE advertised surface
+;;; =============================================================================
+
+(deftest refresh-reseats-the-registry-from-the-advertised-surface
+  (testing "refresh! replaces the registry with the advertised table: stale names go, every advertised name is present once"
+    (reg/register! [{:name "stale-from-before-reload" :handler identity}])
+    (let [n        (reg/refresh!)
+          expected (set (map :name ((requiring-resolve 'hive-mcp.server.routes/advertised-tool-defs))))]
+      (is (pos? n))
+      (is (= n (count expected)))
+      (is (= expected (set (reg/list-tools))))
+      (is (nil? (reg/get-tool "stale-from-before-reload"))))))
+
+(deftest refresh-never-reloads-a-namespace
+  (testing "hive-hot is the only reload authority: refresh! leaves the tools registry namespace object untouched"
+    (require 'hive-mcp.tools.registry)
+    (let [before @(resolve 'hive-mcp.tools.registry/advertised-tools)]
+      (reg/refresh!)
+      (is (identical? before @(resolve 'hive-mcp.tools.registry/advertised-tools))
+          "a :reload would have re-evaluated the defn and minted a new fn object"))))
+
 (comment
   ;; Run tests
   (require '[clojure.test :refer [run-tests]])
