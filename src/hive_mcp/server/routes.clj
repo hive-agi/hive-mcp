@@ -306,12 +306,12 @@
   "Hot-reload all tools in the running server.
 
    SERVER-CONTEXT-ATOM's context is registered as a surface (idempotent, keyed
-   by the atom) so every later refresh reaches it too, then every registered
-   surface is refreshed from the one table. Returns what `refresh-surfaces!`
-   returns, nil when the atom holds no context."
+   by the atom's identity) so every later refresh reaches it too, then every
+   registered surface is refreshed from the one table. Returns what
+   `refresh-surfaces!` returns, nil when the atom holds no context."
   [server-context-atom]
   (when @server-context-atom
-    (register-surface! [:context-atom server-context-atom]
+    (register-surface! [:context-atom (System/identityHashCode server-context-atom)]
                        {:surface/kind :context-atom
                         :surface/context-atom server-context-atom})
     (refresh-surfaces!)))
