@@ -4,7 +4,8 @@
             [hive-mcp.agent.type-registry :as agent-type-registry]
             [hive-spi.editor.services :as svc]
             [taoensso.timbre :as log]
-            [clojure.data.json :as json]))
+            [clojure.data.json :as json]
+            [hive-mcp.tools.agent.reconcile :as reconcile]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -65,15 +66,21 @@
             []))))))
 
 (defn merge-with-elisp-lings
-  "Merge DataScript agents with elisp lings, DataScript taking precedence."
-  [ds-agents]
-  (try
-    (let [elisp-lings (or (query-elisp-lings) [])
-          ds-ids (set (map :slave/id ds-agents))
-          new-lings (remove #(ds-ids (:slave/id %)) elisp-lings)]
-      (log/debug "Merging agents: DataScript=" (count ds-agents)
-                 "elisp-only=" (count new-lings))
-      (concat ds-agents new-lings))
-    (catch Exception e
-      (log/warn "Failed to merge elisp lings (returning DataScript only):" (ex-message e))
-      ds-agents)))
+  "Merge DataScript agents with elisp lings, DataScript taking precedence.
+   Elisp orphan rows are reconciled against `:probe` (an ILivenessEvidence,
+   default: live registries); dead orphans appear only with `:include-stale?`."
+  ([ds-agents] (merge-with-elisp-lings ds-agents {}))
+  ([ds-agents {:keys [probe include-stale? elisp-lings]}]
+   (try
+     (let [elisp-lings (or elisp-lings (query-elisp-lings) [])
+           ds-ids      (set (map :slave/id ds-agents))
+           elisp-only  (remove #(ds-ids (:slave/id %)) elisp-lings)
+           new-lings   (reconcile/reconcile (or probe (reconcile/live-evidence))
+                                            elisp-only
+                                            {:include-stale? include-stale?})]
+       (log/debug "Merging agents: DataScript=" (count ds-agents)
+                  "elisp-only=" (count new-lings))
+       (concat ds-agents new-lings))
+     (catch Exception e
+       (log/warn "Failed to merge elisp lings (returning DataScript only):" (ex-message e))
+       ds-agents))))
