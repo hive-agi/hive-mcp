@@ -2,8 +2,10 @@
   "Evidence-driven, read-only diagnostics for one live IAddon.
 
    The doctor composes hive-addon's manifest/solver/contract seams with the
-   hive-mcp registry and Emacs extension port. Stage failures are evidence, not
-   transport failures: a completed diagnostic returns (r/ok report) with
+   hive-mcp registry and the :vessel :dispatch editor capability (Emacs
+   feature probes are the closed op :editor/feature?, never evaluated elisp).
+   Stage failures are evidence, not transport failures: a completed
+   diagnostic returns (r/ok report) with
    :ok? false. Only invalid input or an invalid report shape returns r/err.
 
    Live lifecycle state is never mutated. In particular, the doctor does not
@@ -17,10 +19,10 @@
             [hive-addon.schema :as addon-schema]
             [hive-dsl.result :as r]
             [hive-mcp.addons.core :as registry]
-            [hive-mcp.spi.emacs :as emacs]
             [malli.core :as m]
             [malli.error :as me]
-            [hive-addon.wire :as wire])
+            [hive-addon.wire :as wire]
+            [hive-spi.editor.services :as svc])
   (:import [java.io PushbackReader]
            [java.time Instant]))
 
@@ -464,7 +466,12 @@
          vec)))
 
 (defn- feature-probe
-  [feature timeout-ms emacs-eval-fn]
+  "Ask the vessel whether FEATURE is loaded, through the closed probe op
+   {:op :editor/feature? :feature FEATURE} on (svc/invoke :vessel :dispatch).
+   No elisp is built here: the vessel addon lowers the op. With no vessel
+   registered, or one without the :editor/* translators, the failure envelope
+   reads as unreachable with its error as evidence."
+  [feature timeout-ms]
   (if-not (and (string? feature)
                (re-matches #"[A-Za-z0-9][A-Za-z0-9+*./_:@~-]*" feature))
     {:feature (str feature)
@@ -472,9 +479,10 @@
      :loaded? false
      :error "invalid Emacs feature symbol"}
     (try
-      (let [{:keys [success result error timed-out]} (emacs-eval-fn
-                                                      (format "(featurep '%s)" feature)
-                                                      timeout-ms)
+      (let [{:keys [success result error timed-out]}
+            (svc/invoke :vessel :dispatch
+                        {:op :editor/feature? :feature feature}
+                        timeout-ms)
             loaded? (and success (= "t" (str/trim (str result))))]
         (cond-> {:feature feature
                  :reachable? (boolean success)
@@ -489,12 +497,12 @@
          :class (.getName (class t))}))))
 
 (defn- emacs-stage
-  [input spec emacs-eval-fn]
+  [input spec]
   (let [features (feature-names input spec)]
     (if (empty? features)
       (skipped :emacs-features "no Emacs feature expectations were declared")
       (let [timeout-ms (:timeout-ms input 3000)
-            probes (mapv #(feature-probe % timeout-ms emacs-eval-fn) features)
+            probes (mapv #(feature-probe % timeout-ms) features)
             pass? (every? :loaded? probes)]
         (stage :emacs-features
                (if pass? :pass :fail)
@@ -507,10 +515,6 @@
 ;; -----------------------------------------------------------------------------
 ;; Composition root
 ;; -----------------------------------------------------------------------------
-
-(defn- default-emacs-eval
-  [code timeout-ms]
-  (emacs/eval-elisp-with-timeout code timeout-ms))
 
 (def ^:private default-ports
   {:discover-fn mount/discover-specs
@@ -526,15 +530,16 @@
    :capabilities-fn (fn [addon] (addon/capabilities addon))
    :addon-id-fn (fn [addon] (addon/addon-id addon))
    :addon-type-fn (fn [addon] (addon/addon-type addon))
-   :emacs-eval-fn default-emacs-eval
    :now-fn #(Instant/now)})
 
 (defn run-doctor
   "Run all addon doctor stages and return a hive-dsl Result.
 
    The optional ports map is a DIP seam for deterministic tests and alternate
-   hosts. A diagnostic finding is represented by report :ok? false inside an
-   r/ok; r/err is reserved for invalid input/report contracts."
+   hosts. The Emacs feature probes are not a port here: they go through the
+   :vessel :dispatch capability of hive-spi.editor.services, which is itself
+   the seam. A diagnostic finding is represented by report :ok? false inside
+   an r/ok; r/err is reserved for invalid input/report contracts."
   ([input] (run-doctor input {}))
   ([input port-overrides]
    (if-not (valid-input? input)
@@ -543,7 +548,7 @@
              :explanation (me/humanize (m/explain DoctorInput input))})
      (let [{:keys [discover-fn solve-fn resolve-constructor-fn scan-project-fn
                    get-entry-fn validate-addon-fn health-fn capabilities-fn
-                   addon-id-fn addon-type-fn emacs-eval-fn now-fn]}
+                   addon-id-fn addon-type-fn now-fn]}
            (merge default-ports port-overrides)
            addon-id (:addon-id input)
            {:keys [spec specs] discovery :stage}
@@ -556,7 +561,7 @@
                                     validate-addon-fn health-fn)
                    (capability-stage addon-id spec get-entry-fn capabilities-fn
                                      addon-id-fn addon-type-fn)
-                   (emacs-stage input spec emacs-eval-fn)]
+                   (emacs-stage input spec)]
            counts (frequencies (map :status stages))
            report {:report/type :addon-doctor
                    :schema-version 1
