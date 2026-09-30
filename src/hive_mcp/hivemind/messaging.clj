@@ -30,8 +30,10 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-(defn- all-hivemind-messages
-  "Return all hivemind messages for piggyback module.
+(defn registry->messages
+  "Project an agent-registry SNAPSHOT (agent-id -> entry) into piggyback rows.
+   Pure. nil or {} -> ().
+
    Projection mirrors buffer-backbone-event! normalization so dual-path dedup
    keys remain shape-aligned (both paths carry :task and :shout-id when set).
    :parent-id / :broadcast? ride along — hive-mcp.channel.audience routes on
@@ -47,12 +49,12 @@
    into its turn telemetry) held on one of the two paths and not the other.
    Measured again 2026-09-15: two directed turns from the same peer collapsed
    into one row, so the recipient of a conversation lost a turn of it."
-  []
-  (mapcat (fn [[_agent-id entry]]
+  [entries]
+  (mapcat (fn [[agent-id entry]]
             (let [{:keys [messages]} (:data entry)]
               (for [{:keys [event-type message task timestamp project-id shout-id
                             parent-id broadcast? deliberate? to context-id ref]} messages]
-                (cond-> {:agent-id _agent-id
+                (cond-> {:agent-id agent-id
                          :event-type event-type
                          :message (or message task "")
                          :timestamp timestamp
@@ -65,9 +67,20 @@
                   context-id (assoc :context-id context-id)
                   ref (assoc :ref ref)
                   deliberate? (assoc :deliberate? true)))))
-          @(:atom state/agent-registry)))
+          entries))
 
-(piggyback/register-message-source! all-hivemind-messages)
+(defn- all-hivemind-messages
+  "Piggyback source over the swarm's local message ring.
+
+   Compat step while the swarm still lives behind hive-mcp.swarm.delegate: the
+   agent registry is resolved on EVERY call, never captured at load, so this
+   yields no rows when hive-agent is absent and sees a reloaded hive-agent on
+   the next read."
+  []
+  (registry->messages (some-> (state/current-agent-registry) :atom deref)))
+
+;; By VAR, so a reload of all-hivemind-messages is seen by the next read.
+(piggyback/register-message-source! #'all-hivemind-messages)
 
 (defn- event-type->slave-status
   "Map hivemind event type to valid DataScript slave status.
@@ -302,15 +315,17 @@
     ;; ONE swap, not a read then a put: two shouts from the same sender in
     ;; flight together (a release waking two waiters, both sent as the
     ;; releaser) would each read the old ring and the second put would drop
-    ;; the first message.
-    (bounded-swap! state/agent-registry
-                   (fn [entries]
-                     (let [messages (or (get-in entries [agent-id :data :messages]) [])]
-                       (assoc entries agent-id
-                              {:data {:messages (vec (take-last 10 (conj messages message)))
-                                      :last-seen now}
-                               :created-at (or (get-in entries [agent-id :created-at]) now)
-                               :last-accessed now}))))
+    ;; the first message. The ring is resolved per call, never captured at
+    ;; load, so a reloaded hive-agent is written to rather than a stale atom.
+    (when-let [ring (state/current-agent-registry)]
+      (bounded-swap! ring
+                     (fn [entries]
+                       (let [messages (or (get-in entries [agent-id :data :messages]) [])]
+                         (assoc entries agent-id
+                                {:data {:messages (vec (take-last 10 (conj messages message)))
+                                        :last-seen now}
+                                 :created-at (or (get-in entries [agent-id :created-at]) now)
+                                 :last-accessed now})))))
     ;; 2. DataScript slave status — always
     (when resolved-slave
       (proto/update-slave! registry/default-registry resolved-slave-id
