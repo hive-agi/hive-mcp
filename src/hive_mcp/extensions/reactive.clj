@@ -33,16 +33,15 @@
    contributions, when it is whitelisted. Mirrors the boot one-shot: a name
    with NO contributions gets no composite (and loses the one it had, so a
    retraction that empties a tool does not leave a help-only shell behind).
-   Returns the tool-def, or nil."
+   Returns the tool-def, or nil. The agent-delegation registry is NOT written
+   here: it follows the advertised table in `refresh-surface!`, so an
+   absorbed composite is absent there exactly as it is on the wire."
   [tool-name]
   (when-let [desc (get composite-descriptions tool-name)]
     (if (empty? (acmds/get-commands tool-name))
       (do (ext/deregister-tool! tool-name) nil)
       (let [t (composite/build-composite-tool tool-name desc)]
         (ext/register-tool! t)
-        (rescue nil
-                (when-let [reg-fn (requiring-resolve 'hive-mcp.agent.registry/register!)]
-                  (reg-fn [t])))
         t))))
 
 (defn redrain-schema-extensions!
@@ -62,28 +61,53 @@
         (addon-core/list-addons)))
 
 (defn refresh-server-tools!
-  "Rebuild the running server's tool table, when a server is running.
-   Returns the tool count, or nil when there is no server context yet."
+  "Refresh every registered tool surface from the one advertised table
+   (`hive-mcp.server.routes/refresh-surfaces!`), registering the nREPL
+   server-context as a surface first when it is up. Returns the refresh
+   report {:count :changed :surfaces :failed}, or nil when no surface took the
+   table (no server running yet)."
   []
   (rescue nil
-          (when-let [ctx-atom (some-> (requiring-resolve 'hive-mcp.server.core/server-context-atom)
-                                      deref)]
-            (when @ctx-atom
-              ((requiring-resolve 'hive-mcp.server.routes/refresh-tools!) ctx-atom)))))
+          (let [ctx-atom (some-> (requiring-resolve 'hive-mcp.server.core/server-context-atom)
+                                 deref)
+                out      (if (and ctx-atom @ctx-atom)
+                           ((requiring-resolve 'hive-mcp.server.routes/refresh-tools!) ctx-atom)
+                           ((requiring-resolve 'hive-mcp.server.routes/refresh-surfaces!)))]
+            (when (seq (:surfaces out)) out))))
+
+(defn refresh-agent-tools!
+  "Re-seat the agent-delegation registry from the advertised table. Returns
+   its tool count, nil when it could not be reached."
+  []
+  (rescue nil ((requiring-resolve 'hive-mcp.agent.registry/refresh!))))
 
 (defn refresh-surface!
   "Bring the advertised surface up to date after a contribution to
    `tool-name` (nil: no composite to rebuild): rebuild its composite, re-drain
-   schema-extensions, refresh the server's tool table. Each leg is rescued on
-   its own; returns what each did."
+   schema-extensions, refresh every tool surface and the delegation registry
+   from the one table. Each leg is rescued on its own; returns what each did."
   [tool-name]
   {:composite    (some? (rescue nil (rebuild-composite! tool-name)))
    :schema-tools (rescue [] (redrain-schema-extensions!))
-   :server-tools (refresh-server-tools!)})
+   :server-tools (refresh-server-tools!)
+   :agent-tools  (refresh-agent-tools!)})
+
+(defn on-contribution
+  "The contribution listener: bring the surface up to date for the tool the
+   EVENT names. Registered BY VAR (see `install!`)."
+  [{:keys [type tool-name addon-id]}]
+  (let [out (refresh-surface! tool-name)]
+    (log/debug "Contribution reached the surface"
+               {:type type :tool tool-name :addon addon-id :refresh out})))
 
 (defn install!
-  "Subscribe to the registry's contribution events. Idempotent.
+  "Subscribe to the registry's contribution events. Idempotent by id.
    Returns the listener id, as it always has.
+
+   The listener is registered as the VAR #'on-contribution, never as a fn
+   value: the listener table is a defonce that outlives a reload of this
+   namespace, so a captured value would keep running the OLD code after a
+   core reload. Through the var, every event runs the current definition.
 
    Two things are subscribed, not one. The facade's own listener list is what
    a contribution through hive-mcp.extensions.registry notifies. The hive-addon
@@ -95,12 +119,7 @@
    would never rebuild. Arming it here, at install time, is what makes the
    migration safe to perform one addon at a time."
   []
-  (let [id (ext/add-contribution-listener!
-            :reactive-surface
-            (fn [{:keys [type tool-name addon-id]}]
-              (let [out (refresh-surface! tool-name)]
-                (log/debug "Contribution reached the surface"
-                           {:type type :tool tool-name :addon addon-id :refresh out}))))]
+  (let [id (ext/add-contribution-listener! :reactive-surface #'on-contribution)]
     (rescue nil (ext/ensure-seam-listener!))
     id))
 

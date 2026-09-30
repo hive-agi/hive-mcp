@@ -86,3 +86,29 @@
     (is (false? (:composite out)) "nothing contributed, nothing to build")
     (is (vector? (:schema-tools out)))
     (is (nil? (:server-tools out)) "no server context in a unit test")))
+
+(defn- installed-listener []
+  (get @@#'ext/contribution-listeners :reactive-surface))
+
+(deftest the-listener-is-registered-by-var
+  (testing "install! registers the VAR, so a reload of this namespace reaches the defonce listener table"
+    (reactive/install!)
+    (is (identical? #'reactive/on-contribution (installed-listener))))
+  (testing "install! is idempotent by id"
+    (reactive/install!)
+    (reactive/install!)
+    (is (= 1 (count (filter #{:reactive-surface} (keys @@#'ext/contribution-listeners)))))))
+
+(deftest a-rebound-listener-runs-without-reinstalling
+  (testing "what a core reload does to the var (rebind its root) reaches the next contribution"
+    (reactive/install!)
+    (let [seen     (atom [])
+          original @#'reactive/on-contribution]
+      ;; Rebinding the root is exactly the effect of reloading the namespace;
+      ;; install! is NOT called again.
+      (alter-var-root #'reactive/on-contribution (constantly #(swap! seen conj (:tool-name %))))
+      (try
+        (ext/contribute-commands! "overarch" :probe.rebind {"probe" {:handler identity}})
+        (is (= ["overarch"] @seen))
+        (finally
+          (alter-var-root #'reactive/on-contribution (constantly original)))))))
