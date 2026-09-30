@@ -122,6 +122,7 @@
   "saa" :hive-workflows
   "scheduler.dag-waves" :hive-workflows
   "scheduler.decay" :hive-memory
+  "scheduler.kg-gc" :hive-memory
   "scheduler.vulcan" :hive-workflows
   "scripts.kg-datahike-rebuild" :hive-memory
   "telemetry" :hive-observability
