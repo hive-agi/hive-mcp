@@ -205,33 +205,98 @@
     :pattern  "^(moonshotai/)?kimi-"
     :aliases  #{"kimi" "moonshot"}}])
 
+(defn- route-match
+  "The {:provider :model} `route` assigns `model`, or nil when the route does
+   not claim it. A bare `:aliases` name takes `registry`'s :default-model for
+   that provider; a `:families` name takes that provider's :model-aliases entry
+   for it, or stays as given; a model id keeps its name, minus the `:strip`
+   prefix."
+  [registry {:keys [provider pattern strip aliases families]} model]
+  (let [m     (str/trim model)
+        lower (str/lower-case m)]
+    (cond
+      (contains? aliases lower)
+      {:provider provider
+       :model    (:default-model (get registry provider))}
+
+      (contains? families lower)
+      {:provider provider
+       :model    (get-in registry [provider :model-aliases lower] m)}
+
+      (and pattern (re-find (re-pattern (str "(?i)" pattern)) m))
+      {:provider provider
+       :model    (cond-> m
+                   strip (str/replace (re-pattern (str "(?i)" strip)) ""))})))
+
 (defn subscription-route
   "The {:provider :model} a subscription-only `model` routes to, or nil.
-
-   The first `subscription-routes` entry that claims `model` wins. A bare
-   `:aliases` name takes `registry`'s :default-model for that provider; a
-   `:families` name takes that provider's :model-aliases entry for it, or
-   stays as given; a model id keeps its name, minus the entry's `:strip`
-   prefix."
+   The first `subscription-routes` entry that claims `model` wins."
   [registry model]
   (when (string? model)
-    (let [m     (str/trim model)
-          lower (str/lower-case m)]
-      (some (fn [{:keys [provider pattern strip aliases families]}]
-              (cond
-                (contains? aliases lower)
-                {:provider provider
-                 :model    (:default-model (get registry provider))}
+    (some #(route-match registry % model) subscription-routes)))
 
-                (contains? families lower)
-                {:provider provider
-                 :model    (get-in registry [provider :model-aliases lower] m)}
+;;; ---------------------------------------------------------------------------
+;;; Spawn refusals: a pair no client can serve, a credential that cannot work
+;;; ---------------------------------------------------------------------------
 
-                (and pattern (re-find (re-pattern (str "(?i)" pattern)) m))
-                {:provider provider
-                 :model    (cond-> m
-                             strip (str/replace (re-pattern (str "(?i)" strip)) ""))}))
-            subscription-routes))))
+(defn routing-refusal
+  "nil when `provider` can carry `model`, else an error map.
+
+   Only a dispatch-routed provider that owns families in `subscription-routes`
+   refuses: it serves its own families, their aliases and its :default-model,
+   and nothing else. An OpenAI-compat provider refuses nothing here."
+  [registry provider model]
+  (let [entry  (get registry provider)
+        routes (filterv #(= provider (:provider %)) subscription-routes)]
+    (when (and (string? model)
+               (model/dispatch-routed? entry)
+               (seq routes)
+               (not= model (:default-model entry))
+               (not-any? #(route-match registry % model) routes))
+      {:error    :model-unroutable-on-provider
+       :provider provider
+       :model    model
+       :fix      (str (name provider) " serves only its own model family, so "
+                      model " would fail at its first turn. Name the provider "
+                      "that serves " model ": the provider param, or a "
+                      "'<provider>:<model>' prefix")})))
+
+(defn missing-secret
+  "nil when `provider` needs no secret or `present-secret-keys` holds its
+   :secret-key, else an error map. A dispatch-routed provider authenticates in
+   its own client, so it is never refused here."
+  [registry provider present-secret-keys]
+  (let [{:keys [secret-key] :as entry} (get registry provider)]
+    (when (and (model/openai-compat? entry)
+               (some? secret-key)
+               (not (contains? (set present-secret-keys) secret-key)))
+      {:error      :provider-secret-missing
+       :provider   provider
+       :secret-key secret-key
+       :fix        (str "Configure the secret " (name secret-key)
+                        ", or name another provider for this spawn")})))
+
+(defn credential-refusal
+  "nil when a credential probe of `provider` shows a usable credential, else an
+   error map. `probe` is {:status int :remaining number-or-nil}: a 401 or 403
+   refuses, a 2xx with a numeric `:remaining` at or below zero refuses, and any
+   other answer is inconclusive and passes."
+  [provider {:keys [status remaining]}]
+  (cond
+    (contains? #{401 403} status)
+    {:error    :provider-credential-rejected
+     :provider provider
+     :status   status
+     :fix      (str (name provider) " rejected its configured key (HTTP " status
+                    "). Replace the key, or name another provider for this spawn")}
+
+    (and (int? status) (<= 200 status 299) (number? remaining) (<= remaining 0))
+    {:error     :provider-quota-exhausted
+     :provider  provider
+     :remaining remaining
+     :fix       (str (name provider) " key has no credit left (limit_remaining "
+                     remaining "). Raise its limit, or name another provider "
+                     "for this spawn")}))
 
 (defn strip-anthropic-prefix
   "Strip the `anthropic/` prefix from a model name so native Anthropic API
