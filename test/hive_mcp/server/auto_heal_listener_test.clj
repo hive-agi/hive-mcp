@@ -7,7 +7,8 @@
    real listener table is never touched."
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.server.core]
-            [hive-mcp.server.init :as init]))
+            [hive-mcp.server.init :as init]
+            [hive-mcp.hot.reseat :as reseat]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -58,3 +59,16 @@
             "refresh-tools! rebuilt the table of the context current at the event")
         (is (seq @tools))
         (finally (reset! ctx-atom before))))))
+
+(deftest a-watcher-reload-re-seats-the-loaded-namespaces
+  (let [k      'hive-mcp.server.auto-heal-listener-test.seat
+        seated (atom [])
+        [[_ listener]] (registered-listener)]
+    (try
+      (reseat/register-reseater! k (fn [loaded] (swap! seated conj loaded) :ok))
+      (listener {:type :reload-success :loaded ['hive-mcp.other] :unloaded [] :ms 0})
+      (is (= [] @seated) "a namespace that was not loaded is not re-seated")
+      (listener {:type :reload-success :loaded [k 'hive-mcp.other] :unloaded [] :ms 0})
+      (is (= [[(str k) "hive-mcp.other"]] @seated)
+          "the watcher path re-seats too, not only hive-mcp.hot.core/reload!")
+      (finally (reseat/unregister-reseater! k)))))

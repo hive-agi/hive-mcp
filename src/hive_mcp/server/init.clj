@@ -149,10 +149,15 @@
   (some-> (resolve server-context-var) deref))
 
 (defn on-hot-reload-event!
-  "The :mcp-auto-heal listener body: on :reload-success, refresh the tools of
-   the server context current at the time of the event."
+  "The :mcp-auto-heal listener body: on :reload-success, re-seat the live
+   record instances of the loaded namespaces (hive-mcp.hot.reseat; a watcher
+   reload never passes through hive-mcp.hot.core/reload!), then refresh the
+   tools of the server context current at the time of the event. Re-seating
+   is idempotent, so a core reload that already ran it finds nothing stale."
   [event]
   (when (= :reload-success (:type event))
+    (result/rescue-log "on-hot-reload-event! reseat" nil
+                       (reseat/reseat! (mapv str (:loaded event))))
     (handle-hot-reload-success! (server-context-atom) event)))
 
 (def auto-heal-listener-id
