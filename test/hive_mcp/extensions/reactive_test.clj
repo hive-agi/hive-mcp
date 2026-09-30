@@ -91,9 +91,9 @@
   (get @@#'ext/contribution-listeners :reactive-surface))
 
 (deftest the-listener-is-registered-by-var
-  (testing "install! registers the VAR, so a reload of this namespace reaches the defonce listener table"
+  (testing "install! registers the symbol-resolving trampoline by VAR, never a closure"
     (reactive/install!)
-    (is (identical? #'reactive/on-contribution (installed-listener))))
+    (is (identical? #'reactive/contribution-listener (installed-listener))))
   (testing "install! is idempotent by id"
     (reactive/install!)
     (reactive/install!)

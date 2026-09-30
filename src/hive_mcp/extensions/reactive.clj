@@ -100,14 +100,26 @@
     (log/debug "Contribution reached the surface"
                {:type type :tool tool-name :addon addon-id :refresh out})))
 
+(defn contribution-listener
+  "The listener `install!` registers: resolves `on-contribution` BY SYMBOL on
+   every event and calls whatever is interned there now.
+
+   Holding the var is not enough. hive-hot's core reload unloads a namespace
+   and loads it afresh, which interns NEW vars, while the listener table (a
+   defonce in hive-mcp.extensions.registry) keeps whatever it was given. A
+   registered var would still point at the unloaded namespace's code; a
+   symbol lookup per call always reaches the live one."
+  [event]
+  ((requiring-resolve `on-contribution) event))
+
 (defn install!
   "Subscribe to the registry's contribution events. Idempotent by id.
    Returns the listener id, as it always has.
 
-   The listener is registered as the VAR #'on-contribution, never as a fn
-   value: the listener table is a defonce that outlives a reload of this
-   namespace, so a captured value would keep running the OLD code after a
-   core reload. Through the var, every event runs the current definition.
+   The listener is `contribution-listener`, which reaches `on-contribution`
+   through its symbol on every call, never a fn value captured here: the
+   listener table outlives a core reload, so a captured value would keep
+   running the OLD code.
 
    Two things are subscribed, not one. The facade's own listener list is what
    a contribution through hive-mcp.extensions.registry notifies. The hive-addon
@@ -119,7 +131,7 @@
    would never rebuild. Arming it here, at install time, is what makes the
    migration safe to perform one addon at a time."
   []
-  (let [id (ext/add-contribution-listener! :reactive-surface #'on-contribution)]
+  (let [id (ext/add-contribution-listener! :reactive-surface #'contribution-listener)]
     (rescue nil (ext/ensure-seam-listener!))
     id))
 
