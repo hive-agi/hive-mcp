@@ -36,13 +36,14 @@
 (defmethod ig/init-key :hive/hot-reload
   [_ config]
   (log/info ":hive/hot-reload init — starting hot-reload watcher" config)
-  ;; server-context-atom is needed for MCP auto-heal after reload.
-  ;; We create a local atom here — :hive/mcp-stdio will populate it later.
-  (let [server-context-atom (atom nil)
-        project-config      (lifecycle/read-project-config)]
+  ;; The auto-heal listener reads THE server context (server.core's
+  ;; server-context-atom) through its var on every reload event; nothing is
+  ;; captured here. The component hands that same atom to :hive/mcp-stdio,
+  ;; which wires its context into it (nil when server.core is not loaded).
+  (let [project-config (lifecycle/read-project-config)]
     (result/rescue nil
-      (init/init-hot-reload-watcher! server-context-atom project-config))
-    {:server-context-atom server-context-atom
+      (init/init-hot-reload-watcher! project-config))
+    {:server-context-atom (init/server-context-atom)
      :status              :running}))
 
 (defmethod ig/halt-key! :hive/hot-reload

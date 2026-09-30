@@ -26,7 +26,8 @@
             [hive-dsl.result :as r]
             [hive-mcp.hot.keep :as keep]
             [hive-mcp.hot.self :as self]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [hive-mcp.hot.reseat :as reseat])
   (:import [java.io File]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -138,7 +139,9 @@
 
 (defn default-ports
   "The effects a reload drives, each resolved through its var now.
-   :host/remount! is nil here: only the `hot` tool knows the mounted specs."
+   :host/remount! is nil here: only the `hot` tool knows the mounted specs.
+   :host/reseat! runs the open registry of hive-mcp.hot.reseat: every loaded
+   namespace that holds live record instances rebuilds them itself."
   []
   {:hot/ensure-init!      (soft 'hive-hot.core/ensure-init!)
    :hot/status            (soft 'hive-hot.core/status)
@@ -152,7 +155,8 @@
                               (fn [] (refresh @ctx))))
    :host/refresh-surface! (when-let [refresh (soft 'hive-mcp.extensions.reactive/refresh-surface!)]
                             (fn [] (refresh nil)))
-   :host/remount!         nil})
+   :host/remount!         nil
+   :host/reseat!          (reseat/via-var `reseat/reseat!)})
 
 (defn- prepare!
   "Extend hive-hot with core's roots and the interlock. Returns
@@ -212,7 +216,12 @@
      :ok? :pass :roots :loaded :unloaded :failed :error :ms :skipped :dragged
      :unchanged? :multi-file :stale-registrations :interlock :kept-vars
      :forced-unload :orphans :dead-links :kept-state :records-redefined
-     :remount :tools-refreshed :surface :hive-hot
+     :remount :reseated :tools-refreshed :surface :hive-hot
+
+   The repairs run in order: remount the addons, re-seat the live record
+   instances of every loaded namespace that registered a re-seater
+   (hive-mcp.hot.reseat), then refresh the tool table and the surface, so
+   the table is rebuilt over re-seated holders.
 
    :pass is :scoped when a change under the roots drove hive-hot, :pending
    when nothing changed but the image had repairs queued, :none otherwise."
@@ -238,6 +247,7 @@
              names    (fn [s] (mapv str (sort (set/intersection loaded* (set s)))))
              repair?  (and ok? (seq loaded))
              remount  (when repair? (repair! ports :host/remount! loaded))
+             reseated (when repair? (repair! ports :host/reseat! loaded))
              tools    (when repair? (repair! ports :host/refresh-tools!))
              surface  (when repair? (repair! ports :host/refresh-surface!))]
          (log/info "core hot-reload" {:ok? ok? :pass kind :loaded (count loaded)
@@ -263,6 +273,7 @@
           :kept-state          (names (:state classes))
           :records-redefined   (names (:record classes))
           :remount             remount
+          :reseated            reseated
           :tools-refreshed     tools
           :surface             surface
           :hive-hot            hot-init})))))
