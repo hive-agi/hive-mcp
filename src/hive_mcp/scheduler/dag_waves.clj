@@ -8,7 +8,7 @@
             [hive-mcp.channel.core :as channel]
             [hive-mcp.swarm.datascript.queries :as ds-queries]
             [hive-mcp.tools.memory.scope :as scope]
-            [clojure.core.async :as async :refer [go-loop <! close!]]
+            [clojure.core.async :as async :refer [go-loop close!]]
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive.events :as ev]))
@@ -403,20 +403,27 @@
 
 (defn- start-event-listener!
   "Subscribe to the hivemind channel of every terminal ling event and route
-   each arrival to `on-ling-complete`, tagged with the event that arrived."
+   each arrival to `on-ling-complete`, tagged with the event that arrived.
+   ONE go-loop reads every channel (alts!), so arrivals are handled one at a
+   time and two lings ending together never advance the plan concurrently.
+   The loop ends once every channel is closed."
   []
-  (doseq [event-type (terminal-event-types)]
-    (let [ch (channel/subscribe! (event-channel-topic event-type))]
-      (swap! dag-sub-channels assoc event-type ch)
-      (go-loop []
-        (when-let [event (<! ch)]
-          (when (:active @dag-state)
-            (result/rescue nil
-                           (on-ling-complete {:agent-id   (:agent-id event)
-                                              :project-id (:project-id event)
-                                              :event-type event-type
-                                              :data       (:data event)})))
-          (recur)))))
+  (let [subs (into {} (map (fn [event-type]
+                             [(channel/subscribe! (event-channel-topic event-type)) event-type]))
+                   (terminal-event-types))]
+    (reset! dag-sub-channels (into {} (map (fn [[ch et]] [et ch])) subs))
+    (go-loop [live subs]
+      (when (seq live)
+        (let [[event ch] (async/alts! (vec (keys live)))]
+          (if (nil? event)
+            (recur (dissoc live ch))
+            (do (when (:active @dag-state)
+                  (result/rescue nil
+                                 (on-ling-complete {:agent-id   (:agent-id event)
+                                                    :project-id (:project-id event)
+                                                    :event-type (get live ch)
+                                                    :data       (:data event)})))
+                (recur live)))))))
   (log/info "DAGWaves event listener started"))
 
 (defn- stop-event-listener!
