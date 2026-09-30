@@ -5,7 +5,8 @@
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.schema.type-token :as token]
-            [hive-mcp.tools.catchup.outcome :as outcome]))
+            [hive-mcp.tools.catchup.outcome :as outcome]
+            [hive-mcp.addons.boot-health :as boot-health]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -264,9 +265,12 @@
   "Return error response when no IMemoryStore is registered."
   []
   {:type "text"
-   :text (json/write-str {:success false
-                          :error "Memory store not configured"
-                          :message "Memory query requires a registered IMemoryStore (Milvus, Qdrant, etc.) with embedding provider"})
+   :text (json/write-str
+          (let [notice (boot-health/notice)]
+            (cond-> {:success false
+                     :error "Memory store not configured"
+                     :message "Memory query requires a registered IMemoryStore (Milvus, Qdrant, etc.) with embedding provider"}
+              notice (assoc :degraded-boot notice))))
    :isError true})
 
 (defn catchup-error

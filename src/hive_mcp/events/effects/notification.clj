@@ -16,6 +16,8 @@
    ```"
 
   (:require [hive-mcp.events.core :as ev]
+            [hive-mcp.events.schemas :as schemas]
+            [malli.core :as m]
             [hive-mcp.hivemind.core :as hivemind]
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.channel.core :as channel]
@@ -28,16 +30,45 @@
 ;; Effect: :shout
 ;; =============================================================================
 
+(def ^:private shout-envelope-keys
+  "ShoutEffectData keys that ADDRESS the shout rather than carry its payload."
+  #{:event-type :agent-id :data})
+
+(def shout-effect-payload-keys
+  "Top-level :shout effect keys that are shout payload (e.g. :message, :task).
+   Derived from ShoutEffectData, so a payload key added to the schema is
+   promoted here with no edit to this namespace."
+  (into []
+        (comp (map first) (remove shout-envelope-keys))
+        (m/children (m/schema schemas/ShoutEffectData))))
+
+(defn shout-effect->shout-data
+  "Pure: the shout! data map for a :shout effect.
+
+   ShoutEffectData allows :message / :task at the top level of the effect
+   (session_complete and crystal wrap put them there). Forwarding :data alone
+   dropped them, and with nothing else to carry the shout was suppressed as
+   empty. Top-level payload keys are merged under :data; an explicit :data
+   entry wins over the top-level one."
+  [effect]
+  (let [promoted (select-keys effect shout-effect-payload-keys)
+        data     (:data effect)]
+    (if (seq promoted)
+      (merge promoted data)
+      data)))
+
 (defn- handle-shout
   "Execute a :shout effect - broadcast to hivemind.
 
    Expected data shape:
    {:agent-id   \"swarm-worker-123\"
     :event-type :progress | :completed | :error | :blocked | :started
-    :data       {:task \"...\" :message \"...\" ...}}
+    :data       {:task \"...\" :message \"...\" ...}
+    :message    \"...\"   ; optional, merged into :data
+    :task       \"...\"}  ; optional, merged into :data
 
    P1 FIX: Fallback chain includes ctx/current-agent-id for in-process agent context."
-  [{:keys [agent-id event-type data]}]
+  [{:keys [agent-id event-type] :as effect}]
   ;; P1 FIX: Check context for in-process agent attribution
   ;; Uses hive-mcp.agent.context (no circular dep) for thread-local agent-id
   (let [get-ctx-agent-id (try
@@ -47,7 +78,7 @@
                          (when get-ctx-agent-id (get-ctx-agent-id))
                          (System/getenv "CLAUDE_SWARM_SLAVE_ID")
                          "unknown-agent")]
-    (hivemind/shout! effective-id event-type data)))
+    (hivemind/shout! effective-id event-type (shout-effect->shout-data effect))))
 
 ;; =============================================================================
 ;; Effect: :targeted-shout (File Claim Cascade)

@@ -22,6 +22,7 @@
             [hive-mcp.events.channel-bridge :as channel-bridge]
             [hive-mcp.tools.swarm :as swarm]
             [hive-mcp.protocols.memory :as mem-proto]
+            [hive-mcp.addons.boot-health :as boot-health]
             [hive-mcp.swarm.sync :as sync]
             [hive-mcp.swarm.bootstrap.factory :as bootstrap-factory]
             [hive-mcp.swarm.lifecycle.boot-reconcile :as boot-reconcile]
@@ -288,6 +289,27 @@
     (create)
     (log/warn "no Chroma store in this build; leaving the memory store for an addon to register")))
 
+(defn- deferred-store-addon
+  "The addon id a backend defers its memory store to, or nil when the kernel
+   wires it itself."
+  [backend]
+  (case backend
+    "milvus" "hive.milvus"
+    nil))
+
+(defn verify-memory-store!
+  "Hold wire-memory-store!'s deferral to account once extensions have loaded.
+   Records the facts with hive-mcp.addons.boot-health, which logs at ERROR
+   when the store a backend deferred to never arrived. Returns the facts."
+  []
+  (result/rescue-log "verify-memory-store!" nil
+                     (let [backend (resolve-memory-backend)
+                           facts   {:backend     backend
+                                    :deferred-to (deferred-store-addon backend)
+                                    :store-set?  (boolean (mem-proto/store-set?))}]
+                       (boot-health/record-memory! facts)
+                       facts)))
+
 (defn wire-memory-store!
   "Select and wire the memory backend.
 
@@ -310,7 +332,8 @@
                        (case backend
                          "milvus"
                          (log/info "wire-memory-store!: deferring to hive-milvus addon"
-                                   {:backend backend})
+                                   "(a PROMISE: verified after extensions load, ERROR if it never mounts)"
+                                   {:backend backend :addon (deferred-store-addon backend)})
 
                          (when-let [store (create-chroma-store)]
                            (mem-proto/set-store! store)
@@ -667,6 +690,8 @@
                    (when load-fn
                      (let [result (load-fn)]
                        (log/info "Extension loading complete:" result)))))
+  ;; The memory deferral is a promise; check it was kept.
+  (verify-memory-store!)
   ;; Post-init multi-dispatch coherence check (WARN-only)
   (result/rescue-log "load-extensions!" nil
                  (let [get-adv (requiring-resolve 'hive-mcp.tools.registry/get-advertised-tools)

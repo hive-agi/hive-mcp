@@ -153,6 +153,22 @@
 ;;; NatsChannel — frontend-agnostic delivery via NATS bridge
 ;;; ============================================================================
 
+(def backbone-republish-exempt-origins
+  "`:via` markers of payloads NatsChannel must NOT republish to NATS.
+     :nats-inbound — arrived FROM NATS; republishing it ping-pongs at 100Hz
+                     (incident 2026-05-11).
+     :local-origin — fanned out locally by the emitting process, which
+                     publishes to the backbone itself; republishing would
+                     double-publish.
+   A new origin is an entry here, not a new branch in deliver!."
+  #{:nats-inbound :local-origin})
+
+(defn- backbone-republishable?
+  "True when a payload with this `:via` marker may be republished to NATS.
+   Accepts keyword or string markers (JSON round-trips keywords to strings)."
+  [via]
+  (not (contains? backbone-republish-exempt-origins (some-> via keyword))))
+
 (defrecord NatsChannel []
   dc/IDeliveryChannel
   (channel-id [_this] :nats)
@@ -164,11 +180,8 @@
       (catch Exception _ false)))
 
   (deliver! [_this {:keys [agent-id event-type project-id timestamp via] :as event}]
-    ;; Loopback guard (incident 2026-05-11): when the bridge fans out a shout
-    ;; that arrived FROM NATS, it tags the payload with :via :nats-inbound.
-    ;; Republishing inbound traffic to NATS spawns a 100Hz ping-pong: NATS →
-    ;; fanout → NatsChannel republish → NATS … OOMs the JVM in minutes.
-    (when-not (= via :nats-inbound)
+    ;; Loopback / double-publish guard: see backbone-republish-exempt-origins.
+    (when (backbone-republishable? via)
       (try
         (when-let [publish-fn (requiring-resolve 'hive-mcp.nats.bridge/publish-shout!)]
           (publish-fn {:agent-id   agent-id
