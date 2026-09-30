@@ -414,26 +414,82 @@
   [agent-id event-type data]
   (boolean (:delivered (shout-with-verdict! agent-id event-type data))))
 
+(defn- asker-parent-id
+  "Spawner of `agent-id` per the slave registry, or nil when unknown."
+  [agent-id]
+  (try
+    (:slave/parent (queries/get-slave-by-name-or-id agent-id))
+    (catch Exception _ nil)))
+
+(defn pending-ask-entry
+  "Pure: the pending-asks entry for one ask. Carries who asked, for which
+   project and spawner, and when — what a timeout needs to tell the asker's
+   reader that the ask went unanswered."
+  [{:keys [agent-id question options response-chan project-id parent-id asked-at]}]
+  (cond-> {:question question
+           :options options
+           :agent-id agent-id
+           :response-chan response-chan
+           :asked-at asked-at}
+    project-id (assoc :project-id project-id)
+    parent-id (assoc :parent-id parent-id)))
+
+(defn ask-timeout-shout
+  "Pure: the :blocked shout data announcing that ask `ask-id` timed out.
+   -> data for (shout! agent-id :blocked data)"
+  [ask-id {:keys [question project-id parent-id asked-at]} timeout-ms]
+  (cond-> {:reason :ask-timeout
+           :ask-id ask-id
+           :message (str "Ask timed out after " timeout-ms "ms with no answer: "
+                         question)
+           :timeout-ms timeout-ms}
+    asked-at (assoc :asked-at asked-at)
+    project-id (assoc :project-id project-id)
+    parent-id (assoc :parent-id parent-id)))
+
+(defn- announce-ask-timeout!
+  "Shout the asker :blocked so its reader hears the unanswered ask.
+   Non-fatal: a failed shout must not turn a timeout into an exception."
+  [ask-id entry timeout-ms]
+  (try
+    (shout! (:agent-id entry) :blocked (ask-timeout-shout ask-id entry timeout-ms))
+    (catch Exception e
+      (log/debug "Hivemind ask-timeout shout failed (non-fatal):" (.getMessage e)))))
+
 (defn ask!
-  "Request a decision from the human coordinator, blocking until response or timeout."
-  [agent-id question options & {:keys [timeout-ms] :or {timeout-ms 300000}}]
+  "Request a decision from the human coordinator, blocking until response or timeout.
+
+   The pending entry records :project-id, :parent-id (resolved from the slave
+   registry when not given) and :asked-at. On TIMEOUT the asker is shouted
+   :blocked with {:reason :ask-timeout :ask-id ...} before the entry is
+   dropped — an answered ask and an unanswered one used to leave identical
+   traces, so nobody heard that an agent stalled waiting."
+  [agent-id question options & {:keys [timeout-ms project-id parent-id]
+                                :or {timeout-ms 300000}}]
   (let [ask-id (str (random-uuid))
         response-chan (chan 1)
+        asked-at (System/currentTimeMillis)
+        entry (pending-ask-entry {:agent-id agent-id
+                                  :question question
+                                  :options options
+                                  :response-chan response-chan
+                                  :project-id project-id
+                                  :parent-id (or parent-id (asker-parent-id agent-id))
+                                  :asked-at asked-at})
         ask-event {:type :hivemind-ask
                    :ask-id ask-id
                    :agent-id agent-id
                    :question question
                    :options options
-                   :timestamp (System/currentTimeMillis)}]
-    (swap! state/pending-asks assoc ask-id {:question question
-                                            :options options
-                                            :agent-id agent-id
-                                            :response-chan response-chan})
+                   :timestamp asked-at}]
+    (swap! state/pending-asks assoc ask-id entry)
     (channel/broadcast! ask-event)
     (log/info "Hivemind ask:" agent-id question)
     (let [result (alt!!
                    response-chan ([v] v)
                    (timeout timeout-ms) {:timeout true :ask-id ask-id})]
+      (when (:timeout result)
+        (announce-ask-timeout! ask-id entry timeout-ms))
       (swap! state/pending-asks dissoc ask-id)
       result)))
 
