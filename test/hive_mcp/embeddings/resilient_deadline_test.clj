@@ -64,6 +64,20 @@
         "the providers the deadline skipped are reported, not silently ignored")
     (is (= 500 (:total-budget-ms d)))))
 
+(deftest saturated-gate-cannot-outlive-the-deadline
+  (testing "every permit held elsewhere — the permit wait is part of the budget"
+    (let [^java.util.concurrent.Semaphore sem (:semaphore @#'res/embed-gate)
+          n (.drainPermits sem)]
+      (try
+        (let [embedder (res/resilient-embedder
+                        [(entry :healthy (->InstantProvider 1.0 3))] 200 400)
+              [ms r]   (elapsed-ms #(proto/embed-text embedder "x"))
+              d        (ex-data (:ex r))]
+          (is (< ms 2000) (str "waited " ms "ms for a permit against a 400ms budget"))
+          (is (= :deadline (:exhausted-by d)))
+          (is (= [:healthy] (:untried d))))
+        (finally (.release sem n))))))
+
 ;; =============================================================================
 ;; Failover still works — the deadline must not break the feature it bounds
 ;; =============================================================================
