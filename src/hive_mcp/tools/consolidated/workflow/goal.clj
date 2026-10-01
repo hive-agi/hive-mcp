@@ -99,10 +99,10 @@
 (defn handle-goal-schema
   "Project the GoalSpec contract for zero-source-read authoring: JSON-Schema +
    valid example + verb-index example + how-to. Zero-arg. Degrades loud when the
-   hive-spi workflow schemas are off the runtime classpath."
+   hive-contracts workflow schemas are off the runtime classpath."
   [_params]
   (let [compile-op (resolve-var 'hive-spi.schema.derive/compile-op)
-        goal-var   (resolve-var 'hive-spi.workflow.planner/GoalSpec)]
+        goal-var   (resolve-var 'hive-contracts.workflow.planner/GoalSpec)]
     (if (and compile-op goal-var)
       (let [{:keys [input-schema]} (compile-op @goal-var)]
         (mcp-json
@@ -122,4 +122,4 @@
                                    "{step-id -> fact}}. 3) Pass author=true to persist the compiled workflow "
                                    "through the author path (fail-loud on unsound / unknown refs). The :example "
                                    "with :example-verb-index above plans to a sound 4-step workflow verbatim.")}))
-      (mcp-error "goal-schema unavailable: hive-spi.workflow.planner not on the runtime classpath."))))
+      (mcp-error "goal-schema unavailable: hive-contracts.workflow.planner not on the runtime classpath."))))
