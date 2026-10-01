@@ -27,6 +27,7 @@
             [hive-mcp.tools.core :refer [mcp-json mcp-error]]
             [taoensso.timbre :as log]
             [hive-mcp.hot.core :as core-hot]
+            [hive-mcp.hot.claims :as claims]
             [hive-mcp.extensions.runtime :as runtime]
             [malli.core :as m]
             [malli.error :as me]
@@ -111,11 +112,17 @@
    EXTENDED with any new dirs instead of reset, so a `hot inject` adds its
    source root without discarding pending changes.
 
+   With ensure-init! the dirs are claimed PER ADDON: the baseline carries no
+   addon dir (one would become a hive-hot core dir no unmount releases) and
+   each addon extends hive-hot under its own id as :owner
+   (hive-mcp.hot.claims), so remove-dirs! releases exactly that claim.
+
    Returns {:initialized? bool :dirs [...] :already? bool}. Never throws."
   [plan]
   (let [status  (soft 'hive-hot.core/status)
         init!   (soft 'hive-hot.core/init!)
         ensure! (soft 'hive-hot.core/ensure-init!)
+        extend! (soft 'hive-hot.core/extend-init!)
         opts    (cond-> {:dirs (vec (:hot/dirs plan))
                          :no-reload (:hot/no-reload plan)}
                   (jvm-start-ms) (assoc :since (jvm-start-ms)))]
@@ -124,14 +131,20 @@
 
       ensure!
       (try
-        (let [r (ensure! opts)]
+        (let [r  (ensure! (claims/base-opts (:hot/no-reload plan) (jvm-start-ms)))
+              cl (if extend!
+                   (claims/claim! extend! (claims/owner-claims plan))
+                   {:claims {} :added [] :errors []})]
           (when (:fresh? r)
             (log/info "hive-hot initialized for addon hot-reload"
-                      {:dirs (count (:dirs opts))}))
-          (when (seq (:added r))
-            (log/info "hive-hot extended with addon dirs" {:added (:added r)}))
-          {:initialized? true :already? (not (:fresh? r))
-           :dirs (vec (:dirs r)) :added (vec (:added r))})
+                      {:owners (count (:claims cl))}))
+          (when (seq (:added cl))
+            (log/info "hive-hot extended with addon dirs" {:added (:added cl)}))
+          (cond-> {:initialized? true :already? (not (:fresh? r))
+                   :dirs (vec (distinct (into (vec (:dirs r)) (:added cl))))
+                   :added (vec (:added cl))
+                   :claims (:claims cl)}
+            (seq (:errors cl)) (assoc :claim-errors (:errors cl))))
         (catch Throwable t
           (log/warn "hive-hot init failed" {:error (ex-message t)})
           {:initialized? false :dirs [] :reason (ex-message t)}))

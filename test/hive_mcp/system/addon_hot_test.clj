@@ -27,32 +27,43 @@
                      (f specs)
                      {:hot/dirs #{"/a/src" "/b/src"}
                       :hot/no-reload #{'hive-addon.protocol}
-                      :hot/registered (filterv :local? specs)
+                      :hot/registered (mapv (fn [s] {:addon/id (:addon/id s)
+                                                     :hot/source {:hot/source-dir (:dir s)}})
+                                            (filterv :local? specs))
                       :hot/skipped (filterv (complement :local?) specs)})))
       (ensure-init! [_ opts]
         (rec :ensure-init! opts)
         {:initialized? true :fresh? true :dirs (:dirs opts) :added (:dirs opts)})
+      (extend-dirs! [_ req]
+        (rec :extend-dirs! req)
+        (if-let [f (:extend-dirs! ov)] (f req) {:dirs (:dirs req) :added (:dirs req)}))
       (register! [_ _host specs]
         (rec :register! (if-let [f (:register! ov)]
                           (f specs)
                           {:ok? true :hot/registered (filterv :local? specs)})))
       (unregister! [_ specs] (rec :unregister! (mapv :addon/id specs))))))
 
-(def specs [{:addon/id "hive.a" :local? true}
-            {:addon/id "hive.b" :local? true}
+(def specs [{:addon/id "hive.a" :local? true :dir "/a/src"}
+            {:addon/id "hive.b" :local? true :dir "/b/src"}
             {:addon/id "hive.jar" :local? false}])
 
 (deftest boot-initializes-with-every-mounted-addon-dir-and-registers
   (let [log (atom [])
         res (ah/boot! (catalog specs :host) (engine log) 1000)]
     (is (r/ok? res))
-    (testing "hive-hot is initialized once, with the plan's dirs, interlock and baseline"
+    (testing "hive-hot is initialized once with the interlock and baseline, NO addon dir"
       (let [inits (filter #(= :ensure-init! (first %)) @log)]
         (is (= 1 (count inits)))
-        (is (= {:dirs ["/a/src" "/b/src"]
+        (is (= {:dirs []
                 :no-reload #{'hive-addon.protocol}
                 :since 1000}
-               (second (first inits))))))
+               (second (first inits)))
+            "an addon dir in init! would become a core dir no unmount releases")))
+    (testing "each addon claims its own dirs under its id as hive-hot :owner"
+      (is (= [{:dirs ["/a/src"] :owner "hive.a" :no-reload #{'hive-addon.protocol}}
+              {:dirs ["/b/src"] :owner "hive.b" :no-reload #{'hive-addon.protocol}}]
+             (mapv second (filter #(= :extend-dirs! (first %)) @log))))
+      (is (= {"hive.a" ["/a/src"] "hive.b" ["/b/src"]} (:claims (:ok res)))))
     (testing "the reloadable addons are registered; the jar one is reported skipped"
       (is (= ["hive.a" "hive.b"] (:registered (:ok res))))
       (is (= ["hive.jar"] (:skipped (:ok res))))
@@ -60,7 +71,20 @@
       (is (true? (:fresh? (:ok res))))
       (is (true? (:ok? (:ok res)))))
     (testing "init precedes registration"
-      (is (= [:plan :ensure-init! :register!] (mapv first @log))))))
+      (is (= [:plan :ensure-init! :extend-dirs! :extend-dirs! :register!] (mapv first @log))))))
+
+(deftest a-failed-claim-is-reported-and-the-others-still-claim
+  (let [log (atom [])
+        res (ah/boot! (catalog specs :host)
+                      (engine log {:extend-dirs! (fn [req]
+                                                   (if (= "hive.a" (:owner req))
+                                                     (throw (ex-info "disk gone" {}))
+                                                     {:dirs (:dirs req) :added (:dirs req)}))})
+                      nil)]
+    (is (r/ok? res))
+    (is (= {"hive.b" ["/b/src"]} (:claims (:ok res))))
+    (is (some #(re-find #"hive.a: .*disk gone" %) (:errors (:ok res))))
+    (is (some #(= :register! (first %)) @log) "registration still runs")))
 
 (deftest no-mounted-addons-leaves-hive-hot-alone
   (let [log (atom [])
@@ -128,8 +152,8 @@
       (is (= [[:unregister! ["hive.a" "hive.b"]]]
              (filterv #(= :unregister! (first %)) @log))))))
 
-(deftest init-opts-is-pure-and-sorted
-  (is (= {:dirs ["/a" "/z"] :no-reload #{}} (ah/init-opts {:hot/dirs #{"/z" "/a"}} nil)))
+(deftest init-opts-is-pure-and-carries-no-addon-dir
+  (is (= {:dirs [] :no-reload #{}} (ah/init-opts {:hot/dirs #{"/z" "/a"}} nil)))
   (is (= 5 (:since (ah/init-opts {} 5)))))
 
 (deftest hot-status-projects-the-boot-report

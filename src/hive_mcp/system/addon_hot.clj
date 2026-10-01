@@ -15,12 +15,17 @@
    This key does NOT start a file watcher; the watcher stays governed by
    :hot-reload. It only makes the registry true from boot on.
 
+   Dirs are claimed PER ADDON: the baseline init carries no addon dir, and
+   each addon then extends hive-hot under its own :addon/id as :owner, so
+   hive-hot's remove-dirs! (an unmount) releases exactly that addon's claim.
+
    Strata:
      ports    — IAddonCatalog (what is mounted), IHotEngine (hive-hot + bridge)
      pure     — init-opts, boot-report
      boundary — boot!, the live adapters, the Integrant key"
   (:require [integrant.core :as ig]
             [hive-mcp.dns.result :as r]
+            [hive-mcp.hot.claims :as claims]
             [taoensso.timbre :as log]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -40,6 +45,9 @@
   "hive-hot plus hive-addon's bridge onto it."
   (plan [this host specs] "hive-addon.hot/plan: {:hot/dirs :hot/no-reload :hot/registered ...}.")
   (ensure-init! [this opts] "hive-hot ensure-init!: init once, extend after.")
+  (extend-dirs! [this req]
+    "hive-hot extend-init! for ONE owner: REQ {:dirs :owner :no-reload}.
+     Returns its ExtendInitReport {:dirs :added}.")
   (register! [this host specs] "hive-addon.hot/hot!: one component per reloadable addon.")
   (unregister! [this specs] "hive-addon.hot/unhot!."))
 
@@ -48,23 +56,27 @@
 ;; =============================================================================
 
 (defn init-opts
-  "Pure. hive-hot init options from a PLAN. SINCE (epoch ms, the JVM start)
-   makes an edit made after boot count as a change on the first reload."
+  "Pure. hive-hot init options from a PLAN: the baseline and the protocol
+   interlock, with NO addon dir. An addon dir handed to init! would become a
+   hive-hot CORE dir that remove-dirs! never releases; each addon claims its
+   dirs under its own id instead (hive-mcp.hot.claims). SINCE (epoch ms, the
+   JVM start) makes an edit made after boot count as a change on the first
+   reload."
   [plan since]
-  (cond-> {:dirs      (vec (sort (map str (:hot/dirs plan))))
-           :no-reload (set (:hot/no-reload plan))}
-    since (assoc :since (long since))))
+  (claims/base-opts (:hot/no-reload plan) since))
 
 (defn boot-report
-  "Pure. The data `hot status` shows under :boot."
-  [specs plan init reg]
+  "Pure. The data `hot status` shows under :boot. CLAIMS is
+   hive-mcp.hot.claims/claims-report: which owner claimed which dirs."
+  [specs plan init reg claimed]
   {:mounted    (count specs)
+   :claims     (:claims claimed {})
    :dirs       (vec (sort (map str (:hot/dirs plan))))
    :registered (vec (sort (map (comp str :addon/id) (:hot/registered reg))))
    :skipped    (vec (sort (map (comp str :addon/id) (:hot/skipped plan))))
    :fresh?     (boolean (:fresh? init))
    :ok?        (boolean (:ok? reg true))
-   :errors     (vec (:errors reg))})
+   :errors     (into (vec (:errors reg)) (:errors claimed))})
 
 ;; =============================================================================
 ;; Boundary
@@ -93,8 +105,11 @@
       (r/let-ok [p    (r/try-effect* :addon-hot/plan-failed (plan engine host specs))
                  init (r/try-effect* :addon-hot/init-failed
                                      (ensure-init! engine (init-opts p since)))
+                 claimed (r/try-effect* :addon-hot/claim-failed
+                                        (claims/claim! #(extend-dirs! engine %)
+                                                       (claims/owner-claims p)))
                  reg  (r/try-effect* :addon-hot/register-failed (register! engine host specs))]
-        (r/ok {:report     (boot-report specs p init reg)
+        (r/ok {:report     (boot-report specs p init reg claimed)
                :registered (registered-specs specs reg)})))))
 
 (defn boot!
@@ -143,6 +158,7 @@
   (reify IHotEngine
     (plan [_ host specs] (call 'hive-addon.hot/plan host specs))
     (ensure-init! [_ opts] (call 'hive-hot.core/ensure-init! opts))
+    (extend-dirs! [_ req] (call 'hive-hot.core/extend-init! req))
     (register! [_ host specs] (call 'hive-addon.hot/hot! host specs (live-reload-opts)))
     (unregister! [_ specs] (call 'hive-addon.hot/unhot! specs))))
 
