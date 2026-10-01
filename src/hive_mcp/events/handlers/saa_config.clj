@@ -27,11 +27,12 @@
      effective-agent-id        — coalesce caller-provided id > config-resolved id"
   (:require [hive-di.core :as di]
             [hive-di.source :as src]
-            [hive-dsl.result :as r]))
+            [hive-dsl.result :as r]
+            [hive-mcp.config.path :as config-path]))
 
-(def ^:const config-edn-path
+(def config-edn-path
   "Canonical hive-mcp config file. Each field's :file source reads from here."
-  (str (System/getProperty "user.home") "/.config/hive-mcp/config.edn"))
+  config-path/config-path)
 
 (def ^:const default-agent-id
   "Sentinel agent identifier when no swarm slave id is configured.

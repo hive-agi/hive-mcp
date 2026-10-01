@@ -171,7 +171,7 @@
                                  (let [schema-exts (proto/schema-extensions addon)]
                                    (when (seq schema-exts)
                                      (doseq [[tool-name props] schema-exts]
-                                       (ext/register-schema! tool-name props))
+                                       (ext/register-schema! id tool-name props))
                                      (log/debug "Addon registered schema extensions"
                                                 {:addon id :tools (keys schema-exts)})))
                     ;; Register extensions from init result metadata (opaque fn registry)
@@ -233,10 +233,11 @@
 (defn shutdown-addon!
   "Shutdown an active addon.
 
-   Deregisters extensions, tools, composite contributions, and hooks
-   that were registered for this addon during init. Hook ownership
-   is tracked per-addon (entry's `:hook-keys`) so shutdown only
-   removes hooks this addon registered."
+   Deregisters extensions, tools, composite contributions, schema extensions
+   and hooks that were registered for this addon during init. Hook ownership
+   is tracked per-addon (entry's `:hook-keys`) so shutdown only removes hooks
+   this addon registered; schema extensions are owned by addon id in the
+   extension registry, so only this addon's params are withdrawn."
   [id]
   (if-let [{:keys [addon state init-result hook-keys]} (get-addon-entry id)]
     (if (not= state :active)
@@ -281,6 +282,13 @@
                              (swap! addon-registry assoc-in [id :state] :registered)
                              (swap! addon-registry assoc-in [id :init-time] nil)
                              (swap! addon-registry update id dissoc :hook-keys)
+                             ;; Retract schema extensions AFTER the state leaves
+                             ;; :active. The retraction notifies the surface
+                             ;; listeners, whose refresh re-drains schema
+                             ;; extensions from every addon still :active; done
+                             ;; earlier, that re-drain would republish this
+                             ;; addon's params in the same breath.
+                             (ext/retract-schemas-by-owner! id)
                              (log/info "Addon shut down" {:addon id})
                              (assoc result :addon-name id)))]
         (if (r/err? shutdown-result)
