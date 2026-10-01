@@ -15,7 +15,8 @@
             [taoensso.timbre :as log]
             [clojure.spec.alpha :as s]
             [hive-mcp.tools.composite :as composite]
-            [hive-mcp.dispatch.handler :as dispatch]))
+            [hive-mcp.dispatch.handler :as dispatch]
+            [hive-addon.tool-contract :as tool-contract]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -123,13 +124,18 @@
    contribution reaches the advertised schema as soon as the reactive surface
    refreshes it.
 
+   The def is checked against the MCP root tool contract
+   (`hive-addon.tool-contract/assert-root-tool!`) BEFORE the async params are
+   merged in, so a tool whose own schema is empty throws here.
+
    EVERY tool advertises `async` and `async-timeout-ms`, because every tool's
    chain runs `wrap-handler-async`. A tool declaring :default-async-commands
    gets the opt-out wording, any other tool the opt-in wording. A tool that
    declares its own `async` keeps it."
   [{:keys [consolidated] :as tool-def}]
   (let [{:keys [name description inputSchema handler deprecated default-async-commands]}
-        (if consolidated (composite/build-merged-tool tool-def) tool-def)
+        (tool-contract/assert-root-tool!
+         (if consolidated (composite/build-merged-tool tool-def) tool-def))
         schema-ext (ext/get-schema-extensions name)
         async-props (merge (if (seq default-async-commands)
                              async-opt-out-property

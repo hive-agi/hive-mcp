@@ -35,6 +35,35 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-09-30
+
+### Added
+
+- **The default ling spawn mode is operator config.** A ling spawned without
+  `spawn_mode` (`agent spawn`, forge strikes, the orchestrator) uses
+  `[:ling :default-spawn-mode]` from `config.edn`, else the
+  `HIVE_LING_DEFAULT_SPAWN_MODE` env var, else `:headless`. Any registered mode
+  is accepted (`:claude` restores the previous behaviour); an unregistered one
+  is refused at spawn. Forge keeps its own `[:forge :spawn-mode]` override.
+
+### Changed
+
+- **Lings default to headless.** The shipped default spawn mode was `:claude`
+  (a Claude Code TUI in a terminal addon); it is now `:headless`, whose backend
+  the headless registry resolves. Set `[:ling :default-spawn-mode] :claude` to
+  keep terminal lings.
+- **Breaking for addons: the MCP root refuses a tool it cannot describe.**
+  Every tool registered at the root (`register-tool!`, and every tool the
+  server assembles) must satisfy `hive-addon.tool-contract/RootToolDef`:
+  non-blank `:name` and `:description`, and an `:inputSchema` of type
+  `"object"` with at least one property. A client without source access can
+  only operate a tool through its schema. A violating tool throws
+  `{:type :hive-addon/root-tool-contract}` and is not registered, so an addon
+  contributing one fails to mount. Addons check themselves with
+  `hive-addon.tool-contract.test/deftest-root-tools` or the
+  `hive-addon.tool-contract.check` CLI. A dormant addon's surface must declare
+  each tool's `:inputSchema`. Requires hive-addon 1.1.0.
+
 ## [1.7.0] - 2026-09-27
 
 ### Added

@@ -11,7 +11,7 @@
 
 (defn- tool [name handler]
   (routes/make-tool {:name name :description "d"
-                     :inputSchema {:type "object" :properties {}}
+                     :inputSchema {:type "object" :properties {"x" {:type "string" :description "x"}}}
                      :handler handler}))
 
 (deftest a-sync-by-default-tool-queues-when-asked

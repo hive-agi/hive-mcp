@@ -204,7 +204,10 @@
         tool-def     (assoc (or inner-def
                                 {:name "clojure"
                                  :description "Clojure dev tools (minimal JVM fallback)"
-                                 :inputSchema {:type "object" :required ["command"]}})
+                                 :inputSchema {:type       "object"
+                                               :properties {"command" {:type        "string"
+                                                                       :description "Clojure dev command, e.g. discover"}}
+                                               :required   ["command"]}})
                             :handler (wrap-handle-clojure))]
     (ext/register-tool! tool-def)
     (update-server-context! tool-def)

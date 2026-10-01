@@ -72,6 +72,9 @@
                                  [:kg-backend {:optional true} :keyword]
                                  [:hot-reload {:optional true} :boolean]
                                  [:presets-path {:optional true} [:maybe :string]]]]
+   [:ling {:optional true} [:map
+                             [:default-spawn-mode {:optional true}
+                              [:or :keyword :string]]]]
    [:project-overrides {:optional true} :map]
    [:parent-rules {:optional true} [:vector :map]]
    [:embeddings {:optional true} :map]

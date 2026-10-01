@@ -100,7 +100,7 @@
   [addon-id tool-decl activate!]
   (assoc tool-decl
          :description (str "[dormant, mounts on first use] " (:description tool-decl ""))
-         :inputSchema (or (:inputSchema tool-decl) {:type "object" :properties {}})
+         :inputSchema (:inputSchema tool-decl)
          stub-marker addon-id
          :handler (fn [params]
                     (let [rep (activate!)]

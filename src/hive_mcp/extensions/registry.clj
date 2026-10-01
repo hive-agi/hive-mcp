@@ -18,7 +18,8 @@
    Idempotent: Re-registering the same key replaces silently."
   (:require [hive-mcp.protocols.registry :as reg]
             [malli.core :as m]
-            [hive-addon.registry.commands :as addon-cmds]))
+            [hive-addon.registry.commands :as addon-cmds]
+            [hive-addon.tool-contract :as tool-contract]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -275,10 +276,14 @@
 
 (defn register-tool!
   "Register a full MCP tool definition for dynamic discovery.
-   Tool-def must have :name (string) and :handler (ifn?).
+   Tool-def must have :handler (ifn?) and satisfy the MCP root tool contract
+   (`hive-addon.tool-contract/RootToolDef`): non-blank :name and :description,
+   :inputSchema of type \"object\" with at least one property. Throws ex-info
+   {:type :hive-addon/root-tool-contract} otherwise; nothing is registered.
    Thread-safe, idempotent. Last-write-wins by tool name."
   [tool-def]
-  {:pre [(string? (:name tool-def)) (ifn? (:handler tool-def))]}
+  {:pre [(ifn? (:handler tool-def))]}
+  (tool-contract/assert-root-tool! tool-def)
   (reg/reg-put! tool-slot (:name tool-def) tool-def)
   (:name tool-def))
 

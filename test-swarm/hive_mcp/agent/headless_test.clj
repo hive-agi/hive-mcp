@@ -368,10 +368,10 @@
 (deftest ling-record-spawn-mode-default-test
   (testing "Ling record applies lifecycle/default-spawn-mode when none is given"
     (let [ling (ling/->ling "test-ling" {:cwd "/tmp"})]
-      (is (= lifecycle/default-spawn-mode (:spawn-mode ling))
-          "the default is read from the source constant, not restated here")
+      (is (= (lifecycle/resolve-effective-mode {}) (:spawn-mode ling))
+          "the default is read from lifecycle/default-spawn-mode, not restated here")
       (is (= (ling/->ling "test-ling" {:cwd "/tmp"
-                                       :spawn-mode lifecycle/default-spawn-mode})
+                                       :spawn-mode (lifecycle/default-spawn-mode)})
              ling)
           "omitting :spawn-mode is equivalent to passing the default"))))
 
