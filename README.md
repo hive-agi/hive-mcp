@@ -64,37 +64,83 @@ Both are plain requests to the model, not slash commands — it reaches for the 
 
 ### 1. Install
 
+Install with `curl -fsSL https://hive-mcp.com/install.sh | sh` then `hive setup`.
+`hive setup` installs [bb-mcp](https://github.com/hive-agi/bb-mcp), publishes it at
+`~/.local/share/hive-mcp/bb-mcp`, and registers `hive` with your MCP clients (Claude
+Code, Codex) through bb-mcp. Already have bb-mcp checked out somewhere? Run
+`<that checkout>/bb-mcp setup`: wherever bb-mcp lives becomes the reference. Verify with
+`bb-mcp setup --check`.
+
+A running hive is two processes. The **backend** is the hive-mcp JVM serving nREPL on
+port 7910 (`bin/hive-mcp-foss`). The **client entry point** is bb-mcp, the lightweight
+Babashka MCP server your client launches. bb-mcp is the only thing a client config
+names, and it names it through one well-known anchor, `~/.local/share/hive-mcp/bb-mcp`
+(a symlink to wherever bb-mcp is checked out), so the same config works on every
+machine and for every user.
+
 **Option A: One line (recommended)**
 
 ```bash
 curl -fsSL https://hive-mcp.com/install.sh | sh
+hive setup
 ```
 
-That installs the `hive` CLI, writes the setup skills into `~/.claude/skills`, and
-registers the setup helper with Claude Code. Then start Claude Code and say what you
-want:
+`install.sh` installs the `hive` CLI and the setup skills into `~/.claude/skills`.
+`hive setup` checks the prerequisites (babashka is required), reuses the bb-mcp the
+anchor already points at or clones it to `${BB_MCP_DIR:-$HOME/bb-mcp}`, and runs
+`<bb-mcp>/bb-mcp setup --client all`, which publishes the anchor and registers `hive`
+with Claude Code and Codex. Client registration lives only in `bb-mcp setup`; the CLI
+does not register anything itself. Start the backend with `hive start`, or with
+`bin/hive-mcp-foss` from a hive-mcp checkout. `hive doctor` runs
+`bb-mcp setup --check` and offers `bb-mcp setup` as the fix.
+
+To let the assistant drive the rest (starter pack, store gateway, credentials, what to
+check when a step fails), start Claude Code and say what you want:
 
 > help me set up the hive-mcp harness locally, I have a key
 
 > help me set up a FOSS build of the hive-mcp harness
 
-The skills carry the whole procedure (prerequisites, the starter pack, the store
-gateway, the two credentials, and what to check when a step fails), so the assistant
-drives it rather than guessing. To run the machine setup unattended in the same pass,
-pass the flag through: `| sh -s -- --setup`.
-
 **Option B: Batteries included, fully FOSS, by hand**
 
-One command starts the open-source services (Chroma for memory, the clojure-lsp
-sidecar), waits until each is actually reachable, merges the starter pack and boots
-the host on nREPL:
+Clone both repositories. `bin/hive-mcp-foss` starts the open-source services (Chroma
+for memory, the clojure-lsp sidecar), waits until each is actually reachable, merges
+the starter pack and boots the backend on nREPL 7910. `bb-mcp setup` then registers
+the client side:
 
 ```bash
-git clone https://github.com/hive-agi/hive-mcp.git && cd hive-mcp
-bin/hive-mcp-foss
+git clone https://github.com/hive-agi/hive-mcp.git
+git clone https://github.com/hive-agi/bb-mcp.git
 
-claude mcp add hive -- "$PWD/bin/hive-mcp-foss"
+(cd hive-mcp && bin/hive-mcp-foss)        # backend: hive-mcp JVM on nREPL 7910
+
+bb-mcp/bb-mcp setup --dry-run              # print the plan without writing
+bb-mcp/bb-mcp setup                        # publish the anchor, register hive with your clients
 ```
+
+`bb-mcp setup` takes `--client claude|codex|all`, `--scope user|project` and `--port N`
+(only when the backend is not on 7910). Wherever you cloned bb-mcp becomes the
+reference; move it and rerun `bb-mcp setup` to repoint the anchor.
+
+To register by hand instead, a client that expands environment variables takes this
+entry (it is the committed [`.mcp.json`](.mcp.json)):
+
+```json
+{
+  "mcpServers": {
+    "hive": {
+      "command": "${HOME}/.local/share/hive-mcp/bb-mcp/start-bb-mcp.sh",
+      "env": { "BB_MCP_NREPL_PORT": "7910" }
+    }
+  }
+}
+```
+
+No arguments are needed: `start-bb-mcp.sh` takes the project directory from the
+client's working directory and the nREPL port from `<project>/.nrepl-port`, else 7910.
+For a client without variable expansion, write the expanded anchor path
+(`/home/<you>/.local/share/hive-mcp/bb-mcp/start-bb-mcp.sh`), never the path of the real
+checkout.
 
 The **starter pack** is [`starter.deps.edn`](starter.deps.edn): the FOSS addons that
 turn the bare core into a working harness, merged over `deps.edn` at boot
@@ -125,24 +171,33 @@ docker build -t hive-mcp .                 # bakes the starter pack into the ima
 docker run -p 7910:7910 -e HIVE_PROFILE=k8s-headless hive-mcp
 ```
 
-The image runs the server from source with the same starter pack. Build with
+The image runs the backend from source with the same starter pack. Build with
 `--build-arg DEPS_OVERLAY=` for the bare core; `HIVE_HEAP` sets the JVM cap (default 2g).
+Clients still connect through bb-mcp: run `bb-mcp setup` on the client machine (add
+`--port N` when nREPL is published on another port).
 
 **Option D: From the parts**
 
 ```bash
 docker compose up -d chroma lsp-sidecar                    # services
-clojure -Sdeps "$(cat starter.deps.edn)" -M:dev:nrepl      # host + starter pack
+clojure -Sdeps "$(cat starter.deps.edn)" -M:dev:nrepl      # backend + starter pack
 ```
 
 Drop the `-Sdeps` argument for the bare core, or point it at your own overlay the
-way `bin/hive-mcp` merges a gitignored `local.deps.edn`.
+way `bin/hive-mcp` merges a gitignored `local.deps.edn`. Clients connect through bb-mcp
+exactly as in Option B.
 
 ### 2. Verify
 
 ```bash
-claude mcp list | grep -q "hive" && echo "OK" || echo "FAILED"
+bb-mcp setup --check     # anchor, client entries, babashka, nREPL reachability
+claude mcp list          # lists "hive", launched from the anchor
 ```
+
+`--check` exits non-zero when a check fails: the anchor does not resolve to a bb-mcp
+with an executable `start-bb-mcp.sh`, a client's `hive` entry points somewhere other
+than the anchor (another user's home, the real checkout path), or `bb` is missing. An
+nREPL that does not answer yet is only a warning; start the backend and check again.
 
 ### 3. Optional: Semantic Search
 
@@ -155,6 +210,7 @@ ollama pull nomic-embed-text      # local embeddings; Chroma is already up
 | Requirement | Version | Install |
 |---|---|---|
 | Claude Code | Latest | [claude.ai/download](https://claude.ai/download) |
+| Babashka | recent | [babashka.org](https://babashka.org) (runs bb-mcp, the client entry point; required) |
 | Java | 21 | `apt install openjdk-21-jdk` (CI and the image run 21) |
 | Clojure CLI | 1.12+ | [clojure.org/guides/install_clojure](https://clojure.org/guides/install_clojure) |
 | Docker | recent | Chroma and the LSP sidecar; `HIVE_SKIP_COMPOSE=1` if they run elsewhere |
@@ -406,13 +462,13 @@ Everything else:
 
 | Repository | Description |
 |---|---|
-| **[bb-mcp](https://github.com/hive-agi/bb-mcp)** | Lightweight Babashka MCP wrapper (~50MB RAM) |
+| **[bb-mcp](https://github.com/hive-agi/bb-mcp)** | The standard client entry point: the lightweight Babashka MCP server (~50MB RAM) every client launches, published at `~/.local/share/hive-mcp/bb-mcp`; `bb-mcp setup` registers it |
 | **[lsp-mcp](https://github.com/hive-agi/lsp-mcp)** | Clojure-LSP bridge addon (analysis, callers, references) |
 | **[basic-tools-mcp](https://github.com/hive-agi/basic-tools-mcp)** | File read/write/glob/grep tools addon |
 | **[hive-dsl](https://github.com/hive-agi/hive-dsl)** | DSL verb compiler for batch operations |
 | **[hive-test](https://github.com/hive-agi/hive-test)** | Test utilities for hive-mcp addons |
 | **[olympus-web-ui](https://github.com/hive-agi/olympus-web-ui)** | Web dashboard for swarm monitoring |
-| **[hive-mcp-cli](https://github.com/hive-agi/hive-mcp-cli)** | Go CLI for automated setup |
+| **[hive-mcp-cli](https://github.com/hive-agi/hive-mcp-cli)** | Go CLI: `hive setup` installs bb-mcp and runs `bb-mcp setup`; `hive doctor` checks it |
 
 ---
 
