@@ -39,6 +39,11 @@
 ;; Mock Helpers
 ;; =============================================================================
 
+(defn- ->terminal-ling
+  "A ling in the :claude terminal mode the stub terminal fixture registers."
+  [id opts]
+  (ling/->ling id (merge {:spawn-mode :claude} opts)))
+
 (defn mock-elisp-success
   "Creates a mock elisp response indicating success."
   [result]
@@ -121,7 +126,7 @@
 
 (deftest ling-spawn-success
   (testing "spawn! registers ling in DataScript on success"
-    (let [ling (ling/->ling "spawn-test-001"
+    (let [ling (->terminal-ling "spawn-test-001"
                             {:cwd "/tmp/project"
                              :presets ["tdd"]
                              :project-id "test-project"})]
@@ -144,7 +149,7 @@
 
 (deftest ling-spawn-with-task
   (testing "spawn! dispatches initial task when provided"
-    (let [ling (ling/->ling "spawn-task-test"
+    (let [ling (->terminal-ling "spawn-task-test"
                             {:cwd "/tmp/project"
                              :project-id "test-project"})]
       (with-redefs [ec/eval-elisp-with-timeout
@@ -168,7 +173,7 @@
         (treg/register-terminal!
          :claude
          (terminal-stub/->terminal :claude {:spawn! "Emacs not running"}))
-        (let [ling (ling/->ling "spawn-fail-test" {:cwd "/tmp"})]
+        (let [ling (->terminal-ling "spawn-fail-test" {:cwd "/tmp"})]
           (is (thrown? clojure.lang.ExceptionInfo (proto/spawn! ling {}))
               "Should throw when the terminal addon fails to spawn"))
         (finally
@@ -176,8 +181,8 @@
 
 (deftest ling-spawn-with-parent
   (testing "spawn! sets parent relationship"
-    (let [parent-ling (ling/->ling "parent-ling" {:cwd "/tmp"})
-          child-ling (ling/->ling "child-ling" {:cwd "/tmp"})]
+    (let [parent-ling (->terminal-ling "parent-ling" {:cwd "/tmp"})
+          child-ling (->terminal-ling "child-ling" {:cwd "/tmp"})]
       (with-redefs [ec/eval-elisp-with-timeout
                     (fn [_code _timeout]
                       (mock-elisp-success "ok"))]
@@ -193,7 +198,7 @@
 
 (deftest ling-spawn-with-kanban-task
   (testing "spawn! associates with kanban task"
-    (let [ling (ling/->ling "kanban-ling" {:cwd "/tmp"})]
+    (let [ling (->terminal-ling "kanban-ling" {:cwd "/tmp"})]
       (with-redefs [ec/eval-elisp-with-timeout
                     (fn [_code _timeout]
                       (mock-elisp-success "kanban-ling"))]
@@ -212,7 +217,7 @@
     ;; First register the ling in DataScript
     (ds-lings/add-slave! "dispatch-test-ling" {:status :idle :cwd "/tmp"})
 
-    (let [ling (ling/->ling "dispatch-test-ling" {:cwd "/tmp"})]
+    (let [ling (->terminal-ling "dispatch-test-ling" {:cwd "/tmp"})]
       (let [task-id (proto/dispatch! ling {:task "Fix the bug"})]
         ;; Task ID should be returned
         (is (string? task-id) "Should return task ID")
@@ -228,7 +233,7 @@
   (testing "dispatch! handles file claims"
     (ds-lings/add-slave! "dispatch-files-ling" {:status :idle :cwd "/tmp"})
 
-    (let [ling (ling/->ling "dispatch-files-ling" {:cwd "/tmp"})]
+    (let [ling (->terminal-ling "dispatch-files-ling" {:cwd "/tmp"})]
       (proto/dispatch! ling {:task "Fix the bug"
                              :files ["src/core.clj" "src/util.clj"]})
 
@@ -240,7 +245,7 @@
   (testing "dispatch! accepts priority option"
     (ds-lings/add-slave! "priority-ling" {:status :idle})
 
-    (let [ling (ling/->ling "priority-ling" {})]
+    (let [ling (->terminal-ling "priority-ling" {})]
       ;; Should not throw with priority option
       (let [task-id (proto/dispatch! ling {:task "Urgent fix"
                                            :priority :high})]
@@ -257,7 +262,7 @@
                           :cwd "/home/test"
                           :name "test-worker"})
 
-    (let [ling (ling/->ling "status-ling" {:cwd "/home/test"})
+    (let [ling (->terminal-ling "status-ling" {:cwd "/home/test"})
           status (proto/status ling)]
       (is (map? status) "Status should be a map")
       (is (= "status-ling" (:slave/id status)) "ID should match")
@@ -265,7 +270,7 @@
 
 (deftest ling-status-unregistered-returns-nil-or-elisp
   (testing "status for unregistered ling queries elisp"
-    (let [ling (ling/->ling "unregistered-ling" {})]
+    (let [ling (->terminal-ling "unregistered-ling" {})]
       (with-redefs [ec/eval-elisp-with-timeout
                     (fn [_code _timeout]
                       (mock-elisp-success "nil"))]
@@ -283,7 +288,7 @@
   (testing "kill! removes ling and releases resources"
     (ds-lings/add-slave! "kill-test-ling" {:status :idle})
 
-    (let [ling (ling/->ling "kill-test-ling" {})]
+    (let [ling (->terminal-ling "kill-test-ling" {})]
       (with-redefs [ec/eval-elisp-with-timeout
                     (fn [_code _timeout]
                       (mock-elisp-success "killed"))]
@@ -302,7 +307,7 @@
     ;; Enter critical operation
     (ds-lings/enter-critical-op! "critical-ling" :wrap)
 
-    (let [ling (ling/->ling "critical-ling" {})]
+    (let [ling (->terminal-ling "critical-ling" {})]
       (let [result (proto/kill! ling)]
         (is (map? result))
         (is (false? (:killed? result)) "Should not be killed")
@@ -324,7 +329,7 @@
     (is (= 2 (count (filter #(= "claims-ling" (:slave-id %))
                             (ds-queries/get-all-claims)))))
 
-    (let [ling (ling/->ling "claims-ling" {})]
+    (let [ling (->terminal-ling "claims-ling" {})]
       (with-redefs [ec/eval-elisp-with-timeout
                     (fn [_code _timeout]
                       (mock-elisp-success "killed"))]
@@ -345,7 +350,7 @@
     (ds-lings/claim-file! "/src/core.clj" "claims-test-ling")
     (ds-lings/claim-file! "/src/util.clj" "claims-test-ling")
 
-    (let [ling (ling/->ling "claims-test-ling" {})
+    (let [ling (->terminal-ling "claims-test-ling" {})
           claims (proto/claims ling)]
       (is (vector? claims) "claims should return a vector")
       (is (= 2 (count claims)) "Should have 2 claims")
@@ -356,7 +361,7 @@
   (testing "claims returns empty vector when no claims"
     (ds-lings/add-slave! "no-claims-ling" {:status :idle})
 
-    (let [ling (ling/->ling "no-claims-ling" {})
+    (let [ling (->terminal-ling "no-claims-ling" {})
           claims (proto/claims ling)]
       (is (vector? claims))
       (is (empty? claims)))))
@@ -369,7 +374,7 @@
   (testing "claim-files! creates claims for files"
     (ds-lings/add-slave! "claim-files-ling" {:status :working})
 
-    (let [ling (ling/->ling "claim-files-ling" {})
+    (let [ling (->terminal-ling "claim-files-ling" {})
           files ["/src/a.clj" "/src/b.clj"]]
       (proto/claim-files! ling files "task-123")
 
@@ -388,7 +393,7 @@
     (ds-lings/claim-file! "/shared/file.clj" "ling-a" "task-a")
 
     ;; Ling B tries to claim the same file
-    (let [ling-b (ling/->ling "ling-b" {})]
+    (let [ling-b (->terminal-ling "ling-b" {})]
       (proto/claim-files! ling-b ["/shared/file.clj"] "task-b")
 
       ;; File should still be owned by ling-a (conflict logged)
@@ -406,7 +411,7 @@
     (ds-lings/claim-file! "/src/x.clj" "release-ling")
     (ds-lings/claim-file! "/src/y.clj" "release-ling")
 
-    (let [ling (ling/->ling "release-ling" {})]
+    (let [ling (->terminal-ling "release-ling" {})]
       ;; Verify claims exist
       (is (= 2 (count (proto/claims ling))))
 
@@ -419,7 +424,7 @@
   (testing "release-claims! returns 0 when no claims"
     (ds-lings/add-slave! "no-release-ling" {:status :idle})
 
-    (let [ling (ling/->ling "no-release-ling" {})
+    (let [ling (->terminal-ling "no-release-ling" {})
           released-count (proto/release-claims! ling)]
       (is (= 0 released-count)))))
 

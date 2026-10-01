@@ -209,7 +209,8 @@
     (testing "the plain card gets no routing and no persona"
       (is (some? plain))
       (is (not (contains? plain :provider)))
-      (is (not (contains? plain :spawn_mode)))
+      (is (string? (:spawn_mode plain)) "spawn params always name the mode explicitly")
+      (is (not= "hive-agent" (:spawn_mode plain)) "the routed card's mode does not leak")
       (is (nil? (position #(and (= :register (first %)) (= (:name plain) (second %)))))))
     (testing "the routed ling's prompt carries the card description"
       (is (str/includes? (str (prompt-for (:name routed))) "Routed step body")))))

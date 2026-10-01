@@ -149,12 +149,34 @@
     (warn-if-oversized block-name text)
     {:type "text" :text text}))
 
+(defn- block-name
+  "The `_block` name for a contributed block id: `name` for a simple keyword,
+   `ns/name` for a qualified one."
+  [id]
+  (if (keyword? id) (subs (str id) 1) (str id)))
+
+(defn contributed-sections
+  "One content block per contributed [id value] pair, in the order given.
+   A nil value means the contributor has nothing to say and emits no section;
+   a map value becomes {\"_block\": \"<id>\", ...value}; any other value lands
+   under :value. No id is special-cased."
+  [contributed]
+  (into []
+        (keep (fn [[id value]]
+                (when (some? value)
+                  (let [bname (block-name id)]
+                    (make-block bname
+                                (if (map? value)
+                                  (merge {:_block bname} (dissoc value :_block))
+                                  {:_block bname :value value}))))))
+        contributed))
+
 (defn build-catchup-response
   [{:keys [project-name project-id scopes git-info permeation
            axioms-meta axiom-candidates-meta
            principles-meta priority-principles-meta priority-meta sessions-meta decisions-meta
            conventions-meta snippets-meta expiring-meta recent-wraps kg-insights
-           project-tree-scan disc-decay carto-status kanban-summary context-refs
+           project-tree-scan disc-decay carto-status contributed-blocks context-refs
            memory-status]}]
   (let [memory-status (or memory-status {:status :ok :warnings []})
         memory-available? (outcome/available? memory-status)
@@ -181,8 +203,10 @@
                     (and memory-available? (seq context-refs))
                     (assoc :context-refs context-refs
                            :ref-note "Context refs point to ephemeral context-store entries (10min TTL). Future :ref mode can send only refs instead of full content."))]
-    (filterv
-     some?
+    (into
+     []
+     (comp (mapcat #(if (sequential? %) % [%]))
+           (remove nil?))
      [(make-block
        "header"
        (cond-> {:_block "header"
@@ -236,16 +260,10 @@
         :hint (if memory-available?
                 "Axioms and priority conventions are being delivered via ---MEMORY--- piggyback blocks. AXIOMS are INVIOLABLE - follow them word-for-word. Entries with :kg key have Knowledge Graph relationships."
                 "Memory is unavailable; no empty-memory claim or piggyback delivery was made.")})
-      (when (and kanban-summary
-                 (or (pos? (apply + (vals (:counts kanban-summary {}))))
-                     (seq (:recent-todos kanban-summary))))
-        (make-block
-         "kanban"
-         {:_block "kanban"
-          :counts (:counts kanban-summary)
-          :recent-todos (:recent-todos kanban-summary)
-          :scope-tag (:scope-tag kanban-summary)
-          :hint "Kanban summary for current project scope. Use mcp__hive__project kanban list status=todo|inprogress for full rows."}))
+      ;; Contributed blocks (hive-mcp.spi.catchup-registry), already in
+      ;; :block/order. Each becomes its own section named after its id; the
+      ;; host never names a contributor.
+      (seq (contributed-sections contributed-blocks))
       (when carto-status
         (make-block
          "carto-status"

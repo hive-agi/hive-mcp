@@ -199,7 +199,11 @@
 ;; Tool Registry (dynamic MCP tool definitions)
 ;; =============================================================================
 
-(defn- tool-def [name] {:name name :handler (fn [_] :ok)})
+(defn- tool-def [name]
+  {:name        name
+   :description (str name " tool")
+   :inputSchema {:type "object" :properties {"arg" {:type "string" :description "argument"}}}
+   :handler     (fn [_] :ok)})
 
 (deftest register-tool-and-list
   (testing "register-tool! returns the tool name"
@@ -240,11 +244,13 @@
 
 (deftest register-tool-rejects-non-string-name
   (testing "keyword :name throws AssertionError"
-    (is (thrown? AssertionError (ext/register-tool! {:name :bad :handler (fn [_] :ok)})))))
+    (is (= :hive-addon/root-tool-contract
+           (try (ext/register-tool! (assoc (tool-def "x") :name :bad)) nil
+                (catch clojure.lang.ExceptionInfo e (:type (ex-data e))))))))
 
 (deftest register-tool-rejects-non-ifn-handler
   (testing "non-callable :handler throws AssertionError"
-    (is (thrown? AssertionError (ext/register-tool! {:name "x" :handler "not-a-fn"})))))
+    (is (thrown? AssertionError (ext/register-tool! (assoc (tool-def "x") :handler "not-a-fn"))))))
 
 ;; =============================================================================
 ;; Precondition Enforcement

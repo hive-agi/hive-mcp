@@ -41,8 +41,19 @@
                            {:agent-id id :n (int (max 1 n))}))
             (gen/tuple gen-agent-id gen-pos-int)))
 
+(def gen-query-report
+  (gen/fmap #(tq/transcript-query :query/report {:agent-id %}) gen-agent-id))
+
+(def gen-query-digest
+  (gen/fmap #(tq/transcript-query :query/digest {:agent-id %}) gen-agent-id))
+
+(def gen-query-find
+  (gen/fmap #(tq/transcript-query :query/find {:query %})
+            (gen/such-that (complement empty?) gen/string-alphanumeric)))
+
 (def gen-any-query
-  (gen/one-of [gen-query-by-agent gen-query-by-time gen-query-since gen-query-tail]))
+  (gen/one-of [gen-query-by-agent gen-query-by-time gen-query-since gen-query-tail
+               gen-query-report gen-query-digest gen-query-find]))
 
 (def gen-source
   (gen/fmap #(tq/transcript-source %)
@@ -53,8 +64,9 @@
 ;; =============================================================================
 
 (deftest query-adt-registered-test
-  (testing "TranscriptQuery has 4 variants"
-    (is (= #{:query/by-agent :query/by-time :query/since :query/tail}
+  (testing "TranscriptQuery has 7 variants"
+    (is (= #{:query/by-agent :query/by-time :query/since :query/tail :query/report
+             :query/digest :query/find}
            (:variants tq/TranscriptQuery)))))
 
 (deftest query-construction-test
@@ -62,11 +74,14 @@
     (let [q1 (tq/transcript-query :query/by-agent {:agent-id "a1"})
           q2 (tq/transcript-query :query/by-time {:start-ms (int 0) :end-ms (int 100)})
           q3 (tq/transcript-query :query/since {:agent-id "a1" :turn (int 5)})
-          q4 (tq/transcript-query :query/tail {:agent-id "a1" :n (int 10)})]
+          q4 (tq/transcript-query :query/tail {:agent-id "a1" :n (int 10)})
+          q5 (tq/transcript-query :query/report {:agent-id "a1"})]
       (is (= :query/by-agent (adt-variant q1)))
       (is (= :query/by-time (adt-variant q2)))
       (is (= :query/since (adt-variant q3)))
       (is (= :query/tail (adt-variant q4)))
+      (is (= :query/report (adt-variant q5)))
+      (is (= "a1" (:agent-id q5)))
       ;; Field access
       (is (= "a1" (:agent-id q1)))
       (is (= 0 (:start-ms q2)))
@@ -78,13 +93,19 @@
     (doseq [q [(tq/transcript-query :query/by-agent {:agent-id "x"})
                (tq/transcript-query :query/by-time {:start-ms (int 0) :end-ms (int 1)})
                (tq/transcript-query :query/since {:agent-id "x" :turn (int 0)})
-               (tq/transcript-query :query/tail {:agent-id "x" :n (int 1)})]]
+               (tq/transcript-query :query/tail {:agent-id "x" :n (int 1)})
+               (tq/transcript-query :query/report {:agent-id "x"})
+               (tq/transcript-query :query/digest {:agent-id "x"})
+               (tq/transcript-query :query/find {:query "x"})]]
       (is (keyword?
             (adt-case tq/TranscriptQuery q
               :query/by-agent :agent
               :query/by-time  :time
               :query/since    :since
-              :query/tail     :tail))))))
+              :query/tail     :tail
+              :query/report   :report
+              :query/digest   :digest
+              :query/find     :find))))))
 
 ;; =============================================================================
 ;; Unit Tests: TranscriptSource
@@ -126,7 +147,8 @@
 
 (defspec query-variant-in-closed-set 200
   (prop/for-all [q gen-any-query]
-    (contains? #{:query/by-agent :query/by-time :query/since :query/tail}
+    (contains? #{:query/by-agent :query/by-time :query/since :query/tail :query/report
+                 :query/digest :query/find}
                (adt-variant q))))
 
 (defspec source-always-has-adt-type 100
@@ -144,7 +166,10 @@
         :query/by-agent :agent
         :query/by-time  :time
         :query/since    :since
-        :query/tail     :tail))))
+        :query/tail     :tail
+        :query/report   :report
+        :query/digest   :digest
+        :query/find     :find))))
 
 (defspec by-agent-always-has-agent-id 100
   (prop/for-all [q gen-query-by-agent]

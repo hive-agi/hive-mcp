@@ -4,7 +4,8 @@
    live in hive-di.file. Effect boundary preserved: this ns only forwards."
   (:require [hive-di.file :as di-file]
             [hive-dsl.result :as result]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.config.path :as config-path]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -14,8 +15,8 @@
 ;; =============================================================================
 
 (def config-path
-  "Canonical path for global hive config."
-  (str (System/getProperty "user.home") "/.config/hive-mcp/config.edn"))
+  "Canonical path for global hive config (see hive-mcp.config.path)."
+  config-path/config-path)
 
 (def legacy-config-path
   "Legacy path for backward compatibility migration."

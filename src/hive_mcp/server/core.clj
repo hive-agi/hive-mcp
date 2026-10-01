@@ -22,11 +22,13 @@
             [hive-mcp.system.layer3]
             [hive-mcp.system.layer4]
             [hive-mcp.system.layer5]
+            [hive-mcp.system.addon-hot]
             [hive-mcp.system.keepalive :as keepalive]
             ;; Engine resilience — defense-in-depth L0.3 boot-time hprof control
             [hive-mcp.engine.hprof.boot :as hprof]
             ;; Engine resilience — defense-in-depth L0.5 bounded manifold pool
-            [hive-mcp.engine.manifold-pool :as manifold-pool])
+            [hive-mcp.engine.manifold-pool :as manifold-pool]
+            [hive-mcp.config.io :as config-io])
   (:gen-class))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -62,18 +64,26 @@
 ;; =============================================================================
 
 (defn profile-from
-  "The profile keyword for a CLI --profile value and a HIVE_PROFILE value,
-   either of which may be nil. Precedence: CLI > env > :desktop. Pure, so the
-   precedence can be tested under any ambient environment."
-  [cli-profile env-profile]
-  (keyword (or cli-profile env-profile "desktop")))
+  "The profile keyword for a CLI --profile value, a HIVE_PROFILE value and the
+   config.edn [:system :profile] value, any of which may be nil. Precedence:
+   CLI > env > config.edn > :desktop. Pure, so the precedence can be tested
+   under any ambient environment."
+  ([cli-profile env-profile] (profile-from cli-profile env-profile nil))
+  ([cli-profile env-profile config-profile]
+   (keyword (or cli-profile env-profile config-profile "desktop"))))
+
+(defn config-system
+  "The :system section of config.edn: {:profile kw, :overrides {ig-key map-or-nil}}.
+   {} when the file or the section is absent or unreadable."
+  []
+  (or (some-> (config-io/read-config-file config-io/config-path) :ok :system) {}))
 
 (defn resolve-profile
-  "Resolve profile keyword from CLI --profile arg, HIVE_PROFILE env, or :desktop.
-   Precedence: explicit arg > env > default."
+  "Resolve the profile keyword from the CLI --profile arg, HIVE_PROFILE env,
+   config.edn [:system :profile], or :desktop, in that order."
   ([] (resolve-profile nil))
   ([cli-profile]
-   (profile-from cli-profile (System/getenv "HIVE_PROFILE"))))
+   (profile-from cli-profile (System/getenv "HIVE_PROFILE") (:profile (config-system)))))
 
 (defn read-base-config
   "Read and parse the base system.edn config with Integrant readers."
@@ -93,23 +103,23 @@
       (do (log/warn "Profile" path "not found, using base config only")
           {}))))
 
-(defn load-system-config
-  "Load base system.edn merged with profile overlay via meta-merge.
-   Profile nil keys are removed (Integrant convention for exclusion).
+(defn apply-overlay
+  "BASE with OVERLAY meta-merged over it. A key OVERLAY sets to nil is removed
+   (Integrant exclusion); meta-merge alone would keep the base value."
+  [base overlay]
+  (let [nil-keys (into #{} (comp (filter (fn [[_ v]] (nil? v))) (map key)) overlay)
+        overlay' (into {} (remove (fn [[_ v]] (nil? v))) overlay)]
+    (apply dissoc (meta-merge base overlay') nil-keys)))
 
-   Note: meta-merge ignores nil overlay values (keeps base), so we must
-   explicitly dissoc keys that the profile sets to nil BEFORE merging."
+(defn load-system-config
+  "Base system.edn, then the profile overlay, then config.edn's
+   [:system :overrides], each applied with `apply-overlay`."
   ([] (load-system-config (resolve-profile)))
-  ([profile]
-   (let [base       (read-base-config)
-         overlay    (read-profile-config profile)
-         ;; Identify keys the profile explicitly sets to nil (exclusion markers)
-         nil-keys   (into #{} (comp (filter (fn [[_ v]] (nil? v))) (map key)) overlay)
-         ;; Remove nil entries from overlay before meta-merge (meta-merge ignores nil)
-         overlay'   (into {} (remove (fn [[_ v]] (nil? v))) overlay)
-         ;; Merge remaining overlay into base, then remove excluded keys
-         merged     (meta-merge base overlay')]
-     (apply dissoc merged nil-keys))))
+  ([profile] (load-system-config profile (:overrides (config-system))))
+  ([profile overrides]
+   (-> (read-base-config)
+       (apply-overlay (read-profile-config profile))
+       (apply-overlay (or overrides {})))))
 
 ;; =============================================================================
 ;; Boot timing — per-init-key duration instrumentation

@@ -75,3 +75,53 @@
                  :elisp-lings [(orphan "td-precompact") (orphan "stale-other-session")]})]
     (is (= ["td-precompact" "swarm-stale-other-session-orphan"] (mapv :slave/id merged)))
     (is (= :orphan (:slave/status (second merged))))))
+
+;; =============================================================================
+;; Ghosts restored from a previous JVM
+;; =============================================================================
+
+(def ^:private zombie-row
+  {:slave/id "cljs-evalforms" :slave/status :zombie :slave/alive? false
+   :slave/cwd "/w/cljs" :slave/project-id "hive-cljs"
+   :slave/status-changed-at 1759330000000})
+
+(def ^:private elisp-ghost
+  {:slave/id "cljs-evalforms" :slave/name "cljs-evalforms"
+   :slave/status :working :slave/depth 1 :slave/cwd nil :slave/project-id nil})
+
+(deftest retired-recognises-dead-registry-rows
+  (is (reconcile/retired? zombie-row))
+  (is (reconcile/retired? {:slave/id "x" :slave/status :idle :slave/alive? false}))
+  (is (not (reconcile/retired? {:slave/id "x" :slave/status :working})))
+  (is (not (reconcile/retired? nil))))
+
+(deftest elisp-row-of-a-retired-ling-is-orphaned-never-working
+  (let [probe (reconcile/->known-agents [] [] {"cljs-evalforms" zombie-row})
+        row   (reconcile/reconcile-row probe elisp-ghost)]
+    (is (= :orphaned (:slave/status row)))
+    (is (= "restored from previous JVM, no live loop" (:slave/orphan-reason row)))
+    (is (= "2025-10-01T14:46:40Z" (:slave/last-event-at row)))
+    (testing "cwd and project come back from the registry row"
+      (is (= "/w/cljs" (:slave/cwd row)))
+      (is (= "hive-cljs" (:slave/project-id row))))))
+
+(deftest live-elisp-rows-are-untouched-by-retirement-evidence
+  (let [probe (reconcile/->known-agents [] [] {"other" zombie-row})
+        row   {:slave/id "alive" :slave/status :working}]
+    (is (= row (reconcile/reconcile-row probe row)))))
+
+(deftest a-two-arity-probe-has-no-retirement-evidence
+  (is (= elisp-ghost (reconcile/reconcile-row (reconcile/->known-agents [] []) elisp-ghost))))
+
+(deftest status-merge-reports-ghosts-as-orphaned-with-reason
+  (let [probe  (reconcile/->known-agents ["cljs-evalforms"] [] {"cljs-evalforms" zombie-row})
+        merged (helpers/merge-with-elisp-lings
+                [live-ds-row]
+                {:probe probe :elisp-lings [elisp-ghost]})
+        out    (helpers/format-agents merged)
+        ghost  (second (:agents out))]
+    (is (= ["td-precompact" "cljs-evalforms"] (mapv :id (:agents out))))
+    (is (= :orphaned (:status ghost)))
+    (is (= "restored from previous JVM, no live loop" (:reason ghost)))
+    (is (some? (:last-event-at ghost)))
+    (is (= {:working 1 :orphaned 1} (:by-status out)))))

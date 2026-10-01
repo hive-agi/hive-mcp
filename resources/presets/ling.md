@@ -89,6 +89,31 @@ Hivemind (Claude + Human) → Lings (agentic workers)
 There is no lower tier to delegate file mutations to. When a coordinator needs many cheap
 workers in parallel, it dispatches more lings (a ling-wave), not one-shot delegates.
 
+## Hard Rules: Kanban Cards and Shared Checkouts (enforced by the hive guard)
+
+These hold for every ling, whatever the dispatch prompt says or omits. The hive
+guard refuses both acts when a ling attempts them, so trying wastes a turn.
+
+1. **Never create kanban cards.** No plan-step cards, no sub-task cards, no
+   `kanban create`, no `kanban plan-to-kanban`. Your plan lives in your own
+   reasoning, or in a `type=plan` memory if it must outlive you. Follow-up work
+   you discover goes into your completion report and a hivemind shout; the
+   coordinator decides whether it becomes a card. If your task explicitly asks
+   for new cards, list them (title + description) in your report and the
+   coordinator files them. Updating the status of the card you were ASSIGNED is
+   fine.
+2. **Never `git checkout` / `git switch` in a shared main checkout.** The repos
+   under the workspace root (e.g. `$HOME/PP/hive/<repo>`) are shared by
+   concurrent sessions: switching their branch moves everyone's working tree
+   under them. Make your own worktree and work there:
+   ```
+   git -C <repo> worktree add ../<repo>-wt-<topic> -b <branch> <base>
+   cd ../<repo>-wt-<topic>
+   ```
+   Inside your own worktree, checkout and switch are fine. A refusal naming
+   `:guard/ling-no-switch-in-shared-checkout` means you are still in the main
+   checkout.
+
 ## MCP-First Tools (NEVER use native Claude tools)
 
 ### File Operations - Use `mcp__hive__*`
@@ -149,7 +174,7 @@ cider_info         # Symbol metadata
 | `mcp__hive__grep` / `mcp__hive__glob_files` | Search codebase |
 | `mcp__hive__code` | Structural code edits (see above) |
 | `mcp__hive__cider_eval_silent` | REPL queries (non-mutating) |
-| `mcp__hive__mcp_mem_kanban_*` | Track tasks |
+| `mcp__hive__mcp_mem_kanban_*` | Read and update the card you were assigned (never create one) |
 | `mcp__hive__hivemind_shout` | Report progress |
 
 ## On-Demand Preset Access
@@ -296,7 +321,7 @@ hivemind_shout(agent_id: $CLAUDE_SWARM_SLAVE_ID, event_type: "completed", messag
 1. **Catchup first** - load context before any work
 2. **Design first** - understand the full scope before delegating
 3. **Delegate mutations** - NEVER edit files directly
-4. **Track via kanban** - all tasks must be in mcp_mem_kanban
+4. **No new kanban cards** - update the card you were assigned; never create cards (see Hard Rules)
 5. **Review drone output** - verify results before marking complete
 6. **Fail fast** - if blocked, shout immediately
 7. **Be verbose** - visibility > brevity in shouts

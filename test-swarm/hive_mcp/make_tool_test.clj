@@ -31,7 +31,7 @@
   (testing "Map result is normalized to vector of one item"
     (let [test-tool {:name "map-tool"
                      :description "Returns a map"
-                     :inputSchema {}
+                     :inputSchema {:type "object" :properties {"x" {:type "string" :description "x"}}}
                      :handler (fn [_] {:type "text" :text "single-map"})}
           wrapped (routes/make-tool test-tool)
           result ((:handler wrapped) {})]
@@ -44,7 +44,7 @@
   (testing "Sequential result is converted to vec"
     (let [test-tool {:name "seq-tool"
                      :description "Returns a list (sequential)"
-                     :inputSchema {}
+                     :inputSchema {:type "object" :properties {"x" {:type "string" :description "x"}}}
                      ;; Return a list (sequential but not vector)
                      :handler (fn [_] '({:type "text" :text "item1"}
                                         {:type "text" :text "item2"}))}
@@ -59,7 +59,7 @@
   (testing "Vector result is preserved as-is"
     (let [test-tool {:name "vec-tool"
                      :description "Returns a vector"
-                     :inputSchema {}
+                     :inputSchema {:type "object" :properties {"x" {:type "string" :description "x"}}}
                      :handler (fn [_] [{:type "text" :text "a"}
                                        {:type "text" :text "b"}])}
           wrapped (routes/make-tool test-tool)
@@ -71,7 +71,7 @@
   (testing "Non-map/non-seq result is wrapped in text item"
     (let [test-tool {:name "string-tool"
                      :description "Returns a plain string"
-                     :inputSchema {}
+                     :inputSchema {:type "object" :properties {"x" {:type "string" :description "x"}}}
                      :handler (fn [_] "plain-string")}
           wrapped (routes/make-tool test-tool)
           result ((:handler wrapped) {})]
@@ -91,7 +91,7 @@
 
     (let [test-tool {:name "status-tool"
                      :description "Get status"
-                     :inputSchema {}
+                     :inputSchema {:type "object" :properties {"x" {:type "string" :description "x"}}}
                      :handler (fn [_] {:type "text" :text "OK"})}
           wrapped (routes/make-tool test-tool)
           result ((:handler wrapped) {})]
@@ -114,7 +114,7 @@
     ;; No shouts - piggyback should be empty
     (let [test-tool {:name "clean-tool"
                      :description "No piggyback"
-                     :inputSchema {}
+                     :inputSchema {:type "object" :properties {"x" {:type "string" :description "x"}}}
                      :handler (fn [_] {:type "text" :text "result"})}
           wrapped (routes/make-tool test-tool)
           ;; First call might consume any existing piggyback
@@ -132,7 +132,7 @@
 
     (let [test-tool {:name "consume-tool"
                      :description "test"
-                     :inputSchema {}
+                     :inputSchema {:type "object" :properties {"x" {:type "string" :description "x"}}}
                      :handler (fn [_] {:type "text" :text "done"})}
           wrapped (routes/make-tool test-tool)]
       ;; First call gets the piggyback
@@ -157,7 +157,7 @@
 
     (let [test-tool {:name "id-tool"
                      :description "test"
-                     :inputSchema {}
+                     :inputSchema {:type "object" :properties {"x" {:type "string" :description "x"}}}
                      :handler (fn [_] {:type "text" :text "x"})}
           wrapped (routes/make-tool test-tool)
           ;; Call with keyword :agent-id
@@ -173,7 +173,7 @@
 
     (let [test-tool {:name "id-tool"
                      :description "test"
-                     :inputSchema {}
+                     :inputSchema {:type "object" :properties {"x" {:type "string" :description "x"}}}
                      :handler (fn [_] {:type "text" :text "x"})}
           wrapped (routes/make-tool test-tool)
           ;; Call with string key "agent-id"
@@ -188,7 +188,7 @@
 
     (let [test-tool {:name "default-tool"
                      :description "test"
-                     :inputSchema {}
+                     :inputSchema {:type "object" :properties {"x" {:type "string" :description "x"}}}
                      :handler (fn [_] {:type "text" :text "x"})}
           wrapped (routes/make-tool test-tool)
           ;; Call without agent-id - should default to "coordinator"
@@ -210,7 +210,7 @@
 
     (let [test-tool {:name "multi-tool"
                      :description "Returns multiple items"
-                     :inputSchema {}
+                     :inputSchema {:type "object" :properties {"x" {:type "string" :description "x"}}}
                      ;; Return multiple content items
                      :handler (fn [_] [{:type "text" :text "first"}
                                        {:type "image" :data "base64..."}
@@ -237,7 +237,7 @@
 
     (let [test-tool {:name "image-only-tool"
                      :description "Returns only images"
-                     :inputSchema {}
+                     :inputSchema {:type "object" :properties {"x" {:type "string" :description "x"}}}
                      ;; Return only non-text items
                      :handler (fn [_] [{:type "image" :data "img1"}
                                        {:type "image" :data "img2"}])}
@@ -265,7 +265,7 @@
 
     (let [test-tool {:name "multi-msg-tool"
                      :description "test"
-                     :inputSchema {}
+                     :inputSchema {:type "object" :properties {"x" {:type "string" :description "x"}}}
                      :handler (fn [_] {:type "text" :text "result"})}
           wrapped (routes/make-tool test-tool)
           result ((:handler wrapped) {})]
@@ -285,7 +285,7 @@
   (testing "nil result from handler is stringified"
     (let [test-tool {:name "nil-tool"
                      :description "Returns nil"
-                     :inputSchema {}
+                     :inputSchema {:type "object" :properties {"x" {:type "string" :description "x"}}}
                      :handler (fn [_] nil)}
           wrapped (routes/make-tool test-tool)]
       ;; Should not throw
@@ -298,7 +298,7 @@
   (testing "Empty vector from handler is preserved"
     (let [test-tool {:name "empty-tool"
                      :description "Returns empty vector"
-                     :inputSchema {}
+                     :inputSchema {:type "object" :properties {"x" {:type "string" :description "x"}}}
                      :handler (fn [_] [])}
           wrapped (routes/make-tool test-tool)]
       (let [result ((:handler wrapped) {})]

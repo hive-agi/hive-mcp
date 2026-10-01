@@ -8,6 +8,7 @@
             [hive-mcp.tools.agent.helpers :as helpers]
             [hive-mcp.agent.protocol :as proto]
             [hive-mcp.agent.ling :as ling]
+            [hive-mcp.agent.ling.lifecycle :as lifecycle]
             [hive-mcp.agent.type-registry :as agent-type-registry]
             [hive-mcp.agent.spawn-mode-registry :as spawn-registry]
             [hive-mcp.agent.openrouter :as llm-registry]
@@ -273,7 +274,7 @@
                                   (string? presets) [presets]
                                   (sequential? presets) (vec presets)
                                   :else [presets])
-                    effective-spawn-mode (keyword (or spawn_mode "claude"))
+                    effective-spawn-mode (keyword (or spawn_mode (lifecycle/default-spawn-mode)))
                     _ (when-not (spawn-registry/valid-mode? effective-spawn-mode)
                         (throw (ex-info (str "spawn_mode must be one of: " (pr-str spawn-registry/mcp-modes))
                                         {:spawn-mode spawn_mode})))

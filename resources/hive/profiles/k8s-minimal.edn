@@ -12,6 +12,7 @@
  :hive/ws-channel       nil
  :hive/olympus          nil
  :hive/hot-reload       nil
+ :hive/addon-hot        nil
  :hive/registry-sync    nil
  :hive/a2a-gateway      {:enabled true :port 7912}
  :hive/mcp-http         {:enabled true :port 7921}

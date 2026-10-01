@@ -196,9 +196,9 @@
 ;; Section 4: Facade Integration Tests
 ;; =============================================================================
 
-(deftest facade-spawn-uses-terminal-strategy-by-default
-  (testing "Ling facade defaults to :claude terminal strategy (via terminal registry)"
-    (let [;; Register a mock terminal strategy as :claude (the default mode)
+(deftest facade-spawn-uses-terminal-strategy-for-claude
+  (testing "A :claude ling uses the terminal strategy (via terminal registry)"
+    (let [;; Register a mock terminal strategy as :claude
           mock-terminal (reify
                           hive-mcp.addons.terminal/ITerminalAddon
                           (terminal-id [_] :claude)
@@ -208,11 +208,11 @@
                           (terminal-status [_ _ctx ds-data] ds-data)
                           (terminal-kill! [_ ctx] {:killed? true :id (:id ctx)})
                           (terminal-interrupt! [_ ctx] {:success? false :ling-id (:id ctx) :errors ["Not supported"]}))
-          ling (ling/->ling "facade-terminal" {:cwd "/tmp" :project-id "test"})]
+          ling (ling/->ling "facade-terminal" {:cwd "/tmp" :project-id "test" :spawn-mode :claude})]
       (terminal-reg/register-terminal! :claude mock-terminal)
       (try
         (is (= :claude (:spawn-mode ling))
-            "Default spawn mode should be :claude")
+            "an explicit :claude spawn mode is kept")
         (let [slave-id (proto/spawn! ling {:depth 1})]
           (is (= "facade-terminal" slave-id))
           ;; Verify DataScript registration (common concern)
@@ -257,8 +257,9 @@
     (let [ling (ling/->ling "deepseek-ling"
                             {:cwd "/tmp" :project-id "test"
                              :model "deepseek/deepseek-v3.2"})]
-      (is (= :claude (:spawn-mode ling))
-          "Without explicit :spawn-mode, defaults to :claude; the model name no longer leaks into spawn-mode resolution.")
+      (is (= (:spawn-mode (ling/->ling "no-model-ling" {:cwd "/tmp" :project-id "test"}))
+             (:spawn-mode ling))
+          "Without explicit :spawn-mode, the configured default applies; the model name no longer leaks into spawn-mode resolution.")
       (is (not= :openrouter (:spawn-mode ling))
           "The legacy non-claude→:openrouter auto-mapping is removed (provider is infrastructure, not a spawn-mode).")
       (is (= "deepseek/deepseek-v3.2" (:model ling))
@@ -302,7 +303,7 @@
 
 (deftest facade-unregistered-terminal-throws
   (testing "Attempting :claude with no addon registered throws clear error"
-    (let [ling (ling/->ling "no-terminal-ling" {:cwd "/tmp" :project-id "test"})]
+    (let [ling (ling/->ling "no-terminal-ling" {:cwd "/tmp" :project-id "test" :spawn-mode :claude})]
       (is (= :claude (:spawn-mode ling)))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"No strategy registered for mode"

@@ -10,6 +10,12 @@ Use **SAA** to turn grounded exploration into a durable plan and verified implem
 
 > "The map is not the territory." Read first, abstract second, act third.
 
+> **Spawned as a ling?** Then SAA runs INSIDE your one task. Kanban conversion
+> (`plan-to-kanban`, `kanban create`) and forge strikes are COORDINATOR steps:
+> a ling never creates cards and the hive guard refuses it. Keep your plan in
+> your reasoning or a `type=plan` memory, report its id, and let the
+> coordinator decide what becomes a card.
+
 ## The d[l]e Pattern
 
 ```text

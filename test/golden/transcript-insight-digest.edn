@@ -1,0 +1,52 @@
+{:digest
+ {:started 1000,
+  :errors
+  {:count 1,
+   :samples
+   [{:tool "bash", :text "Execution error at build/jar", :turn 4}]},
+  :report
+  {:agent-id "ling",
+   :final-text "Done: parser fixed, 3 tests, commit 1a2b3c4d.",
+   :final-turn 6,
+   :turns 6,
+   :entries 7,
+   :ending "text",
+   :last-tool-result
+   {:turn 5,
+    :preview "[feat/x 1a2b3c4d] fix(a): parse\n 1 file changed",
+    :tool "bash"}},
+  :turns 6,
+  :ended 90000,
+  :agent-id "ling",
+  :entries 7,
+  :tests [{:tests 3, :assertions 7, :failures 1, :errors 0, :turn 3}],
+  :tools {"bash" 4, "edit" 1, "file_write" 1, "read_file" 1},
+  :idle-gap {:ms 60000, :after-turn 2},
+  :commands {"build" 1, "git" 2, "test" 1},
+  :wall-ms 89000,
+  :commits
+  [{:branch "feat/x",
+    :sha "1a2b3c4d",
+    :subject "fix(a): parse",
+    :turn 5}],
+  :files ["src/a.clj" "test/a_test.clj"],
+  :shell
+  [{:turn 1, :class "git", :command "cd /w && git status"}
+   {:turn 3,
+    :class "test",
+    :command
+    "java -cp x clojure.main -e \"(clojure.test/run-tests 'a)\""}
+   {:turn 4, :class "build", :command "clojure -T:build jar"}
+   {:turn 5, :class "git", :command "git commit -m 'fix(a): parse'"}],
+  :ending "text"},
+ :row
+ {:errors 1,
+  :turns 6,
+  :tests "3 tests, 1 fail, 0 err",
+  :tools "bash:4 edit:1 file_write:1 read_file:1",
+  :wall_s 89,
+  :final "Done: parser fixed, 3 tests, commit 1a2b3c4d.",
+  :agent "ling",
+  :commits 1,
+  :files 2,
+  :ending "text"}}

@@ -42,6 +42,14 @@
   "Set of spawn modes that don't require Emacs."
   spawn-registry/headless-modes)
 
+(defn- headless-mode?
+  "True for the abstract :headless mode, a core headless mode, or any
+   addon-registered headless backend (e.g. an operator-configured default)."
+  [mode]
+  (boolean (or (= :headless mode)
+               (headless-modes mode)
+               (headless-reg/get-headless-backend mode))))
+
 ;; ── Effect Ports ────────────────────────────────────────────────────────────
 
 (def ^:private default-spark-ports
@@ -90,7 +98,8 @@
         model (or (:model execution) model)
         provider (or (:provider execution) provider)
         presets (or (:presets execution) default-presets)
-        requested-mode (keyword (or (:spawn-mode execution) spawn-mode-kw :claude))
+        requested-mode (keyword (or (:spawn-mode execution) spawn-mode-kw
+                                    (lifecycle/default-spawn-mode)))
         mode (if (or provider (:spawn-mode execution))
                (lifecycle/resolve-effective-mode {:spawn-mode requested-mode})
                requested-mode)
@@ -110,8 +119,7 @@
       task-id (assoc :kanban_task_id task-id)
       model (assoc :model model)
       provider (assoc :provider provider)
-      (or (:spawn-mode execution) (not= :claude mode))
-      (assoc :spawn_mode (subs (str mode) 1)))))
+      true (assoc :spawn_mode (subs (str mode) 1)))))
 
 (defn- parse-spawn-result
   "Extract agent-id and spawn-mode from spawn handler response."
@@ -291,15 +299,16 @@
    Returns [vterm-tasks headless-tasks]."
   [{:keys [effective-spawn-mode ling-tasks max-slots active-counts]}]
   (let [{:keys [active-vterm active-total]} active-counts]
-    (case effective-spawn-mode
-      (:claude :vterm)
+    (cond
+      (#{:claude :vterm} effective-spawn-mode)
       (let [cap   (min (or max-slots vterm-max-slots) vterm-max-slots)
             avail (max 0 (- cap active-total))]
         [(vec (take avail ling-tasks)) []])
-      (:headless :agent-sdk :openrouter)
+      (headless-mode? effective-spawn-mode)
       (let [avail (max 0 (- (or max-slots 10) active-total))]
         [[] (vec (take avail ling-tasks))])
       ;; :mixed — fill vterm, overflow to headless
+      :else
       (let [total-cap   (or max-slots 10)
             total-avail (max 0 (- total-cap active-total))
             vt-avail    (min (max 0 (- vterm-max-slots active-vterm)) total-avail)
@@ -416,7 +425,7 @@
                          :model   model})
           parsed       (parse-spawn-result spawn-result agent-name)
           agent-id     (:agent-id parsed)
-          ready-mode   (or (:spawn-mode parsed) :claude)
+          ready-mode   (or (:spawn-mode parsed) (lifecycle/default-spawn-mode))
           ready        (await-ready-fn agent-id ready-mode)]
       (if (or (:ready? ready) (:slave ready))
         (let [dispatch-result (send-prompt-fn
@@ -446,8 +455,9 @@
 (defn spark!
   "Spawn lings for ready tasks.
    Routes: :claude (Emacs), :vterm, :headless/:agent-sdk/:openrouter,
-   :orchestrator (single ling + Task subagents), :mixed (default: fill vterm slots,
-   overflow to headless).
+   :orchestrator (single ling + Task subagents), :mixed (fill vterm slots,
+   overflow to headless). Without a mode: (lifecycle/default-spawn-mode),
+   i.e. config.edn [:ling :default-spawn-mode], shipped :headless.
    A task carrying per-task execution goes to a ling in every ling mode, in task order.
    :orchestrator cannot honor it: such a task is not dispatched and is reported in
    :failed as :execution/unsupported-mode while the other tasks proceed; when every
@@ -460,7 +470,8 @@
     ports]
    (let [ports                (spark-ports ports)
          model                (budget-route-model model)
-         effective-spawn-mode (keyword (or spawn_mode spawn-mode :mixed))
+         effective-spawn-mode (keyword (or spawn_mode spawn-mode
+                                           (lifecycle/default-spawn-mode)))
          _ (when (= :drone effective-spawn-mode)
              (throw (ex-info "Drone spawn mode was removed: lings are the forge execution unit"
                              {:type :execution/unsupported-mode
@@ -484,7 +495,7 @@
                                      :ling-tasks ling-tasks :max-slots max_slots
                                      :active-counts active-counts})
 
-             headless-spawn-mode (if (headless-modes effective-spawn-mode)
+             headless-spawn-mode (if (headless-mode? effective-spawn-mode)
                                    effective-spawn-mode :headless)]
          (if (and (empty? vterm-tasks) (empty? headless-tasks))
            (empty-spark-response active-counts max_slots)

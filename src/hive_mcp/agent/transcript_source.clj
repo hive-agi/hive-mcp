@@ -157,3 +157,25 @@
   []
   (composite [(->JsonlSource "/tmp/hive-transcripts")
               (->DatalevinSource (hive-agent-datalevin-root) hive-agent-read-dir)]))
+
+;; =============================================================================
+;; Parent index — who spawned a ling
+;; =============================================================================
+
+(defprotocol ParentIndex
+  (parent-of [this agent-id] "The spawning coordinator/ling id of `agent-id`, or nil."))
+
+(defrecord SwarmParentIndex []
+  ;; Reads the swarm slave registry (rows persist past a ling's death until
+  ;; the JVM restarts). nil when the registry or the row is absent.
+  ParentIndex
+  (parent-of [_ agent-id]
+    (try
+      (when-let [get-slave (requiring-resolve 'hive-mcp.swarm.datascript.queries/get-slave)]
+        (let [p (:slave/parent (get-slave agent-id))]
+          (cond (string? p) p
+                (map? p)    (:slave/id p)
+                :else       nil)))
+      (catch Throwable _ nil))))
+
+(defn default-parent-index [] (->SwarmParentIndex))

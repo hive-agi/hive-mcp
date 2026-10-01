@@ -90,18 +90,18 @@
    until the Milvus batch-get path is itself optimized."
   300000)
 
-(def ^:private empty-kanban-summary
-  "The kanban block's value when no contributor registered one."
-  {:counts {} :recent-todos []})
-
 (defn- compose-blocks
-  "Every registered catchup block's value for CTX, keyed by block id.
-   A contributor that throws is logged and omitted; the others still land."
+  "Every registered catchup block's value for CTX as [id value] pairs in
+   :block/order. A contributor that throws is logged and omitted; the others
+   still land. Ordered by the registry, never by naming a contributor."
   [ctx]
-  (let [{:keys [blocks failed]} (blocks/compose ctx)]
+  (let [{:keys [blocks failed]} (blocks/compose ctx)
+        order (into {} (map-indexed (fn [i b] [(:block/id b) i])) (blocks/registered-blocks))]
     (when (seq failed)
       (log/warn "catchup: contributed blocks failed" failed))
-    blocks))
+    (->> blocks
+         (sort-by (fn [[id _]] [(get order id Long/MAX_VALUE) (str id)]))
+         vec)))
 
 ;; =============================================================================
 ;; Main Catchup Handler
@@ -184,8 +184,7 @@
               git-info      (outcome/value-or (safe-deref f-git query-timeout-ms "git-info") {})
               addon-status  (outcome/value-or (safe-deref f-status query-timeout-ms "addon-status") {})
               carto-status  (:carto-status addon-status)
-              contributed   (outcome/value-or (safe-deref f-blocks query-timeout-ms "blocks") {})
-              kanban-summary (or (:kanban contributed) empty-kanban-summary)
+              contributed   (outcome/value-or (safe-deref f-blocks query-timeout-ms "blocks") [])
 
               axioms               (:axioms (outcome/value-or bundle {}) [])
               axiom-candidates     (:axiom-candidates (outcome/value-or bundle {}) [])
@@ -355,7 +354,7 @@
                                              context-refs))]
 
           (fmt/build-catchup-response
-           {:scopes scopes, :axiom-candidates-meta axiom-candidates-meta, :project-name project-name, :principles-meta principles-meta, :priority-principles-meta priority-principles-meta, :recent-wraps recent-wraps, :context-refs context-refs, :axioms-meta axioms-meta, :memory-status (outcome/summary bundle), :priority-meta priority-meta, :carto-status carto-status, :expiring-meta expiring-meta, :git-info git-info, :sessions-meta sessions-meta, :snippets-meta snippets-meta, :decisions-meta decisions-base, :conventions-meta conventions-base, :project-id project-id, :kanban-summary kanban-summary}))
+           {:scopes scopes, :axiom-candidates-meta axiom-candidates-meta, :project-name project-name, :principles-meta principles-meta, :priority-principles-meta priority-principles-meta, :recent-wraps recent-wraps, :context-refs context-refs, :axioms-meta axioms-meta, :memory-status (outcome/summary bundle), :priority-meta priority-meta, :carto-status carto-status, :expiring-meta expiring-meta, :git-info git-info, :sessions-meta sessions-meta, :snippets-meta snippets-meta, :decisions-meta decisions-base, :conventions-meta conventions-base, :project-id project-id, :contributed-blocks contributed}))
         (catch Exception e
           (fmt/catchup-error e))))))
 
