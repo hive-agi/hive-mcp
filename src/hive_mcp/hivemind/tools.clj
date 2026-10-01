@@ -85,8 +85,7 @@ The env var fallback reads from MCP server process, NOT your ling process!"
                      ;; process's CLAUDE_SWARM_SLAVE_ID. For headless lings this is
                      ;; the correct ling identity. env-agent reads from the SERVER
                      ;; process env, which is wrong for child lings.
-                     effective-id (or agent_id
-                                      _caller_id
+                     effective-id (or (ctx/session-agent-id agent_id _caller_id)
                                       ctx-agent
                                       env-agent
                                       "unknown-agent")
@@ -171,8 +170,7 @@ The env var fallback reads from MCP server process, NOT your ling process!"
                                              :description "Explicit project-id override. Wins over directory-derivation."}}
                   :required ["question"]}
     :handler (fn [{:keys [agent_id _caller_id question options timeout_ms directory project_id]}]
-               (let [effective-id (or agent_id
-                                      _caller_id
+               (let [effective-id (or (ctx/session-agent-id agent_id _caller_id)
                                       (ctx/current-agent-id)
                                       (System/getenv "CLAUDE_SWARM_SLAVE_ID")
                                       "unknown-agent")

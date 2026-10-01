@@ -127,12 +127,11 @@
 
 (defn handle-whoami
   "Return the calling agent's identity context."
-  [{:keys [agent_id directory]}]
+  [{:keys [directory] :as args}]
   (let [effective-dir (or directory
                           (ctx/current-directory)
                           (System/getProperty "user.dir"))
-        effective-agent-id (or agent_id
-                               (ctx/current-agent-id)
+        effective-agent-id (or (ctx/current-session-agent-id args)
                                (session-config/swarm-slave-id)
                                "unknown")
         project-id (when effective-dir
