@@ -186,7 +186,10 @@
                  :timeout-ms 10000
                  :f (fn [] (.countDown done))})
     (is (await-latch done 5000))
-    (is (= :task/done (:state (at/get-task "t-inside"))))))
+    ;; Same race as the test above: the latch opens inside f, and the
+    ;; :task/done write lands only after f returns. Wait for the state rather
+    ;; than reading it straight off the latch.
+    (is (await-state "t-inside" :task/done 5000))))
 
 ;; =============================================================================
 ;; The execution seam (DIP)

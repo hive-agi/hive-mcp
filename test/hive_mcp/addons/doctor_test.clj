@@ -2,7 +2,9 @@
   (:require [clojure.test :refer [deftest is testing]]
             [hive-addon.protocol :as addon]
             [hive-dsl.result :as r]
-            [hive-mcp.addons.doctor :as doctor])
+            [hive-mcp.addons.doctor :as doctor]
+            [hive-mcp.test.stub.swarm-host :as sh]
+            [hive-spi.editor.services :as svc])
   (:import [java.nio.file Files]
            [java.nio.file.attribute FileAttribute]
            [java.time Instant]))
@@ -49,56 +51,63 @@
                         :registered-at (Instant/parse "2026-07-21T00:00:00Z")
                         :init-time (Instant/parse "2026-07-21T00:00:01Z")
                         :init-result {:success? true}}))
-     :emacs-eval-fn (fn [_code _timeout]
-                      {:success true :result "t"})
      :now-fn #(Instant/parse "2026-07-21T00:00:02Z")}))
+
+(defn- feature-host
+  "A vessel stub answering every :editor/feature? probe with RESULT."
+  [result]
+  (sh/answering {:editor/feature? {:success true :result result :timed-out false}}))
 
 (defn- stage-by-name
   [report stage-name]
   (first (filter #(= stage-name (:stage %)) (:stages report))))
 
 (deftest healthy-doctor-report-is-complete-and-valid
-  (let [manifest (spec #{"hive-mcp" "hive-mcp-cider"})
-        result (doctor/run-doctor {:addon-id "hive.emacs"
-                                   :directory "/tmp/hive-emacs"
-                                   :timeout-ms 1500}
-                                  (healthy-ports manifest))
-        report (:ok result)]
-    (is (r/ok? result))
-    (is (doctor/report-valid? report))
-    (is (:ok? report))
-    (is (= 6 (count (:stages report))))
-    (is (= {:pass 6 :fail 0 :skip 0} (:summary report)))
-    (is (every? #(= :pass (:status %)) (:stages report)))
-    (is (= ["hive-mcp" "hive-mcp-cider"]
-           (get-in report [:request :emacs-features])))))
+  (sh/with-swarm-host [host (feature-host "t")]
+    (let [manifest (spec #{"hive-mcp" "hive-mcp-cider"})
+          result (doctor/run-doctor {:addon-id "hive.emacs"
+                                     :directory "/tmp/hive-emacs"
+                                     :timeout-ms 1500}
+                                    (healthy-ports manifest))
+          report (:ok result)]
+      (is (r/ok? result))
+      (is (doctor/report-valid? report))
+      (is (:ok? report))
+      (is (= 6 (count (:stages report))))
+      (is (= {:pass 6 :fail 0 :skip 0} (:summary report)))
+      (is (every? #(= :pass (:status %)) (:stages report)))
+      (is (= ["hive-mcp" "hive-mcp-cider"]
+             (get-in report [:request :emacs-features])))
+      (testing "each feature is one closed :editor/feature? op with the input timeout"
+        (is (= [[{:op :editor/feature? :feature "hive-mcp"} 1500]
+                [{:op :editor/feature? :feature "hive-mcp-cider"} 1500]]
+               (sh/calls host)))))))
 
 (deftest findings-stay-in-a-successful-evidence-envelope
-  (let [manifest (spec #{"hive-mcp"})
-        instance (fake-addon "hive.emacs" :native #{:tools}
-                             {:status :degraded})
-        ports (assoc (healthy-ports manifest)
-                     :get-entry-fn (constantly {:addon instance
-                                                :state :active
-                                                :init-result {:success? true}})
-                     :scan-project-fn (constantly
-                                       {:status :fail
-                                        :evidence
-                                        {:forbidden-dependencies
-                                         [{:lib "io.github.hive-agi/hive-mcp"}]}})
-                     :emacs-eval-fn (fn [_ _]
-                                      {:success true :result "nil"}))
-        result (doctor/run-doctor {:addon-id "hive.emacs"
-                                   :directory "/tmp/hive-emacs"}
-                                  ports)
-        report (:ok result)]
-    (testing "diagnostic findings are report data, not an MCP execution error"
-      (is (r/ok? result))
-      (is (false? (:ok? report))))
-    (is (= :fail (:status (stage-by-name report :dependency-boundary))))
-    (is (= :fail (:status (stage-by-name report :lifecycle-smoke))))
-    (is (= :fail (:status (stage-by-name report :capability-comparison))))
-    (is (= :fail (:status (stage-by-name report :emacs-features))))))
+  (sh/with-swarm-host [_host (feature-host "nil")]
+    (let [manifest (spec #{"hive-mcp"})
+          instance (fake-addon "hive.emacs" :native #{:tools}
+                               {:status :degraded})
+          ports (assoc (healthy-ports manifest)
+                       :get-entry-fn (constantly {:addon instance
+                                                  :state :active
+                                                  :init-result {:success? true}})
+                       :scan-project-fn (constantly
+                                         {:status :fail
+                                          :evidence
+                                          {:forbidden-dependencies
+                                           [{:lib "io.github.hive-agi/hive-mcp"}]}}))
+          result (doctor/run-doctor {:addon-id "hive.emacs"
+                                     :directory "/tmp/hive-emacs"}
+                                    ports)
+          report (:ok result)]
+      (testing "diagnostic findings are report data, not an MCP execution error"
+        (is (r/ok? result))
+        (is (false? (:ok? report))))
+      (is (= :fail (:status (stage-by-name report :dependency-boundary))))
+      (is (= :fail (:status (stage-by-name report :lifecycle-smoke))))
+      (is (= :fail (:status (stage-by-name report :capability-comparison))))
+      (is (= :fail (:status (stage-by-name report :emacs-features)))))))
 
 (deftest absent-emacs-expectations-are-an-explicit-skip
   (let [manifest (spec)
@@ -111,18 +120,61 @@
     (is (= 1 (get-in report [:summary :skip])))))
 
 (deftest explicit-emacs-features-override-manifest-hints
-  (let [manifest (spec #{"manifest-feature"})
-        seen (atom [])
-        ports (assoc (healthy-ports manifest)
-                     :emacs-eval-fn
-                     (fn [code _]
-                       (swap! seen conj code)
-                       {:success true :result "t"}))
-        result (doctor/run-doctor {:addon-id "hive.emacs"
-                                   :emacs-features ["requested-feature"]}
-                                  ports)]
-    (is (r/ok? result))
-    (is (= ["(featurep 'requested-feature)"] @seen))))
+  (sh/with-swarm-host [host (feature-host "t")]
+    (let [manifest (spec #{"manifest-feature"})
+          result (doctor/run-doctor {:addon-id "hive.emacs"
+                                     :emacs-features ["requested-feature"]}
+                                    (healthy-ports manifest))]
+      (is (r/ok? result))
+      (is (= [[{:op :editor/feature? :feature "requested-feature"} 3000]]
+             (sh/calls host))))))
+
+(deftest no-vessel-registered-is-an-unreachable-finding
+  (let [prior (get (svc/registered) sh/registry-key)]
+    (svc/unregister-services! sh/registry-key)
+    (try
+      (let [report (:ok (doctor/run-doctor {:addon-id "hive.emacs"}
+                                           (healthy-ports (spec #{"hive-mcp"}))))
+            [probe] (get-in (stage-by-name report :emacs-features)
+                            [:evidence :features])]
+        (is (doctor/report-valid? report))
+        (is (= :fail (:status (stage-by-name report :emacs-features))))
+        (is (= {:feature "hive-mcp" :reachable? false :loaded? false}
+               (dissoc probe :error)))
+        (is (string? (:error probe)) "the unavailable envelope is the evidence"))
+      (finally
+        (sh/restore! prior)))))
+
+(deftest a-vessel-without-the-editor-translators-degrades-to-a-finding
+  (testing "an older vessel answers the unplannable op with a failure map"
+    (sh/with-swarm-host
+      [_host (sh/answering {:editor/feature? {:success false :result nil
+                                              :error {:failure/reason :unsupported}
+                                              :timed-out false}})]
+      (let [report (:ok (doctor/run-doctor {:addon-id "hive.emacs"}
+                                           (healthy-ports (spec #{"hive-mcp"}))))
+            [probe] (get-in (stage-by-name report :emacs-features)
+                            [:evidence :features])]
+        (is (doctor/report-valid? report))
+        (is (false? (:loaded? probe)))
+        (testing "the vessel answered, so the finding names the missing op, not an unreachable Emacs"
+          (is (true? (:reachable? probe)))
+          (is (true? (:unsupported? probe))))
+        (is (re-find #"unsupported" (:error probe)))))))
+
+(deftest a-feature-name-over-the-translator-cap-is-invalid-not-unreachable
+  ;; Refused either at the input boundary or as an invalid probe; what must
+  ;; never happen is the name reaching the vessel and coming back "unreachable".
+  (sh/with-swarm-host [host (feature-host "t")]
+    (let [too-long (apply str (repeat 257 "a"))
+          result (doctor/run-doctor {:addon-id "hive.emacs"
+                                     :emacs-features [too-long]}
+                                    (healthy-ports (spec)))]
+      (when (r/ok? result)
+        (let [[probe] (get-in (stage-by-name (:ok result) :emacs-features)
+                              [:evidence :features])]
+          (is (= "invalid Emacs feature symbol" (:error probe)))))
+      (is (empty? (sh/calls host)) "an over-long name never reaches the vessel"))))
 
 (deftest opaque-live-health-details-are-folded-to-json-safe-evidence
   (let [manifest (spec)
