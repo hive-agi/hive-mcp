@@ -206,3 +206,23 @@
     (is (true? (:ok? report)) "a repair failure does not unmake the reload")
     (is (= {:error "table gone"} (:tools-refreshed report)))
     (is (str/blank? (str (:error report))))))
+
+(deftest a-reload-builds-the-table-once-by-default
+  (is (not (contains? (core/default-ports) :host/refresh-tools!))
+      "the surface refresh covers the server context; no second table build")
+  (testing "without a refresh-tools port, :tools-refreshed is the surface refresh's table leg"
+    (let [log    (atom [])
+          ports  (-> (recording-ports log {:success true :loaded ['hive-mcp.x] :unloaded []})
+                     (dissoc :host/refresh-tools!)
+                     (assoc :host/refresh-surface!
+                            (fn [] (swap! log conj [:refresh-surface! []])
+                              {:server-tools {:count 3 :changed [] :surfaces [:mcp-stdio] :failed []}})))
+          report (core/reload! {:ports ports :roots ["/r/src"]})]
+      (is (= {:count 3 :changed [] :surfaces [:mcp-stdio] :failed []} (:tools-refreshed report)))
+      (is (= [:remount! :reseat! :refresh-surface!] (map first (drop 4 @log)))
+          "exactly one table-building repair ran")))
+  (testing "pure projection"
+    (is (= 42 (core/tools-refreshed {:host/refresh-tools! identity} 42 {:server-tools 1})))
+    (is (= 1 (core/tools-refreshed {} nil {:server-tools 1})))
+    (is (nil? (core/tools-refreshed {} nil {:error "boom"}))
+        "a failed surface refresh is reported under :surface, not invented here")))

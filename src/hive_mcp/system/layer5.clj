@@ -170,6 +170,20 @@
 ;;   halt-key! is a no-op — keepalive handles shutdown signaling.
 ;; =============================================================================
 
+(def stdio-surface-id
+  "The id the stdio context's tool table is registered under as a live tool
+   surface (hive-mcp.server.routes/register-surface!)."
+  :mcp-stdio)
+
+(defn register-stdio-surface!
+  "Register CONTEXT's :tools atom as the :mcp-stdio tool surface, so every
+   refresh (reactive evict/activate as well as a hot reload) installs the one
+   advertised table into it. REGISTER! is routes/register-surface!, injected
+   for tests. Returns the surface id, nil when the context has no :tools atom."
+  [register! context]
+  (when-let [tools-atom (:tools context)]
+    (register! stdio-surface-id {:surface/kind :tools-atom :surface/tools-atom tools-atom})))
+
 (defmethod ig/init-key :hive/mcp-stdio
   [_ {:keys [hot-reload] :as _config}]
   (log/info ":hive/mcp-stdio init — building MCP server spec and starting stdio server")
@@ -178,6 +192,7 @@
         (try
           (let [;; Require at init time — these may not be loaded in K8s profiles
                 routes-ns   (requiring-resolve 'hive-mcp.server.routes/build-server-spec)
+                register!   (requiring-resolve 'hive-mcp.server.routes/register-surface!)
                 io-server   (requiring-resolve 'io.modelcontext.clojure-sdk.stdio-server/stdio-server)
                 create-ctx! (requiring-resolve 'io.modelcontext.clojure-sdk.server/create-context!)
                 start!      (requiring-resolve 'jsonrpc4clj.server/start)
@@ -189,6 +204,8 @@
             (when-let [ctx-atom (:server-context-atom hot-reload)]
               (reset! ctx-atom context)
               (log/info ":hive/mcp-stdio — server context wired to :hive/hot-reload"))
+            ;; One live tool surface: reactive refreshes reach stdio from boot on.
+            (register-stdio-surface! register! context)
             ;; Start JSON-RPC server — returns a join promise (derefable)
             (let [join (start! server context)]
               (log/info ":hive/mcp-stdio — stdio server started, server-id:" server-id)
@@ -208,6 +225,8 @@
     ;; keepalive delivering :shutdown (which races the join promise).
     ;; We don't System/exit here — that's the caller's decision.
     (result/rescue nil
+      (when-let [unregister! (requiring-resolve 'hive-mcp.server.routes/unregister-surface!)]
+        (unregister! stdio-surface-id))
       (when-let [ch (:log-ch state)]
         (async/close! ch))
       (log/info ":hive/mcp-stdio halted"))))
