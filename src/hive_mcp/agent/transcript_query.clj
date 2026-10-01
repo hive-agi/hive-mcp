@@ -19,7 +19,9 @@
        :query/by-time   (query-range store (:start-ms q) (:end-ms q))
        :query/since     (query-since store (:agent-id q) (:turn q))
        :query/tail      (query-tail store (:agent-id q) (:n q))
-       :query/report    (final-report store (:agent-id q)))"
+       :query/report    (final-report store (:agent-id q))
+       :query/digest    (digest store (:agent-id q))
+       :query/find      (find-hits store (:query q)))"
   (:require [hive-dsl.adt :refer [defadt]]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -40,12 +42,19 @@
      :query/tail      — Last N entries for an agent
      :query/report    — A finished ling's final report: its last assistant
                         text in full, turn count, how it ended, and the
-                        last tool result"
+                        last tool result
+     :query/digest    — What one ling did, folded from its entries: tool
+                        histogram, files written, shell commands, commits,
+                        test outcomes, errors, idle gap, final report
+     :query/find      — Cross-run full-text search (substring or /regex/)
+                        over every transcript the listing filters admit"
   [:query/by-agent {:agent-id string?}]
   [:query/by-time  {:start-ms int? :end-ms int?}]
   [:query/since    {:agent-id string? :turn int?}]
   [:query/tail     {:agent-id string? :n int?}]
-  [:query/report   {:agent-id string?}])
+  [:query/report   {:agent-id string?}]
+  [:query/digest   {:agent-id string?}]
+  [:query/find     {:query string?}])
 
 ;; =============================================================================
 ;; TranscriptSource ADT
