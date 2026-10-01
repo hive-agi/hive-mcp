@@ -458,6 +458,17 @@
          (log/warn "core pin classification failed" {:error (ex-message t)})
          [])))
 
+(defn boot-status
+  "What :hive/addon-hot did at boot: its BootReport, its error, or
+   :not-booted when the key never ran (a profile without it, a REPL)."
+  []
+  (if-let [last-report (soft 'hive-mcp.system.addon-hot/last-report)]
+    (let [res (last-report)]
+      (cond (nil? res)        {:state :not-booted}
+            (contains? res :ok) (assoc (:ok res) :state :initialized)
+            :else             (assoc res :state :failed)))
+    {:state :not-booted}))
+
 (defn handle-status
   "hive-hot availability + watcher state, the installed strategy chain, and the
    protocol interlock: the effective no-reload set, split into core and addon
@@ -472,7 +483,8 @@
                     (assoc :hot/no-reload (:effective split)
                            :hot/no-reload-split (dissoc split :effective)
                            :mounted-addon-count (count (effective-specs))
-                           :watcher (when watcher (watcher))))))))
+                           :watcher (when watcher (watcher))
+                           :boot (boot-status)))))))
 
 (defn handle-strategies
   "The installed reload-strategy chain, in selection order."

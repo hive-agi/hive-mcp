@@ -22,6 +22,7 @@
             [hive-mcp.system.layer3]
             [hive-mcp.system.layer4]
             [hive-mcp.system.layer5]
+            [hive-mcp.system.addon-hot]
             [hive-mcp.system.keepalive :as keepalive]
             ;; Engine resilience — defense-in-depth L0.3 boot-time hprof control
             [hive-mcp.engine.hprof.boot :as hprof]
