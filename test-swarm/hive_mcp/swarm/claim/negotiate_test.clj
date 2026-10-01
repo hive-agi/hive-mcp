@@ -272,3 +272,65 @@
                          ["ling-b" "ling-c" "ling-d"])]
     (is (= 1 (count winners)) "exactly one retry wins the file")
     (is (= (first winners) (holder-of "src/hot.clj")))))
+
+;; =============================================================================
+;; Deadlock
+;; =============================================================================
+
+(defn- crossed-lings!
+  "ling-a holds `a-files`, ling-b holds src/y.clj."
+  [a-files]
+  (ds/add-slave! "ling-a" {:name "a" :status :working})
+  (ds/add-slave! "ling-b" {:name "b" :status :working})
+  (ds/add-task! "task-a" "ling-a" {:status :dispatched :files a-files})
+  (ds/add-task! "task-b" "ling-b" {:status :dispatched :files ["src/y.clj"]})
+  (is (:acquired? (negotiate/acquire-for-ling! "ling-a" a-files {:task-id "task-a"})))
+  (is (:acquired? (negotiate/acquire-for-ling! "ling-b" ["src/y.clj"] {:task-id "task-b"}))))
+
+(deftest a-wait-that-closes-no-cycle-carries-no-deadlock
+  (crossed-lings! ["src/x.clj"])
+  (let [r (negotiate/acquire-for-ling! "ling-a" ["src/y.clj"] {:task-id "task-a"})]
+    (is (false? (:acquired? r)))
+    (is (not (contains? r :deadlock)))
+    (is (= #{"src/y.clj"} (wait-queue "ling-a")))
+    (is (empty? (messages-to "ling-a" :claim/deadlock)))
+    (is (empty? (messages-to "ling-b" :claim/deadlock)))))
+
+(deftest a-requester-that-is-the-victim-is-told-and-not-parked
+  (crossed-lings! ["src/x.clj"])
+  (negotiate/acquire-for-ling! "ling-a" ["src/y.clj"] {:task-id "task-a"})
+  (let [r (negotiate/acquire-for-ling! "ling-b" ["src/x.clj"] {:task-id "task-b"})]
+    (is (false? (:acquired? r)))
+    (is (= {:cycle ["ling-b" "ling-a"] :victim "ling-b"} (:deadlock r)))
+    (is (= [] (:parked r)))
+    (is (= [] (:yield-requested r)))
+    (is (empty? (wait-queue "ling-b")) "the victim does not join the cycle")
+    (is (= "ling-b" (holder-of "src/y.clj")) "nothing is released for it")
+    (let [msgs (messages-to "ling-b" :claim/deadlock)]
+      (is (= 1 (count msgs)))
+      (is (= ["ling-b" "ling-a"] (get-in (first msgs) [:data :cycle]))))
+    (is (empty? (messages-to "ling-a" :claim/deadlock)))))
+
+(deftest the-holder-of-fewer-claims-is-the-victim
+  (crossed-lings! ["src/x.clj" "src/z.clj"])
+  (negotiate/acquire-for-ling! "ling-b" ["src/x.clj"] {:task-id "task-b"})
+  (let [r (negotiate/acquire-for-ling! "ling-a" ["src/y.clj"] {:task-id "task-a"})]
+    (is (= "ling-b" (get-in r [:deadlock :victim])))
+    (is (= ["src/y.clj"] (:parked r)) "the requester still waits")
+    (is (= 1 (count (messages-to "ling-b" :claim/deadlock))))
+    (is (empty? (messages-to "ling-a" :claim/deadlock)))))
+
+(deftest retries-do-not-repeat-the-deadlock-notice
+  (crossed-lings! ["src/x.clj"])
+  (negotiate/acquire-for-ling! "ling-a" ["src/y.clj"] {:task-id "task-a"})
+  (dotimes [_ 3]
+    (negotiate/acquire-for-ling! "ling-b" ["src/x.clj"] {:task-id "task-b"}))
+  (is (= 1 (count (messages-to "ling-b" :claim/deadlock)))))
+
+(deftest the-victim-releases-and-the-cycle-is-gone
+  (crossed-lings! ["src/x.clj"])
+  (negotiate/acquire-for-ling! "ling-a" ["src/y.clj"] {:task-id "task-a"})
+  (negotiate/acquire-for-ling! "ling-b" ["src/x.clj"] {:task-id "task-b"})
+  (lings/release-claims-for-slave! "ling-b")
+  (is (nil? (negotiate/foresee-deadlock "ling-b" ["src/x.clj"])))
+  (is (:acquired? (negotiate/acquire-for-ling! "ling-a" ["src/y.clj"] {:task-id "task-a"}))))
