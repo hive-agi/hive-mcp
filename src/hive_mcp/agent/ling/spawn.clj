@@ -478,12 +478,12 @@
 
 (defn ->ling
   "Create a new Ling agent instance.
-   Omitting :spawn-mode yields lifecycle/default-spawn-mode."
+   Omitting :spawn-mode yields (lifecycle/default-spawn-mode)."
   [id opts]
   (let [model-val (:model opts)
         effective-spawn-mode (lifecycle/resolve-effective-mode
                               {:model model-val
-                               :spawn-mode (:spawn-mode opts lifecycle/default-spawn-mode)})]
+                               :spawn-mode (:spawn-mode opts)})]
     (map->Ling (cond-> {:id id
                         :cwd (:cwd opts)
                         :presets (:presets opts [])
