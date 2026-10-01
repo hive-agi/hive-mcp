@@ -1375,3 +1375,61 @@
   (is (dag/plan-finished? [] {}))
   (is (not (dag/plan-finished? [{:task-id "x"}] {})))
   (is (not (dag/plan-finished? [] {"x" "ling-x"}))))
+
+;; =============================================================================
+;; Scope bound (:task-ids) and idle-start stop
+;; =============================================================================
+
+(deftest scheduler-declares-the-task-ids-capability
+  (is (contains? dag/capabilities :task-ids)
+      "callers check this before trusting the scheduler with a bound"))
+
+(deftest find-ready-tasks-honours-the-task-id-bound
+  (testing "with :task-ids only those cards are candidates"
+    (with-dag-mocks
+      (is (= #{"task-a"} (set (map :task-id (dag/find-ready-tasks test-directory #{} {} #{} #{"task-a"})))))
+      (testing "an out-of-bound ready card (task-a) is never offered"
+        (is (empty? (dag/find-ready-tasks test-directory #{} {} #{} #{"task-b"}))
+            "task-b is in scope but blocked; task-a is ready but OUT of scope"))
+      (testing "nil means the whole board, as before"
+        (is (= #{"task-a"} (set (map :task-id (dag/find-ready-tasks test-directory #{} {} #{} nil)))))))))
+
+(deftest start-dag-never-dispatches-outside-its-task-ids
+  (testing "a bounded plan spawns lings only on its own cards, wave after wave"
+    (with-dag-mocks
+      ;; a stray unrelated todo with no deps — the hazard: it is READY
+      (swap! *chroma-entries assoc "stray" {:id "stray" :title "Unrelated" :status "todo"})
+      (let [r (dag/start-dag! "bounded" {:cwd test-directory :task-ids ["task-a" "task-b"]})]
+        (is (= #{"task-a" "task-b"} (:task-ids r)))
+        (is (= ["task-a"] (map #(get-in % [:opts :kanban-task-id]) @*spawned-lings)))
+        (let [ling-a (:id (first @*spawned-lings))]
+          (dag/on-ling-complete {:agent-id ling-a :event-type :completed :data {}}))
+        (is (= ["task-a" "task-b"] (map #(get-in % [:opts :kanban-task-id]) @*spawned-lings))
+            "the auto-advanced wave stays inside the bound: stray is never spawned")
+        (let [ling-b (:id (second @*spawned-lings))]
+          (dag/on-ling-complete {:agent-id ling-b :event-type :completed :data {}}))
+        (is (not (:active @dag/dag-state))
+            "the plan finishes when ITS cards are done, not when the board is empty")
+        (is (not-any? #{"stray"} (map #(get-in % [:opts :kanban-task-id]) @*spawned-lings)))))))
+
+(deftest start-dag-refuses-an-empty-bound
+  (with-dag-mocks
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (dag/start-dag! "empty" {:cwd test-directory :task-ids []})))
+    (is (not (:active @dag/dag-state)))
+    (is (empty? @*spawned-lings))))
+
+(deftest start-dag-stops-when-nothing-is-in-flight
+  (testing "no ready task in scope -> the scheduler does not stay subscribed"
+    (with-dag-mocks
+      (let [r (dag/start-dag! "idle" {:cwd test-directory :task-ids ["task-d"]})]
+        (is (true? (:stopped r)))
+        (is (zero? (:ready-count r)))
+        (is (not (:active @dag/dag-state)))
+        (is (empty? @*spawned-lings)))))
+  (testing "every first-wave spawn failing also stops it"
+    (with-dag-mocks
+      (with-redefs [ling/create-ling! (fn [_ _] (throw (ex-info "spawn refused" {})))]
+        (let [r (dag/start-dag! "all-fail" {:cwd test-directory :task-ids ["task-a"]})]
+          (is (true? (:stopped r)))
+          (is (not (:active @dag/dag-state))))))))

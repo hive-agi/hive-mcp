@@ -105,10 +105,30 @@
                   (subs s (count "role:")))))
             (:tags task))))
 
+(def capabilities
+  "What this scheduler honours in start-dag! opts. A caller that needs a
+   guarantee (e.g. :task-ids — never touch cards outside the plan) checks for it
+   here BEFORE starting, because an older scheduler would silently ignore the
+   key and drain the whole todo board."
+  #{:task-ids})
+
+(defn- in-scope
+  "TODOS restricted to TASK-IDS, or every todo when TASK-IDS is nil (the
+   unbounded, board-wide mode)."
+  [task-ids todos]
+  (if (nil? task-ids)
+    todos
+    (let [allowed (set task-ids)]
+      (filterv #(contains? allowed (:id %)) todos))))
+
 (defn find-ready-tasks
-  "Find tasks whose all dependencies have been completed."
-  [directory completed dispatched failed]
-  (let [todos (get-kanban-todos directory)
+  "Find tasks whose all dependencies have been completed.
+   With TASK-IDS (a collection) only those cards are candidates; nil means
+   every todo on the board."
+  ([directory completed dispatched failed]
+   (find-ready-tasks directory completed dispatched failed nil))
+  ([directory completed dispatched failed task-ids]
+  (let [todos (in-scope task-ids (get-kanban-todos directory))
         already-handled (into (set (keys dispatched))
                               (into completed failed))]
     (->> todos
@@ -124,7 +144,7 @@
                       :role    (task-role task)
                       :deps    deps
                       :dep-count (count deps)}))))
-         vec)))
+         vec))))
 
 ;; =============================================================================
 ;; Stateful Dispatch Functions
@@ -324,14 +344,14 @@
                        n-skipped " skipped.")}))
 
 (defn- remaining-dep-graph
-  "{task-id -> #{dep-id}} for every todo task the plan never handled."
-  [directory {:keys [completed failed dispatched]}]
+  "{task-id -> #{dep-id}} for every in-scope todo task the plan never handled."
+  [directory {:keys [completed failed dispatched opts]}]
   (let [handled (into (set (keys dispatched)) (into completed failed))]
     (into {}
           (comp (map :id)
                 (remove handled)
                 (map (juxt identity get-task-dependencies)))
-          (get-kanban-todos directory))))
+          (in-scope (:task-ids opts) (get-kanban-todos directory)))))
 
 (defn- announce-plan-complete!
   "Shout the finished plan's summary (with failed and skipped counts) and
@@ -356,7 +376,8 @@
   [directory]
   (loop []
     (let [s         @dag-state
-          ready     (find-ready-tasks directory (:completed s) (:dispatched s) (:failed s))
+          ready     (find-ready-tasks directory (:completed s) (:dispatched s) (:failed s)
+                                      (get-in s [:opts :task-ids]))
           wave      (when (seq ready) (dispatch-wave! ready (:max-slots s) (:opts s)))
           in-flight (:dispatched @dag-state)]
       (cond
@@ -441,6 +462,8 @@
 ;; Lifecycle Functions
 ;; =============================================================================
 
+(declare stop-dag!)
+
 (defn start-dag!
   "Initialize and start the DAG scheduler for a plan.
 
@@ -449,15 +472,31 @@
    complete and nothing calls `stop-dag!` on failure, so an uncapped run is an
    unbounded spend loop with no operator in it. Pass an explicit
    `:max-budget-usd` to widen or narrow it; pass 0 only if you have another
-   guardrail."
+   guardrail.
+
+   `:task-ids` bounds the run to exactly those kanban cards: nothing else on
+   the board is ever dispatched, by this wave or any auto-advanced one. Omit it
+   only for the board-wide mode (every todo is a candidate). An EMPTY
+   `:task-ids` is refused rather than read as \"no bound\".
+
+   A start that leaves nothing in flight (no ready task, or every spawn of the
+   first wave failed) stops the scheduler before returning: with no ling
+   running, no completion event can ever advance it, so leaving it :active
+   would only park a subscribed listener that a later unrelated ling event
+   could wake."
   [plan-id opts]
   (when (:active @dag-state)
     (throw (ex-info "DAG already active. Call stop-dag! first."
                     {:current-plan (:plan-id @dag-state)})))
 
-  (let [{:keys [max-slots cwd presets project-id run-id max-budget-usd]
+  (when (and (contains? opts :task-ids) (empty? (:task-ids opts)))
+    (throw (ex-info "start-dag! :task-ids is empty; refusing to treat it as unbounded."
+                    {:plan-id plan-id})))
+
+  (let [{:keys [max-slots cwd presets project-id run-id max-budget-usd task-ids]
          :or {max-slots 5
               presets ["ling"]}} opts
+        task-ids (some-> task-ids set)
         effective-project-id (or project-id
                                  (when cwd (scope/get-current-project-id cwd)))
         effective-budget     (if (some? max-budget-usd)
@@ -477,7 +516,8 @@
                           :presets presets
                           :project-id effective-project-id
                           :run-id run-id
-                          :max-budget-usd effective-budget}})
+                          :max-budget-usd effective-budget
+                          :task-ids task-ids}})
 
     ;; Start event listener for completion detection
     (start-event-listener!)
@@ -489,19 +529,28 @@
                                     " budget/ling: " (or effective-budget "UNCAPPED"))})
 
     ;; Find and dispatch first wave
-    (let [ready (find-ready-tasks cwd #{} {} #{})
+    (let [ready (find-ready-tasks cwd #{} {} #{} task-ids)
           result (when (seq ready)
-                   (dispatch-wave! ready max-slots (:opts @dag-state)))]
+                   (dispatch-wave! ready max-slots (:opts @dag-state)))
+          idle?  (empty? (:dispatched @dag-state))]
 
       (log/info "DAGWaves started. Plan:" plan-id
                 "Ready tasks:" (count ready)
                 "Dispatched:" (or (:dispatched-count result) 0)
+                "Scope:" (if task-ids (str (count task-ids) " task(s)") "WHOLE BOARD")
                 "Budget/ling:" (or effective-budget "UNCAPPED"))
 
+      ;; Nothing in flight -> nothing can ever advance this plan. Stop now.
+      (when idle?
+        (log/warn "DAGWaves: plan" plan-id "has nothing in flight after its first wave; stopping.")
+        (stop-dag!))
+
       {:started true
+       :stopped (boolean idle?)
        :plan-id plan-id
        :max-slots max-slots
        :max-budget-usd effective-budget
+       :task-ids task-ids
        :ready-count (count ready)
        :initial-dispatch result})))
 
@@ -541,9 +590,11 @@
                                (find-ready-tasks directory
                                                  (:completed state)
                                                  (:dispatched state)
-                                                 (:failed state))))]
+                                                 (:failed state)
+                                                 (get-in state [:opts :task-ids]))))]
     {:active       (:active state)
      :plan-id      (:plan-id state)
+     :task-ids     (get-in state [:opts :task-ids])
      :max-slots    (:max-slots state)
      :completed    (count (:completed state))
      :failed       (count (:failed state))
