@@ -91,5 +91,18 @@
         (is (= ["a" "b" "ling-wave"] (get-in t [:inputSchema :properties "command" :enum])))
         (is (:composite t))))))
 
+(deftest build-merged-tool-enum-advertises-a-subdomains-verbs-test
+  ;; Measured 2026-10-01: hive-git contributes `ship` and `belt` as verb maps,
+  ;; and the git tool's enum listed neither `ship land` nor `belt scan`.
+  (ext/contribute-commands! "merged-test-root" :merged-test-addon
+                            {"ship" {:handler {:land (fn [_] nil) :status (fn [_] nil)}}
+                             "solo" {:handler (fn [_] nil)}})
+  (try
+    (let [core (assoc-in merged-core [:inputSchema :properties "command" :enum] ["a"])
+          enum (get-in (composite/build-merged-tool core) [:inputSchema :properties "command" :enum])]
+      (is (= ["a" "ship" "ship land" "ship status" "solo"] enum)
+          "the subdomain stays (it answers help); each verb joins; a plain handler adds only its name"))
+    (finally (ext/retract-commands! "merged-test-root" :merged-test-addon))))
+
 (deftest build-merged-tool-is-identity-without-contributions-test
   (is (= merged-core (composite/build-merged-tool merged-core))))

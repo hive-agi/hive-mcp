@@ -58,10 +58,21 @@
                      attach-recent)]
     (if (ok? result) (:ok result) empty-result)))
 
+(def ^:private hint
+  "Kanban summary for current project scope. Use mcp__hive__project kanban list status=todo|inprogress for full rows.")
+
+(defn catchup-section
+  "The catchup section for SUMMARY: nil when the board is empty (an empty
+   board is not news), else the summary with its usage hint."
+  [{:keys [counts recent-todos] :as summary}]
+  (when (or (pos? (apply + (vals (or counts {}))))
+            (seq recent-todos))
+    (assoc summary :hint hint)))
+
 (def block
   "The catchup block contribution. Reads :project-id from the context."
   {:block/id    :kanban
-   :block/fn    (fn [{:keys [project-id]}] (gather-kanban-summary project-id))
+   :block/fn    (fn [{:keys [project-id]}] (catchup-section (gather-kanban-summary project-id)))
    :block/order 40})
 
 (defn register!

@@ -241,6 +241,19 @@
                             (str cmd))))
          ".")))
 
+(defn contributed-command-names
+  "Every command string ADDON-CMDS (command name -> contribution spec) makes
+   callable, sorted: each command name, and for a contribution whose :handler
+   is a verb map, each `<command> <verb>` too. The verbs are what a caller
+   actually sends (`ship land`, `belt scan`); an enum holding only the
+   subdomain name would refuse every one of them."
+  [addon-cmds]
+  (vec (sort (distinct
+              (for [[cmd {:keys [handler]}] addon-cmds
+                    command (cons cmd (when (map? handler)
+                                        (map #(str cmd " " (name %)) (keys handler))))]
+                command)))))
+
 (defn build-merged-tool
   "Fold the current addon contributions to TOOL-NAME into a consolidated
    tool-def's advertised surface: every contributed command's :params joins
@@ -263,7 +276,7 @@
   [core-tool-def]
   (let [tool-name       (:name core-tool-def)
         addon-cmds      (acmds/get-commands tool-name)
-        addon-cmd-names (vec (sort (keys (or addon-cmds {}))))
+        addon-cmd-names (contributed-command-names addon-cmds)
         addon-params    (apply merge-with union-property
                                (keep :params (vals (or addon-cmds {}))))
         core-enum       (get-in core-tool-def [:inputSchema :properties "command" :enum])]

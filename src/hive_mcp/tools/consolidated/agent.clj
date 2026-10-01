@@ -88,7 +88,7 @@
 (def tool-def
   {:name "agent"
    :consolidated true
-   :description "Unified agent operations: spawn (create ling), status (query agents), digest (compact per-agent progress roster — turn, last event, idle time — the PULL view now that shouts reach only the spawner; pass agent_id for just your own children, verbose for rendered text), kill (terminate), kill-batch (terminate multiple agents in one call), batch-spawn (spawn multiple agents at once via operations array), dispatch (send task — also the way to STEER a running agent), interrupt (interrupt current query of agent-sdk ling), claims (file ownership), list (deprecated alias for status), collect (get task result), broadcast (prompt all), cleanup (remove orphan agents after Emacs restart). Type: 'ling' (agentic worker). Nested: dag (start/stop/status DAGWave scheduler). Use command='help' to list all."
+   :description "Unified agent operations: spawn (create ling), status (query agents), digest (compact per-agent progress roster — turn, last event, idle time — the PULL view now that shouts reach only the spawner; pass agent_id for just your own children, verbose for rendered text), kill (terminate), kill-batch (terminate multiple agents in one call), batch-spawn (spawn multiple agents at once via operations array), dispatch (send task — also the way to STEER a running agent), interrupt (interrupt current query of agent-sdk ling), claims (file ownership), list (deprecated alias for status), collect (get task result; task_id, or agent_id alone for its latest task), broadcast (prompt all), cleanup (remove orphan agents after Emacs restart). Type: 'ling' (agentic worker). Nested: dag (start/stop/status DAGWave scheduler). Use command='help' to list all."
    :inputSchema {:type "object"
                  :properties {"command" {:type "string"
                                          :enum ["spawn" "status" "digest" "kill" "kill-batch" "batch-spawn" "dispatch" "interrupt" "claims" "list" "collect" "broadcast" "cleanup" "dag start" "dag stop" "dag status" "help"]
@@ -180,7 +180,7 @@
                                                      :description "HIL override: Allow killing agents from different projects (default: false). Required when target agent belongs to different project than caller."}
                               ;; collect params
                               "task_id" {:type "string"
-                                         :description "Task ID for collect operation"}
+                                         :description "Task ID for collect operation (omit with agent_id to collect that agent's latest task)"}
                               "timeout_ms" {:type "integer"
                                             :description "Timeout in ms for collect (default: 300000)"}
                               ;; dag params

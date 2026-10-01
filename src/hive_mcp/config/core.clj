@@ -244,6 +244,10 @@
 (defn set-config-value!
   "Update a value at a dotted key path and persist to disk.
 
+   The write is read-modify-write against the FILE, not the boot-time atom:
+   keys edited on disk while the server runs survive. An unreadable file is
+   left untouched (the in-memory value is still updated).
+
    Under a bound `*config-source*` the write stays in memory: a test declares
    config, it does not rewrite the developer's ~/.config/hive-mcp."
   ([key-str value] (set-config-value! key-str value config-io/config-path))
@@ -256,8 +260,11 @@
        (do
          (when-not @global-config
            (load-global-config! path))
-         (let [updated (swap! global-config assoc-in kp value)]
-           (config-io/write-config! updated path)
+         (let [updated (swap! global-config assoc-in kp value)
+               on-disk (config-io/read-config-file path)]
+           (if (result/ok? on-disk)
+             (config-io/write-config! (assoc-in (or (:ok on-disk) {}) kp value) path)
+             (log/warn "Config file unreadable, not persisting" key-str on-disk))
            (log/info "Config updated:" key-str "=" value)
            updated))))))
 

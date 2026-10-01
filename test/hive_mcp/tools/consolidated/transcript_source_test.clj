@@ -46,7 +46,7 @@
 
 (deftest list-sees-a-datalevin-only-ling
   (let [res (transcript/handle-transcript sources {:command "list"})
-        ids (set (map :agent-id (:transcripts (body res))))]
+        ids (set (map :agent (:transcripts (body res))))]
     (is (not (:isError res)))
     (is (= #{"ling-1" "old"} ids))))
 
