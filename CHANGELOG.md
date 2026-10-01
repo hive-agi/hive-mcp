@@ -35,6 +35,8 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-09-30
+
 ### Added
 
 - **The default ling spawn mode is operator config.** A ling spawned without
@@ -60,7 +62,7 @@ bump, not a quiet minor, because a consumer's storage would change under it.
   contributing one fails to mount. Addons check themselves with
   `hive-addon.tool-contract.test/deftest-root-tools` or the
   `hive-addon.tool-contract.check` CLI. A dormant addon's surface must declare
-  each tool's `:inputSchema`. Requires hive-addon 1.0.16.
+  each tool's `:inputSchema`. Requires hive-addon 1.1.0.
 
 ## [1.7.0] - 2026-09-27
 
