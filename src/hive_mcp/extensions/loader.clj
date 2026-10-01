@@ -146,10 +146,13 @@
     (when (seq errors)
       (log/warn "Addon manifest scan errors" {:count (count errors) :errors errors}))
     (if (seq manifests)
-      (let [{:keys [ordered cycles]} (manifest/manifests-load-order manifests)
+      (let [{:keys [ordered cycles missing]} (manifest/manifests-load-order manifests)
             init-ns-set (into #{} (map (comp symbol :addon/init-ns)) ordered)]
         (when (seq cycles)
           (log/warn "Cyclic addon dependencies detected" {:cycles cycles}))
+        (when (seq missing)
+          (log/error "Addon dependencies not on the classpath — the dependents may fail to mount"
+                     {:missing missing}))
         (log/info "Discovered" (count ordered) "addon manifest(s) on classpath"
                   {:ids (mapv :addon/id ordered)})
         {:ordered ordered :errors errors :init-ns-set init-ns-set})

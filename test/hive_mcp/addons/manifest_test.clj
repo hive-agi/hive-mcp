@@ -160,3 +160,17 @@
               :addon/dependencies #{"x"}}
           {:keys [cycles]} (manifest/manifests-load-order [m1 m2])]
       (is (seq cycles)))))
+
+(deftest manifests-load-order-reports-missing-dependency
+  (testing "A dependency with no manifest is reported, never emitted as nil"
+    (let [m1 {:addon/id "a" :addon/type :native
+              :addon/init-ns "a" :addon/init-fn "init"
+              :addon/dependencies #{}}
+          m2 {:addon/id "b" :addon/type :native
+              :addon/init-ns "b" :addon/init-fn "init"
+              :addon/dependencies #{"absent"}}
+          {:keys [ordered cycles missing]} (manifest/manifests-load-order [m2 m1])]
+      (is (= #{"a" "b"} (set (map :addon/id ordered))))
+      (is (not-any? nil? ordered))
+      (is (empty? cycles))
+      (is (= {"b" #{"absent"}} missing)))))

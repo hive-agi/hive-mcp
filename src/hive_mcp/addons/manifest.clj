@@ -255,7 +255,11 @@
 
    Returns:
      {:ordered [manifest1 manifest2 ...]
-      :cycles  #{} | #{[\"a\" \"b\"]}}  ;; pairs forming cycles"
+      :cycles  #{} | #{[\"a\" \"b\"]}   ;; pairs forming cycles
+      :missing {} | {\"a\" #{\"absent-dep\"}}}  ;; deps with no manifest
+
+   A manifest whose dependency is absent from the classpath stays in
+   :ordered; the absent id is reported under :missing, never as a nil entry."
   [manifests]
   (let [id->manifest (into {} (map (juxt :addon/id identity)) manifests)
         id->deps     (into {} (map (fn [m] [(:addon/id m)
@@ -277,10 +281,18 @@
            order  []
            remain in-degree]
       (if (empty? q)
-        (let [unvisited (into #{} (remove (set (map :addon/id (map id->manifest order))))
-                              (keys id->manifest))]
-          {:ordered (mapv id->manifest order)
-           :cycles  (if (seq unvisited) unvisited #{})})
+        (let [unvisited (into #{} (remove (set order)) (keys id->manifest))
+              ;; A dependency id with no manifest is tracked in `order` (it
+              ;; unblocks its dependents) but has nothing to load. Emitting
+              ;; nil for it once aborted the whole roster downstream.
+              missing   (into {}
+                              (keep (fn [[id deps]]
+                                      (when-let [absent (seq (remove id->manifest deps))]
+                                        [id (set absent)])))
+                              id->deps)]
+          {:ordered (into [] (keep id->manifest) order)
+           :cycles  (if (seq unvisited) unvisited #{})
+           :missing missing})
         (let [id   (peek q)
               q    (pop q)
               ;; Find nodes that depend ON this id (reverse edges)
