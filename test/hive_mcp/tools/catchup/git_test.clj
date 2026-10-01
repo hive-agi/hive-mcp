@@ -5,8 +5,9 @@
    1. Integration: real temp git repo for end-to-end validation
    2. Unit: mock-based tests via with-redefs for branch, status, log
    3. Shape: response contract — always {:branch string? :uncommitted boolean? :last-commit string?}"
-  (:require [clojure.test :refer [deftest is testing]]
-            [clojure.java.shell :refer [sh]]
+  (:require [clojure.test :refer [deftest is testing use-fixtures]]
+            [clojure.java.io :as io]
+            [clojure.java.shell :as shell]
             [hive-mcp.tools.catchup.git :as git])
   (:import [java.io File]
            [java.nio.file Files]
@@ -16,13 +17,40 @@
 ;; Helpers
 ;; =============================================================================
 
+(def ^:private temp-dirs (atom []))
+
 (defn- make-temp-dir
-  "Create a temporary directory that is deleted on JVM exit."
+  "Create a temporary directory, removed recursively after each test.
+   `deleteOnExit` alone cannot remove a non-empty directory, so every run
+   used to leave a git repo behind in the system temp dir."
   ^File []
-  (let [dir (Files/createTempDirectory "hive-git-test"
-                                       (into-array FileAttribute []))]
-    (.deleteOnExit (.toFile dir))
-    (.toFile dir)))
+  (let [dir (.toFile (Files/createTempDirectory "hive-git-test"
+                                                (into-array FileAttribute [])))]
+    (swap! temp-dirs conj dir)
+    dir))
+
+(defn- delete-tree! [^File f]
+  (doseq [^File x (reverse (file-seq f))]
+    (io/delete-file x true)))
+
+(use-fixtures :each
+  (fn [t]
+    (try (t)
+         (finally
+           (run! delete-tree! @temp-dirs)
+           (reset! temp-dirs [])))))
+
+(def ^:private hermetic-git-env
+  "The host's git config (global + system) must not reach the fixture repo:
+   a user-level commit.gpgsign or init.defaultBranch changes what a commit does."
+  (merge (into {} (System/getenv))
+         {"GIT_CONFIG_GLOBAL"   "/dev/null"
+          "GIT_CONFIG_NOSYSTEM" "1"}))
+
+(defn- sh
+  "clojure.java.shell/sh under a hermetic git environment."
+  [& args]
+  (apply shell/sh (concat args [:env hermetic-git-env])))
 
 (defn- response-shape?
   "True when m has exactly the expected keys with correct types."
@@ -105,7 +133,7 @@
 
 (deftest gather-git-info-branch-detection-test
   (testing "correctly extracts branch name from rev-parse output"
-    (with-redefs [sh (fn [& args]
+    (with-redefs [shell/sh (fn [& args]
                        (let [args-vec (vec args)]
                          (cond
                            (some #(= "rev-parse" %) args-vec)
@@ -124,7 +152,7 @@
 
 (deftest gather-git-info-uncommitted-true-test
   (testing "uncommitted is true when porcelain output is non-blank"
-    (with-redefs [sh (fn [& args]
+    (with-redefs [shell/sh (fn [& args]
                        (let [args-vec (vec args)]
                          (cond
                            (some #(= "rev-parse" %) args-vec)
@@ -143,7 +171,7 @@
 
 (deftest gather-git-info-uncommitted-false-test
   (testing "uncommitted is false when porcelain output is blank"
-    (with-redefs [sh (fn [& args]
+    (with-redefs [shell/sh (fn [& args]
                        (let [args-vec (vec args)]
                          (cond
                            (some #(= "rev-parse" %) args-vec)
@@ -162,7 +190,7 @@
 
 (deftest gather-git-info-last-commit-format-test
   (testing "last-commit is trimmed from git log output"
-    (with-redefs [sh (fn [& args]
+    (with-redefs [shell/sh (fn [& args]
                        (let [args-vec (vec args)]
                          (cond
                            (some #(= "rev-parse" %) args-vec)
@@ -181,7 +209,7 @@
 
 (deftest gather-git-info-non-zero-exit-uses-fallback-test
   (testing "non-zero exit code returns fallback values per field"
-    (with-redefs [sh (fn [& _args]
+    (with-redefs [shell/sh (fn [& _args]
                        {:exit 128 :out "" :err "fatal: not a git repo"})]
       (let [info (git/gather-git-info "/fake/dir")]
         (is (response-shape? info))
@@ -191,7 +219,7 @@
 
 (deftest gather-git-info-sh-throws-test
   (testing "exception in sh returns fallback without propagating"
-    (with-redefs [sh (fn [& _args]
+    (with-redefs [shell/sh (fn [& _args]
                        (throw (RuntimeException. "shell exploded")))]
       (let [info (git/gather-git-info "/fake/dir")]
         (is (response-shape? info)
