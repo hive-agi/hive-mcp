@@ -301,7 +301,7 @@
                                        :description "Row cap for ir list"}
                               "spawn_mode" {:type "string"
                                             :enum ["claude" "vterm" "headless"]
-                                            :description "[forge strike] Spawn mode for every forged ling; default claude. 'headless' is ABSTRACT — the concrete backend is resolved at spawn time by the headless registry. Falls back to config [:forge :spawn-mode] when omitted."}
+                                            :description "[forge strike] Spawn mode for every forged ling; default: config [:forge :spawn-mode], else config [:ling :default-spawn-mode], shipped headless. 'headless' is ABSTRACT — the concrete backend is resolved at spawn time by the headless registry. Falls back to config [:forge :spawn-mode] when omitted."}
                               "max_slots" {:type "integer"
                                            :description "[forge strike] Cap on concurrently forged lings (default 10)."}
                               "presets" {:type "array"

@@ -36,7 +36,7 @@
     {:success? true :errors []})
   (shutdown! [_] nil)
   (tools [_] [{:name "probe_lc_tool" :description "probe"
-               :inputSchema {:type "object" :properties {}}
+               :inputSchema {:type "object" :properties {"arg" {:type "string" :description "probe arg"}}}
                :handler (fn [_] {:type "text" :text (str "tool " gen)})}])
   (schema-extensions [_] [])
   (health [_] {:status :ok})
@@ -50,7 +50,8 @@
    :addon/init-ns "hive-mcp.extensions.lifecycle-test" :addon/init-fn "make-probe"
    :addon/capabilities #{:tools}
    :addon/lifecycle {:policy :lazy :idle-ms 100}
-   :addon/surface {:tools [{:name "probe_lc_tool" :description "probe"}]
+   :addon/surface {:tools [{:name "probe_lc_tool" :description "probe"
+                            :inputSchema {:type "object" :properties {"arg" {:type "string" :description "probe arg"}}}}]
                    :commands {"code" ["probe-lc"]}}})
 
 (defn- clean [f]

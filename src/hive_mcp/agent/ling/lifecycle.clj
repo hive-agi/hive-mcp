@@ -11,7 +11,8 @@
             [hive-mcp.swarm.datascript.schema :as schema]
             [hive-mcp.config.core :as global-config]
             [hive-dsl.result :as r]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.config.ling-defaults :as ling-defaults]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -32,15 +33,20 @@
   (when-let [secret-key (get provider->secret-key (keyword provider))]
     (r/rescue nil (global-config/get-secret secret-key))))
 
-(def ^:const default-spawn-mode
+(defn default-spawn-mode
   "Spawn mode applied when a caller supplies none.
-   Single source of truth for the default — `resolve-effective-mode` and
-   `hive-mcp.agent.ling.spawn/->ling` both read it, and tests assert against
-   it rather than restating a literal."
-  :claude)
+   Single source of truth for the default — `resolve-effective-mode`,
+   `hive-mcp.agent.ling.spawn/->ling` and the MCP spawn handlers all call
+   it, and tests assert against it rather than restating a literal.
+
+   Operator-settable: config.edn [:ling :default-spawn-mode] >
+   HIVE_LING_DEFAULT_SPAWN_MODE > :headless (see
+   `hive-mcp.config.ling-defaults`). Read per call, never captured."
+  []
+  (ling-defaults/default-spawn-mode))
 
 (defn resolve-effective-mode
-  "Pure function: raw spawn inputs -> effective spawn mode keyword.
+  "Raw spawn inputs -> effective spawn mode keyword.
 
    Provider/model are NOT inputs — they're orthogonal infrastructure
    concerns consumed by the backend's LLM router, not the spawn-mode
@@ -55,9 +61,9 @@
    via META-INF discovery + register-headless! / register-mode!.
 
    When :spawn-mode is any other valid keyword, returned unchanged.
-   When omitted, defaults to `default-spawn-mode`."
+   When omitted, defaults to `(default-spawn-mode)` — operator config."
   [{:keys [spawn-mode]}]
-  (let [raw-mode (or spawn-mode default-spawn-mode)]
+  (let [raw-mode (or spawn-mode (default-spawn-mode))]
     (if (= raw-mode :headless)
       (or (headless-reg/resolve-default-backend nil)
           (do (log/warn "No headless backend resolvable, leaving :headless abstract"

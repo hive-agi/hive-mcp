@@ -98,7 +98,7 @@
     ;; No messages added - create wrapped tool
     (let [test-tool {:name "test-tool"
                      :description "test"
-                     :inputSchema {}
+                     :inputSchema {:type "object" :properties {"x" {:type "string" :description "x"}}}
                      :handler (fn [_] {:type "text" :text "result"})}
           wrapped (routes/make-tool test-tool)
           handler (:handler wrapped)]
