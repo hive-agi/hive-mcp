@@ -14,7 +14,8 @@
             [hive-mcp.addons.core :as addons]
             [hive-mcp.hot.lifecycle.port :as port]
             [hive-mcp.server.core :as server]
-            [hive-mcp.tools.consolidated.hot :as hot]))
+            [hive-mcp.tools.consolidated.hot :as hot]
+            [clojure.java.io :as io]))
 
 ;; ── collect: read the host ───────────────────────────────────────────────
 
@@ -44,6 +45,41 @@
   [addon-id]
   (when-let [a (:addon (addons/get-addon-entry addon-id))]
     (into (sorted-set) (map :name) (addon/tools a))))
+
+(defn- present? [addon-id] (contains? (phases) addon-id))
+
+(defn- checkout-dir
+  "The project dir (the nearest one holding a deps.edn) at or above DIR, or nil."
+  [dir]
+  (loop [f (some-> dir io/file .getCanonicalFile)]
+    (cond
+      (nil? f)                          nil
+      (.exists (io/file f "deps.edn"))  (str f)
+      :else                             (recur (.getParentFile f)))))
+
+(defn inject-paths
+  "{addon-id checkout-dir}: where a path-based inject can plug each mounted
+   addon back in from, read off the classpath. Only addons with source on disk
+   (:local/root) have one; a jar-backed addon is absent from the map, and an
+   inject of it is refused with that reason. hive-addon's source resolver is
+   reached per call (Capture-by-Var); an image without it yields {}."
+  []
+  (if-let [spec-source (try (requiring-resolve 'hive-addon.hot.source/spec-source)
+                            (catch Exception _ nil))]
+    (into (sorted-map)
+          (keep (fn [s]
+                  (when-let [dir (checkout-dir (:hot/source-dir (spec-source s)))]
+                    [(:addon/id s) dir])))
+          (hot/effective-specs))
+    (sorted-map)))
+
+(defn- hot!
+  "Call the `hot` tool's dispatcher with PARAMS, as an operator would, and
+   read its reply. Routing by :command reaches a verb added later (e.g. eject)
+   without a new require here; an image without the verb answers an error,
+   which the outcome reads as a refusal and the report keeps."
+  [params]
+  (report (hot/handle-hot params)))
 
 ;; ── act: op kind -> handler call, report -> outcome ──────────────────────
 
@@ -75,6 +111,21 @@
      :error? (or (nil? handler) (boolean (:isError reply)) (contains? reply :thrown))
      :reply reply}))
 
+(defmethod perform! :pin [_ {:op/keys [addon policy force?]}]
+  (hot! {:command "pin" :addon addon :policy (name policy) :force (true? force?)}))
+
+(defmethod perform! :eject [_ {:op/keys [addon cascade?]}]
+  (hot! {:command "eject" :addon addon :cascade (true? cascade?)}))
+
+(defmethod perform! :inject [{:keys [inject-paths]} {:op/keys [addon]}]
+  (let [before (present? addon)
+        dir    (get inject-paths addon)
+        r      (if dir
+                 (hot! {:command "inject" :path dir})
+                 {:ok? false
+                  :errors [(str "no inject path for " addon "; known: " (vec (keys inject-paths)))]})]
+    (assoc r ::present-before? before ::present-after? (present? addon))))
+
 (defmulti outcome-of
   "[op report] -> Outcome."
   (fn [op _report] (:op/kind op)))
@@ -98,9 +149,21 @@
         (and (= :dormant before) (= :active after))   :applied
         :else                                         :noop))
 
+(defmethod outcome-of :pin [_ {:keys [lifecycle]}]
+  (cond (not (map? lifecycle))  :refused
+        (:refused lifecycle)    :refused
+        :else                   :applied))
+
+(defmethod outcome-of :eject [_ r] (ok-applied r))
+
+(defmethod outcome-of :inject [_ {:keys [ok?] ::keys [present-before? present-after?]}]
+  (cond present-before?            :noop
+        (and ok? present-after?)   :applied
+        :else                      :refused))
+
 ;; ── the host ─────────────────────────────────────────────────────────────
 
-(defrecord HandlersHost [probe-calls last-report]
+(defrecord HandlersHost [probe-calls inject-paths last-report]
   port/IHotHost
   (apply-op! [this op]
     (let [r (perform! this op)]
@@ -111,13 +174,19 @@
 
 (defn handlers-host
   "A HandlersHost. PROBE-CALLS is {addon-id {:tool name :args map}}: the call
-   a :call op makes to exercise that addon through its advertised tool."
-  [probe-calls]
-  (->HandlersHost probe-calls (atom nil)))
+   a :call op makes to exercise that addon through its advertised tool.
+   INJECT-PATHS is {addon-id dir}: where an :inject op plugs that addon in
+   from (the live spec's :spec/inject-paths)."
+  ([probe-calls] (handlers-host probe-calls {}))
+  ([probe-calls inject-paths]
+   (->HandlersHost probe-calls inject-paths (atom nil))))
 
 (defn live-spec
   "The HostSpec of the running host, read from what is mounted now. Call it
-   on a freshly booted instance, before any op."
+   on a freshly booted instance, before any op. :spec/inject-paths says where
+   each addon with source on disk can be injected back from; :spec/deps is
+   left at its default (none), so a live eject is never expected to be
+   blocked by a dependent."
   []
   (let [ps        (phases)
         per-addon (into (sorted-map) (map (fn [id] [id (or (addon-tools id) #{})])) (keys ps))
@@ -125,7 +194,8 @@
         policies  (into (sorted-map)
                         (map (fn [[id {:keys [lifecycle]}]] [(name id) (keyword (:policy lifecycle))]))
                         (:addons (report (hot/handle-lifecycle {}))))]
-    {:spec/core-tools  (into (sorted-set) (remove addon-all) (advertised-tools))
-     :spec/addon-tools per-addon
-     :spec/hook-only   (into (sorted-set) (keep (fn [[id ts]] (when (empty? ts) id))) per-addon)
-     :spec/policy      policies}))
+    {:spec/core-tools    (into (sorted-set) (remove addon-all) (advertised-tools))
+     :spec/addon-tools   per-addon
+     :spec/hook-only     (into (sorted-set) (keep (fn [[id ts]] (when (empty? ts) id))) per-addon)
+     :spec/policy        policies
+     :spec/inject-paths  (inject-paths)}))
