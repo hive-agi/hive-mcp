@@ -132,7 +132,9 @@ child=""
 trap '[[ -n "$child" ]] && kill -TERM "$child" 2>/dev/null; wait "$child" 2>/dev/null; exit 143' INT TERM
 
 while true; do
-  "${CMD[@]}" &
+  # Without <&0 a non-interactive shell gives the background child /dev/null
+  # as stdin, which breaks the stdio MCP transport.
+  "${CMD[@]}" <&0 &
   child=$!
   set +e
   wait "$child"
