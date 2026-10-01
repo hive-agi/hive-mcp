@@ -117,6 +117,9 @@
 (defmethod perform! :eject [_ {:op/keys [addon cascade?]}]
   (hot! {:command "eject" :addon addon :cascade (true? cascade?)}))
 
+(defmethod perform! :unmount [_ {:op/keys [addon cascade?]}]
+  (hot! {:command "unmount" :addon addon :cascade (true? cascade?)}))
+
 (defmethod perform! :inject [{:keys [inject-paths]} {:op/keys [addon]}]
   (let [before (present? addon)
         dir    (get inject-paths addon)
@@ -155,6 +158,10 @@
         :else                   :applied))
 
 (defmethod outcome-of :eject [_ r] (ok-applied r))
+
+;; unmount answers plug-out!'s Result projected: :ok? false with :reason on a
+;; refusal, so it reads exactly as eject.
+(defmethod outcome-of :unmount [_ r] (ok-applied r))
 
 (defmethod outcome-of :inject [_ {:keys [ok?] ::keys [present-before? present-after?]}]
   (cond present-before?            :noop

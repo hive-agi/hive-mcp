@@ -153,6 +153,10 @@
   (gen/fmap (fn [[a c]] (op k a {:op/cascade? c}))
             (gen/tuple (gen/elements addon-ids) gen/boolean)))
 
+(defmethod gen-of :unmount [k]
+  (gen/fmap (fn [[a c]] (op k a {:op/cascade? c}))
+            (gen/tuple (gen/elements addon-ids) gen/boolean)))
+
 (def gen-op
   (gen/one-of (mapv gen-of (sort (keys (methods gen-of))))))
 

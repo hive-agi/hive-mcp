@@ -38,6 +38,8 @@
    :core-reload-while-dormant       [(op :evict "hive.rss") (op :core-reload) (op :activate "hive.rss")]
    :eject-then-call-refused         [(op :eject "hive.rss") (op :call "hive.rss")]
    :eject-then-inject-restores      [(op :eject "hive.rss") (op :inject "hive.rss") (op :inject "hive.rss")]
+   :unmount-then-call-refused       [(op :unmount "hive.rss") (op :call "hive.rss") (op :unmount "hive.rss")]
+   :unmount-then-inject-restores    [(op :unmount "hive.rss") (op :inject "hive.rss")]
    :pin-lazy-on-hook-only           [(op :pin "hive.guard.projections" {:op/policy :lazy})
                                      (op :pin "hive.guard.projections" {:op/policy :lazy :op/force? true})]})
 
@@ -86,6 +88,15 @@
   (testing "eject: the report's :ok?"
     (is (= :applied (live/outcome-of (op :eject "x") {:ok? true :hot/ejected ["x"]})))
     (is (= :refused (live/outcome-of (op :eject "x") {:ok? false :hot/refused? true}))))
+  (testing "unmount: the projected plug-out! Result's :ok?"
+    (is (= :applied (live/outcome-of (op :unmount "x") {:ok? true :hot/ejected ["x"]})))
+    (is (= :refused (live/outcome-of (op :unmount "x") {:ok? false :reason "hot/eject-refused"})))
+    (is (= :refused (live/outcome-of (op :unmount "x") {:ok? false :reason "hot/eject-unknown"}))))
+  (testing "the model reads unmount as eject: a second unmount of the same addon is refused"
+    (let [spec {:spec/core-tools #{"hot"} :spec/addon-tools {"x" #{"x_tool"}}
+                :spec/hook-only #{} :spec/policy {"x" :eager} :spec/deps {}}
+          t    (model/run spec [(op :unmount "x") (op :unmount "x")])]
+      (is (= [:applied :refused] (mapv :step/outcome (:trace/steps t))))))
   (testing "inject: presence before and after decides"
     (let [o (op :inject "x")]
       (is (= :noop (live/outcome-of o {:ok? true ::live/present-before? true ::live/present-after? true})))

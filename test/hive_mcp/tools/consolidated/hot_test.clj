@@ -13,6 +13,10 @@
             [clojure.test.check.properties :as prop]
             [hive-addon.lifecycle :as lc]
             [hive-addon.lifecycle.port :as lport]
+            [hive-addon.hot.port :as hport]
+            [hive-addon.protocol :as proto]
+            [hive-dsl.result :as r]
+            [hive-mcp.extensions.mount-host :as mount-host]
             [hive-mcp.tools.consolidated.hot :as hot]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -321,3 +325,122 @@
       (is (fn? (:probe handlers)))
       (is (thrown? AssertionError (hot/host-verb {:bridge `stub-eject! :target :addon}))
           "a descriptor without :report-keys is refused at construction"))))
+
+;; =============================================================================
+;; unmount: plug-out! (a Result) projected for the wire
+;; =============================================================================
+
+(deftest unmount-outcome-projects-the-railway-test
+  (testing "ok: the EjectReport itself"
+    (is (= {:ok? true :hot/ejected ["a"]}
+           (hot/unmount-outcome (r/ok {:ok? true :hot/ejected ["a"]})))))
+  (testing "a refusal is stated plainly, with its category and sentence"
+    (let [out (hot/unmount-outcome (r/err :hot/eject-refused
+                                          {:ok? false :hot/blocking ["b"] :message "b depends on a"}))]
+      (is (false? (:ok? out)))
+      (is (= "hot/eject-refused" (:reason out)))
+      (is (true? (:hot/refused? out)))
+      (is (= ["b"] (:hot/blocking out)))
+      (is (= "b depends on a" (:message out)))
+      (is (not (contains? out :error)) "the Result envelope is not leaked")))
+  (testing "unknown and failed keep their category; a missing message is named"
+    (is (= "hot/eject-unknown" (:reason (hot/unmount-outcome (r/err :hot/eject-unknown {:message "x"})))))
+    (is (= ":hot/eject-failed" (:message (hot/unmount-outcome (r/err :hot/eject-failed {}))))))
+  (testing "a bare report (no Result) passes through"
+    (is (= {:ok? true} (hot/unmount-outcome {:ok? true})))))
+
+(defn stub-plug-out-ok! [_host _specs target _opts]
+  (r/ok {:hot/target target :hot/ejected [target] :hot/unregistered [target]
+         :hot/unsupported [] :ok? true}))
+
+(defn stub-plug-out-refused! [_host _specs target _opts]
+  (r/err :hot/eject-refused {:hot/target target :hot/ejected [target] :hot/refused? true
+                             :hot/blocking ["hive.dependent"] :ok? false
+                             :message "mounted addons depend on it"}))
+
+(defn- unmount-verb [bridge]
+  {:bridge bridge :target #'hot/eject-target
+   :opts (fn [{:keys [cascade]}] {:cascade? (true? cascade)})
+   :project #'hot/unmount-outcome
+   :report-keys hot/unmount-report-keys})
+
+(deftest unmount-ok-over-stub-ports-test
+  (let [refreshes (atom 0)
+        resp (hot/run-host-verb (unmount-verb `stub-plug-out-ok!) (stub-ports refreshes) {:addon "hive.rss"})
+        out  (body resp)]
+    (is (not (:isError resp)))
+    (is (true? (:ok? out)))
+    (is (= ["hive.rss"] (:unregistered out)))
+    (is (= 1 @refreshes))))
+
+(deftest unmount-refusal-is-an-answer-not-a-throw-test
+  (let [resp (hot/run-host-verb (unmount-verb `stub-plug-out-refused!) (stub-ports (atom 0))
+                                {:addon "hive.rss"})
+        out  (body resp)]
+    (is (not (:isError resp)) "a refusal is the verb's answer, not a tool failure")
+    (is (false? (:ok? out)))
+    (is (= "hot/eject-refused" (:reason out)))
+    (is (true? (:refused? out)))
+    (is (= ["hive.dependent"] (:blocking out)))
+    (is (= "mounted addons depend on it" (:message out)))))
+
+(deftest unmount-is-registered-and-advertised-test
+  (is (= #'hot/handle-unmount (:unmount hot/canonical-handlers)))
+  (is (some #{"unmount"} (hot/command-enum)))
+  (is (str/includes? (:description hot/tool-def) "unmount")))
+
+;; Integration: the real plug-out! over hive-mcp's AddonRegistryHost (fake
+;; registry seams) proves the host plugs OUT through IMountUnregister — the
+;; ejected id lands under :hot/unregistered, never :hot/unsupported — and that
+;; shutdown precedes the drop, so no data is deleted.
+
+(defrecord UnmountProbe []
+  proto/IAddon
+  (addon-id [_] "probe.unmount")
+  (addon-type [_] :native)
+  (capabilities [_] #{})
+  (initialize! [_ _] {:success? true :errors []})
+  (shutdown! [_] nil)
+  (tools [_] [])
+  (schema-extensions [_] [])
+  (health [_] {:status :ok})
+  (excluded-tools [_] #{})
+  (hooks [_] {}))
+
+(defn- registry-host [log reg]
+  (mount-host/addon-registry-host
+   {:reg-fn        (fn [a] (swap! reg assoc (proto/addon-id a) a) {:success? true})
+    :init-fn       (fn [_ _] {:success? true :errors []})
+    :shutdown-fn   (fn [id] (swap! log conj [:shutdown id]) {:success? true})
+    :unreg-fn      (fn [id] (swap! log conj [:unregister id]) (swap! reg dissoc id) {:success? true})
+    :registered-fn (fn [id] (get @reg id))}))
+
+(def ^:private null-dirs
+  (reify hport/IHotDirs
+    (-extend-dirs! [_ _] (r/ok {:dirs [] :added []}))
+    (-remove-dirs! [_ req] {:removed [] :kept [] :absent (vec (:dirs req)) :dirs [] :shared {}})))
+
+(deftest unmount-through-the-real-plug-out-unregisters-test
+  (if-not (try (requiring-resolve 'hive-addon.hot.inject/plug-out!) (catch Throwable _ nil))
+    (is true "skipped: this hive-addon predates plug-out!")
+    (let [log  (atom [])
+          reg  (atom {"probe.unmount" (->UnmountProbe)})
+          h    (registry-host log reg)
+          ports {:host        (constantly h)
+                 ;; effective-specs' contract: manifests intersected with the live registry
+                 :specs       (fn [] (filterv #(contains? @reg (:addon/id %))
+                                              [{:addon/id "probe.unmount"
+                                                :addon/init-ns 'hive-mcp.tools.consolidated.hot-test}]))
+                 :reload-opts (constantly {:hot-dirs null-dirs})
+                 :refresh!    (constantly {:count 0})}
+          out  (body (hot/run-host-verb hot/unmount-verb ports {:addon "probe.unmount"}))]
+      (is (true? (:ok? out)) (pr-str out))
+      (is (= ["probe.unmount"] (:unregistered out)))
+      (is (= [] (:unsupported out)) "the host has IMountUnregister")
+      (is (= [[:shutdown "probe.unmount"] [:unregister "probe.unmount"]] @log)
+          "shut down (data kept) before it is dropped")
+      (is (empty? @reg))
+      (testing "a second unmount is refused as unknown, plainly"
+        (let [again (body (hot/run-host-verb hot/unmount-verb ports {:addon "probe.unmount"}))]
+          (is (false? (:ok? again)))
+          (is (= "hot/eject-unknown" (:reason again))))))))

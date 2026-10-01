@@ -160,6 +160,10 @@
                     (update :phases #(reduce (fn [ps id] (assoc ps id :active)) % remounted))
                     (update :policy dissoc addon))])))
 
+(defmethod step :unmount [state op]
+  ;; The same plug-out as eject; only the reply's shape (a Result) differs.
+  (step state (assoc op :op/kind :eject)))
+
 (defmethod step :inject [{:keys [spec] :as state} {:op/keys [addon]}]
   (cond
     (known-addon? state addon)               [:noop state]

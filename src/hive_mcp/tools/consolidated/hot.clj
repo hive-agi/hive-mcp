@@ -525,11 +525,15 @@
 ;; A verb that forwards to a hive-addon.lifecycle function is DATA: which
 ;; bridge symbol to call, which params it needs, how params become the call's
 ;; trailing args. `lifecycle-verb` turns that descriptor into a handler, so a
-;; new verb is ONE entry in `canonical-handlers`, e.g. the planned unmount:
+;; new verb is ONE entry in `canonical-handlers`, e.g. (illustrative):
 ;;
-;;   :unmount (lifecycle-verb {:bridge   'hive-addon.lifecycle/eject!
-;;                             :requires [:addon]
-;;                             :example  "{:command \"unmount\" :addon \"hive.rss\"}"})
+;;   :forget (lifecycle-verb {:bridge   'hive-addon.lifecycle/forget!
+;;                            :requires [:addon]
+;;                            :args     (fn [{:keys [addon]}] [[addon]])
+;;                            :example  "{:command \"forget\" :addon \"hive.rss\"}"})
+;;
+;; (`unmount` is NOT one of these: it plugs out of the mount host, so it is a
+;; host verb over hive-addon.hot.inject/plug-out!, see handle-unmount.)
 ;;
 ;; The bridge is held as a SYMBOL and resolved on every call (Capture-by-Var,
 ;; 20260817195749-0d407e9c): a hive-addon that gains the fn later, or is
@@ -617,6 +621,7 @@
    [:target ifn?]
    [:opts {:optional true} ifn?]
    [:report-keys [:vector :keyword]]
+   [:project {:optional true} ifn?]
    [:example {:optional true} :string]])
 
 (def HostPorts
@@ -649,7 +654,7 @@
    resolve the bridge now, call (bridge host specs target opts), refresh the
    surface, answer the report's :report-keys plus :surface. An absent bridge
    answers `unsupported-report`; nothing here throws."
-  [{:keys [bridge target opts report-keys example] :as verb} ports params]
+  [{:keys [bridge target opts report-keys project example] :as verb} ports params]
   {:pre [(m/validate HostVerb verb) (m/validate HostPorts ports)]}
   (let [t (target params)
         f (soft bridge)
@@ -659,8 +664,9 @@
       (nil? f) (mcp-json (unsupported-report bridge))
       (nil? h) (mcp-error "mount-host adapter unavailable")
       :else
-      (let [report  (try (f h ((:specs ports)) t
-                            (merge ((:reload-opts ports)) (when opts (opts params))))
+      (let [report  (try ((or project identity)
+                          (f h ((:specs ports)) t
+                             (merge ((:reload-opts ports)) (when opts (opts params)))))
                          (catch Throwable e
                            (log/warn "host verb bridge threw" {:bridge bridge :error (ex-message e)})
                            {:ok? false :reason :bridge-threw :errors [(str bridge ": " (ex-message e))]}))
@@ -690,6 +696,49 @@
               :opts        (fn [{:keys [cascade]}] {:cascade? (true? cascade)})
               :report-keys eject-report-keys
               :example     "{:command \"eject\" :addon \"hive.rss\"}"}))
+
+;; -----------------------------------------------------------------------------
+;; unmount — plug-out! on the railway, projected for the wire
+;; -----------------------------------------------------------------------------
+
+(def unmount-report-keys
+  "What `unmount` answers: the EjectReport keys plus the refusal it states."
+  (into eject-report-keys [:hot/unknown :hot/dirs-shared :reason :message]))
+
+(defn unmount-outcome
+  "Pure. A hive-addon.hot.inject/plug-out! Result as the report the wire shows.
+   (ok EjectReport) answers the report. An err Result (:hot/eject-refused,
+   :hot/eject-unknown, :hot/eject-failed) carries the whole report: it answers
+   :ok? false with :reason naming the category (as the qualified string
+   \"hot/eject-refused\", which survives JSON) and :message its sentence, and a
+   refusal is stated (:hot/refused? true). A bare EjectReport (a bridge that
+   answers no Result) passes through. Never throws."
+  [res]
+  (cond
+    (and (map? res) (contains? res :ok) (not (contains? res :error))) (:ok res)
+    (and (map? res) (keyword? (:error res)))
+    (cond-> (-> (dissoc res :error)
+                (assoc :ok? false :reason (subs (str (:error res)) 1)))
+      (= :hot/eject-refused (:error res)) (assoc :hot/refused? true)
+      (nil? (:message res)) (assoc :message (str (:error res))))
+    :else res))
+
+(def unmount-verb
+  "The HostVerb descriptor `unmount` runs."
+  {:bridge      'hive-addon.hot.inject/plug-out!
+   :target      #'eject-target
+   :opts        (fn [{:keys [cascade]}] {:cascade? (true? cascade)})
+   :project     #'unmount-outcome
+   :report-keys unmount-report-keys
+   :example     "{:command \"unmount\" :addon \"hive.rss\"}"})
+
+(def handle-unmount
+  "Plug an addon OUT through hive-addon.hot.inject/plug-out! over the effective
+   specs: teardown (no data deleted), IMountUnregister, lifecycle forget!,
+   hive-hot deregistration and owner-scoped dir release. A refusal (dependents
+   without cascade, an unknown id) is answered plainly as :ok? false with
+   :reason, never thrown."
+  (host-verb unmount-verb))
 
 ;; -----------------------------------------------------------------------------
 ;; pin — a validated policy change
@@ -871,6 +920,7 @@
    :reload-all  #'handle-reload-all
    :inject      #'handle-inject
    :eject       #'handle-eject
+   :unmount     #'handle-unmount
    :watch       #'handle-watch
    :unwatch     #'handle-unwatch
    :list        #'handle-list
@@ -914,7 +964,9 @@
         "the classpath at boot: a project dir, source dir or jar), eject (plug an addon "
         "OUT by id or by the path it was injected from; refused with :hot/blocking while "
         "mounted addons depend on it unless cascade, which remounts them without it; what "
-        "cannot be removed, e.g. classpath URLs, is reported as retained), watch/unwatch "
+        "cannot be removed, e.g. classpath URLs, is reported as retained), unmount (eject on "
+        "the railway via plug-out!: the same plug-out, its refusals answered as :ok? false with "
+        ":reason :hot/eject-refused | :hot/eject-unknown | :hot/eject-failed and :message), watch/unwatch "
         "(file-watcher: edit an addon's source and it remounts itself), list "
         "(per-addon strategy + source-kind + whether it is reloadable at all), "
         "status (includes the no-reload set split into core and addon pins), "
@@ -939,17 +991,17 @@
                 :enum (command-enum)
                 :description "Hot-reload operation to perform"}
      "addon" {:type "string"
-              :description "[reload/eject/lifecycle verbs] Addon id, e.g. \"hive.carto\". Dependents cascade automatically on reload."}
+              :description "[reload/eject/unmount/lifecycle verbs] Addon id, e.g. \"hive.carto\". Dependents cascade automatically on reload."}
      "namespace" {:type "string"
                   :description "[reload] Constructor namespace to reload instead of an addon id — seeds every addon built from it."}
      "strategy" {:type "string"
                  :description "[reload] Override the reload strategy for this addon (e.g. \"remount\", \"in-place\", \"inert\"). Omit to let the chain select."}
      "path" {:type "string"
-             :description "[inject/eject] Absolute path of the addon: a project dir (its deps.edn :paths go on the classpath), a source dir, or a jar. inject mounts its META-INF/hive-addons manifests (addons already mounted are left alone); eject plugs out what was injected from it."}
+             :description "[inject/eject/unmount] Absolute path of the addon: a project dir (its deps.edn :paths go on the classpath), a source dir, or a jar. inject mounts its META-INF/hive-addons manifests (addons already mounted are left alone); eject plugs out what was injected from it."}
      "resolve_deps" {:type "boolean"
                      :description "[inject] Also hand the project's deps.edn :deps to clojure.repl.deps/add-libs before mounting (needs a tools.deps basis in the running image). Default false."}
      "cascade" {:type "boolean"
-                :description "[eject] Also tear down the mounted addons that depend on the target and remount them without it. Default false: such an eject is refused."}
+                :description "[eject/unmount] Also tear down the mounted addons that depend on the target and remount them without it. Default false: such an eject is refused."}
      "force" {:type "boolean"
               :description "[evict] Also evict a pinned or eager addon. [pin] Allow :lazy on an addon with no surface a stub could advertise. Default false."}
      "policy" {:type "string"
