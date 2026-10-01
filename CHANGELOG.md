@@ -35,6 +35,17 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-10-01
+
+### Fixed
+
+- **A coordinator session answers as its own id.** `session whoami`,
+  `hivemind shout` and `hivemind ask` resolve a blank agent id, or the bare
+  `coordinator` role, to the caller id the transport stamped on the request
+  (`coordinator:<session>`). Two coordinator sessions on one server no longer
+  share the name `coordinator`. A ling keeps its own id, and a caller with no
+  session stamp keeps the role.
+
 ## [1.8.0] - 2026-09-30
 
 ### Added
