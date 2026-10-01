@@ -13,7 +13,8 @@
             [clojure.string :as str]
             [hive-mcp.multi.registry :as multi-registry]
             [hive-mcp.multi.registry.tools :as r-tools]
-            [hive-mcp.agent.context :as ctx]))
+            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.multi.param-coerce :as param-coerce]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -281,6 +282,32 @@
 ;; Main Router
 ;; =============================================================================
 
+(defn- target-input-schema
+  "The inputSchema TOOL-NAME advertises, with addon schema extensions merged,
+   or nil when the tool has no flat definition (a multi-only consolidated
+   tool). Resolved lazily: hive-mcp.tools.registry requires this namespace."
+  [tool-name]
+  (rescue nil
+          (when-let [tool-def ((requiring-resolve 'hive-mcp.tools.registry/get-tool-by-name)
+                               tool-name)]
+            (let [schema-ext ((requiring-resolve 'hive-mcp.extensions.registry/get-schema-extensions)
+                              tool-name)]
+              (cond-> (:inputSchema tool-def)
+                (seq schema-ext) (update :properties merge schema-ext))))))
+
+(defn- dispatch-to-tool
+  "Call HANDLER with PARAMS decoded against TOOL-NAME's own schema.
+
+   Params multi does not declare reach it as JSON text, because the client
+   typed them against multi's schema, not the target's (see
+   hive-mcp.multi.param-coerce). A value that cannot be decoded is refused
+   here rather than handed on as the text the target would misread."
+  [tool-name handler params]
+  (let [coerced (param-coerce/coerce-params (target-input-schema tool-name) params)]
+    (if (contains? coerced :ok)
+      (handler (:ok coerced))
+      (mcp-error (str "Parameter error for tool " tool-name ": " (:message coerced))))))
+
 (defn handle-multi
   "Route to consolidated tool by :tool param, forwarding remaining params.
 
@@ -337,7 +364,7 @@
       (let [tool-str (str/lower-case (str tool))
             handler  (get-tool-handler tool-str)]
         (if handler
-          (handler (dissoc normalized :tool))
+          (dispatch-to-tool tool-str handler (dissoc normalized :tool))
           (mcp-error (str "Unknown tool: " tool-str
                           ". Available: " (str/join ", " (tool-names)))))))))
 
