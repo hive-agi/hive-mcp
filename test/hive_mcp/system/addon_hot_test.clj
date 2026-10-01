@@ -106,12 +106,27 @@
     (is (r/ok? (:result state)))
     (is (= (:result state) (ah/last-report)))
     (ah/stop! state)
-    (is (= [:unregister! ["hive.a" "hive.b" "hive.jar"]] (last @log))))
+    (is (= [:unregister! ["hive.a" "hive.b"]] (last @log))))
   (testing "a failed boot deregisters nothing"
     (let [log (atom [])]
-      (ah/stop! {:catalog (catalog specs nil) :engine (engine log)
-                 :result (r/err :addon-hot/no-mount-host {})})
+      (ah/stop! (ah/start! (catalog specs nil) (engine log) nil))
       (is (empty? @log)))))
+
+(deftest stop-deregisters-what-boot-registered-not-what-is-mounted-at-halt
+  (let [log     (atom [])
+        mounted (atom [{:addon/id "hive.a" :local? true}
+                       {:addon/id "hive.b" :local? true}])
+        cat     (reify ah/IAddonCatalog
+                  (mounted-specs [_] @mounted)
+                  (mount-host [_] :host))
+        state   (ah/start! cat (engine log) nil)]
+    (is (= ["hive.a" "hive.b"] (:registered (:ok (:result state)))))
+    (testing "an addon activated after boot does not leak into halt"
+      (swap! mounted conj {:addon/id "hive.c" :local? true})
+      (is (= ["hive.a" "hive.b" "hive.c"] (mapv :addon/id (ah/mounted-specs cat))))
+      (ah/stop! state)
+      (is (= [[:unregister! ["hive.a" "hive.b"]]]
+             (filterv #(= :unregister! (first %)) @log))))))
 
 (deftest init-opts-is-pure-and-sorted
   (is (= {:dirs ["/a" "/z"] :no-reload #{}} (ah/init-opts {:hot/dirs #{"/z" "/a"}} nil)))

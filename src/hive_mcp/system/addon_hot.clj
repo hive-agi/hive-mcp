@@ -70,22 +70,38 @@
 ;; Boundary
 ;; =============================================================================
 
-(defn boot!
+(defn registered-specs
+  "Pure. The SPECS whose ids REG reports registered: exactly what stop! must
+   deregister later, whatever the catalog says by then."
+  [specs reg]
+  (let [ids (set (map (comp str :addon/id) (:hot/registered reg)))]
+    (filterv (comp ids str :addon/id) specs)))
+
+(defn boot-registration
   "Initialize hive-hot with every mounted addon's source dirs and register the
-   reloadable ones. Railway: returns (ok BootReport) or (err category data).
-   An empty catalog is not an error: hive-hot is left untouched."
+   reloadable ones. Railway: returns (ok {:report BootReport :registered [spec]})
+   or (err category data). An empty catalog is not an error: hive-hot is left
+   untouched and nothing is registered."
   [catalog engine since]
   (r/let-ok [specs (r/try-effect* :addon-hot/catalog-failed (vec (mounted-specs catalog)))
              host  (r/try-effect* :addon-hot/catalog-failed (mount-host catalog))]
     (cond
-      (empty? specs) (r/ok {:mounted 0 :skipped-boot :no-mounted-addons})
+      (empty? specs) (r/ok {:report {:mounted 0 :skipped-boot :no-mounted-addons}
+                            :registered []})
       (nil? host)    (r/err :addon-hot/no-mount-host {:mounted (count specs)})
       :else
       (r/let-ok [p    (r/try-effect* :addon-hot/plan-failed (plan engine host specs))
                  init (r/try-effect* :addon-hot/init-failed
                                      (ensure-init! engine (init-opts p since)))
                  reg  (r/try-effect* :addon-hot/register-failed (register! engine host specs))]
-        (r/ok (boot-report specs p init reg))))))
+        (r/ok {:report     (boot-report specs p init reg)
+               :registered (registered-specs specs reg)})))))
+
+(defn boot!
+  "boot-registration, projected to its BootReport: (ok BootReport) or the error."
+  [catalog engine since]
+  (let [res (boot-registration catalog engine since)]
+    (if (r/ok? res) (r/ok (:report (:ok res))) res)))
 
 (defonce ^{:doc "The last boot! Result, for `hot status`."} last-boot (atom nil))
 
@@ -134,23 +150,28 @@
   (r/rescue nil (.getStartTime (java.lang.management.ManagementFactory/getRuntimeMXBean))))
 
 (defn start!
-  "Run boot! over CATALOG and ENGINE, record and log the Result. Never throws.
-   Returns the component state."
+  "Run boot-registration over CATALOG and ENGINE, record and log the Result.
+   Never throws. Returns the component state, which keeps the specs boot
+   registered so stop! deregisters exactly those."
   [catalog engine since]
-  (let [res (r/rescue (r/err :addon-hot/threw {}) (boot! catalog engine since))]
+  (let [res0 (r/rescue (r/err :addon-hot/threw {}) (boot-registration catalog engine since))
+        res  (if (r/ok? res0) (r/ok (:report (:ok res0))) res0)]
     (reset! last-boot res)
     (if (r/ok? res)
       (log/info ":hive/addon-hot hive-hot initialized for mounted addons"
                 (select-keys (:ok res) [:mounted :registered :fresh? :ok?]))
       (log/warn ":hive/addon-hot did not initialize hive-hot" res))
-    {:catalog catalog :engine engine :result res}))
+    {:engine     engine
+     :result     res
+     :registered (if (r/ok? res0) (vec (:registered (:ok res0))) [])}))
 
 (defn stop!
-  "Deregister the addon components this key registered. The hive-hot baseline
-   and dirs are left as they are: nothing is destroyed."
-  [{:keys [catalog engine result]}]
-  (when (and engine (r/ok? result) (seq (:registered (:ok result))))
-    (r/rescue nil (unregister! engine (mounted-specs catalog)))))
+  "Deregister exactly the addon components start! registered, not whatever is
+   mounted at halt time (addons activated or evicted since boot differ). The
+   hive-hot baseline and dirs are left as they are: nothing is destroyed."
+  [{:keys [engine registered]}]
+  (when (and engine (seq registered))
+    (r/rescue nil (unregister! engine registered))))
 
 (defmethod ig/init-key :hive/addon-hot
   [_ config]
