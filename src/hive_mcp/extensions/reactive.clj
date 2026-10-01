@@ -47,16 +47,20 @@
 (defn redrain-schema-extensions!
   "Re-read every ACTIVE addon's (schema-extensions) into the registry — the
    map-shaped idiom (tool-name -> params); the DataScript-attribute sequence
-   is not a tool schema. Returns the tool names touched."
+   is not a tool schema. Each addon's params are registered OWNED by its id,
+   so the addon's shutdown (retract-schemas-by-owner!) withdraws exactly
+   them. Returns the tool names touched."
   []
   (into []
         (comp (filter #(= :active (:state %)))
-              (keep (fn [{:keys [name]}] (:addon (addon-core/get-addon-entry name))))
-              (mapcat (fn [addon]
+              (keep (fn [{:keys [name]}]
+                      (when-let [addon (:addon (addon-core/get-addon-entry name))]
+                        [name addon])))
+              (mapcat (fn [[addon-id addon]]
                         (let [exts (rescue nil (proto/schema-extensions addon))]
                           (when (map? exts)
                             (doseq [[tool-name props] exts]
-                              (ext/register-schema! tool-name props))
+                              (ext/register-schema! addon-id tool-name props))
                             (keys exts))))))
         (addon-core/list-addons)))
 

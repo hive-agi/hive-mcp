@@ -744,35 +744,27 @@
 ;; nREPL-mode initialization (for dev/bb-mcp without full -main)
 ;; =============================================================================
 
-(defn- tool->registry-entry
-  "Convert a make-tool result to a registry entry [name {:tool spec, :handler fn}]."
-  [t]
-  [(:name t) {:tool (dissoc t :handler)
-              :handler (:handler t)}])
-
 (defn populate-server-context!
-  "Populate server-context-atom with middleware-wrapped tool handlers.
+  "Populate server-context-atom with the ONE advertised tool table.
 
-   CRITICAL: Uses routes/make-tool to wrap handlers with the full middleware
-   chain (piggyback, context, normalize, etc.). Without make-tool, bb-mcp
-   gets raw handlers and no ---MEMORY---/---HIVEMIND--- blocks are attached.
+   The table is routes' own (`routes/refresh-tools!`: the advertised defs,
+   middleware-wrapped by make-tool, so bb-mcp gets ---MEMORY---/---HIVEMIND---
+   blocks), never a variant built here. refresh-tools! also registers the
+   context as a live surface, so every later refresh reaches it.
 
    A context already in the atom (the stdio server's, wired by :hive/mcp-stdio)
    KEEPS its identity and gets the table in its own :tools atom, so bb-mcp,
-   the stdio server and the auto-heal listener all read one context."
+   the stdio server and the auto-heal listener all read one context. Without
+   one, an empty context is created for the refresh to fill. Returns the
+   refresh report."
   []
   (require 'hive-mcp.server.core)
-  (require 'hive-mcp.tools.registry)
-  (require 'hive-mcp.extensions.registry)
-  (let [consolidated ((resolve 'hive-mcp.tools.registry/get-consolidated-tools))
-        extensions   ((resolve 'hive-mcp.extensions.registry/get-registered-tools))
-        wrapped      (mapv routes/make-tool (concat consolidated extensions))
-        tools        (into {} (map tool->registry-entry wrapped))
-        ctx-atom     (server-context-atom)]
-    (if-let [tools-atom (:tools @ctx-atom)]
-      (reset! tools-atom tools)
-      (reset! ctx-atom {:tools (atom tools)}))
-    (log/info "server-context populated:" (count tools) "tools (middleware-wrapped)")))
+  (let [ctx-atom (server-context-atom)]
+    (when-not (:tools @ctx-atom)
+      (reset! ctx-atom {:tools (atom {})}))
+    (let [out (routes/refresh-tools! ctx-atom)]
+      (log/info "server-context populated:" (:count out) "tools (middleware-wrapped)")
+      out)))
 
 (defn nrepl-init!
   "Initialize essential services for nREPL-mode operation (dev REPL, bb-mcp).
