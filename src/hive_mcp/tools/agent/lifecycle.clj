@@ -78,12 +78,40 @@
       (log/error "Failed to get claims" {:error (ex-message e)})
       (mcp-error (str "Failed to get claims: " (ex-message e))))))
 
+(defn latest-task-id
+  "Pure: id of the most recently started task in `tasks` (swarm task rows
+   {:task/id :task/started-at}), or nil."
+  [tasks]
+  (some->> (seq tasks)
+           (sort-by #(some-> ^java.util.Date (:task/started-at %) .getTime) #(compare %2 %1))
+           first
+           :task/id))
+
+(defn- registry-tasks-for
+  "Boundary: the swarm registry's task rows for one agent."
+  [agent-id]
+  (queries/get-tasks-for-slave agent-id))
+
 (defn handle-collect
-  "Collect response from a dispatched task."
-  [{:keys [task_id] :as params}]
-  (if (empty? task_id)
-    (mcp-error "task_id is required")
-    (swarm-collect/handle-swarm-collect params)))
+  "Collect response from a dispatched task.
+
+   task_id names the task; with agent_id alone, the agent's most recently
+   started task is collected. `tasks-for` is the task-lookup port
+   (fn [agent-id] -> task rows), the swarm registry by default."
+  ([params] (handle-collect registry-tasks-for params))
+  ([tasks-for {:keys [task_id agent_id] :as params}]
+   (cond
+     (not (str/blank? (str task_id)))
+     (swarm-collect/handle-swarm-collect params)
+
+     (str/blank? (str agent_id))
+     (mcp-error "task_id or agent_id is required")
+
+     :else
+     (if-let [tid (latest-task-id (tasks-for agent_id))]
+       (swarm-collect/handle-swarm-collect (assoc params :task_id tid))
+       (mcp-error (str "No dispatched task recorded for agent " agent_id
+                       "; pass task_id, or read the run with transcript report"))))))
 
 (defn handle-broadcast
   "Broadcast a prompt to all active lings."
