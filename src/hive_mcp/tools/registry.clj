@@ -266,6 +266,22 @@
     (assoc tool :inputSchema (update inputSchema :properties merge schema-ext))
     tool))
 
+(defn- fold-contributions
+  "A consolidated root with the commands addons contributed to it folded into
+   its advertised surface (composite/build-merged-tool): their :params join the
+   properties and `<cmd> <verb>` joins the `command` enum. Any other tool is
+   returned unchanged.
+
+   server.routes/make-tool does this for the server's own tool table, but
+   external loaders (bb-mcp) read this surface and never run make-tool.
+   Without the fold they advertised the bare core enum and none of the
+   contributed params. Measured 2026-10-01 on the `git` root: the server's
+   table listed ship/belt and their params, and bb-mcp's tools/list did not.
+   Read from the commands registry on every call, so a (re)contribution is
+   visible to the next fetch."
+  [tool]
+  (if (:consolidated tool) (composite/build-merged-tool tool) tool))
+
 (defn- subcommand-scoped?
   "True when a property documents itself as belonging to particular subcommands,
    by the leading `[subcommand]` tag the consolidated tools use in :description."
@@ -294,8 +310,9 @@
   "Canonical MCP surface for external loaders (e.g. the bb-mcp dynamic loader).
 
    = consolidated native roots ++ addon/extension tools, deduped by name
-   (consolidated wins), with the visibility gate applied and addon schema
-   extensions merged into each :inputSchema. Non-allowlisted tools are KEPT in
+   (consolidated wins), with the visibility gate applied, and with addon
+   command contributions (`fold-contributions`) and addon schema extensions
+   merged into each :inputSchema. Non-allowlisted tools are KEPT in
    the list but marked :deprecated, so a consumer can hide them from tools/list
    while still dispatching them via tools/call (back-compat).
 
@@ -309,7 +326,7 @@
    every dispatch path are unchanged."
   ([] (get-advertised-tools nil))
   ([{:keys [compact-schema?]}]
-   (let [tools (mapv merge-schema-ext
+   (let [tools (mapv (comp merge-schema-ext fold-contributions)
                      (apply-visibility-gate
                       (distinct-by-name
                        (concat (get-consolidated-tools)
