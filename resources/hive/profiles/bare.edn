@@ -1,0 +1,32 @@
+;; bare profile: the hive-mcp core with ZERO addons, headless.
+;;
+;; Select it from config.edn, no launcher flag needed:
+;;   {:system   {:profile :bare}
+;;    :services {:nrepl    {:port 7990}
+;;               :mcp-http {:enabled true :port 7991}}}
+;; (or --profile bare / HIVE_PROFILE=bare). HIVE_MCP_CONFIG=<file> points a
+;; second instance at its own config.edn.
+;;
+;; :hive/extensions skips the META-INF/hive-addons scan, so no addon mounts,
+;; not even one that rides in on a library jar. Every channel the desktop
+;; server owns is dropped; nREPL, MCP over HTTP, hot-reload and the tool
+;; table remain. Ports are NOT set here: config.edn :services decides them.
+;;
+;; Keys set to nil are removed (hive-mcp.server.core/apply-overlay).
+{:hive/extensions       {:discover :none}
+ :hive/mcp-http         {:enabled true}
+ :hive/keepalive        {:signal :sigterm}
+
+ :hive/mcp-stdio        nil
+ :hive/legacy-channel   nil
+ :hive/ws-channel       nil
+ :hive/channel-bridge   nil
+ :hive/olympus          nil
+ :hive/a2a-gateway      nil
+ :hive/websocket-mcp    nil
+ :hive/nats             nil
+ :hive/swarm-sync       nil
+ :hive/registry-sync    nil
+ :hive/forge-belt       nil
+ :hive/decay-scheduler  nil
+ :hive/housekeeping     nil}
