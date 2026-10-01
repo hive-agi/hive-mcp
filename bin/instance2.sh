@@ -29,6 +29,8 @@
 #   INSTANCE=probe-a NREPL_PORT=7960 HTTP_PORT=7961 bin/instance2.sh start
 # LOCAL_ROOTS swaps a library for a checkout (space-separated lib=dir):
 #   LOCAL_ROOTS="io.github.hive-agi/hive-addon=$HOME/PP/hive/hive-addon" bin/instance2.sh start
+# BARE=1 boots the core with ZERO addons (profile :bare, dev/hive/profiles/bare.edn):
+#   INSTANCE=bare NREPL_PORT=7990 HTTP_PORT=7991 BARE=1 bin/instance2.sh start
 #
 # Addons are sibling repositories mounted as :local/root, so hive-hot can
 # reload them. Default: hive-compose hive-rss hive-guard (small, core deps only).
@@ -52,6 +54,7 @@ OVERLAY="$PROJECT_DIR/dev/instance2.overlay.edn"
 
 INSTANCE="${INSTANCE:-instance2}"
 [[ "$INSTANCE" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "instance2: FATAL: INSTANCE must be [a-z0-9-]" >&2; exit 2; }
+PROFILE=instance2; [[ "${BARE:-}" == 1 ]] && PROFILE=bare
 NREPL_PORT="${NREPL_PORT:-7950}"
 HTTP_PORT="${HTTP_PORT:-7951}"
 LIVE_PORTS=(7910 7911 7912 9998 9999)
@@ -107,9 +110,14 @@ cmd_start() {
     port_busy "$p" && die "port $p already in use"
   done
 
-  local addons=("$@"); [[ ${#addons[@]} -gt 0 ]] || addons=("${DEFAULT_ADDONS[@]}")
+  local addons=("$@")
+  if [[ "$PROFILE" == bare ]]; then
+    [[ ${#addons[@]} -eq 0 ]] || die "BARE=1 mounts no addons; drop: ${addons[*]}"
+  else
+    [[ ${#addons[@]} -gt 0 ]] || addons=("${DEFAULT_ADDONS[@]}")
+  fi
   local deps=""
-  for a in "${addons[@]}"; do
+  for a in "${addons[@]+"${addons[@]}"}"; do
     [[ -f "$FLEET_DIR/$a/deps.edn" ]] || die "addon repo not found: $FLEET_DIR/$a"
     deps+=" io.github.hive-agi/$a {:local/root \"$FLEET_DIR/$a\"}"
   done
@@ -149,20 +157,20 @@ cmd_start() {
            XDG_CACHE_HOME="$SBX/.cache" XDG_RUNTIME_DIR="$SBX/run" \
            GITLIBS="$real_home/.gitlibs" CLJ_CONFIG="$real_home/.clojure" \
            HIVE_KG_DB_PATH="$SBX/state/kg-datahike" HIVE_KG_DH_BACKEND=memory HIVE_KG_BACKEND=datascript \
-           HIVE_PROFILE=instance2 HIVE_MCP_NREPL_PORT="$NREPL_PORT" HIVE_MCP_ADDON_LIFECYCLE=1 \
+           HIVE_PROFILE="$PROFILE" HIVE_MCP_NREPL_PORT="$NREPL_PORT" HIVE_MCP_ADDON_LIFECYCLE=1 \
            HIVE_MCP_HTTP_ENABLED=true HIVE_MCP_HTTP_PORT="$HTTP_PORT" HIVE_MCP_HTTP_BIND=127.0.0.1
     nohup java -cp "$cp" \
       -Duser.home="$SBX" -Djava.io.tmpdir="$SBX/tmp" -Dhive.kg.backend=datascript \
       -Xmx2g -XX:+ExitOnOutOfMemoryError -XX:+UseG1GC -Djdk.attach.allowAttachSelf=true \
       --add-opens=java.base/jdk.internal.misc=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED \
       clojure.main -e "(require 'hive-mcp.server.core)
-                       (hive-mcp.server.core/start! :profile :instance2)
+                       (hive-mcp.server.core/start! :profile :$PROFILE)
                        (println \"instance2: READY instance=$INSTANCE nrepl=$NREPL_PORT http=$HTTP_PORT\")
                        @(promise)" \
       >"$LOGFILE" 2>&1 &
     echo $! > "$PIDFILE"
   )
-  note "started pid=$(cat "$PIDFILE") sandbox=$SBX log=$LOGFILE addons=${addons[*]}"
+  note "started pid=$(cat "$PIDFILE") sandbox=$SBX log=$LOGFILE profile=$PROFILE addons=${addons[*]+"${addons[*]}"}"
   note "wait for 'instance2: READY' in the log, then drive it on nREPL $NREPL_PORT"
 }
 

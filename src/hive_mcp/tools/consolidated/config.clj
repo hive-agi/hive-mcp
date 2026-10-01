@@ -7,7 +7,8 @@
             [hive-mcp.config.schema :as schema]
             [clojure.java.io :as io]
             [taoensso.timbre :as log]
-            [clojure.edn :as edn]))
+            [clojure.edn :as edn]
+            [hive-mcp.config.path :as config-path]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -75,9 +76,8 @@
 (defn- path*
   "Return config file path info."
   [_params]
-  (result/ok {:config-path (str (System/getProperty "user.home") "/.config/hive-mcp/config.edn")
-              :exists? (.exists (io/file
-                                 (str (System/getProperty "user.home") "/.config/hive-mcp/config.edn")))}))
+  (result/ok {:config-path config-path/config-path
+              :exists? (.exists (io/file config-path/config-path))}))
 
 (defn- validate*
   "Validate current config against schema. Optionally validate a section."

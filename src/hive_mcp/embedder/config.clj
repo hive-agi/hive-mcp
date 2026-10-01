@@ -17,17 +17,16 @@
    downstream is the simplest fit."
   (:require [hive-di.core :as di]
             [hive-di.source :as src]
-            [hive-dsl.result :as r]))
+            [hive-dsl.result :as r]
+            [hive-mcp.config.path :as config-path]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-(def ^:const config-edn-path
-  "Canonical hive-mcp config file. Mirrors `hive-mcp.config.io` so
-   defconfig stays decoupled from the io ns (which transitively
-   pulls in NATS/k8s/etc that this layer must not depend on)."
-  (str (System/getProperty "user.home") "/.config/hive-mcp/config.edn"))
+(def config-edn-path
+  "Canonical hive-mcp config file (see hive-mcp.config.path)."
+  config-path/config-path)
 
 (def ^:private default-block
   "Embedder defaults. Mirrored from `hive-mcp.config.merge` so

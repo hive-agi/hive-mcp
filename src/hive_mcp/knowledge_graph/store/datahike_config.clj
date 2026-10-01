@@ -18,11 +18,12 @@
    ignored the config.edn :path key, so users couldn't relocate the store
    without code changes."
   (:require [hive-di.core :as di]
-            [hive-di.source :as src]))
+            [hive-di.source :as src]
+            [hive-mcp.config.path :as config-path]))
 
-(def ^:const config-edn-path
+(def config-edn-path
   "Canonical hive-mcp config file. Each field's :file source reads from here."
-  (str (System/getProperty "user.home") "/.config/hive-mcp/config.edn"))
+  config-path/config-path)
 
 (def ^:const default-db-path
   "XDG-conformant default. Avoids CWD-relative drift across launchers/REPLs."
