@@ -18,7 +18,8 @@
        :query/by-agent  (query-agent store (:agent-id q))
        :query/by-time   (query-range store (:start-ms q) (:end-ms q))
        :query/since     (query-since store (:agent-id q) (:turn q))
-       :query/tail      (query-tail store (:agent-id q) (:n q)))"
+       :query/tail      (query-tail store (:agent-id q) (:n q))
+       :query/report    (final-report store (:agent-id q)))"
   (:require [hive-dsl.adt :refer [defadt]]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -36,11 +37,15 @@
      :query/by-agent  — All entries for an agent, ordered by turn
      :query/by-time   — Entries in a time window (epoch ms)
      :query/since     — Entries after a given turn (live follow)
-     :query/tail      — Last N entries for an agent"
+     :query/tail      — Last N entries for an agent
+     :query/report    — A finished ling's final report: its last assistant
+                        text in full, turn count, how it ended, and the
+                        last tool result"
   [:query/by-agent {:agent-id string?}]
   [:query/by-time  {:start-ms int? :end-ms int?}]
   [:query/since    {:agent-id string? :turn int?}]
-  [:query/tail     {:agent-id string? :n int?}])
+  [:query/tail     {:agent-id string? :n int?}]
+  [:query/report   {:agent-id string?}])
 
 ;; =============================================================================
 ;; TranscriptSource ADT

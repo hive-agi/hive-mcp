@@ -385,6 +385,7 @@
                      "kg: start_node, node_id, from, to, relation, direction, max_depth, from_node, to_node, confidence; "
                      "session: commit_msg, task_ids, ctx_id, data, ttl_ms, scope; "
                      "magit: target, count, all, set_upstream, remote; "
+                     "transcript: agent_id, n, turn, full (whole entry content), max_chars; command report = a ling's final text in full; "
                      "emacs: code, buffer, file, line, text, level, function_name, variable_name, pattern. DSL aliases: c=content, t=type, #=tags, d=directory, q=query, n=name, id=id, p=prompt, f=files.")
    :inputSchema {:type "object"
                  :properties {"tool"    {:type "string"
