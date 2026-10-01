@@ -1,3 +1,9 @@
 {:query-variants
- (:query/by-agent :query/by-time :query/report :query/since :query/tail),
+ (:query/by-agent
+  :query/by-time
+  :query/digest
+  :query/find
+  :query/report
+  :query/since
+  :query/tail),
  :source-variants (:source/auto :source/datalevin :source/jsonl)}

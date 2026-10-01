@@ -228,6 +228,13 @@
                                          :description "[workflow forge strike] Presets applied to every forged ling"}
                               "predicates" {:type "array" :items {:type "string"}
                                             :description "[workflow] Named predicates available at run time"}
+                              ;; transcript list|find|digest
+                              "agent" {:type "string" :description "[transcript list|find|digest] Agent id prefix, or a glob with * / ?"}
+                              "parent" {:type "string" :description "[transcript list|find|digest] Spawning coordinator/ling id"}
+                              "since" {:type "string" :description "[transcript list|find|digest] 30m, 2h, 1d or an ISO-8601 instant"}
+                              "role" {:type "string" :description "[transcript find] assistant|tool|user"}
+                              "tool" {:type "string" :description "[transcript find] Tool name the hit must come from"}
+                              "runs" {:type "integer" :description "[transcript find] Newest runs scanned (default 50)"}
                               ;; Shared
                               "operations" {:type "array" :items {:type "object"}
                                             :description "Array of operations for batch commands"}

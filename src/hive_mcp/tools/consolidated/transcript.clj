@@ -16,6 +16,7 @@
    at this boundary (strings and numbers alike), and every failure, thrown
    or returned, leaves as an MCP error envelope."
   (:require [hive-mcp.agent.transcript-query :as tq]
+            [hive-mcp.agent.transcript-insight :as ti]
             [hive-mcp.agent.transcript-source :as src]
             [hive-dsl.adt :refer [adt-case]]
             [hive-dsl.result :as r]
@@ -27,11 +28,13 @@
 ;; Query Execution
 ;; =============================================================================
 
-(declare final-report)
+(declare run-find)
 
 (defn- execute-query
-  "Run a TranscriptQuery against `source`. Returns Result<vector<entry>>."
-  [source query]
+  "Run a TranscriptQuery against `source`. Returns a Result. `ctx` carries
+   what the cross-run variants need: {:selection [listing rows] :opts {...}}."
+  ([source query] (execute-query source query {}))
+  ([source query ctx]
   (adt-case tq/TranscriptQuery query
     :query/by-agent (src/read-entries source (:agent-id query))
     :query/by-time  (r/err :transcript/not-implemented
@@ -41,7 +44,10 @@
     :query/tail     (r/map-ok (src/read-entries source (:agent-id query))
                               (fn [es] (vec (take-last (:n query) es))))
     :query/report   (r/map-ok (src/read-entries source (:agent-id query))
-                              #(final-report (:agent-id query) %))))
+                              #(ti/final-report (:agent-id query) %))
+    :query/digest   (r/map-ok (src/read-entries source (:agent-id query))
+                              #(ti/digest (:agent-id query) %))
+    :query/find     (run-find source (:query query) ctx))))
 
 (defn- err-message
   "Human text for an err Result."
@@ -52,38 +58,13 @@
 ;; Response Formatting
 ;; =============================================================================
 
-(defn- entry-role [e]
-  (or (:role e) (some-> (:transcript/role e) name)))
-
-(defn- entry-content [e]
-  (str (or (:content e) (:transcript/content e) "")))
-
-(def ^:private preview-chars 120)
-
-(defn- clip [s n]
-  (subs s 0 (min (long n) (count s))))
-
-(defn- entry-turn [e]
-  (or (:turn e) (:transcript/turn e)))
-
-(defn- tool-call-name
-  "Name of one tool call in either shape: hive-agent's stored
-   {:tool-call/name}, or an OpenAI-style {:function {:name}} / {:name}."
-  [tc]
-  (or (:tool-call/name tc) (get-in tc [:function :name]) (:name tc) "unknown"))
-
-(defn- entry-tool-calls
-  "Raw tool-call maps of an entry (Datalevin or JSONL shape)."
-  [e]
-  (or (seq (:transcript/tool-calls e)) (seq (:tool_calls e)) (seq (:tool-calls e))))
-
-(defn- entry-tool-names [e]
-  (mapv tool-call-name (entry-tool-calls e)))
-
-(defn- entry-empty?
-  "True when an entry carries neither text nor tool calls."
-  [e]
-  (and (str/blank? (entry-content e)) (empty? (entry-tool-calls e))))
+(def ^:private entry-role ti/entry-role)
+(def ^:private entry-content ti/entry-content)
+(def ^:private preview-chars ti/preview-chars)
+(def ^:private clip ti/clip)
+(def ^:private entry-turn ti/entry-turn)
+(def ^:private entry-tool-names ti/entry-tool-names)
+(def ^:private entry-empty? ti/entry-empty?)
 
 (defn- format-entry-compact
   "One entry for list responses. `mode` is {:full? bool :max-chars int?}:
@@ -104,64 +85,10 @@
        (seq names)          (assoc :tool_calls names)
        (entry-empty? entry) (assoc :empty true)))))
 
-(defn- assistant? [e] (= "assistant" (entry-role e)))
-
-(defn- llm-error? [e]
-  (and (= "system" (entry-role e))
-       (str/starts-with? (entry-content e) "LLM error")))
-
-(defn- last-tool-result
-  "{:turn :tool :preview} of the newest tool output: a `tool` role entry,
-   or a stored tool-call result, whichever comes last."
-  [entries]
-  (some (fn [e]
-          (or (when (= "tool" (entry-role e))
-                {:entry e :tool nil :content (entry-content e)})
-              (when-let [tc (some #(when-not (str/blank? (str (:tool-call/result %))) %)
-                                  (reverse (entry-tool-calls e)))]
-                {:entry e :tool (tool-call-name tc) :content (str (:tool-call/result tc))})))
-        (rseq (vec entries))))
-
-(defn- ending
-  "How the transcript ends, read from its last entries: `error` (an LLM
-   error was recorded last), `text` (the last assistant turn wrote text and
-   called no tool: a finished report), `tool-calls` (the last assistant turn
-   only called tools: the run was cut off mid-work), or `unknown`."
-  [entries]
-  (let [lst  (peek (vec entries))
-        asst (some #(when (assistant? %) %) (rseq (vec entries)))]
-    (cond
-      (nil? lst)                               "unknown"
-      (llm-error? lst)                         "error"
-      (nil? asst)                              "unknown"
-      (seq (entry-tool-calls asst))            "tool-calls"
-      (not (str/blank? (entry-content asst)))  "text"
-      :else                                    "unknown")))
-
-(defn final-report
+(def final-report
   "Pure: the final report of a ling read from its transcript entries.
-
-   :final-text is the newest NON-BLANK assistant text in full (a closing
-   turn that wrote nothing does not hide the report before it). The
-   transcript store records no exit variant, so :outcome is absent here;
-   :ending is what the entries themselves show."
-  [agent-id entries]
-  (let [entries (vec entries)
-        final   (some #(when (and (assistant? %) (not (str/blank? (entry-content %)))) %)
-                      (rseq entries))
-        tool    (last-tool-result entries)
-        cost    (keep #(or (:cost_usd %) (:transcript/cost-usd %)) entries)]
-    (cond-> {:agent-id   agent-id
-             :final-text (some-> final entry-content)
-             :final-turn (some-> final entry-turn)
-             :turns      (apply max 0 (keep entry-turn entries))
-             :entries    (count entries)
-             :ending     (ending entries)}
-      tool (assoc :last-tool-result
-                  (cond-> {:turn    (entry-turn (:entry tool))
-                           :preview (clip (:content tool) preview-chars)}
-                    (:tool tool) (assoc :tool (:tool tool))))
-      (seq cost) (assoc :total-cost (reduce + 0.0 cost)))))
+   See hive-mcp.agent.transcript-insight/final-report."
+  ti/final-report)
 
 (defn- format-replay
   "Format entries as markdown conversation."
@@ -235,11 +162,12 @@
 
 (defn- run-query
   "Execute `query` and render the ok value with `render`, or an MCP error."
-  [source query render]
-  (let [res (execute-query source query)]
+  ([source query render] (run-query source query {} render))
+  ([source query ctx render]
+  (let [res (execute-query source query ctx)]
     (if (r/ok? res)
       (render (:ok res))
-      (tcore/mcp-error (err-message res)))))
+      (tcore/mcp-error (err-message res))))))
 
 ;; =============================================================================
 ;; MCP Command Router
@@ -255,7 +183,17 @@
                      "tool_calls [names] when it called tools, empty true when it has neither text nor tool calls.")
    :options  {"full"      "true: return each entry's whole content instead of the 120-char preview"
               "max_chars" "N: return up to N chars of content (truncated true when cut)"}
-   :commands [{:command "list"   :params []                  :description "Available transcripts (JSONL + Datalevin)"}
+   :filters  {"agent"   "agent id prefix, or a glob with * / ?"
+              "project" "project id (exact)"
+              "parent"  "spawning coordinator/ling id (exact)"
+              "since"   "30m, 2h, 1d, or an ISO-8601 instant"
+              "limit"   "max rows/hits (default 25)"}
+   :commands [{:command "list"   :params ["agent" "project" "parent" "since" "limit"]
+               :description "Runs, newest first: agent project parent turns modified ending (matched = total before limit)"}
+              {:command "find"   :params ["query" "role" "tool" "agent" "project" "parent" "since" "limit" "runs"]
+               :description "Cross-run search. query: substring (case-insensitive) or /regex/[i]; role assistant|tool|user; tool: tool name; runs: newest runs scanned (default 50). Hits: agent run turn role tool snippet"}
+              {:command "digest" :params ["agent" "parent" "project" "since" "limit"]
+               :description "What a ling did: tools, files written, shell commands by class, commits, test runs, errors, idle gap, final report. With parent or an agent glob: one compact row per ling"}
               {:command "query"  :params (into ["agent_id"] content-params)        :description "Full conversation entries"}
               {:command "tail"   :params (into ["agent_id" "n"] content-params)    :description "Last N entries (default 10)"}
               {:command "since"  :params (into ["agent_id" "turn"] content-params) :description "Entries after turn"}
@@ -263,20 +201,163 @@
               {:command "stats"  :params ["agent_id"]        :description "Turn count, cost, role breakdown"}
               {:command "replay" :params ["agent_id"]        :description "Formatted markdown conversation"}]})
 
-(defn- list-response [source]
-  (let [res (src/list-transcripts source)]
-    (if-not (r/ok? res)
-      (tcore/mcp-error (err-message res))
-      (let [all (->> (:ok res)
-                     (group-by :agent-id)
-                     (map (fn [[_ rows]]
-                            (assoc (apply max-key #(or (:modified %) 0) rows)
-                                   :sources (vec (distinct (map :source rows))))))
-                     (sort-by #(or (:modified %) 0) >)
-                     vec)]
-        (tcore/mcp-json {:transcripts all :count (count all)})))))
+;; =============================================================================
+;; Selection: list filters (boundary: one listing read + parent lookups)
+;; =============================================================================
 
-(defn- dispatch [source {:keys [command agent-id agent_id id n turn full max_chars max-chars]}]
+(def ^:private default-list-limit 25)
+(def ^:private default-find-runs 50)
+
+(defn- with-limit
+  "Coerce `limit` (default `default`) to a positive int, then call `f`."
+  [value param default f]
+  (with-int-param value param default
+    (fn [n] (if (pos? n) (f n) (tcore/mcp-error (str "transcript: `" (name param) "` must be positive"))))))
+
+(defn- with-filters
+  "Coerce the listing filters into ti/select-listing opts, then call `f`.
+   A bad `since` is an MCP error naming it."
+  [{:keys [agent agent_id id project project_id parent since]} now-ms f]
+  (let [since-ms (ti/parse-since since now-ms)]
+    (if (:error since-ms)
+      (tcore/mcp-error (:error since-ms))
+      (f {:agent    (or agent agent_id id)
+          :project  (some-> (or project project_id) str str/trim not-empty)
+          :parent   (some-> parent str str/trim not-empty)
+          :since-ms since-ms}))))
+
+(defn- select-runs
+  "Result<[row]>: the collapsed listing, parent-annotated when a parent
+   filter asks for it, filtered and capped by `opts`."
+  [source parents opts]
+  (r/map-ok (src/list-transcripts source)
+            (fn [rows]
+              (let [rows (ti/collapse-listing rows)
+                    rows (if (:parent opts)
+                           (map #(assoc % :parent (src/parent-of parents (:agent-id %))) rows)
+                           rows)]
+                (ti/select-listing rows opts)))))
+
+(defn- run-summary
+  "{:turns :ending} of one run, read through `source`; {} when unreadable."
+  [source agent-id]
+  (let [res (src/read-entries source agent-id)]
+    (if (r/ok? res)
+      {:turns (ti/max-turn (:ok res)) :ending (ti/ending (:ok res))}
+      {})))
+
+(defn- list-row
+  "Wire projection of one listing row: strings and numbers only."
+  [source parents row]
+  (let [{:keys [turns ending]} (run-summary source (:agent-id row))]
+    {:agent    (:agent-id row)
+     :project  (:project-id row)
+     :parent   (or (:parent row) (src/parent-of parents (:agent-id row)))
+     :turns    turns
+     :modified (ti/iso (:modified row))
+     :ending   ending}))
+
+(defn- list-response [source parents params now-ms]
+  (with-filters params now-ms
+    (fn [opts]
+      (with-limit (:limit params) :limit default-list-limit
+        (fn [limit]
+          (let [res (select-runs source parents opts)]
+            (if-not (r/ok? res)
+              (tcore/mcp-error (err-message res))
+              (let [matched (:ok res)
+                    page    (take limit matched)]
+                (tcore/mcp-json {:transcripts (mapv #(list-row source parents %) page)
+                                 :count       (count page)
+                                 :matched     (count matched)})))))))))
+
+;; =============================================================================
+;; find: cross-run full-text search
+;; =============================================================================
+
+(defn- run-find
+  "Result<{:hits :runs-scanned}>: `needle-text` searched across the runs of
+   `(:selection ctx)`, newest first, stopping at `(:limit ctx)` hits."
+  [source needle-text {:keys [selection limit role tool]}]
+  (let [needle (ti/compile-needle needle-text)]
+    (if (:error needle)
+      (r/err :transcript/bad-query {:message (:error needle)})
+      (let [[hits scanned]
+            (reduce (fn [[hits n] row]
+                      (if (>= (count hits) limit)
+                        (reduced [hits n])
+                        (let [res (src/read-entries source (:agent-id row))
+                              es  (if (r/ok? res) (:ok res) [])
+                              found (ti/find-hits {:agent (:agent-id row) :run (:project-id row)}
+                                                  es needle {:role role :tool tool})]
+                          [(into hits (take (- limit (count hits))) found) (inc n)])))
+                    [[] 0]
+                    selection)]
+        (r/ok {:hits hits :count (count hits) :runs-scanned scanned})))))
+
+(defn- find-response [source parents params now-ms]
+  (with-filters params now-ms
+    (fn [opts]
+      (with-limit (:limit params) :limit default-list-limit
+        (fn [limit]
+          (with-limit (:runs params) :runs default-find-runs
+            (fn [runs]
+              (let [sel (select-runs source parents (assoc opts :limit runs))]
+                (if-not (r/ok? sel)
+                  (tcore/mcp-error (err-message sel))
+                  (run-query source
+                             (tq/transcript-query :query/find {:query (str (:query params))})
+                             {:selection (:ok sel) :limit limit
+                              :role (some-> (:role params) str str/trim not-empty)
+                              :tool (some-> (:tool params) str str/trim not-empty)}
+                             tcore/mcp-json))))))))))
+
+;; =============================================================================
+;; digest: what a ling did
+;; =============================================================================
+
+(def ^:private shell-cap 40)
+
+(defn- digest-projection
+  "Wire projection of one full digest: timestamps as ISO, shell list capped."
+  [d]
+  (let [shell (:shell d)]
+    (cond-> (-> d
+                (dissoc :started :ended)
+                (assoc :shell (mapv #(update % :command ti/clip 200) (take-last shell-cap shell))))
+      (> (count shell) shell-cap) (assoc :shell-omitted (- (count shell) shell-cap))
+      (:started d) (assoc :started (ti/iso (:started d)) :ended (ti/iso (:ended d))))))
+
+(defn- multi-digest?
+  "A digest over many lings: a parent is given, or the agent is a glob."
+  [{:keys [parent agent agent_id id]}]
+  (or (not (str/blank? (str parent)))
+      (boolean (re-find #"[*?]" (str (or agent agent_id id))))))
+
+(defn- digest-response [source parents params now-ms]
+  (if-not (multi-digest? params)
+    (with-agent-id (or (:agent params) (:agent_id params) (:id params))
+      (fn [aid]
+        (run-query source (tq/transcript-query :query/digest {:agent-id aid})
+                   (comp tcore/mcp-json digest-projection))))
+    (with-filters params now-ms
+      (fn [opts]
+        (with-limit (:limit params) :limit default-list-limit
+          (fn [limit]
+            (let [sel (select-runs source parents (assoc opts :limit limit))]
+              (if-not (r/ok? sel)
+                (tcore/mcp-error (err-message sel))
+                (let [rows (keep (fn [row]
+                                   (let [res (execute-query source
+                                                            (tq/transcript-query :query/digest
+                                                                                 {:agent-id (:agent-id row)}))]
+                                     (when (r/ok? res)
+                                       (assoc (ti/digest-row (:ok res)) :project (:project-id row)))))
+                                 (:ok sel))]
+                  (tcore/mcp-json {:lings (vec rows) :count (count rows)}))))))))))
+
+(defn- dispatch [{:keys [source parents now-ms]}
+                 {:keys [command agent-id agent_id id n turn full max_chars max-chars] :as params}]
   (let [agent-id  (or agent-id agent_id id)
         max-chars (or max_chars max-chars)
         by-agent  (fn [render]
@@ -289,7 +370,9 @@
                       (fn [mode] (f #(entries-response %1 %2 mode)))))]
     (case command
       "help"   (tcore/mcp-json help-response)
-      "list"   (list-response source)
+      "list"   (list-response source parents params (now-ms))
+      ("find" "search") (find-response source parents params (now-ms))
+      "digest" (digest-response source parents params (now-ms))
       "query"  (listing by-agent)
       "stats"  (by-agent #(tcore/mcp-json (compute-stats %2 %1)))
       "replay" (by-agent #(tcore/mcp-json {:markdown (format-replay %2 %1) :agent-id %1}))
@@ -320,11 +403,20 @@
   "Route transcript MCP commands. Returns an MCP-envelope result, never throws.
 
    ([params])        reads `src/default-source`.
-   ([source params]) reads the given TranscriptSource.
+   ([ports params])  `ports` is a TranscriptSource, or a map
+                     {:source TranscriptSource :parents ParentIndex
+                      :now-ms (fn [] epoch-ms)}; absent ports take defaults.
 
    Commands:
      help                     This command list
-     list                     Available transcripts (JSONL + Datalevin)
+     list   {:agent :project :parent :since :limit}
+                              Runs newest first (default limit 25), compact
+                              rows: agent project parent turns modified ending
+     find   {:query :role :tool :agent :project :parent :since :limit :runs}
+                              Cross-run search; query is a substring or /re/
+     digest {:agent | :parent | agent glob}
+                              What a ling did; one compact row per ling when
+                              many are selected
      query  {:agent-id}       Full conversation entries
      tail   {:agent-id :n?}   Last N entries (default 10)
      since  {:agent-id :turn} Entries after turn
@@ -335,9 +427,13 @@
      stats  {:agent-id}       Turn count, cost, role breakdown
      replay {:agent-id}       Formatted markdown conversation"
   ([params] (handle-transcript (src/default-source) params))
-  ([source params]
+  ([ports params]
+   ;; ports: {:source TranscriptSource :parents ParentIndex :now-ms (fn [])}
    (try
-     (dispatch source params)
+     (dispatch (merge {:parents (src/default-parent-index)
+                       :now-ms  #(System/currentTimeMillis)}
+                      (if (satisfies? src/TranscriptSource ports) {:source ports} ports))
+               params)
      (catch Throwable e
        (log/warn e "[transcript] command failed" (:command params))
        (tcore/mcp-error (str "transcript " (:command params) " failed: " (ex-message e)))))))
