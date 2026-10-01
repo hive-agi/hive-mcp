@@ -8,6 +8,7 @@
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.dispatch.handler :as dispatch]
+            [hive-mcp.addons.boot-health :as boot-health]
             [hive-mcp.tools.op-outcome :as op-outcome]))
 
 ;; =============================================================================
@@ -299,6 +300,16 @@
               (str/join ", " (sort (map #(str/join " " (map name (concat path %))) paths))))
       err)))
 
+(defn- with-degraded-notice
+  "RESPONSE with the degraded-addon-roster notice appended to its :text when
+   the boot recorded one. A reduced command set must not pass for the whole
+   truth: an agent reading `help` or `Unknown command` on a degraded boot is
+   told the roster is short, not that the capability does not exist."
+  [response]
+  (if (and (map? response) (string? (:text response)))
+    (update response :text boot-health/with-notice)
+    response))
+
 (defn make-cli-handler
   "Create a CLI-style handler that dispatches on :command param.
 
@@ -357,11 +368,11 @@
          (cond
            ;; No command or empty -> error
            (nil? path)
-           (unknown-command-error command handlers)
+           (with-degraded-notice (unknown-command-error command handlers))
 
            ;; Help at root level
            (= [:help] path)
-           {:type "text" :text (format-help handlers)}
+           (with-degraded-notice {:type "text" :text (format-help handlers)})
 
            ;; Normal dispatch via n-depth resolve-handler
            :else
@@ -378,8 +389,9 @@
                                  (:handler (resolve-handler handlers (parse-command qualified))))]
                  (if owner
                    (run owner (assoc params :command qualified))
-                   (with-subtree-listing (unknown-command-error command handlers)
-                     handlers path-used)))))))))))
+                   (with-degraded-notice
+                     (with-subtree-listing (unknown-command-error command handlers)
+                       handlers path-used))))))))))))
 
 ;; =============================================================================
 ;; Batch Handler Factory (generic batch middleware)
@@ -448,7 +460,8 @@
                                        (if-let [rej (:__rejection__ op)]
                                          {:success false :command (:command op) :error rej}
                                          {:success false :command (:command op)
-                                          :error (str "Unknown command: " (:command op))})))))
+                                          :error (boot-health/with-notice
+                                                  (str "Unknown command: " (:command op)))})))))
                                (catch Exception e
                                  {:success false :command (:command op) :error (ex-message e)})))
                            operations)]

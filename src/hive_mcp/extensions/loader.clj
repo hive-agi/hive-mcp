@@ -7,9 +7,12 @@
    Called once at system startup (init.clj).
    Graceful degradation: if resolution fails, no extensions are registered
    and all consumers fall back to their defaults."
-  (:require [hive-mcp.addons.core :as addon-core]
+  (:require [hive-mcp.addons.boot-health :as boot-health]
+            [hive-mcp.addons.core :as addon-core]
             [hive-mcp.addons.manifest :as manifest]
             [hive-mcp.dns.result :refer [rescue]]
+            [clojure.set :as set]
+            [clojure.string :as str]
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.tools.composite :as composite]
             [taoensso.timbre :as log]
@@ -194,6 +197,57 @@
                             (pr-str (or (:addon/capabilities m) #{}))
                             (str (:addon/init-ns m))
                             (str (:addon/description m "")))))))))
+
+;; =============================================================================
+;; Boot health facts
+;; =============================================================================
+
+(defn roster-facts
+  "{:discovered :mounted :failed} addon ids for this boot.
+
+   Mounted means the addon is usable now or on first use: a successful mount
+   in the composer's report, a dormant lifecycle addon behind its stubs, an
+   addon-core registry record in :active, or (legacy path) an init-ns that
+   self-registered."
+  [ordered mount-result successful-ns]
+  (let [discovered (mapv :addon/id ordered)
+        report     (:report mount-result)
+        composed   (into #{} (comp (filter :success?) (map :addon/id)) (:mounted report))
+        dormant    (set (get-in mount-result [:lifecycle :dormant]))
+        active     (into #{} (comp (filter #(= :active (:state %))) (map :name))
+                         (rescue [] (addon-core/list-addons)))
+        by-ns      (into #{} (comp (filter #(contains? successful-ns
+                                                        (symbol (str (:addon/init-ns %)))))
+                                   (map :addon/id))
+                         ordered)
+        mounted    (into #{} (filter (set/union composed dormant active by-ns)) discovered)]
+    {:discovered discovered
+     :mounted    (vec (sort mounted))
+     :failed     (vec (sort (remove mounted discovered)))}))
+
+(defn- roster-expectations
+  "Operator expectations from `:services :addons`:
+     :expected-min n            floor on discovered manifests
+     :expected [\"hive.carto\"]  ids that must mount"
+  []
+  (let [cfg (rescue {} ((requiring-resolve 'hive-mcp.config.core/get-service-config) :addons))]
+    (cond-> {}
+      (integer? (:expected-min cfg)) (assoc :expected-min (:expected-min cfg))
+      (seq (:expected cfg))          (assoc :expected (set (map str (:expected cfg)))))))
+
+(defn- roster-baseline-path
+  "Where the last healthy roster is kept. `:services :addons :roster-baseline`
+   overrides; `false` there disables the baseline. Env HIVE_MCP_ROSTER_BASELINE
+   overrides both (empty string disables)."
+  []
+  (let [env (System/getenv "HIVE_MCP_ROSTER_BASELINE")
+        cfg (rescue {} ((requiring-resolve 'hive-mcp.config.core/get-service-config) :addons))
+        v   (:roster-baseline cfg)]
+    (cond
+      (some? env)  (when-not (str/blank? env) env)
+      (false? v)   nil
+      (string? v)  v
+      :else        (boot-health/default-baseline-path))))
 
 (defn mount-event-logger
   "Write one structured hive-addon mount lifecycle event through Timbre."
@@ -414,6 +468,14 @@
 
     ;; Roster: which addons were discovered, their META-INF metadata + status
     (log-addon-roster! ordered successful-ns)
+
+    ;; Boot health: judge the roster against what was expected and say so
+    ;; LOUDLY when it falls short (hive memory 20260901002309-05854dd7).
+    (rescue nil
+            (boot-health/record-roster!
+             (merge (roster-facts ordered mount-result successful-ns)
+                    (roster-expectations))
+             (roster-baseline-path)))
 
     (if (pos? total-registered)
       (log/info "Extensions loaded:" total-registered "total capabilities"

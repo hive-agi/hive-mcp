@@ -171,3 +171,153 @@
 (deftest lifecycle-gate-hint-names-the-real-config-path-test
   (lc/uninstall!)
   (is (str/includes? (:text (hot/handle-lifecycle {})) "{:services {:addons {:lifecycle")))
+
+;; =============================================================================
+;; evict: a refusal is never dressed as success
+;; =============================================================================
+
+(def ^:private gen-eviction
+  (gen/let [evicted? gen/boolean
+            refused? (gen/elements [nil true false])
+            reason   (gen/elements [nil :pinned :no-surface :dependents])
+            ok?      gen/boolean]
+    (cond-> {:addon/id "a" :evicted? evicted? :ok? ok?}
+      (some? refused?) (assoc :refused? refused?)
+      reason           (assoc :reason reason))))
+
+(defspec eviction-outcome-never-reports-a-refusal-as-ok 300
+  (prop/for-all [r gen-eviction]
+    (let [out (hot/eviction-outcome r)
+          refusal? (or (:refused? r) (and (false? (:evicted? r)) (some? (:reason r))))]
+      (if refusal?
+        (and (false? (:ok? out)) (true? (:refused? out)) (= (:reason r) (:reason out)))
+        (= r out)))))
+
+(deftest evict-of-a-pinned-addon-is-a-refusal-test
+  (hot/handle-pin {:addon "stub.lazy" :policy "pinned"})
+  (let [out (body (hot/handle-evict {:addon "stub.lazy"}))]
+    (is (false? (:ok? out)))
+    (is (true? (:refused? out)))
+    (is (some? (:reason out)))))
+
+;; =============================================================================
+;; pin: the force flag reaches set-policy! when it takes one
+;; =============================================================================
+
+(defn set-policy-3 [_mgr _id decl] {:policy (:policy decl) :arity 3})
+(defn set-policy-4
+  ([mgr id decl] (set-policy-4 mgr id decl {}))
+  ([_mgr _id decl opts] {:policy (:policy decl) :arity 4 :opts opts}))
+
+(deftest set-policy-call-degrades-to-the-3-arity-test
+  (testing "a 4-arity set-policy! receives {:force? ...}"
+    (is (= {:force? true}
+           (get-in (hot/set-policy-call! #'set-policy-4 :mgr "a" {:policy :lazy} true)
+                   [:lifecycle :opts]))))
+  (testing "an older 3-arity set-policy! is called without it, and says so only when force was asked"
+    (is (= {:lifecycle {:policy :lazy :arity 3} :force-unsupported? true}
+           (hot/set-policy-call! #'set-policy-3 :mgr "a" {:policy :lazy} true)))
+    (is (= {:lifecycle {:policy :lazy :arity 3}}
+           (hot/set-policy-call! #'set-policy-3 :mgr "a" {:policy :lazy} false)))))
+
+(deftest pin-lazy-on-a-surface-less-addon-needs-force-test
+  (when (hot/accepts-arity? (requiring-resolve 'hive-addon.lifecycle/set-policy!) 4)
+    (let [mgr (lc/manager {:host stub-host
+                           :specs [{:addon/id "stub.bare" :addon/init-ns 'stub.bare
+                                    :addon/lifecycle {:policy :eager}}]})]
+      (lc/boot! mgr {:mount-eager? false})
+      (lc/install! mgr)
+      (let [refused (body (hot/handle-pin {:addon "stub.bare" :policy "lazy"}))
+            forced  (body (hot/handle-pin {:addon "stub.bare" :policy "lazy" :force true}))]
+        (is (false? (:ok? refused)))
+        (is (= "no-surface" (:refused refused)))
+        (is (true? (:ok? forced)))
+        (is (= "lazy" (get-in forced [:lifecycle :policy])))))))
+
+;; =============================================================================
+;; eject: a HostVerb over stub ports
+;; =============================================================================
+
+(def ^:private eject-calls (atom []))
+
+(defn stub-eject!
+  "A bridge with eject!'s shape that records its call and answers an EjectReport."
+  [host specs target opts]
+  (swap! eject-calls conj {:host host :specs specs :target target :opts opts})
+  {:hot/target target :hot/ejected [target] :hot/torn-down [target]
+   :hot/unregistered [target] :hot/unsupported [] :hot/classpath-retained ["file:/x/"]
+   :teardown/data-preserved? true :ok? true :internal/noise 1})
+
+(defn stub-refusing-eject!
+  [_host _specs target _opts]
+  {:hot/target target :hot/ejected [target] :hot/refused? true
+   :hot/blocking ["hive.dependent"] :ok? false
+   :errors ["mounted addons depend on it"]})
+
+(defn- stub-ports
+  "HostPorts over stubs; :refreshes counts surface refreshes."
+  [refreshes]
+  {:host        (constantly ::host)
+   :specs       (constantly [{:addon/id "hive.rss"}])
+   :reload-opts (constantly {:mount-opts {:resolve-config ::cfg}})
+   :refresh!    (fn [] (swap! refreshes inc) {:count 1})})
+
+(defn- eject-verb [bridge]
+  {:bridge bridge :target #'hot/eject-target
+   :opts (fn [{:keys [cascade]}] {:cascade? (true? cascade)})
+   :report-keys hot/eject-report-keys})
+
+(deftest eject-ok-test
+  (reset! eject-calls [])
+  (let [refreshes (atom 0)
+        out (body (hot/run-host-verb (eject-verb `stub-eject!) (stub-ports refreshes)
+                                     {:addon "hive.rss" :cascade true}))
+        call (first @eject-calls)]
+    (is (true? (:ok? out)))
+    (is (= ["hive.rss"] (:ejected out)))
+    (is (= ["file:/x/"] (:classpath-retained out)) "what stays is reported")
+    (is (not (contains? out :noise)) "only EjectReport keys are answered")
+    (is (= 1 @refreshes) "the surface is refreshed")
+    (is (= ::host (:host call)))
+    (is (= "hive.rss" (:target call)))
+    (is (true? (get-in call [:opts :cascade?])))
+    (is (= ::cfg (get-in call [:opts :mount-opts :resolve-config])) "reload-opts ride along")))
+
+(deftest eject-by-path-test
+  (reset! eject-calls [])
+  (hot/run-host-verb (eject-verb `stub-eject!) (stub-ports (atom 0)) {:path "/tmp/hive-rss"})
+  (is (= "/tmp/hive-rss" (:target (first @eject-calls))))
+  (is (false? (get-in (first @eject-calls) [:opts :cascade?]))))
+
+(deftest eject-refused-with-blocking-test
+  (let [out (body (hot/run-host-verb (eject-verb `stub-refusing-eject!) (stub-ports (atom 0))
+                                     {:addon "hive.rss"}))]
+    (is (false? (:ok? out)))
+    (is (true? (:refused? out)))
+    (is (= ["hive.dependent"] (:blocking out)))))
+
+(deftest eject-unsupported-when-the-bridge-is-absent-test
+  (let [refreshes (atom 0)
+        resp (hot/run-host-verb (eject-verb 'no.such.hive-addon/eject!) (stub-ports refreshes)
+                                {:addon "hive.rss"})
+        out  (body resp)]
+    (is (not (:isError resp)) "an absent bridge is a report, not a failure of the tool")
+    (is (false? (:ok? out)))
+    (is (= "unsupported" (:reason out)))
+    (is (zero? @refreshes))))
+
+(deftest eject-needs-a-target-test
+  (is (:isError (hot/run-host-verb (eject-verb `stub-eject!) (stub-ports (atom 0)) {}))))
+
+(deftest a-new-verb-is-one-registration-test
+  (testing "eject is one entry in canonical-handlers and therefore advertised"
+    (is (= #'hot/handle-eject (:eject hot/canonical-handlers)))
+    (is (some #{"eject"} (hot/command-enum))))
+  (testing "a host verb built from a descriptor is a complete handler"
+    (let [handlers (assoc hot/canonical-handlers
+                          :probe (hot/host-verb {:bridge `stub-eject!
+                                                 :target :addon
+                                                 :report-keys [:ok? :hot/ejected]}))]
+      (is (fn? (:probe handlers)))
+      (is (thrown? AssertionError (hot/host-verb {:bridge `stub-eject! :target :addon}))
+          "a descriptor without :report-keys is refused at construction"))))

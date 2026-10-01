@@ -199,17 +199,44 @@
               (assoc :addon/reload-strategy (keyword strategy))))
           specs)))
 
+(def remount-report-keys
+  "The RemountReport keys a terminal reader gets. A key hive-addon adds to the
+   report is shown by adding it here."
+  [:hot/strategy :hot/seeds :hot/roots :hot/affected
+   :hot/torn-down :hot/cycles :hot/widened
+   :hot/ns-reloaded :hot/ns-skipped :hot/ns-dragged
+   :hot/ns-unchanged? :hot/multi-file :hot/stale-ctors
+   :hot/refused? :hot/preflight :hot/restored :hot/down :hot/restored?
+   :ok? :errors :diagnostic :diagnostics :teardown/data-preserved?])
+
+(def inject-report-keys
+  "The InjectReport keys `inject` answers with."
+  [:hot/path :hot/paths :hot/classpath
+   :hot/discovered :hot/already-mounted
+   :hot/injected :hot/affected :hot/torn-down
+   :hot/missing :hot/dirs-added :hot/registered
+   :hot/remembered :hot/adopted
+   :hot/deps :discovery-errors :ok? :errors :diagnostic :diagnostics
+   :teardown/data-preserved?])
+
+(def eject-report-keys
+  "The EjectReport keys `eject` answers with: what was removed and what stays."
+  [:hot/target :hot/ejected :hot/unknown :hot/refused? :hot/blocking
+   :hot/torn-down :hot/unregistered :hot/unsupported :hot/ungoverned
+   :hot/unhot :hot/forgotten :hot/dirs-removed :hot/dirs-retained
+   :hot/dirs-reason :hot/classpath-retained :hot/namespaces-retained
+   :hot/remounted :teardown/data-preserved? :ok? :errors])
+
+(def mount-result-keys
+  "The per-addon MountResult keys shown under :mounted."
+  [:addon/id :success? :phase :errors :diagnostic])
+
 (defn- summarize
   "Trim a RemountReport to what is worth reading in a terminal."
   [report]
-  (cond-> (select-keys report [:hot/strategy :hot/seeds :hot/roots :hot/affected
-                               :hot/torn-down :hot/cycles :hot/widened
-                               :hot/ns-reloaded :hot/ns-skipped :hot/ns-dragged
-                               :hot/ns-unchanged? :hot/multi-file :hot/stale-ctors
-                               :ok? :errors :diagnostic :diagnostics :teardown/data-preserved?])
+  (cond-> (select-keys report remount-report-keys)
     (seq (:mounted report))
-    (assoc :mounted (mapv #(select-keys % [:addon/id :success? :phase :errors :diagnostic])
-                          (:mounted report)))))
+    (assoc :mounted (mapv #(select-keys % mount-result-keys) (:mounted report)))))
 
 (defn- surface-refreshed!
   "After a remount or an injection the addon's contributions are live in
@@ -337,13 +364,8 @@
                                     :ok? (:ok? report)
                                     :injected (:hot/injected report)
                                     :already (:hot/already-mounted report)})
-            (mcp-json (-> (select-keys report [:hot/path :hot/paths :hot/classpath
-                                               :hot/discovered :hot/already-mounted
-                                               :hot/injected :hot/affected :hot/torn-down
-                                               :hot/missing :hot/dirs-added :hot/registered
-                                               :hot/deps :discovery-errors :ok? :errors :diagnostic :diagnostics
-                                               :teardown/data-preserved?])
-                          (assoc :mounted (mapv #(select-keys % [:addon/id :success? :phase :errors :diagnostic])
+            (mcp-json (-> (select-keys report inject-report-keys)
+                          (assoc :mounted (mapv #(select-keys % mount-result-keys)
                                                 (:mounted report))
                                  :hive-hot hot-init
                                  :surface surface))))))
@@ -508,6 +530,7 @@
    [:bridge qualified-symbol?]
    [:requires {:optional true} [:vector :keyword]]
    [:args {:optional true} ifn?]
+   [:render {:optional true} ifn?]
    [:example {:optional true} :string]])
 
 (defn- missing-param-error
@@ -517,15 +540,16 @@
 (defn run-lifecycle-verb
   "Run a LifecycleVerb descriptor against PARAMS: check the required params,
    require the installed lifecycle manager, resolve the bridge now and call it
-   as (bridge mgr & (args params)). `args` defaults to [(:addon params)]."
-  [{:keys [bridge requires args example] :as verb} params]
+   as (bridge mgr & (args params)). `args` defaults to [(:addon params)];
+   `render` (default identity) projects the bridge's answer before it is sent."
+  [{:keys [bridge requires args render example] :as verb} params]
   {:pre [(m/validate LifecycleVerb verb)]}
   (if-let [k (some #(when (nil? (get params %)) %) requires)]
     (missing-param-error k example)
     (with-manager
       (fn [mgr]
         (if-let [f (soft bridge)]
-          (mcp-json (apply f mgr ((or args (juxt :addon)) params)))
+          (mcp-json ((or render identity) (apply f mgr ((or args (juxt :addon)) params))))
           (mcp-error (str bridge " is not on the classpath; the hive-addon in this "
                           "image predates it. Bump the hive-addon pin and restart.")))))))
 
@@ -544,12 +568,116 @@
                    :requires [:addon]
                    :example  "{:command \"activate\" :addon \"hive.carto\"}"}))
 
+(defn eviction-outcome
+  "Pure. An EvictionReport with a refusal stated, never dressed as success: a
+   report that is :refused?, or that did not evict and names a :reason, answers
+   :ok? false :refused? true. Anything else passes through."
+  [report]
+  (if (and (map? report)
+           (or (:refused? report)
+               (and (false? (:evicted? report)) (some? (:reason report)))))
+    (assoc report :ok? false :refused? true)
+    report))
+
 (def handle-evict
-  "Release an addon to dormant stubs (force for pinned/eager)."
+  "Release an addon to dormant stubs (force for pinned/eager). A refusal
+   answers :ok? false :refused? true with its :reason."
   (lifecycle-verb {:bridge   'hive-addon.lifecycle/evict!
                    :requires [:addon]
                    :args     (fn [{:keys [addon force]}] [addon {:force? (true? force)}])
+                   :render   #'eviction-outcome
                    :example  "{:command \"evict\" :addon \"hive.carto\"}"}))
+
+;; -----------------------------------------------------------------------------
+;; Host bridge verbs — the second registration seam
+;;
+;; A verb that forwards to a hive-addon.hot fn of shape
+;; (bridge host specs target opts) is DATA too: which bridge, how params name
+;; the target, which opts it adds, which report keys it answers with. The
+;; effects it needs (the mount host, the mounted specs, the bridge options,
+;; the surface refresh) arrive as HostPorts, so a test hands it stubs and the
+;; tool hands it the vars below.
+;; -----------------------------------------------------------------------------
+
+(def HostVerb
+  [:map
+   [:bridge qualified-symbol?]
+   [:target ifn?]
+   [:opts {:optional true} ifn?]
+   [:report-keys [:vector :keyword]]
+   [:example {:optional true} :string]])
+
+(def HostPorts
+  [:map
+   [:host ifn?]
+   [:specs ifn?]
+   [:reload-opts ifn?]
+   [:refresh! ifn?]])
+
+(defn default-host-ports
+  "The HostPorts the tool runs on, each reached through its var."
+  []
+  {:host        #'host
+   :specs       #'effective-specs
+   :reload-opts #'reload-opts
+   :refresh!    #'surface-refreshed!})
+
+(defn unsupported-report
+  "Pure. What a host verb answers when BRIDGE is absent from this image."
+  [bridge]
+  {:ok?     false
+   :reason  :unsupported
+   :bridge  (str bridge)
+   :message (str bridge " is not on the classpath; the hive-addon in this image "
+                 "predates it. Bump the hive-addon pin (or point local.deps.edn at "
+                 "../hive-addon) and restart.")})
+
+(defn run-host-verb
+  "Run a HostVerb descriptor against PARAMS over PORTS: derive the target,
+   resolve the bridge now, call (bridge host specs target opts), refresh the
+   surface, answer the report's :report-keys plus :surface. An absent bridge
+   answers `unsupported-report`; nothing here throws."
+  [{:keys [bridge target opts report-keys example] :as verb} ports params]
+  {:pre [(m/validate HostVerb verb) (m/validate HostPorts ports)]}
+  (let [t (target params)
+        f (soft bridge)
+        h (when (and (some? t) f) ((:host ports)))]
+    (cond
+      (nil? t) (mcp-error (str "a target is required" (when example (str ", e.g. " example))))
+      (nil? f) (mcp-json (unsupported-report bridge))
+      (nil? h) (mcp-error "mount-host adapter unavailable")
+      :else
+      (let [report  (try (f h ((:specs ports)) t
+                            (merge ((:reload-opts ports)) (when opts (opts params))))
+                         (catch Throwable e
+                           (log/warn "host verb bridge threw" {:bridge bridge :error (ex-message e)})
+                           {:ok? false :reason :bridge-threw :errors [(str bridge ": " (ex-message e))]}))
+            surface ((:refresh! ports))]
+        (log/info "hot host verb" {:bridge bridge :target t :ok? (:ok? report)})
+        (mcp-json (cond-> (assoc (select-keys report report-keys) :surface surface)
+                    (:reason report) (assoc :reason (:reason report))))))))
+
+(defn host-verb
+  "A `hot` handler for the HostVerb DESCRIPTOR over `default-host-ports`. The
+   returned fn closes over data only and calls `run-host-verb` through its var."
+  [descriptor]
+  {:pre [(m/validate HostVerb descriptor)]}
+  (fn host-verb-handler [params]
+    (run-host-verb descriptor (default-host-ports) params)))
+
+(defn eject-target
+  "Pure. What `eject` plugs out: the addon id, else the path it was injected from."
+  [{:keys [addon path]}]
+  (or addon path))
+
+(def handle-eject
+  "Plug an addon OUT of the running host (the inverse of inject). Refused while
+   mounted addons depend on it unless cascade, which remounts them without it."
+  (host-verb {:bridge      'hive-addon.hot.inject/eject!
+              :target      #'eject-target
+              :opts        (fn [{:keys [cascade]}] {:cascade? (true? cascade)})
+              :report-keys eject-report-keys
+              :example     "{:command \"eject\" :addon \"hive.rss\"}"}))
 
 ;; -----------------------------------------------------------------------------
 ;; pin — a validated policy change
@@ -625,12 +753,28 @@
       (some-> (soft 'hive-addon.lifecycle.policy/default-idle-ms) deref)
       fallback-idle-ms))
 
+(defn accepts-arity?
+  "True when fn var V declares an arglist of exactly N params."
+  [v n]
+  (boolean (some #(= n (count %)) (:arglists (meta v)))))
+
+(defn set-policy-call!
+  "Call SET-POLICY! (a var) with the force flag when it takes one (4-arity);
+   against an older hive-addon, call the 3-arity and say that force was not
+   honoured. Returns {:lifecycle lc} plus :force-unsupported? when it mattered."
+  [set-policy! mgr addon decl force?]
+  (if (accepts-arity? set-policy! 4)
+    {:lifecycle (set-policy! mgr addon decl {:force? force?})}
+    (cond-> {:lifecycle (set-policy! mgr addon decl)}
+      force? (assoc :force-unsupported? true))))
+
 (defn handle-pin
   "Set an addon's lifecycle policy at runtime (default :pinned). The policy is
    validated against hive-addon's policy enum; idle_ms, when absent, resets to
    the addon's declared value; and a mounting policy set on a dormant addon
-   says so, because it does not mount it."
-  [{:keys [addon] :as params}]
+   says so, because it does not mount it. A refused change (e.g. :lazy on a
+   surface-less addon without force) answers :ok? false with :refused."
+  [{:keys [addon force] :as params}]
   (if-not addon
     (missing-param-error :addon "{:command \"pin\" :addon \"hive.carto\" :policy \"lazy\"}")
     (with-manager
@@ -638,11 +782,16 @@
         (let [decl (pin-decl params (policy-schema) (baseline-idle-ms mgr addon))]
           (if-let [msg (:error decl)]
             (mcp-error msg)
-            (let [lc    ((soft 'hive-addon.lifecycle/set-policy!) mgr addon decl)
-                  phase (some-> (soft 'hive-addon.lifecycle/phase) (apply [mgr addon]))
-                  note  (dormant-pin-note (:policy decl) phase addon)]
-              (mcp-json (cond-> {:addon/id addon :lifecycle lc :phase phase}
-                          note (assoc :note note))))))))))
+            (let [{lc :lifecycle :keys [force-unsupported?]}
+                  (set-policy-call! (soft 'hive-addon.lifecycle/set-policy!) mgr addon decl (true? force))
+                  refused (:refused lc)
+                  phase   (some-> (soft 'hive-addon.lifecycle/phase) (apply [mgr addon]))
+                  note    (dormant-pin-note (:policy decl) phase addon)]
+              (mcp-json (cond-> {:addon/id addon :lifecycle lc :phase phase :ok? (nil? refused)}
+                          refused            (assoc :refused refused)
+                          note               (assoc :note note)
+                          force-unsupported? (assoc :force-unsupported? true
+                                                    :force-note "this hive-addon's set-policy! takes no force flag; force was not applied"))))))))))
 
 (defn handle-sweep
   "Evict every idle lazy addon and close idle parts now."
@@ -677,12 +826,13 @@
 
 (defn handle-core-reload
   "Reload the changes under hive-mcp's own source root: protocol definers
-   pinned, state holders kept, then the tool table and the surface refreshed
-   and every addon whose constructor namespace was loaded remounted."
+   pinned, state holders kept, then the live records re-seated (:reseated),
+   the tool table and the surface refreshed and every addon whose constructor
+   namespace was loaded remounted."
   [_params]
   (let [report (core-hot/reload! {:ports (assoc (core-hot/default-ports)
                                                 :host/remount! (core-remounter))})]
-    (log/info "hot core-reload" (select-keys report [:ok? :loaded :failed :error :ms]))
+    (log/info "hot core-reload" (select-keys report [:ok? :loaded :failed :error :ms :reseated]))
     (mcp-json report)))
 
 (def canonical-handlers
@@ -698,9 +848,9 @@
 
    Extending it is ONE entry, never an edit elsewhere:
      - a verb that forwards to hive-addon.lifecycle is a `lifecycle-verb`
-       descriptor (see the seam above handle-activate), e.g.
-         :unmount (lifecycle-verb {:bridge 'hive-addon.lifecycle/eject!
-                                   :requires [:addon]})
+       descriptor (see the seam above handle-activate);
+     - a verb that forwards to a (bridge host specs target opts) fn is a
+       `host-verb` descriptor, as `eject` is;
      - the advertised `command` enum is derived from these keys (tool-def);
      - an addon adds a verb WITHOUT touching this map by contributing a
        command under \"hot\" (hive-addon.registry.commands), which
@@ -708,6 +858,7 @@
   {:reload      #'handle-reload
    :reload-all  #'handle-reload-all
    :inject      #'handle-inject
+   :eject       #'handle-eject
    :watch       #'handle-watch
    :unwatch     #'handle-unwatch
    :list        #'handle-list
@@ -748,7 +899,10 @@
         "and reports what it declined under :hot/ns-skipped), reload-all (every "
         "mounted addon with reloadable source, in dependency order; the rest are "
         "reported under :skipped with a reason), inject (mount an addon that was NOT on "
-        "the classpath at boot: a project dir, source dir or jar), watch/unwatch "
+        "the classpath at boot: a project dir, source dir or jar), eject (plug an addon "
+        "OUT by id or by the path it was injected from; refused with :hot/blocking while "
+        "mounted addons depend on it unless cascade, which remounts them without it; what "
+        "cannot be removed, e.g. classpath URLs, is reported as retained), watch/unwatch "
         "(file-watcher: edit an addon's source and it remounts itself), list "
         "(per-addon strategy + source-kind + whether it is reloadable at all), "
         "status (includes the no-reload set split into core and addon pins), "
@@ -756,12 +910,14 @@
         "source; jar-backed addons report :restart-required. "
         "core-plan / core-reload: hive-mcp's OWN source, the same way. core-plan lists the "
         "pending namespaces, the cascade, what the interlock pins (protocol definers) and "
-        "keeps (state holders); core-reload runs it, then refreshes the tool table and the "
-        "surface and remounts any addon whose constructor namespace was loaded. "
+        "keeps (state holders); core-reload runs it, re-seats live records (:reseated), then "
+        "refreshes the tool table and the surface and remounts any addon whose constructor "
+        "namespace was loaded. "
         "Addon lifecycle (when :services :addons :lifecycle :enabled?): lifecycle (per-addon "
         "phase, policy, idle time, parts), activate (mount a dormant addon now), evict (release "
-        "an addon to dormant stubs; force for pinned/eager), pin (set a validated policy at "
-        "runtime; it never mounts a dormant addon), "
+        "an addon to dormant stubs; force for pinned/eager; a refusal is :ok? false :refused? "
+        "true with :reason), pin (set a validated policy at runtime; it never mounts a dormant "
+        "addon; force allows :lazy on a surface-less addon), "
         "sweep (evict every idle lazy addon and close idle parts now). "
         "Use command='help' to list all.")
    :inputSchema
@@ -771,17 +927,19 @@
                 :enum (command-enum)
                 :description "Hot-reload operation to perform"}
      "addon" {:type "string"
-              :description "[reload] Addon id to reload, e.g. \"hive.carto\". Dependents cascade automatically."}
+              :description "[reload/eject/lifecycle verbs] Addon id, e.g. \"hive.carto\". Dependents cascade automatically on reload."}
      "namespace" {:type "string"
                   :description "[reload] Constructor namespace to reload instead of an addon id — seeds every addon built from it."}
      "strategy" {:type "string"
                  :description "[reload] Override the reload strategy for this addon (e.g. \"remount\", \"in-place\", \"inert\"). Omit to let the chain select."}
      "path" {:type "string"
-             :description "[inject] Absolute path of the addon to mount: a project dir (its deps.edn :paths go on the classpath), a source dir, or a jar. Its META-INF/hive-addons manifests are discovered and mounted; addons already mounted are left alone."}
+             :description "[inject/eject] Absolute path of the addon: a project dir (its deps.edn :paths go on the classpath), a source dir, or a jar. inject mounts its META-INF/hive-addons manifests (addons already mounted are left alone); eject plugs out what was injected from it."}
      "resolve_deps" {:type "boolean"
                      :description "[inject] Also hand the project's deps.edn :deps to clojure.repl.deps/add-libs before mounting (needs a tools.deps basis in the running image). Default false."}
+     "cascade" {:type "boolean"
+                :description "[eject] Also tear down the mounted addons that depend on the target and remount them without it. Default false: such an eject is refused."}
      "force" {:type "boolean"
-              :description "[evict] Also evict a pinned or eager addon. Default false."}
+              :description "[evict] Also evict a pinned or eager addon. [pin] Allow :lazy on an addon with no surface a stub could advertise. Default false."}
      "policy" {:type "string"
                :enum (mapv name (rest (policy-schema)))
                :description "[pin] Lifecycle policy to set at runtime; pin defaults to \"pinned\"."}

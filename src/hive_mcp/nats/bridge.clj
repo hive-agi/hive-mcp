@@ -226,7 +226,7 @@
   [{:keys [event-type ling-id] :as payload}]
   (let [backbone (eb/get-backbone)
         subject (agent-subject ling-id event-type)]
-    (eb/publish! backbone subject payload)
+    (eb/publish! backbone subject (stamp-self payload))
     (log/debug "[Bridge] Published agent event on" subject)))
 
 ;; =============================================================================
@@ -339,16 +339,33 @@
     (catch Exception e
       (log/warn "[Bridge] failed to republish lifecycle event:" (.getMessage e)))))
 
+(defn- agent-error
+  "Resolve the error of a failed agent event: top-level :error wins, else the
+   :error nested in :result (headless adapters report failures either way)."
+  [{:keys [error result]}]
+  (or error (:error result)))
+
+(defn- shout-agent-event!
+  "Auto-shout an inbound agent event unless this process published it.
+   Our own agent events are already audible in-JVM via local shout fanout, so
+   shouting the NATS echo would double every ling completion/failure."
+  [msg ling-id event-type summary-msg]
+  (if (self-publish? msg)
+    (log/trace "[Bridge] skipping auto-shout for self-published agent event" ling-id)
+    (auto-shout-agent-event! ling-id event-type summary-msg)))
+
 (defn- handle-agent-completed
   "Handle headless agent completion — auto-shout to hivemind piggyback AND
    re-emit slave-lifecycle events into channel.core so swarm/sync handlers
    fire (release claims, mark slave killed, write-through to Datahike).
 
-   Journal write is already done by headless_adapter; no duplicate write here."
-  [{:keys [ling-id task-id result] :as _msg}]
+   The auto-shout is skipped for self-published events; the lifecycle
+   republish always runs. Journal write is already done by headless_adapter;
+   no duplicate write here."
+  [{:keys [ling-id task-id result] :as msg}]
   (log/info "[Bridge] agent completed:" ling-id)
-  (auto-shout-agent-event!
-   ling-id :completed
+  (shout-agent-event!
+   msg ling-id :completed
    (str "Agent " ling-id " completed"
         (when-let [r (:result result)] (str ": " (subs (str r) 0 (min 120 (count (str r))))))))
   ;; Lifecycle: a headless agent completion is BOTH a task-completed and a
@@ -366,18 +383,22 @@
 (defn- handle-agent-failed
   "Handle headless agent failure — auto-shout to hivemind piggyback AND
    re-emit slave-lifecycle events into channel.core so swarm/sync handlers
-   fire (release claims, fail task, remove slave)."
-  [{:keys [ling-id task-id error] :as _msg}]
+   fire (release claims, fail task, remove slave).
+
+   The auto-shout is skipped for self-published events; the lifecycle
+   republish always runs."
+  [{:keys [ling-id task-id] :as msg}]
   (log/info "[Bridge] agent failed:" ling-id)
-  (auto-shout-agent-event!
-   ling-id :error
-   (str "Agent " ling-id " failed: " (summarize-error error)))
-  (when task-id
-    (republish-lifecycle-locally! {:type :task-failed
-                                   :slave-id ling-id
-                                   :task-id task-id
-                                   :error error
-                                   :timestamp (System/currentTimeMillis)}))
+  (let [error (agent-error msg)]
+    (shout-agent-event!
+     msg ling-id :error
+     (str "Agent " ling-id " failed: " (summarize-error error)))
+    (when task-id
+      (republish-lifecycle-locally! {:type :task-failed
+                                     :slave-id ling-id
+                                     :task-id task-id
+                                     :error error
+                                     :timestamp (System/currentTimeMillis)})))
   (republish-lifecycle-locally! {:type :slave-killed
                                  :slave-id ling-id
                                  :timestamp (System/currentTimeMillis)}))
@@ -393,7 +414,9 @@
 
    Loopback gates (incident 2026-05-11):
      1. `self-publish?` drops shouts we just emitted (NATS re-delivers our own
-        publishes back to us; the local atom path already feeds piggyback).
+        publishes back to us; the emitter already fanned them out to every
+        in-process channel, marked :via :local-origin — see
+        hive-mcp.hivemind.messaging/route-shout!).
      2. `:via :nats-inbound` marker propagates to NatsChannel.deliver! so it
         does NOT re-publish; otherwise the channel ping-pongs to NATS, NATS
         echoes back, fanout fans out, NatsChannel re-publishes — 100Hz
