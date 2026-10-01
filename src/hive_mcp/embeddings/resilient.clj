@@ -74,8 +74,22 @@
    Returns the first success value; throws ex-info :embedder/chain-exhausted
    (:exhausted-by :providers | :deadline) when none succeeds."
   [chain call budget-ms total-budget-ms]
-  (let [dl (dl/deadline total-budget-ms)]
-    (gate/with-gate embed-gate
+  (let [dl        (dl/deadline total-budget-ms)
+        exhausted (fn [untried failures]
+                    (ex-info "Embedding chain ran out of time before a provider succeeded"
+                             {:error           :embedder/chain-exhausted
+                              :exhausted-by    :deadline
+                              :total-budget-ms total-budget-ms
+                              :untried         (mapv describe untried)
+                              :failures        failures}))
+        ;; The permit wait is bounded by what the DEADLINE has left, not by the
+        ;; gate's own (longer) timeout — otherwise a saturated gate lets the
+        ;; chain outlive its caller before a single provider is tried.
+        ^java.util.concurrent.Semaphore sem (:semaphore embed-gate)]
+    (when-not (.tryAcquire sem (long (dl/remaining-ms dl))
+                           java.util.concurrent.TimeUnit/MILLISECONDS)
+      (throw (exhausted chain [])))
+    (try
       (loop [[entry & more] chain
              failures       []]
         (cond
@@ -86,12 +100,7 @@
                            :failures     failures}))
 
           (dl/expired? dl)
-          (throw (ex-info "Embedding chain ran out of time before a provider succeeded"
-                          {:error          :embedder/chain-exhausted
-                           :exhausted-by   :deadline
-                           :total-budget-ms total-budget-ms
-                           :untried        (mapv describe (cons entry more))
-                           :failures       failures}))
+          (throw (exhausted (cons entry more) failures))
 
           :else
           (let [outcome (attempt entry call (dl/attempt-budget-ms dl budget-ms))]
@@ -99,7 +108,8 @@
                           :attempt/ok     (:value outcome)
                           :attempt/failed (recur more (conj failures
                                                            (select-keys outcome
-                                                                        [:provider :error :message]))))))))))
+                                                                        [:provider :error :message])))))))
+      (finally (.release sem)))))
 
 (defrecord ResilientEmbedder [chain budget-ms total-budget-ms]
   proto/EmbeddingProvider
