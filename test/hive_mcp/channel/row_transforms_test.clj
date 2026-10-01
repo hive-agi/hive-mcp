@@ -228,7 +228,7 @@
 (deftest the-core-fold-survives-an-extensions-halt-and-reinit-test
   (let [saved-ext     (into {} (map (juxt identity ext/get-extension)) (ext/registered-keys))
         saved-tools   (vec (ext/get-registered-tools))
-        schema-atom   @#'ext/schema-registry
+        schema-atom   @#'ext/schema-ledger
         saved-schemas @schema-atom]
     (try
       (with-redefs [init/load-extensions!    (constantly {:registered 0 :total 0 :sources []})
