@@ -1,11 +1,11 @@
 {
   "mcpServers": {
     "hive": {
-      "command": "/home/leibniz/PP/hive/bb-mcp/start-bb-mcp.sh",
-      "args": ["/home/leibniz/PP/hive/hive-mcp"],
+      "command": "${HOME}/PP/hive/bb-mcp/start-bb-mcp.sh",
+      "args": ["${HOME}/PP/hive/hive-mcp"],
       "env": {
         "BB_MCP_NREPL_PORT": "7910",
-        "HIVE_MCP_DIR": "/home/leibniz/PP/hive/hive-mcp/hive-mcp"
+        "HIVE_MCP_DIR": "${HOME}/PP/hive/hive-mcp/hive-mcp"
       }
     }
   }
