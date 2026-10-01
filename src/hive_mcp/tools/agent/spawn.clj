@@ -20,7 +20,8 @@
             [taoensso.timbre :as log]
             [clojure.string :as str]
             [hive-mcp.channel.audience :as audience]
-            [hive-mcp.agent.ling.headless-registry :as headless-registry]))
+            [hive-mcp.agent.ling.headless-registry :as headless-registry]
+            [hive-mcp.emacs.client :as emacs-client]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -187,6 +188,19 @@
   (when (and provider (contains? (headless-registry/registered-headless) mode))
     (provider-preflight/refusal provider)))
 
+(def ^:dynamic *editor-reachable?*
+  "0-arg port: true when an Emacs daemon answers. Read per spawn."
+  (fn [] (boolean (emacs-client/emacs-running?))))
+
+(defn editor-preflight-refusal
+  "Message refusing MODE when it needs Emacs and REACHABLE? answers false, else nil.
+   REACHABLE? is only called for Emacs-bound modes."
+  [mode reachable?]
+  (when (and (spawn-registry/requires-emacs? mode) (not (reachable?)))
+    (str "spawn_mode " (clojure.core/name mode) " needs a running Emacs daemon, "
+         "and none answered. Start Emacs (emacs --daemon) or retry with "
+         "spawn_mode=\"headless\", which needs no Emacs.")))
+
 (defn spawn-brief
   "The initial task a spawn carries: `task`, else `prompt`. Blank counts as
    absent. Throws ex-info when both are given and differ."
@@ -294,6 +308,9 @@
                     _ (when-let [refusal (chat-point-refusal (:spawn-mode ling-agent) loop-params
                                                              (headless-registry/headless-capabilities (:spawn-mode ling-agent)))]
                         (throw (ex-info refusal {:spawn-mode (:spawn-mode ling-agent)})))
+                    _ (when-let [refusal (editor-preflight-refusal (:spawn-mode ling-agent) *editor-reachable?*)]
+                        (throw (ex-info refusal {:spawn-mode (:spawn-mode ling-agent)
+                                                 :fallback "headless"})))
                     _ (when-let [err (provider-preflight-refusal (:spawn-mode ling-agent) effective-provider)]
                         (throw (ex-info (str "Provider " (clojure.core/name effective-provider)
                                              " cannot serve this spawn: " (:fix err))
