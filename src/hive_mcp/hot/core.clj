@@ -26,7 +26,8 @@
             [hive-dsl.result :as r]
             [hive-mcp.hot.keep :as keep]
             [hive-mcp.hot.self :as self]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [hive-mcp.hot.reseat :as reseat])
   (:import [java.io File]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -138,7 +139,14 @@
 
 (defn default-ports
   "The effects a reload drives, each resolved through its var now.
-   :host/remount! is nil here: only the `hot` tool knows the mounted specs."
+   :host/remount! is nil here: only the `hot` tool knows the mounted specs.
+   :host/reseat! runs the open registry of hive-mcp.hot.reseat: every loaded
+   namespace that holds live record instances rebuilds them itself.
+
+   There is no :host/refresh-tools! port by default: :host/refresh-surface!
+   refreshes every registered tool surface (the server context included) and
+   the agent registry from ONE table build, so a reload builds it once. A
+   caller may still inject :host/refresh-tools!; `reload!` then runs it."
   []
   {:hot/ensure-init!      (soft 'hive-hot.core/ensure-init!)
    :hot/status            (soft 'hive-hot.core/status)
@@ -147,12 +155,10 @@
    :hot/prepare-pass!     keep/prepare-pass!
    :hot/reload-scoped!    (soft 'hive-hot.core/reload-scoped!)
    :hot/reload-pending!   keep/run-pending!
-   :host/refresh-tools!   (when-let [refresh (soft 'hive-mcp.server.routes/refresh-tools!)]
-                            (when-let [ctx (soft 'hive-mcp.server.core/server-context-atom)]
-                              (fn [] (refresh @ctx))))
    :host/refresh-surface! (when-let [refresh (soft 'hive-mcp.extensions.reactive/refresh-surface!)]
                             (fn [] (refresh nil)))
-   :host/remount!         nil})
+   :host/remount!         nil
+   :host/reseat!          (reseat/via-var `reseat/reseat!)})
 
 (defn- prepare!
   "Extend hive-hot with core's roots and the interlock. Returns
@@ -205,6 +211,15 @@
          (assoc (plan-report sp roots classes (partial file->ns dirs))
                 :repair (repair! ports :hot/repair-preview prefix)))))))
 
+(defn tools-refreshed
+  "What the report's :tools-refreshed says. PORTS with a :host/refresh-tools!
+   port answer what it returned (TOOLS); otherwise the table refresh is the
+   :server-tools leg of the surface refresh (SURFACE). Pure."
+  [ports tools surface]
+  (if (contains? ports :host/refresh-tools!)
+    tools
+    (when (map? surface) (:server-tools surface))))
+
 (defn reload!
   "Reload the changes under core's roots, plus whatever repair the image
    needs, and repair what a namespace reload leaves behind. Never throws;
@@ -212,7 +227,12 @@
      :ok? :pass :roots :loaded :unloaded :failed :error :ms :skipped :dragged
      :unchanged? :multi-file :stale-registrations :interlock :kept-vars
      :forced-unload :orphans :dead-links :kept-state :records-redefined
-     :remount :tools-refreshed :surface :hive-hot
+     :remount :reseated :tools-refreshed :surface :hive-hot
+
+   The repairs run in order: remount the addons, re-seat the live record
+   instances of every loaded namespace that registered a re-seater
+   (hive-mcp.hot.reseat), then refresh the surface (tool table included), so
+   the table is rebuilt over re-seated holders, once.
 
    :pass is :scoped when a change under the roots drove hive-hot, :pending
    when nothing changed but the image had repairs queued, :none otherwise."
@@ -238,6 +258,7 @@
              names    (fn [s] (mapv str (sort (set/intersection loaded* (set s)))))
              repair?  (and ok? (seq loaded))
              remount  (when repair? (repair! ports :host/remount! loaded))
+             reseated (when repair? (repair! ports :host/reseat! loaded))
              tools    (when repair? (repair! ports :host/refresh-tools!))
              surface  (when repair? (repair! ports :host/refresh-surface!))]
          (log/info "core hot-reload" {:ok? ok? :pass kind :loaded (count loaded)
@@ -263,6 +284,7 @@
           :kept-state          (names (:state classes))
           :records-redefined   (names (:record classes))
           :remount             remount
-          :tools-refreshed     tools
+          :reseated            reseated
+          :tools-refreshed     (tools-refreshed ports tools surface)
           :surface             surface
           :hive-hot            hot-init})))))

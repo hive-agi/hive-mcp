@@ -33,57 +33,97 @@
    contributions, when it is whitelisted. Mirrors the boot one-shot: a name
    with NO contributions gets no composite (and loses the one it had, so a
    retraction that empties a tool does not leave a help-only shell behind).
-   Returns the tool-def, or nil."
+   Returns the tool-def, or nil. The agent-delegation registry is NOT written
+   here: it follows the advertised table in `refresh-surface!`, so an
+   absorbed composite is absent there exactly as it is on the wire."
   [tool-name]
   (when-let [desc (get composite-descriptions tool-name)]
     (if (empty? (acmds/get-commands tool-name))
       (do (ext/deregister-tool! tool-name) nil)
       (let [t (composite/build-composite-tool tool-name desc)]
         (ext/register-tool! t)
-        (rescue nil
-                (when-let [reg-fn (requiring-resolve 'hive-mcp.agent.registry/register!)]
-                  (reg-fn [t])))
         t))))
 
 (defn redrain-schema-extensions!
   "Re-read every ACTIVE addon's (schema-extensions) into the registry — the
    map-shaped idiom (tool-name -> params); the DataScript-attribute sequence
-   is not a tool schema. Returns the tool names touched."
+   is not a tool schema. Each addon's params are registered OWNED by its id,
+   so the addon's shutdown (retract-schemas-by-owner!) withdraws exactly
+   them. Returns the tool names touched."
   []
   (into []
         (comp (filter #(= :active (:state %)))
-              (keep (fn [{:keys [name]}] (:addon (addon-core/get-addon-entry name))))
-              (mapcat (fn [addon]
+              (keep (fn [{:keys [name]}]
+                      (when-let [addon (:addon (addon-core/get-addon-entry name))]
+                        [name addon])))
+              (mapcat (fn [[addon-id addon]]
                         (let [exts (rescue nil (proto/schema-extensions addon))]
                           (when (map? exts)
                             (doseq [[tool-name props] exts]
-                              (ext/register-schema! tool-name props))
+                              (ext/register-schema! addon-id tool-name props))
                             (keys exts))))))
         (addon-core/list-addons)))
 
 (defn refresh-server-tools!
-  "Rebuild the running server's tool table, when a server is running.
-   Returns the tool count, or nil when there is no server context yet."
+  "Refresh every registered tool surface from the one advertised table
+   (`hive-mcp.server.routes/refresh-surfaces!`), registering the nREPL
+   server-context as a surface first when it is up. Returns the refresh
+   report {:count :changed :surfaces :failed}, or nil when no surface took the
+   table (no server running yet)."
   []
   (rescue nil
-          (when-let [ctx-atom (some-> (requiring-resolve 'hive-mcp.server.core/server-context-atom)
-                                      deref)]
-            (when @ctx-atom
-              ((requiring-resolve 'hive-mcp.server.routes/refresh-tools!) ctx-atom)))))
+          (let [ctx-atom (some-> (requiring-resolve 'hive-mcp.server.core/server-context-atom)
+                                 deref)
+                out      (if (and ctx-atom @ctx-atom)
+                           ((requiring-resolve 'hive-mcp.server.routes/refresh-tools!) ctx-atom)
+                           ((requiring-resolve 'hive-mcp.server.routes/refresh-surfaces!)))]
+            (when (seq (:surfaces out)) out))))
+
+(defn refresh-agent-tools!
+  "Re-seat the agent-delegation registry from the advertised table. Returns
+   its tool count, nil when it could not be reached."
+  []
+  (rescue nil ((requiring-resolve 'hive-mcp.agent.registry/refresh!))))
 
 (defn refresh-surface!
   "Bring the advertised surface up to date after a contribution to
    `tool-name` (nil: no composite to rebuild): rebuild its composite, re-drain
-   schema-extensions, refresh the server's tool table. Each leg is rescued on
-   its own; returns what each did."
+   schema-extensions, refresh every tool surface and the delegation registry
+   from the one table. Each leg is rescued on its own; returns what each did."
   [tool-name]
   {:composite    (some? (rescue nil (rebuild-composite! tool-name)))
    :schema-tools (rescue [] (redrain-schema-extensions!))
-   :server-tools (refresh-server-tools!)})
+   :server-tools (refresh-server-tools!)
+   :agent-tools  (refresh-agent-tools!)})
+
+(defn on-contribution
+  "The contribution listener: bring the surface up to date for the tool the
+   EVENT names. Registered BY VAR (see `install!`)."
+  [{:keys [type tool-name addon-id]}]
+  (let [out (refresh-surface! tool-name)]
+    (log/debug "Contribution reached the surface"
+               {:type type :tool tool-name :addon addon-id :refresh out})))
+
+(defn contribution-listener
+  "The listener `install!` registers: resolves `on-contribution` BY SYMBOL on
+   every event and calls whatever is interned there now.
+
+   Holding the var is not enough. hive-hot's core reload unloads a namespace
+   and loads it afresh, which interns NEW vars, while the listener table (a
+   defonce in hive-mcp.extensions.registry) keeps whatever it was given. A
+   registered var would still point at the unloaded namespace's code; a
+   symbol lookup per call always reaches the live one."
+  [event]
+  ((requiring-resolve `on-contribution) event))
 
 (defn install!
-  "Subscribe to the registry's contribution events. Idempotent.
+  "Subscribe to the registry's contribution events. Idempotent by id.
    Returns the listener id, as it always has.
+
+   The listener is `contribution-listener`, which reaches `on-contribution`
+   through its symbol on every call, never a fn value captured here: the
+   listener table outlives a core reload, so a captured value would keep
+   running the OLD code.
 
    Two things are subscribed, not one. The facade's own listener list is what
    a contribution through hive-mcp.extensions.registry notifies. The hive-addon
@@ -95,12 +135,7 @@
    would never rebuild. Arming it here, at install time, is what makes the
    migration safe to perform one addon at a time."
   []
-  (let [id (ext/add-contribution-listener!
-            :reactive-surface
-            (fn [{:keys [type tool-name addon-id]}]
-              (let [out (refresh-surface! tool-name)]
-                (log/debug "Contribution reached the surface"
-                           {:type type :tool tool-name :addon addon-id :refresh out}))))]
+  (let [id (ext/add-contribution-listener! :reactive-surface #'contribution-listener)]
     (rescue nil (ext/ensure-seam-listener!))
     id))
 

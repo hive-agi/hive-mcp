@@ -19,11 +19,12 @@
    slot. Datalevin (LMDB) has no .ksv.new -> .ksv rename race that corrupts
    konserve+datahike under the 51-scope concurrent scan fan-out."
   (:require [hive-di.core :as di]
-            [hive-di.source :as src]))
+            [hive-di.source :as src]
+            [hive-mcp.config.path :as config-path]))
 
-(def ^:const config-edn-path
+(def config-edn-path
   "Canonical hive-mcp config file. Each field's :file source reads from here."
-  (str (System/getProperty "user.home") "/.config/hive-mcp/config.edn"))
+  config-path/config-path)
 
 (def ^:const default-db-path
   "XDG-conformant default. Symmetric with Datahike default — pick the

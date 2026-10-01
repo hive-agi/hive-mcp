@@ -81,8 +81,48 @@
     (is (= {:type "boolean"} (get (ext/get-schema-extensions "code") "late_param"))
         "the advertised schema follows the addon's CURRENT schema-extensions")))
 
+(deftest a-re-drained-schema-is-owned-by-its-addon
+  (testing "params re-drained for an addon are filed under ITS id, so retracting that owner withdraws them"
+    (let [exts (atom {"code" {"probe_param" {:type "string"}}})]
+      (addon-core/register-addon! (schema-addon "probe.owned" exts))
+      (addon-core/init-addon! "probe.owned")
+      (reset! exts {"code" {"probe_param" {:type "string"}
+                            "late_param"  {:type "boolean"}}})
+      (is (= ["code"] (reactive/redrain-schema-extensions!)))
+      (is (= {:type "boolean"} (get (ext/get-schema-extensions "code") "late_param")))
+      (ext/retract-schemas-by-owner! "probe.owned")
+      (is (nil? (get (ext/get-schema-extensions "code") "late_param"))
+          "an anonymous (default-owner) registration would have survived this retraction")
+      (is (nil? (get (ext/get-schema-extensions "code") "probe_param"))))))
+
 (deftest refresh-surface-without-a-server-reports-what-it-could-do
   (let [out (reactive/refresh-surface! "analysis")]
     (is (false? (:composite out)) "nothing contributed, nothing to build")
     (is (vector? (:schema-tools out)))
     (is (nil? (:server-tools out)) "no server context in a unit test")))
+
+(defn- installed-listener []
+  (get @@#'ext/contribution-listeners :reactive-surface))
+
+(deftest the-listener-is-registered-by-var
+  (testing "install! registers the symbol-resolving trampoline by VAR, never a closure"
+    (reactive/install!)
+    (is (identical? #'reactive/contribution-listener (installed-listener))))
+  (testing "install! is idempotent by id"
+    (reactive/install!)
+    (reactive/install!)
+    (is (= 1 (count (filter #{:reactive-surface} (keys @@#'ext/contribution-listeners)))))))
+
+(deftest a-rebound-listener-runs-without-reinstalling
+  (testing "what a core reload does to the var (rebind its root) reaches the next contribution"
+    (reactive/install!)
+    (let [seen     (atom [])
+          original @#'reactive/on-contribution]
+      ;; Rebinding the root is exactly the effect of reloading the namespace;
+      ;; install! is NOT called again.
+      (alter-var-root #'reactive/on-contribution (constantly #(swap! seen conj (:tool-name %))))
+      (try
+        (ext/contribute-commands! "overarch" :probe.rebind {"probe" {:handler identity}})
+        (is (= ["overarch"] @seen))
+        (finally
+          (alter-var-root #'reactive/on-contribution (constantly original)))))))

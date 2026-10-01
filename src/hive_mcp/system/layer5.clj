@@ -36,13 +36,14 @@
 (defmethod ig/init-key :hive/hot-reload
   [_ config]
   (log/info ":hive/hot-reload init — starting hot-reload watcher" config)
-  ;; server-context-atom is needed for MCP auto-heal after reload.
-  ;; We create a local atom here — :hive/mcp-stdio will populate it later.
-  (let [server-context-atom (atom nil)
-        project-config      (lifecycle/read-project-config)]
+  ;; The auto-heal listener reads THE server context (server.core's
+  ;; server-context-atom) through its var on every reload event; nothing is
+  ;; captured here. The component hands that same atom to :hive/mcp-stdio,
+  ;; which wires its context into it (nil when server.core is not loaded).
+  (let [project-config (lifecycle/read-project-config)]
     (result/rescue nil
-      (init/init-hot-reload-watcher! server-context-atom project-config))
-    {:server-context-atom server-context-atom
+      (init/init-hot-reload-watcher! project-config))
+    {:server-context-atom (init/server-context-atom)
      :status              :running}))
 
 (defmethod ig/halt-key! :hive/hot-reload
@@ -169,6 +170,20 @@
 ;;   halt-key! is a no-op — keepalive handles shutdown signaling.
 ;; =============================================================================
 
+(def stdio-surface-id
+  "The id the stdio context's tool table is registered under as a live tool
+   surface (hive-mcp.server.routes/register-surface!)."
+  :mcp-stdio)
+
+(defn register-stdio-surface!
+  "Register CONTEXT's :tools atom as the :mcp-stdio tool surface, so every
+   refresh (reactive evict/activate as well as a hot reload) installs the one
+   advertised table into it. REGISTER! is routes/register-surface!, injected
+   for tests. Returns the surface id, nil when the context has no :tools atom."
+  [register! context]
+  (when-let [tools-atom (:tools context)]
+    (register! stdio-surface-id {:surface/kind :tools-atom :surface/tools-atom tools-atom})))
+
 (defmethod ig/init-key :hive/mcp-stdio
   [_ {:keys [hot-reload] :as _config}]
   (log/info ":hive/mcp-stdio init — building MCP server spec and starting stdio server")
@@ -177,6 +192,7 @@
         (try
           (let [;; Require at init time — these may not be loaded in K8s profiles
                 routes-ns   (requiring-resolve 'hive-mcp.server.routes/build-server-spec)
+                register!   (requiring-resolve 'hive-mcp.server.routes/register-surface!)
                 io-server   (requiring-resolve 'io.modelcontext.clojure-sdk.stdio-server/stdio-server)
                 create-ctx! (requiring-resolve 'io.modelcontext.clojure-sdk.server/create-context!)
                 start!      (requiring-resolve 'jsonrpc4clj.server/start)
@@ -188,6 +204,8 @@
             (when-let [ctx-atom (:server-context-atom hot-reload)]
               (reset! ctx-atom context)
               (log/info ":hive/mcp-stdio — server context wired to :hive/hot-reload"))
+            ;; One live tool surface: reactive refreshes reach stdio from boot on.
+            (register-stdio-surface! register! context)
             ;; Start JSON-RPC server — returns a join promise (derefable)
             (let [join (start! server context)]
               (log/info ":hive/mcp-stdio — stdio server started, server-id:" server-id)
@@ -207,6 +225,8 @@
     ;; keepalive delivering :shutdown (which races the join promise).
     ;; We don't System/exit here — that's the caller's decision.
     (result/rescue nil
+      (when-let [unregister! (requiring-resolve 'hive-mcp.server.routes/unregister-surface!)]
+        (unregister! stdio-surface-id))
       (when-let [ch (:log-ch state)]
         (async/close! ch))
       (log/info ":hive/mcp-stdio halted"))))

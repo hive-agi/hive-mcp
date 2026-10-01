@@ -145,18 +145,27 @@
 ;; :hive/extensions — Classpath addon discovery + self-registration
 ;; =============================================================================
 
+(defn discovery-mode
+  "Addon discovery the :hive/extensions CONFIG asks for: :classpath (the
+   default, every META-INF/hive-addons manifest) or :none (core only)."
+  [config]
+  (get config :discover :classpath))
+
 (defmethod ig/init-key :hive/extensions
-  [_ _config]
-  (log/info ":hive/extensions init — loading classpath extensions + addon discovery")
-  (let [{:keys [ok? result]}
-        (try {:ok? true :result (init/load-extensions!)}
-             (catch Throwable t
-               (log/warn t ":hive/extensions load-extensions! threw (non-fatal) — some addons may be missing")
-               {:ok? false :result nil}))]
-    {:status     (if ok? :running :failed)
-     :registered (:registered result)
-     :total      (:total result)
-     :sources    (:sources result)}))
+  [_ config]
+  (if (= :none (discovery-mode config))
+    (do (log/info ":hive/extensions init — addon discovery off (:discover :none), core only")
+        {:status :bare :registered 0 :total 0 :sources []})
+    (do (log/info ":hive/extensions init — loading classpath extensions + addon discovery")
+        (let [{:keys [ok? result]}
+              (try {:ok? true :result (init/load-extensions!)}
+                   (catch Throwable t
+                     (log/warn t ":hive/extensions load-extensions! threw (non-fatal) — some addons may be missing")
+                     {:ok? false :result nil}))]
+          {:status     (if ok? :running :failed)
+           :registered (:registered result)
+           :total      (:total result)
+           :sources    (:sources result)}))))
 
 (defmethod ig/halt-key! :hive/extensions
   [_ state]

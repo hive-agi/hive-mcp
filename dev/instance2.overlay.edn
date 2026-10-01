@@ -1,0 +1,11 @@
+;; instance2 config overlay, deep-merged OVER dev/test-sandbox.config.edn by
+;; bin/instance2.sh. The sandbox template disables or redirects every live
+;; service; this overlay turns back on only what instance 2 is for: its own
+;; nREPL and MCP-HTTP (ports are merged in by the launcher per instance) and
+;; the addon lifecycle (evict / activate).
+;;
+;; The lifecycle gate reads SERVICE config, i.e. [:services :addons], not a
+;; top-level :addons key (hive-mcp.extensions.loader, lifecycle gate).
+{:services {:nrepl    {:mode :local}
+            :mcp-http {:mode :local :enabled true :bind "127.0.0.1"}
+            :addons   {:lifecycle {:enabled? true}}}}

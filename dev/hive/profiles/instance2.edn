@@ -1,0 +1,29 @@
+;; instance2 profile: a lightweight, pokeable second hive-mcp.
+;;
+;; Booted by bin/instance2.sh inside a sandbox (-Duser.home, cwd = sandbox),
+;; beside the live server. It keeps what the reloadable-core seam exercises:
+;; extensions (addons), hot-reload, the tool table and an nREPL to drive it,
+;; plus MCP over HTTP so its surface can be read as a client sees it. Every
+;; transport the live server owns (stdio, 9998/9999/7911 channels, olympus,
+;; nats, swarm sync) is removed, so the two can never contend for a port or
+;; a store. Ports are per instance: the launcher sets them in config.edn and
+;; the HIVE_MCP_NREPL_PORT / HIVE_MCP_HTTP_PORT env.
+;;
+;; Lives under dev/ (on the :dev classpath) so no production artifact ships it.
+;; Keys set to nil are removed (hive-mcp.server.core/load-system-config).
+{:hive/mcp-http         {:enabled true}
+
+ :hive/mcp-stdio        nil
+ :hive/keepalive        nil
+ :hive/legacy-channel   nil
+ :hive/ws-channel       nil
+ :hive/channel-bridge   nil
+ :hive/olympus          nil
+ :hive/a2a-gateway      nil
+ :hive/websocket-mcp    nil
+ :hive/nats             nil
+ :hive/swarm-sync       nil
+ :hive/registry-sync    nil
+ :hive/forge-belt       nil
+ :hive/decay-scheduler  nil
+ :hive/housekeeping     nil}
