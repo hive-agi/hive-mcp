@@ -27,7 +27,9 @@
       (cond-> base
         (:slave/parent agent-data) (assoc :parent (:slave/parent agent-data))
         (:slave/presets agent-data) (assoc :presets (:slave/presets agent-data))
-        (:slave/created-at agent-data) (assoc :created-at (:slave/created-at agent-data))))))
+        (:slave/created-at agent-data) (assoc :created-at (:slave/created-at agent-data))
+        (:slave/orphan-reason agent-data) (assoc :reason (:slave/orphan-reason agent-data))
+        (:slave/last-event-at agent-data) (assoc :last-event-at (:slave/last-event-at agent-data))))))
 
 (defn format-agents
   "Format a list of agents for response."
