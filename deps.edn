@@ -247,9 +247,9 @@
                 com.clojure-goes-fast/jvm-alloc-rate-meter {:mvn/version "0.1.4"}
                 com.clojure-goes-fast/clj-async-profiler {:mvn/version "1.8.0"}}
    ;; Heap cap + G1GC tuning, string dedup, bounded core.async pool, Netty
-   ;; access, Proximum HNSW SIMD. -Xmx6g hard cap; SoftMaxHeapSize=4g soft-caps
+   ;; access, Proximum HNSW SIMD. -Xmx10g hard cap; SoftMaxHeapSize=8g soft-caps
    ;; the peak; ratio flags + periodic GC return idle RSS to the OS.
-   :jvm-opts ["-Xmx6g"
+   :jvm-opts ["-Xmx10g"
               "-Xms2g"
               "-XX:+UseG1GC"
               "-XX:MaxGCPauseMillis=200"
@@ -278,9 +278,9 @@
               ;; not ephemeral dev REPLs, which would collide on the singleton
               ;; recording and write junk .jfr files.
               ;; --- RSS containment ---
-              ;; SoftMaxHeapSize makes G1 treat 4g as a soft ceiling and
+              ;; SoftMaxHeapSize makes G1 treat 8g as a soft ceiling and
               ;; uncommit toward it, returning RSS to the OS between peaks;
-              ;; -Xmx6g stays the hard cap. ParallelRefProc speeds SoftRef
+              ;; -Xmx10g stays the hard cap. ParallelRefProc speeds SoftRef
               ;; clearing.
               ;;
               ;; ExplicitGCInvokesConcurrent is DELIBERATELY OFF. It is not a
@@ -292,7 +292,7 @@
               ;;   +ExplicitGCInvokesConcurrent  committed 780MB -> 1700MB (grew)
               ;;   -ExplicitGCInvokesConcurrent  committed 780MB ->  256MB
               ;; Cost: that sweep's GC becomes a full STW pause (~1s at this heap).
-              "-XX:SoftMaxHeapSize=4g"
+              "-XX:SoftMaxHeapSize=8g"
               "-XX:+ParallelRefProcEnabled"
               "-XX:-ExplicitGCInvokesConcurrent"]}
 
@@ -308,9 +308,9 @@
                 com.clojure-goes-fast/jvm-alloc-rate-meter {:mvn/version "0.1.4"}
                 com.clojure-goes-fast/clj-async-profiler {:mvn/version "1.8.0"}}
    ;; Heap cap + G1GC tuning, string dedup, bounded core.async pool, Netty
-   ;; access, Proximum HNSW SIMD. -Xmx6g hard cap; SoftMaxHeapSize=4g soft-caps
+   ;; access, Proximum HNSW SIMD. -Xmx10g hard cap; SoftMaxHeapSize=8g soft-caps
    ;; the peak; ratio flags + periodic GC return idle RSS to the OS.
-   :jvm-opts ["-Xmx6g"
+   :jvm-opts ["-Xmx10g"
               "-Xms2g"
               "-XX:+UseG1GC"
               "-XX:MaxGCPauseMillis=200"
@@ -339,16 +339,16 @@
               ;; not ephemeral dev REPLs, which would collide on the singleton
               ;; recording and write junk .jfr files.
               ;; --- RSS containment ---
-              ;; SoftMaxHeapSize makes G1 treat 4g as a soft ceiling and
+              ;; SoftMaxHeapSize makes G1 treat 8g as a soft ceiling and
               ;; uncommit toward it, returning RSS to the OS between peaks;
-              ;; -Xmx6g stays the hard cap. ParallelRefProc speeds SoftRef
+              ;; -Xmx10g stays the hard cap. ParallelRefProc speeds SoftRef
               ;; clearing.
               ;;
               ;; ExplicitGCInvokesConcurrent is DELIBERATELY OFF — see the
               ;; :prod alias above. housekeeping's (.gc runtime) sweep cannot
               ;; uncommit while it is on; measured 780MB -> 1700MB (grew) with
               ;; it, 780MB -> 256MB without.
-              "-XX:SoftMaxHeapSize=4g"
+              "-XX:SoftMaxHeapSize=8g"
               "-XX:+ParallelRefProcEnabled"
               "-XX:-ExplicitGCInvokesConcurrent"]
    ;; Same main as the container. The system's :hive/nrepl component is the
