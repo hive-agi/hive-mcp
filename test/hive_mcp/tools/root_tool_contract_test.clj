@@ -3,7 +3,7 @@
    (hive-addon.tool-contract): every core tool satisfies the contract, and both
    entry points to the root refuse one that does not."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
-            [hive-addon.tool-contract.test :refer [deftest-root-tools]]
+            [hive-addon.tool-contract.test :refer [assert-root-tools]]
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.server.routes :as routes]
             [hive-mcp.tools.registry :as registry]))
@@ -19,8 +19,8 @@
     (ext/deregister-tool! probe-name)
     (try (f) (finally (ext/deregister-tool! probe-name)))))
 
-(deftest-root-tools every-core-tool-satisfies-the-root-contract
-  (registry/core-tools))
+(deftest every-core-tool-satisfies-the-root-contract
+  (assert-root-tools (registry/core-tools)))
 
 (def ^:private conforming
   {:name        probe-name
