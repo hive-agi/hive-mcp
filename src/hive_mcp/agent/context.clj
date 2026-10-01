@@ -104,6 +104,34 @@
   []
   (:caller-id *request-ctx*))
 
+(def coordinator-role
+  "The agent id every coordinator session shares: a role, not an identity."
+  "coordinator")
+
+(defn session-agent-id
+  "The id a request speaks as, from its `agent-id` and its `caller-id`.
+
+   A specific agent id wins. A blank one, or the bare coordinator role,
+   resolves to the caller id when the transport supplied one, so each
+   coordinator session answers as its own `coordinator:<session>`. With no
+   caller id the agent id is returned as given, nil when blank."
+  [agent-id caller-id]
+  (let [present (fn [s] (when (and (string? s) (not (.isBlank ^String s))) s))
+        agent   (present agent-id)
+        caller  (present caller-id)]
+    (if (and caller (or (nil? agent) (= coordinator-role agent)))
+      caller
+      agent)))
+
+(defn current-session-agent-id
+  "`session-agent-id` of the request in flight. `args` may carry an explicit
+   `:agent_id` and the transport's `:_caller_id`; each falls back to the bound
+   request context."
+  ([] (current-session-agent-id nil))
+  ([args]
+   (session-agent-id (or (:agent_id args) (current-agent-id))
+                     (or (:_caller_id args) (current-caller-id)))))
+
 (defn current-timestamp
   "Get the request timestamp from execution context."
   []
@@ -176,3 +204,4 @@
        :keys (keys entries)})))
 
 (m/=> current-directory [:=> [:cat] [:maybe :string]])
+(m/=> session-agent-id [:=> [:cat [:maybe :string] [:maybe :string]] [:maybe :string]])
