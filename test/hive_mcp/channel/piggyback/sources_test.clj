@@ -199,5 +199,5 @@
 
 (deftest a-throwing-default-slot-is-rescued-test
   (testing "the pre-fix NPE shape: the slot source derefs a nil registry"
-    (pb/register-message-source! (fn [] @(:atom nil)))
+    (pb/register-message-source! (fn [] (throw (NullPointerException. "agent-registry is nil"))))
     (is (nil? (pb/get-messages "coordinator" :project-id "p")))))
