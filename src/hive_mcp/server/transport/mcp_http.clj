@@ -21,14 +21,21 @@
    tool SURFACE, so every refresh (inject, evict, activate, remount, core
    reload) installs the current advertised table into it. MCP-HTTP therefore
    serves the same table as every other transport, never the closures of the
-   addon instances that were live when it started."
+   addon instances that were live when it started.
+
+   tools/list is (re)installed as hive-mcp's filtering projection here, after
+   the SDK namespace is certainly loaded, so the SDK's unfiltered method can
+   never win by load order."
   []
   (let [build-spec   (requiring-resolve 'hive-mcp.server.routes/build-server-spec)
         register!    (requiring-resolve 'hive-mcp.server.routes/register-surface!)
         create-ctx!  (requiring-resolve 'io.modelcontext.clojure-sdk.server/create-context!)
+        install-list! (requiring-resolve 'hive-mcp.server.registration/install-tools-list!)
         sdk-dispatch (requiring-resolve 'hive-mcp.transport.mcp-http/sdk-dispatch)
         context      (create-ctx! (assoc (build-spec) :server-id (random-uuid)))]
     (register! surface-id {:surface/kind :tools-atom :surface/tools-atom (:tools context)})
+    (when-not (install-list!)
+      (log/warn "tools/list filter not installed; MCP-HTTP may advertise hidden tools"))
     (sdk-dispatch context)))
 
 (defn start-mcp-http!
