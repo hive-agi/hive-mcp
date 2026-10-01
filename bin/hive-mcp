@@ -6,6 +6,10 @@
 #   bin/hive-mcp --profile k8s-headless
 #   HIVE_PROFILE=k8s-minimal bin/hive-mcp
 #
+# Env knobs: HIVE_MCP_XMX (10g) HIVE_MCP_XMS (2g) HIVE_MCP_SOFT_MAX_HEAP (8g)
+#            MALLOC_ARENA_MAX (4) HIVE_MCP_SUPERVISE (1: restart on OOM kill)
+#            HIVE_MCP_MAX_RESTARTS (5) HIVE_MCP_RESTART_WINDOW (600s)
+#
 # Profile precedence: --profile flag > HIVE_PROFILE env > "desktop"
 #
 # Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -96,7 +100,58 @@ if fast_boot_requested; then
   fi
 fi
 
+# ── Memory budget ───────────────────────────────────────────────────
+# -J flags land after the alias :jvm-opts; the JVM honours the last one.
+# RSS ~= heap + 1.5-2.5 GB native (metaspace, threads, malloc arenas).
+HIVE_MCP_XMX="${HIVE_MCP_XMX:-10g}"
+HIVE_MCP_XMS="${HIVE_MCP_XMS:-2g}"
+HIVE_MCP_SOFT_MAX_HEAP="${HIVE_MCP_SOFT_MAX_HEAP:-8g}"
+export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-4}"
+
+JVM_ARGS=(-J-Xmx"$HIVE_MCP_XMX" -J-Xms"$HIVE_MCP_XMS"
+          -J-XX:SoftMaxHeapSize="$HIVE_MCP_SOFT_MAX_HEAP")
+
+# :mcp carries :exec-fn and no :main-opts, so -M needs an explicit -m.
+CMD=(clojure "${JVM_ARGS[@]}" "${SDEPS_ARG[@]}" -M"$ALIASES"
+     -m hive-mcp.server.core "${PASSTHROUGH_ARGS[@]}")
+
 # ── Launch ──────────────────────────────────────────────────────────
 cd "$PROJECT_DIR"
 
-exec clj "${SDEPS_ARG[@]}" -M"$ALIASES" "${PASSTHROUGH_ARGS[@]}"
+# 137 = SIGKILL (kernel OOM-killer), 3 = -XX:+ExitOnOutOfMemoryError.
+restartable_exit() { [[ "$1" == 137 || "$1" == 3 ]]; }
+
+if [[ "${HIVE_MCP_SUPERVISE:-1}" != "1" ]]; then
+  exec "${CMD[@]}"
+fi
+
+MAX_RESTARTS="${HIVE_MCP_MAX_RESTARTS:-5}"
+RESTART_WINDOW="${HIVE_MCP_RESTART_WINDOW:-600}"
+restarts=()
+child=""
+trap '[[ -n "$child" ]] && kill -TERM "$child" 2>/dev/null; wait "$child" 2>/dev/null; exit 143' INT TERM
+
+while true; do
+  "${CMD[@]}" &
+  child=$!
+  set +e
+  wait "$child"
+  code=$?
+  set -e
+  child=""
+  if ! restartable_exit "$code"; then
+    exit "$code"
+  fi
+  now=$SECONDS
+  recent=()
+  for t in "${restarts[@]}"; do
+    (( now - t < RESTART_WINDOW )) && recent+=("$t")
+  done
+  restarts=("${recent[@]}" "$now")
+  if (( ${#restarts[@]} > MAX_RESTARTS )); then
+    echo "hive-mcp: exit $code, $MAX_RESTARTS restarts within ${RESTART_WINDOW}s, giving up" >&2
+    exit "$code"
+  fi
+  echo "hive-mcp: exit $code (OOM) at $(date -Is), restart ${#restarts[@]}/$MAX_RESTARTS in 5s" >&2
+  sleep 5
+done
