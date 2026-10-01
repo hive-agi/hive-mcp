@@ -229,7 +229,8 @@
         ks     (set (keys config))]
     (testing "K8s-minimal removes stdio, legacy, ws-channel, olympus, hot-reload, registry-sync"
       (let [excluded #{:hive/mcp-stdio :hive/legacy-channel :hive/ws-channel
-                       :hive/olympus :hive/hot-reload :hive/registry-sync}]
+                       :hive/olympus :hive/hot-reload :hive/addon-hot
+                       :hive/registry-sync}]
         (doseq [k excluded]
           (is (not (contains? ks k)) (str k " should be excluded in k8s-minimal")))))
     (testing "K8s-minimal enables A2A gateway"
@@ -343,8 +344,9 @@
             minimal-sys (do (core/start! :profile :k8s-minimal) @core/system)
             _           (core/stop!)]
         (is (< (count minimal-sys) (count desktop-sys)))
-        ;; k8s-minimal excludes 6 keys from base
-        (is (<= (- (count desktop-sys) (count minimal-sys)) 6))))))
+        ;; k8s-minimal excludes 7 keys from base (:hive/addon-hot rides
+        ;; out with :hive/hot-reload)
+        (is (<= (- (count desktop-sys) (count minimal-sys)) 7))))))
 
 ;; =============================================================================
 ;; Reset! — full dev cycle (init -> halt -> init)

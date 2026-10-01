@@ -234,6 +234,19 @@
     (and (not (identical? c now))
          (= (.getName ^Class c) (.getName ^Class now)))))
 
+(defn stale-mount-host?
+  "Does HOST carry a mount host built from an earlier AddonRegistryHost (what
+   a reload of hive-mcp.extensions.mount-host leaves)? Then it lacks the
+   plug-out capability extended onto the current class."
+  [host]
+  (let [mh (:mount-host host)]
+    (and (some? mh) (not (identical? mh (mount-host/current mh))))))
+
+(defn needs-reseat?
+  "Is anything in HOST's record graph stale: the host itself or its mount host?"
+  [host]
+  (or (stale-host? host) (stale-mount-host? host)))
+
 (defn rebuild-host
   "HOST's fields in a host built by the current constructor. Its mount host is
    brought current too (hive-mcp.extensions.mount-host/current), so a reload
@@ -307,17 +320,21 @@
     (narrow-reseat! mgr)))
 
 (defn reseat-host!
-  "Re-seater for hive-mcp.hot.reseat: when the installed manager's host is
-   stale, re-seat it (`reseat-installed!`). Answers what it did."
+  "Re-seater for hive-mcp.hot.reseat: when the installed manager's host, or
+   the mount host under it, is stale, re-seat it (`reseat-installed!`, which
+   goes through hive-addon.lifecycle/reseat-host!: the SAME manager state on a
+   new host, never a rebuilt manager). Answers what it did."
   [_loaded]
   (let [mgr (lc/installed-manager)]
     (cond
-      (nil? mgr)                      {:reseated? false :reason :no-manager}
-      (not (stale-host? (:host mgr))) {:reseated? false :reason :current}
-      :else                           (reseat-installed! mgr))))
+      (nil? mgr)                        {:reseated? false :reason :no-manager}
+      (not (needs-reseat? (:host mgr))) {:reseated? false :reason :current}
+      :else                             (reseat-installed! mgr))))
 
-(reseat/register-reseater! 'hive-mcp.extensions.lifecycle
-                           (reseat/via-var `reseat-host!))
+;; Both namespaces define a record the installed host holds: a reload of
+;; either leaves a stale instance only this re-seater can replace.
+(doseq [n '[hive-mcp.extensions.lifecycle hive-mcp.extensions.mount-host]]
+  (reseat/register-reseater! n (reseat/via-var `reseat-host!)))
 
 ;; =============================================================================
 ;; Boot

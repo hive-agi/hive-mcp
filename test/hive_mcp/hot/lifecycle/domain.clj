@@ -69,6 +69,13 @@
    [:op/addon AddonId]
    [:op/cascade? {:optional true} boolean?]])
 
+;; unmount is eject on the railway (hive-addon plug-out!): same op shape.
+(defmethod op-variant :unmount [_]
+  [:map
+   [:op/kind [:= :unmount]]
+   [:op/addon AddonId]
+   [:op/cascade? {:optional true} boolean?]])
+
 (defn Op
   "One thing done to a host: the :multi over every registered `op-variant`,
    dispatching on :op/kind. A function, not a def, so it is never frozen at

@@ -56,6 +56,10 @@
 
  ;; ── Layer 5: Hot-reload, Schedulers, Stdio ───────────────────────────
  :hive/hot-reload      {:extensions #ig/ref :hive/extensions}
+ ;; Initializes hive-hot ONCE with every mounted addon's source dirs and
+ ;; registers each reloadable addon as a component. No watcher (that stays
+ ;; with :hive/hot-reload and the project's :hot-reload flag).
+ :hive/addon-hot       {:extensions #ig/ref :hive/extensions}
 
  :hive/registry-sync   {:swarm-sync #ig/ref :hive/swarm-sync}
 

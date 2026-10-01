@@ -278,3 +278,34 @@
     (is (or (nil? r) (var? r))
         "a var (reaches what is interned there now) or nil, never a captured fn value")
     (is (= (some? (resolve 'hive-addon.lifecycle/reseat-host!)) (some? r)))))
+
+;; =============================================================================
+;; A reload of the mount-host namespace alone is re-seated too, through
+;; hive-addon.lifecycle/reseat-host!: same manager state, never a rebuild.
+;; =============================================================================
+
+(deftest a-reload-of-the-mount-host-namespace-reseats-through-hive-addon
+  (if-not (try (requiring-resolve 'hive-addon.lifecycle/reseat-host!) (catch Throwable _ nil))
+    (is true "skipped: this hive-addon predates reseat-host!")
+    (let [log (atom [])
+          mh  (recording-mount-host log "x" {:success? true})
+          h   (lcm/->McpLifecycleHost mh (constantly {}) (constantly nil))
+          mgr (lc/manager {:host h :specs [] :reload-ns! (fn [_ _] nil)})]
+      (lc/install! mgr)
+      (is (= {:reseated? false :reason :current} (lcm/reseat-host! [])))
+      (require 'hive-mcp.extensions.mount-host :reload)
+      (is (lcm/stale-mount-host? (:host (lc/installed-manager))) "the mount host is the OLD class")
+      (is (not (lcm/stale-host? (:host (lc/installed-manager)))) "while the lifecycle host is current")
+      (let [report (some #(when (= "hive-mcp.extensions.mount-host" (:ns %)) %)
+                         (reseat/reseat! ["hive-mcp.extensions.mount-host"]))
+            mgr'   (lc/installed-manager)
+            mh'    (:mount-host (:host mgr'))]
+        (is (= :hive-addon (get-in report [:result :via])) "hive-addon's reseat-host! did it")
+        (is (true? (get-in report [:result :reseated?])))
+        (is (not (lcm/stale-mount-host? (:host mgr'))))
+        (is (= (into {} mh) (into {} mh')) "every registry seam carried over")
+        (is (identical? (:states mgr) (:states mgr')) "the manager state is the same, not rebuilt")
+        (is (identical? (:specs mgr) (:specs mgr')))
+        (testing "the reseated mount host plugs out (IMountUnregister on the current class)"
+          (is (= {:unregistered ["x"] :unsupported [] :errors []}
+                 (mount-host/unregister! mh' ["x"]))))))))
