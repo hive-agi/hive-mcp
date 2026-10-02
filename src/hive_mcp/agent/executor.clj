@@ -9,6 +9,7 @@
             [clojure.data.json :as json]
             [taoensso.timbre :as log]
             [hive-mcp.channel.task-signal :as task-signal]
+            [hive-mcp.agent.grant :as grant]
             [hive-mcp.channel.activation :as activation]))
 
 #_{:clj-kondo/ignore [:deprecated-var]}
@@ -37,17 +38,32 @@
                                 :timeout-ms 60000)]
     (= "yes" (:decision response))))
 
+(defn- grant-refusal
+  "The grant gate on the delegation path (headless lings call raw handlers
+   here, outside the route middleware). Keys on the request context's caller
+   id, bound by the loop that runs the ling, never on tool arguments: the
+   model-written `agent_id` is not read. No bound caller = no gate."
+  [tool-name arguments]
+  (when-let [caller (some-> (ctx/current-caller-id) str not-empty)]
+    (when (grant/recorded-grant grant/registry-get-slave caller)
+      (grant/call-refusal (grant/domain) grant/registry-get-slave caller tool-name
+                          (or (get arguments :command) (get arguments "command"))))))
+
 (defn execute-tool
-  "Execute a tool by name with arguments."
+  "Execute a tool by name with arguments. A call the caller's grant does not
+   permit is refused before the handler runs."
   [tool-name arguments]
   (if-let [tool (registry/get-tool tool-name)]
-    (let [result (r/try-effect* :agent/tool-execution-failed
-                                (let [handler (:handler tool)]
-                                  (handler arguments)))]
-      (if (r/ok? result)
-        {:success true :result (:ok result)}
-        (do (log/error "Tool execution failed:" tool-name {:error (:message result)})
-            {:success false :error (:message result)})))
+    (if-let [no (grant-refusal tool-name arguments)]
+      (do (log/warn "grant: refused a delegated tool call" {:tool tool-name})
+          {:success false :error no})
+      (let [result (r/try-effect* :agent/tool-execution-failed
+                                  (let [handler (:handler tool)]
+                                    (handler arguments)))]
+        (if (r/ok? result)
+          {:success true :result (:ok result)}
+          (do (log/error "Tool execution failed:" tool-name {:error (:message result)})
+              {:success false :error (:message result)}))))
     {:success false :error (str "Unknown tool: " tool-name)}))
 
 (defn format-tool-result
@@ -93,7 +109,7 @@
   ([agent-id tool-calls permissions]
    (execute-tool-calls agent-id tool-calls permissions nil))
   ([agent-id tool-calls permissions {:keys [project-id] :as opts}]
-   (ctx/with-request-context {:agent-id agent-id :project-id project-id}
+   (ctx/with-request-context {:agent-id agent-id :caller-id agent-id :project-id project-id}
      (let [all-results (mapv (fn [{:keys [id name arguments]}]
                                (let [approved? (or (not (requires-approval? name permissions))
                                                    (request-approval! agent-id name arguments))]

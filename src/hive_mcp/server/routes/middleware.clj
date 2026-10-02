@@ -383,10 +383,7 @@
   "1-arg port: registry row for a slave id, the lineage the grant gate walks.
    Resolved late (the swarm registry is wired after the routes load); a
    missing registry reads as no row, so nothing is gated. Rebound by tests."
-  (fn [id]
-    (when-let [f (try (requiring-resolve 'hive-mcp.swarm.datascript.queries/get-slave)
-                      (catch Throwable _ nil))]
-      (try (f id) (catch Throwable _ nil)))))
+  grant/registry-get-slave)
 
 (def ^:dynamic *grant-domain*
   "0-arg port: the grant domain (hive-mcp.agent.grant/domain). Rebound by tests."
@@ -404,10 +401,9 @@
    credentials are verified, so this stops mistakes, not a hostile child."
   [handler tool-name]
   (fn [args]
-    (let [caller (or (some-> (:_caller_id args) str not-empty)
-                     (id/extract-agent-id args nil))
+    (let [caller (some-> (:_caller_id args) str not-empty)
           get-slave *grant-get-slave*
-          no (when (grant/recorded-grant get-slave caller)
+          no (when (and caller (grant/recorded-grant get-slave caller))
                (grant/call-refusal (*grant-domain*) get-slave caller tool-name (:command args)))]
       (if no
         (do (log/warn "grant: refused a tool call" {:tool tool-name :command (:command args) :caller caller})

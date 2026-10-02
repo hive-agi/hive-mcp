@@ -45,6 +45,15 @@
             :->wire    (soft 'hive-agent.loop.grant/->wire)}]
     (when (every? some? (vals fs)) fs)))
 
+(defn registry-get-slave
+  "The live registry port: the swarm row for `id`, or nil. Resolved late (the
+   swarm registry is wired after this namespace loads); a missing registry
+   reads as no row, so nothing is gated. The only effectful fn here; every
+   check below takes the port as a parameter."
+  [id]
+  (when-let [f (soft 'hive-mcp.swarm.datascript.queries/get-slave)]
+    (try (f id) (catch Throwable _ nil))))
+
 ;; =============================================================================
 ;; Lineage (pure over get-slave)
 ;; =============================================================================

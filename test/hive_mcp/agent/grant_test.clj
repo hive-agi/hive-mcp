@@ -9,6 +9,9 @@
             [hive-mcp.server.routes.middleware :as mw]
             [hive-mcp.tools.agent.spawn :as spawn]
             [hive-mcp.agent.protocol :as proto]
+            [hive-mcp.agent.executor :as executor]
+            [hive-mcp.agent.registry]
+            [hive-mcp.agent.context :as proto-ctx]
             [hive-mcp.agent.openrouter :as llm-registry]))
 
 ;; =============================================================================
@@ -117,7 +120,31 @@
           (is (:isError c))
           (is (str/includes? (:text c) "memory:add"))
           (is (str/includes? (:text c) "hivemind ask"))))
-      (is (= 1 @called)))))
+      (testing "the model-written agent_id is never the identity the gate keys on"
+        (let [[c] (h {:_caller_id "ling-a:bb" :agent_id "coordinator:s1" :command "add"})]
+          (is (:isError c) "naming another agent does not lift the caller's grant"))
+        (let [[c] (h {:agent_id "ling-a" :command "add"})]
+          (is (= "ran" (:text c)) "agent_id alone does not make a call gated as that agent")))
+      (is (= 2 @called)))))
+
+(deftest executor-gate
+  (let [called (atom 0)
+        rows {"ling-a" {:slave/id "ling-a" :slave/grant {:tools ["kanban"]}}}
+        dom (domain)]
+    (with-redefs [hive-mcp.agent.registry/get-tool
+                  (fn [_] {:handler (fn [_] (swap! called inc) "ran")})
+                  grant/registry-get-slave (registry rows)
+                  grant/domain (constantly dom)]
+      (testing "no bound caller: ungated"
+        (is (:success (executor/execute-tool "memory" {:command "add"}))))
+      (testing "the bound caller's grant gates a delegated call"
+        (let [res (proto-ctx/with-request-context {:caller-id "ling-a"}
+                    (executor/execute-tool "memory" {:command "add" :agent_id "coordinator:s1"}))]
+          (is (false? (:success res)))
+          (is (str/includes? (:error res) "hivemind ask")))
+        (is (:success (proto-ctx/with-request-context {:caller-id "ling-a"}
+                        (executor/execute-tool "kanban" {:command "list"})))))
+      (is (= 2 @called)))))
 
 ;; =============================================================================
 ;; Spawn handler
@@ -131,7 +158,7 @@
       (binding [spawn/*get-slave* (registry rows)
                 spawn/*grant-domain* domain
                 spawn/*editor-reachable?* (constantly true)]
-        (let [res (spawn/handle-spawn (merge {:type "ling" :cwd "/tmp" :spawn_mode "headless"} params))]
+        (let [res (spawn/handle-spawn (merge {:type "ling" :cwd "/tmp" :spawn_mode "headless" :project_id "grant-test"} params))]
           {:res res :opts @captured})))))
 
 (defn- body [res]
