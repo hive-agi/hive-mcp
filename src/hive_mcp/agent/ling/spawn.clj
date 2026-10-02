@@ -17,7 +17,8 @@
             [hive-mcp.swarm.adapters.soft :as soft]
             [hive-mcp.swarm.claim.negotiate :as claim-negotiate]
             [hive-mcp.agent.ling.start-preflight :as start-preflight]
-            [hive-mcp.agent.grant :as grant]))
+            [hive-mcp.agent.grant :as grant]
+            [hive-mcp.agent.identity :as agent-identity]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -164,15 +165,26 @@
 (defn- spawn-opts
   "Build the spawn-opts passed to strategy-spawn!. Backend-agnostic: opts pass
    through (incl. any :system-prompt), with resolved preset-content and api-key
-   added. Each backend maps these to its own config."
-  [opts enriched-task {:keys [preset-content api-key]}]
-  (cond-> (if enriched-task
-            (assoc opts :task enriched-task)
-            opts)
-    (seq preset-content)
-    (assoc :preset-content preset-content)
-    api-key
-    (assoc :api-key api-key)))
+   added. Each backend maps these to its own config.
+
+   Identity: `credential` is the child's minted spawn credential (or nil).
+   It rides as :credential, and :env-extra is rebuilt by
+   `agent-identity/child-env`, so CLAUDE_SWARM_SLAVE_ID and
+   HIVE_AGENT_CREDENTIAL are set by the server and a caller's env-extra
+   cannot override either, whichever backend reads the env."
+  ([opts enriched-task inputs] (spawn-opts opts enriched-task inputs nil nil))
+  ([opts enriched-task {:keys [preset-content api-key]} ling-id credential]
+   (cond-> (if enriched-task
+             (assoc opts :task enriched-task)
+             opts)
+     (seq preset-content)
+     (assoc :preset-content preset-content)
+     api-key
+     (assoc :api-key api-key)
+     (or ling-id (seq (:env-extra opts)))
+     (assoc :env-extra (agent-identity/child-env (:env-extra opts) ling-id credential))
+     credential
+     (assoc :credential credential))))
 
 (defn- initial-slave-attrs
   [{:keys [depth parent presets cwd project-id kanban-task-id grant]} enriched-task]
@@ -317,15 +329,23 @@
    CRITICAL: For headless backends, strategy-spawn! triggers start! which fires
    the agentic loop immediately. The ling MUST exist in the spawn store before
    that happens, otherwise completion handlers hit a deregistration race (H2
-   fix)."
+   fix).
+
+   The child's spawn credential is minted after registration, from the same
+   parent, depth and grant the row records, and before the backend starts
+   the child, so its first tool call can already present it."
   [plan opts]
   (start-preflight/ensure-startable! (:mode plan) (:cwd plan))
   (let [{:keys [strat ctx]} plan
         enriched-task (enrich-task plan)
         headless-inputs (resolve-headless-inputs plan)
         headless? (:headless? headless-inputs)
-        spawn-opts (spawn-opts opts enriched-task headless-inputs)]
-    (register-requested-slave! plan enriched-task)
+        _ (register-requested-slave! plan enriched-task)
+        credential (agent-identity/mint-for-child {:agent-id  (:ling-id plan)
+                                                   :parent-id (:parent plan)
+                                                   :depth     (:depth plan)
+                                                   :grant     (:grant plan)})
+        spawn-opts (spawn-opts opts enriched-task headless-inputs (:ling-id plan) credential)]
     (let [slave-id (strategy/strategy-spawn! strat ctx spawn-opts)]
       (reconcile-spawned-slave! plan slave-id enriched-task)
       (stamp-spawn-metadata! plan slave-id headless?)

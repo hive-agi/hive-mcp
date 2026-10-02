@@ -24,7 +24,8 @@
             [hive-mcp.channel.activation :as activation]
             [hive-mcp.channel.blocks :as blocks]
             [hive-spi.guard.ports :as gp]
-            [hive-mcp.agent.grant :as grant])
+            [hive-mcp.agent.grant :as grant]
+            [hive-mcp.agent.identity :as agent-identity])
 (:import [java.util.concurrent RejectedExecutionException]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -103,24 +104,45 @@
 ;; Context Binding
 ;; =============================================================================
 
+(def ^:dynamic *identity-get-slave*
+  "1-arg port: registry row for a slave id, used to tell a spawned agent's
+   caller id from a coordinator's. Rebound by tests."
+  grant/registry-get-slave)
+
 (defn wrap-handler-context
-  "Bind request context: keywordize args, resolve identity, bind ctx vars.
+  "Bind request context: keywordize args, verify identity, resolve ids, bind
+   ctx vars.
+
    `:caller-id` is the transport's `:_caller_id`: the MCP session making the
    call, shared by its subagents, distinct per session even when every
-   session's agent-id is nil."
+   session's agent-id is nil.
+
+   Identity: the spawn credential the transport carries as
+   `:_caller_credential` is verified here (hive-mcp.agent.identity) and
+   STRIPPED from the args before anything else sees them, so no handler,
+   log line, transcript or piggyback ever holds it. The result is bound as
+   `:identity` in the request context. Under :enforce a request that claims a
+   registered spawned agent's id without a valid credential is refused here;
+   under :observe (the default) it is logged and counted and proceeds."
   [handler]
   (fn [args]
-    (let [args (walk/keywordize-keys args)]
-      (binding [ctx/*request-cache* (atom {})]
-        (let [agent-id (id/extract-agent-id args nil)
-              project-id (id/extract-project-id args)
-              directory (id/extract-directory args)]
-          (crystal/record-session-start! agent-id)
-          (ctx/with-request-context {:agent-id agent-id
-                                     :caller-id (:_caller_id args)
-                                     :project-id project-id
-                                     :directory directory}
-            (handler args)))))))
+    (let [raw-args (walk/keywordize-keys args)
+          {args :args who :identity decision :decision}
+          (agent-identity/verify-request! raw-args "mcp" *identity-get-slave*)]
+      (if-not (:allow? decision true)
+        [{:type "text" :isError true
+          :text (agent-identity/refusal-text decision (:caller-id who))}]
+        (binding [ctx/*request-cache* (atom {})]
+          (let [agent-id (id/extract-agent-id args nil)
+                project-id (id/extract-project-id args)
+                directory (id/extract-directory args)]
+            (crystal/record-session-start! agent-id)
+            (ctx/with-request-context {:agent-id agent-id
+                                       :caller-id (:_caller_id args)
+                                       :identity who
+                                       :project-id project-id
+                                       :directory directory}
+              (handler args))))))))
 
 
 ;; =============================================================================
@@ -401,7 +423,7 @@
    credentials are verified, so this stops mistakes, not a hostile child."
   [handler tool-name]
   (fn [args]
-    (let [caller (some-> (:_caller_id args) str not-empty)
+    (let [caller (some-> (or (ctx/current-verified-caller-id) (:_caller_id args)) str not-empty)
           get-slave *grant-get-slave*
           no (when (and caller (grant/recorded-grant get-slave caller))
                (grant/call-refusal (*grant-domain*) get-slave caller tool-name (:command args)))]
