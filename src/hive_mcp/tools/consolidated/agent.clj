@@ -136,6 +136,8 @@
                                              :description "[spawn] Chat-point headless backend only; refused elsewhere. Explicit chat-point run id to record this ling's history under (default: generated). Reported back by collect as chat_point.run_id, which is what resume.run_id takes."}
                               "sandbox" {:type "boolean"
                                          :description "[spawn] Headless lings: run the ling's tools inside the host sandbox (bwrap). bash/grep/clojure_eval run with no network, no host home and a clean environment; file tools stay below cwd; delegated host tools are refused unless allowlisted. Omitted = the host default ([:services :agent :sandbox] in config.edn). false opts out."}
+                              "grant" {:type "object"
+                                       :description "[spawn] Limit the child to a SUBSET of your own grant. Omit to share your grant unchanged. Keys (each optional; an omitted key is shared): tools (array of \"tool\" or \"tool:command\", or \"all\"), memory_read, memory_write, seal_kids, enclaves (arrays of names, or \"all\"), may_spawn (boolean), max_depth (lineage depth ceiling, coordinator = 0), budget_usd (number). A request wider than your grant is refused with a denial naming what was wider. The effective grant is returned in the response and in agent status."}
                               ;; common params
                               "agent_id" {:type "string"
                                           :description "Agent ID for status/kill/dispatch/claims"}

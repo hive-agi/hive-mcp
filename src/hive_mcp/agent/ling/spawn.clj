@@ -16,7 +16,8 @@
             [hive-mcp.tools.swarm.channel :as swarm-channel]
             [hive-mcp.swarm.adapters.soft :as soft]
             [hive-mcp.swarm.claim.negotiate :as claim-negotiate]
-            [hive-mcp.agent.ling.start-preflight :as start-preflight]))
+            [hive-mcp.agent.ling.start-preflight :as start-preflight]
+            [hive-mcp.agent.grant :as grant]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -35,7 +36,9 @@
 
 (defn- compute-spawn-plan
   "Pure computation: derive all spawn decisions from ling state and opts.
-   Returns a plan map with resolved mode, model, strategy, and context."
+   Returns a plan map with resolved mode, model, strategy, and context.
+   :grant is the effective grant (wire form) decided at the tool boundary,
+   or nil for an unrestricted child."
   [ling opts]
   (let [effective-model (or (:model opts) (:model ling))
         mode (lifecycle/resolve-effective-mode
@@ -57,6 +60,7 @@
      :ling-id (:id ling)
      :token-budget (:token-budget ling)
      :max-budget-usd (or (:max-budget-usd opts) (:max-budget-usd ling))
+     :grant (:grant opts)
      :task (:task opts)}))
 
 (defn- load-presets-content
@@ -171,22 +175,28 @@
     (assoc :api-key api-key)))
 
 (defn- initial-slave-attrs
-  [{:keys [depth parent presets cwd project-id kanban-task-id]} enriched-task]
-  {:status (if enriched-task :working :idle)
-   :depth depth
-   :parent parent
-   :presets presets
-   :cwd cwd
-   :project-id project-id
-   :kanban-task-id kanban-task-id})
+  [{:keys [depth parent presets cwd project-id kanban-task-id grant]} enriched-task]
+  (cond-> {:status (if enriched-task :working :idle)
+           :depth depth
+           :parent parent
+           :presets presets
+           :cwd cwd
+           :project-id project-id
+           :kanban-task-id kanban-task-id}
+    (some? grant) (assoc :grant grant)))
 
 (defn- register-slave-row!
   "Persist a slave row through the spawn store, first making sure its parent
    can be referenced: a coordinator session named as parent gets its own row
-   on demand."
+   on demand. A recorded grant is written beside :slave/parent in the same
+   registration, before the backend starts the ling, so its first tool call
+   is already gated."
   [store slave-id attrs]
   (spawn-store/ensure-coordinator-session! store (:parent attrs))
-  (spawn-store/add-slave! store slave-id attrs))
+  (let [res (spawn-store/add-slave! store slave-id (dissoc attrs :grant))]
+    (when-let [g (:grant attrs)]
+      (spawn-store/update-slave! store slave-id {grant/slave-attr g}))
+    res))
 
 (defn- register-requested-slave!
   [{:keys [ling-id] :as plan} enriched-task]
