@@ -6,7 +6,8 @@
             [hive-mcp.protocols.lifecycle :as lifecycle]
             [hive-spi.swarm.guards :as guards]
             [hive-mcp.system.registry :as reg]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [hive-mcp.agent.identity :as agent-identity])
   (:import [java.lang ProcessBuilder]
            [java.io BufferedReader InputStreamReader BufferedWriter OutputStreamWriter]
            [java.util.concurrent ConcurrentHashMap]))
@@ -216,25 +217,33 @@
    1. Forwarded parent env vars (OPENROUTER_API_KEY, etc.)
    2. Child-ling guard vars (HIVE_MCP_ROLE, HIVE_LING_DEPTH)
    3. Project dir (BB_MCP_PROJECT_DIR from cwd)
-   4. Agent identity (CLAUDE_SWARM_SLAVE_ID)
-   5. Model override (OPENROUTER_MODEL when non-claude)
-   6. Caller-provided env-extra (highest priority override)
-   and then drops every `withheld-env-vars` name, env-extra included."
-  [ling-id {:keys [cwd env-extra model]}]
+   4. Model override (OPENROUTER_MODEL when non-claude)
+   5. Caller-provided env-extra, minus the reserved identity names
+   6. Agent identity (CLAUDE_SWARM_SLAVE_ID = ling-id, always) and the spawn
+      credential (HIVE_AGENT_CREDENTIAL). The server sets these last, so
+      env-extra cannot override the slave id.
+   and then drops every `withheld-env-vars` name, env-extra included.
+
+   The credential is `:credential` when given. A backend that forwards only
+   env-extra (hive-claude's process backend) carries the server-minted value
+   inside it, put there by the spawn pipeline, so that value is kept when no
+   `:credential` is given. It cannot be used to impersonate: a credential is
+   bound to one agent id, and the slave id beside it is forced to `ling-id`."
+  [ling-id {:keys [cwd env-extra model credential]}]
   (let [parent-vars (reduce (fn [m var-name]
                               (if-let [v (System/getenv var-name)]
                                 (assoc m var-name v)
                                 m))
                             {}
                             forwarded-env-vars)
-        guard-vars (guards/child-ling-env)]
-    (-> (cond-> (merge parent-vars
-                       guard-vars
-                       {"CLAUDE_SWARM_SLAVE_ID" ling-id})
+        guard-vars (guards/child-ling-env)
+        credential (or credential
+                       (some (fn [[k v]] (when (= agent-identity/credential-env (name k)) (str v)))
+                             env-extra))]
+    (-> (cond-> (merge parent-vars guard-vars)
           cwd (assoc "BB_MCP_PROJECT_DIR" cwd)
-          (and model (not= model "claude")) (assoc "OPENROUTER_MODEL" model)
-          env-extra (as-> m (reduce-kv (fn [acc k v] (assoc acc (name k) (str v)))
-                                       m env-extra)))
+          (and model (not= model "claude")) (assoc "OPENROUTER_MODEL" model))
+        (merge (agent-identity/child-env env-extra ling-id credential))
         (#(apply dissoc % withheld-env-vars)))))
 
 (defn- configure-process-env!
@@ -338,14 +347,12 @@
 
 (defn- spawn-headless!*
   "Internal spawn logic returning Result."
-  [ling-id {:keys [cwd task model env-extra claude-cmd buffer-capacity system-prompt]
-            :or {claude-cmd "claude"
-                 buffer-capacity default-buffer-capacity}}]
+  [ling-id {:keys [cwd task model env-extra credential claude-cmd buffer-capacity system-prompt], :or {claude-cmd "claude", buffer-capacity default-buffer-capacity}}]
   (result/let-ok [_ (require-not-registered ling-id)]
                  (register-shutdown-hook!)
                  (let [cmd-parts (build-command-parts claude-cmd model task system-prompt)
                        pb (create-process-builder cmd-parts cwd)]
-                   (configure-process-env! pb ling-id {:cwd cwd :env-extra env-extra :model model})
+                   (configure-process-env! pb ling-id {:cwd cwd, :env-extra env-extra, :model model, :credential credential})
                    (log/info "Spawning headless ling" {:ling-id ling-id
                                                        :cwd cwd
                                                        :model (or model "claude")

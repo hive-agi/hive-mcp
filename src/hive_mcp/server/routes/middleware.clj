@@ -23,7 +23,9 @@
             [hive-mcp.channel.task-signal :as task-signal]
             [hive-mcp.channel.activation :as activation]
             [hive-mcp.channel.blocks :as blocks]
-            [hive-spi.guard.ports :as gp])
+            [hive-spi.guard.ports :as gp]
+            [hive-mcp.agent.grant :as grant]
+            [hive-mcp.agent.identity :as agent-identity])
 (:import [java.util.concurrent RejectedExecutionException]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -102,24 +104,45 @@
 ;; Context Binding
 ;; =============================================================================
 
+(def ^:dynamic *identity-get-slave*
+  "1-arg port: registry row for a slave id, used to tell a spawned agent's
+   caller id from a coordinator's. Rebound by tests."
+  grant/registry-get-slave)
+
 (defn wrap-handler-context
-  "Bind request context: keywordize args, resolve identity, bind ctx vars.
+  "Bind request context: keywordize args, verify identity, resolve ids, bind
+   ctx vars.
+
    `:caller-id` is the transport's `:_caller_id`: the MCP session making the
    call, shared by its subagents, distinct per session even when every
-   session's agent-id is nil."
+   session's agent-id is nil.
+
+   Identity: the spawn credential the transport carries as
+   `:_caller_credential` is verified here (hive-mcp.agent.identity) and
+   STRIPPED from the args before anything else sees them, so no handler,
+   log line, transcript or piggyback ever holds it. The result is bound as
+   `:identity` in the request context. Under :enforce a request that claims a
+   registered spawned agent's id without a valid credential is refused here;
+   under :observe (the default) it is logged and counted and proceeds."
   [handler]
   (fn [args]
-    (let [args (walk/keywordize-keys args)]
-      (binding [ctx/*request-cache* (atom {})]
-        (let [agent-id (id/extract-agent-id args nil)
-              project-id (id/extract-project-id args)
-              directory (id/extract-directory args)]
-          (crystal/record-session-start! agent-id)
-          (ctx/with-request-context {:agent-id agent-id
-                                     :caller-id (:_caller_id args)
-                                     :project-id project-id
-                                     :directory directory}
-            (handler args)))))))
+    (let [raw-args (walk/keywordize-keys args)
+          {args :args who :identity decision :decision}
+          (agent-identity/verify-request! raw-args "mcp" *identity-get-slave*)]
+      (if-not (:allow? decision true)
+        [{:type "text" :isError true
+          :text (agent-identity/refusal-text decision (:caller-id who))}]
+        (binding [ctx/*request-cache* (atom {})]
+          (let [agent-id (id/extract-agent-id args nil)
+                project-id (id/extract-project-id args)
+                directory (id/extract-directory args)]
+            (crystal/record-session-start! agent-id)
+            (ctx/with-request-context {:agent-id agent-id
+                                       :caller-id (:_caller_id args)
+                                       :identity who
+                                       :project-id project-id
+                                       :directory directory}
+              (handler args))))))))
 
 
 ;; =============================================================================
@@ -374,6 +397,41 @@
         (log/debug "catchup-piggyback drain failed:" (.getMessage e))
         nil))))
 
+;; =============================================================================
+;; Grant Gate
+;; =============================================================================
+
+(def ^:dynamic *grant-get-slave*
+  "1-arg port: registry row for a slave id, the lineage the grant gate walks.
+   Resolved late (the swarm registry is wired after the routes load); a
+   missing registry reads as no row, so nothing is gated. Rebound by tests."
+  grant/registry-get-slave)
+
+(def ^:dynamic *grant-domain*
+  "0-arg port: the grant domain (hive-mcp.agent.grant/domain). Rebound by tests."
+  grant/domain)
+
+(defn wrap-handler-grant
+  "Refuse a call the caller's effective grant does not permit.
+
+   The caller is the transport's `:_caller_id` (else the resolved agent id);
+   its effective grant is the nearest one recorded on its lineage, walked
+   through the swarm registry the same way enclaves walk it. No grant on the
+   lineage, which is every session today, means unrestricted and the call
+   proceeds untouched. The refusal names the missing capability and the
+   `hivemind ask` path. The caller id is self-asserted until spawn
+   credentials are verified, so this stops mistakes, not a hostile child."
+  [handler tool-name]
+  (fn [args]
+    (let [caller (some-> (or (ctx/current-verified-caller-id) (:_caller_id args)) str not-empty)
+          get-slave *grant-get-slave*
+          no (when (and caller (grant/recorded-grant get-slave caller))
+               (grant/call-refusal (*grant-domain*) get-slave caller tool-name (:command args)))]
+      (if no
+        (do (log/warn "grant: refused a tool call" {:tool tool-name :command (:command args) :caller caller})
+            [{:type "text" :isError true :text no}])
+        (handler args)))))
+
 (defn wrap-handler-piggybacks
   "Unified piggyback wrapper: drains all 4 channels in a single pass.
    Task cues harvested from the request args steer the MEMORY drain that rides
@@ -437,6 +495,9 @@
   "Compose the 9-layer middleware chain around a raw tool handler.
    Testable in isolation — no tool definition machinery needed.
 
+   The grant gate sits just outside the guard: a call the caller's grant does
+   not permit is refused before any rule is judged or any future is queued.
+
    The guard sits INSIDE context (so it judges keywordized args with identity
    already resolved) and OUTSIDE async (so a denied call is never spawned as a
    future)."
@@ -448,6 +509,7 @@
       (cond-> (seq default-async-commands)
         (wrap-handler-default-async-for-commands default-async-commands))
       (wrap-handler-guard tool-name)
+      (wrap-handler-grant tool-name)
       wrap-handler-normalize
       wrap-handler-compress
       (wrap-handler-piggybacks tool-name)

@@ -26,6 +26,7 @@
                 :project-id (:slave/project-id agent-data)}]
       (cond-> base
         (:slave/parent agent-data) (assoc :parent (:slave/parent agent-data))
+        (:slave/grant agent-data) (assoc :grant (:slave/grant agent-data))
         (:slave/presets agent-data) (assoc :presets (:slave/presets agent-data))
         (:slave/created-at agent-data) (assoc :created-at (:slave/created-at agent-data))
         (:slave/orphan-reason agent-data) (assoc :reason (:slave/orphan-reason agent-data))

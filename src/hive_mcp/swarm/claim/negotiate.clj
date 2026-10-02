@@ -34,7 +34,9 @@
             [hive-mcp.swarm.claim.registry :as registry]
             [hive-mcp.swarm.claim.span :as span]
             [hive-mcp.swarm.datascript.lings :as lings]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.swarm.delegate :as delegate]
+            [hive-mcp.swarm.datascript :as ds]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -153,6 +155,61 @@
               :message  (str/join " " (map :message warnings))})))
 
 ;; =============================================================================
+;; Deadlock
+;; =============================================================================
+
+(defn- waits-impl
+  "hive-agent.swarm.claim.waits/`sym` when the loaded hive-agent defines it,
+   else nil."
+  [sym]
+  (when (delegate/available? "hive-agent.swarm.claim.waits")
+    (requiring-resolve (symbol "hive-agent.swarm.claim.waits" (name sym)))))
+
+(defn- held-facts
+  "Live claims as {:key :agent} facts."
+  []
+  (mapv (fn [row] {:key (:claim/key row) :agent (:claim/slave row)})
+        (registry/held-spans)))
+
+(defn- waiting-facts
+  "Wait-queue rows as {:key :agent} facts."
+  []
+  (mapv (fn [[ling k]] {:key k :agent ling})
+        (ds/q-db (ds/current-db)
+                 '[:find ?ling ?file
+                   :where
+                   [?w :wait-queue/ling-id ?ling]
+                   [?w :wait-queue/file ?file]])))
+
+(defn foresee-deadlock
+  "{:cycle [agent ...] :victim agent} when parking `ling-id` on `ks` closes a
+   wait cycle, else nil. nil too when the loaded hive-agent has no wait graph."
+  [ling-id ks]
+  (when-let [would-deadlock (and (seq ks) (waits-impl 'would-deadlock))]
+    (let [held    (held-facts)
+          waiting (waiting-facts)]
+      (when-let [cycle (would-deadlock held waiting ling-id ks)]
+        {:cycle  cycle
+         :victim ((waits-impl 'victim)
+                  cycle held
+                  (into waiting (map (fn [k] {:key k :agent ling-id})) ks))}))))
+
+(defn- announce-deadlock!
+  "Tell the victim of `deadlock` to release, once per standing cycle."
+  [notify! ling-id task-id {:keys [cycle victim] :as deadlock} now]
+  (when (and deadlock
+             (first-ask? [victim [:deadlock (vec (sort (map str cycle)))] ling-id] now))
+    (notify! "coordinator" victim :claim/deadlock
+             {:cycle        cycle
+              :victim       victim
+              :requested-by ling-id
+              :task-id      task-id
+              :message      (str "Claim deadlock: " (str/join " waits on " cycle)
+                                 " waits on " (first cycle) ". " victim
+                                 ", release your claims now and claim again"
+                                 " when the others are done.")})))
+
+;; =============================================================================
 ;; Entry point
 ;; =============================================================================
 
@@ -167,7 +224,9 @@
      :now-ms   clock, for the dedup ledger
 
    Returns registry/acquire!'s map. A refusal also carries :parked (keys the
-   ling now waits on) and :yield-requested ([{:holder :file}] sent this call)."
+   ling now waits on) and :yield-requested ([{:holder :file}] sent this call).
+   When parking would close a wait cycle it carries :deadlock {:cycle :victim}
+   too; a requester that is the victim is not parked."
   [ling-id files & [{:keys [task-id cwd notify! now-ms]
                      :or   {notify! tell!}}]]
   (if (empty? files)
@@ -178,12 +237,17 @@
       (if (:acquired? result)
         (do (forget-yields! ling-id)
             result)
-        (let [pairs  (holds (:conflicts result))
-              parked (park! ling-id pairs)
-              asked  (request-yields! notify! ling-id task-id pairs
-                                      (or now-ms (System/currentTimeMillis)))]
-          (log/warn "claim refused; ling parked"
+        (let [now      (or now-ms (System/currentTimeMillis))
+              pairs    (holds (:conflicts result))
+              deadlock (foresee-deadlock ling-id (mapv :key pairs))
+              yield?   (= ling-id (:victim deadlock))
+              parked   (if yield? [] (park! ling-id pairs))
+              asked    (if yield? [] (request-yields! notify! ling-id task-id pairs now))]
+          (announce-deadlock! notify! ling-id task-id deadlock now)
+          (log/warn "claim refused"
                     {:ling-id ling-id :task-id task-id :parked parked
                      :holders (mapv :holder pairs)
-                     :yield-requested (count asked)})
-          (assoc result :parked parked :yield-requested asked))))))
+                     :yield-requested (count asked)
+                     :deadlock deadlock})
+          (cond-> (assoc result :parked parked :yield-requested asked)
+            deadlock (assoc :deadlock deadlock)))))))

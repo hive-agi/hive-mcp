@@ -100,7 +100,8 @@
        latency from sum(per-target) → max(per-target), keeping the
        compound add safely under `memory-write-timeout-ms`."
   [entry-id {:keys [kg_implements kg_supersedes kg_depends_on kg_refines]} project-id agent-id]
-  (let [created-by   (when agent-id (str "agent:" agent-id))
+  (let [created-by   (ctx/attribution-created-by (ctx/current-attribution agent-id)
+                                           (when agent-id (str "agent:" agent-id)))
         edge-records
         (kg-conn/with-tx-batch
           (let [add-edges (fn [targets relation]
@@ -132,10 +133,13 @@
     (mapv :edge-id edge-records)))
 
 (defn- build-entry-tags
-  "Build complete tags vector: base, agent, KG markers, and scope."
-  [tags-vec agent-id kg-vecs project-id]
+  "Build complete tags vector: base, agent, attribution, KG markers, and scope.
+   The `agent:<agent-id>` tag is kept as before; `attribution` (see
+   hive-mcp.agent.context/attribution) adds the session-precise tags beside it."
+  [tags-vec agent-id attribution kg-vecs project-id]
   (let [agent-tag (when agent-id (str "agent:" agent-id))
-        tags-with-agent (if agent-tag (conj tags-vec agent-tag) tags-vec)
+        tags-with-agent (into (if agent-tag (conj tags-vec agent-tag) tags-vec)
+                              (ctx/attribution-tags attribution))
         {:keys [kg-implements-vec kg-supersedes-vec kg-depends-on-vec kg-refines-vec]} kg-vecs
         kg-tags (cond-> []
                   (seq kg-implements-vec) (conj "kg:has-implements")
@@ -357,7 +361,7 @@
       (let [project-id (scope/get-current-project-id directory)
             agent-id (or agent_id (ctx/current-agent-id)
                          (System/getenv "CLAUDE_SWARM_SLAVE_ID"))
-            tags-with-scope (build-entry-tags tags-vec agent-id kg-vecs project-id)
+            tags-with-scope (build-entry-tags tags-vec agent-id (ctx/current-attribution agent-id) kg-vecs project-id)
             store (mem-proto/get-store store-key)
             content-hash (mem-proto/content-hash content)
             duration-str (or duration "long")
