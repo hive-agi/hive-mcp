@@ -35,6 +35,35 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-10-02
+
+### Added
+
+- **A coordinator can limit what a spawned child may do.** `agent spawn`
+  takes a `grant` naming the tools, commands and scopes the child may use. A
+  child can only be given a subset of what its parent holds; a request wider
+  than the parent is refused whole, never silently trimmed. With no `grant`,
+  the child inherits its parent's. Calls the grant does not permit are refused
+  at dispatch, and asking upward (`hivemind ask`) always stays open.
+- **Spawned children carry a signed credential.** Each child receives a
+  credential at spawn, and the server verifies it on every request. This
+  release runs in observe mode: a missing or invalid credential is recorded,
+  not refused, so lings spawned before the upgrade keep working.
+- **Memory attribution carries the session id.** Memory, knowledge-graph and
+  other writes are tagged with the verified caller, or the session id when
+  none is verified (`agent-session:<id>`, plus `agent-verified` when the
+  credential checked out). The existing `agent:<role>` tag is kept, so
+  current queries keep working.
+
+### Fixed
+
+- **Clients connected through bb-mcp see the full command list.** Commands
+  and parameters that addons add to a tool are now advertised to external
+  clients as well, not only to the server's own tool table.
+- **A refused ling no longer waits on a cycle it cannot leave.** Before a
+  ling is parked waiting for a claim, the server checks whether that wait would
+  close a deadlock and refuses it up front instead.
+
 ## [1.8.1] - 2026-10-01
 
 ### Fixed
