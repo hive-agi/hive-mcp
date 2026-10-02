@@ -37,7 +37,8 @@
             [hive-mcp.extensions.registry :as ext]
             [taoensso.timbre :as log]
             [hive-mcp.tools.consolidated.hot :as c-hot]
-            [hive-mcp.spi.contributions :as contrib]))
+            [hive-mcp.spi.contributions :as contrib]
+            [hive-mcp.tools.schema-keys :as schema-keys]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -321,12 +322,16 @@
    advertised set can no longer drift from the gate config. Schema-ext merge
    keeps this surface in sync with the stdio/server-context path (make-tool).
 
+   Every property key is provider-legal (`schema-keys/legal-tool`): a client
+   forwards this surface to an LLM provider, which rejects the whole request
+   over one key like `kg-rank?`.
+
    With opts {:compact-schema? true} each advertised :inputSchema omits its
    subcommand-scoped params. Opt-in per request; the zero-arity surface and
    every dispatch path are unchanged."
   ([] (get-advertised-tools nil))
   ([{:keys [compact-schema?]}]
-   (let [tools (mapv (comp merge-schema-ext fold-contributions)
+   (let [tools (mapv (comp schema-keys/legal-tool merge-schema-ext fold-contributions)
                      (apply-visibility-gate
                       (distinct-by-name
                        (concat (get-consolidated-tools)

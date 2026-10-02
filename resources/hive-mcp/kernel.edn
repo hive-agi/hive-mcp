@@ -50,6 +50,7 @@
  [hive-mcp.tools.core
   hive-mcp.tools.registry
   hive-mcp.tools.composite
+  hive-mcp.tools.schema-keys
   hive-mcp.tools.cli
   hive-mcp.tools.op-outcome
   hive-mcp.tools.result-bridge
