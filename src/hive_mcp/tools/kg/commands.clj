@@ -7,7 +7,8 @@
             [hive-mcp.knowledge-graph.edges :as edges]
             [hive-mcp.knowledge-graph.grounding :as grounding]
             [hive-mcp.knowledge-graph.schema :as schema]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.agent.context :as ctx]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -55,6 +56,13 @@
       (conn/flush-pending!)
       result)))
 
+(defn- edge-created-by
+  "The `created-by` an edge written by this request carries: the request's
+   attribution (hive-mcp.agent.context/attribution) when the transport stamped
+   a caller id, else the `created_by` argument as given."
+  [created_by]
+  (ctx/attribution-created-by (ctx/current-attribution nil) created_by))
+
 (defn- add-edge*
   "Create a relationship between two knowledge nodes. Raw impl — the public
    handle-kg-add-edge wraps this with with-kg-flush for durable-on-return."
@@ -67,12 +75,13 @@
         (validate-relation relation)
         ;; Execute
         (let [relation-kw (if (keyword? relation) relation (keyword relation))
+              created-by (edge-created-by created_by)
               opts (cond-> {:from from
                             :to to
                             :relation relation-kw}
                      scope (assoc :scope scope)
                      confidence (assoc :confidence confidence)
-                     created_by (assoc :created-by created_by)
+                     created-by (assoc :created-by created-by)
                      predicate (assoc :predicate predicate))
               edge-id (edges/add-edge! opts)]
           (mcp-json {:success true
@@ -94,13 +103,14 @@
   "Project one batch op onto an add-edges! spec. MCP sends snake_case and
    string relations; the write layer wants kebab-case and keywords."
   [{:keys [from to relation scope confidence created_by predicate]}]
-  (cond-> {:from from
-           :to   to
-           :relation (if (keyword? relation) relation (keyword relation))}
-    scope       (assoc :scope scope)
-    confidence  (assoc :confidence confidence)
-    created_by  (assoc :created-by created_by)
-    predicate   (assoc :predicate predicate)))
+  (let [created-by (edge-created-by created_by)]
+    (cond-> {:from from
+             :to   to
+             :relation (if (keyword? relation) relation (keyword relation))}
+      scope       (assoc :scope scope)
+      confidence  (assoc :confidence confidence)
+      created-by  (assoc :created-by created-by)
+      predicate   (assoc :predicate predicate))))
 
 (defn- classify-op
   "Return [:ok spec] or [:error message] for one op, without transacting."

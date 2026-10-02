@@ -151,6 +151,58 @@
    (session-agent-id (or (:agent_id args) (current-agent-id))
                      (or (:_caller_id args) (current-caller-id)))))
 
+(defn attribution
+  "Who a write is attributed to. Pure.
+
+   Inputs: `verified-id` (the caller id whose spawn credential verified),
+   `caller-id` (the transport-stamped `_caller_id`) and `legacy-id` (what the
+   writer used before: an agent id from args, context or env).
+
+   -> {:id :verified? :source}, source one of :verified :caller :legacy.
+   The verified id wins, then the caller id, then the legacy id. When either
+   id is present the legacy id is never the source, so a model-supplied
+   `agent_id` cannot change who a write is attributed to. :id is nil only
+   when every input is blank."
+  [{:keys [verified-id caller-id legacy-id]}]
+  (let [present (fn [s] (when (and (string? s) (not (.isBlank ^String s))) s))]
+    (if-let [v (present verified-id)]
+      {:id v :verified? true :source :verified}
+      (if-let [c (present caller-id)]
+        {:id c :verified? false :source :caller}
+        {:id (present legacy-id) :verified? false :source :legacy}))))
+
+(defn current-attribution
+  "`attribution` of the request in flight, with `legacy-id` as the fallback
+   a writer used before. Outside a request it is the legacy id."
+  [legacy-id]
+  (attribution {:verified-id (current-verified-caller-id)
+                :caller-id   (:caller-id *request-ctx*)
+                :legacy-id   legacy-id}))
+
+(def verified-tag
+  "Marks a memory entry whose writer's spawn credential verified."
+  "agent-verified")
+
+(defn attribution-tags
+  "Tags an `attribution` adds to a memory entry, beside the existing
+   `agent:<id>` tag, which is left as it was so queries on it keep working.
+   Pure. `agent-session:<id>` when the id came from the transport or a
+   credential, plus `verified-tag` when it verified. The legacy path adds
+   nothing."
+  [{:keys [id verified? source]}]
+  (cond-> []
+    (and id (not= :legacy source)) (conj (str "agent-session:" id))
+    verified?                      (conj verified-tag)))
+
+(defn attribution-created-by
+  "The KG edge `created-by` an `attribution` writes: `agent:<id>` when the id
+   came from the transport or a credential, else `legacy` unchanged (the value
+   the writer used before, which may be nil or a system label). Pure."
+  [{:keys [id source]} legacy]
+  (if (and id (not= :legacy source))
+    (str "agent:" id)
+    legacy))
+
 (defn current-timestamp
   "Get the request timestamp from execution context."
   []
