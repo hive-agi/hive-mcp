@@ -181,3 +181,27 @@
       (is (nil? opts))
       (is (:isError res))
       (is (str/includes? (:text res) "tools")))))
+
+(deftest spawn-handler-grant-as-string
+  ;; Measured live 2026-10-02: a client whose cached schema predates `grant`
+  ;; sends it as text, and the spawn died on "java.lang.Character cannot be
+  ;; cast to java.util.Map$Entry".
+  (testing "a JSON-object string is parsed and honoured like the map"
+    (let [{:keys [res opts]} (spawn-with {} {:_caller_id "coordinator:s1"
+                                             :grant "{\"tools\": [\"memory\"], \"may_spawn\": false}"})]
+      (is (= ["memory"] (get-in opts [:grant :tools])))
+      (is (= ["memory"] (get-in (body res) [:grant :tools])))))
+  (testing "a blank string shares, as no grant does"
+    (let [{:keys [opts]} (spawn-with {} {:_caller_id "coordinator:s1" :grant "  "})]
+      (is (nil? (:grant opts)))))
+  (doseq [[what bad] [["not JSON" "tools=memory"]
+                      ["a JSON array" "[\"memory\"]"]
+                      ["a JSON scalar" "42"]
+                      ["a number" 42]
+                      ["a vector" ["memory"]]]]
+    (testing (str "anything else is refused by message, never a ClassCastException: " what)
+      (let [{:keys [res opts]} (spawn-with {} {:_caller_id "coordinator:s1" :grant bad})]
+        (is (nil? opts) "nothing is spawned")
+        (is (:isError res))
+        (is (str/includes? (:text res) "`grant` must be a JSON object"))
+        (is (not (str/includes? (:text res) "ClassCast")))))))

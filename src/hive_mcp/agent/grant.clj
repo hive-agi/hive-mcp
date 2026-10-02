@@ -15,7 +15,8 @@
    IDENTITY CAVEAT: the caller id is self-asserted by the transport until
    spawn credentials are verified (kanban IDENTITY-VERIFIED). This gate stops
    mistakes, not a hostile child."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [clojure.data.json :as json]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -101,6 +102,33 @@
 ;; =============================================================================
 ;; Spawn
 ;; =============================================================================
+
+(defn requested-grant
+  "The raw `grant` spawn parameter as a map, or why it cannot be one:
+     nil / blank string          {:ok nil}   (share the parent's grant)
+     a map                       {:ok m}
+     a string holding a JSON object  {:ok parsed}  (a client whose cached
+                                 schema predates the parameter sends text)
+     anything else               {:refused message}
+   Never throws."
+  [requested]
+  (let [shape-msg (fn [what]
+                    (str "SPAWN DENIED: `grant` must be a JSON object such as "
+                         "{\"tools\": [\"memory:search\"], \"may_spawn\": false}; got "
+                         what ". Nothing was spawned."))]
+    (cond
+      (nil? requested) {:ok nil}
+      (map? requested) {:ok requested}
+      (string? requested)
+      (if (str/blank? requested)
+        {:ok nil}
+        (let [parsed (try (json/read-str requested) (catch Exception _ ::unparseable))]
+          (cond
+            (map? parsed)            {:ok parsed}
+            (= ::unparseable parsed) {:refused (shape-msg "a string that is not valid JSON")}
+            :else                    {:refused (shape-msg (str "a JSON string holding "
+                                                               (if (nil? parsed) "null" (.getSimpleName (class parsed)))))})))
+      :else {:refused (shape-msg (.getSimpleName (class requested)))})))
 
 (defn child-grant
   "The grant a spawn records for its child, as a decision map:

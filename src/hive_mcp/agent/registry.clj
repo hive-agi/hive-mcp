@@ -3,7 +3,8 @@
   (:require [hive-mcp.agent.protocol :refer [IAgentRegistry agent-type]]
             [hive-mcp.swarm.datascript.queries :as ds-queries]
             [hive-dsl.result :as r]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.tools.schema-keys :as schema-keys]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -46,13 +47,15 @@
   (log/info "Registered" (count tools) "tools for agent delegation"))
 
 (defn get-schemas
-  "Get tool schemas for specified tool names (or all if nil)."
+  "Get tool schemas for specified tool names (or all if nil). Property keys
+   are provider-legal (`schema-keys/legal-tool`): these schemas go straight
+   to an LLM provider as a ling's tool list."
   [tool-names]
   (let [all-tools @registry
         selected (if tool-names
                    (select-keys all-tools tool-names)
                    all-tools)]
-    (mapv #(dissoc % :handler) (vals selected))))
+    (mapv #(schema-keys/legal-tool (dissoc % :handler)) (vals selected))))
 
 (defn get-tool
   "Get a tool by name from the registry."
