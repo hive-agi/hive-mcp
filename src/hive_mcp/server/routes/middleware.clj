@@ -23,7 +23,8 @@
             [hive-mcp.channel.task-signal :as task-signal]
             [hive-mcp.channel.activation :as activation]
             [hive-mcp.channel.blocks :as blocks]
-            [hive-spi.guard.ports :as gp])
+            [hive-spi.guard.ports :as gp]
+            [hive-mcp.agent.grant :as grant])
 (:import [java.util.concurrent RejectedExecutionException]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -374,6 +375,41 @@
         (log/debug "catchup-piggyback drain failed:" (.getMessage e))
         nil))))
 
+;; =============================================================================
+;; Grant Gate
+;; =============================================================================
+
+(def ^:dynamic *grant-get-slave*
+  "1-arg port: registry row for a slave id, the lineage the grant gate walks.
+   Resolved late (the swarm registry is wired after the routes load); a
+   missing registry reads as no row, so nothing is gated. Rebound by tests."
+  grant/registry-get-slave)
+
+(def ^:dynamic *grant-domain*
+  "0-arg port: the grant domain (hive-mcp.agent.grant/domain). Rebound by tests."
+  grant/domain)
+
+(defn wrap-handler-grant
+  "Refuse a call the caller's effective grant does not permit.
+
+   The caller is the transport's `:_caller_id` (else the resolved agent id);
+   its effective grant is the nearest one recorded on its lineage, walked
+   through the swarm registry the same way enclaves walk it. No grant on the
+   lineage, which is every session today, means unrestricted and the call
+   proceeds untouched. The refusal names the missing capability and the
+   `hivemind ask` path. The caller id is self-asserted until spawn
+   credentials are verified, so this stops mistakes, not a hostile child."
+  [handler tool-name]
+  (fn [args]
+    (let [caller (some-> (:_caller_id args) str not-empty)
+          get-slave *grant-get-slave*
+          no (when (and caller (grant/recorded-grant get-slave caller))
+               (grant/call-refusal (*grant-domain*) get-slave caller tool-name (:command args)))]
+      (if no
+        (do (log/warn "grant: refused a tool call" {:tool tool-name :command (:command args) :caller caller})
+            [{:type "text" :isError true :text no}])
+        (handler args)))))
+
 (defn wrap-handler-piggybacks
   "Unified piggyback wrapper: drains all 4 channels in a single pass.
    Task cues harvested from the request args steer the MEMORY drain that rides
@@ -437,6 +473,9 @@
   "Compose the 9-layer middleware chain around a raw tool handler.
    Testable in isolation — no tool definition machinery needed.
 
+   The grant gate sits just outside the guard: a call the caller's grant does
+   not permit is refused before any rule is judged or any future is queued.
+
    The guard sits INSIDE context (so it judges keywordized args with identity
    already resolved) and OUTSIDE async (so a denied call is never spawned as a
    future)."
@@ -448,6 +487,7 @@
       (cond-> (seq default-async-commands)
         (wrap-handler-default-async-for-commands default-async-commands))
       (wrap-handler-guard tool-name)
+      (wrap-handler-grant tool-name)
       wrap-handler-normalize
       wrap-handler-compress
       (wrap-handler-piggybacks tool-name)

@@ -22,7 +22,8 @@
             [clojure.string :as str]
             [hive-mcp.channel.audience :as audience]
             [hive-mcp.agent.ling.headless-registry :as headless-registry]
-            [hive-mcp.emacs.client :as emacs-client]))
+            [hive-mcp.emacs.client :as emacs-client]
+            [hive-mcp.agent.grant :as grant]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -213,6 +214,27 @@
                       {:param "prompt"}))
       (or t p))))
 
+(def ^:dynamic *grant-domain*
+  "0-arg port: the grant domain fns (hive-mcp.agent.grant/domain), or nil
+   when the hive-agent addon is not loaded. Rebound by tests."
+  grant/domain)
+
+(def ^:dynamic *get-slave*
+  "1-arg port: registry row for a slave id. Rebound by tests."
+  (fn [id] (queries/get-slave id)))
+
+(defn spawn-grant
+  "The grant decision for a spawn by `parent` asking for `requested` (the
+   raw `grant` param, nil = share). {:grant wire-or-nil} or {:refused msg}.
+   See hive-mcp.agent.grant/child-grant. With no grant recorded on the
+   parent's lineage and none requested, nothing changes: {:grant nil}."
+  [parent requested]
+  (let [get-slave *get-slave*
+        parent-wire (grant/recorded-grant get-slave parent)
+        child-depth (inc (long (grant/depth-of get-slave parent)))]
+    (grant/child-grant (when (or parent-wire requested) (*grant-domain*))
+                       parent-wire requested child-depth)))
+
 (defn handle-spawn
   "Spawn a new ling agent.
 
@@ -255,6 +277,9 @@
         (try
           ;; Resolve provider+model via registry chain
           (let [parent (effective-parent params)
+                {child-grant :grant grant-refusal :refused} (spawn-grant parent (:grant params))
+                _ (when grant-refusal
+                    (throw (ex-info grant-refusal {:grant/refused true})))
                 worker-tier (normalize-tier tier)
                 token-budget (normalize-token-budget token_budget)
                 loop-params (loop-opts params)
@@ -323,7 +348,8 @@
                                                                :model effective-model
                                                                :provider effective-provider
                                                                :spawn/request params}
-                                                        max_budget_usd (assoc :max-budget-usd max_budget_usd)))]
+                                                        max_budget_usd (assoc :max-budget-usd max_budget_usd)
+                                                        child-grant    (assoc :grant child-grant)))]
                 (log/info "Spawned ling" {:requested-id agent-id
                                           :slave-id slave-id
                                           :parent parent
@@ -348,6 +374,8 @@
                                    :cwd cwd
                                    :presets presets-vec
                                    :project-id effective-project-id}
+                            child-grant
+                            (assoc :grant child-grant)
                             (nil? brief)
                             (assoc :warning (str "Spawned with no task: the ling has no brief "
                                                  "and will idle until `agent dispatch` sends one.")))))))
