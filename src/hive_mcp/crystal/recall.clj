@@ -6,7 +6,8 @@
             [hive-mcp.crystal.core :as crystal]
             [hive-mcp.engine.bounded.lru :as lru]
             [hive-mcp.engine.bounded.protocol :as bp]
-            [hive-mcp.extensions.delegate :refer [delegate-or-noop]]))
+            [hive-mcp.extensions.delegate :refer [delegate-or-noop]]
+            [hive-mcp.agent.context :as ctx]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -29,13 +30,18 @@
 ;; =============================================================================
 
 (defn create-recall-event
-  "Create a recall event record."
+  "Create a recall event record. It names its reader (:agent-id, resolved the
+   way whoami resolves it) and the reader's :project, so a wrap can keep only
+   the reads its own session made. Kanban 20261002152638-34671747."
   [context-params]
-  (let [context (detect-recall-context context-params)]
-    {:context context
-     :timestamp (.toString (java.time.Instant/now))
-     :source (:source context-params)
-     :session (or (:session context-params) (crystal/session-id))}))
+  (let [context (detect-recall-context context-params)
+        project (or (:project context-params) (ctx/current-project-id))]
+    (cond-> {:context context
+             :timestamp (.toString (java.time.Instant/now))
+             :source (:source context-params)
+             :session (or (:session context-params) (crystal/session-id))
+             :agent-id (or (:agent-id context-params) (ctx/current-session-agent-id))}
+      project (assoc :project project))))
 
 (defn batch-recall-events
   "Create recall events for multiple entries queried together."
