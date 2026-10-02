@@ -99,10 +99,29 @@
   []
   (:session-id *request-ctx*))
 
-(defn current-caller-id
-  "The MCP caller (`_caller_id`) of the request in flight, or nil."
+(defn current-identity
+  "The verified identity of the request in flight, bound at the request
+   boundary by hive-mcp.agent.identity: {:caller-id :claimant :verified?
+   :claims}. nil when nothing was resolved (outside a request)."
   []
-  (:caller-id *request-ctx*))
+  (:identity *request-ctx*))
+
+(defn current-verified-caller-id
+  "The caller id of the request in flight when its spawn credential verified,
+   else nil. A credential that failed verification is never identity."
+  []
+  (let [{:keys [verified? caller-id]} (current-identity)]
+    (when (and verified? (string? caller-id) (not (.isBlank ^String caller-id)))
+      caller-id)))
+
+(defn current-caller-id
+  "The MCP caller of the request in flight, or nil: the verified caller id
+   when the request's credential verified, else the transport's `_caller_id`
+   as asserted. The grant gate and enclave lineage read this, so they use the
+   verified id whenever one is present."
+  []
+  (or (current-verified-caller-id)
+      (:caller-id *request-ctx*)))
 
 (def coordinator-role
   "The agent id every coordinator session shares: a role, not an identity."

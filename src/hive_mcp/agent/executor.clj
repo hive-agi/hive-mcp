@@ -105,11 +105,20 @@
    unless task-signal/enabled?. The cues feed `activation/drain-ctx`, so this
    lane carries the same pins and floor-cap as the MCP tool lane. `:tool-name`
    is the single call's name when the batch holds exactly one, else nil.
-   opts may carry `:drain-fn` to supply the piggyback drain; see drain-fn-for."
+   opts may carry `:drain-fn` to supply the piggyback drain; see drain-fn-for.
+
+   Identity: this lane is the server's own agentic loop running the ling, so
+   the caller id is bound by the server, not asserted by a client. It is
+   recorded as verified with claimant :server-loop."
   ([agent-id tool-calls permissions]
    (execute-tool-calls agent-id tool-calls permissions nil))
   ([agent-id tool-calls permissions {:keys [project-id] :as opts}]
-   (ctx/with-request-context {:agent-id agent-id :caller-id agent-id :project-id project-id}
+   (ctx/with-request-context {:agent-id   agent-id
+                              :caller-id  agent-id
+                              :project-id project-id
+                              :identity   {:caller-id agent-id
+                                           :claimant  :server-loop
+                                           :verified? (boolean (not-empty (str agent-id)))}}
      (let [all-results (mapv (fn [{:keys [id name arguments]}]
                                (let [approved? (or (not (requires-approval? name permissions))
                                                    (request-approval! agent-id name arguments))]
