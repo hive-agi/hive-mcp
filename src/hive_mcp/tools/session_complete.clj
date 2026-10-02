@@ -105,10 +105,11 @@
 ;; =============================================================================
 
 (defn- resolve-agent-id
-  "Resolve agent-id with fallback chain: explicit > context > env > default."
+  "Resolve agent-id: the session agent id whoami answers (explicit specific id,
+   else the transport caller id for a blank id or the bare coordinator role),
+   then env, then default. Kanban 20261002152638-34671747."
   [agent_id]
-  (or agent_id
-      (ctx/current-agent-id)
+  (or (ctx/current-session-agent-id {:agent_id agent_id})
       (System/getenv "CLAUDE_SWARM_SLAVE_ID")
       "unknown-ling"))
 

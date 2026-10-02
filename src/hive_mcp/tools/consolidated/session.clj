@@ -143,34 +143,41 @@
 
 (defn- wrap-async!
   "Execute wrap crystallization + eviction in background thread.
-   Logs completion/failure. Notifies via hivemind shout (already in crystallize path)."
-  [agent_id directory]
-  (let [t0 (System/currentTimeMillis)
-        effective-agent (or agent_id
-                            (ctx/current-agent-id)
-                            (session-config/swarm-slave-id))]
+   Logs completion/failure. Notifies via hivemind shout (already in crystallize path).
+
+   `agent-id` must already be resolved on the request thread (handle-wrap
+   does it with crystal/resolve-agent): the future runs after the request
+   returns, so the identity is handed over as a value instead of being read
+   from a context the background thread may no longer see."
+  [agent-id directory]
+  (let [t0 (System/currentTimeMillis)]
     (future
       (try
         (trigger-gc-sweep!)
-        (crystal/handle-wrap-crystallize {:directory directory :agent_id agent_id})
-        (evict-agent-context! effective-agent)
+        (crystal/handle-wrap-crystallize {:directory directory :agent_id agent-id})
+        (evict-agent-context! agent-id)
         (log/info "session-wrap: DONE" (- (System/currentTimeMillis) t0) "ms")
         (catch Throwable t
           (log/error t "session-wrap: background crystallization failed"
-                     {:agent agent_id :elapsed-ms (- (System/currentTimeMillis) t0)}))))))
+                     {:agent agent-id :elapsed-ms (- (System/currentTimeMillis) t0)}))))))
 
 (defn handle-wrap
   "Wrap session -- fire-and-forget crystallization.
    Returns immediately after kicking off harvest+crystallize in background.
-   Completion notified via hivemind shout (:crystal/wrap-notify)."
-  [{:keys [agent_id directory]}]
-  (let [directory (or directory (ctx/current-directory))]
-    (log/info "session-wrap: START (async)" {:agent agent_id :directory directory})
-    (wrap-async! agent_id directory)
-  (mcp-json {:status "wrap-started"
-             :agent-id (or agent_id (ctx/current-agent-id) "coordinator")
-             :directory directory
-             :message "Crystallization running in background. Completion notified via hivemind."})))
+   Completion notified via hivemind shout (:crystal/wrap-notify).
+
+   The caller is resolved HERE, on the request thread, through
+   crystal/resolve-agent (the whoami resolver), and both the response and the
+   background crystallization use that one value. Kanban 20261002152638-34671747."
+  [{:keys [directory] :as params}]
+  (let [directory (or directory (ctx/current-directory))
+        agent-id  (crystal/resolve-agent params)]
+    (log/info "session-wrap: START (async)" {:agent agent-id :directory directory})
+    (wrap-async! agent-id directory)
+    (mcp-json {:status "wrap-started"
+               :agent-id agent-id
+               :directory directory
+               :message "Crystallization running in background. Completion notified via hivemind."})))
 
 (defn handle-catchup
   "Restore session context from Chroma memory.
@@ -221,9 +228,7 @@
   (let [gc-result (trigger-gc-sweep!)]
     (log/debug "session-complete: GC sweep result" gc-result))
   (let [result (session-handlers/handle-session-complete params)
-        effective-agent (or agent_id
-                            (ctx/current-agent-id)
-                            (session-config/swarm-slave-id))
+        effective-agent (crystal/resolve-agent {:agent_id agent_id})
         eviction (evict-agent-context! effective-agent)]
     (when eviction
       (log/info "session-complete: context eviction" eviction))
