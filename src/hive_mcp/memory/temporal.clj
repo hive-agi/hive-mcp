@@ -65,6 +65,18 @@
   [op]
   (not (contains? ephemeral-ops op)))
 
+(defn- mutation-attribution
+  "Who a mutation is attributed to: the request's attribution
+   (hive-mcp.agent.context/attribution) when the transport stamped a caller
+   id, else `legacy-id`, else the context agent id, the env slave id, or
+   \"unknown\" as before. -> {:id :verified?}"
+  [legacy-id]
+  (let [{:keys [id verified?]}
+        (ctx/current-attribution (or legacy-id
+                                     (ctx/current-agent-id)
+                                     (System/getenv "CLAUDE_SWARM_SLAVE_ID")))]
+    {:id (or id "unknown") :verified? verified?}))
+
 (defn record-mutation!
   "Record a memory mutation event to Datahike for temporal tracking.
 
@@ -74,8 +86,13 @@
        :op             - Mutation operation keyword (required, from valid-ops)
        :data           - Mutation payload map (what changed)
        :previous-value - Previous state (for destructive ops)
-       :agent-id       - Agent that triggered mutation (optional, auto-detected)
+       :agent-id       - Agent that triggered mutation (optional, auto-detected;
+                         ignored when the transport stamped a caller id, see
+                         `mutation-attribution`)
        :project-id     - Project scope (optional, auto-detected)
+
+   A mutation whose writer's spawn credential verified also carries
+   :mem-mutation/agent-verified true.
 
    Returns:
      {:ok true :mutation-id \"mut-...\"} on success
@@ -88,10 +105,7 @@
   (try
     (when (and (persist-mutation? op) (kg-conn/temporal-store?))
       (let [mutation-id (gen-mutation-id)
-            agent-id (or agent-id
-                         (ctx/current-agent-id)
-                         (System/getenv "CLAUDE_SWARM_SLAVE_ID")
-                         "unknown")
+            {agent-id :id verified? :verified?} (mutation-attribution agent-id)
             project-id (or project-id "unknown")
             tx-data [(cond-> {:mem-mutation/id        mutation-id
                               :mem-mutation/entry-id  entry-id
@@ -99,6 +113,9 @@
                               :mem-mutation/timestamp (java.util.Date.)
                               :mem-mutation/agent-id  agent-id
                               :mem-mutation/project-id project-id}
+                       verified?
+                       (assoc :mem-mutation/agent-verified true)
+
                        data
                        (assoc :mem-mutation/data (pr-str data))
 
@@ -136,9 +153,7 @@
   (try
     (when (and (seq mutations) (kg-conn/temporal-store?))
       (let [now (java.util.Date.)
-            agent-id (or (ctx/current-agent-id)
-                         (System/getenv "CLAUDE_SWARM_SLAVE_ID")
-                         "unknown")
+            agent-id (:id (mutation-attribution nil))
             tx-data (mapv (fn [{:keys [entry-id op data previous-value project-id]}]
                             (cond-> {:mem-mutation/id         (gen-mutation-id)
                                      :mem-mutation/entry-id   (or entry-id "unknown")
