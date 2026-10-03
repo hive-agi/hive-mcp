@@ -101,6 +101,43 @@
    "c!" {:tool "config"   :command "set"}
    "c*" {:tool "config"   :command "list"}})
 
+(def verb-params
+  "Param keys each verb's target handler honours, keyed by verb code, as the
+   caller writes them (after alias expansion, before any id remap). A verb
+   with an entry rejects every other key except `verb-meta-params`; a verb
+   without one forwards its params unchecked."
+  {"b?" #{:status :priority :tags :tag_match :query :fields :limit :offset
+          :created_after :updated_after :scope :project_id :include_descendants}
+   "b#" #{:scope :include_descendants}
+   "m?" #{:type :tags :exclude_tags :scope :duration :limit :verbosity
+          :include_descendants :created_after :updated_after}
+   "m/" #{:query :type :scope :limit :exclude_tags :include_descendants}
+   "m@" #{:id :ids}
+   "p?" #{:verbosity}
+   "p/" #{:query :limit :category}})
+
+(def verb-meta-params
+  "Keys any verb may carry: op routing, caller scope and explicit ordering."
+  #{:tool :command :directory :_caller_cwd :depends_on})
+
+(defn unknown-param-error
+  "nil when VERB has no `verb-params` entry or accepts every key of the
+   alias-expanded PARAMS; otherwise the per-op error map naming the keys it
+   would have dropped."
+  [verb params]
+  (when-let [accepted (get verb-params verb)]
+    (let [unknown (->> (keys params)
+                       (remove #(or (contains? accepted %)
+                                    (contains? verb-meta-params %)))
+                       (sort-by str)
+                       vec)]
+      (when (seq unknown)
+        {:error          (str "Unknown param(s) for " verb ": "
+                              (str/join ", " (map name unknown)))
+         :verb           verb
+         :unknown-params unknown
+         :accepted       accepted}))))
+
 ;; =============================================================================
 ;; Parameter Aliases — Short keys → full keywords
 ;; =============================================================================
@@ -211,12 +248,18 @@
   "Parse a DSL sentence [verb params-map] into a standard operation map.
    Resolves verb code to {:tool :command}, expands parameter aliases.
 
+   A verb listed in `verb-params` rejects any expanded param outside its set
+   (and `verb-meta-params`), checked before the id remap below, so a typo or
+   an unsupported filter is an error rather than a silently widened result.
+
    For verbs listed in `entity-id-remaps` the advertised `id` param is moved
    to the key the handler reads (b> update / b- delete -> :task_id, m@ get ->
    batch-get :ids) and the op-local :id is freed so the batch compiler can
    assign its \"$N\" ref id.
 
-   Returns expanded operation map, or {:error \"...\" :verb verb} for unknowns.
+   Returns expanded operation map, or {:error \"...\" :verb verb} for an
+   unknown verb or unknown params (the latter adds :unknown-params and
+   :accepted).
 
    Examples:
      (parse-sentence [\"m+\" {\"c\" \"hello\" \"t\" \"note\"}])
@@ -228,18 +271,23 @@
      (parse-sentence [\"m@\" {\"id\" \"20260101-abcd\"}])
      ;=> {:tool \"memory\" :command \"batch-get\" :ids [\"20260101-abcd\"]}
 
+     (parse-sentence [\"b?\" {\"id\" \"20260101-abcd\"}])
+     ;=> {:error \"Unknown param(s) for b?: id\" :verb \"b?\"
+     ;    :unknown-params [:id] :accepted #{:status ...}}
+
      (parse-sentence [\"zz\" {}])
      ;=> {:error \"Unknown verb: zz\" :verb \"zz\"}"
   [[verb params]]
   (if-let [{:keys [tool command]} (get verb-table verb)]
-    (let [op                      (merge {:tool tool :command command}
-                                         (expand-params params))
-          {:keys [unless rewrite]} (get entity-id-remaps [tool command])]
-      (if (and rewrite
-               (contains? op :id)
-               (not (contains? op unless)))
-        (rewrite (dissoc op :id) (:id op))
-        op))
+    (let [expanded (expand-params params)]
+      (or (unknown-param-error verb expanded)
+          (let [op                       (merge {:tool tool :command command} expanded)
+                {:keys [unless rewrite]} (get entity-id-remaps [tool command])]
+            (if (and rewrite
+                     (contains? op :id)
+                     (not (contains? op unless)))
+              (rewrite (dissoc op :id) (:id op))
+              op))))
     {:error (str "Unknown verb: " verb)
      :verb  verb}))
 

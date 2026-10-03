@@ -148,7 +148,7 @@
                    (testing "d → directory"
                      (is (= "/tmp/project" (:directory (parse-sentence ["m+" {"d" "/tmp/project"}])))))
                    (testing "q → query"
-                     (is (= "search term" (:query (parse-sentence ["m?" {"q" "search term"}])))))
+                     (is (= "search term" (:query (parse-sentence ["m/" {"q" "search term"}])))))
                    (testing "n → name"
                      (is (= "ling" (:name (parse-sentence ["p@" {"n" "ling"}])))))
                    (testing "id → id (passthrough for verbs without an entity-id remap)"
