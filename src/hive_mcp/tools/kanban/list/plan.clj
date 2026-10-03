@@ -73,6 +73,34 @@
                    :limit  (page-cap req)
                    :fields (when (seq fields) (vec fields))}})
 
+(def session-todo-tag
+  "Tag an agent's ITodoStore puts on the cards that mirror its session step
+   list (hive-agent.todo.kanban-store). Those cards are private working
+   state, not backlog, so the shared board hides them unless asked."
+  "session-todo")
+
+(def default-hidden-tags
+  "Tags a board read hides unless the caller opts in."
+  [session-todo-tag])
+
+(defn hidden-tags
+  "Tags whose cards this request hides. A request opts in by naming the tag
+   in :tags (AND or OR; the owning agent reads its own list that way) or
+   with a truthy :include_session_todos."
+  [{:keys [tags include_session_todos]}]
+  (if include_session_todos
+    []
+    (let [named (set tags)]
+      (into [] (remove named) default-hidden-tags))))
+
+(defn drop-hidden
+  "Entries carrying none of the `hidden` tags."
+  [entries hidden]
+  (if (empty? hidden)
+    (vec entries)
+    (let [hide? (set hidden)]
+      (into [] (remove #(some hide? (:tags %))) entries))))
+
 (defn tagged-with?
   "True iff the entry carries every tag in `required`."
   [entry required]
