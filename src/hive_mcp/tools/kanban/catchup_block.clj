@@ -70,10 +70,13 @@
     (assoc summary :hint hint)))
 
 (def block
-  "The catchup block contribution. Reads :project-id from the context."
+  "The catchup block contribution. Reads :project-id from the context.
+   Cached per project: five board scans are the same answer for every agent
+   catching up on one project, and a kanban-tagged write drops the entry."
   {:block/id    :kanban
    :block/fn    (fn [{:keys [project-id]}] (catchup-section (gather-kanban-summary project-id)))
-   :block/order 40})
+   :block/order 40
+   :block/cache {:key-by [:project-id] :drop-tags #{"kanban"}}})
 
 (defn register!
   "Install the kanban block in the catchup block registry. Returns it."
