@@ -182,10 +182,13 @@
   "Announce a kanban write through the kernel write-events vocabulary, the
    same seam the memory facade and crud paths use, so synchronous listeners
    (catchup block-cache :drop-tags #{\"kanban\"}) see it before the caller
-   returns. The kanban tag is always present. Never throws."
+   returns. The kanban tag is always present, and the memory-type is always
+   \"kanban\": a board move must drop the kanban block only, never the catchup
+   bundle (whose bucket types exclude kanban) nor the axiom cache. Never throws."
   [op payload]
   (rescue nil
     (write-events/notify! op (-> payload
+                                 (assoc :memory-type kanban-tag)
                                  (update :tags #(vec (distinct (cons kanban-tag (map str %)))))
                                  (->> (into {} (remove (comp nil? val))))))))
 
