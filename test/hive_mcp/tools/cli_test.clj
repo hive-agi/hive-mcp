@@ -268,49 +268,79 @@
       (is (map? (cli-handler {:command nil})))
       (is (map? (cli-handler {:command "!@#$%"}))))))
 
-(deftest unknown-command-suggests-the-subdomain-qualified-form
+(defn- verbs [node vs] (vary-meta node assoc ::cli/verbs vs))
+
+(deftest unknown-command-suggests-only-subdomains-that-route-the-verb
   (let [handlers    {:cider   {:eval (fn [_] :eval)}
-                     :clojure {:_handler (fn [_] :clojure)}
-                     :carto   {:_handler (fn [_] :carto)}}
+                     :clojure {:_handler (verbs (fn [_] :clojure) #{"check" "format"})}
+                     :carto   {:_handler (verbs (fn [_] :carto) #{"scan" "multi"})}}
         cli-handler (cli/make-cli-handler handlers)]
 
-    (testing "a bare subcommand names the qualified form under each delegating subdomain"
-      (let [text (:text (cli-handler {:command "scan"}))]
-        (is (str/includes? text "carto scan"))
-        (is (str/includes? text "clojure scan"))))
-
-    (testing "subdomains WITHOUT :_handler are not offered — their subcommands
-              are already visible in this tree, so an unknown token is not theirs"
-      (is (not (str/includes? (:text (cli-handler {:command "scan"})) "cider scan"))))
+    (testing "exactly one subdomain declares the verb: named first and plainly"
+      (let [r    (cli-handler {:command "scan"})
+            text (:text r)]
+        (is (:isError r) "a declared-only owner is suggested, not guessed into")
+        (is (str/starts-with? text "Unknown command: scan. Did you mean: carto scan?"))
+        (is (not (str/includes? text "clojure scan")))
+        (is (not (str/includes? text "cider scan")))))
 
     (testing "a tree with no delegating subdomain adds no suggestion"
       (let [flat (cli/make-cli-handler {:status (fn [_] :status)})
             text (:text (flat {:command "scan"}))]
         (is (str/includes? text "Unknown command"))
-        (is (not (str/includes? text "SUBCOMMAND")))))
+        (is (not (str/includes? text "Did you mean")))))
 
     (testing "a nil/blank command still errors without a bogus suggestion"
       (doseq [c [nil ""]]
         (let [r (cli-handler {:command c})]
           (is (:isError r))
-          (is (not (str/includes? (:text r) "SUBCOMMAND"))))))))
+          (is (not (str/includes? (:text r) "Did you mean"))))))))
 
-(deftest unknown-command-suggests-metadata-marked-opaque-roots
-  (testing "a contributed subdomain (bare fn + ::opaque-roots metadata) is
-            offered alongside the core :_handler ones"
-    (let [handlers (with-meta {:clojure {:_handler (fn [_] :clojure)}
+(deftest unknown-command-names-every-declaring-subdomain
+  (let [handlers {:carto   {:_handler (verbs (fn [_] :c) ["multi" "scan"])}
+                  :kanban  {:_handler (verbs (fn [_] :k) (fn [] [:multi :list]))}
+                  :clojure {:_handler (fn [_] :clj)}}
+        text     (:text ((cli/make-cli-handler handlers) {:command "multi"}))]
+    (is (str/includes? text "Did you mean: carto multi, kanban multi?"))
+    (is (not (str/includes? text "clojure multi")))))
+
+(deftest unknown-command-with-no-owner-lists-only-valid-commands
+  (testing "the reported defect: undeclared opaque roots are not offered"
+    (let [handlers (with-meta {:analysis      {:_handler (fn [_] :a)}
+                               :arch-eco-emit (fn [_] :e)
+                               :cider         (fn [_] :ci)
+                               :clojure       {:_handler (fn [_] :clj)}}
+                     {::cli/opaque-roots #{:arch-eco-emit :cider}})
+          text     (:text ((cli/make-cli-handler handlers) {:command "multi"}))]
+      (is (= "Unknown command: multi. Valid: analysis, arch-eco-emit, cider, clojure" text))
+      (is (not (str/includes? text "SUBCOMMAND"))))))
+
+(deftest unknown-command-asks-the-verb-oracle-port
+  (testing "a contributed subdomain (bare fn + ::opaque-roots) is offered when
+            the tree's ::verb-oracle says it routes the verb"
+    (let [oracle   {:carto ["multi" "scan"]}
+          handlers (with-meta {:clojure {:_handler (fn [_] :clojure)}
                                :carto   (fn [_] :carto)}
-                     {:hive-mcp.tools.cli/opaque-roots #{:carto}})
-          text     (:text ((cli/make-cli-handler handlers) {:command "scan"}))]
-      (is (str/includes? text "carto scan") "the regression this fixes")
-      (is (str/includes? text "clojure scan"))))
+                     {::cli/opaque-roots #{:carto}
+                      ::cli/verb-oracle  oracle})
+          text     (:text ((cli/make-cli-handler handlers) {:command "multi"}))]
+      (is (str/includes? text "Did you mean: carto multi?"))
+      (is (not (str/includes? text "clojure multi")))))
+
+  (testing "a throwing oracle is a silent no-answer, never a crash"
+    (let [handlers (with-meta {:carto (fn [_] :carto)}
+                     {::cli/opaque-roots #{:carto}
+                      ::cli/verb-oracle  (fn [_] (throw (ex-info "boom" {})))})
+          r        ((cli/make-cli-handler handlers) {:command "multi"})]
+      (is (:isError r))
+      (is (not (str/includes? (:text r) "Did you mean")))))
 
   (testing "the stuttering carto_* form names exactly one subdomain, so it is
             dispatched there instead of refused"
     (let [handlers (with-meta {:clojure  {:_handler (fn [_] :clojure)}
                                :analysis {:_handler (fn [_] :analysis)}
                                :carto    (fn [p] [:carto (:command p)])}
-                     {:hive-mcp.tools.cli/opaque-roots #{:carto}})
+                     {::cli/opaque-roots #{:carto}})
           result   ((cli/make-cli-handler handlers)
                     {:command "carto_definition"})]
       (is (= [:carto "carto carto_definition"] result))))
@@ -318,7 +348,7 @@
   (testing "an unmarked leaf fn is still never offered as a subdomain"
     (let [text (:text ((cli/make-cli-handler {:status (fn [_] :status)})
                        {:command "scan"}))]
-      (is (not (str/includes? text "SUBCOMMAND"))))))
+      (is (not (str/includes? text "Did you mean"))))))
 
 (deftest bare-subcommand-auto-routes-only-to-a-single-nameable-owner
   (testing "an enumerable root that alone registers the token owns it"
@@ -340,11 +370,11 @@
       (is (str/includes? (:text result) "kanban list"))
       (is (str/includes? (:text result) "session list"))))
 
-  (testing "a lone opaque root is NOT guessed for a token it does not spell"
+  (testing "a lone opaque root is NOT guessed for a token it neither spells nor declares"
     (let [handlers {:carto {:_handler (fn [_] :carto)}}
           result   ((cli/make-cli-handler handlers) {:command "scan"})]
       (is (:isError result))
-      (is (str/includes? (:text result) "carto scan"))))
+      (is (not (str/includes? (:text result) "carto scan")))))
 
   (testing "coercion still runs on the auto-qualified call"
     (let [handlers {:carto {:_handler (fn [p] (:limit p))}}
