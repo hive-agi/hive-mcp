@@ -35,8 +35,11 @@
     ;; with init-embedding-provider! when the embedding wiring left the kernel
     ;; for hive-mcp.embeddings.boot. One was DELETED, not converted: the
     ;; auto-heal listener registration is now a keyed, idempotent call whose
-    ;; failure lands in init-hot-reload-watcher!'s own rescue, so seven remain.
-    (is (= 4 (count (filter #(re-find nested-rescue-re %) @lines))))
+    ;; failure lands in init-hot-reload-watcher!'s own rescue, so seven remained.
+    ;; Two more were DELETED with the code they guarded: the requires of
+    ;; hive-mcp.hot.state and hive-mcp.hot.silence, namespaces that no longer
+    ;; exist, so every boot swallowed the same failure. Five remain.
+    (is (= 2 (count (filter #(re-find nested-rescue-re %) @lines))))
     (is (= 3 (count (filter #(re-find nested-rescue-re %) @moved-lines))))
-    (is (= 7 (+ (count (filter #(re-find nested-rescue-re %) @lines))
+    (is (= 5 (+ (count (filter #(re-find nested-rescue-re %) @lines))
                 (count (filter #(re-find nested-rescue-re %) @moved-lines)))))))
