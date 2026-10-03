@@ -524,17 +524,7 @@
                                  {:dirs src-dirs
                                   :protocol-namespaces-protected (count no-reload)})
           ;; Register MCP auto-heal listener to refresh tools after reload
-                       (register-hot-reload-listener!)
-          ;; Register state protection for DataScript state validation
-                       (result/rescue nil
-                                      (require 'hive-mcp.hot.state)
-                                      (let [register! (resolve 'hive-mcp.hot.state/register-with-hive-hot!)]
-                                        (register!)))
-          ;; Register SAA Silence strategy for hot-reload aware exploration
-                       (result/rescue nil
-                                      (require 'hive-mcp.hot.silence)
-                                      (let [register! (resolve 'hive-mcp.hot.silence/register-with-hive-hot!)]
-                                        (register!)))))
+                       (register-hot-reload-listener!)))
       (log/info "Hot-reload disabled via .hive-project.edn"))))
 
 ;; =============================================================================
