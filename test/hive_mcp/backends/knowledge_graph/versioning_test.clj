@@ -376,3 +376,25 @@
                hist-strs (set (map str hist))]
            (is (contains? hist-strs feature-snap)
                "History should include feature snapshot")))))))
+
+(deftest versioned-store-has-own-id-test
+  (testing "versioned store names itself: konserve :id distinct from hive-kg / hive-mcp-kg and stable"
+    (require 'hive-datahike.kg.store)
+    (let [create-store (resolve 'hive-datahike.kg.store/create-store)
+          store-opts   @#'versioning/versioned-store-opts
+          name-uuid    (fn [^String s] (java.util.UUID/nameUUIDFromBytes (.getBytes s)))
+          store-id     (fn [opts] (get-in (:cfg (create-store (store-opts opts))) [:store :id]))
+          id-a         (store-id {:backend :mem})
+          id-b         (store-id {:backend :mem})]
+      (is (uuid? id-a))
+      (is (not= id-a (name-uuid "hive-kg")) "must not share the default hive-kg id")
+      (is (not= id-a (name-uuid "hive-mcp-kg")) "must not share the main KG slot id")
+      (is (= id-a id-b) "id must be stable across calls")
+      (is (= id-a (name-uuid "hive-mcp-kg-versioned")))
+      (testing "opts override"
+        (let [u (random-uuid)]
+          (is (= u (store-id {:backend :mem :id u})))
+          (is (= (name-uuid "custom") (store-id {:backend :mem :store-name "custom"})))))
+      (testing "the fixture-built store carries the same id"
+        (when-let [s (proto/get-store)]
+          (is (= id-a (get-in (:cfg s) [:store :id]))))))))

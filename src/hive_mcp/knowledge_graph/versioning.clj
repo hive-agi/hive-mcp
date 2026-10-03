@@ -105,6 +105,23 @@
   []
   (require-yggdrasil!))
 
+(def ^:private versioned-store-name
+  "Default store-name of the versioned KG. konserve 0.9 wants one :id per
+   logical store; hive-datahike derives the id from :store-name when no :id
+   is given, and its default (\"hive-kg\") is shared with any other
+   default-named store. The main KG slot uses \"hive-mcp-kg\"."
+  "hive-mcp-kg-versioned")
+
+(defn- versioned-store-opts
+  "Pure: the hive-datahike create-store opts for a versioned store.
+   Names the store (:store-name, default `versioned-store-name`) so its
+   konserve :id is distinct and stable; an explicit :id in opts wins."
+  [opts]
+  (cond-> {:db-path    (or (:db-path opts) "data/kg/datahike-versioned")
+           :backend    (or (:backend opts) :file)
+           :store-name (or (:store-name opts) versioned-store-name)}
+    (:id opts) (assoc :id (:id opts))))
+
 (defn create-versioned-store
   "Create a versioned Knowledge Graph store backed by Datahike.
 
@@ -113,21 +130,27 @@
        :db-path     - Path for file storage (default: data/kg/datahike-versioned)
        :backend     - :file or :mem (default: :file)
        :system-name - Name for Yggdrasil system (default: auto-generated)
+       :store-name  - Logical store name; the konserve :id is derived from it
+                      (default: \"hive-mcp-kg-versioned\", distinct from the
+                      main KG's \"hive-mcp-kg\" and hive-datahike's \"hive-kg\")
+       :id          - Explicit store id (UUID or UUID-string); wins over
+                      :store-name
 
    Returns map with:
      :store  - DatahikeStore implementing IGraphStore
      :system - Yggdrasil DatahikeSystem for versioning"
 
   [& [opts]]
-  (let [db-path (or (:db-path opts) "data/kg/datahike-versioned")
-        backend (or (:backend opts) :file)
+  (let [store-opts (versioned-store-opts opts)
+        {:keys [db-path backend store-name]} store-opts
         system-name (or (:system-name opts) (str "hive-kg-" (subs (str (random-uuid)) 0 8)))]
-    (log/info "Creating versioned KG store" {:db-path db-path :backend backend :system-name system-name})
+    (log/info "Creating versioned KG store" {:db-path db-path :backend backend
+                                             :store-name store-name :system-name system-name})
 
     ;; Create Datahike store
     (require 'hive-datahike.kg.store)
     (let [create-store-fn (resolve 'hive-datahike.kg.store/create-store)
-          store (create-store-fn {:db-path db-path :backend backend})]
+          store (create-store-fn store-opts)]
 
       (if-not store
         (do
