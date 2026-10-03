@@ -13,7 +13,8 @@
             [hive-mcp.tools.kanban.list.plan :as plan]
             [hive-mcp.tools.kanban.list.source :as src]
             [hive-mcp.tools.memory-kanban.query :as query]
-            [hive-spi.memory.registry :as sreg]))
+            [hive-spi.memory.registry :as sreg]
+            [hive-mcp.tools.consolidated.kanban :as kanban-tool]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -57,7 +58,30 @@
     (is (= [] (plan/hidden-tags {:tags ["x" "session-todo"] :tag_match "any"}))))
   (testing "the explicit flag opts in"
     (is (= [] (plan/hidden-tags {:include_session_todos true})))
-    (is (= ["session-todo"] (plan/hidden-tags {:include_session_todos false})))))
+    (is (= ["session-todo"] (plan/hidden-tags {:include_session_todos false}))))
+  (testing "the flag may arrive as text; only \"true\" opts in"
+    (is (= [] (plan/hidden-tags {:include_session_todos "true"})))
+    (is (= [] (plan/hidden-tags {:include_session_todos " TRUE "})))
+    (is (= ["session-todo"] (plan/hidden-tags {:include_session_todos "false"})))
+    (is (= ["session-todo"] (plan/hidden-tags {:include_session_todos ""})))
+    (is (= ["session-todo"] (plan/hidden-tags {:include_session_todos "yes"})))
+    (is (= ["session-todo"] (plan/hidden-tags {:include_session_todos 1})))))
+
+(deftest kanban-tool-declares-the-opt-in
+  (let [prop (get-in kanban-tool/tool-def [:inputSchema :properties "include_session_todos"])]
+    (testing "include_session_todos is a declared boolean"
+      (is (= "boolean" (:type prop)))
+      (is (string? (:description prop))))
+    (testing "the tool description says session todos are hidden by default"
+      (is (re-find #"session-todo" (:description kanban-tool/tool-def)))
+      (is (re-find #"include_session_todos" (:description kanban-tool/tool-def))))))
+
+(deftest string-false-does-not-opt-in-on-list
+  (binding [query/*board-source* (src/->seq-source board)]
+    (is (= #{"real-1" "real-2" "real-3"}
+           (ids (query/list-slim* (assoc base :include_session_todos "false")))))
+    (is (= #{"real-1" "real-2" "real-3" "sess-4" "sess-5"}
+           (ids (query/list-slim* (assoc base :include_session_todos "true")))))))
 
 (deftest drop-hidden-removes-only-tagged-entries
   (is (= ["real-1" "real-2" "real-3"]

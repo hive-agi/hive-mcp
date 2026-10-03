@@ -16,7 +16,8 @@
             [hive-mcp.tools.kanban.list.schema :as s]
             [hive-mcp.tools.kanban.predicates :as kp]
             [hive-mcp.tools.kanban.transitions :as kt]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [clojure.string :as str]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -83,12 +84,23 @@
   "Tags a board read hides unless the caller opts in."
   [session-todo-tag])
 
+(defn opt-in?
+  "True iff an opt-in flag is boolean true or the text \"true\" (any case,
+   surrounding blanks ignored). A flag can reach a handler as text, so a
+   bare truthiness check would let \"false\" opt in."
+  [flag]
+  (or (true? flag)
+      (and (string? flag)
+           (= "true" (str/lower-case (str/trim flag))))))
+
 (defn hidden-tags
-  "Tags whose cards this request hides. A request opts in by naming the tag
-   in :tags (AND or OR; the owning agent reads its own list that way) or
-   with a truthy :include_session_todos."
+  "Tags whose cards this request hides. A request opts in by naming the
+   exact tag in :tags (AND or OR; the owning agent reads its own list that
+   way, always naming `session-todo` alongside `session-agent:<id>`) or with
+   :include_session_todos true / \"true\". Naming only `session-agent:<id>`
+   does not opt in."
   [{:keys [tags include_session_todos]}]
-  (if include_session_todos
+  (if (opt-in? include_session_todos)
     []
     (let [named (set tags)]
       (into [] (remove named) default-hidden-tags))))
