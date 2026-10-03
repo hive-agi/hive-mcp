@@ -22,7 +22,7 @@
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.chroma.core :as chroma]
             [hive-mcp.vectordb.facade :as facade]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.channel.piggyback :as piggyback]
             [hive-mcp.concurrency.pool :as pool]))

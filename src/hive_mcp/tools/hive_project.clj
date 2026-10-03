@@ -14,7 +14,7 @@
    - :presets-path - project-local presets directory"
   (:require [hive-mcp.tools.core :refer [mcp-json mcp-error]]
             [hive-spi.editor.services :as svc]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.config.core :as config]
             [clojure.data.json :as json]
             [clojure.java.io :as io]

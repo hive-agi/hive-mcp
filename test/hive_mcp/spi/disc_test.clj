@@ -13,7 +13,7 @@
    (HIVE-KERNEL K1/E6c)."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.spi.disc :as port]
-            [hive-mcp.swarm.adapters.soft :as soft]))
+            [hive-mcp.extensions.soft :as soft]))
 
 (defn- clean-registry [f]
   (port/uninstall!)

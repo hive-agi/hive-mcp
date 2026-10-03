@@ -12,7 +12,7 @@
             [hive-mcp.tools.core :refer [mcp-success mcp-error emacs-timeout-ms]]
             [hive-mcp.emacs-ext.client :as ec]
             [hive-mcp.emacs-ext.elisp :as el]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [taoensso.timbre :as log]
             [clojure.string :as str]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -37,7 +37,7 @@
    Uses provided directory, request context directory, or falls back to
    MCP server's working directory.
 
-   CTX Migration: Now uses hive-mcp.agent.context for directory resolution."
+   CTX Migration: Now uses hive-mcp.context.request for directory resolution."
   [directory]
   (or directory
       (ctx/current-directory)

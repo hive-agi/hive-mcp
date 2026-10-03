@@ -16,7 +16,7 @@
             [hive-mcp.knowledge-graph.schema :as kg-schema]
             [hive-mcp.concurrency.pool :as pool]
             [hive-weave.pool :as wpool]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.crystal.recall :as recall]
             [clojure.string :as str]
             [taoensso.timbre :as log]
@@ -135,7 +135,7 @@
 (defn- build-entry-tags
   "Build complete tags vector: base, agent, attribution, KG markers, and scope.
    The `agent:<agent-id>` tag is kept as before; `attribution` (see
-   hive-mcp.agent.context/attribution) adds the session-precise tags beside it."
+   hive-mcp.context.request/attribution) adds the session-precise tags beside it."
   [tags-vec agent-id attribution kg-vecs project-id]
   (let [agent-tag (when agent-id (str "agent:" agent-id))
         tags-with-agent (into (if agent-tag (conj tags-vec agent-tag) tags-vec)

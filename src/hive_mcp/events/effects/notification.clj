@@ -70,9 +70,9 @@
    P1 FIX: Fallback chain includes ctx/current-agent-id for in-process agent context."
   [{:keys [agent-id event-type] :as effect}]
   ;; P1 FIX: Check context for in-process agent attribution
-  ;; Uses hive-mcp.agent.context (no circular dep) for thread-local agent-id
+  ;; Uses hive-mcp.context.request (no circular dep) for thread-local agent-id
   (let [get-ctx-agent-id (try
-                           (requiring-resolve 'hive-mcp.agent.context/current-agent-id)
+                           (requiring-resolve 'hive-mcp.context.request/current-agent-id)
                            (catch Exception e (log/trace "[notification] agent-context resolution failed:" (.getMessage e)) nil))
         effective-id (or agent-id
                          (when get-ctx-agent-id (get-ctx-agent-id))

@@ -7,7 +7,7 @@
             [hive-mcp.agent.ling :as ling]
             [hive-mcp.agent.protocol :as proto]
             [hive-mcp.project.scope :as project-scope]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.spi.metrics :as metrics-port]

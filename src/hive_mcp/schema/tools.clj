@@ -9,7 +9,7 @@
             [clojure.string :as str]
             [clojure.walk :as walk]
             [hive-mcp.schema.memory :as mem]
-            [hive-mcp.swarm.adapters.soft :as soft]
+            [hive-mcp.extensions.soft :as soft]
             [hive-system.pattern.construct.api :as pattern]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>

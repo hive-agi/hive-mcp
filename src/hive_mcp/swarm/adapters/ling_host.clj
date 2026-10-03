@@ -20,14 +20,14 @@
      ling-catchup (keeps the extension-layer requiring-resolve and the
      token-budget truncation host-side). hive-mcp.workflows is a
      hive-workflows extraction target in the kernel census, so it is resolved
-     by symbol on the call (hive-mcp.swarm.adapters.soft) and answers the
+     by symbol on the call (hive-mcp.extensions.soft) and answers the
      port's Noop (nil) once the namespace has left.
 
    Install at addon init via install!. A standalone process without this
    adapter runs on the SPI's Noop (readiness: {:ready? false :phase
    :no-host ...}; catchup: nil)."
   (:require [hive-spi.swarm.ports.ling-host :as spi]
-            [hive-mcp.swarm.adapters.soft :as soft]))
+            [hive-mcp.extensions.soft :as soft]))
 
 (def ^:private wait-for-ling-ready-sym
   'hive-mcp.tools.consolidated.workflow.readiness/wait-for-ling-ready)

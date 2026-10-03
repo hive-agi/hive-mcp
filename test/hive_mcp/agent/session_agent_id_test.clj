@@ -3,7 +3,7 @@
    `coordinator:<session>`, never as the role every coordinator shares."
   (:require [clojure.data.json :as json]
             [clojure.test :refer [deftest is testing]]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.tools.consolidated.session :as session]))
 
 (deftest session-agent-id-resolution

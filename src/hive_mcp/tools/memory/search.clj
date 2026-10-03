@@ -39,7 +39,7 @@
             [hive-weave.pool :as wpool]
             [hive-weave.safe :as safe]
             [hive-weave.parallel :as parallel]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.resilience :refer [with-resilience]]

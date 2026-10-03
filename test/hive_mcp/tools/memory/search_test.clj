@@ -19,7 +19,7 @@
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [hive-mcp.project.scope :as kg-scope]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.plan.plans :as plans]
             [hive-mcp.memory.ingest-search :as ingest-search]))
 

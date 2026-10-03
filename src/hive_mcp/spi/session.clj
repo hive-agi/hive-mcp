@@ -18,7 +18,7 @@
 
    With no memory domain both calls are no-ops: sessions are still served, and
    nothing is crystallized because there is nowhere to crystallize into."
-  (:require [hive-mcp.swarm.adapters.soft :as soft]))
+  (:require [hive-mcp.extensions.soft :as soft]))
 
 (defprotocol ISessionLifecycle
   (-record-session-start! [this agent-id]

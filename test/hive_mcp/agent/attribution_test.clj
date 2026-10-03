@@ -3,7 +3,7 @@
    caller id, else the legacy value. A model-supplied agent_id never moves
    attribution once a caller id is stamped."
   (:require [clojure.test :refer [deftest is testing]]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.memory.temporal :as temporal]
             [hive-mcp.tools.kg.commands :as kg-commands]
             [hive-mcp.tools.memory.crud.write :as write]))

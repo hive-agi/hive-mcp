@@ -92,7 +92,7 @@
    Computed rather than hard-coded so the suite does not depend on the JVM's cwd."
   []
   ((requiring-resolve 'hive-mcp.project.scope/get-current-project-id)
-   ((requiring-resolve 'hive-mcp.agent.context/current-directory))))
+   ((requiring-resolve 'hive-mcp.context.request/current-directory))))
 
 (defn call-with-stub-store
   "Register a stub IMemoryStore for THUNK, then restore the prior registry.

@@ -11,7 +11,7 @@
             [hive-mcp.agent.protocol :as proto]
             [hive-mcp.agent.executor :as executor]
             [hive-mcp.agent.registry]
-            [hive-mcp.agent.context :as proto-ctx]
+            [hive-mcp.context.request :as proto-ctx]
             [hive-mcp.agent.openrouter :as llm-registry]))
 
 ;; =============================================================================

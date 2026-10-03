@@ -30,7 +30,7 @@
             [hive-mcp.chroma.core :as chroma]
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.tools.memory.duration :as dur]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.channel.piggyback :as piggyback]
             [hive-mcp.channel.memory-piggyback :as memory-piggyback]

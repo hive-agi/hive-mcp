@@ -2,7 +2,7 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-(ns hive-mcp.swarm.adapters.soft-test
+(ns hive-mcp.extensions.soft-test
   "The swarm host adapters bind extraction-bound host namespaces late.
 
    Two classpaths are exercised through the one seam the adapters expose,
@@ -18,7 +18,7 @@
             [hive-mcp.swarm.adapters.events :as events]
             [hive-mcp.swarm.adapters.ling-host :as ling-host]
             [hive-mcp.swarm.adapters.memory-scope :as memory-scope]
-            [hive-mcp.swarm.adapters.soft :as soft]
+            [hive-mcp.extensions.soft :as soft]
             [hive-spi.swarm.ports.agent-context :as ctx-spi]
             [hive-spi.swarm.ports.events :as events-spi]
             [hive-spi.swarm.ports.ling-host :as ling-spi]

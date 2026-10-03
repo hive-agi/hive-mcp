@@ -1,5 +1,5 @@
 (ns hive-mcp.tools.memory-kanban.query
-  (:require [hive-mcp.agent.context :as ctx]
+  (:require [hive-mcp.context.request :as ctx]
             [hive-mcp.project.tree :as tree]
             [hive-mcp.tools.core :refer [mcp-json]]
             [hive-mcp.tools.kanban.list.plan :as plan]

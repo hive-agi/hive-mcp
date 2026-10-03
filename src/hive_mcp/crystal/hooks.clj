@@ -15,7 +15,7 @@
             [hive-mcp.channel.core :as channel]   ;; on-kanban-done, on-session-end
             [hive-mcp.hooks.core :as hooks]       ;; register-hooks!
             [hive-mcp.swarm.datascript :as ds]    ;; on-kanban-done
-            [hive-mcp.agent.context :as ctx]      ;; on-session-end
+            [hive-mcp.context.request :as ctx]      ;; on-session-end
             [hive-mcp.dns.result :as result]
             [clojure.string :as str]
             [taoensso.timbre :as log]

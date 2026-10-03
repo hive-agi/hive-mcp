@@ -11,7 +11,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.server.routes.middleware :as mw]
-            [hive-mcp.agent.context :as ctx]))
+            [hive-mcp.context.request :as ctx]))
 
 (defn- with-seam*
   "Register `f` as the :guard/decide extension for the duration of `body-fn`."

@@ -24,7 +24,7 @@
             [hive-mcp.dsl.response :as compress]
             [taoensso.timbre :as log]
             [clojure.data.json :as json]
-            [hive-mcp.agent.context :as ctx]))
+            [hive-mcp.context.request :as ctx]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -38,7 +38,7 @@
   "Resolve the current agent-id from agent context or environment."
   []
   (try
-    (when-let [ctx-fn (requiring-resolve 'hive-mcp.agent.context/current-agent-id)]
+    (when-let [ctx-fn (requiring-resolve 'hive-mcp.context.request/current-agent-id)]
       (ctx-fn))
     (catch Exception _
       (System/getenv "CLAUDE_SWARM_SLAVE_ID"))))

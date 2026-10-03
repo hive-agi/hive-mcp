@@ -14,7 +14,7 @@
             [taoensso.timbre :as log]
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.tools.swarm.channel :as swarm-channel]
-            [hive-mcp.swarm.adapters.soft :as soft]
+            [hive-mcp.extensions.soft :as soft]
             [hive-mcp.swarm.claim.negotiate :as claim-negotiate]
             [hive-mcp.agent.ling.start-preflight :as start-preflight]
             [hive-mcp.agent.grant :as grant]

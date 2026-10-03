@@ -38,7 +38,7 @@
             [hive-mcp.hot.self :as hot-self]
             [hive-mcp.protocols.vector :as vec-proto]
             [hive-mcp.spi.contributions :as contrib]
-            [hive-mcp.swarm.adapters.soft :as soft]
+            [hive-mcp.extensions.soft :as soft]
             [hive-mcp.hot.core :as hot-core]
             [hive-mcp.hot.reseat :as reseat]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>

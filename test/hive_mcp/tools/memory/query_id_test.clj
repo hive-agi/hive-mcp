@@ -21,7 +21,7 @@
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.project.scope :as kg-scope]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
-            [hive-mcp.agent.context :as ctx]))
+            [hive-mcp.context.request :as ctx]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later

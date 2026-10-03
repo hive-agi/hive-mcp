@@ -5,7 +5,7 @@
    Absorbed domains use nested prefixes: 'kanban list', 'config get', etc.
    Addons can extend via contribute-commands! \"project\"."
   (:require [clojure.string :as str]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.dns.result :as result]
             [hive-mcp.project.tree :as tree]
             [hive-mcp.tools.composite :as composite]

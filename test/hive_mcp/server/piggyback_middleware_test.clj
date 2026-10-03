@@ -18,7 +18,7 @@
             [hive-mcp.server.routes :as routes]
             [hive-mcp.channel.piggyback :as pb]
             [hive-mcp.channel.memory-piggyback :as mp]
-            [hive-mcp.agent.context :as ctx]))
+            [hive-mcp.context.request :as ctx]))
 
 ;; The project-id that extract-project-id resolves for our test directory.
 ;; Used for hivemind piggyback (still project-scoped).
