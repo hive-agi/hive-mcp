@@ -39,7 +39,8 @@
             [hive-mcp.tools.consolidated.agent :as agent]
             ;; Multi meta-facade
             [hive-mcp.tools.consolidated.multi :as multi]
-            [hive-mcp.dispatch.handler :as dispatch]))
+            [hive-mcp.dispatch.handler :as dispatch]
+            [hive-mcp.dispatch.verbs :as verbs]))
 
 ;; =============================================================================
 ;; Helpers
@@ -1067,15 +1068,17 @@
   (testing "agent canonical-handlers has expected commands"
     (is (contains? agent/canonical-handlers :spawn))
     (is (contains? agent/canonical-handlers :status))
-    (is (contains? agent/canonical-handlers :kill))
-    (is (contains? agent/canonical-handlers :kill-batch))
     (is (contains? agent/canonical-handlers :batch-spawn))
     (is (contains? agent/canonical-handlers :dispatch))
     (is (contains? agent/canonical-handlers :claims))
     (is (contains? agent/canonical-handlers :collect))
     (is (contains? agent/canonical-handlers :broadcast))
     (is (contains? agent/canonical-handlers :cleanup))
-    (is (contains? agent/canonical-handlers :dag))))
+    (is (contains? agent/canonical-handlers :dag)))
+  (testing "kill and kill-batch are provided by the hive-agent addon (verb root)"
+    (is (= {:kill "hive.agent" :kill-batch "hive.agent"}
+           (verbs/provided-by agent/canonical-handlers)))
+    (is (= "agent" (verbs/root-of agent/canonical-handlers)))))
 
 (deftest test-agent-dag-nested-handlers
   (testing "agent dag subtree has nested commands"

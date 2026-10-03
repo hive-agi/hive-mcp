@@ -1,0 +1,25 @@
+{:conflict
+ {:source :refused,
+  :verb :status,
+  :handler :core-status,
+  :owner :core,
+  :refused-owner "hive.rogue"},
+ :contributed-only
+ {:source :contributed,
+  :verb :kill,
+  :handler :addon-kill,
+  :owner "hive.agent"},
+ :declared-other
+ {:source :refused,
+  :verb :kill,
+  :handler :core-shim,
+  :owner "hive.agent",
+  :refused-owner "hive.rogue"},
+ :missing {:source :missing, :verb :kill, :owner "hive.agent"},
+ :same-owner-shim
+ {:source :contributed,
+  :verb :kill,
+  :handler :addon-kill,
+  :owner "hive.agent"},
+ :static-only {:source :static, :verb :status, :handler :core-status},
+ :unknown-verb {:source :unknown, :verb :nope}}

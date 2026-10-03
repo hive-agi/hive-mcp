@@ -9,7 +9,8 @@
             [taoensso.timbre :as log]
             [hive-mcp.dispatch.handler :as dispatch]
             [hive-mcp.addons.boot-health :as boot-health]
-            [hive-mcp.tools.op-outcome :as op-outcome]))
+            [hive-mcp.tools.op-outcome :as op-outcome]
+            [hive-mcp.dispatch.verbs :as verbs]))
 
 ;; =============================================================================
 ;; Command Normalization
@@ -386,7 +387,7 @@
                            (mcp-error (str "Parameter error: " (:message coerced)))))
                        (handler params)))]
      (fn [{:keys [command] :as params}]
-       (let [handlers (dispatch/current handlers)
+       (let [handlers (verbs/effective-tree (dispatch/current handlers))
              cmd-str  (normalize-command command)
              path     (parse-command cmd-str)]
          (cond
