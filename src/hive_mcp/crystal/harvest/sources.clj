@@ -14,7 +14,7 @@
   (:require [hive-mcp.crystal.harvest.protocol :as proto
              :refer [harvest-ok harvest-empty harvest-error]]
             [hive-mcp.crystal.core :as crystal]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.dns.result :as result]
             [clojure.java.shell :refer [sh]]

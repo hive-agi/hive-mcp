@@ -19,7 +19,7 @@
             [hive-mcp.server.routes :as routes]
             [hive-mcp.hivemind.core :as hivemind]
             [hive-mcp.channel.piggyback :as pb]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-dsl.bounded-atom :refer [bput! bget bclear!]]
             [clojure.edn]))
 

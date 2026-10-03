@@ -27,10 +27,10 @@
    CI cannot resolve (memory 20260919203856-2bb9451d).
 
    With nothing installed the port late-binds BY SYMBOL to the in-core
-   namespace through `hive-mcp.swarm.adapters.soft`, so behaviour today is
+   namespace through `hive-mcp.extensions.soft`, so behaviour today is
    unchanged and the day the namespace leaves the same call answers the Noop:
    no staleness value, no propagation, no stale files."
-  (:require [hive-mcp.swarm.adapters.soft :as soft]))
+  (:require [hive-mcp.extensions.soft :as soft]))
 
 (defprotocol IDiscKnowledge
   "The disc-graph questions the kernel asks."

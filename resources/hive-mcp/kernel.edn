@@ -231,7 +231,6 @@
    hive-mcp.swarm.adapters.ling-host
    hive-mcp.swarm.adapters.memory-scope
    hive-mcp.swarm.adapters.messaging
-   hive-mcp.swarm.adapters.soft
    hive-mcp.swarm.adapters.store-hooks
    hive-mcp.swarm.bootstrap.datahike
    hive-mcp.swarm.bootstrap.datahike-driver
@@ -308,8 +307,6 @@
  :waivers
  [{:from hive-mcp.config.merge, :to hive-mcp.agent.provider.model, :since "2026-10-03", :retired-by "CORE-X3", :reason "spawn provider routing moves to hive-agent.llm.provider"}
   {:from hive-mcp.events.core, :to hive-mcp.swarm.datascript, :since "2026-10-03", :retired-by "step-2", :reason "callers go through a hive-spi ISwarmDb slot (plan step-2; no CORE-X card yet)"}
-  {:from hive-mcp.events.effects, :to hive-mcp.swarm.adapters.soft, :since "2026-10-03", :retired-by "step-1", :reason "generic utility misfiled under swarm/agent is renamed out (plan 20260930195015-2c11c04d step-1; no CORE-X card yet)"}
-  {:from hive-mcp.events.effects.coeffect, :to hive-mcp.agent.context, :since "2026-10-03", :retired-by "step-1", :reason "generic utility misfiled under swarm/agent is renamed out (plan 20260930195015-2c11c04d step-1; no CORE-X card yet)"}
   {:from hive-mcp.events.effects.coeffect, :to hive-mcp.swarm.datascript, :since "2026-10-03", :retired-by "step-2", :reason "callers go through a hive-spi ISwarmDb slot (plan step-2; no CORE-X card yet)"}
   {:from hive-mcp.events.effects.conversation, :to hive-mcp.hivemind.conversation, :since "2026-10-03", :retired-by "CORE-X8", :reason "A2A and conversation delivery move to hive-agent (census backlog item 8; card not filed yet)"}
   {:from hive-mcp.events.effects.infrastructure, :to hive-mcp.swarm.datascript, :since "2026-10-03", :retired-by "step-2", :reason "callers go through a hive-spi ISwarmDb slot (plan step-2; no CORE-X card yet)"}
@@ -318,11 +315,8 @@
   {:from hive-mcp.events.handlers.claim, :to hive-mcp.swarm.datascript, :since "2026-10-03", :retired-by "step-2", :reason "callers go through a hive-spi ISwarmDb slot (plan step-2; no CORE-X card yet)"}
   {:from hive-mcp.events.handlers.conversation, :to hive-mcp.hivemind.conversation, :since "2026-10-03", :retired-by "CORE-X8", :reason "A2A and conversation delivery move to hive-agent (census backlog item 8; card not filed yet)"}
   {:from hive-mcp.events.interceptors.conversation, :to hive-mcp.hivemind.conversation, :since "2026-10-03", :retired-by "CORE-X8", :reason "A2A and conversation delivery move to hive-agent (census backlog item 8; card not filed yet)"}
-  {:from hive-mcp.multi.batchables, :to hive-mcp.swarm.adapters.soft, :since "2026-10-03", :retired-by "step-1", :reason "generic utility misfiled under swarm/agent is renamed out (plan 20260930195015-2c11c04d step-1; no CORE-X card yet)"}
   {:from hive-mcp.multi.core-seed, :to hive-mcp.tools.consolidated.roster, :since "2026-10-03", :retired-by "step-5", :reason "hive-agent contributes the swarm/hivemind/roster tool roots (plan step-5; no CORE-X card yet)"}
   {:from hive-mcp.nats.bridge, :to hive-mcp.agent.error-summary, :since "2026-10-03", :retired-by "step-6", :reason "error summary logic moves to hive-agent (plan step-6; no CORE-X card yet)"}
-  {:from hive-mcp.schema.tools, :to hive-mcp.swarm.adapters.soft, :since "2026-10-03", :retired-by "step-1", :reason "generic utility misfiled under swarm/agent is renamed out (plan 20260930195015-2c11c04d step-1; no CORE-X card yet)"}
-  {:from hive-mcp.server.init, :to hive-mcp.swarm.adapters.soft, :since "2026-10-03", :retired-by "step-1", :reason "generic utility misfiled under swarm/agent is renamed out (plan 20260930195015-2c11c04d step-1; no CORE-X card yet)"}
   {:from hive-mcp.server.init, :to hive-mcp.swarm.bootstrap.factory, :since "2026-10-03", :retired-by "step-4", :reason "swarm boot and ask-human leave server.* for hive-agent initialize! and ports (plan step-4; no CORE-X card yet)"}
   {:from hive-mcp.server.init, :to hive-mcp.swarm.event-bridge, :since "2026-10-03", :retired-by "step-4", :reason "swarm boot and ask-human leave server.* for hive-agent initialize! and ports (plan step-4; no CORE-X card yet)"}
   {:from hive-mcp.server.init, :to hive-mcp.swarm.lifecycle.boot-reconcile, :since "2026-10-03", :retired-by "step-4", :reason "swarm boot and ask-human leave server.* for hive-agent initialize! and ports (plan step-4; no CORE-X card yet)"}
@@ -331,23 +325,8 @@
   {:from hive-mcp.server.init, :to hive-mcp.tools.swarm, :since "2026-10-03", :retired-by "step-4", :reason "swarm boot and ask-human leave server.* for hive-agent initialize! and ports (plan step-4; no CORE-X card yet)"}
   {:from hive-mcp.server.lifecycle, :to hive-mcp.swarm.sync, :since "2026-10-03", :retired-by "step-4", :reason "swarm boot and ask-human leave server.* for hive-agent initialize! and ports (plan step-4; no CORE-X card yet)"}
   {:from hive-mcp.server.permissions, :to hive-mcp.hivemind.core, :since "2026-10-03", :retired-by "step-4", :reason "swarm boot and ask-human leave server.* for hive-agent initialize! and ports (plan step-4; no CORE-X card yet)"}
-  {:from hive-mcp.server.routes.identity, :to hive-mcp.agent.context, :since "2026-10-03", :retired-by "step-1", :reason "generic utility misfiled under swarm/agent is renamed out (plan 20260930195015-2c11c04d step-1; no CORE-X card yet)"}
-  {:from hive-mcp.server.routes.middleware, :to hive-mcp.agent.context, :since "2026-10-03", :retired-by "step-1", :reason "generic utility misfiled under swarm/agent is renamed out (plan 20260930195015-2c11c04d step-1; no CORE-X card yet)"}
   {:from hive-mcp.server.routes.middleware, :to hive-mcp.agent.grant, :since "2026-10-03", :retired-by "CORE-X6", :reason "request boundary calls a hive-spi ICallerVerifier port instead"}
   {:from hive-mcp.server.routes.middleware, :to hive-mcp.agent.identity, :since "2026-10-03", :retired-by "CORE-X6", :reason "request boundary calls a hive-spi ICallerVerifier port instead"}
-  {:from hive-mcp.server.transport.olympus-ws, :to hive-mcp.swarm.adapters.soft, :since "2026-10-03", :retired-by "step-1", :reason "generic utility misfiled under swarm/agent is renamed out (plan 20260930195015-2c11c04d step-1; no CORE-X card yet)"}
-  {:from hive-mcp.spi.contributions, :to hive-mcp.swarm.adapters.soft, :since "2026-10-03", :retired-by "step-1", :reason "generic utility misfiled under swarm/agent is renamed out (plan 20260930195015-2c11c04d step-1; no CORE-X card yet)"}
-  {:from hive-mcp.spi.disc, :to hive-mcp.swarm.adapters.soft, :since "2026-10-03", :retired-by "step-1", :reason "generic utility misfiled under swarm/agent is renamed out (plan 20260930195015-2c11c04d step-1; no CORE-X card yet)"}
-  {:from hive-mcp.spi.emacs, :to hive-mcp.swarm.adapters.soft, :since "2026-10-03", :retired-by "step-1", :reason "generic utility misfiled under swarm/agent is renamed out (plan 20260930195015-2c11c04d step-1; no CORE-X card yet)"}
-  {:from hive-mcp.spi.metrics, :to hive-mcp.swarm.adapters.soft, :since "2026-10-03", :retired-by "step-1", :reason "generic utility misfiled under swarm/agent is renamed out (plan 20260930195015-2c11c04d step-1; no CORE-X card yet)"}
-  {:from hive-mcp.spi.session, :to hive-mcp.swarm.adapters.soft, :since "2026-10-03", :retired-by "step-1", :reason "generic utility misfiled under swarm/agent is renamed out (plan 20260930195015-2c11c04d step-1; no CORE-X card yet)"}
-  {:from hive-mcp.tools.catchup, :to hive-mcp.agent.context, :since "2026-10-03", :retired-by "step-1", :reason "generic utility misfiled under swarm/agent is renamed out (plan 20260930195015-2c11c04d step-1; no CORE-X card yet)"}
-  {:from hive-mcp.tools.catchup, :to hive-mcp.swarm.adapters.soft, :since "2026-10-03", :retired-by "step-1", :reason "generic utility misfiled under swarm/agent is renamed out (plan 20260930195015-2c11c04d step-1; no CORE-X card yet)"}
-  {:from hive-mcp.tools.catchup.spawn, :to hive-mcp.swarm.adapters.soft, :since "2026-10-03", :retired-by "step-1", :reason "generic utility misfiled under swarm/agent is renamed out (plan 20260930195015-2c11c04d step-1; no CORE-X card yet)"}
-  {:from hive-mcp.tools.consolidated.multi, :to hive-mcp.agent.context, :since "2026-10-03", :retired-by "step-1", :reason "generic utility misfiled under swarm/agent is renamed out (plan 20260930195015-2c11c04d step-1; no CORE-X card yet)"}
-  {:from hive-mcp.tools.consolidated.project, :to hive-mcp.agent.context, :since "2026-10-03", :retired-by "step-1", :reason "generic utility misfiled under swarm/agent is renamed out (plan 20260930195015-2c11c04d step-1; no CORE-X card yet)"}
-  {:from hive-mcp.tools.hive-project, :to hive-mcp.agent.context, :since "2026-10-03", :retired-by "step-1", :reason "generic utility misfiled under swarm/agent is renamed out (plan 20260930195015-2c11c04d step-1; no CORE-X card yet)"}
-  {:from hive-mcp.tools.multi, :to hive-mcp.agent.context, :since "2026-10-03", :retired-by "step-1", :reason "generic utility misfiled under swarm/agent is renamed out (plan 20260930195015-2c11c04d step-1; no CORE-X card yet)"}
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.hivemind, :since "2026-10-03", :retired-by "step-5", :reason "hive-agent contributes the swarm/hivemind/roster tool roots (plan step-5; no CORE-X card yet)"}
   {:from hive-mcp.tools.registry, :to hive-mcp.tools.consolidated.swarm, :since "2026-10-03", :retired-by "step-5", :reason "hive-agent contributes the swarm/hivemind/roster tool roots (plan step-5; no CORE-X card yet)"}
   {:from hive-mcp.transport.a2a, :to hive-mcp.swarm.datascript.queries, :since "2026-10-03", :retired-by "CORE-X8", :reason "A2A and conversation delivery move to hive-agent (census backlog item 8; card not filed yet)"}

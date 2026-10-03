@@ -53,7 +53,7 @@
               "tools=" (count (or allowed-tools [])))
     (try
       (when-let [set-allowlist! (requiring-resolve
-                                 'hive-mcp.agent.context/set-tool-allowlist!)]
+                                 'hive-mcp.context.request/set-tool-allowlist!)]
         (set-allowlist! agent-id (set (or allowed-tools [])))
         (log/debug "[saa-fx] Tool allowlist set for" agent-id
                    "phase=" (name phase)))
@@ -94,7 +94,7 @@
                 "size=" ctx-size)
       (try
         (when-let [inject-ctx! (requiring-resolve
-                                'hive-mcp.agent.context/inject-context!)]
+                                'hive-mcp.context.request/inject-context!)]
           (inject-ctx! agent-id phase context)
           (log/debug "[saa-fx] Context injected for" agent-id
                      "phase=" (name phase)))

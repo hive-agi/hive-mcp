@@ -14,7 +14,7 @@
    to pin the inputs the fns derive from the environment."
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.data.json :as json]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.crystal.core :as crystal]
             [hive-mcp.crystal.harvest.collect :as collect]
             [hive-mcp.swarm.datascript :as ds]

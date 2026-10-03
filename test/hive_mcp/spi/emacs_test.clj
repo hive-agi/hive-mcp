@@ -8,7 +8,7 @@
    `soft/*resolve*` rather than described."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.spi.emacs :as emacs]
-            [hive-mcp.swarm.adapters.soft :as soft]))
+            [hive-mcp.extensions.soft :as soft]))
 
 (defn- clean [f]
   (emacs/uninstall!)

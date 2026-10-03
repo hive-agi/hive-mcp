@@ -3,7 +3,7 @@
 
    Single responsibility: start Olympus WS server and wire hivemind events."
   (:require [hive-mcp.dns.result :as result]
-            [hive-mcp.swarm.adapters.soft :as soft]
+            [hive-mcp.extensions.soft :as soft]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

@@ -14,7 +14,7 @@
      in-core `hive-mcp.telemetry.prometheus` for as long as that namespace
      still lives here. Once it leaves, the same call answers the Noop.
 
-   Same shape and same reason as `hive-mcp.swarm.adapters.soft`, whose
+   Same shape and same reason as `hive-mcp.extensions.soft`, whose
    `resolve-soft` does the late binding here too. Host-local, like the K1
    ports: hive-spi has never released a metrics port, and pinning an
    unreleased sibling would land staging red (memory 20260919203856-2bb9451d).
@@ -23,7 +23,7 @@
    `inc-events!` on every event. `install!`, `uninstall!` and
    `reset-cache!` clear the cache, so a namespace that arrives later (an
    addon mounting its telemetry) is picked up on the next call."
-  (:require [hive-mcp.swarm.adapters.soft :as soft]))
+  (:require [hive-mcp.extensions.soft :as soft]))
 
 (defprotocol IMetrics
   "Every metric the kernel reports. An implementation returns nil from all

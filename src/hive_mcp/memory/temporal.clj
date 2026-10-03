@@ -29,7 +29,7 @@
    Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
    SPDX-License-Identifier: AGPL-3.0-or-later"
   (:require [hive-mcp.knowledge-graph.connection :as kg-conn]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]))
 
 ;; =============================================================================
@@ -67,7 +67,7 @@
 
 (defn- mutation-attribution
   "Who a mutation is attributed to: the request's attribution
-   (hive-mcp.agent.context/attribution) when the transport stamped a caller
+   (hive-mcp.context.request/attribution) when the transport stamped a caller
    id, else `legacy-id`, else the context agent id, the env slave id, or
    \"unknown\" as before. -> {:id :verified?}"
   [legacy-id]

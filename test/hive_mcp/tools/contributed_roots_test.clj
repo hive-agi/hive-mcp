@@ -13,7 +13,7 @@
    extracted domain leaves behind (HIVE-KERNEL E1/E3/E4/E5/E6/E7)."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.spi.contributions :as contrib]
-            [hive-mcp.swarm.adapters.soft :as soft]
+            [hive-mcp.extensions.soft :as soft]
             [hive-mcp.tools.registry :as registry]))
 
 (def ^:private manifest-opts

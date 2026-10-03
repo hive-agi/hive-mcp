@@ -14,7 +14,7 @@
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
             [hive-dsl.result :as r]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.memory.temporal :as temporal]
             [hive-mcp.project.tree :as tree]
             [hive-mcp.swarm.datascript :as ds]

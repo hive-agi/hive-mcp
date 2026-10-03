@@ -2,7 +2,7 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-(ns hive-mcp.swarm.adapters.soft
+(ns hive-mcp.extensions.soft
   "Late binding for the host namespaces a swarm adapter delegates to.
 
    The adapters sit in the kernel (segment `swarm` in

@@ -10,7 +10,7 @@
 
    DDD: Application Service layer — request processing pipeline."
   (:require [hive-mcp.server.routes.identity :as id]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.spi.session :as crystal]
             [hive-mcp.channel.async-result :as async-buf]
             [hive-mcp.server.routes.async-tasks :as async-tasks]
@@ -307,7 +307,7 @@
    Identity is offered from three sources so the guard can attribute the call
    to the strongest one it trusts:
      :verified-caller-id - the caller id whose spawn credential the host
-                           verified (hive-mcp.agent.context), else absent.
+                           verified (hive-mcp.context.request), else absent.
      :caller-id          - the transport-stamped `_caller_id`, as asserted.
      :agent-id           - the model-supplied argument, never verified.
    The two caller keys are ADDITIVE and present only when known: a guard that

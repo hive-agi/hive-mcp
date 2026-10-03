@@ -13,7 +13,7 @@
             [clojure.string :as str]
             [hive-mcp.multi.registry :as multi-registry]
             [hive-mcp.multi.registry.tools :as r-tools]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.multi.param-coerce :as param-coerce]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

@@ -59,7 +59,7 @@
             [hive-mcp.events.core :as events]
             [hive-mcp.hooks.core :as hooks]
             [hive-mcp.protocols.vessel :as vessel]
-            [hive-mcp.swarm.adapters.soft :as soft]
+            [hive-mcp.extensions.soft :as soft]
             [hive-mcp.swarm.sync :as sync]))
 
 (defn make-adapter

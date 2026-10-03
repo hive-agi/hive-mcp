@@ -63,7 +63,6 @@
  hive-mcp.swarm.adapters.ling-host
  hive-mcp.swarm.adapters.memory-scope
  hive-mcp.swarm.adapters.messaging
- hive-mcp.swarm.adapters.soft
  hive-mcp.swarm.adapters.store-hooks
  hive-mcp.swarm.bootstrap.datahike
  hive-mcp.swarm.bootstrap.datahike-driver

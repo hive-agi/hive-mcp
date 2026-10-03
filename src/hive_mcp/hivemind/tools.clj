@@ -5,7 +5,7 @@
             [hive-mcp.hivemind.messaging :as messaging]
             [hive-mcp.hivemind.status :as status]
             [hive-mcp.hivemind.event-registry :as event-registry]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-spi.swarm.protocol :as proto]
             [hive-mcp.swarm.datascript.registry :as registry]
             [hive-mcp.project.scope :as project-scope]

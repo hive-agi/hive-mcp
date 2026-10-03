@@ -5,7 +5,7 @@
             [hive-mcp.hivemind.event-registry :as event-registry]
             [hive-mcp.tools.core :refer [mcp-error]]
             [clojure.string :as str]
-            [hive-mcp.swarm.adapters.soft :as soft]))
+            [hive-mcp.extensions.soft :as soft]))
 
 (def ^:private tools-by-name
   (into {} (map (fn [t] [(keyword (str/replace (:name t) "hivemind_" "")) (:handler t)])

@@ -15,7 +15,7 @@
             [hive-mcp.vectordb.facade :as facade]
             [hive-mcp.knowledge-graph.connection :as kg-conn]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.plan.schema :as schema]
