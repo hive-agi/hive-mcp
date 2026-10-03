@@ -31,7 +31,7 @@
             [hive-mcp.crystal.harvest.sources :as sources]
             [hive-mcp.crystal.pipeline :as pipeline]
             [hive-mcp.crystal.core :as crystal]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [taoensso.timbre :as log]
             [clojure.java.shell]))
 

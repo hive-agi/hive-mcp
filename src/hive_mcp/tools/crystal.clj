@@ -17,7 +17,7 @@
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.events.core :as ev]
             [hive-mcp.events.effects]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.extensions.registry :as ext]
             [clojure.data.json :as json]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]))

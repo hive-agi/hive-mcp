@@ -50,6 +50,19 @@
         (is (empty? stale)
             (str "stale waivers (edge is gone, drop the waiver):\n" (fmt-edges (map #(assoc % :target :stale) stale))))))))
 
+(deftest frozen-extractions-take-no-new-namespace
+  (let [{:keys [allowlist rows]} (gate-state)]
+    (testing "no namespace under a frozen owner's prefixes is missing from :extraction/listed"
+      (let [unlisted (census/unlisted-extractions allowlist rows)]
+        (is (empty? unlisted)
+            (str "new namespaces under a frozen extraction; write them in the addon, not core:\n  "
+                 (str/join "\n  " (map (fn [{:keys [ns target]}] (str ns " (" (name target) ")")) unlisted))))))
+    (testing "every listed namespace still exists and still extracts to its owner"
+      (let [stale (census/stale-listings allowlist rows)]
+        (is (empty? stale)
+            (str "stale :extraction/listed entries (drop them):\n  "
+                 (str/join "\n  " (map :ns stale))))))))
+
 (deftest waiver-count-ratchets-down
   (let [{:keys [allowlist]} (gate-state)
         baseline (:waiver-baseline allowlist)

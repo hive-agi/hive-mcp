@@ -1,7 +1,7 @@
 (ns hive-mcp.server.routes-identity-test
   (:require [hive-mcp.project.scope]
             [clojure.test :refer [deftest is testing]]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.crystal.core :as crystal]
             [hive-mcp.protocols.vessel :as vessel]
             [hive-mcp.server.routes.identity :as identity]

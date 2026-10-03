@@ -178,6 +178,8 @@
                                        :description "Force kill even if critical ops in progress"}
                               "directory" {:type "string"
                                            :description "Caller's working directory (for cross-project ownership check)"}
+                              "cascade" {:type "boolean"
+                                         :description "[kill/kill-batch] Also cancel the agent's descendants, leaves first, each reported aborted with killed-by naming the root (default: true). false kills only the named agents."}
                               "force_cross_project" {:type "boolean"
                                                      :description "HIL override: Allow killing agents from different projects (default: false). Required when target agent belongs to different project than caller."}
                               ;; collect params

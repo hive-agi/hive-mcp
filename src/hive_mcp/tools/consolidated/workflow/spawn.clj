@@ -15,7 +15,7 @@
             [hive-mcp.tools.consolidated.kanban :as c-kanban]
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.tools.memory.scope :as scope]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.config.core :as config]
             [hive-mcp.agent.budget-router :as budget-router]

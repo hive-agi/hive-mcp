@@ -1,7 +1,7 @@
 (ns hive-mcp.agent.executor
   "Tool execution with permission gates."
   (:require [hive-mcp.agent.registry :as registry]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.channel.piggyback-tap :as tap]
             [hive-mcp.hivemind.core :as hivemind]
             [hive-mcp.server.permissions :as permissions]

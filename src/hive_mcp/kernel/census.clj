@@ -211,6 +211,46 @@
   (let [live (set (map edge-key edges))]
     (remove #(live (edge-key %)) waivers)))
 
+;; ---------------------------------------------------------------------------
+;; Frozen extractions
+;;
+;; An :extraction prefix only says where a namespace is going. For an owner
+;; named under :extraction/listed the namespaces that exist today are listed
+;; one by one, and a new namespace under that owner's prefixes is refused: new
+;; behaviour for that owner is written in the addon, not in core.
+
+(defn listed-extractions
+  "Map from owner keyword to the set of namespace symbols ALLOWLIST lists
+   under :extraction/listed."
+  [allowlist]
+  (into {} (map (fn [[owner nss]] [owner (set (map #(symbol (str %)) nss))]))
+        (:extraction/listed allowlist)))
+
+(defn unlisted-extractions
+  "Rows of ROWS that classify as :extract for an owner under
+   :extraction/listed but are not in that owner's list, as {:ns :target}.
+   Example:
+   (unlisted-extractions (load-allowlist) (census \"src/hive_mcp\"))"
+  [allowlist rows]
+  (let [listed (listed-extractions allowlist)]
+    (vec (for [{:keys [ns]} rows
+               :let [{:keys [class target]} (classify allowlist ns)]
+               :when (and (= :extract class)
+                          (contains? listed target)
+                          (not (contains? (get listed target) ns)))]
+           {:ns ns :target target}))))
+
+(defn stale-listings
+  "Entries of :extraction/listed naming a namespace ROWS no longer has, or
+   one that no longer classifies as :extract for that owner, as {:ns :target}."
+  [allowlist rows]
+  (let [present (set (map :ns rows))]
+    (vec (for [[owner nss] (listed-extractions allowlist)
+               ns (sort nss)
+               :when (or (not (contains? present ns))
+                         (not= {:class :extract :target owner} (classify allowlist ns)))]
+           {:ns ns :target owner}))))
+
 (defn segment-matrix
   "Map from source segment to {target-segment require-count} over hive-mcp
    requires between different segments of ROWS."

@@ -26,7 +26,7 @@
    remove."
   (:require [clojure.data.json :as json]
             [clojure.test :refer [deftest is testing]]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [hive-mcp.project.scope :as kg-scope]
             [hive-mcp.recall.golden :as g]

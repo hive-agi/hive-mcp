@@ -19,7 +19,7 @@
             [hive-mcp.events.contributions :as contrib]
             [hive-mcp.events.handlers :as handlers]
             [hive-mcp.events.registry :as registry]
-            [hive-mcp.swarm.adapters.soft :as soft]))
+            [hive-mcp.extensions.soft :as soft]))
 
 (defn- with-clean-registry [f]
   (let [handlers-before (contrib/contributed :handlers)

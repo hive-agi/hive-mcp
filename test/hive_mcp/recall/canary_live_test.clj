@@ -6,7 +6,7 @@
    handler, and an absent provider degrades to a visible skip instead of a
    silent pass."
   (:require [clojure.test :refer [deftest is testing]]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [hive-mcp.project.scope :as kg-scope]
             [hive-mcp.protocols.memory :as mem-proto]

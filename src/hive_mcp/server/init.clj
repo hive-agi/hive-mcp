@@ -38,7 +38,7 @@
             [hive-mcp.hot.self :as hot-self]
             [hive-mcp.protocols.vector :as vec-proto]
             [hive-mcp.spi.contributions :as contrib]
-            [hive-mcp.swarm.adapters.soft :as soft]
+            [hive-mcp.extensions.soft :as soft]
             [hive-mcp.hot.core :as hot-core]
             [hive-mcp.hot.reseat :as reseat]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -524,17 +524,7 @@
                                  {:dirs src-dirs
                                   :protocol-namespaces-protected (count no-reload)})
           ;; Register MCP auto-heal listener to refresh tools after reload
-                       (register-hot-reload-listener!)
-          ;; Register state protection for DataScript state validation
-                       (result/rescue nil
-                                      (require 'hive-mcp.hot.state)
-                                      (let [register! (resolve 'hive-mcp.hot.state/register-with-hive-hot!)]
-                                        (register!)))
-          ;; Register SAA Silence strategy for hot-reload aware exploration
-                       (result/rescue nil
-                                      (require 'hive-mcp.hot.silence)
-                                      (let [register! (resolve 'hive-mcp.hot.silence/register-with-hive-hot!)]
-                                        (register!)))))
+                       (register-hot-reload-listener!)))
       (log/info "Hot-reload disabled via .hive-project.edn"))))
 
 ;; =============================================================================

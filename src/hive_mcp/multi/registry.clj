@@ -204,4 +204,9 @@
   (rescue
    {:status :failed :reason "core-seed load threw — :multi/core entries absent"}
    (require 'hive-mcp.multi.core-seed)
+   ;; A refresh recreates this namespace (so this defonce runs again) and the
+   ;; child stores (empty) while core-seed stays in *loaded-libs*, making the
+   ;; require a no-op. install! deregisters :multi/core and seeds again, so
+   ;; the seed converges on a cold load and a warm one alike.
+   ((requiring-resolve 'hive-mcp.multi.core-seed/install!))
    {:status :ok}))

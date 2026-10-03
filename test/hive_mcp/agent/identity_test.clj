@@ -8,7 +8,7 @@
             [clojure.string :as str]
             [hive-mcp.agent.identity :as agent-identity]
             [hive-mcp.agent.headless :as headless]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.server.routes.middleware :as mw]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>

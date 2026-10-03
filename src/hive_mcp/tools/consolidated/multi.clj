@@ -13,7 +13,7 @@
             [clojure.string :as str]
             [hive-mcp.multi.registry :as multi-registry]
             [hive-mcp.multi.registry.tools :as r-tools]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.multi.param-coerce :as param-coerce]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -71,11 +71,14 @@
        "                         {\"id\": \"op2\", \"tool\": \"kg\", \"command\": \"edge\", \"depends_on\": [\"op1\"]}],\n"
        "         \"dry_run\": false}\n"
        "  Operations are topologically sorted by depends_on and executed in waves.\n"
-       "  Independent ops run in parallel within each wave.\n\n"
+       "  Independent ops run in parallel within each wave.\n"
+       "  In a node-id param (from/to/node_id/...), a value equal to a sibling's declared\n"
+       "  id expands to \"$ref:<id>.data.id\" and wires depends_on. There is NO positional\n"
+       "  $N here; a $-prefixed value naming no declared id fails the whole batch.\n\n"
        "== DSL Dispatch (verb syntax) ==\n"
        "  multi {\"dsl\": [[\"m+\", {\"c\": \"hello\", \"t\": \"note\"}],\n"
        "                   [\"k>\", {\"from\": \"$0\", \"to\": \"node-2\", \"rel\": \"implements\"}]]}\n"
-       "  Ops are numbered from $0. In a node-id param (from/to/node_id/...), a bare\n"
+       "  DSL only: the compiler names its ops $0..$n-1. In a node-id param (from/to/node_id/...), a bare\n"
        "  op id refers to that op's result id: \"$0\" expands to \"$ref:$0.data.id\".\n"
        "  Verbs: m+ m? m@ m/ (memory), k> k^ k! k# (kg), a+ a? a! ax (agent),\n"
        "         b+ b> b? b# (kanban), s. s~ s? s< (session), g? g+ g! g> (magit),\n"
@@ -430,6 +433,10 @@
                               "operations" {:type "array"
                                             :items {:type "object"}
                                             :description (str "Batch operation array. Each op: {id, tool, command, ...params, depends_on?: [ids]}. "
+                                                              "Cross-op refs: in a node-id param (from/to/node_id/...), a value equal to a sibling op's "
+                                                              "declared id expands to \"$ref:<id>.data.id\" and wires depends_on; anywhere else use the "
+                                                              "explicit \"$ref:<id>.<path>\" form. There is NO positional $N on this surface ($0..$n-1 "
+                                                              "is DSL-only): a $-prefixed value naming no declared id fails the whole batch. "
                                                               "Mutually exclusive with 'dsl'.")}
                               "dsl"        {:type "array"
                                             :items {:type "array"}
@@ -446,7 +453,8 @@
                                                               "c? (config get), c! (set), c* (list). "
                                                               "Param aliases: c=content, t=type, #=tags, d=directory, "
                                                               "q=query, n=name, id=id, p=prompt, f=files. "
-                                                              "Ops are numbered from $0. In a node-id param (from/to/node_id/...), "
+                                                              "DSL only: the compiler names its ops $0..$n-1 in order (the 'operations' "
+                                                              "surface has no positional $N). In a node-id param (from/to/node_id/...), "
                                                               "a bare op id refers to that op's result id: \"$0\" expands to "
                                                               "\"$ref:$0.data.id\". Anywhere else, use the explicit \"$ref:$0.<path>\" form. "
                                                               "Example: [[\"m+\", {\"c\": \"note text\", \"t\": \"note\"}], "

@@ -18,7 +18,7 @@
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.test.stub.memory-store :as stub]
             [hive-spi.memory.registry :as registry]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [clojure.string]))
 
 ;; =============================================================================

@@ -11,7 +11,7 @@
             [hive-mcp.crystal.core :as crystal]
             [hive-mcp.memory.temporal :as temporal]
             [hive-mcp.tools.core :refer [mcp-json]]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.resilience :refer [with-resilience]]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>

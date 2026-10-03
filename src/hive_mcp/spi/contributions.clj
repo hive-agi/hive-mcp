@@ -18,7 +18,7 @@
    - an ADDON at `initialize!`, which is where every domain ends up;
    - a MANIFEST resource for domains still shipped inside core.
      `load-manifest!` resolves each entry's symbols through
-     `hive-mcp.swarm.adapters.soft`, so the kernel declares an in-core domain
+     `hive-mcp.extensions.soft`, so the kernel declares an in-core domain
      without requiring it, and an entry that does not resolve is ABSENT rather
      than fatal: that is the normal state once the domain becomes an addon.
 
@@ -29,7 +29,7 @@
    under that word."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [hive-mcp.swarm.adapters.soft :as soft]
+            [hive-mcp.extensions.soft :as soft]
             [taoensso.timbre :as log]))
 
 (defonce ^:private registry

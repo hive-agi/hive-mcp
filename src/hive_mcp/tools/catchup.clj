@@ -16,7 +16,7 @@
    - handle-native-catchup  — main catchup handler
    - handle-native-wrap     — wrap/crystallize handler
    - spawn-context          — re-export from catchup.spawn"
-  (:require [hive-mcp.agent.context :as ctx]
+  (:require [hive-mcp.context.request :as ctx]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.project.scope :as project-scope]
             [hive-mcp.tools.catchup.scope :as catchup-scope]
@@ -39,7 +39,7 @@
             [hive-mcp.tools.catchup.outcome :as outcome]
             [hive-mcp.tools.catchup.caller :as catchup-caller]
             [hive-mcp.spi.catchup-registry :as blocks]
-            [hive-mcp.swarm.adapters.soft :as soft]
+            [hive-mcp.extensions.soft :as soft]
             [hive-mcp.tools.catchup.block-cache :as block-cache]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

@@ -5,7 +5,7 @@
    for MCP tool requests. No middleware — just data functions.
 
    DDD: Value Object layer — content formatting and identity ADTs."
-  (:require [hive-mcp.agent.context :as ctx]
+  (:require [hive-mcp.context.request :as ctx]
             [hive-dsl.context.identity :as ctx-id]
             [taoensso.timbre :as log]
             [hive-mcp.project.scope :as project-scope]))

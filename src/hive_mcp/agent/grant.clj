@@ -168,10 +168,27 @@
 ;; Tool dispatch
 ;; =============================================================================
 
+(def remedy-commands
+  "The hivemind commands a refused child uses to ask its parent for more and
+   to read the answer. The one source the always-permitted entries derive
+   from, so the spellings below cannot drift apart."
+  #{"ask" "messages" "respond"})
+
+(def remedy-routes
+  "Every way a caller reaches a hivemind command, as tool -> command prefix:
+   the consolidated `hivemind` tool (`hivemind:ask`), and the `swarm` tool a
+   ling holds, whose command carries the subdomain (`swarm:hivemind ask`)."
+  {"hivemind" ""
+   "swarm"    "hivemind "})
+
 (def always-permitted
   "Tool entries no grant can take away: the path a refused child uses to ask
-   its parent for more. Gating it would leave a refusal with no remedy."
-  #{"hivemind:ask" "hivemind:messages" "hivemind:respond"})
+   its parent for more. Gating it would leave a refusal with no remedy.
+   Derived from `remedy-commands` x `remedy-routes`."
+  (into #{}
+        (for [[tool prefix] remedy-routes
+              command       remedy-commands]
+          (str tool ":" prefix command))))
 
 (defn call-refusal
   "nil when a call by `caller-id` to `tool`/`command` is permitted, else the
