@@ -14,7 +14,9 @@
             [hive-hot.core :as hot]
             [hive-mcp.protocols.dispatch]
             [hive-mcp.server.init :as init]
-            [hive-mcp.hot.core :as hot-core]))
+            [hive-mcp.hot.core :as hot-core]
+            [clojure.string :as str]
+            [clojure.java.io :as io]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -73,3 +75,16 @@
   (testing "the off switch still works, interlock or not"
     (is (= ::never-called (captured-watcher-opts {:hot-reload false}))
         "hot-reload false must not reach init-with-watcher! at all")))
+
+(deftest every-hot-namespace-init-names-exists
+  (testing "init.clj names no hive-mcp.hot.* namespace that is missing from the classpath"
+    ;; hive-mcp.hot.state and hive-mcp.hot.silence were required at boot long
+    ;; after both were deleted; a result/rescue around each require hid the
+    ;; drift. Pure source scan: nothing is required or invoked.
+    (let [src      (slurp (io/resource "hive_mcp/server/init.clj"))
+          named    (set (re-seq #"hive-mcp\.hot\.[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*" src))
+          ns->path (fn [n] (-> n (str/replace "-" "_") (str/replace "." "/")))
+          missing  (remove (fn [n] (some #(io/resource (str (ns->path n) %)) [".clj" ".cljc"]))
+                           named)]
+      (is (seq named) "vacuity guard: init.clj must still name hot namespaces")
+      (is (empty? missing) (str "init.clj names absent namespaces: " (vec missing))))))
