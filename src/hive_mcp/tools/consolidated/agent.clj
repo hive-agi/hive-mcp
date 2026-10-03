@@ -4,14 +4,14 @@
             [hive-mcp.tools.core :refer [mcp-error]]
             [hive-mcp.tools.agent.spawn :as spawn]
             [hive-mcp.tools.agent.status :as status]
-            [hive-mcp.tools.agent.kill :as kill]
             [hive-mcp.tools.agent.dispatch :as dispatch]
             [hive-mcp.tools.agent.dag :as dag]
             [hive-mcp.tools.agent.lifecycle :as lifecycle]
             [hive-mcp.agent.type-registry :as agent-type-registry]
             [hive-mcp.agent.spawn-mode-registry :as spawn-registry]
             [hive-mcp.schema.tools :as schema]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.dispatch.verbs :as verbs]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -44,12 +44,16 @@
    The `:dag` value stays a LITERAL map with var-quoted leaves rather than
    becoming a var itself. Both spellings dispatch correctly now that the walker
    derefs, but a literal map is still `map?` to every OTHER reader of this tree
-   — and this table is read by more than the walker."
+   — and this table is read by more than the walker.
+
+   A verb root (hive-mcp.dispatch.verbs): `kill` and `kill-batch` have no core
+   entry. The hive-agent addon contributes them under root \"agent\"; until it
+   does they answer an error naming it."
+  ^{::verbs/root        "agent"
+    ::verbs/provided-by {:kill "hive.agent" :kill-batch "hive.agent"}}
   {:spawn       #'spawn/handle-spawn
    :status      #'status/handle-status
    :digest      #'status/handle-digest
-   :kill        #'kill/handle-kill
-   :kill-batch  #'kill/handle-kill-batch
    :interrupt   #'lifecycle/handle-interrupt
    :batch-spawn #'batch-spawn-handler
    :dispatch    #'dispatch/handle-dispatch
@@ -76,8 +80,6 @@
 ;; Re-exports for direct handler access (used by tests and internal callers)
 (def handle-spawn #'spawn/handle-spawn)
 (def handle-status #'status/handle-status)
-(def handle-kill #'kill/handle-kill)
-(def handle-kill-batch #'kill/handle-kill-batch)
 (def handle-dispatch #'dispatch/handle-dispatch)
 (def handle-claims #'lifecycle/handle-claims)
 (def handle-collect #'lifecycle/handle-collect)
@@ -91,7 +93,7 @@
    :description "Unified agent operations: spawn (create ling), status (query agents), digest (compact per-agent progress roster — turn, last event, idle time — the PULL view now that shouts reach only the spawner; pass agent_id for just your own children, verbose for rendered text), kill (terminate), kill-batch (terminate multiple agents in one call), batch-spawn (spawn multiple agents at once via operations array), dispatch (send task — also the way to STEER a running agent), interrupt (interrupt current query of agent-sdk ling), claims (file ownership), list (deprecated alias for status), collect (get task result; task_id, or agent_id alone for its latest task), broadcast (prompt all), cleanup (remove orphan agents after Emacs restart). Type: 'ling' (agentic worker). Nested: dag (start/stop/status DAGWave scheduler). Use command='help' to list all."
    :inputSchema {:type "object"
                  :properties {"command" {:type "string"
-                                         :enum ["spawn" "status" "digest" "kill" "kill-batch" "batch-spawn" "dispatch" "interrupt" "claims" "list" "collect" "broadcast" "cleanup" "dag start" "dag stop" "dag status" "help"]
+                                         :enum ["spawn" "status" "digest" "batch-spawn" "dispatch" "interrupt" "claims" "list" "collect" "broadcast" "cleanup" "dag start" "dag stop" "dag status" "help"]
                                          :description "Agent operation to perform"}
                               ;; spawn params
                               "type" {:type "string"
@@ -178,8 +180,6 @@
                                        :description "Force kill even if critical ops in progress"}
                               "directory" {:type "string"
                                            :description "Caller's working directory (for cross-project ownership check)"}
-                              "cascade" {:type "boolean"
-                                         :description "[kill/kill-batch] Also cancel the agent's descendants, leaves first, each reported aborted with killed-by naming the root (default: true). false kills only the named agents."}
                               "force_cross_project" {:type "boolean"
                                                      :description "HIL override: Allow killing agents from different projects (default: false). Required when target agent belongs to different project than caller."}
                               ;; collect params

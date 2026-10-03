@@ -178,3 +178,16 @@
                {:name "dom" :consolidated true :verb-roots ["vt"]
                 :inputSchema {:type "object" :properties {"command" {:type "string"}}}})]
       (is (= {:type "boolean"} (get-in out [:inputSchema :properties "cascade"]))))))
+
+(deftest agent-kill-routes-through-the-seam
+  (let [agent-handlers @(requiring-resolve 'hive-mcp.tools.consolidated.agent/canonical-handlers)
+        h              (cli/make-cli-handler agent-handlers)
+        swarm          (cli/make-cli-handler {:agent agent-handlers})]
+    (testing "without hive-agent, kill names its owner on both paths"
+      (is (re-find #"hive\.agent" (:text (h {:command "kill"}))))
+      (is (re-find #"hive\.agent" (:text (swarm {:command "agent kill-batch"})))))
+    (testing "the contribution routes `agent kill` and `swarm agent kill`"
+      (verbs/contribute-verb! "agent" :kill {:handler (fn [_] {:type "text" :text "addon-kill"})
+                                             :owner "hive.agent"})
+      (is (= "addon-kill" (:text (h {:command "kill"}))))
+      (is (= "addon-kill" (:text (swarm {:command "agent kill"})))))))
