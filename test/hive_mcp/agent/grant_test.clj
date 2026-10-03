@@ -108,6 +108,29 @@
     (is (string? (grant/call-refusal nil get-slave "ling-a" "memory" "search"))
         "grant recorded but no domain: fail closed")))
 
+(deftest ask-path-through-swarm-tool
+  ;; Measured live 2026-10-03: a ling holding {:tools ["memory:search"]} was
+  ;; refused `swarm` + `hivemind ask`, because the table only spelled the
+  ;; consolidated `hivemind:ask`, which no ling holds.
+  (let [get-slave (registry {"ling-a" {:slave/id "ling-a" :slave/depth 1
+                                       :slave/grant {:tools ["memory:search"]}}})
+        refusal   (fn [tool command] (grant/call-refusal stub-domain get-slave "ling-a:inst" tool command))]
+    (testing "the ask path is permitted on every route a caller reaches it by"
+      (doseq [command ["hivemind ask" "hivemind messages" "hivemind respond"]]
+        (is (nil? (refusal "swarm" command)) (str "swarm:" command)))
+      (doseq [command ["ask" "messages" "respond"]]
+        (is (nil? (refusal "hivemind" command)) (str "hivemind:" command))))
+    (testing "the table is derived, one entry per route x command"
+      (is (= #{"hivemind:ask" "hivemind:messages" "hivemind:respond"
+               "swarm:hivemind ask" "swarm:hivemind messages" "swarm:hivemind respond"}
+             grant/always-permitted)))
+    (testing "the rest of the grant still binds"
+      (is (str/includes? (refusal "swarm" "agent spawn") "swarm:agent spawn"))
+      (is (str/includes? (refusal "swarm" "hivemind shout") "swarm:hivemind shout"))
+      (is (str/includes? (refusal "memory" "add") "memory:add")))
+    (testing "no grant recorded: unrestricted, as before"
+      (is (nil? (grant/call-refusal stub-domain get-slave "coordinator:s1" "swarm" "agent spawn"))))))
+
 (deftest middleware-gate
   (let [called (atom 0)
         h (mw/wrap-handler-grant (fn [_] (swap! called inc) [{:type "text" :text "ran"}]) "memory")]
