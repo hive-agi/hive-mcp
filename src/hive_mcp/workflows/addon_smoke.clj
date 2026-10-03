@@ -24,7 +24,8 @@
             [clojure.java.io :as io]
             [clojure.set :as set]
             [hive-spi.workflow.strategy :as spi]
-            [hive-dsl.result :as result]))
+            [hive-dsl.result :as result]
+            [hive-mcp.addons.core :as addons]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -46,6 +47,15 @@
    smoke-check cannot meaningfully run, instead of false-failing."
   []
   (some? (io/resource "META-INF/hive-addons/hive-workflows-strategy.edn")))
+
+(defn addons-initialized?
+  "True when every id in IDS (default `required-addon-ids`) is :active in the
+   addon registry of THIS JVM. A JVM can carry the manifests on its classpath
+   without anything having booted them; there the smoke-check has nothing to
+   observe."
+  ([] (addons-initialized? required-addon-ids))
+  ([ids]
+   (every? #(= :active (:state (addons/get-addon-entry %))) ids)))
 
 (defn discovered-addons
   "Scan the classpath for META-INF/hive-addons manifests and project down to the
