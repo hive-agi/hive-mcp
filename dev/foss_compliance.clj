@@ -290,27 +290,61 @@
       (verdict :warn (str (count rows) " manifest(s) resolve; ctor return type is a boot claim: "
                           (str/join ", " (map :id rows)))))))
 
+(def ^:private osi-licence-ids
+  "OSI-approved SPDX ids the fleet ships or plausibly could, without the
+   -only / -or-later suffix (licence->trust-class strips it)."
+  #{"MIT" "Apache-2.0" "EPL-1.0" "EPL-2.0" "MPL-2.0" "ISC" "Unlicense"
+    "BSD-2-Clause" "BSD-3-Clause" "AGPL-3.0" "GPL-2.0" "GPL-3.0"
+    "LGPL-2.1" "LGPL-3.0"})
+
+(defn- licence->trust-class
+  "The :addon/trust-class a declared licence name implies: any LicenseRef-*
+   (the fleet's \"LicenseRef-Proprietary\") is :proprietary, an OSI SPDX id
+   (with or without -only / -or-later) is :foss, anything else is nil."
+  [licence-name]
+  (when (string? licence-name)
+    (cond
+      (str/starts-with? licence-name "LicenseRef-")
+      :proprietary
+
+      (contains? osi-licence-ids (str/replace licence-name #"-(only|or-later)$" ""))
+      :foss
+
+      :else nil)))
+
+(defn- publish->trust-class
+  "The trust class a registry conventionally carries. A convention only: a
+   :foss artifact may well live on a private Gitea registry."
+  [publish]
+  (case publish
+    :gitea :proprietary
+    (:clojars :clojars-aot) :foss
+    nil))
+
 (defn- manifest-declarations
   "Every manifest must STATE :addon/maturity and :addon/trust-class, and the
-   trust class must agree with where the artifact is published.
+   trust class must agree with the licence version.edn declares.
 
    Both fields are schema-optional with a permissive default, so an omission
    VALIDATES and then reads as the safe-looking answer. That is exactly how
    the licence gate came to be bypassed fleet-wide: an absent
    :addon/trust-class defaults to :foss, so hive-addon.mount.entitlement/gated?
    answered false for every addon and the closed gate was never consulted.
-   Measuring the field's presence is the only thing that catches it."
+   Measuring the field's presence is the only thing that catches it.
+
+   The licence, not the registry, decides the expected trust class. Where the
+   artifact is published is cross-checked only as a :warn when it disagrees."
   [facts]
   (let [vedn (:version.edn facts)
+        licence (get-in vedn [:license :name])
         rows (for [{manifest :edn} (:manifests facts)]
                {:id (:addon/id manifest)
                 :status (:addon/maturity manifest)
                 :trust (:addon/trust-class manifest)})
+        summary (str/join ", " (map #(str (:id %) " " (:status %) "/" (:trust %)) rows))
         undeclared (remove #(and (:status %) (:trust %)) rows)
-        expected (case (:publish vedn)
-                   :gitea :proprietary
-                   :clojars :foss
-                   nil)
+        expected (licence->trust-class licence)
+        conventional (publish->trust-class (:publish vedn))
         mismatched (when expected (remove #(= expected (:trust %)) rows))]
     (cond
       (seq undeclared)
@@ -318,23 +352,24 @@
                           (str/join ", " (map :id undeclared))))
 
       (seq mismatched)
-      (verdict :fail (str "publish " (:publish vedn) " implies :addon/trust-class "
+      (verdict :fail (str "licence " licence " implies :addon/trust-class "
                           expected ", manifest declares: "
                           (str/join ", " (map #(str (:id %) "=" (pr-str (:trust %)))
                                               mismatched))))
 
       (nil? expected)
-      (verdict :warn (str "declared, but version.edn names no :publish target to "
-                          "cross-check the trust class against: "
-                          (str/join ", " (map #(str (:id %) " " (:status %)
-                                                    "/" (:trust %))
-                                              rows))))
+      (verdict :warn (str "declared, but version.edn :license " (pr-str licence)
+                          " names no known licence to cross-check the trust class "
+                          "against: " summary))
+
+      (and conventional (not= conventional expected))
+      (verdict :warn (str "licence " licence " (" expected ") published to "
+                          (:publish vedn) ", a registry conventionally "
+                          conventional "; trust class follows the licence: " summary))
 
       :else
       (verdict :pass (str (count rows) " manifest(s) declare maturity + trust-class: "
-                          (str/join ", " (map #(str (:id %) " " (:status %)
-                                                    "/" (:trust %))
-                                              rows)))))))
+                          summary)))))
 
 (def ^:private hard-host-ref
   "A hive-mcp qualified symbol NOT preceded by a quote. A quoted symbol handed

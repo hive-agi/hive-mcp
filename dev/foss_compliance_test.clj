@@ -178,6 +178,62 @@
     (is (= :pass (status-of facts :declarations)))
     (is (= :fail (status-of facts :host-coupling)))))
 
+(defn- addon-repo
+  "`repo` shipping one addon manifest, with version.edn naming `publish` and
+   `licence` (nil leaves :license out) and the manifest naming `manifest`."
+  [{:keys [publish licence manifest]}]
+  (update-in repo [:refs "origin/main" :files] assoc
+             "resources/META-INF/hive-addons/thing.edn"
+             (pr-str (merge {:addon/id "thing" :addon/init-ns 'thing.core} manifest))
+             "version.edn"
+             (pr-str (cond-> {:lib 'io.github.hive-agi/thing :publish publish
+                              :src-dirs ["src" "resources"]}
+                       licence (assoc :license {:name licence})))))
+
+(defn- declarations-of [spec]
+  (status-of (:facts (facts-for (addon-repo spec))) :declarations))
+
+(deftest the-licence-not-the-registry-decides-the-trust-class
+  (testing "a FOSS licence on a private Gitea registry is a :warn, not a violation"
+    (is (= :warn (declarations-of {:publish :gitea :licence "AGPL-3.0-or-later"
+                                   :manifest {:addon/maturity :beta
+                                              :addon/trust-class :foss}}))))
+  (testing "a proprietary licence on Clojars is the same convention mismatch: :warn"
+    (is (= :warn (declarations-of {:publish :clojars :licence "LicenseRef-Proprietary"
+                                   :manifest {:addon/maturity :beta
+                                              :addon/trust-class :proprietary}}))))
+  (testing "registry and licence agreeing with the trust class passes"
+    (is (= :pass (declarations-of {:publish :gitea :licence "LicenseRef-Proprietary"
+                                   :manifest {:addon/maturity :beta
+                                              :addon/trust-class :proprietary}})))
+    (is (= :pass (declarations-of {:publish :clojars :licence "EPL-2.0"
+                                   :manifest {:addon/maturity :beta
+                                              :addon/trust-class :foss}})))))
+
+(deftest a-licence-that-contradicts-the-trust-class-fails
+  (is (= :fail (declarations-of {:publish :gitea :licence "LicenseRef-Proprietary"
+                                 :manifest {:addon/maturity :beta
+                                            :addon/trust-class :foss}}))
+      "a proprietary licence cannot ship under the :foss trust class")
+  (is (= :fail (declarations-of {:publish :clojars :licence "MIT"
+                                 :manifest {:addon/maturity :beta
+                                            :addon/trust-class :proprietary}}))
+      "and an OSI licence cannot ship as :proprietary"))
+
+(deftest an-undeclared-trust-class-still-fails
+  (is (= :fail (declarations-of {:publish :clojars :licence "MIT"
+                                 :manifest {:addon/maturity :beta}})))
+  (is (= :fail (declarations-of {:publish :clojars :licence "MIT"
+                                 :manifest {:addon/trust-class :foss}}))))
+
+(deftest no-known-licence-falls-back-to-the-warn-path
+  (is (= :warn (declarations-of {:publish :gitea :licence nil
+                                 :manifest {:addon/maturity :beta
+                                            :addon/trust-class :foss}})))
+  (is (= :warn (declarations-of {:publish :clojars :licence "UNDECLARED"
+                                 :manifest {:addon/maturity :beta
+                                            :addon/trust-class :proprietary}}))))
+
 (when (= *file* (System/getProperty "babashka.file"))
   (let [{:keys [fail error]} (run-tests 'foss-compliance-test)]
     (System/exit (if (zero? (+ fail error)) 0 1))))
