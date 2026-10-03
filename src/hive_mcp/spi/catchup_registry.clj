@@ -20,11 +20,18 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (def Block
-  "malli schema for a registered block."
+  "malli schema for a registered block.
+
+   :block/cache (optional) opts the block into the host's shared cache:
+   true for the default policy, or a policy map
+   {:fresh-ms n :max-age-ms n :drop-tags #{tag} :key-by [ctx-key ...]}.
+   Only a block whose value is the same for every caller with the same
+   :key-by values may opt in."
   [:map
    [:block/id :keyword]
    [:block/fn fn?]
-   [:block/order :int]])
+   [:block/order :int]
+   [:block/cache {:optional true} [:or :boolean :map]]])
 
 (defn block?
   "True iff X has the Block shape."
@@ -70,12 +77,17 @@
 
    Returns {:blocks {id value} :failed {id message}}. A block that throws
    lands in :failed with the exception message and never aborts the others;
-   a block that returns nil lands in :blocks as nil."
-  [ctx]
-  (reduce (fn [acc {:block/keys [id fn]}]
-            (try
-              (assoc-in acc [:blocks id] (fn ctx))
-              (catch Throwable t
-                (assoc-in acc [:failed id] (or (ex-message t) (str (class t)))))))
-          {:blocks {} :failed {}}
-          (registered-blocks)))
+   a block that returns nil lands in :blocks as nil.
+
+   RUN (fn [block ctx]) is how one block is executed; the default calls its
+   :block/fn. The host passes a runner that honours :block/cache."
+  ([ctx]
+   (compose ctx (fn [block ctx] ((:block/fn block) ctx))))
+  ([ctx run]
+   (reduce (fn [acc {:block/keys [id] :as block}]
+             (try
+               (assoc-in acc [:blocks id] (run block ctx))
+               (catch Throwable t
+                 (assoc-in acc [:failed id] (or (ex-message t) (str (class t)))))))
+           {:blocks {} :failed {}}
+           (registered-blocks))))

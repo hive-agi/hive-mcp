@@ -39,7 +39,8 @@
             [hive-mcp.tools.catchup.outcome :as outcome]
             [hive-mcp.tools.catchup.caller :as catchup-caller]
             [hive-mcp.spi.catchup-registry :as blocks]
-            [hive-mcp.swarm.adapters.soft :as soft]))
+            [hive-mcp.swarm.adapters.soft :as soft]
+            [hive-mcp.tools.catchup.block-cache :as block-cache]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -93,9 +94,10 @@
 (defn- compose-blocks
   "Every registered catchup block's value for CTX as [id value] pairs in
    :block/order. A contributor that throws is logged and omitted; the others
-   still land. Ordered by the registry, never by naming a contributor."
+   still land. Ordered by the registry, never by naming a contributor.
+   A block that declares :block/cache is served from the shared block cache."
   [ctx]
-  (let [{:keys [blocks failed]} (blocks/compose ctx)
+  (let [{:keys [blocks failed]} (blocks/compose ctx block-cache/run-block)
         order (into {} (map-indexed (fn [i b] [(:block/id b) i])) (blocks/registered-blocks))]
     (when (seq failed)
       (log/warn "catchup: contributed blocks failed" failed))
@@ -170,7 +172,7 @@
               f-status (pool/with-io ((tt/timed-query "catchup/status-providers-total"
                                                       #(reduce-kv (fn [acc k provider-fn]
                                                                     (assoc acc k
-                                                                           (rescue nil (provider-fn project-id))))
+                                                                           (rescue nil (block-cache/run-status-provider k provider-fn project-id))))
                                                                   {} status-providers))))
               ;; Contributed blocks (hive-mcp.spi.catchup-registry): core's own
               ;; domains and addons register {:block/id :block/fn :block/order};
@@ -314,39 +316,44 @@
               catchup-ttl 3600000
               scope-tag  (or project-id "global")
               context-refs
+              ;; Shared across callers: agents served the identical cached
+              ;; bundle reuse one set of live refs instead of writing N copies.
               (rescue nil
-                      (let [refs (context-store/context-put-batch!
-                                  {:axioms                {:data axioms
-                                                           :tags #{"catchup" "axioms" scope-tag}
-                                                           :ttl-ms catchup-ttl}
-                                   :principles            {:data principles
-                                                           :tags #{"catchup" "principles" scope-tag}
-                                                           :ttl-ms catchup-ttl}
-                                   :priority-principles   {:data priority-principles
-                                                           :tags #{"catchup" "priority-principles" scope-tag}
-                                                           :ttl-ms catchup-ttl}
-                                   :priority-conventions  {:data priority-conventions
-                                                           :tags #{"catchup" "priority-conventions" scope-tag}
-                                                           :ttl-ms catchup-ttl}
-                                   :sessions              {:data sessions
-                                                           :tags #{"catchup" "sessions" scope-tag}
-                                                           :ttl-ms catchup-ttl}
-                                   :decisions             {:data decisions
-                                                           :tags #{"catchup" "decisions" scope-tag}
-                                                           :ttl-ms catchup-ttl}
-                                   :conventions           {:data conventions
-                                                           :tags #{"catchup" "conventions" scope-tag}
-                                                           :ttl-ms catchup-ttl}
-                                   :snippets              {:data snippets
-                                                           :tags #{"catchup" "snippets" scope-tag}
-                                                           :ttl-ms catchup-ttl}
-                                   :recent-wraps          {:data recent-wraps-raw
-                                                           :tags #{"catchup" "recent-wraps" scope-tag}
-                                                           :ttl-ms catchup-ttl}})]
-                        (when (seq refs)
-                          (log/info "catchup: stored" (count refs) "categories in context-store"
-                                    {:refs (keys refs)}))
-                        refs))
+                      (block-cache/shared-context-refs
+                       scope-tag (outcome/value-or bundle nil)
+                       (fn []
+                         (let [refs (context-store/context-put-batch!
+                                     {:axioms                {:data axioms
+                                                              :tags #{"catchup" "axioms" scope-tag}
+                                                              :ttl-ms catchup-ttl}
+                                      :principles            {:data principles
+                                                              :tags #{"catchup" "principles" scope-tag}
+                                                              :ttl-ms catchup-ttl}
+                                      :priority-principles   {:data priority-principles
+                                                              :tags #{"catchup" "priority-principles" scope-tag}
+                                                              :ttl-ms catchup-ttl}
+                                      :priority-conventions  {:data priority-conventions
+                                                              :tags #{"catchup" "priority-conventions" scope-tag}
+                                                              :ttl-ms catchup-ttl}
+                                      :sessions              {:data sessions
+                                                              :tags #{"catchup" "sessions" scope-tag}
+                                                              :ttl-ms catchup-ttl}
+                                      :decisions             {:data decisions
+                                                              :tags #{"catchup" "decisions" scope-tag}
+                                                              :ttl-ms catchup-ttl}
+                                      :conventions           {:data conventions
+                                                              :tags #{"catchup" "conventions" scope-tag}
+                                                              :ttl-ms catchup-ttl}
+                                      :snippets              {:data snippets
+                                                              :tags #{"catchup" "snippets" scope-tag}
+                                                              :ttl-ms catchup-ttl}
+                                      :recent-wraps          {:data recent-wraps-raw
+                                                              :tags #{"catchup" "recent-wraps" scope-tag}
+                                                              :ttl-ms catchup-ttl}})]
+                           (when (seq refs)
+                             (log/info "catchup: stored" (count refs) "categories in context-store"
+                                       {:refs (keys refs)}))
+                           refs))))
 
               _ (when (seq piggyback-entries)
                   (memory-piggyback/enqueue! raw-caller-id
