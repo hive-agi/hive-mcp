@@ -301,6 +301,27 @@
                (when-let [rid (:guard/rule-id decision)]
                  (str "\nRule: " rid)))}])
 
+(defn guard-raw-context
+  "The raw context the `:guard/decide` seam is handed for one MCP call.
+
+   Identity is offered from three sources so the guard can attribute the call
+   to the strongest one it trusts:
+     :verified-caller-id - the caller id whose spawn credential the host
+                           verified (hive-mcp.agent.context), else absent.
+     :caller-id          - the transport-stamped `_caller_id`, as asserted.
+     :agent-id           - the model-supplied argument, never verified.
+   The two caller keys are ADDITIVE and present only when known: a guard that
+   reads only :agent-id and :input sees exactly the map it saw before."
+  [tool-name args]
+  (let [verified (some-> (ctx/current-verified-caller-id) str not-empty)
+        caller   (some-> (:_caller_id args) str not-empty)]
+    (cond-> {:tool tool-name
+             :input args
+             :agent-id (id/extract-agent-id args nil)
+             :cwd (id/extract-directory args)}
+      caller   (assoc :caller-id caller)
+      verified (assoc :verified-caller-id verified))))
+
 (defn wrap-handler-guard
   "Gate the call through the `:guard/decide` seam before the handler runs.
 
@@ -309,6 +330,9 @@
 
    Soft seam — core does not depend on the guard addon. With no
    `:guard/decide` extension registered the call proceeds untouched.
+
+   The seam is handed `guard-raw-context`: tool, input, cwd and every known
+   identity source (verified caller id, transport caller id, agent-id arg).
 
      :deny — short-circuits; the refusal is returned and the tool never runs.
      :warn — the tool runs and the advisory is appended to its content.
@@ -320,10 +344,7 @@
   (fn [args]
     (let [decision (when-let [decide (ext/get-extension gp/decide-ext-key)]
                      (try
-                       (decide :mcp {:tool tool-name
-                                     :input args
-                                     :agent-id (id/extract-agent-id args nil)
-                                     :cwd (id/extract-directory args)})
+                       (decide :mcp (guard-raw-context tool-name args))
                        (catch Exception e
                          (log/error e "guard: seam threw; call NOT judged"
                                     {:tool tool-name})
