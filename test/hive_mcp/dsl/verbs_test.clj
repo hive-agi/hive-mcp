@@ -541,3 +541,72 @@
       ;; Op 2: hivemind shout (no deps)
       (is (= "hivemind" (:tool (nth ops 2))))
       (is (nil? (:depends_on (nth ops 2)))))))
+
+;; =============================================================================
+;; Part 9: Strict params — an unrecognised param is an error, not a no-op
+;; =============================================================================
+
+(deftest strict-kanban-list-rejects-id-test
+  (testing "b? with id errors instead of returning the whole board"
+    (let [r (verbs/parse-sentence ["b?" {"id" "20260731123928-1f22cead"}])]
+      (is (= "Unknown param(s) for b?: id" (:error r)))
+      (is (= "b?" (:verb r)))
+      (is (= [:id] (:unknown-params r)))
+      (is (= (get verbs/verb-params "b?") (:accepted r))))))
+
+(deftest strict-kanban-list-valid-filters-pass-test
+  (testing "b? with real filters compiles to a kanban list op"
+    (is (= {:tool "kanban" :command "list" :status "todo" :priority "high"}
+           (verbs/parse-sentence ["b?" {"status" "todo" "priority" "high"}]))))
+  (testing "aliased and meta keys pass: q -> :query, d -> :directory"
+    (is (= {:tool "kanban" :command "list" :query "x" :directory "/tmp"}
+           (verbs/parse-sentence ["b?" {"q" "x" "d" "/tmp"}]))))
+  (testing "s is not an alias, so it is reported as the literal key"
+    (is (= [:s] (:unknown-params (verbs/parse-sentence ["b?" {"s" "todo"}]))))))
+
+(deftest strict-memory-get-id-remap-intact-test
+  (testing "m@ id is validated as :id, then still remapped to batch-get :ids"
+    (is (= {:tool "memory" :command "batch-get" :ids ["abc"]}
+           (verbs/parse-sentence ["m@" {"id" "abc"}]))))
+  (testing "m@ with a stray key errors"
+    (is (= [:query] (:unknown-params (verbs/parse-sentence ["m@" {"id" "abc" "q" "x"}]))))))
+
+(deftest strict-read-verbs-reject-id-test
+  (testing "id is rejected wherever the target handler does not read it"
+    (doseq [v ["b?" "b#" "m?" "m/" "p?" "p/"]]
+      (is (= [:id] (:unknown-params (verbs/parse-sentence [v {"id" "x"}])))
+          (str v " should reject :id")))))
+
+(deftest strict-memory-query-rejects-query-text-test
+  (testing "m? q is reported at parse time, matching handle-query's refusal"
+    (is (= [:query] (:unknown-params (verbs/parse-sentence ["m?" {"t" "note" "q" "x"}]))))))
+
+(deftest strict-unlisted-verbs-stay-permissive-test
+  (testing "a verb with no verb-params entry forwards anything"
+    (is (nil? (get verbs/verb-params "m+")))
+    (is (= {:tool "memory" :command "add" :content "c" :anything 1}
+           (verbs/parse-sentence ["m+" {"c" "c" "anything" 1}])))
+    (is (= {:tool "kanban" :command "update" :task_id "t" :new_status "done"}
+           (verbs/parse-sentence ["b>" {"id" "t" "new_status" "done"}])))))
+
+(deftest strict-compile-paragraph-keeps-error-per-op-test
+  (testing "a rejected sentence keeps its error under its $N id; siblings compile"
+    (let [[a b] (verbs/compile-paragraph [["b?" {"id" "x"}] ["b?" {"status" "todo"}]])]
+      (is (= "$0" (:id a)))
+      (is (= [:id] (:unknown-params a)))
+      (is (= "$1" (:id b)))
+      (is (= "list" (:command b))))))
+
+(deftest strict-alias-targets-accepted-test
+  (testing "the entry for each covered verb never rejects an alias target that verb uses"
+    (let [alias-targets (set (vals verbs/param-aliases))]
+      (doseq [[v accepted] verbs/verb-params
+              :let [used (filter #(contains? alias-targets %) accepted)]]
+        (is (every? #(nil? (verbs/unknown-param-error v {% 1})) used)
+            (str v " rejects one of its own alias targets"))))))
+
+(deftest strict-meta-params-always-accepted-test
+  (testing ":directory, :tool, :command and :depends_on never trip the check"
+    (doseq [v (keys verbs/verb-params)
+            k verbs/verb-meta-params]
+      (is (nil? (verbs/unknown-param-error v {k "x"})) (str v " " k)))))

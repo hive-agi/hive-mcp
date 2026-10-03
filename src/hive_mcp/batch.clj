@@ -149,15 +149,19 @@
 ;; =============================================================================
 
 (defn- validate-required-fields
-  "Check all ops have non-blank :id and :tool. Returns error vector."
+  "Check all ops have non-blank :id and :tool. Returns error vector.
+   A tool-less op the DSL compiler already rejected carries its own :error,
+   which is reported in place of the missing-:tool message."
   [ops]
   (into []
-        (mapcat (fn [{:keys [id tool] :as op}]
+        (mapcat (fn [{:keys [id tool error] :as op}]
                   (cond-> []
                     (str/blank? id)
                     (conj (str "Operation missing :id — " (pr-str (select-keys op [:tool :command]))))
                     (str/blank? tool)
-                    (conj (str "Operation '" id "' missing :tool")))))
+                    (conj (if (string? error)
+                            (str "Operation '" id "': " error)
+                            (str "Operation '" id "' missing :tool"))))))
         ops))
 
 (defn- validate-unique-ids
