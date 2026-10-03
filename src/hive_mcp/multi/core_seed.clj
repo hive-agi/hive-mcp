@@ -2,8 +2,10 @@
   "Project the existing 21 consolidated tools + 36 DSL verbs + 9 param aliases
    into multi.registry as the synthetic `:multi/core` owner.
 
-   Runs at namespace load via a `defonce` guard so the seed is idempotent and
-   the registry is populated before any addon `(hooks [this])` walk arrives.
+   Seeds on every load of this namespace, so the registry is populated before
+   any addon `(hooks [this])` walk arrives. Registering under :multi/core is an
+   idempotent same-owner replace, so each load leaves the :multi/core entries
+   this code builds.
 
    This decouples multi.handler from consolidated.multi at the type level
    (DIP) — the handler dispatches through the registry, not the literal map.
@@ -103,27 +105,29 @@
       (registry/register-by-key! core-owner :multi/batchable [entry]))
     (count entries)))
 
-(defonce ^{:doc "Seed runs once on namespace load. Idempotent — re-loading
-                 the namespace is a no-op because defonce guards the side
-                 effect. Call `install!` from a REPL to force re-seed
-                 (after `registry/reset-for-test!`)."}
-  installed
-  (let [tools (seed-tools!)
-        verbs (seed-verbs!)
-        aliases (seed-aliases!)
-        batchables (seed-batchables!)]
-    (log/info "[multi.core-seed] seeded :multi/core owner"
-              {:tools tools :verbs verbs :aliases aliases :batchables batchables})
-    {:tools tools :verbs verbs :aliases aliases :batchables batchables}))
+(defn- seed!
+  "Register every :multi/core seed. Returns the count registered per child registry."
+  []
+  {:tools      (seed-tools!)
+   :verbs      (seed-verbs!)
+   :aliases    (seed-aliases!)
+   :batchables (seed-batchables!)})
+
+(def installed
+  "Counts registered per child registry by the latest load of this namespace.
+   Evaluating it seeds :multi/core, so every load re-registers; registering
+   under :multi/core is an idempotent same-owner replace."
+  (let [result (seed!)]
+    (log/info "[multi.core-seed] seeded :multi/core owner" result)
+    result))
 
 (defn install!
-  "Force re-seed (test/REPL). Production code should rely on the defonce
-   guard above which fires automatically on namespace load."
+  "Deregister every :multi/core entry, then seed again. Returns the count
+   registered per child registry. The registry bootstrap calls it, so the
+   seed converges even when a refresh recreates the registry while this
+   namespace stays loaded."
   []
   (registry/deregister-by-owner! core-owner)
-  (let [result {:tools (seed-tools!)
-                :verbs (seed-verbs!)
-                :aliases (seed-aliases!)
-                :batchables (seed-batchables!)}]
+  (let [result (seed!)]
     (log/info "[multi.core-seed] re-seeded :multi/core owner" result)
     result))
