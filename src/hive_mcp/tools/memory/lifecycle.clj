@@ -25,7 +25,8 @@
             [clojure.data.json :as json]
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
-            [hive-mcp.memory.write-events :as write-events]))
+            [hive-mcp.memory.write-events :as write-events]
+            [hive-mcp.addons.boot-health :as boot-health]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -157,7 +158,9 @@
         limit-val (coerce-int! limit :limit 20)
         directory (or directory (ctx/current-directory))]
     (log/info "mcp-memory-expiring-soon:" days-val "limit:" limit-val "directory:" directory)
-    (with-store
+    (if-not (mem-proto/store-set?)
+      (result/err :memory/store-not-configured
+                  {:message (boot-health/with-notice "Memory store not configured")})
       (let [project-id (scope/get-current-project-id directory)
             all-entries (with-resilience
                           (mem-proto/entries-expiring-soon (mem-proto/get-store) days-val {}))
