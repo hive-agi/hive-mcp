@@ -35,6 +35,27 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-10-02
+
+### Changed
+
+- **Many agents catching up on one project share the work.** Catchup now
+  caches the kanban summary, addon status (carto status) and its
+  context-store refs per project. A burst of concurrent catchups computes
+  each one once, and later callers get the cached value. This was 2-3.5 s
+  per agent for each of the kanban summary and the carto status. A
+  kanban-tagged memory write clears the kanban entry at once. Catchup
+  blocks opt in through an optional `:block/cache` key.
+
+### Fixed
+
+- **Spawned lings start again.** Tool schemas sent to the model provider
+  now use only legal property keys. Under 1.9.0, carto params ending in
+  `?` made every new ling fail with a 400 error.
+- **`agent spawn` accepts `grant` as a JSON string.** Before, it crashed
+  with a ClassCastException. Anything other than a JSON object is refused
+  with a message.
+
 ## [1.9.0] - 2026-10-02
 
 ### Added
