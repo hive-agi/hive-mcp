@@ -93,7 +93,10 @@
         {:keys [entries multi-project?]} (query-kanban-entries
                                           project-id include_descendants
                                           plan/whole-board ["kanban"] {:scope scope})
-        kanban-entries (plan/select-tagged entries ["kanban"])
+        ;; Session todos are an agent's own step list, not backlog: they are
+        ;; left out of the counts unless the caller opts in.
+        kanban-entries (-> (plan/select-tagged entries ["kanban"])
+                           (plan/drop-hidden (plan/hidden-tags params)))
         ;; Entries with a missing/invalid status are dropped from the
         ;; bucket counts rather than defaulted to :todo.
         bucket-keys    #{:todo :doing :review :done}
@@ -158,7 +161,10 @@
   (mcp-json (list-slim-data params)))
 
 (defn list-slim-data
-  "The slim board rows `list-slim*` serializes, as data. Same params."
+  "The slim board rows `list-slim*` serializes, as data. Same params.
+
+   Session todos (`session-todo` tag) are dropped unless the request opts in
+   (`plan/hidden-tags`): they are an agent's own step list, not backlog."
   [{:keys [include_descendants project_id scope]
     :or   {include_descendants true}
     :as   params}]
@@ -173,4 +179,6 @@
                            :include-descendants? include_descendants
                            :scope                scope}
                           fetch-plan)]
-    (plan/shape fetch-plan entries multi-project?)))
+    (plan/shape fetch-plan
+                (plan/drop-hidden entries (plan/hidden-tags params))
+                multi-project?)))
