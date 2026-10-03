@@ -115,3 +115,31 @@
   (is (nil? (composite/contribution-summary {})))
   (is (= "a" (composite/contribution-summary {:summary " " :description "a\nb"})))
   (is (<= (count (composite/contribution-summary {:summary (apply str (repeat 500 "x"))})) 200)))
+
+(deftest addon-contributed-subdomain-is-suggested-only-for-its-own-verbs
+  (let [tool  "unknown-hint-test-root"
+        core  {:clojure  {:_handler (fn [_] :clj)}
+               :analysis {:_handler (fn [_] :an)}}
+        h     (composite/build-merged-handler tool core)]
+    (ext/contribute-commands! tool :hint-test-carto
+                              {"carto"  {:handler (fn [p] [:carto (:command p)])
+                                         :verbs   ["multi" "scan" "read-form"]}
+                               "cider"  {:handler {:eval (fn [_] :e) :multi (fn [_] :m)}}
+                               "silent" {:handler (fn [_] :s)}})
+    (try
+      (testing "1 match: the declaring contribution is named first and plainly"
+        (let [text (:text (h {:command "scan"}))]
+          (is (str/starts-with? text "Unknown command: scan. Did you mean: carto scan?"))
+          (is (not (str/includes? text "silent scan")))
+          (is (not (str/includes? text "clojure scan")))))
+      (testing "2+ matches: every root that routes the verb, none that does not"
+        (let [text (:text (h {:command "multi"}))]
+          (is (str/includes? text "Did you mean: carto multi, cider multi?"))
+          (is (not (str/includes? text "analysis multi")))
+          (is (not (str/includes? text "silent multi")))))
+      (testing "0 matches: the plain list of valid commands, nothing fabricated"
+        (is (= "Unknown command: zebra. Valid: analysis, carto, cider, clojure, silent"
+               (:text (h {:command "zebra"})))))
+      (testing "the qualified form still dispatches to the contribution"
+        (is (= [:carto "carto multi"] (h {:command "carto multi"}))))
+      (finally (ext/retract-commands! tool :hint-test-carto)))))

@@ -162,60 +162,90 @@
          (sort-by name)
          vec)))
 
-(def ^:private max-subdomain-hints
-  "Upper bound on the last-resort subdomain list — the stage that can only say
-   'one of these routes its own subcommands'. The `code` tool has 5."
-  6)
+(defn- verb-set
+  "V, a collection of verb names or a 0-arity fn returning one, as a set of
+   lower-cased strings; nil when V is absent, empty, or throws."
+  [v]
+  (let [v (if (fn? v) (try (v) (catch Throwable _ nil)) v)]
+    (when (and (coll? v) (seq v))
+      (into #{} (map #(str/lower-case (if (keyword? %) (name %) (str %)))) v))))
+
+(defn declared-verbs
+  "The verbs opaque root K of HANDLERS says it routes, as a set of lower-cased
+   strings, or nil when it says nothing. Asked in order:
+     - ::verbs metadata on K's node, on the value that node holds, or on its
+       :_handler (a collection, or a 0-arity fn returning one)
+     - the tree's ::verb-oracle port in its metadata, (oracle k) -> a
+       collection or nil. hive-mcp.tools.composite fills it from addon
+       contribution specs and from the command enum of a registered tool of
+       the same name.
+   The root's handler is never INVOKED to find out."
+  [handlers k]
+  (let [node   (get handlers k)
+        cur    (dispatch/current node)
+        oracle (::verb-oracle (meta handlers))]
+    (or (verb-set (::verbs (meta node)))
+        (verb-set (::verbs (meta cur)))
+        (when (map? cur) (verb-set (::verbs (meta (:_handler cur)))))
+        (when (ifn? oracle) (verb-set (try (oracle k) (catch Throwable _ nil)))))))
 
 (defn- qualification-hints
-  "Root keys to offer as CMD's qualifying subdomain, most precise first.
+  "Root keys that can own CMD, offered as `<root> CMD`.
 
    Cascade, the first non-empty stage wins and is named in :stage:
-     :exact     roots whose ENUMERABLE subtree registers CMD exactly (all of them)
-     :lead      opaque roots whose name is CMD's leading segment under separator
-                folding (`carto_definition` -> `carto`)
-     :fallback  every opaque root, capped at `max-subdomain-hints`
+     :exact  roots whose ENUMERABLE subtree registers CMD, plus opaque roots
+             that DECLARE CMD (`declared-verbs`)
+     :lead   opaque roots whose name is CMD's leading segment under separator
+             folding (`carto_definition` -> `carto`)
+     :none   nothing owns CMD; :roots is empty
+   An opaque root that declares nothing is never offered for a token its name
+   does not spell.
 
    A root CMD already starts with (its first whitespace word) is never
    offered: CMD is already qualified by it, and `ss ss help` names nothing.
 
-   Returns {:roots [kw ...] :exact? bool :stage kw}; :roots is empty when the
-   tree offers nothing. :exact? is true only for :exact."
+   Returns {:roots [kw ...] :stage kw :auto? bool}. :auto? is true when the
+   ONE root is nameable without a guess: it enumerates CMD, or its name is
+   CMD's leading segment."
   [cmd handlers]
-  (let [cmd-low (str/lower-case cmd)
-        head    (first (remove str/blank? (str/split cmd-low #"\s+")))
-        own?    #(= head (str/lower-case (name %)))
-        opaque  (vec (remove own? (delegating-subdomains handlers)))
-        owners  (->> (collect-command-paths handlers [])
-                     (filter #(and (> (count %) 1)
-                                   (= cmd-low
-                                      (str/lower-case
-                                       (str/join " " (map name (rest %)))))))
-                     (map first)
-                     (remove own?)
-                     distinct
-                     (sort-by name)
-                     vec)
-        lead    (first (remove str/blank? (str/split cmd-low #"[-_\\s]+")))
-        by-lead (when (and lead (not= lead cmd-low))
-                  (vec (filter #(= lead (str/lower-case (name %))) opaque)))]
+  (let [cmd-low  (str/lower-case cmd)
+        head     (first (remove str/blank? (str/split cmd-low #"\s+")))
+        own?     #(= head (str/lower-case (name %)))
+        opaque   (vec (remove own? (delegating-subdomains handlers)))
+        owners   (->> (collect-command-paths handlers [])
+                      (filter #(and (> (count %) 1)
+                                    (= cmd-low
+                                       (str/lower-case
+                                        (str/join " " (map name (rest %)))))))
+                      (map first)
+                      (remove own?)
+                      distinct
+                      vec)
+        declared (filterv #(contains? (or (declared-verbs handlers %) #{}) cmd-low)
+                          opaque)
+        exact    (vec (sort-by name (distinct (concat owners declared))))
+        lead     (first (remove str/blank? (str/split cmd-low #"[-_\s]+")))
+        lead?    #(boolean (and lead (not= lead cmd-low)
+                                (= lead (str/lower-case (name %)))))
+        by-lead  (filterv lead? opaque)]
     (cond
-      (seq owners)  {:roots owners  :exact? true  :stage :exact}
-      (seq by-lead) {:roots by-lead :exact? false :stage :lead}
-      :else         {:roots (vec (take max-subdomain-hints opaque))
-                     :exact? false
-                     :stage :fallback})))
+      (seq exact)   {:roots exact :stage :exact
+                     :auto? (and (= 1 (count exact))
+                                 (or (boolean (some #{(first exact)} owners))
+                                     (lead? (first exact))))}
+      (seq by-lead) {:roots by-lead :stage :lead :auto? (= 1 (count by-lead))}
+      :else         {:roots [] :stage :none :auto? false})))
 
 (defn- auto-qualified-command
   "CMD spelled under the ONE root that can own it, or nil.
 
    Only a root the tree can name qualifies: an enumerable root that registers
    CMD, or the opaque root CMD's leading segment spells (`carto_callers` ->
-   `carto carto_callers`). Several candidates, or the fallback list of every
-   opaque root, is a guess and stays an error."
+   `carto carto_callers`). Several candidates, or an opaque root known only
+   by its declared verbs, stay an error that names them."
   [cmd handlers]
-  (let [{:keys [roots stage]} (qualification-hints cmd handlers)]
-    (when (and (contains? #{:exact :lead} stage) (= 1 (count roots)))
+  (let [{:keys [roots auto?]} (qualification-hints cmd handlers)]
+    (when auto?
       (str (name (first roots)) " " cmd))))
 
 (defn- nearest-commands
@@ -248,27 +278,21 @@
            (mapv first)))))
 
 (defn- unknown-command-error
-  "Loud error for a command this tree cannot resolve. Names the valid roots;
-   names the subdomains that could own the token — exactly, when this tree can
-   enumerate them, otherwise the roots that route their own subcommands; and
-   names the nearest known commands by edit distance."
+  "Loud error for a command this tree cannot resolve. Leads with the roots
+   that own the token (`Did you mean: carto multi?`), then the nearest known
+   commands by edit distance, then the valid roots. A root that neither
+   enumerates nor declares the token is never offered."
   [command handlers]
-  (let [raw   (normalize-command command)
-        cmd   (when (and raw (not (str/blank? raw))) (str/trim raw))
-        hints (when cmd (qualification-hints cmd handlers))
-        roots (:roots hints)
-        near  (when cmd (nearest-commands cmd handlers))]
-    (mcp-error (str "Unknown command: " command
-                    ". Valid: " (str/join ", " (sort (map name (keys handlers))))
-                    (when (seq roots)
-                      (str (if (:exact? hints)
-                             (str ". '" cmd "' is a SUBCOMMAND — qualify it: ")
-                             (str ". If '" cmd "' is a SUBCOMMAND, qualify it with "
-                                  "its subdomain — one of these routes its own "
-                                  "subcommands: "))
-                           (str/join " | " (map #(str (name %) " " cmd) roots))))
-                    (when (seq near)
-                      (str ". Did you mean: " (str/join ", " near) "?"))))))
+  (let [raw       (normalize-command command)
+        cmd       (when (and raw (not (str/blank? raw))) (str/trim raw))
+        roots     (when cmd (:roots (qualification-hints cmd handlers)))
+        qualified (map #(str (name %) " " cmd) roots)
+        near      (when cmd (nearest-commands cmd handlers))
+        suggest   (distinct (concat qualified near))]
+    (mcp-error (str "Unknown command: " command "."
+                    (when (seq suggest)
+                      (str " Did you mean: " (str/join ", " suggest) "?"))
+                    " Valid: " (str/join ", " (sort (map name (keys handlers))))))))
 
 (defn- subtree-at
   "The node PATH names in HANDLERS, every level resolved through
