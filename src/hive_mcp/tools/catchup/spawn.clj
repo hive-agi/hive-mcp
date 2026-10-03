@@ -17,7 +17,9 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defn- lookup-context-refs
-  "Query context-store for catchup-cached entries by project scope."
+  "Query context-store for catchup-cached entries by project scope.
+   context-query returns entries newest first; the first entry seen per
+   category wins, so each category resolves to its newest cached ref."
   [project-id]
   (rescue nil
           (let [entries (context-store/context-query :tags #{"catchup"} :limit 20)
@@ -28,9 +30,10 @@
                 category-tags #{"axioms" "priority-conventions" "sessions"
                                 "decisions" "conventions" "snippets"}
                 refs (reduce (fn [acc entry]
-                               (let [cat-tag (first (filter category-tags (:tags entry)))]
-                                 (if cat-tag
-                                   (assoc acc (keyword cat-tag) (:id entry))
+                               (let [cat-tag (first (filter category-tags (:tags entry)))
+                                     k (some-> cat-tag keyword)]
+                                 (if (and k (not (contains? acc k)))
+                                   (assoc acc k (:id entry))
                                    acc)))
                              {}
                              matching)]

@@ -236,3 +236,16 @@
               ;; compressed reconstruction produces "Reconstructed Context" header
               (is (str/includes? result "Reconstructed Context") "Uses compressed reconstruction")
               (is (str/includes? result "Axioms") "Contains Axioms category"))))))))
+
+(deftest test-lookup-context-refs-picks-newest-per-category
+  (testing "with two cached generations of each category, the newer ctx-id wins"
+    (let [proj      (unique-project "newest-proj")
+          put!      (fn [cat] (ctx-store/context-put! [{:id cat}]
+                                                      :tags #{"catchup" cat proj}
+                                                      :ttl-ms 60000))
+          older     {:axioms (put! "axioms") :decisions (put! "decisions")}
+          _         (Thread/sleep 5)
+          newer     {:axioms (put! "axioms") :decisions (put! "decisions")}
+          refs      (#'spawn/lookup-context-refs proj)]
+      (is (= newer refs))
+      (is (empty? (filter (set (vals older)) (vals refs)))))))
