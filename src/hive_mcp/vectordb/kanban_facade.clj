@@ -27,7 +27,8 @@
   (:require [hive-dsl.result :refer [rescue]]
             [hive-mcp.config.core :as cfg-core]
             [hive-mcp.protocols.memory :as proto]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.events.write-events :as write-events]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -172,40 +173,72 @@
     (proto/get-store)
     :else (proto/get-store (active-key))))
 
+(def ^:private kanban-tag
+  "Every entry this facade writes is a kanban entry, whatever tags the
+   caller's payload carried (a delete carries none)."
+  "kanban")
+
+(defn- announce!
+  "Announce a kanban write through the kernel write-events vocabulary, the
+   same seam the memory facade and crud paths use, so synchronous listeners
+   (catchup block-cache :drop-tags #{\"kanban\"}) see it before the caller
+   returns. The kanban tag is always present. Never throws."
+  [op payload]
+  (rescue nil
+    (write-events/notify! op (-> payload
+                                 (update :tags #(vec (distinct (cons kanban-tag (map str %)))))
+                                 (->> (into {} (remove (comp nil? val))))))))
+
 (defn add-entry!
   "Index a kanban entry. Used by migration tooling — the create path
    stays on hive-mcp.tools.memory.crud.write/handle-add (which handles
-   embedding + duplicate detection + KG edges) and threads `:store-key`
-   through to land in the same slot."
+   embedding + duplicate detection + KG edges, and announces its own
+   :added write) and threads `:store-key` through to land in the same
+   slot. Announces the write when the backend returned an id."
   [entry]
-  (case (mode)
-    :default   (proto/add-entry! (proto/get-store) entry)
-    :kanban    (proto/add-entry! (proto/get-store :kanban) entry)
-    :dual-read (let [primary (proto/add-entry! (proto/get-store :kanban) entry)]
-                 (mirror-write! (fn [s] (proto/add-entry! s entry)))
-                 primary)))
+  (let [id (case (mode)
+             :default   (proto/add-entry! (proto/get-store) entry)
+             :kanban    (proto/add-entry! (proto/get-store :kanban) entry)
+             :dual-read (let [primary (proto/add-entry! (proto/get-store :kanban) entry)]
+                          (mirror-write! (fn [s] (proto/add-entry! s entry)))
+                          primary))]
+    (when (string? id)
+      (announce! :added {:id          id
+                         :memory-type (:type entry)
+                         :tags        (:tags entry)
+                         :project-id  (:project-id entry)}))
+    id))
 
 (defn update-entry!
   "Soft-update a kanban entry (status retag, tag rewrite). In :dual-read,
-   primary = :kanban, mirror best-effort to :default."
+   primary = :kanban, mirror best-effort to :default. Announces the write
+   through write-events once the primary write returned."
   [id updates]
-  (case (mode)
-    :default   (proto/update-entry! (proto/get-store) id updates)
-    :kanban    (proto/update-entry! (store-for-id id) id updates)
-    :dual-read (let [primary (proto/update-entry! (proto/get-store :kanban) id updates)]
-                 (mirror-write! (fn [s] (proto/update-entry! s id updates)))
-                 primary)))
+  (let [result (case (mode)
+                 :default   (proto/update-entry! (proto/get-store) id updates)
+                 :kanban    (proto/update-entry! (store-for-id id) id updates)
+                 :dual-read (let [primary (proto/update-entry! (proto/get-store :kanban) id updates)]
+                              (mirror-write! (fn [s] (proto/update-entry! s id updates)))
+                              primary))]
+    (announce! :updated {:id         id
+                         :tags       (:tags updates)
+                         :project-id (:project-id updates)
+                         :fields     (vec (keys updates))})
+    result))
 
 (defn delete-entry!
   "Hard-delete a kanban entry. In :dual-read, attempts both slots so
-   the entry can't resurrect from the legacy slot during soak."
+   the entry can't resurrect from the legacy slot during soak. Announces
+   the write through write-events once the primary delete returned."
   [id]
-  (case (mode)
-    :default   (proto/delete-entry! (proto/get-store) id)
-    :kanban    (proto/delete-entry! (store-for-id id) id)
-    :dual-read (let [primary (proto/delete-entry! (proto/get-store :kanban) id)]
-                 (mirror-write! (fn [s] (proto/delete-entry! s id)))
-                 primary)))
+  (let [result (case (mode)
+                 :default   (proto/delete-entry! (proto/get-store) id)
+                 :kanban    (proto/delete-entry! (store-for-id id) id)
+                 :dual-read (let [primary (proto/delete-entry! (proto/get-store :kanban) id)]
+                              (mirror-write! (fn [s] (proto/delete-entry! s id)))
+                              primary))]
+    (announce! :deleted {:id id})
+    result))
 
 ;;; ============================================================================
 ;;; Boot-time validation
