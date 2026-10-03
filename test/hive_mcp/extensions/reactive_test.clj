@@ -56,6 +56,14 @@
   (is (nil? (registered-tool "code"))
       "a non-whitelisted name folds into its core tool, never overwrites it"))
 
+(deftest overarch-is-no-longer-a-whitelisted-composite
+  (is (not (contains? reactive/composite-descriptions "overarch"))
+      "hive-overarch folds into the code tool as arch-* verbs")
+  (reactive/install!)
+  (ext/contribute-commands! "overarch" :probe {"probe" {:handler identity}})
+  (is (nil? (registered-tool "overarch"))
+      "a contribution to the retired overarch name builds no composite"))
+
 (defn- schema-addon [id exts-atom]
   (reify proto/IAddon
     (addon-id [_] id)
