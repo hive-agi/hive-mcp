@@ -7,7 +7,7 @@
             [hive-mcp.engine.bounded.lru :as lru]
             [hive-mcp.engine.bounded.protocol :as bp]
             [hive-mcp.extensions.delegate :refer [delegate-or-noop]]
-            [hive-mcp.agent.context :as ctx]))
+            [hive-mcp.context.request :as ctx]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later

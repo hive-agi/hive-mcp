@@ -17,7 +17,7 @@
    project B."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.data.json :as json]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.channel.piggyback :as piggyback]
             [hive-mcp.crystal.hooks :as hooks]
             [hive-mcp.crystal.recall :as recall]
