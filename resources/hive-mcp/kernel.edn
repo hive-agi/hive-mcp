@@ -273,7 +273,6 @@
    hive-mcp.tools.agent.dag
    hive-mcp.tools.agent.dispatch
    hive-mcp.tools.agent.helpers
-   hive-mcp.tools.agent.kill
    hive-mcp.tools.agent.lifecycle
    hive-mcp.tools.agent.reconcile
    hive-mcp.tools.agent.spawn

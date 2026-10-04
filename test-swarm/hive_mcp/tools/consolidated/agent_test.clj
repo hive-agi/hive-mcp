@@ -28,7 +28,8 @@
             [hive-test.isolation :as iso]
             [hive-mcp.test.stub.terminal-addon :as stub-term]
             [hive-mcp.isolation-methods]
-            [hive-mcp.dispatch.handler :as dispatch]))
+            [hive-mcp.dispatch.handler :as dispatch]
+            [hive-mcp.dispatch.verbs :as verbs]))
 
 ;; =============================================================================
 ;; Test Fixtures
@@ -282,47 +283,6 @@
 ;; Kill Handler Tests
 ;; =============================================================================
 
-(deftest test-handle-kill-missing-agent-id
-  (testing "kill requires agent_id"
-    (let [result (agent/handle-kill {})]
-      (is (:isError result))
-      (is (re-find #"agent_id is required" (:text result))))))
-
-(deftest test-handle-kill-agent-not-found
-  (testing "kill with non-existent agent returns error"
-    (let [result (agent/handle-kill {:agent_id "non-existent"})]
-      (is (:isError result))
-      (is (re-find #"not found" (:text result))))))
-
-(deftest test-handle-kill-ling-success
-  (testing "kill successfully terminates ling"
-    (add-test-slave! "ling-to-kill" {:depth 1 :status :idle})
-
-    ;; Mock at the emacsclient level - the ling's kill! implementation
-    ;; calls emacsclient to kill the process
-    (with-redefs [ec/eval-elisp-with-timeout (fn [_elisp _timeout]
-                                               {:success true :result "killed"})]
-      (let [result (agent/handle-kill {:agent_id "ling-to-kill"})
-            parsed (parse-response result)]
-        (is (not (:isError result)))
-        (is (:killed? parsed))
-        (is (= "ling-to-kill" (:id parsed)))))))
-
-(deftest test-handle-kill-exception-handling
-  (testing "an addon exception is reported in-band, not as a tool error"
-    (add-test-slave! "ling-error" {:depth 1 :status :idle})
-
-    ;; A terminal whose kill! throws drives the handler's failure path.
-    ;; terminal-addon-strategy rescues it to {:killed? false :reason
-    ;; :addon-exception}, so the tool answers with a structured failure rather
-    ;; than an MCP error.
-    (stub-term/register-terminal! :claude {:kill! "terminal crashed"})
-    (let [result (agent/handle-kill {:agent_id "ling-error"})
-          parsed (parse-response result)]
-      (is (not (:isError result)))
-      (is (false? (:killed? parsed)))
-      (is (= "addon-exception" (:reason parsed))))))
-
 ;; =============================================================================
 ;; Dispatch Handler Tests
 ;; =============================================================================
@@ -515,10 +475,12 @@
   (testing "all handlers are registered"
     (is (contains? agent/handlers :spawn))
     (is (contains? agent/handlers :status))
-    (is (contains? agent/handlers :kill))
     (is (contains? agent/handlers :dispatch))
     (is (contains? agent/handlers :claims))
-    (is (contains? agent/handlers :list))))
+    (is (contains? agent/handlers :list)))
+  (testing "kill is declared for hive-agent, not routed by core"
+    (is (not (contains? agent/handlers :kill)))
+    (is (= "hive.agent" (get (verbs/provided-by agent/canonical-handlers) :kill)))))
 
 (deftest test-handlers-are-functions
   (testing "all top-level handlers are dispatchable, or nested handler maps"
@@ -605,90 +567,6 @@
 ;; =============================================================================
 ;; Human-in-the-Loop (HIL) Cross-Project Kill Prevention Tests
 ;; =============================================================================
-
-(deftest test-handle-kill-same-project-succeeds
-  (testing "kill succeeds when caller and target are same project"
-    (add-test-slave! "ling-same-proj" {:depth 1
-                                       :status :idle
-                                       :project-id "my-project"})
-
-    ;; Mock emacsclient for successful kill
-    (with-redefs [ec/eval-elisp-with-timeout (fn [_elisp _timeout]
-                                               {:success true :result "killed"})]
-      ;; Caller passes directory that resolves to same project-id
-      (let [result (agent/handle-kill {:agent_id "ling-same-proj"
-                                       :directory "/path/to/my-project"})
-            parsed (parse-response result)]
-        (is (not (:isError result))
-            (str "Same project kill should succeed, got: " (:text result)))
-        (is (:killed? parsed))))))
-
-(deftest test-handle-kill-different-project-denied
-  (testing "kill denied when target belongs to different project (HIL)"
-    (add-test-slave! "ling-other-proj" {:depth 1
-                                        :status :idle
-                                        :project-id "other-project"})
-
-    ;; Caller's directory resolves to different project
-    (let [result (agent/handle-kill {:agent_id "ling-other-proj"
-                                     :directory "/path/to/my-project"})]
-      (is (:isError result) "Cross-project kill should be denied")
-      ;; Check HIL error message format
-      (is (re-find #"belongs to project 'other-project'" (:text result)))
-      (is (re-find #"not 'my-project'" (:text result)))
-      (is (re-find #"force_cross_project=true" (:text result))))))
-
-(deftest test-handle-kill-different-project-with-force-succeeds
-  (testing "kill succeeds with force_cross_project=true"
-    (add-test-slave! "ling-forced-kill" {:depth 1
-                                         :status :idle
-                                         :project-id "other-project"})
-
-    ;; Mock emacsclient for successful kill
-    (with-redefs [ec/eval-elisp-with-timeout (fn [_elisp _timeout]
-                                               {:success true :result "killed"})]
-      ;; Caller explicitly allows cross-project kill
-      (let [result (agent/handle-kill {:agent_id "ling-forced-kill"
-                                       :directory "/path/to/my-project"
-                                       :force_cross_project true})
-            parsed (parse-response result)]
-        (is (not (:isError result))
-            (str "Forced cross-project kill should succeed, got: " (:text result)))
-        (is (:killed? parsed))))))
-
-(deftest test-handle-kill-coordinator-context-can-kill-anything
-  (testing "kill without directory (coordinator context) can kill any project"
-    (add-test-slave! "ling-any-project" {:depth 1
-                                         :status :idle
-                                         :project-id "some-random-project"})
-
-    ;; Mock emacsclient for successful kill
-    (with-redefs [ec/eval-elisp-with-timeout (fn [_elisp _timeout]
-                                               {:success true :result "killed"})]
-      ;; No directory = coordinator context (no restriction)
-      (let [result (agent/handle-kill {:agent_id "ling-any-project"})
-            parsed (parse-response result)]
-        (is (not (:isError result))
-            (str "Coordinator context should kill anything, got: " (:text result)))
-        (is (:killed? parsed))))))
-
-(deftest test-handle-kill-legacy-ling-can-be-killed-by-anyone
-  (testing "lings without project-id (legacy) can be killed by any caller"
-    ;; Legacy ling has no project-id
-    (add-test-slave! "legacy-ling" {:depth 1
-                                    :status :idle
-                                    :project-id nil})
-
-    ;; Mock emacsclient for successful kill
-    (with-redefs [ec/eval-elisp-with-timeout (fn [_elisp _timeout]
-                                               {:success true :result "killed"})]
-      ;; Caller has project context but target doesn't
-      (let [result (agent/handle-kill {:agent_id "legacy-ling"
-                                       :directory "/path/to/my-project"})
-            parsed (parse-response result)]
-        (is (not (:isError result))
-            (str "Legacy ling kill should succeed, got: " (:text result)))
-        (is (:killed? parsed))))))
 
 (deftest test-tool-schema-includes-hil-params
   (testing "tool inputSchema includes directory and force_cross_project"

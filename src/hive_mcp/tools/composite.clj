@@ -12,7 +12,8 @@
             [hive-mcp.tools.cli :as cli]
             [clojure.string :as str]
             [hive-mcp.dispatch.handler :as dispatch]
-            [hive-addon.registry.commands :as acmds]))
+            [hive-addon.registry.commands :as acmds]
+            [hive-mcp.dispatch.verbs :as verbs]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -289,14 +290,42 @@
                                         (map #(str cmd " " (name %)) (keys handler))))]
                 command)))))
 
+(defn fold-verb-contributions
+  "TOOL-DEF with the verbs contributed through hive-mcp.dispatch.verbs folded
+   into its advertised surface. The roots read are the tool-def's
+   :verb-roots, else its own :name. For the root named like the tool itself
+   the contributed verb names join the `command` enum (when it has one);
+   for a folded root (`<root> <verb>` under a domain tool) the enum gains
+   `<root> <verb>` likewise. Every contributed :params joins the properties
+   through `union-property`, so a contribution never silently retypes a core
+   param. Unchanged when nothing was contributed."
+  [tool-def]
+  (let [tool-name (:name tool-def)
+        roots     (or (seq (:verb-roots tool-def)) [tool-name])
+        params    (apply merge-with union-property
+                         (keep verbs/contributed-params roots))
+        names     (for [r roots
+                        v (verbs/contributed-verb-names r)]
+                    (if (= r tool-name) v (str r " " v)))
+        core-enum (get-in tool-def [:inputSchema :properties "command" :enum])]
+    (cond-> tool-def
+      (and (seq core-enum) (seq names))
+      (assoc-in [:inputSchema :properties "command" :enum]
+                (vec (sort (distinct (concat core-enum names)))))
+
+      (seq params)
+      (update-in [:inputSchema :properties]
+                 #(merge-with union-property % params)))))
+
 (defn build-merged-tool
   "Fold the current addon contributions to TOOL-NAME into a consolidated
    tool-def's advertised surface: every contributed command's :params joins
    the inputSchema properties, the `command` enum — when the core declares
    one — grows the contributed command names, and the description gains one
    line naming each contributed command with its purpose
-   (`contributed-commands-text`). Returns the tool-def unchanged when nothing
-   has been contributed.
+   (`contributed-commands-text`). Verb-level contributions
+   (hive-mcp.dispatch.verbs) fold in too, through `fold-verb-contributions`.
+   Returns the tool-def unchanged when nothing has been contributed.
 
    Routing already folded contributions in (effective-handlers); this is the
    SCHEMA half. The MCP layer forwards only the params a tool declares, so a
@@ -315,22 +344,23 @@
         addon-params    (apply merge-with union-property
                                (keep :params (vals (or addon-cmds {}))))
         core-enum       (get-in core-tool-def [:inputSchema :properties "command" :enum])]
-    (if (empty? addon-cmds)
-      core-tool-def
-      (cond-> core-tool-def
-        (seq core-enum)
-        (assoc-in [:inputSchema :properties "command" :enum]
-                  (vec (sort (distinct (concat core-enum addon-cmd-names)))))
+    (fold-verb-contributions
+     (if (empty? addon-cmds)
+       core-tool-def
+       (cond-> core-tool-def
+         (seq core-enum)
+         (assoc-in [:inputSchema :properties "command" :enum]
+                   (vec (sort (distinct (concat core-enum addon-cmd-names)))))
 
-        (seq addon-params)
-        (update-in [:inputSchema :properties]
-                   #(merge-with union-property % addon-params))
+         (seq addon-params)
+         (update-in [:inputSchema :properties]
+                    #(merge-with union-property % addon-params))
 
-        true
-        (update :description #(str/join " " (remove str/blank? [% (contributed-commands-text addon-cmds)])))
+         true
+         (update :description #(str/join " " (remove str/blank? [% (contributed-commands-text addon-cmds)])))
 
-        true
-        (assoc :composite true)))))
+         true
+         (assoc :composite true))))))
 
 ;; =============================================================================
 ;; Handler Map for Registry Introspection
