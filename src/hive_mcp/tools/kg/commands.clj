@@ -83,7 +83,11 @@
                      confidence (assoc :confidence confidence)
                      created-by (assoc :created-by created-by)
                      predicate (assoc :predicate predicate))
-              edge-id (edges/add-edge! opts)]
+              ;; Synchronous: the queued path reports success before the write
+              ;; and drops it when the transact fails (2026-10-04: 2631 edges
+              ;; lost while this tool said "Created edge"). A failed write now
+              ;; throws into the catch below and the caller gets an error.
+              edge-id (edges/add-edge! opts conn/transact-sync!)]
           (mcp-json {:success true
                      :edge-id edge-id
                      :message (str "Created edge " edge-id)})))
