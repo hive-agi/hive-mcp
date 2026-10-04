@@ -18,7 +18,7 @@
 
   (:require [hive-mcp.events.core :as ev]
             [hive-mcp.swarm.datascript :as ds]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

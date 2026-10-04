@@ -10,7 +10,8 @@
    that a broken guard cannot brick the server."
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.extensions.registry :as ext]
-            [hive-mcp.server.routes.middleware :as mw]))
+            [hive-mcp.server.routes.middleware :as mw]
+            [hive-mcp.context.request :as ctx]))
 
 (defn- with-seam*
   "Register `f` as the :guard/decide extension for the duration of `body-fn`."
@@ -151,6 +152,54 @@
             (is (= :mcp harness))
             (is (= "mcp__hive__git" (:tool raw)))
             (is (= {:command "stage" :files "all"} (:input raw)))))))))
+
+(defn- recording-guard-port
+  "A stub `:guard/decide` port that records every raw context it is handed
+   and allows the call."
+  [seen]
+  (fn [_harness raw] (swap! seen conj raw) nil))
+
+(deftest the-seam-is-told-the-transport-and-verified-caller-ids
+  (let [seen (atom [])]
+    (with-seam*
+      (recording-guard-port seen)
+      (fn []
+        (let [h (mw/wrap-handler-guard (constantly :ok) "mcp__hive__memory")]
+          (ctx/with-request-context {:caller-id "ling-a"
+                                     :identity {:verified? true
+                                                :caller-id "ling-a"}}
+            (h {:command "add" :_caller_id "ling-a" :agent_id "spoofed"}))
+          (let [raw (first @seen)]
+            (testing "the host-verified caller id reaches the guard"
+              (is (= "ling-a" (:verified-caller-id raw))))
+            (testing "the transport-stamped caller id reaches the guard"
+              (is (= "ling-a" (:caller-id raw))))
+            (testing "the model-supplied agent-id is still passed, unchanged"
+              (is (= "spoofed" (:agent-id raw))))))))))
+
+(deftest an-unverified-credential-is-not-offered-as-verified
+  (let [seen (atom [])]
+    (with-seam*
+      (recording-guard-port seen)
+      (fn []
+        (let [h (mw/wrap-handler-guard (constantly :ok) "t")]
+          (ctx/with-request-context {:caller-id "ling-b"
+                                     :identity {:verified? false
+                                                :caller-id "ling-b"}}
+            (h {:_caller_id "ling-b"}))
+          (let [raw (first @seen)]
+            (is (= "ling-b" (:caller-id raw)))
+            (is (not (contains? raw :verified-caller-id))
+                "a credential that failed verification is never identity")))))))
+
+(deftest with-no-caller-the-raw-context-is-the-old-shape
+  (let [seen (atom [])]
+    (with-seam*
+      (recording-guard-port seen)
+      (fn []
+        ((mw/wrap-handler-guard (constantly :ok) "t") {:x 1})
+        (is (= #{:tool :input :agent-id :cwd} (set (keys (first @seen))))
+            "no caller keys appear when nothing is known: older guards see the same map")))))
 
 ;;; ===========================================================================
 ;;; Placement in the chain

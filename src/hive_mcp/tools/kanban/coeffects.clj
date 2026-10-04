@@ -5,7 +5,7 @@
    Each cofx looks up data the pure handler will need, by reading
    stable boundaries (facade lookup, current scope)."
   (:require [hive.events.cofx :as cofx]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.tools.kanban.transitions :as kt]
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.vectordb.kanban-facade :as kanban-facade]))

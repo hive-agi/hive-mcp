@@ -20,7 +20,7 @@
 
    knowledge-graph.disc is a hive-memory extraction target in the kernel
    census, so it is not required here: each function is resolved by symbol on
-   the call (hive-mcp.swarm.adapters.soft). While the namespace is present
+   the call (hive-mcp.extensions.soft). While the namespace is present
    the host answer passes through unchanged; once it has left, the method
    answers what the port's own Noop answers.
 
@@ -28,7 +28,7 @@
    adapter runs on the SPI's Noop."
   (:require [hive-spi.swarm.ports.memory-scope :as spi]
             [hive-mcp.project.scope :as project-scope]
-            [hive-mcp.swarm.adapters.soft :as soft]))
+            [hive-mcp.extensions.soft :as soft]))
 
 (defn make-adapter
   "Build the hive-mcp implementation of both memory-scope SPI protocols."

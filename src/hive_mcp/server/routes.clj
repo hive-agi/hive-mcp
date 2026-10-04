@@ -16,7 +16,8 @@
             [clojure.spec.alpha :as s]
             [hive-mcp.tools.composite :as composite]
             [hive-mcp.dispatch.handler :as dispatch]
-            [hive-addon.tool-contract :as tool-contract]))
+            [hive-addon.tool-contract :as tool-contract]
+            [hive-mcp.tools.schema-keys :as schema-keys]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -131,7 +132,11 @@
    EVERY tool advertises `async` and `async-timeout-ms`, because every tool's
    chain runs `wrap-handler-async`. A tool declaring :default-async-commands
    gets the opt-out wording, any other tool the opt-in wording. A tool that
-   declares its own `async` keeps it."
+   declares its own `async` keeps it.
+
+   The emitted schema has provider-legal property keys only
+   (`schema-keys/legal-tool`): an addon param such as `preview?` is
+   advertised as its `preview_` alias."
   [{:keys [consolidated] :as tool-def}]
   (let [{:keys [name description inputSchema handler deprecated default-async-commands]}
         (tool-contract/assert-root-tool!
@@ -147,11 +152,12 @@
 
                         true
                         (update :properties #(merge async-props %)))]
-    (cond-> {:name name
-             :description description
-             :inputSchema merged-schema
-             :handler (mw/build-middleware-chain handler name default-async-commands)}
-      deprecated (assoc :deprecated true))))
+    (schema-keys/legal-tool
+     (cond-> {:name name
+              :description description
+              :inputSchema merged-schema
+              :handler (mw/build-middleware-chain handler name default-async-commands)}
+       deprecated (assoc :deprecated true)))))
 
 (defn collect-surface-inputs
   "COLLECT: read every source of the advertised surface once, into a

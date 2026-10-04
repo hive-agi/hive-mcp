@@ -227,13 +227,21 @@
   "The grant decision for a spawn by `parent` asking for `requested` (the
    raw `grant` param, nil = share). {:grant wire-or-nil} or {:refused msg}.
    See hive-mcp.agent.grant/child-grant. With no grant recorded on the
-   parent's lineage and none requested, nothing changes: {:grant nil}."
+   parent's lineage and none requested, nothing changes: {:grant nil}.
+
+   `requested` is first read by `grant/requested-grant`: a JSON-object
+   string is parsed (a client whose cached schema predates the parameter
+   sends it as text), any other non-map is refused by message. It used to
+   reach `attenuate` as is and die on a ClassCastException."
   [parent requested]
-  (let [get-slave *get-slave*
-        parent-wire (grant/recorded-grant get-slave parent)
-        child-depth (inc (long (grant/depth-of get-slave parent)))]
-    (grant/child-grant (when (or parent-wire requested) (*grant-domain*))
-                       parent-wire requested child-depth)))
+  (let [{requested :ok shape-refusal :refused} (grant/requested-grant requested)]
+    (if shape-refusal
+      {:refused shape-refusal}
+      (let [get-slave *get-slave*
+            parent-wire (grant/recorded-grant get-slave parent)
+            child-depth (inc (long (grant/depth-of get-slave parent)))]
+        (grant/child-grant (when (or parent-wire requested) (*grant-domain*))
+                           parent-wire requested child-depth)))))
 
 (defn handle-spawn
   "Spawn a new ling agent.

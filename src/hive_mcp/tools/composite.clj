@@ -12,7 +12,8 @@
             [hive-mcp.tools.cli :as cli]
             [clojure.string :as str]
             [hive-mcp.dispatch.handler :as dispatch]
-            [hive-addon.registry.commands :as acmds]))
+            [hive-addon.registry.commands :as acmds]
+            [hive-mcp.dispatch.verbs :as verbs]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -86,19 +87,54 @@
 ;; Composite Handler Builder
 ;; =============================================================================
 
+(defn- registered-tool-verbs
+  "The `command` enum of the registered standalone tool named TOOL-NAME, or
+   nil. A contributed subdomain that forwards to such a tool (`code carto` ->
+   the `carto` tool) routes exactly those verbs."
+  [tool-name]
+  (some (fn [t]
+          (when (= tool-name (:name t))
+            (get-in t [:inputSchema :properties "command" :enum])))
+        (ext/get-registered-tools)))
+
+(defn contributed-verbs
+  "The verbs the subdomain K contributed under TOOL-NAME routes, or nil when it
+   declares none. Asked, first answer wins:
+     - the contribution spec's :verbs (a collection, or a 0-arity fn)
+     - the keys of a verb-map :handler
+     - the command enum of a registered tool named K
+   This is the ::cli/verb-oracle port an unknown-command hint consults, so a
+   bare verb is offered only under the subdomains that really route it."
+  [tool-name k]
+  (let [cmd  (name k)
+        spec (get (acmds/get-commands tool-name) cmd)
+        v    (:verbs spec)
+        h    (:handler spec)]
+    (or (seq (if (fn? v) (v) v))
+        (when (map? h) (seq (map name (keys h))))
+        (seq (registered-tool-verbs cmd)))))
+
+(defn- with-contribution-meta
+  "HANDLERS with ADDON-CMDS' root keys recorded as ::cli/opaque-roots and the
+   ::cli/verb-oracle port bound to TOOL-NAME's contributions."
+  [handlers tool-name addon-cmds]
+  (vary-meta handlers
+             #(-> %
+                  (update ::cli/opaque-roots (fnil into #{}) (keys addon-cmds))
+                  (assoc ::cli/verb-oracle (partial contributed-verbs tool-name)))))
+
 (defn build-composite-handler
   "Build a handler fn that dispatches to contributed addon handlers only.
    Re-resolves contributions on each call so hot-reload picks up changes.
    Use build-merged-handler when core handlers exist.
 
    Every root is contributed, so all of them are recorded under
-   ::cli/opaque-roots in the tree's metadata."
+   ::cli/opaque-roots in the tree's metadata, beside the ::cli/verb-oracle
+   port that says which verbs each one routes."
   [tool-name]
   (fn [params]
     (let [addon-cmds (or (addon-commands->handlers tool-name) {})
-          handlers   (vary-meta addon-cmds
-                                update ::cli/opaque-roots (fnil into #{})
-                                (keys addon-cmds))
+          handlers   (with-contribution-meta addon-cmds tool-name addon-cmds)
           cli-fn     (cli/make-cli-handler handlers)]
       (cli-fn params))))
 
@@ -135,13 +171,13 @@
    Contributed root keys are recorded under ::cli/opaque-roots in the returned
    map's METADATA: a contributed handler receives the whole :command and routes
    the remainder itself, so this tree cannot enumerate what lives beneath it.
-   The map value itself is identical to the plain merge."
+   The ::cli/verb-oracle port beside it answers which verbs each opaque root,
+   core or contributed, routes (`contributed-verbs`). The map value itself is
+   identical to the plain merge."
   [tool-name canonical-handlers]
-  (let [canonical (dispatch/current canonical-handlers)]
-    (if-let [addon-cmds (addon-commands->handlers tool-name)]
-      (vary-meta (merge canonical addon-cmds)
-                 update ::cli/opaque-roots (fnil into #{}) (keys addon-cmds))
-      canonical)))
+  (let [canonical (dispatch/current canonical-handlers)
+        addon-cmds (addon-commands->handlers tool-name)]
+    (with-contribution-meta (merge canonical addon-cmds) tool-name (or addon-cmds {}))))
 
 (defn build-merged-handler
   "Build a handler fn that merges core handlers with addon contributions.
@@ -254,14 +290,42 @@
                                         (map #(str cmd " " (name %)) (keys handler))))]
                 command)))))
 
+(defn fold-verb-contributions
+  "TOOL-DEF with the verbs contributed through hive-mcp.dispatch.verbs folded
+   into its advertised surface. The roots read are the tool-def's
+   :verb-roots, else its own :name. For the root named like the tool itself
+   the contributed verb names join the `command` enum (when it has one);
+   for a folded root (`<root> <verb>` under a domain tool) the enum gains
+   `<root> <verb>` likewise. Every contributed :params joins the properties
+   through `union-property`, so a contribution never silently retypes a core
+   param. Unchanged when nothing was contributed."
+  [tool-def]
+  (let [tool-name (:name tool-def)
+        roots     (or (seq (:verb-roots tool-def)) [tool-name])
+        params    (apply merge-with union-property
+                         (keep verbs/contributed-params roots))
+        names     (for [r roots
+                        v (verbs/contributed-verb-names r)]
+                    (if (= r tool-name) v (str r " " v)))
+        core-enum (get-in tool-def [:inputSchema :properties "command" :enum])]
+    (cond-> tool-def
+      (and (seq core-enum) (seq names))
+      (assoc-in [:inputSchema :properties "command" :enum]
+                (vec (sort (distinct (concat core-enum names)))))
+
+      (seq params)
+      (update-in [:inputSchema :properties]
+                 #(merge-with union-property % params)))))
+
 (defn build-merged-tool
   "Fold the current addon contributions to TOOL-NAME into a consolidated
    tool-def's advertised surface: every contributed command's :params joins
    the inputSchema properties, the `command` enum — when the core declares
    one — grows the contributed command names, and the description gains one
    line naming each contributed command with its purpose
-   (`contributed-commands-text`). Returns the tool-def unchanged when nothing
-   has been contributed.
+   (`contributed-commands-text`). Verb-level contributions
+   (hive-mcp.dispatch.verbs) fold in too, through `fold-verb-contributions`.
+   Returns the tool-def unchanged when nothing has been contributed.
 
    Routing already folded contributions in (effective-handlers); this is the
    SCHEMA half. The MCP layer forwards only the params a tool declares, so a
@@ -280,22 +344,23 @@
         addon-params    (apply merge-with union-property
                                (keep :params (vals (or addon-cmds {}))))
         core-enum       (get-in core-tool-def [:inputSchema :properties "command" :enum])]
-    (if (empty? addon-cmds)
-      core-tool-def
-      (cond-> core-tool-def
-        (seq core-enum)
-        (assoc-in [:inputSchema :properties "command" :enum]
-                  (vec (sort (distinct (concat core-enum addon-cmd-names)))))
+    (fold-verb-contributions
+     (if (empty? addon-cmds)
+       core-tool-def
+       (cond-> core-tool-def
+         (seq core-enum)
+         (assoc-in [:inputSchema :properties "command" :enum]
+                   (vec (sort (distinct (concat core-enum addon-cmd-names)))))
 
-        (seq addon-params)
-        (update-in [:inputSchema :properties]
-                   #(merge-with union-property % addon-params))
+         (seq addon-params)
+         (update-in [:inputSchema :properties]
+                    #(merge-with union-property % addon-params))
 
-        true
-        (update :description #(str/join " " (remove str/blank? [% (contributed-commands-text addon-cmds)])))
+         true
+         (update :description #(str/join " " (remove str/blank? [% (contributed-commands-text addon-cmds)])))
 
-        true
-        (assoc :composite true)))))
+         true
+         (assoc :composite true))))))
 
 ;; =============================================================================
 ;; Handler Map for Registry Introspection

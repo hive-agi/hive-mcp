@@ -83,17 +83,19 @@
    itself, is the cost. Validation happens for ALL specs before anything is
    transacted, so a bad spec in the batch writes nothing.
 
-   Empty input transacts nothing and returns []."
-  [edge-specs]
-  (if (empty? edge-specs)
-    []
-    (let [tx-data (mapv edge-tx-data edge-specs)]
-      (conn/transact! tx-data)
-      (doseq [d tx-data]
-        (emit-stats-event! :kg.edges/added
-                           {:relation (:kg-edge/relation d) :scope (:kg-edge/scope d)}
-                           #(stats/apply-delta! (:kg-edge/relation d) (:kg-edge/scope d) 1)))
-      (mapv :kg-edge/id tx-data))))
+   Empty input transacts nothing and returns []. The two-argument arity selects
+   the transaction function; explicit tool writes use conn/transact-sync!."
+  ([edge-specs] (add-edges! edge-specs conn/transact!))
+  ([edge-specs transact-fn]
+   (if (empty? edge-specs)
+     []
+     (let [tx-data (mapv edge-tx-data edge-specs)]
+       (transact-fn tx-data)
+       (doseq [d tx-data]
+         (emit-stats-event! :kg.edges/added
+                            {:relation (:kg-edge/relation d) :scope (:kg-edge/scope d)}
+                            #(stats/apply-delta! (:kg-edge/relation d) (:kg-edge/scope d) 1)))
+       (mapv :kg-edge/id tx-data)))))
 
 (defn add-edge!
   "Create a new edge between two knowledge nodes.
@@ -117,9 +119,11 @@
    :from and :to must be non-blank strings (schema/valid-node-id?).
 
    Returns the edge ID on success, throws on validation failure. Writing many
-   edges? Use `add-edges!` — it transacts once for the whole batch."
-  [edge-spec]
-  (first (add-edges! [edge-spec])))
+   edges? Use `add-edges!` — it transacts once for the whole batch.
+   Pass conn/transact-sync! as transact-fn when success requires persistence."
+  ([edge-spec] (add-edge! edge-spec conn/transact!))
+  ([edge-spec transact-fn]
+   (first (add-edges! [edge-spec] transact-fn))))
 
 (defn update-edge-confidence!
   "Update the confidence score of an edge.

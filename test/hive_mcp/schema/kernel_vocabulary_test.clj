@@ -17,7 +17,7 @@
             [hive-mcp.schema.memory :as mem-schema]
             [hive-mcp.schema.tools :as tools-schema]
             [hive-mcp.schema.type-token :as token]
-            [hive-mcp.swarm.adapters.soft :as soft]))
+            [hive-mcp.extensions.soft :as soft]))
 
 (deftest a-type-token-is-judged-without-any-taxonomy
   (testing "safe tokens"

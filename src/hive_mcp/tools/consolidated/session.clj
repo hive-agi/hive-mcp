@@ -6,7 +6,7 @@
             [hive-mcp.tools.core :refer [mcp-error mcp-json]]
             [hive-mcp.tools.crystal :as crystal]
             [hive-mcp.tools.catchup :as catchup]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.channel.context-store :as ctx-store]
             [hive-mcp.context.reconstruction :as reconstruction]
             [hive-mcp.dns.result :as result]

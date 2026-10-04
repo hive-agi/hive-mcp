@@ -4,7 +4,7 @@
    Reifies hive-spi.swarm.ports.agent-context/IAgentCallContext and
    /IBudgetGuardrail over the host's own machinery:
 
-   - IAgentCallContext delegates to hive-mcp.agent.context — the thread-local
+   - IAgentCallContext delegates to hive-mcp.context.request — the thread-local
      *request-ctx* middleware chain keeps working unchanged, so every
      wrap-handler-context-bound call sees the same agent-id / directory the
      swarm slice reads today via ctx/current-agent-id and ctx/current-directory.
@@ -13,7 +13,7 @@
      (agent/ling/spawn.clj), so budget behaviour is unchanged; the adapter
      simply formalizes that seam into the port. The budget hook is a
      hive-agent extraction target in the kernel census, so it stays soft here
-     too (hive-mcp.swarm.adapters.soft): absent, the methods answer the
+     too (hive-mcp.extensions.soft): absent, the methods answer the
      port's Noop (nil, budgets unenforced).
 
    Install at addon init (the same moment headless/terminal strategies
@@ -25,8 +25,8 @@
   ;;
   ;; SPDX-License-Identifier: AGPL-3.0-or-later
   (:require [hive-spi.swarm.ports.agent-context :as spi]
-            [hive-mcp.agent.context :as ctx]
-            [hive-mcp.swarm.adapters.soft :as soft]))
+            [hive-mcp.context.request :as ctx]
+            [hive-mcp.extensions.soft :as soft]))
 
 (defn make-adapter
   "An IAgentCallContext + IBudgetGuardrail reify delegating to hive-mcp's

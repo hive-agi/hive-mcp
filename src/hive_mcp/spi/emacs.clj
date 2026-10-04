@@ -18,9 +18,9 @@
 
    Host-local, like the other kernel ports (memory 20260919203856-2bb9451d).
    With nothing installed it late-binds BY SYMBOL through
-   `hive-mcp.swarm.adapters.soft` for as long as `emacs-ext` ships in core,
+   `hive-mcp.extensions.soft` for as long as `emacs-ext` ships in core,
    and answers the Noop once it does not."
-  (:require [hive-mcp.swarm.adapters.soft :as soft]))
+  (:require [hive-mcp.extensions.soft :as soft]))
 
 (defprotocol IEmacsDaemons
   "Placing a ling on an Emacs daemon."

@@ -25,7 +25,7 @@
             [hive-dsl.result :as r :refer [rescue]]
             [clojure.data.json :as json]
             [hive-mcp.multi.util :as util]
-            [hive-mcp.swarm.adapters.soft :as soft]))
+            [hive-mcp.extensions.soft :as soft]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

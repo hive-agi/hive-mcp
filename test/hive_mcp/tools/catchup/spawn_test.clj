@@ -13,11 +13,29 @@
             [hive-mcp.knowledge-graph.edges]
             [hive-mcp.tools.catchup.git]
             [hive-mcp.tools.catchup.scope]
-            [hive-mcp.tools.memory.scope]))
+            [hive-mcp.tools.memory.scope]
+            [hive-mcp.spi.disc :as disc-port]))
 
 ;; =============================================================================
 ;; Fixtures
 ;; =============================================================================
+
+(defrecord StubDiscKnowledge [stale-files calls]
+  disc-port/IDiscKnowledge
+  (-staleness-value [_ _] nil)
+  (-propagate-staleness! [_ _ _ _] nil)
+  (-top-stale-files [_ opts]
+    (swap! calls conj opts)
+    stale-files))
+
+(defn disc-port-fixture
+  "Install a stub IDiscKnowledge through the port for the test (no stale
+   files), then uninstall it: spawn-context never reaches the in-core disc
+   namespace."
+  [f]
+  (disc-port/install! (->StubDiscKnowledge [] (atom [])))
+  (try (f)
+       (finally (disc-port/uninstall!))))
 
 (defn context-store-fixture
   "Reset context-store before each test."
@@ -26,7 +44,7 @@
   (try (f)
        (finally (ctx-store/reset-all!))))
 
-(use-fixtures :each stub/with-stub-store context-store-fixture)
+(use-fixtures :each stub/with-stub-store disc-port-fixture context-store-fixture)
 
 ;; =============================================================================
 ;; Shared mocks
@@ -47,13 +65,13 @@
      ~@body))
 
 (defmacro with-full-mode-mocks
-  "with-base-mocks plus the query seams the :full renderer fans out to."
+  "with-base-mocks plus the query seams the :full renderer fans out to.
+   Stale files come from the disc PORT, stubbed by `disc-port-fixture`."
   [project-id axioms & body]
   `(with-redefs [hive-mcp.project.scope/get-current-project-id (fn [~'_] ~project-id)
                  hive-mcp.tools.catchup.scope/get-current-project-name (fn [~'_] ~project-id)
                  hive-mcp.tools.catchup.scope/query-axioms (fn [~'_] ~axioms)
                  hive-mcp.tools.catchup.scope/query-scoped-entries (fn [~'_ ~'_ ~'_ ~'_] [])
-                 hive-mcp.knowledge-graph.disc/top-stale-files (fn [& ~'_] [])
                  hive-mcp.tools.catchup.git/gather-git-info (fn [~'_] mock-git-info)]
      ~@body))
 
@@ -218,3 +236,16 @@
               ;; compressed reconstruction produces "Reconstructed Context" header
               (is (str/includes? result "Reconstructed Context") "Uses compressed reconstruction")
               (is (str/includes? result "Axioms") "Contains Axioms category"))))))))
+
+(deftest test-lookup-context-refs-picks-newest-per-category
+  (testing "with two cached generations of each category, the newer ctx-id wins"
+    (let [proj      (unique-project "newest-proj")
+          put!      (fn [cat] (ctx-store/context-put! [{:id cat}]
+                                                      :tags #{"catchup" cat proj}
+                                                      :ttl-ms 60000))
+          older     {:axioms (put! "axioms") :decisions (put! "decisions")}
+          _         (Thread/sleep 5)
+          newer     {:axioms (put! "axioms") :decisions (put! "decisions")}
+          refs      (#'spawn/lookup-context-refs proj)]
+      (is (= newer refs))
+      (is (empty? (filter (set (vals older)) (vals refs)))))))

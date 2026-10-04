@@ -16,7 +16,7 @@
             [hive-mcp.crystal.recall :as recall]
             [hive-spi.editor.services :as svc]
             [hive-mcp.swarm.datascript :as ds]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.vectordb.facade :as facade]
             [hive-mcp.knowledge-graph.edges :as kg-edges]

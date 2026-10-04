@@ -10,7 +10,7 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.server.init :as init]
             [hive-mcp.spi.contributions :as contrib]
-            [hive-mcp.swarm.adapters.soft :as soft]))
+            [hive-mcp.extensions.soft :as soft]))
 
 (defn- with-restored-boot [f]
   (try (f)

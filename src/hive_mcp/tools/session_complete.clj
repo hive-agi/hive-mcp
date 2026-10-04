@@ -31,7 +31,7 @@
             [hive-mcp.tools.core :refer [mcp-json mcp-error]]
             [hive-mcp.events.core :as ev]
             [hive-mcp.events.interceptors :as interceptors]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.vectordb.facade :as facade]
             [hive-spi.swarm.guards :as guards]

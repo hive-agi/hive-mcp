@@ -25,16 +25,21 @@
   "Bucket counts and the ten most recently updated todos scoped to
    PROJECT-ID. Returns {:counts {:todo n :inprogress n :inreview n :done n}
    :recent-todos [{:id :title :tags} ...] :scope-tag str-or-nil}; the empty
-   summary (with :scope-tag) when any board read fails."
+   summary (with :scope-tag) when any board read fails.
+
+   Session todos (`list-plan/default-hidden-tags`) are excluded from both:
+   they are an agent's own step list mirrored onto the board, not backlog."
   [project-id]
   (let [scope-tag    (when project-id (str "scope:project:" project-id))
         base-tags    (cond-> ["kanban"] scope-tag (conj scope-tag))
+        hidden       list-plan/default-hidden-tags
         empty-result (assoc empty-summary :scope-tag scope-tag)
         count-into   (fn [acc bucket tag]
                        (let-ok [n (try-effect* :kanban/count-failed
                                     (count (kanban-facade/query-entries
                                             :type "note"
                                             :tags (conj base-tags tag)
+                                            :exclude-tags hidden
                                             :limit list-plan/whole-board
                                             :output-fields ["id"])))]
                          (ok (assoc-in acc [:counts bucket] n))))
@@ -43,6 +48,7 @@
                                         (kanban-facade/query-entries
                                          :type "note"
                                          :tags (conj base-tags "todo")
+                                         :exclude-tags hidden
                                          :limit 10
                                          :order-by [:updated :desc]
                                          :output-fields ["id" "content" "tags"]
@@ -70,10 +76,13 @@
     (assoc summary :hint hint)))
 
 (def block
-  "The catchup block contribution. Reads :project-id from the context."
+  "The catchup block contribution. Reads :project-id from the context.
+   Cached per project: five board scans are the same answer for every agent
+   catching up on one project, and a kanban-tagged write drops the entry."
   {:block/id    :kanban
    :block/fn    (fn [{:keys [project-id]}] (catchup-section (gather-kanban-summary project-id)))
-   :block/order 40})
+   :block/order 40
+   :block/cache {:key-by [:project-id] :drop-tags #{"kanban"}}})
 
 (defn register!
   "Install the kanban block in the catchup block registry. Returns it."

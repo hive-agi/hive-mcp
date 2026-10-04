@@ -35,7 +35,8 @@
   "hive-mcp-owned evict-stale! entry points. Adding a new cache here is
    a one-liner plus a defn in the cache's own ns."
   '[hive-mcp.tools.catchup.axiom-cache/evict-stale!
-    hive-mcp.tools.catchup.bundle-cache/evict-stale!])
+    hive-mcp.tools.catchup.bundle-cache/evict-stale!
+    hive-mcp.tools.catchup.block-cache/evict-stale!])
 
 (defonce ^:private *cache-evictors
   ^{:doc "Set of 0-arg evict-stale! fns registered at runtime."}

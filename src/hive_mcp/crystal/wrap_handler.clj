@@ -10,7 +10,7 @@
    the entry point answers an error naming what is missing, because a wrap
    with nothing to harvest into is not something to fake."
   (:require [clojure.data.json :as json]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.crystal.fanout :as fan]
             [hive-mcp.crystal.harvest.collect :as coll]
             [hive-mcp.crystal.persist :as persist]

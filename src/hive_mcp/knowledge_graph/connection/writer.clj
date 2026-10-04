@@ -54,7 +54,14 @@
               (catch Throwable t2
                 (log/error "Individual fallback transact also failed"
                            {:item item :error (.getMessage t2)})
-                (swap! writer-metrics update :items-dropped inc)))))
+                ;; Keep the last failure next to the drop count so writer-stats
+                ;; shows WHY writes are being lost, not only how many.
+                (swap! writer-metrics
+                       (fn [m]
+                         (-> m
+                             (update :items-dropped inc)
+                             (assoc :last-failure {:at    (System/currentTimeMillis)
+                                                   :error (.getMessage t2)}))))))))
         (finally
           (swap! in-flight - batch-item-count))))))
 

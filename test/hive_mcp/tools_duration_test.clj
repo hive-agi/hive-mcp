@@ -92,7 +92,7 @@
    Computed rather than hard-coded so the suite does not depend on the JVM's cwd."
   []
   ((requiring-resolve 'hive-mcp.project.scope/get-current-project-id)
-   ((requiring-resolve 'hive-mcp.agent.context/current-directory))))
+   ((requiring-resolve 'hive-mcp.context.request/current-directory))))
 
 (defn call-with-stub-store
   "Register a stub IMemoryStore for THUNK, then restore the prior registry.
@@ -354,11 +354,7 @@
       (let [result (memory/handle-mcp-memory-expiring-soon {:days 7})]
         (is (= "text" (:type result)))
         (is (true? (:isError result)))
-        ;; NOTE: the "Memory store not configured" MESSAGE is lost here.
-        ;; expiring-soon* returns with-store's mcp-error map, which is not a
-        ;; Result, so rb/result->mcp cannot read it and emits empty text.
-        ;; Asserting the observed contract; the lost message is carded.
-        (is (= "" (:text result))))))
+        (is (str/includes? (:text result) "Memory store not configured")))))
 
   (testing "Defaults to 3 days when days not specified"
     (let [observing (stub/->observing (stub/->stub))

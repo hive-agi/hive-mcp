@@ -25,8 +25,7 @@
   "Composite tools built from addon contributions, name -> description prefix.
    A whitelist: a contribution to a name outside it folds into that tool's
    core definition through build-merged-handler instead."
-  {"analysis" "Code analysis"
-   "overarch" "Architecture model"})
+  {"analysis" "Code analysis"})
 
 (defn rebuild-composite!
   "Rebuild and re-register the composite tool `tool-name` from its current

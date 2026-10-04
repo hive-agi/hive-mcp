@@ -12,7 +12,7 @@
    E2)."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.spi.metrics :as port]
-            [hive-mcp.swarm.adapters.soft :as soft]))
+            [hive-mcp.extensions.soft :as soft]))
 
 (defn- clean-registry [f]
   (port/uninstall!)

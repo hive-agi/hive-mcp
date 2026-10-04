@@ -11,7 +11,7 @@
             [hive-mcp.agent.protocol :as proto]
             [hive-mcp.agent.executor :as executor]
             [hive-mcp.agent.registry]
-            [hive-mcp.agent.context :as proto-ctx]
+            [hive-mcp.context.request :as proto-ctx]
             [hive-mcp.agent.openrouter :as llm-registry]))
 
 ;; =============================================================================
@@ -108,6 +108,29 @@
     (is (string? (grant/call-refusal nil get-slave "ling-a" "memory" "search"))
         "grant recorded but no domain: fail closed")))
 
+(deftest ask-path-through-swarm-tool
+  ;; Measured live 2026-10-03: a ling holding {:tools ["memory:search"]} was
+  ;; refused `swarm` + `hivemind ask`, because the table only spelled the
+  ;; consolidated `hivemind:ask`, which no ling holds.
+  (let [get-slave (registry {"ling-a" {:slave/id "ling-a" :slave/depth 1
+                                       :slave/grant {:tools ["memory:search"]}}})
+        refusal   (fn [tool command] (grant/call-refusal stub-domain get-slave "ling-a:inst" tool command))]
+    (testing "the ask path is permitted on every route a caller reaches it by"
+      (doseq [command ["hivemind ask" "hivemind messages" "hivemind respond"]]
+        (is (nil? (refusal "swarm" command)) (str "swarm:" command)))
+      (doseq [command ["ask" "messages" "respond"]]
+        (is (nil? (refusal "hivemind" command)) (str "hivemind:" command))))
+    (testing "the table is derived, one entry per route x command"
+      (is (= #{"hivemind:ask" "hivemind:messages" "hivemind:respond"
+               "swarm:hivemind ask" "swarm:hivemind messages" "swarm:hivemind respond"}
+             grant/always-permitted)))
+    (testing "the rest of the grant still binds"
+      (is (str/includes? (refusal "swarm" "agent spawn") "swarm:agent spawn"))
+      (is (str/includes? (refusal "swarm" "hivemind shout") "swarm:hivemind shout"))
+      (is (str/includes? (refusal "memory" "add") "memory:add")))
+    (testing "no grant recorded: unrestricted, as before"
+      (is (nil? (grant/call-refusal stub-domain get-slave "coordinator:s1" "swarm" "agent spawn"))))))
+
 (deftest middleware-gate
   (let [called (atom 0)
         h (mw/wrap-handler-grant (fn [_] (swap! called inc) [{:type "text" :text "ran"}]) "memory")]
@@ -181,3 +204,27 @@
       (is (nil? opts))
       (is (:isError res))
       (is (str/includes? (:text res) "tools")))))
+
+(deftest spawn-handler-grant-as-string
+  ;; Measured live 2026-10-02: a client whose cached schema predates `grant`
+  ;; sends it as text, and the spawn died on "java.lang.Character cannot be
+  ;; cast to java.util.Map$Entry".
+  (testing "a JSON-object string is parsed and honoured like the map"
+    (let [{:keys [res opts]} (spawn-with {} {:_caller_id "coordinator:s1"
+                                             :grant "{\"tools\": [\"memory\"], \"may_spawn\": false}"})]
+      (is (= ["memory"] (get-in opts [:grant :tools])))
+      (is (= ["memory"] (get-in (body res) [:grant :tools])))))
+  (testing "a blank string shares, as no grant does"
+    (let [{:keys [opts]} (spawn-with {} {:_caller_id "coordinator:s1" :grant "  "})]
+      (is (nil? (:grant opts)))))
+  (doseq [[what bad] [["not JSON" "tools=memory"]
+                      ["a JSON array" "[\"memory\"]"]
+                      ["a JSON scalar" "42"]
+                      ["a number" 42]
+                      ["a vector" ["memory"]]]]
+    (testing (str "anything else is refused by message, never a ClassCastException: " what)
+      (let [{:keys [res opts]} (spawn-with {} {:_caller_id "coordinator:s1" :grant bad})]
+        (is (nil? opts) "nothing is spawned")
+        (is (:isError res))
+        (is (str/includes? (:text res) "`grant` must be a JSON object"))
+        (is (not (str/includes? (:text res) "ClassCast")))))))

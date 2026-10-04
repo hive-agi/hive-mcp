@@ -5,7 +5,7 @@
    so that hivemind_shout and similar tools can identify the calling agent."
   (:require [clojure.test :refer :all]
             [hive-mcp.agent.executor :as executor]
-            [hive-mcp.agent.context :as ctx]
+            [hive-mcp.context.request :as ctx]
             [hive-mcp.agent.registry :as registry]
             [hive-mcp.channel.piggyback-tap :as tap]
             [hive-mcp.channel.activation :as act]
