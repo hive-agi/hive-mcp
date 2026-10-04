@@ -61,17 +61,23 @@
   (let [{:keys [success result]} (svc/invoke :vessel :dispatch {:op :crystal/available?} 5000)]
     (and success (= result "t"))))
 
-(defn- resolve-agent
-  "Resolve effective agent-id with fallback chain. Logs warnings for fallbacks."
-  [{:keys [agent_id]}]
-  (let [ctx-id (ctx/current-agent-id)
-        env-id (System/getenv "CLAUDE_SWARM_SLAVE_ID")]
-    (when (and (nil? agent_id) (nil? ctx-id))
-      (log/warn "wrap-crystallize: agent_id not passed explicitly."
-                (if env-id
-                  (str "Falling back to env var " env-id)
-                  "Defaulting to 'coordinator'. Lings should pass agent_id explicitly.")))
-    (or agent_id ctx-id env-id "coordinator")))
+(defn resolve-agent
+  "The agent a wrap runs as. Every wrap entry point (session wrap, workflow
+   wrap, session complete, the :wrap-crystallize effect) lands here or calls
+   `ctx/current-session-agent-id` itself, the resolver `session whoami` uses:
+   an explicit specific `agent_id` wins, and a blank one or the bare
+   `coordinator` role resolves to the transport's caller id, so a coordinator
+   session wraps as its own `coordinator:<session>`. Then the ling env var,
+   then the shared role as a last resort, logged.
+   Kanban 20261002152638-34671747."
+  [params]
+  (or (ctx/current-session-agent-id params)
+      (let [env-id (System/getenv "CLAUDE_SWARM_SLAVE_ID")]
+        (log/warn "wrap-crystallize: no agent_id and no caller id."
+                  (if env-id
+                    (str "Falling back to env var " env-id)
+                    "Defaulting to 'coordinator'. Lings should pass agent_id explicitly."))
+        (or env-id ctx/coordinator-role))))
 
 ;;; =============================================================================
 ;;; Side-Effect Helpers (isolated actions)
@@ -115,12 +121,18 @@
 ;;; =============================================================================
 
 (defn- harvest
-  "Harvest session data. Returns Result."
+  "Harvest session data. Returns Result.
+
+   Scoped to the caller: :lineage (the agent and its own lings) restricts the
+   hivemind shouts, the recall buffer and the created ids to what that lineage
+   did in the directory's project, so a wrap cannot summarize another
+   session's work. Kanban 20261002152638-34671747."
   ([effective-dir] (harvest effective-dir nil))
   ([effective-dir agent-id]
    (result/try-effect* :crystal/harvest-failed
                        (collect/harvest-all {:directory effective-dir
-                                             :agent-id agent-id}))))
+                                             :agent-id agent-id
+                                             :lineage (collect/caller-lineage agent-id)}))))
 
 (defn- crystallize-session-result
   "Run crystallize-session, handling domain-level :error. Returns Result.
@@ -158,9 +170,9 @@
 
 (defn- gather*
   "Gather session data. Returns Result with combined crystal + elisp data."
-  [{:keys [directory agent_id]}]
+  [{:keys [directory] :as params}]
   (let [effective-dir (or directory (ctx/current-directory))
-        effective-agent (or agent_id (ctx/current-agent-id))]
+        effective-agent (resolve-agent params)]
     (log/info "wrap-gather with crystal harvesting" (str "directory:" effective-dir))
     (result/let-ok [harvested (harvest effective-dir effective-agent)]
                    (let [elisp-result (fetch-elisp-data effective-dir)]
@@ -171,7 +183,12 @@
                                                  {:has-elisp-data (some? elisp-result)})})))))
 
 (defn- crystallize*
-  "Crystallize session data into long-term memory. Returns Result."
+  "Crystallize session data into long-term memory. Returns Result.
+
+   The harvest is scoped to the caller's project and lineage (see `harvest`).
+   When nothing is left after that scoping the wrap writes NO synthesis and
+   says whose activity it looked for, rather than summarizing another
+   session. Kanban 20261002152638-34671747."
   [{:keys [directory] :as params}]
   (let [effective-dir (or directory (ctx/current-directory))
         effective-agent (resolve-agent params)
@@ -188,6 +205,9 @@
           (crystal/reset-session-start! effective-agent)
           (result/ok {:skipped true
                       :reason "no-activity"
+                      :message (str "No activity by " effective-agent " or its lings in "
+                                    project-id " since its session start; no synthesis written.")
+                      :scope {:project-id project-id :agent-id effective-agent}
                       :session (:session harvested)
                       :project-id project-id
                       :stats (:summary harvested)}))
