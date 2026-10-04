@@ -118,3 +118,21 @@
     ;; the wrapped flush is a cheap no-op when nothing was enqueued.
     (is (some? (:error (cmd/handle-kg-add-edge {}))) "add-edge {} → bare :error envelope")
     (is (:isError (cmd/handle-kg-promote {}))        "promote {} → mcp-error envelope")))
+
+;; =============================================================================
+;; A failed write is an error, never "Created edge"
+;; =============================================================================
+
+(deftest add-edge-reports-a-failed-write-test
+  ;; 2026-10-04: with the Datahike writer dead, the queued path answered
+  ;; "Created edge" while flush-batch! dropped every edge. The tool now writes
+  ;; synchronously, so a failing store surfaces as an error envelope.
+  (testing "a store whose transact throws makes add-edge an error"
+    (with-redefs [conn/transact-sync! (fn [_] (throw (ex-info "Writer is shut down" {})))]
+      (let [resp (cmd/handle-kg-add-edge {:from "fail-a" :to "fail-b" :relation "relates"})]
+        (is (:isError resp))
+        (is (not (clojure.string/includes? (pr-str resp) "Created edge"))))))
+  (testing "a working store still creates the edge, durable on return"
+    (let [resp (cmd/handle-kg-add-edge {:from "ok-a" :to "ok-b" :relation "relates"})]
+      (is (not (:isError resp)))
+      (is (= #{["ok-b"]} (edges-from "ok-a"))))))

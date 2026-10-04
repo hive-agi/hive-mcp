@@ -32,8 +32,11 @@
 
 (defspec multi-unknown-tool-returns-error 50
   (prop/for-all [tool (gen/such-that
+                       ;; handle-multi resolves tool names case-insensitively, so a
+                       ;; generated "kG" is the real `kg` tool, not an unknown one.
                        #(and (not (str/blank? %))
-                             (nil? (multi/get-tool-handler %)))
+                             (nil? (multi/get-tool-handler %))
+                             (nil? (multi/get-tool-handler (str/lower-case %))))
                        gen/string-alphanumeric
                        100)]
                 (let [result (multi/handle-multi {"tool" tool "command" "help"})]
