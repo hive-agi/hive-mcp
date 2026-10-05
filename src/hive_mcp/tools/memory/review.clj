@@ -37,8 +37,9 @@
         (vals (type-registry/registry))))
 
 (def ^:dynamic *queue-types-port*
-  "Registry boundary for review listing; bind a gate set in isolated tests."
-  queue-types)
+  "Registry boundary for review listing; bind a gate set in isolated tests.
+   Holds the VAR, so a redefinition of queue-types is seen."
+  #'queue-types)
 
 (defn group-queues
   "Promote query results into a queue-type keyed map, preserving empty queues.
@@ -47,8 +48,9 @@
   (into (sorted-map) (map (fn [[queue-type entries]] [queue-type (vec entries)])) results))
 
 (def ^:dynamic *query-port*
-  "Query boundary for review listing; bind a recording query in tests."
-  query/handle-query)
+  "Query boundary for review listing; bind a recording query in tests. Holds
+   the VAR, so a reload of the query namespace is seen without rebinding."
+  #'query/handle-query)
 
 (defn- verdict-tags
   "Audit tags stamped on a resolved entry. `requested` is the gated type the
