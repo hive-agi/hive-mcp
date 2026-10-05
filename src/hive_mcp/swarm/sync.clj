@@ -43,7 +43,8 @@
             [hive-mcp.project.scope :as project-scope]
             [clojure.core.async :as async :refer [go-loop <!]]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
-            [hive-mcp.swarm.claim.negotiate :as claim-negotiate]))
+            [hive-mcp.swarm.claim.negotiate :as claim-negotiate]
+            [hive-mcp.swarm.lifecycle.restore-liveness :as restore]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -499,8 +500,7 @@
 ;; =============================================================================
 
 (defn- register-slave-from-status!
-  "Register a single slave from a bootstrap source's slave map.
-   Derives project-id from cwd if not already supplied."
+  "Register one classified snapshot row. Preserve the original creation time."
   [slave]
   (let [slave-id (:slave-id slave)
         status (some-> (:status slave) keyword)
@@ -513,26 +513,30 @@
     (proto/add-slave! reg slave-id {:status status :name name :depth depth
                                     :cwd cwd :project-id project-id})
     (let [updates (cond-> {}
-                    (:spawn-mode slave)  (assoc :ling/spawn-mode (:spawn-mode slave))
-                    (:process-pid slave) (assoc :slave/process-pid (:process-pid slave)))]
+                    (:spawn-mode slave) (assoc :ling/spawn-mode (:spawn-mode slave))
+                    (:process-pid slave) (assoc :slave/process-pid (:process-pid slave))
+                    (:created-at slave) (assoc :slave/created-at (:created-at slave))
+                    (false? (:alive? slave)) (assoc :slave/alive? false))]
       (when (seq updates)
         (proto/update-slave! reg slave-id updates)))
     (log/debug "Sync: bootstrapped slave" slave-id status "project-id:" project-id)))
 
 (defn full-sync-from-bootstrap!
-  "One-time full sync from the configured ISwarmBootstrap source.
-   Replaces the legacy `full-sync-from-emacs!` — the backend is now
-   pluggable via `set-swarm-bootstrap!`."
-  []
-  (log/info "Starting full sync from bootstrap source...")
-  (conn/reset-conn!)
-  (let [bs (get-swarm-bootstrap)
-        slaves (try (bootstrap/load-slaves bs)
-                    (catch Exception e
-                      (log/error "Bootstrap load failed:" (.getMessage e))
-                      []))]
-    (run! register-slave-from-status! slaves)
-    (log/info "Full sync complete:" (count slaves) "slaves")))
+  "Full sync from the bootstrap source. Classify liveness before any registration.
+   probe-fn accepts the snapshot rows and returns {:elisp-ids :live-pids};
+   the default boundary shares Emacs membership with agent cleanup."
+  ([] (full-sync-from-bootstrap! (get-swarm-bootstrap) restore/probe-evidence))
+  ([bs probe-fn]
+   (log/info "Starting full sync from bootstrap source...")
+   (let [slaves (try (bootstrap/load-slaves bs)
+                     (catch Exception e
+                       (log/error "Bootstrap load failed:" (.getMessage e))
+                       []))
+         evidence (probe-fn slaves)
+         classified (mapv #(restore/classify-row % evidence) slaves)]
+     (conn/reset-conn!)
+     (run! register-slave-from-status! classified)
+     (log/info "Full sync complete:" (count classified) "slaves"))))
 
 ;; Backwards-compatibility alias — keep old call sites working until they
 ;; migrate. Marked deprecated to discourage new use.

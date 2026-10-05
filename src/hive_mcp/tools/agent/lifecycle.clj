@@ -11,7 +11,8 @@
             [hive-mcp.tools.swarm.collect :as swarm-collect]
             [hive-mcp.tools.swarm.status :as swarm-status]
             [taoensso.timbre :as log]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [hive-mcp.swarm.lifecycle.restore-liveness :as restore]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -55,10 +56,9 @@
     (let [ds-agents (queries/get-all-slaves)
           elisp-lings (or (helpers/query-elisp-lings) [])
           elisp-ids (set (map :slave/id elisp-lings))
-          ;; Only check top-level lings (depth=1), the ones Emacs tracks
           orphan-lings (->> ds-agents
                             (filter #(= 1 (:slave/depth %)))
-                            (filter #(not (elisp-ids (:slave/id %))))
+                            (filter #(restore/missing-from-emacs? (:slave/id %) elisp-ids))
                             (map :slave/id))
           removed (doall
                    (for [slave-id orphan-lings]
