@@ -8,7 +8,8 @@
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [taoensso.timbre :as log]
-            [hive-mcp.vectordb.resilience :refer [with-resilience]]))
+            [hive-mcp.vectordb.resilience :refer [with-resilience]]
+            [hive-mcp.tools.memory.crud.deferred :as deferred]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -36,14 +37,14 @@
      :incoming (mapv edge->json-map incoming)}))
 
 (defn handle-get-full
-  "Get full content of a memory entry by ID with KG edges.
-   Wraps the store read in `with-resilience` so a transient transport
-   drop triggers the heal loop + retry before surfacing a not-found."
+  "Get an indexed or deferred entry by ID with KG edges. A deferred entry
+   cannot participate in semantic search until reembed drains its outbox row."
   [{:keys [id]}]
   (log/info "mcp-memory-get-full:" id)
   (with-store
     (let [store (mem-proto/get-store)]
-      (if-let [entry (with-resilience (mem-proto/get-entry store id))]
+      (if-let [entry (or (deferred/lookup id)
+                         (with-resilience (mem-proto/get-entry store id)))]
         (let [base-result (fmt/entry->json-alist entry)
               {:keys [outgoing incoming]}
               (try (get-kg-edges-for-entry id)
@@ -51,40 +52,34 @@
                      (log/warn "KG edge lookup failed for" id ":" (.getMessage e))
                      {:outgoing [] :incoming []}))
               result (cond-> base-result
+                       (deferred/lookup id) (assoc :embedding_deferred true)
                        (seq outgoing) (assoc :kg_outgoing outgoing)
                        (seq incoming) (assoc :kg_incoming incoming))]
           (mcp-json result))
         (mcp-json {:error "Entry not found" :id id})))))
 
 (defn handle-get-metadata
-  "Get a single entry by ID, projected to the metadata shape.
-
-   Exists because `memory metadata` is otherwise an alias onto the QUERY path,
-   whose handler cannot consume an :id — the param was silently dropped and the
-   call degraded into an unfiltered in-scope scan. An id lookup must resolve the
-   id or fail; it must never answer with an unrelated result set.
-
-   Returns a ONE-ELEMENT array so the response keeps the metadata-listing shape."
+  "Get indexed or pending entry metadata by ID; never fall back to a scan."
   [{:keys [id]}]
   (log/info "mcp-memory-get-metadata:" id)
   (if (or (not (string? id)) (str/blank? id))
     (mcp-error "memory metadata: id must be a non-empty string")
     (with-store
-      (if-let [entry (with-resilience (mem-proto/get-entry (mem-proto/get-store) id))]
+      (if-let [entry (or (deferred/lookup id)
+                         (with-resilience (mem-proto/get-entry (mem-proto/get-store) id)))]
         (mcp-json [(fmt/entry->metadata entry)])
         (mcp-error (str "Entry not found: " id))))))
 
 (defn handle-batch-get
-  "Get multiple memory entries by IDs in a single call with KG edges.
-   Each store read is wrapped in `with-resilience` so a dropped transport
-   on one ID triggers heal-and-retry rather than poisoning the whole batch."
+  "Get indexed and pending entries by IDs, with KG edges where available."
   [{:keys [ids]}]
   (if (or (nil? ids) (empty? ids))
     (mcp-error "ids is required (array of memory entry ID strings)")
     (with-store
       (let [store (mem-proto/get-store)
             results (mapv (fn [id]
-                            (if-let [entry (with-resilience (mem-proto/get-entry store id))]
+                            (if-let [entry (or (deferred/lookup id)
+                                               (with-resilience (mem-proto/get-entry store id)))]
                               (let [base (fmt/entry->json-alist entry)
                                     {:keys [outgoing incoming]}
                                     (try (get-kg-edges-for-entry id)
@@ -92,11 +87,12 @@
                                            (log/warn "KG edge lookup failed for" id ":" (.getMessage e))
                                            {:outgoing [] :incoming []}))]
                                 (cond-> base
+                                  (deferred/lookup id) (assoc :embedding_deferred true)
                                   (seq outgoing) (assoc :kg_outgoing outgoing)
                                   (seq incoming) (assoc :kg_incoming incoming)))
                               {:error "Entry not found" :id id}))
                           ids)
-            found   (filterv #(not (:error %)) results)
+            found (filterv #(not (:error %)) results)
             missing (filterv :error results)]
         (mcp-json (cond-> {:entries found :count (count found)}
                     (seq missing) (assoc :missing (mapv :id missing))))))))

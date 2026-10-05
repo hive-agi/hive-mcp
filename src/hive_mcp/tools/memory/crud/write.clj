@@ -23,7 +23,8 @@
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
             [hive-mcp.memory.type-registry :as type-registry]
             [hive-weave.core :as weave]
-            [hive-mcp.memory.write-events :as write-events]))
+            [hive-mcp.memory.write-events :as write-events]
+            [hive-mcp.tools.memory.crud.deferred :as deferred]))
 
 (def ^:const ^:private memory-write-timeout-ms
   "Timeout budget for a single memory write (Chroma add + KG tx + fetch).
@@ -221,23 +222,14 @@
                          :explanation (explain card)}))))))
 
 (defn- index-entry!
-  "Index entry through IMemoryStore. Plan-type entries get enriched with
-   plan-specific metadata (`:plan-status`, `:steps-count`) but are
-   stored via the same `add-entry!` path as every other type — there
-   is no separate plans collection.
-
-   `:store-key` selects the multi-store registry slot. Defaults to
-   `:default` (legacy). Kanban writes thread `:kanban` through so the
-   entry lands in the dedicated qdrant collection instead of milvus.
-
-   Wraps the store add-entry! in `with-resilience` so a dropped
-   HTTP transport (selector-manager-closed IOException surfaced as
-   ExecutionException) kicks the heal loop and retries once before
-   surfacing the failure to the caller."
+  "Index through the selected IMemoryStore. On embedding failure persist the
+   complete entry to the local outbox BEFORE acknowledging its id. Other store
+   failures are never misreported as deferred writes."
   [{:keys [type content tags-with-scope content-hash duration-str
            expires project-id abstraction-level knowledge-gaps store-key]
-    :or   {store-key :default}}]
-  (let [base-entry {:type type :content content :tags tags-with-scope
+    :or {store-key :default}}]
+  (let [base-entry {:id (mem-proto/generate-id)
+                    :type type :content content :tags tags-with-scope
                     :content-hash content-hash :duration duration-str
                     :expires (or expires "") :project-id project-id
                     :abstraction-level abstraction-level
@@ -247,8 +239,18 @@
                   (plans/count-plan-steps content)
                   (assoc :steps-count (plans/count-plan-steps content)))
                 base-entry)]
-    (with-resilience
-      (mem-proto/add-entry! (mem-proto/get-store store-key) entry))))
+    (try
+      (let [result (with-resilience
+                     (mem-proto/add-entry! (mem-proto/get-store store-key) entry))]
+        (if (and (map? result)
+                 (deferred/embedding-failure?
+                   (ex-info "Embedding result" {:result result})))
+          (deferred/park! entry)
+          result))
+      (catch Exception e
+        (if (deferred/embedding-failure? e)
+          (deferred/park! entry)
+          (throw e))))))
 
 (def ^:private ^:const read-after-write-attempts 6)
 (def ^:private ^:const read-after-write-base-ms 40)
@@ -277,33 +279,18 @@
                   (recur (inc attempt)))))))
 
 (defn- finalize-entry!
-  "Wire KG edges, fetch created entry, notify the write, and format response.
-
-   `:store-key` (passed via `entry-ctx`) routes the read-after-write +
-   `:kg-outgoing` link write to the same slot the entry was indexed in.
-   Defaults to `:default` (legacy / milvus). Kanban writes thread
-   `:kanban` so the back-link update lands in the same qdrant
-   collection that `index-entry!` wrote to.
-
-   Note: `create-kg-edges!` does back-edge bookkeeping on entries that
-   may live in *other* slots (e.g. an axiom in :default that a kanban
-   entry depends-on). That cross-slot scan is a known soft-edge for
-   the cutover window — see plan section D.5. KG edges themselves
-   live in Datahike, unaffected by the IMemoryStore slot.
-
-   The KG outgoing-edge update is wrapped in `with-resilience` so a
-   transient Milvus transport drop during the edge-link write kicks
-   the heal loop instead of poisoning KG edges. All types — plans
-   included — flow through the single IMemoryStore."
+  "Wire KG edges and return either the indexed entry or its durable deferred
+   outbox record. A pending entry is readable by id via the outbox until drained."
   [entry-id kg-params project-id agent-id
    {:keys [tags-with-scope type knowledge-gaps store-key]
-    :or   {store-key :default}}]
+    :or {store-key :default}}]
   (let [store (mem-proto/get-store store-key)
+        pending (deferred/lookup entry-id)
         edge-ids (create-kg-edges! entry-id kg-params project-id agent-id)
-        _ (when (seq edge-ids)
+        _ (when (and (seq edge-ids) (not pending))
             (with-resilience
               (mem-proto/update-entry! store entry-id {:kg-outgoing edge-ids})))
-        created (fetch-with-retry store entry-id)]
+        created (or pending (fetch-with-retry store entry-id))]
     (when-not created
       (log/error "Failed to retrieve entry after indexing:" entry-id))
     (log/info "Created memory entry:" entry-id
@@ -312,16 +299,15 @@
     (write-events/notify! :added {:id entry-id :memory-type type
                                   :tags tags-with-scope :project-id project-id})
     (if created
-      ;; The gate notice is DERIVED from the entry's own tags, so the response
-      ;; cannot disagree with what was stored.
       (let [requested (type-registry/requested-type-of tags-with-scope)]
         (mcp-json (cond-> (fmt/entry->json-alist created)
+                    pending (assoc :embedding_deferred true :reembed_id entry-id)
                     (seq edge-ids) (assoc :kg_edges_created edge-ids)
                     requested
                     (assoc :queued_for_review
                            {:requested_type requested
-                            :parked_as      type
-                            :reason         (:reason (type-registry/gate-of requested))}))))
+                            :parked_as type
+                            :reason (:reason (type-registry/gate-of requested))}))))
       (mcp-error (str "Entry indexed as " entry-id " but retrieval failed. Check memory store connectivity.")))))
 
 (defn- do-add!
