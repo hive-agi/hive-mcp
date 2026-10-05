@@ -24,7 +24,8 @@
             [hive-mcp.memory.type-registry :as type-registry]
             [hive-weave.core :as weave]
             [hive-mcp.memory.write-events :as write-events]
-            [hive-mcp.tools.memory.crud.deferred :as deferred]))
+            [hive-mcp.tools.memory.crud.deferred :as deferred]
+            [hive-mcp.embeddings.shared-gate :as embed-gate]))
 
 (def ^:const ^:private memory-write-timeout-ms
   "Timeout budget for a single memory write (Chroma add + KG tx + fetch).
@@ -224,7 +225,8 @@
 (defn- index-entry!
   "Index through the selected IMemoryStore. On embedding failure persist the
    complete entry to the local outbox BEFORE acknowledging its id. Other store
-   failures are never misreported as deferred writes."
+   failures are never misreported as deferred writes. Interactive writes use
+   the priority lane of the shared provider gate."
   [{:keys [type content tags-with-scope content-hash duration-str
            expires project-id abstraction-level knowledge-gaps store-key]
     :or {store-key :default}}]
@@ -240,8 +242,9 @@
                   (assoc :steps-count (plans/count-plan-steps content)))
                 base-entry)]
     (try
-      (let [result (with-resilience
-                     (mem-proto/add-entry! (mem-proto/get-store store-key) entry))]
+      (let [result (binding [embed-gate/*lane* :interactive]
+                     (with-resilience
+                       (mem-proto/add-entry! (mem-proto/get-store store-key) entry)))]
         (if (and (map? result)
                  (deferred/embedding-failure?
                    (ex-info "Embedding result" {:result result})))

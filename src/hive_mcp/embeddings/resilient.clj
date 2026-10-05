@@ -4,12 +4,12 @@
    provider."
   (:require [hive-mcp.embeddings.protocol :as proto]
             [hive-dsl.result :as r]
-            [hive-weave.gate :as gate]
             [hive-weave.safe :as safe]
             [taoensso.timbre :as log]
             [hive-mcp.embeddings.deadline :as dl]
             [hive-dsl.adt :as adt]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [hive-mcp.embeddings.shared-gate :as shared]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -33,13 +33,8 @@
   18000)
 
 (def default-permits
-  "Max concurrent embedding calls across the process."
-  8)
-
-(defonce ^:private embed-gate
-  (gate/gate {:permits    default-permits
-              :timeout-ms default-total-budget-ms
-              :name       "embedding-provider"}))
+  "Shared gate capacity; all embedding providers use one permit at a time."
+  1)
 
 (defn- describe
   "Log label for a chain entry."
@@ -116,22 +111,12 @@
        (str/join "; ")))
 
 (defn- run-chain
-  "Try each provider in `chain` under one gate permit, bounded by ONE deadline.
-
-   The deadline starts before the permit wait, so a slow queue eats the same
-   budget a slow provider would. Each attempt may spend only what is left, so
-   the chain always returns — successfully, or with an exception — inside
-   `total-budget-ms`. A provider not known warm gets `cold-budget-ms` for its
-   attempt instead of `budget-ms`; a warm provider that times out is retried
-   once on the cold budget before the chain moves on.
-
-   Returns the first success value; throws ex-info :embedder/chain-exhausted
-   (:exhausted-by :providers | :deadline) when none succeeds. The message names
-   every provider tried, its model and the elapsed time."
+  "Try providers under one deadline. The provider decorator, not this chain,
+   owns admission and prioritizes interactive callers over batches."
   [{:keys [chain budget-ms cold-budget-ms total-budget-ms warmth]} call]
-  (let [t0        (System/nanoTime)
-        elapsed   #(long (/ (- (System/nanoTime) t0) 1e6))
-        dl        (dl/deadline total-budget-ms)
+  (let [t0 (System/nanoTime)
+        elapsed #(long (/ (- (System/nanoTime) t0) 1e6))
+        dl (dl/deadline total-budget-ms)
         exhausted (fn [untried failures]
                     (let [ms (elapsed)]
                       (ex-info (str "Embedding chain ran out of time after " ms
@@ -141,57 +126,45 @@
                                     (when (seq untried)
                                       (str " — never tried: "
                                            (str/join ", " (map describe untried)))))
-                               {:error           :embedder/chain-exhausted
-                                :exhausted-by    :deadline
-                                :elapsed-ms      ms
+                               {:error :embedder/chain-exhausted
+                                :exhausted-by :deadline
+                                :elapsed-ms ms
                                 :total-budget-ms total-budget-ms
-                                :untried         (mapv describe untried)
-                                :failures        failures})))
-        ;; The permit wait is bounded by what the DEADLINE has left, not by the
-        ;; gate's own (longer) timeout — otherwise a saturated gate lets the
-        ;; chain outlive its caller before a single provider is tried.
-        ^java.util.concurrent.Semaphore sem (:semaphore embed-gate)]
-    (when-not (.tryAcquire sem (long (dl/remaining-ms dl))
-                           java.util.concurrent.TimeUnit/MILLISECONDS)
-      (throw (exhausted chain [])))
-    (try
-      (loop [[entry & more] chain
-             failures       []]
-        (cond
-          (nil? entry)
-          (let [ms (elapsed)]
-            (throw (ex-info (str "All embedding providers in the chain failed after "
-                                 ms "ms — " (failures-summary failures))
-                            {:error        :embedder/chain-exhausted
-                             :exhausted-by :providers
-                             :elapsed-ms   ms
-                             :failures     failures})))
-
-          (dl/expired? dl)
-          (throw (exhausted (cons entry more) failures))
-
-          :else
-          (let [was-warm (contains? @warmth (identity-of entry))
-                per      (attempt-budget warmth entry budget-ms cold-budget-ms)
-                outcome  (attempt warmth entry call (dl/attempt-budget-ms dl per))]
-            (adt/adt-case AttemptOutcome outcome
-                          :attempt/ok     (:value outcome)
-                          :attempt/failed (let [failures (conj failures
-                                                               (select-keys outcome
-                                                                            [:provider :model :elapsed-ms
-                                                                             :budget-ms :error :message]))
-                                                retry?   (and was-warm
-                                                              (= :weave/timeout (:error outcome)))]
-                                            (recur (if retry? (cons entry more) more)
-                                                   failures))))))
-      (finally (.release sem)))))
+                                :untried (mapv describe untried)
+                                :failures failures})))]
+    (loop [[entry & more] chain failures []]
+      (cond
+        (nil? entry)
+        (let [ms (elapsed)]
+          (throw (ex-info (str "All embedding providers in the chain failed after "
+                               ms "ms — " (failures-summary failures))
+                          {:error :embedder/chain-exhausted
+                           :exhausted-by :providers
+                           :elapsed-ms ms
+                           :failures failures})))
+        (dl/expired? dl)
+        (throw (exhausted (cons entry more) failures))
+        :else
+        (let [was-warm (contains? @warmth (identity-of entry))
+              per (attempt-budget warmth entry budget-ms cold-budget-ms)
+              outcome (attempt warmth entry call (dl/attempt-budget-ms dl per))]
+          (adt/adt-case AttemptOutcome outcome
+                        :attempt/ok (:value outcome)
+                        :attempt/failed (let [failures (conj failures
+                                                             (select-keys outcome
+                                                                          [:provider :model :elapsed-ms
+                                                                           :budget-ms :error :message]))
+                                              retry? (and was-warm
+                                                          (= :weave/timeout (:error outcome)))]
+                                          (recur (if retry? (cons entry more) more)
+                                                 failures))))))))
 
 (defrecord ResilientEmbedder [chain budget-ms total-budget-ms cold-budget-ms warmth]
   proto/EmbeddingProvider
   (embed-text [this text]
-    (run-chain this (fn [p] (proto/embed-text p text))))
+    (run-chain this (fn [p] (proto/embed-text (shared/gated-provider p) text))))
   (embed-batch [this texts]
-    (run-chain this (fn [p] (proto/embed-batch p texts))))
+    (run-chain this (fn [p] (proto/embed-batch (shared/gated-provider p) texts))))
   (embedding-dimension [_]
     (proto/embedding-dimension (:provider (first chain)))))
 

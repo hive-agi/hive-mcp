@@ -16,7 +16,8 @@
      ;; Register custom factory
      (register-factory! :my-provider my-factory-fn)"
   (:require [hive-mcp.embeddings.config :as config]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.embeddings.shared-gate :as shared]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -121,15 +122,9 @@
   true)
 
 (defn get-provider
-  "Get or create an embedding provider for the given config.
-
-   Uses lazy instantiation - provider is only created on first access.
-   Subsequent calls with equivalent config return cached instance.
-
-   The cache-hit line logs at TRACE: it fires on every embed, so at DEBUG it
-   floods a bulk ingest with one identical line per chunk.
-
-   Returns EmbeddingProvider or throws if factory not found."
+  "Get or create a cached EmbeddingProvider, decorated at the registry
+   boundary with the one process-wide admission gate. Both text and batch
+   methods cross this port regardless of which consumer resolved the provider."
   [config]
   (when-not (config/valid-config? config)
     (throw (ex-info "Invalid EmbeddingConfig" {:config config})))
@@ -138,7 +133,6 @@
       (do
         (log/trace "Using cached provider for" (config/describe config))
         cached)
-      ;; Create new provider
       (let [provider-type (:provider-type config)
             factory (get @provider-factories provider-type)]
         (when-not factory
@@ -146,7 +140,7 @@
                           {:provider-type provider-type
                            :registered (keys @provider-factories)})))
         (log/info "Creating embedding provider:" (config/describe config))
-        (let [provider (factory config)]
+        (let [provider (shared/gated-provider (factory config))]
           (swap! provider-cache assoc cache-key provider)
           provider)))))
 
