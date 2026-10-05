@@ -10,10 +10,11 @@
    Resolution delegates to the ordinary edit path with the gate bypassed, so
    there is exactly one implementation of 'update an entry in place' and the
    entry id — hence every KG edge keyed by it — survives untouched."
-  (:require [hive-mcp.tools.memory.crud.edit :as edit]
+  (:require [cheshire.core :as json]
+            [hive-mcp.tools.memory.crud.edit :as edit]
             [hive-mcp.tools.memory.crud.query :as query]
             [hive-mcp.tools.memory.core :refer [with-entry]]
-            [hive-mcp.tools.core :refer [mcp-error]]
+            [hive-mcp.tools.core :refer [mcp-error mcp-json]]
             [hive-mcp.memory.type-registry :as type-registry]
             [clojure.string :as str]
             [taoensso.timbre :as log]))
@@ -34,6 +35,22 @@
   (into #{}
         (keep #(some-> (get-in % [:gate :queue-as]) type-registry/sanitize-type))
         (vals (type-registry/registry))))
+
+(def ^:dynamic *queue-types-port*
+  "Registry boundary for review listing; bind a gate set in isolated tests.
+   Holds the VAR, so a redefinition of queue-types is seen."
+  #'queue-types)
+
+(defn group-queues
+  "Promote query results into a queue-type keyed map, preserving empty queues.
+   Input is a sequence of [queue-type metadata-entries] pairs."
+  [results]
+  (into (sorted-map) (map (fn [[queue-type entries]] [queue-type (vec entries)])) results))
+
+(def ^:dynamic *query-port*
+  "Query boundary for review listing; bind a recording query in tests. Holds
+   the VAR, so a reload of the query namespace is seen without rebinding."
+  #'query/handle-query)
 
 (defn- verdict-tags
   "Audit tags stamped on a resolved entry. `requested` is the gated type the
@@ -70,32 +87,42 @@
   (contains? (queue-types) (type-registry/sanitize-type (:type entry))))
 
 (defn handle-review
-  "Resolve — or list — the human review queue for write-gated types.
+  "Resolve — or list — the human review queues for write-gated types.
 
    Params:
-     :id       — entry to resolve. Omit to LIST the pending queue.
+     :id       — entry to resolve. Omit to LIST every gate's pending queue,
+                 grouped by queue type (including empty queues).
+     :type     — optional queue type to list alone (ignored on resolve).
      :verdict  — \"approve\" | \"reject\" (required with :id)
      :as       — type a rejected entry lands as (default: principle).
                  Ignored on approve, which lands the requested type.
      :reason   — optional, logged for audit.
-     :scope / :directory / :limit — passed through when listing.
+     :scope / :directory / :limit — passed through when listing; limit per queue.
 
    Approve lands the type the entry originally requested (recorded in its
    requested-type tag); if that marker is missing it falls back to `:as`, then
    to axiom. Reject lands `:as`. Both strip the pending tags."
-  [{:keys [id verdict as reason] :as params}]
+  [{:keys [id verdict as reason type] :as params}]
   (cond
     ;; --- list mode ---
     (or (nil? id) (str/blank? (str id)))
-    ;; scope "all" by default: a nomination is reviewed wherever it was made,
-    ;; matching the catchup bundle's global branch. Sorted queue-types keeps
-    ;; the choice deterministic if a second gate is ever declared.
-    (query/handle-query (merge {:type      (first (sort (queue-types)))
-                                :limit     25
-                                :scope     "all"
-                                :verbosity "metadata"}
-                               (select-keys params [:scope :directory :limit
-                                                    :include_descendants])))
+    (let [queues (*queue-types-port*)
+          selected (when (some? type) (type-registry/sanitize-type type))]
+      (if (and (some? type) (not (contains? queues selected)))
+        (mcp-error (str "Unknown review queue type: " (pr-str type)
+                        ". Available queues: " (pr-str (vec (sort queues)))))
+        (let [opts (merge {:limit 25 :scope "all" :verbosity "metadata"}
+                          (select-keys params [:scope :directory :limit :include_descendants]))
+              results (for [queue-type (if selected [selected] (sort queues))]
+                        (let [response (*query-port* (assoc opts :type queue-type))]
+                          [queue-type response]))
+              failure (some (fn [[_ response]] (when (:isError response) response)) results)]
+          (if failure
+            failure
+            (mcp-json (group-queues
+                       (map (fn [[queue-type response]]
+                              [queue-type (json/parse-string (:text response) true)])
+                            results)))))))
 
     (not (#{"approve" "reject"} (some-> verdict str/lower-case str/trim)))
     (mcp-error (str "verdict must be \"approve\" or \"reject\" (got "
