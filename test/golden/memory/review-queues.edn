@@ -1,0 +1,3 @@
+{:two-gates {"axiom-candidate" [{:id "a"}], "friction-hypothesis-candidate" [{:id "f"}]}
+ :empty-gate {"axiom-candidate" [], "friction-hypothesis-candidate" [{:id "f"}]}
+ :no-gates {}}
