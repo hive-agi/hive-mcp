@@ -177,7 +177,7 @@
         ;; Transitive callers can pull 0.1.6, which exists on Gitea only (404 on
         ;; Clojars and Central), so the default tree cannot resolve from a public
         ;; runner. :use-top makes this pin win everywhere.
-        io.github.hive-agi/hive-schemas {:mvn/version "0.1.39"}
+        io.github.hive-agi/hive-schemas {:mvn/version "0.1.40"}
 
         ;; hive-ttracking — telemetry/timing (timed-query, track*, bench*).
         ;; Consumed by catchup.clj and siblings (bundle/hydration/hierarchy).
@@ -379,7 +379,7 @@
                 ;; mutant. Must come from the JAR, not :local/root — the macros
                 ;; live in src/synth, which ships but is not on the project's
                 ;; :paths.
-                io.github.hive-agi/hive-schemas {:mvn/version "0.1.39"}}
+                io.github.hive-agi/hive-schemas {:mvn/version "0.1.40"}}
                 ;; hive-spi now lives in :deps (core nses require it) — no
                 ;; :test-alias override needed.
    ;; Backend drivers are NOT here — the default cold-CI test path is
@@ -418,7 +418,7 @@
                 ;; aborts this whole alias — all 405 namespaces — if the dep is
                 ;; only declared on :test. This is the CI alias; it is the one that
                 ;; must not be able to fail at load.
-                io.github.hive-agi/hive-schemas {:mvn/version "0.1.39"}}
+                io.github.hive-agi/hive-schemas {:mvn/version "0.1.40"}}
    :jvm-opts ["-Dhive.kg.backend=datascript"]
    :main-opts ["-m" "cognitect.test-runner" "-e" ":integration"
                "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]
@@ -435,7 +435,7 @@
                 io.github.hive-agi/hive-test {:mvn/version "0.4.11"}
                 ;; Same reason as :test-unit — this alias also puts test/ on the
                 ;; path, so it loads every test ns before selecting :integration.
-                io.github.hive-agi/hive-schemas {:mvn/version "0.1.39"}}
+                io.github.hive-agi/hive-schemas {:mvn/version "0.1.40"}}
    :jvm-opts ["-Dhive.kg.backend=datascript"]
    :main-opts ["-m" "cognitect.test-runner" "-i" ":integration"
                "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]
