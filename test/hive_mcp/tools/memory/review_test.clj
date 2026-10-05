@@ -30,7 +30,8 @@
                (swap! calls conj params)
                {:type "text" :text (json/generate-string
                                      [{:id (:type params) :type (:type params)}])})]
-    (binding [review/*query-port* port]
+    (binding [review/*query-port* port
+              review/*queue-types-port* (constantly #{"axiom-candidate" "friction-hypothesis-candidate"})]
       (let [result (json/parse-string (:text (review/handle-review {:limit 3})) true)]
         (is (= #{:axiom-candidate :friction-hypothesis-candidate} (set (keys result))))
         (is (= ["axiom-candidate"] (mapv :id (:axiom-candidate result))))
@@ -39,10 +40,37 @@
         (is (= #{"axiom-candidate" "friction-hypothesis-candidate"}
                (set (map :type @calls))))
         (is (every? #(= {:limit 3 :scope "all" :verbosity "metadata"}
-                        (dissoc % :type)) @calls))))
-    (reset! calls [])
-    (binding [review/*query-port* port]
+                        (dissoc % :type)) @calls)))
+      (reset! calls [])
       (let [result (json/parse-string
                      (:text (review/handle-review {:type "friction-hypothesis-candidate"})) true)]
         (is (= #{:friction-hypothesis-candidate} (set (keys result))))
         (is (= ["friction-hypothesis-candidate"] (mapv :type @calls)))))))
+
+(deftest listing-preserves-empty-queues-and-query-errors
+  (let [calls (atom [])
+        queues #{"axiom-candidate" "friction-hypothesis-candidate"}]
+    (binding [review/*queue-types-port* (constantly queues)
+              review/*query-port* (fn [params]
+                                    (swap! calls conj params)
+                                    {:text "[]"})]
+      (is (= {:axiom-candidate [] :friction-hypothesis-candidate []}
+             (json/parse-string (:text (review/handle-review {})) true)))
+      (is (= 2 (count @calls))))
+    (reset! calls [])
+    (binding [review/*queue-types-port* (constantly queues)
+              review/*query-port* (fn [params]
+                                    (swap! calls conj params)
+                                    (if (= "friction-hypothesis-candidate" (:type params))
+                                      {:isError true :text "query failed"}
+                                      {:text "[]"}))]
+      (is (= {:isError true :text "query failed"}
+             (review/handle-review {})))
+      (is (= 2 (count @calls))))
+    (reset! calls [])
+    (binding [review/*queue-types-port* (constantly queues)
+              review/*query-port* (fn [params]
+                                    (swap! calls conj params)
+                                    {:text "[]"})]
+      (is (:isError (review/handle-review {:type "unregistered-queue"})))
+      (is (empty? @calls)))))

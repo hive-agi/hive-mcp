@@ -36,6 +36,10 @@
         (keep #(some-> (get-in % [:gate :queue-as]) type-registry/sanitize-type))
         (vals (type-registry/registry))))
 
+(def ^:dynamic *queue-types-port*
+  "Registry boundary for review listing; bind a gate set in isolated tests."
+  queue-types)
+
 (defn group-queues
   "Promote query results into a queue-type keyed map, preserving empty queues.
    Input is a sequence of [queue-type metadata-entries] pairs."
@@ -100,8 +104,8 @@
   (cond
     ;; --- list mode ---
     (or (nil? id) (str/blank? (str id)))
-    (let [queues (queue-types)
-          selected (if (some? type) (type-registry/sanitize-type type) nil)]
+    (let [queues (*queue-types-port*)
+          selected (when (some? type) (type-registry/sanitize-type type))]
       (if (and (some? type) (not (contains? queues selected)))
         (mcp-error (str "Unknown review queue type: " (pr-str type)
                         ". Available queues: " (pr-str (vec (sort queues)))))
