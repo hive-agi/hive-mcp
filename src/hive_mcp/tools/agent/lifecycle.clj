@@ -12,7 +12,7 @@
             [hive-mcp.tools.swarm.status :as swarm-status]
             [taoensso.timbre :as log]
             [clojure.string :as str]
-            [hive-mcp.swarm.lifecycle.restore-liveness :as restore]))
+            [hive-mcp.swarm.sync :as sync]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -58,7 +58,7 @@
           elisp-ids (set (map :slave/id elisp-lings))
           orphan-lings (->> ds-agents
                             (filter #(= 1 (:slave/depth %)))
-                            (filter #(restore/missing-from-emacs? (:slave/id %) elisp-ids))
+                            (filter #(sync/missing-from-emacs? (:slave/id %) elisp-ids))
                             (map :slave/id))
           removed (doall
                    (for [slave-id orphan-lings]

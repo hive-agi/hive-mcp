@@ -44,7 +44,11 @@
             [clojure.core.async :as async :refer [go-loop <!]]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
             [hive-mcp.swarm.claim.negotiate :as claim-negotiate]
-            [hive-mcp.swarm.lifecycle.restore-liveness :as restore]))
+            [hive-mcp.tools.agent.helpers :as helpers]
+            [hive-system.process.liveness :as liveness]
+            [hive-mcp.agent.ling.terminal-registry :as terminals]
+            [hive-mcp.agent.ling.headless-registry :as headless-registry]
+            [hive-spi.addon.headless :as headless]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -522,11 +526,55 @@
         (proto/update-slave! reg slave-id updates)))
     (log/debug "Sync: bootstrapped slave" slave-id status "project-id:" project-id)))
 
+(defn missing-from-emacs?
+  "Pure: whether a slave id is absent from the Emacs membership cleanup reads."
+  [slave-id elisp-ids]
+  (not (contains? elisp-ids slave-id)))
+
+(defn classify-row
+  "Pure: only live backing verifies a restored row. Emacs membership can
+   verify terminal or legacy mode-less rows, never a named headless backend."
+  [row {:keys [emacs live-pids live-ids terminal-modes]}]
+  (let [id (:slave-id row)
+        mode (:spawn-mode row)
+        emacs-tracked? (or (contains? terminal-modes mode) (nil? mode))]
+    (cond
+      (or (contains? live-ids id)
+          (and (:process-pid row) (contains? live-pids (:process-pid row)))
+          (and emacs-tracked? (contains? (:ids emacs) id)))
+      (assoc row :liveness :verified)
+      (and emacs-tracked? (= :unknown (:state emacs)))
+      (assoc row :liveness :unverified)
+      :else (assoc row :status :zombie :alive? false))))
+
+(defn probe-evidence
+  "Boundary: query Emacs, OS pids and the registered headless backend's live
+   session status. A missing or failed query never certifies liveness."
+  [rows]
+  (let [elisp (helpers/query-elisp-lings)]
+    {:emacs (if (nil? elisp)
+              {:state :unknown}
+              {:state :known :ids (set (map :slave/id elisp))})
+     :terminal-modes (terminals/registered-terminals)
+     :live-ids (into #{}
+                     (keep (fn [{:keys [slave-id spawn-mode]}]
+                             (when-let [backend (headless-registry/get-headless-backend spawn-mode)]
+                               (when (try
+                                       (contains? #{:running :idle}
+                                                  (:slave/status (headless/headless-status backend {:id slave-id} nil)))
+                                       (catch Exception _ false))
+                                 slave-id))))
+                     rows)
+     :live-pids (into #{} (comp (keep :process-pid)
+                                (filter #(= :liveness/alive
+                                            (:adt/variant (liveness/check-pid-alive %)))))
+                      rows)}))
+
 (defn full-sync-from-bootstrap!
   "Full sync from the bootstrap source. Classify liveness before any registration.
-   probe-fn accepts the snapshot rows and returns {:elisp-ids :live-pids};
+   probe-fn accepts the snapshot rows and returns liveness evidence;
    the default boundary shares Emacs membership with agent cleanup."
-  ([] (full-sync-from-bootstrap! (get-swarm-bootstrap) restore/probe-evidence))
+  ([] (full-sync-from-bootstrap! (get-swarm-bootstrap) probe-evidence))
   ([bs probe-fn]
    (log/info "Starting full sync from bootstrap source...")
    (let [slaves (try (bootstrap/load-slaves bs)
@@ -534,7 +582,7 @@
                        (log/error "Bootstrap load failed:" (.getMessage e))
                        []))
          evidence (probe-fn slaves)
-         classified (mapv #(restore/classify-row % evidence) slaves)]
+         classified (mapv #(classify-row % evidence) slaves)]
      (conn/reset-conn!)
      (run! register-slave-from-status! classified)
      (log/info "Full sync complete:" (count classified) "slaves"))))

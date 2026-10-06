@@ -3,13 +3,12 @@
             [clojure.test.check.generators :as gen]
             [hive-test.trifecta :refer [deftrifecta]]
             [hive-mcp.swarm.sync :as sync]
-            [hive-mcp.swarm.lifecycle.restore-liveness :as restore]
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-spi.swarm.bootstrap :as bootstrap]
             [hive-mcp.swarm.lifecycle.boot-reconcile :as boot-reconcile]))
 
 (deftrifecta restore-classification
-  restore/classify-row
+  sync/classify-row
   {:cases {:dead [{:slave-id "dead" :status :working :created-at 100} {:emacs {:state :known :ids #{}} :live-pids #{}}]
            :alive [{:slave-id "alive" :status :idle :spawn-mode :vterm :created-at 200} {:emacs {:state :known :ids #{"alive"}} :terminal-modes #{:vterm} :live-pids #{}}]
            :pid [{:slave-id "pid" :status :working :process-pid 42 :created-at 300} {:emacs {:state :known :ids #{}} :live-pids #{42}}]}
@@ -42,7 +41,7 @@
 
 (deftest unknown-emacs-membership-preserves-terminal-row
   (let [row {:slave-id "vterm" :status :working :spawn-mode :vterm :created-at 123}
-        classified (restore/classify-row row {:emacs {:state :unknown}
+        classified (sync/classify-row row {:emacs {:state :unknown}
                                               :terminal-modes #{:vterm}
                                               :live-pids #{}})]
     (is (= :working (:status classified)))
@@ -51,10 +50,8 @@
 
 (deftest headless-session-evidence-preserves-same-jvm-row
   (let [row {:slave-id "in-jvm" :status :working :spawn-mode :hive-agent}]
-    (is (= :working (:status (restore/classify-row row
-                     {:emacs {:state :known :ids #{}} :live-ids #{"in-jvm"} :live-pids #{}}))))
-    (is (= :zombie (:status (restore/classify-row row
-                     {:emacs {:state :known :ids #{}} :live-ids #{} :live-pids #{}}))))))
+    (is (= :working (:status (sync/classify-row row {:emacs {:state :known :ids #{}} :live-ids #{"in-jvm"} :live-pids #{}}))))
+    (is (= :zombie (:status (sync/classify-row row {:emacs {:state :known :ids #{}} :live-ids #{} :live-pids #{}}))))))
 
 (deftest full-sync-keeps-unknown-vessel-and-live-headless
   (let [rows [{:slave-id "vessel" :status :working :spawn-mode :vterm}
@@ -97,5 +94,5 @@
   (let [row {:slave-id "ghost" :status :working :spawn-mode :hive-agent}
         evidence {:emacs {:state :known :ids #{"ghost"}}
                   :terminal-modes #{:vterm} :live-ids #{} :live-pids #{}}]
-    (is (= :zombie (:status (restore/classify-row row evidence))))
-    (is (false? (:alive? (restore/classify-row row evidence))))))
+    (is (= :zombie (:status (sync/classify-row row evidence))))
+    (is (false? (:alive? (sync/classify-row row evidence))))))
