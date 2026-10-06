@@ -122,9 +122,19 @@
   true)
 
 (defn get-provider
-  "Get or create a cached EmbeddingProvider, decorated at the registry
-   boundary with the one process-wide admission gate. Both text and batch
-   methods cross this port regardless of which consumer resolved the provider."
+  "Get or create an embedding provider for the given config.
+
+   Uses lazy instantiation - provider is only created on first access.
+   Subsequent calls with equivalent config return cached instance.
+
+   The provider is decorated at this registry boundary with the one
+   process-wide admission gate (embeddings.shared-gate), so text and batch
+   calls cross the same gate whichever consumer resolved it.
+
+   The cache-hit line logs at TRACE: it fires on every embed, so at DEBUG it
+   floods a bulk ingest with one identical line per chunk.
+
+   Returns EmbeddingProvider or throws if factory not found."
   [config]
   (when-not (config/valid-config? config)
     (throw (ex-info "Invalid EmbeddingConfig" {:config config})))
@@ -133,6 +143,7 @@
       (do
         (log/trace "Using cached provider for" (config/describe config))
         cached)
+      ;; Create new provider
       (let [provider-type (:provider-type config)
             factory (get @provider-factories provider-type)]
         (when-not factory

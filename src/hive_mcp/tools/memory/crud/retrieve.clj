@@ -37,8 +37,13 @@
      :incoming (mapv edge->json-map incoming)}))
 
 (defn handle-get-full
-  "Get an indexed or deferred entry by ID with KG edges. A deferred entry
-   cannot participate in semantic search until reembed drains its outbox row."
+  "Get full content of a memory entry by ID with KG edges.
+   Wraps the store read in `with-resilience` so a transient transport
+   drop triggers the heal loop + retry before surfacing a not-found.
+
+   An entry whose embed failed is answered from the durable reembed outbox
+   and flagged :embedding_deferred; it cannot participate in semantic search
+   until reembed drains its outbox record."
   [{:keys [id]}]
   (log/info "mcp-memory-get-full:" id)
   (with-store
@@ -59,7 +64,16 @@
         (mcp-json {:error "Entry not found" :id id})))))
 
 (defn handle-get-metadata
-  "Get indexed or pending entry metadata by ID; never fall back to a scan."
+  "Get a single entry by ID, projected to the metadata shape.
+
+   Exists because `memory metadata` is otherwise an alias onto the QUERY path,
+   whose handler cannot consume an :id — the param was silently dropped and the
+   call degraded into an unfiltered in-scope scan. An id lookup must resolve the
+   id or fail; it must never answer with an unrelated result set.
+
+   A deferred entry (embed failed, still in the reembed outbox) resolves too.
+
+   Returns a ONE-ELEMENT array so the response keeps the metadata-listing shape."
   [{:keys [id]}]
   (log/info "mcp-memory-get-metadata:" id)
   (if (or (not (string? id)) (str/blank? id))
@@ -71,7 +85,10 @@
         (mcp-error (str "Entry not found: " id))))))
 
 (defn handle-batch-get
-  "Get indexed and pending entries by IDs, with KG edges where available."
+  "Get multiple memory entries by IDs in a single call with KG edges.
+   Each store read is wrapped in `with-resilience` so a dropped transport
+   on one ID triggers heal-and-retry rather than poisoning the whole batch.
+   Deferred entries (still in the reembed outbox) resolve too."
   [{:keys [ids]}]
   (if (or (nil? ids) (empty? ids))
     (mcp-error "ids is required (array of memory entry ID strings)")
@@ -92,7 +109,7 @@
                                   (seq incoming) (assoc :kg_incoming incoming)))
                               {:error "Entry not found" :id id}))
                           ids)
-            found (filterv #(not (:error %)) results)
+            found   (filterv #(not (:error %)) results)
             missing (filterv :error results)]
         (mcp-json (cond-> {:entries found :count (count found)}
                     (seq missing) (assoc :missing (mapv :id missing))))))))
