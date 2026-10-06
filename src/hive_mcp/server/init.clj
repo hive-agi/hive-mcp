@@ -25,7 +25,6 @@
             [hive-mcp.addons.boot-health :as boot-health]
             [hive-mcp.swarm.sync :as sync]
             [hive-mcp.swarm.bootstrap.factory :as bootstrap-factory]
-            [hive-mcp.swarm.lifecycle.boot-reconcile :as boot-reconcile]
             [hive-mcp.swarm.event-bridge :as swarm-event-bridge]
             [hive-mcp.channel.piggyback :as piggyback]
             [hive-mcp.channel.instruction-store :as instruction-store]
@@ -40,7 +39,8 @@
             [hive-mcp.spi.contributions :as contrib]
             [hive-mcp.extensions.soft :as soft]
             [hive-mcp.hot.core :as hot-core]
-            [hive-mcp.hot.reseat :as reseat]))
+            [hive-mcp.hot.reseat :as reseat]
+            [hive-mcp.swarm.lifecycle.boot-reconcile :as boot-reconcile]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -429,8 +429,11 @@
 
    Order matters:
      1. Build + inject bootstrap (durable slave projection)
-     2. start-sync! (subscribes to channel.core; runs bootstrap reload)
-     3. Start NATS event bridge if requested (NATS → channel.core)"
+     2. start-sync! (classifies restored rows by liveness evidence BEFORE
+        registering them, then subscribes to channel.core)
+     3. Reconcile: retire rows whose absence the boot probe established
+        (idempotent; isolated so a failure cannot skip step 4)
+     4. Start NATS event bridge if requested (NATS → channel.core)"
   ([] (start-swarm-sync! {}))
   ([opts]
    (result/rescue nil
@@ -450,9 +453,7 @@
                       ;; coordinators and lings in separate JVMs share a queue.
                       (let [bb (eb/get-backbone)]
                         (if (eb/connected? bb)
-                          (do (instruction-store/rewire!
-                               piggyback/instruction-queues
-                               bb)
+                          (do (instruction-store/rewire! piggyback/instruction-queues bb)
                               (log/info "Swarm sync: piggyback instruction store bound to NATS"))
                           (log/warn "Swarm sync: piggyback instruction store staying local"
                                     " (NATS backbone not connected)")))))
