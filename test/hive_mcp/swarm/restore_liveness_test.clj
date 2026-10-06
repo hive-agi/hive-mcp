@@ -3,7 +3,6 @@
             [clojure.test.check.generators :as gen]
             [hive-test.trifecta :refer [deftrifecta]]
             [hive-mcp.swarm.sync :as sync]
-            [hive-mcp.swarm.datascript.queries :as queries]
             [hive-spi.swarm.bootstrap :as bootstrap]
             [hive-mcp.swarm.lifecycle.boot-reconcile :as boot-reconcile]))
 
@@ -20,6 +19,23 @@
    :pred (fn [row] (and (= :zombie (:status row)) (false? (:alive? row))))
    :num-tests 30})
 
+(defn- isolated-restore-store
+  "Per-test registry ports: no globally installed DataScript delegate or addon."
+  []
+  (let [state (atom {})]
+    {:state state
+     :sync-ports {:reset! #(reset! state {})
+                  :register! (fn [{:keys [slave-id status created-at liveness alive? spawn-mode]}]
+                               (swap! state assoc slave-id
+                                      (cond-> {:slave/id slave-id :slave/status status
+                                               :slave/alive? (not (false? alive?))}
+                                        created-at (assoc :slave/created-at created-at)
+                                        liveness (assoc :slave/liveness liveness)
+                                        spawn-mode (assoc :ling/spawn-mode spawn-mode))))}
+     :reconcile-ports {:load-slaves #(vals @state)
+                       :update! (fn [id updates] (swap! state update id merge updates))
+                       :terminal-modes #(identity #{:vterm})}}))
+
 (deftest restore-never-publishes-dead-as-working
   (let [original (java.util.Date. 1234567890)
         rows [{:slave-id "dead" :status :working :created-at original}
@@ -28,12 +44,14 @@
                  (-load-slaves [_] rows)
                  (-snapshot-slave! [this _ _] this)
                  (-forget-slave! [this _] this)
-                 (-close! [_] nil))]
+                 (-close! [_] nil))
+        {:keys [state sync-ports]} (isolated-restore-store)]
     (sync/full-sync-from-bootstrap! source
                                     (fn [_] {:emacs {:state :known :ids #{"alive"}}
-                                             :terminal-modes #{:vterm} :live-pids #{}}))
-    (let [dead (queries/get-slave "dead")
-          alive (queries/get-slave "alive")]
+                                             :terminal-modes #{:vterm} :live-pids #{}})
+                                    sync-ports)
+    (let [dead (get @state "dead")
+          alive (get @state "alive")]
       (is (not= :working (:slave/status dead)))
       (is (false? (:slave/alive? dead)))
       (is (= :idle (:slave/status alive)))
@@ -61,14 +79,15 @@
                  (-load-slaves [_] rows)
                  (-snapshot-slave! [this _ _] this)
                  (-forget-slave! [this _] this)
-                 (-close! [_] nil))]
+                 (-close! [_] nil))
+        {:keys [state sync-ports]} (isolated-restore-store)]
     (sync/full-sync-from-bootstrap!
      source (fn [_] {:emacs {:state :unknown} :terminal-modes #{:vterm}
-                     :live-ids #{"session"} :live-pids #{}}))
-    (is (= :working (:slave/status (queries/get-slave "vessel"))))
-    (is (= :unverified (:slave/liveness (queries/get-slave "vessel"))))
-    (is (= :working (:slave/status (queries/get-slave "session"))))
-    (is (= :zombie (:slave/status (queries/get-slave "old"))))))
+                     :live-ids #{"session"} :live-pids #{}}) sync-ports)
+    (is (= :working (:slave/status (get @state "vessel"))))
+    (is (= :unverified (:slave/liveness (get @state "vessel"))))
+    (is (= :working (:slave/status (get @state "session"))))
+    (is (= :zombie (:slave/status (get @state "old"))))))
 
 (deftest boot-reconciliation-retires-restored-zombies
   (let [rows [{:slave-id "previous-boot" :status :working :spawn-mode :hive-agent}
@@ -78,17 +97,18 @@
                  (-load-slaves [_] rows)
                  (-snapshot-slave! [this _ _] this)
                  (-forget-slave! [this _] this)
-                 (-close! [_] nil))]
+                 (-close! [_] nil))
+        {:keys [state sync-ports reconcile-ports]} (isolated-restore-store)]
     (sync/full-sync-from-bootstrap!
      source (fn [_] {:emacs {:state :unknown} :terminal-modes #{:vterm}
-                     :live-ids #{"live-session"} :live-pids #{}}))
-    (let [result (boot-reconcile/reconcile-rehydrated-slaves!)]
+                     :live-ids #{"live-session"} :live-pids #{}}) sync-ports)
+    (let [result (boot-reconcile/reconcile-rehydrated-slaves! reconcile-ports)]
       (is (= 0 (:reconciled result)))
       (is (= 2 (:spared result)))
       (is (= 1 (:skipped result)))
-      (is (false? (:slave/alive? (queries/get-slave "previous-boot"))))
-      (is (= :working (:slave/status (queries/get-slave "live-session"))))
-      (is (= :working (:slave/status (queries/get-slave "unverified-vessel")))))))
+      (is (false? (:slave/alive? (get @state "previous-boot"))))
+      (is (= :working (:slave/status (get @state "live-session"))))
+      (is (= :working (:slave/status (get @state "unverified-vessel")))))))
 
 (deftest stale-emacs-membership-is-not-headless-loop-evidence
   (let [row {:slave-id "ghost" :status :working :spawn-mode :hive-agent}

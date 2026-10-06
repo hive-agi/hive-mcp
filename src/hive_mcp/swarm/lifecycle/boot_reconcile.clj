@@ -63,24 +63,29 @@
   "Retire still-live-looking rehydrated slaves on JVM restart (per decision
    `20260423152822-70fe5631`): mark `:zombie` + `:alive? false`. Terminal-backed
    and live-pid slaves are spared (see `spare?`) and left to the periodic sweeps.
-   Idempotent. Returns {:reconciled N :spared S :skipped M :total T}."
-  []
-  (let [now        (System/currentTimeMillis)
-        registered (terminal-reg/registered-terminals)
-        slaves     (queries/get-all-slaves :include-stale? true)
-        live       (filterv live-looking? slaves)
-        {spared true to-retire false} (group-by #(boolean (spare? registered %)) live)]
-    (doseq [s to-retire]
-      (ds-lings/update-slave! (:slave/id s)
-                              {:slave/status            :zombie
-                               :slave/alive?            false
-                               :slave/status-changed-at now}))
-    (let [result {:reconciled (count to-retire)
-                  :spared     (count spared)
-                  :skipped    (- (count slaves) (count live))
-                  :total      (count slaves)}]
-      (log/info "Boot reconciliation: retired rehydrated slaves (JVM restart)" result)
-      result)))
+   Idempotent. Returns {:reconciled N :spared S :skipped M :total T}.
+   The one-arity form accepts registry ports for isolated reconciliation."
+  ([] (reconcile-rehydrated-slaves!
+       {:load-slaves #(queries/get-all-slaves :include-stale? true)
+        :update! ds-lings/update-slave!
+        :terminal-modes terminal-reg/registered-terminals}))
+  ([{:keys [load-slaves update! terminal-modes]}]
+   (let [now        (System/currentTimeMillis)
+         registered (terminal-modes)
+         slaves     (load-slaves)
+         live       (filterv live-looking? slaves)
+         {spared true to-retire false} (group-by #(boolean (spare? registered %)) live)]
+     (doseq [s to-retire]
+       (update! (:slave/id s)
+                {:slave/status            :zombie
+                 :slave/alive?            false
+                 :slave/status-changed-at now}))
+     (let [result {:reconciled (count to-retire)
+                   :spared     (count spared)
+                   :skipped    (- (count slaves) (count live))
+                   :total      (count slaves)}]
+       (log/info "Boot reconciliation: retired rehydrated slaves (JVM restart)" result)
+       result))))
 
 ;; =============================================================================
 ;; One-time test-junk purge (maintenance helper — NOT boot-wired)

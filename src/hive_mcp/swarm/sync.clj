@@ -572,10 +572,13 @@
 
 (defn full-sync-from-bootstrap!
   "Full sync from the bootstrap source. Classify liveness before any registration.
-   probe-fn accepts the snapshot rows and returns liveness evidence;
-   the default boundary shares Emacs membership with agent cleanup."
+   probe-fn accepts snapshot rows and returns liveness evidence. The three-arity
+   form injects the reset and registration ports for isolated consumers."
   ([] (full-sync-from-bootstrap! (get-swarm-bootstrap) probe-evidence))
   ([bs probe-fn]
+   (full-sync-from-bootstrap! bs probe-fn {:reset! conn/reset-conn!
+                                          :register! register-slave-from-status!}))
+  ([bs probe-fn {:keys [reset! register!]}]
    (log/info "Starting full sync from bootstrap source...")
    (let [slaves (try (bootstrap/load-slaves bs)
                      (catch Exception e
@@ -583,8 +586,8 @@
                        []))
          evidence (probe-fn slaves)
          classified (mapv #(classify-row % evidence) slaves)]
-     (conn/reset-conn!)
-     (run! register-slave-from-status! classified)
+     (reset!)
+     (run! register! classified)
      (log/info "Full sync complete:" (count classified) "slaves"))))
 
 ;; Backwards-compatibility alias — keep old call sites working until they
