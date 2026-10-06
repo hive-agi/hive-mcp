@@ -3,7 +3,9 @@
    Evidence comes from the boundary; classification is a pure value transform."
   (:require [hive-mcp.tools.agent.helpers :as helpers]
             [hive-system.process.liveness :as liveness]
-            [hive-mcp.agent.ling.terminal-registry :as terminals]))
+            [hive-mcp.agent.ling.terminal-registry :as terminals]
+            [hive-mcp.agent.ling.headless-registry :as headless-registry]
+            [hive-spi.addon.headless :as headless]))
 
 (defn missing-from-emacs?
   "Pure: whether a slave id is absent from the Emacs membership cleanup reads."
@@ -25,14 +27,23 @@
       :else (assoc row :status :zombie :alive? false))))
 
 (defn probe-evidence
-  "Boundary: query Emacs membership without converting a failed query to absence.
-   Probe process handles and registered terminal modes at the same boundary."
+  "Boundary: query Emacs, OS pids and the registered headless backend's live
+   session status. A missing or failed query never certifies liveness."
   [rows]
   (let [elisp (helpers/query-elisp-lings)]
     {:emacs (if (nil? elisp)
               {:state :unknown}
               {:state :known :ids (set (map :slave/id elisp))})
      :terminal-modes (terminals/registered-terminals)
+     :live-ids (into #{}
+                     (keep (fn [{:keys [slave-id spawn-mode]}]
+                             (when-let [backend (headless-registry/get-headless-backend spawn-mode)]
+                               (when (try
+                                       (contains? #{:running :idle}
+                                                  (:slave/status (headless/headless-status backend {:id slave-id} nil)))
+                                       (catch Exception _ false))
+                                 slave-id))))
+                     rows)
      :live-pids (into #{} (comp (keep :process-pid)
                                 (filter #(= :liveness/alive
                                             (:adt/variant (liveness/check-pid-alive %)))))

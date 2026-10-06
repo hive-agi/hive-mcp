@@ -9,13 +9,13 @@
 
 (deftrifecta restore-classification
   restore/classify-row
-  {:cases {:dead [{:slave-id "dead" :status :working :created-at 100} {:elisp-ids #{} :live-pids #{}}]
-           :alive [{:slave-id "alive" :status :idle :created-at 200} {:elisp-ids #{"alive"} :live-pids #{}}]
-           :pid [{:slave-id "pid" :status :working :process-pid 42 :created-at 300} {:elisp-ids #{} :live-pids #{42}}]}
+  {:cases {:dead [{:slave-id "dead" :status :working :created-at 100} {:emacs {:state :known :ids #{}} :live-pids #{}}]
+           :alive [{:slave-id "alive" :status :idle :created-at 200} {:emacs {:state :known :ids #{"alive"}} :live-pids #{}}]
+           :pid [{:slave-id "pid" :status :working :process-pid 42 :created-at 300} {:emacs {:state :known :ids #{}} :live-pids #{42}}]}
    :gen (gen/tuple (gen/hash-map :slave-id gen/string-alphanumeric
                                   :status (gen/elements [:working :idle])
                                   :created-at gen/pos-int)
-                   (gen/return {:elisp-ids #{} :live-pids #{}}))
+                   (gen/return {:emacs {:state :known :ids #{}} :live-pids #{}}))
    :apply? true
    :pred (fn [row] (and (= :zombie (:status row)) (false? (:alive? row))))
    :num-tests 30})
@@ -29,7 +29,9 @@
                  (-snapshot-slave! [this _ _] this)
                  (-forget-slave! [this _] this)
                  (-close! [_] nil))]
-    (sync/full-sync-from-bootstrap! source (fn [_] {:elisp-ids #{"alive"} :live-pids #{}}))
+    (sync/full-sync-from-bootstrap! source
+                                    (fn [_] {:emacs {:state :known :ids #{"alive"}}
+                                             :live-pids #{}}))
     (let [dead (queries/get-slave "dead")
           alive (queries/get-slave "alive")]
       (is (not= :working (:slave/status dead)))
@@ -45,3 +47,10 @@
     (is (= :working (:status classified)))
     (is (= :unverified (:liveness classified)))
     (is (= 123 (:created-at classified)))))
+
+(deftest headless-session-evidence-preserves-same-jvm-row
+  (let [row {:slave-id "in-jvm" :status :working :spawn-mode :hive-agent}]
+    (is (= :working (:status (restore/classify-row row
+                     {:emacs {:state :known :ids #{}} :live-ids #{"in-jvm"} :live-pids #{}}))))
+    (is (= :zombie (:status (restore/classify-row row
+                     {:emacs {:state :known :ids #{}} :live-ids #{} :live-pids #{}}))))))
