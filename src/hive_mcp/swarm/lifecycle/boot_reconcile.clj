@@ -52,8 +52,13 @@
   (= :liveness/alive (:adt/variant (liveness/check-pid-alive (:slave/process-pid slave)))))
 
 (defn- spare?
-  "Spare rows with positive live evidence or an unverified Emacs query.
-   Retire only rows for which the boot probe established absence."
+  "A live-looking rehydrated slave we must NOT zombify because something may
+   still back it: a row the boot probe verified, or could not judge
+   (`:slave/liveness` :verified / :unverified, e.g. Emacs unreachable at boot);
+   a terminal vessel whose mode is a registered terminal (reaped by the
+   periodic terminal-liveness sweep if actually dead); or a subprocess whose
+   OS pid is still alive. Only rows whose absence the probe established are
+   retired."
   [registered-terminals slave]
   (or (contains? #{:verified :unverified} (:slave/liveness slave))
       (contains? registered-terminals (:ling/spawn-mode slave))
