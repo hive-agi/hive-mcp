@@ -1,18 +1,12 @@
 (ns hive-mcp.chroma.gate
-  "Concurrency gate for ChromaDB operations.
+  "Concurrency gates for ChromaDB reads/writes and the shared embed port.
 
-   ChromaDB uses SQLite internally — concurrent HTTP requests can trigger
-   WAL locking, causing hangs. Three named gates bound concurrency:
-
-   - read-gate  (4 permits, 15s timeout) — queries, gets
-   - write-gate (1 permit, 30s timeout)  — adds, updates, deletes
-   - embed-gate (2 permits, 60s timeout) — Ollama/OpenRouter embedding calls
-
-   All Chroma deref sites use `deref-read` or `deref-write` instead of
-   bare `@`. All embedding calls use `with-embedding-gate`.
-
-   Built on hive-weave.gate for bounded execution and Result integration."
-  (:require [hive-weave.gate :as g]))
+   ChromaDB uses SQLite internally: read (4 permits) and write (1 permit)
+   derefs retain their hive-weave gates. Embeddings use the ONE process-wide
+   provider gate from embeddings.shared-gate, never a Chroma-only pool.
+   Do not nest with-embedding-gate around a decorated provider call."
+  (:require [hive-weave.gate :as g]
+            [hive-mcp.embeddings.shared-gate :as shared]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -27,9 +21,6 @@
 
 (defonce write-gate
   (g/gate {:permits 1 :timeout-ms 30000 :name "chroma-write"}))
-
-(defonce embed-gate
-  (g/gate {:permits 2 :timeout-ms 60000 :name "embedding"}))
 
 ;; =============================================================================
 ;; Convenience API — drop-in replacements for bare @ derefs
@@ -52,18 +43,24 @@
    (g/deref-gate write-gate promise timeout-ms)))
 
 (defmacro with-embedding-gate
-  "Execute body under embedding concurrency gate.
-   Ollama serializes GPU work — this prevents piling up HTTP connections."
+  "Legacy macro for callers outside the EmbeddingProvider port. Never wrap a
+   decorated provider call with it: admission there already owns the permit."
   [& body]
-  `(g/with-gate embed-gate ~@body))
+  `(shared/with-permit shared/process-gate shared/*lane* (fn [] ~@body)))
 
 ;; =============================================================================
 ;; Diagnostics
 ;; =============================================================================
 
 (defn gate-stats
-  "Current state of all three gates."
+  "Current state of Chroma read/write and the one shared embedding provider gate."
   []
-  {:read  (g/gate-stats read-gate)
-   :write (g/gate-stats write-gate)
-   :embed (g/gate-stats embed-gate)})
+  (let [embed shared/process-gate
+        active @(:active embed)
+        waiting @(:waiting embed)]
+    {:read (g/gate-stats read-gate)
+     :write (g/gate-stats write-gate)
+     :embed {:name "embedding-provider"
+             :permits (:permits embed)
+             :available (- (:permits embed) active)
+             :queue-length (reduce + (vals waiting))}}))

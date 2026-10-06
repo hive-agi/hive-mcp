@@ -8,7 +8,8 @@
    failure was never reported and the memory entry was silently dropped."
   (:require [clojure.test :refer [deftest testing is]]
             [hive-mcp.embeddings.protocol :as proto]
-            [hive-mcp.embeddings.resilient :as res]))
+            [hive-mcp.embeddings.resilient :as res]
+            [hive-mcp.embeddings.shared-gate :as shared]))
 
 ;; =============================================================================
 ;; Test doubles
@@ -65,18 +66,42 @@
     (is (= 500 (:total-budget-ms d)))))
 
 (deftest saturated-gate-cannot-outlive-the-deadline
-  (testing "every permit held elsewhere — the permit wait is part of the budget"
-    (let [^java.util.concurrent.Semaphore sem (:semaphore @#'res/embed-gate)
-          n (.drainPermits sem)]
+  (testing "a held shared provider permit cannot extend the chain deadline"
+    (let [entered (promise)
+          release (promise)
+          gate (shared/new-gate 1 12000)
+          holder (shared/gated-provider
+                   (reify proto/EmbeddingProvider
+                     (embed-text [_ _] (deliver entered true) @release [1.0])
+                     (embed-batch [_ _] [])
+                     (embedding-dimension [_] 1)) gate)
+          healthy (shared/gated-provider (->InstantProvider 1.0 3) gate)
+          holding (future (proto/embed-text holder "hold"))]
       (try
-        (let [embedder (res/resilient-embedder
-                        [(entry :healthy (->InstantProvider 1.0 3))] 200 400)
-              [ms r]   (elapsed-ms #(proto/embed-text embedder "x"))
-              d        (ex-data (:ex r))]
+        (is (= true (deref entered 1000 false)))
+        (let [embedder (res/resilient-embedder [(entry :healthy healthy)] 200 400)
+              [ms r] (elapsed-ms #(proto/embed-text embedder "x"))
+              d (ex-data (:ex r))]
           (is (< ms 2000) (str "waited " ms "ms for a permit against a 400ms budget"))
+          (is (= :embedder/chain-exhausted (:error d)))
           (is (= :deadline (:exhausted-by d)))
           (is (= [:healthy] (:untried d))))
-        (finally (.release sem n))))))
+        (finally
+          (deliver release true)
+          (deref holding 1000 nil))))))
+
+(deftest chain-over-gated-providers-does-not-nest-permits
+  (testing "the active port wraps a resilient chain of registry-gated providers
+            without holding an outer permit the inner attempt then waits for"
+    (let [gate     (shared/new-gate 1 12000)
+          healthy  (shared/gated-provider (->InstantProvider 1.0 3) gate)
+          embedder (res/resilient-embedder [(entry :healthy healthy)] 1000 1500)
+          port     (shared/gated-provider embedder gate)
+          [ms r]   (elapsed-ms #(proto/embed-text port "x"))]
+      (is (identical? embedder port) "a chain owns its admission; never decorated")
+      (is (= [1.0] (:ok r)) (str "failed: " (some-> (:ex r) ex-message)))
+      (is (< ms 500) (str "took " ms "ms: nested permit wait"))
+      (is (zero? @(:active gate)) "the permit is returned"))))
 
 ;; =============================================================================
 ;; Failover still works — the deadline must not break the feature it bounds

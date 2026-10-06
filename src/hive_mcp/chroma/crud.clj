@@ -50,7 +50,7 @@
                  (:collection-name resolved) (:dimension resolved))
                (conn/get-or-create-collection))
         provider (if resolved (:provider resolved) (emb/get-embedding-provider))
-        embed-1 (fn [p] (gate/with-embedding-gate (emb/embed-text p doc-text)))
+        embed-1 (fn [p] (emb/embed-text p doc-text))
         embedding (if no-embed?
                     (vec (repeat (or (:dimension resolved) 768) 0.0))
                     ;; Embed via the resolved provider; on failure (e.g. Venice
@@ -99,14 +99,13 @@
 
 (defn index-memory-entries!
   "Index multiple memory entries in batch with full metadata.
-   Uses embed-batch for single GPU call. Entries should have :id pre-set."
+   Uses the shared provider gate for the complete embed-batch call. Entries should have :id pre-set."
   [entries]
   (emb/require-embedding!)
   (let [coll (conn/get-or-create-collection)
         now  (h/iso-timestamp)
         docs (mapv h/memory-to-document entries)
-        embeddings (gate/with-embedding-gate
-                     (emb/embed-batch (emb/get-embedding-provider) docs))
+        embeddings (emb/embed-batch (emb/get-embedding-provider) docs)
         records (mapv (fn [entry doc emb-vec]
                         (let [provided {:type          (:type entry)
                                         :tags          (h/join-tags (:tags entry))
