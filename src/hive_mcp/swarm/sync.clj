@@ -500,7 +500,7 @@
 ;; =============================================================================
 
 (defn- register-slave-from-status!
-  "Register one classified snapshot row. Preserve the original creation time."
+  "Register one classified snapshot row. Preserve its creation time and liveness verdict."
   [slave]
   (let [slave-id (:slave-id slave)
         status (some-> (:status slave) keyword)
@@ -516,6 +516,7 @@
                     (:spawn-mode slave) (assoc :ling/spawn-mode (:spawn-mode slave))
                     (:process-pid slave) (assoc :slave/process-pid (:process-pid slave))
                     (:created-at slave) (assoc :slave/created-at (:created-at slave))
+                    (:liveness slave) (assoc :slave/liveness (:liveness slave))
                     (false? (:alive? slave)) (assoc :slave/alive? false))]
       (when (seq updates)
         (proto/update-slave! reg slave-id updates)))

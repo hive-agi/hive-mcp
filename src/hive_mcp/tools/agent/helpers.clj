@@ -45,7 +45,8 @@
      :by-status (frequencies (map :status formatted))}))
 
 (defn query-elisp-lings
-  "Query elisp for lings that may not be in DataScript."
+  "Query elisp for lings that may not be in DataScript. nil means unavailable,
+   while an empty sequence means a successful, empty membership query."
   []
   (when (swarm-core/swarm-addon-available?)
     (let [{:keys [success result timed-out]}
@@ -59,14 +60,14 @@
                           {:slave/id (or (:slave-id ling) (:slave_id ling))
                            :slave/name (:name ling)
                            :slave/status (keyword (or (:status ling) "idle"))
-                           :slave/depth 1  ;; lings are depth 1
+                           :slave/depth 1
                            :slave/cwd (:cwd ling)
                            :slave/project-id (:project-id ling)
                            :slave/presets (:presets ling)}))
-                   (filter :slave/id))))  ;; filter out invalid entries
+                   (filter :slave/id))))
           (catch Exception e
             (log/debug "Failed to parse elisp lings:" (ex-message e))
-            []))))))
+            nil))))))
 
 (defn merge-with-elisp-lings
   "Merge DataScript agents with elisp lings, DataScript taking precedence.

@@ -36,3 +36,12 @@
       (is (false? (:slave/alive? dead)))
       (is (= :idle (:slave/status alive)))
       (is (= original (:slave/created-at alive))))))
+
+(deftest unknown-emacs-membership-preserves-terminal-row
+  (let [row {:slave-id "vterm" :status :working :spawn-mode :vterm :created-at 123}
+        classified (restore/classify-row row {:emacs {:state :unknown}
+                                              :terminal-modes #{:vterm}
+                                              :live-pids #{}})]
+    (is (= :working (:status classified)))
+    (is (= :unverified (:liveness classified)))
+    (is (= 123 (:created-at classified)))))
