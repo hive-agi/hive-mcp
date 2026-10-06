@@ -5,12 +5,20 @@
    Card 20260913181359-78ad3db5: an update naming no `new_status` never
    changes the status. A description-only or priority-only edit leaves the
    status tag and content status exactly where they were, through the direct
-   `kanban update`, a multi `operations` op and a multi DSL `b>`."
+   `kanban update`, a multi `operations` op and a multi DSL `b>`.
+
+   Card 20260916162147-173c1d52: an update, move or retag against an id the
+   store does not hold answers `:kanban/invalid-task` (as `dispatch-edit!`
+   documents) and an error envelope at the boundary, never a success-shaped
+   row of nulls."
   (:require [clojure.data.json :as json]
+            [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
+            [hive-dsl.result :as r]
             [hive-mcp.test.stub.memory-store :as ms]
             [hive-mcp.tools.consolidated.kanban :as ck]
-            [hive-mcp.tools.consolidated.multi :as cm]))
+            [hive-mcp.tools.consolidated.multi :as cm]
+            [hive-mcp.tools.kanban.events :as events]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -90,6 +98,36 @@
     (cm/handle-multi {:dsl [["b>" {"task_id" task-id "priority" "high"}]]})
     (is (= "high" (get-in (stored) [:content :priority])))
     (is (= ["todo" "todo"] (status-of)))))
+
+(def ^:private phantom "probe-does-not-exist-000")
+
+(deftest dispatch-on-missing-entry-is-invalid-task
+  (testing "every resolve-first dispatch answers :kanban/invalid-task"
+    (doseq [[label result] [[:edit  (events/dispatch-edit! {:task-id phantom :description "probe"})]
+                            [:move  (events/dispatch-move! {:task-id phantom :new-status "doing"})]
+                            [:retag (events/dispatch-retag! {:task-id phantom :add-tags ["x"]})]]]
+      (testing (name label)
+        (is (not (r/ok? result)) "a missing entry is never ok")
+        (is (= :kanban/invalid-task (:error result)))
+        (is (= phantom (:task-id result))))))
+  (testing "nothing was written"
+    (is (= [task-id] (keys (ms/entries *store*))))))
+
+(deftest boundary-on-missing-entry-is-an-error
+  (doseq [[label params] [[:edit   {:command "update" :task_id phantom :description "probe"}]
+                          [:prio   {:command "update" :task_id phantom :priority "high"}]
+                          [:move   {:command "update" :task_id phantom :new_status "doing"}]
+                          [:retag  {:command "retag" :task_id phantom :add_tags ["x"]}]
+                          [:delete {:command "delete" :task_id phantom}]]]
+    (testing (name label)
+      (let [resp (ck/handle-kanban params)]
+        (is (true? (:isError resp)) "an error envelope, not a success-shaped row")
+        (is (str/includes? (str (:text resp)) phantom)
+            "the error names the id the caller sent"))))
+  (testing "a multi batch counts the phantom update as failed"
+    (let [resp (cm/handle-multi {:operations [{"id" "p" "tool" "kanban" "command" "update"
+                                               "task_id" phantom "description" "probe"}]})]
+      (is (= 1 (get-in (body resp) [:summary :failed]))))))
 
 (deftest update-with-status-still-moves
   (ck/handle-kanban {:command "update" :task_id task-id :new_status "inreview"
