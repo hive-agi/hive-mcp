@@ -19,6 +19,9 @@
   "Gate capacity and maximum wait in milliseconds. Admission is shared across
    all providers wrapped by the process-wide gate."
   [permits timeout-ms]
+  (when-not (and (pos-int? permits) (pos-int? timeout-ms))
+    (throw (ex-info "Embedding gate requires positive permits and timeout"
+                    {:permits permits :timeout-ms timeout-ms})))
   {:permits permits :timeout-ms timeout-ms
    :lock (Object.)
    :active (atom 0)
@@ -38,6 +41,8 @@
           false)))))
 
 (defn- acquire!
+  "Admit a waiter only when capacity is free and no higher-priority lane waits.
+   A departing waiter wakes the others, including when it times out."
   [gate lane]
   (let [lock (:lock gate)
         end (+ (System/currentTimeMillis) (:timeout-ms gate))]
@@ -48,17 +53,19 @@
           (let [remaining (- end (System/currentTimeMillis))
                 waiting @(:waiting gate)]
             (cond
-              (and (< @(:active gate) (:permits gate))
-                   (= lane (next-lane (:interactive waiting) (:batch waiting))))
-              (do (swap! (:active gate) inc) true)
-
               (<= remaining 0)
               (throw (ex-info "Embedding gate timed out"
                               {:error :embedder/gate-timeout :lane lane}))
 
+              (and (< @(:active gate) (:permits gate))
+                   (= lane (next-lane (:interactive waiting) (:batch waiting))))
+              (do (swap! (:active gate) inc) true)
+
               :else
               (do (.wait lock (long remaining)) (recur)))))
-        (finally (swap! (:waiting gate) update lane dec))))))
+        (finally
+          (swap! (:waiting gate) update lane dec)
+          (.notifyAll ^Object lock))))))
 
 (defn- release!
   [gate]
@@ -88,6 +95,7 @@
    boundary; repeated decoration is idempotent to prevent nested permits."
   ([provider] (gated-provider provider process-gate))
   ([provider gate]
-   (if (instance? GatedProvider provider)
-     provider
-     (->GatedProvider provider gate))))
+   (cond
+     (nil? provider) (throw (ex-info "Cannot gate a nil embedding provider" {}))
+     (instance? GatedProvider provider) provider
+     :else (->GatedProvider provider gate))))

@@ -134,7 +134,7 @@
                                 :failures failures})))]
     (loop [[entry & more] chain failures []]
       (cond
-        (nil? entry)
+        (and (nil? entry) (not (dl/expired? dl)))
         (let [ms (elapsed)]
           (throw (ex-info (str "All embedding providers in the chain failed after "
                                ms "ms — " (failures-summary failures))
@@ -143,7 +143,7 @@
                            :elapsed-ms ms
                            :failures failures})))
         (dl/expired? dl)
-        (throw (exhausted (cons entry more) failures))
+        (throw (exhausted (when entry (cons entry more)) failures))
         :else
         (let [was-warm (contains? @warmth (identity-of entry))
               per (attempt-budget warmth entry budget-ms cold-budget-ms)

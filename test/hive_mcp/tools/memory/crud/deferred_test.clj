@@ -68,6 +68,13 @@
           (when-let [old (:default snapshot)]
             (hive-mcp.protocols.memory/register-store! :default old)))))))
 
+(deftest shared-gate-timeout-is-deferrable
+  (is (true? (boolean (deferred/embedding-failure?
+                        (ex-info "Embedding gate timed out"
+                                 {:error :embedder/gate-timeout :lane :interactive})))))
+  (is (false? (boolean (deferred/embedding-failure?
+                         (ex-info "Vector store failed" {:error :store/unavailable}))))))
+
 (deftest reembed-drains-only-after-successful-store-write
   (let [dir (.toFile (java.nio.file.Files/createTempDirectory "pending-drain" (make-array java.nio.file.attribute.FileAttribute 0)))
         accepted? (atom false)

@@ -19,9 +19,9 @@
   (let [data (ex-data e)
         result (:result data)]
     (or (= "embed-for-entry failed" (ex-message e))
-        (#{:embedder/embed-failed :embedder/chain-exhausted}
+        (#{:embedder/embed-failed :embedder/chain-exhausted :embedder/gate-timeout}
          (:error result))
-        (#{:embedder/embed-failed :embedder/chain-exhausted}
+        (#{:embedder/embed-failed :embedder/chain-exhausted :embedder/gate-timeout}
          (:error data)))))
 
 (defn- path-for [id]
