@@ -90,6 +90,19 @@
           (deliver release true)
           (deref holding 1000 nil))))))
 
+(deftest chain-over-gated-providers-does-not-nest-permits
+  (testing "the active port wraps a resilient chain of registry-gated providers
+            without holding an outer permit the inner attempt then waits for"
+    (let [gate     (shared/new-gate 1 12000)
+          healthy  (shared/gated-provider (->InstantProvider 1.0 3) gate)
+          embedder (res/resilient-embedder [(entry :healthy healthy)] 1000 1500)
+          port     (shared/gated-provider embedder gate)
+          [ms r]   (elapsed-ms #(proto/embed-text port "x"))]
+      (is (identical? embedder port) "a chain owns its admission; never decorated")
+      (is (= [1.0] (:ok r)) (str "failed: " (some-> (:ex r) ex-message)))
+      (is (< ms 500) (str "took " ms "ms: nested permit wait"))
+      (is (zero? @(:active gate)) "the permit is returned"))))
+
 ;; =============================================================================
 ;; Failover still works — the deadline must not break the feature it bounds
 ;; =============================================================================

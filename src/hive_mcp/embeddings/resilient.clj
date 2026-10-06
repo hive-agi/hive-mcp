@@ -110,9 +110,54 @@
                    (when message (str ": " message)))))
        (str/join "; ")))
 
+(defn- admitted-attempt
+  "One attempt that first waits for `entry`'s shared-gate permit, but only for
+   what the deadline has left. Returns ::not-admitted when the wait runs out:
+   a provider never admitted was never TRIED, so it is reported as untried,
+   not as a failure.
+
+   The permit is held by the worker running the provider call and returned
+   when that call actually ends. A timed-out attempt therefore keeps its
+   permit until the abandoned HTTP call returns, so a cancelled request cannot
+   free a slot the provider is still busy serving (the retry storm of
+   friction 20261003172907-4abbcf92). A worker cancelled before it started
+   returns the permit here."
+  [warmth entry call dl per]
+  (let [provider (:provider entry)
+        gate     (shared/gate-of provider)]
+    (if-not (shared/try-acquire! gate shared/*lane* (dl/remaining-ms dl))
+      ::not-admitted
+      (let [released (atom false)
+            started  (atom false)
+            release  #(when (compare-and-set! released false true)
+                        (shared/release! gate))
+            outcome  (try
+                       (attempt warmth (assoc entry :provider (shared/ungated provider))
+                                (fn [p]
+                                  (reset! started true)
+                                  (try (call p) (finally (release))))
+                                (dl/attempt-budget-ms dl per))
+                       (catch Throwable t
+                         (when-not @started (release))
+                         (throw t)))]
+        (when-not @started (release))
+        outcome))))
+
 (defn- run-chain
-  "Try providers under one deadline. The provider decorator, not this chain,
-   owns admission and prioritizes interactive callers over batches."
+  "Try each provider in `chain`, bounded by ONE deadline.
+
+   The deadline starts before the first permit wait, so a slow queue eats the
+   same budget a slow provider would. Each attempt waits on the shared gate
+   (embeddings.shared-gate, the caller's *lane*) only for what is left, then
+   may spend only what is left, so the chain always returns, successfully or
+   with an exception, inside `total-budget-ms`. A provider not known warm gets
+   `cold-budget-ms` for its attempt instead of `budget-ms`; a warm provider
+   that times out is retried once on the cold budget before the chain moves on.
+
+   Returns the first success value; throws ex-info :embedder/chain-exhausted
+   (:exhausted-by :providers | :deadline) when none succeeds. The message names
+   every provider tried, its model and the elapsed time, and :untried names
+   every provider never admitted or never reached."
   [{:keys [chain budget-ms cold-budget-ms total-budget-ms warmth]} call]
   (let [t0 (System/nanoTime)
         elapsed #(long (/ (- (System/nanoTime) t0) 1e6))
@@ -147,24 +192,27 @@
         :else
         (let [was-warm (contains? @warmth (identity-of entry))
               per (attempt-budget warmth entry budget-ms cold-budget-ms)
-              outcome (attempt warmth entry call (dl/attempt-budget-ms dl per))]
-          (adt/adt-case AttemptOutcome outcome
-                        :attempt/ok (:value outcome)
-                        :attempt/failed (let [failures (conj failures
-                                                             (select-keys outcome
-                                                                          [:provider :model :elapsed-ms
-                                                                           :budget-ms :error :message]))
-                                              retry? (and was-warm
-                                                          (= :weave/timeout (:error outcome)))]
-                                          (recur (if retry? (cons entry more) more)
-                                                 failures))))))))
+              outcome (admitted-attempt warmth entry call dl per)]
+          (if (= ::not-admitted outcome)
+            (throw (exhausted (cons entry more) failures))
+            (adt/adt-case AttemptOutcome outcome
+                          :attempt/ok (:value outcome)
+                          :attempt/failed (let [failures (conj failures
+                                                               (select-keys outcome
+                                                                            [:provider :model :elapsed-ms
+                                                                             :budget-ms :error :message]))
+                                                retry? (and was-warm
+                                                            (= :weave/timeout (:error outcome)))]
+                                            (recur (if retry? (cons entry more) more)
+                                                   failures)))))))))
 
 (defrecord ResilientEmbedder [chain budget-ms total-budget-ms cold-budget-ms warmth]
+  shared/AdmissionOwner
   proto/EmbeddingProvider
   (embed-text [this text]
-    (run-chain this (fn [p] (proto/embed-text (shared/gated-provider p) text))))
+    (run-chain this (fn [p] (proto/embed-text p text))))
   (embed-batch [this texts]
-    (run-chain this (fn [p] (proto/embed-batch (shared/gated-provider p) texts))))
+    (run-chain this (fn [p] (proto/embed-batch p texts))))
   (embedding-dimension [_]
     (proto/embedding-dimension (:provider (first chain)))))
 
