@@ -13,16 +13,18 @@
   (not (contains? elisp-ids slave-id)))
 
 (defn classify-row
-  "Pure: positive evidence preserves a row. When Emacs is unknown, registered
-   terminal-backed rows are unverified; headless rows still need positive proof."
+  "Pure: only live backing verifies a restored row. Emacs membership can
+   verify terminal or legacy mode-less rows, never a named headless backend."
   [row {:keys [emacs live-pids live-ids terminal-modes]}]
-  (let [id (:slave-id row)]
+  (let [id (:slave-id row)
+        mode (:spawn-mode row)
+        emacs-tracked? (or (contains? terminal-modes mode) (nil? mode))]
     (cond
       (or (contains? live-ids id)
           (and (:process-pid row) (contains? live-pids (:process-pid row)))
-          (contains? (:ids emacs) id)) (assoc row :liveness :verified)
-      (and (= :unknown (:state emacs))
-           (contains? terminal-modes (:spawn-mode row)))
+          (and emacs-tracked? (contains? (:ids emacs) id)))
+      (assoc row :liveness :verified)
+      (and emacs-tracked? (= :unknown (:state emacs)))
       (assoc row :liveness :unverified)
       :else (assoc row :status :zombie :alive? false))))
 

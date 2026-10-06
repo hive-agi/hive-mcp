@@ -16,7 +16,7 @@
   (str (name agent-type) "-" (java.util.UUID/randomUUID)))
 
 (defn format-agent
-  "Format agent data for response."
+  "Format agent data for response, exposing unverified restore liveness."
   [agent-data]
   (when agent-data
     (let [base {:id (:slave/id agent-data)
@@ -29,6 +29,7 @@
         (:slave/grant agent-data) (assoc :grant (:slave/grant agent-data))
         (:slave/presets agent-data) (assoc :presets (:slave/presets agent-data))
         (:slave/created-at agent-data) (assoc :created-at (:slave/created-at agent-data))
+        (:slave/liveness agent-data) (assoc :liveness (:slave/liveness agent-data))
         (:slave/orphan-reason agent-data) (assoc :reason (:slave/orphan-reason agent-data))
         (:slave/last-event-at agent-data) (assoc :last-event-at (:slave/last-event-at agent-data))))))
 

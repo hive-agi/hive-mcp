@@ -5,12 +5,13 @@
             [hive-mcp.swarm.sync :as sync]
             [hive-mcp.swarm.lifecycle.restore-liveness :as restore]
             [hive-mcp.swarm.datascript.queries :as queries]
-            [hive-spi.swarm.bootstrap :as bootstrap]))
+            [hive-spi.swarm.bootstrap :as bootstrap]
+            [hive-mcp.swarm.lifecycle.boot-reconcile :as boot-reconcile]))
 
 (deftrifecta restore-classification
   restore/classify-row
   {:cases {:dead [{:slave-id "dead" :status :working :created-at 100} {:emacs {:state :known :ids #{}} :live-pids #{}}]
-           :alive [{:slave-id "alive" :status :idle :created-at 200} {:emacs {:state :known :ids #{"alive"}} :live-pids #{}}]
+           :alive [{:slave-id "alive" :status :idle :spawn-mode :vterm :created-at 200} {:emacs {:state :known :ids #{"alive"}} :terminal-modes #{:vterm} :live-pids #{}}]
            :pid [{:slave-id "pid" :status :working :process-pid 42 :created-at 300} {:emacs {:state :known :ids #{}} :live-pids #{42}}]}
    :gen (gen/tuple (gen/hash-map :slave-id gen/string-alphanumeric
                                   :status (gen/elements [:working :idle])
@@ -23,7 +24,7 @@
 (deftest restore-never-publishes-dead-as-working
   (let [original (java.util.Date. 1234567890)
         rows [{:slave-id "dead" :status :working :created-at original}
-              {:slave-id "alive" :status :idle :created-at original}]
+              {:slave-id "alive" :status :idle :spawn-mode :vterm :created-at original}]
         source (reify bootstrap/ISwarmBootstrap
                  (-load-slaves [_] rows)
                  (-snapshot-slave! [this _ _] this)
@@ -31,7 +32,7 @@
                  (-close! [_] nil))]
     (sync/full-sync-from-bootstrap! source
                                     (fn [_] {:emacs {:state :known :ids #{"alive"}}
-                                             :live-pids #{}}))
+                                             :terminal-modes #{:vterm} :live-pids #{}}))
     (let [dead (queries/get-slave "dead")
           alive (queries/get-slave "alive")]
       (is (not= :working (:slave/status dead)))
@@ -54,3 +55,47 @@
                      {:emacs {:state :known :ids #{}} :live-ids #{"in-jvm"} :live-pids #{}}))))
     (is (= :zombie (:status (restore/classify-row row
                      {:emacs {:state :known :ids #{}} :live-ids #{} :live-pids #{}}))))))
+
+(deftest full-sync-keeps-unknown-vessel-and-live-headless
+  (let [rows [{:slave-id "vessel" :status :working :spawn-mode :vterm}
+              {:slave-id "session" :status :working :spawn-mode :hive-agent}
+              {:slave-id "old" :status :working :spawn-mode :hive-agent}]
+        source (reify bootstrap/ISwarmBootstrap
+                 (-load-slaves [_] rows)
+                 (-snapshot-slave! [this _ _] this)
+                 (-forget-slave! [this _] this)
+                 (-close! [_] nil))]
+    (sync/full-sync-from-bootstrap!
+     source (fn [_] {:emacs {:state :unknown} :terminal-modes #{:vterm}
+                     :live-ids #{"session"} :live-pids #{}}))
+    (is (= :working (:slave/status (queries/get-slave "vessel"))))
+    (is (= :unverified (:slave/liveness (queries/get-slave "vessel"))))
+    (is (= :working (:slave/status (queries/get-slave "session"))))
+    (is (= :zombie (:slave/status (queries/get-slave "old"))))))
+
+(deftest boot-reconciliation-retires-restored-zombies
+  (let [rows [{:slave-id "previous-boot" :status :working :spawn-mode :hive-agent}
+              {:slave-id "live-session" :status :working :spawn-mode :hive-agent}
+              {:slave-id "unverified-vessel" :status :working :spawn-mode :vterm}]
+        source (reify bootstrap/ISwarmBootstrap
+                 (-load-slaves [_] rows)
+                 (-snapshot-slave! [this _ _] this)
+                 (-forget-slave! [this _] this)
+                 (-close! [_] nil))]
+    (sync/full-sync-from-bootstrap!
+     source (fn [_] {:emacs {:state :unknown} :terminal-modes #{:vterm}
+                     :live-ids #{"live-session"} :live-pids #{}}))
+    (let [result (boot-reconcile/reconcile-rehydrated-slaves!)]
+      (is (= 0 (:reconciled result)))
+      (is (= 2 (:spared result)))
+      (is (= 1 (:skipped result)))
+      (is (false? (:slave/alive? (queries/get-slave "previous-boot"))))
+      (is (= :working (:slave/status (queries/get-slave "live-session"))))
+      (is (= :working (:slave/status (queries/get-slave "unverified-vessel")))))))
+
+(deftest stale-emacs-membership-is-not-headless-loop-evidence
+  (let [row {:slave-id "ghost" :status :working :spawn-mode :hive-agent}
+        evidence {:emacs {:state :known :ids #{"ghost"}}
+                  :terminal-modes #{:vterm} :live-ids #{} :live-pids #{}}]
+    (is (= :zombie (:status (restore/classify-row row evidence))))
+    (is (false? (:alive? (restore/classify-row row evidence))))))
