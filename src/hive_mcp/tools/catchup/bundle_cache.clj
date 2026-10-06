@@ -175,32 +175,46 @@
 
 (declare ensure-subscribed!)
 
+(def ^:dynamic *private-view*
+  "True while the current caller's view of memory is private to it (e.g. it
+   is bound to an enclave, so the store decrypts and shows entries other
+   callers cannot see). Both tiers are then bypassed, read and write: a
+   bundle or entry computed under a private view must never be served to
+   another caller, and a shared one may hide what this caller should see.
+   Bound by catchup (hive-mcp.tools.catchup.private-view); conveyed onto
+   pool threads like every binding."
+  false)
+
 (defn cached-bundle
   "The catchup bundle for `project-id`, computing it with `compute-fn`
    (0-arity) when the cache holds nothing usable for the current store.
 
+     private (*private-view*)               -> compute; nothing read or stored
      fresh  (age < fresh-ttl-ms)            -> cached value
      stale  (fresh-ttl-ms <= age < max-age) -> cached value; refresh in background
      cold   (absent, other store, age >= max-age) -> compute under single-flight"
   [project-id compute-fn]
-  (ensure-subscribed!)
-  (let [now   (now-ms)
-        store (current-store)
-        hit   (let [e (get @bundles project-id)]
-                (when (and e (same-store? e store)) e))
-        age   (when hit (age-ms hit now))]
-    (cond
-      (and hit (< age fresh-ttl-ms))
-      (do (count! :hit) (:value hit))
+  (if *private-view*
+    (do (count! :private) (compute-fn))
+    (do
+      (ensure-subscribed!)
+      (let [now   (now-ms)
+            store (current-store)
+            hit   (let [e (get @bundles project-id)]
+                    (when (and e (same-store? e store)) e))
+            age   (when hit (age-ms hit now))]
+        (cond
+          (and hit (< age fresh-ttl-ms))
+          (do (count! :hit) (:value hit))
 
-      (and hit (< age max-age-ms))
-      (do (count! :stale)
-          (refresh-in-background! project-id compute-fn)
-          (:value hit))
+          (and hit (< age max-age-ms))
+          (do (count! :stale)
+              (refresh-in-background! project-id compute-fn)
+              (:value hit))
 
-      :else
-      (do (count! :miss)
-          (single-flight [:bundle project-id] #(compute-and-store! project-id compute-fn))))))
+          :else
+          (do (count! :miss)
+              (single-flight [:bundle project-id] #(compute-and-store! project-id compute-fn))))))))
 
 ;; =============================================================================
 ;; Content tier
@@ -230,27 +244,31 @@
   "{id -> entry} for `ids`. Ids fresh in the content tier for the current
    store are answered from it; the rest are fetched in one call to
    `fetch-fn` (ids -> seq of entry maps) and stored. Ids the fetch does not
-   return are absent from the result and are not cached."
+   return are absent from the result and are not cached. Under
+   *private-view* every id is fetched and nothing is stored."
   [ids fetch-fn]
-  (let [ids      (vec (distinct (remove nil? ids)))
-        now      (now-ms)
-        store    (current-store)
-        snapshot @content
-        hits     (into {}
-                       (keep (fn [id]
-                               (when-let [e (get snapshot id)]
-                                 (when (and (same-store? e store)
-                                            (< (age-ms e now) max-age-ms))
-                                   [id (:value e)]))))
-                       ids)
-        missing  (vec (remove #(contains? hits %) ids))
-        fetched  (if (seq missing)
-                   (into {} (map (juxt :id identity)) (rescue [] (fetch-fn missing)))
-                   {})]
-    (swap! counters update :content-hit  (fnil + 0) (count hits))
-    (swap! counters update :content-miss (fnil + 0) (count missing))
-    (when (seq fetched) (store-content! fetched now store))
-    (merge hits fetched)))
+  (let [ids (vec (distinct (remove nil? ids)))]
+    (if *private-view*
+      (do (count! :private-content)
+          (into {} (map (juxt :id identity)) (rescue [] (fetch-fn ids))))
+      (let [now      (now-ms)
+            store    (current-store)
+            snapshot @content
+            hits     (into {}
+                           (keep (fn [id]
+                                   (when-let [e (get snapshot id)]
+                                     (when (and (same-store? e store)
+                                                (< (age-ms e now) max-age-ms))
+                                       [id (:value e)]))))
+                           ids)
+            missing  (vec (remove #(contains? hits %) ids))
+            fetched  (if (seq missing)
+                       (into {} (map (juxt :id identity)) (rescue [] (fetch-fn missing)))
+                       {})]
+        (swap! counters update :content-hit  (fnil + 0) (count hits))
+        (swap! counters update :content-miss (fnil + 0) (count missing))
+        (when (seq fetched) (store-content! fetched now store))
+        (merge hits fetched)))))
 
 ;; =============================================================================
 ;; Invalidation
