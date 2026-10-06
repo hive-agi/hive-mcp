@@ -2,7 +2,8 @@
   "Durable local outbox for entries whose vectorization failed before the store write.
    An outbox write precedes acknowledgement; reembed drains it by id."
   (:require [clojure.edn :as edn]
-            [clojure.java.io :as io]))
+            [clojure.java.io :as io]
+            [clojure.string :as str]))
 
 (def ^:dynamic *queue-dir*
   (str (System/getProperty "user.home") "/.local/share/hive/pending-reembed"))
@@ -62,14 +63,57 @@
   [id]
   (java.nio.file.Files/deleteIfExists (.toPath (path-for id))))
 
+(defn with-store-key
+  "Pure: record the IMemoryStore slot an entry must drain into. :default is
+   left implicit so a record parked before this field drains as before."
+  [entry store-key]
+  (cond-> entry
+    (and store-key (not= :default store-key)) (assoc :deferred/store-key store-key)))
+
+(defn store-key-of
+  "The slot a parked record drains into, or nil for the caller's store."
+  [parked]
+  (:deferred/store-key parked))
+
+(defn ->store-entry
+  "Pure: the entry a drain hands to add-entry!, without outbox bookkeeping
+   and without the pending-reembed tag."
+  [parked]
+  (-> parked
+      (dissoc :deferred/store-key)
+      (update :tags reembed-tags false)))
+
+(defn amend!
+  "Merge `fields` into a parked record (e.g. the :kg-outgoing edge ids a
+   finalize created after parking) so the drain writes them too. No-op and nil
+   when `id` is not parked."
+  [id fields]
+  (when-let [parked (lookup id)]
+    (park! (merge parked fields))))
+
+(defn id-of-file-name
+  "Pure inverse of path-for's name encoding: the entry id a queue file holds,
+   or nil when the name is not one this outbox wrote (a temp file, a stray)."
+  [file-name]
+  (when (and (string? file-name) (str/ends-with? file-name ".edn"))
+    (let [hex (subs file-name 0 (- (count file-name) 4))]
+      (when (and (seq hex) (even? (count hex))
+                 (every? #(Character/isLetterOrDigit (char %)) hex))
+        (try
+          (String. (byte-array (map #(unchecked-byte (Integer/parseInt (apply str %) 16))
+                                    (partition 2 hex)))
+                   "UTF-8")
+          (catch NumberFormatException _ nil))))))
+
 (defn pending-ids
-  "Enumerate the outbox. Only entries successfully parsed are returned."
+  "Enumerate the outbox by FILE NAME, never by parsing contents: one corrupt
+   record must not hide every other pending id from the drain. A corrupt
+   record then fails its own reembed and stays parked, visible as an error."
   []
   (let [dir (io/file *queue-dir*)]
     (if (.isDirectory dir)
       (->> (.listFiles dir)
-           (filter #(.endsWith (.getName %) ".edn"))
-           (map #(edn/read-string (slurp %)))
-           (map :id)
+           (keep #(id-of-file-name (.getName ^java.io.File %)))
+           sort
            vec)
       [])))
