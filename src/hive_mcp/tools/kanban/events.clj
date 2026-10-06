@@ -129,9 +129,16 @@
                 :project-id project-id})))))
 
 (defn- result-from-fx
-  "Lift a possibly-nil effect map into a Result."
+  "Lift a possibly-empty effect map into a Result.
+
+   A pure handler answers nil for a missing or non-kanban entry, and the
+   router hands that back as an EMPTY `:effects` map, not nil. Every valid
+   move/edit/retag emits at least `:kanban/facade-update`, so an empty map
+   means there was nothing to update: `:kanban/invalid-task`, never an ok
+   that the boundary would render as a success-shaped row of nulls
+   (card 20260916162147-173c1d52)."
   [fx-map task-id]
-  (if fx-map
+  (if (seq fx-map)
     (r/ok fx-map)
     (r/err :kanban/invalid-task
            {:message (str "Entry not found or not a kanban task: " task-id)
