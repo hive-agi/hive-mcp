@@ -39,7 +39,8 @@
             [hive-mcp.spi.contributions :as contrib]
             [hive-mcp.extensions.soft :as soft]
             [hive-mcp.hot.core :as hot-core]
-            [hive-mcp.hot.reseat :as reseat]))
+            [hive-mcp.hot.reseat :as reseat]
+            [hive-mcp.swarm.lifecycle.boot-reconcile :as boot-reconcile]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -414,28 +415,15 @@
       :local))
 
 (defn start-swarm-sync!
-  "Start swarm sync — bridges channel events to logic database, rehydrates
-   the in-memory registry from the configured ISwarmBootstrap source, and
-   (optionally) bridges the IEventBackbone (NATS) into the in-process event
-   bus so distributed slave events reach the same handlers.
-
-   Args:
-     opts — {:source         :emacs|:datahike|:none
-             :event-backbone :local|:nats
-             :db-path        string
-             :timeout-ms     int}
-            (all optional; defaults resolved from config.edn)
-
-   Order matters:
-     1. Build + inject bootstrap (durable slave projection)
-     2. start-sync! (classifies before registration, then subscribes)
-     3. Start NATS event bridge if requested (NATS → channel.core)"
+  "Start swarm sync: bootstrap, classify and reconcile restored rows before spawns,
+   then optionally bridge NATS events. Reconciliation is idempotent."
   ([] (start-swarm-sync! {}))
   ([opts]
    (result/rescue nil
                   (let [bs (build-swarm-bootstrap opts)]
                     (sync/set-swarm-bootstrap! bs))
                   (sync/start-sync!)
+                  (boot-reconcile/reconcile-rehydrated-slaves!)
                   (let [eb (resolve-event-backbone opts)]
                     (when (= :nats eb)
                       (let [started? (swarm-event-bridge/start-nats-bridge!)]
@@ -443,13 +431,9 @@
                           (log/info "Swarm sync: NATS event bridge started")
                           (log/warn "Swarm sync: NATS event bridge requested but not started"
                                     " (backbone may be disconnected — check :hive/nats init)")))
-                      ;; Rewire the piggyback instruction queue through NATS so
-                      ;; coordinators and lings in separate JVMs share a queue.
                       (let [bb (eb/get-backbone)]
                         (if (eb/connected? bb)
-                          (do (instruction-store/rewire!
-                               piggyback/instruction-queues
-                               bb)
+                          (do (instruction-store/rewire! piggyback/instruction-queues bb)
                               (log/info "Swarm sync: piggyback instruction store bound to NATS"))
                           (log/warn "Swarm sync: piggyback instruction store staying local"
                                     " (NATS backbone not connected)")))))
