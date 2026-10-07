@@ -209,8 +209,15 @@
                                 :total-budget-ms total-budget-ms
                                 :untried (mapv describe untried)
                                 :failures failures})))]
-    (loop [[entry & more] chain failures [] skipped []]
+    (loop [[entry & more] chain failures [] skipped [] forced? false]
       (cond
+        ;; Every provider was skipped by an open circuit. A call never fails
+        ;; without one real attempt, so a single-provider chain still embeds
+        ;; after a transient failure: retry the skipped entries, circuit bypassed.
+        (and (nil? entry) (empty? failures) (seq skipped) (not forced?)
+             (not (dl/expired? dl)))
+        (recur skipped [] [] true)
+
         (and (nil? entry) (not (dl/expired? dl)))
         (let [ms (elapsed)]
           (throw (ex-info (str "All embedding providers in the chain failed after "
@@ -224,8 +231,8 @@
         (throw (exhausted (concat skipped (when entry (cons entry more))) failures))
         :else
         (let [id (identity-of entry)]
-          (if-not (claim-provider! health id (clock))
-            (recur more failures (conj skipped entry))
+          (if-not (or forced? (claim-provider! health id (clock)))
+            (recur more failures (conj skipped entry) forced?)
             (let [was-warm (contains? @warmth id)
                   per (attempt-budget warmth entry budget-ms cold-budget-ms)
                   outcome (try (admitted-attempt warmth entry call dl per)
@@ -248,7 +255,7 @@
                                                 (when-not retry?
                                                   (record-health! health id (clock) cooldown-ms false))
                                                 (recur (if retry? (cons entry more) more)
-                                                       failures skipped)))))))))))
+                                                       failures skipped forced?)))))))))))
 
 (defrecord ResilientEmbedder [chain budget-ms total-budget-ms cold-budget-ms warmth health cooldown-ms clock]
   shared/AdmissionOwner

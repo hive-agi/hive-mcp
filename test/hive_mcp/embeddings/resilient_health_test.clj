@@ -43,6 +43,43 @@
            :final @primary-calls :backup @backup-calls :probe probe
            :health @health})))))
 
+(defn open-circuit-scenario
+  "An open circuit is bypassed only if no chain entry was attempted."
+  [mode]
+  (let [health (atom {[:primary nil] {:until 1000000000}})
+        now (atom 0)
+        primary-calls (atom 0)
+        backup-calls (atom 0)
+        primary {:provider (provider primary-calls (atom false) [1.0])
+                 :provider-key :primary}
+        backup {:provider (provider backup-calls (atom false) [2.0])
+                :provider-key :backup}
+        chain (if (= mode :single) [primary] [primary backup])
+        embedder (res/resilient-embedder chain
+                   {:health health :warmth (atom #{}) :clock #(long @now)
+                    :cooldown-ms 1000 :budget-ms 1000 :cold-budget-ms 1000
+                    :total-budget-ms 10000})]
+    {:value (proto/embed-text embedder "text")
+     :primary @primary-calls
+     :backup @backup-calls
+     :health @health}))
+
+(deftrifecta open-circuit-attempts-at-least-once
+  hive-mcp.embeddings.resilient-health-test/open-circuit-scenario
+  {:golden-path "test/golden/hive-mcp/embeddings/open-circuit-attempts-at-least-once.edn"
+   :cases {:single :single :two :two}
+   :gen (gen/elements [:single :two])
+   :pred (fn [{:keys [value primary backup health]}]
+           (or (and (= [1.0] value) (= 1 primary) (zero? backup)
+                    (empty? health))
+               (and (= [2.0] value) (zero? primary) (= 1 backup)
+                    (= {[:primary nil] {:until 1000000000}} health))))
+   :num-tests 25
+   :mutations [["always-bypass" (fn [_] {:value [1.0] :primary 1 :backup 0
+                                           :health {}})]
+               ["always-skip" (fn [_] {:value [2.0] :primary 0 :backup 1
+                                         :health {[:primary nil] {:until 1000000000}}})]]})
+
 (deftrifecta circuit-skips-and-recovers
   hive-mcp.embeddings.resilient-health-test/circuit-scenario
   {:golden-path "test/golden/hive-mcp/embeddings/circuit-skips-and-recovers.edn"
