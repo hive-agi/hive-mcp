@@ -10,7 +10,8 @@
             [hive-test.trifecta :refer [deftrifecta]]
             [hive-test.generators.memory :as gen-mem]
             [hive-test.generators.core :as gen-core]
-            [hive-mcp.tools.catchup.format :as fmt]))
+            [hive-mcp.tools.catchup.format :as fmt]
+            [clojure.data.json :as json]))
 
 ;; =============================================================================
 ;; Generators
@@ -156,3 +157,35 @@
                          (<= (count (get-in result [:grounding-warnings :stale-entries] [])) 10))))
    :num-tests   200
    :mutations   [["no-trim" identity]]})
+
+(deftrifecta catchup-byte-backstop
+  hive-mcp.tools.catchup.format/enforce-block-budget
+  {:cases {:within {:_block "context" :entries ["ok"]}
+           :at-boundary {:_block "context" :entries [(apply str (repeat 39960 "a"))]}
+           :multibyte {:_block "context" :entries [(apply str (repeat 20000 "é")) "last"]}
+           :oversized-first {:_block "context" :entries [(apply str (repeat 45000 "x"))]}}
+   :gen (gen/fmap (fn [n] {:_block "context" :entries [(apply str (repeat n "é")) "tail"]})
+                  (gen/choose 0 25000))
+   :pred (fn [result]
+           (let [size (alength (.getBytes (json/write-str result)
+                                          java.nio.charset.StandardCharsets/UTF_8))]
+             (and (<= size fmt/block-warn-threshold)
+                  (or (not (:truncation result))
+                      (and (pos? (get-in result [:truncation :dropped-bytes]))
+                           (= "context" (:_block result)))))))
+   :num-tests 100
+   :mutations [["no-backstop" identity]]})
+
+(deftest byte-backstop-boundary-and-entry-integrity-test
+  (let [size #(alength (.getBytes (json/write-str %) java.nio.charset.StandardCharsets/UTF_8))
+        exact {:_block "context" :entries ["é"]}
+        boundary (fmt/enforce-block-budget exact (size exact))
+        overflow (fmt/enforce-block-budget {:_block "context" :entries ["keep" (apply str (repeat 50000 "é"))]})
+        first-too-big (fmt/enforce-block-budget {:_block "context" :entries [(apply str (repeat 45000 "x"))]})]
+    (is (= exact boundary) "at the exact byte boundary nothing is dropped")
+    (is (<= (size overflow) fmt/block-warn-threshold))
+    (is (= ["keep"] (:entries overflow)) "whole trailing entry removed")
+    (is (pos? (get-in overflow [:truncation :dropped-bytes])))
+    (is (<= (size first-too-big) fmt/block-warn-threshold))
+    (is (empty? (:entries first-too-big)) "oversized first entry is dropped whole")
+    (is (pos? (get-in first-too-big [:truncation :dropped-bytes])))))
