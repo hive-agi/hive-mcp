@@ -156,9 +156,9 @@
                                    (cond
                                      (map? v) (some (fn [k] (visit (get v k) (conj path k)))
                                                     (reverse (vec (keys v))))
-                                     (vector? v) (or (some (fn [i] (visit (nth v i) (conj path i)))
-                                                           (reverse (range (count v))))
-                                                     (when (seq v) path))))]
+                                     ;; The vector element is the entry. Never
+                                     ;; descend into an entry's nested vectors.
+                                     (vector? v) (when (seq v) path)))]
                            (visit value [])))]
      (if (<= original ceiling)
        data
