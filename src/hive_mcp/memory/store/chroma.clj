@@ -65,6 +65,16 @@
       (vec (sort-by field cmp entries)))
     entries))
 
+(defn project-fields
+  "ENTRIES trimmed to OUTPUT-FIELDS (entry-key names as strings or keywords).
+   :id always survives, so a projected row stays addressable. ENTRIES are
+   returned unchanged when OUTPUT-FIELDS is empty."
+  [entries output-fields]
+  (if (seq output-fields)
+    (let [ks (conj (set (map keyword output-fields)) :id)]
+      (mapv #(select-keys % ks) entries))
+    entries))
+
 (defn- build-health-map
   "Build health-check response from probe result and latency.
    probe-result is a Result (ok/err from probe-chroma)."
@@ -131,7 +141,7 @@
                                   (chroma/configure! (select-keys config [:host :port :collection-name]))
                                   (when-let [_ (chroma/embedding-configured?)]
                                     (chroma/chroma-available?))
-                                  (swap! config-atom merge config)
+                                  (swap! config-atom merge config {:disconnected? false})
                                   {:backend  "chroma"
                                    :metadata (select-keys @config-atom [:host :port :collection-name])}))]
       (if-let [data (:ok r)]
@@ -143,13 +153,16 @@
 
   (disconnect! [_this]
     (try
+      (swap! config-atom assoc :disconnected? true)
       (chroma/reset-collection-cache!)
       {:success? true :errors []}
       (catch Exception e
         {:success? false :errors [(.getMessage e)]})))
 
+  ;; The port promises a boolean, false after disconnect! until connect!.
   (connected? [_this]
-    (chroma/embedding-configured?))
+    (and (not (:disconnected? @config-atom))
+         (boolean (chroma/embedding-configured?))))
 
   (health-check [_this]
     (let [start-ms (System/currentTimeMillis)
@@ -175,7 +188,7 @@
   (query-entries [_this opts]
     (let [{:keys [type project-id project-ids tags exclude-tags
                   limit include-expired? grounded-from order-by
-                  output-fields]  ;; accepted for interface compat; chroma ignores projection
+                  output-fields]
            :or {limit 100 include-expired? false}} opts
           entries (if grounded-from
                     (ccrud/query-grounded-from grounded-from)
@@ -186,7 +199,7 @@
                                          :exclude-tags exclude-tags
                                          :limit limit
                                          :include-expired? include-expired?))]
-      (apply-order-by entries order-by)))
+      (project-fields (apply-order-by entries order-by) output-fields)))
 
   ;; --- Semantic Search ---
 
@@ -199,7 +212,7 @@
                               :exclude-tags exclude-tags)))
 
   (supports-semantic-search? [_this]
-    (chroma/embedding-configured?))
+    (boolean (chroma/embedding-configured?)))
 
   ;; --- Expiration Management ---
 
@@ -225,7 +238,9 @@
        :entry-count      (safe-entry-count)
        :supports-search? (:configured? status)}))
 
+  ;; The port promises an EMPTY store afterwards, not only a cold cache.
   (reset-store! [_this]
+    (ccrud/delete-all-entries!)
     (chroma/reset-collection-cache!)
     true)
 

@@ -1,0 +1,3 @@
+{:id-survives [{:content "c", :id "a"}],
+ :no-fields [{:id "a", :content "c", :type "note"}],
+ :type-only [{:type "note", :id "a"}]}
