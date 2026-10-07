@@ -32,16 +32,19 @@
 ;;   2. ctx/current-directory - from request context (CTX migration)
 ;;   3. System/getProperty "user.dir" - MCP server's working directory
 
-(defn- resolve-directory
+(defn resolve-directory
   "Resolve the directory to use for git operations.
    Uses provided directory, request context directory, or falls back to
-   MCP server's working directory.
+   MCP server's working directory. A blank candidate counts as absent: the
+   closed :magit/* ops refuse a blank :directory, so a blank one must fall
+   through the chain instead of failing the call.
 
    CTX Migration: Now uses hive-mcp.context.request for directory resolution."
   [directory]
-  (or directory
-      (ctx/current-directory)
-      (System/getProperty "user.dir")))
+  (some #(when-not (str/blank? %) %)
+        [(some-> directory str)
+         (some-> (ctx/current-directory) str)
+         (System/getProperty "user.dir")]))
 
 ;;; =============================================================================
 ;;; Result DSL Helpers (boundary pattern — same as tools/cider.clj)

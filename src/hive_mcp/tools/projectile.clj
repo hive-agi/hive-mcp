@@ -31,13 +31,15 @@
 
    Honors `directory` param (with ctx fallback): the :project/info op binds
    Emacs `default-directory` so projectile resolves the requested project
-   rather than the JVM cwd. With neither, the key is omitted (the op's
-   :directory is optional but must be non-blank when present)."
+   rather than the JVM cwd. A blank candidate counts as absent; with neither,
+   the key is omitted (the op's :directory is optional but must be non-blank
+   when present)."
   [{:keys [directory]}]
-  (let [dir (or directory (ctx/current-directory))]
+  (let [dir (some #(when-not (str/blank? %) %)
+                  [(some-> directory str) (some-> (ctx/current-directory) str)])]
     (log/info "projectile-info" {:directory dir})
     (dispatch-projectile (cond-> {:op :project/info}
-                           dir (assoc :directory (str dir))))))
+                           dir (assoc :directory dir)))))
 
 (defn handle-projectile-files
   "List files in current project, optionally filtered by pattern.
