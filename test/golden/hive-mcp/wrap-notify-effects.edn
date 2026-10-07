@@ -1,0 +1,2 @@
+{:two {:wrapped 2 :message "Session wrapped: 0 decisions, 0 conventions [wrote 2 · merged 0 · skipped 0]"}
+ :empty {:wrapped 0 :message "Session wrapped: 0 decisions, 0 conventions [wrote 0 · merged 0 · skipped 0]"}}

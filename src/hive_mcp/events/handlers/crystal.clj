@@ -266,7 +266,8 @@
         ;; Reconcile the HarvestSummary producer shape into the consumer
         ;; vocabulary the formatter reads, so the piggyback reports the real
         ;; session delta instead of a structural 0 decisions, 0 conventions.
-        projected (project-wrap-stats safe-stats)
+        projected (assoc (project-wrap-stats safe-stats)
+                         :wrapped (count (distinct (remove nil? created-ids))))
         message (format-bucket-message projected)]
     {:log {:level :info
            :message (str "Wrap notify from " agent-id " (project: " project-id "): " note-count " entries")}

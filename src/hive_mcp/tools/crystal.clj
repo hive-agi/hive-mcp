@@ -149,16 +149,29 @@
       (result/err :crystal/crystallize-failed
                   {:message (.getMessage e)}))))
 
+(defn wrap-notify-data
+  "Build the notification from harvested memory IDs and successfully stored
+   summaries. A multi-project synthesis writes multiple summaries; only IDs
+   returned by successful stores count as newly written entries."
+  [agent-id harvested cr-result project-id stats]
+  (let [created-ids (->> (concat (map :id (:memory-ids-created harvested))
+                                 (map :summary-id (or (:sub-summaries cr-result)
+                                                      [cr-result])))
+                         (remove nil?)
+                         distinct
+                         vec)]
+    {:agent-id agent-id
+     :session-id (:session cr-result)
+     :project-id project-id
+     :created-ids created-ids
+     :stats (assoc stats :wrapped (count created-ids))}))
+
 (defn- emit-wrap-notify!
   "Best-effort event dispatch for wrap notification."
-  [agent-id cr-result project-id stats]
+  [agent-id harvested cr-result project-id stats]
   (try
     (ev/dispatch [:crystal/wrap-notify
-                  {:agent-id agent-id
-                   :session-id (:session cr-result)
-                   :project-id project-id
-                   :created-ids (some-> (:summary-id cr-result) vector)
-                   :stats stats}])
+                  (wrap-notify-data agent-id harvested cr-result project-id stats)])
     (log/info "wrap-crystallize: emitted wrap_notify for" agent-id "project:" project-id
               "summary-id:" (:summary-id cr-result))
     (catch Exception e
@@ -225,7 +238,7 @@
                               "capped?" (:capped? kg-result)))
                   (catch Throwable t
                     (log/warn "wrap-crystallize: KG edges failed" (ex-message t))))))
-            (emit-wrap-notify! effective-agent cr-result project-id safe-stats)
+            (emit-wrap-notify! effective-agent harvested cr-result project-id safe-stats)
             (crystal/reset-session-start! effective-agent)
             (log/info "wrap-crystallize: total" (- (System/currentTimeMillis) t-start) "ms")
             (result/ok (assoc cr-result :project-id project-id))))))))
