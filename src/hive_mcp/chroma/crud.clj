@@ -292,13 +292,16 @@
 
 (defn delete-all-entries!
   "Remove every entry from every collection a read could visit. Returns the
-   number of entries removed."
+   number of entries removed. With no embedding provider configured no entry
+   can have been written, so there is nothing to remove and this answers 0
+   rather than throwing."
   []
-  (emb/require-embedding!)
-  (reduce (fn [n coll]
-            (let [ids (mapv :id (gate/deref-read (chroma/get coll :include #{:metadatas})))]
-              (when (seq ids)
-                (gate/deref-write (chroma/delete coll :ids ids)))
-              (+ n (count ids))))
-          0
-          (read-collections nil)))
+  (if-not (emb/embedding-configured?)
+    0
+    (reduce (fn [n coll]
+              (let [ids (mapv :id (gate/deref-read (chroma/get coll :include #{:metadatas})))]
+                (when (seq ids)
+                  (gate/deref-write (chroma/delete coll :ids ids)))
+                (+ n (count ids))))
+            0
+            (read-collections nil))))
