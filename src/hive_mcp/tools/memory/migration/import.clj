@@ -4,10 +4,10 @@
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.tools.core :refer [mcp-json]]
             [hive-mcp.protocols.memory :as mem-proto]
-            [hive-mcp.emacs-ext.client :as ec]
             [clojure.data.json :as json]
             [taoensso.timbre :as log]
-            [hive-mcp.vectordb.resilience :refer [with-resilience]]))
+            [hive-mcp.vectordb.resilience :refer [with-resilience]]
+            [hive-spi.editor.services :as svc]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -50,17 +50,13 @@
         :imported))))
 
 (defn handle-import-json
-  "Import memory entries from legacy JSON storage to Chroma."
+  "Import memory entries from legacy Emacs JSON storage."
   [{:keys [project-id dry-run]}]
   (log/info "mcp-memory-import-json:" project-id "dry-run:" dry-run)
   (with-store
     (let [pid (or project-id (scope/get-current-project-id))
-          elisp (format "(json-encode (list :notes (hive-mcp-memory-query 'note nil %s 1000 nil t)
-                                            :snippets (hive-mcp-memory-query 'snippet nil %s 1000 nil t)
-                                            :conventions (hive-mcp-memory-query 'convention nil %s 1000 nil t)
-                                            :decisions (hive-mcp-memory-query 'decision nil %s 1000 nil t)))"
-                        (pr-str pid) (pr-str pid) (pr-str pid) (pr-str pid))
-          {:keys [success result error]} (ec/eval-elisp elisp)]
+          {:keys [success result error]} (svc/invoke :vessel :dispatch
+                                               {:op :memory/legacy-export :project-id pid} nil)]
       (if-not success
         (mcp-json {:error (str "Failed to read JSON: " error)})
         (let [data (json/read-str result :key-fn keyword)

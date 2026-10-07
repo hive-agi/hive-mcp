@@ -14,11 +14,11 @@
       the parameter is the regression this suite exists to catch, so the test
       enumerates the tool's own command map rather than a hand-kept list."
   (:require [clojure.test :refer [deftest is testing]]
-            [hive-mcp.test.stub.emacs-ext :as se]
             [hive-mcp.tools.consolidated.git :as git]
             [hive-mcp.tools.consolidated.magit :as magit]
             [hive-mcp.tools.core :as core]
-            [hive-mcp.tools.magit :as tools]))
+            [hive-mcp.tools.magit :as tools]
+            [hive-mcp.test.stub.swarm-host :as sh]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -28,13 +28,22 @@
   {:directory "/tmp/repo" :message "m" :files "src/a.clj" :remote "origin"})
 
 (defn- timed-calls
-  "The [elisp timeout-ms] vectors that reached the TIMED seam."
-  [stub]
-  (se/calls-of stub :emacs/eval-elisp-with-timeout))
+  "The [op timeout-ms] pairs dispatched WITH a caller budget."
+  [host]
+  (filterv (comp some? second) (sh/calls host)))
 
 (defn- untimed-calls
-  [stub]
-  (se/calls-of stub :emacs/eval-elisp))
+  "The [op timeout-ms] pairs dispatched with no budget (nil), so the vessel's
+   own default applies."
+  [host]
+  (filterv (comp nil? second) (sh/calls host)))
+
+(defn- answer-all
+  "Vessel stub answer: every op succeeds; stage-verify answers the ok verdict."
+  [op _timeout-ms]
+  (if (= :magit/stage-verify (:op op))
+    {:success true :result "{\"status\":\"ok\"}" :timed-out false}
+    {:success true :result "ok" :timed-out false}))
 
 ;;; ===========================================================================
 ;;; The parameter reader
@@ -63,22 +72,22 @@
 ;;; ===========================================================================
 
 (deftest without-a-timeout-nothing-changes
-  (se/with-stub-emacs [stub {}]
+  (sh/with-swarm-host [stub answer-all]
     (tools/handle-magit-status {:directory "/tmp/repo"})
     (is (= 1 (count (untimed-calls stub)))
-        "the untimed seam still carries a call that asked for no budget")
+        "a call that asked for no budget still dispatches with a nil budget")
     (is (empty? (timed-calls stub)))))
 
 (deftest a-passed-timeout-reaches-the-client-verbatim
-  (se/with-stub-emacs [stub {}]
+  (sh/with-swarm-host [stub answer-all]
     (tools/handle-magit-push {:directory "/tmp/repo" :timeout_ms 60000})
     (is (empty? (untimed-calls stub)))
-    (let [[[_elisp timeout]] (timed-calls stub)]
+    (let [[[_op timeout]] (timed-calls stub)]
       (is (= 60000 timeout)
-          "unclamped here on purpose — hive-emacs.client applies the ceiling"))))
+          "unclamped here on purpose; the vessel applies the ceiling"))))
 
 (deftest a-string-timeout-arrives-as-a-number
-  (se/with-stub-emacs [stub {}]
+  (sh/with-swarm-host [stub answer-all]
     (tools/handle-magit-push {:directory "/tmp/repo" :timeout_ms "45000"})
     (is (= 45000 (second (first (timed-calls stub)))))))
 
@@ -102,13 +111,13 @@
     (doseq [[command extra] command-params]
       (let [handler (get git/canonical-handlers command)]
         (is (some? handler) (str "no handler for " command))
-        (se/with-stub-emacs [stub {}]
+        (sh/with-swarm-host [stub answer-all]
           (handler (merge base-params extra {:timeout_ms 12345}))
           (let [timed (timed-calls stub)]
             (is (seq timed)
-                (str command " did not route through the timed seam"))
+                (str command " did not dispatch with the caller's budget"))
             (is (every? #(= 12345 (second %)) timed)
-                (str command " reached Emacs with the wrong budget: "
+                (str command " reached the vessel with the wrong budget: "
                      (pr-str (mapv second timed))))
             (is (empty? (untimed-calls stub))
                 (str command " still made an untimed call"))))))))
