@@ -1,0 +1,13 @@
+{:failed
+ {:in [{:kg_implements ["a"], :kg_depends_on ["b" "c"]} true],
+  :out
+  {:edge-ids [],
+   :edge-errors
+   [{:relation "implements", :to "a", :error "kg transact failed"}
+    {:relation "depends-on", :to "b", :error "kg transact failed"}
+    {:relation "depends-on", :to "c", :error "kg transact failed"}]}},
+ :no-edge {:in [{} true], :out {:edge-ids [], :edge-errors []}},
+ :ok
+ {:in [{:kg_depends_on ["a"], :kg_refines ["b"]} false],
+  :out
+  {:edge-ids ["edge-depends-on-a" "edge-refines-b"], :edge-errors []}}}
