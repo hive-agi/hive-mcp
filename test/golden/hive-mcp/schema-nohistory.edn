@@ -1,0 +1,7 @@
+{:audit-source false,
+ :certainty true,
+ :content-hash true,
+ :grounded-at true,
+ :identity false,
+ :last-observation true,
+ :source-hash true}
