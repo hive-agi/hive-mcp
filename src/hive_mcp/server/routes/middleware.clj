@@ -25,7 +25,8 @@
             [hive-mcp.channel.blocks :as blocks]
             [hive-spi.guard.ports :as gp]
             [hive-mcp.agent.grant :as grant]
-            [hive-mcp.agent.identity :as agent-identity])
+            [hive-mcp.agent.identity :as agent-identity]
+            [hive-mcp.server.routes.async-ack :as async-ack])
 (:import [java.util.concurrent RejectedExecutionException]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -215,9 +216,9 @@
    that into an `:interrupted` result the caller is eventually handed,
    instead of silence against an ack it already holds.
 
-   When the journal cannot be written the ack says `:durable false` rather
-   than lying by omission. The happy path is byte-identical to before, so no
-   client has to learn a new shape to keep working.
+   The ack shape is `async-ack/ack`: it names where the result arrives
+   (`:result-via`) and says `:durable false` when the journal cannot be
+   written.
 
    A SATURATED POOL IS ANSWERED, NOT ABSORBED. The pool refuses rather than
    handing the work back to the submitting thread, and the submitting thread
@@ -272,9 +273,7 @@
                                                           :error (str (.getName (class t)) ": " (.getMessage t))})
                               (throw t))))})
           [{:type "text"
-            :text (pr-str (cond-> {:queued true :task-id task-id :tool tool-name}
-                            timeout-ms     (assoc :timeout-ms timeout-ms)
-                            (not durable?) (assoc :durable false)))}]
+            :text (pr-str (async-ack/ack task-id tool-name timeout-ms durable?))}]
           (catch RejectedExecutionException _
             (log/warn "async call refused: pool saturated"
                       {:tool tool-name :task-id task-id :caller-id caller-id})

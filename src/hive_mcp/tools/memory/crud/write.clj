@@ -25,7 +25,8 @@
             [hive-weave.core :as weave]
             [hive-mcp.memory.write-events :as write-events]
             [hive-mcp.tools.memory.crud.deferred :as deferred]
-            [hive-mcp.embeddings.shared-gate :as embed-gate]))
+            [hive-mcp.embeddings.shared-gate :as embed-gate]
+            [hive-mcp.tools.memory.crud.edge-outcome :as edge-outcome]))
 
 (def ^:const ^:private memory-write-timeout-ms
   "Timeout budget for a single memory write (Chroma add + KG tx + fetch).
@@ -302,20 +303,11 @@
 
    `:store-key` (passed via `entry-ctx`) routes the read-after-write +
    `:kg-outgoing` link write to the same slot the entry was indexed in.
-   Defaults to `:default` (legacy / milvus). Kanban writes thread
-   `:kanban` so the back-link update lands in the same qdrant
-   collection that `index-entry!` wrote to.
+   Defaults to `:default`. Kanban writes thread `:kanban`.
 
-   Note: `create-kg-edges!` does back-edge bookkeeping on entries that
-   may live in *other* slots (e.g. an axiom in :default that a kanban
-   entry depends-on). That cross-slot scan is a known soft-edge for
-   the cutover window — see plan section D.5. KG edges themselves
-   live in Datahike, unaffected by the IMemoryStore slot.
-
-   The KG outgoing-edge update is wrapped in `with-resilience` so a
-   transient Milvus transport drop during the edge-link write kicks
-   the heal loop instead of poisoning KG edges. All types — plans
-   included — flow through the single IMemoryStore.
+   The entry is already stored when this runs, so a failed edge write never
+   fails the add: the response carries the entry id plus `:kg_edge_errors`
+   [{:relation :to :error}], and the :added notify still fires.
 
    A deferred entry (embed failed, parked in the outbox) is answered from
    its outbox record; its :kg-outgoing link is amended into that record so
@@ -325,7 +317,10 @@
     :or {store-key :default}}]
   (let [store (mem-proto/get-store store-key)
         pending (deferred/lookup entry-id)
-        edge-ids (create-kg-edges! entry-id kg-params project-id agent-id)
+        {:keys [edge-ids edge-errors]}
+        (edge-outcome/attempt-edges
+         #(create-kg-edges! entry-id kg-params project-id agent-id)
+         (edge-outcome/edge-requests kg-params))
         pending (if (and pending (seq edge-ids))
                   (do (deferred/amend! entry-id {:kg-outgoing edge-ids})
                       (deferred/lookup entry-id))
@@ -338,6 +333,7 @@
       (log/error "Failed to retrieve entry after indexing:" entry-id))
     (log/info "Created memory entry:" entry-id
               (when (seq edge-ids) (str " with " (count edge-ids) " KG edges"))
+              (when (seq edge-errors) (str " edge-errors:" (count edge-errors)))
               (when (seq knowledge-gaps) (str " gaps:" (count knowledge-gaps))))
     (write-events/notify! :added {:id entry-id :memory-type type
                                   :tags tags-with-scope :project-id project-id})
@@ -348,12 +344,15 @@
         (mcp-json (cond-> (fmt/entry->json-alist created)
                     pending (assoc :embedding_deferred true :reembed_id entry-id)
                     (seq edge-ids) (assoc :kg_edges_created edge-ids)
+                    (seq edge-errors) (assoc :kg_edge_errors edge-errors)
                     requested
                     (assoc :queued_for_review
                            {:requested_type requested
                             :parked_as      type
                             :reason         (:reason (type-registry/gate-of requested))}))))
-      (mcp-error (str "Entry indexed as " entry-id " but retrieval failed. Check memory store connectivity.")))))
+      (mcp-error (str "Entry indexed as " entry-id " but retrieval failed. Check memory store connectivity."
+                      (when (seq edge-errors)
+                        (str " KG edges also failed: " (pr-str edge-errors))))))))
 
 (defn- do-add!
   "Inner core of handle-add. Runs the memory-store/KG IO path through
