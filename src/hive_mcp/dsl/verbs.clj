@@ -342,12 +342,14 @@
 ;; =============================================================================
 
 (defn- positional-ref?
-  "True only for a DSL positional op label, not arbitrary dollar-prefixed text."
-  [v]
+  "True only for a DSL positional op label that names an op of THIS paragraph
+   ($0..$n-1), not arbitrary dollar-prefixed text such as \"$100\"."
+  [n v]
   (and (string? v)
        (str/starts-with? v "$")
        (> (count v) 1)
-       (every? #(<= (int \0) (int %) (int \9)) (subs v 1))))
+       (every? #(<= (int \0) (int %) (int \9)) (subs v 1))
+       (boolean (some-> (parse-long (subs v 1)) (< n)))))
 
 (defn- canonicalize-positional-refs
   "Turn positional references in addressable DSL params into batch refs.
@@ -355,7 +357,7 @@
   [sentences]
   (letfn [(convert [v]
             (cond
-              (positional-ref? v) (str "$ref:" v ".data.id")
+              (positional-ref? (count sentences) v) (str "$ref:" v ".data.id")
               (map? v) (into (empty v) (map (fn [[k x]] [k (convert x)])) v)
               (vector? v) (mapv convert v)
               (sequential? v) (doall (map convert v))
