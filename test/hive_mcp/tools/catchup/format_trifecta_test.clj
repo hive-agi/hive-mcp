@@ -158,23 +158,31 @@
    :num-tests   200
    :mutations   [["no-trim" identity]]})
 
+;; The 2-arity takes the ceiling, so the trifecta runs at a 200-byte ceiling:
+;; same algorithm as the production 40,000, with a golden small enough to read.
+(def ^:private backstop-ceiling 200)
+
 (deftrifecta catchup-byte-backstop
   hive-mcp.tools.catchup.format/enforce-block-budget
-  {:cases {:within {:_block "context" :entries ["ok"]}
-           :at-boundary {:_block "context" :entries [(apply str (repeat 39960 "a"))]}
-           :multibyte {:_block "context" :entries [(apply str (repeat 20000 "é")) "last"]}
-           :oversized-first {:_block "context" :entries [(apply str (repeat 45000 "x"))]}}
-   :gen (gen/fmap (fn [n] {:_block "context" :entries [(apply str (repeat n "é")) "tail"]})
-                  (gen/choose 0 25000))
+  {:golden-path "test/golden/catchup/byte-backstop.edn"
+   :apply? true
+   :cases {:within [{:_block "context" :entries ["ok"]} backstop-ceiling]
+           :multibyte [{:_block "context" :entries [(apply str (repeat 60 "é")) "last"]}
+                       backstop-ceiling]
+           :oversized-first [{:_block "context" :entries [(apply str (repeat 300 "x"))]}
+                             backstop-ceiling]}
+   :gen (gen/fmap (fn [n] [{:_block "context" :entries [(apply str (repeat n "é")) "tail"]}
+                           backstop-ceiling])
+                  (gen/choose 0 200))
    :pred (fn [result]
            (let [size (alength (.getBytes (json/write-str result)
                                           java.nio.charset.StandardCharsets/UTF_8))]
-             (and (<= size fmt/block-warn-threshold)
+             (and (<= size backstop-ceiling)
                   (or (not (:truncation result))
                       (and (pos? (get-in result [:truncation :dropped-bytes]))
                            (= "context" (:_block result)))))))
    :num-tests 100
-   :mutations [["no-backstop" identity]]})
+   :mutations [["no-backstop" (fn [data _ceiling] data)]]})
 
 (deftest byte-backstop-boundary-and-entry-integrity-test
   (let [size #(alength (.getBytes (json/write-str %) java.nio.charset.StandardCharsets/UTF_8))

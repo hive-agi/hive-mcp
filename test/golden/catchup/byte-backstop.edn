@@ -1,0 +1,11 @@
+{:multibyte
+ {:_block "context",
+  :entries [],
+  :truncation
+  {:dropped-bytes 369, :reason "catchup block byte ceiling"}},
+ :oversized-first
+ {:_block "context",
+  :entries [],
+  :truncation
+  {:dropped-bytes 302, :reason "catchup block byte ceiling"}},
+ :within {:_block "context", :entries ["ok"]}}
