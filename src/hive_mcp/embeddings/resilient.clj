@@ -55,6 +55,16 @@
   warm-providers
   (atom #{}))
 
+(def default-cooldown-ms
+  "How long a failed provider is skipped before one half-open probe."
+  30000)
+
+(defonce ^{:doc "Process-wide per-[provider-key model] circuit state. Open entries
+   carry :until (monotonic nanoseconds); :probing reserves the sole half-open
+   attempt. Shared because callers construct new embedders per write."}
+  provider-health
+  (atom {}))
+
 (defn- model-of
   "The model a chain entry's provider embeds with, when it says."
   [{:keys [provider]}]
@@ -64,6 +74,28 @@
   "Warmth key for a chain entry: provider-key plus model."
   [entry]
   [(describe entry) (model-of entry)])
+
+(defn- claim-provider!
+  "Admit a closed provider, or reserve the sole half-open probe after cooldown.
+   CAS makes the reservation atomic across independently constructed embedders."
+  [health id now]
+  (loop []
+    (let [old @health
+          {:keys [until probing]} (get old id)]
+      (cond
+        probing false
+        (nil? until) true
+        (< now until) false
+        (compare-and-set! health old (assoc old id {:probing true})) true
+        :else (recur)))))
+
+(defn- record-health!
+  "A completed provider attempt closes on success and opens on failure.
+   Gate denial is not an attempt and never reaches this function."
+  [health id now cooldown-ms success?]
+  (if success?
+    (swap! health dissoc id)
+    (swap! health assoc id {:until (+ now (* 1000000 (long cooldown-ms)))})))
 
 (defn- attempt-budget
   "Per-attempt budget for `entry`: `budget-ms` when known warm, else the
@@ -158,7 +190,7 @@
    (:exhausted-by :providers | :deadline) when none succeeds. The message names
    every provider tried, its model and the elapsed time, and :untried names
    every provider never admitted or never reached."
-  [{:keys [chain budget-ms cold-budget-ms total-budget-ms warmth]} call]
+  [{:keys [chain budget-ms cold-budget-ms total-budget-ms warmth health cooldown-ms clock]} call]
   (let [t0 (System/nanoTime)
         elapsed #(long (/ (- (System/nanoTime) t0) 1e6))
         dl (dl/deadline total-budget-ms)
@@ -177,7 +209,7 @@
                                 :total-budget-ms total-budget-ms
                                 :untried (mapv describe untried)
                                 :failures failures})))]
-    (loop [[entry & more] chain failures []]
+    (loop [[entry & more] chain failures [] skipped []]
       (cond
         (and (nil? entry) (not (dl/expired? dl)))
         (let [ms (elapsed)]
@@ -186,27 +218,39 @@
                           {:error :embedder/chain-exhausted
                            :exhausted-by :providers
                            :elapsed-ms ms
-                           :failures failures})))
+                           :failures failures
+                           :untried skipped})))
         (dl/expired? dl)
-        (throw (exhausted (when entry (cons entry more)) failures))
+        (throw (exhausted (concat skipped (when entry (cons entry more))) failures))
         :else
-        (let [was-warm (contains? @warmth (identity-of entry))
-              per (attempt-budget warmth entry budget-ms cold-budget-ms)
-              outcome (admitted-attempt warmth entry call dl per)]
-          (if (= ::not-admitted outcome)
-            (throw (exhausted (cons entry more) failures))
-            (adt/adt-case AttemptOutcome outcome
-                          :attempt/ok (:value outcome)
-                          :attempt/failed (let [failures (conj failures
-                                                               (select-keys outcome
-                                                                            [:provider :model :elapsed-ms
-                                                                             :budget-ms :error :message]))
-                                                retry? (and was-warm
-                                                            (= :weave/timeout (:error outcome)))]
-                                            (recur (if retry? (cons entry more) more)
-                                                   failures)))))))))
+        (let [id (identity-of entry)]
+          (if-not (claim-provider! health id (clock))
+            (recur more failures (conj skipped entry))
+            (let [was-warm (contains? @warmth id)
+                  per (attempt-budget warmth entry budget-ms cold-budget-ms)
+                  outcome (try (admitted-attempt warmth entry call dl per)
+                               (catch Throwable t
+                                 (record-health! health id (clock) cooldown-ms false)
+                                 (throw t)))]
+              (if (= ::not-admitted outcome)
+                (do (swap! health #(if (get-in % [id :probing]) (dissoc % id) %))
+                    (throw (exhausted (concat skipped (cons entry more)) failures)))
+                (adt/adt-case AttemptOutcome outcome
+                              :attempt/ok (do (record-health! health id (clock) cooldown-ms true)
+                                              (:value outcome))
+                              :attempt/failed (let [failures (conj failures
+                                                                   (select-keys outcome
+                                                                                [:provider :model :elapsed-ms
+                                                                                 :budget-ms :error :message]))
+                                                    retry? (and was-warm
+                                                                (= :weave/timeout (:error outcome))
+                                                                (not (get-in @health [id :probing])))]
+                                                (when-not retry?
+                                                  (record-health! health id (clock) cooldown-ms false))
+                                                (recur (if retry? (cons entry more) more)
+                                                       failures skipped)))))))))))
 
-(defrecord ResilientEmbedder [chain budget-ms total-budget-ms cold-budget-ms warmth]
+(defrecord ResilientEmbedder [chain budget-ms total-budget-ms cold-budget-ms warmth health cooldown-ms clock]
   shared/AdmissionOwner
   proto/EmbeddingProvider
   (embed-text [this text]
@@ -226,18 +270,24 @@
    (attempt budget for a provider not known warm; defaults to
    `default-cold-budget-ms`, or `budget-ms` in the positional arities) and
    `:warmth` (an atom of warm provider identities; defaults to the process-wide
-   `warm-providers`). Throws on an empty chain."
+   `warm-providers`). Throws on an empty chain. `:health` stores per-identity
+   circuit state, `:clock` returns monotonic nanoseconds, and `:cooldown-ms`
+   controls when a failed provider is eligible for a single half-open probe."
   ([chain] (resilient-embedder chain {}))
   ([chain budget-ms-or-opts]
    (if (map? budget-ms-or-opts)
-     (let [{:keys [budget-ms total-budget-ms cold-budget-ms warmth]
+     (let [{:keys [budget-ms total-budget-ms cold-budget-ms warmth health cooldown-ms clock]
             :or   {budget-ms       default-budget-ms
                    total-budget-ms default-total-budget-ms
                    cold-budget-ms  default-cold-budget-ms
-                   warmth          warm-providers}} budget-ms-or-opts]
+                   warmth          warm-providers
+                   health          provider-health
+                   cooldown-ms     default-cooldown-ms
+                   clock           #(System/nanoTime)}} budget-ms-or-opts]
        (when (empty? chain)
          (throw (ex-info "resilient-embedder: empty provider chain" {})))
-       (->ResilientEmbedder (vec chain) budget-ms total-budget-ms cold-budget-ms warmth))
+       (->ResilientEmbedder (vec chain) budget-ms total-budget-ms cold-budget-ms
+                            warmth health cooldown-ms clock))
      (resilient-embedder chain budget-ms-or-opts default-total-budget-ms)))
   ([chain budget-ms total-budget-ms]
    (resilient-embedder chain {:budget-ms       budget-ms
