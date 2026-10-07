@@ -12,7 +12,8 @@
             [hive-mcp.chroma.search :as csearch]
             [hive-mcp.chroma.maintenance :as cmaint]
             [hive-mcp.dns.result :as result]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [clojure.string :as str]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -65,13 +66,23 @@
       (vec (sort-by field cmp entries)))
     entries))
 
+(defn field-key
+  "Entry key for an :output-fields name. Shared callers (catchup bundle and
+   hierarchy) pass Milvus column names such as \"project_id\"; Chroma entries
+   carry kebab keys such as :project-id, so underscores map to hyphens.
+   Total: a value that is not a string, keyword or symbol is read through str."
+  [field]
+  (let [s (if (instance? clojure.lang.Named field) (name field) (str field))]
+    (keyword (str/replace s "_" "-"))))
+
 (defn project-fields
-  "ENTRIES trimmed to OUTPUT-FIELDS (entry-key names as strings or keywords).
-   :id always survives, so a projected row stays addressable. ENTRIES are
-   returned unchanged when OUTPUT-FIELDS is empty."
+  "ENTRIES trimmed to OUTPUT-FIELDS (entry-key names as strings or keywords,
+   kebab-case or Milvus snake_case column names, see field-key). :id always
+   survives, so a projected row stays addressable. ENTRIES are returned
+   unchanged when OUTPUT-FIELDS is empty."
   [entries output-fields]
   (if (seq output-fields)
-    (let [ks (conj (set (map keyword output-fields)) :id)]
+    (let [ks (conj (set (map field-key output-fields)) :id)]
       (mapv #(select-keys % ks) entries))
     entries))
 
@@ -293,6 +304,15 @@
                     cnt))
                 0
                 kg-outgoing)))))
+
+;; IMemoryStoreBatch: now that query-entries honours :output-fields, the
+;; catchup bundle's metadata scan returns content-less rows and relies on
+;; get-entries (catchup.hydration/batch-fetch-content) to restore :content.
+;; Without this extension a Chroma-backed catchup renders empty entries.
+(extend-protocol proto/IMemoryStoreBatch
+  ChromaMemoryStore
+  (get-entries [_this ids]
+    (into [] (keep ccrud/get-entry-by-id) (distinct ids))))
 
 ;; =========================================================================
 ;; IMemoryStoreLiveness — cross-store resilience seam
