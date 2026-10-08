@@ -25,7 +25,7 @@
                 (<= (count selected) warmup/max-models)
                 (= (count selected) (count (set (map (juxt :host :model) selected))))))
    :num-tests 80
-   :mutations [["drops-all-routes" (fn [_] [])]
+   :mutations [["drops-all-routes" (fn [_] [{:host "mutant" :model "x" :keys #{}}])]
                ["includes-remotes" (fn [_] [{:host "remote" :model "r" :keys #{}}])]]})
 
 (deftest warmup-provider-port-test

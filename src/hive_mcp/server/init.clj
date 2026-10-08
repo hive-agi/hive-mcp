@@ -63,15 +63,23 @@
 
    When embeddings.warmup.enabled is true, the memory-domain warmup starts a
    bounded daemon worker for each distinct routed local model. Disabled by
-   default: no network request or thread is made unless explicitly enabled."
+   default: no network request or thread is made unless explicitly enabled.
+   The soft namespace resolution happens off-thread too, so even loading the
+   memory domain cannot extend the server's critical startup path."
   []
-  (when (true? (get-in (global-config/get-global-config) [:embeddings :warmup :enabled]))
-    (try
-      (if-let [warm! (soft/resolve-soft 'hive-mcp.embeddings.warmup/start!)]
-        (warm! (global-config/get-global-config))
-        (log/debug "no embedding warmup in this build; skipping warmup"))
-      (catch Exception e
-        (log/warn "Embedding warmup failed (non-fatal):" (ex-message e))))))
+  (let [cfg (global-config/get-global-config)]
+    (when (true? (get-in cfg [:embeddings :warmup :enabled]))
+      (doto (Thread. ^Runnable
+                     (fn []
+                       (try
+                         (if-let [warm! (soft/resolve-soft 'hive-mcp.embeddings.warmup/start!)]
+                           (warm! cfg)
+                           (log/debug "no embedding warmup in this build; skipping warmup"))
+                         (catch Throwable e
+                           (log/warn "Embedding warmup failed (non-fatal):" (ex-message e))))))
+        (.setName "boot-embedding-dispatch")
+        (.setDaemon true)
+        (.start)))))
 
 ;; =============================================================================
 ;; Embedding Provider Initialization
