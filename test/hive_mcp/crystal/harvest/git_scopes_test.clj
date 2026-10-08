@@ -129,3 +129,13 @@
     (is (some? (:error (nth out 1))))
     (is (string? (:error (nth out 2))))
     (is (= {:pid "d" :error :timeout} (nth out 3)))))
+
+(deftest harvest-timeout-bounds-the-whole-fan-out
+  (testing "N hung repositories cost one timeout, not N"
+    (let [reader (fn [_] (Thread/sleep 2000) {:commits ["late"]})
+          repos  (mapv (fn [i] {:pid (str "p" i) :dir (str "/" i)}) (range 5))
+          t0     (System/currentTimeMillis)
+          out    (gs/harvest-descendant-commits reader repos 200)
+          ms     (- (System/currentTimeMillis) t0)]
+      (is (every? #(= :timeout (:error %)) out))
+      (is (< ms 900) (str "fan-out took " ms " ms")))))

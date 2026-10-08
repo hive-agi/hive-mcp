@@ -313,9 +313,13 @@
                          dir since))
                      (do
                        (log/warn "harvest-commits-direct: git failed exit=" exit "err=" err "in" ms "ms")
-                       {:commits []
-                        :count 0
-                        :error {:type :git-failed :exit exit :err err}})))))
+                       ;; An umbrella that is not itself a git repository still
+                       ;; harvests the repositories of its descendants.
+                       (with-descendant-commits
+                         {:commits []
+                          :count 0
+                          :error {:type :git-failed :exit exit :err err}}
+                         dir since))))))
 
 (defn- harvest-hivemind-messages
   "Harvest hivemind shouts since session start (no Emacs roundtrip).

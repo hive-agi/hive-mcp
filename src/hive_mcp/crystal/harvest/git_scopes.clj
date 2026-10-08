@@ -67,18 +67,22 @@
         (seq errors) (assoc :scope-errors (mapv #(select-keys % [:pid :error]) errors))))))
 
 (defn harvest-descendant-commits
-  "Run GIT-LOG for each repository in REPOS in parallel, each bounded by
-   TIMEOUT-MS. GIT-LOG is (fn [dir] {:commits [str]} | {:error any}).
+  "Run GIT-LOG for each repository in REPOS in parallel. TIMEOUT-MS bounds the
+   whole fan-out, not each repository: every future shares one deadline, so N
+   hung repositories cost TIMEOUT-MS in total, not N times it.
+   GIT-LOG is (fn [dir] {:commits [str]} | {:error any}).
    Returns [{:pid :commits} | {:pid :error}] in REPOS order. Never throws."
   ([git-log repos] (harvest-descendant-commits git-log repos default-timeout-ms))
   ([git-log repos timeout-ms]
-   (let [futs (mapv (fn [{:keys [pid dir]}]
+   (let [deadline (+ (System/currentTimeMillis) timeout-ms)
+         futs (mapv (fn [{:keys [pid dir]}]
                       [pid (future (try (git-log dir)
                                         (catch Throwable t
                                           {:error (str (.getName (class t)) ": " (.getMessage t))})))])
                     repos)]
      (mapv (fn [[pid fut]]
-             (let [r (deref fut timeout-ms ::timeout)]
+             (let [remaining (max 0 (- deadline (System/currentTimeMillis)))
+                   r (deref fut remaining ::timeout)]
                (cond
                  (= ::timeout r) (do (future-cancel fut) {:pid pid :error :timeout})
                  (:error r)      {:pid pid :error (:error r)}
