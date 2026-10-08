@@ -128,6 +128,34 @@
         (throw (ex-info "tier must be cheap or frontier"
                         {:param "tier" :value v}))))))
 
+(defn sandbox-decision
+  "Pure reading of the optional `sandbox` spawn param: nil (host default),
+   true, false, or :refused. Fails CLOSED: only a boolean or the strings
+   \"true\"/\"false\" are accepted. Anything else, a backend name such as
+   \"darkmatter\" or a map naming one, is :refused rather than read as false,
+   which would run the ling with no sandbox at all, or as true, which would
+   silently swap the requested backend for bwrap. Per-spawn backends are card
+   20261006212408-519d3e2b."
+  [v]
+  (cond
+    (nil? v)      nil
+    (boolean? v)  v
+    (= "true" v)  true
+    (= "false" v) false
+    :else         :refused))
+
+(defn normalize-sandbox
+  "`sandbox-decision` of V, throwing on :refused so the spawn is refused."
+  [v]
+  (let [d (sandbox-decision v)]
+    (if (= :refused d)
+      (throw (ex-info (str "sandbox must be true or false; got " (pr-str v)
+                           ". A per-spawn sandbox backend (e.g. darkmatter) is not"
+                           " supported yet, so the spawn is refused rather than run"
+                           " unsandboxed.")
+                      {:param "sandbox" :value v}))
+      d)))
+
 (defn- normalize-token-budget
   "Normalize a positive context-reconstruction budget from MCP JSON."
   [v]
@@ -368,9 +396,7 @@
                                                        (seq loop-params) (merge loop-params)
                                                        token-budget      (assoc :token-budget token-budget)
                                                        sliding_window_size (assoc :sliding-window-size sliding_window_size)
-                                                       (some? sandbox)   (assoc :sandbox (if (string? sandbox)
-                                                                                           (= "true" sandbox)
-                                                                                           (boolean sandbox)))))
+                                                       (some? sandbox)   (assoc :sandbox (normalize-sandbox sandbox))))
                     _ (when-let [refusal (chat-point-refusal (:spawn-mode ling-agent) loop-params
                                                              (headless-registry/headless-capabilities (:spawn-mode ling-agent)))]
                         (throw (ex-info refusal {:spawn-mode (:spawn-mode ling-agent)})))
