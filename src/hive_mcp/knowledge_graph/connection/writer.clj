@@ -22,48 +22,62 @@
   (atom {:running? false :tx-chan nil :ctrl-chan nil}))
 
 (defonce ^:private writer-metrics
-  (atom {:batches-flushed 0 :items-written 0 :items-dropped 0 :largest-batch 0}))
+  (atom {:batches-flushed 0 :items-written 0 :items-dropped 0
+         :async-write-failures 0 :largest-batch 0}))
 
 ;; Count of items enqueued on tx-chan but not yet flushed. Public so callers
 ;; (e.g. hive-ingestor's writer guard) can observe queue depth.
 (defonce in-flight (atom 0))
 
+(defn flush-status
+  "Pure health verdict for the async writer. A drained queue is not a successful
+   flush when an accepted write failed; failure remains sticky for observers."
+  [metrics]
+  (if (pos? (:async-write-failures metrics 0))
+    :weave/write-failed
+    :ok))
+
 (defn- flush-batch!
   "Flush accumulated tx-data as a single transaction.
    `batch-item-count` is the number of producer-side items this batch drained
    from tx-chan (used to decrement in-flight); it may differ from (count batch)
-   after dsl-batch/normalize-tx-datum expansion."
-  [batch batch-item-count]
-  (when (seq batch)
-    (let [n (count batch)]
-      (try
-        (proto/transact! (store/ensure-store!) batch)
-        (swap! writer-metrics (fn [m]
-                                (-> m
-                                    (update :batches-flushed inc)
-                                    (update :items-written + n)
-                                    (update :largest-batch max n))))
-        (catch Throwable t
-          (log/error "Coalesced batch transact failed, falling back to individual writes"
-                     {:batch-size n :error (.getMessage t)})
-          ;; Fallback: retry items individually so we don't lose data
-          (doseq [item batch]
-            (try
-              (proto/transact! (store/ensure-store!) [item])
-              (swap! writer-metrics update :items-written inc)
-              (catch Throwable t2
-                (log/error "Individual fallback transact also failed"
-                           {:item item :error (.getMessage t2)})
-                ;; Keep the last failure next to the drop count so writer-stats
-                ;; shows WHY writes are being lost, not only how many.
-                (swap! writer-metrics
-                       (fn [m]
-                         (-> m
-                             (update :items-dropped inc)
-                             (assoc :last-failure {:at    (System/currentTimeMillis)
-                                                   :error (.getMessage t2)}))))))))
-        (finally
-          (swap! in-flight - batch-item-count))))))
+   after dsl-batch/normalize-tx-datum expansion. The three-argument arity
+   accepts a transaction port for deterministic failure testing."
+  ([batch batch-item-count]
+   (flush-batch! batch batch-item-count
+                 (fn [tx] (proto/transact! (store/ensure-store!) tx))))
+  ([batch batch-item-count transact-fn]
+   (when (seq batch)
+     (let [n (count batch)]
+       (try
+         (transact-fn batch)
+         (swap! writer-metrics (fn [m]
+                                 (-> m
+                                     (update :batches-flushed inc)
+                                     (update :items-written + n)
+                                     (update :largest-batch max n))))
+         (catch Throwable t
+           (log/error "Coalesced batch transact failed, falling back to individual writes"
+                      {:batch-size n :error (.getMessage t)})
+           ;; Fallback: retry items individually so we don't lose data
+           (doseq [item batch]
+             (try
+               (transact-fn [item])
+               (swap! writer-metrics update :items-written inc)
+               (catch Throwable t2
+                 (log/error t2 "CRITICAL: Async KG write failed after enqueue and fallback"
+                            {:item item :error (.getMessage t2)})
+                 ;; Keep the last failure next to the drop count so writer-stats
+                 ;; shows WHY writes are being lost, not only how many.
+                 (swap! writer-metrics
+                        (fn [m]
+                          (-> m
+                              (update :items-dropped inc)
+                              (update :async-write-failures inc)
+                              (assoc :last-failure {:at    (System/currentTimeMillis)
+                                                    :error (.getMessage t2)}))))))))
+         (finally
+           (swap! in-flight - batch-item-count)))))))
 
 (defn- start-writer-loop!
   "Start the background write-coalescing consumer loop.
@@ -167,15 +181,18 @@
    Deterministic replacement for (Thread/sleep N) after transact! in tests.
    Bounded deadline prevents indefinite hang if the writer is dead — returns
    `:weave/timeout` after deadline-ms (default 5000ms) rather than blocking forever.
-   Returns `:ok` when drained. No-op (returns `:ok`) if writer not running."
+   Returns `:weave/write-failed` when an accepted async write failed in the
+   consumer, including after the queue drains or the writer stops. Inspect
+   writer-stats :last-failure and :async-write-failures for diagnostics.
+   Returns `:ok` only when drained without recorded async failures."
   ([] (flush-pending! 5000))
   ([deadline-ms]
    (if-not (:running? @writer-state)
-     :ok
+     (flush-status @writer-metrics)
      (let [deadline (+ (System/currentTimeMillis) deadline-ms)]
        (loop []
          (cond
-           (zero? @in-flight) :ok
+           (zero? @in-flight) (flush-status @writer-metrics)
            (> (System/currentTimeMillis) deadline)
            (do (log/warn "flush-pending! deadline exceeded, items still in flight:" @in-flight)
                :weave/timeout)
