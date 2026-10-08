@@ -1,0 +1,14 @@
+{:console-only
+ {:appender-classes ["ch.qos.logback.core.ConsoleAppender"],
+  :file-appender? false,
+  :user-home? false},
+ :plain-file
+ {:appender-classes ["ch.qos.logback.core.FileAppender"],
+  :file-appender? true,
+  :user-home? false},
+ :prod-like
+ {:appender-classes
+  ["ch.qos.logback.core.ConsoleAppender"
+   "ch.qos.logback.core.rolling.RollingFileAppender"],
+  :file-appender? true,
+  :user-home? true}}
