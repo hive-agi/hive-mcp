@@ -40,7 +40,8 @@
             [hive-mcp.tools.catchup.caller :as catchup-caller]
             [hive-mcp.spi.catchup-registry :as blocks]
             [hive-mcp.extensions.soft :as soft]
-            [hive-mcp.tools.catchup.block-cache :as block-cache]))
+            [hive-mcp.tools.catchup.block-cache :as block-cache]
+            [hive-mcp.tools.catchup.caps :as catchup-caps]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -162,10 +163,14 @@
               ;; core knowing about them — DIP.
               bundle-profile (when-let [profile-fn (ext/get-extension :catchup/bundle-profile)]
                                (catchup-caller/resolve-for-caller profile-fn (:_caller_id args) project-id))
+              ;; :catchup/caps is a project-id-keyed display-budget provider,
+              ;; independent of the :catchup/lens axiom reranker.
               f-bundle (pool/with-io ((tt/timed-query "catchup/bundle-total"
-                                                      #(if (seq (:caps bundle-profile))
-                                                         (catchup-scope/query-catchup-bundle project-id bundle-profile)
-                                                         (catchup-scope/query-catchup-bundle project-id)))))
+                                                      #(let [caps-provider (ext/get-extension :catchup/caps)
+                                                             caps (catchup-caps/resolve-caps caps-provider project-id bundle-profile)]
+                                                         (if (or caps-provider (seq (:caps bundle-profile)))
+                                                           (catchup-scope/query-catchup-bundle project-id {:caps caps})
+                                                           (catchup-scope/query-catchup-bundle project-id))))))
               f-git    (pool/with-io ((tt/timed-query "catchup/git-total"
                                                       #(catchup-git/gather-git-info directory))))
               status-providers (or (ext/get-extension :catchup/status-providers) {})

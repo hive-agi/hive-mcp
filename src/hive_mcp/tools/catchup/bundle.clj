@@ -372,10 +372,10 @@
                                (filter #(hydr/has-tag? % tag) (get by-type t [])))))
         has-priority? (some #(hydr/has-tag? % "catchup-priority") (get by-type bt/principle []))
         prio-principles (tagged bt/principle "catchup-priority" (cap :priority-principles 50))]
-    {:axioms               (take-type bt/axiom 100)
+    {:axioms               (take-type bt/axiom (cap :axioms 100))
      ;; Nominations awaiting human review. Small cap on purpose: this is a
      ;; to-do list for a person, not a context lane for an agent.
-     :axiom-candidates     (take-type bt/axiom-candidate 25)
+     :axiom-candidates     (take-type bt/axiom-candidate (cap :axiom-candidates 25))
      :priority-principles  (if has-priority?
                              prio-principles
                              (take-type bt/principle (cap :priority-principles 50)))
