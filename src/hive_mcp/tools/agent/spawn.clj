@@ -154,7 +154,7 @@
    core requires no addon statically and grows no namespace under the frozen
    hive-agent extraction. nil when hive-agent is not on the classpath."
   []
-  (try (some-> (requiring-resolve 'hive-agent.swarm.mcp-tool/normalize-turn-budget) deref)
+  (try (some-> (requiring-resolve 'hive-agent.swarm.wave-params/normalize-turn-budget) deref)
        (catch Throwable _ nil)))
 
 (defn turn-budget-opt
@@ -175,7 +175,7 @@
    :turn-budget {...}}, absent keys omitted. A malformed value throws ex-info
    with the humanized errors.
 
-   :turn-budget is the lease spec (hive-agent.swarm.mcp-tool/normalize-turn-budget,
+   :turn-budget is the lease spec (hive-agent.swarm.wave-params/normalize-turn-budget,
    reached through the turn-budget port, see turn-budget-normalizer):
    kebab keys, :judge a keyword. It rides the ling ctx to the headless
    backend, which reads it as hive-agent.loop.spawn/build-spawn-config's
