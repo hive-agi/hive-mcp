@@ -42,6 +42,34 @@
     :kg-edge/created-at :kg-edge/last-verified :kg-edge/weight
     :kg-edge/verified])
 
+(def ^:private mutation-pull
+  '[:mem-mutation/id :mem-mutation/entry-id :mem-mutation/op
+    :mem-mutation/timestamp :mem-mutation/agent-id :mem-mutation/project-id
+    :mem-mutation/agent-verified :mem-mutation/data :mem-mutation/previous-value])
+
+(defn entity-kind
+  "Classify one pulled entity for the rebuild export. Pure.
+     :mutation          :mem-mutation/* audit row (durable, always kept)
+     :edge-durable      KG edge with at least one non-UUID endpoint (kept)
+     :edge-structural   carto edge, both endpoints UUIDs (dropped, regenerable)
+     :unknown           anything else (not exported)
+
+   The 2026-07-01 rebuild exported edges only, so the fresh store started with
+   an empty :mem-mutation trail (first row 2026-07-02T14:00Z). Mutation rows
+   are the audit trail and are not regenerable, so they are always kept."
+  [e]
+  (cond
+    (not (map? e))        :unknown
+    (:mem-mutation/id e)  :mutation
+    (not (:kg-edge/id e)) :unknown
+    (structural-edge? e)  :edge-structural
+    :else                 :edge-durable))
+
+(defn keep-entity?
+  "True when the rebuild export must carry `e` into the fresh store. Pure."
+  [e]
+  (contains? #{:mutation :edge-durable} (entity-kind e)))
+
 (defn- heap-pct []
   (let [h (.getHeapMemoryUsage (java.lang.management.ManagementFactory/getMemoryMXBean))]
     (int (* 100.0 (/ (.getUsed h) (double (.getMax h)))))))
@@ -49,24 +77,34 @@
 (defn export-keep-edges!
   "Stream durable (non-structural) edges to `out-path`, one EDN map per line.
    Application heap stays bounded: lazy scan + line-by-line write, holding one
-   edge at a time. Returns {:scanned :kept :dropped :max-heap-pct}."
+   edge at a time. Returns {:scanned :kept :dropped :max-heap-pct}.
+
+   Also streams every :mem-mutation/* audit row (see `entity-kind`), counted
+   under :mutations. Without them a rebuild resets the temporal trail."
   [out-path]
   (with-open [w (io/writer out-path)]
-    (let [kept (atom 0) dropped (atom 0) n (atom 0) maxh (atom 0)]
+    (let [kept (atom 0) dropped (atom 0) n (atom 0) maxh (atom 0) muts (atom 0)
+          write! (fn [e]
+                   (.write w (pr-str (dissoc e :db/id)))
+                   (.write w "\n"))]
       (doseq [eid (conn/eids-by-attr :kg-edge/id)]
         (let [e (conn/pull-entity edge-pull eid)]
           (swap! n inc)
-          (if (structural-edge? e)
-            (swap! dropped inc)
-            (do (.write w (pr-str (dissoc e :db/id)))
-                (.write w "\n")
-                (swap! kept inc))))
+          (if (keep-entity? e)
+            (do (write! e)
+                (swap! kept inc))
+            (swap! dropped inc)))
         (when (zero? (mod @n 100000))
           (.flush w)
           (swap! maxh max (heap-pct))
           (log/info "kg-rebuild export progress"
                     {:scanned @n :kept @kept :dropped @dropped :heap-pct (heap-pct)})))
-      {:scanned @n :kept @kept :dropped @dropped :max-heap-pct @maxh})))
+      (doseq [eid (conn/eids-by-attr :mem-mutation/id)]
+        (let [e (conn/pull-entity mutation-pull eid)]
+          (when (keep-entity? e)
+            (write! e)
+            (swap! muts inc))))
+      {:scanned @n :kept @kept :dropped @dropped :mutations @muts :max-heap-pct @maxh})))
 
 (defn import-keep-edges!
   "Chunked import of EDN edges (one map per line) into the CURRENT KG store.
