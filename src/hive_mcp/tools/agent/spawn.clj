@@ -23,8 +23,7 @@
             [hive-mcp.channel.audience :as audience]
             [hive-mcp.agent.ling.headless-registry :as headless-registry]
             [hive-mcp.emacs.client :as emacs-client]
-            [hive-mcp.agent.grant :as grant]
-            [hive-mcp.agent.turn-budget :as turn-budget]))
+            [hive-mcp.agent.grant :as grant]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -150,25 +149,50 @@
     at     (assoc :at at)
     prompt (assoc :prompt prompt)))
 
+(defn turn-budget-normalizer
+  "The turn-budget port: hive-agent's turn_budget normalizer, soft-resolved so
+   core requires no addon statically and grows no namespace under the frozen
+   hive-agent extraction. nil when hive-agent is not on the classpath."
+  []
+  (try (some-> (requiring-resolve 'hive-agent.swarm.wave-params/normalize-turn-budget) deref)
+       (catch Throwable _ nil)))
+
+(defn turn-budget-opt
+  "Pure: the lease spec for a raw turn_budget V through NORMALIZE (the port).
+   nil V -> nil (the backend's defaults). A V with no NORMALIZE (hive-agent
+   absent) throws ex-info naming turn_budget, so a lease is never dropped
+   silently."
+  [normalize v]
+  (when (some? v)
+    (if normalize
+      (normalize v)
+      (throw (ex-info "turn_budget needs the hive-agent addon, which is not loaded"
+                      {:param "turn_budget" :value v})))))
+
 (defn loop-opts
   "Validate the loop params of a spawn request once, by SpawnLoopParams, and
    return them as ling opts: {:llm-retries n :resume {...} :chat-run-id s
    :turn-budget {...}}, absent keys omitted. A malformed value throws ex-info
    with the humanized errors.
 
-   :turn-budget is the lease spec (hive-mcp.agent.turn-budget/normalize):
+   :turn-budget is the lease spec (hive-agent.swarm.wave-params/normalize-turn-budget,
+   reached through the turn-budget port, see turn-budget-normalizer):
    kebab keys, :judge a keyword. It rides the ling ctx to the headless
    backend, which reads it as hive-agent.loop.spawn/build-spawn-config's
-   :turn-budget."
-  [params]
-  (let [{:keys [llm_retries resume chat_run_id]}
-        (coerce-loop-params (select-keys params [:llm_retries :resume :chat_run_id]))
-        turn-budget (turn-budget/normalize (:turn_budget params))]
-    (cond-> {}
-      llm_retries (assoc :llm-retries llm_retries)
-      resume      (assoc :resume (resume->backend resume))
-      chat_run_id (assoc :chat-run-id chat_run_id)
-      turn-budget (assoc :turn-budget turn-budget))))
+   :turn-budget.
+
+   NORMALIZE is that port, a fn raw-turn_budget -> lease spec; the 1-arity
+   resolves it from the hive-agent addon."
+  ([params] (loop-opts params (turn-budget-normalizer)))
+  ([params normalize]
+   (let [{:keys [llm_retries resume chat_run_id]}
+         (coerce-loop-params (select-keys params [:llm_retries :resume :chat_run_id]))
+         turn-budget (turn-budget-opt normalize (:turn_budget params))]
+     (cond-> {}
+       llm_retries (assoc :llm-retries llm_retries)
+       resume      (assoc :resume (resume->backend resume))
+       chat_run_id (assoc :chat-run-id chat_run_id)
+       turn-budget (assoc :turn-budget turn-budget)))))
 
 (defn normalize-resume
   "The MCP `resume` object as the kebab map the headless backend reads:

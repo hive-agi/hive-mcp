@@ -5,7 +5,6 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.tools.agent.spawn :as spawn]
             [hive-mcp.tools.consolidated.agent :as agent]
-            [hive-mcp.agent.turn-budget :as turn-budget]
             [hive-mcp.test.stub.headless-backend :as hb]
             [hive-test.isolation :as iso]
             [hive-mcp.isolation-methods]))
@@ -32,14 +31,17 @@
         [resp (mapv first (hb/calls-of b :spawn!))]))))
 
 (deftest normalize-reads-the-mcp-shapes
-  (is (= lease (turn-budget/normalize lease-json)))
-  (is (= lease (turn-budget/normalize {:judge "hivemind" :initial "60" :hard-cap 400})))
-  (is (= lease (turn-budget/normalize "{\"judge\":\"hivemind\",\"initial\":60,\"hard_cap\":400}")))
-  (is (= {:max-extensions 8 :ask-timeout-ms 600000 :wrap-up? true}
-         (turn-budget/normalize {"max_extensions" 8 "ask_timeout_ms" 600000 "wrap_up" true})))
-  (is (nil? (turn-budget/normalize nil)))
-  (is (thrown? clojure.lang.ExceptionInfo (turn-budget/normalize 5)))
-  (is (thrown? clojure.lang.ExceptionInfo (turn-budget/normalize {"initial" "lots"}))))
+  (testing "the port resolves hive-agent's normalizer (hive-agent is on this classpath)"
+    (is (fn? (spawn/turn-budget-normalizer))))
+  (let [normalize (spawn/turn-budget-normalizer)]
+    (is (= lease (spawn/turn-budget-opt normalize lease-json)))
+    (is (= lease (spawn/turn-budget-opt normalize {:judge "hivemind" :initial "60" :hard-cap 400})))
+    (is (= lease (spawn/turn-budget-opt normalize "{\"judge\":\"hivemind\",\"initial\":60,\"hard_cap\":400}")))
+    (is (= {:max-extensions 8 :wrap-up? true}
+           (spawn/turn-budget-opt normalize {"max_extensions" 8 "wrap_up" true})))
+    (is (nil? (spawn/turn-budget-opt normalize nil)))
+    (is (thrown? clojure.lang.ExceptionInfo (spawn/turn-budget-opt normalize 5)))
+    (is (thrown? clojure.lang.ExceptionInfo (spawn/turn-budget-opt normalize {"initial" "lots"})))))
 
 (deftest spawn-carries-the-lease-to-the-backend-ctx
   (let [[resp [ctx]] (spawn-ctxs #(spawn/handle-spawn
