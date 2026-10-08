@@ -84,7 +84,8 @@
                        :registered-headless (headless-reg/registered-headless)}))))
 
 (defn ling-ctx
-  "Build a context map from a Ling record for strategy calls."
+  "Build a context map from a Ling record for strategy calls.
+   :turn-budget is the lease spec hive-agent's build-spawn-config reads."
   [ling]
   (cond-> {:id (:id ling)
            :cwd (:cwd ling)
@@ -99,6 +100,7 @@
     (:resume ling) (assoc :resume (:resume ling))
     (:chat-run-id ling) (assoc :chat-run-id (:chat-run-id ling))
     (:token-budget ling) (assoc :token-budget (:token-budget ling))
+    (:turn-budget ling) (assoc :turn-budget (:turn-budget ling))
     (:sliding-window-size ling) (assoc :sliding-window-size (:sliding-window-size ling))
     (:agents ling) (assoc :agents (:agents ling))
     (some? (:sandbox ling)) (assoc :sandbox (:sandbox ling))))

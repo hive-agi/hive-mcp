@@ -26,12 +26,13 @@
 (defn slave->ling-opts
   "Extract ling construction opts from a DataScript slave entity."
   [slave]
-  {:cwd (:slave/cwd slave)
-   :presets (:slave/presets slave)
-   :project-id (:slave/project-id slave)
-   :spawn-mode (or (:ling/spawn-mode slave) :claude)
-   :model (:ling/model slave)
-   :token-budget (:ling/token-budget slave)})
+  (cond-> {:cwd (:slave/cwd slave)
+           :presets (:slave/presets slave)
+           :project-id (:slave/project-id slave)
+           :spawn-mode (or (:ling/spawn-mode slave) :claude)
+           :model (:ling/model slave)
+           :token-budget (:ling/token-budget slave)}
+    (:ling/turn-budget slave) (assoc :turn-budget (:ling/turn-budget slave))))
 
 (declare ->ling)
 
@@ -60,6 +61,7 @@
      :project-id (:project-id ling)
      :ling-id (:id ling)
      :token-budget (:token-budget ling)
+     :turn-budget (:turn-budget ling)
      :max-budget-usd (or (:max-budget-usd opts) (:max-budget-usd ling))
      :grant (:grant opts)
      :task (:task opts)}))
@@ -236,7 +238,7 @@
       :else nil)))
 
 (defn- stamp-spawn-metadata!
-  [{:keys [mode effective-model token-budget] :as plan} slave-id headless?]
+  [{:keys [mode effective-model token-budget turn-budget] :as plan} slave-id headless?]
   (let [now (System/currentTimeMillis)
         provider (provider-name plan)]
     (spawn-store/update-slave! (spawn-store/get-store)
@@ -248,6 +250,8 @@
                                         :slave/last-active-at now}
                                  (some? token-budget)
                                  (assoc :ling/token-budget token-budget)
+                                 (some? turn-budget)
+                                 (assoc :ling/turn-budget turn-budget)
                                  provider
                                  (assoc :ling/provider provider)
                                  headless?
@@ -522,6 +526,7 @@
                         :model model-val}
                  (:provider opts)           (assoc :provider (:provider opts))
                  (:token-budget opts)       (assoc :token-budget (:token-budget opts))
+                 (:turn-budget opts)        (assoc :turn-budget (:turn-budget opts))
                  (some? (:kg-compress? opts)) (assoc :kg-compress? (:kg-compress? opts))
                  (some? (:verbose? opts))   (assoc :verbose? (:verbose? opts))
                  (:llm-retries opts)        (assoc :llm-retries (:llm-retries opts))
