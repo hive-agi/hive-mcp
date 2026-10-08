@@ -12,7 +12,8 @@
   (:require [hive-mcp.protocols.memory :as proto]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
-            [hive-mcp.memory.write-events :as write-events]))
+            [hive-mcp.memory.write-events :as write-events]
+            [clojure.string :as str]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -22,15 +23,26 @@
 ;;; CRUD Operations
 ;;; ============================================================================
 
+(defn- require-entry-id
+  "Accept only a persisted entry ID. A backend failure envelope must not
+   masquerade as a successful write to callers that attach claims or KG edges."
+  [result]
+  (if (and (string? result) (not (str/blank? result)))
+    result
+    (throw (ex-info "Memory store did not return an entry ID"
+                    {:error :vectordb/invalid-write-result :result result}))))
+
 (defn index-memory-entry!
   "Index a memory entry via the active backend. Returns entry ID.
-   Announces the write through write-events when the backend returned an id."
+   Announces the write through write-events when the backend returned an id.
+   Throws when the backend returns a failure envelope, nil, or a non-ID value;
+   callers must never treat an unpersisted entry as successfully indexed."
   [entry]
-  (let [id (with-resilience
-             (proto/add-entry! (proto/get-store) entry))]
-    (when (string? id)
-      (write-events/notify! :added {:id id :memory-type (:type entry)
-                                    :tags (:tags entry) :project-id (:project-id entry)}))
+  (let [id (require-entry-id
+             (with-resilience
+               (proto/add-entry! (proto/get-store) entry)))]
+    (write-events/notify! :added {:id id :memory-type (:type entry)
+                                  :tags (:tags entry) :project-id (:project-id entry)})
     id))
 
 (defn index-memory-entries!
@@ -45,6 +57,7 @@
    Returns:
      Vector of entry IDs (one per input entry, positionally matched).
      Entries that fail individually are logged and returned as nil in that position.
+     Non-ID backend results (including failure envelopes) count as failures.
 
    Callers (e.g. cartography/scan.clj) should chunk large batches themselves
    to avoid holding the store lock for extended periods."
@@ -52,10 +65,9 @@
   (let [store (proto/get-store)]
     (mapv (fn [entry]
             (try
-              (let [id (with-resilience (proto/add-entry! store entry))]
-                (when (string? id)
-                  (write-events/notify! :added {:id id :memory-type (:type entry)
-                                                :tags (:tags entry) :project-id (:project-id entry)}))
+              (let [id (require-entry-id (with-resilience (proto/add-entry! store entry)))]
+                (write-events/notify! :added {:id id :memory-type (:type entry)
+                                              :tags (:tags entry) :project-id (:project-id entry)})
                 id)
               (catch Exception e
                 (log/warn "index-memory-entries!: entry failed:"
