@@ -33,7 +33,10 @@
 
 (deftrifecta forge-belt-dispatch-clock
   hive-mcp.workflows.forge-belt-purity-test/dispatch-and-clock-case
-  {:gen (gen/let [enabled? gen/boolean
+  {:golden-path "test/golden/hive-mcp/forge-belt-dispatch-clock.edn"
+   :cases {:enabled  {:enabled? true  :timestamp "2001-01-01T00:00:00Z"}
+           :disabled {:enabled? false :timestamp "2040-12-31T23:59:59Z"}}
+   :gen (gen/let [enabled? gen/boolean
                   timestamp (gen/elements ["2001-01-01T00:00:00Z"
                                            "2040-12-31T23:59:59Z"])]
           {:enabled? enabled? :timestamp timestamp})
