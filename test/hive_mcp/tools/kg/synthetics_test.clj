@@ -16,7 +16,10 @@
             [hive-mcp.knowledge-graph.schema :as schema]
             [hive-mcp.knowledge-graph.store.fixtures :as fixtures]
             [hive-mcp.protocols.memory :as mem-proto]
-            [hive-mcp.tools.kg.synthetics :as synthetics]))
+            [hive-mcp.tools.kg.synthetics :as synthetics]
+            [hive-mcp.addons.core :as addons]
+            [hive-test.trifecta :refer [deftrifecta]]
+            [clojure.test.check.generators :as gen]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -48,17 +51,52 @@
 
 (def ^:dynamic *live-ids* nil)
 
+(defn safe-test-registry?
+  "Refuse to run this mutating fixture inside an active addon server."
+  [status]
+  (and (zero? (:total status 0))
+       (zero? (:active status 0))
+       (zero? (:registered status 0))
+       (zero? (:error status 0))))
+
+(deftrifecta live-registry-refusal
+  safe-test-registry?
+  {:golden-path "test/golden/hive-mcp/kg/live-registry-refusal.edn"
+   :cases {:empty {:total 0 :active 0}
+           :registered-only {:total 2 :active 0 :registered 2}
+           :running {:total 1 :active 1}
+           :errored {:total 1 :error 1}}
+   :gen (gen/fmap (fn [n] {:total n :active n}) (gen/choose 0 20))
+   :pred (fn [result] (boolean? result))
+   :property-type :pred
+   :num-tests 50
+   :mutations [["always-safe" (fn [_] true)]]})
+
+(defn guard-live-addons-fixture
+  "Fail before any KG or memory fixture can replace a shared store."
+  [f]
+  (when-not (safe-test-registry? (addons/registry-status))
+    (throw (ex-info "Refusing synthetics tests in a live addon registry"
+                    {:reason :live-addon-registry})))
+  (when (seq (mem-proto/registered-stores))
+    (throw (ex-info "Refusing synthetics tests with registered memory stores"
+                    {:reason :shared-memory-registry})))
+  (f))
+
 (defn stub-store-fixture
   "Install a StubMemoryStore whose live-ids can be rebound per test."
   [f]
   (let [live (atom #{})
-        store (->StubMemoryStore live)]
-    (mem-proto/set-store! store)
-    (binding [*live-ids* live]
-      (try
-        (f)
-        (finally
-          (mem-proto/reset-registry!))))))
+        store (->StubMemoryStore live)
+        prior (mem-proto/registered-stores)]
+    (try
+      (mem-proto/set-store! store)
+      (binding [*live-ids* live]
+        (f))
+      (finally
+        (mem-proto/unregister-store! :default)
+        (when-let [original (:default prior)]
+          (mem-proto/register-store! :default original))))))
 
 (defn- set-live! [ids]
   (reset! *live-ids* (set ids)))
@@ -73,6 +111,7 @@
   (f))
 
 (use-fixtures :each
+  guard-live-addons-fixture
   fixtures/datascript-fixture
   register-relations-fixture
   stub-store-fixture)
