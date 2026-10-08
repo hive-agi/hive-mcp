@@ -199,15 +199,47 @@
            :kanban-task-id kanban-task-id}
     (some? grant) (assoc :grant grant)))
 
+(def row-safe-keys
+  "Row attrs kept when the row filter itself throws: routing and liveness
+   only, nothing that names the work. Mirrors hive-agent's own set."
+  #{:status :depth :parent})
+
+(defn row-attrs
+  "ATTRS of SLAVE-ID's registry row after ROW-FILTER, a
+   (fn [ling-id attrs] -> attrs) or nil. nil (no swarm addon) is identity.
+   A filter that throws, or answers anything but a map, fails CLOSED: the
+   row keeps only `row-safe-keys`, so a broken filter can never let task
+   text, cwd or project-id through."
+  [row-filter slave-id attrs]
+  (if-not row-filter
+    attrs
+    (let [out (try (row-filter slave-id attrs) (catch Throwable _ ::threw))]
+      (if (map? out)
+        out
+        (do (log/warn "[spawn] row filter failed closed" {:slave-id slave-id})
+            (select-keys attrs row-safe-keys))))))
+
+(defn- row-filter
+  "hive-agent's registry row filter chain, resolved softly so core needs no
+   swarm addon: nil when hive-agent (or its shout-filters ns) is absent."
+  []
+  (try (requiring-resolve 'hive-agent.events.shout-filters/row!)
+       (catch Throwable _ nil)))
+
 (defn- register-slave-row!
   "Persist a slave row through the spawn store, first making sure its parent
    can be referenced: a coordinator session named as parent gets its own row
    on demand. A recorded grant is written beside :slave/parent in the same
    registration, before the backend starts the ling, so its first tool call
-   is already gated."
+   is already gated.
+
+   The row attrs pass hive-agent's row filters first (`row-attrs`), so an
+   addon such as hive-darkmatter can replace identifying attrs before they
+   reach the registry. The grant is not filtered: it gates, it does not name."
   [store slave-id attrs]
   (spawn-store/ensure-coordinator-session! store (:parent attrs))
-  (let [res (spawn-store/add-slave! store slave-id (dissoc attrs :grant))]
+  (let [res (spawn-store/add-slave! store slave-id
+                                    (row-attrs (row-filter) slave-id (dissoc attrs :grant)))]
     (when-let [g (:grant attrs)]
       (spawn-store/update-slave! store slave-id {grant/slave-attr g}))
     res))
