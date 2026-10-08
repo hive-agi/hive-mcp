@@ -1,0 +1,6 @@
+{:blank-secret-wants-lan "127.0.0.1",
+ :no-secret-no-request "127.0.0.1",
+ :no-secret-wants-all "127.0.0.1",
+ :secret-blank-request "0.0.0.0",
+ :secret-default "0.0.0.0",
+ :secret-wants-lan "10.0.0.5"}
