@@ -234,15 +234,25 @@
   "Validate :role content against the RoleCard schema before storage.
 
    Resolves the validator via `current-role-card-validator` — injected first,
-   else the hive-spi role leaf, else nil (gate skipped). FAIL-LOUD otherwise:
+   else one registered under `role-card-validator-extension-key`, else the
+   hive-spi role leaf, else nil (gate skipped). FAIL-LOUD otherwise:
    throws `:role-gate-rejected` when the content is unreadable EDN, not a map,
-   or a non-conformant RoleCard.
+   or a non-conformant RoleCard. A validator whose :valid? is not invokable
+   (e.g. a bare fn registered instead of a {:valid? :explain} map) is rejected
+   loudly rather than failing with an opaque NPE; a missing :explain explains
+   nothing.
 
    A skipped gate is no longer silent: it logs a warning naming the
    extension key a provider must register under."
   [content]
   (if-let [{:keys [valid? explain]} (current-role-card-validator)]
-    (let [card (try
+    (let [explain (if (ifn? explain) explain (constantly nil))
+          _ (when-not (ifn? valid?)
+              (throw (ex-info (str "RoleCard validator is malformed: expected a map "
+                                   "{:valid? fn :explain fn}")
+                              {:type :role-gate-rejected
+                               :explanation :role-gate/malformed-validator})))
+          card (try
                  (edn/read-string content)
                  (catch Exception e
                    (throw (ex-info (str "RoleCard content is not readable EDN: "

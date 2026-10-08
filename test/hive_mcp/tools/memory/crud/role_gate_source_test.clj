@@ -46,3 +46,15 @@
                      (catch clojure.lang.ExceptionInfo ex ex))]
           (is (= :role-gate-rejected (:type (ex-data e)))))
         (finally (ext/deregister! k))))))
+
+(deftest a-malformed-registration-is-rejected-loudly
+  (testing "a bare fn registered instead of a {:valid? :explain} map rejects, never NPEs"
+    (let [k wr/role-card-validator-extension-key]
+      (wr/set-role-card-validator! nil)
+      (ext/register! k (constantly true))
+      (try
+        (let [e (try (#'wr/validate-role-gate! "{:role/id :role/x :role/name \"X\"}")
+                     (catch clojure.lang.ExceptionInfo ex ex))]
+          (is (= :role-gate-rejected (:type (ex-data e))))
+          (is (= :role-gate/malformed-validator (:explanation (ex-data e)))))
+        (finally (ext/deregister! k))))))
