@@ -1,1 +1,1 @@
-{:healthy :ok, :failed :weave/write-failed, :repeated-failures :weave/write-failed}
+{:healthy :ok, :failed :weave/write-failed, :repeated-failures :weave/write-failed :after-report :ok}

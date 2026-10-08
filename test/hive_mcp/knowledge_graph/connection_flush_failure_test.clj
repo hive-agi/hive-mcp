@@ -8,10 +8,11 @@
 (deftrifecta flush-health-verdict
   hive-mcp.knowledge-graph.connection.writer/flush-status
   {:golden-path "test/golden/hive-mcp/connection-flush-health.edn"
-   :cases {:healthy {:async-write-failures 0}
-           :failed {:async-write-failures 1}
-           :repeated-failures {:async-write-failures 3}}
-   :gen (gen/fmap (fn [n] {:async-write-failures n}) (gen/choose 0 100))
+   :cases {:healthy 0
+           :failed 1
+           :repeated-failures 3
+           :after-report 0}
+   :gen (gen/choose 0 100)
    :pred #{:ok :weave/write-failed}
    :num-tests 100
    :mutations [["always-healthy" (fn [_] :ok)]
@@ -24,6 +25,7 @@
         item {:kg-edge/id "failed-after-enqueue"}
         calls (atom [])]
     (try
+      (swap! metrics assoc :unreported-failures 0)
       (swap! writer/in-flight inc)
       (#'writer/flush-batch! [item] 1
        (fn [tx]
@@ -36,6 +38,11 @@
       (is (= "backend died after enqueue"
              (get-in (writer/writer-stats) [:last-failure :error])))
       (is (= :weave/write-failed (writer/flush-pending!)))
+      (is (= :ok (writer/flush-pending!)) "no new drop must not fail the next flush")
+      (is (= 0 (:unreported-failures (writer/writer-stats))))
+      (is (= (inc (:async-write-failures before))
+             (:async-write-failures (writer/writer-stats)))
+          "the cumulative failure metric survives acknowledgement")
       (finally
         ;; Writer metrics are process-wide; leave other tests' health unchanged.
         (reset! metrics before)

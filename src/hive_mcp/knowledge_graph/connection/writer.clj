@@ -23,7 +23,7 @@
 
 (defonce ^:private writer-metrics
   (atom {:batches-flushed 0 :items-written 0 :items-dropped 0
-         :async-write-failures 0 :largest-batch 0}))
+         :async-write-failures 0 :unreported-failures 0 :largest-batch 0}))
 
 ;; Count of items enqueued on tx-chan but not yet flushed. Public so callers
 ;; (e.g. hive-ingestor's writer guard) can observe queue depth.
@@ -31,9 +31,10 @@
 
 (defn flush-status
   "Pure health verdict for the async writer. A drained queue is not a successful
-   flush when an accepted write failed; failure remains sticky for observers."
-  [metrics]
-  (if (pos? (:async-write-failures metrics 0))
+   flush when an accepted write failed; failure remains sticky for observers
+   in writer-stats, while flush-pending! reports each failure only once."
+  [unreported-failures]
+  (if (pos? unreported-failures)
     :weave/write-failed
     :ok))
 
@@ -74,6 +75,7 @@
                           (-> m
                               (update :items-dropped inc)
                               (update :async-write-failures inc)
+                              (update :unreported-failures inc)
                               (assoc :last-failure {:at    (System/currentTimeMillis)
                                                     :error (.getMessage t2)}))))))))
          (finally
@@ -182,23 +184,29 @@
    Bounded deadline prevents indefinite hang if the writer is dead — returns
    `:weave/timeout` after deadline-ms (default 5000ms) rather than blocking forever.
    Returns `:weave/write-failed` when an accepted async write failed in the
-   consumer, including after the queue drains or the writer stops. Inspect
-   writer-stats :last-failure and :async-write-failures for diagnostics.
-   Returns `:ok` only when drained without recorded async failures."
+   consumer, including after the queue drains or the writer stops. Each failure
+   is reported by the first flush that observes it, not by later flushes with
+   no new failures. Inspect writer-stats :last-failure and cumulative
+   :async-write-failures for diagnostics.
+   Returns `:ok` only when drained without unreported async failures."
   ([] (flush-pending! 5000))
   ([deadline-ms]
-   (if-not (:running? @writer-state)
-     (flush-status @writer-metrics)
-     (let [deadline (+ (System/currentTimeMillis) deadline-ms)]
-       (loop []
-         (cond
-           (zero? @in-flight) (flush-status @writer-metrics)
-           (> (System/currentTimeMillis) deadline)
-           (do (log/warn "flush-pending! deadline exceeded, items still in flight:" @in-flight)
-               :weave/timeout)
-           :else
-           (do (Thread/sleep 5)
-               (recur))))))))
+   (let [take-status! (fn []
+                        (flush-status
+                         (:unreported-failures
+                          (first (swap-vals! writer-metrics assoc :unreported-failures 0)))))]
+     (if-not (:running? @writer-state)
+       (take-status!)
+       (let [deadline (+ (System/currentTimeMillis) deadline-ms)]
+         (loop []
+           (cond
+             (zero? @in-flight) (take-status!)
+             (> (System/currentTimeMillis) deadline)
+             (do (log/warn "flush-pending! deadline exceeded, items still in flight:" @in-flight)
+                 :weave/timeout)
+             :else
+             (do (Thread/sleep 5)
+                 (recur)))))))))
 
 (defn offer-coalesced!
   "Enqueue tx-data on the write-coalescing channel. Pre-increments in-flight
