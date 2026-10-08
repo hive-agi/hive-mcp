@@ -61,13 +61,14 @@
 
 (deftrifecta live-registry-refusal
   safe-test-registry?
-  {:cases {:empty {:total 0 :active 0}
+  {:golden-path "test/golden/hive-mcp/kg/live-registry-refusal.edn"
+   :cases {:empty {:total 0 :active 0}
            :registered-only {:total 2 :active 0 :registered 2}
            :running {:total 1 :active 1}
            :errored {:total 1 :error 1}}
    :gen (gen/fmap (fn [n] {:total n :active n}) (gen/choose 0 20))
    :pred (fn [result] (boolean? result))
-   :property-type :pred-fn
+   :property-type :pred
    :num-tests 50
    :mutations [["always-safe" (fn [_] true)]]})
 
