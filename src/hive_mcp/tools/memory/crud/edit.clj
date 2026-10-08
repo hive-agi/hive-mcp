@@ -105,10 +105,16 @@
    applied to the existing content (exact substring, unique match). Nil when
    the edit does not touch content. Throws ex-info {:type :invalid-edit} when
    :find/:replace are incomplete, non-string, blank :find, combined with
-   :content, or :find is not a unique match."
+   :content, or :find is not a unique match.
+
+   Also throws {:type :invalid-edit} when the existing content is not a
+   string: a kanban card's content is a map ({:title :status :description
+   ...}), and casting it to String surfaced as a bare ClassCastException that
+   read like a backend fault. The error names `kanban update` instead."
   [existing {:keys [content find replace] :as params}]
   (let [find?    (contains? params :find)
-        replace? (contains? params :replace)]
+        replace? (contains? params :replace)
+        current  (:content existing)]
     (cond
       (not (or find? replace?))
       content
@@ -125,8 +131,17 @@
       (not (string? replace))
       (invalid-edit! "replace must be a string" {:replace replace})
 
+      (not (or (nil? current) (string? current)))
+      (invalid-edit! (str "find/replace needs string content, but this entry's"
+                          " content is a " (if (map? current) "map" (str (type current)))
+                          (when (map? current)
+                            "; a kanban card is edited with `kanban update`"
+                            )
+                          ".")
+                     {:content-type (str (type current))})
+
       :else
-      (find-replace (or (:content existing) "") find replace))))
+      (find-replace (or current "") find replace))))
 
 (defn- build-updates
   "Compute the partial-update map from the incoming edit params against the
