@@ -1,0 +1,6 @@
+{:chroma-map {:count 2, :deleted-ids ["a" "b"], :repaired 1},
+ :failed-nil {:count 0, :deleted-ids [], :repaired 0},
+ :map-without-count
+ {:count 3, :deleted-ids ["a" "b" "c"], :repaired 0},
+ :milvus-integer {:count 7, :deleted-ids [], :repaired 0},
+ :milvus-zero {:count 0, :deleted-ids [], :repaired 0}}
