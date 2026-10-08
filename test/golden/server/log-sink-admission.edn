@@ -1,0 +1,9 @@
+{:empty {:queued 0, :dropped 0, :depth 0, :results []},
+ :exactly-full
+ {:queued 2, :dropped 0, :depth 2, :results [:queued :queued]},
+ :overflow
+ {:queued 2,
+  :dropped 3,
+  :depth 2,
+  :results [:queued :queued :dropped :dropped :dropped]},
+ :under {:queued 2, :dropped 0, :depth 2, :results [:queued :queued]}}

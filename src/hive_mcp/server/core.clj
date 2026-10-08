@@ -28,7 +28,8 @@
             [hive-mcp.engine.hprof.boot :as hprof]
             ;; Engine resilience — defense-in-depth L0.5 bounded manifold pool
             [hive-mcp.engine.manifold-pool :as manifold-pool]
-            [hive-mcp.config.io :as config-io])
+            [hive-mcp.config.io :as config-io]
+            [hive-mcp.server.log-sink :as log-sink])
   (:gen-class))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -39,14 +40,19 @@
 ;; This is CRITICAL for MCP servers — stdout is the JSON-RPC channel
 ;; =============================================================================
 
+;; The appender never writes on the caller's thread: it offers the line to a
+;; bounded, dropping queue drained by one daemon thread (log-sink). Under CIDER
+;; *err* is the cider out proxy; a client that stops draining its socket used to
+;; block every logging thread (card 20261002221707-04f355cd). Now it stalls the
+;; drain thread only, and overflow is counted in (log-sink/dropped console-sink).
+(defonce console-sink
+  (log-sink/make-sink (log-sink/err-stream-writer)))
+
 (log/merge-config!
  {:appenders
   {:println {:enabled? true
              :async? false
-             :fn (fn [data]
-                   (let [{:keys [output_]} data]
-                     (binding [*out* *err*]
-                       (println (force output_)))))}}})
+             :fn (log-sink/appender-fn console-sink)}}})
 
 ;; =============================================================================
 ;; System State — single defonce atom replaces 6 private atoms
