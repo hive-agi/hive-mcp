@@ -61,14 +61,14 @@
    memory domain in the build there is nothing to warm and the future is a
    no-op.
 
-   When embeddings.warmup.enabled is true, the memory-domain warmup starts a
-   bounded daemon worker for each distinct routed local model. Disabled by
-   default: no network request or thread is made unless explicitly enabled.
-   The soft namespace resolution happens off-thread too, so even loading the
-   memory domain cannot extend the server's critical startup path."
+   When embeddings.warmup.enabled is true (opt-in), it instead starts a
+   bounded daemon worker for each distinct routed local model; the soft
+   namespace resolution happens off-thread too, so even loading the memory
+   domain cannot extend the server's critical startup path. With the flag off
+   (the default) the original single hive-mcp-memory warmup runs unchanged."
   []
   (let [cfg (global-config/get-global-config)]
-    (when (true? (get-in cfg [:embeddings :warmup :enabled]))
+    (if (true? (get-in cfg [:embeddings :warmup :enabled]))
       (doto (Thread. ^Runnable
                      (fn []
                        (try
@@ -79,7 +79,17 @@
                            (log/warn "Embedding warmup failed (non-fatal):" (ex-message e))))))
         (.setName "boot-embedding-dispatch")
         (.setDaemon true)
-        (.start)))))
+        (.start))
+      ;; Flag off: the original single memory-domain warmup, unchanged, so the
+      ;; first memory write never pays the model's cold start.
+      (future
+        (try
+          (if-let [embed (soft/resolve-soft 'hive-mcp.embeddings.service/embed-for-collection)]
+            (do (embed "hive-mcp-memory" "warmup")
+                (log/info "Ollama embedding model warmed up"))
+            (log/debug "no embedding service in this build; skipping warmup"))
+          (catch Exception e
+            (log/warn "Embedding warmup failed (non-fatal):" (ex-message e))))))))
 
 ;; =============================================================================
 ;; Embedding Provider Initialization
