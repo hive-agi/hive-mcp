@@ -118,3 +118,30 @@
 (deftest unregister-error-retracts-partial-surface
   (testing "an addon in :error has its owner-keyed contributions retracted"
     (is (= clean (:after (run-unregister {:state :error :repeat 1}))))))
+
+(deftest unregister-throwing-shutdown-retracts-surface
+  (testing "an active addon whose shutdown! throws still has its surface withdrawn"
+    (addons/reset-registry!)
+    (ext/clear-all-tools!)
+    (ext/clear-all-schemas!)
+    (try
+      (let [base (->TeardownAddon addon-id true (atom 0))
+            addon (reify proto/IAddon
+                    (addon-id [_] addon-id)
+                    (addon-type [_] :native)
+                    (capabilities [_] #{:tools})
+                    (initialize! [_ opts] (proto/initialize! base opts))
+                    (shutdown! [_] (throw (ex-info "shutdown boom" {})))
+                    (tools [_] (proto/tools base))
+                    (schema-extensions [_] (proto/schema-extensions base))
+                    (health [_] {:status :ok}))]
+        (addons/register-addon! addon)
+        (addons/init-addon! addon-id)
+        (let [result (addons/unregister-addon! addon-id)]
+          (is (:success? result) "the entry is removed regardless")
+          (is (seq (:shutdown-errors result)) "the shutdown failure is reported")
+          (is (= clean (observe)) "nothing the addon contributed is left advertised")))
+      (finally
+        (addons/reset-registry!)
+        (ext/clear-all-tools!)
+        (ext/clear-all-schemas!)))))

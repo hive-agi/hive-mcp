@@ -125,27 +125,37 @@
    strategies and every other owner-keyed registration are retracted BEFORE
    the registry entry is removed. An addon left in :error may have registered
    part of its surface before failing, so its owner-keyed contributions are
-   retracted best-effort as well. A shutdown failure is logged and reported
+   retracted best-effort as well, and so are those of an active addon whose
+   shutdown failed part-way. A shutdown failure is logged and reported
    under :shutdown-errors; the entry is removed regardless, so a second
    unregister answers not-registered instead of failing again."
   [id]
   (if-let [{:keys [state]} (get-addon-entry id)]
-    (let [shutdown-errors
+    (let [retract! (fn []
+                     (let [result (r/try-effect* :addon/retract-error
+                                                 (retract-owned-by! id))]
+                       (when (r/err? result)
+                         (log/error "Addon retraction failed during unregister"
+                                    {:addon id :error (:message result)})
+                         (:message result))))
+          shutdown-errors
           (case state
             :active
             (let [result (shutdown-addon! id)]
               (when-not (:success? result)
                 (log/warn "Addon shutdown had errors during unregister"
                           {:addon id :errors (:errors result)})
-                (vec (:errors result))))
+                ;; A shutdown that threw part-way skipped the steps after the
+                ;; throw (schema retraction runs after the addon's own
+                ;; shutdown!), so retract the owner-keyed surface again before
+                ;; the entry, and with it the ownership record, is removed.
+                (let [retract-error (retract!)]
+                  (cond-> (vec (:errors result))
+                    retract-error (conj retract-error)))))
 
             :error
-            (let [result (r/try-effect* :addon/retract-error
-                                        (retract-owned-by! id))]
-              (when (r/err? result)
-                (log/error "Addon retraction failed during unregister"
-                           {:addon id :error (:message result)})
-                [(:message result)]))
+            (when-let [retract-error (retract!)]
+              [retract-error])
 
             nil)]
       (swap! addon-registry dissoc id)
