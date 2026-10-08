@@ -1,0 +1,6 @@
+{:memory {:provider :ollama}
+ :presets-openrouter {:provider :openrouter :message "Presets collection configured with OpenRouter" :level :info}
+ :presets-fallback {:provider :ollama :message nil :level nil}
+ :plans-fallback {:provider :ollama :message "Plans collection using Ollama - entries >1500 chars may be truncated" :level :warn}
+ :ingest-unconfigured {:provider nil :message nil :level nil}
+ :ingest-openrouter {:provider :openrouter :message "Ingest collection configured with OpenRouter" :level :info}}

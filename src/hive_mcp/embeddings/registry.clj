@@ -17,7 +17,8 @@
      (register-factory! :my-provider my-factory-fn)"
   (:require [hive-mcp.embeddings.config :as config]
             [taoensso.timbre :as log]
-            [hive-mcp.embeddings.shared-gate :as shared]))
+            [hive-mcp.embeddings.shared-gate :as shared]
+            [hive-mcp.protocols.registry :as reg]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -25,7 +26,7 @@
 
 ;; Map of provider-type -> factory function.
 ;; Factory fn takes EmbeddingConfig, returns EmbeddingProvider.
-(defonce ^:private provider-factories (atom {}))
+(defonce ^:private provider-factories (reg/multi-slot {}))
 
 ;; Cache of instantiated providers.
 ;; Key: [provider-type model options-hash]
@@ -93,13 +94,14 @@
    This enables extending the system with new providers without
    modifying existing code (OCP)."
   [provider-type factory-fn]
-  (swap! provider-factories assoc provider-type factory-fn)
+  (reg/reg-put! provider-factories provider-type factory-fn)
   (log/debug "Registered embedding provider factory:" provider-type))
 
 (defn unregister-factory!
   "Remove a registered factory. For testing."
   [provider-type]
-  (swap! provider-factories dissoc provider-type))
+  (reg/reg-remove! provider-factories provider-type)
+  (reg/reg-snapshot provider-factories))
 
 (defn init!
   "Initialize registry with built-in provider factories.
@@ -110,7 +112,7 @@
   (register-factory! :openrouter create-openrouter-provider)
   (register-factory! :venice create-venice-provider)
   (log/info "Embedding provider registry initialized with factories:"
-            (keys @provider-factories))
+            (keys (reg/reg-snapshot provider-factories)))
   true)
 
 (defn register-venice!
@@ -145,11 +147,11 @@
         cached)
       ;; Create new provider
       (let [provider-type (:provider-type config)
-            factory (get @provider-factories provider-type)]
+            factory (reg/reg-get provider-factories provider-type)]
         (when-not factory
           (throw (ex-info (str "No factory registered for provider type: " provider-type)
                           {:provider-type provider-type
-                           :registered (keys @provider-factories)})))
+                           :registered (keys (reg/reg-snapshot provider-factories))})))
         (log/info "Creating embedding provider:" (config/describe config))
         (let [provider (shared/gated-provider (factory config))]
           (swap! provider-cache assoc cache-key provider)
@@ -165,7 +167,7 @@
   "Get statistics about the provider cache."
   []
   {:cached-count (count @provider-cache)
-   :factories (vec (keys @provider-factories))})
+   :factories (vec (keys (reg/reg-snapshot provider-factories)))})
 
 
 (defn provider-available?
@@ -182,4 +184,4 @@
 (defn list-factories
   "List all registered provider factories."
   []
-  (keys @provider-factories))
+  (keys (reg/reg-snapshot provider-factories)))
