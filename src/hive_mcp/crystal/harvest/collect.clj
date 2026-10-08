@@ -30,7 +30,9 @@
             [taoensso.timbre :as log]
             [hive-mcp.crystal.harvest.attribution :as attr]
             [hive-mcp.crystal.harvest.partition :as part]
-            [hive-mcp.session.current :as session]))
+            [hive-mcp.session.current :as session]
+            [hive-mcp.project.tree :as tree]
+            [hive-mcp.crystal.harvest.git-scopes :as git-scopes]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -256,6 +258,34 @@
                     :chroma-count (count chroma-tasks)
                     :project-id project-id})))
 
+(defn- git-log-since
+  "GitLog reader for `git-scopes/harvest-descendant-commits`: one-line commits
+   in DIR since SINCE, or {:error ...} when git fails."
+  [since dir]
+  (let [{:keys [exit out err]} (sh "git" "log" (str "--since=" since) "--oneline" :dir dir)]
+    (if (zero? exit)
+      {:commits (if (str/blank? out) [] (str/split-lines (str/trim out)))}
+      {:error {:type :git-failed :exit exit :err err}})))
+
+(defn- with-descendant-commits
+  "ROOT-RESULT plus the commits of descendant projects of DIR's project that
+   live in their own git repositories (HCR, include_descendants semantics).
+   A project with no such descendants gets ROOT-RESULT unchanged.
+   Kanban 20260516114613-10aeb0be."
+  [root-result dir since]
+  (result/rescue root-result
+                 (let [pid (when dir (scope/get-current-project-id dir))
+                       repos (when pid
+                               (git-scopes/descendant-repos
+                                (:project/git-root (tree/query-project-by-id pid))
+                                (keep tree/query-project-by-id
+                                      (sort (tree/get-descendant-ids pid)))))]
+                   (if (seq repos)
+                     (git-scopes/merge-commit-sets
+                      root-result
+                      (git-scopes/harvest-descendant-commits (partial git-log-since since) repos))
+                     root-result))))
+
 (defn- harvest-commits-direct
   "Harvest git commits via JVM subprocess (no Emacs roundtrip)."
   [{:keys [directory agent-id]}]
@@ -276,14 +306,20 @@
                      (let [commits (when (and out (not (str/blank? out)))
                                      (str/split-lines (str/trim out)))]
                        (log/info "harvest-commits-direct:" (count (or commits [])) "commits in" ms "ms")
-                       {:commits (or commits [])
-                        :count (count (or commits []))
-                        :directory dir})
+                       (with-descendant-commits
+                         {:commits (or commits [])
+                          :count (count (or commits []))
+                          :directory dir}
+                         dir since))
                      (do
                        (log/warn "harvest-commits-direct: git failed exit=" exit "err=" err "in" ms "ms")
-                       {:commits []
-                        :count 0
-                        :error {:type :git-failed :exit exit :err err}})))))
+                       ;; An umbrella that is not itself a git repository still
+                       ;; harvests the repositories of its descendants.
+                       (with-descendant-commits
+                         {:commits []
+                          :count 0
+                          :error {:type :git-failed :exit exit :err err}}
+                         dir since))))))
 
 (defn- harvest-hivemind-messages
   "Harvest hivemind shouts since session start (no Emacs roundtrip).
