@@ -26,7 +26,8 @@
             [hive-mcp.memory.write-events :as write-events]
             [hive-mcp.tools.memory.crud.deferred :as deferred]
             [hive-mcp.embeddings.shared-gate :as embed-gate]
-            [hive-mcp.tools.memory.crud.edge-outcome :as edge-outcome]))
+            [hive-mcp.tools.memory.crud.edge-outcome :as edge-outcome]
+            [hive-mcp.extensions.registry :as ext]))
 
 (def ^:const ^:private memory-write-timeout-ms
   "Timeout budget for a single memory write (Chroma add + KG tx + fetch).
@@ -192,14 +193,42 @@
   [v]
   (reset! role-card-validator v))
 
-(defn current-role-card-validator
-  "The injected validator, else one resolved from hive-spi.role.card, else nil."
+(def role-card-validator-extension-key
+  "Extension-registry key under which a provider (e.g. the addon that owns the
+   RoleCard contract) registers its validator map {:valid? fn :explain fn}.
+   The provider registers INTO hive-mcp, so no private namespace name appears
+   in this public source (dependency inversion over the registry seam)."
+  :role/card-validator)
+
+(defn select-role-card-validator
+  "Pure: pick the RoleCard validator from candidate sources in precedence order
+   :injected > :extension > :spi. Returns {:source kw :validator v-or-nil};
+   :source :none means no validator exists and the gate cannot run."
+  [{:keys [injected extension spi]}]
+  (cond
+    injected  {:source :injected  :validator injected}
+    extension {:source :extension :validator extension}
+    spi       {:source :spi       :validator spi}
+    :else     {:source :none      :validator nil}))
+
+(defn- spi-role-card-validator
+  "Validator resolved from the hive-spi role leaf, or nil when it is absent."
   []
-  (or @role-card-validator
-      (when-let [valid? (resolve-role-card-sym (quote hive-spi.role.card/valid?))]
-        {:valid? valid?
-         :explain (or (resolve-role-card-sym (quote hive-spi.role.card/explain))
-                      (constantly nil))})))
+  (when-let [valid? (resolve-role-card-sym (quote hive-spi.role.card/valid?))]
+    {:valid? valid?
+     :explain (or (resolve-role-card-sym (quote hive-spi.role.card/explain))
+                  (constantly nil))}))
+
+(defn current-role-card-validator
+  "The injected validator, else one resolved from hive-spi.role.card, else nil.
+   Between the two, a validator registered in the extension registry under
+   `role-card-validator-extension-key` is consulted."
+  []
+  (:validator
+   (select-role-card-validator
+    {:injected  @role-card-validator
+     :extension (ext/get-extension role-card-validator-extension-key)
+     :spi       (spi-role-card-validator)})))
 
 (defn- validate-role-gate!
   "Validate :role content against the RoleCard schema before storage.
@@ -207,9 +236,12 @@
    Resolves the validator via `current-role-card-validator` — injected first,
    else the hive-spi role leaf, else nil (gate skipped). FAIL-LOUD otherwise:
    throws `:role-gate-rejected` when the content is unreadable EDN, not a map,
-   or a non-conformant RoleCard."
+   or a non-conformant RoleCard.
+
+   A skipped gate is no longer silent: it logs a warning naming the
+   extension key a provider must register under."
   [content]
-  (when-let [{:keys [valid? explain]} (current-role-card-validator)]
+  (if-let [{:keys [valid? explain]} (current-role-card-validator)]
     (let [card (try
                  (edn/read-string content)
                  (catch Exception e
@@ -221,7 +253,10 @@
                              "(keyword) and :role/name (string). Explanation: "
                              (pr-str (explain card)))
                         {:type :role-gate-rejected
-                         :explanation (explain card)}))))))
+                         :explanation (explain card)}))))
+    (log/warn "RoleCard gate skipped: no validator injected, none registered under"
+              role-card-validator-extension-key
+              "and hive-spi.role.card is absent; the :role entry is stored unvalidated")))
 
 (defn- index-entry!
   "Index entry through IMemoryStore. Plan-type entries get enriched with
