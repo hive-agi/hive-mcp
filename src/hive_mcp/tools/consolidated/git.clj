@@ -98,7 +98,7 @@
                                                      :required ["message"]}
                                              :description "Array of commit operations for batch-commit. Each: {message, files?, all?}. Each operation stages its own `files` and is refused when they do not stage anything."}
                                "parallel" {:type "boolean"
-                                           :description "Run batch operations in parallel (default: false)"}}
+                                           :description "Run batch operations in parallel (default: false). batch-commit refuses true: its operations share one git index."}}
                               git-files-property
                               emacs-timeout-ms-property)
                  :required ["command"]}
