@@ -1,0 +1,1 @@
+{:none [], :remote-only [], :shared-model [{:host "http://localhost:11434", :model "n", :keys #{:note :other}} {:host "http://localhost:11434", :model "q", :keys #{:decision}}], :legacy [{:host "http://localhost:11434", :model "legacy", :keys #{}}]}

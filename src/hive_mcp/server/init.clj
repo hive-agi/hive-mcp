@@ -59,16 +59,37 @@
    Non-blocking: runs in a future so it does not delay server startup. The
    embedding service is memory domain, so it is resolved BY SYMBOL: with no
    memory domain in the build there is nothing to warm and the future is a
-   no-op."
+   no-op.
+
+   When embeddings.warmup.enabled is true (opt-in), it instead starts a
+   bounded daemon worker for each distinct routed local model; the soft
+   namespace resolution happens off-thread too, so even loading the memory
+   domain cannot extend the server's critical startup path. With the flag off
+   (the default) the original single hive-mcp-memory warmup runs unchanged."
   []
-  (future
-    (try
-      (if-let [embed (soft/resolve-soft 'hive-mcp.embeddings.service/embed-for-collection)]
-        (do (embed "hive-mcp-memory" "warmup")
-            (log/info "Ollama embedding model warmed up"))
-        (log/debug "no embedding service in this build; skipping warmup"))
-      (catch Exception e
-        (log/warn "Embedding warmup failed (non-fatal):" (ex-message e))))))
+  (let [cfg (global-config/get-global-config)]
+    (if (true? (get-in cfg [:embeddings :warmup :enabled]))
+      (doto (Thread. ^Runnable
+                     (fn []
+                       (try
+                         (if-let [warm! (soft/resolve-soft 'hive-mcp.embeddings.warmup/start!)]
+                           (warm! cfg)
+                           (log/debug "no embedding warmup in this build; skipping warmup"))
+                         (catch Throwable e
+                           (log/warn "Embedding warmup failed (non-fatal):" (ex-message e))))))
+        (.setName "boot-embedding-dispatch")
+        (.setDaemon true)
+        (.start))
+      ;; Flag off: the original single memory-domain warmup, unchanged, so the
+      ;; first memory write never pays the model's cold start.
+      (future
+        (try
+          (if-let [embed (soft/resolve-soft 'hive-mcp.embeddings.service/embed-for-collection)]
+            (do (embed "hive-mcp-memory" "warmup")
+                (log/info "Ollama embedding model warmed up"))
+            (log/debug "no embedding service in this build; skipping warmup"))
+          (catch Exception e
+            (log/warn "Embedding warmup failed (non-fatal):" (ex-message e))))))))
 
 ;; =============================================================================
 ;; Embedding Provider Initialization
