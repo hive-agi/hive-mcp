@@ -513,6 +513,20 @@ session_complete(
 
 ---
 
+## Preserve Existing Text (layout, comments, docstrings)
+
+Next to Stratified design, CPPB, DDD and SOLID, this is part of how code is changed here:
+
+- **Never delete or shorten an existing docstring or comment.** Extend a docstring with new
+  sentences; never collapse it to a one-liner, even when the function body gets simpler.
+- **Keep the existing layout.** No re-indentation, re-alignment or reflow of code you did not
+  change. A diff should show only the lines your task needed.
+- **Check before committing:** read the removed lines of the staged diff (`git diff --cached`,
+  lines starting with `-`). A docstring or comment that appears only on the `-` side is a
+  regression; restore it.
+
+---
+
 ## Constraints
 
 - Do not spawn other lings (you are a leaf worker)
