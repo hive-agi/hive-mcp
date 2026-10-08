@@ -9,11 +9,32 @@
  [mcp-error emacs-timeout-ms-property git-files-property]]
             [hive-mcp.tools.magit :as magit-handlers]))
 
+(defn parallel-refusal
+  "Pure: the refusal message for a batch-commit asked to run in parallel, or nil.
+
+   Each batch-commit operation stages its own files and then commits. Those two
+   steps share ONE git index, so two operations interleaved under pmap can
+   commit each other's paths (20260906164520-50e229df). Serial is the only
+   correct order, and a caller that asks for parallel is refused rather than
+   silently serialized, so the request and the behaviour cannot disagree.
+   Only a truthy :parallel is refused; false, nil or absent pass."
+  [params]
+  (when (:parallel params)
+    (str "batch-commit/parallel-unsupported: batch-commit runs serially because "
+         "every operation stages and commits through the same git index; "
+         "omit :parallel or pass false.")))
+
 (defn- handle-batch-commit
   "Batch commit multiple operations. Injects :command \"commit\" into each op."
   [{:keys [operations] :as params}]
-  (if (or (nil? operations) (empty? operations))
+  (cond
+    (or (nil? operations) (empty? operations))
     (mcp-error "operations is required (array of commit parameter objects, each with :message)")
+
+    (parallel-refusal params)
+    (mcp-error (parallel-refusal params))
+
+    :else
     (let [batch-fn (make-batch-handler {:commit magit-handlers/handle-magit-commit})
           ops-with-command (mapv #(assoc % :command "commit") operations)]
       (batch-fn (assoc params :operations ops-with-command)))))
