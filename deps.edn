@@ -426,6 +426,16 @@
    :exec-args {:excludes [:integration]
                :patterns ["^hive-mcp\\.(?!backends\\.).*-test$"]}}
 
+  ;; Focused run: one or more namespaces, nothing else. cognitect.test-runner
+  ;; UNIONS -n with -r (a namespace runs when it is named OR matches a regex),
+  ;; so `-M:test-unit -n <ns>` still selects all of :test-unit's -r universe,
+  ;; about 5700 tests. Compose this alias LAST: its :main-opts replace the
+  ;; earlier alias's and carry no -r, so only the named namespaces run.
+  ;;   clojure -M:test-unit:test-focus -n hive-mcp.foo-test
+  ;;   clojure -M:test:test-swarm:test-focus -d test-swarm -n hive-mcp.bar-test
+  :test-focus
+  {:main-opts ["-m" "cognitect.test-runner" "-e" ":integration"]}
+
   ;; Run only integration tests (requires Emacs with emacs-mcp loaded)
   :test-integration
   {:extra-paths ["test" "test/resources"]
