@@ -40,11 +40,6 @@
 ;; This is CRITICAL for MCP servers — stdout is the JSON-RPC channel
 ;; =============================================================================
 
-;; The appender never writes on the caller's thread: it offers the line to a
-;; bounded, dropping queue drained by one daemon thread (log-sink). Under CIDER
-;; *err* is the cider out proxy; a client that stops draining its socket used to
-;; block every logging thread (card 20261002221707-04f355cd). Now it stalls the
-;; drain thread only, and overflow is counted in (log-sink/dropped console-sink).
 (defonce console-sink
   (log-sink/make-sink (log-sink/err-stream-writer)))
 

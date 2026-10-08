@@ -1,11 +1,9 @@
+;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
+;;
+;; SPDX-License-Identifier: AGPL-3.0-or-later
+
 (ns hive-mcp.server.log-sink
   "Bounded, dropping console sink for the server's Timbre appender.
-
-   Why: the println appender used to write synchronously through *err*. Under
-   CIDER that stream is the cider out-middleware proxy, which fans every line
-   out to every nREPL session. One editor that stops draining its socket held
-   the proxy lock, and every thread that logged waited on it (measured
-   2026-10-02, card 20261002221707-04f355cd).
 
    Shape:
      LineWriter      — the port: where a formatted line finally goes.
@@ -18,9 +16,7 @@
    lost console lines, visible as (dropped sink)."
   (:import [java.util.concurrent ArrayBlockingQueue BlockingQueue TimeUnit]
            [java.util.concurrent.atomic AtomicLong]))
-;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
-;;
-;; SPDX-License-Identifier: AGPL-3.0-or-later
+
 
 ;; =============================================================================
 ;; Port
