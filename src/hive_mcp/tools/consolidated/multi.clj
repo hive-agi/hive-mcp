@@ -142,6 +142,27 @@
           (format-fn result :compact compact-mode)
           {:type "text" :text (pr-str result)})))))
 
+(defn malformed-operations
+  "Entries of OPERATIONS that are not maps, as [{:index i :value v} ...]
+   (empty when every entry is a map). A string entry would otherwise reach
+   keywordize-map and leak 'nth not supported on this type: Character'
+   (kanban 20260915163543-5aac729f)."
+  [operations]
+  (into []
+        (keep-indexed (fn [i op]
+                        (when-not (map? op)
+                          {:index i :value op})))
+        operations))
+
+(defn malformed-operations-message
+  "Human message naming each non-map entry of a batch by index."
+  [malformed]
+  (str "operations entries must be {id, tool, command, ...} objects; got "
+       (str/join ", " (map (fn [{:keys [index value]}]
+                             (str "index " index " = " (pr-str value)))
+                           malformed))
+       ". For verb sentences use the 'dsl' param: [[verb, params], ...]."))
+
 (defn- handle-batch
   "Handle batch dispatch mode with dependency-ordered wave execution.
    Supports async: true for non-blocking dispatch."
@@ -155,6 +176,9 @@
 
     (empty? operations)
     (mcp-error "operations array is empty. Provide at least one operation.")
+
+    (seq (malformed-operations operations))
+    (mcp-error (malformed-operations-message (malformed-operations operations)))
 
     :else
     (let [normalized-ops (thread-caller-directory operations params)]
