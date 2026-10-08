@@ -13,7 +13,8 @@
             [hive-mcp.dns.result :as r]
             [hive-mcp.extensions.registry :as ext]
             [taoensso.timbre :as log]
-            [hive-mcp.addons.runtime-ports :as runtime-ports]))
+            [hive-mcp.addons.runtime-ports :as runtime-ports]
+            [hive-mcp.extensions.dispatch-wrap :as dispatch-wrap]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -369,16 +370,14 @@
    wins and the addon tool is refused as `:shadows-core`. Refusals are
    dropped here: use `resolve-addon-tools` to see them.
 
-   When an :addon/wrap-handler extension is registered, each tool's :handler
-   is passed through it as (wrap addon-source handler)."
+   Each tool's :handler is dispatched through
+   hive-mcp.extensions.dispatch-wrap/wrap-addon-handler: the registered
+   :addon/wrap-handler extension, then the drain gate an unmount waits on."
   []
-  (let [installed (:installed (resolve-addon-tools))]
-    (if-let [wrap (ext/get-extension :addon/wrap-handler)]
-      (mapv (fn [t] (if (ifn? (:handler t))
-                      (update t :handler #(wrap (:addon-source t) %))
-                      t))
-            installed)
-      installed)))
+  (mapv (fn [t] (if (ifn? (:handler t))
+                  (update t :handler #(dispatch-wrap/wrap-addon-handler (:addon-source t) %))
+                  t))
+        (:installed (resolve-addon-tools))))
 
 (defn addon-tools-by-name
   "Get MCP tools contributed by a specific addon."
