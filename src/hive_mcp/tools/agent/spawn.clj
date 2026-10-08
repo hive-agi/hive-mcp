@@ -23,7 +23,8 @@
             [hive-mcp.channel.audience :as audience]
             [hive-mcp.agent.ling.headless-registry :as headless-registry]
             [hive-mcp.emacs.client :as emacs-client]
-            [hive-mcp.agent.grant :as grant]))
+            [hive-mcp.agent.grant :as grant]
+            [hive-mcp.agent.turn-budget :as turn-budget]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -151,16 +152,23 @@
 
 (defn loop-opts
   "Validate the loop params of a spawn request once, by SpawnLoopParams, and
-   return them as ling opts: {:llm-retries n :resume {...} :chat-run-id s},
-   absent keys omitted. A malformed value throws ex-info with the humanized
-   errors."
+   return them as ling opts: {:llm-retries n :resume {...} :chat-run-id s
+   :turn-budget {...}}, absent keys omitted. A malformed value throws ex-info
+   with the humanized errors.
+
+   :turn-budget is the lease spec (hive-mcp.agent.turn-budget/normalize):
+   kebab keys, :judge a keyword. It rides the ling ctx to the headless
+   backend, which reads it as hive-agent.loop.spawn/build-spawn-config's
+   :turn-budget."
   [params]
   (let [{:keys [llm_retries resume chat_run_id]}
-        (coerce-loop-params (select-keys params [:llm_retries :resume :chat_run_id]))]
+        (coerce-loop-params (select-keys params [:llm_retries :resume :chat_run_id]))
+        turn-budget (turn-budget/normalize (:turn_budget params))]
     (cond-> {}
       llm_retries (assoc :llm-retries llm_retries)
       resume      (assoc :resume (resume->backend resume))
-      chat_run_id (assoc :chat-run-id chat_run_id))))
+      chat_run_id (assoc :chat-run-id chat_run_id)
+      turn-budget (assoc :turn-budget turn-budget))))
 
 (defn normalize-resume
   "The MCP `resume` object as the kebab map the headless backend reads:
