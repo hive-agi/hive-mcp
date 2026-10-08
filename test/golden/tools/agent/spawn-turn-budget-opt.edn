@@ -1,0 +1,3 @@
+{:absent nil,
+ :object {:normalized {"judge" "hivemind", "initial" 60}},
+ :string {:normalized "{\"initial\":60}"}}
