@@ -13,7 +13,8 @@
             [clojure.string :as str]
             [hive-mcp.dispatch.handler :as dispatch]
             [hive-addon.registry.commands :as acmds]
-            [hive-mcp.dispatch.verbs :as verbs]))
+            [hive-mcp.dispatch.verbs :as verbs]
+            [hive-mcp.extensions.dispatch-wrap :as dispatch-wrap]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -27,8 +28,10 @@
   "Convert addon command contributions to keyword->fn handler map.
    Supports both flat handlers and nested handler trees.
 
-   When an :addon/wrap-handler extension is registered, every handler is passed
-   through it as (wrap addon-id handler).
+   Every handler is dispatched through
+   hive-mcp.extensions.dispatch-wrap/wrap-addon-handler as (wrap addon-id
+   handler): the registered :addon/wrap-handler extension, then the drain gate
+   an unmount waits on.
 
    The gate is `dispatch/handler?` and NOT `fn?`, and this is the site where
    that mattered most: `fn?` is false for a var, so a var-registered handler
@@ -37,12 +40,11 @@
    nothing downstream can tell the unwrapped handler from a wrapped one."
   [tool-name]
   (when-let [commands (acmds/get-commands tool-name)]
-    (let [wrap (ext/get-extension :addon/wrap-handler)]
-      (into {} (map (fn [[cmd {:keys [handler addon]}]]
-                      [(keyword cmd) (if (and wrap (dispatch/handler? handler))
-                                       (wrap addon handler)
-                                       handler)]))
-            commands))))
+    (into {} (map (fn [[cmd {:keys [handler addon]}]]
+                    [(keyword cmd) (if (dispatch/handler? handler)
+                                     (dispatch-wrap/wrap-addon-handler addon handler)
+                                     handler)]))
+          commands)))
 
 (defn lazy-resolve-handlers
   "Lazily resolve a consolidated tool's `handlers` map by fully-qualified
