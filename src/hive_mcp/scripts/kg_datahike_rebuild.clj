@@ -6,7 +6,7 @@
   "One-off rebuild of the KG datahike store, keeping only durable edges.
 
    Carto structural edges (both endpoints a UUID) live in the :carto datalevin
-   slot and are regenerable by `codebase-map scan`; carto reads already come
+   slot and are regenerable by `carto scan`; carto reads already come
    from :carto. They are dropped here. Retraction is infeasible in-heap
    (see memory 20260521153840-1e8a1b05), so we export the keep-set and
    import it into a fresh store.
