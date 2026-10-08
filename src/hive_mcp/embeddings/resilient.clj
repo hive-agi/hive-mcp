@@ -66,9 +66,11 @@
   (atom {}))
 
 (defn- model-of
-  "The model a chain entry's provider embeds with, when it says."
+  "The model a chain entry's provider embeds with, when it says. Unwrap the
+   shared admission gate so boot probes and write attempts share an identity."
   [{:keys [provider]}]
-  (when (map? provider) (:model provider)))
+  (let [provider (shared/ungated provider)]
+    (when (map? provider) (:model provider))))
 
 (defn- identity-of
   "Warmth key for a chain entry: provider-key plus model."

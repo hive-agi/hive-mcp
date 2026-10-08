@@ -59,14 +59,17 @@
    Non-blocking: runs in a future so it does not delay server startup. The
    embedding service is memory domain, so it is resolved BY SYMBOL: with no
    memory domain in the build there is nothing to warm and the future is a
-   no-op."
+   no-op.
+
+   When embeddings.warmup.enabled is true, the memory-domain warmup starts a
+   bounded daemon worker for each distinct routed local model. Disabled by
+   default: no network request or thread is made unless explicitly enabled."
   []
-  (future
+  (when (true? (get-in (global-config/get-global-config) [:embeddings :warmup :enabled]))
     (try
-      (if-let [embed (soft/resolve-soft 'hive-mcp.embeddings.service/embed-for-collection)]
-        (do (embed "hive-mcp-memory" "warmup")
-            (log/info "Ollama embedding model warmed up"))
-        (log/debug "no embedding service in this build; skipping warmup"))
+      (if-let [warm! (soft/resolve-soft 'hive-mcp.embeddings.warmup/start!)]
+        (warm! (global-config/get-global-config))
+        (log/debug "no embedding warmup in this build; skipping warmup"))
       (catch Exception e
         (log/warn "Embedding warmup failed (non-fatal):" (ex-message e))))))
 
