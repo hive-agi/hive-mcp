@@ -11,6 +11,7 @@
   (:require [clojure.core.async :as async]
             [clojure.test :refer [deftest is testing]]
             [hive-mcp.channel.core :as channel]
+            [hive-mcp.hivemind.event-registry]
             [hive-mcp.hivemind.messaging :as msg]
             [hive-mcp.hivemind.state :as state]
             [hive-mcp.swarm.datascript.queries :as queries]))

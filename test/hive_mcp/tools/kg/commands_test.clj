@@ -14,6 +14,7 @@
    it and `immediate-read` goes empty (verified: a raw, unwrapped handler leaves
    the edge invisible until a manual flush). Kanban 20260629161156-76f4e486."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
+            [clojure.string]
             [hive-mcp.knowledge-graph.connection :as conn]
             [hive-mcp.knowledge-graph.store.fixtures :as fixtures]
             [hive-mcp.knowledge-graph.edges :as edges]
