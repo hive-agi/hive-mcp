@@ -24,7 +24,14 @@
                           coordinator lanes are exempt so the wave scheduler
                           still sees the events it authors)
      :parent-id set    -> that reader alone
-     :parent-id absent -> root-level, coordinator readers only
+     :parent-id absent -> root-level, coordinator readers only, and only
+                          when the reader owns it (`root-visible?`): its
+                          author is that same session, it is scoped to the
+                          reader's project, the reader lane names no
+                          session, or the operator opted into unowned
+                          shouts. An unowned (\"global\" or nil project)
+                          root shout from outside the reader's lineage
+                          reaches NOBODY.
 
    A coordinator lane is ONE Claude window. The MCP transport spells it
    `coordinator:<session>`, optionally suffixed `-<project>`, and two lanes
@@ -100,14 +107,55 @@
 ;; Audience
 ;; =============================================================================
 
+(def unowned-project
+  "Project id a shout carries when nothing scoped it: no explicit project, no
+   registered vessel cwd, no directory (hive-mcp.hivemind.messaging/shout!*).
+   A nil :project-id reads the same."
+  "global")
+
+(defn unowned?
+  "Does `msg` belong to no project? Pure. nil and \"global\" both count."
+  [msg]
+  (contains? #{nil unowned-project} (:project-id msg)))
+
+(defn root-visible?
+  "May a ROOT-level shout (no :to, no :broadcast?, no :parent-id) reach
+   coordinator reader `reader-id`? Pure. First rule that matches wins:
+
+     reader names no session  -> yes. The legacy and Emacs lanes
+                                 (\"coordinator\", \"coordinator-hive\") have
+                                 no session to scope by, so they keep the old
+                                 behaviour.
+     author is this session   -> yes. A coordinator still sees what it shouted
+                                 itself (the wave scheduler).
+     shout is project-scoped  -> yes. piggyback/get-messages already admitted
+                                 it ONLY because its project is the reader's
+                                 project or an HCR descendant of it.
+     global-opt-in?           -> yes. The operator asked for unowned shouts
+                                 ([:hivemind :unowned-global] :deliver).
+     otherwise                -> no. An unowned shout from an agent outside
+                                 this session's lineage reaches nobody. This
+                                 is the HIVEMIND-PIGGYBACK-LEAK fix: before it,
+                                 a \"team:<id>\" runner's shout or a parentless
+                                 ling's shout in project \"global\" reached
+                                 every coordinator window."
+  [reader-id {:keys [agent-id] :as msg} global-opt-in?]
+  (boolean
+   (or (nil? (coordinator-session reader-id))
+       (and (coordinator-reader? agent-id) (same-agent? reader-id agent-id))
+       (not (unowned? msg))
+       global-opt-in?)))
+
 (defn addressed-to?
   "Is `msg` part of `reader-id`'s audience? First rule that matches wins; see
    the namespace docstring for the contract.
 
    `scoped-id` composes a bare agent name onto this read's project scope, and
-   is consulted for the DIRECTED rule only."
-  ([reader-id msg] (addressed-to? reader-id msg nil))
-  ([reader-id {:keys [agent-id parent-id broadcast? to]} scoped-id]
+   is consulted for the DIRECTED rule only. `opts` may carry
+   :global-opt-in? (see `root-visible?`)."
+  ([reader-id msg] (addressed-to? reader-id msg nil nil))
+  ([reader-id msg scoped-id] (addressed-to? reader-id msg scoped-id nil))
+  ([reader-id {:keys [agent-id parent-id broadcast? to] :as msg} scoped-id opts]
    (let [coord? (coordinator-reader? reader-id)]
      (cond
        ;; DIRECTED beats every other rule. Naming a recipient is an act of
@@ -117,15 +165,16 @@
        broadcast? true
        (and (not coord?) (same-agent? reader-id agent-id)) false
        (some? parent-id) (same-agent? reader-id parent-id)
-       :else coord?))))
+       :else (and coord? (root-visible? reader-id msg (:global-opt-in? opts)))))))
 
 (defn filter-messages
   "Keep only the messages addressed to `reader-id`, in order. Returns a vector.
    `scoped-id` composes a bare agent name onto this read's project scope; see
-   `same-agent?`."
-  ([reader-id msgs] (filter-messages reader-id msgs nil))
-  ([reader-id msgs scoped-id]
-   (filterv #(addressed-to? reader-id % scoped-id) msgs)))
+   `same-agent?`. `opts` is passed to `addressed-to?`."
+  ([reader-id msgs] (filter-messages reader-id msgs nil nil))
+  ([reader-id msgs scoped-id] (filter-messages reader-id msgs scoped-id nil))
+  ([reader-id msgs scoped-id opts]
+   (filterv #(addressed-to? reader-id % scoped-id opts) msgs)))
 
 (defn directed?
   "Does this message name a recipient?"
@@ -144,6 +193,32 @@
    in the number of conversations."
   5)
 
+(defn in-lineage?
+  "Was `msg` sent by `reader-id` or by an agent `reader-id` spawned? Pure.
+   A shout carries its author's spawner as :parent-id
+   (hive-mcp.hivemind.messaging/shout!*), so one hop is visible on the row.
+   A reader that names no coordinator session (\"coordinator\",
+   \"coordinator-hive\") cannot be told apart from any other lane, so it owns
+   every lineage, as before."
+  [reader-id {:keys [agent-id parent-id]}]
+  (boolean
+   (or (nil? (coordinator-session reader-id))
+       (and (some? agent-id) (same-agent? reader-id agent-id))
+       (and (some? parent-id) (same-agent? reader-id parent-id)))))
+
+(defn supervised-conversations
+  "Directed messages `reader-id` is NOT addressed by, grouped by conversation,
+   kept only for conversations at least one of whose messages is in the
+   reader's lineage (`in-lineage?`). Another coordinator's peers talking among
+   themselves is not this reader's to supervise. Pure.
+   -> seq of [context-id-or-::unscoped rows], busiest first."
+  [reader-id msgs]
+  (->> (filter directed? msgs)
+       (remove #(addressed-to? reader-id %))
+       (group-by #(or (:context-id %) ::unscoped))
+       (filter (fn [[_ rows]] (some #(in-lineage? reader-id %) rows)))
+       (sort-by (fn [[k rows]] [(- (count rows)) (str k)]))))
+
 (defn peer-traffic-digest
   "The coordinator's view of directed traffic it is not addressed by.
 
@@ -153,10 +228,14 @@
    conversation instead of the conversation: how many turns, between whom, and
    the contextId to fetch the exchange by if it wants to.
 
+   Only conversations in the reader's lineage are named
+   (`supervised-conversations`): a conversation between another coordinator's
+   lings is not summarised to this one.
+
    At most `max-peer-traffic-rows` conversations are named; the remainder
    collapse into one overflow row carrying the totals, so the summary's cost
    does not grow with the swarm's chattiness. The busiest conversations are the
-   ones named — a conversation with more turns is the one more likely to want
+   ones named \u2014 a conversation with more turns is the one more likely to want
    looking at.
 
    Returns [] for a non-coordinator reader, and for a coordinator with no such
@@ -164,10 +243,7 @@
   [reader-id msgs]
   (if-not (coordinator-reader? reader-id)
     []
-    (let [unseen (remove #(addressed-to? reader-id %) (filter directed? msgs))
-          groups (->> unseen
-                      (group-by #(or (:context-id %) ::unscoped))
-                      (sort-by (fn [[k rows]] [(- (count rows)) (str k)])))
+    (let [groups (supervised-conversations reader-id msgs)
           named (take max-peer-traffic-rows groups)
           overflow (drop max-peer-traffic-rows groups)
           row (fn [[ctx rows]]

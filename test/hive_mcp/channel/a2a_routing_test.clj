@@ -104,28 +104,26 @@
                     n (gen/choose 1 12)
                     ctxs (gen/not-empty (gen/vector (gen/elements ["c1" "c2" "c3"]) 1 3))]
     (let [msgs (mapv (fn [i]
-                       {:agent-id (nth swarm (mod i (count swarm)))
-                        :to (nth swarm (mod (inc i) (count swarm)))
-                        :context-id (nth ctxs (mod i (count ctxs)))})
+                       {:agent-id (nth swarm (mod i (count swarm))), :to (nth swarm (mod (inc i) (count swarm))), :context-id (nth ctxs (mod i (count ctxs))), :parent-id "coordinator:7"})
                      (range n))
           rows (aud/peer-traffic-digest "coordinator:7" msgs)]
       (= n (reduce + 0 (map :n rows))))))
 
 (deftest peer-traffic-digest-is-coordinator-only-test
-  (let [msgs [{:agent-id "ling-a" :to "ling-b" :context-id "c1"}]]
+  (let [msgs [{:agent-id "ling-a", :to "ling-b", :context-id "c1", :parent-id "coordinator:7"}]]
     (is (= [] (aud/peer-traffic-digest "ling-c" msgs))
         "a peer has no business knowing two other peers spoke")
     (is (seq (aud/peer-traffic-digest "coordinator:7" msgs)))))
 
 (deftest peer-traffic-digest-omits-what-the-reader-already-got-test
   (testing "a directed message the coordinator IS addressed by is not also summarised"
-    (let [msgs [{:agent-id "ling-a" :to "coordinator:7" :context-id "c1"}]]
+    (let [msgs [{:agent-id "ling-a", :to "coordinator:7", :context-id "c1", :parent-id "coordinator:7"}]]
       (is (= [] (aud/peer-traffic-digest "coordinator:7" msgs))))))
 
 (deftest peer-traffic-digest-names-the-context-test
-  (let [msgs [{:agent-id "ling-a" :to "ling-b" :context-id "c1"}
-              {:agent-id "ling-b" :to "ling-a" :context-id "c1"}
-              {:agent-id "ling-a" :to "ling-c" :context-id "c2"}]
+  (let [msgs [{:agent-id "ling-a", :to "ling-b", :context-id "c1", :parent-id "coordinator:7"}
+              {:agent-id "ling-b", :to "ling-a", :context-id "c1", :parent-id "coordinator:7"}
+              {:agent-id "ling-a", :to "ling-c", :context-id "c2", :parent-id "coordinator:7"}]
         rows (aud/peer-traffic-digest "coordinator:7" msgs)]
     (is (= 2 (count rows)) "one row per conversation")
     (is (= #{"c1" "c2"} (set (map :ctx rows)))
