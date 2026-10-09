@@ -13,8 +13,7 @@
             [hive-mcp.test.stub.memory-store :as ms]
             [hive-mcp.test.stub.swarm-host :as sh]
             [hive-mcp.tools.magit :as magit]
-            [hive-mcp.tools.projectile :as projectile]
-            [hive-mcp.tools.memory.migration.import :as import]))
+            [hive-mcp.tools.projectile :as projectile]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -64,9 +63,7 @@
    :project-recent   [#(projectile/handle-projectile-recent {})
                       {:op :project/recent}]
    :project-list     [#(projectile/handle-projectile-list-projects {})
-                      {:op :project/list-projects}]
-   :legacy-import    [#(import/handle-import-json {:project-id "hive" :dry-run true})
-                      {:op :memory/legacy-export :project-id "hive"}]})
+                      {:op :project/list-projects}]})
 
 (defn- exercise
   "Run the handler labelled LABEL against a stub vessel answering every op
@@ -156,17 +153,3 @@
     (let [r (projectile/handle-projectile-recent {})]
       (is (true? (:isError r)))
       (is (str/includes? (:text r) "projectile not loaded")))))
-
-(deftest legacy-import-reads-the-export-and-counts-by-type
-  (let [{:keys [response]} (exercise {:label :legacy-import :response ok})
-        body (json/read-str (:text response) :key-fn keyword)]
-    (is (= {:dry-run true :would-import 2
-            :by-type {:notes 1 :snippets 0 :conventions 1 :decisions 0}}
-           body))))
-
-(deftest legacy-import-reports-a-failed-export
-  (ms/with-stub-store
-    (fn []
-      (sh/with-swarm-host [_ (fn [_ _] {:success false :error "no vessel"})]
-        (let [r (import/handle-import-json {:project-id "hive" :dry-run true})]
-          (is (str/includes? (:text r) "Failed to read JSON: no vessel")))))))
