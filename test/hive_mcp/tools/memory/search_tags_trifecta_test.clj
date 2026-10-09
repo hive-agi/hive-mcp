@@ -84,14 +84,21 @@
                              entries))]]
    :assert      (fn []
                   (is (= ["a" "c"]
-                         (mapv :id (search/filter-required-tags
+                         (mapv :id (run-filter
                                     {:entries [(entry "a" ["session-wrap"])
                                                (entry "b" ["decision"])
-                                               (entry "c" ["note" "session-wrap"])]
+                                               (entry "c" ["note" "session-wrap"])
+                                               (entry "d" ["session-wrapped"])]
                                      :tags ["session-wrap"]})))
-                      "only hits carrying the required tag survive")
+                      "only hits carrying the required tag, matched whole, survive")
+                  (is (= ["a"]
+                         (mapv :id (run-filter
+                                    {:entries [(entry "a" ["session-wrap" "decision"])
+                                               (entry "b" ["session-wrap"])]
+                                     :tags ["session-wrap" "decision"]})))
+                      "every required tag must be present")
                   (is (= ["x"]
-                         (mapv :id (search/filter-required-tags
+                         (mapv :id (run-filter
                                     {:entries [{:id "x" :metadata {:tags ["kanban" "todo"]}}]
                                      :tags ["kanban"]})))
                       "a sequential :tags value is read as tags too"))})
