@@ -27,8 +27,8 @@
       "the kanban plan-to-kanban meaning is kept"))
 
 (deftrifecta forge-param-advertised
-  #'hive-mcp.tools.consolidated.project-forge-schema-test/advertised
-  {:golden-path "test/golden/project_forge_schema.edn"
+  hive-mcp.tools.consolidated.project-forge-schema-test/advertised
+  {:golden-path "test/golden/hive-mcp/tools/consolidated/project-forge-schema.edn"
    :cases       {:max-slots   "max_slots"
                  :plan-id     "plan_id"
                  :task-filter "task_filter"
