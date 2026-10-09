@@ -85,6 +85,8 @@
            :unresolved-var
            {:exclude [;; core.logic vars that may not be in kondo's database
                       clojure.core.logic/membero
+                      ;; private clojure.core var, read through @#' by hot tests
+                      clojure.core/*loaded-libs*
                       ;; datahike.api - dynamically loaded, kondo can't resolve
                       datahike.api/database-exists?
                       datahike.api/create-database
