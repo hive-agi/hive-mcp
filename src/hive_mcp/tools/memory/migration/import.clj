@@ -7,7 +7,7 @@
             [clojure.data.json :as json]
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
-            [hive-spi.editor.services :as svc]))
+            [clojure.java.io :as io]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -49,17 +49,62 @@
                                  :project-id project-id}))
         :imported))))
 
+(def ^:private legacy-types
+  "Legacy storage file stem -> the by-type key the import reports it under."
+  [["note" :notes] ["snippet" :snippets] ["convention" :conventions] ["decision" :decisions]])
+
+(defn default-legacy-dir
+  "Root of the legacy Emacs JSON storage: HIVE_MCP_LEGACY_MEMORY_DIR when set,
+   else the first existing of ~/.emacs.d/hive-mcp and ~/.config/emacs/hive-mcp
+   (the old `hive-mcp-memory-storage-directory` default), else the first."
+  []
+  (let [home (System/getProperty "user.home")
+        candidates [(str home "/.emacs.d/hive-mcp") (str home "/.config/emacs/hive-mcp")]]
+    (or (not-empty (System/getenv "HIVE_MCP_LEGACY_MEMORY_DIR"))
+        (first (filter #(.isDirectory (io/file %)) candidates))
+        (first candidates))))
+
+(defn legacy-project-dir
+  "Directory holding PROJECT-ID's legacy files under ROOT, mirroring the old
+   elisp `hive-mcp-memory-storage-project-dir`: global/ or projects/<id>/."
+  [root project-id]
+  (if (= "global" project-id)
+    (io/file root "global")
+    (io/file root "projects" project-id)))
+
+(defn read-legacy-export
+  "Read PROJECT-ID's legacy JSON files under ROOT straight from disk.
+   Returns {:success true :result {:notes [..] :snippets [..] ...}} (a missing
+   type file reads as no entries) or {:success false :error msg} when the
+   project directory is absent or a file does not parse."
+  [root project-id]
+  (let [dir (legacy-project-dir root project-id)]
+    (if-not (.isDirectory dir)
+      {:success false :error (str "no legacy memory directory at " (.getPath dir))}
+      (try
+        {:success true
+         :result (into {}
+                       (for [[stem k] legacy-types
+                             :let [f (io/file dir (str stem ".json"))]]
+                         [k (if (and (.isFile f) (pos? (.length f)))
+                              (vec (json/read-str (slurp f) :key-fn keyword))
+                              [])]))}
+        (catch Exception e
+          {:success false :error (str "unreadable legacy JSON in " (.getPath dir) ": " (ex-message e))})))))
+
 (defn handle-import-json
-  "Import memory entries from legacy Emacs JSON storage."
-  [{:keys [project-id dry-run]}]
+  "Import memory entries from legacy Emacs JSON storage.
+   Reads the JSON files directly (see `read-legacy-export`); the former Emacs
+   round-trip through `hive-mcp-memory-query` always failed, so the import no
+   longer depends on the editor at all. LEGACY-DIR overrides the storage root."
+  [{:keys [project-id dry-run legacy-dir]}]
   (log/info "mcp-memory-import-json:" project-id "dry-run:" dry-run)
   (with-store
     (let [pid (or project-id (scope/get-current-project-id))
-          {:keys [success result error]} (svc/invoke :vessel :dispatch
-                                               {:op :memory/legacy-export :project-id pid} nil)]
+          {:keys [success result error]} (read-legacy-export (or legacy-dir (default-legacy-dir)) pid)]
       (if-not success
         (mcp-json {:error (str "Failed to read JSON: " error)})
-        (let [data (json/read-str result :key-fn keyword)
+        (let [data result
               all-entries (concat (:notes data) (:snippets data)
                                   (:conventions data) (:decisions data))]
           (if dry-run
