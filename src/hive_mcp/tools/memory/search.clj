@@ -308,6 +308,27 @@
    and stay visible — they are few and high-signal."
   ["carto" "ingestion-chunk"])
 
+(defn search-payload
+  "Pure: the ok payload of a semantic search.
+
+   A default-on exclusion filter must be loud: every payload echoes the
+   :excluded-tags the store query ran with, and :excludes-source says
+   whether they are the built-in default (:default), the caller's own set
+   (:caller) or nothing (:none). A caller can then tell an empty corpus
+   from a filtered one, and knows to pass exclude_tags=[] to see the rest
+   (kanban 20260728020157-1407f421)."
+  [{:keys [results query scope exclude-tags default-excludes]}]
+  (let [excluded (vec exclude-tags)]
+    {:results         results
+     :count           (count results)
+     :query           query
+     :scope           scope
+     :excluded-tags   excluded
+     :excludes-source (cond
+                        (empty? excluded)                    :none
+                        (= (set excluded) (set default-excludes)) :default
+                        :else                                :caller)}))
+
 ;; =============================================================================
 ;; Composite search-store* (fork-join across store + ingest)
 ;; =============================================================================
@@ -370,10 +391,11 @@
           (result/ok? post)
           (let [formatted (:ok post)]
             (record-co-access! formatted project-id "system:semantic-search")
-            (result/ok {:results formatted
-                        :count   (count formatted)
-                        :query   query
-                        :scope   project-id}))
+            (result/ok (search-payload {:results          formatted
+                                        :query            query
+                                        :scope            project-id
+                                        :exclude-tags     effective-excludes
+                                        :default-excludes default-exclude-tags})))
 
           :else
           (let [msg (or (:message post) (:name post) "post-filter failed")]
