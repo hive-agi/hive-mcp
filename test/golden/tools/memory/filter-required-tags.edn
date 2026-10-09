@@ -1,0 +1,30 @@
+{:all-required-and
+ [{:id "a",
+   :document "a",
+   :distance 0.1,
+   :metadata
+   {:tags "session-wrap,decision", :type "note", :content "a"}}],
+ :nil-tags-keeps-all
+ [{:id "a",
+   :document "a",
+   :distance 0.1,
+   :metadata {:tags "note", :type "note", :content "a"}}],
+ :no-tags-keeps-all
+ [{:id "a",
+   :document "a",
+   :distance 0.1,
+   :metadata {:tags "note", :type "note", :content "a"}}
+  {:id "b",
+   :document "b",
+   :distance 0.1,
+   :metadata {:tags "", :type "note", :content "b"}}],
+ :none-match [],
+ :single-required
+ [{:id "a",
+   :document "a",
+   :distance 0.1,
+   :metadata {:tags "session-wrap,note", :type "note", :content "a"}}
+  {:id "c",
+   :document "c",
+   :distance 0.1,
+   :metadata {:tags "session-wrap", :type "note", :content "c"}}]}
