@@ -118,6 +118,16 @@
   [msg]
   (contains? #{nil unowned-project} (:project-id msg)))
 
+(defn foreign-coordinator?
+  "Is AUTHOR-ID another coordinator session than READER-ID's? Pure. Both must
+   name a session; a sessionless lane is nobody's foreigner."
+  [reader-id author-id]
+  (boolean
+   (and (coordinator-reader? author-id)
+        (some? (coordinator-session author-id))
+        (some? (coordinator-session reader-id))
+        (not= (coordinator-session author-id) (coordinator-session reader-id)))))
+
 (defn root-visible?
   "May a ROOT-level shout (no :to, no :broadcast?, no :parent-id) reach
    coordinator reader `reader-id`? Pure. First rule that matches wins:
@@ -128,6 +138,10 @@
                                  behaviour.
      author is this session   -> yes. A coordinator still sees what it shouted
                                  itself (the wave scheduler).
+     author is ANOTHER session -> no. Another window's own root shouts (its
+                                 wrap notice, its progress) are its business;
+                                 what it needs others to read it broadcasts
+                                 with an argued reason, or addresses with :to.
      shout is project-scoped  -> yes. piggyback/get-messages already admitted
                                  it ONLY because its project is the reader's
                                  project or an HCR descendant of it.
@@ -141,10 +155,11 @@
                                  every coordinator window."
   [reader-id {:keys [agent-id] :as msg} global-opt-in?]
   (boolean
-   (or (nil? (coordinator-session reader-id))
-       (and (coordinator-reader? agent-id) (same-agent? reader-id agent-id))
-       (not (unowned? msg))
-       global-opt-in?)))
+   (cond
+     (nil? (coordinator-session reader-id))                       true
+     (and (coordinator-reader? agent-id) (same-agent? reader-id agent-id)) true
+     (foreign-coordinator? reader-id agent-id)                    false
+     :else (or (not (unowned? msg)) global-opt-in?))))
 
 (defn addressed-to?
   "Is `msg` part of `reader-id`'s audience? First rule that matches wins; see
