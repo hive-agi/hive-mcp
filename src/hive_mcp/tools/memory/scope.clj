@@ -17,6 +17,22 @@
   ([] (project-scope/get-current-project-id))
   ([directory] (project-scope/get-current-project-id directory)))
 
+(defn effective-directory
+  "The directory a memory handler resolves its project scope from: the
+   caller's :directory when it names one, else :current (the request's
+   working directory, `hive-mcp.context.request/current-directory`).
+   A blank string counts as absent. Pure; one map in.
+
+   `memory check_duplicate` resolves scope through this so it sees the
+   same project `memory add` writes to when :directory is omitted (kanban
+   20260728110541-3fa9f5f1): add defaulted to the request directory while
+   check_duplicate passed nil through and searched \"global\"."
+  [{:keys [directory current]}]
+  (if (and (string? directory)
+           (not (every? #(Character/isWhitespace (char %)) directory)))
+    directory
+    current))
+
 (defn inject-project-scope
   "Add project scope tag if not already present."
   [tags project-id]

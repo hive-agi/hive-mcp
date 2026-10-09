@@ -9,7 +9,8 @@
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
-            [hive-mcp.tools.memory.crud.deferred :as deferred]))
+            [hive-mcp.tools.memory.crud.deferred :as deferred]
+            [hive-mcp.context.request :as ctx]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -117,18 +118,25 @@
 (defn handle-check-duplicate
   "Check if content already exists in memory.
    Wraps the store lookup in `with-resilience` so a transient transport
-   drop yields a heal-and-retry rather than a false 'no duplicate' result."
+   drop yields a heal-and-retry rather than a false 'no duplicate' result.
+
+   An omitted :directory resolves to the request's working directory, the
+   same default `memory add` uses, via `scope/effective-directory`; it used
+   to fall through as nil and search \"global\" (kanban
+   20260728110541-3fa9f5f1)."
   [{:keys [type content directory]}]
-  (log/info "mcp-memory-check-duplicate:" type "directory:" directory)
-  (with-store
-    (let [store (mem-proto/get-store)
-          project-id (scope/get-current-project-id directory)
-          hash (mem-proto/content-hash content)
-          existing (with-resilience
-                     (mem-proto/find-duplicate store type hash {:project-id project-id}))]
-      (mcp-json {:exists (some? existing)
-                 :entry (when existing (fmt/entry->json-alist existing))
-                 :content_hash hash}))))
+  (let [directory (scope/effective-directory
+                   {:directory directory :current (ctx/current-directory)})]
+    (log/info "mcp-memory-check-duplicate:" type "directory:" directory)
+    (with-store
+      (let [store (mem-proto/get-store)
+            project-id (scope/get-current-project-id directory)
+            hash (mem-proto/content-hash content)
+            existing (with-resilience
+                       (mem-proto/find-duplicate store type hash {:project-id project-id}))]
+        (mcp-json {:exists (some? existing)
+                   :entry (when existing (fmt/entry->json-alist existing))
+                   :content_hash hash})))))
 
 (defn handle-update-tags
   "Replace tags on an existing memory entry.
