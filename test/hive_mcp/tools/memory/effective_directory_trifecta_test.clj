@@ -42,9 +42,9 @@
 (deftrifecta effective-directory-contract
   hive-mcp.tools.memory.effective-directory-trifecta-test/run-effective
   {:golden-path "test/golden/tools/memory/effective-directory.edn"
-   :cases       {:caller-given   {:directory "/home/u/a" :current "/home/u/b"}
-                 :omitted        {:directory nil :current "/home/u/b"}
-                 :blank          {:directory "  " :current "/home/u/b"}
+   :cases       {:caller-given   {:directory "/srv/a" :current "/srv/b"}
+                 :omitted        {:directory nil :current "/srv/b"}
+                 :blank          {:directory "  " :current "/srv/b"}
                  :both-absent    {:directory nil :current nil}}
    :gen         gen-input
    :pred        caller-wins-else-current?
@@ -56,7 +56,9 @@
                  ["blank-counts — an empty string shadows the default"
                   (fn [{:keys [directory current]}] (or directory current))]]
    :assert      (fn []
-                  (is (= "/req" (scope/effective-directory {:directory nil :current "/req"}))
+                  (is (= "/req" (run-effective {:directory nil :current "/req"}))
                       "an omitted directory resolves to the request directory, as add does")
-                  (is (= "/mine" (scope/effective-directory {:directory "/mine" :current "/req"}))
-                      "an explicit directory wins"))})
+                  (is (= "/mine" (run-effective {:directory "/mine" :current "/req"}))
+                      "an explicit directory wins")
+                  (is (= "/req" (run-effective {:directory "  " :current "/req"}))
+                      "a blank directory counts as absent"))})
