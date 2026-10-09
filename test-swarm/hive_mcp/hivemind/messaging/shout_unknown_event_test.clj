@@ -35,7 +35,8 @@
                  :string-started {:event-type "started" :data {}}
                  :neutral        {:event-type :blocked :data {:status-neutral? true}}
                  :unknown        {:event-type :working :data {}}
-                 :unknown-string {:event-type "running" :data {}}}
+                 :unknown-string {:event-type "running" :data {}}
+                 :nil-type       {:event-type nil :data {}}}
    :gen         (gen/hash-map :event-type (gen/elements unknown-types)
                               :data (gen/elements [{} {:message "m"}]))
    :pred        nil?

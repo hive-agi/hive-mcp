@@ -1,6 +1,7 @@
 {:blocked :blocked,
  :completed :idle,
  :neutral nil,
+ :nil-type nil,
  :progress :working,
  :started :working,
  :string-started :working,

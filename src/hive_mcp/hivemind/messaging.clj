@@ -97,9 +97,11 @@
    Also nil for an event type the registry does not know. The registry's
    lookup defaults an unknown type to :idle, so a typo'd :working or :running
    used to report a mid-task ling as available; an unknown type now leaves
-   the slave's status as it was."
+   the slave's status as it was. A nil type counts as unknown; it is checked
+   first because the registry's validity check calls `name` on it."
   [event-type data]
   (when (and (not (:status-neutral? data))
+             (some? event-type)
              (event-registry/valid-event-type? event-type))
     (event-type->slave-status event-type)))
 
