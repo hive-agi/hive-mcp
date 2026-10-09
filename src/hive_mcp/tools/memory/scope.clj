@@ -23,11 +23,10 @@
    working directory, `hive-mcp.context.request/current-directory`).
    A blank string counts as absent. Pure; one map in.
 
-   Every handler resolves scope through this so `memory add` and
-   `memory check_duplicate` see the same project when :directory is
-   omitted (kanban 20260728110541-3fa9f5f1): add defaulted to the request
-   directory while check_duplicate passed nil through and searched
-   \"global\"."
+   `memory check_duplicate` resolves scope through this so it sees the
+   same project `memory add` writes to when :directory is omitted (kanban
+   20260728110541-3fa9f5f1): add defaulted to the request directory while
+   check_duplicate passed nil through and searched \"global\"."
   [{:keys [directory current]}]
   (if (and (string? directory)
            (not (every? #(Character/isWhitespace (char %)) directory)))
