@@ -60,8 +60,12 @@
       with-pid? (assoc :slave/project-id pid))))
 
 (deftrifecta slave-projects-onto-ling-vocabulary
-  runtime-ports/slave->ling
-  {:gen gen-slave
+  hive-mcp.addons.runtime-ports/slave->ling
+  {:golden-path "test/golden/addons/emacs-ling-ports-slave-to-ling.edn"
+   :cases {:full        {:slave/id "a" :slave/status :idle :slave/project-id "p" :slave/name "x"}
+           :id-only     {:slave/id "b" :slave/name "y"}
+           :status-only {:slave/id "c" :slave/status :error}}
+   :gen gen-slave
    :pred #(and (string? (:ling/id %))
                (every? #{"ling"} (map namespace (keys %))))
    :num-tests 50

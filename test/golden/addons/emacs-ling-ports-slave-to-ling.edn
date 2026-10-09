@@ -1,0 +1,3 @@
+{:full #:ling{:id "a", :status :idle, :project-id "p"},
+ :id-only #:ling{:id "b"},
+ :status-only #:ling{:id "c", :status :error}}
