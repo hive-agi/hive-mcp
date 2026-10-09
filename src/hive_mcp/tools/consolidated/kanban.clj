@@ -192,6 +192,8 @@
                                            :description "Working directory for project scope (auto-detected if not provided)"}
                               "include_descendants" {:type "boolean"
                                                      :description "Include DESCENDANT (child) project tasks in results (HCR Wave 4). Default true — set false to restrict to current scope + ancestors only. Ancestor (parent) tasks are ALWAYS included regardless of this flag ('child sees parent')."}
+                              "include_ancestors" {:type "boolean"
+                                                   :description "[list/status] Include ANCESTOR (parent) project tasks. Default true ('child sees parent'). Set false from a leaf scope to list only its own board (+ descendants when include_descendants)."}
                               "scope" {:type "string"
                                        :enum ["all"]
                                        :description "[list/status] scope=\"all\" lifts the project filter entirely — returns the whole board across EVERY workspace (opt-in cross-workspace view). Omit for the default scoped view (current project + ancestors [+ descendants])."}

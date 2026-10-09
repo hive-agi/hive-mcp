@@ -31,11 +31,12 @@
    returns the whole board across every workspace."
   ([project-id include-descendants? limit query-tags]
    (query-kanban-entries project-id include-descendants? limit query-tags nil))
-  ([project-id include-descendants? limit query-tags {:keys [scope]}]
+  ([project-id include-descendants? limit query-tags {:keys [scope include-ancestors?]}]
    (let [all-scopes?    (= scope "all")
          global?        (= project-id "global")
          visible-ids    (when-not (or all-scopes? global?)
-                          (resolve-visible-project-ids project-id include-descendants?))
+                          (resolve-visible-project-ids project-id include-descendants?
+                                                       (if (false? include-ancestors?) false true)))
          multi-project? (boolean (or all-scopes? global? (and visible-ids (next visible-ids))))
          entries (cond
                    (or all-scopes? (and global? include-descendants?))
@@ -61,6 +62,22 @@
     (when-let [desc (seq (tree/get-descendant-ids pid))]
       (vec (cons pid desc)))))
 
+(defn visible-project-ids
+  "Pure core of `resolve-visible-project-ids`: the scope chain and the
+   descendant ids arrive as data, so the composition is testable without
+   touching the project tree.
+
+   CHAIN is [self ... \"global\"] as `scope/resolve-scope-chain` yields it.
+   When INCLUDE-ANCESTORS? is false the chain collapses to [project-id]
+   (kanban 20260913181359-7756fa87: a leaf listing otherwise drags in every
+   ancestor board). DESCENDANTS are added only when INCLUDE-DESCENDANTS?.
+   Returns nil for nil or \"global\" project-id."
+  [{:keys [project-id chain descendants include-ancestors? include-descendants?]}]
+  (when (and project-id (not= project-id "global"))
+    (let [up   (if (false? include-ancestors?) [project-id] chain)
+          down (when include-descendants? (seq descendants))]
+      (vec (distinct (concat up down))))))
+
 (defn resolve-visible-project-ids
   "Project-ids visible from `project-id`, honouring the documented scope
    inheritance (knowledge_graph/scope.clj):
@@ -72,18 +89,28 @@
    This is the fix for kanban HCR scope-blindness: the prior code path
    (`resolve-project-ids-with-descendants`) walked DOWN only, so listing from
    a child scope dropped every parent task. Returns nil for global (caller
-   handles the no-filter / single-scope branches)."
-  [project-id include-descendants?]
-  (when (and project-id (not= project-id "global"))
-    (let [ancestors   (scope/resolve-scope-chain project-id)   ; [self … "global"]
-          descendants (when include-descendants?
-                        (seq (tree/get-descendant-ids project-id)))]
-      (vec (distinct (concat ancestors descendants))))))
+   handles the no-filter / single-scope branches).
+
+   The 3-arity takes `include-ancestors?` (default true): false drops the
+   ancestor chain and keeps self (+ descendants). Composition lives in the
+   pure `visible-project-ids`."
+  ([project-id include-descendants?]
+   (resolve-visible-project-ids project-id include-descendants? true))
+  ([project-id include-descendants? include-ancestors?]
+   (when (and project-id (not= project-id "global"))
+     (visible-project-ids
+      {:project-id           project-id
+       :chain                (when-not (false? include-ancestors?)
+                               (scope/resolve-scope-chain project-id))   ; [self … "global"]
+       :descendants          (when include-descendants?
+                               (tree/get-descendant-ids project-id))
+       :include-ancestors?   include-ancestors?
+       :include-descendants? include-descendants?}))))
 
 (defn effective-dir [directory]
   (kt/effective-dir directory ctx/current-directory))
 
-(defn stats* [{:keys [include_descendants scope]
+(defn stats* [{:keys [include_descendants include_ancestors scope]
                 :or {include_descendants true}
                 :as params}]
   ;; HCR: explicit :directory > :_caller_cwd (bb-mcp session pwd) >
@@ -92,7 +119,9 @@
         project-id (scope/get-current-project-id eff-dir)
         {:keys [entries multi-project?]} (query-kanban-entries
                                           project-id include_descendants
-                                          plan/whole-board ["kanban"] {:scope scope})
+                                          plan/whole-board ["kanban"]
+                                          {:scope scope
+                                           :include-ancestors? (not (false? include_ancestors))})
         ;; Session todos are an agent's own step list, not backlog: they are
         ;; left out of the counts unless the caller opts in.
         kanban-entries (-> (plan/select-tagged entries ["kanban"])
@@ -129,8 +158,9 @@
 
 (defrecord FacadeBoardSource []
   src/IBoardSource
-  (scoped-board [_ {:keys [project-id include-descendants? scope]} {:keys [required-tags window]}]
-    (query-kanban-entries project-id include-descendants? window required-tags {:scope scope})))
+  (scoped-board [_ {:keys [project-id include-descendants? include-ancestors? scope]} {:keys [required-tags window]}]
+    (query-kanban-entries project-id include-descendants? window required-tags
+                          {:scope scope :include-ancestors? include-ancestors?})))
 
 (def ^:dynamic *board-source*
   "IBoardSource `list-slim*` reads at call time. Rebind to inject a board."
@@ -143,6 +173,7 @@
    - :status               todo | inprogress | inreview | done (pushed to store)
    - :project_id           explicit project scope override (defaults to dir-resolved)
    - :include_descendants  aggregate child-project tasks (default true)
+   - :include_ancestors    false drops the ancestor boards (default true)
    - :scope                \"all\" lifts the project filter (whole board)
    - :query                case-insensitive substring on title + description
    - :tags                 extra tag filter beyond [kanban, status]
@@ -165,7 +196,7 @@
 
    Session todos (`session-todo` tag) are dropped unless the request opts in
    (`plan/hidden-tags`): they are an agent's own step list, not backlog."
-  [{:keys [include_descendants project_id scope]
+  [{:keys [include_descendants include_ancestors project_id scope]
     :or   {include_descendants true}
     :as   params}]
   ;; HCR: explicit :directory > :_caller_cwd (bb-mcp session pwd) >
@@ -177,6 +208,7 @@
         (src/scoped-board *board-source*
                           {:project-id           scoped-pid
                            :include-descendants? include_descendants
+                           :include-ancestors?   (not (false? include_ancestors))
                            :scope                scope}
                           fetch-plan)]
     (plan/shape fetch-plan
