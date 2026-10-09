@@ -160,6 +160,19 @@
                   {:holder holder :file key})))
         hold-pairs))
 
+(defn request-yields-for!
+  "Send the deduplicated :claim/yield-request to each holder behind
+   `conflicts` on behalf of `requester`, WITHOUT parking it in the wait queue.
+
+   For a caller that must return at once (the carto write gate): a tell, never
+   an ask, so nothing blocks. Returns the requests actually sent
+   ([{:holder :file}]); a repeat within `yield-ttl-ms` is suppressed.
+
+   opts: :task-id, :notify! (default `tell!`), :now-ms."
+  [requester conflicts & [{:keys [task-id notify! now-ms] :or {notify! tell!}}]]
+  (request-yields! notify! requester task-id (holds conflicts)
+                   (or now-ms (System/currentTimeMillis))))
+
 (defn- warn-claimant!
   "Tell `ling-id` about holds on its files in other worktrees. Never blocks."
   [notify! ling-id task-id warnings]

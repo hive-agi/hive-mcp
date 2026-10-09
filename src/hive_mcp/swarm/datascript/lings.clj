@@ -76,22 +76,46 @@
   "Slave statuses whose claims no longer protect anything."
   #{:terminated :dead :killed :zombie})
 
+(defn holder-live?
+  "True when `slave-id` is a registered slave not in a dead status.
+
+   The one liveness rule for claim holders: `claim-file!` takes over a key
+   whose holder fails it, and `claim.registry/held-spans` (`:drop-dead?`) and
+   `claim.gate` stop counting such a holder as a blocker. An unregistered id
+   fails it too, matching what `claim-file!` has always done: a claim row
+   cannot outlive the slave entity it references."
+  [slave-id]
+  (boolean
+   (when slave-id
+     (when-let [slave ((delegate/resolve-var "hive-datascript.swarm.queries" 'get-slave)
+                       slave-id)]
+       (not (contains? dead-statuses (:slave/status slave)))))))
+
+(defn- lease-stale?
+  "True when the claim on `file-path` has had no activity for the lease window.
+
+   Activity is the later of creation and the last `refresh-claim!` heartbeat
+   (`claim.registry/key-stale?`). Resolved late (the registry requires this
+   namespace); when it is unavailable the creation-age rule stands."
+  [file-path]
+  (if-let [f (try (requiring-resolve 'hive-mcp.swarm.claim.registry/key-stale?)
+                  (catch Throwable _registry-absent-creation-age-stands nil))]
+    (boolean (f file-path))
+    (boolean ((impl! 'claim-stale?) file-path))))
+
 (defn- live-foreign-holder
   "The id of the LIVE slave other than `slave-id` holding `file-path`, or nil.
 
-   Live means registered, not in a dead status, and holding a claim that is not
-   stale. A dead or stale holder is exactly the case the upsert exists for (a
-   ling that died holding a file must not fence it off forever), so only a live
-   one refuses."
+   Live means `holder-live?` and holding a claim whose lease has not lapsed. A
+   dead or stale holder is exactly the case the upsert exists for (a ling that
+   died holding a file must not fence it off forever), so only a live one
+   refuses."
   [file-path slave-id]
   (let [{holder :slave-id} ((impl! 'get-claim-info) file-path)]
-    (when (and holder (not= holder slave-id))
-      (let [slave ((delegate/resolve-var "hive-datascript.swarm.queries" 'get-slave)
-                   holder)]
-        (when (and slave
-                   (not (contains? dead-statuses (:slave/status slave)))
-                   (not ((impl! 'claim-stale?) file-path)))
-          holder)))))
+    (when (and holder (not= holder slave-id)
+               (holder-live? holder)
+               (not (lease-stale? file-path)))
+      holder)))
 
 (defn- claim-lock
   "The one claim lock (the logic-db atom `coordinator/atomic-claim-files!` and
