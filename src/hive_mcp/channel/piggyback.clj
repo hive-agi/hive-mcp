@@ -392,10 +392,10 @@
             max-global  (max-ts (filter global? in-context))
             max-project (max-ts (remove global? in-context))
             addressed (if (spawner-routing?)
-                        (audience/filter-messages agent-id (lineage/attach-parents (lineage/registry-parent-of) in-context) (scoped-id-fn project-id) {:global-opt-in? (unowned-global-opt-in?)})
+                        (audience/filter-messages agent-id (lineage/with-parents all-msgs in-context) (scoped-id-fn project-id) {:global-opt-in? (unowned-global-opt-in?)})
                         in-context)
             peer-rows (if (spawner-routing?)
-                        (audience/peer-traffic-digest agent-id (lineage/attach-parents (lineage/registry-parent-of) in-context))
+                        (audience/peer-traffic-digest agent-id (lineage/with-parents all-msgs in-context))
                         [])
             ;; :ts and :deliberate? ride along only as far as the transform
             ;; chain, which is the one stage that reads them; the row a reader
