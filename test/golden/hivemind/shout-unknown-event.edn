@@ -1,0 +1,8 @@
+{:blocked :blocked,
+ :completed :idle,
+ :neutral nil,
+ :progress :working,
+ :started :working,
+ :string-started :working,
+ :unknown nil,
+ :unknown-string nil}
