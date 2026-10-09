@@ -38,12 +38,15 @@
 
 (deftrifecta plan-contract-derivation
   hive-mcp.plan.plan-schema-contract-test/contract-of
-  {:cases {:plan projected}
+  {:golden-path "test/golden/hive-mcp/plan/plan-contract-derivation.edn"
+   :cases {:plan projected}
    :xf    identity
    :gen   (gen/return projected)
    :pred  #(and (vector? (:required %)) (vector? (:step-required %))
                 (map? (:step-enums %)))
-   :num-tests 5})
+   :num-tests 5
+   :mutations [["drops-required"   (fn [s] (assoc (tool/plan-contract s) :required ["id" "title"]))]
+               ["drops-step-enums" (fn [s] (assoc (tool/plan-contract s) :step-enums {}))]]})
 
 (deftest contract-matches-the-malli-schema
   (let [{:keys [required step-required step-enums]} (tool/plan-contract projected)]
