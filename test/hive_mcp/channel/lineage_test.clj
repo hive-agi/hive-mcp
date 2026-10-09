@@ -73,3 +73,20 @@
 
 (deftest an-absent-registry-attaches-nothing
   (is (= [{:agent-id "x"}] (lineage/attach-parents (constantly nil) [{:agent-id "x"}]))))
+
+(deftest a-parent-named-once-is-remembered-after-the-ling-is-gone
+  (testing "measured 2026-10-09: an aborted ling leaves the registry, but one of
+            its rows named its parent, so its parentless rows still route"
+    (let [rows  [{:agent-id "csr-scan" :parent-id "coordinator:31311" :project-id "hive-carto"}
+                 {:agent-id "csr-scan" :project-id "hive-carto"}]
+          known (lineage/learned-parents {} rows)]
+      (is (= {"csr-scan" "coordinator:31311"} known))
+      (is (= [] (aud/filter-messages "coordinator:246159-hive"
+                                     (lineage/attach-parents known rows))))))
+  (is (= {} (lineage/learned-parents {} [{:agent-id "x" :parent-id ""} {:agent-id nil :parent-id "p"}]))))
+
+(deftest another-coordinators-root-shout-is-its-own-business
+  (is (not (aud/root-visible? "coordinator:246159-hive" {:agent-id "coordinator:31311" :project-id "hive"} false)))
+  (is (aud/root-visible? "coordinator:246159-hive" {:agent-id "coordinator:246159" :project-id "hive"} false))
+  (is (aud/root-visible? "coordinator-hive" {:agent-id "coordinator:31311" :project-id "hive"} false))
+  (is (aud/addressed-to? "coordinator:246159-hive" {:agent-id "coordinator:31311" :broadcast? true})))

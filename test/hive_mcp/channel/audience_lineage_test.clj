@@ -51,10 +51,7 @@
    :out :boolean
    :rel (fn [{:keys [reader author project opt-in]} out]
           (= out (boolean
-                  (or (nil? (session-of reader))
-                      (= (session-of reader) (author-session author))
-                      (= "hive" project)
-                      opt-in))))
+                  (or (nil? (session-of reader)) (= (session-of reader) (author-session author)) (and (nil? (author-session author)) (or (= "hive" project) opt-in))))))
    :mutation false
    :num-tests 300})
 

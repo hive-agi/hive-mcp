@@ -28,12 +28,38 @@
                 msg))))
         msgs))
 
+(defn learned-parents
+  "KNOWN agent -> parent map grown by every row in MSGS that names its parent.
+   Pure."
+  [known msgs]
+  (into known
+        (keep (fn [{:keys [agent-id parent-id]}]
+                (when (and (string? agent-id) (string? parent-id) (not (str/blank? parent-id)))
+                  [agent-id parent-id])))
+        msgs))
+
+(defonce ^{:private true
+           :doc "agent-id -> parent, remembered from rows and registry hits, so a
+                 ling's rows still route to its coordinator after the registry
+                 has forgotten the ling."}
+  known-parents
+  (atom {}))
+
 (defn registry-parent-of
-  "agent-id -> spawning agent id from the swarm registry, memoized for one
-   read. nil for an unknown agent or when the registry is absent."
+  "agent-id -> spawning agent id: the live swarm registry, else the parent last
+   seen for that agent. Memoized for one read; nil when neither knows."
   []
   (let [get-slave (rescue nil (requiring-resolve 'hive-mcp.swarm.datascript.queries/get-slave))]
     (memoize
      (fn [agent-id]
-       (when get-slave
-         (rescue nil (:slave/parent (get-slave agent-id))))))))
+       (let [p (when get-slave (rescue nil (:slave/parent (get-slave agent-id))))]
+         (if (and (string? p) (not (str/blank? p)))
+           (do (swap! known-parents assoc agent-id p) p)
+           (get @known-parents agent-id)))))))
+
+(defn with-parents
+  "MSGS with missing parents filled, after learning parents from every row in
+   SEEN (the whole buffer, so a parent named once is remembered)."
+  [seen msgs]
+  (swap! known-parents learned-parents seen)
+  (attach-parents (registry-parent-of) msgs))
