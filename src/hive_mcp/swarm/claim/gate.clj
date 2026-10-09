@@ -70,7 +70,10 @@
   "Install `f` as the conflict explainer (nil restores name resolution).
    Returns the previous one. `f` has the shape of
    `hive-agent.swarm.claim.reason/conflicts`:
-   (f callers-fn held wanted-span agent-id) => [{:file :qn :held-by :why ...}]."
+   (f held wanted slave-id {:callers-fn f :ctx ctx})
+   => [{:file :qn :mode :held-by :reason :message :why {:fact :rules :premises}}]
+   where `held` is what `registry/held-spans` returns and `wanted` is the
+   vector of wanted spans."
   [f]
   (first (reset-vals! reason-override f)))
 
@@ -128,15 +131,15 @@
 (defn- conflict-id [c] [(:file c) (:qn c) (:held-by c)])
 
 (defn- explain-why
-  "`conflicts` each with :why from the conflict explainer, nil without one."
-  [conflicts agent wanted scope]
+  "`conflicts` each with :why from the conflict explainer, nil without one.
+   The explainer is called ONCE with the whole `wanted` vector."
+  [conflicts agent wanted scope ctx]
   (let [whys (if-let [f (reason-fn)]
                (try
-                 (let [callers (graph/callers-fn scope)
-                       held    (registry/held-spans {:drop-dead? true})]
+                 (let [held (registry/held-spans {:drop-dead? true})]
                    (into {}
-                         (for [s wanted
-                               c (f callers held s agent)
+                         (for [c (f held wanted agent {:callers-fn (graph/callers-fn scope)
+                                                       :ctx        ctx})
                                :when (:why c)]
                            [(conflict-id c) (:why c)])))
                  (catch Throwable explainer-failed-why-stays-nil
@@ -216,7 +219,7 @@
            :acquired (:spans-claimed result 0)
            :warnings (vec (:warnings result))
            :lease-ms lease}
-          (let [conflicts (explain-why (:conflicts result) agent wanted scope)
+          (let [conflicts (explain-why (:conflicts result) agent wanted scope ctx)
                 asked     (request-yields! agent conflicts)]
             (log/info "claim gate refused" {:agent agent :op op
                                             :conflicts (count conflicts)})

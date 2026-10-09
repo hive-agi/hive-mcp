@@ -12,7 +12,8 @@
             [hive-mcp.swarm.datascript :as ds]
             [hive-test.isolation :as iso]
             hive-mcp.isolation-methods
-            [hive-mcp.swarm.datascript.lings :as lings]))
+            [hive-mcp.swarm.datascript.lings :as lings]
+            [hive-mcp.swarm.delegate :as delegate]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -74,7 +75,8 @@
            (select-keys c [:file :qn :mode])))
     (is (string? (:message c)))
     (is (contains? c :why))
-    (is (nil? (:why c)) "no explainer registered and none on this classpath")
+    (when-not (delegate/available? "hive-agent.swarm.claim.reason")
+      (is (nil? (:why c)) "no explainer registered and none on this classpath"))
     (is (re-find #"ling-1" (:hint r)))
     (testing "the holder is asked to yield, once, and the caller is not parked"
       (is (= [["ling-2" "ling-1" :claim/yield-request]]
@@ -168,16 +170,39 @@
   (ling! "ling-1")
   (ling! "ling-2")
   (write! "ling-1" "app.core/alpha")
-  (let [seen (atom nil)]
+  (let [seen (atom [])]
     (gate/register-reason-fn!
-     (fn [_callers held wanted agent]
-       (reset! seen {:agent agent :qn (:span/qn wanted) :held (count held)})
+     (fn [held wanted agent opts]
+       (swap! seen conj {:agent   agent
+                         :wanted  (mapv :span/qn wanted)
+                         :held    (count held)
+                         :opts    (set (keys opts))
+                         :callers (fn? (:callers-fn opts))})
        [{:file f :qn "app.core/alpha" :held-by "ling-1"
-         :why {:rule :same-form :because "both edit alpha"}}]))
-    (let [r (write! "ling-2" "app.core/alpha")]
-      (is (= {:agent "ling-2" :qn "app.core/alpha" :held 1} @seen))
-      (is (= {:rule :same-form :because "both edit alpha"}
+         :why {:fact [:claim/blocks] :rules [:same-form] :premises []}}]))
+    (let [r (gate/check-write! {:agent-id "ling-2"
+                                :spans    [{:file f :qn "app.core/alpha"}
+                                           {:file f :qn "app.core/delta"}]})]
+      (is (= [{:agent "ling-2" :wanted ["app.core/alpha" "app.core/delta"]
+               :held 1 :opts #{:callers-fn :ctx} :callers true}]
+             @seen)
+          "called ONCE with the whole wanted vector")
+      (is (= {:fact [:claim/blocks] :rules [:same-form] :premises []}
              (:why (first (:conflicts r))))))))
+
+(deftest the-real-hive-agent-reason-explains-a-same-form-refusal
+  (if-not (delegate/available? "hive-agent.swarm.claim.reason")
+    (println "SKIP the-real-hive-agent-reason-explains-a-same-form-refusal:"
+             "hive-agent.swarm.claim.reason is not on this classpath")
+    (do
+      (ling! "ling-1")
+      (ling! "ling-2")
+      (write! "ling-1" "app.core/alpha")
+      (let [r   (write! "ling-2" "app.core/alpha")
+            why (:why (first (:conflicts r)))]
+        (is (false? (:allowed? r)))
+        (is (some? why) (pr-str r))
+        (is (some #{:same-form} (:rules why)) (pr-str why))))))
 
 (deftest a-throwing-reason-fn-leaves-why-nil
   (ling! "ling-1")
