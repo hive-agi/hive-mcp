@@ -239,7 +239,13 @@
    ["a top-level op-result key resolves"
     {:op-id "a" :path ["success"]}      sample-results true]
    ["a path that exists but holds nil resolves to nil, not to the sentinel"
-    {:op-id "a" :path ["data" "field"]} sample-results nil]])
+    {:op-id "a" :path ["data" "field"]} sample-results nil]
+   ;; The op-result ITSELF is nil: present under its id, holding nil. Only a
+   ;; `contains?` lookup tells this apart from a missing op; an `if-let` on the
+   ;; op lookup collapses it to the sentinel. Without this row that mutant
+   ;; survives (kanban 20260729123145-6f9a02e5).
+   ["an op whose result is itself nil resolves to nil, not to the sentinel"
+    {:op-id "n" :path []}               {"n" nil}      nil]])
 
 (def collect-ref-op-ids-cases
   "[label op] for :bx/f; the expectation is `op-ref-op-ids`, the rule itself."
