@@ -105,10 +105,16 @@
    applied to the existing content (exact substring, unique match). Nil when
    the edit does not touch content. Throws ex-info {:type :invalid-edit} when
    :find/:replace are incomplete, non-string, blank :find, combined with
-   :content, or :find is not a unique match."
+   :content, or :find is not a unique match.
+
+   Also throws {:type :invalid-edit} when the existing content is not a
+   string: a kanban card's content is a map ({:title :status :description
+   ...}), and casting it to String surfaced as a bare ClassCastException that
+   read like a backend fault. The error names `kanban update` instead."
   [existing {:keys [content find replace] :as params}]
   (let [find?    (contains? params :find)
-        replace? (contains? params :replace)]
+        replace? (contains? params :replace)
+        current  (:content existing)]
     (cond
       (not (or find? replace?))
       content
@@ -125,8 +131,17 @@
       (not (string? replace))
       (invalid-edit! "replace must be a string" {:replace replace})
 
+      (not (or (nil? current) (string? current)))
+      (invalid-edit! (str "find/replace needs string content, but this entry's"
+                          " content is a " (if (map? current) "map" (str (type current)))
+                          (when (map? current)
+                            "; a kanban card is edited with `kanban update`"
+                            )
+                          ".")
+                     {:content-type (str (type current))})
+
       :else
-      (find-replace (or (:content existing) "") find replace))))
+      (find-replace (or current "") find replace))))
 
 (defn- build-updates
   "Compute the partial-update map from the incoming edit params against the
@@ -307,13 +322,35 @@
      :not-found (get status->count :not-found 0)
      :errors    (get status->count :error 0)}))
 
+(defn dry-run-op
+  "Validate one batch-edit op as apply-edit! would, without writing: known
+   params, non-blank id, safe type, entry present, and :content or a :find that
+   occurs exactly once. `lookup` maps an id to its stored entry or nil.
+   Returns {:id :ok true} or {:id :ok false :error msg}."
+  [lookup {:keys [id type] :as op}]
+  (try
+    (when-let [unknown (seq (unrecognised-params op))]
+      (invalid-edit! (unrecognised-params-message unknown) {}))
+    (when-not (and (string? id) (not (str/blank? id)))
+      (invalid-edit! "id is required (non-blank string)" {}))
+    (validate-type! type)
+    (let [existing (lookup id)]
+      (when-not existing
+        (invalid-edit! (str "Entry not found: " id) {:id id}))
+      (resolve-content existing op))
+    {:id id :ok true}
+    (catch Exception e
+      {:id id :ok false :error (.getMessage e)})))
+
 (defn handle-batch-edit
   "Apply a batch of edits sequentially. Each operation has the same shape
    as handle-edit params. Returns a summary + per-op result vector.
 
    Params:
      :operations  — required, seq of {:id ... :type? ... :content? ... :tags? ...}
-     :dry-run     — optional, validate + preview without writing (default false)
+     :dry-run     — optional, validate every op against the stored entries
+                    without writing; returns {:dry_run :op_count :valid
+                    :invalid :results [{:id :ok :error?}]}
      :atomic      — accepted but not enforced yet — follow-up ships the single-tx
                     path per addendum 20260423133956-0aa648bc"
   [{:keys [operations dry-run]
@@ -323,15 +360,15 @@
     (mcp-error "operations is required (non-empty array of edit ops)")
 
     dry-run
-    (mcp-json {:dry_run  true
-               :op_count (count operations)
-               :preview  (mapv (fn [op]
-                                 (let [unknown (unrecognised-params op)]
-                                   (cond-> (select-keys op [:id :type :content :find :replace
-                                                            :tags :duration
-                                                            :abstraction_level :reason])
-                                     (seq unknown) (assoc :unrecognised_params unknown))))
-                               operations)})
+    (with-store
+      (let [lookup  (fn [id] (second (store-holding id)))
+            results (mapv #(dry-run-op lookup %) operations)
+            valid   (count (filter :ok results))]
+        (mcp-json {:dry_run  true
+                   :op_count (count operations)
+                   :valid    valid
+                   :invalid  (- (count operations) valid)
+                   :results  results})))
 
     :else
     (with-store

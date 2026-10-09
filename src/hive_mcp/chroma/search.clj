@@ -64,7 +64,7 @@
                        (conn/get-or-create-named-collection
                          (:collection-name resolved) (:dimension resolved))
                        (conn/get-or-create-collection))
-            query-emb (gate/with-embedding-gate (emb/embed-text provider query-text))
+            query-emb (emb/embed-text provider query-text)
             results   (search-collection coll query-emb limit where-clause where-doc-clause)]
         (log/debug "Semantic search for:" (subs query-text 0 (min 50 (count query-text)))
                    "found:" (count results))
@@ -79,8 +79,7 @@
                         provider (:provider resolved)
                         coll     (conn/get-or-create-named-collection
                                    cn (:dimension resolved))
-                        query-emb (gate/with-embedding-gate
-                                    (emb/embed-text provider query-text))]
+                        query-emb (emb/embed-text provider query-text)]
                     (search-collection coll query-emb limit where-clause where-doc-clause))
                   (catch Exception e
                     (log/debug "Fan-out search failed for" cn ":" (.getMessage e))

@@ -1,0 +1,4 @@
+{:kanban-map {:invalid-edit true},
+ :nil-content {:invalid-edit false},
+ :string-unique {:ok "alpha B gamma"},
+ :vector-content {:invalid-edit false}}

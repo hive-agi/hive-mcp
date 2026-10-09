@@ -23,7 +23,11 @@
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
             [hive-mcp.memory.type-registry :as type-registry]
             [hive-weave.core :as weave]
-            [hive-mcp.memory.write-events :as write-events]))
+            [hive-mcp.memory.write-events :as write-events]
+            [hive-mcp.tools.memory.crud.deferred :as deferred]
+            [hive-mcp.embeddings.shared-gate :as embed-gate]
+            [hive-mcp.tools.memory.crud.edge-outcome :as edge-outcome]
+            [hive-mcp.extensions.registry :as ext]))
 
 (def ^:const ^:private memory-write-timeout-ms
   "Timeout budget for a single memory write (Chroma add + KG tx + fetch).
@@ -189,25 +193,66 @@
   [v]
   (reset! role-card-validator v))
 
-(defn current-role-card-validator
-  "The injected validator, else one resolved from hive-spi.role.card, else nil."
+(def role-card-validator-extension-key
+  "Extension-registry key under which a provider (e.g. the addon that owns the
+   RoleCard contract) registers its validator map {:valid? fn :explain fn}.
+   The provider registers INTO hive-mcp, so no private namespace name appears
+   in this public source (dependency inversion over the registry seam)."
+  :role/card-validator)
+
+(defn select-role-card-validator
+  "Pure: pick the RoleCard validator from candidate sources in precedence order
+   :injected > :extension > :spi. Returns {:source kw :validator v-or-nil};
+   :source :none means no validator exists and the gate cannot run."
+  [{:keys [injected extension spi]}]
+  (cond
+    injected  {:source :injected  :validator injected}
+    extension {:source :extension :validator extension}
+    spi       {:source :spi       :validator spi}
+    :else     {:source :none      :validator nil}))
+
+(defn- spi-role-card-validator
+  "Validator resolved from the hive-spi role leaf, or nil when it is absent."
   []
-  (or @role-card-validator
-      (when-let [valid? (resolve-role-card-sym (quote hive-spi.role.card/valid?))]
-        {:valid? valid?
-         :explain (or (resolve-role-card-sym (quote hive-spi.role.card/explain))
-                      (constantly nil))})))
+  (when-let [valid? (resolve-role-card-sym (quote hive-spi.role.card/valid?))]
+    {:valid? valid?
+     :explain (or (resolve-role-card-sym (quote hive-spi.role.card/explain))
+                  (constantly nil))}))
+
+(defn current-role-card-validator
+  "The injected validator, else one resolved from hive-spi.role.card, else nil.
+   Between the two, a validator registered in the extension registry under
+   `role-card-validator-extension-key` is consulted."
+  []
+  (:validator
+   (select-role-card-validator
+    {:injected  @role-card-validator
+     :extension (ext/get-extension role-card-validator-extension-key)
+     :spi       (spi-role-card-validator)})))
 
 (defn- validate-role-gate!
   "Validate :role content against the RoleCard schema before storage.
 
    Resolves the validator via `current-role-card-validator` — injected first,
-   else the hive-spi role leaf, else nil (gate skipped). FAIL-LOUD otherwise:
+   else one registered under `role-card-validator-extension-key`, else the
+   hive-spi role leaf, else nil (gate skipped). FAIL-LOUD otherwise:
    throws `:role-gate-rejected` when the content is unreadable EDN, not a map,
-   or a non-conformant RoleCard."
+   or a non-conformant RoleCard. A validator whose :valid? is not invokable
+   (e.g. a bare fn registered instead of a {:valid? :explain} map) is rejected
+   loudly rather than failing with an opaque NPE; a missing :explain explains
+   nothing.
+
+   A skipped gate is no longer silent: it logs a warning naming the
+   extension key a provider must register under."
   [content]
-  (when-let [{:keys [valid? explain]} (current-role-card-validator)]
-    (let [card (try
+  (if-let [{:keys [valid? explain]} (current-role-card-validator)]
+    (let [explain (if (ifn? explain) explain (constantly nil))
+          _ (when-not (ifn? valid?)
+              (throw (ex-info (str "RoleCard validator is malformed: expected a map "
+                                   "{:valid? fn :explain fn}")
+                              {:type :role-gate-rejected
+                               :explanation :role-gate/malformed-validator})))
+          card (try
                  (edn/read-string content)
                  (catch Exception e
                    (throw (ex-info (str "RoleCard content is not readable EDN: "
@@ -218,7 +263,10 @@
                              "(keyword) and :role/name (string). Explanation: "
                              (pr-str (explain card)))
                         {:type :role-gate-rejected
-                         :explanation (explain card)}))))))
+                         :explanation (explain card)}))))
+    (log/warn "RoleCard gate skipped: no validator injected, none registered under"
+              role-card-validator-extension-key
+              "and hive-spi.role.card is absent; the :role entry is stored unvalidated")))
 
 (defn- index-entry!
   "Index entry through IMemoryStore. Plan-type entries get enriched with
@@ -233,11 +281,18 @@
    Wraps the store add-entry! in `with-resilience` so a dropped
    HTTP transport (selector-manager-closed IOException surfaced as
    ExecutionException) kicks the heal loop and retries once before
-   surfacing the failure to the caller."
+   surfacing the failure to the caller.
+
+   On embedding failure the complete entry, with its store slot, is persisted
+   to the local outbox BEFORE its id is acknowledged; the housekeeping drain
+   reembeds it into that slot. Other store failures are never misreported as
+   deferred writes. The embed runs on the :interactive lane of the shared
+   provider gate, ahead of batch callers."
   [{:keys [type content tags-with-scope content-hash duration-str
            expires project-id abstraction-level knowledge-gaps store-key]
-    :or   {store-key :default}}]
-  (let [base-entry {:type type :content content :tags tags-with-scope
+    :or {store-key :default}}]
+  (let [base-entry {:id (mem-proto/generate-id)
+                    :type type :content content :tags tags-with-scope
                     :content-hash content-hash :duration duration-str
                     :expires (or expires "") :project-id project-id
                     :abstraction-level abstraction-level
@@ -246,9 +301,21 @@
                 (cond-> (assoc base-entry :plan-status "draft")
                   (plans/count-plan-steps content)
                   (assoc :steps-count (plans/count-plan-steps content)))
-                base-entry)]
-    (with-resilience
-      (mem-proto/add-entry! (mem-proto/get-store store-key) entry))))
+                base-entry)
+        park! #(deferred/park! (deferred/with-store-key entry store-key))]
+    (try
+      (let [result (binding [embed-gate/*lane* :interactive]
+                     (with-resilience
+                       (mem-proto/add-entry! (mem-proto/get-store store-key) entry)))]
+        (if (and (map? result)
+                 (deferred/embedding-failure?
+                   (ex-info "Embedding result" {:result result})))
+          (park!)
+          result))
+      (catch Exception e
+        (if (deferred/embedding-failure? e)
+          (park!)
+          (throw e))))))
 
 (def ^:private ^:const read-after-write-attempts 6)
 (def ^:private ^:const read-after-write-base-ms 40)
@@ -281,33 +348,37 @@
 
    `:store-key` (passed via `entry-ctx`) routes the read-after-write +
    `:kg-outgoing` link write to the same slot the entry was indexed in.
-   Defaults to `:default` (legacy / milvus). Kanban writes thread
-   `:kanban` so the back-link update lands in the same qdrant
-   collection that `index-entry!` wrote to.
+   Defaults to `:default`. Kanban writes thread `:kanban`.
 
-   Note: `create-kg-edges!` does back-edge bookkeeping on entries that
-   may live in *other* slots (e.g. an axiom in :default that a kanban
-   entry depends-on). That cross-slot scan is a known soft-edge for
-   the cutover window — see plan section D.5. KG edges themselves
-   live in Datahike, unaffected by the IMemoryStore slot.
+   The entry is already stored when this runs, so a failed edge write never
+   fails the add: the response carries the entry id plus `:kg_edge_errors`
+   [{:relation :to :error}], and the :added notify still fires.
 
-   The KG outgoing-edge update is wrapped in `with-resilience` so a
-   transient Milvus transport drop during the edge-link write kicks
-   the heal loop instead of poisoning KG edges. All types — plans
-   included — flow through the single IMemoryStore."
+   A deferred entry (embed failed, parked in the outbox) is answered from
+   its outbox record; its :kg-outgoing link is amended into that record so
+   the drain stores it with the entry."
   [entry-id kg-params project-id agent-id
    {:keys [tags-with-scope type knowledge-gaps store-key]
-    :or   {store-key :default}}]
+    :or {store-key :default}}]
   (let [store (mem-proto/get-store store-key)
-        edge-ids (create-kg-edges! entry-id kg-params project-id agent-id)
-        _ (when (seq edge-ids)
+        pending (deferred/lookup entry-id)
+        {:keys [edge-ids edge-errors]}
+        (edge-outcome/attempt-edges
+         #(create-kg-edges! entry-id kg-params project-id agent-id)
+         (edge-outcome/edge-requests kg-params))
+        pending (if (and pending (seq edge-ids))
+                  (do (deferred/amend! entry-id {:kg-outgoing edge-ids})
+                      (deferred/lookup entry-id))
+                  pending)
+        _ (when (and (seq edge-ids) (not pending))
             (with-resilience
               (mem-proto/update-entry! store entry-id {:kg-outgoing edge-ids})))
-        created (fetch-with-retry store entry-id)]
+        created (or pending (fetch-with-retry store entry-id))]
     (when-not created
       (log/error "Failed to retrieve entry after indexing:" entry-id))
     (log/info "Created memory entry:" entry-id
               (when (seq edge-ids) (str " with " (count edge-ids) " KG edges"))
+              (when (seq edge-errors) (str " edge-errors:" (count edge-errors)))
               (when (seq knowledge-gaps) (str " gaps:" (count knowledge-gaps))))
     (write-events/notify! :added {:id entry-id :memory-type type
                                   :tags tags-with-scope :project-id project-id})
@@ -316,13 +387,17 @@
       ;; cannot disagree with what was stored.
       (let [requested (type-registry/requested-type-of tags-with-scope)]
         (mcp-json (cond-> (fmt/entry->json-alist created)
+                    pending (assoc :embedding_deferred true :reembed_id entry-id)
                     (seq edge-ids) (assoc :kg_edges_created edge-ids)
+                    (seq edge-errors) (assoc :kg_edge_errors edge-errors)
                     requested
                     (assoc :queued_for_review
                            {:requested_type requested
                             :parked_as      type
                             :reason         (:reason (type-registry/gate-of requested))}))))
-      (mcp-error (str "Entry indexed as " entry-id " but retrieval failed. Check memory store connectivity.")))))
+      (mcp-error (str "Entry indexed as " entry-id " but retrieval failed. Check memory store connectivity."
+                      (when (seq edge-errors)
+                        (str " KG edges also failed: " (pr-str edge-errors))))))))
 
 (defn- do-add!
   "Inner core of handle-add. Runs the memory-store/KG IO path through

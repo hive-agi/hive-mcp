@@ -1,0 +1,7 @@
+{:conflict {:all {"x" {:owner :a, :v 1}}, :by-owner {:a #{"x"}}, :steps [:ok :conflict]},
+ :deregister-owner-only {:all {"y" {:owner :b, :v 2}}, :by-owner {:b #{"y"}}, :steps [:ok :ok #{"x"}]},
+ :deregister-unknown {:all {"x" {:owner :a, :v 1}}, :by-owner {:a #{"x"}}, :steps [:ok #{}]},
+ :empty {:all {}, :by-owner {}, :steps []},
+ :fresh {:all {"x" {:owner :a, :v 1}}, :by-owner {:a #{"x"}}, :steps [:ok]},
+ :reregister-after-deregister {:all {"x" {:owner :b, :v 3}}, :by-owner {:b #{"x"}}, :steps [:ok #{"x"} :ok]},
+ :replace {:all {"x" {:owner :a, :v 2}}, :by-owner {:a #{"x"}}, :steps [:ok :replaced]}}

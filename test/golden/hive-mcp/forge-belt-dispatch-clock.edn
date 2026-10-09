@@ -1,0 +1,12 @@
+{:disabled
+ {:enabled false,
+  :disabled true,
+  :timestamp "2040-12-31T23:59:59Z",
+  :expected-enabled false,
+  :expected-timestamp "2040-12-31T23:59:59Z"},
+ :enabled
+ {:enabled true,
+  :disabled false,
+  :timestamp "2001-01-01T00:00:00Z",
+  :expected-enabled true,
+  :expected-timestamp "2001-01-01T00:00:00Z"}}

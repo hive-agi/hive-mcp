@@ -341,13 +341,47 @@
 ;; Extension Stub — delegates to extension or returns local fallback
 ;; =============================================================================
 
+(defn- positional-ref?
+  "True only for a DSL positional op label that names an op of THIS paragraph
+   ($0..$n-1), not arbitrary dollar-prefixed text such as \"$100\"."
+  [n v]
+  (and (string? v)
+       (str/starts-with? v "$")
+       (> (count v) 1)
+       (every? #(<= (int \0) (int %) (int \9)) (subs v 1))
+       (boolean (some-> (parse-long (subs v 1)) (< n)))))
+
+(defn- canonicalize-positional-refs
+  "Turn positional references in addressable DSL params into batch refs.
+   Prose and batch metadata remain literal; nested vectors/maps are traversed."
+  [sentences]
+  (letfn [(convert [v]
+            (cond
+              (positional-ref? (count sentences) v) (str "$ref:" v ".data.id")
+              (map? v) (into (empty v) (map (fn [[k x]] [k (convert x)])) v)
+              (vector? v) (mapv convert v)
+              (sequential? v) (doall (map convert v))
+              :else v))]
+    (mapv (fn [[verb params :as sentence]]
+            (if (map? params)
+              [verb (into (empty params)
+                          (map (fn [[k v]]
+                                 [k (if (or (pd/prose-param? (expand-param-key k))
+                                            (contains? pd/meta-param-keys (expand-param-key k)))
+                                      v
+                                      (convert v))]))
+                          params)]
+              sentence))
+          sentences)))
+
 (defn compile-verb
   "Compile DSL sentences into batch operations.
    Delegates to extension if available."
   [sentences]
-  (delegate-or-noop :dv/compile
-                    (compile-paragraph-local sentences)
-                    [sentences]))
+  (let [sentences (canonicalize-positional-refs sentences)]
+    (delegate-or-noop :dv/compile
+                      (compile-paragraph-local sentences)
+                      [sentences])))
 
 (defn compile-paragraph
   "Compile DSL sentences into a fully-resolved batch operations vector.

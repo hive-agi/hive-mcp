@@ -13,6 +13,9 @@
    - All external deps (git, Emacs, DataScript, events, extensions, piggyback,
      context-store, scope, pool) are mocked out."
   (:require [clojure.test :refer [deftest testing is]]
+            [clojure.test.check.generators :as gen]
+            [hive-test.trifecta :refer [deftrifecta]]
+            [hive-mcp.spi.catchup-registry :as catchup-registry]
             [clojure.data.json :as json]
             ;; Wrap path
             [hive-mcp.crystal.harvest.collect :as collect]
@@ -251,6 +254,25 @@
 ;; E2E Roundtrip Test
 ;; =============================================================================
 
+(defn- contributed-block-names
+  "The `_block` names every block registered in the catchup-registry would
+   emit. The registry is open by design (addons contribute blocks such as
+   kg-digest), so the roundtrip allowlist must include them."
+  []
+  (into #{} (map (comp fmt/block-name :block/id)) (catchup-registry/registered-blocks)))
+
+(deftrifecta contributed-block-name-contract
+  #'hive-mcp.tools.catchup.format/block-name
+  {:golden-path "test/golden/catchup/contributed-block-name.edn"
+   :cases       {:simple    :kg-digest
+                 :qualified :hive-knowledge/kg-digest
+                 :string    "tool-friction"}
+   :gen         (gen/one-of [gen/keyword gen/keyword-ns])
+   :pred        string?
+   :num-tests   50
+   :mutations   [["keep-colon" (fn [id] (str id))]
+                 ["drop-namespace" (fn [id] (if (keyword? id) (clojure.core/name id) (str id)))]]})
+
 (deftest e2e-wrap-catchup-roundtrip
   (testing "Session summary crystallized by wrap is retrieved by catchup"
     (let [[entries-atom store] (make-memory-store)]
@@ -340,13 +362,17 @@
                                     catchup-result)
                   core-blocks     #{"header" "context" "recent-wraps" "meta"}
                   optional-blocks #{"kanban" "carto-status"}
+                  ;; Addon blocks arrive through the open catchup-registry
+                  ;; (kg-digest, tool-friction, ...): any block registered in
+                  ;; this JVM may legitimately appear in the answer.
+                  contributed     (contributed-block-names)
                   _ (is (= ["header" "context" "recent-wraps" "meta"]
                            (filterv core-blocks block-names))
                         "catchup should emit header/context/recent-wraps/meta, in that order")
                   _ (is (not-any? #{"kg-insights"} block-names)
                         "no kg-insights block: handle-native-catchup supplies no :kg-insights")
-                  _ (is (every? (into core-blocks optional-blocks) block-names)
-                        "catchup should emit no block outside core + addon-optional (kanban, carto-status)")
+                  _ (is (every? (into core-blocks (concat optional-blocks contributed)) block-names)
+                        "catchup should emit no block outside core + addon-optional (kanban, carto-status) + registry-contributed")
 
                   ;; Parse the blocks
                   header-block (json/read-str (:text (nth catchup-result 0)) :key-fn keyword)

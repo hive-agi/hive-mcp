@@ -38,9 +38,57 @@
   ([system-var-fn]
    (boolean (some-> (system-var-fn) deref))))
 
+(defn slave->ling
+  "Project a swarm slave map onto the :hive-emacs/ling shape. Pure; nil in,
+   nil out. hive-emacs speaks :ling/*, the swarm DataScript speaks :slave/*."
+  [slave]
+  (when slave
+    (cond-> {:ling/id (:slave/id slave)}
+      (contains? slave :slave/status)     (assoc :ling/status (:slave/status slave))
+      (contains? slave :slave/project-id) (assoc :ling/project-id (:slave/project-id slave)))))
+
+(defn ling-updates->slave
+  "Rename :ling/* UPDATES to the raw :slave/* attributes `update-slave!`
+   takes (unlike `add-slave!`, which takes short keys). Pure."
+  [updates]
+  (cond-> {}
+    (contains? updates :ling/status)     (assoc :slave/status (:ling/status updates))
+    (contains? updates :ling/project-id) (assoc :slave/project-id (:ling/project-id updates))))
+
+(defn emacs-ling-ports
+  "The :emacs/* swarm adapters hive-emacs.runtime-ports needs for daemon
+   redistribution and autoheal (hive-emacs.addon/direct-port-keys maps
+   :emacs/lookup-ling-fn -> :lookup-ling-fn etc). CALL-FN resolves and calls
+   a host symbol; arity 0 uses the lazy `call` over the swarm datascript
+   delegates."
+  ([] (emacs-ling-ports call))
+  ([call-fn]
+   {:emacs/lookup-ling-fn
+    (fn [ling-id]
+      (slave->ling (call-fn 'hive-mcp.swarm.datascript.queries/get-slave ling-id)))
+
+    :emacs/tasks-for-ling-fn
+    (fn [ling-id status]
+      (vec (call-fn 'hive-mcp.swarm.datascript.queries/get-tasks-for-slave ling-id status)))
+
+    :emacs/fail-task-fn
+    (fn [task-id status]
+      (call-fn 'hive-mcp.swarm.datascript.lings/fail-task! task-id status)
+      {:success true})
+
+    :emacs/release-claims-fn
+    (fn [ling-id]
+      (call-fn 'hive-mcp.swarm.datascript.lings/release-claims-for-slave! ling-id))
+
+    :emacs/update-ling-fn
+    (fn [ling-id updates]
+      (call-fn 'hive-mcp.swarm.datascript.lings/update-slave!
+               ling-id (ling-updates->slave updates)))}))
+
 (defn runtime-ports
   "Return a fresh map of host-neutral function ports for addon injection."
   []
+  (merge
   {:workflow/engine
    (fn [] (call 'hive-workflows.mcp/engine))
 
@@ -108,4 +156,6 @@
 
    :extension/retract-contributions!
    (fn [addon-id]
-     (call 'hive-mcp.extensions.registry/retract-all-by-addon! addon-id))})
+     (call 'hive-mcp.extensions.registry/retract-all-by-addon! addon-id))}
+  ;; hive-emacs daemon redistribution / autoheal swarm ports (:emacs/*).
+  (emacs-ling-ports)))

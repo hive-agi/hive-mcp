@@ -142,14 +142,50 @@
     (log/warn "Catchup block" block-name "exceeds threshold:"
               (count text) "chars >" block-warn-threshold)))
 
+(defn enforce-block-budget
+  "Keep a catchup block under the UTF-8 byte ceiling. Drop whole trailing
+   vector entries, then whole optional top-level fields if needed; never slice
+   JSON. Report the removed byte count visibly inside the resulting block."
+  ([data] (enforce-block-budget data block-warn-threshold))
+  ([data ceiling]
+   (let [bytes (fn [value] (alength (.getBytes (json/write-str value)
+                                               java.nio.charset.StandardCharsets/UTF_8)))
+         original (bytes data)
+         trailing-path (fn [value]
+                         (letfn [(visit [v path]
+                                   (cond
+                                     (map? v) (some (fn [k] (visit (get v k) (conj path k)))
+                                                    (reverse (vec (keys v))))
+                                     ;; The vector element is the entry. Never
+                                     ;; descend into an entry's nested vectors.
+                                     (vector? v) (when (seq v) path)))]
+                           (visit value [])))]
+     (if (<= original ceiling)
+       data
+       (loop [kept data]
+         (let [marked (assoc kept :truncation
+                             {:dropped-bytes (- original (bytes kept))
+                              :reason "catchup block byte ceiling"})]
+           (if (<= (bytes marked) ceiling)
+             marked
+             (if-let [path (trailing-path kept)]
+               (recur (update-in kept path pop))
+               (if-let [field (last (remove #{:_block} (keys kept)))]
+                 (recur (dissoc kept field))
+                 marked)))))))))
+
 (defn- make-block
-  "Build a single catchup content block with warning check."
+  "Build a single catchup content block with warning check.
+   Enforce the UTF-8 byte backstop before serialization."
   [block-name data]
-  (let [text (json/write-str data)]
-    (warn-if-oversized block-name text)
+  (let [bounded (enforce-block-budget data)
+        text (json/write-str bounded)]
+    (when (:truncation bounded)
+      (log/warn "Catchup block" block-name "truncated by"
+                (get-in bounded [:truncation :dropped-bytes]) "bytes"))
     {:type "text" :text text}))
 
-(defn- block-name
+(defn block-name
   "The `_block` name for a contributed block id: `name` for a simple keyword,
    `ns/name` for a qualified one."
   [id]

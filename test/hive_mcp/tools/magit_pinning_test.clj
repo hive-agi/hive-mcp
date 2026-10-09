@@ -11,34 +11,39 @@
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.string :as str]
             [hive-mcp.tools.magit :as tools]
-            [hive-mcp.test.stub.emacs-ext :as se]))
+            [hive-mcp.test.stub.swarm-host :as sh]))
 
 ;; =============================================================================
 ;; Test Helpers
 ;; =============================================================================
 
 (defn mock-emacsclient-success
-  "Creates a mock eval-elisp that returns success with given result."
+  "A vessel answer that succeeds with RESULT for any op."
   [result]
-  (fn [_elisp]
-    {:success true :result result :duration-ms 10}))
+  (fn [_op]
+    {:success true :result result :timed-out false}))
 
 (defn mock-emacsclient-failure
-  "Creates a mock eval-elisp that returns failure with given error."
+  "A vessel answer that fails with ERROR for any op."
   [error]
-  (fn [_elisp]
-    {:success false :error error :duration-ms 10}))
+  (fn [_op]
+    {:success false :error error :timed-out false}))
 
 (defmacro with-mock-emacsclient
-  "Execute body with a stub Emacs whose eval-elisp answers with MOCK-FN.
+  "Execute body with a stub vessel whose :dispatch answers with MOCK-FN.
 
-   Magit handlers reach Emacs through hive-mcp.emacs-ext.client, which
-   resolves :emacs/eval-elisp from the extension registry. The registry is the
-   seam — a with-redefs on any emacs client namespace binds a var the handlers
-   no longer call, and every response then carries the registry-miss error."
+   Magit handlers reach the editor only through the closed `:vessel :dispatch`
+   capability; the SPI registry is the seam, never a concrete client."
   [mock-fn & body]
-  `(se/with-stub-emacs [_# {:default-response ~mock-fn}]
+  `(sh/with-swarm-host [_# (fn [op# _t#] (~mock-fn op#))]
      ~@body))
+
+(defn- only-op
+  "The single op map HOST received."
+  [host]
+  (let [[[op] :as calls] (sh/calls host)]
+    (is (= 1 (count calls)) "exactly one dispatch")
+    op))
 
 ;; =============================================================================
 ;; handle-magit-status Tests
@@ -155,23 +160,19 @@
 
 (deftest handle-magit-log-with-count-test
   (testing "Accepts count parameter"
-    (se/with-stub-emacs [emacs {:default-response {:success true :result "[]" :duration-ms 10}}]
+    (sh/with-swarm-host [host (fn [_ _] {:success true :result "[]"})]
       (let [result (tools/handle-magit-log {:count 5})]
         (is (= "text" (:type result)))
         (is (nil? (:isError result)))
-        ;; Verify count is passed in elisp
-        (is (str/includes? (first (se/evaluated emacs)) "5")
-            "Elisp should contain the count parameter")))))
+        (is (= 5 (:count (only-op host))) "the op carries the count")))))
 
 (deftest handle-magit-log-default-count-test
   (testing "Uses default count of 10 when not specified"
-    (se/with-stub-emacs [emacs {:default-response {:success true :result "[]" :duration-ms 10}}]
+    (sh/with-swarm-host [host (fn [_ _] {:success true :result "[]"})]
       (let [result (tools/handle-magit-log {})]
         (is (= "text" (:type result)))
         (is (nil? (:isError result)))
-        ;; Verify default count of 10 is used
-        (is (str/includes? (first (se/evaluated emacs)) "10")
-            "Elisp should contain default count of 10")))))
+        (is (= 10 (:count (only-op host))) "default count of 10")))))
 
 (deftest handle-magit-log-with-directory-test
   (testing "Accepts directory parameter"
@@ -231,55 +232,43 @@
 ;; =============================================================================
 
 (deftest elisp-calls-correct-functions-test
-  (testing "handle-magit-status calls correct elisp function"
-    (se/with-stub-emacs [emacs {:default-response {:success true :result "{}" :duration-ms 10}}]
-      (tools/handle-magit-status {})
-      (let [elisp (first (se/evaluated emacs))]
-        (is (str/includes? elisp "hive-mcp-magit")
-            "Should require hive-mcp-magit")
-        (is (str/includes? elisp "hive-mcp-magit-api-status")
-            "Should call hive-mcp-magit-api-status"))))
+  (testing "handle-magit-status dispatches the closed :magit/status op"
+    (sh/with-swarm-host [host (fn [_ _] {:success true :result "{}"})]
+      (tools/handle-magit-status {:directory "/r"})
+      (is (= {:op :magit/status :directory "/r"} (only-op host)))))
 
-  (testing "handle-magit-branches calls correct elisp function"
-    (se/with-stub-emacs [emacs {:default-response {:success true :result "{}" :duration-ms 10}}]
-      (tools/handle-magit-branches {})
-      (let [elisp (first (se/evaluated emacs))]
-        (is (str/includes? elisp "hive-mcp-magit")
-            "Should require hive-mcp-magit")
-        (is (str/includes? elisp "hive-mcp-magit-api-branches")
-            "Should call hive-mcp-magit-api-branches")))))
+  (testing "handle-magit-branches dispatches the closed :magit/branches op"
+    (sh/with-swarm-host [host (fn [_ _] {:success true :result "{}"})]
+      (tools/handle-magit-branches {:directory "/r"})
+      (is (= {:op :magit/branches :directory "/r"} (only-op host))))))
 
 ;; =============================================================================
 ;; Push Remote Targeting
 ;; =============================================================================
 
 (deftest handle-magit-push-carries-remote-test
-  (testing "An explicit remote reaches api-push as :remote"
-    (se/with-stub-emacs [emacs {:default-response {:success true :result "{}" :duration-ms 10}}]
+  (testing "An explicit remote reaches :magit/push as :remote"
+    (sh/with-swarm-host [host (fn [_ _] {:success true :result "{}"})]
       (tools/handle-magit-push {:remote "github" :directory "/some/repo"})
-      (let [elisp (first (se/evaluated emacs))]
-        (is (str/includes? elisp "hive-mcp-magit-api-push")
-            "Should call hive-mcp-magit-api-push")
-        (is (str/includes? elisp ":remote \"github\"")
-            "The remote the caller named must reach api-push"))))
+      (is (= {:op :magit/push :set-upstream false :remote "github" :directory "/some/repo"}
+             (only-op host))
+          "The remote the caller named must reach api-push")))
 
   (testing "set_upstream and remote travel together"
-    (se/with-stub-emacs [emacs {:default-response {:success true :result "{}" :duration-ms 10}}]
+    (sh/with-swarm-host [host (fn [_ _] {:success true :result "{}"})]
       (tools/handle-magit-push {:remote "github" :set_upstream true})
-      (let [elisp (first (se/evaluated emacs))]
-        (is (str/includes? elisp ":set-upstream t"))
-        (is (str/includes? elisp ":remote \"github\"")))))
+      (let [op (only-op host)]
+        (is (true? (:set-upstream op)))
+        (is (= "github" (:remote op))))))
 
-  (testing "No remote emits the options the pre-remote call emitted"
-    (se/with-stub-emacs [emacs {:default-response {:success true :result "{}" :duration-ms 10}}]
+  (testing "No remote and no upstream: the translator emits bare nil options"
+    (sh/with-swarm-host [host (fn [_ _] {:success true :result "{}"})]
       (tools/handle-magit-push {})
-      (let [elisp (first (se/evaluated emacs))]
-        (is (str/includes? elisp "hive-mcp-magit-api-push nil")
-            "Absent remote and upstream emit bare nil options")
-        (is (not (str/includes? elisp ":remote"))))))
+      (let [op (only-op host)]
+        (is (false? (:set-upstream op)))
+        (is (nil? (:remote op))))))
 
   (testing "A blank remote is absent, not a remote named the empty string"
-    (se/with-stub-emacs [emacs {:default-response {:success true :result "{}" :duration-ms 10}}]
+    (sh/with-swarm-host [host (fn [_ _] {:success true :result "{}"})]
       (tools/handle-magit-push {:remote "   "})
-      (let [elisp (first (se/evaluated emacs))]
-        (is (not (str/includes? elisp ":remote")))))))
+      (is (nil? (:remote (only-op host)))))))

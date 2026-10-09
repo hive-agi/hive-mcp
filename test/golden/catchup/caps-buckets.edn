@@ -1,0 +1,3 @@
+{:default {:axioms 4, :axiom-candidates 4, :decisions 4},
+ :invalid {:axioms 4, :axiom-candidates 4, :decisions 4},
+ :override {:axioms 4, :axiom-candidates 1, :decisions 0}}

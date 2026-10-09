@@ -12,6 +12,11 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
+(clojure.test/use-fixtures :each
+  (fn [test-fn]
+    (reset! res/provider-health {})
+    (test-fn)))
+
 (defrecord ColdStartProvider [model load-ms calls]
   proto/EmbeddingProvider
   (embed-text [_ _]

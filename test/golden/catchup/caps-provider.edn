@@ -1,0 +1,4 @@
+{:absent {:axioms 100 :axiom-candidates 25 :decisions 50}
+ :throws {:axioms 100 :axiom-candidates 25 :decisions 50}
+ :project {:axioms 2 :axiom-candidates 1 :decisions 0}
+ :invalid {:axioms 100 :axiom-candidates 25 :decisions 50}}

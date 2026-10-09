@@ -1,0 +1,26 @@
+{:not-durable
+ {:in ["atask-3" "git" nil false],
+  :out
+  {:queued true,
+   :task-id "atask-3",
+   :tool "git",
+   :result-via
+   "---TOOLRESULT--- block on your next hive call; pass async:false to get the result inline",
+   :durable false}},
+ :plain
+ {:in ["atask-1" "memory" nil true],
+  :out
+  {:queued true,
+   :task-id "atask-1",
+   :tool "memory",
+   :result-via
+   "---TOOLRESULT--- block on your next hive call; pass async:false to get the result inline"}},
+ :timeout
+ {:in ["atask-2" "bash" 5000 true],
+  :out
+  {:queued true,
+   :task-id "atask-2",
+   :tool "bash",
+   :result-via
+   "---TOOLRESULT--- block on your next hive call; pass async:false to get the result inline",
+   :timeout-ms 5000}}}

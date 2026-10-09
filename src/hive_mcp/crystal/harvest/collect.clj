@@ -30,7 +30,9 @@
             [taoensso.timbre :as log]
             [hive-mcp.crystal.harvest.attribution :as attr]
             [hive-mcp.crystal.harvest.partition :as part]
-            [hive-mcp.session.current :as session]))
+            [hive-mcp.session.current :as session]
+            [hive-mcp.project.tree :as tree]
+            [hive-mcp.crystal.harvest.git-scopes :as git-scopes]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -256,6 +258,34 @@
                     :chroma-count (count chroma-tasks)
                     :project-id project-id})))
 
+(defn- git-log-since
+  "GitLog reader for `git-scopes/harvest-descendant-commits`: one-line commits
+   in DIR since SINCE, or {:error ...} when git fails."
+  [since dir]
+  (let [{:keys [exit out err]} (sh "git" "log" (str "--since=" since) "--oneline" :dir dir)]
+    (if (zero? exit)
+      {:commits (if (str/blank? out) [] (str/split-lines (str/trim out)))}
+      {:error {:type :git-failed :exit exit :err err}})))
+
+(defn- with-descendant-commits
+  "ROOT-RESULT plus the commits of descendant projects of DIR's project that
+   live in their own git repositories (HCR, include_descendants semantics).
+   A project with no such descendants gets ROOT-RESULT unchanged.
+   Kanban 20260516114613-10aeb0be."
+  [root-result dir since]
+  (result/rescue root-result
+                 (let [pid (when dir (scope/get-current-project-id dir))
+                       repos (when pid
+                               (git-scopes/descendant-repos
+                                (:project/git-root (tree/query-project-by-id pid))
+                                (keep tree/query-project-by-id
+                                      (sort (tree/get-descendant-ids pid)))))]
+                   (if (seq repos)
+                     (git-scopes/merge-commit-sets
+                      root-result
+                      (git-scopes/harvest-descendant-commits (partial git-log-since since) repos))
+                     root-result))))
+
 (defn- harvest-commits-direct
   "Harvest git commits via JVM subprocess (no Emacs roundtrip)."
   [{:keys [directory agent-id]}]
@@ -276,18 +306,29 @@
                      (let [commits (when (and out (not (str/blank? out)))
                                      (str/split-lines (str/trim out)))]
                        (log/info "harvest-commits-direct:" (count (or commits [])) "commits in" ms "ms")
-                       {:commits (or commits [])
-                        :count (count (or commits []))
-                        :directory dir})
+                       (with-descendant-commits
+                         {:commits (or commits [])
+                          :count (count (or commits []))
+                          :directory dir}
+                         dir since))
                      (do
                        (log/warn "harvest-commits-direct: git failed exit=" exit "err=" err "in" ms "ms")
-                       {:commits []
-                        :count 0
-                        :error {:type :git-failed :exit exit :err err}})))))
+                       ;; An umbrella that is not itself a git repository still
+                       ;; harvests the repositories of its descendants.
+                       (with-descendant-commits
+                         {:commits []
+                          :count 0
+                          :error {:type :git-failed :exit exit :err err}}
+                         dir since))))))
 
 (defn- harvest-hivemind-messages
-  "Harvest hivemind shouts since session start (no Emacs roundtrip)."
-  [{:keys [directory agent-id]}]
+  "Harvest hivemind shouts since session start (no Emacs roundtrip).
+
+   :lineage, when given, is the set of agent ids whose shouts belong to this
+   wrap: the caller and its own lings. Without it every author in the project
+   (and every author's `global` shouts) is returned, which is how a wrap came
+   to summarize other sessions' work. Kanban 20261002152638-34671747."
+  [{:keys [directory agent-id lineage]}]
   (result/rescue {:messages [] :count 0}
                  (let [dir (or directory (ctx/current-directory))
                        project-id (when dir (scope/get-current-project-id dir))
@@ -297,12 +338,16 @@
                                  (crystal/get-session-start nil))
                        since-ms (if start (.toEpochMilli start) 0)
                        t0 (System/currentTimeMillis)
-                       messages (piggyback/fetch-history :since since-ms
-                                                        :limit 100
+                       fetched (piggyback/fetch-history :since since-ms
+                                                        :limit (if lineage 5000 100)
                                                         :project-id project-id)
+                       messages (if lineage
+                                  (->> fetched (filter #(contains? lineage (:a %))) (take 100) vec)
+                                  fetched)
                        ms (- (System/currentTimeMillis) t0)]
                    (log/info "harvest-hivemind-messages:" (count messages) "shouts in" ms "ms"
-                             "since" (or (some-> start .toString) "epoch"))
+                             "since" (or (some-> start .toString) "epoch")
+                             "lineage:" (some-> lineage count))
                    {:messages (vec messages)
                     :count (count messages)
                     :project-id project-id})))
@@ -401,6 +446,61 @@
 ;; Harvest Result Assembly (pure)
 ;; =============================================================================
 
+(defn lineage-agent-ids
+  "The agent ids whose activity belongs to `agent-id`'s wrap: itself plus every
+   slave whose parent chain reaches it. Pure over `slaves`, the swarm rows
+   ({:slave/id, :slave/parent-id or :slave/parent {:slave/id}}).
+
+   nil for a blank id or the bare `coordinator` role: the role names every
+   coordinator session at once, so it owns no one's shouts.
+   Kanban 20261002152638-34671747."
+  [agent-id slaves]
+  (when (and (string? agent-id)
+             (not (str/blank? agent-id))
+             (not= ctx/coordinator-role agent-id))
+    (let [parent (into {}
+                       (keep (fn [s]
+                               (let [id (:slave/id s)
+                                     p  (or (:slave/parent-id s)
+                                            (get-in s [:slave/parent :slave/id]))]
+                                 (when (and id p (not= id p)) [id p]))))
+                       slaves)
+          owned? (fn [id]
+                   (loop [cur id seen #{}]
+                     (cond
+                       (= cur agent-id)      true
+                       (nil? cur)            false
+                       (contains? seen cur)  false
+                       :else (recur (get parent cur) (conj seen cur)))))]
+      (into #{agent-id} (filter owned?) (keys parent)))))
+
+(defn scope-recalls
+  "Keep the recall-buffer entries read by `lineage` in `project-id`. Pure.
+   An event carries its reader as :agent-id and its project as :project; an
+   event that names neither cannot be attributed and is dropped."
+  [recalls lineage project-id]
+  (into {}
+        (keep (fn [[id events]]
+                (let [mine (filterv #(and (contains? lineage (:agent-id %))
+                                          (= project-id (:project %)))
+                                    events)]
+                  (when (seq mine) [id mine]))))
+        recalls))
+
+(defn scope-created-ids
+  "Keep the created entries scoped to `project-id`. Pure. An unscoped entry
+   names no project, so it is not this wrap's to summarize."
+  [entries project-id]
+  (filterv #(= project-id (:project-id %)) entries))
+
+(defn caller-lineage
+  "Effectful: `lineage-agent-ids` of `agent-id` over the live swarm rows, the
+   value a wrap passes to `harvest-all` as :lineage. Never nil: a caller with
+   no resolvable id (blank, or the bare coordinator role) owns nothing."
+  [agent-id]
+  (or (lineage-agent-ids agent-id (result/rescue [] (ds/get-all-slaves)))
+      #{}))
+
 (defn assemble-harvest-result
   "Pure fn: assembles the final harvest result map from deref'd harvest data.
    No IO — only data transformation.
@@ -467,7 +567,7 @@
                      Derived from the swarm world when a ref is given and this
                      is absent."
   ([] (harvest-all nil))
-  ([{:keys [directory agent-id session-ref parent-of] :as _opts}]
+  ([{:keys [directory agent-id session-ref parent-of lineage], :as _opts}]
    (result/rescue {:progress-notes []
                    :completed-tasks []
                    :git-commits []
@@ -506,8 +606,11 @@
                         f-progress   (pool/with-io (harvest-progress-direct {:directory dir}))
                         f-tasks      (pool/with-io (harvest-tasks-direct scoped))
                         f-commits    (pool/with-io (harvest-commits-direct {:directory dir :agent-id effective-agent}))
-                        f-recalls    (pool/with-io (result/rescue {} (recall/get-buffered-recalls)))
-                        f-hivemind   (pool/with-io (harvest-hivemind-messages {:directory dir :agent-id effective-agent}))
+                        f-recalls    (pool/with-io (let [all (result/rescue {} (recall/get-buffered-recalls))]
+                                                      (if lineage
+                                                        (scope-recalls all lineage project-id)
+                                                        all)))
+                        f-hivemind   (pool/with-io (harvest-hivemind-messages {:directory dir, :agent-id effective-agent, :lineage lineage}))
                         f-kanban     (pool/with-io (harvest-kanban-activity scoped))
                         f-kg-edges   (pool/with-io (harvest-kg-edges-direct {:directory dir :agent-id effective-agent}))
                         f-kanban-mvs (pool/with-io (harvest-kanban-movements-direct scoped))
@@ -536,7 +639,10 @@
                                         (crystal/session-timing-metadata
                                          session-start
                                          (java.time.Instant/now)))
-                        memory-ids-created (result/rescue [] (recall/flush-created-ids! project-id))
+                        memory-ids-created (let [flushed (result/rescue [] (recall/flush-created-ids! project-id))]
+                                             (if lineage
+                                               (scope-created-ids flushed project-id)
+                                               flushed))
                         _ (log/info "harvest-all: flushed" (count memory-ids-created)
                                     "created-ids for project-id" project-id
                                     "ids:" (mapv :id memory-ids-created))
@@ -549,29 +655,34 @@
                                                (:error kg-edges)
                                                (:error kanban-mvs)])
                         session (crystal/session-id)]
-                    (assoc
-                     (assemble-harvest-result
-                      {:progress            progress
-                       :tasks               tasks
-                       :commits             commits
-                       :recalls             recalls
-                       :hivemind            hivemind
-                       :kanban              kanban
-                       :kg-edges            kg-edges
-                       :kanban-mvs          kanban-mvs
-                       :session-timing      session-timing
-                       :memory-ids-created  memory-ids-created
-                       :memory-ids-accessed memory-ids-accessed
-                       :dir                 dir
-                       :effective-agent     effective-agent
-                       :errors              errors
-                       :session             session})
-                     ;; What this harvest actually consumed, so the wrap can clear
-                     ;; exactly that and leave a concurrent session's rows alone.
-                     :harvested-task-ids     (vec (distinct (keep :id (:tasks tasks))))
-                     :harvested-movement-ids (vec (distinct (keep :kanban-movement/id
-                                                                 (:movements kanban-mvs))))
-                     :session-ref            session-ref)))))
+                    (cond->
+                     (assoc
+                      (assemble-harvest-result
+                       {:progress            progress
+                        :tasks               tasks
+                        :commits             commits
+                        :recalls             recalls
+                        :hivemind            hivemind
+                        :kanban              kanban
+                        :kg-edges            kg-edges
+                        :kanban-mvs          kanban-mvs
+                        :session-timing      session-timing
+                        :memory-ids-created  memory-ids-created
+                        :memory-ids-accessed memory-ids-accessed
+                        :dir                 dir
+                        :effective-agent     effective-agent
+                        :errors              errors
+                        :session             session})
+                      ;; What this harvest actually consumed, so the wrap can clear
+                      ;; exactly that and leave a concurrent session's rows alone.
+                      :harvested-task-ids     (vec (distinct (keep :id (:tasks tasks))))
+                      :harvested-movement-ids (vec (distinct (keep :kanban-movement/id
+                                                                  (:movements kanban-mvs))))
+                      :session-ref            session-ref)
+                      ;; A caller-scoped harvest names its scope, which the
+                      ;; synthesizer's own shout filter reads.
+                      lineage (assoc :project-id project-id
+                                     :coordination-agent-ids (vec (sort lineage))))))))
 
 (defn harvest-all-by-scope
   "Per-scope variant of `harvest-all`. Returns a `HarvestByScope` shape

@@ -50,7 +50,7 @@
                  (:collection-name resolved) (:dimension resolved))
                (conn/get-or-create-collection))
         provider (if resolved (:provider resolved) (emb/get-embedding-provider))
-        embed-1 (fn [p] (gate/with-embedding-gate (emb/embed-text p doc-text)))
+        embed-1 (fn [p] (emb/embed-text p doc-text))
         embedding (if no-embed?
                     (vec (repeat (or (:dimension resolved) 768) 0.0))
                     ;; Embed via the resolved provider; on failure (e.g. Venice
@@ -99,14 +99,13 @@
 
 (defn index-memory-entries!
   "Index multiple memory entries in batch with full metadata.
-   Uses embed-batch for single GPU call. Entries should have :id pre-set."
+   Uses the shared provider gate for the complete embed-batch call. Entries should have :id pre-set."
   [entries]
   (emb/require-embedding!)
   (let [coll (conn/get-or-create-collection)
         now  (h/iso-timestamp)
         docs (mapv h/memory-to-document entries)
-        embeddings (gate/with-embedding-gate
-                     (emb/embed-batch (emb/get-embedding-provider) docs))
+        embeddings (emb/embed-batch (emb/get-embedding-provider) docs)
         records (mapv (fn [entry doc emb-vec]
                         (let [provided {:type          (:type entry)
                                         :tags          (h/join-tags (:tags entry))
@@ -146,21 +145,30 @@
                 lg-results (gate/deref-read (chroma/get lg-coll :ids [id] :include #{:documents :metadatas}))]
             (some-> (first lg-results) h/metadata->entry))))))
 
+(defn read-collections
+  "Collections a read of TYPE must visit. With no embedder provider configured
+   the type routing names no collection at all, yet writes still land in the
+   default one, so an empty routing answer means the default collection, never
+   nothing."
+  [type]
+  (let [colls (try (let [coll-names (embedding-service/type->collection-names type)]
+                     (mapv (fn [cn]
+                             (let [resolved (rescue nil (embedding-service/resolve-provider-for-type
+                                                         (or type "note")))]
+                               (if (and resolved (= cn (:collection-name resolved)))
+                                 (conn/get-or-create-named-collection cn (:dimension resolved))
+                                 (conn/get-or-create-collection))))
+                           coll-names))
+                   (catch Exception _ []))]
+    (if (seq colls) (vec (distinct colls)) [(conn/get-or-create-collection)])))
+
 (defn query-entries
   "Query memory entries from Chroma with filtering.
    :exclude-tags — seq of tags to exclude via $not_contains."
   [& {:keys [type project-id project-ids tags exclude-tags limit include-expired?]
       :or {limit 100 include-expired? false}}]
   (emb/require-embedding!)
-  (let [colls (try (let [coll-names (embedding-service/type->collection-names type)]
-                     (mapv (fn [cn]
-                             (let [resolved (rescue nil (embedding-service/resolve-provider-for-type
-                                                   (or type "note")))]
-                               (if (and resolved (= cn (:collection-name resolved)))
-                                 (conn/get-or-create-named-collection cn (:dimension resolved))
-                                 (conn/get-or-create-collection))))
-                           coll-names))
-                   (catch Exception _ [(conn/get-or-create-collection)]))
+  (let [colls (read-collections type)
         base-clause (cond-> {}
                       type (assoc :type type)
                       project-ids (assoc :project-id {:$in (vec project-ids)})
@@ -213,16 +221,26 @@
           _ (index-memory-entry! merged)]
       (get-entry-by-id id))))
 
+(defn staleness-updates
+  "Entry field updates for staleness OPTS. The port names the fields
+   :staleness-alpha, :staleness-beta, :staleness-source and :staleness-depth;
+   the short :alpha, :beta, :source and :depth spellings are still accepted,
+   and lose to the port names when both are given."
+  [opts]
+  (into {}
+        (keep (fn [[field short-k]]
+                (let [v (if (some? (get opts field)) (get opts field) (get opts short-k))]
+                  (when (some? v) [field v]))))
+        [[:staleness-alpha :alpha]
+         [:staleness-beta :beta]
+         [:staleness-source :source]
+         [:staleness-depth :depth]]))
+
 (defn update-staleness!
   "Update staleness fields for a Chroma entry."
-  [entry-id {:keys [alpha beta source depth]}]
+  [entry-id opts]
   (emb/require-embedding!)
-  (let [updates (-> {}
-                    (cond-> alpha (assoc :staleness-alpha alpha))
-                    (cond-> beta (assoc :staleness-beta beta))
-                    (cond-> source (assoc :staleness-source source))
-                    (cond-> depth (assoc :staleness-depth depth)))]
-    (update-entry! entry-id updates)))
+  (update-entry! entry-id (staleness-updates opts)))
 
 (defn delete-entry!
   "Delete a memory entry from the Chroma index. Tries all collections."
@@ -245,21 +263,16 @@
    falling off the query window."
   [type content-hash & {:keys [project-id]}]
   (emb/require-embedding!)
-  (let [colls (try (let [coll-names (embedding-service/type->collection-names type)]
-                     (mapv (fn [cn]
-                             (let [resolved (rescue nil (embedding-service/resolve-provider-for-type
-                                                         (or type "note")))]
-                               (if (and resolved (= cn (:collection-name resolved)))
-                                 (conn/get-or-create-named-collection cn (:dimension resolved))
-                                 (conn/get-or-create-collection))))
-                           coll-names))
-                   (catch Exception _ [(conn/get-or-create-collection)]))
+  (let [colls (read-collections type)
         base-clause (cond-> {:content-hash content-hash}
                       type       (assoc :type type)
                       project-id (assoc :project-id project-id))
+        where (if (< 1 (count base-clause))
+                {:$and (mapv (fn [[k v]] {k v}) base-clause)}
+                base-clause)
         results (mapcat (fn [coll]
                           (try (gate/deref-read (chroma/get coll
-                                                            :where base-clause
+                                                            :where where
                                                             :include #{:metadatas}
                                                             :limit 1))
                                (catch Exception _ [])))
@@ -276,3 +289,19 @@
        :types (frequencies (map #(get-in % [:metadata :type]) all-entries))})
     (catch Exception e
       {:error (str e)})))
+
+(defn delete-all-entries!
+  "Remove every entry from every collection a read could visit. Returns the
+   number of entries removed. With no embedding provider configured no entry
+   can have been written, so there is nothing to remove and this answers 0
+   rather than throwing."
+  []
+  (if-not (emb/embedding-configured?)
+    0
+    (reduce (fn [n coll]
+              (let [ids (mapv :id (gate/deref-read (chroma/get coll :include #{:metadatas})))]
+                (when (seq ids)
+                  (gate/deref-write (chroma/delete coll :ids ids)))
+                (+ n (count ids))))
+            0
+            (read-collections nil))))

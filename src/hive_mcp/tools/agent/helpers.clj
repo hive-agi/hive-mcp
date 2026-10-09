@@ -16,7 +16,7 @@
   (str (name agent-type) "-" (java.util.UUID/randomUUID)))
 
 (defn format-agent
-  "Format agent data for response."
+  "Format agent data for response, exposing unverified restore liveness."
   [agent-data]
   (when agent-data
     (let [base {:id (:slave/id agent-data)
@@ -29,6 +29,7 @@
         (:slave/grant agent-data) (assoc :grant (:slave/grant agent-data))
         (:slave/presets agent-data) (assoc :presets (:slave/presets agent-data))
         (:slave/created-at agent-data) (assoc :created-at (:slave/created-at agent-data))
+        (:slave/liveness agent-data) (assoc :liveness (:slave/liveness agent-data))
         (:slave/orphan-reason agent-data) (assoc :reason (:slave/orphan-reason agent-data))
         (:slave/last-event-at agent-data) (assoc :last-event-at (:slave/last-event-at agent-data))))))
 
@@ -45,7 +46,8 @@
      :by-status (frequencies (map :status formatted))}))
 
 (defn query-elisp-lings
-  "Query elisp for lings that may not be in DataScript."
+  "Query elisp for lings that may not be in DataScript. nil means unavailable,
+   while an empty sequence means a successful, empty membership query."
   []
   (when (swarm-core/swarm-addon-available?)
     (let [{:keys [success result timed-out]}
@@ -59,14 +61,14 @@
                           {:slave/id (or (:slave-id ling) (:slave_id ling))
                            :slave/name (:name ling)
                            :slave/status (keyword (or (:status ling) "idle"))
-                           :slave/depth 1  ;; lings are depth 1
+                           :slave/depth 1
                            :slave/cwd (:cwd ling)
                            :slave/project-id (:project-id ling)
                            :slave/presets (:presets ling)}))
-                   (filter :slave/id))))  ;; filter out invalid entries
+                   (filter :slave/id))))
           (catch Exception e
             (log/debug "Failed to parse elisp lings:" (ex-message e))
-            []))))))
+            nil))))))
 
 (defn merge-with-elisp-lings
   "Merge DataScript agents with elisp lings, DataScript taking precedence.

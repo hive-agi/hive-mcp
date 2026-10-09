@@ -1,0 +1,35 @@
+{:absent
+ {:results [{:success? false}],
+  :shutdowns 0,
+  :after
+  {:tool-advertised? false,
+   :schema-advertised? false,
+   :registered? false}},
+ :active
+ {:results [{:success? true}],
+  :shutdowns 1,
+  :after
+  {:tool-advertised? false,
+   :schema-advertised? false,
+   :registered? false}},
+ :active-twice
+ {:results [{:success? true} {:success? false}],
+  :shutdowns 1,
+  :after
+  {:tool-advertised? false,
+   :schema-advertised? false,
+   :registered? false}},
+ :error-partial
+ {:results [{:success? true}],
+  :shutdowns 0,
+  :after
+  {:tool-advertised? false,
+   :schema-advertised? false,
+   :registered? false}},
+ :registered-only
+ {:results [{:success? true}],
+  :shutdowns 0,
+  :after
+  {:tool-advertised? false,
+   :schema-advertised? false,
+   :registered? false}}}

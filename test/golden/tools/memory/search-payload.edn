@@ -1,0 +1,28 @@
+{:caller-custom
+ {:results [1],
+  :count 1,
+  :query "q",
+  :scope "p",
+  :excluded-tags ["kanban"],
+  :excludes-source :caller},
+ :caller-empty
+ {:results [],
+  :count 0,
+  :query "q",
+  :scope "p",
+  :excluded-tags [],
+  :excludes-source :none},
+ :default-excludes
+ {:results [1 2],
+  :count 2,
+  :query "q",
+  :scope "p",
+  :excluded-tags ["carto" "ingestion-chunk"],
+  :excludes-source :default},
+ :nil-excludes
+ {:results [],
+  :count 0,
+  :query "q",
+  :scope nil,
+  :excluded-tags [],
+  :excludes-source :none}}

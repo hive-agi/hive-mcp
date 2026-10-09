@@ -1,0 +1,4 @@
+{:edge-durable true,
+ :edge-structural false,
+ :mutation true,
+ :unknown-map false}

@@ -22,7 +22,8 @@
             [hive-mcp.swarm.datascript.queries :as ds-queries]
             [hive-mcp.transport.a2a.schema :as schema]
             [hive-mcp.transport.a2a.handlers :as handlers]
-            [hive-mcp.concurrency.pool :as pool]))
+            [hive-mcp.concurrency.pool :as pool]
+            [hive-mcp.transport.exposure :as exposure]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -87,12 +88,7 @@
    Returns true if api-key is blank (no auth) or the key matches. The
    comparison is constant-time so a caller cannot learn the key by timing."
   [req api-key]
-  (if (str/blank? api-key)
-    true
-    (let [auth-header (get-in req [:headers "authorization"] "")]
-      (java.security.MessageDigest/isEqual
-       (.getBytes ^String (str auth-header) "UTF-8")
-       (.getBytes (str "Bearer " api-key) "UTF-8")))))
+  (exposure/bearer-ok? api-key (get-in req [:headers "authorization"] "")))
 
 (defn bind-host
   "The interface the gateway listens on. Without an api-key the gateway
@@ -100,9 +96,7 @@
    whatever was requested. With a key the requested host wins, default all
    interfaces."
   [api-key requested]
-  (if (str/blank? api-key)
-    "127.0.0.1"
-    (if (str/blank? requested) "0.0.0.0" requested)))
+  (exposure/bind-host api-key requested))
 
 ;; =============================================================================
 ;; JSON-RPC Dispatcher

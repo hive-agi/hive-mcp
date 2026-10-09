@@ -233,12 +233,22 @@
    :teardown/data-preserved?])
 
 (def eject-report-keys
-  "The EjectReport keys `eject` answers with: what was removed and what stays."
+  "The EjectReport keys `eject` answers with: what was removed and what stays,
+   and the wait for calls in flight that ran first."
   [:hot/target :hot/ejected :hot/unknown :hot/refused? :hot/blocking
+   :hot/drain :hot/busy? :hot/forced?
    :hot/torn-down :hot/unregistered :hot/unsupported :hot/ungoverned
    :hot/unhot :hot/forgotten :hot/dirs-removed :hot/dirs-retained
    :hot/dirs-reason :hot/classpath-retained :hot/namespaces-retained
    :hot/remounted :teardown/data-preserved? :ok? :errors])
+
+(defn plug-out-opts
+  "Pure. The eject!/plug-out! opts an `eject` or `unmount` call asks for:
+   :cascade? and :force? from the booleans, :drain-ms when drain_ms is a
+   positive integer (otherwise hive-addon's default bound)."
+  [{:keys [cascade force drain_ms]}]
+  (cond-> {:cascade? (true? cascade) :force? (true? force)}
+    (pos-int? drain_ms) (assoc :drain-ms drain_ms)))
 
 (def mount-result-keys
   "The per-addon MountResult keys shown under :mounted."
@@ -702,11 +712,13 @@
   (or addon path))
 
 (def handle-eject
-  "Plug an addon OUT of the running host (the inverse of inject). Refused while
-   mounted addons depend on it unless cascade, which remounts them without it."
+  "Plug an addon OUT of the running host (the inverse of inject). Calls in
+   flight drain first (bounded by drain_ms; still running answers busy unless
+   force). Refused while mounted addons depend on it unless cascade, which
+   remounts them without it."
   (host-verb {:bridge      'hive-addon.hot.inject/eject!
               :target      #'eject-target
-              :opts        (fn [{:keys [cascade]}] {:cascade? (true? cascade)})
+              :opts        #'plug-out-opts
               :report-keys eject-report-keys
               :example     "{:command \"eject\" :addon \"hive.rss\"}"}))
 
@@ -740,7 +752,7 @@
   "The HostVerb descriptor `unmount` runs."
   {:bridge      'hive-addon.hot.inject/plug-out!
    :target      #'eject-target
-   :opts        (fn [{:keys [cascade]}] {:cascade? (true? cascade)})
+   :opts        #'plug-out-opts
    :project     #'unmount-outcome
    :report-keys unmount-report-keys
    :example     "{:command \"unmount\" :addon \"hive.rss\"}"})
@@ -1016,7 +1028,9 @@
      "cascade" {:type "boolean"
                 :description "[eject/unmount] Also tear down the mounted addons that depend on the target and remount them without it. Default false: such an eject is refused."}
      "force" {:type "boolean"
-              :description "[evict] Also evict a pinned or eager addon. [pin] Allow :lazy on an addon with no surface a stub could advertise. Default false."}
+              :description "[eject/unmount] Plug out even when calls are still in flight after drain_ms (the report says :forced?). [evict] Also evict a pinned or eager addon. [pin] Allow :lazy on an addon with no surface a stub could advertise. Default false."}
+     "drain_ms" {:type "integer"
+                 :description "[eject/unmount] How long to wait for the addon's calls in flight before teardown; new calls are refused meanwhile. Still running after it: refused as busy (nothing torn down) unless force. Default 30000."}
      "policy" {:type "string"
                :enum (mapv name (rest (policy-schema)))
                :description "[pin] Lifecycle policy to set at runtime; pin defaults to \"pinned\"."}

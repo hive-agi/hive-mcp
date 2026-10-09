@@ -13,7 +13,9 @@
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.config.core :as config]
             [hive-mcp.dns.result :as result]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.agent.ling.headless-registry :as headless-registry]
+            [hive-spi.addon.headless :as headless-spi]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -93,11 +95,21 @@
                                       (boolean (py-call-fn thread-obj "is_alive"))))))
                               false)))))))
 
+(defn registered-backend-ready?
+  "Check a ling whose spawn-mode names a registered headless backend: ready
+   when BACKEND's headless-status reports it :idle or :running."
+  [agent-id backend]
+  (result/rescue false
+                 (contains? #{:idle :running}
+                            (:slave/status (headless-spi/headless-status backend {:id agent-id} nil)))))
+
 ;; ── Mode Dispatch ───────────────────────────────────────────────────────────
 
 (defn ling-cli-ready?
   "Mode-dispatch readiness check for a ling's CLI.
-   Checks terminal modes via Emacs, headless via process/SDK status."
+   Checks terminal modes via Emacs, headless via process/SDK status, and a
+   mode naming a backend in the headless registry via that backend's
+   headless-status."
   [agent-id spawn-mode]
   (case spawn-mode
     :headless        (headless-ready? agent-id)
@@ -105,9 +117,10 @@
     :openrouter      true
     :agent-sdk       (agent-sdk-ready? agent-id)
     :claude-sdk      (agent-sdk-ready? agent-id)
-    ;; default: claude / vterm (both Emacs-bound)
     (:claude :vterm) (vterm-ready? agent-id)
-    (vterm-ready? agent-id)))
+    (if-let [backend (headless-registry/get-headless-backend spawn-mode)]
+      (registered-backend-ready? agent-id backend)
+      (vterm-ready? agent-id))))
 
 ;; ── Polling Loop ────────────────────────────────────────────────────────────
 

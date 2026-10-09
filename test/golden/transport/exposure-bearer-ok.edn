@@ -1,0 +1,7 @@
+{:blank-secret true,
+ :exact true,
+ :longer-secret false,
+ :missing-header false,
+ :no-scheme false,
+ :no-secret true,
+ :prefix-of-secret false}
