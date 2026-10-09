@@ -1,0 +1,21 @@
+{:no-ops nil,
+ :ops-inherit-tool
+ {:operations
+  [{:id "x", :from "a", :to "b", :tool "kg", :command "edge"}]},
+ :ops-no-tool
+ {:operations
+  [{:id "e1",
+    :tool "kg",
+    :command "edge",
+    :from "a",
+    :to "b",
+    :relation "relates"}]},
+ :ops-with-tool
+ {:operations
+  [{:id "e1",
+    :tool "kg",
+    :command "edge",
+    :from "a",
+    :to "b",
+    :relation "relates"}]},
+ :tool-own-batch nil}
