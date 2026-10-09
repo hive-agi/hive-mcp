@@ -52,8 +52,14 @@
                 "convention" (gen/choose 0 4) "decision" (gen/choose 0 4)))
 
 (deftrifecta import-reads-legacy-files-from-disk
-  dry-run-counts
-  {:gen (gen/hash-map :project-id (gen/elements ["hive" "global" "p-1"])
+  hive-mcp.tools.memory.migration.import-test/dry-run-counts
+  {:golden-path "test/golden/memory/import-legacy-json.edn"
+   :cases {:project-all-types {:project-id "hive"
+                               :counts {"note" 2 "snippet" 1 "convention" 1 "decision" 3}}
+           :global-notes-only {:project-id "global" :counts {"note" 1}}
+           :empty-files       {:project-id "p-1"
+                               :counts {"note" 0 "snippet" 0 "convention" 0 "decision" 0}}}
+   :gen (gen/hash-map :project-id (gen/elements ["hive" "global" "p-1"])
                       :counts gen-counts)
    :pred #(and (map? %) (every? nat-int? (vals %))
                (= #{:notes :snippets :conventions :decisions} (set (keys %))))
