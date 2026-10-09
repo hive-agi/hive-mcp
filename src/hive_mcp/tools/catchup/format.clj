@@ -185,7 +185,7 @@
                 (get-in bounded [:truncation :dropped-bytes]) "bytes"))
     {:type "text" :text text}))
 
-(defn- block-name
+(defn block-name
   "The `_block` name for a contributed block id: `name` for a simple keyword,
    `ns/name` for a qualified one."
   [id]
