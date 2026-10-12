@@ -251,16 +251,32 @@
     (seq (:mounted report))
     (assoc :mounted (mapv #(select-keys % mount-result-keys) (:mounted report)))))
 
+(defn report-with-surface
+  "A remount cannot claim success when its tool registry did not refresh.
+   Keep the surface diagnostic alongside the remount report."
+  [report surface]
+  (let [failure (cond
+                  (nil? surface) "tool surface refresh unavailable"
+                  (false? (get-in surface [:agent-tools :ok?]))
+                  (str "tool registry refresh failed: " (get-in surface [:agent-tools :error]))
+                  (seq (get-in surface [:server-tools :failed]))
+                  (str "tool surfaces failed: " (pr-str (get-in surface [:server-tools :failed]))))]
+    (cond-> (assoc report :surface surface)
+      failure (-> (assoc :ok? false)
+                  (update :errors (fnil conj []) failure)))))
+
 (defn- surface-refreshed!
   "After a remount or an injection the addon's contributions are live in
    dispatch but the advertised surface — composites, tools/list, schema
-   extensions — was assembled earlier. Bring it up to date. Never throws."
+   extensions — was assembled earlier. Bring it up to date. Never throws;
+   failures are returned as diagnostics, not mistaken for a successful refresh."
   []
-  (when-let [refresh! (soft 'hive-mcp.extensions.reactive/refresh-surface!)]
+  (if-let [refresh! (soft 'hive-mcp.extensions.reactive/refresh-surface!)]
     (try (refresh! nil)
          (catch Throwable t
            (log/warn "surface refresh after hot op failed" {:error (ex-message t)})
-           nil))))
+           {:agent-tools {:ok? false :error (ex-message t)}}))
+    {:agent-tools {:ok? false :error "surface refresh unavailable"}}))
 
 ;; =============================================================================
 ;; Handlers
@@ -282,11 +298,12 @@
               report (if namespace
                        ((soft 'hive-addon.hot/reload-namespace!) host specs namespace (reload-opts))
                        ((soft 'hive-addon.hot/reload-addon!) host specs addon (reload-opts)))
-              surface (surface-refreshed!)]
+              surface (surface-refreshed!)
+              result (report-with-surface (summarize report) surface)]
           (log/info "hot reload" {:addon addon :namespace namespace
-                                  :ok? (:ok? report)
+                                  :ok? (:ok? result)
                                   :affected (:hot/affected report)})
-          (mcp-json (assoc (summarize report) :hive-hot hot-init :surface surface)))))))
+          (mcp-json (assoc result :hive-hot hot-init)))))))
 
 (defmulti skip-reason
   "Why `reload-all` leaves an addon out, from its AddonSource (a row of
@@ -339,8 +356,8 @@
                        :note "no mounted addon has reloadable source; nothing to reload"})
             (let [report  ((soft 'hive-addon.hot/reload-seeds!) host specs seeds (reload-opts))
                   surface (surface-refreshed!)]
-              (mcp-json (assoc (summarize report)
-                               :skipped skipped :hive-hot hot-init :surface surface)))))))))
+              (mcp-json (assoc (report-with-surface (summarize report) surface)
+                               :skipped skipped :hive-hot hot-init)))))))))
 
 (defn handle-inject
   "Mount an addon that was NOT on the classpath at boot.

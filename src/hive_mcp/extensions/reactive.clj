@@ -77,18 +77,23 @@
                            ((requiring-resolve 'hive-mcp.server.routes/refresh-tools!) ctx-atom)
                            ((requiring-resolve 'hive-mcp.server.routes/refresh-surfaces!)))]
             (when (seq (:surfaces out)) out))))
-
 (defn refresh-agent-tools!
-  "Re-seat the agent-delegation registry from the advertised table. Returns
-   its tool count, nil when it could not be reached."
+  "Re-seat the agent-delegation registry from the advertised table. A failed
+   refresh is an explicit error report, never a success-shaped count or nil."
   []
-  (rescue nil ((requiring-resolve 'hive-mcp.agent.registry/refresh!))))
+  (try
+    {:ok? true
+     :count ((requiring-resolve 'hive-mcp.agent.registry/refresh!))}
+    (catch Throwable t
+      (log/error "Agent tool registry refresh failed" {:error (ex-message t)})
+      {:ok? false :error (ex-message t)})))
 
 (defn refresh-surface!
   "Bring the advertised surface up to date after a contribution to
    `tool-name` (nil: no composite to rebuild): rebuild its composite, re-drain
    schema-extensions, refresh every tool surface and the delegation registry
-   from the one table. Each leg is rescued on its own; returns what each did."
+   from the one table. Each leg is rescued on its own; returns what each did,
+   including an explicit failed agent-tools report when the refresh aborts."
   [tool-name]
   {:composite    (some? (rescue nil (rebuild-composite! tool-name)))
    :schema-tools (rescue [] (redrain-schema-extensions!))
