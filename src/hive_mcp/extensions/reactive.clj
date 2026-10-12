@@ -11,7 +11,7 @@
    and does, for the one tool that changed, the three things a boot does."
   (:require [hive-addon.protocol :as proto]
             [hive-mcp.addons.core :as addon-core]
-            [hive-mcp.dns.result :refer [rescue]]
+            [hive-mcp.dns.result :as result :refer [rescue]]
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.tools.composite :as composite]
             [taoensso.timbre :as log]
@@ -63,32 +63,48 @@
                             (keys exts))))))
         (addon-core/list-addons)))
 
-(defn refresh-server-tools!
-  "Refresh every registered tool surface from the one advertised table
-   (`hive-mcp.server.routes/refresh-surfaces!`), registering the nREPL
-   server-context as a surface first when it is up. Returns the refresh
-   report {:count :changed :surfaces :failed}, or nil when no surface took the
-   table (no server running yet)."
-  []
-  (rescue nil
-          (let [ctx-atom (some-> (requiring-resolve 'hive-mcp.server.core/server-context-atom)
-                                 deref)
-                out      (if (and ctx-atom @ctx-atom)
-                           ((requiring-resolve 'hive-mcp.server.routes/refresh-tools!) ctx-atom)
-                           ((requiring-resolve 'hive-mcp.server.routes/refresh-surfaces!)))]
-            (when (seq (:surfaces out)) out))))
+(def ^:dynamic *server-refresh*
+  "Replaceable server boundary for isolated tests; production resolves live vars."
+  (fn []
+    (let [ctx-atom (some-> (requiring-resolve 'hive-mcp.server.core/server-context-atom) deref)]
+      (if (and ctx-atom @ctx-atom)
+        ((requiring-resolve 'hive-mcp.server.routes/refresh-tools!) ctx-atom)
+        ((requiring-resolve 'hive-mcp.server.routes/refresh-surfaces!))))))
 
-(defn refresh-agent-tools!
-  "Re-seat the agent-delegation registry from the advertised table. Returns
-   its tool count, nil when it could not be reached."
+(defn refresh-server-tools!
+  "Refresh advertised MCP surfaces. Returns a Result with the routes report
+   on success (and its legacy report keys), or the cause on failure/absence."
   []
-  (rescue nil ((requiring-resolve 'hive-mcp.agent.registry/refresh!))))
+  (try
+    (let [out (*server-refresh*)]
+      (cond
+        (seq (:failed out))
+        (result/err :surface/refresh-failed {:cause (pr-str (:failed out)) :report out})
+
+        (not (seq (:surfaces out)))
+        (result/err :surface/refresh-unavailable {:cause "no MCP surface refreshed" :report out})
+
+        :else (merge out (result/ok out))))
+    (catch Throwable t
+      (log/error "MCP tool surface refresh failed" {:error (ex-message t)})
+      (result/err :surface/refresh-failed {:cause (or (ex-message t) (str t))}))))
+(defn refresh-agent-tools!
+  "Re-seat the agent-delegation registry from the advertised table. A failed
+   refresh is an explicit error report, never a success-shaped count or nil."
+  []
+  (try
+    {:ok? true
+     :count ((requiring-resolve 'hive-mcp.agent.registry/refresh!))}
+    (catch Throwable t
+      (log/error "Agent tool registry refresh failed" {:error (ex-message t)})
+      {:ok? false :error (ex-message t)})))
 
 (defn refresh-surface!
   "Bring the advertised surface up to date after a contribution to
    `tool-name` (nil: no composite to rebuild): rebuild its composite, re-drain
    schema-extensions, refresh every tool surface and the delegation registry
-   from the one table. Each leg is rescued on its own; returns what each did."
+   from the one table. Each leg is rescued on its own; returns what each did,
+   including an explicit failed agent-tools report when the refresh aborts."
   [tool-name]
   {:composite    (some? (rescue nil (rebuild-composite! tool-name)))
    :schema-tools (rescue [] (redrain-schema-extensions!))

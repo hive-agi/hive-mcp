@@ -66,23 +66,22 @@
   "List all registered tool names."
   []
   (keys @registry))
+(def ^:dynamic *advertised-tools*
+  "Port for the advertised tool source. Tests bind a stub surface rather than
+   redefining the transport or the addon registry."
+  advertised-tools)
 
 (defn refresh!
   "Replace the delegation registry with the advertised surface, in ONE reset!
    (no empty window a concurrent lookup could fall into). Returns the tool
-   count, 0 when the surface could not be computed (the registry is then left
-   as it was)."
+   count, including zero for a legitimately empty surface. A failed read
+   throws: returning zero used to report success beside the OLD registry."
   []
-  (reset! initialized? true)
-  (let [result (r/try-effect* :agent/tool-refresh-failed
-                              (let [table (by-name (advertised-tools))]
-                                (reset! registry table)
-                                (log/info "[hot-reload] Tool registry refreshed:" (count table) "tools")
-                                (count table)))]
-    (if (r/ok? result)
-      (:ok result)
-      (do (log/error "[hot-reload] Failed to refresh tools:" (:message result))
-          0))))
+  (let [table (by-name (*advertised-tools*))]
+    (reset! registry table)
+    (reset! initialized? true)
+    (log/info "[hot-reload] Tool registry refreshed:" (count table) "tools")
+    (count table)))
 
 (defonce ^:private agents (atom {}))
 

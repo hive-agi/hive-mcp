@@ -107,7 +107,8 @@
   (let [out (reactive/refresh-surface! "analysis")]
     (is (false? (:composite out)) "nothing contributed, nothing to build")
     (is (vector? (:schema-tools out)))
-    (is (nil? (:server-tools out)) "no server context in a unit test")))
+    (is (= :surface/refresh-unavailable (get-in out [:server-tools :error]))
+        "no server context must be an explicit failed Result")))
 
 (defn- installed-listener []
   (get @@#'ext/contribution-listeners :reactive-surface))
