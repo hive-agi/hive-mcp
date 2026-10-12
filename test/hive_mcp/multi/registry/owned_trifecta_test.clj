@@ -157,3 +157,49 @@
       (owned/register! state :idx :a "x" {:v 1} "[owned-test]" :id)
       (is (= {:v 1 :owner :a} (owned/lookup state :idx "x")))
       (is (nil? (owned/lookup state :idx "missing"))))))
+
+(defn run-overridable-script
+  "Exercise the stamped, overridable core policy against a fresh registry."
+  [ops]
+  (let [state (atom {:by-name {} :by-owner {}})
+        policy {:stamp-fn #(assoc % :registered-at :fixed-time)
+                :overridable-owner :multi/core}
+        steps (mapv (fn [[owner id value]]
+                      (owned/register! state :by-name owner id {:value value}
+                                       "[multi.registry.tools]" :tool-name policy))
+                    ops)]
+    {:steps steps :data @state}))
+
+(deftrifecta overridable-core-contract
+  hive-mcp.multi.registry.owned-trifecta-test/run-overridable-script
+  {:golden-path "test/golden/multi/registry-owned-core.edn"
+   :cases {:core-override [[:multi/core "tool" :core]
+                           [:addon "tool" :addon]]
+           :foreign-conflict [[:addon "tool" :first]
+                              [:other "tool" :second]]
+           :same-owner [[:addon "tool" :first]
+                        [:addon "tool" :second]]}
+   :gen (gen/return [[:multi/core "tool" :core]
+                     [:addon "tool" :addon]])
+   :pred map?
+   :num-tests 20
+   :mutations [["override-denied"
+                (fn [_] {:steps [:ok :conflict]
+                         :data {:by-name {"tool" {:owner :multi/core
+                                                 :registered-at :fixed-time
+                                                 :value :core}}
+                                :by-owner {:multi/core #{"tool"}}}})]
+               ["stale-owner-index"
+                (fn [_] {:steps [:ok :replaced]
+                         :data {:by-name {"tool" {:owner :addon
+                                                 :registered-at :fixed-time
+                                                 :value :addon}}
+                                :by-owner {:multi/core #{"tool"}}}})]]
+   :assert (fn []
+             (let [{:keys [steps data]} (run-overridable-script
+                                         [[:multi/core "tool" :core]
+                                          [:addon "tool" :addon]])]
+               (is (= [:ok :replaced] steps))
+               (is (= {:multi/core #{} :addon #{"tool"}} (:by-owner data)))
+               (is (= {:value :addon :owner :addon :registered-at :fixed-time}
+                      (get-in data [:by-name "tool"])))))} )
