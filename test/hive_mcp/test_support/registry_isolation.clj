@@ -4,6 +4,8 @@
   (:require [hive-mcp.addons.core :as addons]
             [hive-mcp.protocols.memory :as memory]))
 
+(def ^:private fixture-lock (Object.))
+
 (defn safe-test-registry?
   "True only when the addon registry reports no installed or active addons."
   [status]
@@ -29,20 +31,25 @@
 
 (defn restore-stores!
   "Restore the registry snapshot after a test, without a global reset.
-   Only use after refuse-live-registry! in a dedicated test JVM."
+   Only use after refuse-live-registry! in a dedicated test JVM.
+   Replace the slot map in one atomic operation; do not unregister and
+   register individual keys (which exposes a partially restored registry)."
   [prior]
-  (doseq [key (keys (memory/registered-stores))]
-    (memory/unregister-store! key))
-  (doseq [[key store] prior]
-    (memory/register-store! key store)))
+  (let [slot (var-get (ns-resolve 'hive-spi.memory.registry 'store-slot))]
+    (when-not (and (map? prior) (instance? clojure.lang.IAtom (:state slot)))
+      (throw (ex-info "Memory registry slot unavailable for atomic restore"
+                      {:reason :missing-memory-slot})))
+    (swap! (:state slot) (constantly prior))))
 
 (defn with-isolated-store-registry
   "Run f with a blank registry and restore its prior snapshot on teardown.
-   Refuses a nonempty registry rather than clobbering a live store."
+   Refuses a nonempty registry rather than clobbering a live store. Serializes
+   cooperating fixtures; run this only in a dedicated sequential test JVM."
   [f]
-  (refuse-live-registry!)
-  (let [prior (memory/registered-stores)]
-    (try
-      (f)
-      (finally
-        (restore-stores! prior)))))
+  (locking fixture-lock
+    (refuse-live-registry!)
+    (let [prior (memory/registered-stores)]
+      (try
+        (f)
+        (finally
+          (restore-stores! prior))))))
