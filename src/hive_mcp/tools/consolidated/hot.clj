@@ -252,17 +252,21 @@
     (assoc :mounted (mapv #(select-keys % mount-result-keys) (:mounted report)))))
 
 (defn report-with-surface
-  "A remount cannot claim success when its tool registry did not refresh.
-   Keep the surface diagnostic alongside the remount report."
+  "Keep remount status and diagnostics, but never claim a fresh MCP surface
+   when the server refresh failed or did not refresh any surface."
   [report surface]
-  (let [failure (cond
-                  (nil? surface) "tool surface refresh unavailable"
+  (let [server (:server-tools surface)
+        failure (cond
+                  (nil? surface) "MCP surface stale: surface refresh unavailable"
+                  (and (map? server) (contains? server :error))
+                  (str "MCP surface stale: server refresh failed: "
+                       (or (:cause server) (:error server)))
+                  (not (seq (get-in server [:ok :surfaces])))
+                  "MCP surface stale: server refresh returned no refreshed surface"
                   (false? (get-in surface [:agent-tools :ok?]))
-                  (str "tool registry refresh failed: " (get-in surface [:agent-tools :error]))
-                  (seq (get-in surface [:server-tools :failed]))
-                  (str "tool surfaces failed: " (pr-str (get-in surface [:server-tools :failed]))))]
+                  (str "tool registry refresh failed: " (get-in surface [:agent-tools :error])))]
     (cond-> (assoc report :surface surface)
-      failure (-> (assoc :ok? false)
+      failure (-> (assoc :ok? false :surface-stale? true)
                   (update :errors (fnil conj []) failure)))))
 
 (defn- surface-refreshed!
@@ -370,7 +374,7 @@
 
    The classpath is extended on the highest DynamicClassLoader above this
    thread; a thread without one refuses rather than mounting code the next
-   require could not find."
+   require could not find. Surface failures are reported separately from mount."
   [{:keys [path resolve_deps]}]
   (cond
     (not (bridge-available?)) (mcp-error unavailable-msg)
@@ -389,16 +393,18 @@
                 opts     (cond-> (reload-opts)
                            resolve_deps (assoc :resolve-deps? true))
                 report   (inject! h specs path opts)
-                surface  (surface-refreshed!)]
+                surface  (surface-refreshed!)
+                result   (report-with-surface
+                          (assoc (select-keys report inject-report-keys)
+                                 :mounted (mapv #(select-keys % mount-result-keys)
+                                                (:mounted report))
+                                 :hive-hot hot-init)
+                          surface)]
             (log/info "hot inject" {:path path
-                                    :ok? (:ok? report)
+                                    :ok? (:ok? result)
                                     :injected (:hot/injected report)
                                     :already (:hot/already-mounted report)})
-            (mcp-json (-> (select-keys report inject-report-keys)
-                          (assoc :mounted (mapv #(select-keys % mount-result-keys)
-                                                (:mounted report))
-                                 :hive-hot hot-init
-                                 :surface surface))))))
+            (mcp-json result))))
       (mcp-error (str "hive-addon.hot.inject is not on the classpath — injection ships in "
                       "hive-addon >= 0.3.8; bump the pin (or point local.deps.edn at "
                       "../hive-addon) and restart the server.")))))

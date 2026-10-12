@@ -51,17 +51,24 @@
                                                   :mcp {:text "old"}})]]})
 
 (defn refresh-verdict
-  "Run a registry refresh against an injected advertised-surface port."
+  "Run a registry refresh against a stub source, restoring both singleton atoms."
   [fail?]
-  (binding [agent-reg/*advertised-tools*
-            (if fail?
-              (fn [] (throw (ex-info "stub registry refused" {})))
-              (fn [] [{:name "stub" :handler #'scan-stub}]))]
+  (let [before @agent-reg/registry
+        initialized (var-get (ns-resolve 'hive-mcp.agent.registry 'initialized?))
+        was-initialized @initialized]
     (try
-      (let [count' (agent-reg/refresh!)]
-        {:ok? true :count count'})
-      (catch Exception e
-        {:ok? false :message (ex-message e)}))))
+      (binding [agent-reg/*advertised-tools*
+                (if fail?
+                  (fn [] (throw (ex-info "stub registry refused" {})))
+                  (fn [] [{:name "stub" :handler #'scan-stub}]))]
+        (try
+          (let [count' (agent-reg/refresh!)]
+            {:ok? true :count count'})
+          (catch Exception e
+            {:ok? false :message (ex-message e)})))
+      (finally
+        (reset! agent-reg/registry before)
+        (reset! initialized was-initialized)))))
 
 (deftrifecta failed-refresh-is-loud
   hive-mcp.extensions.hot-stale-verb-test/refresh-verdict
@@ -76,12 +83,14 @@
 (deftest failed-refresh-is-in-the-reload-report
   (let [failed (hot/report-with-surface
                 {:ok? true :errors []}
-                {:agent-tools {:ok? false :error "stub registry refused"}})]
+                {:server-tools {:ok {:surfaces [:stub]}}
+                 :agent-tools {:ok? false :error "stub registry refused"}})]
     (testing "the failed agent registry read cannot leave hot reload green"
       (is (false? (:ok? failed)))
       (is (= ["tool registry refresh failed: stub registry refused"] (:errors failed)))))
   (let [good (hot/report-with-surface {:ok? true :errors []}
-                                      {:agent-tools {:ok? true :count 1}})]
+                                      {:server-tools {:ok {:surfaces [:stub]}}
+                                       :agent-tools {:ok? true :count 1}})]
     (is (true? (:ok? good)))))
 
 (deftest refresh-surface-exposes-the-failure
@@ -89,3 +98,47 @@
             (fn [] (throw (ex-info "stub registry refused" {})))]
     (let [report (reactive/refresh-agent-tools!)]
       (is (= {:ok? false :error "stub registry refused"} report)))))
+
+(deftest server-refresh-boundary-reports-stale-surface
+  (doseq [[label refresh cause] [[:throws (fn [] (throw (ex-info "stub MCP rejected table" {}))) "stub MCP rejected table"]
+                                 [:missing (fn [] nil) "no MCP surface refreshed"]
+                                 [:partial (fn [] {:surfaces [:stub] :failed [:other]}) ":other"]]]
+    (testing (name label)
+      (binding [reactive/*server-refresh* refresh]
+        (let [surface {:server-tools (reactive/refresh-server-tools!)
+                       :agent-tools {:ok? true :count 1}}
+              report (hot/report-with-surface {:ok? true :errors [] :mounted [:stub]} surface)]
+          (is (contains? (:server-tools surface) :error))
+          (is (false? (:ok? report)))
+          (is (:surface-stale? report))
+          (is (= [:stub] (:mounted report)))
+          (is (some #(clojure.string/includes? % cause) (:errors report)))))))
+  (binding [reactive/*server-refresh* (fn [] {:surfaces [:stub] :failed [] :count 1})]
+    (let [surface {:server-tools (reactive/refresh-server-tools!)
+                   :agent-tools {:ok? true :count 1}}
+          report (hot/report-with-surface {:ok? true :errors []} surface)]
+      (is (= [:stub] (get-in surface [:server-tools :ok :surfaces])))
+      (is (= 1 (get-in surface [:server-tools :count])) "legacy report keys remain")
+      (is (true? (:ok? report)))
+      (is (not (:surface-stale? report)))
+      (is (= "new" (:mcp (dispatch-after-stub-reload "new")))))))
+
+(deftest inject-verdict-preserves-mount-and-reports-stale-mcp
+  (let [mount {:ok? true :hot/injected ["stub"] :mounted [{:addon/id "stub"}]
+               :hive-hot {:initialized? true}}
+        failure (hot/report-with-surface mount
+                                         {:server-tools {:error :surface/refresh-failed
+                                                         :cause "stub MCP refused"}
+                                          :agent-tools {:ok? true :count 1}})
+        good (hot/report-with-surface mount
+                                      {:server-tools {:ok {:surfaces [:stub]}}
+                                       :agent-tools {:ok? true :count 1}})]
+    (is (false? (:ok? failure)))
+    (is (true? (:surface-stale? failure)))
+    (is (some #(clojure.string/includes? % "stub MCP refused") (:errors failure)))
+    (is (= ["stub"] (:hot/injected failure)))
+    (is (= (:mounted mount) (:mounted failure)))
+    (is (= (:hive-hot mount) (:hive-hot failure)))
+    (is (true? (:ok? good)))
+    (is (= (:surface good) {:server-tools {:ok {:surfaces [:stub]}}
+                            :agent-tools {:ok? true :count 1}}))))
