@@ -26,12 +26,13 @@
 (defn slave->ling-opts
   "Extract ling construction opts from a DataScript slave entity."
   [slave]
-  {:cwd (:slave/cwd slave)
-   :presets (:slave/presets slave)
-   :project-id (:slave/project-id slave)
-   :spawn-mode (or (:ling/spawn-mode slave) :claude)
-   :model (:ling/model slave)
-   :token-budget (:ling/token-budget slave)})
+  (cond-> {:cwd (:slave/cwd slave)
+           :presets (:slave/presets slave)
+           :project-id (:slave/project-id slave)
+           :spawn-mode (or (:ling/spawn-mode slave) :claude)
+           :model (:ling/model slave)
+           :token-budget (:ling/token-budget slave)}
+    (:ling/turn-budget slave) (assoc :turn-budget (:ling/turn-budget slave))))
 
 (declare ->ling)
 
@@ -60,6 +61,7 @@
      :project-id (:project-id ling)
      :ling-id (:id ling)
      :token-budget (:token-budget ling)
+     :turn-budget (:turn-budget ling)
      :max-budget-usd (or (:max-budget-usd opts) (:max-budget-usd ling))
      :grant (:grant opts)
      :task (:task opts)}))
@@ -197,15 +199,47 @@
            :kanban-task-id kanban-task-id}
     (some? grant) (assoc :grant grant)))
 
+(def row-safe-keys
+  "Row attrs kept when the row filter itself throws: routing and liveness
+   only, nothing that names the work. Mirrors hive-agent's own set."
+  #{:status :depth :parent})
+
+(defn row-attrs
+  "ATTRS of SLAVE-ID's registry row after ROW-FILTER, a
+   (fn [ling-id attrs] -> attrs) or nil. nil (no swarm addon) is identity.
+   A filter that throws, or answers anything but a map, fails CLOSED: the
+   row keeps only `row-safe-keys`, so a broken filter can never let task
+   text, cwd or project-id through."
+  [row-filter slave-id attrs]
+  (if-not row-filter
+    attrs
+    (let [out (try (row-filter slave-id attrs) (catch Throwable _ ::threw))]
+      (if (map? out)
+        out
+        (do (log/warn "[spawn] row filter failed closed" {:slave-id slave-id})
+            (select-keys attrs row-safe-keys))))))
+
+(defn- row-filter
+  "hive-agent's registry row filter chain, resolved softly so core needs no
+   swarm addon: nil when hive-agent (or its shout-filters ns) is absent."
+  []
+  (try (requiring-resolve 'hive-agent.events.shout-filters/row!)
+       (catch Throwable _ nil)))
+
 (defn- register-slave-row!
   "Persist a slave row through the spawn store, first making sure its parent
    can be referenced: a coordinator session named as parent gets its own row
    on demand. A recorded grant is written beside :slave/parent in the same
    registration, before the backend starts the ling, so its first tool call
-   is already gated."
+   is already gated.
+
+   The row attrs pass hive-agent's row filters first (`row-attrs`), so an
+   addon such as hive-darkmatter can replace identifying attrs before they
+   reach the registry. The grant is not filtered: it gates, it does not name."
   [store slave-id attrs]
   (spawn-store/ensure-coordinator-session! store (:parent attrs))
-  (let [res (spawn-store/add-slave! store slave-id (dissoc attrs :grant))]
+  (let [res (spawn-store/add-slave! store slave-id
+                                    (row-attrs (row-filter) slave-id (dissoc attrs :grant)))]
     (when-let [g (:grant attrs)]
       (spawn-store/update-slave! store slave-id {grant/slave-attr g}))
     res))
@@ -236,7 +270,7 @@
       :else nil)))
 
 (defn- stamp-spawn-metadata!
-  [{:keys [mode effective-model token-budget] :as plan} slave-id headless?]
+  [{:keys [mode effective-model token-budget turn-budget] :as plan} slave-id headless?]
   (let [now (System/currentTimeMillis)
         provider (provider-name plan)]
     (spawn-store/update-slave! (spawn-store/get-store)
@@ -248,6 +282,8 @@
                                         :slave/last-active-at now}
                                  (some? token-budget)
                                  (assoc :ling/token-budget token-budget)
+                                 (some? turn-budget)
+                                 (assoc :ling/turn-budget turn-budget)
                                  provider
                                  (assoc :ling/provider provider)
                                  headless?
@@ -522,6 +558,7 @@
                         :model model-val}
                  (:provider opts)           (assoc :provider (:provider opts))
                  (:token-budget opts)       (assoc :token-budget (:token-budget opts))
+                 (:turn-budget opts)        (assoc :turn-budget (:turn-budget opts))
                  (some? (:kg-compress? opts)) (assoc :kg-compress? (:kg-compress? opts))
                  (some? (:verbose? opts))   (assoc :verbose? (:verbose? opts))
                  (:llm-retries opts)        (assoc :llm-retries (:llm-retries opts))

@@ -1,0 +1,29 @@
+{:ambiguous
+ {:in {:id "e1", :find "beta", :replace "x"},
+  :out
+  {:id "e1",
+   :ok false,
+   :error
+   "find text matches more than once in entry content; extend it until it is unique"}},
+ :bad-param
+ {:in {:id "e1", :colour "red"},
+  :out
+  {:id "e1",
+   :ok false,
+   :error
+   "Unrecognised edit param(s): colour. memory edit accepts: abstraction_level, content, duration, find, id, reason, replace, tags, type."}},
+ :bad-type
+ {:in {:id "e1", :type "not a type!"},
+  :out
+  {:id "e1",
+   :ok false,
+   :error
+   "Invalid memory type: \"not a type!\". Type must be a safe token — letters, digits, '_' or '-', starting with a letter, max 64 chars."}},
+ :missing
+ {:in {:id "nope", :content "x"},
+  :out {:id "nope", :ok false, :error "Entry not found: nope"}},
+ :ok-content
+ {:in {:id "e1", :content "new"}, :out {:id "e1", :ok true}},
+ :ok-find
+ {:in {:id "e1", :find "alpha", :replace "gamma"},
+  :out {:id "e1", :ok true}}}

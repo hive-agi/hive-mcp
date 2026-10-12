@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Test-classpath logging. test/resources is on the :test, :test-unit and
+  :test-integration paths, and logback looks for logback-test.xml before
+  logback.xml, so every test JVM (CI, bin/test-sandboxed.sh, a `cider spawn`
+  REPL with the :test alias) loads this file instead of resources/logback.xml.
+
+  Console only, on purpose. resources/logback.xml appends to
+  ~/.config/hive-mcp/server.json.log (resolved from the user.home system
+  property) with its own rolling policy; a test JVM running with the
+  operator's real HOME would write into, and roll, the very file the live
+  server writes. Nothing here resolves user.home, so a test JVM touches no
+  HOME-relative log path.
+
+  hive-mcp.logback-test-config-test pins this: no FileAppender of any kind.
+-->
+<configuration>
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} %-5level [%logger{36}] - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <logger name="io.netty" level="WARN"/>
+  <logger name="aleph" level="INFO"/>
+  <logger name="manifold" level="INFO"/>
+  <logger name="io.pedestal" level="WARN"/>
+  <logger name="org.eclipse.jetty" level="WARN"/>
+
+  <logger name="hive-mcp" level="INFO"/>
+
+  <root level="WARN">
+    <appender-ref ref="CONSOLE"/>
+  </root>
+</configuration>

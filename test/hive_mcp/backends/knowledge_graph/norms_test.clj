@@ -7,6 +7,7 @@
    - Support data roundtrip after application
    - Work on existing DB with pre-existing data"
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
+            [clojure.string]
             [datahike.api :as d]
             [datahike.norm.norm :as norm]
             [clojure.java.io :as io]))

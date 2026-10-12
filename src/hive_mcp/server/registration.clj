@@ -71,11 +71,25 @@
   [rules entries]
   (into [] (comp (map :tool) (remove #(hidden? rules %))) entries))
 
+(defn listed-tools
+  "Pure. What tools/list returns: `visible-tools` sorted by :name.
+
+   The live table is a hash map ({name entry}), so its `vals` come back in
+   hash order, and that order shifts whenever a tool is registered, refreshed
+   or hot-reloaded. Clients put the tool list in their prompt prefix, so a
+   reshuffle busts their prompt cache. Sorting by name makes the listing a
+   function of the visible tool SET alone (MCP 2026-07-28: servers SHOULD
+   return tools in a deterministic order). Names are unique table keys, so the
+   order is total."
+  [rules entries]
+  (vec (sort-by (comp str :name) (visible-tools rules entries))))
+
 (defn receive-tools-list
-  "The tools/list method body: the context's live table through the hide rules."
+  "The tools/list method body: the context's live table through the hide
+   rules, sorted by name (`listed-tools`)."
   [_ context _params]
   (let [entries (vals @(:tools context))
-        visible (visible-tools @hide-rules entries)
+        visible (listed-tools @hide-rules entries)
         hidden  (- (count entries) (count visible))]
     (when (pos? hidden)
       (log/debug "Hiding" hidden "tools from tools/list"))

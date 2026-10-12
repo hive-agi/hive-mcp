@@ -347,8 +347,7 @@
             project-id, its [reader project] cursor started at 0, and every
             global shout of the session was replayed to the coordinator, once
             per repo touched (kanban 20260519145332-0c5878a5's symptom)"
-    (let [messages (atom [{:agent-id "wave-m0" :event-type :completed :message "PONG"
-                           :timestamp 1000 :project-id "global"}
+    (let [messages (atom [{:agent-id "wave-m0", :event-type :completed, :message "PONG", :timestamp 1000, :project-id "global", :broadcast? true}
                           {:agent-id "ling-a" :event-type :progress :message "in A"
                            :timestamp 1001 :project-id "proj-A"}])]
       (pb/register-message-source! (fn [] @messages))
@@ -356,8 +355,7 @@
         (is (= 2 (count r1)) "first read under proj-A: the global shout and A's own"))
       (is (nil? (pb/get-messages "coordinator" :project-id "proj-B"))
           "a first read under ANOTHER project does not replay the global shout")
-      (swap! messages conj {:agent-id "wave-m1" :event-type :completed :message "PONG again"
-                            :timestamp 1002 :project-id "global"})
+      (swap! messages conj {:agent-id "wave-m1", :event-type :completed, :message "PONG again", :timestamp 1002, :project-id "global", :broadcast? true})
       (is (= ["PONG again"] (mapv :m (pb/get-messages "coordinator" :project-id "proj-B")))
           "a NEW global shout still reaches the proj-B read, once")
       (is (nil? (pb/get-messages "coordinator" :project-id "proj-A"))
@@ -374,8 +372,7 @@
             (coordinator:7-hive, coordinator:7-hive-mcp), so a window that
             touched five repos re-read the same 30 global wave shouts five
             times. With :session-id the global cursor is one per window."
-    (let [messages (atom [{:agent-id "wave-m0" :event-type :completed :message "PONG"
-                           :timestamp 1000 :project-id "global"}])]
+    (let [messages (atom [{:agent-id "wave-m0", :event-type :completed, :message "PONG", :timestamp 1000, :project-id "global", :broadcast? true}])]
       (pb/register-message-source! (fn [] @messages))
       (is (= ["PONG"] (mapv :m (pb/get-messages "coordinator:7-hive" :project-id "hive"
                                                 :session-id "coordinator:7")))
@@ -386,8 +383,7 @@
       (is (= ["PONG"] (mapv :m (pb/get-messages "coordinator:9-hive" :project-id "hive"
                                                 :session-id "coordinator:9")))
           "another window still gets it once")
-      (swap! messages conj {:agent-id "wave-m1" :event-type :completed :message "again"
-                            :timestamp 1001 :project-id "global"})
+      (swap! messages conj {:agent-id "wave-m1", :event-type :completed, :message "again", :timestamp 1001, :project-id "global", :broadcast? true})
       (is (= ["again"] (mapv :m (pb/get-messages "coordinator:7-hive-carto" :project-id "hive-carto"
                                                  :session-id "coordinator:7")))
           "a NEW global shout reaches the window once, under whichever repo it reads next")
@@ -403,8 +399,7 @@
                :timestamp 1000 :project-id "proj"}
               {:agent-id "ling-b" :event-type :progress :message "b1"
                :timestamp 1001 :project-id "proj"}
-              {:agent-id "ling-a" :event-type :completed :message "a2"
-               :timestamp 1002 :project-id "global"}
+              {:agent-id "ling-a", :event-type :completed, :message "a2", :timestamp 1002, :project-id "global", :broadcast? true}
               {:agent-id "ling-a" :event-type :progress :message "a-other"
                :timestamp 1003 :project-id "other"}]]
     (pb/register-message-source! (constantly msgs))

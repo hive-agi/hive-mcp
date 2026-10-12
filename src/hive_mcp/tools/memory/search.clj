@@ -147,6 +147,37 @@
                 :content    content
                 :project-id (:project-id entry)}}))
 
+(defn- entry-tag-set
+  "The tags of a normalized search entry as a set of strings. The
+   normalized shape carries them comma-joined under [:metadata :tags]; a
+   sequential value is accepted too, so an ingest hit that kept its vector
+   is read the same way."
+  [entry]
+  (let [t (get-in entry [:metadata :tags])]
+    (cond
+      (string? t)     (into #{} (remove str/blank?) (str/split t #","))
+      (sequential? t) (into #{} (map str) t)
+      :else           #{})))
+
+(defn filter-required-tags
+  "Keep the normalized search ENTRIES that carry EVERY tag in TAGS (AND
+   semantics, the same as `memory query`). A nil or empty TAGS keeps every
+   entry. Takes one map, {:entries [...] :tags [...]}.
+
+   The vector stores rank by similarity only; the `tags` param of a search
+   used to be accepted and then dropped, so a tag-scoped search answered
+   untagged hits (kanban 20260713154842-68993ce0)."
+  [{:keys [entries tags]}]
+  (let [required (into #{} (comp (map str) (remove str/blank?)) tags)]
+    (if (empty? required)
+      (vec entries)
+      (filterv #(every? (entry-tag-set %) required) entries))))
+
+(def ^:private tag-overfetch
+  "How many times the requested limit to fetch from the store when a tag
+   filter is applied after ranking, so the filter has hits to keep."
+  10)
+
 (defn- record-co-access!
   "Fire-and-forget co-access recording for search results."
   [formatted project-id created-by]
@@ -252,13 +283,20 @@
 (defn- run-post-filter
   "Post-filter / aggregation stage: normalize, merge, rerank, format.
    Pure CPU but bounded by the :post-filter budget so a pathological
-   reducer (e.g. million-row dedupe) cannot wedge the handler."
-  [store-results ingest-results limit-val]
+   reducer (e.g. million-row dedupe) cannot wedge the handler.
+
+   REQUIRED-TAGS (may be empty) drops every hit, store or ingest, that does
+   not carry all of them, before the merge cuts to LIMIT-VAL."
+  [store-results ingest-results limit-val required-tags]
   (safe/safe-future-call
    {:timeout-ms (budget :post-filter) :name "memory-search/post"}
    (fn []
-     (let [normalized-store (mapv store-entry->normalized (or store-results []))
-           merged (ingest-search/merge-and-rerank normalized-store (or ingest-results []) limit-val)]
+     (let [normalized-store (filter-required-tags
+                             {:entries (mapv store-entry->normalized (or store-results []))
+                              :tags    required-tags})
+           ingest-kept      (filter-required-tags
+                             {:entries (or ingest-results []) :tags required-tags})
+           merged (ingest-search/merge-and-rerank normalized-store ingest-kept limit-val)]
        (mapv format-search-result merged)))))
 
 (def ^:private default-exclude-tags
@@ -269,6 +307,27 @@
    document-level entries an ingest also writes are tagged ingestion-document
    and stay visible — they are few and high-signal."
   ["carto" "ingestion-chunk"])
+
+(defn search-payload
+  "Pure: the ok payload of a semantic search.
+
+   A default-on exclusion filter must be loud: every payload echoes the
+   :excluded-tags the store query ran with, and :excludes-source says
+   whether they are the built-in default (:default), the caller's own set
+   (:caller) or nothing (:none). A caller can then tell an empty corpus
+   from a filtered one, and knows to pass exclude_tags=[] to see the rest
+   (kanban 20260728020157-1407f421)."
+  [{:keys [results query scope exclude-tags default-excludes]}]
+  (let [excluded (vec exclude-tags)]
+    {:results         results
+     :count           (count results)
+     :query           query
+     :scope           scope
+     :excluded-tags   excluded
+     :excludes-source (cond
+                        (empty? excluded)                    :none
+                        (= (set excluded) (set default-excludes)) :default
+                        :else                                :caller)}))
 
 ;; =============================================================================
 ;; Composite search-store* (fork-join across store + ingest)
@@ -289,25 +348,29 @@
    - store and ingest run in parallel under the collective :total budget.
    - each vectordb side has its own 15s cap, so one hung backend cannot
      eat the whole budget (the other side still races to complete).
-   - post-filter gets 5s — bounded CPU, independent of network health."
-  [query limit-val type project-id in-project? include_descendants exclude-tags]
+   - post-filter gets 5s — bounded CPU, independent of network health.
+
+   REQUIRED-TAGS: when non-empty, both sides over-fetch by `tag-overfetch`
+   and the post stage keeps only hits carrying every tag."
+  [query limit-val type project-id in-project? include_descendants exclude-tags required-tags]
   (let [visible-project-ids (when in-project?
                               (let [visible (kg-scope/visible-scopes project-id)
                                     descendants (when include_descendants
                                                   (kg-scope/descendant-scopes project-id))]
                                 (vec (distinct (concat visible descendants)))))
         effective-excludes (vec exclude-tags)
+        fetch-limit (if (seq required-tags) (* limit-val tag-overfetch) limit-val)
         fj (parallel/fork-join
             {:budget-ms (budget :total)}
             [:store
              #(unwrap-safe-future :vectordb
-                                  (run-store-query query limit-val type
+                                  (run-store-query query fetch-limit type
                                                    visible-project-ids
                                                    effective-excludes))
              {:stage :vectordb :err "fork-join store timeout"}]
             [:ingest
              #(unwrap-safe-future :vectordb
-                                  (run-ingest-query query limit-val))
+                                  (run-ingest-query query fetch-limit))
              {:stage :vectordb :value []}])
         store-side  (:store fj)
         ingest-side (:ingest fj)]
@@ -323,15 +386,16 @@
       :else
       (let [store-results  (:value store-side)
             ingest-results (:value ingest-side [])
-            post (run-post-filter store-results ingest-results limit-val)]
+            post (run-post-filter store-results ingest-results limit-val required-tags)]
         (cond
           (result/ok? post)
           (let [formatted (:ok post)]
             (record-co-access! formatted project-id "system:semantic-search")
-            (result/ok {:results formatted
-                        :count   (count formatted)
-                        :query   query
-                        :scope   project-id}))
+            (result/ok (search-payload {:results          formatted
+                                        :query            query
+                                        :scope            project-id
+                                        :exclude-tags     effective-excludes
+                                        :default-excludes default-exclude-tags})))
 
           :else
           (let [msg (or (:message post) (:name post) "post-filter failed")]
@@ -350,17 +414,23 @@
    default IMemoryStore via search-store*.
    exclude_tags defaults to `default-exclude-tags` — pass a tag vector to
    replace that default with your own exclusion set.
+   tags, when given, is a required set: only hits carrying every tag are
+   returned (AND, as in `memory query`).
    include_descendants defaults to true — pass false to restrict to current project."
-  [{:keys [query limit type directory include_descendants scope exclude_tags]}]
+  [{:keys [query limit type directory include_descendants scope exclude_tags tags]}]
   (let [directory (or directory (ctx/current-directory))
         include-descendants? (if (some? include_descendants)
                                (boolean include_descendants)
                                true)
         limit-val (coerce-int! limit :limit 10)
+        required-tags (cond
+                        (string? tags)     [tags]
+                        (sequential? tags) (vec tags)
+                        :else              [])
         store-ready? (and (mem-proto/store-set?)
                           (mem-proto/supports-semantic-search? (mem-proto/get-store)))]
     (log/info "mcp-memory-search-semantic:" query "type:" type "directory:" directory
-              "scope:" scope "exclude_tags:" exclude_tags
+              "scope:" scope "exclude_tags:" exclude_tags "tags:" required-tags
               "include_descendants:" include-descendants?)
     (if-not store-ready?
       (result/err :memory/store-not-configured
@@ -372,7 +442,8 @@
         (search-store* query limit-val type effective-pid in-project?
                        include-descendants? (if (some? exclude_tags)
                                               exclude_tags
-                                              default-exclude-tags))))))
+                                              default-exclude-tags)
+                       required-tags)))))
 
 (defn handle-search-semantic
   "Search project memory using semantic similarity (vector search).

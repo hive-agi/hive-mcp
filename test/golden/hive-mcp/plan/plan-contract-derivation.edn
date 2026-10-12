@@ -1,0 +1,6 @@
+{:plan
+ {:required ["id" "title" "steps"],
+  :step-required ["id" "title"],
+  :step-enums
+  {:priority ["high" "medium" "low"],
+   :estimate ["small" "medium" "large"]}}}

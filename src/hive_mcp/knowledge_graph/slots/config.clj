@@ -75,7 +75,7 @@
   "Recovery policy per slot. `nil` means use the global heal-and-open!
    default (`:throw`, preserves pre-L1.2 semantics).
 
-   :carto    — derived index, fully regenerable via `codebase-map scan`.
+   :carto    — derived index, fully regenerable via `carto scan`.
                 Aggressive heal: truncate tail-zeroed corruption in place,
                 quarantine on unhealable corruption, finally throw.
    :sessions — append-only timestamp index; truncate handles crash-tail.

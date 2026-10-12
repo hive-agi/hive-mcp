@@ -13,7 +13,8 @@
             [hive-mcp.dns.result :as r]
             [hive-mcp.extensions.registry :as ext]
             [taoensso.timbre :as log]
-            [hive-mcp.addons.runtime-ports :as runtime-ports]))
+            [hive-mcp.addons.runtime-ports :as runtime-ports]
+            [hive-mcp.extensions.dispatch-wrap :as dispatch-wrap]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -89,24 +90,78 @@
                 :init-time init-time
                 :capabilities (proto/capabilities addon)}))))
 
-(defn unregister-addon!
-  "Unregister an addon, calling shutdown! first if active."
-  [id]
-  (if-let [{:keys [addon state]} (get-addon-entry id)]
-    (do
-      (when (= state :active)
-        (let [result (r/try-effect* :addon/shutdown-error (proto/shutdown! addon))]
-          (cond
-            (r/err? result)
-            (log/error "Addon shutdown failed during unregister"
-                       {:addon id :error (:message result)})
+(declare shutdown-addon!)
 
-            (and (r/ok? result) (not (:success? (:ok result))))
-            (log/warn "Addon shutdown had errors during unregister"
-                      {:addon id :errors (:errors (:ok result))}))))
+(defn- retract-owned-by!
+  "Retract every owner-keyed registration addon `id` may have made, without
+   calling the addon's own shutdown!. For an entry that is not :active (an
+   init that failed part-way), where `shutdown-addon!` skips teardown.
+   Each step is idempotent: retracting what was never registered is a no-op."
+  [id]
+  (let [{:keys [addon init-result hook-keys]} (get-addon-entry id)]
+    (when-let [exts (:extensions (:metadata init-result))]
+      (when (map? exts)
+        (doseq [k (keys exts)] (ext/deregister! k))))
+    (doseq [k hook-keys
+            :when (not (#{"multi" "saa" "plan" "wf" "op-schema"} (namespace k)))]
+      (ext/deregister! k))
+    (doseq [sym '[hive-mcp.multi.registry/deregister-by-owner!
+                  hive-mcp.saa.registry/deregister-by-owner!
+                  hive-mcp.plan.field-registry/deregister-by-owner!
+                  hive-mcp.workflows.strategy-registry/deregister-by-owner!
+                  hive-mcp.spi.op-schema-registry/deregister-by-owner!]]
+      ((requiring-resolve sym) id))
+    (doseq [t (r/rescue [] (proto/tools addon))]
+      (ext/deregister-tool! (:name t)))
+    (ext/retract-all-by-addon! id)
+    (ext/retract-schemas-by-owner! id)
+    nil))
+
+(defn unregister-addon!
+  "Unregister an addon, calling shutdown! first if active.
+
+   Teardown is owner-safe and goes through the same path as `shutdown-addon!`,
+   so tools, schema extensions, composite contributions, hooks, workflow
+   strategies and every other owner-keyed registration are retracted BEFORE
+   the registry entry is removed. An addon left in :error may have registered
+   part of its surface before failing, so its owner-keyed contributions are
+   retracted best-effort as well, and so are those of an active addon whose
+   shutdown failed part-way. A shutdown failure is logged and reported
+   under :shutdown-errors; the entry is removed regardless, so a second
+   unregister answers not-registered instead of failing again."
+  [id]
+  (if-let [{:keys [state]} (get-addon-entry id)]
+    (let [retract! (fn []
+                     (let [result (r/try-effect* :addon/retract-error
+                                                 (retract-owned-by! id))]
+                       (when (r/err? result)
+                         (log/error "Addon retraction failed during unregister"
+                                    {:addon id :error (:message result)})
+                         (:message result))))
+          shutdown-errors
+          (case state
+            :active
+            (let [result (shutdown-addon! id)]
+              (when-not (:success? result)
+                (log/warn "Addon shutdown had errors during unregister"
+                          {:addon id :errors (:errors result)})
+                ;; A shutdown that threw part-way skipped the steps after the
+                ;; throw (schema retraction runs after the addon's own
+                ;; shutdown!), so retract the owner-keyed surface again before
+                ;; the entry, and with it the ownership record, is removed.
+                (let [retract-error (retract!)]
+                  (cond-> (vec (:errors result))
+                    retract-error (conj retract-error)))))
+
+            :error
+            (when-let [retract-error (retract!)]
+              [retract-error])
+
+            nil)]
       (swap! addon-registry dissoc id)
       (log/info "Addon unregistered" {:addon id})
-      {:success? true :addon-name id})
+      (cond-> {:success? true :addon-name id}
+        (seq shutdown-errors) (assoc :shutdown-errors shutdown-errors)))
     (do
       (log/warn "Addon not found for unregister" {:addon id})
       {:success? false
@@ -369,16 +424,14 @@
    wins and the addon tool is refused as `:shadows-core`. Refusals are
    dropped here: use `resolve-addon-tools` to see them.
 
-   When an :addon/wrap-handler extension is registered, each tool's :handler
-   is passed through it as (wrap addon-source handler)."
+   Each tool's :handler is dispatched through
+   hive-mcp.extensions.dispatch-wrap/wrap-addon-handler: the registered
+   :addon/wrap-handler extension, then the drain gate an unmount waits on."
   []
-  (let [installed (:installed (resolve-addon-tools))]
-    (if-let [wrap (ext/get-extension :addon/wrap-handler)]
-      (mapv (fn [t] (if (ifn? (:handler t))
-                      (update t :handler #(wrap (:addon-source t) %))
-                      t))
-            installed)
-      installed)))
+  (mapv (fn [t] (if (ifn? (:handler t))
+                  (update t :handler #(dispatch-wrap/wrap-addon-handler (:addon-source t) %))
+                  t))
+        (:installed (resolve-addon-tools))))
 
 (defn addon-tools-by-name
   "Get MCP tools contributed by a specific addon."

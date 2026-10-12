@@ -1,0 +1,2 @@
+{:success {:ok? true :count 1}
+ :failed {:ok? false :message "stub registry refused"}}

@@ -152,11 +152,11 @@
           (is (<= 0 (:available gate-stat) (:permits gate-stat))))))))
 
 (deftest g1-chroma-gate-permits-config
-  (testing "gate permits match design: read=4, write=1, embed=2"
+  (testing "gate permits match design: read=4, write=1, shared embedding=1"
     (let [stats (cg/gate-stats)]
       (is (= 4 (get-in stats [:read :permits])))
       (is (= 1 (get-in stats [:write :permits])))
-      (is (= 2 (get-in stats [:embed :permits]))))))
+      (is (= 1 (get-in stats [:embed :permits]))))))
 
 ;; =============================================================================
 ;; M1: Mutation targets — tests that break when gate is removed/weakened
@@ -181,22 +181,17 @@
           "Must terminate promptly, not hang"))))
 
 (deftest m1-embedding-gate-has-concurrency-bound
-  (testing "with-embedding-gate limits concurrent Ollama calls"
+  (testing "legacy gate delegates to the same process gate as provider decoration"
     (let [active (atom 0)
           peak (atom 0)
-          ;; Launch 6 concurrent "embedding" calls
           futures (doall
                     (for [_ (range 6)]
                       (future
-                        (try
-                          (cg/with-embedding-gate
-                            (let [cur (swap! active inc)]
-                              (swap! peak max cur)
-                              (Thread/sleep 50)
-                              (swap! active dec)))
-                          (catch Exception _ nil)))))]
+                        (cg/with-embedding-gate
+                          (let [cur (swap! active inc)]
+                            (swap! peak max cur)
+                            (Thread/sleep 30)
+                            (swap! active dec))))))]
       (doseq [f futures]
-        (when (= ::pending (deref f 10000 ::pending))
-          (future-cancel f)))
-      ;; embed-gate has 2 permits
-      (is (<= @peak 2) "Embedding concurrency must be bounded to 2"))))
+        (is (not= ::pending (deref f 10000 ::pending))))
+      (is (<= @peak 1) "One shared embedding permit, not a Chroma-only second pool"))))

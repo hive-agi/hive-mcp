@@ -1,0 +1,10 @@
+{:mixed
+ {:commits ["r1 a" "[p] c1 x" "[p] c2 y"],
+  :count 3,
+  :by-scope {"p" 2},
+  :scope-errors [{:pid "e", :error :timeout}]},
+ :no-scoped {:commits ["r1 a"], :count 1},
+ :umbrella-0
+ {:commits ["[sealed-workload] 69fd99d SW-M5.4"],
+  :count 1,
+  :by-scope {"sealed-workload" 1}}}

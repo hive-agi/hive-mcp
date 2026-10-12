@@ -1,0 +1,6 @@
+{:case-and-dash ["Kg" "kg" "kg-b" "kg_a"],
+ :desc-disagrees ["a" "b"],
+ :empty [],
+ :hidden-dropped ["kg" "memory"],
+ :no-rules ["a" "b"],
+ :reverse-inserted ["alpha" "mid" "zeta"]}

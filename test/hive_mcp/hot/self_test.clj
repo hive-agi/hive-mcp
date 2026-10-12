@@ -4,6 +4,7 @@
    The set has to be DERIVED and it has to be derived WITHOUT dereferencing
    anything, so both properties get a test that fails if they regress."
   (:require [clojure.test :refer [deftest is testing]]
+            [clojure.string]
             [hive-mcp.dispatch.handler]
             [hive-mcp.hot.self :as self]
             [hive-mcp.protocols.dispatch]))

@@ -113,6 +113,8 @@
                                       :description "[spawn] Economy role. cheap delegates model selection to configured ling defaults; frontier permits explicit model selection. Omit to preserve legacy direct-spawn behavior."}
                               "token_budget" {:type "integer"
                                                :description "[spawn] Context-reconstruction token ceiling for this ling."}
+                              "turn_budget" {:type "object"
+                                             :description "[spawn] Turn lease for the ling (hive-agent headless backend): {initial, hard_cap?, max_extensions?, judge? (policy|llm|hivemind), wrap_up?, judge_model?, warn_pct?, escalation_ladder?, escalate_after?, ask_timeout_ms?}. snake or kebab keys. Omitted = the backend default (50 turns, policy judge, cap 4x initial). judge hivemind routes request_turns to the parent as an ask answered by `ss reply`."}
                               "provider" {:type "string"
                                           :enum ["openrouter" "venice" "groq" "together" "fireworks" "openai" "ollama-compat" "anthropic" "chatgpt" "codex" "kimi"]
                                           :description "Explicit LLM provider (overrides any 'provider:' prefix in model). anthropic, chatgpt, codex and kimi are OAuth subscriptions; the others are API-key providers, which refuse Claude, GPT and Kimi models. Usually unnecessary: the subscription families route from the model name."}
@@ -149,7 +151,7 @@
                               ;; batch-spawn params
                               "operations" {:type "array"
                                             :items {:type "object"}
-                                            :description "Array of spawn parameter objects for batch-spawn. Each object: {type, name, cwd, presets, model, task, spawn_mode, parent, kanban_task_id, llm_retries, resume, chat_run_id}"}
+                                            :description "Array of spawn parameter objects for batch-spawn. Each object: {type, name, cwd, presets, model, task, spawn_mode, parent, kanban_task_id, llm_retries, resume, chat_run_id, token_budget, turn_budget}"}
                               "parallel" {:type "boolean"
                                           :description "Run batch operations in parallel (default: false)"}
                               "project_id" {:type "string"

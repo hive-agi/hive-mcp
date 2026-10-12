@@ -130,44 +130,60 @@
           [:ok spec]
           (catch Exception e [:error (.getMessage e)])))))
 
-(defn handle-kg-add-edges
-  "Create every edge in :operations in ONE transaction, then flush ONCE.
+(defn batch-envelope
+  "Pair `classified` ops ([:ok spec] | [:error msg]) with the bulk write outcome
+   `written`: {:ids [edge-id ...]} on success, {:error msg} on failure.
 
-   The generic batch runner dispatches each op to handle-kg-add-edge, so an
-   N-edge batch paid N datahike transactions AND N flush-pending! barriers —
-   measured as a write storm during corpus synthesis, where a single ingest
-   issues thousands of edges. Validation is per-op so one bad spec is reported
-   against itself rather than failing the batch.
+   Returns {:results [...] :summary {:total :success :failed}}, plus
+   :write_error when the bulk write failed. A valid op is reported as a success
+   only when the write returned an id for it."
+  [classified {:keys [ids error]}]
+  (let [remaining (volatile! (seq ids))
+        results   (mapv (fn [[k v]]
+                          (if (= k :error)
+                            {:success false :command "edge" :error v}
+                            (if-let [id (first @remaining)]
+                              (do (vswap! remaining next)
+                                  {:success true :command "edge"
+                                   :result {:success true :edge-id id}})
+                              {:success false :command "edge"
+                               :error (str "bulk edge write failed"
+                                           (when error (str ": " error)))})))
+                        classified)
+        succeeded (count (filter :success results))]
+    (cond-> {:results results
+             :summary {:total   (count classified)
+                       :success succeeded
+                       :failed  (- (count classified) succeeded)}}
+      error (assoc :write_error error))))
 
-   Returns the same {:results :summary} envelope as the generic batch path."
-  [{:keys [operations]}]
+(defn add-edges-with
+  "Create every valid edge in :operations in ONE transaction through
+   `transact-fn`, reporting per-op outcomes as an MCP response. A transaction
+   that throws makes every valid op a failure and sets :write_error."
+  [transact-fn {:keys [operations]}]
   (if (empty? operations)
     (mcp-error "operations is required (array of {command, ...} objects) for batch-edge")
     (let [classified (mapv classify-op operations)
           valid      (into [] (keep (fn [[k v]] (when (= k :ok) v)) classified))
-          edge-ids   (try (edges/add-edges! valid)
+          written    (try {:ids (edges/add-edges! valid transact-fn)}
                           (catch Exception e
                             (log/error e "kg batch-edge bulk write failed")
-                            nil))
-          _          (conn/flush-pending!)
-          ids        (volatile! (seq edge-ids))
-          results    (mapv (fn [[k v]]
-                             (if (= k :error)
-                               {:success false :command "edge" :error v}
-                               (if-let [id (first @ids)]
-                                 (do (vswap! ids next)
-                                     {:success true :command "edge"
-                                      :result {:success true :edge-id id}})
-                                 {:success false :command "edge"
-                                  :error "bulk edge write failed"})))
-                           classified)
-          succeeded  (count (filter :success results))]
+                            {:error (or (.getMessage e) (.getName (class e)))}))
+          envelope   (batch-envelope classified written)]
       (log/info "kg_batch_add_edges"
-                {:ops (count operations) :written succeeded :transactions 1})
-      (mcp-json {:results results
-                 :summary {:total (count operations)
-                           :success succeeded
-                           :failed (- (count operations) succeeded)}}))))
+                {:ops (count operations) :written (get-in envelope [:summary :success])
+                 :transactions 1})
+      (mcp-json envelope))))
+
+(defn handle-kg-add-edges
+  "Create every edge in :operations in ONE synchronous transaction.
+
+   Validation is per-op so one bad spec is reported against itself. The write
+   is synchronous, so a reported success is durable and a failed write is
+   reported against every valid op. Returns {:results :summary}."
+  [params]
+  (add-edges-with conn/transact-sync! params))
 
 (defn- promote*
   "Promote knowledge edge to a broader scope, preserving the original. Raw impl

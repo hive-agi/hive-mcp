@@ -17,6 +17,27 @@
    Usage with EmbeddingService:
      (service/configure-collection! \"my-collection\" (config/ollama-config))"
   (:require [hive-mcp.config.core :as global-config]))
+
+(def collection-provider-specs
+  "Boot routing policy in application order. A nil fallback leaves ingest unconfigured."
+  [{:collection "hive-mcp-memory" :primary :ollama}
+   {:collection "hive-mcp-presets" :primary :openrouter :fallback :ollama
+    :success-message "Presets collection configured with OpenRouter"}
+   {:collection "hive-mcp-plans" :primary :openrouter :fallback :ollama
+    :success-message "Plans collection configured with OpenRouter"
+    :fallback-warning "Plans collection using Ollama - entries >1500 chars may be truncated"}
+   {:collection "hive-ingest" :primary :openrouter
+    :success-message "Ingest collection configured with OpenRouter"}])
+
+(defn collection-route
+  "Choose the effective route and boot message from a spec and OpenRouter attempt result.
+   This is pure: the caller owns provider setup, logging and any failed attempt."
+  [{:keys [primary fallback success-message fallback-warning]} openrouter-success?]
+  (if (= primary :ollama)
+    {:provider :ollama}
+    (if openrouter-success?
+      {:provider :openrouter :message success-message :level :info}
+      {:provider fallback :message fallback-warning :level (when fallback-warning :warn)})))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later

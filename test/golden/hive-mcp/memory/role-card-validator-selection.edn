@@ -1,0 +1,4 @@
+{:extension {:source :extension, :validator :e},
+ :injected {:source :injected, :validator :i},
+ :none {:source :none, :validator nil},
+ :spi-only {:source :spi, :validator :s}}

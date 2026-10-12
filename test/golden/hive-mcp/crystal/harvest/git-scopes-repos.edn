@@ -1,0 +1,6 @@
+{:child-own-repo [{:pid "sealed", :dir "/u/sealed"}],
+ :child-same-repo [],
+ :no-descendants [],
+ :no-git-root [],
+ :root-not-in-git [{:pid "z", :dir "/z"}],
+ :shared-repo-once [{:pid "x", :dir "/r"}]}

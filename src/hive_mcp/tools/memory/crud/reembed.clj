@@ -22,7 +22,8 @@
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.dns.result :refer [rescue-log]]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.tools.memory.crud.deferred :as deferred]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -40,16 +41,30 @@
                    :project-id (:project-id existing)}))))
 
 (defn- reembed-one!
-  "Re-embed a single entry. Returns a result map or nil when not found."
+  "Drain a deferred id through the existing store add path, or reembed a
+   previously indexed entry through update-entry!. A deferred entry drains
+   into the store slot it was parked from (kanban parks :kanban), not the
+   caller's. Remove the outbox record only after the store confirms the
+   write. Returns nil when not found."
   [store id]
-  (when-let [existing (mem-proto/get-entry store id)]
-    (let [updated (mem-proto/update-entry! store id {:updated (now-iso)})]
-      (log/info "Memory reembed:" id)
-      (publish-reembed! id existing)
-      {:id        id
-       :reembedded true
-       :updated    updated
-       :existing   existing})))
+  (let [pending (deferred/lookup id)
+        existing (or pending (mem-proto/get-entry store id))]
+    (when existing
+      (let [updated (if pending
+                      (let [target (if-let [k (deferred/store-key-of pending)]
+                                     (mem-proto/get-store k)
+                                     store)
+                            entry (deferred/->store-entry pending)
+                            stored-id (mem-proto/add-entry! target entry)]
+                        (when-not (= id stored-id)
+                          (throw (ex-info "Deferred reembed did not persist"
+                                          {:id id :result stored-id})))
+                        (deferred/remove! id)
+                        (or (mem-proto/get-entry target id) entry))
+                      (mem-proto/update-entry! store id {:updated (now-iso)}))]
+        (log/info "Memory reembed:" id)
+        (publish-reembed! id existing)
+        {:id id :reembedded true :updated updated :existing existing}))))
 
 (defn handle-reembed
   "Re-embed a single memory entry by id. No content change required.
@@ -89,18 +104,26 @@
      :errors     (get status->count :error 0)}))
 
 (defn handle-batch-reembed
-  "Re-embed a batch of entries by id. Sequential per-op.
-
-   Params:
-     :ids — required, seq of entry ids"
+  "Re-embed ids sequentially; when :ids is omitted, drain the durable pending
+   outbox. Each failed id stays parked for a subsequent retry."
   [{:keys [ids]}]
-  (cond
-    (empty? ids)
-    (mcp-error "ids is required (non-empty array of entry ids)")
+  (let [ids (or ids (deferred/pending-ids))]
+    (if (empty? ids)
+      (mcp-json {:total 0 :reembedded 0 :not-found 0 :errors 0 :results []})
+      (with-store
+        (let [store (mem-proto/get-store)
+              results (mapv #(batch-op-result store %) ids)
+              summary (tally-statuses results)]
+          (mcp-json (assoc summary :results results)))))))
 
-    :else
-    (with-store
-      (let [store   (mem-proto/get-store)
-            results (mapv #(batch-op-result store %) ids)
-            summary (tally-statuses results)]
-        (mcp-json (assoc summary :results results))))))
+(defn drain-pending!
+  "Housekeeping entry point: reembed every parked id once, so an entry whose
+   embed failed is re-vectorized without anyone calling memory reembed. A
+   failure leaves the id parked for the next sweep. Returns the tally."
+  []
+  (let [ids (deferred/pending-ids)]
+    (if (empty? ids)
+      {:total 0 :reembedded 0 :not-found 0 :errors 0}
+      (let [store (mem-proto/get-store)
+            results (mapv #(batch-op-result store %) ids)]
+        (tally-statuses results)))))

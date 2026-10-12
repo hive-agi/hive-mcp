@@ -15,7 +15,17 @@
 
    Pure, deterministic, no IO. The floor test goes through
    `hive-mcp.channel.drain-rank/lane`, so `floor-types` and `:pins` stay the
-   single definition of what must never be summarised."
+   single definition of what must never be summarised.
+
+   In ARC's vocabulary (arXiv 2607.25066), the system KEEPS and DISPLAYS
+   different things. The append-only memory store KEEPS every entry whole; this
+   namespace decides only what the drain DISPLAYS, and a displayed pointer is a
+   citation the caller recalls on demand. ARC reports that citation stubs carry
+   a fixed overhead that dominates under very tight budgets. Here that failure
+   mode is closed per entry: `project-entry` displays whichever of pointer and
+   entry is smaller, so projection never grows the payload however short the
+   entries are. The regression lives in
+   `hive-mcp.channel.drain-projection-arc-test`."
   (:require [clojure.string :as str]
             [hive-mcp.channel.drain-rank :as rank]
             [hive-mcp.channel.axiom-projection :as ax]))

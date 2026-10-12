@@ -1,0 +1,4 @@
+{:blank "/srv/b",
+ :both-absent nil,
+ :caller-given "/srv/a",
+ :omitted "/srv/b"}

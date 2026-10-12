@@ -350,13 +350,7 @@
     ;; MESSAGE gave one summary row per message, which is the linear cost
     ;; directed addressing exists to remove, reintroduced one level up.
     (let [pathological (mapv (fn [i]
-                               {:agent-id (str "ling-" (mod i swarm-size))
-                                :to (str "ling-" (mod (inc i) swarm-size))
-                                :context-id (str "ctx-" i)
-                                :project-id project
-                                :event-type :progress
-                                :message peer-question
-                                :timestamp (+ 1000 i)})
+                               {:agent-id (str "ling-" (mod i swarm-size)), :to (str "ling-" (mod (inc i) swarm-size)), :context-id (str "ctx-" i), :parent-id coordinator, :project-id project, :event-type :progress, :message peer-question, :timestamp (+ 1000 i)})
                              (range 200))
           rows (aud/peer-traffic-digest coordinator pathological)]
       (is (<= (count rows) (inc aud/max-peer-traffic-rows))

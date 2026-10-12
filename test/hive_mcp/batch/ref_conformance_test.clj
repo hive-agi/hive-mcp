@@ -79,9 +79,13 @@
         (str "resolved providers: " (provider-names))))
   (testing "every corpus carries rows, so the per-provider doseqs assert"
     (is (<= 8 (count contract/parse-ref-cases)))
-    (is (<= 4 (count contract/resolve-ref-cases)))
+    (is (<= 5 (count contract/resolve-ref-cases)))
     (is (<= 5 (count contract/collect-ref-op-ids-cases)))
     (is (<= 8 (count contract/validate-ref-deps-cases))))
+  (testing "the :bx/c corpus holds an op whose result is itself nil, so a provider that looks the op up with if-let instead of contains? goes red"
+    (is (some (fn [[_ {:keys [op-id]} results _]]
+                (and (contains? results op-id) (nil? (get results op-id))))
+              contract/resolve-ref-cases)))
   (testing "the :bx/g corpus contains rows that MUST be refused — a corpus of only-accepted batches would pass against a constantly-[] provider"
     (is (<= 3 (count (filter (fn [[_ ops]] (seq (contract/expected-ref-dep-errors ops)))
                              contract/validate-ref-deps-cases))))))

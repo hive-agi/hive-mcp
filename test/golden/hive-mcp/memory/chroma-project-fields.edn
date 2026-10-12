@@ -1,0 +1,4 @@
+{:id-survives [{:content "c", :id "a"}],
+ :milvus-cols [{:id "a", :type "note", :project-id "p1", :content-hash "h"}],
+ :no-fields [{:id "a", :content "c", :type "note"}],
+ :type-only [{:type "note", :id "a"}]}

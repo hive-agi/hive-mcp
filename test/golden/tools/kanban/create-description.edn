@@ -1,0 +1,6 @@
+{:blank-content nil,
+ :both "wins",
+ :content-only "body via content",
+ :description-only "body",
+ :map-content nil,
+ :neither nil}

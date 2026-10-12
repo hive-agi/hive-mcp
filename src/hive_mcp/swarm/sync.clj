@@ -43,7 +43,12 @@
             [hive-mcp.project.scope :as project-scope]
             [clojure.core.async :as async :refer [go-loop <!]]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
-            [hive-mcp.swarm.claim.negotiate :as claim-negotiate]))
+            [hive-mcp.swarm.claim.negotiate :as claim-negotiate]
+            [hive-mcp.tools.agent.helpers :as helpers]
+            [hive-system.process.liveness :as liveness]
+            [hive-mcp.agent.ling.terminal-registry :as terminals]
+            [hive-mcp.agent.ling.headless-registry :as headless-registry]
+            [hive-spi.addon.headless :as headless]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -499,8 +504,7 @@
 ;; =============================================================================
 
 (defn- register-slave-from-status!
-  "Register a single slave from a bootstrap source's slave map.
-   Derives project-id from cwd if not already supplied."
+  "Register one classified snapshot row. Preserve its creation time and liveness verdict."
   [slave]
   (let [slave-id (:slave-id slave)
         status (some-> (:status slave) keyword)
@@ -513,26 +517,78 @@
     (proto/add-slave! reg slave-id {:status status :name name :depth depth
                                     :cwd cwd :project-id project-id})
     (let [updates (cond-> {}
-                    (:spawn-mode slave)  (assoc :ling/spawn-mode (:spawn-mode slave))
-                    (:process-pid slave) (assoc :slave/process-pid (:process-pid slave)))]
+                    (:spawn-mode slave) (assoc :ling/spawn-mode (:spawn-mode slave))
+                    (:process-pid slave) (assoc :slave/process-pid (:process-pid slave))
+                    (:created-at slave) (assoc :slave/created-at (:created-at slave))
+                    (:liveness slave) (assoc :slave/liveness (:liveness slave))
+                    (false? (:alive? slave)) (assoc :slave/alive? false))]
       (when (seq updates)
         (proto/update-slave! reg slave-id updates)))
     (log/debug "Sync: bootstrapped slave" slave-id status "project-id:" project-id)))
 
+(defn missing-from-emacs?
+  "Pure: whether a slave id is absent from the Emacs membership cleanup reads."
+  [slave-id elisp-ids]
+  (not (contains? elisp-ids slave-id)))
+
+(defn classify-row
+  "Pure: only live backing verifies a restored row. Emacs membership can
+   verify terminal or legacy mode-less rows, never a named headless backend."
+  [row {:keys [emacs live-pids live-ids terminal-modes]}]
+  (let [id (:slave-id row)
+        mode (:spawn-mode row)
+        emacs-tracked? (or (contains? terminal-modes mode) (nil? mode))]
+    (cond
+      (or (contains? live-ids id)
+          (and (:process-pid row) (contains? live-pids (:process-pid row)))
+          (and emacs-tracked? (contains? (:ids emacs) id)))
+      (assoc row :liveness :verified)
+      (and emacs-tracked? (= :unknown (:state emacs)))
+      (assoc row :liveness :unverified)
+      :else (assoc row :status :zombie :alive? false))))
+
+(defn probe-evidence
+  "Boundary: query Emacs, OS pids and the registered headless backend's live
+   session status. A missing or failed query never certifies liveness."
+  [rows]
+  (let [elisp (helpers/query-elisp-lings)]
+    {:emacs (if (nil? elisp)
+              {:state :unknown}
+              {:state :known :ids (set (map :slave/id elisp))})
+     :terminal-modes (terminals/registered-terminals)
+     :live-ids (into #{}
+                     (keep (fn [{:keys [slave-id spawn-mode]}]
+                             (when-let [backend (headless-registry/get-headless-backend spawn-mode)]
+                               (when (try
+                                       (contains? #{:running :idle}
+                                                  (:slave/status (headless/headless-status backend {:id slave-id} nil)))
+                                       (catch Exception _ false))
+                                 slave-id))))
+                     rows)
+     :live-pids (into #{} (comp (keep :process-pid)
+                                (filter #(= :liveness/alive
+                                            (:adt/variant (liveness/check-pid-alive %)))))
+                      rows)}))
+
 (defn full-sync-from-bootstrap!
-  "One-time full sync from the configured ISwarmBootstrap source.
-   Replaces the legacy `full-sync-from-emacs!` — the backend is now
-   pluggable via `set-swarm-bootstrap!`."
-  []
-  (log/info "Starting full sync from bootstrap source...")
-  (conn/reset-conn!)
-  (let [bs (get-swarm-bootstrap)
-        slaves (try (bootstrap/load-slaves bs)
-                    (catch Exception e
-                      (log/error "Bootstrap load failed:" (.getMessage e))
-                      []))]
-    (run! register-slave-from-status! slaves)
-    (log/info "Full sync complete:" (count slaves) "slaves")))
+  "Full sync from the bootstrap source. Classify liveness before any registration.
+   probe-fn accepts snapshot rows and returns liveness evidence. The three-arity
+   form injects the reset and registration ports for isolated consumers."
+  ([] (full-sync-from-bootstrap! (get-swarm-bootstrap) probe-evidence))
+  ([bs probe-fn]
+   (full-sync-from-bootstrap! bs probe-fn {:reset! conn/reset-conn!
+                                          :register! register-slave-from-status!}))
+  ([bs probe-fn {:keys [reset! register!]}]
+   (log/info "Starting full sync from bootstrap source...")
+   (let [slaves (try (bootstrap/load-slaves bs)
+                     (catch Exception e
+                       (log/error "Bootstrap load failed:" (.getMessage e))
+                       []))
+         evidence (probe-fn slaves)
+         classified (mapv #(classify-row % evidence) slaves)]
+     (reset!)
+     (run! register! classified)
+     (log/info "Full sync complete:" (count classified) "slaves"))))
 
 ;; Backwards-compatibility alias — keep old call sites working until they
 ;; migrate. Marked deprecated to discourage new use.

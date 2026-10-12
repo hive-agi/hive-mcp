@@ -63,17 +63,9 @@
   (testing "Fallback dedup normalizes event-type even without shout-id"
     (let [now (System/currentTimeMillis)
           ;; Legacy message without shout-id, keyword event-type
-          atom-msg {:agent-id "ling-legacy"
-                    :event-type :completed
-                    :message "Done"
-                    :timestamp now
-                    :project-id "global"}
+          atom-msg {:agent-id "ling-legacy", :event-type :completed, :message "Done", :timestamp now, :project-id "global", :parent-id "coordinator:test"}
           ;; Same message, string event-type (as from JSON roundtrip)
-          backbone-msg {:agent-id "ling-legacy"
-                        :event-type "completed"
-                        :message "Done"
-                        :timestamp now
-                        :project-id "global"}]
+          backbone-msg {:agent-id "ling-legacy", :event-type "completed", :message "Done", :timestamp now, :project-id "global", :parent-id "coordinator:test"}]
 
       (pb/register-message-source! (constantly [atom-msg]))
       (pb/buffer-backbone-event! backbone-msg)

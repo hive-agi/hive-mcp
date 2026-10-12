@@ -27,13 +27,17 @@
           "No additional methods leaked into the protocol"))))
 
 (deftest p2-chroma-alias-is-same-protocol
-  (testing "chroma.embeddings/EmbeddingProvider IS the relocated protocol"
-    (is (identical? proto/EmbeddingProvider chroma-emb/EmbeddingProvider)))
-
-  (testing "method fns re-exported via chroma.embeddings resolve to same vars"
-    (is (identical? proto/embed-text chroma-emb/embed-text))
-    (is (identical? proto/embed-batch chroma-emb/embed-batch))
-    (is (identical? proto/embedding-dimension chroma-emb/embedding-dimension))))
+  (testing "active provider surface uses the relocated protocol"
+    (is (identical? proto/EmbeddingProvider chroma-emb/EmbeddingProvider))
+    (is (identical? proto/embedding-dimension chroma-emb/embedding-dimension))
+    (let [calls (atom [])
+          stub (reify proto/EmbeddingProvider
+                 (embed-text [_ text] (swap! calls conj text) [1.0])
+                 (embed-batch [_ texts] (swap! calls into texts) (mapv (constantly [1.0]) texts))
+                 (embedding-dimension [_] 1))]
+      (is (= [1.0] (chroma-emb/embed-text stub "one")))
+      (is (= [[1.0]] (chroma-emb/embed-batch stub ["two"])))
+      (is (= ["one" "two"] @calls)))))
 
 (deftest p3-embedder-records-implement-new-protocol
   (testing "OllamaEmbedder, OpenAIEmbedder, OpenRouterEmbedder satisfy the protocol"

@@ -92,17 +92,52 @@ ALIASES=":test"
 FOCUS_ALIAS='{:main-opts ["-m" "cognitect.test-runner"]}'
 SDEPS_EDN=""
 if [[ "$SWARM" -eq 1 ]]; then
+  # local.deps.edn is untracked, so a git worktree usually has none; fall back to
+  # the MAIN checkout's copy (git-common-dir's parent). Its relative :local/root
+  # coords ("../sibling") are written against the main checkout, and from a
+  # worktree they would resolve to <worktrees>/<sibling> and fail at "Error
+  # building classpath" with zero tests run. So every relative root is made
+  # absolute against the first base where it exists (the main checkout, then this
+  # checkout; never a sibling of a worktree, which may be another session's
+  # checkout), and a root that exists under neither is refused here, by name.
+  MAIN_DIR="$PROJECT_DIR"
+  COMMON_DIR="$(git -C "$PROJECT_DIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+  [[ -n "$COMMON_DIR" ]] && MAIN_DIR="$(dirname "$COMMON_DIR")"
   LOCAL_DEPS="$PROJECT_DIR/local.deps.edn"
-  [[ -f "$LOCAL_DEPS" ]] || die "--swarm needs $LOCAL_DEPS to supply the swarm addon (hive-agent, hive-datascript)"
+  [[ -f "$LOCAL_DEPS" ]] || LOCAL_DEPS="$MAIN_DIR/local.deps.edn"
+  [[ -f "$LOCAL_DEPS" ]] || die "--swarm needs $PROJECT_DIR/local.deps.edn (or $MAIN_DIR/local.deps.edn) to supply the swarm addon (hive-agent, hive-datascript)"
+  command -v bb >/dev/null 2>&1 || die "--swarm needs bb to resolve the :local/root coords of $LOCAL_DEPS"
   ALIASES=":test:test-swarm"
   FOCUS_ALIAS='{:main-opts ["-m" "cognitect.test-runner" "-d" "test-swarm"]}'
-  SDEPS_EDN="$(cat "$LOCAL_DEPS")"
+  SDEPS_EDN="$(bb -e '
+(let [[f & bases] *command-line-args*
+      missing (atom [])
+      fix (fn [root]
+            (let [p (java.io.File. root)]
+              (if (.isAbsolute p)
+                root
+                (if-let [hit (some (fn [b] (let [c (.getCanonicalFile (java.io.File. b root))]
+                                             (when (.exists c) (str c))))
+                                   bases)]
+                  hit
+                  (do (swap! missing conj root) root)))))
+      walk (fn walk [x]
+             (cond (map? x) (into {} (map (fn [[k v]]
+                                            [k (if (and (= k :local/root) (string? v)) (fix v) (walk v))]))
+                                  x)
+                   (vector? x) (mapv walk x)
+                   :else x))
+      out (walk (clojure.edn/read-string (slurp f)))]
+  (if (seq @missing)
+    (do (binding [*out* *err*]
+          (println "test-sandboxed: FATAL:" f "names :local/root dirs that exist under none of" (vec bases) ":" @missing))
+        (System/exit 2))
+    (prn out)))' "$LOCAL_DEPS" "$MAIN_DIR" "$PROJECT_DIR")" || exit 2
 fi
 if [[ "$SELECTS_NS" -eq 1 ]]; then
   ALIASES="$ALIASES:sbx-focus"
   if [[ -n "$SDEPS_EDN" ]]; then
-    command -v bb >/dev/null 2>&1 || die "--swarm with a namespace selector needs bb to merge local.deps.edn with the focus alias"
-    SDEPS_EDN="$(bb -e '(let [[f a] *command-line-args*] (prn (assoc-in (clojure.edn/read-string (slurp f)) [:aliases :sbx-focus] (clojure.edn/read-string a))))' "$LOCAL_DEPS" "$FOCUS_ALIAS")"
+    SDEPS_EDN="$(bb -e '(let [[d a] *command-line-args*] (prn (assoc-in (clojure.edn/read-string d) [:aliases :sbx-focus] (clojure.edn/read-string a))))' "$SDEPS_EDN" "$FOCUS_ALIAS")"
   else
     SDEPS_EDN="{:aliases {:sbx-focus $FOCUS_ALIAS}}"
   fi

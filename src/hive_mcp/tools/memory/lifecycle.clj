@@ -80,13 +80,31 @@
 ;; Cleanup & Expiry
 ;; =============================================================================
 
+(defn normalize-cleanup-result
+  "Coerce a store's cleanup-expired! return into {:count :deleted-ids :repaired}.
+
+   hive-spi.memory.ports/cleanup-expired! does not fix the return shape: the
+   Chroma store and the stub answer a map, while hive-milvus answers a bare
+   integer total. Destructuring the integer as a map read every key as nil, so
+   the tool reported {\"deleted\": null}. A bare count carries no ids, so
+   :deleted-ids is empty for it and KG edges for those rows are left to the
+   store. Anything else (nil from a failed call) reads as zero."
+  [r]
+  (cond
+    (map? r)     {:count       (or (:count r) (count (:deleted-ids r)))
+                  :deleted-ids (vec (:deleted-ids r))
+                  :repaired    (or (:repaired r) 0)}
+    (integer? r) {:count r :deleted-ids [] :repaired 0}
+    :else        {:count 0 :deleted-ids [] :repaired 0}))
+
 (defn handle-cleanup-expired
   "Remove all expired memory entries and clean up their KG edges."
   [_]
   (log/info "mcp-memory-cleanup-expired")
   (with-store
-    (let [{:keys [count deleted-ids repaired]} (with-resilience
-                                                 (mem-proto/cleanup-expired! (mem-proto/get-store)))
+    (let [{:keys [count deleted-ids repaired]} (normalize-cleanup-result
+                                                (with-resilience
+                                                  (mem-proto/cleanup-expired! (mem-proto/get-store))))
           edges-removed (when (seq deleted-ids)
                           (reduce (fn [total id]
                                     (+ total (kg-edges/remove-edges-for-node! id)))

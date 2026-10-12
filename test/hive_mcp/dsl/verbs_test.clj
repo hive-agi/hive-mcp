@@ -10,7 +10,9 @@
    6. parse-dsl — multiple sentences
    7. compile-paragraph — auto IDs, auto depends_on, error passthrough, explicit deps merge"
   (:require [clojure.test :refer [deftest testing is are]]
-            [hive-mcp.dsl.verbs :as verbs]))
+            [hive-mcp.dsl.verbs :as verbs]
+            [hive-test.trifecta :refer [deftrifecta]]
+            [clojure.test.check.generators :as gen]))
 
 ;; =============================================================================
 ;; Part 1: Verb Table Structure
@@ -497,6 +499,37 @@
       (is (nil? (:depends_on (nth ops 0))))
       (is (nil? (:depends_on (nth ops 1))) "content ref is quotation, no dep")
       (is (= ["$1"] (:depends_on (nth ops 2))) "node-id ref still wires"))))
+
+(defn- compile-kg-dependency [target]
+  (last (verbs/compile-paragraph
+         [["m+" {"c" "first" "t" "note"}]
+          ["m+" {"c" "second" "t" "note"}]
+          ["m+" {"c" "third" "t" "note"}]
+          ["m+" {"c" "dependent" "t" "note"
+                  "kg_depends_on" [target]}]])))
+
+(deftrifecta nested-positional-kg-dependency
+  hive-mcp.dsl.verbs-test/compile-kg-dependency
+  {:gen (gen/elements ["$0" "$1" "$2" "$ref:$0.data.id"])
+   :pred (fn [op]
+           (and (= "memory" (:tool op))
+                (= "add" (:command op))
+                (contains? #{["$ref:$0.data.id"] ["$ref:$1.data.id"]
+                             ["$ref:$2.data.id"]}
+                           (:kg_depends_on op))
+                (= 1 (count (:depends_on op)))))
+   :num-tests 30
+   :mutations [["literal-node-id" (fn [target] {:tool "memory" :command "add"
+                                                   :kg_depends_on [target]})]]
+   :assert (fn []
+             (is (= ["$ref:$1.data.id"]
+                    (:kg_depends_on (compile-kg-dependency "$1"))))
+             (is (= ["$1"] (:depends_on (compile-kg-dependency "$1"))))
+             (is (= ["$ref:$2.data.id"]
+                    (:kg_depends_on (compile-kg-dependency "$2"))))
+             (is (= ["$2"] (:depends_on (compile-kg-dependency "$2"))))
+             (is (= ["$ref:$0.data.id"]
+                    (:kg_depends_on (compile-kg-dependency "$ref:$0.data.id")))))})
 
 (deftest compile-paragraph-duplicate-ref-deduped-test
   (testing "same ref appearing twice in params is deduped in depends_on"

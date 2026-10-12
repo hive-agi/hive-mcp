@@ -16,7 +16,8 @@
             [clojure.string :as str]
             [hive-dsl.context.identity :as ctx-id]
             [hive-mcp.channel.row-transforms :as row-transforms]
-            [hive-mcp.channel.piggyback.sources :as sources]))
+            [hive-mcp.channel.piggyback.sources :as sources]
+            [hive-mcp.channel.lineage :as lineage]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -245,6 +246,15 @@
   []
   (not (false? (config-value [:hivemind :progress-digest]))))
 
+(defn unowned-global-opt-in?
+  "Do coordinator sessions receive ROOT-level shouts that belong to no
+   project and to no lineage (a \"team:<id>\" runner, a parentless ling in
+   project \"global\")? Default false: such a shout reaches nobody, so one
+   window never reads another window's swarm. Set
+   [:hivemind :unowned-global] to :deliver (or \"deliver\") to opt in."
+  []
+  (contains? #{:deliver "deliver"} (config-value [:hivemind :unowned-global])))
+
 (def progress-fold-key
   "Reserved row-transform key of core's built-in default policy, the
    :progress fold, :hivemind.rows/00-progress-fold. It is a CORE transform
@@ -382,10 +392,10 @@
             max-global  (max-ts (filter global? in-context))
             max-project (max-ts (remove global? in-context))
             addressed (if (spawner-routing?)
-                        (audience/filter-messages agent-id in-context (scoped-id-fn project-id))
+                        (audience/filter-messages agent-id (lineage/with-parents all-msgs in-context) (scoped-id-fn project-id) {:global-opt-in? (unowned-global-opt-in?)})
                         in-context)
             peer-rows (if (spawner-routing?)
-                        (audience/peer-traffic-digest agent-id in-context)
+                        (audience/peer-traffic-digest agent-id (lineage/with-parents all-msgs in-context))
                         [])
             ;; :ts and :deliberate? ride along only as far as the transform
             ;; chain, which is the one stage that reads them; the row a reader

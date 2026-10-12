@@ -20,6 +20,9 @@ the diff — and the deep why belongs in hive memory, not the message.
 - Re-read the staged diff. Not the working tree — the staged diff.
 - Confirm no secret, token, or credential value is in it.
 - Confirm the tests you claim are green actually ran.
+- Read the removed (`-`) lines. An existing docstring or comment must never be deleted or
+  shortened, only extended, and code you did not change must keep its layout (no re-alignment
+  or reflow).
 
 ## Branches and pushes
 

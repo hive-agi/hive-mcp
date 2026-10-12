@@ -1,0 +1,5 @@
+{:edge-durable :edge-durable,
+ :edge-structural :edge-structural,
+ :mutation :mutation,
+ :not-a-map :unknown,
+ :unknown-map :unknown}

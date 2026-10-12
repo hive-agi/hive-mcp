@@ -16,7 +16,8 @@
             [hive-mcp.migration.adapter :as adapter]
             [clojure.edn]
             [hive-mcp.chroma.core]
-            [hive-mcp.knowledge-graph.migration]))
+            [hive-mcp.knowledge-graph.migration]
+            [hive-mcp.vectordb.facade]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

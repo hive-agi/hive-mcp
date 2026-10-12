@@ -11,7 +11,7 @@
      same key + same owner   → idempotent silent replace
      same key + different owner → :multi/registry-conflict warn-log,
                                    first-write-wins"
-  (:require [taoensso.timbre :as log]))
+  (:require [hive-mcp.multi.registry.owned :as owned]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -27,55 +27,20 @@
 
    entry shape: {:handler ifn :batchable (some-fn nil? any?)}"
   [owner tool-name entry]
-  (let [now (java.time.Instant/now)
-        v   (assoc entry :owner owner :registered-at now)]
-    (let [outcome (atom :ok)]
-      (swap! state
-             (fn [{:keys [by-name by-owner]}]
-               (let [existing (get by-name tool-name)]
-                 (cond
-                   (nil? existing)
-                   (do (reset! outcome :ok)
-                       {:by-name  (assoc by-name tool-name v)
-                        :by-owner (update by-owner owner (fnil conj #{}) tool-name)})
-
-                   (= owner (:owner existing))
-                   (do (reset! outcome :replaced)
-                       {:by-name  (assoc by-name tool-name v)
-                        :by-owner by-owner})
-
-                   (= :multi/core (:owner existing))
-                   (do (reset! outcome :replaced)
-                       {:by-name  (assoc by-name tool-name v)
-                        :by-owner (-> by-owner
-                                      (update :multi/core disj tool-name)
-                                      (update owner (fnil conj #{}) tool-name))})
-
-                   :else
-                   (do (reset! outcome :conflict)
-                       {:by-name by-name :by-owner by-owner})))))
-      (when (= :conflict @outcome)
-        (log/warn "[multi.registry.tools] :multi/registry-conflict"
-                  {:tool-name tool-name :existing-owner (:owner (get-in @state [:by-name tool-name]))
-                   :rejected-owner owner}))
-      @outcome)))
+  (owned/register! state :by-name owner tool-name entry
+                   "[multi.registry.tools]" :tool-name
+                   {:stamp-fn #(assoc % :registered-at (java.time.Instant/now))
+                    :overridable-owner :multi/core}))
 
 (defn deregister-by-owner!
   "Remove every tool registered by `owner`. Returns set of removed names."
   [owner]
-  (let [removed (atom #{})]
-    (swap! state
-           (fn [{:keys [by-name by-owner]}]
-             (let [names (get by-owner owner #{})]
-               (reset! removed names)
-               {:by-name  (apply dissoc by-name names)
-                :by-owner (dissoc by-owner owner)})))
-    @removed))
+  (owned/deregister-by-owner! state :by-name owner))
 
 (defn lookup
   "Return the registered entry for a tool-name, or nil."
   [tool-name]
-  (get-in @state [:by-name tool-name]))
+  (owned/lookup state :by-name tool-name))
 
 (defn all-names
   "Return a sorted vector of registered tool names."

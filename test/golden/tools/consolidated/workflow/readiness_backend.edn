@@ -1,0 +1,6 @@
+{":done" false,
+ ":error" false,
+ ":idle" true,
+ ":killed" false,
+ ":running" true,
+ "nil" false}

@@ -13,9 +13,9 @@
             [clojure.string :as str]
             [malli.core :as m]
             [taoensso.timbre :as log]
-            [hive-mcp.dns.result :as result])
-  (:import [java.net InetSocketAddress]
-           [java.security MessageDigest]))
+            [hive-mcp.dns.result :as result]
+            [hive-mcp.transport.exposure :as exposure])
+  (:import [java.net InetSocketAddress]))
 
 ;; ── Schemas ──────────────────────────────────────────────────────────────
 
@@ -70,18 +70,13 @@
   "Loopback when TOKEN is blank, whatever was requested. Otherwise REQUESTED,
    default all interfaces."
   [token requested]
-  (if (str/blank? token)
-    "127.0.0.1"
-    (if (str/blank? requested) "0.0.0.0" requested)))
+  (exposure/bind-host token requested))
 
 (defn bearer-ok?
   "True when TOKEN is blank, or AUTH-HEADER is exactly `Bearer TOKEN`.
    Constant-time."
   [token auth-header]
-  (or (str/blank? token)
-      (MessageDigest/isEqual
-       (.getBytes (str auth-header) "UTF-8")
-       (.getBytes (str "Bearer " token) "UTF-8"))))
+  (exposure/bearer-ok? token auth-header))
 
 (defn rpc-error [id kind message]
   {:jsonrpc "2.0" :id id :error {:code (error-codes kind) :message message}})

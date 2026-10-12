@@ -9,7 +9,8 @@
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.embeddings.config :as config]
             [hive-mcp.embeddings.registry :as registry]
-            [taoensso.timbre :as timbre]))
+            [taoensso.timbre :as timbre]
+            [hive-mcp.embeddings.protocol]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -34,21 +35,29 @@
     (filterv #(.contains ^String (second %) "Using cached provider") @sink)))
 
 (deftest the-cache-hit-line-is-trace-not-debug
-  (let [stub     (Object.)
-        cfg      (config/->EmbeddingConfig :venice
-                                           (str "registry-test-" (random-uuid))
-                                           8
-                                           {})
+  (let [calls (atom [])
+        stub (reify hive-mcp.embeddings.protocol/EmbeddingProvider
+               (embed-text [_ text] (swap! calls conj text) [1.0])
+               (embed-batch [_ texts] (swap! calls into texts) (mapv (constantly [1.0]) texts))
+               (embedding-dimension [_] 1))
+        cfg (config/->EmbeddingConfig :venice
+                                     (str "registry-test-" (random-uuid))
+                                     1 {})
         had-venice? (some #{:venice} (registry/list-factories))]
     (try
       (registry/register-factory! :venice (constantly stub))
-      (testing "the second call is a cache hit returning the same instance"
-        (is (identical? stub (registry/get-provider cfg))))
+      (testing "cache hits return the same gated instance, never the raw stub"
+        (let [a (registry/get-provider cfg)
+              b (registry/get-provider cfg)]
+          (is (identical? a b))
+          (is (not (identical? stub a)))
+          (is (= [1.0] (hive-mcp.embeddings.protocol/embed-text b "hello")))
+          (is (= ["hello"] @calls))))
       (testing "at :debug the per-call cache-hit line is silent"
         (is (empty? (cache-hit-lines :debug cfg))))
       (testing "at :trace it is still there, at level :trace"
         (let [lines (cache-hit-lines :trace cfg)]
-          (is (= 2 (count lines)) "both calls hit the cache: the first call above warmed it")
+          (is (= 2 (count lines)))
           (is (every? #(= :trace (first %)) lines))))
       (finally
         (if had-venice?

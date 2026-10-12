@@ -131,6 +131,15 @@
 ;; Pure operations
 ;; ============================================================
 
+(defn create-description
+  "The card body of a kanban create: :description, else a non-blank string
+   :content. `content` is the multi DSL's body alias for memory add; a kanban
+   create that received it used to drop the body while reporting success
+   (kanban 20260921210947-5c988302)."
+  [{:keys [description content]}]
+  (or description
+      (when (and (string? content) (not (str/blank? content))) content)))
+
 (defn- create* [{:keys [title priority context agent_id tags description status]
                  :as params}]
   (when (or (nil? title) (and (string? title) (str/blank? title)))
@@ -170,7 +179,7 @@
       (let [content (cond-> {:task-type "kanban" :title title :status status
                              :priority priority :created (kt/kanban-timestamp)
                              :started nil :context context}
-                      description (assoc :description description))
+                      (create-description params) (assoc :description (create-description params)))
             ;; Merge caller-supplied tags (e.g. wave:N from plan-to-kanban,
             ;; epic:foo from grouping) with the standard kanban tag set.
             ;; Audit kanban 20260429203429: previously :tags was silently dropped.

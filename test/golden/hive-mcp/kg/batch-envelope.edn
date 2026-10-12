@@ -1,0 +1,33 @@
+{:all-ok
+ {:in [[true true] true],
+  :out
+  {:results
+   [{:success true,
+     :command "edge",
+     :result {:success true, :edge-id "edge-0"}}
+    {:success true,
+     :command "edge",
+     :result {:success true, :edge-id "edge-1"}}],
+   :summary {:total 2, :success 2, :failed 0}}},
+ :mixed-ok
+ {:in [[false true] true],
+  :out
+  {:results
+   [{:success false, :command "edge", :error "bad op"}
+    {:success true,
+     :command "edge",
+     :result {:success true, :edge-id "edge-0"}}],
+   :summary {:total 2, :success 1, :failed 1}}},
+ :write-fail
+ {:in [[true false true] false],
+  :out
+  {:results
+   [{:success false,
+     :command "edge",
+     :error "bulk edge write failed: tx failed"}
+    {:success false, :command "edge", :error "bad op"}
+    {:success false,
+     :command "edge",
+     :error "bulk edge write failed: tx failed"}],
+   :summary {:total 3, :success 0, :failed 3},
+   :write_error "tx failed"}}}

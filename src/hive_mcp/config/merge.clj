@@ -84,7 +84,9 @@
    ;; Contract: these defaults carry no model id, model list or provider
    ;; choice (:agent-defaults, :models, embedding models). The user's
    ;; config.edn is the only source of those.
-   :embeddings {:ollama {:host "http://localhost:11434"}}
+   :embeddings {:ollama {:host "http://localhost:11434"}
+                ;; Explicit opt-in: boot probes local routed models off-thread.
+                :warmup {:enabled false}}
    :embedder {;; Memory types that are structurally addressed (fetched by
               ;; tag/id/project-id, never semantic search) — the write path
               ;; skips embedding them. hive-di-configurable per profile; addons

@@ -10,6 +10,7 @@
    because an addon registered it. If that ever needs a host edit, the seam is
    gone."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
+            [clojure.string]
             [hive-mcp.channel.blocks :as blocks]
             [hive-mcp.extensions.registry :as ext]))
 

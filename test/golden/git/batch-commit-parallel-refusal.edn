@@ -1,0 +1,7 @@
+{:absent nil,
+ :false nil,
+ :nil nil,
+ :true
+ "batch-commit/parallel-unsupported: batch-commit runs serially because every operation stages and commits through the same git index; omit :parallel or pass false.",
+ :truthy-string
+ "batch-commit/parallel-unsupported: batch-commit runs serially because every operation stages and commits through the same git index; omit :parallel or pass false."}

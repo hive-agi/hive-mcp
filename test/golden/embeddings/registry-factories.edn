@@ -1,0 +1,4 @@
+{:register {:listed true :stat-listed true :cache-count 1 :gated true :cache-hit true :factory-calls 1}
+ :replace {:uses-replacement true :old-calls 0 :new-calls 1}
+ :remove {:remove-return-map? true :removed-key? false :listed false :stat-listed false :missing-type :venice :missing-registered false}
+ :cached-after-remove {:cache-hit true :factory-calls 1 :listed false}}

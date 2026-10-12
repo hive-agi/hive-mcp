@@ -1,0 +1,2 @@
+{:single {:value [1.0] :primary 1 :backup 0 :health {}}
+ :two {:value [2.0] :primary 0 :backup 1 :health {[:primary nil] {:until 1000000000}}}}

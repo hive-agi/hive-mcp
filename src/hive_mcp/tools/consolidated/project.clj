@@ -187,7 +187,7 @@
                               "scope" {:type "string"
                                        :enum ["all"]
                                        :description "[kanban list/status] scope=\"all\" lifts the project filter — whole board across EVERY workspace (opt-in cross-workspace view). Omit for the default scoped view (current project + ancestors [+ descendants])."}
-                              "plan_id" {:type "string" :description "[kanban plan-to-kanban] Memory plan entry ID"}
+                              "plan_id" {:type "string" :description "[kanban plan-to-kanban] Memory plan entry ID / [workflow forge survey|strike] Restrict the survey and strike to the cards of this converted plan memory"}
                               "plan_path" {:type "string" :description "[kanban plan-to-kanban] File path to plan"}
                               ;; Kanban list filters (token-flood reduction)
                               "query" {:type "string"
@@ -224,6 +224,7 @@
                                              :description "[session context-reconstruct] KG node IDs for graph traversal seeds"}
                               ;; Workflow params
                               "task_filter" {:type "string" :description "[workflow forge] Title prefix filter for survey"}
+                              "max_slots" {:type "integer" :description "[workflow forge strike] Cap on concurrently forged lings (default 10)"}
                               "presets" {:type "array" :items {:type "string"}
                                          :description "[workflow forge strike] Presets applied to every forged ling"}
                               "predicates" {:type "array" :items {:type "string"}

@@ -8,11 +8,11 @@
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [hive-mcp.test.stub.emacs-ext :as se]
             [hive-mcp.tools.consolidated.git :as git]
             [hive-mcp.tools.consolidated.magit :as cmagit]
             [hive-mcp.tools.core :as core]
-            [hive-mcp.tools.magit :as magit]))
+            [hive-mcp.tools.magit :as magit]
+            [hive-mcp.test.stub.swarm-host :as sh]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -21,24 +21,35 @@
 (def ^:private dir "/tmp/repo")
 
 (defn- staged-responses
-  "Script the stub: the stage-and-verify round trip answers VERDICT, the commit
-   round trip answers like a real commit."
+  "Script the vessel stub: the :magit/stage-verify round trip answers VERDICT
+   (the JSON the translator's elisp encodes), the commit answers like a real
+   commit, every other op succeeds."
   [verdict]
-  [["hive-mcp-magit-api-commit" (se/elisp-str "1 file changed")]
-   ["git diff --cached" (se/elisp-str verdict)]])
+  (fn [op _timeout-ms]
+    (case (:op op)
+      :magit/stage-verify {:success true :result verdict :timed-out false}
+      :magit/commit       {:success true :result "1 file changed" :timed-out false}
+      {:success true :result nil :timed-out false})))
+
+(def ^:private verdict-ok "{\"status\":\"ok\"}")
+
+(def ^:private verdict-empty "{\"status\":\"empty\"}")
+
+(defn- verdict-missing [path] (str "{\"status\":\"missing\",\"path\":\"" path "\"}"))
 
 (defn- committed?
   [stub]
-  (boolean (some #(str/includes? % "hive-mcp-magit-api-commit") (se/evaluated stub))))
+  (boolean (seq (sh/calls-of stub :magit/commit))))
 
 (defn- stage-file-args
-  "The FILES argument each api-stage call received."
+  "The :files each :magit/stage op carried."
   [stub]
-  (mapv #(nth % 2) (se/calls-of stub :emacs/require-and-call)))
+  (mapv (comp :files first) (sh/calls-of stub :magit/stage)))
 
 (defn- stage-elisp
+  "The :magit/stage-verify op dispatched, or nil."
   [stub]
-  (first (filter #(str/includes? % "git diff --cached") (se/evaluated stub))))
+  (ffirst (sh/calls-of stub :magit/stage-verify)))
 
 (defn- batch-op-results
   [r]
@@ -74,44 +85,45 @@
 ;;; ===========================================================================
 
 (deftest stage-accepts-an-array-of-paths
-  (se/with-stub-emacs [stub {}]
+  (sh/with-swarm-host [stub (staged-responses verdict-ok)]
     (magit/handle-magit-stage {:files ["src/a.clj" "src/b.clj"] :directory dir})
     (is (= [["src/a.clj" "src/b.clj"]] (stage-file-args stub)))))
 
 (deftest stage-splits-a-whitespace-separated-string
-  (se/with-stub-emacs [stub {}]
+  (sh/with-swarm-host [stub (staged-responses verdict-ok)]
     (magit/handle-magit-stage {:files "src/a.clj src/b.clj" :directory dir})
     (is (= [["src/a.clj" "src/b.clj"]] (stage-file-args stub))
         "the path-list string that used to reach Emacs as ONE nonexistent path")))
 
 (deftest stage-all-still-means-all
-  (se/with-stub-emacs [stub {}]
+  (sh/with-swarm-host [stub (staged-responses verdict-ok)]
     (magit/handle-magit-stage {:files "all" :directory dir})
-    (is (= ['all] (stage-file-args stub)))))
+    (is (= [:all] (stage-file-args stub)))))
 
 (deftest stage-without-files-is-an-error-not-a-silent-no-op
-  (se/with-stub-emacs [stub {}]
+  (sh/with-swarm-host [stub (staged-responses verdict-ok)]
     (let [r (magit/handle-magit-stage {:directory dir})]
       (is (true? (:isError r)))
-      (is (empty? (se/evaluated stub)) "nothing reached Emacs"))))
+      (is (empty? (sh/calls stub)) "nothing reached the vessel"))))
 
 ;;; ===========================================================================
 ;;; commit — stage the operation's own paths, or refuse
 ;;; ===========================================================================
 
 (deftest commit-stages-its-own-paths-then-commits
-  (se/with-stub-emacs [stub {:responses (staged-responses "hive-mcp:staged-ok")}]
+  (sh/with-swarm-host [stub (staged-responses verdict-ok)]
     (let [r (magit/handle-magit-commit {:message "feat: x"
                                         :files "src/a.clj src/b.clj"
                                         :directory dir})]
       (is (nil? (:isError r)))
       (is (some? (stage-elisp stub)) "the paths are staged before the commit")
-      (is (str/includes? (stage-elisp stub) "(\"src/a.clj\" \"src/b.clj\")")
+      (is (= ["src/a.clj" "src/b.clj"] (:paths (stage-elisp stub)))
           "both paths reach the stage call")
+      (is (= [:magit/stage-verify :magit/commit] (sh/ops stub)) "stage, then commit")
       (is (committed? stub)))))
 
 (deftest commit-refuses-a-path-that-does-not-exist
-  (se/with-stub-emacs [stub {:responses (staged-responses "hive-mcp:missing-path:src/gone.clj")}]
+  (sh/with-swarm-host [stub (staged-responses (verdict-missing "src/gone.clj"))]
     (let [r (magit/handle-magit-commit {:message "feat: x"
                                         :files ["src/gone.clj"]
                                         :directory dir})]
@@ -121,7 +133,7 @@
       (is (not (committed? stub)) "a refused stage must never reach the commit"))))
 
 (deftest commit-refuses-when-nothing-staged-for-the-listed-paths
-  (se/with-stub-emacs [stub {:responses (staged-responses "hive-mcp:nothing-staged")}]
+  (sh/with-swarm-host [stub (staged-responses verdict-empty)]
     (let [r (magit/handle-magit-commit {:message "feat(html): x"
                                         :files "src/a.clj src/b.clj"
                                         :directory dir})]
@@ -132,16 +144,25 @@
 
 (deftest commit-refuses-a-stage-answer-it-cannot-read
   (testing "an unrecognized verdict is a refusal, not a fall-through"
-    (se/with-stub-emacs [stub {}]
+    (doseq [garbage ["hive-mcp:staged-ok" "{\"status\":\"maybe\"}" "[\"ok\"]" nil]]
+      (sh/with-swarm-host [stub (staged-responses garbage)]
+        (let [r (magit/handle-magit-commit {:message "m" :files ["src/a.clj"] :directory dir})]
+          (is (true? (:isError r)) (pr-str garbage))
+          (is (str/includes? (:text r) ":magit/stage-failed"))
+          (is (not (committed? stub))))))
+    (sh/with-swarm-host [stub (fn [_ _] {:success false :error "vessel down"})]
       (let [r (magit/handle-magit-commit {:message "m" :files ["src/a.clj"] :directory dir})]
         (is (true? (:isError r)))
+        (is (str/includes? (:text r) "vessel down"))
         (is (not (committed? stub)))))))
 
 (deftest commit-without-files-is-untouched
-  (se/with-stub-emacs [stub {:responses (staged-responses "hive-mcp:staged-ok")}]
+  (sh/with-swarm-host [stub (staged-responses verdict-ok)]
     (let [r (magit/handle-magit-commit {:message "m" :directory dir})]
       (is (nil? (:isError r)))
       (is (nil? (stage-elisp stub)) "no staging round trip when no paths were named")
+      (is (= [[{:op :magit/commit :message "m" :all false :directory dir} nil]]
+             (sh/calls stub)))
       (is (committed? stub)))))
 
 ;;; ===========================================================================
@@ -149,7 +170,7 @@
 ;;; ===========================================================================
 
 (deftest batch-commit-stages-a-path-list-per-operation
-  (se/with-stub-emacs [stub {:responses (staged-responses "hive-mcp:staged-ok")}]
+  (sh/with-swarm-host [stub (staged-responses verdict-ok)]
     (let [handler (:batch-commit git/handlers)
           r (handler {:directory dir
                       :operations [{:message "feat: one" :files ["src/a.clj" "src/b.clj"]}
@@ -157,11 +178,10 @@
           results (batch-op-results r)]
       (is (= 2 (count results)))
       (is (every? #(nil? (get-in % [:result :isError])) results))
-      (is (= 2 (count (filter #(str/includes? % "hive-mcp-magit-api-commit")
-                              (se/evaluated stub))))))))
+      (is (= 2 (count (sh/calls-of stub :magit/commit)))))))
 
 (deftest batch-commit-refuses-an-operation-that-stages-nothing
-  (se/with-stub-emacs [stub {:responses (staged-responses "hive-mcp:nothing-staged")}]
+  (sh/with-swarm-host [stub (staged-responses verdict-empty)]
     (let [handler (:batch-commit git/handlers)
           r (handler {:directory dir
                       :operations [{:message "feat(html): projections"

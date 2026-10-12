@@ -7,7 +7,8 @@
    backward compatibility for any existing callers that reach for
    `chroma.embeddings/EmbeddingProvider` or its method fns."
   (:require [hive-mcp.embeddings.protocol :as proto]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.embeddings.shared-gate :as shared]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -15,16 +16,24 @@
 
 ;; --- Backward-compat re-exports for the relocated protocol ---
 (def EmbeddingProvider proto/EmbeddingProvider)
-(def embed-text proto/embed-text)
-(def embed-batch proto/embed-batch)
+(defn embed-text
+  "Invoke the embedding port; ensure even a supplied one-off provider crosses
+   the process gate. Registry/global providers are already decorated."
+  [provider text]
+  (proto/embed-text (shared/gated-provider provider) text))
+(defn embed-batch
+  "Invoke the same gated embedding port for batch and single calls."
+  [provider texts]
+  (proto/embed-batch (shared/gated-provider provider) texts))
 (def embedding-dimension proto/embedding-dimension)
 
 (defonce ^:private embedding-provider (atom nil))
 
 (defn set-embedding-provider!
-  "Set the embedding provider for vectorization."
+  "Set the global embedding provider through the same gated port as the
+   registry. Wrapping is idempotent for registry-sourced providers."
   [provider]
-  (reset! embedding-provider provider)
+  (reset! embedding-provider (some-> provider shared/gated-provider))
   (log/info "Embedding provider set:" (type provider)))
 
 (defn embedding-configured?

@@ -97,23 +97,20 @@
                                   "OpenRouter-backed collections fall back to Ollama."))
 
         ;; Memory collection: Ollama
-                     (configure-ollama! "hive-mcp-memory")
-
         ;; Presets collection: OpenRouter when configured, else Ollama
-                     (if (configure-openrouter! "hive-mcp-presets")
-                       (log/info "Presets collection configured with OpenRouter")
-                       (configure-ollama! "hive-mcp-presets"))
-
         ;; Plans collection: OpenRouter when configured, else Ollama with a truncation warning
-                     (if (configure-openrouter! "hive-mcp-plans")
-                       (log/info "Plans collection configured with OpenRouter")
-                       (do
-                         (configure-ollama! "hive-mcp-plans")
-                         (log/warn "Plans collection using Ollama - entries >1500 chars may be truncated")))
-
         ;; Ingest collection: OpenRouter when configured
-                     (when (configure-openrouter! "hive-ingest")
-                       (log/info "Ingest collection configured with OpenRouter"))
+                     (doseq [{:keys [collection primary] :as spec} embedding-config/collection-provider-specs]
+                       (let [openrouter-success? (when (= primary :openrouter)
+                                                   (configure-openrouter! collection))
+                             {:keys [provider message level]}
+                             (embedding-config/collection-route spec openrouter-success?)]
+                         (when (and (= provider :ollama) (not openrouter-success?))
+                           (configure-ollama! collection))
+                         (case level
+                           :info (log/info message)
+                           :warn (log/warn message)
+                           nil)))
 
         ;; Global fallback provider (Ollama), only with a configured model
                      (when ollama-model

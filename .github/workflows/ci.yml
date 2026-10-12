@@ -88,8 +88,18 @@ jobs:
       - name: Download dependencies
         run: clojure -P -M:test-unit
 
+      # The runner's exit code folds a namespace LOAD abort into the same 1 as
+      # an ordinary red test, and a run that silently dropped namespaces can
+      # still print a plausible summary. bin/test-count-floor.sh judges the
+      # saved log instead: load abort (exit 2), suite below the committed
+      # test/assertion floor (exit 3), red tests (exit 1).
       - name: Run unit tests
-        run: clojure -M:test-unit
+        run: |
+          set +e
+          clojure -M:test-unit 2>&1 | tee unit-tests.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          bin/test-count-floor.sh unit-tests.log "$rc"
         env:
           # Suppress Netty warnings in CI
           JVM_OPTS: >-

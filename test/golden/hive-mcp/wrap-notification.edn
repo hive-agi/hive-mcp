@@ -1,0 +1,3 @@
+{:single {:agent-id "ling" :session-id "s" :project-id "hive-mcp" :created-ids ["m-1" "m-2" "s-1"] :stats {:created-count 2 :wrapped 3}}
+ :multiple {:agent-id "ling" :session-id "s" :project-id "hive-mcp" :created-ids ["m-1" "s-1" "s-2"] :stats {:wrapped 3}}
+ :failed-store {:agent-id "ling" :session-id "s" :project-id "hive-mcp" :created-ids [] :stats {:wrapped 0}}}

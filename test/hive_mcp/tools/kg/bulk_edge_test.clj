@@ -11,7 +11,9 @@
             [hive-mcp.knowledge-graph.connection :as conn]
             [hive-mcp.knowledge-graph.edges :as edges]
             [hive-mcp.knowledge-graph.store.fixtures :as fixtures]
-            [hive-mcp.tools.kg.commands :as cmd]))
+            [hive-mcp.tools.kg.commands :as cmd]
+            [hive-test.trifecta :refer [deftrifecta]]
+            [clojure.test.check.generators]))
 
 (use-fixtures :each fixtures/global-datascript-fixture)
 
@@ -32,13 +34,64 @@
                  :confidence 0.95 :scope "topic:programming"})
         (range n)))
 
+(defn- counting-transact
+  "Recording transact port: counts calls, then writes through transact-sync!."
+  [calls]
+  (fn [tx-data] (swap! calls inc) (conn/transact-sync! tx-data)))
+
 (deftest a-batch-of-edges-costs-one-transaction
-  (let [calls (atom 0)
-        real  conn/transact!]
-    (with-redefs [conn/transact! (fn [& args] (swap! calls inc) (apply real args))]
-      (cmd/handle-kg-add-edges {:operations (ops 25)}))
+  (let [calls (atom 0)]
+    (cmd/add-edges-with (counting-transact calls) {:operations (ops 25)})
     (is (= 1 @calls)
         (str "25 edges must transact once, not 25 times; got " @calls))))
+
+(deftest a-failed-bulk-write-is-reported-not-swallowed
+  (let [failing (fn [_] (throw (ex-info "datahike down" {:error :kg/down})))
+        body    (payload (cmd/add-edges-with failing {:operations (ops 3)}))]
+    (is (= 0 (get-in body [:summary :success])))
+    (is (= 3 (get-in body [:summary :failed])))
+    (is (= "datahike down" (:write_error body)))
+    (is (empty? (edges-from "entry-a")))))
+
+(defn envelope
+  "Adapt batch-envelope to trifecta's unary port: [op-validity write-ok?].
+   Returns {:in input :out envelope}."
+  [[validity write-ok? :as input]]
+  (let [classified (mapv #(if % [:ok {}] [:error "bad op"]) validity)
+        n-valid    (count (filter true? validity))]
+    {:in  input
+     :out (cmd/batch-envelope classified
+                              (if write-ok?
+                                {:ids (mapv #(str "edge-" %) (range n-valid))}
+                                {:error "tx failed"}))}))
+
+(deftrifecta batch-edge-reports-write-failure
+  hive-mcp.tools.kg.bulk-edge-test/envelope
+  {:golden-path "test/golden/hive-mcp/kg/batch-envelope.edn"
+   :cases {:all-ok     [[true true] true]
+           :write-fail [[true false true] false]
+           :mixed-ok   [[false true] true]}
+   :gen (clojure.test.check.generators/tuple
+         (clojure.test.check.generators/vector clojure.test.check.generators/boolean 0 6)
+         clojure.test.check.generators/boolean)
+   :pred (fn [{[validity write-ok?] :in {:keys [summary write_error]} :out}]
+           (let [n-valid (count (filter true? validity))]
+             (and (= (count validity) (:total summary))
+                  (= (if write-ok? n-valid 0) (:success summary))
+                  (= (some? write_error) (not write-ok?)))))
+   :num-tests 100
+   :mutations [["success-on-failed-write"
+                (fn [[validity _ :as input]]
+                  (let [n (count (filter true? validity))]
+                    {:in input
+                     :out {:results [] :summary {:total (count validity) :success n
+                                                 :failed (- (count validity) n)}}}))]
+               ["drops-write-error"
+                (fn [[validity write-ok? :as input]]
+                  (let [n (if write-ok? (count (filter true? validity)) 0)]
+                    {:in input
+                     :out {:results [] :summary {:total (count validity) :success n
+                                                 :failed (- (count validity) n)}}}))]]})
 
 (deftest every-edge-in-the-batch-is-written-and-readable-on-return
   (let [body (payload (cmd/handle-kg-add-edges {:operations (ops 10)}))]
@@ -63,10 +116,8 @@
           "the failure is attributed to the offending op, not the first one"))))
 
 (deftest an-empty-batch-writes-nothing
-  (let [calls (atom 0)
-        real  conn/transact!]
-    (with-redefs [conn/transact! (fn [& args] (swap! calls inc) (apply real args))]
-      (is (= [] (edges/add-edges! []))))
+  (let [calls (atom 0)]
+    (is (= [] (edges/add-edges! [] (counting-transact calls))))
     (is (zero? @calls) "an empty batch must not open a transaction")))
 
 (deftest add-edge-and-add-edges-agree-on-what-a-valid-edge-is

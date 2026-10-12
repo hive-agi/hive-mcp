@@ -159,6 +159,11 @@
                 :terminal-liveness terminal-liveness-result
                 :ledger-cold ledger-cold-result
                 :kg-gc kg-gc-result
+                ;; Memory entries whose embed failed sit in the durable outbox;
+                ;; each sweep reembeds them once (a failure stays parked).
+                :pending-reembed (resolve-and-call
+                                  'hive-mcp.tools.memory.crud.reembed/drain-pending!
+                                  #(%) {:total 0 :reembedded 0 :not-found 0 :errors 0})
                 :gc-hint gc-hint-result
                 :sweep-number sweep-num
                 :duration-ms elapsed-ms

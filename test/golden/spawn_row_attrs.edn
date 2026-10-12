@@ -1,0 +1,18 @@
+{:non-map {:parent "coordinator", :status :working, :depth 1},
+ :none
+ {:status :working,
+  :depth 1,
+  :parent "coordinator",
+  :presets ["p"],
+  :cwd "/secret/cwd",
+  :project-id "secret-project",
+  :kanban-task-id "k-1"},
+ :opaque
+ {:status :working,
+  :depth 1,
+  :parent "coordinator",
+  :presets ["p"],
+  :cwd "opaque",
+  :project-id "opaque",
+  :kanban-task-id nil},
+ :throws {:parent "coordinator", :status :working, :depth 1}}

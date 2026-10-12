@@ -1,0 +1,7 @@
+{:all {:cascade? true, :force? true, :drain-ms 2000},
+ :bad-drain {:cascade? false, :force? false},
+ :cascade {:cascade? true, :force? false},
+ :drain {:cascade? false, :force? false, :drain-ms 500},
+ :force {:cascade? false, :force? true},
+ :none {:cascade? false, :force? false},
+ :truthy-only {:cascade? false, :force? false}}

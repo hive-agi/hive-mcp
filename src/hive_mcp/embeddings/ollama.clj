@@ -19,8 +19,7 @@
      ;; Or specify model
      (chroma/set-embedding-provider! 
        (ollama/->provider {:model \"mxbai-embed-large\"}))"
-  (:require [hive-mcp.concurrency.pool :as pool]
-            [hive-mcp.embeddings.env-config :as env-cfg]
+  (:require [hive-mcp.embeddings.env-config :as env-cfg]
             [hive-mcp.embeddings.http-client :as http]
             [hive-mcp.embeddings.model-spec :as spec]
             [hive-mcp.embeddings.protocol :as emb-proto]
@@ -108,14 +107,18 @@
         (throw e)))))
 
 (defn- get-embeddings-batch
-  "Embeddings for TEXTS, one request per text, fanned out over the shared IO
-   pool. Returns a vector aligned with TEXTS.
-
-   Ollama's /api/embed DOES accept an `input` array; the fan-out is measured
-   faster than one array request, not a workaround for a missing API."
+  "Embed TEXTS in one Ollama /api/embed request under one provider permit.
+   An array input avoids spawning one HTTP connection per item while a batch
+   holds the shared gate; the returned vectors retain input order."
   [host model texts num-ctx]
-  (let [futures (mapv (fn [text] (pool/with-io (get-embedding host model text num-ctx))) texts)]
-    (mapv deref futures)))
+  (if (empty? texts)
+    []
+    (:embeddings
+      (make-request host "/api/embed"
+                    {:model model
+                     :input (vec texts)
+                     :keep_alive "24h"
+                     :options {:num_ctx num-ctx}}))))
 
 (defn- executor-embed-one
   "Route a single embed call through executor-fn. Returns the embedding

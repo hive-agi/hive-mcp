@@ -92,9 +92,17 @@
   "Pure: the slave status a shout of `event-type` with `data` sets, or nil
    when the shout is `:status-neutral?` — an announcement ABOUT the agent
    (e.g. an ask timeout it already resumed from) rather than a transition
-   OF it."
+   OF it.
+
+   Also nil for an event type the registry does not know. The registry's
+   lookup defaults an unknown type to :idle, so a typo'd :working or :running
+   used to report a mid-task ling as available; an unknown type now leaves
+   the slave's status as it was. A nil type counts as unknown; it is checked
+   first because the registry's validity check calls `name` on it."
   [event-type data]
-  (when-not (:status-neutral? data)
+  (when (and (not (:status-neutral? data))
+             (some? event-type)
+             (event-registry/valid-event-type? event-type))
     (event-type->slave-status event-type)))
 
 (def ^:const default-shout-message-cap

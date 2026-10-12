@@ -1,0 +1,5 @@
+{:default-up ["leaf" "hive" "global"],
+ :nil-means-true ["leaf" "hive" "global"],
+ :self-and-down ["leaf" "kid-a"],
+ :self-only ["leaf"],
+ :up-and-down ["leaf" "hive" "global" "kid-a"]}

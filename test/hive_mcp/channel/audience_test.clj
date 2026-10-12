@@ -81,9 +81,30 @@
       (is (aud/addressed-to? "coordinator:1269206-hive" msg))
       (is (aud/addressed-to? "coordinator-hive" msg)))
     (is (aud/addressed-to? "coordinator-hive" {:agent-id "ling-a" :parent-id "coordinator:1269206"})))
-  (testing "root-level shouts (no parent) still reach every coordinator lane"
-    (is (aud/addressed-to? "coordinator:1269206-hive" {:agent-id "orphan"}))
-    (is (aud/addressed-to? "coordinator:1343228-hive" {:agent-id "orphan"}))))
+  (testing "an UNOWNED root-level shout (no parent, no project) reaches no
+            session lane: HIVEMIND-PIGGYBACK-LEAK"
+    (is (not (aud/addressed-to? "coordinator:1269206-hive" {:agent-id "orphan"})))
+    (is (not (aud/addressed-to? "coordinator:1343228-hive"
+                                {:agent-id "team:delib-x" :project-id "global"}))))
+  (testing "a project-scoped root shout still reaches the session lanes that
+            read that project (piggyback already filtered by project)"
+    (is (aud/addressed-to? "coordinator:1269206-hive" {:agent-id "orphan" :project-id "hive"})))
+  (testing "a session still sees its own root shouts, and the operator can opt in"
+    (is (aud/addressed-to? "coordinator:1269206-hive" {:agent-id "coordinator:1269206"}))
+    (is (not (aud/addressed-to? "coordinator:1343228-hive" {:agent-id "coordinator:1269206"})))
+    (is (aud/addressed-to? "coordinator:1343228-hive" {:agent-id "orphan"} nil
+                           {:global-opt-in? true})))
+  (testing "a sessionless lane keeps the legacy root-level delivery"
+    (is (aud/addressed-to? "coordinator-hive" {:agent-id "orphan"}))))
+
+(deftest peer-traffic-is-summarised-only-for-the-readers-lineage-test
+  (let [mine   {:agent-id "irs-a" :parent-id "coordinator:7" :to "irs-b" :context-id "c1"}
+        theirs {:agent-id "irs-d4" :parent-id "coordinator:t300b" :to "irs-x" :context-id "c2"}]
+    (is (= ["c1"] (mapv :ctx (aud/peer-traffic-digest "coordinator:7-hive" [mine theirs]))))
+    (is (= ["c2"] (mapv :ctx (aud/peer-traffic-digest "coordinator:t300b" [mine theirs]))))
+    (is (= #{"c1" "c2"} (set (map :ctx (aud/peer-traffic-digest "coordinator-hive" [mine theirs]))))
+        "a sessionless lane still supervises every conversation")))
+
 
 ;; --- directed delivery to a project-scoped reader --------------------------
 

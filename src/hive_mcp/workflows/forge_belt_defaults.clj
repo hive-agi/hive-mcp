@@ -58,8 +58,8 @@
 (defn- context-gather-enabled?*
   "fb/q7: Check if context-gather phase is enabled via config.
    Config key: [:forge :context-gather] — default false."
-  [_data]
-  (boolean (config/get-service-value :forge :context-gather :default false)))
+  [data]
+  (true? (:context-gather? data)))
 
 (defn- context-gather-disabled?*
   "fb/q8: Inverse of q7 — skip context-gather when disabled."
@@ -88,11 +88,15 @@
    Sets phase marker, cycle-start timestamp, nils previous results."
   [resources data]
   (let [clock-fn (or (:clock-fn resources) #(java.time.Instant/now))
-        now      (str (clock-fn))]
+        now      (str (clock-fn))
+        context-gather? (boolean (if (contains? resources :context-gather?)
+                                   (:context-gather? resources)
+                                   (config/get-service-value :forge :context-gather :default false)))]
     (assoc data
            :phase ::smite
            :cycle-start now
            :last-strike now
+           :context-gather? context-gather?
            :smite-result nil
            :survey-result nil
            :spark-result nil
@@ -147,7 +151,7 @@
 (defn- handle-spark*
   "fb/h4: Spawn lings for the surveyed tasks via (:spawn-fn (:agent-ops resources))."
   [resources data]
-  (let [{:keys [agent-ops kanban-ops config directory]} resources
+  (let [{:keys [agent-ops kanban-ops config directory clock-fn]} resources
         {:keys [spawn-fn dispatch-fn wait-ready-fn]} agent-ops
         {:keys [update-fn]} kanban-ops
         {:keys [max-slots presets spawn-mode model
@@ -172,7 +176,7 @@
     (-> data
         (assoc :phase ::cycle-complete
                :spark-result result
-               :last-strike (str (java.time.Instant/now)))
+               :last-strike (str ((or clock-fn #(java.time.Instant/now)))))
         (update :total-sparked + (:count result 0))
         (update :strike-count (fnil inc 0)))))
 

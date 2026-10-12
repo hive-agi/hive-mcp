@@ -233,12 +233,22 @@
    :teardown/data-preserved?])
 
 (def eject-report-keys
-  "The EjectReport keys `eject` answers with: what was removed and what stays."
+  "The EjectReport keys `eject` answers with: what was removed and what stays,
+   and the wait for calls in flight that ran first."
   [:hot/target :hot/ejected :hot/unknown :hot/refused? :hot/blocking
+   :hot/drain :hot/busy? :hot/forced?
    :hot/torn-down :hot/unregistered :hot/unsupported :hot/ungoverned
    :hot/unhot :hot/forgotten :hot/dirs-removed :hot/dirs-retained
    :hot/dirs-reason :hot/classpath-retained :hot/namespaces-retained
    :hot/remounted :teardown/data-preserved? :ok? :errors])
+
+(defn plug-out-opts
+  "Pure. The eject!/plug-out! opts an `eject` or `unmount` call asks for:
+   :cascade? and :force? from the booleans, :drain-ms when drain_ms is a
+   positive integer (otherwise hive-addon's default bound)."
+  [{:keys [cascade force drain_ms]}]
+  (cond-> {:cascade? (true? cascade) :force? (true? force)}
+    (pos-int? drain_ms) (assoc :drain-ms drain_ms)))
 
 (def mount-result-keys
   "The per-addon MountResult keys shown under :mounted."
@@ -251,16 +261,36 @@
     (seq (:mounted report))
     (assoc :mounted (mapv #(select-keys % mount-result-keys) (:mounted report)))))
 
+(defn report-with-surface
+  "Keep remount status and diagnostics, but never claim a fresh MCP surface
+   when the server refresh failed or did not refresh any surface."
+  [report surface]
+  (let [server (:server-tools surface)
+        failure (cond
+                  (nil? surface) "MCP surface stale: surface refresh unavailable"
+                  (and (map? server) (contains? server :error))
+                  (str "MCP surface stale: server refresh failed: "
+                       (or (:cause server) (:error server)))
+                  (not (seq (get-in server [:ok :surfaces])))
+                  "MCP surface stale: server refresh returned no refreshed surface"
+                  (false? (get-in surface [:agent-tools :ok?]))
+                  (str "tool registry refresh failed: " (get-in surface [:agent-tools :error])))]
+    (cond-> (assoc report :surface surface)
+      failure (-> (assoc :ok? false :surface-stale? true)
+                  (update :errors (fnil conj []) failure)))))
+
 (defn- surface-refreshed!
   "After a remount or an injection the addon's contributions are live in
    dispatch but the advertised surface — composites, tools/list, schema
-   extensions — was assembled earlier. Bring it up to date. Never throws."
+   extensions — was assembled earlier. Bring it up to date. Never throws;
+   failures are returned as diagnostics, not mistaken for a successful refresh."
   []
-  (when-let [refresh! (soft 'hive-mcp.extensions.reactive/refresh-surface!)]
+  (if-let [refresh! (soft 'hive-mcp.extensions.reactive/refresh-surface!)]
     (try (refresh! nil)
          (catch Throwable t
            (log/warn "surface refresh after hot op failed" {:error (ex-message t)})
-           nil))))
+           {:agent-tools {:ok? false :error (ex-message t)}}))
+    {:agent-tools {:ok? false :error "surface refresh unavailable"}}))
 
 ;; =============================================================================
 ;; Handlers
@@ -282,11 +312,12 @@
               report (if namespace
                        ((soft 'hive-addon.hot/reload-namespace!) host specs namespace (reload-opts))
                        ((soft 'hive-addon.hot/reload-addon!) host specs addon (reload-opts)))
-              surface (surface-refreshed!)]
+              surface (surface-refreshed!)
+              result (report-with-surface (summarize report) surface)]
           (log/info "hot reload" {:addon addon :namespace namespace
-                                  :ok? (:ok? report)
+                                  :ok? (:ok? result)
                                   :affected (:hot/affected report)})
-          (mcp-json (assoc (summarize report) :hive-hot hot-init :surface surface)))))))
+          (mcp-json (assoc result :hive-hot hot-init)))))))
 
 (defmulti skip-reason
   "Why `reload-all` leaves an addon out, from its AddonSource (a row of
@@ -339,8 +370,8 @@
                        :note "no mounted addon has reloadable source; nothing to reload"})
             (let [report  ((soft 'hive-addon.hot/reload-seeds!) host specs seeds (reload-opts))
                   surface (surface-refreshed!)]
-              (mcp-json (assoc (summarize report)
-                               :skipped skipped :hive-hot hot-init :surface surface)))))))))
+              (mcp-json (assoc (report-with-surface (summarize report) surface)
+                               :skipped skipped :hive-hot hot-init)))))))))
 
 (defn handle-inject
   "Mount an addon that was NOT on the classpath at boot.
@@ -353,7 +384,7 @@
 
    The classpath is extended on the highest DynamicClassLoader above this
    thread; a thread without one refuses rather than mounting code the next
-   require could not find."
+   require could not find. Surface failures are reported separately from mount."
   [{:keys [path resolve_deps]}]
   (cond
     (not (bridge-available?)) (mcp-error unavailable-msg)
@@ -372,16 +403,18 @@
                 opts     (cond-> (reload-opts)
                            resolve_deps (assoc :resolve-deps? true))
                 report   (inject! h specs path opts)
-                surface  (surface-refreshed!)]
+                surface  (surface-refreshed!)
+                result   (report-with-surface
+                          (assoc (select-keys report inject-report-keys)
+                                 :mounted (mapv #(select-keys % mount-result-keys)
+                                                (:mounted report))
+                                 :hive-hot hot-init)
+                          surface)]
             (log/info "hot inject" {:path path
-                                    :ok? (:ok? report)
+                                    :ok? (:ok? result)
                                     :injected (:hot/injected report)
                                     :already (:hot/already-mounted report)})
-            (mcp-json (-> (select-keys report inject-report-keys)
-                          (assoc :mounted (mapv #(select-keys % mount-result-keys)
-                                                (:mounted report))
-                                 :hive-hot hot-init
-                                 :surface surface))))))
+            (mcp-json result))))
       (mcp-error (str "hive-addon.hot.inject is not on the classpath — injection ships in "
                       "hive-addon >= 0.3.8; bump the pin (or point local.deps.edn at "
                       "../hive-addon) and restart the server.")))))
@@ -702,11 +735,13 @@
   (or addon path))
 
 (def handle-eject
-  "Plug an addon OUT of the running host (the inverse of inject). Refused while
-   mounted addons depend on it unless cascade, which remounts them without it."
+  "Plug an addon OUT of the running host (the inverse of inject). Calls in
+   flight drain first (bounded by drain_ms; still running answers busy unless
+   force). Refused while mounted addons depend on it unless cascade, which
+   remounts them without it."
   (host-verb {:bridge      'hive-addon.hot.inject/eject!
               :target      #'eject-target
-              :opts        (fn [{:keys [cascade]}] {:cascade? (true? cascade)})
+              :opts        #'plug-out-opts
               :report-keys eject-report-keys
               :example     "{:command \"eject\" :addon \"hive.rss\"}"}))
 
@@ -740,7 +775,7 @@
   "The HostVerb descriptor `unmount` runs."
   {:bridge      'hive-addon.hot.inject/plug-out!
    :target      #'eject-target
-   :opts        (fn [{:keys [cascade]}] {:cascade? (true? cascade)})
+   :opts        #'plug-out-opts
    :project     #'unmount-outcome
    :report-keys unmount-report-keys
    :example     "{:command \"unmount\" :addon \"hive.rss\"}"})
@@ -1016,7 +1051,9 @@
      "cascade" {:type "boolean"
                 :description "[eject/unmount] Also tear down the mounted addons that depend on the target and remount them without it. Default false: such an eject is refused."}
      "force" {:type "boolean"
-              :description "[evict] Also evict a pinned or eager addon. [pin] Allow :lazy on an addon with no surface a stub could advertise. Default false."}
+              :description "[eject/unmount] Plug out even when calls are still in flight after drain_ms (the report says :forced?). [evict] Also evict a pinned or eager addon. [pin] Allow :lazy on an addon with no surface a stub could advertise. Default false."}
+     "drain_ms" {:type "integer"
+                 :description "[eject/unmount] How long to wait for the addon's calls in flight before teardown; new calls are refused meanwhile. Still running after it: refused as busy (nothing torn down) unless force. Default 30000."}
      "policy" {:type "string"
                :enum (mapv name (rest (policy-schema)))
                :description "[pin] Lifecycle policy to set at runtime; pin defaults to \"pinned\"."}

@@ -83,6 +83,14 @@
     (vec (sort-by field (if (= direction :desc) #(compare %2 %1) compare) entries))
     (vec entries)))
 
+(defn- project-fields
+  "ROWS trimmed to OUTPUT-FIELDS (entry-key names); :id always survives."
+  [rows output-fields]
+  (if (seq output-fields)
+    (let [ks (conj (set (map keyword output-fields)) :id)]
+      (mapv #(select-keys % ks) rows))
+    rows))
+
 (defn- tokens [s]
   (into #{} (remove str/blank?) (str/split (str/lower-case (str s)) #"[^\p{Alnum}]+")))
 
@@ -141,7 +149,8 @@
 
   (add-entry! [_this entry]
     (let [id (or (:id entry) ((:id-fn @state)))
-          e  (assoc entry :id id :created (or (:created entry) (ids/iso-timestamp)))]
+          now (ids/iso-timestamp)
+          e  (assoc entry :id id :created (or (:created entry) now) :updated (or (:updated entry) now))]
       (swap! state assoc-in [:entries id] e)
       id))
 
@@ -163,7 +172,8 @@
           hit (->> (vals (:entries @state))
                    (filter #(matches? % opts now))
                    (apply-order-by (:order-by opts)))]
-      (mapv #(read-view state %) (if-let [n (:limit opts)] (take n hit) hit))))
+      (project-fields (mapv #(read-view state %) (if-let [n (:limit opts)] (take n hit) hit))
+                      (:output-fields opts))))
 
   (search-similar [_this query-text opts]
     (let [now (System/currentTimeMillis)]

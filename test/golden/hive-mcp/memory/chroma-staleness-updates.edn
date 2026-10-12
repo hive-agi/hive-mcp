@@ -1,0 +1,8 @@
+{:empty {},
+ :port-names {:staleness-alpha 1, :staleness-beta 9},
+ :port-wins {:staleness-beta 9},
+ :short-names
+ {:staleness-alpha 2,
+  :staleness-beta 3,
+  :staleness-source :transitive,
+  :staleness-depth 1}}

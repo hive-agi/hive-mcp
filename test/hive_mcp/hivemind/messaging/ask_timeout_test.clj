@@ -11,6 +11,7 @@
   (:require [clojure.core.async :as async]
             [clojure.test :refer [deftest is testing]]
             [hive-mcp.channel.core :as channel]
+            [hive-mcp.hivemind.event-registry]
             [hive-mcp.hivemind.messaging :as msg]
             [hive-mcp.hivemind.state :as state]
             [hive-mcp.swarm.datascript.queries :as queries]))
@@ -107,7 +108,11 @@
         "a status-neutral shout sets no slave status")))
 
 (deftest ordinary-shout-still-sets-slave-status
-  (with-redefs [hive-mcp.hivemind.event-registry/slave-status
+  ;; Both registry lookups are stubbed: shout-slave-status checks the type is
+  ;; registered before mapping it, and this tree has no swarm addon.
+  (with-redefs [hive-mcp.hivemind.event-registry/valid-event-type?
+                (fn [et] (contains? #{:blocked :completed} et))
+                hive-mcp.hivemind.event-registry/slave-status
                 (fn [et] (get {:blocked :blocked :completed :idle} et))]
     (is (= :blocked (msg/shout-slave-status :blocked {:message "stuck"})))
     (is (= :idle (msg/shout-slave-status :completed {})))))

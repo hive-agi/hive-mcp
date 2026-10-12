@@ -384,6 +384,51 @@
                     :plan-path plan_path
                     :auto-assign? auto_assign)))
 
+(defn- json-get
+  "Read k from a JSON-Schema map whose keys may be keywords or strings."
+  [m k]
+  (when (map? m)
+    (if (contains? m k) (get m k) (get m (name k)))))
+
+(defn- json-deref
+  "Follow a local $ref (#/definitions/X or #/$defs/X) against the root schema;
+   any other node is returned unchanged."
+  [root node]
+  (if-let [ref (json-get node :$ref)]
+    (let [[_ section def-name] (str/split (str ref) #"/" 3)]
+      (json-deref root (json-get (json-get root (keyword section)) (keyword def-name))))
+    node))
+
+(defn- json-prop
+  "The dereferenced property schema `prop` of object schema `node`."
+  [root node prop]
+  (json-deref root (json-get (json-get (json-deref root node) :properties) prop)))
+
+(defn- json-required
+  "The :required names of an object schema, as a vector of strings."
+  [root node]
+  (mapv name (json-get (json-deref root node) :required)))
+
+(defn- json-enum
+  "The :enum values of a (possibly $ref'd or nullable) schema, as strings."
+  [root node]
+  (let [node (json-deref root node)]
+    (or (some->> (json-get node :enum) (mapv name))
+        (some (fn [alt] (some->> (json-get (json-deref root alt) :enum) (mapv name)))
+              (concat (json-get node :anyOf) (json-get node :oneOf))))))
+
+(defn plan-contract
+  "Derive the plan-schema verb's :required / :step-required / :step-enums from
+   the projected JSON-Schema `input-schema`, so the response can never restate
+   a list that drifted from schema/Plan. Shapes are the historical ones:
+   vectors of strings, and {:priority [..] :estimate [..]}."
+  [input-schema]
+  (let [step (json-get (json-prop input-schema input-schema :steps) :items)]
+    {:required      (json-required input-schema input-schema)
+     :step-required (json-required input-schema step)
+     :step-enums    {:priority (json-enum input-schema (json-prop input-schema step :priority))
+                     :estimate (json-enum input-schema (json-prop input-schema step :estimate))}}))
+
 (defn handle-plan-schema
   "MCP handler: surface the plan-memory contract at the tool boundary.
 
@@ -391,17 +436,19 @@
    hive-spi `compile-op` seam — the SAME projection every schema-driven MCP tool
    advertises as its :inputSchema — plus the required keys, the step enums, a
    valid example, and the authoring recipe. Zero-arg. Removes the need to read
-   hive-mcp.plan.schema source before authoring a `type=plan` memory."
+   hive-mcp.plan.schema source before authoring a `type=plan` memory.
+   :required, :step-required and :step-enums are DERIVED from that projection
+   (plan-contract), never restated beside it."
   [_params]
-  (let [{:keys [input-schema]} (derive/compile-op schema/Plan)]
+  (let [{:keys [input-schema]} (derive/compile-op schema/Plan)
+        {:keys [required step-required step-enums]} (plan-contract input-schema)]
     (mcp-json
      {:success       true
       :for           "type=plan memory content — embed the plan as an ```edn fenced block matching :json-schema"
       :json-schema   input-schema
-      :required      ["id" "title" "steps"]
-      :step-required ["id" "title"]
-      :step-enums    {:priority ["high" "medium" "low"]
-                      :estimate ["small" "medium" "large"]}
+      :required      required
+      :step-required step-required
+      :step-enums    step-enums
       :example       schema/example-plan
       :how-to        (str "1) Write a memory: type=plan whose content embeds the plan as an "
                           "```edn fenced block matching :json-schema. "

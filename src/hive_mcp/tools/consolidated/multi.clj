@@ -142,6 +142,27 @@
           (format-fn result :compact compact-mode)
           {:type "text" :text (pr-str result)})))))
 
+(defn malformed-operations
+  "Entries of OPERATIONS that are not maps, as [{:index i :value v} ...]
+   (empty when every entry is a map). A string entry would otherwise reach
+   keywordize-map and leak 'nth not supported on this type: Character'
+   (kanban 20260915163543-5aac729f)."
+  [operations]
+  (into []
+        (keep-indexed (fn [i op]
+                        (when-not (map? op)
+                          {:index i :value op})))
+        operations))
+
+(defn malformed-operations-message
+  "Human message naming each non-map entry of a batch by index."
+  [malformed]
+  (str "operations entries must be {id, tool, command, ...} objects; got "
+       (str/join ", " (map (fn [{:keys [index value]}]
+                             (str "index " index " = " (pr-str value)))
+                           malformed))
+       ". For verb sentences use the 'dsl' param: [[verb, params], ...]."))
+
 (defn- handle-batch
   "Handle batch dispatch mode with dependency-ordered wave execution.
    Supports async: true for non-blocking dispatch."
@@ -155,6 +176,9 @@
 
     (empty? operations)
     (mcp-error "operations array is empty. Provide at least one operation.")
+
+    (seq (malformed-operations operations))
+    (mcp-error (malformed-operations-message (malformed-operations operations)))
 
     :else
     (let [normalized-ops (thread-caller-directory operations params)]
@@ -311,6 +335,36 @@
       (handler (:ok coerced))
       (mcp-error (str "Parameter error for tool " tool-name ": " (:message coerced))))))
 
+(defn batch-route
+  "Decide whether NORMALIZED params are an `operations` batch. PURE.
+
+   Returns the params to hand to handle-batch, or nil when the call is not a
+   batch. A top-level :tool alongside :operations used to fall through to
+   single dispatch, which called the target with none of the ops' params and
+   ran nothing. Now :operations always means batch, EXCEPT when the command is
+   the target tool's own `batch-*` command, which takes :operations itself.
+   Ops that carry no :tool / :command inherit the top-level ones."
+  [{:keys [tool command operations] :as normalized}]
+  (when (some? operations)
+    (let [tool-blank? (or (nil? tool) (str/blank? (str tool)))
+          own-batch?  (and (not tool-blank?)
+                           (str/starts-with? (str command) "batch-"))]
+      (cond
+        tool-blank? normalized
+        own-batch?  nil
+        :else
+        (let [inherit (fn [op]
+                        (if (map? op)
+                          (cond-> op
+                            (str/blank? (str (:tool op)))
+                            (assoc :tool tool)
+                            (and (some? command) (str/blank? (str (:command op))))
+                            (assoc :command command))
+                          op))]
+          (-> normalized
+              (dissoc :tool :command)
+              (update :operations #(if (sequential? %) (mapv inherit %) %))))))))
+
 (defn handle-multi
   "Route to consolidated tool by :tool param, forwarding remaining params.
 
@@ -350,8 +404,10 @@
       (handle-run normalized)
 
       ;; Batch mode: operations present, no tool specified
-      (and (some? operations) (or (nil? tool) (str/blank? (str tool))))
-      (handle-batch normalized)
+      ;; A top-level tool is a default for ops that omit theirs, not a
+      ;; single dispatch that would drop every op (see batch-route).
+      (some? (batch-route normalized))
+      (handle-batch (batch-route normalized))
 
       ;; No tool and no operations -- show help
       (or (nil? tool) (str/blank? (str tool)))

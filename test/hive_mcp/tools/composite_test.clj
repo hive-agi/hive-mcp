@@ -104,5 +104,27 @@
           "the subdomain stays (it answers help); each verb joins; a plain handler adds only its name"))
     (finally (ext/retract-commands! "merged-test-root" :merged-test-addon))))
 
+(deftest build-merged-tool-folds-contributed-default-async-test
+  (ext/contribute-commands! "merged-test-root" :merged-test-addon
+                            {"ship"  {:handler {:land (fn [_] nil) :status (fn [_] nil)}
+                                      :default-async [:land]}
+                             "sweep" {:handler (fn [_] nil) :default-async true}
+                             "solo"  {:handler (fn [_] nil)}})
+  (try
+    (testing "a declared verb joins as `<command> <verb>`, a declared command as itself"
+      (is (= #{(keyword "ship land") :sweep}
+             (:default-async-commands (composite/build-merged-tool merged-core)))))
+    (testing "the core's own default-async commands are kept"
+      (is (= #{:add (keyword "ship land") :sweep}
+             (:default-async-commands
+              (composite/build-merged-tool
+               (assoc merged-core :default-async-commands #{:add}))))))
+    (finally (ext/retract-commands! "merged-test-root" :merged-test-addon)))
+  (testing "contributions that declare none leave the key absent"
+    (with-contribution {}
+      (fn []
+        (is (not (contains? (composite/build-merged-tool merged-core)
+                            :default-async-commands)))))))
+
 (deftest build-merged-tool-is-identity-without-contributions-test
   (is (= merged-core (composite/build-merged-tool merged-core))))

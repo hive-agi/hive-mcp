@@ -1,0 +1,5 @@
+{:empty-files {:notes 0, :snippets 0, :conventions 0, :decisions 0},
+ :global-notes-only
+ {:notes 1, :snippets 0, :conventions 0, :decisions 0},
+ :project-all-types
+ {:notes 2, :snippets 1, :conventions 1, :decisions 3}}

@@ -1,0 +1,5 @@
+{:all-maps [],
+ :dsl-tuple [{:index 0, :value ["m/" {:q "x"}]}],
+ :mixed
+ [{:index 1, :value "x"} {:index 2, :value nil} {:index 3, :value 3}],
+ :one-string [{:index 0, :value "memory search q"}]}

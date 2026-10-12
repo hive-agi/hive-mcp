@@ -1,0 +1,8 @@
+{:case-0 {:out [], :in (nil)},
+ :case-1 {:out [], :in (-1)},
+ :case-2 {:out [], :in ([])},
+ :case-3 {:out [], :in (-1)},
+ :case-4 {:out [], :in ("24b7")},
+ :case-5 {:out [], :in ("Uo")},
+ :case-6 {:out [], :in ("8")},
+ :case-7 {:out [], :in ("z5b")}}
