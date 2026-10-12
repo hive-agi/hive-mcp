@@ -14,7 +14,8 @@
             [hive-mcp.dispatch.handler :as dispatch]
             [hive-addon.registry.commands :as acmds]
             [hive-mcp.dispatch.verbs :as verbs]
-            [hive-mcp.extensions.dispatch-wrap :as dispatch-wrap]))
+            [hive-mcp.extensions.dispatch-wrap :as dispatch-wrap]
+            [hive-mcp.tools.composite.default-async :as default-async]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -327,6 +328,8 @@
    line naming each contributed command with its purpose
    (`contributed-commands-text`). Verb-level contributions
    (hive-mcp.dispatch.verbs) fold in too, through `fold-verb-contributions`.
+   The commands a contribution declares :default-async join
+   :default-async-commands (`default-async/fold`).
    Returns the tool-def unchanged when nothing has been contributed.
 
    Routing already folded contributions in (effective-handlers); this is the
@@ -349,7 +352,7 @@
     (fold-verb-contributions
      (if (empty? addon-cmds)
        core-tool-def
-       (cond-> core-tool-def
+       (cond-> (default-async/fold core-tool-def addon-cmds)
          (seq core-enum)
          (assoc-in [:inputSchema :properties "command" :enum]
                    (vec (sort (distinct (concat core-enum addon-cmd-names)))))

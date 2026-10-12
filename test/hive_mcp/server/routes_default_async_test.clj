@@ -9,7 +9,8 @@
    - Commands outside the set are untouched regardless of direction."
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.server.routes :as routes]
-            [hive-mcp.tools.consolidated.memory :as cmem]))
+            [hive-mcp.tools.consolidated.memory :as cmem]
+            [hive-mcp.tools.composite.default-async :as default-async]))
 
 (defn- capture-handler
   "Return [handler captured-ref] where captured-ref is an atom that
@@ -74,6 +75,20 @@
                                               :properties {"async" own}}
                                 :handler (fn [_] "ok")})]
     (is (= own (get-in tool [:inputSchema :properties "async"])))))
+
+(deftest a-contributed-default-async-verb-is-queued-by-default
+  (testing "the keyword a contribution's :default-async folds to is the one the
+            wrapper derives from the command string a caller sends"
+    (let [commands (default-async/contributed-commands
+                    {"ship" {:default-async [:land :watch]}})
+          [h cap]  (capture-handler)
+          wrapped  (routes/wrap-handler-default-async-for-commands h commands)]
+      (wrapped {:command "ship land"})
+      (is (true? (:async @cap)))
+      (wrapped {:command "ship status"})
+      (is (not (contains? @cap :async)) "an undeclared verb of the same command stays in-band")
+      (wrapped {:command "ship land" :async false})
+      (is (false? (:async @cap)) "the caller's opt-out wins"))))
 
 (deftest leaves-read-commands-synchronous
   (testing "read commands (not in set) pass through without :async key"
