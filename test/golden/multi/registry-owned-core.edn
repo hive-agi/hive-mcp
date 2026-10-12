@@ -1,0 +1,3 @@
+{:core-override {:steps [:ok :replaced], :data {:by-name {"tool" {:value :addon, :registered-at :fixed-time, :owner :addon}}, :by-owner {:multi/core #{}, :addon #{"tool"}}}},
+ :foreign-conflict {:steps [:ok :conflict], :data {:by-name {"tool" {:value :first, :registered-at :fixed-time, :owner :addon}}, :by-owner {:addon #{"tool"}}}},
+ :same-owner {:steps [:ok :replaced], :data {:by-name {"tool" {:value :second, :registered-at :fixed-time, :owner :addon}}, :by-owner {:addon #{"tool"}}}}}
