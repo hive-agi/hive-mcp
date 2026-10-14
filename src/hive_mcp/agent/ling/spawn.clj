@@ -243,8 +243,19 @@
        (catch Throwable _ nil)))
 
 (defn- register-slave-row!
-  "Persist a filtered row and its ordered preset snapshot through either store.
-   The grant bypasses the row filter because it gates rather than names work."
+  "Persist a slave row through the spawn store, first making sure its parent
+   can be referenced: a coordinator session named as parent gets its own row
+   on demand. A recorded grant is written beside :slave/parent in the same
+   registration, before the backend starts the ling, so its first tool call
+   is already gated.
+
+   The row attrs pass hive-agent's row filters first (`row-attrs`), so an
+   addon such as hive-darkmatter can replace identifying attrs before they
+   reach the registry. The grant is not filtered: it gates, it does not name.
+
+   The filtered presets are also persisted as an ordered scalar snapshot via
+   the spawn-store port before backend start, preserving declared precedence
+   when the cardinality-many preset attribute reads back as a set."
   [store slave-id attrs]
   (spawn-store/ensure-coordinator-session! store (:parent attrs))
   (let [filtered (row-attrs (row-filter) slave-id (dissoc attrs :grant))

@@ -35,11 +35,21 @@
 
 (deftest registration-writes-declared-order-through-port
   (let [writes (atom [])
+        rows (atom {})
         backend (reify store/ISpawnStore
-                  (add-slave! [_ id attrs] (swap! writes conj [:add id attrs]))
-                  (update-slave! [_ id attrs] (swap! writes conj [:update id attrs]))
-                  (remove-slave! [_ _])
-                  (claims-for-slave [_ _] []))]
-    (#'spawn/register-slave-row! backend "ling" {:presets ["gamma" "alpha" "beta"]})
+                  (add-slave! [_ id attrs]
+                    (swap! writes conj [:add id attrs])
+                    (swap! rows assoc id (assoc attrs :slave/presets (set (:presets attrs)))))
+                  (update-slave! [_ id attrs]
+                    (swap! writes conj [:update id attrs])
+                    (swap! rows update id merge attrs))
+                  (remove-slave! [_ id] (swap! rows dissoc id))
+                  (claims-for-slave [_ _] []))
+        declared ["gamma" "alpha" "beta"]]
+    (#'spawn/register-slave-row! backend "ling" {:presets declared})
     (is (= [:update "ling" {:slave/preset-order "[\"gamma\" \"alpha\" \"beta\"]"}]
-           (second @writes)))))
+           (second @writes)))
+    ;; Read the row back from the port stub, not the input or the write log:
+    ;; cardinality-many presets have lost their order, but the scalar has not.
+    (is (= (set declared) (get-in @rows ["ling" :slave/presets])))
+    (is (= declared (spawn/ordered-presets (get @rows "ling"))))))
