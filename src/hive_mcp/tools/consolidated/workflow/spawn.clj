@@ -309,13 +309,24 @@
         [[] (vec (take avail ling-tasks))])
       ;; :mixed — fill vterm, overflow to headless
       :else
-      (let [total-cap   (or max-slots 10)
-            total-avail (max 0 (- total-cap active-total))
-            vt-avail    (min (max 0 (- vterm-max-slots active-vterm)) total-avail)
-            vt-batch    (vec (take vt-avail ling-tasks))
-            hl-avail    (max 0 (- total-avail (count vt-batch)))
-            hl-batch    (vec (take hl-avail (drop vt-avail ling-tasks)))]
-        [vt-batch hl-batch]))))
+      (let [total-avail (max 0 (- (or max-slots 10) active-total))
+            vt-avail (max 0 (- vterm-max-slots active-vterm))]
+        (reduce (fn [[vt hl :as batches] task]
+                  (let [execution (get-in task [:context :execution])
+                        requested (some-> (:spawn-mode execution) keyword)
+                        headless? (or (headless-mode? requested)
+                                      (and (:provider execution)
+                                           (not (#{:claude :vterm} requested))
+                                           (not= :claude (keyword (:provider execution)))))
+                        terminal? (#{:claude :vterm} requested)]
+                    (cond
+                      (>= (+ (count vt) (count hl)) total-avail) batches
+                      headless? [vt (conj hl task)]
+                      terminal? (if (< (count vt) vt-avail)
+                                  [(conj vt task) hl] batches)
+                      (< (count vt) vt-avail) [(conj vt task) hl]
+                      :else [vt (conj hl task)])))
+                [[] []] ling-tasks)))))
 
 (defn- execute-spawn-batches
   "Spawn lings for vterm and headless task batches.
