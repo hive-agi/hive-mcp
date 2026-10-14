@@ -223,3 +223,26 @@
           (doseq [p (iterator-seq (.iterator stream))]
             (java.nio.file.Files/deleteIfExists p)))
         (java.nio.file.Files/deleteIfExists dir)))))
+
+(deftest private-target-and-parent-alias
+  (let [dir (java.nio.file.Files/createTempDirectory "hive-log-permissions" (make-array java.nio.file.attribute.FileAttribute 0))
+        path (.resolve dir "coordinator.log")
+        link (.resolveSibling dir (str (.getFileName dir) "-alias"))
+        owner-only (java.nio.file.attribute.PosixFilePermissions/fromString "rw-------")
+        public (java.nio.file.attribute.PosixFilePermissions/fromString "rw-r--r--")]
+    (try
+      (java.nio.file.Files/write path (.getBytes "original" "UTF-8") (make-array java.nio.file.OpenOption 0))
+      (java.nio.file.Files/setPosixFilePermissions path public)
+      (is (thrown? Exception (sink/write-line! (sink/file-line-writer (.toFile path)) "unsafe")))
+      (is (= "original" (slurp (.toFile path))))
+      (java.nio.file.Files/delete path)
+      (sink/write-line! (sink/file-line-writer (.toFile path)) "safe")
+      (is (= owner-only (java.nio.file.Files/getPosixFilePermissions path (make-array java.nio.file.LinkOption 0))))
+      (java.nio.file.Files/createSymbolicLink link dir (make-array java.nio.file.attribute.FileAttribute 0))
+      (is (thrown? Exception
+                   (sink/write-line! (sink/file-line-writer (.toFile (.resolve link "coordinator.log"))) "unsafe")))
+      (is (= "safe\n" (slurp (.toFile path))))
+      (finally
+        (java.nio.file.Files/deleteIfExists link)
+        (java.nio.file.Files/deleteIfExists path)
+        (java.nio.file.Files/deleteIfExists dir)))))
