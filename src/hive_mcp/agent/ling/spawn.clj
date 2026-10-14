@@ -23,16 +23,32 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
+(declare ordered-presets)
+
 (defn slave->ling-opts
   "Extract ling construction opts from a DataScript slave entity."
   [slave]
   (cond-> {:cwd (:slave/cwd slave)
-           :presets (:slave/presets slave)
+           :presets (ordered-presets slave)
            :project-id (:slave/project-id slave)
            :spawn-mode (or (:ling/spawn-mode slave) :claude)
            :model (:ling/model slave)
            :token-budget (:ling/token-budget slave)}
     (:ling/turn-budget slave) (assoc :turn-budget (:ling/turn-budget slave))))
+
+(defn ordered-presets
+  "Read declared order from the scalar EDN snapshot; sort old unordered rows."
+  [slave]
+  (let [legacy (:slave/presets slave)
+        encoded (:slave/preset-order slave)
+        decoded (when (string? encoded)
+                  (try (clojure.edn/read-string encoded)
+                       (catch Exception _ nil)))]
+    (if (and (vector? decoded)
+             (every? string? decoded)
+             (= (set decoded) (set legacy)))
+      decoded
+      (vec (sort legacy)))))
 
 (declare ->ling)
 
@@ -227,19 +243,16 @@
        (catch Throwable _ nil)))
 
 (defn- register-slave-row!
-  "Persist a slave row through the spawn store, first making sure its parent
-   can be referenced: a coordinator session named as parent gets its own row
-   on demand. A recorded grant is written beside :slave/parent in the same
-   registration, before the backend starts the ling, so its first tool call
-   is already gated.
-
-   The row attrs pass hive-agent's row filters first (`row-attrs`), so an
-   addon such as hive-darkmatter can replace identifying attrs before they
-   reach the registry. The grant is not filtered: it gates, it does not name."
+  "Persist a filtered row and its ordered preset snapshot through either store.
+   The grant bypasses the row filter because it gates rather than names work."
   [store slave-id attrs]
   (spawn-store/ensure-coordinator-session! store (:parent attrs))
-  (let [res (spawn-store/add-slave! store slave-id
-                                    (row-attrs (row-filter) slave-id (dissoc attrs :grant)))]
+  (let [filtered (row-attrs (row-filter) slave-id (dissoc attrs :grant))
+        presets (:presets filtered)
+        res (spawn-store/add-slave! store slave-id filtered)]
+    (when (seq presets)
+      (spawn-store/update-slave! store slave-id
+                                 {:slave/preset-order (pr-str (vec presets))}))
     (when-let [g (:grant attrs)]
       (spawn-store/update-slave! store slave-id {grant/slave-attr g}))
     res))
