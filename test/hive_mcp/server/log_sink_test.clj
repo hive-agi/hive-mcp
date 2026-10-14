@@ -180,6 +180,21 @@
                     (boot-file-contract [[:info ["[boot-timing] init :addon 12.0 ms"]]
                                          [:info ["secret"]]]))))})
 
+(deftest coordinator-appender-registration
+  (require 'hive-mcp.server.core)
+  (let [config @(requiring-resolve 'taoensso.timbre/*config*)
+        append! (get-in config [:appenders :coordinator-file :fn])
+        file-sink @(requiring-resolve 'hive-mcp.server.core/file-sink)
+        before (sink/depth file-sink)
+        formatted? (atom false)]
+    (is (fn? append!))
+    (is (false? (get-in config [:appenders :coordinator-file :async?])))
+    (append! {:level :info :?ns-str "hive-mcp.server.core"
+              :vargs ["unrelated secret"]
+              :output_ (delay (reset! formatted? true) "unrelated secret")})
+    (is (false? @formatted?) "disallowed payload must never be formatted")
+    (is (= before (sink/depth file-sink)) "disallowed payload never reaches file sink")))
+
 (deftest file-aliases-and-rotation
   (let [dir (java.nio.file.Files/createTempDirectory "hive-log-safe" (make-array java.nio.file.attribute.FileAttribute 0))
         path (.resolve dir "coordinator.log")
