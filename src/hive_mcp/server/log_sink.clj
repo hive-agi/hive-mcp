@@ -14,7 +14,10 @@
 
    A slow writer stalls only the drain thread; the worst case for callers is
    lost console lines, visible as (dropped sink)."
-  (:import [java.util.concurrent ArrayBlockingQueue BlockingQueue TimeUnit]
+  (:require [clojure.java.io :as io])
+  (:import [java.nio.file Files LinkOption StandardCopyOption StandardOpenOption]
+           [java.nio.file.attribute PosixFilePermissions]
+           [java.util.concurrent ArrayBlockingQueue BlockingQueue TimeUnit]
            [java.util.concurrent.atomic AtomicLong]))
 
 
@@ -38,6 +41,44 @@
   "The production writer: the root *err* stream."
   []
   (->ErrStreamWriter))
+
+(defn file-path
+  "Coordinator log under the user-private state directory. Honors XDG_STATE_HOME."
+  []
+  (let [state-home (System/getenv "XDG_STATE_HOME")]
+    (io/file (if (and state-home (not (.isBlank ^String state-home)))
+               state-home
+               (str (System/getProperty "user.home") "/.local/state"))
+             "hive-mcp" "coordinator.log")))
+
+(defn- private-file!
+  "Create a private log directory/file, refusing symlinks before writes."
+  [^java.io.File file]
+  (let [dir (.toPath (.getParentFile file))
+        path (.toPath file)
+        no-links (into-array LinkOption [LinkOption/NOFOLLOW_LINKS])]
+    (when (Files/isSymbolicLink dir)
+      (throw (ex-info "Log directory must not be a symlink" {:directory (str dir)})))
+    (Files/createDirectories dir (make-array java.nio.file.attribute.FileAttribute 0))
+    (Files/setPosixFilePermissions dir (PosixFilePermissions/fromString "rwx------"))
+    (when (Files/isSymbolicLink path)
+      (throw (ex-info "Log file must not be a symlink" {:path (str path)})))
+    (when-not (Files/exists path no-links)
+      (Files/createFile path (make-array java.nio.file.attribute.FileAttribute 0)))
+    (Files/setPosixFilePermissions path (PosixFilePermissions/fromString "rw-------"))
+    path))
+
+(defrecord FileLineWriter [file]
+  LineWriter
+  (write-line! [_ line]
+    (let [path (private-file! file)]
+      (Files/write path (.getBytes (str line \newline) "UTF-8")
+                   (into-array StandardOpenOption [StandardOpenOption/APPEND])))))
+
+(defn file-line-writer
+  "A private append-only coordinator log writer. The sink's daemon thread owns IO."
+  ([] (file-line-writer (file-path)))
+  ([file] (->FileLineWriter (io/file file))))
 
 ;; =============================================================================
 ;; Sink

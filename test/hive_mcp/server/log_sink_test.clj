@@ -8,6 +8,7 @@
    Mutants are self-contained and never call the subject var, which the
    trifecta has rebound to the mutant while it runs them."
   (:require [clojure.test :refer [deftest is testing]]
+            [clojure.string :as str]
             [clojure.test.check.generators :as gen]
             [hive-test.trifecta :refer [deftrifecta]]
             [hive-mcp.server.log-sink :as sink]))
@@ -118,3 +119,35 @@
                     (< (System/currentTimeMillis) deadline))
           (Thread/sleep 10)))
       (is (some #{"first"} @(:written w))))))
+
+(defn file-write-contract
+  "Unary adapter: write lines through the file port in a disposable directory."
+  [lines]
+  (let [dir (java.nio.file.Files/createTempDirectory "hive-log-test" (make-array java.nio.file.attribute.FileAttribute 0))
+        file (.toFile (.resolve dir "coordinator.log"))
+        writer (sink/file-line-writer file)]
+    (try
+      (doseq [line lines] (sink/write-line! writer line))
+      {:lines (str/split-lines (slurp file))
+       :private? (= "rw-------" (java.nio.file.attribute.PosixFilePermissions/toString
+                                     (java.nio.file.Files/getPosixFilePermissions (.toPath file)
+                                       (make-array java.nio.file.LinkOption 0))))}
+      (finally
+        (java.nio.file.Files/deleteIfExists (.toPath file))
+        (java.nio.file.Files/deleteIfExists dir)))))
+
+(deftrifecta private-coordinator-log
+  hive-mcp.server.log-sink-test/file-write-contract
+  {:golden-path "test/golden/server/private-coordinator-log.edn"
+   :cases {:one ["[boot-timing] addon a 10 ms"]
+           :append ["first" "second"]}
+   :gen (gen/vector gen/string-alphanumeric 1 8)
+   :pred (fn [out] (and (:private? out) (vector? (:lines out))))
+   :num-tests 25
+   :mutations [["drops-last-line"
+                (fn [lines] {:lines (vec (butlast lines)) :private? true})]
+               ["public-log-file"
+                (fn [lines] {:lines lines :private? false})]]
+   :assert (fn []
+             (is (= {:lines ["first" "second"] :private? true}
+                    (file-write-contract ["first" "second"]))))})

@@ -43,11 +43,17 @@
 (defonce console-sink
   (log-sink/make-sink (log-sink/err-stream-writer)))
 
+(defonce file-sink
+  (log-sink/make-sink (log-sink/file-line-writer)))
+
 (log/merge-config!
  {:appenders
   {:println {:enabled? true
              :async? false
-             :fn (log-sink/appender-fn console-sink)}}})
+             :fn (log-sink/appender-fn console-sink)}
+   :coordinator-file {:enabled? true
+                      :async? false
+                      :fn (log-sink/appender-fn file-sink)}}})
 
 ;; =============================================================================
 ;; System State — single defonce atom replaces 6 private atoms
