@@ -378,3 +378,39 @@
     (is (= {:provider "ollama-compat" :model "qwen2.5:3b-instruct" :spawn_mode "hive-agent"}
            (select-keys (spawn-for routed) [:provider :model :spawn_mode])))
     (is (empty? (:failed r)))))
+
+(deftest mixed-spark-routes-kanban-list-rows-by-execution-without-consuming-emacs-slots
+  (let [{:keys [cards]} (convert-plan!)
+        rows (list-rows)
+        routed-id (get cards "step-1")
+        plain-id (get cards "step-2")
+        routed-row (first (filter #(= routed-id (:id %)) rows))
+        plain-row (first (filter #(= plain-id (:id %)) rows))
+        headless-row (assoc-in routed-row [:context :execution] execution)
+        terminal-row (assoc-in plain-row [:context :execution] {:spawn-mode "claude"})]
+    (is (some? routed-row) "the routed input is a real kanban list row")
+    (is (some? plain-row) "the terminal input is a real kanban list row")
+    (is (not (contains? routed-row :context)) "list rows themselves are slim")
+    (let [headless-result (spawn/spark! {:directory dir :spawn-mode :mixed
+                                         :tasks [headless-row] :max_slots 1}
+                                        (spark-ports))
+          headless-spawn (spawn-for routed-id)]
+      (is (= 1 (:count headless-result)))
+      (is (= :headless (:route (first (:spawned headless-result)))))
+      (is (str/starts-with? (:name headless-spawn) "forja-hl-"))
+      (is (= "hive-agent" (:spawn_mode headless-spawn)))
+      (is (= 0 (get-in headless-result [:routes :vterm :count]))
+          "explicit headless execution consumes no Emacs slot")
+      (reset! events [])
+      (let [active-headless {:slave/depth 1 :slave/status :active
+                             :slave/project-id project-id :ling/spawn-mode :hive-agent}
+            terminal-result (spawn/spark! {:directory dir :spawn-mode :mixed
+                                           :tasks [terminal-row] :max_slots 2}
+                                          (assoc (spark-ports) :agents-fn (constantly [active-headless])))
+            terminal-spawn (spawn-for plain-id)]
+        (is (= 1 (:count terminal-result)))
+        (is (= :claude (:route (first (:spawned terminal-result)))))
+        (is (str/starts-with? (:name terminal-spawn) "forja-cl-"))
+        (is (= "claude" (:spawn_mode terminal-spawn)))
+        (is (= 0 (get-in terminal-result [:routes :vterm :active-before]))
+            "the headless ling did not increase the Emacs slot count")))))
