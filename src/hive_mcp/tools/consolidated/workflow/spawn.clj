@@ -289,8 +289,8 @@
                            (filter (fn [a] (if project-id
                                              (= project-id (:slave/project-id a))
                                              true))))
-        active-vterm    (count (remove #(headless-modes (:ling/spawn-mode %)) project-lings))
-        active-headless (count (filter #(headless-modes (:ling/spawn-mode %)) project-lings))]
+        active-vterm    (count (remove #(headless-mode? (:ling/spawn-mode %)) project-lings))
+        active-headless (count (filter #(headless-mode? (:ling/spawn-mode %)) project-lings))]
     {:active-vterm active-vterm :active-headless active-headless
      :active-total (+ active-vterm active-headless)}))
 

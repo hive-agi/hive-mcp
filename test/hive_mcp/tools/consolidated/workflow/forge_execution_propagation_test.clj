@@ -40,7 +40,9 @@
             [hive-mcp.vectordb.kanban-facade :as kanban-store]
             [hive-mcp.workflows.forge-belt :as belt]
             [hive-spi.memory.registry :as store-registry]
-            [hive-test.isolation :as iso]))
+            [hive-test.isolation :as iso]
+            [hive-mcp.agent.ling.terminal-registry :as terminal-reg]
+            [hive-addon.terminal :as terminal]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -70,6 +72,24 @@
   (atom []))
 
 ;; ── Fixtures ────────────────────────────────────────────────────────────────
+
+(defn- terminal-fixture
+  "Register a terminal lookup stub so the explicit :claude execution resolves without Emacs."
+  [f]
+  (let [prior (terminal-reg/get-terminal-addon :claude)
+        stub (reify terminal/ITerminalAddon
+               (terminal-id [_] :claude)
+               (terminal-spawn! [_ _ _] (throw (ex-info "stub terminal never spawns" {})))
+               (terminal-dispatch! [_ _ _] (throw (ex-info "stub terminal never dispatches" {})))
+               (terminal-status [_ _ _] nil)
+               (terminal-kill! [_ _] {:killed? true})
+               (terminal-interrupt! [_ _] {:success? false}))]
+    (try
+      (terminal-reg/register-terminal! :claude stub)
+      (f)
+      (finally
+        (terminal-reg/deregister-terminal! :claude)
+        (when prior (terminal-reg/register-terminal! :claude prior))))))
 
 (defn- store-fixture
   "One decoding stub store under :default and :kanban; the prior registry is restored."
@@ -133,7 +153,8 @@
   (iso/with-isolations :kg-conn)
   stub-belt/forge-belt-fixture
   persona-fixture
-  headless-fixture)
+  headless-fixture
+  terminal-fixture)
 
 ;; ── Hops ────────────────────────────────────────────────────────────────────
 
