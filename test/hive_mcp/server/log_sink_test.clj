@@ -151,3 +151,60 @@
    :assert (fn []
              (is (= {:lines ["first" "second"] :private? true}
                     (file-write-contract ["first" "second"]))))})
+
+(defn boot-file-contract
+  "Exercise the same filtered appender factory registered by server.core through a stub sink."
+  [records]
+  (let [s (sink/make-sink (->NullWriter) {:capacity 32 :start? false})
+        append! (sink/boot-appender-fn s)]
+    (doseq [[level args] records]
+      (append! {:level level :?ns-str "hive-mcp.server.core"
+                :vargs args :output_ (delay (str (first args)))}))
+    (vec (:queue s))))
+
+(deftrifecta boot-file-filter
+  hive-mcp.server.log-sink-test/boot-file-contract
+  {:golden-path "test/golden/server/boot-file-filter.edn"
+   :cases {:safe [[:info ["[boot-timing] init :addon 12.0 ms"]]]
+           :secret [[:info ["API_KEY=secret"]]
+                    [:warn ["[boot-timing] password"]]
+                    [:info ["[boot-timing] init :addon\nsecret"]]
+                    [:info ["[boot-timing] init" "secret"]]]}
+   :gen (gen/fmap (fn [s] [[:warn [(str "[boot-timing] " s)]]
+                            [:info [(str "secret=" s)]]]) gen/string-alphanumeric)
+   :pred empty?
+   :num-tests 30
+   :mutations [["unfiltered-appender" (fn [records] (mapv (comp first second) records))]]
+   :assert (fn []
+             (is (= ["[boot-timing] init :addon 12.0 ms"]
+                    (boot-file-contract [[:info ["[boot-timing] init :addon 12.0 ms"]]
+                                         [:info ["secret"]]]))))})
+
+(deftest file-aliases-and-rotation
+  (let [dir (java.nio.file.Files/createTempDirectory "hive-log-safe" (make-array java.nio.file.attribute.FileAttribute 0))
+        path (.resolve dir "coordinator.log")
+        other (.resolve dir "other")
+        writer (sink/file-line-writer (.toFile path))
+        no-links (make-array java.nio.file.LinkOption 0)]
+    (try
+      (java.nio.file.Files/createSymbolicLink path other (make-array java.nio.file.attribute.FileAttribute 0))
+      (is (thrown? Exception (sink/write-line! writer "symlink")))
+      (java.nio.file.Files/delete path)
+      (java.nio.file.Files/createDirectory path (make-array java.nio.file.attribute.FileAttribute 0))
+      (is (thrown? Exception (sink/write-line! writer "directory")))
+      (java.nio.file.Files/delete path)
+      (java.nio.file.Files/write other (.getBytes "sentinel" "UTF-8") (make-array java.nio.file.OpenOption 0))
+      (java.nio.file.Files/createLink path other)
+      (is (thrown? Exception (sink/write-line! writer "hardlink")))
+      (is (= "sentinel" (slurp (.toFile other))))
+      (java.nio.file.Files/delete path)
+      (dotimes [_ 21] (sink/write-line! writer (apply str (repeat 200000 "x"))))
+      (let [generations (map #(.resolve dir (str "coordinator.log" (when (pos? %) (str "." %)))) (range 4))]
+        (is (every? #(java.nio.file.Files/exists % no-links) generations))
+        (is (every? #(<= (java.nio.file.Files/size %) sink/max-file-bytes) generations))
+        (is (not (java.nio.file.Files/exists (.resolve dir "coordinator.log.4") no-links))))
+      (finally
+        (with-open [stream (java.nio.file.Files/list dir)]
+          (doseq [p (iterator-seq (.iterator stream))]
+            (java.nio.file.Files/deleteIfExists p)))
+        (java.nio.file.Files/deleteIfExists dir)))))

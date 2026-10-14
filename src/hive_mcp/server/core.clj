@@ -53,7 +53,7 @@
              :fn (log-sink/appender-fn console-sink)}
    :coordinator-file {:enabled? true
                       :async? false
-                      :fn (log-sink/appender-fn file-sink)}}})
+                      :fn (log-sink/boot-appender-fn file-sink)}}})
 
 ;; =============================================================================
 ;; System State — single defonce atom replaces 6 private atoms

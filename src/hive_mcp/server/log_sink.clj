@@ -56,24 +56,64 @@
   [^java.io.File file]
   (let [dir (.toPath (.getParentFile file))
         path (.toPath file)
-        no-links (into-array LinkOption [LinkOption/NOFOLLOW_LINKS])]
-    (when (Files/isSymbolicLink dir)
-      (throw (ex-info "Log directory must not be a symlink" {:directory (str dir)})))
+        no-links (into-array LinkOption [LinkOption/NOFOLLOW_LINKS])
+        private-dir (PosixFilePermissions/fromString "rwx------")]
+    (doseq [p (take-while some? (iterate #(.getParent %) (.toAbsolutePath dir)))]
+      (when (Files/isSymbolicLink p)
+        (throw (ex-info "Log directory contains symlink" {:directory (str p)}))))
     (Files/createDirectories dir (make-array java.nio.file.attribute.FileAttribute 0))
-    (Files/setPosixFilePermissions dir (PosixFilePermissions/fromString "rwx------"))
-    (when (Files/isSymbolicLink path)
-      (throw (ex-info "Log file must not be a symlink" {:path (str path)})))
-    (when-not (Files/exists path no-links)
-      (Files/createFile path (make-array java.nio.file.attribute.FileAttribute 0)))
-    (Files/setPosixFilePermissions path (PosixFilePermissions/fromString "rw-------"))
+    (Files/setPosixFilePermissions dir private-dir)
+    (when (Files/exists path no-links)
+      (when-not (Files/isRegularFile path no-links)
+        (throw (ex-info "Log file must be regular" {:path (str path)})))
+      (when (not= 1 (long (Files/getAttribute path "unix:nlink" no-links)))
+        (throw (ex-info "Log file must not be hardlinked" {:path (str path)})))
+      (when-not (= (PosixFilePermissions/fromString "rw-------")
+                   (Files/getPosixFilePermissions path no-links))
+        (throw (ex-info "Log file must be private" {:path (str path)}))))
     path))
+
+(def max-file-bytes
+  "Maximum bytes in the active log and each retained generation."
+  1048576)
+
+(def retained-files
+  "Number of retained older generations."
+  3)
 
 (defrecord FileLineWriter [file]
   LineWriter
   (write-line! [_ line]
-    (let [path (private-file! file)]
-      (Files/write path (.getBytes (str line \newline) "UTF-8")
-                   (into-array StandardOpenOption [StandardOpenOption/APPEND])))))
+    (let [path (private-file! file)
+          bytes (.getBytes (str line \newline) "UTF-8")
+          bytes (if (> (alength bytes) max-file-bytes)
+                  (.getBytes (str (String. bytes 0 (- max-file-bytes 32) "UTF-8") " [truncated]" \newline) "UTF-8")
+                  bytes)
+          no-links (into-array LinkOption [LinkOption/NOFOLLOW_LINKS])
+          attrs (into-array java.nio.file.attribute.FileAttribute
+                            [(PosixFilePermissions/asFileAttribute (PosixFilePermissions/fromString "rw-------"))])]
+      (when (and (Files/exists path no-links)
+                 (> (+ (Files/size path) (alength bytes)) max-file-bytes))
+        (doseq [n (range retained-files 0 -1)]
+          (let [source (if (= n 1) path (.resolveSibling path (str (.getFileName path) "." (dec n))))
+                target (.resolveSibling path (str (.getFileName path) "." n))]
+            (when (Files/exists source no-links)
+              (private-file! (.toFile source))
+              (when (Files/exists target no-links) (private-file! (.toFile target)))
+              (Files/move source target (into-array StandardCopyOption [StandardCopyOption/REPLACE_EXISTING]))))))
+      (let [before (when (Files/exists path no-links)
+                     (Files/readAttributes path java.nio.file.attribute.BasicFileAttributes no-links))
+            options #{StandardOpenOption/CREATE StandardOpenOption/WRITE
+                      StandardOpenOption/APPEND LinkOption/NOFOLLOW_LINKS}]
+        (with-open [channel (Files/newByteChannel path options attrs)]
+          (let [after (Files/readAttributes path java.nio.file.attribute.BasicFileAttributes no-links)]
+            (when (or (not (.isRegularFile after))
+                      (not= 1 (long (Files/getAttribute path "unix:nlink" no-links)))
+                      (not= (PosixFilePermissions/fromString "rw-------")
+                            (Files/getPosixFilePermissions path no-links))
+                      (and before (not= (.fileKey before) (.fileKey after))))
+              (throw (ex-info "Log file changed during open" {:path (str path)}))))
+          (.write channel (java.nio.ByteBuffer/wrap bytes)))))))
 
 (defn file-line-writer
   "A private append-only coordinator log writer. The sink's daemon thread owns IO."
@@ -144,3 +184,30 @@
   (fn [data]
     (let [{:keys [output_]} data]
       (offer! sink (force output_)))))
+
+(defn boot-line?
+  "Admit only audited, single-line boot timing records, never arbitrary log payloads."
+  [data]
+  (let [args (:vargs data)
+        ns-name (:?ns-str data)
+        line (first args)]
+    (and (= :info (:level data))
+         (or (= "hive-mcp.server.core" ns-name)
+             (= "hive-mcp.extensions.loader" ns-name))
+         (= 1 (count args))
+         (string? line)
+         (or (and (= "hive-mcp.server.core" ns-name)
+                  (or (.startsWith ^String line "[boot-timing] init ")
+                      (.startsWith ^String line "[boot-timing] ===== ig/init complete:")
+                      (.startsWith ^String line "[boot-timing]   slowest ")))
+             (and (= "hive-mcp.extensions.loader" ns-name)
+                  (or (.startsWith ^String line "[boot-timing] addon ")
+                      (.startsWith ^String line "[boot-timing] classpath manifest scan "))))
+         (not-any? #(Character/isISOControl ^char %) line))))
+
+(defn boot-appender-fn
+  "Timbre file appender that filters before forcing formatted output."
+  [sink]
+  (fn [data]
+    (when (boot-line? data)
+      (offer! sink (force (:output_ data))))))
