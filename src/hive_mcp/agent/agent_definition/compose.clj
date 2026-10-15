@@ -15,7 +15,9 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [hive-mcp.agent.agent-definition.frontmatter :as fm]
-            [hive-mcp.agent.agent-definition.spec :as spec]))
+            [hive-mcp.agent.agent-definition.spec :as spec]
+            [malli.core :as m]
+            [hive-mcp.agent.agent-definition.schema :as schema]))
 
 ;; Re-export the two pure frontmatter entry points so the façade (and any
 ;; external caller holding an `ad/` alias) can keep using them here.
@@ -228,3 +230,39 @@
   "Create a summary of all agent definitions for display."
   [definitions]
   (str/join "\n" (map summarize definitions)))
+
+(m/=> load-agent-file
+      [:function
+       [:=> [:cat :any :any] schema/LoadResult]
+       [:=> [:cat :any :any [:maybe [:map-of :any :any]]] schema/LoadResult]])
+
+(m/=> load-agents-dir [:=> [:cat :any :any] schema/LoadedDir])
+
+(m/=> find-agent-dirs
+      [:=> [:cat :any] [:vector [:tuple :string schema/Source]]])
+
+(m/=> load-all-custom-agents [:=> [:cat :any] schema/LoadedDir])
+
+(m/=> merge-definitions
+      [:=> [:cat [:* [:maybe schema/Definitions]]] [:vector schema/AnyMap]])
+
+(m/=> active-agents
+      [:function
+       [:=> [:cat [:maybe schema/Definitions] :any] schema/ActiveAgents]
+       [:=> [:cat [:maybe schema/Definitions] :any [:maybe [:map-of :any :any]]] schema/ActiveAgents]])
+
+(m/=> find-by-type [:=> [:cat :any [:maybe schema/Definitions]] [:maybe schema/AnyMap]])
+
+(m/=> built-in? [:=> [:cat [:maybe schema/AnyMap]] :boolean])
+
+(m/=> custom? [:=> [:cat [:maybe schema/AnyMap]] [:maybe :keyword]])
+
+(m/=> plugin? [:=> [:cat [:maybe schema/AnyMap]] :boolean])
+
+(m/=> has-all-tools? [:=> [:cat [:maybe schema/AnyMap]] :boolean])
+
+(m/=> get-system-prompt [:=> [:cat [:maybe schema/AnyMap]] :any])
+
+(m/=> summarize [:=> [:cat [:maybe schema/AnyMap]] :string])
+
+(m/=> list-summary [:=> [:cat [:maybe schema/Definitions]] :string])

@@ -1,6 +1,8 @@
 (ns hive-mcp.agent.hooks.budget
   "Budget guardrail hook for agent sessions. Tracks cumulative USD cost per agent and denies tool calls when exceeded."
-  (:require [taoensso.timbre :as log]))
+  (:require [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.agent.hooks.schema :as schema]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -238,3 +240,44 @@
                     :denied-calls 0
                     :exceeded? false))))
   (log/info "[budget-hook] Agent spend reset" {:agent-id agent-id}))
+
+(m/=> estimate-cost-usd
+      [:function
+       [:=> [:cat schema/Usd schema/Usd] :double]
+       [:=> [:cat schema/Usd schema/Usd [:maybe :string]] :double]])
+
+(m/=> estimate-tool-call-cost
+      [:function
+       [:=> [:cat [:maybe :string] :any] :double]
+       [:=> [:cat [:maybe :string] :any [:maybe :string]] :double]])
+
+(m/=> register-budget!
+      [:function
+       [:=> [:cat :string number?] schema/BudgetEntry]
+       [:=> [:cat :string number? [:maybe [:map [:model {:optional true} [:maybe :string]]]]]
+        schema/BudgetEntry]])
+
+(m/=> deregister-budget! [:=> [:cat :any] [:maybe schema/BudgetEntry]])
+
+(m/=> record-usage!
+      [:function
+       [:=> [:cat :any number?] [:maybe schema/BudgetEntry]]
+       [:=> [:cat :any number? [:maybe [:map-of :any :any]]] [:maybe schema/BudgetEntry]]])
+
+(m/=> record-tool-usage!
+      [:=> [:cat :any [:maybe :string] :any] [:maybe schema/BudgetEntry]])
+
+(m/=> check-budget
+      [:=> [:cat :any [:maybe :string] :any] [:maybe schema/Decision]])
+
+(m/=> budget-guardrail-handler [:=> [:cat] ifn?])
+
+(m/=> get-budget-status [:=> [:cat :any] [:maybe schema/BudgetStatus]])
+
+(m/=> get-all-budget-statuses [:=> [:cat] [:vector schema/BudgetStatus]])
+
+(m/=> get-total-spend [:=> [:cat] schema/TotalSpend])
+
+(m/=> reset-all-budgets! [:=> [:cat] :nil])
+
+(m/=> reset-agent-spend! [:=> [:cat :any] :nil])

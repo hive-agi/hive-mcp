@@ -2,7 +2,9 @@
   "Pure domain calculations for hint generation.
   Extracted from hints.clj to reduce cyclomatic complexity.
   All functions are pure calculations (no I/O, no side effects)."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [malli.core :as m]
+            [hive-mcp.agent.hints.schema :as schema]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -148,3 +150,32 @@
            (mapcat (fn [[_ ids-str]] (str/split (str/trim ids-str) #"\s+")))
            (remove str/blank?)
            vec))))
+
+(m/=> or-val [:=> [:cat :any :any] :any])
+
+(m/=> meaningful-tags [:=> [:cat schema/Strings] [:vector :string]])
+
+(m/=> scope-visible? [:=> [:cat schema/Strings :any [:maybe [:map-of :any :any]]] :any])
+
+(m/=> axiom-section [:=> [:cat schema/Items] schema/Section])
+
+(m/=> read-id-section [:=> [:cat schema/Items] schema/Section])
+
+(m/=> query-section [:=> [:cat schema/Items] schema/Section])
+
+(m/=> tag-section [:=> [:cat schema/TagSets] schema/Section])
+
+(m/=> kg-section [:=> [:cat schema/Items [:maybe :int]] schema/Section])
+
+(m/=> git-section [:=> [:cat schema/GitInfo] schema/Section])
+
+(m/=> parse-memory-ids [:=> [:cat [:maybe :string]] [:maybe [:vector :string]]])
+
+(m/=> parse-search-queries [:=> [:cat [:maybe :string]] [:maybe [:vector :string]]])
+
+(m/=> parse-tag-queries [:=> [:cat [:maybe :string]] [:maybe [:vector [:vector :string]]]])
+
+(m/=> parse-kg-traversals
+      [:=> [:cat [:maybe :string]] [:maybe [:map [:seeds [:vector :string]] [:depth :int]]]])
+
+(m/=> parse-axiom-ids [:=> [:cat [:maybe :string]] [:maybe [:vector :string]]])

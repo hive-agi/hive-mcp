@@ -13,7 +13,8 @@
 
   (:require [malli.core :as m]
             [malli.error :as me]
-            [hive-mcp.agent.agent-definition.spec :as spec]))
+            [hive-mcp.agent.agent-definition.spec :as spec]
+            [hive-mcp.agent.agent-definition.schema :as schema]))
 
 ;; =============================================================================
 ;; Map Coercion
@@ -81,3 +82,11 @@
                            ": " (pr-str (:errors result)))
                       {:agent-type (:agent-type m)
                        :errors (:errors result)})))))
+
+(m/=> validate [:=> [:cat :any] schema/Validation])
+
+(m/=> valid? [:=> [:cat :any] :boolean])
+
+(m/=> explain [:=> [:cat :any] [:maybe :any]])
+
+(m/=> validate-or-throw! [:=> [:cat :any] schema/AnyMap])

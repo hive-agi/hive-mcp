@@ -11,7 +11,9 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
   (:require [clj-yaml.core :as yaml]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [malli.core :as m]
+            [hive-mcp.agent.agent-definition.schema :as schema]))
 
 ;; =============================================================================
 ;; Raw Frontmatter Split
@@ -213,3 +215,10 @@
             hm-role      (assoc :hivemind-role hm-role)
             filename     (assoc :filename filename)
             base-dir     (assoc :base-dir base-dir)))))))
+
+(m/=> parse-frontmatter [:=> [:cat :string] schema/FrontmatterResult])
+
+(m/=> frontmatter->agent-def
+      [:function
+       [:=> [:cat [:maybe schema/AnyMap] :string :any] schema/CoerceResult]
+       [:=> [:cat [:maybe schema/AnyMap] :string :any [:maybe [:map-of :any :any]]] schema/CoerceResult]])
