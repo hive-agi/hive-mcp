@@ -1,0 +1,56 @@
+{:case-0
+ {:out "VBu (built-in) — 1675k5d9gL0",
+  :in
+  {:agent-type "VBu",
+   :description "1675k5d9gL0",
+   :system-prompt "q5y0",
+   :source :built-in}},
+ :case-1
+ {:out "Vu3Wd (user) — zde0upI",
+  :in
+  {:agent-type "Vu3Wd",
+   :description "zde0upI",
+   :system-prompt "7R28yK9",
+   :source :user}},
+ :case-2
+ {:out "fk (project) — SPGTs3CY",
+  :in
+  {:agent-type "fk",
+   :description "SPGTs3CY",
+   :system-prompt "w1",
+   :source :project}},
+ :case-3
+ {:out "j62 (project) — ",
+  :in
+  {:agent-type "j62",
+   :description "",
+   :system-prompt "769zs",
+   :source :project}},
+ :case-4
+ {:out "24b60776 (built-in) — m2ZWrABgwKQc",
+  :in
+  {:agent-type "24b60776",
+   :description "m2ZWrABgwKQc",
+   :system-prompt "b",
+   :source :built-in}},
+ :case-5
+ {:out "U7b5 (built-in) — ihX0T48",
+  :in
+  {:agent-type "U7b5",
+   :description "ihX0T48",
+   :system-prompt "S93Y8t",
+   :source :built-in}},
+ :case-6
+ {:out "zy (built-in) — MC",
+  :in
+  {:agent-type "zy",
+   :description "MC",
+   :system-prompt "Bfv3hFE0z",
+   :source :built-in}},
+ :case-7
+ {:out "z50H (built-in) — ",
+  :in
+  {:agent-type "z50H",
+   :description "",
+   :system-prompt "hLM4Q892",
+   :source :built-in}}}

@@ -1,0 +1,104 @@
+{:case-0
+ {:out
+  {:valid true,
+   :data
+   {:agent-type "VBu",
+    :description "1675k5d9gL0",
+    :system-prompt "q5y0",
+    :source :built-in}},
+  :in
+  {:agent-type "VBu",
+   :description "1675k5d9gL0",
+   :system-prompt "q5y0",
+   :source :built-in}},
+ :case-1
+ {:out
+  {:valid true,
+   :data
+   {:agent-type "Vu3Wd",
+    :description "zde0upI",
+    :system-prompt "7R28yK9",
+    :source :user}},
+  :in
+  {:agent-type "Vu3Wd",
+   :description "zde0upI",
+   :system-prompt "7R28yK9",
+   :source :user}},
+ :case-2
+ {:out
+  {:valid true,
+   :data
+   {:agent-type "fk",
+    :description "SPGTs3CY",
+    :system-prompt "w1",
+    :source :project}},
+  :in
+  {:agent-type "fk",
+   :description "SPGTs3CY",
+   :system-prompt "w1",
+   :source :project}},
+ :case-3
+ {:out
+  {:valid true,
+   :data
+   {:agent-type "j62",
+    :description "",
+    :system-prompt "769zs",
+    :source :project}},
+  :in
+  {:agent-type "j62",
+   :description "",
+   :system-prompt "769zs",
+   :source :project}},
+ :case-4
+ {:out
+  {:valid true,
+   :data
+   {:agent-type "24b60776",
+    :description "m2ZWrABgwKQc",
+    :system-prompt "b",
+    :source :built-in}},
+  :in
+  {:agent-type "24b60776",
+   :description "m2ZWrABgwKQc",
+   :system-prompt "b",
+   :source :built-in}},
+ :case-5
+ {:out
+  {:valid true,
+   :data
+   {:agent-type "U7b5",
+    :description "ihX0T48",
+    :system-prompt "S93Y8t",
+    :source :built-in}},
+  :in
+  {:agent-type "U7b5",
+   :description "ihX0T48",
+   :system-prompt "S93Y8t",
+   :source :built-in}},
+ :case-6
+ {:out
+  {:valid true,
+   :data
+   {:agent-type "zy",
+    :description "MC",
+    :system-prompt "Bfv3hFE0z",
+    :source :built-in}},
+  :in
+  {:agent-type "zy",
+   :description "MC",
+   :system-prompt "Bfv3hFE0z",
+   :source :built-in}},
+ :case-7
+ {:out
+  {:valid true,
+   :data
+   {:agent-type "z50H",
+    :description "",
+    :system-prompt "hLM4Q892",
+    :source :built-in}},
+  :in
+  {:agent-type "z50H",
+   :description "",
+   :system-prompt "hLM4Q892",
+   :source :built-in}}}
