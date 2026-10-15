@@ -16,8 +16,7 @@
                        commands, commits, test outcomes, errors, idle gap"
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
-            [malli.core :as m]
-            [hive-mcp.agent.runtime-schema :as schema]))
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -26,6 +25,63 @@
 ;; =============================================================================
 ;; Entry accessors (JSONL and hive-agent Datalevin shapes)
 ;; =============================================================================
+
+;; =============================================================================
+;; Schemas (value objects; every schema here generates)
+;; =============================================================================
+
+(def Entry
+  "A transcript entry in either the JSONL or the hive-agent Datalevin shape.
+   Open: the accessors read whichever keys exist."
+  [:maybe [:map-of :any :any]])
+
+(def ToolCall
+  "A tool call map in either shape (stored, or OpenAI style)."
+  [:maybe [:map-of :any :any]])
+
+(def Segment
+  [:map [:role [:maybe :string]] [:tool [:maybe :any]] [:text :string]])
+
+(def Pattern
+  "A compiled java.util.regex.Pattern; generates from a fixed sample."
+  [:fn {:gen/elements [#"x" #"(?i)ab" #"\d+"]}
+   #(instance? java.util.regex.Pattern %)])
+
+(def AgentIdPred
+  "Predicate on an agent id (glob->pred result); generates the two
+   constant predicates and a prefix predicate."
+  [:fn {:gen/elements [(constantly true) (constantly false) #(str/starts-with? (str %) "ling-")]}
+   ifn?])
+
+(def Needle
+  "Result of compile-needle: a regex/substring needle, or an error."
+  [:or
+   [:map [:kind [:enum :regex :substring]] [:pattern Pattern]]
+   [:map [:error :string]]])
+
+(def Hit
+  "One find-hits row."
+  [:map
+   [:agent :any]
+   [:run :any]
+   [:turn :any]
+   [:role [:maybe :string]]
+   [:snippet :string]
+   [:tool {:optional true} :any]])
+
+(def DigestRow
+  "digest-row result: the compact multi-agent view of one digest."
+  [:map
+   [:agent :any]
+   [:turns :any]
+   [:ending :any]
+   [:tools :string]
+   [:files :int]
+   [:commits :int]
+   [:errors :any]
+   [:wall_s {:optional true} :int]
+   [:tests {:optional true} :string]
+   [:final {:optional true} :string]])
 
 (defn entry-role [e]
   (or (:role e) (some-> (:transcript/role e) name)))
@@ -433,33 +489,33 @@
       (get-in d [:report :final-text])
       (assoc :final (clip (get-in d [:report :final-text]) preview-chars)))))
 
-(m/=> entry-role [:=> [:cat schema/Entry] [:maybe :string]])
+(m/=> entry-role [:=> [:cat Entry] [:maybe :string]])
 
-(m/=> entry-content [:=> [:cat schema/Entry] :string])
+(m/=> entry-content [:=> [:cat Entry] :string])
 
-(m/=> entry-turn [:=> [:cat schema/Entry] :any])
+(m/=> entry-turn [:=> [:cat Entry] :any])
 
-(m/=> entry-timestamp [:=> [:cat schema/Entry] [:maybe :int]])
+(m/=> entry-timestamp [:=> [:cat Entry] [:maybe :int]])
 
-(m/=> tool-call-name [:=> [:cat schema/ToolCall] :any])
+(m/=> tool-call-name [:=> [:cat ToolCall] :any])
 
-(m/=> tool-call-arguments [:=> [:cat schema/ToolCall] :string])
+(m/=> tool-call-arguments [:=> [:cat ToolCall] :string])
 
-(m/=> tool-call-result [:=> [:cat schema/ToolCall] :string])
+(m/=> tool-call-result [:=> [:cat ToolCall] :string])
 
-(m/=> entry-tool-calls [:=> [:cat schema/Entry] [:maybe [:sequential :any]]])
+(m/=> entry-tool-calls [:=> [:cat Entry] [:maybe [:sequential :any]]])
 
-(m/=> entry-tool-names [:=> [:cat schema/Entry] [:vector :any]])
+(m/=> entry-tool-names [:=> [:cat Entry] [:vector :any]])
 
-(m/=> entry-empty? [:=> [:cat schema/Entry] :boolean])
+(m/=> entry-empty? [:=> [:cat Entry] :boolean])
 
-(m/=> assistant? [:=> [:cat schema/Entry] :boolean])
+(m/=> assistant? [:=> [:cat Entry] :boolean])
 
-(m/=> llm-error? [:=> [:cat schema/Entry] :boolean])
+(m/=> llm-error? [:=> [:cat Entry] :boolean])
 
 (m/=> clip [:=> [:cat :string number?] :string])
 
-(m/=> parse-args [:=> [:cat schema/ToolCall] [:map-of :any :any]])
+(m/=> parse-args [:=> [:cat ToolCall] [:map-of :any :any]])
 
 (m/=> parse-since
       [:=> [:cat :any number?] [:maybe [:or :int [:map [:error :string]]]]])
@@ -476,16 +532,16 @@
        [:vector [:map-of :any :any]]])
 
 (m/=> last-tool-result
-      [:=> [:cat [:maybe [:sequential schema/Entry]]]
-       [:maybe [:map [:entry schema/Entry] [:tool :any] [:content :string]]]])
+      [:=> [:cat [:maybe [:sequential Entry]]]
+       [:maybe [:map [:entry Entry] [:tool :any] [:content :string]]]])
 
 (m/=> ending
-      [:=> [:cat [:maybe [:sequential schema/Entry]]] [:enum "error" "text" "tool-calls" "unknown"]])
+      [:=> [:cat [:maybe [:sequential Entry]]] [:enum "error" "text" "tool-calls" "unknown"]])
 
-(m/=> max-turn [:=> [:cat [:maybe [:sequential schema/Entry]]] number?])
+(m/=> max-turn [:=> [:cat [:maybe [:sequential Entry]]] number?])
 
 (m/=> final-report
-      [:=> [:cat :any [:maybe [:sequential schema/Entry]]]
+      [:=> [:cat :any [:maybe [:sequential Entry]]]
        [:map
         [:agent-id :any]
         [:final-text [:maybe :string]]
@@ -496,24 +552,24 @@
         [:last-tool-result {:optional true} [:map-of :any :any]]
         [:total-cost {:optional true} number?]]])
 
-(m/=> compile-needle [:=> [:cat :any] schema/Needle])
+(m/=> compile-needle [:=> [:cat :any] Needle])
 
 (m/=> snippet
       [:function
        [:=> [:cat :string :int :int] :string]
        [:=> [:cat :string :int :int :int] :string]])
 
-(m/=> entry-segments [:=> [:cat schema/Entry] [:vector schema/Segment]])
+(m/=> entry-segments [:=> [:cat Entry] [:vector Segment]])
 
 (m/=> find-hits
-      [:=> [:cat [:maybe [:map-of :any :any]] [:maybe [:sequential schema/Entry]]
+      [:=> [:cat [:maybe [:map-of :any :any]] [:maybe [:sequential Entry]]
             [:map [:pattern [:fn #(instance? java.util.regex.Pattern %)]]]
             [:maybe [:map-of :any :any]]]
        [:sequential [:map-of :any :any]]])
 
-(m/=> written-path [:=> [:cat schema/ToolCall] :any])
+(m/=> written-path [:=> [:cat ToolCall] :any])
 
-(m/=> shell-command [:=> [:cat schema/ToolCall] [:maybe :string]])
+(m/=> shell-command [:=> [:cat ToolCall] [:maybe :string]])
 
 (m/=> classify-command [:=> [:cat :any] [:enum "test" "git" "build" "other"]])
 
@@ -528,11 +584,11 @@
 (m/=> error-text? [:=> [:cat :any] :boolean])
 
 (m/=> idle-gap
-      [:=> [:cat [:maybe [:sequential schema/Entry]]]
+      [:=> [:cat [:maybe [:sequential Entry]]]
        [:maybe [:map [:ms :int] [:after-turn :any]]]])
 
 (m/=> digest
-      [:=> [:cat :any [:maybe [:sequential schema/Entry]]]
+      [:=> [:cat :any [:maybe [:sequential Entry]]]
        [:map
         [:agent-id :any]
         [:turns number?]

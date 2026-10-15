@@ -50,7 +50,6 @@
      ;; => {:adt/type :SpawnMode, :adt/variant :headless}"
   (:require [hive-dsl.adt :refer [defadt adt-variant]]
             [hive-mcp.agent.spawn-mode-registry :as registry]
-            [hive-mcp.agent.runtime-schema :as schema]
             [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -81,6 +80,20 @@
 ;; =============================================================================
 ;; Keyword Coercion (backward compatibility bridge)
 ;; =============================================================================
+
+;; =============================================================================
+;; Schemas (value objects; every schema here generates). The value schema is
+;; SpawnModeValue because the ADT descriptor itself already owns `SpawnMode`.
+;; =============================================================================
+
+(def SpawnModeKw
+  [:enum :claude :vterm :headless :agent-sdk])
+
+(def SpawnModeValue
+  "SpawnMode ADT value."
+  [:map
+   [:adt/type [:= :SpawnMode]]
+   [:adt/variant SpawnModeKw]])
 
 (defn from-keyword
   "Coerce a keyword or string to a SpawnMode ADT value.
@@ -163,25 +176,25 @@
   [sm]
   (get-in (registry/registry) [(adt-variant sm) :mcp?] false))
 
-(m/=> from-keyword [:=> [:cat :any] [:maybe schema/SpawnMode]])
+(m/=> from-keyword [:=> [:cat :any] [:maybe SpawnModeValue]])
 
-(m/=> to-keyword [:=> [:cat schema/SpawnMode] schema/SpawnModeKw])
+(m/=> to-keyword [:=> [:cat SpawnModeValue] SpawnModeKw])
 
-(m/=> resolve-alias [:=> [:cat schema/SpawnMode] schema/SpawnMode])
+(m/=> resolve-alias [:=> [:cat SpawnModeValue] SpawnModeValue])
 
-(m/=> canonical? [:=> [:cat schema/SpawnMode] :boolean])
+(m/=> canonical? [:=> [:cat SpawnModeValue] :boolean])
 
-(m/=> requires-emacs? [:=> [:cat schema/SpawnMode] :boolean])
+(m/=> requires-emacs? [:=> [:cat SpawnModeValue] :boolean])
 
-(m/=> io-model [:=> [:cat schema/SpawnMode] [:enum :buffer :stdin-stdout :api]])
+(m/=> io-model [:=> [:cat SpawnModeValue] [:enum :buffer :stdin-stdout :api]])
 
-(m/=> slot-limit [:=> [:cat schema/SpawnMode] [:maybe :int]])
+(m/=> slot-limit [:=> [:cat SpawnModeValue] [:maybe :int]])
 
-(m/=> capabilities [:=> [:cat schema/SpawnMode] [:set :keyword]])
+(m/=> capabilities [:=> [:cat SpawnModeValue] [:set :keyword]])
 
-(m/=> has-capability? [:=> [:cat schema/SpawnMode :any] :boolean])
+(m/=> has-capability? [:=> [:cat SpawnModeValue :any] :boolean])
 
-(m/=> mcp-visible? [:=> [:cat schema/SpawnMode] :boolean])
+(m/=> mcp-visible? [:=> [:cat SpawnModeValue] :boolean])
 
 ;; =============================================================================
 ;; Variant Sets (for iteration / validation)

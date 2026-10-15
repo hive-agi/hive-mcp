@@ -5,7 +5,6 @@
             [hive-dsl.result :as r]
             [taoensso.timbre :as log]
             [hive-mcp.tools.schema-keys :as schema-keys]
-            [hive-mcp.agent.runtime-schema :as schema]
             [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -28,6 +27,18 @@
   "tools -> {name tool}. Pure."
   [tools]
   (into {} (map (juxt :name identity)) tools))
+
+;; ---------------------------------------------------------------------------
+;; Schemas (value objects; every schema here generates)
+;; ---------------------------------------------------------------------------
+
+(def ToolDef
+  "A tool as held by the delegation registry."
+  [:map [:name :any]])
+
+(def AgentMap
+  "A registered agent: any map, records (Ling, Drone) included."
+  [:map-of :any :any])
 
 (defn ensure-registered!
   "Lazily initialize tool registry on first use."
@@ -163,7 +174,7 @@
 
 (m/=> ensure-registered! [:=> [:cat] :nil])
 
-(m/=> register! [:=> [:cat [:maybe [:sequential schema/ToolDef]]] :nil])
+(m/=> register! [:=> [:cat [:maybe [:sequential ToolDef]]] :nil])
 
 (m/=> get-schemas
       [:=> [:cat [:maybe [:sequential :any]]] [:vector [:map-of :any :any]]])
@@ -178,13 +189,12 @@
 
 (m/=> unregister-agent! [:=> [:cat :any] :any])
 
-(m/=> get-agent-by-id [:=> [:cat :any] :any])
+(m/=> get-agent-by-id [:=> [:cat :any] [:maybe AgentMap]])
 
-(m/=> list-all-agents [:=> [:cat] [:maybe [:sequential :any]]])
+(m/=> list-all-agents [:=> [:cat] [:maybe [:sequential AgentMap]]])
 
-(m/=> list-lings [:=> [:cat] [:sequential :any]])
+(m/=> list-lings [:=> [:cat] [:sequential AgentMap]])
 
-(m/=> sync-from-datascript!
-      [:=> [:cat] [:map [:synced-count :int] [:agents [:vector :any]]]])
+(m/=> sync-from-datascript! [:=> [:cat] [:map [:synced-count :int] [:agents [:vector AgentMap]]]])
 
 (m/=> clear-agents! [:=> [:cat] :nil])
