@@ -1,0 +1,5 @@
+{:running? false,
+ :port nil,
+ :clients 0,
+ :connected? false,
+ :endpoints nil}
