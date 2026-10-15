@@ -236,6 +236,37 @@
    [:p {:optional true} :map]
    [:E {:optional true} [:vector :string]]])
 
+(def ResponseData
+  "What the extension delegates process: a map, a vector of items, text or nil.
+   With no extension registered every delegate answers its input unchanged."
+  [:or :map [:sequential :any] :string :nil])
+
+(def Mode
+  "A compression mode as callers pass it."
+  [:maybe [:or :keyword :string]])
+
+(m/=> omit-defaults [:=> [:cat [:maybe :map]] [:maybe :map]])
+
+(m/=> strip-verbose [:=> [:cat [:maybe :map]] [:maybe :map]])
+
+(m/=> abbreviate-keys [:=> [:cat [:maybe :map]] [:maybe :map]])
+
+(m/=> minimal-entry [:=> [:cat [:maybe :map]] [:maybe :map]])
+
+(m/=> compact-response [:=> [:cat ResponseData] ResponseData])
+
+(m/=> minimal-response [:=> [:cat ResponseData] ResponseData])
+
+(m/=> compress [:=> [:cat ResponseData Mode] ResponseData])
+
+(m/=> compress-mcp-text [:=> [:cat [:maybe :map] Mode] [:maybe :map]])
+
+(m/=> compress-content [:=> [:cat [:maybe [:sequential :any]] Mode] [:maybe [:sequential :any]]])
+
+(m/=> compress-batch-op [:=> [:cat [:maybe :map]] [:maybe :map]])
+
+(m/=> compress-batch-envelope [:=> [:cat [:maybe :map]] [:maybe :map]])
+
 (m/=> ling-caller? [:=> [:cat :any] [:maybe :boolean]])
 
 (m/=> resolve-compress-mode [:=> [:cat [:maybe :map]] [:maybe CompressMode]])

@@ -14,7 +14,8 @@
             [hive-mcp.dsl.verbs :as verbs]
             [hive-schemas.coverage :as cov]
             [hive-schemas.instrument :as inst]
-            [hive-schemas.test :as hst]))
+            [hive-schemas.test :as hst]
+            [malli.generator :as mg]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -99,6 +100,31 @@
    :num-tests 120
    :seed 0
    :n-cases 6})
+
+(hst/deftrifecta-from-schema ling-caller-recognises-the-id-prefix
+  hive-mcp.dsl.response/ling-caller?
+  {:in [:enum "swarm-1" "ling-2" "coordinator" "" "xling-1" nil :ling-1 42]
+   :out [:maybe :boolean]
+   :rel (fn [in out]
+          (if (and (string? in)
+                   (or (str/starts-with? in "swarm-") (str/starts-with? in "ling-")))
+            (true? out)
+            (nil? out)))
+   :golden-path "test/golden/dsl/contract/ling-caller.edn"
+   :num-tests 60
+   :seed 0
+   :n-cases 9})
+
+;; With no extension registered every delegate answers its input unchanged.
+(hst/deftrifecta-from-schema compress-delegate-is-noop-without-extension
+  hive-mcp.dsl.response/compress
+  {:in [:cat [:enum {:a 1} {} [1 2] "text" nil] [:enum :compact :minimal "full" nil]]
+   :out response/ResponseData
+   :rel (fn [[data _mode] out] (= data out))
+   :golden-path "test/golden/dsl/contract/compress-noop.edn"
+   :num-tests 60
+   :seed 0
+   :n-cases 5})
 
 ;; =============================================================================
 ;; dsl.verbs/ref-target and expand-param-key
@@ -199,18 +225,7 @@
        "and a contract narrower than :any would be a claim this ns cannot keep."))
 
 (def ^:private exempt
-  {'hive-mcp.dsl.response/omit-defaults          extension-delegate
-    'hive-mcp.dsl.response/strip-verbose          extension-delegate
-   'hive-mcp.dsl.response/abbreviate-keys        extension-delegate
-   'hive-mcp.dsl.response/minimal-entry          extension-delegate
-   'hive-mcp.dsl.response/compact-response       extension-delegate
-   'hive-mcp.dsl.response/minimal-response       extension-delegate
-   'hive-mcp.dsl.response/compress               extension-delegate
-   'hive-mcp.dsl.response/compress-mcp-text      extension-delegate
-   'hive-mcp.dsl.response/compress-content       extension-delegate
-   'hive-mcp.dsl.response/compress-batch-op      extension-delegate
-   'hive-mcp.dsl.response/compress-batch-envelope extension-delegate
-   'hive-mcp.context.reconstruction/gather-kg-context extension-delegate
+  {'hive-mcp.context.reconstruction/gather-kg-context extension-delegate
    'hive-mcp.context.reconstruction/compress-kg-subgraph extension-delegate})
 
 (cov/deftest-contract-coverage every-pure-dsl-fn-carries-a-contract
@@ -222,6 +237,25 @@
     (is (<= 30 (count (:universe report)))
         "the universe collapsed - a gate over nothing passes for the wrong reason")
     (is (<= 25 (count (:covered report))))))
+
+;; The directory gate: every public fn under hive_mcp/dsl is contracted, with
+;; no exemption at all.
+(cov/deftest-contract-coverage every-dsl-fn-carries-a-contract
+  {:paths ["src/hive_mcp/dsl"]})
+
+(deftest every-dsl-schema-generates
+  (doseq [[nm schema] {'CompressMode response/CompressMode
+                       'BatchOpResult response/BatchOpResult
+                       'BatchEnvelope response/BatchEnvelope
+                       'CompactOpResult response/CompactOpResult
+                       'CompactEnvelope response/CompactEnvelope
+                       'ResponseData response/ResponseData
+                       'Mode response/Mode
+                       'Sentence verbs/Sentence
+                       'DslOp verbs/DslOp
+                       'UnknownParamError verbs/UnknownParamError
+                       'Op hive-mcp.dsl.param-domain/Op}]
+    (is (seq (mg/sample schema {:size 5})) (str nm " must generate"))))
 
 (deftest every-contract-survives-instrumentation
   (let [report  (cov/coverage {:paths gated-paths :exempt exempt})
