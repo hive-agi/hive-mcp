@@ -172,8 +172,8 @@
    the caller's payload. Both applications see the same buffer value, so the
    payload cannot disagree with the cursor that was committed.
 
-   A budgeted oversized entry is delivered as a marked preview, with the full
-   value still available from poll-task. The default drain retains its legacy
+   A budgeted oversized entry is delivered as a marked preview; the caller
+   can see that its result was truncated. The default drain retains its legacy
    at-least-one contract."
   [{:keys [entries cursor]} budget legacy?]
   (let [total (count entries)]
@@ -189,7 +189,7 @@
             (seq batch) [batch idx]
             legacy? [[output-entry] (inc idx)]
             :else
-            (let [marker "...[truncated; full result available via poll-task]"
+            (let [marker "...[truncated; oversized async result]"
                   original (pr-str output-entry)
                   base (assoc (select-keys output-entry [:task-id :status])
                               :result marker)
