@@ -173,3 +173,46 @@
   "Does `catalog` know a vector width for `model`?"
   [catalog model]
   (some? (:dimension (spec-for catalog model))))
+
+;; =============================================================================
+;; Contracts (malli)
+;; =============================================================================
+
+(def Catalog
+  "Anything satisfying IModelCatalog. Generates the shipped catalogs."
+  [:fn {:gen/elements [(built-in-catalog) (empty-catalog)
+                       (table-catalog {"m" {:dimension 8}})]}
+   #(satisfies? IModelCatalog %)])
+
+(def ModelSpecRecord
+  "A resolved ModelSpec record."
+  [:and Spec
+   [:fn {:gen/elements [(map->ModelSpec floor-spec)
+                        (map->ModelSpec (assoc floor-spec :dimension 768))]}
+    #(instance? ModelSpec %)]])
+
+(def Table
+  "A model -> partial-spec table, as declared in config. nil is an empty table."
+  [:maybe [:map-of :any [:maybe PartialSpec]]])
+
+(def Model
+  "A model name. Lookups go through `str`, so any value is a model name."
+  [:or :string :keyword :symbol :nil])
+
+(m/=> ->spec [:=> [:cat Layers] ModelSpecRecord])
+
+(m/=> table-catalog [:=> [:cat Table] Catalog])
+
+(m/=> built-in-catalog [:=> [:cat] Catalog])
+
+(m/=> empty-catalog [:=> [:cat] Catalog])
+
+(m/=> layered [:=> [:cat [:* [:maybe Catalog]]] Catalog])
+
+(m/=> caching [:=> [:cat Catalog] Catalog])
+
+(m/=> default-catalog [:=> [:cat Table] Catalog])
+
+(m/=> spec-for [:=> [:cat Catalog Model] ModelSpecRecord])
+
+(m/=> known-model? [:=> [:cat Catalog Model] :boolean])
