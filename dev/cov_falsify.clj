@@ -36,10 +36,10 @@
                     (swap! failures conj
                            {:test (some-> t/*testing-vars* first meta :name)
                             :type (:type m)
-                            :msg (let [a (:actual m)]
-                                   (subs (str (if (instance? Throwable a) (ex-message a) (pr-str a))
-                                              (when (:message m) (str " " (:message m))))
-                                         0 300))}))
+                            :msg (let [a (:actual m)
+                                       s (str (if (instance? Throwable a) (ex-message a) (pr-str a))
+                                              (when (:message m) (str " " (:message m))))]
+                                   (subs s 0 (min 300 (count s))))}))
                   (report m))]
         (let [res (apply t/run-tests test-nss)]
           (assoc (select-keys res [:test :pass :fail :error])

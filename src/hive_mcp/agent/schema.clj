@@ -320,3 +320,12 @@
    [:total-latency-ms :int]
    [:avg-latency-ms number?]
    [:error-rate number?]])
+
+(def MetricCounters
+  "The raw counters `reset-metrics!` answers (no computed averages)."
+  [:map
+   [:request-count :int]
+   [:success-count :int]
+   [:error-count :int]
+   [:timeout-count :int]
+   [:total-latency-ms :int]])

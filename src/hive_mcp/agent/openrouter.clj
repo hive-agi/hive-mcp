@@ -12,7 +12,9 @@
             [taoensso.timbre :as log]
             [hive-mcp.agent.provider :as provider]
             [hive-mcp.agent.provider.model :as model]
-            [hive-mcp.agent.cache :as cache]))
+            [hive-mcp.agent.cache :as cache]
+            [hive-mcp.agent.schema :as schema]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -397,3 +399,40 @@
    Without :model, config llm-providers.openrouter.default-model is used."
   [{:keys [api-key model]}]
   (openai-compat-backend {:provider :openrouter :api-key api-key :model model}))
+
+;;; ---------------------------------------------------------------------------
+;;; Contracts
+;;; ---------------------------------------------------------------------------
+
+;; The facade vars delegate to hive-mcp.agent.provider*, whose result shapes
+;; are owned (and contracted) there; here the shapes are only what this
+;; namespace promises its callers.
+(m/=> valid-provider-entry? [:=> [:cat :any] :boolean])
+
+(m/=> effective-provider-registry [:=> [:cat] [:map-of :keyword :map]])
+
+(m/=> effective-provider-priority [:=> [:cat] [:sequential :keyword]])
+
+;; nil when valid, else an error map.
+(m/=> validate-provider [:=> [:cat :any] [:maybe :map]])
+
+(m/=> validate-model [:=> [:cat :any :any] [:maybe :map]])
+
+(m/=> resolve-provider-model [:=> [:cat [:maybe :map]] :map])
+
+(m/=> reset-metrics! [:=> [:cat] schema/MetricCounters])
+
+(m/=> get-metrics [:=> [:cat] schema/Metrics])
+
+;; nil is a legal message (a provider that returns no choice).
+(m/=> parse-response [:=> [:cat [:maybe :map]] schema/ParsedResponse])
+
+(m/=> available-providers [:=> [:cat] [:sequential :keyword]])
+
+(m/=> best-available-provider [:=> [:cat] [:maybe :keyword]])
+
+(m/=> openai-compat-backend [:=> [:cat [:maybe :map]] schema/Backend])
+
+(m/=> auto-backend [:=> [:cat [:maybe :map]] schema/Backend])
+
+(m/=> openrouter-backend [:=> [:cat [:maybe :map]] schema/Backend])
