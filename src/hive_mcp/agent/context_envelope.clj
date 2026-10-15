@@ -2,7 +2,8 @@
   "Context preparation for agent spawn and dispatch. Delegates to extension layer when available."
   (:require [hive-mcp.dns.result :refer [rescue]]
             [hive-mcp.extensions.registry :as ext]
-            [hive-mcp.protocols.dispatch :as dispatch-ctx]))
+            [hive-mcp.protocols.dispatch :as dispatch-ctx]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -57,6 +58,32 @@
               (= :ref (dispatch-ctx/context-type dispatch-context)))
      (let [{:keys [ctx-refs kg-node-ids scope]} dispatch-context]
        (enrich-context ctx-refs kg-node-ids scope opts)))))
+
+;; The extension layer may be absent or throw (try-ext rescues to nil), and the
+;; output is capped at max-context-chars, so every answer is nil or a
+;; non-empty string. ctx-refs / kg-node-ids / scope are forwarded untouched.
+(def ^:private Opts [:maybe :map])
+(def ^:private Envelope [:maybe [:string {:min 1}]])
+
+(m/=> enrich-context
+      [:function
+       [:=> [:cat :any :any :any] Envelope]
+       [:=> [:cat :any :any :any Opts] Envelope]])
+
+(m/=> prepare-spawn-context
+      [:function
+       [:=> [:cat :any] Envelope]
+       [:=> [:cat :any Opts] Envelope]])
+
+;; The argument is nil or something implementing IDispatchContext: a plain map
+;; has no context-type implementation and throws (probed).
+(def ^:private DispatchContext
+  [:maybe [:fn (fn [x] (satisfies? dispatch-ctx/IDispatchContext x))]])
+
+(m/=> from-dispatch-context
+      [:function
+       [:=> [:cat DispatchContext] Envelope]
+       [:=> [:cat DispatchContext Opts] Envelope]])
 
 ;; Backwards-compatible aliases (build-l2-envelope removed — use enrich-context directly)
 (def build-spawn-envelope #'prepare-spawn-context)
