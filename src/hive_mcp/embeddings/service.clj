@@ -439,9 +439,12 @@
 
 (defn validate-content-size!
   "Reject content exceeding the resolved provider's max-tokens.
-   Uses chars/4 heuristic for token estimation."
-  [doc-text {:keys [max-tokens provider-key] :as _resolved}]
-  (let [estimated-tokens (quot (count doc-text) 4)]
+   Uses chars/4 heuristic for token estimation.
+   Now: the same `estimate-tokens` basis as the escalation resolver
+   (`default-chars-per-token`, or the resolved map's :chars-per-token), so
+   the guard and the router can never disagree about whether content fits."
+  [doc-text {:keys [max-tokens provider-key chars-per-token] :as _resolved}]
+  (let [estimated-tokens (estimate-tokens doc-text chars-per-token)]
     (when (> estimated-tokens max-tokens)
       (throw (ex-info (str "Content too large for embedder " (name provider-key)
                            " (" estimated-tokens " est. tokens > " max-tokens " max)")
