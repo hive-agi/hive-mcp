@@ -396,37 +396,70 @@
 ;; =============================================================================
 
 (def ^:private ServiceKey
-  "A service key. Permissive in: `register-service!` guards with :pre, and the
-   suite drives that rejection, so the contract admits any value."
-  :any)
+  "A service key as `register-service!` accepts it: the `:pre` demands a
+   keyword. Lookups (`get-service`, `require-service`, `service-registered?`,
+   `deregister-service!`) stay permissive in (`:any`), because a lookup of a
+   non-keyword is a legal miss, never an error."
+  :keyword)
+
+(def ^:private ServiceValue
+  "A registered service value: anything but nil (the `:pre` of
+   `register-service!`). Services are opaque accessors and instances, so no
+   narrower shape is true."
+  [:fn {:gen/elements [:svc 1 "svc" {:conn :fake} false]
+        :error/message "must be non-nil"}
+   some?])
+
+(def ^:private ServiceMap
+  "`register-services!` input: a map of service key -> value. Its keys are not
+   validated (only `map?` is asserted), so they stay `:any`."
+  [:map-of :any ServiceValue])
+
+(def ^:private ResolvedVar
+  "What `requiring-resolve` answers for a symbol that exists: its var."
+  [:fn {:gen/elements [#'clojure.core/identity]
+        :error/message "must be a var"}
+   var?])
 
 (def ^:private DependencyReport
+  "`check-service-dependencies`: `:missing` and `:available` partition the
+   addon's required services into those absent from / present in the registry."
   [:map [:satisfied? :boolean] [:missing [:set :any]] [:available [:set :any]]])
 
 (def ^:private PipelineOpts [:maybe :map])
 
-(m/=> register-service! [:=> [:cat ServiceKey :any] :any])
+(def ^:private PipelineContext
+  "What `run-addon-pipeline!` answers on success: the addon plus the results of
+   its registration and initialization (the context may carry more)."
+  [:map
+   [:addon :any]
+   [:reg-result :map]
+   [:init-result :map]])
 
-(m/=> register-services! [:=> [:cat :any] [:vector :any]])
+(m/=> register-service! [:=> [:cat ServiceKey ServiceValue] ServiceKey])
 
+(m/=> register-services! [:=> [:cat ServiceMap] [:vector :any]])
+
+;; The value is whatever was registered, so the result is open by nature.
 (m/=> get-service
       [:function
        [:=> [:cat :any] :any]
        [:=> [:cat :any :any] :any]])
 
-(m/=> require-service [:=> [:cat :any] :any])
+(m/=> require-service [:=> [:cat :any] ServiceValue])
 
 (m/=> service-registered? [:=> [:cat :any] :boolean])
 
+;; Answers the key it was given, whatever that was.
 (m/=> deregister-service! [:=> [:cat :any] :any])
 
 (m/=> list-services [:=> [:cat] [:set :any]])
 
 (m/=> clear-services! [:=> [:cat] :nil])
 
-(m/=> resolve-symbol [:=> [:cat :any] :any])
+(m/=> resolve-symbol [:=> [:cat :any] [:maybe ResolvedVar]])
 
-(m/=> resolve-symbols [:=> [:cat [:map-of :any :any]] [:maybe :map]])
+(m/=> resolve-symbols [:=> [:cat [:map-of :any :any]] [:maybe [:map-of :any ResolvedVar]]])
 
 (m/=> safe-required-services [:=> [:cat :any] [:set :any]])
 
@@ -436,10 +469,12 @@
 
 (m/=> run-addon-pipeline!
       [:function
-       [:=> [:cat :any] [:maybe :map]]
-       [:=> [:cat :any PipelineOpts] [:maybe :map]]])
+       [:=> [:cat :any] [:maybe PipelineContext]]
+       [:=> [:cat :any PipelineOpts] [:maybe PipelineContext]]])
+
 (m/=> init-as-addon!
       [:function
-       [:=> [:cat :string schema/Invokable] [:map [:registered [:vector :any]] [:total :int]]]
+       [:=> [:cat :string schema/Invokable]
+        [:map [:registered [:vector [:maybe schema/RegistryId]]] [:total :int]]]
        [:=> [:cat :string schema/Invokable PipelineOpts]
-        [:map [:registered [:vector :any]] [:total :int]]]])
+        [:map [:registered [:vector [:maybe schema/RegistryId]]] [:total :int]]]])
