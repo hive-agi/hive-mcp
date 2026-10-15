@@ -168,8 +168,15 @@
   (is (= 0 (:total (addons/registry-status)))))
 
 (deftest contracts-discriminate-test
-  (testing "the lifecycle outcome demands a success flag and an addon name"
+  (testing "the lifecycle outcome demands an addon name"
     (is (not (m/validate schema/AddonOutcome {:success? true})))
-    (is (not (m/validate schema/AddonOutcome {:addon-name :a}))))
+    (is (not (m/validate schema/AddonOutcome {}))))
+  (testing "the success flag is the addon's own word: absent, nil or boolean, never another type"
+    (is (m/validate schema/AddonOutcome {:addon-name "probe.owned"}) "a spliced shutdown! result of {}")
+    (is (m/validate schema/AddonOutcome {:addon-name :a :success? nil}))
+    (is (m/validate schema/AddonOutcome {:addon-name :a :success? false}))
+    (is (not (m/validate schema/AddonOutcome {:addon-name :a :success? "yes"}))))
+  (testing "a registry id has no upper length bound (only the generator is sized)"
+    (is (m/validate schema/RegistryId (apply str (repeat 64 "x")))))
   (testing "a state outside the lifecycle is rejected"
     (is (not (m/validate schema/AddonState :zombie)))))
