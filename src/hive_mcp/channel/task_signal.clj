@@ -157,8 +157,10 @@
   [:maybe :string])
 
 (def ToolArgs
-  "Tool call arguments. Keys may be keywords or strings; nil is tolerated."
-  [:maybe [:map-of [:or :keyword :string] :any]])
+  "Tool call arguments. Keys may be keywords or strings. Anything that is not
+   a map (nil, a string) is tolerated and contributes no tokens, so the
+   second arm admits any value; the first arm keeps generation map-shaped."
+  [:or [:map-of [:or :keyword :string] :any] :any])
 
 (def TaskTokens
   "At most `max-tokens` lowercase identifier tokens."
