@@ -5,7 +5,8 @@
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.test.check.generators :as gen]
             [hive-mcp.crystal.harvest.git-scopes :as gs]
-            [hive-test.trifecta :refer [deftrifecta]]))
+            [hive-test.trifecta :refer [deftrifecta]]
+            [hive-schemas.test :as hst]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -108,6 +109,16 @@
     (is (= ["[sealed-workload] 69fd99d SW-M5.4"]
            (:commits (merged {:root {:commits [] :count 0}
                               :scoped [{:pid "sealed-workload" :commits ["69fd99d SW-M5.4"]}]}))))))
+
+(hst/deftrifecta-from-schema merge-commit-contract-facets hive-mcp.crystal.harvest.git-scopes/merge-commit-sets
+  {:in [:cat [:map [:commits [:vector :string]] [:count :int]]
+        [:vector [:map [:pid :string] [:commits [:vector :string]]]]]
+   :out [:map [:commits [:vector :string]] [:count :int]]
+   :rel (fn [[root scoped] out]
+          (if (empty? scoped) (= out root) (= (:count out) (count (:commits out)))))
+   :num-tests 100
+   :n-cases 6
+   :golden-path "test/golden/hive-mcp/crystal/harvest/git-scopes-contract.edn"})
 
 ;; =============================================================================
 ;; harvest-descendant-commits (git reader injected)

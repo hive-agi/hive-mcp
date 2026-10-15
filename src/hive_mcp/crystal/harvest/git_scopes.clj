@@ -9,7 +9,8 @@
 
    Pure core (`descendant-repos`, `merge-commit-sets`) plus one effectful
    runner (`harvest-descendant-commits`) that takes its git reader as an
-   argument, so the core is testable without a filesystem or a project tree.")
+   argument, so the core is testable without a filesystem or a project tree."
+  (:require [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -40,6 +41,8 @@
                {:seen #{} :out []})
        :out))
 
+(m/=> descendant-repos [:=> [:cat [:maybe :string] [:sequential [:map [:project/id {:optional true} [:maybe :string]] [:project/git-root {:optional true} [:maybe :string]]]]] [:vector [:map [:pid :string] [:dir :string]]]])
+
 (defn merge-commit-sets
   "Fold descendant commit sets into the umbrella's commit result.
 
@@ -66,6 +69,8 @@
         (seq by-scope) (assoc :by-scope by-scope)
         (seq errors) (assoc :scope-errors (mapv #(select-keys % [:pid :error]) errors))))))
 
+(m/=> merge-commit-sets [:=> [:cat [:map [:commits {:optional true} [:sequential :string]] [:count {:optional true} :int]] [:sequential [:map [:pid :string] [:commits {:optional true} [:sequential :string]] [:error {:optional true} :any]]]] [:map [:commits [:sequential :string]] [:count :int]]])
+
 (defn harvest-descendant-commits
   "Run GIT-LOG for each repository in REPOS in parallel. TIMEOUT-MS bounds the
    whole fan-out, not each repository: every future shares one deadline, so N
@@ -88,3 +93,17 @@
                  (:error r)      {:pid pid :error (:error r)}
                  :else           {:pid pid :commits (vec (:commits r))})))
            futs))))
+
+(m/=> harvest-descendant-commits
+      [:function
+       [:=> [:cat [:fn {:gen/elements [(fn [_] {:commits []})]} ifn?]
+             [:sequential [:map [:pid :string] [:dir :string]]]]
+        [:vector [:map [:pid :string]
+                  [:commits {:optional true} [:vector :string]]
+                  [:error {:optional true} :any]]]]
+       [:=> [:cat [:fn {:gen/elements [(fn [_] {:commits []})]} ifn?]
+             [:sequential [:map [:pid :string] [:dir :string]]]
+             [:int {:min 0}]]
+        [:vector [:map [:pid :string]
+                  [:commits {:optional true} [:vector :string]]
+                  [:error {:optional true} :any]]]]])
