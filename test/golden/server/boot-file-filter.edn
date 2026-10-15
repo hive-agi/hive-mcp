@@ -1,3 +1,3 @@
 {:safe
- ["[boot-timing] addon=9548b71b611cccf3 phase=init elapsed-ms=12.0 status=ok"],
+ ["[boot-timing] addon=addon addon-hash=613c3abf0f077f31 phase=init elapsed-ms=12.0 status=ok"],
  :secret []}

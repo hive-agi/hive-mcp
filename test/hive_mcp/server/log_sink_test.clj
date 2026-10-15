@@ -168,6 +168,7 @@
    :cases {:safe [[:info [(sink/boot-event :addon :init 12.0 :ok)]]]
            :secret [[:info ["[boot-timing] init API_KEY=secret"]]
                     [:warn [(sink/boot-event :addon :init 12.0 :ok)]]
+                    [:info [(sink/boot-event "API_KEY=secret" :init 12.0 :ok)]]
                     [:info [(sink/boot-event :addon :init 12.0 :bad)]]
                     [:info [(sink/boot-event :addon :init Double/NaN :ok)]]
                     [:info ["[boot-timing] init" "secret"]]]}
@@ -177,9 +178,10 @@
    :num-tests 30
    :mutations [["unfiltered-appender" (fn [records] (mapv (comp str first second) records))]]
    :assert (fn []
-             (let [out (boot-file-contract [[:info [(sink/boot-event "API_KEY=secret" :addon 12.0 :ok)]]
-                                            [:info ["[boot-timing] init API_KEY=secret"]]])]
+             (let [out (boot-file-contract [[:info [(sink/boot-event :hive-addon.loader/start :addon 12.0 :ok)]]
+                                            [:info [(sink/boot-event "API_KEY=secret" :addon 12.0 :ok)]]])]
                (is (= 1 (count out)))
+               (is (str/includes? (first out) "addon=hive-addon.loader/start addon-hash="))
                (is (not (str/includes? (first out) "secret")))))})
 
 (deftest coordinator-appender-registration
@@ -204,7 +206,7 @@
                   :vargs ["[boot-timing] init API_KEY=secret"]
                   :output_ (delay (reset! formatted? true) "API_KEY=secret")})
         (append! {:level :info :?ns-str "hive-mcp.server.core"
-                  :vargs [(sink/boot-event "API_KEY=secret" :init 12.0 :ok)]
+                  :vargs [(sink/boot-event :hive-addon.loader/start :init 12.0 :ok)]
                   :output_ (delay (reset! formatted? true) "API_KEY=secret")})
         (is (false? @formatted?) "neither rejected nor accepted payload can force output")
         (let [deadline (+ (System/currentTimeMillis) 2000)]
@@ -215,6 +217,7 @@
         (when (java.nio.file.Files/exists path (make-array java.nio.file.LinkOption 0))
           (let [lines (str/split-lines (slurp (.toFile path)))]
             (is (= 1 (count lines)))
+            (is (str/includes? (first lines) "addon=hive-addon.loader/start addon-hash="))
             (is (str/includes? (first lines) "phase=init elapsed-ms=12.0 status=ok"))
             (is (not (str/includes? (first lines) "secret"))))))
       (finally

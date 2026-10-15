@@ -266,14 +266,23 @@
 (defrecord BootEvent [addon-id phase elapsed-ms status])
 
 (defn boot-event
-  "Build a typed timing record; appender hashes the identifier rather than writing untrusted text."
+  "Build a typed timing record; appender writes only validated addon identifiers."
   [addon-id phase elapsed-ms status]
   (->BootEvent addon-id phase elapsed-ms status))
 
 (defn- valid-boot-event?
   [event]
   (and (instance? BootEvent event)
-       (some? (:addon-id event))
+       (let [id (:addon-id event)
+             text (cond (keyword? id) (if-let [ns (namespace id)] (str ns "/" (name id)) (name id))
+                        (symbol? id) (str id)
+                        :else nil)]
+         (and text
+              (<= 1 (count text) 160)
+              (boolean (every? #(or (<= (int \a) (int %) (int \z))
+                                    (<= (int \A) (int %) (int \Z))
+                                    (<= (int \0) (int %) (int \9))
+                                    (#{\. \- \_ \/} %)) text))))
        (#{:addon :init :slowest :complete :manifest-scan} (:phase event))
        (#{:ok} (:status event))
        (number? (:elapsed-ms event))
@@ -281,13 +290,18 @@
          (and (Double/isFinite ms) (<= 0.0 ms)))))
 
 (defn- render-boot-event
-  "Only fixed literals, numeric duration and a digest of the identifier reach disk."
+  "Render only a validated addon identifier, its digest, fixed literals and
+   numeric duration. Caller must validate before rendering."
   [event]
   (let [digest (java.security.MessageDigest/getInstance "SHA-256")
-        id-bytes (.digest digest (.getBytes (str (:addon-id event)) java.nio.charset.StandardCharsets/UTF_8))
-        id (apply str (map #(format "%02x" (bit-and 255 %)) (take 8 id-bytes)))]
-    (format "[boot-timing] addon=%s phase=%s elapsed-ms=%.1f status=ok"
-            id (name (:phase event)) (double (:elapsed-ms event)))))
+        addon (:addon-id event)
+        id (if (keyword? addon)
+             (if-let [ns (namespace addon)] (str ns "/" (name addon)) (name addon))
+             (str addon))
+        id-bytes (.digest digest (.getBytes id java.nio.charset.StandardCharsets/UTF_8))
+        hash (apply str (map #(format "%02x" (bit-and 255 %)) (take 8 id-bytes)))]
+    (format "[boot-timing] addon=%s addon-hash=%s phase=%s elapsed-ms=%.1f status=ok"
+            id hash (name (:phase event)) (double (:elapsed-ms event)))))
 
 (defn boot-line?
   "Admit only structured, typed boot events; never inspect or force raw log output."
