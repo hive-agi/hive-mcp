@@ -33,7 +33,7 @@
    :gen (gen/tuple (gen/vector gen-entry 0 8) (gen/choose 1 5))
    :pred (fn [out] (and (vector? out)
                         (= (count out) (count (distinct (map :id out))))
-                        (apply <= (map :distance out))))
+                        (or (empty? out) (apply <= (map :distance out)))))
    :num-tests 60
    :mutations [["keeps-duplicates" (fn [[rs limit]] (vec (take limit (sort-by :distance rs))))]
                ["unsorted" (fn [[rs limit]] (vec (take limit (vals (reduce #(assoc %1 (:id %2) %2) {} (reverse rs))))))]]})
