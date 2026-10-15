@@ -1,0 +1,24 @@
+{:case-0
+ {:out false,
+  :in #:adt{:type :AgentSessionState, :variant :session/idle}},
+ :case-1
+ {:out true,
+  :in #:adt{:type :AgentSessionState, :variant :session/done}},
+ :case-2
+ {:out true,
+  :in #:adt{:type :AgentSessionState, :variant :session/aborted}},
+ :case-3
+ {:out true,
+  :in #:adt{:type :AgentSessionState, :variant :session/errored}},
+ :case-4
+ {:out false,
+  :in #:adt{:type :AgentSessionState, :variant :session/running}},
+ :case-5
+ {:out false,
+  :in #:adt{:type :AgentSessionState, :variant :session/running}},
+ :case-6
+ {:out true,
+  :in #:adt{:type :AgentSessionState, :variant :session/done}},
+ :case-7
+ {:out false,
+  :in #:adt{:type :AgentSessionState, :variant :session/running}}}
