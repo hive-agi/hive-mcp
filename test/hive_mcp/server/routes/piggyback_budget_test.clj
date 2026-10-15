@@ -4,7 +4,9 @@
             [hive-test.trifecta :refer [deftrifecta]]
             [hive-mcp.server.routes.middleware :as middleware]
             [hive-mcp.channel.async-result :as async]
-            [hive-mcp.extensions.registry :as ext]))
+            [hive-mcp.extensions.registry :as ext]
+            [hive-mcp.channel.memory-piggyback]
+            [hive-mcp.channel.piggyback]))
 
 (deftrifecta priority-rollover-exhaustion
   hive-mcp.server.routes.middleware/spend-piggyback-budget
@@ -68,3 +70,67 @@
       (is (= {:large (apply str (repeat 500 "L"))} (drained 600)))
       (is (= 1 @calls) "the provider must not be called twice for a deferred block")
       (finally (hive-mcp.extensions.registry/deregister! :cu/piggyback-drain)))))
+
+(deftest middleware-four-channel-wire-budget-and-deferral
+  ;; Run the wrapper with real buffers/cursors and injected source ports.
+  (let [caller "tw5-budget-integration"
+        previous-source @hive-mcp.channel.piggyback/message-source-fn
+        block-calls (atom 0)
+        catchup-calls (atom 0)
+        handler (middleware/wrap-handler-piggybacks
+                 (constantly [{:type "text" :text "answer"}]) "test")
+        args {:_caller_id caller :project_id "hive-mcp"}
+        text (fn [response] (apply str (map :text response)))
+        budgeted (fn [wire]
+                   (let [hm (.indexOf wire "\n\n---HIVEMIND---")]
+                     (subs wire (count "answer") (if (neg? hm) (count wire) hm))))]
+    (try
+      (swap! async/buffers assoc caller
+             {:entries [{:task-id "large-async" :status :completed
+                         :result (apply str (repeat 29500 "A"))}] :cursor 0})
+      (hive-mcp.channel.memory-piggyback/enqueue!
+       caller [{:id "budget-memory" :type "axiom"
+                :content (apply str (repeat 1000 "M"))}])
+      (ext/register! :block/tw5-budget
+                     (fn [_] (swap! block-calls inc)
+                       (when (= 1 @block-calls) (apply str (repeat 3500 "B")))))
+      (ext/register! :cu/piggyback-drain
+                     (fn [_ _] (swap! catchup-calls inc)
+                       {:tw5_budget (apply str (repeat 3500 "C"))}))
+      (hive-mcp.channel.piggyback/register-message-source!
+       (fn [] [{:agent-id "tw5-peer" :event-type :progress
+                :to "tw5-budget-integration-hive-mcp"
+                :message "untouched-hivemind" :timestamp 1000
+                :project-id "hive-mcp"}]))
+      (let [first-wire (text (handler args))
+            first-budgeted (budgeted first-wire)
+            second-wire (text (handler args))
+            second-budgeted (budgeted second-wire)]
+        (is (<= (count first-budgeted) middleware/response-piggyback-char-budget)
+            "actual delimited wire, not the sum of channel body estimates")
+        (is (<= (count second-budgeted) middleware/response-piggyback-char-budget))
+        (is (<= 0 (.indexOf first-budgeted "---TOOLRESULT---")))
+        (is (< (.indexOf first-budgeted "---TOOLRESULT---")
+               (.indexOf first-budgeted "---MEMORY---"))
+            "async is spent before memory")
+        (is (neg? (.indexOf first-budgeted "---TW5-BUDGET---"))
+            "block cannot fit after higher priority channels")
+        (is (neg? (.indexOf first-budgeted "---TW5_BUDGET---"))
+            "catchup cannot fit after higher priority channels")
+        (is (<= 0 (.indexOf second-budgeted "---TW5-BUDGET---"))
+            "one-shot emitted block was retained")
+        (is (< (.indexOf second-budgeted "---TW5-BUDGET---")
+               (.indexOf second-budgeted "---TW5_BUDGET---"))
+            "unused async and memory allowances roll forward to blocks then catchup")
+        (is (= 1 @catchup-calls) "deferred catchup must not invoke its source again")
+        (is (= 1 @block-calls) "deferred one-shot block must not invoke its source again")
+        (is (<= 0 (.indexOf first-wire "untouched-hivemind"))
+            "hivemind is delivered outside the four-channel ceiling")
+        (is (neg? (.indexOf second-wire "untouched-hivemind"))
+            "hivemind cursor still advances normally"))
+      (finally
+        (async/clear-buffer! caller)
+        (hive-mcp.channel.memory-piggyback/clear-buffer! caller)
+        (ext/deregister! :block/tw5-budget)
+        (ext/deregister! :cu/piggyback-drain)
+        (hive-mcp.channel.piggyback/register-message-source! previous-source)))))
