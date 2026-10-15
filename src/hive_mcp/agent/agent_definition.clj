@@ -64,7 +64,9 @@
 
   (:require [hive-mcp.agent.agent-definition.spec :as spec]
             [hive-mcp.agent.agent-definition.validate :as validate]
-            [hive-mcp.agent.agent-definition.compose :as compose]))
+            [hive-mcp.agent.agent-definition.compose :as compose]
+            [malli.core :as m]
+            [hive-mcp.agent.schema :as schema]))
 
 ;; =============================================================================
 ;; Re-exports: spec (schemas + enums)
@@ -176,3 +178,49 @@
 (def get-system-prompt      #'compose/get-system-prompt)
 (def summarize              #'compose/summarize)
 (def list-summary           #'compose/list-summary)
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+;;
+;; The aliases above capture the underlying Var (`#'ns/x`), so each needs its
+;; own contract or instrumentation never reaches callers that go through this
+;; facade. Shapes mirror the contracts on the owning namespaces.
+
+(m/=> agent-def? [:=> [:cat :any] :boolean])
+
+;; Records are maps; a plain map is returned untouched.
+(m/=> ->map [:=> [:cat :any] :any])
+
+(m/=> make-agent-def [:=> [:cat schema/AnyMap] [:fn {:gen/elements [nil]} agent-def?]])
+
+(m/=> validate [:=> [:cat :any] schema/Validation])
+(m/=> valid? [:=> [:cat :any] :boolean])
+(m/=> explain [:=> [:cat :any] [:maybe :any]])
+(m/=> validate-or-throw! [:=> [:cat :any] schema/AnyMap])
+
+(m/=> parse-frontmatter [:=> [:cat :string] schema/FrontmatterResult])
+(m/=> frontmatter->agent-def
+      [:function
+       [:=> [:cat [:maybe schema/AnyMap] :string :any] schema/CoerceResult]
+       [:=> [:cat [:maybe schema/AnyMap] :string :any [:maybe schema/AnyMap]] schema/CoerceResult]])
+(m/=> load-agent-file
+      [:function
+       [:=> [:cat :any :any] schema/LoadResult]
+       [:=> [:cat :any :any [:maybe schema/AnyMap]] schema/LoadResult]])
+(m/=> load-agents-dir [:=> [:cat :any :any] schema/LoadedDir])
+(m/=> find-agent-dirs [:=> [:cat :any] [:vector [:tuple :string schema/DefSource]]])
+(m/=> load-all-custom-agents [:=> [:cat :any] schema/LoadedDir])
+(m/=> merge-definitions [:=> [:cat [:* [:maybe schema/Definitions]]] [:vector schema/AnyMap]])
+(m/=> active-agents
+      [:function
+       [:=> [:cat [:maybe schema/Definitions] :any] schema/ActiveAgents]
+       [:=> [:cat [:maybe schema/Definitions] :any [:maybe schema/AnyMap]] schema/ActiveAgents]])
+(m/=> find-by-type [:=> [:cat :any [:maybe schema/Definitions]] [:maybe schema/AnyMap]])
+(m/=> built-in? [:=> [:cat [:maybe schema/AnyMap]] :boolean])
+(m/=> custom? [:=> [:cat [:maybe schema/AnyMap]] [:maybe :keyword]])
+(m/=> plugin? [:=> [:cat [:maybe schema/AnyMap]] :boolean])
+(m/=> has-all-tools? [:=> [:cat [:maybe schema/AnyMap]] :boolean])
+(m/=> get-system-prompt [:=> [:cat [:maybe schema/AnyMap]] :any])
+(m/=> summarize [:=> [:cat [:maybe schema/AnyMap]] :string])
+(m/=> list-summary [:=> [:cat [:maybe schema/Definitions]] :string])
