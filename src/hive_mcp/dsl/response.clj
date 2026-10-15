@@ -6,7 +6,8 @@
    Extension points are resolved via the extensions registry at startup.
    When no extensions are registered, all functions gracefully degrade
    to pass-through (input returned unchanged)."
-  (:require [hive-mcp.extensions.delegate :refer [delegate-or-noop]]))
+  (:require [hive-mcp.extensions.delegate :refer [delegate-or-noop]]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -194,3 +195,49 @@
 
       errors
       (assoc :E errors))))
+
+(def CompressMode
+  "The compression modes `resolve-compress-mode` can answer."
+  [:enum :compact :minimal :full])
+
+(def BatchOpResult
+  "One op result inside a batch envelope wave."
+  [:map
+   [:id :string]
+   [:success :boolean]
+   [:result {:optional true} :string]
+   [:error {:optional true} :string]])
+
+(def BatchEnvelope
+  "A batch execution envelope as `format-results-compact` reads it."
+  [:map
+   [:success {:optional true} [:maybe :boolean]]
+   [:summary {:optional true} [:maybe [:map-of :keyword :any]]]
+   [:waves {:optional true} [:maybe [:map-of :string [:vector BatchOpResult]]]]
+   [:dry_run {:optional true} [:maybe :boolean]]
+   [:plan {:optional true} [:maybe :map]]
+   [:errors {:optional true} [:maybe [:vector :string]]]])
+
+(def CompactOpResult
+  "A compacted op result: {:id _ :ok _} plus :d or :e when present."
+  [:map
+   [:id :string]
+   [:ok :boolean]
+   [:d {:optional true} :string]
+   [:e {:optional true} :string]])
+
+(def CompactEnvelope
+  "The compact batch envelope `format-results-compact` answers."
+  [:map
+   [:ok [:maybe :boolean]]
+   [:s [:map-of :keyword :any]]
+   [:r {:optional true} [:vector CompactOpResult]]
+   [:dr {:optional true} :boolean]
+   [:p {:optional true} :map]
+   [:E {:optional true} [:vector :string]]])
+
+(m/=> ling-caller? [:=> [:cat :any] [:maybe :boolean]])
+
+(m/=> resolve-compress-mode [:=> [:cat [:maybe :map]] [:maybe CompressMode]])
+
+(m/=> format-results-compact [:=> [:cat BatchEnvelope] CompactEnvelope])
