@@ -15,7 +15,8 @@
    - hive-mcp.addons.headless-caps        -- Optional capability protocols (ISP)
    - hive-mcp.agent.ling.strategy         -- ILingStrategy (arities mirrored)"
   (:require [hive-addon.protocol :as proto]
-            [hive-spi.addon.headless :as headless]))
+            [hive-spi.addon.headless :as headless]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -45,6 +46,8 @@
    Analogous to terminal-addon? in hive-mcp.addons.terminal."
   [x]
   (headless/headless-addon? proto/IAddon x))
+
+(m/=> headless-addon? [:=> [:cat :any] :boolean])
 
 (def capabilities
   "Get declared capabilities for a headless backend.

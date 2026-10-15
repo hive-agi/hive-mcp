@@ -63,6 +63,11 @@
   "A capability keyword an addon declares."
   :keyword)
 
+(def Invokable
+  "Anything callable: `ifn?`, never `fn?` (sets, keywords and maps are callable).
+   Not named Callable: that is java.util.concurrent.Callable in every ns."
+  [:fn {:gen/elements [identity]} ifn?])
+
 (def Instant
   "A `java.time.Instant`."
   [:fn {:gen/elements [(java.time.Instant/parse "2026-10-14T00:00:00Z")]}

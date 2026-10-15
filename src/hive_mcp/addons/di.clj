@@ -30,7 +30,9 @@
    - hive-mcp.addons.core     — Addon registry (register!, init!, shutdown!)
    - hive-mcp.extensions.registry — Opaque extension fn/schema/tool registry"
   (:require [clojure.set :as set]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.addons.schema :as schema]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -387,3 +389,57 @@
      (do
        (log/warn (str addon-name " addon registration failed"))
        {:registered [] :total 0}))))
+
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def ^:private ServiceKey
+  "A service key. Permissive in: `register-service!` guards with :pre, and the
+   suite drives that rejection, so the contract admits any value."
+  :any)
+
+(def ^:private DependencyReport
+  [:map [:satisfied? :boolean] [:missing [:set :any]] [:available [:set :any]]])
+
+(def ^:private PipelineOpts [:maybe :map])
+
+(m/=> register-service! [:=> [:cat ServiceKey :any] :any])
+
+(m/=> register-services! [:=> [:cat :any] [:vector :any]])
+
+(m/=> get-service
+      [:function
+       [:=> [:cat :any] :any]
+       [:=> [:cat :any :any] :any]])
+
+(m/=> require-service [:=> [:cat :any] :any])
+
+(m/=> service-registered? [:=> [:cat :any] :boolean])
+
+(m/=> deregister-service! [:=> [:cat :any] :any])
+
+(m/=> list-services [:=> [:cat] [:set :any]])
+
+(m/=> clear-services! [:=> [:cat] :nil])
+
+(m/=> resolve-symbol [:=> [:cat :any] :any])
+
+(m/=> resolve-symbols [:=> [:cat [:map-of :any :any]] [:maybe :map]])
+
+(m/=> safe-required-services [:=> [:cat :any] [:set :any]])
+
+(m/=> safe-optional-services [:=> [:cat :any] [:set :any]])
+
+(m/=> check-service-dependencies [:=> [:cat :any] DependencyReport])
+
+(m/=> run-addon-pipeline!
+      [:function
+       [:=> [:cat :any] [:maybe :map]]
+       [:=> [:cat :any PipelineOpts] [:maybe :map]]])
+(m/=> init-as-addon!
+      [:function
+       [:=> [:cat :string schema/Invokable] [:map [:registered [:vector :any]] [:total :int]]]
+       [:=> [:cat :string schema/Invokable PipelineOpts]
+        [:map [:registered [:vector :any]] [:total :int]]]])
