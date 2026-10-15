@@ -1,0 +1,8 @@
+{:case-0 {:out :content, :in "c"},
+ :case-1 {:out :tags, :in :#},
+ :case-2 {:out :idempotency_key, :in "idk"},
+ :case-3 {:out :id, :in "id"},
+ :case-4 {:out :tags, :in "#"},
+ :case-5 {:out :relation, :in :relation},
+ :case-6 {:out :relation, :in "relation"},
+ :case-7 {:out :tags, :in "#"}}

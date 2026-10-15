@@ -587,3 +587,35 @@
          (r/err :addon-doctor/invalid-report
                 {:message "Addon doctor produced an invalid report"
                  :explanation (me/humanize (m/explain DoctorReport report))}))))))
+
+;; -----------------------------------------------------------------------------
+;; Contracts
+;; -----------------------------------------------------------------------------
+
+(def ScanFragment
+  "`scan-project-boundary` answer: a stage fragment."
+  [:map
+   [:status [:enum :pass :fail :skip]]
+   [:evidence [:map {:closed false}]]])
+
+(def DoctorResult
+  "`run-doctor` answer, a hive-dsl Result: the report under :ok, or the
+   refusal under :error (invalid input, or a report that broke its own
+   contract). A diagnostic FINDING is `{:ok {... :ok? false}}`, never an err."
+  [:or
+   [:map [:ok DoctorReport]]
+   [:map [:error :keyword] [:message {:optional true} :string]
+    [:explanation {:optional true} :any]]])
+
+(def Ports
+  "Port overrides for `run-doctor`: any subset of the default ports."
+  [:map-of :keyword [:fn {:gen/elements [identity]} ifn?]])
+
+(m/=> report-valid? [:=> [:cat :any] :boolean])
+
+(m/=> scan-project-boundary [:=> [:cat [:maybe :string]] ScanFragment])
+
+(m/=> run-doctor
+      [:function
+       [:=> [:cat :any] DoctorResult]
+       [:=> [:cat :any Ports] DoctorResult]])

@@ -1,0 +1,9 @@
+{:case-0 {:out true, :in "swarm-1"},
+ :case-1 {:out nil, :in :ling-1},
+ :case-2 {:out nil, :in ""},
+ :case-3 {:out nil, :in "coordinator"},
+ :case-4 {:out true, :in "ling-2"},
+ :case-5 {:out nil, :in :ling-1},
+ :case-6 {:out nil, :in "xling-1"},
+ :case-7 {:out true, :in "ling-2"},
+ :case-8 {:out nil, :in "coordinator"}}

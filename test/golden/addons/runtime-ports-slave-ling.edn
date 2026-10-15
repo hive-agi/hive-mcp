@@ -1,0 +1,14 @@
+{:case-0 {:out nil, :in nil},
+ :case-1
+ {:out #:ling{:id nil, :status :working},
+  :in #:slave{:status :working}},
+ :case-2
+ {:out #:ling{:id "KK", :status :working, :project-id "r"},
+  :in #:slave{:id "KK", :status :working, :project-id "r"}},
+ :case-3
+ {:out #:ling{:id nil, :status :working},
+  :in #:slave{:status :working}},
+ :case-4 {:out nil, :in nil},
+ :case-5 {:out nil, :in nil},
+ :case-6 {:out nil, :in nil},
+ :case-7 {:out nil, :in nil}}
