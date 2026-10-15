@@ -122,6 +122,55 @@
                          :else          ps))
     :else            nil))
 
+(defn staged-outside-files
+  "Return staged paths not named by FILES. An explicit directory covers paths
+   beneath it; a named file covers only itself. Git's --no-renames reports both
+   sides of a staged rename, so either side outside the selection is refused."
+  [files staged-paths]
+  (let [selected (map #(if (str/starts-with? % "./") (subs % 2) %) files)]
+    (->> staged-paths
+         (remove (fn [path]
+                   (some (fn [selected-path]
+                           (or (= path selected-path)
+                               (and (str/ends-with? selected-path "/")
+                                    (str/starts-with? path selected-path))))
+                         selected)))
+         vec)))
+
+(defn- staged-paths
+  "Read the index directly, without asking the shared Emacs buffer to choose a repo.
+   A failed git inspection is a refusal, never an empty index."
+  [dir]
+  (try
+    (let [process (-> (ProcessBuilder. ["git" "diff" "--cached" "--name-only"
+                                      "--no-renames" "-z"])
+                      (.directory (java.io.File. dir))
+                      (.redirectErrorStream true)
+                      (.start))
+          bytes (.readAllBytes (.getInputStream process))
+          exit (.waitFor process)
+          output (String. bytes java.nio.charset.StandardCharsets/UTF_8)]
+      (if (zero? exit)
+        (result/ok (vec (remove str/blank? (str/split output (re-pattern (str (char 0)))))))
+        (result/err :magit/index-inspection-failed
+                    {:message (str ":magit/index-inspection-failed - git diff --cached failed in " dir ": " output)})))
+    (catch Exception e
+      (result/err :magit/index-inspection-failed
+                  {:message (str ":magit/index-inspection-failed - " (.getMessage e))}))))
+
+(defn- verify-index-scope
+  "Refuse an explicit-files commit if the index holds any other path."
+  [files dir]
+  (let [inspection (staged-paths dir)]
+    (if-let [paths (:ok inspection)]
+      (let [extras (staged-outside-files files paths)]
+        (if (seq extras)
+          (result/err :magit/unrelated-staged
+                      {:message (str ":magit/unrelated-staged - refusing commit; index also contains: "
+                                     (pr-str extras))})
+          (result/ok files)))
+      inspection)))
+
 (defn- stage-verify
   "Stage PATHS in DIR and confirm the index carries at least one of them.
 
@@ -218,8 +267,9 @@
    several paths in one whitespace-separated string, or 'all'. Named paths are
    staged and VERIFIED before the commit runs; a path that does not exist, or a
    stage that leaves the index empty for those paths, fails the operation
-   instead of committing whatever the index already held."
-  [{:keys [message all directory files] :as params}]
+   instead of committing whatever the index already held. An explicit path list
+   also refuses a foreign staged path, naming it, unless include_staged is true."
+  [{:keys [message all directory files include_staged] :as params}]
   (let [dir (resolve-directory directory)
         timeout-ms (emacs-timeout-ms params)
         norm (normalize-files files)
@@ -229,9 +279,13 @@
                               :files norm :directory dir})
     (if (and (some? staged) (nil? (find staged :ok)))
       (result->mcp staged)
-      (handle-op :magit/commit-failed
-                 {:op :magit/commit :message message :all stage-all :directory dir}
-                 timeout-ms))))
+      (let [scope (when (and (vector? norm) (not stage-all) (not include_staged))
+                    (verify-index-scope norm dir))]
+        (if (and (some? scope) (nil? (find scope :ok)))
+          (result->mcp scope)
+          (handle-op :magit/commit-failed
+                     {:op :magit/commit :message message :all stage-all :directory dir}
+                     timeout-ms))))))
 
 (defn handle-magit-push
   "Push to remote. Optionally set upstream tracking.
