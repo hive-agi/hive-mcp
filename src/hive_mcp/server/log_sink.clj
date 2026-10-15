@@ -135,35 +135,63 @@
                                 (object-array [fd buf (long (alength bytes))]))))
       (throw (ex-info "Log write failed or incomplete" {})))))
 
+(declare rotate-generations!)
+
 (defrecord FileLineWriter [file]
   LineWriter
   (write-line! [_ line]
     (let [parent (private-file! file)]
       (try
-        (let [path (.toPath file)
-              bytes (.getBytes (str line \newline) "UTF-8")
+        (let [bytes (.getBytes (str line \newline) "UTF-8")
               bytes (if (> (alength bytes) max-file-bytes)
                       (.getBytes (str (String. bytes 0 (- max-file-bytes 32) "UTF-8") " [truncated]" \newline) "UTF-8")
                       bytes)
-              no-links (into-array LinkOption [LinkOption/NOFOLLOW_LINKS])
               opened (open-verified-fd! parent (:name parent))
               rotate? (> (+ (:size opened) (alength bytes)) max-file-bytes)]
-          (try
-            (if rotate?
-              (do
-                (close-fd! opened)
-                (doseq [n (range retained-files 0 -1)]
-                  (let [source (if (= n 1) path (.resolveSibling path (str (.getFileName path) "." (dec n))))
-                        target (.resolveSibling path (str (.getFileName path) "." n))]
-                    (when (Files/exists source no-links)
-                      (when (Files/exists target no-links) (private-file! (.toFile target)))
-                      (Files/move source target (into-array StandardCopyOption [StandardCopyOption/REPLACE_EXISTING])))))
-                (let [rotated (open-verified-fd! parent (:name parent))]
-                  (try (write-fd! rotated bytes)
-                       (finally (close-fd! rotated)))))
-              (write-fd! opened bytes))
-            (finally (when-not rotate? (close-fd! opened)))))
+          (if rotate?
+            (do
+              (close-fd! opened)
+              (rotate-generations! parent)
+              (let [rotated (open-verified-fd! parent (:name parent))]
+                (try (write-fd! rotated bytes)
+                     (finally (close-fd! rotated)))))
+            (try (write-fd! opened bytes)
+                 (finally (close-fd! opened)))))
         (finally (close-fd! parent))))))
+
+(defn- verified-generation!
+  "Inspect an opened generation inode, including symlinks, before renameat.
+   Only ENOENT is absent; other open failures refuse rotation."
+  [{:keys [fd libc]} name]
+  (let [call (fn [sym ret args] (.invoke (.getFunction libc sym) ret (object-array args)))
+        opened (int (call "openat" Integer/TYPE [fd name (int (bit-or 2097152 131072 524288))]))]
+    (if (neg? opened)
+      (if (= 2 (com.sun.jna.Native/getLastError))
+        false
+        (throw (ex-info "Cannot inspect log generation" {:name name})))
+      (try
+        (let [stat (com.sun.jna.Memory. 256)]
+          (when (or (neg? (int (call "fstat" Integer/TYPE [opened stat])))
+                    (not= 32768 (bit-and 61440 (.getInt stat 24)))
+                    (not= 384 (bit-and 511 (.getInt stat 24)))
+                    (not= 1 (.getLong stat 16))
+                    (not= (int (call "getuid" Integer/TYPE [])) (.getInt stat 28)))
+            (throw (ex-info "Unsafe log generation" {:name name})))
+          true)
+        (finally (call "close" Integer/TYPE [opened]))))))
+
+(defn- rotate-generations!
+  "Rename only within the opened private directory; no path lookup can redirect
+   rotation to a swapped ancestor. Generation entries must be private files."
+  [{:keys [fd libc name] :as parent}]
+  (let [call (fn [sym ret args] (.invoke (.getFunction libc sym) ret (object-array args)))]
+    (doseq [n (range retained-files 0 -1)]
+      (let [source (str name (when (> n 1) (str "." (dec n))))
+            target (str name "." n)]
+        (when (verified-generation! parent source)
+          (verified-generation! parent target)
+          (when (neg? (int (call "renameat" Integer/TYPE [fd source fd target])))
+            (throw (ex-info "Log rotation failed" {:generation n}))))))))
 
 (defn file-line-writer
   "A private append-only coordinator log writer. The sink's daemon thread owns IO."

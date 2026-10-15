@@ -350,3 +350,51 @@
    :mutations [["follows-alias-after-check" (fn [_] {:victim "pinned" :moved ""})]]
    :assert (fn [] (is (= {:victim "untouched" :moved "pinned"}
                          (pinned-parent-contract :swap))))})
+
+(defn rotation-alias-contract
+  "A symlink generation is never overwritten, and rotation after a parent
+   swap remains within the pinned original directory."
+  [_]
+  (let [root (java.nio.file.Files/createTempDirectory "hive-log-rotation-swap" (make-array java.nio.file.attribute.FileAttribute 0))
+        parent (.resolve root "hive-mcp")
+        moved (.resolve root "moved")
+        victim (.resolve root "victim")
+        target (.resolve victim "coordinator.log")
+        attrs (make-array java.nio.file.attribute.FileAttribute 0)
+        writer (sink/file-line-writer (.toFile (.resolve parent "coordinator.log")))]
+    (try
+      (java.nio.file.Files/createDirectory victim attrs)
+      (java.nio.file.Files/write target (.getBytes "untouched" "UTF-8") (make-array java.nio.file.OpenOption 0))
+      (sink/write-line! writer "first")
+      (let [p (#'sink/private-file! (.toFile (.resolve parent "coordinator.log")))]
+        (try
+          (java.nio.file.Files/move parent moved (make-array java.nio.file.CopyOption 0))
+          (java.nio.file.Files/createSymbolicLink parent victim attrs)
+          (#'sink/rotate-generations! p)
+          (finally (#'sink/close-fd! p))))
+      (let [rotated? (java.nio.file.Files/exists (.resolve moved "coordinator.log.1") (make-array java.nio.file.LinkOption 0))
+            untouched? (= "untouched" (slurp (.toFile target)))]
+        (java.nio.file.Files/deleteIfExists parent)
+        (sink/write-line! (sink/file-line-writer (.toFile (.resolve moved "coordinator.log"))) "next")
+        (java.nio.file.Files/deleteIfExists (.resolve moved "coordinator.log.1"))
+        (java.nio.file.Files/createSymbolicLink (.resolve moved "coordinator.log.1") target attrs)
+        (let [p (#'sink/private-file! (.toFile (.resolve moved "coordinator.log")))]
+          (try
+            {:rotated? rotated? :untouched? untouched?
+             :refused? (try (#'sink/rotate-generations! p)
+                            false (catch Exception _ true))}
+            (finally (#'sink/close-fd! p)))))
+      (finally
+        (doseq [p [parent (.resolve moved "coordinator.log.1") (.resolve moved "coordinator.log") moved target victim root]]
+          (java.nio.file.Files/deleteIfExists p))))))
+
+(deftrifecta rotation-alias-safety
+  hive-mcp.server.log-sink-test/rotation-alias-contract
+  {:golden-path "test/golden/server/rotation-alias-safety.edn"
+   :cases {:swap :swap}
+   :gen (gen/return :swap)
+   :pred (fn [{:keys [rotated? untouched? refused?]}] (and rotated? untouched? refused?))
+   :num-tests 5
+   :mutations [["name-based-rotation" (fn [_] {:rotated? false :untouched? false :refused? false})]]
+   :assert (fn [] (is (= {:rotated? true :untouched? true :refused? true}
+                         (rotation-alias-contract :swap))))})
