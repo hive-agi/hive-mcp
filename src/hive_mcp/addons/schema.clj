@@ -52,8 +52,9 @@
 
 (def RegistryId
   "The key an addon is registered under: the keyword its `addon-id` answers, or
-   the string id a manifest carries."
-  [:or :keyword [:string {:min 1 :max 24}]])
+   the string id a manifest carries. Real ids are arbitrary non-empty strings, so
+   the contract states no upper bound; `:gen/max` only sizes the generator."
+  [:or :keyword [:string {:min 1 :gen/max 24}]])
 
 (def AddonState
   "Lifecycle state of a registry entry."
@@ -97,9 +98,12 @@
 (def AddonOutcome
   "What a lifecycle operation (register / init / shutdown / unregister)
    answers. An addon's own `initialize!` / `shutdown!` result is spliced in, so
-   the map is open: only the success flag and the addon name are promised."
+   the map is open: only the addon name is promised. The success flag is the
+   addon's own word (a `shutdown!` that answers `{}` is legal and is spliced in
+   as is), so it is optional and may be nil; the operations' own rejection arms
+   always set it."
   [:map
-   [:success? :boolean]
+   [:success? {:optional true} [:maybe :boolean]]
    [:addon-name RegistryId]
    [:errors {:optional true} [:sequential :string]]
    [:already-active? {:optional true} :boolean]
