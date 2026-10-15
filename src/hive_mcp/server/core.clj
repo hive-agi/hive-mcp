@@ -46,15 +46,21 @@
 (defonce file-sink
   (log-sink/make-sink (log-sink/file-line-writer)))
 
+(defn register-coordinator-file!
+  "Install the boot-only file appender over an injected asynchronous sink."
+  [sink]
+  (log/merge-config!
+   {:appenders {:coordinator-file {:enabled? true
+                                   :async? false
+                                   :fn (log-sink/boot-appender-fn sink)}}}))
+
 (log/merge-config!
  {:appenders
   {:println {:enabled? true
              :async? false
-             :fn (log-sink/appender-fn console-sink)}
-   :coordinator-file {:enabled? true
-                      :async? false
-                      :fn (log-sink/boot-appender-fn file-sink)}}})
+             :fn (log-sink/appender-fn console-sink)}}})
 
+(register-coordinator-file! file-sink)
 ;; =============================================================================
 ;; System State — single defonce atom replaces 6 private atoms
 ;; =============================================================================

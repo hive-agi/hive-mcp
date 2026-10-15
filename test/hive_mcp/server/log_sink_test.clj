@@ -185,35 +185,41 @@
 (deftest coordinator-appender-registration
   (require 'hive-mcp.server.core)
   (let [config @(requiring-resolve 'taoensso.timbre/*config*)
-        append! (get-in config [:appenders :coordinator-file :fn])
+        original (get-in config [:appenders :coordinator-file])
+        register! (requiring-resolve 'hive-mcp.server.core/register-coordinator-file!)
         dir (java.nio.file.Files/createTempDirectory "registered-boot-log" (make-array java.nio.file.attribute.FileAttribute 0))
         path (.resolve dir "coordinator.log")
-        ;; Real registered appender, real file writer, disposable directory.
-        ;; We preserve the original sink and replace its writer through the
-        ;; queue drain only by registering a new appender with the same factory.
+        ;; Inject the disposable file writer into the actual core registration,
+        ;; not a second, manually constructed appender.
         real-sink (sink/make-sink (sink/file-line-writer (.toFile path)))
-        registered! (sink/boot-appender-fn real-sink)
         formatted? (atom false)]
     (try
-      (is (fn? append!))
-      (is (false? (get-in config [:appenders :coordinator-file :async?])))
-      (doseq [fn! [append! registered!]]
-        (fn! {:level :info :?ns-str "hive-mcp.server.core"
-              :vargs ["[boot-timing] init API_KEY=secret"]
-              :output_ (delay (reset! formatted? true) "API_KEY=secret")})
-        (fn! {:level :info :?ns-str "hive-mcp.server.core"
-              :vargs [(sink/boot-event :addon :init 12.0 :ok)]
-              :output_ (delay (reset! formatted? true) "API_KEY=secret")}))
-      (is (false? @formatted?) "neither rejected nor accepted payload can force output")
-      (let [deadline (+ (System/currentTimeMillis) 2000)]
-        (while (and (not (java.nio.file.Files/exists path (make-array java.nio.file.LinkOption 0)))
-                    (< (System/currentTimeMillis) deadline))
-          (Thread/sleep 10)))
-      (is (java.nio.file.Files/exists path (make-array java.nio.file.LinkOption 0)))
-      (when (java.nio.file.Files/exists path (make-array java.nio.file.LinkOption 0))
-        (is (str/includes? (slurp (.toFile path)) "phase=init elapsed-ms=12.0 status=ok"))
-        (is (not (str/includes? (slurp (.toFile path)) "secret"))))
+      (is (fn? (:fn original)))
+      (register! real-sink)
+      (let [registered (get-in @(requiring-resolve 'taoensso.timbre/*config*)
+                               [:appenders :coordinator-file])
+            append! (:fn registered)]
+        (is (false? (:async? registered)))
+        (append! {:level :info :?ns-str "hive-mcp.server.core"
+                  :vargs ["[boot-timing] init API_KEY=secret"]
+                  :output_ (delay (reset! formatted? true) "API_KEY=secret")})
+        (append! {:level :info :?ns-str "hive-mcp.server.core"
+                  :vargs [(sink/boot-event "API_KEY=secret" :init 12.0 :ok)]
+                  :output_ (delay (reset! formatted? true) "API_KEY=secret")})
+        (is (false? @formatted?) "neither rejected nor accepted payload can force output")
+        (let [deadline (+ (System/currentTimeMillis) 2000)]
+          (while (and (not (java.nio.file.Files/exists path (make-array java.nio.file.LinkOption 0)))
+                      (< (System/currentTimeMillis) deadline))
+            (Thread/sleep 10)))
+        (is (java.nio.file.Files/exists path (make-array java.nio.file.LinkOption 0)))
+        (when (java.nio.file.Files/exists path (make-array java.nio.file.LinkOption 0))
+          (let [lines (str/split-lines (slurp (.toFile path)))]
+            (is (= 1 (count lines)))
+            (is (str/includes? (first lines) "phase=init elapsed-ms=12.0 status=ok"))
+            (is (not (str/includes? (first lines) "secret"))))))
       (finally
+        ((requiring-resolve 'taoensso.timbre/merge-config!)
+         {:appenders {:coordinator-file original}})
         (sink/stop! real-sink)
         (java.nio.file.Files/deleteIfExists path)
         (java.nio.file.Files/deleteIfExists dir)))))
