@@ -1,0 +1,13 @@
+{:case-0 {:out 0, :in ([])},
+ :case-1 {:out 0, :in ([])},
+ :case-10
+ {:out 1, :in ([{:bytes nil} {:bytes nil} {:bytes nil} {:bytes 1}])},
+ :case-11 {:out 0, :in ([])},
+ :case-2 {:out 0, :in ([])},
+ :case-3 {:out 2, :in ([{:bytes 1} {:bytes 1}])},
+ :case-4 {:out 0, :in ([{:bytes nil} {}])},
+ :case-5 {:out 0, :in ([{} {}])},
+ :case-6 {:out 12, :in ([{} {} {} {:bytes nil} {:bytes 12}])},
+ :case-7 {:out 0, :in ([{} {:bytes nil}])},
+ :case-8 {:out 0, :in ([{} {:bytes nil} {:bytes nil} {} {}])},
+ :case-9 {:out 206, :in ([{:bytes 206} {} {} {:bytes nil}])}}
