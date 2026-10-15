@@ -112,8 +112,10 @@
    Every drain folds its offered / delivered ids into `drain-telemetry`."
   ([caller-id] (drain! caller-id nil))
   ([caller-id ctx]
-   (let [buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))
-         buf (bget buffers buffer-key)]
+   (let [budget (max 0 (min drain-char-budget (or (:char-budget ctx) drain-char-budget)))
+         strict? (some? (:char-budget ctx))
+         buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))
+         buf (when (pos? budget) (bget buffers buffer-key))]
      (when (and buf (not (:done buf)))
        (let [{:keys [cursor seq-num context-refs refs-delivered? sent offers]} buf
              policy (proj/resolve-policy (:policy ctx))
@@ -124,11 +126,10 @@
              pending (when (seq tokens)
                        (subvec (vec entries) (min cursor total)))
              ranked (when (seq pending)
-                      (rank/select-batch pending {:tokens tokens
-                                                  :offers offers
+                      (rank/select-batch pending {:tokens tokens :offers offers
                                                   :pins (:pins ctx)
                                                   :floor-cap (:floor-cap ctx)
-                                                  :char-budget drain-char-budget}))
+                                                  :char-budget budget :strict-budget? strict?}))
              entries* (if ranked
                         (into (subvec (vec entries) 0 (min cursor total))
                               (:ordered ranked))
@@ -136,20 +137,14 @@
              [batch new-cursor]
              (if ranked
                [(:batch ranked) (+ cursor (:taken ranked))]
-               (loop [batch []
-                      chars 0
-                      idx cursor]
+               (loop [batch [] chars 0 idx cursor]
                  (if (>= idx total)
                    [batch idx]
                    (let [entry (nth entries idx)
-                         entry-str (pr-str entry)
-                         entry-chars (count entry-str)
-                         new-chars (+ chars entry-chars)]
-                     (if (and (seq batch) (> new-chars drain-char-budget))
+                         new-chars (+ chars (count (pr-str entry)))]
+                     (if (and (> new-chars budget) (or strict? (seq batch)))
                        [batch idx]
-                       (recur (conj batch entry)
-                              new-chars
-                              (inc idx)))))))
+                       (recur (conj batch entry) new-chars (inc idx)))))))
              is-done (>= new-cursor total)
              new-seq (inc seq-num)
              delivered new-cursor
@@ -162,42 +157,31 @@
                                        (if (and eid (not (contains? taken-ids eid)))
                                          (update m eid (fnil inc 0))
                                          m)))
-                                   (or offers {})
-                                   pending)
+                                   (or offers {}) pending)
                            offers)
              hint (proj/pull-hint batch)]
-         (telemetry/record!
-          {:seq-num new-seq
-           :batch batch
-           :delivered-ids (into [] (keep :id) batch)
-           :offered-ids (when ranked
-                          (into [] (comp (keep :id) (remove taken-ids)) pending))})
-         (bput! buffers buffer-key
-                (cond-> (if is-done
-                          {:entries []
-                           :cursor  0
-                           :done    true
-                           :seq-num new-seq
-                           :sent    (into (set sent) (keep :id) entries*)}
-                          {:entries entries*
-                           :cursor  new-cursor
-                           :done    false
-                           :seq-num new-seq
-                           :sent    (set sent)})
-                  (some? context-refs)
-                  (assoc :context-refs context-refs
-                         :refs-delivered? (or (boolean refs-delivered?) send-refs?))
-
-                  (some? next-offers)
-                  (assoc :offers next-offers)))
-         (cond-> {:batch batch
-                  :remaining remaining
-                  :total total
-                  :delivered delivered
-                  :seq new-seq}
-           is-done (assoc :done true)
-           send-refs? (assoc :context-refs context-refs)
-           hint (assoc :pull hint)))))))
+         (when (or (seq batch) send-refs?)
+           (telemetry/record!
+            {:seq-num new-seq
+             :batch batch
+             :delivered-ids (into [] (keep :id) batch)
+             :offered-ids (when ranked
+                            (into [] (comp (keep :id) (remove taken-ids)) pending))})
+           (bput! buffers buffer-key
+                  (cond-> (if is-done
+                            {:entries [] :cursor 0 :done true :seq-num new-seq
+                             :sent (into (set sent) (keep :id) entries*)}
+                            {:entries entries* :cursor new-cursor :done false
+                             :seq-num new-seq :sent (set sent)})
+                    (some? context-refs)
+                    (assoc :context-refs context-refs
+                           :refs-delivered? (or (boolean refs-delivered?) send-refs?))
+                    (some? next-offers) (assoc :offers next-offers)))
+           (cond-> {:batch batch :remaining remaining :total total
+                    :delivered delivered :seq new-seq}
+             is-done (assoc :done true)
+             send-refs? (assoc :context-refs context-refs)
+             hint (assoc :pull hint))))))))
 
 (defn has-pending?
   "Check if a caller session has undrained memory entries."

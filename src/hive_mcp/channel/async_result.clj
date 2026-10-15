@@ -172,16 +172,15 @@
    the caller's payload. Both applications see the same buffer value, so the
    payload cannot disagree with the cursor that was committed.
 
-   At least one entry is always taken, even when that single entry is over
-   budget, or an oversized result would wedge the buffer forever."
-  [{:keys [entries cursor]}]
+   An entry too large for this response stays pending for a later drain."
+  [{:keys [entries cursor]} budget]
   (let [total (count entries)]
     (loop [batch [] chars 0 idx cursor]
       (if (>= idx total)
         [batch idx]
         (let [output-entry (dissoc (nth entries idx) :timestamp :content-hash)
               new-chars    (+ chars (count (pr-str output-entry)))]
-          (if (and (seq batch) (> new-chars drain-char-budget))
+          (if (> new-chars budget)
             [batch idx]
             (recur (conj batch output-entry) new-chars (inc idx))))))))
 
@@ -211,28 +210,33 @@
    The delivery is journalled AFTER the cursor has moved, so a crash between
    the two re-delivers rather than drops. At-least-once is the correct
    direction to fail for something the caller has already been promised."
-  [caller-id]
-  (let [buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))
-        [old _new] (swap-vals!
-                    buffers
-                    (fn [bufs]
-                      (let [buf (get bufs buffer-key)]
-                        (if-not (drainable? buf)
-                          bufs
-                          (let [[_ new-cursor] (next-batch buf)]
-                            (if (>= new-cursor (count (:entries buf)))
-                              (dissoc bufs buffer-key)
-                              (assoc bufs buffer-key (assoc buf :cursor new-cursor))))))))
-        buf (get old buffer-key)]
-    (when (drainable? buf)
-      (let [[batch new-cursor] (next-batch buf)
-            total              (count (:entries buf))]
-        (journal/record-delivered! buffer-key (keep :task-id batch))
-        (cond-> {:results   batch
-                 :remaining (- total new-cursor)
-                 :total     total
-                 :delivered new-cursor}
-          (>= new-cursor total) (assoc :done true))))))
+  ([caller-id] (drain! caller-id drain-char-budget))
+  ([caller-id budget]
+   (when (pos? budget)
+     (let [buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))
+           [old _new] (swap-vals!
+                       buffers
+                       (fn [bufs]
+                         (let [buf (get bufs buffer-key)]
+                           (if-not (drainable? buf)
+                             bufs
+                             (let [[_ new-cursor] (next-batch buf budget)]
+                               (if (= new-cursor (:cursor buf))
+                                 bufs
+                                 (if (>= new-cursor (count (:entries buf)))
+                                   (dissoc bufs buffer-key)
+                                   (assoc bufs buffer-key (assoc buf :cursor new-cursor)))))))))
+           buf (get old buffer-key)]
+       (when (drainable? buf)
+         (let [[batch new-cursor] (next-batch buf budget)
+               total (count (:entries buf))]
+           (when (seq batch)
+             (journal/record-delivered! buffer-key (keep :task-id batch))
+             (cond-> {:results batch
+                      :remaining (- total new-cursor)
+                      :total total
+                      :delivered new-cursor}
+               (>= new-cursor total) (assoc :done true)))))))))
 
 (defn has-pending?
   "Check if a caller session has undrained async results."

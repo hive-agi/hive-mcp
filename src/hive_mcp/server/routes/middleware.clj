@@ -407,15 +407,35 @@
    still takes the caller alone is called that way and drains one-shot, as
    before. Neither shape is allowed to fail the response."
   [caller-id request-ctx]
-  (when-let [drain-fn (ext/get-extension :cu/piggyback-drain)]
-    (try
+  (when (pos? (:char-budget request-ctx Long/MAX_VALUE))
+    (when-let [drain-fn (ext/get-extension :cu/piggyback-drain)]
       (try
-        (drain-fn caller-id request-ctx)
-        (catch clojure.lang.ArityException _
-          (drain-fn caller-id)))
-      (catch Exception e
-        (log/debug "catchup-piggyback drain failed:" (.getMessage e))
-        nil))))
+        (try
+          (drain-fn caller-id request-ctx)
+          (catch clojure.lang.ArityException _
+            (drain-fn caller-id)))
+        (catch Exception e
+          (log/debug "catchup-piggyback drain failed:" (.getMessage e))
+          nil)))))
+
+(def response-piggyback-char-budget
+  "Total response allowance for async results, memory, blocks and catchup.
+   Hivemind uses its cursor/audience/digest rather than this budget."
+  32000)
+
+(defn spend-piggyback-budget
+  "Pure accounting for one channel. Returns the permitted allowance and the
+   remaining response chars after the actual rendered cost. Channel order is
+   the caller's order; unused allowance rolls forward to the next channel."
+  [remaining channel-cap rendered-chars]
+  (let [allowance (max 0 (min remaining channel-cap))]
+    {:allowance allowance
+     :remaining (max 0 (- remaining (max 0 rendered-chars)))}))
+
+(defn- piggyback-content-chars
+  "Total text chars in MCP content, for measuring a channel's actual wire cost."
+  [content]
+  (reduce + 0 (map (comp count :text) (filter #(= "text" (:type %)) (id/normalize-content content)))))
 
 ;; =============================================================================
 ;; Grant Gate
@@ -468,43 +488,56 @@
      (let [task-tokens (task-signal/cues tool-name args)
            content (handler args)
            caller-id (or (:_caller_id args) "coordinator")
-           async-drain (async-buf/drain! caller-id)
            request-ctx {:tool-name tool-name :cues task-tokens :caller-id caller-id}
+           async-cap (:allowance (spend-piggyback-budget response-piggyback-char-budget
+                                                    async-buf/drain-char-budget 0))
+           async-drain (async-buf/drain! caller-id (max 0 (- async-cap 160)))
+           async-content (if async-drain
+                           (id/wrap-delimited-block content "TOOLRESULT" (pr-str async-drain))
+                           content)
+           remaining-async (:remaining (spend-piggyback-budget response-piggyback-char-budget
+                                                async-buf/drain-char-budget
+                                                (- (piggyback-content-chars async-content)
+                                                   (piggyback-content-chars content))))
            act-ctx (activation/drain-ctx request-ctx)
+           memory-cap (:allowance (spend-piggyback-budget remaining-async 12000 0))
+           memory-drain (when (> memory-cap 200)
+                          (drain-memory-piggyback caller-id
+                            (assoc act-ctx :char-budget (- memory-cap 200))))
+           memory-content (if memory-drain
+                            (id/wrap-memory-piggyback-content async-content memory-drain)
+                            async-content)
+           remaining-memory (:remaining (spend-piggyback-budget remaining-async 12000
+                                                (- (piggyback-content-chars memory-content)
+                                                   (piggyback-content-chars async-content))))
            ;; Blocks are an OPEN set: whatever addons registered under
            ;; :block/*, rendered by tag. The host names none of them, so a new
            ;; block is an addon plus a config entry rather than a commit here.
-           extra-blocks (blocks/render request-ctx)
-           memory-drain (drain-memory-piggyback caller-id act-ctx)
-           catchup-blocks (drain-catchup-piggyback caller-id request-ctx)
+           blocks-cap (:allowance (spend-piggyback-budget remaining-memory blocks/max-response-chars 0))
+           extra-blocks (blocks/render request-ctx blocks-cap)
+           blocks-content (reduce (fn [acc [tag body]] (id/wrap-delimited-block acc tag body))
+                                  memory-content extra-blocks)
+           remaining-blocks (:remaining (spend-piggyback-budget remaining-memory
+                                               blocks/max-response-chars
+                                               (- (piggyback-content-chars blocks-content)
+                                                  (piggyback-content-chars memory-content))))
+           catchup-cap (:allowance (spend-piggyback-budget remaining-blocks 4000 0))
+           catchup-blocks (when (> catchup-cap 100)
+                            (drain-catchup-piggyback caller-id
+                              (assoc request-ctx :char-budget (- catchup-cap 100))))
+           catchup-content (reduce-kv
+                            (fn [acc tag body]
+                              (id/wrap-delimited-block acc
+                                (str/upper-case (name tag))
+                                (if (string? body) body (pr-str body))))
+                            blocks-content (or catchup-blocks {}))
            caller (id/extract-caller-identity args)
            scope (id/extract-project-scope args)
            hm-agent-id (ctx-id/make-piggyback-agent-id caller scope)
            hm-project-id (ctx-id/project-scope-string scope)
            hivemind-msgs (get-piggyback-messages hm-agent-id hm-project-id
                                                  (ctx-id/caller-id-string caller))]
-
-       (cond-> content
-         async-drain
-         (id/wrap-delimited-block "TOOLRESULT" (pr-str async-drain))
-
-         memory-drain
-         (id/wrap-memory-piggyback-content memory-drain)
-
-         (seq extra-blocks)
-         (as-> c (reduce (fn [acc [tag body]] (id/wrap-delimited-block acc tag body))
-                         c extra-blocks))
-
-         (seq catchup-blocks)
-         (as-> c (reduce-kv
-                   (fn [acc tag body]
-                     (id/wrap-delimited-block acc
-                       (str/upper-case (name tag))
-                       (if (string? body) body (pr-str body))))
-                   c catchup-blocks))
-
-         true
-         (id/wrap-piggyback hivemind-msgs))))))
+       (id/wrap-piggyback catchup-content hivemind-msgs)))))
 
 
 ;; =============================================================================

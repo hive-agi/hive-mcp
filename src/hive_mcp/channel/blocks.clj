@@ -127,23 +127,29 @@
    the least to do with this call rather than the one whose key sorts last.
    The highest-ranked block is always kept, so a single large block degrades
    the response rather than emptying it. Never throws."
-  [ctx]
-  (try
-    (let [emitted (into [] (comp (keep #(emit-one % ctx)) (take max-blocks))
-                        (emitter-keys))
-          cues (:cues ctx)
-          ordered (if (seq cues)
-                    (vec (sort-by (fn [[tag body]] [(- (cue-hits body cues)) tag])
-                                  emitted))
-                    emitted)]
-      (first
-       (reduce (fn [[acc used] [tag body :as blk]]
-                 (let [size (count body)]
-                   (if (or (empty? acc) (<= (+ used size) max-response-chars))
-                     [(conj acc blk) (+ used size)]
-                     (reduced [acc used]))))
-               [[] 0]
-               ordered)))
-    (catch Throwable t
-      (log/debug t "blocks: render failed; response carries no blocks")
-      [])))
+  ([ctx] (render ctx max-response-chars false))
+  ([ctx budget] (render ctx budget true))
+  ([ctx budget strict?]
+   (try
+     (if (pos? budget)
+       (let [emitted (into [] (comp (keep #(emit-one % ctx)) (take max-blocks))
+                           (emitter-keys))
+             cues (:cues ctx)
+             ordered (if (seq cues)
+                       (vec (sort-by (fn [[tag body]] [(- (cue-hits body cues)) tag])
+                                     emitted))
+                       emitted)]
+         (first
+          (reduce (fn [[acc used] [tag body :as blk]]
+                    (let [size (if strict?
+                                 (+ (count body) (* 2 (count tag)) 17)
+                                 (count body))]
+                      (if (or (and (not strict?) (empty? acc))
+                              (<= (+ used size) (min budget max-response-chars)))
+                        [(conj acc blk) (+ used size)]
+                        (reduced [acc used]))))
+                  [[] 0] ordered)))
+       [])
+     (catch Throwable t
+       (log/debug t "blocks: render failed; response carries no blocks")
+       []))))
