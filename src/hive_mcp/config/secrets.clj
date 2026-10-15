@@ -5,7 +5,8 @@
   (:require [clojure.java.shell :as shell]
             [clojure.string :as str]
             [hive-dsl.result :refer [rescue]]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -54,6 +55,8 @@
           (when-not (str/blank? line)
             line))))))
 
+(m/=> pass-show [:=> [:cat :string] [:maybe :string]])
+
 ;; =============================================================================
 ;; Resolution Chain
 ;; =============================================================================
@@ -83,11 +86,15 @@
         {:value pv :source :pass}
         {:value nil :source :missing}))))
 
+(m/=> resolve-secret [:=> [:cat :any :string [:maybe :string]] [:map [:value :any] [:source [:enum :config :env :pass :missing]]]])
+
 (defn env-var-for
   "ENV_VAR name for a secret keyword, by the rule `hive-mcp.config.resolve/get-secret`
    applies at read time: `:axon-api-key` -> \"AXON_API_KEY\"."
   [secret-key]
   (-> (name secret-key) (str/replace "-" "_") str/upper-case))
+
+(m/=> env-var-for [:=> [:cat :keyword] :string])
 
 (defn resolve-all-secrets
   "Resolve every secret against the current config's :secrets map.
@@ -115,6 +122,8 @@
      {:secrets {} :sources {}}
      (merge secret-registry declared))))
 
+(m/=> resolve-all-secrets [:=> [:cat [:maybe [:map-of :keyword :any]]] [:map [:secrets [:map-of :keyword :any]] [:sources [:map-of :keyword [:enum :config :env :pass :missing]]]]])
+
 ;; =============================================================================
 ;; Startup Logging
 ;; =============================================================================
@@ -131,3 +140,5 @@
     (when (seq missing)
       (log/warn (str "Secrets [missing]: "
                      (str/join ", " (map (comp name key) missing)))))))
+
+(m/=> log-secret-sources! [:=> [:cat [:map-of :keyword :keyword]] :nil])
