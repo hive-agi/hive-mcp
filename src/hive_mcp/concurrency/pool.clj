@@ -24,7 +24,9 @@
    Client code depends on `hive-weave.pool` primitives (submit!,
    await!, with-pool-await) and passes one of the named pool instances
    below — it should not reach into `java.util.concurrent` directly."
-  (:require [hive-weave.pool :as wpool]))
+  (:require [hive-weave.pool :as wpool]
+            [malli.core :as m]
+            [clojure.test.check.generators :as gen]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -71,10 +73,20 @@
   (delay (wpool/make-pool {:name "hive-catchup" :size catchup-pool-size})))
 
 (defn io-pool       [] @io-pool-delay)
+
+(m/=> io-pool [:=> [:cat] [:fn {:gen/gen (gen/return (io-pool))} #(instance? java.util.concurrent.ThreadPoolExecutor %)]])
 (defn compute-pool  [] @compute-pool-delay)
+
+(m/=> compute-pool [:=> [:cat] [:fn {:gen/gen (gen/return (compute-pool))} #(instance? java.util.concurrent.ThreadPoolExecutor %)]])
 (defn event-pool    [] @event-pool-delay)
+
+(m/=> event-pool [:=> [:cat] [:fn {:gen/gen (gen/return (event-pool))} #(instance? java.util.concurrent.ThreadPoolExecutor %)]])
 (defn memory-pool   [] @memory-pool-delay)
+
+(m/=> memory-pool [:=> [:cat] [:fn {:gen/gen (gen/return (memory-pool))} #(instance? java.util.concurrent.ThreadPoolExecutor %)]])
 (defn catchup-pool  [] @catchup-pool-delay)
+
+(m/=> catchup-pool [:=> [:cat] [:fn {:gen/gen (gen/return (catchup-pool))} #(instance? java.util.concurrent.ThreadPoolExecutor %)]])
 
 ;; =============================================================================
 ;; Submit API (thin delegation; prefer hive-weave.pool directly)
@@ -85,25 +97,35 @@
   [f]
   (wpool/submit! (io-pool) f))
 
+(m/=> submit-io! [:=> [:cat ifn?] [:fn {:gen/gen (gen/return (future nil))} #(instance? java.util.concurrent.Future %) ]])
+
 (defn submit-compute!
   "Submit a CPU-bound task to the compute pool."
   [f]
   (wpool/submit! (compute-pool) f))
+
+(m/=> submit-compute! [:=> [:cat ifn?] [:fn {:gen/gen (gen/return (future nil))} #(instance? java.util.concurrent.Future %) ]])
 
 (defn submit-event!
   "Submit a fire-and-forget event-dispatch task."
   [f]
   (wpool/submit! (event-pool) f))
 
+(m/=> submit-event! [:=> [:cat ifn?] [:fn {:gen/gen (gen/return (future nil))} #(instance? java.util.concurrent.Future %)]])
+
 (defn submit-memory!
   "Submit a memory tool IO task (Chroma HTTP, KG mutation, plan indexing)."
   [f]
   (wpool/submit! (memory-pool) f))
 
+(m/=> submit-memory! [:=> [:cat ifn?] [:fn {:gen/gen (gen/return (future nil))} #(instance? java.util.concurrent.Future %)]])
+
 (defn submit-catchup!
   "Submit a catchup-branch task (parallel Chroma/KG sub-queries in catchup)."
   [f]
   (wpool/submit! (catchup-pool) f))
+
+(m/=> submit-catchup! [:=> [:cat ifn?] [:fn {:gen/gen (gen/return (future nil))} #(instance? java.util.concurrent.Future %)]])
 
 ;; =============================================================================
 ;; DSL Macros — sugar that matches the hive-weave.pool primitives
@@ -136,6 +158,8 @@
    :memory  (wpool/pool-stats (memory-pool))
    :catchup (wpool/pool-stats (catchup-pool))})
 
+(m/=> pool-stats [:=> [:cat] [:map [:io :map] [:compute :map] [:event :map] [:memory :map] [:catchup :map]]])
+
 ;; =============================================================================
 ;; Lifecycle
 ;; =============================================================================
@@ -149,3 +173,5 @@
                       catchup-pool-delay]]
     (when (realized? pool-delay)
       (wpool/shutdown! @pool-delay {:await-ms 5000}))))
+
+(m/=> shutdown-pools! [:=> [:cat] :nil])
