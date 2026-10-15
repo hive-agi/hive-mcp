@@ -180,15 +180,16 @@
    refresh (reactive evict/activate as well as a hot reload) installs the one
    advertised table into it. REGISTER! is routes/register-surface!, injected
    for tests. Returns the surface id, nil when the context has no :tools atom.
-   Notify the connected client through the SDK after a changed table installs."
+   Notify the connected client through JSON-RPC after a changed table installs."
   [register! context]
   (when-let [tools-atom (:tools context)]
     (register! stdio-surface-id
                {:surface/kind :tools-atom
                 :surface/tools-atom tools-atom
                 :surface/notify! (fn []
-                                   ((requiring-resolve 'io.modelcontext.clojure-sdk.server/send-tools-list-changed!)
-                                    context))})))
+                                   (when-let [server (:server context)]
+                                     ((requiring-resolve 'jsonrpc4clj.server/send-notification)
+                                      server "notifications/tools/list_changed" {})))})))
 
 (defmethod ig/init-key :hive/mcp-stdio
   [_ {:keys [hot-reload] :as _config}]

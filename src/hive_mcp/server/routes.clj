@@ -358,8 +358,9 @@
                                                                               (:surface/tools-atom surface))
                                                                   (:surface/notify! surface)))
                                                            @tool-surfaces)
-                                             ((requiring-resolve 'io.modelcontext.clojure-sdk.server/send-tools-list-changed!)
-                                              context)))})
+                                             (when-let [server (:server context)]
+                                               ((requiring-resolve 'jsonrpc4clj.server/send-notification)
+                                                server "notifications/tools/list_changed" {}))))})
     (refresh-surfaces!)))
 
 (defn debug-tool-handler
