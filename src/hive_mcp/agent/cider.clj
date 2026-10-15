@@ -5,7 +5,9 @@
             [hive-mcp.agent.openrouter :as openrouter]
             [hive-spi.editor.services :as svc]
             [clojure.data.json :as json]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.agent.schema :as schema])
   (:import [java.util.concurrent ArrayBlockingQueue TimeUnit]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -171,3 +173,30 @@
                           :available (into [:ollama :cider :openrouter
                                             :openai-compat :auto]
                                            (keys registry))})))))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> init-pool! [:=> [:cat :int] :nil])
+
+(m/=> shutdown-pool! [:=> [:cat] :map])
+
+(m/=> acquire-session! [:=> [:cat :int] [:maybe :map]])
+
+(m/=> release-session! [:=> [:cat :any] :boolean])
+
+(m/=> pool-status [:=> [:cat] [:map [:total :int] [:available :int] [:sessions [:sequential :any]]]])
+
+(m/=> cider-backend
+      [:function
+       [:=> [:cat] schema/Backend]
+       [:=> [:cat [:maybe :map]] schema/Backend]])
+
+;; Requires :ollama-model; the answer is a map of the two backends.
+(m/=> hybrid-backend [:=> [:cat :map] [:map [:ollama schema/Backend] [:cider schema/Backend]]])
+
+(m/=> make-backend
+      [:function
+       [:=> [:cat :any] schema/Backend]
+       [:=> [:cat :any [:maybe :map]] schema/Backend]])

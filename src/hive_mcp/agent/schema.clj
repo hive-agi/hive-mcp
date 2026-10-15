@@ -248,3 +248,75 @@
                [:verified? :boolean]
                [:claims {:optional true} :any]]]
    [:decision :map]])
+
+;; ---------------------------------------------------------------------------
+;; Headless processes and OpenAI-compatible responses
+;; ---------------------------------------------------------------------------
+
+(def BufferStats
+  "What `ring-buffer-stats` reports."
+  [:map
+   [:current-lines :int]
+   [:capacity :int]
+   [:total-lines-seen :int]
+   [:dropped :int]])
+
+(def HeadlessStatus
+  "What `headless-status` reports for a registered ling process."
+  [:map
+   [:ling-id :any]
+   [:pid :int]
+   [:alive? :boolean]
+   [:exit-code [:maybe :int]]
+   [:cwd :any]
+   [:model :any]
+   [:started-at :int]
+   [:uptime-ms :int]
+   [:stdout BufferStats]
+   [:stderr BufferStats]])
+
+(def ProcessCounts
+  "What `active-process-count` reports."
+  [:map [:active :int] [:total :int] [:dead :int]])
+
+(def WatchdogState
+  "What `watchdog-status` reports."
+  [:map
+   [:running? :boolean]
+   [:sweep-count :int]
+   [:last-sweep-at [:maybe :int]]
+   [:last-cleaned [:sequential :any]]])
+
+(def KillAllResult
+  "What `kill-all-headless!` reports."
+  [:map [:killed :int] [:errors :int]])
+
+(def KillResult
+  "What `kill-headless!` reports."
+  [:map
+   [:killed? :boolean]
+   [:ling-id :any]
+   [:pid :int]
+   [:exit-code :int]])
+
+(def Usage
+  "Token usage of a chat completion, as the backend reports it."
+  [:map [:input :any] [:output :any] [:total :any]])
+
+(def ParsedResponse
+  "What `parse-response` answers: an error, a tool-call batch, or text."
+  [:multi {:dispatch :type}
+   [:error [:map [:type [:= :error]] [:error :string]]]
+   [:tool_calls [:map [:type [:= :tool_calls]] [:calls [:vector :map]]]]
+   [:text [:map [:type [:= :text]] [:content :string]]]])
+
+(def Metrics
+  "What `get-metrics` reports: the counters plus the computed averages."
+  [:map
+   [:request-count :int]
+   [:success-count :int]
+   [:error-count :int]
+   [:timeout-count :int]
+   [:total-latency-ms :int]
+   [:avg-latency-ms number?]
+   [:error-rate number?]])

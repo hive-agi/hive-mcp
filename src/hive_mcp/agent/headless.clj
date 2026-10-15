@@ -7,7 +7,9 @@
             [hive-spi.swarm.guards :as guards]
             [hive-mcp.system.registry :as reg]
             [taoensso.timbre :as log]
-            [hive-mcp.agent.identity :as agent-identity])
+            [hive-mcp.agent.identity :as agent-identity]
+            [malli.core :as m]
+            [hive-mcp.agent.schema :as schema])
   (:import [java.lang ProcessBuilder]
            [java.io BufferedReader InputStreamReader BufferedWriter OutputStreamWriter]
            [java.util.concurrent ConcurrentHashMap]))
@@ -607,6 +609,80 @@
                       {:success true :id id})))]
     {:killed (count (filter :success results))
      :errors (count (remove :success results))}))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def ^:private SpawnOpts
+  [:map
+   [:cwd {:optional true} :any]
+   [:task {:optional true} [:maybe :string]]
+   [:model {:optional true} [:maybe :string]]
+   [:env-extra {:optional true} [:maybe :map]]
+   [:credential {:optional true} [:maybe :string]]
+   [:claude-cmd {:optional true} [:maybe :string]]
+   [:buffer-capacity {:optional true} :int]
+   [:system-prompt {:optional true} [:maybe :string]]])
+
+(def ^:private SpawnResult
+  [:map
+   [:ling-id :string]
+   [:pid :int]
+   [:process [:fn {:gen/elements [nil]} #(instance? Process %)]]
+   [:stdout-buf schema/RingBuffer]
+   [:stderr-buf schema/RingBuffer]
+   [:model [:maybe :string]]])
+
+;; Env names and values are strings; the withheld names never appear.
+(m/=> build-child-env
+      [:=> [:cat :any [:maybe :map]] [:map-of :string :string]])
+
+(m/=> start-watchdog! [:=> [:cat] :nil])
+
+(m/=> stop-watchdog! [:=> [:cat] :nil])
+
+;; The :pre conditions make both arguments strings.
+(m/=> spawn-headless! [:=> [:cat :string SpawnOpts] SpawnResult])
+
+(m/=> dispatch-via-stdin! [:=> [:cat :string :string] :boolean])
+
+(m/=> kill-headless!
+      [:function
+       [:=> [:cat :any] schema/KillResult]
+       [:=> [:cat :any [:maybe :map]] schema/KillResult]])
+
+(m/=> headless-status [:=> [:cat :any] [:maybe schema/HeadlessStatus]])
+
+(m/=> get-stdout
+      [:function
+       [:=> [:cat :any] [:maybe [:sequential :any]]]
+       [:=> [:cat :any [:maybe :map]] [:maybe [:sequential :any]]]])
+
+(m/=> get-stderr
+      [:function
+       [:=> [:cat :any] [:maybe [:sequential :any]]]
+       [:=> [:cat :any [:maybe :map]] [:maybe [:sequential :any]]]])
+
+(m/=> get-stdout-since [:=> [:cat :any :any] [:maybe [:sequential :map]]])
+
+(m/=> list-headless [:=> [:cat] [:vector schema/HeadlessStatus]])
+
+(m/=> headless-count [:=> [:cat] :int])
+
+(m/=> active-process-count [:=> [:cat] schema/ProcessCounts])
+
+(m/=> watchdog-status [:=> [:cat] schema/WatchdogState])
+
+(m/=> headless? [:=> [:cat :any] :boolean])
+
+(m/=> get-process [:=> [:cat :any] [:maybe [:fn {:gen/elements [nil]} #(instance? Process %)]]])
+
+(m/=> get-stdout-buffer [:=> [:cat :any] [:maybe schema/RingBuffer]])
+
+(m/=> get-stderr-buffer [:=> [:cat :any] [:maybe schema/RingBuffer]])
+
+(m/=> kill-all-headless! [:=> [:cat] schema/KillAllResult])
 
 (comment)
   ;; (spawn-headless! "test-ling-1" {:cwd "/home/user/project"})

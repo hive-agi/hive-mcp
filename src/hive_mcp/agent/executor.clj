@@ -10,7 +10,9 @@
             [taoensso.timbre :as log]
             [hive-mcp.channel.task-signal :as task-signal]
             [hive-mcp.agent.grant :as grant]
-            [hive-mcp.channel.activation :as activation]))
+            [hive-mcp.channel.activation :as activation]
+            [malli.core :as m]
+            [hive-mcp.agent.schema :as schema]))
 
 #_{:clj-kondo/ignore [:deprecated-var]}
 (def ^:dynamic ^:deprecated *current-agent-id* ctx/*current-agent-id*)
@@ -140,3 +142,25 @@
            ;; Drain piggyback channels — bridges hivemind shouts to agentic loop
            piggyback-text ((drain-fn-for opts) agent-id project-id drain-ctx)]
        (append-piggyback-to-results all-results piggyback-text)))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> current-agent-id [:=> [:cat] :any])
+
+;; `and` answers false/nil/true, so the result is a maybe-boolean.
+(m/=> requires-approval? [:=> [:cat :any schema/Permissions] [:maybe :boolean]])
+
+(m/=> request-approval! [:=> [:cat :any :any :any] :boolean])
+
+(m/=> execute-tool [:=> [:cat :any :any] schema/ToolResult])
+
+;; `result` is only read with keyword lookups, so any map (or nil) is fine.
+(m/=> format-tool-result [:=> [:cat :any :any [:maybe :map]] schema/ToolMessage])
+
+(m/=> execute-tool-calls
+      [:function
+       [:=> [:cat :any [:sequential :map] schema/Permissions] [:sequential schema/ToolMessage]]
+       [:=> [:cat :any [:sequential :map] schema/Permissions [:maybe :map]]
+        [:sequential schema/ToolMessage]]])
