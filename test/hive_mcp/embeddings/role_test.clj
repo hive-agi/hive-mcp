@@ -2,7 +2,10 @@
   "Contract tests for revisioned embedding-role shaping; no provider or store."
   (:require [clojure.test.check.generators :as gen]
             [hive-mcp.embeddings.role :as role]
-            [hive-test.trifecta :refer [deftrifecta]]))
+            [hive-test.trifecta :refer [deftrifecta]]
+            [clojure.test :refer [deftest is]]
+            [hive-mcp.embeddings.protocol :as proto]
+            [hive-mcp.embeddings.active :as active]))
 
 (defn characterize-query
   [{:keys [template text]}]
@@ -42,3 +45,16 @@
    :num-tests 40
    :mutations [["always-raw" (fn [{:keys [entry]}] (:content entry))]
                ["always-empty" (fn [_] "")]]})
+
+(deftest provider-port-receives-shaped-query
+  (let [seen (atom [])
+        provider (reify proto/EmbeddingProvider
+                   (embed-text [_ text] (swap! seen conj text) [1.0])
+                   (embed-batch [_ texts] (mapv (constantly [1.0]) texts))
+                   (embedding-dimension [_] 1))]
+    (is (= [1.0] (active/embed-text provider (role/shape-query :raw "plain"))))
+    (is (= [1.0] (active/embed-text provider
+                                    (role/shape-query :qwen3-retrieval-v1 "find memory"))))
+    (is (= ["plain"
+            (str "Instruct: " role/qwen-retrieval-instruction "\nQuery: find memory")]
+           @seen))))
