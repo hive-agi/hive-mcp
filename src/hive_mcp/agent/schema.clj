@@ -217,3 +217,34 @@
 (def Permissions
   "Permission flags a tool call runs with (a coll, `(set perms)` is taken)."
   [:maybe [:or [:sequential :any] [:set :any]]])
+
+(def GetSlave
+  "The registry port: a callable id -> row or nil (a fn, map or keyword all work)."
+  [:fn {:gen/elements [(constantly nil)]} ifn?])
+
+(def Domain
+  "The soft-resolved domain fns of the hive-agent addon (or nil when absent)."
+  [:maybe [:map-of :keyword [:fn {:gen/elements [(constantly nil)]} ifn?]]])
+
+(def RequestedGrant
+  "What `grant/requested-grant` answers: the parsed map, or why it cannot be one."
+  [:or
+   [:map [:ok [:maybe :map]]]
+   [:map [:refused :string]]])
+
+(def ChildGrantDecision
+  "What `grant/child-grant` answers: a recorded grant, or a refusal."
+  [:or
+   [:map [:grant :any]]
+   [:map [:refused :string] [:data {:optional true} :map]]])
+
+(def ResolveResult
+  "What `identity/resolve-request` answers."
+  [:map
+   [:args :map]
+   [:identity [:map
+               [:caller-id :any]
+               [:claimant Claimant]
+               [:verified? :boolean]
+               [:claims {:optional true} :any]]]
+   [:decision :map]])

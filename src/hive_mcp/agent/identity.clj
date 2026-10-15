@@ -29,7 +29,9 @@
             [clojure.string :as str]
             [hive-system.crypto.ed25519-der :as ed]
             [hive-dsl.result :as r]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [hive-mcp.agent.schema :as schema]
+            [malli.core :as m])
   (:import [java.nio.file Files LinkOption StandardCopyOption]
            [java.nio.file.attribute FileAttribute PosixFilePermissions]))
 
@@ -324,3 +326,46 @@
                              args)]
     (note-anomaly! (:decision res) tool-name (get-in res [:identity :caller-id]))
     res))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> domain [:=> [:cat] schema/Domain])
+
+;; Unknown values (nil, numbers, junk strings) read as :observe.
+(m/=> parse-mode [:=> [:cat :any] schema/Mode])
+
+(m/=> configured-mode [:=> [:cat] schema/Mode])
+
+(m/=> configured-ttl-ms [:=> [:cat] [:and :int [:> 0]]])
+
+(m/=> default-key-file [:=> [:cat] schema/File])
+
+(m/=> load-or-create-key! [:=> [:cat schema/File] schema/SigningKey])
+
+(m/=> ->signer [:=> [:cat schema/SigningKey] schema/Signer])
+
+(m/=> signer [:=> [:cat] schema/Signer])
+
+;; Every key is read with destructuring, so any map (or nil) is accepted; the
+;; token is nil when the domain is absent or minting fails.
+(m/=> mint-for-child [:=> [:cat [:maybe :map]] [:maybe :any]])
+
+(m/=> mint-for-slave [:=> [:cat schema/GetSlave :any] [:maybe :any]])
+
+;; Keys of env-extra may be keywords or strings; names and values come out as
+;; strings.
+(m/=> child-env [:=> [:cat [:maybe :map] :any :any] [:map-of :string :string]])
+
+(m/=> claimant [:=> [:cat schema/GetSlave :any] schema/Claimant])
+
+(m/=> anomaly-counts [:=> [:cat] :map])
+
+(m/=> resolve-request [:=> [:cat :map [:maybe :map]] schema/ResolveResult])
+
+(m/=> refusal-text [:=> [:cat [:maybe :map] :any] :string])
+
+(m/=> note-anomaly! [:=> [:cat [:maybe :map] :any :any] :nil])
+
+(m/=> verify-request! [:=> [:cat [:maybe :map] :any schema/GetSlave] schema/ResolveResult])

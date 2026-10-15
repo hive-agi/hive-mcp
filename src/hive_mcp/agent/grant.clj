@@ -16,7 +16,9 @@
    spawn credentials are verified (kanban IDENTITY-VERIFIED). This gate stops
    mistakes, not a hostile child."
   (:require [clojure.string :as str]
-            [clojure.data.json :as json]))
+            [clojure.data.json :as json]
+            [hive-mcp.agent.schema :as schema]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -207,3 +209,28 @@
                    "\n\nMissing capability: " (pr-str (:grant/missing no))
                    "\nRequest it from your parent with `hivemind ask`, naming the "
                    "capability and why you need it. Do not retry another way."))))))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> domain [:=> [:cat] schema/Domain])
+
+(m/=> registry-get-slave [:=> [:cat :any] [:maybe :map]])
+
+;; `slave-ids` splits its argument, so it is a string; the vector is [id] or
+;; [id agent].
+(m/=> slave-ids [:=> [:cat :string] [:vector :string]])
+
+(m/=> lineage [:=> [:cat schema/GetSlave :string] [:vector :map]])
+
+;; A blank or nil caller has no grant; the wire form is a map.
+(m/=> recorded-grant [:=> [:cat schema/GetSlave :any] [:maybe :map]])
+
+(m/=> depth-of [:=> [:cat schema/GetSlave :any] :int])
+
+(m/=> requested-grant [:=> [:cat :any] schema/RequestedGrant])
+
+(m/=> child-grant [:=> [:cat [:maybe :map] :any :any :any] schema/ChildGrantDecision])
+
+(m/=> call-refusal [:=> [:cat [:maybe :map] schema/GetSlave :any :any :any] [:maybe :string]])
