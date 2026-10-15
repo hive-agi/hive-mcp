@@ -39,7 +39,9 @@
        :cap/multi-turn    :multi-turn
        :cap/budget-guard  :budgeted
        :cap/saa           :saa-enabled)"
-  (:require [hive-dsl.adt :refer [defadt adt-variant]]))
+  (:require [hive-dsl.adt :refer [defadt adt-variant]]
+            [malli.core :as m]
+            [hive-mcp.agent.schema :as schema]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -94,6 +96,14 @@
    (to-keyword (headless-capability :cap/hooks)) => :cap/hooks"
   [hc]
   (adt-variant hc))
+
+;; Input: any keyword or string is tried (the body coerces and returns nil for
+;; the rest), and any other value reaches the `:else nil` branch, so the input
+;; is :any. Output is a capability ADT value or nil.
+(m/=> from-keyword [:=> [:cat :any] [:maybe schema/HeadlessCapability]])
+
+;; Input is a capability ADT value; the variant keyword comes back.
+(m/=> to-keyword [:=> [:cat schema/HeadlessCapability] schema/CapabilityKw])
 
 ;; =============================================================================
 ;; Variant Sets

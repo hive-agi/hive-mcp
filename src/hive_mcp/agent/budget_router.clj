@@ -21,7 +21,9 @@
                                          Required once routing downgrades."
   (:require [hive-mcp.config.core :as config]
             [hive-dsl.result :as r]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.agent.schema :as schema]))
 
 ;; ---------------------------------------------------------------------------
 ;; Config helpers
@@ -401,3 +403,73 @@
                             (>= fleet-remaining (* 0.2 fleet-budget)) :caution
                             (pos? fleet-remaining)                    :critical
                             :else                                     :exhausted)}))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> enabled? [:=> [:cat] :boolean])
+
+;; Candidate model ids configured for a tier; [] when none. The tier is looked
+;; up in a config map, so any value is accepted.
+(m/=> tier-models [:=> [:cat :any] [:vector :any]])
+
+;; A non-string model classifies as :standard, so the input is :any.
+(m/=> classify-model-tier [:=> [:cat :any] schema/Tier])
+
+;; An unknown tier falls back to 9.0 (existing test), so any keyword is valid.
+(m/=> tier-cost-per-1m [:=> [:cat :keyword] :double])
+
+(m/=> estimate-task-cost-usd
+      [:function
+       [:=> [:cat :keyword] :double]
+       [:=> [:cat :keyword [:maybe [:map [:tokens {:optional true} number?]]]] number?]])
+
+(m/=> project-remaining-tasks
+      [:function
+       [:=> [:cat number? :keyword] :int]
+       [:=> [:cat number? :keyword [:maybe [:map [:tokens {:optional true} number?]]]] :int]])
+
+(m/=> max-tier-for-budget [:=> [:cat number?] schema/Tier])
+
+;; Unknown tiers read as :standard / :premium in the body, so keywords.
+(m/=> tier-allowed? [:=> [:cat :keyword :keyword] :boolean])
+
+(m/=> select-tier
+      [:function
+       [:=> [:cat schema/BudgetStatus] schema/TierSelection]
+       [:=> [:cat schema/BudgetStatus
+             [:maybe [:map [:preferred-tier {:optional true} [:maybe schema/Tier]]]]]
+        schema/TierSelection]])
+
+(m/=> route-model
+      [:function
+       [:=> [:cat :any :any] schema/RouteResult]
+       [:=> [:cat :any :any [:maybe [:map [:force? {:optional true} :any]]]]
+        schema/RouteResult]])
+
+(def ^:private SuggestOpts
+  [:maybe [:map
+           [:budget-usd {:optional true} [:maybe number?]]
+           [:model {:optional true} :any]
+           [:preferred-tier {:optional true} [:maybe schema/Tier]]
+           [:active-agents {:optional true} [:maybe number?]]]])
+
+(m/=> suggest-model
+      [:function
+       [:=> [:cat] schema/ModelSuggestion]
+       [:=> [:cat SuggestOpts] schema/ModelSuggestion]])
+
+(m/=> recommend-budget
+      [:function
+       [:=> [:cat] schema/BudgetRecommendation]
+       [:=> [:cat [:maybe [:map
+                           [:fleet-budget-usd {:optional true} [:maybe number?]]
+                           [:planned-agents {:optional true} [:maybe number?]]]]]
+        schema/BudgetRecommendation]])
+
+(m/=> fleet-budget-summary
+      [:function
+       [:=> [:cat] schema/FleetSummary]
+       [:=> [:cat [:maybe [:map [:fleet-budget-usd {:optional true} [:maybe number?]]]]]
+        schema/FleetSummary]])

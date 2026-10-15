@@ -34,7 +34,9 @@
      ;; Pure functions replacing ICoordinatorAware protocol methods:
      (hr/hivemind-tools role agent-def)
      (hr/hivemind-mode? role)"
-  (:require [hive-dsl.adt :refer [defadt adt-case adt-variant]]))
+  (:require [hive-dsl.adt :refer [defadt adt-case adt-variant]]
+            [malli.core :as m]
+            [hive-mcp.agent.schema :as schema]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -154,3 +156,22 @@
     :role/hivemind   all-available-tools
     :role/worker     nil
     :role/standalone nil))
+
+;; from-keyword: like headless-capability, anything not a keyword/string is
+;; nil, so the input is :any (permissive in).
+(m/=> from-keyword [:=> [:cat :any] [:maybe schema/HivemindRole]])
+
+(m/=> to-keyword [:=> [:cat schema/HivemindRole] schema/RoleKw])
+
+(m/=> hivemind-mode? [:=> [:cat schema/HivemindRole] :boolean])
+
+;; The tool set is a set of names for :role/hivemind and nil otherwise. The
+;; optional agent-def is only documented for the caller's disallowed-tools
+;; filter; the body never reads it, so it is :any.
+(m/=> hivemind-tools
+      [:function
+       [:=> [:cat schema/HivemindRole] [:maybe [:set :string]]]
+       [:=> [:cat schema/HivemindRole :any] [:maybe [:set :string]]]])
+
+;; The pool is handed back untouched for :role/hivemind, nil for the others.
+(m/=> worker-tool-pool [:=> [:cat schema/HivemindRole :any] :any])
