@@ -275,3 +275,78 @@
         (java.nio.file.Files/deleteIfExists link)
         (java.nio.file.Files/deleteIfExists path)
         (java.nio.file.Files/deleteIfExists dir)))))
+
+(defn parent-swap-contract
+  "A concurrent rename/symlink swap of the parent cannot write through its alias."
+  [_]
+  (let [root (java.nio.file.Files/createTempDirectory "hive-log-swap" (make-array java.nio.file.attribute.FileAttribute 0))
+        parent (.resolve root "hive-mcp")
+        moved (.resolve root "moved")
+        victim (.resolve root "victim")
+        target (.resolve victim "coordinator.log")
+        writer (sink/file-line-writer (.toFile (.resolve parent "coordinator.log")))
+        attrs (make-array java.nio.file.attribute.FileAttribute 0)]
+    (try
+      (java.nio.file.Files/createDirectory victim attrs)
+      (java.nio.file.Files/write target (.getBytes "untouched" "UTF-8") (make-array java.nio.file.OpenOption 0))
+      (sink/write-line! writer "first")
+      (java.nio.file.Files/move parent moved (make-array java.nio.file.CopyOption 0))
+      (java.nio.file.Files/createSymbolicLink parent victim attrs)
+      (let [refused? (try (sink/write-line! writer "second") false
+                          (catch Exception _ true))]
+        {:refused? refused? :victim (slurp (.toFile target))
+         :moved (slurp (.toFile (.resolve moved "coordinator.log")))})
+      (finally
+        (doseq [p [parent (.resolve moved "coordinator.log") moved target victim root]]
+          (java.nio.file.Files/deleteIfExists p))))))
+
+(deftrifecta parent-swap-safety
+  hive-mcp.server.log-sink-test/parent-swap-contract
+  {:golden-path "test/golden/server/parent-swap-safety.edn"
+   :cases {:swap :swap}
+   :gen (gen/return :swap)
+   :pred (fn [{:keys [refused? victim moved]}]
+           (and refused? (= "untouched" victim) (= "first\n" moved)))
+   :num-tests 5
+   :mutations [["follows-swapped-parent" (fn [_] {:refused? false :victim "second" :moved "first\n"})]]
+   :assert (fn [] (is (= {:refused? true :victim "untouched" :moved "first\n"}
+                         (parent-swap-contract :swap))))})
+
+(defn pinned-parent-contract
+  "Rename the directory and install a symlink precisely between verified
+   directory open and relative file open; the pinned handle stays on its inode."
+  [_]
+  (let [root (java.nio.file.Files/createTempDirectory "hive-log-pinned" (make-array java.nio.file.attribute.FileAttribute 0))
+        parent (.resolve root "hive-mcp")
+        moved (.resolve root "moved")
+        victim (.resolve root "victim")
+        target (.resolve victim "coordinator.log")
+        attrs (make-array java.nio.file.attribute.FileAttribute 0)]
+    (try
+      (java.nio.file.Files/createDirectory victim attrs)
+      (java.nio.file.Files/write target (.getBytes "untouched" "UTF-8") (make-array java.nio.file.OpenOption 0))
+      (let [p (#'sink/private-file! (.toFile (.resolve parent "coordinator.log")))]
+        (try
+          (java.nio.file.Files/move parent moved (make-array java.nio.file.CopyOption 0))
+          (java.nio.file.Files/createSymbolicLink parent victim attrs)
+          (let [f (#'sink/open-verified-fd! p (:name p))]
+            (try (#'sink/write-fd! f (.getBytes "pinned" "UTF-8"))
+                 (finally (#'sink/close-fd! f))))
+          {:victim (slurp (.toFile target))
+           :moved (slurp (.toFile (.resolve moved "coordinator.log")))}
+          (finally (#'sink/close-fd! p))))
+      (finally
+        (doseq [p [parent (.resolve moved "coordinator.log") moved target victim root]]
+          (java.nio.file.Files/deleteIfExists p))))))
+
+(deftrifecta pinned-parent-safety
+  hive-mcp.server.log-sink-test/pinned-parent-contract
+  {:golden-path "test/golden/server/pinned-parent-safety.edn"
+   :cases {:swap :swap}
+   :gen (gen/return :swap)
+   :pred (fn [{:keys [victim moved]}]
+           (and (= "untouched" victim) (= "pinned" moved)))
+   :num-tests 5
+   :mutations [["follows-alias-after-check" (fn [_] {:victim "pinned" :moved ""})]]
+   :assert (fn [] (is (= {:victim "untouched" :moved "pinned"}
+                         (pinned-parent-contract :swap))))})

@@ -52,17 +52,43 @@
              "hive-mcp" "coordinator.log")))
 
 (defn- private-file!
-  "Create a private log directory, refusing symlinks before writes; file inode is verified after open."
+  "Open every ancestor with O_DIRECTORY|O_NOFOLLOW, creating only the final
+   private directory relative to its opened parent. Never chmod a pathname.
+   Returns a pinned directory descriptor; caller must close it."
   [^java.io.File file]
-  (let [dir (.toPath (.getParentFile file))
-        path (.toPath file)
-        private-dir (PosixFilePermissions/fromString "rwx------")]
-    (doseq [p (take-while some? (iterate #(.getParent %) (.toAbsolutePath dir)))]
-      (when (Files/isSymbolicLink p)
-        (throw (ex-info "Log directory contains symlink" {:directory (str p)}))))
-    (Files/createDirectories dir (make-array java.nio.file.attribute.FileAttribute 0))
-    (Files/setPosixFilePermissions dir private-dir)
-    path))
+  (when-not (and (= "Linux" (System/getProperty "os.name"))
+                 (= "amd64" (System/getProperty "os.arch")))
+    (throw (ex-info "Secure log sink requires Linux amd64" {})))
+  (let [libc (com.sun.jna.NativeLibrary/getInstance "c")
+        call (fn [name ret args] (.invoke (.getFunction libc name) ret (object-array args)))
+        parts (map str (iterator-seq (.iterator (.normalize (.toAbsolutePath (.toPath file))))))
+        root (int (call "open" Integer/TYPE ["/" (int (bit-or 65536 131072 524288))]))
+        close! (fn [fd] (call "close" Integer/TYPE [fd]))]
+    (when (neg? root) (throw (ex-info "Cannot open log root" {})))
+    (loop [fd root dirs (butlast parts)]
+      (if-let [part (first dirs)]
+        (let [opened (int (call "openat" Integer/TYPE [fd part (int (bit-or 65536 131072 524288))]))
+              next-fd (if (and (neg? opened) (= 1 (count dirs)))
+                        (do
+                          (when (neg? (int (call "mkdirat" Integer/TYPE [fd part (int 448)])))
+                            (close! fd)
+                            (throw (ex-info "Cannot create private log directory" {})))
+                          (int (call "openat" Integer/TYPE [fd part (int (bit-or 65536 131072 524288))])))
+                        opened)]
+          (close! fd)
+          (when (neg? next-fd) (throw (ex-info "Unsafe log ancestor" {:component part})))
+          (when (= 1 (count dirs))
+            (try
+              (let [stat (com.sun.jna.Memory. 256)
+                    uid (int (call "getuid" Integer/TYPE []))]
+                (when (or (neg? (int (call "fstat" Integer/TYPE [next-fd stat])))
+                          (not= 16384 (bit-and 61440 (.getInt stat 24)))
+                          (not= 448 (bit-and 511 (.getInt stat 24)))
+                          (not= uid (.getInt stat 28)))
+                  (throw (ex-info "Log directory is not owned and private" {}))))
+              (catch Throwable t (close! next-fd) (throw t))))
+          (recur next-fd (next dirs)))
+        {:fd fd :libc libc :name (last parts)}))))
 
 (def max-file-bytes
   "Maximum bytes in the active log and each retained generation."
@@ -73,34 +99,29 @@
   3)
 
 (defn- open-verified-fd!
-  "Open with O_NOFOLLOW and inspect the OPEN Linux inode with fstat before writing.
-   The portable NIO attribute APIs address a pathname, not a channel, and are
-   insufficient against a rename/hardlink race. Fail closed off Linux."
-  [path]
-  (when-not (= "Linux" (System/getProperty "os.name"))
-    (throw (ex-info "Secure log sink requires Linux fstat" {})))
-  (let [libc (com.sun.jna.NativeLibrary/getInstance "c")
-        call (fn [name ret args]
-               (.invoke (.getFunction libc name) ret (object-array args)))
-        fd (int (call "open" Integer/TYPE [(str path) (int (bit-or 1 64 1024 131072 524288)) (int 384)]))]
-    (when (neg? fd)
-      (throw (ex-info "Secure log open failed" {:path (str path)})))
+  "Open relative to a pinned private directory and inspect the OPEN Linux
+   inode with fstat before writing. Fail closed off Linux amd64."
+  [{:keys [fd libc]} name]
+  (let [call (fn [sym ret args] (.invoke (.getFunction libc sym) ret (object-array args)))
+        opened (int (call "openat" Integer/TYPE
+                          [fd name (int (bit-or 1 64 1024 131072 524288)) (int 384)]))]
+    (when (neg? opened)
+      (throw (ex-info "Secure log open failed" {:name name})))
     (try
       (let [stat (com.sun.jna.Memory. 256)
             uid (int (call "getuid" Integer/TYPE []))]
-        (when (neg? (int (call "fstat" Integer/TYPE [fd stat])))
-          (throw (ex-info "fstat failed" {:path (str path)})))
+        (when (neg? (int (call "fstat" Integer/TYPE [opened stat])))
+          (throw (ex-info "fstat failed" {:name name})))
         ;; Linux x86_64 stat: nlink +16, mode +24, uid +28, size +48.
-        (when-not (and (= "amd64" (System/getProperty "os.arch"))
-                       (= 1 (.getLong stat 16))
+        (when-not (and (= 1 (.getLong stat 16))
                        (= 32768 (bit-and 61440 (.getInt stat 24)))
                        (= 384 (bit-and 511 (.getInt stat 24)))
                        (= uid (.getInt stat 28)))
           (throw (ex-info "Opened log inode is not private, owned, singly-linked regular file"
-                          {:path (str path)})))
-        {:fd fd :size (.getLong stat 48) :libc libc})
+                          {:name name})))
+        {:fd opened :size (.getLong stat 48) :libc libc})
       (catch Throwable t
-        (.invoke (.getFunction libc "close") Integer/TYPE (object-array [fd]))
+        (call "close" Integer/TYPE [opened])
         (throw t)))))
 
 (defn- close-fd! [{:keys [fd libc]}]
@@ -117,31 +138,32 @@
 (defrecord FileLineWriter [file]
   LineWriter
   (write-line! [_ line]
-    (let [path (private-file! file)
-          bytes (.getBytes (str line \newline) "UTF-8")
-          bytes (if (> (alength bytes) max-file-bytes)
-                  (.getBytes (str (String. bytes 0 (- max-file-bytes 32) "UTF-8") " [truncated]" \newline) "UTF-8")
-                  bytes)
-          no-links (into-array LinkOption [LinkOption/NOFOLLOW_LINKS])
-          opened (open-verified-fd! path)
-          rotate? (> (+ (:size opened) (alength bytes)) max-file-bytes)]
+    (let [parent (private-file! file)]
       (try
-        (if rotate?
-          (do
-            (close-fd! opened)
-            (doseq [n (range retained-files 0 -1)]
-              (let [source (if (= n 1) path (.resolveSibling path (str (.getFileName path) "." (dec n))))
-                    target (.resolveSibling path (str (.getFileName path) "." n))]
-                (when (Files/exists source no-links)
-                  (private-file! (.toFile source))
-                  (when (Files/exists target no-links) (private-file! (.toFile target)))
-                  (Files/move source target (into-array StandardCopyOption [StandardCopyOption/REPLACE_EXISTING])))))
-            (let [rotated (open-verified-fd! path)]
-              (try (write-fd! rotated bytes)
-                   (finally (close-fd! rotated)))))
-          (write-fd! opened bytes))
-        (finally
-          (when-not rotate? (close-fd! opened)))))))
+        (let [path (.toPath file)
+              bytes (.getBytes (str line \newline) "UTF-8")
+              bytes (if (> (alength bytes) max-file-bytes)
+                      (.getBytes (str (String. bytes 0 (- max-file-bytes 32) "UTF-8") " [truncated]" \newline) "UTF-8")
+                      bytes)
+              no-links (into-array LinkOption [LinkOption/NOFOLLOW_LINKS])
+              opened (open-verified-fd! parent (:name parent))
+              rotate? (> (+ (:size opened) (alength bytes)) max-file-bytes)]
+          (try
+            (if rotate?
+              (do
+                (close-fd! opened)
+                (doseq [n (range retained-files 0 -1)]
+                  (let [source (if (= n 1) path (.resolveSibling path (str (.getFileName path) "." (dec n))))
+                        target (.resolveSibling path (str (.getFileName path) "." n))]
+                    (when (Files/exists source no-links)
+                      (when (Files/exists target no-links) (private-file! (.toFile target)))
+                      (Files/move source target (into-array StandardCopyOption [StandardCopyOption/REPLACE_EXISTING])))))
+                (let [rotated (open-verified-fd! parent (:name parent))]
+                  (try (write-fd! rotated bytes)
+                       (finally (close-fd! rotated)))))
+              (write-fd! opened bytes))
+            (finally (when-not rotate? (close-fd! opened)))))
+        (finally (close-fd! parent))))))
 
 (defn file-line-writer
   "A private append-only coordinator log writer. The sink's daemon thread owns IO."
