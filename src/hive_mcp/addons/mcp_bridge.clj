@@ -40,7 +40,9 @@
             [hive-mcp.dns.result :as r]
             [clojure.string :as str]
             [clojure.walk :as walk]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.addons.schema :as schema]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -577,6 +579,139 @@
   [name-kw]
   (when-let [bridge (get-bridge name-kw)]
     (:connected? (bridge-status bridge))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+;;
+;; Value objects local to the bridge: the `IMcpBridge` port is defined in THIS
+;; namespace, so its schema cannot live in `hive-mcp.addons.schema` without a
+;; require cycle.
+
+(def Bridge
+  "Anything satisfying `IMcpBridge` (generated from the no-op bridge)."
+  [:fn {:gen/elements [(->NoopMcpBridge :bridge/schema-seed)]
+        :error/message "must satisfy hive-mcp.addons.mcp-bridge/IMcpBridge"}
+   #(satisfies? IMcpBridge %)])
+
+(def BridgeAddon
+  "A bridge that is also an `IAddon`: what `register-bridge!` accepts."
+  [:fn {:gen/elements [(->NoopMcpBridge :bridge/schema-seed)]
+        :error/message "must satisfy IAddon and IMcpBridge"}
+   #(and (satisfies? proto/IAddon %) (satisfies? IMcpBridge %))])
+
+(def TransportType
+  "A member of `transport-types`."
+  [:enum :stdio :sse :http])
+
+(def Handler
+  "A proxy handler: `(fn [params] result)`. Callable, so `ifn?`, never `fn?`."
+  [:fn {:gen/elements [identity]} ifn?])
+
+(def Middleware
+  "`(fn [handler] -> handler')`."
+  [:fn {:gen/elements [identity]} ifn?])
+
+(def RemoteTool
+  "A tool definition as `list-remote-tools` returns it."
+  [:map
+   [:name :string]
+   [:description {:optional true} [:maybe :string]]
+   [:inputSchema {:optional true} [:maybe :map]]])
+
+(def ProxyOpts
+  "Options of `proxy-tool-def` / `proxy-tool-defs`."
+  [:map
+   [:middleware {:optional true} [:maybe [:sequential Middleware]]]
+   [:skip-defaults? {:optional true} [:maybe :boolean]]
+   [:schema-xf {:optional true} [:maybe Handler]]
+   [:tool-filter {:optional true} [:maybe Handler]]
+   [:name-xf {:optional true} [:maybe Handler]]
+   [:desc-xf {:optional true} [:maybe Handler]]])
+
+(def ProxyToolDef
+  "A local tool-def proxying a remote tool."
+  [:map
+   [:name :string]
+   [:description :string]
+   [:inputSchema :map]
+   [:handler Handler]
+   [:bridge-source :string]])
+
+(def BridgeStatus
+  "What `bridge-status` answers."
+  [:map
+   [:connected? [:maybe :boolean]]
+   [:transport TransportType]
+   [:uptime-ms [:maybe :int]]
+   [:remote-tool-count :int]])
+
+(def BridgeListing
+  "One row of `list-bridges`."
+  [:map
+   [:name :keyword]
+   [:prefix :string]
+   [:transport TransportType]
+   [:registered-at schema/Instant]
+   [:status BridgeStatus]])
+
+(def BridgeOutcome
+  "`register-bridge!` answer: the addon outcome, plus the prefix once init ran."
+  [:map
+   [:success? :boolean]
+   [:addon-name schema/RegistryId]
+   [:bridge-prefix {:optional true} :string]
+   [:errors {:optional true} [:sequential :string]]
+   [:already-active? {:optional true} :boolean]
+   [:elapsed-ms {:optional true} number?]])
+
+(m/=> compose-middleware [:=> [:cat Handler [:sequential Middleware]] Handler])
+
+(m/=> wrap-proxy-strip-params [:=> [:cat [:set :keyword]] Middleware])
+
+(m/=> wrap-proxy-stringify-keys [:=> [:cat] Middleware])
+
+(m/=> wrap-proxy-logging [:=> [:cat :string :string] Middleware])
+
+(m/=> wrap-proxy-timeout [:=> [:cat [:int {:min 0}]] Middleware])
+
+(m/=> wrap-proxy-retry [:=> [:cat [:int {:min 0}] [:int {:min 0}]] Middleware])
+
+(m/=> wrap-proxy-params [:=> [:cat :map] Middleware])
+
+(m/=> default-proxy-middleware [:=> [:cat] [:vector Middleware]])
+
+(m/=> proxy-tool-def
+      [:function
+       [:=> [:cat Bridge :string RemoteTool] ProxyToolDef]
+       [:=> [:cat Bridge :string RemoteTool [:maybe ProxyOpts]] ProxyToolDef]])
+
+(m/=> proxy-tool-defs
+      [:function
+       [:=> [:cat Bridge :string] [:vector ProxyToolDef]]
+       [:=> [:cat Bridge :string [:maybe ProxyOpts]] [:vector ProxyToolDef]]])
+
+(m/=> ->noop-bridge
+      [:function
+       [:=> [:cat] BridgeAddon]
+       [:=> [:cat :keyword] BridgeAddon]])
+
+(m/=> register-bridge!
+      [:function
+       [:=> [:cat :any] BridgeOutcome]
+       [:=> [:cat :any [:maybe :map]] BridgeOutcome]])
+
+(m/=> unregister-bridge! [:=> [:cat :keyword] schema/AddonOutcome])
+
+(m/=> get-bridge [:=> [:cat :keyword] [:maybe Bridge]])
+
+(m/=> list-bridges [:=> [:cat] [:vector BridgeListing]])
+
+(m/=> bridge? [:=> [:cat :any] :boolean])
+
+(m/=> bridge-addon? [:=> [:cat :any] :boolean])
+
+(m/=> bridge-connected? [:=> [:cat :keyword] [:maybe :boolean]])
 
 (comment
   ;; Development REPL examples

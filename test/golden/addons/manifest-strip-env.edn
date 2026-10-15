@@ -1,0 +1,12 @@
+{:case-0 {:out {}, :in {}},
+ :case-1 {:out {:+- 0}, :in {:+- 0}},
+ :case-2 {:out {:_ 0, :? "literal"}, :in {:_ 0, :? "literal"}},
+ :case-3 {:out {:Y 3, :A -4}, :in {:Y 3, :A -4}},
+ :case-4 {:out {}, :in {:+qb "${HOME}"}},
+ :case-5
+ {:out {:* "pre-${X}-post", :i0 "literal"},
+  :in {:* "pre-${X}-post", :i0 "literal"}},
+ :case-6
+ {:out {:OD8 10, :*+E "pre-${X}-post", :?k -20},
+  :in {:OD8 10, :*+E "pre-${X}-post", :?k -20}},
+ :case-7 {:out {:Du -1}, :in {:I!? "${HOME}", :Du -1}}}

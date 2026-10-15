@@ -14,7 +14,8 @@
             [hive-mcp.addons.mcp-bridge :as bridge]
             [hive-mcp.dns.result :as r]
             [clojure.data.json :as json]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [malli.core :as m])
   (:import [java.io BufferedReader InputStreamReader OutputStreamWriter BufferedWriter]
            [java.util.concurrent.atomic AtomicLong]
            [java.util.concurrent TimeUnit]))
@@ -232,3 +233,5 @@
    with {:command [\"python3\" \"path/to/server.py\"]} before use."
   [id]
   (->StdioBridge id (atom nil)))
+
+(m/=> ->stdio-bridge [:=> [:cat :keyword] bridge/BridgeAddon])
