@@ -4,7 +4,9 @@
             [hive-mcp.swarm.datascript.queries :as ds-queries]
             [hive-dsl.result :as r]
             [taoensso.timbre :as log]
-            [hive-mcp.tools.schema-keys :as schema-keys]))
+            [hive-mcp.tools.schema-keys :as schema-keys]
+            [hive-mcp.agent.runtime-schema :as schema]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -158,3 +160,31 @@
   []
   (reset! agents {})
   (log/info "Cleared agent registry"))
+
+(m/=> ensure-registered! [:=> [:cat] :nil])
+
+(m/=> register! [:=> [:cat [:maybe [:sequential schema/ToolDef]]] :nil])
+
+(m/=> get-schemas
+      [:=> [:cat [:maybe [:sequential :any]]] [:vector [:map-of :any :any]]])
+
+(m/=> get-tool [:=> [:cat :any] [:maybe [:map-of :any :any]]])
+
+(m/=> list-tools [:=> [:cat] [:maybe [:sequential :any]]])
+
+(m/=> refresh! [:=> [:cat] :int])
+
+(m/=> register-agent! [:=> [:cat [:map [:id :any]]] :any])
+
+(m/=> unregister-agent! [:=> [:cat :any] :any])
+
+(m/=> get-agent-by-id [:=> [:cat :any] :any])
+
+(m/=> list-all-agents [:=> [:cat] [:maybe [:sequential :any]]])
+
+(m/=> list-lings [:=> [:cat] [:sequential :any]])
+
+(m/=> sync-from-datascript!
+      [:=> [:cat] [:map [:synced-count :int] [:agents [:vector :any]]]])
+
+(m/=> clear-agents! [:=> [:cat] :nil])

@@ -12,7 +12,8 @@
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [hive-dsl.result :as r]))
+            [hive-dsl.result :as r]
+            [malli.core :as m]))
 
 (defprotocol TranscriptSource
   (list-transcripts [this] "Result<[{:agent-id :source ...}]>.")
@@ -179,3 +180,16 @@
       (catch Throwable _ nil))))
 
 (defn default-parent-index [] (->SwarmParentIndex))
+
+(m/=> entry-turn [:=> [:cat [:maybe [:map-of :any :any]]] :any])
+
+(m/=> hive-agent-read-dir
+      [:=> [:cat :any :any] [:map-of :any :any]])
+
+(m/=> hive-agent-datalevin-root [:=> [:cat] :string])
+
+(m/=> composite [:=> [:cat [:sequential :any]] [:fn #(instance? hive_mcp.agent.transcript_source.CompositeSource %)]])
+
+(m/=> default-source [:=> [:cat] [:fn #(instance? hive_mcp.agent.transcript_source.CompositeSource %)]])
+
+(m/=> default-parent-index [:=> [:cat] [:fn #(instance? hive_mcp.agent.transcript_source.SwarmParentIndex %)]])

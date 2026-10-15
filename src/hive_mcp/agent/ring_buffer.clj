@@ -3,7 +3,9 @@
 
    Provider-agnostic infrastructure used by ProcessBuilder and OpenRouter
    backends for streaming output capture. Extracted from agent/headless.clj
-   to enable reuse across headless backend implementations.")
+   to enable reuse across headless backend implementations."
+  (:require [hive-mcp.agent.runtime-schema :as schema]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -97,3 +99,23 @@
      :capacity capacity
      :total-lines-seen total-lines-seen
      :dropped dropped}))
+
+(m/=> create-ring-buffer
+      [:function
+       [:=> [:cat] schema/RingBuffer]
+       [:=> [:cat :int] schema/RingBuffer]])
+
+(m/=> ring-buffer-append!
+      [:=> [:cat schema/RingBuffer :any] schema/BufferState])
+
+(m/=> ring-buffer-contents
+      [:function
+       [:=> [:cat schema/RingBuffer] [:vector :any]]
+       [:=> [:cat schema/RingBuffer [:maybe [:map [:last-n {:optional true} [:maybe number?]]]]]
+        [:vector :any]]])
+
+(m/=> ring-buffer-contents-since
+      [:=> [:cat schema/RingBuffer [:maybe :int]] [:vector schema/LineEntry]])
+
+(m/=> ring-buffer-stats
+      [:=> [:cat schema/RingBuffer] schema/BufferStats])

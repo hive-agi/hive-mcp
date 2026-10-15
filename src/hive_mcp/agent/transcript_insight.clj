@@ -15,7 +15,9 @@
      digest            one fold over a ling's entries: tools, files, shell
                        commands, commits, test outcomes, errors, idle gap"
   (:require [clojure.data.json :as json]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [malli.core :as m]
+            [hive-mcp.agent.runtime-schema :as schema]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -430,3 +432,123 @@
                                          (:tests last-test) (:failures last-test) (:errors last-test)))
       (get-in d [:report :final-text])
       (assoc :final (clip (get-in d [:report :final-text]) preview-chars)))))
+
+(m/=> entry-role [:=> [:cat schema/Entry] [:maybe :string]])
+
+(m/=> entry-content [:=> [:cat schema/Entry] :string])
+
+(m/=> entry-turn [:=> [:cat schema/Entry] :any])
+
+(m/=> entry-timestamp [:=> [:cat schema/Entry] [:maybe :int]])
+
+(m/=> tool-call-name [:=> [:cat schema/ToolCall] :any])
+
+(m/=> tool-call-arguments [:=> [:cat schema/ToolCall] :string])
+
+(m/=> tool-call-result [:=> [:cat schema/ToolCall] :string])
+
+(m/=> entry-tool-calls [:=> [:cat schema/Entry] [:maybe [:sequential :any]]])
+
+(m/=> entry-tool-names [:=> [:cat schema/Entry] [:vector :any]])
+
+(m/=> entry-empty? [:=> [:cat schema/Entry] :boolean])
+
+(m/=> assistant? [:=> [:cat schema/Entry] :boolean])
+
+(m/=> llm-error? [:=> [:cat schema/Entry] :boolean])
+
+(m/=> clip [:=> [:cat :string number?] :string])
+
+(m/=> parse-args [:=> [:cat schema/ToolCall] [:map-of :any :any]])
+
+(m/=> parse-since
+      [:=> [:cat :any number?] [:maybe [:or :int [:map [:error :string]]]]])
+
+(m/=> iso [:=> [:cat [:maybe number?]] [:maybe :string]])
+
+(m/=> glob->pred [:=> [:cat :any] ifn?])
+
+(m/=> collapse-listing
+      [:=> [:cat [:sequential [:map-of :any :any]]] [:sequential [:map-of :any :any]]])
+
+(m/=> select-listing
+      [:=> [:cat [:sequential [:map-of :any :any]] [:maybe [:map-of :any :any]]]
+       [:vector [:map-of :any :any]]])
+
+(m/=> last-tool-result
+      [:=> [:cat [:maybe [:sequential schema/Entry]]]
+       [:maybe [:map [:entry schema/Entry] [:tool :any] [:content :string]]]])
+
+(m/=> ending
+      [:=> [:cat [:maybe [:sequential schema/Entry]]] [:enum "error" "text" "tool-calls" "unknown"]])
+
+(m/=> max-turn [:=> [:cat [:maybe [:sequential schema/Entry]]] number?])
+
+(m/=> final-report
+      [:=> [:cat :any [:maybe [:sequential schema/Entry]]]
+       [:map
+        [:agent-id :any]
+        [:final-text [:maybe :string]]
+        [:final-turn :any]
+        [:turns number?]
+        [:entries :int]
+        [:ending [:enum "error" "text" "tool-calls" "unknown"]]
+        [:last-tool-result {:optional true} [:map-of :any :any]]
+        [:total-cost {:optional true} number?]]])
+
+(m/=> compile-needle [:=> [:cat :any] schema/Needle])
+
+(m/=> snippet
+      [:function
+       [:=> [:cat :string :int :int] :string]
+       [:=> [:cat :string :int :int :int] :string]])
+
+(m/=> entry-segments [:=> [:cat schema/Entry] [:vector schema/Segment]])
+
+(m/=> find-hits
+      [:=> [:cat [:maybe [:map-of :any :any]] [:maybe [:sequential schema/Entry]]
+            [:map [:pattern [:fn #(instance? java.util.regex.Pattern %)]]]
+            [:maybe [:map-of :any :any]]]
+       [:sequential [:map-of :any :any]]])
+
+(m/=> written-path [:=> [:cat schema/ToolCall] :any])
+
+(m/=> shell-command [:=> [:cat schema/ToolCall] [:maybe :string]])
+
+(m/=> classify-command [:=> [:cat :any] [:enum "test" "git" "build" "other"]])
+
+(m/=> parse-commits
+      [:=> [:cat :any]
+       [:vector [:map [:branch :string] [:sha :string] [:subject :string]]]])
+
+(m/=> parse-test-runs
+      [:=> [:cat :any]
+       [:vector [:map [:tests :int] [:assertions :int] [:failures :int] [:errors :int]]]])
+
+(m/=> error-text? [:=> [:cat :any] :boolean])
+
+(m/=> idle-gap
+      [:=> [:cat [:maybe [:sequential schema/Entry]]]
+       [:maybe [:map [:ms :int] [:after-turn :any]]]])
+
+(m/=> digest
+      [:=> [:cat :any [:maybe [:sequential schema/Entry]]]
+       [:map
+        [:agent-id :any]
+        [:turns number?]
+        [:entries :int]
+        [:ending [:enum "error" "text" "tool-calls" "unknown"]]
+        [:tools [:map-of :any :int]]
+        [:files [:vector :any]]
+        [:commands [:map-of :any :int]]
+        [:shell [:vector [:map-of :any :any]]]
+        [:commits [:vector [:map-of :any :any]]]
+        [:tests [:vector [:map-of :any :any]]]
+        [:errors [:map [:count :int] [:samples [:vector [:map-of :any :any]]]]]
+        [:report [:map-of :any :any]]
+        [:started {:optional true} :int]
+        [:ended {:optional true} :int]
+        [:wall-ms {:optional true} :int]
+        [:idle-gap {:optional true} [:map-of :any :any]]]])
+
+(m/=> digest-row [:=> [:cat [:map-of :any :any]] [:map-of :any :any]])

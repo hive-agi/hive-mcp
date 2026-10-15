@@ -35,7 +35,9 @@
        :session/done     :finished
        :session/errored  :failed
        :session/aborted  :cancelled)"
-  (:require [hive-dsl.adt :refer [defadt adt-variant]]))
+  (:require [hive-dsl.adt :refer [defadt adt-variant]]
+            [hive-mcp.agent.runtime-schema :as schema]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -117,3 +119,13 @@
   "Check if the given AgentSessionState ADT value represents an active state."
   [ss]
   (contains? active-states (adt-variant ss)))
+
+(m/=> from-keyword [:=> [:cat :any] [:maybe schema/SessionState]])
+
+(m/=> to-keyword [:=> [:cat schema/SessionState] schema/SessionStateKw])
+
+(m/=> valid-state? [:=> [:cat :any] :boolean])
+
+(m/=> terminal? [:=> [:cat schema/SessionState] :boolean])
+
+(m/=> active? [:=> [:cat schema/SessionState] :boolean])
