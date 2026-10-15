@@ -1,0 +1,5 @@
+{:case-0 {:out (), :in {}},
+ :case-1 {:out (), :in {:tool nil}},
+ :case-2 {:out (), :in {:wave nil, :tool "a"}},
+ :case-3 {:out ([:to 1]), :in {:to 1, :id "$ref:op-1"}},
+ :case-4 {:out (), :in {:wave "a"}}}

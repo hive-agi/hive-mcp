@@ -229,7 +229,9 @@
                       (:covered report))
         wrapped (inst/instrument! {:ns nss})]
     (try
-      (is (= (count wrapped) (count (:covered report)))
+      ;; instrument! wraps every contracted var of the namespaces, so it may
+      ;; wrap more than the gated set but never fewer.
+      (is (<= (count (:covered report)) (count wrapped))
           "every covered function should have been wrappable")
       (is (= [{:tool "memory" :command "add" :content "hi"}]
              (verbs/parse-dsl [["m+" {"c" "hi"}]]))
