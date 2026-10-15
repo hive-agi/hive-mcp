@@ -167,8 +167,8 @@
   {:golden-path "test/golden/server/boot-file-filter.edn"
    :cases {:safe [[:info [(sink/boot-event :addon :init 12.0 :ok)]]]
            :secret [[:info ["[boot-timing] init API_KEY=secret"]]
-                    [:info [(sink/boot-event "API_KEY=secret" :addon 2.0 :ok)]]
                     [:warn [(sink/boot-event :addon :init 12.0 :ok)]]
+                    [:info [(sink/boot-event :addon :init 12.0 :bad)]]
                     [:info [(sink/boot-event :addon :init Double/NaN :ok)]]
                     [:info ["[boot-timing] init" "secret"]]]}
    :gen (gen/fmap (fn [s] [[:warn [(str "[boot-timing] " s)]]
