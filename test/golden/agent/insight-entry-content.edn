@@ -1,0 +1,44 @@
+{:case-0
+ {:out "3N",
+  :in
+  #:transcript{:role :assistant,
+               :content "3N",
+               :turn 0,
+               :tool-calls
+               [#:tool-call{:name "read_file",
+                            :arguments "{\"file_path\":\"/a/b\"}",
+                            :result "[main abc1234] fix it"}]}},
+ :case-1
+ {:out "zenlbMkPWjV5g686qs6",
+  :in {:role "system", :content "zenlbMkPWjV5g686qs6", :turn 1}},
+ :case-2
+ {:out "54sVhbyzCx2966",
+  :in {:role "tool", :content "54sVhbyzCx2966", :turn 0}},
+ :case-3
+ {:out "Gip0V4U45y1WG4L4U",
+  :in {:role "assistant", :content "Gip0V4U45y1WG4L4U", :turn 1}},
+ :case-4
+ {:out "ca2R0X",
+  :in
+  #:transcript{:role :system,
+               :content "ca2R0X",
+               :turn 2,
+               :timestamp 1000000000003}},
+ :case-5
+ {:out "hZ21fk5I7so9r6102T5",
+  :in
+  #:transcript{:role :system,
+               :content "hZ21fk5I7so9r6102T5",
+               :turn 1,
+               :tool-calls []}},
+ :case-6
+ {:out "Z3l587ZhL",
+  :in
+  #:transcript{:role :tool,
+               :content "Z3l587ZhL",
+               :turn 10,
+               :timestamp 1000000000004,
+               :tool-calls []}},
+ :case-7
+ {:out "11F0us",
+  :in #:transcript{:role :user, :content "11F0us", :turn 1}}}
