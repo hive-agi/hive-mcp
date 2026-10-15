@@ -27,7 +27,9 @@
             [clojure.java.io :as io]
             [clojure.set :as set]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.addons.schema :as schema]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -263,3 +265,42 @@
                     {:path (:baseline-path snap) :at (:at b) :discovered (count (:discovered b))})
       :recorded-at (:recorded-at snap)
       :notice     (notice snap)})))
+
+;; -----------------------------------------------------------------------------
+;; Contracts
+;; -----------------------------------------------------------------------------
+
+(m/=> default-baseline-path [:=> [:cat] :string])
+
+(m/=> read-baseline [:=> [:cat :string] [:maybe :map]])
+
+(m/=> write-baseline!
+      [:=> [:cat :string [:map [:discovered {:optional true} schema/BootIds]
+                          [:mounted {:optional true} schema/BootIds]]]
+       :nil])
+
+(m/=> assess [:=> [:cat schema/BootFacts] [:vector schema/Issue]])
+
+(m/=> degraded? [:=> [:cat [:sequential [:map [:severity {:optional true} :keyword]]]] :boolean])
+
+(m/=> record-roster! [:=> [:cat schema/BootFacts [:maybe :string]] schema/Snapshot])
+
+(m/=> record-memory! [:=> [:cat schema/BootMemory] schema/Snapshot])
+
+(m/=> snapshot [:=> [:cat] [:maybe schema/Snapshot]])
+
+(m/=> reset-state! [:=> [:cat] :nil])
+
+(m/=> summary-line [:=> [:cat :map] :string])
+
+(m/=> notice
+      [:function
+       [:=> [:cat] [:maybe :string]]
+       [:=> [:cat [:maybe :map]] [:maybe :string]]])
+
+(m/=> with-notice [:=> [:cat :string] :string])
+
+(m/=> readiness-report
+      [:function
+       [:=> [:cat] schema/ReadinessReport]
+       [:=> [:cat [:maybe :map]] schema/ReadinessReport]])

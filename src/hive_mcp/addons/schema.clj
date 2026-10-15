@@ -136,21 +136,45 @@
    [:severity [:enum :error :warn]]
    [:message :string]])
 
+(def BootIds
+  "A roster of addon ids, as the loader hands it: any collection (it is
+   `set`-ed or sorted on read)."
+  [:or [:vector [:string {:min 1}]] [:set [:string {:min 1}]]])
+
+(def BootMemory
+  "The memory backend's facts."
+  [:map
+   [:backend {:optional true} [:maybe :string]]
+   [:deferred-to {:optional true} [:maybe :string]]
+   [:store-set? {:optional true} [:maybe :boolean]]])
+
 (def BootFacts
   "The facts `boot-health/assess` judges."
   [:map
-   [:discovered {:optional true} [:vector [:string {:min 1 :max 12}]]]
-   [:mounted {:optional true} [:vector [:string {:min 1 :max 12}]]]
-   [:failed {:optional true} [:vector [:string {:min 1 :max 12}]]]
+   [:discovered {:optional true} BootIds]
+   [:mounted {:optional true} BootIds]
+   [:failed {:optional true} BootIds]
    [:expected-min {:optional true} [:maybe [:int {:min 0 :max 20}]]]
-   [:expected {:optional true} [:set [:string {:min 1 :max 12}]]]
-   [:baseline {:optional true} [:maybe [:map [:discovered {:optional true}
-                                             [:vector [:string {:min 1 :max 12}]]]
+   [:expected {:optional true} BootIds]
+   [:baseline {:optional true} [:maybe [:map [:discovered {:optional true} BootIds]
                                     [:at {:optional true} :string]]]]
-   [:memory {:optional true} [:maybe [:map
-                                      [:backend {:optional true} [:maybe :string]]
-                                      [:deferred-to {:optional true} [:maybe :string]]
-                                      [:store-set? {:optional true} [:maybe :boolean]]]]]])
+   [:memory {:optional true} [:maybe BootMemory]]])
+
+(def ReadinessReport
+  "`readiness-report`: the not-yet-recorded arm carries only :ready? and
+   :summary; the recorded arm adds the roster."
+  [:map
+   [:ready? :boolean]
+   [:summary :string]
+   [:expected {:optional true} [:maybe :int]]
+   [:discovered {:optional true} [:vector :string]]
+   [:mounted {:optional true} [:vector :string]]
+   [:failed {:optional true} [:vector :string]]
+   [:memory {:optional true} [:maybe :map]]
+   [:issues {:optional true} [:vector Issue]]
+   [:baseline {:optional true} [:maybe :map]]
+   [:recorded-at {:optional true} [:maybe :string]]
+   [:notice {:optional true} [:maybe :string]]])
 
 (def Snapshot
   "A recorded boot-health snapshot: the facts plus the judgement."
