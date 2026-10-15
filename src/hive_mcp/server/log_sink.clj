@@ -52,25 +52,16 @@
              "hive-mcp" "coordinator.log")))
 
 (defn- private-file!
-  "Create a private log directory/file, refusing symlinks before writes."
+  "Create a private log directory, refusing symlinks before writes; file inode is verified after open."
   [^java.io.File file]
   (let [dir (.toPath (.getParentFile file))
         path (.toPath file)
-        no-links (into-array LinkOption [LinkOption/NOFOLLOW_LINKS])
         private-dir (PosixFilePermissions/fromString "rwx------")]
     (doseq [p (take-while some? (iterate #(.getParent %) (.toAbsolutePath dir)))]
       (when (Files/isSymbolicLink p)
         (throw (ex-info "Log directory contains symlink" {:directory (str p)}))))
     (Files/createDirectories dir (make-array java.nio.file.attribute.FileAttribute 0))
     (Files/setPosixFilePermissions dir private-dir)
-    (when (Files/exists path no-links)
-      (when-not (Files/isRegularFile path no-links)
-        (throw (ex-info "Log file must be regular" {:path (str path)})))
-      (when (not= 1 (long (Files/getAttribute path "unix:nlink" no-links)))
-        (throw (ex-info "Log file must not be hardlinked" {:path (str path)})))
-      (when-not (= (PosixFilePermissions/fromString "rw-------")
-                   (Files/getPosixFilePermissions path no-links))
-        (throw (ex-info "Log file must be private" {:path (str path)}))))
     path))
 
 (def max-file-bytes
@@ -81,6 +72,48 @@
   "Number of retained older generations."
   3)
 
+(defn- open-verified-fd!
+  "Open with O_NOFOLLOW and inspect the OPEN Linux inode with fstat before writing.
+   The portable NIO attribute APIs address a pathname, not a channel, and are
+   insufficient against a rename/hardlink race. Fail closed off Linux."
+  [path]
+  (when-not (= "Linux" (System/getProperty "os.name"))
+    (throw (ex-info "Secure log sink requires Linux fstat" {})))
+  (let [libc (com.sun.jna.NativeLibrary/getInstance "c")
+        call (fn [name ret args]
+               (.invoke (.getFunction libc name) ret (object-array args)))
+        fd (int (call "open" Integer/TYPE [(str path) (int (bit-or 1 64 1024 131072 524288)) (int 384)]))]
+    (when (neg? fd)
+      (throw (ex-info "Secure log open failed" {:path (str path)})))
+    (try
+      (let [stat (com.sun.jna.Memory. 256)
+            uid (int (call "getuid" Integer/TYPE []))]
+        (when (neg? (int (call "fstat" Integer/TYPE [fd stat])))
+          (throw (ex-info "fstat failed" {:path (str path)})))
+        ;; Linux x86_64 stat: nlink +16, mode +24, uid +28, size +48.
+        (when-not (and (= "amd64" (System/getProperty "os.arch"))
+                       (= 1 (.getLong stat 16))
+                       (= 32768 (bit-and 61440 (.getInt stat 24)))
+                       (= 384 (bit-and 511 (.getInt stat 24)))
+                       (= uid (.getInt stat 28)))
+          (throw (ex-info "Opened log inode is not private, owned, singly-linked regular file"
+                          {:path (str path)})))
+        {:fd fd :size (.getLong stat 48) :libc libc})
+      (catch Throwable t
+        (.invoke (.getFunction libc "close") Integer/TYPE (object-array [fd]))
+        (throw t)))))
+
+(defn- close-fd! [{:keys [fd libc]}]
+  (.invoke (.getFunction libc "close") Integer/TYPE (object-array [fd])))
+
+(defn- write-fd! [{:keys [fd libc]} bytes]
+  (let [buf (com.sun.jna.Memory. (alength bytes))]
+    (.write buf 0 bytes 0 (alength bytes))
+    (when-not (= (long (alength bytes))
+                 (long (.invoke (.getFunction libc "write") Long/TYPE
+                                (object-array [fd buf (long (alength bytes))]))))
+      (throw (ex-info "Log write failed or incomplete" {})))))
+
 (defrecord FileLineWriter [file]
   LineWriter
   (write-line! [_ line]
@@ -90,30 +123,25 @@
                   (.getBytes (str (String. bytes 0 (- max-file-bytes 32) "UTF-8") " [truncated]" \newline) "UTF-8")
                   bytes)
           no-links (into-array LinkOption [LinkOption/NOFOLLOW_LINKS])
-          attrs (into-array java.nio.file.attribute.FileAttribute
-                            [(PosixFilePermissions/asFileAttribute (PosixFilePermissions/fromString "rw-------"))])]
-      (when (and (Files/exists path no-links)
-                 (> (+ (Files/size path) (alength bytes)) max-file-bytes))
-        (doseq [n (range retained-files 0 -1)]
-          (let [source (if (= n 1) path (.resolveSibling path (str (.getFileName path) "." (dec n))))
-                target (.resolveSibling path (str (.getFileName path) "." n))]
-            (when (Files/exists source no-links)
-              (private-file! (.toFile source))
-              (when (Files/exists target no-links) (private-file! (.toFile target)))
-              (Files/move source target (into-array StandardCopyOption [StandardCopyOption/REPLACE_EXISTING]))))))
-      (let [before (when (Files/exists path no-links)
-                     (Files/readAttributes path java.nio.file.attribute.BasicFileAttributes no-links))
-            options #{StandardOpenOption/CREATE StandardOpenOption/WRITE
-                      StandardOpenOption/APPEND LinkOption/NOFOLLOW_LINKS}]
-        (with-open [channel (Files/newByteChannel path options attrs)]
-          (let [after (Files/readAttributes path java.nio.file.attribute.BasicFileAttributes no-links)]
-            (when (or (not (.isRegularFile after))
-                      (not= 1 (long (Files/getAttribute path "unix:nlink" no-links)))
-                      (not= (PosixFilePermissions/fromString "rw-------")
-                            (Files/getPosixFilePermissions path no-links))
-                      (and before (not= (.fileKey before) (.fileKey after))))
-              (throw (ex-info "Log file changed during open" {:path (str path)}))))
-          (.write channel (java.nio.ByteBuffer/wrap bytes)))))))
+          opened (open-verified-fd! path)
+          rotate? (> (+ (:size opened) (alength bytes)) max-file-bytes)]
+      (try
+        (if rotate?
+          (do
+            (close-fd! opened)
+            (doseq [n (range retained-files 0 -1)]
+              (let [source (if (= n 1) path (.resolveSibling path (str (.getFileName path) "." (dec n))))
+                    target (.resolveSibling path (str (.getFileName path) "." n))]
+                (when (Files/exists source no-links)
+                  (private-file! (.toFile source))
+                  (when (Files/exists target no-links) (private-file! (.toFile target)))
+                  (Files/move source target (into-array StandardCopyOption [StandardCopyOption/REPLACE_EXISTING])))))
+            (let [rotated (open-verified-fd! path)]
+              (try (write-fd! rotated bytes)
+                   (finally (close-fd! rotated)))))
+          (write-fd! opened bytes))
+        (finally
+          (when-not rotate? (close-fd! opened)))))))
 
 (defn file-line-writer
   "A private append-only coordinator log writer. The sink's daemon thread owns IO."
@@ -185,29 +213,44 @@
     (let [{:keys [output_]} data]
       (offer! sink (force output_)))))
 
+(defrecord BootEvent [addon-id phase elapsed-ms status])
+
+(defn boot-event
+  "Build a typed timing record; appender hashes the identifier rather than writing untrusted text."
+  [addon-id phase elapsed-ms status]
+  (->BootEvent addon-id phase elapsed-ms status))
+
+(defn- valid-boot-event?
+  [event]
+  (and (instance? BootEvent event)
+       (some? (:addon-id event))
+       (#{:addon :init :slowest :complete :manifest-scan} (:phase event))
+       (#{:ok} (:status event))
+       (number? (:elapsed-ms event))
+       (let [ms (double (:elapsed-ms event))]
+         (and (Double/isFinite ms) (<= 0.0 ms)))))
+
+(defn- render-boot-event
+  "Only fixed literals, numeric duration and a digest of the identifier reach disk."
+  [event]
+  (let [digest (java.security.MessageDigest/getInstance "SHA-256")
+        id-bytes (.digest digest (.getBytes (str (:addon-id event)) java.nio.charset.StandardCharsets/UTF_8))
+        id (apply str (map #(format "%02x" (bit-and 255 %)) (take 8 id-bytes)))]
+    (format "[boot-timing] addon=%s phase=%s elapsed-ms=%.1f status=ok"
+            id (name (:phase event)) (double (:elapsed-ms event)))))
+
 (defn boot-line?
-  "Admit only audited, single-line boot timing records, never arbitrary log payloads."
+  "Admit only structured, typed boot events; never inspect or force raw log output."
   [data]
-  (let [args (:vargs data)
-        ns-name (:?ns-str data)
-        line (first args)]
-    (and (= :info (:level data))
-         (or (= "hive-mcp.server.core" ns-name)
-             (= "hive-mcp.extensions.loader" ns-name))
-         (= 1 (count args))
-         (string? line)
-         (or (and (= "hive-mcp.server.core" ns-name)
-                  (or (.startsWith ^String line "[boot-timing] init ")
-                      (.startsWith ^String line "[boot-timing] ===== ig/init complete:")
-                      (.startsWith ^String line "[boot-timing]   slowest ")))
-             (and (= "hive-mcp.extensions.loader" ns-name)
-                  (or (.startsWith ^String line "[boot-timing] addon ")
-                      (.startsWith ^String line "[boot-timing] classpath manifest scan "))))
-         (not-any? #(Character/isISOControl ^char %) line))))
+  (and (= :info (:level data))
+       (#{"hive-mcp.server.core" "hive-mcp.extensions.loader"} (:?ns-str data))
+       (= 1 (count (:vargs data)))
+       (instance? BootEvent (first (:vargs data)))
+       (valid-boot-event? (first (:vargs data)))))
 
 (defn boot-appender-fn
-  "Timbre file appender that filters before forcing formatted output."
+  "Timbre file appender: serialize only typed boot events, never formatted output."
   [sink]
   (fn [data]
     (when (boot-line? data)
-      (offer! sink (force (:output_ data))))))
+      (offer! sink (render-boot-event (first (:vargs data)))))))

@@ -161,17 +161,15 @@
                            r  (ig/init-key k v)
                            ms (/ (- (System/nanoTime) s) 1e6)]
                        (swap! timings conj [k ms])
-                       (log/info (format "[boot-timing] init %-30s %9.1f ms" (str k) ms))
+                       (log/info (log-sink/boot-event k :init ms :ok))
                        r))
                    assertf
                    ig/resolve-key)
           total   (/ (- (System/nanoTime) t0) 1e6)
           slowest (take 8 (sort-by (comp - second) @timings))]
-      (log/info (format "[boot-timing] ===== ig/init complete: %.1f ms over %d keys ====="
-                        total (count @timings)))
+      (log/info (log-sink/boot-event :system :complete total :ok))
       (doseq [[k ms] slowest]
-        (log/info (format "[boot-timing]   slowest %-30s %9.1f ms  (%.0f%%)"
-                          (str k) ms (* 100.0 (/ ms (max total 0.001))))))
+        (log/info (log-sink/boot-event k :slowest ms :ok)))
       sys)))
 
 ;; =============================================================================

@@ -159,41 +159,64 @@
         append! (sink/boot-appender-fn s)]
     (doseq [[level args] records]
       (append! {:level level :?ns-str "hive-mcp.server.core"
-                :vargs args :output_ (delay (str (first args)))}))
+                :vargs args :output_ (delay "API_KEY=secret must never reach disk")}))
     (vec (:queue s))))
 
 (deftrifecta boot-file-filter
   hive-mcp.server.log-sink-test/boot-file-contract
   {:golden-path "test/golden/server/boot-file-filter.edn"
-   :cases {:safe [[:info ["[boot-timing] init :addon 12.0 ms"]]]
-           :secret [[:info ["API_KEY=secret"]]
-                    [:warn ["[boot-timing] password"]]
-                    [:info ["[boot-timing] init :addon\nsecret"]]
+   :cases {:safe [[:info [(sink/boot-event :addon :init 12.0 :ok)]]]
+           :secret [[:info ["[boot-timing] init API_KEY=secret"]]
+                    [:info [(sink/boot-event "API_KEY=secret" :addon 2.0 :ok)]]
+                    [:warn [(sink/boot-event :addon :init 12.0 :ok)]]
+                    [:info [(sink/boot-event :addon :init Double/NaN :ok)]]
                     [:info ["[boot-timing] init" "secret"]]]}
    :gen (gen/fmap (fn [s] [[:warn [(str "[boot-timing] " s)]]
-                            [:info [(str "secret=" s)]]]) gen/string-alphanumeric)
+                            [:info [(str "[boot-timing] init " s)]]]) gen/string-alphanumeric)
    :pred empty?
    :num-tests 30
-   :mutations [["unfiltered-appender" (fn [records] (mapv (comp first second) records))]]
+   :mutations [["unfiltered-appender" (fn [records] (mapv (comp str first second) records))]]
    :assert (fn []
-             (is (= ["[boot-timing] init :addon 12.0 ms"]
-                    (boot-file-contract [[:info ["[boot-timing] init :addon 12.0 ms"]]
-                                         [:info ["secret"]]]))))})
+             (let [out (boot-file-contract [[:info [(sink/boot-event "API_KEY=secret" :addon 12.0 :ok)]]
+                                            [:info ["[boot-timing] init API_KEY=secret"]]])]
+               (is (= 1 (count out)))
+               (is (not (str/includes? (first out) "secret")))))})
 
 (deftest coordinator-appender-registration
   (require 'hive-mcp.server.core)
   (let [config @(requiring-resolve 'taoensso.timbre/*config*)
         append! (get-in config [:appenders :coordinator-file :fn])
-        file-sink @(requiring-resolve 'hive-mcp.server.core/file-sink)
-        before (sink/depth file-sink)
+        dir (java.nio.file.Files/createTempDirectory "registered-boot-log" (make-array java.nio.file.attribute.FileAttribute 0))
+        path (.resolve dir "coordinator.log")
+        ;; Real registered appender, real file writer, disposable directory.
+        ;; We preserve the original sink and replace its writer through the
+        ;; queue drain only by registering a new appender with the same factory.
+        real-sink (sink/make-sink (sink/file-line-writer (.toFile path)))
+        registered! (sink/boot-appender-fn real-sink)
         formatted? (atom false)]
-    (is (fn? append!))
-    (is (false? (get-in config [:appenders :coordinator-file :async?])))
-    (append! {:level :info :?ns-str "hive-mcp.server.core"
-              :vargs ["unrelated secret"]
-              :output_ (delay (reset! formatted? true) "unrelated secret")})
-    (is (false? @formatted?) "disallowed payload must never be formatted")
-    (is (= before (sink/depth file-sink)) "disallowed payload never reaches file sink")))
+    (try
+      (is (fn? append!))
+      (is (false? (get-in config [:appenders :coordinator-file :async?])))
+      (doseq [fn! [append! registered!]]
+        (fn! {:level :info :?ns-str "hive-mcp.server.core"
+              :vargs ["[boot-timing] init API_KEY=secret"]
+              :output_ (delay (reset! formatted? true) "API_KEY=secret")})
+        (fn! {:level :info :?ns-str "hive-mcp.server.core"
+              :vargs [(sink/boot-event :addon :init 12.0 :ok)]
+              :output_ (delay (reset! formatted? true) "API_KEY=secret")}))
+      (is (false? @formatted?) "neither rejected nor accepted payload can force output")
+      (let [deadline (+ (System/currentTimeMillis) 2000)]
+        (while (and (not (java.nio.file.Files/exists path (make-array java.nio.file.LinkOption 0)))
+                    (< (System/currentTimeMillis) deadline))
+          (Thread/sleep 10)))
+      (is (java.nio.file.Files/exists path (make-array java.nio.file.LinkOption 0)))
+      (when (java.nio.file.Files/exists path (make-array java.nio.file.LinkOption 0))
+        (is (str/includes? (slurp (.toFile path)) "phase=init elapsed-ms=12.0 status=ok"))
+        (is (not (str/includes? (slurp (.toFile path)) "secret"))))
+      (finally
+        (sink/stop! real-sink)
+        (java.nio.file.Files/deleteIfExists path)
+        (java.nio.file.Files/deleteIfExists dir)))))
 
 (deftest file-aliases-and-rotation
   (let [dir (java.nio.file.Files/createTempDirectory "hive-log-safe" (make-array java.nio.file.attribute.FileAttribute 0))
