@@ -285,5 +285,76 @@
       {:entry-count (count entries)
        :keys (keys entries)})))
 
+;; ── Contracts ──────────────────────────────────────────────────────────────
+;; Context slots are filled by the transport, so reads are permissive: an id
+;; is a string when present, a directory may be any value a caller passed
+;; (a File is accepted and returned as-is by the HCR chain).
+
+(def RequestCtxOpts
+  "Options `make-request-ctx` reads; every key optional."
+  [:map
+   [:agent-id {:optional true} [:maybe :string]]
+   [:caller-id {:optional true} [:maybe :string]]
+   [:project-id {:optional true} [:maybe :string]]
+   [:directory {:optional true} [:maybe :string]]
+   [:session-id {:optional true} [:maybe :string]]
+   [:timestamp {:optional true} [:maybe inst?]]
+   [:depth {:optional true} [:maybe :int]]])
+
+(def RequestCtx
+  "Shape `make-request-ctx` builds and `with-request-context` binds. An
+   explicit nil :timestamp or :depth in the options is kept (`:or` only fills
+   absent keys)."
+  [:map
+   [:agent-id [:maybe :string]]
+   [:caller-id [:maybe :string]]
+   [:project-id [:maybe :string]]
+   [:directory [:maybe :string]]
+   [:session-id [:maybe :string]]
+   [:timestamp [:maybe inst?]]
+   [:depth [:maybe :int]]])
+
+(def Attribution
+  "Who a write is attributed to; see `attribution`."
+  [:map
+   [:id [:maybe :string]]
+   [:verified? :boolean]
+   [:source [:enum :verified :caller :legacy]]])
+
+(def ^:private DirSource
+  [:enum :explicit :caller-cwd :request-ctx :server-cwd])
+
+(m/=> current-agent-id [:=> [:cat] [:maybe :string]])
+(m/=> current-project-id [:=> [:cat] [:maybe :string]])
+(m/=> resolve-caller-directory [:function
+                                [:=> [:cat] :any]
+                                [:=> [:cat [:maybe :map]] :any]])
+(m/=> caller-directory-source [:=> [:cat [:maybe :map]] DirSource])
+(m/=> current-session-id [:=> [:cat] [:maybe :string]])
+(m/=> current-identity [:=> [:cat] [:maybe :map]])
+(m/=> current-verified-caller-id [:=> [:cat] [:maybe :string]])
+(m/=> current-caller-id [:=> [:cat] [:maybe :string]])
+(m/=> current-session-agent-id [:function
+                                [:=> [:cat] [:maybe :string]]
+                                [:=> [:cat [:maybe :map]] [:maybe :string]]])
+(m/=> attribution [:=> [:cat [:maybe [:map
+                                      [:verified-id {:optional true} :any]
+                                      [:caller-id {:optional true} :any]
+                                      [:legacy-id {:optional true} :any]]]]
+                   Attribution])
+(m/=> current-attribution [:=> [:cat :any] Attribution])
+(m/=> attribution-tags [:=> [:cat [:maybe :map]] [:vector :string]])
+(m/=> attribution-created-by [:=> [:cat [:maybe :map] :any] :any])
+(m/=> current-timestamp [:=> [:cat] [:maybe inst?]])
+(m/=> current-depth [:=> [:cat] [:maybe :int]])
+(m/=> request-ctx [:=> [:cat] [:maybe :map]])
+(m/=> make-request-ctx [:=> [:cat [:maybe RequestCtxOpts]] RequestCtx])
+(m/=> increment-depth [:=> [:cat [:maybe [:map [:depth {:optional true} [:maybe :int]]]]]
+                       [:map [:depth :int]]])
+(m/=> request-memoize [:=> [:cat :any ifn?] :any])
+(m/=> request-cache-stats [:=> [:cat] [:maybe [:map
+                                              [:entry-count [:int {:min 0}]]
+                                              [:keys [:maybe [:sequential :any]]]]]])
+
 (m/=> current-directory [:=> [:cat] [:maybe :string]])
 (m/=> session-agent-id [:=> [:cat [:maybe :string] [:maybe :string]] [:maybe :string]])
