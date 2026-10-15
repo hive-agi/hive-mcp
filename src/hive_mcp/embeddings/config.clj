@@ -16,7 +16,8 @@
 
    Usage with EmbeddingService:
      (service/configure-collection! \"my-collection\" (config/ollama-config))"
-  (:require [hive-mcp.config.core :as global-config]))
+  (:require [hive-mcp.config.core :as global-config]
+            [malli.core :as m]))
 
 (def collection-provider-specs
   "Boot routing policy in application order. A nil fallback leaves ingest unconfigured."
@@ -29,6 +30,27 @@
    {:collection "hive-ingest" :primary :openrouter
     :success-message "Ingest collection configured with OpenRouter"}])
 
+(def ProviderType
+  "Embedding provider kinds an EmbeddingConfig may name."
+  [:enum :ollama :openai :openrouter :venice])
+
+(def CollectionSpec
+  "One row of `collection-provider-specs`."
+  [:map
+   [:collection :string]
+   [:primary ProviderType]
+   [:fallback {:optional true} [:maybe ProviderType]]
+   [:success-message {:optional true} [:maybe :string]]
+   [:fallback-warning {:optional true} [:maybe :string]]])
+
+(def CollectionRoute
+  "The route `collection-route` chooses. :provider is nil when an OpenRouter
+   attempt failed and the spec names no fallback."
+  [:map
+   [:provider [:maybe ProviderType]]
+   [:message {:optional true} [:maybe :string]]
+   [:level {:optional true} [:maybe [:enum :info :warn]]]])
+
 (defn collection-route
   "Choose the effective route and boot message from a spec and OpenRouter attempt result.
    This is pure: the caller owns provider setup, logging and any failed attempt."
@@ -38,6 +60,8 @@
     (if openrouter-success?
       {:provider :openrouter :message success-message :level :info}
       {:provider fallback :message fallback-warning :level (when fallback-warning :warn)})))
+
+(m/=> collection-route [:=> [:cat CollectionSpec :any] CollectionRoute])
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -209,3 +233,62 @@
           (name (:provider-type config))
           (:model config)
           (:dimension config)))
+
+;; =============================================================================
+;; Contracts (malli)
+;; =============================================================================
+
+(def ConfigShape
+  "The fields of an EmbeddingConfig, as a plain map."
+  [:map
+   [:provider-type ProviderType]
+   [:model [:string {:min 1}]]
+   [:dimension pos-int?]
+   [:options [:maybe [:map-of :keyword :any]]]])
+
+(def EmbeddingConfigRecord
+  "An EmbeddingConfig record. Generated from ConfigShape."
+  [:and
+   [:fn {:gen/schema ConfigShape :gen/fmap map->EmbeddingConfig}
+    #(instance? EmbeddingConfig %)]
+   ConfigShape])
+
+(def FactoryOpts
+  "Options a config factory reads; :model is required at runtime (the
+   factory throws naming the config key when it is absent)."
+  [:maybe [:map
+           [:model {:optional true} [:maybe :string]]
+           [:host {:optional true} [:maybe :string]]
+           [:api-key {:optional true} [:maybe :string]]]])
+
+(m/=> valid-config? [:=> [:cat :any] [:maybe :boolean]])
+
+(m/=> config->map [:=> [:cat [:maybe map?]]
+                   [:map
+                    [:provider-type :any]
+                    [:model :any]
+                    [:dimension :any]
+                    [:options [:map-of :keyword :any]]]])
+
+(m/=> get-dimension [:=> [:cat :any :any] [:maybe pos-int?]])
+
+(m/=> ollama-config [:function
+                     [:=> [:cat] EmbeddingConfigRecord]
+                     [:=> [:cat FactoryOpts] EmbeddingConfigRecord]])
+
+(m/=> openai-config [:function
+                     [:=> [:cat] EmbeddingConfigRecord]
+                     [:=> [:cat FactoryOpts] EmbeddingConfigRecord]])
+
+(m/=> openrouter-config [:function
+                         [:=> [:cat] EmbeddingConfigRecord]
+                         [:=> [:cat FactoryOpts] EmbeddingConfigRecord]])
+
+(m/=> venice-config [:function
+                     [:=> [:cat] EmbeddingConfigRecord]
+                     [:=> [:cat FactoryOpts] EmbeddingConfigRecord]])
+
+(m/=> same-dimension? [:=> [:cat :any :any] :boolean])
+
+(m/=> describe [:=> [:cat [:map [:provider-type :keyword] [:model :any] [:dimension :int]]]
+                :string])

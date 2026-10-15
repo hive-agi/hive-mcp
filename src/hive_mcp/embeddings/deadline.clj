@@ -146,10 +146,10 @@
 (def DeadlineSchema
   "A Deadline record: a clock plus the monotonic ms it expires at."
   [:and
-   [:map [:clock Clock] [:expires-at-ms :int]]
    [:fn {:gen/schema [:int {:min 0 :max 1000000}]
          :gen/fmap #(->Deadline (->FixedClock (atom 0)) %)}
-    #(instance? Deadline %)]])
+    #(instance? Deadline %)]
+   [:map [:clock Clock] [:expires-at-ms :int]]])
 
 (m/=> system-clock [:=> [:cat] [:fn {:gen/elements [(->SystemClock)]} #(instance? SystemClock %)]])
 
