@@ -27,7 +27,8 @@
    but it is frozen until the next register!, so hot-reloadable code registers
    the var."
   (:require [hive-dsl.result :as r]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -107,17 +108,23 @@
   (swap! registry assoc id source)
   id)
 
+(m/=> register! [:=> [:cat :keyword :any] :keyword])
+
 (defn deregister!
   "Remove the source under ID. A no-op when none is there. Returns ID."
   [id]
   (swap! registry dissoc id)
   id)
 
+(m/=> deregister! [:=> [:cat :keyword] :keyword])
+
 (defn registered
   "Snapshot of the registry, sorted by SourceId so a read's row order is
    deterministic across calls."
   []
   (into (sorted-map) @registry))
+
+(m/=> registered [:=> [:cat] :map])
 
 ;; =============================================================================
 ;; Pipeline — one source, on the railway
@@ -130,6 +137,8 @@
   {:source-id id
    :result (r/try-effect* :piggyback.source/failed
              (vec (-messages source)))})
+
+(m/=> pull [:=> [:cat [:tuple :keyword :any]] SourceOutcome])
 
 ;; =============================================================================
 ;; Promote — pure
@@ -147,6 +156,8 @@
           {:messages [] :failures []}
           outcomes))
 
+(m/=> fold-outcomes [:=> [:cat [:sequential SourceOutcome]] Collected])
+
 ;; =============================================================================
 ;; Boundary
 ;; =============================================================================
@@ -161,7 +172,11 @@
                 {:source-id source-id :message message}))
     messages))
 
+(m/=> messages-from [:=> [:cat [:or [:map-of :keyword :any] [:sequential [:tuple :keyword :any]]]] [:vector :map]])
+
 (defn collect-messages
   "Rows from every registered source. [] when none is registered."
   []
   (messages-from (registered)))
+
+(m/=> collect-messages [:=> [:cat] [:vector :map]])
