@@ -1,0 +1,7 @@
+{:case-0 {:out "$0", :in "$ref:$0.data.id"},
+ :case-1 {:out nil, :in "ref:no-dollar"},
+ :case-2 {:out nil, :in "plain"},
+ :case-3 {:out "$2", :in "$ref:$2"},
+ :case-4 {:out "op-1", :in "$ref:op-1"},
+ :case-5 {:out nil, :in "ref:no-dollar"},
+ :case-6 {:out nil, :in ""}}
