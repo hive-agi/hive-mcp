@@ -172,17 +172,36 @@
    the caller's payload. Both applications see the same buffer value, so the
    payload cannot disagree with the cursor that was committed.
 
-   An entry too large for this response stays pending for a later drain."
-  [{:keys [entries cursor]} budget]
+   A budgeted oversized entry is delivered as a marked preview, with the full
+   value still available from poll-task. The default drain retains its legacy
+   at-least-one contract."
+  [{:keys [entries cursor]} budget legacy?]
   (let [total (count entries)]
     (loop [batch [] chars 0 idx cursor]
       (if (>= idx total)
         [batch idx]
         (let [output-entry (dissoc (nth entries idx) :timestamp :content-hash)
-              new-chars    (+ chars (count (pr-str output-entry)))]
-          (if (> new-chars budget)
-            [batch idx]
-            (recur (conj batch output-entry) new-chars (inc idx))))))))
+              new-chars (+ chars (count (pr-str output-entry)))]
+          (cond
+            (<= new-chars budget)
+            (recur (conj batch output-entry) new-chars (inc idx))
+
+            (seq batch) [batch idx]
+            legacy? [[output-entry] (inc idx)]
+            :else
+            (let [marker "...[truncated; full result available via poll-task]"
+                  original (pr-str output-entry)
+                  base (assoc (select-keys output-entry [:task-id :status])
+                              :result marker)
+                  preview (loop [n (min (count original)
+                                        (max 0 (- budget (count (pr-str base)))))]
+                            (let [p (assoc base :result (str (subs original 0 n) marker))]
+                              (if (or (zero? n) (<= (count (pr-str p)) budget))
+                                p
+                                (recur (dec n)))))]
+              (if (<= (count (pr-str preview)) budget)
+                [[preview] (inc idx)]
+                [batch idx]))))))))
 
 (defn- drainable?
   "True when `buf` exists and holds an entry the caller has not been given."
@@ -210,8 +229,9 @@
    The delivery is journalled AFTER the cursor has moved, so a crash between
    the two re-delivers rather than drops. At-least-once is the correct
    direction to fail for something the caller has already been promised."
-  ([caller-id] (drain! caller-id drain-char-budget))
-  ([caller-id budget]
+  ([caller-id] (drain! caller-id drain-char-budget true))
+  ([caller-id budget] (drain! caller-id budget false))
+  ([caller-id budget legacy?]
    (when (pos? budget)
      (let [buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))
            [old _new] (swap-vals!
@@ -220,7 +240,7 @@
                          (let [buf (get bufs buffer-key)]
                            (if-not (drainable? buf)
                              bufs
-                             (let [[_ new-cursor] (next-batch buf budget)]
+                             (let [[_ new-cursor] (next-batch buf budget legacy?)]
                                (if (= new-cursor (:cursor buf))
                                  bufs
                                  (if (>= new-cursor (count (:entries buf)))
@@ -228,7 +248,7 @@
                                    (assoc bufs buffer-key (assoc buf :cursor new-cursor)))))))))
            buf (get old buffer-key)]
        (when (drainable? buf)
-         (let [[batch new-cursor] (next-batch buf budget)
+         (let [[batch new-cursor] (next-batch buf budget legacy?)
                total (count (:entries buf))]
            (when (seq batch)
              (journal/record-delivered! buffer-key (keep :task-id batch))

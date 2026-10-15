@@ -398,6 +398,9 @@
    (require 'hive-mcp.channel.memory-piggyback)
    ((resolve 'hive-mcp.channel.memory-piggyback/drain!) caller-id ctx)))
 
+(defonce ^{:private true :doc "Provider blocks already drained but not yet fitted to a response, per caller."}
+  pending-catchup (atom {}))
+
 (defn- drain-catchup-piggyback
   "Drain the `:cu/piggyback-drain` enrichment channel for this response.
 
@@ -405,15 +408,38 @@
    A ctx-aware provider gets `request-ctx` and returns only a budgeted, cue-
    ordered slice, leaving the rest buffered for a later call; a provider that
    still takes the caller alone is called that way and drains one-shot, as
-   before. Neither shape is allowed to fail the response."
+   before. Neither shape is allowed to fail the response.
+
+   Provider-selected blocks are retained locally until their complete delimited
+   wire representation fits; a provider that advances on an oversized first
+   candidate cannot cause either budget overflow or lost work."
   [caller-id request-ctx]
-  (when (pos? (:char-budget request-ctx Long/MAX_VALUE))
-    (when-let [drain-fn (ext/get-extension :cu/piggyback-drain)]
+  (let [budget (:char-budget request-ctx Long/MAX_VALUE)]
+    (when (pos? budget)
       (try
-        (try
-          (drain-fn caller-id request-ctx)
-          (catch clojure.lang.ArityException _
-            (drain-fn caller-id)))
+        (let [prior (get @pending-catchup caller-id)
+              incoming (when (and (empty? prior)
+                                  (ext/get-extension :cu/piggyback-drain))
+                         (let [drain-fn (ext/get-extension :cu/piggyback-drain)]
+                           (try (drain-fn caller-id request-ctx)
+                                (catch clojure.lang.ArityException _
+                                  (drain-fn caller-id)))))
+              all (or prior (seq incoming))
+              [deliver defer]
+              (loop [pairs (seq all) out {} used 0]
+                (if-let [[tag body] (first pairs)]
+                  (let [text (if (string? body) body (pr-str body))
+                        wire (str "\n\n---" (str/upper-case (name tag)) "---\n"
+                                  text "\n---/" (str/upper-case (name tag)) "---")
+                        size (count wire)]
+                    (if (<= (+ used size) budget)
+                      (recur (next pairs) (assoc out tag body) (+ used size))
+                      [out (into {} pairs)]))
+                  [out nil]))]
+          (swap! pending-catchup (fn [m]
+                                   (if (seq defer) (assoc m caller-id defer)
+                                       (dissoc m caller-id))))
+          (when (seq deliver) deliver))
         (catch Exception e
           (log/debug "catchup-piggyback drain failed:" (.getMessage e))
           nil)))))

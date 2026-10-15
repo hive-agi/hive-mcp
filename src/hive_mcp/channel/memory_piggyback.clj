@@ -66,18 +66,18 @@
          fresh      (filterv #(not (and (:id %) (contains? known (:id %)))) formatted)
          merged     (into prior fresh)
          cursor     (min (:cursor existing 0) (count merged))
-         refs       (or context-refs (:context-refs existing))]
+         refs       (or context-refs (:context-refs existing))
+         refs-delivered? (if (some? context-refs)
+                           false (boolean (:refs-delivered? existing)))]
      (bput! buffers buffer-key
             (cond-> {:entries merged
-                     :cursor  cursor
-                     :done    (empty? (drop cursor merged))
+                     :cursor cursor
+                     :done (and (empty? (drop cursor merged))
+                                (or (nil? refs) refs-delivered?))
                      :seq-num (:seq-num existing 0)
-                     :sent    (set (:sent existing))}
+                     :sent (set (:sent existing))}
               (some? refs)
-              (assoc :context-refs refs
-                     :refs-delivered? (if (some? context-refs)
-                                        false
-                                        (boolean (:refs-delivered? existing))))))
+              (assoc :context-refs refs :refs-delivered? refs-delivered?)))
      (log/info "memory-piggyback: enqueued" (count fresh) "new of" (count formatted)
                "offered for" buffer-key
                "- buffer now" (count merged) "entries, cursor" cursor
@@ -119,22 +119,19 @@
      (when (and buf (not (:done buf)))
        (let [{:keys [cursor seq-num context-refs refs-delivered? sent offers]} buf
              policy (proj/resolve-policy (:policy ctx))
-             entries (proj/project (:entries buf) {:policy policy
-                                                   :pins (:pins ctx)})
+             entries (proj/project (:entries buf) {:policy policy :pins (:pins ctx)})
              total (count entries)
              tokens (:tokens ctx)
-             pending (when (seq tokens)
-                       (subvec (vec entries) (min cursor total)))
+             pending (when (seq tokens) (subvec (vec entries) (min cursor total)))
              ranked (when (seq pending)
                       (rank/select-batch pending {:tokens tokens :offers offers
                                                   :pins (:pins ctx)
                                                   :floor-cap (:floor-cap ctx)
                                                   :char-budget budget :strict-budget? strict?}))
              entries* (if ranked
-                        (into (subvec (vec entries) 0 (min cursor total))
-                              (:ordered ranked))
+                        (into (subvec (vec entries) 0 (min cursor total)) (:ordered ranked))
                         entries)
-             [batch new-cursor]
+             [candidate _]
              (if ranked
                [(:batch ranked) (+ cursor (:taken ranked))]
                (loop [batch [] chars 0 idx cursor]
@@ -145,28 +142,46 @@
                      (if (and (> new-chars budget) (or strict? (seq batch)))
                        [batch idx]
                        (recur (conj batch entry) new-chars (inc idx)))))))
-             is-done (>= new-cursor total)
              new-seq (inc seq-num)
-             delivered new-cursor
-             remaining (- total new-cursor)
-             send-refs? (and (some? context-refs) (not refs-delivered?))
-             taken-ids (when ranked (into #{} (keep :id) (:batch ranked)))
+             refs-pending? (and (some? context-refs) (not refs-delivered?))
+             ;; Charge the actual serialized result, including refs, pull hint,
+             ;; metadata and the MEMORY delimiters (the caller reserves 200).
+             result-for (fn [batch refs?]
+                          (let [new-cursor (+ cursor (count batch))
+                                done? (>= new-cursor total)]
+                            (cond-> {:batch batch :remaining (- total new-cursor)
+                                     :total total :delivered new-cursor :seq new-seq}
+                              done? (assoc :done true)
+                              refs? (assoc :context-refs context-refs)
+                              (proj/pull-hint batch) (assoc :pull (proj/pull-hint batch)))))
+             fits? (fn [batch refs?]
+                     (or (not strict?)
+                         (<= (+ 30 (count (pr-str (result-for batch refs?)))) budget)))
+             ;; Refs have priority over entries, but must never be marked sent
+             ;; unless they really fit. An oversized ref waits in the buffer.
+             send-refs? (and refs-pending? (fits? [] true))
+             batch (if strict?
+                     (loop [remaining candidate acc []]
+                       (if (and (seq remaining)
+                                (fits? (conj acc (first remaining)) send-refs?))
+                         (recur (rest remaining) (conj acc (first remaining)))
+                         acc))
+                     candidate)
+             new-cursor (+ cursor (count batch))
+             is-done (and (>= new-cursor total) (or (not refs-pending?) send-refs?))
+             taken-ids (when ranked (into #{} (keep :id) batch))
              next-offers (if ranked
                            (reduce (fn [m e]
                                      (let [eid (:id e)]
                                        (if (and eid (not (contains? taken-ids eid)))
-                                         (update m eid (fnil inc 0))
-                                         m)))
+                                         (update m eid (fnil inc 0)) m)))
                                    (or offers {}) pending)
-                           offers)
-             hint (proj/pull-hint batch)]
+                           offers)]
          (when (or (seq batch) send-refs?)
-           (telemetry/record!
-            {:seq-num new-seq
-             :batch batch
-             :delivered-ids (into [] (keep :id) batch)
-             :offered-ids (when ranked
-                            (into [] (comp (keep :id) (remove taken-ids)) pending))})
+           (telemetry/record! {:seq-num new-seq :batch batch
+                               :delivered-ids (into [] (keep :id) batch)
+                               :offered-ids (when ranked
+                                              (into [] (comp (keep :id) (remove taken-ids)) pending))})
            (bput! buffers buffer-key
                   (cond-> (if is-done
                             {:entries [] :cursor 0 :done true :seq-num new-seq
@@ -177,11 +192,7 @@
                     (assoc :context-refs context-refs
                            :refs-delivered? (or (boolean refs-delivered?) send-refs?))
                     (some? next-offers) (assoc :offers next-offers)))
-           (cond-> {:batch batch :remaining remaining :total total
-                    :delivered delivered :seq new-seq}
-             is-done (assoc :done true)
-             send-refs? (assoc :context-refs context-refs)
-             hint (assoc :pull hint))))))))
+           (result-for batch send-refs?)))))))
 
 (defn has-pending?
   "Check if a caller session has undrained memory entries."
