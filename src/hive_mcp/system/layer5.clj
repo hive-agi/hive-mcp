@@ -179,10 +179,16 @@
   "Register CONTEXT's :tools atom as the :mcp-stdio tool surface, so every
    refresh (reactive evict/activate as well as a hot reload) installs the one
    advertised table into it. REGISTER! is routes/register-surface!, injected
-   for tests. Returns the surface id, nil when the context has no :tools atom."
+   for tests. Returns the surface id, nil when the context has no :tools atom.
+   Notify the connected client through the SDK after a changed table installs."
   [register! context]
   (when-let [tools-atom (:tools context)]
-    (register! stdio-surface-id {:surface/kind :tools-atom :surface/tools-atom tools-atom})))
+    (register! stdio-surface-id
+               {:surface/kind :tools-atom
+                :surface/tools-atom tools-atom
+                :surface/notify! (fn []
+                                   ((requiring-resolve 'io.modelcontext.clojure-sdk.server/send-tools-list-changed!)
+                                    context))})))
 
 (defmethod ig/init-key :hive/mcp-stdio
   [_ {:keys [hot-reload] :as _config}]

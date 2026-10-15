@@ -298,6 +298,15 @@
           {:surfaces [] :failed []}
           @tool-surfaces))
 
+(defn notification-targets
+  "Select successfully installed surfaces that can notify a connected client.
+   No change to the advertised view means no notification, even if the tool
+   handlers were rebuilt during a hot reload."
+  [changed installed surfaces]
+  (if (seq changed)
+    (filterv #(some? (:surface/notify! (get surfaces %))) installed)
+    []))
+
 (defn refresh-surfaces!
   "Compute the advertised table ONCE and install it into every registered
    surface. Returns {:count unique-tools :changed [names] :surfaces [ids]
@@ -310,6 +319,20 @@
         res   (assoc out
                      :count   (count table)
                      :changed (vec (changed-tool-names old view)))]
+    (doseq [id (notification-targets (:changed res) (:surfaces res) @tool-surfaces)]
+      (try ((:surface/notify! (get @tool-surfaces id)))
+           (catch Throwable t
+             (log/warn "tool surface notification failed"
+                       {:surface id :error (ex-message t)}))))
+    (when (seq (:changed res))
+      ;; IDE WebSocket clients share a JSON-RPC stream rather than an SDK
+      ;; context, so notify them separately when their tool view changes.
+      (try
+        (when ((requiring-resolve 'hive-mcp.transport.websocket/connected?))
+          ((requiring-resolve 'hive-mcp.transport.websocket/notify!)
+           "notifications/tools/list_changed" {}))
+        (catch Throwable t
+          (log/warn "WebSocket tool notification failed" {:error (ex-message t)}))))
     (log/info "Tool surfaces refreshed:" (:count res) "tools,"
               (count (:changed res)) "changed, into" (:surfaces res))
     res))
@@ -322,10 +345,21 @@
    registered surface is refreshed from the one table. Returns what
    `refresh-surfaces!` returns, nil when the atom holds no context."
   [server-context-atom]
-  (when @server-context-atom
+  (when-let [context @server-context-atom]
     (register-surface! [:context-atom (System/identityHashCode server-context-atom)]
                        {:surface/kind :context-atom
-                        :surface/context-atom server-context-atom})
+                        :surface/context-atom server-context-atom
+                        :surface/notify! (fn []
+                                           ;; The stdio registration may already
+                                           ;; notify this same SDK context.
+                                           (when-not (some (fn [[_ surface]]
+                                                             (and (= :tools-atom (:surface/kind surface))
+                                                                  (identical? (:tools context)
+                                                                              (:surface/tools-atom surface))
+                                                                  (:surface/notify! surface)))
+                                                           @tool-surfaces)
+                                             ((requiring-resolve 'io.modelcontext.clojure-sdk.server/send-tools-list-changed!)
+                                              context)))})
     (refresh-surfaces!)))
 
 (defn debug-tool-handler
