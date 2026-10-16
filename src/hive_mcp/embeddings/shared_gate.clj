@@ -2,7 +2,8 @@
   "One admission gate for the EmbeddingProvider port. Priority is chosen at
    request ingress, not inferred from provider type. The permit covers the
    actual provider HTTP call, including a full batch."
-  (:require [hive-mcp.embeddings.protocol :as proto]))
+  (:require [hive-mcp.embeddings.protocol :as proto]
+            [malli.core :as m]))
 
 (def ^:dynamic *lane*
   "Interactive memory adds bind :interactive; all other work uses :batch."
@@ -14,6 +15,12 @@
   (cond (pos? interactive) :interactive
         (pos? batch) :batch
         :else nil))
+
+(def Lane
+  "An admission lane."
+  [:enum :interactive :batch])
+
+(m/=> next-lane [:=> [:cat :int :int] [:maybe Lane]])
 
 (defn new-gate
   "Gate capacity and maximum wait in milliseconds. Admission is shared across
@@ -27,6 +34,23 @@
    :active (atom 0)
    :waiting (atom {:interactive 0 :batch 0})})
 
+(def Gate
+  "A gate built by `new-gate`: capacity, maximum wait, its monitor and the
+   live active/waiting counters. Generates fresh gates."
+  [:and
+   [:fn {:gen/schema [:tuple [:int {:min 1 :max 4}] [:int {:min 1 :max 50}]]
+         :gen/fmap (fn [[p t]] (new-gate p t))}
+    map?]
+   [:map
+    [:permits pos-int?]
+    [:timeout-ms pos-int?]
+    [:lock some?]
+    [:active [:fn #(instance? clojure.lang.IAtom %)]]
+    [:waiting [:fn #(instance? clojure.lang.IAtom %)]]]])
+
+;; Inputs admit anything: the body validates them and throws ex-info itself.
+(m/=> new-gate [:=> [:cat :any :any] Gate])
+
 (defonce process-gate (new-gate 1 12000))
 
 (defn await-waiters
@@ -39,6 +63,8 @@
         (if (< (System/currentTimeMillis) end)
           (do (Thread/sleep 2) (recur))
           false)))))
+
+(m/=> await-waiters [:=> [:cat Gate Lane :int :int] :boolean])
 
 (defn try-acquire!
   "Admit a waiter only when capacity is free and no higher-priority lane waits.
@@ -69,6 +95,8 @@
           (swap! (:waiting gate) update lane dec)
           (.notifyAll ^Object lock))))))
 
+(m/=> try-acquire! [:=> [:cat Gate Lane :int] :boolean])
+
 (defn- acquire!
   "Admit within the gate's own timeout or throw :embedder/gate-timeout."
   [gate lane]
@@ -83,6 +111,9 @@
     (swap! (:active gate) dec)
     (.notifyAll ^Object (:lock gate))))
 
+;; `locking` returns the value of .notifyAll, which is nil.
+(m/=> release! [:=> [:cat Gate] :nil])
+
 (defn with-permit
   "Run an embedding call under the shared admission gate. Always release on
    timeout, 403, or any other provider exception."
@@ -90,6 +121,10 @@
   (acquire! gate lane)
   (try (call)
        (finally (release! gate))))
+
+;; The result is whatever the wrapped provider call returns (a vector, a batch
+;; of vectors), so the output is open by design.
+(m/=> with-permit [:=> [:cat Gate Lane [:=> [:cat] :any]] :any])
 
 (defprotocol AdmissionOwner
   "Marker for a provider that takes the shared permit itself, per attempt and
@@ -118,12 +153,21 @@
      (satisfies? AdmissionOwner provider) provider
      :else (->GatedProvider provider gate))))
 
+;; A nil provider is admitted at the boundary; the body rejects it itself.
+(m/=> gated-provider [:function
+                      [:=> [:cat [:maybe proto/Provider]] proto/Provider]
+                      [:=> [:cat [:maybe proto/Provider] Gate] proto/Provider]])
+
 (defn gate-of
   "The gate admitting `provider`: its decorator's gate, else the process gate."
   [provider]
   (if (instance? GatedProvider provider) (:gate provider) process-gate))
 
+(m/=> gate-of [:=> [:cat [:maybe proto/Provider]] Gate])
+
 (defn ungated
   "The undecorated provider, for a caller that already holds its permit."
   [provider]
   (if (instance? GatedProvider provider) (:delegate provider) provider))
+
+(m/=> ungated [:=> [:cat [:maybe proto/Provider]] [:maybe proto/Provider]])
