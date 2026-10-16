@@ -12,13 +12,30 @@
             [hive-mcp.protocols.lifecycle :as lifecycle]
             [hive-mcp.system.layer5]
             [hive-mcp.system.registry :as reg]
-            [hive-mcp.system.sweep-coordinator :as sc]))
+            [hive-mcp.system.sweep-coordinator :as sc]
+            [hive-mcp.scheduler.housekeeping :as housekeeping]
+            [hive-test.trifecta :refer [deftrifecta]]
+            [clojure.test.check.generators :as gen]
+            [clojure.set :as set]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defn- sweep-names []
   (set (map lifecycle/sweep-name (reg/registered-sweeps))))
+
+(deftrifecta housekeeping-and-registry-owners-do-not-overlap
+  housekeeping/disjoint-sweep-owners?
+  {:golden-path "test/golden/hive-mcp/system/housekeeping-sweep-owners.edn"
+   :cases {:empty #{}
+           :unrelated #{"channels/orphan" "channels/async-result-gc"}
+           :collision #{"lings/terminal-liveness"}}
+   :gen (gen/set (gen/elements ["channels/orphan" "channels/async-result-gc"
+                                 "lings/terminal-liveness" "memory/pending-reembed"]) 0 4)
+   :pred boolean?
+   :num-tests 50
+   :mutations [["always-disjoint" (fn [_] true)]
+               ["always-collides" (fn [_] false)]]})
 
 (def ^:private sweeper-namespaces
   "The sweepers :hive/sweep-coordinator is responsible for putting on the
@@ -77,6 +94,13 @@
         "the async result buffers have a reclaimer")
     (is (contains? names "channels/orphan")
         "and the orphan channel sweep, which nothing used to require")))
+
+(deftest boot-registered-sweeps-do-not-duplicate-housekeeping
+  (ig/init-key :hive/sweep-coordinator {})
+  (is (housekeeping/disjoint-sweep-owners? (sweep-names))
+      (str "Registered ISweepable and housekeeping timers must have distinct owners; "
+           "collisions: " (set/intersection housekeeping/housekeeping-sweep-names
+                                         (sweep-names)))))
 
 (deftest terminal-liveness-has-exactly-one-owner
   ;; This test USED TO PASS VACUOUSLY. It asserted the sweep was absent from the
