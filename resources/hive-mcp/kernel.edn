@@ -118,6 +118,7 @@
   "recall" :hive-memory
   "router" :hive-memory
   "saa" :hive-workflows
+  "scheduler.dag-eligibility" :hive-workflows
   "scheduler.dag-waves" :hive-workflows
   "scheduler.decay" :hive-memory
   "scheduler.kg-gc" :hive-memory
