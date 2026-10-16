@@ -1,8 +1,7 @@
-{:case-0 {:out {:path ""}, :in ("")},
- :case-1 {:out {:path "W"}, :in ("W")},
- :case-2 {:out {:path "pC"}, :in ("pC")},
- :case-3 {:out {:path "4C"}, :in ("4C")},
- :case-4 {:out {:path "x"}, :in ("x")},
- :case-5 {:out {:path "61"}, :in ("61")},
- :case-6 {:out {:path "8K8"}, :in ("8K8")},
- :case-7 {:out {:path "X5"}, :in ("X5")}}
+{:empty {:path "", :record "FileTailChannel", :id :file-tail},
+ :rel
+ {:path "shouts.jsonl", :record "FileTailChannel", :id :file-tail},
+ :tmp
+ {:path "/tmp/hivemind-shouts.jsonl",
+  :record "FileTailChannel",
+  :id :file-tail}}

@@ -164,8 +164,18 @@
           (and (instance? hive_mcp.delivery.channels.FileTailChannel out)
                (= path (:path out))
                (= :file-tail (dc/channel-id out))))
-   :num-tests 100
-   :golden-path "test/golden/hive-mcp/delivery/create-file-tail-channel.edn"})
+   :num-tests 100})
+
+;; The record does not round-trip through an EDN snapshot (a read-back map is
+;; not = to a record), so the golden facet snapshots it as a plain map.
+(deftrifecta create-file-tail-channel-golden
+  hive-mcp.delivery.channels/create-file-tail-channel
+  {:golden-path "test/golden/hive-mcp/delivery/create-file-tail-channel.edn"
+   :cases       {:tmp "/tmp/hivemind-shouts.jsonl" :rel "shouts.jsonl" :empty ""}
+   :apply?      false
+   :xf          (fn [c] (assoc (into {} c) :record (.getSimpleName (class c)) :id (dc/channel-id c)))
+   :mutations   [["drops-path" (fn [_] (ch/->FileTailChannel nil))]
+                 ["wrong-record" (fn [_] (ch/->NatsChannel))]]})
 
 (deftest zero-arity-factories-match-their-contracts
   (testing "each factory returns its own record type and reports the matching id"
