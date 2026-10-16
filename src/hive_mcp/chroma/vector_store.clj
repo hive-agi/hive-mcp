@@ -19,7 +19,8 @@
      between the two is exactly why an adapter exists rather than an alias."
   (:require [hive-mcp.chroma.client :as client]
             [hive-mcp.protocols.vector :as vp]
-            [hive-weave.safe :as ws]))
+            [hive-weave.safe :as ws]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -111,3 +112,12 @@
   "A store over the active Chroma transport, or over TRANSPORT when given."
   ([] (chroma-vector-store (client/transport)))
   ([transport] (->ChromaVectorStore transport)))
+
+(def VectorStore
+  "An IVectorCollectionStore. Generates a store over the soft vendor transport."
+  [:fn {:gen/schema client/Transport :gen/fmap ->ChromaVectorStore}
+   #(satisfies? vp/IVectorCollectionStore %)])
+
+(m/=> chroma-vector-store [:function
+                           [:=> [:cat] VectorStore]
+                           [:=> [:cat client/Transport] VectorStore]])
