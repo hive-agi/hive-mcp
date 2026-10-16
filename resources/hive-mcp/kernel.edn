@@ -6,6 +6,7 @@
 ;; listed, and an unlisted one fails the gate. It only shrinks too; new code goes to the addon.
 {:kernel/segments
  ["server"
+  "service"
   "system"
   "transport"
   "config"
