@@ -33,7 +33,8 @@
             [hive-mcp.tools.memory.duration :as dur]
             [taoensso.timbre :as log]
             [clojure.string :as str]
-            [hive-mcp.memory.write-events :as write-events]))
+            [hive-mcp.memory.write-events :as write-events]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -49,6 +50,20 @@
    :umbrella keyword used inside HarvestByScope for routing."
   "multi-project")
 
+(def Wrap
+  "One fan-out element: `{:pid <pid-or-:umbrella> :entry <synth entry>}`."
+  [:map [:pid [:or [:= :umbrella] [:maybe :string]]]
+   [:entry [:map [:type {:optional true} [:or :keyword :string]]
+            [:duration {:optional true} [:or :keyword :string]]
+            [:content {:optional true} :any]
+            [:tags {:optional true} [:maybe [:sequential :string]]]]]])
+
+(def PersistReport
+  [:map [:total [:int {:min 0}]] [:persisted [:int {:min 0}]] [:failed [:int {:min 0}]]
+   [:results [:vector [:map [:pid :any] [:project-id [:maybe :string]] [:id [:maybe :string]]
+                       [:success? :boolean] [:error [:maybe :string]]]]]
+   [:error {:optional true} :string]])
+
 (defn pid->project-id
   "Resolve fan-out pid → IMemoryStore :project-id field value.
    - Real pid string → unchanged
@@ -57,6 +72,8 @@
   (if (= pid bs/umbrella-sentinel)
     umbrella-project-id
     (str pid)))
+
+(m/=> pid->project-id [:=> [:cat :any] :string])
 
 ;; =============================================================================
 ;; Single-entry persist
@@ -145,3 +162,5 @@
         :persisted (count (filter :success? results))
         :failed    (count (remove :success? results))
         :results   results}))))
+
+(m/=> persist-wraps! [:function [:=> [:cat [:sequential Wrap]] PersistReport] [:=> [:cat [:sequential Wrap] :keyword] PersistReport]])
