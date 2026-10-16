@@ -5,4 +5,5 @@
 
 (deftest-contract-coverage engine-contract-coverage
   {:paths ["src/hive_mcp/engine/health.clj"
-           "src/hive_mcp/engine/manifold_pool.clj"]})
+           "src/hive_mcp/engine/manifold_pool.clj"
+           "src/hive_mcp/engine/bounded"]})
