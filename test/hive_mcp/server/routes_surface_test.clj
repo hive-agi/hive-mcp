@@ -2,6 +2,8 @@
   "Every transport reads ONE advertised table: a refresh computes it once and
    installs it into every registered surface, whatever kind each one is."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
+            [hive-test.trifecta :refer [deftrifecta]]
+            [clojure.test.check.generators :as gen]
             [hive-mcp.server.routes :as routes]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -85,3 +87,46 @@
           _          (routes/refresh-surfaces!)
           [[_ table]] @installs]
       (is (= spec-names (names table))))))
+
+(deftest refresh-notifies-only-installed-connected-clients
+  (let [a (atom 0)
+        b (atom 0)
+        broken (atom 0)]
+    (routes/register-surface! ::a {:surface/kind ::recording ::id ::a
+                                   :surface/notify! #(swap! a inc)})
+    (routes/register-surface! ::b {:surface/kind :tools-atom
+                                   :surface/tools-atom (atom {})
+                                   :surface/notify! #(swap! b inc)})
+    (routes/register-surface! ::faulty {:surface/kind ::faulty
+                                        :surface/notify! #(swap! broken inc)})
+    (let [before (routes/refresh-surfaces!)
+          expected (if (seq (:changed before)) 1 0)]
+      (is (some #{::faulty} (:failed before)))
+      (is (= expected @a))
+      (is (= expected @b))
+      (is (= 0 @broken))
+      (is (empty? (:changed (routes/refresh-surfaces!))))
+      (is (= expected @a))
+      (is (= expected @b)))))
+
+(deftrifecta notification-targets-contract
+  routes/notification-targets
+  {:golden-path "test/golden/server/notification-targets.edn"
+   :apply? true
+   :cases {:unchanged [[] [:connected] {:connected {:surface/notify! identity}}]
+           :no-install [["emacs"] [] {}]
+           :connected [["emacs"] [:connected :unsupported]
+                       {:connected {:surface/notify! identity}
+                        :unsupported {}}]
+           :failed [["emacs"] [] {:connected {:surface/notify! identity}}]}
+   :gen (gen/let [changed (gen/vector gen/string-alphanumeric 0 3)
+                  installed (gen/vector (gen/elements [:connected :unsupported]) 0 3)]
+          [changed installed {:connected {:surface/notify! identity}
+                              :unsupported {}}])
+   :pred (fn [targets] (and (vector? targets)
+                             (every? #{:connected} targets)))
+   :num-tests 100
+   :mutations [["notify without a schema change" (fn [_ installed surfaces]
+                                                   (filterv #(some? (:surface/notify! (get surfaces %))) installed))]
+               ["notify failed surfaces" (fn [changed _ surfaces]
+                                            (if (seq changed) (vec (keys surfaces)) []))]]})

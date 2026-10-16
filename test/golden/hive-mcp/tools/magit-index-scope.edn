@@ -1,0 +1,5 @@
+{:dot-prefix [],
+ :foreign ["foreign.clj"],
+ :nested-dir ["other/a.clj"],
+ :only-own [],
+ :rename-sides ["new.clj"]}

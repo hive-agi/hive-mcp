@@ -6,6 +6,7 @@
    string staged nothing and then committed whatever the index already held
    under that operation's message."
   (:require [clojure.data.json :as json]
+            [clojure.java.shell :as shell]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [hive-mcp.tools.consolidated.git :as git]
@@ -30,6 +31,26 @@
       :magit/stage-verify {:success true :result verdict :timed-out false}
       :magit/commit       {:success true :result "1 file changed" :timed-out false}
       {:success true :result nil :timed-out false})))
+
+(defn- with-index
+  "Create an isolated real index while vessel dispatch is stubbed."
+  [f]
+  (let [dir (.toFile (java.nio.file.Files/createTempDirectory "magit-index-" (make-array java.nio.file.attribute.FileAttribute 0)))
+        path (.getAbsolutePath dir)]
+    (try
+      (doseq [args [["init" "-q"] ["config" "user.name" "Test"]
+                    ["config" "user.email" "test@example.invalid"]]]
+        (let [r (apply shell/sh "git" (concat args [:dir path]))]
+          (when-not (zero? (:exit r)) (throw (ex-info "git setup failed" r)))))
+      (spit (java.io.File. dir "own.txt") "own")
+      (spit (java.io.File. dir "foreign.txt") "foreign")
+      (f path)
+      (finally
+        (doseq [file (reverse (file-seq dir))] (.delete file))))))
+
+(defn- add-to-index [dir & files]
+  (let [r (apply shell/sh "git" (concat ["add" "--"] files [:dir dir]))]
+    (when-not (zero? (:exit r)) (throw (ex-info "git add failed" r)))))
 
 (def ^:private verdict-ok "{\"status\":\"ok\"}")
 
@@ -111,16 +132,61 @@
 ;;; ===========================================================================
 
 (deftest commit-stages-its-own-paths-then-commits
-  (sh/with-swarm-host [stub (staged-responses verdict-ok)]
-    (let [r (magit/handle-magit-commit {:message "feat: x"
-                                        :files "src/a.clj src/b.clj"
-                                        :directory dir})]
-      (is (nil? (:isError r)))
-      (is (some? (stage-elisp stub)) "the paths are staged before the commit")
-      (is (= ["src/a.clj" "src/b.clj"] (:paths (stage-elisp stub)))
-          "both paths reach the stage call")
-      (is (= [:magit/stage-verify :magit/commit] (sh/ops stub)) "stage, then commit")
-      (is (committed? stub)))))
+  (with-index
+    (fn [dir]
+      (add-to-index dir "own.txt")
+      (sh/with-swarm-host [stub (staged-responses verdict-ok)]
+        (let [r (magit/handle-magit-commit {:message "feat: x"
+                                            :files ["own.txt"]
+                                            :directory dir})]
+          (is (nil? (:isError r)))
+          (is (some? (stage-elisp stub)) "the paths are staged before the commit")
+          (is (= ["own.txt"] (:paths (stage-elisp stub))))
+          (is (= [:magit/stage-verify :magit/commit] (sh/ops stub)) "stage, then commit")
+          (is (committed? stub)))))))
+
+(deftest commit-with-explicit-files-refuses-other-staged-paths
+  (with-index
+    (fn [dir]
+      (add-to-index dir "own.txt" "foreign.txt")
+      (sh/with-swarm-host [stub (staged-responses verdict-ok)]
+        (let [r (magit/handle-magit-commit {:message "own" :files ["own.txt"] :directory dir})]
+          (is (true? (:isError r)))
+          (is (str/includes? (:text r) ":magit/unrelated-staged"))
+          (is (str/includes? (:text r) "foreign.txt"))
+          (is (not (committed? stub))))))))
+
+(deftest commit-directory-pathspec-covers-children
+  (with-index
+    (fn [dir]
+      (let [subdir (java.io.File. dir "src")]
+        (.mkdir subdir)
+        (spit (java.io.File. subdir "child.clj") "child")
+        (add-to-index dir "src/child.clj")
+        (sh/with-swarm-host [stub (staged-responses verdict-ok)]
+          (let [r (magit/handle-magit-commit {:message "directory"
+                                              :files ["src"] :directory dir})]
+            (is (nil? (:isError r)) (str "git add -- src covers child: " (:text r)))
+            (is (committed? stub))))))))
+
+(deftest commit-with-explicit-files-can-opt-into-existing-index
+  (with-index
+    (fn [dir]
+      (add-to-index dir "own.txt" "foreign.txt")
+      (sh/with-swarm-host [stub (staged-responses verdict-ok)]
+        (let [r (magit/handle-magit-commit {:message "both" :files ["own.txt"]
+                                            :include_staged true :directory dir})]
+          (is (nil? (:isError r)))
+          (is (committed? stub)))))))
+
+(deftest staged-outside-files-handles-rename-and-directory-prefix
+  (is (= ["elsewhere/file.txt"]
+         (magit/staged-outside-files ["src/"] ["src/own.txt" "elsewhere/file.txt"])))
+  (is (= ["renamed/new.txt"]
+         (magit/staged-outside-files ["renamed/old.txt"]
+                                     ["renamed/old.txt" "renamed/new.txt"])))
+  (is (= ["src2/a.txt"]
+         (magit/staged-outside-files ["src/"] ["src2/a.txt"]))))
 
 (deftest commit-refuses-a-path-that-does-not-exist
   (sh/with-swarm-host [stub (staged-responses (verdict-missing "src/gone.clj"))]
@@ -170,15 +236,18 @@
 ;;; ===========================================================================
 
 (deftest batch-commit-stages-a-path-list-per-operation
-  (sh/with-swarm-host [stub (staged-responses verdict-ok)]
-    (let [handler (:batch-commit git/handlers)
-          r (handler {:directory dir
-                      :operations [{:message "feat: one" :files ["src/a.clj" "src/b.clj"]}
-                                   {:message "fix: two" :files "src/c.clj"}]})
-          results (batch-op-results r)]
-      (is (= 2 (count results)))
-      (is (every? #(nil? (get-in % [:result :isError])) results))
-      (is (= 2 (count (sh/calls-of stub :magit/commit)))))))
+  (with-index
+    (fn [dir]
+      (add-to-index dir "own.txt")
+      (sh/with-swarm-host [stub (staged-responses verdict-ok)]
+        (let [handler (:batch-commit git/handlers)
+              r (handler {:directory dir
+                          :operations [{:message "feat: one" :files ["own.txt"]}
+                                       {:message "fix: two" :files "own.txt"}]})
+              results (batch-op-results r)]
+          (is (= 2 (count results)))
+          (is (every? #(nil? (get-in % [:result :isError])) results))
+          (is (= 2 (count (sh/calls-of stub :magit/commit)))))))))
 
 (deftest batch-commit-refuses-an-operation-that-stages-nothing
   (sh/with-swarm-host [stub (staged-responses verdict-empty)]

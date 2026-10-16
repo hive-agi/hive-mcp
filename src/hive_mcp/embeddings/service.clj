@@ -293,7 +293,9 @@
 (defn- build-resolved
   "Resolved-provider map for an explicit provider-key (or the global provider
    fallback when the key has no configured spec). Shared by the type resolver
-   and the size-aware escalation resolver so both produce identical shapes."
+   and the size-aware escalation resolver so both produce identical shapes.
+   A provider spec's optional :chars-per-token is carried into the map, so
+   `estimate-tokens` in the router and the size guard read the same ratio."
   [cfg provider-key]
   (let [provider-spec (get-in cfg [:providers provider-key])]
     (if provider-spec
@@ -301,6 +303,7 @@
             model     (:model provider-spec)
             dimension (:dimension provider-spec)
             max-toks  (:max-tokens provider-spec)
+            cpt       (:chars-per-token provider-spec)
             options   (case impl
                         ;; :num-ctx is the provider's declared :max-tokens. Ollama
                         ;; sizes the KV cache from it at load time, so a model loaded
@@ -313,11 +316,12 @@
                         :venice     {:api-key (global-config/get-secret :venice-api-key)}
                         {})
             emb-cfg   (config/->EmbeddingConfig impl model dimension options)]
-        {:provider        (registry/get-provider emb-cfg)
-         :dimension       dimension
-         :max-tokens      max-toks
-         :collection-name (collection-name-for-dimension dimension)
-         :provider-key    provider-key})
+        (cond-> {:provider        (registry/get-provider emb-cfg)
+                 :dimension       dimension
+                 :max-tokens      max-toks
+                 :collection-name (collection-name-for-dimension dimension)
+                 :provider-key    provider-key}
+          cpt (assoc :chars-per-token cpt)))
       ;; No embedder config → fall back to global provider
       (let [global (chroma/get-embedding-provider)]
         (when-not global
@@ -366,10 +370,23 @@
   [memory-type]
   (build-resolved (embedder-config) (resolve-provider-key memory-type)))
 
+(def default-chars-per-token
+  "Characters per token assumed when estimating embedder input size.
+   Measured against qwen3-embedding:4b on Portuguese prose at ~3.0; the old
+   chars/4 basis under-counted non-English text, letting content past the
+   real ceiling through the local guard to fail at the provider."
+  3.0)
+
 (defn estimate-tokens
-  "Cheap token estimate (chars/4 heuristic) — same basis as the size guard."
-  [content]
-  (quot (count (or content "")) 4))
+  "Cheap token estimate: chars / `chars-per-token` (default
+   `default-chars-per-token`), rounded up. Same basis as the size guard
+   `validate-content-size!`, so guard and escalation router agree."
+  ([content] (estimate-tokens content nil))
+  ([content chars-per-token]
+   (let [ratio (if (and (number? chars-per-token) (pos? chars-per-token))
+                 (double chars-per-token)
+                 default-chars-per-token)]
+     (long (Math/ceil (/ (count (or content "")) ratio))))))
 
 (defn resolve-provider-for-type+size
   "Type-routed provider resolution WITH size-aware auto-escalation. When the
@@ -378,13 +395,19 @@
    the SMALLEST provider that fits; if none fit, the LARGEST available. Logs
    the escalation. Same return shape as `resolve-provider-for-type`.
 
+   Token estimates use each provider's own :chars-per-token (default
+   `default-chars-per-token`), the same basis `validate-content-size!` checks,
+   so a provider picked here is never refused by the guard afterwards.
+
    Coherence: callers MUST use this same resolution for BOTH the embedding
    vector and the target collection (escalation changes dimension). See
    hive-milvus.store.routing/coll-for-entry."
   [memory-type content]
-  (let [cfg  (embedder-config)
-        base (build-resolved cfg (resolve-provider-key memory-type))
-        est  (estimate-tokens content)]
+  (let [cfg   (embedder-config)
+        base  (build-resolved cfg (resolve-provider-key memory-type))
+        est   (estimate-tokens content (:chars-per-token base))
+        fits? (fn [p] (<= (estimate-tokens content (:chars-per-token p))
+                          (:max-tokens p)))]
     ;; Prefer usable providers (secret present / local), smallest that fits,
     ;; then smallest dimension (favors the key-free local 32k embedder over
     ;; remote ones, and avoids wasting a 4096-d vector).
@@ -394,7 +417,7 @@
                         (map (fn [[k spec]] (assoc spec :provider-key k)))
                         (filter provider-available?)
                         (sort-by (juxt :max-tokens :dimension)))
-            pick   (or (first (filter #(<= est (:max-tokens %)) ladder))
+            pick   (or (first (filter fits? ladder))
                        (last ladder))]
         (if (and pick (not= (:provider-key pick) (:provider-key base)))
           (let [esc (build-resolved cfg (:provider-key pick))]
@@ -439,9 +462,12 @@
 
 (defn validate-content-size!
   "Reject content exceeding the resolved provider's max-tokens.
-   Uses chars/4 heuristic for token estimation."
-  [doc-text {:keys [max-tokens provider-key] :as _resolved}]
-  (let [estimated-tokens (quot (count doc-text) 4)]
+   Estimates tokens with the same `estimate-tokens` basis as the escalation
+   resolver (`default-chars-per-token`, or the resolved map's
+   :chars-per-token), so the guard and the router can never disagree about
+   whether content fits."
+  [doc-text {:keys [max-tokens provider-key chars-per-token] :as _resolved}]
+  (let [estimated-tokens (estimate-tokens doc-text chars-per-token)]
     (when (> estimated-tokens max-tokens)
       (throw (ex-info (str "Content too large for embedder " (name provider-key)
                            " (" estimated-tokens " est. tokens > " max-tokens " max)")

@@ -17,7 +17,8 @@
             [hive-mcp.tools.composite :as composite]
             [taoensso.timbre :as log]
             [hive-mcp.extensions.reactive :as reactive]
-            [hive-mcp.extensions.runtime :as runtime]))
+            [hive-mcp.extensions.runtime :as runtime]
+            [hive-mcp.server.log-sink :as log-sink]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -126,8 +127,7 @@
     ;; Per-addon boot timing — captures first-time require/compile of the
     ;; addon's transitive graph (via requiring-resolve) plus its init cost.
     (when (boot-timing?)
-      (log/info (format "[boot-timing] addon %-48s %9.1f ms"
-                        (str ns-sym) (/ (- (System/nanoTime) t0) 1e6))))
+      (log/info (log-sink/boot-event ns-sym :addon (/ (- (System/nanoTime) t0) 1e6) :ok)))
     result))
 
 ;; =============================================================================
@@ -141,8 +141,8 @@
   (let [scan-t0 (System/nanoTime)
         {:keys [manifests errors]} (manifest/scan-classpath-manifests)
         _ (when (boot-timing?)
-            (log/info (format "[boot-timing] classpath manifest scan %9.1f ms (%d manifests)"
-                              (/ (- (System/nanoTime) scan-t0) 1e6) (count manifests))))]
+            (log/info (log-sink/boot-event :classpath :manifest-scan
+                                           (/ (- (System/nanoTime) scan-t0) 1e6) :ok)))]
     (when (seq errors)
       (log/warn "Addon manifest scan errors" {:count (count errors) :errors errors}))
     (if (seq manifests)
