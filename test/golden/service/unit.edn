@@ -1,0 +1,72 @@
+{:case-0
+ {:out
+  "[Unit]\nDescription=hive-mcp serving image (nREPL tool server)\nStartLimitIntervalSec=31\nStartLimitBurst=1\n\n[Service]\nType=simple\nEnvironment=PATH=/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin\nWorkingDirectory=%h/hive-mcp\nExecStart=/usr/bin/env clojure -M:nrepl\nRestart=on-failure\nRestartSec=1\n\n[Install]\nWantedBy=default.target\n",
+  :in
+  {:working-dir "%h/hive-mcp",
+   :exec-start "/usr/bin/env clojure -M:nrepl",
+   :restart-sec 1,
+   :start-limit-burst 1,
+   :start-limit-interval-sec 31}},
+ :case-1
+ {:out
+  "[Unit]\nDescription=hive-mcp serving image (nREPL tool server)\nStartLimitIntervalSec=31\nStartLimitBurst=1\n\n[Service]\nType=simple\nEnvironment=PATH=/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin\nWorkingDirectory=%h/hive-mcp\nExecStart=/usr/bin/env clojure -M:nrepl\nRestart=on-failure\nRestartSec=1\n\n[Install]\nWantedBy=default.target\n",
+  :in
+  {:working-dir "%h/hive-mcp",
+   :exec-start "/usr/bin/env clojure -M:nrepl",
+   :restart-sec 1,
+   :start-limit-burst 1,
+   :start-limit-interval-sec 31}},
+ :case-2
+ {:out
+  "[Unit]\nDescription=hive-mcp serving image (nREPL tool server)\nStartLimitIntervalSec=31\nStartLimitBurst=1\n\n[Service]\nType=simple\nEnvironment=PATH=/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin\nWorkingDirectory=%h/PP/hive/hive-mcp\nExecStart=/usr/bin/env clojure -M:nrepl\nRestart=on-failure\nRestartSec=1\n\n[Install]\nWantedBy=default.target\n",
+  :in
+  {:working-dir "%h/PP/hive/hive-mcp",
+   :exec-start "/usr/bin/env clojure -M:nrepl",
+   :restart-sec 1,
+   :start-limit-burst 1,
+   :start-limit-interval-sec 31}},
+ :case-3
+ {:out
+  "[Unit]\nDescription=hive-mcp serving image (nREPL tool server)\nStartLimitIntervalSec=32\nStartLimitBurst=3\n\n[Service]\nType=simple\nEnvironment=PATH=/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin\nWorkingDirectory=%h/PP/hive/hive-mcp\nExecStart=/usr/bin/env clojure -M:nrepl\nRestart=on-failure\nRestartSec=1\n\n[Install]\nWantedBy=default.target\n",
+  :in
+  {:working-dir "%h/PP/hive/hive-mcp",
+   :exec-start "/usr/bin/env clojure -M:nrepl",
+   :restart-sec 1,
+   :start-limit-burst 3,
+   :start-limit-interval-sec 32}},
+ :case-4
+ {:out
+  "[Unit]\nDescription=hive-mcp serving image (nREPL tool server)\nStartLimitIntervalSec=30\nStartLimitBurst=2\n\n[Service]\nType=simple\nEnvironment=PATH=/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin\nWorkingDirectory=%h/PP/hive/hive-mcp\nExecStart=/usr/bin/env clojure -M:nrepl\nRestart=on-failure\nRestartSec=4\n\n[Install]\nWantedBy=default.target\n",
+  :in
+  {:working-dir "%h/PP/hive/hive-mcp",
+   :exec-start "/usr/bin/env clojure -M:nrepl",
+   :restart-sec 4,
+   :start-limit-burst 2,
+   :start-limit-interval-sec 30}},
+ :case-5
+ {:out
+  "[Unit]\nDescription=hive-mcp serving image (nREPL tool server)\nStartLimitIntervalSec=36\nStartLimitBurst=2\n\n[Service]\nType=simple\nEnvironment=PATH=/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin\nWorkingDirectory=%h/PP/hive/hive-mcp\nExecStart=/usr/bin/env clojure -M:nrepl\nRestart=on-failure\nRestartSec=14\n\n[Install]\nWantedBy=default.target\n",
+  :in
+  {:working-dir "%h/PP/hive/hive-mcp",
+   :exec-start "/usr/bin/env clojure -M:nrepl",
+   :restart-sec 14,
+   :start-limit-burst 2,
+   :start-limit-interval-sec 36}},
+ :case-6
+ {:out
+  "[Unit]\nDescription=hive-mcp serving image (nREPL tool server)\nStartLimitIntervalSec=59\nStartLimitBurst=2\n\n[Service]\nType=simple\nEnvironment=PATH=/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin\nWorkingDirectory=%h/PP/hive/hive-mcp\nExecStart=/usr/bin/env clojure -M:nrepl\nRestart=on-failure\nRestartSec=10\n\n[Install]\nWantedBy=default.target\n",
+  :in
+  {:working-dir "%h/PP/hive/hive-mcp",
+   :exec-start "/usr/bin/env clojure -M:nrepl",
+   :restart-sec 10,
+   :start-limit-burst 2,
+   :start-limit-interval-sec 59}},
+ :case-7
+ {:out
+  "[Unit]\nDescription=hive-mcp serving image (nREPL tool server)\nStartLimitIntervalSec=31\nStartLimitBurst=3\n\n[Service]\nType=simple\nEnvironment=PATH=/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin\nWorkingDirectory=%h/hive-mcp\nExecStart=/usr/bin/env clojure -M:nrepl\nRestart=on-failure\nRestartSec=1\n\n[Install]\nWantedBy=default.target\n",
+  :in
+  {:working-dir "%h/hive-mcp",
+   :exec-start "/usr/bin/env clojure -M:nrepl",
+   :restart-sec 1,
+   :start-limit-burst 3,
+   :start-limit-interval-sec 31}}}
