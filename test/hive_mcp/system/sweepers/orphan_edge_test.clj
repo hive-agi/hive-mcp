@@ -81,7 +81,9 @@
     (is (= ["e1" "e2"] @removed))
     (is (= 3 @(:cursor sweep)))
     (ports/sweep! sweep {})
-    (is (= 0 @(:cursor sweep)) "a short window wraps to the start")))
+    (is (= 6 @(:cursor sweep)))
+    (ports/sweep! sweep {})
+    (is (= 0 @(:cursor sweep)) "an empty window wraps to the start")))
 
 (deftest backfill-reports-count-before-retracting
   (let [removed (atom [])

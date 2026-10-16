@@ -424,7 +424,8 @@
        :entry-id "entry-partial-001"}
       (let [result (synthesis/synthesize
                     (assoc base-harvested
-                           :progress-notes [{:content "work"}]))]
+                           :progress-notes [{:content "work"}]
+                           :summary (assoc (:summary base-harvested) :progress-count 1)))]
         (is (string? (:summary-id result)) "summary-id must be present")
         (is (not (contains? result :error))
             ":error key must never appear alongside :summary-id")))))
@@ -623,7 +624,8 @@
                                    {:content "more foo"    :tags ["scope:project:foo"]}]
                                   :completed-tasks
                                   [{:title "finish bar task" :tags ["scope:project:bar"]}]
-                                  :git-commits ["abc123 fix: cross-project"]})]
+                                  :git-commits ["abc123 fix: cross-project"]
+                                  :summary (assoc (:summary base-harvested) :progress-count 3)})]
       (with-capturing-synthesis-mocks entries
         (let [result (synthesis/synthesize multi-harvested)]
           ;; N+1 summaries persisted (foo + bar + umbrella).
@@ -662,7 +664,8 @@
           ;; Only one project scope present → back-compat path, single summary.
           single-harvested (merge base-harvested
                                   {:progress-notes
-                                   [{:content "work" :tags ["scope:project:foo"]}]})]
+                                   [{:content "work" :tags ["scope:project:foo"]}]
+                                   :summary (assoc (:summary base-harvested) :progress-count 1)})]
       (with-capturing-synthesis-mocks entries
         (let [result (synthesis/synthesize single-harvested)]
           (is (= 1 (count @entries))
