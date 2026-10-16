@@ -27,12 +27,14 @@
   {:in [:cat olympus/Positions [:int {:min 0 :max 2}] [:int {:min 0 :max 2}]
         [:maybe [:int {:min 0 :max 2}]]]
    :out [:maybe :string]
+   ;; Positions keys may be nil (the schema allows a nil ling id), so a hit
+   ;; can legitimately answer nil: check the answer against the set of
+   ;; matching KEYS rather than reading nil as "no match".
    :rel (fn [[positions row col tab] id]
-          (if (nil? id)
-            (not-any? #(= {:row row :col col :tab tab} (select-keys % [:row :col :tab]))
-                      (vals positions))
-            (= {:row row :col col :tab tab}
-               (select-keys (get positions id) [:row :col :tab]))))
+          (let [cell {:row row :col col :tab tab}
+                hits (set (map key (filter #(= cell (select-keys (val %) [:row :col :tab]))
+                                           positions)))]
+            (if (seq hits) (contains? hits id) (nil? id))))
    :num-tests 200})
 
 (deftest grid-and-tabbed-arms-are-distinct
