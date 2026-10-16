@@ -44,7 +44,8 @@
             [taoensso.timbre :as log]
             [hive-mcp.embeddings.routing :as routing]
             [clojure.string :as str]
-            [hive-mcp.embeddings.availability.multi :as multi]))
+            [hive-mcp.embeddings.availability.multi :as multi]
+            [hive-mcp.embeddings.space :as space]))
 
 (declare provider-for-collection dimension-for-collection)
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -150,6 +151,15 @@
                        :has-global-fallback? (chroma/embedding-configured?)})))
     provider))
 
+(defn- space-id-for
+  "Embedding-space id of the explicit config for `collection-name`, or nil when
+   the collection resolves through routing or the global fallback and so has no
+   declared space. Cache keys scope by it, so reconfiguring a collection to
+   another model cannot serve the old model's vectors."
+  [collection-name]
+  (when-let [cfg (get @collection-configs collection-name)]
+    (space/space-id (space/config->space cfg))))
+
 (defn embed-for-collection
   "Embed text using the provider configured for the collection.
 
@@ -160,12 +170,16 @@
    Returns: Vector of floats (embedding).
 
    Results are cached in an in-process LRU+TTL keyed by
-   [collection-name, sha256(text)]. Repeat queries skip the provider."
+   [collection-name, embedding-space-id, sha256(text)]. The space id is that of
+   the collection's explicit config (provider, model, dimension); a collection
+   without one keys by [collection-name, sha256(text)]. Repeat queries skip the
+   provider."
   [collection-name text]
-  (or (embed-cache/lookup collection-name text)
-      (let [provider (get-provider-for collection-name)
-            vec      (chroma/embed-text provider text)]
-        (embed-cache/store! collection-name text vec))))
+  (let [sid (space-id-for collection-name)]
+    (or (embed-cache/lookup collection-name sid text)
+        (let [provider (get-provider-for collection-name)
+              vec      (chroma/embed-text provider text)]
+          (embed-cache/store! collection-name sid text vec)))))
 
 (defn embed-batch-for-collection
   "Embed multiple texts using the provider configured for the collection.
