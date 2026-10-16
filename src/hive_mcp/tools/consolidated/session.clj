@@ -12,7 +12,8 @@
             [hive-mcp.dns.result :as result]
             [hive-mcp.tools.memory.scope :as scope]
             [taoensso.timbre :as log]
-            [hive-mcp.tools.consolidated.session-config :as session-config]))
+            [hive-mcp.tools.consolidated.session-config :as session-config]
+            [hive-mcp.embeddings.shared-gate :as embed-gate]))
 
 (defn- evict-agent-context!
   "Evict context-store entries for a completing agent."
@@ -151,15 +152,14 @@
    from a context the background thread may no longer see."
   [agent-id directory]
   (let [t0 (System/currentTimeMillis)]
-    (future
-      (try
+    (future (embed-gate/with-lane :batch (try
         (trigger-gc-sweep!)
         (crystal/handle-wrap-crystallize {:directory directory :agent_id agent-id})
         (evict-agent-context! agent-id)
         (log/info "session-wrap: DONE" (- (System/currentTimeMillis) t0) "ms")
         (catch Throwable t
           (log/error t "session-wrap: background crystallization failed"
-                     {:agent agent-id :elapsed-ms (- (System/currentTimeMillis) t0)}))))))
+                     {:agent agent-id :elapsed-ms (- (System/currentTimeMillis) t0)})))))))
 
 (defn handle-wrap
   "Wrap session -- fire-and-forget crystallization.

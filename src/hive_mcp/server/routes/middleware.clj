@@ -27,7 +27,8 @@
             [hive-mcp.agent.grant :as grant]
             [hive-mcp.agent.identity :as agent-identity]
             [hive-mcp.server.routes.async-ack :as async-ack]
-            [hive-mcp.tools.async-params :as async-params])
+            [hive-mcp.tools.async-params :as async-params]
+            [hive-mcp.embeddings.shared-gate :as embed-gate])
 (:import [java.util.concurrent RejectedExecutionException]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -125,7 +126,13 @@
    log line, transcript or piggyback ever holds it. The result is bound as
    `:identity` in the request context. Under :enforce a request that claims a
    registered spawned agent's id without a valid credential is refused here;
-   under :observe (the default) it is logged and counted and proceeds."
+   under :observe (the default) it is logged and counted and proceeds.
+
+   Every tool call runs in the :interactive embedding lane
+   (embeddings.shared-gate/*lane*), so a caller waiting on an embedding is
+   admitted ahead of queued background (:batch) work such as an ingest.
+   Work the call hands to the background rebinds :batch (wrap-handler-async,
+   shared-gate/batch-fn)."
   [handler]
   (fn [args]
     (let [raw-args (walk/keywordize-keys args)
@@ -134,7 +141,8 @@
       (if-not (:allow? decision true)
         [{:type "text" :isError true
           :text (agent-identity/refusal-text decision (:caller-id who))}]
-        (binding [ctx/*request-cache* (atom {})]
+        (binding [ctx/*request-cache* (atom {})
+                  embed-gate/*lane* :interactive]
           (let [agent-id (id/extract-agent-id args nil)
                 project-id (id/extract-project-id args)
                 directory (id/extract-directory args)]
@@ -248,7 +256,9 @@
             :tool       tool-name
             :caller-id  caller-id
             :timeout-ms timeout-ms
-            :f          (fn []
+            ;; Background work: back to the :batch embedding lane.
+            :f          (embed-gate/batch-fn
+                         (fn []
                           (try
                             (let [clean-args (dissoc args :async :async-timeout-ms)
                                   result (handler clean-args)]
@@ -275,7 +285,7 @@
                                                          {:task-id task-id :tool tool-name
                                                           :status :error
                                                           :error (str (.getName (class t)) ": " (.getMessage t))})
-                              (throw t))))})
+                              (throw t)))))})
           [{:type "text"
             :text (pr-str (async-ack/ack task-id tool-name timeout-ms durable?))}]
           (catch RejectedExecutionException _
