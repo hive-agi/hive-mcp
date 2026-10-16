@@ -157,7 +157,11 @@
        (feedback-credit entry)
        (- (offer-decay offers)))))
 
-(m/=> score [:=> [:cat :map [:maybe [:sequential :string]] [:maybe number?]] :double])
+(def Tokens
+  "Task cue tokens: a set (what task-signal answers), any seq, or nil."
+  [:maybe [:or [:set :string] [:sequential :string]]])
+
+(m/=> score [:=> [:cat :map Tokens [:maybe number?]] :double])
 
 (defn- budget-prefix
   "Count of leading entries whose pr-str total fits `budget`.
@@ -211,4 +215,4 @@
      :batch (subvec ordered 0 taken)
      :taken taken}))
 
-(m/=> select-batch [:=> [:cat [:sequential :map] [:map [:tokens {:optional true} [:maybe [:sequential :string]]] [:offers {:optional true} [:maybe :map]] [:char-budget {:optional true} [:maybe :int]] [:pins {:optional true} [:maybe [:sequential :any]]] [:floor-cap {:optional true} [:maybe :int]]]] [:map [:ordered [:vector :map]] [:batch [:vector :map]] [:taken [:int {:min 0}]]]])
+(m/=> select-batch [:=> [:cat [:sequential :map] [:map [:tokens {:optional true} Tokens] [:offers {:optional true} [:maybe :map]] [:char-budget {:optional true} [:maybe :int]] [:pins {:optional true} [:maybe [:or [:set :any] [:sequential :any]]]] [:floor-cap {:optional true} [:maybe :int]]]] [:map [:ordered [:vector :map]] [:batch [:vector :map]] [:taken [:int {:min 0}]]]])

@@ -1,0 +1,42 @@
+{:case-0
+ {:out -0.5,
+  :in
+  ({:id "e1",
+    :T :note,
+    :C "ljMHN1q4wY6qHgtn0ldC550QXS6Hud7XtiD",
+    :F -1}
+   #{"carto" "zzz" "memory"}
+   0)},
+ :case-1
+ {:out 3.7333333333333334,
+  :in
+  ({:id "e5",
+    :T :principle,
+    :C "aLf2hr",
+    :tags ["drain" "memory" "memory"],
+    :A 1}
+   #{"zzz" "memory"}
+   0)},
+ :case-2
+ {:out 2.85,
+  :in
+  ({:id "e3",
+    :T :axiom,
+    :C "m656eDd9412hQrp6Y3xWDn4J7C87F",
+    :tags ["memory" "carto"],
+    :A 0}
+   #{"drain" "carto"}
+   1)},
+ :case-3 {:out 0.85, :in ({:id "e1", :T :axiom, :tags []} #{} 1)},
+ :case-4
+ {:out 2.85,
+  :in
+  ({:id "e5", :T :note, :tags ["memory"]}
+   #{"drain" "carto" "memory"}
+   1)},
+ :case-5 {:out 0.4, :in ({:id "e5", :T :axiom} #{"drain" "zzz"} 7)},
+ :case-6 {:out -0.6, :in ({:id "e2", :T "note", :tags []} #{} 4)},
+ :case-7
+ {:out 0.35,
+  :in
+  ({:id "e4", :T :note, :C "N9I9SOs4MLCCVm8QRD8pU5BKJ", :F 2} #{} 1)}}

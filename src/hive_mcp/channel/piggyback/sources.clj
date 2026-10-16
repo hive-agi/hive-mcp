@@ -172,7 +172,7 @@
                 {:source-id source-id :message message}))
     messages))
 
-(m/=> messages-from [:=> [:cat [:or [:map-of :keyword :any] [:sequential [:tuple :keyword :any]]]] [:vector :map]])
+(m/=> messages-from [:=> [:cat [:maybe [:or [:map-of :keyword :any] [:sequential [:tuple :keyword :any]]]]] [:vector :map]])
 
 (defn collect-messages
   "Rows from every registered source. [] when none is registered."
