@@ -1,0 +1,17 @@
+{:case-0 {:out #{}, :in {:tags []}},
+ :case-1 {:out #{}, :in {:tags ["agent:x"]}},
+ :case-2
+ {:out #{"" "hive"},
+  :in {:tags ["xpoll:project:" "xpoll:project:hive"]}},
+ :case-3
+ {:out #{"hive" "funeraria"},
+  :in {:tags ["xpoll:project:hive" "xpoll:project:funeraria"]}},
+ :case-4 {:out #{"hive"}, :in {:tags ["xpoll:project:hive"]}},
+ :case-5 {:out #{""}, :in {:tags ["agent:x" "xpoll:project:"]}},
+ :case-6
+ {:out #{"" "funeraria"},
+  :in
+  {:tags
+   ["xpoll:project:funeraria" "scope:project:hive" "xpoll:project:"]}},
+ :case-7
+ {:out #{""}, :in {:tags ["scope:project:hive" "xpoll:project:"]}}}

@@ -4,7 +4,8 @@
    Public fns delegate to extension registry (:cc/*) with inline fallbacks."
   (:require [clojure.string :as str]
             [hive-mcp.dns.result :refer [rescue]]
-            [hive-mcp.extensions.registry :as ext]))
+            [hive-mcp.extensions.registry :as ext]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -24,6 +25,71 @@
 (declare scope-boost)
 
 ;; =============================================================================
+;; Value-object schemas (contracts for the public fns below)
+;; =============================================================================
+
+(def Duration
+  "A memory duration tier as returned by the promotion/demotion rules."
+  [:enum :ephemeral :short :medium :long :permanent])
+
+(def Instant
+  "A java.time.Instant (session start/end)."
+  [:fn {:gen/schema [:int {:min 0 :max 4000000000}]
+        :gen/fmap (fn [s] (java.time.Instant/ofEpochSecond s))}
+   #(instance? java.time.Instant %)])
+
+(def RecallWeights
+  "recall-context -> weight."
+  [:map-of :keyword number?])
+
+(def PromotionThresholds
+  "`:from->to` -> score threshold."
+  [:map-of :keyword number?])
+
+(def Recall
+  "One recall-history row. `:count` defaults to 1 when absent."
+  [:map [:context {:optional true} :any] [:count {:optional true} number?]])
+
+(def PromotionScore
+  [:map [:score number?]
+   [:breakdown [:vector [:map [:context :any] [:weight number?] [:count number?] [:contribution number?]]]]])
+
+(def PromotableEntry
+  [:map [:duration {:optional true} :any] [:recalls {:optional true} [:maybe [:sequential Recall]]]])
+
+(def PromoteVerdict
+  [:map [:promote? :boolean] [:current-score number?] [:base-score number?]
+   [:behavioral-adjustment number?] [:scope-boost-override number?]
+   [:threshold number?] [:next-duration [:maybe Duration]]])
+
+(def DemoteVerdict
+  [:map [:demote? :boolean] [:reason [:maybe [:= :behavioral-corrections]]]
+   [:behavioral-adjustment number?] [:prev-duration [:maybe Duration]]])
+
+(def SessionTag
+  [:fn {:gen/schema :string :gen/fmap (fn [s] (str "session:" s))}
+   #(and (string? %) (str/starts-with? % "session:"))])
+
+(def SessionUidTag
+  [:fn {:gen/schema :string :gen/fmap (fn [s] (str "session-uid:" s))}
+   #(and (string? %) (str/starts-with? % "session-uid:"))])
+
+(def SessionTiming
+  [:map [:session-start [:maybe :string]] [:session-end :string] [:duration-minutes :int]])
+
+(def DecayEntry
+  [:maybe [:map [:access-count {:optional true} [:maybe number?]]
+           [:last-accessed {:optional true} :any]
+           [:duration {:optional true} [:maybe :string]]
+           [:type {:optional true} [:maybe :string]]]])
+
+(def ProgressNote
+  [:map [:type [:= :note]] [:content :string] [:tags [:vector :string]] [:duration [:= :ephemeral]]])
+
+(def SummaryNote
+  [:map [:type [:= :note]] [:content :string] [:tags [:vector :string]] [:duration [:= :short]]])
+
+;; =============================================================================
 ;; Crystal Config Registry (OCP: injectable domain constants)
 ;; =============================================================================
 
@@ -36,15 +102,21 @@
   [config-map]
   (swap! crystal-config-extensions merge config-map))
 
+(m/=> register-crystal-config! [:=> [:cat [:maybe [:map-of :keyword :any]]] [:map-of :keyword :any]])
+
 (defn get-crystal-config
   "Look up a registered crystal config by key."
   [k]
   (get @crystal-config-extensions k))
 
+(m/=> get-crystal-config [:=> [:cat :keyword] :any])
+
 (defn get-crystal-config-or
   "Look up a registered crystal config by key, with default fallback."
   [k default]
   (get @crystal-config-extensions k default))
+
+(m/=> get-crystal-config-or [:=> [:cat :keyword :any] :any])
 
 ;; =============================================================================
 ;; Recall Context Weights (defaults — overridable via crystal config registry)
@@ -70,6 +142,8 @@
   []
   (get-crystal-config-or :recall-weights default-recall-weights))
 
+(m/=> recall-weights [:=> [:cat] RecallWeights])
+
 (def default-promotion-thresholds
   "Default score thresholds for promotion between durations.
    Can be overridden via register-crystal-config!"
@@ -83,6 +157,8 @@
    Returns registered config if available, otherwise defaults."
   []
   (get-crystal-config-or :promotion-thresholds default-promotion-thresholds))
+
+(m/=> promotion-thresholds [:=> [:cat] PromotionThresholds])
 
 ;; =============================================================================
 ;; Score Calculation — delegates to :cc/promotion-score
@@ -101,6 +177,8 @@
   "Calculate promotion score from recall history."
   [recalls]
   (delegate :cc/promotion-score calculate-promotion-score-fallback [recalls]))
+
+(m/=> calculate-promotion-score [:=> [:cat [:maybe [:sequential Recall]]] PromotionScore])
 
 (defn current-duration->next
   "Map current duration to next tier."
@@ -121,6 +199,8 @@
       "permanent" :permanent
       :medium)))
 
+(m/=> current-duration->next [:=> [:cat :any] Duration])
+
 (defn threshold-for-duration
   "Get promotion threshold for current duration."
   [duration]
@@ -134,6 +214,8 @@
       :long-term (:long->permanent pt)
       :permanent Double/MAX_VALUE
       10.0)))
+
+(m/=> threshold-for-duration [:=> [:cat :any] [:maybe number?]])
 
 ;; =============================================================================
 ;; Promotion / Demotion — delegates to :cc/should-promote, :cc/should-demote
@@ -164,6 +246,8 @@
   ([entry opts]
    (delegate :cc/should-promote should-promote-fallback [entry opts])))
 
+(m/=> should-promote? [:function [:=> [:cat PromotableEntry] PromoteVerdict] [:=> [:cat PromotableEntry [:maybe [:map [:behavioral-adjustment {:optional true} number?] [:scope-boost-override {:optional true} number?]]]] PromoteVerdict]])
+
 (defn- should-demote-fallback
   [{:keys [duration] :as _entry} behavioral-adjustment]
   (let [demote? (< behavioral-adjustment -3.0)
@@ -184,6 +268,8 @@
   [{:keys [duration] :as entry} behavioral-adjustment]
   (delegate :cc/should-demote should-demote-fallback [entry behavioral-adjustment]))
 
+(m/=> should-demote? [:=> [:cat [:maybe [:map [:duration {:optional true} :any]]] number?] DemoteVerdict])
+
 ;; =============================================================================
 ;; Session Tagging — delegates to :cc/session-id, :cc/session-tag, :cc/extract-session
 ;; =============================================================================
@@ -198,6 +284,8 @@
   []
   (delegate :cc/session-id session-id-fallback []))
 
+(m/=> session-id [:=> [:cat] [:string {:min 1}]])
+
 (defn- session-tag-fallback
   ([] (str "session:" (session-id)))
   ([date-str] (str "session:" date-str)))
@@ -206,6 +294,8 @@
   "Create a session scope tag."
   ([] (delegate :cc/session-tag session-tag-fallback []))
   ([date-str] (delegate :cc/session-tag session-tag-fallback [date-str])))
+
+(m/=> session-tag [:function [:=> [:cat] SessionTag] [:=> [:cat :any] SessionTag]])
 
 ;; session-id above is the calendar DATE, and it stays that way: `session:<date>`
 ;; is what every existing recall query matches on. It is NOT an identity — every
@@ -223,6 +313,8 @@
       (f))
     (catch Throwable _ nil)))
 
+(m/=> session-uid [:=> [:cat] [:maybe :string]])
+
 (defn session-uid-tag
   "`session-uid:<id>` for the current session, or nil. Carried ALONGSIDE
    session-tag, never instead of it, so existing date queries keep working."
@@ -230,11 +322,15 @@
   (when-let [uid (session-uid)]
     (str "session-uid:" uid)))
 
+(m/=> session-uid-tag [:=> [:cat] [:maybe SessionUidTag]])
+
 (defn session-tags
   "The session tags a wrap-generated entry should carry: the date tag always,
    the uid tag when this session has an identity."
   []
   (into [(session-tag)] (remove nil?) [(session-uid-tag)]))
+
+(m/=> session-tags [:=> [:cat] [:vector {:min 1 :max 2} :string]])
 
 (defn- extract-session-fallback [tags]
   (some #(when (str/starts-with? % "session:") (subs % 8)) tags))
@@ -246,10 +342,14 @@
   [tags]
   (some #(when (str/starts-with? % "session-uid:") (subs % 12)) tags))
 
+(m/=> extract-session-uid-from-tags [:=> [:cat [:maybe [:or [:sequential :string] [:set :string]]]] [:maybe :string]])
+
 (defn extract-session-from-tags
   "Extract session identifier from tags."
   [tags]
   (delegate :cc/extract-session extract-session-fallback [tags]))
+
+(m/=> extract-session-from-tags [:=> [:cat [:maybe [:or [:sequential :string] [:set :string]]]] [:maybe :string]])
 
 ;; =============================================================================
 ;; Session Timestamp Tracking — delegates to :cc/record-start!, :cc/get-start, :cc/reset-start!
@@ -277,6 +377,8 @@
   ([] (delegate :cc/record-start! record-session-start-fallback []))
   ([agent-id] (delegate :cc/record-start! record-session-start-fallback [agent-id])))
 
+(m/=> record-session-start! [:function [:=> [:cat] Instant] [:=> [:cat [:maybe :string]] Instant]])
+
 (defn- get-session-start-fallback
   ([] (get-session-start-fallback nil))
   ([agent-id]
@@ -290,6 +392,8 @@
   ([] (delegate :cc/get-start get-session-start-fallback []))
   ([agent-id] (delegate :cc/get-start get-session-start-fallback [agent-id])))
 
+(m/=> get-session-start [:function [:=> [:cat] [:maybe Instant]] [:=> [:cat [:maybe :string]] [:maybe Instant]]])
+
 (defn- reset-session-start-fallback
   ([] (reset! session-start-tracker {}))
   ([agent-id]
@@ -300,6 +404,8 @@
   "Reset session start tracker for an agent."
   ([] (delegate :cc/reset-start! reset-session-start-fallback []))
   ([agent-id] (delegate :cc/reset-start! reset-session-start-fallback [agent-id])))
+
+(m/=> reset-session-start! [:function [:=> [:cat] [:map-of :string Instant]] [:=> [:cat [:maybe :string]] [:map-of :string Instant]]])
 
 (defn- session-timing-metadata-fallback [start-instant end-instant]
   (let [duration-minutes (if (and start-instant end-instant)
@@ -315,6 +421,8 @@
   [start-instant end-instant]
   (delegate :cc/timing-meta session-timing-metadata-fallback [start-instant end-instant]))
 
+(m/=> session-timing-metadata [:=> [:cat [:maybe Instant] Instant] SessionTiming])
+
 ;; =============================================================================
 ;; Crystallization Rules (Pure Predicates) — kept inline (trivial, no IP)
 ;; =============================================================================
@@ -324,35 +432,49 @@
   [context]
   (contains? #{:catchup-structural :wrap-structural} context))
 
+(m/=> mechanical-recall? [:=> [:cat :any] :boolean])
+
 (defn meaningful-recalls
   "Filter to only meaningful recalls."
   [recalls]
   (remove #(mechanical-recall? (:context %)) recalls))
+
+(m/=> meaningful-recalls [:=> [:cat [:maybe [:sequential [:maybe :map]]]] [:sequential [:maybe :map]]])
 
 (defn cross-boundary-recalls
   "Get recalls that cross session/project boundaries."
   [recalls]
   (filter #(contains? #{:cross-session :cross-project} (:context %)) recalls))
 
+(m/=> cross-boundary-recalls [:=> [:cat [:maybe [:sequential [:maybe :map]]]] [:sequential [:maybe :map]]])
+
 (defn has-user-endorsement?
   "Check if any recall has user feedback."
   [recalls]
   (some #(= :user-feedback (:context %)) recalls))
+
+(m/=> has-user-endorsement? [:=> [:cat [:maybe [:sequential [:maybe :map]]]] [:maybe [:= true]]])
 
 (defn behavioral-recall?
   "Is this recall context a behavioral signal?"
   [context]
   (contains? #{:behavioral-success :behavioral-failure :behavioral-correction} context))
 
+(m/=> behavioral-recall? [:=> [:cat :any] :boolean])
+
 (defn behavioral-recalls
   "Filter to only behavioral signal recalls."
   [recalls]
   (filter #(behavioral-recall? (:context %)) recalls))
 
+(m/=> behavioral-recalls [:=> [:cat [:maybe [:sequential [:maybe :map]]]] [:sequential [:maybe :map]]])
+
 (defn has-behavioral-signal?
   "Check if any recall has behavioral outcome data."
   [recalls]
   (some behavioral-recall? (map :context recalls)))
+
+(m/=> has-behavioral-signal? [:=> [:cat [:maybe [:sequential [:maybe :map]]]] [:maybe [:= true]]])
 
 ;; =============================================================================
 ;; Staleness Decay — delegates to :cc/decay-candidate, :cc/decay-delta
@@ -367,6 +489,8 @@
                   now (java.time.ZonedDateTime/now)]
               (.between java.time.temporal.ChronoUnit/DAYS then now)))))
 
+(m/=> days-since [:=> [:cat :any] [:maybe :int]])
+
 (defn- decay-candidate-fallback
   ([entry] (decay-candidate-fallback entry {}))
   ([{:keys [access-count duration type] :as _entry}
@@ -379,6 +503,8 @@
   "Check if entry should be considered for staleness decay."
   ([entry] (delegate :cc/decay-candidate decay-candidate-fallback [entry]))
   ([entry opts] (delegate :cc/decay-candidate decay-candidate-fallback [entry opts])))
+
+(m/=> decay-candidate? [:function [:=> [:cat DecayEntry] :boolean] [:=> [:cat DecayEntry [:maybe [:map [:access-threshold {:optional true} number?]]]] :boolean]])
 
 (def ^:private duration-decay-rate
   {"ephemeral" 2.0
@@ -404,6 +530,8 @@
   ([entry] (delegate :cc/decay-delta calculate-decay-delta-fallback [entry]))
   ([entry opts] (delegate :cc/decay-delta calculate-decay-delta-fallback [entry opts])))
 
+(m/=> calculate-decay-delta [:function [:=> [:cat DecayEntry] [:double {:min 0.0}]] [:=> [:cat DecayEntry [:maybe [:map [:recency-days {:optional true} number?]]]] [:double {:min 0.0}]]])
+
 ;; =============================================================================
 ;; Scope Detection — already delegates via ext registry (unchanged)
 ;; =============================================================================
@@ -417,10 +545,14 @@
          (map #(subs % (count "xpoll:project:")))
          set)))
 
+(m/=> extract-xpoll-projects [:=> [:cat [:maybe [:map [:tags {:optional true} [:maybe [:or [:sequential :string] [:set :string]]]]]]] [:set :string]])
+
 (defn scope-count
   "Count distinct scope accesses for this entry."
   [entry]
   (count (extract-xpoll-projects entry)))
+
+(m/=> scope-count [:=> [:cat [:maybe [:map [:tags {:optional true} [:maybe [:or [:sequential :string] [:set :string]]]]]]] [:int {:min 0}]])
 
 (defn scope-boost
   "Compute promotion score boost from scope breadth.
@@ -430,6 +562,8 @@
     (f entry)
     0.0))
 
+(m/=> scope-boost [:=> [:cat [:maybe :map]] number?])
+
 (defn scope-eligible?
   "Predicate: is this entry eligible for scope-based auto-promotion?"
   ([entry] (scope-eligible? entry {}))
@@ -438,12 +572,16 @@
      (f entry opts)
      false)))
 
+(m/=> scope-eligible? [:function [:=> [:cat [:maybe :map]] :boolean] [:=> [:cat [:maybe :map] [:maybe :map]] :boolean]])
+
 (defn scope-tiers
   "Compute tiers to promote based on scope breadth."
   [entry]
   (if-let [f (ext/get-extension :gx/tiers)]
     (f entry)
     0))
+
+(m/=> scope-tiers [:=> [:cat [:maybe :map]] [:int {:min 0}]])
 
 ;; =============================================================================
 ;; Progress Note Generation — delegates to :cc/task-to-note, :cc/summarize-*
@@ -468,6 +606,8 @@
   "Convert a completed kanban task to a progress note."
   [task]
   (delegate :cc/task-to-note task-to-progress-note-fallback [task]))
+
+(m/=> task-to-progress-note [:=> [:cat [:map [:title {:optional true} :any] [:context {:optional true} [:maybe :string]] [:priority {:optional true} [:maybe :string]] [:started {:optional true} :any] [:completed-at {:optional true} :any]]] ProgressNote])
 
 (defn- extract-content-summary [content]
   (cond
@@ -519,6 +659,8 @@
   ([notes git-commits harvested]
    (delegate :cc/summarize-progress summarize-session-progress-fallback [notes git-commits harvested])))
 
+(m/=> summarize-session-progress [:function [:=> [:cat [:maybe [:sequential :any]] [:maybe [:sequential :any]]] [:maybe SummaryNote]] [:=> [:cat [:maybe [:sequential :any]] [:maybe [:sequential :any]] [:maybe [:map [:summary {:optional true} [:maybe [:map [:kg-edge-count {:optional true} number?] [:kanban-movement-count {:optional true} number?]]]]]]] [:maybe SummaryNote]]])
+
 (defn- summarize-memory-activity-fallback [{:keys [created accessed]} & [_harvested]]
   (when (pos? (+ (or created 0) (or accessed 0)))
     {:type :note
@@ -537,6 +679,8 @@
   ([activity harvested]
    (delegate :cc/summarize-memory summarize-memory-activity-fallback [activity harvested])))
 
+(m/=> summarize-memory-activity [:function [:=> [:cat [:maybe [:map [:created {:optional true} [:maybe number?]] [:accessed {:optional true} [:maybe number?]]]]] [:maybe SummaryNote]] [:=> [:cat [:maybe [:map [:created {:optional true} [:maybe number?]] [:accessed {:optional true} [:maybe number?]]]] :any] [:maybe SummaryNote]]])
+
 (defn meaningful-harvest?
   "True iff the harvest shows write-shaped work: progress notes, completed
    tasks, commits, kg-edges, kanban moves, or memories created. Excludes
@@ -551,6 +695,8 @@
                          (or kg-edge-count 0)
                          (or kanban-movement-count 0)
                          (or created-count 0)]))))
+
+(m/=> meaningful-harvest? [:=> [:cat [:maybe [:map [:summary {:optional true} [:maybe [:map [:progress-count {:optional true} [:maybe number?]] [:task-count {:optional true} [:maybe number?]] [:commit-count {:optional true} [:maybe number?]] [:kg-edge-count {:optional true} [:maybe number?]] [:kanban-movement-count {:optional true} [:maybe number?]] [:created-count {:optional true} [:maybe number?]]]]]]]] :boolean])
 
 (comment
   (calculate-promotion-score
