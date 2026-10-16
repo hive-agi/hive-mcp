@@ -1,0 +1,22 @@
+{:case-0
+ {:out {:id "op-1", :tool "memory", :entity_id "op-1"},
+  :in {:id "op-1", :tool "memory"}},
+ :case-1
+ {:out {:id "op-1", :tool "memory", :depends_on [], :entity_id "op-1"},
+  :in {:id "op-1", :tool "memory", :depends_on []}},
+ :case-2
+ {:out {:id "a", :tool "memory", :depends_on ["a"], :entity_id "a"},
+  :in {:id "a", :tool "memory", :depends_on "a"}},
+ :case-3
+ {:out {:id "$0", :tool "kg", :depends_on ["b"]},
+  :in {:id "$0", :tool "kg", :depends_on "b"}},
+ :case-4
+ {:out {:id "a", :tool "memory", :entity_id "a"},
+  :in {:id "a", :tool "memory"}},
+ :case-5
+ {:out {:id "a", :tool "memory", :entity_id "a"},
+  :in {:id "a", :tool "memory"}},
+ :case-6 {:out {:id "$0", :tool "kg"}, :in {:id "$0", :tool "kg"}},
+ :case-7
+ {:out {:id "op-1", :tool "memory", :entity_id "op-1"},
+  :in {:id "op-1", :tool "memory"}}}

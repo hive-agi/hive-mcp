@@ -1,0 +1,46 @@
+{:case-0
+ {:out
+  {:ok true, :s {:t 0, :ok 0, :f 0, :w 0}, :dr true, :p {}, :E []},
+  :in
+  {:success true,
+   :summary {:total 0, :success 0, :failed 0, :waves 0},
+   :waves {},
+   :dry_run true,
+   :plan {},
+   :errors []}},
+ :case-1
+ {:out {:ok true, :s {:t -1, :ok 0, :f -1, :w -1}, :r [], :E [""]},
+  :in
+  {:success true,
+   :summary {:total -1, :success 0, :failed -1, :waves -1},
+   :waves {"F" []},
+   :dry_run false,
+   :plan {},
+   :errors [""]}},
+ :case-2
+ {:out
+  {:ok false,
+   :s {:t -2, :ok 0, :f -1, :w -2},
+   :dr true,
+   :p {},
+   :E ["" ""]},
+  :in
+  {:success false,
+   :summary {:total -2, :success 0, :failed -1, :waves -2},
+   :waves {},
+   :dry_run true,
+   :plan {},
+   :errors ["" ""]}},
+ :case-3
+ {:out
+  {:ok false,
+   :s {:t 0, :ok -4, :f 0, :w -1},
+   :r [{:id "v", :ok true, :d "Z0"}],
+   :E ["a2"]},
+  :in
+  {:success false,
+   :summary {:total 0, :success -4, :failed 0, :waves -1},
+   :waves {"" [{:id "v", :success true, :result "Z0"}]},
+   :dry_run false,
+   :plan {},
+   :errors ["a2"]}}}

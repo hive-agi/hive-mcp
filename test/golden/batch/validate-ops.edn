@@ -1,0 +1,39 @@
+{:case-0 {:out {:valid true}, :in ([])},
+ :case-1
+ {:out
+  {:valid false,
+   :errors ["Operation 'c' depends on non-existent 'd'"]},
+  :in
+  ([{:id "a", :tool "kg", :command "add"}
+    {:id "c", :tool "kanban", :depends_on ["d"]}])},
+ :case-2
+ {:out {:valid true},
+  :in
+  ([{:id "a", :tool "kanban", :depends_on ["c"]}
+    {:id "c", :tool "kg", :depends_on []}
+    {:id "d", :tool "kg", :command "query"}])},
+ :case-3
+ {:out
+  {:valid false,
+   :errors
+   ["Operation 'b' depends on non-existent 'a'"
+    "Operation 'd' depends on itself"]},
+  :in
+  ([{:id "b", :tool "kanban", :command "query", :depends_on ["a"]}
+    {:id "c", :tool "kg"}
+    {:id "d", :tool "kg", :command "query", :depends_on ["d"]}])},
+ :case-4
+ {:out
+  {:valid false,
+   :errors
+   ["Operation 'd' depends on itself"
+    "Operation 'd' depends on non-existent 'b'"]},
+  :in ([{:id "d", :tool "kg", :depends_on ["d" "b"]}])},
+ :case-5 {:out {:valid true}, :in ([{:id "d", :tool "memory"}])},
+ :case-6
+ {:out {:valid true},
+  :in
+  ([{:id "c", :tool "kanban", :command "add", :depends_on []}
+    {:id "d", :tool "kanban"}])},
+ :case-7
+ {:out {:valid true}, :in ([{:id "c", :tool "kg", :command "query"}])}}

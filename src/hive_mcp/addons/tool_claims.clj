@@ -220,3 +220,16 @@
 (def valid-resolution?
   "Malli validator for a Resolution."
   (m/validator Resolution))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> resolve-claims
+      [:=> [:cat [:sequential CoreTool] [:sequential Contribution]] Resolution])
+
+(m/=> refusals-by-addon
+      [:=> [:cat Resolution] [:map-of :any [:vector Refusal]]])
+
+(m/=> claimed-core-names
+      [:=> [:cat [:map [:claims [:sequential Claim]]]] [:set :string]])

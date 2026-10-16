@@ -1,0 +1,68 @@
+{:case-0 {:out [], :in ({:mounted #{}, :baseline nil})},
+ :case-1
+ {:out
+  [{:issue :expected-missing,
+    :severity :error,
+    :missing ["I"],
+    :message "expected addon(s) not mounted: I"}],
+  :in
+  ({:discovered [],
+    :mounted #{"RN"},
+    :failed [],
+    :expected-min nil,
+    :expected ["I"]})},
+ :case-2
+ {:out [], :in ({:mounted ["MdS"], :expected-min 0, :memory nil})},
+ :case-3
+ {:out [], :in ({:baseline {:at "T"}, :memory {:deferred-to "TS"}})},
+ :case-4
+ {:out [],
+  :in
+  ({:discovered #{}, :mounted ["8" "9" "LRFE"], :expected-min nil})},
+ :case-5
+ {:out
+  [{:issue :below-floor,
+    :severity :error,
+    :expected 3,
+    :found 0,
+    :message
+    "discovered 0 addon manifest(s), configured floor is 3 (:services :addons :expected-min)"}],
+  :in
+  ({:mounted ["ZY" "383V3w" "i3i948" "bU" "8vW"],
+    :expected-min 3,
+    :expected [],
+    :baseline {:discovered []},
+    :memory {:backend "3170w", :store-set? nil}})},
+ :case-6
+ {:out
+  [{:issue :expected-missing,
+    :severity :error,
+    :missing ["1k2KkQ" "NmS" "RBeb0" "RlW3s88" "VFXE1cs" "hP7c"],
+    :message
+    "expected addon(s) not mounted: 1k2KkQ, NmS, RBeb0, RlW3s88, VFXE1cs, hP7c"}
+   {:issue :mount-failed,
+    :severity :warn,
+    :failed ["SpTh" "sMF"],
+    :message "discovered but not mounted: SpTh, sMF"}],
+  :in
+  ({:failed #{"SpTh" "sMF"},
+    :expected ["RlW3s88" "1k2KkQ" "RBeb0" "VFXE1cs" "hP7c" "NmS"],
+    :baseline {:at "w8Kj"},
+    :memory nil})},
+ :case-7
+ {:out
+  [{:issue :below-floor,
+    :severity :error,
+    :expected 1,
+    :found 0,
+    :message
+    "discovered 0 addon manifest(s), configured floor is 1 (:services :addons :expected-min)"}
+   {:issue :mount-failed,
+    :severity :warn,
+    :failed ["2fV14dxW" "37kI7" "53g25M" "R8a0Y" "y4Sf"],
+    :message
+    "discovered but not mounted: 2fV14dxW, 37kI7, 53g25M, R8a0Y, y4Sf"}],
+  :in
+  ({:failed ["2fV14dxW" "y4Sf" "R8a0Y" "53g25M" "37kI7"],
+    :expected-min 1,
+    :baseline {:at "e"}})}}

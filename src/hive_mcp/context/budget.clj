@@ -6,7 +6,8 @@
    Extension points are resolved via the extensions registry at startup.
    When no extensions are registered, all functions gracefully degrade
    to pass-through results."
-  (:require [hive-mcp.extensions.delegate :refer [delegate-or-noop]]))
+  (:require [hive-mcp.extensions.delegate :refer [delegate-or-noop]]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -75,3 +76,71 @@
                                                        :snippets    (count (or snippets []))
                                                        :domain      (count (or domain []))}}}
                     [input]))
+
+(def Tokens
+  "A token count."
+  [:int {:min 0}])
+
+(def BudgetMetadata
+  "The accounting block both allocators attach."
+  [:map
+   [:total-budget :int]
+   [:total-tokens :int]
+   [:remaining :int]])
+
+(def TruncatedText
+  "What `truncate-to-budget` answers."
+  [:map
+   [:content :string]
+   [:tokens :int]
+   [:truncated? :boolean]])
+
+(def LingContextInput
+  "Sections `allocate-ling-context` splits a budget across."
+  [:map
+   [:total-budget {:optional true} [:maybe :int]]
+   [:preset {:optional true} [:maybe :string]]
+   [:axioms {:optional true} [:maybe :string]]
+   [:context {:optional true} [:maybe :string]]
+   [:history {:optional true} [:maybe :string]]])
+
+(def LingContext
+  "The allocated ling context."
+  [:map
+   [:preset :string]
+   [:axioms :string]
+   [:context :string]
+   [:history :string]
+   [:metadata BudgetMetadata]])
+
+(def UnifiedEntriesInput
+  "Entry vectors `allocate-unified-entries` splits a budget across."
+  [:map
+   [:total-budget {:optional true} [:maybe :int]]
+   [:conventions {:optional true} [:maybe [:sequential :any]]]
+   [:decisions {:optional true} [:maybe [:sequential :any]]]
+   [:snippets {:optional true} [:maybe [:sequential :any]]]
+   [:domain {:optional true} [:maybe [:sequential :any]]]])
+
+(def UnifiedEntries
+  "The allocated entries."
+  [:map
+   [:conventions [:sequential :any]]
+   [:decisions [:sequential :any]]
+   [:snippets [:sequential :any]]
+   [:domain [:sequential :any]]
+   [:budget-used :int]
+   [:budget-remaining :int]
+   [:metadata [:map
+               [:total-budget :int]
+               [:total-tokens :int]
+               [:remaining :int]
+               [:counts [:map-of :keyword :int]]]]])
+
+(m/=> estimate-tokens [:=> [:cat [:maybe :string]] Tokens])
+
+(m/=> truncate-to-budget [:=> [:cat [:maybe :string] :int] TruncatedText])
+
+(m/=> allocate-ling-context [:=> [:cat LingContextInput] LingContext])
+
+(m/=> allocate-unified-entries [:=> [:cat UnifiedEntriesInput] UnifiedEntries])

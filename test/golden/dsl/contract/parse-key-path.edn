@@ -1,0 +1,6 @@
+{:case-0 {:out nil, :in ""},
+ :case-1 {:out [:a :b :c], :in "a.b.c"},
+ :case-2 {:out [:kg], :in "kg"},
+ :case-3 {:out nil, :in "  "},
+ :case-4 {:out nil, :in "  "},
+ :case-5 {:out [:services :nrepl :port], :in "services.nrepl.port"}}
