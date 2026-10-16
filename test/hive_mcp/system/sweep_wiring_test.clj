@@ -30,8 +30,9 @@
    :cases {:empty #{}
            :unrelated #{"channels/orphan" "channels/async-result-gc"}
            :collision #{"lings/terminal-liveness"}}
-   :gen (gen/set (gen/elements ["channels/orphan" "channels/async-result-gc"
-                                 "lings/terminal-liveness" "memory/pending-reembed"]) 0 4)
+   :gen (gen/fmap set
+                  (gen/vector (gen/elements ["channels/orphan" "channels/async-result-gc"
+                                                  "lings/terminal-liveness" "memory/pending-reembed"]) 0 4))
    :pred boolean?
    :num-tests 50
    :mutations [["always-disjoint" (fn [_] true)]
