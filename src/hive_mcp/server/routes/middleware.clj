@@ -26,8 +26,7 @@
             [hive-spi.guard.ports :as gp]
             [hive-mcp.agent.grant :as grant]
             [hive-mcp.agent.identity :as agent-identity]
-            [hive-mcp.server.routes.async-ack :as async-ack]
-            [hive-mcp.embeddings.shared-gate :as embed-gate])
+            [hive-mcp.server.routes.async-ack :as async-ack])
 (:import [java.util.concurrent RejectedExecutionException]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -111,6 +110,22 @@
    caller id from a coordinator's. Rebound by tests."
   grant/registry-get-slave)
 
+(defn- embed-lane-var
+  "The memory domain's embedding admission lane var
+   (hive-mcp.embeddings.shared-gate/*lane*), resolved at call time: the kernel
+   does not require the memory domain. Nil when that namespace is absent."
+  []
+  (try (requiring-resolve 'hive-mcp.embeddings.shared-gate/*lane*)
+       (catch Throwable _ nil)))
+
+(defn in-embed-lane
+  "Wrap thunk `f` so it runs with the embedding lane bound to `lane`. Without
+   a memory domain, `f` is returned unchanged."
+  [lane f]
+  (if-let [v (embed-lane-var)]
+    (fn [] (with-bindings {v lane} (f)))
+    f))
+
 (defn wrap-handler-context
   "Bind request context: keywordize args, verify identity, resolve ids, bind
    ctx vars.
@@ -128,10 +143,10 @@
    under :observe (the default) it is logged and counted and proceeds.
 
    Every tool call runs in the :interactive embedding lane
-   (embeddings.shared-gate/*lane*), so a caller waiting on an embedding is
-   admitted ahead of queued background (:batch) work such as an ingest.
-   Work the call hands to the background rebinds :batch (wrap-handler-async,
-   shared-gate/batch-fn)."
+   (embeddings.shared-gate/*lane*, via `in-embed-lane`), so a caller waiting
+   on an embedding is admitted ahead of queued background (:batch) work such
+   as an ingest. Work the call hands to the background rebinds :batch
+   (wrap-handler-async, shared-gate/batch-fn)."
   [handler]
   (fn [args]
     (let [raw-args (walk/keywordize-keys args)
@@ -140,8 +155,7 @@
       (if-not (:allow? decision true)
         [{:type "text" :isError true
           :text (agent-identity/refusal-text decision (:caller-id who))}]
-        (binding [ctx/*request-cache* (atom {})
-                  embed-gate/*lane* :interactive]
+        (binding [ctx/*request-cache* (atom {})]
           (let [agent-id (id/extract-agent-id args nil)
                 project-id (id/extract-project-id args)
                 directory (id/extract-directory args)]
@@ -151,7 +165,7 @@
                                        :identity who
                                        :project-id project-id
                                        :directory directory}
-              (handler args))))))))
+              ((in-embed-lane :interactive #(handler args))))))))))
 
 
 ;; =============================================================================
@@ -253,8 +267,7 @@
             :caller-id  caller-id
             :timeout-ms timeout-ms
             ;; Background work: back to the :batch embedding lane.
-            :f          (embed-gate/batch-fn
-                         (fn []
+            :f          (in-embed-lane :batch (fn []
                           (try
                             (let [clean-args (dissoc args :async :async-timeout-ms)
                                   result (handler clean-args)]
