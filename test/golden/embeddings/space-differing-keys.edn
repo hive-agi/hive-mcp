@@ -1,0 +1,207 @@
+{:case-0
+ {:out
+  [:digest
+   :dimension
+   :normalized?
+   :query-template-rev
+   :doc-serializer-rev],
+  :in
+  ({:provider :ollama,
+    :model "b",
+    :digest "d1",
+    :dimension 768,
+    :metric :l2,
+    :normalized? true,
+    :query-template-rev nil,
+    :doc-serializer-rev nil}
+   {:provider :ollama,
+    :model "b",
+    :digest nil,
+    :dimension 8,
+    :metric :l2,
+    :normalized? false,
+    :query-template-rev "q1",
+    :doc-serializer-rev "s1"})},
+ :case-1
+ {:out [:provider :metric :normalized? :doc-serializer-rev],
+  :in
+  ({:provider :openrouter,
+    :model "a",
+    :digest "d1",
+    :dimension 768,
+    :metric :l2,
+    :normalized? false,
+    :query-template-rev nil,
+    :doc-serializer-rev nil}
+   {:provider :ollama,
+    :model "a",
+    :digest "d1",
+    :dimension 768,
+    :metric :cosine,
+    :normalized? true,
+    :query-template-rev nil,
+    :doc-serializer-rev "s1"})},
+ :case-2
+ {:out
+  [:digest
+   :dimension
+   :normalized?
+   :query-template-rev
+   :doc-serializer-rev],
+  :in
+  ({:provider :ollama,
+    :model "a",
+    :digest "d1",
+    :dimension 8,
+    :metric :ip,
+    :normalized? true,
+    :query-template-rev "q1",
+    :doc-serializer-rev "s1"}
+   {:provider :ollama,
+    :model "a",
+    :digest nil,
+    :dimension 768,
+    :metric :ip,
+    :normalized? false,
+    :query-template-rev nil,
+    :doc-serializer-rev nil})},
+ :case-3
+ {:out
+  [:provider
+   :model
+   :dimension
+   :metric
+   :normalized?
+   :query-template-rev],
+  :in
+  ({:provider :openrouter,
+    :model "a",
+    :digest nil,
+    :dimension 768,
+    :metric :l2,
+    :normalized? false,
+    :query-template-rev nil,
+    :doc-serializer-rev nil}
+   {:provider :ollama,
+    :model "b",
+    :digest nil,
+    :dimension 8,
+    :metric :ip,
+    :normalized? true,
+    :query-template-rev "q1",
+    :doc-serializer-rev nil})},
+ :case-4
+ {:out [:provider :dimension :normalized? :query-template-rev],
+  :in
+  ({:provider :ollama,
+    :model "a",
+    :digest nil,
+    :dimension 768,
+    :metric :ip,
+    :normalized? true,
+    :query-template-rev nil,
+    :doc-serializer-rev "s1"}
+   {:provider :openrouter,
+    :model "a",
+    :digest nil,
+    :dimension 8,
+    :metric :ip,
+    :normalized? false,
+    :query-template-rev "q1",
+    :doc-serializer-rev "s1"})},
+ :case-5
+ {:out [:provider :digest :metric :normalized? :doc-serializer-rev],
+  :in
+  ({:provider :openrouter,
+    :model "b",
+    :digest "d1",
+    :dimension 768,
+    :metric :l2,
+    :normalized? true,
+    :query-template-rev nil,
+    :doc-serializer-rev nil}
+   {:provider :ollama,
+    :model "b",
+    :digest nil,
+    :dimension 768,
+    :metric :cosine,
+    :normalized? false,
+    :query-template-rev nil,
+    :doc-serializer-rev "s1"})},
+ :case-6
+ {:out [:provider :model :dimension :normalized? :doc-serializer-rev],
+  :in
+  ({:provider :openrouter,
+    :model "a",
+    :digest nil,
+    :dimension 768,
+    :metric :l2,
+    :normalized? false,
+    :query-template-rev "q1",
+    :doc-serializer-rev "s1"}
+   {:provider :ollama,
+    :model "b",
+    :digest nil,
+    :dimension 8,
+    :metric :l2,
+    :normalized? true,
+    :query-template-rev "q1",
+    :doc-serializer-rev nil})},
+ :case-7
+ {:out
+  [:model :dimension :metric :query-template-rev :doc-serializer-rev],
+  :in
+  ({:provider :ollama,
+    :model "a",
+    :digest nil,
+    :dimension 8,
+    :metric :cosine,
+    :normalized? true,
+    :query-template-rev "q1",
+    :doc-serializer-rev "s1"}
+   {:provider :ollama,
+    :model "b",
+    :digest nil,
+    :dimension 768,
+    :metric :ip,
+    :normalized? true,
+    :query-template-rev nil,
+    :doc-serializer-rev nil})},
+ :case-8
+ {:out [:metric :query-template-rev :doc-serializer-rev],
+  :in
+  ({:provider :ollama,
+    :model "a",
+    :digest nil,
+    :dimension 8,
+    :metric :cosine,
+    :normalized? true,
+    :query-template-rev nil,
+    :doc-serializer-rev nil}
+   {:provider :ollama,
+    :model "a",
+    :digest nil,
+    :dimension 8,
+    :metric :ip,
+    :normalized? true,
+    :query-template-rev "q1",
+    :doc-serializer-rev "s1"})},
+ :case-9
+ {:out [:provider :digest :dimension :metric],
+  :in
+  ({:provider :openrouter,
+    :model "a",
+    :digest "d1",
+    :dimension 768,
+    :metric :cosine,
+    :normalized? true,
+    :query-template-rev "q1",
+    :doc-serializer-rev "s1"}
+   {:provider :ollama,
+    :model "a",
+    :digest nil,
+    :dimension 8,
+    :metric :ip,
+    :normalized? true,
+    :query-template-rev "q1",
+    :doc-serializer-rev "s1"})}}

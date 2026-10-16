@@ -1,0 +1,40 @@
+{:case-0
+ {:out
+  ":abc:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  :in (nil "abc" "")},
+ :case-1
+ {:out
+  "hive-mcp-memory:s1:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  :in ("hive-mcp-memory" "s1" "")},
+ :case-2
+ {:out
+  "hive-ingest:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  :in ("hive-ingest" nil "")},
+ :case-3
+ {:out
+  ":s1:e5b26262aa4cf1f218bd0fcbcd9fd32926996a0ead5b142fa34de820d60b0931",
+  :in (nil "s1" "Yl")},
+ :case-4
+ {:out
+  ":5bf78d68c878cc7703736e6e134490ebd58d2d9a5613c47cde5c9237607dc978",
+  :in (nil nil "0ir")},
+ :case-5
+ {:out
+  ":8a0782d3ee5bc924092a85324d9d8e2b7fa99cc05b04c958cfd726c9f8c5afbf",
+  :in (nil nil "0dI49")},
+ :case-6
+ {:out
+  ":abc:938db8c9f82c8cb58d3f3ef4fd250036a48d26a712753d2fde5abd03a85cabf4",
+  :in (nil "abc" "01")},
+ :case-7
+ {:out
+  "hive-ingest:s1:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  :in ("hive-ingest" "s1" "")},
+ :case-8
+ {:out
+  ":f67e1de194b5cd14e162149d21492718fbc082cd28029866ea72f691b8da41cc",
+  :in (nil nil "8o8")},
+ :case-9
+ {:out
+  ":e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  :in (nil nil "")}}

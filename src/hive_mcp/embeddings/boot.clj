@@ -19,7 +19,8 @@
             [hive-mcp.embeddings.config :as embedding-config]
             [hive-mcp.embeddings.ollama :as ollama]
             [hive-mcp.embeddings.service :as embedding-service]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -122,3 +123,6 @@
                                                                     :openrouter-model openrouter-model})
                      (log/info "EmbeddingService status:" (embedding-service/status))
                      true))))
+
+;; rescue-log answers false on any failure; success answers true.
+(m/=> init-embedding-provider! [:=> [:cat] :boolean])
