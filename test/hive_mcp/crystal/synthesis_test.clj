@@ -171,37 +171,20 @@
 ;; =============================================================================
 
 (deftest golden-synthesize-no-content
-  (testing "synthesize with no synthesized summary still persists a minimal breadcrumb"
-    ;; Contract change (bugfix): every wrap MUST leave a memory-store trace.
-    ;; Quiet sessions now fall back to minimal-wrap-summary instead of skipping.
+  (testing "synthesize with an accessed-only or empty harvest persists nothing"
     (with-synthesis-mocks
       {:summary nil
        :entry-id "entry-minimal-001"}
       (let [result (synthesis/synthesize base-harvested)]
-        ;; Structure: content-path shape even when no synthesized summary
-        (is (= "entry-minimal-001" (:summary-id result))
-            "Quiet sessions still persist and return a :summary-id")
-        (is (not (contains? result :skipped))
-            "No silent skip — every wrap persists")
+        (is (true? (:skipped result)) "Quiet sessions are skipped")
+        (is (= "no-activity" (:reason result)))
+        (is (not (contains? result :summary-id))
+            "Quiet sessions never return a :summary-id")
         (is (= "test-session-synth" (:session result)))
         (is (= "synth-project" (:project-id result)))
-        (is (map? (:session-timing result)))
         (is (map? (:stats result)))
-        ;; Lifecycle stats present
-        (is (map? (:promotion-stats result)) "promotion-stats present")
-        (is (map? (:decay-stats result)) "decay-stats present")
-        (is (map? (:xpoll-stats result)) "xpoll-stats present")
-        (is (map? (:memory-decay-stats result)) "memory-decay-stats present")
-        (is (contains? result :file-provenance-stats) "file-provenance-stats present")
-        ;; Lifecycle stats shape
-        (is (= #{:promoted :skipped :below :evaluated}
-               (set (keys (:promotion-stats result)))))
-        (is (= #{:decayed :pruned :fresh :evaluated}
-               (set (keys (:decay-stats result)))))
-        (is (= #{:promoted :candidates :total-scanned}
-               (set (keys (:xpoll-stats result)))))
-        (is (= #{:decayed :expired :total-scanned}
-               (set (keys (:memory-decay-stats result)))))))))
+        (is (not (contains? result :promotion-stats))
+            "Lifecycle ops do not run for a skipped wrap")))))
 
 ;; =============================================================================
 ;; Golden: synthesize — content path
@@ -242,26 +225,22 @@
 ;; =============================================================================
 
 (deftest golden-synthesize-shape-contract
-  (testing "Both paths produce key sets compatible with crystallize-session golden"
-    ;; Minimal-breadcrumb path keys (was: no-content skip path)
+  (testing "Skipped path and content path produce their contract key sets"
     (with-synthesis-mocks
       {:summary nil
        :entry-id "entry-minimal-001"}
       (let [result (synthesis/synthesize base-harvested)
-            expected-keys #{:summary-id :session :project-id
-                            :session-timing :stats
-                            :promotion-stats :decay-stats :xpoll-stats
-                            :memory-decay-stats :file-provenance-stats}]
+            expected-keys #{:skipped :reason :session :project-id :stats}]
         (is (= expected-keys (set (keys result)))
-            "Quiet-session path key set must match contract (persists, no :skipped)")))
+            "Quiet-session path key set must match the skip contract")))
 
-    ;; Content path keys
     (with-synthesis-mocks
       {:summary {:content "Summary" :tags ["wrap"]}
        :entry-id "entry-001"}
       (let [result (synthesis/synthesize
                     (assoc base-harvested
-                           :progress-notes [{:content "work"}]))
+                           :progress-notes [{:content "work"}]
+                           :summary (assoc (:summary base-harvested) :progress-count 1)))
             expected-keys #{:summary-id :session :project-id
                             :session-timing :stats
                             :promotion-stats :decay-stats :xpoll-stats
@@ -369,8 +348,9 @@
                   {:content "## Summary" :tags ["wrap"]})
        :entry-id "prop-entry-001"}
       (let [result (synthesis/synthesize harvested)]
-        ;; Either has lifecycle stats (both paths) or has :error (store failed)
-        (or (contains? result :error)
+        ;; Skipped (quiet harvest), failed store, or stored with lifecycle stats
+        (or (true? (:skipped result))
+            (contains? result :error)
             (and (map? (:promotion-stats result))
                  (map? (:decay-stats result))
                  (map? (:xpoll-stats result))
@@ -444,7 +424,8 @@
        :entry-id "entry-partial-001"}
       (let [result (synthesis/synthesize
                     (assoc base-harvested
-                           :progress-notes [{:content "work"}]))]
+                           :progress-notes [{:content "work"}]
+                           :summary (assoc (:summary base-harvested) :progress-count 1)))]
         (is (string? (:summary-id result)) "summary-id must be present")
         (is (not (contains? result :error))
             ":error key must never appear alongside :summary-id")))))
@@ -469,7 +450,7 @@
 ;; =============================================================================
 
 (deftest red-wrap-always-persists-session-memory
-  (testing "synthesize must call facade/index-memory-entry! even with empty harvest"
+  (testing "synthesize must NOT call facade/index-memory-entry! on an empty or accessed-only harvest"
     (let [calls (atom [])]
       (ext/register! :ch/a (fn [_] {:promoted 0 :skipped 0 :below 0 :evaluated 0}))
       (ext/register! :ch/b (fn [_] {:decayed 0 :pruned 0 :fresh 0 :evaluated 0}))
@@ -493,23 +474,15 @@
                                                 (swap! calls conj entry)
                                                 "entry-red-001")
            facade/content-hash                (fn [c] (str (hash c)))]
-          (let [result (synthesis/synthesize base-harvested)]
-            ;; The core contract: a memory entry MUST be persisted.
-            (is (pos? (count @calls))
-                "facade/index-memory-entry! must be called at least once")
-            ;; It must carry the session-wrap tag so catchup can find it.
-            (when (pos? (count @calls))
-              (let [entry (first @calls)
-                    tags  (set (:tags entry))]
-                (is (contains? tags "session-wrap")
-                    "persisted entry must be tagged session-wrap")
-                (is (string? (:content entry))
-                    "persisted entry must have string content")
-                (is (not (clojure.string/blank? (:content entry)))
-                    "persisted entry content must not be blank")))
-            ;; Result must carry a :summary-id pointing at the persisted entry.
-            (is (string? (:summary-id result))
-                "synthesize result must include :summary-id, not silently skip")))
+          (let [empty-result    (synthesis/synthesize base-harvested)
+                accessed-only   (assoc-in base-harvested [:summary :accessed-count] 7)
+                accessed-result (synthesis/synthesize accessed-only)]
+            (is (zero? (count @calls))
+                "facade/index-memory-entry! must not be called for a quiet harvest")
+            (is (true? (:skipped empty-result)))
+            (is (true? (:skipped accessed-result)))
+            (is (nil? (:summary-id empty-result)))
+            (is (nil? (:summary-id accessed-result)))))
         (finally
           (ext/deregister! :ch/a)
           (ext/deregister! :ch/b)
@@ -651,7 +624,8 @@
                                    {:content "more foo"    :tags ["scope:project:foo"]}]
                                   :completed-tasks
                                   [{:title "finish bar task" :tags ["scope:project:bar"]}]
-                                  :git-commits ["abc123 fix: cross-project"]})]
+                                  :git-commits ["abc123 fix: cross-project"]
+                                  :summary (assoc (:summary base-harvested) :progress-count 3)})]
       (with-capturing-synthesis-mocks entries
         (let [result (synthesis/synthesize multi-harvested)]
           ;; N+1 summaries persisted (foo + bar + umbrella).
@@ -690,7 +664,8 @@
           ;; Only one project scope present → back-compat path, single summary.
           single-harvested (merge base-harvested
                                   {:progress-notes
-                                   [{:content "work" :tags ["scope:project:foo"]}]})]
+                                   [{:content "work" :tags ["scope:project:foo"]}]
+                                   :summary (assoc (:summary base-harvested) :progress-count 1)})]
       (with-capturing-synthesis-mocks entries
         (let [result (synthesis/synthesize single-harvested)]
           (is (= 1 (count @entries))
