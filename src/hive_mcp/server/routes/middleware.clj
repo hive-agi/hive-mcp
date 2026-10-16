@@ -334,6 +334,9 @@
    identity source (verified caller id, transport caller id, agent-id arg).
 
      :deny — short-circuits; the refusal is returned and the tool never runs.
+     :ask  — refused the same way. The guard addon resolves an ask for this
+             floor itself (the operator's yes becomes an :allow), so an :ask
+             reaching here was granted by nobody.
      :warn — the tool runs and the advisory is appended to its content.
      else  — proceeds.
 
@@ -352,6 +355,11 @@
         :deny (do (log/warn "guard: refused a tool call"
                             {:tool tool-name :rule (:guard/rule-id decision)})
                   (guard-refusal tool-name decision))
+        :ask  (do (log/warn "guard: refused a tool call nobody granted"
+                            {:tool tool-name :rule (:guard/rule-id decision)})
+                  (guard-refusal tool-name
+                                 (update decision :guard/reason str
+                                         "\n\nThis call needs the operator's permission and nothing granted it.")))
         :warn (conj (vec (id/normalize-content (handler args)))
                     {:type "text"
                      :text (str "GUARD WARNING — " (:guard/reason decision)
