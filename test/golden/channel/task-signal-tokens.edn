@@ -1,0 +1,42 @@
+{:case-0
+ {:out #{},
+  :in
+  (nil
+   {:command "", :query "secretvalue", :content "hive_mcp.channel"})},
+ :case-1 {:out #{}, :in ("clojure_eval" "not-a-map")},
+ :case-2
+ {:out #{},
+  :in
+  (nil
+   {:query "ab12cd34ef56gh",
+    :content "secretvalue",
+    :description "secretvalue"})},
+ :case-3 {:out #{}, :in (nil "not-a-map")},
+ :case-4
+ {:out #{},
+  :in
+  ("clojure_eval"
+   {:query "/usr/bin/git",
+    :content "x",
+    :tags [],
+    :description "/usr/bin/git"})},
+ :case-5
+ {:out #{},
+  :in
+  (nil
+   {:query "secretvalue", :tags [], :description "hive_mcp.channel"})},
+ :case-6
+ {:out #{},
+  :in
+  (nil
+   {:query "x",
+    :content "secretvalue",
+    :description "hive_mcp.channel"})},
+ :case-7
+ {:out #{},
+  :in
+  (nil
+   {:command "",
+    :content "secretvalue",
+    :tags ["ab12cd34ef56gh" "secretvalue"],
+    :description "secretvalue"})}}
