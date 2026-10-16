@@ -159,11 +159,17 @@
                   {:message (str ":magit/index-inspection-failed - " (.getMessage e))}))))
 
 (defn- verify-index-scope
-  "Refuse an explicit-files commit if the index holds any other path."
+  "Refuse an explicit-files commit if the index holds any other path. A directory
+   pathspec covers its descendants whether or not its spelling ends in /."
   [files dir]
-  (let [inspection (staged-paths dir)]
+  (let [inspection (staged-paths dir)
+        scope-files (mapv (fn [path]
+                            (if (and (not (str/ends-with? path "/"))
+                                     (.isDirectory (java.io.File. dir path)))
+                              (str path "/")
+                              path)) files)]
     (if-let [paths (:ok inspection)]
-      (let [extras (staged-outside-files files paths)]
+      (let [extras (staged-outside-files scope-files paths)]
         (if (seq extras)
           (result/err :magit/unrelated-staged
                       {:message (str ":magit/unrelated-staged - refusing commit; index also contains: "

@@ -156,6 +156,19 @@
           (is (str/includes? (:text r) "foreign.txt"))
           (is (not (committed? stub))))))))
 
+(deftest commit-directory-pathspec-covers-children
+  (with-index
+    (fn [dir]
+      (let [subdir (java.io.File. dir "src")]
+        (.mkdir subdir)
+        (spit (java.io.File. subdir "child.clj") "child")
+        (add-to-index dir "src/child.clj")
+        (sh/with-swarm-host [stub (staged-responses verdict-ok)]
+          (let [r (magit/handle-magit-commit {:message "directory"
+                                              :files ["src"] :directory dir})]
+            (is (nil? (:isError r)) (str "git add -- src covers child: " (:text r)))
+            (is (committed? stub))))))))
+
 (deftest commit-with-explicit-files-can-opt-into-existing-index
   (with-index
     (fn [dir]
