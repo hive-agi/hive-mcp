@@ -10,7 +10,8 @@
             [clojure.test.check.generators :as gen]
             [hive-test.trifecta :refer [deftrifecta]]
             [hive-mcp.test.stub.memory-store :as ms]
-            [hive-mcp.tools.memory.migration.import :as import]))
+            [hive-mcp.tools.memory.migration.import :as import]
+            [hive-spi.memory.registry :as registry]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -87,6 +88,41 @@
                                     :key-fn keyword)]
               (is (= 0 (:imported r2)))
               (is (= 3 (get-in r2 [:skipped :total]))))))))))
+
+(defn- import-write-outcome
+  "Exercise import-entry! and the JSON count through an injected memory write port."
+  [{:keys [refuse?]}]
+  (let [root (write-legacy! (temp-root) "hive" {"note" 1})
+        store (ms/->stub nil {:add-entry-fn (fn [entry]
+                                             (if refuse?
+                                               {:success? false :error "store refused"}
+                                               (:id entry)))})
+        prior (registry/registered-stores)]
+    (try
+      (ms/install! store)
+      (let [body (json/read-str (:text (import/handle-import-json {:project-id "hive" :legacy-dir root}))
+                                :key-fn keyword)]
+        (select-keys body [:imported :failed]))
+      (finally
+        (registry/reset-registry!)
+        (doseq [[k s] prior] (registry/register-store! k s))))))
+
+(deftrifecta import-counts-refused-write
+  hive-mcp.tools.memory.migration.import-test/import-write-outcome
+  {:golden-path "test/golden/memory/import-write-failure.edn"
+   :cases {:refused {:refuse? true}
+           :landed {:refuse? false}}
+   :gen (gen/hash-map :refuse? gen/boolean)
+   :pred #(and (map? %)
+               (nat-int? (:failed %))
+               (nat-int? (:imported %))
+               (= 1 (+ (:failed %) (:imported %))))
+   :num-tests 20
+   :mutations [["refusal-as-import" (fn [_] {:failed 0 :imported 1})]
+               ["refusal-as-skip" (fn [_] {:failed 0 :imported 0})]]
+   :assert (fn []
+             (is (= {:failed 1 :imported 0} (import-write-outcome {:refuse? true})))
+             (is (= {:failed 0 :imported 1} (import-write-outcome {:refuse? false}))))})
 
 (deftest import-reports-a-missing-legacy-directory
   (ms/with-stub-store
