@@ -1,0 +1,2 @@
+{:one {:lines ["[boot-timing] addon a 10 ms"], :private? true},
+ :append {:lines ["first" "second"], :private? true}}
