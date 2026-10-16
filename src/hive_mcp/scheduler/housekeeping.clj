@@ -16,7 +16,8 @@
      hive-mcp.scheduler.kg-gc"
   (:require [hive-mcp.dns.result :as result]
             [hive-mcp.config.core :as config]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [clojure.set :as set])
   (:import [java.util.concurrent Executors ScheduledExecutorService TimeUnit]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -62,6 +63,28 @@
 ;; =============================================================================
 ;; Housekeeping Sweep (Pure Logic)
 ;; =============================================================================
+
+(def housekeeping-sweep-names
+  "Logical names of tasks owned by the five-minute housekeeping timer. Keep this
+   inventory alongside housekeeping-sweep! when adding or removing a task;
+   the boot wiring test checks for collisions with registered ISweepable names.
+   This is descriptive data, not a second dispatcher."
+  #{"swarm/stale-callbacks"
+    "tools/completed-async-batches"
+    "channels/event-journal"
+    "agent/completed-saa-states"
+    "system/bounded-atom-gc"
+    "lings/terminal-liveness"
+    "lings/ledger-cold"
+    "knowledge-graph/gc-lane"
+    "memory/pending-reembed"
+    "system/jvm-gc-hint"})
+
+(defn disjoint-sweep-owners?
+  "True when no registered sweep name duplicates a housekeeping-owned task."
+  [registered-names]
+  (empty? (set/intersection housekeeping-sweep-names
+                            (set registered-names))))
 
 (defn housekeeping-sweep!
   "Run a single housekeeping sweep. Each task is guarded independently."
