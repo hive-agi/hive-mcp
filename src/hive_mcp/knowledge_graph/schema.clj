@@ -110,11 +110,11 @@
    Tracks the abstraction level and grounding status of knowledge entries,
    enabling drift detection and re-grounding workflows."
   {:knowledge/abstraction-level {:db/doc "Abstraction level 1-4 (1=File, 2=Semantic, 3=Pattern, 4=Intent)"}
-   :knowledge/grounded-at       {:db/doc "Timestamp of last verification against lower level (inst)"}
-   :knowledge/grounded-from     {:db/doc "Ref to disc entity (file/commit) verified against"}
+   :knowledge/grounded-at       {:db/noHistory true :db/doc "Timestamp of last verification against lower level (inst)"}
+   :knowledge/grounded-from     {:db/noHistory true :db/doc "Ref to disc entity (file/commit) verified against"}
    :knowledge/gaps              {:db/cardinality :db.cardinality/many
                                  :db/doc "Set of known abstraction gaps (keywords)"}
-   :knowledge/source-hash       {:db/doc "Content hash of source when abstracted (for drift detection)"}
+   :knowledge/source-hash       {:db/noHistory true :db/doc "Content hash of source when abstracted (for drift detection)"}
    :knowledge/source-type       {:db/doc "How this knowledge was created: :manual, :automated, :inferred, :co-access"}})
 
 (def source-types
@@ -232,17 +232,17 @@
    - volatility-class affects decay rate between observations"
   {:disc/path              {:db/unique :db.unique/identity
                             :db/doc "File path (unique identity for the disc entity)"}
-   :disc/content-hash      {:db/doc "SHA256 hash of file content"}
-   :disc/analyzed-at       {:db/doc "Timestamp of last kondo/analysis (inst)"}
+   :disc/content-hash      {:db/noHistory true :db/doc "SHA256 hash of file content"}
+   :disc/analyzed-at       {:db/noHistory true :db/doc "Timestamp of last kondo/analysis (inst)"}
    :disc/git-commit        {:db/doc "Git commit hash when analyzed"}
    :disc/project-id        {:db/doc "Project scope (for multi-project support)"}
-   :disc/last-read-at      {:db/doc "Timestamp of last file read by any agent (inst)"}
-   :disc/read-count        {:db/doc "Number of times this file has been read by agents"}
+   :disc/last-read-at      {:db/noHistory true :db/doc "Timestamp of last file read by any agent (inst)"}
+   :disc/read-count        {:db/noHistory true :db/doc "Number of times this file has been read by agents"}
    ;; Bayesian certainty fields
-   :disc/certainty-alpha   {:db/doc "Beta distribution alpha parameter (float, default 5.0)"}
-   :disc/certainty-beta    {:db/doc "Beta distribution beta parameter (float, default 2.0)"}
+   :disc/certainty-alpha   {:db/noHistory true :db/doc "Beta distribution alpha parameter (float, default 5.0)"}
+   :disc/certainty-beta    {:db/noHistory true :db/doc "Beta distribution beta parameter (float, default 2.0)"}
    :disc/volatility-class  {:db/doc "Volatility class: :stable, :moderate, or :volatile"}
-   :disc/last-observation  {:db/doc "Timestamp when certainty was last updated (inst)"}})
+   :disc/last-observation  {:db/noHistory true :db/doc "Timestamp when certainty was last updated (inst)"}})
 
 (defn valid-volatility-class?
   "Check if volatility class is valid."
