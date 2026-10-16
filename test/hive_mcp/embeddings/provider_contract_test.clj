@@ -31,6 +31,9 @@
   #{"selector manager closed" "HttpClient has been shut down" "HttpClient closed"
     "the client is closed"})
 
+;; No :golden-path: the inputs are Throwables, which an EDN snapshot cannot
+;; read back. The golden facet is the literal table in
+;; `fatal-client-error-table` below.
 (deftrifecta-from-schema fatal-client-error-trifecta
   hive-mcp.embeddings.http-client/fatal-client-error?
   {:in [:cat [:fn {:gen/elements (mapv #(IOException. ^String %) messages)}
@@ -41,8 +44,19 @@
             (= out (when msg (contains? fatal-messages msg)))))
    :num-tests 200
    :seed 83
-   :n-cases 8
-   :golden-path "test/golden/embeddings/http-fatal-client-error.edn"})
+   :n-cases 8})
+
+(deftest fatal-client-error-table
+  (is (= {"selector manager closed" true
+          "HttpClient has been shut down" true
+          "HttpClient closed" true
+          "the client is closed" true
+          "Connection refused" false
+          "Read timed out" false
+          "" false
+          nil nil}
+         (into {} (for [msg messages]
+                    [msg (http/fatal-client-error? (IOException. ^String msg))])))))
 
 (deftest client-cache-shape
   (let [cache (http/mk-client (constantly :c1))]
