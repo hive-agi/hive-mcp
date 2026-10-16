@@ -299,7 +299,11 @@
 
    Returns the number of entries restored. A positive count is logged at WARN
    because it means the previous process did not shut down cleanly, which is
-   worth noticing even though it was survived."
+   worth noticing even though it was survived.
+
+   Compacts the replayed journal at startup, even when no GC sweep is running:
+   delivered tombstones and superseded submissions cannot accumulate across
+   restarts. The sweep still handles compaction during a long-lived process."
   []
   (let [restored (journal/restore)
         n (reduce + 0 (map (comp count :entries val) restored))]
@@ -308,7 +312,8 @@
                 "undelivered result(s) from the journal; the previous process"
                 "did not shut down cleanly"
                 {:callers (vec (keys restored))}))
-    (swap! buffers #(merge restored %))
+    (let [[_ current] (swap-vals! buffers #(merge restored %))]
+      (journal/compact! current))
     n))
 
 (defn record-submission!
