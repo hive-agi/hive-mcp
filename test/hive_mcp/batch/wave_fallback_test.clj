@@ -8,7 +8,10 @@
    extension lookup is forced to miss."
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.batch :as batch]
-            [hive-mcp.extensions.registry :as ext]))
+            [hive-mcp.test.stub.batch-extensions :as stub]
+            [hive-mcp.extensions.registry :as ext]
+            [hive-test.trifecta :refer [deftrifecta]]
+            [clojure.test.check.generators :as gen]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -19,8 +22,50 @@
    holds. Hermetic: independent of test order and of any stub another
    namespace installed."
   [f]
-  (with-redefs [ext/get-extension (constantly nil)]
-    (f)))
+  (stub/with-no-batch-extensions f))
+
+(deftest fallback-fixture-restores-batch-registrations
+  (let [batch-key :bx/fixture-test
+        other-key :unrelated/fixture-test
+        new-key :bx/fixture-new
+        prior (into {} (map (fn [k] [k (ext/get-extension k)]))
+                    [batch-key other-key new-key])
+        original (fn [] :original)
+        other (fn [] :other)
+        temporary (fn [] :temporary)]
+    (try
+      (ext/register! batch-key original)
+      (ext/register! other-key other)
+      (is (= "fixture exit"
+             (try
+               (no-extensions
+                (fn []
+                  (is (nil? (ext/get-extension batch-key)))
+                  (is (identical? other (ext/get-extension other-key)))
+                  (ext/register! new-key temporary)
+                  (throw (ex-info "fixture exit" {}))))
+               (catch clojure.lang.ExceptionInfo e (.getMessage e)))))
+      (is (identical? original (ext/get-extension batch-key)))
+      (is (nil? (ext/get-extension new-key)))
+      (is (identical? other (ext/get-extension other-key)))
+      (finally
+        (doseq [[k v] prior]
+          (if v (ext/register! k v) (ext/deregister! k)))))))
+
+(deftrifecta batch-extension-keys-trifecta
+  hive-mcp.test.stub.batch-extensions/batch-extension-keys
+  {:golden-path "test/golden/batch/extension-keys.edn"
+   :cases {:mixed [:bx/a :other/x :bx/new]
+           :empty []
+           :no-batch [:other/x :tools/y]}
+   :gen (gen/vector (gen/elements [:bx/a :bx/new :other/x :tools/y]) 0 20)
+   :pred (fn [result] (and (vector? result) (every? #(= "bx" (namespace %)) result)))
+   :num-tests 100
+   :mutations [["keep-all" (fn [keys] (vec keys))]
+               ["drop-all" (fn [_] [])]]
+   :assert (fn []
+             (is (= [:bx/a :bx/new]
+                    (stub/batch-extension-keys [:other/x :bx/a :bx/new]))))})
 
 (defn- waves-by-id [ops]
   (into {} (map (juxt :id :wave)) (batch/assign-waves ops)))
