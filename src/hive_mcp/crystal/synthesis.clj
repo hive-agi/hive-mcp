@@ -366,7 +366,11 @@
    Returns the umbrella summary (multi-project) or the single summary
    (single-project), with a :sub-summaries vector of all emitted summaries
    (including the umbrella itself). Back-compat: callers that read only
-   :summary-id / :project-id / :stats / lifecycle stats continue to work."
+   :summary-id / :project-id / :stats / lifecycle stats continue to work.
+
+   Guard: a harvest that is not `crystal/meaningful-harvest?` (reads only,
+   or nothing) persists nothing and returns
+   {:skipped true :reason \"no-activity\" :session :project-id :stats}."
   [{:keys [directory] :as harvested}]
   (log/info "Synthesizing session:" (crystal/session-id)
             (when directory (str "directory:" directory)))
@@ -374,7 +378,16 @@
                            "global")
         project-scopes (extract-project-scopes harvested)
         multi? (> (count project-scopes) 1)]
-    (if multi?
+    (cond
+      (not (crystal/meaningful-harvest? harvested))
+      (do (log/info "synthesize: skipped no-activity harvest, nothing persisted")
+          {:skipped true
+           :reason "no-activity"
+           :session (crystal/session-id)
+           :project-id (or (first project-scopes) cwd-project-id)
+           :stats (:summary harvested)})
+
+      multi?
       ;; Per-project summaries + global umbrella.
       (let [groups (group-harvested-by-scope harvested cwd-project-id)
             sub-summaries (vec
@@ -392,6 +405,8 @@
         (log/info "synthesize: emitted" (inc (count sub-summaries))
                   "summaries (per-project + umbrella) for projects:" project-scopes)
         (assoc umbrella :sub-summaries (conj sub-summaries umbrella)))
+
+      :else
       ;; Single-project (or no project) path — back-compat.
       (let [effective-pid (or (first project-scopes) cwd-project-id)
             scope-tag (if (= effective-pid "global")
