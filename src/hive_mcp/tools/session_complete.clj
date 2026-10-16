@@ -36,7 +36,8 @@
             [hive-mcp.vectordb.facade :as facade]
             [hive-spi.swarm.guards :as guards]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.embeddings.shared-gate :as embed-gate]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -192,13 +193,12 @@
   "Trigger plan_to_kanban for a plan memory entry asynchronously.
    Best-effort, fire-and-forget via future."
   [plan-id directory]
-  (future
-    (try
+  (future (embed-gate/with-lane :batch (try
       (let [plan-to-kanban (requiring-resolve 'hive-mcp.plan.tool/plan-to-kanban)
             r (plan-to-kanban plan-id :directory directory)]
         (log/info "plan_to_kanban result:" (pr-str r)))
       (catch Exception e
-        (log/error e "Async plan_to_kanban failed")))))
+        (log/error e "Async plan_to_kanban failed"))))))
 
 (defn- maybe-trigger-plan-to-kanban!
   "Check if explorer ling has plan memory, trigger plan_to_kanban if so.
