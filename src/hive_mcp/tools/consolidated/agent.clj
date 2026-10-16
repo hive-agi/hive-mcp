@@ -191,9 +191,14 @@
                                             :description "Timeout in ms for collect (default: 300000)"}
                               ;; dag params
                               "plan_id" {:type "string"
-                                         :description "Plan memory entry ID for dag start (required for 'dag start')"}
+                                         :description "Plan memory entry ID for dag start (required for 'dag start'). The run is bounded to the plan's own cards (the ones `kanban plan-to-kanban` linked to it); a plan with no linked cards is refused unless task_ids or board_wide is given."}
                               "max_slots" {:type "integer"
-                                           :description "Max concurrent lings for dag scheduler (default: 5)"}}
+                                           :description "Max concurrent lings for dag scheduler (default: 5)"}
+                              "task_ids" {:type "array"
+                                          :items {:type "string"}
+                                          :description "[dag start] Explicit kanban card ids to bound the run to, instead of the plan's linked cards."}
+                              "board_wide" {:type "boolean"
+                                            :description "[dag start] Take every todo on the board as a candidate instead of only the plan's cards (default false). Human-only cards (PEDRO DECISION titles, human-only/needs-human/decision tags) are never dispatched either way."}}
                  :required ["command"]}
    :handler #'handle-agent})
 
