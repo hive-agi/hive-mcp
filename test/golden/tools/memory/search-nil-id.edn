@@ -1,0 +1,30 @@
+{:all-valid
+ {:results
+  [{:id "good-a",
+    :type "note",
+    :tags [],
+    :distance 0.1,
+    :title "needle"}
+   {:id "good-b",
+    :type "note",
+    :tags [],
+    :distance 0.1,
+    :title "needle"}],
+  :count 2,
+  :dropped-null-hits 0},
+ :empty {:results [], :count 0, :dropped-null-hits 0},
+ :mixed
+ {:results
+  [{:id "good-a",
+    :type "note",
+    :tags [],
+    :distance 0.1,
+    :title "needle"}
+   {:id "good-b",
+    :type "note",
+    :tags [],
+    :distance 0.1,
+    :title "needle"}],
+  :count 2,
+  :dropped-null-hits 1},
+ :only-null {:results [], :count 0, :dropped-null-hits 2}}
