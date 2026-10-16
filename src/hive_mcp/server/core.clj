@@ -191,8 +191,10 @@
    Idempotent guard: throws if system already running.
 
    Accepts optional profile keyword (:desktop, :k8s-headless, :k8s-minimal).
-   Profile precedence: explicit :profile > HIVE_PROFILE env > :desktop."
-  [& {:keys [profile] :or {profile nil}}]
+   Profile precedence: explicit :profile > HIVE_PROFILE env > :desktop.
+   `:hprof-boot!` is a boot port for isolated lifecycle tests; production
+   defaults to hprof/boot! and retains the disk-pressure abort."
+  [& {:keys [profile hprof-boot!] :or {profile nil hprof-boot! hprof/boot!}}]
   (let [profile (resolve-profile profile)]
     (when @system
       (throw (ex-info "System already running. Call (stop!) first or (reset!) to restart."
@@ -202,7 +204,7 @@
       (log/info "Targeting Emacs daemon:" sock))
     ;; ENGINE-L0.3 — rotate stale hprofs and abort early on disk pressure
     ;; before allocating any heap-heavy subsystems.
-    (hprof/boot!)
+    (hprof-boot!)
     ;; ENGINE-L0.5 — cap manifold's wait-pool BEFORE any deferred runs
     ;; (the wait-pool fn is delay-cached, so this must precede ig/init).
     (manifold-pool/boot!)
@@ -235,8 +237,9 @@
   "Stop system, reload changed namespaces via clj-reload, re-init system.
    The full REPL-driven development cycle.
 
-   clj-reload is dev-only (not in main deps), so we use requiring-resolve."
-  [& {:keys [profile] :or {profile nil}}]
+   clj-reload is dev-only (not in main deps), so we use requiring-resolve.
+   Accepts the same optional hprof boot port as start! for isolated tests."
+  [& {:keys [profile hprof-boot!] :or {profile nil hprof-boot! hprof/boot!}}]
   (let [profile (or profile (resolve-profile))]
     (stop!)
     (log/info "Reloading changed namespaces...")
@@ -244,7 +247,7 @@
       (do (reload-fn)
           (log/info "Namespaces reloaded. Restarting..."))
       (log/warn "clj-reload not available (dev-only dep). Skipping reload."))
-    (start! :profile profile)))
+    (start! :profile profile :hprof-boot! hprof-boot!)))
 
 ;; =============================================================================
 ;; Blocking — keepalive integration for -main
