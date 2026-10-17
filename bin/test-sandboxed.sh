@@ -53,6 +53,7 @@ usage() { sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0; }
 
 # ── Capture the REAL environment BEFORE we clobber it ───────────────────────
 REAL_HOME="${HOME:?HOME must be set}"
+REAL_XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"   # reaches the user manager
 REAL_KG_STORE="$REAL_HOME/.local/share/hive-mcp/datahike"   # the live KG store
 TMPROOT="${TMPDIR:-/tmp}"; TMPROOT="${TMPROOT%/}"
 
@@ -175,7 +176,7 @@ SBX="$(mktemp -d "$TMPROOT/hive-mcp-test-sbx.XXXXXXXX")"
 [[ "$SBX" != "$PROJECT_DIR" ]]               || die "sandbox root == project dir"
 
 # ── Cleanup: delete ONLY our mktemp dir, never a real path (NOTE: no exec) ──
-# shellcheck disable=SC2317  # reached via `trap`, not inline — SC can't see it
+# shellcheck disable=SC2317,SC2329  # reached via `trap`, not inline; SC can't see it
 cleanup() {
   if [[ "$KEEP_SANDBOX" -eq 0 && -n "${SBX:-}" && -d "$SBX" \
         && "$SBX" == "$TMPROOT/hive-mcp-test-sbx."* && "$SBX" != "$REAL_HOME" ]]; then
@@ -262,17 +263,31 @@ test-sandboxed: ISOLATION ENV -------------------------------------------------
 AUDIT
 
 # ── OOM standing: the test JVM dies before the server ──────────────────────
-# Raise this shell's oom_score_adj (inherited by the JVM) so the kernel OOM
-# killer takes a runaway test JVM before hive-mcp. Raising needs no privilege.
-# HIVE_TEST_OOM_SCORE_ADJ=0 restores the default. See bin/oom-policy.sh.
+# Kernel OOM killer: raise this shell's oom_score_adj (inherited by the JVM)
+# so it takes a runaway test JVM before hive-mcp. Raising needs no privilege.
+# HIVE_TEST_OOM_SCORE_ADJ=0 restores the default.
+# systemd-oomd: a suite started from inside hive-mcp (its bash tool, a
+# headless ling) would otherwise sit in the server's ManagedOOMPreference=avoid
+# scope, shielded, and oomd would at last kill that whole scope, server
+# included. So the JVM moves into its OWN user scope, a sibling of the
+# server's, with ManagedOOMPreference=none (HIVE_TEST_OOMD_PREFERENCE;
+# avoid|omit|none, "off" = stay in the caller's cgroup). When the scope cannot
+# be had the JVM runs bare, as before. See bin/oom-policy.sh.
 # shellcheck source=bin/oom-policy.sh
 source "$SCRIPT_DIR/oom-policy.sh"
 oom_adj_set "${HIVE_TEST_OOM_SCORE_ADJ:-800}"
+TEST_OOMD_PREF="${HIVE_TEST_OOMD_PREFERENCE:-none}"
+export OOM_BUS_XDG_RUNTIME_DIR="$REAL_XDG_RUNTIME_DIR"   # XDG_RUNTIME_DIR now points into the sandbox
 
 # ── Run (NOT exec — so the EXIT trap fires and the sandbox is cleaned up) ────
 cd "$PROJECT_DIR"
+TEST_CMD=(clojure "${JVM_OPTS[@]}" ${SDEPS[@]+"${SDEPS[@]}"} "-M$ALIASES" ${RUNNER_ARGS[@]+"${RUNNER_ARGS[@]}"})
 set +e
-clojure "${JVM_OPTS[@]}" ${SDEPS[@]+"${SDEPS[@]}"} "-M$ALIASES" ${RUNNER_ARGS[@]+"${RUNNER_ARGS[@]}"}
+if [[ "$TEST_OOMD_PREF" == "off" ]]; then
+  "${TEST_CMD[@]}"
+else
+  oom_run_scoped hive-mcp-test "$TEST_OOMD_PREF" "${TEST_CMD[@]}"
+fi
 rc=$?
 set -e
 echo "test-sandboxed: runner exited rc=$rc" >&2
