@@ -44,6 +44,11 @@
       (let [ts (get entry k)]
         (boolean (and ts (pos? (compare (str ts) (str threshold))))))))
 
+(def max-query-limit
+  "Largest safe memory-query page before per-store over-fetch and backend timeouts.
+   Narrow with temporal filters for larger audits."
+  100)
+
 (defn- record-batch-co-access!
   "Record co-access pattern for batch query results (non-blocking)."
   [result-ids scope]
@@ -225,22 +230,26 @@
 
         :else
         (let [limit-val (coerce-int! limit :limit 20)]
-          (with-store
-            (let [project-id  (scope/get-current-project-id directory)
-                  sf          (domain/parse-scope scope project-id)
-                  project-ids (resolve-project-ids-for-db sf include-descendants?)
-                  entries     (fetch-entries type project-ids tags limit-val include-descendants?
-                                             :exclude-tags exclude-tags
-                                             :created-after created_after
-                                             :updated-after updated_after)
-                  filtered    (apply-scope-filter entries sf include-descendants?)
-                  results     (apply-post-filters filtered
-                                                  {:tags tags
-                                                   :duration duration
-                                                   :created-after created_after
-                                                   :updated-after updated_after
-                                                   :limit-val limit-val})]
-              (format-query-results results project-id metadata-only?)))))
+          (if (or (neg? limit-val) (> limit-val max-query-limit))
+            (mcp-error (str "memory query :limit must be between 0 and " max-query-limit
+                            "; large backend reads can time out and masquerade as empty results. "
+                            "Narrow with :created_after / :updated_after and use smaller pages."))
+            (with-store
+              (let [project-id  (scope/get-current-project-id directory)
+                    sf          (domain/parse-scope scope project-id)
+                    project-ids (resolve-project-ids-for-db sf include-descendants?)
+                    entries     (fetch-entries type project-ids tags limit-val include-descendants?
+                                               :exclude-tags exclude-tags
+                                               :created-after created_after
+                                               :updated-after updated_after)
+                    filtered    (apply-scope-filter entries sf include-descendants?)
+                    results     (apply-post-filters filtered
+                                                    {:tags tags
+                                                     :duration duration
+                                                     :created-after created_after
+                                                     :updated-after updated_after
+                                                     :limit-val limit-val})]
+                (format-query-results results project-id metadata-only?))))))
       (catch clojure.lang.ExceptionInfo e
         (if (= :coercion-error (:type (ex-data e)))
           (mcp-error (.getMessage e))
