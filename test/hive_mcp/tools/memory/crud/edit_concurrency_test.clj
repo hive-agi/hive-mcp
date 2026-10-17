@@ -79,3 +79,29 @@
          (is (< (count (pr-str result)) 500))
          (is (not (contains? result :content)))
          (is (not (contains? result :embed-text)))))))
+
+(deftest id-answer-with-pending-readback-is-a-success
+  (let [entry {:id "edit-eventual" :type "note" :content "old"}
+        reads (atom 0)
+        store (reify proto/IMemoryStore
+                (connect! [_ _] {:success? true})
+                (disconnect! [_] nil)
+                (connected? [_] true)
+                (health-check [_] {:healthy? true})
+                (add-entry! [_ e] (:id e))
+                (get-entry [_ id]
+                  (when (and (= id "edit-eventual") (= 1 (swap! reads inc))) entry))
+                (update-entry! [_ id _] id)
+                (delete-entry! [_ _] nil)
+                (query-entries [_ _] [])
+                (search-similar [_ _ _] [])
+                (supports-semantic-search? [_] false)
+                (cleanup-expired! [_] {:cleaned 0})
+                (entries-expiring-soon [_ _ _] [])
+                (find-duplicate [_ _ _ _] nil)
+                (store-status [_] {})
+                (reset-store! [_] nil))]
+    (with-edit-store store
+      #(let [response (edit/handle-edit {:id "edit-eventual" :content "new"})]
+         (is (not (:isError response)))
+         (is (true? (:edit_applied (body response))))))))

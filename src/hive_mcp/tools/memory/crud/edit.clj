@@ -201,13 +201,19 @@
 
    Milvus/Chroma answer with the updated entry MAP; the qdrant store backing
    the :kanban slot answers with the entry ID STRING. Both are successes.
-   Returns the updated entry map, or nil when the store signalled failure —
-   an opaque value that is neither a clean map nor the entry's own id."
-  [store id updated]
+   Returns the updated entry map, or nil when the store signalled failure.
+
+   An id answer whose read-back is not visible yet (eventual store) is a
+   success marked `:readback :pending`. Any other answer counts as success
+   only when a fresh read shows the written :content-hash."
+  [store id updated updates]
   (cond
     (and (map? updated) (not (:error updated))) updated
-    (and (string? updated) (= updated id))      (mem-proto/get-entry store id)
-    :else                                       nil))
+    (and (string? updated) (= updated id))      (or (mem-proto/get-entry store id)
+                                                    {:id id :readback :pending})
+    :else (let [h (:content-hash updates)
+                e (when h (mem-proto/get-entry store id))]
+            (when (and e (= h (:content-hash e))) e))))
 
 (def ^:private edit-locks
   (vec (repeatedly 256 #(Object.))))
@@ -225,7 +231,7 @@
           {:id id :noop true :existing existing}
           (do
             (let [raw     (mem-proto/update-entry! store id updates)
-                  updated (updated-entry store id raw)]
+                  updated (updated-entry store id raw updates)]
               (when-not updated
                 (throw (ex-info (str "Memory store update failed for " id)
                                 {:type :memory-update-failed
