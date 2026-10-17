@@ -268,6 +268,8 @@
                               "path" {:type "string" :description "[migration] Backup file path"}
                               "backend" {:type "string" :description "[migration] Backend filter"}
                               ;; Shared
+                              "async" {:type "boolean"
+                                       :description "Run in background by default for writes; pass false to wait for the result."}
                               "operations" {:type "array"
                                             :items {:type "object"}
                                             :description "Array of operation objects for batch commands"}

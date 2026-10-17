@@ -304,6 +304,7 @@
                 (into (empty props)
                       (remove (fn [[k v]]
                                 (and (not (contains? required (name k)))
+                                     (not= "async" (name k))
                                      (subcommand-scoped? v))))
                       props)))))
 

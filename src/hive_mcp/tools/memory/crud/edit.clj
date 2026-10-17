@@ -15,7 +15,6 @@
    follow-up work; correctness ships first."
   (:require [hive-mcp.tools.memory.core :refer [with-store]]
             [hive-mcp.tools.memory.duration :as duration]
-            [hive-mcp.tools.memory.format :as fmt]
             [hive-mcp.tools.core :refer [mcp-json mcp-error]]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.memory.type-registry :as type-registry]
@@ -210,36 +209,44 @@
     (and (string? updated) (= updated id))      (mem-proto/get-entry store id)
     :else                                       nil))
 
+(def ^:private edit-locks
+  (vec (repeatedly 256 #(Object.))))
+
 (defn- apply-edit!
   "Apply a single edit to whichever registered store holds the entry. Returns a
    result map describing the outcome, or nil when no store has the id. Does not
    build MCP-shaped responses — leaves that to the caller so batch ops can
    aggregate cleanly. Announces a successful write through write-events."
   [{:keys [id reason] :as params}]
-  (when-let [[store existing] (store-holding id)]
-    (let [[updates content-changed?] (build-updates existing params)]
-      (if (empty? updates)
-        {:id id :noop true :existing existing}
-        (let [raw     (mem-proto/update-entry! store id updates)
-              updated (updated-entry store id raw)]
-          (when-not updated
-            (throw (ex-info (str "Memory store update failed for " id)
-                            {:type :memory-update-failed
-                             :id id
-                             :result-type (some-> raw class str)})))
-          (log/info "Memory edit:" id
-                    "fields:" (vec (keys updates))
-                    (when content-changed? "[re-embed]")
-                    (when reason (str "reason:" reason)))
-          (write-events/notify! :updated {:id          id
-                                          :memory-type (:type updated)
-                                          :tags        (:tags updated)
-                                          :project-id  (:project-id updated)
-                                          :fields      (vec (keys updates))})
-          {:id               id
-           :updated          updated
-           :fields-changed   (vec (keys updates))
-           :content-changed? content-changed?})))))
+  (locking (nth edit-locks (mod (hash id) (count edit-locks)))
+    (when-let [[store existing] (store-holding id)]
+      (let [[updates content-changed?] (build-updates existing params)]
+        (if (empty? updates)
+          {:id id :noop true :existing existing}
+          (do
+            (when (not= existing (mem-proto/get-entry store id))
+              (throw (ex-info (str "Memory edit conflict for " id ": entry changed before write")
+                              {:type :edit-conflict :id id})))
+            (let [raw     (mem-proto/update-entry! store id updates)
+                  updated (updated-entry store id raw)]
+              (when-not updated
+                (throw (ex-info (str "Memory store update failed for " id)
+                                {:type :memory-update-failed
+                                 :id id
+                                 :result-type (some-> raw class str)})))
+              (log/info "Memory edit:" id
+                        "fields:" (vec (keys updates))
+                        (when content-changed? "[re-embed]")
+                        (when reason (str "reason:" reason)))
+              (write-events/notify! :updated {:id          id
+                                              :memory-type (:type updated)
+                                              :tags        (:tags updated)
+                                              :project-id  (:project-id updated)
+                                              :fields      (vec (keys updates))})
+              {:id               id
+               :updated          updated
+               :fields-changed   (vec (keys updates))
+               :content-changed? content-changed?})))))))
 
 (defn handle-edit
   "Edit a memory entry in place. Entry ID is preserved, so all KG edges —
@@ -278,17 +285,16 @@
             (mcp-json {:error "Entry not found" :id id})
 
             (:noop result)
-            (mcp-json (assoc (fmt/entry->json-alist (:existing result))
-                             :noop true
-                             :edit_applied false))
+            (mcp-json {:id id :noop true :edit_applied false})
 
             :else
-            (mcp-json (assoc (fmt/entry->json-alist (:updated result))
-                             :edit_applied  true
-                             :fields_changed (:fields-changed result)
-                             :content_changed (boolean (:content-changed? result)))))))
+            (mcp-json {:id id
+                       :edit_applied true
+                       :fields_changed (:fields-changed result)
+                       :content_changed (boolean (:content-changed? result))
+                       :content_hash (:content-hash (:updated result))}))))
       (catch clojure.lang.ExceptionInfo e
-        (if (= :invalid-type (:type (ex-data e)))
+        (if (#{:invalid-type :edit-conflict} (:type (ex-data e)))
           (mcp-error (.getMessage e))
           (throw e))))))
 
@@ -355,23 +361,28 @@
                     path per addendum 20260423133956-0aa648bc"
   [{:keys [operations dry-run]
     :or   {dry-run false}}]
-  (cond
-    (empty? operations)
-    (mcp-error "operations is required (non-empty array of edit ops)")
+  (let [duplicate (->> operations (map :id) (remove nil?) frequencies
+                       (some (fn [[id n]] (when (> n 1) id))))]
+    (cond
+      (empty? operations)
+      (mcp-error "operations is required (non-empty array of edit ops)")
 
-    dry-run
-    (with-store
-      (let [lookup  (fn [id] (second (store-holding id)))
-            results (mapv #(dry-run-op lookup %) operations)
-            valid   (count (filter :ok results))]
-        (mcp-json {:dry_run  true
-                   :op_count (count operations)
-                   :valid    valid
-                   :invalid  (- (count operations) valid)
-                   :results  results})))
+      duplicate
+      (mcp-error (str "Duplicate edit id in batch: " duplicate))
 
-    :else
-    (with-store
-      (let [results (mapv batch-op-result operations)
-            summary (tally-statuses results)]
-        (mcp-json (assoc summary :results results))))))
+      dry-run
+      (with-store
+        (let [lookup  (fn [id] (second (store-holding id)))
+              results (mapv #(dry-run-op lookup %) operations)
+              valid   (count (filter :ok results))]
+          (mcp-json {:dry_run  true
+                     :op_count (count operations)
+                     :valid    valid
+                     :invalid  (- (count operations) valid)
+                     :results  results})))
+
+      :else
+      (with-store
+        (let [results (mapv batch-op-result operations)
+              summary (tally-statuses results)]
+          (mcp-json (assoc summary :results results)))))))
