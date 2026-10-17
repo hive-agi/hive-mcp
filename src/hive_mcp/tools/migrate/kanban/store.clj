@@ -25,7 +25,9 @@
             [hive-mcp.protocols.memory :as proto]
             [hive-mcp.tools.migrate.kanban.ports :as ports]
             [hive-mcp.tools.migrate.kanban.pure :as pure]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-spi.memory.decorate :as decorate]
+            [hive-spi.memory.ports :as sp]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -114,3 +116,37 @@
    its content opened."
   [store]
   (->StoreEntryReader store))
+
+;; =============================================================================
+;; Existence probe
+;; =============================================================================
+
+(defn- scan-capable? [s] (satisfies? sp/IMemoryStoreScan s))
+
+(defrecord StoreIdProbe [store]
+  ;; Which ids the target holds, read from the BACKEND store under every
+  ;; decorator (`decorate/base-store`): a visibility layer hides a row from
+  ;; the reader but not from the backend's id listing. Only `scan-ids` is
+  ;; called there, never a read: no content, sealed or not, leaves the
+  ;; backend through this probe.
+  ports/IIdProbe
+  (existing-ids [_ ids]
+    (cond
+      (empty? ids) (r/ok #{})
+      (nil? store) (r/err :store/missing {:n (count ids)})
+      :else
+      (let [base (decorate/base-store store)]
+        (if-not (scan-capable? base)
+          (r/err :store/no-id-probe {:n (count ids) :store (str (class base))})
+          (try
+            (let [wanted (set ids)]
+              (r/ok (into #{} (filter wanted) (sp/scan-ids base {:include-expired? true}))))
+            (catch Throwable t
+              (r/err :store/id-probe-failed {:n (count ids) :message (.getMessage t)}))))))))
+
+(defn make-id-probe
+  "Existence probe over STORE (the decorated registry store in production):
+   answers which ids the backend under every decorator holds, by id listing
+   only."
+  [store]
+  (->StoreIdProbe store))

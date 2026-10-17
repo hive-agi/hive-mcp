@@ -84,6 +84,10 @@
 (defn- full-target-entry [id title]
   (kanban-entry id title))
 
+(defrecord MemProbe [ids]
+  ports/IIdProbe
+  (existing-ids [_ asked] (r/ok (into #{} (filter (set ids)) asked))))
+
 (defn- new-deps
   [{:keys [ids source-entries target-entries fail-write-ids]
     :or   {ids [] source-entries {} target-entries {} fail-write-ids #{}}}]
@@ -91,6 +95,7 @@
   {:source-lister (mem-lister ids)
    :source-reader (mem-reader source-entries)
    :target-reader (mem-reader target-entries)
+   :target-probe  (->MemProbe (keys target-entries))
    :writer        (mem-writer fail-write-ids)
    :state         (mem-state)})
 

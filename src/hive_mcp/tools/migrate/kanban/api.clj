@@ -31,15 +31,21 @@
    `add-entry!` seals what it writes, and the :target-reader's
    `get-entries`/`get-entry` answer with content opened. Never read the raw
    base store here: its ciphertext would classify as an empty card and be
-   overwritten."
+   overwritten.
+
+   The :target-probe answers which ids the target holds at all, from the
+   backend's id listing (`scan-ids`) only, never its content: an entry the
+   seal's visibility layer hides reads as absent, and must not be written
+   over."
   [& {:keys [source-store target-store state-path
-             source-lister source-reader target-reader writer state]}]
+             source-lister source-reader target-reader target-probe writer state]}]
   (mig-events/init!)
   (let [src-store (delay (or source-store (proto/get-store)))
         tgt-store (delay (or target-store (proto/get-store :kanban)))]
     {:source-lister (or source-lister (mig-milvus/make-id-lister @src-store))
      :source-reader (or source-reader (mig-milvus/make-entry-reader @src-store))
      :target-reader (or target-reader (mig-store/make-entry-reader @tgt-store))
+     :target-probe  (or target-probe (mig-store/make-id-probe @tgt-store))
      :writer        (or writer (mig-store/make-entry-writer @tgt-store))
      :state         (or state (mig-state/make (or state-path
                                                    mig-state/default-path)))}))

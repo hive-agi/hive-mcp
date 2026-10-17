@@ -52,15 +52,35 @@
 
 (defn- classify-each
   "Pure: derive {:id :outcome :source} for each id in the batch given
-   pre-fetched source/target maps."
+   pre-fetched source/target maps. A :ready-to-write row whose target read
+   was absent carries `:target-absent? true` (the existence probe's
+   candidates); an :unreadable one carries its `:reason`."
   [batch source-map target-map]
   (mapv (fn [id]
-          (let [src (get source-map id)
-                tgt (get target-map id)]
-            {:id id
-             :outcome (pure/classify-outcome src tgt)
-             :source src}))
+          (let [src     (get source-map id)
+                tgt     (get target-map id)
+                outcome (pure/classify-outcome src tgt)]
+            (cond-> {:id id :outcome outcome :source src}
+              (and (= :ready-to-write outcome) (not (contains? target-map id)))
+              (assoc :target-absent? true)
+              (= :unreadable outcome)
+              (assoc :reason (pure/unreadable-reason tgt)))))
         batch))
+
+(defn- settle-hidden
+  "OUTCOMES with every :ready-to-write whose target read was absent checked
+   against the target's existence probe: an id the target holds (a row a
+   visibility layer hid from the read) becomes :unreadable / :hidden and is
+   not written. No candidates, no probe call. A probe err is the batch's
+   err: nothing is written on a guess."
+  [target-probe outcomes]
+  (let [candidates (pure/probe-candidates outcomes)]
+    (cond
+      (empty? candidates)  (r/ok outcomes)
+      (nil? target-probe)  (r/err :target-probe/missing {:n (count candidates)})
+      :else
+      (r/let-ok [present (ports/existing-ids target-probe candidates)]
+        (r/ok (pure/mark-hidden outcomes present))))))
 
 (defn- writes-needed
   "Filter the outcomes whose source needs to be written to the target."
@@ -98,13 +118,19 @@
          :done?     true}))
 
 (defn migrate-batch!
-  "Run one cursor-bounded batch. Reads source + target, classifies, writes
-   the ready ones, returns outcomes + tally. Does NOT mutate state — the
-   caller (`step!`) folds the result into state.
+  "Run one cursor-bounded batch. Reads source + target, classifies, probes
+   the target for the ids its read found absent (a hidden row is not an
+   absent one), writes the ready ones, returns outcomes + tally. Does NOT
+   mutate state — the caller (`step!`) folds the result into state.
+
+   Only an id the target truly has no row for (or a content-less stub row)
+   is written: add-entry! upserts by id. A row the read could not open, or
+   one the probe finds but the read did not show, is :unreadable, reported
+   and left alone.
 
    A :queued outcome (accepted for replay, not durable) holds the cursor at
    that id (`pure/hold-cursor`), so the next step reads and writes it again."
-  [{:keys [source-reader target-reader writer state] :as _deps}
+  [{:keys [source-reader target-reader target-probe writer state] :as _deps}
    {:keys [batch-size dry-run?] :or {batch-size 50 dry-run? false}}]
   (r/let-ok [s (ports/load-state state)
              :let [[batch new-cursor done?]
@@ -117,15 +143,17 @@
                           {:size (count batch) :cursor (:cursor s)})
         (r/let-ok [source-map    (ports/read-by-ids source-reader batch)
                    target-map    (ports/read-by-ids target-reader batch)
-                   :let [outcomes (classify-each batch source-map target-map)
-                         ready    (writes-needed outcomes)
+                   outcomes      (settle-hidden target-probe
+                                                (classify-each batch source-map target-map))
+                   :let [ready    (writes-needed outcomes)
                          entries  (mapv :source ready)]
                    write-results (cond
                                    (empty? ready) (r/ok [])
                                    dry-run?       (r/ok [])
                                    :else
                                    (ports/write-entries writer entries))
-                   :let [final-outcomes (finalize-outcomes outcomes write-results dry-run?)
+                   :let [final-outcomes (mapv #(dissoc % :target-absent?)
+                                              (finalize-outcomes outcomes write-results dry-run?))
                          [cursor' done?'] (pure/hold-cursor start final-outcomes new-cursor done?)
                          tally          (pure/tally-outcomes final-outcomes)
                          result         {:cursor   cursor'
@@ -141,20 +169,24 @@
 ;; =============================================================================
 
 (defn- fold-state-after-batch
-  "Pure: produce the next state given the current state and a batch result."
+  "Pure: produce the next state given the current state and a batch result.
+   :failed and :unreadable outcomes are kept by id (with :error / :reason)
+   so an operator can see what was not migrated and why."
   [s {:keys [cursor outcomes tally done?]}]
-  (-> s
-      (assoc :cursor        cursor
-             :last-step-at  (now-iso)
-             :phase         (if done? :done :running))
-      (update :stats pure/merge-tally tally)
-      (update-in [:stats :scanned] (fnil + 0) (count outcomes))
-      (update :failed
-              (fn [xs]
-                (into (or xs [])
-                      (->> outcomes
-                           (filter #(= :failed (:outcome %)))
-                           (map #(select-keys % [:id :error]))))))))
+  (letfn [(keep-rows [k ks]
+            (fn [xs]
+              (into (or xs [])
+                    (comp (filter #(= k (:outcome %)))
+                          (map #(select-keys % ks)))
+                    outcomes)))]
+    (-> s
+        (assoc :cursor        cursor
+               :last-step-at  (now-iso)
+               :phase         (if done? :done :running))
+        (update :stats pure/merge-tally tally)
+        (update-in [:stats :scanned] (fnil + 0) (count outcomes))
+        (update :failed (keep-rows :failed [:id :error]))
+        (update :unreadable (keep-rows :unreadable [:id :reason])))))
 
 (defn step!
   "Run one batch and persist the new state. Returns r/ok of
@@ -219,6 +251,7 @@
            :remaining       (max 0 (- (count (:all-ids s)) (:cursor s)))
            :stats           (:stats s)
            :failed-count    (count (:failed s))
+           :unreadable      (vec (:unreadable s))
            :phase-a-summary (:phase-a-summary s)
            :phase-a-at      (:phase-a-at s)
            :last-step-at    (:last-step-at s)})))

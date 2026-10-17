@@ -28,6 +28,16 @@
   [entry]
   (boolean (and entry (map? (:content entry)) (seq (:content entry)))))
 
+(defn stub-row?
+  "True iff ENTRY is a row with nothing in it to lose: no :content, or an
+   empty opened map (a half-finished cutover). A string :content (a sealed
+   envelope the reader could not open) is NOT a stub: it holds a card."
+  [entry]
+  (boolean
+   (and (map? entry)
+        (let [c (:content entry)]
+          (or (nil? c) (and (map? c) (empty? c)))))))
+
 ;; =============================================================================
 ;; Outcome classification — single decision point, no IO
 ;; =============================================================================
@@ -36,10 +46,13 @@
   "Closed enum of classifier outcomes (pre-write). `classify-outcome`
    returns one of these. Use cases consume them and may transform
    `:ready-to-write` into a post-write outcome (`:written`, `:would-write`,
-   `:failed`)."
+   `:failed`), or into `:unreadable` when the existence probe finds a row
+   the read did not show (`mark-hidden`). `:unreadable` is reported, never
+   written."
   #{:missing-from-source
     :not-task
     :already-full
+    :unreadable
     :ready-to-write})
 
 (def post-write-outcome-types
@@ -58,18 +71,63 @@
    each store. Pure: callers fetch then classify, never mixed.
 
    `source-entry`  — entry read from the migration source (milvus :default)
-   `target-entry`  — entry read from the migration target (qdrant :kanban)
-                     or nil when target lookup found nothing/stub.
+   `target-entry`  — entry read from the migration target (qdrant :kanban),
+                     nil when the target answered no row for the id.
 
-   Returns a keyword from `outcome-types`."
+   Only an ABSENT target (nil) or a `stub-row?` (a bare id with no
+   content, from a half-finished cutover) is :ready-to-write. Any other
+   target row that is not an opened kanban card is :unreadable and is never
+   written: add-entry! upserts by id, so writing would replace whatever the
+   target holds (a card edited since it was migrated, still sealed because
+   its key could not be resolved, or a different entry) with the stale
+   source copy. A nil target can still be a row a visibility layer hid;
+   `mark-hidden` settles that with an existence probe before any write.
+
+   Returns a keyword from `classifier-outcome-types`."
   [source-entry target-entry]
   (cond
-    (nil? source-entry)              :missing-from-source
+    (nil? source-entry)                    :missing-from-source
     (not (task-type-kanban? source-entry)) :not-task
     (and target-entry
          (task-type-kanban? target-entry)
-         (full-payload? target-entry)) :already-full
-    :else                            :ready-to-write))
+         (full-payload? target-entry))     :already-full
+    (or (nil? target-entry)
+        (stub-row? target-entry))          :ready-to-write
+    :else                                  :unreadable))
+
+(defn unreadable-reason
+  "Why an outcome is :unreadable, given the TARGET row the read returned:
+   :unopenable when the read returned a row whose content is not an opened
+   map (a sealed envelope whose key could not be resolved), :hidden when
+   the read returned nothing but the existence probe found the id, else
+   :not-a-card (an opened row that is not a kanban card)."
+  [target-entry]
+  (cond
+    (nil? target-entry)                      :hidden
+    (not (map? (:content target-entry)))     :unopenable
+    :else                                    :not-a-card))
+
+(defn probe-candidates
+  "Ids of the :ready-to-write OUTCOMES whose target read was ABSENT (no
+   row at all, `:target-absent? true`): only these can be rows a visibility
+   layer hid, so only these need the existence probe."
+  [outcomes]
+  (into [] (comp (filter #(and (= :ready-to-write (:outcome %)) (:target-absent? %)))
+                 (map :id))
+        outcomes))
+
+(defn mark-hidden
+  "OUTCOMES with every :ready-to-write whose id is in PRESENT (the ids the
+   existence probe found in the target) turned :unreadable / :hidden: the
+   target holds a row the read could not see, and add-entry! would
+   overwrite it."
+  [outcomes present]
+  (let [present (set present)]
+    (mapv (fn [{:keys [id outcome] :as o}]
+            (if (and (= :ready-to-write outcome) (contains? present id))
+              (assoc o :outcome :unreadable :reason :hidden)
+              o))
+          outcomes)))
 
 ;; =============================================================================
 ;; Cursor / batch slicing

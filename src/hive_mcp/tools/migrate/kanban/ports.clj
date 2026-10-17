@@ -26,6 +26,16 @@
      Entries returned use the canonical hive-mcp memory shape with
      `:content` already parsed back to a map when applicable."))
 
+(defprotocol IIdProbe
+  "Answer whether the migration target holds a row for an id WITHOUT
+   reading its content. A layer that hides an entry from the caller (the
+   seal's visibility layer) makes a read answer nothing for a row that is
+   there; the writer must not take that for an absent id."
+  (existing-ids [this ids]
+    "Return r/ok of the set of IDS the target holds a row for, whoever may
+     read it. Return an err when that cannot be answered: the caller then
+     writes nothing."))
+
 (defprotocol IEntryWriter
   "Persist entries to the migration target. Implementations are
    responsible for embedding/serialization decisions; the use-case

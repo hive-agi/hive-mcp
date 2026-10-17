@@ -74,6 +74,7 @@
         deps  {:source-lister (->FixedLister ["a" "b" "c"])
                :source-reader (->MapReader (into {} (map (juxt identity kanban-entry)) ["a" "b" "c"]))
                :target-reader (mig-store/make-entry-reader store)
+               :target-probe  (mig-store/make-id-probe inner)
                :writer        (mig-store/make-entry-writer store)
                :state         (->MemState st)}
         _     (uc/init-ids! deps)
@@ -103,6 +104,7 @@
         deps  {:source-lister (->FixedLister ["a" "b"])
                :source-reader (->MapReader {"a" (kanban-entry "a") "b" (kanban-entry "b")})
                :target-reader (mig-store/make-entry-reader inner)
+               :target-probe  (mig-store/make-id-probe inner)
                :writer        (mig-store/make-entry-writer inner)
                :state         (->MemState st)}
         _     (uc/init-ids! deps)
@@ -114,11 +116,13 @@
 (deftest run-stops-when-the-target-only-queues
   (mig-events/init!)
   (let [calls (atom {:n 0})
+        inner (stub/create-store)
         deps  {:source-lister (->FixedLister ["a" "b"])
                :source-reader (->MapReader {"a" (kanban-entry "a") "b" (kanban-entry "b")})
                :target-reader (->MapReader {})
+               :target-probe  (mig-store/make-id-probe inner)
                :writer        (mig-store/make-entry-writer
-                               (queue-then-land-store (stub/create-store) 1000 calls))
+                               (queue-then-land-store inner 1000 calls))
                :state         (->MemState (atom state/initial-state))}
         _     (uc/init-ids! deps)
         res   (uc/run! deps {:batch-size 1 :max-steps 10})]

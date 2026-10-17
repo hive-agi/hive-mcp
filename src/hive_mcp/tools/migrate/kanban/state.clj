@@ -32,13 +32,16 @@
 (def initial-state
   "Identity element for state aggregation. Stats key set is closed and
    pinned to `pure/outcome-types` plus the `:written`/`:would-write`
-   counters that only the use-case layer increments."
+   counters that only the use-case layer increments. `:unreadable` keeps
+   the ids the target holds but the migrator would not write over, with
+   the reason (:hidden, :unopenable, :not-a-card)."
   {:phase     :ready
    :all-ids   []
    :cursor    0
    :stats     (merge pure/empty-tally
                      {:scanned 0 :written 0 :would-write 0 :failed 0})
    :failed    []
+   :unreadable []
    :started-at nil
    :phase-a-at nil
    :last-step-at nil})

@@ -19,7 +19,8 @@
             [hive-mcp.tools.migrate.kanban.usecases :as uc]
             [hive-spi.memory.ports :as sp]
             [hive-spi.memory.stub :as stub]
-            [hive-test.trifecta :refer [deftrifecta]]))
+            [hive-test.trifecta :refer [deftrifecta]]
+            [hive-spi.memory.decorate :as decorate]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -42,8 +43,11 @@
 
 (defrecord CipherLikeLayer [inner]
   ;; Shaped like hive-knowledge's seal layers: a record with only [inner],
-  ;; no backend fields (no :client-atom). Seals :content on write as an
+  ;; no backend fields (no :client-atom), declared a hive-spi decorator so
+  ;; `decorate/base-store` peels it. Seals :content on write as an
   ;; EDN-printed marker, opens it on every read exit.
+  decorate/IStoreDecorator
+  (inner-store [_] inner)
   sp/IMemoryStore
   (add-entry! [_ e]
     (sp/add-entry! inner (assoc e :content (str sealed-prefix (pr-str (:content e))))))
@@ -174,6 +178,7 @@
         deps  {:source-lister (->FixedLister ["a" "b"])
                :source-reader (->MapReader {"a" (kanban-entry "a") "b" (kanban-entry "b")})
                :target-reader (->MapReader {})
+               :target-probe  (mig-store/make-id-probe inner)
                :writer        (mig-store/make-entry-writer (sealing-store inner seen))
                :state         (->MemState (atom state/initial-state))}
         _     (uc/init-ids! deps)
