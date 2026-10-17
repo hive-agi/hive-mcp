@@ -72,11 +72,13 @@
       (nil? (get-kanban-task task-id))))
 
 (defn- move-kanban-done!
-  "Move a kanban task to 'done' status."
+  "Move a finished task's kanban card to 'inreview'. A ling ending its run is
+   not evidence the work landed, so the card waits for review; the scheduler
+   counts the task complete through its own state, not the card's status."
   [task-id directory]
   (result/rescue nil
                  (kanban-port/transition!
-                  {:task-id task-id :new-status "done" :directory directory})))
+                  {:task-id task-id :new-status "inreview" :directory directory})))
 
 
 ;; =============================================================================
