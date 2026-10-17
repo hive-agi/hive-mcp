@@ -7,7 +7,8 @@
             [hive-spi.swarm.guards :as guards]
             [hive-mcp.system.registry :as reg]
             [taoensso.timbre :as log]
-            [hive-mcp.agent.identity :as agent-identity])
+            [hive-mcp.agent.identity :as agent-identity]
+            [hive-mcp.system.child-scope :as child-scope])
   (:import [java.lang ProcessBuilder]
            [java.io BufferedReader InputStreamReader BufferedWriter OutputStreamWriter]
            [java.util.concurrent ConcurrentHashMap]))
@@ -261,9 +262,13 @@
       (.put env k v))))
 
 (defn- create-process-builder
-  "Create and configure a ProcessBuilder for headless ling."
+  "Create and configure a ProcessBuilder for headless ling.
+
+   The argv goes through `child-scope/child-argv`, so the ling (and every
+   build it starts) lands in a sibling ManagedOOMPreference=none user scope
+   instead of the server's avoid scope when systemd-run is available."
   [cmd-parts cwd]
-  (doto (ProcessBuilder. ^java.util.List (vec cmd-parts))
+  (doto (ProcessBuilder. ^java.util.List (child-scope/child-argv cmd-parts))
     (.directory (java.io.File. cwd))
     (.redirectErrorStream false)))
 

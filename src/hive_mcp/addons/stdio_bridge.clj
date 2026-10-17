@@ -15,7 +15,8 @@
             [hive-mcp.dns.result :as r]
             [clojure.data.json :as json]
             [taoensso.timbre :as log]
-            [malli.core :as m])
+            [malli.core :as m]
+            [hive-mcp.system.child-scope :as child-scope])
   (:import [java.io BufferedReader InputStreamReader OutputStreamWriter BufferedWriter]
            [java.util.concurrent.atomic AtomicLong]
            [java.util.concurrent TimeUnit]))
@@ -116,7 +117,8 @@
     (let [effect (r/try-effect* :bridge/start-failed
                                 (let [command    (:command opts)
                                       env        (:env opts)
-                                      pb         (ProcessBuilder. ^java.util.List (vec command))
+                                      ;; Sibling OOM scope when available (see the child-scope ns doc).
+                                      pb         (ProcessBuilder. ^java.util.List (child-scope/child-argv command))
                                       _          (when env
                                                    (let [pe (.environment pb)]
                                                      (doseq [[k v] env]
