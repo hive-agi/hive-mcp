@@ -98,13 +98,25 @@
   [m]
   (temporal/record-mutation-silent! m))
 
+(def ^:dynamic *write-outcome*
+  "Bound by the dispatch entry points (hive-mcp.tools.kanban.events) to an
+   atom that `facade-update!` resets to the store's answer. The fx runner
+   discards an effect's return value, so this is how a refused commit
+   reaches the caller instead of being reported as success. Unbound: the
+   answer is only returned, as before."
+  nil)
+
 (defn- facade-update!
   "Apply a soft-mutation to the underlying memory store.
    Routes via kanban-facade so the write lands in the configured slot
    (`:default` legacy / `:kanban` post-cutover / both during dual-read).
-   This is the COMMIT — preserves entry id, content, KG edges."
+   This is the COMMIT — preserves entry id, content, KG edges.
+   The store's answer is published to `*write-outcome*` when bound."
   [{:keys [task-id payload]}]
-  (kanban-facade/update-entry! task-id payload))
+  (let [result (kanban-facade/update-entry! task-id payload)]
+    (when-let [outcome *write-outcome*]
+      (reset! outcome {:result result}))
+    result))
 
 (defn register-all!
   "Idempotent registration of every kanban effect interpreter.

@@ -260,6 +260,16 @@
                          :project-id  (:project-id entry)}))
     id))
 
+(defn write-rejected?
+  "True when a store's answer to a write means nothing landed: nil (unknown
+   id, the hive-spi :absent answer) or the `{:success? false ...}` failure map
+   a backend returns instead of throwing (hive-qdrant answers its embed
+   refusal this way). Any other answer, an id string, true, a queued-op map,
+   is an accepted write."
+  [result]
+  (or (nil? result)
+      (and (map? result) (false? (:success? result)))))
+
 (defn update-entry!
   "Soft-update a kanban entry (status retag, tag rewrite). In :dual-read,
    primary = :kanban, mirror best-effort to :default. Announces the write
@@ -267,7 +277,8 @@
    written :content/:tags so the next `get-entry-by-id` reads its own write
    (see `write-overlay`). Only a write the store accepted is remembered: an
    unknown id answers nil (hive-spi contract :absent) and must not be served
-   from the overlay as if it had landed."
+   from the overlay as if it had landed. A `{:success? false}` failure map
+   (see `write-rejected?`) is a refusal too, and is never remembered."
   [id updates]
   (let [result (case (mode)
                  :default   (proto/update-entry! (proto/get-store) id updates)
@@ -275,7 +286,7 @@
                  :dual-read (let [primary (proto/update-entry! (proto/get-store :kanban) id updates)]
                               (mirror-write! (fn [s] (proto/update-entry! s id updates)))
                               primary))]
-    (when result (remember-write! id updates))
+    (when-not (write-rejected? result) (remember-write! id updates))
     (announce! :updated {:id         id
                          :tags       (:tags updates)
                          :project-id (:project-id updates)
