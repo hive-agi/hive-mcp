@@ -147,7 +147,11 @@
         (is (= 2 (:cursor @st)) "the cursor did not move past c and d")
         (is (not= :done (:phase @st)))
         (is (= 2 (-> @st :stats :written)) "c and d are not counted written")
-        (is (= 2 (-> @st :stats :unconfirmed)))
+        (is (= 2 (-> @st :stats :scanned)) "c and d are not counted scanned")
+        (is (= 2 (-> @st :last-step :tally :unconfirmed))
+            "the step reports its unconfirmed writes")
+        (is (not (contains? (:stats @st) :unconfirmed))
+            ":unconfirmed is not a cumulative stat")
         (is (= 4 @writes))))
     (testing "the held-id cache does not keep the unconfirmed ids"
       (is (= #{"a" "b"} @held)))))
@@ -178,7 +182,9 @@
 
 (deftest a-rerun-against-rows-that-did-land-rewrites-nothing
   ;; If the unconfirmed writes in fact reached the backend, the re-run reads
-  ;; them back as :already-full: idempotent, nothing written twice.
+  ;; them back as :already-full: idempotent, nothing written twice. Each id
+  ;; is counted once: a and b written by the confirmed batch, c and d
+  ;; already full on the re-run; the unconfirmed attempt counts nothing.
   (let [n (atom 3)
         {:keys [deps st writes]}
         (fixture ["a" "b" "c" "d"]
@@ -189,10 +195,14 @@
                                (r/err :target/not-durable {}))))))
         _ (uc/init-ids! deps)
         _ (uc/run! deps {:batch-size 2})]
+    (is (= 2 (-> @st :stats :scanned)) "the held batch is not counted")
     (reset! n Long/MAX_VALUE)
     (is (= :done (-> (uc/run! deps {:batch-size 2}) :ok :stopped)))
     (is (= 4 @writes))
-    (is (= 2 (-> @st :stats :already-full)))))
+    (is (= 4 (-> @st :stats :scanned)))
+    (is (= 2 (-> @st :stats :written)))
+    (is (= 2 (-> @st :stats :already-full)))
+    (is (not (contains? (:stats @st) :unconfirmed)))))
 
 (deftest a-durability-check-that-errs-after-the-batch-also-holds
   (let [{:keys [deps st]} (fixture ["a" "b"] #(->ThrowingAfter % 0))
@@ -212,5 +222,6 @@
     (is (= 3 (-> res :ok :steps-run)))
     (is (= 5 (:cursor @st)))
     (is (= 5 (-> @st :stats :written)))
-    (is (zero? (-> @st :stats :unconfirmed)))
+    (is (= 5 (-> @st :stats :scanned)))
+    (is (zero? (-> @st :last-step :tally :unconfirmed)))
     (is (= 5 @writes))))

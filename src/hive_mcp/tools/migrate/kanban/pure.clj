@@ -221,6 +221,75 @@
              b))
 
 ;; =============================================================================
+;; Folding a batch into saved state
+;; =============================================================================
+
+(def transient-outcome-types
+  "Outcomes that never settle an id: `:queued` and `:unconfirmed` both hold
+   the cursor at or before their id, so the id is classified again on the
+   next step. They are reported per step (the batch result's :tally and the
+   state's :last-step), never summed into the cumulative :stats."
+  #{:queued :unconfirmed})
+
+(defn settled-outcomes
+  "The part of a batch's OUTCOMES (in batch order, the batch starting at
+   index START of the id list) whose ids lie before CURSOR, the cursor
+   `hold-cursor` returned. Those ids are final: the next step starts at
+   CURSOR, so every id at or after it is read and classified again and must
+   not be counted now."
+  [start cursor outcomes]
+  (let [os (vec outcomes)
+        n  (max 0 (min (count os) (- cursor start)))]
+    (subvec os 0 n)))
+
+(defn- upsert-rows
+  "ROWS (maps keyed by :id) with every id in SETTLED taken out, then the
+   SETTLED outcomes classified K appended as KS: the last classification of
+   an id wins, and an id that settled any other way (written, already full)
+   leaves the list."
+  [rows settled k ks]
+  (let [ids (into #{} (map :id) settled)]
+    (into (into [] (remove #(contains? ids (:id %))) rows)
+          (comp (filter #(= k (:outcome %)))
+                (map #(select-keys % ks)))
+          settled)))
+
+(defn fold-batch
+  "The next migration state given state S, a batch result and the timestamp
+   AT.
+
+   Only the settled outcomes (`settled-outcomes`: the ids before the
+   returned cursor) are folded: tallied into :stats, counted in
+   :stats :scanned, and used to update :failed (`{:id :error}`) and
+   :unreadable (`{:id :reason}`), both keyed by id. Outcomes at or after a
+   held cursor are left out, since the next step classifies those ids
+   again; a resume after a hold therefore counts each id once.
+
+   `transient-outcome-types` are never cumulative stats (and are dropped
+   from a state saved before this rule). The whole batch's tally, held part
+   included, is kept as :last-step `{:at :start :cursor :settled :held
+   :tally}`, replaced every step, so an operator can see what the last step
+   queued or could not confirm."
+  [s {:keys [start cursor outcomes tally done?]} at]
+  (let [start   (or start cursor)
+        settled (settled-outcomes start cursor outcomes)
+        drop-tr #(apply dissoc % transient-outcome-types)]
+    (-> s
+        (assoc :cursor       cursor
+               :last-step-at at
+               :phase        (if done? :done :running)
+               :last-step    {:at      at
+                              :start   start
+                              :cursor  cursor
+                              :settled (count settled)
+                              :held    (- (count outcomes) (count settled))
+                              :tally   (or tally (tally-outcomes outcomes))})
+        (update :stats #(drop-tr (merge-tally (or % {}) (tally-outcomes settled))))
+        (update-in [:stats :scanned] (fnil + 0) (count settled))
+        (update :failed upsert-rows settled :failed [:id :error])
+        (update :unreadable upsert-rows settled :unreadable [:id :reason]))))
+
+;; =============================================================================
 ;; Id deduplication
 ;; =============================================================================
 

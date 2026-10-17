@@ -30,18 +30,22 @@
        "/.local/share/hive-mcp/kanban-migration/state.edn"))
 
 (def initial-state
-  "Identity element for state aggregation. Stats key set is closed and
-   pinned to `pure/outcome-types` plus the `:written`/`:would-write`
-   counters that only the use-case layer increments. `:unreadable` keeps
-   the ids the target holds but the migrator would not write over, with
-   the reason (:hidden, :unopenable, :not-a-card)."
+  "Identity element for state aggregation. The :stats key set is closed:
+   `pure/outcome-types` minus `pure/transient-outcome-types` (:queued and
+   :unconfirmed hold the cursor, so they are per-step values kept under
+   :last-step, never cumulative), plus :scanned. Every count covers only
+   ids the cursor has passed, each once. `:failed` and `:unreadable` are
+   keyed by id (the last classification wins); `:unreadable` keeps the ids
+   the target holds but the migrator would not write over, with the reason
+   (:hidden, :unopenable, :not-a-card)."
   {:phase     :ready
    :all-ids   []
    :cursor    0
-   :stats     (merge pure/empty-tally
+   :stats     (merge (apply dissoc pure/empty-tally pure/transient-outcome-types)
                      {:scanned 0 :written 0 :would-write 0 :failed 0})
    :failed    []
    :unreadable []
+   :last-step nil
    :started-at nil
    :phase-a-at nil
    :last-step-at nil})

@@ -86,8 +86,15 @@
              (mapv :outcome (-> r1 :ok :batch-result :outcomes))))
       (is (= 0 (:cursor @st)))
       (is (= :running (:phase @st)))
-      (is (= 2 (-> @st :stats :written)))
-      (is (= 1 (-> @st :stats :queued)))
+      (testing "the step reports the whole batch"
+        (is (= 1 (-> r1 :ok :batch-result :tally :queued)))
+        (is (= 1 (-> @st :last-step :tally :queued)))
+        (is (= 2 (-> @st :last-step :tally :written)))
+        (is (= {:settled 0 :held 3} (select-keys (:last-step @st) [:settled :held]))))
+      (testing "nothing at or after the held cursor is counted yet"
+        (is (zero? (-> @st :stats :written)))
+        (is (zero? (-> @st :stats :scanned)))
+        (is (not (contains? (:stats @st) :queued)) ":queued is not a cumulative stat"))
       (is (empty? (:failed @st)) "a queued write is not a failure")
       (is (nil? (sp/get-entry inner "a")) "nothing durable for a yet"))
     (testing "next step writes a again; b and c are already full"
@@ -96,6 +103,9 @@
                (mapv :outcome (-> r2 :ok :batch-result :outcomes))))
         (is (= 3 (:cursor @st)))
         (is (= :done (:phase @st)))
+        (is (= 3 (-> @st :stats :scanned)) "each id counted once")
+        (is (= 1 (-> @st :stats :written)))
+        (is (= 2 (-> @st :stats :already-full)))
         (is (some? (sp/get-entry inner "a")))))))
 
 (deftest a-durable-write-still-advances-the-cursor

@@ -178,7 +178,11 @@
    of an in-memory fallback. If it is not durable now (or the check errs),
    every :written outcome becomes :unconfirmed (`pure/unconfirm-written`),
    leaves the held-id set, and the cursor stays at the batch start; the
-   result carries `:not-durable` with the check's err."
+   result carries `:not-durable` with the check's err.
+
+   The result carries `:start`, the index the batch began at, so the fold
+   can tell the settled part of the batch (before `:cursor`) from the held
+   part."
   [{:keys [source-reader target-reader target-probe target-durability writer state held-ids]
     :as _deps}
    {:keys [batch-size dry-run?] :or {batch-size 50 dry-run? false}}]
@@ -212,7 +216,8 @@
                          _              (note-written! held final-outcomes)
                          [cursor' done?'] (pure/hold-cursor start final-outcomes new-cursor done?)
                          tally          (pure/tally-outcomes final-outcomes)
-                         result         (cond-> {:cursor   cursor'
+                         result         (cond-> {:start    start
+                                                 :cursor   cursor'
                                                  :outcomes final-outcomes
                                                  :tally    tally
                                                  :done?    done?'}
@@ -224,26 +229,6 @@
 ;; =============================================================================
 ;; step! — one batch, fold into state
 ;; =============================================================================
-
-(defn- fold-state-after-batch
-  "Pure: produce the next state given the current state and a batch result.
-   :failed and :unreadable outcomes are kept by id (with :error / :reason)
-   so an operator can see what was not migrated and why."
-  [s {:keys [cursor outcomes tally done?]}]
-  (letfn [(keep-rows [k ks]
-            (fn [xs]
-              (into (or xs [])
-                    (comp (filter #(= k (:outcome %)))
-                          (map #(select-keys % ks)))
-                    outcomes)))]
-    (-> s
-        (assoc :cursor        cursor
-               :last-step-at  (now-iso)
-               :phase         (if done? :done :running))
-        (update :stats pure/merge-tally tally)
-        (update-in [:stats :scanned] (fnil + 0) (count outcomes))
-        (update :failed (keep-rows :failed [:id :error]))
-        (update :unreadable (keep-rows :unreadable [:id :reason])))))
 
 (defn- not-durable-err
   "The :target/not-durable err a step returns after BATCH-RESULT's writes
@@ -266,6 +251,14 @@
    (`:target-durability`, an ITargetDurability port); on its err nothing is
    read or written and that err is returned.
 
+   The state folds only the part of the batch before the returned cursor
+   (`pure/fold-batch`): ids at or after a held cursor (a :queued id and
+   those after it, or a whole :unconfirmed batch) are classified again by
+   the next step, so they are not counted now. The batch result's :tally
+   (and the state's :last-step) still report the whole batch, :queued and
+   :unconfirmed included; those two are per-step values, not cumulative
+   :stats.
+
    A batch whose target was not durable once its writes were done (see
    `migrate-batch!`) still saves its state, with the cursor at the batch
    start, and then returns :target/not-durable, so a run stops there and
@@ -274,7 +267,7 @@
   (r/let-ok [_            (if dry-run? (r/ok nil) (check-durable target-durability))
              batch-result (migrate-batch! deps opts)
              s            (ports/load-state state)]
-    (let [new-state (fold-state-after-batch s batch-result)]
+    (let [new-state (pure/fold-batch s batch-result (now-iso))]
       (r/let-ok [saved (ports/save-state! state new-state)]
         (if (contains? batch-result :not-durable)
           (not-durable-err batch-result)
@@ -332,6 +325,9 @@
 ;; =============================================================================
 
 (defn status
+  "Read-only progress snapshot. :stats counts each id the cursor has passed
+   once; :last-step is the latest step's whole-batch report (its :tally
+   includes the :queued / :unconfirmed ids that held the cursor)."
   [{:keys [state] :as _deps}]
   (r/let-ok [s (ports/load-state state)]
     (r/ok {:phase           (:phase s)
@@ -339,6 +335,7 @@
            :total           (count (:all-ids s))
            :remaining       (max 0 (- (count (:all-ids s)) (:cursor s)))
            :stats           (:stats s)
+           :last-step       (:last-step s)
            :failed-count    (count (:failed s))
            :unreadable      (vec (:unreadable s))
            :phase-a-summary (:phase-a-summary s)
