@@ -261,6 +261,14 @@ test-sandboxed: ISOLATION ENV -------------------------------------------------
 -------------------------------------------------------------------------------
 AUDIT
 
+# ── OOM standing: the test JVM dies before the server ──────────────────────
+# Raise this shell's oom_score_adj (inherited by the JVM) so the kernel OOM
+# killer takes a runaway test JVM before hive-mcp. Raising needs no privilege.
+# HIVE_TEST_OOM_SCORE_ADJ=0 restores the default. See bin/oom-policy.sh.
+# shellcheck source=bin/oom-policy.sh
+source "$SCRIPT_DIR/oom-policy.sh"
+oom_adj_set "${HIVE_TEST_OOM_SCORE_ADJ:-800}"
+
 # ── Run (NOT exec — so the EXIT trap fires and the sandbox is cleaned up) ────
 cd "$PROJECT_DIR"
 set +e

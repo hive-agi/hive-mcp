@@ -10,6 +10,7 @@
 # Env knobs: HIVE_MCP_XMX (10g) HIVE_MCP_XMS (2g) HIVE_MCP_SOFT_MAX_HEAP (8g)
 #            MALLOC_ARENA_MAX (4) HIVE_MCP_SUPERVISE (1: restart on OOM kill)
 #            HIVE_MCP_MAX_RESTARTS (5) HIVE_MCP_RESTART_WINDOW (600s)
+#            HIVE_MCP_OOM_SCORE_ADJ (-500) HIVE_MCP_OOMD_PREFERENCE (avoid)
 #
 # Profile precedence: --profile flag > HIVE_PROFILE env > config.edn
 # [:system :profile] > "desktop". Unset here means config.edn decides.
@@ -117,8 +118,24 @@ export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-4}"
 JVM_ARGS=(-J-Xmx"$HIVE_MCP_XMX" -J-Xms"$HIVE_MCP_XMS"
           -J-XX:SoftMaxHeapSize="$HIVE_MCP_SOFT_MAX_HEAP")
 
+# ── OOM standing: the server outlives a runaway test JVM ────────────
+# Kernel OOM killer: try to lower our oom_score_adj (inherited by the JVM).
+# Lowering needs CAP_SYS_RESOURCE; unprivileged it stays put and test JVMs
+# raise theirs instead (bin/test-sandboxed.sh). systemd-oomd ignores the adj
+# and kills whole cgroups, so the JVM also runs in its own user scope with
+# ManagedOOMPreference=avoid. Knobs: HIVE_MCP_OOM_SCORE_ADJ (-500),
+# HIVE_MCP_OOMD_PREFERENCE (avoid|omit|none, "off" = no scope).
+# Proof: bin/oom-policy.sh check <jvm-pid>. See bin/oom-policy.sh.
+# shellcheck source=bin/oom-policy.sh
+source "$SCRIPT_DIR/oom-policy.sh"
+oom_adj_set "${HIVE_MCP_OOM_SCORE_ADJ:--500}"
+OOM_SCOPE_PREFIX=()
+if [[ "${HIVE_MCP_OOMD_PREFERENCE:-avoid}" != "off" ]]; then
+  oom_scope_prefix hive-mcp "${HIVE_MCP_OOMD_PREFERENCE:-avoid}"
+fi
+
 # :mcp carries :exec-fn and no :main-opts, so -M needs an explicit -m.
-CMD=(clojure "${JVM_ARGS[@]}" "${SDEPS_ARG[@]+"${SDEPS_ARG[@]}"}" -M"$ALIASES"
+CMD=(${OOM_SCOPE_PREFIX[@]+"${OOM_SCOPE_PREFIX[@]}"} clojure "${JVM_ARGS[@]}" "${SDEPS_ARG[@]+"${SDEPS_ARG[@]}"}" -M"$ALIASES"
      -m hive-mcp.server.core "${PASSTHROUGH_ARGS[@]+"${PASSTHROUGH_ARGS[@]}"}")
 
 # ── Launch ──────────────────────────────────────────────────────────
