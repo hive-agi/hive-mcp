@@ -17,7 +17,11 @@
  ;; classpath: on 1.12.6 the server dies loading clojure.core.async with
  ;; NoClassDefFoundError before a single namespace finishes. Lift this only
  ;; together with a deep-diamond build made against the newer Clojure.
- :deps {org.clojure/clojure {:mvn/version "1.12.5"}
+ ;; LIFTED 2026-10-17: hive-knowledge (a55fbc0) and hive-carto (f9229cf) dropped
+ ;; deep-diamond from :deps. Measured: the resolved :test:test-swarm classpath
+ ;; (committed deps.edn, and with local.deps.edn merged) holds no deep-diamond
+ ;; jar, and no jar on it references clojure.core$seq_QMARK___5492.
+ :deps {org.clojure/clojure {:mvn/version "1.12.6"}
         org.clojure/data.json {:mvn/version "2.5.2"}
         org.clojure/core.async {:mvn/version "1.9.865"}
 
