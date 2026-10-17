@@ -50,13 +50,65 @@
 ;;; Result DSL Helpers (boundary pattern — same as tools/cider.clj)
 ;;; =============================================================================
 
+(defn- git!
+  "Run git ARGS in DIR, optionally feeding IN on stdin. {:exit :out}."
+  ([dir args] (git! dir args nil))
+  ([dir args in]
+   (let [process (-> (ProcessBuilder. ^java.util.List (into ["git"] args))
+                     (.directory (java.io.File. ^String dir))
+                     (.redirectErrorStream true)
+                     (.start))]
+     (with-open [w (.getOutputStream process)]
+       (when in (.write w (.getBytes ^String in java.nio.charset.StandardCharsets/UTF_8))))
+     (let [out (String. (.readAllBytes (.getInputStream process))
+                        java.nio.charset.StandardCharsets/UTF_8)]
+       {:exit (.waitFor process) :out out}))))
+
+(defn- git-ok [{:keys [exit out]} category]
+  (if (zero? exit)
+    (result/ok out)
+    (result/err category {:message (str category " - " (str/trim out))})))
+
+(defn- cli-op
+  "Plain-git twin of the commit-path closed ops, used when no editor vessel
+   can serve them. nil for any other op."
+  [{:keys [op directory files paths message all]}]
+  (case op
+    :magit/stage
+    (git-ok (git! directory (if (= :all files) ["add" "-A"] (into ["add" "--"] files)))
+            :magit/stage-failed)
+
+    :magit/stage-verify
+    (if-let [missing (first (remove #(.exists (java.io.File. ^String directory ^String %)) paths))]
+      (result/ok (json/write-str {:status "missing" :path missing}))
+      (let [added (git! directory (into ["add" "--"] paths))]
+        (if-not (zero? (:exit added))
+          (git-ok added :magit/stage-failed)
+          (let [staged (git! directory (into ["diff" "--cached" "--name-only" "--"] paths))]
+            (result/ok (json/write-str {:status (if (str/blank? (:out staged)) "empty" "ok")}))))))
+
+    :magit/commit
+    (git-ok (git! directory (cond-> ["commit"] all (conj "-a") true (conj "-F" "-")) message)
+            :magit/commit-failed)
+
+    nil))
+
+(defn- vessel-unsupported? [error]
+  (str/includes? (str error) ":unsupported"))
+
 (defn- dispatch->result
-  "Dispatch a closed magit operation and convert the eval-shaped envelope to Result."
+  "Dispatch a closed magit operation and convert the eval-shaped envelope to Result.
+   When no editor vessel serves the op (:unsupported, e.g. a background session
+   without Emacs), the commit-path ops fall back to plain git in :directory."
   [op timeout-ms]
   (let [{:keys [success result error]} (svc/invoke :vessel :dispatch op timeout-ms)]
-    (if success
-      (result/ok result)
-      (result/err :magit/dispatch-failed {:message (str error)}))))
+    (cond
+      success (result/ok result)
+      (and (vessel-unsupported? error) (:directory op)) (or (cli-op op)
+                                                            (result/err :magit/dispatch-failed
+                                                                        {:message (str error)}))
+      :else (result/err :magit/dispatch-failed {:message (str error)}))))
+
 
 (defn- try-result
   "Execute thunk f returning Result; catch unexpected exceptions as error Result.
