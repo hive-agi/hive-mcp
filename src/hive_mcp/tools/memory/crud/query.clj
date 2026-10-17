@@ -47,7 +47,7 @@
 (def max-query-limit
   "Largest safe memory-query page before per-store over-fetch and backend timeouts.
    Narrow with temporal filters for larger audits."
-  100)
+  1000)
 
 (defn- record-batch-co-access!
   "Record co-access pattern for batch query results (non-blocking)."
