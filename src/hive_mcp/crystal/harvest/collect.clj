@@ -531,6 +531,7 @@
              :recall-count         (count recalls)
              :hivemind-shout-count (:count hivemind)
              :kanban-completed     (:completed-count kanban)
+             :kanban-closed-transitions (count (filter #(= "done" (name (or (:kanban-movement/to %) :unknown))) (:movements kanban-mvs)))
              :kg-edge-count        (:count kg-edges)
              :kanban-movement-count (:count kanban-mvs)
              :created-count        (count memory-ids-created)
