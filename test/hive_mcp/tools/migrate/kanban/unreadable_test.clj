@@ -33,6 +33,7 @@
   decorate/IStoreDecorator
   (inner-store [_] inner)
   sp/IMemoryStore
+  (connected? [_] (sp/connected? inner))
   (add-entry! [_ e] (sp/add-entry! inner e))
   (get-entry [_ id] (when-not (contains? hidden id) (sp/get-entry inner id))))
 
@@ -42,6 +43,7 @@
   decorate/IStoreDecorator
   (inner-store [_] inner)
   sp/IMemoryStore
+  (connected? [_] (sp/connected? inner))
   (add-entry! [_ e] (sp/add-entry! inner (assoc e :content (str "#env:" (pr-str (:content e))))))
   (get-entry [_ id] (sp/get-entry inner id)))
 
@@ -121,21 +123,22 @@
         writer (reify ports/IEntryWriter
                  (write-entries [_ es] (swap! writes + (count es)) (r/ok [])))
         probe  (reify ports/IIdProbe
-                 (existing-ids [_ _] (r/err :store/no-id-probe {})))
-        deps   {:source-lister (->FixedLister ["a"])
-                :source-reader (->MapReader {"a" (card "a" "stale")})
-                :target-reader (mig-store/make-entry-reader inner)
-                :target-probe  probe
-                :writer        writer
-                :state         (->MemState (atom state/initial-state))}
+                 (held-ids [_] (r/err :store/no-id-probe {})))
+        deps   {:source-lister     (->FixedLister ["a"])
+                :source-reader     (->MapReader {"a" (card "a" "stale")})
+                :target-reader     (mig-store/make-entry-reader inner)
+                :target-probe      probe
+                :target-durability (mig-store/make-durability inner)
+                :writer            writer
+                :state             (->MemState (atom state/initial-state))}
         _      (uc/init-ids! deps)]
     (is (r/err? (uc/step! deps {:batch-size 10})))
+    (is (r/err? (uc/run! deps {:batch-size 10})))
     (is (zero? @writes))))
 
 (deftest the-store-probe-lists-ids-through-every-decorator
   (let [inner (stub/create-store)
         _     (sp/add-entry! inner (card "p1" "x"))
         layer (->HidingLayer (->UnopenableLayer inner) #{"p1"})]
-    (is (= (r/ok #{"p1"}) (ports/existing-ids (mig-store/make-id-probe layer) ["p1" "p2"])))
-    (is (= (r/ok #{}) (ports/existing-ids (mig-store/make-id-probe layer) [])))
-    (is (r/err? (ports/existing-ids (mig-store/make-id-probe nil) ["p1"])))))
+    (is (= (r/ok #{"p1"}) (ports/held-ids (mig-store/make-id-probe layer))))
+    (is (r/err? (ports/held-ids (mig-store/make-id-probe nil))))))

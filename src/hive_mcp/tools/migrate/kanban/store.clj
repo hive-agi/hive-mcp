@@ -128,21 +128,19 @@
   ;; decorator (`decorate/base-store`): a visibility layer hides a row from
   ;; the reader but not from the backend's id listing. Only `scan-ids` is
   ;; called there, never a read: no content, sealed or not, leaves the
-  ;; backend through this probe.
+  ;; backend through this probe. One call lists the whole target; the use
+  ;; case makes it at most once per run and keeps the set.
   ports/IIdProbe
-  (existing-ids [_ ids]
-    (cond
-      (empty? ids) (r/ok #{})
-      (nil? store) (r/err :store/missing {:n (count ids)})
-      :else
+  (held-ids [_]
+    (if (nil? store)
+      (r/err :store/missing {})
       (let [base (decorate/base-store store)]
         (if-not (scan-capable? base)
-          (r/err :store/no-id-probe {:n (count ids) :store (str (class base))})
+          (r/err :store/no-id-probe {:store (str (class base))})
           (try
-            (let [wanted (set ids)]
-              (r/ok (into #{} (filter wanted) (sp/scan-ids base {:include-expired? true}))))
+            (r/ok (set (sp/scan-ids base {:include-expired? true})))
             (catch Throwable t
-              (r/err :store/id-probe-failed {:n (count ids) :message (.getMessage t)}))))))))
+              (r/err :store/id-probe-failed {:message (.getMessage t)}))))))))
 
 (defn make-id-probe
   "Existence probe over STORE (the decorated registry store in production):
@@ -150,3 +148,36 @@
    only."
   [store]
   (->StoreIdProbe store))
+
+;; =============================================================================
+;; Durability gate
+;; =============================================================================
+
+(defrecord StoreDurability [store]
+  ;; Asked through the DECORATED store's port (`connected?`, which the seal
+  ;; layers forward to the backend), never the backend's fields. A store
+  ;; that is not connected may still answer add-entry! with the id, out of
+  ;; an in-memory fallback (hive-qdrant does): that is no durable write.
+  ;; A store that cannot answer at all is refused too.
+  ports/ITargetDurability
+  (check-durable [_]
+    (if (nil? store)
+      (r/err :store/missing {})
+      (try
+        (if (true? (proto/connected? store))
+          (r/ok {:connected? true})
+          (r/err :target/not-durable
+                 {:message (str "the migration target store is not connected: its writes"
+                                " would land only in memory. Connect it, then run again.")
+                  :store   (str (class (decorate/base-store store)))}))
+        (catch Throwable t
+          (r/err :target/not-durable
+                 {:message (str "the migration target store cannot say whether it is connected: "
+                                (or (.getMessage t) (str (class t))))
+                  :store   (str (class store))}))))))
+
+(defn make-durability
+  "Durability gate over STORE (the decorated registry store in production):
+   ok only while the store reports itself connected."
+  [store]
+  (->StoreDurability store))

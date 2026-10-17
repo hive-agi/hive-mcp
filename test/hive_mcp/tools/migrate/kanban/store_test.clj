@@ -49,6 +49,7 @@
   decorate/IStoreDecorator
   (inner-store [_] inner)
   sp/IMemoryStore
+  (connected? [_] (sp/connected? inner))
   (add-entry! [_ e]
     (sp/add-entry! inner (assoc e :content (str sealed-prefix (pr-str (:content e))))))
   (get-entry [_ id]
@@ -179,6 +180,7 @@
                :source-reader (->MapReader {"a" (kanban-entry "a") "b" (kanban-entry "b")})
                :target-reader (->MapReader {})
                :target-probe  (mig-store/make-id-probe inner)
+               :target-durability (mig-store/make-durability inner)
                :writer        (mig-store/make-entry-writer (sealing-store inner seen))
                :state         (->MemState (atom state/initial-state))}
         _     (uc/init-ids! deps)

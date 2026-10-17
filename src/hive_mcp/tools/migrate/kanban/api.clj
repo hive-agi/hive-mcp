@@ -36,19 +36,25 @@
    The :target-probe answers which ids the target holds at all, from the
    backend's id listing (`scan-ids`) only, never its content: an entry the
    seal's visibility layer hides reads as absent, and must not be written
-   over."
+   over.
+
+   The :target-durability gate refuses a run (or a step) while the target
+   store does not report itself connected: a disconnected store may answer
+   add-entry! from an in-memory fallback, which is no migration."
   [& {:keys [source-store target-store state-path
-             source-lister source-reader target-reader target-probe writer state]}]
+             source-lister source-reader target-reader target-probe
+             target-durability writer state]}]
   (mig-events/init!)
   (let [src-store (delay (or source-store (proto/get-store)))
         tgt-store (delay (or target-store (proto/get-store :kanban)))]
-    {:source-lister (or source-lister (mig-milvus/make-id-lister @src-store))
-     :source-reader (or source-reader (mig-milvus/make-entry-reader @src-store))
-     :target-reader (or target-reader (mig-store/make-entry-reader @tgt-store))
-     :target-probe  (or target-probe (mig-store/make-id-probe @tgt-store))
-     :writer        (or writer (mig-store/make-entry-writer @tgt-store))
-     :state         (or state (mig-state/make (or state-path
-                                                   mig-state/default-path)))}))
+    {:source-lister     (or source-lister (mig-milvus/make-id-lister @src-store))
+     :source-reader     (or source-reader (mig-milvus/make-entry-reader @src-store))
+     :target-reader     (or target-reader (mig-store/make-entry-reader @tgt-store))
+     :target-probe      (or target-probe (mig-store/make-id-probe @tgt-store))
+     :target-durability (or target-durability (mig-store/make-durability @tgt-store))
+     :writer            (or writer (mig-store/make-entry-writer @tgt-store))
+     :state             (or state (mig-state/make (or state-path
+                                                       mig-state/default-path)))}))
 
 ;; =============================================================================
 ;; Façade — each delegates to the use case with the wired deps

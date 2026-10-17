@@ -75,6 +75,7 @@
                :source-reader (->MapReader (into {} (map (juxt identity kanban-entry)) ["a" "b" "c"]))
                :target-reader (mig-store/make-entry-reader store)
                :target-probe  (mig-store/make-id-probe inner)
+               :target-durability (mig-store/make-durability inner)
                :writer        (mig-store/make-entry-writer store)
                :state         (->MemState st)}
         _     (uc/init-ids! deps)
@@ -105,6 +106,7 @@
                :source-reader (->MapReader {"a" (kanban-entry "a") "b" (kanban-entry "b")})
                :target-reader (mig-store/make-entry-reader inner)
                :target-probe  (mig-store/make-id-probe inner)
+               :target-durability (mig-store/make-durability inner)
                :writer        (mig-store/make-entry-writer inner)
                :state         (->MemState st)}
         _     (uc/init-ids! deps)
@@ -121,6 +123,7 @@
                :source-reader (->MapReader {"a" (kanban-entry "a") "b" (kanban-entry "b")})
                :target-reader (->MapReader {})
                :target-probe  (mig-store/make-id-probe inner)
+               :target-durability (mig-store/make-durability inner)
                :writer        (mig-store/make-entry-writer
                                (queue-then-land-store inner 1000 calls))
                :state         (->MemState (atom state/initial-state))}

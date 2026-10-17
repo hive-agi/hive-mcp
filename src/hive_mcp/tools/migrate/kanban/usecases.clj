@@ -8,6 +8,8 @@
      {:source-lister  IIdLister     ; e.g. milvus
       :source-reader  IEntryReader  ; e.g. milvus
       :target-reader  IEntryReader  ; e.g. qdrant
+      :target-probe   IIdProbe      ; the target's id set, listed once per run
+      :target-durability ITargetDurability ; gate: refuse a non-durable target
       :writer         IEntryWriter  ; e.g. qdrant
       :state          IState}"
   (:refer-clojure :exclude [run!])
@@ -67,20 +69,54 @@
               (assoc :reason (pure/unreadable-reason tgt)))))
         batch))
 
+(defn- new-held
+  "Run-scoped cache of the target's id set: nil until the first batch that
+   needs the existence probe lists it."
+  []
+  (atom nil))
+
+(defn- held-set
+  "r/ok of the target's id set, listed through TARGET-PROBE the first time
+   and kept in HELD (an atom) after that, so a run lists the target once,
+   not once per batch."
+  [target-probe held]
+  (if-some [s @held]
+    (r/ok s)
+    (r/let-ok [s (ports/held-ids target-probe)]
+      (r/ok (reset! held (set s))))))
+
 (defn- settle-hidden
   "OUTCOMES with every :ready-to-write whose target read was absent checked
-   against the target's existence probe: an id the target holds (a row a
-   visibility layer hid from the read) becomes :unreadable / :hidden and is
-   not written. No candidates, no probe call. A probe err is the batch's
-   err: nothing is written on a guess."
-  [target-probe outcomes]
+   against the target's id set (HELD, listed once per run): an id the target
+   holds (a row a visibility layer hid from the read) becomes :unreadable /
+   :hidden and is not written. No candidates, no listing. A probe err is the
+   batch's err: nothing is written on a guess."
+  [target-probe held outcomes]
   (let [candidates (pure/probe-candidates outcomes)]
     (cond
       (empty? candidates)  (r/ok outcomes)
       (nil? target-probe)  (r/err :target-probe/missing {:n (count candidates)})
       :else
-      (r/let-ok [present (ports/existing-ids target-probe candidates)]
+      (r/let-ok [present (held-set target-probe held)]
         (r/ok (pure/mark-hidden outcomes present))))))
+
+(defn- note-written!
+  "Add the ids FINAL-OUTCOMES wrote to HELD, once it has been listed: they
+   are target rows now."
+  [held final-outcomes]
+  (let [ids (into [] (comp (filter #(= :written (:outcome %))) (map :id)) final-outcomes)]
+    (when (seq ids)
+      (swap! held #(some-> % (into ids))))))
+
+(defn- check-durable
+  "r/ok when the target can show its writes are durable (TARGET-DURABILITY,
+   the ITargetDurability port), else its err. No port is an err too: the
+   migrator does not write to a target it cannot vouch for."
+  [target-durability]
+  (if (nil? target-durability)
+    (r/err :target-durability/missing
+           {:message "no durability port for the migration target: refusing to write"})
+    (ports/check-durable target-durability)))
 
 (defn- writes-needed
   "Filter the outcomes whose source needs to be written to the target."
@@ -128,12 +164,17 @@
    one the probe finds but the read did not show, is :unreadable, reported
    and left alone.
 
+   The probe lists the target's ids once and keeps the set in `:held-ids`
+   (an atom `run!` puts in DEPS so every batch of a run shares it; without
+   one, this batch lists for itself). Ids written here join the set.
+
    A :queued outcome (accepted for replay, not durable) holds the cursor at
    that id (`pure/hold-cursor`), so the next step reads and writes it again."
-  [{:keys [source-reader target-reader target-probe writer state] :as _deps}
+  [{:keys [source-reader target-reader target-probe writer state held-ids] :as _deps}
    {:keys [batch-size dry-run?] :or {batch-size 50 dry-run? false}}]
   (r/let-ok [s (ports/load-state state)
-             :let [[batch new-cursor done?]
+             :let [held (or held-ids (new-held))
+                   [batch new-cursor done?]
                    (pure/slice-batch (:all-ids s) (:cursor s) batch-size)
                    start (- new-cursor (count batch))]]
     (if (empty? batch)
@@ -143,7 +184,7 @@
                           {:size (count batch) :cursor (:cursor s)})
         (r/let-ok [source-map    (ports/read-by-ids source-reader batch)
                    target-map    (ports/read-by-ids target-reader batch)
-                   outcomes      (settle-hidden target-probe
+                   outcomes      (settle-hidden target-probe held
                                                 (classify-each batch source-map target-map))
                    :let [ready    (writes-needed outcomes)
                          entries  (mapv :source ready)]
@@ -154,6 +195,7 @@
                                    (ports/write-entries writer entries))
                    :let [final-outcomes (mapv #(dissoc % :target-absent?)
                                               (finalize-outcomes outcomes write-results dry-run?))
+                         _              (note-written! held final-outcomes)
                          [cursor' done?'] (pure/hold-cursor start final-outcomes new-cursor done?)
                          tally          (pure/tally-outcomes final-outcomes)
                          result         {:cursor   cursor'
@@ -190,9 +232,14 @@
 
 (defn step!
   "Run one batch and persist the new state. Returns r/ok of
-   `{:state :batch-result}`."
-  [{:keys [state] :as deps} opts]
-  (r/let-ok [batch-result (migrate-batch! deps opts)
+   `{:state :batch-result}`.
+
+   Unless `:dry-run?`, the target must first show its writes are durable
+   (`:target-durability`, an ITargetDurability port); on its err nothing is
+   read or written and that err is returned."
+  [{:keys [state target-durability] :as deps} {:keys [dry-run?] :as opts}]
+  (r/let-ok [_            (if dry-run? (r/ok nil) (check-durable target-durability))
+             batch-result (migrate-batch! deps opts)
              s            (ports/load-state state)]
     (let [new-state (fold-state-after-batch s batch-result)]
       (r/let-ok [saved (ports/save-state! state new-state)]
@@ -206,37 +253,44 @@
   "Loop step! up to `:max-steps` times or until the migration is :done.
    Stops on err, and with `:stopped :queued` after a step whose target only
    queued a write (its circuit is open: looping would re-queue the same id).
-   Returns r/ok with `{:steps-run :stopped :state}`."
-  [deps {:keys [max-steps] :or {max-steps 50} :as opts}]
-  (loop [i 0 last-state nil]
-    (let [result (step! deps opts)]
-      (cond
-        (r/err? result)
-        result
+   Returns r/ok with `{:steps-run :stopped :state}`.
 
-        (-> result :ok :batch-result :done?)
-        (r/ok {:steps-run (inc i)
-               :stopped   :done
-               :state     (-> result :ok :state)})
+   Refuses to start (the durability port's err, nothing read or written)
+   unless the target shows its writes are durable; each step checks again.
+   Every step of the run shares one cache of the target's id set, so the
+   target is listed at most once per run."
+  [{:keys [target-durability] :as deps} {:keys [max-steps dry-run?] :or {max-steps 50} :as opts}]
+  (r/let-ok [_ (if dry-run? (r/ok nil) (check-durable target-durability))]
+    (let [deps (assoc deps :held-ids (new-held))]
+      (loop [i 0]
+        (let [result (step! deps opts)]
+          (cond
+            (r/err? result)
+            result
 
-        (pos? (get-in result [:ok :batch-result :tally :queued] 0))
-        (do
-          (mig-events/emit :kanban-mig/run-done
-                            {:steps-run (inc i) :stopped :queued})
-          (r/ok {:steps-run (inc i)
-                 :stopped   :queued
-                 :state     (-> result :ok :state)}))
+            (-> result :ok :batch-result :done?)
+            (r/ok {:steps-run (inc i)
+                   :stopped   :done
+                   :state     (-> result :ok :state)})
 
-        (>= (inc i) max-steps)
-        (do
-          (mig-events/emit :kanban-mig/run-done
-                            {:steps-run (inc i) :stopped :max-steps})
-          (r/ok {:steps-run (inc i)
-                 :stopped   :max-steps
-                 :state     (-> result :ok :state)}))
+            (pos? (get-in result [:ok :batch-result :tally :queued] 0))
+            (do
+              (mig-events/emit :kanban-mig/run-done
+                                {:steps-run (inc i) :stopped :queued})
+              (r/ok {:steps-run (inc i)
+                     :stopped   :queued
+                     :state     (-> result :ok :state)}))
 
-        :else
-        (recur (inc i) (-> result :ok :state))))))
+            (>= (inc i) max-steps)
+            (do
+              (mig-events/emit :kanban-mig/run-done
+                                {:steps-run (inc i) :stopped :max-steps})
+              (r/ok {:steps-run (inc i)
+                     :stopped   :max-steps
+                     :state     (-> result :ok :state)}))
+
+            :else
+            (recur (inc i))))))))
 
 ;; =============================================================================
 ;; status — read-only
