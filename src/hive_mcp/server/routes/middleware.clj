@@ -26,7 +26,8 @@
             [hive-spi.guard.ports :as gp]
             [hive-mcp.agent.grant :as grant]
             [hive-mcp.agent.identity :as agent-identity]
-            [hive-mcp.server.routes.async-ack :as async-ack])
+            [hive-mcp.server.routes.async-ack :as async-ack]
+            [hive-mcp.tools.async-params :as async-params])
 (:import [java.util.concurrent RejectedExecutionException]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -178,14 +179,17 @@
 ;; =============================================================================
 
 (defn wrap-handler-default-async-for-commands
-  "Inject :async true for commands in `commands` set when not explicitly set."
+  "Inject :async true for commands in `commands` set when not explicitly set.
+   An explicit :async is normalized to a boolean (`async-params/async-flag`),
+   so a string \"false\" opts out instead of reading as truthy."
   [handler commands]
   (fn [{:keys [command] :as args}]
     (let [cmd-kw (when command (keyword command))
-          should-default? (and (contains? commands cmd-kw)
-                               (not (contains? args :async)))]
-      (handler (cond-> args
-                 should-default? (assoc :async true))))))
+          flag   (async-params/async-flag (:async args))]
+      (handler (cond
+                 (some? flag)                   (assoc args :async flag)
+                 (contains? commands cmd-kw)    (assoc args :async true)
+                 :else                          args)))))
 
 (defn wrap-handler-async
   "Intercept async:true calls: return an ack, run the work on the async pool.
@@ -233,7 +237,7 @@
    `hive-ingestor.addon.registry/dispatcher-shadowed-params`)."
   [handler tool-name]
   (fn [args]
-    (if (:async args)
+    (if (true? (async-params/async-flag (:async args)))
       (let [task-id    (str "atask-" (random-uuid))
             caller-id  (or (:_caller_id args) "coordinator")
             timeout-ms (:async-timeout-ms args)
