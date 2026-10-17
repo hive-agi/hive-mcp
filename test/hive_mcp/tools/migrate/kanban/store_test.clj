@@ -1,13 +1,15 @@
 (ns hive-mcp.tools.migrate.kanban.store-test
-  "SEAL-KANBAN-MIGRATOR-BYPASS: the migrator's writer goes through the
-   target store's add-entry!, so a decorator (the seal) over that store
-   sees every migrated entry, and derived fields never travel.
+  "SEAL-KANBAN-MIGRATOR-BYPASS: the migrator's writer AND target reader go
+   through the target store's port, so a decorator (the seal) over that
+   store sees every migrated entry, reads come back opened, and derived
+   fields never travel.
 
    No live store: the target is hive-spi's atom-backed stub store, wrapped
-   in a test decorator that marks content the way a cipher layer would."
+   in test decorators that mark content the way a cipher layer would."
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.test.check.generators :as gen]
             [hive-dsl.result :as r]
+            [hive-mcp.tools.migrate.kanban.api :as api]
             [hive-mcp.tools.migrate.kanban.events :as mig-events]
             [hive-mcp.tools.migrate.kanban.ports :as ports]
             [hive-mcp.tools.migrate.kanban.pure :as pure]
@@ -36,6 +38,22 @@
       (swap! seen conj e)
       (sp/add-entry! inner (assoc e :content (str "#sealed:" (hash (:content e))))))))
 
+(def ^:private sealed-prefix "#sealed:")
+
+(defrecord CipherLikeLayer [inner]
+  ;; Shaped like hive-knowledge's seal layers: a record with only [inner],
+  ;; no backend fields (no :client-atom). Seals :content on write as an
+  ;; EDN-printed marker, opens it on every read exit.
+  sp/IMemoryStore
+  (add-entry! [_ e]
+    (sp/add-entry! inner (assoc e :content (str sealed-prefix (pr-str (:content e))))))
+  (get-entry [_ id]
+    (let [e (sp/get-entry inner id)
+          c (:content e)]
+      (cond-> e
+        (and (string? c) (.startsWith ^String c sealed-prefix))
+        (assoc :content (read-string (subs c (count sealed-prefix))))))))
+
 (defrecord MemState [atm]
   ports/IState
   (load-state [_]    (r/ok @atm))
@@ -63,6 +81,7 @@
 (def gen-answer
   (gen/one-of [gen/string-alphanumeric
                (gen/return {:queued? true})
+               (gen/return {:success? true :queued? true})
                (gen/return {:success? false :error "boom"})
                (gen/return {:error "x"})
                (gen/return nil)
@@ -72,17 +91,30 @@
   hive-mcp.tools.migrate.kanban.pure/write-result
   {:gen (gen/tuple gen/string-alphanumeric gen-answer)
    :apply? true
-   :pred (fn [r] (and (map? r) (boolean? (:ok? r)) (contains? r :id)))
+   :pred (fn [r] (and (map? r) (boolean? (:ok? r)) (contains? r :id)
+                      ;; a queued ack is never ok
+                      (not (and (:ok? r) (:queued? r)))))
    :num-tests 100
    :mutations [["always-ok"   (fn [id _] {:id id :ok? true :error nil})]
                ["always-fail" (fn [id _] {:id id :ok? false :error "x"})]]
    :assert (fn []
              (is (true?  (:ok? (pure/write-result "a" "a"))))
-             (is (true?  (:ok? (pure/write-result "a" {:queued? true}))))
              (is (false? (:ok? (pure/write-result "a" {:success? false :error "e"}))))
              (is (= "e"  (:error (pure/write-result "a" {:error "e"}))))
              (is (false? (:ok? (pure/write-result "a" nil))))
              (is (false? (:ok? (pure/write-result "a" "")))))})
+
+(deftest a-queued-ack-is-not-a-durable-write
+  (testing "hive-qdrant's open-circuit answer: not ok, flagged queued"
+    (let [row (pure/write-result "a" {:success? true :queued? true :depth 1})]
+      (is (false? (:ok? row)))
+      (is (true? (:queued? row)))))
+  (testing "a landed id is ok and not queued"
+    (let [row (pure/write-result "a" "a")]
+      (is (true? (:ok? row)))
+      (is (not (:queued? row)))))
+  (testing "a queued ack that also failed is a plain failure"
+    (is (not (:queued? (pure/write-result "a" {:queued? true :success? false}))))))
 
 (deftrifecta strip-derived-trifecta
   hive-mcp.tools.migrate.kanban.pure/strip-derived
@@ -149,6 +181,61 @@
     (is (r/ok? res))
     (is (= 2 (count @seen)))
     (is (every? #(nil? (:embed-text %)) @seen))))
+
+;; =============================================================================
+;; Store reader: through the decorated store's port, content opened
+;; =============================================================================
+
+(deftest reader-reads-through-the-decorator-opened
+  (let [inner (stub/create-store)
+        layer (->CipherLikeLayer inner)
+        _     (sp/add-entry! layer (dissoc (kanban-entry "k1") :embed-text :embedding))
+        res   (ports/read-by-ids (mig-store/make-entry-reader layer) ["k1" "absent"])]
+    (is (string? (:content (sp/get-entry inner "k1"))) "at rest it is sealed")
+    (is (r/ok? res))
+    (is (= #{"k1"} (set (keys (:ok res)))))
+    (is (= "kanban" (get-in res [:ok "k1" :content :task-type])) "read back opened")))
+
+(deftest reader-uses-batch-port-and-strips-derived
+  (let [inner (stub/create-store)
+        _     (sp/add-entry! inner {:id "k1" :content {:task-type "kanban" :t 1}})
+        res   (ports/read-by-ids (mig-store/make-entry-reader inner) ["k1"])]
+    (is (= {:task-type "kanban" :t 1} (get-in res [:ok "k1" :content])))
+    (is (not-any? #(contains? (get-in res [:ok "k1"]) %) pure/derived-fields))))
+
+(deftest reader-surfaces-a-failure-map-as-err
+  (let [store (reify sp/IMemoryStore
+                (get-entry [_ _] {:success? false :error :circuit-open}))]
+    (is (r/err? (ports/read-by-ids (mig-store/make-entry-reader store) ["a"]))))
+  (is (= (r/ok {}) (ports/read-by-ids (mig-store/make-entry-reader nil) [])))
+  (is (r/err? (ports/read-by-ids (mig-store/make-entry-reader nil) ["a"]))))
+
+(deftest default-make-deps-over-a-decorator-migrates-an-entry
+  ;; The registry hands make-deps the DECORATED store: a record with only
+  ;; [inner]. A step through the default wiring must read and write
+  ;; through it, and land the entry sealed.
+  (let [inner  (stub/create-store)
+        layer  (->CipherLikeLayer inner)
+        src    (kanban-entry "m1")
+        deps   (api/make-deps :target-store  layer
+                              :source-lister (->FixedLister ["m1"])
+                              :source-reader (->MapReader {"m1" src})
+                              :state         (->MemState (atom state/initial-state)))
+        _      (uc/init-ids! deps)
+        res    (api/step! deps {:batch-size 10})]
+    (is (r/ok? res) (pr-str res))
+    (is (= :written (-> res :ok :batch-result :outcomes first :outcome)))
+    (is (= 1 (-> res :ok :state :stats :written)))
+    (testing "landed sealed at rest, without derived fields"
+      (let [at-rest (sp/get-entry inner "m1")]
+        (is (string? (:content at-rest)))
+        (is (.startsWith ^String (:content at-rest) sealed-prefix))
+        (is (nil? (:embed-text at-rest)))))
+    (testing "a second pass reads it opened and does not overwrite it"
+      (let [deps2 (assoc deps :state (->MemState (atom (assoc state/initial-state
+                                                                :all-ids ["m1"]))))
+            res2  (api/step! deps2 {:batch-size 10})]
+        (is (= :already-full (-> res2 :ok :batch-result :outcomes first :outcome)))))))
 
 ;; =============================================================================
 ;; Qdrant reader boundary strips derived fields

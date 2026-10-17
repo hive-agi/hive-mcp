@@ -43,8 +43,10 @@
     :ready-to-write})
 
 (def post-write-outcome-types
-  "Outcomes emitted only after the writer runs."
-  #{:written :would-write :failed})
+  "Outcomes emitted only after the writer runs. `:queued` is a write the
+   target only ACCEPTED for replay (hive-qdrant's in-memory queue behind an
+   open circuit): not durable, so the cursor must not move past it."
+  #{:written :would-write :failed :queued})
 
 (def outcome-types
   "Union of all outcomes that may appear in a tally — classifier results
@@ -85,6 +87,18 @@
         new-cursor end
         done?     (>= new-cursor total)]
     [batch new-cursor done?]))
+
+(defn hold-cursor
+  "[cursor done?] for a batch that started at START, given its final
+   OUTCOMES (in batch order) and the END / DONE? `slice-batch` proposed.
+   The cursor stops AT the first `:queued` outcome, so that id and every
+   one after it is read again on the next step (ids written after it then
+   classify as :already-full); with nothing queued the proposal stands."
+  [start outcomes end done?]
+  (if-let [i (first (keep-indexed (fn [i o] (when (= :queued (:outcome o)) i))
+                                  outcomes))]
+    [(+ start i) false]
+    [end done?]))
 
 ;; =============================================================================
 ;; Tally
@@ -145,9 +159,14 @@
 
 (defn write-result
   "Fold the answer of one `add-entry!` call for ID into a writer result row
-   `{:id :ok? :error}`. An id string (landed) or a queue acknowledgement
-   (`:queued? true`, accepted for replay) is a success; a failure map
-   (`:success? false` or a non-nil `:error`) and any other value are not."
+   `{:id :ok? :error}`. Only an id string (landed) is a success.
+
+   A queue acknowledgement (`:queued? true`, as hive-qdrant answers while
+   its circuit breaker is open) is NOT a durable write: that queue lives in
+   RAM and dies with the process. It folds to `{:ok? false :queued? true}`,
+   which the use case turns into a `:queued` outcome that holds the cursor
+   so the id is written again on the next step. A failure map
+   (`:success? false` or a non-nil `:error`) and any other value fail."
   [id answer]
   (cond
     (and (string? answer) (seq answer))
@@ -157,7 +176,7 @@
          (true? (:queued? answer))
          (not (false? (:success? answer)))
          (nil? (:error answer)))
-    {:id id :ok? true :error nil}
+    {:id id :ok? false :queued? true :error "queued for replay, not durable"}
 
     (map? answer)
     {:id id :ok? false :error (str (or (:error answer) "add-entry! refused"))}

@@ -69,7 +69,9 @@
 
 (defn- finalize-outcomes
   "Replace each :ready-to-write outcome with the post-write outcome
-   (:written / :would-write / :failed) using the writer's per-id results.
+   (:written / :queued / :would-write / :failed) using the writer's per-id
+   results. A row the target only queued for replay (`:queued? true`) is
+   :queued, never :written: it is not durable yet.
 
    On dry-run, all :ready-to-write become :would-write."
   [outcomes write-results dry-run?]
@@ -81,9 +83,11 @@
               :else
               (let [w (get by-id id)]
                 (cond
-                  (:ok? w)  (assoc o :outcome :written)
-                  :else     (assoc o :outcome :failed
-                                     :error   (or (:error w) "no-writer-result"))))))
+                  (:ok? w)     (assoc o :outcome :written)
+                  ;; accepted for replay only (a RAM queue): not durable
+                  (:queued? w) (assoc o :outcome :queued)
+                  :else        (assoc o :outcome :failed
+                                        :error   (or (:error w) "no-writer-result"))))))
           outcomes)))
 
 (defn- empty-batch-result
@@ -96,12 +100,16 @@
 (defn migrate-batch!
   "Run one cursor-bounded batch. Reads source + target, classifies, writes
    the ready ones, returns outcomes + tally. Does NOT mutate state — the
-   caller (`step!`) folds the result into state."
+   caller (`step!`) folds the result into state.
+
+   A :queued outcome (accepted for replay, not durable) holds the cursor at
+   that id (`pure/hold-cursor`), so the next step reads and writes it again."
   [{:keys [source-reader target-reader writer state] :as _deps}
    {:keys [batch-size dry-run?] :or {batch-size 50 dry-run? false}}]
   (r/let-ok [s (ports/load-state state)
              :let [[batch new-cursor done?]
-                   (pure/slice-batch (:all-ids s) (:cursor s) batch-size)]]
+                   (pure/slice-batch (:all-ids s) (:cursor s) batch-size)
+                   start (- new-cursor (count batch))]]
     (if (empty? batch)
       (empty-batch-result new-cursor)
       (do
@@ -118,11 +126,12 @@
                                    :else
                                    (ports/write-entries writer entries))
                    :let [final-outcomes (finalize-outcomes outcomes write-results dry-run?)
+                         [cursor' done?'] (pure/hold-cursor start final-outcomes new-cursor done?)
                          tally          (pure/tally-outcomes final-outcomes)
-                         result         {:cursor   new-cursor
+                         result         {:cursor   cursor'
                                          :outcomes final-outcomes
                                          :tally    tally
-                                         :done?    done?}]]
+                                         :done?    done?'}]]
           (mig-events/emit :kanban-mig/batch-completed
                             (select-keys result [:cursor :tally :done?]))
           (r/ok result))))))
@@ -163,7 +172,9 @@
 
 (defn run!
   "Loop step! up to `:max-steps` times or until the migration is :done.
-   Stops on err. Returns r/ok with `{:steps-run :stopped :state}`."
+   Stops on err, and with `:stopped :queued` after a step whose target only
+   queued a write (its circuit is open: looping would re-queue the same id).
+   Returns r/ok with `{:steps-run :stopped :state}`."
   [deps {:keys [max-steps] :or {max-steps 50} :as opts}]
   (loop [i 0 last-state nil]
     (let [result (step! deps opts)]
@@ -175,6 +186,14 @@
         (r/ok {:steps-run (inc i)
                :stopped   :done
                :state     (-> result :ok :state)})
+
+        (pos? (get-in result [:ok :batch-result :tally :queued] 0))
+        (do
+          (mig-events/emit :kanban-mig/run-done
+                            {:steps-run (inc i) :stopped :queued})
+          (r/ok {:steps-run (inc i)
+                 :stopped   :queued
+                 :state     (-> result :ok :state)}))
 
         (>= (inc i) max-steps)
         (do
