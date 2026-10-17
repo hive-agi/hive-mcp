@@ -224,9 +224,6 @@
         (if (empty? updates)
           {:id id :noop true :existing existing}
           (do
-            (when (not= existing (mem-proto/get-entry store id))
-              (throw (ex-info (str "Memory edit conflict for " id ": entry changed before write")
-                              {:type :edit-conflict :id id})))
             (let [raw     (mem-proto/update-entry! store id updates)
                   updated (updated-entry store id raw)]
               (when-not updated

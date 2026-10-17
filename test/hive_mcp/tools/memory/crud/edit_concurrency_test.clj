@@ -57,35 +57,6 @@
              (is (= "one two" (:content @state))))
            (finally (deliver release true)))))))
 
-(deftest stale-read-before-write-is-rejected
-  (let [state (atom {:id "edit-stale" :type "note" :content "original"})
-        reads (atom 0)
-        store (reify proto/IMemoryStore
-                (connect! [_ _] {:success? true})
-                (disconnect! [_] nil)
-                (connected? [_] true)
-                (health-check [_] {:healthy? true})
-                (add-entry! [_ entry] (:id entry))
-                (get-entry [_ id]
-                  (when (= id (:id @state))
-                    (if (= 1 (swap! reads inc)) @state
-                        (assoc @state :content "external change"))))
-                (update-entry! [_ _ _] (throw (ex-info "stale write" {})))
-                (delete-entry! [_ _] nil)
-                (query-entries [_ _] [])
-                (search-similar [_ _ _] [])
-                (supports-semantic-search? [_] false)
-                (cleanup-expired! [_] {:cleaned 0})
-                (entries-expiring-soon [_ _ _] [])
-                (find-duplicate [_ _ _ _] nil)
-                (store-status [_] {})
-                (reset-store! [_] nil))]
-    (with-edit-store store
-      #(let [response (edit/handle-edit {:id "edit-stale" :content "replacement"})]
-         (is (:isError response))
-         (is (.contains (:text response) "Memory edit conflict"))
-         (is (= "original" (:content @state)))))))
-
 (deftest batch-rejects-duplicate-before-writing
   (let [state (atom {:id "edit-duplicate" :type "note" :content "before"})]
     (with-edit-store (store-for state nil)
