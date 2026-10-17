@@ -9,7 +9,6 @@
             [hive-dsl.result :as r]
             [hive-mcp.agent.transcript-source :as src]
             [hive-mcp.tools.consolidated.transcript :as transcript]
-            [hive-mcp.agent.chat-point-runs :as cpr]
             [hive-mcp.schema.tools :as schema]))
 
 (def ^:private now 100000000)
@@ -36,21 +35,21 @@
                      (e "e3-c" 1 :system "LLM error: 529")]}})
 
 (def ^:private chat-runs
+  "run-id -> {:row run-summary :tip tip-summary}, in the shapes
+   hive-agent.loop.chat-point run-summaries / tip-summary return."
   {"r-a1" {:row {:run-id "r-a1" :agent-id "ss-a" :project-id "hive-mcp" :model "m1"
                  :created (- now 5000) :parent-point nil}
-           :tip {:seq 4 :turn 2 :message {:role "assistant" :content "Fixed the bug."}}}
+           :tip {:seq 4 :turn 2 :ended? true}}
    "r-a2" {:row {:run-id "r-a2" :agent-id "ss-a" :project-id "hive-mcp" :model "m1"
                  :created (- now 1000) :parent-point {:run-id "r-a1" :seq 4 :turn 2}}
-           :tip {:seq 6 :turn 3 :message {:role "assistant" :content ""
-                                          :tool_calls [{:id "c1"}]}}}
+           :tip {:seq 6 :turn 3 :ended? false}}
    "r-c"  {:row {:run-id "r-c" :agent-id "e3-c" :project-id "dirge" :model "m2"
                  :created (- now 300) :parent-point nil}
            :tip nil}})
 
 (def ^:private run-index
-  (reify cpr/RunIndex
-    (list-runs [_] (r/ok (mapv :row (vals chat-runs))))
-    (run-tip [_ id] (r/ok (get-in chat-runs [id :tip])))))
+  {:list-runs (fn [] (r/ok (mapv :row (vals chat-runs))))
+   :run-tip   (fn [id] (r/ok (get-in chat-runs [id :tip])))})
 
 (def ^:private ports
   {:source (reify src/TranscriptSource
@@ -98,15 +97,21 @@
     (is (:isError (call {:command "list" :limit 0})))))
 
 (def ^:private failing-run-index
-  (reify cpr/RunIndex
-    (list-runs [_] (r/err :chat-point/unreadable {:message "store down"}))
-    (run-tip [_ _] (r/err :chat-point/unreadable {:message "store down"}))))
+  {:list-runs (fn [] (r/err :chat-point/unreadable {:message "store down"}))
+   :run-tip   (fn [_] (r/err :chat-point/unreadable {:message "store down"}))})
 
 (deftest list-survives-an-unreadable-run-store
   (let [b (body (transcript/handle-transcript (assoc ports :runs failing-run-index)
                                               {:command "list"}))]
     (is (= 3 (:count b)))
     (is (every? nil? (map :run_id (:transcripts b))))))
+
+(deftest the-default-runs-port-is-empty-without-hive-agent
+  (when-not (try (requiring-resolve 'hive-agent.loop.chat-point/run-summaries)
+                 (catch Throwable _hive-agent-absent nil))
+    (let [runs (transcript/hive-agent-runs)]
+      (is (= {:ok []} (select-keys ((:list-runs runs)) [:ok])))
+      (is (r/ok? ((:run-tip runs) "r1"))))))
 
 (deftest runs-lists-chat-point-runs-newest-first
   (let [b (body (call {:command "runs"}))]

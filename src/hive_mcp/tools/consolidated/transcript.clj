@@ -15,8 +15,8 @@
 
    Reads go through the `TranscriptSource` port
    (hive-mcp.agent.transcript-source), which covers legacy JSONL files and
-   the Datalevin stores headless hive-agent lings write, and the `RunIndex`
-   port (hive-mcp.agent.chat-point-runs) over the chat-point store. Params
+   the Datalevin stores headless hive-agent lings write, and the `:runs`
+   port over hive-agent's chat-point store (see `handle-transcript`). Params
    are coerced at this boundary (strings and numbers alike), and every
    failure, thrown or returned, leaves as an MCP error envelope."
   (:require [hive-mcp.agent.transcript-query :as tq]
@@ -26,9 +26,7 @@
             [hive-dsl.result :as r]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.tools.core :as tcore]
-            [hive-mcp.agent.chat-point-runs :as cpr]
-            [hive-mcp.tools.consolidated.transcript-runs :as truns]))
+            [hive-mcp.tools.core :as tcore]))
 
 ;; =============================================================================
 ;; Query Execution
@@ -254,6 +252,18 @@
       {:turns (ti/max-turn (:ok res)) :ending (ti/ending (:ok res))}
       {})))
 
+(defn- latest-runs
+  "{agent-id run-id}: each agent's newest chat-point run, read through
+   `runs`; {} when the store is unreadable, so a listing never fails on it."
+  [runs]
+  (let [res ((:list-runs runs))]
+    (if-not (r/ok? res)
+      (do (log/warn "[transcript] chat-point runs unreadable:" (err-message res)) {})
+      (->> (:ok res)
+           (filter :agent-id)
+           (sort-by #(or (:created %) 0))
+           (reduce #(assoc %1 (:agent-id %2) (:run-id %2)) {})))))
+
 (defn- list-row
   "Wire projection of one listing row: strings and numbers only. `latest`
    is {agent-id run-id}."
@@ -277,7 +287,7 @@
               (tcore/mcp-error (err-message res))
               (let [matched (:ok res)
                     page    (take limit matched)
-                    latest  (if (seq page) (truns/latest-runs runs) {})]
+                    latest  (if (seq page) (latest-runs runs) {})]
                 (tcore/mcp-json {:transcripts (mapv #(list-row source parents latest %) page)
                                  :count       (count page)
                                  :matched     (count matched)})))))))))
@@ -286,16 +296,38 @@
 ;; runs: chat-point runs a spawn's resume can continue
 ;; =============================================================================
 
+(defn- run-wire
+  "Wire projection of one run summary, its tip read through `runs`."
+  [runs parents {:keys [run-id agent-id parent-point created] :as row}]
+  (let [tip (let [res ((:run-tip runs) run-id)] (when (r/ok? res) (:ok res)))]
+    {:run_id       run-id
+     :agent        agent-id
+     :project      (:project-id row)
+     :parent       (or (:parent row) (when agent-id (src/parent-of parents agent-id)))
+     :parent_point (when parent-point
+                     {:run_id (:run-id parent-point) :seq (:seq parent-point) :turn (:turn parent-point)})
+     :model        (:model row)
+     :created      (some-> created ti/iso)
+     :tip          (when tip (select-keys tip [:seq :turn]))
+     :ended        (boolean (:ended? tip))}))
+
 (defn- runs-response [runs parents params now-ms]
   (with-filters params now-ms
     (fn [opts]
       (with-limit (:limit params) :limit default-list-limit
         (fn [limit]
-          (let [res (truns/runs-page runs parents opts limit)]
-            (if (r/ok? res)
-              (tcore/mcp-json (:ok res))
-              (tcore/mcp-error (str "transcript runs: chat-point store unreadable: "
-                                    (err-message res))))))))))
+          (let [res ((:list-runs runs))]
+            (if-not (r/ok? res)
+              (tcore/mcp-error (str "transcript runs: chat-point store unreadable: " (err-message res)))
+              (let [rows    (map #(cond-> (assoc % :modified (:created %))
+                                    (:parent opts)
+                                    (assoc :parent (some->> (:agent-id %) (src/parent-of parents))))
+                                 (:ok res))
+                    matched (ti/select-listing rows opts)
+                    page    (take limit matched)]
+                (tcore/mcp-json {:runs    (mapv #(run-wire runs parents %) page)
+                                 :count   (count page)
+                                 :matched (count matched)})))))))))
 
 ;; =============================================================================
 ;; find: cross-run full-text search
@@ -426,14 +458,36 @@
                                      #(render aid %))))))))
       (tcore/mcp-error (str "Unknown transcript command: " command)))))
 
+(defn- soft-resolve [sym]
+  (try (requiring-resolve sym)
+       (catch Throwable _hive-agent-absent nil)))
+
+(defn hive-agent-runs
+  "The `:runs` port over hive-agent's configured chat-point store
+   (hive-agent.loop.chat-point run-summaries / tip-summary); an empty port
+   when hive-agent is not on the classpath."
+  []
+  (let [store     (soft-resolve 'hive-agent.config/resolve-chat-point-store)
+        summaries (soft-resolve 'hive-agent.loop.chat-point/run-summaries)
+        tip       (soft-resolve 'hive-agent.loop.chat-point/tip-summary)]
+    (if (and store summaries tip)
+      {:list-runs (fn [] (r/try-effect (summaries (store))))
+       :run-tip   (fn [run-id] (r/try-effect (tip (store) run-id)))}
+      {:list-runs (constantly (r/ok []))
+       :run-tip   (constantly (r/ok nil))})))
+
 (defn handle-transcript
   "Route transcript MCP commands. Returns an MCP-envelope result, never throws.
 
    ([params])        reads `src/default-source`.
    ([ports params])  `ports` is a TranscriptSource, or a map
                      {:source TranscriptSource :parents ParentIndex
-                      :runs RunIndex :now-ms (fn [] epoch-ms)}; absent
-                     ports take defaults.
+                      :runs {:list-runs (fn [] Result<[run-summary]>)
+                             :run-tip   (fn [run-id] Result<{:seq :turn :ended?}|nil>)}
+                      :now-ms (fn [] epoch-ms)}; absent ports take defaults.
+                     A run-summary is {:run-id :agent-id :project-id :model
+                     :created :parent-point}, as hive-agent.loop.chat-point
+                     run-summaries returns it.
 
    Commands:
      help                     This command list
@@ -463,7 +517,7 @@
   ([ports params]
    (try
      (dispatch (merge {:parents (src/default-parent-index)
-                       :runs    (cpr/default-run-index)
+                       :runs    (hive-agent-runs)
                        :now-ms  #(System/currentTimeMillis)}
                       (if (satisfies? src/TranscriptSource ports) {:source ports} ports))
                params)
