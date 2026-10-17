@@ -120,3 +120,47 @@
    the milvus adapter after fanning across per-dim collections."
   [id-seqs]
   (->> id-seqs (apply concat) distinct sort vec))
+
+;; =============================================================================
+;; Derived fields — never carried across stores
+;; =============================================================================
+
+(def derived-fields
+  "Entry keys a store derives from :content (the embedder's input text and
+   the vector). The migrator must neither persist them verbatim nor hand
+   them to the target store: :embed-text is plaintext of the content, so a
+   sealed target would store it next to the ciphertext. The target store's
+   own decorator chain derives what it needs from :content."
+  [:embed-text :embedding])
+
+(defn strip-derived
+  "ENTRY without the `derived-fields`. nil passes through."
+  [entry]
+  (when entry
+    (apply dissoc entry derived-fields)))
+
+;; =============================================================================
+;; Write answers — what one add-entry! returned, as a writer result row
+;; =============================================================================
+
+(defn write-result
+  "Fold the answer of one `add-entry!` call for ID into a writer result row
+   `{:id :ok? :error}`. An id string (landed) or a queue acknowledgement
+   (`:queued? true`, accepted for replay) is a success; a failure map
+   (`:success? false` or a non-nil `:error`) and any other value are not."
+  [id answer]
+  (cond
+    (and (string? answer) (seq answer))
+    {:id id :ok? true :error nil}
+
+    (and (map? answer)
+         (true? (:queued? answer))
+         (not (false? (:success? answer)))
+         (nil? (:error answer)))
+    {:id id :ok? true :error nil}
+
+    (map? answer)
+    {:id id :ok? false :error (str (or (:error answer) "add-entry! refused"))}
+
+    :else
+    {:id id :ok? false :error (str "unexpected add-entry! answer: " (pr-str answer))}))

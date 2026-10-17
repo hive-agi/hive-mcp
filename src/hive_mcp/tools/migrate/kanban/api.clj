@@ -17,13 +17,18 @@
             [hive-mcp.tools.migrate.kanban.milvus :as mig-milvus]
             [hive-mcp.tools.migrate.kanban.qdrant :as mig-qdrant]
             [hive-mcp.tools.migrate.kanban.state :as mig-state]
-            [hive-mcp.tools.migrate.kanban.usecases :as uc]))
+            [hive-mcp.tools.migrate.kanban.usecases :as uc]
+            [hive-mcp.tools.migrate.kanban.store :as mig-store]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defn make-deps
-  "Build the dependency map. Pass overrides as kwargs to swap any slot."
+  "Build the dependency map. Pass overrides as kwargs to swap any slot.
+
+   The default :writer goes through the target store's `add-entry!`
+   (`mig-store/make-entry-writer`), so the registry store's decorator
+   chain (the seal layers) applies to every migrated entry."
   [& {:keys [source-store target-store state-path
              source-lister source-reader target-reader writer state]}]
   (mig-events/init!)
@@ -32,7 +37,7 @@
     {:source-lister (or source-lister (mig-milvus/make-id-lister src-store))
      :source-reader (or source-reader (mig-milvus/make-entry-reader src-store))
      :target-reader (or target-reader (mig-qdrant/make-entry-reader tgt-store))
-     :writer        (or writer (mig-qdrant/make-entry-writer tgt-store))
+     :writer        (or writer (mig-store/make-entry-writer tgt-store))
      :state         (or state (mig-state/make (or state-path
                                                    mig-state/default-path)))}))
 
