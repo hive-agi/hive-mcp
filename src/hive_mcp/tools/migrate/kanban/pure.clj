@@ -58,8 +58,11 @@
 (def post-write-outcome-types
   "Outcomes emitted only after the writer runs. `:queued` is a write the
    target only ACCEPTED for replay (hive-qdrant's in-memory queue behind an
-   open circuit): not durable, so the cursor must not move past it."
-  #{:written :would-write :failed :queued})
+   open circuit): not durable, so the cursor must not move past it.
+   `:unconfirmed` is a write the target acknowledged while the batch ran
+   but could not show durable once the batch ended (`unconfirm-written`):
+   it may live only in an in-memory fallback, so it is written again."
+  #{:written :would-write :failed :queued :unconfirmed})
 
 (def outcome-types
   "Union of all outcomes that may appear in a tally — classifier results
@@ -149,14 +152,48 @@
 (defn hold-cursor
   "[cursor done?] for a batch that started at START, given its final
    OUTCOMES (in batch order) and the END / DONE? `slice-batch` proposed.
-   The cursor stops AT the first `:queued` outcome, so that id and every
-   one after it is read again on the next step (ids written after it then
-   classify as :already-full); with nothing queued the proposal stands."
+   Any `:unconfirmed` outcome keeps the cursor AT START: the target lost
+   its backend during the batch, so no write of it is known durable and
+   the whole batch is read and written again. Otherwise the cursor stops
+   AT the first `:queued` outcome, so that id and every one after it is
+   read again on the next step (ids written after it then classify as
+   :already-full); with nothing held the proposal stands."
   [start outcomes end done?]
-  (if-let [i (first (keep-indexed (fn [i o] (when (= :queued (:outcome o)) i))
-                                  outcomes))]
-    [(+ start i) false]
-    [end done?]))
+  (if (some #(= :unconfirmed (:outcome %)) outcomes)
+    [start false]
+    (if-let [i (first (keep-indexed (fn [i o] (when (= :queued (:outcome o)) i))
+                                    outcomes))]
+      [(+ start i) false]
+      [end done?])))
+
+(defn needs-durable-ack?
+  "True iff OUTCOMES carry a :written row: the batch has writes whose
+   durability must be checked again once the batch is over."
+  [outcomes]
+  (boolean (some #(= :written (:outcome %)) outcomes)))
+
+(defn unconfirm-written
+  "OUTCOMES after the post-batch durability check. DURABLE? true leaves
+   them as they are. Otherwise every :written becomes :unconfirmed: the
+   target lost its backend at some point during the batch, and a store
+   without a backend (hive-qdrant's fallback-atom) still answers add-entry!
+   with the id, so no write of the batch can be told apart from one held
+   in RAM only. `hold-cursor` then keeps the cursor at the batch start and
+   the next step writes them again (add-entry! upserts by id)."
+  [outcomes durable?]
+  (if durable?
+    outcomes
+    (mapv (fn [o]
+            (if (= :written (:outcome o))
+              (assoc o :outcome :unconfirmed
+                     :error "target not durable after the batch; write unconfirmed")
+              o))
+          outcomes)))
+
+(defn unconfirmed-ids
+  "Ids of the :unconfirmed OUTCOMES, in order."
+  [outcomes]
+  (into [] (comp (filter #(= :unconfirmed (:outcome %))) (map :id)) outcomes))
 
 ;; =============================================================================
 ;; Tally

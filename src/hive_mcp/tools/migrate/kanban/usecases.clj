@@ -102,11 +102,13 @@
 
 (defn- note-written!
   "Add the ids FINAL-OUTCOMES wrote to HELD, once it has been listed: they
-   are target rows now."
+   are target rows now. An :unconfirmed id is taken OUT of HELD: it may
+   exist only in the target's RAM, and a held id is never written again."
   [held final-outcomes]
-  (let [ids (into [] (comp (filter #(= :written (:outcome %))) (map :id)) final-outcomes)]
-    (when (seq ids)
-      (swap! held #(some-> % (into ids))))))
+  (let [ids   (into [] (comp (filter #(= :written (:outcome %))) (map :id)) final-outcomes)
+        unids (pure/unconfirmed-ids final-outcomes)]
+    (when (or (seq ids) (seq unids))
+      (swap! held #(some-> % (into ids) (as-> s (apply disj s unids)))))))
 
 (defn- check-durable
   "r/ok when the target can show its writes are durable (TARGET-DURABILITY,
@@ -169,8 +171,16 @@
    one, this batch lists for itself). Ids written here join the set.
 
    A :queued outcome (accepted for replay, not durable) holds the cursor at
-   that id (`pure/hold-cursor`), so the next step reads and writes it again."
-  [{:keys [source-reader target-reader target-probe writer state held-ids] :as _deps}
+   that id (`pure/hold-cursor`), so the next step reads and writes it again.
+
+   After a batch that wrote, the target's durability is checked AGAIN: a
+   store that lost its backend mid-batch answers add-entry! with the id out
+   of an in-memory fallback. If it is not durable now (or the check errs),
+   every :written outcome becomes :unconfirmed (`pure/unconfirm-written`),
+   leaves the held-id set, and the cursor stays at the batch start; the
+   result carries `:not-durable` with the check's err."
+  [{:keys [source-reader target-reader target-probe target-durability writer state held-ids]
+    :as _deps}
    {:keys [batch-size dry-run?] :or {batch-size 50 dry-run? false}}]
   (r/let-ok [s (ports/load-state state)
              :let [held (or held-ids (new-held))
@@ -193,15 +203,20 @@
                                    dry-run?       (r/ok [])
                                    :else
                                    (ports/write-entries writer entries))
-                   :let [final-outcomes (mapv #(dissoc % :target-absent?)
+                   :let [written        (mapv #(dissoc % :target-absent?)
                                               (finalize-outcomes outcomes write-results dry-run?))
+                         ack            (when (pure/needs-durable-ack? written)
+                                          (check-durable target-durability))
+                         durable?       (or (nil? ack) (r/ok? ack))
+                         final-outcomes (pure/unconfirm-written written durable?)
                          _              (note-written! held final-outcomes)
                          [cursor' done?'] (pure/hold-cursor start final-outcomes new-cursor done?)
                          tally          (pure/tally-outcomes final-outcomes)
-                         result         {:cursor   cursor'
-                                         :outcomes final-outcomes
-                                         :tally    tally
-                                         :done?    done?'}]]
+                         result         (cond-> {:cursor   cursor'
+                                                 :outcomes final-outcomes
+                                                 :tally    tally
+                                                 :done?    done?'}
+                                          (not durable?) (assoc :not-durable ack))]]
           (mig-events/emit :kanban-mig/batch-completed
                             (select-keys result [:cursor :tally :done?]))
           (r/ok result))))))
@@ -230,20 +245,40 @@
         (update :failed (keep-rows :failed [:id :error]))
         (update :unreadable (keep-rows :unreadable [:id :reason])))))
 
+(defn- not-durable-err
+  "The :target/not-durable err a step returns after BATCH-RESULT's writes
+   could not be confirmed durable. Names the check's own err as :cause."
+  [{:keys [not-durable cursor outcomes]}]
+  (r/err :target/not-durable
+         {:message     (str "the migration target was not durable after the batch: "
+                            (or (:message not-durable) (:error not-durable))
+                            "; its writes are unconfirmed and the cursor stays at "
+                            cursor)
+          :cause       (:error not-durable)
+          :cursor      cursor
+          :unconfirmed (pure/unconfirmed-ids outcomes)}))
+
 (defn step!
   "Run one batch and persist the new state. Returns r/ok of
    `{:state :batch-result}`.
 
    Unless `:dry-run?`, the target must first show its writes are durable
    (`:target-durability`, an ITargetDurability port); on its err nothing is
-   read or written and that err is returned."
+   read or written and that err is returned.
+
+   A batch whose target was not durable once its writes were done (see
+   `migrate-batch!`) still saves its state, with the cursor at the batch
+   start, and then returns :target/not-durable, so a run stops there and
+   the next one writes the batch again."
   [{:keys [state target-durability] :as deps} {:keys [dry-run?] :as opts}]
   (r/let-ok [_            (if dry-run? (r/ok nil) (check-durable target-durability))
              batch-result (migrate-batch! deps opts)
              s            (ports/load-state state)]
     (let [new-state (fold-state-after-batch s batch-result)]
       (r/let-ok [saved (ports/save-state! state new-state)]
-        (r/ok {:state saved :batch-result batch-result})))))
+        (if (contains? batch-result :not-durable)
+          (not-durable-err batch-result)
+          (r/ok {:state saved :batch-result batch-result}))))))
 
 ;; =============================================================================
 ;; run! — repeat step! until done / max-steps
