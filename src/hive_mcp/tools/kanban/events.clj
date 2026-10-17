@@ -105,13 +105,14 @@
      * `:kanban/temporal-record` op = `:kanban-edit`, emitted only when a
        field actually changed, so a no-op edit leaves no audit noise.
      * No completion hooks, no movement tracking, no delete effect"
-  [{:keys [:kanban/entry]} [_ {:keys [task-id title description priority]}]]
+  [{:keys [:kanban/entry]} [_ {:keys [task-id title description append-description priority]}]]
   (when (and entry (pred/kanban-entry? entry))
     (let [{:keys [changed new-content new-tags
                   old-title new-title old-priority new-priority]}
-          (kt/edit-transition entry {:title       title
-                                     :description description
-                                     :priority    priority})
+          (kt/edit-transition entry {:title              title
+                                     :description        description
+                                     :append-description append-description
+                                     :priority           priority})
           project-id (kt/extract-project-id-from-tags entry)]
       (cond-> {:kanban/facade-update
                {:task-id task-id
@@ -249,11 +250,12 @@
      {:task-id ..     — required
       :title ..       — optional, non-blank string to replace the title
       :description .. — optional, non-blank string to replace the description
+      :append-description .. — optional, non-blank text to append to description
       :priority ..    — optional, one of high|medium|low
       :directory ..}  — optional, threaded for cofx context
 
    A field that is absent, nil, or blank leaves the current value standing;
-   at least one of the three must be present.
+   at least one of the editable fields must be present.
 
    Returns:
      (r/ok effect-map)                      on success
@@ -261,7 +263,7 @@
      (r/err :kanban/nothing-to-edit ...)    when no editable field was given
      (r/err :kanban/invalid-priority ...)   when priority is outside the enum
      (r/err :kanban/invalid-task ...)       when entry missing or non-kanban"
-  [{:keys [task-id title description priority] :as event-payload}]
+  [{:keys [task-id title description append-description priority] :as event-payload}]
   (init!)
   (let [given?     (fn [v] (and (string? v) (not (clojure.string/blank? v))))
         priorities #{"high" "medium" "low"}]
@@ -272,9 +274,9 @@
              {:message "Edit requires :task-id"
               :given   task-id})
 
-      (not (some given? [title description priority]))
+      (not (some given? [title description append-description priority]))
       (r/err :kanban/nothing-to-edit
-             {:message "Edit requires at least one of :title, :description, :priority"
+             {:message "Edit requires at least one of :title, :description, :append-description, :priority"
               :task-id task-id})
 
       (and (given? priority) (not (priorities priority)))
