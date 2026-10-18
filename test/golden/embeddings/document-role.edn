@@ -1,0 +1,5 @@
+{:chroma "Type: note\nTags: alpha, beta\nContent: memory",
+ :content-only "memory",
+ :default "memory",
+ :raw-structured "{\"a\":1}",
+ :untagged "Type: decision\nContent: choice"}

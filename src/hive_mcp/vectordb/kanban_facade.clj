@@ -87,18 +87,66 @@
 ;;; CRUD — read path
 ;;; ============================================================================
 
+;; Read-your-writes overlay. The vector backends behind the kanban slot are
+;; read-after-write eventual: an entry read straight after `update-entry!` can
+;; still carry the PRE-write :content/:tags. Every kanban verb is a
+;; read-modify-write of the whole content map or tag vector, so a second verb
+;; issued right after the first (update then retag, move then edit) rebuilt its
+;; write from the stale entry and silently reverted the first one (status back
+;; to old, added tags gone, while both calls reported ok). The facade therefore
+;; remembers what it last wrote per id for `overlay-ttl-ms` and lays it over
+;; what the store answers. Bounded by the TTL, so a write from another process
+;; is only masked for that long.
+(def ^:private overlay-ttl-ms 15000)
+
+(defonce ^:private write-overlay (atom {}))
+
+(defn- now-ms [] (System/currentTimeMillis))
+
+(defn- remember-write!
+  "Record the :content/:tags a write put in the store, and drop expired rows."
+  [id updates]
+  (let [t    (now-ms)
+        kept (select-keys updates [:content :tags])
+        stores (select-keys (proto/registered-stores) [:default :kanban])]
+    (swap! write-overlay
+           (fn [m]
+             (let [live (into {} (filter (fn [[_ v]] (< (- t (:at v)) overlay-ttl-ms))) m)]
+               (if (seq kept)
+                 (update live id (fn [prev]
+                                   (assoc (merge (when (= stores (:stores prev))
+                                                   (dissoc prev :at :stores))
+                                                 kept)
+                                          :stores stores :at t)))
+                 live))))))
+
+(defn- forget-write! [id] (swap! write-overlay dissoc id))
+
+(defn- overlay-entry
+  "`entry` with the facade's own last write for its id laid over it."
+  [id entry]
+  (let [{:keys [at stores] :as w} (get @write-overlay id)]
+    (if (and (map? entry) at
+             (= stores (select-keys (proto/registered-stores) [:default :kanban]))
+             (< (- (now-ms) at) overlay-ttl-ms))
+      (merge entry (select-keys w [:content :tags]))
+      entry)))
+
 (defn get-entry-by-id
   "Read a kanban entry by id. In :kanban and :dual-read modes, falls back
    across the :kanban and :default stores so legacy entries in either slot
-   stay retrievable."
+   stay retrievable. The facade's own recent writes are laid over the answer
+   (see `write-overlay`) so a read straight after a write sees the write."
   [id]
-  (case (mode)
-    :default   (proto/get-entry (proto/get-store) id)
-    :kanban    (or (rescue nil (proto/get-entry (proto/get-store :kanban) id))
-                   (rescue nil (proto/get-entry (proto/get-store) id)))
-    :dual-read (or (when (registered? :kanban)
-                     (rescue nil (proto/get-entry (proto/get-store :kanban) id)))
-                   (proto/get-entry (proto/get-store) id))))
+  (overlay-entry
+   id
+   (case (mode)
+     :default   (proto/get-entry (proto/get-store) id)
+     :kanban    (or (rescue nil (proto/get-entry (proto/get-store :kanban) id))
+                    (rescue nil (proto/get-entry (proto/get-store) id)))
+     :dual-read (or (when (registered? :kanban)
+                      (rescue nil (proto/get-entry (proto/get-store :kanban) id)))
+                    (proto/get-entry (proto/get-store) id)))))
 
 (defn query-entries
   "Query kanban entries with filtering. Mirrors hive-mcp.vectordb.facade
@@ -215,7 +263,11 @@
 (defn update-entry!
   "Soft-update a kanban entry (status retag, tag rewrite). In :dual-read,
    primary = :kanban, mirror best-effort to :default. Announces the write
-   through write-events once the primary write returned."
+   through write-events once the primary write returned, and remembers the
+   written :content/:tags so the next `get-entry-by-id` reads its own write
+   (see `write-overlay`). Only a write the store accepted is remembered: an
+   unknown id answers nil (hive-spi contract :absent) and must not be served
+   from the overlay as if it had landed."
   [id updates]
   (let [result (case (mode)
                  :default   (proto/update-entry! (proto/get-store) id updates)
@@ -223,6 +275,7 @@
                  :dual-read (let [primary (proto/update-entry! (proto/get-store :kanban) id updates)]
                               (mirror-write! (fn [s] (proto/update-entry! s id updates)))
                               primary))]
+    (when result (remember-write! id updates))
     (announce! :updated {:id         id
                          :tags       (:tags updates)
                          :project-id (:project-id updates)
@@ -232,7 +285,8 @@
 (defn delete-entry!
   "Hard-delete a kanban entry. In :dual-read, attempts both slots so
    the entry can't resurrect from the legacy slot during soak. Announces
-   the write through write-events once the primary delete returned."
+   the write through write-events once the primary delete returned, and drops
+   any remembered write so a deleted entry is not served from the overlay."
   [id]
   (let [result (case (mode)
                  :default   (proto/delete-entry! (proto/get-store) id)
@@ -240,6 +294,7 @@
                  :dual-read (let [primary (proto/delete-entry! (proto/get-store :kanban) id)]
                               (mirror-write! (fn [s] (proto/delete-entry! s id)))
                               primary))]
+    (forget-write! id)
     (announce! :deleted {:id id})
     result))
 

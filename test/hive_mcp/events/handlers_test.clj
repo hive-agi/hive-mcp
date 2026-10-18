@@ -237,6 +237,7 @@
                   ;; Producer shape emitted by harvest/synthesize — NOT the
                   ;; consumer vocabulary the formatter reads.
                   :stats {:progress-count 1 :created-count 6 :kanban-completed 2
+                          :kanban-closed-transitions 1
                           :kg-edge-count 4
                           :created-by-type {"decision" 2 "convention" 1
                                             "note" 3 "feedback" 1}}}]
@@ -248,7 +249,7 @@
       (is (= 1 (:conventions stats)) "convention count projected from :created-by-type")
       (is (= 3 (:notes stats)) "note count projected")
       (is (= 1 (:other stats)) "unknown type folds into :other")
-      (is (= 2 (:kanban-closures stats)) "kanban closures surfaced")
+      (is (= 1 (:kanban-closures stats)) "only session transitions count as kanban closures")
       (is (= 4 (:kg-edges stats)) "kg edges surfaced")
       (is (re-find #"2 decisions" msg) "message reports real decision count")
       (is (re-find #"1 conventions" msg) "message reports real convention count")

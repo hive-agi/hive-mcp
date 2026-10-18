@@ -7,7 +7,9 @@
             [hive-mcp.embeddings.service :as embedding-service]
             [hive-dsl.result :as r]
             [taoensso.timbre :as log]
-            [hive-mcp.memory.ingest-search :as ingest-search]))
+            [hive-mcp.memory.ingest-search :as ingest-search]
+            [hive-mcp.embeddings.role :as role]
+            [hive-mcp.config.core :as config]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -49,11 +51,16 @@
   "Search for memory entries similar to the query text.
    Routes to type-specific collection when type is provided.
    Fans out to all collections when type is nil.
-   :exclude-tags — seq of tags to exclude via where-document $not_contains."
-  [query-text & {:keys [limit type project-ids exclude-tags] :or {limit 10}}]
+   :exclude-tags — seq of tags to exclude via where-document $not_contains.
+   :query-template overrides embeddings.query-template (:raw by default)."
+  [query-text & {:keys [limit type project-ids exclude-tags query-template] :or {limit 10}}]
   (emb/require-embedding!)
   (let [where-clause    (build-where-clause {:type type :project-ids project-ids})
         where-doc-clause (build-where-document-clause exclude-tags)
+        shaped-query (role/shape-query (or query-template
+                                           (config/get-in-config [:embeddings :query-template])
+                                           :raw)
+                                       query-text)
         coll-names      (try (embedding-service/type->collection-names type)
                              (catch Exception _ [nil]))]
     (if (= 1 (count coll-names))
@@ -64,7 +71,7 @@
                        (conn/get-or-create-named-collection
                          (:collection-name resolved) (:dimension resolved))
                        (conn/get-or-create-collection))
-            query-emb (emb/embed-text provider query-text)
+            query-emb (emb/embed-text provider shaped-query)
             results   (search-collection coll query-emb limit where-clause where-doc-clause)]
         (log/debug "Semantic search for:" (subs query-text 0 (min 50 (count query-text)))
                    "found:" (count results))
@@ -79,7 +86,7 @@
                         provider (:provider resolved)
                         coll     (conn/get-or-create-named-collection
                                    cn (:dimension resolved))
-                        query-emb (emb/embed-text provider query-text)]
+                        query-emb (emb/embed-text provider shaped-query)]
                     (search-collection coll query-emb limit where-clause where-doc-clause))
                   (catch Exception e
                     (log/debug "Fan-out search failed for" cn ":" (.getMessage e))

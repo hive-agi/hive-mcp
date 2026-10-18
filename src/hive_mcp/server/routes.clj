@@ -17,7 +17,8 @@
             [hive-mcp.tools.composite :as composite]
             [hive-mcp.dispatch.handler :as dispatch]
             [hive-addon.tool-contract :as tool-contract]
-            [hive-mcp.tools.schema-keys :as schema-keys]))
+            [hive-mcp.tools.schema-keys :as schema-keys]
+            [hive-mcp.tools.async-params :as async-params]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -76,42 +77,6 @@
   :args (s/cat :tool-def ::tool-def)
   :ret ::tool-response)
 
-(def ^:private async-result-note
-  "How a queued call's result reaches the caller, shared by both descriptions."
-  (str "A queued call returns {:queued true :task-id ...} at once; its result "
-       "arrives in a ---TOOLRESULT--- block on a later hive call."))
-
-(def ^:private async-opt-out-property
-  "Schema property advertising the :async escape hatch.
-
-   An UNDECLARED boolean false is stripped in transit by the MCP client, so a
-   tool whose middleware honours `async:false` must DECLARE the property or the
-   opt-out never reaches the handler."
-  {"async" {:type "boolean"
-            :description (str "Set false to force synchronous execution and get the "
-                              "full result in-band (default: this tool's commands may "
-                              "queue and return {:queued true :task-id ...}). "
-                              "Set true to force queueing. " async-result-note)}})
-
-(def ^:private async-opt-in-property
-  "Schema property advertising :async on a tool that runs synchronously by
-   default.
-
-   `wrap-handler-async` sits in EVERY tool's middleware chain, so any call may
-   be queued. An MCP client forwards only declared params, though, so a tool
-   that does not declare `async` can never be sent it: the long call holds the
-   agent loop although the server could have released it."
-  {"async" {:type "boolean"
-            :description (str "Set true to run in the background so the call does not "
-                              "block the agent loop. " async-result-note)}})
-
-(def ^:private async-timeout-property
-  "Schema property for `:async-timeout-ms`, the per-call bound the async
-   wrapper consumes. Declared for the same reason as `async`: an undeclared
-   param never reaches the server."
-  {"async-timeout-ms" {:type "integer"
-                       :description "With async:true, cancel the queued call after this many ms."}})
-
 (defn make-tool
   "Convert a tool definition with :handler to SDK format.
    Wraps handler with the standard middleware chain.
@@ -129,29 +94,22 @@
    (`hive-addon.tool-contract/assert-root-tool!`) BEFORE the async params are
    merged in, so a tool whose own schema is empty throws here.
 
-   EVERY tool advertises `async` and `async-timeout-ms`, because every tool's
-   chain runs `wrap-handler-async`. A tool declaring :default-async-commands
-   gets the opt-out wording, any other tool the opt-in wording. A tool that
-   declares its own `async` keeps it.
+   EVERY tool advertises `async` and `async-timeout-ms`
+   (`async-params/with-async-params`), because every tool's chain runs
+   `wrap-handler-async`. A tool declaring its own `async` keeps it.
 
    The emitted schema has provider-legal property keys only
    (`schema-keys/legal-tool`): an addon param such as `preview?` is
    advertised as its `preview_` alias."
   [{:keys [consolidated] :as tool-def}]
-  (let [{:keys [name description inputSchema handler deprecated default-async-commands]}
+  (let [{:keys [name description handler deprecated default-async-commands] :as checked}
         (tool-contract/assert-root-tool!
          (if consolidated (composite/build-merged-tool tool-def) tool-def))
         schema-ext (ext/get-schema-extensions name)
-        async-props (merge (if (seq default-async-commands)
-                             async-opt-out-property
-                             async-opt-in-property)
-                           async-timeout-property)
-        merged-schema (cond-> inputSchema
-                        schema-ext
-                        (update :properties merge schema-ext)
-
-                        true
-                        (update :properties #(merge async-props %)))]
+        merged-schema (:inputSchema
+                       (async-params/with-async-params
+                        (cond-> checked
+                          schema-ext (update-in [:inputSchema :properties] merge schema-ext))))]
     (schema-keys/legal-tool
      (cond-> {:name name
               :description description
@@ -298,6 +256,15 @@
           {:surfaces [] :failed []}
           @tool-surfaces))
 
+(defn notification-targets
+  "Select successfully installed surfaces that can notify a connected client.
+   No change to the advertised view means no notification, even if the tool
+   handlers were rebuilt during a hot reload."
+  [changed installed surfaces]
+  (if (seq changed)
+    (filterv #(some? (:surface/notify! (get surfaces %))) installed)
+    []))
+
 (defn refresh-surfaces!
   "Compute the advertised table ONCE and install it into every registered
    surface. Returns {:count unique-tools :changed [names] :surfaces [ids]
@@ -310,6 +277,20 @@
         res   (assoc out
                      :count   (count table)
                      :changed (vec (changed-tool-names old view)))]
+    (doseq [id (notification-targets (:changed res) (:surfaces res) @tool-surfaces)]
+      (try ((:surface/notify! (get @tool-surfaces id)))
+           (catch Throwable t
+             (log/warn "tool surface notification failed"
+                       {:surface id :error (ex-message t)}))))
+    (when (seq (:changed res))
+      ;; IDE WebSocket clients share a JSON-RPC stream rather than an SDK
+      ;; context, so notify them separately when their tool view changes.
+      (try
+        (when ((requiring-resolve 'hive-mcp.transport.websocket/connected?))
+          ((requiring-resolve 'hive-mcp.transport.websocket/notify!)
+           "notifications/tools/list_changed" {}))
+        (catch Throwable t
+          (log/warn "WebSocket tool notification failed" {:error (ex-message t)}))))
     (log/info "Tool surfaces refreshed:" (:count res) "tools,"
               (count (:changed res)) "changed, into" (:surfaces res))
     res))
@@ -322,10 +303,22 @@
    registered surface is refreshed from the one table. Returns what
    `refresh-surfaces!` returns, nil when the atom holds no context."
   [server-context-atom]
-  (when @server-context-atom
+  (when-let [context @server-context-atom]
     (register-surface! [:context-atom (System/identityHashCode server-context-atom)]
                        {:surface/kind :context-atom
-                        :surface/context-atom server-context-atom})
+                        :surface/context-atom server-context-atom
+                        :surface/notify! (fn []
+                                           ;; The stdio registration may already
+                                           ;; notify this same SDK context.
+                                           (when-not (some (fn [[_ surface]]
+                                                             (and (= :tools-atom (:surface/kind surface))
+                                                                  (identical? (:tools context)
+                                                                              (:surface/tools-atom surface))
+                                                                  (:surface/notify! surface)))
+                                                           @tool-surfaces)
+                                             (when-let [server (:server context)]
+                                               ((requiring-resolve 'jsonrpc4clj.server/send-notification)
+                                                server "notifications/tools/list_changed" {}))))})
     (refresh-surfaces!)))
 
 (defn debug-tool-handler

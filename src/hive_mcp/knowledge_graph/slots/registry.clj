@@ -121,14 +121,24 @@
           (failed slot backend :factory-returned-nil)
           (ensure-conn-result slot backend store))))))
 
+(defn factory-failure-level
+  "Classify an unavailable optional factory separately from a constructed
+   store whose lifecycle failed. The latter must remain an ERROR."
+  [reason]
+  (if (= :factory-returned-nil reason) :warn :error))
+
 (defn- log-init
-  "Side-effect-only — logs the outcome of build-slot."
+  "Side-effect-only — logs the outcome of build-slot. A nil factory result is
+   expected when an optional backend is not installed; a lifecycle exception
+   after constructing a store still requires operator attention."
   [init]
   (case (adt/adt-variant init)
     :slot/ok               (log/info  "kg-slot initialized" (select-keys init [:slot :backend]))
     :slot/missing-backend  (log/warn  "kg-slot has no backend mapping" {:slot (:slot init)})
-    :slot/factory-failed   (log/error "kg-slot factory failed"
-                                      (select-keys init [:slot :backend :reason]))
+    :slot/factory-failed   (let [details (select-keys init [:slot :backend :reason])]
+                             (case (factory-failure-level (:reason init))
+                               :warn  (log/warn "kg-slot backend unavailable (optional backend may not be installed)" details)
+                               :error (log/error "kg-slot factory failed" details)))
     nil))
 
 ;; -----------------------------------------------------------------------------

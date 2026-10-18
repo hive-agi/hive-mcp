@@ -7,7 +7,8 @@
             [clojure.data.json :as json]
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
-            [clojure.java.io :as io]))
+            [clojure.java.io :as io]
+            [hive-spi.memory.contract :as contract]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -29,25 +30,24 @@
       :skipped-id
 
       :else
-      (do
-        (with-resilience
-          (mem-proto/add-entry! store
-                                {:id (:id entry)
-                                 :type entry-type
-                                 :content (:content entry)
-                                 :tags (if (vector? (:tags entry))
-                                         (vec (:tags entry))
-                                         (:tags entry))
-                                 :content-hash entry-hash
-                                 :created (:created entry)
-                                 :updated (:updated entry)
-                                 :duration (or (:duration entry) "long")
-                                 :expires (or (:expires entry) "")
-                                 :access-count (or (:access-count entry) 0)
-                                 :helpful-count (or (:helpful-count entry) 0)
-                                 :unhelpful-count (or (:unhelpful-count entry) 0)
-                                 :project-id project-id}))
-        :imported))))
+      (let [result (with-resilience
+                     (mem-proto/add-entry! store
+                                           {:id (:id entry)
+                                            :type entry-type
+                                            :content (:content entry)
+                                            :tags (if (vector? (:tags entry))
+                                                    (vec (:tags entry))
+                                                    (:tags entry))
+                                            :content-hash entry-hash
+                                            :created (:created entry)
+                                            :updated (:updated entry)
+                                            :duration (or (:duration entry) "long")
+                                            :expires (or (:expires entry) "")
+                                            :access-count (or (:access-count entry) 0)
+                                            :helpful-count (or (:helpful-count entry) 0)
+                                            :unhelpful-count (or (:unhelpful-count entry) 0)
+                                            :project-id project-id}))]
+        (if (contract/failure? result) :failed :imported)))))
 
 (def ^:private legacy-types
   "Legacy storage file stem -> the by-type key the import reports it under."
@@ -116,9 +116,11 @@
                                  :decisions (count (:decisions data))}})
             (let [results (mapv #(import-entry! % pid) all-entries)
                   imported (count (filter #(= :imported %) results))
+                  failed (count (filter #(= :failed %) results))
                   skipped-hash (count (filter #(= :skipped-hash %) results))
                   skipped-id (count (filter #(= :skipped-id %) results))]
               (mcp-json {:imported imported
+                         :failed failed
                          :skipped {:by-hash skipped-hash
                                    :by-id skipped-id
                                    :total (+ skipped-hash skipped-id)}

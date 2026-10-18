@@ -286,18 +286,25 @@
    reducer (e.g. million-row dedupe) cannot wedge the handler.
 
    REQUIRED-TAGS (may be empty) drops every hit, store or ingest, that does
-   not carry all of them, before the merge cuts to LIMIT-VAL."
+   not carry all of them, before the merge cuts to LIMIT-VAL.
+   Hits without IDs are dropped before merging and counted separately."
   [store-results ingest-results limit-val required-tags]
   (safe/safe-future-call
    {:timeout-ms (budget :post-filter) :name "memory-search/post"}
    (fn []
-     (let [normalized-store (filter-required-tags
-                             {:entries (mapv store-entry->normalized (or store-results []))
+     (let [store-hits (mapv store-entry->normalized (or store-results []))
+           ingest-hits (vec (or ingest-results []))
+           dropped-null-hits (+ (count (remove (comp some? :id) store-hits))
+                                (count (remove (comp some? :id) ingest-hits)))
+           normalized-store (filter-required-tags
+                             {:entries (filterv (comp some? :id) store-hits)
                               :tags    required-tags})
-           ingest-kept      (filter-required-tags
-                             {:entries (or ingest-results []) :tags required-tags})
+           ingest-kept (filter-required-tags
+                         {:entries (filterv (comp some? :id) ingest-hits)
+                          :tags required-tags})
            merged (ingest-search/merge-and-rerank normalized-store ingest-kept limit-val)]
-       (mapv format-search-result merged)))))
+       {:results (mapv format-search-result merged)
+        :dropped-null-hits dropped-null-hits}))))
 
 (def ^:private default-exclude-tags
   "Tags excluded from semantic search by default.
@@ -316,11 +323,13 @@
    whether they are the built-in default (:default), the caller's own set
    (:caller) or nothing (:none). A caller can then tell an empty corpus
    from a filtered one, and knows to pass exclude_tags=[] to see the rest
-   (kanban 20260728020157-1407f421)."
-  [{:keys [results query scope exclude-tags default-excludes]}]
+   (kanban 20260728020157-1407f421).
+   :dropped-null-hits counts store and ingest hits missing an ID before ranking."
+  [{:keys [results query scope exclude-tags default-excludes dropped-null-hits]}]
   (let [excluded (vec exclude-tags)]
     {:results         results
      :count           (count results)
+     :dropped-null-hits (or dropped-null-hits 0)
      :query           query
      :scope           scope
      :excluded-tags   excluded
@@ -389,9 +398,10 @@
             post (run-post-filter store-results ingest-results limit-val required-tags)]
         (cond
           (result/ok? post)
-          (let [formatted (:ok post)]
-            (record-co-access! formatted project-id "system:semantic-search")
-            (result/ok (search-payload {:results          formatted
+          (let [{:keys [results dropped-null-hits]} (:ok post)]
+            (record-co-access! results project-id "system:semantic-search")
+            (result/ok (search-payload {:results          results
+                                        :dropped-null-hits dropped-null-hits
                                         :query            query
                                         :scope            project-id
                                         :exclude-tags     effective-excludes

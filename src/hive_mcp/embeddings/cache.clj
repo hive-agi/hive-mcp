@@ -32,35 +32,47 @@
         bs (.digest md (.getBytes text "UTF-8"))]
     (apply str (map #(format "%02x" %) bs))))
 
-(defn- cache-key
-  [collection-name text]
-  (str collection-name ":" (text-hash text)))
+(defn cache-key
+  "Cache identity. With a `space-id` (hive-mcp.embeddings.space/space-id) the
+   key is collection + space + text hash, so a vector from one model, digest or
+   serializer revision can never answer for another. Without one it is the
+   legacy collection + text hash."
+  ([collection-name text]
+   (str collection-name ":" (text-hash text)))
+  ([collection-name space-id text]
+   (if space-id
+     (str collection-name ":" space-id ":" (text-hash text))
+     (cache-key collection-name text))))
 
 (defn lookup
-  "Return cached embedding vector or nil. Lazy-evicts expired entries."
-  [collection-name text]
-  (let [k (cache-key collection-name text)
-        {:keys [^LinkedHashMap map ttl-ms]} @state]
-    (locking map
-      (if-let [entry (.get map k)]
-        (if (< (System/currentTimeMillis) (:expires-at entry))
-          (do (swap! state update :hits inc)
-              (:vec entry))
-          (do (.remove map k)
-              (swap! state (fn [s] (-> s (update :evicts inc) (update :misses inc))))
-              nil))
-        (do (swap! state update :misses inc)
-            nil)))))
+  "Return cached embedding vector or nil. Lazy-evicts expired entries.
+   The 3-arity scopes the lookup to an embedding space id."
+  ([collection-name text] (lookup collection-name nil text))
+  ([collection-name space-id text]
+   (let [k (cache-key collection-name space-id text)
+         {:keys [^LinkedHashMap map ttl-ms]} @state]
+     (locking map
+       (if-let [entry (.get map k)]
+         (if (< (System/currentTimeMillis) (:expires-at entry))
+           (do (swap! state update :hits inc)
+               (:vec entry))
+           (do (.remove map k)
+               (swap! state (fn [s] (-> s (update :evicts inc) (update :misses inc))))
+               nil))
+         (do (swap! state update :misses inc)
+             nil))))))
 
 (defn store!
-  "Insert a fresh embedding into the cache."
-  [collection-name text embedding]
-  (let [k (cache-key collection-name text)
-        {:keys [^LinkedHashMap map ttl-ms]} @state
-        expires (+ (System/currentTimeMillis) ttl-ms)]
-    (locking map
-      (.put map k {:vec embedding :expires-at expires}))
-    embedding))
+  "Insert a fresh embedding into the cache. The 4-arity scopes the entry to an
+   embedding space id."
+  ([collection-name text embedding] (store! collection-name nil text embedding))
+  ([collection-name space-id text embedding]
+   (let [k (cache-key collection-name space-id text)
+         {:keys [^LinkedHashMap map ttl-ms]} @state
+         expires (+ (System/currentTimeMillis) ttl-ms)]
+     (locking map
+       (.put map k {:vec embedding :expires-at expires}))
+     embedding)))
 
 (defn stats
   []

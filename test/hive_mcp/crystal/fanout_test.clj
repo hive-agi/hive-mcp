@@ -51,6 +51,15 @@
                           :cross-cutting-decisions [{:dec :x}]
                           :session-timing          {:t 100}})))
 
+(deftest wrap-counts-only-session-movements-to-done
+  (let [slice (assoc bs/empty-scope-slice
+                     :kanban-activity [{:id "board-snapshot-1"} {:id "board-snapshot-2"}]
+                     :kanban-movements [{:kanban-movement/from :todo :kanban-movement/to :done}
+                                        {:kanban-movement/from :todo :kanban-movement/to :inprogress}])
+        harvest (fan/slice->harvested "hive" slice {})]
+    (is (= 2 (get-in harvest [:summary :kanban-completed])))
+    (is (= 1 (get-in harvest [:summary :kanban-closed-transitions])))))
+
 ;; =============================================================================
 ;; Step-5 — fan-out shape and per-scope isolation
 ;; =============================================================================

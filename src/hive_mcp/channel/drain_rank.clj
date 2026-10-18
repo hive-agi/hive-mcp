@@ -154,15 +154,15 @@
 
 (defn- budget-prefix
   "Count of leading entries whose pr-str total fits `budget`.
-   At least 1 whenever `entries` is non-empty."
-  [entries budget]
+   At least 1 whenever `entries` is non-empty with the default budget;
+   an explicit caller budget strictly defers entries too large for this turn."
+  [entries budget strict?]
   (let [n (count entries)]
-    (loop [taken 0
-           chars 0]
+    (loop [taken 0 chars 0]
       (if (>= taken n)
         taken
         (let [c (+ chars (count (pr-str (nth entries taken))))]
-          (if (and (pos? taken) (> c budget))
+          (if (and (> c budget) (or strict? (pos? taken)))
             taken
             (recur (inc taken) c)))))))
 
@@ -183,7 +183,7 @@
    Returns {:ordered <every pending entry, floor lane first>
             :batch   <prefix of :ordered fitting the budget>
             :taken   <count of :batch>}."
-  [pending {:keys [tokens offers char-budget pins floor-cap]}]
+  [pending {:keys [tokens offers char-budget pins floor-cap strict-budget?]}]
   (let [pin-set (set pins)
         indexed (vec (map-indexed vector pending))
         floor-all (filterv (fn [[_ e]] (= :floor (lane e pin-set))) indexed)
@@ -199,7 +199,7 @@
                               pool-idx))
                (into [] (map second) (sort-by first pool-idx)))
         ordered (into floor pool)
-        taken (budget-prefix ordered (or char-budget default-char-budget))]
+        taken (budget-prefix ordered (or char-budget default-char-budget) strict-budget?)]
     {:ordered ordered
      :batch (subvec ordered 0 taken)
      :taken taken}))

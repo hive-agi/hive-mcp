@@ -52,3 +52,9 @@
     (let [resp (q/handle-query {:query "how do I..." :created_after "2026-07-12T00:00:00"
                                 :directory "/tmp"})]
       (is (re-find #"does not accept :query" (pr-str resp))))))
+
+(deftest oversized-query-reports-limit-instead-of-empty-result
+  (let [response (q/handle-query {:type "ingestion" :tags ["source:ffcd3f0cbcd0a558"]
+                                  :limit 5000 :scope "all" :directory "/tmp"})]
+    (is (true? (:isError response)))
+    (is (re-find #"limit must be between" (pr-str response)))))

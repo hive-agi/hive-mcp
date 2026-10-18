@@ -101,7 +101,7 @@
   "Spawn `resume`: continue run_id at its tip, or fork it at `at`."
   [:map {:closed true
          :decode/string {:leave drop-absent-resume-keys}}
-   [:run_id {:json-schema/description "Chat-point run id to continue: a prior collect's chat_point.run_id, or the transcript tool's runs command."}
+   [:run_id {:json-schema/description "Chat-point run id to continue, dead lings included: the run_id of a `transcript runs` row, the run_id on a `transcript list` row (that agent's newest run), or a prior collect's chat_point.run_id."}
     NonBlankString]
    [:at {:optional true} ChatPointAt]
    [:prompt {:optional true :json-schema/description "Optional message appended at the resume/branch point."}

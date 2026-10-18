@@ -410,8 +410,8 @@
         ;; Verify state updates
         (is (contains? (:completed @dag/dag-state) "task-a"))
         (is (not (contains? (:dispatched @dag/dag-state) "task-a")))
-        ;; A was deleted from chroma (moved to done)
-        (is (nil? (get @*chroma-entries "task-a")))
+        ;; A is kept for review (moved to inreview, not deleted as done)
+        (is (some? (get @*chroma-entries "task-a")))
         ;; B and C should now be dispatched (they depend only on A)
         (is (= 2 (count @*spawned-lings)) "B and C should be auto-dispatched")))))
 
