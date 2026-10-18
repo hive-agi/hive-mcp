@@ -90,23 +90,38 @@
             (is (= "second result" (get-in @entries [id :content :description])))))))))
 
 (deftest refused-write-fails-loudly
-  (let [id      "fx3-refused"
-        entries (atom {id (card id "done")})
-        refusal {:success? false :error :qdrant/embed-failed :message "embedder returned no vector"}]
-    (with-store* (slow-store entries 0 refusal)
-      (fn []
-        (let [res (events/dispatch-edit! {:task-id id :description "lost?"})]
-          (is (r/err? res))
-          (is (= :kanban/write-rejected (:error res)))
-          (is (str/includes? (str (:message res)) "embedder returned no vector")))
-        (let [res (mem-kanban/handle-mem-kanban-move {:task_id id :description "lost?"})]
-          (is (:isError res) "the MCP boundary reports the refusal, not a success row"))
-        (is (= "original" (get-in (facade/get-entry-by-id id) [:content :description]))
-            "a refused write is not served from the read-your-writes overlay")))))
+  (doseq [[label refusal needle]
+          [["qdrant {:success? false}"
+            {:success? false :error :qdrant/embed-failed :message "embedder returned no vector"}
+            "embedder returned no vector"]
+           ["milvus {:error ..}"
+            {:error :milvus/unavailable :id "x" :detail "milvus connection refused"
+             :reconnecting? true}
+            "milvus connection refused"]]]
+    (testing label
+      (let [id      (str "fx3-refused-" (hash label))
+            entries (atom {id (card id "done")})]
+        (with-store* (slow-store entries 0 refusal)
+          (fn []
+            (let [res (events/dispatch-edit! {:task-id id :description "lost?"})]
+              (is (r/err? res))
+              (is (= :kanban/write-rejected (:error res)))
+              (is (str/includes? (str (:message res)) needle)))
+            (let [res (mem-kanban/handle-mem-kanban-move {:task_id id :description "lost?"})]
+              (is (:isError res) "the MCP boundary reports the refusal, not a success row"))
+            (is (= "original" (get-in (facade/get-entry-by-id id) [:content :description]))
+                "a refused write is not served from the read-your-writes overlay")))))))
 
 (deftest write-rejected-vocabulary
   (is (facade/write-rejected? nil))
   (is (facade/write-rejected? {:success? false :error :x}))
+  (is (facade/write-rejected? {:error :milvus/unavailable :id "x" :detail "down" :reconnecting? false})
+      "a hive-milvus refusal carries :error and no :success? key")
+  (is (facade/write-rejected? {:queued? true :error :x})
+      "a queue ack that also carries an error is a failure")
+  (is (not (facade/write-rejected? {:queued? true}))
+      "a queued ack is an accepted write, not a refusal")
+  (is (not (facade/write-rejected? {:error nil :id "x"})))
   (is (not (facade/write-rejected? "id")))
   (is (not (facade/write-rejected? true)))
   (is (not (facade/write-rejected? {:op :update-entry! :id "x"}))))

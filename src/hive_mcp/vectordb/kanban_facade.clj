@@ -28,7 +28,8 @@
             [hive-mcp.config.core :as cfg-core]
             [hive-mcp.protocols.memory :as proto]
             [taoensso.timbre :as log]
-            [hive-mcp.events.write-events :as write-events]))
+            [hive-mcp.events.write-events :as write-events]
+            [hive-spi.memory.contract :as contract]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -262,13 +263,13 @@
 
 (defn write-rejected?
   "True when a store's answer to a write means nothing landed: nil (unknown
-   id, the hive-spi :absent answer) or the `{:success? false ...}` failure map
-   a backend returns instead of throwing (hive-qdrant answers its embed
-   refusal this way). Any other answer, an id string, true, a queued-op map,
-   is an accepted write."
+   id, the hive-spi :absent answer) or a hive-spi failure map, i.e.
+   `{:success? false ...}` (hive-qdrant) or `{:error <category> ...}`
+   (hive-milvus). Any other answer, an id string, true, a `{:queued? true}`
+   ack or a queued-op map, is an accepted write."
   [result]
   (or (nil? result)
-      (and (map? result) (false? (:success? result)))))
+      (contract/failure? result)))
 
 (defn update-entry!
   "Soft-update a kanban entry (status retag, tag rewrite). In :dual-read,

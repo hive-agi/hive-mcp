@@ -165,9 +165,9 @@
    into a Result. The effect map alone is not proof of a write: the fx runner
    drops the commit's answer and swallows its exceptions, so `facade-update!`
    publishes the answer through `keffects/*write-outcome*`. A store refusal
-   (nil or `{:success? false}`) is `:kanban/write-rejected`, and a commit that
-   never answered (it threw) is `:kanban/write-failed`, instead of an ok the
-   caller reads as success."
+   (nil or a hive-spi failure map, see `kanban-facade/write-rejected?`) is
+   `:kanban/write-rejected`, and a commit that never answered (it threw) is
+   `:kanban/write-failed`, instead of an ok the caller reads as success."
   [event task-id]
   (locking (entry-lock task-id)
     (let [outcome (atom nil)
@@ -189,7 +189,8 @@
           (r/err :kanban/write-rejected
                  {:message (str "Store refused the kanban write for " task-id
                                 (when (map? result)
-                                  (str ": " (or (:message result) (:error result)))))
+                                  (str ": " (or (:message result) (:detail result)
+                                                (:error result)))))
                   :task-id task-id
                   :store-answer result}))
 
