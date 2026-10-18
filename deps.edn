@@ -166,10 +166,8 @@
         ;; hive-mcp.addons.protocol re-exports it via def-aliases so the ~30
         ;; monorepo addon implementors can depend on hive-addon instead of
         ;; compile-depending on hive-mcp.
-        ;; Git coordinate, not Maven: v1.1.6 is the first tag carrying
-        ;; hive-addon.resources and it is tagged but not on Clojars (latest
-        ;; published is 1.1.4). Return to {:mvn/version ...} once it is released.
-        io.github.hive-agi/hive-addon {:git/tag "v1.1.6" :git/sha "ba8b1fa"}
+        ;; 1.1.7 is the first Clojars release carrying hive-addon.resources.
+        io.github.hive-agi/hive-addon {:mvn/version "1.1.7"}
 
         ;; hive-di — declarative typed config resolution (defconfig/env/literal)
         ;; Used by hive-mcp.embeddings.env-config and downstream addons.
