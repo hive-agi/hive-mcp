@@ -21,8 +21,24 @@
                                    :scope       scope}))
     (dispatch-ctx/ensure-context prompt)))
 
+(defn dispatch-error-text
+  "The MCP error text for an exception E a dispatch threw. A wrapper's own
+   message names no cause (the ling dispatch re-throws as \"Failed to
+   dispatch to ling\"), so the root cause's message, from the wrapper's
+   ex-data :error or its ex-cause, is appended unless the message already
+   carries it. Pure."
+  [e]
+  (let [msg   (or (ex-message e) (str (type e)))
+        cause (or (some-> (ex-data e) :error str)
+                  (some-> (ex-cause e) ex-message))]
+    (str "Failed to dispatch: "
+         (if (and cause (not (.contains ^String msg ^String cause)))
+           (str msg ": " cause)
+           msg))))
+
 (defn handle-dispatch
-  "Dispatch a task to an agent."
+  "Dispatch a task to an agent. A refused dispatch answers the root cause's
+   words (`dispatch-error-text`), not only the wrapper's."
   [{:keys [agent_id prompt files priority ctx_refs kg_node_ids scope]}]
   (cond
     (empty? agent_id)
@@ -61,4 +77,4 @@
         (mcp-error (str "Agent not found: " agent_id)))
       (catch Exception e
         (log/error "Failed to dispatch to agent" {:agent_id agent_id :error (ex-message e)})
-        (mcp-error (str "Failed to dispatch: " (ex-message e)))))))
+        (mcp-error (dispatch-error-text e))))))
