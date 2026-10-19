@@ -49,7 +49,8 @@
      (sm/resolve-alias (sm/spawn-mode :headless))
      ;; => {:adt/type :SpawnMode, :adt/variant :headless}"
   (:require [hive-dsl.adt :refer [defadt adt-variant]]
-            [hive-mcp.agent.spawn-mode-registry :as registry]))
+            [hive-mcp.agent.spawn-mode-registry :as registry]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -79,6 +80,20 @@
 ;; =============================================================================
 ;; Keyword Coercion (backward compatibility bridge)
 ;; =============================================================================
+
+;; =============================================================================
+;; Schemas (value objects; every schema here generates). The value schema is
+;; SpawnModeValue because the ADT descriptor itself already owns `SpawnMode`.
+;; =============================================================================
+
+(def SpawnModeKw
+  [:enum :claude :vterm :headless :agent-sdk])
+
+(def SpawnModeValue
+  "SpawnMode ADT value."
+  [:map
+   [:adt/type [:= :SpawnMode]]
+   [:adt/variant SpawnModeKw]])
 
 (defn from-keyword
   "Coerce a keyword or string to a SpawnMode ADT value.
@@ -160,6 +175,26 @@
   "Is this spawn mode visible in MCP tool enums?"
   [sm]
   (get-in (registry/registry) [(adt-variant sm) :mcp?] false))
+
+(m/=> from-keyword [:=> [:cat :any] [:maybe SpawnModeValue]])
+
+(m/=> to-keyword [:=> [:cat SpawnModeValue] SpawnModeKw])
+
+(m/=> resolve-alias [:=> [:cat SpawnModeValue] SpawnModeValue])
+
+(m/=> canonical? [:=> [:cat SpawnModeValue] :boolean])
+
+(m/=> requires-emacs? [:=> [:cat SpawnModeValue] :boolean])
+
+(m/=> io-model [:=> [:cat SpawnModeValue] [:enum :buffer :stdin-stdout :api]])
+
+(m/=> slot-limit [:=> [:cat SpawnModeValue] [:maybe :int]])
+
+(m/=> capabilities [:=> [:cat SpawnModeValue] [:set :keyword]])
+
+(m/=> has-capability? [:=> [:cat SpawnModeValue :any] :boolean])
+
+(m/=> mcp-visible? [:=> [:cat SpawnModeValue] :boolean])
 
 ;; =============================================================================
 ;; Variant Sets (for iteration / validation)

@@ -1,0 +1,58 @@
+{:case-0 {:out nil, :in []},
+ :case-1
+ {:out
+  ["### Semantic Queries (search during Silence)"
+   "- `memory search \"qV\"`"
+   "- `memory search \"qzq\"`"
+   "- `memory search \"qN\"`"
+   ""],
+  :in ["qV" "qzq" "qN"]},
+ :case-2
+ {:out
+  ["### Semantic Queries (search during Silence)"
+   "- `memory search \"qsr3\"`"
+   "- `memory search \"q542\"`"
+   "- `memory search \"qIW\"`"
+   "- `memory search \"q7s7\"`"
+   "- `memory search \"qYI\"`"
+   "- `memory search \"q4\"`"
+   ""],
+  :in ["qsr3" "q542" "qIW" "q7s7" "qYI" "q4"]},
+ :case-3
+ {:out
+  ["### Semantic Queries (search during Silence)"
+   "- `memory search \"qj\"`"
+   "- `memory search \"qGipx\"`"
+   "- `memory search \"qB\"`"
+   "- `memory search \"q67\"`"
+   ""],
+  :in ["qj" "qGipx" "qB" "q67"]},
+ :case-4
+ {:out
+  ["### Semantic Queries (search during Silence)"
+   "- `memory search \"q3qv3\"`"
+   "- `memory search \"qoa\"`"
+   ""],
+  :in ["q3qv3" "qoa"]},
+ :case-5
+ {:out
+  ["### Semantic Queries (search during Silence)"
+   "- `memory search \"qU\"`"
+   "- `memory search \"qh\"`"
+   ""],
+  :in ["qU" "qh"]},
+ :case-6
+ {:out
+  ["### Semantic Queries (search during Silence)"
+   "- `memory search \"qz\"`"
+   "- `memory search \"qZ3ld\"`"
+   "- `memory search \"q7v4\"`"
+   ""],
+  :in ["qz" "qZ3ld" "q7v4"]},
+ :case-7
+ {:out
+  ["### Semantic Queries (search during Silence)"
+   "- `memory search \"qi8as9\"`"
+   "- `memory search \"q4q\"`"
+   ""],
+  :in ["qi8as9" "q4q"]}}

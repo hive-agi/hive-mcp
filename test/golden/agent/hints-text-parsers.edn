@@ -1,0 +1,7 @@
+{:memory-ids ["a1" "a2" "r1" "r2" "r3" "r4" "r5" "r6"],
+ :axiom-ids ["a1" "a2"],
+ :queries ["alpha" "beta"],
+ :tags [["x" "y"] ["z"]],
+ :kg {:seeds ["s1" "s2"], :depth 4},
+ :meaningful ["keep" "also"],
+ :nothing [nil nil]}
