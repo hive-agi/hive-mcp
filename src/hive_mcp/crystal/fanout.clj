@@ -134,6 +134,7 @@
                          :recall-count         (count (:recalls slice))
                          :hivemind-shout-count (count (:hivemind-messages slice))
                          :kanban-completed     (count (:kanban-activity slice))
+                         :kanban-closed-transitions (count (filter #(= "done" (name (or (:kanban-movement/to %) :unknown))) (:kanban-movements slice)))
                          :kg-edge-count        (count (:kg-edges-created slice))
                          :kanban-movement-count (count (:kanban-movements slice))
                          :created-count        (count (:memory-ids-created slice))

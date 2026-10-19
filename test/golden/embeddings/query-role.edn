@@ -1,0 +1,4 @@
+{:default "Where is the design?",
+ :raw "  keep whitespace  ",
+ :revision
+ "Instruct: Given a memory search query, retrieve stored memory passages relevant to the query\nQuery: Where is the design?"}

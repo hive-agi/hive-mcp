@@ -1,0 +1,7 @@
+{:explicit-headless
+ [[{:id "plain"}]
+  [{:id "cheap", :context {:execution {:spawn-mode "headless"}}}]],
+ :explicit-terminal
+ [[{:id "terminal", :context {:execution {:spawn-mode "claude"}}}] []],
+ :provider-headless
+ [[] [{:id "cheap", :context {:execution {:provider "venice"}}}]]}

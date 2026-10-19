@@ -13,7 +13,8 @@
             [hive-mcp.tools.kanban.effects :as keffects]
             [hive-mcp.tools.kanban.predicates :as pred]
             [hive-mcp.tools.kanban.transitions :as kt]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [hive-mcp.vectordb.kanban-facade :as kanban-facade]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -105,13 +106,14 @@
      * `:kanban/temporal-record` op = `:kanban-edit`, emitted only when a
        field actually changed, so a no-op edit leaves no audit noise.
      * No completion hooks, no movement tracking, no delete effect"
-  [{:keys [:kanban/entry]} [_ {:keys [task-id title description priority]}]]
+  [{:keys [:kanban/entry]} [_ {:keys [task-id title description append-description priority]}]]
   (when (and entry (pred/kanban-entry? entry))
     (let [{:keys [changed new-content new-tags
                   old-title new-title old-priority new-priority]}
-          (kt/edit-transition entry {:title       title
-                                     :description description
-                                     :priority    priority})
+          (kt/edit-transition entry {:title              title
+                                     :description        description
+                                     :append-description append-description
+                                     :priority           priority})
           project-id (kt/extract-project-id-from-tags entry)]
       (cond-> {:kanban/facade-update
                {:task-id task-id
@@ -143,6 +145,56 @@
     (r/err :kanban/invalid-task
            {:message (str "Entry not found or not a kanban task: " task-id)
             :task-id task-id})))
+
+(defonce ^:private entry-locks
+  ;; One monitor per task id. Every kanban verb is a read-modify-write of the
+  ;; whole content map or tag vector (coeffect read, then facade commit), so
+  ;; two verbs on one id running at once both read the same entry and the
+  ;; later commit erases the earlier one's field.
+  (atom {}))
+
+(defn- entry-lock
+  "The monitor that serializes kanban writes on `task-id`."
+  [task-id]
+  (let [k (str task-id)]
+    (or (get @entry-locks k)
+        (get (swap! entry-locks (fn [m] (if (contains? m k) m (assoc m k (Object.))))) k))))
+
+(defn- dispatch-committed!
+  "Dispatch `event` under the per-id lock of `task-id` and lift the outcome
+   into a Result. The effect map alone is not proof of a write: the fx runner
+   drops the commit's answer and swallows its exceptions, so `facade-update!`
+   publishes the answer through `keffects/*write-outcome*`. A store refusal
+   (nil or a hive-spi failure map, see `kanban-facade/write-rejected?`) is
+   `:kanban/write-rejected`, and a commit that never answered (it threw) is
+   `:kanban/write-failed`, instead of an ok the caller reads as success."
+  [event task-id]
+  (locking (entry-lock task-id)
+    (let [outcome (atom nil)
+          ctx     (binding [keffects/*write-outcome* outcome]
+                    (router/dispatch-sync event))
+          res     (result-from-fx (:effects ctx) task-id)
+          answer  @outcome]
+      (cond
+        (not (r/ok? res)) res
+
+        (nil? answer)
+        (r/err :kanban/write-failed
+               {:message (str "The kanban commit for " task-id
+                              " did not complete (the store write threw; see the log)")
+                :task-id task-id})
+
+        (kanban-facade/write-rejected? (:result answer))
+        (let [result (:result answer)]
+          (r/err :kanban/write-rejected
+                 {:message (str "Store refused the kanban write for " task-id
+                                (when (map? result)
+                                  (str ": " (or (:message result) (:detail result)
+                                                (:error result)))))
+                  :task-id task-id
+                  :store-answer result}))
+
+        :else res))))
 
 (defn register-all!
   "Idempotent registration of cofx, fx, and event handlers."
@@ -198,8 +250,7 @@
       ;; Router runs the interceptor chain and `fx/do-fx` on the resulting
       ;; effects map, then returns the final context. We surface that
       ;; effects map to the caller as a Result.
-      (let [ctx (router/dispatch-sync [:kanban/move normalized])]
-        (result-from-fx (:effects ctx) (:task-id normalized))))))
+      (dispatch-committed! [:kanban/move normalized] (:task-id normalized)))))
 
 (defn dispatch-retag!
   "Public boundary entry point. Synchronously dispatch a `:kanban/retag` event
@@ -238,8 +289,7 @@
                       :remove-tags    remove-tags}})
 
     :else
-    (let [ctx (router/dispatch-sync [:kanban/retag event-payload])]
-      (result-from-fx (:effects ctx) task-id))))
+    (dispatch-committed! [:kanban/retag event-payload] task-id)))
 
 (defn dispatch-edit!
   "Public boundary entry point. Synchronously dispatch a `:kanban/edit` event
@@ -249,11 +299,12 @@
      {:task-id ..     — required
       :title ..       — optional, non-blank string to replace the title
       :description .. — optional, non-blank string to replace the description
+      :append-description .. — optional, non-blank text to append to description
       :priority ..    — optional, one of high|medium|low
       :directory ..}  — optional, threaded for cofx context
 
    A field that is absent, nil, or blank leaves the current value standing;
-   at least one of the three must be present.
+   at least one of the editable fields must be present.
 
    Returns:
      (r/ok effect-map)                      on success
@@ -261,7 +312,7 @@
      (r/err :kanban/nothing-to-edit ...)    when no editable field was given
      (r/err :kanban/invalid-priority ...)   when priority is outside the enum
      (r/err :kanban/invalid-task ...)       when entry missing or non-kanban"
-  [{:keys [task-id title description priority] :as event-payload}]
+  [{:keys [task-id title description append-description priority] :as event-payload}]
   (init!)
   (let [given?     (fn [v] (and (string? v) (not (clojure.string/blank? v))))
         priorities #{"high" "medium" "low"}]
@@ -272,9 +323,9 @@
              {:message "Edit requires :task-id"
               :given   task-id})
 
-      (not (some given? [title description priority]))
+      (not (some given? [title description append-description priority]))
       (r/err :kanban/nothing-to-edit
-             {:message "Edit requires at least one of :title, :description, :priority"
+             {:message "Edit requires at least one of :title, :description, :append-description, :priority"
               :task-id task-id})
 
       (and (given? priority) (not (priorities priority)))
@@ -283,5 +334,4 @@
               :given   priority})
 
       :else
-      (let [ctx (router/dispatch-sync [:kanban/edit event-payload])]
-        (result-from-fx (:effects ctx) task-id)))))
+      (dispatch-committed! [:kanban/edit event-payload] task-id))))

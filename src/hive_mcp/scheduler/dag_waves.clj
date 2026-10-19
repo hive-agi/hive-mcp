@@ -11,7 +11,8 @@
             [clojure.core.async :as async :refer [go-loop close!]]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive.events :as ev]))
+            [hive.events :as ev]
+            [hive-mcp.scheduler.dag-eligibility :as elig]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -71,11 +72,13 @@
       (nil? (get-kanban-task task-id))))
 
 (defn- move-kanban-done!
-  "Move a kanban task to 'done' status."
+  "Move a finished task's kanban card to 'inreview'. A ling ending its run is
+   not evidence the work landed, so the card waits for review; the scheduler
+   counts the task complete through its own state, not the card's status."
   [task-id directory]
   (result/rescue nil
                  (kanban-port/transition!
-                  {:task-id task-id :new-status "done" :directory directory})))
+                  {:task-id task-id :new-status "inreview" :directory directory})))
 
 
 ;; =============================================================================
@@ -109,8 +112,10 @@
   "What this scheduler honours in start-dag! opts. A caller that needs a
    guarantee (e.g. :task-ids — never touch cards outside the plan) checks for it
    here BEFORE starting, because an older scheduler would silently ignore the
-   key and drain the whole todo board."
-  #{:task-ids})
+   key and drain the whole todo board. :plan-scope = a plan's own cards bound
+   the run (and :require-plan-scope? / :board-wide? are honoured);
+   :human-guard = human-only cards are never dispatched."
+  #{:task-ids :plan-scope :human-guard})
 
 (defn- in-scope
   "TODOS restricted to TASK-IDS, or every todo when TASK-IDS is nil (the
@@ -123,12 +128,15 @@
 
 (defn find-ready-tasks
   "Find tasks whose all dependencies have been completed.
-   With TASK-IDS (a collection) only those cards are candidates; nil means
-   every todo on the board."
+   With TASK-IDS (a collection) only those cards are candidates, lowest open
+   wave first; nil means every todo on the board. Human-only cards are never
+   candidates (see dag-eligibility)."
   ([directory completed dispatched failed]
    (find-ready-tasks directory completed dispatched failed nil))
   ([directory completed dispatched failed task-ids]
-  (let [todos (in-scope task-ids (get-kanban-todos directory))
+  (let [todos (->> (get-kanban-todos directory)
+                   (in-scope task-ids)
+                   (elig/eligible (some? task-ids) (into (set completed) failed)))
         already-handled (into (set (keys dispatched))
                               (into completed failed))]
     (->> todos
@@ -141,6 +149,7 @@
                    (when all-deps-done?
                      {:task-id task-id
                       :title   (:title task)
+                      :description (:description task)
                       :role    (task-role task)
                       :deps    deps
                       :dep-count (count deps)}))))
@@ -183,21 +192,28 @@
    Threads :max-budget-usd so each dispatched ling carries a spend guardrail:
    this scheduler auto-advances waves on completion, so an uncapped ling here
    is an unbounded spend loop with no operator in it."
-  [task-id title role {:keys [cwd presets project-id prefer-lightweight? run-id max-budget-usd]
+  [task-id title role {:keys [cwd presets project-id prefer-lightweight? run-id max-budget-usd
+                              description parent]
                        :or {prefer-lightweight? true}}]
   (let [safe-title (-> (or title "task")
                        str/lower-case
                        (str/replace #"[^a-z0-9]+" "-"))
         truncated (subs safe-title 0 (min 30 (count safe-title)))
         ling-id (str "swarm-dag-" truncated "-" (System/currentTimeMillis))
-        role* (normalize-role role)]
+        role* (normalize-role role)
+        task (str title
+                  "\n\nKanban card " task-id ": read it in full with"
+                  " `project kanban get id=" task-id "` before starting."
+                  (when-not (str/blank? description) (str "\n\n" description)))]
     (result/try-effect* :dag/spawn-failed
                         (ling/create-ling! ling-id
                                            (cond-> {:cwd cwd
                                                     :presets (or presets ["ling"])
                                                     :project-id project-id
                                                     :kanban-task-id task-id
-                                                    :task title}
+                                                    :task task}
+                                             parent
+                                             (assoc :parent parent)
                                              run-id
                                              (assoc :run-id run-id)
                                              (and max-budget-usd (pos? max-budget-usd))
@@ -222,8 +238,9 @@
 
     (let [dispatched-results
           (doall
-           (for [{:keys [task-id title role]} tasks-to-dispatch]
-             (let [r (spawn-ling-for-task task-id title role opts)]
+           (for [{:keys [task-id title role description]} tasks-to-dispatch]
+             (let [r (spawn-ling-for-task task-id title role
+                                          (assoc opts :description description))]
                (if-let [ling-id (:ok r)]
                  (do
                    ;; Track dispatch in state
@@ -474,10 +491,13 @@
    `:max-budget-usd` to widen or narrow it; pass 0 only if you have another
    guardrail.
 
-   `:task-ids` bounds the run to exactly those kanban cards: nothing else on
-   the board is ever dispatched, by this wave or any auto-advanced one. Omit it
-   only for the board-wide mode (every todo is a candidate). An EMPTY
-   `:task-ids` is refused rather than read as \"no bound\".
+   The run is bounded to a set of kanban cards, by this wave and every
+   auto-advanced one (dag-eligibility/run-scope): `:task-ids` when given, else
+   the plan's own cards (its `plan --depends-on--> task` KG edges, written by
+   `kanban plan-to-kanban`). Only `:board-wide? true`, or a plan with no
+   linked cards and no `:require-plan-scope?`, makes every todo a candidate;
+   with `:require-plan-scope?` such a plan is refused. An EMPTY `:task-ids` is
+   refused rather than read as \"no bound\".
 
    A start that leaves nothing in flight (no ready task, or every spawn of the
    first wave failed) stops the scheduler before returning: with no ling
@@ -496,7 +516,9 @@
   (let [{:keys [max-slots cwd presets project-id run-id max-budget-usd task-ids]
          :or {max-slots 5
               presets ["ling"]}} opts
-        task-ids (some-> task-ids set)
+        task-ids (elig/run-scope plan-id opts
+                                 (when-not (or (seq task-ids) (:board-wide? opts))
+                                   (get-task-dependencies plan-id)))
         effective-project-id (or project-id
                                  (when cwd (scope/get-current-project-id cwd)))
         effective-budget     (if (some? max-budget-usd)

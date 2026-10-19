@@ -191,3 +191,22 @@
                                              :owner "hive.agent"})
       (is (= "addon-kill" (:text (h {:command "kill"}))))
       (is (= "addon-kill" (:text (swarm {:command "agent kill"})))))))
+
+(deftest agent-broadcast-routes-through-the-addon-seam
+  (let [agent-handlers @(requiring-resolve 'hive-mcp.tools.consolidated.agent/canonical-handlers)
+        h (cli/make-cli-handler agent-handlers)
+        swarm (cli/make-cli-handler {:agent agent-handlers})]
+    (testing "without the addon, broadcast fails closed on both paths"
+      (is (:isError (h {:command "broadcast" :prompt "brief"})))
+      (is (:isError (swarm {:command "agent broadcast" :prompt "brief"}))))
+    (testing "the contributed handler receives scope and caller identity unchanged"
+      (let [calls (atom [])]
+        (verbs/contribute-verb! "agent" :broadcast
+                                {:handler (fn [p] (swap! calls conj p)
+                                            {:type "text" :text "delivered"})
+                                 :owner "hive.agent"})
+        (is (= "delivered" (:text (h {:command "broadcast" :scope "children"
+                                      :_caller_id "coordinator:one" :prompt "brief"}))))
+        (is (= "delivered" (:text (swarm {:command "agent broadcast" :scope "all"
+                                          :_caller_id "coordinator:one" :prompt "brief"}))))
+        (is (= ["children" "all"] (mapv :scope @calls)))))))

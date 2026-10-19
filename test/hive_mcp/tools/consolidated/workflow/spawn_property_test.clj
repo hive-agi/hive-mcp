@@ -5,7 +5,8 @@
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
-            [hive-mcp.tools.consolidated.workflow.spawn :as spawn]))
+            [hive-mcp.tools.consolidated.workflow.spawn :as spawn]
+            [hive-test.trifecta :refer [deftrifecta]]))
 
 ;; Access private functions via var deref
 (def ^:private compute-route-batches
@@ -170,6 +171,39 @@
                                           :active-counts {:active-vterm 2 :active-headless 1 :active-total 3}})]
       (is (empty? vt))
       (is (empty? hl)))))
+
+(deftrifecta mixed-route-honors-explicit-execution
+  compute-route-batches
+  {:golden-path "test/golden/workflow/mixed-route-execution.edn"
+   :cases {:explicit-headless {:effective-spawn-mode :mixed
+                               :ling-tasks [{:id "cheap" :context {:execution {:spawn-mode "headless"}}}
+                                            {:id "plain"}]
+                               :max-slots 2
+                               :active-counts {:active-vterm 0 :active-headless 0 :active-total 0}}
+           :provider-headless {:effective-spawn-mode :mixed
+                               :ling-tasks [{:id "cheap" :context {:execution {:provider "venice"}}}]
+                               :max-slots 1
+                               :active-counts {:active-vterm 0 :active-headless 0 :active-total 0}}
+           :explicit-terminal {:effective-spawn-mode :mixed
+                               :ling-tasks [{:id "terminal" :context {:execution {:spawn-mode "claude"}}}]
+                               :max-slots 1
+                               :active-counts {:active-vterm 0 :active-headless 0 :active-total 0}}}
+   :gen (gen/let [n (gen/choose 1 6)
+                  mode (gen/elements [nil "headless" "claude"])]
+          {:effective-spawn-mode :mixed
+           :ling-tasks (mapv (fn [i] {:id (str i) :context {:execution {:spawn-mode mode}}}) (range n))
+           :max-slots n
+           :active-counts {:active-vterm 0 :active-headless 0 :active-total 0}})
+   :pred (fn [[vt hl]] (and (vector? vt) (vector? hl)
+                             (not-any? #(#{"headless" :headless}
+                                           (get-in % [:context :execution :spawn-mode])) vt)
+                             (not-any? #(#{"claude" :claude}
+                                           (get-in % [:context :execution :spawn-mode])) hl)
+                             (<= (+ (count vt) (count hl)) 6)))
+   :num-tests 60
+   :mutations [["old positional vterm batch"
+                (fn [{:keys [ling-tasks]}] [(vec ling-tasks) []])]
+               ["drops routed tasks" (fn [_] [[] []])]]})
 
 (deftest build-spark-response-routes-are-lings-only
   (testing "the response reports vterm and headless routes and nothing else"

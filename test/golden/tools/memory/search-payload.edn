@@ -1,6 +1,7 @@
 {:caller-custom
  {:results [1],
   :count 1,
+  :dropped-null-hits 0,
   :query "q",
   :scope "p",
   :excluded-tags ["kanban"],
@@ -8,6 +9,7 @@
  :caller-empty
  {:results [],
   :count 0,
+  :dropped-null-hits 0,
   :query "q",
   :scope "p",
   :excluded-tags [],
@@ -15,6 +17,7 @@
  :default-excludes
  {:results [1 2],
   :count 2,
+  :dropped-null-hits 0,
   :query "q",
   :scope "p",
   :excluded-tags ["carto" "ingestion-chunk"],
@@ -22,6 +25,7 @@
  :nil-excludes
  {:results [],
   :count 0,
+  :dropped-null-hits 0,
   :query "q",
   :scope nil,
   :excluded-tags [],

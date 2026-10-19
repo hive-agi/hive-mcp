@@ -1,0 +1,10 @@
+{:digest {:changes true},
+ :dimension {:changes true},
+ :metric {:changes true},
+ :model {:changes true},
+ :normalized {:changes true},
+ :provider {:changes true},
+ :query {:changes true},
+ :serializer {:changes true},
+ :stable {:hex-64 true, :repeatable true, :key-order-free true},
+ :unrecorded {:changes true, :not-unknown true}}

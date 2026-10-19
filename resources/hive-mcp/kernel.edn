@@ -6,6 +6,7 @@
 ;; listed, and an unlisted one fails the gate. It only shrinks too; new code goes to the addon.
 {:kernel/segments
  ["server"
+  "service"
   "system"
   "transport"
   "config"
@@ -50,6 +51,7 @@
   hive-mcp.tools.composite
   hive-mcp.tools.composite.default-async
   hive-mcp.tools.schema-keys
+  hive-mcp.tools.async-params
   hive-mcp.tools.cli
   hive-mcp.tools.op-outcome
   hive-mcp.tools.result-bridge
@@ -118,6 +120,7 @@
   "recall" :hive-memory
   "router" :hive-memory
   "saa" :hive-workflows
+  "scheduler.dag-eligibility" :hive-workflows
   "scheduler.dag-waves" :hive-workflows
   "scheduler.decay" :hive-memory
   "scheduler.kg-gc" :hive-memory

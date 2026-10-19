@@ -76,6 +76,18 @@
         (is (true? (:isError (first out))))
         (is (re-find #"REFUSED" (text-of out)))))))
 
+(deftest an-ask-nobody-granted-is-refused
+  (with-seam*
+    (deny-seam :guard/verdict :ask :guard/reason "this call reaches another project")
+    (fn []
+      (let [calls (atom [])
+            h (mw/wrap-handler-guard (counting-handler calls) "memory")
+            out (h {:command "query" :scope "baston"})]
+        (is (empty? @calls) "an ungranted ask must fail closed")
+        (is (true? (:isError (first out))))
+        (is (re-find #"another project" (text-of out)))
+        (is (re-find #"permission" (text-of out)))))))
+
 (deftest a-deny-is-arguable
   (with-seam*
     (deny-seam)

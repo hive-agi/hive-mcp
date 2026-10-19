@@ -27,7 +27,8 @@
             [hive-mcp.hot.keep :as keep]
             [hive-mcp.hot.self :as self]
             [taoensso.timbre :as log]
-            [hive-mcp.hot.reseat :as reseat])
+            [hive-mcp.hot.reseat :as reseat]
+            [hive-mcp.hot.registrations :as registrations])
   (:import [java.io File]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -142,6 +143,10 @@
    :host/remount! is nil here: only the `hot` tool knows the mounted specs.
    :host/reseat! runs the open registry of hive-mcp.hot.reseat: every loaded
    namespace that holds live record instances rebuilds them itself.
+   :host/rebind-registrations! re-points every fx / cofx / event registration
+   owned by a loaded namespace at the var's fresh value
+   (hive-mcp.hot.registrations): the registrars run from init, several behind
+   a defonce gate, so no reload re-runs them.
 
    There is no :host/refresh-tools! port by default: :host/refresh-surface!
    refreshes every registered tool surface (the server context included) and
@@ -158,7 +163,8 @@
    :host/refresh-surface! (when-let [refresh (soft 'hive-mcp.extensions.reactive/refresh-surface!)]
                             (fn [] (refresh nil)))
    :host/remount!         nil
-   :host/reseat!          (reseat/via-var `reseat/reseat!)})
+   :host/reseat!          (reseat/via-var `reseat/reseat!)
+   :host/rebind-registrations! (reseat/via-var `registrations/rebind-stale!)})
 
 (defn- prepare!
   "Extend hive-hot with core's roots and the interlock. Returns
@@ -220,19 +226,33 @@
     tools
     (when (map? surface) (:server-tools surface))))
 
+(defn stale-registrations
+  "What the report's :stale-registrations says. hive-hot scans the registries
+   at the end of its pass (RES), BEFORE the host repairs run; once
+   :host/rebind-registrations! has run, its rescan (REBIND :remaining) is the
+   truth about what is still stale. A port that failed or is absent leaves
+   hive-hot's answer standing. Pure."
+  [res rebind]
+  (if (and (map? rebind) (contains? rebind :remaining))
+    (not-empty (vec (:remaining rebind)))
+    (:stale-registrations res)))
+
 (defn reload!
   "Reload the changes under core's roots, plus whatever repair the image
    needs, and repair what a namespace reload leaves behind. Never throws;
    answers a report:
      :ok? :pass :roots :loaded :unloaded :failed :error :ms :skipped :dragged
-     :unchanged? :multi-file :stale-registrations :interlock :kept-vars
-     :forced-unload :orphans :dead-links :kept-state :records-redefined
-     :remount :reseated :tools-refreshed :surface :hive-hot
+     :unchanged? :multi-file :stale-registrations :rebound-registrations
+     :interlock :kept-vars :forced-unload :orphans :dead-links :kept-state
+     :records-redefined :remount :reseated :tools-refreshed :surface :hive-hot
 
    The repairs run in order: remount the addons, re-seat the live record
    instances of every loaded namespace that registered a re-seater
-   (hive-mcp.hot.reseat), then refresh the surface (tool table included), so
-   the table is rebuilt over re-seated holders, once.
+   (hive-mcp.hot.reseat), re-point every fx/cofx/event registration owned by
+   a loaded namespace at its var's fresh value (hive-mcp.hot.registrations),
+   then refresh the surface (tool table included), so the table is rebuilt
+   over re-seated holders, once. :stale-registrations is what is still stale
+   AFTER the rebind, :rebound-registrations what the rebind repaired.
 
    :pass is :scoped when a change under the roots drove hive-hot, :pending
    when nothing changed but the image had repairs queued, :none otherwise."
@@ -259,32 +279,34 @@
              repair?  (and ok? (seq loaded))
              remount  (when repair? (repair! ports :host/remount! loaded))
              reseated (when repair? (repair! ports :host/reseat! loaded))
+             rebound  (when repair? (repair! ports :host/rebind-registrations! loaded))
              tools    (when repair? (repair! ports :host/refresh-tools!))
              surface  (when repair? (repair! ports :host/refresh-surface!))]
          (log/info "core hot-reload" {:ok? ok? :pass kind :loaded (count loaded)
                                       :failed (:failed res) :ms (:ms res)})
-         {:ok?                 ok?
-          :pass                kind
-          :roots               roots
-          :loaded              loaded
-          :unloaded            (mapv str (:unloaded res))
-          :failed              (some-> (:failed res) str)
-          :error               (:error res)
-          :ms                  (:ms res)
-          :skipped             (vec (:skipped res))
-          :dragged             (vec (:dragged res))
-          :unchanged?          (boolean (:unchanged? res))
-          :multi-file          (:multi-file res)
-          :stale-registrations (:stale-registrations res)
-          :interlock           {:no-reload (count (:no-reload interlock))}
-          :kept-vars           (:kept pass)
-          :forced-unload       (mapv str (:forced pass))
-          :orphans             (mapv str (:orphans pass))
-          :dead-links          (:dead-links pass)
-          :kept-state          (names (:state classes))
-          :records-redefined   (names (:record classes))
-          :remount             remount
-          :reseated            reseated
-          :tools-refreshed     (tools-refreshed ports tools surface)
-          :surface             surface
-          :hive-hot            hot-init})))))
+         {:ok?                   ok?
+          :pass                  kind
+          :roots                 roots
+          :loaded                loaded
+          :unloaded              (mapv str (:unloaded res))
+          :failed                (some-> (:failed res) str)
+          :error                 (:error res)
+          :ms                    (:ms res)
+          :skipped               (vec (:skipped res))
+          :dragged               (vec (:dragged res))
+          :unchanged?            (boolean (:unchanged? res))
+          :multi-file            (:multi-file res)
+          :stale-registrations   (stale-registrations res rebound)
+          :rebound-registrations (when (map? rebound) (or (:rebound rebound) (:error rebound)))
+          :interlock             {:no-reload (count (:no-reload interlock))}
+          :kept-vars             (:kept pass)
+          :forced-unload         (mapv str (:forced pass))
+          :orphans               (mapv str (:orphans pass))
+          :dead-links            (:dead-links pass)
+          :kept-state            (names (:state classes))
+          :records-redefined     (names (:record classes))
+          :remount               remount
+          :reseated              reseated
+          :tools-refreshed       (tools-refreshed ports tools surface)
+          :surface               surface
+          :hive-hot              hot-init})))))

@@ -1,0 +1,5 @@
+{:appends-after-blank-line "history\n\ndecision",
+ :blank-addition-keeps "history",
+ :blank-current-yields-add "decision",
+ :nil-addition-keeps "history",
+ :nil-current-yields-add "decision"}
