@@ -13,7 +13,8 @@
    tracking for cleanup)."
 
   (:require [clojure.data.json :as json]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [malli.core :as m])
   (:import [io.nats.client Nats Options$Builder Connection$Status
             MessageHandler]
            [java.time Duration]))
@@ -213,3 +214,46 @@
     (when-let [disp @dispatcher]
       (.unsubscribe disp subject))
     (swap! subscriptions dissoc subject)))
+;; =============================================================================
+;; Function Contracts (m16 coverage batch)
+;; =============================================================================
+
+;; Connection lifecycle boundary fns; graceful-degradation model means most
+;; returns are nil or the jnats object (opaque Java shapes — :any).
+
+(m/=> connected?
+      [:=> [:cat]
+       :any])
+
+(m/=> start!
+      [:=> [:cat :map]
+       :any])
+
+(m/=> stop!
+      [:=> [:cat]
+       :any])
+
+(m/=> add-connection-watch!
+      [:=> [:cat :any ifn?]
+       :any])
+
+(m/=> remove-connection-watch!
+      [:=> [:cat :any]
+       :nil])
+
+(m/=> clamp-depth
+      [:function
+       [:=> [:cat :any] :any]
+       [:=> [:cat :any :int] :any]])
+
+(m/=> publish!
+      [:=> [:cat :string :any]
+       :any])
+
+(m/=> subscribe!
+      [:=> [:cat :string ifn?]
+       :any])
+
+(m/=> unsubscribe!
+      [:=> [:cat :string]
+       :any])

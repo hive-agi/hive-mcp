@@ -37,7 +37,8 @@
    middleware then finds the existing session instead of creating a new one."
   (:require [nrepl.middleware :as middleware]
             [nrepl.transport :as transport]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [malli.core :as m])
   (:import [clojure.lang DynamicClassLoader]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -203,3 +204,30 @@
 
   ;; Count classloaders in the chain
   (count-dynamic-classloaders))
+
+;; =============================================================================
+;; Function Contracts (m16 coverage batch)
+;; =============================================================================
+
+(m/=> count-dynamic-classloaders
+      [:=> [:cat]
+       [:map
+        [:chain-depth :int]
+        [:dynamic-classloader-count :int]
+        [:thread-context-classloader :string]]])
+
+(m/=> wrap-shared-classloader
+      [:=> [:cat ifn?]
+       ifn?])
+
+(m/=> set-rotation-threshold!
+      [:=> [:cat :int]
+       :any])
+
+(m/=> status
+      [:=> [:cat]
+       :map])
+
+(m/=> force-rotate!
+      [:=> [:cat]
+       :map])
