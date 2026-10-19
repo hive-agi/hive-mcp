@@ -12,7 +12,9 @@
    of the kernel var would not reach callers of this name. See memory
    20260919135346-7838bb58."
   (:refer-clojure :exclude [reset!])
-  (:require [hive-mcp.resilience.breaker :as cb]))
+  (:require [hive-mcp.resilience.breaker :as cb]
+            [malli.core :as m]
+            [hive-mcp.knowledge-graph.slots.schema :as ss]))
 
 (def default-policy
   "See `hive-mcp.resilience.breaker/default-policy`."
@@ -67,3 +69,16 @@
   "See `hive-mcp.resilience.breaker/reset!`."
   [breaker-atom]
   (cb/reset! breaker-atom))
+
+(m/=> fresh [:=> [:cat] ss/FreshBreaker])
+;; the breaker argument is ignored: success always collapses to fresh
+(m/=> on-success [:=> [:cat :any] ss/FreshBreaker])
+(m/=> on-failure [:=> [:cat [:maybe ss/Breaker] ss/Policy :int] ss/FailedBreaker])
+(m/=> maybe-recover [:=> [:cat [:maybe ss/Breaker] :int] [:maybe ss/Breaker]])
+(m/=> decision [:=> [:cat [:maybe ss/Breaker]] ss/Decision])
+;; a slot is any key of the breaker atom; policy is unused on this path
+(m/=> attempt [:=> [:cat ss/BreakerAtom :any [:maybe :map]] ss/Breaker])
+(m/=> record-success! [:=> [:cat ss/BreakerAtom :any] [:map-of :any ss/Breaker]])
+(m/=> record-failure! [:=> [:cat ss/BreakerAtom :any ss/Policy] ss/FailedBreaker])
+(m/=> snapshot [:=> [:cat ss/BreakerAtom] [:map-of :any :any]])
+(m/=> reset! [:=> [:cat ss/BreakerAtom] [:map-of {:max 0} :any :any]])

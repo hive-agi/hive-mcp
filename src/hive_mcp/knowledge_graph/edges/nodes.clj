@@ -3,7 +3,9 @@
    ids, tag -> node lookup (Chroma-backed), and 1-hop neighbors."
   (:require [hive-mcp.knowledge-graph.connection :as conn]
             [hive-mcp.knowledge-graph.edges.queries :as queries]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.knowledge-graph.edges.schema :as es]))
 
 (defn get-all-node-ids
   "Distinct node IDs participating in any KG edge — the union of
@@ -89,3 +91,12 @@
           (remove #(= node-id %))
           distinct
           vec))))
+
+(m/=> get-all-node-ids [:function
+                        [:=> [:cat] [:vector :string]]
+                        [:=> [:cat es/Scope] [:vector :string]]])
+(m/=> node-ids-by-tag [:=> [:cat :string] [:vector :string]])
+;; an invalid direction is in the domain: the body throws ex-info on it
+(m/=> neighbors [:function
+                 [:=> [:cat :string] [:vector :string]]
+                 [:=> [:cat :string [:maybe :keyword]] [:vector :string]]])

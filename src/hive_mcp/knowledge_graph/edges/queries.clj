@@ -1,5 +1,7 @@
 (ns hive-mcp.knowledge-graph.edges.queries
-  (:require [hive-mcp.knowledge-graph.connection :as conn]))
+  (:require [hive-mcp.knowledge-graph.connection :as conn]
+            [malli.core :as m]
+            [hive-mcp.knowledge-graph.edges.schema :as es]))
 
 (declare get-edge get-edges-from get-edges-to get-edges-by-relation get-edges-by-scope find-edge find-edges-between pull-edge-batch get-all-edges get-all-edge-arcs count-edges)
 
@@ -290,3 +292,32 @@
          (sort-by :kg-edge/created-at)
          (take limit)
          (map #(dissoc % :db/id)))))
+
+(m/=> get-edge [:=> [:cat :string] [:maybe es/Edge]])
+(m/=> get-edges-from [:function
+                      [:=> [:cat :string] es/Edges]
+                      [:=> [:cat :string es/Scope] es/Edges]])
+(m/=> get-edges-to [:function
+                    [:=> [:cat :string] es/Edges]
+                    [:=> [:cat :string es/Scope] es/Edges]])
+(m/=> get-edges-by-relation [:function
+                             [:=> [:cat es/Relation] es/Edges]
+                             [:=> [:cat es/Relation es/Scope] es/Edges]])
+(m/=> get-edges-by-scope [:=> [:cat :string] es/Edges])
+(m/=> find-edge [:function
+                 [:=> [:cat :string :string] [:maybe es/Edge]]
+                 [:=> [:cat :string :string [:maybe es/Relation]] [:maybe es/Edge]]])
+;; membership is tested with contains?, so the ids must be a set
+(m/=> find-edges-between [:=> [:cat [:set :string]] [:vector es/Edge]])
+(m/=> pull-edge-batch [:=> [:cat [:sequential :int]] [:vector es/Edge]])
+(m/=> get-all-edges [:function
+                     [:=> [:cat] es/Edges]
+                     [:=> [:cat es/Scope] es/Edges]
+                     [:=> [:cat es/Scope es/AllEdgesOpts] es/Edges]])
+(m/=> get-all-edge-arcs [:function
+                         [:=> [:cat] [:vector es/Arc]]
+                         [:=> [:cat es/Scope] [:vector es/Arc]]])
+(m/=> count-edges [:function
+                   [:=> [:cat] es/Count]
+                   [:=> [:cat es/Scope] es/Count]])
+(m/=> get-edges-since [:=> [:cat es/Instant es/SinceOpts] es/Edges])

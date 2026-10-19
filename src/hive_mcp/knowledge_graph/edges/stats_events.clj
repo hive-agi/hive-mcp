@@ -15,7 +15,8 @@
    (e.g. after `events/reset-all!` in tests)."
   (:require [hive-mcp.events.core :as events]
             [hive-mcp.knowledge-graph.edges.stats :as stats]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -56,6 +57,8 @@
   (events/reg-event :kg.store/ready          [] on-store-ready)
   (log/debug "KG edge stats event handlers registered:"
              ":kg.edges/added :kg.edges/removed :kg.edges/scope-migrated :kg.store/ready"))
+
+(m/=> register-handlers! [:=> [:cat] :nil])
 
 ;; Eager registration on namespace load. edges.clj requires this ns for
 ;; its side-effect; the moment it loads, any subsequent dispatch from
