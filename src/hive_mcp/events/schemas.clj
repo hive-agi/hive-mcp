@@ -219,7 +219,11 @@
                      :error (me/humanize (m/explain Interceptor interceptor))})))
   interceptor)
 
-(m/=> validate-interceptor! [:=> [:cat :any] Interceptor])
+(m/=> validate-interceptor! [:=> [:cat :any]
+                              [:map [:id :keyword]
+                               [:before {:optional true} [:fn {:gen/elements [identity]} fn?]]
+                               [:after {:optional true} [:fn {:gen/elements [identity]} fn?]]
+                               [:comment {:optional true} :string]]])
 
 (defn validate-context!
   "Validate an execution context. Throws ex-info on invalid format.
