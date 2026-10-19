@@ -14,7 +14,8 @@
 
    Verdict contract. A probe that could not run is `:skipped` with a reason and
    is reported as such — never folded into the pass count."
-  (:require [clojure.set :as set]))
+  (:require [clojure.set :as set]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -70,15 +71,162 @@
                      "supersedes the retracted one; retrieval must return THIS "
                      "and suppress that.")}])
 
+;; =============================================================================
+;; Schemas
+;; =============================================================================
+
+(def Fixture
+  "One entry of `fixtures`."
+  [:map
+   [:role :keyword]
+   [:type :string]
+   [:tags [:vector :string]]
+   [:content :string]
+   [:supersedes {:optional true} :keyword]])
+
+(def Ids
+  "A collection of entry ids: any sequential or set."
+  [:maybe [:or [:sequential :any] [:set :any]]])
+
+(def Row
+  "One retrieval row as a fault fn reads it: an open map whose :id and
+   :distance are optional; a nil :distance is ignored."
+  [:map
+   [:id {:optional true} :any]
+   [:distance {:optional true} [:maybe number?]]])
+
+(def Rows
+  "The rows a retrieval returned, in order."
+  [:maybe [:or [:sequential Row] [:set Row]]])
+
+(def RecallObservation
+  "What `recall-fault` takes."
+  [:maybe [:map
+           [:label {:optional true} :any]
+           [:populated? {:optional true} :any]
+           [:results {:optional true} Rows]
+           [:must-contain {:optional true} Ids]]])
+
+(def RankObservation
+  "What `rank-fault` takes."
+  [:maybe [:map
+           [:label {:optional true} :any]
+           [:results {:optional true} Rows]]])
+
+(def Reading
+  "One embedding-width reading: a collection, the width its name implies and
+   the width the embedder emits."
+  [:map
+   [:collection {:optional true} :any]
+   [:expected {:optional true} :any]
+   [:actual {:optional true} :any]])
+
+(def DimensionObservation
+  "What `dimension-fault` takes."
+  [:maybe [:map
+           [:label {:optional true} :any]
+           [:readings {:optional true} [:maybe [:or [:sequential Reading] [:set Reading]]]]]])
+
+(def SupersessionObservation
+  "What `supersession-fault` takes."
+  [:maybe [:map
+           [:label {:optional true} :any]
+           [:results {:optional true} Rows]
+           [:superseded-id {:optional true} :any]
+           [:current-id {:optional true} :any]]])
+
+(def PresenceObservation
+  "What `presence-fault` takes."
+  [:maybe [:map
+           [:label {:optional true} :any]
+           [:count {:optional true} :any]
+           [:probe {:optional true} :any]
+           [:diagnosis {:optional true} :any]]])
+
+(def RecallFault
+  "The faults `recall-fault` names."
+  [:multi {:dispatch :fault}
+   [:recall/empty-from-populated-store
+    [:map [:fault [:= :recall/empty-from-populated-store]] [:label :any]
+     [:diagnosis :string] [:expected-ids [:vector :any]]]]
+   [:recall/anchor-missing
+    [:map [:fault [:= :recall/anchor-missing]] [:label :any] [:diagnosis :string]
+     [:missing-ids [:vector :any]] [:returned-ids [:vector :any]]]]])
+
+(def RankFault
+  "The fault `rank-fault` names."
+  [:map [:fault [:= :recall/rank-inverted]] [:label :any] [:diagnosis :string]
+   [:distances [:vector number?]]])
+
+(def DimensionFault
+  "The faults `dimension-fault` names."
+  [:multi {:dispatch :fault}
+   [:recall/no-collections-configured
+    [:map [:fault [:= :recall/no-collections-configured]] [:label :any] [:diagnosis :string]]]
+   [:recall/dimension-mismatch
+    [:map [:fault [:= :recall/dimension-mismatch]] [:label :any] [:diagnosis :string]
+     [:mismatched [:vector Reading]]]]])
+
+(def SupersessionFault
+  "The faults `supersession-fault` names."
+  [:multi {:dispatch :fault}
+   [:recall/superseded-returned
+    [:map [:fault [:= :recall/superseded-returned]] [:label :any] [:diagnosis :string]
+     [:superseded-id :any] [:returned-ids [:vector :any]]]]
+   [:recall/current-missing
+    [:map [:fault [:= :recall/current-missing]] [:label :any] [:diagnosis :string]
+     [:current-id :any] [:returned-ids [:vector :any]]]]])
+
+(def PresenceFault
+  "The fault `presence-fault` names."
+  [:map [:fault [:= :recall/probe-empty]] [:label :any] [:probe :any] [:count :any]
+   [:diagnosis :some]])
+
+(def Outcome
+  "One probe's outcome, by :status."
+  [:multi {:dispatch :status}
+   [:skipped [:map [:label :any] [:status [:= :skipped]] [:reason :some]]]
+   [:fault [:map [:label :any] [:status [:= :fault]] [:fault :some]]]
+   [:ok [:map [:label :any] [:status [:= :ok]]]]])
+
+(def Outcomes
+  "The outcomes `verdict` folds: any sequential or set of maps."
+  [:maybe [:or [:sequential [:maybe :map]] [:set [:maybe :map]]]])
+
+(def Verdict
+  "The report `verdict` folds outcomes into."
+  [:map
+   [:ok? :boolean]
+   [:ran nat-int?]
+   [:passed nat-int?]
+   [:faults [:vector :any]]
+   [:skipped [:vector :map]]
+   [:ran-labels [:set :any]]])
+
+(def PriorVerdict
+  "A verdict as `skip-regressions` reads it: only :ran-labels and :skipped
+   matter, and both may be absent."
+  [:maybe [:map
+           [:ran-labels {:optional true} [:maybe [:set :any]]]
+           [:skipped {:optional true} [:maybe [:sequential [:maybe :map]]]]]])
+
+(def Regression
+  "One probe that ran last tick and is skipped now."
+  [:map [:fault [:= :recall/probe-went-dark]] [:label :any] [:reason :any]])
+
 (defn fixture
   "The fixture spec for `role`, or nil."
   [role]
   (first (filter #(= role (:role %)) fixtures)))
 
+(m/=> fixture [:=> [:cat :any] [:maybe Fixture]])
+
 (defn fixture-tags
   "Discovery tags for `role`: [canary-tag role-tag]."
   [role]
   (:tags (fixture role)))
+
+(m/=> fixture-tags [:=> [:cat :any] [:maybe [:vector :string]]])
 
 ;; =============================================================================
 ;; The fault taxonomy
@@ -121,6 +269,8 @@
 
       :else nil)))
 
+(m/=> recall-fault [:=> [:cat RecallObservation] [:maybe RecallFault]])
+
 (defn rank-fault
   "Nil when `results` are ordered nearest-first; otherwise a fault map.
 
@@ -136,6 +286,8 @@
                        "reversed, or a similarity (higher = better) is being "
                        "carried in the :distance field (lower = better).")
        :distances (vec ds)})))
+
+(m/=> rank-fault [:=> [:cat RankObservation] [:maybe RankFault]])
 
 (defn dimension-fault
   "Nil when every reading's emitted width equals its collection's width.
@@ -163,6 +315,8 @@
        :mismatched (vec mismatched)}
 
       :else nil)))
+
+(m/=> dimension-fault [:=> [:cat DimensionObservation] [:maybe DimensionFault]])
 
 (defn supersession-fault
   "Nil when the retracted row stays out of `results`; otherwise a fault map.
@@ -193,6 +347,8 @@
 
       :else nil)))
 
+(m/=> supersession-fault [:=> [:cat SupersessionObservation] [:maybe SupersessionFault]])
+
 (defn presence-fault
   "Nil when `count` is positive; otherwise a fault map.
 
@@ -208,6 +364,8 @@
                     (str "the probe returned nothing. An index that answers "
                          "zero to its own smoke query is down, not empty."))}))
 
+(m/=> presence-fault [:=> [:cat PresenceObservation] [:maybe PresenceFault]])
+
 ;; =============================================================================
 ;; The verdict
 ;; =============================================================================
@@ -220,6 +378,10 @@
      skip  {:label label :status :skipped :reason skip}
      fault {:label label :status :fault :fault fault}
      :else {:label label :status :ok})))
+
+(m/=> outcome [:function
+               [:=> [:cat :any :any] Outcome]
+               [:=> [:cat :any :any :any] Outcome]])
 
 (defn verdict
   "Fold probe outcomes into a report.
@@ -239,6 +401,8 @@
      :faults    (mapv :fault faults)
      :skipped   (mapv #(select-keys % [:label :reason]) skipped)
      :ran-labels (set (map :label (concat passed faults)))}))
+
+(m/=> verdict [:=> [:cat Outcomes] Verdict])
 ;; =============================================================================
 ;; Skip regression detection — a probe that ran last tick and skips now is a fault
 ;; =============================================================================
@@ -263,6 +427,8 @@
                     :label label
                     :reason (get cur-skipped label)}))))))
 
+(m/=> skip-regressions [:=> [:cat PriorVerdict PriorVerdict] [:vector Regression]])
+
 (defn with-regressions
   "Return `cur` with skip-regressions faults appended to :faults when any are
    detected. :ok? is set to false when regressions exist, and the regressed
@@ -278,3 +444,7 @@
           (update :ran-labels (fnil into #{}) (map :label regressions))
           (assoc :ok? false))
       cur)))
+
+;; `cur` comes back unchanged when nothing regressed, so the output is as open
+;; as the input.
+(m/=> with-regressions [:=> [:cat PriorVerdict PriorVerdict] [:maybe :map]])

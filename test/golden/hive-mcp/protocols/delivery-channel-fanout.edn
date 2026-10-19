@@ -1,0 +1,2 @@
+{:outcomes {:m17-alpha :ok, :m17-beta :unavailable, :m17-gamma :ok},
+ :seen {:m17-alpha [:m17/ping], :m17-beta [], :m17-gamma [:m17/ping]}}

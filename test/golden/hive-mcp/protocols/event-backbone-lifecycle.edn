@@ -1,0 +1,8 @@
+{:before {:set? false, :id :noop},
+ :during
+ {:set? true,
+  :id :m17-nats,
+  :same? true,
+  :subscribed {:subject "hive.events"}},
+ :cleared nil,
+ :transitions [[nil :m17-nats] [:m17-nats nil]]}

@@ -31,7 +31,8 @@
    map, e.g. a hive-dsl err Result). `error-outcome?` and
    `write-outcome->result` are the single classification point, so every
    caller handles both channels identically."
-  (:require [hive-dsl.result :as result]))
+  (:require [hive-dsl.result :as result]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -104,6 +105,8 @@
   [outcome]
   (and (map? outcome) (contains? outcome :error)))
 
+(m/=> error-outcome? [:=> [:cat :any] :boolean])
+
 (defn write-outcome->result
   "Normalize a port write return into a hive-dsl Result.
 
@@ -115,6 +118,15 @@
     (result/err (or (:error outcome) ::write-failed)
                 (select-keys outcome [:message :data]))
     (result/ok success-val)))
+
+(def WriteResult
+  "The hive-dsl Result `write-outcome->result` answers: an ok carrying the
+   success value, or an err whose :error category is never nil."
+  [:or
+   [:map [:ok :any]]
+   [:map [:error :some] [:message {:optional true} :any] [:data {:optional true} :any]]])
+
+(m/=> write-outcome->result [:=> [:cat :any :any] WriteResult])
 
 
 (defn set-store!
@@ -128,21 +140,35 @@
   (reset! -store store)
   store)
 
+(def VectorStore
+  "Any value satisfying IVectorCollectionStore; generates a method-less reify."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (reify IVectorCollectionStore))}
+   #(satisfies? IVectorCollectionStore %)])
+
+;; The input is loose: set-store! rejects a non-store with its own ex-info.
+(m/=> set-store! [:=> [:cat :any] VectorStore])
+
 (defn get-store
   "The active vector-collection store, or nil when none is installed."
   []
   @-store)
+
+(m/=> get-store [:=> [:cat] [:maybe VectorStore]])
 
 (defn store-set?
   "True iff a vector-collection store is installed."
   []
   (some? @-store))
 
+(m/=> store-set? [:=> [:cat] :boolean])
+
 (defn clear-store!
   "Remove the active store. Returns nil."
   []
   (reset! -store nil)
   nil)
+
+(m/=> clear-store! [:=> [:cat] :nil])
 
 (defn require-store
   "The active store, or a loud failure naming what is missing. Callers that
@@ -153,3 +179,5 @@
       (throw (ex-info "No vector-collection store installed"
                       {:reason ::no-store
                        :hint "the composition root installs one via protocols.vector/set-store!"}))))
+
+(m/=> require-store [:=> [:cat] VectorStore])

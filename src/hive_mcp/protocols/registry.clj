@@ -6,7 +6,8 @@
    a configurable empty-policy applied by `current` when nothing is installed
    (throw, or construct a fallback, or seed a default), and an optional
    teardown run on `clear!`. Consumers wrap a Slot in trivial name-preserving
-   delegations, so existing call sites are untouched.")
+   delegations, so existing call sites are untouched."
+  (:require [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -63,6 +64,21 @@
      :initial   seed value for the slot (default nil)."
   [{:keys [validate on-empty teardown initial]}]
   (->SingleSlot (atom initial) validate on-empty teardown))
+
+(def SlotConfig
+  "The config map `single-slot` reads; nil reads as {}."
+  [:maybe [:map
+           [:validate {:optional true} [:maybe ifn?]]
+           [:on-empty {:optional true} [:maybe ifn?]]
+           [:teardown {:optional true} [:maybe ifn?]]
+           [:initial {:optional true} :any]]])
+
+(def SlotValue
+  "A SingleSlot built by `single-slot`."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (single-slot {}))}
+   #(instance? SingleSlot %)])
+
+(m/=> single-slot [:=> [:cat SlotConfig] SlotValue])
 
 (defn watch-slot!
   "Run `(f old-impl new-impl)` when `slot`'s installed impl transitions."
@@ -133,3 +149,27 @@
      :initial     seed map (default {})."
   [{:keys [validate on-missing initial]}]
   (->MultiSlot (atom (or initial {})) validate on-missing))
+
+(def MultiSlotConfig
+  "The config map `multi-slot` reads; nil reads as {}."
+  [:maybe [:map
+           [:validate {:optional true} [:maybe ifn?]]
+           [:on-empty {:optional true} [:maybe ifn?]]
+           [:on-missing {:optional true} [:maybe ifn?]]
+           [:initial {:optional true} [:maybe [:map-of :any :any]]]]])
+
+(def RegistryValue
+  "A MultiSlot built by `multi-slot`."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (multi-slot {}))}
+   #(instance? MultiSlot %)])
+
+(def WatchedSlot
+  "Any slot `watch-slot!` can watch: a SingleSlot or a MultiSlot, both of
+   which keep their impls in a :state atom."
+  [:or SlotValue RegistryValue])
+
+(m/=> multi-slot [:=> [:cat MultiSlotConfig] RegistryValue])
+
+(m/=> watch-slot! [:=> [:cat WatchedSlot :any ifn?] WatchedSlot])
+
+(m/=> unwatch-slot! [:=> [:cat WatchedSlot :any] WatchedSlot])
