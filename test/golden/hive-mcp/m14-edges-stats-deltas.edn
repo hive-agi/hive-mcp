@@ -1,0 +1,32 @@
+{:reset nil,
+ :plus
+ {:initialized? true,
+  :scanned? false,
+  :total-edges 1,
+  :by-relation {:implements 1},
+  :by-scope {"s1" 1}},
+ :plus2
+ {:initialized? true,
+  :scanned? false,
+  :total-edges 2,
+  :by-relation {:implements 1, :refines 1},
+  :by-scope {"s1" 1}},
+ :minus
+ {:initialized? true,
+  :scanned? false,
+  :total-edges 1,
+  :by-relation {:refines 1},
+  :by-scope {}},
+ :floor
+ {:initialized? true,
+  :scanned? false,
+  :total-edges 0,
+  :by-relation {:refines 1},
+  :by-scope {}},
+ :moved-zero {},
+ :moved
+ {:initialized? true,
+  :scanned? false,
+  :total-edges 2,
+  :by-relation {:refines 1, :implements 2},
+  :by-scope {"s1" 1, "s2" 1}}}

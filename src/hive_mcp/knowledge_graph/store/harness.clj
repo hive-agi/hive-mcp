@@ -51,7 +51,8 @@
             [hive-mcp.knowledge-graph.protocol :as proto]
             [hive-mcp.knowledge-graph.store.datascript :as ds-store]
             [hive-mcp.knowledge-graph.schema :as schema]
-            [hive-mcp.knowledge-graph.slots :as slots]))
+            [hive-mcp.knowledge-graph.slots :as slots]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -302,3 +303,44 @@
   (skip-if-unavailable
    "Datahike"
    (fn [] (with-disposable-store (datahike-factory) (global-isolation) f))))
+
+(def StoreFactorySchema
+  "A StoreFactory. Generates the in-memory DataScript one."
+  [:fn {:error/message "should satisfy StoreFactory"
+        :gen/schema :nil
+        :gen/fmap (fn [_] (->DatascriptStoreFactory))}
+   #(satisfies? StoreFactory %)])
+
+(def IsolationSchema
+  "An IsolationStrategy. Generates the thread-local one."
+  [:fn {:error/message "should satisfy IsolationStrategy"
+        :gen/schema :boolean
+        :gen/fmap ->ThreadLocalIsolation}
+   #(satisfies? IsolationStrategy %)])
+
+(def Thunk
+  "A zero-arg fn."
+  [:fn {:error/message "should be a fn"
+        :gen/elements [(constantly nil) (constantly :ran)]}
+   ifn?])
+
+(def SyncWritesOpt
+  "The trailing :sync-writes? option, as a pair or one map; any truthy value
+   turns synchronous writes on."
+  [:alt
+   [:cat]
+   [:cat [:= :sync-writes?] :any]
+   [:cat [:maybe [:map [:sync-writes? {:optional true} :any]]]]])
+
+(m/=> datascript-factory [:=> [:cat] StoreFactorySchema])
+(m/=> datalevin-factory [:=> [:cat] StoreFactorySchema])
+(m/=> datahike-factory [:=> [:cat] StoreFactorySchema])
+(m/=> thread-local-isolation [:=> [:cat SyncWritesOpt] IsolationSchema])
+(m/=> global-isolation [:=> [:cat SyncWritesOpt] IsolationSchema])
+;; the combinators return whatever the test fn returns
+(m/=> with-disposable-store [:=> [:cat StoreFactorySchema IsolationSchema Thunk] :any])
+(m/=> skip-if-unavailable [:=> [:cat :string Thunk] :any])
+(m/=> datascript-store-fixture [:=> [:cat Thunk] :any])
+(m/=> global-datascript-store-fixture [:=> [:cat Thunk SyncWritesOpt] :any])
+(m/=> datalevin-store-fixture [:=> [:cat Thunk] :any])
+(m/=> datahike-store-fixture [:=> [:cat Thunk] :any])

@@ -1,0 +1,32 @@
+{:case-0
+ {:out
+  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  :in ("")},
+ :case-1
+ {:out
+  "fcb5f40df9be6bae66c1d77a6c15968866a9e6cbd7314ca432b019d17392f6f4",
+  :in ("W")},
+ :case-2
+ {:out
+  "f442a685d33998b18009ec8bc7e13db191f6d34b37a94ce59a6ad694b69e9235",
+  :in ("pC")},
+ :case-3
+ {:out
+  "1163d3d178fcbb1d5862affb8d2098be4092d94dc741800f6b232385c71f592d",
+  :in ("4C")},
+ :case-4
+ {:out
+  "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
+  :in ("x")},
+ :case-5
+ {:out
+  "d029fa3a95e174a19934857f535eb9427d967218a36ea014b70ad704bc6c8d1c",
+  :in ("61")},
+ :case-6
+ {:out
+  "3fabdccfd0243a9231796418903e0d10fbf38331dd409524189588e62f825cf4",
+  :in ("8K8")},
+ :case-7
+ {:out
+  "06b4fefb71ddc9ce82cd6dc51f8a4c545a168b144199656e6e2cc0fa572c7d20",
+  :in ("X5")}}

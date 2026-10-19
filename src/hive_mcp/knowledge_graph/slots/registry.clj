@@ -20,7 +20,9 @@
             [hive-mcp.knowledge-graph.slots.protocol :as p]
             [hive-mcp.knowledge-graph.slots.breaker :as cb]
             [hive-mcp.knowledge-graph.slots.config :as slot-cfg]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.knowledge-graph.slots.schema :as ss]))
 
 ;; -----------------------------------------------------------------------------
 ;; SlotInit constructors — thin wrappers over the generated `p/slot-init`
@@ -212,3 +214,9 @@
    (->AtomBackedRegistry (atom {}) resolver factory
                          (atom {})
                          (merge cb/default-policy (or breaker-overrides {})))))
+
+;; any reason other than a nil factory result is a lifecycle failure
+(m/=> factory-failure-level [:=> [:cat :any] [:enum :warn :error]])
+(m/=> ->registry [:function
+                  [:=> [:cat ss/Resolver ss/Factory] ss/Registry]
+                  [:=> [:cat ss/Resolver ss/Factory [:maybe :map]] ss/Registry]])

@@ -1,0 +1,6 @@
+{:two [:store-2 :store-2],
+ :one :store-1,
+ :nil nil,
+ :seen
+ [[:datascript {}] [:datalevin {:recovery-policy :x}] [:datahike]],
+ :supported (:datahike :datalevin :datascript :proximum)}

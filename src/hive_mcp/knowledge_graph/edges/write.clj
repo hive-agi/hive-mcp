@@ -13,7 +13,9 @@
             [hive-mcp.knowledge-graph.edges.stats :as stats]
             [hive-mcp.knowledge-graph.edges.decay :as decay]
             [hive-mcp.events.core :as events]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.knowledge-graph.edges.schema :as es]))
 
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -184,3 +186,19 @@
       (doseq [eid edge-ids]
         (decay/remove-edge! eid))
       (count edge-ids))))
+
+;; the result is whatever the dispatch or the fallback returns
+(m/=> emit-stats-event! [:=> [:cat es/EventId [:maybe :map] es/Thunk] :any])
+(m/=> edge-tx-data [:=> [:cat es/EdgeSpec] es/EdgeTx])
+(m/=> add-edges! [:function
+                  [:=> [:cat es/EdgeSpecs] [:vector es/EdgeId]]
+                  [:=> [:cat es/EdgeSpecs es/TransactFn] [:vector es/EdgeId]]])
+(m/=> add-edges-sync! [:=> [:cat es/EdgeSpecs] [:vector es/EdgeId]])
+(m/=> add-edge! [:function
+                 [:=> [:cat es/EdgeSpec] es/EdgeId]
+                 [:=> [:cat es/EdgeSpec es/TransactFn] es/EdgeId]])
+;; an invalid confidence is in the domain: the body throws ex-info on it
+(m/=> update-edge-confidence! [:=> [:cat :string :any] [:maybe [:= true]]])
+(m/=> verify-edge! [:=> [:cat :string] [:maybe [:= true]]])
+(m/=> increment-confidence! [:=> [:cat :string number?] [:maybe es/Confidence]])
+(m/=> remove-edges-for-node! [:=> [:cat :string] es/Count])

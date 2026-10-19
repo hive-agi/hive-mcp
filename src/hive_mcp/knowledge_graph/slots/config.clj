@@ -28,7 +28,9 @@
      :carto-vec  → Proximum (HNSW, branchable, time-travel)
      :memory-vec → Proximum (HNSW, branchable, time-travel)"
   (:require [hive-mcp.config.core :as config]
-            [hive-mcp.knowledge-graph.slots.protocol :as p]))
+            [hive-mcp.knowledge-graph.slots.protocol :as p]
+            [malli.core :as m]
+            [hive-mcp.knowledge-graph.slots.schema :as ss]))
 
 ;; -----------------------------------------------------------------------------
 ;; Default slot → backend mapping (immutable canonical fact)
@@ -158,3 +160,12 @@
    (->resolver path-lookup default-slot->backend))
   ([path-lookup defaults]
    (->ConfigBackendResolver path-lookup defaults)))
+
+;; a slot unknown to config and defaults resolves to nil
+(m/=> resolve-recovery-policy [:function
+                               [:=> [:cat :keyword] [:maybe ss/RecoveryPolicy]]
+                               [:=> [:cat ss/PathLookup :keyword] [:maybe ss/RecoveryPolicy]]])
+(m/=> ->resolver [:function
+                  [:=> [:cat] ss/Resolver]
+                  [:=> [:cat ss/PathLookup] ss/Resolver]
+                  [:=> [:cat ss/PathLookup ss/SlotBackendMap] ss/Resolver]])

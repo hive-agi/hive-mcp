@@ -11,7 +11,9 @@
             [hive-mcp.knowledge-graph.edges.queries :as queries]
             [hive-mcp.knowledge-graph.edges.write :as write]
             [taoensso.timbre :as log]
-            [hive-mcp.knowledge-graph.schema :as schema]))
+            [hive-mcp.knowledge-graph.schema :as schema]
+            [malli.core :as m]
+            [hive-mcp.knowledge-graph.edges.schema :as es]))
 
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -187,3 +189,8 @@
                       (when (pos? (:promoted tally))
                         (log/info "Promoted" (:promoted tally)
                                   "co-access edges to :depends-on")))})))
+
+;; fewer than two distinct ids record nothing and return nil
+(m/=> record-co-access! [:=> [:cat es/NodeIds [:? es/CoAccessOpts]] [:maybe es/Count]])
+(m/=> get-co-accessed [:=> [:cat :string] [:vector es/Neighbor]])
+(m/=> promote-co-access-edges! [:=> [:cat [:? es/PromotionOpts]] es/PromotionTally])

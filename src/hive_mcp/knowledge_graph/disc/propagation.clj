@@ -5,7 +5,9 @@
             [hive-mcp.knowledge-graph.disc.crud :as crud]
             [hive-mcp.knowledge-graph.disc.volatility :as vol]
             [hive-dsl.result :as r]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.knowledge-graph.disc.schema :as ds]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -121,3 +123,9 @@
       (log/warn "Failed to propagate staleness"
                 {:disc-path disc-path :error (:message err)}))
     outer))
+
+(m/=> apply-time-decay-to-all-discs! [:=> [:cat ds/ProjectOpts] ds/DecayResult])
+;; base-staleness may be nil (an unknown reason has no staleness value); the
+;; body rescues every failure into the tally
+(m/=> propagate-staleness! [:=> [:cat [:maybe :string] [:maybe number?] ds/StalenessSource]
+                            ds/PropagationResult])
