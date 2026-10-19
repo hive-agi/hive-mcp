@@ -72,6 +72,20 @@
                        :explain (m/explain EmbeddingSpace space)})))
     space))
 
+;; Input is a partial map: the body fills defaults and throws on what is
+;; still missing, so any map is admitted.
+(m/=> ->space [:=> [:cat [:maybe [:map-of :keyword :any]]] EmbeddingSpace])
+
+(def SpaceId
+  "A space id: 64 lowercase hex characters. Generates from 32 random bytes."
+  [:re {:gen/schema [:vector {:min 32 :max 32} [:int {:min 0 :max 255}]]
+        :gen/fmap (fn [bs] (apply str (map #(format "%02x" %) bs)))}
+   #"^[0-9a-f]{64}$"])
+
+(def SpaceKey
+  "One of `space-keys`."
+  (into [:enum] space-keys))
+
 (defn config->space
   "The EmbeddingSpace implied by an EmbeddingConfig-shaped map
    ({:provider-type :model :dimension}) plus any `extra` fields the caller
@@ -84,6 +98,10 @@
                     :dimension (:dimension config)}
                    extra))))
 
+(m/=> config->space [:function
+                     [:=> [:cat [:maybe [:map-of :keyword :any]]] EmbeddingSpace]
+                     [:=> [:cat [:maybe [:map-of :keyword :any]] [:maybe [:map-of :keyword :any]]] EmbeddingSpace]])
+
 ;; =============================================================================
 ;; Identity
 ;; =============================================================================
@@ -94,6 +112,8 @@
   [space]
   (let [s (->space space)]
     (pr-str (mapv (fn [k] [k (get s k)]) space-keys))))
+
+(m/=> canonical [:=> [:cat [:map-of :keyword :any]] [:string {:min 1}]])
 
 (defn- sha256-hex
   [^String text]
@@ -106,6 +126,8 @@
    spaces share an id, any differing field changes it."
   [space]
   (sha256-hex (canonical space)))
+
+(m/=> space-id [:=> [:cat [:map-of :keyword :any]] SpaceId])
 
 (def unknown-space-id
   "What a vector set with no recorded provenance answers to. It equals no
@@ -122,10 +144,15 @@
   (let [a (->space a) b (->space b)]
     (filterv #(not= (get a %) (get b %)) space-keys)))
 
+(m/=> differing-keys [:=> [:cat [:map-of :keyword :any] [:map-of :keyword :any]]
+                      [:vector SpaceKey]])
+
 (defn compatible?
   "True when `a` and `b` are the same space."
   [a b]
   (empty? (differing-keys a b)))
+
+(m/=> compatible? [:=> [:cat [:map-of :keyword :any] [:map-of :keyword :any]] :boolean])
 
 (defn check-compatible!
   "Return `expected` when `actual` is the same space. `actual` nil means the
@@ -152,3 +179,6 @@
                        :actual-id    (if actual (space-id actual) unknown-space-id)
                        :differs-on   diff
                        :remedy       #{:isolate :re-embed}})))))
+
+(m/=> check-compatible! [:=> [:cat [:map-of :keyword :any] [:maybe [:map-of :keyword :any]]]
+                         EmbeddingSpace])

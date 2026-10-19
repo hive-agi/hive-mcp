@@ -24,7 +24,8 @@
             [hive-mcp.embeddings.model-spec :as spec]
             [hive-mcp.embeddings.protocol :as emb-proto]
             [clojure.data.json :as json]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [malli.core :as m])
   (:import [java.net URI]
            [java.net.http HttpClient HttpRequest HttpRequest$BodyPublishers HttpResponse$BodyHandlers]
            [java.time Duration]))
@@ -201,12 +202,30 @@
                "executor-routed?" (some? executor-fn))
      (->OllamaEmbedder host model resolved executor-fn))))
 
+(def ProviderOpts
+  "Options of `->provider`, per its docstring. Every key is optional; the
+   model may come from the environment instead."
+  [:map
+   [:host {:optional true} [:maybe :string]]
+   [:model {:optional true} [:maybe :string]]
+   [:declared {:optional true} [:maybe [:map-of :keyword :any]]]
+   [:catalog {:optional true} :any]
+   [:executor-fn {:optional true} [:maybe [:=> [:cat :map] :map]]]])
+
+(m/=> ->provider [:function
+                  [:=> [:cat] emb-proto/Provider]
+                  [:=> [:cat ProviderOpts] emb-proto/Provider]])
+
 (defn list-models
   "List available models on the Ollama server."
   ([] (list-models (:host (resolve-config! {}))))
   ([host]
    (let [response (make-request host "/api/tags" nil)]
      (mapv :name (:models response)))))
+
+(m/=> list-models [:function
+                   [:=> [:cat] [:vector :string]]
+                   [:=> [:cat :string] [:vector :string]]])
 
 (defn pull-model
   "Pull a model from Ollama (downloads if not present).
@@ -215,3 +234,8 @@
   ([host model]
    (log/info "Pulling model:" model "(this may take a while...)")
    (make-request host "/api/pull" {:name model :stream false})))
+
+;; The parsed /api/pull response body, e.g. {:status "success"}.
+(m/=> pull-model [:function
+                  [:=> [:cat :string] [:map-of :keyword :any]]
+                  [:=> [:cat :string :string] [:map-of :keyword :any]]])
