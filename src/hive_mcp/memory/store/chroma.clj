@@ -89,7 +89,10 @@
       (mapv #(select-keys % ks) entries))
     entries))
 
-(m/=> project-fields [:=> [:cat [:sequential :map] [:maybe [:sequential [:or :string :keyword :symbol]]]] [:sequential :map]])
+(m/=> project-fields
+      [:=> [:cat [:sequential :map]
+             [:maybe [:sequential [:or :string :keyword :symbol]]]]
+       [:sequential :map]])
 
 (defn- build-health-map
   "Build health-check response from probe result and latency.

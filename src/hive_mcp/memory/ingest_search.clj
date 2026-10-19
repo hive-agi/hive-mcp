@@ -67,4 +67,10 @@
        (take limit)
        vec))
 
-(m/=> merge-and-rerank [:=> [:cat [:sequential [:map [:id :string] [:distance {:optional true} :double]]] [:sequential [:map [:id :string] [:distance {:optional true} :double]]] [:int {:min 0}]] [:vector :map]])
+(m/=> merge-and-rerank
+      [:=> [:cat [:maybe [:sequential [:map [:id :string]
+                                         [:distance {:optional true} :double]]]]
+             [:maybe [:sequential [:map [:id :string]
+                                   [:distance {:optional true} :double]]]]
+             [:int {:min 0}]]
+       [:vector :map]])
