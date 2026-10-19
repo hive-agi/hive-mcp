@@ -3,8 +3,8 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (ns hive-mcp.knowledge-graph.slots.schema
-  "Malli value objects for the slot routing layer: breaker records and
-   policies, recovery policies, and the three role ports as predicates.
+  "Malli value objects for the slot routing layer: recovery policies, config
+   lookups, and the three role ports as predicates.
 
    Port generators build the production implementation late-bound, so this
    namespace does not compile-couple to the modules whose contracts use it."
