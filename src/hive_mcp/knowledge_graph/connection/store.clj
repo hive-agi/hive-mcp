@@ -227,5 +227,5 @@
 (m/=> reset-conn! [:=> [:cat] :any])
 (m/=> delete-database! [:=> [:cat :keyword] :any])
 (m/=> close! [:=> [:cat] :any])
-(m/=> set-backend! [:=> [:cat :keyword :map] :any])
+(m/=> set-backend! [:function [:=> [:cat :keyword] :any] [:=> [:cat :keyword [:maybe :map]] :any]])
 (m/=> install-store! [:=> [:cat :any] :any])
