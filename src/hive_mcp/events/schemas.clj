@@ -44,8 +44,8 @@
    them loosely as fn? doesn't work with malli's registry by default."
   [:map
    [:id :keyword]
-   [:before {:optional true} [:fn fn?]]
-   [:after {:optional true} [:fn fn?]]
+   [:before {:optional true} [:fn {:gen/elements [(fn [context] context)]} fn?]]
+   [:after {:optional true} [:fn {:gen/elements [(fn [context] context)]} fn?]]
    [:comment {:optional true} :string]])
 
 ;; =============================================================================
