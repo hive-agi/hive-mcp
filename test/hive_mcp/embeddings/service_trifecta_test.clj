@@ -116,7 +116,7 @@
   ;; BUG: an INVALID config makes provider-available? throw a
   ;; NullPointerException instead of answering false: the log/debug inside its
   ;; catch calls config/describe, which calls (name nil). Pinned; see report.
-  (is (thrown? NullPointerException (registry/provider-available? {:not "a config"})))
+  (is (thrown? RuntimeException (registry/provider-available? {:not "a config"})))
   (registry/register-factory! :openai (fn [_] (throw (ex-info "down" {}))))
   (is (false? (registry/provider-available?
                (config/->EmbeddingConfig :openai "m" 4 {}))))

@@ -290,5 +290,4 @@
 
 (m/=> same-dimension? [:=> [:cat :any :any] :boolean])
 
-(m/=> describe [:=> [:cat [:map [:provider-type :keyword] [:model :any] [:dimension :int]]]
-                :string])
+(m/=> describe [:=> [:cat [:map [:provider-type [:or :keyword :string :symbol]] [:model :any] [:dimension [:maybe :int]]]] :string])
