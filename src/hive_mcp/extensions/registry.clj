@@ -76,12 +76,16 @@
   (reg/reg-put! ext-slot k f)
   k)
 
+(m/=> register! [:=> [:cat :any :any] :keyword])
+
 (defn register-many!
   "Register multiple extensions at once from a map of {keyword fn}.
    Thread-safe, atomic."
   [m]
   {:pre [(map? m)]}
   (reg/reg-merge! ext-slot m))
+
+(m/=> register-many! [:=> [:cat :any] [:maybe [:sequential :any]]])
 
 (defn get-extension
   "Look up a registered extension by keyword key.
@@ -96,16 +100,22 @@
   [k]
   (contains? (reg/reg-snapshot ext-slot) k))
 
+(m/=> extension-available? [:=> [:cat :any] :boolean])
+
 (defn registered-keys
   "Return the set of all registered extension keys."
   []
   (set (keys (reg/reg-snapshot ext-slot))))
+
+(m/=> registered-keys [:=> [:cat] [:set :any]])
 
 (defn deregister!
   "Remove an extension registration. Returns the key."
   [k]
   (reg/reg-remove! ext-slot k)
   k)
+
+(m/=> deregister! [:=> [:cat :keyword] :keyword])
 
 (defn clear-all!
   "Remove all registrations (fn + schema + tool + contributions). Intended for testing only."
@@ -115,6 +125,8 @@
   (reg/reg-clear! tool-slot)
   (addon-cmds/clear!)
   nil)
+
+(m/=> clear-all! [:=> [:cat] :nil])
 
 ;; =============================================================================
 ;; Schema Extension Registry
@@ -239,6 +251,8 @@
   (into [] (comp (filter (fn [[_ contribs]] (contains? contribs owner))) (map key))
         (sort-by key ledger)))
 
+(m/=> schema-owner-tools [:=> [:cat SchemaLedger SchemaOwner] [:vector :string]])
+
 (defn register-schema!
   "Register schema properties for a tool, owned by OWNER (an addon id).
    Properties is a map of {\"param_name\" {:type ... :description ...}}.
@@ -251,6 +265,11 @@
    (swap! schema-ledger contribute-schema owner tool-name properties)
    tool-name))
 
+(m/=> register-schema!
+      [:function
+       [:=> [:cat :any :any] :string]
+       [:=> [:cat :any :any :any] :string]])
+
 (defn get-schema-extensions
   "The advertised schema property extensions for a tool: every owner's
    contribution merged at read time (see Precedence above). Returns map or nil,
@@ -258,17 +277,23 @@
   [tool-name]
   (effective-schema-properties (get @schema-ledger tool-name)))
 
+(m/=> get-schema-extensions [:=> [:cat [:maybe :string]] [:maybe ParamProperties]])
+
 (defn schema-contributions
   "Who contributes what to TOOL-NAME: {owner props}. For inspection; callers
    that advertise a schema read `get-schema-extensions`."
   [tool-name]
   (update-vals (get @schema-ledger tool-name {}) :props))
 
+(m/=> schema-contributions [:=> [:cat [:maybe :string]] [:map-of SchemaOwner ParamProperties]])
+
 (defn clear-all-schemas!
   "Remove all schema registrations. Intended for testing only."
   []
   (reset! schema-ledger {})
   nil)
+
+(m/=> clear-all-schemas! [:=> [:cat] :nil])
 
 ;; =============================================================================
 ;; Tool Registry (dynamic MCP tool definitions)
@@ -287,10 +312,14 @@
   (reg/reg-put! tool-slot (:name tool-def) tool-def)
   (:name tool-def))
 
+(m/=> register-tool! [:=> [:cat :any] :string])
+
 (defn get-registered-tools
   "Return seq of all dynamically registered tool definitions."
   []
   (vals (reg/reg-snapshot tool-slot)))
+
+(m/=> get-registered-tools [:=> [:cat] [:maybe [:sequential :map]]])
 
 (defn deregister-tool!
   "Remove a dynamically registered tool by name. Returns the name."
@@ -298,11 +327,15 @@
   (reg/reg-remove! tool-slot tool-name)
   tool-name)
 
+(m/=> deregister-tool! [:=> [:cat [:maybe :string]] [:maybe :string]])
+
 (defn clear-all-tools!
   "Remove all tool registrations. Intended for testing only."
   []
   (reg/reg-clear! tool-slot)
   nil)
+
+(m/=> clear-all-tools! [:=> [:cat] :nil])
 
 ;; =============================================================================
 ;; Composite Tool Command Contributions
@@ -318,11 +351,15 @@
   (swap! contribution-listeners assoc listener-id f)
   listener-id)
 
+(m/=> add-contribution-listener! [:=> [:cat :any :any] :keyword])
+
 (defn remove-contribution-listener!
   "Drop a contribution listener. Returns the id."
   [listener-id]
   (swap! contribution-listeners dissoc listener-id)
   listener-id)
+
+(m/=> remove-contribution-listener! [:=> [:cat :keyword] :keyword])
 
 (defn- notify-contribution!
   [event]
@@ -368,6 +405,8 @@
   []
   @seam-registered?)
 
+(m/=> ensure-seam-listener! [:=> [:cat] :boolean])
+
 (defn- notify-once!
   "Notify the host's contribution listeners exactly once.
 
@@ -377,6 +416,11 @@
   [event]
   (when-not @seam-registered?
     (notify-contribution! event)))
+
+(def CommandContributions
+  "The whole contribution tree the command facade answers:
+   {tool-name {command-name spec}}."
+  [:map-of :string [:map-of :any :map]])
 
 (defn contribute-commands!
   "Register commands that compose into a named composite tool.
@@ -394,6 +438,8 @@
                          :commands (mapv name (keys commands))})
   (all-contributions))
 
+(m/=> contribute-commands! [:=> [:cat :string :any [:map-of :any :map]] CommandContributions])
+
 (defn retract-commands!
   "Remove all commands contributed by an addon from a tool. Notifies the
    contribution listeners afterwards."
@@ -401,6 +447,8 @@
   (addon-cmds/retract! tool-name addon-id)
   (notify-once! {:type :retract :tool-name tool-name :addon-id addon-id})
   (all-contributions))
+
+(m/=> retract-commands! [:=> [:cat :string :any] CommandContributions])
 
 (defn retract-all-by-addon!
   "Remove all contributions from an addon across all tools (for shutdown).
@@ -415,6 +463,8 @@
     (doseq [tn touched]
       (notify-once! {:type :retract :tool-name tn :addon-id addon-id}))
     (all-contributions)))
+
+(m/=> retract-all-by-addon! [:=> [:cat :any] CommandContributions])
 
 (defn retract-schemas-by-owner!
   "Remove every schema extension OWNER contributed, across all tools (for
@@ -432,6 +482,8 @@
       (notify-contribution! {:type :retract-schema :tool-name tn :addon-id owner}))
     touched))
 
+(m/=> retract-schemas-by-owner! [:=> [:cat SchemaOwner] [:vector :string]])
+
 (m/=> effective-schema-properties
       [:=> [:cat [:maybe ToolSchemaContributions]] [:maybe ParamProperties]])
 
@@ -443,7 +495,7 @@
 
 (def ExtensionFn
   "Schema for a registered extension value: any invokable."
-  [:fn ifn?])
+  [:fn {:gen/elements [identity]} ifn?])
 
 (m/=> get-extension
       [:function
