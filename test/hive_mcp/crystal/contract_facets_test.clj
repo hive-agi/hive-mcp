@@ -82,10 +82,13 @@
   hive-mcp.crystal.synthesis/extract-project-scopes
   {:in  HarvestedIn
    :out [:set :string]
+   ;; An entry contributes only its FIRST scope:project:* tag (entry-project-id
+   ;; uses `some`), so the oracle keeps the first match per entry.
    :rel (fn [h out]
           (= out (set (for [k [:progress-notes :completed-tasks :memory-ids-created :memory-ids-accessed]
                             e (get h k) :when (map? e)
-                            t (:tags e) :when (.startsWith ^String t "scope:project:")]
+                            :let [t (first (filter #(.startsWith ^String % "scope:project:") (:tags e)))]
+                            :when t]
                         (subs t 14)))))
    :num-tests 200
    :golden-path "test/golden/hive-mcp/crystal/extract-project-scopes-contract.edn"})
