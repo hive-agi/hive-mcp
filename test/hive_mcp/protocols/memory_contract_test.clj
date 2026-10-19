@@ -32,22 +32,61 @@
 
 (defn- stub? [x] (instance? StubMemoryStore x))
 
-(defmacro ^:private role-predicate [name subject expected]
-  `(deftrifecta-from-schema ~name
-     ~subject
-     {:in [:cat AnyStore]
-      :out :boolean
-      :rel (fn [[x#] out#] (= out# (~expected x#)))
-      :num-tests 60}))
+(deftrifecta-from-schema batch-store-pred
+  #'mem/batch-store?
+  {:in [:cat AnyStore]
+   :out :boolean
+   :rel (fn [[x] out] (= out (stub? x)))
+   :num-tests 60})
 
-(role-predicate batch-store-pred #'mem/batch-store? stub?)
-(role-predicate batch-read-store-pred #'mem/batch-read-store? stub?)
-(role-predicate analytics-store-pred #'mem/analytics-store? stub?)
-(role-predicate metadata-write-store-pred #'mem/metadata-write-store? stub?)
-(role-predicate staleness-store-pred #'mem/staleness-store? stub?)
-(role-predicate routing-store-pred #'mem/routing-store? (constantly false))
-(role-predicate temporal-store-pred #'mem/temporal-store? (constantly false))
-(role-predicate liveness-store-pred #'ml/liveness-store? stub?)
+(deftrifecta-from-schema batch-read-store-pred
+  #'mem/batch-read-store?
+  {:in [:cat AnyStore]
+   :out :boolean
+   :rel (fn [[x] out] (= out (stub? x)))
+   :num-tests 60})
+
+(deftrifecta-from-schema analytics-store-pred
+  #'mem/analytics-store?
+  {:in [:cat AnyStore]
+   :out :boolean
+   :rel (fn [[x] out] (= out (stub? x)))
+   :num-tests 60})
+
+(deftrifecta-from-schema metadata-write-store-pred
+  #'mem/metadata-write-store?
+  {:in [:cat AnyStore]
+   :out :boolean
+   :rel (fn [[x] out] (= out (stub? x)))
+   :num-tests 60})
+
+(deftrifecta-from-schema staleness-store-pred
+  #'mem/staleness-store?
+  {:in [:cat AnyStore]
+   :out :boolean
+   :rel (fn [[x] out] (= out (stub? x)))
+   :num-tests 60})
+
+(deftrifecta-from-schema routing-store-pred
+  #'mem/routing-store?
+  {:in [:cat AnyStore]
+   :out :boolean
+   :rel (fn [_ out] (false? out))
+   :num-tests 60})
+
+(deftrifecta-from-schema temporal-store-pred
+  #'mem/temporal-store?
+  {:in [:cat AnyStore]
+   :out :boolean
+   :rel (fn [_ out] (false? out))
+   :num-tests 60})
+
+(deftrifecta-from-schema liveness-store-pred
+  #'ml/liveness-store?
+  {:in [:cat AnyStore]
+   :out :boolean
+   :rel (fn [[x] out] (= out (stub? x)))
+   :num-tests 60})
 
 (def ^:private PopulatedStore
   "A stub store holding the generated ids, each a note whose content names it."

@@ -3,6 +3,7 @@
    the registry: it starts with three stub channels and the prior channels are
    registered again afterwards."
   (:require [clojure.test :refer [deftest is use-fixtures]]
+            [hive-mcp.delivery.fanout :as fanout]
             [hive-mcp.protocols.delivery-channel :as dc]
             [hive-schemas.test :refer [deftrifecta-from-schema]]
             [hive-test.golden :as golden]))
@@ -58,7 +59,9 @@
 
 (golden/deftest-golden fanout-delivers-to-available-channels-golden
   "test/golden/hive-mcp/protocols/delivery-channel-fanout.edn"
-  (let [outcomes (dc/fanout! {:type :m17/ping})]
+  ;; Fresh breakers, so an earlier test's failures on these ids cannot open one.
+  (let [_ (fanout/reset-breakers!)
+        outcomes (dc/fanout! {:type :m17/ping})]
     {:outcomes (into (sorted-map) (select-keys outcomes stub-ids))
      :seen (into (sorted-map)
                  (for [id stub-ids] [id @(:seen (dc/get-channel id))]))}))

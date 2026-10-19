@@ -154,7 +154,6 @@
   "The config map `multi-slot` reads; nil reads as {}."
   [:maybe [:map
            [:validate {:optional true} [:maybe ifn?]]
-           [:on-empty {:optional true} [:maybe ifn?]]
            [:on-missing {:optional true} [:maybe ifn?]]
            [:initial {:optional true} [:maybe [:map-of :any :any]]]]])
 
