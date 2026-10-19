@@ -2,7 +2,8 @@
   "Event dispatch + interceptor execution. Wraps hive.events.interceptor with
    malli validation, Prometheus telemetry, and metrics-tracked effect execution.
    Built-in dispatch-side interceptors here: debug, validate-event."
-  (:require [hive.events.interceptor :as interceptor]
+  (:require [malli.core :as mall]
+            [hive.events.interceptor :as interceptor]
             [hive.events.fx :as fx]
             [malli.core :as m]
             [malli.error :as me]
@@ -38,16 +39,22 @@
   []
   @*unhandled-effect-counts)
 
+(mall/=> unhandled-effect-counts [:=> [:cat] [:map-of :keyword [:int {:min 0}]]])
+
 (defn reset-unhandled-effect-counts!
   "Clear the unhandled-effect counter — call from test fixtures."
   []
   (reset! *unhandled-effect-counts {}))
+
+(mall/=> reset-unhandled-effect-counts! [:=> [:cat] :map])
 
 (defn interceptor?
   "Returns true if m is a valid interceptor map."
   [m]
   (and (map? m)
        (contains? m :id)))
+
+(mall/=> interceptor? [:=> [:cat :any] :boolean])
 
 ;; =============================================================================
 ;; Interceptor Chain Execution
@@ -74,6 +81,8 @@
      :effects {}
      :queue (vec interceptors)
      :stack []})))
+
+(mall/=> execute [:function [:=> [:cat [:vector :any] [:sequential :map]] :map] [:=> [:cat [:vector :any] [:sequential :map] :map] :map]])
 
 ;; =============================================================================
 ;; Effect Execution (with metrics tracking)
@@ -115,6 +124,8 @@
         (log/error "Effect" effect-id "failed:" (.getMessage e))))
     (record-unhandled-effect! effect-id)))
 
+(mall/=> effect-executor [:=> [:cat :keyword :any] [:or :nil [:int {:min 1}] :map]])
+
 (defonce ^:private effect-executor-installed
   ^{:doc "Installs `effect-executor` once, at load. Held in a defonce so a
           namespace reload does not reinstall over a test's own policy."}
@@ -139,6 +150,8 @@
    context)
   ([context _fx-handlers]
    (do-fx context)))
+
+(mall/=> do-fx [:function [:=> [:cat :map] :map] [:=> [:cat :map :any] :map]])
 
 ;; =============================================================================
 ;; Dispatch
@@ -179,11 +192,15 @@
       (throw (ex-info (str "No handler registered for event: " event-id)
                       {:event event})))))
 
+(mall/=> dispatch [:=> [:cat [:vector :any]] :map])
+
 (defn dispatch-sync
   "Synchronous dispatch — same as dispatch for now.
    Future: dispatch may become async."
   [event]
   (dispatch event))
+
+(mall/=> dispatch-sync [:=> [:cat [:vector :any]] :map])
 
 ;; =============================================================================
 ;; Built-in Interceptors (dispatch-side)
@@ -259,3 +276,5 @@
                                      :error (me/humanize (m/explain data-schema event-data))
                                      :schema-type :data}))))
                 context)))))
+
+(mall/=> validate-event [:function [:=> [:cat] [:map [:id :keyword] [:before ifn?]]] [:=> [:cat :any] [:map [:id :keyword] [:before ifn?]]]])
