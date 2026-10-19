@@ -2,7 +2,8 @@
   "Re-grounding workflow for knowledge entries.
    Verifies entries against source files and updates grounding timestamps."
 
-  (:require [hive-mcp.protocols.memory :as mem-proto]
+  (:require [malli.core :as m]
+            [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.memory.temporal :as temporal]
             [hive-dsl.result :as r]
             [clojure.java.io :as io]
@@ -253,3 +254,8 @@
           {:error (:message result)
            :total-scanned 0
            :processed 0}))))
+(m/=> entry-attr [:=> [:cat :map :keyword] :any])
+(m/=> needs-regrounding? [:=> [:cat :map [:int {:min 0}]] :boolean])
+(m/=> reground-entry! [:=> [:cat :string] :map])
+(m/=> reground-batch! [:=> [:cat [:sequential :string]] [:map [:total [:int {:min 0}]] [:by-status :map] [:results [:sequential :map]] [:drifted-entries [:sequential :string]]]])
+(m/=> backfill-grounding! [:=> [:cat :map] [:map [:total-scanned [:int {:min 0}]] [:with-source [:int {:min 0}]] [:processed [:int {:min 0}]] [:by-status :map] [:drifted-entries [:sequential :string]]]])
