@@ -4,4 +4,4 @@
 
 (golden/deftest-golden connection-golden
   "test/golden/hive-mcp/m13-connection.edn"
-  (let [s (subject/gen-edge-id)] (and (.startsWith s "edge-") (= 32 (count s)))))
+  (let [s (subject/gen-edge-id)] {:prefix (.startsWith s "edge-") :length (count s)}))

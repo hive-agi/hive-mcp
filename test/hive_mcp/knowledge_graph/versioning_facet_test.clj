@@ -4,4 +4,4 @@
 
 (golden/deftest-golden versioning-golden
   "test/golden/hive-mcp/m13-versioning.edn"
-  (boolean (subject/versioning-available?)))
+  (subject/status))

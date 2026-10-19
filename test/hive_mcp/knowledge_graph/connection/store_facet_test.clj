@@ -4,4 +4,4 @@
 
 (golden/deftest-golden store-golden
   "test/golden/hive-mcp/m13-connection-store.edn"
-  (boolean (subject/store-live?)))
+  (subject/store-live?))

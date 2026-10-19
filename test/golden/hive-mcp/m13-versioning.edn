@@ -1,1 +1,5 @@
-false
+{:available false,
+ :system-id nil,
+ :branch nil,
+ :snapshot-id nil,
+ :branches nil}
