@@ -3,6 +3,7 @@
   (:require [clojure.test :refer [deftest is]]
             [hive-mcp.memory.domain :as domain]
             [hive-mcp.memory.ingest-search :as ingest]
+            [hive-mcp.memory.temporal :as temporal]
             [hive-mcp.memory.types :as types]
             [hive-schemas.coverage :refer [deftest-contract-coverage]]
             [hive-schemas.test :as hst]))
@@ -39,4 +40,32 @@
                (= (map :distance out) (sort (map :distance out)))
                (every? (set (concat a b)) out)))
    :golden-path "test/golden/hive-mcp/memory/merge-and-rerank-contract.edn"
+   :num-tests 100})
+
+(deftest-contract-coverage memory-contracts
+  {:paths ["src/hive_mcp/memory/domain.clj"
+           "src/hive_mcp/memory/ids.clj"
+           "src/hive_mcp/memory/ingest_search.clj"
+           "src/hive_mcp/memory/synthesis_protection.clj"
+           "src/hive_mcp/memory/temporal.clj"
+           "src/hive_mcp/memory/type_registry.clj"
+           "src/hive_mcp/memory/types.clj"
+           "src/hive_mcp/memory/write_events.clj"]})
+
+(hst/deftrifecta-from-schema prune-victims-contract
+  hive-mcp.memory.temporal/prune-victims
+  {:in [:cat [:vector [:tuple [:int {:min 0 :max 100}] :string
+                             [:fn {:gen/elements [(java.util.Date. 0)
+                                                  (java.util.Date. 1000)
+                                                  (java.util.Date. 2000)]}
+                              #(instance? java.util.Date %)]
+                             [:enum :feedback :kanban-done]]]
+        [:fn {:gen/elements [(java.util.Date. 1000)]} #(instance? java.util.Date %)]
+        [:map [:max-per-entry [:int {:min 0 :max 4}]]
+         [:batch-cap [:int {:min 0 :max 6}]]]]
+   :out [:vector :int]
+   :rel (fn [[rows _ {:keys [batch-cap]}] victims]
+          (and (<= (count victims) batch-cap)
+               (= (count victims) (count (distinct victims)))
+               (every? (set (map first (remove #(= :kanban-done (last %)) rows))) victims)))
    :num-tests 100})
