@@ -1,0 +1,84 @@
+{:case-0 {:out {:slice-key :recalls, :datums []}, :in ({} nil)},
+ :case-1
+ {:out
+  {:slice-key :recalls,
+   :datums [{:pid "src-pid", :datum ["m3" {:tags ["wrap"]}]}]},
+  :in ({"m3" {:tags ["wrap"]}} "src-pid")},
+ :case-2 {:out {:slice-key :recalls, :datums []}, :in ({} nil)},
+ :case-3
+ {:out
+  {:slice-key :recalls,
+   :datums
+   [{:pid "proj-b",
+     :datum
+     ["m3"
+      {:project-id nil, :tags ["wrap" "scope:project:proj-b"]}]}]},
+  :in
+  ({"m3" {:project-id nil, :tags ["wrap" "scope:project:proj-b"]}}
+   "src-pid")},
+ :case-4
+ {:out
+  {:slice-key :recalls,
+   :datums
+   [{:pid :umbrella, :datum ["m2" {:project-id nil}]}
+    {:pid "hive",
+     :datum ["m1" {:project-id "hive", :tags ["scope:project:"]}]}
+    {:pid :umbrella, :datum ["m3" {:project-id nil}]}]},
+  :in
+  ({"m2" {:project-id nil},
+    "m1" {:project-id "hive", :tags ["scope:project:"]},
+    "m3" {:project-id nil}}
+   nil)},
+ :case-5
+ {:out
+  {:slice-key :recalls,
+   :datums
+   [{:pid "proj-b",
+     :datum
+     ["m1"
+      {:tags
+       ["agent:x" "wrap" "scope:project:proj-b" "scope:project:"]}]}
+    {:pid :umbrella, :datum ["m2" {:project-id nil}]}]},
+  :in
+  ({"m1"
+    {:tags ["agent:x" "wrap" "scope:project:proj-b" "scope:project:"]},
+    "m2" {:project-id nil}}
+   nil)},
+ :case-6
+ {:out
+  {:slice-key :recalls, :datums [{:pid :umbrella, :datum ["m3" {}]}]},
+  :in ({"m3" {}} nil)},
+ :case-7
+ {:out
+  {:slice-key :recalls,
+   :datums
+   [{:pid "proj-b",
+     :datum
+     ["m3" {:project-id "umbrella", :tags ["scope:project:proj-b"]}]}
+    {:pid :umbrella, :datum ["m1" {:tags ["wrap"]}]}
+    {:pid "hive",
+     :datum
+     ["m2"
+      {:project-id nil,
+       :tags
+       ["agent:x"
+        "agent:x"
+        "scope:project:hive"
+        "scope:project:"
+        "agent:x"
+        "scope:project:umbrella"
+        "scope:project:umbrella"]}]}]},
+  :in
+  ({"m3" {:project-id "umbrella", :tags ["scope:project:proj-b"]},
+    "m1" {:tags ["wrap"]},
+    "m2"
+    {:project-id nil,
+     :tags
+     ["agent:x"
+      "agent:x"
+      "scope:project:hive"
+      "scope:project:"
+      "agent:x"
+      "scope:project:umbrella"
+      "scope:project:umbrella"]}}
+   nil)}}

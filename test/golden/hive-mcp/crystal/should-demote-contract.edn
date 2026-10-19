@@ -1,0 +1,56 @@
+{:case-0
+ {:out
+  {:demote? false,
+   :reason nil,
+   :behavioral-adjustment -2.0,
+   :prev-duration nil},
+  :in ({:duration :ephemeral} -2.0)},
+ :case-1
+ {:out
+  {:demote? false,
+   :reason nil,
+   :behavioral-adjustment -0.5,
+   :prev-duration nil},
+  :in ({:duration :ephemeral} -0.5)},
+ :case-2
+ {:out
+  {:demote? false,
+   :reason nil,
+   :behavioral-adjustment -2.0,
+   :prev-duration nil},
+  :in ({:duration :permanent} -2.0)},
+ :case-3
+ {:out
+  {:demote? false,
+   :reason nil,
+   :behavioral-adjustment 2.0,
+   :prev-duration nil},
+  :in ({:duration :medium} 2.0)},
+ :case-4
+ {:out
+  {:demote? false,
+   :reason nil,
+   :behavioral-adjustment -2.0,
+   :prev-duration nil},
+  :in ({:duration :permanent} -2.0)},
+ :case-5
+ {:out
+  {:demote? false,
+   :reason nil,
+   :behavioral-adjustment -1.5,
+   :prev-duration nil},
+  :in ({:duration :permanent} -1.5)},
+ :case-6
+ {:out
+  {:demote? false,
+   :reason nil,
+   :behavioral-adjustment -1.65625,
+   :prev-duration nil},
+  :in ({:duration :medium} -1.65625)},
+ :case-7
+ {:out
+  {:demote? false,
+   :reason nil,
+   :behavioral-adjustment 1.375,
+   :prev-duration nil},
+  :in ({:duration :weird} 1.375)}}

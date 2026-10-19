@@ -1,0 +1,8 @@
+{:case-0 {:out :short, :in :ephemeral},
+ :case-1 {:out :permanent, :in "long"},
+ :case-2 {:out :medium, :in "short-term"},
+ :case-3 {:out :permanent, :in :permanent},
+ :case-4 {:out :long, :in :medium},
+ :case-5 {:out :permanent, :in "permanent"},
+ :case-6 {:out :long, :in "medium"},
+ :case-7 {:out :long, :in :medium}}

@@ -1,0 +1,20 @@
+{:case-0
+ {:out {:pid "proj-a", :datum {:project-id "proj-a"}},
+  :in (nil {:project-id "proj-a"})},
+ :case-1
+ {:out {:pid "proj-a", :datum {:project-id "proj-a", :tags ["wrap"]}},
+  :in ("other" {:project-id "proj-a", :tags ["wrap"]})},
+ :case-2
+ {:out {:pid :umbrella, :datum {:project-id nil, :tags []}},
+  :in (nil {:project-id nil, :tags []})},
+ :case-3
+ {:out {:pid :umbrella, :datum {:tags ["agent:x"]}},
+  :in (nil {:tags ["agent:x"]})},
+ :case-4
+ {:out {:pid "other", :datum {:project-id nil}},
+  :in ("other" {:project-id nil})},
+ :case-5
+ {:out {:pid :umbrella, :datum {:project-id nil}},
+  :in (nil {:project-id nil})},
+ :case-6 {:out {:pid :umbrella, :datum {}}, :in (nil {})},
+ :case-7 {:out {:pid :umbrella, :datum {}}, :in (nil {})}}

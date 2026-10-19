@@ -1,0 +1,64 @@
+{:case-0
+ {:out
+  {:type :note,
+   :content
+   "## Session Summary: s-x\n\n### Activity\n- Progress notes: 1\n- Completed tasks: 0\n- Commits: 0\n- Memories created: 0\n- Memories accessed: 0\n\n(Quiet session — no synthesized progress; breadcrumb persisted for catchup.)",
+   :tags ["session-summary" "wrap-generated" "wrap-minimal"],
+   :duration :short},
+  :in ("s-x" {:summary {:progress-count 1, :commit-count 0}})},
+ :case-1
+ {:out
+  {:type :note,
+   :content
+   "## Session Summary: s-x\n\n### Activity\n- Progress notes: 0\n- Completed tasks: 0\n- Commits: 0\n- Memories created: 0\n- Memories accessed: 0\n\n(Quiet session — no synthesized progress; breadcrumb persisted for catchup.)",
+   :tags ["session-summary" "wrap-generated" "wrap-minimal"],
+   :duration :short},
+  :in ("s-x" {:summary {:progress-count 0, :commit-count 0}})},
+ :case-2
+ {:out
+  {:type :note,
+   :content
+   "## Session Summary: 2026-10-16\n\n### Activity\n- Progress notes: 2\n- Completed tasks: 0\n- Commits: 1\n- Memories created: 0\n- Memories accessed: 0\n\n(Quiet session — no synthesized progress; breadcrumb persisted for catchup.)",
+   :tags ["session-summary" "wrap-generated" "wrap-minimal"],
+   :duration :short},
+  :in ("2026-10-16" {:summary {:progress-count 2, :commit-count 1}})},
+ :case-3
+ {:out
+  {:type :note,
+   :content
+   "## Session Summary: 2026-10-16\n\n### Activity\n- Progress notes: 1\n- Completed tasks: 0\n- Commits: 1\n- Memories created: 0\n- Memories accessed: 0\n\n(Quiet session — no synthesized progress; breadcrumb persisted for catchup.)",
+   :tags ["session-summary" "wrap-generated" "wrap-minimal"],
+   :duration :short},
+  :in ("2026-10-16" {:summary {:progress-count 1, :commit-count 1}})},
+ :case-4
+ {:out
+  {:type :note,
+   :content
+   "## Session Summary: 2026-10-16\n\n### Activity\n- Progress notes: 2\n- Completed tasks: 0\n- Commits: 1\n- Memories created: 0\n- Memories accessed: 0\n\n(Quiet session — no synthesized progress; breadcrumb persisted for catchup.)",
+   :tags ["session-summary" "wrap-generated" "wrap-minimal"],
+   :duration :short},
+  :in ("2026-10-16" {:summary {:progress-count 2, :commit-count 1}})},
+ :case-5
+ {:out
+  {:type :note,
+   :content
+   "## Session Summary: 2026-10-16\n\n### Activity\n- Progress notes: 0\n- Completed tasks: 0\n- Commits: 7\n- Memories created: 0\n- Memories accessed: 0\n\n(Quiet session — no synthesized progress; breadcrumb persisted for catchup.)",
+   :tags ["session-summary" "wrap-generated" "wrap-minimal"],
+   :duration :short},
+  :in ("2026-10-16" {:summary {:progress-count 0, :commit-count 7}})},
+ :case-6
+ {:out
+  {:type :note,
+   :content
+   "## Session Summary: 2026-10-16\n\n### Activity\n- Progress notes: 1\n- Completed tasks: 0\n- Commits: 4\n- Memories created: 0\n- Memories accessed: 0\n\n(Quiet session — no synthesized progress; breadcrumb persisted for catchup.)",
+   :tags ["session-summary" "wrap-generated" "wrap-minimal"],
+   :duration :short},
+  :in ("2026-10-16" {:summary {:progress-count 1, :commit-count 4}})},
+ :case-7
+ {:out
+  {:type :note,
+   :content
+   "## Session Summary: s-x\n\n### Activity\n- Progress notes: 7\n- Completed tasks: 0\n- Commits: 1\n- Memories created: 0\n- Memories accessed: 0\n\n(Quiet session — no synthesized progress; breadcrumb persisted for catchup.)",
+   :tags ["session-summary" "wrap-generated" "wrap-minimal"],
+   :duration :short},
+  :in ("s-x" {:summary {:progress-count 7, :commit-count 1}})}}
