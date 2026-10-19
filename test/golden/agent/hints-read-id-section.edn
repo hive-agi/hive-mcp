@@ -1,0 +1,88 @@
+{:case-0
+ {:out
+  ["### Priority Memory IDs (fetch during Silence)"
+   "```"
+   "memory get iQ"
+   "```"
+   "Count: 1"
+   ""],
+  :in ["iQ"]},
+ :case-1
+ {:out
+  ["### Priority Memory IDs (fetch during Silence)"
+   "```"
+   "memory get iV izq iit iic i9b"
+   "memory get iE"
+   "```"
+   "Count: 6"
+   ""],
+  :in ["iV" "izq" "iit" "iic" "i9b" "iE"]},
+ :case-2
+ {:out
+  ["### Priority Memory IDs (fetch during Silence)"
+   "```"
+   "memory get isr3 i542 iIW i7s7 iYI"
+   "memory get iO i8 iq0 i6 i60z"
+   "memory get il1C i5F"
+   "```"
+   "Count: 12"
+   ""],
+  :in
+  ["isr3"
+   "i542"
+   "iIW"
+   "i7s7"
+   "iYI"
+   "iO"
+   "i8"
+   "iq0"
+   "i6"
+   "i60z"
+   "il1C"
+   "i5F"]},
+ :case-3
+ {:out
+  ["### Priority Memory IDs (fetch during Silence)"
+   "```"
+   "memory get ij iGipx iB iQ8N im"
+   "memory get iO4 ioY9 iwS i1Bwy"
+   "```"
+   "Count: 9"
+   ""],
+  :in ["ij" "iGipx" "iB" "iQ8N" "im" "iO4" "ioY9" "iwS" "i1Bwy"]},
+ :case-4
+ {:out
+  ["### Priority Memory IDs (fetch during Silence)"
+   "```"
+   "memory get i3qv3 icY iD6 i64lfZ i85S"
+   "```"
+   "Count: 5"
+   ""],
+  :in ["i3qv3" "icY" "iD6" "i64lfZ" "i85S"]},
+ :case-5
+ {:out
+  ["### Priority Memory IDs (fetch during Silence)"
+   "```"
+   "memory get iU ihZ21fw in0 i2"
+   "```"
+   "Count: 4"
+   ""],
+  :in ["iU" "ihZ21fw" "in0" "i2"]},
+ :case-6
+ {:out
+  ["### Priority Memory IDs (fetch during Silence)"
+   "```"
+   "memory get iz iZ3ld iDI i8r0xikK iE182sVj"
+   "```"
+   "Count: 5"
+   ""],
+  :in ["iz" "iZ3ld" "iDI" "i8r0xikK" "iE182sVj"]},
+ :case-7
+ {:out
+  ["### Priority Memory IDs (fetch during Silence)"
+   "```"
+   "memory get ii8as9 i11U iW"
+   "```"
+   "Count: 3"
+   ""],
+  :in ["ii8as9" "i11U" "iW"]}}

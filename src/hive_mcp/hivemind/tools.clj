@@ -141,16 +141,30 @@ The env var fallback reads from MCP server process, NOT your ling process!"
                                                   ". Lings should always pass agent_id explicitly for status sync."))))})))}
 
    {:name "hivemind_ask"
-    :description "Request a decision from the human coordinator.
+    :description "Ask the human coordinator a question and wait for the answer.
 
-USE THIS when you need human approval or guidance:
-- Before destructive operations
-- When multiple valid approaches exist
-- When requirements are ambiguous
+USE THIS when you need a human:
+- Before destructive operations (expects: confirm)
+- When multiple valid approaches exist (options, expects: choice)
+- When requirements are ambiguous and you need them explained (expects: text)
 
-BLOCKS until human responds (up to timeout).
+Give the human what they need to answer in `context`: what you found, what
+you tried, what each option costs. The question itself stays one line.
 
-Example: hivemind_ask('Should I delete these 50 files?', ['yes', 'no', 'show me first'])
+The answer is TEXT. With expects=text (the default without options) the human
+types a free-form reply. With options the human may pick one or type
+something else, so read the answer, do not only match it against the options.
+
+`cc` names other agents waiting on the same answer; each is told it, so ask
+once instead of once per agent.
+
+BLOCKS until the human answers (up to timeout).
+
+Examples:
+- hivemind_ask('Delete these 50 files?', expects='confirm')
+- hivemind_ask('Which schema should the migration target?',
+               context='v1 has 3 consumers; v2 has none yet but is the plan',
+               cc=['ling-b'])
 
 IMPORTANT: Lings MUST pass agent_id explicitly (use your $CLAUDE_SWARM_SLAVE_ID).
 The env var fallback reads from MCP server process, NOT your ling process!"
@@ -158,10 +172,18 @@ The env var fallback reads from MCP server process, NOT your ling process!"
                   :properties {"agent_id" {:type "string"
                                            :description "REQUIRED for lings: Pass your $CLAUDE_SWARM_SLAVE_ID. Without this, coordination may fail."}
                                "question" {:type "string"
-                                           :description "What decision do you need?"}
+                                           :description "What you need answered, in one line"}
+                               "context" {:type "string"
+                                          :description "What the human should read before answering: findings, trade-offs, what you tried"}
+                               "expects" {:type "string"
+                                          :enum ["confirm" "choice" "text"]
+                                          :description "The answer you want: confirm (yes/no), choice (one of options, typed text still accepted) or text (free-form). Default: choice with options, text without"}
                                "options" {:type "array"
                                           :items {:type "string"}
-                                          :description "Available options (or omit for free-form)"}
+                                          :description "Suggested answers (omit for free-form text)"}
+                               "cc" {:type "array"
+                                     :items {:type "string"}
+                                     :description "Other agent ids that are told the answer"}
                                "timeout_ms" {:type "integer"
                                              :description "Timeout in ms (default 300000 = 5 min)"}
                                "directory" {:type "string"
@@ -169,7 +191,8 @@ The env var fallback reads from MCP server process, NOT your ling process!"
                                "project_id" {:type "string"
                                              :description "Explicit project-id override. Wins over directory-derivation."}}
                   :required ["question"]}
-    :handler (fn [{:keys [agent_id _caller_id question options timeout_ms directory project_id]}]
+    :handler (fn [{:keys [agent_id _caller_id question context expects options cc
+                          timeout_ms directory project_id]}]
                (let [effective-id (or (ctx/session-agent-id agent_id _caller_id)
                                       (ctx/current-agent-id)
                                       (System/getenv "CLAUDE_SWARM_SLAVE_ID")
@@ -180,12 +203,16 @@ The env var fallback reads from MCP server process, NOT your ling process!"
                                               (when effective-dir (project-scope/get-current-project-id effective-dir)))
                      result (messaging/ask! effective-id question options
                                             :timeout-ms (or timeout_ms 300000)
-                                            :project-id effective-project-id)]
+                                            :project-id effective-project-id
+                                            :context context
+                                            :expects expects
+                                            :cc cc)]
                  {:type "text"
                   :text (json/write-str
                          (if (:timeout result)
                            {:timeout true :message "No response within timeout"}
-                           {:decision (:decision result)
+                           {:answer (:answer result (:decision result))
+                            :decision (:decision result)
                             :by (:by result)
                             :directory effective-dir
                             :project-id effective-project-id}))}))}
@@ -214,21 +241,27 @@ This prevents cross-project pollution in multi-project hivemind sessions."
                   :text (json/write-str (status/get-status project-id))}))}
 
    {:name "hivemind_respond"
-    :description "Respond to a pending ask from an agent.
+    :description "Answer a pending ask from an agent.
 
-Used by the coordinator to answer agent questions."
+The answer is any text: one of the ask's options, yes/no, or a typed reply.
+The asking agent resumes with it, and every agent the ask copied (cc) is told
+the same answer. The first answer wins; a second one is refused."
     :inputSchema {:type "object"
                   :properties {"ask_id" {:type "string"
                                          :description "ID of the ask to respond to"}
+                               "answer" {:type "string"
+                                         :description "The answer: an option, yes/no, or free text"}
                                "decision" {:type "string"
-                                           :description "The decision/response"}}
-                  :required ["ask_id" "decision"]}
-    :handler (fn [{:keys [ask_id decision]}]
-               {:type "text"
-                :text (json/write-str
-                       (if (messaging/respond-ask! ask_id decision)
-                         {:success true}
-                         {:error "No pending ask with that ID"}))})}
+                                           :description "Alias of answer, kept for existing callers"}}
+                  :required ["ask_id"]}
+    :handler (fn [{:keys [ask_id answer decision]}]
+               (let [reply (or answer decision)]
+                 {:type "text"
+                  :text (json/write-str
+                         (cond
+                           (str/blank? reply) {:error "answer is required"}
+                           (messaging/respond-ask! ask_id reply) {:success true}
+                           :else {:error "No pending ask with that ID"}))}))}
 
    {:name "hivemind_messages"
     :description "Get recent messages from a specific agent.

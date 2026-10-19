@@ -1,0 +1,116 @@
+{:case-0 {:out 0, :in []},
+ :case-1
+ {:out 1,
+  :in
+  [#:transcript{:role :system,
+                :content "V9a7SkSnjZ2E3cj3U29I",
+                :turn 1}
+   {:role "tool", :content "n2I3dUF6638R2trf8k", :turn 0}
+   {:role "assistant", :content "85wa5M1Fn89NJk1m2", :turn 1}
+   {:role "assistant", :content "v1F", :turn 0}]},
+ :case-2
+ {:out 2,
+  :in
+  [{:role "assistant", :content "2jE5KL7XI6h7BbP3Ui32", :turn 1}
+   {:role "system", :content "TUxV0", :turn 0}
+   {:role "user", :content "AKs61IhASRaYF0GN", :turn 1}
+   {:role "system", :content "W1N3XDU16s1t083BW2mK", :turn 1}
+   {:role "system", :content "029Vo2", :turn 1}
+   #:transcript{:role :user,
+                :content "4YZlaVaAh9om7RWa456e",
+                :turn 1,
+                :tool-calls
+                [#:tool-call{:name "edit",
+                             :arguments "{}",
+                             :result "Execution error"}
+                 #:tool-call{:name "edit",
+                             :arguments "{}",
+                             :result
+                             "Ran 3 tests containing 5 assertions. 0 failures, 1 errors."}]}
+   #:transcript{:role :system,
+                :content "j7frA69piWF01o",
+                :turn 2,
+                :tool-calls
+                [#:tool-call{:name "read_file",
+                             :arguments "{\"command\":\"git status\"}",
+                             :result "Execution error"}
+                 #:tool-call{:name "read_file",
+                             :arguments "{\"file_path\":\"/a/b\"}",
+                             :result "Execution error"}
+                 #:tool-call{:name "bash",
+                             :arguments "{\"command\":\"git status\"}",
+                             :result
+                             "Ran 3 tests containing 5 assertions. 0 failures, 1 errors."}]}
+   #:transcript{:role :system, :content "Yb70Q6O1s39", :turn 2}]},
+ :case-3
+ {:out 2,
+  :in
+  [#:transcript{:role :tool,
+                :content "r30Pt30PnW7x",
+                :turn 1,
+                :timestamp 1000000000001}
+   {:role "system", :content "J2W7L6Q7AL40AF2wa", :turn 2}
+   #:transcript{:role :assistant,
+                :content "vLV7Q26EB5E4MFCPJ",
+                :turn 1,
+                :timestamp 1000000000003}
+   {:role "user", :content "VeEPTF", :turn 1}
+   #:transcript{:role :tool, :content "urz7L", :turn 1}
+   #:transcript{:role :user,
+                :content "jk89jzof",
+                :turn 1,
+                :timestamp 1000000000002,
+                :tool-calls
+                [#:tool-call{:name "edit",
+                             :arguments "not json",
+                             :result "Execution error"}]}]},
+ :case-4
+ {:out 5,
+  :in
+  [{:role "assistant", :content "R0t29vP2O0zsZq1", :turn 1}
+   #:transcript{:role :user,
+                :content "4Ed764sch53U724y",
+                :turn 5,
+                :timestamp 1000000000004}
+   {:role "system", :content "lQ999kBRCUF1", :turn 0}]},
+ :case-5
+ {:out 3,
+  :in
+  [#:transcript{:role :system,
+                :content "Gm",
+                :turn 1,
+                :tool-calls
+                [#:tool-call{:name "read_file",
+                             :arguments "{\"command\":\"git status\"}",
+                             :result "[main abc1234] fix it"}
+                 #:tool-call{:name "bash",
+                             :arguments "not json",
+                             :result "Execution error"}]}
+   {:role "user", :content "5QDuu0Yp", :turn 3}
+   {:role "assistant", :content "jwBE2C6", :turn 1}]},
+ :case-6
+ {:out 10,
+  :in
+  [#:transcript{:role :system,
+                :content "2OaZtv9XK3I99YcSBa",
+                :turn 10,
+                :timestamp 1000000000004,
+                :tool-calls
+                [#:tool-call{:name "bash",
+                             :arguments "{\"file_path\":\"/a/b\"}",
+                             :result
+                             "Ran 3 tests containing 5 assertions. 0 failures, 1 errors."}]}
+   #:transcript{:role :tool, :content "651i4", :turn 1}
+   #:transcript{:role :system,
+                :content "109Nr0Z48vnw0R2753Yp",
+                :turn 1,
+                :timestamp 1000000000003,
+                :tool-calls []}]},
+ :case-7
+ {:out 3,
+  :in
+  [{:role "system", :content "GoaA5", :turn 3}
+   #:transcript{:role :tool,
+                :content "L28D95m1Z",
+                :turn 1,
+                :timestamp 1000000000002}]}}

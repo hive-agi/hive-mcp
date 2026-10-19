@@ -1,0 +1,11 @@
+{:case-0 {:out #:adt{:variant :claude, :type :SpawnMode}, :in :claude},
+ :case-1
+ {:out #:adt{:variant :agent-sdk, :type :SpawnMode}, :in :agent-sdk},
+ :case-2 {:out #:adt{:variant :vterm, :type :SpawnMode}, :in :vterm},
+ :case-3 {:out #:adt{:variant :vterm, :type :SpawnMode}, :in :vterm},
+ :case-4 {:out #:adt{:variant :claude, :type :SpawnMode}, :in :claude},
+ :case-5
+ {:out #:adt{:variant :agent-sdk, :type :SpawnMode}, :in :agent-sdk},
+ :case-6
+ {:out #:adt{:variant :headless, :type :SpawnMode}, :in :headless},
+ :case-7 {:out #:adt{:variant :claude, :type :SpawnMode}, :in :claude}}

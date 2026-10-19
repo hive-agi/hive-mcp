@@ -1,0 +1,8 @@
+{:case-0 {:out 1.8E-5, :in (1 1 nil)},
+ :case-1 {:out 1.5E-5, :in (1 0 "claude-opus")},
+ :case-2 {:out 2.5E-6, :in (0 2 "claude-haiku")},
+ :case-3 {:out 8.999999999999999E-5, :in (1 1 "claude-opus")},
+ :case-4 {:out 3.3E-5, :in (1 2 nil)},
+ :case-5 {:out 0.0, :in (0 0 nil)},
+ :case-6 {:out 5.7E-5, :in (14 1 nil)},
+ :case-7 {:out 2.1600000000000002E-4, :in (2 14 nil)}}

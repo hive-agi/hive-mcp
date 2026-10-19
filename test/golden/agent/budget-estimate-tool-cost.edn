@@ -1,0 +1,17 @@
+{:case-0
+ {:out 0.0078000000000000005,
+  :in ("other" "1675k5d9gLRJir6Q2ZJ67g02X8c7M9mpj65" nil)},
+ :case-1
+ {:out 0.039, :in ("other" "zde0upfm81eQ9gQmxF46C8c4" "claude-opus")},
+ :case-2
+ {:out 0.001275,
+  :in ("read_file" "SPGTs3CoBlvCa8f25aEJci4GQ" "claude-haiku")},
+ :case-3 {:out 0.039, :in ("bash" "97" "claude-opus")},
+ :case-4
+ {:out 0.015300000000000001,
+  :in ("read_file" "m2ZWrABgwKQoVv06wLVYHsAR14TQ4z8oAHpUE1a6" nil)},
+ :case-5
+ {:out 0.015300000000000001,
+  :in ("read_file" "ihX0T4aEOYGbzogs7e8s4qFg4" nil)},
+ :case-6 {:out 0.0078000000000000005, :in ("bash" "M7b5I1Z5H" nil)},
+ :case-7 {:out 0.0078000000000000005, :in (nil "uB" nil)}}
