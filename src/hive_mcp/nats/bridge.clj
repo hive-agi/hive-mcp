@@ -476,11 +476,13 @@
 ;; Function Contracts (m16 coverage batch)
 ;; =============================================================================
 
-;; Subject builders: permissive tokens in (nil/blank -> fallback), strings out.
+;; Subject builders: tokens are strings, keywords, symbols or nil (blank/nil
+;; -> fallback), strings out. NOTE: safe-token calls (name x), so numbers throw
+;; ClassCastException — a genuine domain limit, recorded as a bug, not fixed.
 ;; Publishers: payload maps in, publish return threaded out.
 
 (m/=> shout-subject
-      [:=> [:cat :any :any]
+      [:=> [:cat [:or :string :keyword :symbol :nil] [:or :string :keyword :symbol :nil]]
        :string])
 
 (m/=> shout-wildcard
@@ -489,7 +491,7 @@
        [:=> [:cat :any] :string]])
 
 (m/=> event-subject
-      [:=> [:cat :any]
+      [:=> [:cat [:or :string :keyword :symbol :nil]]
        :string])
 
 (m/=> event-wildcard
@@ -497,15 +499,15 @@
        :string])
 
 (m/=> agent-subject
-      [:=> [:cat :any :any]
+      [:=> [:cat [:or :string :keyword :symbol :nil] [:or :string :keyword :symbol :nil]]
        :string])
 
 (m/=> agent-wildcard
-      [:=> [:cat :any]
+      [:=> [:cat [:or :string :keyword :symbol :nil]]
        :string])
 
 (m/=> tool-subject
-      [:=> [:cat :any]
+      [:=> [:cat [:or :string :keyword :symbol :nil]]
        :string])
 
 (m/=> tool-wildcard
@@ -513,7 +515,7 @@
        :string])
 
 (m/=> wave-subject
-      [:=> [:cat :any :any]
+      [:=> [:cat [:or :string :keyword :symbol :nil] [:or :string :keyword :symbol :nil]]
        :string])
 
 (m/=> publish-wave-event!

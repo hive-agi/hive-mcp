@@ -1,0 +1,8 @@
+{:threshold-set 7,
+ :status-keys
+ #{:rotation-threshold
+   :eval-count
+   :shared-session-id
+   :classloader-info},
+ :count-keys
+ #{:thread-context-classloader :dynamic-classloader-count :chain-depth}}

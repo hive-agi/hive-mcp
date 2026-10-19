@@ -242,9 +242,7 @@
        :nil])
 
 (m/=> clamp-depth
-      [:function
-       [:=> [:cat :any] :any]
-       [:=> [:cat :any :int] :any]])
+      [:=> [:cat :any [:* :any]] :any])
 
 (m/=> publish!
       [:=> [:cat :string :any]

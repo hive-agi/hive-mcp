@@ -1,0 +1,69 @@
+{:case-0
+ {:out
+  {:name nil,
+   :title "",
+   :category "general",
+   :summary "No summary available",
+   :key-points []},
+  :in ({:title "", :content ""})},
+ :case-1
+ {:out
+  {:name "review",
+   :title "z",
+   :category "general",
+   :summary "No summary available",
+   :key-points []},
+  :in
+  ({:name "review",
+    :title "z",
+    :category "general",
+    :_content "",
+    :content "6"})},
+ :case-2
+ {:out
+  {:name nil,
+   :title "",
+   :category "general",
+   :summary "87",
+   :key-points []},
+  :in ({:title "", :_content "87", :content "l"})},
+ :case-3
+ {:out
+  {:name nil,
+   :title nil,
+   :category "general",
+   :summary "No summary available",
+   :key-points []},
+  :in ({})},
+ :case-4
+ {:out
+  {:name "review",
+   :title "",
+   :category "general",
+   :summary "Hk",
+   :key-points []},
+  :in ({:name "review", :title "", :_content "Hk"})},
+ :case-5
+ {:out
+  {:name nil,
+   :title "wV",
+   :category "general",
+   :summary "nhe6",
+   :key-points []},
+  :in ({:title "wV", :_content "nhe6", :content "3e6NF"})},
+ :case-6
+ {:out
+  {:name nil,
+   :title nil,
+   :category "testing",
+   :summary "qDTH6",
+   :key-points []},
+  :in ({:category "testing", :content "qDTH6"})},
+ :case-7
+ {:out
+  {:name nil,
+   :title nil,
+   :category "testing",
+   :summary "y5e2B",
+   :key-points []},
+  :in ({:category "testing", :_content "y5e2B"})}}
