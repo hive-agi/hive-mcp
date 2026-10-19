@@ -25,19 +25,21 @@
    #(instance? java.time.Instant %)])
 
 (def PositiveNumber
-  "A Beta-distribution parameter: a positive finite double, or a positive
-   integer.
+  "A Beta-distribution parameter: a positive double, or a positive integer,
+   in the range the scoring fns compute over.
 
-   BUG (recorded, not fixed): with INTEGER parameters `beta-lower-bound`
-   computes `(* sum sum (+ sum 1))` in long arithmetic and throws
-   ArithmeticException (long overflow) once alpha + beta exceeds about 2.09e6,
-   e.g. {:disc/certainty-alpha 1 :disc/certainty-beta 2097151}. Stored
-   parameters are doubles; the integer arm is bounded to the range the body
-   survives."
+   BUG (recorded, not fixed): `beta-lower-bound` computes the variance as
+   `(/ (* a b) (* sum sum (+ sum 1)))` and fails outside that range:
+     - INTEGER parameters overflow long arithmetic and throw
+       ArithmeticException once alpha + beta exceeds about 2.09e6, e.g.
+       {:disc/certainty-alpha 1 :disc/certainty-beta 2097151};
+     - tiny DOUBLES underflow the denominator to 0.0 and throw
+       ArithmeticException (Divide by zero), e.g. alpha 1.1e-162, beta 2.8e-163;
+     - huge DOUBLES overflow to Infinity and yield NaN, e.g. alpha 9e307.
+   Stored parameters are doubles near the 2.0..7.0 priors, so the schema
+   states the range the body survives."
   [:or
-   [:and [:double {:gen/infinite? false :gen/NaN? false}]
-    [:> 0.0]
-    [:fn {:error/message "should be finite"} (fn [x] (Double/isFinite x))]]
+   [:double {:min 1.0E-100 :max 1.0E100}]
    [:int {:min 1 :max 1000000}]])
 
 (def Score

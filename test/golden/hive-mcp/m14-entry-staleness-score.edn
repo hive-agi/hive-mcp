@@ -15,8 +15,8 @@
     :staleness-source "pV",
     :staleness-depth nil})},
  :case-3
- {:out 0.653061224489796,
-  :in ({:staleness-alpha 0.53125, :staleness-source nil})},
+ {:out 0.6666666666666667,
+  :in ({:staleness-alpha 0.5, :staleness-source nil})},
  :case-4 {:out 0.5, :in (nil)},
  :case-5 {:out 0.5, :in (nil)},
  :case-6 {:out 0.5, :in (nil)},

@@ -1,0 +1,8 @@
+{:satisfies? true,
+ :query ("b" "c"),
+ :query-in "b",
+ :pull #:kg-edge{:from "a", :relation :implements},
+ :entity-from "a",
+ :eids 2,
+ :reset-empty 0,
+ :close nil}

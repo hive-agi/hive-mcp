@@ -21,11 +21,11 @@
     :disc/last-observation #inst "1969-12-31T23:59:59.999-00:00",
     :disc/last-read-at #inst "1970-01-01T00:00:00.000-00:00"})},
  :case-3
- {:out 0.10713298826867801,
+ {:out 0.0,
   :in
   (#:disc{:path "",
           :analyzed-at #inst "1970-01-01T00:00:00.001-00:00",
-          :certainty-alpha 2.3359375,
+          :certainty-alpha 1.0,
           :volatility-class :__})},
  :case-4 {:out 0.39484743178574433, :in (nil)},
  :case-5 {:out 0.39484743178574433, :in (nil)},

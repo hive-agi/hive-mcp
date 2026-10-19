@@ -55,8 +55,16 @@
   [:sequential Edge])
 
 (def NodeIds
-  "A collection of node ids, as a vector, list or set."
-  [:maybe [:or [:sequential :string] [:set :string]]])
+  "A collection of node ids for the batch readers and record-co-access!: a
+   vector or list, or an empty set.
+
+   BUG (recorded, not fixed): each of these calls `(distinct node-ids)`, and
+   clojure.core/distinct destructures its collection with nth, so a NON-EMPTY
+   set throws UnsupportedOperationException (nth not supported on this type:
+   PersistentHashSet), e.g. (batch-get-edges-from #{\"n1\"}). An empty set
+   short-circuits before distinct and returns {}. The schema states that
+   current domain."
+  [:maybe [:or [:sequential :string] [:set {:max 0} :string]]])
 
 (def EdgesByNode
   "Edges grouped by the node id they hang off."

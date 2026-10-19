@@ -1,0 +1,11 @@
+{:ephemeral-was-a-store? true,
+ :ds-fixture :ran,
+ :skip-pass :ran,
+ :thread-local :thread-local-ran,
+ :global-fixture :ran,
+ :global-installed-ephemeral? true,
+ :available
+ {:datascript true, :datalevin-boolean? true, :datahike-boolean? true},
+ :still-restored? true,
+ :global-restored? true,
+ :skip "M14 fixture failed, skipping: no driver\n"}

@@ -6,7 +6,7 @@
   #:disc{:path "5",
          :analyzed-at #inst "1970-01-01T00:00:00.000-00:00",
          :certainty-alpha 1,
-         :certainty-beta 3.0,
+         :certainty-beta 4.0,
          :volatility-class :B,
          :last-observation #inst "1970-01-01T00:00:00.000-00:00",
          :read-count 0},
@@ -14,7 +14,7 @@
   (#:disc{:path "5",
           :analyzed-at #inst "1970-01-01T00:00:00.000-00:00",
           :certainty-alpha 1,
-          :certainty-beta 1.0,
+          :certainty-beta 2.0,
           :volatility-class :B,
           :last-observation #inst "1970-01-01T00:00:00.000-00:00",
           :read-count 0}

@@ -6,7 +6,8 @@
             [hive-mcp.knowledge-graph.store.fixtures :as fixtures]
             [hive-mcp.test.stub.memory-store :as stub]
             [hive-test.golden :as golden]
-            [hive-mcp.protocols.memory :as mem]))
+            [hive-mcp.protocols.memory :as mem]
+            [hive-mcp.knowledge-graph.disc.volatility :as vol]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -37,7 +38,7 @@
                              {:id "m14-e2" :type "note" :content "y" :grounded-from "/m14/f.clj"}])
           {:hash-mismatch (prop/propagate-staleness! "/m14/f.clj" 5.0 :hash-mismatch)
            :below-threshold (prop/propagate-staleness! "/m14/f.clj" 0.1 :time-decay)
-           :unknown-reason (prop/propagate-staleness! "/m14/f.clj" nil :nope)
+           :unknown-reason (prop/propagate-staleness! "/m14/f.clj" (get vol/base-staleness-values :nope) :nope)
            :betas (into (sorted-map)
                         (map (fn [[id e]] [id (select-keys e [:staleness-beta :staleness-depth :staleness-source])]))
                         (stub/entries store))}))))))
