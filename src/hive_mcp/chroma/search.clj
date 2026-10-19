@@ -63,7 +63,9 @@
                                        query-text)
         coll-names      (try (embedding-service/type->collection-names type)
                              (catch Exception _ [nil]))]
-    (if (= 1 (count coll-names))
+    ;; No collection named (no provider configured): writes land in the
+    ;; default collection, so search it rather than nothing.
+    (if (<= (count coll-names) 1)
       ;; Single collection — use matched provider for embedding
       (let [resolved (r/rescue nil (embedding-service/resolve-provider-for-type (or type "note")))
             provider (if resolved (:provider resolved) (emb/get-embedding-provider))
