@@ -17,7 +17,11 @@
  ;; classpath: on 1.12.6 the server dies loading clojure.core.async with
  ;; NoClassDefFoundError before a single namespace finishes. Lift this only
  ;; together with a deep-diamond build made against the newer Clojure.
- :deps {org.clojure/clojure {:mvn/version "1.12.5"}
+ ;; LIFTED 2026-10-17: hive-knowledge (a55fbc0) and hive-carto (f9229cf) dropped
+ ;; deep-diamond from :deps. Measured: the resolved :test:test-swarm classpath
+ ;; (committed deps.edn, and with local.deps.edn merged) holds no deep-diamond
+ ;; jar, and no jar on it references clojure.core$seq_QMARK___5492.
+ :deps {org.clojure/clojure {:mvn/version "1.12.6"}
         org.clojure/data.json {:mvn/version "2.5.2"}
         org.clojure/core.async {:mvn/version "1.9.865"}
 
@@ -162,7 +166,8 @@
         ;; hive-mcp.addons.protocol re-exports it via def-aliases so the ~30
         ;; monorepo addon implementors can depend on hive-addon instead of
         ;; compile-depending on hive-mcp.
-        io.github.hive-agi/hive-addon {:mvn/version "1.1.4"}
+        ;; 1.1.7 is the first Clojars release carrying hive-addon.resources.
+        io.github.hive-agi/hive-addon {:mvn/version "1.1.7"}
 
         ;; hive-di — declarative typed config resolution (defconfig/env/literal)
         ;; Used by hive-mcp.embeddings.env-config and downstream addons.
@@ -398,7 +403,14 @@
    ;; everything minus a known exception.
    ;; KG test isolation: force ephemeral in-memory DataScript so a cold test
    ;; JVM never opens (and konserve-lock-contends) the prod datahike store.
-   :jvm-opts ["-Dhive.kg.backend=datascript"]
+   ;; Heap cap: an uncapped test JVM sizes its heap from host RAM (a quarter
+   ;; of it), and on 2026-10-17 a 14 GB test JVM pushed the host into the
+   ;; OOM killer twice, taking the serving hive-mcp with it. -Xmx2g is the
+   ;; figure CI already loads the core under (.github/workflows/ci.yml), so a
+   ;; plain `clojure -M:test` is safe on a shared host. Every :test* alias
+   ;; carries the same cap so any composition keeps it; a -J-Xmx on the
+   ;; command line comes after alias :jvm-opts and still overrides it.
+   :jvm-opts ["-Xmx2g" "-Dhive.kg.backend=datascript"]
    :main-opts ["-m" "cognitect.test-runner"
                "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]}
 
@@ -419,7 +431,7 @@
                 ;; only declared on :test. This is the CI alias; it is the one that
                 ;; must not be able to fail at load.
                 io.github.hive-agi/hive-schemas {:mvn/version "0.1.40"}}
-   :jvm-opts ["-Dhive.kg.backend=datascript"]
+   :jvm-opts ["-Xmx2g" "-Dhive.kg.backend=datascript"]
    :main-opts ["-m" "cognitect.test-runner" "-e" ":integration"
                "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]
    :exec-fn cognitect.test-runner.api/test
@@ -434,7 +446,8 @@
   ;;   clojure -M:test-unit:test-focus -n hive-mcp.foo-test
   ;;   clojure -M:test:test-swarm:test-focus -d test-swarm -n hive-mcp.bar-test
   :test-focus
-  {:main-opts ["-m" "cognitect.test-runner" "-e" ":integration"]}
+  {:jvm-opts ["-Xmx2g"]
+   :main-opts ["-m" "cognitect.test-runner" "-e" ":integration"]}
 
   ;; Run only integration tests (requires Emacs with emacs-mcp loaded)
   :test-integration
@@ -446,7 +459,7 @@
                 ;; Same reason as :test-unit — this alias also puts test/ on the
                 ;; path, so it loads every test ns before selecting :integration.
                 io.github.hive-agi/hive-schemas {:mvn/version "0.1.40"}}
-   :jvm-opts ["-Dhive.kg.backend=datascript"]
+   :jvm-opts ["-Xmx2g" "-Dhive.kg.backend=datascript"]
    :main-opts ["-m" "cognitect.test-runner" "-i" ":integration"
                "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]
    :exec-fn cognitect.test-runner.api/test
@@ -477,7 +490,8 @@
   ;; Drivers (datalevin/datahike) + the KG-store siblings are NOT declared here
   ;; — the user's local.deps.edn brings whichever backend they run against.
   :test-backends
-  {:main-opts ["-m" "cognitect.test-runner"
+  {:jvm-opts ["-Xmx2g"]
+   :main-opts ["-m" "cognitect.test-runner"
                "-r" "^hive-mcp\\.backends\\..*-test$"]}
 
   ;; Swarm-coupled suites: hive-mcp's integration tests of the swarm addon,
@@ -493,6 +507,7 @@
   ;; supplies its own main and is unaffected.
   :test-swarm
   {:extra-paths ["test-swarm"]
+   :jvm-opts ["-Xmx2g"]
    :main-opts ["-m" "cognitect.test-runner"
                "-d" "test-swarm"
                "-r" "^hive-mcp\\..*-test$"]}

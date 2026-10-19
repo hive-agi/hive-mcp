@@ -81,6 +81,8 @@
                                           :description "Commit message"}
                                "all" {:type "boolean"
                                       :description "Stage all changes before committing"}
+                               "include_staged" {:type "boolean"
+                                                 :description "With explicit files, also commit other paths already staged (default false; otherwise refuse and name them)"}
                                "set_upstream" {:type "boolean"
                                                :description "Set upstream tracking for new branch"}
                                "count" {:type "integer"
@@ -94,9 +96,10 @@
                                              :items {:type "object"
                                                      :properties {"message" {:type "string"}
                                                                   "files" (get git-files-property "files")
-                                                                  "all" {:type "boolean"}}
+                                                                  "all" {:type "boolean"}
+                                                                  "include_staged" {:type "boolean"}}
                                                      :required ["message"]}
-                                             :description "Array of commit operations for batch-commit. Each: {message, files?, all?}. Each operation stages its own `files` and is refused when they do not stage anything."}
+                                             :description "Array of commit operations for batch-commit. Each operation stages its own files; an explicit file list refuses unrelated staged paths unless include_staged is true."}
                                "parallel" {:type "boolean"
                                            :description "Run batch operations in parallel (default: false). batch-commit refuses true: its operations share one git index."}}
                               git-files-property

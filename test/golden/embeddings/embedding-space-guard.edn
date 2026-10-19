@@ -1,0 +1,29 @@
+{:legacy
+ {:error :embedding-space-mismatch,
+  :differs-on
+  [:provider
+   :model
+   :digest
+   :dimension
+   :metric
+   :normalized?
+   :query-template-rev
+   :doc-serializer-rev],
+  :remedy #{:re-embed :isolate},
+  :names-both true},
+ :new-digest
+ {:error :embedding-space-mismatch,
+  :differs-on [:digest],
+  :remedy #{:re-embed :isolate},
+  :names-both true},
+ :new-serial
+ {:error :embedding-space-mismatch,
+  :differs-on [:doc-serializer-rev],
+  :remedy #{:re-embed :isolate},
+  :names-both true},
+ :same {:same true},
+ :wide
+ {:error :embedding-space-mismatch,
+  :differs-on [:model :dimension],
+  :remedy #{:re-embed :isolate},
+  :names-both true}}

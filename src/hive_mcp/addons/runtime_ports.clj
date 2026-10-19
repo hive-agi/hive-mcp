@@ -3,7 +3,9 @@
 
    This namespace is the only place where the generic addon port vocabulary is
    bound to hive-mcp implementations. Adapters resolve lazily to keep manifest
-   parsing free of startup-order and require-cycle hazards.")
+   parsing free of startup-order and require-cycle hazards."
+  (:require [malli.core :as m]
+            [hive-mcp.addons.schema :as schema]))
 
 (defn- resolve!
   [sym]
@@ -159,3 +161,27 @@
      (call 'hive-mcp.extensions.registry/retract-all-by-addon! addon-id))}
   ;; hive-emacs daemon redistribution / autoheal swarm ports (:emacs/*).
   (emacs-ling-ports)))
+
+;; Contracts
+
+(def Ports
+  "A map of keyword -> callable port."
+  [:map-of :keyword schema/Invokable])
+
+(m/=> invoke-registered-tool! [:=> [:cat schema/Invokable :any :any] :any])
+
+(m/=> shared-jvm?
+      [:function
+       [:=> [:cat] :boolean]
+       [:=> [:cat schema/Invokable] :boolean]])
+
+(m/=> slave->ling [:=> [:cat [:maybe :map]] [:maybe :map]])
+
+(m/=> ling-updates->slave [:=> [:cat :map] :map])
+
+(m/=> emacs-ling-ports
+      [:function
+       [:=> [:cat] Ports]
+       [:=> [:cat schema/Invokable] Ports]])
+
+(m/=> runtime-ports [:=> [:cat] Ports])

@@ -1,0 +1,8 @@
+{:case-0 {:out true, :in :content},
+ :case-1 {:out false, :in :from},
+ :case-2 {:out false, :in :id},
+ :case-3 {:out true, :in :reason},
+ :case-4 {:out true, :in :title},
+ :case-5 {:out false, :in "content"},
+ :case-6 {:out false, :in :wave},
+ :case-7 {:out true, :in :prompt}}

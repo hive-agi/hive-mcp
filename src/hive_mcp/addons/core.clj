@@ -14,7 +14,9 @@
             [hive-mcp.extensions.registry :as ext]
             [taoensso.timbre :as log]
             [hive-mcp.addons.runtime-ports :as runtime-ports]
-            [hive-mcp.extensions.dispatch-wrap :as dispatch-wrap]))
+            [hive-mcp.extensions.dispatch-wrap :as dispatch-wrap]
+            [hive-mcp.addons.schema :as schema]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -43,7 +45,7 @@
   [addon]
   {:pre [(satisfies? proto/IAddon addon)]}
   (let [id (proto/addon-id addon)]
-    (if (contains? @addon-registry id)
+    (if (some? (get-in @addon-registry [id :addon]))
       (do
         (log/warn "Addon already registered" {:addon id})
         {:success? false
@@ -62,6 +64,8 @@
                                       :capabilities (proto/capabilities addon)})
         {:success? true
          :addon-name id}))))
+
+(m/=> register-addon! [:=> [:cat schema/AddonCandidate] schema/AddonOutcome])
 
 (defn get-addon
   "Get addon by id from the registry."
@@ -83,12 +87,13 @@
   []
   (->> @addon-registry
        (mapv (fn [[id {:keys [addon state registered-at init-time]}]]
-               {:name id
-                :type (proto/addon-type addon)
-                :state state
-                :registered-at registered-at
-                :init-time init-time
-                :capabilities (proto/capabilities addon)}))))
+               (cond-> {:name id
+                        :type (when addon (proto/addon-type addon))
+                        :state state
+                        :registered-at registered-at
+                        :init-time init-time
+                        :capabilities (when addon (proto/capabilities addon))}
+                 (nil? addon) (assoc :addon nil))))))
 
 (declare shutdown-addon!)
 
@@ -111,8 +116,9 @@
                   hive-mcp.workflows.strategy-registry/deregister-by-owner!
                   hive-mcp.spi.op-schema-registry/deregister-by-owner!]]
       ((requiring-resolve sym) id))
-    (doseq [t (r/rescue [] (proto/tools addon))]
-      (ext/deregister-tool! (:name t)))
+    (when addon
+      (doseq [t (r/rescue [] (proto/tools addon))]
+        (ext/deregister-tool! (:name t))))
     (ext/retract-all-by-addon! id)
     (ext/retract-schemas-by-owner! id)
     nil))
@@ -501,3 +507,54 @@
      :tool-count (count (active-addon-tools))
      :capabilities (all-capabilities)
      :addons (list-addons)}))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> get-addon [:=> [:cat schema/RegistryId] [:maybe schema/IAddonInstance]])
+
+(m/=> get-addon-entry [:=> [:cat schema/RegistryId] [:maybe schema/AddonEntry]])
+
+(m/=> addon-registered? [:=> [:cat schema/RegistryId] :boolean])
+
+(m/=> list-addons [:=> [:cat] [:vector schema/AddonListing]])
+
+(m/=> unregister-addon! [:=> [:cat schema/RegistryId] schema/AddonOutcome])
+
+(m/=> addon-declared-config [:=> [:cat schema/RegistryId] :map])
+
+(m/=> init-addon!
+      [:function
+       [:=> [:cat schema/RegistryId] schema/AddonOutcome]
+       [:=> [:cat schema/RegistryId [:maybe :map]] schema/AddonOutcome]])
+
+(m/=> shutdown-addon! [:=> [:cat schema/RegistryId] schema/AddonOutcome])
+
+(m/=> init-all!
+      [:function
+       [:=> [:cat] [:map-of schema/RegistryId schema/AddonOutcome]]
+       [:=> [:cat [:maybe :map]] [:map-of schema/RegistryId schema/AddonOutcome]]])
+
+(m/=> shutdown-all! [:=> [:cat] [:map-of schema/RegistryId schema/AddonOutcome]])
+
+(m/=> active-contributions [:=> [:cat] [:vector claims/Contribution]])
+
+(m/=> resolve-addon-tools [:=> [:cat] claims/Resolution])
+
+(m/=> claimed-core-names [:=> [:cat [:map [:claims [:sequential claims/Claim]]]] [:set :string]])
+
+(m/=> active-addon-tools [:=> [:cat] [:vector schema/InstalledTool]])
+
+(m/=> addon-tools-by-name [:=> [:cat schema/RegistryId] [:vector :map]])
+
+(m/=> addons-with-capability [:=> [:cat schema/Capability] [:vector schema/RegistryId]])
+
+(m/=> all-capabilities
+      [:=> [:cat] [:map-of schema/Capability [:vector schema/RegistryId]]])
+
+(m/=> check-dependencies [:=> [:cat schema/RegistryId] schema/Dependencies])
+
+(m/=> reset-registry! [:=> [:cat] [:map-of schema/RegistryId schema/AddonOutcome]])
+
+(m/=> registry-status [:=> [:cat] schema/RegistryStatus])

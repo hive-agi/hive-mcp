@@ -433,7 +433,11 @@
     (log/info "mcp-memory-add:" type "directory:" directory "agent_id:" agent_id
               "store-key:" store-key)
     (with-store
-      (let [project-id (scope/get-current-project-id directory)
+      (let [;; Caller-explicit `scope:project:<id>` tag wins over the project
+            ;; inferred from directory/session (kanban 20260519173408-30f0a6a6,
+            ;; rule A); see scope/explicit-project-id.
+            project-id (or (scope/explicit-project-id tags-vec)
+                           (scope/get-current-project-id directory))
             agent-id (or agent_id (ctx/current-agent-id)
                          (System/getenv "CLAUDE_SWARM_SLAVE_ID"))
             tags-with-scope (build-entry-tags tags-vec agent-id (ctx/current-attribution agent-id) kg-vecs project-id)

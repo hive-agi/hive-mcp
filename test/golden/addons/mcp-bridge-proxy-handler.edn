@@ -1,0 +1,4 @@
+{:error {:type "text", :text "Remote tool error: bad\nworse"},
+ :multi [{:type "text", :text "a"} {:type "text", :text "b"}],
+ :no-text {:type "text", :text "{:content []}"},
+ :text {:type "text", :text "hello"}}

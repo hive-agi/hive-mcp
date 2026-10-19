@@ -1,0 +1,6 @@
+{:case-0 {:out nil, :in {}},
+ :case-1 {:out :compact, :in {:compact true, :_caller_id "ling-2"}},
+ :case-2 {:out nil, :in {}},
+ :case-3 {:out nil, :in {:_caller_id "coordinator"}},
+ :case-4 {:out :compact, :in {:compact :compact}},
+ :case-5 {:out nil, :in {}}}

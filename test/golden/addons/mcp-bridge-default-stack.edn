@@ -1,0 +1,4 @@
+{:empty {},
+ :internal {"q" "find"},
+ :mixed {"q" "find", "limit" 3},
+ :only-user {"q" "find", "limit" 3}}

@@ -36,7 +36,8 @@
             [malli.error :as me]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.addons.core :as addon-core])
+            [hive-mcp.addons.core :as addon-core]
+            [hive-mcp.addons.schema :as schema])
   (:import [java.util.jar JarFile]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -506,3 +507,64 @@
       (do (log/warn "Failed to init addon from manifest"
                     {:addon/id addon-id :error (:message effect)})
           {:success? false :addon/id addon-id :errors [(:message effect)]}))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def Validation
+  "`validate-manifest` answer."
+  [:map [:valid? :boolean] [:errors :any]])
+
+(def ParseResult
+  "`parse-manifest` / `parse-manifest-file` answer. :manifest is the parsed map
+   when valid, nil otherwise; :errors is humanized malli output or a one-entry
+   vector carrying the parse/file error."
+  [:map
+   [:valid? :boolean]
+   [:manifest [:maybe :map]]
+   [:errors :any]
+   [:raw {:optional true} :any]
+   [:path {:optional true} :any]])
+
+(def ManifestSummary
+  "`manifest-summary` answer."
+  [:map
+   [:id :any]
+   [:type :any]
+   [:version :any]
+   [:capabilities [:set :any]]
+   [:dependencies [:set :any]]])
+
+(def LoadOrder
+  "`manifests-load-order` answer."
+  [:map [:ordered [:vector :any]] [:cycles [:set :any]]])
+
+(def ScanResult
+  "`scan-classpath-manifests` answer."
+  [:map [:manifests [:vector :map]] [:errors [:vector :map]]])
+
+(m/=> validate-manifest [:=> [:cat :any] Validation])
+
+(m/=> valid-manifest? [:=> [:cat :any] :boolean])
+
+(m/=> parse-manifest [:=> [:cat :any] ParseResult])
+
+(m/=> parse-manifest-file [:=> [:cat :any] ParseResult])
+
+(m/=> manifest->init-sym [:=> [:cat :map] :symbol])
+
+(m/=> resolve-constructor [:=> [:cat :map] :any])
+
+(m/=> manifest-summary [:=> [:cat :map] ManifestSummary])
+
+(m/=> manifests-load-order [:=> [:cat [:sequential :map]] LoadOrder])
+
+(m/=> strip-env-templates [:=> [:cat :map] :map])
+
+(m/=> prepare-config [:=> [:cat :map] :map])
+
+(m/=> scan-classpath-manifests [:=> [:cat] ScanResult])
+
+(m/=> init-from-manifest!
+      [:=> [:cat :map schema/Invokable schema/Invokable] [:maybe :map]])

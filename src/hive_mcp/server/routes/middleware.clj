@@ -26,7 +26,8 @@
             [hive-spi.guard.ports :as gp]
             [hive-mcp.agent.grant :as grant]
             [hive-mcp.agent.identity :as agent-identity]
-            [hive-mcp.server.routes.async-ack :as async-ack])
+            [hive-mcp.server.routes.async-ack :as async-ack]
+            [hive-mcp.tools.async-params :as async-params])
 (:import [java.util.concurrent RejectedExecutionException]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -178,14 +179,17 @@
 ;; =============================================================================
 
 (defn wrap-handler-default-async-for-commands
-  "Inject :async true for commands in `commands` set when not explicitly set."
+  "Inject :async true for commands in `commands` set when not explicitly set.
+   An explicit :async is normalized to a boolean (`async-params/async-flag`),
+   so a string \"false\" opts out instead of reading as truthy."
   [handler commands]
   (fn [{:keys [command] :as args}]
     (let [cmd-kw (when command (keyword command))
-          should-default? (and (contains? commands cmd-kw)
-                               (not (contains? args :async)))]
-      (handler (cond-> args
-                 should-default? (assoc :async true))))))
+          flag   (async-params/async-flag (:async args))]
+      (handler (cond
+                 (some? flag)                   (assoc args :async flag)
+                 (contains? commands cmd-kw)    (assoc args :async true)
+                 :else                          args)))))
 
 (defn wrap-handler-async
   "Intercept async:true calls: return an ack, run the work on the async pool.
@@ -233,7 +237,7 @@
    `hive-ingestor.addon.registry/dispatcher-shadowed-params`)."
   [handler tool-name]
   (fn [args]
-    (if (:async args)
+    (if (true? (async-params/async-flag (:async args)))
       (let [task-id    (str "atask-" (random-uuid))
             caller-id  (or (:_caller_id args) "coordinator")
             timeout-ms (:async-timeout-ms args)
@@ -334,6 +338,9 @@
    identity source (verified caller id, transport caller id, agent-id arg).
 
      :deny — short-circuits; the refusal is returned and the tool never runs.
+     :ask  — refused the same way. The guard addon resolves an ask for this
+             floor itself (the operator's yes becomes an :allow), so an :ask
+             reaching here was granted by nobody.
      :warn — the tool runs and the advisory is appended to its content.
      else  — proceeds.
 
@@ -352,6 +359,11 @@
         :deny (do (log/warn "guard: refused a tool call"
                             {:tool tool-name :rule (:guard/rule-id decision)})
                   (guard-refusal tool-name decision))
+        :ask  (do (log/warn "guard: refused a tool call nobody granted"
+                            {:tool tool-name :rule (:guard/rule-id decision)})
+                  (guard-refusal tool-name
+                                 (update decision :guard/reason str
+                                         "\n\nThis call needs the operator's permission and nothing granted it.")))
         :warn (conj (vec (id/normalize-content (handler args)))
                     {:type "text"
                      :text (str "GUARD WARNING — " (:guard/reason decision)
@@ -398,6 +410,9 @@
    (require 'hive-mcp.channel.memory-piggyback)
    ((resolve 'hive-mcp.channel.memory-piggyback/drain!) caller-id ctx)))
 
+(defonce ^{:private true :doc "Provider blocks already drained but not yet fitted to a response, per caller."}
+  pending-catchup (atom {}))
+
 (defn- drain-catchup-piggyback
   "Drain the `:cu/piggyback-drain` enrichment channel for this response.
 
@@ -405,17 +420,60 @@
    A ctx-aware provider gets `request-ctx` and returns only a budgeted, cue-
    ordered slice, leaving the rest buffered for a later call; a provider that
    still takes the caller alone is called that way and drains one-shot, as
-   before. Neither shape is allowed to fail the response."
+   before. Neither shape is allowed to fail the response.
+
+   Provider-selected blocks are retained locally until their complete delimited
+   wire representation fits; a provider that advances on an oversized first
+   candidate cannot cause either budget overflow or lost work."
   [caller-id request-ctx]
-  (when-let [drain-fn (ext/get-extension :cu/piggyback-drain)]
-    (try
+  (let [budget (:char-budget request-ctx Long/MAX_VALUE)]
+    (when (pos? budget)
       (try
-        (drain-fn caller-id request-ctx)
-        (catch clojure.lang.ArityException _
-          (drain-fn caller-id)))
-      (catch Exception e
-        (log/debug "catchup-piggyback drain failed:" (.getMessage e))
-        nil))))
+        (let [prior (get @pending-catchup caller-id)
+              incoming (when (and (empty? prior)
+                                  (ext/get-extension :cu/piggyback-drain))
+                         (let [drain-fn (ext/get-extension :cu/piggyback-drain)]
+                           (try (drain-fn caller-id request-ctx)
+                                (catch clojure.lang.ArityException _
+                                  (drain-fn caller-id)))))
+              all (or prior (seq incoming))
+              [deliver defer]
+              (loop [pairs (seq all) out {} used 0]
+                (if-let [[tag body] (first pairs)]
+                  (let [text (if (string? body) body (pr-str body))
+                        wire (str "\n\n---" (str/upper-case (name tag)) "---\n"
+                                  text "\n---/" (str/upper-case (name tag)) "---")
+                        size (count wire)]
+                    (if (<= (+ used size) budget)
+                      (recur (next pairs) (assoc out tag body) (+ used size))
+                      [out (into {} pairs)]))
+                  [out nil]))]
+          (swap! pending-catchup (fn [m]
+                                   (if (seq defer) (assoc m caller-id defer)
+                                       (dissoc m caller-id))))
+          (when (seq deliver) deliver))
+        (catch Exception e
+          (log/debug "catchup-piggyback drain failed:" (.getMessage e))
+          nil)))))
+
+(def response-piggyback-char-budget
+  "Total response allowance for async results, memory, blocks and catchup.
+   Hivemind uses its cursor/audience/digest rather than this budget."
+  32000)
+
+(defn spend-piggyback-budget
+  "Pure accounting for one channel. Returns the permitted allowance and the
+   remaining response chars after the actual rendered cost. Channel order is
+   the caller's order; unused allowance rolls forward to the next channel."
+  [remaining channel-cap rendered-chars]
+  (let [allowance (max 0 (min remaining channel-cap))]
+    {:allowance allowance
+     :remaining (max 0 (- remaining (max 0 rendered-chars)))}))
+
+(defn- piggyback-content-chars
+  "Total text chars in MCP content, for measuring a channel's actual wire cost."
+  [content]
+  (reduce + 0 (map (comp count :text) (filter #(= "text" (:type %)) (id/normalize-content content)))))
 
 ;; =============================================================================
 ;; Grant Gate
@@ -468,43 +526,56 @@
      (let [task-tokens (task-signal/cues tool-name args)
            content (handler args)
            caller-id (or (:_caller_id args) "coordinator")
-           async-drain (async-buf/drain! caller-id)
            request-ctx {:tool-name tool-name :cues task-tokens :caller-id caller-id}
+           async-cap (:allowance (spend-piggyback-budget response-piggyback-char-budget
+                                                    async-buf/drain-char-budget 0))
+           async-drain (async-buf/drain! caller-id (max 0 (- async-cap 160)))
+           async-content (if async-drain
+                           (id/wrap-delimited-block content "TOOLRESULT" (pr-str async-drain))
+                           content)
+           remaining-async (:remaining (spend-piggyback-budget response-piggyback-char-budget
+                                                async-buf/drain-char-budget
+                                                (- (piggyback-content-chars async-content)
+                                                   (piggyback-content-chars content))))
            act-ctx (activation/drain-ctx request-ctx)
+           memory-cap (:allowance (spend-piggyback-budget remaining-async 12000 0))
+           memory-drain (when (> memory-cap 200)
+                          (drain-memory-piggyback caller-id
+                            (assoc act-ctx :char-budget (- memory-cap 200))))
+           memory-content (if memory-drain
+                            (id/wrap-memory-piggyback-content async-content memory-drain)
+                            async-content)
+           remaining-memory (:remaining (spend-piggyback-budget remaining-async 12000
+                                                (- (piggyback-content-chars memory-content)
+                                                   (piggyback-content-chars async-content))))
            ;; Blocks are an OPEN set: whatever addons registered under
            ;; :block/*, rendered by tag. The host names none of them, so a new
            ;; block is an addon plus a config entry rather than a commit here.
-           extra-blocks (blocks/render request-ctx)
-           memory-drain (drain-memory-piggyback caller-id act-ctx)
-           catchup-blocks (drain-catchup-piggyback caller-id request-ctx)
+           blocks-cap (:allowance (spend-piggyback-budget remaining-memory blocks/max-response-chars 0))
+           extra-blocks (blocks/render request-ctx blocks-cap)
+           blocks-content (reduce (fn [acc [tag body]] (id/wrap-delimited-block acc tag body))
+                                  memory-content extra-blocks)
+           remaining-blocks (:remaining (spend-piggyback-budget remaining-memory
+                                               blocks/max-response-chars
+                                               (- (piggyback-content-chars blocks-content)
+                                                  (piggyback-content-chars memory-content))))
+           catchup-cap (:allowance (spend-piggyback-budget remaining-blocks 4000 0))
+           catchup-blocks (when (> catchup-cap 100)
+                            (drain-catchup-piggyback caller-id
+                              (assoc request-ctx :char-budget (- catchup-cap 100))))
+           catchup-content (reduce-kv
+                            (fn [acc tag body]
+                              (id/wrap-delimited-block acc
+                                (str/upper-case (name tag))
+                                (if (string? body) body (pr-str body))))
+                            blocks-content (or catchup-blocks {}))
            caller (id/extract-caller-identity args)
            scope (id/extract-project-scope args)
            hm-agent-id (ctx-id/make-piggyback-agent-id caller scope)
            hm-project-id (ctx-id/project-scope-string scope)
            hivemind-msgs (get-piggyback-messages hm-agent-id hm-project-id
                                                  (ctx-id/caller-id-string caller))]
-
-       (cond-> content
-         async-drain
-         (id/wrap-delimited-block "TOOLRESULT" (pr-str async-drain))
-
-         memory-drain
-         (id/wrap-memory-piggyback-content memory-drain)
-
-         (seq extra-blocks)
-         (as-> c (reduce (fn [acc [tag body]] (id/wrap-delimited-block acc tag body))
-                         c extra-blocks))
-
-         (seq catchup-blocks)
-         (as-> c (reduce-kv
-                   (fn [acc tag body]
-                     (id/wrap-delimited-block acc
-                       (str/upper-case (name tag))
-                       (if (string? body) body (pr-str body))))
-                   c catchup-blocks))
-
-         true
-         (id/wrap-piggyback hivemind-msgs))))))
+       (id/wrap-piggyback catchup-content hivemind-msgs)))))
 
 
 ;; =============================================================================

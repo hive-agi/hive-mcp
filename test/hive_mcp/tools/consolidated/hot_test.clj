@@ -17,7 +17,10 @@
             [hive-addon.protocol :as proto]
             [hive-dsl.result :as r]
             [hive-mcp.extensions.mount-host :as mount-host]
-            [hive-mcp.tools.consolidated.hot :as hot]))
+            [hive-mcp.tools.consolidated.hot :as hot]
+            [hive-mcp.addons.manifest :as manifest]
+            [hive-mcp.config.core :as config]
+            [hive-mcp.config.source :as source]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -175,6 +178,16 @@
 (deftest lifecycle-gate-hint-names-the-real-config-path-test
   (lc/uninstall!)
   (is (str/includes? (:text (hot/handle-lifecycle {})) "{:services {:addons {:lifecycle")))
+
+(deftest hot-inject-resolves-declared-addon-config-like-boot
+  (let [id "test.hot-inject-config"
+        config-source (source/static-source {:addons {id {:code-gate :approved}}})
+        resolver (get-in (#'hot/reload-opts) [:mount-opts :resolve-config])]
+    (is (identical? manifest/prepare-config resolver))
+    (is (= :approved
+           (binding [config/*config-source* config-source]
+             (:code-gate (resolver {:addon/id id :addon/type :native
+                                    :addon/config {:code-gate :default}})))))))
 
 ;; =============================================================================
 ;; evict: a refusal is never dressed as success

@@ -16,7 +16,8 @@
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
             [hive-dsl.coerce :as coerce]
-            [hive-dsl.result :as r]))
+            [hive-dsl.result :as r]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -92,3 +93,15 @@
          acc)))
    (r/ok params)
    (coercion-spec input-schema)))
+
+(def InputSchema
+  "A tool inputSchema as the registry holds it (string or keyword keys)."
+  [:maybe [:map-of :any :any]])
+
+(def Params
+  "Forwarded params of one call."
+  [:map-of :any :any])
+
+(m/=> coercion-spec [:=> [:cat InputSchema] [:map-of :keyword :string]])
+
+(m/=> coerce-params [:=> [:cat InputSchema Params] [:map-of :any :any]])

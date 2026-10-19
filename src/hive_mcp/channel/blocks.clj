@@ -68,6 +68,9 @@
    should ever spend on commentary. This is the limit that actually binds."
   6000)
 
+(defonce ^{:private true :doc "Rendered but undelivered blocks, by caller and emitter key."}
+  pending-blocks (atom {}))
+
 (defn emitter-keys
   "Registered block-emitter keys, sorted, so block ORDER in a response is
    deterministic rather than a function of registration order."
@@ -126,24 +129,45 @@
    the budget is applied, so when something must be cut it is the block with
    the least to do with this call rather than the one whose key sorts last.
    The highest-ranked block is always kept, so a single large block degrades
-   the response rather than emptying it. Never throws."
-  [ctx]
-  (try
-    (let [emitted (into [] (comp (keep #(emit-one % ctx)) (take max-blocks))
-                        (emitter-keys))
-          cues (:cues ctx)
-          ordered (if (seq cues)
-                    (vec (sort-by (fn [[tag body]] [(- (cue-hits body cues)) tag])
-                                  emitted))
-                    emitted)]
-      (first
-       (reduce (fn [[acc used] [tag body :as blk]]
-                 (let [size (count body)]
-                   (if (or (empty? acc) (<= (+ used size) max-response-chars))
-                     [(conj acc blk) (+ used size)]
-                     (reduced [acc used]))))
-               [[] 0]
-               ordered)))
-    (catch Throwable t
-      (log/debug t "blocks: render failed; response carries no blocks")
-      [])))
+   the response rather than emptying it. Never throws.
+
+   A strict caller budget retains emitted blocks that cannot fit, including
+   values produced by one-shot emitters, for that caller's next response."
+  ([ctx] (render ctx max-response-chars false))
+  ([ctx budget] (render ctx budget true))
+  ([ctx budget strict?]
+   (try
+     (if (pos? budget)
+       (let [caller (:caller-id ctx)
+             keys (emitter-keys)
+             saved (when (and strict? caller) (get @pending-blocks caller))
+             emitted (into [] (comp (keep (fn [k]
+                                        (when-let [blk (or (get saved k) (emit-one k ctx))]
+                                          [k blk])))
+                                    (take max-blocks)) keys)
+             cues (:cues ctx)
+             ordered (if (seq cues)
+                       (vec (sort-by (fn [[_ [tag body]]] [(- (cue-hits body cues)) tag]) emitted))
+                       emitted)
+             [included deferred]
+             (loop [more ordered acc [] rejected [] used 0]
+               (if-let [[k [tag body :as blk]] (first more)]
+                 (let [size (if strict?
+                              (+ (count body) (* 2 (count tag)) 17)
+                              (count body))]
+                   (if (or (and (not strict?) (empty? acc))
+                           (<= (+ used size) (min budget max-response-chars)))
+                     (recur (rest more) (conj acc [k blk]) rejected (+ used size))
+                     (recur (rest more) acc (conj rejected [k blk]) used)))
+                 [acc rejected]))]
+         (when (and strict? caller)
+           (swap! pending-blocks (fn [m]
+                                   (let [still (into {} (concat (remove (fn [[k _]]
+                                                                        (some #(= k (first %)) included)) saved)
+                                                                 deferred))]
+                                     (if (seq still) (assoc m caller still) (dissoc m caller))))))
+         (mapv second included))
+       [])
+     (catch Throwable t
+       (log/debug t "blocks: render failed; response carries no blocks")
+       []))))

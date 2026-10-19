@@ -1,0 +1,108 @@
+{:case-0
+ {:out {:installed [], :refused [], :claims []},
+  :in ([{:name "c"}] [])},
+ :case-1
+ {:out
+  {:installed [{:name "c", :addon-source :z}],
+   :refused
+   [{:addon-id :z, :tool "d", :reason :shadows-core, :holder :core}],
+   :claims [{:addon-id :z, :tool "c", :how :declared, :over :core}]},
+  :in
+  ([{:name "d"} {:name "c"}]
+   [{:addon-id :x, :addon-type :external, :tools [], :excluded #{"a"}}
+    {:addon-id :z,
+     :tools [{:name "d"} {:name "c"}],
+     :excluded #{"c"}}])},
+ :case-2
+ {:out
+  {:installed
+   [{:name "b", :addon-source :y} {:name "d", :addon-source :y}],
+   :refused [],
+   :claims []},
+  :in
+  ([]
+   [{:addon-id :y, :tools [{:name "b"} {:name "d"}], :excluded nil}
+    {:addon-id :z, :addon-type nil, :tools [], :excluded nil}])},
+ :case-3
+ {:out
+  {:installed
+   [{:name "d", :addon-source :z} {:name "a", :addon-source :z}],
+   :refused
+   [{:addon-id :z, :tool "a", :reason :duplicate, :holder :z}],
+   :claims []},
+  :in
+  ([{:name "b"}]
+   [{:addon-id :z,
+     :tools
+     [{:name "d"} {:name "a"} {:name "a", :consolidated nil}]}])},
+ :case-4
+ {:out
+  {:installed [],
+   :refused
+   [{:addon-id :x, :tool "b", :reason :shadows-core, :holder :core}
+    {:addon-id :z, :tool "b", :reason :shadows-core, :holder :core}
+    {:addon-id :x, :tool "c", :reason :shadows-core, :holder :core}
+    {:addon-id :z, :tool "c", :reason :shadows-core, :holder :core}
+    {:addon-id :x, :tool "a", :reason :shadows-core, :holder :core}],
+   :claims []},
+  :in
+  ([{:name "a", :consolidated true}
+    {:name "b"}
+    {:name "a"}
+    {:name "c"}]
+   [{:addon-id :x,
+     :addon-type :external,
+     :tools
+     [{:name "b", :consolidated false}
+      {:name "c", :consolidated true}
+      {:name "a"}],
+     :excluded nil}
+    {:addon-id :z,
+     :tools
+     [{:name "b", :consolidated true}
+      {:name "c", :consolidated false}]}])},
+ :case-5
+ {:out
+  {:installed
+   [{:name "a", :addon-source :y}
+    {:name "d", :consolidated false, :addon-source :y}
+    {:name "b", :consolidated nil, :addon-source :y}],
+   :refused
+   [{:addon-id :y, :tool "a", :reason :duplicate, :holder :y}],
+   :claims
+   [{:addon-id :y, :tool "a", :how :declared, :over :addon}
+    {:addon-id :y, :tool "d", :how :declared, :over :core}
+    {:addon-id :y, :tool "b", :how :declared, :over :addon}]},
+  :in
+  ([{:name "d"} {:name "c", :consolidated false}]
+   [{:addon-id :y,
+     :tools
+     [{:name "a"}
+      {:name "a"}
+      {:name "d", :consolidated false}
+      {:name "b", :consolidated nil}],
+     :excluded #{"d" "a" "b"}}])},
+ :case-6
+ {:out
+  {:installed
+   [{:name "a", :addon-source :y} {:name "c", :addon-source :y}],
+   :refused [],
+   :claims []},
+  :in
+  ([]
+   [{:addon-id :y,
+     :addon-type :native,
+     :tools [{:name "a"} {:name "c"}]}])},
+ :case-7
+ {:out
+  {:installed
+   [{:name "c", :addon-source :x} {:name "a", :addon-source :x}],
+   :refused [],
+   :claims
+   [{:addon-id :x, :tool "c", :how :declared, :over :addon}
+    {:addon-id :x, :tool "a", :how :declared, :over :core}]},
+  :in
+  ([{:name "d"} {:name "a", :consolidated nil}]
+   [{:addon-id :x,
+     :tools [{:name "c"} {:name "a"}],
+     :excluded #{"d" "a" "b" "c"}}])}}

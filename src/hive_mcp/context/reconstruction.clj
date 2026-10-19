@@ -6,7 +6,8 @@
    Extension points are resolved via the extensions registry at startup.
    When no extensions are registered, all functions gracefully degrade
    to empty/noop results."
-  (:require [hive-mcp.extensions.delegate :refer [delegate-or-noop]]))
+  (:require [hive-mcp.extensions.delegate :refer [delegate-or-noop]]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -60,3 +61,23 @@
                      :scope          scope
                      :reconstruct-fn reconstruct-context}
                     [catchup-response scope]))
+
+(def CtxRefs
+  "Category -> context-store id."
+  [:map-of :any :any])
+
+(def KgNodeIds
+  "Seed node ids for the structural context."
+  [:maybe [:sequential :string]])
+
+(def RefContextOpts
+  "Options `catchup-refs->ref-context-opts` answers."
+  [:map-of :any :any])
+
+(m/=> fetch-ref-data [:=> [:cat [:maybe CtxRefs]] [:map-of :any :any]])
+
+(m/=> render-compressed-context [:=> [:cat :any :any] :string])
+
+(m/=> reconstruct-context [:=> [:cat [:maybe CtxRefs] KgNodeIds :any] :string])
+
+(m/=> catchup-refs->ref-context-opts [:=> [:cat :any :any] RefContextOpts])

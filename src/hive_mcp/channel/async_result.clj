@@ -172,18 +172,36 @@
    the caller's payload. Both applications see the same buffer value, so the
    payload cannot disagree with the cursor that was committed.
 
-   At least one entry is always taken, even when that single entry is over
-   budget, or an oversized result would wedge the buffer forever."
-  [{:keys [entries cursor]}]
+   A budgeted oversized entry is delivered as a marked preview; the caller
+   can see that its result was truncated. The default drain retains its legacy
+   at-least-one contract."
+  [{:keys [entries cursor]} budget legacy?]
   (let [total (count entries)]
     (loop [batch [] chars 0 idx cursor]
       (if (>= idx total)
         [batch idx]
         (let [output-entry (dissoc (nth entries idx) :timestamp :content-hash)
-              new-chars    (+ chars (count (pr-str output-entry)))]
-          (if (and (seq batch) (> new-chars drain-char-budget))
-            [batch idx]
-            (recur (conj batch output-entry) new-chars (inc idx))))))))
+              new-chars (+ chars (count (pr-str output-entry)))]
+          (cond
+            (<= new-chars budget)
+            (recur (conj batch output-entry) new-chars (inc idx))
+
+            (seq batch) [batch idx]
+            legacy? [[output-entry] (inc idx)]
+            :else
+            (let [marker "...[truncated; oversized async result]"
+                  original (pr-str output-entry)
+                  base (assoc (select-keys output-entry [:task-id :status])
+                              :result marker)
+                  preview (loop [n (min (count original)
+                                        (max 0 (- budget (count (pr-str base)))))]
+                            (let [p (assoc base :result (str (subs original 0 n) marker))]
+                              (if (or (zero? n) (<= (count (pr-str p)) budget))
+                                p
+                                (recur (dec n)))))]
+              (if (<= (count (pr-str preview)) budget)
+                [[preview] (inc idx)]
+                [batch idx]))))))))
 
 (defn- drainable?
   "True when `buf` exists and holds an entry the caller has not been given."
@@ -211,28 +229,34 @@
    The delivery is journalled AFTER the cursor has moved, so a crash between
    the two re-delivers rather than drops. At-least-once is the correct
    direction to fail for something the caller has already been promised."
-  [caller-id]
-  (let [buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))
-        [old _new] (swap-vals!
-                    buffers
-                    (fn [bufs]
-                      (let [buf (get bufs buffer-key)]
-                        (if-not (drainable? buf)
-                          bufs
-                          (let [[_ new-cursor] (next-batch buf)]
-                            (if (>= new-cursor (count (:entries buf)))
-                              (dissoc bufs buffer-key)
-                              (assoc bufs buffer-key (assoc buf :cursor new-cursor))))))))
-        buf (get old buffer-key)]
-    (when (drainable? buf)
-      (let [[batch new-cursor] (next-batch buf)
-            total              (count (:entries buf))]
-        (journal/record-delivered! buffer-key (keep :task-id batch))
-        (cond-> {:results   batch
-                 :remaining (- total new-cursor)
-                 :total     total
-                 :delivered new-cursor}
-          (>= new-cursor total) (assoc :done true))))))
+  ([caller-id] (drain! caller-id drain-char-budget true))
+  ([caller-id budget] (drain! caller-id budget false))
+  ([caller-id budget legacy?]
+   (when (pos? budget)
+     (let [buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))
+           [old _new] (swap-vals!
+                       buffers
+                       (fn [bufs]
+                         (let [buf (get bufs buffer-key)]
+                           (if-not (drainable? buf)
+                             bufs
+                             (let [[_ new-cursor] (next-batch buf budget legacy?)]
+                               (if (= new-cursor (:cursor buf))
+                                 bufs
+                                 (if (>= new-cursor (count (:entries buf)))
+                                   (dissoc bufs buffer-key)
+                                   (assoc bufs buffer-key (assoc buf :cursor new-cursor)))))))))
+           buf (get old buffer-key)]
+       (when (drainable? buf)
+         (let [[batch new-cursor] (next-batch buf budget legacy?)
+               total (count (:entries buf))]
+           (when (seq batch)
+             (journal/record-delivered! buffer-key (keep :task-id batch))
+             (cond-> {:results batch
+                      :remaining (- total new-cursor)
+                      :total total
+                      :delivered new-cursor}
+               (>= new-cursor total) (assoc :done true)))))))))
 
 (defn has-pending?
   "Check if a caller session has undrained async results."
@@ -275,7 +299,11 @@
 
    Returns the number of entries restored. A positive count is logged at WARN
    because it means the previous process did not shut down cleanly, which is
-   worth noticing even though it was survived."
+   worth noticing even though it was survived.
+
+   Compacts the replayed journal at startup, even when no GC sweep is running:
+   delivered tombstones and superseded submissions cannot accumulate across
+   restarts. The sweep still handles compaction during a long-lived process."
   []
   (let [restored (journal/restore)
         n (reduce + 0 (map (comp count :entries val) restored))]
@@ -284,7 +312,8 @@
                 "undelivered result(s) from the journal; the previous process"
                 "did not shut down cleanly"
                 {:callers (vec (keys restored))}))
-    (swap! buffers #(merge restored %))
+    (let [[_ current] (swap-vals! buffers #(merge restored %))]
+      (journal/compact! current))
     n))
 
 (defn record-submission!

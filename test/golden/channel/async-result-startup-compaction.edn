@@ -1,0 +1,9 @@
+{:empty {:restored 0, :records []},
+ :owed
+ {:restored 1,
+  :records
+  [{:op :result,
+    :caller "c",
+    :task-id "t",
+    :entry {:task-id "t", :status :completed}}]},
+ :tombstone {:restored 0, :records []}}

@@ -148,11 +148,13 @@
      :checked-at  (ids/iso-timestamp)})
 
   (add-entry! [_this entry]
-    (let [id (or (:id entry) ((:id-fn @state)))
-          now (ids/iso-timestamp)
-          e  (assoc entry :id id :created (or (:created entry) now) :updated (or (:updated entry) now))]
-      (swap! state assoc-in [:entries id] e)
-      id))
+    (if-let [f (:add-entry-fn @state)]
+      (f entry)
+      (let [id (or (:id entry) ((:id-fn @state)))
+            now (ids/iso-timestamp)
+            e  (assoc entry :id id :created (or (:created entry) now) :updated (or (:updated entry) now))]
+        (swap! state assoc-in [:entries id] e)
+        id)))
 
   (get-entry [_this id]
     (if-let [f (:get-entry-fn @state)]
@@ -355,17 +357,20 @@
                     store's own entry map is not consulted for reads. For a
                     test that already owns its entry table and needs only the
                     port to read from it.
+     :add-entry-fn — when supplied, `add-entry!` returns its answer instead of
+                     writing to the atom; useful for contract failure outcomes.
      :decode-content? — when true, get-entry, get-entries, query-entries and
                     search-similar answer a JSON-object string :content as a
                     keyword-keyed map, the shape a JSON-writing backend returns
                     on read. Stored entries are not changed."
   ([] (->stub nil nil))
   ([entries] (->stub entries nil))
-  ([entries {:keys [id-fn get-entry-fn decode-content?]}]
+  ([entries {:keys [id-fn get-entry-fn add-entry-fn decode-content?]}]
    (let [store (->StubMemoryStore (atom (cond-> {:entries    {}
                                                  :connected? true
                                                  :id-fn      (or id-fn ids/generate-id)}
                                           get-entry-fn (assoc :get-entry-fn get-entry-fn)
+                                          add-entry-fn (assoc :add-entry-fn add-entry-fn)
                                           decode-content? (assoc :decode-content? true))))]
      (doseq [e entries] (ports/add-entry! store e))
      store)))

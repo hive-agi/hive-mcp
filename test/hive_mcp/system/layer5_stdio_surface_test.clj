@@ -3,6 +3,7 @@
    registers its :tools atom as :mcp-stdio, so a reactive refresh (evict,
    activate) reaches stdio, not only a hot-reload refresh."
   (:require [clojure.test :refer [deftest is testing]]
+            [jsonrpc4clj.server]
             [hive-mcp.server.routes :as routes]
             [hive-mcp.system.layer5 :as layer5]))
 
@@ -37,3 +38,15 @@
       (layer5/register-stdio-surface! (fn [_ s] (reset! sink s)) {:tools tools})
       (is (true? (routes/install-table! @sink table)))
       (is (= table @tools)))))
+
+(deftest the-stdio-surface-sends-the-json-rpc-notification
+  (testing "a registered stdio surface has a notification port to its server"
+    (let [sink (atom nil)
+          sent (atom [])
+          server (Object.)]
+      (layer5/register-stdio-surface! (fn [_ surface] (reset! sink surface))
+                                      {:tools (atom {}) :server server})
+      (with-redefs [jsonrpc4clj.server/send-notification
+                    (fn [target method params] (swap! sent conj [target method params]))]
+        ((:surface/notify! @sink)))
+      (is (= [[server "notifications/tools/list_changed" {}]] @sent)))))

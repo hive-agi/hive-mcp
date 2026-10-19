@@ -1,0 +1,50 @@
+{:healthy
+ {:ok? true,
+  :summary {:pass 5, :fail 0, :skip 1},
+  :stages
+  {:capability-comparison :pass,
+   :constructor-resolution :pass,
+   :dependency-boundary :pass,
+   :emacs-features :skip,
+   :lifecycle-smoke :pass,
+   :manifest-discovery :pass}},
+ :inactive
+ {:ok? false,
+  :summary {:pass 4, :fail 1, :skip 1},
+  :stages
+  {:capability-comparison :pass,
+   :constructor-resolution :pass,
+   :dependency-boundary :pass,
+   :emacs-features :skip,
+   :lifecycle-smoke :fail,
+   :manifest-discovery :pass}},
+ :undiscovered
+ {:ok? false,
+  :summary {:pass 1, :fail 1, :skip 4},
+  :stages
+  {:capability-comparison :skip,
+   :constructor-resolution :skip,
+   :dependency-boundary :skip,
+   :emacs-features :skip,
+   :lifecycle-smoke :pass,
+   :manifest-discovery :fail}},
+ :unregistered
+ {:ok? false,
+  :summary {:pass 3, :fail 1, :skip 2},
+  :stages
+  {:capability-comparison :skip,
+   :constructor-resolution :pass,
+   :dependency-boundary :pass,
+   :emacs-features :skip,
+   :lifecycle-smoke :fail,
+   :manifest-discovery :pass}},
+ :unresolvable
+ {:ok? false,
+  :summary {:pass 4, :fail 1, :skip 1},
+  :stages
+  {:capability-comparison :pass,
+   :constructor-resolution :fail,
+   :dependency-boundary :pass,
+   :emacs-features :skip,
+   :lifecycle-smoke :pass,
+   :manifest-discovery :pass}}}

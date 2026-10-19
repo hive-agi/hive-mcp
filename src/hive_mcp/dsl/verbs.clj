@@ -23,7 +23,8 @@
    Design decision: 20260211212019-b8499942 (Multi DSL plan, Phase 2)"
   (:require [clojure.string :as str]
             [hive-mcp.dsl.param-domain :as pd]
-            [hive-mcp.extensions.delegate :refer [delegate-or-noop]]))
+            [hive-mcp.extensions.delegate :refer [delegate-or-noop]]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -402,3 +403,46 @@
            :relation \"implements\" :depends_on [\"$0\"]}]"
   [sentences]
   (compile-verb sentences))
+
+(def Verb
+  "A compressed verb code, e.g. \"m+\"."
+  :string)
+
+(def SentenceParams
+  "Caller-written params of one sentence: string or keyword keys."
+  [:maybe [:map-of [:or :keyword :string] :any]])
+
+(def Sentence
+  "One DSL sentence: [verb params]."
+  [:tuple Verb SentenceParams])
+
+(def DslOp
+  "An expanded operation map, or the per-op error map."
+  [:map-of :any :any])
+
+(def UnknownParamError
+  "The per-op error naming the keys a strict verb would have dropped."
+  [:map
+   [:error :string]
+   [:verb :string]
+   [:unknown-params [:vector :keyword]]
+   [:accepted [:set :keyword]]])
+
+(m/=> unknown-param-error
+      [:=> [:cat Verb [:maybe [:map-of :keyword :any]]] [:maybe UnknownParamError]])
+
+(m/=> expand-param-key [:=> [:cat :any] :keyword])
+
+(m/=> expand-params [:=> [:cat [:maybe :map]] [:maybe [:map-of :keyword :any]]])
+
+(m/=> ref-target [:=> [:cat :any] [:maybe :string]])
+
+(m/=> collect-refs [:=> [:cat [:map-of :any :any]] [:set :string]])
+
+(m/=> parse-sentence [:=> [:cat Sentence] DslOp])
+
+(m/=> parse-dsl [:=> [:cat [:sequential Sentence]] [:vector DslOp]])
+
+(m/=> compile-verb [:=> [:cat [:sequential Sentence]] [:vector DslOp]])
+
+(m/=> compile-paragraph [:=> [:cat [:sequential Sentence]] [:vector DslOp]])

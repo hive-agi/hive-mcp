@@ -43,6 +43,29 @@
         (conj (vec tags) "scope:global")
         (conj (vec tags) (str "scope:project:" project-id))))))
 
+(defn explicit-project-id
+  "The project-id a caller NAMED through a `scope:project:<id>` tag, or nil.
+
+   Resolution rule for `memory add` (kanban 20260519173408-30f0a6a6): a
+   caller-explicit scope tag wins over the project inferred from the request
+   directory or the agent session. Without it a coordinator anchored in
+   project A that wrote `scope:project:B` stored the entry with :project-id A
+   while the tag said B, so project-scoped queries missed it.
+
+   Only `scope:project:<id>` tags count; `scope:global` is a visibility tag
+   that long-standing callers attach from inside a project, so it never
+   overrides the inferred project. The first such tag wins. The id is
+   alias-resolved to its canonical form. A blank id yields nil. Pure apart
+   from the alias lookup; no regex."
+  [tags]
+  (let [prefix "scope:project:"]
+    (some (fn [tag]
+            (when (and (string? tag) (str/starts-with? tag prefix))
+              (let [id (str/trim (subs tag (count prefix)))]
+                (when-not (str/blank? id)
+                  (kg-scope/resolve-project-id id)))))
+          tags)))
+
 (defn make-scope-tag
   "Create a scope tag for a project-id."
   [project-id]
