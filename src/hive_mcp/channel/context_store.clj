@@ -1,7 +1,8 @@
 (ns hive-mcp.channel.context-store
   "Ephemeral context store for pass-by-reference agent communication with TTL auto-eviction."
   (:require [taoensso.timbre :as log]
-            [hive-spi.swarm.guards :as guards])
+            [hive-spi.swarm.guards :as guards]
+            [malli.core :as m])
   (:import [java.util.concurrent ConcurrentHashMap ScheduledExecutorService
             Executors TimeUnit]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -92,6 +93,23 @@
 
 ;; Public API
 
+(def CtxId
+  "A context-store id: ctx-<epoch-ms>-<8 hex>."
+  [:string {:min 14 :gen/schema [:tuple [:int {:min 0}] [:int {:min 0 :max 65535}]]
+            :gen/fmap (fn [[ts n]] (format "ctx-%d-%08x" ts n))}])
+
+(def Entry
+  "A stored entry, with its access bookkeeping."
+  [:map
+   [:id CtxId]
+   [:data :any]
+   [:tags [:set :any]]
+   [:created-at :int]
+   [:ttl-ms :int]
+   [:expires-at :int]
+   [:access-count [:int {:min 0}]]
+   [:last-accessed [:maybe :int]]])
+
 (defn context-put!
   "Store data in the context store, returns ctx-id."
   [data & {:keys [tags ttl-ms] :or {tags #{} ttl-ms default-ttl-ms}}]
@@ -109,6 +127,9 @@
     (.put store id entry)
     (log/debug "[context-store] put" id "tags:" tags "ttl:" ttl-ms)
     id))
+
+;; data, then keyword options :tags and :ttl-ms.
+(m/=> context-put! [:=> [:cat :any [:* :any]] CtxId])
 
 (defn context-put-batch!
   "Store multiple entries in the context store in parallel.
@@ -144,6 +165,13 @@
       (log/debug "[context-store] batch-put stored" (count refs) "entries:" (keys refs)))
     refs))
 
+(m/=> context-put-batch!
+      [:=> [:cat [:maybe [:map-of :any [:map
+                                       [:data :any]
+                                       [:tags {:optional true} :any]
+                                       [:ttl-ms {:optional true} [:maybe :int]]]]]]
+       [:map-of :any CtxId]])
+
 (defn context-get
   "Retrieve entry by ID, returns nil for expired entries."
   [ctx-id]
@@ -162,6 +190,9 @@
                                updated)))))
     @result))
 
+;; The store is a ConcurrentHashMap, which refuses a nil key.
+(m/=> context-get [:=> [:cat :string] [:maybe Entry]])
+
 (defn context-query
   "Query entries by tags, returns matching non-expired entries."
   [& {:keys [tags limit] :or {limit 100}}]
@@ -177,10 +208,15 @@
          (take limit)
          vec)))
 
+;; keyword options :tags and :limit.
+(m/=> context-query [:=> [:cat [:* :any]] [:vector Entry]])
+
 (defn context-evict!
   "Remove entry by ID. Returns true if entry existed, false otherwise."
   [ctx-id]
   (some? (.remove store ctx-id)))
+
+(m/=> context-evict! [:=> [:cat :string] :boolean])
 
 (defn evict-by-tags!
   "Evict all entries matching any of the given tags, returns count evicted."
@@ -197,6 +233,8 @@
         (log/info "[context-store] evicted" n "entries by tags:" query-tags))
       n)))
 
+(m/=> evict-by-tags! [:=> [:cat [:maybe [:or [:set :any] [:sequential :any]]]] [:int {:min 0}]])
+
 (defn context-stats
   "Return store statistics."
   []
@@ -208,6 +246,14 @@
      :oldest (when (seq timestamps) (apply min timestamps))
      :newest (when (seq timestamps) (apply max timestamps))
      :bytes-approx (reduce + 0 (map #(count (pr-str (:data %))) live-vec))}))
+
+(m/=> context-stats
+      [:=> [:cat]
+       [:map
+        [:total [:int {:min 0}]]
+        [:oldest [:maybe :int]]
+        [:newest [:maybe :int]]
+        [:bytes-approx [:int {:min 0}]]]])
 
 ;; Reaper
 
@@ -223,6 +269,8 @@
       (when (pos? n)
         (log/info "[context-store] reaped" n "expired entries"))
       n)))
+
+(m/=> reap-expired! [:=> [:cat] [:int {:min 0}]])
 
 (defn start-reaper!
   "Start the background reaper. Idempotent — no-op if already running."
@@ -241,6 +289,8 @@
       (reset! reaper-executor executor)
       (log/info "[context-store] reaper started, interval:" reaper-interval-sec "s"))))
 
+(m/=> start-reaper! [:=> [:cat] :nil])
+
 (defn stop-reaper!
   "Stop the background reaper. Idempotent — no-op if not running."
   []
@@ -248,6 +298,8 @@
     (.shutdownNow executor)
     (reset! reaper-executor nil)
     (log/info "[context-store] reaper stopped")))
+
+(m/=> stop-reaper! [:=> [:cat] :nil])
 
 ;; Reset (for testing)
 
@@ -262,3 +314,5 @@
    "channel.context-store/reset-all! blocked"
    (.clear store)
    (stop-reaper!)))
+
+(m/=> reset-all! [:=> [:cat] :nil])

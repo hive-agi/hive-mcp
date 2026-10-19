@@ -1,0 +1,10 @@
+{:case-0 {:out "Heading", :in "# Heading\nrest"},
+ :case-1 {:out "", :in nil},
+ :case-2 {:out "", :in ""},
+ :case-3
+ {:out "first real line", :in "\n\n  first real line  \nsecond"},
+ :case-4 {:out "Heading", :in "# Heading\nrest"},
+ :case-5 {:out "x", :in "x"},
+ :case-6 {:out "", :in ""},
+ :case-7
+ {:out "first real line", :in "\n\n  first real line  \nsecond"}}
