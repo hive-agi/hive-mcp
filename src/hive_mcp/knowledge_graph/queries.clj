@@ -10,7 +10,8 @@
    - get-node-context: Full context for node display
    - batch-get-node-contexts: Batch version for N+1 elimination"
 
-  (:require [clojure.set :as set]
+  (:require [malli.core :as m]
+            [clojure.set :as set]
             [hive-mcp.knowledge-graph.edges :as edges]
             [hive-mcp.knowledge-graph.scope :as scope]
             [taoensso.timbre :as log]))
@@ -475,3 +476,13 @@
     ;; Nodes with only one occurrence might be leaf nodes
     ;; True orphan detection requires memory integration
     (set (keys (filter #(= 1 (val %)) node-occurrences)))))
+
+(m/=> traverse [:=> [:cat :string :map] [:sequential [:map [:node-id :string] [:edge :map] [:depth [:int {:min 0}]] [:path [:vector :string]]]]])
+(m/=> find-path [:=> [:cat :string :string :map] [:maybe [:map [:path [:vector :string]] [:edges [:vector :map]] [:length [:int {:min 0}]]]]])
+(m/=> impact-analysis [:=> [:cat :string :map] [:map [:direct [:sequential :string]] [:transitive [:sequential :string]] [:total-count [:int {:min 0}]] [:by-relation :map]]])
+(m/=> subgraph [:=> [:cat [:maybe :string]] [:map [:nodes [:sequential :string]] [:edges [:sequential :map]] [:node-count [:int {:min 0}]] [:edge-count [:int {:min 0}]]]])
+(m/=> find-contradictions [:=> [:cat [:maybe :string]] [:sequential [:map [:node-a :string] [:node-b :string] [:edge :map]]]])
+(m/=> get-node-context [:=> [:cat :string] [:map [:node-id :string] [:incoming :map] [:outgoing :map] [:confidence :map] [:scopes [:sequential :string]]]])
+(m/=> batch-get-node-contexts [:=> [:cat [:sequential :string]] [:map-of :string :map]])
+(m/=> find-connected-nodes [:=> [:cat :string :map] [:set :string]])
+(m/=> find-orphan-nodes [:=> [:cat] [:set :string]])
