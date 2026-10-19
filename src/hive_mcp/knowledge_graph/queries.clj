@@ -477,9 +477,9 @@
     ;; True orphan detection requires memory integration
     (set (keys (filter #(= 1 (val %)) node-occurrences)))))
 
-(m/=> traverse [:function [:=> [:cat :string] [:sequential [:map [:node-id :string] [:edge :map] [:depth [:int {:min 0}]] [:path [:vector :string]]]]] [:=> [:cat :string [:maybe :map]] [:sequential [:map [:node-id :string] [:edge :map] [:depth [:int {:min 0}]] [:path [:vector :string]]]]]])
+(m/=> traverse [:=> [:cat :string :map] [:sequential [:map [:node-id :string] [:edge :map] [:depth [:int {:min 0}]] [:path [:vector :string]]]]])
 (m/=> find-path [:=> [:cat :string :string :map] [:maybe [:map [:path [:vector :string]] [:edges [:vector :map]] [:length [:int {:min 0}]]]]])
-(m/=> impact-analysis [:=> [:cat :string :map] [:map [:direct [:sequential :string]] [:transitive [:sequential :string]] [:total-count [:int {:min 0}]] [:by-relation :map]]])
+(m/=> impact-analysis [:function [:=> [:cat :string] [:map [:direct [:sequential :string]] [:transitive [:sequential :string]] [:total-count [:int {:min 0}]] [:by-relation :map]]] [:=> [:cat :string [:maybe :map]] [:map [:direct [:sequential :string]] [:transitive [:sequential :string]] [:total-count [:int {:min 0}]] [:by-relation :map]]]])
 (m/=> subgraph [:=> [:cat [:maybe :string]] [:map [:nodes [:sequential :string]] [:edges [:sequential :map]] [:node-count [:int {:min 0}]] [:edge-count [:int {:min 0}]]]])
 (m/=> find-contradictions [:function [:=> [:cat] [:sequential [:map [:node-a :string] [:node-b :string] [:edge :map]]]] [:=> [:cat [:maybe :string]] [:sequential [:map [:node-a :string] [:node-b :string] [:edge :map]]]]])
 (m/=> get-node-context [:=> [:cat :string] [:map [:node-id :string] [:incoming :map] [:outgoing :map] [:confidence [:maybe :map]] [:scopes [:sequential :string]]]])

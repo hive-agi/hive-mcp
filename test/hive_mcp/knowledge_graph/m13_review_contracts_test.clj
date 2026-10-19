@@ -22,7 +22,7 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (def ^:private contracted
-  #{#'queries/get-node-context #'queries/traverse #'queries/find-connected-nodes
+  #{#'queries/get-node-context #'queries/impact-analysis #'queries/find-connected-nodes
     #'queries/find-contradictions
     #'ground/backfill-grounding!
     #'mig/migrate-store! #'mig/sync-to-backend!
@@ -56,9 +56,13 @@
 
 (deftest query-opts-are-optional
   (edges/add-edge! {:from "rv-a" :to "rv-b" :relation :implements :confidence 0.9})
-  (testing "traverse and find-connected-nodes default their opts"
-    (is (= ["rv-b"] (mapv :node-id (queries/traverse "rv-a"))))
-    (is (= #{"rv-b"} (queries/find-connected-nodes "rv-a"))))
+  (testing "impact-analysis and find-connected-nodes default their opts"
+    (let [impact (queries/impact-analysis "rv-b")]
+      (is (= impact (queries/impact-analysis "rv-b" nil) (queries/impact-analysis "rv-b" {})))
+      (is (nat-int? (:total-count impact))))
+    (let [connected (queries/find-connected-nodes "rv-a")]
+      (is (contains? connected "rv-b"))
+      (is (= connected (queries/find-connected-nodes "rv-a" nil)))))
   (testing "find-contradictions without a scope"
     (is (= [] (vec (queries/find-contradictions))))))
 
