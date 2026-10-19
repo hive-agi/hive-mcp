@@ -422,17 +422,11 @@
       [:=> [:cat]
        :map])
 
-(m/=> get-parent-scope
-      [:=> [:cat :any]
-       [:maybe :string]])
+(m/=> get-parent-scope [:=> [:cat [:maybe :string]] [:maybe :string]])
 
-(m/=> visible-scopes
-      [:=> [:cat :any]
-       [:vector :string]])
+(m/=> visible-scopes [:=> [:cat [:maybe :string]] [:vector :string]])
 
-(m/=> scope-contains?
-      [:=> [:cat :any :any]
-       :boolean])
+(m/=> scope-contains? [:=> [:cat [:maybe :string] [:maybe :string]] :boolean])
 
 (m/=> infer-scope-from-path
       [:=> [:cat :any]
@@ -443,26 +437,14 @@
        [:=> [:cat] :string]
        [:=> [:cat :any] :string]])
 
-(m/=> scope->tag
-      [:=> [:cat :any]
-       :string])
+(m/=> scope->tag [:=> [:cat [:maybe :string]] :string])
 
-(m/=> visible-scope-tags
-      [:=> [:cat :any]
-       [:set :string]])
+(m/=> visible-scope-tags [:=> [:cat [:maybe :string]] [:set :string]])
 
-(m/=> descendant-scope-tags
-      [:=> [:cat :any]
-       [:maybe [:set :string]]])
+(m/=> descendant-scope-tags [:=> [:cat [:maybe :string]] [:maybe [:set :string]]])
 
-(m/=> descendant-scopes
-      [:=> [:cat :any]
-       [:maybe [:vector :string]]])
+(m/=> descendant-scopes [:=> [:cat [:maybe :string]] [:maybe [:vector :string]]])
 
-(m/=> full-hierarchy-scope-tags
-      [:=> [:cat :any]
-       [:set :string]])
+(m/=> full-hierarchy-scope-tags [:=> [:cat [:maybe :string]] [:set :string]])
 
-(m/=> derive-hierarchy-scope-filter
-      [:=> [:cat :any]
-       [:maybe [:set :string]]])
+(m/=> derive-hierarchy-scope-filter [:=> [:cat [:maybe :string]] [:maybe [:set :string]]])
