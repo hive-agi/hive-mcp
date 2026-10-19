@@ -65,7 +65,7 @@
 (m/=> resolve!
       [:function
        [:=> [:cat] SAAHandlerConfig-schema]
-       [:=> [:cat [:maybe :map]] SAAHandlerConfig-schema]])
+       [:=> [:cat :any] SAAHandlerConfig-schema]])
 
 (defn slave-agent-id
   "Resolved CLAUDE_SWARM_SLAVE_ID (or config.edn / default).
@@ -82,4 +82,4 @@
   [agent-id]
   (or agent-id (slave-agent-id)))
 
-(m/=> effective-agent-id [:=> [:cat [:maybe :string]] :string])
+(m/=> effective-agent-id [:=> [:cat :any] :some])

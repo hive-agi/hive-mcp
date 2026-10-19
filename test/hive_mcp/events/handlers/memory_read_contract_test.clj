@@ -3,13 +3,48 @@
    store holds answers the tool's not-found response, which needs no entry and
    writes nothing."
   (:require [clojure.string :as str]
-            [clojure.test :refer [deftest is]]
+            [clojure.test :refer [deftest is use-fixtures]]
             [hive-mcp.events.core :as ev]
             [hive-mcp.events.handlers.memory-read :as memory-read]
-            [hive-schemas.test :refer [deftrifecta-from-schema]]))
+            [hive-schemas.test :refer [deftrifecta-from-schema]]
+            [hive-mcp.protocols.memory :as mem-proto]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+(defrecord EmptyStore []
+  mem-proto/IMemoryStore
+  (connect! [_ _] nil)
+  (disconnect! [_] nil)
+  (connected? [_] true)
+  (health-check [_] {:healthy? true})
+  (add-entry! [_ _] nil)
+  (get-entry [_ _] nil)
+  (update-entry! [_ _ _] nil)
+  (delete-entry! [_ _] nil)
+  (query-entries [_ _] nil)
+  (search-similar [_ _ _] nil)
+  (supports-semantic-search? [_] false)
+  (cleanup-expired! [_] nil)
+  (entries-expiring-soon [_ _ _] nil)
+  (find-duplicate [_ _ _ _] nil)
+  (store-status [_] {:configured? true})
+  (reset-store! [_] nil))
+
+(defn- with-empty-store
+  "Run the namespace against a store that holds no entry, restoring whatever
+   :default store was registered before."
+  [f]
+  (let [prior (get (mem-proto/registered-stores) :default)]
+    (try
+      (mem-proto/register-store! :default (->EmptyStore))
+      (f)
+      (finally
+        (if prior
+          (mem-proto/register-store! :default prior)
+          (mem-proto/unregister-store! :default))))))
+
+(use-fixtures :once with-empty-store)
 
 (def ^:private AbsentId
   [:string {:gen/fmap #(str "m11-absent-" %), :min 1}])

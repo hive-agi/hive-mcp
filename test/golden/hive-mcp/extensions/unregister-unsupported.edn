@@ -1,0 +1,33 @@
+{:case-0
+ {:out {:unregistered [], :unsupported [], :errors []},
+  :in (:not-a-host [])},
+ :case-1
+ {:out
+  {:unregistered [],
+   :unsupported ["x.three" "x.one" "x.three" "x.two"],
+   :errors []},
+  :in (:not-a-host ["x.three" "x.one" "x.three" "x.two"])},
+ :case-2
+ {:out
+  {:unregistered [], :unsupported ["x.three" "x.two"], :errors []},
+  :in (:not-a-host ["x.three" "x.two"])},
+ :case-3
+ {:out
+  {:unregistered [],
+   :unsupported ["x.three" "x.two" "x.three"],
+   :errors []},
+  :in (:not-a-host ["x.three" "x.two" "x.three"])},
+ :case-4
+ {:out
+  {:unregistered [], :unsupported ["x.three" "x.three"], :errors []},
+  :in (:not-a-host ["x.three" "x.three"])},
+ :case-5
+ {:out
+  {:unregistered [], :unsupported ["x.three" "x.two"], :errors []},
+  :in (:not-a-host ["x.three" "x.two"])},
+ :case-6
+ {:out {:unregistered [], :unsupported ["x.three"], :errors []},
+  :in (:not-a-host ["x.three"])},
+ :case-7
+ {:out {:unregistered [], :unsupported ["x.one"], :errors []},
+  :in (:not-a-host ["x.one"])}}

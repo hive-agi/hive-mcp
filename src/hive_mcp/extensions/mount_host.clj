@@ -192,4 +192,4 @@
     (f host addon-ids)
     (unregister-via-seam host addon-ids)))
 
-(m/=> unregister! [:=> [:cat :any [:or [:sequential :any] [:set :any]]] UnregisterReport])
+(m/=> unregister! [:=> [:cat :any [:maybe [:or [:sequential :any] [:set :any]]]] UnregisterReport])

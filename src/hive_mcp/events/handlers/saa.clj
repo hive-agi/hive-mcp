@@ -57,7 +57,7 @@
        [:map
         [:log hs/LogEffect]
         [:shout [:map
-                 [:agent-id :string]
+                 [:agent-id :some]
                  [:event-type [:= :started]]
                  [:data [:map
                          [:task :any]
@@ -121,7 +121,7 @@
        [:map
         [:log hs/LogEffect]
         [:shout [:map
-                 [:agent-id :string]
+                 [:agent-id :some]
                  [:event-type [:= :progress]]
                  [:data [:map
                          [:workflow [:= :saa]]
@@ -130,7 +130,7 @@
         [:channel-publish [:map
                            [:event-type [:= :saa-phase-complete]]
                            [:data [:map
-                                   [:agent-id :string]
+                                   [:agent-id :some]
                                    [:phase :any]
                                    [:grounding-score :any]
                                    [:plan-valid? :any]]]]]]])
@@ -191,7 +191,7 @@
        [:map
         [:log hs/LogEffect]
         [:shout [:map
-                 [:agent-id :string]
+                 [:agent-id :some]
                  [:event-type [:= :completed]]
                  [:data [:map
                          [:task :any]
@@ -256,7 +256,7 @@
        [:map
         [:log hs/LogEffect]
         [:shout [:map
-                 [:agent-id :string]
+                 [:agent-id :some]
                  [:event-type [:= :error]]
                  [:data [:map
                          [:task :any]
@@ -268,13 +268,13 @@
                              [:source :string]
                              [:message :string]
                              [:context [:map
-                                        [:agent-id :string]
+                                        [:agent-id :some]
                                         [:task :any]
                                         [:phase :any]
                                         [:data [:maybe :map]]]]]]
         [:channel-publish [:map
                            [:event-type [:= :saa-failed]]
-                           [:data [:map [:agent-id :string] [:phase :any] [:error :any]]]]]]])
+                           [:data [:map [:agent-id :some] [:phase :any] [:error :any]]]]]]])
 
 ;; =============================================================================
 ;; Registration

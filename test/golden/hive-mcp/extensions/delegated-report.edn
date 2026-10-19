@@ -1,0 +1,27 @@
+{:case-0
+ {:out {:reseated? true, :via :hive-addon, :host "HostA"},
+  :in ({:reseated? true} "HostA")},
+ :case-1
+ {:out {:reseated? true, :via :hive-addon, :host "HostB"},
+  :in (:done "HostB")},
+ :case-2
+ {:out
+  {:reseated? true, :errors ["x"], :via :hive-addon, :host "HostB"},
+  :in ({:reseated? true, :errors ["x"]} "HostB")},
+ :case-3
+ {:out {:reseated? false, :via :hive-addon, :host "HostB"},
+  :in ({:reseated? false} "HostB")},
+ :case-4
+ {:out {:reseated? true, :via :hive-addon, :host "HostA"},
+  :in (:done "HostA")},
+ :case-5
+ {:out
+  {:reseated? true, :errors ["x"], :via :hive-addon, :host "HostA"},
+  :in ({:reseated? true, :errors ["x"]} "HostA")},
+ :case-6
+ {:out
+  {:reseated? true, :errors ["x"], :via :hive-addon, :host "HostA"},
+  :in ({:reseated? true, :errors ["x"]} "HostA")},
+ :case-7
+ {:out {:reseated? true, :via :hive-addon, :host "HostA"},
+  :in ({:reseated? true} "HostA")}}

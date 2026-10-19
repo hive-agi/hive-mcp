@@ -1,0 +1,29 @@
+{:case-0
+ {:out {:ok? true, :errors [], :torn-down [], :unregistered []},
+  :in (nil nil)},
+ :case-1
+ {:out {:ok? true, :errors [], :torn-down ["a"], :unregistered ["b"]},
+  :in ({:torn-down ["a"]} {:unregistered ["b"], :unsupported []})},
+ :case-2
+ {:out {:ok? true, :errors [], :torn-down [], :unregistered []},
+  :in (nil nil)},
+ :case-3
+ {:out {:ok? true, :errors [], :torn-down [], :unregistered ["b"]},
+  :in (nil {:unregistered ["b"]})},
+ :case-4
+ {:out
+  {:ok? true,
+   :errors [],
+   :torn-down [],
+   :unregistered [],
+   :teardown/data-preserved? false},
+  :in (#:teardown{:data-preserved? false} nil)},
+ :case-5
+ {:out {:ok? true, :errors [], :torn-down [], :unregistered []},
+  :in (nil nil)},
+ :case-6
+ {:out {:ok? true, :errors [], :torn-down [], :unregistered []},
+  :in (nil nil)},
+ :case-7
+ {:out {:ok? true, :errors [], :torn-down [], :unregistered []},
+  :in (nil nil)}}
