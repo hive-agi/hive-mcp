@@ -1,0 +1,18 @@
+{:before {:set? false, :enhanced? false, :noop? true},
+ :during
+ {:set? true,
+  :enhanced? true,
+  :same? true,
+  :caps
+  {:backend-id :m17-stub,
+   :enhanced? true,
+   :available? true,
+   :capabilities #{:tools :streaming}}},
+ :cleared nil,
+ :after
+ {:set? false,
+  :caps
+  {:backend-id :noop,
+   :enhanced? false,
+   :available? false,
+   :capabilities #{}}}}

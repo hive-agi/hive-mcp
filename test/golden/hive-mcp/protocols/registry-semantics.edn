@@ -1,0 +1,16 @@
+{:single
+ {:empty [:fallback false],
+  :installed :impl-a,
+  :rejected :rejected,
+  :cleared nil,
+  :torn [:impl-a],
+  :transitions [[nil :impl-a] [:impl-a nil]],
+  :after-unwatch :impl-b},
+ :multi
+ {:put 2,
+  :merged (:c :d),
+  :missing [:missing :zz 4],
+  :removed nil,
+  :snapshot {:b 2, :c 3, :d 4},
+  :cleared nil,
+  :after-clear {}}}

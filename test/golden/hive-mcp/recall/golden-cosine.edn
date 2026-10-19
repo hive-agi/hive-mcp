@@ -1,0 +1,14 @@
+{:case-0 {:out 0.0, :in (#{"7731"} #{})},
+ :case-1
+ {:out 0.7071067811865475,
+  :in (#{"pelican" "7731"} #{"pelican" "7731" "index" "quokka"})},
+ :case-2 {:out 0.0, :in (#{} #{"canary" "quokka"})},
+ :case-3
+ {:out 0.5773502691896258,
+  :in (#{"pelican"} #{"pelican" "canary" "quokka"})},
+ :case-4
+ {:out 0.7071067811865475,
+  :in (#{"7731" "index" "canary" "quokka"} #{"index" "quokka"})},
+ :case-5 {:out 0.5, :in (#{"7731" "quokka"} #{"7731" "canary"})},
+ :case-6 {:out 0.0, :in (#{} #{"pelican"})},
+ :case-7 {:out 0.0, :in (#{"7731" "canary"} #{"quokka"})}}

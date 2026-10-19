@@ -1,0 +1,7 @@
+{:start #{:m17-beta :m17-gamma :m17-alpha},
+ :replaced :m17-alpha,
+ :alpha-up-after-replace false,
+ :unregistered nil,
+ :after-unregister #{:m17-beta :m17-alpha},
+ :cleared nil,
+ :after-clear nil}

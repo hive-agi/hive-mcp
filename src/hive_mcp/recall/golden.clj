@@ -46,7 +46,8 @@
   (:require [clojure.set :as set]
             [clojure.string :as str]
             [hive-mcp.protocols.memory :as mem-proto]
-            [hive-mcp.recall.canary :as canary]))
+            [hive-mcp.recall.canary :as canary]
+            [malli.core :as m]))
 
 ;; =============================================================================
 ;; The corpus
@@ -116,6 +117,8 @@
        (remove str/blank?)
        set))
 
+(m/=> tokens [:=> [:cat :any] [:set :string]])
+
 (defn cosine
   "Cosine similarity of two binary bags. 1.0 = identical, 0.0 = disjoint."
   [a b]
@@ -124,6 +127,8 @@
       0.0
       (/ (double (count (set/intersection a b)))
          (Math/sqrt (double (* na nb)))))))
+
+(m/=> cosine [:=> [:cat [:set :any] [:set :any]] [:double {:min 0.0 :max 1.0}]])
 
 ;; =============================================================================
 ;; The fault taxonomy — the thing that was missing
@@ -201,6 +206,18 @@
    `recall-fault` must not call it a fault — otherwise the canary cries wolf."
   ([] (->GoldenMemoryStore [] :distance)))
 
+(def GoldenStore
+  "A GoldenMemoryStore."
+  [:fn {:gen/schema [:enum :distance :similarity] :gen/fmap ->golden-store}
+   #(instance? GoldenMemoryStore %)])
+
+;; `emit` is read by a `case` with a default arm, so any value is accepted.
+(m/=> ->golden-store [:function
+                      [:=> [:cat] GoldenStore]
+                      [:=> [:cat :any] GoldenStore]])
+
+(m/=> ->empty-store [:=> [:cat] GoldenStore])
+
 ;; =============================================================================
 ;; Store registration — never leaks across tests
 ;; =============================================================================
@@ -215,6 +232,10 @@
         (if prior
           (mem-proto/register-store! :default prior)
           (mem-proto/unregister-store! :default))))))
+
+;; The store input is loose: register-store! throws for a non-IMemoryStore.
+;; The result is whatever `f` returns.
+(m/=> with-store* [:=> [:cat :any ifn?] :any])
 
 (defmacro with-store
   "Register `store` as :default for the body, then restore what was there."

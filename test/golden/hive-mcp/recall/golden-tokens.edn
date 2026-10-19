@@ -1,0 +1,8 @@
+{:case-0 {:out #{}, :in (nil)},
+ :case-1 {:out #{"1"}, :in (-1)},
+ :case-2 {:out #{"7731"}, :in ("7731")},
+ :case-3 {:out #{"7731" "vestibule"}, :in ("7731 vestibule")},
+ :case-4 {:out #{"1"}, :in (1)},
+ :case-5 {:out #{"0"}, :in (0)},
+ :case-6 {:out #{"14"}, :in (-14)},
+ :case-7 {:out #{}, :in (nil)}}

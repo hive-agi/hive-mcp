@@ -6,7 +6,8 @@
 
    Pattern: follows protocols/editor.clj (active atom + NoopBackbone fallback).
    Headless mode is a first-class citizen — NoopBackbone degrades gracefully."
-  (:require [hive-mcp.protocols.registry :as reg]))
+  (:require [hive-mcp.protocols.registry :as reg]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -101,3 +102,23 @@
   "Create a no-op backbone fallback."
   []
   (->NoopBackbone))
+
+(def Backbone
+  "Any value satisfying IEventBackbone; generates NoopBackbones."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (->NoopBackbone))}
+   #(satisfies? IEventBackbone %)])
+
+;; The input is loose: the slot's :validate assert rejects a non-backbone.
+(m/=> set-backbone! [:=> [:cat :any] Backbone])
+
+(m/=> backbone-set? [:=> [:cat] :boolean])
+
+(m/=> get-backbone [:=> [:cat] Backbone])
+
+(m/=> clear-backbone! [:=> [:cat] :nil])
+
+(m/=> add-backbone-watch! [:=> [:cat :any ifn?] reg/SlotValue])
+
+(m/=> remove-backbone-watch! [:=> [:cat :any] reg/SlotValue])
+
+(m/=> noop-backbone [:=> [:cat] Backbone])

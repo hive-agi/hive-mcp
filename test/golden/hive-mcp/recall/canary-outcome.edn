@@ -1,0 +1,33 @@
+{:case-0
+ {:out
+  {:label :carto-semantic,
+   :status :fault,
+   :fault {:fault :recall/anchor-missing}},
+  :in (:carto-semantic {:fault :recall/anchor-missing} nil)},
+ :case-1
+ {:out {:label :carto-semantic, :status :skipped, :reason "no store"},
+  :in (:carto-semantic {:fault :recall/rank-inverted} "no store")},
+ :case-2
+ {:out {:label :lexical-anchor, :status :skipped, :reason "no store"},
+  :in (:lexical-anchor {:fault :recall/rank-inverted} "no store")},
+ :case-3
+ {:out {:label :supersession, :status :skipped, :reason "no store"},
+  :in (:supersession nil "no store")},
+ :case-4
+ {:out
+  {:label :lexical-anchor,
+   :status :fault,
+   :fault {:fault :recall/rank-inverted}},
+  :in (:lexical-anchor {:fault :recall/rank-inverted} nil)},
+ :case-5
+ {:out
+  {:label :lexical-anchor,
+   :status :fault,
+   :fault {:fault :recall/rank-inverted}},
+  :in (:lexical-anchor {:fault :recall/rank-inverted} nil)},
+ :case-6
+ {:out {:label :supersession, :status :ok},
+  :in (:supersession nil nil)},
+ :case-7
+ {:out {:label :carto-semantic, :status :ok},
+  :in (:carto-semantic nil nil)}}
