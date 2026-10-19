@@ -1,0 +1,75 @@
+{:case-0
+ {:out {:id "e2", :T "note", :C "x", :ref true},
+  :in {:id "e2", :T "note", :C "x", :ref true}},
+ :case-1
+ {:out {:id "e2", :T "decision", :C "Title line", :ref true},
+  :in
+  {:id "e2",
+   :T "decision",
+   :C
+   "# Title line\nbody body body body body body body body body body",
+   :tags [],
+   :ref true}},
+ :case-2
+ {:out
+  {:id "e1",
+   :T "note",
+   :C "Title line",
+   :ref true,
+   :tags ["b" "c" "a" "b" "b"]},
+  :in
+  {:id "e1",
+   :T "note",
+   :C
+   "# Title line\nbody body body body body body body body body body",
+   :tags ["b" "c" "a" "b" "b" "b" "c"],
+   :ref true}},
+ :case-3
+ {:out {:id "e1", :T "axiom", :C "Title line", :ref true},
+  :in
+  {:id "e1",
+   :T "axiom",
+   :C
+   "# Title line\nbody body body body body body body body body body"}},
+ :case-4
+ {:out
+  {:id "e1",
+   :T "note",
+   :C "Title line",
+   :ref true,
+   :tags ["a" "b" "c"]},
+  :in
+  {:id "e1",
+   :T "note",
+   :C
+   "# Title line\nbody body body body body body body body body body",
+   :tags ["a" "b" "c"]}},
+ :case-5
+ {:out
+  {:id "e1",
+   :T "note",
+   :C "x",
+   :ref true,
+   :tags ["b" "b" "c" "c" "a"]},
+  :in
+  {:id "e1",
+   :T "note",
+   :C "x",
+   :tags ["b" "b" "c" "c" "a" "c"],
+   :ref true}},
+ :case-6
+ {:out {:id "e1", :T "axiom", :C "Title line", :ref true},
+  :in
+  {:id "e1",
+   :T "axiom",
+   :C
+   "# Title line\nbody body body body body body body body body body",
+   :ref true}},
+ :case-7
+ {:out
+  {:id "e2",
+   :T "note",
+   :C "x",
+   :ref true,
+   :tags ["b" "a" "c" "c" "b"]},
+  :in {:id "e2", :T "note", :C "x", :tags ["b" "a" "c" "c" "b"]}}}

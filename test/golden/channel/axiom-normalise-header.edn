@@ -1,0 +1,8 @@
+{:case-0 {:out "why it matters", :in "## Why it matters"},
+ :case-1 {:out "plain", :in "plain"},
+ :case-2 {:out "strict definitions", :in "### Strict Definitions"},
+ :case-3 {:out "examples", :in "# Examples!"},
+ :case-4 {:out "why it matters", :in "## Why it matters"},
+ :case-5 {:out "", :in nil},
+ :case-6 {:out "strict definitions", :in "### Strict Definitions"},
+ :case-7 {:out "examples", :in "# Examples!"}}

@@ -28,7 +28,8 @@
    `hive-mcp.channel.drain-projection-arc-test`."
   (:require [clojure.string :as str]
             [hive-mcp.channel.drain-rank :as rank]
-            [hive-mcp.channel.axiom-projection :as ax]))
+            [hive-mcp.channel.axiom-projection :as ax]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -51,6 +52,31 @@
   "Tags kept in an index row."
   5)
 
+(def BufferedEntry
+  "A buffered memory entry as the drain sees it; open beyond these keys."
+  [:map
+   [:id {:optional true} :any]
+   [:T {:optional true} :any]
+   [:C {:optional true} :any]
+   [:tags {:optional true} [:maybe [:sequential :any]]]
+   [:ref {:optional true} :any]])
+
+(def IndexRow
+  "A pull row: the entry's id, type, title and first tags, marked :ref."
+  [:map
+   [:id :any]
+   [:T :any]
+   [:C :string]
+   [:ref [:= true]]
+   [:tags {:optional true} [:vector :any]]])
+
+(def ProjectionOpts
+  "The policy, floor pins and floor policy one projection uses."
+  [:maybe [:map
+           [:policy {:optional true} [:maybe :keyword]]
+           [:pins {:optional true} [:maybe [:set :any]]]
+           [:axiom-policy {:optional true} [:maybe :keyword]]]])
+
 (defn title-of
   "The first non-blank line of CONTENT, stripped of markdown heading marks and
    truncated to `title-chars`.
@@ -69,6 +95,8 @@
       (str (subs line 0 title-chars) "...")
       line)))
 
+(m/=> title-of [:=> [:cat :any] :string])
+
 (defn index-entry
   "ENTRY reduced to a pull row: id, type, title and a few tags.
 
@@ -81,6 +109,8 @@
            :C (title-of (:C entry))
            :ref true}
     (seq (:tags entry)) (assoc :tags (vec (take index-tags (:tags entry))))))
+
+(m/=> index-entry [:=> [:cat BufferedEntry] IndexRow])
 
 (def axiom-policies
   "The closed set of floor-lane policies. `:compact` withholds rationale and
@@ -111,6 +141,12 @@
               raw
               (keyword (str/replace (str/trim (str raw)) #"^:" "")))]
      (if (contains? axiom-policies kw) kw default-axiom-policy))))
+
+;; Never throws: an unknown or unreadable policy falls back to the default.
+(m/=> resolve-axiom-policy
+      [:function
+       [:=> [:cat] (into [:enum] (sort axiom-policies))]
+       [:=> [:cat :any] (into [:enum] (sort axiom-policies))]])
 
 (defn project-entry
   "ENTRY as POLICY sends it, given the lane it falls in.
@@ -146,6 +182,8 @@
           row
           entry)))))
 
+(m/=> project-entry [:=> [:cat BufferedEntry ProjectionOpts] :map])
+
 (defn project
   "ENTRIES as POLICY sends them.
 
@@ -153,6 +191,8 @@
    buffer that was written back projected changes nothing."
   [entries opts]
   (mapv #(project-entry % opts) entries))
+
+(m/=> project [:=> [:cat [:maybe [:sequential BufferedEntry]] ProjectionOpts] [:vector :map]])
 
 (defn resolve-policy
   "Wire policy for this drain, by the house precedence
@@ -176,6 +216,12 @@
               (keyword (str/replace (str/trim (str raw)) #"^:" "")))]
      (if (contains? policies kw) kw default-policy))))
 
+;; Never throws: an unknown or unreadable policy falls back to the default.
+(m/=> resolve-policy
+      [:function
+       [:=> [:cat] (into [:enum] (sort policies))]
+       [:=> [:cat :any] (into [:enum] (sort policies))]])
+
 (defn pull-hint
   "One line telling the caller how to turn index rows back into entries.
 
@@ -187,3 +233,5 @@
          "`memory get :id <id>`, several with `memory batch-get :ids [...]`, "
          "or follow its edges with `memory kg traverse :start_node <id>`. "
          "Pull what the current task needs; ignore the rest.")))
+
+(m/=> pull-hint [:=> [:cat [:maybe [:sequential [:maybe :map]]]] [:maybe :string]])
