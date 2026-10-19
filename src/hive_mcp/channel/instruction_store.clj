@@ -110,7 +110,10 @@
   []
   (str (UUID/randomUUID)))
 
-(m/=> new-instruction-id [:=> [:cat] [:re #"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"]])
+(m/=> new-instruction-id
+      [:=> [:cat]
+       [:re {:gen/schema :uuid :gen/fmap str}
+        #"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"]])
 
 (defn wrap-envelope
   "Pure: wrap a raw instruction into a transport envelope with id + agent-id.
