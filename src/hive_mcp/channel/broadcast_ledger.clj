@@ -26,7 +26,8 @@
    Every decision lives in a pure function over a ledger VALUE; the atom is a
    held value and three thin wrappers. A test needs no fixture and no clock:
    it passes its own `now`."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -58,6 +59,8 @@
   (let [v (config-value [:hivemind :broadcast-window-ms])]
     (if (and (number? v) (pos? v)) (long v) default-window-ms)))
 
+(m/=> window-ms [:=> [:cat] [:int {:min 1}]])
+
 ;; =============================================================================
 ;; Pure core: a ledger is {project-id [timestamp ...]}
 ;; =============================================================================
@@ -70,11 +73,17 @@
   (let [s (str project-id)]
     (if (str/blank? s) "global" s)))
 
+(def Ledger
+  "project key -> timestamps of the broadcasts it has been admitted."
+  [:map-of :any [:vector :int]])
+
 (defn live
   "The timestamps of `stamps` still inside the window ending at `now`.
    Strictly inside: an entry exactly `window` old has aged out."
   [stamps now window]
   (into [] (filter #(> (long %) (- (long now) (long window)))) stamps))
+
+(m/=> live [:=> [:cat [:maybe [:sequential :int]] :int :int] [:vector :int]])
 
 (defn prune
   "Drop every aged-out entry from `ledger`, and every project left with none.
@@ -89,10 +98,14 @@
              {}
              (or ledger {})))
 
+(m/=> prune [:=> [:cat [:maybe Ledger] :int :int] Ledger])
+
 (defn spent
   "How many broadcasts `project-id` has been admitted inside the window."
   [ledger project-id now window]
   (count (live (get (or ledger {}) (key-for project-id) []) now window)))
+
+(m/=> spent [:=> [:cat [:maybe Ledger] :any :int :int] [:int {:min 0}]])
 
 (defn spend
   "Record one admitted broadcast for `project-id` at `now`.
@@ -103,6 +116,8 @@
   (let [pruned (prune ledger now window)
         k (key-for project-id)]
     (assoc pruned k (conj (get pruned k []) (long now)))))
+
+(m/=> spend [:=> [:cat [:maybe Ledger] :any :int :int] Ledger])
 
 ;; =============================================================================
 ;; The held value
@@ -118,6 +133,11 @@
   ([project-id now]
    (spent @ledger project-id now (window-ms))))
 
+(m/=> spent-recently
+      [:function
+       [:=> [:cat :any] [:int {:min 0}]]
+       [:=> [:cat :any :int] [:int {:min 0}]]])
+
 (defn record-broadcast!
   "Charge one admitted broadcast to this project's budget.
 
@@ -129,12 +149,19 @@
    (swap! ledger spend project-id now (window-ms))
    nil))
 
+(m/=> record-broadcast!
+      [:function
+       [:=> [:cat :any] :nil]
+       [:=> [:cat :any :int] :nil]])
+
 (defn reset-ledger!
   "Forget every recorded broadcast. For tests, and for an operator who has
    dealt with whatever caused the burst."
   []
   (reset! ledger {})
   nil)
+
+(m/=> reset-ledger! [:=> [:cat] :nil])
 
 (defn snapshot
   "The live ledger as {project-id count}, for diagnostics. Reading it decides
@@ -145,3 +172,8 @@
      (reduce-kv (fn [acc k stamps] (assoc acc k (count (live stamps now w))))
                 {}
                 (prune @ledger now w)))))
+
+(m/=> snapshot
+      [:function
+       [:=> [:cat] [:map-of :any [:int {:min 1}]]]
+       [:=> [:cat :int] [:map-of :any [:int {:min 1}]]]])

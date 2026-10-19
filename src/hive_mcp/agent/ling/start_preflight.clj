@@ -6,7 +6,8 @@
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -45,10 +46,16 @@
           acc
           (recur (parent-dir path) acc))))))
 
+(m/=> trust-candidates [:=> [:cat :string [:maybe :string]] [:vector :string]])
+
 (defn trusted?
   "True when any of CANDIDATES is in TRUSTED."
   [candidates trusted]
   (boolean (some (set trusted) candidates)))
+
+(m/=> trusted?
+      [:=> [:cat [:sequential :string] [:maybe [:or [:set :string] [:sequential :string]]]]
+       :boolean])
 
 (defn refusal-message
   "Error text for a spawn refused because ROOT is not trusted."
@@ -60,6 +67,21 @@
        "\"].hasTrustDialogAccepted to true in ~/.claude.json. "
        "Or spawn with a trusted cwd."))
 
+(m/=> refusal-message [:=> [:cat [:maybe :string] [:maybe :string]] :string])
+
+(def FolderTrust
+  "Malli schema for a value that satisfies `IFolderTrust`. Generates a source
+   that trusts nothing and finds no checkout."
+  [:fn {:gen/schema :nil
+        :gen/fmap   (fn [_] (reify IFolderTrust
+                              (trusted-roots [_] #{})
+                              (checkout-root [_ _] nil)))}
+   (fn [x] (satisfies? IFolderTrust x))])
+
+(def Refusal
+  "Why a spawn cannot start: the cwd, the root that is not trusted, the prose."
+  [:map [:cwd :string] [:root :string] [:message :string]])
+
 (defn untrusted-refusal
   "Nil when MODE does not run Claude Code interactively or CWD is trusted
    by SOURCE; otherwise {:cwd :root :message}."
@@ -69,6 +91,8 @@
       (when-not (trusted? (trust-candidates cwd root) (trusted-roots source))
         (let [shown (or root (strip-trailing-slash cwd))]
           {:cwd cwd :root shown :message (refusal-message cwd shown)})))))
+
+(m/=> untrusted-refusal [:=> [:cat FolderTrust :any [:maybe :string]] [:maybe Refusal]])
 
 ;;; Boundary adapter: ~/.claude.json + .git on disk
 
@@ -115,6 +139,8 @@
   []
   (->ClaudeCodeTrust (str (System/getProperty "user.home") "/.claude.json")))
 
+(m/=> claude-code-trust [:=> [:cat] FolderTrust])
+
 (def ^:dynamic *folder-trust*
   "IFolderTrust consulted by `ensure-startable!`; nil means the default adapter."
   nil)
@@ -135,3 +161,6 @@
     (when refusal
       (throw (ex-info (:message refusal)
                       (assoc refusal :reason :spawn/untrusted-folder :spawn-mode mode))))))
+
+;; nil when the spawn may start; a refusal is thrown as ex-info, not returned.
+(m/=> ensure-startable! [:=> [:cat :any [:maybe :string]] :nil])

@@ -4,7 +4,8 @@
             [hive-mcp.swarm.datascript.queries :as ds-queries]
             [hive-dsl.result :as r]
             [taoensso.timbre :as log]
-            [hive-mcp.tools.schema-keys :as schema-keys]))
+            [hive-mcp.tools.schema-keys :as schema-keys]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -26,6 +27,18 @@
   "tools -> {name tool}. Pure."
   [tools]
   (into {} (map (juxt :name identity)) tools))
+
+;; ---------------------------------------------------------------------------
+;; Schemas (value objects; every schema here generates)
+;; ---------------------------------------------------------------------------
+
+(def ToolDef
+  "A tool as held by the delegation registry."
+  [:map [:name :any]])
+
+(def AgentMap
+  "A registered agent: any map, records (Ling, Drone) included."
+  [:map-of :any :any])
 
 (defn ensure-registered!
   "Lazily initialize tool registry on first use."
@@ -158,3 +171,30 @@
   []
   (reset! agents {})
   (log/info "Cleared agent registry"))
+
+(m/=> ensure-registered! [:=> [:cat] :nil])
+
+(m/=> register! [:=> [:cat [:maybe [:sequential ToolDef]]] :nil])
+
+(m/=> get-schemas
+      [:=> [:cat [:maybe [:sequential :any]]] [:vector [:map-of :any :any]]])
+
+(m/=> get-tool [:=> [:cat :any] [:maybe [:map-of :any :any]]])
+
+(m/=> list-tools [:=> [:cat] [:maybe [:sequential :any]]])
+
+(m/=> refresh! [:=> [:cat] :int])
+
+(m/=> register-agent! [:=> [:cat [:map [:id :any]]] :any])
+
+(m/=> unregister-agent! [:=> [:cat :any] :any])
+
+(m/=> get-agent-by-id [:=> [:cat :any] [:maybe AgentMap]])
+
+(m/=> list-all-agents [:=> [:cat] [:maybe [:sequential AgentMap]]])
+
+(m/=> list-lings [:=> [:cat] [:sequential AgentMap]])
+
+(m/=> sync-from-datascript! [:=> [:cat] [:map [:synced-count :int] [:agents [:vector AgentMap]]]])
+
+(m/=> clear-agents! [:=> [:cat] :nil])

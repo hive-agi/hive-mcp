@@ -1,0 +1,15 @@
+{:tx-data
+ ;; Identical to hive-knowledge.seal.kg-edges/blob-schema and tombstone-schema,
+ ;; which older hive-knowledge transacted on first use: on a store that already
+ ;; holds them this norm re-asserts the same schema and changes nothing.
+ [{:db/ident       :kg-sealed/blob
+   :db/valueType   :db.type/string
+   :db/cardinality :db.cardinality/one
+   :db/noHistory   true
+   :db/doc         "A sealed KG edge: WORK(payload) or WORK(VAULT(payload))"}
+  {:db/ident       :kg-sealed/tombstone
+   :db/valueType   :db.type/string
+   :db/cardinality :db.cardinality/one
+   :db/unique      :db.unique/identity
+   :db/noHistory   true
+   :db/doc         "SHA-256 (hex) of a deleted entry id that sealed rows may still name"}]}

@@ -2,7 +2,8 @@
   "Async tool result buffer for piggyback delivery with cursor+budget drain."
   (:require [taoensso.timbre :as log]
             [hive-dsl.context.identity :as ctx-id]
-            [hive-mcp.channel.async-result-journal :as journal])
+            [hive-mcp.channel.async-result-journal :as journal]
+            [malli.core :as m])
   (:import [java.time Instant]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -127,7 +128,31 @@
     (journal/compact! new)
     total))
 
+(m/=> gc-expired! [:=> [:cat] [:int {:min 0}]])
+
 ;; Public API
+
+(def CallerId
+  "A caller id as the transport spells it; parsed to its buffer key."
+  [:maybe :string])
+
+(def AsyncResult
+  "A completed async result: the task it answers and what it produced."
+  [:map
+   [:task-id :any]
+   [:tool {:optional true} :any]
+   [:status {:optional true} :any]
+   [:result {:optional true} :any]])
+
+(def DrainBatch
+  "One drain: the delivered results and where the cursor now stands."
+  [:maybe
+   [:map
+    [:results [:vector :map]]
+    [:remaining [:int {:min 0}]]
+    [:total [:int {:min 0}]]
+    [:delivered [:int {:min 0}]]
+    [:done {:optional true} [:= true]]]])
 
 (defn enqueue-result!
   "Enqueue a completed async result into the buffer with content-hash dedup.
@@ -163,6 +188,9 @@
     (log/info "async-result: enqueued result for task" (:task-id result-map)
               "tool:" (:tool result-map) "status:" (:status result-map)
               "buffer:" buffer-key)))
+
+;; The body ends in a log call, so the enqueue answers nil.
+(m/=> enqueue-result! [:=> [:cat CallerId AsyncResult] :nil])
 
 (defn- next-batch
   "The batch one drain would take from `buf`, as [entries new-cursor]. PURE.
@@ -258,6 +286,13 @@
                       :delivered new-cursor}
                (>= new-cursor total) (assoc :done true)))))))))
 
+;; nil when the budget is not positive or nothing is owed.
+(m/=> drain!
+      [:function
+       [:=> [:cat CallerId] DrainBatch]
+       [:=> [:cat CallerId :int] DrainBatch]
+       [:=> [:cat CallerId :int :boolean] DrainBatch]])
+
 (defn has-pending?
   "Check if a caller session has undrained async results."
   [caller-id]
@@ -265,6 +300,8 @@
         buf (get @buffers buffer-key)]
     (and (some? buf)
          (< (:cursor buf) (count (:entries buf))))))
+
+(m/=> has-pending? [:=> [:cat CallerId] :boolean])
 
 (defn poll-task
   "Get status of a specific async task by task-id across all buffers."
@@ -275,16 +312,23 @@
                 entries))
         @buffers))
 
+(m/=> poll-task [:=> [:cat :any] [:maybe :map]])
+
 (defn clear-buffer!
   "Clear buffer for a specific caller session. For testing."
   [caller-id]
   (let [buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))]
     (swap! buffers dissoc buffer-key)))
 
+;; The buffers left after the swap.
+(m/=> clear-buffer! [:=> [:cat CallerId] journal/Buffers])
+
 (defn reset-all!
   "Reset all buffers. For testing."
   []
   (reset! buffers {}))
+
+(m/=> reset-all! [:=> [:cat] [:= {} {}]])
 
 (defn restore!
   "Restore undelivered results from the journal into `buffers`.
@@ -316,6 +360,8 @@
       (journal/compact! current))
     n))
 
+(m/=> restore! [:=> [:cat] [:int {:min 0}]])
+
 (defn record-submission!
   "Journal that an async task was accepted for `caller-id`, before its ack.
 
@@ -334,6 +380,8 @@
    task-id
    tool))
 
+(m/=> record-submission! [:=> [:cat CallerId :any :any] :boolean])
+
 (defn stats
   "Get buffer statistics. For monitoring/debugging."
   []
@@ -350,3 +398,13 @@
                                :cursor cursor
                                :pending (- (count entries) cursor)}])
                          bufs))}))
+
+(m/=> stats
+      [:=> [:cat]
+       [:map
+        [:buffer-count [:int {:min 0}]]
+        [:total-entries [:int {:min 0}]]
+        [:pending-entries :int]
+        [:buffers [:map-of :any [:map [:entries [:int {:min 0}]]
+                                 [:cursor [:int {:min 0}]]
+                                 [:pending :int]]]]]])

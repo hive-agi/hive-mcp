@@ -1,0 +1,64 @@
+{:case-0
+ {:out
+  {:reached? true,
+   :approval-ratio 0.6,
+   :threshold 0.5,
+   :signal-counts
+   {:propose 1, :counter 1, :approve 2, :no-change 0, :defer 1}},
+  :in "tri-d"},
+ :case-1
+ {:out
+  {:reached? false,
+   :approval-ratio 0.0,
+   :threshold 0.8,
+   :signal-counts
+   {:propose 0, :counter 0, :approve 0, :no-change 0, :defer 0}},
+  :in "tri-missing"},
+ :case-2
+ {:out
+  {:reached? false,
+   :approval-ratio 0.0,
+   :threshold 0.8,
+   :signal-counts
+   {:propose 0, :counter 0, :approve 0, :no-change 0, :defer 0}},
+  :in "tri-empty"},
+ :case-3
+ {:out
+  {:reached? true,
+   :approval-ratio 0.6,
+   :threshold 0.5,
+   :signal-counts
+   {:propose 1, :counter 1, :approve 2, :no-change 0, :defer 1}},
+  :in "tri-d"},
+ :case-4
+ {:out
+  {:reached? true,
+   :approval-ratio 0.6,
+   :threshold 0.5,
+   :signal-counts
+   {:propose 1, :counter 1, :approve 2, :no-change 0, :defer 1}},
+  :in "tri-d"},
+ :case-5
+ {:out
+  {:reached? false,
+   :approval-ratio 0.0,
+   :threshold 0.8,
+   :signal-counts
+   {:propose 0, :counter 0, :approve 0, :no-change 0, :defer 0}},
+  :in "tri-missing"},
+ :case-6
+ {:out
+  {:reached? false,
+   :approval-ratio 0.0,
+   :threshold 0.8,
+   :signal-counts
+   {:propose 0, :counter 0, :approve 0, :no-change 0, :defer 0}},
+  :in "tri-empty"},
+ :case-7
+ {:out
+  {:reached? true,
+   :approval-ratio 0.6,
+   :threshold 0.5,
+   :signal-counts
+   {:propose 1, :counter 1, :approve 2, :no-change 0, :defer 1}},
+  :in "tri-d"}}

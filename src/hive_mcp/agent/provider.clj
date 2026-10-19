@@ -16,7 +16,8 @@
   (:require [hive-mcp.agent.provider.collect :as collect]
             [hive-mcp.agent.provider.model :as model]
             [hive-mcp.agent.provider.policy :as policy]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -145,3 +146,34 @@
   (let [registry (effective-registry)]
     (mapv (fn [p] {:provider p :secret-key (:secret-key (get registry p))})
           (effective-priority))))
+
+(m/=> effective-registry [:=> [:cat] [:map-of :keyword [:map-of :any :any]]])
+
+(m/=> effective-priority [:=> [:cat] [:sequential :keyword]])
+
+(m/=> available-providers [:=> [:cat] [:sequential :keyword]])
+
+(m/=> best-available-provider [:=> [:cat] [:maybe :keyword]])
+
+(m/=> validate-provider [:=> [:cat :any] [:maybe [:map [:error :keyword]]]])
+
+(m/=> validate-model [:=> [:cat :any :any] [:maybe [:map-of :any :any]]])
+
+(m/=> model-refusal
+      [:function
+       [:=> [:cat :any :any] [:maybe [:map-of :any :any]]]
+       [:=> [:cat :any :any [:maybe [:map-of :any :any]]] [:maybe [:map-of :any :any]]]])
+
+(m/=> resolve-provider-model
+      [:=> [:cat [:maybe [:map-of :any :any]]]
+       [:map [:provider {:optional true} :any] [:model {:optional true} :any]]])
+
+(m/=> missing-secret [:=> [:cat :any] [:maybe [:map-of :any :any]]])
+
+(m/=> credential-probe
+      [:=> [:cat :any] [:maybe [:map [:probe [:map-of :any :any]] [:secret :any]]]])
+
+(m/=> credential-refusal [:=> [:cat :any :any] [:maybe [:map-of :any :any]]])
+
+(m/=> provider-diagnostic
+      [:=> [:cat] [:vector [:map [:provider :keyword] [:secret-key :any]]]])

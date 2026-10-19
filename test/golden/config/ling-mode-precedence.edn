@@ -1,0 +1,8 @@
+{:case-0 {:out :headless, :in (nil nil)},
+ :case-1 {:out :vterm, :in (:vterm :claude)},
+ :case-2 {:out :headless, :in (nil nil)},
+ :case-3 {:out :vterm, :in (nil :vterm)},
+ :case-4 {:out :vterm, :in (:vterm nil)},
+ :case-5 {:out :headless, :in (nil nil)},
+ :case-6 {:out :headless, :in (nil nil)},
+ :case-7 {:out :headless, :in (nil nil)}}

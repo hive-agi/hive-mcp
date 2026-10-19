@@ -7,7 +7,8 @@
   (:require [hive-spi.swarm.spawn-store :as spi]
             [hive-mcp.swarm.datascript.lings :as ds-lings]
             [hive-mcp.swarm.datascript.queries :as ds-queries]
-            [hive-mcp.channel.audience :as audience]))
+            [hive-mcp.channel.audience :as audience]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -36,11 +37,20 @@
          (map :file)
          vec)))
 
+(def SpawnStore
+  "Malli schema for a value that satisfies `ISpawnStore`. Generates the
+   DataScript default."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (->DataScriptSpawnStore))}
+   (fn [x] (satisfies? spi/ISpawnStore x))])
+
 (defn set-store!
   "Install a spawn registration store. Intended for addons/tests that provide a
    non-DataScript implementation."
   [store]
   (spi/set-store! store))
+
+;; The answer is the installed store, as the port's slot returns it.
+(m/=> set-store! [:=> [:cat :any] SpawnStore])
 
 (defn get-store
   "The installed spawn registration store, installing the DataScript default
@@ -48,6 +58,8 @@
   []
   (or (spi/get-store)
       (spi/set-store! (->DataScriptSpawnStore))))
+
+(m/=> get-store [:=> [:cat] SpawnStore])
 
 (defn ensure-coordinator-session!
   "Give a coordinator SESSION (`coordinator:<session>`) a depth-0 row in
@@ -62,7 +74,11 @@
     (add-slave! store parent-id {:status :idle :depth 0})
     parent-id))
 
+(m/=> ensure-coordinator-session! [:=> [:cat SpawnStore :any] [:maybe :string]])
+
 (defn reset-store!
   "Restore the default swarm-backed store. Intended for tests."
   []
   (set-store! (->DataScriptSpawnStore)))
+
+(m/=> reset-store! [:=> [:cat] SpawnStore])

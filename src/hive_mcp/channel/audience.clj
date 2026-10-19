@@ -50,7 +50,8 @@
    row carrying the burst count under :n and the LAST message under :m, sitting
    at the position of that agent's last such row. Every other event (started,
    completed, error, aborted, ask) passes through verbatim and in place."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -63,6 +64,35 @@
   "Prefix every coordinator-lane reader id carries."
   "coordinator")
 
+;; Value schemas for the contracts in this namespace.
+
+(def Msg
+  "A shout as the audience rules read it. Every key is optional."
+  [:map
+   [:agent-id {:optional true} :any]
+   [:parent-id {:optional true} :any]
+   [:to {:optional true} :any]
+   [:broadcast? {:optional true} :any]
+   [:project-id {:optional true} :any]
+   [:context-id {:optional true} :any]])
+
+(def ScopedId
+  "Composes a bare agent name onto a read's project scope, or nil."
+  [:maybe ifn?])
+
+(def AudienceOpts
+  "`addressed-to?` options."
+  [:maybe [:map [:global-opt-in? {:optional true} :any]]])
+
+(def PeerTrafficRow
+  "One row of the coordinator's peer-traffic summary."
+  [:map
+   [:a [:= "swarm"]]
+   [:e [:= "peer-traffic"]]
+   [:m :string]
+   [:n [:int {:min 1}]]
+   [:ctx {:optional true} :any]])
+
 (defn coordinator-reader?
   "True when `reader-id` names a coordinator lane. The MCP lane derives its
    reader id as \"coordinator\" or \"coordinator-<project-id>\" (see
@@ -71,6 +101,8 @@
   [reader-id]
   (or (nil? reader-id)
       (str/starts-with? (str reader-id) coordinator-prefix)))
+
+(m/=> coordinator-reader? [:=> [:cat :any] :boolean])
 
 (defn coordinator-session
   "The session token of a coordinator-lane id, or nil when the id names the
@@ -81,6 +113,8 @@
   [id]
   (when (and (some? id) (coordinator-reader? id))
     (second (re-find #"^coordinator:([^-]+)" (str id)))))
+
+(m/=> coordinator-session [:=> [:cat :any] [:maybe :string]])
 
 (defn same-agent?
   "Do two ids name the same reader? Tolerates the coordinator lane's
@@ -103,6 +137,11 @@
                     os (coordinator-session o)]
                 (or (nil? rs) (nil? os) (= rs os))))))))
 
+(m/=> same-agent?
+      [:function
+       [:=> [:cat :any :any] :boolean]
+       [:=> [:cat :any :any ScopedId] :boolean]])
+
 ;; =============================================================================
 ;; Audience
 ;; =============================================================================
@@ -118,6 +157,8 @@
   [msg]
   (contains? #{nil unowned-project} (:project-id msg)))
 
+(m/=> unowned? [:=> [:cat [:maybe Msg]] :boolean])
+
 (defn foreign-coordinator?
   "Is AUTHOR-ID another coordinator session than READER-ID's? Pure. Both must
    name a session; a sessionless lane is nobody's foreigner."
@@ -127,6 +168,8 @@
         (some? (coordinator-session author-id))
         (some? (coordinator-session reader-id))
         (not= (coordinator-session author-id) (coordinator-session reader-id)))))
+
+(m/=> foreign-coordinator? [:=> [:cat :any :any] :boolean])
 
 (defn root-visible?
   "May a ROOT-level shout (no :to, no :broadcast?, no :parent-id) reach
@@ -161,6 +204,8 @@
      (foreign-coordinator? reader-id agent-id)                    false
      :else (or (not (unowned? msg)) global-opt-in?))))
 
+(m/=> root-visible? [:=> [:cat :any [:maybe Msg] :any] :boolean])
+
 (defn addressed-to?
   "Is `msg` part of `reader-id`'s audience? First rule that matches wins; see
    the namespace docstring for the contract.
@@ -182,6 +227,12 @@
        (some? parent-id) (same-agent? reader-id parent-id)
        :else (and coord? (root-visible? reader-id msg (:global-opt-in? opts)))))))
 
+(m/=> addressed-to?
+      [:function
+       [:=> [:cat :any [:maybe Msg]] :boolean]
+       [:=> [:cat :any [:maybe Msg] ScopedId] :boolean]
+       [:=> [:cat :any [:maybe Msg] ScopedId AudienceOpts] :boolean]])
+
 (defn filter-messages
   "Keep only the messages addressed to `reader-id`, in order. Returns a vector.
    `scoped-id` composes a bare agent name onto this read's project scope; see
@@ -191,10 +242,18 @@
   ([reader-id msgs scoped-id opts]
    (filterv #(addressed-to? reader-id % scoped-id opts) msgs)))
 
+(m/=> filter-messages
+      [:function
+       [:=> [:cat :any [:maybe [:sequential Msg]]] [:vector Msg]]
+       [:=> [:cat :any [:maybe [:sequential Msg]] ScopedId] [:vector Msg]]
+       [:=> [:cat :any [:maybe [:sequential Msg]] ScopedId AudienceOpts] [:vector Msg]]])
+
 (defn directed?
   "Does this message name a recipient?"
   [msg]
   (some? (:to msg)))
+
+(m/=> directed? [:=> [:cat [:maybe Msg]] :boolean])
 
 (def max-peer-traffic-rows
   "How many conversations the coordinator's peer-traffic summary names before it
@@ -221,6 +280,8 @@
        (and (some? agent-id) (same-agent? reader-id agent-id))
        (and (some? parent-id) (same-agent? reader-id parent-id)))))
 
+(m/=> in-lineage? [:=> [:cat :any [:maybe Msg]] :boolean])
+
 (defn supervised-conversations
   "Directed messages `reader-id` is NOT addressed by, grouped by conversation,
    kept only for conversations at least one of whose messages is in the
@@ -233,6 +294,10 @@
        (group-by #(or (:context-id %) ::unscoped))
        (filter (fn [[_ rows]] (some #(in-lineage? reader-id %) rows)))
        (sort-by (fn [[k rows]] [(- (count rows)) (str k)]))))
+
+;; [context-id-or-::unscoped rows] pairs, busiest first.
+(m/=> supervised-conversations
+      [:=> [:cat :any [:maybe [:sequential Msg]]] [:sequential [:tuple :any [:vector Msg]]]])
 
 (defn peer-traffic-digest
   "The coordinator's view of directed traffic it is not addressed by.
@@ -283,6 +348,8 @@
                  :e "peer-traffic"
                  :m (str n " more directed messages across " convs " other conversations")
                  :n n}))))))
+
+(m/=> peer-traffic-digest [:=> [:cat :any [:maybe [:sequential Msg]]] [:vector PeerTrafficRow]])
 
 ;; =============================================================================
 ;; Digest
@@ -337,3 +404,6 @@
                    (and (> n 1) ts) (assoc :ts ts)))
                :else nil)))
           rows)))
+
+;; Rows are the formatted piggyback shape {:a :e :m :t}, kept open.
+(m/=> digest [:=> [:cat [:maybe [:sequential :map]]] [:vector :map]])

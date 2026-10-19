@@ -1,0 +1,19 @@
+{:tokens 0,
+ :ling
+ {:preset "",
+  :axioms "ax",
+  :context "",
+  :history "",
+  :metadata {:total-budget 4000, :total-tokens 0, :remaining 4000}},
+ :unified
+ {:conventions [{:id "c"}],
+  :decisions [],
+  :snippets [1 2],
+  :domain [],
+  :budget-used 0,
+  :budget-remaining 100,
+  :metadata
+  {:total-budget 100,
+   :total-tokens 0,
+   :remaining 100,
+   :counts {:conventions 1, :decisions 0, :snippets 2, :domain 0}}}}

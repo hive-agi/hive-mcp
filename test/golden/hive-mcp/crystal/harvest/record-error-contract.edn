@@ -1,0 +1,20 @@
+{:case-0
+ {:out {:errors [{:error ""}]}, :in ({:errors []} {:error ""})},
+ :case-1
+ {:out {:errors [{} {:error "Z"}]}, :in ({:errors [{}]} {:error "Z"})},
+ :case-2
+ {:out {:errors [{:error "T"}]}, :in ({:errors []} {:error "T"})},
+ :case-3
+ {:out {:errors [{} {:error "wm"}]},
+  :in ({:errors [{}]} {:error "wm"})},
+ :case-4
+ {:out {:errors [{} {} {} {} {:error "9g"}]},
+  :in ({:errors [{} {} {} {}]} {:error "9g"})},
+ :case-5
+ {:out {:errors [{} {} {:error "J3"}]},
+  :in ({:errors [{} {}]} {:error "J3"})},
+ :case-6
+ {:out {:errors [{} {:error "5"}]}, :in ({:errors [{}]} {:error "5"})},
+ :case-7
+ {:out {:errors [{} {} {} {:error "Zu"}]},
+  :in ({:errors [{} {} {}]} {:error "Zu"})}}

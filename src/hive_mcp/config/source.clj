@@ -5,7 +5,8 @@
    live, shared, user-owned system, and a test that reads it asserts against
    whatever the developer last tuned. Binding a StaticConfigSource makes a test
    depend on the config it declares, and on nothing else."
-  (:require [malli.core :as m]))
+  (:require [malli.core :as m]
+            [clojure.test.check.generators :as gen]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -39,6 +40,8 @@
   [config-atom defaults]
   (->AtomConfigSource config-atom defaults))
 
+(m/=> atom-source [:=> [:cat [:fn {:gen/gen (clojure.test.check.generators/return (atom {}))} #(instance? clojure.lang.IAtom %)] :map] [:fn {:gen/gen (clojure.test.check.generators/return (->AtomConfigSource (atom {}) {}))} #(satisfies? IConfigSource %)]])
+
 (defn static-source
   "A fixed config map — the test default. Give it an EDN map and the code under
    test sees exactly that, no matter what is on disk."
@@ -52,6 +55,6 @@
   []
   (->EmptyConfigSource))
 
-(m/=> static-source [:=> [:cat :map] [:fn #(satisfies? IConfigSource %)]])
+(m/=> static-source [:=> [:cat :map] [:fn {:gen/gen (gen/return (empty-source))} #(satisfies? IConfigSource %)]])
 
-(m/=> empty-source [:=> [:cat] [:fn #(satisfies? IConfigSource %)]])
+(m/=> empty-source [:=> [:cat] [:fn {:gen/gen (gen/return (empty-source))} #(satisfies? IConfigSource %)]])

@@ -1,6 +1,7 @@
 (ns hive-mcp.dns.result.taxonomy
   "Domain error keywords by subsystem.
-   Each category is a namespace-qualified keyword matching :subsystem/cause.")
+   Each category is a namespace-qualified keyword matching :subsystem/cause."
+  (:require [malli.core :as m]))
 
 (def ^:private error-categories
   "Set of all known error category keywords."
@@ -54,3 +55,5 @@
   "True if category is a recognized domain error keyword."
   [category]
   (contains? error-categories category))
+
+(m/=> known-error? [:=> [:cat :any] :boolean])

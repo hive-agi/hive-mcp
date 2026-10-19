@@ -16,7 +16,8 @@
             [hive-spi.diag.schema :as schema]
             [hive-dsl.result :as r]
             [clojure.java.io :as io]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [malli.core :as m])
   (:import [java.lang.management ManagementFactory MemoryUsage]))
 
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -141,3 +142,5 @@
    requires a capability check."
   []
   (->HotSpotHeapProbe))
+
+(m/=> make-heap-probe [:=> [:cat] [:fn {:gen/fmap (fn [_] (->HotSpotHeapProbe)) :gen/elements [nil]} #(satisfies? p/IHeapProbe %)]])

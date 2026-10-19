@@ -1,0 +1,7 @@
+{:empty {:path "", :record "FileTailChannel", :id :file-tail},
+ :rel
+ {:path "shouts.jsonl", :record "FileTailChannel", :id :file-tail},
+ :tmp
+ {:path "/tmp/hivemind-shouts.jsonl",
+  :record "FileTailChannel",
+  :id :file-tail}}

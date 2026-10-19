@@ -6,7 +6,8 @@
    provider gate from embeddings.shared-gate, never a Chroma-only pool.
    Do not nest with-embedding-gate around a decorated provider call."
   (:require [hive-weave.gate :as g]
-            [hive-mcp.embeddings.shared-gate :as shared]))
+            [hive-mcp.embeddings.shared-gate :as shared]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -26,6 +27,23 @@
 ;; Convenience API — drop-in replacements for bare @ derefs
 ;; =============================================================================
 
+(def Pending
+  "A deref-able vendor result (promise, future, deferred). Generates a
+   realized promise."
+  [:fn {:gen/schema :any :gen/fmap #(doto (promise) (deliver %))}
+   #(instance? clojure.lang.IBlockingDeref %)])
+
+(def GateStats
+  "Diagnostic snapshot of the read, write and embed gates."
+  [:map
+   [:read :map]
+   [:write :map]
+   [:embed [:map
+            [:name :string]
+            [:permits :int]
+            [:available :int]
+            [:queue-length [:int {:min 0}]]]]])
+
 (defn deref-read
   "Deref a Chroma read promise with concurrency gate + timeout.
    Replaces: @(chroma/query ...) or @(chroma/get ...)"
@@ -34,6 +52,10 @@
   ([promise timeout-ms]
    (g/deref-gate read-gate promise timeout-ms)))
 
+(m/=> deref-read [:function
+                  [:=> [:cat Pending] :any]
+                  [:=> [:cat Pending [:int {:min 0}]] :any]])
+
 (defn deref-write
   "Deref a Chroma write promise with exclusive gate + timeout.
    Replaces: @(chroma/add ...) or @(chroma/delete ...)"
@@ -41,6 +63,10 @@
    (g/deref-gate write-gate promise))
   ([promise timeout-ms]
    (g/deref-gate write-gate promise timeout-ms)))
+
+(m/=> deref-write [:function
+                   [:=> [:cat Pending] :any]
+                   [:=> [:cat Pending [:int {:min 0}]] :any]])
 
 (defmacro with-embedding-gate
   "Legacy macro for callers outside the EmbeddingProvider port. Never wrap a
@@ -64,3 +90,5 @@
              :permits (:permits embed)
              :available (- (:permits embed) active)
              :queue-length (reduce + (vals waiting))}}))
+
+(m/=> gate-stats [:=> [:cat] GateStats])

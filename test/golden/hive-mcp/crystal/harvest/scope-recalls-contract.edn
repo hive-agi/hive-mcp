@@ -1,0 +1,73 @@
+{:case-0 {:out {}, :in ({} #{} "hive")},
+ :case-1 {:out {}, :in ({"m3" []} #{"ling-b"} "funeraria")},
+ :case-2 {:out {}, :in ({} #{"coord"} "hive")},
+ :case-3 {:out {}, :in ({"m3" []} #{} "funeraria")},
+ :case-4
+ {:out
+  {"m1" [{:agent-id "ling-b", :project "hive"}],
+   "m3" [{:agent-id "stranger", :project "hive"}]},
+  :in
+  ({"m2"
+    [{:agent-id "ling-a", :project "hive"}
+     {:agent-id "ling-a", :project "hive"}],
+    "m1"
+    [{:agent-id "coord", :project "funeraria"}
+     {:agent-id "ling-b", :project "hive"}],
+    "m3"
+    [{:agent-id "stranger", :project "hive"}
+     {:agent-id "coord", :project "funeraria"}
+     {:agent-id "ling-c", :project "funeraria"}]}
+   #{"ling-b" "coord" "stranger" "ling-c"}
+   "hive")},
+ :case-5
+ {:out
+  {"m2"
+   [{:agent-id "ling-a", :project "hive"}
+    {:agent-id "stranger", :project "hive"}
+    {:agent-id "ling-a", :project "hive"}]},
+  :in
+  ({"m1" [{:agent-id "ling-c", :project "hive"}],
+    "m2"
+    [{:agent-id "ling-a", :project "hive"}
+     {:agent-id "stranger", :project "hive"}
+     {:agent-id "ling-a", :project "hive"}
+     {:agent-id "coord", :project "funeraria"}
+     {:agent-id "coord", :project "hive"}]}
+   #{"ling-b" "ling-a" "stranger"}
+   "hive")},
+ :case-6
+ {:out {"m3" [{:agent-id "coord", :project "hive"}]},
+  :in
+  ({"m3"
+    [{:agent-id "coord", :project "hive"}
+     {:agent-id "stranger", :project "funeraria"}]}
+   #{"coord"}
+   "hive")},
+ :case-7
+ {:out {},
+  :in
+  ({"m3"
+    [{:agent-id "ling-b", :project "funeraria"}
+     {:agent-id "coord", :project "funeraria"}
+     {:agent-id "ling-b", :project "funeraria"}
+     {:agent-id "ling-a", :project "hive"}
+     {:agent-id "ling-b", :project "funeraria"}
+     {:agent-id "stranger", :project "hive"}
+     {:agent-id "ling-c", :project "hive"}
+     {:agent-id "stranger", :project "hive"}
+     {:agent-id "ling-c", :project "hive"}],
+    "m1"
+    [{:agent-id "stranger", :project "funeraria"}
+     {:agent-id "ling-b", :project "hive"}
+     {:agent-id "stranger", :project "funeraria"}
+     {:agent-id "ling-c", :project "funeraria"}
+     {:agent-id "stranger", :project "funeraria"}
+     {:agent-id "coord", :project "funeraria"}],
+    "m2"
+    [{:agent-id "stranger", :project "hive"}
+     {:agent-id "coord", :project "hive"}
+     {:agent-id "coord", :project "funeraria"}
+     {:agent-id "ling-c", :project "hive"}
+     {:agent-id "stranger", :project "funeraria"}]}
+   #{}
+   "hive")}}

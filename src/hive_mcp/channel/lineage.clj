@@ -9,10 +9,21 @@
 
    `attach-parents` is pure; `registry-parent-of` is the boundary."
   (:require [clojure.string :as str]
-            [hive-dsl.result :refer [rescue]]))
+            [hive-dsl.result :refer [rescue]]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+(def Msg
+  "A buffered shout row; only :agent-id and :parent-id are read here."
+  [:map
+   [:agent-id {:optional true} [:maybe :string]]
+   [:parent-id {:optional true} [:maybe :string]]])
+
+(def ParentOf
+  "agent-id -> parent id lookup (a fn or a map)."
+  [:or [:map-of :string :string] [:=> [:cat :string] [:maybe :string]]])
 
 (defn attach-parents
   "MSGS with each row's missing :parent-id filled from (parent-of agent-id).
@@ -28,6 +39,8 @@
                 msg))))
         msgs))
 
+(m/=> attach-parents [:=> [:cat ParentOf [:sequential Msg]] [:vector Msg]])
+
 (defn learned-parents
   "KNOWN agent -> parent map grown by every row in MSGS that names its parent.
    Pure."
@@ -37,6 +50,8 @@
                 (when (and (string? agent-id) (string? parent-id) (not (str/blank? parent-id)))
                   [agent-id parent-id])))
         msgs))
+
+(m/=> learned-parents [:=> [:cat [:map-of :string :string] [:sequential Msg]] [:map-of :string :string]])
 
 (defonce ^{:private true
            :doc "agent-id -> parent, remembered from rows and registry hits, so a
@@ -57,9 +72,13 @@
            (do (swap! known-parents assoc agent-id p) p)
            (get @known-parents agent-id)))))))
 
+(m/=> registry-parent-of [:=> [:cat] [:=> [:cat :any] [:maybe :string]]])
+
 (defn with-parents
   "MSGS with missing parents filled, after learning parents from every row in
    SEEN (the whole buffer, so a parent named once is remembered)."
   [seen msgs]
   (swap! known-parents learned-parents seen)
   (attach-parents (registry-parent-of) msgs))
+
+(m/=> with-parents [:=> [:cat [:sequential Msg] [:sequential Msg]] [:vector Msg]])

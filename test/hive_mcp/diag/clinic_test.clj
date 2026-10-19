@@ -17,8 +17,11 @@
    here every port is a fake so the composition logic is isolated."
   (:require [clojure.test :refer [deftest is testing]]
             [hive-spi.diag.ports :as p]
+            [hive-spi.diag.schema :as ds]
             [hive-dsl.result :as r]
-            [hive-mcp.diag.clinic :as clinic]))
+            [hive-mcp.diag.clinic :as clinic]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]
+            [malli.core :as m]))
 
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -195,3 +198,51 @@
         (is (= 500 (:diag/bytes (first roots))))
         (is (nil? (:diag/bytes (last roots))))
         (is (re-find #"unmapped" (:diag/skipped (last roots))) "refusal reason is recorded")))))
+
+;; ---------------------------------------------------------------------------
+;; make-clinic — trifecta over the injected fakes
+;; ---------------------------------------------------------------------------
+
+(def ^:private FakeProbeGen
+  "A FakeProbe over a heap of `used` bytes with `headroom` bytes free."
+  [:fn {:gen/schema [:tuple [:int {:min 1 :max 1000000}] [:int {:min 0 :max 1000000}]]
+        :gen/fmap   (fn [[used headroom]] (->FakeProbe (snap used (+ used headroom)) nil))}
+   map?])
+
+(def ^:private FakeSamplerGen
+  "A FakeSampler at a mean rate spanning both sides of the 5 MiB/s threshold."
+  [:fn {:gen/schema [:int {:min 0 :max (* 20 1024 1024)}]
+        :gen/fmap   (fn [mean] (->FakeSampler (alloc-ok mean)))}
+   map?])
+
+(def ^:private FakeSizerGen
+  "A sizer that is available and measures `:o` at 7 bytes."
+  [:fn {:gen/schema :int
+        :gen/fmap   (fn [_] (->FakeSizer true {:o (r/ok {:diag/bytes 7})}))}
+   map?])
+
+(def ^:private FakeProfilerGen
+  [:fn {:gen/schema :int :gen/fmap (fn [_] (->FakeProfiler))} map?])
+
+(deftrifecta-from-schema make-clinic-trifecta clinic/make-clinic
+  {:in  [:cat FakeProbeGen FakeSizerGen FakeSamplerGen FakeProfilerGen
+         [:= []] [:int {:min 0 :max 1000000}]]
+   :out [:and
+         [:fn {:gen/schema nat-int?
+               :gen/fmap   (fn [g] (clinic/->MemoryClinic nil nil nil nil [] g))}
+          #(satisfies? p/IMemoryClinic %)]
+         [:map [:guard-bytes nat-int?]]]
+   ;; the guard is threaded through; the verdict follows the 5 MiB/s threshold;
+   ;; a hunt skips exactly when free heap is below the guard
+   :rel (fn [[probe _ sampler _ _ guard] c]
+          (let [mean    (:diag/mean-bps (:ok (p/sample-allocation sampler 0)))
+                s       (p/heap-snapshot probe)
+                free    (- (:diag/max-bytes s) (:diag/used-bytes s))
+                report  (:ok (p/diagnose c))
+                root    (first (:diag/roots (:ok (p/hunt-retainers c [{:diag/label "o" :diag/object :o}]))))]
+            (and (= guard (:guard-bytes c))
+                 (= (:diag/verdict report)
+                    (if (< mean (* 5 1024 1024)) :static-residency :churning))
+                 (if (< free guard) (nil? (:diag/bytes root)) (= 7 (:diag/bytes root)))
+                 (m/validate ds/DiagnosisReport report))))
+   :num-tests 100})

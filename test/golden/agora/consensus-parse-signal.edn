@@ -1,0 +1,10 @@
+{:case-0 {:out :approve, :in "[SIGNAL: approve] ok"},
+ :case-1 {:out :propose, :in ""},
+ :case-2 {:out :propose, :in "[SIGNAL: shrug] x"},
+ :case-3 {:out :defer, :in "[SIGNAL: defer]"},
+ :case-4 {:out :defer, :in "[SIGNAL: defer]"},
+ :case-5 {:out :propose, :in nil},
+ :case-6 {:out :propose, :in "text"},
+ :case-7 {:out :defer, :in "[SIGNAL: defer]"},
+ :case-8 {:out :defer, :in "[SIGNAL: defer]"},
+ :case-9 {:out :propose, :in ""}}

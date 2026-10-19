@@ -16,7 +16,8 @@
             [hive-mcp.crystal.persist :as persist]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.tools.catchup.format :as fmt]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -70,3 +71,5 @@
           {:type "text"
            :text (json/write-str {:error (.getMessage e)})
            :isError true})))))
+
+(m/=> handle-native-wrap [:=> [:cat [:maybe :map]] [:map [:type [:= "text"]] [:text :string] [:isError {:optional true} [:= true]]]])
