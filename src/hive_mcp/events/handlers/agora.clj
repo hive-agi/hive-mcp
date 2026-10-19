@@ -14,7 +14,9 @@
             [hive-mcp.events.interceptors :as interceptors]
             [hive-mcp.agora.dialogue :as dialogue]
             [hive-mcp.agora.schema :as schema]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [malli.core :as m]
+            [hive-mcp.events.handlers.schema :as hs]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -64,6 +66,11 @@ Signals: propose/counter=reset equilibrium, approve/no-change=toward consensus
 ;; =============================================================================
 ;; Handler: :agora/turn-dispatched
 ;; =============================================================================
+
+(def ^:private SendPrompt
+  "The :swarm-send-prompt effect: the ling the turn is relayed to and the
+   Agora-framed prompt it receives."
+  [:map [:slave-id :any] [:prompt :string]])
 
 (defn handle-agora-turn-dispatched
   "Handler for :agora/turn-dispatched events.
@@ -121,6 +128,15 @@ Signals: propose/counter=reset equilibrium, approve/no-change=toward consensus
                                      :topic topic
                                      :message message})}})))
 
+(m/=> handle-agora-turn-dispatched
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:dispatch {:optional true}
+         [:tuple [:= :agora/timeout]
+          [:map [:dialogue-id :any] [:reason [:= :max-turns]] [:turn-count :any]]]]
+        [:swarm-send-prompt {:optional true} SendPrompt]]])
+
 ;; =============================================================================
 ;; Handler: :agora/timeout
 ;; =============================================================================
@@ -143,6 +159,8 @@ Signals: propose/counter=reset equilibrium, approve/no-change=toward consensus
          :message (str "Agora dialogue " dialogue-id " timed out"
                        " (reason: " (name (or reason :unknown)) ")"
                        (when turn-count (str ", turns: " turn-count)))}})
+
+(m/=> handle-agora-timeout [:=> hs/HandlerArgs [:map [:log hs/LogEffect]]])
 
 ;; =============================================================================
 ;; Handler: :agora/turn-completed (Unified Turn Completion)
@@ -202,6 +220,13 @@ Signals: propose/counter=reset equilibrium, approve/no-change=toward consensus
              :message (str "Agora " dialogue-id " in unexpected status: "
                            (:status dialogue))}})))
 
+(m/=> handle-turn-completed
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:dispatch {:optional true}
+         [:tuple [:= :agora/dispatch-next] [:map [:dialogue-id :any]]]]]])
+
 ;; =============================================================================
 ;; Handler: :agora/dispatch-next (Next Turn Relay)
 ;; =============================================================================
@@ -239,6 +264,12 @@ Signals: propose/counter=reset equilibrium, approve/no-change=toward consensus
     (catch Exception e
       {:log {:level :error
              :message (str "dispatch-next failed for " dialogue-id ": " (.getMessage e))}})))
+
+(m/=> handle-dispatch-next
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:swarm-send-prompt {:optional true} SendPrompt]]])
 
 ;; =============================================================================
 ;; Handler: :agora/consensus (P0: Crystallize Result)
@@ -307,6 +338,19 @@ Signals: propose/counter=reset equilibrium, approve/no-change=toward consensus
                               :topic topic
                               :turns turns}}}))
 
+(m/=> handle-consensus
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:memory-write [:map
+                        [:type [:= "decision"]]
+                        [:content :string]
+                        [:tags [:vector :string]]
+                        [:duration [:= "long"]]]]
+        [:channel-publish [:map
+                           [:event [:= :agora-consensus-crystallized]]
+                           [:data [:map [:dialogue-id :any] [:topic :any] [:turns :any]]]]]]])
+
 ;; =============================================================================
 ;; Registration
 ;; =============================================================================
@@ -350,3 +394,5 @@ Signals: propose/counter=reset equilibrium, approve/no-change=toward consensus
   (ev/reg-event :agora/consensus
                 [interceptors/debug]
                 handle-consensus))
+
+(m/=> register-handlers! [:=> [:cat] hs/HandlerRegistry])

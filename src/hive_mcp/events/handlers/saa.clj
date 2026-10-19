@@ -12,7 +12,9 @@
 
   (:require [hive-mcp.events.core :as ev]
             [hive-mcp.events.interceptors :as interceptors]
-            [hive-mcp.events.handlers.saa-config :as saa-config]))
+            [hive-mcp.events.handlers.saa-config :as saa-config]
+            [malli.core :as m]
+            [hive-mcp.events.handlers.schema :as hs]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -49,6 +51,19 @@
                     :directory directory
                     :workflow :saa
                     :mode mode}}}))
+
+(m/=> handle-saa-started
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:shout [:map
+                 [:agent-id :string]
+                 [:event-type [:= :started]]
+                 [:data [:map
+                         [:task :any]
+                         [:directory :any]
+                         [:workflow [:= :saa]]
+                         [:mode [:enum "plan-only" "full"]]]]]]]])
 
 ;; =============================================================================
 ;; Handler: :saa/phase-complete
@@ -101,6 +116,25 @@
                               :grounding-score grounding-score
                               :plan-valid? plan-valid?}}}))
 
+(m/=> handle-saa-phase-complete
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:shout [:map
+                 [:agent-id :string]
+                 [:event-type [:= :progress]]
+                 [:data [:map
+                         [:workflow [:= :saa]]
+                         [:phase :any]
+                         [:detail [:maybe :map]]]]]]
+        [:channel-publish [:map
+                           [:event-type [:= :saa-phase-complete]]
+                           [:data [:map
+                                   [:agent-id :string]
+                                   [:phase :any]
+                                   [:grounding-score :any]
+                                   [:plan-valid? :any]]]]]]])
+
 ;; =============================================================================
 ;; Handler: :saa/completed
 ;; =============================================================================
@@ -152,6 +186,25 @@
                                                 :kanban-task-ids :plan-only?
                                                 :tests-passed? :grounding-score])}}))
 
+(m/=> handle-saa-completed
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:shout [:map
+                 [:agent-id :string]
+                 [:event-type [:= :completed]]
+                 [:data [:map
+                         [:task :any]
+                         [:workflow [:= :saa]]
+                         [:mode [:enum "plan-only" "full"]]
+                         [:plan-memory-id :any]
+                         [:kanban-task-ids :any]
+                         [:tests-passed? :any]
+                         [:grounding-score :any]]]]]
+        [:channel-publish [:map
+                           [:event-type [:= :saa-completed]]
+                           [:data :map]]]]])
+
 ;; =============================================================================
 ;; Handler: :saa/failed
 ;; =============================================================================
@@ -198,6 +251,31 @@
                               :phase phase
                               :error error}}}))
 
+(m/=> handle-saa-failed
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:shout [:map
+                 [:agent-id :string]
+                 [:event-type [:= :error]]
+                 [:data [:map
+                         [:task :any]
+                         [:workflow [:= :saa]]
+                         [:phase :any]
+                         [:error :any]]]]]
+        [:emit-system-error [:map
+                             [:error-type [:= :saa-workflow-failed]]
+                             [:source :string]
+                             [:message :string]
+                             [:context [:map
+                                        [:agent-id :string]
+                                        [:task :any]
+                                        [:phase :any]
+                                        [:data [:maybe :map]]]]]]
+        [:channel-publish [:map
+                           [:event-type [:= :saa-failed]]
+                           [:data [:map [:agent-id :string] [:phase :any] [:error :any]]]]]]])
+
 ;; =============================================================================
 ;; Registration
 ;; =============================================================================
@@ -220,3 +298,5 @@
   (ev/reg-event :saa/failed
                 [interceptors/debug]
                 handle-saa-failed))
+
+(m/=> register-handlers! [:=> [:cat] hs/HandlerRegistry])

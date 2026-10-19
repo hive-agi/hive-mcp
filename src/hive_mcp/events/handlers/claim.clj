@@ -11,7 +11,9 @@
   (:require [hive-mcp.events.core :as ev]
             [hive-mcp.events.interceptors :as interceptors]
             [hive-mcp.swarm.datascript :as ds]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.events.handlers.schema :as hs]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -116,6 +118,19 @@
              :message (str "File " file " released by " released-by
                            " - no waiting lings")}})))
 
+(m/=> handle-claim-file-released
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:dispatch-n {:optional true}
+         [:vector [:tuple [:= :claim/notify-waiting]
+                   [:map
+                    [:target-agent-id :any]
+                    [:file :any]
+                    [:task-id :any]
+                    [:released-by :any]
+                    [:parked? :boolean]]]]]]])
+
 ;; =============================================================================
 ;; Handler: :claim/notify-waiting
 ;; =============================================================================
@@ -151,6 +166,17 @@
                    [[:db/retractEntity
                      [:wait-queue/id (wait-queue-id target-agent-id file)]]])))
 
+(m/=> handle-claim-notify-waiting
+      [:=> hs/HandlerArgs
+       [:map
+        [:targeted-shout [:map
+                          [:target-agent-id :any]
+                          [:sender-id :any]
+                          [:event-type [:= :file-available]]
+                          [:data [:map [:file :any] [:task-id :any] [:message :string]]]]]
+        [:ds-transact {:optional true}
+         [:vector [:tuple [:= :db/retractEntity] [:tuple [:= :wait-queue/id] :string]]]]]])
+
 ;; =============================================================================
 ;; Registration
 ;; =============================================================================
@@ -168,3 +194,5 @@
                 handle-claim-notify-waiting)
 
   (log/info "[hive-events] Claim handlers registered: :claim/file-released :claim/notify-waiting"))
+
+(m/=> register-handlers! [:=> [:cat] :nil])
