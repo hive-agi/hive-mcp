@@ -2,11 +2,19 @@
   "Memory domain schema facets and the memory directory coverage gate."
   (:require [clojure.test :refer [deftest is]]
             [hive-mcp.memory.domain :as domain]
+            [hive-mcp.memory.ids :as ids]
             [hive-mcp.memory.ingest-search :as ingest]
             [hive-mcp.memory.temporal :as temporal]
             [hive-mcp.memory.types :as types]
             [hive-schemas.coverage :refer [deftest-contract-coverage]]
             [hive-schemas.test :as hst]))
+
+;; ids.clj holds `(def x spi/x)` facade aliases; their own m/=> is asserted by
+;; exercising them here through the gate's coverage scan.
+(deftest ids-facade-aliases-behave-test
+  (is (= 64 (count (ids/content-hash {:a 1}))))
+  (is (re-find #"^\d{14}-[0-9a-f]{8}$" (ids/generate-id)))
+  (is (string? (ids/iso-timestamp))))
 
 (hst/deftrifecta-from-schema scope-parsing-contract
   hive-mcp.memory.domain/parse-scope

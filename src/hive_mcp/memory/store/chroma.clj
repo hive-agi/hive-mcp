@@ -90,9 +90,9 @@
     entries))
 
 (m/=> project-fields
-      [:=> [:cat [:sequential :map]
+      [:=> [:cat [:maybe [:sequential :map]]
              [:maybe [:sequential [:or :string :keyword :symbol]]]]
-       [:sequential :map]])
+       [:maybe [:sequential :map]]])
 
 (defn- build-health-map
   "Build health-check response from probe result and latency.
