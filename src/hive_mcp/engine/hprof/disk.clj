@@ -6,7 +6,8 @@
    namespace wraps `java.io.File.getUsableSpace` so the boot
    orchestrator can refuse to start when the residual free space is
    below the policy floor."
-  (:require [clojure.java.io :as io])
+  (:require [clojure.java.io :as io]
+            [malli.core :as m])
   (:import (java.io File)))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -24,13 +25,19 @@
       (.exists f) (.getUsableSpace f)
       :else       (recur (.getParentFile f)))))
 
+(m/=> free-bytes [:=> [:cat [:or :string [:fn {:gen/elements [(java.io.File. "/tmp")]} #(instance? java.io.File %)]]] [:int {:min 0}]])
+
 (defn free-gb
   "Free space in gibibytes (1024³ bytes per GiB)."
   [path]
   (/ (double (free-bytes path)) 1024.0 1024.0 1024.0))
+
+(m/=> free-gb [:=> [:cat [:or :string [:fn {:gen/elements [(java.io.File. "/tmp")]} #(instance? java.io.File %)]]] :double])
 
 (defn under-pressure?
   "True when the filesystem holding `path` reports less than
    `min-free-gb` of usable space."
   [path min-free-gb]
   (< (free-gb path) (double min-free-gb)))
+
+(m/=> under-pressure? [:=> [:cat [:or :string [:fn {:gen/elements [(java.io.File. "/tmp")]} #(instance? java.io.File %)]] [:or :int :double]] :boolean])

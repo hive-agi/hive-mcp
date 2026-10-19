@@ -1,0 +1,96 @@
+{:case-0
+ {:out
+  "1577893a1ffa95a47842b1373ad185924b5ce19a01a14ad08beff2b6f2849728",
+  :in
+  ({:provider :ollama,
+    :model "a",
+    :digest "d1",
+    :dimension 768,
+    :metric :l2,
+    :normalized? true,
+    :query-template-rev "q1",
+    :doc-serializer-rev "s1"})},
+ :case-1
+ {:out
+  "dda92d1a0e769e37f62068e1d0e8ba535176f9949f44dec323c42c007520a1cd",
+  :in
+  ({:provider :openrouter,
+    :model "b",
+    :digest "d1",
+    :dimension 768,
+    :metric :ip,
+    :normalized? true,
+    :query-template-rev "q1",
+    :doc-serializer-rev nil})},
+ :case-2
+ {:out
+  "54a4aa4b7a93af93cdcfd1f045b9643816aeff1bcaf782b1ad4c9b4b0fcc49d8",
+  :in
+  ({:provider :openrouter,
+    :model "a",
+    :digest nil,
+    :dimension 8,
+    :metric :l2,
+    :normalized? true,
+    :query-template-rev nil,
+    :doc-serializer-rev "s1"})},
+ :case-3
+ {:out
+  "6b5e4602612d46561d315c28dd4388f6103bccd475a57928ee326e74eeaaae30",
+  :in
+  ({:provider :openrouter,
+    :model "b",
+    :digest "d1",
+    :dimension 8,
+    :metric :l2,
+    :normalized? true,
+    :query-template-rev nil,
+    :doc-serializer-rev nil})},
+ :case-4
+ {:out
+  "931645da3cd746fed0d96e4bd65ff0e4b551036cbed32e7f299a7a22fc5c3284",
+  :in
+  ({:provider :openrouter,
+    :model "a",
+    :digest "d1",
+    :dimension 8,
+    :metric :cosine,
+    :normalized? false,
+    :query-template-rev "q1",
+    :doc-serializer-rev nil})},
+ :case-5
+ {:out
+  "30cff394ae96ff1b55cb8fbcbbdfb23b554fa57a40f10862a2e9a5bea83490a3",
+  :in
+  ({:provider :ollama,
+    :model "b",
+    :digest "d1",
+    :dimension 768,
+    :metric :l2,
+    :normalized? true,
+    :query-template-rev "q1",
+    :doc-serializer-rev nil})},
+ :case-6
+ {:out
+  "ca2636a435f5b448372a955d2c804c5afbb2de9979c654ae472955b9414283cf",
+  :in
+  ({:provider :ollama,
+    :model "b",
+    :digest "d1",
+    :dimension 768,
+    :metric :ip,
+    :normalized? true,
+    :query-template-rev "q1",
+    :doc-serializer-rev nil})},
+ :case-7
+ {:out
+  "3ccf6996f7f419a131df586407f047bc31ddeaf7563a8b7d30e88284d26fe906",
+  :in
+  ({:provider :openrouter,
+    :model "b",
+    :digest "d1",
+    :dimension 768,
+    :metric :l2,
+    :normalized? false,
+    :query-template-rev "q1",
+    :doc-serializer-rev "s1"})}}

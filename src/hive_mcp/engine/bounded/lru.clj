@@ -17,7 +17,8 @@
    only owns the atom and the protocol dispatch.
 
    Policies supported: `:drop-oldest` (default), `:drop-newest`."
-  (:require [hive-mcp.engine.bounded.protocol :as bp]))
+  (:require [hive-mcp.engine.bounded.protocol :as bp]
+            [malli.core :as m]))
 
 ;; -----------------------------------------------------------------------------
 ;; Pure data helpers — flat queue
@@ -28,10 +29,39 @@
         rest   (pop q)]
     [rest victim]))
 
+(def PQueue
+  "A clojure.lang.PersistentQueue. Generated from a vector of items."
+  [:fn {:gen/schema [:vector :any]
+        :gen/fmap #(into clojure.lang.PersistentQueue/EMPTY %)}
+   #(instance? clojure.lang.PersistentQueue %)])
+
+(def Policy
+  "Overflow policy. nil and any unknown value behave as :drop-oldest in the
+   pure steps; the constructors only accept the three listed."
+  [:maybe [:enum :drop-oldest :drop-newest]])
+
+(def FlatState
+  "State of a flat LruQueue, as built by `new-flat-state`."
+  [:map
+   [:q PQueue]
+   [:capacity :int]
+   [:policy Policy]
+   [:added :int]
+   [:evicted :int]
+   [:rejected :int]])
+
+(def Outcome
+  "Outcome of one offer. `:evicted` is the displaced (or rejected) item."
+  [:map
+   [:outcome [:enum :added :rejected :added-and-evicted]]
+   [:evicted {:optional true} :any]])
+
 (defn empty-queue
   "Initial state for a flat LruQueue: a clojure.lang.PersistentQueue."
   []
   clojure.lang.PersistentQueue/EMPTY)
+
+(m/=> empty-queue [:=> [:cat] PQueue])
 
 (defn offer-flat
   "Pure step. Returns `[next-state outcome-map]`.
@@ -57,10 +87,15 @@
              (update :evicted inc))
          {:outcome :added-and-evicted :evicted victim}]))))
 
+(m/=> offer-flat [:=> [:cat FlatState :any] [:tuple FlatState Outcome]])
+
 (defn drain-flat
   "Pure step. Returns `[next-state drained-payload]`."
   [{:keys [q] :as state}]
   [(assoc state :q (empty-queue)) (vec q)])
+
+(m/=> drain-flat [:=> [:cat [:map [:q [:sequential :any]]]]
+                    [:tuple [:map [:q PQueue]] [:vector :any]]])
 
 (defn- new-flat-state
   [{:keys [capacity policy]}]
@@ -120,6 +155,13 @@
          (contains? #{nil :drop-oldest :drop-newest} policy)]}
   (->LruQueue (atom (new-flat-state opts))))
 
+(m/=> make-queue [:=> [:cat [:map
+                              [:capacity pos-int?]
+                              [:policy {:optional true} Policy]]]
+                    [:fn {:gen/schema [:int {:min 1 :max 16}]
+                          :gen/fmap #(make-queue {:capacity %})}
+                     #(instance? LruQueue %)]])
+
 ;; -----------------------------------------------------------------------------
 ;; Pure data helpers — per-key queue
 ;; -----------------------------------------------------------------------------
@@ -149,6 +191,19 @@
         rest    (rest key-order)
         victim  [vk (vec (get by-key vk))]]
     [(dissoc by-key vk) (vec rest) victim]))
+
+(def KeyedState
+  "State of an LruByKey, as built by `new-keyed-state`."
+  [:map
+   [:by-key [:map-of :any PQueue]]
+   [:key-order [:vector :any]]
+   [:capacity :int]
+   [:per-key-cap :int]
+   [:policy Policy]
+   [:added :int]
+   [:evicted :int]
+   [:rejected :int]
+   [:evicted-keys :int]])
 
 (defn offer-keyed
   "Pure step. Returns `[next-state outcome-map]`.
@@ -181,10 +236,22 @@
                (update :evicted-keys inc))
            (assoc o :key k :evicted-key victim)])))))
 
+(m/=> offer-keyed [:=> [:cat KeyedState :any :any]
+                     [:tuple KeyedState
+                      [:map
+                       [:outcome [:enum :added :rejected :added-and-evicted]]
+                       [:evicted {:optional true} :any]
+                       [:key :any]
+                       [:evicted-key {:optional true} [:tuple :any [:vector :any]]]]]])
+
 (defn drain-keyed
   [{:keys [by-key] :as state}]
   [(-> state (assoc :by-key {} :key-order []))
    (into {} (map (fn [[k q]] [k (vec q)])) by-key)])
+
+(m/=> drain-keyed [:=> [:cat [:map [:by-key [:map-of :any [:sequential :any]]]]]
+                     [:tuple [:map [:by-key [:= {} {}]] [:key-order [:= {} []]]]
+                      [:map-of :any [:vector :any]]]])
 
 (defn- new-keyed-state
   [{:keys [capacity per-key-cap policy]}]
@@ -252,3 +319,11 @@
   [{:keys [capacity per-key-cap] :as opts}]
   {:pre [(pos-int? capacity) (pos-int? per-key-cap)]}
   (->LruByKey (atom (new-keyed-state opts))))
+
+(m/=> make-by-key [:=> [:cat [:map
+                               [:capacity pos-int?]
+                               [:per-key-cap pos-int?]
+                               [:policy {:optional true} Policy]]]
+                     [:fn {:gen/schema [:int {:min 1 :max 16}]
+                           :gen/fmap #(make-by-key {:capacity % :per-key-cap %})}
+                      #(instance? LruByKey %)]])

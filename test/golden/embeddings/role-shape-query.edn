@@ -1,0 +1,20 @@
+{:case-0
+ {:out
+  "Instruct: Given a memory search query, retrieve stored memory passages relevant to the query\nQuery: ",
+  :in (:qwen3-retrieval-v1 "")},
+ :case-1 {:out "1", :in (:raw "1")},
+ :case-2 {:out "1", :in (:raw "1")},
+ :case-3 {:out "BX", :in (:raw "BX")},
+ :case-4
+ {:out
+  "Instruct: Given a memory search query, retrieve stored memory passages relevant to the query\nQuery: Y5",
+  :in (:qwen3-retrieval-v1 "Y5")},
+ :case-5
+ {:out
+  "Instruct: Given a memory search query, retrieve stored memory passages relevant to the query\nQuery: ",
+  :in (:qwen3-retrieval-v1 "")},
+ :case-6
+ {:out
+  "Instruct: Given a memory search query, retrieve stored memory passages relevant to the query\nQuery: Da99",
+  :in (:qwen3-retrieval-v1 "Da99")},
+ :case-7 {:out "f", :in (:raw "f")}}

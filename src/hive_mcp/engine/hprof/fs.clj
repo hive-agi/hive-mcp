@@ -9,6 +9,7 @@
    rotation never aborts the rest of the sweep."
   (:require [hive-mcp.engine.hprof.spec :as spec]
             [clojure.java.io :as io]
+            [malli.core :as m]
             [taoensso.timbre :as log])
   (:import (java.io File FileInputStream FileOutputStream)
            (java.util.zip GZIPOutputStream)))
@@ -30,6 +31,8 @@
   [^File f]
   (spec/->HprofFile (.getCanonicalPath f) (.length f) (.lastModified f)))
 
+(m/=> file->hprof [:=> [:cat [:fn {:gen/elements [(java.io.File. "/tmp")]} #(instance? java.io.File %)]] [:map [:path :string] [:bytes [:int {:min 0}]] [:mtime-ms [:int {:min 0}]]]])
+
 (defn list-hprofs
   "Return a vector of HprofFile records found under `dir`. Empty when
    `dir` does not exist or is not a directory."
@@ -41,12 +44,16 @@
            (mapv file->hprof))
       [])))
 
+(m/=> list-hprofs [:=> [:cat [:or :string [:fn {:gen/elements [(java.io.File. "/tmp")]} #(instance? java.io.File %)]]] [:vector [:map [:path :string] [:bytes :int] [:mtime-ms :int]]]])
+
 (defn ensure-dir!
   "Create `dir` (with parents) when missing. Returns the java.io.File."
   [dir]
   (let [d (io/file dir)]
     (when-not (.exists d) (.mkdirs d))
     d))
+
+(m/=> ensure-dir! [:=> [:cat [:or :string [:fn {:gen/elements [(java.io.File. "/tmp")]} #(instance? java.io.File %)]]] [:fn {:gen/elements [(java.io.File. "/tmp")]} #(instance? java.io.File %)]])
 
 (defn move-to-dir!
   "Rename `hprof` into `target-dir`. Returns a refreshed HprofFile or
@@ -58,6 +65,8 @@
       (file->hprof dst)
       (do (log/warn "[hprof] move failed:" path "→" (.getCanonicalPath dst))
           nil))))
+
+(m/=> move-to-dir! [:=> [:cat [:map [:path :string]] [:or :string [:fn {:gen/elements [(java.io.File. "/tmp")]} #(instance? java.io.File %)]]] [:maybe [:map [:path :string] [:bytes :int] [:mtime-ms :int]]]])
 
 (defn gzip!
   "Gzip a hprof in place — produces `<path>.gz`, deletes the original
@@ -97,6 +106,8 @@
           (try (.delete tmp) (catch Throwable _ nil))
           nil)))))
 
+(m/=> gzip! [:=> [:cat [:map [:path :string]]] [:maybe :string]])
+
 (defn delete!
   "Best-effort delete. Returns true on success, false otherwise."
   [{:keys [path]}]
@@ -105,3 +116,5 @@
     (catch Throwable t
       (log/warn t "[hprof] delete failed:" path)
       false)))
+
+(m/=> delete! [:=> [:cat [:map [:path :string]]] :boolean])

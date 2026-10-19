@@ -9,7 +9,8 @@
             [hive-mcp.embeddings.deadline :as dl]
             [hive-dsl.adt :as adt]
             [clojure.string :as str]
-            [hive-mcp.embeddings.shared-gate :as shared]))
+            [hive-mcp.embeddings.shared-gate :as shared]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -302,3 +303,28 @@
    (resilient-embedder chain {:budget-ms       budget-ms
                               :total-budget-ms total-budget-ms
                               :cold-budget-ms  budget-ms})))
+
+(def ChainEntry
+  "One resolved provider of a failover chain."
+  [:map
+   [:provider proto/Provider]
+   [:provider-key {:optional true} :any]])
+
+(def ResilientOpts
+  "The options-map arity of `resilient-embedder`, per its docstring."
+  [:map
+   [:budget-ms {:optional true} :int]
+   [:total-budget-ms {:optional true} :int]
+   [:cold-budget-ms {:optional true} :int]
+   [:warmth {:optional true} [:fn {:gen/elements [(atom #{})]}
+                              #(instance? clojure.lang.IAtom %)]]
+   [:health {:optional true} [:fn {:gen/elements [(atom {})]}
+                              #(instance? clojure.lang.IAtom %)]]
+   [:cooldown-ms {:optional true} :int]
+   [:clock {:optional true} [:=> [:cat] :int]]])
+
+;; An empty chain is admitted at the boundary; the body throws on it.
+(m/=> resilient-embedder [:function
+                          [:=> [:cat [:sequential ChainEntry]] proto/Provider]
+                          [:=> [:cat [:sequential ChainEntry] [:or ResilientOpts :int]] proto/Provider]
+                          [:=> [:cat [:sequential ChainEntry] :int :int] proto/Provider]])
