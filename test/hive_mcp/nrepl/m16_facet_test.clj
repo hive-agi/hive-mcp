@@ -13,10 +13,14 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
+;; These vars are private atoms holding VALUES (a long, a string-or-nil,
+;; a long). The fixture dereferences the var (#'x -> atom) then the atom.
+;; A bare @#'var would hand the ATOM itself to the wrapped handler and
+;; should-rotate? would ClassCast on pos? (caught in the first green run).
 (defn- gc-fixture [f]
-  (let [saved-threshold @#'gc/classloader-rotation-threshold
-        saved-session @#'gc/shared-session-id
-        saved-counter @#'gc/session-eval-counter]
+  (let [saved-threshold @@#'gc/classloader-rotation-threshold
+        saved-session @@#'gc/shared-session-id
+        saved-counter @@#'gc/session-eval-counter]
     (try (f)
          (finally
            (reset! @#'gc/classloader-rotation-threshold saved-threshold)

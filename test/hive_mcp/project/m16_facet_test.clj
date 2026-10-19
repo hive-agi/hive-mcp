@@ -67,15 +67,14 @@
 ;; Registry-touching scope fns — state snapshot/restored around each case
 ;; -----------------------------------------------------------------------------
 
+;; project-configs and reverse-alias-index are private atoms of maps.
+;; @@#'var reads the map; (reset! @#'var) writes through the var.
 (defn- config-fixture [f]
-  (let [saved-projects @#'scope/project-configs
-        saved-aliases @#'scope/reverse-alias-index]
+  (let [saved-projects @@#'scope/project-configs
+        saved-aliases @@#'scope/reverse-alias-index]
     (scope/clear-config-cache!)
     (try (f)
          (finally
-           (reset! @#'scope/project-configs saved-projects)
-           (reset! @#'scope/reverse-alias-index saved-aliases)
-           (scope/clear-config-cache!)
            (reset! @#'scope/project-configs saved-projects)
            (reset! @#'scope/reverse-alias-index saved-aliases)))))
 

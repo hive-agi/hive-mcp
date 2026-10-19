@@ -127,8 +127,10 @@
 ;; field-registry: register / query round-trip, own state snapshot+restore
 ;; -----------------------------------------------------------------------------
 
+;; fr/registry is a private atom of {:step {} :plan {}}; @@#'var reads the
+;; value, (reset! @#'var) writes through the var to the atom.
 (defn- snapshot-registry []
-  @#'fr/registry)
+  @@#'fr/registry)
 
 (defn- registry-fixture [f]
   (let [saved (snapshot-registry)]
