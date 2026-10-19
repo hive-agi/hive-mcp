@@ -266,6 +266,5 @@
 
 (m/=> transact! [:=> [:cat [:or :map [:sequential :any]]] [:maybe [:or :map [:vector :any]]]])
 (m/=> transact-sync! [:=> [:cat [:or :map [:sequential :any]]] [:maybe :map]])
-;; Backend snapshot is an opaque host DB value, not a stable portable shape.
-;; Contract its arity; the backend protocol owns its result semantics.
+;; Backend snapshots are opaque host DB values; the protocol owns their shape.
 (m/=> db-snapshot [:=> [:cat] :any])

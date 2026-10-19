@@ -247,7 +247,6 @@
 
 (m/=> flush-status [:=> [:cat [:int {:min 0}]] [:enum :ok :weave/write-failed]])
 (m/=> ensure-writer! [:=> [:cat] :any])
-(m/=> stop-writer! [:=> [:cat] :any])
 (m/=> writer-stats [:=> [:cat] [:map [:running? :boolean] [:batches-flushed [:int {:min 0}]] [:items-written [:int {:min 0}]]]])
 (m/=> flush-pending! [:function [:=> [:cat] [:enum :ok :weave/timeout :weave/write-failed]] [:=> [:cat :int] [:enum :ok :weave/timeout :weave/write-failed]]])
 (m/=> offer-coalesced! [:=> [:cat :any] :boolean])
