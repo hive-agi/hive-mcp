@@ -425,7 +425,6 @@
             0
             (read-collections nil))))
 
-<<<<<<< HEAD
 (def ^:private scan-page-size 1000)
 
 (def ^:private scan-attempts 3)
@@ -481,6 +480,13 @@
           (< n scan-attempts) (recur (inc n))
           :else (throw (ex-info "chroma scan-ids: consecutive passes never agreed"
                                 {:attempts n :first (count a) :second (count b)})))))))
-=======
+
 (m/=> delete-all-entries! [:=> [:cat] [:int {:min 0}]])
->>>>>>> origin/staging
+
+(m/=> strip-transient [:=> [:cat :any] :any])
+
+(m/=> embed-input [:=> [:cat :map [:maybe :string]] [:maybe :string]])
+
+(m/=> scan-ids [:=> [:cat [:map [:include-expired? {:optional true} [:maybe :boolean]]]]
+                [:vector :string]])
+
