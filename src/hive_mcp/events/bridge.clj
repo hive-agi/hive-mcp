@@ -23,6 +23,8 @@
    - [:kg/edge-created data], [:kg/edge-updated data], [:kg/edge-removed data]
    - [:kg/node-promoted data], [:kg/edges-batch-created data]")
 
+(require '[malli.core :as m])
+
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -221,3 +223,5 @@
   ([hook-type payload dispatch-fn]
    (when-let [event (hook->event hook-type payload)]
      (dispatch-fn event))))
+
+(m/=> bridge-dispatch! [:function [:=> [:cat :keyword [:maybe :map]] :any] [:=> [:cat :keyword [:maybe :map] [:fn {:gen/elements [identity]} ifn?]] :any]])
