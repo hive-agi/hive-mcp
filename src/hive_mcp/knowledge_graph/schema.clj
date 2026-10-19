@@ -5,7 +5,8 @@
    enabling graph traversal, impact analysis, and knowledge promotion."
   (:require [hive-mcp.memory.type-registry :as type-registry]
             [clojure.string :as str]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.knowledge-graph.schema.sealed :as sealed]))
 
 ;; =============================================================================
 ;; Relation Type Registry (OCP — extensions inject their own relation types)
@@ -422,6 +423,6 @@
   (type-registry/abstraction-level entry-type))
 
 (defn full-schema
-  "Returns the combined KG schema (edges + knowledge abstraction + disc + synth + addon extensions)."
+  "Returns the combined KG schema (edges + sealed edges + knowledge abstraction + disc + synth + addon extensions)."
   []
-  (merge kg-schema knowledge-schema disc-schema synth-schema @kg-schema-extensions))
+  (merge kg-schema sealed/sealed-edge-schema knowledge-schema disc-schema synth-schema @kg-schema-extensions))
