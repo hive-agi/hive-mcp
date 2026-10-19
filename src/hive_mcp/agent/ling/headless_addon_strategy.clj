@@ -7,10 +7,11 @@
 
    spawn!/dispatch! let exceptions propagate (critical path).
    status/kill!/interrupt! use rescue with safe fallbacks (non-critical)."
-  (:require [hive-mcp.agent.ling.strategy :refer [ILingStrategy]]
+  (:require [hive-mcp.agent.ling.strategy :as strategy :refer [ILingStrategy]]
             [hive-spi.addon.headless :as headless]
             [hive-dsl.result :refer [rescue]]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -52,6 +53,12 @@
              :errors ["Headless addon interrupt threw exception"]}
             (headless/headless-interrupt! headless-backend ling-ctx))))
 
+(def HeadlessBackend
+  "Malli schema for a value that satisfies `IHeadlessBackend`. Generates a
+   bare reify, which satisfies the protocol and implements none of its methods."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (reify headless/IHeadlessBackend))}
+   (fn [x] (satisfies? headless/IHeadlessBackend x))])
+
 (defn ->headless-addon-strategy
   "Create a HeadlessAddonStrategy wrapping an IHeadlessBackend instance.
 
@@ -61,3 +68,7 @@
   [headless-backend]
   {:pre [(satisfies? headless/IHeadlessBackend headless-backend)]}
   (->HeadlessAddonStrategy headless-backend))
+
+;; The input is open: the body's own :pre refuses a non-backend, and the
+;; contract does not turn that AssertionError into a schema error.
+(m/=> ->headless-addon-strategy [:=> [:cat :any] strategy/LingStrategy])

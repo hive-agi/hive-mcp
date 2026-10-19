@@ -1,0 +1,60 @@
+{:case-0
+ {:out
+  {:type :defer,
+   :strength 1.0,
+   :target nil,
+   :evidence [],
+   :message "a"},
+  :in {:signal :defer, :message "a"}},
+ :case-1
+ {:out
+  {:error
+   "Invalid signal type: :bogus. Valid: approve, defer, propose, counter, no-change, lgtm",
+   :input
+   {:type "bogus",
+    :signal "no-change",
+    :strength 1.0,
+    :confidence 1.0,
+    :message "a"}},
+  :in
+  {:type "bogus",
+   :signal "no-change",
+   :strength 1.0,
+   :confidence 1.0,
+   :message "a"}},
+ :case-2
+ {:out
+  {:type :no-change,
+   :strength 1.0,
+   :target nil,
+   :evidence [],
+   :message "a"},
+  :in {:signal "no-change", :confidence 1.0, :message "a"}},
+ :case-3
+ {:out
+  {:error "Missing signal type (provide :type or :signal)", :input {}},
+  :in {}},
+ :case-4
+ {:out
+  {:error
+   "Invalid signal type: :bogus. Valid: approve, defer, propose, counter, no-change, lgtm",
+   :input {:type "bogus", :signal "no-change", :confidence 1.0}},
+  :in {:type "bogus", :signal "no-change", :confidence 1.0}},
+ :case-5
+ {:out
+  {:type :no-change,
+   :strength 0.875,
+   :target nil,
+   :evidence [],
+   :message "a"},
+  :in {:signal "no-change", :confidence 0.875, :message "a"}},
+ :case-6
+ {:out
+  {:error "Missing signal type (provide :type or :signal)",
+   :input {:strength 2.609375, :message "because"}},
+  :in {:strength 2.609375, :message "because"}},
+ :case-7
+ {:out
+  {:error "Missing signal type (provide :type or :signal)",
+   :input {:strength -1.140625, :confidence 1.0}},
+  :in {:strength -1.140625, :confidence 1.0}}}

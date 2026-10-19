@@ -1,0 +1,24 @@
+{:case-0
+ {:out {:propose 1, :counter 1, :approve 2, :no-change 0, :defer 1},
+  :in "tri-d"},
+ :case-1
+ {:out {:propose 0, :counter 0, :approve 0, :no-change 0, :defer 0},
+  :in "tri-missing"},
+ :case-2
+ {:out {:propose 0, :counter 0, :approve 0, :no-change 0, :defer 0},
+  :in "tri-empty"},
+ :case-3
+ {:out {:propose 1, :counter 1, :approve 2, :no-change 0, :defer 1},
+  :in "tri-d"},
+ :case-4
+ {:out {:propose 1, :counter 1, :approve 2, :no-change 0, :defer 1},
+  :in "tri-d"},
+ :case-5
+ {:out {:propose 0, :counter 0, :approve 0, :no-change 0, :defer 0},
+  :in "tri-missing"},
+ :case-6
+ {:out {:propose 0, :counter 0, :approve 0, :no-change 0, :defer 0},
+  :in "tri-empty"},
+ :case-7
+ {:out {:propose 1, :counter 1, :approve 2, :no-change 0, :defer 1},
+  :in "tri-d"}}

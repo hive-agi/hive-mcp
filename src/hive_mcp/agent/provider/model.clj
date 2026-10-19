@@ -79,20 +79,91 @@
   "Malli schema for the provider registry: provider keyword -> ProviderEntry."
   [:map-of :keyword ProviderEntry])
 
+(def Registry
+  "What the policy stratum takes as a registry: provider keyword -> entry map.
+   Looser than `ProviderRegistry` on purpose: an overlaid config entry is a map
+   before it is validated, and the decisions read it as one."
+  [:map-of :keyword :map])
+
+(def SecretKeys
+  "A collection of secret keys, as a set or a sequence."
+  [:maybe [:or [:set :keyword] [:sequential :keyword]]])
+
+(def Routing
+  "A routing decision: the provider and the model a spawn would use. Either is
+   nil when nothing supplied it."
+  [:map [:provider [:maybe :keyword]] [:model [:maybe :string]]])
+
+(def RoutingRequest
+  "What `resolve-routing` reads from the caller and the collected world."
+  [:maybe
+   [:map
+    [:provider {:optional true} [:maybe [:or :keyword :string]]]
+    [:model {:optional true} [:maybe :string]]
+    [:type-defaults {:optional true} [:maybe :map]]
+    [:fallback-provider {:optional true} [:maybe :keyword]]]])
+
+(def CredentialProbe
+  "The answer of a credential probe."
+  [:maybe [:map
+           [:status {:optional true} [:maybe :int]]
+           [:remaining {:optional true} [:maybe number?]]]])
+
+(defn- refusal-schema
+  "A refusal map: its :error keyword, its :fix prose and the given entries."
+  [error & entries]
+  (into [:map [:error [:= error]] [:fix :string]] entries))
+
+(def UnknownProvider
+  (refusal-schema :unknown-provider [:requested :any] [:available [:vector :keyword]]))
+
+(def UnknownModel
+  (refusal-schema :unknown-model-for-provider
+                  [:provider :keyword] [:model :any] [:available [:vector :any]]))
+
+(def ModelDenied
+  (refusal-schema :model-denied-for-provider
+                  [:provider :keyword] [:model :string] [:pattern :string]))
+
+(def UnresolvedRouting
+  [:map
+   [:error [:enum :model-not-configured :provider-not-configured]]
+   [:agent-type :any]
+   [:provider [:maybe :keyword]]
+   [:config-keys [:vector :string]]
+   [:fix :string]])
+
+(def ModelUnroutable
+  (refusal-schema :model-unroutable-on-provider [:provider :keyword] [:model :string]))
+
+(def SecretMissing
+  (refusal-schema :provider-secret-missing [:provider :keyword] [:secret-key :keyword]))
+
+(def CredentialRefused
+  [:or
+   (refusal-schema :provider-credential-rejected [:provider :keyword] [:status [:enum 401 403]])
+   (refusal-schema :provider-quota-exhausted [:provider :keyword] [:remaining number?])])
+
 (defn valid-provider-entry?
   "True when `entry` conforms to `ProviderEntry`."
   [entry]
   (m/validate ProviderEntry entry))
+
+(m/=> valid-provider-entry? [:=> [:cat :any] :boolean])
 
 (defn dispatch-routed?
   "True when `entry` names its own client rather than an OpenAI-compat endpoint."
   [entry]
   (boolean (and (map? entry) (:dispatch entry))))
 
+(m/=> dispatch-routed? [:=> [:cat :any] :boolean])
+
 (defn openai-compat?
   "True when `entry` is a reachable OpenAI-compat provider entry."
   [entry]
   (and (map? entry) (not (dispatch-routed? entry))))
+
+(m/=> openai-compat? [:=> [:cat :any] :boolean])
 
 ;;; ---------------------------------------------------------------------------
 ;;; Seeds

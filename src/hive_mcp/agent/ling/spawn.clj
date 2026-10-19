@@ -19,12 +19,39 @@
             [hive-mcp.agent.ling.start-preflight :as start-preflight]
             [hive-mcp.agent.grant :as grant]
             [hive-mcp.agent.identity :as agent-identity]
-            [hive-mcp.swarm.datascript :as ds]))
+            [hive-mcp.swarm.datascript :as ds]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (declare ordered-presets)
+
+(def Presets
+  "Preset names as a ling carries them: declared order, or sorted."
+  [:vector :string])
+
+(def LingOpts
+  "The construction opts `slave->ling-opts` reads back from a slave row."
+  [:map
+   [:cwd [:maybe :string]]
+   [:presets Presets]
+   [:project-id [:maybe :string]]
+   [:spawn-mode :keyword]
+   [:model [:maybe :string]]
+   [:token-budget :any]
+   [:turn-budget {:optional true} :any]])
+
+(def LingValue
+  "A Ling record, as `->ling` builds it. The six identity fields are always
+   present; the rest appear only when the opts carry them."
+  [:map
+   [:id :string]
+   [:cwd [:maybe :string]]
+   [:presets [:maybe [:or [:sequential :string] [:set :string]]]]
+   [:project-id [:maybe :string]]
+   [:spawn-mode :keyword]
+   [:model [:maybe :string]]])
 
 (defn slave->ling-opts
   "Extract ling construction opts from a DataScript slave entity."
@@ -36,6 +63,8 @@
            :model (:ling/model slave)
            :token-budget (:ling/token-budget slave)}
     (:ling/turn-budget slave) (assoc :turn-budget (:ling/turn-budget slave))))
+
+(m/=> slave->ling-opts [:=> [:cat [:maybe :map]] LingOpts])
 
 (defn ordered-presets
   "Read declared order from the scalar EDN snapshot; sort old unordered rows."
@@ -50,6 +79,8 @@
              (= (set decoded) (set legacy)))
       decoded
       (vec (sort legacy)))))
+
+(m/=> ordered-presets [:=> [:cat [:maybe :map]] Presets])
 
 (declare ->ling)
 
@@ -235,6 +266,8 @@
         out
         (do (log/warn "[spawn] row filter failed closed" {:slave-id slave-id})
             (select-keys attrs row-safe-keys))))))
+
+(m/=> row-attrs [:=> [:cat [:maybe ifn?] :any :map] :map])
 
 (defn- row-filter
   "hive-agent's registry row filter chain, resolved softly so core needs no
@@ -428,6 +461,14 @@
     (and (map? answer) (false? (:dispatched answer))) answer
     (r/err? answer) answer
     :else nil))
+
+;; Any answer is read; a refusal is one of the three refused shapes.
+(m/=> dispatch-refusal
+      [:=> [:cat :any]
+       [:maybe [:or
+                [:map [:answer [:= false]]]
+                [:map [:dispatched [:= false]]]
+                [:map [:error :any]]]]])
 
 (defn- status-after-failed-dispatch
   "The :slave/status a failed dispatch leaves, from the status PRIOR-STATUS
@@ -650,8 +691,13 @@
                  (:max-budget-usd opts)     (assoc :max-budget-usd (:max-budget-usd opts))
                  (some? (:sandbox opts))    (assoc :sandbox (:sandbox opts))))))
 
+(m/=> ->ling [:=> [:cat :string [:maybe :map]] LingValue])
+
 (defn create-ling!
   "Create and spawn a new ling agent."
   [id opts]
   (let [ling (->ling id opts)]
     (.spawn! ling opts)))
+
+;; The answer is the slave id the strategy's spawn! returned.
+(m/=> create-ling! [:=> [:cat :string [:maybe :map]] [:maybe :string]])

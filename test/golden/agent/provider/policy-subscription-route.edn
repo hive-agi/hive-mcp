@@ -1,0 +1,264 @@
+{:case-0
+ {:out nil,
+  :in
+  ({:anthropic
+    {:dispatch :anthropic-oauth,
+     :secret-key :anthropic-api-key,
+     :default-model "claude-sonnet-4-6",
+     :model-aliases {"opus" "claude-opus-4-1"}},
+    :chatgpt
+    {:dispatch :chatgpt-oauth,
+     :secret-key nil,
+     :default-model "gpt-5"},
+    :kimi {:dispatch :subscription, :secret-key nil},
+    :openrouter
+    {:api-url "https://openrouter.ai/api/v1/chat/completions",
+     :secret-key :openrouter-api-key,
+     :cache-control :anthropic-style,
+     :auth-probe
+     {:kind :openrouter-key-info,
+      :url "https://openrouter.ai/api/v1/key"}},
+    :venice
+    {:api-url "https://api.venice.ai/api/v1/chat/completions",
+     :secret-key :venice-api-key,
+     :default-model "qwen3",
+     :available-models ["qwen3" "llama-4"]},
+    :groq
+    {:api-url "https://api.groq.com/openai/v1/chat/completions",
+     :secret-key :groq-api-key,
+     :deny-models ["^llama"]},
+    :zeta
+    {:api-url "https://api.zeta.test/v1/chat/completions",
+     :secret-key nil}}
+   "llama-4")},
+ :case-1
+ {:out nil,
+  :in
+  ({:anthropic
+    {:dispatch :anthropic-oauth,
+     :secret-key :anthropic-api-key,
+     :default-model "claude-sonnet-4-6",
+     :model-aliases {"opus" "claude-opus-4-1"}},
+    :chatgpt
+    {:dispatch :chatgpt-oauth,
+     :secret-key nil,
+     :default-model "gpt-5"},
+    :kimi {:dispatch :subscription, :secret-key nil},
+    :openrouter
+    {:api-url "https://openrouter.ai/api/v1/chat/completions",
+     :secret-key :openrouter-api-key,
+     :cache-control :anthropic-style,
+     :auth-probe
+     {:kind :openrouter-key-info,
+      :url "https://openrouter.ai/api/v1/key"}},
+    :venice
+    {:api-url "https://api.venice.ai/api/v1/chat/completions",
+     :secret-key :venice-api-key,
+     :default-model "qwen3",
+     :available-models ["qwen3" "llama-4"]},
+    :groq
+    {:api-url "https://api.groq.com/openai/v1/chat/completions",
+     :secret-key :groq-api-key,
+     :deny-models ["^llama"]},
+    :zeta
+    {:api-url "https://api.zeta.test/v1/chat/completions",
+     :secret-key nil}}
+   nil)},
+ :case-2
+ {:out {:provider :anthropic, :model "claude-sonnet-4-6"},
+  :in
+  ({:anthropic
+    {:dispatch :anthropic-oauth,
+     :secret-key :anthropic-api-key,
+     :default-model "claude-sonnet-4-6",
+     :model-aliases {"opus" "claude-opus-4-1"}},
+    :chatgpt
+    {:dispatch :chatgpt-oauth,
+     :secret-key nil,
+     :default-model "gpt-5"},
+    :kimi {:dispatch :subscription, :secret-key nil},
+    :openrouter
+    {:api-url "https://openrouter.ai/api/v1/chat/completions",
+     :secret-key :openrouter-api-key,
+     :cache-control :anthropic-style,
+     :auth-probe
+     {:kind :openrouter-key-info,
+      :url "https://openrouter.ai/api/v1/key"}},
+    :venice
+    {:api-url "https://api.venice.ai/api/v1/chat/completions",
+     :secret-key :venice-api-key,
+     :default-model "qwen3",
+     :available-models ["qwen3" "llama-4"]},
+    :groq
+    {:api-url "https://api.groq.com/openai/v1/chat/completions",
+     :secret-key :groq-api-key,
+     :deny-models ["^llama"]},
+    :zeta
+    {:api-url "https://api.zeta.test/v1/chat/completions",
+     :secret-key nil}}
+   "claude")},
+ :case-3
+ {:out nil,
+  :in
+  ({:anthropic
+    {:dispatch :anthropic-oauth,
+     :secret-key :anthropic-api-key,
+     :default-model "claude-sonnet-4-6",
+     :model-aliases {"opus" "claude-opus-4-1"}},
+    :chatgpt
+    {:dispatch :chatgpt-oauth,
+     :secret-key nil,
+     :default-model "gpt-5"},
+    :kimi {:dispatch :subscription, :secret-key nil},
+    :openrouter
+    {:api-url "https://openrouter.ai/api/v1/chat/completions",
+     :secret-key :openrouter-api-key,
+     :cache-control :anthropic-style,
+     :auth-probe
+     {:kind :openrouter-key-info,
+      :url "https://openrouter.ai/api/v1/key"}},
+    :venice
+    {:api-url "https://api.venice.ai/api/v1/chat/completions",
+     :secret-key :venice-api-key,
+     :default-model "qwen3",
+     :available-models ["qwen3" "llama-4"]},
+    :groq
+    {:api-url "https://api.groq.com/openai/v1/chat/completions",
+     :secret-key :groq-api-key,
+     :deny-models ["^llama"]},
+    :zeta
+    {:api-url "https://api.zeta.test/v1/chat/completions",
+     :secret-key nil}}
+   nil)},
+ :case-4
+ {:out {:provider :anthropic, :model "claude-sonnet-4-6"},
+  :in
+  ({:anthropic
+    {:dispatch :anthropic-oauth,
+     :secret-key :anthropic-api-key,
+     :default-model "claude-sonnet-4-6",
+     :model-aliases {"opus" "claude-opus-4-1"}},
+    :chatgpt
+    {:dispatch :chatgpt-oauth,
+     :secret-key nil,
+     :default-model "gpt-5"},
+    :kimi {:dispatch :subscription, :secret-key nil},
+    :openrouter
+    {:api-url "https://openrouter.ai/api/v1/chat/completions",
+     :secret-key :openrouter-api-key,
+     :cache-control :anthropic-style,
+     :auth-probe
+     {:kind :openrouter-key-info,
+      :url "https://openrouter.ai/api/v1/key"}},
+    :venice
+    {:api-url "https://api.venice.ai/api/v1/chat/completions",
+     :secret-key :venice-api-key,
+     :default-model "qwen3",
+     :available-models ["qwen3" "llama-4"]},
+    :groq
+    {:api-url "https://api.groq.com/openai/v1/chat/completions",
+     :secret-key :groq-api-key,
+     :deny-models ["^llama"]},
+    :zeta
+    {:api-url "https://api.zeta.test/v1/chat/completions",
+     :secret-key nil}}
+   "claude-sonnet-4-6")},
+ :case-5
+ {:out {:provider :anthropic, :model "claude-sonnet-4-6"},
+  :in
+  ({:anthropic
+    {:dispatch :anthropic-oauth,
+     :secret-key :anthropic-api-key,
+     :default-model "claude-sonnet-4-6",
+     :model-aliases {"opus" "claude-opus-4-1"}},
+    :chatgpt
+    {:dispatch :chatgpt-oauth,
+     :secret-key nil,
+     :default-model "gpt-5"},
+    :kimi {:dispatch :subscription, :secret-key nil},
+    :openrouter
+    {:api-url "https://openrouter.ai/api/v1/chat/completions",
+     :secret-key :openrouter-api-key,
+     :cache-control :anthropic-style,
+     :auth-probe
+     {:kind :openrouter-key-info,
+      :url "https://openrouter.ai/api/v1/key"}},
+    :venice
+    {:api-url "https://api.venice.ai/api/v1/chat/completions",
+     :secret-key :venice-api-key,
+     :default-model "qwen3",
+     :available-models ["qwen3" "llama-4"]},
+    :groq
+    {:api-url "https://api.groq.com/openai/v1/chat/completions",
+     :secret-key :groq-api-key,
+     :deny-models ["^llama"]},
+    :zeta
+    {:api-url "https://api.zeta.test/v1/chat/completions",
+     :secret-key nil}}
+   "claude")},
+ :case-6
+ {:out nil,
+  :in
+  ({:anthropic
+    {:dispatch :anthropic-oauth,
+     :secret-key :anthropic-api-key,
+     :default-model "claude-sonnet-4-6",
+     :model-aliases {"opus" "claude-opus-4-1"}},
+    :chatgpt
+    {:dispatch :chatgpt-oauth,
+     :secret-key nil,
+     :default-model "gpt-5"},
+    :kimi {:dispatch :subscription, :secret-key nil},
+    :openrouter
+    {:api-url "https://openrouter.ai/api/v1/chat/completions",
+     :secret-key :openrouter-api-key,
+     :cache-control :anthropic-style,
+     :auth-probe
+     {:kind :openrouter-key-info,
+      :url "https://openrouter.ai/api/v1/key"}},
+    :venice
+    {:api-url "https://api.venice.ai/api/v1/chat/completions",
+     :secret-key :venice-api-key,
+     :default-model "qwen3",
+     :available-models ["qwen3" "llama-4"]},
+    :groq
+    {:api-url "https://api.groq.com/openai/v1/chat/completions",
+     :secret-key :groq-api-key,
+     :deny-models ["^llama"]},
+    :zeta
+    {:api-url "https://api.zeta.test/v1/chat/completions",
+     :secret-key nil}}
+   "nope:x")},
+ :case-7
+ {:out nil,
+  :in
+  ({:anthropic
+    {:dispatch :anthropic-oauth,
+     :secret-key :anthropic-api-key,
+     :default-model "claude-sonnet-4-6",
+     :model-aliases {"opus" "claude-opus-4-1"}},
+    :chatgpt
+    {:dispatch :chatgpt-oauth,
+     :secret-key nil,
+     :default-model "gpt-5"},
+    :kimi {:dispatch :subscription, :secret-key nil},
+    :openrouter
+    {:api-url "https://openrouter.ai/api/v1/chat/completions",
+     :secret-key :openrouter-api-key,
+     :cache-control :anthropic-style,
+     :auth-probe
+     {:kind :openrouter-key-info,
+      :url "https://openrouter.ai/api/v1/key"}},
+    :venice
+    {:api-url "https://api.venice.ai/api/v1/chat/completions",
+     :secret-key :venice-api-key,
+     :default-model "qwen3",
+     :available-models ["qwen3" "llama-4"]},
+    :groq
+    {:api-url "https://api.groq.com/openai/v1/chat/completions",
+     :secret-key :groq-api-key,
+     :deny-models ["^llama"]},
+    :zeta
+    {:api-url "https://api.zeta.test/v1/chat/completions",
+     :secret-key nil}}
+   "llama-4")}}

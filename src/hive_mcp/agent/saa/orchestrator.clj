@@ -16,7 +16,8 @@
             [hive-mcp.saa.prompt :as prompt]
             [hive-mcp.saa.model :as model]
             [hive-mcp.extensions.registry :as ext]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -331,6 +332,50 @@
             (close! out-ch))))
       out-ch)))
 
+;; =============================================================================
+;; Value schemas for the contracts below
+;; =============================================================================
+
+(def SaaPhase
+  "Every phase an agent's SAA state passes through."
+  [:enum :idle :silence :abstract :act :complete :error])
+
+(def AgentId
+  "The session id an agent's SAA state is keyed by."
+  [:maybe [:or :string :keyword]])
+
+(def SaaState
+  "One agent's SAA state. Every key is optional: a phase started without
+   `init-agent-state!` (run-abstract! or run-act! on their own) merges its
+   updates into no state at all, leaving a partial map. A later transition
+   then records a history entry with no phase, `conj`ed onto no history, so
+   the history is a list there and a vector otherwise."
+  [:map
+   [:phase {:optional true} SaaPhase]
+   [:task {:optional true} :any]
+   [:observations {:optional true} [:sequential :any]]
+   [:plan {:optional true} :any]
+   [:result {:optional true} :any]
+   [:phase-history {:optional true}
+    [:sequential [:map [:phase [:maybe SaaPhase]] [:started-at [:maybe :int]] [:ended-at :int]]]]
+   [:started-at {:optional true} :int]
+   [:phase-started-at {:optional true} :int]
+   [:error {:optional true} [:maybe :string]]])
+
+(def OrchestratorValue
+  "An orchestrator: a record whose :config carries the three injected ports
+   and the turn budgets, caller overrides merged over the defaults."
+  [:map
+   [:config [:map
+             [:phase-provider :any]
+             [:scorer :any]
+             [:planner :any]
+             [:shout? :any]
+             [:score-threshold :any]
+             [:max-silence-turns :any]
+             [:max-abstract-turns :any]
+             [:max-act-turns :any]]]])
+
 (defn ->saa-orchestrator
   "Create an SAAOrchestrator instance with optional config.
 
@@ -354,15 +399,24 @@
               :planner (registry/lookup-planner-or-default provider-id)}
              config)))))
 
+(m/=> ->saa-orchestrator
+      [:function
+       [:=> [:cat] OrchestratorValue]
+       [:=> [:cat [:maybe :map]] OrchestratorValue]])
+
 (defn agent-saa-state
   "Get the current SAA state for an agent (read-only)."
   [agent-id]
   (get-agent-state agent-id))
 
+(m/=> agent-saa-state [:=> [:cat AgentId] [:maybe SaaState]])
+
 (defn agent-saa-phase
   "Get just the current SAA phase keyword for an agent."
   [agent-id]
   (:phase (get-agent-state agent-id)))
+
+(m/=> agent-saa-phase [:=> [:cat AgentId] [:maybe SaaPhase]])
 
 (defn list-active-saa
   "List all agents currently in active SAA phases."
@@ -377,6 +431,15 @@
                 :started-at (:started-at state)
                 :elapsed-ms (- (System/currentTimeMillis) (:started-at state))}))))
 
+(m/=> list-active-saa
+      [:=> [:cat]
+       [:vector [:map
+                 [:agent-id AgentId]
+                 [:phase [:enum :silence :abstract :act]]
+                 [:task :any]
+                 [:started-at :int]
+                 [:elapsed-ms :int]]]])
+
 (defn clear-completed-states!
   "Remove SAA state for all completed or errored agents."
   []
@@ -388,8 +451,12 @@
       (clear-agent-state! agent-id))
     {:cleared (count to-clear)}))
 
+(m/=> clear-completed-states! [:=> [:cat] [:map [:cleared [:int {:min 0}]]]])
+
 (defn clear-all-states!
   "Remove all SAA states."
   []
   (reset! agent-states {})
   nil)
+
+(m/=> clear-all-states! [:=> [:cat] :nil])

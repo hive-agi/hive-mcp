@@ -1,0 +1,45 @@
+{:case-0
+ {:out #{"b"},
+  :in
+  {:id "c",
+   :depends_on ["c" "c"],
+   :from "$ref:b.data.id",
+   :content "$ref:a.data.id"}},
+ :case-1
+ {:out #{},
+  :in {:id "c", :depends_on ["c"], :from "", :content "plain text"}},
+ :case-2
+ {:out #{"a"},
+  :in
+  {:id "a",
+   :depends_on ["c"],
+   :from "$ref:a.data.id",
+   :content "plain text"}},
+ :case-3
+ {:out #{"c"},
+  :in
+  {:id "b",
+   :depends_on [],
+   :from "$ref:c.data.id",
+   :content "plain text"}},
+ :case-4
+ {:out #{"c"},
+  :in
+  {:id "a",
+   :depends_on ["c" "a"],
+   :from "$ref:c.data.id",
+   :content "$ref:a.data.id"}},
+ :case-5
+ {:out #{"b"},
+  :in
+  {:id "a",
+   :depends_on ["c"],
+   :from "$ref:b.data.id",
+   :content "$ref:a.data.id"}},
+ :case-6
+ {:out #{},
+  :in
+  {:id "b", :depends_on [], :from "O7svn", :content "$ref:a.data.id"}},
+ :case-7
+ {:out #{},
+  :in {:id "c", :depends_on [], :from "", :content "$ref:a.data.id"}}}
