@@ -67,8 +67,8 @@
   [:map-of :any :any])
 
 (def KgNodeIds
-  "Seed node ids for the structural context."
-  [:maybe [:sequential :string]])
+  "Seed node ids for the structural context: any collection of id strings."
+  [:maybe [:or [:sequential :string] [:set :string]]])
 
 (def RefContextOpts
   "Options `catchup-refs->ref-context-opts` answers."
