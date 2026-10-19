@@ -1,8 +1,7 @@
 (ns hive-mcp.agent.hooks.budget
   "Budget guardrail hook for agent sessions. Tracks cumulative USD cost per agent and denies tool calls when exceeded."
   (:require [taoensso.timbre :as log]
-            [malli.core :as m]
-            [hive-mcp.agent.hooks.schema :as schema]))
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -241,10 +240,72 @@
                     :exceeded? false))))
   (log/info "[budget-hook] Agent spend reset" {:agent-id agent-id}))
 
+;; ---------------------------------------------------------------------------
+;; Contract schemas for the budget guardrail hook. They live here, beside the
+;; fns they describe, because hive-mcp.agent.* is a frozen extraction prefix
+;; (hive-mcp.kernel.census): no new namespace may be added under it.
+;; ---------------------------------------------------------------------------
+
+(def Instant
+  "A java.time.Instant."
+  [:fn {:gen/elements [java.time.Instant/EPOCH]}
+   (fn [x] (instance? java.time.Instant x))])
+
+(def Usd
+  "A USD amount or token count as a caller may pass it."
+  [:maybe number?])
+
+(def Budget
+  "A positive budget, as register-budget! requires."
+  [:or [:int {:min 1}] [:double {:min 0.01 :infinite? false :NaN? false}]])
+
+(def BudgetEntry
+  "The record kept per registered agent."
+  [:map
+   [:max-budget-usd :double]
+   [:spent-usd :double]
+   [:model :string]
+   [:tool-calls :int]
+   [:registered-at Instant]
+   [:last-check-at [:maybe Instant]]
+   [:exceeded? :boolean]
+   [:denied-calls :int]])
+
+(def BudgetStatus
+  "get-budget-status row."
+  [:map
+   [:agent-id :string]
+   [:max-budget-usd :double]
+   [:spent-usd :double]
+   [:remaining-usd :double]
+   [:pct-used :double]
+   [:tool-calls :int]
+   [:denied-calls :int]
+   [:model :string]
+   [:exceeded? :boolean]
+   [:registered-at :string]])
+
+(def Decision
+  "The guardrail verdict: allow, or deny + interrupt."
+  [:or
+   [:map [:action [:= :allow]]]
+   [:map [:action [:= :deny]] [:message :string] [:interrupt? [:= true]]]])
+
+(def TotalSpend
+  [:map
+   [:total-spend-usd :double]
+   [:agent-count :int]
+   [:agents [:vector [:map [:agent-id :string] [:spent-usd :double]]]]])
+
+(def Handler
+  "A hook handler fn. Generates a constant allow-handler so the output of
+   budget-guardrail-handler can be sampled."
+  [:fn {:gen/elements [(fn [_] {:action :allow})]} ifn?])
+
 (m/=> estimate-cost-usd
       [:function
-       [:=> [:cat schema/Usd schema/Usd] :double]
-       [:=> [:cat schema/Usd schema/Usd [:maybe :string]] :double]])
+       [:=> [:cat Usd Usd] :double]
+       [:=> [:cat Usd Usd [:maybe :string]] :double]])
 
 (m/=> estimate-tool-call-cost
       [:function
@@ -253,30 +314,30 @@
 
 (m/=> register-budget!
       [:function
-       [:=> [:cat :string number?] schema/BudgetEntry]
+       [:=> [:cat :string number?] BudgetEntry]
        [:=> [:cat :string number? [:maybe [:map [:model {:optional true} [:maybe :string]]]]]
-        schema/BudgetEntry]])
+        BudgetEntry]])
 
-(m/=> deregister-budget! [:=> [:cat :any] [:maybe schema/BudgetEntry]])
+(m/=> deregister-budget! [:=> [:cat :any] [:maybe BudgetEntry]])
 
 (m/=> record-usage!
       [:function
-       [:=> [:cat :any number?] [:maybe schema/BudgetEntry]]
-       [:=> [:cat :any number? [:maybe [:map-of :any :any]]] [:maybe schema/BudgetEntry]]])
+       [:=> [:cat :any number?] [:maybe BudgetEntry]]
+       [:=> [:cat :any number? [:maybe [:map-of :any :any]]] [:maybe BudgetEntry]]])
 
 (m/=> record-tool-usage!
-      [:=> [:cat :any [:maybe :string] :any] [:maybe schema/BudgetEntry]])
+      [:=> [:cat :any [:maybe :string] :any] [:maybe BudgetEntry]])
 
 (m/=> check-budget
-      [:=> [:cat :any [:maybe :string] :any] [:maybe schema/Decision]])
+      [:=> [:cat :any [:maybe :string] :any] [:maybe Decision]])
 
-(m/=> budget-guardrail-handler [:=> [:cat] ifn?])
+(m/=> budget-guardrail-handler [:=> [:cat] Handler])
 
-(m/=> get-budget-status [:=> [:cat :any] [:maybe schema/BudgetStatus]])
+(m/=> get-budget-status [:=> [:cat :any] [:maybe BudgetStatus]])
 
-(m/=> get-all-budget-statuses [:=> [:cat] [:vector schema/BudgetStatus]])
+(m/=> get-all-budget-statuses [:=> [:cat] [:vector BudgetStatus]])
 
-(m/=> get-total-spend [:=> [:cat] schema/TotalSpend])
+(m/=> get-total-spend [:=> [:cat] TotalSpend])
 
 (m/=> reset-all-budgets! [:=> [:cat] :nil])
 

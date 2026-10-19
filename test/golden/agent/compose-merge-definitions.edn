@@ -7,20 +7,20 @@
    {:agent-type "o6kaU",
     :description "",
     :system-prompt "u3mt",
-    :source :plugin}
+    :source :project}
    {:agent-type "4N4V3x9",
     :description "",
     :system-prompt "H",
-    :source :project}],
+    :source :user}],
   :in
   ([{:agent-type "4N4V3x9",
      :description "",
      :system-prompt "H",
-     :source :project}
+     :source :user}
     {:agent-type "o6kaU",
      :description "",
      :system-prompt "u3mt",
-     :source :plugin}]
+     :source :project}]
    [{:agent-type "Sy3tnqh",
      :description "6cLHVFo",
      :system-prompt "3qm6SNq82cy2",
@@ -30,31 +30,31 @@
   [{:agent-type "vksC1",
     :description "yUO",
     :system-prompt "Jtk",
-    :source :project}
+    :source :user}
    {:agent-type "g",
     :description "V9a7SkSnjZ2R",
     :system-prompt "3",
-    :source :project}
+    :source :user}
    {:agent-type "iy9A4q",
     :description "0lFxGpC",
     :system-prompt "Wa4nyn",
-    :source :user}
+    :source :plugin}
    {:agent-type "GW8AaiFJ",
     :description "",
     :system-prompt "RxJV1s",
-    :source :project}
+    :source :user}
    {:agent-type "m",
     :description "359KPhuEn",
     :system-prompt "K05V5X8E",
-    :source :user}
+    :source :plugin}
    {:agent-type "D",
     :description "1h8LCw",
     :system-prompt "hu",
-    :source :project}
+    :source :user}
    {:agent-type "12otx5d9",
     :description "T73y52Vt99",
     :system-prompt "waYa95i3xxLZ",
-    :source :plugin}
+    :source :project}
    {:agent-type "q2m7",
     :description "pff798mEOQU",
     :system-prompt "3W53EQQJshbP",
@@ -62,24 +62,24 @@
    {:agent-type "6klUk2k",
     :description "bE",
     :system-prompt "yzNi9",
-    :source :project}],
+    :source :user}],
   :in
   ([{:agent-type "g",
      :description "V9a7SkSnjZ2R",
      :system-prompt "3",
-     :source :project}
+     :source :user}
     {:agent-type "vksC1",
      :description "yUO",
      :system-prompt "Jtk",
-     :source :project}
+     :source :user}
     {:agent-type "D",
      :description "1h8LCw",
      :system-prompt "hu",
-     :source :project}]
+     :source :user}]
    [{:agent-type "12otx5d9",
      :description "T73y52Vt99",
      :system-prompt "waYa95i3xxLZ",
-     :source :plugin}
+     :source :project}
     {:agent-type "q2m7",
      :description "pff798mEOQU",
      :system-prompt "3W53EQQJshbP",
@@ -87,19 +87,19 @@
     {:agent-type "6klUk2k",
      :description "bE",
      :system-prompt "yzNi9",
-     :source :project}
+     :source :user}
     {:agent-type "iy9A4q",
      :description "0lFxGpC",
      :system-prompt "Wa4nyn",
-     :source :user}
+     :source :plugin}
     {:agent-type "GW8AaiFJ",
      :description "",
      :system-prompt "RxJV1s",
-     :source :project}
+     :source :user}
     {:agent-type "m",
      :description "359KPhuEn",
      :system-prompt "K05V5X8E",
-     :source :user}])},
+     :source :plugin}])},
  :case-2
  {:out
   [{:agent-type "KMKVJQ",
@@ -109,15 +109,15 @@
    {:agent-type "Mgv1",
     :description "G65G23",
     :system-prompt "Irve0t",
-    :source :plugin}
+    :source :project}
    {:agent-type "Z",
     :description "NmV9nUfVGVw",
     :system-prompt "329naBYi",
-    :source :project}
+    :source :user}
    {:agent-type "BdrhAIQ2",
     :description "3",
     :system-prompt "mb7t8",
-    :source :project}],
+    :source :user}],
   :in
   ([{:agent-type "KMKVJQ",
      :description "711jDm",
@@ -126,15 +126,15 @@
    [{:agent-type "Mgv1",
      :description "G65G23",
      :system-prompt "Irve0t",
-     :source :plugin}
+     :source :project}
     {:agent-type "Z",
      :description "NmV9nUfVGVw",
      :system-prompt "329naBYi",
-     :source :project}
+     :source :user}
     {:agent-type "BdrhAIQ2",
      :description "3",
      :system-prompt "mb7t8",
-     :source :project}])},
+     :source :user}])},
  :case-3
  {:out
   [{:agent-type "p7C",
@@ -149,27 +149,27 @@
     :description "9097o8SbL0",
     :system-prompt "",
     :source :built-in}
-   {:agent-type "Yla",
-    :description "r30Pt3K",
-    :system-prompt "",
-    :source :plugin}
-   {:agent-type "7860x8bA",
-    :description "le1hlH3",
-    :system-prompt "hIV5",
-    :source :project}
    {:agent-type "6L",
     :description "BD50LaXa1kZ2",
     :system-prompt "DUF1a46Q",
+    :source :plugin}
+   {:agent-type "Yla",
+    :description "r30Pt3K",
+    :system-prompt "",
+    :source :project}
+   {:agent-type "7860x8bA",
+    :description "le1hlH3",
+    :system-prompt "hIV5",
     :source :user}],
   :in
   ([{:agent-type "Yla",
      :description "r30Pt3K",
      :system-prompt "",
-     :source :plugin}
+     :source :project}
     {:agent-type "6L",
      :description "BD50LaXa1kZ2",
      :system-prompt "DUF1a46Q",
-     :source :user}]
+     :source :plugin}]
    [{:agent-type "p7C",
      :description "",
      :system-prompt "A",
@@ -177,7 +177,7 @@
     {:agent-type "7860x8bA",
      :description "le1hlH3",
      :system-prompt "hIV5",
-     :source :project}
+     :source :user}
     {:agent-type "h8FE11of",
      :description "",
      :system-prompt "ve6735k867S",
@@ -195,11 +195,11 @@
    {:agent-type "AvJw8h",
     :description "",
     :system-prompt "ayh3ZsMTZC0v",
-    :source :project}
+    :source :user}
    {:agent-type "b3",
     :description "36",
     :system-prompt "AJECmVZDB9j",
-    :source :plugin}
+    :source :project}
    {:agent-type "VD",
     :description "D3n",
     :system-prompt "kV0",
@@ -207,15 +207,15 @@
    {:agent-type "Bgxc6Qq",
     :description "hpQ01k1",
     :system-prompt "EWio5h",
-    :source :user}
+    :source :plugin}
    {:agent-type "7",
     :description "R0t29vP20",
     :system-prompt "aDSSCD1piwV",
-    :source :plugin}
+    :source :project}
    {:agent-type "a6Z",
     :description "ar7N06Pkbiu",
     :system-prompt "6K",
-    :source :project}
+    :source :user}
    {:agent-type "6",
     :description "qUtv",
     :system-prompt "Y3d3p",
@@ -223,20 +223,20 @@
    {:agent-type "m7o",
     :description "6dKRdup6p0XN",
     :system-prompt "BHY58Yu6",
-    :source :plugin}],
+    :source :project}],
   :in
   ([{:agent-type "7",
      :description "R0t29vP20",
      :system-prompt "aDSSCD1piwV",
-     :source :plugin}
+     :source :project}
     {:agent-type "b3",
      :description "36",
      :system-prompt "AJECmVZDB9j",
-     :source :plugin}
+     :source :project}
     {:agent-type "a6Z",
      :description "ar7N06Pkbiu",
      :system-prompt "6K",
-     :source :project}
+     :source :user}
     {:agent-type "VD",
      :description "D3n",
      :system-prompt "kV0",
@@ -244,7 +244,7 @@
     {:agent-type "AvJw8h",
      :description "",
      :system-prompt "ayh3ZsMTZC0v",
-     :source :project}
+     :source :user}
     {:agent-type "6",
      :description "qUtv",
      :system-prompt "Y3d3p",
@@ -256,11 +256,11 @@
     {:agent-type "m7o",
      :description "6dKRdup6p0XN",
      :system-prompt "BHY58Yu6",
-     :source :plugin}
+     :source :project}
     {:agent-type "Bgxc6Qq",
      :description "hpQ01k1",
      :system-prompt "EWio5h",
-     :source :user}])},
+     :source :plugin}])},
  :case-5
  {:out
   [{:agent-type "z8g",
@@ -274,20 +274,20 @@
    {:agent-type "5iVx6",
     :description "U",
     :system-prompt "4QOXO",
-    :source :project}
+    :source :user}
    {:agent-type "caT",
     :description "7RjE",
     :system-prompt "5Qt5",
-    :source :project}
+    :source :user}
    {:agent-type "b5ZB",
     :description "019D002gN02G",
     :system-prompt "7klCNx6ORt5",
-    :source :project}],
+    :source :user}],
   :in
   ([{:agent-type "5iVx6",
      :description "U",
      :system-prompt "4QOXO",
-     :source :project}
+     :source :user}
     {:agent-type "z8g",
      :description "9fTnjUi7tR5",
      :system-prompt "C9",
@@ -299,30 +299,30 @@
     {:agent-type "caT",
      :description "7RjE",
      :system-prompt "5Qt5",
-     :source :project}
+     :source :user}
     {:agent-type "b5ZB",
      :description "019D002gN02G",
      :system-prompt "7klCNx6ORt5",
-     :source :project}])},
+     :source :user}])},
  :case-6
  {:out
-  [{:agent-type "j2v1zh",
-    :description "8Zf",
-    :system-prompt "NF",
-    :source :plugin}
-   {:agent-type "M",
+  [{:agent-type "M",
     :description "7HWV995",
     :system-prompt "d6n7rq",
-    :source :user}],
+    :source :plugin}
+   {:agent-type "j2v1zh",
+    :description "8Zf",
+    :system-prompt "NF",
+    :source :project}],
   :in
   ([{:agent-type "j2v1zh",
      :description "8Zf",
      :system-prompt "NF",
-     :source :plugin}]
+     :source :project}]
    [{:agent-type "M",
      :description "7HWV995",
      :system-prompt "d6n7rq",
-     :source :user}])},
+     :source :plugin}])},
  :case-7
  {:out
   [{:agent-type "SRH42W8",
@@ -332,24 +332,24 @@
    {:agent-type "tVGKrRS",
     :description "Gol",
     :system-prompt "4lIebK4AV",
-    :source :project}
+    :source :user}
    {:agent-type "0B",
     :description "Z",
     :system-prompt "g3",
-    :source :project}
+    :source :user}
    {:agent-type "CI2",
     :description "sAgl2G0",
     :system-prompt "VnlTyHR",
-    :source :project}],
+    :source :user}],
   :in
   ([{:agent-type "tVGKrRS",
      :description "Gol",
      :system-prompt "4lIebK4AV",
-     :source :project}
+     :source :user}
     {:agent-type "0B",
      :description "Z",
      :system-prompt "g3",
-     :source :project}]
+     :source :user}]
    [{:agent-type "SRH42W8",
      :description "MPw0ko1K",
      :system-prompt "FQAve8Sau",
@@ -357,4 +357,4 @@
     {:agent-type "CI2",
      :description "sAgl2G0",
      :system-prompt "VnlTyHR",
-     :source :project}])}}
+     :source :user}])}}

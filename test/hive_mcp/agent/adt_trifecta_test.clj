@@ -4,7 +4,6 @@
    [:maybe ADT] result is driven directly: a variant keyword must produce a
    value that validates against the ADT schema, and anything else nil."
   (:require [clojure.test :refer [deftest is testing]]
-            [hive-mcp.agent.runtime-schema :as schema]
             [hive-mcp.agent.session-state :as ss]
             [hive-mcp.agent.spawn-mode :as sm]
             [hive-schemas.coverage :refer [deftest-contract-coverage]]
@@ -17,21 +16,21 @@
 
 (def StateInput
   "Keywords and strings, valid or not, as from-keyword receives them."
-  [:or schema/SessionStateKw
+  [:or ss/SessionStateKw
    [:enum "session/idle" "session/running" "bogus" nil 1]
    :keyword])
 
 (deftrifecta-from-schema session-from-keyword-trifecta
   hive-mcp.agent.session-state/from-keyword
-  {:in schema/SessionStateKw
-   :out schema/SessionState
+  {:in ss/SessionStateKw
+   :out ss/SessionState
    :rel (fn [k out] (= k (ss/to-keyword out)))
    :golden-path "test/golden/agent/session-from-keyword.edn"
    :num-tests 100})
 
 (deftrifecta-from-schema session-terminal-trifecta
   hive-mcp.agent.session-state/terminal?
-  {:in schema/SessionState
+  {:in ss/SessionState
    :out :boolean
    :rel (fn [s out] (and (= out (contains? ss/terminal-states (ss/to-keyword s)))
                          (not= out (ss/active? s))))
@@ -39,14 +38,14 @@
 
 (deftrifecta-from-schema spawn-mode-from-keyword-trifecta
   hive-mcp.agent.spawn-mode/from-keyword
-  {:in schema/SpawnModeKw
-   :out schema/SpawnMode
+  {:in sm/SpawnModeKw
+   :out sm/SpawnModeValue
    :rel (fn [k out] (= k (sm/to-keyword out)))
    :golden-path "test/golden/agent/spawn-mode-from-keyword.edn"})
 
 (deftrifecta-from-schema spawn-mode-metadata-trifecta
   hive-mcp.agent.spawn-mode/requires-emacs?
-  {:in schema/SpawnMode
+  {:in sm/SpawnModeValue
    :out :boolean
    :rel (fn [s out] (= out (contains? sm/emacs-variants (sm/to-keyword s))))
    :golden-path "test/golden/agent/spawn-mode-requires-emacs.edn"})
@@ -55,12 +54,12 @@
   (testing "arm 1: a member yields an ADT value and no other arm validates it"
     (doseq [k (:variants ss/AgentSessionState)]
       (let [v (ss/from-keyword k)]
-        (is (m/validate schema/SessionState v))
-        (is (not (m/validate schema/SpawnMode v)))
+        (is (m/validate ss/SessionState v))
+        (is (not (m/validate sm/SpawnModeValue v)))
         (is (= v (ss/from-keyword (subs (str k) 1))) "strings coerce too")))
     (doseq [k (:variants sm/SpawnMode)]
-      (is (m/validate schema/SpawnMode (sm/from-keyword k)))
-      (is (not (m/validate schema/SessionState (sm/from-keyword k))))))
+      (is (m/validate sm/SpawnModeValue (sm/from-keyword k)))
+      (is (not (m/validate ss/SessionState (sm/from-keyword k))))))
   (testing "arm 2: anything else is nil"
     (doseq [bad [:bogus "bogus" nil 1 {} :hive-agent]]
       (is (nil? (ss/from-keyword bad)))

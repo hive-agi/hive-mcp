@@ -8,7 +8,6 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.agent.provider :as p]
             [hive-mcp.agent.registry :as reg]
-            [hive-mcp.agent.runtime-schema :as schema]
             [hive-schemas.coverage :refer [deftest-contract-coverage]]
             [hive-schemas.test :refer [deftrifecta-from-schema]]
             [hive-test.golden :as golden]
@@ -37,7 +36,6 @@
           (and (every? #(not (contains? % :handler)) out)
                (= (count out)
                   (if names (count (filter (set seeded) (distinct names))) (count seeded)))))
-   :mutation false
    :num-tests 100})
 
 (deftrifecta-from-schema get-tool-trifecta
@@ -45,7 +43,6 @@
   {:in [:enum "alpha" "beta" "delta"]
    :out [:maybe [:map-of :any :any]]
    :rel (fn [n out] (= (some? out) (boolean (some #{n} seeded))))
-   :mutation false
    :num-tests 30})
 
 (deftest registry-tools-and-agents

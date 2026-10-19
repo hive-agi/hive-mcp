@@ -4,7 +4,6 @@
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is]]
             [hive-mcp.agent.hints.domain :as d]
-            [hive-mcp.agent.hints.schema :as schema]
             [hive-schemas.coverage :refer [deftest-contract-coverage]]
             [hive-schemas.test :refer [deftrifecta-from-schema]]
             [hive-test.golden :as golden]))
@@ -28,7 +27,7 @@
 (deftrifecta-from-schema read-id-section-trifecta
   hive-mcp.agent.hints.domain/read-id-section
   {:in Ids
-   :out schema/Section
+   :out d/Section
    :rel roundtrips?
    :golden-path "test/golden/agent/hints-read-id-section.edn"
    :num-tests 200})
@@ -36,7 +35,7 @@
 (deftrifecta-from-schema axiom-section-trifecta
   hive-mcp.agent.hints.domain/axiom-section
   {:in Ids
-   :out schema/Section
+   :out d/Section
    :rel (fn [ids out]
           (if (empty? ids)
             (nil? out)
@@ -54,7 +53,7 @@
 
 (deftrifecta-from-schema meaningful-tags-trifecta
   hive-mcp.agent.hints.domain/meaningful-tags
-  {:in schema/Strings
+  {:in d/Strings
    :out [:vector :string]
    :rel (fn [tags out]
           (and (every? #(not (or (str/starts-with? % "scope:")
@@ -71,7 +70,7 @@
 (deftrifecta-from-schema query-section-trifecta
   hive-mcp.agent.hints.domain/query-section
   {:in [:vector {:max 6} [:string {:min 1 :gen/fmap (fn [s] (apply str "q" (filter #(Character/isLetterOrDigit ^char %) s)))}]]
-   :out schema/Section
+   :out d/Section
    :rel (fn [qs out]
           (if (empty? qs)
             (nil? out)

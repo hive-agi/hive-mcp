@@ -18,12 +18,12 @@
    {:agent-type "Vu3Wd",
     :description "zde0upI",
     :system-prompt "7R28yK9",
-    :source :user}},
+    :source :plugin}},
   :in
   {:agent-type "Vu3Wd",
    :description "zde0upI",
    :system-prompt "7R28yK9",
-   :source :user}},
+   :source :plugin}},
  :case-2
  {:out
   {:valid true,
@@ -31,12 +31,12 @@
    {:agent-type "fk",
     :description "SPGTs3CY",
     :system-prompt "w1",
-    :source :project}},
+    :source :user}},
   :in
   {:agent-type "fk",
    :description "SPGTs3CY",
    :system-prompt "w1",
-   :source :project}},
+   :source :user}},
  :case-3
  {:out
   {:valid true,
@@ -44,12 +44,12 @@
    {:agent-type "j62",
     :description "",
     :system-prompt "769zs",
-    :source :project}},
+    :source :user}},
   :in
   {:agent-type "j62",
    :description "",
    :system-prompt "769zs",
-   :source :project}},
+   :source :user}},
  :case-4
  {:out
   {:valid true,

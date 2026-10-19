@@ -4,7 +4,6 @@
    Datalevin) so the properties reach the digest and matcher branches."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [hive-mcp.agent.runtime-schema :as schema]
             [hive-mcp.agent.transcript-insight :as ti]
             [hive-mcp.agent.transcript-source :as ts]
             [hive-schemas.coverage :refer [deftest-contract-coverage]]
@@ -114,11 +113,11 @@
   (let [sub (ti/compile-needle "Foo.bar") rx (ti/compile-needle "/fo+/i") bad (ti/compile-needle "/(/") blank (ti/compile-needle "")]
     (is (= :substring (:kind sub)))
     (is (= :regex (:kind rx)))
-    (is (m/validate schema/Needle sub))
-    (is (m/validate schema/Needle rx))
+    (is (m/validate ti/Needle sub))
+    (is (m/validate ti/Needle rx))
     (is (string? (:error bad)))
     (is (string? (:error blank)))
-    (is (m/validate schema/Needle bad))
+    (is (m/validate ti/Needle bad))
     (is (some? (re-find (:pattern sub) "xFOO.BARx")) "substring is quoted and case-insensitive")
     (is (nil? (re-find (:pattern sub) "fooXbar")))))
 

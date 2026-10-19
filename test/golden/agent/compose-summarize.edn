@@ -6,26 +6,26 @@
    :system-prompt "q5y0",
    :source :built-in}},
  :case-1
- {:out "Vu3Wd (user) — zde0upI",
+ {:out "Vu3Wd (plugin) — zde0upI",
   :in
   {:agent-type "Vu3Wd",
    :description "zde0upI",
    :system-prompt "7R28yK9",
-   :source :user}},
+   :source :plugin}},
  :case-2
- {:out "fk (project) — SPGTs3CY",
+ {:out "fk (user) — SPGTs3CY",
   :in
   {:agent-type "fk",
    :description "SPGTs3CY",
    :system-prompt "w1",
-   :source :project}},
+   :source :user}},
  :case-3
- {:out "j62 (project) — ",
+ {:out "j62 (user) — ",
   :in
   {:agent-type "j62",
    :description "",
    :system-prompt "769zs",
-   :source :project}},
+   :source :user}},
  :case-4
  {:out "24b60776 (built-in) — m2ZWrABgwKQc",
   :in

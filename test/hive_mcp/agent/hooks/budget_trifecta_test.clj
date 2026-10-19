@@ -3,7 +3,6 @@
    the malli contracts, plus unit tests for the stateful ledger."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.agent.hooks.budget :as b]
-            [hive-mcp.agent.hooks.schema :as schema]
             [hive-schemas.coverage :refer [deftest-contract-coverage]]
             [hive-schemas.test :refer [deftrifecta-from-schema]]
             [hive-test.golden :as golden]))

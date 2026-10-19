@@ -1,10 +1,9 @@
 (ns hive-mcp.agent.ring-buffer-trifecta-test
   "Facets for the stdout/stderr ring buffer, derived from its malli contracts.
-   The :in schemas generate ATOMS (runtime-schema/RingBuffer), so the derived
+   The :in schemas generate ATOMS (ring-buffer/RingBuffer), so the derived
    goldens are off and a hand-built golden over plain values pins behaviour."
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.agent.ring-buffer :as rb]
-            [hive-mcp.agent.runtime-schema :as schema]
             [hive-schemas.coverage :refer [deftest-contract-coverage]]
             [hive-schemas.test :refer [deftrifecta-from-schema]]
             [hive-test.golden :as golden]))
@@ -15,8 +14,8 @@
 
 (deftrifecta-from-schema ring-buffer-stats-trifecta
   hive-mcp.agent.ring-buffer/ring-buffer-stats
-  {:in schema/RingBuffer
-   :out schema/BufferStats
+  {:in rb/RingBuffer
+   :out rb/BufferStats
    :rel (fn [buf stats]
           (and (= (count (:lines @buf)) (:current-lines stats))
                (= (:capacity @buf) (:capacity stats))
@@ -25,7 +24,7 @@
 
 (deftrifecta-from-schema ring-buffer-contents-trifecta
   hive-mcp.agent.ring-buffer/ring-buffer-contents
-  {:in schema/RingBuffer
+  {:in rb/RingBuffer
    :out [:vector :any]
    :rel (fn [buf out] (= out (:lines @buf)))
    :mutation false
@@ -33,8 +32,8 @@
 
 (deftrifecta-from-schema ring-buffer-contents-since-trifecta
   hive-mcp.agent.ring-buffer/ring-buffer-contents-since
-  {:in [:cat schema/RingBuffer [:int {:min 0 :max 1000000}]]
-   :out [:vector schema/LineEntry]
+  {:in [:cat rb/RingBuffer [:int {:min 0 :max 1000000}]]
+   :out [:vector rb/LineEntry]
    :rel (fn [[buf since] out]
           (let [{:keys [lines timestamps]} @buf
                 expected (vec (for [[l t] (map vector lines timestamps) :when (> t since)] {:text l :ts t}))]
@@ -44,8 +43,8 @@
 
 (deftrifecta-from-schema ring-buffer-append-trifecta
   hive-mcp.agent.ring-buffer/ring-buffer-append!
-  {:in [:cat schema/RingBuffer :string]
-   :out schema/BufferState
+  {:in [:cat rb/RingBuffer :string]
+   :out rb/BufferState
    :rel (fn [[buf line] st]
           (and (= line (peek (:lines st)))
                (<= (count (:lines st)) (:capacity st))

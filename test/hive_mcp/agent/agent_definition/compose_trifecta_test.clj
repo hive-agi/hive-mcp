@@ -7,7 +7,7 @@
             [clojure.test :refer [deftest is testing]]
             [hive-mcp.agent.agent-definition.compose :as c]
             [hive-mcp.agent.agent-definition.frontmatter :as fm]
-            [hive-mcp.agent.agent-definition.schema :as schema]
+            [hive-mcp.agent.agent-definition.spec :as spec]
             [hive-mcp.agent.agent-definition.validate :as v]
             [hive-schemas.coverage :refer [deftest-contract-coverage]]
             [hive-schemas.test :refer [deftrifecta-from-schema]]
@@ -23,7 +23,7 @@
    [:agent-type [:string {:min 1 :max 8}]]
    [:description [:string {:max 12}]]
    [:system-prompt [:string {:max 12}]]
-   [:source schema/Source]])
+   [:source spec/Source]])
 
 (def Defs [:vector {:max 6} Def])
 
@@ -35,7 +35,6 @@
           (and (str/starts-with? s (:agent-type d))
                (str/includes? s (str "(" (name (:source d)) ")"))
                (str/ends-with? s (:description d))))
-   :mutation false
    :golden-path "test/golden/agent/compose-summarize.edn"})
 
 (deftrifecta-from-schema merge-definitions-trifecta
@@ -54,16 +53,14 @@
                                                       (concat a b))))
                               (prio (:source d))))
                          out))))
-   :mutation false
    :golden-path "test/golden/agent/compose-merge-definitions.edn"
    :num-tests 200})
 
 (deftrifecta-from-schema validate-trifecta
   hive-mcp.agent.agent-definition.validate/validate
   {:in Def
-   :out schema/Validation
+   :out spec/Validation
    :rel (fn [d r] (and (true? (:valid r)) (= d (:data r))))
-   :mutation false
    :golden-path "test/golden/agent/validate-valid.edn"})
 
 (deftest validate-rejects-and-explains

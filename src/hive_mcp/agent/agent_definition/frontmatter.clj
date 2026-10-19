@@ -13,7 +13,7 @@
   (:require [clj-yaml.core :as yaml]
             [clojure.string :as str]
             [malli.core :as m]
-            [hive-mcp.agent.agent-definition.schema :as schema]))
+            [hive-mcp.agent.agent-definition.spec :as spec]))
 
 ;; =============================================================================
 ;; Raw Frontmatter Split
@@ -216,9 +216,9 @@
             filename     (assoc :filename filename)
             base-dir     (assoc :base-dir base-dir)))))))
 
-(m/=> parse-frontmatter [:=> [:cat :string] schema/FrontmatterResult])
+(m/=> parse-frontmatter [:=> [:cat :string] spec/FrontmatterResult])
 
 (m/=> frontmatter->agent-def
       [:function
-       [:=> [:cat [:maybe schema/AnyMap] :string :any] schema/CoerceResult]
-       [:=> [:cat [:maybe schema/AnyMap] :string :any [:maybe [:map-of :any :any]]] schema/CoerceResult]])
+       [:=> [:cat [:maybe spec/AnyMap] :string :any] spec/CoerceResult]
+       [:=> [:cat [:maybe spec/AnyMap] :string :any [:maybe [:map-of :any :any]]] spec/CoerceResult]])

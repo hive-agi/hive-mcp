@@ -16,8 +16,7 @@
             [clojure.string :as str]
             [hive-mcp.agent.agent-definition.frontmatter :as fm]
             [hive-mcp.agent.agent-definition.spec :as spec]
-            [malli.core :as m]
-            [hive-mcp.agent.agent-definition.schema :as schema]))
+            [malli.core :as m]))
 
 ;; Re-export the two pure frontmatter entry points so the façade (and any
 ;; external caller holding an `ad/` alias) can keep using them here.
@@ -233,36 +232,36 @@
 
 (m/=> load-agent-file
       [:function
-       [:=> [:cat :any :any] schema/LoadResult]
-       [:=> [:cat :any :any [:maybe [:map-of :any :any]]] schema/LoadResult]])
+       [:=> [:cat :any :any] spec/LoadResult]
+       [:=> [:cat :any :any [:maybe [:map-of :any :any]]] spec/LoadResult]])
 
-(m/=> load-agents-dir [:=> [:cat :any :any] schema/LoadedDir])
+(m/=> load-agents-dir [:=> [:cat :any :any] spec/LoadedDir])
 
 (m/=> find-agent-dirs
-      [:=> [:cat :any] [:vector [:tuple :string schema/Source]]])
+      [:=> [:cat :any] [:vector [:tuple :string spec/Source]]])
 
-(m/=> load-all-custom-agents [:=> [:cat :any] schema/LoadedDir])
+(m/=> load-all-custom-agents [:=> [:cat :any] spec/LoadedDir])
 
 (m/=> merge-definitions
-      [:=> [:cat [:* [:maybe schema/Definitions]]] [:vector schema/AnyMap]])
+      [:=> [:cat [:* [:maybe spec/Definitions]]] [:vector spec/AnyMap]])
 
 (m/=> active-agents
       [:function
-       [:=> [:cat [:maybe schema/Definitions] :any] schema/ActiveAgents]
-       [:=> [:cat [:maybe schema/Definitions] :any [:maybe [:map-of :any :any]]] schema/ActiveAgents]])
+       [:=> [:cat [:maybe spec/Definitions] :any] spec/ActiveAgents]
+       [:=> [:cat [:maybe spec/Definitions] :any [:maybe [:map-of :any :any]]] spec/ActiveAgents]])
 
-(m/=> find-by-type [:=> [:cat :any [:maybe schema/Definitions]] [:maybe schema/AnyMap]])
+(m/=> find-by-type [:=> [:cat :any [:maybe spec/Definitions]] [:maybe spec/AnyMap]])
 
-(m/=> built-in? [:=> [:cat [:maybe schema/AnyMap]] :boolean])
+(m/=> built-in? [:=> [:cat [:maybe spec/AnyMap]] :boolean])
 
-(m/=> custom? [:=> [:cat [:maybe schema/AnyMap]] [:maybe :keyword]])
+(m/=> custom? [:=> [:cat [:maybe spec/AnyMap]] [:maybe :keyword]])
 
-(m/=> plugin? [:=> [:cat [:maybe schema/AnyMap]] :boolean])
+(m/=> plugin? [:=> [:cat [:maybe spec/AnyMap]] :boolean])
 
-(m/=> has-all-tools? [:=> [:cat [:maybe schema/AnyMap]] :boolean])
+(m/=> has-all-tools? [:=> [:cat [:maybe spec/AnyMap]] :boolean])
 
-(m/=> get-system-prompt [:=> [:cat [:maybe schema/AnyMap]] :any])
+(m/=> get-system-prompt [:=> [:cat [:maybe spec/AnyMap]] :any])
 
-(m/=> summarize [:=> [:cat [:maybe schema/AnyMap]] :string])
+(m/=> summarize [:=> [:cat [:maybe spec/AnyMap]] :string])
 
-(m/=> list-summary [:=> [:cat [:maybe schema/Definitions]] :string])
+(m/=> list-summary [:=> [:cat [:maybe spec/Definitions]] :string])
