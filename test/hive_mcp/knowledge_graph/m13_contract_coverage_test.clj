@@ -5,6 +5,7 @@
   {:paths [
            "src/hive_mcp/knowledge_graph/conn_init.clj"
            "src/hive_mcp/knowledge_graph/connection/detect.clj"
+           "src/hive_mcp/knowledge_graph/connection/store.clj"
            "src/hive_mcp/knowledge_graph/connection/strategy.clj"
            "src/hive_mcp/knowledge_graph/connection/temporal.clj"
            "src/hive_mcp/knowledge_graph/connection/writer.clj"
@@ -17,6 +18,7 @@
            "src/hive_mcp/knowledge_graph/queries.clj"
            "src/hive_mcp/knowledge_graph/schema.clj"
            "src/hive_mcp/knowledge_graph/scope.clj"
+           "src/hive_mcp/knowledge_graph/slots.clj"
            "src/hive_mcp/knowledge_graph/synth.clj"
            "src/hive_mcp/knowledge_graph/versioning.clj"
           ]

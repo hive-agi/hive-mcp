@@ -474,7 +474,7 @@
      :branches nil}))
 
 (m/=> versioning-available? [:=> [:cat] :boolean])
-(m/=> create-versioned-store [:=> [:cat :map] [:maybe [:map [:store :any] [:system :any]]]])
+(m/=> create-versioned-store [:function [:=> [:cat] [:maybe [:map [:store :any] [:system :any]]]] [:=> [:cat [:maybe :map]] [:maybe [:map [:store :any] [:system :any]]]]])
 (m/=> get-versioned-system [:=> [:cat] :any])
 (m/=> set-versioned-system! [:=> [:cat :any] :any])
 (m/=> branches [:=> [:cat] [:maybe [:set :keyword]]])
@@ -486,7 +486,7 @@
 (m/=> parent-ids [:=> [:cat] [:maybe [:set :string]]])
 (m/=> snapshot-meta [:=> [:cat :string] [:maybe :map]])
 (m/=> as-of [:=> [:cat :string] :any])
-(m/=> history [:=> [:cat :map] [:maybe [:vector :string]]])
+(m/=> history [:function [:=> [:cat] [:maybe [:vector :string]]] [:=> [:cat [:maybe :map]] [:maybe [:vector :string]]]])
 (m/=> ancestors [:=> [:cat :string] [:maybe [:vector :string]]])
 (m/=> ancestor? [:=> [:cat :string :string] [:maybe :boolean]])
 (m/=> common-ancestor [:=> [:cat :string :string] [:maybe :string]])

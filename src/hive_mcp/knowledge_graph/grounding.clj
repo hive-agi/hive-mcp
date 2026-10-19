@@ -258,4 +258,4 @@
 (m/=> needs-regrounding? [:=> [:cat :map [:int {:min 0}]] :boolean])
 (m/=> reground-entry! [:=> [:cat :string] :map])
 (m/=> reground-batch! [:=> [:cat [:sequential :string]] [:map [:total [:int {:min 0}]] [:by-status :map] [:results [:sequential :map]] [:drifted-entries [:sequential :string]]]])
-(m/=> backfill-grounding! [:=> [:cat :map] [:map [:total-scanned [:int {:min 0}]] [:with-source [:int {:min 0}]] [:processed [:int {:min 0}]] [:by-status :map] [:drifted-entries [:sequential :string]]]])
+(m/=> backfill-grounding! [:function [:=> [:cat] [:or [:map [:total-scanned [:int {:min 0}]] [:with-source [:int {:min 0}]] [:processed [:int {:min 0}]] [:by-status :map] [:drifted-entries [:sequential :string]]] [:map [:error [:maybe :string]] [:total-scanned [:= 0]] [:processed [:= 0]]]]] [:=> [:cat [:maybe :map]] [:or [:map [:total-scanned [:int {:min 0}]] [:with-source [:int {:min 0}]] [:processed [:int {:min 0}]] [:by-status :map] [:drifted-entries [:sequential :string]]] [:map [:error [:maybe :string]] [:total-scanned [:= 0]] [:processed [:= 0]]]]]])
