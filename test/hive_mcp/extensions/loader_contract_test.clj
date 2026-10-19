@@ -1,8 +1,7 @@
 (ns hive-mcp.extensions.loader-contract-test
   "Contract facets for the extension loader's pure boot-health projection and
    its mount event logger. The probe ids are never mounted in this JVM."
-  (:require [clojure.test :refer [deftest is]]
-            [hive-mcp.extensions.loader :as loader]
+  (:require [hive-mcp.extensions.loader :as loader]
             [hive-schemas.test :refer [deftrifecta-from-schema]]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
