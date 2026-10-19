@@ -237,7 +237,7 @@
 (deftest lifecycle-contract-test
   (is (keyword? (lifecycle/default-spawn-mode)))
   (is (nil? (lifecycle/resolve-api-key-for-provider :no-such-provider)))
-  (is (nil? (lifecycle/resolve-api-key-for-provider nil)))
+  (is (nil? (lifecycle/resolve-api-key-for-provider "no-such-provider")))
   (testing "an unregistered mode throws, naming what is registered"
     (let [e (try (lifecycle/resolve-strategy :zz-unregistered) nil
                  (catch clojure.lang.ExceptionInfo e e))]
