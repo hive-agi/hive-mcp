@@ -1,0 +1,1 @@
+{:memory {:default-store :chroma}, :project-roots ["/tmp"]}

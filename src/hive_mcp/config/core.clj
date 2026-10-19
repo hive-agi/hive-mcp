@@ -9,7 +9,8 @@
             [hive-mcp.config.schema :as schema]
             [hive-dsl.result :as result]
             [taoensso.timbre :as log]
-            [hive-mcp.config.source :as src]))
+            [hive-mcp.config.source :as src]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -298,3 +299,43 @@
   "Reset the cached config to nil. Useful for testing."
   []
   (reset! global-config nil))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+;; Config values are user data: accessors that return an arbitrary leaf
+;; (get-in-config, get-config-value, get-service-value, get-secret,
+;; get-parent-for-path) promise no shape beyond what the config file holds.
+;; Validation at load is warn-only, so container outputs are only as tight as
+;; the shapes the default config guarantees.
+
+(def ^:private ProjectId
+  "A project id as callers pass it: a string, a keyword, or nil when unknown."
+  [:maybe [:or :string :keyword]])
+
+(m/=> load-global-config! [:function
+                           [:=> [:cat] :map]
+                           [:=> [:cat :string] :map]])
+(m/=> get-global-config [:=> [:cat] :map])
+(m/=> get-project-roots [:=> [:cat] [:maybe [:sequential :string]]])
+(m/=> get-defaults [:=> [:cat] [:maybe :map]])
+(m/=> get-project-overrides [:=> [:cat ProjectId] [:maybe :map]])
+(m/=> get-project-config [:=> [:cat ProjectId] [:maybe :map]])
+(m/=> get-parent-rules [:=> [:cat] [:maybe [:sequential :map]]])
+(m/=> get-parent-for-path [:=> [:cat [:maybe :string]] :any])
+(m/=> get-memory-config [:=> [:cat] [:maybe :map]])
+(m/=> get-memory-route [:=> [:cat :any] [:maybe schema/RouteTarget]])
+(m/=> get-memory-store [:=> [:cat :any] [:maybe :map]])
+(m/=> get-kanban-store-mode [:=> [:cat] schema/KanbanStoreMode])
+(m/=> get-in-config [:=> [:cat [:sequential :any]] :any])
+(m/=> get-service-config [:=> [:cat :keyword] [:maybe :map]])
+(m/=> get-service-mode [:=> [:cat :keyword] [:or :keyword :string]])
+(m/=> get-service-value [:=> [:cat :keyword :keyword [:* :any]] :any])
+(m/=> get-secret [:=> [:cat :keyword] :any])
+(m/=> parse-key-path [:=> [:cat [:maybe :string]] [:maybe [:vector :keyword]]])
+(m/=> get-config-value [:=> [:cat [:maybe :string]] :any])
+(m/=> set-config-value! [:function
+                         [:=> [:cat :string :any] :map]
+                         [:=> [:cat :string :any :string] :map]])
+(m/=> update-in-config! [:=> [:cat [:sequential :any] ifn? [:* :any]] :map])
+(m/=> reset-config! [:=> [:cat] :nil])
