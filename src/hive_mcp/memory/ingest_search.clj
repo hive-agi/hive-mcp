@@ -1,4 +1,5 @@
-(ns hive-mcp.memory.ingest-search)
+(ns hive-mcp.memory.ingest-search
+  (:require [malli.core :as m]))
 
 (declare resolve-ingest-search normalize-ingest-results merge-and-rerank)
 
@@ -15,6 +16,8 @@
    as \"no ingest search\"."
   []
   nil)
+
+(m/=> resolve-ingest-search [:=> [:cat] :nil])
 
 (defn normalize-ingest-results
   "Normalize ingest search results to match search-similar output shape."
@@ -38,6 +41,12 @@
          (remove nil?)
          vec)))
 
+(m/=> normalize-ingest-results
+      [:=> [:cat [:maybe [:sequential :map]]]
+       [:maybe [:vector [:map [:id :any] [:document :any]
+                              [:metadata :map] [:distance :double]
+                              [:collection [:maybe :string]]]]]])
+
 (defn merge-and-rerank
   "Merge two result sequences, deduplicate by :id keeping closest distance, sort ascending.
    Pure function — no IO."
@@ -57,3 +66,5 @@
        (sort-by #(or (:distance %) 999.0))
        (take limit)
        vec))
+
+(m/=> merge-and-rerank [:=> [:cat [:sequential [:map [:id :string] [:distance {:optional true} :double]]] [:sequential [:map [:id :string] [:distance {:optional true} :double]]] [:int {:min 0}]] [:vector :map]])
