@@ -1,0 +1,175 @@
+{:case-0
+ {:out
+  {:log
+   {:level :info,
+    :message "KG edge updated: q5y0 confidence changed to 0.5 (2F2)"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :updated,
+     :edge-id "q5y0",
+     :old-confidence nil,
+     :new-confidence 0.5,
+     :delta nil,
+     :reason "2F2",
+     :updated-by nil}}},
+  :in
+  ({}
+   [:kg/edge-updated
+    {:edge-id "q5y0", :new-confidence 0.5, :reason "2F2"}])},
+ :case-1
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG edge updated: 7R28yn confidence decreased by 1.00 to 0.0"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :updated,
+     :edge-id "7R28yn",
+     :old-confidence 1.0,
+     :new-confidence 0.0,
+     :delta -1.0,
+     :reason nil,
+     :updated-by nil}}},
+  :in
+  ({}
+   [:kg/edge-updated
+    {:edge-id "7R28yn", :old-confidence 1.0, :new-confidence 0.0}])},
+ :case-2
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG edge updated: w37 confidence decreased by 0.50 to 0.5 by b7Pq"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :updated,
+     :edge-id "w37",
+     :old-confidence 1.0,
+     :new-confidence 0.5,
+     :delta -0.5,
+     :reason nil,
+     :updated-by "b7Pq"}}},
+  :in
+  ({}
+   [:kg/edge-updated
+    {:edge-id "w37",
+     :old-confidence 1.0,
+     :new-confidence 0.5,
+     :updated-by "b7Pq"}])},
+ :case-3
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG edge updated: 769zs confidence changed to 1.0 (3HLVuR) by Wf8o84E5"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :updated,
+     :edge-id "769zs",
+     :old-confidence nil,
+     :new-confidence 1.0,
+     :delta nil,
+     :reason "3HLVuR",
+     :updated-by "Wf8o84E5"}}},
+  :in
+  ({}
+   [:kg/edge-updated
+    {:edge-id "769zs",
+     :new-confidence 1.0,
+     :reason "3HLVuR",
+     :updated-by "Wf8o84E5"}])},
+ :case-4
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG edge updated: Pf confidence decreased by 0.47 to 0.53125"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :updated,
+     :edge-id "Pf",
+     :old-confidence 1.0,
+     :new-confidence 0.53125,
+     :delta -0.46875,
+     :reason nil,
+     :updated-by nil}}},
+  :in
+  ({}
+   [:kg/edge-updated
+    {:edge-id "Pf", :old-confidence 1.0, :new-confidence 0.53125}])},
+ :case-5
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG edge updated: S93Yh confidence decreased by 0.38 to 0.5 (mPcJ8n) by tU171DSc"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :updated,
+     :edge-id "S93Yh",
+     :old-confidence 0.875,
+     :new-confidence 0.5,
+     :delta -0.375,
+     :reason "mPcJ8n",
+     :updated-by "tU171DSc"}}},
+  :in
+  ({}
+   [:kg/edge-updated
+    {:edge-id "S93Yh",
+     :old-confidence 0.875,
+     :new-confidence 0.5,
+     :reason "mPcJ8n",
+     :updated-by "tU171DSc"}])},
+ :case-6
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG edge updated: Bfv3hFEH confidence changed to 0.78125 (1RQxWK2Gc7) by VMtY"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :updated,
+     :edge-id "Bfv3hFEH",
+     :old-confidence nil,
+     :new-confidence 0.78125,
+     :delta nil,
+     :reason "1RQxWK2Gc7",
+     :updated-by "VMtY"}}},
+  :in
+  ({}
+   [:kg/edge-updated
+    {:edge-id "Bfv3hFEH",
+     :new-confidence 0.78125,
+     :reason "1RQxWK2Gc7",
+     :updated-by "VMtY"}])},
+ :case-7
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG edge updated: hLM4Q82 confidence unchanged by 0.00 to 1.0 (I1OwN5)"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :updated,
+     :edge-id "hLM4Q82",
+     :old-confidence 1.0,
+     :new-confidence 1.0,
+     :delta 0.0,
+     :reason "I1OwN5",
+     :updated-by nil}}},
+  :in
+  ({}
+   [:kg/edge-updated
+    {:edge-id "hLM4Q82",
+     :old-confidence 1.0,
+     :new-confidence 1.0,
+     :reason "I1OwN5"}])}}

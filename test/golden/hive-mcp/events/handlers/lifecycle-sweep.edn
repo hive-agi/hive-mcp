@@ -1,0 +1,40 @@
+{:case-0
+ {:out
+  {:lifecycle/sweep-fx {:atom-ids nil},
+   :log {:level :info, :message "Lifecycle sweep triggered"}},
+  :in ({} [:lifecycle/sweep nil])},
+ :case-1
+ {:out
+  {:lifecycle/sweep-fx {:atom-ids []},
+   :log {:level :info, :message "Lifecycle sweep triggered"}},
+  :in ({} [:lifecycle/sweep {:atom-ids []}])},
+ :case-2
+ {:out
+  {:lifecycle/sweep-fx {:atom-ids nil},
+   :log {:level :info, :message "Lifecycle sweep triggered"}},
+  :in ({} [:lifecycle/sweep {}])},
+ :case-3
+ {:out
+  {:lifecycle/sweep-fx {:atom-ids nil},
+   :log {:level :info, :message "Lifecycle sweep triggered"}},
+  :in ({} [:lifecycle/sweep {}])},
+ :case-4
+ {:out
+  {:lifecycle/sweep-fx {:atom-ids nil},
+   :log {:level :info, :message "Lifecycle sweep triggered"}},
+  :in ({} [:lifecycle/sweep nil])},
+ :case-5
+ {:out
+  {:lifecycle/sweep-fx {:atom-ids nil},
+   :log {:level :info, :message "Lifecycle sweep triggered"}},
+  :in ({} [:lifecycle/sweep nil])},
+ :case-6
+ {:out
+  {:lifecycle/sweep-fx {:atom-ids nil},
+   :log {:level :info, :message "Lifecycle sweep triggered"}},
+  :in ({} [:lifecycle/sweep nil])},
+ :case-7
+ {:out
+  {:lifecycle/sweep-fx {:atom-ids nil},
+   :log {:level :info, :message "Lifecycle sweep triggered"}},
+  :in ({} [:lifecycle/sweep nil])}}

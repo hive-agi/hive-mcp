@@ -1,0 +1,63 @@
+{:case-0
+ {:out
+  {:log
+   {:level :warn,
+    :message
+    "Agora dialogue q5y0 timed out (reason: unknown), turns: 1"}},
+  :in ({} [:agora/timeout {:dialogue-id "q5y0", :turn-count 1}])},
+ :case-1
+ {:out
+  {:log
+   {:level :warn,
+    :message
+    "Agora dialogue 7R28yn timed out (reason: max-turns), turns: 1"}},
+  :in
+  ({}
+   [:agora/timeout
+    {:dialogue-id "7R28yn", :reason :max-turns, :turn-count 1}])},
+ :case-2
+ {:out
+  {:log
+   {:level :warn,
+    :message
+    "Agora dialogue w37 timed out (reason: inactivity), turns: 1"}},
+  :in
+  ({}
+   [:agora/timeout
+    {:dialogue-id "w37", :reason :inactivity, :turn-count 1}])},
+ :case-3
+ {:out
+  {:log
+   {:level :warn,
+    :message "Agora dialogue 769zs timed out (reason: unknown)"}},
+  :in ({} [:agora/timeout {:dialogue-id "769zs"}])},
+ :case-4
+ {:out
+  {:log
+   {:level :warn,
+    :message "Agora dialogue Pf timed out (reason: max-turns)"}},
+  :in ({} [:agora/timeout {:dialogue-id "Pf", :reason :max-turns}])},
+ :case-5
+ {:out
+  {:log
+   {:level :warn,
+    :message
+    "Agora dialogue S93Yh timed out (reason: inactivity), turns: 7"}},
+  :in
+  ({}
+   [:agora/timeout
+    {:dialogue-id "S93Yh", :reason :inactivity, :turn-count 7}])},
+ :case-6
+ {:out
+  {:log
+   {:level :warn,
+    :message
+    "Agora dialogue Bfv3hFEH timed out (reason: unknown), turns: 3"}},
+  :in ({} [:agora/timeout {:dialogue-id "Bfv3hFEH", :turn-count 3}])},
+ :case-7
+ {:out
+  {:log
+   {:level :warn,
+    :message "Agora dialogue hLM4Q82 timed out (reason: inactivity)"}},
+  :in
+  ({} [:agora/timeout {:dialogue-id "hLM4Q82", :reason :inactivity}])}}
