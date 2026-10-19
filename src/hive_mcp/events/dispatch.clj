@@ -82,7 +82,7 @@
      :queue (vec interceptors)
      :stack []})))
 
-(mall/=> execute [:function [:=> [:cat [:vector :any] [:sequential :map]] :map] [:=> [:cat [:vector :any] [:sequential :map] :map] :map]])
+(mall/=> execute [:function [:=> [:cat [:vector :any] [:or [:sequential :map] [:set :map]]] :map] [:=> [:cat [:vector :any] [:or [:sequential :map] [:set :map]] :map] :map]])
 
 ;; =============================================================================
 ;; Effect Execution (with metrics tracking)

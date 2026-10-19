@@ -1,6 +1,7 @@
 (ns hive-mcp.events.registry-contract-test
   (:require [clojure.test :refer [deftest is]]
             [hive-mcp.events.registry :as registry]
+            [malli.instrument :as mi]
             [hive-schemas.test :refer [deftrifecta-from-schema]]))
 
 (deftrifecta-from-schema registry-membership
@@ -21,3 +22,15 @@
       (finally
         (registry/unreg-event event)))
     (is (false? (registry/handler-registered? event)))))
+
+(deftest reg-event-accepts-numeric-and-nil-interceptor-ids-under-instrumentation
+  (let [vs #{#'registry/reg-event}
+        event :m10/non-keyword-interceptor]
+    (mi/instrument! {:filters [(mi/-filter-var vs)]})
+    (try
+      (let [entry (registry/reg-event event [{:id 42} {:id nil}] (fn [_] {}))]
+        (is (map? entry))
+        (is (= [42 nil] (mapv :id (registry/get-interceptors event)))))
+      (finally
+        (registry/unreg-event event)
+        (mi/unstrument! {:filters [(mi/-filter-var vs)]})))))

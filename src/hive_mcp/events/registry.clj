@@ -39,7 +39,7 @@
   [event-id interceptors handler-fn]
   (router/reg-event-fx event-id interceptors handler-fn))
 
-(m/=> reg-event [:=> [:cat :keyword [:sequential [:map [:id :keyword]]] ifn?] :map])
+(m/=> reg-event [:=> [:cat :keyword [:sequential :map] ifn?] :map])
 
 (defn get-handler-entry
   "Return the registry entry for event-id, or nil."
