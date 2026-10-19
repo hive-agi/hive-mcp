@@ -6,7 +6,8 @@
             [hive-mcp.chroma.gate :as gate]
             [hive-mcp.chroma.helpers :as h]
             [hive-mcp.embeddings.service :as embedding-service]
-            [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]))
+            [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -67,6 +68,43 @@
   [entry doc-text]
   (let [embed-text (:embed-text entry)]
     (if (string? embed-text) embed-text doc-text)))
+
+(def EntryIn
+  "A memory entry to index. Only :content is read unconditionally; every
+   other field is optional and dropped from metadata when nil."
+  [:map
+   [:id {:optional true} [:maybe :string]]
+   [:content {:optional true} :any]
+   [:type {:optional true} [:maybe [:or :string :keyword]]]
+   [:tags {:optional true} [:maybe [:sequential :any]]]])
+
+(def Entry
+  "A memory entry read back from Chroma metadata (helpers/metadata->entry)."
+  [:map [:id :any] [:type :any] [:content :any] [:tags [:maybe [:vector :string]]]])
+
+(def EntryId
+  "A stored entry id."
+  :string)
+
+(def StalenessOpts
+  "Staleness fields, under the port names or their short spellings."
+  [:map
+   [:staleness-alpha {:optional true} :any]
+   [:staleness-beta {:optional true} :any]
+   [:staleness-source {:optional true} :any]
+   [:staleness-depth {:optional true} :any]
+   [:alpha {:optional true} :any]
+   [:beta {:optional true} :any]
+   [:source {:optional true} :any]
+   [:depth {:optional true} :any]])
+
+(def StalenessUpdates
+  "Entry updates carrying only the port-named staleness fields."
+  [:map {:closed true}
+   [:staleness-alpha {:optional true} some?]
+   [:staleness-beta {:optional true} some?]
+   [:staleness-source {:optional true} some?]
+   [:staleness-depth {:optional true} some?]])
 
 (defn index-memory-entry!
   "Index a memory entry in Chroma, returns entry ID.
@@ -147,6 +185,8 @@
     (log/debug "Indexed memory entry:" entry-id)
     entry-id))
 
+(m/=> index-memory-entry! [:=> [:cat EntryIn] EntryId])
+
 (defn index-memory-entries!
   "Index multiple memory entries in batch with full metadata.
    Uses the shared provider gate for the complete embed-batch call. Entries should have :id pre-set.
@@ -180,6 +220,8 @@
     (log/info "Indexed" (count entries) "memory entries in batch")
     (mapv :id entries)))
 
+(m/=> index-memory-entries! [:=> [:cat [:sequential EntryIn]] [:vector [:maybe EntryId]]])
+
 (defn get-entry-by-id
   "Get a memory entry by ID from Chroma. Searches default + large collections."
   [id]
@@ -197,6 +239,8 @@
                 lg-results (gate/deref-read (chroma/get lg-coll :ids [id] :include #{:documents :metadatas}))]
             (some-> (first lg-results) h/metadata->entry))))))
 
+(m/=> get-entry-by-id [:=> [:cat :any] [:maybe Entry]])
+
 (defn read-collections
   "Collections a read of TYPE must visit. With no embedder provider configured
    the type routing names no collection at all, yet writes still land in the
@@ -213,6 +257,8 @@
                            coll-names))
                    (catch Exception _ []))]
     (if (seq colls) (vec (distinct colls)) [(conn/get-or-create-collection)])))
+
+(m/=> read-collections [:=> [:cat [:maybe [:or :string :keyword]]] [:vector {:min 1} chroma/Coll]])
 
 (defn query-entries
   "Query memory entries from Chroma with filtering.
@@ -254,6 +300,8 @@
          (take limit)
          vec)))
 
+(m/=> query-entries [:=> [:cat [:* :any]] [:vector Entry]])
+
 (defn query-grounded-from
   "Query entries grounded from a specific disc path."
   [disc-path]
@@ -263,6 +311,8 @@
                                             :where {:grounded-from disc-path}
                                             :include #{:documents :metadatas}))]
     (map h/metadata->entry results)))
+
+(m/=> query-grounded-from [:=> [:cat :any] [:sequential Entry]])
 
 (defn update-entry!
   "Update a memory entry in Chroma by ID. The merged entry is re-indexed, so
@@ -275,6 +325,8 @@
     (let [merged (merge existing updates {:id id :updated (h/iso-timestamp)})
           _ (index-memory-entry! merged)]
       (get-entry-by-id id))))
+
+(m/=> update-entry! [:=> [:cat :any [:maybe :map]] [:maybe Entry]])
 
 (defn staleness-updates
   "Entry field updates for staleness OPTS. The port names the fields
@@ -291,11 +343,15 @@
          [:staleness-source :source]
          [:staleness-depth :depth]]))
 
+(m/=> staleness-updates [:=> [:cat [:maybe StalenessOpts]] StalenessUpdates])
+
 (defn update-staleness!
   "Update staleness fields for a Chroma entry."
   [entry-id opts]
   (emb/require-embedding!)
   (update-entry! entry-id (staleness-updates opts)))
+
+(m/=> update-staleness! [:=> [:cat :any [:maybe StalenessOpts]] [:maybe Entry]])
 
 (defn delete-entry!
   "Delete a memory entry from the Chroma index. Tries all collections."
@@ -310,6 +366,8 @@
         (gate/deref-write (chroma/delete lg-coll :ids [id]))))
     (log/debug "Deleted entry from Chroma:" id)
     id))
+
+(m/=> delete-entry! [:=> [:cat :any] :any])
 
 (defn find-duplicate
   "Find entry with matching content-hash in the given type.
@@ -334,6 +392,8 @@
                         colls)]
     (first (map h/metadata->entry results))))
 
+(m/=> find-duplicate [:=> [:cat [:maybe [:or :string :keyword]] [:maybe :string] [:* :any]] [:maybe Entry]])
+
 (defn collection-stats
   "Get statistics about the Chroma collection."
   []
@@ -344,6 +404,10 @@
        :types (frequencies (map #(get-in % [:metadata :type]) all-entries))})
     (catch Exception e
       {:error (str e)})))
+
+(m/=> collection-stats [:=> [:cat] [:or
+                                    [:map [:count [:int {:min 0}]] [:types [:map-of :any pos-int?]]]
+                                    [:map [:error :string]]]])
 
 (defn delete-all-entries!
   "Remove every entry from every collection a read could visit. Returns the
@@ -361,6 +425,7 @@
             0
             (read-collections nil))))
 
+<<<<<<< HEAD
 (def ^:private scan-page-size 1000)
 
 (def ^:private scan-attempts 3)
@@ -416,3 +481,6 @@
           (< n scan-attempts) (recur (inc n))
           :else (throw (ex-info "chroma scan-ids: consecutive passes never agreed"
                                 {:attempts n :first (count a) :second (count b)})))))))
+=======
+(m/=> delete-all-entries! [:=> [:cat] [:int {:min 0}]])
+>>>>>>> origin/staging

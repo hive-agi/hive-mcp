@@ -29,7 +29,8 @@
             [hive-mcp.protocols.delivery-channel :as dc]
             [hive-weave.safe :as ws]
             [taoensso.timbre :as log]
-            [hive-weave.pool :as wp]))
+            [hive-weave.pool :as wp]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -76,10 +77,14 @@
   []
   (cb/reset! *breakers))
 
+(m/=> reset-breakers! [:=> [:cat] :map])
+
 (defn breaker-snapshot
   "Diagnostic snapshot of every channel's breaker state."
   []
   (cb/snapshot *breakers))
+
+(m/=> breaker-snapshot [:=> [:cat] :map])
 
 ;; -----------------------------------------------------------------------------
 ;; Envelope tagging
@@ -96,6 +101,8 @@
      (assoc ::id (or id (str (random-uuid))))
      (nil? (::ts event))
      (assoc ::ts (System/currentTimeMillis)))))
+
+(m/=> wrap-envelope [:function [:=> [:cat :map] [:map [::id :string] [::ts :int]]] [:=> [:cat :map [:maybe :string]] [:map [::id :string] [::ts :int]]]])
 
 ;; -----------------------------------------------------------------------------
 ;; Telemetry
@@ -235,3 +242,5 @@
                                      (assoc acc chan-id :exception))))))))))
       {}
       (dc/get-channels)))))
+
+(m/=> fanout! [:function [:=> [:cat :map] [:map-of :keyword [:enum :ok :timeout :exception :breaker-open :unavailable :unavailable-throw]]] [:=> [:cat :map [:maybe :map]] [:map-of :keyword [:enum :ok :timeout :exception :breaker-open :unavailable :unavailable-throw]]]])

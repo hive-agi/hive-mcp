@@ -147,6 +147,14 @@
       (is (contains? full :disc/path))
       (is (contains? full :disc/content-hash)))))
 
+(deftest full-schema-declares-the-sealed-edge-attributes-test
+  (testing "every store opens with :kg-sealed/*: DataScript and Datalevin fix their schema at open"
+    (let [full (schema/full-schema)]
+      (is (= {:db/unique :db.unique/identity :db/noHistory true}
+             (select-keys (:kg-sealed/tombstone full) [:db/unique :db/noHistory])))
+      (is (true? (:db/noHistory (:kg-sealed/blob full))))
+      (is (not (contains? (:kg-sealed/blob full) :db/unique))))))
+
 ;; =============================================================================
 ;; Relation Type Registry Tests
 ;; =============================================================================

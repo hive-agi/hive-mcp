@@ -36,7 +36,8 @@
    is dropped or duplicated.
 
    Pure. No IO, no protocols, no logging."
-  (:require [hive-mcp.crystal.harvest.by-scope :as bs]))
+  (:require [hive-mcp.crystal.harvest.by-scope :as bs]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -109,6 +110,22 @@
 ;; Public API
 ;; =============================================================================
 
+(def AttributionResult
+  "Input of `partition-harvest-by-scope`: the step-2 attribution map. Every
+   key is optional because the empty-session case is `{}`."
+  [:map
+   [:by-source {:optional true}
+    [:maybe [:map-of :keyword
+             [:maybe [:sequential [:map
+                                   [:pid [:or [:= :umbrella] [:and :string [:fn {:gen/elements ["hive" "funeraria" "proj-a"]} bs/valid-pid?]]]]
+                                   [:datum :any]]]]]]]
+   [:umbrella-scalars {:optional true} [:maybe [:map [:session-timing {:optional true} [:maybe :map]]
+                                                [:session-temporal {:optional true} [:maybe :map]]]]]
+   [:session   {:optional true} [:maybe :string]]
+   [:directory {:optional true} [:maybe :string]]
+   [:agent-id  {:optional true} [:maybe :string]]
+   [:errors    {:optional true} [:maybe [:sequential :map]]]])
+
 (defn partition-harvest-by-scope
   "Pure transform: attribution output → HarvestByScope.
 
@@ -123,6 +140,8 @@
                (seq errors) (assoc :errors (vec errors)))]
     (-> (reduce absorb-source seed (or by-source {}))
         (absorb-umbrella-scalars (or umbrella-scalars {})))))
+
+(m/=> partition-harvest-by-scope [:=> [:cat [:maybe AttributionResult]] bs/HarvestByScope])
 
 ;; =============================================================================
 ;; Inspection helpers (pure — useful for tests + debugging)
@@ -139,6 +158,8 @@
              0
              (:by-scope hbs)))
 
+(m/=> scope-datum-count [:=> [:cat [:maybe [:map [:by-scope {:optional true} [:maybe [:map-of :string :map]]]]]] [:int {:min 0}]])
+
 (defn umbrella-datum-count
   "Total number of datums in the UmbrellaSlice's three sequential fields.
    Excludes scalar fields (session-timing, session-temporal)."
@@ -148,9 +169,15 @@
        (count (:cross-cutting-decisions u))
        (count (:hivemind-shouts-global u)))))
 
+(m/=> umbrella-datum-count [:=> [:cat [:maybe [:map [:umbrella {:optional true} [:maybe bs/UmbrellaSlice]]]]] [:int {:min 0}]])
+
 (defn total-datum-count
   "Sum of scope + umbrella datums. The conservation invariant: this equals
    the total flat-input count from attribution (for any well-formed input)."
   [hbs]
   (+ (scope-datum-count hbs)
      (umbrella-datum-count hbs)))
+
+(m/=> total-datum-count [:=> [:cat [:maybe [:map [:by-scope {:optional true} [:maybe [:map-of :string :map]]]
+                                         [:umbrella {:optional true} [:maybe bs/UmbrellaSlice]]]]]
+                         [:int {:min 0}]])

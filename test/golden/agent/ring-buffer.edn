@@ -1,0 +1,5 @@
+{:contents ["two" "three"],
+ :last-1 ["three"],
+ :stats
+ {:current-lines 2, :capacity 2, :total-lines-seen 3, :dropped 1},
+ :timestamps-aligned? true}

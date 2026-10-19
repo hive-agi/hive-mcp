@@ -2,7 +2,8 @@
   "Chroma connection configuration, collection management, and health status."
   (:require [hive-mcp.chroma.client :as chroma]
             [hive-mcp.embeddings.active :as emb]
-            [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]))
+            [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -15,10 +16,28 @@
 
 (defonce ^:private config (atom default-config))
 
+(def Config
+  "Chroma connection settings; callers may merge in vendor options."
+  [:map
+   [:host :string]
+   [:port :int]
+   [:collection-name :string]])
+
+(def Status
+  "Chroma integration status."
+  [:map
+   [:configured? :boolean]
+   [:provider [:maybe :string]]
+   [:collection [:maybe :string]]
+   [:host [:maybe :string]]
+   [:port [:maybe :int]]])
+
 (defn get-config
   "Get current Chroma configuration map."
   []
   @config)
+
+(m/=> get-config [:=> [:cat] Config])
 
 (defn configure!
   "Configure Chroma connection settings."
@@ -26,6 +45,12 @@
   (swap! config merge opts)
   (chroma/configure (select-keys opts [:host :port :api-version :tenant :database]))
   (log/info "Chroma configured:" (select-keys @config [:host :port :collection-name])))
+
+(m/=> configure! [:=> [:cat [:map
+                             [:host {:optional true} :string]
+                             [:port {:optional true} :int]
+                             [:collection-name {:optional true} :string]]]
+                  :nil])
 
 (defonce ^:private collection-cache (atom nil))
 
@@ -62,6 +87,8 @@
           (cache-collection! (create-new-collection coll-name dim)
                              (str "Created Chroma collection: " coll-name " dimension: " dim))))))
 
+(m/=> get-or-create-collection [:=> [:cat] chroma/Coll])
+
 (defonce ^:private named-collection-cache (atom {}))
 
 (defn get-or-create-named-collection
@@ -75,11 +102,15 @@
         (log/info "Named collection ready:" coll-name "dimension:" dimension)
         coll)))
 
+(m/=> get-or-create-named-collection [:=> [:cat :string pos-int?] chroma/Coll])
+
 (defn reset-collection-cache!
   "Reset the collection cache (for testing/reconnection)."
   []
   (reset! collection-cache nil)
   (reset! named-collection-cache {}))
+
+(m/=> reset-collection-cache! [:=> [:cat] [:map-of {:max 0} :any :any]])
 
 (defn status
   "Get Chroma integration status."
@@ -89,6 +120,8 @@
    :collection (:collection-name @config)
    :host (:host @config)
    :port (:port @config)})
+
+(m/=> status [:=> [:cat] Status])
 
 (defn chroma-available?
   "Check if Chroma is configured and reachable."
@@ -100,6 +133,8 @@
       (catch Exception e
         (log/debug "Chroma availability check failed:" (.getMessage e))
         false))))
+
+(m/=> chroma-available? [:=> [:cat] [:maybe :boolean]])
 
 (defn reinitialize-embeddings!
   "Fix hot-reload protocol mismatch by reloading namespaces and reinitializing."
@@ -141,3 +176,9 @@
       {:fixed? fixed?
        :provider-type provider-type
        :dimension (when fixed? (emb/embedding-dimension provider))})))
+
+(m/=> reinitialize-embeddings! [:=> [:cat [:* :any]]
+                                [:map
+                                 [:fixed? :boolean]
+                                 [:provider-type [:enum :ollama :openai :openrouter]]
+                                 [:dimension [:maybe pos-int?]]]])

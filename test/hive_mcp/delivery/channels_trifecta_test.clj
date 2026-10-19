@@ -15,7 +15,8 @@
             [clojure.test.check.generators :as gen]
             [hive-test.trifecta :refer [deftrifecta]]
             [hive-mcp.delivery.channels :as ch]
-            [hive-mcp.protocols.delivery-channel :as dc]))
+            [hive-mcp.protocols.delivery-channel :as dc]
+            [hive-schemas.test :as hst]))
 
 ;; =============================================================================
 ;; Subjects under test — public wrappers around the private targets
@@ -150,3 +151,43 @@
                 (ch/->OlympusChannel)]]
       (is (nil? (dc/deliver! ch {:agent-id "a" :message "m"}))
           (str (dc/channel-id ch) " must silently drop events with nil :event-type")))))
+
+;; =============================================================================
+;; Contracted factories: path threading + record identity
+;; =============================================================================
+
+(hst/deftrifecta-from-schema create-file-tail-channel-contract
+  hive-mcp.delivery.channels/create-file-tail-channel
+  {:in  [:cat :string]
+   :out [:map [:path :string]]
+   :rel (fn [[path] out]
+          (and (instance? hive_mcp.delivery.channels.FileTailChannel out)
+               (= path (:path out))
+               (= :file-tail (dc/channel-id out))))
+   :num-tests 100})
+
+;; The record does not round-trip through an EDN snapshot (a read-back map is
+;; not = to a record), so the golden facet snapshots it as a plain map.
+(deftrifecta create-file-tail-channel-golden
+  hive-mcp.delivery.channels/create-file-tail-channel
+  {:golden-path "test/golden/hive-mcp/delivery/create-file-tail-channel.edn"
+   :cases       {:tmp "/tmp/hivemind-shouts.jsonl" :rel "shouts.jsonl" :empty ""}
+   :apply?      false
+   :xf          (fn [c] (assoc (into {} c) :record (.getSimpleName (class c)) :id (dc/channel-id c)))
+   :mutations   [["drops-path" (fn [_] (ch/->FileTailChannel nil))]
+                 ["wrong-record" (fn [_] (ch/->NatsChannel))]]})
+
+(deftest zero-arity-factories-match-their-contracts
+  (testing "each factory returns its own record type and reports the matching id"
+    (doseq [[f klass id] [[ch/create-websocket-channel hive_mcp.delivery.channels.WebSocketChannel :websocket]
+                          [ch/create-core-async-channel hive_mcp.delivery.channels.CoreAsyncChannel :core-async]
+                          [ch/create-channel-broadcast-channel hive_mcp.delivery.channels.ChannelBroadcastChannel :channel-broadcast]
+                          [ch/create-olympus-channel hive_mcp.delivery.channels.OlympusChannel :olympus]
+                          [ch/create-piggyback-channel hive_mcp.delivery.channels.PiggybackChannel :piggyback]
+                          [ch/create-nats-channel hive_mcp.delivery.channels.NatsChannel :nats]]]
+      (let [c (f)]
+        (is (instance? klass c))
+        (is (= id (dc/channel-id c)))))
+    (is (= (ch/default-file-tail-path) (:path (ch/create-file-tail-channel))))
+    (is (string? (ch/default-file-tail-path)))
+    (is (seq (ch/default-file-tail-path)))))

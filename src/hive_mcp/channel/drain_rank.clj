@@ -15,7 +15,8 @@
    Pure — no IO, deterministic."
   (:require [clojure.set :as set]
             [clojure.string :as str]
-            [hive-mcp.tools.catchup.relevance :as rel]))
+            [hive-mcp.tools.catchup.relevance :as rel]
+            [malli.core :as m]))
 
 (def raw-tag-weight
   "Weight of a raw-tag hit."
@@ -83,6 +84,8 @@
     :else (let [s (str/replace (str/trim (str x)) #"^:+" "")]
             (when (seq s) (keyword s)))))
 
+(m/=> kw [:=> [:cat :any] [:maybe :keyword]])
+
 (defn lane
   "Lane of a buffered entry: :floor for `floor-types` or an id in `pins`,
    :pool otherwise. The 1-arity pins nothing."
@@ -92,6 +95,8 @@
            (and (seq pins) (contains? pins (:id entry))))
      :floor
      :pool)))
+
+(m/=> lane [:function [:=> [:cat :map] [:enum :floor :pool]] [:=> [:cat :map [:maybe [:set :any]]] [:enum :floor :pool]]])
 
 (defn- raw-tags
   "Lowercased raw tag set of an entry."
@@ -152,6 +157,12 @@
        (feedback-credit entry)
        (- (offer-decay offers)))))
 
+(def Tokens
+  "Task cue tokens: a set (what task-signal answers), any seq, or nil."
+  [:maybe [:or [:set :string] [:sequential :string]]])
+
+(m/=> score [:=> [:cat :map Tokens [:maybe number?]] :double])
+
 (defn- budget-prefix
   "Count of leading entries whose pr-str total fits `budget`.
    At least 1 whenever `entries` is non-empty with the default budget;
@@ -203,3 +214,5 @@
     {:ordered ordered
      :batch (subvec ordered 0 taken)
      :taken taken}))
+
+(m/=> select-batch [:=> [:cat [:sequential :map] [:map [:tokens {:optional true} Tokens] [:offers {:optional true} [:maybe :map]] [:char-budget {:optional true} [:maybe :int]] [:pins {:optional true} [:maybe [:or [:set :any] [:sequential :any]]]] [:floor-cap {:optional true} [:maybe :int]]]] [:map [:ordered [:vector :map]] [:batch [:vector :map]] [:taken [:int {:min 0}]]]])
