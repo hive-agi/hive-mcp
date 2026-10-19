@@ -119,7 +119,24 @@
     (is (= :ready-to-write
            (pure/classify-outcome
              {:id "x" :content {:task-type "kanban"}}
-             {:id "x" :content {}})))))
+             {:id "x" :content {}}))))
+  (testing "a sealed envelope the reader could not open is unreadable, never written"
+    (let [t {:id "x" :content "#envelope:v1:kid-other:AAAA"}]
+      (is (= :unreadable (pure/classify-outcome {:id "x" :content {:task-type "kanban"}} t)))
+      (is (= :unopenable (pure/unreadable-reason t)))))
+  (testing "an opened row that is not a kanban card is unreadable"
+    (let [t {:id "x" :content {:task-type "swarm" :x 1}}]
+      (is (= :unreadable (pure/classify-outcome {:id "x" :content {:task-type "kanban"}} t)))
+      (is (= :not-a-card (pure/unreadable-reason t))))))
+
+(deftest mark-hidden-only-touches-probed-ready-rows
+  (let [outs [{:id "a" :outcome :ready-to-write :target-absent? true}
+              {:id "b" :outcome :ready-to-write :target-absent? true}
+              {:id "c" :outcome :already-full}]]
+    (is (= ["a" "b"] (pure/probe-candidates outs)))
+    (is (= [:unreadable :ready-to-write :already-full]
+           (mapv :outcome (pure/mark-hidden outs #{"a" "c"}))))
+    (is (= :hidden (:reason (first (pure/mark-hidden outs #{"a"})))))))
 
 ;; =============================================================================
 ;; slice-batch

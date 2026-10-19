@@ -179,10 +179,26 @@
   [content k v]
   (-> content (dissoc (name k)) (assoc k v)))
 
+(defn append-description
+  "Pure: `current` description with the non-blank `addition` appended after a
+   blank line. A blank/nil `addition` leaves `current` standing; a blank/nil
+   `current` yields the addition alone. Unlike `description=` (a full replace)
+   this never loses the existing text."
+  [current addition]
+  (if (and (string? addition) (not (str/blank? addition)))
+    (if (and (string? current) (not (str/blank? current)))
+      (str current "\n\n" addition)
+      addition)
+    current))
+
 (defn edit-transition
   "Pure: derive the content edit for a task. A field is edited only when
    `edits` carries a non-blank string for it; anything else leaves the
    current value standing. Status, scope and every other tag are preserved.
+
+   `:append-description` is applied AFTER `:description`: it extends the
+   description that results (the replaced one when both are given, else the
+   current one), so history can grow without being rewritten.
 
    `:new-tags` is nil unless the priority changed. Priority lives in BOTH
    the content map and a `priority-*` tag — `kanban get` reads content while
@@ -202,7 +218,8 @@
         old-desc  (content-val content :description nil)
         old-prio  (current-priority entry)
         new-title (pick :title old-title)
-        new-desc  (pick :description old-desc)
+        new-desc  (append-description (pick :description old-desc)
+                                      (get edits :append-description))
         new-prio  (pick :priority old-prio)
         changed   (cond-> #{}
                     (not= new-title old-title) (conj :title)

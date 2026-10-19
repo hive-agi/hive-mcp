@@ -6,8 +6,16 @@
             [malli.core :as m]))
 
 (def ^:dynamic *lane*
-  "Interactive memory adds bind :interactive; all other work uses :batch."
+  "Admission lane for gated embedding calls. MCP tool ingress binds
+   :interactive (server.routes.middleware/wrap-handler-context); the binding
+   is conveyed to futures and pools, so background work started from a
+   request rebinds :batch (`batch-fn`, wrap-handler-async). Unbound: :batch."
   :batch)
+
+(defn current-lane
+  "The lane a gated call on this thread is admitted in."
+  []
+  *lane*)
 
 (defn next-lane
   "Pure admission policy; always serve a waiting interactive call first."
@@ -51,7 +59,42 @@
 ;; Inputs admit anything: the body validates them and throws ex-info itself.
 (m/=> new-gate [:=> [:cat :any :any] Gate])
 
-(defonce process-gate (new-gate 1 12000))
+(def default-permits
+  "Process gate capacity when [:embeddings :gate :permits] is unset."
+  1)
+
+(def default-timeout-ms
+  "Longest a caller waits for a process-gate permit."
+  12000)
+
+(defn permits-from-config
+  "Process gate capacity from a config map: [:embeddings :gate :permits] when
+   it is a positive integer, else `default-permits`."
+  [cfg]
+  (let [n (get-in cfg [:embeddings :gate :permits])]
+    (if (pos-int? n) n default-permits)))
+
+(defn- configured-permits
+  "Capacity from the global config, resolved lazily so this namespace does not
+   load the config subsystem; any failure yields the default."
+  []
+  (try
+    (permits-from-config ((requiring-resolve 'hive-mcp.config.core/get-global-config)))
+    (catch Throwable _ default-permits)))
+
+(defonce process-gate (new-gate (configured-permits) default-timeout-ms))
+
+(defn batch-fn
+  "Wrap `f` so it runs in the :batch lane on whatever thread executes it.
+   Background work started from a request thread (futures and pools convey
+   bindings) uses this so it never competes with the interactive lane."
+  [f]
+  (fn [& args] (binding [*lane* :batch] (apply f args))))
+
+(defmacro with-lane
+  "Evaluate body with `*lane*` bound to `lane`."
+  [lane & body]
+  `(binding [*lane* ~lane] ~@body))
 
 (defn await-waiters
   "Test/diagnostic helper: wait until at least n calls are queued."

@@ -45,7 +45,7 @@
   [addon]
   {:pre [(satisfies? proto/IAddon addon)]}
   (let [id (proto/addon-id addon)]
-    (if (contains? @addon-registry id)
+    (if (some? (get-in @addon-registry [id :addon]))
       (do
         (log/warn "Addon already registered" {:addon id})
         {:success? false
@@ -87,12 +87,13 @@
   []
   (->> @addon-registry
        (mapv (fn [[id {:keys [addon state registered-at init-time]}]]
-               {:name id
-                :type (proto/addon-type addon)
-                :state state
-                :registered-at registered-at
-                :init-time init-time
-                :capabilities (proto/capabilities addon)}))))
+               (cond-> {:name id
+                        :type (when addon (proto/addon-type addon))
+                        :state state
+                        :registered-at registered-at
+                        :init-time init-time
+                        :capabilities (when addon (proto/capabilities addon))}
+                 (nil? addon) (assoc :addon nil))))))
 
 (declare shutdown-addon!)
 
@@ -115,8 +116,9 @@
                   hive-mcp.workflows.strategy-registry/deregister-by-owner!
                   hive-mcp.spi.op-schema-registry/deregister-by-owner!]]
       ((requiring-resolve sym) id))
-    (doseq [t (r/rescue [] (proto/tools addon))]
-      (ext/deregister-tool! (:name t)))
+    (when addon
+      (doseq [t (r/rescue [] (proto/tools addon))]
+        (ext/deregister-tool! (:name t))))
     (ext/retract-all-by-addon! id)
     (ext/retract-schemas-by-owner! id)
     nil))

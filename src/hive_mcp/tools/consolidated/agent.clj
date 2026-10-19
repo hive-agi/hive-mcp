@@ -46,11 +46,12 @@
    derefs, but a literal map is still `map?` to every OTHER reader of this tree
    — and this table is read by more than the walker.
 
-   A verb root (hive-mcp.dispatch.verbs): `kill` and `kill-batch` have no core
-   entry. The hive-agent addon contributes them under root \"agent\"; until it
-   does they answer an error naming it."
+   A verb root (hive-mcp.dispatch.verbs): `kill`, `kill-batch`, and `broadcast`
+   have no core entry. The hive-agent addon contributes them under root `agent`;
+   until it does they answer an error naming it."
   ^{::verbs/root        "agent"
-    ::verbs/provided-by {:kill "hive.agent" :kill-batch "hive.agent"}}
+    ::verbs/provided-by {:kill "hive.agent" :kill-batch "hive.agent"
+                         :broadcast "hive.agent"}}
   {:spawn       #'spawn/handle-spawn
    :status      #'status/handle-status
    :digest      #'status/handle-digest
@@ -59,7 +60,6 @@
    :dispatch    #'dispatch/handle-dispatch
    :claims      #'lifecycle/handle-claims
    :collect     #'lifecycle/handle-collect
-   :broadcast   #'lifecycle/handle-broadcast
    :cleanup     #'lifecycle/handle-cleanup
    :dag         {:start    #'dag/handle-dag-start
                  :stop     #'dag/handle-dag-stop
@@ -90,7 +90,7 @@
 (def tool-def
   {:name "agent"
    :consolidated true
-   :description "Unified agent operations: spawn (create ling), status (query agents), digest (compact per-agent progress roster — turn, last event, idle time — the PULL view now that shouts reach only the spawner; pass agent_id for just your own children, verbose for rendered text), kill (terminate), kill-batch (terminate multiple agents in one call), batch-spawn (spawn multiple agents at once via operations array), dispatch (send task — also the way to STEER a running agent), interrupt (interrupt current query of agent-sdk ling), claims (file ownership), list (deprecated alias for status), collect (get task result; task_id, or agent_id alone for its latest task), broadcast (prompt all), cleanup (remove orphan agents after Emacs restart). Type: 'ling' (agentic worker). Nested: dag (start/stop/status DAGWave scheduler). Use command='help' to list all."
+   :description "Unified agent operations: spawn (create ling), status (query agents), digest (compact per-agent progress roster — turn, last event, idle time — the PULL view now that shouts reach only the spawner; pass agent_id for just your own children, verbose for rendered text), kill (terminate), kill-batch (terminate multiple agents in one call), batch-spawn (spawn multiple agents at once via operations array), dispatch (send task — also the way to STEER a running agent), interrupt (interrupt current query of agent-sdk ling), claims (file ownership), list (deprecated alias for status), collect (get task result; task_id, or agent_id alone for its latest task), broadcast (prompt only caller's children by default; scope=project or all explicitly expands recipients, response lists recipient-ids), cleanup (remove orphan agents after Emacs restart). Type: 'ling' (agentic worker). Nested: dag (start/stop/status DAGWave scheduler). Use command='help' to list all."
    :inputSchema {:type "object"
                  :properties {"command" {:type "string"
                                          :enum ["spawn" "status" "digest" "batch-spawn" "dispatch" "interrupt" "claims" "list" "collect" "broadcast" "cleanup" "dag start" "dag stop" "dag status" "help"]
@@ -172,7 +172,7 @@
                                              :items {:type "string"}
                                              :description "[dispatch] Node IDs for context resolution seeds. Combined with ctx_refs for structural context reconstruction."}
                               "scope" {:type "string"
-                                       :description "[dispatch] Project scope for context resolution (auto-derived from agent if omitted)"}
+                                       :description "[dispatch] Project scope for context resolution (auto-derived from agent if omitted). [broadcast] children (default): lings spawned by this caller; session: caller session; project: lings in project_id; all: global (explicit opt-in)."}
                               "parent" {:type "string"
                                         :description "Parent agent ID for spawn"}
                               "kanban_task_id" {:type "string"

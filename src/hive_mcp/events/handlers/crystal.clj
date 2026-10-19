@@ -90,7 +90,7 @@
      (select-keys m [:decisions :conventions :notes :principles :axioms
                      :snippets :plans :knowledge :other :accomplishments])
      typed
-     {:kanban-closures  (or (:kanban-closures m) (:kanban-completed m) 0)
+     {:kanban-closures  (or (:kanban-closures m) (:kanban-closed-transitions m) 0)
       :kg-edges         (or (:kg-edges m) (:kg-edge-count m) 0)
       :memories-created (or (:memories-created m) (:created-count m) 0)})))
 

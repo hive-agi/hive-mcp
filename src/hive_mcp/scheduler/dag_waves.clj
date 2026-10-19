@@ -72,11 +72,13 @@
       (nil? (get-kanban-task task-id))))
 
 (defn- move-kanban-done!
-  "Move a kanban task to 'done' status."
+  "Move a finished task's kanban card to 'inreview'. A ling ending its run is
+   not evidence the work landed, so the card waits for review; the scheduler
+   counts the task complete through its own state, not the card's status."
   [task-id directory]
   (result/rescue nil
                  (kanban-port/transition!
-                  {:task-id task-id :new-status "done" :directory directory})))
+                  {:task-id task-id :new-status "inreview" :directory directory})))
 
 
 ;; =============================================================================
@@ -147,6 +149,7 @@
                    (when all-deps-done?
                      {:task-id task-id
                       :title   (:title task)
+                      :description (:description task)
                       :role    (task-role task)
                       :deps    deps
                       :dep-count (count deps)}))))
@@ -189,21 +192,28 @@
    Threads :max-budget-usd so each dispatched ling carries a spend guardrail:
    this scheduler auto-advances waves on completion, so an uncapped ling here
    is an unbounded spend loop with no operator in it."
-  [task-id title role {:keys [cwd presets project-id prefer-lightweight? run-id max-budget-usd]
+  [task-id title role {:keys [cwd presets project-id prefer-lightweight? run-id max-budget-usd
+                              description parent]
                        :or {prefer-lightweight? true}}]
   (let [safe-title (-> (or title "task")
                        str/lower-case
                        (str/replace #"[^a-z0-9]+" "-"))
         truncated (subs safe-title 0 (min 30 (count safe-title)))
         ling-id (str "swarm-dag-" truncated "-" (System/currentTimeMillis))
-        role* (normalize-role role)]
+        role* (normalize-role role)
+        task (str title
+                  "\n\nKanban card " task-id ": read it in full with"
+                  " `project kanban get id=" task-id "` before starting."
+                  (when-not (str/blank? description) (str "\n\n" description)))]
     (result/try-effect* :dag/spawn-failed
                         (ling/create-ling! ling-id
                                            (cond-> {:cwd cwd
                                                     :presets (or presets ["ling"])
                                                     :project-id project-id
                                                     :kanban-task-id task-id
-                                                    :task title}
+                                                    :task task}
+                                             parent
+                                             (assoc :parent parent)
                                              run-id
                                              (assoc :run-id run-id)
                                              (and max-budget-usd (pos? max-budget-usd))
@@ -228,8 +238,9 @@
 
     (let [dispatched-results
           (doall
-           (for [{:keys [task-id title role]} tasks-to-dispatch]
-             (let [r (spawn-ling-for-task task-id title role opts)]
+           (for [{:keys [task-id title role description]} tasks-to-dispatch]
+             (let [r (spawn-ling-for-task task-id title role
+                                          (assoc opts :description description))]
                (if-let [ling-id (:ok r)]
                  (do
                    ;; Track dispatch in state

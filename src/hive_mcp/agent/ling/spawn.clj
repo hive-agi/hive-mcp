@@ -18,7 +18,8 @@
             [hive-mcp.swarm.claim.negotiate :as claim-negotiate]
             [hive-mcp.agent.ling.start-preflight :as start-preflight]
             [hive-mcp.agent.grant :as grant]
-            [hive-mcp.agent.identity :as agent-identity]))
+            [hive-mcp.agent.identity :as agent-identity]
+            [hive-mcp.swarm.datascript :as ds]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -416,6 +417,53 @@
       (dispatch-when-ready! plan slave-id enriched-task headless?)
       slave-id)))
 
+(defn dispatch-refusal
+  "The refusal in a strategy-dispatch! ANSWER, or nil when it dispatched.
+   A backend refuses without throwing by answering `false`, a map carrying
+   `:dispatched false`, or a hive-dsl err Result. Any other answer (true,
+   nil, {:dispatched true ...}) is a dispatch."
+  [answer]
+  (cond
+    (false? answer) {:answer false}
+    (and (map? answer) (false? (:dispatched answer))) answer
+    (r/err? answer) answer
+    :else nil))
+
+(defn- status-after-failed-dispatch
+  "The :slave/status a failed dispatch leaves, from the status PRIOR-STATUS
+   the ling had before the dispatch wrote :working and the failure E.
+
+   - A backend that knows what the failure did to the ling names it in the
+     exception's ex-data as :slave-status (e.g. :error when its session is
+     gone, :idle when it refused a start); that status is used.
+   - Any other failure (a refused answer, a thrown backend or bookkeeping
+     error) started nothing on the ling, so it is as it was: PRIOR-STATUS.
+     A failure to dispatch is not evidence the ling is broken; marking it
+     :error would hide a healthy ling from the next dispatch."
+  [prior-status e]
+  (let [named (some-> (ex-data e) :slave-status)]
+    (if (keyword? named) named prior-status)))
+
+(defn- restore-status-after-failed-dispatch!
+  "Set ling ID's :slave/status back after a failed dispatch (see
+   `status-after-failed-dispatch`), but only while it still holds the
+   :working this dispatch wrote: the write is a compare-and-set against
+   :working, so a status another writer set meanwhile (a kill, a completion,
+   an error the backend recorded) is never overwritten. No-op when the ling
+   had no row before the dispatch. Never throws."
+  [id prior-status e]
+  (when-let [target (status-after-failed-dispatch prior-status e)]
+    (when (not= target :working)
+      (try
+        (ds/transact! [[:db/cas [:slave/id id] :slave/status :working target]])
+        (log/info "Restored ling status after failed dispatch"
+                  {:ling-id id :status target})
+        (catch Throwable t
+          (log/info "Ling status changed during failed dispatch; left as is"
+                    {:ling-id id :wanted target
+                     :current (:slave/status (ds-queries/get-slave id))
+                     :reason (ex-message t)}))))))
+
 (defrecord Ling [id cwd presets project-id spawn-mode model provider token-budget kg-compress? sliding-window-size agents max-budget-usd]
   IAgent
 
@@ -437,22 +485,29 @@
                      (:ling/spawn-mode slave))
                    :claude)
           strat (lifecycle/resolve-strategy mode)]
-      (ds-lings/update-slave! id {:slave/status :working})
-      (swarm-channel/record-dispatched-task! task-id)
-      (ds-lings/add-task! task-id id {:status :dispatched
-                                      :prompt resolved-task
-                                      :files files})
-      (when (seq files)
-        (.claim-files! this files task-id))
-
-      ;; NOTE: intentionally do NOT publish :task-dispatched — the JVM-side
-      ;; calls above already do every action handle-task-dispatched would do.
-      ;; :task-failed / :slave-killed below ARE needed (queue + cleanup).
-
-      (let [resolved-opts (cond-> (assoc task-opts :task resolved-task :task-id task-id)
+      (let [prior-status (:slave/status (ds-queries/get-slave id))
+            resolved-opts (cond-> (assoc task-opts :task resolved-task :task-id task-id)
                             ctx (assoc :dispatch-context ctx))]
+        (ds-lings/update-slave! id {:slave/status :working})
+        ;; Everything after the :working write runs inside the try, so no
+        ;; failure (task bookkeeping, claims, strategy) leaves the ling shown
+        ;; as :working when nothing is running.
+        ;;
+        ;; NOTE: intentionally do NOT publish :task-dispatched — the JVM-side
+        ;; calls below already do every action handle-task-dispatched would do.
+        ;; :task-failed / :slave-killed below ARE needed (queue + cleanup).
         (try
-          (strategy/strategy-dispatch! strat (lifecycle/ling-ctx this) resolved-opts)
+          (swarm-channel/record-dispatched-task! task-id)
+          (ds-lings/add-task! task-id id {:status :dispatched
+                                          :prompt resolved-task
+                                          :files files})
+          (when (seq files)
+            (.claim-files! this files task-id))
+          (let [answer (strategy/strategy-dispatch! strat (lifecycle/ling-ctx this) resolved-opts)]
+            (when-let [refusal (dispatch-refusal answer)]
+              (throw (ex-info "Backend refused the dispatch"
+                              {:ling-id id :task-id task-id
+                               :dispatch/refused? true :refusal refusal}))))
           (log/info "Task dispatched to ling" {:ling-id id :task-id task-id
                                                :mode mode :files files
                                                :context-type (when ctx
@@ -468,8 +523,10 @@
           (catch Throwable e
             (log/error "Failed to dispatch to ling"
                        {:ling-id id :task-id task-id :mode mode :error (ex-message e)})
-            (ds-lings/update-task! task-id {:status :failed
-                                            :error (ex-message e)})
+            (restore-status-after-failed-dispatch! id prior-status e)
+            (r/rescue nil
+              (ds-lings/update-task! task-id {:status :failed
+                                              :error (ex-message e)}))
             ;; :task-failed -> swarm/sync releases claims + processes queue.
             (r/rescue nil
               (when-let [publish-slave! (requiring-resolve 'hive-mcp.swarm.event-bridge/publish-slave-event!)]

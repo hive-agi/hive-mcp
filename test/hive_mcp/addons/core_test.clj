@@ -317,6 +317,25 @@
       (is (every? #(= :registered (:state %)) addons-list))
       (is (every? #(instance? java.time.Instant (:registered-at %)) addons-list)))))
 
+(deftest a-missing-instance-does-not-break-the-registry
+  (let [registry @(ns-resolve 'hive-mcp.addons.core 'addon-registry)]
+    (swap! registry assoc :failed {:addon nil :state :error})
+    (let [entry (first (filter #(= :failed (:name %)) (addons/list-addons)))]
+      (is (= :error (:state entry)))
+      (is (contains? entry :addon))
+      (is (nil? (:addon entry)))
+      (is (nil? (:type entry)))
+      (is (nil? (:capabilities entry)))
+      (is (= 1 (:error (addons/registry-status)))))))
+
+(deftest a-missing-instance-can-be-registered-from-a-fresh-manifest-constructor
+  (let [registry @(ns-resolve 'hive-mcp.addons.core 'addon-registry)
+        addon    (->noop-addon :failed "1.0.0")]
+    (swap! registry assoc :failed {:addon nil :state :error})
+    (is (:success? (addons/register-addon! addon)))
+    (is (identical? addon (addons/get-addon :failed)))
+    (is (= :registered (:state (addons/get-addon-entry :failed))))))
+
 (deftest test-unregister-addon
   (let [addon (->test-addon :unreg-test)]
     (addons/register-addon! addon)

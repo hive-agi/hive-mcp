@@ -1072,11 +1072,12 @@
     (is (contains? agent/canonical-handlers :dispatch))
     (is (contains? agent/canonical-handlers :claims))
     (is (contains? agent/canonical-handlers :collect))
-    (is (contains? agent/canonical-handlers :broadcast))
     (is (contains? agent/canonical-handlers :cleanup))
     (is (contains? agent/canonical-handlers :dag)))
-  (testing "kill and kill-batch are provided by the hive-agent addon (verb root)"
-    (is (= {:kill "hive.agent" :kill-batch "hive.agent"}
+  (testing "kill, kill-batch and broadcast are provided by the hive-agent addon (verb root)"
+    (is (not (contains? agent/canonical-handlers :broadcast))
+        "broadcast has no core entry; hive-agent contributes the scoped verb")
+    (is (= {:kill "hive.agent" :kill-batch "hive.agent" :broadcast "hive.agent"}
            (verbs/provided-by agent/canonical-handlers)))
     (is (= "agent" (verbs/root-of agent/canonical-handlers)))))
 

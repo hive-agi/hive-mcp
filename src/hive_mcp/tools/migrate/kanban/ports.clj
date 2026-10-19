@@ -26,6 +26,27 @@
      Entries returned use the canonical hive-mcp memory shape with
      `:content` already parsed back to a map when applicable."))
 
+(defprotocol IIdProbe
+  "Answer which ids the migration target holds a row for WITHOUT reading
+   their content. A layer that hides an entry from the caller (the seal's
+   visibility layer) makes a read answer nothing for a row that is there;
+   the writer must not take that for an absent id."
+  (held-ids [this]
+    "Return r/ok of the set of EVERY id the target holds a row for, whoever
+     may read it. This is one listing of the whole target, so the use case
+     asks at most once per run (or per lone step), keeps the set and adds
+     the ids it writes. Return an err when that cannot be answered: the
+     caller then writes nothing."))
+
+(defprotocol ITargetDurability
+  "Whether a write the target acknowledges is durable. A store whose
+   backend is gone may still answer add-entry! with the id from an
+   in-memory fallback, and the migrator would count it :written and move
+   its cursor past it."
+  (check-durable [this]
+    "Return r/ok when the target can show its writes reach its backend, or
+     an err that names why it cannot. On an err the migrator writes nothing."))
+
 (defprotocol IEntryWriter
   "Persist entries to the migration target. Implementations are
    responsible for embedding/serialization decisions; the use-case

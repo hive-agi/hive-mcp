@@ -8,12 +8,19 @@
         `clj-qdrant.api/get-points` + `point->map` directly.
 
      2. Writes batch into a single `upsert-points` call, eliminating
-        per-id grpc overhead during migration."
+        per-id grpc overhead during migration.
+
+   Since SEAL-KANBAN-MIGRATOR-BYPASS only the READER lives here. Wrinkle 2
+   is retired: a raw `upsert-points` writer went around the store's
+   decorator chain, so migrated entries landed unsealed. Writes now go
+   through the registry store's `add-entry!`
+   (`hive-mcp.tools.migrate.kanban.store`). The reader strips derived
+   fields (:embed-text, :embedding) at its boundary."
   (:require [clojure.data.json :as json]
             [clojure.edn :as edn]
             [hive-dsl.result :as r]
             [hive-mcp.tools.migrate.kanban.ports :as ports]
-            [taoensso.timbre :as log]
+            [hive-mcp.tools.migrate.kanban.pure :as pure]
             [hive-mcp.tools.migrate.optional :as opt])
   (:import [java.util UUID]))
 
@@ -50,12 +57,17 @@
 (defn- decoded-point->entry
   "Take a clj-qdrant decoded point ({:id :payload}) and rebuild the
    canonical hive-mcp entry shape. Prefers the payload's `:id` over the
-   qdrant point UUID so move/delete-by-id flows still work."
+   qdrant point UUID so move/delete-by-id flows still work.
+
+   Derived fields (`pure/derived-fields`, e.g. a stored :embed-text) are
+   stripped at this boundary: they are plaintext derived from :content and
+   must never travel on as entry data."
   [{:keys [id payload]} fallback-id]
   (when (seq payload)
     (-> payload
         (assoc :id (or (:id payload) id fallback-id))
-        (update :content parse-content))))
+        (update :content parse-content)
+        (pure/strip-derived))))
 
 (defn- qclient-of [qstore]
   (some-> qstore :client-atom deref))
@@ -63,31 +75,32 @@
 (defn- collection-of [qstore]
   (or (-> qstore :config :collection-name) default-collection))
 
-(defn- vector-size-of [qstore]
-  (or (-> qstore :config :vector-size) default-vector-size))
-
-(defn- zero-vec [n] (vec (repeat n 0.0)))
-
 ;; =============================================================================
 ;; QdrantEntryReader — batched, decoder-correct
 ;; =============================================================================
 
-(defn- decode-results-by-id
+(defn decode-results-by-id
   "Map of id-string → entry, only for points that came back with non-empty
-   payload (stub points are dropped at the boundary)."
-  [points ids-vec]
-  (let [decoded   (mapv (opt/backend-var "clj-qdrant.api" (quote point->map)) points)
-        ;; clj-qdrant's get-points preserves order; map UUID-string back
-        ;; to original id.
-        uuid->id  (into {} (map (fn [id] [(str (->qdrant-uuid id)) id]) ids-vec))]
-    (reduce (fn [acc dp]
-              (let [pt-uuid-str (str (:id dp))
-                    orig-id     (get uuid->id pt-uuid-str)
-                    entry       (decoded-point->entry dp orig-id)]
-                (cond-> acc
-                  (and orig-id entry) (assoc orig-id entry))))
-            {}
-            decoded)))
+   payload (stub points are dropped at the boundary).
+
+   POINT->MAP decodes one raw point (default: clj-qdrant's `point->map`);
+   tests pass identity over already-decoded {:id :payload} maps."
+  ([points ids-vec]
+   (decode-results-by-id points ids-vec
+                         (opt/backend-var "clj-qdrant.api" (quote point->map))))
+  ([points ids-vec point->map]
+   (let [decoded   (mapv point->map points)
+         ;; clj-qdrant's get-points preserves order; map UUID-string back
+         ;; to original id.
+         uuid->id  (into {} (map (fn [id] [(str (->qdrant-uuid id)) id]) ids-vec))]
+     (reduce (fn [acc dp]
+               (let [pt-uuid-str (str (:id dp))
+                     orig-id     (get uuid->id pt-uuid-str)
+                     entry       (decoded-point->entry dp orig-id)]
+                 (cond-> acc
+                   (and orig-id entry) (assoc orig-id entry))))
+             {}
+             decoded))))
 
 (defrecord QdrantEntryReader [qstore]
   ports/IEntryReader
@@ -108,51 +121,3 @@
                {:message (.getMessage t) :n (count ids)})))))
 
 (defn make-entry-reader [qstore] (->QdrantEntryReader qstore))
-
-;; =============================================================================
-;; QdrantEntryWriter — batched upsert
-;; =============================================================================
-
-(defn- entry->point
-  "Build a clj-qdrant point from an entry. Mirrors the qdrant store's
-   internal `entry->point` but tolerates legacy entry shapes from
-   milvus reads (content as string/map, type as keyword/string)."
-  [entry vector-size]
-  (let [id     (:id entry)
-        embed  (:embedding entry)
-        ;; Stringify content if it came back as a map (milvus reads parse JSON).
-        content (let [c (:content entry)]
-                  (cond
-                    (string? c) c
-                    (map? c)    (json/write-str c)
-                    :else       c))]
-    {:id      (->qdrant-uuid id)
-     :vector  (or embed (zero-vec vector-size))
-     :payload (-> entry
-                  (assoc :id id :content content)
-                  (dissoc :embedding)
-                  (update :type #(if (keyword? %) (name %) (str (or % "note"))))
-                  (update :tags #(when (seq %) (mapv str %)))
-                  (->> (into {} (remove (comp nil? val)))))}))
-
-(defrecord QdrantEntryWriter [qstore]
-  ports/IEntryWriter
-  (write-entries [_ entries]
-    (try
-      (let [client (qclient-of qstore)
-            coll   (collection-of qstore)
-            vs     (vector-size-of qstore)]
-        (cond
-          (empty? entries) (r/ok [])
-          (nil? client) (r/err :qdrant/disconnected {})
-          :else
-          (let [points (mapv #(entry->point % vs) entries)
-                _      ((opt/backend-var "clj-qdrant.api" (quote upsert-points)) client :collection coll :points points)
-                results (mapv (fn [e] {:id (:id e) :ok? true}) entries)]
-            (r/ok results))))
-      (catch Throwable t
-        (log/warn t "qdrant batched upsert failed" {:n (count entries)})
-        (r/err :qdrant/write-entries-failed
-               {:message (.getMessage t) :n (count entries)})))))
-
-(defn make-entry-writer [qstore] (->QdrantEntryWriter qstore))

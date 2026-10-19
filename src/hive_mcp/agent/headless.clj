@@ -7,7 +7,8 @@
             [hive-spi.swarm.guards :as guards]
             [hive-mcp.system.registry :as reg]
             [taoensso.timbre :as log]
-            [hive-mcp.agent.identity :as agent-identity])
+            [hive-mcp.agent.identity :as agent-identity]
+            [hive-mcp.system.child-scope :as child-scope])
   (:import [java.lang ProcessBuilder]
            [java.io BufferedReader InputStreamReader BufferedWriter OutputStreamWriter]
            [java.util.concurrent ConcurrentHashMap]))
@@ -261,17 +262,33 @@
       (.put env k v))))
 
 (defn- create-process-builder
-  "Create and configure a ProcessBuilder for headless ling."
+  "Create and configure a ProcessBuilder for headless ling.
+
+   The argv goes through `child-scope/child-argv`, so the ling (and every
+   build it starts) lands in a sibling ManagedOOMPreference=none user scope
+   instead of the server's avoid scope when systemd-run is available.
+
+   The builder holds the PLAIN argv: the scope prefix is applied at start
+   time by `child-scope/start!` (see `start-process!`), once the child's
+   environment is known, so the command is resolved against the PATH the
+   child will see and a scope that fails to start is retried plain. The
+   probe and prefix are read from `child-scope/*probe*` and
+   `child-scope/*prefix*` at call time, the seam tests bind."
   [cmd-parts cwd]
   (doto (ProcessBuilder. ^java.util.List (vec cmd-parts))
     (.directory (java.io.File. cwd))
     (.redirectErrorStream false)))
 
 (defn- start-process!
-  "Start the subprocess, returning Result."
+  "Start the subprocess, returning Result.
+
+   Started through `child-scope/start!`: scoped when available, plain when
+   the command does not resolve (so a missing executable is still a
+   :headless/spawn-failed error here, not a pid for a process that dies) or
+   when systemd-run could not start the scope."
   [^ProcessBuilder pb ling-id cwd model cmd-parts]
   (try
-    (result/ok (.start pb))
+    (result/ok (child-scope/start! pb))
     (catch Exception e
       (result/err :headless/spawn-failed
                   {:ling-id ling-id
