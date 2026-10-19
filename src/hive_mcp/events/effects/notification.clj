@@ -15,7 +15,8 @@
    (notif-effects/register-notification-effects!)
    ```"
 
-  (:require [hive-mcp.events.core :as ev]
+  (:require [malli.core :as m]
+            [hive-mcp.events.core :as ev]
             [hive-mcp.events.schemas :as schemas]
             [malli.core :as m]
             [hive-mcp.hivemind.core :as hivemind]
@@ -56,6 +57,8 @@
     (if (seq promoted)
       (merge promoted data)
       data)))
+
+(m/=> shout-effect->shout-data [:=> [:cat [:maybe :map]] [:maybe :map]])
 
 (defn- handle-shout
   "Execute a :shout effect - broadcast to hivemind.
@@ -270,3 +273,5 @@
   (ev/reg-fx :emit-system-error handle-emit-system-error)
   (ev/reg-fx :olympus-broadcast handle-olympus-broadcast)
   (log/info "[hive-events.notification] Notification effects registered: :shout :targeted-shout :log :channel-publish :emit-system-error :olympus-broadcast"))
+
+(m/=> register-notification-effects! [:=> [:cat] :nil])

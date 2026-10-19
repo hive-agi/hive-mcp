@@ -16,7 +16,8 @@
    (mem-effects/register-memory-effects!)
    ```"
 
-  (:require [hive-mcp.events.core :as ev]
+  (:require [malli.core :as m]
+            [hive-mcp.events.core :as ev]
             [hive-mcp.swarm.datascript :as ds]
             [taoensso.timbre :as log]
             [hive-mcp.session.current :as session]))
@@ -40,6 +41,8 @@
   [f]
   (reset! memory-write-handler f))
 
+(m/=> set-memory-write-handler! [:=> [:cat [:maybe ifn?]] [:maybe ifn?]])
+
 (defn set-wrap-crystallize-handler!
   "Set the handler function for :wrap-crystallize effect.
    Called during server initialization to wire tools layer.
@@ -50,6 +53,8 @@
      (set-wrap-crystallize-handler! crystal/handle-wrap-crystallize)"
   [f]
   (reset! wrap-crystallize-handler f))
+
+(m/=> set-wrap-crystallize-handler! [:=> [:cat [:maybe ifn?]] [:maybe ifn?]])
 
 ;; =============================================================================
 ;; Effect: :memory-write (EVENTS-04)
@@ -178,3 +183,5 @@
   (ev/reg-fx :wrap-notify handle-wrap-notify)
   (ev/reg-fx :wrap-crystallize handle-wrap-crystallize)
   (log/info "[hive-events.memory] Memory effects registered: :memory-write :wrap-notify :wrap-crystallize"))
+
+(m/=> register-memory-effects! [:=> [:cat] :nil])
