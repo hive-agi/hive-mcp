@@ -28,6 +28,10 @@
   "An admission lane."
   [:enum :interactive :batch])
 
+;; `*lane*` is only ever bound to a Lane (ingress middleware, `batch-fn`,
+;; `with-lane` callers); unbound it is :batch.
+(m/=> current-lane [:=> [:cat] Lane])
+
 (m/=> next-lane [:=> [:cat :int :int] [:maybe Lane]])
 
 (defn new-gate
@@ -74,6 +78,10 @@
   (let [n (get-in cfg [:embeddings :gate :permits])]
     (if (pos-int? n) n default-permits)))
 
+;; Any config shape is admitted: get-in yields nil on a missing or malformed
+;; path and the body falls back to `default-permits`.
+(m/=> permits-from-config [:=> [:cat :any] pos-int?])
+
 (defn- configured-permits
   "Capacity from the global config, resolved lazily so this namespace does not
    load the config subsystem; any failure yields the default."
@@ -90,6 +98,9 @@
    bindings) uses this so it never competes with the interactive lane."
   [f]
   (fn [& args] (binding [*lane* :batch] (apply f args))))
+
+;; `f` may be any callable; the wrapper is a variadic fn applying it.
+(m/=> batch-fn [:=> [:cat ifn?] ifn?])
 
 (defmacro with-lane
   "Evaluate body with `*lane*` bound to `lane`."
