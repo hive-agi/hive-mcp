@@ -63,7 +63,7 @@
   "test/golden/hive-mcp/m14-store-fixtures.edn"
   (let [prior (global-before)
         calls (atom 0)]
-    (fixtures/dual-backend-fixture (fn [] (swap! calls inc)))
+    (with-out-str (fixtures/dual-backend-fixture (fn [] (swap! calls inc))))
     {:datascript (fixtures/datascript-fixture (constantly :ran))
      :global (fixtures/global-datascript-fixture (constantly :ran) :sync-writes? true)
      :global-map (fixtures/global-datascript-fixture (constantly :ran) {:sync-writes? false})
