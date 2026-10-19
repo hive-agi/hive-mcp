@@ -196,3 +196,25 @@
           (if v
             (ext/register! k v)
             (ext/deregister! k)))))))
+
+(defn batch-extension-keys
+  "Select registered :bx/* keys, including keys added after this stub's known
+   ext-keys list, without disturbing other extension namespaces."
+  [keys]
+  (filterv #(= "bx" (namespace %)) keys))
+
+(defn with-no-batch-extensions
+  "clojure.test fixture: run F without any :bx/* extension, then restore
+   precisely the previous batch registrations. Other extension keys are left
+   alone; even batch keys registered during F are removed on exit."
+  [f]
+  (let [prior (into {} (map (fn [k] [k (ext/get-extension k)]))
+                    (batch-extension-keys (ext/registered-keys)))]
+    (try
+      (doseq [k (keys prior)] (ext/deregister! k))
+      (f)
+      (finally
+        (doseq [k (batch-extension-keys (ext/registered-keys))]
+          (ext/deregister! k))
+        (doseq [[k v] prior]
+          (ext/register! k v))))))

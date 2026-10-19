@@ -8,7 +8,9 @@
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.channel.async-result :as ar]
-            [hive-mcp.channel.async-result-journal :as journal]))
+            [hive-mcp.channel.async-result-journal :as journal]
+            [hive-test.trifecta :refer [deftrifecta]]
+            [clojure.test.check.generators :as gen]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -172,3 +174,64 @@
     (ar/gc-expired!)
     (is (= [] (journal/read-records))
         "reclaiming the heap copy and the disk copy is one event, not two")))
+
+(deftest startup-compacts-without-a-gc-sweep
+  (journal/append! {:op :submitted :caller "victim" :task-id "pending" :tool "memory"})
+  (journal/append! {:op :result :caller "victim" :task-id "pending"
+                    :entry {:task-id "pending" :tool "memory" :status :completed :result 7}})
+  (journal/append! {:op :result :caller "victim" :task-id "delivered"
+                    :entry {:task-id "delivered" :status :completed}})
+  (journal/append! {:op :delivered :caller "victim" :task-ids ["delivered"]})
+  (is (= 1 (ar/restore!)))
+  (is (= [:result] (mapv :op (journal/read-records)))
+      "startup drops tombstones and superseded submissions even without GC")
+  (is (= ["pending"] (mapv :task-id (journal/read-records))))
+  (kill-the-process!)
+  (is (= 1 (ar/restore!)) "a second boot can still recover the owed result")
+  (is (= [7] (mapv :result (:results (ar/drain! "victim"))))))
+
+(defn restore-and-inspect
+  "Isolated startup adapter: return the restored count and compacted disk records."
+  [records]
+  (let [p (str (System/getProperty "java.io.tmpdir")
+               "/hive-async-restore-trifecta-" (random-uuid) ".edn")]
+    (binding [journal/*journal-path* p]
+      (ar/reset-all!)
+      (try
+        (doseq [record records] (journal/append! record))
+        {:restored (ar/restore!)
+         :records (mapv #(select-keys % [:op :caller :task-id :entry])
+                        (journal/read-records))}
+        (finally
+          (ar/reset-all!)
+          (.delete (io/file p))
+          (.delete (io/file (str p ".compacting"))))))))
+
+(deftrifecta startup-compaction-contract
+  hive-mcp.channel.async-result-journal-test/restore-and-inspect
+  {:golden-path "test/golden/channel/async-result-startup-compaction.edn"
+   :cases {:empty []
+           :owed [{:op :result :caller "c" :task-id "t"
+                   :entry {:task-id "t" :status :completed}}]
+           :tombstone [{:op :result :caller "c" :task-id "t"
+                        :entry {:task-id "t" :status :completed}}
+                       {:op :delivered :caller "c" :task-ids ["t"]}]}
+   :gen (gen/fmap
+         (fn [flags]
+           (vec (mapcat (fn [id delivered?]
+                          (let [record {:op :result :caller "c" :task-id (str id)
+                                        :entry {:task-id (str id) :status :completed}}]
+                            (if delivered?
+                              [record {:op :delivered :caller "c" :task-ids [(str id)]}]
+                              [record])))
+                        (range (count flags)) flags)))
+         (gen/vector gen/boolean 0 8))
+   :pred (fn [{:keys [restored records]}]
+           (and (nat-int? restored)
+                (every? #(= :result (:op %)) records)
+                (= restored (count records))))
+   :num-tests 40
+   :mutations [["skip-startup-compaction"
+                (fn [records]
+                  {:restored (count (filter #(= :result (:op %)) records))
+                   :records (vec records)})]]})

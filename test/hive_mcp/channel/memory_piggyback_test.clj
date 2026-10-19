@@ -90,6 +90,19 @@
         (is (= 1 (count (:batch result))))
         (is (true? (:done result)))))))
 
+(deftest refs-are-charged-and-retained-under-explicit-budget
+  (mp/enqueue! "refs-budget" [{:id "one" :type "axiom" :content "small"}]
+               {:axioms (apply str (repeat 900 "r"))})
+  (let [first-drain (mp/drain! "refs-budget" {:policy :full :char-budget 250})]
+    (is (or (nil? first-drain)
+            (and (not (:context-refs first-drain))
+                 (<= (+ 30 (count (pr-str first-drain))) 250))))
+    (is (mp/has-pending? "refs-budget")))
+  (let [next-drain (mp/drain! "refs-budget" {:policy :full :char-budget 2000})]
+    (is (= 900 (count (get-in next-drain [:context-refs :axioms]))))
+    (is (<= (+ 30 (count (pr-str next-drain))) 2000))
+    (is (not (mp/has-pending? "refs-budget")))))
+
 ;; =============================================================================
 ;; Cursor Tracking
 ;; =============================================================================

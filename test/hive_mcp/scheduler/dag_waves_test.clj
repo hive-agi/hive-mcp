@@ -410,8 +410,8 @@
         ;; Verify state updates
         (is (contains? (:completed @dag/dag-state) "task-a"))
         (is (not (contains? (:dispatched @dag/dag-state) "task-a")))
-        ;; A was deleted from chroma (moved to done)
-        (is (nil? (get @*chroma-entries "task-a")))
+        ;; A is kept for review (moved to inreview, not deleted as done)
+        (is (some? (get @*chroma-entries "task-a")))
         ;; B and C should now be dispatched (they depend only on A)
         (is (= 2 (count @*spawned-lings)) "B and C should be auto-dispatched")))))
 
@@ -1433,3 +1433,63 @@
         (let [r (dag/start-dag! "all-fail" {:cwd test-directory :task-ids ["task-a"]})]
           (is (true? (:stopped r)))
           (is (not (:active @dag/dag-state))))))))
+
+(defn- spawned-task-ids []
+  (mapv #(get-in % [:opts :kanban-task-id]) @*spawned-lings))
+
+(defn- edges-with-plan
+  "mock-get-edges-from, plus PLAN-ID --depends-on--> each of TASK-IDS."
+  [plan-id task-ids]
+  (fn ([id] (if (= id plan-id)
+              (mapv (fn [t] {:kg-edge/from plan-id :kg-edge/to t :kg-edge/relation :depends-on})
+                    task-ids)
+              (mock-get-edges-from id)))
+      ([id _scope] (mock-get-edges-from id))))
+
+(deftest start-dag-scopes-a-plan-to-its-own-cards
+  (testing "without :task-ids the plan's KG-linked cards bound the run; ready strays are left alone"
+    (with-dag-mocks
+      (swap! *chroma-entries assoc
+             "stray-1" {:id "stray-1" :title "Unrelated" :status "todo"}
+             "stray-2" {:id "stray-2" :title "Also unrelated" :status "todo"})
+      (with-redefs [kg-edges/get-edges-from (edges-with-plan "plan-x" ["task-a" "task-b"])]
+        (let [r (dag/start-dag! "plan-x" {:cwd test-directory :max-slots 3})]
+          (is (= #{"task-a" "task-b"} (:task-ids r)))
+          (is (= 1 (:ready-count r)) "only task-a is ready; task-b waits on it")
+          (is (= ["task-a"] (spawned-task-ids))))))))
+
+(deftest start-dag-refuses-an-unlinked-plan-when-scope-is-required
+  (with-dag-mocks
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no kanban cards linked"
+                          (dag/start-dag! "unlinked" {:cwd test-directory
+                                                      :require-plan-scope? true})))
+    (is (empty? @*spawned-lings))
+    (is (not (:active @dag/dag-state)))))
+
+(deftest start-dag-board-wide-must-be-asked-for
+  (with-dag-mocks
+    (with-redefs [kg-edges/get-edges-from (edges-with-plan "plan-x" ["task-a"])]
+      (let [r (dag/start-dag! "plan-x" {:cwd test-directory :board-wide? true
+                                        :require-plan-scope? true})]
+        (is (nil? (:task-ids r)) "board_wide overrides the plan's own cards")))))
+
+(deftest human-only-cards-are-never-dispatched
+  (testing "a PEDRO DECISION title or a human-only tag keeps a ready card off the lings"
+    (with-dag-mocks
+      (swap! *chroma-entries assoc
+             "decide" {:id "decide" :title "PEDRO DECISION: visual identity" :status "todo"}
+             "ask"    {:id "ask" :title "Pick a vendor" :status "todo" :tags ["needs-human"]})
+      (dag/start-dag! "board" {:cwd test-directory :max-slots 10})
+      (is (= ["task-a"] (spawned-task-ids)))
+      (is (empty? (dag/find-ready-tasks test-directory #{} {} #{} ["decide" "ask"]))))))
+
+(deftest a-bounded-run-dispatches-the-lowest-open-wave-first
+  (testing "with no KG dependency edges, wave:N tags still order the run"
+    (with-dag-mocks
+      (reset! *chroma-entries
+              {"w0" {:id "w0" :title "wave zero" :status "todo" :tags ["wave:0"]}
+               "w1" {:id "w1" :title "wave one" :status "todo" :tags ["wave:1"]}})
+      (dag/start-dag! "waves" {:cwd test-directory :task-ids ["w0" "w1"] :max-slots 5})
+      (is (= ["w0"] (spawned-task-ids)))
+      (dag/on-ling-complete {:agent-id (:id (first @*spawned-lings)) :event-type :completed :data {}})
+      (is (= ["w0" "w1"] (spawned-task-ids))))))

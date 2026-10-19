@@ -97,6 +97,19 @@
                             #(stats/apply-delta! (:kg-edge/relation d) (:kg-edge/scope d) 1)))
        (mapv :kg-edge/id tx-data)))))
 
+(defn add-edges-sync!
+  "Write every edge in EDGE-SPECS in ONE synchronous transaction and return
+   their ids, for in-process callers (the ingestor, via requiring-resolve).
+
+   No durability barrier: unlike the MCP kg tool path it never calls
+   writer/flush-pending!, so it neither waits on nor is waited on by other
+   callers' coalesced writes. Bypasses the coalescing queue
+   (conn/transact-sync!), so the edges are durable when this returns.
+   Validation covers the whole batch before anything is written; empty input
+   writes nothing and returns []."
+  [edge-specs]
+  (add-edges! edge-specs conn/transact-sync!))
+
 (defn add-edge!
   "Create a new edge between two knowledge nodes.
 
