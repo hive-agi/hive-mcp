@@ -12,7 +12,8 @@
    :handler <fn>}. The terminal handler-interceptor is appended by whichever
    dispatch runs the event, so appending an interceptor here cannot land it
    after the handler."
-  (:require [hive.events.fx :as fx]
+  (:require [malli.core :as m]
+            [hive.events.fx :as fx]
             [hive.events.cofx :as cofx]
             [hive.events.router :as router]
             [hive-mcp.events.metrics :as metrics]
@@ -38,10 +39,14 @@
   [event-id interceptors handler-fn]
   (router/reg-event-fx event-id interceptors handler-fn))
 
+(m/=> reg-event [:=> [:cat :keyword [:sequential :map] ifn?] :map])
+
 (defn get-handler-entry
   "Return the registry entry for event-id, or nil."
   [event-id]
   (router/get-event event-id))
+
+(m/=> get-handler-entry [:=> [:cat :keyword] [:maybe [:map [:interceptors [:sequential :map]] [:handler ifn?]]]])
 
 ;; =============================================================================
 ;; Interceptor Chain Mutation
@@ -55,16 +60,22 @@
   {:pre [(keyword? event-id) (map? interceptor) (:id interceptor)]}
   (router/append-interceptor! event-id interceptor))
 
+(m/=> append-interceptor! [:=> [:cat :keyword [:map [:id :keyword]]] :boolean])
+
 (defn get-interceptors
   "Get the interceptor chain for an event. For debugging/verification.
    Delegates to hive.events.router, which owns the registry."
   [event-id]
   (router/get-interceptors event-id))
 
+(m/=> get-interceptors [:=> [:cat :keyword] [:maybe [:sequential :map]]])
+
 (defn handler-registered?
   "Check if a handler is registered for the given event-id."
   [event-id]
   (router/handler-registered? event-id))
+
+(m/=> handler-registered? [:=> [:cat :keyword] :boolean])
 
 ;; =============================================================================
 ;; Deregistration
@@ -75,15 +86,21 @@
   [event-id]
   (router/unreg-event event-id))
 
+(m/=> unreg-event [:=> [:cat :keyword] :boolean])
+
 (defn unreg-fx
   "Remove fx handler. Returns true if removed, false if not found."
   [fx-id]
   (fx/unreg-fx fx-id))
 
+(m/=> unreg-fx [:=> [:cat :keyword] :boolean])
+
 (defn unreg-cofx
   "Remove cofx handler. Returns true if removed, false if not found."
   [cofx-id]
   (cofx/unreg-cofx cofx-id))
+
+(m/=> unreg-cofx [:=> [:cat :keyword] :boolean])
 
 ;; =============================================================================
 ;; Inspection
@@ -94,15 +111,21 @@
   []
   (router/registered-event-ids))
 
+(m/=> registered-events [:=> [:cat] [:set :keyword]])
+
 (defn registered-effects
   "Return set of registered effect IDs."
   []
   (fx/registered-fx-ids))
 
+(m/=> registered-effects [:=> [:cat] [:set :keyword]])
+
 (defn registered-coeffects
   "Return set of registered coeffect IDs."
   []
   (cofx/registered-cofx-ids))
+
+(m/=> registered-coeffects [:=> [:cat] [:set :keyword]])
 
 (defn handler-registry-status
   "Summary of registered events/fx/cofx with counts and sorted IDs."
@@ -116,6 +139,8 @@
      :events      (vec (sort events))
      :effects     (vec (sort effects))
      :coeffects   (vec (sort coeffects))}))
+
+(m/=> handler-registry-status [:=> [:cat] [:map [:event-count [:int {:min 0}]] [:fx-count [:int {:min 0}]] [:cofx-count [:int {:min 0}]] [:events [:vector :keyword]] [:effects [:vector :keyword]] [:coeffects [:vector :keyword]]]])
 
 ;; =============================================================================
 ;; Test Isolation
@@ -148,3 +173,5 @@
    (cofx/clear-cofx)
    (metrics/reset-metrics!)
    nil))
+
+(m/=> reset-all! [:=> [:cat] :nil])

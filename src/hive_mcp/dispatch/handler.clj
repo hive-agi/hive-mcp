@@ -29,7 +29,8 @@
    `hive-mcp.tools.core`: that namespace is response helpers and coercion, and
    making the hook registry depend on it to borrow a predicate would buy a
    dependency that says something false about what hooks needs."
-  (:require [clojure.spec.alpha :as s]))
+  (:require [clojure.spec.alpha :as s]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -96,6 +97,8 @@
       (recur (deref v) (inc hops))
       v)))
 
+(m/=> current [:=> [:cat :any] :any])
+
 (defn handler?
   "Is `x` invocable as a handler?
 
@@ -114,5 +117,7 @@
    `current` learns a new way to hold a callable."
   [x]
   (code? (current x)))
+
+(m/=> handler? [:=> [:cat :any] :boolean])
 
 (s/def ::handler handler?)

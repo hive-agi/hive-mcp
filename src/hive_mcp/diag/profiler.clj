@@ -13,7 +13,8 @@
    resolvable, `start-profiling!` degrades to an `err` Result — inert, not fatal."
   (:require [hive-spi.diag.ports :as p]
             [hive-spi.diag.schema :as schema]
-            [hive-dsl.result :as r]))
+            [hive-dsl.result :as r]
+            [malli.core :as m]))
 
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -74,3 +75,5 @@
    async-profiler is not on the classpath — it simply degrades to an `err`."
   []
   (->AsyncProfiler (atom nil)))
+
+(m/=> make-profiler [:=> [:cat] [:fn {:gen/fmap (fn [_] (->AsyncProfiler (atom nil))) :gen/elements [nil]} #(satisfies? p/IProfiler %)]])

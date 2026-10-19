@@ -17,7 +17,8 @@
    never thrown."
   (:require [hive-spi.diag.ports :as p]
             [hive-spi.diag.schema :as schema]
-            [hive-dsl.result :as r]))
+            [hive-dsl.result :as r]
+            [malli.core :as m]))
 
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -151,3 +152,17 @@
    (make-clinic probe sizer sampler profiler cache-probes default-guard-bytes))
   ([probe sizer sampler profiler cache-probes guard-bytes]
    (->MemoryClinic probe sizer sampler profiler (vec cache-probes) guard-bytes)))
+
+(m/=> make-clinic [:function
+  [:=> [:cat [:fn {:gen/fmap (fn [_] (reify p/IHeapProbe)) :gen/elements [nil]} #(satisfies? p/IHeapProbe %)]
+             [:fn {:gen/fmap (fn [_] (reify p/IRetainedSizer)) :gen/elements [nil]} #(satisfies? p/IRetainedSizer %)]
+             [:fn {:gen/fmap (fn [_] (reify p/IAllocationSampler)) :gen/elements [nil]} #(satisfies? p/IAllocationSampler %)]
+             [:fn {:gen/fmap (fn [_] (reify p/IProfiler)) :gen/elements [nil]} #(satisfies? p/IProfiler %)]
+             [:sequential :any]]
+       [:fn {:gen/fmap (fn [_] (->MemoryClinic nil nil nil nil [] default-guard-bytes)) :gen/elements [nil]} #(satisfies? p/IMemoryClinic %)]]
+  [:=> [:cat [:fn {:gen/fmap (fn [_] (reify p/IHeapProbe)) :gen/elements [nil]} #(satisfies? p/IHeapProbe %)]
+             [:fn {:gen/fmap (fn [_] (reify p/IRetainedSizer)) :gen/elements [nil]} #(satisfies? p/IRetainedSizer %)]
+             [:fn {:gen/fmap (fn [_] (reify p/IAllocationSampler)) :gen/elements [nil]} #(satisfies? p/IAllocationSampler %)]
+             [:fn {:gen/fmap (fn [_] (reify p/IProfiler)) :gen/elements [nil]} #(satisfies? p/IProfiler %)]
+             [:sequential :any] :int]
+       [:fn {:gen/fmap (fn [_] (->MemoryClinic nil nil nil nil [] default-guard-bytes)) :gen/elements [nil]} #(satisfies? p/IMemoryClinic %)]]])

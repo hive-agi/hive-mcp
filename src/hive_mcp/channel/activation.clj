@@ -20,7 +20,8 @@
    response."
   (:require [clojure.set :as set]
             [hive-mcp.extensions.registry :as ext]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 (def extension-key
   "Registry key an activation provider registers under. The provider is
@@ -51,6 +52,8 @@
   []
   (ext/get-extension extension-key))
 
+(m/=> provider [:=> [:cat] [:maybe ifn?]])
+
 (defn drain-ctx
   "Drain ctx for one tool call: `{:tokens cues}` merged with whatever the
    activation provider contributes.
@@ -74,3 +77,13 @@
           (log/debug t "activation: provider failed; drain falls back to cues")
           base))
       base)))
+
+(m/=> drain-ctx
+      [:=> [:cat [:maybe [:map
+                          [:tool-name {:optional true} :any]
+                          [:cues {:optional true} [:maybe [:set :string]]]
+                          [:caller-id {:optional true} :any]]]]
+       [:map
+        [:tokens [:set :string]]
+        [:pins {:optional true} [:set :string]]
+        [:floor-cap {:optional true} [:int {:min 1}]]]])

@@ -1,0 +1,26 @@
+{:case-0
+ {:out true,
+  :in
+  {:api-url "https://api.openai.com/v1/chat/completions",
+   :secret-key :openai-api-key}},
+ :case-1 {:out false, :in {:api-url "https://x.test/v1/models"}},
+ :case-10 {:out false, :in "entry"},
+ :case-11 {:out false, :in {:api-url "https://x.test/v1/models"}},
+ :case-12
+ {:out true,
+  :in
+  {:api-url "https://api.venice.ai/api/v1/chat/completions",
+   :secret-key :venice-api-key}},
+ :case-13 {:out false, :in {:dispatch :anthropic-oauth}},
+ :case-14 {:out false, :in {:dispatch :subscription}},
+ :case-15
+ {:out true,
+  :in {:dispatch :anthropic-oauth, :secret-key :anthropic-api-key}},
+ :case-2 {:out false, :in "entry"},
+ :case-3 {:out false, :in {:api-url "https://x.test/v1/models"}},
+ :case-4 {:out false, :in {:dispatch :anthropic-oauth}},
+ :case-5 {:out false, :in {:dispatch :anthropic-oauth}},
+ :case-6 {:out false, :in {:dispatch :chatgpt-oauth}},
+ :case-7 {:out false, :in {:dispatch :subscription}},
+ :case-8 {:out false, :in {:dispatch :chatgpt-oauth}},
+ :case-9 {:out false, :in {:api-url "https://x.test/v1/models"}}}

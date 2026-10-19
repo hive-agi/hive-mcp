@@ -55,6 +55,8 @@
                        :explain    (explainer spec)})))
     spec))
 
+(m/=> make [:=> [:cat :map] schema])
+
 (defn cache-key
   "Stable cache key for a `ProviderSpec`. Excludes nothing — the spec
    itself is already free of secrets (api keys live in provider opts,
@@ -62,3 +64,5 @@
    provider instance."
   [spec]
   [(:provider/impl spec) (:provider/model spec) (:provider/dim spec)])
+
+(m/=> cache-key [:=> [:cat :map] [:tuple [:maybe [:enum :ollama :venice :openai :openrouter]] [:maybe :string] [:maybe pos-int?]]])
