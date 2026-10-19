@@ -33,7 +33,8 @@
    versioning-specific function for traversing the commit graph."
 
   (:refer-clojure :exclude [ancestors])
-  (:require [hive-mcp.knowledge-graph.protocol :as proto]
+  (:require [malli.core :as m]
+            [hive-mcp.knowledge-graph.protocol :as proto]
             [hive-dsl.result :as r]
             [taoensso.timbre :as log]))
 
@@ -471,3 +472,29 @@
      :branch nil
      :snapshot-id nil
      :branches nil}))
+
+(m/=> versioning-available? [:=> [:cat] :boolean])
+(m/=> create-versioned-store [:function [:=> [:cat] [:maybe [:map [:store :any] [:system :any]]]] [:=> [:cat [:maybe :map]] [:maybe [:map [:store :any] [:system :any]]]]])
+(m/=> get-versioned-system [:=> [:cat] :any])
+(m/=> set-versioned-system! [:=> [:cat :any] :any])
+(m/=> branches [:=> [:cat] [:maybe [:set :keyword]]])
+(m/=> current-branch [:=> [:cat] [:maybe :keyword]])
+(m/=> branch! [:function [:=> [:cat :keyword] :any] [:=> [:cat :keyword [:or :string :keyword]] :any]])
+(m/=> delete-branch! [:=> [:cat :keyword] :any])
+(m/=> checkout [:=> [:cat :keyword] :any])
+(m/=> snapshot-id [:=> [:cat] [:maybe :string]])
+(m/=> parent-ids [:=> [:cat] [:maybe [:set :string]]])
+(m/=> snapshot-meta [:=> [:cat :string] [:maybe :map]])
+(m/=> as-of [:=> [:cat :string] :any])
+(m/=> history [:function [:=> [:cat] [:maybe [:vector :string]]] [:=> [:cat [:maybe :map]] [:maybe [:vector :string]]]])
+(m/=> ancestors [:=> [:cat :string] [:maybe [:vector :string]]])
+(m/=> ancestor? [:=> [:cat :string :string] [:maybe :boolean]])
+(m/=> common-ancestor [:=> [:cat :string :string] [:maybe :string]])
+(m/=> commit-graph [:=> [:cat] [:maybe :map]])
+(m/=> merge! [:function [:=> [:cat [:or :string :keyword]] :any] [:=> [:cat [:or :string :keyword] :map] :any]])
+(m/=> conflicts [:=> [:cat [:or :string :keyword] [:or :string :keyword]] [:maybe [:sequential :map]]])
+(m/=> diff [:=> [:cat [:or :string :keyword] [:or :string :keyword]] :any])
+(m/=> system-id [:=> [:cat] [:maybe :string]])
+(m/=> system-type [:=> [:cat] [:maybe :keyword]])
+(m/=> capabilities [:=> [:cat] [:maybe :map]])
+(m/=> status [:=> [:cat] :map])

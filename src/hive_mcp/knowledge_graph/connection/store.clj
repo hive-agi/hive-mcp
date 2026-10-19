@@ -1,5 +1,6 @@
 (ns hive-mcp.knowledge-graph.connection.store
-  (:require [hive-dsl.result :as r]
+  (:require [malli.core :as m]
+            [hive-dsl.result :as r]
             [hive-mcp.events.core :as events]
             [hive-mcp.knowledge-graph.connection.detect :as detect]
             [hive-mcp.knowledge-graph.protocol :as proto]
@@ -218,3 +219,17 @@
     (set! *test-store* store)
     (proto/set-store! store))
   store)
+
+(m/=> store-live? [:=> [:cat] :boolean])
+(m/=> backend-health [:=> [:cat] :map])
+(m/=> get-conn [:=> [:cat] :any])
+(m/=> ensure-conn! [:=> [:cat] :any])
+(m/=> reset-conn! [:=> [:cat] :any])
+(m/=> delete-database! [:=> [:cat :keyword] :any])
+(m/=> close! [:=> [:cat] :any])
+(m/=> set-backend! [:function [:=> [:cat :keyword] :any] [:=> [:cat :keyword [:maybe :map]] :any]])
+(m/=> install-store! [:=> [:cat :any] :any])
+
+;; Every backend implements the port, but the returned concrete object is
+;; deliberately backend-specific; protocol tests own its behavior.
+(m/=> ensure-store! [:=> [:cat] :any])

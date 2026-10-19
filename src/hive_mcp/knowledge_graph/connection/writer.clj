@@ -1,5 +1,6 @@
 (ns hive-mcp.knowledge-graph.connection.writer
-  (:require [clojure.core.async :as async]
+  (:require [malli.core :as m]
+            [clojure.core.async :as async]
             [hive-dsl.batch :as dsl-batch]
             [hive-dsl.result :as r]
             [hive-mcp.knowledge-graph.connection.store :as store]
@@ -243,3 +244,13 @@
          + (if (sequential? tx-data) (count tx-data) 1))
   (r/rescue nil
             (proto/transact! store (dsl-batch/normalize-tx-datum tx-data))))
+
+(m/=> flush-status [:=> [:cat [:int {:min 0}]] [:enum :ok :weave/write-failed]])
+(m/=> ensure-writer! [:=> [:cat] :any])
+(m/=> writer-stats [:=> [:cat] [:map [:running? :boolean] [:batches-flushed [:int {:min 0}]] [:items-written [:int {:min 0}]]]])
+(m/=> flush-pending! [:function [:=> [:cat] [:enum :ok :weave/timeout :weave/write-failed]] [:=> [:cat :int] [:enum :ok :weave/timeout :weave/write-failed]]])
+(m/=> offer-coalesced! [:=> [:cat :any] :boolean])
+(m/=> write-sync-fallback! [:=> [:cat :any :any] :any])
+
+(m/=> stop-writer! [:function [:=> [:cat] :nil]
+                             [:=> [:cat [:int {:min 0}]] :nil]])
