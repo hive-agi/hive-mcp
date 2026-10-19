@@ -122,3 +122,10 @@
     (datahike-q q aodb inputs)))
 
 (m/=> temporal-store? [:=> [:cat] :boolean])
+
+;; Temporal DB values are backend-specific opaque objects, or nil on non-temporal stores.
+(m/=> history-db [:=> [:cat] :any])
+(m/=> as-of-db [:=> [:cat [:or :int inst?]] :any])
+(m/=> since-db [:=> [:cat [:or :int inst?]] :any])
+(m/=> query-history [:=> [:cat [:or :vector :seq] [:* :any]] :any])
+(m/=> query-as-of [:=> [:cat [:or :int inst?] [:or :vector :seq] [:* :any]] :any])

@@ -446,3 +446,4 @@
 (m/=> derive-abstraction-level [:=> [:cat :any] [:int {:min 2 :max 4}]])
 (m/=> full-schema [:=> [:cat] :map])
 
+(m/=> valid-node-id? [:=> [:cat :any] :boolean])

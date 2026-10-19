@@ -252,3 +252,6 @@
 (m/=> flush-pending! [:function [:=> [:cat] [:enum :ok :weave/timeout :weave/write-failed]] [:=> [:cat :int] [:enum :ok :weave/timeout :weave/write-failed]]])
 (m/=> offer-coalesced! [:=> [:cat :any] :boolean])
 (m/=> write-sync-fallback! [:=> [:cat :any :any] :any])
+
+(m/=> stop-writer! [:function [:=> [:cat] :nil]
+                             [:=> [:cat [:int {:min 0}]] :nil]])

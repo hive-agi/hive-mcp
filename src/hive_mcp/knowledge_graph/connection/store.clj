@@ -229,3 +229,7 @@
 (m/=> close! [:=> [:cat] :any])
 (m/=> set-backend! [:function [:=> [:cat :keyword] :any] [:=> [:cat :keyword [:maybe :map]] :any]])
 (m/=> install-store! [:=> [:cat :any] :any])
+
+;; Every backend implements the port, but the returned concrete object is
+;; deliberately backend-specific; protocol tests own its behavior.
+(m/=> ensure-store! [:=> [:cat] :any])
