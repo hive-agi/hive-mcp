@@ -81,5 +81,5 @@
               [:sort-desc? {:optional true} :boolean]
               [:limit {:optional true} [:maybe :int]]
               [:error-log-fn {:optional true} [:maybe [:fn {:gen/gen (gen/return (fn [_ _]))} ifn?]]]
-              [:log-fn {:optional true} [:maybe [:fn {:gen/gen (gen/return (fn [_]))} ifn?]]]]] 
+              [:log-fn {:optional true} [:maybe [:fn {:gen/gen (gen/return (fn [_]))} ifn?]]]]]
    [:map [:evaluated [:int {:min 0}]] [:errors [:int {:min 0}]]]])
