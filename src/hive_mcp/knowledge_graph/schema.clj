@@ -425,7 +425,7 @@
   []
   (merge kg-schema sealed/sealed-edge-schema knowledge-schema disc-schema synth-schema @kg-schema-extensions))
 (m/=> register-relation-type! [:=> [:cat :keyword] :any])
-(m/=> register-relation-types! [:=> [:cat [:sequential :keyword]] :any])
+(m/=> register-relation-types! [:=> [:cat [:or [:sequential :keyword] [:set :keyword]]] :any])
 (m/=> relation-types [:=> [:cat] [:set :keyword]])
 (m/=> valid-relation? [:=> [:cat :any] :boolean])
 (m/=> normalize-predicate [:=> [:cat :any] [:maybe :string]])
