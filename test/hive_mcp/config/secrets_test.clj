@@ -2,7 +2,9 @@
   "Startup secret resolution: the registered set plus whatever the config
    declares on its own."
   (:require [clojure.test :refer [deftest is testing]]
-            [hive-mcp.config.secrets :as secrets]))
+            [hive-mcp.config.secrets :as secrets]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]
+            [clojure.string :as str]))
 
 (deftest a-config-declared-secret-outside-the-registry-survives-resolution
   (testing "registered keys resolve, and so does a key only the config knows"
@@ -20,3 +22,10 @@
 (deftest a-declared-secret-is-named-in-the-environment-by-its-keyword
   (is (= "AXON_API_KEY" (secrets/env-var-for :axon-api-key)))
   (is (= "OPENROUTER_API_KEY" (secrets/env-var-for :openrouter-api-key))))
+
+(deftrifecta-from-schema secret-env-name hive-mcp.config.secrets/env-var-for
+  {:in [:enum :axon-api-key :openrouter-api-key :x]
+   :out :string
+   :rel (fn [input output] (= output (-> (name input) (clojure.string/replace "-" "_") clojure.string/upper-case)))
+   :golden-path "test/golden/config/secret-env-name.edn"
+   :num-tests 500})

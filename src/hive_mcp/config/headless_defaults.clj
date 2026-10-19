@@ -21,7 +21,8 @@
    provider\". Concrete keyword values (e.g. `:hive-agent`) are looked up
    directly in the registry and used if registered, ignored otherwise."
   (:require [hive-di.core :refer [defconfig env]]
-            [hive-dsl.result :as r]))
+            [hive-dsl.result :as r]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -58,6 +59,8 @@
        (throw (ex-info "HeadlessDefaultsConfig resolution failed"
                        {:result result :overrides overrides}))))))
 
+(m/=> resolve! [:function [:=> [:cat] :map] [:=> [:cat :map] :map]])
+
 (defn default-backend
   "Resolved default backend keyword via three-tier precedence:
      config.edn [:headless :default-backend] > env > defconfig literal.
@@ -70,7 +73,11 @@
       edn-val
       (:default-backend (resolve!)))))
 
+(m/=> default-backend [:=> [:cat] :keyword])
+
 (defn auto?
   "True when configured default backend is the :auto sentinel."
   [backend-kw]
   (= auto-sentinel backend-kw))
+
+(m/=> auto? [:=> [:cat :any] :boolean])
