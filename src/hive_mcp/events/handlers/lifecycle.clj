@@ -10,7 +10,9 @@
    Part of gc-fix-4: prevents GC death spiral from unbounded atom growth."
 
   (:require [hive-mcp.events.core :as ev]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.events.handlers.schema :as hs]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -41,6 +43,12 @@
                          (when (seq atom-ids)
                            (str " for atoms: " (pr-str atom-ids))))}}))
 
+(m/=> handle-lifecycle-sweep
+      [:=> hs/HandlerArgs
+       [:map
+        [:lifecycle/sweep-fx [:map [:atom-ids :any]]]
+        [:log hs/LogEffect]]])
+
 ;; =============================================================================
 ;; Convenience Function
 ;; =============================================================================
@@ -57,6 +65,11 @@
    (trigger-sweep! {}))
   ([opts]
    (ev/dispatch [:lifecycle/sweep (or opts {})])))
+
+(m/=> trigger-sweep!
+      [:function
+       [:=> [:cat] :map]
+       [:=> [:cat [:maybe [:map [:atom-ids {:optional true} [:maybe [:or [:sequential :any] [:set :any]]]]]]] :map]])
 
 ;; =============================================================================
 ;; Registration
@@ -84,7 +97,11 @@
       (log/info "[hive-events] Lifecycle handlers registered: :lifecycle/sweep"))
     true))
 
+(m/=> register-handlers! [:=> [:cat] [:= true]])
+
 (defn reset-registration!
   "Reset registration state. Primarily for testing."
   []
   (reset! *registered false))
+
+(m/=> reset-registration! [:=> [:cat] [:= false]])

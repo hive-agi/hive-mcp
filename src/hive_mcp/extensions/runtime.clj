@@ -23,7 +23,8 @@
   (:require [hive-mcp.addons.core :as addon-core]
             [hive-mcp.dns.result :refer [rescue]]
             [hive-mcp.extensions.registry :as ext]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -47,6 +48,8 @@
   [svc-cfg]
   (let [c (:runtime svc-cfg)] (if (map? c) c {})))
 
+(m/=> config [:=> [:cat :any] :map])
+
 (defn enabled?
   "Provisioning is on unless config or HIVE_MCP_ADDON_RUNTIME turns it off."
   ([svc-cfg] (enabled? svc-cfg (System/getenv "HIVE_MCP_ADDON_RUNTIME")))
@@ -54,6 +57,11 @@
    (if (some? env-flag)
      (contains? #{"1" "true"} env-flag)
      (not (false? (:enabled? (config svc-cfg)))))))
+
+(m/=> enabled?
+      [:function
+       [:=> [:cat :any] :boolean]
+       [:=> [:cat :any [:maybe :string]] :boolean]])
 
 (defn registered-eval
   "The eval-fn hive-mcp hands the provisioner: delegates to whatever is
@@ -63,6 +71,8 @@
   [client commands]
   (when-let [f (ext/get-extension client-eval-key)]
     (f client commands)))
+
+(m/=> registered-eval [:=> [:cat :keyword :any] :any])
 
 (defn provisioner-opts
   "Options for hive-addon.runtime.boundary/provisioner from the :runtime
@@ -74,6 +84,15 @@
     (:declarations cfg) (assoc :declarations (:declarations cfg))
     (:profiles cfg)     (assoc :profiles (:profiles cfg))))
 
+(m/=> provisioner-opts
+      [:=> [:cat [:maybe [:map [:home {:optional true} [:maybe :string]]]]]
+       [:map
+        [:home :string]
+        [:eval-fn ifn?]
+        [:live? :boolean]
+        [:declarations {:optional true} :any]
+        [:profiles {:optional true} :any]]])
+
 ;; =============================================================================
 ;; The process-wide provisioner
 ;; =============================================================================
@@ -84,6 +103,15 @@
   [opts]
   (when-let [ctor (rescue nil (requiring-resolve 'hive-addon.runtime.boundary/provisioner))]
     (ctor opts)))
+
+(def Provisioner
+  "The shared provisioner hive-addon.runtime.boundary/provisioner builds."
+  [:map [:provision ifn?] [:deprovision ifn?] [:installed ifn?]])
+
+(def MountedReport
+  "A MountReport as `provision-mounted` reads and answers it: its :mounted
+   results. Open, every other key passes through."
+  [:map [:mounted {:optional true} [:maybe [:sequential :map]]]])
 
 (defn provisioner
   "The shared provisioner map {:provision :deprovision :installed}, built on
@@ -98,11 +126,18 @@
              (when p (compare-and-set! state nil p))
              @state))))))
 
+(m/=> provisioner
+      [:function
+       [:=> [:cat] [:maybe Provisioner]]
+       [:=> [:cat [:maybe :map]] [:maybe Provisioner]]])
+
 (defn reset-provisioner!
   "Drop the shared provisioner (tests, or after a config change). What it
    installed stays on disk."
   []
   (reset! state nil))
+
+(m/=> reset-provisioner! [:=> [:cat] :nil])
 
 (defn provision-fn
   "The :provision fn for hive-addon.mount/mount!, or nil when provisioning is
@@ -127,10 +162,14 @@
                                        (:runtimes report))})))
         report))))
 
+(m/=> provision-fn [:=> [:cat] [:maybe ifn?]])
+
 (defn mount-opts
   "{:provision f} to merge into mount! options, or {} when provisioning is off."
   []
   (if-let [f (provision-fn)] {:provision f} {}))
+
+(m/=> mount-opts [:=> [:cat] [:map [:provision {:optional true} ifn?]]])
 
 (defn deprovision!
   "Remove the runtimes the shared provisioner installed for ADDON-ID. Returns
@@ -139,10 +178,14 @@
   (when-let [{:keys [deprovision]} @state]
     (deprovision addon-id)))
 
+(m/=> deprovision! [:=> [:cat :any] [:maybe :map]])
+
 (defn installed
   "Addon id -> RuntimeDecls the shared provisioner installed, or {}."
   []
   (if-let [{:keys [installed]} @state] (installed) {}))
+
+(m/=> installed [:=> [:cat] :map])
 
 ;; =============================================================================
 ;; Mount paths that cannot thread :provision
@@ -167,8 +210,13 @@
                           (cond-> result rt (assoc :runtime rt))))
                       results))))))
 
+(m/=> provision-mounted
+      [:=> [:cat MountedReport [:maybe [:sequential :map]] [:maybe ifn?] ifn?] MountedReport])
+
 (defn provision-mounted!
   "provision-mounted over hive-mcp's addon registry with the shared
    provisioner."
   [report specs]
   (provision-mounted report specs (provision-fn) addon-core/get-addon))
+
+(m/=> provision-mounted! [:=> [:cat MountedReport [:maybe [:sequential :map]]] MountedReport])

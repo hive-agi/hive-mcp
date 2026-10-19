@@ -1,0 +1,88 @@
+{:case-0
+ {:out
+  {:log {:level :info, :message "Task q5y0 completed by 0Qp"},
+   :shout
+   {:agent-id "0Qp",
+    :event-type :completed,
+    :data {:task-id "q5y0", :result "success"}}},
+  :in
+  ({}
+   [:task/complete
+    {:task-id "q5y0", :agent-id "0Qp", :result "success"}])},
+ :case-1
+ {:out
+  {:log {:level :info, :message "Task 7R28yn completed by E9hV1o7"},
+   :shout
+   {:agent-id "E9hV1o7",
+    :event-type :completed,
+    :data {:task-id "7R28yn", :result "success"}}},
+  :in
+  ({}
+   [:task/complete
+    {:task-id "7R28yn", :agent-id "E9hV1o7", :result "success"}])},
+ :case-2
+ {:out
+  {:log {:level :info, :message "Task w37 completed by q3BeL8CcDs"},
+   :shout
+   {:agent-id "q3BeL8CcDs",
+    :event-type :completed,
+    :data {:task-id "w37", :result "failure"}}},
+  :in
+  ({}
+   [:task/complete
+    {:task-id "w37", :agent-id "q3BeL8CcDs", :result "failure"}])},
+ :case-3
+ {:out
+  {:log {:level :info, :message "Task 769zs completed by 99"},
+   :shout
+   {:agent-id "99",
+    :event-type :completed,
+    :data {:task-id "769zs", :result "failure"}}},
+  :in
+  ({}
+   [:task/complete
+    {:task-id "769zs", :agent-id "99", :result "failure"}])},
+ :case-4
+ {:out
+  {:log {:level :info, :message "Task Pf completed by 1JuS3N76R"},
+   :shout
+   {:agent-id "1JuS3N76R",
+    :event-type :completed,
+    :data {:task-id "Pf", :result "failure"}}},
+  :in
+  ({}
+   [:task/complete
+    {:task-id "Pf", :agent-id "1JuS3N76R", :result "failure"}])},
+ :case-5
+ {:out
+  {:log {:level :info, :message "Task S93Yh completed by N95Yt55"},
+   :shout
+   {:agent-id "N95Yt55",
+    :event-type :completed,
+    :data {:task-id "S93Yh", :result "failure"}}},
+  :in
+  ({}
+   [:task/complete
+    {:task-id "S93Yh", :agent-id "N95Yt55", :result "failure"}])},
+ :case-6
+ {:out
+  {:log {:level :info, :message "Task Bfv3hFEH completed by K2gqM"},
+   :shout
+   {:agent-id "K2gqM",
+    :event-type :completed,
+    :data {:task-id "Bfv3hFEH", :result "failure"}}},
+  :in
+  ({}
+   [:task/complete
+    {:task-id "Bfv3hFEH", :agent-id "K2gqM", :result "failure"}])},
+ :case-7
+ {:out
+  {:log {:level :info, :message "Task hLM4Q82 completed by 4zU2Cl6"},
+   :shout
+   {:agent-id "4zU2Cl6",
+    :event-type :completed,
+    :data {:task-id "hLM4Q82", :result "success"}}},
+  :in
+  ({}
+   [:task/complete
+    {:task-id "hLM4Q82", :agent-id "4zU2Cl6", :result "success"}])}}

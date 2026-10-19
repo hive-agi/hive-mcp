@@ -28,7 +28,8 @@
   (:require [hive-di.core :as di]
             [hive-di.source :as src]
             [hive-dsl.result :as r]
-            [hive-mcp.config.path :as config-path]))
+            [hive-mcp.config.path :as config-path]
+            [malli.core :as m]))
 
 (def config-edn-path
   "Canonical hive-mcp config file. Each field's :file source reads from here."
@@ -61,11 +62,18 @@
        (throw (ex-info "SAAHandlerConfig resolution failed"
                        {:result result :overrides overrides}))))))
 
+(m/=> resolve!
+      [:function
+       [:=> [:cat] SAAHandlerConfig-schema]
+       [:=> [:cat :any] SAAHandlerConfig-schema]])
+
 (defn slave-agent-id
   "Resolved CLAUDE_SWARM_SLAVE_ID (or config.edn / default).
    Always returns a non-blank string."
   []
   (:slave-agent-id (resolve!)))
+
+(m/=> slave-agent-id [:=> [:cat] [:string {:min 1}]])
 
 (defn effective-agent-id
   "Coalesce caller-provided agent-id with the resolved slave-agent-id.
@@ -73,3 +81,5 @@
    payload omits :agent-id."
   [agent-id]
   (or agent-id (slave-agent-id)))
+
+(m/=> effective-agent-id [:=> [:cat :any] :some])

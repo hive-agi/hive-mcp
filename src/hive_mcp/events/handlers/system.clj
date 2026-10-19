@@ -5,7 +5,8 @@
    - :system/error - Structured error telemetry"
 
   (:require [hive-mcp.events.core :as ev]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -58,7 +59,11 @@
       (log/info "[hive-events] System handlers registered: :system/error"))
     true))
 
+(m/=> register-handlers! [:=> [:cat] [:= true]])
+
 (defn reset-registration!
   "Reset registration state. Primarily for testing."
   []
   (reset! *registered false))
+
+(m/=> reset-registration! [:=> [:cat] [:= false]])

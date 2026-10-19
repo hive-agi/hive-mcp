@@ -21,7 +21,9 @@
   (:require [hive-mcp.events.core :as ev]
             [hive-mcp.events.interceptors.conversation :as cix]
             [hive-mcp.hivemind.conversation :as conv]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.events.handlers.schema :as hs]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -29,6 +31,11 @@
 ;; =============================================================================
 ;; Handler: :conversation/tell
 ;; =============================================================================
+
+(def ^:private InboxPush
+  "The :conversation/inbox-push effect: the receiver and the envelope dropped
+   into its piggyback inbox."
+  [:map [:agent-id :any] [:envelope :map]])
 
 (defn handle-conversation-tell
   "Pure handler for :conversation/tell.
@@ -45,6 +52,13 @@
                                  :envelope envelope}
      :log {:level :debug
            :message (str "tell " (:from envelope) " → " (:to envelope))}}))
+
+(m/=> handle-conversation-tell
+      [:=> hs/HandlerArgs
+       [:map
+        [:conversation/publish-tell [:map [:envelope :map]]]
+        [:conversation/inbox-push InboxPush]
+        [:log hs/LogEffect]]])
 
 ;; =============================================================================
 ;; Handler: :conversation/ask
@@ -72,6 +86,14 @@
      :log {:level :debug
            :message (str "ask " (:from envelope) " → " (:to envelope)
                          " ask-id=" ask-id)}}))
+
+(m/=> handle-conversation-ask
+      [:=> hs/HandlerArgs
+       [:map
+        [:conversation/register-ask [:map [:envelope :map]]]
+        [:conversation/publish-ask [:map [:envelope :map] [:ask-id :any]]]
+        [:conversation/inbox-push InboxPush]
+        [:log hs/LogEffect]]])
 
 ;; =============================================================================
 ;; Handler: :conversation/respond
@@ -110,6 +132,14 @@
              :message (str "respond for ask-id " ask-id
                            " has no local ask yet; buffered and published")})}))
 
+(m/=> handle-conversation-respond
+      [:=> hs/HandlerArgs
+       [:map
+        [:conversation/deliver-response [:map [:ask-id :any] [:answer :any]]]
+        [:conversation/publish-respond [:map [:envelope :map]]]
+        [:conversation/inbox-push InboxPush]
+        [:log hs/LogEffect]]])
+
 ;; =============================================================================
 ;; Registration
 ;; =============================================================================
@@ -144,7 +174,11 @@
       (log/info "[hive-events] Conversation handlers registered: :conversation/tell :conversation/ask :conversation/respond"))
     true))
 
+(m/=> register-handlers! [:=> [:cat] [:= true]])
+
 (defn reset-registration!
   "Reset registration state. Test only."
   []
   (reset! *registered false))
+
+(m/=> reset-registration! [:=> [:cat] [:= false]])

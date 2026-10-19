@@ -5,7 +5,8 @@
    across the delegation-stub namespaces: call the extension registered under a
    key when present, otherwise log at debug and return a default."
   (:require [hive-mcp.extensions.registry :as ext]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -21,3 +22,6 @@
     (do
       (log/debug "Extension not available, returning default for" ext-key)
       default-val)))
+
+(m/=> delegate-or-noop
+      [:=> [:cat :keyword :any [:maybe [:or [:sequential :any] [:set :any]]]] :any])

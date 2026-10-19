@@ -1,0 +1,8 @@
+{:case-0 {:out true, :in (nil nil)},
+ :case-1 {:out true, :in ({} "true")},
+ :case-2 {:out true, :in (nil nil)},
+ :case-3 {:out false, :in (nil "0")},
+ :case-4 {:out true, :in ({:runtime {:home "/h/a"}} nil)},
+ :case-5 {:out true, :in (nil nil)},
+ :case-6 {:out true, :in (nil nil)},
+ :case-7 {:out true, :in (nil nil)}}

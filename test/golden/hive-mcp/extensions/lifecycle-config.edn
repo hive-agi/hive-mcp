@@ -1,0 +1,18 @@
+{:case-0
+ {:out {:enabled? false, :sweep-interval-ms 1},
+  :in ({:lifecycle {:enabled? false, :sweep-interval-ms 1}})},
+ :case-1 {:out {}, :in ({:lifecycle "yes"})},
+ :case-2 {:out {}, :in ({:lifecycle true})},
+ :case-3 {:out {}, :in ({:lifecycle true})},
+ :case-4
+ {:out {:enabled? true, :sweep-interval-ms 2},
+  :in ({:lifecycle {:enabled? true, :sweep-interval-ms 2}})},
+ :case-5
+ {:out {:enabled? true, :sweep-interval-ms 3},
+  :in ({:lifecycle {:enabled? true, :sweep-interval-ms 3}})},
+ :case-6
+ {:out {:enabled? false, :sweep-interval-ms 5},
+  :in ({:lifecycle {:enabled? false, :sweep-interval-ms 5}})},
+ :case-7
+ {:out {:enabled? true, :sweep-interval-ms 1},
+  :in ({:lifecycle {:enabled? true, :sweep-interval-ms 1}})}}

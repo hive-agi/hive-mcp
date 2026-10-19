@@ -1,0 +1,23 @@
+{:case-0
+ {:out {:type "text", :text nil, :isError true},
+  :in (nil "hive.carto")},
+ :case-1
+ {:out {:type "text", :text "1o2BjJ1574", :isError true},
+  :in ("1o2BjJ1574" "probe.a")},
+ :case-2
+ {:out {:type "text", :text nil, :isError true}, :in (nil :probe/b)},
+ :case-3
+ {:out {:type "text", :text nil, :isError true}, :in (nil :probe/b)},
+ :case-4
+ {:out
+  {:type "text",
+   :text "3qvkKpiwo0PnW3P5PP78J9YlwZMy72B",
+   :isError true},
+  :in ("3qvkKpiwo0PnW3P5PP78J9YlwZMy72B" "probe.a")},
+ :case-5
+ {:out {:type "text", :text nil, :isError true}, :in (nil "probe.a")},
+ :case-6
+ {:out {:type "text", :text nil, :isError true}, :in (nil "probe.a")},
+ :case-7
+ {:out {:type "text", :text nil, :isError true},
+  :in (nil "hive.carto")}}

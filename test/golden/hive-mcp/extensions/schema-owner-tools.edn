@@ -1,0 +1,65 @@
+{:case-0
+ {:out ["memory"],
+  :in
+  ({"memory"
+    {:addon/a
+     {:seq 1, :props {"p" {:type "string"}, "q" {:type "string"}}},
+     "addon-c" {:seq 0, :props {"p" {:type "string"}}}}}
+   :addon/a)},
+ :case-1
+ {:out ["kanban"],
+  :in
+  ({"kanban"
+    #:addon{:a {:seq 0, :props {}},
+            :b {:seq 0, :props {"q" {:type "string"}}}}}
+   :addon/b)},
+ :case-2
+ {:out ["code"],
+  :in
+  ({"memory"
+    #:addon{:a {:seq 0, :props {"p" {:type "string"}}},
+            :b
+            {:seq 1,
+             :props {"p" {:type "string"}, "q" {:type "string"}}}},
+    "kanban" {},
+    "code"
+    {:addon/a {:seq 0, :props {"q" {:type "string"}}},
+     :addon/b {:seq 0, :props {"q" {:type "string"}}},
+     "addon-c" {:seq 0, :props {"p" {:type "string"}}}}}
+   "addon-c")},
+ :case-3
+ {:out [],
+  :in
+  ({"kanban"
+    #:addon{:a {:seq 1, :props {}},
+            :b {:seq 1, :props {"q" {:type "string"}}}}}
+   "addon-c")},
+ :case-4
+ {:out ["code" "memory"],
+  :in
+  ({"memory" #:addon{:b {:seq 1, :props {"q" {:type "string"}}}},
+    "code"
+    {:addon/a
+     {:seq 3, :props {"p" {:type "string"}, "q" {:type "string"}}},
+     :addon/b {:seq 1, :props {"p" {:type "string"}}},
+     "addon-c"
+     {:seq 0, :props {"p" {:type "string"}, "q" {:type "string"}}}}}
+   :addon/b)},
+ :case-5
+ {:out [],
+  :in
+  ({"kanban"
+    {:addon/a {:seq 2, :props {"q" {:type "string"}}},
+     "addon-c"
+     {:seq 7, :props {"p" {:type "string"}, "q" {:type "string"}}}},
+    "code" {"addon-c" {:seq 4, :props {}}}}
+   :addon/b)},
+ :case-6 {:out [], :in ({} :addon/b)},
+ :case-7
+ {:out ["memory"],
+  :in
+  ({"memory"
+    {:addon/a
+     {:seq 8, :props {"p" {:type "string"}, "q" {:type "string"}}},
+     "addon-c" {:seq 4, :props {}}}}
+   :addon/a)}}

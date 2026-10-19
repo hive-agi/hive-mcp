@@ -12,7 +12,9 @@
 
    Uses requiring-resolve to avoid circular deps (events -> tools -> chroma)."
 
-  (:require [hive-mcp.events.core :as ev]))
+  (:require [hive-mcp.events.core :as ev]
+            [malli.core :as m]
+            [hive-mcp.events.handlers.schema :as hs]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -20,6 +22,11 @@
 ;; =============================================================================
 ;; Handlers
 ;; =============================================================================
+
+(def ^:private McpResponseEffect
+  "What every read-path handler answers: the delegated tool handler's MCP
+   response under :mcp-response. Its shape is the tool handler's own."
+  [:map [:mcp-response :any]])
 
 (defn handle-memory-query
   "Handler for :memory/query events.
@@ -29,6 +36,8 @@
         handler (requiring-resolve 'hive-mcp.tools.memory.crud.query/handle-query)]
     {:mcp-response (handler params)}))
 
+(m/=> handle-memory-query [:=> hs/HandlerArgs McpResponseEffect])
+
 (defn handle-memory-search
   "Handler for :memory/search events.
    Delegates to hive-mcp.tools.memory.search/handle-search-semantic."
@@ -36,6 +45,8 @@
   (let [params (second event)
         handler (requiring-resolve 'hive-mcp.tools.memory.search/handle-search-semantic)]
     {:mcp-response (handler params)}))
+
+(m/=> handle-memory-search [:=> hs/HandlerArgs McpResponseEffect])
 
 (defn handle-memory-get
   "Handler for :memory/get events.
@@ -45,6 +56,8 @@
         handler (requiring-resolve 'hive-mcp.tools.memory.crud.retrieve/handle-get-full)]
     {:mcp-response (handler params)}))
 
+(m/=> handle-memory-get [:=> hs/HandlerArgs McpResponseEffect])
+
 (defn handle-memory-get-metadata
   "Handler for :memory/get-metadata events.
    Delegates to hive-mcp.tools.memory.crud.retrieve/handle-get-metadata."
@@ -52,6 +65,8 @@
   (let [params (second event)
         handler (requiring-resolve 'hive-mcp.tools.memory.crud.retrieve/handle-get-metadata)]
     {:mcp-response (handler params)}))
+
+(m/=> handle-memory-get-metadata [:=> hs/HandlerArgs McpResponseEffect])
 
 ;; =============================================================================
 ;; Registration
@@ -65,3 +80,5 @@
   (ev/reg-event :memory/search [ev/metrics] handle-memory-search)
   (ev/reg-event :memory/get    [ev/metrics] handle-memory-get)
   (ev/reg-event :memory/get-metadata [ev/metrics] handle-memory-get-metadata))
+
+(m/=> register-handlers! [:=> [:cat] hs/HandlerRegistry])
