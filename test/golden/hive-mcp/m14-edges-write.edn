@@ -1,0 +1,27 @@
+{:increment 1.0,
+ :update-missing nil,
+ :one-string? true,
+ :ids 2,
+ :update true,
+ :sync 1,
+ :event-fallback :fallback,
+ :increment-missing nil,
+ :verify true,
+ :verify-missing nil,
+ :increment-clamped 1.0,
+ :edges
+ [#:kg-edge{:from "w1",
+            :to "w2",
+            :relation :implements,
+            :scope "s",
+            :confidence 1.0}
+  #:kg-edge{:from "w1", :to "w3", :relation :relates, :confidence 1.0}
+  #:kg-edge{:from "w2", :to "w3", :relation :refines, :confidence 1.0}
+  #:kg-edge{:from "w3",
+            :to "w1",
+            :relation :depends-on,
+            :confidence 1.0}],
+ :none [],
+ :removed 3,
+ :left
+ [#:kg-edge{:from "w2", :to "w3", :relation :refines, :confidence 1.0}]}

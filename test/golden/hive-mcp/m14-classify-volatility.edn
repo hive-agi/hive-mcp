@@ -1,0 +1,8 @@
+{:case-0 {:out :stable, :in ("deps.edn")},
+ :case-1 {:out :moderate, :in ("src/a.clj")},
+ :case-2 {:out :volatile, :in ("server.log")},
+ :case-3 {:out :stable, :in (".gitignore")},
+ :case-4 {:out :stable, :in ("sub/project.clj")},
+ :case-5 {:out :moderate, :in ("README.md")},
+ :case-6 {:out :volatile, :in ("target/classes/a.class")},
+ :case-7 {:out :stable, :in ("pom.xml")}}

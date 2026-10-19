@@ -1,0 +1,23 @@
+{:case-0 {:out 0.5, :in (nil)},
+ :case-1
+ {:out 0.33333333333333337,
+  :in
+  ({:staleness-alpha 2,
+    :staleness-beta 1.0,
+    :staleness-source :!Y,
+    :staleness-depth -1})},
+ :case-2
+ {:out 0.5,
+  :in
+  ({:id "NL",
+    :staleness-alpha 2,
+    :staleness-beta 2,
+    :staleness-source "pV",
+    :staleness-depth nil})},
+ :case-3
+ {:out 0.6666666666666667,
+  :in ({:staleness-alpha 0.5, :staleness-source nil})},
+ :case-4 {:out 0.5, :in (nil)},
+ :case-5 {:out 0.5, :in (nil)},
+ :case-6 {:out 0.5, :in (nil)},
+ :case-7 {:out 0.5, :in (nil)}}

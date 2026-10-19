@@ -1,0 +1,8 @@
+{:datascript :ran,
+ :global :ran,
+ :global-map :ran,
+ :backend-is-fixture true,
+ :backend-others [true true],
+ :dual-ran-datascript? true,
+ :bound-backend :datascript,
+ :restored? true}
