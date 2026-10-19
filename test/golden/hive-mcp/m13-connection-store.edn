@@ -1,1 +1,1 @@
-false
+{:no-store false, :datascript-store true}
