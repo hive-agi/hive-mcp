@@ -10,7 +10,8 @@
    3. :kg-backend in .hive-project.edn
    4. Default: config/default-kg-backend (persistent — compounding axiom)"
 
-  (:require [hive-mcp.knowledge-graph.protocol :as proto]
+  (:require [malli.core :as m]
+            [hive-mcp.knowledge-graph.protocol :as proto]
             [hive-dsl.batch :as dsl-batch]
             [hive-mcp.knowledge-graph.connection.store :as store]
             [hive-mcp.knowledge-graph.connection.writer :as writer]
@@ -253,3 +254,12 @@
 ;; requiring-resolves connection/in-flight to observe queue depth; the canonical
 ;; counter lives in connection.writer.
 (def ^:private in-flight hive-mcp.knowledge-graph.connection.writer/in-flight)
+
+(m/=> query [:=> [:cat :any [:* :any]] :any])
+(m/=> entity [:=> [:cat :any] :any])
+(m/=> entid [:=> [:cat :any] [:maybe :int]])
+(m/=> pull-entity [:=> [:cat :any :any] [:maybe :map]])
+(m/=> eids-by-attr [:=> [:cat :keyword] [:sequential :int]])
+(m/=> query-with-db [:=> [:cat :any :any [:* :any]] :any])
+(m/=> gen-edge-id [:=> [:cat] [:string {:min 1}]])
+(m/=> now [:=> [:cat] inst?])
