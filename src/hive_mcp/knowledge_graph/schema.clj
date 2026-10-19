@@ -3,7 +3,8 @@
 
    Defines the schema for knowledge edges that connect memory entries,
    enabling graph traversal, impact analysis, and knowledge promotion."
-  (:require [hive-mcp.memory.type-registry :as type-registry]
+  (:require [malli.core :as m]
+            [hive-mcp.memory.type-registry :as type-registry]
             [clojure.string :as str]
             [malli.core :as m]))
 
@@ -31,11 +32,13 @@
 (defn register-relation-type!
   "Register an additional relation type from an addon.
    Must be called before any validation that needs the type."
+
   [rel]
   (swap! relation-type-extensions conj rel))
 
 (defn register-relation-types!
   "Register multiple additional relation types from an addon."
+
   [rels]
   (swap! relation-type-extensions into rels))
 
@@ -51,6 +54,7 @@
    - :depends-on   - Requires for correctness
    - :derived-from - Synthesized from sources
    - :applies-to   - Scope applicability"
+
   []
   (into core-relation-types @relation-type-extensions))
 
@@ -128,6 +132,7 @@
 
 (defn valid-relation?
   "Check if a relation type is valid."
+
   [relation]
   (contains? (relation-types) relation))
 
@@ -139,6 +144,7 @@
 
    v1 is purely syntactic; semantic canonicalization (synonym / embedding
    clustering of predicates) is a deferred v2."
+
   [predicate]
   (when (string? predicate)
     (let [norm (-> predicate
@@ -151,12 +157,14 @@
 
 (defn valid-confidence?
   "Check if confidence score is in valid range [0.0, 1.0]."
+
   [confidence]
   (and (number? confidence)
        (<= 0.0 confidence 1.0)))
 
 (defn valid-source-type?
   "Check if source type is valid."
+
   [source-type]
   (contains? source-types source-type))
 
@@ -178,17 +186,17 @@
   [node-id]
   (m/validate NodeId node-id))
 
-(m/=> valid-node-id? [:=> [:cat :any] :boolean])
-
 (defn valid-abstraction-level?
   "Check if abstraction level is valid (1-4).
    L0 (runtime) is not stored, so 0 is not valid for persistence."
+
   [level]
   (and (integer? level)
        (<= 1 level 4)))
 
 (defn abstraction-level-keyword
   "Convert integer level to keyword (:level-1, :level-2, :level-3, :level-4)."
+
   [level]
   (when (valid-abstraction-level? level)
     (keyword (str "L" level))))
@@ -196,6 +204,7 @@
 (defn abstraction-level-info
   "Get full info for an abstraction level.
    Returns {:level n :name \"Name\" :description \"...\"} or nil."
+
   [level]
   (when (valid-abstraction-level? level)
     (get abstraction-levels (keyword (str "level-" level)))))
@@ -246,16 +255,19 @@
 
 (defn valid-volatility-class?
   "Check if volatility class is valid."
+
   [volatility-class]
   (contains? volatility-classes volatility-class))
 
 (defn valid-certainty-alpha?
   "Check if certainty alpha is valid (positive number)."
+
   [alpha]
   (and (number? alpha) (pos? alpha)))
 
 (defn valid-certainty-beta?
   "Check if certainty beta is valid (positive number)."
+
   [beta]
   (and (number? beta) (pos? beta)))
 
@@ -363,6 +375,7 @@
 (defn synth-attr?
   "True iff attr is in the :synth/* namespace (excludes :synth/node-id).
    Used by DatahikeKgWriter destructive-guard."
+
   [attr]
   (and (keyword? attr)
        (= "synth" (namespace attr))
@@ -370,6 +383,7 @@
 
 (defn disc-certainty-defaults-with-timestamp
   "Returns disc certainty defaults with current timestamp for last-observation."
+
   []
   (assoc disc-certainty-defaults
          :disc/last-observation (java.util.Date.)))
@@ -377,6 +391,7 @@
 (defn apply-disc-certainty-defaults
   "Apply default certainty values to a disc entity map.
    Only sets values for keys not already present."
+
   [disc-entity]
   (merge (disc-certainty-defaults-with-timestamp) disc-entity))
 
@@ -397,11 +412,13 @@
   "Register additional DataScript schema attributes from an addon.
    Must be called before the KG store is first accessed.
    schema-map: a DataScript schema map, e.g. {:my/attr {:db/doc \"...\"}}"
+
   [schema-map]
   (swap! kg-schema-extensions merge schema-map))
 
 (defn get-kg-schema-extensions
   "Returns the current KG schema extensions registered by addons."
+
   []
   @kg-schema-extensions)
 
@@ -412,16 +429,40 @@
 (defn type->abstraction-level
   "Maps memory entry types to their default abstraction levels.
    Derived from type-registry (SST)."
+
   []
   (type-registry/type->abstraction))
 
 (defn derive-abstraction-level
   "Derive the default abstraction level for a memory entry type.
    Returns integer 2-4, defaulting to 2 (Semantic) for unknown types."
+
   [entry-type]
   (type-registry/abstraction-level entry-type))
 
 (defn full-schema
   "Returns the combined KG schema (edges + knowledge abstraction + disc + synth + addon extensions)."
+
   []
   (merge kg-schema knowledge-schema disc-schema synth-schema @kg-schema-extensions))
+(m/=> register-relation-type! [:=> [:cat :keyword] :any])
+(m/=> register-relation-types! [:=> [:cat [:sequential :keyword]] :any])
+(m/=> relation-types [:=> [:cat] [:set :keyword]])
+(m/=> valid-relation? [:=> [:cat :any] :boolean])
+(m/=> normalize-predicate [:=> [:cat :any] [:maybe :string]])
+(m/=> valid-confidence? [:=> [:cat :any] :boolean])
+(m/=> valid-source-type? [:=> [:cat :any] :boolean])
+(m/=> valid-abstraction-level? [:=> [:cat :any] :boolean])
+(m/=> abstraction-level-keyword [:=> [:cat :any] [:maybe :keyword]])
+(m/=> abstraction-level-info [:=> [:cat :any] [:maybe [:map [:level :int] [:name :string] [:description :string]]]])
+(m/=> valid-volatility-class? [:=> [:cat :any] :boolean])
+(m/=> valid-certainty-alpha? [:=> [:cat :any] :boolean])
+(m/=> valid-certainty-beta? [:=> [:cat :any] :boolean])
+(m/=> synth-attr? [:=> [:cat :any] :boolean])
+(m/=> disc-certainty-defaults-with-timestamp [:=> [:cat] :map])
+(m/=> apply-disc-certainty-defaults [:=> [:cat :map] :map])
+(m/=> register-kg-schema! [:=> [:cat :map] :any])
+(m/=> get-kg-schema-extensions [:=> [:cat] :map])
+(m/=> type->abstraction-level [:=> [:cat] :map])
+(m/=> derive-abstraction-level [:=> [:cat :any] [:int {:min 2 :max 4}]])
+(m/=> full-schema [:=> [:cat] :map])
