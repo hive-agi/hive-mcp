@@ -59,4 +59,4 @@
     (f feature fn-sym params-map)))
 
 (m/=> require-and-call-plist-json
-      [:=> [:cat ElispName ElispName [:maybe [:map-of :keyword :any]]] ElispSource])
+      [:=> [:cat ElispName ElispName [:maybe [:map-of [:or :keyword :string :symbol] :any]]] ElispSource])

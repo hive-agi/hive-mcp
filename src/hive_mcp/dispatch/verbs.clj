@@ -280,7 +280,7 @@
   [root]
   (apply merge (keep :params (vals (contributions root)))))
 
-(m/=> contributed-params [:=> [:cat :any] :map])
+(m/=> contributed-params [:=> [:cat :any] [:maybe :map]])
 
 (defn contributed-verb-names
   "The verbs contributed under ROOT, as sorted strings."
