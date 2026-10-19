@@ -7,10 +7,11 @@
 
    spawn!/dispatch! let exceptions propagate (critical path).
    status/kill!/interrupt! use rescue with safe fallbacks (non-critical)."
-  (:require [hive-mcp.agent.ling.strategy :refer [ILingStrategy]]
+  (:require [hive-mcp.agent.ling.strategy :as strategy :refer [ILingStrategy]]
             [hive-addon.terminal :as terminal]
             [hive-dsl.result :refer [rescue]]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -52,6 +53,12 @@
              :errors ["Terminal addon interrupt threw exception"]}
       (terminal/terminal-interrupt! terminal-addon ling-ctx))))
 
+(def TerminalAddon
+  "Malli schema for a value that satisfies `ITerminalAddon`. Generates a bare
+   reify, which satisfies the protocol and implements none of its methods."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (reify terminal/ITerminalAddon))}
+   (fn [x] (satisfies? terminal/ITerminalAddon x))])
+
 (defn ->terminal-addon-strategy
   "Create a TerminalAddonStrategy wrapping an ITerminalAddon instance.
 
@@ -61,3 +68,7 @@
   [terminal-addon]
   {:pre [(satisfies? terminal/ITerminalAddon terminal-addon)]}
   (->TerminalAddonStrategy terminal-addon))
+
+;; The input is open: the body's own :pre refuses a non-addon, and the
+;; contract does not turn that AssertionError into a schema error.
+(m/=> ->terminal-addon-strategy [:=> [:cat :any] strategy/LingStrategy])

@@ -12,7 +12,9 @@
    Idempotent: Re-registering the same key replaces silently (last-write-wins)."
   (:require [hive-addon.terminal :as terminal]
             [hive-mcp.agent.ling.terminal-addon-strategy :as terminal-strat]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.agent.ling.strategy :as strategy]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -49,6 +51,14 @@
         {:registered? true
          :terminal-id terminal-id})))
 
+;; The addon is checked inside and refused with :errors, so any value is accepted.
+(m/=> register-terminal!
+      [:=> [:cat :keyword :any]
+       [:map
+        [:registered? :boolean]
+        [:terminal-id :keyword]
+        [:errors {:optional true} [:vector :string]]]])
+
 (defn resolve-terminal-strategy
   "Look up terminal-id in registry and wrap as ILingStrategy.
    Returns a TerminalAddonStrategy instance, or nil if not found."
@@ -56,15 +66,21 @@
   (when-let [addon (get @registry terminal-id)]
     (terminal-strat/->terminal-addon-strategy addon)))
 
+(m/=> resolve-terminal-strategy [:=> [:cat :any] [:maybe strategy/LingStrategy]])
+
 (defn registered-terminals
   "Return the set of registered terminal-id keywords."
   []
   (set (keys @registry)))
 
+(m/=> registered-terminals [:=> [:cat] [:set :keyword]])
+
 (defn get-terminal-addon
   "Get the raw ITerminalAddon instance for a terminal-id, or nil."
   [terminal-id]
   (get @registry terminal-id))
+
+(m/=> get-terminal-addon [:=> [:cat :any] [:maybe terminal-strat/TerminalAddon]])
 
 (defn deregister-terminal!
   "Remove a terminal from the registry (for addon shutdown).
@@ -78,8 +94,12 @@
     {:deregistered? had-entry?
      :terminal-id terminal-id}))
 
+(m/=> deregister-terminal! [:=> [:cat :any] [:map [:deregistered? :boolean] [:terminal-id :any]]])
+
 (defn clear-registry!
   "Reset the terminal registry. Intended for testing only."
   []
   (reset! registry {})
   nil)
+
+(m/=> clear-registry! [:=> [:cat] :nil])
