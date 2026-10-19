@@ -185,11 +185,13 @@
    #(satisfies? IModelCatalog %)])
 
 (def ModelSpecRecord
-  "A resolved ModelSpec record."
-  [:and Spec
+  "A resolved ModelSpec record. The record test comes first so `:and`
+   generates from its elements, which the Spec arm then accepts."
+  [:and
    [:fn {:gen/elements [(map->ModelSpec floor-spec)
                         (map->ModelSpec (assoc floor-spec :dimension 768))]}
-    #(instance? ModelSpec %)]])
+    #(instance? ModelSpec %)]
+   Spec])
 
 (def Table
   "A model -> partial-spec table, as declared in config. nil is an empty table."
