@@ -1,0 +1,60 @@
+{:case-0
+ {:out
+  {:error :model-not-configured,
+   :agent-type nil,
+   :provider :venice,
+   :config-keys
+   ["agent-defaults.<agent-type>"
+    "llm-providers.venice.default-model"],
+   :fix
+   "Pass provider and model explicitly, or set one of agent-defaults.<agent-type>, llm-providers.venice.default-model, e.g. hive config set agent-defaults.<agent-type> '{:provider :venice :model \"<model-id>\"}'"},
+  :in (nil {:provider :venice})},
+ :case-1 {:out nil, :in (nil {:provider :groq, :model "qwen3"})},
+ :case-2 {:out nil, :in (:ling {:provider :groq, :model "qwen3"})},
+ :case-3
+ {:out
+  {:error :provider-not-configured,
+   :agent-type :drone,
+   :provider nil,
+   :config-keys ["agent-defaults.drone"],
+   :fix
+   "Pass provider and model explicitly, or set one of agent-defaults.drone, e.g. hive config set agent-defaults.drone '{:provider :venice :model \"<model-id>\"}'"},
+  :in (:drone {:model "qwen3"})},
+ :case-4
+ {:out
+  {:error :model-not-configured,
+   :agent-type :ling,
+   :provider :groq,
+   :config-keys
+   ["agent-defaults.ling" "llm-providers.groq.default-model"],
+   :fix
+   "Pass provider and model explicitly, or set one of agent-defaults.ling, llm-providers.groq.default-model, e.g. hive config set agent-defaults.ling '{:provider :venice :model \"<model-id>\"}'"},
+  :in (:ling {:provider :groq})},
+ :case-5
+ {:out
+  {:error :model-not-configured,
+   :agent-type :ling,
+   :provider :groq,
+   :config-keys
+   ["agent-defaults.ling" "llm-providers.groq.default-model"],
+   :fix
+   "Pass provider and model explicitly, or set one of agent-defaults.ling, llm-providers.groq.default-model, e.g. hive config set agent-defaults.ling '{:provider :venice :model \"<model-id>\"}'"},
+  :in (:ling {:provider :groq})},
+ :case-6
+ {:out
+  {:error :provider-not-configured,
+   :agent-type :drone,
+   :provider nil,
+   :config-keys ["agent-defaults.drone"],
+   :fix
+   "Pass provider and model explicitly, or set one of agent-defaults.drone, e.g. hive config set agent-defaults.drone '{:provider :venice :model \"<model-id>\"}'"},
+  :in (:drone {})},
+ :case-7
+ {:out
+  {:error :provider-not-configured,
+   :agent-type nil,
+   :provider nil,
+   :config-keys ["agent-defaults.<agent-type>"],
+   :fix
+   "Pass provider and model explicitly, or set one of agent-defaults.<agent-type>, e.g. hive config set agent-defaults.<agent-type> '{:provider :venice :model \"<model-id>\"}'"},
+  :in (nil {})}}
