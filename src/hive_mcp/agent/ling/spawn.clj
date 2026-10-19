@@ -462,6 +462,14 @@
     (r/err? answer) answer
     :else nil))
 
+;; Any answer is read; a refusal is one of the three refused shapes.
+(m/=> dispatch-refusal
+      [:=> [:cat :any]
+       [:maybe [:or
+                [:map [:answer [:= false]]]
+                [:map [:dispatched [:= false]]]
+                [:map [:error :any]]]]])
+
 (defn- status-after-failed-dispatch
   "The :slave/status a failed dispatch leaves, from the status PRIOR-STATUS
    the ling had before the dispatch wrote :working and the failure E.

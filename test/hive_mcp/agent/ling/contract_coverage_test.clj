@@ -187,6 +187,25 @@
                      (= (contains? opts :token-budget) (some? (:token-budget out)))))
    :num-tests 100})
 
+(hst/deftrifecta-from-schema dispatch-refusal-contract
+  hive-mcp.agent.ling.spawn/dispatch-refusal
+  {:in        [:or [:enum true false nil "task-1"]
+               [:map [:dispatched :boolean] [:task-id {:optional true} [:enum "t"]]]
+               [:map [:error [:enum :dispatch/refused]] [:message [:enum "busy"]]]]
+   :out       [:maybe [:or [:map [:answer [:= false]]] [:map [:dispatched [:= false]]]
+                       [:map [:error :any]]]]
+   ;; false, {:dispatched false} and an err Result refuse; the refusal of a
+   ;; map answer is that answer; everything else dispatched
+   :rel       (fn [in out]
+                (cond
+                  (false? in)                                 (= {:answer false} out)
+                  (and (map? in) (false? (:dispatched in)))   (= in out)
+                  (and (map? in) (contains? in :error))       (= in out)
+                  :else                                       (nil? out)))
+   :num-tests 200
+   :n-cases   12
+   :golden-path "test/golden/agent/ling/dispatch-refusal.edn"})
+
 ;;; ---------------------------------------------------------------------------
 ;;; lifecycle
 ;;; ---------------------------------------------------------------------------
