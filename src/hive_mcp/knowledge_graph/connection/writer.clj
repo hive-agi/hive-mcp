@@ -232,7 +232,7 @@
   (r/rescue nil
             (proto/transact! store (dsl-batch/normalize-tx-datum tx-data))))
 
-(m/=> flush-status [:=> [:cat :map :map :int] :map])
+(m/=> flush-status [:=> [:cat [:int {:min 0}]] [:enum :ok :weave/write-failed]])
 (m/=> ensure-writer! [:=> [:cat] :any])
 (m/=> stop-writer! [:=> [:cat] :any])
 (m/=> writer-stats [:=> [:cat] [:map [:running? :boolean] [:batches-flushed [:int {:min 0}]] [:items-written [:int {:min 0}]]]])
