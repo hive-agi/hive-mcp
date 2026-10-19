@@ -202,6 +202,8 @@
                      :error (me/humanize (m/explain Event event))})))
   event)
 
+(m/=> validate-event! [:=> [:cat :any] Event])
+
 (defn validate-interceptor!
   "Validate an interceptor map. Throws ex-info on invalid format.
    
@@ -216,6 +218,8 @@
                     {:interceptor interceptor
                      :error (me/humanize (m/explain Interceptor interceptor))})))
   interceptor)
+
+(m/=> validate-interceptor! [:=> [:cat :any] Interceptor])
 
 (defn validate-context!
   "Validate an execution context. Throws ex-info on invalid format.
@@ -232,6 +236,8 @@
                      :error (me/humanize (m/explain Context context))})))
   context)
 
+(m/=> validate-context! [:=> [:cat :any] Context])
+
 (defn valid-event?
   "Check if event is valid without throwing.
    
@@ -239,12 +245,16 @@
   [event]
   (m/validate Event event))
 
+(m/=> valid-event? [:=> [:cat :any] :boolean])
+
 (defn valid-interceptor?
   "Check if interceptor is valid without throwing.
    
    Returns: boolean"
   [interceptor]
   (m/validate Interceptor interceptor))
+
+(m/=> valid-interceptor? [:=> [:cat :any] :boolean])
 
 (defn explain-event
   "Get human-readable explanation of why event is invalid.
@@ -254,6 +264,8 @@
   (when-not (m/validate Event event)
     (me/humanize (m/explain Event event))))
 
+(m/=> explain-event [:=> [:cat :any] [:maybe [:or :map [:vector :any]]]])
+
 (defn explain-interceptor
   "Get human-readable explanation of why interceptor is invalid.
    
@@ -261,3 +273,5 @@
   [interceptor]
   (when-not (m/validate Interceptor interceptor)
     (me/humanize (m/explain Interceptor interceptor))))
+
+(m/=> explain-interceptor [:=> [:cat :any] [:maybe [:or :map [:vector :any]]]])
