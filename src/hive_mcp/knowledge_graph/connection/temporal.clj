@@ -127,5 +127,5 @@
 (m/=> history-db [:=> [:cat] :any])
 (m/=> as-of-db [:=> [:cat [:or :int inst?]] :any])
 (m/=> since-db [:=> [:cat [:or :int inst?]] :any])
-(m/=> query-history [:=> [:cat [:or :vector :seq] [:* :any]] :any])
-(m/=> query-as-of [:=> [:cat [:or :int inst?] [:or :vector :seq] [:* :any]] :any])
+(m/=> query-history [:=> [:cat [:or [:vector :any] [:sequential :any]] [:* :any]] :any])
+(m/=> query-as-of [:=> [:cat [:or :int inst?] [:or [:vector :any] [:sequential :any]] [:* :any]] :any])
