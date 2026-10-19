@@ -1,0 +1,71 @@
+{:case-0
+ {:out 0,
+  :in
+  {:umbrella
+   {:cross-pid-edges [],
+    :cross-cutting-decisions [],
+    :hivemind-shouts-global []}}},
+ :case-1
+ {:out 3,
+  :in
+  {:umbrella
+   {:cross-pid-edges [nil],
+    :cross-cutting-decisions [{}],
+    :session-timing nil,
+    :session-temporal nil,
+    :hivemind-shouts-global [()]}}},
+ :case-2
+ {:out 3,
+  :in
+  {:umbrella
+   {:cross-pid-edges [],
+    :cross-cutting-decisions [nil],
+    :session-temporal {},
+    :hivemind-shouts-global
+    [[] #{#uuid "e141900f-f44a-4c3e-b8a2-8a3b3fa7f48a"}]}}},
+ :case-3
+ {:out 1,
+  :in
+  {:umbrella
+   {:cross-pid-edges [nil],
+    :cross-cutting-decisions [],
+    :hivemind-shouts-global []}}},
+ :case-4
+ {:out 9,
+  :in
+  {:umbrella
+   {:cross-pid-edges [nil nil {} nil],
+    :cross-cutting-decisions [:Uk/ReP nil [false] nil],
+    :session-temporal nil,
+    :hivemind-shouts-global [nil]}}},
+ :case-5
+ {:out 10,
+  :in
+  {:umbrella
+   {:cross-pid-edges [false []],
+    :cross-cutting-decisions
+    [([] (:Q-)) (#uuid "49630c9d-5c91-4db6-8679-0237f22e6c3d") nil],
+    :session-temporal {},
+    :hivemind-shouts-global
+    [nil
+     nil
+     {}
+     nil
+     {#uuid "d0dfd883-6a9e-4b51-bfe1-b6920ed7a571" 1.0, DH -5}]}}},
+ :case-6
+ {:out 7,
+  :in
+  {:umbrella
+   {:cross-pid-edges [nil],
+    :cross-cutting-decisions [nil],
+    :session-timing {},
+    :hivemind-shouts-global [nil nil #{} nil #{false}]}}},
+ :case-7
+ {:out 4,
+  :in
+  {:umbrella
+   {:cross-pid-edges [#{S./S -1 * true :Aq/? -eb} nil "IO,"],
+    :cross-cutting-decisions [],
+    :session-timing nil,
+    :session-temporal {},
+    :hivemind-shouts-global [nil]}}}}

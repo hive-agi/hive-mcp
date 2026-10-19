@@ -8,7 +8,8 @@
             [hive-mcp.channel.drain-rank :as rank]
             [hive-mcp.channel.drain-telemetry :as telemetry]
             [clojure.string :as str]
-            [hive-mcp.channel.drain-projection :as proj]))
+            [hive-mcp.channel.drain-projection :as proj]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -43,6 +44,31 @@
       (seq (:tags entry)) (assoc :tags (vec (:tags entry)))
       (and access (pos? access)) (assoc :A access)
       (not (zero? net)) (assoc :F net))))
+
+(def CallerId
+  "Caller identity as the route layer passes it (string or keyword). nil is
+   accepted: ctx-id/parse-caller-id falls back to the default caller."
+  [:maybe [:or :string :keyword]])
+
+(def DrainCtx
+  "Optional drain ctx: task tokens, pins, floor cap and wire policy override."
+  [:maybe [:map
+           [:tokens {:optional true} [:maybe [:or [:set :string] [:sequential :string]]]]
+           [:pins {:optional true} :any]
+           [:floor-cap {:optional true} [:maybe :int]]
+           [:policy {:optional true} :any]]])
+
+(def DrainResult
+  "One drained batch plus the buffer position after it."
+  [:map
+   [:batch [:vector :map]]
+   [:remaining [:int {:min 0}]]
+   [:total [:int {:min 0}]]
+   [:delivered [:int {:min 0}]]
+   [:seq pos-int?]
+   [:done {:optional true} [:= true]]
+   [:context-refs {:optional true} :any]
+   [:pull {:optional true} :any]])
 
 (defn enqueue!
   "Enqueue entries into the memory piggyback buffer.
@@ -83,6 +109,10 @@
                "- buffer now" (count merged) "entries, cursor" cursor
                (when (seq (:sent existing)) (str ", " (count (:sent existing)) " already delivered"))
                (when context-refs (str ", " (count context-refs) " context-refs"))))))
+
+(m/=> enqueue! [:function
+                [:=> [:cat CallerId [:maybe [:sequential :map]]] :nil]
+                [:=> [:cat CallerId [:maybe [:sequential :map]] :any] :nil]])
 
 (defn drain!
   "Drain next batch of entries within char budget for a caller session.
@@ -194,6 +224,10 @@
                     (some? next-offers) (assoc :offers next-offers)))
            (result-for batch send-refs?)))))))
 
+(m/=> drain! [:function
+              [:=> [:cat CallerId] [:maybe DrainResult]]
+              [:=> [:cat CallerId DrainCtx] [:maybe DrainResult]]])
+
 (defn has-pending?
   "Check if a caller session has undrained memory entries."
   [caller-id]
@@ -201,11 +235,15 @@
         buf (bget buffers buffer-key)]
     (and (some? buf) (not (:done buf)))))
 
+(m/=> has-pending? [:=> [:cat CallerId] :boolean])
+
 (defn clear-buffer!
   "Clear buffer for a specific caller session. For testing."
   [caller-id]
   (let [buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))]
     (bounded-swap! buffers dissoc buffer-key)))
+
+(m/=> clear-buffer! [:=> [:cat CallerId] :any])
 
 (defn reset-all!
   "Reset all buffers. For testing.
@@ -216,6 +254,8 @@
   (guards/when-not-coordinator
    "channel.memory-piggyback/reset-all! blocked"
    (bclear! buffers)))
+
+(m/=> reset-all! [:=> [:cat] :any])
 
 (defn adopt-buffer!
   "Adopt an orphaned buffer from a previous coordinator instance.
@@ -244,6 +284,8 @@
                   "(" (- (count (:entries donor-buf)) (:cursor donor-buf)) "entries remaining)")
         true))))
 
+(m/=> adopt-buffer! [:=> [:cat CallerId] [:maybe [:= true]]])
+
 (defn evict-orphaned-buffers!
   "Evict coordinator buffers that have no matching active caller.
    Called during catchup to clean up buffers from dead bb-mcp processes.
@@ -263,3 +305,5 @@
       (bounded-swap! buffers #(apply dissoc % orphaned))
       (log/info "memory-piggyback: evicted" (count orphaned) "orphaned buffers:" orphaned))
     (count orphaned)))
+
+(m/=> evict-orphaned-buffers! [:=> [:cat :any] [:int {:min 0}]])

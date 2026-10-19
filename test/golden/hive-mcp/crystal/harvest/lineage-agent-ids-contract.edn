@@ -1,0 +1,25 @@
+{:case-0 {:out nil, :in ("coordinator" [])},
+ :case-1 {:out nil, :in (nil [#:slave{:id "stranger"}])},
+ :case-2
+ {:out #{"coord"},
+  :in ("coord" [#:slave{:id "ling-c", :parent-id "stranger"}])},
+ :case-3
+ {:out nil, :in ("" [#:slave{:id "stranger"} #:slave{:id "ling-b"}])},
+ :case-4
+ {:out #{"coord"},
+  :in ("coord" [#:slave{:id "stranger"} #:slave{:id "ling-a"}])},
+ :case-5
+ {:out #{"coord"},
+  :in
+  ("coord"
+   [#:slave{:id "ling-a", :parent-id "stranger"}
+    #:slave{:id "ling-a"}])},
+ :case-6
+ {:out #{"ling-a"},
+  :in ("ling-a" [#:slave{:id "ling-b", :parent-id "coord"}])},
+ :case-7
+ {:out nil,
+  :in
+  (nil
+   [#:slave{:id "stranger", :parent-id "coord"}
+    #:slave{:id "ling-c", :parent-id "ling-b"}])}}

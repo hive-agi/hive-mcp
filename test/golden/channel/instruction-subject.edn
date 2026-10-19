@@ -1,0 +1,8 @@
+{:case-0 {:out "hive.v1.instruction.ling-1", :in "ling-1"},
+ :case-1 {:out "hive.v1.instruction.unknown", :in nil},
+ :case-2 {:out "hive.v1.instruction.ling-2", :in "ling-2"},
+ :case-3 {:out "hive.v1.instruction.ling-2", :in "ling-2"},
+ :case-4 {:out "hive.v1.instruction.ling-1", :in "ling-1"},
+ :case-5 {:out "hive.v1.instruction.unknown", :in nil},
+ :case-6 {:out "hive.v1.instruction.coord", :in "coord"},
+ :case-7 {:out "hive.v1.instruction.ling-1", :in "ling-1"}}

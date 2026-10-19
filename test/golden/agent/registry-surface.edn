@@ -1,0 +1,3 @@
+{:schemas [{:name "alpha", :description "alpha tool"}],
+ :all-names ("alpha" "beta" "gamma"),
+ :missing nil}

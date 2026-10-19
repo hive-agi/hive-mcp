@@ -1,0 +1,4 @@
+{:soon-3 ["alias" "soon"],
+ :soon-30 ["alias" "soon" "later"],
+ :cleaned {:count 1, :deleted-ids ["past"], :repaired 1},
+ :again {:count 0, :deleted-ids [], :repaired 0}}

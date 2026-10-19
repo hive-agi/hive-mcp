@@ -1,0 +1,8 @@
+{:case-0 {:out [], :in nil},
+ :case-1 {:out [], :in #{}},
+ :case-2 {:out ["NL" "r"], :in ["NL" "r"]},
+ :case-3 {:out [], :in []},
+ :case-4 {:out [], :in nil},
+ :case-5 {:out [], :in nil},
+ :case-6 {:out [], :in nil},
+ :case-7 {:out [], :in nil}}

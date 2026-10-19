@@ -3,7 +3,8 @@
    depend on this, not on clojure-chroma-client directly. Public fns mirror
    the clojure-chroma-client.api surface used by hive-mcp (same names + kwarg
    shapes); the active IChromaTransport is swappable via set-transport!."
-  (:refer-clojure :exclude [get update]))
+  (:refer-clojure :exclude [get update])
+  (:require [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -55,15 +56,38 @@
 
 (defonce ^:private -transport (atom (->SoftVendorTransport)))
 
+(def Transport
+  "Any IChromaTransport. Generates the soft vendor adapter, which resolves
+   nothing until a method is called."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (->SoftVendorTransport))}
+   #(satisfies? IChromaTransport %)])
+
+(def Coll
+  "A collection value as the vendor returns it (a map or a record)."
+  [:maybe [:or :map :keyword :string]])
+
+(def Records
+  "Documents to add or update."
+  [:sequential :map])
+
+(def VendorResult
+  "Whatever the vendor answers: usually a deref-able, sometimes a plain value.
+   Opaque by design; the seam does not interpret it."
+  :any)
+
 (defn set-transport!
   "Install the active IChromaTransport (tests inject a stub). Returns it."
   [t]
   (reset! -transport t))
 
+(m/=> set-transport! [:=> [:cat Transport] Transport])
+
 (defn transport
   "The active IChromaTransport (default: the soft-resolving vendor adapter)."
   []
   @-transport)
+
+(m/=> transport [:=> [:cat] Transport])
 
 (defn configure [opts] (-configure (transport) opts))
 (defn get-collection [coll-name] (-get-collection (transport) coll-name))
@@ -74,3 +98,13 @@
 (defn query [coll embedding & {:as opts}] (-query (transport) coll embedding opts))
 (defn delete [coll & {:as opts}] (-delete (transport) coll opts))
 (defn update [coll records] (-update (transport) coll records))
+
+(m/=> configure [:=> [:cat [:maybe :map]] VendorResult])
+(m/=> get-collection [:=> [:cat :string] VendorResult])
+(m/=> create-collection [:=> [:cat :string [:* :any]] VendorResult])
+(m/=> delete-collection [:=> [:cat Coll] VendorResult])
+(m/=> add [:=> [:cat Coll Records [:* :any]] VendorResult])
+(m/=> get [:=> [:cat Coll [:* :any]] VendorResult])
+(m/=> query [:=> [:cat Coll [:sequential number?] [:* :any]] VendorResult])
+(m/=> delete [:=> [:cat Coll [:* :any]] VendorResult])
+(m/=> update [:=> [:cat Coll Records] VendorResult])

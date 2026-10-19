@@ -1,0 +1,8 @@
+{:case-0 {:out :N, :in :N},
+ :case-1 {:out :?, :in ?},
+ :case-2 {:out :note, :in "note"},
+ :case-3 {:out :decision, :in "  decision "},
+ :case-4 {:out :P1d, :in P1d},
+ :case-5 {:out :o98, :in o98},
+ :case-6 {:out :T1, :in T1},
+ :case-7 {:out :M, :in :M}}

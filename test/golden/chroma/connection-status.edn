@@ -1,0 +1,11 @@
+{:config-keys (:collection-name :host :port),
+ :status
+ {:configured? true,
+  :provider "class hive_mcp.embeddings.shared_gate.GatedProvider",
+  :collection "hive-mcp-memory",
+  :host "localhost",
+  :port 8000},
+ :available? true,
+ :coll "hive-mcp-memory",
+ :named "hive-mcp-memory-1024d",
+ :reset {}}

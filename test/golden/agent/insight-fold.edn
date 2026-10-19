@@ -1,0 +1,83 @@
+{:digest
+ {:started 1000,
+  :errors
+  {:count 1, :samples [{:turn 2, :tool nil, :text "LLM error: boom"}]},
+  :report
+  {:agent-id "ling-1",
+   :final-text "done",
+   :final-turn 3,
+   :turns 3,
+   :entries 3,
+   :ending "text",
+   :last-tool-result
+   {:turn 1,
+    :preview
+    "Ran 3 tests containing 5 assertions. 0 failures, 1 errors.",
+    :tool "bash"}},
+  :turns 3,
+  :ended 62000,
+  :agent-id "ling-1",
+  :entries 3,
+  :tests [{:tests 3, :assertions 5, :failures 0, :errors 1, :turn 1}],
+  :tools {"Write" 1, "bash" 2},
+  :idle-gap {:ms 60000, :after-turn 1},
+  :commands {"git" 1, "test" 1},
+  :wall-ms 61000,
+  :commits
+  [{:branch "main", :sha "abc1234", :subject "fix it", :turn 1}],
+  :files ["/a/b"],
+  :shell
+  [{:turn 1, :class "git", :command "git commit -m x"}
+   {:turn 1, :class "test", :command "clojure -M:test"}],
+  :ending "text"},
+ :row
+ {:errors 1,
+  :turns 3,
+  :tests "3 tests, 0 fail, 1 err",
+  :tools "bash:2 Write:1",
+  :wall_s 61,
+  :final "done",
+  :agent "ling-1",
+  :commits 1,
+  :files 1,
+  :ending "text"},
+ :report
+ {:agent-id "ling-1",
+  :final-text "done",
+  :final-turn 3,
+  :turns 3,
+  :entries 3,
+  :ending "text",
+  :last-tool-result
+  {:turn 1,
+   :preview
+   "Ran 3 tests containing 5 assertions. 0 failures, 1 errors.",
+   :tool "bash"}},
+ :last-tool
+ {:entry
+  #:transcript{:role :assistant,
+               :content "start",
+               :turn 1,
+               :timestamp 1000,
+               :tool-calls
+               [#:tool-call{:name "bash",
+                            :arguments
+                            "{\"command\":\"git commit -m x\"}",
+                            :result "[main abc1234] fix it"}
+                #:tool-call{:name "bash",
+                            :arguments
+                            "{\"command\":\"clojure -M:test\"}",
+                            :result
+                            "Ran 3 tests containing 5 assertions. 0 failures, 1 errors."}
+                #:tool-call{:name "Write",
+                            :arguments "{\"file_path\":\"/a/b\"}",
+                            :result ""}]},
+  :tool "bash",
+  :content
+  "Ran 3 tests containing 5 assertions. 0 failures, 1 errors."},
+ :idle {:ms 60000, :after-turn 1},
+ :listing
+ [{:agent-id "ling-a",
+   :modified 9,
+   :source :datalevin,
+   :sources [:jsonl :datalevin]}]}

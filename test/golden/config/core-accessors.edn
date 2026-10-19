@@ -1,0 +1,21 @@
+{:service {:mode :remote, :url "http://carto"},
+ :unknown-project
+ {:kg-backend :datahike, :hot-reload false, :presets-path nil},
+ :overrides {:hot-reload true},
+ :route-snippet {:primary :milvus, :projection :chroma},
+ :service-mode :remote,
+ :parent "hive",
+ :store {:addon :hive-milvus, :port 19530},
+ :project-roots ["/home/u/PP"],
+ :default-mode :local,
+ :defaults
+ {:kg-backend :datahike, :hot-reload false, :presets-path nil},
+ :no-parent nil,
+ :kanban-mode :dual-read,
+ :route-decision :chroma,
+ :in-config :milvus,
+ :service-url "http://carto",
+ :project-config
+ {:kg-backend :datahike, :hot-reload true, :presets-path nil},
+ :route-fallback :milvus,
+ :dotted :chroma}

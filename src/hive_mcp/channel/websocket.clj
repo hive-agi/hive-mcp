@@ -6,7 +6,8 @@
             [manifold.deferred :as d]
             [clojure.data.json :as json]
             [hive-mcp.dns.result :refer [rescue]]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -44,15 +45,40 @@
 
 (defonce ^:private on-connect-hooks (atom []))
 
+(def Socket
+  "A manifold stream, one client connection. Generates an open stream."
+  [:fn {:gen/schema :int :gen/fmap (fn [_] (s/stream))} s/stream?])
+
+(def Deferred
+  "A manifold deferred. Generates a realized one."
+  [:fn {:gen/schema :boolean :gen/fmap d/success-deferred} d/deferred?])
+
+(def EventType
+  "Event type, rendered with `name`."
+  [:or :keyword :string :symbol])
+
+(def Status
+  "Channel status map."
+  [:map
+   [:running? :boolean]
+   [:port [:maybe :int]]
+   [:clients [:int {:min 0}]]
+   [:connected? :boolean]
+   [:endpoints [:maybe [:map [:metrics :string] [:health :string]]]]])
+
 (defn add-on-connect-hook!
   "Register `(f emit-to)` to run when a client connects; `emit-to` is
    `(fn [event-type data])` targeting only that client. Returns hook count."
   [f]
   (count (swap! on-connect-hooks conj f)))
 
+(m/=> add-on-connect-hook! [:=> [:cat ifn?] pos-int?])
+
 (defn clear-on-connect-hooks! []
   (reset! on-connect-hooks [])
   nil)
+
+(m/=> clear-on-connect-hooks! [:=> [:cat] :nil])
 
 (defn emit-to!
   "Emit a typed event to a single client socket."
@@ -62,6 +88,8 @@
                                                     :timestamp (System/currentTimeMillis)}
                                                    data)))
              (fn [e] (log/warn "emit-to! failed:" (.getMessage e)) nil))))
+
+(m/=> emit-to! [:=> [:cat Socket EventType [:maybe :map]] [:maybe Deferred]])
 
 (defn- run-on-connect-hooks! [socket]
   (doseq [hook @on-connect-hooks]
@@ -124,6 +152,11 @@
                 "(endpoints: /metrics, /health, WebSocket)")
       actual-port)))
 
+(m/=> start! [:=> [:cat [:map
+                         [:port {:optional true} [:int {:min 0 :max 65535}]]
+                         [:on-message {:optional true} [:maybe ifn?]]]]
+              [:int {:min 0 :max 65535}]])
+
 (defn stop!
   "Stop the WebSocket channel server."
   []
@@ -133,6 +166,8 @@
     (reset! clients #{})
     (log/info "WebSocket channel stopped (was on port" port ")")
     true))
+
+(m/=> stop! [:=> [:cat] [:maybe [:= true]]])
 
 (defn broadcast!
   "Broadcast JSON-encoded message to all connected WebSocket clients."
@@ -149,15 +184,21 @@
              (log/warn "Broadcast failed:" (.getMessage e))
              (swap! clients disj client))))))))
 
+(m/=> broadcast! [:=> [:cat :any] :nil])
+
 (defn connected?
   "Returns true if at least one client is connected."
   []
   (boolean (seq @clients)))
 
+(m/=> connected? [:=> [:cat] :boolean])
+
 (defn client-count
   "Returns number of connected clients."
   []
   (count @clients))
+
+(m/=> client-count [:=> [:cat] [:int {:min 0}]])
 
 (defn status
   "Returns channel status map."
@@ -171,9 +212,13 @@
                   {:metrics (str "http://localhost:" port "/metrics")
                    :health (str "http://localhost:" port "/health")})}))
 
+(m/=> status [:=> [:cat] Status])
+
 (defn emit!
   "Emit a typed event to all connected clients."
   [event-type data]
   (broadcast! (merge {:type (name event-type)
                       :timestamp (System/currentTimeMillis)}
                      data)))
+
+(m/=> emit! [:=> [:cat EventType [:maybe :map]] :nil])

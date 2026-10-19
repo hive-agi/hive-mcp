@@ -38,7 +38,9 @@
    Pure (no IO of its own; the synthesiser fn it calls is the only IO seam)."
   (:require [hive-mcp.crystal.core :as core]
             [hive-mcp.crystal.harvest.by-scope :as bs]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [malli.util :as mu]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -52,6 +54,23 @@
 (def scope-tag-prefix "scope:project:")
 (def multi-project-tag "scope:multi-project")
 
+(def SliceHarvested
+  "Legacy `harvest-all`-shaped map built from one slice, the shape the
+   `:cc/summarize-progress` synthesiser was written against."
+  [:map
+   [:progress-notes [:vector :any]] [:completed-tasks [:vector :any]] [:git-commits [:vector :any]]
+   [:recalls [:map-of :any :any]] [:hivemind-messages [:vector :any]]
+   [:kanban-activity [:map [:tasks-completed [:vector :any]] [:completed-count [:int {:min 0}]]]]
+   [:kg-edges-created [:map [:edges [:vector :any]] [:count [:int {:min 0}]]]]
+   [:kanban-movements [:map [:movements [:vector :any]] [:count [:int {:min 0}]]]]
+   [:memory-ids-created [:vector :any]] [:memory-ids-accessed [:vector :any]]
+   [:project-id [:maybe :string]]
+   [:summary [:map-of :keyword [:or [:int {:min 0}] [:map-of :any :int]]]]])
+
+(def UmbrellaHarvested
+  "`umbrella->harvested` output: SliceHarvested pinned to the umbrella scope."
+  (mu/merge SliceHarvested [:map [:project-id [:= "multi-project"]] [:scope [:= :umbrella]]]))
+
 (defn scope-tag-for
   "Return the scope tag string for a pid. Real pid strings get the
    `scope:project:<pid>` form; the umbrella sentinel keyword gets
@@ -60,6 +79,8 @@
   (if (= pid bs/umbrella-sentinel)
     multi-project-tag
     (str scope-tag-prefix pid)))
+
+(m/=> scope-tag-for [:=> [:cat [:or [:= :umbrella] [:maybe :string]]] :string])
 
 (defn with-scope-tag
   "Prepend the scope tag derived from `pid` to `entry`'s `:tags`. Tag
@@ -70,6 +91,8 @@
     (if (some #{tag} existing)
       entry
       (assoc entry :tags (vec (cons tag existing))))))
+
+(m/=> with-scope-tag [:=> [:cat [:map [:tags {:optional true} [:maybe [:sequential :string]]]] [:or [:= :umbrella] [:maybe :string]]] [:map [:tags [:vector :string]]]])
 
 ;; =============================================================================
 ;; Slice → legacy-harvested adapter
@@ -118,6 +141,8 @@
                          :accessed-count       (count (:memory-ids-accessed slice))
                          :created-by-type      (frequencies (keep :type (:memory-ids-created slice)))}})
 
+(m/=> slice->harvested [:=> [:cat [:maybe :string] bs/ScopeSlice [:maybe [:map [:session {:optional true} :any] [:directory {:optional true} :any] [:agent-id {:optional true} :any] [:session-timing {:optional true} :any] [:session-temporal {:optional true} :any]]]] SliceHarvested])
+
 ;; =============================================================================
 ;; Umbrella → legacy-harvested adapter
 ;; =============================================================================
@@ -159,6 +184,8 @@
                            :created-count        0
                            :accessed-count       0
                            :created-by-type      {}}}))
+
+(m/=> umbrella->harvested [:=> [:cat [:map [:umbrella {:optional true} [:maybe bs/UmbrellaSlice]]] [:maybe [:map [:session {:optional true} :any] [:directory {:optional true} :any] [:agent-id {:optional true} :any]]]] UmbrellaHarvested])
 
 ;; =============================================================================
 ;; Per-scope synthesis call
@@ -240,3 +267,5 @@
                 "umbrella?" (some? umbrella-result)
                 "total:" (count results))
       results)))
+
+(m/=> synthesize-wraps [:=> [:cat bs/HarvestByScope] [:vector [:map [:pid [:or [:= :umbrella] :string]] [:entry [:map [:tags [:vector :string]]]]]]])

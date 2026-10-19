@@ -1,0 +1,64 @@
+{:case-0
+ {:out false,
+  :in
+  {:summary
+   {:progress-count nil,
+    :task-count 0,
+    :commit-count nil,
+    :accessed-count 1}}},
+ :case-1
+ {:out true,
+  :in
+  {:summary
+   {:progress-count 0,
+    :task-count 1,
+    :commit-count 1,
+    :accessed-count 1}}},
+ :case-2
+ {:out true,
+  :in
+  {:summary
+   {:progress-count nil,
+    :task-count 2,
+    :commit-count nil,
+    :accessed-count 1}}},
+ :case-3
+ {:out false,
+  :in
+  {:summary
+   {:progress-count nil,
+    :task-count nil,
+    :commit-count nil,
+    :accessed-count 1}}},
+ :case-4
+ {:out true,
+  :in
+  {:summary
+   {:progress-count 2,
+    :task-count 2,
+    :commit-count nil,
+    :accessed-count 1}}},
+ :case-5
+ {:out true,
+  :in
+  {:summary
+   {:progress-count nil,
+    :task-count 3,
+    :commit-count nil,
+    :accessed-count 1}}},
+ :case-6
+ {:out true,
+  :in
+  {:summary
+   {:progress-count nil,
+    :task-count nil,
+    :commit-count 1,
+    :accessed-count 2}}},
+ :case-7
+ {:out true,
+  :in
+  {:summary
+   {:progress-count nil,
+    :task-count nil,
+    :commit-count 3,
+    :accessed-count 3}}}}

@@ -1,0 +1,89 @@
+{:case-0 {:out {:score 0.0, :breakdown []}, :in []},
+ :case-1
+ {:out
+  {:score 0.0,
+   :breakdown
+   [{:context :behavioral-correction,
+     :weight -2.0,
+     :count 0,
+     :contribution -0.0}]},
+  :in [{:context :behavioral-correction, :count 0}]},
+ :case-2
+ {:out
+  {:score 4.1,
+   :breakdown
+   [{:context :behavioral-success,
+     :weight 2.0,
+     :count 2,
+     :contribution 4.0}
+    {:context :wrap-structural,
+     :weight 0.1,
+     :count 1,
+     :contribution 0.1}]},
+  :in
+  [{:context :behavioral-success, :count 2}
+   {:context :wrap-structural, :count 1}]},
+ :case-3
+ {:out
+  {:score 3.1,
+   :breakdown
+   [{:context :cross-project, :weight 3.0, :count 1, :contribution 3.0}
+    {:context :catchup-structural,
+     :weight 0.1,
+     :count 1,
+     :contribution 0.1}]},
+  :in [{:context :cross-project} {:context :catchup-structural}]},
+ :case-4
+ {:out
+  {:score 1.0,
+   :breakdown
+   [{:context :unknown-context,
+     :weight 1.0,
+     :count 1,
+     :contribution 1.0}]},
+  :in [{:context :unknown-context}]},
+ :case-5
+ {:out
+  {:score 2.1,
+   :breakdown
+   [{:context :behavioral-success,
+     :weight 2.0,
+     :count 1,
+     :contribution 2.0}
+    {:context :wrap-structural,
+     :weight 0.1,
+     :count 1,
+     :contribution 0.1}]},
+  :in
+  [{:context :behavioral-success, :count 1}
+   {:context :wrap-structural, :count 1}]},
+ :case-6
+ {:out
+  {:score -12.0,
+   :breakdown
+   [{:context :behavioral-correction,
+     :weight -2.0,
+     :count 6,
+     :contribution -12.0}
+    {:context :cross-session, :weight 2.0, :count 1, :contribution 2.0}
+    {:context :behavioral-correction,
+     :weight -2.0,
+     :count 1,
+     :contribution -2.0}]},
+  :in
+  [{:context :behavioral-correction, :count 6}
+   {:context :cross-session}
+   {:context :behavioral-correction}]},
+ :case-7
+ {:out
+  {:score 6.0,
+   :breakdown
+   [{:context :unknown-context,
+     :weight 1.0,
+     :count 1,
+     :contribution 1.0}
+    {:context :user-feedback,
+     :weight 5.0,
+     :count 1,
+     :contribution 5.0}]},
+  :in [{:context :unknown-context} {:context :user-feedback}]}}

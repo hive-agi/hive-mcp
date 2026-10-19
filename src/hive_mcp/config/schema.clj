@@ -98,6 +98,24 @@
        :errors (:errors explanation)
        :humanized (me/humanize explanation)})))
 
+(def ValidationFailure
+  "Failed validation result: malli explanation errors plus their humanized form
+   (a map keyed by path for map values, a vector of messages otherwise)."
+  [:map
+   [:valid? [:= false]]
+   [:errors [:sequential :map]]
+   [:humanized [:or :map [:sequential :string]]]])
+
+(def ConfigValidation
+  "Result of validate-config."
+  [:or [:map [:valid? [:= true]] [:config ConfigSchema]] ValidationFailure])
+
+(def SectionValidation
+  "Result of validate-section for the :memory section."
+  [:or [:map [:valid? [:= true]] [:value MemoryConfig]] ValidationFailure])
+
+(m/=> validate-config [:=> [:cat :any] ConfigValidation])
+
 (defn validate-section
   "Validate a specific config section by key.
    Supported sections: :memory
@@ -114,12 +132,17 @@
          :errors (:errors explanation)
          :humanized (me/humanize explanation)}))))
 
+;; Any other section key throws ex-info, so the domain is the supported key.
+(m/=> validate-section [:=> [:cat [:= :memory] :any] SectionValidation])
+
 (defn validate-memory-config
   "Convenience: validate just the :memory section from a full config.
    Returns nil if :memory section is absent (valid — it's optional)."
   [cfg]
   (when-let [mem (:memory cfg)]
     (validate-section :memory mem)))
+
+(m/=> validate-memory-config [:=> [:cat [:maybe :map]] [:maybe SectionValidation]])
 
 (comment
   ;; Valid memory config

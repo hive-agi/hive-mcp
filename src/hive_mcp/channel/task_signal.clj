@@ -12,7 +12,8 @@
    only. A tool name absent from `tool-arg-allowlist` contributes nothing.
 
    Pure — no IO, deterministic."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [malli.core :as m]))
 
 (def max-tokens
   "Hard ceiling on the number of tokens `task-tokens` returns."
@@ -151,6 +152,20 @@
         (get args (keyword (str/replace n "-" "_")))
         (get args (keyword (str/replace n "_" "-"))))))
 
+(def ToolName
+  "A tool name as the route middleware passes it; nil for an unnamed handler."
+  [:maybe :string])
+
+(def ToolArgs
+  "Tool call arguments. Keys may be keywords or strings. Anything that is not
+   a map (nil, a string) is tolerated and contributes no tokens, so the
+   second arm admits any value; the first arm keeps generation map-shaped."
+  [:or [:map-of [:or :keyword :string] :any] :any])
+
+(def TaskTokens
+  "At most `max-tokens` lowercase identifier tokens."
+  [:set [:string {:min 2 :max 32}]])
+
 (defn task-tokens
   "Task cue tokens for one tool call.
 
@@ -170,6 +185,8 @@
                         (mapcat (fn [[k mode]] (value-tokens k mode (arg-value m k)))))
                   spec))
       #{})))
+
+(m/=> task-tokens [:=> [:cat ToolName ToolArgs] TaskTokens])
 
 (def ^:dynamic *enabled?*
   "Overrides the env check when bound to true or false. nil defers to the env."
@@ -191,6 +208,8 @@
                     (some-> (System/getenv "HIVE_TWO_LANE_DRAIN")
                             str/trim str/lower-case)))))
 
+(m/=> enabled? [:=> [:cat] :boolean])
+
 (defn cues
   "`task-tokens` for one tool call, or the empty set when `enabled?` is false.
 
@@ -199,3 +218,5 @@
   (if (enabled?)
     (task-tokens tool-name args)
     #{}))
+
+(m/=> cues [:=> [:cat ToolName ToolArgs] TaskTokens])

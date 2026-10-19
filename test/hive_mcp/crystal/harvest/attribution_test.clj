@@ -14,7 +14,8 @@
             [clojure.test.check.generators :as gen]
             [hive-mcp.crystal.harvest.attribution :as attr]
             [hive-mcp.crystal.harvest.by-scope :as bs]
-            [hive-test.trifecta :refer [deftrifecta]]))
+            [hive-test.trifecta :refer [deftrifecta]]
+            [hive-schemas.test :as hst]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -226,3 +227,39 @@
     (let [r (attr/attribute-harvest {:git-commits ["x" "y"]} nil)]
       (is (= [bs/umbrella-sentinel bs/umbrella-sentinel]
              (mapv :pid (get-in r [:by-source :git-commits])))))))
+
+;; =============================================================================
+;; Contract-derived facets
+;; =============================================================================
+
+(def ^:private TaggedEntry
+  "Memory-style entries whose tags reach the scope:project: branch."
+  [:map
+   [:project-id {:optional true} [:maybe [:enum "hive" "" "umbrella" "scope:x" "proj-a"]]]
+   [:tags {:optional true}
+    [:vector [:enum "scope:project:hive" "scope:project:proj-b" "scope:project:"
+              "scope:project:umbrella" "agent:x" "wrap"]]]])
+
+(hst/deftrifecta-from-schema attribute-progress-note-contract
+  hive-mcp.crystal.harvest.attribution/attribute-progress-note
+  {:in  [:cat [:maybe [:enum "src-pid" "other"]] TaggedEntry]
+   :out [:map [:pid [:or [:= :umbrella] :string]] [:datum :map]]
+   :rel (fn [[src note] out]
+          (and (= note (:datum out))
+               (= (:pid out) (or (attr/pid-from-entry note) src :umbrella))))
+   :num-tests 200
+   :golden-path "test/golden/hive-mcp/crystal/harvest/attribute-progress-note-contract.edn"})
+
+(hst/deftrifecta-from-schema attribute-recalls-map-contract
+  hive-mcp.crystal.harvest.attribution/attribute-recalls-map
+  {:in  [:cat [:map-of [:enum "m1" "m2" "m3"] TaggedEntry] [:maybe [:enum "src-pid"]]]
+   :out [:map [:slice-key [:= :recalls]]
+         [:datums [:vector [:map [:pid [:or [:= :umbrella] :string]] [:datum [:tuple :string :map]]]]]]
+   :rel (fn [[recalls src] out]
+          (and (= (count recalls) (count (:datums out)))
+               (= (set (keys recalls)) (set (map (comp first :datum) (:datums out))))
+               (every? (fn [{:keys [pid datum]}]
+                         (= pid (or (attr/pid-from-entry (second datum)) src :umbrella)))
+                       (:datums out))))
+   :num-tests 200
+   :golden-path "test/golden/hive-mcp/crystal/harvest/attribute-recalls-map-contract.edn"})

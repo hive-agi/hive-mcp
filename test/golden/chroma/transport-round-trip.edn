@@ -1,0 +1,5 @@
+{:got [["a" "A2" {}]],
+ :hits ["a" "b"],
+ :left ["a"],
+ :known "c1",
+ :gone nil}

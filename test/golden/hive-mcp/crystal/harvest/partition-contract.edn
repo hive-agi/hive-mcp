@@ -1,0 +1,104 @@
+{:case-0
+ {:out
+  {:by-scope {},
+   :umbrella
+   {:cross-pid-edges [],
+    :cross-cutting-decisions [],
+    :session-timing {},
+    :session-temporal {},
+    :hivemind-shouts-global []},
+   :errors []},
+  :in
+  {:umbrella-scalars {:session-timing {}, :session-temporal {}},
+   :errors []}},
+ :case-1
+ {:out
+  {:by-scope {},
+   :umbrella
+   {:cross-pid-edges [],
+    :cross-cutting-decisions [],
+    :session-timing nil,
+    :session-temporal nil,
+    :hivemind-shouts-global []},
+   :errors []},
+  :in
+  {:by-source nil,
+   :umbrella-scalars {:session-timing nil, :session-temporal nil},
+   :session nil,
+   :directory nil,
+   :agent-id nil,
+   :errors nil}},
+ :case-2
+ {:out
+  {:by-scope {},
+   :umbrella
+   {:cross-pid-edges [],
+    :cross-cutting-decisions [],
+    :session-timing nil,
+    :session-temporal nil,
+    :hivemind-shouts-global []},
+   :errors [],
+   :directory "a7"},
+  :in {:umbrella-scalars nil, :directory "a7", :errors nil}},
+ :case-3
+ {:out
+  {:by-scope {},
+   :umbrella
+   {:cross-pid-edges [],
+    :cross-cutting-decisions [],
+    :session-timing nil,
+    :session-temporal nil,
+    :hivemind-shouts-global []},
+   :errors []},
+  :in {}},
+ :case-4
+ {:out
+  {:by-scope {},
+   :umbrella
+   {:cross-pid-edges [],
+    :cross-cutting-decisions [],
+    :session-timing nil,
+    :session-temporal nil,
+    :hivemind-shouts-global []},
+   :errors []},
+  :in {:by-source {}, :umbrella-scalars nil, :directory nil}},
+ :case-5
+ {:out
+  {:by-scope {},
+   :umbrella
+   {:cross-pid-edges [],
+    :cross-cutting-decisions [],
+    :session-timing nil,
+    :session-temporal nil,
+    :hivemind-shouts-global []},
+   :errors [{} {} {}],
+   :directory "25E"},
+  :in
+  {:umbrella-scalars nil,
+   :directory "25E",
+   :agent-id nil,
+   :errors [{} {} {}]}},
+ :case-6
+ {:out
+  {:by-scope {},
+   :umbrella
+   {:cross-pid-edges [],
+    :cross-cutting-decisions [],
+    :session-timing nil,
+    :session-temporal nil,
+    :hivemind-shouts-global []},
+   :errors [{} {} {} {} {} {}],
+   :session "dX"},
+  :in {:session "dX", :agent-id nil, :errors [{} {} {} {} {} {}]}},
+ :case-7
+ {:out
+  {:by-scope {},
+   :umbrella
+   {:cross-pid-edges [],
+    :cross-cutting-decisions [],
+    :session-timing nil,
+    :session-temporal nil,
+    :hivemind-shouts-global []},
+   :errors [{} {} {} {}],
+   :directory ""},
+  :in {:session nil, :directory "", :errors [{} {} {} {}]}}}

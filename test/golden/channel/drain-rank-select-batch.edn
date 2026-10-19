@@ -1,0 +1,123 @@
+{:case-0
+ {:out
+  {:ordered
+   [{:id "e5", :T :principle, :tags ["drain" "memory"], :A 1}
+    {:id "e2", :T "note", :tags ["memory" "carto" "carto"], :A 0}],
+   :batch
+   [{:id "e5", :T :principle, :tags ["drain" "memory"], :A 1}
+    {:id "e2", :T "note", :tags ["memory" "carto" "carto"], :A 0}],
+   :taken 2},
+  :in
+  ([{:id "e5", :T :principle, :tags ["drain" "memory"], :A 1}
+    {:id "e2", :T "note", :tags ["memory" "carto" "carto"], :A 0}]
+   {:tokens #{"carto" "zzz" "memory"}})},
+ :case-1
+ {:out
+  {:ordered
+   [{:id "e5", :T :note, :tags ["carto" "drain" "memory"], :F 0}
+    {:id "e5", :T :decision, :A 0}
+    {:id "e5", :T "note", :A 1}],
+   :batch
+   [{:id "e5", :T :note, :tags ["carto" "drain" "memory"], :F 0}],
+   :taken 1},
+  :in
+  ([{:id "e5", :T "note", :A 1}
+    {:id "e5", :T :note, :tags ["carto" "drain" "memory"], :F 0}
+    {:id "e5", :T :decision, :A 0}]
+   {:tokens #{"carto" "zzz"}, :char-budget 2})},
+ :case-2
+ {:out
+  {:ordered [{:id "e4", :T :decision, :F -1}],
+   :batch [{:id "e4", :T :decision, :F -1}],
+   :taken 1},
+  :in ([{:id "e4", :T :decision, :F -1}] {:tokens #{}, :floor-cap 0})},
+ :case-3
+ {:out
+  {:ordered
+   [{:id "e2", :T "note", :tags ["memory" "carto"], :A 1}
+    {:id "e5", :T :principle, :C "8I4zfRcU", :A 0, :F -1}],
+   :batch
+   [{:id "e2", :T "note", :tags ["memory" "carto"], :A 1}
+    {:id "e5", :T :principle, :C "8I4zfRcU", :A 0, :F -1}],
+   :taken 2},
+  :in
+  ([{:id "e2", :T "note", :tags ["memory" "carto"], :A 1}
+    {:id "e5", :T :principle, :C "8I4zfRcU", :A 0, :F -1}]
+   {:floor-cap 2})},
+ :case-4
+ {:out
+  {:ordered
+   [{:id "e3", :T "axiom", :C "1Nteh71l5qX9gHe3o", :A 2}
+    {:id "e2", :T :note, :C "8m", :tags ["drain" "carto"], :A 7}
+    {:id "e1", :T "note", :tags [], :A 1}
+    {:id "e4", :T "convention", :F -1}
+    {:id "e1",
+     :T "note",
+     :C "8Xu6x1j3Z8r11TRw7Ryz3Pde",
+     :tags [],
+     :A 2}
+    {:id "e4", :T "note", :tags ["scope:project:x"], :A 2}],
+   :batch
+   [{:id "e3", :T "axiom", :C "1Nteh71l5qX9gHe3o", :A 2}
+    {:id "e2", :T :note, :C "8m", :tags ["drain" "carto"], :A 7}
+    {:id "e1", :T "note", :tags [], :A 1}
+    {:id "e4", :T "convention", :F -1}
+    {:id "e1",
+     :T "note",
+     :C "8Xu6x1j3Z8r11TRw7Ryz3Pde",
+     :tags [],
+     :A 2}
+    {:id "e4", :T "note", :tags ["scope:project:x"], :A 2}],
+   :taken 6},
+  :in
+  ([{:id "e2", :T :note, :C "8m", :tags ["drain" "carto"], :A 7}
+    {:id "e3", :T "axiom", :C "1Nteh71l5qX9gHe3o", :A 2}
+    {:id "e1", :T "note", :tags [], :A 1}
+    {:id "e4", :T "convention", :F -1}
+    {:id "e1",
+     :T "note",
+     :C "8Xu6x1j3Z8r11TRw7Ryz3Pde",
+     :tags [],
+     :A 2}
+    {:id "e4", :T "note", :tags ["scope:project:x"], :A 2}]
+   {:tokens #{}, :floor-cap 1})},
+ :case-5
+ {:out
+  {:ordered
+   [{:id "e4", :T "axiom", :A 1}
+    {:id "e3", :T "note", :tags ["memory" "carto"]}],
+   :batch
+   [{:id "e4", :T "axiom", :A 1}
+    {:id "e3", :T "note", :tags ["memory" "carto"]}],
+   :taken 2},
+  :in
+  ([{:id "e4", :T "axiom", :A 1}
+    {:id "e3", :T "note", :tags ["memory" "carto"]}]
+   {:tokens #{"zzz"}, :floor-cap 1})},
+ :case-6
+ {:out
+  {:ordered [{:id "e5", :T "convention"}],
+   :batch [{:id "e5", :T "convention"}],
+   :taken 1},
+  :in ([{:id "e5", :T "convention"}] {:char-budget 2, :floor-cap 1})},
+ :case-7
+ {:out
+  {:ordered
+   [{:id "e2", :T :axiom, :A 2, :F 2}
+    {:id "e5",
+     :T :decision,
+     :C "82q8eJEE007",
+     :tags ["scope:project:x" "memory"],
+     :A 7,
+     :F -2}],
+   :batch [{:id "e2", :T :axiom, :A 2, :F 2}],
+   :taken 1},
+  :in
+  ([{:id "e5",
+     :T :decision,
+     :C "82q8eJEE007",
+     :tags ["scope:project:x" "memory"],
+     :A 7,
+     :F -2}
+    {:id "e2", :T :axiom, :A 2, :F 2}]
+   {:char-budget 13})}}
