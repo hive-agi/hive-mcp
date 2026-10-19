@@ -35,7 +35,8 @@
        :session/done     :finished
        :session/errored  :failed
        :session/aborted  :cancelled)"
-  (:require [hive-dsl.adt :refer [defadt adt-variant]]))
+  (:require [hive-dsl.adt :refer [defadt adt-variant]]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -61,6 +62,19 @@
 ;; =============================================================================
 ;; Keyword Coercion
 ;; =============================================================================
+
+;; =============================================================================
+;; Schemas (value objects; every schema here generates)
+;; =============================================================================
+
+(def SessionStateKw
+  [:enum :session/idle :session/running :session/done :session/errored :session/aborted])
+
+(def SessionState
+  "AgentSessionState ADT value."
+  [:map
+   [:adt/type [:= :AgentSessionState]]
+   [:adt/variant SessionStateKw]])
 
 (defn from-keyword
   "Coerce a keyword or string to an AgentSessionState ADT value.
@@ -117,3 +131,13 @@
   "Check if the given AgentSessionState ADT value represents an active state."
   [ss]
   (contains? active-states (adt-variant ss)))
+
+(m/=> from-keyword [:=> [:cat :any] [:maybe SessionState]])
+
+(m/=> to-keyword [:=> [:cat SessionState] SessionStateKw])
+
+(m/=> valid-state? [:=> [:cat :any] :boolean])
+
+(m/=> terminal? [:=> [:cat SessionState] :boolean])
+
+(m/=> active? [:=> [:cat SessionState] :boolean])

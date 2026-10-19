@@ -81,3 +81,11 @@
                            ": " (pr-str (:errors result)))
                       {:agent-type (:agent-type m)
                        :errors (:errors result)})))))
+
+(m/=> validate [:=> [:cat :any] spec/Validation])
+
+(m/=> valid? [:=> [:cat :any] :boolean])
+
+(m/=> explain [:=> [:cat :any] [:maybe :any]])
+
+(m/=> validate-or-throw! [:=> [:cat :any] spec/AnyMap])

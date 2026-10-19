@@ -1,0 +1,8 @@
+{:case-0 {:out "test", :in "clojure -M:test"},
+ :case-1 {:out "build", :in "npm run build"},
+ :case-2 {:out "other", :in "ls"},
+ :case-3 {:out "build", :in "make build"},
+ :case-4 {:out "git", :in "git commit -m x"},
+ :case-5 {:out "build", :in "npm run build"},
+ :case-6 {:out "test", :in "bb test"},
+ :case-7 {:out "git", :in "git commit -m x"}}

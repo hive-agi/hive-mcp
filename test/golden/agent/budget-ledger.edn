@@ -1,0 +1,22 @@
+{:deny-interrupt true,
+ :unknown nil,
+ :guard-agent {:action :allow},
+ :allow {:action :allow},
+ :deny-message-prefix "Budget exceeded:",
+ :total
+ {:total-spend-usd 0.5,
+  :agent-count 2,
+  :agents
+  [{:agent-id "a", :spent-usd 0.5} {:agent-id "b", :spent-usd 0.0}]},
+ :guard-no-agent {:action :allow},
+ :status
+ {:tool-calls 1,
+  :max-budget-usd 1.0,
+  :agent-id "a",
+  :remaining-usd 0.5,
+  :exceeded? false,
+  :pct-used 50.0,
+  :denied-calls 0,
+  :spent-usd 0.5,
+  :model "claude-haiku"},
+ :deny-action :deny}
