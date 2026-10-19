@@ -99,4 +99,4 @@
 ;; an invalid direction is in the domain: the body throws ex-info on it
 (m/=> neighbors [:function
                  [:=> [:cat :string] [:vector :string]]
-                 [:=> [:cat :string [:maybe :keyword]] [:vector :string]]])
+                 [:=> [:cat :string :any] [:vector :string]]])

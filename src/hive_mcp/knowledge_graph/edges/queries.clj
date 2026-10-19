@@ -293,13 +293,9 @@
          (take limit)
          (map #(dissoc % :db/id)))))
 
-(m/=> get-edge [:=> [:cat :string] [:maybe es/Edge]])
-(m/=> get-edges-from [:function
-                      [:=> [:cat :string] es/Edges]
-                      [:=> [:cat :string es/Scope] es/Edges]])
-(m/=> get-edges-to [:function
-                    [:=> [:cat :string] es/Edges]
-                    [:=> [:cat :string es/Scope] es/Edges]])
+(m/=> get-edge [:=> [:cat :any] [:maybe es/Edge]])
+(m/=> get-edges-from [:function [:=> [:cat [:maybe :string]] es/Edges] [:=> [:cat [:maybe :string] es/Scope] es/Edges]])
+(m/=> get-edges-to [:function [:=> [:cat [:maybe :string]] es/Edges] [:=> [:cat [:maybe :string] es/Scope] es/Edges]])
 (m/=> get-edges-by-relation [:function
                              [:=> [:cat es/Relation] es/Edges]
                              [:=> [:cat es/Relation es/Scope] es/Edges]])

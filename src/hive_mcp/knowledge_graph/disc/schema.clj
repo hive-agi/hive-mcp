@@ -25,8 +25,20 @@
    #(instance? java.time.Instant %)])
 
 (def PositiveNumber
-  "A Beta-distribution parameter: any positive number."
-  [:and number? [:> 0]])
+  "A Beta-distribution parameter: a positive finite double, or a positive
+   integer.
+
+   BUG (recorded, not fixed): with INTEGER parameters `beta-lower-bound`
+   computes `(* sum sum (+ sum 1))` in long arithmetic and throws
+   ArithmeticException (long overflow) once alpha + beta exceeds about 2.09e6,
+   e.g. {:disc/certainty-alpha 1 :disc/certainty-beta 2097151}. Stored
+   parameters are doubles; the integer arm is bounded to the range the body
+   survives."
+  [:or
+   [:and [:double {:gen/infinite? false :gen/NaN? false}]
+    [:> 0.0]
+    [:fn {:error/message "should be finite"} (fn [x] (Double/isFinite x))]]
+   [:int {:min 1 :max 1000000}]])
 
 (def Score
   "A staleness or certainty score in [0, 1]."

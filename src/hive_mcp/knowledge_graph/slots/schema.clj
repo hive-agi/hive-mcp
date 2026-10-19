@@ -10,54 +10,6 @@
    namespace does not compile-couple to the modules whose contracts use it."
   (:require [hive-mcp.knowledge-graph.slots.protocol :as p]))
 
-(def BreakerState
-  "The breaker state machine's states."
-  [:enum :closed :open :half-open])
-
-(def Breaker
-  "A breaker record. Every key is optional on input: the transition fns
-   default each one."
-  [:map
-   [:state {:optional true} [:maybe BreakerState]]
-   [:failures {:optional true} [:maybe [:int {:min 0}]]]
-   [:opened-at {:optional true} [:maybe :int]]
-   [:cooldown-ms {:optional true} [:maybe [:int {:min 0}]]]])
-
-(def FreshBreaker
-  "The breaker of a slot that has not failed."
-  [:map
-   [:state [:= :closed]]
-   [:failures [:= 0]]
-   [:opened-at :nil]
-   [:cooldown-ms [:= 0]]])
-
-(def FailedBreaker
-  "A breaker after a failure was accounted: state, count and cooldown are
-   set; opened-at is set once it trips."
-  [:map
-   [:state [:enum :closed :open]]
-   [:failures [:int {:min 1}]]
-   [:opened-at {:optional true} [:maybe :int]]
-   [:cooldown-ms [:int {:min 0}]]])
-
-(def Policy
-  "Breaker tuning knobs."
-  [:map
-   [:max-failures [:int {:min 1}]]
-   [:initial-cooldown-ms [:int {:min 0}]]
-   [:max-cooldown-ms [:int {:min 0}]]])
-
-(def BreakerAtom
-  "The atom of slot -> breaker the stateful breaker fns swap."
-  [:fn {:error/message "should be an atom"
-        :gen/schema [:map-of :keyword FreshBreaker]
-        :gen/fmap atom}
-   #(instance? clojure.lang.IAtom %)])
-
-(def Decision
-  "A breaker decision."
-  [:enum :pass :block])
-
 (def RecoveryStrategy
   "A heal-and-open! strategy: one step, or a chain of them."
   [:or :keyword [:vector :keyword]])
