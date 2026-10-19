@@ -1,6 +1,7 @@
 (ns hive-mcp.multi.util
   "Shared helpers for the multi tool."
-  (:require [hive-dsl.result :refer [rescue]]
+  (:require [malli.core :as m]
+            [hive-dsl.result :refer [rescue]]
             [clojure.data.json :as json]))
 
 (defn decode-mcp-text
@@ -11,3 +12,5 @@
     (rescue v
       (json/read-str (:text v) :key-fn keyword))
     v))
+
+(m/=> decode-mcp-text [:=> [:cat :any] :any])
