@@ -11,7 +11,8 @@
    (dispatch-effects/register-dispatch-effects!)
    ```"
 
-  (:require [hive-mcp.events.core :as ev]
+  (:require [malli.core :as m]
+            [hive-mcp.events.core :as ev]
             [hive-mcp.concurrency.pool :as pool]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -88,3 +89,5 @@
   (ev/reg-fx :dispatch handle-dispatch)
   (ev/reg-fx :dispatch-n handle-dispatch-n)
   (log/info "[hive-events.dispatch] Dispatch effects registered: :dispatch :dispatch-n"))
+
+(m/=> register-dispatch-effects! [:=> [:cat] :nil])
