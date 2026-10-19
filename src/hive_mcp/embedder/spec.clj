@@ -55,7 +55,7 @@
                        :explain    (explainer spec)})))
     spec))
 
-(m/=> make [:=> [:cat schema] schema])
+(m/=> make [:=> [:cat :map] schema])
 
 (defn cache-key
   "Stable cache key for a `ProviderSpec`. Excludes nothing — the spec
