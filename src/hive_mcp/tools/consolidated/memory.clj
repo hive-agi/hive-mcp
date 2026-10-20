@@ -8,9 +8,10 @@
             [clojure.string :as str]
             [hive-mcp.events.core :as ev]
             [hive-mcp.memory.type-registry :as type-registry]
-            [hive-mcp.tools.cli :refer [make-batch-handler]]
             [hive-mcp.tools.composite :as composite]
-            [hive-mcp.tools.memory :as mem]))
+            [hive-mcp.tools.memory :as mem]
+            [hive-mcp.tools.memory.batch :as memory-batch]
+            [hive-mcp.batch.cli-adapter :as bca]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -82,57 +83,69 @@
    :review            #'mem/handle-mcp-memory-review})
 
 (defn- make-single-command-batch
-  "Wrap make-batch-handler for batch ops targeting one command.
+  "Batch handler for ops targeting one memory command, run through a
+   `Batchable` runner (RUN-FN, default `hive-mcp.tools.memory.batch/run-batch`)
+   by way of `bca/cli-batch-handler`, which answers the `{:results :summary}`
+   envelope `make-batch-handler` always did. The default runner resolves CMD-KW
+   in `canonical-handlers`, so the verb's handler is the one registered there.
+   The outer call's params are merged under each op, as before.
 
-   An op that names CMD-KW, or names nothing at all, reaches the wrapped
-   handler with :command set to `(name cmd-kw)` — the behaviour a defaulted op
-   has always had, and the reason an op may still omit :command. An op naming
-   anything else — a nested sub-domain like \"kg edge\", or an unknown verb — is
-   answered per-op WITHOUT invoking the handler.
+   An op that names CMD-KW, or names nothing at all, reaches the runner with
+   :command set to `(name cmd-kw)` — the behaviour a defaulted op has always
+   had, and the reason an op may still omit :command. An op naming
+   anything else — a nested sub-domain like \"kg edge\", or an unknown verb —
+   is answered per-op WITHOUT invoking the runner.
 
    Rewriting EVERY op's :command (the 20260803 behaviour) coerced nine `memory
    batch-add :command \"kg edge\"` ops into nine `add` calls that each answered
    \"Invalid memory type: nil\", while the envelope still reported
-   {:success true} for all nine and summary {:total 9 :success 9 :failed 0}."
-  [cmd-kw handler-fn]
-  (let [cmd-name (name cmd-kw)
-        batch-fn (make-batch-handler {cmd-kw handler-fn})
-        targets? (fn [op]
-                   (let [c (some-> (:command op) (str/trim) (str/lower-case))]
-                     (or (nil? c) (str/blank? c) (= c cmd-name))))
-        rejection (fn [op]
-                    {:success false
-                     :command (:command op)
-                     :error (str "batch-" cmd-name " only accepts '" cmd-name
-                                 "' operations; got: " (pr-str (:command op))
-                                 ". Use the multi tool's operations batch for mixed-command batches.")})]
-    (fn [{:keys [operations] :as params}]
-      (if (or (nil? operations) (empty? operations))
-        (batch-fn params)
-        (let [accepted (into [] (comp (filter targets?)
-                                      (map #(assoc % :command cmd-name)))
-                             operations)
-              ;; Only accepted ops reach the wrapped handler, so its results
-              ;; vector is aligned with ACCEPTED, not with OPERATIONS. Zip it
-              ;; back onto the positions the caller supplied.
-              by-index (if (empty? accepted)
-                         {}
-                         (zipmap (->> operations
-                                      (map-indexed (fn [i op] (when (targets? op) i)))
-                                      (remove nil?))
-                                 (:results (json/read-str
-                                            (:text (batch-fn (assoc params :operations accepted)))
-                                            :key-fn keyword))))
-              results (mapv (fn [i op]
-                              (if (targets? op) (get by-index i) (rejection op)))
-                            (range) operations)
-              succeeded (count (filter :success results))]
-          {:type "text"
-           :text (json/write-str
-                  {:results results
-                   :summary {:total   (count operations)
-                             :success succeeded
-                             :failed  (- (count operations) succeeded)}})})))))
+   {:success true} for all nine and summary {:total 9 :success 9 :failed 0}.
+
+   A batch the runner refuses before executing anything (duplicate op ids, a
+   dependency cycle) answers no per-op results, only :errors; each accepted op
+   is then reported failed with those errors rather than left empty."
+  ([cmd-kw] (make-single-command-batch cmd-kw #'memory-batch/run-batch))
+  ([cmd-kw run-fn]
+   (let [cmd-name (name cmd-kw)
+         batch-fn (bca/cli-batch-handler {:run-fn run-fn
+                                          :cmd-kw cmd-kw
+                                          :shared-params? true})
+         targets? (fn [op]
+                    (let [c (some-> (:command op) (str/trim) (str/lower-case))]
+                      (or (nil? c) (str/blank? c) (= c cmd-name))))
+         rejection (fn [op]
+                     {:success false
+                      :command (:command op)
+                      :error (str "batch-" cmd-name " only accepts '" cmd-name
+                                  "' operations; got: " (pr-str (:command op))
+                                  ". Use the multi tool's operations batch for mixed-command batches.")})]
+     (fn [{:keys [operations] :as params}]
+       (if (or (nil? operations) (empty? operations))
+         (batch-fn params)
+         (let [accepted (filterv targets? operations)
+               ;; Only accepted ops reach the runner, so its results vector is
+               ;; aligned with ACCEPTED, not with OPERATIONS. Zip it back onto
+               ;; the positions the caller supplied.
+               body     (when (seq accepted)
+                          (json/read-str (:text (batch-fn (assoc params :operations accepted)))
+                                         :key-fn keyword))
+               refused  (fn [] {:success false
+                                :command cmd-name
+                                :error (str "batch refused: " (str/join "; " (:errors body)))})
+               by-index (zipmap (->> operations
+                                     (map-indexed (fn [i op] (when (targets? op) i)))
+                                     (remove nil?))
+                                (concat (:results body) (repeatedly refused)))
+               results (mapv (fn [i op]
+                               (if (targets? op) (get by-index i) (rejection op)))
+                             (range) operations)
+               succeeded (count (filter :success results))]
+           {:type "text"
+            :text (json/write-str
+                   {:results results
+                    :summary {:total   (count operations)
+                              :success succeeded
+                              :failed  (- (count operations) succeeded)}})}))))))
 
 (def ^:private bare-batch-pointer
   (str "memory has no generic `batch` verb. To batch memory sub-commands call "
@@ -179,14 +192,14 @@
 
 (def canonical-handlers
   (merge handlers
-         {:batch-add      (make-single-command-batch :add (:add handlers))
-          :batch-feedback (make-single-command-batch :feedback (:feedback handlers))
+         {:batch-add      (make-single-command-batch :add)
+          :batch-feedback (make-single-command-batch :feedback)
           ;; PR4.3 — additional batch siblings via the same iterator pattern.
           ;; A real single-store-call optimization for these is PR5+ work.
-          :batch-tags     (make-single-command-batch :tags (:tags handlers))
-          :batch-duration (make-single-command-batch :duration (:duration handlers))
-          :batch-promote  (make-single-command-batch :promote (:promote handlers))
-          :batch-demote   (make-single-command-batch :demote (:demote handlers))
+          :batch-tags     (make-single-command-batch :tags)
+          :batch-duration (make-single-command-batch :duration)
+          :batch-promote  (make-single-command-batch :promote)
+          :batch-demote   (make-single-command-batch :demote)
           :batch          (make-bare-batch-handler #'handle-memory)
           ;; Nested subdomains resolved lazily via composite/lazy-resolve-handlers
           ;; — drops the static `c-kg`/`c-mig` :requires that previously
