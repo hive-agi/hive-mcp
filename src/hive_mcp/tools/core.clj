@@ -402,6 +402,63 @@ HINT: Provide a JSON array like [\"item1\", \"item2\"]
    [:text :string]
    [:pending_instructions {:optional true} [:vector :any]]])
 
+(def McpResponse
+  "Any single MCP text-content response a tool handler returns: success
+   (mcp-success / mcp-json) or error (mcp-error). :text is nil only when a
+   nil message reaches mcp-error; :_hm is the hivemind piggyback rows that
+   mcp-success+hm attaches."
+  [:map
+   [:type [:= "text"]]
+   [:text [:maybe :string]]
+   [:isError {:optional true} :boolean]
+   [:pending_instructions {:optional true} [:vector :any]]
+   [:_hm {:optional true} [:sequential :any]]])
+
+(def ToolHandler
+  "A tool handler: `(fn [params] mcp-response)`. Callable, so `ifn?`, never
+   `fn?`; the generator yields handlers answering a fixed MCP response."
+  [:fn {:gen/elements [(fn [_params] {:type "text" :text "ok"})
+                       (fn [_params] {:type "text" :text "no" :isError true})]}
+   ifn?])
+
+(def ParamName
+  "A parameter name as the coercers print it with `name`."
+  [:or :keyword :string :symbol])
+
+(def CoercedInt
+  "coerce-int's Elm-style result: {:ok int} or {:error helpful-message}."
+  [:or [:map [:ok :int]] [:map [:error :string]]])
+
+(def CoercedVec
+  "coerce-vec's Elm-style result: {:ok seq} or {:error helpful-message}.
+   :ok is a vector except when a caller's non-vector default passes through."
+  [:or [:map [:ok [:sequential :any]]] [:map [:error :string]]])
+
+(m/=> mcp-success [:=> [:cat :any [:? [:cat [:= :agent-id] [:maybe :string]]]] McpJsonResponse])
+
+(m/=> coerce-int [:function
+                  [:=> [:cat :any ParamName] CoercedInt]
+                  [:=> [:cat :any ParamName [:maybe :int]] CoercedInt]])
+
+(m/=> coerce-int! [:function
+                   [:=> [:cat :any ParamName] :int]
+                   [:=> [:cat :any ParamName [:maybe :int]] :int]])
+
+(m/=> emacs-timeout-ms [:=> [:cat [:maybe :map]] [:maybe :int]])
+
+(m/=> coerce-vec [:function
+                  [:=> [:cat :any ParamName] CoercedVec]
+                  [:=> [:cat :any ParamName [:maybe [:sequential :any]]] CoercedVec]])
+
+(m/=> coerce-vec! [:function
+                   [:=> [:cat :any ParamName] [:sequential :any]]
+                   [:=> [:cat :any ParamName [:maybe [:sequential :any]]] [:sequential :any]]])
+
+(m/=> get-hivemind-piggyback
+      [:=> [:cat :any [:* :any]] [:maybe [:sequential :any]]])
+
+(m/=> mcp-success+hm [:=> [:cat :any [:* :any]] McpResponse])
+
 (m/=> mcp-error [:=> [:cat [:maybe :string]] McpErrorResponse])
 
 (m/=> mcp-json [:=> [:cat :any [:? [:cat [:= :agent-id] [:maybe :string]]]] McpJsonResponse])

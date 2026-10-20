@@ -1,0 +1,8 @@
+{:success-string {:type "text", :text "done"},
+ :success-data {:type "text", :text "{:a 1}"},
+ :error {:type "text", :text "nope", :isError true},
+ :error-nil {:type "text", :text nil, :isError true},
+ :json {:type "text", :text "{\"a\":[1,2]}"},
+ :hm-no-agent {:type "text", :text "t"},
+ :timeout [nil 60000 :refused],
+ :bang [5 :refused ["d"] :refused]}

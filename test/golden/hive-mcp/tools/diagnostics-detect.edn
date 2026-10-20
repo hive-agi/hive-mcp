@@ -1,0 +1,55 @@
+{:case-0
+ {:out
+  {:diagnosis :stale-class,
+   :poisoned? true,
+   :method ":coll-reduce",
+   :protocol "clojure.core.protocols/CollReduce",
+   :class "java.lang.String",
+   :known-poisonable? false},
+  :in
+  ("No implementation of method: :coll-reduce of protocol: #'clojure.core.protocols/CollReduce found for class: java.lang.String")},
+ :case-1 {:out nil, :in ("")},
+ :case-2
+ {:out
+  {:diagnosis :unknown,
+   :poisoned? false,
+   :method ":m",
+   :protocol "hive-mcp.no-such/Proto",
+   :class "java.lang.String",
+   :known-poisonable? false},
+  :in
+  ("No implementation of method: :m of protocol: #'hive-mcp.no-such/Proto found for class: java.lang.String")},
+ :case-3
+ {:out
+  {:diagnosis :not-extended,
+   :poisoned? false,
+   :method ":coll-reduce",
+   :protocol "clojure.core.protocols/CollReduce",
+   :class "no.such.Klass",
+   :known-poisonable? false},
+  :in
+  ("No implementation of method: :coll-reduce of protocol: #'clojure.core.protocols/CollReduce found for class: no.such.Klass")},
+ :case-4
+ {:out
+  {:diagnosis :missing-method,
+   :impl-keys [:coll-reduce],
+   :poisoned? false,
+   :method ":nope",
+   :protocol "clojure.core.protocols/CollReduce",
+   :class "java.lang.String",
+   :known-poisonable? false},
+  :in
+  ("No implementation of method: :nope of protocol: #'clojure.core.protocols/CollReduce found for class: java.lang.String")},
+ :case-5 {:out nil, :in ("")},
+ :case-6 {:out nil, :in ("boom")},
+ :case-7
+ {:out
+  {:diagnosis :missing-method,
+   :impl-keys [:coll-reduce],
+   :poisoned? false,
+   :method ":nope",
+   :protocol "clojure.core.protocols/CollReduce",
+   :class "java.lang.String",
+   :known-poisonable? false},
+  :in
+  ("No implementation of method: :nope of protocol: #'clojure.core.protocols/CollReduce found for class: java.lang.String")}}
