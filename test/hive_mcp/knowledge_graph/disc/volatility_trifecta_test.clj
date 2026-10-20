@@ -65,9 +65,22 @@
    :rel (fn [[d] out] (<= out (+ 1e-9 (vol/current-certainty d))))
    :golden-path "test/golden/hive-mcp/m14-beta-lower-bound.edn"})
 
+(def ^:private NeedsReadArgs
+  "needs-read? arguments with the threshold correlated to the disc. Generated
+   independently, the threshold exceeds the disc's certainty only for a small,
+   seed-dependent share of draws (the default prior is 5/7, and generated
+   priors vary), which starves the true variant. Here the threshold is the
+   disc's own certainty plus an offset of -50..50 hundredths, clamped to
+   [0, 1], so both sides of the comparison are reached."
+  [:cat
+   {:gen/schema [:tuple [:maybe ds/Disc] [:int {:min -50 :max 50}]]
+    :gen/fmap   (fn [[d off]]
+                  [d (-> (+ (vol/current-certainty d) (/ off 100.0)) (max 0.0) (min 1.0))])}
+   [:maybe ds/Disc] [:double {:min 0.0 :max 1.0}]])
+
 (hst/deftrifecta-from-schema needs-read-contract
   hive-mcp.knowledge-graph.disc.volatility/needs-read?
-  {:in [:cat [:maybe ds/Disc] [:double {:min 0.0 :max 1.0}]]
+  {:in NeedsReadArgs
    :out :boolean
    :rel (fn [[d t] out] (= out (or (< (vol/current-certainty d) t)
                                    (< (vol/beta-lower-bound d) (* 0.5 t)))))
