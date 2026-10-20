@@ -12,7 +12,8 @@
             [hive-mcp.tools.migrate.kanban.ports :as ports]
             [hive-mcp.tools.migrate.kanban.pure :as pure]
             [hive-mcp.tools.migrate.optional :as opt]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -103,6 +104,30 @@
    (->MilvusIdLister milvus-store
                      (or tag-filter default-tag-filter)
                      (or page-cap default-page-cap))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def MilvusStore
+  "The milvus-backed source store; the adapters only close over it."
+  [:maybe :some])
+
+(def IdLister
+  [:fn {:gen/elements [(->MilvusIdLister nil default-tag-filter default-page-cap)]}
+   #(satisfies? ports/IIdLister %)])
+
+(def EntryReader
+  [:fn {:gen/elements [(->MilvusEntryReader nil)]} #(satisfies? ports/IEntryReader %)])
+
+(m/=> make-entry-reader [:=> [:cat MilvusStore] EntryReader])
+
+(m/=> make-id-lister
+  [:function
+   [:=> [:cat MilvusStore] IdLister]
+   [:=> [:cat MilvusStore [:maybe [:map [:tag-filter {:optional true} [:maybe :string]]
+                                   [:page-cap {:optional true} [:maybe [:int {:min 1}]]]]]]
+    IdLister]])
 
 ;; =============================================================================
 ;; IEntryReader
