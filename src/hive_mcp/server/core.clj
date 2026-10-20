@@ -29,7 +29,8 @@
             ;; Engine resilience — defense-in-depth L0.5 bounded manifold pool
             [hive-mcp.engine.manifold-pool :as manifold-pool]
             [hive-mcp.config.io :as config-io]
-            [hive-mcp.server.log-sink :as log-sink])
+            [hive-mcp.server.log-sink :as log-sink]
+            [malli.core :as m])
   (:gen-class))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -53,6 +54,8 @@
    {:appenders {:coordinator-file {:enabled? true
                                    :async? false
                                    :fn (log-sink/boot-appender-fn sink)}}}))
+
+(m/=> register-coordinator-file! [:=> [:cat log-sink/Sink] :map])
 
 (log/merge-config!
  {:appenders
@@ -85,11 +88,23 @@
   ([cli-profile env-profile config-profile]
    (keyword (or cli-profile env-profile config-profile "desktop"))))
 
+(def ProfileName
+  "A profile as the CLI, the env or config.edn spell it: a string or a
+   keyword, nil when that source names none."
+  [:maybe [:or [:string {:min 1}] :keyword]])
+
+(m/=> profile-from [:function
+                    [:=> [:cat ProfileName ProfileName] :keyword]
+                    [:=> [:cat ProfileName ProfileName ProfileName] :keyword]])
+
 (defn config-system
   "The :system section of config.edn: {:profile kw, :overrides {ig-key map-or-nil}}.
    {} when the file or the section is absent or unreadable."
   []
   (or (some-> (config-io/read-config-file config-io/config-path) :ok :system) {}))
+
+(m/=> config-system [:=> [:cat] [:map [:profile {:optional true} :any]
+                                 [:overrides {:optional true} [:maybe :map]]]])
 
 (defn resolve-profile
   "Resolve the profile keyword from the CLI --profile arg, HIVE_PROFILE env,
@@ -97,6 +112,8 @@
   ([] (resolve-profile nil))
   ([cli-profile]
    (profile-from cli-profile (System/getenv "HIVE_PROFILE") (:profile (config-system)))))
+
+(m/=> resolve-profile [:function [:=> [:cat] :keyword] [:=> [:cat ProfileName] :keyword]])
 
 (defn read-base-config
   "Read and parse the base system.edn config with Integrant readers."
@@ -107,6 +124,12 @@
                     {:resource "hive/system.edn"
                      :hint "Ensure resources/ is on :paths"}))))
 
+(def SystemConfig
+  "An Integrant config: component key -> its config."
+  [:map-of :keyword :any])
+
+(m/=> read-base-config [:=> [:cat] SystemConfig])
+
 (defn read-profile-config
   "Read profile overlay EDN. Returns {} if profile file not found."
   [profile]
@@ -116,6 +139,8 @@
       (do (log/warn "Profile" path "not found, using base config only")
           {}))))
 
+(m/=> read-profile-config [:=> [:cat [:or :keyword :string]] SystemConfig])
+
 (defn apply-overlay
   "BASE with OVERLAY meta-merged over it. A key OVERLAY sets to nil is removed
    (Integrant exclusion); meta-merge alone would keep the base value."
@@ -123,6 +148,8 @@
   (let [nil-keys (into #{} (comp (filter (fn [[_ v]] (nil? v))) (map key)) overlay)
         overlay' (into {} (remove (fn [[_ v]] (nil? v))) overlay)]
     (apply dissoc (meta-merge base overlay') nil-keys)))
+
+(m/=> apply-overlay [:=> [:cat [:map-of :any :any] [:map-of :any :any]] [:map-of :any :any]])
 
 (defn load-system-config
   "Base system.edn, then the profile overlay, then config.edn's
@@ -133,6 +160,11 @@
    (-> (read-base-config)
        (apply-overlay (read-profile-config profile))
        (apply-overlay (or overrides {})))))
+
+(m/=> load-system-config [:function
+                          [:=> [:cat] SystemConfig]
+                          [:=> [:cat [:or :keyword :string]] SystemConfig]
+                          [:=> [:cat [:or :keyword :string] [:maybe [:map-of :any :any]]] SystemConfig]])
 
 ;; =============================================================================
 ;; Boot timing — per-init-key duration instrumentation
@@ -222,6 +254,13 @@
       (log/info "Integrant system initialized:" (count sys) "keys")
       sys)))
 
+(def StartOpts
+  "start! / reset! keyword args: :profile, and the :hprof-boot! port."
+  [:* [:alt [:cat [:= :profile] ProfileName]
+       [:cat [:= :hprof-boot!] [:=> [:cat] :any]]]])
+
+(m/=> start! [:=> [:cat StartOpts] SystemConfig])
+
 (defn stop!
   "Halt the running Integrant system. Safe to call when no system running.
    Keys are halted in reverse init order (Integrant default)."
@@ -232,6 +271,8 @@
     (clojure.core/reset! system nil)
     (log/info "Integrant system halted.")
     :halted))
+
+(m/=> stop! [:=> [:cat] [:maybe [:= :halted]]])
 
 (defn reset!
   "Stop system, reload changed namespaces via clj-reload, re-init system.
@@ -248,6 +289,8 @@
           (log/info "Namespaces reloaded. Restarting..."))
       (log/warn "clj-reload not available (dev-only dep). Skipping reload."))
     (start! :profile profile :hprof-boot! hprof-boot!)))
+
+(m/=> reset! [:=> [:cat StartOpts] SystemConfig])
 
 ;; =============================================================================
 ;; Blocking — keepalive integration for -main

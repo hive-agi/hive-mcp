@@ -1,0 +1,38 @@
+{:case-0
+ {:out [],
+  :in
+  ({:deprecated #'hive-mcp.server.registration/deprecated-tool?} nil)},
+ :case-1
+ {:out
+  [{:name "memory", :deprecated nil}
+   {:name "a", :deprecated nil}
+   {:name "c"}],
+  :in
+  ({:deprecated #'hive-mcp.server.registration/deprecated-tool?}
+   [{:tool {:name "memory", :deprecated nil}}
+    {:tool {:name "a", :deprecated nil}}
+    {:tool {:name "c"}}])},
+ :case-2
+ {:out [],
+  :in
+  ({:deprecated #'hive-mcp.server.registration/deprecated-tool?} nil)},
+ :case-3
+ {:out [],
+  :in
+  ({:deprecated #'hive-mcp.server.registration/deprecated-tool?} [])},
+ :case-4
+ {:out [],
+  :in
+  ({:deprecated #'hive-mcp.server.registration/deprecated-tool?} nil)},
+ :case-5
+ {:out [],
+  :in
+  ({:deprecated #'hive-mcp.server.registration/deprecated-tool?} nil)},
+ :case-6
+ {:out [],
+  :in
+  ({:deprecated #'hive-mcp.server.registration/deprecated-tool?} nil)},
+ :case-7
+ {:out [],
+  :in
+  ({:deprecated #'hive-mcp.server.registration/deprecated-tool?} nil)}}
