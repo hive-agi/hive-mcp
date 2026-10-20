@@ -8,7 +8,7 @@
    - Xpoll failure does NOT block crystallization
    - Correct args passed to lifecycle/run-xpoll-cycle!"
   (:require [hive-mcp.project.scope]
-            [clojure.test :refer [deftest testing is are]]
+            [clojure.test :refer [deftest testing is are use-fixtures]]
             [hive-mcp.crystal.harvest.collect :as collect]
             [hive-mcp.crystal.synthesis :as synthesis]
             [hive-mcp.crystal.core :as crystal]
@@ -19,7 +19,8 @@
             [hive-mcp.test.stub.memory-store :as stub]
             [hive-spi.memory.registry :as registry]
             [hive-mcp.context.request :as ctx]
-            [clojure.string]))
+            [clojure.string]
+            [hive-mcp.test-support.registry-isolation :as isolation]))
 
 ;; =============================================================================
 ;; Test helpers
@@ -103,11 +104,13 @@
             :xpoll-calls @xpoll-calls#
             :memory-decay-calls @memory-decay-calls#}))
        (finally
-         (registry/reset-registry!)
+         (isolation/restore-stores! {})
          (ext/deregister! :ch/a)
          (ext/deregister! :ch/b)
          (ext/deregister! :ch/c)
          (ext/deregister! :ch/d)))))
+
+(use-fixtures :each isolation/with-restored-store-registry)
 
 ;; =============================================================================
 ;; No-content path tests

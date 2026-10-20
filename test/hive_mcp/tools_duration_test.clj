@@ -25,7 +25,8 @@
             [hive-spi.editor.elisp :as el]
             [hive-mcp.test.stub.memory-store :as stub]
             [hive-spi.memory.registry :as registry]
-            [hive-mcp.protocols.memory :as mem-proto]))
+            [hive-mcp.protocols.memory :as mem-proto]
+            [hive-mcp.test-support.registry-isolation :as isolation]))
 
 ;; =============================================================================
 ;; Test Fixtures and Helpers
@@ -102,28 +103,27 @@
    no row to write and returns 'Entry not found'.
 
    CONFIGURED? false registers NO store, which is what the handlers now treat
-   as 'not configured'."
+   as 'not configured'.
+
+   The prior registry is restored atomically; a live addon server is refused."
   [{:keys [configured? entry entries] :or {configured? true}} thunk]
-  (let [prior (registry/registered-stores)
-        pid   (ambient-project-id)
-        seed  (map #(assoc % :project-id pid)
-                   (cond-> (vec entries) entry (conj entry)))]
-    (try
-      (registry/reset-registry!)
-      (when configured?
-        (let [s (stub/->stub seed)]
-          (swap! (:state s) assoc :get-entry-fn
-                 (fn [id]
-                   (or (get-in @(:state s) [:entries id])
-                       (let [e (assoc (or entry (make-test-entry :id id))
-                                      :id id :project-id pid)]
-                         (swap! (:state s) assoc-in [:entries id] e)
-                         e))))
-          (registry/set-store! s)))
-      (thunk)
-      (finally
-        (registry/reset-registry!)
-        (doseq [[k s] prior] (registry/register-store! k s))))))
+  (isolation/with-restored-store-registry
+    (fn []
+      (let [pid   (ambient-project-id)
+            seed  (map #(assoc % :project-id pid)
+                       (cond-> (vec entries) entry (conj entry)))]
+        (isolation/restore-stores! {})
+        (when configured?
+          (let [s (stub/->stub seed)]
+            (swap! (:state s) assoc :get-entry-fn
+                   (fn [id]
+                     (or (get-in @(:state s) [:entries id])
+                         (let [e (assoc (or entry (make-test-entry :id id))
+                                        :id id :project-id pid)]
+                           (swap! (:state s) assoc-in [:entries id] e)
+                           e))))
+            (registry/set-store! s)))
+        (thunk)))))
 
 (defmacro with-mock-chroma
   "Execute body against a stub IMemoryStore.
@@ -133,6 +133,8 @@
    calling. Options: :configured? :entry :entries."
   [opts & body]
   `(call-with-stub-store ~opts (fn [] ~@body)))
+
+(use-fixtures :each isolation/with-restored-store-registry)
 
 (defmacro with-chroma-not-configured
   "Execute body with Memory store not configured."
@@ -193,7 +195,7 @@
     ;; the handler no longer calls.
     (let [prior (registry/registered-stores)]
       (try
-        (registry/reset-registry!)
+        (isolation/restore-stores! {})
         (registry/set-store! (stub/->stub))
         (let [result (memory/handle-mcp-memory-set-duration {:id "nonexistent"
                                                              :duration "permanent"})]
@@ -201,7 +203,7 @@
           (is (true? (:isError result)))
           (is (str/includes? (:text result) "not found")))
         (finally
-          (registry/reset-registry!)
+          (isolation/restore-stores! {})
           (doseq [[k s] prior] (registry/register-store! k s)))))))
 
 ;; =============================================================================
@@ -359,12 +361,12 @@
     (let [observing (stub/->observing (stub/->stub))
           prior     (registry/registered-stores)]
       (try
-        (registry/reset-registry!)
+        (isolation/restore-stores! {})
         (registry/set-store! observing)
         (memory/handle-mcp-memory-expiring-soon {})
         (is (= [3] (mapv first (stub/calls-of observing :entries-expiring-soon))))
         (finally
-          (registry/reset-registry!)
+          (isolation/restore-stores! {})
           (doseq [[k s] prior] (registry/register-store! k s)))))))
 
 ;; =============================================================================
@@ -379,7 +381,7 @@
     (let [observing (stub/->observing (stub/->stub))
           prior     (registry/registered-stores)]
       (try
-        (registry/reset-registry!)
+        (isolation/restore-stores! {})
         (registry/set-store! observing)
         (let [result (memory/handle-mcp-memory-add {:type "note"
                                                     :content "Test note"
@@ -390,14 +392,14 @@
           (is (nil? (:isError result)))
           (is (= "short" (:duration added))))
         (finally
-          (registry/reset-registry!)
+          (isolation/restore-stores! {})
           (doseq [[k s] prior] (registry/register-store! k s))))))
 
   (testing "Adds memory entry with default duration"
     (let [observing (stub/->observing (stub/->stub))
           prior     (registry/registered-stores)]
       (try
-        (registry/reset-registry!)
+        (isolation/restore-stores! {})
         (registry/set-store! observing)
         (let [result (memory/handle-mcp-memory-add {:type "note"
                                                     :content "Test note"})
@@ -406,7 +408,7 @@
           (is (nil? (:isError result)))
           (is (= "long" (:duration added))))
         (finally
-          (registry/reset-registry!)
+          (isolation/restore-stores! {})
           (doseq [[k s] prior] (registry/register-store! k s))))))
 
   (testing "Returns error when Memory store not configured"
@@ -461,7 +463,7 @@
     (let [store (stub/->stub)
           prior (registry/registered-stores)]
       (try
-        (registry/reset-registry!)
+        (isolation/restore-stores! {})
         (registry/set-store! store)
 
         (let [create-result (memory/handle-mcp-memory-add {:type "note"
@@ -492,7 +494,7 @@
 
           (is (= "short" (:duration (mem-proto/get-entry store entry-id)))))
         (finally
-          (registry/reset-registry!)
+          (isolation/restore-stores! {})
           (doseq [[k s] prior] (registry/register-store! k s)))))))
 
 ;; =============================================================================
@@ -505,14 +507,14 @@
     ;; with-mock-chroma's :entry does, and this case wants a genuine miss.
     (let [prior (registry/registered-stores)]
       (try
-        (registry/reset-registry!)
+        (isolation/restore-stores! {})
         (registry/set-store! (stub/->stub))
         (let [result (memory/handle-mcp-memory-promote {:id "non-existent-id"})]
           (is (= "text" (:type result)))
           (is (true? (:isError result)))
           (is (str/includes? (:text result) "not found")))
         (finally
-          (registry/reset-registry!)
+          (isolation/restore-stores! {})
           (doseq [[k s] prior] (registry/register-store! k s))))))
 
   (testing "Handles a store read failure"
@@ -521,7 +523,7 @@
     ;; longer calls, so the real store ran instead.
     (let [prior (registry/registered-stores)]
       (try
-        (registry/reset-registry!)
+        (isolation/restore-stores! {})
         (registry/set-store!
          (stub/->observing (stub/->stub) {:get-entry "Connection failed"}))
         (let [result (memory/handle-mcp-memory-promote {:id "test-id"})]
@@ -529,13 +531,13 @@
           (is (true? (:isError result)))
           (is (str/includes? (:text result) "Connection failed")))
         (finally
-          (registry/reset-registry!)
+          (isolation/restore-stores! {})
           (doseq [[k s] prior] (registry/register-store! k s))))))
 
   (testing "Handles a store cleanup failure"
     (let [prior (registry/registered-stores)]
       (try
-        (registry/reset-registry!)
+        (isolation/restore-stores! {})
         (registry/set-store!
          (stub/->observing (stub/->stub) {:cleanup-expired! "Cleanup failed"}))
         (let [result (memory/handle-mcp-memory-cleanup-expired {})]
@@ -543,7 +545,7 @@
           (is (true? (:isError result)))
           (is (str/includes? (:text result) "Cleanup failed")))
         (finally
-          (registry/reset-registry!)
+          (isolation/restore-stores! {})
           (doseq [[k s] prior] (registry/register-store! k s)))))))
 
 ;; =============================================================================
