@@ -1,0 +1,5 @@
+{:clean
+ {:branch "main", :uncommitted false, :last-commit "abc1234 - init"},
+ :dirty
+ {:branch "feat/x", :uncommitted true, :last-commit "def5678 - wip"},
+ :no-repo {:branch "none", :uncommitted false, :last-commit "none"}}

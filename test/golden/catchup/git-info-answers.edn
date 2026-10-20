@@ -1,0 +1,53 @@
+{:case-0
+ {:out
+  {:branch "feat/x",
+   :uncommitted false,
+   :last-commit "abc1234 - init"},
+  :in
+  {"rev-parse" {:exit 0, :out "feat/x\n"},
+   "status" {:exit 128, :out ""},
+   "log" {:exit 0, :out "abc1234 - init\n"}}},
+ :case-1
+ {:out {:branch "none", :uncommitted false, :last-commit "none"},
+  :in
+  {"rev-parse" {:exit 128, :out ""},
+   "status" {:exit 128, :out ""},
+   "log" {:exit 128, :out ""}}},
+ :case-2
+ {:out {:branch "feat/x", :uncommitted false, :last-commit "none"},
+  :in
+  {"rev-parse" {:exit 0, :out "feat/x\n"},
+   "status" {:exit 128, :out ""},
+   "log" {:exit 128, :out ""}}},
+ :case-3
+ {:out {:branch "main", :uncommitted true, :last-commit "none"},
+  :in
+  {"rev-parse" {:exit 0, :out "main\n"},
+   "status" {:exit 0, :out " M a.clj\n"},
+   "log" {:exit 128, :out ""}}},
+ :case-4
+ {:out
+  {:branch "none", :uncommitted false, :last-commit "abc1234 - init"},
+  :in
+  {"rev-parse" {:exit 128, :out ""},
+   "status" {:exit 128, :out ""},
+   "log" {:exit 0, :out "abc1234 - init\n"}}},
+ :case-5
+ {:out
+  {:branch "main", :uncommitted false, :last-commit "abc1234 - init"},
+  :in
+  {"rev-parse" {:exit 0, :out "main\n"},
+   "status" {:exit 128, :out ""},
+   "log" {:exit 0, :out "abc1234 - init\n"}}},
+ :case-6
+ {:out {:branch "main", :uncommitted false, :last-commit "d - x"},
+  :in
+  {"rev-parse" {:exit 0, :out "main\n"},
+   "status" {:exit 0, :out ""},
+   "log" {:exit 0, :out "  d - x  \n"}}},
+ :case-7
+ {:out {:branch "feat/x", :uncommitted true, :last-commit "d - x"},
+  :in
+  {"rev-parse" {:exit 0, :out "feat/x\n"},
+   "status" {:exit 0, :out " M a.clj\n"},
+   "log" {:exit 0, :out "  d - x  \n"}}}}
