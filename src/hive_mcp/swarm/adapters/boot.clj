@@ -21,7 +21,8 @@
             [hive-mcp.swarm.adapters.memory-scope :as memory-scope]
             [hive-mcp.swarm.adapters.messaging :as messaging]
             [taoensso.timbre :as log]
-            [hive-mcp.swarm.adapters.store-hooks :as store-hooks]))
+            [hive-mcp.swarm.adapters.store-hooks :as store-hooks]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -40,6 +41,8 @@
   (log/debug "swarm host adapters installed")
   :installed)
 
+(m/=> install-all! [:=> [:cat] [:= :installed]])
+
 (defonce ^:private installed
   (delay (install-all!)))
 
@@ -47,3 +50,5 @@
   "Install the adapters once per JVM. Cheap after the first call."
   []
   @installed)
+
+(m/=> ensure! [:=> [:cat] [:= :installed]])
