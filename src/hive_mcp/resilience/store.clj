@@ -40,6 +40,8 @@
             [hive-mcp.protocols.memory-liveness :as liveness]
             [hive-mcp.resilience.classify :as rc]
             [hive-mcp.resilience.protocol :as rproto]
+            [hive-mcp.resilience.runner :as runner]
+            [malli.core :as m]
             [taoensso.timbre :as log]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -78,6 +80,10 @@
          (boolean (liveness/-await-reconnect! store budget-ms)))
      false)))
 
+(m/=> kick-and-wait! [:function
+                      [:=> [:cat] :boolean]
+                      [:=> [:cat :any] :boolean]])
+
 ;; ---------------------------------------------------------------------------
 ;; Advisory event — fire-and-forget. Wrapped in `rescue` per the
 ;; \"Advisory events should not short-circuit the main pipeline\"
@@ -104,6 +110,8 @@
    working with the `ErrorClass` ADT directly."
   [^Throwable t]
   (rproto/transient? (rc/classify t)))
+
+(m/=> transient-failure? [:=> [:cat rc/Throwable_] :boolean])
 
 ;; ---------------------------------------------------------------------------
 ;; Railway — Result-returning core
@@ -222,6 +230,10 @@
 ;; Legacy throwing surface — thin shim over the Result-returning core
 ;; ---------------------------------------------------------------------------
 
+(m/=> call-with-resilience-result [:function
+                                   [:=> [:cat ifn?] runner/Result]
+                                   [:=> [:cat ifn? :any] runner/Result]])
+
 (defn- result->throw
   "Convert a `Result` back to the legacy throwing contract. Schema
    mismatches surface as `:embedder/dim-mismatch` ex-info; other
@@ -262,6 +274,12 @@
   ([f budget-ms]
    (-> (call-with-resilience-result f budget-ms)
        result->throw)))
+
+;; throwing surface: the success value is whatever `f` returns; a failure
+;; throws instead of returning
+(m/=> call-with-resilience [:function
+                            [:=> [:cat ifn?] :any]
+                            [:=> [:cat ifn? :any] :any]])
 
 (defmacro with-resilience
   "Evaluate `body` under `call-with-resilience`. See fn docstring for

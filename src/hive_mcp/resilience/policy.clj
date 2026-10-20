@@ -16,7 +16,8 @@
    No I/O. Decision table is data-driven so the property suite can
    exhaustively probe every variant."
   (:require [hive-dsl.adt :as adt]
-            [hive-mcp.resilience.protocol :as proto]))
+            [hive-mcp.resilience.protocol :as proto]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -37,6 +38,13 @@
    :err/validation      {:retry? false :backoff-ms 0                 :escalate? true}
    :err/unknown         {:retry? false :backoff-ms 0                 :escalate? true}})
 
+(def RetryDecision
+  "The decision map `decide` returns (see the ns docstring)."
+  [:map
+   [:retry? :boolean]
+   [:backoff-ms :int]
+   [:escalate? :boolean]])
+
 (defn decide
   "Given an `ErrorClass` ADT value, return a `RetryDecision` map."
   [err-class]
@@ -44,12 +52,20 @@
     (or (get decision-table variant)
         (get decision-table :err/unknown))))
 
+;; a non-ADT input falls through to the conservative :err/unknown row
+(m/=> decide [:=> [:cat :any] RetryDecision])
+
 (defn retry?
   "Convenience predicate — true if the policy says to retry."
   [err-class]
   (:retry? (decide err-class)))
 
+(m/=> retry? [:=> [:cat :any] :boolean])
+
 (defn schema-mismatch?
   "Re-export from protocol so callers don't need a second require."
   [err-class]
   (proto/schema-mismatch? err-class))
+
+;; call-through re-export of proto/schema-mismatch? — same contract
+(m/=> schema-mismatch? [:=> [:cat :any] :boolean])
