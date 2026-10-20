@@ -362,8 +362,7 @@
               "No-content path persists nothing")
           (is (true? (:skipped result)))
           (is (= "no-activity" (:reason result)))
-          (is (not (contains? result :promotion-stats))
-              "lifecycle ops do not run for a skipped wrap")))
+          (is (map? (:promotion-stats result)) "lifecycle ops still maintain the store on a skipped wrap")))
 
       ;; Content path
       (with-synthesis-mocks

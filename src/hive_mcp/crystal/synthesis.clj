@@ -60,11 +60,16 @@
 
 (def SessionSummary
   "`synthesize` result. A store failure answers {:error :project-id :session}
-   instead of the :summary-id shape."
+   instead of the :summary-id shape. A harvest that is not persist-worthy
+   answers {:skipped true :reason \"no-activity\" ...} merged with the
+   lifecycle stats, and persists no summary."
   [:or
    [:map [:summary-id :string] [:session :string] [:project-id :string]
     [:session-timing :map] [:stats :any]
     [:sub-summaries {:optional true} [:vector :map]]]
+   [:map [:skipped [:= true]] [:reason [:= "no-activity"]]
+    [:session :string] [:project-id :string]
+    [:session-timing :map] [:stats :any]]
    [:map [:error [:maybe :string]] [:project-id :string] [:session :string]]])
 
 ;; =============================================================================

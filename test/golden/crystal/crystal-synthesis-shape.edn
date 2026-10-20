@@ -1,5 +1,5 @@
 {:no-content-path
- {:keys #{:skipped :reason :session :project-id :stats},
+ {:keys #{:skipped :reason :session :project-id :stats :session-timing :promotion-stats :decay-stats :xpoll-stats :memory-decay-stats :file-provenance-stats},
   :skipped true,
   :reason "no-activity",
   :session "test-session-golden",

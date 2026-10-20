@@ -183,8 +183,9 @@
         (is (= "test-session-synth" (:session result)))
         (is (= "synth-project" (:project-id result)))
         (is (map? (:stats result)))
-        (is (not (contains? result :promotion-stats))
-            "Lifecycle ops do not run for a skipped wrap")))))
+        (is (map? (:session-timing result)))
+        (is (map? (:promotion-stats result))
+            "Lifecycle ops still maintain the store on a skipped wrap")))))
 
 ;; =============================================================================
 ;; Golden: synthesize — content path
@@ -230,7 +231,10 @@
       {:summary nil
        :entry-id "entry-minimal-001"}
       (let [result (synthesis/synthesize base-harvested)
-            expected-keys #{:skipped :reason :session :project-id :stats}]
+            expected-keys #{:skipped :reason :session :project-id :stats
+                            :session-timing
+                            :promotion-stats :decay-stats :xpoll-stats
+                            :memory-decay-stats :file-provenance-stats}]
         (is (= expected-keys (set (keys result)))
             "Quiet-session path key set must match the skip contract")))
 
