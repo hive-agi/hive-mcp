@@ -8,7 +8,9 @@
             [hive-mcp.nrepl.classloader-gc :as classloader-gc]
             [hive-mcp.config.core :as config]
             [hive-mcp.dns.result :as result]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.server.transport.schema :as ts]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -92,10 +94,15 @@
     (spit port-file (str port))
     true))
 
+(m/=> write-port-file! [:=> [:cat :any] ts/EffectResult])
+
 (defn delete-port-file!
   "Delete the `.nrepl-port` file written by `write-port-file!`, if present."
   []
   (io/delete-file port-file true))
+
+;; io/delete-file answers the `silently` flag (true) when there is nothing to delete
+(m/=> delete-port-file! [:=> [:cat] :boolean])
 
 (defn- try-start-nrepl!
   "Attempt to start nREPL server. Returns Result ok with server or err."
@@ -152,3 +159,5 @@
               :else
               (do (log/warn "Embedded nREPL failed (non-fatal):" (:message r))
                   nil))))))))
+
+(m/=> start-embedded-nrepl! [:=> [:cat ts/AtomRef] [:maybe ts/NreplServer]])

@@ -4,7 +4,9 @@
    Single responsibility: start the MCP HTTP transport if enabled via config."
   (:require [hive-mcp.config.core :as config]
             [hive-mcp.dns.result :as result]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.server.transport.schema :as ts]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -75,3 +77,7 @@
            {:status :running :port actual}
            (do (log/warn "MCP HTTP failed to start, NOT listening" {:port port})
                {:status :failed :port port})))))))
+
+(m/=> start-mcp-http! [:function
+                       [:=> [:cat] ts/MaybeStartStatus]
+                       [:=> [:cat ts/ComponentConfig] ts/MaybeStartStatus]])
