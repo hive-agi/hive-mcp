@@ -14,7 +14,9 @@
             [hive-mcp.tools.kanban.predicates :as pred]
             [hive-mcp.tools.kanban.transitions :as kt]
             [clojure.string :as str]
-            [hive-mcp.vectordb.kanban-facade :as kanban-facade]))
+            [hive-mcp.vectordb.kanban-facade :as kanban-facade]
+            [hive-mcp.tools.kanban.schema :as ks]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -335,3 +337,16 @@
 
       :else
       (dispatch-committed! [:kanban/edit event-payload] task-id))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> move-fx [:=> [:cat ks/Coeffects ks/Event] [:maybe ks/FxMap]])
+(m/=> retag-fx [:=> [:cat ks/Coeffects ks/Event] [:maybe ks/FxMap]])
+(m/=> edit-fx [:=> [:cat ks/Coeffects ks/Event] [:maybe ks/FxMap]])
+(m/=> register-all! [:=> [:cat] ks/HandlerRegistry])
+(m/=> init! [:=> [:cat] [:= true]])
+(m/=> dispatch-move! [:=> [:cat ks/DispatchPayload] ks/Result])
+(m/=> dispatch-retag! [:=> [:cat ks/DispatchPayload] ks/Result])
+(m/=> dispatch-edit! [:=> [:cat ks/DispatchPayload] ks/Result])

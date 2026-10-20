@@ -9,7 +9,9 @@
    query + tag pre-filter, before slim projection."
   (:require [clojure.string :as str]
             [hive-mcp.tools.kanban.transitions :as kt]
-            [hive-mcp.dns.result :refer [rescue]]))
+            [hive-mcp.dns.result :refer [rescue]]
+            [hive-mcp.tools.kanban.schema :as ks]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -135,3 +137,24 @@
                created_after
                updated_after
                (and (or (= tag_match "any") (= tag_match :any)) (seq tags)))))
+
+(def ^:private Instant
+  "A `java.time.Instant`."
+  [:fn {:gen/elements [java.time.Instant/EPOCH (java.time.Instant/parse "2026-08-21T19:55:25Z")]}
+   #(instance? java.time.Instant %)])
+
+(m/=> ->instant [:=> [:cat :any] [:maybe Instant]])
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> substring-ci? [:=> [:cat [:maybe :string] :any] :boolean])
+(m/=> entry-priority? [:=> [:cat ks/EntryIn [:maybe :string]] :boolean])
+(m/=> entry-matches-query? [:=> [:cat ks/EntryIn [:maybe :string]] :boolean])
+(m/=> entry-tags-match? [:=> [:cat ks/EntryIn ks/TagsIn [:maybe [:or :keyword :string]]] :boolean])
+(m/=> entry-after-ts? [:=> [:cat ks/EntryIn :keyword [:maybe :string]] :boolean])
+(m/=> paginate [:=> [:cat [:maybe [:sequential :any]] :any :any] [:maybe [:sequential :any]]])
+(m/=> project-fields [:=> [:cat [:maybe [:map-of :any :any]] ks/Fields] [:maybe [:map-of :any :any]]])
+(m/=> post-filters? [:=> [:cat ks/ListParams] :boolean])
+(m/=> narrowing-post-filters? [:=> [:cat ks/ListParams] :boolean])

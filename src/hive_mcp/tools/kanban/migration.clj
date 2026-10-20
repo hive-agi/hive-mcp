@@ -31,7 +31,9 @@
   (:require [hive-mcp.protocols.memory :as proto]
             [hive-mcp.tools.kanban.predicates :as kp]
             [taoensso.timbre :as log]
-            [hive-mcp.tools.migrate.batch :as batch]))
+            [hive-mcp.tools.migrate.batch :as batch]
+            [hive-mcp.tools.kanban.schema :as ks]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -136,3 +138,12 @@
      :kanban-registered?  kanban?
      :source-count        (count src)
      :sample-ids          (vec (take 5 (map :id src)))}))
+
+(m/=> extract-kanban-from-default-store [:=> [:cat] [:vector ks/EntryIn]])
+(m/=> migrate-to-kanban! [:function
+                          [:=> [:cat] ks/SyncReport]
+                          [:=> [:cat ks/MigrateOpts] ks/SyncReport]])
+(m/=> verify [:function
+              [:=> [:cat] ks/VerifyReport]
+              [:=> [:cat ks/VerifyOpts] ks/VerifyReport]])
+(m/=> status [:=> [:cat] ks/MigrationStatus])

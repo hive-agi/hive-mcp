@@ -6,7 +6,9 @@
    scoped board that carries the plan's required tags, up to the plan's
    window. The facade-backed adapter lives in
    hive-mcp.tools.memory-kanban.query (it is the boundary); this ns holds
-   the protocol and the in-memory adapter both are held to.")
+   the protocol and the in-memory adapter both are held to."
+  (:require [hive-mcp.tools.kanban.schema :as ks]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -43,3 +45,11 @@
   "In-memory board source over a seq of entries."
   [entries]
   (->SeqBoardSource (vec entries)))
+
+(def BoardSource
+  "An `IBoardSource` adapter; generates an empty in-memory source."
+  [:fn {:gen/fmap (fn [_] (->SeqBoardSource []))
+        :gen/schema :nil}
+   #(satisfies? IBoardSource %)])
+
+(m/=> ->seq-source [:=> [:cat [:maybe [:sequential ks/EntryIn]]] BoardSource])
