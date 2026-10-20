@@ -1,29 +1,31 @@
 (ns hive-mcp.system.contract-test
-  "Contract facets for the system tree (registry, addon-hot, keepalive,
-   layer3/5, child-scope, sweep coordinator, in-core shutdown hooks, and the
-   sweepers). Pure calculations get schema-driven trifectas; boundary fns get
-   goldens over plain-EDN projections of their results, with every
-   process-global registry they drive captured and restored around the test.
-   No scheduler is started and no JVM shutdown hook is registered."
-  (:require [clojure.core.async :as async]
-            [clojure.test :refer [deftest is testing use-fixtures]]
+  "Contract facets for the system registry and child-scope, and the coverage
+   gate for the whole system tree. The other system namespaces carry their
+   facets in their own <ns>-contract-test (addon-hot, keepalive, layer3,
+   layer5, sweep-coordinator, shutdown.in-core, sweepers.heap-pressure,
+   sweepers.stale-cache) or <ns>-test (sweepers.orphan-edge). Pure
+   calculations get schema-driven trifectas; boundary fns get goldens over
+   plain-EDN projections of their results, with every process-global registry
+   they drive captured and restored around the test. No scheduler is started
+   and no JVM shutdown hook is registered."
+  (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.protocols.lifecycle :as lifecycle]
-            [hive-mcp.system.addon-hot :as ah]
+            [hive-mcp.system.addon-hot]
             [hive-mcp.system.child-scope :as cs]
-            [hive-mcp.system.keepalive :as keepalive]
-            [hive-mcp.system.layer3 :as layer3]
-            [hive-mcp.system.layer5 :as layer5]
+            [hive-mcp.system.keepalive]
+            [hive-mcp.system.layer3]
+            [hive-mcp.system.layer5]
             [hive-mcp.system.registry :as reg]
-            [hive-mcp.system.shutdown.in-core :as in-core]
-            [hive-mcp.system.sweep-coordinator :as sc]
-            [hive-mcp.system.sweepers.heap-pressure :as hp]
-            [hive-mcp.system.sweepers.stale-cache :as stale]
+            [hive-mcp.system.shutdown.in-core]
+            [hive-mcp.system.sweep-coordinator]
+            [hive-mcp.system.sweepers.heap-pressure]
+            [hive-mcp.system.sweepers.orphan-edge]
+            [hive-mcp.system.sweepers.stale-cache]
             [hive-schemas.coverage :as coverage]
             [hive-schemas.test :refer [deftrifecta-from-schema]]
             [hive-test.golden :as golden]
             [malli.core :as m]
-            [malli.generator :as mg]
-            [hive-mcp.system.sweepers.orphan-edge :as oe]))
+            [malli.generator :as mg]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -96,132 +98,6 @@
     (is (not (m/validate reg/ShutdownHook (sweep "x" 1))))))
 
 ;;; ---------------------------------------------------------------------------
-;;; addon-hot: the pure strata
-;;; ---------------------------------------------------------------------------
-
-(def ^:private SpecIn [:map [:addon/id [:enum "hive.a" "hive.b" :hive.c]]])
-
-(deftrifecta-from-schema registered-specs-keeps-exactly-the-registered
-  #'ah/registered-specs
-  {:in [:cat [:vector SpecIn]
-        [:map [:hot/registered [:vector SpecIn]]]]
-   :out [:vector ah/MountSpec]
-   :rel (fn [[specs reg] out]
-          (let [ids (set (map (comp str :addon/id) (:hot/registered reg)))]
-            (= out (filterv #(ids (str (:addon/id %))) specs))))
-   :golden-path "test/golden/hive-mcp/system/registered-specs.edn"
-   :num-tests 100})
-
-(deftrifecta-from-schema init-opts-never-carries-an-addon-dir
-  #'ah/init-opts
-  {:in [:cat [:map [:hot/no-reload [:set :symbol]] [:hot/dirs [:set :string]]]
-        [:maybe [:int {:min 0}]]]
-   :out ah/InitOpts
-   :rel (fn [[plan since] out]
-          (and (= [] (:dirs out))
-               (= (set (:hot/no-reload plan)) (:no-reload out))
-               (= since (:since out))))
-   :num-tests 100})
-
-(deftrifecta-from-schema boot-report-counts-and-sorts
-  #'ah/boot-report
-  {:in [:cat [:vector SpecIn]
-        [:map [:hot/dirs [:set [:enum "/b" "/a" "/c"]]]
-         [:hot/skipped [:vector SpecIn]]]
-        [:map [:fresh? :boolean]]
-        [:map [:ok? :boolean] [:hot/registered [:vector SpecIn]] [:errors [:vector :string]]]
-        [:map [:claims [:map-of :string [:vector :string]]] [:errors [:vector :string]]]]
-   :out ah/BootReport
-   :rel (fn [[specs plan init reg claimed] out]
-          (and (= (count specs) (:mounted out))
-               (= (vec (sort (:hot/dirs plan))) (:dirs out))
-               (= (:fresh? init) (:fresh? out))
-               (= (:ok? reg) (:ok? out))
-               (= (into (:errors reg) (:errors claimed)) (:errors out))))
-   :num-tests 100})
-
-(defn- catalog [specs host]
-  (reify ah/IAddonCatalog (mounted-specs [_] specs) (mount-host [_] host)))
-
-(defn- engine [throw-on]
-  (reify ah/IHotEngine
-    (plan [_ _ specs]
-      (when (= throw-on :plan) (throw (ex-info "plan broke" {})))
-      {:hot/dirs #{"/a/src"} :hot/no-reload #{'p} :hot/registered specs :hot/skipped []})
-    (ensure-init! [_ _] {:fresh? true})
-    (extend-dirs! [_ req] {:dirs (:dirs req) :added (:dirs req)})
-    (register! [_ _ specs]
-      (when (= throw-on :register) (throw (ex-info "register broke" {})))
-      {:ok? true :hot/registered specs})
-    (unregister! [_ specs] (mapv :addon/id specs))))
-
-(golden/deftest-golden addon-hot-boot-arms-golden
-  "test/golden/hive-mcp/system/addon-hot-boot.edn"
-  (let [specs [{:addon/id "hive.a"}]
-        prior (ah/last-report)]
-    (try
-      {:ok         (ah/boot! (catalog specs :host) (engine nil) 5)
-       :empty      (ah/boot! (catalog [] :host) (engine nil) nil)
-       :no-host    (ah/boot! (catalog specs nil) (engine nil) nil)
-       :plan-fail  (:error (ah/boot! (catalog specs :host) (engine :plan) nil))
-       :reg-fail   (:error (ah/boot-registration (catalog specs :host) (engine :register) nil))
-       :registered (:registered (:ok (ah/boot-registration (catalog specs :host) (engine nil) nil)))
-       :start      (let [st (ah/start! (catalog specs :host) (engine nil) nil)]
-                     {:registered (:registered st)
-                      :result-ok? (contains? (:result st) :ok)
-                      :last-is-result (= (:result st) (ah/last-report))
-                      :stop (ah/stop! st)})
-       :stop-empty (ah/stop! {:engine (engine nil) :registered []})}
-      (finally (reset! ah/last-boot prior)))))
-
-(deftest addon-hot-boot-results-hit-each-arm
-  (let [ok (ah/boot! (catalog [{:addon/id "x"}] :host) (engine nil) nil)
-        err (ah/boot! (catalog [{:addon/id "x"}] nil) (engine nil) nil)]
-    (is (m/validate ah/BootResult ok))
-    (is (m/validate [:map [:ok ah/BootReport]] ok) "the full report on the happy arm")
-    (is (m/validate ah/BootResult err))
-    (is (not (m/validate [:map [:ok :any]] err)))
-    (is (m/validate ah/AddonCatalog (ah/live-catalog)))
-    (is (m/validate ah/HotEngine (ah/live-engine)))))
-
-;;; ---------------------------------------------------------------------------
-;;; keepalive: no hook is registered; channels are local
-;;; ---------------------------------------------------------------------------
-
-(deftest keepalive-awaits-return-what-was-delivered
-  (let [ch (async/promise-chan)]
-    (async/put! ch :shutdown)
-    (is (= :shutdown (keepalive/await-shutdown! {:mode :stdio :shutdown-ch ch}))))
-  (testing "stdio join wins when shutdown never fires"
-    (let [p (doto (promise) (deliver :done))]
-      (is (= [:stdio :done]
-             (keepalive/await-shutdown-or-stdio! {:shutdown-ch (async/promise-chan)} p)))))
-  (testing "shutdown wins when the join never delivers"
-    (let [ch (async/promise-chan)]
-      (async/put! ch :shutdown)
-      (is (= [:shutdown :shutdown]
-             (keepalive/await-shutdown-or-stdio! {:shutdown-ch ch} (promise)))))))
-
-;;; ---------------------------------------------------------------------------
-;;; layer3 / layer5
-;;; ---------------------------------------------------------------------------
-
-(deftrifecta-from-schema discovery-mode-defaults-to-classpath
-  #'layer3/discovery-mode
-  {:in [:cat [:maybe [:map [:discover {:optional true} [:enum :classpath :none :other]]]]]
-   :out :keyword
-   :rel (fn [[config] out] (= out (get config :discover :classpath)))
-   :golden-path "test/golden/hive-mcp/system/discovery-mode.edn"
-   :num-tests 100})
-
-(deftest stdio-surface-registers-only-with-a-tools-atom
-  (let [seen (atom [])
-        reg! (fn [id s] (swap! seen conj [id (:surface/kind s)]) id)]
-    (is (= :mcp-stdio (layer5/register-stdio-surface! reg! {:tools (atom {})})))
-    (is (nil? (layer5/register-stdio-surface! reg! {})))
-    (is (= [[:mcp-stdio :tools-atom]] @seen))))
-
-;;; ---------------------------------------------------------------------------
 ;;; child-scope: pure argv policy
 ;;; ---------------------------------------------------------------------------
 
@@ -284,76 +160,6 @@
   (let [p (cs/start! (ProcessBuilder. ^java.util.List ["true"]) {:probe (constantly false)})]
     (is (instance? Process p))
     (is (zero? (.waitFor ^Process p)))))
-
-;;; ---------------------------------------------------------------------------
-;;; sweep coordinator: status only, never started here
-;;; ---------------------------------------------------------------------------
-
-(deftest coordinator-status-and-idempotent-stop
-  (reg/reset-all!)
-  (reg/register-sweep! (sweep "c/s" 5))
-  (let [st (sc/status)]
-    (is (m/validate sc/CoordinatorStatus st))
-    (is (= 10 (:heartbeat-s st)) "the cadence is floored at 10 s")
-    (is (= ["c/s"] (:registered st))))
-  (when-not (:running? (sc/status))
-    (is (false? (sc/stop!)) "stop! of a stopped coordinator is a no-op")))
-
-;;; ---------------------------------------------------------------------------
-;;; in-core shutdown hooks
-;;; ---------------------------------------------------------------------------
-
-(golden/deftest-golden in-core-hooks-golden
-  "test/golden/hive-mcp/system/in-core-hooks.edn"
-  (do
-    (reg/reset-all!)
-    {:ret (in-core/register-in-core-shutdown! (atom nil) (atom {}))
-     :snapshot (reg/registry-snapshot)}))
-
-;;; ---------------------------------------------------------------------------
-;;; sweepers
-;;; ---------------------------------------------------------------------------
-
-(def ^:private gib (* 1024 1024 1024))
-
-(def ^:private HeapIn
-  [:map
-   [:committed [:maybe [:enum 0 gib (* 3 gib) (* 5 gib) (* 9 gib) (* 12 gib)]]]
-   [:used [:maybe [:enum 0 gib (* 3 gib) (* 4 gib) (* 10 gib)]]]])
-
-(deftrifecta-from-schema reclaimable-is-the-empty-committed-heap
-  #'hp/reclaimable
-  {:in HeapIn
-   :out [:int {:min 0}]
-   :rel (fn [{:keys [committed used]} out] (= out (max 0 (- (or committed 0) (or used 0)))))
-   :golden-path "test/golden/hive-mcp/system/heap-reclaimable.edn"
-   :num-tests 100})
-
-(deftrifecta-from-schema worth-collecting-needs-both-thresholds
-  #'hp/worth-collecting?
-  {:in HeapIn
-   :out :boolean
-   :rel (fn [{:keys [committed used]} out]
-          (let [c (or committed 0) u (or used 0)]
-            (= out (and (>= (- c u) hp/min-waste-bytes)
-                        (> c (* hp/min-waste-ratio (max u 1)))))))
-   :classify (fn [_ out] out)
-   :classify-domain #{true false}
-   :classify-floor 5
-   :golden-path "test/golden/hive-mcp/system/heap-worth-collecting.edn"
-   :num-tests 200})
-
-(deftest heap-snapshot-reads-the-runtime
-  (let [s (hp/heap-snapshot)]
-    (is (m/validate hp/HeapSnap s))
-    (is (<= (:used s) (:committed s)))))
-
-(deftest stale-cache-evictor-registry-is-a-set
-  (let [f (fn [] 0)
-        before (stale/registered-evictors)]
-    (is (contains? (stale/register-cache-evictor! f) f))
-    (is (= (stale/registered-evictors) (stale/register-cache-evictor! f)) "idempotent")
-    (is (set? before))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Coverage gate

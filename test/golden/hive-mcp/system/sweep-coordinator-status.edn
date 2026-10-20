@@ -1,0 +1,4 @@
+{:empty {:heartbeat-s 30, :registered []},
+ :floored {:heartbeat-s 10, :registered ["c/fast"]},
+ :gcd {:heartbeat-s 60, :registered ["c/a" "c/b"]},
+ :one-slow {:heartbeat-s 60, :registered ["c/slow"]}}

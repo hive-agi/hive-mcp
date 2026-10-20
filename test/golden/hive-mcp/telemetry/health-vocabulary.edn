@@ -1,0 +1,22 @@
+{:severities [:error :fatal :info :warn],
+ :error-types
+ [:chroma-unavailable
+  :emacs-unreachable
+  :harvest-failed
+  :hot-reload-failed
+  :nrepl-connection
+  :nrepl-disconnect
+  :nrepl-eval-error
+  :nrepl-timeout
+  :restart-collision
+  :validation-failed
+  :websocket-death
+  :wrap-crystallize-failed],
+ :schema-keys
+ [:health-event/context
+  :health-event/id
+  :health-event/message
+  :health-event/recoverable?
+  :health-event/severity
+  :health-event/timestamp
+  :health-event/type]}
