@@ -1,0 +1,11 @@
+[{:old-size 8,
+  :new-size 0,
+  :dropped-bytes 8,
+  :truncated? true,
+  :path "2.wal",
+  :backup "2.wal.before-truncate",
+  :sub-classification :tail-zeroed}
+ {:path "3.wal",
+  :truncated? false,
+  :sub-classification :mid-segment,
+  :backup nil}]
