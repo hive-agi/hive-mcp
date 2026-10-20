@@ -209,8 +209,12 @@
                   :vargs [(sink/boot-event :hive-addon.loader/start :init 12.0 :ok)]
                   :output_ (delay (reset! formatted? true) "API_KEY=secret")})
         (is (false? @formatted?) "neither rejected nor accepted payload can force output")
-        (let [deadline (+ (System/currentTimeMillis) 2000)]
-          (while (and (not (java.nio.file.Files/exists path (make-array java.nio.file.LinkOption 0)))
+        ;; The drain thread creates the file (openat O_CREAT) before it writes
+        ;; the line, so existence alone races the write: wait for a whole line.
+        (let [deadline (+ (System/currentTimeMillis) 5000)
+              line-written? #(and (java.nio.file.Files/exists path (make-array java.nio.file.LinkOption 0))
+                                  (str/ends-with? (slurp (.toFile path)) "\n"))]
+          (while (and (not (line-written?))
                       (< (System/currentTimeMillis) deadline))
             (Thread/sleep 10)))
         (is (java.nio.file.Files/exists path (make-array java.nio.file.LinkOption 0)))
