@@ -134,3 +134,71 @@
         (ext/deregister! :block/tw5-budget)
         (ext/deregister! :cu/piggyback-drain)
         (hive-mcp.channel.piggyback/register-message-source! previous-source)))))
+
+(deftest catchup-provider-gets-strict-ceiling-ctx
+  ;; The provider is an addon port. Its ctx must say the response owns a hard
+  ;; ceiling, so a strict-aware provider costs blocks on the wire and defers.
+  (let [caller "tw12-strict-ctx"
+        seen (atom nil)
+        handler (middleware/wrap-handler-piggybacks
+                 (constantly [{:type "text" :text "answer"}]) "test")]
+    (try
+      (ext/register! :cu/piggyback-drain
+                     (fn [_ ctx] (reset! seen ctx) nil))
+      (handler {:_caller_id caller :project_id "hive-mcp"})
+      (is (true? (:strict? @seen)))
+      (is (= 32000 (:ceiling @seen)))
+      (is (= middleware/response-piggyback-char-budget (:ceiling @seen)))
+      (is (pos? (:char-budget @seen)))
+      (finally
+        (ext/deregister! :cu/piggyback-drain)))))
+
+(deftest oversized-channels-stay-under-ceiling-and-drop-catchup-first
+  ;; Every channel is oversized. The provider honours :strict?/:ceiling the way
+  ;; hive-knowledge's rank/select does: wire-cost the block and defer it unless
+  ;; it fits the offered budget (or could never fit under the ceiling). Without
+  ;; :strict? it behaves as the legacy provider and the first block always rides,
+  ;; so a host that forgets to pass :strict? fails the ceiling assertion below.
+  (let [caller "tw12-strict-oversized"
+        previous-source @hive-mcp.channel.piggyback/message-source-fn
+        offered (atom [])
+        wire-size (fn [tag body]
+                    (count (str "\n\n---" (clojure.string/upper-case (name tag)) "---\n"
+                                body "\n---/" (clojure.string/upper-case (name tag)) "---")))
+        body (apply str (repeat 9000 "C"))
+        provider (fn [_ {:keys [char-budget strict? ceiling]}]
+                   (swap! offered conj {:budget char-budget :strict? strict?})
+                   (when (or (not strict?)
+                             (<= (wire-size :tw12_big body) char-budget)
+                             (> (wire-size :tw12_big body) ceiling))
+                     {:tw12_big body}))
+        handler (middleware/wrap-handler-piggybacks
+                 (constantly [{:type "text" :text "answer"}]) "test")
+        text (fn [response] (apply str (map :text response)))]
+    (try
+      (swap! async/buffers assoc caller
+             {:entries [{:task-id "big-async" :status :completed
+                         :result (apply str (repeat 60000 "A"))}] :cursor 0})
+      (hive-mcp.channel.memory-piggyback/enqueue!
+       caller (vec (for [i (range 30)]
+                     {:id (str "m" i) :type "axiom"
+                      :content (apply str (repeat 1500 "M"))})))
+      (ext/register! :block/tw12-big (fn [_] (apply str (repeat 3500 "B"))))
+      (ext/register! :cu/piggyback-drain provider)
+      (hive-mcp.channel.piggyback/register-message-source! (fn [] []))
+      (let [wire (text (handler {:_caller_id caller :project_id "hive-mcp"}))
+            budgeted (subs wire (count "answer"))]
+        (is (<= (count budgeted) middleware/response-piggyback-char-budget)
+            "four channels together stay under the response ceiling")
+        (is (<= 0 (.indexOf budgeted "---TOOLRESULT---")) "async rides first")
+        (is (neg? (.indexOf budgeted "---TW12_BIG---"))
+            "lowest-priority channel (catchup) is dropped, not truncated")
+        (is (neg? (.indexOf budgeted "---/TW12_BIG---")))
+        (is (every? :strict? @offered)
+            "every catchup drain this response made was strict"))
+      (finally
+        (async/clear-buffer! caller)
+        (hive-mcp.channel.memory-piggyback/clear-buffer! caller)
+        (ext/deregister! :block/tw12-big)
+        (ext/deregister! :cu/piggyback-drain)
+        (hive-mcp.channel.piggyback/register-message-source! previous-source)))))

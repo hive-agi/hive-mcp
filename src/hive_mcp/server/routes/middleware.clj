@@ -585,7 +585,13 @@
            catchup-cap (:allowance (spend-piggyback-budget remaining-blocks 4000 0))
            catchup-blocks (when (> catchup-cap 100)
                             (drain-catchup-piggyback caller-id
-                              (assoc request-ctx :char-budget (- catchup-cap 100))))
+                              ;; STRICT: this response owns a hard ceiling, so the
+                              ;; provider costs candidates on the wire and defers an
+                              ;; oversized one instead of letting it ride first.
+                              (assoc request-ctx
+                                     :char-budget (- catchup-cap 100)
+                                     :strict? true
+                                     :ceiling response-piggyback-char-budget)))
            catchup-content (reduce-kv
                             (fn [acc tag body]
                               (id/wrap-delimited-block acc
