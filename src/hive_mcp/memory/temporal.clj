@@ -28,7 +28,8 @@
 
    Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
    SPDX-License-Identifier: AGPL-3.0-or-later"
-  (:require [hive-mcp.knowledge-graph.connection :as kg-conn]
+  (:require [malli.core :as m]
+            [hive-mcp.knowledge-graph.connection :as kg-conn]
             [hive-mcp.context.request :as ctx]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]))
 
@@ -129,11 +130,15 @@
                 {:op op :entry-id entry-id :error (.getMessage e)})
       {:ok false :error (.getMessage e)})))
 
+(m/=> record-mutation! [:=> [:cat [:map [:entry-id :string] [:op [:enum :feedback :kanban-done :kanban-move :kanban-delete :kanban-retag :kanban-edit :expire :decay :promote :reground :migrate :log-access :cleanup]] [:data {:optional true} :map] [:previous-value {:optional true} :map] [:agent-id {:optional true} :string] [:project-id {:optional true} :string]]] [:maybe [:or [:map [:ok [:= true]] [:mutation-id :string]] [:map [:ok [:= false]] [:error :string]]]]])
+
 (defn record-mutation-silent!
   "Like record-mutation! but swallows all errors completely.
    Use in hot paths where even logging overhead matters."
   [opts]
   (rescue nil (record-mutation! opts)))
+
+(m/=> record-mutation-silent! [:=> [:cat :map] [:maybe :map]])
 
 ;; =============================================================================
 ;; Batch Recording (for cleanup/decay cycles)
@@ -173,6 +178,8 @@
       (log/warn "Temporal batch recording failed (non-fatal)"
                 {:count (count mutations) :error (.getMessage e)})
       {:ok false :error (.getMessage e)})))
+
+(m/=> record-mutations-batch! [:=> [:cat [:sequential :map]] [:maybe [:map [:ok :boolean]]]])
 
 ;; =============================================================================
 ;; Query Helpers (for addon consumers)
@@ -219,6 +226,8 @@
         (log/warn "Mutation query failed" {:entry-id entry-id :error (.getMessage e)})
         nil))))
 
+(m/=> query-mutations [:function [:=> [:cat :string] [:maybe [:vector :map]]] [:=> [:cat :string [:maybe :map]] [:maybe [:vector :map]]]])
+
 (defn mutation-count
   "Count total mutations for an entry or globally.
 
@@ -242,6 +251,8 @@
             0))
       (catch Exception _
         0))))
+
+(m/=> mutation-count [:function [:=> [:cat] [:int {:min 0}]] [:=> [:cat [:maybe :string]] [:int {:min 0}]]])
 
 ;; =============================================================================
 ;; Guarded Prune (heap-pressure-gated retention bound)
@@ -303,6 +314,8 @@
          (take batch-cap)
          vec)))
 
+(m/=> prune-victims [:=> [:cat [:sequential [:tuple :int :string [:fn {:gen/elements [(java.util.Date.)]} #(instance? java.util.Date %)] :keyword]] [:fn {:gen/elements [(java.util.Date.)]} #(instance? java.util.Date %)] [:map [:max-per-entry [:int {:min 0}]] [:batch-cap [:int {:min 0}]]]] [:vector :int]])
+
 (defn prune-mutations!
   "GUARDED prune of the :mem-mutation audit trail. Best-effort, non-fatal.
 
@@ -351,3 +364,5 @@
     (catch Exception e
       (log/warn "Mutation prune failed (non-fatal)" {:error (.getMessage e)})
       {:ok false :error (.getMessage e)})))
+
+(m/=> prune-mutations! [:function [:=> [:cat] [:map [:ok :boolean]]] [:=> [:cat [:maybe :map]] [:map [:ok :boolean]]]])

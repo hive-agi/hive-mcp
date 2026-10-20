@@ -1,0 +1,10 @@
+{:case-0 {:out "scope:global", :in ("")},
+ :case-1 {:out "scope:project:a:b:c:d", :in ("a:b:c:d")},
+ :case-2 {:out "scope:project:hive", :in ("hive")},
+ :case-3
+ {:out "scope:project:hive-mcp:agora:debate",
+  :in ("hive-mcp:agora:debate")},
+ :case-4 {:out "scope:global", :in ("global")},
+ :case-5 {:out "scope:global", :in ("global")},
+ :case-6 {:out "scope:global", :in ("scope:global")},
+ :case-7 {:out "scope:global", :in (nil)}}

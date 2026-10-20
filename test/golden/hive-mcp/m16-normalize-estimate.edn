@@ -1,0 +1,8 @@
+{:case-0 {:out :medium, :in ("")},
+ :case-1 {:out :medium, :in (true)},
+ :case-2 {:out :medium, :in (nil)},
+ :case-3 {:out :medium, :in (-1)},
+ :case-4 {:out :medium, :in (:oD-)},
+ :case-5 {:out :medium, :in (:!n+)},
+ :case-6 {:out :medium, :in (false)},
+ :case-7 {:out :medium, :in (:M)}}

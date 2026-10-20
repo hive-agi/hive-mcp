@@ -7,7 +7,8 @@
             [hive-mcp.knowledge-graph.disc.schema :as ds]
             [hive-mcp.knowledge-graph.disc.volatility :as vol]
             [hive-schemas.test :as hst]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [clojure.test.check.generators :as gen]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -65,9 +66,29 @@
    :rel (fn [[d] out] (<= out (+ 1e-9 (vol/current-certainty d))))
    :golden-path "test/golden/hive-mcp/m14-beta-lower-bound.edn"})
 
+(defn- correlate-threshold
+  "Ties the threshold to the generated disc so both needs-read? outcomes are
+   drawn often. An independent threshold rarely clears the default certainty
+   (~0.71), which starved the true branch (CI saw [[false 180] [true 20]]).
+   `u` is uniform on [0,1] and picks one of three arms: a threshold below both
+   cut-offs (false), one above the certainty (true), or `u` itself."
+  [[d u]]
+  (let [c (vol/current-certainty d)
+        lo (min c (* 2.0 (vol/beta-lower-bound d)))
+        t (cond (< u (/ 1.0 3)) (* lo 3.0 u)
+                (< u (/ 2.0 3)) (+ c (* (- 1.0 c) (- (* 3.0 u) 1.0) 0.999) 1e-6)
+                :else u)]
+    [d (min 1.0 (max 0.0 t))]))
+
+(def ^:private UniformUnit
+  "A threshold source drawn uniformly, not skewed toward 0 like the default
+   double generator, so the arms of correlate-threshold are evenly weighted."
+  [:double {:min 0.0 :max 1.0
+            :gen/gen (gen/fmap #(/ % 1000.0) (gen/choose 0 1000))}])
+
 (hst/deftrifecta-from-schema needs-read-contract
   hive-mcp.knowledge-graph.disc.volatility/needs-read?
-  {:in [:cat [:maybe ds/Disc] [:double {:min 0.0 :max 1.0}]]
+  {:in [:cat {:gen/fmap correlate-threshold} [:maybe ds/Disc] UniformUnit]
    :out :boolean
    :rel (fn [[d t] out] (= out (or (< (vol/current-certainty d) t)
                                    (< (vol/beta-lower-bound d) (* 0.5 t)))))

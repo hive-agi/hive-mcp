@@ -1,0 +1,8 @@
+{:case-0 {:out :project-id, :in "project_id"},
+ :case-1 {:out :project-id, :in :project-id},
+ :case-2 {:out :id, :in "id"},
+ :case-3 {:out :foo-bar, :in "foo_bar"},
+ :case-4 {:out :project-id, :in "project_id"},
+ :case-5 {:out :some-field, :in :some-field},
+ :case-6 {:out :id, :in "id"},
+ :case-7 {:out :foo-bar, :in "foo_bar"}}

@@ -3,14 +3,15 @@
 
    Supports n-depth nested handler trees via parse-command + resolve-handler.
    Single-word commands remain backward compatible."
-  (:require [hive-mcp.tools.core :refer [mcp-error]]
+  (:require [hive-mcp.tools.core :as core :refer [mcp-error]]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.dispatch.handler :as dispatch]
             [hive-mcp.addons.boot-health :as boot-health]
             [hive-mcp.tools.op-outcome :as op-outcome]
-            [hive-mcp.dispatch.verbs :as verbs]))
+            [hive-mcp.dispatch.verbs :as verbs]
+            [malli.core :as m]))
 
 ;; =============================================================================
 ;; Command Normalization
@@ -496,3 +497,38 @@
                  :summary {:total   (count operations)
                            :success (count (filter :success results))
                            :failed  (count (remove :success results))}})}))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def HandlerTree
+  "A handler tree: a map of command -> handler or subtree, or the VAR holding
+   one (the reload-transparent spelling make-cli-handler prefers)."
+  [:fn {:gen/elements [{} {:status (fn [_] {:type "text" :text "ok"})}
+                       {:a {:_handler (fn [_] {:type "text" :text "a"})}}]
+        :error/message "must be a handler map or a var holding one"}
+   #(or (map? %) (var? %))])
+
+(def Resolution
+  "resolve-handler's verdict: a handler with the path it consumed, the
+   subtree an exhausted path stopped at, or :not-found."
+  [:or
+   [:map [:handler some?] [:path-used vector?] [:remaining vector?]]
+   [:map [:tree :any] [:path-used vector?]]
+   [:map [:error [:= :not-found]] [:path-used vector?] [:remaining vector?]]])
+
+(m/=> format-help [:=> [:cat HandlerTree] :string])
+
+(m/=> parse-command [:=> [:cat [:maybe :string]] [:maybe [:vector :keyword]]])
+
+(m/=> resolve-handler [:=> [:cat HandlerTree [:sequential :any]] Resolution])
+
+(m/=> declared-verbs [:=> [:cat [:maybe :map] :any] [:maybe [:set :string]]])
+
+(m/=> make-cli-handler [:function
+                        [:=> [:cat HandlerTree] core/ToolHandler]
+                        [:=> [:cat HandlerTree [:maybe :map]] core/ToolHandler]])
+
+;; make-batch-handler reads (keys handlers), so a var is not accepted here.
+(m/=> make-batch-handler [:=> [:cat :map] core/ToolHandler])

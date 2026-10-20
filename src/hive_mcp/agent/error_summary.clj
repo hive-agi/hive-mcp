@@ -20,7 +20,8 @@
       :line   long}
 
    All rendering is pure; callers choose how to ship the summary (log, shout,
-   metric). `summary->line` provides a single-line renderer honoring a budget.")
+   metric). `summary->line` provides a single-line renderer honoring a budget."
+  (:require [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -207,3 +208,58 @@
         (try-fit bare)
         (try-fit minimal)
         minimal)))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+;; `truncate` stringifies its second argument (`(str s)`), so any value is fine.
+(m/=> truncate [:=> [:cat :int :any] :string])
+
+(def ^:private SummarizeOpts
+  [:maybe [:map
+           [:max-message {:optional true} :int]
+           [:max-frames {:optional true} :int]
+           [:max-cause-depth {:optional true} :int]]])
+
+;; ---------------------------------------------------------------------------
+;; Contract schemas. They live in this namespace because hive-mcp.agent.* is a
+;; frozen extraction prefix (hive-mcp.kernel.census): no new namespace may be
+;; added under it. Every schema generates.
+;; ---------------------------------------------------------------------------
+
+(def Frame
+  "One stack frame of an error summary."
+  [:map
+   [:class :string]
+   [:method :string]
+   [:file [:maybe :string]]
+   [:line :int]])
+
+(def ErrorSummary
+  "A bounded, structured summary of an error payload (see error-summary)."
+  [:schema {:registry {::summary
+                       [:map
+                        [:class :string]
+                        [:message :string]
+                        [:frames [:vector Frame]]
+                        [:error-type {:optional true} :any]
+                        [:cause {:optional true} [:ref ::summary]]]}}
+   ::summary])
+
+;; Any value is an error payload: nil, Throwable, string, map, coll or other.
+(m/=> summarize-error
+      [:function
+       [:=> [:cat :any] ErrorSummary]
+       [:=> [:cat :any SummarizeOpts] ErrorSummary]])
+
+;; The renderer destructures its argument, so any map is read; the line is a
+;; string whatever is missing.
+(m/=> summary->line
+      [:function
+       [:=> [:cat :map] :string]
+       [:=> [:cat :map [:maybe [:map [:budget {:optional true} :int]]]] :string]])
+
+;; Trims a summary until its printed size fits; every fallback keeps the map
+;; shape, so the output is a map.
+(m/=> fit-to-budget [:=> [:cat :map :int] :map])

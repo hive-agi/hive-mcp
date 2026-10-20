@@ -1,0 +1,6 @@
+{:all nil,
+ :auto-keeps-ladder ["topic:data" "topic" "global"],
+ :auto-no-project nil,
+ :explicit-strict ["topic:data"],
+ :explicit-with-kids ["topic:data" "topic:data:ch1"],
+ :global ["global"]}

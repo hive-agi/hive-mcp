@@ -1,0 +1,75 @@
+{:case-0
+ {:out
+  {:lsp-available false,
+   :workspaces-registered [],
+   :workspaces-resolved [],
+   :workspace-count 0,
+   :workspaces [],
+   :sources {:emacs-lsp 0, :sidecar-cache 0, :in-process 0}},
+  :in ({:resolved []})},
+ :case-1
+ {:out
+  {:lsp-available false,
+   :workspaces-registered [],
+   :workspaces-resolved [{:source :in-process}],
+   :workspace-count 1,
+   :workspaces [{:source :in-process}],
+   :sources {:emacs-lsp 0, :sidecar-cache 0, :in-process 1}},
+  :in
+  ({:registered nil,
+    :resolved [{:source :in-process}],
+    :emacs-probe {}})},
+ :case-2
+ {:out
+  {:lsp-available false,
+   :workspaces-registered [],
+   :workspaces-resolved [],
+   :workspace-count 0,
+   :workspaces [],
+   :sources {:emacs-lsp 0, :sidecar-cache 0, :in-process 0}},
+  :in ({:resolved nil, :emacs-probe nil})},
+ :case-3
+ {:out
+  {:lsp-available false,
+   :workspaces-registered [],
+   :workspaces-resolved [],
+   :workspace-count 0,
+   :workspaces [],
+   :sources {:emacs-lsp 0, :sidecar-cache 0, :in-process 0}},
+  :in ({:emacs-probe nil})},
+ :case-4
+ {:out
+  {:lsp-available false,
+   :workspaces-registered [],
+   :workspaces-resolved [],
+   :workspace-count 0,
+   :workspaces [],
+   :sources {:emacs-lsp 0, :sidecar-cache 0, :in-process 0}},
+  :in ({:registered [], :resolved nil})},
+ :case-5
+ {:out
+  {:lsp-available false,
+   :workspaces-registered [],
+   :workspaces-resolved [],
+   :workspace-count 0,
+   :workspaces [],
+   :sources {:emacs-lsp 0, :sidecar-cache 0, :in-process 0}},
+  :in ({:resolved nil})},
+ :case-6
+ {:out
+  {:lsp-available false,
+   :workspaces-registered [],
+   :workspaces-resolved [],
+   :workspace-count 0,
+   :workspaces [],
+   :sources {:emacs-lsp 0, :sidecar-cache 0, :in-process 0}},
+  :in ({})},
+ :case-7
+ {:out
+  {:lsp-available false,
+   :workspaces-registered [],
+   :workspaces-resolved [],
+   :workspace-count 0,
+   :workspaces [],
+   :sources {:emacs-lsp 0, :sidecar-cache 0, :in-process 0}},
+  :in ({})}}

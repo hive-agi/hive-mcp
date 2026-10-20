@@ -1,0 +1,17 @@
+{:tags-of-nested
+ #{"scope:project:a" "scope:project:a:b" "scope:global"},
+ :full-of-global #{"scope:global"},
+ :filter-nil nil,
+ :contains-parent true,
+ :filter-all nil,
+ :contains-global-child true,
+ :contains-nil-nil true,
+ :visible-of-nil ["global"],
+ :tag-of-nil "scope:global",
+ :current-project-nil "global",
+ :contains-sibling false,
+ :tag-of-project "scope:project:hive-mcp",
+ :parent-of-nested "a:b",
+ :visible-of-nested ["a:b:c" "a:b" "a" "global"],
+ :infer-from-nowhere "global",
+ :tag-of-global "scope:global"}

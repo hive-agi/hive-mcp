@@ -14,7 +14,8 @@
             [taoensso.timbre :as log]
             [hive-dsl.bounded-atom :refer [bkeys]]
             [clojure.string :as str]
-            [hive-mcp.channel.piggyback :as piggyback]))
+            [hive-mcp.channel.piggyback :as piggyback]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -348,3 +349,6 @@ The specific agent lookup is still allowed even if agent is from another project
   [register-fn]
   (doseq [tool tools]
     (register-fn tool)))
+
+(m/=> register-tools!
+      [:=> [:cat [:fn {:error/message "an invocable register fn" :gen/elements [(fn [_] nil)]} ifn?]] :nil])

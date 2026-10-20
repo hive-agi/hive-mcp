@@ -1,0 +1,5 @@
+;; Fixture for hive-mcp.schema.contract-test: a shared EDN schema file the
+;; way resources/schema/*.edn files are read by hive-mcp.schema.edn.
+{:covtest/point [:map [:x :int] [:y :int]]
+ :covtest/name  [:string {:min 1}]
+ :covtest/mode  [:enum "a" "b"]}

@@ -1,0 +1,82 @@
+{:case-0
+ {:out
+  "(defun hive-a-valid-p (ROW)\n  \"Validate ROW against hive-a schema.\"\n  (and (hive-a-p row)\n       (or (stringp (hive-a-x row)) (integerp (hive-a-x row)))\n       (floatp (hive-a-ratio row))\n       (symbolp (hive-a-kind row))\n       t))",
+  :in
+  ([:map
+    [:x [:or :string :int]]
+    [:ratio :double]
+    [:kind :keyword]
+    [:any :any]]
+   {:name "hive-a", :var "row"})},
+ :case-1
+ {:out
+  "(defun hive-a-valid-p (ROW)\n  \"Validate ROW against hive-a schema.\"\n  (and (hive-a-p row)\n       (or (stringp (hive-a-x row)) (integerp (hive-a-x row)))\n       (floatp (hive-a-ratio row))\n       (symbolp (hive-a-kind row))\n       t))",
+  :in
+  ([:map
+    [:x [:or :string :int]]
+    [:ratio :double]
+    [:kind :keyword]
+    [:any :any]]
+   {:name "hive-a",
+    :constructor "make-it",
+    :include "base",
+    :defaults {},
+    :var "row"})},
+ :case-2
+ {:out
+  "(defun hive-a-valid-p (E)\n  \"Validate E against hive-a schema.\"\n  (and (hive-a-p e)\n       (stringp (hive-a-id e))\n       (memq (hive-a-type e) '(note snippet))\n       (listp (hive-a-tags e))))",
+  :in
+  ([:map
+    [:id :string]
+    [:type [:enum :note :snippet]]
+    [:tags [:vector :string]]]
+   {:name "hive-a", :include "base", :var "e"})},
+ :case-3
+ {:out
+  "(defun hive-b-valid-p (ENTRY)\n  \"Validate ENTRY against hive-b schema.\"\n  (and (hive-b-p entry)\n       (booleanp (hive-b-enabled entry))\n       (or (null (hive-b-port entry)) (or (null (hive-b-port entry)) (integerp (hive-b-port entry))))))",
+  :in
+  ([:map [:enabled :boolean] [:port {:optional true} [:maybe :int]]]
+   {:name "hive-b"})},
+ :case-4
+ {:out
+  "(defun hive-a-valid-p (ENTRY)\n  \"Validate ENTRY against hive-a schema.\"\n  (and (hive-a-p entry)\n       (stringp (hive-a-id entry))\n       (memq (hive-a-type entry) '(note snippet))\n       (listp (hive-a-tags entry))))",
+  :in
+  ([:map
+    [:id :string]
+    [:type [:enum :note :snippet]]
+    [:tags [:vector :string]]]
+   {:name "hive-a", :include "base"})},
+ :case-5
+ {:out
+  "(defun hive-a-valid-p (ROW)\n  \"Validate ROW against hive-a schema.\"\n  (and (hive-a-p row)\n       (stringp (hive-a-id row))\n       (memq (hive-a-type row) '(note snippet))\n       (listp (hive-a-tags row))))",
+  :in
+  ([:map
+    [:id :string]
+    [:type [:enum :note :snippet]]
+    [:tags [:vector :string]]]
+   {:name "hive-a",
+    :include "base",
+    :defaults {:port nil},
+    :var "row"})},
+ :case-6
+ {:out
+  "(defun hive-b-valid-p (ROW)\n  \"Validate ROW against hive-b schema.\"\n  (and (hive-b-p row)\n       (booleanp (hive-b-enabled row))\n       (or (null (hive-b-port row)) (or (null (hive-b-port row)) (integerp (hive-b-port row))))))",
+  :in
+  ([:map [:enabled :boolean] [:port {:optional true} [:maybe :int]]]
+   {:name "hive-b",
+    :constructor "make-it",
+    :defaults {:port -24, :enabled false},
+    :var "row"})},
+ :case-7
+ {:out
+  "(defun hive-a-valid-p (E)\n  \"Validate E against hive-a schema.\"\n  (and (hive-a-p e)\n       (or (stringp (hive-a-x e)) (integerp (hive-a-x e)))\n       (floatp (hive-a-ratio e))\n       (symbolp (hive-a-kind e))\n       t))",
+  :in
+  ([:map
+    [:x [:or :string :int]]
+    [:ratio :double]
+    [:kind :keyword]
+    [:any :any]]
+   {:name "hive-a",
+    :constructor "make-it",
+    :include "base",
+    :var "e"})}}

@@ -6,7 +6,8 @@
    The SPI reaper (hive-spi.memory.ports/cleanup-expired!) consults a provider
    fn; this namespace is that provider for hive-mcp — it alone can read the KG.
    Install once at boot via `install!`."
-  (:require [hive-mcp.knowledge-graph.connection :as conn]
+  (:require [malli.core :as m]
+            [hive-mcp.knowledge-graph.connection :as conn]
             [hive-spi.memory.ports :as ports]
             [taoensso.timbre :as log]))
 
@@ -40,6 +41,8 @@
                  (.getMessage e))
       #{})))
 
+(m/=> synthesis-protected-ids [:=> [:cat] [:set :string]])
+
 (defn install!
   "Register `synthesis-protected-ids` as the memory-SPI afterlife provider.
    Idempotent (last writer wins). Returns :installed."
@@ -48,3 +51,5 @@
   (log/info "Synthesis afterlife provider installed (confidence floor"
             protection-confidence-floor ")")
   :installed)
+
+(m/=> install! [:=> [:cat] [:= :installed]])

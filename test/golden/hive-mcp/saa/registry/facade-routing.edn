@@ -1,0 +1,25 @@
+{:dereg-key-store #{:saa/default},
+ :snapshot-keys
+ (:dispatch-modes
+  :plan-stores
+  :planners
+  :providers
+  :scorers
+  :tool-intents
+  :version),
+ :mode? true,
+ :single [:conflict],
+ :tools ["fx" "read" "view"],
+ :skipped [],
+ :out [:ok :ok :ok :ignored],
+ :unknown-mode nil,
+ :core-tools ["read" "view"],
+ :store? false,
+ :dereg-owner
+ {:providers #{},
+  :scorers #{},
+  :planners #{},
+  :tool-intents #{:read},
+  :plan-stores #{},
+  :dispatch-modes #{:m/x}},
+ :dereg-key-unknown nil}

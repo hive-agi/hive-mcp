@@ -9,12 +9,13 @@
    Result DSL: Internal logic returns Result maps ({:ok val} or {:error category}).
    Single try-result boundary at each handler level. Zero nested try-catch."
   (:require [hive-mcp.dns.result :as result]
-            [hive-mcp.tools.core :refer [mcp-success mcp-error emacs-timeout-ms]]
+            [hive-mcp.tools.core :as core :refer [mcp-success mcp-error emacs-timeout-ms]]
             [hive-mcp.context.request :as ctx]
             [taoensso.timbre :as log]
             [clojure.string :as str]
             [hive-spi.editor.services :as svc]
-            [clojure.data.json :as json]))
+            [clojure.data.json :as json]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -387,6 +388,45 @@
     (handle-op :magit/feature-branches-failed
                {:op :magit/feature-branches :directory dir}
                (emacs-timeout-ms params))))
+
+;;; =============================================================================
+;;; Contracts
+;;; =============================================================================
+
+(def Files
+  "The `files` parameter as callers send it: a path collection, one path,
+   a whitespace-separated path string, or the `all` marker."
+  [:maybe [:or :string :keyword :symbol [:sequential :any] [:set :any]]])
+
+(m/=> resolve-directory [:=> [:cat :any] :string])
+
+(m/=> normalize-files
+      [:=> [:cat Files] [:maybe [:or [:= :all] [:vector {:min 1} :string]]]])
+
+(m/=> staged-outside-files
+      [:=> [:cat [:sequential :string] [:sequential :string]] [:vector :string]])
+
+;; Every handler answers one MCP text response through the Result boundary.
+;; A malformed timeout_ms THROWS by design (core/emacs-timeout-ms).
+(m/=> handle-magit-status [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-magit-branches [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-magit-log [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-magit-diff [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-magit-stage [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-magit-commit [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-magit-push [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-magit-pull [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-magit-fetch [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-magit-feature-branches [:=> [:cat [:maybe :map]] core/McpResponse])
 
 ;; Tool definitions for magit handlers
 

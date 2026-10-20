@@ -26,7 +26,8 @@
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
             [hive-mcp.plan.schema :as schema]
-            [hive-mcp.plan.field-registry :as field-registry]))
+            [hive-mcp.plan.field-registry :as field-registry]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -287,3 +288,15 @@
    Exposed for use by the unified parser facade."
   [content]
   (extract-plan-title (str/split-lines content)))
+
+;; =============================================================================
+;; Function Contracts (m16 coverage batch)
+;; =============================================================================
+
+(m/=> parse-markdown-plan
+      [:=> [:cat :any]
+       [:map [:success :boolean]]])
+
+(m/=> extract-title
+      [:=> [:cat :any]
+       [:maybe :string]])

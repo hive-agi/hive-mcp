@@ -15,7 +15,6 @@
             [hive-mcp.migration.core :as core]
             [hive-mcp.migration.adapter :as adapter]
             [clojure.edn]
-            [hive-mcp.chroma.core]
             [hive-mcp.knowledge-graph.migration]
             [hive-mcp.vectordb.facade]))
 

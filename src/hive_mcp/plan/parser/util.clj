@@ -4,7 +4,8 @@
    Functions:
    - plan->task-specs:       Convert parsed plan to kanban task specifications
    - validate-dependencies:  Verify all depends-on references resolve"
-  (:require [hive-mcp.plan.field-registry :as field-registry]))
+  (:require [hive-mcp.plan.field-registry :as field-registry]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -53,3 +54,15 @@
                 acc))
             {:valid true}
             (:steps plan))))
+
+;; =============================================================================
+;; Function Contracts (m16 coverage batch)
+;; =============================================================================
+
+(m/=> plan->task-specs
+      [:=> [:cat :map]
+       [:vector :map]])
+
+(m/=> validate-dependencies
+      [:=> [:cat :map]
+       [:map [:valid :boolean]]])

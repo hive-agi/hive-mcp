@@ -1,0 +1,17 @@
+{:plan
+ {:success true,
+  :dry-run true,
+  :waves
+  {1 {:ops [{:id "a", :tool "zz", :command "x", :entity_id "a"}]},
+   2
+   {:ops
+    [{:id "b",
+      :tool "zz",
+      :command "y",
+      :depends_on ["a"],
+      :entity_id "b"}]}},
+  :summary {:total 2, :success 0, :failed 0, :waves 2}},
+ :cycle
+ {:success false,
+  :errors ["Circular dependency detected among: a, b"],
+  :summary {:total 2, :success 0, :failed 0, :waves 0}}}

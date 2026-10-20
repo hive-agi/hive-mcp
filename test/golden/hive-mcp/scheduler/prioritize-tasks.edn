@@ -1,0 +1,44 @@
+{:ports
+ {:tasks
+  [{:id "zz", :priority "high", :wave-number 0}
+   {:id "t2", :priority "high", :wave-number 1}
+   {:id "t1", :priority "low", :wave-number 0}],
+  :count 3,
+  :blocked
+  [{:task-id "t3", :dependencies {"t2" :open}}
+   {:task-id "t4", :dependencies {"x" :missing}}
+   {:task-id "t5", :dependencies {"t5" :lookup-error}}],
+  :blocked-count 3,
+  :scoped-count 6},
+ :legacy
+ {:tasks
+  [{:id "zz", :priority "high", :wave-number 0}
+   {:id "t1", :priority "low", :wave-number 0}],
+  :count 2,
+  :blocked
+  [{:task-id "t2", :dependencies {"t1" :open}}
+   {:task-id "t3", :dependencies {"t2" :open}}
+   {:task-id "t4", :dependencies {"t1" :open, "x" :open}}
+   {:task-id "t5", :dependencies {"t5" :open}}],
+  :blocked-count 4,
+  :scoped-count 6},
+ :scoped
+ {:tasks
+  [{:id "zz", :priority "high", :wave-number 0}
+   {:id "t1", :priority "low", :wave-number 0}],
+  :count 2,
+  :blocked [],
+  :blocked-count 0,
+  :scoped-count 2},
+ :throwing
+ {:tasks
+  [{:id "zz", :priority "high", :wave-number 0}
+   {:id "t2", :priority "high", :wave-number 1}
+   {:id "t1", :priority "low", :wave-number 0}],
+  :count 3,
+  :blocked
+  [{:task-id "t3", :dependencies {"t2" :open}}
+   {:task-id "t4", :dependencies {"x" :missing}}
+   {:task-id "t5", :state :lookup-error, :error "kg down"}],
+  :blocked-count 3,
+  :scoped-count 6}}

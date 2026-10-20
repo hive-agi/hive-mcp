@@ -1,0 +1,129 @@
+{:case-0
+ {:out
+  {:dispatched {},
+   :completed #{},
+   :failed #{"a"},
+   :wave-log
+   [{:event :failed, :task-id "a", :ling-id "l1", :timestamp 1}]},
+  :in
+  ({:dispatched {}, :completed #{}, :failed #{}, :wave-log []}
+   "a"
+   "l1"
+   :failed
+   1)},
+ :case-1
+ {:out
+  {:dispatched {},
+   :completed #{"b" "c"},
+   :failed #{"d"},
+   :wave-log
+   [{:event :p!}
+    {:event :completed, :task-id "b", :ling-id "l1", :timestamp 1}]},
+  :in
+  ({:dispatched {},
+    :completed #{"c"},
+    :failed #{"d"},
+    :wave-log [{:event :p!}]}
+   "b"
+   "l1"
+   :succeeded
+   1)},
+ :case-2
+ {:out
+  {:dispatched {"b" "l1"},
+   :completed #{"c"},
+   :failed #{"d" "a"},
+   :wave-log
+   [{:event :failed, :task-id "a", :ling-id "l1", :timestamp 1}]},
+  :in
+  ({:dispatched {"b" "l1", "a" "l1"},
+    :completed #{"c"},
+    :failed #{"d"},
+    :wave-log []}
+   "a"
+   "l1"
+   :failed
+   1)},
+ :case-3
+ {:out
+  {:dispatched {},
+   :completed #{"z" "c"},
+   :failed #{},
+   :wave-log
+   [{:event :g}
+    {:event :completed, :task-id "z", :ling-id "l1", :timestamp 2}]},
+  :in
+  ({:dispatched {},
+    :completed #{"c"},
+    :failed #{},
+    :wave-log [{:event :g}]}
+   "z"
+   "l1"
+   :succeeded
+   2)},
+ :case-4
+ {:out
+  {:dispatched {"b" "l1"},
+   :completed #{"a" "c"},
+   :failed #{"d"},
+   :wave-log
+   [{:event :u3I}
+    {:event :-}
+    {:event :completed, :task-id "a", :ling-id "l1", :timestamp 0}]},
+  :in
+  ({:dispatched {"b" "l1", "a" "l2"},
+    :completed #{"c"},
+    :failed #{"d"},
+    :wave-log [{:event :u3I} {:event :-}]}
+   "a"
+   "l1"
+   :succeeded
+   0)},
+ :case-5
+ {:out
+  {:dispatched {},
+   :completed #{"c"},
+   :failed #{"d" "a"},
+   :wave-log
+   [{:event :failed, :task-id "a", :ling-id "l1", :timestamp 6}]},
+  :in
+  ({:dispatched {}, :completed #{"c"}, :failed #{"d"}, :wave-log []}
+   "a"
+   "l1"
+   :failed
+   6)},
+ :case-6
+ {:out
+  {:dispatched {},
+   :completed #{"c"},
+   :failed #{"d" "z"},
+   :wave-log
+   [{:event :_Q}
+    {:event :+}
+    {:event :failed, :task-id "z", :ling-id "l1", :timestamp 29}]},
+  :in
+  ({:dispatched {},
+    :completed #{"c"},
+    :failed #{"d"},
+    :wave-log [{:event :_Q} {:event :+}]}
+   "z"
+   "l1"
+   :failed
+   29)},
+ :case-7
+ {:out
+  {:dispatched {"b" "l2"},
+   :completed #{"a" "c"},
+   :failed #{"d"},
+   :wave-log
+   [{:event :uH+_}
+    {:event :completed, :task-id "a", :ling-id "l1", :timestamp 1}]},
+  :in
+  ({:dispatched {"a" "l1", "b" "l2"},
+    :completed #{"c"},
+    :failed #{"d"},
+    :wave-log [{:event :uH+_}]}
+   "a"
+   "l1"
+   :succeeded
+   1)}}

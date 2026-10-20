@@ -1,0 +1,8 @@
+{:case-0 {:out {:conflict? false}, :in ("g.clj" "s1")},
+ :case-1 {:out {:conflict? false}, :in ("g.clj" "s2")},
+ :case-2 {:out {:conflict? true, :held-by "s1"}, :in ("f.clj" "zz")},
+ :case-3 {:out {:conflict? true, :held-by "s1"}, :in ("f.clj" "zz")},
+ :case-4 {:out {:conflict? true, :held-by "s1"}, :in ("f.clj" "s2")},
+ :case-5 {:out {:conflict? true, :held-by "s1"}, :in ("f.clj" "s2")},
+ :case-6 {:out {:conflict? true, :held-by "s1"}, :in ("f.clj" "s2")},
+ :case-7 {:out {:conflict? false}, :in ("g.clj" "s1")}}

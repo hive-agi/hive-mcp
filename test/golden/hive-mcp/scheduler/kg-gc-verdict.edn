@@ -1,0 +1,188 @@
+{:case-0
+ {:out
+  {:ok? true,
+   :vacuous? false,
+   :blind [],
+   :selected {:orphaned 0, :pruned 0, :demoted 0},
+   :collected
+   {:orphaned 1, :pruned 0, :demoted 1, :total 2, :edges-removed 0},
+   :coverage
+   {:scanned 0, :universe {:sources 3}, :cursor nil, :partial 2},
+   :errors 0,
+   :stopped :deadline},
+  :in
+  ({:universe {:sources 3},
+    :blind [],
+    :scanned 0,
+    :orphaned 0,
+    :errors 0,
+    :partial [{} {:stopped :deadline}],
+    :details
+    [{:complete? true, :outcome :orphaned, :effect-count 0}
+     {:complete? true, :outcome :demoted, :effect-count 1}]})},
+ :case-1
+ {:out
+  {:ok? true,
+   :vacuous? false,
+   :blind [],
+   :selected {:orphaned 0, :pruned 0, :demoted 0},
+   :collected
+   {:orphaned 0, :pruned 0, :demoted 0, :total 0, :edges-removed 0},
+   :coverage
+   {:scanned 0, :universe {:sources 3}, :cursor nil, :partial 0},
+   :errors 0,
+   :stopped nil},
+  :in
+  ({:universe {:sources 3},
+    :blind [],
+    :scanned 0,
+    :orphaned 0,
+    :errors 0,
+    :partial [],
+    :details
+    [{:complete? false, :outcome :demoted, :effect-count 0}]})},
+ :case-2
+ {:out
+  {:ok? false,
+   :vacuous? true,
+   :blind
+   [{:class :universe,
+     :reason
+     "derived synthetic universe is empty; an empty graph and a broken read look the same, so 0 collected proves nothing"}],
+   :selected {:orphaned 0, :pruned 0, :demoted 0},
+   :collected
+   {:orphaned 0, :pruned 0, :demoted 0, :total 0, :edges-removed 1},
+   :coverage
+   {:scanned 0, :universe {:sources 0}, :cursor nil, :partial 0},
+   :errors 0,
+   :stopped nil},
+  :in
+  ({:universe {:sources 0},
+    :blind [],
+    :scanned 0,
+    :orphaned 0,
+    :errors 0,
+    :partial [],
+    :details
+    [{:complete? false, :outcome :pruned, :effect-count 1}
+     {:complete? false, :outcome :pruned, :effect-count 0}
+     {:complete? false, :outcome :demoted, :effect-count 0}]})},
+ :case-3
+ {:out
+  {:ok? false,
+   :vacuous? false,
+   :blind [],
+   :selected {:orphaned 2, :pruned 0, :demoted 0},
+   :collected
+   {:orphaned 0, :pruned 0, :demoted 0, :total 0, :edges-removed 3},
+   :coverage
+   {:scanned 0, :universe {:sources 1}, :cursor nil, :partial 2},
+   :errors 1,
+   :stopped :deadline},
+  :in
+  ({:universe {:sources 1},
+    :blind [],
+    :scanned 0,
+    :orphaned 2,
+    :errors 1,
+    :partial [{:stopped :deadline} {}],
+    :details
+    [{:complete? false, :outcome :orphaned, :effect-count 1}
+     {:complete? false, :outcome :orphaned, :effect-count 0}
+     {:complete? false, :outcome :pruned, :effect-count 2}]})},
+ :case-4
+ {:out
+  {:ok? false,
+   :vacuous? true,
+   :blind
+   [{:class :universe,
+     :reason
+     "derived synthetic universe is empty; an empty graph and a broken read look the same, so 0 collected proves nothing"}],
+   :selected {:orphaned 1, :pruned 0, :demoted 0},
+   :collected
+   {:orphaned 1, :pruned 0, :demoted 0, :total 1, :edges-removed 1},
+   :coverage
+   {:scanned 3, :universe {:sources 0}, :cursor nil, :partial 0},
+   :errors 0,
+   :stopped nil},
+  :in
+  ({:universe {:sources 0},
+    :blind [],
+    :scanned 3,
+    :orphaned 1,
+    :errors 0,
+    :partial [],
+    :details
+    [{:complete? false, :outcome :demoted, :effect-count 1}
+     {:complete? true, :outcome :orphaned, :effect-count 1}]})},
+ :case-5
+ {:out
+  {:ok? false,
+   :vacuous? true,
+   :blind
+   [{:class :universe,
+     :reason
+     "derived synthetic universe is empty; an empty graph and a broken read look the same, so 0 collected proves nothing"}],
+   :selected {:orphaned 1, :pruned 0, :demoted 0},
+   :collected
+   {:orphaned 0, :pruned 0, :demoted 0, :total 0, :edges-removed 2},
+   :coverage
+   {:scanned 6, :universe {:sources 0}, :cursor nil, :partial 2},
+   :errors 0,
+   :stopped nil},
+  :in
+  ({:universe {:sources 0},
+    :blind [],
+    :scanned 6,
+    :orphaned 1,
+    :errors 0,
+    :partial [{} {}],
+    :details
+    [{:complete? false, :outcome :demoted, :effect-count 3}
+     {:complete? false, :outcome :demoted, :effect-count 1}
+     {:complete? false, :outcome :pruned, :effect-count 2}]})},
+ :case-6
+ {:out
+  {:ok? false,
+   :vacuous? false,
+   :blind [{:class :edges, :reason "io"}],
+   :selected {:orphaned 1, :pruned 0, :demoted 0},
+   :collected
+   {:orphaned 0, :pruned 1, :demoted 0, :total 1, :edges-removed 7},
+   :coverage
+   {:scanned 9, :universe {:sources 1}, :cursor nil, :partial 1},
+   :errors 0,
+   :stopped :deadline},
+  :in
+  ({:universe {:sources 1},
+    :blind [{:class :edges, :reason "io"}],
+    :scanned 9,
+    :orphaned 1,
+    :errors 0,
+    :partial [{:stopped :deadline}],
+    :details
+    [{:complete? false, :outcome :pruned, :effect-count 3}
+     {:complete? true, :outcome :pruned, :effect-count 4}
+     {:complete? false, :outcome :demoted, :effect-count 1}]})},
+ :case-7
+ {:out
+  {:ok? false,
+   :vacuous? false,
+   :blind [],
+   :selected {:orphaned 2, :pruned 0, :demoted 0},
+   :collected
+   {:orphaned 0, :pruned 1, :demoted 0, :total 1, :edges-removed 0},
+   :coverage
+   {:scanned 0, :universe {:sources 3}, :cursor nil, :partial 1},
+   :errors 1,
+   :stopped :deadline},
+  :in
+  ({:universe {:sources 3},
+    :blind [],
+    :scanned 0,
+    :orphaned 2,
+    :errors 1,
+    :partial [{:stopped :deadline}],
+    :details
+    [{:complete? true, :outcome :pruned, :effect-count 0}
+     {:complete? false, :outcome :demoted, :effect-count 1}]})}}

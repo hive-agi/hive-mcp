@@ -1,0 +1,21 @@
+{:validate-good
+ {:valid true,
+  :data
+  {:agent-type "explore",
+   :description "Fast",
+   :system-prompt "You search."}},
+ :validate-bad {:valid false, :errors ["invalid type"]},
+ :predicates [true false true],
+ :custom :user,
+ :summary "explore (unknown) — Fast",
+ :list "explore (unknown) — Fast",
+ :as-map
+ {:agent-type "explore",
+  :description "Fast",
+  :system-prompt "You search.",
+  :source :built-in,
+  :hivemind-role :role/standalone},
+ :merged
+ [{:agent-type "explore",
+   :description "Slow",
+   :system-prompt "You search."}]}

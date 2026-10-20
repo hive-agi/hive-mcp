@@ -19,7 +19,8 @@
             [hive-mcp.protocols.delivery-channel :as dc]
             [hive-mcp.channel.core :as channel-core]
             [hive-mcp.agent.error-summary :as es]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -471,3 +472,76 @@
     (eb/unsubscribe! backbone (agent-wildcard :completed))
     (eb/unsubscribe! backbone (agent-wildcard :failed))
     (log/info "[Bridge] Subscriptions stopped")))
+;; =============================================================================
+;; Function Contracts (m16 coverage batch)
+;; =============================================================================
+
+;; Subject builders: tokens are strings, keywords, symbols or nil (blank/nil
+;; -> fallback), strings out. NOTE: safe-token calls (name x), so numbers throw
+;; ClassCastException — a genuine domain limit, recorded as a bug, not fixed.
+;; Publishers: payload maps in, publish return threaded out.
+
+(m/=> shout-subject
+      [:=> [:cat [:or :string :keyword :symbol :nil] [:or :string :keyword :symbol :nil]]
+       :string])
+
+(m/=> shout-wildcard
+      [:function
+       [:=> [:cat] :string]
+       [:=> [:cat :any] :string]])
+
+(m/=> event-subject
+      [:=> [:cat [:or :string :keyword :symbol :nil]]
+       :string])
+
+(m/=> event-wildcard
+      [:=> [:cat]
+       :string])
+
+(m/=> agent-subject
+      [:=> [:cat [:or :string :keyword :symbol :nil] [:or :string :keyword :symbol :nil]]
+       :string])
+
+(m/=> agent-wildcard
+      [:=> [:cat [:or :string :keyword :symbol :nil]]
+       :string])
+
+(m/=> tool-subject
+      [:=> [:cat [:or :string :keyword :symbol :nil]]
+       :string])
+
+(m/=> tool-wildcard
+      [:=> [:cat]
+       :string])
+
+(m/=> wave-subject
+      [:=> [:cat [:or :string :keyword :symbol :nil] [:or :string :keyword :symbol :nil]]
+       :string])
+
+(m/=> publish-wave-event!
+      [:=> [:cat :map]
+       :any])
+
+(m/=> publish-shout!
+      [:=> [:cat :map]
+       :any])
+
+(m/=> publish-event!
+      [:=> [:cat :map]
+       :any])
+
+(m/=> publish-tool-notification!
+      [:=> [:cat :map]
+       :any])
+
+(m/=> publish-agent-event!
+      [:=> [:cat :map]
+       :any])
+
+(m/=> start-subscriptions!
+      [:=> [:cat]
+       :any])
+
+(m/=> stop-subscriptions!
+      [:=> [:cat]
+       :any])
