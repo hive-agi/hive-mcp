@@ -1,0 +1,8 @@
+{:case-0 {:out false, :in (:tool-missing)},
+ :case-1 {:out false, :in ("ling")},
+ :case-2 {:out false, :in (:permanent)},
+ :case-3 {:out true, :in (:decision)},
+ :case-4 {:out true, :in (:pattern)},
+ :case-5 {:out false, :in ("note")},
+ :case-6 {:out false, :in (:coordinator)},
+ :case-7 {:out true, :in (:pattern)}}

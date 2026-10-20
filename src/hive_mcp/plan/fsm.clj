@@ -29,7 +29,8 @@
             [hive-mcp.plan.schema :as schema]
             [hive-mcp.plan.parser :as parser]
             [hive-mcp.plan.field-registry :as field-registry]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -242,3 +243,55 @@
                                                        :plan-id  (:plan-id d)}))))}}
               :opts {:max-trace 5}}]
     (fsm/run (fsm/compile spec) {} {:data data})))
+
+;; =============================================================================
+;; Function Contracts (m16 coverage batch)
+;; =============================================================================
+
+;; Guards and handlers take an FSM data map whose shape depends on the state;
+;; permissive maps in, maps out.
+
+(m/=> schema-valid?
+      [:=> [:cat :map]
+       :any])
+
+(m/=> has-tasks?
+      [:=> [:cat :map]
+       :any])
+
+(m/=> human-approved?
+      [:=> [:cat :map]
+       :boolean])
+
+(m/=> all-tasks-done?
+      [:=> [:cat :map]
+       :any])
+
+(m/=> handle-draft
+      [:=> [:cat :any :map]
+       :map])
+
+(m/=> handle-validate
+      [:=> [:cat :any :map]
+       :map])
+
+(m/=> handle-approve
+      [:=> [:cat :any :map]
+       :map])
+
+(m/=> handle-execute
+      [:=> [:cat :map :map]
+       :map])
+
+(m/=> handle-complete
+      [:=> [:cat :any :map]
+       :map])
+
+(m/=> run-plan-fsm
+      [:function
+       [:=> [:cat :map] :map]
+       [:=> [:cat :map :map] :map]])
+
+(m/=> draft->validated
+      [:=> [:cat :map]
+       :map])

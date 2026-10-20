@@ -34,7 +34,8 @@
      ;; Pure functions replacing ICoordinatorAware protocol methods:
      (hr/hivemind-tools role agent-def)
      (hr/hivemind-mode? role)"
-  (:require [hive-dsl.adt :refer [defadt adt-case adt-variant]]))
+  (:require [hive-dsl.adt :refer [defadt adt-case adt-variant]]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -154,3 +155,38 @@
     :role/hivemind   all-available-tools
     :role/worker     nil
     :role/standalone nil))
+
+;; ---------------------------------------------------------------------------
+;; Contract schemas. They live in this namespace because hive-mcp.agent.* is a
+;; frozen extraction prefix (hive-mcp.kernel.census): no new namespace may be
+;; added under it. Every schema generates.
+;; ---------------------------------------------------------------------------
+
+(def RoleKw
+  "The closed set of hivemind role variants."
+  [:enum :role/hivemind :role/worker :role/standalone])
+
+(def HivemindRoleValue
+  "A HivemindRole ADT value."
+  [:map
+   [:adt/type [:= :HivemindRole]]
+   [:adt/variant RoleKw]])
+
+;; from-keyword: like headless-capability, anything not a keyword/string is
+;; nil, so the input is :any (permissive in).
+(m/=> from-keyword [:=> [:cat :any] [:maybe HivemindRoleValue]])
+
+(m/=> to-keyword [:=> [:cat HivemindRoleValue] RoleKw])
+
+(m/=> hivemind-mode? [:=> [:cat HivemindRoleValue] :boolean])
+
+;; The tool set is a set of names for :role/hivemind and nil otherwise. The
+;; optional agent-def is only documented for the caller's disallowed-tools
+;; filter; the body never reads it, so it is :any.
+(m/=> hivemind-tools
+      [:function
+       [:=> [:cat HivemindRoleValue] [:maybe [:set :string]]]
+       [:=> [:cat HivemindRoleValue :any] [:maybe [:set :string]]]])
+
+;; The pool is handed back untouched for :role/hivemind, nil for the others.
+(m/=> worker-tool-pool [:=> [:cat HivemindRoleValue :any] :any])

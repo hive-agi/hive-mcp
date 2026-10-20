@@ -57,12 +57,13 @@
 
 (defn summarize
   "Render one registry row for a caller, as of `now-ms`."
-  [task-id {:keys [tool caller-id state started-at timeout-ms handle]} now-ms]
+  [task-id {:keys [tool caller-id lane state started-at timeout-ms handle]} now-ms]
   (cond-> {:task-id    task-id
            :tool       tool
            :caller-id  caller-id
            :state      (reported-state state handle)
            :elapsed-ms (- now-ms started-at)}
+    lane       (assoc :lane lane)
     timeout-ms (assoc :timeout-ms timeout-ms)))
 
 (defn completion-state

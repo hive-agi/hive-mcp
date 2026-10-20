@@ -8,7 +8,8 @@
    Per the LSP guarantee, every tool — registered or not — is satisfied by
    SOMETHING that implements Batchable; lookup-or-default in the façade returns
    the default adapter for any tool without an explicit record."
-  (:require [hive-mcp.multi.registry.owned :as owned]))
+  (:require [malli.core :as m]
+            [hive-mcp.multi.registry.owned :as owned]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -26,19 +27,29 @@
   (owned/register! state :by-name owner tool-name entry
                    "[multi.registry.batchables]" :tool-name))
 
+(m/=> register! [:=> [:cat [:or :keyword :string] :string [:map [:record :any]]] [:enum :ok :replaced :conflict]])
+
 (defn deregister-by-owner!
   "Remove all batchables registered by `owner`. Returns set of removed names."
   [owner]
   (owned/deregister-by-owner! state :by-name owner))
+
+(m/=> deregister-by-owner! [:=> [:cat [:or :keyword :string]] [:set :string]])
 
 (defn lookup
   "Return {:record :owner} for a tool-name, or nil."
   [tool-name]
   (owned/lookup state :by-name tool-name))
 
+(m/=> lookup [:=> [:cat :string] [:maybe [:map [:record :any] [:owner [:or :keyword :string]]]]])
+
 (defn snapshot []
   (let [s @state]
     {:version (hash s) :data s}))
 
+(m/=> snapshot [:=> [:cat] [:map [:version :int] [:data :map]]])
+
 (defn reset-for-test! []
   (reset! state {:by-name {} :by-owner {}}))
+
+(m/=> reset-for-test! [:=> [:cat] :map])

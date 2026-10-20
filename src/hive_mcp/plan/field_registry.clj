@@ -24,7 +24,8 @@
                                         when the key is present; truthy return is
                                         the error surfaced by the plan gate)
      :owner        keyword             (stamped at registration — addon id)"
-  (:require [clojure.tools.logging :as log]))
+  (:require [clojure.tools.logging :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -150,3 +151,58 @@
        (filter (fn [[_ spec]] (:project? spec)))
        (map key)
        set))
+
+;; =============================================================================
+;; Function Contracts (m16 coverage batch)
+;; =============================================================================
+
+;; Field spec (per ns docstring): {:scope :step|:plan, :key keyword, ...}.
+;; Registration inputs are permissive (invalid specs log + return nil).
+
+(m/=> reset-registry!
+      [:=> [:cat]
+       :any])
+
+(m/=> register-field!
+      [:=> [:cat :any]
+       [:maybe :keyword]])
+
+(m/=> register-by-key!
+      [:=> [:cat :any :keyword :any]
+       [:maybe :keyword]])
+
+(m/=> deregister-by-owner!
+      [:=> [:cat :any]
+       :nil])
+
+(m/=> step-fields
+      [:=> [:cat]
+       :map])
+
+(m/=> plan-fields
+      [:=> [:cat]
+       :map])
+
+(m/=> step-field-keys
+      [:=> [:cat]
+       [:set :keyword]])
+
+(m/=> plan-field-keys
+      [:=> [:cat]
+       [:set :keyword]])
+
+(m/=> apply-normalizers
+      [:=> [:cat :map [:enum :step :plan]]
+       :map])
+
+(m/=> validate-fields
+      [:=> [:cat :map [:enum :step :plan]]
+       [:vector :map]])
+
+(m/=> resolve-step-defaults
+      [:=> [:cat :map]
+       :map])
+
+(m/=> project-keys
+      [:=> [:cat]
+       [:set :keyword]])

@@ -18,7 +18,8 @@
             [datascript.core :as d]
             [hive-mcp.graph.protocol :as proto]
             [hive-mcp.graph.schema :as schema]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -167,6 +168,72 @@
             nil))))))
 
 
+;; =============================================================================
+;; Value schemas for the contracts below
+;; =============================================================================
+
+(def Store
+  "A DatascriptStore. Generates as a fresh in-memory store over the default
+   schema."
+  [:fn {:error/message "a DatascriptStore"
+        :gen/schema :nil
+        :gen/fmap (fn [_] (->DatascriptStore (d/create-conn schema/schema) nil))}
+   #(instance? DatascriptStore %)])
+
+(def DsSchema
+  "A Datascript schema map: attribute -> attribute spec."
+  [:map-of {:gen/elements [schema/schema {}]} :keyword :map])
+
+(def PersistPath
+  "Where a store persists, or nil for none."
+  [:maybe [:string {:gen/elements ["/tmp/hive-graph-contract.edn"]}]])
+
+(def Db
+  [:fn {:error/message "a Datascript db"
+        :gen/schema :nil :gen/fmap (fn [_] (d/empty-db schema/schema))}
+   d/db?])
+
+(def TxReport
+  [:fn {:error/message "a Datascript transaction report"
+        :gen/schema :nil
+        :gen/fmap (fn [_] (d/transact! (d/create-conn schema/schema) []))}
+   #(instance? datascript.db.TxReport %)])
+
+(def TxData
+  "Transaction data: entity maps or datom vectors."
+  [:sequential {:gen/elements [[] [{:agent/id "a-1" :agent/type :ling}]
+                               [{:friction/type :tool-missing :friction/context "no grep"}]
+                               [[:db/add -1 :knowledge/type :decision]]]}
+   [:or :map vector?]])
+
+(def Query
+  "A Datalog query in vector form."
+  [:vector {:gen/elements ['[:find ?e :where [?e :agent/id _]]
+                           '[:find ?e :in $ ?id :where [?e :agent/id ?id]]
+                           '[:find (count ?e) . :where [?e _ _]]]}
+   :any])
+
+(def LookupRef
+  "[attr value] names an entity; [eid attr value] names one datom."
+  [:or [:tuple {:gen/elements [[:agent/id "a-1"] [:agent/id "nobody"]]} :keyword :any]
+   [:tuple {:gen/elements [[1 :agent/type :ling]]} :int :keyword :any]])
+
+(def Entity
+  [:fn {:error/message "a Datascript entity"
+        :gen/schema :nil
+        :gen/fmap (fn [_] (let [c (d/create-conn {:agent/id {:db/unique :db.unique/identity}})]
+                            (d/transact! c [{:agent/id "a-1"}])
+                            (d/entity @c [:agent/id "a-1"])))}
+   #(instance? datascript.impl.entity.Entity %)])
+
+(def StoreStats
+  [:map {:closed true}
+   [:entity-count nat-int?]
+   [:friction-count nat-int?]
+   [:knowledge-count nat-int?]
+   [:agent-count nat-int?]
+   [:persist-path PersistPath]])
+
 (defn create-store
   "Create a new DatascriptStore.
    
@@ -185,6 +252,8 @@
               (when persist-path (str "with persistence at " persist-path)))
     (->DatascriptStore conn persist-path)))
 
+(m/=> create-store [:=> [:cat DsSchema PersistPath] Store])
+
 (defn create-default-store
   "Create a DatascriptStore with the default hive-mcp schema.
    
@@ -196,6 +265,8 @@
   [persist-path]
   (create-store schema/schema persist-path))
 
+(m/=> create-default-store [:=> [:cat PersistPath] Store])
+
 
 (defn make-datascript-store
   "Create a DatascriptStore with default schema and no persistence.
@@ -203,16 +274,22 @@
   []
   (create-store schema/schema nil))
 
+(m/=> make-datascript-store [:=> [:cat] Store])
+
 (defn ds-reset!
   "Reset a DatascriptStore to empty state."
   [store]
   (let [new-db (d/empty-db schema/schema)]
     (clojure.core/reset! (:conn store) new-db)))
 
+(m/=> ds-reset! [:=> [:cat Store] Db])
+
 (defn db
   "Get the current database value from a store."
   [store]
   @(:conn store))
+
+(m/=> db [:=> [:cat Store] Db])
 
 (defn retract!
   "Retract an entity or specific datom from the store.
@@ -228,6 +305,9 @@
       ;; Specific datom retraction [eid attr value]
       (let [[eid attr value] lookup-ref]
         (d/transact! conn [[:db/retract eid attr value]])))))
+
+;; nil when a lookup ref names no entity.
+(m/=> retract! [:=> [:cat Store LookupRef] [:maybe TxReport]])
 
 (defn query
   "Query the store with optional argument map.
@@ -253,15 +333,26 @@
      ;; Vector-style args (passthrough)
      (apply d/q datalog-query @(:conn store) (if (sequential? args-map) args-map [args-map])))))
 
+;; The answer is whatever the query finds: a set of tuples, a scalar, a
+;; collection, or nil for a scalar :find that matched nothing.
+(m/=> query
+      [:function
+       [:=> [:cat Store Query] :any]
+       [:=> [:cat Store Query [:or [:map-of :keyword :any] [:sequential :any] :string]] :any]])
+
 (defn ds-entity
   "Get entity by eid or lookup ref."
   [store eid-or-ref]
   (d/entity @(:conn store) eid-or-ref))
 
+(m/=> ds-entity [:=> [:cat Store [:or :int LookupRef]] [:maybe Entity]])
+
 (defn transact!
   "Transact data into the store. Wrapper for protocol method."
   [store tx-data]
   (d/transact! (:conn store) tx-data))
+
+(m/=> transact! [:=> [:cat Store TxData] TxReport])
 
 
 (defn store-stats
@@ -273,3 +364,5 @@
      :knowledge-count (count (d/q '[:find ?e :where [?e :knowledge/type _]] db))
      :agent-count (count (d/q '[:find ?e :where [?e :agent/id _]] db))
      :persist-path (:persist-path store)}))
+
+(m/=> store-stats [:=> [:cat Store] StoreStats])

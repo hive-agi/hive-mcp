@@ -8,7 +8,8 @@
             [hive-mcp.protocols.saa :as psaa]
             [hive-mcp.protocols.agent-bridge :as bridge]
             [hive-mcp.saa.model :as model]
-            [hive-mcp.saa.types :as types]))
+            [hive-mcp.saa.types :as types]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -45,3 +46,13 @@
   ([] (->default-phase-provider nil))
   ([backend-or-session]
    (->DefaultPhaseProvider backend-or-session)))
+
+(def PhaseProvider
+  "A record satisfying `IPhaseProvider`."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (->DefaultPhaseProvider nil))}
+   (fn [p] (satisfies? psaa/IPhaseProvider p))])
+
+;; backend-or-session is held opaquely (a session, a backend, or nil)
+(m/=> ->default-phase-provider [:function
+                                [:=> [:cat] PhaseProvider]
+                                [:=> [:cat :any] PhaseProvider]])

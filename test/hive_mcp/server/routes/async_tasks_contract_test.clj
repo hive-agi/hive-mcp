@@ -25,20 +25,23 @@
     (-view [_ h] {:present? (some? h) :done? true :cancelled? false})))
 
 (defn- own-state
-  "Inline runner and an empty registry for the test; prior runner, guard
-   flags and coordinator mark restored after."
+  "Inline runner, no lane overrides and an empty registry for the test; prior
+   runner, lane runners, guard flags and coordinator mark restored after."
   [f]
   (let [runner  @at/runner
+        lanes   @at/lane-runners
         mode    (:mode (guards/guard-status))
         enabled (:enabled? (guards/guard-status))
         running (guards/coordinator-running?)]
     (try
       (reset! at/runner inline-runner)
+      (reset! at/lane-runners {})
       (at/reset-registry!)
       (f)
       (finally
         (at/reset-registry!)
         (reset! at/runner runner)
+        (reset! at/lane-runners lanes)
         (guards/set-enforcement-mode! mode)
         (if enabled (guards/enable-guards!) (guards/disable-guards!))
         (if running (guards/mark-coordinator-running!) (guards/mark-coordinator-stopped!))))))
@@ -65,6 +68,48 @@
 (deftest current-runner-answers-the-installed-runner
   (is (identical? inline-runner (at/current-runner)))
   (is (conforms? `at/current-runner (at/current-runner))))
+
+(defn- lane-stub
+  "An in-thread runner that records, in `seen`, the lane it was installed for
+   each time it runs a task."
+  [lane seen]
+  (reify at/ITaskRunner
+    (-run [_ f] (swap! seen conj lane) (f) [::handle lane])
+    (-cancel [_ _] false)
+    (-view [_ h] {:present? (some? h) :done? true :cancelled? false})))
+
+(deftest runner-for-answers-the-installed-runner-for-every-lane
+  (testing "a runner set in `runner` takes every lane, known or not"
+    (doseq [lane [:batch :short nil :bogus]]
+      (is (identical? inline-runner (at/runner-for lane)) (str lane))
+      (is (conforms? `at/runner-for (at/runner-for lane)) (str lane)))))
+
+(deftest runner-for-picks-the-lane-override-when-no-runner-is-set
+  (let [seen  (atom [])
+        batch (lane-stub :batch seen)
+        short (lane-stub :short seen)]
+    (reset! at/runner nil)
+    (reset! at/lane-runners {:batch batch :short short})
+    (is (identical? short (at/runner-for :short)))
+    (is (identical? batch (at/runner-for :batch)))
+    (is (identical? batch (at/runner-for nil)) "no lane is the default lane")
+    (is (identical? batch (at/runner-for :bogus)) "an unknown lane is the default lane")
+    (is (identical? batch (at/current-runner)) "current-runner is the default lane's runner")
+    (doseq [lane [:batch :short nil :bogus]]
+      (is (conforms? `at/runner-for (at/runner-for lane)) (str lane)))))
+
+(deftest submit-runs-on-the-runner-of-its-lane
+  (let [seen (atom [])]
+    (reset! at/runner nil)
+    (reset! at/lane-runners {:batch (lane-stub :batch seen) :short (lane-stub :short seen)})
+    (at/submit! {:task-id "c-s" :tool "git" :caller-id "test" :lane :short :f (fn [] nil)})
+    (at/submit! {:task-id "c-b" :tool "memory" :caller-id "test" :f (fn [] nil)})
+    (at/submit! {:task-id "c-u" :tool "memory" :caller-id "test" :lane :bogus :f (fn [] nil)})
+    (is (= [:short :batch :batch] @seen))
+    (is (= :short (:lane (at/get-task "c-s"))))
+    (is (= :batch (:lane (at/get-task "c-u"))) "an unknown lane is recorded as the default")
+    (is (conforms? `at/list-tasks (at/list-tasks)))
+    (is (= :task/done (:state (at/get-task "c-s"))))))
 
 (deftest submit-registers-a-row-that-get-task-and-list-tasks-render
   (let [ran (atom false)]
@@ -166,9 +211,10 @@
   {:paths gated-paths})
 
 (deftest async-tasks-gate-is-not-vacuous
-  (let [report (coverage/coverage {:paths gated-paths})]
-    (is (= 8 (count (:universe report))))
-    (is (= 8 (count (:covered report))))))
+  (testing "nine public fns, runner-for included since lanes landed"
+    (let [report (coverage/coverage {:paths gated-paths})]
+      (is (= 9 (count (:universe report))))
+      (is (= 9 (count (:covered report)))))))
 
 (deftest every-guards-reexport-is-contracted
   (is (= '#{child-ling? coordinator? get-role ling-depth child-ling-env

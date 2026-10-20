@@ -16,6 +16,7 @@
             [hive-mcp.resilience.classify :as classify]
             [hive-mcp.resilience.policy :as policy]
             [hive-mcp.resilience.protocol :as proto]
+            [malli.core :as m]
             [taoensso.timbre :as log]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -70,6 +71,22 @@
                   (some-> ^Throwable t2 .getMessage))
         (r/err :runner/retry-failed {:throwable t2})))))
 
+;;; ---------------------------------------------------------------------------
+;;; Schemas
+;;; ---------------------------------------------------------------------------
+
+(def Result
+  "A hive-dsl.result Result — `{:ok v}` or `{:error tag & data}`."
+  [:or
+   [:map [:ok :any]]
+   [:map [:error :any]]])
+
+(def RunOpts
+  "Options `run` accepts. `:budget-ms` is documented as accepted but unused."
+  [:map
+   [:kick! {:optional true} [:maybe ifn?]]
+   [:budget-ms {:optional true} :any]])
+
 (defn run
   "Run thunk `f`. Returns a `Result`. Options:
 
@@ -89,9 +106,16 @@
            (retry-once f)
            decision))))))
 
+;; opts may be omitted; the result payload depends on the thunk
+(m/=> run [:function
+           [:=> [:cat ifn?] Result]
+           [:=> [:cat ifn? RunOpts] Result]])
+
 (defn decide-only
   "Convenience — classify a Throwable and return its `RetryDecision`
    without running anything. Used by callers that already own the
    try/catch and just want the policy shape."
   [t]
   (policy/decide (classify/classify t)))
+
+(m/=> decide-only [:=> [:cat classify/Throwable_] policy/RetryDecision])

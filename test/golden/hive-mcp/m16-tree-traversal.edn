@@ -1,0 +1,15 @@
+{:tree
+ {:roots ["root" "island"],
+  :by-id
+  {"root" #:project{:id "root"},
+   "mid" #:project{:id "mid", :parent-id "root"},
+   "leaf" #:project{:id "leaf", :parent-id "mid"},
+   "leaf2" #:project{:id "leaf2", :parent-id "mid"},
+   "island" #:project{:id "island"}},
+  :children {"root" ["mid"], "mid" ["leaf" "leaf2"]}},
+ :descendants-of-root ["mid" "leaf" "leaf2"],
+ :descendants-of-leaf [],
+ :descendants-of-missing [],
+ :ancestors-of-leaf ["mid" "root"],
+ :ancestors-of-root [],
+ :ancestors-of-missing []}

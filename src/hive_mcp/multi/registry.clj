@@ -14,7 +14,8 @@
      2. flat-tool fallback        — for non-consolidated legacy tools
 
    Decision: 20260429230453-7e7627cc"
-  (:require [hive-mcp.multi.registry.tools :as r-tools]
+  (:require [malli.core :as m]
+            [hive-mcp.multi.registry.tools :as r-tools]
             [hive-mcp.multi.registry.verbs :as r-verbs]
             [hive-mcp.multi.registry.aliases :as r-aliases]
             [hive-mcp.multi.registry.batchables :as r-batchables]
@@ -71,6 +72,8 @@
                   :ignored)))
           (or entries []))))
 
+(m/=> register-by-key! [:=> [:cat [:or :keyword :string] :keyword [:or [:sequential :map] :map :any]] [:vector [:enum :ok :replaced :conflict :ignored]]])
+
 (defn deregister-by-key!
   "Remove every entry an addon registered under a particular :multi/* key.
 
@@ -88,6 +91,8 @@
     :multi/batchable    (r-batchables/deregister-by-owner! owner)
     nil))
 
+(m/=> deregister-by-key! [:=> [:cat [:or :keyword :string] :keyword] [:maybe [:set :string]]])
+
 (defn deregister-by-owner!
   "Clear every entry across all four child registries owned by `owner`.
 
@@ -97,6 +102,8 @@
    :verbs       (r-verbs/deregister-by-owner! owner)
    :aliases     (r-aliases/deregister-by-owner! owner)
    :batchables  (r-batchables/deregister-by-owner! owner)})
+
+(m/=> deregister-by-owner! [:=> [:cat [:or :keyword :string]] [:map [:tools [:set :string]] [:verbs [:set :string]] [:aliases [:set :string]] [:batchables [:set :string]]]])
 
 ;; =============================================================================
 ;; Resolve chain
@@ -121,6 +128,8 @@
              (when-let [tool-def (resolver tool-name)]
                (:handler tool-def))))))
 
+(m/=> resolve-tool-handler [:=> [:cat :string] [:maybe [:fn {:gen/elements [identity]} ifn?]]])
+
 (defn dispatch-divergences
   "Coherence check between advertised consolidated tools and the multi dispatch
    registry. Returns a vector of {:tool name :advertised-handler h :dispatch-owner o}
@@ -141,6 +150,8 @@
                       :dispatch-owner (:owner entry)}))))
          advertised-tools)))
 
+(m/=> dispatch-divergences [:function [:=> [:cat [:sequential :map]] [:vector :map]] [:=> [:cat [:sequential :map] [:fn {:gen/elements [(constantly nil)]} ifn?]] [:vector :map]]])
+
 (defn check-dispatch-coherence!
   "Log a WARN for every advertised/dispatch divergence (see dispatch-divergences)
    and return the divergence vector. Effect: logging only; never throws."
@@ -151,6 +162,8 @@
                 {:tool tool}))
     divs))
 
+(m/=> check-dispatch-coherence! [:=> [:cat [:sequential :map]] [:vector :map]])
+
 (defn lookup-batchable-or-default
   "Return the explicit Batchable record for a tool, or a DefaultBatchableAdapter
    bound to `resolve-tool-handler` so the caller cannot tell which path is in use
@@ -160,6 +173,8 @@
   ([tool-name emit-fx]
    (or (some-> (r-batchables/lookup tool-name) :record)
        (adapter/make-default-adapter tool-name resolve-tool-handler emit-fx))))
+
+(m/=> lookup-batchable-or-default [:function [:=> [:cat :string] [:fn {:gen/elements [(adapter/make-default-adapter "tool" (constantly nil))]} #(satisfies? hive-mcp.batch.protocol/Batchable %)]] [:=> [:cat :string [:maybe [:fn {:gen/elements [identity]} ifn?]]] [:fn {:gen/elements [(adapter/make-default-adapter "tool" (constantly nil))]} #(satisfies? hive-mcp.batch.protocol/Batchable %)]]])
 
 ;; =============================================================================
 ;; Snapshot — pure value for deterministic plan compilation
@@ -179,6 +194,8 @@
      :version (hash [(:version tools) (:version verbs)
                      (:version aliases) (:version batchables)])}))
 
+(m/=> snapshot [:=> [:cat] [:map [:tools :map] [:verbs :map] [:aliases :map] [:batchables :map] [:version :int]]])
+
 (defn reset-for-test!
   "Clear all four child registries. Test-only."
   []
@@ -186,6 +203,8 @@
   (r-verbs/reset-for-test!)
   (r-aliases/reset-for-test!)
   (r-batchables/reset-for-test!))
+
+(m/=> reset-for-test! [:=> [:cat] :map])
 
 ;; =============================================================================
 ;; Bootstrap: seed :multi/core owner before first registration arrives

@@ -1,7 +1,8 @@
 (ns hive-mcp.saa.scorer
   "Default observation scorer. Korzybski heuristic for ranking Silence-phase
    observations, plus a grounding-sufficiency score."
-  (:require [hive-mcp.protocols.saa :as psaa]))
+  (:require [hive-mcp.protocols.saa :as psaa]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -40,3 +41,10 @@
   "Create a DefaultObservationScorer."
   []
   (->DefaultObservationScorer))
+
+(def ObservationScorer
+  "A record satisfying `IObservationScorer`."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (->DefaultObservationScorer))}
+   (fn [s] (satisfies? psaa/IObservationScorer s))])
+
+(m/=> ->default-scorer [:=> [:cat] ObservationScorer])

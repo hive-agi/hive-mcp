@@ -25,7 +25,8 @@
   (:require [hive-mcp.plan.fsm :as plan-fsm]
             [hive-mcp.plan.parser :as parser]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -239,3 +240,19 @@
        :phase :unexpected
        :hint "The plan content caused an unexpected error. Check the format."
        :raw-error (.getMessage e)})))
+
+;; =============================================================================
+;; Function Contracts (m16 coverage batch)
+;; =============================================================================
+
+(m/=> plan-content?
+      [:=> [:cat :any]
+       :any])
+
+(m/=> format-gate-error
+      [:=> [:cat :map]
+       :string])
+
+(m/=> validate-for-storage
+      [:=> [:cat :any]
+       [:map [:valid? :boolean]]])

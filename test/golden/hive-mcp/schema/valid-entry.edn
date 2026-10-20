@@ -1,0 +1,27 @@
+{:case-0
+ {:out true,
+  :in
+  ({:id "V",
+    :type "plan",
+    :content "",
+    :project-id nil,
+    :created-at nil,
+    :kg-incoming nil})},
+ :case-1
+ {:out false, :in ({:id "e1", :type "BAD TYPE", :content nil})},
+ :case-2 {:out false, :in (nil)},
+ :case-3 {:out false, :in (nil)},
+ :case-4
+ {:out false, :in ({:id "e1", :type "BAD TYPE", :content "W"})},
+ :case-5
+ {:out false, :in ({:id "e1", :type "BAD TYPE", :content "1"})},
+ :case-6 {:out false, :in ({:id "", :type "note", :content nil})},
+ :case-7
+ {:out true,
+  :in
+  ({:id "i8as9",
+    :type "axiom",
+    :content "66s3",
+    :project-id nil,
+    :abstraction-level 3,
+    :kg-incoming nil})}}

@@ -25,7 +25,8 @@
             [hive-mcp.memory.ids :as ids]
             [hive-spi.memory.ports :as ports]
             [hive-spi.memory.registry :as registry]
-            [clojure.data.json :as json]))
+            [clojure.data.json :as json]
+            [hive-mcp.test-support.registry-isolation :as isolation]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -393,25 +394,23 @@
 
 (defn with-stub-store
   "clojure.test fixture: install a fresh stub as :default for the test, then
-   restore whatever store registry was in place before."
+   restore whatever store registry was in place before. Refuses to run inside
+   a live addon server and restores the prior slot map atomically instead of
+   calling the global reset-registry!."
   [f]
-  (let [prior (registry/registered-stores)]
-    (try
+  (isolation/with-restored-store-registry
+    (fn []
       (install! (->stub))
-      (f)
-      (finally
-        (registry/reset-registry!)
-        (doseq [[k s] prior] (registry/register-store! k s))))))
+      (f))))
 
 (defn with-no-store
   "Run F with an EMPTY store registry, then restore the prior one.
 
-   For asserting the not-configured branch without naming a backend."
+   For asserting the not-configured branch without naming a backend. Refuses
+   to run inside a live addon server and restores the prior slot map
+   atomically instead of calling the global reset-registry!."
   [f]
-  (let [prior (registry/registered-stores)]
-    (try
-      (registry/reset-registry!)
-      (f)
-      (finally
-        (registry/reset-registry!)
-        (doseq [[k s] prior] (registry/register-store! k s))))))
+  (isolation/with-restored-store-registry
+    (fn []
+      (isolation/restore-stores! {})
+      (f))))

@@ -1,0 +1,19 @@
+{:case-0
+ {:out
+  {:tool-intent #{:read :search :web},
+   :permission-intent :observe-only},
+  :in (:silence)},
+ :case-1 {:out nil, :in (nil)},
+ :case-2 {:out nil, :in (:observe)},
+ :case-3
+ {:out
+  {:tool-intent #{:read :exec :write}, :permission-intent :mutate},
+  :in (:act)},
+ :case-4
+ {:out {:tool-intent #{:read :search}, :permission-intent :plan-only},
+  :in (:abstract)},
+ :case-5 {:out nil, :in (nil)},
+ :case-6 {:out nil, :in ("silence")},
+ :case-7
+ {:out {:tool-intent #{:read :search}, :permission-intent :plan-only},
+  :in (:abstract)}}

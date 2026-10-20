@@ -338,14 +338,23 @@
 ;; Single-Command Batch Guard: rejects foreign sub-domain commands loudly
 ;; =============================================================================
 
+(defn- stub-run-fn
+  "A Batchable run-fn stand-in (the port): counts its calls and answers one
+   successful op result per op it was handed."
+  [calls]
+  (fn [ops _opts]
+    (swap! calls inc)
+    {:success true
+     :waves   {1 {:results (mapv (fn [_] {:success true :result {:ok true}}) ops)}}
+     :summary {:total (count ops) :success (count ops) :failed 0 :waves 1}}))
+
 (deftest single-command-batch-rejects-foreign-commands
-  (testing "a foreign sub-domain op is refused WITHOUT reaching the handler"
+  (testing "a foreign sub-domain op is refused WITHOUT reaching the runner"
     (let [calls    (atom 0)
-          batch-fn (#'cmem/make-single-command-batch :add
-                                                     (fn [_] (swap! calls inc) {:ok true}))
+          batch-fn (#'cmem/make-single-command-batch :add (stub-run-fn calls))
           parsed   (parse-batch-result (batch-fn {:operations [{:command "kg edge"
                                                                 :from "a" :to "b"}]}))]
-      (is (= 0 @calls) "the wrapped handler must not be invoked for a foreign op")
+      (is (= 0 @calls) "the runner must not be invoked for a foreign op")
       (is (= {:total 1 :success 0 :failed 1} (:summary parsed)))
       (is (false? (get-in parsed [:results 0 :success])))
       (is (= "kg edge" (get-in parsed [:results 0 :command])) "the caller's command is preserved")
@@ -353,7 +362,7 @@
       (is (str/includes? (get-in parsed [:results 0 :error]) "'add'"))))
 
   (testing "the refusal names the batch command that was actually called"
-    (let [batch-fn (#'cmem/make-single-command-batch :feedback (fn [_] {:ok true}))
+    (let [batch-fn (#'cmem/make-single-command-batch :feedback (stub-run-fn (atom 0)))
           parsed   (parse-batch-result (batch-fn {:operations [{:command "kg edge"}]}))]
       (is (str/includes? (get-in parsed [:results 0 :error]) "batch-feedback only accepts"))
       (is (str/includes? (get-in parsed [:results 0 :error]) "'feedback'"))))

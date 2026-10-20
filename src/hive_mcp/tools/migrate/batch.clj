@@ -8,10 +8,14 @@
 
    Contract:
      sync!  => {:extracted N :transformed N :loaded-ok N :loaded-fail N
-                :batches N :dry-run? bool}
-     verify => {:checked N :ok N :missing [id ...]}"
+                :loaded-queued N :batches N :dry-run? bool}
+     verify => {:checked N :ok N :missing [id ...]}
+
+   A load is read through hive-spi.memory.contract (`load-write-outcome`):
+   a refusal map or nil is :loaded-fail, a queue ack is :loaded-queued."
   (:require [hive-spi.memory.ports :as ports]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-spi.memory.contract :as contract]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -48,18 +52,31 @@
          (update :type #(or % :note))
          (update :tags #(or % []))))))
 
+(defn load-write-outcome
+  "Classify the answer R of a target add-entry! as :ok, :queued or :fail.
+   A contract-compliant store answers an id string on success, so the answer
+   is read through hive-spi.memory.contract rather than for a :success? key:
+   a refusal map (failure?) and a nil answer are :fail, a queue ack is
+   :queued (accepted for replay, not durable yet), anything else is :ok."
+  [r]
+  (cond
+    (nil? r)              :fail
+    (contract/failure? r) :fail
+    (contract/queued? r)  :queued
+    :else                 :ok))
+
 (defn- load-batch!
   [target batch]
-  (reduce (fn [{:keys [ok fail] :as acc} entry]
+  (reduce (fn [{:keys [ok fail queued] :as acc} entry]
             (try
-              (let [r (ports/add-entry! target entry)]
-                (if (:success? r)
-                  (assoc acc :ok (inc ok))
-                  (assoc acc :fail (inc fail))))
+              (case (load-write-outcome (ports/add-entry! target entry))
+                :ok     (assoc acc :ok (inc ok))
+                :queued (assoc acc :queued (inc queued))
+                :fail   (assoc acc :fail (inc fail)))
               (catch Throwable t
                 (log/warn "[migrate/batch] load failed:" (ex-message t))
                 (assoc acc :fail (inc fail)))))
-          {:ok 0 :fail 0}
+          {:ok 0 :fail 0 :queued 0}
           batch))
 
 (defrecord DefaultBatchMigrator []
@@ -75,20 +92,22 @@
           entries     (transform raw)
           transformed (count entries)]
       (if dry-run?
-        {:extracted   extracted
-         :transformed transformed
-         :loaded-ok   0
-         :loaded-fail 0
-         :batches     0
-         :dry-run?    true}
+        {:extracted     extracted
+         :transformed   transformed
+         :loaded-ok     0
+         :loaded-fail   0
+         :loaded-queued 0
+         :batches       0
+         :dry-run?      true}
         (let [batches (partition-all batch-size entries)
               totals  (reduce (fn [acc batch]
-                                (let [{:keys [ok fail]} (load-batch! target batch)]
+                                (let [{:keys [ok fail queued]} (load-batch! target batch)]
                                   (-> acc
-                                      (update :loaded-ok   + ok)
-                                      (update :loaded-fail + fail)
-                                      (update :batches     inc))))
-                              {:loaded-ok 0 :loaded-fail 0 :batches 0}
+                                      (update :loaded-ok     + ok)
+                                      (update :loaded-fail   + fail)
+                                      (update :loaded-queued + queued)
+                                      (update :batches       inc))))
+                              {:loaded-ok 0 :loaded-fail 0 :loaded-queued 0 :batches 0}
                               batches)]
           (merge {:extracted   extracted
                   :transformed transformed

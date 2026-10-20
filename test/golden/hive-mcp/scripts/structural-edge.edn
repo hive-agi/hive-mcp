@@ -1,0 +1,16 @@
+{:case-0 {:out false, :in (nil)},
+ :case-1 {:out false, :in (#:kg-edge{:from "", :to "20260101-abc"})},
+ :case-2
+ {:out true,
+  :in
+  (#:kg-edge{:from "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+             :to "7c9e6679-7425-40de-944b-e07fc1f90ae7"})},
+ :case-3
+ {:out true,
+  :in
+  (#:kg-edge{:from "0f8fad5b-d9cb-469f-a165-70867728950e",
+             :to "0f8fad5b-d9cb-469f-a165-70867728950e"})},
+ :case-4 {:out false, :in (nil)},
+ :case-5 {:out false, :in (nil)},
+ :case-6 {:out false, :in (nil)},
+ :case-7 {:out false, :in (nil)}}

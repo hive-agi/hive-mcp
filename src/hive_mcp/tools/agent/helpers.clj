@@ -16,7 +16,9 @@
   (str (name agent-type) "-" (java.util.UUID/randomUUID)))
 
 (defn format-agent
-  "Format agent data for response, exposing unverified restore liveness."
+  "Format agent data for response, exposing unverified restore liveness and,
+   for a ling on a registered headless backend, how long ago its loop last
+   made progress (`:liveness-age-ms`)."
   [agent-data]
   (when agent-data
     (let [base {:id (:slave/id agent-data)
@@ -31,7 +33,8 @@
         (:slave/created-at agent-data) (assoc :created-at (:slave/created-at agent-data))
         (:slave/liveness agent-data) (assoc :liveness (:slave/liveness agent-data))
         (:slave/orphan-reason agent-data) (assoc :reason (:slave/orphan-reason agent-data))
-        (:slave/last-event-at agent-data) (assoc :last-event-at (:slave/last-event-at agent-data))))))
+        (:slave/last-event-at agent-data) (assoc :last-event-at (:slave/last-event-at agent-data))
+        (some? (:slave/liveness-age-ms agent-data)) (assoc :liveness-age-ms (:slave/liveness-age-ms agent-data))))))
 
 (defn format-agents
   "Format a list of agents for response."

@@ -1,0 +1,57 @@
+{:case-0
+ {:out
+  {:compatible? true,
+   :backup-project-id "global",
+   :target-project-id nil,
+   :reason "No target scope specified, skipping check"},
+  :in ({} nil)},
+ :case-1
+ {:out
+  {:compatible? false,
+   :backup-project-id "beta",
+   :target-project-id "alpha",
+   :reason
+   "Backup is from project 'beta' but target is 'alpha'. Use :force-cross-project to override."},
+  :in (#:backup{:project-id "beta"} "alpha")},
+ :case-2
+ {:out
+  {:compatible? true,
+   :backup-project-id "global",
+   :target-project-id nil,
+   :reason "No target scope specified, skipping check"},
+  :in ({} nil)},
+ :case-3
+ {:out
+  {:compatible? true,
+   :backup-project-id "global",
+   :target-project-id "beta",
+   :reason "Global backup is compatible with any project"},
+  :in ({} "beta")},
+ :case-4
+ {:out
+  {:compatible? true,
+   :backup-project-id "beta",
+   :target-project-id nil,
+   :reason "No target scope specified, skipping check"},
+  :in (#:backup{:project-id "beta"} nil)},
+ :case-5
+ {:out
+  {:compatible? true,
+   :backup-project-id "global",
+   :target-project-id nil,
+   :reason "No target scope specified, skipping check"},
+  :in ({} nil)},
+ :case-6
+ {:out
+  {:compatible? true,
+   :backup-project-id "global",
+   :target-project-id nil,
+   :reason "No target scope specified, skipping check"},
+  :in ({} nil)},
+ :case-7
+ {:out
+  {:compatible? true,
+   :backup-project-id "global",
+   :target-project-id nil,
+   :reason "No target scope specified, skipping check"},
+  :in ({} nil)}}

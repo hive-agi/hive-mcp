@@ -21,6 +21,21 @@
 (defonce ^:private schema-cache
   (atom {}))
 
+(def SchemaKey
+  "A namespaced schema key such as :cider/connect-session. Its namespace names
+   the schema file; an unqualified key names no file and resolves to nil."
+  [:or :qualified-keyword :keyword])
+
+(def SchemaFile
+  "A parsed schema EDN file: schema key -> raw malli form."
+  [:map-of :keyword :any])
+
+(def SchemaObject
+  "A compiled malli schema, ready for m/validate."
+  [:fn {:gen/schema [:enum :int :string :boolean [:map [:name :string]]]
+        :gen/fmap m/schema}
+   m/schema?])
+
 (defn load-schema-file
   "Load and parse a schema EDN file from classpath.
    ns-name is e.g. \"cider\" -> reads schema/cider.edn"
@@ -31,6 +46,10 @@
           (let [schemas (edn/read-string (slurp r))]
             (swap! file-cache assoc ns-name schemas)
             schemas)))))
+
+;; ns-name is nil when schema-for is handed an unqualified key: the path is
+;; then schema/.edn, which is absent, so the answer is nil.
+(m/=> load-schema-file [:=> [:cat [:maybe :string]] [:maybe SchemaFile]])
 
 (defn schema-for
   "Get Malli schema for a namespaced key like :cider/connect-session.
@@ -45,6 +64,8 @@
             (swap! schema-cache assoc key s)
             s)))))
 
+(m/=> schema-for [:=> [:cat SchemaKey] [:maybe SchemaObject]])
+
 (defn validate
   "Validate params against EDN-defined schema.
    Returns nil on success, throws ex-info on failure."
@@ -58,17 +79,23 @@
                        :schema key
                        :errors (m/explain s params)})))))
 
+(m/=> validate [:=> [:cat SchemaKey :any] :nil])
+
 (defn valid?
   "Return true if params match the EDN-defined schema."
   [key params]
   (when-let [s (schema-for key)]
     (m/validate s params)))
 
+(m/=> valid? [:=> [:cat SchemaKey :any] [:maybe :boolean]])
+
 (defn reload!
   "Clear all caches and force re-read from disk on next access."
   []
   (reset! file-cache {})
   (reset! schema-cache {}))
+
+(m/=> reload! [:=> [:cat] [:map-of {:max 0} :any :any]])
 
 (comment
   ;; Load a schema from EDN

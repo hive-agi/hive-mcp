@@ -1,0 +1,33 @@
+{:case-0
+ {:out
+  {:adt/variant :scope/project,
+   :adt/type :ScopeFilter,
+   :project-id "hive"},
+  :in ("hive" nil)},
+ :case-1
+ {:out
+  {:adt/variant :scope/project,
+   :adt/type :ScopeFilter,
+   :project-id "hive"},
+  :in ("hive" "W")},
+ :case-2
+ {:out #:adt{:variant :scope/all, :type :ScopeFilter},
+  :in ("all" nil)},
+ :case-3
+ {:out #:adt{:variant :scope/global, :type :ScopeFilter},
+  :in ("global" "")},
+ :case-4
+ {:out #:adt{:variant :scope/all, :type :ScopeFilter},
+  :in ("all" nil)},
+ :case-5
+ {:out #:adt{:variant :scope/all, :type :ScopeFilter},
+  :in ("all" nil)},
+ :case-6
+ {:out #:adt{:variant :scope/global, :type :ScopeFilter},
+  :in ("global" nil)},
+ :case-7
+ {:out
+  {:adt/variant :scope/project,
+   :adt/type :ScopeFilter,
+   :project-id "hive"},
+  :in ("hive" nil)}}
