@@ -1,0 +1,15 @@
+{:colon
+ {:isError true,
+  :body {:ok false, :command "dump", :error "Missing :agent-id"}},
+ :help {:isError false, :body {:ok true, :command "help"}},
+ :none {:isError false, :body {:ok true, :command "help"}},
+ :tail
+ {:isError true,
+  :body {:ok false, :command "tail", :error "Missing :agent-id"}},
+ :unknown
+ {:isError true,
+  :body
+  {:ok false,
+   :command "m27-nope",
+   :error
+   "Unknown command: m27-nope. Valid: disable, dump, enable, help, register-handler, stats, tail, unreg-fx"}}}
