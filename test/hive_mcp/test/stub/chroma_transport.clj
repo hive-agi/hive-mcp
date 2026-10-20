@@ -63,11 +63,12 @@
     (contains? clause :$not_contains)  (not (str/includes? (str document) (:$not_contains clause)))
     :else (throw (ex-info "stub transport: unsupported where-document clause" {:clause clause}))))
 
-(defn- select-records [records {:keys [ids where where-document limit]}]
-  (cond->> (vals records)
+(defn- select-records [records {:keys [ids where where-document offset limit]}]
+  (cond->> (sort-by :id (vals records))
     (seq ids)      (filter #(contains? (set ids) (:id %)))
     true           (filter #(where-holds? where (:metadata %)))
     where-document (filter #(document-holds? where-document (:document %)))
+    offset         (drop offset)
     limit          (take limit)
     true           vec))
 
