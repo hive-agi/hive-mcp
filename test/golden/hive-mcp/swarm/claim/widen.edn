@@ -1,0 +1,12 @@
+{:case-0 {:out :file, :in (:bogus :file)},
+ :case-1 {:out :body, :in (nil :body)},
+ :case-10 {:out :file, :in (:file nil)},
+ :case-11 {:out :body, :in (nil :body)},
+ :case-2 {:out :file, :in (:file nil)},
+ :case-3 {:out :body, :in (:body :bogus)},
+ :case-4 {:out :file, :in (:file :signature)},
+ :case-5 {:out :file, :in (:file :signature)},
+ :case-6 {:out :signature, :in (:signature :body)},
+ :case-7 {:out :signature, :in (nil :signature)},
+ :case-8 {:out :signature, :in (:bogus :signature)},
+ :case-9 {:out :signature, :in (:signature :body)}}

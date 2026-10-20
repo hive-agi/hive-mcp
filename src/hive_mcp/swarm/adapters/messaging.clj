@@ -30,7 +30,8 @@
             [hive-mcp.channel.payload-ref :as payload-ref]
             [hive-mcp.channel.context-store :as context-store]
             [hive-mcp.protocols.delivery-channel :as dc]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;;; ============================================================================
 ;;; The adapter: every method delegates to an existing hive-mcp var
@@ -123,8 +124,20 @@
                :available? (boolean (dc/available? ch))})
             (dc/get-channels)))))
 
+(def Adapter
+  "Something that fills the messaging port: every protocol but IInboxSink."
+  [:fn {:gen/fmap (fn [_] (make-adapter)) :gen/schema :nil}
+   #(and (satisfies? spi/IEventBus %) (satisfies? spi/IFrontendPush %)
+         (satisfies? spi/IAudience %) (satisfies? spi/IConversationStore %)
+         (satisfies? spi/IBroadcastGovernance %) (satisfies? spi/IContextStore %)
+         (satisfies? spi/IDeliveryFanout %))])
+
+(m/=> make-adapter [:=> [:cat] Adapter])
+
 (defn install!
   "Install the hive-mcp-backed adapter as the active messaging port.
    Call once from addon init, inside the host JVM. Returns the adapter."
   []
   (spi/set-messaging! (make-adapter)))
+
+(m/=> install! [:=> [:cat] Adapter])

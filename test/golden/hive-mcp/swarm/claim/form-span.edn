@@ -1,0 +1,36 @@
+{:case-0
+ {:out #:span{:file "src/b.clj", :mode :body, :qn "a/f"},
+  :in ("src/b.clj" "a/f" :body)},
+ :case-1
+ {:out #:span{:file "src/b.clj", :mode :body, :qn nil},
+  :in ("src/b.clj" "  " :bogus)},
+ :case-10
+ {:out #:span{:file "src/a.clj", :mode :body, :qn "a/f"},
+  :in ("src/a.clj" "a/f" :body)},
+ :case-11
+ {:out #:span{:file "src/b.clj", :mode :body, :qn nil},
+  :in ("src/b.clj" "  " :bogus)},
+ :case-2
+ {:out #:span{:file "src/a.clj", :mode :signature, :qn "a/f"},
+  :in ("src/a.clj" "a/f" :signature)},
+ :case-3
+ {:out #:span{:file "src/a.clj", :mode :file, :qn nil},
+  :in ("src/a.clj" nil :file)},
+ :case-4
+ {:out #:span{:file "src/a.clj", :mode :signature, :qn "a/f"},
+  :in ("src/a.clj" "a/f" :signature)},
+ :case-5
+ {:out #:span{:file "src/a.clj", :mode :signature, :qn "a/f"},
+  :in ("src/a.clj" "a/f" :signature)},
+ :case-6
+ {:out #:span{:file "src/a.clj", :mode :signature, :qn nil},
+  :in ("src/a.clj" nil :signature)},
+ :case-7
+ {:out #:span{:file "src/b.clj", :mode :signature, :qn "a/f"},
+  :in ("src/b.clj" "a/f" :signature)},
+ :case-8
+ {:out #:span{:file "src/b.clj", :mode :body, :qn nil},
+  :in ("src/b.clj" nil :body)},
+ :case-9
+ {:out #:span{:file "src/a.clj", :mode :body, :qn nil},
+  :in ("src/a.clj" "  " :body)}}

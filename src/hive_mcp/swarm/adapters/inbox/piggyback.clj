@@ -20,7 +20,8 @@
   (:require [clojure.string :as str]
             [hive-spi.swarm.ports.messaging :as msg]
             [hive-mcp.channel.piggyback :as piggyback]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;;; ============================================================================
 ;;; The sink
@@ -54,6 +55,17 @@
             {:delivered? false :sink :piggyback :receipt nil}))))
     {:inbox/priority 1000}))
 
+(def Sink
+  "An IInboxSink."
+  [:fn {:gen/fmap (fn [_] (make-sink)) :gen/schema :nil}
+   #(satisfies? msg/IInboxSink %)])
+
+(def Receipt
+  "What deliver! answers. It never throws: a failed push is :delivered? false."
+  [:map [:delivered? :boolean] [:sink [:= :piggyback]] [:receipt :any]])
+
+(m/=> make-sink [:=> [:cat] Sink])
+
 ;;; ============================================================================
 ;;; Install
 ;;; ============================================================================
@@ -67,3 +79,5 @@
   (let [sink (make-sink)]
     (msg/register-sink! sink)
     sink))
+
+(m/=> install! [:=> [:cat] Sink])

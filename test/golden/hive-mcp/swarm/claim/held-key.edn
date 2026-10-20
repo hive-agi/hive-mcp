@@ -1,0 +1,13 @@
+{:case-0 {:out "src/b.clj#a/g", :in {:file "src/b.clj", :qn "a/g"}},
+ :case-1
+ {:out "src/b.clj#a/g",
+  :in {:file "src/b.clj", :qn "a/g", :mode :signature}},
+ :case-2
+ {:out "src/a.clj", :in {:file "src/a.clj", :qn nil, :mode nil}},
+ :case-3 {:out "src/a.clj", :in {:file "src/a.clj", :mode nil}},
+ :case-4 {:out "src/a.clj", :in {:file "src/a.clj", :qn nil}},
+ :case-5 {:out "src/a.clj", :in {:file "src/a.clj", :qn nil}},
+ :case-6 {:out "src/a.clj", :in {:file "src/a.clj"}},
+ :case-7 {:out "src/b.clj", :in {:file "src/b.clj"}},
+ :case-8 {:out "src/b.clj#a/g", :in {:file "src/b.clj", :qn "a/g"}},
+ :case-9 {:out "src/a.clj#a/g", :in {:file "src/a.clj", :qn "a/g"}}}

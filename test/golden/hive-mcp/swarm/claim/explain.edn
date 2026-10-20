@@ -1,0 +1,71 @@
+{:case-0
+ {:out
+  "Warning: ling-b holds a/f in another worktree (overlap). Not blocking; the two edits meet at merge time.",
+  :in
+  {:file "src/b.clj",
+   :qn "a/f",
+   :held-by "ling-b",
+   :reason :cross-worktree,
+   :caller "a/f"}},
+ :case-1
+ {:out "ling-a is already editing a/h in src/b.clj.",
+  :in
+  {:file "src/b.clj",
+   :qn "a/h",
+   :held-by "ling-a",
+   :reason :same-form,
+   :caller "a/f"}},
+ :case-2
+ {:out "ling-a holds a conflicting claim on a/h.",
+  :in
+  {:file "src/a.clj",
+   :qn "a/h",
+   :held-by "ling-a",
+   :reason :other,
+   :caller "a/g"}},
+ :case-3
+ {:out "ling-a is already editing  in src/a.clj.",
+  :in
+  {:file "src/a.clj", :qn nil, :held-by "ling-a", :reason :same-form}},
+ :case-4
+ {:out
+  "ling-a holds the whole of src/a.clj, so no span inside it is free. That claim is either pre-span or the file is not indexed.",
+  :in
+  {:file "src/a.clj",
+   :qn "a/h",
+   :held-by "ling-a",
+   :reason :file-claim}},
+ :case-5
+ {:out
+  "Warning: ling-b holds a/h in another worktree (overlap). Not blocking; the two edits meet at merge time.",
+  :in
+  {:file "src/a.clj",
+   :qn "a/h",
+   :held-by "ling-b",
+   :reason :cross-worktree,
+   :caller "a/f"}},
+ :case-6
+ {:out
+  "ling-a is changing the signature of , which rewrites its caller a/g. Wait for that claim, or take  instead.",
+  :in
+  {:file "src/a.clj",
+   :qn nil,
+   :held-by "ling-a",
+   :reason :signature-vs-caller,
+   :caller "a/g"}},
+ :case-7
+ {:out "ling-b is already editing  in src/b.clj.",
+  :in
+  {:file "src/b.clj", :qn nil, :held-by "ling-b", :reason :same-form}},
+ :case-8
+ {:out
+  "ling-a is changing the signature of a/g, which rewrites its caller . Wait for that claim, or take a/g instead.",
+  :in
+  {:file "src/b.clj",
+   :qn "a/g",
+   :held-by "ling-a",
+   :reason :signature-vs-caller}},
+ :case-9
+ {:out "ling-b holds a conflicting claim on a/f.",
+  :in
+  {:file "src/a.clj", :qn "a/f", :held-by "ling-b", :reason :other}}}
