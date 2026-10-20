@@ -1,0 +1,7 @@
+{:modes [:enforce :observe :enforce :observe],
+ :env
+ {"FOO" "x",
+  "BAR" "y",
+  "CLAUDE_SWARM_SLAVE_ID" "ling-1",
+  "HIVE_AGENT_CREDENTIAL" "cred"},
+ :claimant [:unknown :unknown]}
