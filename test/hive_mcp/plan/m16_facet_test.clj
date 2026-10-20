@@ -57,9 +57,21 @@
              [:title :string]
              [:depends-on {:optional true} [:vector {:gen/max 2} [:enum "a" "b" "c" "d"]]]]]]])
 
+(def ^:private MaybeCyclicPlan
+  "SmallPlan where half the draws close a cycle: the last step (the one
+   build-step-index keeps for its id) depends on itself. Random :depends-on
+   alone closed a cycle in under 10 of 100 plans, against a floor of 12."
+  [:and {:gen/schema [:tuple SmallPlan :boolean]
+         :gen/fmap (fn [[plan cycle?]]
+                     (if (and cycle? (seq (:steps plan)))
+                       (update-in plan [:steps (dec (count (:steps plan))) :depends-on]
+                                  (fn [ds] (conj (vec ds) (:id (peek (:steps plan))))))
+                       plan))}
+   SmallPlan])
+
 (hst/deftrifecta-from-schema detect-cycles-contract
   hive-mcp.plan.schema/detect-cycles
-  {:in [:cat SmallPlan]
+  {:in [:cat MaybeCyclicPlan]
    :out (out-schema 'hive-mcp.plan.schema 'detect-cycles)
    :rel (fn [[plan] out]
           (if (:valid out)
