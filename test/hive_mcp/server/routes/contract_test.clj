@@ -45,7 +45,7 @@
    :exempt {}})
 
 (deftest the-gate-is-not-vacuous
-  (is (= 41 (count (:universe (coverage/coverage {:paths batch-paths}))))))
+  (is (= 43 (count (:universe (coverage/coverage {:paths batch-paths}))))))
 
 (deftest every-routes-contract-generates-both-sides
   (doseq [ns-sym '[hive-mcp.server.routes hive-mcp.server.routes.async-ack
@@ -161,6 +161,35 @@
         h (mw/wrap-handler-retry (fn [_] (swap! n inc) (throw (IllegalStateException. "var not found"))))]
     (is (thrown? IllegalStateException (h {})))
     (is (= 3 @n))))
+
+(deftest-golden activity-touch-owns-its-throttle-and-port
+  "test/golden/hive-mcp/server/routes/activity-touch.edn"
+  ;; The throttle atom is reset on both sides and the registry write port is
+  ;; bound to a recording stub, so nothing reaches the swarm registry and no
+  ;; stamp leaks into another test. Times are reduced to their presence.
+  (let [touches (atom [])
+        rows {"ling-a" {:slave/id "ling-a" :slave/alive? true}
+              "ling-d" {:slave/id "ling-d" :slave/alive? false}}
+        touch (fn [caller] (some? (mw/touch-caller-activity! rows caller)))]
+    (try
+      (mw/reset-activity-throttle!)
+      (binding [mw/*touch-slave!* (fn [id updates]
+                                    (swap! touches conj [id (sort (keys updates))])
+                                    :written)]
+        (let [calls {:first (touch "ling-a:1")
+                     :throttled (touch "ling-a:2")
+                     :dead (touch "ling-d:1")
+                     :unknown (touch "nobody:1")
+                     :nil-caller (touch nil)}
+              after-reset [(mw/reset-activity-throttle!) (touch "ling-a:3")]
+              failing (binding [mw/*touch-slave!* (fn [_ _] (throw (ex-info "down" {})))]
+                        (mw/reset-activity-throttle!)
+                        (mw/touch-caller-activity! rows "ling-a:4"))]
+          {:calls calls
+           :after-reset after-reset
+           :failing-port failing
+           :touches @touches}))
+      (finally (mw/reset-activity-throttle!)))))
 
 ;; =============================================================================
 ;; routes: pure table helpers
