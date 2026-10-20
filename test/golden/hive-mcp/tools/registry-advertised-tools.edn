@@ -1,0 +1,116 @@
+{:case-0
+ {:out
+  [{:name "web", :src :base}
+   {:name "swarm", :src :addon}
+   {:name "carto", :src :dynamic, :deprecated true}
+   {:name "memory", :src :dynamic, :deprecated true}],
+  :in
+  ({:base [{:name "web", :src :base} {:name "swarm", :src :base}],
+    :dynamic
+    [{:name "memory", :src :dynamic}
+     {:name "carto", :src :dynamic}
+     {:name "swarm", :src :dynamic}],
+    :addon [{:name "swarm", :src :addon}],
+    :absorbed #{},
+    :excluded #{},
+    :visible #{"web" "swarm"}})},
+ :case-1
+ {:out
+  [{:name "web", :src :addon, :deprecated true}
+   {:name "carto", :src :addon, :deprecated true}],
+  :in
+  ({:base
+    [{:name "web", :src :base}
+     {:name "web", :src :base}
+     {:name "web", :src :base}],
+    :dynamic
+    [{:name "web", :src :dynamic} {:name "carto", :src :dynamic}],
+    :addon [{:name "carto", :src :addon} {:name "web", :src :addon}],
+    :absorbed #{"memory"},
+    :excluded #{"swarm"},
+    :visible #{"memory"}})},
+ :case-2
+ {:out [{:name "carto", :src :dynamic, :deprecated true}],
+  :in
+  ({:base [{:name "carto", :src :base}],
+    :dynamic
+    [{:name "carto", :src :dynamic} {:name "web", :src :dynamic}],
+    :addon [],
+    :absorbed #{"web"},
+    :excluded #{},
+    :visible #{"swarm"}})},
+ :case-3
+ {:out
+  [{:name "swarm", :src :base}
+   {:name "web", :src :base}
+   {:name "memory", :src :addon}],
+  :in
+  ({:base [{:name "swarm", :src :base} {:name "web", :src :base}],
+    :dynamic [],
+    :addon [{:name "memory", :src :addon}],
+    :absorbed #{},
+    :excluded #{},
+    :visible nil})},
+ :case-4
+ {:out
+  [{:name "swarm", :src :dynamic}
+   {:name "memory", :src :base}
+   {:name "carto", :src :base}],
+  :in
+  ({:base
+    [{:name "swarm", :src :base}
+     {:name "kg", :src :base}
+     {:name "memory", :src :base}
+     {:name "carto", :src :base}
+     {:name "swarm", :src :base}],
+    :dynamic
+    [{:name "kg", :src :dynamic}
+     {:name "swarm", :src :dynamic}
+     {:name "swarm", :src :dynamic}],
+    :addon [],
+    :absorbed #{"kg"},
+    :excluded #{},
+    :visible nil})},
+ :case-5
+ {:out
+  [{:name "carto", :src :addon, :deprecated true}
+   {:name "swarm", :src :dynamic, :deprecated true}],
+  :in
+  ({:base
+    [{:name "carto", :src :base}
+     {:name "carto", :src :base}
+     {:name "web", :src :base}],
+    :dynamic
+    [{:name "swarm", :src :dynamic} {:name "web", :src :dynamic}],
+    :addon [{:name "carto", :src :addon}],
+    :absorbed #{"web"},
+    :excluded #{"memory"},
+    :visible #{"memory" "kg"}})},
+ :case-6
+ {:out
+  [{:name "web", :src :base}
+   {:name "memory", :src :addon, :deprecated true}],
+  :in
+  ({:base [{:name "web", :src :base}],
+    :dynamic [],
+    :addon
+    [{:name "memory", :src :addon} {:name "swarm", :src :addon}],
+    :absorbed #{},
+    :excluded #{"swarm"},
+    :visible #{"carto" "web"}})},
+ :case-7
+ {:out
+  [{:name "web", :src :base, :deprecated true}
+   {:name "kg", :src :base}
+   {:name "memory", :src :base}
+   {:name "swarm", :src :addon, :deprecated true}],
+  :in
+  ({:base
+    [{:name "web", :src :base}
+     {:name "kg", :src :base}
+     {:name "memory", :src :base}],
+    :dynamic [],
+    :addon [{:name "swarm", :src :addon} {:name "carto", :src :addon}],
+    :absorbed #{"carto"},
+    :excluded #{},
+    :visible #{"memory" "kg"}})}}

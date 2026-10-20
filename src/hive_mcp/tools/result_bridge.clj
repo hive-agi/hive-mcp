@@ -89,3 +89,8 @@
 (m/=> try-result [:=> [:cat :keyword [:=> [:cat] Result]] Result])
 
 (m/=> result->mcp [:=> [:cat Result] McpResponse])
+
+(m/=> result->mcp-text [:=> [:cat Result] McpResponse])
+
+(m/=> keywordize-map [:=> [:cat [:maybe [:map-of [:or :string :keyword] :any]]]
+                      [:map-of :keyword :any]])

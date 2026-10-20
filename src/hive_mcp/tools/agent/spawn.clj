@@ -23,7 +23,9 @@
             [hive-mcp.channel.audience :as audience]
             [hive-mcp.agent.ling.headless-registry :as headless-registry]
             [hive-mcp.emacs.client :as emacs-client]
-            [hive-mcp.agent.grant :as grant]))
+            [hive-mcp.agent.grant :as grant]
+            [malli.core :as m]
+            [hive-mcp.tools.result-bridge :as rb]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -448,3 +450,76 @@
           (catch Exception e
             (log/error "Failed to spawn agent" {:type agent-type :error (ex-message e)})
             (mcp-error (str "Failed to spawn " (clojure.core/name agent-type) ": " (ex-message e))))))))))
+
+;;; =============================================================================
+;;; Contracts
+;;; =============================================================================
+
+(def SpawnParams
+  "agent spawn params: an open map. Every key is validated (or defaulted) by
+   the body, which answers an MCP error for a bad one, so all are optional."
+  [:maybe [:map
+           [:type {:optional true} [:maybe [:or :string :keyword]]]
+           [:name {:optional true} [:maybe :string]]
+           [:cwd {:optional true} [:maybe :string]]
+           [:task {:optional true} [:maybe :string]]
+           [:prompt {:optional true} [:maybe :string]]
+           [:parent {:optional true} [:maybe :string]]
+           [:_caller_id {:optional true} :any]]])
+
+(def ResumeBackend
+  "A valid resume request as the kebab map the headless backend reads."
+  [:map
+   [:run-id [:string {:min 1}]]
+   [:at {:optional true} [:or [:map [:seq nat-int?]] [:map [:turn nat-int?]]]]
+   [:prompt {:optional true} :string]])
+
+(def LoopOpts
+  "Ling loop opts read from a spawn request; absent keys omitted."
+  [:map
+   [:llm-retries {:optional true} nat-int?]
+   [:resume {:optional true} ResumeBackend]
+   [:chat-run-id {:optional true} [:string {:min 1}]]
+   [:turn-budget {:optional true} :map]])
+
+(def SpawnMode
+  "A spawn mode keyword (open: addons register more), or nil."
+  [:maybe :keyword])
+
+(def GrantDecision
+  "spawn-grant's answer: a grant (nil = share) or a refusal message."
+  [:or
+   [:map [:grant [:maybe :map]]]
+   [:map [:refused :string]]])
+
+(m/=> effective-parent [:=> [:cat SpawnParams] [:maybe :string]])
+
+(m/=> sandbox-decision [:=> [:cat :any] [:maybe [:or :boolean [:= :refused]]]])
+
+(m/=> normalize-sandbox [:=> [:cat :any] [:maybe :boolean]])
+
+(m/=> turn-budget-normalizer [:=> [:cat] [:maybe helpers/Port]])
+
+(m/=> turn-budget-opt [:=> [:cat [:maybe helpers/Port] :any] [:maybe :map]])
+
+(m/=> loop-opts
+      [:function
+       [:=> [:cat [:maybe :map]] LoopOpts]
+       [:=> [:cat [:maybe :map] [:maybe helpers/Port]] LoopOpts]])
+
+(m/=> normalize-resume [:=> [:cat :any] [:maybe ResumeBackend]])
+
+(m/=> chat-point-refusal
+      [:=> [:cat SpawnMode [:maybe :map] [:maybe [:set :keyword]]] [:maybe :string]])
+
+(m/=> provider-preflight-refusal
+      [:=> [:cat SpawnMode [:maybe :keyword]]
+       [:maybe [:map [:error :keyword] [:provider :keyword] [:fix :string]]]])
+
+(m/=> editor-preflight-refusal [:=> [:cat SpawnMode helpers/Port] [:maybe :string]])
+
+(m/=> spawn-brief [:=> [:cat SpawnParams] [:maybe :string]])
+
+(m/=> spawn-grant [:=> [:cat [:maybe :string] :any] GrantDecision])
+
+(m/=> handle-spawn [:=> [:cat SpawnParams] rb/McpResponse])

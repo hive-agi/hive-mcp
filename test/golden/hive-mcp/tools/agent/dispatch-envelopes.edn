@@ -1,0 +1,3 @@
+{:no-agent {:type "text", :text "agent_id is required", :isError true},
+ :no-prompt {:type "text", :text "prompt is required", :isError true},
+ :lookup [true true]}

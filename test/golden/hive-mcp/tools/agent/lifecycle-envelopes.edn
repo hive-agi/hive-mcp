@@ -1,0 +1,25 @@
+{:interrupt-blank
+ {:type "text",
+  :text "agent_id is required for interrupt",
+  :isError true},
+ :broadcast-empty
+ {:type "text", :text "prompt is required", :isError true},
+ :claims
+ {:type "text",
+  :text
+  "Failed to get claims: The swarm needs hive-agent, which is not on the classpath (hive-agent.swarm.logic/get-all-claims)",
+  :isError true},
+ :cleanup
+ {:type "text",
+  :text
+  "Cleanup failed: The swarm needs hive-datascript, which is not on the classpath (hive-datascript.swarm.queries/get-all-slaves)",
+  :isError true},
+ :collect-none
+ {:type "text",
+  :text "task_id or agent_id is required",
+  :isError true},
+ :collect-ghost
+ {:type "text",
+  :text
+  "No dispatched task recorded for agent ghost; pass task_id, or read the run with transcript report",
+  :isError true}}

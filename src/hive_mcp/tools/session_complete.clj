@@ -37,7 +37,9 @@
             [hive-spi.swarm.guards :as guards]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.embeddings.shared-gate :as embed-gate]))
+            [hive-mcp.embeddings.shared-gate :as embed-gate]
+            [malli.core :as m]
+            [hive-mcp.tools.result-bridge :as rb]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -364,3 +366,32 @@
 (def tools
   "REMOVED: Flat session_complete tool no longer exposed. Use consolidated `session` tool with `complete` command."
   [])
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def SessionConfig
+  "session_complete configuration; open so a caller may stash extra flags."
+  [:map [:auto-kanban-on-explore {:optional true} :any]])
+
+(def SessionCompleteParams
+  "handle-session-complete params, as the docstring lists them. commit_msg
+   is validated by the body (a missing or blank one answers an error), so it
+   is optional here: permissive in."
+  [:maybe [:map
+           [:commit_msg {:optional true} [:maybe :string]]
+           [:task_ids {:optional true} [:maybe [:sequential :string]]]
+           [:agent_id {:optional true} [:maybe :string]]
+           [:directory {:optional true} [:maybe :string]]]])
+
+(m/=> set-config! [:=> [:cat [:maybe :map]] SessionConfig])
+
+(m/=> get-config [:=> [:cat] SessionConfig])
+
+(m/=> register-handler! [:=> [:cat] [:= true]])
+
+(m/=> reset-registration! [:=> [:cat] [:maybe :boolean]])
+
+(m/=> handle-session-complete
+      [:=> [:cat SessionCompleteParams] rb/McpResponse])

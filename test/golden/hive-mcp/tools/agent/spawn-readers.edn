@@ -1,0 +1,17 @@
+{:turn-budget [{:initial 3} nil :refused],
+ :loop-opts
+ {:llm-retries 2,
+  :resume {:run-id "r", :at {:seq 1}},
+  :chat-run-id "c"},
+ :bad-type
+ {:type "text",
+  :text "type must be one of: [\"ling\"]",
+  :isError true},
+ :normalize-sb [true :refused],
+ :sandbox [nil true false true false :refused :refused],
+ :grant-share {:grant nil},
+ :editor [nil true],
+ :brief-refused :refused,
+ :resume [nil {:run-id "r", :prompt "p"}],
+ :provider nil,
+ :loop-bad :refused}

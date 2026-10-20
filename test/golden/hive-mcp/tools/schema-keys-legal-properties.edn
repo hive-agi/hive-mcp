@@ -1,0 +1,12 @@
+{:case-0 {:out {}, :in ({})},
+ :case-1 {:out {}, :in (#:bad{:ns -1})},
+ :case-2 {:out {}, :in ({})},
+ :case-3 {:out {}, :in ({"has space" -1})},
+ :case-4
+ {:out {"s.t" -15, :foo_ 0, :ok -1, :a-b 1},
+  :in ({"s.t" -15, :foo_ 0, :ok -1, :a-b 1})},
+ :case-5 {:out {:ok -1, "s.t" 0}, :in ({:ok -1, "s.t" 0})},
+ :case-6 {:out {:foo_ 0}, :in ({:foo_ 0})},
+ :case-7
+ {:out {:foo_ -32, :ok -4, :a-b -3},
+  :in ({:foo_ -32, :ok -4, :a-b -3})}}

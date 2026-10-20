@@ -1,0 +1,9 @@
+{:case-0 {:out nil, :in ({})},
+ :case-1
+ {:out "write tests", :in ({:task "write tests", :prompt " "})},
+ :case-2 {:out nil, :in ({})},
+ :case-3 {:out "fix the bug", :in ({:prompt "fix the bug"})},
+ :case-4 {:out "write tests", :in ({:task "write tests"})},
+ :case-5 {:out nil, :in ({})},
+ :case-6 {:out nil, :in ({})},
+ :case-7 {:out nil, :in ({})}}

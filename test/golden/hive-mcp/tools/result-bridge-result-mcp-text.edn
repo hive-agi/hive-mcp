@@ -1,0 +1,20 @@
+{:case-0 {:out {:type "text", :text "0"}, :in ({:ok 0})},
+ :case-1
+ {:out {:type "text", :text "nope", :isError true},
+  :in ({:error :y/broken, :message "nope"})},
+ :case-2
+ {:out
+  {:type "text",
+   :text "nope (clojure.lang.ExceptionInfo)",
+   :isError true},
+  :in
+  ({:error :x/failed,
+    :message "nope",
+    :class "clojure.lang.ExceptionInfo"})},
+ :case-3
+ {:out {:type "text", :text "nope", :isError true},
+  :in ({:error :x/failed, :message "nope"})},
+ :case-4 {:out {:type "text", :text "{:a -2}"}, :in ({:ok {:a -2}})},
+ :case-5 {:out {:type "text", :text "-3"}, :in ({:ok -3})},
+ :case-6 {:out {:type "text", :text ""}, :in ({:ok ""})},
+ :case-7 {:out {:type "text", :text "1"}, :in ({:ok 1})}}

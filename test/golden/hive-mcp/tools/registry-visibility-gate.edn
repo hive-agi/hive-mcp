@@ -1,0 +1,7 @@
+{:gated
+ [{:name "a"}
+  {:name "b", :deprecated true}
+  {:name "c", :deprecated true}],
+ :ungated [{:name "a"} {:name "b", :deprecated true} {:name "c"}],
+ :empty [{:name "a"} {:name "b", :deprecated true} {:name "c"}],
+ :none []}
