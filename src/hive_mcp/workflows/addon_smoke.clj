@@ -25,7 +25,8 @@
             [clojure.set :as set]
             [hive-spi.workflow.strategy :as spi]
             [hive-dsl.result :as result]
-            [hive-mcp.addons.core :as addons]))
+            [hive-mcp.addons.core :as addons]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -48,6 +49,8 @@
   []
   (some? (io/resource "META-INF/hive-addons/hive-workflows-strategy.edn")))
 
+(m/=> addons-on-classpath? [:=> [:cat] :boolean])
+
 (defn addons-initialized?
   "True when every id in IDS (default `required-addon-ids`) is :active in the
    addon registry of THIS JVM. A JVM can carry the manifests on its classpath
@@ -56,6 +59,11 @@
   ([] (addons-initialized? required-addon-ids))
   ([ids]
    (every? #(= :active (:state (addons/get-addon-entry %))) ids)))
+
+(m/=> addons-initialized?
+  [:function
+   [:=> [:cat] :boolean]
+   [:=> [:cat [:maybe [:or [:set :string] [:sequential :string]]]] :boolean]])
 
 (defn discovered-addons
   "Scan the classpath for META-INF/hive-addons manifests and project down to the
@@ -71,6 +79,10 @@
                         (:manifests scan))
      :scan-total  (count (:manifests scan))
      :scan-errors (:errors scan)}))
+
+(m/=> discovered-addons
+  [:=> [:cat]
+   [:map [:by-id [:map-of :string :map]] [:scan-total [:int {:min 0}]] [:scan-errors [:sequential :any]]]])
 
 (defn check
   "Run the full hive-workflows addon boot smoke-check against the live
@@ -116,6 +128,19 @@
                                 (pr-str missing) (pr-str unresolved)
                                 (pr-str missing-meth) (count scan-errors)))}))
 
+(m/=> check
+  [:=> [:cat]
+   [:map
+    [:ok? :boolean]
+    [:present [:set :string]]
+    [:missing-addons [:set :string]]
+    [:unresolved [:set :string]]
+    [:methods [:set :keyword]]
+    [:missing-methods [:set :keyword]]
+    [:scan-total [:int {:min 0}]]
+    [:scan-errors [:sequential :any]]
+    [:report :string]]])
+
 (def expected-strategy-classes
   "Required method -> the hive-workflows.method strategy record class name the
    registry must resolve it to."
@@ -149,6 +174,13 @@
            :strategy-classes-match? classes-match?
            :routed?                 (= :hit (:seam v))
            :routed-plan-id          (:plan-id v)})))))
+
+(m/=> check-ir-seam
+  [:=> [:cat]
+   [:or
+    [:map [:ok? [:= false]] [:ir-loadable? [:= false]]]
+    [:map [:ok? :boolean] [:ir-loadable? [:= true]] [:strategy-classes-match? :boolean]
+     [:routed? :boolean] [:routed-plan-id :any]]]])
 
 (comment
   ;; Run against the LIVE server (nREPL 7910), which has the local classpath:

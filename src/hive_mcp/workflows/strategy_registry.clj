@@ -15,7 +15,8 @@
      same method + different owner -> :wf/registry-conflict warn-log, first-write-wins"
   (:require [hive-mcp.workflows.strategy :as strategy :refer [WorkflowStrategyEntry]]
             [hive-dsl.adt :refer [adt-case]]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -31,6 +32,22 @@
 (defonce ^:private state
   (atom {:by-id    {}    ;; :method -> {:strategy rec :owner kw :registered-at inst}
          :by-owner {}})) ;; owner-kw -> #{:method}
+
+(def Strategy
+  "An IDispatchStrategy. Generates the core Noop."
+  [:fn {:gen/fmap (fn [_] (strategy/->NoopDispatchStrategy)) :gen/schema :nil
+        :error/message "must satisfy IDispatchStrategy"}
+   #(strategy/dispatch-strategy? %)])
+
+(def Outcome
+  "A registration outcome."
+  [:enum :ok :replaced :conflict])
+
+(def Entry
+  "A stored registry entry."
+  [:map [:strategy :any] [:owner :any]
+   [:registered-at [:fn {:gen/fmap (fn [_] (java.time.Instant/now)) :gen/schema :nil}
+                    #(instance? java.time.Instant %)]]])
 
 ;; =============================================================================
 ;; Registration
@@ -67,6 +84,8 @@
                  :rejected-owner owner}))
     @outcome))
 
+(m/=> register! [:=> [:cat :any :any [:map [:strategy :any]]] Outcome])
+
 (defn deregister-by-owner!
   "Remove every strategy registered by `owner`. Returns set of removed methods."
   [owner]
@@ -78,6 +97,8 @@
                {:by-id    (apply dissoc by-id ids)
                 :by-owner (dissoc by-owner owner)})))
     @removed))
+
+(m/=> deregister-by-owner! [:=> [:cat :any] [:set :any]])
 
 ;; =============================================================================
 ;; Hook-key facade — routed by addons.core "wf" branch
@@ -107,6 +128,8 @@
                   :ignored)))
           (or entries []))))
 
+(m/=> register-by-key! [:=> [:cat :any :any :any] [:vector [:enum :ok :replaced :conflict :ignored]]])
+
 ;; =============================================================================
 ;; Resolvers — ALWAYS return an IDispatchStrategy (LSP)
 ;; =============================================================================
@@ -115,6 +138,8 @@
   "Return the registered entry for a method, or nil."
   [method]
   (get-in @state [:by-id method]))
+
+(m/=> lookup [:=> [:cat :any] [:maybe Entry]])
 
 (defn lookup-strategy-or-default
   "Return the IDispatchStrategy for `method`, else the :wf/default entry, else a
@@ -125,10 +150,17 @@
        (some-> (lookup default-id) :strategy)
        (strategy/->NoopDispatchStrategy))))
 
+(m/=> lookup-strategy-or-default
+  [:function
+   [:=> [:cat] Strategy]
+   [:=> [:cat :any] Strategy]])
+
 (defn all-methods
   "Sorted vector of all registered method keywords."
   []
   (vec (sort (keys (:by-id @state)))))
+
+(m/=> all-methods [:=> [:cat] [:vector :any]])
 
 (defn snapshot
   "Immutable snapshot of the registry. :version is a hash callers can stamp."
@@ -136,10 +168,16 @@
   (let [s @state]
     {:version (hash s) :data s}))
 
+(m/=> snapshot
+  [:=> [:cat]
+   [:map [:version :int] [:data [:map [:by-id [:map-of :any Entry]] [:by-owner [:map-of :any [:set :any]]]]]]])
+
 (defn reset-for-test!
   "Clear the registry. Test-only."
   []
   (reset! state {:by-id {} :by-owner {}}))
+
+(m/=> reset-for-test! [:=> [:cat] [:map [:by-id [:map-of {:max 0} :any :any]] [:by-owner [:map-of {:max 0} :any :any]]]])
 
 ;; =============================================================================
 ;; Bootstrap: seed :wf/default Noop before the first addon registration arrives
