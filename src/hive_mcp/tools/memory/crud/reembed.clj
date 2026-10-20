@@ -89,11 +89,23 @@
                            :reembedded true)))))))
 
 (defn- batch-op-result
+  "Reembed one id. A failure is never swallowed: it is logged at ERROR with
+   the entry's accumulated attempt count and cause, stamped onto the parked
+   record (so a record stuck in the outbox says how long and why), and
+   reported as :status :error with the message. The record stays parked."
   [store id]
-  (rescue-log (str "Batch-reembed op " id) {:id id :status :error}
+  (try
     (if (reembed-one! store id)
       {:id id :status :reembedded}
-      {:id id :status :not-found})))
+      {:id id :status :not-found})
+    (catch Exception e
+      (let [parked (deferred/record-failure! id e (now-iso))]
+        (log/error "Reembed failed; entry stays in the outbox:" id
+                   "attempts:" (:deferred/attempts parked)
+                   "first-failed-at:" (:deferred/first-failed-at parked)
+                   "cause:" (ex-message e))
+        {:id id :status :error :error (ex-message e)
+         :attempts (:deferred/attempts parked)}))))
 
 (defn- tally-statuses
   [results]
@@ -119,11 +131,19 @@
 (defn drain-pending!
   "Housekeeping entry point: reembed every parked id once, so an entry whose
    embed failed is re-vectorized without anyone calling memory reembed. A
-   failure leaves the id parked for the next sweep. Returns the tally."
+   failure leaves the id parked for the next sweep and is logged at ERROR
+   (the per-id cause is logged by `batch-op-result`; the sweep logs the
+   tally and how many entries are still unvectorized). Returns the tally,
+   with :stuck (ids still parked after this sweep) when any remain."
   []
   (let [ids (deferred/pending-ids)]
     (if (empty? ids)
       {:total 0 :reembedded 0 :not-found 0 :errors 0}
       (let [store (mem-proto/get-store)
-            results (mapv #(batch-op-result store %) ids)]
-        (tally-statuses results)))))
+            results (mapv #(batch-op-result store %) ids)
+            tally (tally-statuses results)
+            stuck (vec (keep #(when (= :error (:status %)) (:id %)) results))]
+        (when (seq stuck)
+          (log/error "Reembed sweep left" (count stuck) "of" (:total tally)
+                     "entries unvectorized; they stay in the outbox:" stuck))
+        (cond-> tally (seq stuck) (assoc :stuck stuck))))))

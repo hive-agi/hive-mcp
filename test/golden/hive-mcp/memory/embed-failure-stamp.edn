@@ -1,0 +1,13 @@
+{:first-failure
+ {:id "a",
+  :deferred/attempts 1,
+  :deferred/first-failed-at "t1",
+  :deferred/last-failed-at "t1",
+  :deferred/last-error
+  {:error :embedder/embed-failed, :message "boom"}},
+ :repeat-failure
+ {:id "a",
+  :deferred/attempts 3,
+  :deferred/first-failed-at "t0",
+  :deferred/last-failed-at "t9",
+  :deferred/last-error {:error :embedder/no-provider, :message "cold"}}}

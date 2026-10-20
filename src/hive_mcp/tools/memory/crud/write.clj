@@ -287,7 +287,13 @@
    to the local outbox BEFORE its id is acknowledged; the housekeeping drain
    reembeds it into that slot. Other store failures are never misreported as
    deferred writes. The embed runs on the :interactive lane of the shared
-   provider gate, ahead of batch callers."
+   provider gate, ahead of batch callers.
+
+   A transient embed failure (provider not warm after a restart, one dropped
+   call) is retried a few times in place before the entry is parked
+   (`deferred/call-with-embed-retry`). A parked entry is never silent: the
+   failure is logged at ERROR with its cause and attempt count, and the cause
+   is recorded on the outbox record for the response and the drain."
   [{:keys [type content tags-with-scope content-hash duration-str
            expires project-id abstraction-level knowledge-gaps store-key]
     :or {store-key :default}}]
@@ -302,20 +308,24 @@
                   (plans/count-plan-steps content)
                   (assoc :steps-count (plans/count-plan-steps content)))
                 base-entry)
-        park! #(deferred/park! (deferred/with-store-key entry store-key))]
-    (try
-      (let [result (binding [embed-gate/*lane* :interactive]
-                     (with-resilience
-                       (mem-proto/add-entry! (mem-proto/get-store store-key) entry)))]
-        (if (and (map? result)
-                 (deferred/embedding-failure?
-                   (ex-info "Embedding result" {:result result})))
-          (park!)
-          result))
-      (catch Exception e
-        (if (deferred/embedding-failure? e)
-          (park!)
-          (throw e))))))
+        park! (fn [failure attempts]
+                (log/error "Embedding failed; entry parked for reembed (NOT vectorized):"
+                           (:id entry) "type:" type "store:" store-key
+                           "attempts:" attempts "cause:" (pr-str failure))
+                (deferred/park!
+                  (deferred/with-failure
+                    (deferred/with-store-key entry store-key)
+                    failure (str (java.time.Instant/now)))))
+        {:keys [ok failure attempts]}
+        (binding [embed-gate/*lane* :interactive]
+          (deferred/call-with-embed-retry
+            #(with-resilience
+               (mem-proto/add-entry! (mem-proto/get-store store-key) entry))
+            deferred/default-retry
+            #(Thread/sleep (long %))))]
+    (if failure
+      (park! failure attempts)
+      ok)))
 
 (def ^:private ^:const read-after-write-attempts 6)
 (def ^:private ^:const read-after-write-base-ms 40)
@@ -356,7 +366,8 @@
 
    A deferred entry (embed failed, parked in the outbox) is answered from
    its outbox record; its :kg-outgoing link is amended into that record so
-   the drain stores it with the entry."
+   the drain stores it with the entry. The response names the cause as
+   `:embedding_error` so the caller sees why the entry is not searchable yet."
   [entry-id kg-params project-id agent-id
    {:keys [tags-with-scope type knowledge-gaps store-key]
     :or {store-key :default}}]
@@ -387,7 +398,8 @@
       ;; cannot disagree with what was stored.
       (let [requested (type-registry/requested-type-of tags-with-scope)]
         (mcp-json (cond-> (fmt/entry->json-alist created)
-                    pending (assoc :embedding_deferred true :reembed_id entry-id)
+                    pending (assoc :embedding_deferred true :reembed_id entry-id
+                                   :embedding_error (some-> pending :deferred/last-error :error str))
                     (seq edge-ids) (assoc :kg_edges_created edge-ids)
                     (seq edge-errors) (assoc :kg_edge_errors edge-errors)
                     requested
