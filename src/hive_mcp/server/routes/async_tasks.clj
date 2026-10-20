@@ -154,10 +154,32 @@
   []
   (vec (remove (comp st/terminal? :state) (list-tasks))))
 
+(defn- update-row!
+  "Apply `f` to field `k` of `task-id`'s row, atomically; no-op for a row
+   that is gone.
+
+   Atomic because a row has two writers: `submit!` attaches the handle on the
+   submitting thread while the pool thread records :task/running. With a
+   bget/bput! read-modify-write each wrote back the row it had read, so the
+   later write erased the other's field: a running task listed with no handle
+   (cancel! answered :cancel/not-started and never interrupted it) or put
+   back to :task/queued (hive-mcp PR #447 CI)."
+  [task-id k f]
+  (bounded-swap! tasks
+                 (fn [m]
+                   (if (get m task-id)
+                     (update-in m [task-id :data k] f)
+                     m))))
+
 (defn- set-state!
   [task-id state]
-  (when-let [e (bget tasks task-id)]
-    (bput! tasks task-id (assoc e :state state))))
+  (update-row! task-id :state (constantly state)))
+
+(defn- start-state!
+  "Record that the body started. Only a :task/queued row is promoted, so a
+   cancel that landed first is not overwritten."
+  [task-id]
+  (update-row! task-id :state #(if (= :task/queued %) :task/running %)))
 
 ;; =============================================================================
 ;; Lifecycle
@@ -201,6 +223,10 @@
    `lane` (see `async-task.lane`) picks the pool; omitted or unknown, it is
    `lane/default-lane`, the pool every async call used before lanes existed.
 
+   The handle and the :task/running state are written by different threads,
+   each as an atomic update of its own field (`update-row!`), so neither
+   write can erase the other.
+
    Throws `RejectedExecutionException` when the lane's pool is saturated. The
    row this function wrote a moment earlier is removed first, because a
    registry that lists a queued task nobody will ever run is worse than no row
@@ -219,7 +245,7 @@
           handle (try
                    (-run (runner-for lane)
                          (fn []
-                           (set-state! task-id :task/running)
+                           (start-state! task-id)
                            (try
                              (body)
                              (finally
@@ -229,8 +255,7 @@
                      (log/warn "async task refused: pool saturated"
                                {:task-id task-id :tool tool :lane lane})
                      (throw e)))]
-      (when-let [e (bget tasks task-id)]
-        (bput! tasks task-id (assoc e :handle-obj handle)))
+      (update-row! task-id :handle-obj (constantly handle))
       handle)))
 
 (defn cancel!
