@@ -1,0 +1,2 @@
+{:default {:tag-filter "tags like \"%kanban%\"", :page-cap 10000},
+ :capped {:tag-filter "tags like \"%kanban%\"", :page-cap 5}}
