@@ -15,7 +15,8 @@
             [hive-dsl.adt                 :refer [defadt adt-case]]
             [clojure.data.json            :as json]
             [taoensso.timbre              :as log]
-            [hive-dsl.result              :refer [rescue]]))
+            [hive-dsl.result              :refer [rescue]]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -223,3 +224,19 @@
       (adt-case PollStrategy (select-strategy)
                 :strategy/emacs (emacs-poll-loop task_id timeout-ms start-time)
                 :strategy/jvm   (jvm-poll-loop   task_id timeout-ms start-time)))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def ChatPoint
+  [:map [:run-id {:optional true} [:maybe :string]]
+   [:tip {:optional true} [:maybe :int]]
+   [:resumable? {:optional true} :any]])
+
+(def ChatPointResponse
+  [:map [:run_id [:maybe :string]] [:tip [:maybe :int]] [:resumable :boolean]])
+
+(m/=> chat-point->response [:=> [:cat [:maybe ChatPoint]] ChatPointResponse])
+
+(m/=> handle-swarm-collect [:=> [:cat [:maybe :map]] core/SwarmResponse])

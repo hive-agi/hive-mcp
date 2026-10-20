@@ -5,7 +5,8 @@
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.project.scope :as project-scope]
             [clojure.core.async :as async :refer [go-loop <!]]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -39,6 +40,39 @@
   "Remove a ling from the registry."
   [slave-id]
   (ds/remove-slave! slave-id))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def LingInfo
+  [:map [:name {:optional true} :any] [:presets {:optional true} :any]
+   [:cwd {:optional true} [:maybe :string]] [:spawned-at {:optional true} :any]])
+
+(def RegisterOpts
+  [:maybe [:map [:name {:optional true} :any]
+           [:presets {:optional true} [:maybe [:sequential :any]]]
+           [:cwd {:optional true} [:maybe :string]]
+           [:kanban-task-id {:optional true} [:maybe :string]]]])
+
+(def SyncState
+  [:map [:running :boolean] [:subscriptions [:sequential :any]]])
+
+;; Boundary writes into the DataScript swarm registry; the answers are the
+;; store's own (connection / transaction report), which callers ignore.
+(m/=> clear-registry! [:=> [:cat] :any])
+
+(m/=> register-ling! [:=> [:cat :string RegisterOpts] :any])
+
+(m/=> unregister-ling! [:=> [:cat :string] :any])
+
+(m/=> get-available-lings [:=> [:cat] [:map-of :any LingInfo]])
+
+(m/=> registry-sync-running? [:=> [:cat] [:maybe :boolean]])
+
+(m/=> start-registry-sync! [:=> [:cat] SyncState])
+
+(m/=> stop-registry-sync! [:=> [:cat] :nil])
 
 (defn get-available-lings
   "Get all registered lings as {slave-id {:name, :presets, :cwd, :spawned-at}}."

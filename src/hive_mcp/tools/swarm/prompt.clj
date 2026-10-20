@@ -5,7 +5,8 @@
             [hive-mcp.channel.core :as channel]
             [clojure.data.json :as json]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -64,6 +65,16 @@
 
         :else
         (core/mcp-error (str "Error: " error))))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> build-lazy-preset-header [:=> [:cat [:maybe [:sequential :string]]] [:maybe :string]])
+
+(m/=> handle-swarm-pending-prompts [:=> [:cat :any] core/SwarmResponse])
+
+(m/=> handle-swarm-respond-prompt [:=> [:cat [:maybe :map]] core/SwarmResponse])
 
 (def lazy-instructions
   "Static instruction template for lazy preset loading headers."
