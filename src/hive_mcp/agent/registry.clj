@@ -59,16 +59,31 @@
     (swap! registry assoc name (assoc tool :handler handler)))
   (log/info "Registered" (count tools) "tools for agent delegation"))
 
+(def ^:private open-schema-hint
+  " Compact schema: only the shared parameters are listed; each command accepts its own. Use command='help' to list them.")
+
+(defn- open-consolidated
+  "A consolidated root routes many commands, each reading params the root
+   does not list. Opens its inputSchema (`additionalProperties true`) so a
+   ling can send them. Any other tool is returned unchanged. Pure."
+  [tool]
+  (cond-> tool
+    (:consolidated tool)
+    (-> (assoc-in [:inputSchema :additionalProperties] true)
+        (update :description str open-schema-hint))))
+
 (defn get-schemas
   "Get tool schemas for specified tool names (or all if nil). Property keys
    are provider-legal (`schema-keys/legal-tool`): these schemas go straight
-   to an LLM provider as a ling's tool list."
+   to an LLM provider as a ling's tool list. A consolidated root comes back
+   open (`open-consolidated`)."
   [tool-names]
   (let [all-tools @registry
         selected (if tool-names
                    (select-keys all-tools tool-names)
                    all-tools)]
-    (mapv #(schema-keys/legal-tool (dissoc % :handler)) (vals selected))))
+    (mapv #(-> % (dissoc :handler) open-consolidated schema-keys/legal-tool)
+          (vals selected))))
 
 (defn get-tool
   "Get a tool by name from the registry."

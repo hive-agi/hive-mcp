@@ -18,73 +18,14 @@
             [clojure.data.json :as json]
             [hive-mcp.vectordb.facade :as facade]
             [hive-mcp.protocols.memory :as proto]
-            [hive-mcp.chroma.helpers :as h]
             [hive-test.mutation :as mutation]
-            [hive-test.golden :as golden]))
+            [hive-test.golden :as golden]
+            [hive-mcp.memory.ids :as ids]
+            [hive-mcp.test.stub.memory-store :as mem-stub]))
 
 ;; =============================================================================
 ;; Mock In-Memory Store (backend-agnostic test harness)
 ;; =============================================================================
-
-(defn- make-mock-store
-  "Create an in-memory IMemoryStore for testing tag filtering.
-   Stores entries in an atom, supports tag filtering via substring match
-   on comma-separated tags (same semantics as Milvus LIKE and in-memory
-   post-filter)."
-  []
-  (let [store-data (atom {})]
-    (reify proto/IMemoryStore
-      (connect! [_ _] nil)
-      (disconnect! [_] nil)
-      (connected? [_] true)
-      (health-check [_] {:healthy? true})
-
-      (add-entry! [_ entry]
-        (let [id (:id entry)]
-          (swap! store-data assoc id entry)
-          id))
-
-      (get-entry [_ id]
-        (when-let [e (get @store-data id)]
-          (update e :tags #(if (string? %) (str/split % #",") %))))
-
-      (update-entry! [_ id updates]
-        (swap! store-data update id merge updates))
-
-      (delete-entry! [_ id]
-        (swap! store-data dissoc id))
-
-      (query-entries [_ opts]
-        (let [{:keys [type project-id tags exclude-tags limit]
-               :or {limit 100}} opts]
-          (->> (vals @store-data)
-               (filter (fn [e]
-                         (let [etags (if (string? (:tags e))
-                                       (str/split (:tags e) #",")
-                                       (or (:tags e) []))]
-                           (and
-                            (or (nil? type) (= type (:type e)))
-                            (or (nil? project-id) (= project-id (:project-id e)))
-                            (or (nil? tags) (empty? tags)
-                                (every? (fn [t]
-                                          (some #(str/includes? % t) etags))
-                                        tags))
-                            (or (nil? exclude-tags) (empty? exclude-tags)
-                                (not-any? (fn [t]
-                                            (some #(str/includes? % t) etags))
-                                          exclude-tags))))))
-               (map (fn [e]
-                      (update e :tags #(if (string? %) (str/split % #",") %))))
-               (take limit)
-               vec)))
-
-      (search-similar [_ _ _] [])
-      (supports-semantic-search? [_] false)
-      (cleanup-expired! [_] nil)
-      (entries-expiring-soon [_ _ _] [])
-      (find-duplicate [_ _ _ _] nil)
-      (store-status [_] {:backend "mock-memory"})
-      (reset-store! [_] (reset! store-data {})))))
 
 ;; =============================================================================
 ;; Fixtures
@@ -94,19 +35,11 @@
 
 (defn with-mock-store-fixture
   "Set up in-memory mock store for each test.
-   Saves and restores the active store so tests don't clobber the real backend."
+   Saves and restores the active store so tests don't clobber the real backend.
+   The store is the contract-only memory stub: it implements IMemoryStore over
+   an atom and names no backend."
   [f]
-  (let [mock (make-mock-store)
-        had-store? (proto/store-set?)
-        original-store (when had-store?
-                         (try (proto/get-store) (catch Exception _ nil)))]
-    (proto/set-store! mock)
-    (try
-      (f)
-      (finally
-        (if original-store
-          (proto/set-store! original-store)
-          (proto/reset-active-store!))))))
+  (mem-stub/with-stub-store f))
 
 (use-fixtures :each with-mock-store-fixture)
 
@@ -129,9 +62,9 @@
                  :title title
                  :status status
                  :priority priority
-                 :created (h/iso-timestamp)}
-        tags (str/join "," ["kanban" status (str "priority-" priority)
-                            (str "scope:project:" project-id)])]
+                 :created (ids/iso-timestamp)}
+        tags ["kanban" status (str "priority-" priority)
+              (str "scope:project:" project-id)]]
     {:id id
      :type "note"
      :content (json/write-str content)
@@ -146,7 +79,7 @@
   {:id id
    :type "note"
    :content "Regular non-kanban note"
-   :tags (str/join "," ["general" (str "scope:project:" project-id)])
+   :tags ["general" (str "scope:project:" project-id)]
    :duration "medium"
    :project-id project-id})
 
@@ -213,7 +146,7 @@
   (testing "Exclude tags removes matching entries"
     (let [kanban-entry (make-kanban-entry :title "Kanban task")
           carto-entry (assoc (make-non-kanban-entry)
-                             :tags (str/join "," ["carto" "scope:project:test-project"]))]
+                             :tags ["carto" "scope:project:test-project"])]
       (index-entries! [kanban-entry carto-entry])
 
       (let [results (facade/query-entries
@@ -221,6 +154,8 @@
                      :project-id "test-project"
                      :exclude-tags ["carto"]
                      :limit 100)]
+        (is (some #(= (:id kanban-entry) (:id %)) results)
+            "Non-excluded entries are still returned")
         (is (not (some #(some #{"carto"} (:tags %)) results))
             "Excluded tag entries must not appear")))))
 
@@ -277,23 +212,6 @@
 ;; =============================================================================
 ;; Tag serialization roundtrip
 ;; =============================================================================
-
-(deftest tag-join-split-roundtrip
-  (testing "Tags survive join→split roundtrip"
-    (let [tags ["kanban" "todo" "priority-medium" "scope:project:funeraria"]]
-      (is (= tags (h/split-tags (h/join-tags tags)))
-          "join-tags → split-tags must be identity"))))
-
-(deftest tag-join-preserves-all-tags
-  (testing "join-tags doesn't lose tags"
-    (let [tags ["kanban" "doing" "priority-high" "scope:project:hive-mcp"
-                "agent:coordinator"]
-          joined (h/join-tags tags)]
-      (is (str/includes? joined "kanban"))
-      (is (str/includes? joined "doing"))
-      (is (str/includes? joined "priority-high"))
-      (is (str/includes? joined "scope:project:hive-mcp"))
-      (is (str/includes? joined "agent:coordinator")))))
 
 ;; =============================================================================
 ;; In-memory tag filtering (kanban's filter-kanban-by-tags)
