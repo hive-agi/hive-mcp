@@ -57,9 +57,41 @@
              [:title :string]
              [:depends-on {:optional true} [:vector {:gen/max 2} [:enum "a" "b" "c" "d"]]]]]]])
 
+(def ^:private CyclicPlan
+  "SmallPlan with the cycle produced deliberately for about half the draws.
+   Drawn independently, random depends-on edges over four ids close a cycle
+   for only about 11% of plans, so the :cycle variant of detect-cycles-contract
+   starved below its floor on a seed-dependent share of runs. A boolean is
+   generated beside the plan; when set and the plan has steps, the steps take
+   the unique ids a, b, c, d by position and each depends on its successor,
+   the last on the first, so the path closes back to its start. Otherwise the
+   plan stays as SmallPlan drew it."
+  [:map
+   {:gen/schema [:tuple SmallPlan :boolean]
+    :gen/fmap   (fn [[plan close?]]
+                  (let [n   (count (:steps plan))
+                        ids ["a" "b" "c" "d"]]
+                    (if (and close? (pos? n))
+                      (update plan :steps
+                              (fn [steps]
+                                (vec (map-indexed
+                                      (fn [i step]
+                                        (assoc step
+                                               :id (nth ids i)
+                                               :depends-on [(nth ids (mod (inc i) n))]))
+                                      steps))))
+                      plan)))}
+   [:id :string]
+   [:title :string]
+   [:steps [:vector {:gen/max 4}
+            [:map
+             [:id [:enum "a" "b" "c" "d"]]
+             [:title :string]
+             [:depends-on {:optional true} [:vector {:gen/max 2} [:enum "a" "b" "c" "d"]]]]]]])
+
 (hst/deftrifecta-from-schema detect-cycles-contract
   hive-mcp.plan.schema/detect-cycles
-  {:in [:cat SmallPlan]
+  {:in [:cat CyclicPlan]
    :out (out-schema 'hive-mcp.plan.schema 'detect-cycles)
    :rel (fn [[plan] out]
           (if (:valid out)

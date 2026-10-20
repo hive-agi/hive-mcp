@@ -1,44 +1,47 @@
-{:case-0
- {:out {:valid true},
-  :in
-  ({:id "",
-    :title "",
-    :steps [{:id "b", :title "", :depends-on ["a"]}]})},
+{:case-0 {:out {:valid true}, :in ({:id "", :title "", :steps []})},
  :case-1
  {:out {:valid false, :cycle "Circular dependency detected"},
   :in
-  ({:id "6",
-    :title "W",
-    :steps
-    [{:id "c", :title "F"}
-     {:id "d", :title "", :depends-on ["d"]}
-     {:id "a", :title ""}]})},
+  ({:id "",
+    :title "M",
+    :steps [{:id "a", :title "E", :depends-on ["a"]}]})},
  :case-2
+ {:out {:valid false, :cycle "Circular dependency detected"},
+  :in
+  ({:id "sJ",
+    :title "5U",
+    :steps
+    [{:id "a", :title "A7", :depends-on ["b"]}
+     {:id "b", :title "7", :depends-on ["c"]}
+     {:id "c", :title "87", :depends-on ["d"]}
+     {:id "d", :title "9", :depends-on ["a"]}]})},
+ :case-3
+ {:out {:valid false, :cycle "Circular dependency detected"},
+  :in
+  ({:id "",
+    :title "Gi4",
+    :steps [{:id "a", :title "fgU", :depends-on ["a"]}]})},
+ :case-4
+ {:out {:valid false, :cycle "Circular dependency detected"},
+  :in
+  ({:id "3qE",
+    :title "o",
+    :steps
+    [{:id "d", :title ""}
+     {:id "b", :title "Kb1", :depends-on ["b" "a"]}
+     {:id "c", :title "", :depends-on []}]})},
+ :case-5
  {:out {:valid true},
   :in
   ({:id "",
-    :title "3",
+    :title "hZ21u",
     :steps
-    [{:id "a", :title ""}
-     {:id "c", :title "0a", :depends-on ["b"]}]})},
- :case-3
- {:out {:valid true},
-  :in
-  ({:id "4",
-    :title "",
-    :steps
-    [{:id "a", :title ""}
-     {:id "c", :title "0", :depends-on ["a"]}
-     {:id "b", :title ""}]})},
- :case-4
- {:out {:valid true},
-  :in
-  ({:id "24b7",
-    :title "m2Z2",
-    :steps [{:id "c", :title "CeJ", :depends-on []}]})},
- :case-5
- {:out {:valid true}, :in ({:id "Uo", :title "ih1", :steps []})},
+    [{:id "a", :title "o"}
+     {:id "c", :title "9BOx", :depends-on []}
+     {:id "c", :title "40"}
+     {:id "a", :title "pAz2"}]})},
  :case-6
  {:out {:valid true},
-  :in ({:id "8", :title "8", :steps [{:id "a", :title "jk"}]})},
- :case-7 {:out {:valid true}, :in ({:id "z5b", :title "", :steps []})}}
+  :in ({:id "", :title "Z3A", :steps [{:id "d", :title "109NrH"}]})},
+ :case-7
+ {:out {:valid true}, :in ({:id "i8an", :title "13", :steps []})}}
