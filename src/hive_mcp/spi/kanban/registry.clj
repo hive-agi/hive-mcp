@@ -15,7 +15,8 @@
    HOST-LOCAL: the kernel's copy of hive-spi.kanban.registry.
    See hive-mcp.spi.kanban."
   (:require [hive-mcp.spi.kanban :as kanban]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -128,3 +129,31 @@
   "See hive-mcp.spi.kanban/IKanbanWrite."
   [request]
   (kanban/create-task! (provider :IKanbanWrite) request))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def Port [:enum :IKanbanRead :IKanbanWrite])
+
+(def Provider
+  "A registered implementation or a Noop. Generates as the Noops."
+  [:fn {:error/message "should satisfy a kanban port"
+        :gen/schema [:enum :IKanbanRead :IKanbanWrite]
+        :gen/fmap noops}
+   (fn [x] (or (satisfies? kanban/IKanbanRead x) (satisfies? kanban/IKanbanWrite x)))])
+
+(m/=> noop? [:=> [:cat :any] :boolean])
+;; an unknown port or a non-satisfying impl is a wiring error and throws, as
+;; documented; the contract states the accepted domain
+(m/=> register! [:=> [:cat Port Provider] Provider])
+(m/=> unregister! [:=> [:cat :any] :nil])
+(m/=> reset-providers! [:=> [:cat] :nil])
+(m/=> registered? [:=> [:cat :any] :boolean])
+(m/=> provider [:=> [:cat Port] Provider])
+;; the facade is permissive in: the port promises never to throw, and a
+;; provider decides what it does with an off-schema request
+(m/=> list-tasks [:=> [:cat [:maybe :map]] [:vector kanban/Task]])
+(m/=> get-task [:=> [:cat :any] [:maybe kanban/Task]])
+(m/=> transition! [:=> [:cat [:maybe :map]] kanban/TransitionResult])
+(m/=> create-task! [:=> [:cat [:maybe :map]] kanban/CreateResult])

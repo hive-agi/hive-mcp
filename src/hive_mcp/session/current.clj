@@ -17,7 +17,8 @@
    is the bug. Minting one per process keeps concurrent sessions apart, and the
    id is stable for the process's life, which is the session's life."
   (:require [hive-mcp.session.identity :as sid]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -133,3 +134,49 @@
      (fn [session-id]
        (when-let [aid (get by-session session-id)]
          (:slave/session-id (sid/root-slave world aid)))))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def EnvMap
+  "An explicit env map for `host-session-id`; values are read only when
+   they are non-blank strings."
+  [:maybe [:map-of :string :any]])
+
+(def RefOpts
+  "What `session-ref` / `session-id` read from their options map."
+  [:maybe
+   [:map
+    [:project-id {:optional true} [:maybe :string]]
+    [:world {:optional true} sid/World]
+    [:session-id {:optional true} [:maybe :string]]]])
+
+(def WorldSnapshot
+  "`world-snapshot`'s answer: both tables always present, possibly empty.
+   Coordinator rows are passed through whole, so they stay open."
+  [:map {:closed true}
+   [:slaves [:map-of [:maybe :string] sid/SlaveRow]]
+   [:coordinators [:map-of [:maybe :string] :map]]])
+
+(m/=> host-session-id [:function
+                       [:=> [:cat] [:maybe :string]]
+                       [:=> [:cat EnvMap] [:maybe :string]]])
+(m/=> agent-id [:=> [:cat] [:maybe :string]])
+(m/=> world-snapshot [:=> [:cat] WorldSnapshot])
+;; BUG: the docstring promises a VALID ref, but a blank :session-id ("") is
+;; truthy for `or`, reaches both resolve-ref and the fallback, and is blanked
+;; to nil by session-ref in each: {:session-id ""} answers :session/id nil.
+;; The contract states the current behaviour (NormalizedRef allows a nil id).
+(m/=> session-ref [:function
+                   [:=> [:cat] sid/NormalizedRef]
+                   [:=> [:cat RefOpts] sid/NormalizedRef]])
+(m/=> session-id [:function
+                  [:=> [:cat] [:maybe :string]]
+                  [:=> [:cat RefOpts] [:maybe :string]]])
+(m/=> parent-of [:function
+                 [:=> [:cat] [:map-of :string :string]]
+                 [:=> [:cat sid/World] [:map-of :string :string]]])
+(m/=> parent-of-fn [:function
+                    [:=> [:cat] [:=> [:cat :any] [:maybe :string]]]
+                    [:=> [:cat sid/World] [:=> [:cat :any] [:maybe :string]]]])

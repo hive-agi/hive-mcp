@@ -14,7 +14,8 @@
    HOST-LOCAL: the kernel's copy of the contribution registry. It moves to
    hive-spi (ns hive-spi.catchup.registry) once that library releases it;
    until then the kernel cannot require an unreleased coordinate."
-  (:require [hive-spi.slot :as slot]))
+  (:require [hive-spi.slot :as slot]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -91,3 +92,41 @@
                  (assoc-in acc [:failed id] (or (ex-message t) (str (class t)))))))
            {:blocks {} :failed {}}
            (registered-blocks))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def BlockValue
+  "A registered block, as `register-block!` accepts and `registered-blocks`
+   answers it: `Block` with a generating :block/fn."
+  [:map
+   [:block/id :keyword]
+   [:block/fn [:fn {:error/message "should be a fn"
+                    :gen/schema :nil
+                    :gen/fmap (fn [_] (fn [_ctx] {}))}
+               fn?]]
+   [:block/order :int]
+   [:block/cache {:optional true} [:or :boolean :map]]])
+
+(def Runner
+  "How `compose` runs one block: (fn [block ctx])."
+  [:fn {:error/message "should be callable"
+        :gen/schema :nil
+        :gen/fmap (fn [_] (fn [block ctx] ((:block/fn block) ctx)))}
+   ifn?])
+
+(def Composed
+  [:map {:closed true}
+   [:blocks [:map-of :keyword :any]]
+   [:failed [:map-of :keyword :string]]])
+
+(m/=> block? [:=> [:cat :any] :boolean])
+(m/=> register-block! [:=> [:cat BlockValue] BlockValue])
+(m/=> unregister-block! [:=> [:cat :any] :nil])
+(m/=> registered-blocks [:=> [:cat] [:vector BlockValue]])
+(m/=> registered? [:=> [:cat :any] :boolean])
+(m/=> reset-registry! [:=> [:cat] :nil])
+(m/=> compose [:function
+               [:=> [:cat :any] Composed]
+               [:=> [:cat :any Runner] Composed]])

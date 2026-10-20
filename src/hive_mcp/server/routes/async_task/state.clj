@@ -80,6 +80,8 @@
   [entry]
   (terminal? (reported-state (:state entry) (:handle entry))))
 
+(m/=> stops-the-work? [:=> [:cat s/CancelOutcome] :boolean])
+
 (defn stops-the-work?
   "Did this outcome actually interrupt something? Exhaustive over the sum.
 

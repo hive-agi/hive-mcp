@@ -1,0 +1,5 @@
+{:written {:ok true},
+ :content "7910",
+ :deleted true,
+ :gone? true,
+ :delete-when-absent true}

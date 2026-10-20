@@ -163,3 +163,37 @@
       (check :create/blank-title-is-err
              (and (map? bad-cr) (m/validate CreateResult bad-cr) (contains? bad-cr :err))
              bad-cr)])))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def ConformanceRow
+  [:map {:closed true}
+   [:case [:enum :list/returns-vector :list/every-task-valid :get/miss-is-nil
+           :transition/missing-task-is-err :create/blank-title-is-err]]
+   [:ok? :boolean]
+   [:detail :any]])
+
+(def ReadImpl
+  [:fn {:error/message "should satisfy IKanbanRead"
+        :gen/schema :nil
+        :gen/fmap (fn [_] (reify IKanbanRead (list-tasks [_ _] []) (get-task [_ _] nil)))}
+   (fn [x] (satisfies? IKanbanRead x))])
+
+(def WriteImpl
+  [:fn {:error/message "should satisfy IKanbanWrite"
+        :gen/schema :nil
+        :gen/fmap (fn [_] (reify IKanbanWrite
+                            (transition! [_ _] {:err {:error :x}})
+                            (create-task! [_ _] {:err {:error :x}})))}
+   (fn [x] (satisfies? IKanbanWrite x))])
+
+;; conformance must report a misbehaving impl, not throw on it, so the
+;; impls are any value: a non-implementation lands in :detail
+(m/=> conformance [:function
+                   [:=> [:cat :any :any] [:vector ConformanceRow]]
+                   [:=> [:cat :any :any [:maybe [:map
+                                                 [:missing-id {:optional true} :string]
+                                                 [:directory {:optional true} [:maybe :string]]]]]
+                    [:vector ConformanceRow]]])

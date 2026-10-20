@@ -30,7 +30,8 @@
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [hive-mcp.extensions.soft :as soft]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 (defonce ^:private registry
   ^{:doc "{kind -> {key -> entry}}; entry carries at least :install! or the
@@ -165,3 +166,42 @@
                   (assoc-in acc [:failed key] t)))))
           {:ran [] :failed {}}
           (ordered kind)))
+
+;; ---------------------------------------------------------------------------
+;; Contracts
+;; ---------------------------------------------------------------------------
+
+(def Entry
+  "A stored contribution: the caller's entry plus :source and :contrib/seq."
+  [:map
+   [:source {:optional true} :keyword]
+   [:contrib/seq {:optional true} :int]])
+
+(def LoadReport
+  [:map-of :any [:map {:closed true}
+                 [:contributed [:vector :any]]
+                 [:absent [:vector :any]]]])
+
+(def LoadOpts
+  [:maybe
+   [:map
+    [:resolve-keys {:optional true} [:set :keyword]]
+    [:required-key {:optional true} :keyword]]])
+
+(m/=> contribute! [:=> [:cat :keyword :some :map] :some])
+(m/=> forget! [:=> [:cat :any :any] :nil])
+(m/=> contributed [:=> [:cat :any] [:map-of :any Entry]])
+(m/=> ordered [:=> [:cat :any] [:sequential [:tuple :any Entry]]])
+(m/=> entry [:=> [:cat :any :any] [:maybe Entry]])
+(m/=> reset-kind! [:=> [:cat :any] :nil])
+(m/=> reset-all! [:=> [:cat] :nil])
+(m/=> read-manifest [:=> [:cat :string] [:map-of :any [:sequential :map]]])
+(m/=> load-manifest! [:function
+                      [:=> [:cat :string] LoadReport]
+                      [:=> [:cat :string LoadOpts] LoadReport]])
+(m/=> register-all! [:=> [:cat :any]
+                     [:map {:closed true}
+                      [:ran [:vector :any]]
+                      [:failed [:map-of :any [:fn {:gen/schema :string
+                                                  :gen/fmap (fn [s] (Exception. ^String s))}
+                                              (fn [t] (instance? Throwable t))]]]]])

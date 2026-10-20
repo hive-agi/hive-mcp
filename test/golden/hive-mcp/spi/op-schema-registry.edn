@@ -1,0 +1,6 @@
+{:registered [:test.m20/alpha],
+ :malformed nil,
+ :owned #:addon{:a #{:test.m20/alpha}},
+ :removed [:test.m20/alpha],
+ :again [],
+ :reset {}}

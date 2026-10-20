@@ -14,7 +14,8 @@
    namespace and dies with the hive-memory extraction."
   (:require [clojure.java.io :as io]
             [hive-dsl.result :as r]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [malli.core :as m])
   (:import [java.security MessageDigest]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -61,3 +62,21 @@
     (when-let [err (::r/error (meta result))]
       (log/warn "Failed to hash file" {:path path :error (:message err)}))
     result))
+
+;; Contracts
+
+(def Sha256Hex
+  [:re {:gen/schema :string
+        :gen/fmap compute-hash}
+   #"^[0-9a-f]{64}$"])
+
+(def FileHash
+  [:or
+   [:map {:closed true} [:hash Sha256Hex] [:exists? [:= true]]]
+   [:map {:closed true} [:exists? [:= false]]]])
+
+;; content is `str`-ed first, so any value hashes
+(m/=> compute-hash [:=> [:cat :any] Sha256Hex])
+(m/=> clear-hash-cache! [:=> [:cat] [:= {} {}]])
+;; path is whatever io/file accepts; nil and absent paths read {:exists? false}
+(m/=> file-content-hash [:=> [:cat :any] FileHash])

@@ -16,6 +16,7 @@
             [hive-mcp.dispatch.verbs :as verbs]
             [hive-mcp.extensions.dispatch-wrap :as dispatch-wrap]
             [hive-mcp.tools.composite.default-async :as default-async]
+            [hive-mcp.tools.composite.departed :as departed]
             [malli.core :as m]
             [hive-mcp.tools.core :as core]))
 
@@ -135,13 +136,15 @@
 
    Every root is contributed, so all of them are recorded under
    ::cli/opaque-roots in the tree's metadata, beside the ::cli/verb-oracle
-   port that says which verbs each one routes."
+   port that says which verbs each one routes. A root that departed with a
+   remounting addon is waited for (`departed/dispatch`)."
   [tool-name]
   (fn [params]
-    (let [addon-cmds (or (addon-commands->handlers tool-name) {})
-          handlers   (with-contribution-meta addon-cmds tool-name addon-cmds)
-          cli-fn     (cli/make-cli-handler handlers)]
-      (cli-fn params))))
+    (departed/dispatch tool-name
+                       #(let [addon-cmds (or (addon-commands->handlers tool-name) {})]
+                          (with-contribution-meta addon-cmds tool-name addon-cmds))
+                       (fn [handlers p] ((cli/make-cli-handler handlers) p))
+                       params)))
 
 (defn subdomain-handler
   "Wrap INNER as the handler for SUBDOMAIN-NAME: strips the \"<subdomain> \"
@@ -196,17 +199,18 @@
    reload reaches dispatch without the consolidated namespace having to be
    reloaded in the same pass. See `effective-handlers`.
 
-   tool-name: string name used for addon contribution lookup.
+   tool-name: string name used for addon contribution lookup. A root that
+   departed with a remounting addon is waited for (`departed/dispatch`).
 
    Optional coerce-schema: passed through to cli/make-cli-handler."
   ([tool-name canonical-handlers]
    (build-merged-handler tool-name canonical-handlers nil))
   ([tool-name canonical-handlers coerce-schema]
    (fn [params]
-     (let [cli-fn (cli/make-cli-handler
-                   (effective-handlers tool-name canonical-handlers)
-                   coerce-schema)]
-       (cli-fn params)))))
+     (departed/dispatch tool-name
+                        #(effective-handlers tool-name canonical-handlers)
+                        (fn [handlers p] ((cli/make-cli-handler handlers coerce-schema) p))
+                        params))))
 
 ;; =============================================================================
 ;; Composite Tool Definition Builder
