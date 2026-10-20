@@ -1,0 +1,17 @@
+{:case-0
+ {:out :healthy, :in ({:percent-used 10, :available-mb 2047} 80 512)},
+ :case-1
+ {:out :critical,
+  :in ({:percent-used 85, :available-mb 2048} 80 2048)},
+ :case-2
+ {:out :critical, :in ({:percent-used 79, :available-mb 100} 80 512)},
+ :case-3
+ {:out :healthy, :in ({:percent-used 10, :available-mb 2047} 90 2048)},
+ :case-4
+ {:out :critical, :in ({:percent-used 99, :available-mb 6000} 80 512)},
+ :case-5
+ {:out :critical, :in ({:percent-used 85, :available-mb 2047} 80 512)},
+ :case-6
+ {:out :healthy, :in ({:percent-used 70, :available-mb 100} 90 512)},
+ :case-7
+ {:out :critical, :in ({:percent-used 80, :available-mb 2047} 80 512)}}

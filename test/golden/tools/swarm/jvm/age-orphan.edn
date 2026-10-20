@@ -1,0 +1,8 @@
+{:case-0 {:out true, :in ({:etime "01:00:00"} 0)},
+ :case-1 {:out true, :in ({:etime "0-01:00:01"} 1)},
+ :case-2 {:out false, :in ({:etime "00:00"} 1)},
+ :case-3 {:out true, :in ({:etime "02:01:01"} 1)},
+ :case-4 {:out true, :in ({:etime nil} 0)},
+ :case-5 {:out true, :in ({:etime "01:01:00"} 3)},
+ :case-6 {:out true, :in ({:etime "01:05"} 1)},
+ :case-7 {:out true, :in ({:etime "03:49:04"} 1)}}

@@ -1,0 +1,11 @@
+{:case-0 {:out :shadow-cljs, :in "java -cp shadow-cljs.jar"},
+ :case-1 {:out :other, :in "java -jar app.jar"},
+ :case-10 {:out :clojure-mcp, :in "clj-mcp"},
+ :case-2 {:out :clojure-mcp, :in "java clojure-mcp"},
+ :case-3 {:out :hive-mcp, :in "clojure -M hive_mcp"},
+ :case-4 {:out :shadow-cljs, :in "java -jar shadow.cljs.devtools"},
+ :case-5 {:out :other, :in ""},
+ :case-6 {:out :nrepl, :in "java -m nrepl.cmdline"},
+ :case-7 {:out :hive-mcp, :in "java -m hive-mcp.server"},
+ :case-8 {:out :hive-mcp, :in "clojure -M hive_mcp"},
+ :case-9 {:out :leiningen, :in "java leiningen.core.main"}}
