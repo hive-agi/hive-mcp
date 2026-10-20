@@ -1,0 +1,7 @@
+{:composed
+ {:blocks #:b{:nil nil, :ok {:n 3}}, :failed #:b{:boom "boom"}},
+ :ordered [:b/boom :b/nil :b/ok],
+ :custom-runner {:blocks #:b{:boom 1, :nil 2, :ok 2}, :failed {}},
+ :removed nil,
+ :still? [true false],
+ :refused :refused}

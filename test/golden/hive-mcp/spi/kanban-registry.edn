@@ -1,0 +1,29 @@
+{:degraded
+ {:list [],
+  :get nil,
+  :transition
+  {:err
+   {:error :kanban/provider-unavailable,
+    :message "no provider registered for :IKanbanWrite"}},
+  :create
+  {:err
+   {:error :kanban/provider-unavailable,
+    :message "no provider registered for :IKanbanWrite"}},
+  :registered? false,
+  :noop? true},
+ :live
+ {:list [{:id "t1", :title "one", :status "todo"}],
+  :get {:id "t1", :title "one", :status "todo"},
+  :transition {:ok {:id "t1", :title "one", :status "done"}},
+  :create {:ok {:id "new-1"}},
+  :registered? true,
+  :conformance
+  [{:case :list/returns-vector, :ok? true}
+   {:case :list/every-task-valid, :ok? true}
+   {:case :get/miss-is-nil, :ok? true}
+   {:case :transition/missing-task-is-err, :ok? true}
+   {:case :create/blank-title-is-err, :ok? true}]},
+ :refusals
+ {:unknown-port :refused, :wrong-impl :refused, :still-live? true},
+ :after-unregister false,
+ :reset nil}

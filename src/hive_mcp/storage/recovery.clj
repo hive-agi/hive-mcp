@@ -53,7 +53,8 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [hive-dsl.result :refer [rescue]]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -465,3 +466,57 @@
                                          :strategy strategy
                                          :err :storage/open-aborted}
                                         ex))))))))))
+
+;; -----------------------------------------------------------------------------
+;; Contracts
+;; -----------------------------------------------------------------------------
+
+(def Classification [:enum :wal-corrupt :lock-contention :version-mismatch :unknown])
+
+(def AThrowable
+  [:fn {:error/message "should be a Throwable"
+        :gen/schema [:enum "MDB_CORRUPTED" "MDB_BUSY" "version mismatch" "boom"]
+        :gen/fmap (fn [msg] (ex-info "open failed" {} (Exception. ^String msg)))}
+   (fn [t] (instance? Throwable t))])
+
+(def TxlogOps
+  [:fn {:error/message "should satisfy ITxlogOps"
+        :gen/schema :nil
+        :gen/fmap (fn [_] (->DatalevinTxlogOps))}
+   (fn [x] (satisfies? ITxlogOps x))])
+
+(def HealRecord
+  [:map
+   [:path :string]
+   [:truncated? {:optional true} :boolean]
+   [:sub-classification {:optional true} [:enum :tail-zeroed :mid-segment]]
+   [:backup {:optional true} :string]
+   [:error {:optional true} [:maybe :string]]])
+
+(def Policy
+  [:maybe
+   [:map
+    [:strategy {:optional true}
+     [:or [:enum :throw :audit :truncate :quarantine]
+      [:sequential [:enum :throw :audit :truncate :quarantine]]]]
+    [:max-attempts {:optional true} :int]]])
+
+;; ex may be nil: the loop answers :unknown for a nil cause
+(m/=> classify-open-failure [:=> [:cat [:maybe AThrowable]] Classification])
+(m/=> quarantine-path [:function
+                       [:=> [:cat :string] :string]
+                       [:=> [:cat :string :any] :string]])
+(m/=> quarantine! [:function
+                   [:=> [:cat :string] [:maybe :string]]
+                   [:=> [:cat :string :string] [:maybe :string]]])
+(m/=> current-txlog-ops [:=> [:cat] TxlogOps])
+(m/=> set-txlog-ops! [:=> [:cat TxlogOps] TxlogOps])
+(m/=> truncate-tail! [:function
+                      [:=> [:cat :string] [:vector HealRecord]]
+                      [:=> [:cat :string :int] [:vector HealRecord]]
+                      [:=> [:cat :string :int TxlogOps] [:vector HealRecord]]])
+;; open-fn's conn is the caller's: any truthy value is returned verbatim
+(m/=> heal-and-open! [:=> [:cat [:map [:policy {:optional true} Policy]
+                                [:db-path {:optional true} [:maybe :string]]]
+                          [:=> [:cat] :any]]
+                      :some])

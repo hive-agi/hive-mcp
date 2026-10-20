@@ -36,7 +36,8 @@
        by the nearest LIVE coordinator sharing its project scope, and by
        exactly one, so it is consumed once;
      - walks are cycle-safe and bounded, so nesting terminates."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -62,6 +63,118 @@
    [:session/depth {:optional true} [:maybe :int]]
    [:session/project-id {:optional true} [:maybe :string]]
    [:session/agent-id {:optional true} [:maybe :string]]])
+
+(def NormalizedRef
+  "What `session-ref` builds: every SessionRef key present, every value but
+   the kind nil-able. An id of nil is a ref `valid?` rejects -- `resolve-ref`
+   returns one on purpose rather than invent an id."
+  [:map {:closed true}
+   [:session/id [:maybe :string]]
+   [:session/kind SessionKind]
+   [:session/parent-id [:maybe :string]]
+   [:session/depth [:maybe :int]]
+   [:session/project-id [:maybe :string]]
+   [:session/agent-id [:maybe :string]]])
+
+(def RefSpec
+  "The loose description `session-ref` normalizes. A blank string reads as
+   nil and an unknown kind as :adhoc, so every key is optional."
+  [:maybe
+   [:map
+    [:id {:optional true} [:maybe :string]]
+    [:kind {:optional true} [:maybe :keyword]]
+    [:parent-id {:optional true} [:maybe :string]]
+    [:depth {:optional true} [:maybe :int]]
+    [:project-id {:optional true} [:maybe :string]]
+    [:agent-id {:optional true} [:maybe :string]]]])
+
+(def RefView
+  "The part of a ref the ownership rules read: its id, kind and project. Open
+   and nil-able, so a NormalizedRef, a SessionRef or nil all pass."
+  [:maybe
+   [:map
+    [:session/id {:optional true} [:maybe :string]]
+    [:session/kind {:optional true} [:maybe :keyword]]
+    [:session/project-id {:optional true} [:maybe :string]]]])
+
+(def SlaveRow
+  "One `:slaves` entry of a world snapshot."
+  [:map
+   [:slave/id {:optional true} [:maybe :string]]
+   [:slave/parent-id {:optional true} [:maybe :string]]
+   [:slave/depth {:optional true} [:maybe :int]]
+   [:slave/session-id {:optional true} [:maybe :string]]
+   [:slave/project-id {:optional true} [:maybe :string]]])
+
+(def CoordinatorRow
+  "One `:coordinators` entry of a world snapshot."
+  [:map
+   [:coordinator/id {:optional true} [:maybe :string]]
+   [:coordinator/session-id {:optional true} [:maybe :string]]
+   [:coordinator/project {:optional true} [:maybe :string]]
+   [:coordinator/status {:optional true} [:maybe :keyword]]])
+
+(def World
+  "The swarm-store projection the resolvers read (see the ns docstring).
+   Both tables are optional: a missing one reads as empty."
+  [:maybe
+   [:map
+    [:slaves {:optional true} [:maybe [:map-of :string SlaveRow]]]
+    [:coordinators {:optional true} [:maybe [:map-of :string CoordinatorRow]]]]])
+
+(def Caller
+  "Who is asking `resolve-ref`."
+  [:maybe
+   [:map
+    [:agent-id {:optional true} [:maybe :string]]
+    [:project-id {:optional true} [:maybe :string]]
+    [:session-id {:optional true} [:maybe :string]]]])
+
+(def ParentOf
+  "A session-id -> parent-session-id lookup: a map or a fn. Generates as a
+   map, which is callable."
+  [:fn {:error/message "should be callable"
+        :gen/schema [:map-of :string :string]}
+   ifn?])
+
+(def Candidate
+  "An ad-hoc session described for `adoptable?`, or nil for a row that is
+   not one."
+  [:maybe
+   [:map
+    [:session-id {:optional true} [:maybe :string]]
+    [:kind {:optional true} [:maybe :keyword]]
+    [:project-id {:optional true} [:maybe :string]]
+    [:parent-id {:optional true} [:maybe :string]]]])
+
+(def RowFn
+  "A row reader passed to `partition-rows`."
+  [:fn {:error/message "should be callable"
+        :gen/schema [:map-of :string [:maybe :string]]}
+   ifn?])
+
+(def CandidateFn
+  "`row->candidate`: reads a row's adoption description, nil when the row is
+   not an ad-hoc session."
+  [:fn {:error/message "should be callable"
+        :gen/schema [:map-of :string Candidate]}
+   ifn?])
+
+(def PartitionOpts
+  [:map
+   [:parent-of ParentOf]
+   [:row->session RowFn]
+   [:row->candidate {:optional true} CandidateFn]])
+
+(def Rows
+  "Rows are opaque to the algebra: only the two readers look inside."
+  [:maybe [:or [:sequential :any] [:set :any]]])
+
+(def Partition
+  [:map {:closed true}
+   [:own [:vector :any]]
+   [:adopted [:vector :any]]
+   [:foreign [:vector :any]]])
 
 (def max-depth
   "Hard bound on any ancestor walk. A malformed :slave/parent cycle must not
@@ -257,3 +370,20 @@
   [opts ref rows]
   (let [{:keys [own adopted]} (partition-rows opts ref rows)]
     (into (vec own) adopted)))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+;; session-ref and resolve-ref read :kind/:depth leniently, so their inputs
+;; stay loose (a non-member kind is :adhoc, a non-int depth is nil)
+(m/=> session-ref [:=> [:cat RefSpec] NormalizedRef])
+(m/=> valid? [:=> [:cat :any] :boolean])
+(m/=> root-slave [:=> [:cat World [:maybe :string]] [:maybe SlaveRow]])
+(m/=> resolve-ref [:=> [:cat World Caller] NormalizedRef])
+(m/=> ancestor-session-ids [:=> [:cat ParentOf [:maybe :string]] [:vector :string]])
+(m/=> descendant-of? [:=> [:cat ParentOf [:maybe :string] [:maybe :string]] :boolean])
+(m/=> owns? [:=> [:cat ParentOf RefView [:maybe :string]] :boolean])
+(m/=> adoptable? [:=> [:cat RefView Candidate] :boolean])
+(m/=> partition-rows [:=> [:cat PartitionOpts RefView Rows] Partition])
+(m/=> harvestable [:=> [:cat PartitionOpts RefView Rows] [:vector :any]])

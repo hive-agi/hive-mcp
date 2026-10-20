@@ -1,0 +1,9 @@
+{:own [{:session "s-a"} {:session "s-c"}],
+ :adopted
+ [{:session "s-x", :kind :adhoc, :project "hive"}
+  {:session "s-y", :kind :adhoc, :project "hive", :parent "s-a"}],
+ :foreign
+ [{:session "s-d"}
+  {:session nil}
+  {:session "s-z", :kind :adhoc, :project "hive", :parent "s-d"}
+  {:session "s-w", :kind :adhoc, :project "other"}]}

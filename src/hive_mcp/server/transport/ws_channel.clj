@@ -8,7 +8,9 @@
             [hive-mcp.channel.websocket :as ws-channel]
             [clojure.core.async :as async]
             [taoensso.timbre :as log]
-            [hive-mcp.channel.inbound :as inbound]))
+            [hive-mcp.channel.inbound :as inbound]
+            [malli.core :as m]
+            [hive-mcp.server.transport.schema :as ts]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -20,6 +22,16 @@
   [port]
   {:port port
    :on-message inbound/handle-client-message!})
+
+(def ChannelOpts
+  "Start options `channel-opts` builds for `hive-mcp.channel.websocket/start!`."
+  [:map {:closed true}
+   [:port ts/Port]
+   [:on-message [:fn {:gen/schema :nil
+                      :gen/fmap (fn [_] inbound/handle-client-message!)}
+                 ifn?]]])
+
+(m/=> channel-opts [:=> [:cat ts/Port] ChannelOpts])
 
 (defn start-ws-channel-with-healing!
   "Start WebSocket channel server with auto-healing.
@@ -54,3 +66,7 @@
                                  (log/info "WebSocket channel server restarted on port" port)))
                 (recur)))
       (log/info "WebSocket channel auto-heal monitor started"))))
+
+;; both branches end in nil: a monitor already present short-circuits the
+;; when-not, and a fresh one ends on log/info
+(m/=> start-ws-channel-with-healing! [:=> [:cat ts/AtomRef] :nil])

@@ -1,0 +1,9 @@
+{:already-mine true,
+ :as-ling false,
+ :claimed false,
+ :itself false,
+ :ling-session false,
+ :loose true,
+ :nil-candidate false,
+ :no-ref-project false,
+ :other-project false}

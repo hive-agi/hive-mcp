@@ -1,0 +1,3 @@
+{:absent {:out nil, :called []},
+ :start-only {:out nil, :called ["start!"]},
+ :start-wire {:out nil, :called ["start!" "wire-hivemind-events!"]}}

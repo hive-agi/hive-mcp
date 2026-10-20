@@ -18,7 +18,8 @@
 
    With no memory domain both calls are no-ops: sessions are still served, and
    nothing is crystallized because there is nowhere to crystallize into."
-  (:require [hive-mcp.extensions.soft :as soft]))
+  (:require [hive-mcp.extensions.soft :as soft]
+            [malli.core :as m]))
 
 (defprotocol ISessionLifecycle
   (-record-session-start! [this agent-id]
@@ -96,3 +97,21 @@
   "Install the session hooks into REGISTRY."
   [registry]
   (-register-session-hooks! (current) registry))
+
+;; Contracts
+
+(def Impl
+  "An `ISessionLifecycle` implementation. Generates as `noop`."
+  [:fn {:error/message "should satisfy ISessionLifecycle"
+        :gen/schema :nil
+        :gen/fmap (fn [_] noop)}
+   (fn [x] (satisfies? ISessionLifecycle x))])
+
+(m/=> reset-cache! [:=> [:cat] :nil])
+(m/=> install! [:=> [:cat Impl] Impl])
+(m/=> uninstall! [:=> [:cat] :nil])
+(m/=> current [:=> [:cat] Impl])
+;; both forward the host's answer, which no caller reads; the agent id may
+;; be nil (no swarm) and the registry is the host's opaque hook registry
+(m/=> record-session-start! [:=> [:cat [:maybe :string]] :any])
+(m/=> register-session-hooks! [:=> [:cat :any] :any])
