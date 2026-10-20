@@ -1,0 +1,26 @@
+{:ghost
+ #:slave{:id "z",
+         :status :orphaned,
+         :orphan-reason "restored from previous JVM, no live loop",
+         :cwd "/w",
+         :project-id "p",
+         :last-event-at "1970-01-01T00:00:00Z"},
+ :retired? [false true true false],
+ :row? [true true],
+ :fresh
+ [#:slave{:id "swarm-h-orphan", :status :unregistered}
+  #:slave{:id "z",
+          :status :orphaned,
+          :orphan-reason "restored from previous JVM, no live loop",
+          :cwd nil,
+          :project-id nil}
+  #:slave{:id "ok", :status :idle}],
+ :stale
+ [#:slave{:id "swarm-h-orphan", :status :unregistered}
+  #:slave{:id "swarm-q-orphan", :status :orphan}
+  #:slave{:id "z",
+          :status :orphaned,
+          :orphan-reason "restored from previous JVM, no live loop",
+          :cwd nil,
+          :project-id nil}
+  #:slave{:id "ok", :status :idle}]}
