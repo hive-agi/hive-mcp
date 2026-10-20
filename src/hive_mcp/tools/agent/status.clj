@@ -6,7 +6,8 @@
             [hive-mcp.swarm.datascript.queries :as queries]
             [taoensso.timbre :as log]
             [hive-mcp.swarm.digest :as digest]
-            [hive-mcp.hivemind.state :as hm-state]))
+            [hive-mcp.hivemind.state :as hm-state]
+            [hive-mcp.tools.agent.liveness :as liveness]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -14,16 +15,22 @@
 (defn handle-status
   "Get agent status, optionally filtered by agent_id, type, or project_id.
    Stale/zombie rows, and orphan rows with no live agent behind them, are
-   hidden by default; pass include_stale=true for diagnostics."
+   hidden by default; pass include_stale=true for diagnostics.
+
+   A ling on a registered headless backend also carries `:liveness-age-ms`,
+   the time since its loop last made progress, so a stalled ling no longer
+   reads as plain \"working\"."
   [{:keys [agent_id type project_id include_stale]}]
   (let [eid    (when (and agent_id (not= agent_id "coordinator")) agent_id)
         stale? (boolean include_stale)
-        merge-elisp #(helpers/merge-with-elisp-lings % {:include-stale? stale?})]
+        merge-elisp #(helpers/merge-with-elisp-lings % {:include-stale? stale?})
+        status-fn (liveness/backend-status-fn)
+        with-age  #(liveness/annotate status-fn %)]
     (try
       (cond
         eid
         (if-let [agent-data (queries/get-slave eid)]
-          (mcp-json {:agent (helpers/format-agent agent-data)})
+          (mcp-json {:agent (helpers/format-agent (first (with-age [agent-data])))})
           (mcp-error (str "Agent not found: " eid)))
         type
         (let [agent-type (keyword type)
@@ -37,11 +44,11 @@
               filtered (if depth
                          (filter #(= depth (:slave/depth %)) all-agents)
                          all-agents)]
-          (mcp-json (helpers/format-agents filtered)))
+          (mcp-json (helpers/format-agents (with-age filtered))))
         project_id
-        (mcp-json (helpers/format-agents (queries/get-slaves-by-project project_id :include-stale? stale?)))
+        (mcp-json (helpers/format-agents (with-age (queries/get-slaves-by-project project_id :include-stale? stale?))))
         :else
-        (mcp-json (helpers/format-agents (merge-elisp (queries/get-all-slaves :include-stale? stale?)))))
+        (mcp-json (helpers/format-agents (with-age (merge-elisp (queries/get-all-slaves :include-stale? stale?))))))
       (catch Exception e
         (log/error "Failed to get agent status" {:error (ex-message e)})
         (mcp-error (str "Failed to get status: " (ex-message e)))))))
