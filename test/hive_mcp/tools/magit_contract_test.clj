@@ -5,16 +5,22 @@
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is]]
             [hive-mcp.tools.magit :as magit]
-            [hive-schemas.test :refer [deftrifecta-from-schema]]))
+            [hive-schemas.test :refer [deftrifecta-from-schema]]
+            [hive-test.golden :as golden]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (def ^:private Files
-  [:or :nil [:enum :all :other 'all 'x "" "  " "all" "a.clj" " a.clj  b.clj " "all b"]
-   [:vector {:max 3} [:enum "a" " b " "" "all" :k]]
-   [:set {:max 2} [:enum "a" "b"]]])
+  "Every spelling of `files`, one top-level branch per outcome (all, nothing
+   usable, paths) so each arm is reached about a third of the time."
+  [:or
+   [:enum :all 'all "all" ["all"] [" all "] #{"all"}]
+   [:enum nil :other 'x "" "  " [] ["" "  "] #{}]
+   [:or [:enum "a.clj" " a.clj  b.clj " "all b"]
+    [:vector {:min 1 :max 3} [:enum "a" " b " :k]]
+    [:set {:min 1 :max 2} [:enum "a" "b"]]]])
 
 (defn- paths
   "Oracle: the non-blank trimmed path strings `files` names."
@@ -38,8 +44,17 @@
                           :else            (= ps out)))))
    :classify (fn [_ out] (cond (nil? out) :none (= :all out) :all :else :paths))
    :classify-domain #{:none :all :paths}
-   :golden-path "test/golden/hive-mcp/tools/magit-normalize-files.edn"
    :num-tests 200})
+
+;; The seeded cases over Files vary between runs (it mixes sets into enums),
+;; so the golden facet is pinned to explicit inputs instead.
+(golden/deftest-golden normalize-files-golden
+  "test/golden/hive-mcp/tools/magit-normalize-files.edn"
+  (into (sorted-map)
+        (map (fn [[k v]] [k (magit/normalize-files v)]))
+        {:nil nil :kw-all :all :sym-all 'all :str-all "all" :vec-all [" all "]
+         :blank "  " :empty-vec [] :other :other :one "a.clj"
+         :spaced " a.clj  b.clj " :all-b "all b" :mixed ["a" " b " "" :k]}))
 
 (deftrifecta-from-schema staged-outside-files-keeps-only-unselected
   #'magit/staged-outside-files
