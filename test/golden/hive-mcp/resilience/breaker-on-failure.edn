@@ -37,12 +37,12 @@
  :case-6
  {:out {:state :open, :failures 9, :opened-at 4, :cooldown-ms 11},
   :in
-  ({:state :closed, :failures 8, :opened-at nil, :cooldown-ms -2}
+  ({:state :closed, :failures 8, :opened-at nil, :cooldown-ms 2}
    {:max-failures 1, :initial-cooldown-ms 22, :max-cooldown-ms 11}
    4)},
  :case-7
- {:out {:state :closed, :failures 0, :opened-at -19, :cooldown-ms 0},
+ {:out {:state :closed, :failures 0, :opened-at 19, :cooldown-ms 0},
   :in
-  ({:state :open, :failures -1, :opened-at -19, :cooldown-ms 0}
+  ({:state :open, :failures -1, :opened-at 19, :cooldown-ms 0}
    {:max-failures 2, :initial-cooldown-ms 13, :max-cooldown-ms 30}
    1)}}

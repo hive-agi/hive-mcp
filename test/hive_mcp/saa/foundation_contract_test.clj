@@ -104,8 +104,10 @@
 ;;; ---------------------------------------------------------------------------
 
 (def ^:private RawProbe
+  ;; :type is weighted so every lifted variant is reached comfortably
   [:map
-   [:type {:optional true} [:enum :message :complete :result :error :saa-complete :other]]
+   [:type {:optional true} [:enum :message :complete :result :error :error
+                            :saa-complete :saa-complete :saa-complete :other]]
    [:phase {:optional true} [:enum :silence :act]]
    [:saa-phase {:optional true} [:enum :abstract]]
    [:content {:optional true} [:string {:max 4}]]

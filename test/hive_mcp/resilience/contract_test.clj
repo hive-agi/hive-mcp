@@ -25,9 +25,15 @@
 ;;; ---------------------------------------------------------------------------
 
 (def ^:private Breaker
-  "Breaker records the generator can produce — same map shape as
-   breaker/Breaker, with a bounded enum for :state."
-  breaker/Breaker)
+  "Breaker records the generator can produce — the breaker/Breaker shape
+   with test-sized ints. A real record's :cooldown-ms is capped by the
+   policy's max-cooldown-ms; an unbounded generated one overflows the
+   doubling in step-cooldown, a state no transition can reach."
+  [:map
+   [:state breaker/BreakerState]
+   [:failures [:int {:min -1 :max 100}]]
+   [:opened-at [:maybe [:int {:min -1 :max 1000000000}]]]
+   [:cooldown-ms [:int {:min -1 :max 600000}]]])
 
 (def ^:private Policy
   [:map
