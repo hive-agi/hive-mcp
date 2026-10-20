@@ -15,7 +15,8 @@
   (:require [clojure.string :as str]
             [hive-dsl.result :refer [rescue]]
             [hive-mcp.hivemind.state :as hm-state]
-            [hive-mcp.swarm.datascript.queries :as queries]))
+            [hive-mcp.swarm.datascript.queries :as queries]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later

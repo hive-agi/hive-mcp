@@ -5,7 +5,9 @@
             [hive-mcp.agent.ling :as ling]
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.protocols.dispatch :as dispatch-ctx]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.tools.result-bridge :as rb]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later

@@ -8,7 +8,9 @@
             [hive-mcp.swarm.digest :as digest]
             [hive-mcp.hivemind.state :as hm-state]
             [hive-mcp.agent.ling.headless-registry :as headless-registry]
-            [hive-spi.addon.headless :as headless]))
+            [hive-spi.addon.headless :as headless]
+            [malli.core :as m]
+            [hive-mcp.tools.result-bridge :as rb]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later

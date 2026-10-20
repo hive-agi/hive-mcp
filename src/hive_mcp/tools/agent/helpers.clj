@@ -5,7 +5,8 @@
             [hive-spi.editor.services :as svc]
             [taoensso.timbre :as log]
             [clojure.data.json :as json]
-            [hive-mcp.tools.agent.reconcile :as reconcile]))
+            [hive-mcp.tools.agent.reconcile :as reconcile]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later

@@ -37,7 +37,9 @@
             [hive-spi.swarm.guards :as guards]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.embeddings.shared-gate :as embed-gate]))
+            [hive-mcp.embeddings.shared-gate :as embed-gate]
+            [malli.core :as m]
+            [hive-mcp.tools.result-bridge :as rb]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later

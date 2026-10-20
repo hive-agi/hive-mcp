@@ -39,7 +39,8 @@
             [hive-mcp.tools.consolidated.hot :as c-hot]
             [hive-mcp.spi.contributions :as contrib]
             [hive-mcp.tools.schema-keys :as schema-keys]
-            [hive-mcp.tools.async-params :as async-params]))
+            [hive-mcp.tools.async-params :as async-params]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

@@ -10,7 +10,8 @@
             [hive-mcp.dns.result :as result]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.embeddings.active :as active]))
+            [hive-mcp.embeddings.active :as active]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later

@@ -16,7 +16,8 @@
                          declared, since the alias is then advertised already
      any other illegal   dropped: no spelling of it can reach a handler
 
-   Calculations only (stratified L1).")
+   Calculations only (stratified L1)."
+  (:require [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

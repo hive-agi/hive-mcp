@@ -23,7 +23,9 @@
             [hive-mcp.channel.audience :as audience]
             [hive-mcp.agent.ling.headless-registry :as headless-registry]
             [hive-mcp.emacs.client :as emacs-client]
-            [hive-mcp.agent.grant :as grant]))
+            [hive-mcp.agent.grant :as grant]
+            [malli.core :as m]
+            [hive-mcp.tools.result-bridge :as rb]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
