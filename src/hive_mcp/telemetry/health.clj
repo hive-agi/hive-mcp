@@ -12,6 +12,7 @@
             [hive-mcp.channel.core :as channel]
             [hive-mcp.swarm.datascript.connection :as conn]
             [hive-mcp.telemetry.prometheus :as prom]
+            [malli.core :as m]
             [hive-mcp.swarm.datascript :as ds]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -180,6 +181,27 @@
     ;; Return event-id for correlation
     event-id))
 
+(def HealthEvent
+  "emit-health-event!'s input. Permissive in: :type and :severity are checked
+   by validate-event!, which throws ExceptionInfo on an unknown one, so the
+   contract does not close them."
+  [:map
+   [:type :keyword]
+   [:severity :keyword]
+   [:message {:optional true} [:maybe :string]]
+   [:context {:optional true} [:maybe :map]]
+   [:recoverable? {:optional true} [:maybe :boolean]]])
+
+(def HealthRow
+  "A persisted health event as pulled from the swarm store. Open map."
+  [:map
+   [:health-event/id :string]
+   [:health-event/type {:optional true} :keyword]
+   [:health-event/severity {:optional true} :keyword]
+   [:health-event/timestamp {:optional true} inst?]])
+
+(m/=> emit-health-event! [:=> [:cat HealthEvent] :string])
+
 (defn get-recent-errors
   "Query recent errors from the swarm store for debugging.
 
@@ -208,6 +230,12 @@
                    sorted)]
     ;; Apply limit
     (take limit filtered)))
+
+(m/=> get-recent-errors
+  [:=> [:cat [:* [:alt [:cat [:= :limit] :int]
+                       [:cat [:= :type] [:maybe :keyword]]
+                       [:cat [:= :since] [:maybe inst?]]]]]
+   [:sequential HealthRow]])
 
 (defn health-summary
   "Get health summary: error counts by type, last error times, circuit states.
@@ -244,6 +272,14 @@
 
      :total-errors
      (count all-events)}))
+
+(m/=> health-summary
+  [:=> [:cat]
+   [:map
+    [:error-counts [:map-of :any :int]]
+    [:last-error-times [:map-of :any [:maybe inst?]]]
+    [:severity-counts [:map-of :any :int]]
+    [:total-errors :int]]])
 
 (comment
   ;; Usage examples
