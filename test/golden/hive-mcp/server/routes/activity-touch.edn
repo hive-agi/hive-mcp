@@ -1,0 +1,11 @@
+{:calls
+ {:first true,
+  :throttled false,
+  :dead false,
+  :unknown false,
+  :nil-caller false},
+ :after-reset [{} true],
+ :failing-port nil,
+ :touches
+ [["ling-a" (:slave/last-active-at)]
+  ["ling-a" (:slave/last-active-at)]]}

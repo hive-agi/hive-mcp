@@ -24,7 +24,8 @@
   (:require [hive-mcp.hivemind.core :as hivemind]
             [hive-mcp.channel.core :as channel]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -66,6 +67,8 @@
    Use this for simple boolean checks without path context."
   [tool-name]
   (contains? tier-3-tools tool-name)) ; data deletion
+
+(m/=> dangerous-tool? [:=> [:cat :any] :boolean])
 
 (def ^:private tier-3-operations
   "Operations that always require human approval regardless of tool"
@@ -132,6 +135,18 @@
 
       ;; Default: allowed
       :else :allowed)))
+
+(def ToolArguments
+  "A tool call's arguments as the transport hands them: string keys. The
+   path is read from \"file_path\", \"path\" or \"file\", a bash command from
+   \"command\". nil reads as no arguments."
+  [:maybe [:map-of :any :any]])
+
+(def Tier
+  "A permission tier."
+  [:enum :tier-1 :tier-2 :tier-3 :allowed])
+
+(m/=> get-tier [:=> [:cat :any ToolArguments] Tier])
 
 ;;; ============================================================
 ;;; Escalation Handlers
@@ -227,6 +242,16 @@
       ;; Unknown tier = deny
       {:approved false :tier tier :reviewer :error :reason "Unknown tier"})))
 
+(def Escalation
+  "escalate!'s verdict. :reason is nil when approved."
+  [:map
+   [:approved :boolean]
+   [:tier Tier]
+   [:reviewer [:enum :none :auto :coordinator :human :error]]
+   [:reason {:optional true} [:maybe :string]]])
+
+(m/=> escalate! [:=> [:cat :any :any ToolArguments] Escalation])
+
 ;;; ============================================================
 ;;; Integration Helpers
 ;;; ============================================================
@@ -236,7 +261,11 @@
   [result]
   (:approved result))
 
+(m/=> approved? [:=> [:cat [:maybe [:map [:approved {:optional true} :any]]]] :any])
+
 (defn requires-escalation?
   "Check if a tool call needs escalation (tier > allowed)."
   [tool-name arguments]
   (not= :allowed (get-tier tool-name arguments)))
+
+(m/=> requires-escalation? [:=> [:cat :any ToolArguments] :boolean])

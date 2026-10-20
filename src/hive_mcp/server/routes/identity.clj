@@ -8,7 +8,8 @@
   (:require [hive-mcp.context.request :as ctx]
             [hive-dsl.context.identity :as ctx-id]
             [taoensso.timbre :as log]
-            [hive-mcp.project.scope :as project-scope]))
+            [hive-mcp.project.scope :as project-scope]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -17,6 +18,18 @@
 ;; =============================================================================
 ;; Content Normalization (pure transforms)
 ;; =============================================================================
+
+(def ContentItem
+  "One MCP content item."
+  [:map-of :keyword :any])
+
+(def Content
+  "An MCP content array."
+  [:vector ContentItem])
+
+(def Args
+  "Keywordized MCP tool args; nil reads as none."
+  [:maybe [:map-of :any :any]])
 
 (defn normalize-content
   "Normalize handler result to content array.
@@ -29,6 +42,8 @@
     (map? result) [result]
     :else [{:type "text" :text (str result)}]))
 
+(m/=> normalize-content [:=> [:cat :any] [:sequential :any]])
+
 (defn find-last-text-idx
   "Find index of last text-type item in content (searching from end).
    Returns nil if no text item found."
@@ -36,6 +51,8 @@
   (some (fn [[idx item]]
           (when (= "text" (:type item)) idx))
         (map-indexed vector (reverse content))))
+
+(m/=> find-last-text-idx [:=> [:cat [:maybe [:sequential :any]]] [:maybe [:int {:min 0}]]])
 
 (defn wrap-delimited-block
   "Append a delimited block to content.
@@ -72,15 +89,21 @@
         (conj content {:type "text" :text block-text})))
     content))
 
+(m/=> wrap-delimited-block [:=> [:cat :any :string :any] [:sequential :any]])
+
 (defn wrap-piggyback
   "Append piggyback messages to content with HIVEMIND delimiters."
   [content piggyback]
   (wrap-delimited-block content "HIVEMIND" (when (seq piggyback) (pr-str piggyback))))
 
+(m/=> wrap-piggyback [:=> [:cat :any :any] [:sequential :any]])
+
 (defn wrap-memory-piggyback-content
   "Append memory piggyback batch to content with MEMORY delimiters."
   [content drain-result]
   (wrap-delimited-block content "MEMORY" (when drain-result (pr-str drain-result))))
+
+(m/=> wrap-memory-piggyback-content [:=> [:cat :any :any] [:sequential :any]])
 
 
 ;; =============================================================================
@@ -95,6 +118,8 @@
       (:agent-id args)
       default))
 
+(m/=> extract-agent-id [:=> [:cat Args :any] :any])
+
 (defn extract-caller-id
   "Extract the actual MCP caller identity for piggyback cursor isolation.
 
@@ -106,6 +131,8 @@
    agent_id is the TARGET, not the caller."
   [args]
   (or (:_caller_id args) "coordinator"))
+
+(m/=> extract-caller-id [:=> [:cat Args] some?])
 
 (defn- resolve-vessel-context
   "Resolve caller agent context as {:project-id :cwd :session-id}, or nil."
@@ -137,6 +164,8 @@
       (ctx/current-directory)
       (System/getProperty "user.dir")))
 
+(m/=> extract-directory [:=> [:cat Args] some?])
+
 (defn- project-id-from-directory
   "Derive and memoize project-id for a non-nil directory."
   [directory]
@@ -159,12 +188,18 @@
        (or (ctx/current-directory)
            (System/getProperty "user.dir")))))
 
+(m/=> extract-project-id [:=> [:cat Args] :any])
+
 (defn extract-caller-identity
   "Extract CallerId ADT from MCP args."
   [args]
   (ctx-id/parse-caller-id (:_caller_id args)))
 
+(m/=> extract-caller-identity [:=> [:cat Args] ctx-id/CallerIdMalli])
+
 (defn extract-project-scope
   "Extract ProjectScope ADT from MCP args."
   [args]
   (ctx-id/parse-project-scope (extract-project-id args)))
+
+(m/=> extract-project-scope [:=> [:cat Args] ctx-id/ProjectScopeMalli])

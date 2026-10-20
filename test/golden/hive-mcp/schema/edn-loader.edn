@@ -1,0 +1,14 @@
+{:valid [true false false],
+ :file
+ #:covtest{:point [:map [:x :int] [:y :int]],
+           :name [:string {:min 1}],
+           :mode [:enum "a" "b"]},
+ :validate-ok nil,
+ :missing-file nil,
+ :unknown-key nil,
+ :reload {},
+ :validate-missing
+ ["Schema not found: :covtest/nope" {:key :covtest/nope}],
+ :valid-unknown nil,
+ :validate-bad {:type :validation, :schema :covtest/name},
+ :point-form [:map [:x :int] [:y :int]]}

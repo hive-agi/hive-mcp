@@ -23,7 +23,8 @@
             [hive-mcp.events.core :as events]
             [clojure.java.io :as io]
             [clojure.edn :as edn]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 (def ^:private uuid-re
   #"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
@@ -35,6 +36,20 @@
   "True when both endpoints are UUIDs (carto-derived, regenerable)."
   [e]
   (and (uuid-id? (:kg-edge/from e)) (uuid-id? (:kg-edge/to e))))
+
+(def Entity
+  "One pulled entity, or anything else the export may meet: the classifier
+   answers :unknown for a non-map, so the domain is every value. The named
+   arms come first so generation favours the entities the export reads."
+  [:or
+   [:map [:kg-edge/id :string]
+    [:kg-edge/from {:optional true} [:maybe :string]]
+    [:kg-edge/to {:optional true} [:maybe :string]]]
+   [:map [:mem-mutation/id :string]]
+   [:map-of :keyword :any]
+   :any])
+
+(m/=> structural-edge? [:=> [:cat [:maybe :map]] :boolean])
 
 (def ^:private edge-pull
   '[:kg-edge/id :kg-edge/from :kg-edge/to :kg-edge/relation
@@ -65,10 +80,18 @@
     (structural-edge? e)  :edge-structural
     :else                 :edge-durable))
 
+(def EntityKind
+  "entity-kind's verdict."
+  [:enum :mutation :edge-durable :edge-structural :unknown])
+
+(m/=> entity-kind [:=> [:cat Entity] EntityKind])
+
 (defn keep-entity?
   "True when the rebuild export must carry `e` into the fresh store. Pure."
   [e]
   (contains? #{:mutation :edge-durable} (entity-kind e)))
+
+(m/=> keep-entity? [:=> [:cat Entity] :boolean])
 
 (defn- heap-pct []
   (let [h (.getHeapMemoryUsage (java.lang.management.ManagementFactory/getMemoryMXBean))]
@@ -106,6 +129,23 @@
             (swap! muts inc))))
       {:scanned @n :kept @kept :dropped @dropped :mutations @muts :max-heap-pct @maxh})))
 
+(def ExportReport
+  "export-keep-edges!' counts."
+  [:map
+   [:scanned [:int {:min 0}]]
+   [:kept [:int {:min 0}]]
+   [:dropped [:int {:min 0}]]
+   [:mutations [:int {:min 0}]]
+   [:max-heap-pct [:int {:min 0 :max 100}]]])
+
+(def OutPath
+  "Anything clojure.java.io coerces to a file: a path string or a File."
+  [:or [:string {:min 1}]
+   [:fn {:gen/schema [:string {:min 1}] :gen/fmap #(java.io.File. (str "/tmp/" %))}
+    #(instance? java.io.File %)]])
+
+(m/=> export-keep-edges! [:=> [:cat OutPath] ExportReport])
+
 (defn import-keep-edges!
   "Chunked import of EDN edges (one map per line) into the CURRENT KG store.
    Run only against a FRESH store. Returns {:imported}."
@@ -119,6 +159,11 @@
           (log/info "kg-rebuild import progress" {:imported @imported}))))
     {:imported @imported}))
 
+(m/=> import-keep-edges! [:function
+                          [:=> [:cat OutPath] [:map [:imported [:int {:min 0}]]]]
+                          [:=> [:cat OutPath [:= :chunk] [:int {:min 1}]]
+                           [:map [:imported [:int {:min 0}]]]]])
+
 (defn verify
   "Post-import sanity: total edge count + structural leakage check."
   []
@@ -129,6 +174,8 @@
                     (take 1)
                     count)]
     {:total-edges total :structural-leaked? (pos? leaked)}))
+
+(m/=> verify [:=> [:cat] [:map [:total-edges [:int {:min 0}]] [:structural-leaked? :boolean]]])
 
 (defn- actual-store-path
   "Ground-truth on-disk path of the currently-open datahike store, read from
@@ -186,3 +233,27 @@
           (shutdown-agents)
           (println "IMPORT:" imp "VERIFY:" v "BACKUP:" bak)
           {:phase :complete :export exp :import imp :verify v :backup bak})))))
+
+(def RebuildArgs
+  "rebuild!'s exec-args."
+  [:map
+   [:edn-path {:optional true} [:string {:min 1}]]
+   [:confirm? {:optional true} [:maybe :boolean]]])
+
+(def ImportReport
+  "import-keep-edges!' count."
+  [:map [:imported [:int {:min 0}]]])
+
+(def VerifyReport
+  "verify's sanity report."
+  [:map [:total-edges [:int {:min 0}]] [:structural-leaked? :boolean]])
+
+(m/=> rebuild! [:=> [:cat RebuildArgs]
+                [:or
+                 [:map
+                  [:phase [:= :export-only]] [:store-path [:maybe :string]]
+                  [:scanned [:int {:min 0}]] [:kept [:int {:min 0}]]
+                  [:dropped [:int {:min 0}]] [:mutations [:int {:min 0}]]
+                  [:max-heap-pct [:int {:min 0 :max 100}]]]
+                 [:map [:phase [:= :complete]] [:export ExportReport]
+                  [:import ImportReport] [:verify VerifyReport] [:backup :string]]]])

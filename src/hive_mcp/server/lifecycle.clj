@@ -14,7 +14,8 @@
             [hive-mcp.swarm.sync :as sync]
             [hive-mcp.system.registry :as reg]
             [taoensso.timbre :as log]
-            [clojure.edn :as edn]))
+            [clojure.edn :as edn]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -23,11 +24,18 @@
 ;; Hooks Registry Access
 ;; =============================================================================
 
+(def AtomRef
+  "An atom (any IAtom), the state cell the server's lifecycle fns are handed."
+  [:fn {:error/message "must be an atom" :gen/schema :nil :gen/fmap (fn [_] (atom nil))}
+   #(instance? clojure.lang.IAtom %)])
+
 (defn get-hooks-registry
   "Get the global hooks registry for external registration.
    Takes the hooks-registry-atom as parameter for decoupling."
   [hooks-registry-atom]
   @hooks-registry-atom)
+
+(m/=> get-hooks-registry [:=> [:cat AtomRef] [:maybe AtomRef]])
 
 ;; =============================================================================
 ;; Session End / Shutdown
@@ -48,6 +56,8 @@
                          results (hooks/trigger-hooks registry :session-end ctx)]
                      (log/info "Session-end hooks completed:" (count results) "handlers executed")
                      results))))
+
+(m/=> trigger-session-end! [:=> [:cat AtomRef :any] [:maybe [:vector :any]]])
 
 (defn- hook-budget-ms
   "Wall-clock budget for `impl`: the milliseconds it declares via
@@ -102,6 +112,25 @@
     (log/info "Shutdown sequence finished" @results)
     @results))
 
+(def ShutdownCtx
+  "run-shutdown-sequence!'s context."
+  [:map
+   [:reason {:optional true} :any]
+   [:timeout-ms {:optional true} [:maybe [:int {:min 1}]]]
+   [:coordinator-id {:optional true} [:maybe :string]]
+   [:hooks-registry-atom {:optional true} [:maybe AtomRef]]])
+
+(def ShutdownReport
+  "How many hooks ran, and the error of each that threw or overran."
+  [:map
+   [:ran [:int {:min 0}]]
+   [:errors [:vector [:map [:name :any]
+                      [:error [:or [:= :timeout]
+                               [:fn {:gen/schema :string :gen/fmap #(Exception. ^String %)}
+                                #(instance? Throwable %)]]]]]]])
+
+(m/=> run-shutdown-sequence! [:=> [:cat ShutdownCtx] ShutdownReport])
+
 (defn register-shutdown-hook!
   "Register JVM shutdown hook that runs the registry-driven shutdown
    sequence.
@@ -127,6 +156,8 @@
     (reset! shutdown-hook-registered? true)
     (log/info "JVM shutdown hook registered (registry-driven)")))
 
+(m/=> register-shutdown-hook! [:=> [:cat AtomRef AtomRef AtomRef] :nil])
+
 ;; =============================================================================
 ;; Project Configuration
 ;; =============================================================================
@@ -142,6 +173,8 @@
                      (let [config (edn/read-string (slurp project-file))]
                        {:watch-dirs (:watch-dirs config)
                         :hot-reload (get config :hot-reload true)})))))
+
+(m/=> read-project-config [:=> [:cat] [:maybe [:map [:watch-dirs :any] [:hot-reload :any]]]])
 
 ;; =============================================================================
 ;; Hooks Initialization
@@ -195,3 +228,6 @@
       (register-shutdown-hook! shutdown-hook-registered? coordinator-id-atom hooks-registry-atom)
       {:registry registry
        :hooks-registered true})))
+
+(m/=> init-hooks! [:=> [:cat AtomRef AtomRef AtomRef]
+                   [:maybe [:map [:registry AtomRef] [:hooks-registered [:= true]]]]])
