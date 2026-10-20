@@ -18,6 +18,7 @@
   ;; SPDX-License-Identifier: AGPL-3.0-or-later
   (:require [hive-mcp.protocols.lifecycle :as lifecycle]
             [hive-mcp.system.registry :as reg]
+            [malli.core :as m]
             [taoensso.timbre :as log]))
 
 ;; =============================================================================
@@ -50,10 +51,18 @@
   {:pre [(fn? evict-fn)]}
   (swap! *cache-evictors conj evict-fn))
 
+(def EvictFn
+  "A 0-arg evict-stale! fn (the :pre demands fn?, not merely ifn?)."
+  [:fn {:gen/elements [(fn [] 0)]} fn?])
+
+(m/=> register-cache-evictor! [:=> [:cat EvictFn] [:set EvictFn]])
+
 (defn registered-evictors
   "Diagnostic snapshot of the dynamic evictor set."
   []
   @*cache-evictors)
+
+(m/=> registered-evictors [:=> [:cat] [:set EvictFn]])
 
 (defn- resolve-evict-fns
   "Merge the statically-listed own caches with the dynamic registry.

@@ -1,0 +1,18 @@
+{:dry-window
+ {:next-offset 0, :scanned 6, :orphans 2, :swept 0, :errors []},
+ :wet-window
+ {:next-offset 2, :scanned 2, :orphans 2, :swept 2, :errors []},
+ :tail-window
+ {:next-offset 0, :scanned 2, :orphans 0, :swept 0, :errors []},
+ :error-window
+ {:next-offset 0,
+  :scanned 6,
+  :orphans 2,
+  :swept 1,
+  :errors [{:edge-id "e2", :error "boom"}]},
+ :capped
+ {:next-offset 0, :scanned 6, :orphans 2, :swept 0, :errors []},
+ :backfill-dry
+ {:scanned 6, :orphans 2, :swept 0, :errors [], :dry-run? true},
+ :removed ["e1" "e2"],
+ :new-cursor 0}

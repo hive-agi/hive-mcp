@@ -5,6 +5,7 @@
    Sub-modules:
    - hive-mcp.telemetry.health - Centralized catastrophic event handling"
   (:require [taoensso.timbre :as log]
+            [malli.core :as m]
             [hive-mcp.telemetry.health :as health]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -48,6 +49,14 @@
                       :code-preview code-preview-with-ellipsis}
                      metadata))))
 
+(def EvalRequest
+  "log-eval-request's argument. :code is required: (count nil) is 0, but
+   (subs nil 0 0) throws."
+  [:map [:code :string] [:mode {:optional true} :any] [:metadata {:optional true} [:maybe :map]]])
+
+;; timbre logging answers nil
+(m/=> log-eval-request [:=> [:cat EvalRequest] :nil])
+
 (defn log-eval-result
   "Log structured information about an evaluation result.
 
@@ -77,6 +86,17 @@
                       :duration-ms duration-ms}
                      metadata))))
 
+(def EvalResult
+  "log-eval-result's argument; every key optional (success absent logs a failure)."
+  [:map
+   [:success {:optional true} :any]
+   [:error {:optional true} [:maybe :string]]
+   [:duration-ms {:optional true} [:maybe number?]]
+   [:result-length {:optional true} [:maybe :int]]
+   [:metadata {:optional true} [:maybe :map]]])
+
+(m/=> log-eval-result [:=> [:cat EvalResult] :nil])
+
 (defn log-eval-exception
   "Log an unexpected exception during evaluation.
 
@@ -91,6 +111,16 @@
                      :exception-message (.getMessage exception)}
                     metadata)
              exception))
+
+(def EvalException
+  "log-eval-exception's argument: the caught Throwable is required (its class
+   and message are read)."
+  [:map
+   [:exception [:fn {:gen/elements [(ex-info "boom" {})]} #(instance? Throwable %)]]
+   [:operation {:optional true} :any]
+   [:metadata {:optional true} [:maybe :map]]])
+
+(m/=> log-eval-exception [:=> [:cat EvalException] :nil])
 
 (defmacro with-eval-telemetry
   "Comprehensive telemetry wrapper for evaluation operations.
@@ -171,6 +201,16 @@
                                :fn (fn [data]
                                      (let [{:keys [output_]} data]
                                        (println (force output_))))}})})))
+
+;; answers timbre's merged config map
+(m/=> configure-logging!
+  [:function
+   [:=> [:cat] :map]
+   [:=> [:cat [:map
+               [:level {:optional true} [:enum :trace :debug :info :warn :error :fatal :report]]
+               [:output-fn {:optional true} [:maybe [:fn {:gen/elements [str]} ifn?]]]
+               [:appenders {:optional true} [:maybe :map]]]]
+    :map]])
 
 (comment
   ;; Usage examples

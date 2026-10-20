@@ -29,6 +29,7 @@
    once per `sweep-interval-s`. A heap that is merely large is left alone."
   (:require [hive-mcp.protocols.lifecycle :as lifecycle]
             [hive-mcp.system.registry :as reg]
+            [malli.core :as m]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -73,10 +74,25 @@
      :used (- committed free)
      :max (.maxMemory rt)}))
 
+(def HeapSnap
+  "heap-snapshot's figures, in bytes."
+  [:map [:committed :int] [:used :int] [:max :int]])
+
+(def HeapFigures
+  "What the pure policy reads: committed / used, either absent or nil reading
+   as 0. Open map (a full HeapSnap passes)."
+  [:map
+   [:committed {:optional true} [:maybe :int]]
+   [:used {:optional true} [:maybe :int]]])
+
+(m/=> heap-snapshot [:=> [:cat] HeapSnap])
+
 (defn reclaimable
   "Bytes of committed heap holding nothing, for `snap`. PURE."
   [{:keys [committed used]}]
   (max 0 (- (or committed 0) (or used 0))))
+
+(m/=> reclaimable [:=> [:cat HeapFigures] [:int {:min 0}]])
 
 (defn worth-collecting?
   "True when `snap` justifies paying for a Full GC. PURE.
@@ -88,6 +104,8 @@
   [{:keys [committed used] :as snap}]
   (and (>= (reclaimable snap) min-waste-bytes)
        (> (or committed 0) (* min-waste-ratio (max (or used 0) 1)))))
+
+(m/=> worth-collecting? [:=> [:cat HeapFigures] :boolean])
 
 (defn- mb [bytes] (long (/ bytes 1048576)))
 

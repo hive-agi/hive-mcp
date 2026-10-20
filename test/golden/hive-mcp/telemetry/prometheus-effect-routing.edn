@@ -1,0 +1,8 @@
+{:wave-failure 1.0,
+ :unknown-counter 1.0,
+ :nothing-named nil,
+ :wave-items 1.0,
+ :wave-duration-nil nil,
+ :handler-status 200,
+ :handler-headers
+ {"Content-Type" "text/plain; version=0.0.4; charset=utf-8"}}
