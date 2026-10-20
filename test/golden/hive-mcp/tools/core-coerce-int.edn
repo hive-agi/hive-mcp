@@ -1,0 +1,32 @@
+{:case-0
+ {:out
+  {:error
+   "I was expecting a number for `limit` but got nothing.\n\nHINT: This parameter is required. Provide an integer value.\n\n    limit: 10    ← example valid value"},
+  :in (nil :limit nil)},
+ :case-1
+ {:out
+  {:error
+   "I was expecting a number for `limit` but got a Boolean: true\n\nHINT: Pass an integer value:\n\n    limit: 10    ← example valid value"},
+  :in (true :limit 0)},
+ :case-2 {:out {:ok -1}, :in (-1 :limit 0)},
+ :case-3 {:out {:ok 42}, :in ("42" :offset 0)},
+ :case-4
+ {:out
+  {:error
+   "I was expecting a number for `limit` but got a PersistentVector: [0 1 1]\n\nHINT: Pass an integer value:\n\n    limit: 10    ← example valid value"},
+  :in ([0 1 1] :limit nil)},
+ :case-5
+ {:out
+  {:error
+   "I was expecting a number for `limit` but got nothing.\n\nHINT: This parameter is required. Provide an integer value.\n\n    limit: 10    ← example valid value"},
+  :in (nil :limit nil)},
+ :case-6
+ {:out
+  {:error
+   "I was expecting a number for `offset` but got the string \"abc\".\n\nThis looks like a string that isn't a valid number.\n\nHINT: Pass an integer, not a string:\n\n    WRONG:  offset: \"abc\"\n    RIGHT:  offset: 10"},
+  :in ("abc" :offset nil)},
+ :case-7
+ {:out
+  {:error
+   "I was expecting a number for `limit` but got nothing.\n\nHINT: This parameter is required. Provide an integer value.\n\n    limit: 10    ← example valid value"},
+  :in (nil :limit nil)}}

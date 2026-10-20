@@ -11,7 +11,8 @@
             [hive-mcp.swarm.datascript.queries :as ds-queries]
             [hive-mcp.events.core :as ev]
             [clojure.edn :as edn] [hive-dsl.result :refer [rescue]]
-            [hive-mcp.swarm.datascript :as ds]))
+            [hive-mcp.swarm.datascript :as ds]
+            [malli.core :as m]))
 
 ;;; =============================================================================
 ;;; DataScript Queries
@@ -228,6 +229,37 @@
     (save-olympus-state! (assoc state :active-tab new-tab))
     {:success true
      :active-tab new-tab}))
+
+;;; =============================================================================
+;;; Contracts
+;;; =============================================================================
+
+(def StatusResult
+  "handle-olympus-status's grid snapshot."
+  [:map
+   [:success [:= true]]
+   [:ling-count [:int {:min 0}]]
+   [:layout :map]
+   [:positions :map]
+   [:active-tab :int]
+   [:layout-mode :any]])
+
+(def FocusResult
+  "handle-olympus-focus's verdict: the focused ling, or why none was."
+  [:or
+   [:map [:success [:= true]] [:focused-ling :any]]
+   [:map [:success [:= false]] [:error :string]]])
+
+(m/=> handle-olympus-status [:=> [:cat :any] StatusResult])
+
+(m/=> handle-olympus-focus [:=> [:cat [:maybe :map]] FocusResult])
+
+(m/=> handle-olympus-arrange
+      [:=> [:cat [:maybe :map]]
+       [:map [:success [:= true]] [:layout-mode :any] [:refreshed [:= true]]]])
+
+(m/=> handle-olympus-tab
+      [:=> [:cat [:maybe :map]] [:map [:success [:= true]] [:active-tab :int]]])
 
 ;;; =============================================================================
 ;;; Tool Registration (for tools.clj)

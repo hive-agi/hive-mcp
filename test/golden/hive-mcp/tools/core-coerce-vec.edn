@@ -1,0 +1,24 @@
+{:case-0 {:out {:ok []}, :in (nil :tags nil)},
+ :case-1
+ {:out
+  {:error
+   "I was expecting `tags` to be an array, but got a Boolean: true\n\nHINT: Provide a JSON array like [\"item1\", \"item2\"]\n\n    tags: [\"tag1\", \"tag2\"]    ← correct format"},
+  :in (true :tags [])},
+ :case-2
+ {:out
+  {:error
+   "I was expecting `tags` to be an array, but got a Long: -1\n\nHINT: Provide a JSON array like [\"item1\", \"item2\"]\n\n    tags: [\"tag1\", \"tag2\"]    ← correct format"},
+  :in (-1 :tags [])},
+ :case-3
+ {:out
+  {:error
+   "I was expecting `ids` to be an array, but got a string that doesn't look like JSON: \"42\"\n\nHINT: Provide a JSON array, not a plain string.\n\n    ids: [\"tag1\", \"tag2\"]    ← correct (JSON array)\n    ids: \"tag1, tag2\"          ← incorrect (plain string)"},
+  :in ("42" :ids [])},
+ :case-4 {:out {:ok [0 1 1]}, :in ([0 1 1] :tags nil)},
+ :case-5 {:out {:ok []}, :in (nil :tags nil)},
+ :case-6
+ {:out
+  {:error
+   "I was expecting `ids` to be an array, but got a string that doesn't look like JSON: \"abc\"\n\nHINT: Provide a JSON array, not a plain string.\n\n    ids: [\"tag1\", \"tag2\"]    ← correct (JSON array)\n    ids: \"tag1, tag2\"          ← incorrect (plain string)"},
+  :in ("abc" :ids nil)},
+ :case-7 {:out {:ok []}, :in (nil :tags nil)}}
