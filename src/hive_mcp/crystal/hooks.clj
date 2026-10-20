@@ -19,7 +19,8 @@
             [hive-mcp.dns.result :as result]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.session.current :as session]))
+            [hive-mcp.session.current :as session]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -64,6 +65,8 @@
         (log/error "Failed to create progress note:" msg)
         {:success false :error msg :task task}))))
 
+(m/=> on-kanban-done [:=> [:cat [:map [:id {:optional true} :any] [:title {:optional true} :any] [:project-id {:optional true} [:maybe :string]]]] [:or [:map [:success [:= true]] [:progress-note-id :any] [:task :map]] [:map [:success [:= false]] [:error :any] [:task :map]]]])
+
 (defn extract-task-from-kanban-entry
   "Extract task data from a kanban memory entry."
   [entry]
@@ -88,6 +91,8 @@
                :status "done"}
         project-id (assoc :project-id project-id)))))
 
+(m/=> extract-task-from-kanban-entry [:=> [:cat [:maybe [:map [:id {:optional true} :any] [:content {:optional true} :any] [:tags {:optional true} [:maybe [:sequential :any]]]]]] [:map [:id :any] [:title :any] [:context :any] [:priority :any] [:started :any] [:status :any] [:project-id {:optional true} :string]]])
+
 ;; =============================================================================
 ;; Memory Access Hook
 ;; =============================================================================
@@ -105,6 +110,8 @@
         (recall/buffer-recall! entry-id event)))
     {:tracked (count entry-ids)
      :source source}))
+
+(m/=> on-memory-accessed [:=> [:cat [:map [:entry-ids {:optional true} [:maybe [:sequential :any]]] [:source {:optional true} :any] [:session {:optional true} [:maybe :string]] [:project {:optional true} :any]]] [:map [:tracked [:int {:min 0}]] [:source :any]]])
 
 ;; =============================================================================
 ;; Auto-Wrap Session-End Handler
@@ -134,6 +141,8 @@
       (log/info "clear-harvested!: retracted" tasks "tasks and" mvs
                 "movements for session" (:session/id session-ref))
       {:tasks tasks :movements mvs})))
+
+(m/=> clear-harvested! [:=> [:cat [:maybe :map] [:maybe [:map [:harvested-task-ids {:optional true} [:maybe [:sequential :any]]] [:harvested-movement-ids {:optional true} [:maybe [:sequential :any]]]]]] [:or [:map [:tasks [:= 0]] [:movements [:= 0]] [:skipped [:= :unscoped]]] [:map [:tasks :int] [:movements :int]]]])
 
 (defn- on-session-end
   "Handler for session-end event.
@@ -187,6 +196,8 @@
                      (log/debug "Channel hooks registered")))
     (reset! hooks-registered? true)
     {:registered true}))
+
+(m/=> register-hooks! [:=> [:cat :any] [:maybe [:map [:registered [:= true]]]]])
 
 (comment
   ;; When a kanban task completes

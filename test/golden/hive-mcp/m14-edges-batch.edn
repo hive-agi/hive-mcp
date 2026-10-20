@@ -1,0 +1,52 @@
+{:from-scoped
+ {"n1"
+  [#:kg-edge{:from "n1",
+             :to "n3",
+             :relation :depends-on,
+             :scope "s2",
+             :confidence 1.0}]},
+ :to-scoped
+ {"n3"
+  [#:kg-edge{:from "n1",
+             :to "n3",
+             :relation :depends-on,
+             :scope "s2",
+             :confidence 1.0}]},
+ :to-db-scoped {},
+ :co
+ {"c1"
+  [{:entry-id "c2", :confidence 0.6}
+   {:entry-id "c3", :confidence 0.2}],
+  "c2" [{:entry-id "c1", :confidence 0.6}]},
+ :from
+ {"n1"
+  [#:kg-edge{:from "n1",
+             :to "n2",
+             :relation :implements,
+             :scope "s1",
+             :confidence 0.9}
+   #:kg-edge{:from "n1",
+             :to "n3",
+             :relation :depends-on,
+             :scope "s2",
+             :confidence 1.0}],
+  "n2"
+  [#:kg-edge{:from "n2",
+             :to "n3",
+             :relation :refines,
+             :confidence 0.4}]},
+ :from-db-scoped {},
+ :from-db {},
+ :to-db {},
+ :to
+ {"n3"
+  [#:kg-edge{:from "n1",
+             :to "n3",
+             :relation :depends-on,
+             :scope "s2",
+             :confidence 1.0}
+   #:kg-edge{:from "n2", :to "n3", :relation :refines, :confidence 0.4}
+   #:kg-edge{:from "n3",
+             :to "n3",
+             :relation :relates,
+             :confidence 1.0}]}}

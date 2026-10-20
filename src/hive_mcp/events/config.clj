@@ -21,7 +21,8 @@
      <Name>-fields      — field registry
      <Name>-schema      — Malli schema
      resolve-<Name>     — resolver fn (0/1/2 arity, returns Result)"
-  (:require [hive-di.core :refer [defconfig env]]
+  (:require [malli.core :as m]
+            [hive-di.core :refer [defconfig env]]
             [hive-dsl.result :as r]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -88,10 +89,14 @@
   [m]
   (swap! *metrics-overrides merge m))
 
+(m/=> set-metrics-override! [:=> [:cat [:maybe :map]] :map])
+
 (defn clear-metrics-overrides!
   "Drop all runtime overrides set via `set-metrics-override!`. For testing."
   []
   (reset! *metrics-overrides {}))
+
+(m/=> clear-metrics-overrides! [:=> [:cat] :map])
 
 (defn metrics-config
   "Resolved EventsMetricsConfig as a plain map.
@@ -106,6 +111,8 @@
    (let [base (resolve-or-throw resolve-EventsMetricsConfig {})]
      (merge base @*metrics-overrides overrides))))
 
+(m/=> metrics-config [:function [:=> [:cat] :map] [:=> [:cat [:maybe :map]] :map]])
+
 (defn agent-config
   "Resolved EventsAgentConfig as a plain map.
 
@@ -116,3 +123,5 @@
   ([] (agent-config {}))
   ([overrides]
    (resolve-or-throw resolve-EventsAgentConfig overrides)))
+
+(m/=> agent-config [:function [:=> [:cat] :map] [:=> [:cat [:maybe :map]] :map]])

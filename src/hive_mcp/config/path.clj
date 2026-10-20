@@ -1,6 +1,7 @@
 (ns hive-mcp.config.path
   "Where the global config.edn lives. A leaf: no requires, so every config
-   reader can depend on it without pulling anything else in.")
+   reader can depend on it without pulling anything else in."
+  (:require [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -12,6 +13,9 @@
   (if (and (string? env-path) (not (.isBlank ^String env-path)))
     env-path
     (str home "/.config/hive-mcp/config.edn")))
+(m/=> resolve-config-path
+      [:=> [:cat [:any {:gen/schema [:maybe :string]}]
+                  [:any {:gen/schema :string}]] :string])
 
 (def config-path
   "The global config.edn of this process. HIVE_MCP_CONFIG names another file,

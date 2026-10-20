@@ -1,0 +1,231 @@
+{:case-0
+ {:out
+  {:log
+   {:level :info,
+    :message "KG node promoted: q5y0 from 0Qp to THA9 with 0 edges"},
+   :channel-publish
+   {:event-type :kg-promotion,
+    :data
+    {:node-id "q5y0",
+     :from-scope "0Qp",
+     :to-scope "THA9",
+     :edges-promoted [],
+     :promoted-by nil}},
+   :shout
+   {:agent-id "coordinator",
+    :event-type :kg-promotion,
+    :data
+    {:node-id "q5y0",
+     :from-scope "0Qp",
+     :to-scope "THA9",
+     :edge-count 0}}},
+  :in
+  ({}
+   [:kg/node-promoted
+    {:node-id "q5y0",
+     :from-scope "0Qp",
+     :to-scope "THA9",
+     :edges-promoted []}])},
+ :case-1
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG node promoted: 7R28yn from E9hV1o7 to k367OXlr2W with 0 edges"},
+   :channel-publish
+   {:event-type :kg-promotion,
+    :data
+    {:node-id "7R28yn",
+     :from-scope "E9hV1o7",
+     :to-scope "k367OXlr2W",
+     :edges-promoted nil,
+     :promoted-by nil}},
+   :shout
+   {:agent-id "coordinator",
+    :event-type :kg-promotion,
+    :data
+    {:node-id "7R28yn",
+     :from-scope "E9hV1o7",
+     :to-scope "k367OXlr2W",
+     :edge-count 0}}},
+  :in
+  ({}
+   [:kg/node-promoted
+    {:node-id "7R28yn",
+     :from-scope "E9hV1o7",
+     :to-scope "k367OXlr2W"}])},
+ :case-2
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG node promoted: w37 from q3BeL8CcDs to XJn2 with 0 edges by b7Pq"},
+   :channel-publish
+   {:event-type :kg-promotion,
+    :data
+    {:node-id "w37",
+     :from-scope "q3BeL8CcDs",
+     :to-scope "XJn2",
+     :edges-promoted nil,
+     :promoted-by "b7Pq"}},
+   :shout
+   {:agent-id "b7Pq",
+    :event-type :kg-promotion,
+    :data
+    {:node-id "w37",
+     :from-scope "q3BeL8CcDs",
+     :to-scope "XJn2",
+     :edge-count 0}}},
+  :in
+  ({}
+   [:kg/node-promoted
+    {:node-id "w37",
+     :from-scope "q3BeL8CcDs",
+     :to-scope "XJn2",
+     :promoted-by "b7Pq"}])},
+ :case-3
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG node promoted: 769zs from 99 to OVP with 2 edges by Wf8o84E5"},
+   :channel-publish
+   {:event-type :kg-promotion,
+    :data
+    {:node-id "769zs",
+     :from-scope "99",
+     :to-scope "OVP",
+     :edges-promoted ["I3" "T4m3N8Ze"],
+     :promoted-by "Wf8o84E5"}},
+   :shout
+   {:agent-id "Wf8o84E5",
+    :event-type :kg-promotion,
+    :data
+    {:node-id "769zs",
+     :from-scope "99",
+     :to-scope "OVP",
+     :edge-count 2}}},
+  :in
+  ({}
+   [:kg/node-promoted
+    {:node-id "769zs",
+     :from-scope "99",
+     :to-scope "OVP",
+     :edges-promoted ["I3" "T4m3N8Ze"],
+     :promoted-by "Wf8o84E5"}])},
+ :case-4
+ {:out
+  {:log
+   {:level :info,
+    :message "KG node promoted: Pf from 1JuS3N76R to R4 with 0 edges"},
+   :channel-publish
+   {:event-type :kg-promotion,
+    :data
+    {:node-id "Pf",
+     :from-scope "1JuS3N76R",
+     :to-scope "R4",
+     :edges-promoted nil,
+     :promoted-by nil}},
+   :shout
+   {:agent-id "coordinator",
+    :event-type :kg-promotion,
+    :data
+    {:node-id "Pf",
+     :from-scope "1JuS3N76R",
+     :to-scope "R4",
+     :edge-count 0}}},
+  :in
+  ({}
+   [:kg/node-promoted
+    {:node-id "Pf", :from-scope "1JuS3N76R", :to-scope "R4"}])},
+ :case-5
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG node promoted: S93Yh from N95Yt55 to 3e6NP4kd8g with 3 edges by tU171DSc"},
+   :channel-publish
+   {:event-type :kg-promotion,
+    :data
+    {:node-id "S93Yh",
+     :from-scope "N95Yt55",
+     :to-scope "3e6NP4kd8g",
+     :edges-promoted ["5V2LH4d" "7kG1iQ7" "1Rof"],
+     :promoted-by "tU171DSc"}},
+   :shout
+   {:agent-id "tU171DSc",
+    :event-type :kg-promotion,
+    :data
+    {:node-id "S93Yh",
+     :from-scope "N95Yt55",
+     :to-scope "3e6NP4kd8g",
+     :edge-count 3}}},
+  :in
+  ({}
+   [:kg/node-promoted
+    {:node-id "S93Yh",
+     :from-scope "N95Yt55",
+     :to-scope "3e6NP4kd8g",
+     :edges-promoted ["5V2LH4d" "7kG1iQ7" "1Rof"],
+     :promoted-by "tU171DSc"}])},
+ :case-6
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG node promoted: Bfv3hFEH from K2gqM to qDTHJnX5 with 6 edges by VMtY"},
+   :channel-publish
+   {:event-type :kg-promotion,
+    :data
+    {:node-id "Bfv3hFEH",
+     :from-scope "K2gqM",
+     :to-scope "qDTHJnX5",
+     :edges-promoted
+     ["W" "w8KlF7" "s6xnU" "1812vQr2" "Kru0" "jMug4s5yp6"],
+     :promoted-by "VMtY"}},
+   :shout
+   {:agent-id "VMtY",
+    :event-type :kg-promotion,
+    :data
+    {:node-id "Bfv3hFEH",
+     :from-scope "K2gqM",
+     :to-scope "qDTHJnX5",
+     :edge-count 6}}},
+  :in
+  ({}
+   [:kg/node-promoted
+    {:node-id "Bfv3hFEH",
+     :from-scope "K2gqM",
+     :to-scope "qDTHJnX5",
+     :edges-promoted
+     ["W" "w8KlF7" "s6xnU" "1812vQr2" "Kru0" "jMug4s5yp6"],
+     :promoted-by "VMtY"}])},
+ :case-7
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG node promoted: hLM4Q82 from 4zU2Cl6 to 2P4 with 4 edges"},
+   :channel-publish
+   {:event-type :kg-promotion,
+    :data
+    {:node-id "hLM4Q82",
+     :from-scope "4zU2Cl6",
+     :to-scope "2P4",
+     :edges-promoted ["vqMQw" "s4" "Hv6nnoz" "i4C04V2"],
+     :promoted-by nil}},
+   :shout
+   {:agent-id "coordinator",
+    :event-type :kg-promotion,
+    :data
+    {:node-id "hLM4Q82",
+     :from-scope "4zU2Cl6",
+     :to-scope "2P4",
+     :edge-count 4}}},
+  :in
+  ({}
+   [:kg/node-promoted
+    {:node-id "hLM4Q82",
+     :from-scope "4zU2Cl6",
+     :to-scope "2P4",
+     :edges-promoted ["vqMQw" "s4" "Hv6nnoz" "i4C04V2"]}])}}

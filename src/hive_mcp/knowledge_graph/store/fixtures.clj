@@ -18,7 +18,8 @@
      (use-fixtures :each (fixtures/backend-fixture :datascript))
      ;; or for dual-backend:
      (use-fixtures :each fixtures/dual-backend-fixture)"
-  (:require [hive-mcp.knowledge-graph.store.harness :as harness]))
+  (:require [hive-mcp.knowledge-graph.store.harness :as harness]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -93,3 +94,33 @@
   ;; Run with Datalevin
   (binding [*current-backend* :datalevin]
     (datalevin-fixture f)))
+
+(def TestFn
+  "A clojure.test fixture's test fn: called with no args."
+  [:fn {:error/message "should be a test fn"
+        :gen/elements [(constantly nil) (constantly :ran)]}
+   ifn?])
+
+(def Fixture
+  "A clojure.test fixture: a fn of the test fn."
+  [:fn {:error/message "should be a fixture fn"
+        :gen/elements [datascript-fixture]}
+   ifn?])
+
+(def Backend
+  "The backends backend-fixture has a fixture for."
+  [:enum :datascript :datalevin :datahike])
+
+;; A fixture returns whatever the test fn returns (nil when a persistent backend
+;; is skipped): the result is the test's, not the fixture's.
+(m/=> datascript-fixture [:=> [:cat TestFn] :any])
+(m/=> datalevin-fixture [:=> [:cat TestFn] :any])
+(m/=> datahike-fixture [:=> [:cat TestFn] :any])
+(m/=> global-datascript-fixture
+      [:=> [:cat TestFn [:alt
+                         [:cat]
+                         [:cat [:= :sync-writes?] :any]
+                         [:cat [:maybe [:map [:sync-writes? {:optional true} :any]]]]]]
+       :any])
+(m/=> backend-fixture [:=> [:cat Backend] Fixture])
+(m/=> dual-backend-fixture [:=> [:cat TestFn] :any])

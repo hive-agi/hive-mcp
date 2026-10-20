@@ -1,0 +1,10 @@
+{:bad-dir "neighbors: invalid direction",
+ :nil-dir ["n1" "n3"],
+ :scoped ["n1" "n3"],
+ :nil-scope 3,
+ :all ["n1" "n2" "n3"],
+ :empty [],
+ :out ["n3" "n2"],
+ :both ["n1" "n3"],
+ :self-loop ["n1" "n2"],
+ :in ["n2" "n1"]}

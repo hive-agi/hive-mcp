@@ -74,11 +74,12 @@
    (let [channels (delivery-channel-snapshot)]
      {:agents (build-agents-map project-id)
       :project-id project-id
-      :pending-asks (mapv (fn [[id {:keys [question options agent-id]}]]
-                            {:ask-id id
-                             :agent-id agent-id
-                             :question question
-                             :options options})
+      :pending-asks (mapv (fn [[id {:keys [question options agent-id] :as entry}]]
+                            (merge {:ask-id id
+                                    :agent-id agent-id
+                                    :question question
+                                    :options options}
+                                   (select-keys entry [:context :expects :cc])))
                           @state/pending-asks)
       :pending-swarm-prompts (mapv (fn [[slave-id entry]]
                                      (let [{:keys [prompt timestamp session-id received-at]} (:data entry)]

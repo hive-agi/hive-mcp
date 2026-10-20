@@ -1,0 +1,7 @@
+{:alpha :slot/ok,
+ :alpha-cached :slot/ok,
+ :made 1,
+ :beta {:backend :missing, :reason :factory-returned-nil},
+ :beta-breaker {:reason :breaker-open},
+ :registered [:alpha],
+ :store-satisfies? true}

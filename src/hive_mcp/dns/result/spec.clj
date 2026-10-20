@@ -15,7 +15,8 @@
    - clojure.org/guides/spec"
   (:require [clojure.spec.alpha :as s]
             [hive-mcp.dns.result :as r]
-            [hive-mcp.dns.result.taxonomy :as tax]))
+            [hive-mcp.dns.result.taxonomy :as tax]
+            [malli.core :as m]))
 
 ;; =============================================================================
 ;; Primitive Specs
@@ -166,6 +167,8 @@
    [`r/ok `r/err `r/ok? `r/err? `r/bind `r/map-ok `r/map-err
     `tax/known-error?]))
 
+(m/=> instrument! [:=> [:cat] [:sequential :any]])
+
 (defn unstrument!
   "Disable spec checking (restore production performance)."
   []
@@ -173,3 +176,5 @@
   ((resolve 'clojure.spec.test.alpha/unstrument)
    [`r/ok `r/err `r/ok? `r/err? `r/bind `r/map-ok `r/map-err
     `tax/known-error?]))
+
+(m/=> unstrument! [:=> [:cat] [:sequential :any]])

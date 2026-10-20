@@ -7,7 +7,8 @@
    aliasing its value, so a reload or a redef of `hive-mcp.project.scope`
    reaches callers that still spell the old name. New code requires
    `hive-mcp.project.scope` directly."
-  (:require [hive-mcp.project.scope :as ps]))
+  (:require [malli.core :as m]
+            [hive-mcp.project.scope :as ps]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -29,3 +30,21 @@
 (defn descendant-scopes [scope] (ps/descendant-scopes scope))
 (defn full-hierarchy-scope-tags [scope] (ps/full-hierarchy-scope-tags scope))
 (defn derive-hierarchy-scope-filter [scope] (ps/derive-hierarchy-scope-filter scope))
+
+(m/=> read-direct-project-config [:=> [:cat :string] [:maybe :map]])
+(m/=> resolve-project-id [:=> [:cat [:maybe :string]] [:maybe :string]])
+(m/=> register-project-config! [:=> [:cat :string :map] :any])
+(m/=> deregister-project-config! [:=> [:cat :string] :any])
+(m/=> get-project-config [:=> [:cat [:maybe :string]] [:maybe :map]])
+(m/=> get-alias-index [:=> [:cat] :map])
+(m/=> clear-config-cache! [:=> [:cat] :any])
+(m/=> get-parent-scope [:=> [:cat [:maybe :string]] [:maybe :string]])
+(m/=> visible-scopes [:=> [:cat [:maybe :string]] [:sequential :string]])
+(m/=> scope-contains? [:=> [:cat [:maybe :string] [:maybe :string]] :boolean])
+(m/=> infer-scope-from-path [:=> [:cat :string] [:maybe :string]])
+(m/=> scope->tag [:=> [:cat :string] :string])
+(m/=> visible-scope-tags [:=> [:cat [:maybe :string]] [:sequential :string]])
+(m/=> descendant-scope-tags [:=> [:cat [:maybe :string]] [:sequential :string]])
+(m/=> descendant-scopes [:=> [:cat [:maybe :string]] [:sequential :string]])
+(m/=> full-hierarchy-scope-tags [:=> [:cat [:maybe :string]] [:sequential :string]])
+(m/=> derive-hierarchy-scope-filter [:=> [:cat [:maybe :string]] :any])

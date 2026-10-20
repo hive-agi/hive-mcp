@@ -18,7 +18,8 @@
   (:require [hive-di.core :as di]
             [hive-di.source :as src]
             [hive-dsl.result :as r]
-            [hive-mcp.config.path :as config-path]))
+            [hive-mcp.config.path :as config-path]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -55,7 +56,14 @@
        (throw (ex-info "EmbedderConfig resolution failed"
                        {:result result :overrides overrides}))))))
 
+(m/=> resolve!
+      [:function
+       [:=> [:cat] [:map [:embedder-block :map]]]
+       [:=> [:cat [:maybe :map]] [:map [:embedder-block :map]]]])
+
 (defn block
   "Resolved `:embedder` block as a map. Convenience for L2 facades."
   []
   (:embedder-block (resolve!)))
+
+(m/=> block [:=> [:cat] :map])

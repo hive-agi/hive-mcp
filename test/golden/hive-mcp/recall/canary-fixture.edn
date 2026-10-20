@@ -1,0 +1,52 @@
+{:case-0
+ {:out
+  {:role :anchor,
+   :type "note",
+   :tags ["recall-canary" "recall-canary-anchor"],
+   :content
+   "# Recall canary anchor (do not delete)\n\nquokka vestibule 7731 — three rare literal tokens that occur together in this entry and nowhere else in the corpus. The recall canary searches for them on every scheduler tick; if this row stops coming back, the lexical channel is dead and every semantic answer above it is unverified."},
+  :in (:anchor)},
+ :case-1 {:out nil, :in (:unknown)},
+ :case-2
+ {:out
+  {:role :current,
+   :type "note",
+   :tags ["recall-canary" "recall-canary-current"],
+   :supersedes :superseded,
+   :content
+   "# Recall canary — the CURRENT claim (do not delete)\n\ncanary pelican index rebuild cadence: hourly. This row supersedes the retracted one; retrieval must return THIS and suppress that."},
+  :in (:current)},
+ :case-3
+ {:out
+  {:role :superseded,
+   :type "note",
+   :tags ["recall-canary" "recall-canary-superseded"],
+   :content
+   "# Recall canary — the RETRACTED claim (do not delete)\n\ncanary pelican index rebuild cadence: nightly. This row is superseded on purpose. A retrieval path that returns it has lost supersede-suppression, which means agents are being served a claim the corpus has already retracted."},
+  :in (:superseded)},
+ :case-4
+ {:out
+  {:role :anchor,
+   :type "note",
+   :tags ["recall-canary" "recall-canary-anchor"],
+   :content
+   "# Recall canary anchor (do not delete)\n\nquokka vestibule 7731 — three rare literal tokens that occur together in this entry and nowhere else in the corpus. The recall canary searches for them on every scheduler tick; if this row stops coming back, the lexical channel is dead and every semantic answer above it is unverified."},
+  :in (:anchor)},
+ :case-5 {:out nil, :in (nil)},
+ :case-6
+ {:out
+  {:role :current,
+   :type "note",
+   :tags ["recall-canary" "recall-canary-current"],
+   :supersedes :superseded,
+   :content
+   "# Recall canary — the CURRENT claim (do not delete)\n\ncanary pelican index rebuild cadence: hourly. This row supersedes the retracted one; retrieval must return THIS and suppress that."},
+  :in (:current)},
+ :case-7
+ {:out
+  {:role :superseded,
+   :type "note",
+   :tags ["recall-canary" "recall-canary-superseded"],
+   :content
+   "# Recall canary — the RETRACTED claim (do not delete)\n\ncanary pelican index rebuild cadence: nightly. This row is superseded on purpose. A retrieval path that returns it has lost supersede-suppression, which means agents are being served a claim the corpus has already retracted."},
+  :in (:superseded)}}

@@ -10,32 +10,53 @@
 
    Decisions:
    - 20260429195812-0c5dfe8d, 20260429230453-7e7627cc (Phase 2)."
-  (:require [hive-mcp.extensions.registry :as ext]))
+  (:require [hive-mcp.extensions.registry :as ext]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+(def ElispName
+  "An elisp feature or function name. The builders interpolate it with %s,
+   so a symbol, keyword or string all render."
+  [:or :symbol :keyword :string])
+
+(def ElispSource
+  "Generated elisp source, or nil when hive-emacs is not loaded."
+  [:maybe :string])
 
 (defn format-elisp
   [template & args]
   (when-let [f (ext/get-extension :emacs/format-elisp)]
     (apply f template args)))
 
+(m/=> format-elisp [:=> [:cat :string [:* :any]] ElispSource])
+
 (defn require-and-call
   [feature fn-sym & args]
   (when-let [f (ext/get-extension :emacs/require-and-call)]
     (apply f feature fn-sym args)))
+
+(m/=> require-and-call [:=> [:cat ElispName ElispName [:* :any]] ElispSource])
 
 (defn require-and-call-json
   [feature fn-sym & args]
   (when-let [f (ext/get-extension :emacs/require-and-call-json)]
     (apply f feature fn-sym args)))
 
+(m/=> require-and-call-json [:=> [:cat ElispName ElispName [:* :any]] ElispSource])
+
 (defn require-and-call-text
   [feature fn-sym & args]
   (when-let [f (ext/get-extension :emacs/require-and-call-text)]
     (apply f feature fn-sym args)))
 
+(m/=> require-and-call-text [:=> [:cat ElispName ElispName [:* :any]] ElispSource])
+
 (defn require-and-call-plist-json
   [feature fn-sym params-map]
   (when-let [f (ext/get-extension :emacs/require-and-call-plist-json)]
     (f feature fn-sym params-map)))
+
+(m/=> require-and-call-plist-json
+      [:=> [:cat ElispName ElispName [:maybe [:map-of [:or :keyword :string :symbol] :any]]] ElispSource])

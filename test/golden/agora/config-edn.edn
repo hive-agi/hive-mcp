@@ -1,0 +1,8 @@
+{:case-0 {:out "nil", :in nil},
+ :case-1 {:out "{:timeout-ms 0}", :in {:timeout-ms 0}},
+ :case-2 {:out "{:threshold 0.5}", :in {:threshold 0.5}},
+ :case-3 {:out "{:timeout-ms 0}", :in {:timeout-ms 0}},
+ :case-4 {:out "nil", :in nil},
+ :case-5 {:out "nil", :in nil},
+ :case-6 {:out "nil", :in nil},
+ :case-7 {:out "nil", :in nil}}

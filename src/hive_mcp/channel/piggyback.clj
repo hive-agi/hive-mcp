@@ -17,7 +17,8 @@
             [hive-dsl.context.identity :as ctx-id]
             [hive-mcp.channel.row-transforms :as row-transforms]
             [hive-mcp.channel.piggyback.sources :as sources]
-            [hive-mcp.channel.lineage :as lineage]))
+            [hive-mcp.channel.lineage :as lineage]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -50,6 +51,18 @@
   []
   (or (istore/get-store) default-local-store))
 
+(def Row
+  "One rendered hivemind row: author, event type, message, plus optional keys."
+  [:map [:a :any] [:e :any] [:m :any]])
+
+(def Rows
+  "Rendered rows, oldest first."
+  [:vector Row])
+
+(def CursorKey
+  "[reader-id project-id] cursor coordinate."
+  [:tuple :any :string])
+
 (defn clear-instruction-queues!
   "Clear instruction queues. Guarded — no-op if coordinator running."
   []
@@ -59,6 +72,8 @@
    ;; Ensure the shared atom is empty even if a caller swapped stores
    ;; out from under us.
    (reset! instruction-queues {})))
+
+(m/=> clear-instruction-queues! [:=> [:cat] :any])
 
 (defn push-instruction!
   "Push an instruction to an agent's queue for piggyback delivery.
@@ -70,16 +85,22 @@
   ;; caller that relied on it.
   @instruction-queues)
 
+(m/=> push-instruction! [:=> [:cat :any [:maybe :map]] istore/Queues])
+
 (defn drain-instructions!
   "Drain all pending instructions for an agent, returning payloads in
    insertion order. Returns a vector (possibly empty)."
   [agent-id]
   (istore/drain! (current-store) agent-id))
 
+(m/=> drain-instructions! [:=> [:cat :any] [:vector :any]])
+
 (defn peek-instructions
   "Peek at pending instructions without draining. For debugging."
   [agent-id]
   (istore/peek* (current-store) agent-id))
+
+(m/=> peek-instructions [:=> [:cat :any] [:vector :any]])
 
 ;; Message Source (injectable for DIP)
 
@@ -98,6 +119,8 @@
    it. Pass a var (#'f) so a reload of f is seen by the next read."
   [source-fn]
   (reset! message-source-fn source-fn))
+
+(m/=> register-message-source! [:=> [:cat [:maybe ifn?]] [:maybe ifn?]])
 
 (def default-source-id
   "SourceId of the legacy single slot, `message-source-fn`."
@@ -157,10 +180,14 @@
       (log/debug "piggyback: buffered backbone event from" agent-id
                  (name (or event-type :unknown))))))
 
+(m/=> buffer-backbone-event! [:=> [:cat [:map [:agent-id {:optional true} :any]]] :nil])
+
 (defn clear-backbone-buffer!
   "Clear backbone buffer. For testing."
   []
   (reset! backbone-buffer []))
+
+(m/=> clear-backbone-buffer! [:=> [:cat] [:vector {:max 0} :any]])
 
 (defn- dedupe-messages
   "Remove duplicate messages using :shout-id (idempotency key) when present,
@@ -210,6 +237,8 @@
   []
   (swap! message-id-counter inc))
 
+(m/=> next-message-id! [:=> [:cat] pos-int?])
+
 (s/def ::session-id (s/nilable string?))
 
 (s/def ::context-id (s/nilable string?))
@@ -240,11 +269,15 @@
   []
   (not (contains? #{:project "project"} (config-value [:hivemind :piggyback-routing]))))
 
+(m/=> spawner-routing? [:=> [:cat] :boolean])
+
 (defn progress-digest?
   "Are :progress bursts collapsed into one row per agent? Default true;
    [:hivemind :progress-digest] false renders every turn verbatim."
   []
   (not (false? (config-value [:hivemind :progress-digest]))))
+
+(m/=> progress-digest? [:=> [:cat] :boolean])
 
 (defn unowned-global-opt-in?
   "Do coordinator sessions receive ROOT-level shouts that belong to no
@@ -254,6 +287,8 @@
    [:hivemind :unowned-global] to :deliver (or \"deliver\") to opt in."
   []
   (contains? #{:deliver "deliver"} (config-value [:hivemind :unowned-global])))
+
+(m/=> unowned-global-opt-in? [:=> [:cat] :boolean])
 
 (def progress-fold-key
   "Reserved row-transform key of core's built-in default policy, the
@@ -281,6 +316,8 @@
    :hive/extensions halt (which clears that registry) does not remove them."
   []
   (row-transforms/register-core-transform! progress-fold-key #'progress-fold))
+
+(m/=> register-default-row-transforms! [:=> [:cat] :any])
 
 (register-default-row-transforms!)
 
@@ -430,6 +467,8 @@
         (when (seq rows)
           rows)))))
 
+(m/=> get-messages [:=> [:cat :any [:* :any]] [:maybe Rows]])
+
 (defn fetch-history
   "Get hivemind messages without marking as read.
    Dual-path: merges messages from atom-based source and backbone buffer.
@@ -459,6 +498,8 @@
                         :p project-id}
                  task (assoc :t task))))))
 
+(m/=> fetch-history [:=> [:cat [:* :any]] Rows])
+
 (defn fetch-conversation
   "Every message of one A2A conversation, oldest first, WITHOUT moving any cursor.
 
@@ -486,6 +527,8 @@
                    task (assoc :t task)
                    ref (assoc :ref ref)))))))
 
+(m/=> fetch-conversation [:=> [:cat :any [:* :any]] [:maybe Rows]])
+
 (defn reset-cursor!
   "Reset read cursor for an agent+project. Next get-messages returns all messages.
 
@@ -498,10 +541,14 @@
         cursor-key [agent-id effective-project]]
     (swap! agent-read-cursors dissoc cursor-key)))
 
+(m/=> reset-cursor! [:=> [:cat :any [:* :any]] [:map-of CursorKey :int]])
+
 (defn reset-all-cursors!
   "Reset all read cursors. For testing/debugging."
   []
   (reset! agent-read-cursors {}))
+
+(m/=> reset-all-cursors! [:=> [:cat] [:map-of {:max 0} :any :any]])
 
 (defn evict-stale-cursors!
   "Evict cursors that haven't been read for longer than max-age-ms.
@@ -521,6 +568,8 @@
       (log/info "piggyback: evicted" (count stale-keys) "stale cursors older than"
                 (quot max-age-ms 60000) "min"))
     (count stale-keys)))
+
+(m/=> evict-stale-cursors! [:=> [:cat number?] [:int {:min 0}]])
 
 (defn adopt-cursor!
   "Adopt another caller's cursor position for a project.
@@ -547,3 +596,5 @@
           (log/info "piggyback: adopted cursor from" (first _donor-key)
                     "→" new-caller-id "at ts" donor-ts)
           donor-ts)))))
+
+(m/=> adopt-cursor! [:=> [:cat :any [:maybe :string]] [:maybe :int]])

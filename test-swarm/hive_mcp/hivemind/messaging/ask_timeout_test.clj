@@ -59,6 +59,8 @@
         shouts (atom [])
         seen-entry (promise)]
     (with-redefs [state/pending-asks asks
+                  ;; no native popup in a test run, even with a display
+                  hive-mcp.hivemind.messaging/ask-popup (constantly nil)
                   channel/broadcast! (fn [{:keys [ask-id]}]
                                        (deliver seen-entry (get @asks ask-id))
                                        (when respond?

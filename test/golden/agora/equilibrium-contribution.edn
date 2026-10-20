@@ -1,0 +1,12 @@
+{:case-0 {:out :negative, :in :zzz},
+ :case-1 {:out :neutral, :in {:type :defer}},
+ :case-10 {:out :positive, :in {:type :approve}},
+ :case-11 {:out :neutral, :in {:type :defer}},
+ :case-2 {:out :positive, :in {:type :approve}},
+ :case-3 {:out :negative, :in {:type :counter}},
+ :case-4 {:out :positive, :in :approve},
+ :case-5 {:out :positive, :in :approve},
+ :case-6 {:out :positive, :in :lgtm},
+ :case-7 {:out :negative, :in nil},
+ :case-8 {:out :negative, :in :counter},
+ :case-9 {:out :positive, :in {:type :approve}}}

@@ -4,7 +4,8 @@
    Datahike exposes history / as-of / since DB values; DataScript and
    Datalevin do not. Every fn here returns nil — and `temporal-store?`
    returns false — when the active store is non-temporal."
-  (:require [hive-mcp.knowledge-graph.protocol :as proto]
+  (:require [malli.core :as m]
+            [hive-mcp.knowledge-graph.protocol :as proto]
             [hive-mcp.knowledge-graph.connection.store :as store]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -119,3 +120,12 @@
   [tx-or-time q & inputs]
   (when-let [aodb (as-of-db tx-or-time)]
     (datahike-q q aodb inputs)))
+
+(m/=> temporal-store? [:=> [:cat] :boolean])
+
+;; Temporal DB values are backend-specific opaque objects, or nil on non-temporal stores.
+(m/=> history-db [:=> [:cat] :any])
+(m/=> as-of-db [:=> [:cat [:or :int inst?]] :any])
+(m/=> since-db [:=> [:cat [:or :int inst?]] :any])
+(m/=> query-history [:=> [:cat [:or [:vector :any] [:sequential :any]] [:* :any]] :any])
+(m/=> query-as-of [:=> [:cat [:or :int inst?] [:or [:vector :any] [:sequential :any]] [:* :any]] :any])

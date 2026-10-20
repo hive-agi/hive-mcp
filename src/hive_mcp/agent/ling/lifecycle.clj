@@ -12,7 +12,9 @@
             [hive-mcp.config.core :as global-config]
             [hive-dsl.result :as r]
             [taoensso.timbre :as log]
-            [hive-mcp.config.ling-defaults :as ling-defaults]))
+            [hive-mcp.config.ling-defaults :as ling-defaults]
+            [malli.core :as m]
+            [hive-mcp.agent.ling.strategy :as strategy]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -33,6 +35,8 @@
   (when-let [secret-key (get provider->secret-key (keyword provider))]
     (r/rescue nil (global-config/get-secret secret-key))))
 
+(m/=> resolve-api-key-for-provider [:=> [:cat [:maybe [:or :keyword :string]]] [:maybe :string]])
+
 (defn default-spawn-mode
   "Spawn mode applied when a caller supplies none.
    Single source of truth for the default — `resolve-effective-mode`,
@@ -44,6 +48,8 @@
    `hive-mcp.config.ling-defaults`). Read per call, never captured."
   []
   (ling-defaults/default-spawn-mode))
+
+(m/=> default-spawn-mode [:=> [:cat] :keyword])
 
 (defn resolve-effective-mode
   "Raw spawn inputs -> effective spawn mode keyword.
@@ -71,6 +77,9 @@
               :headless))
       raw-mode)))
 
+(m/=> resolve-effective-mode
+      [:=> [:cat [:maybe [:map [:spawn-mode {:optional true} [:maybe :keyword]]]]] :keyword])
+
 (defn resolve-strategy
   "Get the ILingStrategy implementation for a spawn mode.
    Checks terminal registry first, then headless registry.
@@ -82,6 +91,24 @@
                       {:mode mode
                        :registered-terminals (terminal-reg/registered-terminals)
                        :registered-headless (headless-reg/registered-headless)}))))
+
+;; An unregistered mode throws ex-info naming the registered ones.
+(m/=> resolve-strategy [:=> [:cat :any] strategy/LingStrategy])
+
+(def LingCtx
+  "The context map a strategy call receives. The six identity keys are always
+   present (nil when the ling has none); the rest appear only when set."
+  [:map
+   [:id :any]
+   [:cwd [:maybe :string]]
+   [:presets :any]
+   [:project-id [:maybe :string]]
+   [:spawn-mode [:maybe :keyword]]
+   [:model [:maybe :string]]
+   [:provider {:optional true} :any]
+   [:kg-compress? {:optional true} :boolean]
+   [:verbose? {:optional true} :boolean]
+   [:sandbox {:optional true} :any]])
 
 (defn ling-ctx
   "Build a context map from a Ling record for strategy calls.
@@ -105,8 +132,13 @@
     (:agents ling) (assoc :agents (:agents ling))
     (some? (:sandbox ling)) (assoc :sandbox (:sandbox ling))))
 
+(m/=> ling-ctx [:=> [:cat [:maybe :map]] LingCtx])
+
 (defn with-critical-op
   "Execute body while holding a critical operation guard."
   [ling-id op-type body-fn]
   (ds-lings/with-critical-op ling-id op-type
     (body-fn)))
+
+;; The answer is whatever body-fn answers: a pass-through, so :any.
+(m/=> with-critical-op [:=> [:cat :string :keyword ifn?] :any])

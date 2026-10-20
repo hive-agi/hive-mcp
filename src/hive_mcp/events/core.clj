@@ -19,7 +19,8 @@
    - init!  — wires hive-mcp built-in coeffects (:now :random
               :agent-context :db-snapshot) and effects (:channel-publish
               :prometheus :log :mcp-response)."
-  (:require [hive.events.interceptor :as interceptor]
+  (:require [malli.core :as m]
+            [hive.events.interceptor :as interceptor]
             [hive.events.fx :as fx]
             [hive.events.cofx :as cofx]
             [hive-mcp.events.config :as ev-cfg]
@@ -70,10 +71,14 @@
   [id]
   (fx/get-fx id))
 
+(m/=> get-fx-handler [:=> [:cat :keyword] [:maybe [:fn {:gen/elements [(fn [_] nil)]} ifn?]]])
+
 (defn get-cofx-handler
   "Get a registered coeffect handler by id. Primarily for testing."
   [id]
   (cofx/get-cofx id))
+
+(m/=> get-cofx-handler [:=> [:cat :keyword] [:maybe [:fn {:gen/elements [(fn [_] nil)]} ifn?]]])
 
 ;; =============================================================================
 ;; Re-exports — context helpers
@@ -201,3 +206,5 @@
         (log/info "Registered effects: :channel-publish :mcp-response"))
       (log/debug "Event system re-initialized: built-in coeffects and effects re-registered")))
   @registry/*initialized)
+
+(m/=> init! [:=> [:cat] :boolean])

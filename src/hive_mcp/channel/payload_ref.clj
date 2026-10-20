@@ -15,7 +15,8 @@
    Pure calculation here (`needs-ref?`, `preview`, `render`); the one effectful
    entry point (`elide!`) takes the store as an argument, so a test drives it
    with a plain atom and nothing reaches the live context store."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -37,6 +38,8 @@
   ([s cap]
    (and (string? s) (> (count s) cap))))
 
+(m/=> needs-ref? [:function [:=> [:cat :any] :boolean] [:=> [:cat :any :int] :boolean]])
+
 (defn preview
   "The head of `s` that travels inline, cut at a word boundary when one is
    near the end so the reader gets whole words rather than a severed one."
@@ -49,11 +52,15 @@
         (subs head 0 last-space)
         head))))
 
+(m/=> preview [:=> [:cat :any :int] :any])
+
 (defn render
   "The inline text for an elided payload: its preview plus the fetch marker.
    `ctx-id` is opaque; the reader hands it back to the store to get the body."
   [preview-text ctx-id]
   (str preview-text "… [ref:" ctx-id "]"))
+
+(m/=> render [:=> [:cat :string :string] :string])
 
 (defn parse-ref
   "The context id inside a rendered payload, or nil when there is none. The
@@ -61,6 +68,8 @@
   [s]
   (when (string? s)
     (second (re-find #"\[ref:([^\]]+)\]" s))))
+
+(m/=> parse-ref [:=> [:cat :any] [:maybe :string]])
 
 (defn elide!
   "Bound `s` to `cap` characters, keeping what does not fit.
@@ -82,3 +91,5 @@
        (if id
          {:text (render head id) :ref (str id)}
          {:text (str head "…")})))))
+
+(m/=> elide! [:function [:=> [:cat :any ifn?] [:map [:text :any] [:ref {:optional true} :string]]] [:=> [:cat :any :int ifn?] [:map [:text :any] [:ref {:optional true} :string]]]])

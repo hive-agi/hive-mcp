@@ -6,7 +6,8 @@
    things `ifn?` would have let through are still refused."
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.dispatch.handler :as dispatch]
-            [hive-mcp.tools.consolidated.config :as config-tool]))
+            [hive-mcp.tools.consolidated.config :as config-tool]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -131,3 +132,43 @@
           "a tool that registers by value cannot pick up a reload of its own handler namespace")
       (is (dispatch/handler? h)
           "and the six gates that guard dispatch must accept it, or the conversion breaks the tool instead of freeing it"))))
+
+;; ---------------------------------------------------------------------------
+;; Trifectas — the predicate and the fixed point, over generated values
+;; ---------------------------------------------------------------------------
+
+(def ^:private Handler
+  "Invocable code: a fn, a multimethod, or a var (chain) whose value is one."
+  [:fn {:gen/elements [a-handler a-multi-handler #'a-handler #'a-multi-handler
+                       #'an-alias an-alias (fn [_] nil)]}
+   dispatch/handler?])
+
+(def ^:private NotHandler
+  "Everything `ifn?` or truthy that is not a handler, plus a var holding data."
+  [:or :keyword :string :int [:map-of :keyword :int] [:set :keyword]
+   [:vector :keyword] :nil
+   [:fn {:gen/elements [#'not-callable]} var?]])
+
+(deftrifecta-from-schema handler?-accepts-every-handler dispatch/handler?
+  {:in  [:cat Handler]
+   :out :boolean
+   :rel (fn [_ answer] (true? answer))
+   :num-tests 100})
+
+(deftrifecta-from-schema handler?-refuses-every-non-handler dispatch/handler?
+  {:in  [:cat NotHandler]
+   :out :boolean
+   :rel (fn [_ answer] (false? answer))
+   :num-tests 200})
+
+(deftrifecta-from-schema current-is-a-fixed-point dispatch/current
+  {:in  [:cat [:or Handler NotHandler]]
+   :out :any
+   ;; never a var at the end of a finite chain, and idempotent on its result
+   :rel (fn [[x] out]
+          (and (not (var? out))
+               (identical? out (dispatch/current out))
+               (if (var? x) true (identical? x out))))
+   ;; :any output yields no schema mutants; the relation carries the teeth
+   :mutation false
+   :num-tests 200})

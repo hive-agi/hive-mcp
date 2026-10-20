@@ -128,6 +128,30 @@
       (is (= #{"tool-x" "tool-z"} (set (map :name schemas)))
           "Should only return requested tools"))))
 
+(deftest a-consolidated-root-reaches-a-ling-open
+  (testing "a ling can only send what its schema admits; a consolidated root's
+            commands read params the root does not list (friction
+            20261019120530-4bf9e2f9: carto insert-form unreachable)"
+    (reg/register! [{:name "code" :consolidated true :description "Code."
+                     :inputSchema {:type "object"
+                                   :properties {"command" {:type "string"}}
+                                   :required ["command"]}
+                     :handler identity}
+                    {:name "plain" :description "Plain."
+                     :inputSchema {:type "object" :properties {}}
+                     :handler identity}])
+    (let [by-name (into {} (map (juxt :name identity)) (reg/get-schemas nil))
+          code    (by-name "code")
+          plain   (by-name "plain")]
+      (is (true? (get-in code [:inputSchema :additionalProperties])))
+      (is (clojure.string/includes? (:description code) "Compact schema")
+          "the model is told why")
+      (is (= {"command" {:type "string"}} (get-in code [:inputSchema :properties]))
+          "declared properties are untouched")
+      (is (not (contains? (:inputSchema plain) :additionalProperties))
+          "a non-consolidated tool stays as declared")
+      (is (= "Plain." (:description plain))))))
+
 (deftest tool-registry-overwrite-tool
   (testing "Registering tool with same name overwrites"
     (reg/register! [{:name "dup-tool" :description "Original" :handler identity}])

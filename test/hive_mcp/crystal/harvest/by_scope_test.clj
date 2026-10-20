@@ -10,7 +10,8 @@
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.test.check.generators :as gen]
             [hive-mcp.crystal.harvest.by-scope :as bs]
-            [hive-test.trifecta :refer [deftrifecta]]))
+            [hive-test.trifecta :refer [deftrifecta]]
+            [hive-schemas.test :as hst]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -180,3 +181,28 @@
     (is (false? (bs/umbrella-empty?
                   (bs/merge-umbrella (bs/empty-by-scope)
                                      {:hivemind-shouts-global [{:m "hi"}]}))))))
+
+;; =============================================================================
+;; Contract-derived facets: merge-umbrella / record-error
+;; =============================================================================
+
+(hst/deftrifecta-from-schema merge-umbrella-contract
+  hive-mcp.crystal.harvest.by-scope/merge-umbrella
+  {:in  [:cat [:map [:umbrella bs/UmbrellaSlice]] bs/UmbrellaSlice]
+   :out [:map [:umbrella bs/UmbrellaSlice]]
+   :rel (fn [[hbs extra] out]
+          (let [u (:umbrella hbs) o (:umbrella out)]
+            (and (every? (fn [k] (= (vec (concat (get u k []) (get extra k []))) (get o k)))
+                         [:cross-pid-edges :cross-cutting-decisions :hivemind-shouts-global])
+                 (every? (fn [k] (= (or (get extra k) (get u k)) (get o k)))
+                         [:session-timing :session-temporal]))))
+   :num-tests 100
+   :golden-path "test/golden/hive-mcp/crystal/harvest/merge-umbrella-contract.edn"})
+
+(hst/deftrifecta-from-schema record-error-contract
+  hive-mcp.crystal.harvest.by-scope/record-error
+  {:in  [:cat [:map [:errors [:vector :map]]] [:map [:error :string]]]
+   :out [:map [:errors [:sequential :map]]]
+   :rel (fn [[hbs err] out] (= (conj (:errors hbs) err) (:errors out)))
+   :num-tests 100
+   :golden-path "test/golden/hive-mcp/crystal/harvest/record-error-contract.edn"})

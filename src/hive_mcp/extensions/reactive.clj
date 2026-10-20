@@ -15,7 +15,8 @@
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.tools.composite :as composite]
             [taoensso.timbre :as log]
-            [hive-addon.registry.commands :as acmds]))
+            [hive-addon.registry.commands :as acmds]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -43,6 +44,8 @@
         (ext/register-tool! t)
         t))))
 
+(m/=> rebuild-composite! [:=> [:cat [:maybe :string]] [:maybe :map]])
+
 (defn redrain-schema-extensions!
   "Re-read every ACTIVE addon's (schema-extensions) into the registry — the
    map-shaped idiom (tool-name -> params); the DataScript-attribute sequence
@@ -63,6 +66,8 @@
                             (keys exts))))))
         (addon-core/list-addons)))
 
+(m/=> redrain-schema-extensions! [:=> [:cat] [:vector :string]])
+
 (def ^:dynamic *server-refresh*
   "Replaceable server boundary for isolated tests; production resolves live vars."
   (fn []
@@ -70,6 +75,21 @@
       (if (and ctx-atom @ctx-atom)
         ((requiring-resolve 'hive-mcp.server.routes/refresh-tools!) ctx-atom)
         ((requiring-resolve 'hive-mcp.server.routes/refresh-surfaces!))))))
+
+(def SurfaceRefresh
+  "What `refresh-server-tools!` answers: the routes report merged with an Ok
+   carrying it, or an Err naming why no surface was refreshed."
+  [:or
+   [:map [:ok :map]]
+   [:map
+    [:error [:enum :surface/refresh-failed :surface/refresh-unavailable]]
+    [:cause :string]]])
+
+(def AgentRefresh
+  "What `refresh-agent-tools!` answers: the tool count, or the failure."
+  [:or
+   [:map [:ok? [:= true]] [:count :int]]
+   [:map [:ok? [:= false]] [:error [:maybe :string]]]])
 
 (defn refresh-server-tools!
   "Refresh advertised MCP surfaces. Returns a Result with the routes report
@@ -88,6 +108,8 @@
     (catch Throwable t
       (log/error "MCP tool surface refresh failed" {:error (ex-message t)})
       (result/err :surface/refresh-failed {:cause (or (ex-message t) (str t))}))))
+
+(m/=> refresh-server-tools! [:=> [:cat] SurfaceRefresh])
 (defn refresh-agent-tools!
   "Re-seat the agent-delegation registry from the advertised table. A failed
    refresh is an explicit error report, never a success-shaped count or nil."
@@ -98,6 +120,8 @@
     (catch Throwable t
       (log/error "Agent tool registry refresh failed" {:error (ex-message t)})
       {:ok? false :error (ex-message t)})))
+
+(m/=> refresh-agent-tools! [:=> [:cat] AgentRefresh])
 
 (defn refresh-surface!
   "Bring the advertised surface up to date after a contribution to
@@ -111,6 +135,14 @@
    :server-tools (refresh-server-tools!)
    :agent-tools  (refresh-agent-tools!)})
 
+(m/=> refresh-surface!
+      [:=> [:cat [:maybe :string]]
+       [:map
+        [:composite :boolean]
+        [:schema-tools [:vector :string]]
+        [:server-tools SurfaceRefresh]
+        [:agent-tools AgentRefresh]]])
+
 (defn on-contribution
   "The contribution listener: bring the surface up to date for the tool the
    EVENT names. Registered BY VAR (see `install!`)."
@@ -118,6 +150,8 @@
   (let [out (refresh-surface! tool-name)]
     (log/debug "Contribution reached the surface"
                {:type type :tool tool-name :addon addon-id :refresh out})))
+
+(m/=> on-contribution [:=> [:cat [:maybe :map]] :nil])
 
 (defn contribution-listener
   "The listener `install!` registers: resolves `on-contribution` BY SYMBOL on
@@ -130,6 +164,8 @@
    symbol lookup per call always reaches the live one."
   [event]
   ((requiring-resolve `on-contribution) event))
+
+(m/=> contribution-listener [:=> [:cat [:maybe :map]] :nil])
 
 (defn install!
   "Subscribe to the registry's contribution events. Idempotent by id.
@@ -154,7 +190,11 @@
     (rescue nil (ext/ensure-seam-listener!))
     id))
 
+(m/=> install! [:=> [:cat] [:= :reactive-surface]])
+
 (defn uninstall!
   "Unsubscribe. For tests."
   []
   (ext/remove-contribution-listener! :reactive-surface))
+
+(m/=> uninstall! [:=> [:cat] [:= :reactive-surface]])

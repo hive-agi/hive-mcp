@@ -30,7 +30,8 @@
 
    Thread-safety: `compare-and-set!` on the atom ensures only one thread wins
    the rebuild race; losing threads pick up the winner's new client."
-  (:require [taoensso.timbre :as log])
+  (:require [taoensso.timbre :as log]
+            [malli.core :as m])
   (:import [java.io IOException]
            [java.net.http HttpClient]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -49,6 +50,15 @@
      (re-find #"(?i)selector manager closed|httpclient.*(shut ?down|closed)|client.*closed"
               msg))))
 
+(def Failure
+  "A Throwable. Generates IOExceptions carrying arbitrary messages."
+  [:fn {:gen/schema [:maybe :string]
+        :gen/fmap #(IOException. ^String %)}
+   #(instance? Throwable %)])
+
+;; nil when the throwable carries no message.
+(m/=> fatal-client-error? [:=> [:cat Failure] [:maybe :boolean]])
+
 (defn mk-client
   "Build a self-healing client cache.
 
@@ -60,10 +70,23 @@
   {:builder builder-fn
    :client  (atom (builder-fn))})
 
+(def ClientCache
+  "What `mk-client` returns: the builder plus an atom holding the current
+   client. The client is whatever the builder makes (an HttpClient in
+   production, any non-nil stand-in in tests)."
+  [:map
+   [:builder [:=> [:cat] :some]]
+   [:client [:fn {:gen/schema :keyword :gen/fmap atom}
+             #(instance? clojure.lang.IAtom %)]]])
+
+(m/=> mk-client [:=> [:cat [:=> [:cat] :some]] ClientCache])
+
 (defn get-client
   "Return the live HttpClient from a cache."
   ^HttpClient [cache]
   @(:client cache))
+
+(m/=> get-client [:=> [:cat ClientCache] :some])
 
 (defn rebuild!
   "Atomically replace the cached client with a fresh one IF `old` is still
@@ -84,6 +107,8 @@
           @client-atom))
       current)))
 
+(m/=> rebuild! [:=> [:cat ClientCache :any] :some])
+
 (defn send-with-retry
   "Send `request` via the cached client. On a fatal client error
    (see `fatal-client-error?`), rebuild the client once and retry. A second
@@ -101,3 +126,7 @@
             (log/info "Retrying embedding request on rebuilt HttpClient")
             (.send fresh request body-handler))
           (throw e))))))
+
+;; request and body-handler are handed to the client untouched, and the
+;; result is the client's response (a JDK HttpResponse in production).
+(m/=> send-with-retry [:=> [:cat ClientCache :any :any] :some])

@@ -1,0 +1,11 @@
+{:got-content "facade body",
+ :updated-tags ["t" "u"],
+ :deleted :id,
+ :cleanup-count 0,
+ :hit? true,
+ :id-string? true,
+ :after-delete nil,
+ :dup-found? true,
+ :answer 42,
+ :expiring ["facade body"],
+ :queried ["facade body"]}

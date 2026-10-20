@@ -5,8 +5,7 @@
    Fallback fanout uses IDeliveryChannel registry — no hardcoded transports.
    Local state (atom, DataScript) still updated synchronously for consistency."
 
-  (:require [clojure.core.async :as async :refer [>!! chan timeout alt!!]]
-            [hive-dsl.bounded-atom :refer [bounded-swap!]]
+  (:require [hive-dsl.bounded-atom :refer [bounded-swap!]]
             [hive-mcp.channel.core :as channel]
             [hive-mcp.channel.piggyback :as piggyback]
             [hive-mcp.hivemind.event-registry :as event-registry]
@@ -24,7 +23,8 @@
             [hive-mcp.channel.payload-ref :as pref]
             [hive-mcp.channel.context-store :as ctx-store]
             [hive-mcp.channel.audience :as audience]
-            [hive-mcp.channel.broadcast-ledger :as bledger])
+            [hive-mcp.channel.broadcast-ledger :as bledger]
+            [hive-mcp.swarm.delegate :as delegate])
   (:import [java.lang Exception]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -453,89 +453,61 @@
     (:slave/parent (queries/get-slave-by-name-or-id agent-id))
     (catch Exception _ nil)))
 
+;; =============================================================================
+;; Ask: moved to hive-agent.swarm.hivemind.ask. These delegate there and hand
+;; it the host ports, so the logic lives in the addon and core keeps the API.
+;; =============================================================================
+
+(defn- ask-impl [sym]
+  (delegate/resolve-var "hive-agent.swarm.hivemind.ask" sym))
+
+(defn- ask-popup
+  "The native popup port: hive-notify's backend race, when hive-notify is on
+   the classpath and [:hivemind :ask-popup?] is not false. Resolved per call,
+   so neither a missing library nor a reload breaks an ask."
+  []
+  (let [enabled? (try (not (false? ((requiring-resolve 'hive-mcp.config.core/get-in-config)
+                                    [:hivemind :ask-popup?])))
+                      (catch Exception _ true))]
+    (when enabled?
+      (try (requiring-resolve 'hive-notify.registry/ask-first!)
+           (catch Throwable _ nil)))))
+
+(defn- ask-ports
+  "The host effects an ask needs. Each is read through its var at call time,
+   so a test's with-redefs still reaches it."
+  []
+  {:asks state/pending-asks
+   :broadcast! (fn [event] (channel/broadcast! event))
+   :shout! (fn [agent-id event-type data] (shout! agent-id event-type data))
+   :parent-of asker-parent-id
+   :prompt! (ask-popup)})
+
 (defn pending-ask-entry
-  "Pure: the pending-asks entry for one ask. Carries who asked, for which
-   project and spawner, and when — what a timeout needs to tell the asker's
-   reader that the ask went unanswered."
-  [{:keys [agent-id question options response-chan project-id parent-id asked-at]}]
-  (cond-> {:question question
-           :options options
-           :agent-id agent-id
-           :response-chan response-chan
-           :asked-at asked-at}
-    project-id (assoc :project-id project-id)
-    parent-id (assoc :parent-id parent-id)))
+  {:arglists '([{:keys [agent-id question options response-chan project-id parent-id asked-at
+                        context expects cc]}])}
+  [& args]
+  (apply (ask-impl 'pending-ask-entry) args))
 
 (defn ask-timeout-shout
-  "Pure: the :blocked shout data announcing that ask `ask-id` timed out.
-   Status-neutral: by the time this is heard the asker has already resumed
-   with the timeout answer, so the shout must not park its slave :blocked.
-   -> data for (shout! agent-id :blocked data)"
-  [ask-id {:keys [question project-id parent-id asked-at]} timeout-ms]
-  (cond-> {:reason :ask-timeout
-           :ask-id ask-id
-           :message (str "Ask timed out after " timeout-ms "ms with no answer: "
-                         question)
-           :timeout-ms timeout-ms
-           :status-neutral? true}
-    asked-at (assoc :asked-at asked-at)
-    project-id (assoc :project-id project-id)
-    parent-id (assoc :parent-id parent-id)))
-
-(defn- announce-ask-timeout!
-  "Shout the asker :blocked so its reader hears the unanswered ask.
-   Non-fatal: a failed shout must not turn a timeout into an exception."
-  [ask-id entry timeout-ms]
-  (try
-    (shout! (:agent-id entry) :blocked (ask-timeout-shout ask-id entry timeout-ms))
-    (catch Exception e
-      (log/debug "Hivemind ask-timeout shout failed (non-fatal):" (.getMessage e)))))
+  {:arglists '([ask-id entry timeout-ms])}
+  [& args]
+  (apply (ask-impl 'ask-timeout-shout) args))
 
 (defn ask!
-  "Request a decision from the human coordinator, blocking until response or timeout.
-
-   The pending entry records :project-id, :parent-id (resolved from the slave
-   registry when not given) and :asked-at. On TIMEOUT the asker is shouted
-   :blocked with {:reason :ask-timeout :ask-id ...} before the entry is
-   dropped — an answered ask and an unanswered one used to leave identical
-   traces, so nobody heard that an agent stalled waiting."
-  [agent-id question options & {:keys [timeout-ms project-id parent-id]
-                                :or {timeout-ms 300000}}]
-  (let [ask-id (str (random-uuid))
-        response-chan (chan 1)
-        asked-at (System/currentTimeMillis)
-        entry (pending-ask-entry {:agent-id agent-id
-                                  :question question
-                                  :options options
-                                  :response-chan response-chan
-                                  :project-id project-id
-                                  :parent-id (or parent-id (asker-parent-id agent-id))
-                                  :asked-at asked-at})
-        ask-event {:type :hivemind-ask
-                   :ask-id ask-id
-                   :agent-id agent-id
-                   :question question
-                   :options options
-                   :timestamp asked-at}]
-    (swap! state/pending-asks assoc ask-id entry)
-    (channel/broadcast! ask-event)
-    (log/info "Hivemind ask:" agent-id question)
-    (let [result (alt!!
-                   response-chan ([v] v)
-                   (timeout timeout-ms) {:timeout true :ask-id ask-id})]
-      (when (:timeout result)
-        (announce-ask-timeout! ask-id entry timeout-ms))
-      (swap! state/pending-asks dissoc ask-id)
-      result)))
+  "Ask the human, blocking until an answer or the timeout. Opts :timeout-ms,
+   :project-id, :parent-id, :context (what the human reads first), :expects
+   (:confirm | :choice | :text) and :cc (agents also told the answer); see
+   hive-agent.swarm.hivemind.ask/ask!."
+  {:arglists '([agent-id question options & {:keys [timeout-ms project-id parent-id
+                                                    context expects cc]}])}
+  [& args]
+  (apply (ask-impl 'ask!) (ask-ports) args))
 
 (defn respond-ask!
-  "Respond to a pending ask from an agent."
-  [ask-id decision & {:keys [by] :or {by "human"}}]
-  (if-let [{:keys [response-chan]} (get @state/pending-asks ask-id)]
-    (do
-      (>!! response-chan {:decision decision :by by :ask-id ask-id})
-      (log/info "Hivemind response:" ask-id decision)
-      true)
-    (do
-      (log/warn "No pending ask for id:" ask-id)
-      false)))
+  "Answer pending ask `ask-id` with any string: an option, yes/no or typed
+   text. The first answer wins; see hive-agent.swarm.hivemind.ask/respond-ask!."
+  {:arglists '([ask-id answer & {:keys [by]}])}
+  [& args]
+  (apply (ask-impl 'respond-ask!) (ask-ports) args))
+

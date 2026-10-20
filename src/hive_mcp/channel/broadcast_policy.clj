@@ -36,7 +36,8 @@
    set refused, and an admissible reason does not buy unlimited repetition.
    The one message exempt from volume is a halt, for the reason spelled out on
    `volume-exempt-reasons`."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -69,6 +70,8 @@
   [x]
   (contains? admissible-reasons (as-reason x)))
 
+(m/=> admissible-reason? [:=> [:cat :any] :boolean])
+
 (def volume-exempt-reasons
   "Arguments the VOLUME gate never refuses, however many went before.
 
@@ -88,6 +91,8 @@
   [x]
   (contains? volume-exempt-reasons (as-reason x)))
 
+(m/=> volume-exempt? [:=> [:cat :any] :boolean])
+
 (def default-budget
   "Broadcasts admitted per window before the policy starts refusing on volume
    alone. Chosen to be small on purpose: a swarm that legitimately needs to tell
@@ -97,6 +102,27 @@
    A caller that does not track volume passes no `:recent-broadcasts` and this
    never bites — the reason gate still applies."
   8)
+
+(def RoutedMsg
+  "The routing fields a policy decision reads; the message is otherwise open."
+  [:map
+   [:broadcast? {:optional true} :any]
+   [:broadcast-reason {:optional true} :any]
+   [:to {:optional true} :any]])
+
+(def VolumeOpts
+  "The volume gate's inputs, when the caller meters this sender."
+  [:maybe [:map
+           [:recent-broadcasts {:optional true} [:maybe number?]]
+           [:budget {:optional true} [:maybe number?]]]])
+
+(def Decision
+  "A delivery verdict, with the admitted argument or the refusal."
+  [:map
+   [:verdict [:enum :direct :spawner :broadcast]]
+   [:reason {:optional true} (into [:enum] (sort admissible-reasons))]
+   [:refused {:optional true}
+    [:enum :addressed-to-a-peer :no-reason-given :reason-not-admissible :budget-exhausted]]])
 
 (defn decide
   "Decide how `msg` should be delivered.
@@ -144,10 +170,17 @@
        :else
        {:verdict :broadcast :reason (as-reason broadcast-reason)}))))
 
+(m/=> decide
+      [:function
+       [:=> [:cat [:maybe RoutedMsg]] Decision]
+       [:=> [:cat [:maybe RoutedMsg] VolumeOpts] Decision]])
+
 (defn admitted?
   "Did the policy let this message reach every reader?"
   [msg]
   (= :broadcast (:verdict (decide msg))))
+
+(m/=> admitted? [:=> [:cat [:maybe RoutedMsg]] :boolean])
 
 (defn apply-policy
   "Rewrite `msg` so its routing fields say what the policy decided.
@@ -162,3 +195,8 @@
        :broadcast (assoc msg :broadcast? true :broadcast-reason reason)
        (cond-> (dissoc msg :broadcast? :broadcast-reason)
          refused (assoc :broadcast-refused refused))))))
+
+(m/=> apply-policy
+      [:function
+       [:=> [:cat [:maybe RoutedMsg]] :map]
+       [:=> [:cat [:maybe RoutedMsg] VolumeOpts] :map]])

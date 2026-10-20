@@ -1,5 +1,6 @@
 (ns hive-mcp.knowledge-graph.connection.detect
-  (:require [clojure.java.io :as io]
+  (:require [malli.core :as m]
+            [clojure.java.io :as io]
             [hive-dsl.result :as r]
             [hive-mcp.config.core :as config]
             [hive-mcp.knowledge-graph.scope :as scope]
@@ -34,6 +35,8 @@
                     (recur (.getParentFile dir)
                            (if cfg (conj configs cfg) configs))))))))
 
+(m/=> walk-hierarchy-for-kg-backend [:=> [:cat] [:maybe :keyword]])
+
 (defn detect-backend
   "Detect the desired KG backend from configuration sources.
 
@@ -61,6 +64,8 @@
                :selected backend})
     backend))
 
+(m/=> detect-backend [:=> [:cat] :keyword])
+
 (defn detect-writer-config
   "Detect the writer backend config from :services.kg.writer in config.edn.
    Returns nil for :self (local) or the writer map for remote backends.
@@ -83,3 +88,5 @@
                          (not= :self (:backend writer-cfg)))
                 (log/info "KG writer config detected" {:writer writer-cfg})
                 writer-cfg))))
+
+(m/=> detect-writer-config [:=> [:cat] [:maybe :map]])

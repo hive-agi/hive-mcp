@@ -23,7 +23,8 @@
      :default  → Datahike  (legacy global-store callers)
 
    Test fixtures override per slot via `with-slot-store`."
-  (:require [hive-dsl.adt :as adt]
+  (:require [malli.core :as m]
+            [hive-dsl.adt :as adt]
             [hive-dsl.result :as r]
             [hive-mcp.protocols.kg :as pkg]
             [hive-mcp.knowledge-graph.slots.protocol :as p]
@@ -220,3 +221,19 @@
                  {:slots (mapv :slot entries)}))
      (emit-heal-report! report)
      report)))
+
+(m/=> registry [:=> [:cat] :any])
+(m/=> reset-registry! [:=> [:cat] :any])
+(m/=> store [:=> [:cat :keyword] :any])
+(m/=> describe-slot [:=> [:cat :keyword] :map])
+(m/=> registered-slots [:=> [:cat] [:sequential :keyword]])
+(m/=> close-slot! [:=> [:cat :keyword] :any])
+(m/=> close-all! [:=> [:cat] :any])
+(m/=> transact! [:=> [:cat :keyword :any] :any])
+(m/=> query [:=> [:cat :keyword :any [:* :any]] :any])
+(m/=> entity [:=> [:cat :keyword :any] :any])
+(m/=> entid [:=> [:cat :keyword :any] :any])
+(m/=> pull-entity [:=> [:cat :keyword :any :any] :any])
+(m/=> eids-by-attr [:=> [:cat :keyword :keyword] [:sequential :int]])
+(m/=> db-snapshot [:=> [:cat :keyword] :any])
+(m/=> heal-sweep! [:=> [:cat] :map])

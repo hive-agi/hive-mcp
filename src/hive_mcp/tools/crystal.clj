@@ -20,7 +20,8 @@
             [hive-mcp.context.request :as ctx]
             [hive-mcp.extensions.registry :as ext]
             [clojure.data.json :as json]
-            [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]))
+            [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
+            [hive-mcp.embeddings.shared-gate :as embed-gate]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -230,14 +231,13 @@
           (let [safe-stats (or (when (map? (:stats cr-result)) (:stats cr-result)) {})
                 summary-id (:summary-id cr-result)]
             (when summary-id
-              (future
-                (try
+              (future (embed-gate/with-lane :batch (try
                   (let [kg-result (ck-a summary-id harvested project-id effective-agent)]
                     (log/info "wrap-crystallize: KG edges completed"
                               "edges:" (:total-edges kg-result)
                               "capped?" (:capped? kg-result)))
                   (catch Throwable t
-                    (log/warn "wrap-crystallize: KG edges failed" (ex-message t))))))
+                    (log/warn "wrap-crystallize: KG edges failed" (ex-message t)))))))
             (emit-wrap-notify! effective-agent harvested cr-result project-id safe-stats)
             (crystal/reset-session-start! effective-agent)
             (log/info "wrap-crystallize: total" (- (System/currentTimeMillis) t-start) "ms")

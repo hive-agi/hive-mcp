@@ -6,7 +6,8 @@
    - Public read API: get-metrics, reset-metrics!, configure-metrics!
    - Dispatch tracking: record-effect-executed!, record-effect-error!
    - The :metrics interceptor (per-event-type timing)"
-  (:require [hive.events.interceptor :as interceptor]
+  (:require [malli.core :as m]
+            [hive.events.interceptor :as interceptor]
             [hive-mcp.events.config :as ev-cfg]
             [hive-mcp.events.context :as ctx]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -38,6 +39,8 @@
    (cond-> {}
      max-timings          (assoc :max-timings max-timings)
      max-timings-per-type (assoc :max-timings-per-type max-timings-per-type))))
+
+(m/=> configure-metrics! [:=> [:cat [:maybe :map]] :map])
 
 ;; =============================================================================
 ;; Bounded Buffer Helper
@@ -110,6 +113,8 @@
            :timings-buffer-capacity (:max-timings cfg)
            :timings-dropped (:timings-dropped m 0))))
 
+(m/=> get-metrics [:=> [:cat] :map])
+
 (defn reset-metrics!
   "Reset all metrics counters including dropped counter. For testing."
   []
@@ -121,6 +126,8 @@
                     :timings []
                     :timings-dropped 0}))
 
+(m/=> reset-metrics! [:=> [:cat] :map])
+
 ;; =============================================================================
 ;; Dispatch Tracking (called from events.dispatch)
 ;; =============================================================================
@@ -130,10 +137,14 @@
   []
   (swap! *metrics update :effects-executed inc))
 
+(m/=> record-effect-executed! [:=> [:cat] :map])
+
 (defn record-effect-error!
   "Increment :errors counter."
   []
   (swap! *metrics update :errors inc))
+
+(m/=> record-effect-error! [:=> [:cat] :map])
 
 ;; =============================================================================
 ;; Metrics Interceptor

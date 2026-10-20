@@ -1,0 +1,16 @@
+{:case-0 {:out {:slave-agent-id "Qo"}, :in ({:slave-agent-id "Qo"})},
+ :case-1
+ {:out {:slave-agent-id "6zNfuE"}, :in ({:slave-agent-id "6zNfuE"})},
+ :case-2
+ {:out {:slave-agent-id "pwBdA45T9C"},
+  :in ({:slave-agent-id "pwBdA45T9C"})},
+ :case-3
+ {:out {:slave-agent-id "4t1X2Nl"}, :in ({:slave-agent-id "4t1X2Nl"})},
+ :case-4
+ {:out {:slave-agent-id "p6XC"}, :in ({:slave-agent-id "p6XC"})},
+ :case-5
+ {:out {:slave-agent-id "6h15"}, :in ({:slave-agent-id "6h15"})},
+ :case-6
+ {:out {:slave-agent-id "8K9ew"}, :in ({:slave-agent-id "8K9ew"})},
+ :case-7
+ {:out {:slave-agent-id "X4W9"}, :in ({:slave-agent-id "X4W9"})}}

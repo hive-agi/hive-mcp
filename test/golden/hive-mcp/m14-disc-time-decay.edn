@@ -1,0 +1,4 @@
+{:empty {:updated 0, :skipped 0, :errors 0},
+ :all {:updated 2, :skipped 0, :errors 0},
+ :scoped {:updated 1, :skipped 0, :errors 0},
+ :scoped-map {:updated 0, :skipped 0, :errors 0}}

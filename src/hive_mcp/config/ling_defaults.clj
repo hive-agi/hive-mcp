@@ -14,7 +14,8 @@
 
    Not validated here; the spawn path refuses an unregistered mode."
   (:require [hive-di.core :refer [defconfig env]]
-            [hive-dsl.result :as r]))
+            [hive-dsl.result :as r]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -67,12 +68,16 @@
     (keyword (subs v (if (.startsWith ^String v ":") 1 0)))
     :else nil))
 
+(m/=> ->spawn-mode [:=> [:cat :any] [:maybe :keyword]])
+
 (defn pick
   "Pure precedence: first coercible value of config.edn, env, shipped literal."
   [edn-val env-val]
   (or (->spawn-mode edn-val)
       (->spawn-mode env-val)
       shipped-spawn-mode))
+
+(m/=> pick [:=> [:cat :any :any] :keyword])
 
 ;; ── Facade ──────────────────────────────────────────────────────────────────
 
@@ -82,3 +87,5 @@
    Read per call, so a config reload takes effect at the next spawn."
   []
   (pick (config-edn-value config-path) (env-value)))
+
+(m/=> default-spawn-mode [:=> [:cat] :keyword])

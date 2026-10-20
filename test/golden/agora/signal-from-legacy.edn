@@ -1,0 +1,70 @@
+{:case-0
+ {:out
+  [{:type :propose,
+    :strength 1.0,
+    :target nil,
+    :evidence [],
+    :message "change"}
+   "change"
+   :prefix],
+  :in "[SIGNAL: propose] change"},
+ :case-1
+ {:out
+  [{:type :propose,
+    :strength 1.0,
+    :target nil,
+    :evidence [],
+    :message "plain text"}
+   "plain text"
+   :default],
+  :in "plain text"},
+ :case-2
+ {:out
+  [{:type :lgtm,
+    :strength 1.0,
+    :target nil,
+    :evidence [],
+    :message "fine"}
+   "fine"
+   :prefix],
+  :in "[SIGNAL: lgtm] fine"},
+ :case-3
+ {:out
+  [{:type :no-change,
+    :strength 1.0,
+    :target nil,
+    :evidence [],
+    :message ""}
+   ""
+   :prefix],
+  :in "[SIGNAL: no-change]"},
+ :case-4
+ {:out
+  [{:type :approve,
+    :strength 1.0,
+    :target nil,
+    :evidence [],
+    :message "ok"}
+   "ok"
+   :prefix],
+  :in "[signal: APPROVE]   ok "},
+ :case-5
+ {:out
+  [{:type :propose,
+    :strength 1.0,
+    :target nil,
+    :evidence [],
+    :message "plain text"}
+   "plain text"
+   :default],
+  :in "plain text"},
+ :case-6
+ {:out
+  [{:type :propose,
+    :strength 1.0,
+    :target nil,
+    :evidence [],
+    :message "[SIGNAL: shrug] hmm"}
+   "[SIGNAL: shrug] hmm"
+   :default],
+  :in "[SIGNAL: shrug] hmm"}}

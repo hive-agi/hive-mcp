@@ -1,0 +1,20 @@
+{:case-0
+ {:out {:project-id "hive-mcp", :cwd "/w/hive-mcp", :session-id "s1"},
+  :in ("ling-1")},
+ :case-1 {:out nil, :in (nil)},
+ :case-2
+ {:out
+  {:project-id "hive-agent", :cwd "/w/hive-agent", :session-id "s2"},
+  :in ("ling-2")},
+ :case-3
+ {:out
+  {:project-id "hive-agent", :cwd "/w/hive-agent", :session-id "s2"},
+  :in ("ling-2")},
+ :case-4
+ {:out {:project-id "hive-mcp", :cwd "/w/hive-mcp", :session-id "s1"},
+  :in ("ling-1")},
+ :case-5 {:out nil, :in (nil)},
+ :case-6 {:out nil, :in ("ling-absent")},
+ :case-7
+ {:out {:project-id "hive-mcp", :cwd "/w/hive-mcp", :session-id "s1"},
+  :in ("ling-1")}}

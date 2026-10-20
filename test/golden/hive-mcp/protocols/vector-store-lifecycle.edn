@@ -1,0 +1,6 @@
+{:before
+ {:set? false, :get nil, :require :hive-mcp.protocols.vector/no-store},
+ :refused :hive-mcp.protocols.vector/not-a-store,
+ :during {:set? true, :same? true},
+ :cleared nil,
+ :after {:set? false, :get nil}}

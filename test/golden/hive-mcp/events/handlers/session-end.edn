@@ -1,0 +1,80 @@
+{:case-0
+ {:out
+  {:log {:level :info, :message "Session ending: b95jkL"},
+   :wrap-notify
+   {:agent-id "b95jkL",
+    :session-id "51ho14w",
+    :stats {:triggered-by "auto-wrap", :reason "session-end"}}},
+  :in
+  ({:agent-context {:agent-id "b95jkL", :session-id "51ho14w"}}
+   [:session/end {}])},
+ :case-1
+ {:out
+  {:log {:level :info, :message "Session ending: 4N"},
+   :wrap-notify
+   {:agent-id "4N",
+    :session-id "MfmKc6YY",
+    :stats {:triggered-by "auto-wrap", :reason "session-end"}}},
+  :in
+  ({:agent-context {:agent-id "1oz", :session-id "MfmKc6YY"}}
+   [:session/end {:slave-id "4N"}])},
+ :case-2
+ {:out
+  {:log {:level :info, :message "Session ending: sr3fR1MP"},
+   :wrap-notify
+   {:agent-id "sr3fR1MP",
+    :session-id "uuqk5",
+    :stats {:triggered-by "auto-wrap", :reason "q3BeL8CcDs"}}},
+  :in
+  ({:agent-context {:agent-id "sr3fR1MP", :session-id "uuqk5"}}
+   [:session/end {:reason "q3BeL8CcDs"}])},
+ :case-3
+ {:out
+  {:log {:level :info, :message "Session ending: 3LY"},
+   :wrap-notify
+   {:agent-id "3LY",
+    :session-id "7EvUD2",
+    :stats {:triggered-by "auto-wrap", :reason "99"}}},
+  :in
+  ({:agent-context {:agent-id "3LY", :session-id "7EvUD2"}}
+   [:session/end {:reason "99"}])},
+ :case-4
+ {:out
+  {:log {:level :info, :message "Session ending: 3qvkKpih"},
+   :wrap-notify
+   {:agent-id "3qvkKpih",
+    :session-id "oe8q",
+    :stats {:triggered-by "auto-wrap", :reason "1JuS3N76R"}}},
+  :in
+  ({:agent-context {:agent-id "3qvkKpih", :session-id "oe8q"}}
+   [:session/end {:reason "1JuS3N76R"}])},
+ :case-5
+ {:out
+  {:log {:level :info, :message "Session ending: X6"},
+   :wrap-notify
+   {:agent-id "X6",
+    :session-id "n0",
+    :stats {:triggered-by "auto-wrap", :reason "N95Yt55"}}},
+  :in
+  ({:agent-context {:agent-id "X6", :session-id "n0"}}
+   [:session/end {:reason "N95Yt55"}])},
+ :case-6
+ {:out
+  {:log {:level :info, :message "Session ending: O7sv2wJy"},
+   :wrap-notify
+   {:agent-id "O7sv2wJy",
+    :session-id "gN0qr9",
+    :stats {:triggered-by "auto-wrap", :reason "K2gqM"}}},
+  :in
+  ({:agent-context {:agent-id "z", :session-id "gN0qr9"}}
+   [:session/end {:slave-id "O7sv2wJy", :reason "K2gqM"}])},
+ :case-7
+ {:out
+  {:log {:level :info, :message "Session ending: h"},
+   :wrap-notify
+   {:agent-id "h",
+    :session-id "4q",
+    :stats {:triggered-by "auto-wrap", :reason "session-end"}}},
+  :in
+  ({:agent-context {:agent-id "i8asja", :session-id "4q"}}
+   [:session/end {:slave-id "h"}])}}

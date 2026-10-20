@@ -1,0 +1,50 @@
+{:case-0
+ {:out #:disc{:certainty-alpha 8.0, :certainty-beta 2.0},
+  :in (nil :read-confirmed)},
+ :case-1
+ {:out
+  #:disc{:path "5",
+         :analyzed-at #inst "1970-01-01T00:00:00.000-00:00",
+         :certainty-alpha 1,
+         :certainty-beta 4.0,
+         :volatility-class :B,
+         :last-observation #inst "1970-01-01T00:00:00.000-00:00",
+         :read-count 0},
+  :in
+  (#:disc{:path "5",
+          :analyzed-at #inst "1970-01-01T00:00:00.000-00:00",
+          :certainty-alpha 1,
+          :certainty-beta 2.0,
+          :volatility-class :B,
+          :last-observation #inst "1970-01-01T00:00:00.000-00:00",
+          :read-count 0}
+   :git-commit-touched)},
+ :case-2
+ {:out #:disc{:certainty-alpha 5.0, :certainty-beta 2.0},
+  :in (nil :unknown-event)},
+ :case-3
+ {:out #:disc{:certainty-alpha 5.0, :certainty-beta 2.5},
+  :in (nil :time-decay)},
+ :case-4
+ {:out
+  #:disc{:content-hash "1",
+         :volatility-class :y0,
+         :last-observation #inst "1969-12-31T23:59:59.999-00:00",
+         :read-count 1,
+         :certainty-alpha 5.0,
+         :certainty-beta 7.0},
+  :in
+  (#:disc{:content-hash "1",
+          :volatility-class :y0,
+          :last-observation #inst "1969-12-31T23:59:59.999-00:00",
+          :read-count 1}
+   :hash-mismatch)},
+ :case-5
+ {:out #:disc{:certainty-alpha 5.0, :certainty-beta 7.0},
+  :in (nil :hash-mismatch)},
+ :case-6
+ {:out #:disc{:certainty-alpha 5.0, :certainty-beta 4.0},
+  :in (nil :git-commit-touched)},
+ :case-7
+ {:out #:disc{:certainty-alpha 5.0, :certainty-beta 7.0},
+  :in (nil :hash-mismatch)}}

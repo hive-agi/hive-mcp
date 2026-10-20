@@ -29,7 +29,8 @@
    listeners are the boundary, at the bottom. Names no domain: any root can
    carry the metadata."
   (:require [hive-mcp.dispatch.handler :as handler]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -44,15 +45,21 @@
   [static]
   (::root (meta static)))
 
+(m/=> root-of [:=> [:cat :any] [:maybe :any]])
+
 (defn provided-by
   "STATIC's {verb owner} declarations; {} when it declares none."
   [static]
   (or (::provided-by (meta static)) {}))
 
+(m/=> provided-by [:=> [:cat :any] :map])
+
 (defn verb-key
   "VERB as the keyword a handler map is keyed by."
   [verb]
   (if (keyword? verb) verb (keyword (str verb))))
+
+(m/=> verb-key [:=> [:cat :any] :keyword])
 
 (defn resolve-verb
   "Which handler VERB dispatches to, given the STATIC handler map and the
@@ -83,6 +90,8 @@
       declared  {:source :missing :verb v :owner declared}
       :else     {:source :unknown :verb v})))
 
+(m/=> resolve-verb [:=> [:cat :map :map :any] [:map [:source [:enum :contributed :refused :static :missing :unknown]] [:verb :keyword]]])
+
 (defn missing-verb-error
   "The MCP error a verb answers when its owner has not contributed it."
   [root verb owner]
@@ -91,6 +100,8 @@
    :text    (str "'" root " " (name verb) "' is provided by the addon " owner
                  ", which has not contributed it. Mount or reload " owner
                  " to enable it.")})
+
+(m/=> missing-verb-error [:=> [:cat :string :keyword :string] [:map [:type [:= "text"]] [:isError [:= true]] [:text :string]]])
 
 (defn- missing-handler
   [root verb owner]
@@ -116,6 +127,8 @@
     (with-meta m (assoc (meta static)
                         ::refusals (filterv #(= :refused (:source %)) rs)))))
 
+(m/=> fold-verbs [:=> [:cat :map :map] :map])
+
 ;; =============================================================================
 ;; Boundary: the registry
 ;; =============================================================================
@@ -137,11 +150,15 @@
   (swap! listeners assoc listener-id f)
   listener-id)
 
+(m/=> add-listener! [:=> [:cat :any ifn?] :any])
+
 (defn remove-listener!
   "Drop a listener. Returns the id."
   [listener-id]
   (swap! listeners dissoc listener-id)
   listener-id)
+
+(m/=> remove-listener! [:=> [:cat :any] :any])
 
 (defn- notify! [event]
   (doseq [[_ f] @listeners]
@@ -151,6 +168,8 @@
   "The verbs contributed under ROOT: {verb {:handler :owner :params}}."
   [root]
   (get @registry root {}))
+
+(m/=> contributions [:=> [:cat :any] :map])
 
 (defn contribute-verb!
   "Contribute VERB under ROOT. SPEC: {:handler h :owner o :params {...}
@@ -182,6 +201,8 @@
           (notify! {:type :contribute-verb :tool-name root :addon-id owner :verb v})
           {:ok? true :root root :verb v :owner owner}))))
 
+(m/=> contribute-verb! [:=> [:cat :any :any :map] [:map [:ok? :boolean]]])
+
 (defn retract-verb!
   "Withdraw VERB under ROOT when OWNER contributed it. Returns true when it did."
   [root verb owner]
@@ -191,6 +212,8 @@
           (notify! {:type :retract-verb :tool-name root :addon-id owner :verb v})
           true)
       false)))
+
+(m/=> retract-verb! [:=> [:cat :any :any :any] :boolean])
 
 (defn retract-owner!
   "Withdraw every verb OWNER contributed, under every root. Returns the
@@ -203,12 +226,16 @@
     (doseq [[root v] pairs] (retract-verb! root v owner))
     pairs))
 
+(m/=> retract-owner! [:=> [:cat :any] [:vector [:tuple :any :keyword]]])
+
 (defn clear!
   "Drop every contribution. For tests."
   []
   (reset! registry {})
   (reset! logged-refusals #{})
   nil)
+
+(m/=> clear! [:=> [:cat] :nil])
 
 (defn- log-refusals! [root refusals]
   (doseq [{:keys [verb owner refused-owner]} refusals
@@ -228,6 +255,8 @@
       folded)
     static))
 
+(m/=> effective [:=> [:cat :any] :any])
+
 (defn effective-tree
   "HANDLERS, a consolidated handler tree, with `effective` applied to the root
    and to each direct subtree that names a root (a domain root folding a
@@ -244,12 +273,18 @@
                  h h)
       h)))
 
+(m/=> effective-tree [:=> [:cat :any] :any])
+
 (defn contributed-params
   "Every param the verbs contributed under ROOT declare, merged."
   [root]
   (apply merge (keep :params (vals (contributions root)))))
 
+(m/=> contributed-params [:=> [:cat :any] [:maybe :map]])
+
 (defn contributed-verb-names
   "The verbs contributed under ROOT, as sorted strings."
   [root]
   (vec (sort (map name (keys (contributions root))))))
+
+(m/=> contributed-verb-names [:=> [:cat :any] [:vector :string]])

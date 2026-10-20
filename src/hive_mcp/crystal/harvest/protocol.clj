@@ -6,7 +6,8 @@
    Exhaustive matching via adt-case ensures all outcomes are handled.
 
    Part of CPPB Collect layer (Wave 1, T1)."
-  (:require [hive-dsl.adt :refer [defadt]]))
+  (:require [hive-dsl.adt :refer [defadt]]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -49,12 +50,18 @@
   [source data elapsed-ms]
   (harvest-outcome :harvest/ok {:source source :data data :elapsed-ms elapsed-ms}))
 
+(m/=> harvest-ok [:=> [:cat :keyword :map number?] [:map [:adt/variant [:= :harvest/ok]] [:source :keyword] [:data :map] [:elapsed-ms number?]]])
+
 (defn harvest-empty
   "Construct a :harvest/empty outcome."
   [source reason]
   (harvest-outcome :harvest/empty {:source source :reason reason}))
 
+(m/=> harvest-empty [:=> [:cat :keyword :string] [:map [:adt/variant [:= :harvest/empty]] [:source :keyword] [:reason :string]]])
+
 (defn harvest-error
   "Construct a :harvest/error outcome."
   [source error-map]
   (harvest-outcome :harvest/error {:source source :error error-map}))
+
+(m/=> harvest-error [:=> [:cat :keyword :map] [:map [:adt/variant [:= :harvest/error]] [:source :keyword] [:error :map]]])

@@ -20,7 +20,8 @@
    DDD: Application service layer — composes harvest sources into synthesis input."
   (:require [hive-dsl.adt :refer [defadt]]
             [hive-mcp.dns.result :as result]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -56,6 +57,38 @@
 
 (def ^:private ^:const default-timeout-ms 10000)
 
+;; =============================================================================
+;; Contract schemas
+;; =============================================================================
+
+(def HarvestSourceS
+  "Any IHarvestSource. Generates small in-memory sources."
+  [:fn {:gen/elements [(reify IHarvestSource (source-id [_] :git) (harvest [_ _] {:commits ["abc fix"]}))
+                       (reify IHarvestSource (source-id [_] :hivemind) (harvest [_ _] {:messages []}))]}
+   #(satisfies? IHarvestSource %)])
+
+(def Outcome
+  "A PipelineOutcome value, one schema arm per variant."
+  [:multi {:dispatch :adt/variant}
+   [:harvest/ok      [:map [:adt/variant [:= :harvest/ok]] [:source-id :keyword] [:data :map]]]
+   [:harvest/timeout [:map [:adt/variant [:= :harvest/timeout]] [:source-id :keyword] [:elapsed-ms number?]]]
+   ;; .getMessage may be nil (an exception thrown without a message)
+   [:harvest/error   [:map [:adt/variant [:= :harvest/error]] [:source-id :keyword] [:message [:maybe :string]]]]])
+
+(def ErrResult
+  [:map [:error :keyword] [:message {:optional true} :string]])
+
+(def SynthesisInput
+  [:map
+   ;; Fields are read from source data as-is: a source that reports the key
+   ;; with nil passes nil through (get-in defaults only a MISSING key).
+   [:hivemind-messages [:maybe [:sequential :any]]]
+   [:kanban-changes [:maybe [:sequential :any]]]
+   [:memory-stats :map]
+   [:git-commits [:maybe [:sequential :any]]]
+   [:session-timing :map]
+   [:source-errors [:sequential :map]]])
+
 (defn harvest-one
   "Run a single IHarvestSource, returning a HarvestOutcome ADT value.
    Catches all exceptions — never throws."
@@ -68,6 +101,8 @@
         (log/warn "harvest-one: source" sid "failed:" (.getMessage e))
         (pipeline-outcome :harvest/error {:source-id sid
                                           :message   (.getMessage e)})))))
+
+(m/=> harvest-one [:=> [:cat HarvestSourceS :any] Outcome])
 
 (defn harvest-all
   "Run all harvest sources in parallel via futures, returning vec of HarvestOutcomes.
@@ -98,6 +133,8 @@
                (count (filter #(not= (:adt/variant %) :harvest/ok) outcomes)) "failed)")
      outcomes)))
 
+(m/=> harvest-all [:function [:=> [:cat [:sequential HarvestSourceS] :any] [:vector Outcome]] [:=> [:cat [:sequential HarvestSourceS] :any number?] [:vector Outcome]]])
+
 ;; =============================================================================
 ;; Merge Outcomes
 ;; =============================================================================
@@ -120,6 +157,8 @@
                         (:fail grouped))]
       (result/ok (cond-> merged
                    (seq errors) (assoc :source-errors errors))))))
+
+(m/=> merge-outcomes [:=> [:cat [:maybe [:sequential Outcome]]] [:or [:map [:ok [:map-of :keyword :any]]] ErrResult]])
 
 ;; =============================================================================
 ;; Validate & Transform → SynthesisInput
@@ -153,6 +192,8 @@
                :source-errors     (get merged :source-errors [])}]
     (result/ok input)))
 
+(m/=> validate-context [:=> [:cat [:maybe :map]] [:map [:ok SynthesisInput]]])
+
 ;; =============================================================================
 ;; Pipeline Composition (result/ok-> railway)
 ;; =============================================================================
@@ -175,6 +216,8 @@
                 merge-outcomes
                 validate-context)))
 
+(m/=> run-pipeline [:function [:=> [:cat [:sequential HarvestSourceS] :any] [:or [:map [:ok SynthesisInput]] ErrResult]] [:=> [:cat [:sequential HarvestSourceS] :any [:maybe [:map [:timeout-ms {:optional true} number?]]]] [:or [:map [:ok SynthesisInput]] ErrResult]]])
+
 ;; =============================================================================
 ;; Convenience: Source Builders
 ;; =============================================================================
@@ -188,6 +231,8 @@
   (reify IHarvestSource
     (source-id [_] id)
     (harvest [_ ctx] (harvest-fn ctx))))
+
+(m/=> make-source [:=> [:cat :keyword [:fn {:gen/elements [(fn [_] {}) (fn [_] {:commits ["abc fix"]})]} ifn?]] HarvestSourceS])
 
 (comment
   ;; Example: build sources and run pipeline

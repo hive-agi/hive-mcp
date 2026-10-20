@@ -1,0 +1,91 @@
+{:case-0
+ {:out
+  {:id "dlg-agree",
+   :topic "topic dlg-agree",
+   :status :active,
+   :participants ["w-1" "c-2"],
+   :turn-count 3,
+   :last-signal :no-change,
+   :consensus? false},
+  :in "dlg-agree"},
+ :case-1
+ {:out
+  {:id "dlg-done",
+   :topic "done",
+   :status :consensus,
+   :participants ["w-1" "c-2"],
+   :turn-count 0,
+   :last-signal nil,
+   :consensus? true},
+  :in "dlg-done"},
+ :case-2
+ {:out
+  {:id "dlg-empty",
+   :topic "topic dlg-empty",
+   :status :active,
+   :participants ["w-1" "c-2"],
+   :turn-count 0,
+   :last-signal nil,
+   :consensus? false},
+  :in "dlg-empty"},
+ :case-3
+ {:out
+  {:id "dlg-open",
+   :topic "topic dlg-open",
+   :status :active,
+   :participants ["w-1" "c-2"],
+   :turn-count 2,
+   :last-signal :counter,
+   :consensus? false},
+  :in "dlg-open"},
+ :case-4
+ {:out
+  {:id "dlg-agree",
+   :topic "topic dlg-agree",
+   :status :active,
+   :participants ["w-1" "c-2"],
+   :turn-count 3,
+   :last-signal :no-change,
+   :consensus? false},
+  :in "dlg-agree"},
+ :case-5 {:out nil, :in "dlg-missing"},
+ :case-6
+ {:out
+  {:id "dlg-empty",
+   :topic "topic dlg-empty",
+   :status :active,
+   :participants ["w-1" "c-2"],
+   :turn-count 0,
+   :last-signal nil,
+   :consensus? false},
+  :in "dlg-empty"},
+ :case-7
+ {:out
+  {:id "dlg-open",
+   :topic "topic dlg-open",
+   :status :active,
+   :participants ["w-1" "c-2"],
+   :turn-count 2,
+   :last-signal :counter,
+   :consensus? false},
+  :in "dlg-open"},
+ :case-8
+ {:out
+  {:id "dlg-open",
+   :topic "topic dlg-open",
+   :status :active,
+   :participants ["w-1" "c-2"],
+   :turn-count 2,
+   :last-signal :counter,
+   :consensus? false},
+  :in "dlg-open"},
+ :case-9
+ {:out
+  {:id "dlg-done",
+   :topic "done",
+   :status :consensus,
+   :participants ["w-1" "c-2"],
+   :turn-count 0,
+   :last-signal nil,
+   :consensus? true},
+  :in "dlg-done"}}

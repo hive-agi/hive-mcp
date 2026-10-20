@@ -1,6 +1,8 @@
 (ns hive-mcp.knowledge-graph.disc.volatility
   "Pure volatility classification and staleness scoring for disc entities."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [malli.core :as m]
+            [hive-mcp.knowledge-graph.disc.schema :as ds]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -184,3 +186,19 @@
      :source (:staleness-source entry)
      :depth (:staleness-depth entry)
      :grounded-from (:grounded-from entry)}))
+
+(m/=> classify-volatility [:=> [:cat :string] ds/VolatilityClass])
+(m/=> current-certainty [:=> [:cat [:maybe ds/Disc]] ds/Score])
+(m/=> beta-lower-bound [:=> [:cat [:maybe ds/Disc]] ds/Score])
+(m/=> needs-read? [:function
+                   [:=> [:cat [:maybe ds/Disc]] :boolean]
+                   [:=> [:cat [:maybe ds/Disc] number?] :boolean]])
+;; event is open: an unknown event falls through the case default unchanged
+(m/=> update-certainty [:=> [:cat [:maybe ds/Disc] :any] ds/DiscWithCertainty])
+(m/=> apply-time-decay [:=> [:cat [:maybe ds/Disc]] ds/DecayedDisc])
+(m/=> staleness-score [:=> [:cat [:maybe ds/Disc] [:maybe :map]] ds/Score])
+(m/=> staleness-report [:=> [:cat [:maybe ds/Disc] [:maybe :map]] ds/StalenessReport])
+(m/=> format-staleness-warnings [:=> [:cat [:maybe [:or [:sequential :map] [:set :map]]]]
+                                 [:maybe :string]])
+(m/=> entry-staleness-score [:=> [:cat [:maybe ds/Entry]] ds/Score])
+(m/=> entry-staleness-report [:=> [:cat [:maybe ds/Entry]] ds/EntryReport])

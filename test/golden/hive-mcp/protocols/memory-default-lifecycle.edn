@@ -1,0 +1,14 @@
+{:before {:set? false, :healthy? nil, :status nil},
+ :during
+ {:set? true,
+  :healthy? true,
+  :status
+  {:backend "stub",
+   :configured? true,
+   :connected? true,
+   :entry-count 0,
+   :supports-search? false,
+   :healthy? true,
+   :errors []}},
+ :reset nil,
+ :after {:set? false, :healthy? nil, :disconnected? true}}

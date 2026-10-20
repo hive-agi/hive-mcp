@@ -6,7 +6,8 @@
    - Import EDN data into any backend (DataScript, Datalevin, Datahike)
    - Migrate between backends with validation"
 
-  (:require [hive-mcp.knowledge-graph.connection :as conn]
+  (:require [malli.core :as m]
+            [hive-mcp.knowledge-graph.connection :as conn]
             [hive-mcp.knowledge-graph.protocol :as proto]
             [hive-dsl.result :as r]
             [clojure.edn :as edn]
@@ -405,3 +406,14 @@
                       :expected exported-counts
                       :actual target-counts}
          :target-store target-store}))))
+
+(m/=> export-to-edn [:=> [:cat] [:map [:edges [:sequential :map]] [:disc [:sequential :map]] [:synthetic [:sequential :map]] [:exported-at :any] [:counts :map]]])
+(m/=> export-to-file! [:=> [:cat :string] :map])
+(m/=> import-from-edn [:=> [:cat [:map [:edges {:optional true} [:sequential :map]] [:disc {:optional true} [:sequential :map]] [:synthetic {:optional true} [:sequential :map]]]] [:map [:imported :map] [:errors [:sequential :any]]]])
+(m/=> import-from-file! [:=> [:cat :string] :map])
+(m/=> validate-migration [:=> [:cat :map] [:map [:valid? :boolean] [:expected :map] [:actual :map] [:missing :map]]])
+(m/=> migrate-store! [:function [:=> [:cat :keyword :keyword] [:map [:source-backend :keyword] [:target-backend :keyword] [:exported :map] [:imported [:maybe :map]] [:validation [:maybe :map]] [:dry-run :boolean]]] [:=> [:cat :keyword :keyword [:maybe :map]] [:map [:source-backend :keyword] [:target-backend :keyword] [:exported :map] [:imported [:maybe :map]] [:validation [:maybe :map]] [:dry-run :boolean]]]])
+(m/=> detect-current-backend [:=> [:cat] :keyword])
+(m/=> migrate-to-datahike! [:function [:=> [:cat] :map] [:=> [:cat [:maybe :map]] :map]])
+(m/=> migrate-to-datalevin! [:function [:=> [:cat] :map] [:=> [:cat [:maybe :map]] :map]])
+(m/=> sync-to-backend! [:function [:=> [:cat :keyword] :map] [:=> [:cat :keyword [:maybe :map]] :map]])

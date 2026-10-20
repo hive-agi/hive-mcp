@@ -11,7 +11,8 @@
    to an `err` Result — the sampler is inert, not fatal."
   (:require [hive-spi.diag.ports :as p]
             [hive-spi.diag.schema :as schema]
-            [hive-dsl.result :as r]))
+            [hive-dsl.result :as r]
+            [malli.core :as m]))
 
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -60,3 +61,5 @@
    build even when the library is absent."
   []
   (->AllocRateSampler))
+
+(m/=> make-sampler [:=> [:cat] [:fn {:gen/fmap (fn [_] (->AllocRateSampler)) :gen/elements [nil]} #(satisfies? p/IAllocationSampler %)]])

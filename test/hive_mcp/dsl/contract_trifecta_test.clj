@@ -219,14 +219,12 @@
    "src/hive_mcp/config/merge.clj"
    "src/hive_mcp/multi/param_coerce.clj"])
 
-(def ^:private extension-delegate
-  (str "Thin delegate to an optional extension through delegate-or-noop: the "
-       "extension owns the value domain, so the argument and result are :any "
-       "and a contract narrower than :any would be a claim this ns cannot keep."))
-
-(def ^:private exempt
-  {'hive-mcp.context.reconstruction/gather-kg-context extension-delegate
-   'hive-mcp.context.reconstruction/compress-kg-subgraph extension-delegate})
+;; context.reconstruction's two extension delegates (gather-kg-context and
+;; compress-kg-subgraph) used to be exempt here as thin :any delegates to an
+;; optional extension. Batch m06 contracted them over the documented results
+;; (nil from the noop, the subgraph map / rendered text from an extension), so
+;; the exemptions went stale and nothing in the group is exempt now.
+(def ^:private exempt {})
 
 (cov/deftest-contract-coverage every-pure-dsl-fn-carries-a-contract
   {:paths gated-paths

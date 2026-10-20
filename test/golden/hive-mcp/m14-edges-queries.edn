@@ -1,0 +1,102 @@
+{:find
+ #:kg-edge{:from "n1",
+           :to "n2",
+           :relation :implements,
+           :scope "s1",
+           :confidence 0.9},
+ :since 3,
+ :get
+ #:kg-edge{:from "n0",
+           :to "n1",
+           :relation :applies-to,
+           :confidence 1.0},
+ :find-relation nil,
+ :get-missing nil,
+ :all-batched 5,
+ :pulled 5,
+ :from-nil [],
+ :arcs-scoped
+ [{:from "n1", :to "n3", :relation :depends-on, :confidence 1.0}],
+ :from-scoped
+ [#:kg-edge{:from "n1",
+            :to "n2",
+            :relation :implements,
+            :scope "s1",
+            :confidence 0.9}],
+ :by-relation
+ [#:kg-edge{:from "n2",
+            :to "n3",
+            :relation :refines,
+            :confidence 0.4}],
+ :arcs
+ [{:from "n0", :to "n1", :relation :applies-to, :confidence 1.0}
+  {:from "n1", :to "n2", :relation :implements, :confidence 0.9}
+  {:from "n1", :to "n3", :relation :depends-on, :confidence 1.0}
+  {:from "n2", :to "n3", :relation :refines, :confidence 0.4}
+  {:from "n3", :to "n3", :relation :relates, :confidence 1.0}],
+ :between
+ [#:kg-edge{:from "n1",
+            :to "n2",
+            :relation :implements,
+            :scope "s1",
+            :confidence 0.9}
+  #:kg-edge{:from "n1",
+            :to "n3",
+            :relation :depends-on,
+            :scope "s2",
+            :confidence 1.0}
+  #:kg-edge{:from "n2", :to "n3", :relation :refines, :confidence 0.4}
+  #:kg-edge{:from "n3",
+            :to "n3",
+            :relation :relates,
+            :confidence 1.0}],
+ :since-future (),
+ :all 5,
+ :to-scoped
+ [#:kg-edge{:from "n1",
+            :to "n3",
+            :relation :depends-on,
+            :scope "s2",
+            :confidence 1.0}],
+ :since-scoped
+ [#:kg-edge{:from "n1",
+            :to "n2",
+            :relation :implements,
+            :scope "s1",
+            :confidence 0.9}],
+ :from
+ [#:kg-edge{:from "n1",
+            :to "n2",
+            :relation :implements,
+            :scope "s1",
+            :confidence 0.9}
+  #:kg-edge{:from "n1",
+            :to "n3",
+            :relation :depends-on,
+            :scope "s2",
+            :confidence 1.0}],
+ :between-one [],
+ :count 5,
+ :by-relation-scoped [],
+ :empty-count 0,
+ :by-scope
+ [#:kg-edge{:from "n1",
+            :to "n3",
+            :relation :depends-on,
+            :scope "s2",
+            :confidence 1.0}],
+ :all-scoped
+ [#:kg-edge{:from "n1",
+            :to "n2",
+            :relation :implements,
+            :scope "s1",
+            :confidence 0.9}],
+ :count-scoped 1,
+ :to
+ [#:kg-edge{:from "n1",
+            :to "n3",
+            :relation :depends-on,
+            :scope "s2",
+            :confidence 1.0}
+  #:kg-edge{:from "n2", :to "n3", :relation :refines, :confidence 0.4}
+  #:kg-edge{:from "n3", :to "n3", :relation :relates, :confidence 1.0}]}
