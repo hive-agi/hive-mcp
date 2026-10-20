@@ -1,0 +1,24 @@
+{:case-0
+ {:out {:id "t2", :artifact {:name "a"}, :kind "artifact-update"},
+  :in ("t2" {:name "a"})},
+ :case-1
+ {:out {:id "t2", :artifact {:name "b"}, :kind "artifact-update"},
+  :in ("t2" {:name "b"})},
+ :case-2
+ {:out {:id "t1", :artifact {:name "b"}, :kind "artifact-update"},
+  :in ("t1" {:name "b"})},
+ :case-3
+ {:out {:id "t1", :artifact {:name "b"}, :kind "artifact-update"},
+  :in ("t1" {:name "b"})},
+ :case-4
+ {:out {:id "t1", :artifact {:name "a"}, :kind "artifact-update"},
+  :in ("t1" {:name "a"})},
+ :case-5
+ {:out {:id "t1", :artifact {:name "a"}, :kind "artifact-update"},
+  :in ("t1" {:name "a"})},
+ :case-6
+ {:out {:id "t1", :artifact {:name "a"}, :kind "artifact-update"},
+  :in ("t1" {:name "a"})},
+ :case-7
+ {:out {:id "t2", :artifact {:name "a"}, :kind "artifact-update"},
+  :in ("t2" {:name "a"})}}

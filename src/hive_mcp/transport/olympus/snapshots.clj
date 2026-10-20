@@ -8,7 +8,8 @@
    refactor-hotspots-p0.md line 99-104)."
   (:require [hive-mcp.dns.result :as result]
             [hive-mcp.swarm.datascript.queries :as ds-queries]
-            [hive-mcp.project.tree :as project-tree]))
+            [hive-mcp.project.tree :as project-tree]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -25,6 +26,54 @@
       (.format java.time.format.DateTimeFormatter/ISO_INSTANT
                (.toInstant ^java.util.Date d))
       (str d))))
+
+(def IsoString
+  "A serialized date: ISO-8601 for a java.util.Date, `str` of anything else."
+  :string)
+
+(m/=> serialize-date [:=> [:cat :any] [:maybe IsoString]])
+
+(def AgentRow
+  "One agent as Olympus renders it. Every value is JSON-serializable."
+  [:map
+   [:id :any]
+   [:name [:maybe :string]]
+   [:type [:enum :coordinator :ling]]
+   [:status [:maybe :string]]
+   [:project-id [:maybe :string]]
+   [:cwd [:maybe :string]]
+   [:presets [:vector :any]]
+   [:parent :any]
+   [:current-task :any]
+   [:tasks-completed :int]
+   [:created-at [:maybe IsoString]]])
+
+(def KgSnapshot
+  [:map [:entries [:sequential :any]] [:edges [:vector :any]] [:entry-count [:int {:min 0}]]])
+
+(def ProjectRow
+  [:map
+   [:id :any]
+   [:path [:maybe :string]]
+   [:type [:maybe :string]]
+   [:parent-id :any]
+   [:tags [:vector :any]]
+   [:git-root :any]
+   [:ling-count [:int {:min 0}]]
+   [:last-scanned [:maybe IsoString]]])
+
+(def ProjectTreeSnapshot
+  [:map
+   [:projects [:vector ProjectRow]]
+   [:roots [:sequential :any]]
+   [:children [:map-of :any :any]]
+   [:total [:int {:min 0}]]])
+
+(def FullSnapshot
+  [:map
+   [:type [:= :init-snapshot]]
+   [:timestamp :int]
+   [:data [:map [:agents [:vector AgentRow]] [:kg KgSnapshot] [:project-tree ProjectTreeSnapshot]]]])
 
 ;; =============================================================================
 ;; Snapshot Builders (Query DataScript for current state)
@@ -51,6 +100,9 @@
                               :created-at (serialize-date (:slave/created-at slave))}))
                       vec)))
 
+;; [] when the swarm store cannot be read.
+(m/=> build-agents-snapshot [:=> [:cat] [:vector AgentRow]])
+
 (defn build-kg-snapshot
   "Build knowledge graph snapshot.
    Returns {:entries [...] :edges [...]} for recent KG state.
@@ -64,6 +116,8 @@
                    {:entries (or recent-entries [])
                     :edges []  ;; KG edges would come from kg/edges query - simplified for now
                     :entry-count (count recent-entries)})))
+
+(m/=> build-kg-snapshot [:=> [:cat] KgSnapshot])
 
 (defn build-project-tree-snapshot
   "Build project tree snapshot from project.tree DataScript.
@@ -96,6 +150,8 @@
                     :children (:children tree-data)
                     :total (count all-projects)})))
 
+(m/=> build-project-tree-snapshot [:=> [:cat] ProjectTreeSnapshot])
+
 (defn build-full-snapshot
   "Build complete state snapshot for new client connection.
 
@@ -109,3 +165,5 @@
    :data {:agents (build-agents-snapshot)
           :kg (build-kg-snapshot)
           :project-tree (build-project-tree-snapshot)}})
+
+(m/=> build-full-snapshot [:=> [:cat] FullSnapshot])

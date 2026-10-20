@@ -23,7 +23,8 @@
             [hive-mcp.transport.a2a.schema :as schema]
             [hive-mcp.transport.a2a.handlers :as handlers]
             [hive-mcp.concurrency.pool :as pool]
-            [hive-mcp.transport.exposure :as exposure]))
+            [hive-mcp.transport.exposure :as exposure]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -97,6 +98,8 @@
    interfaces."
   [api-key requested]
   (exposure/bind-host api-key requested))
+
+(m/=> bind-host [:=> [:cat exposure/Secret [:maybe :string]] exposure/Host])
 
 ;; =============================================================================
 ;; JSON-RPC Dispatcher
@@ -350,6 +353,19 @@
                                     "(no auth, loopback only)"))
                         actual-port))))))
 
+(def StartOpts
+  "Gateway options; every key is optional."
+  [:map
+   [:port {:optional true} [:maybe [:int {:min 0 :max 65535}]]]
+   [:api-key {:optional true} exposure/Secret]
+   [:bind {:optional true} [:maybe :string]]])
+
+;; The bound port, or nil when the server could not start.
+(m/=> start!
+      [:function
+       [:=> [:cat] [:maybe [:int {:min 0 :max 65535}]]]
+       [:=> [:cat [:maybe StartOpts]] [:maybe [:int {:min 0 :max 65535}]]]])
+
 (defn stop!
   "Stop the A2A gateway and drain SSE streams."
   []
@@ -363,6 +379,9 @@
     (log/info "A2A gateway stopped (was on port" port ")")
     true))
 
+;; true when a running gateway was stopped, nil when none was running.
+(m/=> stop! [:=> [:cat] [:maybe [:= true]]])
+
 (defn status
   "Get A2A gateway status."
   []
@@ -371,6 +390,17 @@
    :bind (:bind @server-atom)
    :clients (count @sse-clients)
    :auth? (:api-key @server-atom false)})
+
+(def Status
+  "Gateway status: port and bind are nil while it is stopped."
+  [:map
+   [:running? :boolean]
+   [:port [:maybe [:int {:min 0 :max 65535}]]]
+   [:bind [:maybe :string]]
+   [:clients [:int {:min 0}]]
+   [:auth? :boolean]])
+
+(m/=> status [:=> [:cat] Status])
 
 (comment
   ;; REPL testing
