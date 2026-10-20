@@ -1,0 +1,13 @@
+{:text {:prompt "fix auth"},
+ :ref-bare {:prompt "task"},
+ :ref-full
+ {:prompt "R:1/1@hive-mcp\n\n---\n\ntask",
+  :refs ["ctx-1"],
+  :kg-nodes ["n1"],
+  :reconstructed "R:1/1@hive-mcp"},
+ :ref-failing
+ {:prompt "Context reconstruction failed: down\n\n---\n\ntask",
+  :reconstructed "Context reconstruction failed: down"},
+ :graph-fallback
+ {:prompt "Extension context unavailable. Task node: node-42"},
+ :coerced {:prompt "42"}}

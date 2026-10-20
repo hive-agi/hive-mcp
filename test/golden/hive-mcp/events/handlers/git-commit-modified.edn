@@ -1,0 +1,93 @@
+{:case-0
+ {:out {},
+  :in
+  ({} [:git/commit-modified {:task-id "q5y0", :modified-files []}])},
+ :case-1
+ {:out
+  {:log {:level :info, :message "Git commit for task 7R28yn: 1 files"},
+   :git-commit
+   {:files ["src/a.clj"],
+    :message "fix: fix login",
+    :task-id "7R28yn"}},
+  :in
+  ({}
+   [:git/commit-modified
+    {:task-id "7R28yn",
+     :title "fix login",
+     :modified-files ["src/a.clj"]}])},
+ :case-2
+ {:out
+  {:log {:level :info, :message "Git commit for task w37: 2 files"},
+   :git-commit
+   {:files ["src/b.clj" "src/b.clj"],
+    :message "fix: FIX: typo",
+    :task-id "w37"}},
+  :in
+  ({}
+   [:git/commit-modified
+    {:task-id "w37",
+     :title "FIX: typo",
+     :modified-files ["src/b.clj" "src/b.clj"]}])},
+ :case-3
+ {:out {},
+  :in
+  ({} [:git/commit-modified {:task-id "769zs", :modified-files []}])},
+ :case-4
+ {:out
+  {:log {:level :info, :message "Git commit for task Pf: 1 files"},
+   :git-commit
+   {:files ["src/b.clj"], :message "fix: Fix crash", :task-id "Pf"}},
+  :in
+  ({}
+   [:git/commit-modified
+    {:task-id "Pf",
+     :title "Fix crash",
+     :modified-files ["src/b.clj"]}])},
+ :case-5
+ {:out
+  {:log {:level :info, :message "Git commit for task S93Yh: 5 files"},
+   :git-commit
+   {:files
+    ["src/a.clj" "test/c.clj" "test/c.clj" "src/b.clj" "src/a.clj"],
+    :message "fix: FIX: typo",
+    :task-id "S93Yh"}},
+  :in
+  ({}
+   [:git/commit-modified
+    {:task-id "S93Yh",
+     :title "FIX: typo",
+     :modified-files
+     ["src/a.clj"
+      "test/c.clj"
+      "test/c.clj"
+      "src/b.clj"
+      "src/a.clj"]}])},
+ :case-6
+ {:out
+  {:log
+   {:level :info, :message "Git commit for task Bfv3hFEH: 5 files"},
+   :git-commit
+   {:files
+    ["src/b.clj" "src/b.clj" "src/a.clj" "src/a.clj" "src/a.clj"],
+    :message "feat: Task Bfv3hFEH",
+    :task-id "Bfv3hFEH"}},
+  :in
+  ({}
+   [:git/commit-modified
+    {:task-id "Bfv3hFEH",
+     :modified-files
+     ["src/b.clj" "src/b.clj" "src/a.clj" "src/a.clj" "src/a.clj"]}])},
+ :case-7
+ {:out
+  {:log
+   {:level :info, :message "Git commit for task hLM4Q82: 1 files"},
+   :git-commit
+   {:files ["test/c.clj"],
+    :message "fix: FIX: typo",
+    :task-id "hLM4Q82"}},
+  :in
+  ({}
+   [:git/commit-modified
+    {:task-id "hLM4Q82",
+     :title "FIX: typo",
+     :modified-files ["test/c.clj"]}])}}

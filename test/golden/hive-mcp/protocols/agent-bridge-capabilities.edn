@@ -1,0 +1,56 @@
+{:case-0
+ {:out
+  {:backend-id :noop,
+   :enhanced? false,
+   :available? false,
+   :capabilities #{}},
+  :in ()},
+ :case-1
+ {:out
+  {:backend-id :noop,
+   :enhanced? false,
+   :available? false,
+   :capabilities #{}},
+  :in ()},
+ :case-2
+ {:out
+  {:backend-id :noop,
+   :enhanced? false,
+   :available? false,
+   :capabilities #{}},
+  :in ()},
+ :case-3
+ {:out
+  {:backend-id :noop,
+   :enhanced? false,
+   :available? false,
+   :capabilities #{}},
+  :in ()},
+ :case-4
+ {:out
+  {:backend-id :noop,
+   :enhanced? false,
+   :available? false,
+   :capabilities #{}},
+  :in ()},
+ :case-5
+ {:out
+  {:backend-id :noop,
+   :enhanced? false,
+   :available? false,
+   :capabilities #{}},
+  :in ()},
+ :case-6
+ {:out
+  {:backend-id :noop,
+   :enhanced? false,
+   :available? false,
+   :capabilities #{}},
+  :in ()},
+ :case-7
+ {:out
+  {:backend-id :noop,
+   :enhanced? false,
+   :available? false,
+   :capabilities #{}},
+  :in ()}}

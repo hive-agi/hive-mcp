@@ -1,0 +1,105 @@
+{:case-0
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "Auto-wrap crystallizing session: q5y0 (triggered-by: auto-wrap, reason: session-wrap)"},
+   :wrap-crystallize
+   {:agent-id "VB5B", :session-id "q5y0", :project nil}},
+  :in
+  ({:agent-context {:agent-id "VB5B"}}
+   [:session/wrap {:session-id "q5y0", :triggered-by "auto-wrap"}])},
+ :case-1
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "Auto-wrap crystallizing session: 7R28yn (triggered-by: unknown, reason: session-wrap)"},
+   :wrap-crystallize
+   {:agent-id "E", :session-id "7R28yn", :project "66h"}},
+  :in
+  ({:agent-context {:agent-id "Vu3W5t"}}
+   [:session/wrap
+    {:session-id "7R28yn", :slave-id "E", :project "66h"}])},
+ :case-2
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "Auto-wrap crystallizing session: w37 (triggered-by: unknown, reason: b7Pq)"},
+   :wrap-crystallize
+   {:agent-id "8Uo6NwQWfQ", :session-id "w37", :project nil}},
+  :in
+  ({:agent-context {:agent-id "fk"}}
+   [:session/wrap
+    {:session-id "w37", :slave-id "8Uo6NwQWfQ", :reason "b7Pq"}])},
+ :case-3
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "Auto-wrap crystallizing session: 769zs (triggered-by: auto-wrap, reason: Wf8o84E5)"},
+   :wrap-crystallize
+   {:agent-id "j6pk", :session-id "769zs", :project nil}},
+  :in
+  ({:agent-context {:agent-id "j6pk"}}
+   [:session/wrap
+    {:session-id "769zs",
+     :triggered-by "auto-wrap",
+     :reason "Wf8o84E5"}])},
+ :case-4
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "Auto-wrap crystallizing session: Pf (triggered-by: unknown, reason: session-wrap)"},
+   :wrap-crystallize
+   {:agent-id "H89Lk", :session-id "Pf", :project nil}},
+  :in
+  ({:agent-context {:agent-id "24b6077PfL"}}
+   [:session/wrap {:session-id "Pf", :slave-id "H89Lk"}])},
+ :case-5
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "Auto-wrap crystallizing session: S93Yh (triggered-by: manual, reason: tU171DSc)"},
+   :wrap-crystallize
+   {:agent-id "nheBCB27X", :session-id "S93Yh", :project "bR"}},
+  :in
+  ({:agent-context {:agent-id "U7b8F"}}
+   [:session/wrap
+    {:session-id "S93Yh",
+     :slave-id "nheBCB27X",
+     :project "bR",
+     :triggered-by "manual",
+     :reason "tU171DSc"}])},
+ :case-6
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "Auto-wrap crystallizing session: Bfv3hFEH (triggered-by: manual, reason: VMtY)"},
+   :wrap-crystallize
+   {:agent-id "zy", :session-id "Bfv3hFEH", :project "Fy1"}},
+  :in
+  ({:agent-context {:agent-id "zy"}}
+   [:session/wrap
+    {:session-id "Bfv3hFEH",
+     :project "Fy1",
+     :triggered-by "manual",
+     :reason "VMtY"}])},
+ :case-7
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "Auto-wrap crystallizing session: hLM4Q82 (triggered-by: auto-wrap, reason: session-wrap)"},
+   :wrap-crystallize
+   {:agent-id "y5e20c3K", :session-id "hLM4Q82", :project nil}},
+  :in
+  ({:agent-context {:agent-id "z508U"}}
+   [:session/wrap
+    {:session-id "hLM4Q82",
+     :slave-id "y5e20c3K",
+     :triggered-by "auto-wrap"}])}}

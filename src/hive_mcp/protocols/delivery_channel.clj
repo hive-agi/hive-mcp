@@ -9,7 +9,8 @@
    Registry pattern: multiple channels can be active simultaneously,
    unlike IEditor/IEventBackbone which have a single active instance."
   (:require [hive-dsl.result :refer [rescue]]
-            [hive-mcp.protocols.registry :as reg]))
+            [hive-mcp.protocols.registry :as reg]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -109,3 +110,29 @@
   "Create a no-op delivery channel fallback."
   []
   (->NoopChannel))
+
+(def Channel
+  "Any value satisfying IDeliveryChannel; generates NoopChannels."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (->NoopChannel))}
+   #(satisfies? IDeliveryChannel %)])
+
+(def FanoutOutcomes
+  "What `fanout!` answers: the per-channel outcome map of
+   hive-mcp.delivery.fanout/fanout!, or nil from the serial fallback."
+  [:maybe [:map-of :any :keyword]])
+
+;; register-channel! rejects a non-channel through its own :pre, so its input
+;; is loose.
+(m/=> register-channel! [:=> [:cat :any] Channel])
+
+(m/=> unregister-channel! [:=> [:cat :any] :nil])
+
+(m/=> get-channel [:=> [:cat :any] [:maybe Channel]])
+
+(m/=> get-channels [:=> [:cat] [:maybe [:sequential Channel]]])
+
+(m/=> clear-channels! [:=> [:cat] :nil])
+
+(m/=> fanout! [:=> [:cat :map] FanoutOutcomes])
+
+(m/=> noop-channel [:=> [:cat] Channel])

@@ -1,0 +1,247 @@
+{:case-0
+ {:out
+  {:log {:level :info, :message "SAA complete (full) agent=q5y0"},
+   :shout
+   {:agent-id "q5y0",
+    :event-type :completed,
+    :data
+    {:task "0Qp",
+     :workflow :saa,
+     :mode "full",
+     :plan-memory-id nil,
+     :kanban-task-ids [],
+     :tests-passed? nil,
+     :grounding-score 1.0}},
+   :channel-publish
+   {:event-type :saa-completed,
+    :data
+    {:agent-id "q5y0",
+     :task "0Qp",
+     :kanban-task-ids [],
+     :plan-only? false,
+     :grounding-score 1.0}}},
+  :in
+  ({}
+   [:saa/completed
+    {:agent-id "q5y0",
+     :task "0Qp",
+     :kanban-task-ids [],
+     :plan-only? false,
+     :grounding-score 1.0}])},
+ :case-1
+ {:out
+  {:log
+   {:level :info,
+    :message "SAA complete (full) plan=66h agent=7R28yn"},
+   :shout
+   {:agent-id "7R28yn",
+    :event-type :completed,
+    :data
+    {:task "E9hV1o7",
+     :workflow :saa,
+     :mode "full",
+     :plan-memory-id "66h",
+     :kanban-task-ids nil,
+     :tests-passed? nil,
+     :grounding-score 1.0}},
+   :channel-publish
+   {:event-type :saa-completed,
+    :data
+    {:agent-id "7R28yn",
+     :task "E9hV1o7",
+     :plan-memory-id "66h",
+     :plan-only? false,
+     :grounding-score 1.0}}},
+  :in
+  ({}
+   [:saa/completed
+    {:agent-id "7R28yn",
+     :task "E9hV1o7",
+     :plan-memory-id "66h",
+     :plan-only? false,
+     :grounding-score 1.0}])},
+ :case-2
+ {:out
+  {:log
+   {:level :info, :message "SAA complete (full) tests=fail agent=w37"},
+   :shout
+   {:agent-id "w37",
+    :event-type :completed,
+    :data
+    {:task "q3BeL8CcDs",
+     :workflow :saa,
+     :mode "full",
+     :plan-memory-id nil,
+     :kanban-task-ids nil,
+     :tests-passed? false,
+     :grounding-score nil}},
+   :channel-publish
+   {:event-type :saa-completed,
+    :data
+    {:agent-id "w37", :task "q3BeL8CcDs", :tests-passed? false}}},
+  :in
+  ({}
+   [:saa/completed
+    {:agent-id "w37", :task "q3BeL8CcDs", :tests-passed? false}])},
+ :case-3
+ {:out
+  {:log
+   {:level :info,
+    :message "SAA complete (full) kanban-tasks=2 agent=769zs"},
+   :shout
+   {:agent-id "769zs",
+    :event-type :completed,
+    :data
+    {:task "99",
+     :workflow :saa,
+     :mode "full",
+     :plan-memory-id nil,
+     :kanban-task-ids ["I3" "T4m3N8Ze"],
+     :tests-passed? nil,
+     :grounding-score 0.9375}},
+   :channel-publish
+   {:event-type :saa-completed,
+    :data
+    {:agent-id "769zs",
+     :task "99",
+     :kanban-task-ids ["I3" "T4m3N8Ze"],
+     :plan-only? false,
+     :grounding-score 0.9375}}},
+  :in
+  ({}
+   [:saa/completed
+    {:agent-id "769zs",
+     :task "99",
+     :kanban-task-ids ["I3" "T4m3N8Ze"],
+     :plan-only? false,
+     :grounding-score 0.9375}])},
+ :case-4
+ {:out
+  {:log
+   {:level :info, :message "SAA complete (full) tests=pass agent=Pf"},
+   :shout
+   {:agent-id "Pf",
+    :event-type :completed,
+    :data
+    {:task "1JuS3N76R",
+     :workflow :saa,
+     :mode "full",
+     :plan-memory-id nil,
+     :kanban-task-ids nil,
+     :tests-passed? true,
+     :grounding-score nil}},
+   :channel-publish
+   {:event-type :saa-completed,
+    :data
+    {:agent-id "Pf",
+     :task "1JuS3N76R",
+     :plan-only? false,
+     :tests-passed? true}}},
+  :in
+  ({}
+   [:saa/completed
+    {:agent-id "Pf",
+     :task "1JuS3N76R",
+     :plan-only? false,
+     :tests-passed? true}])},
+ :case-5
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "SAA complete (full) plan=bR kanban-tasks=3 tests=pass agent=S93Yh"},
+   :shout
+   {:agent-id "S93Yh",
+    :event-type :completed,
+    :data
+    {:task "N95Yt55",
+     :workflow :saa,
+     :mode "full",
+     :plan-memory-id "bR",
+     :kanban-task-ids ["5V2LH4d" "7kG1iQ7" "1Rof"],
+     :tests-passed? true,
+     :grounding-score 0.875}},
+   :channel-publish
+   {:event-type :saa-completed,
+    :data
+    {:agent-id "S93Yh",
+     :task "N95Yt55",
+     :plan-memory-id "bR",
+     :kanban-task-ids ["5V2LH4d" "7kG1iQ7" "1Rof"],
+     :plan-only? false,
+     :tests-passed? true,
+     :grounding-score 0.875}}},
+  :in
+  ({}
+   [:saa/completed
+    {:agent-id "S93Yh",
+     :task "N95Yt55",
+     :plan-memory-id "bR",
+     :kanban-task-ids ["5V2LH4d" "7kG1iQ7" "1Rof"],
+     :plan-only? false,
+     :tests-passed? true,
+     :grounding-score 0.875}])},
+ :case-6
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "SAA complete (full) plan=Fy1 kanban-tasks=6 agent=Bfv3hFEH"},
+   :shout
+   {:agent-id "Bfv3hFEH",
+    :event-type :completed,
+    :data
+    {:task "K2gqM",
+     :workflow :saa,
+     :mode "full",
+     :plan-memory-id "Fy1",
+     :kanban-task-ids
+     ["W" "w8KlF7" "s6xnU" "1812vQr2" "Kru0" "jMug4s5yp6"],
+     :tests-passed? nil,
+     :grounding-score 0.75}},
+   :channel-publish
+   {:event-type :saa-completed,
+    :data
+    {:agent-id "Bfv3hFEH",
+     :task "K2gqM",
+     :plan-memory-id "Fy1",
+     :kanban-task-ids
+     ["W" "w8KlF7" "s6xnU" "1812vQr2" "Kru0" "jMug4s5yp6"],
+     :grounding-score 0.75}}},
+  :in
+  ({}
+   [:saa/completed
+    {:agent-id "Bfv3hFEH",
+     :task "K2gqM",
+     :plan-memory-id "Fy1",
+     :kanban-task-ids
+     ["W" "w8KlF7" "s6xnU" "1812vQr2" "Kru0" "jMug4s5yp6"],
+     :grounding-score 0.75}])},
+ :case-7
+ {:out
+  {:log
+   {:level :info,
+    :message "SAA complete (full) kanban-tasks=4 agent=hLM4Q82"},
+   :shout
+   {:agent-id "hLM4Q82",
+    :event-type :completed,
+    :data
+    {:task "4zU2Cl6",
+     :workflow :saa,
+     :mode "full",
+     :plan-memory-id nil,
+     :kanban-task-ids ["vqMQw" "s4" "Hv6nnoz" "i4C04V2"],
+     :tests-passed? nil,
+     :grounding-score nil}},
+   :channel-publish
+   {:event-type :saa-completed,
+    :data
+    {:agent-id "hLM4Q82",
+     :task "4zU2Cl6",
+     :kanban-task-ids ["vqMQw" "s4" "Hv6nnoz" "i4C04V2"]}}},
+  :in
+  ({}
+   [:saa/completed
+    {:agent-id "hLM4Q82",
+     :task "4zU2Cl6",
+     :kanban-task-ids ["vqMQw" "s4" "Hv6nnoz" "i4C04V2"]}])}}

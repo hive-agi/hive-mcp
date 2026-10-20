@@ -6,7 +6,9 @@
    - :kanban/sync - Sync kanban at session end"
 
   (:require [hive-mcp.events.core :as ev]
-            [hive-mcp.events.interceptors :as interceptors]))
+            [hive-mcp.events.interceptors :as interceptors]
+            [malli.core :as m]
+            [hive-mcp.events.handlers.schema :as hs]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -55,6 +57,22 @@
                     :kanban/completed-by effective-agent
                     :kanban/completed-at (java.util.Date.)}]}))
 
+(m/=> handle-kanban-done
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:memory-write [:map
+                        [:type [:= "note"]]
+                        [:content :string]
+                        [:tags [:vector :string]]
+                        [:duration [:= "ephemeral"]]
+                        [:agent-id :any]]]
+        [:ds-transact [:vector [:map
+                                [:kanban/task-id :any]
+                                [:kanban/status [:= :done]]
+                                [:kanban/completed-by :any]
+                                [:kanban/completed-at inst?]]]]]])
+
 ;; =============================================================================
 ;; Handler: :kanban/sync (P5-4)
 ;; =============================================================================
@@ -82,6 +100,12 @@
      :kanban-sync {:project project
                    :direction :bidirectional}}))
 
+(m/=> handle-kanban-sync
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:kanban-sync [:map [:project :any] [:direction [:= :bidirectional]]]]]])
+
 ;; =============================================================================
 ;; Registration
 ;; =============================================================================
@@ -96,3 +120,5 @@
   (ev/reg-event :kanban/sync
                 [interceptors/debug]
                 handle-kanban-sync))
+
+(m/=> register-handlers! [:=> [:cat] hs/HandlerRegistry])

@@ -1,0 +1,9 @@
+{:before {:set? false, :id :noop},
+ :during
+ {:set? true,
+  :id :m17-stub,
+  :same? true,
+  :eval {:ok "(+ 1 1)"},
+  :swarm? true},
+ :cleared nil,
+ :after {:set? false, :id :noop}}

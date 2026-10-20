@@ -20,7 +20,8 @@
                                 same way a process with no adapter does.
 
    Kernel namespaces (events.core, hooks.core, agent.context, ...) stay
-   ordinary static requires.")
+   ordinary static requires."
+  (:require [malli.core :as m]))
 
 (def ^:dynamic *resolve*
   "How a host symbol becomes something callable. `requiring-resolve` in a
@@ -34,6 +35,8 @@
   [sym]
   (try (*resolve* sym) (catch Throwable _ nil)))
 
+(m/=> resolve-soft [:=> [:cat :symbol] [:maybe ifn?]])
+
 (defn host-or
   "Call the host function SYM with ARGS when its namespace loads; otherwise
    call FALLBACK with no arguments. Only the resolution is guarded: a throw
@@ -42,3 +45,5 @@
   (if-let [f (resolve-soft sym)]
     (apply f args)
     (fallback)))
+
+(m/=> host-or [:=> [:cat :symbol ifn? [:* :any]] :any])

@@ -2,7 +2,8 @@
   "Re-exports the KG SPI (hive-spi.kg.protocol) and owns active-store slot
    management. Backends implement hive-spi.kg.protocol/IKGStore directly."
   (:require [hive-spi.kg.protocol :as spi]
-            [hive-mcp.protocols.registry :as reg]))
+            [hive-mcp.protocols.registry :as reg]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -49,23 +50,39 @@
   [store]
   (reg/install! slot store))
 
+(def KGStore
+  "Any value satisfying hive-spi.kg.protocol/IKGStore; generates the noop store."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (spi/noop-store))}
+   #(satisfies? spi/IKGStore %)])
+
+;; The input is loose: the slot's :validate assert rejects a non-store.
+(m/=> set-store! [:=> [:cat :any] KGStore])
+
 (defn get-store
   "Get the active graph store, or throw if none set."
   []
   (reg/current slot))
+
+(m/=> get-store [:=> [:cat] KGStore])
 
 (defn store-set?
   "Check if a store has been configured."
   []
   (reg/present? slot))
 
+(m/=> store-set? [:=> [:cat] :boolean])
+
 (defn clear-store!
   "Clear the active store."
   []
   (reg/clear! slot))
+
+(m/=> clear-store! [:=> [:cat] :nil])
 
 (defn active-temporal?
   "True when the active store supports temporal queries."
   []
   (and (store-set?)
        (spi/temporal-store? (get-store))))
+
+(m/=> active-temporal? [:=> [:cat] :boolean])

@@ -1,0 +1,89 @@
+{:case-0
+ {:out
+  {:fault :recall/dimension-mismatch,
+   :label :dimension-invariant,
+   :diagnosis
+   "a query embedded at one width and searched against an index of another returns confident neighbours from a space the query was never in.",
+   :mismatched
+   [{:collection "hive_384", :expected 768, :actual nil}
+    {:collection "hive_768", :expected 384}
+    {:collection "hive", :expected 384, :actual nil}
+    {:collection "hive_768", :expected 384, :actual nil}]},
+  :in
+  ({:label :dimension-invariant,
+    :readings
+    [{:collection "hive_384", :expected 768, :actual nil}
+     {:collection "hive_768", :expected 384}
+     {:collection "hive", :expected 384, :actual nil}
+     {:collection "hive_768", :expected 384, :actual nil}]})},
+ :case-1
+ {:out nil,
+  :in
+  ({:label :dimension-invariant,
+    :readings
+    [{:collection "hive", :actual nil}
+     {:collection "hive_768", :expected 384, :actual 384}]})},
+ :case-2
+ {:out
+  {:fault :recall/dimension-mismatch,
+   :label :dimension-invariant,
+   :diagnosis
+   "a query embedded at one width and searched against an index of another returns confident neighbours from a space the query was never in.",
+   :mismatched [{:collection "hive", :expected 768}]},
+  :in
+  ({:label :dimension-invariant,
+    :readings
+    [{:collection "hive", :expected 768}
+     {:collection "hive_768"}
+     {:collection "hive"}]})},
+ :case-3
+ {:out
+  {:fault :recall/no-collections-configured,
+   :label :dimension-invariant,
+   :diagnosis
+   "no collection reports a derivable width, so the invariant is vacuous. The embedding service did not come up."},
+  :in ({:label :dimension-invariant, :readings []})},
+ :case-4
+ {:out
+  {:fault :recall/dimension-mismatch,
+   :label :dimension-invariant,
+   :diagnosis
+   "a query embedded at one width and searched against an index of another returns confident neighbours from a space the query was never in.",
+   :mismatched
+   [{:collection "hive_384", :expected 768}
+    {:collection "hive", :expected 768}
+    {:collection "hive_384", :expected 768}]},
+  :in
+  ({:label :dimension-invariant,
+    :readings
+    [{:collection "hive_768", :actual nil}
+     {:collection "hive_384", :expected 768}
+     {:collection "hive", :expected 768}
+     {:collection "hive_384", :expected 768}]})},
+ :case-5
+ {:out
+  {:fault :recall/no-collections-configured,
+   :label :dimension-invariant,
+   :diagnosis
+   "no collection reports a derivable width, so the invariant is vacuous. The embedding service did not come up."},
+  :in
+  ({:label :dimension-invariant,
+    :readings
+    [{:collection "hive_384"}
+     {:collection "hive_384"}
+     {:collection "hive_384"}]})},
+ :case-6
+ {:out
+  {:fault :recall/no-collections-configured,
+   :label :dimension-invariant,
+   :diagnosis
+   "no collection reports a derivable width, so the invariant is vacuous. The embedding service did not come up."},
+  :in
+  ({:label :dimension-invariant, :readings [{:collection "hive"}]})},
+ :case-7
+ {:out
+  {:fault :recall/no-collections-configured,
+   :label :dimension-invariant,
+   :diagnosis
+   "no collection reports a derivable width, so the invariant is vacuous. The embedding service did not come up."},
+  :in ({:label :dimension-invariant, :readings []})}}

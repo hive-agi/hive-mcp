@@ -1,0 +1,151 @@
+{:case-0
+ {:out
+  {:log
+   {:level :info, :message "KG batch: 0 edges created - {} by THA9"},
+   :channel-publish
+   {:event-type :kg-batch-change,
+    :data
+    {:action :batch-created,
+     :count 0,
+     :by-relation {},
+     :scope nil,
+     :created-by "THA9"}}},
+  :in ({} [:kg/edges-batch-created {:edges [], :created-by "THA9"}])},
+ :case-1
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG batch: 1 edges created in E - {:implements 1} by k367OXlr2W"},
+   :channel-publish
+   {:event-type :kg-batch-change,
+    :data
+    {:action :batch-created,
+     :count 1,
+     :by-relation {:implements 1},
+     :scope "E",
+     :created-by "k367OXlr2W"}}},
+  :in
+  ({}
+   [:kg/edges-batch-created
+    {:edges [{:edge-id "R4h", :relation :implements}],
+     :scope "E",
+     :created-by "k367OXlr2W"}])},
+ :case-2
+ {:out
+  {:log
+   {:level :info,
+    :message "KG batch: 0 edges created in 8Uo6NwQWfQ - {} by XJn2"},
+   :channel-publish
+   {:event-type :kg-batch-change,
+    :data
+    {:action :batch-created,
+     :count 0,
+     :by-relation {},
+     :scope "8Uo6NwQWfQ",
+     :created-by "XJn2"}}},
+  :in
+  ({}
+   [:kg/edges-batch-created
+    {:edges [], :scope "8Uo6NwQWfQ", :created-by "XJn2"}])},
+ :case-3
+ {:out
+  {:log
+   {:level :info,
+    :message "KG batch: 1 edges created - {:implements 1}"},
+   :channel-publish
+   {:event-type :kg-batch-change,
+    :data
+    {:action :batch-created,
+     :count 1,
+     :by-relation {:implements 1},
+     :scope nil,
+     :created-by nil}}},
+  :in
+  ({}
+   [:kg/edges-batch-created
+    {:edges [{:edge-id "Y", :relation :implements}]}])},
+ :case-4
+ {:out
+  {:log
+   {:level :info, :message "KG batch: 0 edges created in H89Lk - {}"},
+   :channel-publish
+   {:event-type :kg-batch-change,
+    :data
+    {:action :batch-created,
+     :count 0,
+     :by-relation {},
+     :scope "H89Lk",
+     :created-by nil}}},
+  :in ({} [:kg/edges-batch-created {:edges [], :scope "H89Lk"}])},
+ :case-5
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG batch: 2 edges created in nheBCB27X - {:depends-on 1, :supersedes 1} by 3e6NP4kd8g"},
+   :channel-publish
+   {:event-type :kg-batch-change,
+    :data
+    {:action :batch-created,
+     :count 2,
+     :by-relation {:depends-on 1, :supersedes 1},
+     :scope "nheBCB27X",
+     :created-by "3e6NP4kd8g"}}},
+  :in
+  ({}
+   [:kg/edges-batch-created
+    {:edges
+     [{:edge-id "716M2", :relation :depends-on}
+      {:edge-id "YX", :relation :supersedes}],
+     :scope "nheBCB27X",
+     :created-by "3e6NP4kd8g"}])},
+ :case-6
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG batch: 5 edges created - {:refines 2, :supersedes 1, :depends-on 1, :implements 1} by qDTHJnX5"},
+   :channel-publish
+   {:event-type :kg-batch-change,
+    :data
+    {:action :batch-created,
+     :count 5,
+     :by-relation
+     {:refines 2, :supersedes 1, :depends-on 1, :implements 1},
+     :scope nil,
+     :created-by "qDTHJnX5"}}},
+  :in
+  ({}
+   [:kg/edges-batch-created
+    {:edges
+     [{:edge-id "q2Iq9", :relation :refines}
+      {:edge-id "1Nfe", :relation :supersedes}
+      {:edge-id "uJOB40", :relation :depends-on}
+      {:edge-id "0", :relation :refines}
+      {:edge-id "W0d5ZTxX", :relation :implements}],
+     :created-by "qDTHJnX5"}])},
+ :case-7
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG batch: 5 edges created in y5e20c3K - {:depends-on 2, :refines 3}"},
+   :channel-publish
+   {:event-type :kg-batch-change,
+    :data
+    {:action :batch-created,
+     :count 5,
+     :by-relation {:depends-on 2, :refines 3},
+     :scope "y5e20c3K",
+     :created-by nil}}},
+  :in
+  ({}
+   [:kg/edges-batch-created
+    {:edges
+     [{:edge-id "bvT851W9", :relation :depends-on}
+      {:edge-id "k", :relation :refines}
+      {:edge-id "C8979by3", :relation :depends-on}
+      {:edge-id "1Hxy", :relation :refines}
+      {:edge-id "3SEy", :relation :refines}],
+     :scope "y5e20c3K"}])}}

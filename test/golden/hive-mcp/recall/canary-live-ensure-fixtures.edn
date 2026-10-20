@@ -1,0 +1,10 @@
+{:first-created (:anchor :current :superseded),
+ :first-ids-present [true true true],
+ :first-linked-boolean true,
+ :second-created [],
+ :second-linked true,
+ :ids-stable true,
+ :tags
+ [["recall-canary" "recall-canary-anchor"]
+  ["recall-canary" "recall-canary-superseded"]
+  ["recall-canary" "recall-canary-current"]]}

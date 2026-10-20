@@ -1,0 +1,261 @@
+{:case-0
+ {:out
+  {:log
+   {:level :error,
+    :message
+    "SAA workflow failed at phase silence-review agent=q5y0: WLfswU984"},
+   :shout
+   {:agent-id "q5y0",
+    :event-type :error,
+    :data
+    {:task "0Qp",
+     :workflow :saa,
+     :phase :silence-review,
+     :error "WLfswU984"}},
+   :emit-system-error
+   {:error-type :saa-workflow-failed,
+    :source "saa/silence-review",
+    :message "SAA failed: WLfswU984",
+    :context
+    {:agent-id "q5y0", :task "0Qp", :phase :silence-review, :data {}}},
+   :channel-publish
+   {:event-type :saa-failed,
+    :data
+    {:agent-id "q5y0", :phase :silence-review, :error "WLfswU984"}}},
+  :in
+  ({}
+   [:saa/failed
+    {:agent-id "q5y0",
+     :task "0Qp",
+     :phase :silence-review,
+     :error "WLfswU984"}])},
+ :case-1
+ {:out
+  {:log
+   {:level :error,
+    :message "SAA workflow failed at phase silence agent=7R28yn: 4D"},
+   :shout
+   {:agent-id "7R28yn",
+    :event-type :error,
+    :data
+    {:task "E9hV1o7", :workflow :saa, :phase :silence, :error "4D"}},
+   :emit-system-error
+   {:error-type :saa-workflow-failed,
+    :source "saa/silence",
+    :message "SAA failed: 4D",
+    :context
+    {:agent-id "7R28yn", :task "E9hV1o7", :phase :silence, :data {}}},
+   :channel-publish
+   {:event-type :saa-failed,
+    :data {:agent-id "7R28yn", :phase :silence, :error "4D"}}},
+  :in
+  ({}
+   [:saa/failed
+    {:agent-id "7R28yn",
+     :task "E9hV1o7",
+     :phase :silence,
+     :error "4D"}])},
+ :case-2
+ {:out
+  {:log
+   {:level :error,
+    :message "SAA workflow failed at phase abstract agent=w37: 5"},
+   :shout
+   {:agent-id "w37",
+    :event-type :error,
+    :data
+    {:task "q3BeL8CcDs",
+     :workflow :saa,
+     :phase :abstract,
+     :error "5"}},
+   :emit-system-error
+   {:error-type :saa-workflow-failed,
+    :source "saa/abstract",
+    :message "SAA failed: 5",
+    :context
+    {:agent-id "w37",
+     :task "q3BeL8CcDs",
+     :phase :abstract,
+     :data {:data {:attempt 1}}}},
+   :channel-publish
+   {:event-type :saa-failed,
+    :data {:agent-id "w37", :phase :abstract, :error "5"}}},
+  :in
+  ({}
+   [:saa/failed
+    {:agent-id "w37",
+     :task "q3BeL8CcDs",
+     :phase :abstract,
+     :error "5",
+     :data {:attempt 1}}])},
+ :case-3
+ {:out
+  {:log
+   {:level :error,
+    :message
+    "SAA workflow failed at phase act-dispatch agent=769zs: aESTmjn1"},
+   :shout
+   {:agent-id "769zs",
+    :event-type :error,
+    :data
+    {:task "99",
+     :workflow :saa,
+     :phase :act-dispatch,
+     :error "aESTmjn1"}},
+   :emit-system-error
+   {:error-type :saa-workflow-failed,
+    :source "saa/act-dispatch",
+    :message "SAA failed: aESTmjn1",
+    :context
+    {:agent-id "769zs",
+     :task "99",
+     :phase :act-dispatch,
+     :data {:data {:attempt 2}}}},
+   :channel-publish
+   {:event-type :saa-failed,
+    :data
+    {:agent-id "769zs", :phase :act-dispatch, :error "aESTmjn1"}}},
+  :in
+  ({}
+   [:saa/failed
+    {:agent-id "769zs",
+     :task "99",
+     :phase :act-dispatch,
+     :error "aESTmjn1",
+     :data {:attempt 2}}])},
+ :case-4
+ {:out
+  {:log
+   {:level :error,
+    :message
+    "SAA workflow failed at phase silence-review agent=Pf: 88Sx"},
+   :shout
+   {:agent-id "Pf",
+    :event-type :error,
+    :data
+    {:task "1JuS3N76R",
+     :workflow :saa,
+     :phase :silence-review,
+     :error "88Sx"}},
+   :emit-system-error
+   {:error-type :saa-workflow-failed,
+    :source "saa/silence-review",
+    :message "SAA failed: 88Sx",
+    :context
+    {:agent-id "Pf",
+     :task "1JuS3N76R",
+     :phase :silence-review,
+     :data {}}},
+   :channel-publish
+   {:event-type :saa-failed,
+    :data {:agent-id "Pf", :phase :silence-review, :error "88Sx"}}},
+  :in
+  ({}
+   [:saa/failed
+    {:agent-id "Pf",
+     :task "1JuS3N76R",
+     :phase :silence-review,
+     :error "88Sx"}])},
+ :case-5
+ {:out
+  {:log
+   {:level :error,
+    :message
+    "SAA workflow failed at phase silence agent=S93Yh: 468ogOhX9"},
+   :shout
+   {:agent-id "S93Yh",
+    :event-type :error,
+    :data
+    {:task "N95Yt55",
+     :workflow :saa,
+     :phase :silence,
+     :error "468ogOhX9"}},
+   :emit-system-error
+   {:error-type :saa-workflow-failed,
+    :source "saa/silence",
+    :message "SAA failed: 468ogOhX9",
+    :context
+    {:agent-id "S93Yh",
+     :task "N95Yt55",
+     :phase :silence,
+     :data {:data {:attempt 2}}}},
+   :channel-publish
+   {:event-type :saa-failed,
+    :data {:agent-id "S93Yh", :phase :silence, :error "468ogOhX9"}}},
+  :in
+  ({}
+   [:saa/failed
+    {:agent-id "S93Yh",
+     :task "N95Yt55",
+     :phase :silence,
+     :error "468ogOhX9",
+     :data {:attempt 2}}])},
+ :case-6
+ {:out
+  {:log
+   {:level :error,
+    :message
+    "SAA workflow failed at phase validate-plan agent=Bfv3hFEH: s64M0s"},
+   :shout
+   {:agent-id "Bfv3hFEH",
+    :event-type :error,
+    :data
+    {:task "K2gqM",
+     :workflow :saa,
+     :phase :validate-plan,
+     :error "s64M0s"}},
+   :emit-system-error
+   {:error-type :saa-workflow-failed,
+    :source "saa/validate-plan",
+    :message "SAA failed: s64M0s",
+    :context
+    {:agent-id "Bfv3hFEH",
+     :task "K2gqM",
+     :phase :validate-plan,
+     :data {:data {:attempt 2}}}},
+   :channel-publish
+   {:event-type :saa-failed,
+    :data
+    {:agent-id "Bfv3hFEH", :phase :validate-plan, :error "s64M0s"}}},
+  :in
+  ({}
+   [:saa/failed
+    {:agent-id "Bfv3hFEH",
+     :task "K2gqM",
+     :phase :validate-plan,
+     :error "s64M0s",
+     :data {:attempt 2}}])},
+ :case-7
+ {:out
+  {:log
+   {:level :error,
+    :message
+    "SAA workflow failed at phase act-dispatch agent=hLM4Q82: 9HLl30"},
+   :shout
+   {:agent-id "hLM4Q82",
+    :event-type :error,
+    :data
+    {:task "4zU2Cl6",
+     :workflow :saa,
+     :phase :act-dispatch,
+     :error "9HLl30"}},
+   :emit-system-error
+   {:error-type :saa-workflow-failed,
+    :source "saa/act-dispatch",
+    :message "SAA failed: 9HLl30",
+    :context
+    {:agent-id "hLM4Q82",
+     :task "4zU2Cl6",
+     :phase :act-dispatch,
+     :data {}}},
+   :channel-publish
+   {:event-type :saa-failed,
+    :data
+    {:agent-id "hLM4Q82", :phase :act-dispatch, :error "9HLl30"}}},
+  :in
+  ({}
+   [:saa/failed
+    {:agent-id "hLM4Q82",
+     :task "4zU2Cl6",
+     :phase :act-dispatch,
+     :error "9HLl30"}])}}

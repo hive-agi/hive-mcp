@@ -1,0 +1,67 @@
+{:case-0
+ {:out
+  {:log
+   {:level :warn,
+    :message
+    "Ling completed event with no slave-id or agent-id — dropped"}},
+  :in ({} [:ling/completed {:reason "2F2"}])},
+ :case-1
+ {:out
+  {:log {:level :info, :message "Ling completed: 4N result=66h"},
+   :dispatch
+   [:session/end {:slave-id "4N", :reason "ling-completed"}]},
+  :in
+  ({}
+   [:ling/completed {:slave-id "4N", :agent-id "E", :result "66h"}])},
+ :case-2
+ {:out
+  {:log {:level :info, :message "Ling completed: 8Uo6NwQWfQ"},
+   :dispatch
+   [:session/end {:slave-id "8Uo6NwQWfQ", :reason "ling-completed"}]},
+  :in
+  ({} [:ling/completed {:agent-id "8Uo6NwQWfQ", :session-id "b7Pq"}])},
+ :case-3
+ {:out
+  {:log
+   {:level :warn,
+    :message
+    "Ling completed event with no slave-id or agent-id — dropped"}},
+  :in
+  ({} [:ling/completed {:reason "3HLVuR", :session-id "Wf8o84E5"}])},
+ :case-4
+ {:out
+  {:log {:level :info, :message "Ling completed: H89Lk"},
+   :dispatch
+   [:session/end {:slave-id "H89Lk", :reason "ling-completed"}]},
+  :in ({} [:ling/completed {:agent-id "H89Lk"}])},
+ :case-5
+ {:out
+  {:log {:level :info, :message "Ling completed: nheBCB27X result=bR"},
+   :dispatch [:session/end {:slave-id "nheBCB27X", :reason "mPcJ8n"}]},
+  :in
+  ({}
+   [:ling/completed
+    {:agent-id "nheBCB27X",
+     :result "bR",
+     :reason "mPcJ8n",
+     :session-id "tU171DSc"}])},
+ :case-6
+ {:out
+  {:log {:level :info, :message "Ling completed: O7sv2wJy result=Fy1"},
+   :dispatch
+   [:session/end {:slave-id "O7sv2wJy", :reason "1RQxWK2Gc7"}]},
+  :in
+  ({}
+   [:ling/completed
+    {:slave-id "O7sv2wJy",
+     :result "Fy1",
+     :reason "1RQxWK2Gc7",
+     :session-id "VMtY"}])},
+ :case-7
+ {:out
+  {:log {:level :info, :message "Ling completed: h"},
+   :dispatch [:session/end {:slave-id "h", :reason "I1OwN5"}]},
+  :in
+  ({}
+   [:ling/completed
+    {:slave-id "h", :agent-id "y5e20c3K", :reason "I1OwN5"}])}}

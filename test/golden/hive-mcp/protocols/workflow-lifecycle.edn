@@ -1,0 +1,41 @@
+{:before
+ {:set? false,
+  :enhanced? false,
+  :noop? true,
+  :caps
+  {:execute-workflow? true,
+   :execute-step? true,
+   :cancel? true,
+   :load? true,
+   :engine-type :noop,
+   :get-status? true,
+   :validate? true,
+   :enhanced? false,
+   :persistence? false}},
+ :during
+ {:set? true,
+  :enhanced? true,
+  :same? true,
+  :caps
+  {:execute-workflow? true,
+   :execute-step? true,
+   :cancel? true,
+   :load? true,
+   :engine-type "StubEngine",
+   :get-status? true,
+   :validate? true,
+   :enhanced? true,
+   :persistence? true}},
+ :cleared nil,
+ :after
+ {:set? false,
+  :caps
+  {:execute-workflow? true,
+   :execute-step? true,
+   :cancel? true,
+   :load? true,
+   :engine-type :noop,
+   :get-status? true,
+   :validate? true,
+   :enhanced? false,
+   :persistence? false}}}
