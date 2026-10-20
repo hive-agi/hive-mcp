@@ -57,9 +57,37 @@
              [:title :string]
              [:depends-on {:optional true} [:vector {:gen/max 2} [:enum "a" "b" "c" "d"]]]]]]])
 
+(defn- close-cycle
+  "Close a dependency cycle in `plan`: every step carrying the first step's
+   id depends on the last step's id and vice versa (a self-loop when both
+   are the same id, a fresh self-looping step when the plan has no steps).
+   Touching every step with a given id keeps the cycle whichever duplicate
+   the step index retains."
+  [plan]
+  (let [steps (:steps plan)]
+    (if (empty? steps)
+      (assoc plan :steps [{:id "a" :title "" :depends-on ["a"]}])
+      (let [a    (:id (first steps))
+            b    (:id (peek steps))
+            dep  (fn [s x] (update s :depends-on (fnil (comp vec distinct conj) []) x))
+            link (fn [s] (cond-> s
+                           (= a (:id s)) (dep b)
+                           (= b (:id s)) (dep a)))]
+        (assoc plan :steps (mapv link steps))))))
+
+;; A uniform SmallPlan closes a cycle in only ~10% of draws, which starves
+;; detect-cycles' :cycle class below the classification floor on some seeds.
+;; Correlate the generator instead: draw a SmallPlan plus a coin and, on
+;; heads, close a cycle back to an earlier step, so both classes sit near
+;; half of the samples. Same entries as SmallPlan; only generation differs.
+(def ^:private CyclicPlan
+  (into [:map {:gen/schema [:tuple SmallPlan :boolean]
+               :gen/fmap   (fn [[plan close?]] (if close? (close-cycle plan) plan))}]
+        (subvec SmallPlan 2)))
+
 (hst/deftrifecta-from-schema detect-cycles-contract
   hive-mcp.plan.schema/detect-cycles
-  {:in [:cat SmallPlan]
+  {:in [:cat CyclicPlan]
    :out (out-schema 'hive-mcp.plan.schema 'detect-cycles)
    :rel (fn [[plan] out]
           (if (:valid out)
