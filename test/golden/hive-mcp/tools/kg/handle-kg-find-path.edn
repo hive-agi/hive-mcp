@@ -1,0 +1,30 @@
+{:case-0
+ {:out {:error "from_node must be a non-empty string"},
+  :in ({:to_node "b-1", :scope ""})},
+ :case-1
+ {:out {:error "from_node must be a non-empty string"},
+  :in
+  ({:from_node nil,
+    :to_node :r,
+    :direction nil,
+    :relations nil,
+    :max_depth nil,
+    :scope nil})},
+ :case-2
+ {:out {:error "from_node must be a non-empty string"},
+  :in ({:to_node nil, :relations 0, :scope nil})},
+ :case-3
+ {:out {:error "from_node must be a non-empty string"}, :in ({})},
+ :case-4
+ {:out {:error "to_node must be a non-empty string"},
+  :in ({:from_node "b-1", :to_node nil, :relations []})},
+ :case-5
+ {:out {:error "from_node must be a non-empty string"},
+  :in
+  ({:to_node nil, :relations -3, :max_depth nil, :scope "hive-mcp"})},
+ :case-6
+ {:out {:error "from_node must be a non-empty string"},
+  :in ({:direction "outgoing", :max_depth nil, :scope "hive-mcp"})},
+ :case-7
+ {:out {:error "from_node must be a non-empty string"},
+  :in ({:direction nil, :relations #{}, :scope ""})}}

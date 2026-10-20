@@ -1,0 +1,94 @@
+{:case-0
+ {:out
+  {:results
+   [{:success true,
+     :command "edge",
+     :result {:success true, :edge-id "e5"}}
+    {:success true,
+     :command "edge",
+     :result {:success true, :edge-id "e5"}}],
+   :summary {:total 2, :success 2, :failed 0}},
+  :in
+  ([[:ok {:from "", :to "", :relation :.}]
+    [:ok {:from "", :to "", :relation :-}]]
+   {:ids ["e5" "e5" "e2" "e3" "e5"]})},
+ :case-1
+ {:out
+  {:results
+   [{:success false,
+     :command "edge",
+     :error "bulk edge write failed: tx failed"}
+    {:success false, :command "edge", :error nil}
+    {:success false,
+     :command "edge",
+     :error "bulk edge write failed: tx failed"}],
+   :summary {:total 3, :success 0, :failed 3},
+   :write_error "tx failed"},
+  :in
+  ([[:ok {:from "", :to "M", :relation :_}]
+    [:error nil]
+    [:ok {:from "C", :to "L", :relation :L}]]
+   {:error "tx failed"})},
+ :case-2
+ {:out {:results [], :summary {:total 0, :success 0, :failed 0}},
+  :in ([] {:ids ["e2" "e5" "e3"]})},
+ :case-3
+ {:out
+  {:results
+   [{:success false,
+     :command "edge",
+     :error "bulk edge write failed: down"}],
+   :summary {:total 1, :success 0, :failed 1},
+   :write_error "down"},
+  :in ([[:ok {:from "rw", :to "", :relation :*}]] {:error "down"})},
+ :case-4
+ {:out
+  {:results
+   [{:success true,
+     :command "edge",
+     :result {:success true, :edge-id "e5"}}
+    {:success true,
+     :command "edge",
+     :result {:success true, :edge-id "e5"}}
+    {:success false, :command "edge", :error nil}
+    {:success true,
+     :command "edge",
+     :result {:success true, :edge-id "e2"}}
+    {:success true,
+     :command "edge",
+     :result {:success true, :edge-id "e2"}}],
+   :summary {:total 5, :success 4, :failed 1}},
+  :in
+  ([[:ok {:from "39s", :to "59d", :relation :p5_}]
+    [:ok {:from "dp", :to "NN", :relation :.}]
+    [:error nil]
+    [:ok {:from "B", :to "b", :relation :*I}]
+    [:ok {:from "", :to "ayhX", :relation :Z2}]]
+   {:ids ["e5" "e5" "e2" "e2" "e2"]})},
+ :case-5
+ {:out
+  {:results
+   [{:success false, :command "edge", :error "c6L0"}
+    {:success false, :command "edge", :error "Sfy5i"}],
+   :summary {:total 2, :success 0, :failed 2}},
+  :in ([[:error "c6L0"] [:error "Sfy5i"]] {:ids ["e2" "e5" "e3"]})},
+ :case-6
+ {:out
+  {:results
+   [{:success true,
+     :command "edge",
+     :result {:success true, :edge-id "e3"}}],
+   :summary {:total 1, :success 1, :failed 0}},
+  :in
+  ([[:ok {:from "2OaZtR", :to "yZp", :relation :ep*}]] {:ids ["e3"]})},
+ :case-7
+ {:out
+  {:results
+   [{:success false, :command "edge", :error "jC5MI"}
+    {:success false,
+     :command "edge",
+     :error "bulk edge write failed"}],
+   :summary {:total 2, :success 0, :failed 2}},
+  :in
+  ([[:error "jC5MI"] [:ok {:from "3", :to "V80F5", :relation :AM8d}]]
+   {:ids []})}}
