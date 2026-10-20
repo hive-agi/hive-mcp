@@ -74,6 +74,8 @@
    :batch-edit        #'mem/handle-mcp-memory-batch-edit
    :reembed           #'mem/handle-mcp-memory-reembed
    :batch-reembed     #'mem/handle-mcp-memory-batch-reembed
+   ;; Read-only drift report (vector ids vs entry-store ids); not a write command.
+   :reconcile         #'mem/handle-mcp-memory-reconcile
    ;; Human review queue for write-gated types. Deliberately NOT in
    ;; write-commands: a reviewer wants the verdict applied and reported in the
    ;; same turn, not queued behind an async task.

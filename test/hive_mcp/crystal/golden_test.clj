@@ -20,7 +20,6 @@
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.tools.memory.duration :as dur]
             [hive-mcp.extensions.registry :as ext]
-            [hive-mcp.chroma.core :as chroma]
             [hive-mcp.vectordb.facade :as facade]
             [hive-mcp.context.request :as ctx]
             [hive-mcp.swarm.datascript :as ds]
@@ -119,7 +118,7 @@
    Registers lifecycle extension noops. Uses with-crystallize-mocks pattern.
    opts keys:
      :summary     — return from summarize-session-progress (nil = no-content)
-     :entry-id    — return from chroma/index-memory-entry!"
+     :entry-id    — return from facade/index-memory-entry!"
   [opts & body]
   `(let [opts# ~opts]
      (ext/register! :ch/a (fn [_#] {:promoted 0 :skipped 0 :below 0 :evaluated 0}))

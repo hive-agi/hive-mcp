@@ -12,7 +12,8 @@
             [taoensso.timbre :as log]
             [hive-mcp.agent.provider :as provider]
             [hive-mcp.agent.provider.model :as model]
-            [hive-mcp.agent.cache :as cache]))
+            [hive-mcp.agent.cache :as cache]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -400,3 +401,83 @@
    Without :model, config llm-providers.openrouter.default-model is used."
   [{:keys [api-key model]}]
   (openai-compat-backend {:provider :openrouter :api-key api-key :model model}))
+
+;;; ---------------------------------------------------------------------------
+;;; Contracts
+;;; ---------------------------------------------------------------------------
+
+;; The facade vars delegate to hive-mcp.agent.provider*, whose result shapes
+;; are owned (and contracted) there; here the shapes are only what this
+;; namespace promises its callers.
+(m/=> valid-provider-entry? [:=> [:cat :any] :boolean])
+
+(m/=> effective-provider-registry [:=> [:cat] [:map-of :keyword :map]])
+
+(m/=> effective-provider-priority [:=> [:cat] [:sequential :keyword]])
+
+;; nil when valid, else an error map.
+(m/=> validate-provider [:=> [:cat :any] [:maybe :map]])
+
+(m/=> validate-model [:=> [:cat :any :any] [:maybe :map]])
+
+(m/=> resolve-provider-model [:=> [:cat [:maybe :map]] :map])
+
+;; ---------------------------------------------------------------------------
+;; Contract schemas. They live in this namespace because hive-mcp.agent.* is a
+;; frozen extraction prefix (hive-mcp.kernel.census): no new namespace may be
+;; added under it. Every schema generates.
+;; ---------------------------------------------------------------------------
+
+(def Backend
+  "Anything implementing the LLMBackend protocol."
+  [:fn {:gen/elements [(reify proto/LLMBackend
+                         (chat [_ _ _] {:type :text :content ""})
+                         (model-name [_] "schema/backend"))]}
+   (fn [x] (satisfies? proto/LLMBackend x))])
+
+(def ParsedResponse
+  "What `parse-response` answers: an error, a tool-call batch, or text."
+  [:multi {:dispatch :type}
+   [:error [:map [:type [:= :error]] [:error :string]]]
+   [:tool_calls [:map [:type [:= :tool_calls]] [:calls [:vector :map]]]]
+   [:text [:map [:type [:= :text]] [:content :string]]]])
+
+(def Metrics
+  "What `get-metrics` reports: the counters plus the computed averages."
+  [:map
+   [:request-count :int]
+   [:success-count :int]
+   [:error-count :int]
+   [:timeout-count :int]
+   [:total-latency-ms :int]
+   [:avg-latency-ms number?]
+   [:error-rate number?]])
+
+(def MetricCounters
+  "The raw counters `reset-metrics!` answers (no computed averages)."
+  [:map
+   [:request-count :int]
+   [:success-count :int]
+   [:error-count :int]
+   [:timeout-count :int]
+   [:total-latency-ms :int]])
+
+(m/=> reset-metrics! [:=> [:cat] MetricCounters])
+
+(m/=> get-metrics [:=> [:cat] Metrics])
+
+;; nil is a legal message (a provider that returns no choice).
+(m/=> parse-response [:=> [:cat [:maybe :map]] ParsedResponse])
+
+(m/=> available-providers [:=> [:cat] [:sequential :keyword]])
+
+(m/=> best-available-provider [:=> [:cat] [:maybe :keyword]])
+
+(m/=> openai-compat-backend [:=> [:cat [:maybe :map]] Backend])
+
+(m/=> auto-backend [:=> [:cat [:maybe :map]] Backend])
+
+(m/=> openrouter-backend [:=> [:cat [:maybe :map]] Backend])
+
+;; nil for an empty or nil tool list; throws on an unrecognised tool shape.
+(m/=> format-tools [:=> [:cat [:maybe [:sequential :map]]] [:maybe [:vector :map]]])

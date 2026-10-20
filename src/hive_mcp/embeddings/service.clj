@@ -245,9 +245,11 @@
 
 (defn provider-available-for?
   "Check if an embedding provider is available for a collection.
-   Returns true if either collection-specific or global fallback is available."
+   True only when resolution yields a provider (collection-specific, dimension
+   match, or global fallback). A resolution that answers nil or throws is
+   unavailable, so this agrees with get-provider-for."
   [collection-name]
-  (boolean (rescue false (resolve-provider-for collection-name) true)))
+  (boolean (rescue false (some? (resolve-provider-for collection-name)))))
 
 (m/=> provider-available-for? [:=> [:cat Collection] :boolean])
 

@@ -104,10 +104,16 @@
 
 (defn withhold?
   "True when SECTION is rationale: either explicitly marked, or positively
-   recognised by its heading. A headerless section is never withheld."
+   recognised by its heading.
+
+   Never withheld: a headerless section, and a section under a level-1 `# `
+   heading. The level-1 heading is the entry's TITLE and its body is the
+   opening statement, so a title that happens to read as rationale (`# Why we
+   never force-push`, `# History`) must not take the binding claim with it."
   [{:keys [header body]}]
   (boolean
    (and header
+        (not (str/starts-with? header "# "))
         (or (some #(str/includes? (str %) rationale-marker) (take 2 body))
             (explanatory-header? header)))))
 

@@ -1,0 +1,4 @@
+{:truncate ["abcde…" "abc" "…" ""],
+ :string {:class "java.lang.String", :message "boom", :frames []},
+ :map {:class "clojure.lang.IPersistentMap", :message "m", :frames []},
+ :line "X: m"}

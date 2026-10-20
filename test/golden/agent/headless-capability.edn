@@ -1,0 +1,5 @@
+{:coerce
+ [#:adt{:variant :cap/hooks, :type :HeadlessCapability}
+  #:adt{:variant :cap/saa, :type :HeadlessCapability}
+  nil
+  nil]}

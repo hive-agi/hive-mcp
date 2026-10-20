@@ -88,11 +88,10 @@
     (is (nil? (service/get-collection-config "test-coll")))))
 
 (deftest unconfigured-collection-without-fallback-throws
-  ;; BUG: provider-available-for? answers true here although no provider
-  ;; resolves: (rescue false (resolve-provider-for c) true) yields true
-  ;; whenever resolution does not THROW, including when it answers nil.
-  ;; Pinned to current behaviour; see the m09 report.
-  (is (true? (service/provider-available-for? "nowhere")))
+  ;; Availability must agree with resolution: nothing resolves "nowhere"
+  ;; (no route, no global provider), so it is NOT available, and
+  ;; get-provider-for throws.
+  (is (false? (service/provider-available-for? "nowhere")))
   (is (thrown? clojure.lang.ExceptionInfo (service/get-provider-for "nowhere"))))
 
 (deftest active-provider-lifecycle
@@ -113,10 +112,11 @@
   (is (true? (registry/register-venice!)))
   (is (m/validate registry/CacheStats (registry/cache-stats)))
   (is (some #{:ollama} (registry/list-factories)))
-  ;; BUG: an INVALID config makes provider-available? throw a
-  ;; NullPointerException instead of answering false: the log/debug inside its
-  ;; catch calls config/describe, which calls (name nil). Pinned; see report.
-  (is (thrown? RuntimeException (registry/provider-available? {:not "a config"})))
+  (testing "an INVALID config is unavailable, never a throw: the log path is total"
+    (is (false? (registry/provider-available? {:not "a config"})))
+    (is (false? (registry/provider-available? nil)))
+    (is (string? (config/describe {:not "a config"})))
+    (is (string? (config/describe nil))))
   (registry/register-factory! :openai (fn [_] (throw (ex-info "down" {}))))
   (is (false? (registry/provider-available?
                (config/->EmbeddingConfig :openai "m" 4 {}))))

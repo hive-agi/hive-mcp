@@ -1,0 +1,11 @@
+{:ok
+ {:role "tool",
+  :tool_call_id "id1",
+  :name "memory",
+  :content "{\"a\":1}"},
+ :err
+ {:role "tool",
+  :tool_call_id "id2",
+  :name "memory",
+  :content "Error: no"},
+ :approval [false false]}
