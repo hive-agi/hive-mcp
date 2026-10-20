@@ -1,19 +1,10 @@
-{:case-0
- {:out ["/home/klein/PP/hive-wt/cov-mcp-m19/src"], :in (nil nil)},
- :case-1 {:out ["/repo/src"], :in ([] ["/repo/src"])},
- :case-2
- {:out ["/home/klein/PP/hive-wt/cov-mcp-m19/src"], :in (nil nil)},
- :case-3
- {:out ["/home/klein/PP/hive-wt/cov-mcp-m19/src"], :in (nil [])},
+{:case-0 {:in (nil nil), :out ["<cwd>/src"]},
+ :case-1 {:in ([] ["/repo/src"]), :out ["/repo/src"]},
+ :case-2 {:in (nil nil), :out ["<cwd>/src"]},
+ :case-3 {:in (nil []), :out ["<cwd>/src"]},
  :case-4
- {:out
-  ["/home/klein/PP/hive-wt/cov-mcp-m19/src"
-   "/home/klein/PP/hive-wt/cov-mcp-m19/dev"
-   "/abs/src"],
-  :in (["src" "dev" "/abs/src"] nil)},
- :case-5
- {:out ["/home/klein/PP/hive-wt/cov-mcp-m19/src"], :in (nil nil)},
- :case-6
- {:out ["/home/klein/PP/hive-wt/cov-mcp-m19/src"], :in (nil nil)},
- :case-7
- {:out ["/home/klein/PP/hive-wt/cov-mcp-m19/src"], :in (nil nil)}}
+ {:in (["src" "dev" "/abs/src"] nil),
+  :out ["<cwd>/src" "<cwd>/dev" "/abs/src"]},
+ :case-5 {:in (nil nil), :out ["<cwd>/src"]},
+ :case-6 {:in (nil nil), :out ["<cwd>/src"]},
+ :case-7 {:in (nil nil), :out ["<cwd>/src"]}}

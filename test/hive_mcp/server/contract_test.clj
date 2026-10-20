@@ -241,16 +241,44 @@
 ;; init: pure helpers
 ;; =============================================================================
 
+(def ^:private watch-dirs-in
+  "Explicit roots only, so no case depends on the machine's classpath."
+  [:cat [:maybe [:vector {:max 3} [:enum "src" "dev" "/abs/src" "/opt/x"]]]
+   [:maybe [:vector {:max 2} [:enum "/srv/proj/src" "/repo/src"]]]])
+
 (deftrifecta-from-schema watch-dirs-are-absolute
   #'init/watch-dirs
-  {:in [:cat [:maybe [:vector {:max 3} [:enum "src" "dev" "/abs/src" "/opt/x"]]]
-        [:maybe [:vector {:max 2} [:enum "/home/u/proj/src" "/repo/src"]]]]
+  {:in watch-dirs-in
    :out [:vector [:string {:min 1}]]
    :rel (fn [[configured roots] out]
           (and (every? #(str/starts-with? % "/") out)
                (= (count out) (count (or (seq configured) (seq roots) ["src"])))))
-   :golden-path "test/golden/hive-mcp/server/watch-dirs.edn"
    :num-tests 200})
+
+(defn- cwd-relative
+  "`dir` with the JVM working directory replaced by <cwd>. Only the no-root
+   fallback resolves against the working directory; every other case is a
+   fixed absolute path already, so the golden reads the same on any machine."
+  [dir]
+  (let [cwd (System/getProperty "user.dir")]
+    (if (str/starts-with? dir cwd)
+      (str "<cwd>" (subs dir (count cwd)))
+      dir)))
+
+(def ^:private watch-dirs-cases
+  (hive-schemas.test/seeded-cases watch-dirs-in 0 8))
+
+(deftest watch-dirs-golden-cases-are-absolute
+  (doseq [in (vals watch-dirs-cases)]
+    (is (every? #(str/starts-with? % "/") (apply init/watch-dirs in))
+        (str "relative watch dir for " (pr-str in)))))
+
+(deftest-golden watch-dirs-are-absolute-golden
+  "test/golden/hive-mcp/server/watch-dirs.edn"
+  (into (sorted-map)
+        (map (fn [[label in]]
+               [label {:in in :out (mapv cwd-relative (apply init/watch-dirs in))}]))
+        watch-dirs-cases))
 
 (deftest hot-reload-event-other-than-success-is-ignored
   (is (nil? (init/on-hot-reload-event! {:type :reload-failed})))
