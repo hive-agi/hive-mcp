@@ -1,0 +1,9 @@
+{:absent-key
+ {:isError false,
+  :head "{\"key\":\"m27.no.such.key\",\"value\":null}"},
+ :blank-key
+ {:isError true, :head "Missing required parameter: key. Example"},
+ :nil
+ {:isError true, :head "Missing required parameter: key. Example"},
+ :no-key
+ {:isError true, :head "Missing required parameter: key. Example"}}

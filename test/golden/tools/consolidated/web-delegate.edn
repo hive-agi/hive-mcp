@@ -1,0 +1,8 @@
+{:fetch-absent
+ {:type "text",
+  :text "m27_web_fetch_absent tool not available (addon not loaded)",
+  :isError true},
+ :search-absent
+ {:type "text",
+  :text "m27_web_search_absent tool not available (addon not loaded)",
+  :isError true}}
