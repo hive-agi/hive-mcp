@@ -7,10 +7,19 @@
             [hive-mcp.dns.result :as result]
             [hive-mcp.channel.websocket :as ws-channel]
             [clojure.core.async :as async]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.channel.inbound :as inbound]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+(defn channel-opts
+  "Start options for the WebSocket channel on `port`. :on-message routes what
+   a client sends (an answer to a hivemind ask); without it every client
+   message was read and dropped."
+  [port]
+  {:port port
+   :on-message inbound/handle-client-message!})
 
 (defn start-ws-channel-with-healing!
   "Start WebSocket channel server with auto-healing.
@@ -27,7 +36,7 @@
         check-interval-ms 30000] ; Check every 30 seconds
     ;; Start initial server
     (result/rescue nil
-                   (ws-channel/start! {:port port})
+                   (ws-channel/start! (channel-opts port))
                    (log/info "WebSocket channel server started on port" port))
     ;; Start monitoring loop
     (when-not @ws-channel-monitor
@@ -41,7 +50,7 @@
                 (when-not (:running? (ws-channel/status))
                   (log/warn "WebSocket channel server died, attempting restart...")
                   (result/rescue nil
-                                 (ws-channel/start! {:port port})
+                                 (ws-channel/start! (channel-opts port))
                                  (log/info "WebSocket channel server restarted on port" port)))
                 (recur)))
       (log/info "WebSocket channel auto-heal monitor started"))))

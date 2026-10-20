@@ -32,7 +32,10 @@
             [hive-mcp.crystal.harvest.partition :as part]
             [hive-mcp.session.current :as session]
             [hive-mcp.project.tree :as tree]
-            [hive-mcp.crystal.harvest.git-scopes :as git-scopes]))
+            [hive-mcp.crystal.harvest.git-scopes :as git-scopes]
+            [malli.core :as m]
+            [hive-mcp.crystal.harvest.by-scope :as bs]
+            [malli.util :as mu]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -90,6 +93,19 @@
 ;; =============================================================================
 ;; Kept for fallback and compatibility. Prefer direct-* versions.
 
+(def HarvestOpts
+  "Options every harvester accepts. nil means 'use the request context'."
+  [:maybe [:map
+           [:directory   {:optional true} [:maybe :string]]
+           [:agent-id    {:optional true} [:maybe :string]]
+           [:session-ref {:optional true} [:maybe :map]]
+           [:parent-of   {:optional true} [:maybe [:map-of :string :string]]]
+           [:lineage     {:optional true} [:maybe [:set :string]]]]])
+
+(def HarvestErr
+  "A source failure carried under :error / :errors."
+  [:map [:type [:enum :harvest-failed :harvest-timeout :git-failed]] [:fn {:optional true} :string]])
+
 (defn ^:deprecated harvest-session-progress
   "DEPRECATED: Use harvest-all (direct Chroma access). Legacy Emacs roundtrip version."
   ([] (harvest-session-progress nil))
@@ -114,6 +130,11 @@
                         {:notes []
                          :count 0
                          :error err}))))))
+
+(m/=> harvest-session-progress
+      [:function
+       [:=> [:cat] [:map [:notes [:vector :map]] [:count [:int {:min 0}]] [:error {:optional true} HarvestErr]]]
+       [:=> [:cat HarvestOpts] [:map [:notes [:vector :map]] [:count [:int {:min 0}]] [:error {:optional true} HarvestErr]]]])
 
 (defn ^:deprecated harvest-completed-tasks
   "DEPRECATED: Use harvest-all (direct DataScript+Chroma access). Legacy Emacs roundtrip version."
@@ -160,6 +181,11 @@
                              :project-id project-id}
                       err (assoc :error err))))))
 
+(m/=> harvest-completed-tasks
+      [:function
+       [:=> [:cat] [:map [:tasks [:sequential :map]] [:count [:int {:min 0}]] [:ds-count [:int {:min 0}]] [:emacs-count [:int {:min 0}]] [:error {:optional true} HarvestErr]]]
+       [:=> [:cat HarvestOpts] [:map [:tasks [:sequential :map]] [:count [:int {:min 0}]] [:ds-count [:int {:min 0}]] [:emacs-count [:int {:min 0}]] [:error {:optional true} HarvestErr]]]])
+
 (defn ^:deprecated harvest-git-commits
   "DEPRECATED: Use harvest-all (direct JVM subprocess). Legacy Emacs roundtrip version."
   ([] (harvest-git-commits nil))
@@ -186,6 +212,11 @@
                         {:commits []
                          :count 0
                          :error err}))))))
+
+(m/=> harvest-git-commits
+      [:function
+       [:=> [:cat] [:map [:commits [:sequential :string]] [:count [:int {:min 0}]] [:error {:optional true} HarvestErr]]]
+       [:=> [:cat HarvestOpts] [:map [:commits [:sequential :string]] [:count [:int {:min 0}]] [:error {:optional true} HarvestErr]]]])
 
 ;; =============================================================================
 ;; Direct Harvest Functions (bypass Emacs — JVM-native)
@@ -474,6 +505,8 @@
                        :else (recur (get parent cur) (conj seen cur)))))]
       (into #{agent-id} (filter owned?) (keys parent)))))
 
+(m/=> lineage-agent-ids [:=> [:cat :any [:maybe [:sequential [:maybe :map]]]] [:maybe [:set :string]]])
+
 (defn scope-recalls
   "Keep the recall-buffer entries read by `lineage` in `project-id`. Pure.
    An event carries its reader as :agent-id and its project as :project; an
@@ -487,11 +520,16 @@
                   (when (seq mine) [id mine]))))
         recalls))
 
+(m/=> scope-recalls [:=> [:cat [:maybe [:map-of :any [:sequential [:maybe :map]]]] [:maybe [:set :string]] [:maybe :string]]
+                     [:map-of :any [:vector :map]]])
+
 (defn scope-created-ids
   "Keep the created entries scoped to `project-id`. Pure. An unscoped entry
    names no project, so it is not this wrap's to summarize."
   [entries project-id]
   (filterv #(= project-id (:project-id %)) entries))
+
+(m/=> scope-created-ids [:=> [:cat [:maybe [:sequential [:maybe :map]]] [:maybe :string]] [:vector [:maybe :map]]])
 
 (defn caller-lineage
   "Effectful: `lineage-agent-ids` of `agent-id` over the live swarm rows, the
@@ -500,6 +538,8 @@
   [agent-id]
   (or (lineage-agent-ids agent-id (result/rescue [] (ds/get-all-slaves)))
       #{}))
+
+(m/=> caller-lineage [:=> [:cat :any] [:set :string]])
 
 (defn assemble-harvest-result
   "Pure fn: assembles the final harvest result map from deref'd harvest data.
@@ -531,6 +571,7 @@
              :recall-count         (count recalls)
              :hivemind-shout-count (:count hivemind)
              :kanban-completed     (:completed-count kanban)
+             :kanban-closed-transitions (count (filter #(= "done" (name (or (:kanban-movement/to %) :unknown))) (:movements kanban-mvs)))
              :kg-edge-count        (:count kg-edges)
              :kanban-movement-count (:count kanban-mvs)
              :created-count        (count memory-ids-created)
@@ -540,6 +581,51 @@
              ;; piggyback reports real counts instead of 0 decisions/0 conventions.
              :created-by-type      (frequencies (keep :type memory-ids-created))}
    :errors (when (seq errors) errors)})
+
+(def HarvestSummary
+  "The flat :summary counts of a harvest. Counts read from a source that
+   failed without reporting one come through as nil."
+  [:map
+   [:progress-count [:maybe :int]] [:task-count [:maybe :int]] [:commit-count [:maybe :int]]
+   [:recall-count :int] [:hivemind-shout-count [:maybe :int]] [:kanban-completed [:maybe :int]]
+   [:kg-edge-count [:maybe :int]] [:kanban-movement-count [:maybe :int]]
+   [:created-count :int] [:accessed-count :int]
+   [:created-by-type [:map-of :any [:int {:min 1}]]]])
+
+(def HarvestResult
+  "The unified flat harvest map (`assemble-harvest-result` / `harvest-all`)."
+  [:map
+   [:progress-notes [:maybe [:sequential :any]]]
+   [:completed-tasks [:maybe [:sequential :any]]]
+   [:git-commits [:maybe [:sequential :any]]]
+   [:recalls [:maybe [:map-of :any :any]]]
+   [:hivemind-messages [:maybe [:sequential :any]]]
+   [:kanban-activity [:maybe :map]]
+   [:kg-edges-created [:maybe :map]]
+   [:kanban-movements [:maybe :map]]
+   [:session-temporal [:maybe :map]]
+   [:memory-ids-created [:maybe [:sequential :any]]]
+   [:memory-ids-accessed [:maybe [:sequential :any]]]
+   [:session [:maybe :string]]
+   [:summary HarvestSummary]
+   [:errors [:maybe [:sequential :map]]]])
+
+(m/=> assemble-harvest-result
+      [:=> [:cat [:map
+                  [:progress {:optional true} [:maybe [:map [:notes {:optional true} [:maybe [:sequential :any]]] [:count {:optional true} [:maybe :int]]]]]
+                  [:tasks {:optional true} [:maybe [:map [:tasks {:optional true} [:maybe [:sequential :any]]] [:count {:optional true} [:maybe :int]]]]]
+                  [:commits {:optional true} [:maybe [:map [:commits {:optional true} [:maybe [:sequential :any]]] [:count {:optional true} [:maybe :int]]]]]
+                  [:recalls {:optional true} [:maybe [:map-of :any :any]]]
+                  [:hivemind {:optional true} [:maybe [:map [:messages {:optional true} [:maybe [:sequential :any]]] [:count {:optional true} [:maybe :int]]]]]
+                  [:kanban {:optional true} [:maybe [:map [:completed-count {:optional true} [:maybe :int]]]]]
+                  [:kg-edges {:optional true} [:maybe [:map [:count {:optional true} [:maybe :int]]]]]
+                  [:kanban-mvs {:optional true} [:maybe [:map [:count {:optional true} [:maybe :int]]]]]
+                  [:session-timing {:optional true} [:maybe :map]]
+                  [:memory-ids-created {:optional true} [:maybe [:sequential [:maybe :map]]]]
+                  [:memory-ids-accessed {:optional true} [:maybe [:sequential :any]]]
+                  [:errors {:optional true} [:maybe [:sequential :map]]]
+                  [:session {:optional true} [:maybe :string]]]]
+       HarvestResult])
 
 ;; =============================================================================
 ;; Harvest Orchestrator
@@ -684,6 +770,11 @@
                       lineage (assoc :project-id project-id
                                      :coordination-agent-ids (vec (sort lineage))))))))
 
+(m/=> harvest-all
+      [:function
+       [:=> [:cat] HarvestResult]
+       [:=> [:cat HarvestOpts] HarvestResult]])
+
 (defn harvest-all-by-scope
   "Per-scope variant of `harvest-all`. Returns a `HarvestByScope` shape
    (`hive-mcp.crystal.harvest.by-scope/HarvestByScope`) — every datum
@@ -732,3 +823,15 @@
             ;; consumer that still wants flat counts during the migration
             ;; window. Step-5 may drop this once synthesis is fan-out.
             :summary   (:summary legacy)))))
+
+(def HarvestByScopeWithSummary
+  "`harvest-all-by-scope` output: a HarvestByScope carrying the legacy flat
+   :summary. Merged (not `:and`-ed) so it generates."
+  (mu/merge bs/HarvestByScope
+            ;; carried verbatim from harvest-all's result, whatever it held
+            [:map [:summary [:maybe [:map-of :keyword :any]]]]))
+
+(m/=> harvest-all-by-scope
+      [:function
+       [:=> [:cat] HarvestByScopeWithSummary]
+       [:=> [:cat HarvestOpts] HarvestByScopeWithSummary]])

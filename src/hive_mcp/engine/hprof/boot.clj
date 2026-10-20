@@ -18,6 +18,7 @@
             [hive-mcp.engine.hprof.policy :as policy]
             [hive-mcp.engine.hprof.fs     :as fs]
             [hive-mcp.engine.hprof.disk   :as disk]
+            [malli.core :as m]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -65,6 +66,8 @@
         :deleted   (count (:delete classified))
         :dir       (:dir policy)}))))
 
+(m/=> rotate! [:function [:=> [:cat] [:map [:before :int] [:after :int] [:kept :int] [:gzipped :int] [:deleted :int] [:dir :string]]] [:=> [:cat [:maybe :map]] [:map [:before :int] [:after :int] [:kept :int] [:gzipped :int] [:deleted :int] [:dir :string]]]])
+
 (defn enforce-disk-floor!
   "Abort boot when free space on the storage filesystem is below
    `:min-free-gb`. `abort-fn` defaults to `System/exit` with exit-code
@@ -81,6 +84,8 @@
        (abort-fn 78))
      nil)))
 
+(m/=> enforce-disk-floor! [:function [:=> [:cat [:maybe :map]] :nil] [:=> [:cat [:maybe :map] [:=> [:cat :int] :any]] :nil]])
+
 (defn boot!
   "Single boot-time entrypoint. Rotates stale hprofs, then enforces the
    disk floor. Rotation failures are swallowed (non-fatal) so a
@@ -93,3 +98,5 @@
      (catch Throwable t
        (log/warn t "[hprof] rotation failed (non-fatal) — proceeding to disk-floor check")))
    (enforce-disk-floor! overrides)))
+
+(m/=> boot! [:function [:=> [:cat] :nil] [:=> [:cat [:maybe :map]] :nil]])

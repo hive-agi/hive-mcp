@@ -1,0 +1,12 @@
+{:case-0 {:out nil, :in (-1 -1)},
+ :case-1 {:out nil, :in (0 0)},
+ :case-10 {:out nil, :in (-3 0)},
+ :case-11 {:out :batch, :in (-1 4)},
+ :case-2 {:out nil, :in (-1 0)},
+ :case-3 {:out :batch, :in (-1 1)},
+ :case-4 {:out nil, :in (-1 0)},
+ :case-5 {:out :interactive, :in (1 4)},
+ :case-6 {:out :interactive, :in (4 4)},
+ :case-7 {:out :batch, :in (-1 2)},
+ :case-8 {:out :batch, :in (-3 1)},
+ :case-9 {:out :interactive, :in (3 4)}}

@@ -21,7 +21,8 @@
             [hive-mcp.plan.schema :as schema]
             [clojure.tools.logging :as log]
             [clojure.set :as set]
-            [hive-mcp.plan.field-registry :as field-registry]))
+            [hive-mcp.plan.field-registry :as field-registry]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -591,3 +592,19 @@
      (result->success r)
      {:success false
       :error "No EDN plan found (tried direct parse, embedded extraction, ```edn blocks, and phase blocks)"})))
+;; =============================================================================
+;; Function Contracts (m16 coverage batch)
+;; =============================================================================
+
+(m/=> contains-edn-block?
+      [:=> [:cat :any]
+       :boolean])
+
+(m/=> contains-edn-plan?
+      [:=> [:cat :any]
+       :boolean])
+
+(m/=> parse-edn-plan
+      [:function
+       [:=> [:cat :any] [:map [:success :boolean]]]
+       [:=> [:cat :any :any] [:map [:success :boolean]]]])

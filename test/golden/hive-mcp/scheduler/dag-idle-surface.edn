@@ -1,0 +1,12 @@
+{:terminal [:completed :context-death :error :truncated],
+ :capabilities #{:human-guard :task-ids :plan-scope},
+ :on-complete nil,
+ :stopped
+ {:stopped true,
+  :completed-count 0,
+  :failed-count 0,
+  :dispatched-count 0},
+ :status
+ {:active false, :completed 0, :failed 0, :dispatched 0, :ready 0},
+ :dispatch-empty
+ {:dispatched-count 0, :dispatched-tasks (), :skipped-count 0}}

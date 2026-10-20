@@ -5,7 +5,9 @@
    parent ns re-exports this one's public vars — a direct require would be
    circular. Runtime resolution breaks the cycle safely."
   (:require [hive-mcp.knowledge-graph.connection :as conn]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.knowledge-graph.edges.schema :as es]))
 
 (defn migrate-edge-scopes!
   "Migrate all edges from one scope to another.
@@ -52,3 +54,6 @@
     {:migrated n
      :old-scope old-scope
      :new-scope new-scope}))
+
+;; nil and equal scopes are in the domain: the body throws ex-info on them
+(m/=> migrate-edge-scopes! [:=> [:cat [:maybe :string] [:maybe :string]] es/ScopeMigration])

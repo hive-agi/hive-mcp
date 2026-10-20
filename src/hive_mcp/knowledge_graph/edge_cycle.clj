@@ -8,7 +8,9 @@
 
    Errors thrown by `:step!` are captured via `hive-dsl.result/guard` and
    tallied under `:errors`; the loop never escapes an exception."
-  (:require [hive-dsl.result :as r]
+  (:require [clojure.test.check.generators :as gen]
+            [malli.core :as m]
+            [hive-dsl.result :as r]
             [taoensso.timbre :as log]))
 
 (defn- seed-tally
@@ -69,3 +71,15 @@
                edges)]
     (when log-fn (log-fn tally))
     tally))
+
+(m/=> run-cycle!
+  [:=> [:cat [:map
+              [:fetch [:fn {:gen/gen (gen/return (fn [] []))} ifn?]]
+              [:step! [:fn {:gen/gen (gen/return (fn [_] :processed))} ifn?]]
+              [:outcome-keys [:vector :keyword]]
+              [:sort-key {:optional true} [:maybe [:fn {:gen/gen (gen/return identity)} ifn?]]]
+              [:sort-desc? {:optional true} :boolean]
+              [:limit {:optional true} [:maybe :int]]
+              [:error-log-fn {:optional true} [:maybe [:fn {:gen/gen (gen/return (fn [_ _]))} ifn?]]]
+              [:log-fn {:optional true} [:maybe [:fn {:gen/gen (gen/return (fn [_]))} ifn?]]]]]
+   [:map [:evaluated [:int {:min 0}]] [:errors [:int {:min 0}]]]])

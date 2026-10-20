@@ -32,7 +32,8 @@
      - :conversation/deliver-ask       → :conversation/publish-ask
      - :conversation/deliver-respond   → :conversation/publish-respond"
 
-  (:require [hive-mcp.events.core :as ev]
+  (:require [malli.core :as m]
+            [hive-mcp.events.core :as ev]
             [hive-mcp.hivemind.conversation :as conv]
             [hive-mcp.channel.conversation-inbox :as inbox]
             [taoensso.timbre :as log]))
@@ -96,6 +97,8 @@
       (log/debug "[conv-fx] tell dispatched"
                  (select-keys env [:from :to])))))
 
+(m/=> handle-publish-tell [:=> [:cat :map] :nil])
+
 ;; =============================================================================
 ;; Effect: :conversation/publish-ask  (a.k.a. :conversation/deliver-ask)
 ;; =============================================================================
@@ -116,6 +119,8 @@
       (log/debug "[conv-fx] ask dispatched"
                  (select-keys env [:from :to :ask-id])))))
 
+(m/=> handle-publish-ask [:=> [:cat :map] :nil])
+
 ;; =============================================================================
 ;; Effect: :conversation/publish-respond  (a.k.a. :conversation/deliver-respond)
 ;; =============================================================================
@@ -132,6 +137,8 @@
       (log/debug "[conv-fx] respond dispatched"
                  (select-keys env [:from :to :ask-id])))))
 
+(m/=> handle-publish-respond [:=> [:cat :map] :nil])
+
 ;; =============================================================================
 ;; Effect: :conversation/register-ask
 ;; =============================================================================
@@ -144,6 +151,8 @@
     (when (nil? (conv/pending-ask aid))
       (conv/register-ask! envelope)
       (log/debug "[conv-fx] ask registered" aid))))
+
+(m/=> handle-register-ask [:=> [:cat :map] :nil])
 
 ;; =============================================================================
 ;; Effect: :conversation/deliver-response
@@ -158,6 +167,8 @@
   (when ask-id
     (conv/deliver-response! ask-id answer)))
 
+(m/=> handle-deliver-response [:=> [:cat :map] :nil])
+
 ;; =============================================================================
 ;; Effect: :conversation/inbox-push
 ;; =============================================================================
@@ -170,6 +181,8 @@
   [{:keys [agent-id envelope]}]
   (when (and agent-id envelope)
     (inbox/push! agent-id envelope)))
+
+(m/=> handle-inbox-push [:=> [:cat :map] :nil])
 
 ;; =============================================================================
 ;; Effect: :conversation/timeout-ask
@@ -199,6 +212,8 @@
 
     :else
     (log/debug "[conv-fx] timeout-ask: nothing to do (no :ask-id or :older-than-ms)")))
+
+(m/=> handle-timeout-ask [:=> [:cat :map] :nil])
 
 ;; =============================================================================
 ;; Registration
@@ -237,7 +252,11 @@
                 "(+ deliver-{tell,ask,respond} aliases)"))
     true))
 
+(m/=> register-conversation-effects! [:=> [:cat] :boolean])
+
 (defn reset-registration!
   "Reset registration state. Test only."
   []
   (reset! *registered false))
+
+(m/=> reset-registration! [:=> [:cat] :boolean])

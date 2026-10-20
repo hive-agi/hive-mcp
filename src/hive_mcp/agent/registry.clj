@@ -4,7 +4,8 @@
             [hive-mcp.swarm.datascript.queries :as ds-queries]
             [hive-dsl.result :as r]
             [taoensso.timbre :as log]
-            [hive-mcp.tools.schema-keys :as schema-keys]))
+            [hive-mcp.tools.schema-keys :as schema-keys]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -27,6 +28,18 @@
   [tools]
   (into {} (map (juxt :name identity)) tools))
 
+;; ---------------------------------------------------------------------------
+;; Schemas (value objects; every schema here generates)
+;; ---------------------------------------------------------------------------
+
+(def ToolDef
+  "A tool as held by the delegation registry."
+  [:map [:name :any]])
+
+(def AgentMap
+  "A registered agent: any map, records (Ling, Drone) included."
+  [:map-of :any :any])
+
 (defn ensure-registered!
   "Lazily initialize tool registry on first use."
   []
@@ -46,16 +59,31 @@
     (swap! registry assoc name (assoc tool :handler handler)))
   (log/info "Registered" (count tools) "tools for agent delegation"))
 
+(def ^:private open-schema-hint
+  " Compact schema: only the shared parameters are listed; each command accepts its own. Use command='help' to list them.")
+
+(defn- open-consolidated
+  "A consolidated root routes many commands, each reading params the root
+   does not list. Opens its inputSchema (`additionalProperties true`) so a
+   ling can send them. Any other tool is returned unchanged. Pure."
+  [tool]
+  (cond-> tool
+    (:consolidated tool)
+    (-> (assoc-in [:inputSchema :additionalProperties] true)
+        (update :description str open-schema-hint))))
+
 (defn get-schemas
   "Get tool schemas for specified tool names (or all if nil). Property keys
    are provider-legal (`schema-keys/legal-tool`): these schemas go straight
-   to an LLM provider as a ling's tool list."
+   to an LLM provider as a ling's tool list. A consolidated root comes back
+   open (`open-consolidated`)."
   [tool-names]
   (let [all-tools @registry
         selected (if tool-names
                    (select-keys all-tools tool-names)
                    all-tools)]
-    (mapv #(schema-keys/legal-tool (dissoc % :handler)) (vals selected))))
+    (mapv #(-> % (dissoc :handler) open-consolidated schema-keys/legal-tool)
+          (vals selected))))
 
 (defn get-tool
   "Get a tool by name from the registry."
@@ -158,3 +186,30 @@
   []
   (reset! agents {})
   (log/info "Cleared agent registry"))
+
+(m/=> ensure-registered! [:=> [:cat] :nil])
+
+(m/=> register! [:=> [:cat [:maybe [:sequential ToolDef]]] :nil])
+
+(m/=> get-schemas
+      [:=> [:cat [:maybe [:sequential :any]]] [:vector [:map-of :any :any]]])
+
+(m/=> get-tool [:=> [:cat :any] [:maybe [:map-of :any :any]]])
+
+(m/=> list-tools [:=> [:cat] [:maybe [:sequential :any]]])
+
+(m/=> refresh! [:=> [:cat] :int])
+
+(m/=> register-agent! [:=> [:cat [:map [:id :any]]] :any])
+
+(m/=> unregister-agent! [:=> [:cat :any] :any])
+
+(m/=> get-agent-by-id [:=> [:cat :any] [:maybe AgentMap]])
+
+(m/=> list-all-agents [:=> [:cat] [:maybe [:sequential AgentMap]]])
+
+(m/=> list-lings [:=> [:cat] [:sequential AgentMap]])
+
+(m/=> sync-from-datascript! [:=> [:cat] [:map [:synced-count :int] [:agents [:vector AgentMap]]]])
+
+(m/=> clear-agents! [:=> [:cat] :nil])

@@ -15,7 +15,8 @@
             [clojure.test.check.generators :as gen]
             [hive-mcp.crystal.harvest.by-scope :as bs]
             [hive-mcp.crystal.harvest.partition :as p]
-            [hive-test.trifecta :refer [deftrifecta]]))
+            [hive-test.trifecta :refer [deftrifecta]]
+            [hive-schemas.test :as hst]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -218,3 +219,28 @@
       (is (= 8 (p/total-datum-count hbs)))
       (is (= 5 (count (bs/scope-pids hbs))) "hive-mcp + funeraria + hive + sisf-crm + hive-source")
       (is (= 1 (p/umbrella-datum-count hbs)) "the nil-scope edge"))))
+
+;; =============================================================================
+;; Contract-derived facets: the schema IS the generator
+;; =============================================================================
+
+(hst/deftrifecta-from-schema partition-contract
+  hive-mcp.crystal.harvest.partition/partition-harvest-by-scope
+  {:in  p/AttributionResult
+   :out bs/HarvestByScope
+   :rel (fn [in out]
+          (= (reduce + 0 (map count (vals (:by-source in))))
+             (p/total-datum-count out)))
+   :num-tests 100
+   :golden-path "test/golden/hive-mcp/crystal/harvest/partition-contract.edn"})
+
+(hst/deftrifecta-from-schema umbrella-datum-count-contract
+  hive-mcp.crystal.harvest.partition/umbrella-datum-count
+  {:in  [:map [:umbrella bs/UmbrellaSlice]]
+   :out [:int {:min 0}]
+   :rel (fn [hbs n]
+          (= n (+ (count (get-in hbs [:umbrella :cross-pid-edges]))
+                  (count (get-in hbs [:umbrella :cross-cutting-decisions]))
+                  (count (get-in hbs [:umbrella :hivemind-shouts-global])))))
+   :num-tests 100
+   :golden-path "test/golden/hive-mcp/crystal/harvest/umbrella-datum-count-contract.edn"})

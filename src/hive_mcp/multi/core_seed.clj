@@ -14,7 +14,8 @@
    `deregister-by-owner!` is invoked only with the addon's own id.
 
    Decision: 20260429230453-7e7627cc"
-  (:require [hive-mcp.multi.registry :as registry]
+  (:require [malli.core :as m]
+            [hive-mcp.multi.registry :as registry]
             [hive-mcp.multi.batchables :as bx]
             [hive-mcp.dsl.verbs :as dsl-verbs]
             [taoensso.timbre :as log]
@@ -131,3 +132,5 @@
   (let [result (seed!)]
     (log/info "[multi.core-seed] re-seeded :multi/core owner" result)
     result))
+
+(m/=> install! [:=> [:cat] [:map [:tools :int] [:verbs :int] [:aliases :int] [:batchables :int]]])

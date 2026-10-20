@@ -35,10 +35,37 @@
             [hive-mcp.dns.result :as result]
             [hive-mcp.concurrency.pool :as pool]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+;; =============================================================================
+;; Contract schemas
+;; =============================================================================
+
+(def ^:private ErrKeys
+  [[:error {:optional true} [:maybe :string]] [:latency-ms {:optional true} :int] [:cause {:optional true} [:maybe :string]]])
+
+(def LifecycleStats
+  "`run-lifecycle-ops!` result: exactly `lifecycle-stat-keys`, each a stats map
+   that may carry {:error :latency-ms :cause} on a failed branch."
+  [:map
+   [:promotion-stats (into [:map] ErrKeys)]
+   [:decay-stats (into [:map] ErrKeys)]
+   [:xpoll-stats (into [:map] ErrKeys)]
+   [:memory-decay-stats (into [:map] ErrKeys)]
+   [:file-provenance-stats (into [:map] ErrKeys)]])
+
+(def SessionSummary
+  "`synthesize` result. A store failure answers {:error :project-id :session}
+   instead of the :summary-id shape."
+  [:or
+   [:map [:summary-id :string] [:session :string] [:project-id :string]
+    [:session-timing :map] [:stats :any]
+    [:sub-summaries {:optional true} [:vector :map]]]
+   [:map [:error [:maybe :string]] [:project-id :string] [:session :string]]])
 
 ;; =============================================================================
 ;; Pure Formatting
@@ -60,6 +87,8 @@
                 (conj (str "- Memory entries accessed: " (count memory-ids-accessed))))]
     (str/join "\n" lines)))
 
+(m/=> format-temporal-block [:=> [:cat [:maybe [:map [:session-start {:optional true} :any] [:session-end {:optional true} :any] [:duration-minutes {:optional true} :any]]] [:maybe [:map [:memory-ids-created {:optional true} [:maybe [:sequential :any]]] [:memory-ids-accessed {:optional true} [:maybe [:sequential :any]]]]]] [:re {:gen/elements ["\n\n### Temporal Metadata\n- Session start: unknown\n- Session end: unknown\n- Duration: 0 minutes"]} #"(?s)^\n\n### Temporal Metadata.*$"]])
+
 (defn build-summary-content
   "Build the session summary content string from summary + temporal metadata.
    Pure function — no IO."
@@ -67,12 +96,16 @@
   (let [temporal-block (format-temporal-block session-timing harvested)]
     (str (:content summary) temporal-block)))
 
+(m/=> build-summary-content [:=> [:cat [:maybe [:map [:content {:optional true} :any]]] [:maybe :map] [:maybe :map]] :string])
+
 (defn build-summary-tags
   "Build tags vector with project scope injection.
    Pure function — no IO."
   [summary project-id]
   (let [base-tags (into (or (:tags summary) []) ["auto-kg" "session-wrap" "temporal"])]
     (scope/inject-project-scope base-tags project-id)))
+
+(m/=> build-summary-tags [:=> [:cat [:maybe [:map [:tags {:optional true} [:maybe [:sequential :string]]]]] [:maybe :string]] [:sequential :string]])
 
 (defn minimal-wrap-summary
   "Build a minimal session-wrap summary when no progress/activity was harvested.
@@ -93,6 +126,8 @@
                    "\n(Quiet session — no synthesized progress; breadcrumb persisted for catchup.)")
      :tags ["session-summary" "wrap-generated" "wrap-minimal"]
      :duration :short}))
+
+(m/=> minimal-wrap-summary [:=> [:cat :any [:maybe [:map [:summary {:optional true} [:maybe :map]]]]] [:map [:type [:= :note]] [:content :string] [:tags [:= ["session-summary" "wrap-generated" "wrap-minimal"]]] [:duration [:= :short]]]])
 
 ;; =============================================================================
 ;; Extension Delegation Helpers
@@ -224,6 +259,8 @@
     (zipmap lifecycle-stat-keys
             (mapv #(select-keys %1 (into %2 err-keys)) results stat-keys))))
 
+(m/=> run-lifecycle-ops! [:=> [:cat [:maybe :string] [:maybe :string] [:* :any]] LifecycleStats])
+
 ;; =============================================================================
 ;; Scope grouping (pure — no IO)
 ;; =============================================================================
@@ -254,6 +291,8 @@
                     (collect (:memory-ids-accessed harvested)))]
     (set all)))
 
+(m/=> extract-project-scopes [:=> [:cat [:maybe :map]] [:set :string]])
+
 (defn group-harvested-by-scope
   "Partition harvested data into per-project sub-harvests keyed by project-id.
    Entries without a scope:project:* tag land in the default `fallback-pid`
@@ -279,6 +318,8 @@
                         :completed-tasks     (get tasks pid [])
                         :memory-ids-created  (get created pid [])
                         :memory-ids-accessed (get accessed pid []))]))))
+
+(m/=> group-harvested-by-scope [:=> [:cat [:maybe :map] :any] [:map-of :any :map]])
 
 ;; =============================================================================
 ;; Session Synthesis (main entry point)
@@ -440,6 +481,8 @@
                     (:summary-id r) "project:" effective-pid))
         ;; Strip internal helper keys to preserve back-compat key set.
         (dissoc r :scope-tag :umbrella?)))))
+
+(m/=> synthesize [:=> [:cat [:map [:directory {:optional true} [:maybe :string]]]] SessionSummary])
 
 (comment
   ;; Example: synthesize with minimal harvested data

@@ -1,0 +1,20 @@
+{:promote-low
+ {:evaluated 3, :errors 0, :promoted 1, :skipped 0, :below 2},
+ :single nil,
+ :co
+ [{:entry-id "p1", :confidence 0.4} {:entry-id "p3", :confidence 0.3}],
+ :co-missing [],
+ :again 1,
+ :promote-again
+ {:evaluated 3, :errors 0, :promoted 0, :skipped 1, :below 2},
+ :first 3,
+ :depends-on
+ [#:kg-edge{:from "p1",
+            :to "p2",
+            :relation :depends-on,
+            :confidence 0.4,
+            :source-type :inferred,
+            :created-by "m14"}],
+ :promote-default
+ {:evaluated 3, :errors 0, :promoted 0, :skipped 0, :below 3},
+ :none nil}

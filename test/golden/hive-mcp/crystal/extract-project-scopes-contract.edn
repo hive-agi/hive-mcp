@@ -1,0 +1,166 @@
+{:case-0
+ {:out #{},
+  :in
+  {:progress-notes [],
+   :completed-tasks [],
+   :memory-ids-created [],
+   :memory-ids-accessed []}},
+ :case-1
+ {:out #{},
+  :in
+  {:progress-notes [{:tags []}],
+   :completed-tasks [{:tags ["scope:global"]}],
+   :memory-ids-created [{:tags []}],
+   :memory-ids-accessed []}},
+ :case-2
+ {:out #{"hive"},
+  :in
+  {:progress-notes [],
+   :completed-tasks [{:tags []}],
+   :memory-ids-created [],
+   :memory-ids-accessed
+   [{:tags ["scope:global" "scope:project:hive"]} "V1"]}},
+ :case-3
+ {:out #{},
+  :in
+  {:progress-notes [{:tags []}],
+   :completed-tasks [],
+   :memory-ids-created [{:tags []}],
+   :memory-ids-accessed [{:tags []} {:tags ["scope:global"]} "6"]}},
+ :case-4
+ {:out #{"hive" "funeraria"},
+  :in
+  {:progress-notes
+   [{:tags []}
+    {:tags []}
+    {:tags
+     ["scope:global"
+      "scope:project:hive"
+      "scope:project:funeraria"
+      "scope:project:hive"]}
+    {:tags []}],
+   :completed-tasks
+   [{:tags ["scope:global" "scope:project:funeraria" "scope:global"]}
+    {:tags ["scope:project:hive"]}
+    {:tags ["scope:global" "scope:global"]}
+    {:tags ["scope:project:hive"]}],
+   :memory-ids-created [],
+   :memory-ids-accessed
+   [""
+    {:tags
+     ["scope:project:funeraria"
+      "scope:global"
+      "scope:project:funeraria"
+      "note"]}
+    "9"]}},
+ :case-5
+ {:out #{"hive" "funeraria"},
+  :in
+  {:progress-notes
+   [{:tags ["scope:global" "scope:project:hive" "scope:global"]}
+    {:tags
+     ["note"
+      "scope:project:hive"
+      "scope:project:funeraria"
+      "scope:project:hive"]}],
+   :completed-tasks
+   [{:tags
+     ["scope:global"
+      "note"
+      "scope:project:funeraria"
+      "note"
+      "scope:project:funeraria"]}
+    {:tags
+     ["note"
+      "scope:project:funeraria"
+      "scope:project:funeraria"
+      "scope:project:hive"
+      "note"]}
+    {:tags []}],
+   :memory-ids-created
+   [{:tags
+     ["scope:global" "scope:project:funeraria" "scope:project:hive"]}
+    {:tags
+     ["scope:global"
+      "scope:project:funeraria"
+      "scope:global"
+      "scope:global"
+      "scope:global"]}],
+   :memory-ids-accessed
+   [{:tags ["note" "scope:project:funeraria" "scope:global"]}
+    "j5"
+    {:tags ["scope:project:funeraria" "scope:global"]}]}},
+ :case-6
+ {:out #{"funeraria"},
+  :in
+  {:progress-notes [{:tags []}],
+   :completed-tasks [{:tags []}],
+   :memory-ids-created
+   [{:tags ["note" "scope:project:funeraria"]}
+    {:tags
+     ["note"
+      "scope:global"
+      "scope:global"
+      "scope:global"
+      "scope:global"
+      "note"]}
+    {:tags
+     ["scope:project:funeraria"
+      "note"
+      "note"
+      "note"
+      "scope:project:hive"]}
+    {:tags ["scope:project:funeraria" "scope:project:hive"]}
+    {:tags ["scope:project:funeraria"]}],
+   :memory-ids-accessed
+   ["xRVu"
+    {:tags ["scope:global" "scope:project:funeraria" "scope:global"]}
+    "s"
+    {:tags ["scope:global"]}
+    ""]}},
+ :case-7
+ {:out #{"hive" "funeraria"},
+  :in
+  {:progress-notes
+   [{:tags
+     ["scope:project:funeraria"
+      "scope:project:hive"
+      "scope:project:funeraria"
+      "note"
+      "scope:project:hive"
+      "note"]}
+    {:tags ["note"]}
+    {:tags
+     ["scope:project:hive"
+      "scope:project:funeraria"
+      "scope:project:funeraria"
+      "scope:project:hive"
+      "note"
+      "scope:global"]}],
+   :completed-tasks [],
+   :memory-ids-created
+   [{:tags
+     ["scope:project:hive"
+      "note"
+      "scope:project:funeraria"
+      "scope:project:hive"
+      "note"]}
+    {:tags
+     ["scope:project:hive"
+      "scope:project:hive"
+      "scope:project:funeraria"]}
+    {:tags
+     ["note"
+      "scope:project:funeraria"
+      "scope:global"
+      "scope:global"
+      "scope:project:funeraria"]}
+    {:tags ["scope:project:hive" "scope:project:funeraria"]}
+    {:tags ["note" "scope:project:funeraria"]}],
+   :memory-ids-accessed
+   [{:tags
+     ["scope:project:funeraria"
+      "scope:project:hive"
+      "scope:global"
+      "note"
+      "scope:project:funeraria"]}]}}}

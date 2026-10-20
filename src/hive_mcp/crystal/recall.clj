@@ -7,10 +7,29 @@
             [hive-mcp.engine.bounded.lru :as lru]
             [hive-mcp.engine.bounded.protocol :as bp]
             [hive-mcp.extensions.delegate :refer [delegate-or-noop]]
-            [hive-mcp.context.request :as ctx]))
+            [hive-mcp.context.request :as ctx]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+;; =============================================================================
+;; Contract schemas
+;; =============================================================================
+
+(def RecallEvent
+  "One recall event as built by `create-recall-event`."
+  [:map [:context :keyword] [:timestamp :string] [:source :any]
+   [:session [:maybe :string]] [:agent-id [:maybe :string]]
+   [:project {:optional true} :string]])
+
+(def CreatedEntryS
+  "A CreatedEntry ADT value, one arm per variant."
+  [:multi {:dispatch :adt/variant}
+   [:entry/scoped [:map [:adt/variant [:= :entry/scoped]] [:id :string] [:timestamp :string]
+                   [:project-id :string] [:type {:optional true} :string]]]
+   [:entry/unscoped [:map [:adt/variant [:= :entry/unscoped]] [:id :string] [:timestamp :string]
+                     [:type {:optional true} :string]]]])
 
 ;; =============================================================================
 ;; Extension Delegation Helpers
@@ -24,6 +43,8 @@
   "Delegates to extension if available."
   [context-params]
   (delegate-or-noop :cl/a :explicit-reference [context-params]))
+
+(m/=> detect-recall-context [:=> [:cat [:maybe :map]] :keyword])
 
 ;; =============================================================================
 ;; Recall Event Creation
@@ -43,11 +64,15 @@
              :agent-id (or (:agent-id context-params) (ctx/current-session-agent-id))}
       project (assoc :project project))))
 
+(m/=> create-recall-event [:=> [:cat [:maybe [:map [:source {:optional true} :any] [:session {:optional true} [:maybe :string]] [:project {:optional true} [:maybe :string]] [:agent-id {:optional true} [:maybe :string]]]]] RecallEvent])
+
 (defn batch-recall-events
   "Create recall events for multiple entries queried together."
   [entry-ids context-params]
   (let [event (create-recall-event context-params)]
     (into {} (map (fn [id] [id [event]]) entry-ids))))
+
+(m/=> batch-recall-events [:=> [:cat [:maybe [:sequential :any]] [:maybe :map]] [:map-of :any [:tuple RecallEvent]]])
 
 ;; =============================================================================
 ;; Recall Aggregation — delegates to extension
@@ -58,10 +83,14 @@
   [recalls]
   (delegate-or-noop :cl/c [] [recalls]))
 
+(m/=> aggregate-recalls [:=> [:cat [:maybe [:sequential [:maybe :map]]]] [:sequential :map]])
+
 (defn merge-recall-histories
   "Delegates to extension if available."
   [existing new-recalls]
   (delegate-or-noop :cl/d (vec existing) [existing new-recalls]))
+
+(m/=> merge-recall-histories [:=> [:cat [:maybe [:sequential :any]] [:maybe [:sequential :any]]] [:sequential :any]])
 
 ;; =============================================================================
 ;; Recall Classification — delegates to extension
@@ -71,6 +100,8 @@
   "Delegates to extension if available."
   [query-type tags caller]
   (delegate-or-noop :cl/b :explicit-reference [query-type tags caller]))
+
+(m/=> classify-query-intent [:=> [:cat :any :any :any] :keyword])
 
 ;; =============================================================================
 ;; Session Boundary Detection
@@ -82,6 +113,8 @@
   (when-let [entry-session (crystal/extract-session-from-tags entry-tags)]
     (not= current-session entry-session)))
 
+(m/=> crosses-session-boundary? [:=> [:cat [:maybe :string] [:maybe [:sequential :string]]] [:maybe :boolean]])
+
 (defn crosses-project-boundary?
   "Check if accessing entry crosses project boundary."
   [current-project entry-tags]
@@ -89,6 +122,8 @@
                                     (subs % 14))
                                  entry-tags)]
     (not= current-project entry-project)))
+
+(m/=> crosses-project-boundary? [:=> [:cat [:maybe :string] [:maybe [:sequential :string]]] [:maybe :boolean]])
 
 ;; =============================================================================
 ;; Recall Tracking State (Optional - for hot-path optimization)
@@ -117,21 +152,29 @@
   [entry-id event]
   (bp/q-offer-key! recall-buffer entry-id event))
 
+(m/=> buffer-recall! [:=> [:cat :any :any] [:map [:outcome :keyword]]])
+
 (defn flush-recall-buffer!
   "Get and clear buffered recalls. Atomic.
    Returns: map of {entry-id [events]}"
   []
   (bp/q-drain! recall-buffer))
 
+(m/=> flush-recall-buffer! [:=> [:cat] [:map-of :any [:sequential :any]]])
+
 (defn get-buffered-recalls
   "Get buffered recalls without clearing. Returns map of {entry-id [events]}."
   []
   (bp/q-snapshot recall-buffer))
 
+(m/=> get-buffered-recalls [:=> [:cat] [:map-of :any [:sequential :any]]])
+
 (defn recall-buffer-stats
   "Diagnostic snapshot of buffer cap usage. Useful for /health endpoints."
   []
   (bp/q-stats recall-buffer))
+
+(m/=> recall-buffer-stats [:=> [:cat] [:map [:capacity :int] [:size :int] [:keys :int] [:per-key-cap :int]]])
 
 ;; =============================================================================
 ;; CreatedEntry ADT — Sum type for session-tracked memory entries
@@ -198,10 +241,14 @@
                    (into [] (subvec buf' (- n created-ids-cap)))
                    buf'))))))))
 
+(m/=> register-created-id! [:function [:=> [:cat [:maybe :string] [:maybe :string]] [:maybe [:vector CreatedEntryS]]] [:=> [:cat [:maybe :string] [:maybe :string] [:maybe :string]] [:maybe [:vector CreatedEntryS]]]])
+
 (defn get-created-ids
   "Get all created IDs without clearing."
   []
   @created-ids-buffer)
+
+(m/=> get-created-ids [:=> [:cat] [:vector CreatedEntryS]])
 
 ;; =============================================================================
 ;; Pure Partition (Calculation — extracted from Action per Grokking Simplicity)
@@ -220,6 +267,8 @@
           [[] []]
           entries))
 
+(m/=> partition-by-project [:=> [:cat [:sequential CreatedEntryS] [:maybe :string]] [:tuple [:vector CreatedEntryS] [:vector CreatedEntryS]]])
+
 ;; =============================================================================
 ;; Flush (Action — IO sandwich: read atom → pure partition → write atom)
 ;; =============================================================================
@@ -236,6 +285,8 @@
      (let [[matched retained] (partition-by-project @created-ids-buffer project-id)]
        (reset! created-ids-buffer retained)
        matched))))
+
+(m/=> flush-created-ids! [:function [:=> [:cat] [:vector CreatedEntryS]] [:=> [:cat [:maybe :string]] [:vector CreatedEntryS]]])
 
 (comment
   ;; Example usage

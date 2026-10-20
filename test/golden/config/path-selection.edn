@@ -1,0 +1,8 @@
+{:case-0 {:out "/.config/hive-mcp/config.edn", :in (nil "")},
+ :case-1 {:out "Z/.config/hive-mcp/config.edn", :in ("" "Z")},
+ :case-2 {:out "T/.config/hive-mcp/config.edn", :in (nil "T")},
+ :case-3 {:out "wm/.config/hive-mcp/config.edn", :in (nil "wm")},
+ :case-4 {:out "3qE", :in ("3qE" "9g")},
+ :case-5 {:out "J3/.config/hive-mcp/config.edn", :in (nil "J3")},
+ :case-6 {:out "5/.config/hive-mcp/config.edn", :in (nil "5")},
+ :case-7 {:out "Zu/.config/hive-mcp/config.edn", :in (nil "Zu")}}

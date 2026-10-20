@@ -20,7 +20,8 @@
      (->memory-type :axiom)     => {:adt/type :MemoryType :adt/variant :axiom}
      (variant->string mt)       => \"axiom\"
      (variant->keyword mt)      => :axiom"
-  (:require [hive-dsl.adt :refer [defadt]]
+  (:require [malli.core :as m]
+            [hive-dsl.adt :refer [defadt]]
             [hive-mcp.memory.type-registry :as type-registry]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -52,6 +53,8 @@
   (when (string? s)
     (->memory-type (keyword s))))
 
+(m/=> from-string [:=> [:cat :any] [:maybe [:map [:adt/type :keyword] [:adt/variant :keyword]]]])
+
 (defn valid?
   "Permissive: true when `x` is a SAFE memory type token (any sanitized token
    matching the safe charset/length), delegating to the registry SST gate. The
@@ -60,15 +63,21 @@
   [x]
   (type-registry/valid-type? x))
 
+(m/=> valid? [:=> [:cat :any] :boolean])
+
 (defn variant->keyword
   "Extract the variant keyword from a MemoryType ADT value."
   [mt]
   (:adt/variant mt))
 
+(m/=> variant->keyword [:=> [:cat [:map [:adt/variant {:optional true} :keyword]]] [:maybe :keyword]])
+
 (defn variant->string
   "Extract the variant name as a string from a MemoryType ADT value."
   [mt]
   (some-> (:adt/variant mt) name))
+
+(m/=> variant->string [:=> [:cat [:map [:adt/variant {:optional true} :keyword]]] [:maybe :string]])
 
 ;; =============================================================================
 ;; Type Subsets (for common dispatch patterns)

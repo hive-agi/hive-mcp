@@ -1,0 +1,14 @@
+{:case-0 {:out 0.02, :in (#:kg-edge{:relation :supersedes})},
+ :case-1
+ {:out 0.02,
+  :in
+  (#:kg-edge{:last-verified #inst "1969-12-31T23:59:59.999-00:00",
+             :relation :applies-to})},
+ :case-2 {:out 0.05, :in (#:kg-edge{:relation :unknown})},
+ :case-3 {:out 0.05, :in (#:kg-edge{:relation :relates})},
+ :case-4
+ {:out 0.02,
+  :in (#:kg-edge{:last-verified 42, :relation :depends-on})},
+ :case-5 {:out 0.02, :in (#:kg-edge{:relation :depends-on})},
+ :case-6 {:out 0.02, :in (#:kg-edge{:relation :derived-from})},
+ :case-7 {:out 0.02, :in (#:kg-edge{:relation :contradicts})}}

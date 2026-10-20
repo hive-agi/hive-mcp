@@ -2,7 +2,8 @@
   "Periodic background decay for memory, edges, and discs."
   (:require [hive-mcp.config.core :as config]
             [hive-mcp.dns.result :as result]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [malli.core :as m])
   (:import [java.util.concurrent Executors ScheduledExecutorService TimeUnit]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -172,6 +173,32 @@
                 :canary-faults (count (:faults canary-stats))})
      result)))
 
+(def DecayOpts
+  "Per-cycle knobs (see run-decay-cycle!'s destructuring). Open map."
+  [:maybe
+   [:map
+    [:directory {:optional true} [:maybe :string]]
+    [:project-id {:optional true} [:maybe :string]]
+    [:memory-limit {:optional true} [:maybe :int]]
+    [:edge-limit {:optional true} [:maybe :int]]
+    [:disc-enabled {:optional true} :any]
+    [:grounding-enabled {:optional true} :any]
+    [:grounding-limit {:optional true} [:maybe :int]]
+    [:canary-enabled {:optional true} :any]
+    [:canary-scope {:optional true} :any]]])
+
+(def DecayCycleResult
+  "One cycle's per-pass stats. Each pass answers its callee's map, its
+   fallback, or {:skipped true :reason _}."
+  [:map
+   [:memory-stats :map] [:edge-stats :map] [:disc-stats :map]
+   [:grounding-stats :map] [:canary-stats :map]
+   [:cycle-number [:int {:min 1}]] [:duration-ms :int] [:timestamp inst?]])
+
+(m/=> run-decay-cycle! [:function
+                        [:=> [:cat] DecayCycleResult]
+                        [:=> [:cat DecayOpts] DecayCycleResult]])
+
 ;; =============================================================================
 ;; Scheduler Lifecycle
 ;; =============================================================================
@@ -259,6 +286,14 @@
           (log/error e "Scheduler: failed to start decay scheduler")
           {:started false :reason (.getMessage e)})))))
 
+(def StartResult
+  "start! outcome: started with its interval, or not with a reason."
+  [:or
+   [:map [:started [:= true]] [:interval-minutes number?] [:config :map]]
+   [:map [:started [:= false]] [:reason [:maybe :string]]]])
+
+(m/=> start! [:=> [:cat] StartResult])
+
 (defn stop!
   "Stop the periodic decay scheduler."
   []
@@ -282,11 +317,22 @@
         (swap! scheduler-state assoc :executor nil :running? false)
         {:stopped true :error (.getMessage e)}))))
 
+(def StopResult
+  "stop! outcome."
+  [:or
+   [:map [:stopped [:= false]] [:reason [:= "not-running"]]]
+   [:map [:stopped [:= true]] [:cycles-completed :int]]
+   [:map [:stopped [:= true]] [:error [:maybe :string]]]])
+
+(m/=> stop! [:=> [:cat] StopResult])
+
 (defn restart!
   "Stop and restart the decay scheduler."
   []
   (stop!)
   (start!))
+
+(m/=> restart! [:=> [:cat] StartResult])
 
 ;; =============================================================================
 ;; Status / Introspection
@@ -312,3 +358,11 @@
                      :duration-ms (:duration-ms r)
                      :cycle-number (:cycle-number r)})
      :config cfg}))
+
+(m/=> status [:=> [:cat]
+              [:map
+               [:running? :boolean]
+               [:cycle-count :int]
+               [:last-run [:maybe inst?]]
+               [:last-result [:maybe [:map [:cycle-number :int] [:duration-ms :int]]]]
+               [:config [:map [:enabled :any] [:interval-minutes :any]]]]])

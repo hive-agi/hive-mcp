@@ -1,0 +1,37 @@
+name: version-gate
+
+# A PR into main that changes what release.yml publishes must also bump
+# VERSION. Without the bump, release.yml finds the version already on
+# Clojars, skips Deploy and fails at "Tag published version", so nothing
+# ships (release PRs #395 and #405 both merged that way).
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  version-bumped:
+    name: VERSION bumped for release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Release inputs changed without a new VERSION?
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --tags --quiet
+          VER=$(tr -d '[:space:]' < VERSION)
+          CHANGED=$(git diff --name-only "$BASE"...HEAD -- src resources deps.edn VERSION)
+          if [ -z "$CHANGED" ]; then
+            echo "No release inputs changed; nothing to publish."
+            exit 0
+          fi
+          if git rev-parse --verify --quiet "refs/tags/v$VER" >/dev/null; then
+            echo "::error::VERSION is $VER, and v$VER is already tagged."
+            echo "::error::This PR changes src/, resources/ or deps.edn, so merging it"
+            echo "::error::publishes nothing. Bump VERSION in this PR."
+            exit 1
+          fi
+          echo "VERSION $VER is untagged; release.yml will publish it."

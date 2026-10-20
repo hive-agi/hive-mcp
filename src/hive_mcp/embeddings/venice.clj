@@ -24,7 +24,8 @@
             [hive-mcp.embeddings.http-client :as http]
             [hive-mcp.embeddings.protocol :as emb-proto]
             [clojure.data.json :as json]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [malli.core :as m])
   (:import [java.net URI]
            [java.net.http HttpClient HttpRequest HttpRequest$BodyPublishers HttpResponse$BodyHandlers]
            [java.time Duration]))
@@ -138,3 +139,11 @@
      (log/info "Created Venice embedder with model:" model
                "dimension:" dimension "api-base:" api-base)
      (->VeniceEmbedder api-base api-key model dimension))))
+
+(m/=> ->provider [:function
+                  [:=> [:cat] emb-proto/Provider]
+                  [:=> [:cat [:map
+                              [:api-key {:optional true} [:maybe :string]]
+                              [:api-base {:optional true} [:maybe :string]]
+                              [:model {:optional true} [:maybe :string]]]]
+                   emb-proto/Provider]])

@@ -1,0 +1,8 @@
+{:case-0 {:out "[SIGNAL: defer] LGTM", :in ("defer" "LGTM")},
+ :case-1 {:out "[SIGNAL: defer] ", :in ("defer" "")},
+ :case-2 {:out "[SIGNAL: approve] ", :in (:approve nil)},
+ :case-3 {:out "[SIGNAL: counter] ", :in (:counter nil)},
+ :case-4 {:out "[SIGNAL: approve] ", :in (:approve "")},
+ :case-5 {:out "[SIGNAL: approve] ", :in (:approve "")},
+ :case-6 {:out "[SIGNAL: counter] ", :in (:counter "")},
+ :case-7 {:out "[SIGNAL: defer] LGTM", :in ("defer" "LGTM")}}

@@ -1,0 +1,77 @@
+{:case-0 {:out {:roots [], :by-id {}, :children {}}, :in ([])},
+ :case-1
+ {:out
+  {:roots ["leaf" "other"],
+   :by-id
+   {"leaf" #:project{:id "leaf", :parent-id "mid"},
+    "other" #:project{:id "other"}},
+   :children {"mid" ["leaf"]}},
+  :in
+  ([#:project{:id "leaf"}
+    #:project{:id "other"}
+    #:project{:id "leaf", :parent-id "mid"}])},
+ :case-2
+ {:out
+  {:roots ["other" "root" "mid"],
+   :by-id
+   {"leaf" #:project{:id "leaf", :parent-id "mid"},
+    "other" #:project{:id "other"},
+    "root" #:project{:id "root"},
+    "mid" #:project{:id "mid"}},
+   :children {"mid" ["leaf"], "ghost" ["root"]}},
+  :in
+  ([#:project{:id "leaf", :parent-id "mid"}
+    #:project{:id "other"}
+    #:project{:id "root", :parent-id "ghost"}
+    #:project{:id "root"}
+    #:project{:id "mid"}])},
+ :case-3
+ {:out
+  {:roots ["mid" "other"],
+   :by-id
+   {"mid" #:project{:id "mid"},
+    "other" #:project{:id "other"},
+    "root" #:project{:id "root", :parent-id "ghost"},
+    "leaf" #:project{:id "leaf", :parent-id "ghost"}},
+   :children {"ghost" ["root" "leaf"]}},
+  :in
+  ([#:project{:id "mid"}
+    #:project{:id "other"}
+    #:project{:id "root", :parent-id "ghost"}
+    #:project{:id "leaf", :parent-id "ghost"}])},
+ :case-4
+ {:out
+  {:roots [],
+   :by-id
+   {"leaf" #:project{:id "leaf", :parent-id "ghost"},
+    "mid" #:project{:id "mid", :parent-id "root"}},
+   :children {"ghost" ["leaf"], "root" ["mid"]}},
+  :in
+  ([#:project{:id "leaf", :parent-id "ghost"}
+    #:project{:id "mid", :parent-id "root"}])},
+ :case-5
+ {:out
+  {:roots [],
+   :by-id
+   {"leaf" #:project{:id "leaf", :parent-id "leaf"},
+    "root" #:project{:id "root", :parent-id "leaf"}},
+   :children {"leaf" ["leaf" "root"]}},
+  :in
+  ([#:project{:id "leaf", :parent-id "leaf"}
+    #:project{:id "root", :parent-id "leaf"}])},
+ :case-6
+ {:out
+  {:roots ["leaf"],
+   :by-id
+   {"other" #:project{:id "other", :parent-id "ghost"},
+    "leaf" #:project{:id "leaf"}},
+   :children {"ghost" ["other"]}},
+  :in
+  ([#:project{:id "other", :parent-id "ghost"}
+    #:project{:id "leaf"}])},
+ :case-7
+ {:out
+  {:roots ["leaf"],
+   :by-id {"leaf" #:project{:id "leaf"}},
+   :children {}},
+  :in ([#:project{:id "leaf"}])}}

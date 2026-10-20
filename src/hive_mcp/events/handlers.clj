@@ -62,7 +62,8 @@
             [hive-spi.swarm.guards :as guards]
             [clojure.set :as set]
             [hive-mcp.events.handlers.resilience :as resilience]
-            [hive-mcp.events.contributions :as contrib]))
+            [hive-mcp.events.contributions :as contrib]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -97,6 +98,8 @@
   []
   (into kernel-events (contrib/declared-events)))
 
+(m/=> expected-events [:=> [:cat] [:set :keyword]])
+
 (defn verify-handlers!
   "Compare the live event-handler registry against `(expected-events)` and
    emit a structured WARN for each missing handler. Returns
@@ -117,6 +120,13 @@
     (when (seq extra)
       (println "[hive-events] Extra handlers registered (not declared):" (sort extra)))
     {:registered registered :missing missing :extra extra}))
+
+(m/=> verify-handlers!
+      [:=> [:cat]
+       [:map
+        [:registered [:set :keyword]]
+        [:missing [:set :keyword]]
+        [:extra [:set :keyword]]]])
 
 (defn register-handlers!
   "Register all event handlers. Call at startup.
@@ -173,6 +183,8 @@
       (println "[hive-events] Handlers registered:" (sort (expected-events))))
     true))
 
+(m/=> register-handlers! [:=> [:cat] [:= true]])
+
 (defn reset-registration!
   "Reset registration state. Primarily for testing.
 
@@ -183,3 +195,5 @@
   (guards/when-not-coordinator
    "events.handlers/reset-registration! blocked"
    (reset! *registered false)))
+
+(m/=> reset-registration! [:=> [:cat] [:maybe [:= false]]])

@@ -22,8 +22,7 @@
             [hive-spi.memory.registry :as registry]
             [hive-test.isolation :as iso]
             [hive-mcp.isolation-methods]
-            [hive-mcp.test.stub.memory-store :as mem-stub]
-            [hive-mcp.chroma.core]))
+            [hive-mcp.test.stub.memory-store :as mem-stub]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -239,22 +238,13 @@
 
 (deftest rename-without-directory-test
   (testing "rename works without directory (skips EDN update)"
-    (with-redefs [hive-mcp.chroma.core/query-entries
-                  (fn [& _args] [])
-
-                  hive-mcp.chroma.core/embedding-configured?
-                  (fn [] true)
-
-                  hive-mcp.knowledge-graph.edges/migrate-edge-scopes!
-                  (fn [_ _] {:migrated 0})]
-
-      (let [result (parse-mcp-result
-                    (migration/handle-rename-project
-                     {:old-project-id "old"
-                      :new-project-id "new"}))]
-        (is (= "success" (:status result)))
-        (is (false? (get-in result [:edn :updated])))
-        (is (= "no directory provided" (get-in result [:edn :reason])))))))
+    (let [result (parse-mcp-result
+                  (migration/handle-rename-project
+                   {:old-project-id "old"
+                    :new-project-id "new"}))]
+      (is (= "success" (:status result)))
+      (is (false? (get-in result [:edn :updated])))
+      (is (= "no directory provided" (get-in result [:edn :reason]))))))
 
 ;; ============================================================
 ;; EDN Update Tests
@@ -266,20 +256,15 @@
           _ (write-edn! dir {:project-id "old-project"
                              :aliases ["even-older"]})]
       (try
-        (with-redefs [hive-mcp.chroma.core/query-entries (fn [& _] [])
-                      hive-mcp.chroma.core/embedding-configured? (fn [] true)
-                      hive-mcp.knowledge-graph.edges/migrate-edge-scopes!
-                      (fn [_ _] {:migrated 0})]
+        (migration/handle-rename-project
+         {:old-project-id "old-project"
+          :new-project-id "new-project"
+          :directory dir})
 
-          (migration/handle-rename-project
-           {:old-project-id "old-project"
-            :new-project-id "new-project"
-            :directory dir})
-
-          ;; Verify aliases chain
-          (let [edn-after (read-edn dir)]
-            (is (= "new-project" (:project-id edn-after)))
-            (is (= ["even-older" "old-project"] (:aliases edn-after)))))
+        ;; Verify aliases chain
+        (let [edn-after (read-edn dir)]
+          (is (= "new-project" (:project-id edn-after)))
+          (is (= ["even-older" "old-project"] (:aliases edn-after))))
         (finally
           (cleanup-dir! dir))))))
 
@@ -289,21 +274,16 @@
           _ (write-edn! dir {:project-id "old-project"
                              :aliases ["old-project"]})]
       (try
-        (with-redefs [hive-mcp.chroma.core/query-entries (fn [& _] [])
-                      hive-mcp.chroma.core/embedding-configured? (fn [] true)
-                      hive-mcp.knowledge-graph.edges/migrate-edge-scopes!
-                      (fn [_ _] {:migrated 0})]
+        (migration/handle-rename-project
+         {:old-project-id "old-project"
+          :new-project-id "new-project"
+          :directory dir})
 
-          (migration/handle-rename-project
-           {:old-project-id "old-project"
-            :new-project-id "new-project"
-            :directory dir})
-
-          ;; old-project should only appear once
-          (let [edn-after (read-edn dir)]
-            (is (= "new-project" (:project-id edn-after)))
-            (is (= ["old-project"] (:aliases edn-after)))
-            (is (= 1 (count (filter #(= "old-project" %) (:aliases edn-after)))))))
+        ;; old-project should only appear once
+        (let [edn-after (read-edn dir)]
+          (is (= "new-project" (:project-id edn-after)))
+          (is (= ["old-project"] (:aliases edn-after)))
+          (is (= 1 (count (filter #(= "old-project" %) (:aliases edn-after))))))
         (finally
           (cleanup-dir! dir))))))
 
@@ -311,21 +291,16 @@
   (testing "rename creates .hive-project.edn if directory exists but file doesn't"
     (let [dir (create-temp-dir!)]
       (try
-        (with-redefs [hive-mcp.chroma.core/query-entries (fn [& _] [])
-                      hive-mcp.chroma.core/embedding-configured? (fn [] true)
-                      hive-mcp.knowledge-graph.edges/migrate-edge-scopes!
-                      (fn [_ _] {:migrated 0})]
+        (migration/handle-rename-project
+         {:old-project-id "old-project"
+          :new-project-id "new-project"
+          :directory dir})
 
-          (migration/handle-rename-project
-           {:old-project-id "old-project"
-            :new-project-id "new-project"
-            :directory dir})
-
-          ;; Should have created .hive-project.edn
-          (let [edn-after (read-edn dir)]
-            (is (some? edn-after))
-            (is (= "new-project" (:project-id edn-after)))
-            (is (= ["old-project"] (:aliases edn-after)))))
+        ;; Should have created .hive-project.edn
+        (let [edn-after (read-edn dir)]
+          (is (some? edn-after))
+          (is (= "new-project" (:project-id edn-after)))
+          (is (= ["old-project"] (:aliases edn-after))))
         (finally
           (cleanup-dir! dir))))))
 
@@ -340,21 +315,16 @@
                              :parent-id "parent-proj"
                              :aliases []})]
       (try
-        (with-redefs [hive-mcp.chroma.core/query-entries (fn [& _] [])
-                      hive-mcp.chroma.core/embedding-configured? (fn [] true)
-                      hive-mcp.knowledge-graph.edges/migrate-edge-scopes!
-                      (fn [_ _] {:migrated 0})]
+        (migration/handle-rename-project
+         {:old-project-id "old-project"
+          :new-project-id "new-project"
+          :directory dir})
 
-          (migration/handle-rename-project
-           {:old-project-id "old-project"
-            :new-project-id "new-project"
-            :directory dir})
-
-          ;; Verify config is registered in kg-scope
-          (let [config (kg-scope/get-project-config "new-project")]
-            (is (some? config))
-            (is (= "new-project" (:project-id config)))
-            (is (= ["old-project"] (:aliases config)))))
+        ;; Verify config is registered in kg-scope
+        (let [config (kg-scope/get-project-config "new-project")]
+          (is (some? config))
+          (is (= "new-project" (:project-id config)))
+          (is (= ["old-project"] (:aliases config))))
         (finally
           (cleanup-dir! dir))))))
 
@@ -364,20 +334,15 @@
           _ (write-edn! dir {:project-id "old-project"
                              :aliases []})]
       (try
-        (with-redefs [hive-mcp.chroma.core/query-entries (fn [& _] [])
-                      hive-mcp.chroma.core/embedding-configured? (fn [] true)
-                      hive-mcp.knowledge-graph.edges/migrate-edge-scopes!
-                      (fn [_ _] {:migrated 0})]
+        (migration/handle-rename-project
+         {:old-project-id "old-project"
+          :new-project-id "new-project"
+          :directory dir})
 
-          (migration/handle-rename-project
-           {:old-project-id "old-project"
-            :new-project-id "new-project"
-            :directory dir})
-
-          ;; old-project should resolve to new-project via alias
-          (is (= "new-project" (kg-scope/resolve-project-id "old-project")))
-          ;; new-project should resolve to itself
-          (is (= "new-project" (kg-scope/resolve-project-id "new-project"))))
+        ;; old-project should resolve to new-project via alias
+        (is (= "new-project" (kg-scope/resolve-project-id "old-project")))
+        ;; new-project should resolve to itself
+        (is (= "new-project" (kg-scope/resolve-project-id "new-project")))
         (finally
           (cleanup-dir! dir))))))
 
@@ -386,31 +351,27 @@
 ;; ============================================================
 
 (deftest rename-chroma-failure-non-blocking-test
-  (testing "Chroma failure doesn't prevent EDN update"
+  (testing "a memory-store failure doesn't prevent EDN update"
     (let [dir (create-temp-dir!)
           _ (write-edn! dir {:project-id "old-project"
-                             :aliases []})]
+                             :aliases []})
+          faulty (mem-stub/->observing (registry/get-store)
+                                       {:query-entries "store unavailable"})]
+      (registry/set-store! faulty)
       (try
-        (with-redefs [hive-mcp.chroma.core/query-entries
-                      (fn [& _] (throw (Exception. "Chroma unavailable")))
-
-                      hive-mcp.chroma.core/embedding-configured?
-                      (fn [] true)
-
-                      hive-mcp.knowledge-graph.edges/migrate-edge-scopes!
-                      (fn [_ _] {:migrated 0})]
-
-          (let [result (parse-mcp-result
-                        (migration/handle-rename-project
-                         {:old-project-id "old-project"
-                          :new-project-id "new-project"
-                          :directory dir}))]
-            ;; Result should still succeed overall
-            (is (= "success" (:status result)))
-            ;; Chroma section should have error info
-            (is (= 0 (get-in result [:chroma :migrated])))
-            ;; EDN should still be updated
-            (is (true? (get-in result [:edn :updated])))))
+        (let [result (parse-mcp-result
+                      (migration/handle-rename-project
+                       {:old-project-id "old-project"
+                        :new-project-id "new-project"
+                        :directory dir}))]
+          (is (seq (mem-stub/calls-of faulty :query-entries))
+              "the failure was injected at the memory port")
+          ;; Result should still succeed overall
+          (is (= "success" (:status result)))
+          ;; Memory section should report nothing migrated
+          (is (= 0 (get-in result [:chroma :migrated])))
+          ;; EDN should still be updated
+          (is (true? (get-in result [:edn :updated]))))
         (finally
           (cleanup-dir! dir))))))
 
@@ -422,14 +383,9 @@
   (testing "consolidated memory tool dispatches rename command"
     (let [dir (create-temp-dir!)]
       (try
-        (with-redefs [hive-mcp.chroma.core/query-entries (fn [& _] [])
-                      hive-mcp.chroma.core/embedding-configured? (fn [] true)
-                      hive-mcp.knowledge-graph.edges/migrate-edge-scopes!
-                      (fn [_ _] {:migrated 0})]
-
-          ;; Verify the handler is in the handlers map
-          (let [handlers (requiring-resolve 'hive-mcp.tools.consolidated.memory/handlers)]
-            (is (some? (get @handlers :rename))
-                "rename command should be in handlers map")))
+        ;; Verify the handler is in the handlers map
+        (let [handlers (requiring-resolve 'hive-mcp.tools.consolidated.memory/handlers)]
+          (is (some? (get @handlers :rename))
+              "rename command should be in handlers map"))
         (finally
           (cleanup-dir! dir))))))

@@ -1,0 +1,12 @@
+{:hash-mismatch {:propagated 0, :skipped 0, :errors 0, :grounded 2},
+ :below-threshold {:propagated 0, :skipped 2, :errors 0, :grounded 0},
+ :unknown-reason {:propagated 0, :skipped 0, :errors 1, :grounded 0},
+ :betas
+ {"m14-e1"
+  {:staleness-beta 6.0,
+   :staleness-depth 0,
+   :staleness-source "hash-mismatch"},
+  "m14-e2"
+  {:staleness-beta 6.0,
+   :staleness-depth 0,
+   :staleness-source "hash-mismatch"}}}

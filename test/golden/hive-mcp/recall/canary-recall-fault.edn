@@ -1,0 +1,91 @@
+{:case-0
+ {:out
+  {:fault :recall/empty-from-populated-store,
+   :label :carto-semantic,
+   :diagnosis
+   "a populated store returned zero rows. This is a SYSTEM FAULT, not a query outcome — the query encoder, the index, or the ranking unit disagree.",
+   :expected-ids ["e3"]},
+  :in
+  ({:label :carto-semantic,
+    :populated? true,
+    :results [],
+    :must-contain ["e3"]})},
+ :case-1
+ {:out
+  {:fault :recall/empty-from-populated-store,
+   :label :carto-semantic,
+   :diagnosis
+   "a populated store returned zero rows. This is a SYSTEM FAULT, not a query outcome — the query encoder, the index, or the ranking unit disagree.",
+   :expected-ids ["e2"]},
+  :in
+  ({:label :carto-semantic,
+    :populated? true,
+    :results [],
+    :must-contain ["e2"]})},
+ :case-2
+ {:out
+  {:fault :recall/empty-from-populated-store,
+   :label :lexical-anchor,
+   :diagnosis
+   "a populated store returned zero rows. This is a SYSTEM FAULT, not a query outcome — the query encoder, the index, or the ranking unit disagree.",
+   :expected-ids ["e4" "e3"]},
+  :in
+  ({:label :lexical-anchor,
+    :populated? true,
+    :results [],
+    :must-contain ["e3" "e4"]})},
+ :case-3
+ {:out
+  {:fault :recall/empty-from-populated-store,
+   :label :supersession,
+   :diagnosis
+   "a populated store returned zero rows. This is a SYSTEM FAULT, not a query outcome — the query encoder, the index, or the ranking unit disagree.",
+   :expected-ids ["e2" "e1"]},
+  :in
+  ({:label :supersession,
+    :populated? true,
+    :results [],
+    :must-contain ["e2" "e1"]})},
+ :case-4
+ {:out
+  {:fault :recall/empty-from-populated-store,
+   :label :lexical-anchor,
+   :diagnosis
+   "a populated store returned zero rows. This is a SYSTEM FAULT, not a query outcome — the query encoder, the index, or the ranking unit disagree.",
+   :expected-ids ["e2" "e4"]},
+  :in
+  ({:label :lexical-anchor,
+    :populated? true,
+    :results [],
+    :must-contain ["e2" "e4"]})},
+ :case-5
+ {:out
+  {:fault :recall/empty-from-populated-store,
+   :label :lexical-anchor,
+   :diagnosis
+   "a populated store returned zero rows. This is a SYSTEM FAULT, not a query outcome — the query encoder, the index, or the ranking unit disagree.",
+   :expected-ids ["e3"]},
+  :in
+  ({:label :lexical-anchor,
+    :populated? true,
+    :results [],
+    :must-contain ["e3" "e3"]})},
+ :case-6
+ {:out nil,
+  :in
+  ({:label :supersession,
+    :populated? false,
+    :results [{:id "e3"} {:id "e4"} {:id "e4"}],
+    :must-contain ["e1" "e2"]})},
+ :case-7
+ {:out
+  {:fault :recall/empty-from-populated-store,
+   :label :carto-semantic,
+   :diagnosis
+   "a populated store returned zero rows. This is a SYSTEM FAULT, not a query outcome — the query encoder, the index, or the ranking unit disagree.",
+   :expected-ids ["e2"]},
+  :in
+  ({:label :carto-semantic,
+    :populated? true,
+    :results [],
+    :must-contain ["e2"]})}}

@@ -1,0 +1,8 @@
+{:blank false,
+ :empty false,
+ :nil false,
+ :number false,
+ :placeholder false,
+ :reference false,
+ :short true,
+ :valid true}

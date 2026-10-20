@@ -1,0 +1,33 @@
+{:case-0
+ {:out false,
+  :in [#:kg-edge{:last-verified 42, :relation :applies-to} 0 0]},
+ :case-1
+ {:out true,
+  :in
+  [#:kg-edge{:last-verified #inst "1969-12-31T23:59:59.999-00:00",
+             :relation :refines}
+   7
+   7775999999]},
+ :case-2 {:out true, :in [#:kg-edge{:last-verified 42} 7 864000000]},
+ :case-3
+ {:out true,
+  :in
+  [#:kg-edge{:last-verified #inst "1970-01-01T00:00:00.003-00:00",
+             :relation :implements}
+   30
+   3888000003]},
+ :case-4 {:out true, :in [#:kg-edge{:last-verified 42} 0 864000000]},
+ :case-5
+ {:out true,
+  :in
+  [#:kg-edge{:last-verified #inst "1969-12-31T23:59:59.991-00:00"}
+   7
+   863999991]},
+ :case-6
+ {:out false,
+  :in
+  [#:kg-edge{:last-verified #inst "1969-12-31T23:59:59.988-00:00",
+             :relation :relates}
+   60
+   3599988]},
+ :case-7 {:out true, :in [#:kg-edge{:last-verified 42} 0 3600000]}}

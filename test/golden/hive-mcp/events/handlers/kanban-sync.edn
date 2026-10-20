@@ -1,0 +1,50 @@
+{:case-0
+ {:out
+  {:log
+   {:level :info, :message "Kanban sync for project: unknown-project"},
+   :kanban-sync
+   {:project "unknown-project", :direction :bidirectional}},
+  :in ({} [:kanban/sync {}])},
+ :case-1
+ {:out
+  {:log {:level :info, :message "Kanban sync for project: 7R28yn"},
+   :kanban-sync {:project "7R28yn", :direction :bidirectional}},
+  :in
+  ({:agent-context {:project "1oz"}}
+   [:kanban/sync {:project "7R28yn"}])},
+ :case-2
+ {:out
+  {:log {:level :info, :message "Kanban sync for project: w37"},
+   :kanban-sync {:project "w37", :direction :bidirectional}},
+  :in ({} [:kanban/sync {:project "w37"}])},
+ :case-3
+ {:out
+  {:log {:level :info, :message "Kanban sync for project: 769zs"},
+   :kanban-sync {:project "769zs", :direction :bidirectional}},
+  :in ({} [:kanban/sync {:project "769zs"}])},
+ :case-4
+ {:out
+  {:log {:level :info, :message "Kanban sync for project: 3qvkKpih"},
+   :kanban-sync {:project "3qvkKpih", :direction :bidirectional}},
+  :in ({:agent-context {:project "3qvkKpih"}} [:kanban/sync {}])},
+ :case-5
+ {:out
+  {:log
+   {:level :info, :message "Kanban sync for project: unknown-project"},
+   :kanban-sync
+   {:project "unknown-project", :direction :bidirectional}},
+  :in ({} [:kanban/sync {}])},
+ :case-6
+ {:out
+  {:log
+   {:level :info, :message "Kanban sync for project: unknown-project"},
+   :kanban-sync
+   {:project "unknown-project", :direction :bidirectional}},
+  :in ({} [:kanban/sync {}])},
+ :case-7
+ {:out
+  {:log
+   {:level :info, :message "Kanban sync for project: unknown-project"},
+   :kanban-sync
+   {:project "unknown-project", :direction :bidirectional}},
+  :in ({} [:kanban/sync {}])}}

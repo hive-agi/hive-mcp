@@ -6,7 +6,8 @@
             [hive-mcp.embeddings.active :as emb]
             [hive-mcp.chroma.gate :as gate]
             [hive-mcp.chroma.helpers :as h]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -54,6 +55,13 @@
           (log/warn "Failed to repair entry" (:id entry) ":" (.getMessage e)))))
     (count needs-repair)))
 
+(def CleanupResult
+  "What a cleanup pass did: expired ids deleted, entries repaired."
+  [:map
+   [:count [:int {:min 0}]]
+   [:deleted-ids [:vector :string]]
+   [:repaired [:int {:min 0}]]])
+
 (defn cleanup-expired!
   "Delete expired entries and repair entries with missing expires."
   []
@@ -80,6 +88,8 @@
      :deleted-ids expired-ids
      :repaired repaired}))
 
+(m/=> cleanup-expired! [:=> [:cat] CleanupResult])
+
 (defn entries-expiring-soon
   "Get entries expiring within the given number of days."
   [days & {:keys [project-id]}]
@@ -93,3 +103,6 @@
                      (h/time-between? exp-time now threshold))))
          (sort-by :expires)
          vec)))
+
+(m/=> entries-expiring-soon [:=> [:cat number? [:alt [:* [:cat :keyword :any]] [:cat :map]]]
+                             [:vector crud/Entry]])

@@ -1,0 +1,10 @@
+{:case-0 {:out nil, :in {}},
+ :case-1
+ {:out {:project-id {:$in ["global" "global"]}},
+  :in {:type nil, :project-ids ["global" "global"]}},
+ :case-2 {:out nil, :in {}},
+ :case-3 {:out nil, :in {:project-ids nil}},
+ :case-4 {:out {:type "decision"}, :in {:type "decision"}},
+ :case-5 {:out nil, :in {}},
+ :case-6 {:out nil, :in {}},
+ :case-7 {:out nil, :in {}}}

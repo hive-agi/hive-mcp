@@ -1,0 +1,10 @@
+{:case-0 {:out ["/tmp" "/"], :in ("/tmp" "/srv/repo")},
+ :case-1 {:out ["/"], :in ("/" "/srv")},
+ :case-2 {:out ["/srv/repo" "/srv" "/"], :in ("/srv/repo" nil)},
+ :case-3
+ {:out ["/srv/repo/src/x" "/srv/repo/src" "/srv/repo" "/srv" "/"],
+  :in ("/srv/repo/src/x" nil)},
+ :case-4 {:out ["/srv/repo" "/srv"], :in ("/srv/repo" "/srv")},
+ :case-5 {:out ["/srv/repo" "/srv"], :in ("/srv/repo" "/srv")},
+ :case-6 {:out ["/srv/repo" "/srv"], :in ("/srv/repo/" "/srv")},
+ :case-7 {:out ["/"], :in ("/" "/srv/repo")}}

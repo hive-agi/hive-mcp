@@ -1,0 +1,41 @@
+{:case-0
+ {:out [], :in {:slave/preset-order "[\"b\" \"a\"]", :ling/model "m"}},
+ :case-1
+ {:out [],
+  :in
+  {:slave/presets #{},
+   :slave/preset-order "[1 2]",
+   :slave/cwd "/w",
+   :slave/project-id "p",
+   :ling/spawn-mode :claude}},
+ :case-2
+ {:out [],
+  :in
+  {:slave/preset-order "not edn ((",
+   :slave/project-id "p",
+   :ling/turn-budget 10}},
+ :case-3 {:out [], :in #:ling{:model "m", :turn-budget 10}},
+ :case-4
+ {:out ["a" "b" "c"],
+  :in
+  #:slave{:presets #{"a" "b" "c"},
+          :preset-order "[1 2]",
+          :project-id "p"}},
+ :case-5
+ {:out [],
+  :in
+  {:slave/preset-order "[1 2]",
+   :slave/project-id "p",
+   :ling/spawn-mode :vterm,
+   :ling/model "m",
+   :ling/turn-budget 10}},
+ :case-6
+ {:out [],
+  :in
+  {:slave/cwd "/w",
+   :ling/spawn-mode :vterm,
+   :ling/model "m",
+   :ling/turn-budget 10}},
+ :case-7
+ {:out [],
+  :in {:slave/cwd "/w", :slave/project-id "p", :ling/model "m"}}}

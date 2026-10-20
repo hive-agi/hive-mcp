@@ -1,0 +1,110 @@
+{:case-0
+ {:out
+  {:log
+   {:level :warn,
+    :message
+    "Ready-for-wrap event with no slave-id or agent-id — dropped"}},
+  :in ({} [:ling/ready-for-wrap {:reason "2F2"}])},
+ :case-1
+ {:out
+  {:log
+   {:level :info,
+    :message "Auto-wrap triggered for 4N (reason: task-completed)"},
+   :dispatch
+   [:session/wrap
+    {:session-id nil,
+     :slave-id "4N",
+     :triggered-by "auto-wrap",
+     :reason "task-completed"}]},
+  :in
+  ({}
+   [:ling/ready-for-wrap
+    {:slave-id "4N", :agent-id "E", :result "66h"}])},
+ :case-2
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "Auto-wrap triggered for 8Uo6NwQWfQ (reason: task-completed)"},
+   :dispatch
+   [:session/wrap
+    {:session-id "b7Pq",
+     :slave-id "8Uo6NwQWfQ",
+     :triggered-by "auto-wrap",
+     :reason "task-completed"}]},
+  :in
+  ({}
+   [:ling/ready-for-wrap
+    {:agent-id "8Uo6NwQWfQ", :session-id "b7Pq"}])},
+ :case-3
+ {:out
+  {:log
+   {:level :warn,
+    :message
+    "Ready-for-wrap event with no slave-id or agent-id — dropped"}},
+  :in
+  ({}
+   [:ling/ready-for-wrap {:reason "3HLVuR", :session-id "Wf8o84E5"}])},
+ :case-4
+ {:out
+  {:log
+   {:level :info,
+    :message "Auto-wrap triggered for H89Lk (reason: task-completed)"},
+   :dispatch
+   [:session/wrap
+    {:session-id nil,
+     :slave-id "H89Lk",
+     :triggered-by "auto-wrap",
+     :reason "task-completed"}]},
+  :in ({} [:ling/ready-for-wrap {:agent-id "H89Lk"}])},
+ :case-5
+ {:out
+  {:log
+   {:level :info,
+    :message "Auto-wrap triggered for nheBCB27X (reason: mPcJ8n)"},
+   :dispatch
+   [:session/wrap
+    {:session-id "tU171DSc",
+     :slave-id "nheBCB27X",
+     :triggered-by "auto-wrap",
+     :reason "mPcJ8n"}]},
+  :in
+  ({}
+   [:ling/ready-for-wrap
+    {:agent-id "nheBCB27X",
+     :result "bR",
+     :reason "mPcJ8n",
+     :session-id "tU171DSc"}])},
+ :case-6
+ {:out
+  {:log
+   {:level :info,
+    :message "Auto-wrap triggered for O7sv2wJy (reason: 1RQxWK2Gc7)"},
+   :dispatch
+   [:session/wrap
+    {:session-id "VMtY",
+     :slave-id "O7sv2wJy",
+     :triggered-by "auto-wrap",
+     :reason "1RQxWK2Gc7"}]},
+  :in
+  ({}
+   [:ling/ready-for-wrap
+    {:slave-id "O7sv2wJy",
+     :result "Fy1",
+     :reason "1RQxWK2Gc7",
+     :session-id "VMtY"}])},
+ :case-7
+ {:out
+  {:log
+   {:level :info,
+    :message "Auto-wrap triggered for h (reason: I1OwN5)"},
+   :dispatch
+   [:session/wrap
+    {:session-id nil,
+     :slave-id "h",
+     :triggered-by "auto-wrap",
+     :reason "I1OwN5"}]},
+  :in
+  ({}
+   [:ling/ready-for-wrap
+    {:slave-id "h", :agent-id "y5e20c3K", :reason "I1OwN5"}])}}

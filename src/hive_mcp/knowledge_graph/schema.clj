@@ -5,7 +5,8 @@
    enabling graph traversal, impact analysis, and knowledge promotion."
   (:require [hive-mcp.memory.type-registry :as type-registry]
             [clojure.string :as str]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.knowledge-graph.schema.sealed :as sealed]))
 
 ;; =============================================================================
 ;; Relation Type Registry (OCP — extensions inject their own relation types)
@@ -177,8 +178,6 @@
   "Check if a value is usable as a KG node id — see NodeId."
   [node-id]
   (m/validate NodeId node-id))
-
-(m/=> valid-node-id? [:=> [:cat :any] :boolean])
 
 (defn valid-abstraction-level?
   "Check if abstraction level is valid (1-4).
@@ -422,6 +421,29 @@
   (type-registry/abstraction-level entry-type))
 
 (defn full-schema
-  "Returns the combined KG schema (edges + knowledge abstraction + disc + synth + addon extensions)."
+  "Returns the combined KG schema (edges + sealed edges + knowledge abstraction + disc + synth + addon extensions)."
   []
-  (merge kg-schema knowledge-schema disc-schema synth-schema @kg-schema-extensions))
+  (merge kg-schema sealed/sealed-edge-schema knowledge-schema disc-schema synth-schema @kg-schema-extensions))
+(m/=> register-relation-type! [:=> [:cat :keyword] :any])
+(m/=> register-relation-types! [:=> [:cat [:or [:sequential :keyword] [:set :keyword]]] :any])
+(m/=> relation-types [:=> [:cat] [:set :keyword]])
+(m/=> valid-relation? [:=> [:cat :any] :boolean])
+(m/=> normalize-predicate [:=> [:cat :any] [:maybe :string]])
+(m/=> valid-confidence? [:=> [:cat :any] :boolean])
+(m/=> valid-source-type? [:=> [:cat :any] :boolean])
+(m/=> valid-abstraction-level? [:=> [:cat :any] :boolean])
+(m/=> abstraction-level-keyword [:=> [:cat :any] [:maybe :keyword]])
+(m/=> abstraction-level-info [:=> [:cat :any] [:maybe [:map [:level :int] [:name :string] [:description :string]]]])
+(m/=> valid-volatility-class? [:=> [:cat :any] :boolean])
+(m/=> valid-certainty-alpha? [:=> [:cat :any] :boolean])
+(m/=> valid-certainty-beta? [:=> [:cat :any] :boolean])
+(m/=> synth-attr? [:=> [:cat :any] :boolean])
+(m/=> disc-certainty-defaults-with-timestamp [:=> [:cat] :map])
+(m/=> apply-disc-certainty-defaults [:=> [:cat :map] :map])
+(m/=> register-kg-schema! [:=> [:cat :map] :any])
+(m/=> get-kg-schema-extensions [:=> [:cat] :map])
+(m/=> type->abstraction-level [:=> [:cat] :map])
+(m/=> derive-abstraction-level [:=> [:cat :any] [:int {:min 2 :max 4}]])
+(m/=> full-schema [:=> [:cat] :map])
+
+(m/=> valid-node-id? [:=> [:cat :any] :boolean])

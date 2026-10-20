@@ -11,6 +11,12 @@
 (def strategy-status spi/strategy-status)
 (def strategy-kill! spi/strategy-kill!)
 (def strategy-interrupt! spi/strategy-interrupt!)
+
+(def LingStrategy
+  "Malli schema for a value that satisfies `ILingStrategy`. Generates a bare
+   reify, which satisfies the protocol and implements none of its methods."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (reify spi/ILingStrategy))}
+   (fn [x] (satisfies? spi/ILingStrategy x))])
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later

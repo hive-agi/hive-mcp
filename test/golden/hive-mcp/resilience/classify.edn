@@ -1,0 +1,30 @@
+{"clojure.lang.ExceptionInfo: Milvus HTTP returned code=1804 message=dim mismatch"
+ {:adt/variant :err/schema-mismatch,
+  :adt/type :ErrorClass,
+  :message "dim"},
+ "clojure.lang.ExceptionInfo: auth"
+ {:adt/variant :err/auth, :adt/type :ErrorClass, :message "HTTP 401"},
+ "clojure.lang.ExceptionInfo: dim mismatch"
+ {:adt/variant :err/schema-mismatch,
+  :adt/type :ErrorClass,
+  :message ":embedder/dim-mismatch"},
+ "clojure.lang.ExceptionInfo: too large"
+ {:adt/variant :err/validation,
+  :adt/type :ErrorClass,
+  :message "too large"},
+ "clojure.lang.ExceptionInfo: transport drop"
+ {:adt/variant :err/transient,
+  :adt/type :ErrorClass,
+  :message "transport drop"},
+ "java.io.IOException: Connection reset"
+ {:adt/variant :err/transient,
+  :adt/type :ErrorClass,
+  :message "Connection reset"},
+ "java.lang.RuntimeException: selector manager closed"
+ {:adt/variant :err/transient,
+  :adt/type :ErrorClass,
+  :message "selector manager closed"},
+ "java.lang.RuntimeException: something else entirely"
+ {:adt/variant :err/unknown,
+  :adt/type :ErrorClass,
+  :message "something else entirely"}}

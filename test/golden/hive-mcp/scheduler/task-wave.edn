@@ -1,0 +1,9 @@
+{:case-0 {:out 0, :in ({:id "d", :title "Fix it"})},
+ :case-1 {:out 0, :in ({:id "e", :title "plain", :tags [:kw]})},
+ :case-2
+ {:out 0, :in ({:id "a", :title "human only review", :tags []})},
+ :case-3 {:out 0, :in ({:id "c", :tags ["x"]})},
+ :case-4 {:out 0, :in ({:id "a", :title "plain"})},
+ :case-5 {:out 0, :in ({:id "a", :title "plain"})},
+ :case-6 {:out 0, :in ({:id "b"})},
+ :case-7 {:out 0, :in ({:id "e"})}}

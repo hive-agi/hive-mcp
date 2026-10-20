@@ -23,7 +23,9 @@
             [hive-mcp.knowledge-graph.schema :as schema]
             [hive-mcp.knowledge-graph.store.datalevin-config :as dlc]
             [hive-mcp.knowledge-graph.store.datahike-config :as dhc]
-            [hive-mcp.config.core :as config]))
+            [hive-mcp.config.core :as config]
+            [malli.core :as m]
+            [hive-mcp.knowledge-graph.slots.schema :as ss]))
 
 ;; -----------------------------------------------------------------------------
 ;; Resolution helpers
@@ -209,3 +211,7 @@
    fixtures keep working without modification."
   ([] (->factory backend->store))
   ([factory-fn] (->LateBoundFactory factory-fn)))
+
+(m/=> ->factory [:function
+                 [:=> [:cat] ss/Factory]
+                 [:=> [:cat ss/FactoryFn] ss/Factory]])

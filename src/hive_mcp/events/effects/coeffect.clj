@@ -16,7 +16,8 @@
    (cofx-effects/register-coeffects!)
    ```"
 
-  (:require [hive-mcp.events.core :as ev]
+  (:require [malli.core :as m]
+            [hive-mcp.events.core :as ev]
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.context.request :as ctx]
             [taoensso.timbre :as log]))
@@ -121,3 +122,5 @@
   (ev/reg-cofx :waiting-lings handle-waiting-lings)
   (ev/reg-cofx :request-ctx handle-request-ctx)
   (log/info "[hive-events.coeffect] Coeffects registered: :now :agent-context :db-snapshot :waiting-lings :request-ctx"))
+
+(m/=> register-coeffects! [:=> [:cat] :nil])

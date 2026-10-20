@@ -1,0 +1,10 @@
+{:moved {:migrated 1, :old-scope "s1", :new-scope "s9"},
+ :none {:migrated 0, :old-scope "absent", :new-scope "s9"},
+ :scoped-now
+ [#:kg-edge{:from "n1",
+            :to "n2",
+            :relation :implements,
+            :scope "s9",
+            :confidence 0.9}],
+ :nil-scope "migrate-edge-scopes! requires old-scope and new-scope",
+ :same-scope "old-scope and new-scope must be different"}

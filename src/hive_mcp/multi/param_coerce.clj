@@ -103,5 +103,4 @@
   [:map-of :any :any])
 
 (m/=> coercion-spec [:=> [:cat InputSchema] [:map-of :keyword :string]])
-
 (m/=> coerce-params [:=> [:cat InputSchema Params] [:map-of :any :any]])

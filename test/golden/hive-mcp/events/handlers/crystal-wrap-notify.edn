@@ -1,0 +1,442 @@
+{:case-0
+ {:out
+  {:log
+   {:level :info,
+    :message "Wrap notify from q5y0 (project: THA9): 0 entries"},
+   :wrap-notify
+   {:agent-id "q5y0",
+    :session-id "0Qp",
+    :project-id "THA9",
+    :created-ids [],
+    :stats
+    {:snippets 0,
+     :knowledge 0,
+     :decisions 0,
+     :kg-edges 0,
+     :other 0,
+     :plans 0,
+     :axioms 0,
+     :principles 0,
+     :memories-created 0,
+     :notes 0,
+     :kanban-closures 0,
+     :wrapped 0,
+     :conventions 0}},
+   :shout
+   {:agent-id "q5y0",
+    :event-type :wrap_notify,
+    :data
+    {:session-id "0Qp",
+     :project-id "THA9",
+     :stats
+     {:snippets 0,
+      :knowledge 0,
+      :decisions 0,
+      :kg-edges 0,
+      :other 0,
+      :plans 0,
+      :axioms 0,
+      :principles 0,
+      :memories-created 0,
+      :notes 0,
+      :kanban-closures 0,
+      :wrapped 0,
+      :conventions 0},
+     :message
+     "Session wrapped: 0 decisions, 0 conventions [wrote 0 · merged 0 · skipped 0]"}}},
+  :in
+  ({}
+   [:crystal/wrap-notify
+    {:agent-id "q5y0",
+     :session-id "0Qp",
+     :project-id "THA9",
+     :created-ids [],
+     :stats nil}])},
+ :case-1
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "Wrap notify from 7R28yn (project: k367OXlr2W): 0 entries"},
+   :wrap-notify
+   {:agent-id "7R28yn",
+    :session-id "E9hV1o7",
+    :project-id "k367OXlr2W",
+    :created-ids [],
+    :stats
+    {:snippets 0,
+     :knowledge 0,
+     :decisions 0,
+     :kg-edges 0,
+     :other 0,
+     :plans 0,
+     :axioms 0,
+     :principles 0,
+     :memories-created 0,
+     :notes 0,
+     :kanban-closures 0,
+     :wrapped 0,
+     :conventions 0}},
+   :shout
+   {:agent-id "7R28yn",
+    :event-type :wrap_notify,
+    :data
+    {:session-id "E9hV1o7",
+     :project-id "k367OXlr2W",
+     :stats
+     {:snippets 0,
+      :knowledge 0,
+      :decisions 0,
+      :kg-edges 0,
+      :other 0,
+      :plans 0,
+      :axioms 0,
+      :principles 0,
+      :memories-created 0,
+      :notes 0,
+      :kanban-closures 0,
+      :wrapped 0,
+      :conventions 0},
+     :message
+     "Session wrapped: 0 decisions, 0 conventions [wrote 0 · merged 0 · skipped 0]"}}},
+  :in
+  ({}
+   [:crystal/wrap-notify
+    {:agent-id "7R28yn",
+     :session-id "E9hV1o7",
+     :project-id "k367OXlr2W",
+     :created-ids [],
+     :stats nil}])},
+ :case-2
+ {:out
+  {:log
+   {:level :info,
+    :message "Wrap notify from w37 (project: XJn2): 0 entries"},
+   :wrap-notify
+   {:agent-id "w37",
+    :session-id "q3BeL8CcDs",
+    :project-id "XJn2",
+    :created-ids [],
+    :stats
+    {:snippets 0,
+     :knowledge 0,
+     :decisions 2,
+     :kg-edges 1,
+     :other 1,
+     :plans 0,
+     :axioms 0,
+     :principles 0,
+     :memories-created 0,
+     :notes 0,
+     :kanban-closures 0,
+     :wrapped 0,
+     :conventions 1}},
+   :shout
+   {:agent-id "w37",
+    :event-type :wrap_notify,
+    :data
+    {:session-id "q3BeL8CcDs",
+     :project-id "XJn2",
+     :stats
+     {:snippets 0,
+      :knowledge 0,
+      :decisions 2,
+      :kg-edges 1,
+      :other 1,
+      :plans 0,
+      :axioms 0,
+      :principles 0,
+      :memories-created 0,
+      :notes 0,
+      :kanban-closures 0,
+      :wrapped 0,
+      :conventions 1},
+     :message
+     "Session wrapped: 2 decisions, 1 conventions, 1 other, 1 kg-edges [wrote 0 · merged 0 · skipped 0]"}}},
+  :in
+  ({}
+   [:crystal/wrap-notify
+    {:agent-id "w37",
+     :session-id "q3BeL8CcDs",
+     :project-id "XJn2",
+     :created-ids [],
+     :stats
+     {:created-by-type {"decision" 2, "custom-kind" 1},
+      :conventions 1,
+      :kg-edge-count 1,
+      :kanban-closed-transitions 0}}])},
+ :case-3
+ {:out
+  {:log
+   {:level :info,
+    :message "Wrap notify from 769zs (project: OVP): 2 entries"},
+   :wrap-notify
+   {:agent-id "769zs",
+    :session-id "99",
+    :project-id "OVP",
+    :created-ids ["m-1" nil],
+    :stats
+    {:snippets 0,
+     :knowledge 0,
+     :decisions 0,
+     :kg-edges 0,
+     :other 0,
+     :plans 0,
+     :axioms 2,
+     :principles 0,
+     :memories-created 0,
+     :notes 0,
+     :kanban-closures 0,
+     :wrapped 1,
+     :conventions 0}},
+   :shout
+   {:agent-id "769zs",
+    :event-type :wrap_notify,
+    :data
+    {:session-id "99",
+     :project-id "OVP",
+     :stats
+     {:snippets 0,
+      :knowledge 0,
+      :decisions 0,
+      :kg-edges 0,
+      :other 0,
+      :plans 0,
+      :axioms 2,
+      :principles 0,
+      :memories-created 0,
+      :notes 0,
+      :kanban-closures 0,
+      :wrapped 1,
+      :conventions 0},
+     :message
+     "Session wrapped: 0 decisions, 0 conventions, 2 axioms [wrote 1 · merged 0 · skipped 0]"}}},
+  :in
+  ({}
+   [:crystal/wrap-notify
+    {:agent-id "769zs",
+     :session-id "99",
+     :project-id "OVP",
+     :created-ids ["m-1" nil],
+     :stats
+     {:created-by-type {"axiom" 2},
+      :created-count nil,
+      :kanban-closed-transitions nil}}])},
+ :case-4
+ {:out
+  {:log
+   {:level :info,
+    :message "Wrap notify from Pf (project: R4): 1 entries"},
+   :wrap-notify
+   {:agent-id "Pf",
+    :session-id "1JuS3N76R",
+    :project-id "R4",
+    :created-ids ["m-1"],
+    :stats
+    {:snippets 0,
+     :knowledge 0,
+     :decisions 0,
+     :kg-edges 0,
+     :other 0,
+     :plans 0,
+     :axioms 0,
+     :principles 0,
+     :memories-created 0,
+     :notes 0,
+     :kanban-closures 0,
+     :wrapped 1,
+     :conventions 0}},
+   :shout
+   {:agent-id "Pf",
+    :event-type :wrap_notify,
+    :data
+    {:session-id "1JuS3N76R",
+     :project-id "R4",
+     :stats
+     {:snippets 0,
+      :knowledge 0,
+      :decisions 0,
+      :kg-edges 0,
+      :other 0,
+      :plans 0,
+      :axioms 0,
+      :principles 0,
+      :memories-created 0,
+      :notes 0,
+      :kanban-closures 0,
+      :wrapped 1,
+      :conventions 0},
+     :message
+     "Session wrapped: 0 decisions, 0 conventions [wrote 1 · merged 0 · skipped 0]"}}},
+  :in
+  ({}
+   [:crystal/wrap-notify
+    {:agent-id "Pf",
+     :session-id "1JuS3N76R",
+     :project-id "R4",
+     :created-ids ["m-1"],
+     :stats nil}])},
+ :case-5
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "Wrap notify from S93Yh (project: 3e6NP4kd8g): 5 entries"},
+   :wrap-notify
+   {:agent-id "S93Yh",
+    :session-id "N95Yt55",
+    :project-id "3e6NP4kd8g",
+    :created-ids [nil nil nil "m-2" "m-3"],
+    :stats
+    {:snippets 0,
+     :knowledge 0,
+     :decisions 1,
+     :kg-edges 0,
+     :other 0,
+     :plans 0,
+     :axioms 0,
+     :principles 0,
+     :memories-created 0,
+     :notes 0,
+     :kanban-closures 0,
+     :wrapped 2,
+     :conventions 0}},
+   :shout
+   {:agent-id "S93Yh",
+    :event-type :wrap_notify,
+    :data
+    {:session-id "N95Yt55",
+     :project-id "3e6NP4kd8g",
+     :stats
+     {:snippets 0,
+      :knowledge 0,
+      :decisions 1,
+      :kg-edges 0,
+      :other 0,
+      :plans 0,
+      :axioms 0,
+      :principles 0,
+      :memories-created 0,
+      :notes 0,
+      :kanban-closures 0,
+      :wrapped 2,
+      :conventions 0},
+     :message
+     "Session wrapped: 1 decisions, 0 conventions [wrote 2 · merged 0 · skipped 0]"}}},
+  :in
+  ({}
+   [:crystal/wrap-notify
+    {:agent-id "S93Yh",
+     :session-id "N95Yt55",
+     :project-id "3e6NP4kd8g",
+     :created-ids [nil nil nil "m-2" "m-3"],
+     :stats {:decisions 1, :notes 0}}])},
+ :case-6
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "Wrap notify from Bfv3hFEH (project: qDTHJnX5): 3 entries"},
+   :wrap-notify
+   {:agent-id "Bfv3hFEH",
+    :session-id "K2gqM",
+    :project-id "qDTHJnX5",
+    :created-ids ["m-3" nil nil],
+    :stats
+    {:snippets 0,
+     :knowledge 0,
+     :decisions 4,
+     :kg-edges 0,
+     :other 0,
+     :plans 0,
+     :axioms 0,
+     :principles 0,
+     :memories-created 0,
+     :notes 7,
+     :kanban-closures 0,
+     :wrapped 1,
+     :conventions 0}},
+   :shout
+   {:agent-id "Bfv3hFEH",
+    :event-type :wrap_notify,
+    :data
+    {:session-id "K2gqM",
+     :project-id "qDTHJnX5",
+     :stats
+     {:snippets 0,
+      :knowledge 0,
+      :decisions 4,
+      :kg-edges 0,
+      :other 0,
+      :plans 0,
+      :axioms 0,
+      :principles 0,
+      :memories-created 0,
+      :notes 7,
+      :kanban-closures 0,
+      :wrapped 1,
+      :conventions 0},
+     :message
+     "Session wrapped: 4 decisions, 0 conventions, 7 notes [wrote 1 · merged 0 · skipped 0]"}}},
+  :in
+  ({}
+   [:crystal/wrap-notify
+    {:agent-id "Bfv3hFEH",
+     :session-id "K2gqM",
+     :project-id "qDTHJnX5",
+     :created-ids ["m-3" nil nil],
+     :stats {:decisions 4, :notes 7}}])},
+ :case-7
+ {:out
+  {:log
+   {:level :info,
+    :message "Wrap notify from hLM4Q82 (project: 2P4): 4 entries"},
+   :wrap-notify
+   {:agent-id "hLM4Q82",
+    :session-id "4zU2Cl6",
+    :project-id "2P4",
+    :created-ids [nil nil nil nil],
+    :stats
+    {:snippets 0,
+     :knowledge 0,
+     :decisions 0,
+     :kg-edges 0,
+     :other 0,
+     :plans 0,
+     :axioms 0,
+     :principles 0,
+     :memories-created 0,
+     :notes 0,
+     :kanban-closures 0,
+     :wrapped 0,
+     :conventions 0}},
+   :shout
+   {:agent-id "hLM4Q82",
+    :event-type :wrap_notify,
+    :data
+    {:session-id "4zU2Cl6",
+     :project-id "2P4",
+     :stats
+     {:snippets 0,
+      :knowledge 0,
+      :decisions 0,
+      :kg-edges 0,
+      :other 0,
+      :plans 0,
+      :axioms 0,
+      :principles 0,
+      :memories-created 0,
+      :notes 0,
+      :kanban-closures 0,
+      :wrapped 0,
+      :conventions 0},
+     :message
+     "Session wrapped: 0 decisions, 0 conventions [wrote 0 · merged 0 · skipped 0]"}}},
+  :in
+  ({}
+   [:crystal/wrap-notify
+    {:agent-id "hLM4Q82",
+     :session-id "4zU2Cl6",
+     :project-id "2P4",
+     :created-ids [nil nil nil nil],
+     :stats nil}])}}

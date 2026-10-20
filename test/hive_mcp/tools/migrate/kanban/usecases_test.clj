@@ -84,15 +84,25 @@
 (defn- full-target-entry [id title]
   (kanban-entry id title))
 
+(defrecord MemProbe [ids]
+  ports/IIdProbe
+  (held-ids [_] (r/ok (set ids))))
+
+(defrecord Durable []
+  ports/ITargetDurability
+  (check-durable [_] (r/ok {:connected? true})))
+
 (defn- new-deps
   [{:keys [ids source-entries target-entries fail-write-ids]
     :or   {ids [] source-entries {} target-entries {} fail-write-ids #{}}}]
   (mig-events/init!)
-  {:source-lister (mem-lister ids)
-   :source-reader (mem-reader source-entries)
-   :target-reader (mem-reader target-entries)
-   :writer        (mem-writer fail-write-ids)
-   :state         (mem-state)})
+  {:source-lister     (mem-lister ids)
+   :source-reader     (mem-reader source-entries)
+   :target-reader     (mem-reader target-entries)
+   :target-probe      (->MemProbe (keys target-entries))
+   :target-durability (->Durable)
+   :writer            (mem-writer fail-write-ids)
+   :state             (mem-state)})
 
 ;; =============================================================================
 ;; init-ids!

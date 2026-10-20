@@ -34,7 +34,9 @@
             [taoensso.timbre :as log]
             [hive-addon.registry.commands :as acmds]
             [hive-mcp.extensions.runtime :as runtime]
-            [hive-mcp.hot.reseat :as reseat]))
+            [hive-mcp.hot.reseat :as reseat]
+            [malli.core :as m]
+            [hive-addon.lifecycle.schema :as lschema]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -50,6 +52,8 @@
   [addon-id]
   (str addon-id "#dormant"))
 
+(m/=> stub-owner [:=> [:cat :any] :string])
+
 (def ^:private stub-marker ::stub-of)
 
 ;; =============================================================================
@@ -64,6 +68,8 @@
   [addon-id]
   (when-let [addon (addon-core/get-addon addon-id)]
     (surface/observed addon-id (vec (rescue [] (proto/tools addon))) (all-contributions))))
+
+(m/=> observe-surface [:=> [:cat :any] [:maybe lschema/Surface]])
 
 ;; =============================================================================
 ;; Stubs
@@ -124,6 +130,8 @@
   (when (seq (:tools s)) (reactive/refresh-server-tools!))
   nil)
 
+(m/=> install-stubs! [:=> [:cat :any [:maybe lschema/Surface] ifn?] :nil])
+
 (defn remove-stubs!
   "Withdraw ADDON-ID's stubs. A tool registered under a stub's name by the real
    addon is left alone."
@@ -137,9 +145,36 @@
       (when (seq stubs) (reactive/refresh-server-tools!))))
   nil)
 
+(m/=> remove-stubs! [:=> [:cat :any] :nil])
+
 ;; =============================================================================
 ;; Host
 ;; =============================================================================
+
+(def TeardownAnswer
+  "The TeardownReport `unmount-report` reads: what was torn down, what
+   failed, and the data-preservation claim when the teardown made one."
+  [:map
+   [:errors {:optional true} [:maybe [:sequential :any]]]
+   [:torn-down {:optional true} [:maybe [:sequential :any]]]
+   [:teardown/data-preserved? {:optional true} :boolean]])
+
+(def UnregisterAnswer
+  "The unregister report `unmount-report` reads."
+  [:map
+   [:unregistered {:optional true} [:maybe [:sequential :any]]]
+   [:unsupported {:optional true} [:maybe [:sequential :any]]]
+   [:errors {:optional true} [:maybe [:sequential :any]]]])
+
+(def UnmountReport
+  "The ILifecycleHost -unmount! answer."
+  [:map
+   [:ok? :boolean]
+   [:errors [:vector :any]]
+   [:torn-down [:vector :any]]
+   [:unregistered [:vector :any]]
+   [:teardown/data-preserved? {:optional true} :boolean]
+   [:unsupported {:optional true} [:vector :any]]])
 
 (defn unmount-report
   "PROMOTE: the ILifecycleHost -unmount! answer from a TeardownReport TD and an
@@ -157,6 +192,8 @@
       (seq (:unsupported un))
       (assoc :unsupported (vec (:unsupported un))))))
 
+(m/=> unmount-report [:=> [:cat [:maybe TeardownAnswer] [:maybe UnregisterAnswer]] UnmountReport])
+
 (defrecord McpLifecycleHost [mount-host resolve-config on-event]
   lport/ILifecycleHost
   (-mount! [_ specs peers]
@@ -172,6 +209,16 @@
   (-remove-stubs! [_ addon-id] (remove-stubs! addon-id))
   (-observe-surface [_ addon-id] (observe-surface addon-id)))
 
+(def LifecycleHost
+  "A McpLifecycleHost record. A host rebuilt from a bare map may carry nil
+   seams, so only the record and its fields are promised."
+  [:and
+   [:map {:gen/fmap map->McpLifecycleHost}
+    [:mount-host :any]
+    [:resolve-config [:maybe ifn?]]
+    [:on-event [:maybe ifn?]]]
+   [:fn #(instance? McpLifecycleHost %)]])
+
 (defn host
   "An ILifecycleHost over hive-mcp's addon registry. RESOLVE-CONFIG defaults to
    manifest/prepare-config, the resolver boot mounts with."
@@ -180,6 +227,13 @@
    (->McpLifecycleHost (mount-host/addon-registry-host)
                        (or resolve-config manifest/prepare-config)
                        (or on-event (constantly nil)))))
+
+(m/=> host
+      [:function
+       [:=> [:cat] LifecycleHost]
+       [:=> [:cat [:maybe [:map [:resolve-config {:optional true} [:maybe ifn?]]
+                           [:on-event {:optional true} [:maybe ifn?]]]]]
+        LifecycleHost]])
 
 ;; =============================================================================
 ;; Use tracking at dispatch
@@ -192,6 +246,8 @@
   (if-let [mgr (lc/installed-manager)]
     (lc/tracked mgr addon-id handler)
     handler))
+
+(m/=> wrap-handler [:=> [:cat :any ifn?] ifn?])
 
 ;; =============================================================================
 ;; Hot-reload companions
@@ -234,6 +290,8 @@
     (and (not (identical? c now))
          (= (.getName ^Class c) (.getName ^Class now)))))
 
+(m/=> stale-host? [:=> [:cat :any] :boolean])
+
 (defn stale-mount-host?
   "Does HOST carry a mount host built from an earlier AddonRegistryHost (what
    a reload of hive-mcp.extensions.mount-host leaves)? Then it lacks the
@@ -242,10 +300,14 @@
   (let [mh (:mount-host host)]
     (and (some? mh) (not (identical? mh (mount-host/current mh))))))
 
+(m/=> stale-mount-host? [:=> [:cat :any] :boolean])
+
 (defn needs-reseat?
   "Is anything in HOST's record graph stale: the host itself or its mount host?"
   [host]
   (or (stale-host? host) (stale-mount-host? host)))
+
+(m/=> needs-reseat? [:=> [:cat :any] :boolean])
 
 (defn rebuild-host
   "HOST's fields in a host built by the current constructor. Its mount host is
@@ -254,12 +316,16 @@
   [host]
   (map->McpLifecycleHost (update (into {} host) :mount-host mount-host/current)))
 
+(m/=> rebuild-host [:=> [:cat [:maybe :map]] LifecycleHost])
+
 (defn reseat-manager
   "MGR on HOST. Every atom (specs, states, surfaces, sweeper), the lock and
    the opts are shared with MGR, so no state is copied and none is lost; the
    :on-activated/:on-evicted hooks only read the shared :specs atom."
   [mgr host]
   (assoc mgr :host host))
+
+(m/=> reseat-manager [:=> [:cat :map :any] :map])
 
 (defn- rearm-stubs!
   "Re-advertise every dormant addon's stubs through MGR's host, activating
@@ -297,6 +363,13 @@
    hive-addon on the classpath has none. Read per call; a test binds it."
   (fn [] (rescue nil (requiring-resolve 'hive-addon.lifecycle/reseat-host!))))
 
+(def ReseatAnswer
+  "What a re-seat that ran answers: who did it and which host is installed
+   now, plus the delegate's ReseatReport keys or the narrow seam's own."
+  [:map
+   [:via [:enum :hive-addon :narrow-seam]]
+   [:host :string]])
+
 (defn delegated-report
   "PROMOTE: what `reseat-installed!` answers for a delegated re-seat. RET is
    hive-addon's ReseatReport (kept as is, so a failed reseat stays
@@ -305,6 +378,10 @@
   [ret host]
   (merge (if (and (map? ret) (not (record? ret))) ret {:reseated? true})
          {:via :hive-addon :host host}))
+
+(m/=> delegated-report
+      [:=> [:cat :any :string]
+       [:map [:via [:= :hive-addon]] [:host :string] [:reseated? {:optional true} :any]]])
 
 (defn reseat-installed!
   "Re-seat MGR on a host rebuilt by the current constructor. Delegates to
@@ -319,6 +396,8 @@
       (delegated-report ret (.getName (class (:host (or (lc/installed-manager) mgr))))))
     (narrow-reseat! mgr)))
 
+(m/=> reseat-installed! [:=> [:cat :map] ReseatAnswer])
+
 (defn reseat-host!
   "Re-seater for hive-mcp.hot.reseat: when the installed manager's host, or
    the mount host under it, is stale, re-seat it (`reseat-installed!`, which
@@ -330,6 +409,12 @@
       (nil? mgr)                        {:reseated? false :reason :no-manager}
       (not (needs-reseat? (:host mgr))) {:reseated? false :reason :current}
       :else                             (reseat-installed! mgr))))
+
+(m/=> reseat-host!
+      [:=> [:cat :any]
+       [:or
+        [:map [:reseated? [:= false]] [:reason [:enum :no-manager :current]]]
+        ReseatAnswer]])
 
 ;; Both namespaces define a record the installed host holds: a reload of
 ;; either leaves a stale instance only this re-seater can replace.
@@ -345,10 +430,16 @@
   [svc-cfg]
   (let [c (:lifecycle svc-cfg)] (if (map? c) c {})))
 
+(m/=> config [:=> [:cat :any] :map])
+
 (defn enabled? [svc-cfg] (true? (:enabled? (config svc-cfg))))
+
+(m/=> enabled? [:=> [:cat :any] :boolean])
 
 (defn surface-dir []
   (str (System/getProperty "user.home") "/.config/hive-mcp/data/addon-surfaces"))
+
+(m/=> surface-dir [:=> [:cat] :string])
 
 (defn boot!
   "Discover, compose and boot the classpath addons under the lifecycle.
@@ -389,8 +480,16 @@
            :compose {:report (:mount boot) :dropped dropped
                      :discovery-errors errors :layer-errors lerrs}})))))
 
+(m/=> boot!
+      [:=> [:cat [:maybe :map] [:maybe [:map [:on-event {:optional true} [:maybe ifn?]]]]]
+       [:or
+        [:map [:manager :map] [:boot lschema/BootReport] [:compose :map]]
+        [:map [:error :any]]]])
+
 (defn shutdown!
   "Stop the sweeper and uninstall the manager and dispatch wrap."
   []
   (ext/deregister! wrap-handler-key)
   (lc/uninstall!))
+
+(m/=> shutdown! [:=> [:cat] :nil])

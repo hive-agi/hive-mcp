@@ -14,7 +14,8 @@
    classpath, every method degrades to an `err` Result — the probe is inert, not
    fatal."
   (:require [hive-spi.diag.ports :as p]
-            [hive-dsl.result :as r]))
+            [hive-dsl.result :as r]
+            [malli.core :as m]))
 
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -107,3 +108,5 @@
    any datahike store is opened."
   []
   (->DatahikeQueryResultCache))
+
+(m/=> make-datahike-query-cache [:=> [:cat] [:fn {:gen/fmap (fn [_] (->DatahikeQueryResultCache)) :gen/elements [nil]} #(satisfies? p/ICacheProbe %)]])

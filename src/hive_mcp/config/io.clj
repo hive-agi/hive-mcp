@@ -5,7 +5,8 @@
   (:require [hive-di.file :as di-file]
             [hive-dsl.result :as result]
             [taoensso.timbre :as log]
-            [hive-mcp.config.path :as config-path]))
+            [hive-mcp.config.path :as config-path]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -38,6 +39,8 @@
       (result/ok? r)                      (result/ok nil)
       :else                               r)))
 
+(m/=> read-config-file [:=> [:cat :string] [:map [:ok {:optional true} [:maybe :map]] [:error {:optional true} :any]]])
+
 (defn write-config!
   "Write config map to disk as EDN. Creates parent dirs if needed.
    Perms hardened to 0600 — config holds secrets.
@@ -48,3 +51,5 @@
      (when (result/ok? r)
        (log/info "Config written to" path))
      r)))
+
+(m/=> write-config! [:function [:=> [:cat :map] :map] [:=> [:cat :map :string] :map]])

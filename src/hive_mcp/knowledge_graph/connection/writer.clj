@@ -1,5 +1,6 @@
 (ns hive-mcp.knowledge-graph.connection.writer
-  (:require [clojure.core.async :as async]
+  (:require [malli.core :as m]
+            [clojure.core.async :as async]
             [hive-dsl.batch :as dsl-batch]
             [hive-dsl.result :as r]
             [hive-mcp.knowledge-graph.connection.store :as store]
@@ -82,46 +83,59 @@
            (swap! in-flight - batch-item-count)))))))
 
 (defn- start-writer-loop!
-  "Start the background write-coalescing consumer loop.
+  "Start the background write-coalescing consumer.
    Creates fresh tx-chan + ctrl-chan each time (fixes channel death on stop).
-   Returns map with :tx-chan :ctrl-chan :go-chan."
-  []
-  (let [tx-chan   (async/chan 4096)
-        ctrl-chan (async/chan)
-        go-chan   (async/go-loop []
-                    (let [[val port] (async/alts! [ctrl-chan tx-chan])]
-                      (cond
-                       ;; ctrl-chan closed or signaled — graceful shutdown
-                        (= port ctrl-chan)
-                        (log/debug "Writer loop received shutdown signal")
+   The consumer runs on its OWN thread (async/thread with blocking takes), not
+   in a go block: flush-batch! is a blocking transact that can take minutes,
+   and parked inside a go block it would hold one of the few core.async
+   dispatch threads every other go block in the process (JSON-RPC intake
+   included) depends on.
+   `transact-fn` is the transaction port handed to flush-batch!; the zero-arity
+   uses the live store.
+   Returns map with :tx-chan :ctrl-chan :go-chan (the thread's result channel,
+   closed when the consumer exits)."
+  ([] (start-writer-loop! nil))
+  ([transact-fn]
+   (let [tx-chan   (async/chan 4096)
+         ctrl-chan (async/chan)
+         flush!    (if transact-fn
+                     (fn [batch n] (flush-batch! batch n transact-fn))
+                     flush-batch!)
+         go-chan   (async/thread
+                     (loop []
+                       (let [[val port] (async/alts!! [ctrl-chan tx-chan])]
+                         (cond
+                           ;; ctrl-chan closed or signaled — graceful shutdown
+                           (= port ctrl-chan)
+                           (log/debug "Writer loop received shutdown signal")
 
-                       ;; tx-chan closed — also done
-                        (nil? val)
-                        (log/debug "Writer loop tx-chan closed")
+                           ;; tx-chan closed — also done
+                           (nil? val)
+                           (log/debug "Writer loop tx-chan closed")
 
-                        :else
-                        (let [first-item val
-                              [batch producer-count]
-                              (loop [batch (into [] (dsl-batch/normalize-tx-datum first-item))
-                                     producer-count 1
-                                     remaining coalesce-window-ms]
-                                (if (or (<= remaining 0)
-                                        (>= (count batch) coalesce-max-batch))
-                                  [batch producer-count]
-                                  (let [t0 (System/currentTimeMillis)
-                                        [item port] (async/alts! [ctrl-chan
-                                                                  tx-chan
-                                                                  (async/timeout remaining)])]
-                                    (cond
-                                      (= port ctrl-chan) [batch producer-count]
-                                      (nil? item)        [batch producer-count]
-                                      :else
-                                      (recur (into batch (dsl-batch/normalize-tx-datum item))
-                                             (inc producer-count)
-                                             (- remaining (- (System/currentTimeMillis) t0)))))))]
-                          (flush-batch! batch producer-count)
-                          (recur)))))]
-    {:tx-chan tx-chan :ctrl-chan ctrl-chan :go-chan go-chan}))
+                           :else
+                           (let [first-item val
+                                 [batch producer-count]
+                                 (loop [batch (into [] (dsl-batch/normalize-tx-datum first-item))
+                                        producer-count 1
+                                        remaining coalesce-window-ms]
+                                   (if (or (<= remaining 0)
+                                           (>= (count batch) coalesce-max-batch))
+                                     [batch producer-count]
+                                     (let [t0 (System/currentTimeMillis)
+                                           [item port] (async/alts!! [ctrl-chan
+                                                                      tx-chan
+                                                                      (async/timeout remaining)])]
+                                       (cond
+                                         (= port ctrl-chan) [batch producer-count]
+                                         (nil? item)        [batch producer-count]
+                                         :else
+                                         (recur (into batch (dsl-batch/normalize-tx-datum item))
+                                                (inc producer-count)
+                                                (- remaining (- (System/currentTimeMillis) t0)))))))]
+                             (flush! batch producer-count)
+                             (recur))))))]
+     {:tx-chan tx-chan :ctrl-chan ctrl-chan :go-chan go-chan})))
 
 (defn ensure-writer!
   "Ensure the write-coalescing loop is running.
@@ -230,3 +244,13 @@
          + (if (sequential? tx-data) (count tx-data) 1))
   (r/rescue nil
             (proto/transact! store (dsl-batch/normalize-tx-datum tx-data))))
+
+(m/=> flush-status [:=> [:cat [:int {:min 0}]] [:enum :ok :weave/write-failed]])
+(m/=> ensure-writer! [:=> [:cat] :any])
+(m/=> writer-stats [:=> [:cat] [:map [:running? :boolean] [:batches-flushed [:int {:min 0}]] [:items-written [:int {:min 0}]]]])
+(m/=> flush-pending! [:function [:=> [:cat] [:enum :ok :weave/timeout :weave/write-failed]] [:=> [:cat :int] [:enum :ok :weave/timeout :weave/write-failed]]])
+(m/=> offer-coalesced! [:=> [:cat :any] :boolean])
+(m/=> write-sync-fallback! [:=> [:cat :any :any] :any])
+
+(m/=> stop-writer! [:function [:=> [:cat] :nil]
+                             [:=> [:cat [:int {:min 0}]] :nil]])

@@ -11,7 +11,9 @@
    and the schema-mismatch signal vanished — leaving no metric, no
    log line, and no audit trail for an actionable misconfiguration."
   (:require [hive-mcp.events.core :as ev]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.events.handlers.schema :as hs]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -40,6 +42,17 @@
          :details details
          :data data}})
 
+(m/=> handle-dim-mismatch
+      [:=> hs/HandlerArgs
+       [:map
+        [:log [:map
+               [:level [:= :warn]]
+               [:event [:= :resilience/dim-mismatch]]
+               [:message :any]
+               [:ex-class :any]
+               [:details :any]
+               [:data :any]]]]])
+
 ;; =============================================================================
 ;; Registration
 ;; =============================================================================
@@ -66,7 +79,11 @@
       (log/info "[hive-events] Resilience handlers registered: :resilience/dim-mismatch"))
     true))
 
+(m/=> register-handlers! [:=> [:cat] [:= true]])
+
 (defn reset-registration!
   "Reset registration state. Tests only."
   []
   (reset! *registered false))
+
+(m/=> reset-registration! [:=> [:cat] [:= false]])

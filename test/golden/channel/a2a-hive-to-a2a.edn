@@ -1,0 +1,162 @@
+{:case-0
+ {:out
+  {:messageId "msg-fixed",
+   :role "ROLE_AGENT",
+   :parts [{:kind "text", :text ""}],
+   :extensions ["https://hive-agi.org/a2a/ext/swarm-routing/v1"],
+   :metadata
+   {"hive.swarm/from" "coordinator:7",
+    "hive.swarm/event" "progress",
+    "hive.swarm/to" "ling-2",
+    "hive.swarm/project-id" "hive"},
+   :contextId "a2actx-c"},
+  :in
+  {:agent-id "coordinator:7",
+   :event-type :progress,
+   :shout-id "msg-fixed",
+   :to "ling-2",
+   :context-id "a2actx-c",
+   :project-id "hive"}},
+ :case-1
+ {:out
+  {:messageId "msg-fixed",
+   :role "ROLE_AGENT",
+   :parts [{:kind "text", :text "task-9"}],
+   :extensions ["https://hive-agi.org/a2a/ext/swarm-routing/v1"],
+   :metadata
+   {"hive.swarm/from" "coordinator:7",
+    "hive.swarm/event" "completed",
+    "hive.swarm/timestamp" 1700000000000},
+   :contextId "a2actx-c",
+   :taskId "task-9"},
+  :in
+  {:agent-id "coordinator:7",
+   :event-type "completed",
+   :message "  ",
+   :task "task-9",
+   :shout-id "msg-fixed",
+   :context-id "a2actx-c",
+   :timestamp 1700000000000}},
+ :case-2
+ {:out
+  {:messageId "msg-fixed",
+   :role "ROLE_AGENT",
+   :parts [{:kind "text", :text ""}],
+   :extensions ["https://hive-agi.org/a2a/ext/swarm-routing/v1"],
+   :metadata
+   {"hive.swarm/from" "ling-1",
+    "hive.swarm/event" "progress",
+    "hive.swarm/broadcast" true,
+    "hive.swarm/broadcast-reason" ":halt",
+    "hive.swarm/ref" "ctx-1-0",
+    "hive.swarm/timestamp" 1700000000000}},
+  :in
+  {:agent-id "ling-1",
+   :event-type :progress,
+   :task "",
+   :shout-id "msg-fixed",
+   :broadcast? true,
+   :broadcast-reason :halt,
+   :ref "ctx-1-0",
+   :timestamp 1700000000000}},
+ :case-3
+ {:out
+  {:messageId "msg-other",
+   :role "ROLE_AGENT",
+   :parts [{:kind "text", :text ""}],
+   :extensions ["https://hive-agi.org/a2a/ext/swarm-routing/v1"],
+   :metadata
+   {"hive.swarm/from" "ling-1",
+    "hive.swarm/event" "error",
+    "hive.swarm/to" "ling-2"},
+   :contextId "a2actx-c"},
+  :in
+  {:agent-id "ling-1",
+   :event-type :error,
+   :shout-id "msg-other",
+   :to "ling-2",
+   :context-id "a2actx-c"}},
+ :case-4
+ {:out
+  {:messageId "msg-fixed",
+   :role "ROLE_AGENT",
+   :parts [{:kind "text", :text "task-9"}],
+   :extensions ["https://hive-agi.org/a2a/ext/swarm-routing/v1"],
+   :metadata
+   {"hive.swarm/from" "ling-1",
+    "hive.swarm/event" "progress",
+    "hive.swarm/broadcast" true,
+    "hive.swarm/broadcast-reason" ":halt"},
+   :contextId "a2actx-c",
+   :taskId "task-9"},
+  :in
+  {:agent-id "ling-1",
+   :event-type :progress,
+   :task "task-9",
+   :shout-id "msg-fixed",
+   :context-id "a2actx-c",
+   :broadcast? true,
+   :broadcast-reason :halt}},
+ :case-5
+ {:out
+  {:messageId "msg-fixed",
+   :role "ROLE_AGENT",
+   :parts [{:kind "text", :text ""}],
+   :extensions ["https://hive-agi.org/a2a/ext/swarm-routing/v1"],
+   :metadata
+   {"hive.swarm/from" "ling-1",
+    "hive.swarm/event" "progress",
+    "hive.swarm/to" "ling-2",
+    "hive.swarm/broadcast" true,
+    "hive.swarm/deliberate" true,
+    "hive.swarm/project-id" "hive"},
+   :contextId "a2actx-c"},
+  :in
+  {:agent-id "ling-1",
+   :task "",
+   :broadcast? true,
+   :shout-id "msg-fixed",
+   :project-id "hive",
+   :context-id "a2actx-c",
+   :event-type :progress,
+   :to "ling-2",
+   :deliberate? true}},
+ :case-6
+ {:out
+  {:messageId "msg-other",
+   :role "ROLE_AGENT",
+   :parts [{:kind "text", :text "did a thing"}],
+   :extensions ["https://hive-agi.org/a2a/ext/swarm-routing/v1"],
+   :metadata
+   {"hive.swarm/from" "ling-1",
+    "hive.swarm/event" "error",
+    "hive.swarm/to" "ling-2",
+    "hive.swarm/deliberate" true,
+    "hive.swarm/project-id" "hive"}},
+  :in
+  {:agent-id "ling-1",
+   :event-type :error,
+   :message "did a thing",
+   :shout-id "msg-other",
+   :to "ling-2",
+   :deliberate? true,
+   :project-id "hive"}},
+ :case-7
+ {:out
+  {:messageId "msg-other",
+   :role "ROLE_AGENT",
+   :parts [{:kind "text", :text "did a thing"}],
+   :extensions ["https://hive-agi.org/a2a/ext/swarm-routing/v1"],
+   :metadata
+   {"hive.swarm/from" "coordinator:7",
+    "hive.swarm/event" "progress",
+    "hive.swarm/to" "ling-2",
+    "hive.swarm/broadcast-reason" ":halt"}},
+  :in
+  {:agent-id "coordinator:7",
+   :event-type :progress,
+   :message "did a thing",
+   :task "",
+   :shout-id "msg-other",
+   :to "ling-2",
+   :broadcast-reason :halt}}}

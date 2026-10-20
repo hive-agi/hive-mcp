@@ -12,7 +12,8 @@
   (:require [hive-addon.mount.port :as port]
             [hive-mcp.addons.core :as addon-core]
             [hive-addon.protocol :as proto]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 
@@ -70,6 +71,31 @@
   [sym]
   (try (requiring-resolve sym) (catch Throwable _absent-in-this-hive-addon nil)))
 
+(def RegistrySeams
+  "The addons.core seams an AddonRegistryHost is built from. Each may be left
+   out of the opts map, and falls back to addons.core."
+  [:map
+   [:reg-fn {:optional true} ifn?]
+   [:init-fn {:optional true} ifn?]
+   [:shutdown-fn {:optional true} ifn?]
+   [:unreg-fn {:optional true} ifn?]
+   [:registered-fn {:optional true} ifn?]])
+
+(def RegistryHost
+  "An AddonRegistryHost record with every seam present."
+  [:and
+   [:map {:gen/fmap map->AddonRegistryHost}
+    [:reg-fn ifn?] [:init-fn ifn?] [:shutdown-fn ifn?] [:unreg-fn ifn?] [:registered-fn ifn?]]
+   [:fn #(instance? AddonRegistryHost %)]])
+
+(def UnregisterReport
+  "What a plug-out answers: the ids dropped, the ids the host cannot drop,
+   and one message per failure."
+  [:map
+   [:unregistered [:vector :any]]
+   [:unsupported [:vector :any]]
+   [:errors [:vector :string]]])
+
 (defn unregister-entry!
   "Drop ADDON-ID from HOST's registry through its :unreg-fn, when it is there.
    Called only after shutdown!, so unregister-addon! meets a non-:active entry
@@ -78,6 +104,10 @@
   (when (some? ((:registered-fn host) addon-id))
     ((:unreg-fn host) addon-id))
   host)
+
+(m/=> unregister-entry!
+      [:=> [:cat [:map [:registered-fn ifn?] [:unreg-fn ifn?]] :any]
+       [:map [:registered-fn ifn?] [:unreg-fn ifn?]]])
 
 (def ^:private unregister-methods
   ;; Reaches unregister-entry! through its var on every call (Capture-by-Var).
@@ -96,6 +126,8 @@
       true)
     false))
 
+(m/=> ensure-unregister! [:=> [:cat] :boolean])
+
 (defn addon-registry-host
   "Construct an IMountHost backed by the hive-mcp addon registry. opts may
    override the default addons.core seams (:reg-fn :init-fn :shutdown-fn
@@ -112,6 +144,11 @@
           registered-fn (fn [id] (:addon (addon-core/get-addon-entry id)))}}]
    (ensure-unregister!)
    (->AddonRegistryHost reg-fn init-fn shutdown-fn unreg-fn registered-fn)))
+
+(m/=> addon-registry-host
+      [:function
+       [:=> [:cat] RegistryHost]
+       [:=> [:cat [:maybe RegistrySeams]] RegistryHost]])
 
 (defn current
   "HOST rebuilt by the current AddonRegistryHost constructor when it was
@@ -154,3 +191,5 @@
   (if-let [f (soft 'hive-addon.mount.boundary/unregister!)]
     (f host addon-ids)
     (unregister-via-seam host addon-ids)))
+
+(m/=> unregister! [:=> [:cat :any [:maybe [:or [:sequential :any] [:set :any]]]] UnregisterReport])

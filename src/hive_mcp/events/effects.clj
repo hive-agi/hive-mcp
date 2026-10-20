@@ -19,7 +19,8 @@
    (effects/register-effects!)
    ```"
 
-  (:require [hive-mcp.events.effects.coeffect :as cofx-effects]
+  (:require [malli.core :as m]
+            [hive-mcp.events.effects.coeffect :as cofx-effects]
             [hive-mcp.events.effects.notification :as notif-effects]
             [hive-mcp.events.effects.dispatch :as dispatch-effects]
             [hive-mcp.events.effects.infrastructure :as infra-effects]
@@ -48,6 +49,8 @@
                 (constantly nil)
                 f))
 
+(m/=> set-memory-write-handler! [:=> [:cat [:maybe ifn?]] [:maybe ifn?]])
+
 (defn set-wrap-crystallize-handler!
   "Set the handler function for the :wrap-crystallize effect.
 
@@ -57,6 +60,8 @@
   (soft/host-or 'hive-mcp.events.effects.memory/set-wrap-crystallize-handler!
                 (constantly nil)
                 f))
+
+(m/=> set-wrap-crystallize-handler! [:=> [:cat [:maybe ifn?]] [:maybe ifn?]])
 
 ;; =============================================================================
 ;; Registration
@@ -121,6 +126,8 @@
       (log/debug "[hive-events] Effect/coeffect submodules re-registered"))
     true))
 
+(m/=> register-effects! [:=> [:cat] :boolean])
+
 (defn reset-registration!
   "Reset registration state. Primarily for testing.
 
@@ -131,3 +138,5 @@
   (guards/when-not-coordinator
    "events.effects/reset-registration! blocked"
    (reset! *registered false)))
+
+(m/=> reset-registration! [:=> [:cat] :boolean])

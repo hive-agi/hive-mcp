@@ -8,7 +8,9 @@
    - :kg/node-promoted  - Knowledge promoted to parent scope"
 
   (:require [hive-mcp.events.core :as ev]
-            [hive-mcp.events.interceptors :as interceptors]))
+            [hive-mcp.events.interceptors :as interceptors]
+            [malli.core :as m]
+            [hive-mcp.events.handlers.schema :as hs]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -62,6 +64,18 @@
                               :confidence (or confidence 1.0)
                               :created-by created-by}}}))
 
+(m/=> handle-kg-edge-created
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:channel-publish [:map
+                           [:event-type [:= :kg-change]]
+                           [:data [:map
+                                   [:action [:= :created]]
+                                   [:edge-id :any] [:from :any] [:to :any]
+                                   [:relation :any] [:scope :any]
+                                   [:confidence :any] [:created-by :any]]]]]]])
+
 ;; =============================================================================
 ;; Handler: :kg/edge-updated
 ;; =============================================================================
@@ -106,6 +120,19 @@
                               :reason reason
                               :updated-by updated-by}}}))
 
+(m/=> handle-kg-edge-updated
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:channel-publish [:map
+                           [:event-type [:= :kg-change]]
+                           [:data [:map
+                                   [:action [:= :updated]]
+                                   [:edge-id :any]
+                                   [:old-confidence :any] [:new-confidence :any]
+                                   [:delta [:maybe number?]]
+                                   [:reason :any] [:updated-by :any]]]]]]])
+
 ;; =============================================================================
 ;; Handler: :kg/edge-removed
 ;; =============================================================================
@@ -143,6 +170,17 @@
                             :relation relation
                             :reason reason
                             :removed-by removed-by}}})
+
+(m/=> handle-kg-edge-removed
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:channel-publish [:map
+                           [:event-type [:= :kg-change]]
+                           [:data [:map
+                                   [:action [:= :removed]]
+                                   [:edge-id :any] [:from :any] [:to :any]
+                                   [:relation :any] [:reason :any] [:removed-by :any]]]]]]])
 
 ;; =============================================================================
 ;; Handler: :kg/node-promoted
@@ -185,6 +223,22 @@
                     :to-scope to-scope
                     :edge-count edge-count}}}))
 
+(m/=> handle-kg-node-promoted
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:channel-publish [:map
+                           [:event-type [:= :kg-promotion]]
+                           [:data [:map
+                                   [:node-id :any] [:from-scope :any] [:to-scope :any]
+                                   [:edges-promoted :any] [:promoted-by :any]]]]]
+        [:shout [:map
+                 [:agent-id :any]
+                 [:event-type [:= :kg-promotion]]
+                 [:data [:map
+                         [:node-id :any] [:from-scope :any] [:to-scope :any]
+                         [:edge-count [:int {:min 0}]]]]]]]])
+
 ;; =============================================================================
 ;; Handler: :kg/edges-batch-created (Bulk operations)
 ;; =============================================================================
@@ -219,6 +273,18 @@
                               :scope scope
                               :created-by created-by}}}))
 
+(m/=> handle-kg-edges-batch-created
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:channel-publish [:map
+                           [:event-type [:= :kg-batch-change]]
+                           [:data [:map
+                                   [:action [:= :batch-created]]
+                                   [:count [:int {:min 0}]]
+                                   [:by-relation [:map-of :any [:int {:min 1}]]]
+                                   [:scope :any] [:created-by :any]]]]]]])
+
 ;; =============================================================================
 ;; Registration
 ;; =============================================================================
@@ -252,3 +318,5 @@
   (ev/reg-event :kg/edges-batch-created
                 [interceptors/debug]
                 handle-kg-edges-batch-created))
+
+(m/=> register-handlers! [:=> [:cat] hs/HandlerRegistry])

@@ -10,7 +10,9 @@
             [hive-mcp.knowledge-graph.connection :as conn]
             [hive-mcp.knowledge-graph.disc.hash :as hash]
             [hive-mcp.knowledge-graph.disc.volatility :as vol]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.knowledge-graph.disc.schema :as ds]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -141,3 +143,13 @@
           (update-disc! path {:disc/last-read-at now
                               :disc/read-count 1})
           (get-disc path))))))
+
+(m/=> add-disc! [:=> [:cat ds/DiscSpec] [:maybe :int]])
+(m/=> get-disc [:=> [:cat :string] [:maybe ds/Disc]])
+(m/=> disc-exists? [:=> [:cat :string] :boolean])
+(m/=> update-disc! [:=> [:cat :string ds/DiscUpdates] [:maybe ds/Disc]])
+(m/=> remove-disc! [:=> [:cat :string] [:maybe [:= true]]])
+(m/=> get-all-discs [:=> [:cat ds/ProjectOpts] [:sequential ds/Disc]])
+(m/=> batch-update-discs! [:=> [:cat ds/PathUpdatePairs] ds/BatchUpdateResult])
+(m/=> disc-stats [:=> [:cat] [:map [:total ds/Count]]])
+(m/=> touch-disc! [:=> [:cat ds/Path ds/ProjectOpts] [:maybe ds/Disc]])

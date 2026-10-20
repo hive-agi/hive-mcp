@@ -15,7 +15,8 @@
 
    Decision: 20260429230453-7e7627cc"
   (:refer-clojure :exclude [run!])
-  (:require [hive.events.multi :as ev-multi]
+  (:require [malli.core :as m]
+            [hive.events.multi :as ev-multi]
             [hive-mcp.multi.registry :as registry]
             [hive-dsl.result :as r :refer [rescue]]
             [clojure.edn :as edn]
@@ -101,6 +102,8 @@
         (r/err :multi/plan-persist-failed
                {:message "hive-mcp.tools.memory.crud/handle-add not resolvable"})))))
 
+(m/=> compile-and-persist! [:=> [:cat [:sequential :map] :map] :map])
+
 ;; =============================================================================
 ;; Fetch
 ;; =============================================================================
@@ -141,6 +144,8 @@
            {:plan-id plan-id
             :message "memory.get-full not resolvable"})))
 
+(m/=> fetch [:=> [:cat :string] :map])
+
 ;; =============================================================================
 ;; Run
 ;; =============================================================================
@@ -180,3 +185,5 @@
                       :message "run-multi returned nil"})))
           (r/err :multi/plan-compile-failed
                  {:message "tools.multi/run-multi not resolvable"}))))))
+
+(m/=> run! [:=> [:cat :string :map] :map])

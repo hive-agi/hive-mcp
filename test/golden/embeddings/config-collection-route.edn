@@ -1,0 +1,86 @@
+{:case-0
+ {:out {:provider :openrouter, :message "", :level :info},
+  :in ({:collection "", :primary :venice, :success-message ""} true)},
+ :case-1
+ {:out {:provider :ollama},
+  :in
+  ({:collection "",
+    :primary :ollama,
+    :success-message nil,
+    :fallback-warning nil}
+   true)},
+ :case-10
+ {:out {:provider :openrouter, :message nil, :level :info},
+  :in
+  ({:collection "FG515M3RX", :primary :openai, :fallback :ollama}
+   true)},
+ :case-11
+ {:out {:provider :openrouter, :message nil, :level :info},
+  :in
+  ({:collection "uH00RG4", :primary :openai, :fallback-warning nil}
+   true)},
+ :case-2
+ {:out {:provider :openrouter, :message nil, :level :info},
+  :in
+  ({:collection "M",
+    :primary :venice,
+    :fallback nil,
+    :success-message nil}
+   true)},
+ :case-3
+ {:out {:provider :openrouter, :message "k", :level :info},
+  :in
+  ({:collection "XO",
+    :primary :openai,
+    :fallback nil,
+    :success-message "k"}
+   true)},
+ :case-4
+ {:out {:provider :openrouter, :message nil, :level :info},
+  :in
+  ({:collection "",
+    :primary :openrouter,
+    :fallback nil,
+    :fallback-warning nil}
+   true)},
+ :case-5
+ {:out {:provider :ollama},
+  :in
+  ({:collection "21",
+    :primary :ollama,
+    :fallback nil,
+    :success-message "H",
+    :fallback-warning nil}
+   false)},
+ :case-6
+ {:out {:provider nil, :message nil, :level nil},
+  :in
+  ({:collection "",
+    :primary :venice,
+    :fallback nil,
+    :success-message nil}
+   false)},
+ :case-7
+ {:out {:provider nil, :message nil, :level nil},
+  :in
+  ({:collection "DmNias8",
+    :primary :openai,
+    :fallback nil,
+    :fallback-warning nil}
+   false)},
+ :case-8
+ {:out {:provider nil, :message nil, :level nil},
+  :in
+  ({:collection "u",
+    :primary :openai,
+    :fallback nil,
+    :success-message ""}
+   false)},
+ :case-9
+ {:out {:provider :openrouter, :message "", :level :info},
+  :in
+  ({:collection "lGC5Y60",
+    :primary :openai,
+    :fallback nil,
+    :success-message ""}
+   true)}}

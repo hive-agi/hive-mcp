@@ -11,7 +11,8 @@
      same key + same owner   → idempotent silent replace
      same key + different owner → :multi/registry-conflict warn-log,
                                    first-write-wins"
-  (:require [hive-mcp.multi.registry.owned :as owned]))
+  (:require [malli.core :as m]
+            [hive-mcp.multi.registry.owned :as owned]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -32,20 +33,28 @@
                    {:stamp-fn #(assoc % :registered-at (java.time.Instant/now))
                     :overridable-owner :multi/core}))
 
+(m/=> register! [:=> [:cat [:or :keyword :string] :string [:map [:handler [:fn {:gen/elements [identity]} ifn?]] [:batchable {:optional true} :any]]] [:enum :ok :replaced :conflict]])
+
 (defn deregister-by-owner!
   "Remove every tool registered by `owner`. Returns set of removed names."
   [owner]
   (owned/deregister-by-owner! state :by-name owner))
+
+(m/=> deregister-by-owner! [:=> [:cat [:or :keyword :string]] [:set :string]])
 
 (defn lookup
   "Return the registered entry for a tool-name, or nil."
   [tool-name]
   (owned/lookup state :by-name tool-name))
 
+(m/=> lookup [:=> [:cat :string] [:maybe [:map [:owner [:or :keyword :string]] [:handler [:fn {:gen/elements [identity]} ifn?]]]]])
+
 (defn all-names
   "Return a sorted vector of registered tool names."
   []
   (vec (sort (keys (:by-name @state)))))
+
+(m/=> all-names [:=> [:cat] [:vector :string]])
 
 (defn snapshot
   "Immutable snapshot for deterministic plan compilation.
@@ -56,7 +65,11 @@
   (let [s @state]
     {:version (hash s) :data s}))
 
+(m/=> snapshot [:=> [:cat] [:map [:version :int] [:data :map]]])
+
 (defn reset-for-test!
   "Test-only — clear all entries. Do NOT call from production code."
   []
   (reset! state {:by-name {} :by-owner {}}))
+
+(m/=> reset-for-test! [:=> [:cat] :map])

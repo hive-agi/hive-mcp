@@ -1,0 +1,49 @@
+{:case-0
+ {:out
+  {:mcp-response
+   {:type "text",
+    :text "{\"error\":\"Entry not found\",\"id\":\"m11-absent-J\"}"}},
+  :in ({} [:memory/get {:id "m11-absent-J"}])},
+ :case-1
+ {:out
+  {:mcp-response
+   {:type "text",
+    :text "{\"error\":\"Entry not found\",\"id\":\"m11-absent-63\"}"}},
+  :in ({} [:memory/get {:id "m11-absent-63"}])},
+ :case-2
+ {:out
+  {:mcp-response
+   {:type "text",
+    :text "{\"error\":\"Entry not found\",\"id\":\"m11-absent-F6\"}"}},
+  :in ({} [:memory/get {:id "m11-absent-F6"}])},
+ :case-3
+ {:out
+  {:mcp-response
+   {:type "text",
+    :text
+    "{\"error\":\"Entry not found\",\"id\":\"m11-absent-0Rj\"}"}},
+  :in ({} [:memory/get {:id "m11-absent-0Rj"}])},
+ :case-4
+ {:out
+  {:mcp-response
+   {:type "text",
+    :text "{\"error\":\"Entry not found\",\"id\":\"m11-absent-bR\"}"}},
+  :in ({} [:memory/get {:id "m11-absent-bR"}])},
+ :case-5
+ {:out
+  {:mcp-response
+   {:type "text",
+    :text "{\"error\":\"Entry not found\",\"id\":\"m11-absent-J\"}"}},
+  :in ({} [:memory/get {:id "m11-absent-J"}])},
+ :case-6
+ {:out
+  {:mcp-response
+   {:type "text",
+    :text "{\"error\":\"Entry not found\",\"id\":\"m11-absent-cz\"}"}},
+  :in ({} [:memory/get {:id "m11-absent-cz"}])},
+ :case-7
+ {:out
+  {:mcp-response
+   {:type "text",
+    :text "{\"error\":\"Entry not found\",\"id\":\"m11-absent-H\"}"}},
+  :in ({} [:memory/get {:id "m11-absent-H"}])}}
