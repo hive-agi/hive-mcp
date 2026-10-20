@@ -465,7 +465,8 @@
 
 (defn spark!
   "Spawn lings for ready tasks.
-   Routes: :claude (Emacs), :vterm, :headless/:agent-sdk/:openrouter,
+   Routes: :claude (Emacs), :vterm, :headless/:openrouter,
+
    :orchestrator (single ling + Task subagents), :mixed (fill vterm slots,
    overflow to headless). Without a mode: (lifecycle/default-spawn-mode),
    i.e. config.edn [:ling :default-spawn-mode], shipped :headless.
