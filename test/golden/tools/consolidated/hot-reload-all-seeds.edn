@@ -1,0 +1,94 @@
+{:case-0
+ {:out {:seeds #{"x"}, :skipped []},
+  :in #:hot{:registered [#:addon{:id "x"}], :skipped []}},
+ :case-1
+ {:out
+  {:seeds #{"x" "z"},
+   :skipped
+   [{:addon/id "c",
+     :hot/source-kind :absent,
+     :reason
+     "constructor namespace has no source on the classpath (AOT-only or generated)"}
+    {:addon/id "a",
+     :hot/source-kind :weird,
+     :reason "not reloadable (source-kind :weird)"}
+    {:addon/id "c",
+     :hot/source-kind :absent,
+     :reason
+     "constructor namespace has no source on the classpath (AOT-only or generated)"}]},
+  :in
+  #:hot{:registered [#:addon{:id "z"} #:addon{:id "x"}],
+        :skipped
+        [{:addon/id "c", :hot/source-kind :absent}
+         {:addon/id "a", :hot/source-kind :weird}
+         {:addon/id "c", :hot/source-kind :absent}]}},
+ :case-2
+ {:out
+  {:seeds #{},
+   :skipped
+   [{:addon/id "c",
+     :hot/source-kind :absent,
+     :reason
+     "constructor namespace has no source on the classpath (AOT-only or generated)"}]},
+  :in
+  #:hot{:registered [],
+        :skipped [{:addon/id "c", :hot/source-kind :absent}]}},
+ :case-3
+ {:out
+  {:seeds #{"x"},
+   :skipped
+   [{:addon/id "c",
+     :hot/source-kind :weird,
+     :reason "not reloadable (source-kind :weird)"}
+    {:addon/id "b",
+     :hot/source-kind :weird,
+     :reason "not reloadable (source-kind :weird)"}]},
+  :in
+  #:hot{:registered [#:addon{:id "x"}],
+        :skipped
+        [{:addon/id "c", :hot/source-kind :weird}
+         {:addon/id "b", :hot/source-kind :weird}]}},
+ :case-4
+ {:out
+  {:seeds #{"y" "z"},
+   :skipped
+   [{:addon/id "c",
+     :hot/source-kind :weird,
+     :reason "not reloadable (source-kind :weird)"}]},
+  :in
+  #:hot{:registered
+        [#:addon{:id "y"} #:addon{:id "z"} #:addon{:id "z"}],
+        :skipped [{:addon/id "c", :hot/source-kind :weird}]}},
+ :case-5
+ {:out
+  {:seeds #{"z"},
+   :skipped
+   [{:addon/id "c",
+     :hot/source-kind :absent,
+     :reason
+     "constructor namespace has no source on the classpath (AOT-only or generated)"}]},
+  :in
+  #:hot{:registered [#:addon{:id "z"}],
+        :skipped [{:addon/id "c", :hot/source-kind :absent}]}},
+ :case-6
+ {:out
+  {:seeds #{},
+   :skipped
+   [{:addon/id "b",
+     :hot/source-kind :jar,
+     :reason
+     "jar-backed: its bytes cannot change without a restart (restart-required)"}]},
+  :in
+  #:hot{:registered [],
+        :skipped [{:addon/id "b", :hot/source-kind :jar}]}},
+ :case-7
+ {:out
+  {:seeds #{"y"},
+   :skipped
+   [{:addon/id "a",
+     :hot/source-kind :jar,
+     :reason
+     "jar-backed: its bytes cannot change without a restart (restart-required)"}]},
+  :in
+  #:hot{:registered [#:addon{:id "y"}],
+        :skipped [{:addon/id "a", :hot/source-kind :jar}]}}}
