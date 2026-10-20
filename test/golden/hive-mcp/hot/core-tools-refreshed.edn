@@ -1,0 +1,9 @@
+{:case-0 {:out 7, :in ({} 42 {:server-tools 7})},
+ :case-1 {:out 42, :in (#:host{:refresh-tools! nil} 42 "x")},
+ :case-2 {:out nil, :in ({} 42 "x")},
+ :case-3 {:out nil, :in ({} nil "x")},
+ :case-4
+ {:out 42, :in (#:host{:refresh-tools! nil} 42 {:server-tools 7})},
+ :case-5 {:out 7, :in ({} 42 {:server-tools 7})},
+ :case-6 {:out 7, :in ({} nil {:server-tools 7})},
+ :case-7 {:out 7, :in ({} 42 {:server-tools 7})}}
