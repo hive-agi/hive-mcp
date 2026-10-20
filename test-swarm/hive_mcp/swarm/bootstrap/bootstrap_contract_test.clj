@@ -6,6 +6,7 @@
    fn. Also the coverage gate for src/hive_mcp/swarm/bootstrap."
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
+            [hive-mcp.swarm.addon-gate :as gate]
             [hive-mcp.swarm.bootstrap.datahike :as dh]
             [hive-mcp.swarm.bootstrap.datahike-driver :as driver]
             [hive-mcp.swarm.bootstrap.factory :as factory]
@@ -104,6 +105,41 @@
     (is (m/validate bp/Bootstrap (dh/map->DatahikeBootstrap {:conn-atom (atom nil) :cfg cfg})))
     (is (= "data/swarm/datahike" (get-in (dh/make-datahike-bootstrap) [:cfg :store :path])))))
 
+;; NoopBootstrap and DatahikeBootstrap are hive-agent records behind compat
+;; shims: without the addon only the shims' addon-missing behaviour is
+;; observable, so the tests that build them run only with the addon (see
+;; test-ns-hook). The port itself is exercised offline through this stub.
+(defrecord StubBootstrap [rows]
+  bp/ISwarmBootstrap
+  (-load-slaves [_] (vec (vals @rows)))
+  (-snapshot-slave! [this id data] (swap! rows assoc id (assoc data :slave-id id)) this)
+  (-forget-slave! [this id] (swap! rows dissoc id) this)
+  (-close! [_] nil))
+
+(deftest factory-re-exports-drive-any-port-impl-test
+  (testing "load/snapshot/forget/close go through the port, whatever implements it"
+    (let [bs (->StubBootstrap (atom (sorted-map)))]
+      (is (m/validate bp/Bootstrap bs))
+      (is (identical? bs (factory/snapshot-slave! bs "s1" {:name "one"})))
+      (is (identical? bs (factory/snapshot-slave! bs "s2" {:name "two"})))
+      (is (identical? bs (factory/forget-slave! bs "s2")))
+      (is (= [{:slave-id "s1" :name "one"}] (factory/load-slaves bs)))
+      (is (every? #(m/validate bp/SlaveRow %) (factory/load-slaves bs)))
+      (is (nil? (factory/close! bs))))))
+
+(deftest factory-without-the-addon-test
+  (testing "the :emacs source is built in hive-mcp and needs no addon"
+    (is (= :emacs (kind (factory/make-bootstrap {} (constantly nil)))))
+    (is (m/validate bp/Bootstrap (factory/make-bootstrap {:source :emacs} (constantly nil)))))
+  (when-not (gate/present?)
+    (testing "every source the addon builds raises :swarm/addon-missing"
+      (is (gate/addon-missing? #(factory/make-bootstrap {:source :none} (constantly nil))))
+      (is (gate/addon-missing? #(factory/make-bootstrap {:source :bogus} (constantly nil))))
+      (is (gate/addon-missing? #(factory/make-bootstrap {:source :datahike :db-path (temp-path)}
+                                                        (constantly nil))))
+      (is (gate/addon-missing? #(noop/make-noop-bootstrap)))
+      (is (gate/addon-missing? #(dh/make-datahike-bootstrap {:db-path (temp-path)}))))))
+
 (deftest bootstrap-schemas-generate-test
   (doseq [s [bp/Bootstrap bp/SlaveRow dh/ConnAtom dh/Config factory/ConfigFn]]
     (is (seq (mg/sample s {:size 3})) (pr-str (m/form s)))))
@@ -116,6 +152,16 @@
           arity (if (= :function (m/type s)) (m/children s) [s])
           side (take 2 (m/children arity))]
     (is (seq (mg/sample side {:size 2 :seed 7})) (str ns-sym "/" fn-sym))))
+
+(def ^:private offline?
+  "The tests that never build a hive-agent bootstrap."
+  (gate/offline #{"factory-re-exports-drive-any-port-impl-test" "factory-without-the-addon-test"
+                  "bootstrap-schemas-generate-test"
+                  "every-bootstrap-contract-generates-both-sides-test"
+                  "swarm-bootstrap-contracts-gate"}
+                []))
+
+(defn test-ns-hook [] (gate/run 'hive-mcp.swarm.bootstrap.bootstrap-contract-test offline?))
 
 (deftest-contract-coverage swarm-bootstrap-contracts-gate
   {:paths ["src/hive_mcp/swarm/bootstrap"]

@@ -5,6 +5,7 @@
    here is pure: the call graph is an injected map, the context is nil."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
+            [hive-mcp.swarm.addon-gate :as gate]
             [hive-mcp.swarm.claim.span :as span]
             [hive-schemas.test :as hst]
             [malli.core :as m]
@@ -175,10 +176,25 @@
     (when ctx (is (= "/tmp" (:cwd ctx))))))
 
 (deftest addon-values-resolve-test
-  (testing "the load-time re-exports are the addon's values"
-    (is (= [:file :signature :body] span/modes))
-    (is (= {:body 0 :signature 1 :file 2} span/mode-rank))
-    (is (some? span/Span))))
+  (if (gate/present?)
+    (testing "the load-time re-exports are the addon's values"
+      (is (= [:file :signature :body] span/modes))
+      (is (= {:body 0 :signature 1 :file 2} span/mode-rank))
+      (is (some? span/Span)))
+    (testing "without the addon a load-time value is nil and a call raises :swarm/addon-missing"
+      (is (nil? span/modes))
+      (is (nil? span/mode-rank))
+      (is (gate/addon-missing? #(span/key-of "src/a.clj")))
+      (is (gate/addon-missing? #(span/overlap nil "src/a.clj" "src/a.clj")))
+      (is (gate/addon-missing? #(span/conflicts nil [] "src/a.clj" "ling-a"))))))
+
+(def ^:private offline?
+  "The tests that never reach hive-agent."
+  (gate/offline #{"context-for-anchors-at-cwd-test" "addon-values-resolve-test"
+                  "span-schemas-generate-test"}
+                []))
+
+(defn test-ns-hook [] (gate/run 'hive-mcp.swarm.claim.span-contract-test offline?))
 
 (deftest span-schemas-generate-test
   (doseq [s [span/Mode span/SpanShape span/SpanLike span/Held span/CallersFn span/Ctx

@@ -30,15 +30,17 @@
             [hive-test.golden :as golden]
             [hive-test.mutation :as mut]
             [malli.core :as m]
-            [malli.generator :as mg]))
+            [malli.generator :as mg]
+            [hive-mcp.swarm.addon-gate :as gate]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defn- reset-all! []
-  (conn/reset-conn!)
-  (logic/reset-db!)
+  (when (gate/present?)
+    (conn/reset-conn!)
+    (logic/reset-db!))
   (coord/clear-queue!)
   (doseq [tid (keys (callback/registrations))] (callback/unregister! tid)))
 
@@ -390,6 +392,30 @@
           arity (if (= :function (m/type s)) (m/children s) [s])
           side (take 2 (m/children arity))]
     (is (seq (mg/sample side {:size 2 :seed 7})) (str ns-sym "/" fn-sym))))
+
+(deftest store-shims-without-the-addon-test
+  (when-not (gate/present?)
+    (testing "without the addon every store and logic call raises :swarm/addon-missing"
+      (is (gate/addon-missing? #(conn/reset-conn!)))
+      (is (gate/addon-missing? #(logic/reset-db!)))
+      (is (gate/addon-missing? #(reg/add-slave! "s1" {})))
+      (is (gate/addon-missing? #(ds/current-db)))
+      (is (gate/addon-missing? #(digest/roster 0 {})))
+      (is (gate/addon-missing? #(noop/make-noop-bootstrap))))))
+
+(def ^:private offline?
+  "The tests that never reach hive-agent or hive-datascript: the delegate,
+   the pure event-bridge, coordinator and sync fns, the callback registry,
+   the sync path over injected ports, and the schema and coverage checks."
+  (gate/offline #{"delegate-resolution-test" "bridge-degrades-without-a-backbone-test"
+                  "callback-registry-test" "full-sync-uses-the-injected-ports-test"
+                  "store-shims-without-the-addon-test"
+                  "every-top-level-contract-generates-both-sides-test"
+                  "swarm-top-level-contracts-gate"}
+                ["slave-subject-is-the-hive-v1-subject" "extract-files-finds-paths"
+                 "classify-row-only-live-backing-verifies" "missing-from-emacs-is-not-member"]))
+
+(defn test-ns-hook [] (gate/run 'hive-mcp.swarm.swarm-contract-test offline?))
 
 (deftest-contract-coverage swarm-top-level-contracts-gate
   {:paths ["src/hive_mcp/swarm/callback.clj" "src/hive_mcp/swarm/coordinator.clj"

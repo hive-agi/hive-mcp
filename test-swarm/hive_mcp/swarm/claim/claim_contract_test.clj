@@ -7,6 +7,7 @@
 
    Also the coverage gate for src/hive_mcp/swarm/claim."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
+            [hive-mcp.swarm.addon-gate :as gate]
             [hive-mcp.swarm.claim.graph :as graph]
             [hive-mcp.swarm.claim.negotiate :as neg]
             [hive-mcp.swarm.claim.registry :as creg]
@@ -26,10 +27,11 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defn- reset-all! []
-  (conn/reset-conn!)
-  (logic/reset-db!)
-  (neg/reset-yield-ledger!)
-  (graph/reset-cache!))
+  (when (gate/present?)
+    (conn/reset-conn!)
+    (logic/reset-db!)
+    (graph/reset-cache!))
+  (neg/reset-yield-ledger!))
 
 (defn- fresh [f]
   (reset-all!)
@@ -247,6 +249,24 @@
           arity (if (= :function (m/type s)) (m/children s) [s])
           side (take 2 (m/children arity))]
     (is (seq (mg/sample side {:size 3 :seed 7})) (str ns-sym "/" fn-sym))))
+
+(deftest claim-shims-without-the-addon-test
+  (when-not (gate/present?)
+    (testing "without the addon every delegated call raises :swarm/addon-missing"
+      (is (gate/addon-missing? #(creg/row->span {:claim/file "src/a.clj"})))
+      (is (gate/addon-missing? #(creg/acquire! ["src/a.clj"] "ling-a")))
+      (is (gate/addon-missing? #(neg/held-key {:file "src/a.clj"})))
+      (is (gate/addon-missing? #(conn/reset-conn!)))
+      (is (gate/addon-missing? #(span/key-of "src/a.clj"))))))
+
+(def ^:private offline?
+  "The tests that never reach hive-agent or hive-datascript."
+  (gate/offline #{"reset-yield-ledger-answers-empty-test" "claim-schemas-generate-test"
+                  "every-claim-contract-generates-both-sides-test" "swarm-claim-contracts-gate"
+                  "claim-shims-without-the-addon-test"}
+                []))
+
+(defn test-ns-hook [] (gate/run 'hive-mcp.swarm.claim.claim-contract-test offline?))
 
 (deftest-contract-coverage swarm-claim-contracts-gate
   {:paths ["src/hive_mcp/swarm/claim"]
