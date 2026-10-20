@@ -34,3 +34,31 @@
       (isolation/with-isolated-store-registry
        (fn [] (memory/register-store! :test-only store)))
       (is (empty? (memory/registered-stores))))))
+
+(deftest restored-registry-keeps-prior-stores-and-never-resets
+  (testing "prior stores survive a body that clears, swaps and throws; the map is restored whole"
+    (let [prior-store (memory-test/->StubStore :prior)
+          inner-store (memory-test/->StubStore :inner)]
+      (isolation/with-isolated-store-registry
+       (fn []
+         (memory/register-store! :prior prior-store)
+         (let [before (memory/registered-stores)]
+           (is (thrown? Exception
+                        (isolation/with-restored-store-registry
+                         (fn []
+                           (isolation/restore-stores! {})
+                           (is (empty? (memory/registered-stores)))
+                           (memory/register-store! :inner inner-store)
+                           (throw (Exception. "body failed"))))))
+           (is (= before (memory/registered-stores)))
+           (isolation/with-restored-store-registry
+            (fn [] (memory/register-store! :inner inner-store)))
+           (is (= before (memory/registered-stores)))))))))
+
+(deftest restore-guard-refuses-a-running-addon-server
+  (testing "refuse-live-addons! throws on a non-empty or malformed addon status"
+    (is (nil? (isolation/refuse-live-addons! {:total 0 :active 0 :registered 0 :error 0})))
+    (doseq [status [{:total 1 :active 1 :registered 0 :error 0} nil {:total 0}]]
+      (is (= :live-addon-registry
+             (:reason (ex-data (try (isolation/refuse-live-addons! status)
+                                    (catch clojure.lang.ExceptionInfo e e)))))))))
