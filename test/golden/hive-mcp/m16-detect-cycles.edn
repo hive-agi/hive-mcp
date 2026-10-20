@@ -11,10 +11,10 @@
   ({:id "sJ",
     :title "5U",
     :steps
-    [{:id "c", :title "A7", :depends-on ["d" "d"]}
+    [{:id "c", :title "A7", :depends-on ["d" "a"]}
      {:id "b", :title "7"}
      {:id "d", :title "87"}
-     {:id "a", :title "9", :depends-on ["a"]}]})},
+     {:id "a", :title "9", :depends-on ["c"]}]})},
  :case-3
  {:out {:valid false, :cycle "Circular dependency detected"},
   :in

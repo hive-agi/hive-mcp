@@ -18,7 +18,9 @@
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.system.registry :as reg]
             [hive-system.process.liveness :as liveness]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.swarm.datascript.schema :as s]
+            [malli.core :as m]))
 
 (def ^:const default-sweep-interval-s 60)
 
@@ -97,6 +99,15 @@
       :zombified (count zombies)
       :alive (- (count slaves) (count dead) (count errors))
       :errors errors})))
+
+;; BUG: a probe that throws AND whose pid fallback confirms death counts in both
+;; `dead` and `errors`, so :alive under-counts by one per such row
+;; (terminal_sweep.clj sweep-once!). The schema states the current behaviour.
+(m/=> sweep-once! [:function
+                   [:=> [:cat] [:map [:checked s/Count] [:zombified s/Count] [:alive :int]
+                                [:errors [:vector :string]]]]
+                   [:=> [:cat :int] [:map [:checked s/Count] [:zombified s/Count] [:alive :int]
+                                     [:errors [:vector :string]]]]])
 
 (defrecord TerminalLivenessSweep []
   lifecycle/ISweepable

@@ -1,0 +1,72 @@
+{:case-0
+ {:out
+  {:queued true,
+   :task-id "atask-2",
+   :tool "memory",
+   :result-via
+   "---TOOLRESULT--- block on your next hive call; pass async:false to get the result inline",
+   :durable false},
+  :in ("atask-2" "memory" nil false)},
+ :case-1
+ {:out
+  {:queued true,
+   :task-id "atask-2",
+   :tool "memory",
+   :result-via
+   "---TOOLRESULT--- block on your next hive call; pass async:false to get the result inline",
+   :timeout-ms 60000},
+  :in ("atask-2" "memory" 60000 true)},
+ :case-2
+ {:out
+  {:queued true,
+   :task-id "atask-1",
+   :tool "memory",
+   :result-via
+   "---TOOLRESULT--- block on your next hive call; pass async:false to get the result inline"},
+  :in ("atask-1" "memory" nil true)},
+ :case-3
+ {:out
+  {:queued true,
+   :task-id "atask-1",
+   :tool "kg",
+   :result-via
+   "---TOOLRESULT--- block on your next hive call; pass async:false to get the result inline"},
+  :in ("atask-1" "kg" nil true)},
+ :case-4
+ {:out
+  {:queued true,
+   :task-id "atask-1",
+   :tool "memory",
+   :result-via
+   "---TOOLRESULT--- block on your next hive call; pass async:false to get the result inline",
+   :durable false},
+  :in ("atask-1" "memory" nil false)},
+ :case-5
+ {:out
+  {:queued true,
+   :task-id "atask-1",
+   :tool "memory",
+   :result-via
+   "---TOOLRESULT--- block on your next hive call; pass async:false to get the result inline",
+   :durable false},
+  :in ("atask-1" "memory" nil false)},
+ :case-6
+ {:out
+  {:queued true,
+   :task-id "atask-1",
+   :tool "kg",
+   :result-via
+   "---TOOLRESULT--- block on your next hive call; pass async:false to get the result inline",
+   :timeout-ms 1000,
+   :durable false},
+  :in ("atask-1" "kg" 1000 false)},
+ :case-7
+ {:out
+  {:queued true,
+   :task-id "atask-2",
+   :tool "memory",
+   :result-via
+   "---TOOLRESULT--- block on your next hive call; pass async:false to get the result inline",
+   :timeout-ms 1000,
+   :durable false},
+  :in ("atask-2" "memory" 1000 false)}}

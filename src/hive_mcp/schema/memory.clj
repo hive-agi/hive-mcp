@@ -20,7 +20,11 @@
    Extended / user-defined types are accepted with sane defaults. Safety
    (charset + bounded length) is enforced here so an unsafe token never
    reaches storage, vector-DB filter expressions, or keyword interning."
-  [:fn {:error/message "must be a safe type token: starts with a letter, then [a-z0-9_-], max 64 chars"}
+  [:fn {:error/message "must be a safe type token: starts with a letter, then [a-z0-9_-], max 64 chars"
+        ;; Generates registered and user-defined tokens alike, so schemas that
+        ;; embed MemoryType (MemoryEntry, MemoryAddParams, ...) generate too.
+        :gen/elements ["decision" "note" "snippet" "convention" "axiom" "plan"
+                       "principle" "my-type_2" "x"]}
    token/safe-type?])
 
 (def MemoryDuration
@@ -139,20 +143,32 @@
   [type-str]
   (m/validate MemoryType type-str))
 
+(m/=> valid-type? [:=> [:cat :any] :boolean])
+
 (defn valid-duration?
   "Check if duration string is a valid MemoryDuration."
   [duration-str]
   (m/validate MemoryDuration duration-str))
+
+(m/=> valid-duration? [:=> [:cat :any] :boolean])
 
 (defn valid-entry?
   "Check if entry map is a valid MemoryEntry."
   [entry]
   (m/validate MemoryEntry entry))
 
+(m/=> valid-entry? [:=> [:cat :any] :boolean])
+
 (defn explain-entry
   "Explain validation errors for a MemoryEntry."
   [entry]
   (m/explain MemoryEntry entry))
+
+(def Explanation
+  "A malli explanation: the value, and one error per failing path."
+  [:map [:value :any] [:errors [:sequential [:map [:path :any] [:in :any]]]]])
+
+(m/=> explain-entry [:=> [:cat :any] [:maybe Explanation]])
 
 ;; =============================================================================
 ;; Schema Registry Entry
@@ -185,6 +201,12 @@
       {:errors (mapv (fn [{:keys [path value]}]
                        {:path path :value value})
                      (:errors explanation))})))
+
+(def AddRequestErrors
+  "validate-add-request's failure: one {:path :value} per failing path."
+  [:map [:errors [:vector {:min 1} [:map [:path [:vector :any]] [:value :any]]]]])
+
+(m/=> validate-add-request [:=> [:cat :any] [:maybe AddRequestErrors]])
 
 (comment
   ;; Example usage

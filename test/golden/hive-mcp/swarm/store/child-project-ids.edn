@@ -1,0 +1,8 @@
+{:case-0 {:out #{}, :in nil},
+ :case-1 {:out #{}, :in "zz"},
+ :case-2 {:out #{"p2"}, :in "p"},
+ :case-3 {:out #{}, :in "p2"},
+ :case-4 {:out #{}, :in nil},
+ :case-5 {:out #{}, :in nil},
+ :case-6 {:out #{}, :in nil},
+ :case-7 {:out #{}, :in nil}}

@@ -1,0 +1,4 @@
+{:stale {:diagnosis :stale-class},
+ :missing {:diagnosis :missing-method, :impl-keys [:coll-reduce]},
+ :not-ext {:diagnosis :not-extended},
+ :unknown {:diagnosis :unknown}}

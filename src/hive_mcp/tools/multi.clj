@@ -20,11 +20,12 @@
   (:require [hive-mcp.batch :as batch]
             [hive-mcp.batch.protocol :as batch-proto]
             [hive-mcp.dns.result :as result :refer [rescue]]
-            [hive-mcp.tools.core :refer [mcp-error]]
+            [hive-mcp.tools.core :as core :refer [mcp-error]]
             [hive-mcp.dsl.response :as compress]
             [taoensso.timbre :as log]
             [clojure.data.json :as json]
-            [hive-mcp.context.request :as ctx]))
+            [hive-mcp.context.request :as ctx]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -286,3 +287,19 @@
       (format-results (run-multi (thread-caller-cwd (:ok input) params)
                                  :dry-run (boolean (:dry_run params)))
                       :compact compact))))
+
+(m/=> register-fx! [:=> [:cat] [:maybe [:= true]]])
+
+(m/=> resolve-consolidated-handler [:=> [:cat :any] [:maybe core/ToolHandler]])
+
+(m/=> resolve-tool-handler [:=> [:cat :any] [:maybe core/ToolHandler]])
+
+(m/=> execute-op [:=> [:cat batch/Op] batch/OpResult])
+
+;; Permissive in: handle-batch forwards caller ops as they arrive, string or
+;; keyword keyed, after only a non-empty sequential check.
+(m/=> run-multi [:=> [:cat [:sequential :any] [:* :any]] batch/RunResult])
+
+(m/=> format-results [:=> [:cat :map [:* :any]] core/McpJsonResponse])
+
+(m/=> handle-batch [:=> [:cat [:maybe :map]] core/McpResponse])

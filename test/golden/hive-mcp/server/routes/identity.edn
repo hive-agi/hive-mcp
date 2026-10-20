@@ -1,0 +1,11 @@
+{:agent ["a" "b" "d"],
+ :caller ["ling-1" "coordinator"],
+ :directory "/tmp/x",
+ :project "p1",
+ :caller-identity
+ [{:adt/variant :caller/named, :adt/type :CallerId, :slave-id "ling-1"}
+  #:adt{:variant :caller/coordinator, :type :CallerId}],
+ :scope
+ {:adt/variant :project/scoped,
+  :adt/type :ProjectScope,
+  :project-id "p1"}}

@@ -1,0 +1,3 @@
+{:results [:one {:error "handler broke"} "t-1"],
+ :seen [[:first {:task-id "t-1"}] [:third {:task-id "t-1"}]],
+ :untouched []}

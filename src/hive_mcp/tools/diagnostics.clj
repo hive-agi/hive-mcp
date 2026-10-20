@@ -2,7 +2,8 @@
   "Error-diagnostic helpers for MCP tool responses: classify Clojure's
    protocol dispatch failure (missing method impl, class never extended,
    or real protocol-class poisoning) and produce an accurate operator hint."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [malli.core :as m]))
 
 (def ^:private protocol-poison-pattern
   "Regex for Clojure's protocol dispatch failure, the IllegalArgumentException
@@ -182,3 +183,30 @@
              header
              "  The protocol is not loaded in this JVM, so the cause (a missing\n"
              "  extend vs. a stale class after a reload) could not be determined.")))))
+
+(def Diagnosis
+  "The four protocol dispatch-failure verdicts classify-dispatch-failure names."
+  [:enum :stale-class :missing-method :not-extended :unknown])
+
+(def DispatchVerdict
+  "classify-dispatch-failure's result; :impl-keys only for :missing-method."
+  [:map
+   [:diagnosis Diagnosis]
+   [:impl-keys {:optional true} [:vector :keyword]]])
+
+(def PoisoningReport
+  "detect-protocol-poisoning's report for a matched dispatch failure."
+  [:map
+   [:diagnosis Diagnosis]
+   [:impl-keys {:optional true} [:vector :keyword]]
+   [:poisoned? :boolean]
+   [:method :string]
+   [:protocol :string]
+   [:class :string]
+   [:known-poisonable? :boolean]])
+
+(m/=> classify-dispatch-failure [:=> [:cat :string :any :string] DispatchVerdict])
+
+(m/=> detect-protocol-poisoning [:=> [:cat :any] [:maybe PoisoningReport]])
+
+(m/=> recovery-hint [:=> [:cat :any] [:maybe :string]])
