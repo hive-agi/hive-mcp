@@ -78,3 +78,30 @@
 (def tools
   "REMOVED: Flat projectile tools no longer exposed. Use consolidated `project` tool."
   [])
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def ProjectileParams
+  "Projectile handler params: an open map; every key optional (nil allowed)."
+  [:maybe [:map
+           [:directory {:optional true} :any]
+           [:pattern {:optional true} [:maybe :string]]
+           [:filename {:optional true} [:maybe :string]]]])
+
+(def ProjectileResponse
+  "The MCP text envelope on success, or an mcp-error on a failed dispatch."
+  [:or
+   [:map {:closed true} [:type [:= "text"]] [:text [:maybe :string]]]
+   hive-mcp.tools.core/McpErrorResponse])
+
+(def ProjectileHandler
+  [:=> [:cat ProjectileParams] ProjectileResponse])
+
+(m/=> handle-projectile-info ProjectileHandler)
+(m/=> handle-projectile-files ProjectileHandler)
+(m/=> handle-projectile-find-file ProjectileHandler)
+(m/=> handle-projectile-search ProjectileHandler)
+(m/=> handle-projectile-recent ProjectileHandler)
+(m/=> handle-projectile-list-projects ProjectileHandler)

@@ -86,3 +86,23 @@
   "Property keys of `tool` a provider would reject. Empty when legal."
   [tool]
   (vec (remove legal-key? (keys (get-in tool [:inputSchema :properties])))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def PropKey
+  "A property key as a schema carries it: keyword or string, legal or not."
+  [:or :keyword :string])
+
+(def Props
+  "An inputSchema :properties map."
+  [:map-of PropKey :any])
+
+(m/=> legal-key? [:=> [:cat :any] :boolean])
+
+(m/=> legal-properties [:=> [:cat [:maybe Props]] [:maybe Props]])
+
+(m/=> legal-tool [:=> [:cat [:maybe :map]] [:maybe :map]])
+
+(m/=> illegal-keys [:=> [:cat [:maybe :map]] [:vector :any]])

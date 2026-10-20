@@ -213,3 +213,34 @@
 (def tools
   "REMOVED: Flat preset tools no longer exposed. Use consolidated `preset` tool."
   [])
+
+;;; ============================================================
+;;; Contracts
+;;; ============================================================
+
+(def PresetParams
+  "Params of a preset handler: an open map, read by keyword. Every handler
+   tolerates absent keys (nil params included)."
+  [:maybe [:map
+           [:name {:optional true} [:maybe :string]]
+           [:query {:optional true} [:maybe :string]]
+           [:limit {:optional true} [:maybe :int]]
+           [:category {:optional true} [:maybe :string]]
+           [:lazy {:optional true} [:maybe :boolean]]
+           [:directory {:optional true} [:maybe :string]]
+           [:content {:optional true} [:maybe :string]]]])
+
+(def PresetHandler
+  "Every preset handler: params -> MCP response via result-bridge."
+  [:=> [:cat PresetParams] rb/McpResponse])
+
+(m/=> handle-preset-search PresetHandler)
+(m/=> handle-preset-get PresetHandler)
+(m/=> handle-preset-list PresetHandler)
+(m/=> handle-preset-list-slim PresetHandler)
+(m/=> handle-preset-core PresetHandler)
+(m/=> handle-preset-header PresetHandler)
+(m/=> handle-preset-migrate PresetHandler)
+(m/=> handle-preset-status PresetHandler)
+(m/=> handle-preset-add PresetHandler)
+(m/=> handle-preset-delete PresetHandler)

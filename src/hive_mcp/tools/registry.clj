@@ -426,6 +426,51 @@
   [name]
   (first (filter #(= (:name %) name) (get-all-tools))))
 
+;; -----------------------------------------------------------------------------
+;; Contracts
+;; -----------------------------------------------------------------------------
+
+(def ToolDefs
+  "A realized tool table: always a vector of tool defs."
+  [:vector ToolDef])
+
+(m/=> absorbed-root-names [:=> [:cat] [:set :any]])
+
+(m/=> visible-root-names [:=> [:cat] [:maybe [:set :any]]])
+
+(m/=> apply-visibility-gate
+      [:function
+       [:=> [:cat [:maybe [:sequential :map]]] [:vector :map]]
+       [:=> [:cat [:maybe [:sequential :map]] [:maybe [:set :any]]] [:vector :map]]])
+
+(m/=> loaded-tool-domains
+      [:=> [:cat] [:map
+                   [:contributed {:optional true} [:sequential :keyword]]
+                   [:absent {:optional true} [:sequential :keyword]]]])
+
+(m/=> contributed-roots [:=> [:cat] ToolDefs])
+
+(m/=> core-tools [:=> [:cat] ToolDefs])
+
+(m/=> child-ling-excluded? [:=> [:cat [:maybe :map]] :boolean])
+
+(m/=> get-child-ling-tools [:=> [:cat] ToolDefs])
+
+(m/=> get-all-tools [:=> [:cat [:* :any]] ToolDefs])
+
+(m/=> get-consolidated-tools [:=> [:cat] ToolDefs])
+
+(m/=> get-filtered-tools [:=> [:cat] ToolDefs])
+
+(m/=> get-advertised-tools
+      [:function
+       [:=> [:cat] ToolDefs]
+       [:=> [:cat [:maybe [:map [:compact-schema? {:optional true} :any]]]] ToolDefs]])
+
+(m/=> advertised-tools [:=> [:cat SurfaceInputs] ToolDefs])
+
+(m/=> get-tool-by-name [:=> [:cat :any] [:maybe ToolDef]])
+
 ;; =============================================================================
 ;; Sub-command introspection
 ;; =============================================================================
