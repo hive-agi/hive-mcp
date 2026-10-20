@@ -1,0 +1,118 @@
+{:case-0
+ {:out
+  {:type "text",
+   :text
+   "{\"success\":true,\"summary\":{\"total\":0,\"success\":0,\"failed\":0,\"waves\":0},\"waves\":{},\"errors\":[\"missing\"]}"},
+  :in
+  ({:success true,
+    :summary {:total 0, :success 0, :failed 0, :waves 0},
+    :waves {},
+    :errors ["missing"]})},
+ :case-1
+ {:out
+  {:type "text",
+   :text
+   "{\"success\":true,\"summary\":{\"total\":1,\"success\":0,\"failed\":1,\"waves\":1},\"dry_run\":true,\"plan\":{\"wave_1\":[{\"id\":\"b\"},{\"id\":\"a\"}],\"wave_2\":[{\"id\":\"a\"},{\"id\":\"a\"}]},\"errors\":[\"missing\",\"cycle\"]}"},
+  :in
+  ({:success true,
+    :summary {:total 1, :success 0, :failed 1, :waves 1},
+    :dry-run true,
+    :waves
+    {1
+     {:ops [{:id "b"} {:id "a"}],
+      :results
+      [{:id "b", :success false, :error "boom"}
+       {:id "b", :success true, :result "done", :error "boom"}]},
+     2
+     {:ops [{:id "a"} {:id "a"}],
+      :results
+      [{:id "a", :success true, :result "done"}
+       {:id "b", :success false}]}},
+    :errors ["missing" "cycle"]})},
+ :case-2
+ {:out
+  {:type "text",
+   :text
+   "{\"success\":false,\"summary\":{\"total\":2,\"success\":0,\"failed\":1,\"waves\":2},\"waves\":{\"wave_1\":[{\"id\":\"a\",\"success\":false,\"result\":\"{\\\"n\\\":1}\",\"error\":\"boom\"}],\"wave_2\":[{\"id\":\"b\",\"success\":true,\"error\":\"boom\"},{\"id\":\"b\",\"success\":true,\"error\":\"boom\"}]},\"errors\":[\"cycle\"]}"},
+  :in
+  ({:success false,
+    :summary {:total 2, :success 0, :failed 1, :waves 2},
+    :waves
+    {1
+     {:ops [{:id "a"}],
+      :results
+      [{:id "a", :success false, :result {:n 1}, :error "boom"}]},
+     2
+     {:ops [{:id "a"} {:id "b"}],
+      :results
+      [{:id "b", :success true, :error "boom"}
+       {:id "b", :success true, :error "boom"}]}},
+    :errors ["cycle"]})},
+ :case-3
+ {:out
+  {:type "text",
+   :text
+   "{\"success\":false,\"summary\":{\"total\":0,\"success\":4,\"failed\":0,\"waves\":1},\"waves\":{}}"},
+  :in
+  ({:success false,
+    :summary {:total 0, :success 4, :failed 0, :waves 1},
+    :waves {}})},
+ :case-4
+ {:out
+  {:type "text",
+   :text
+   "{\"success\":false,\"summary\":{\"total\":2,\"success\":0,\"failed\":0,\"waves\":4},\"waves\":{\"wave_1\":[],\"wave_2\":[{\"id\":\"a\",\"success\":false,\"error\":\"boom\"},{\"id\":\"b\",\"success\":true}]}}"},
+  :in
+  ({:success false,
+    :summary {:total 2, :success 0, :failed 0, :waves 4},
+    :waves
+    {1 {:ops [], :results []},
+     2
+     {:ops [{:id "b"} {:id "b"}],
+      :results
+      [{:id "a", :success false, :error "boom"}
+       {:id "b", :success true}]}}})},
+ :case-5
+ {:out
+  {:type "text",
+   :text
+   "{\"success\":false,\"summary\":{\"total\":3,\"success\":4,\"failed\":0,\"waves\":2},\"waves\":{\"wave_2\":[{\"id\":\"b\",\"success\":false},{\"id\":\"a\",\"success\":false}]},\"errors\":[\"cycle\",\"cycle\"]}"},
+  :in
+  ({:success false,
+    :summary {:total 3, :success 4, :failed 0, :waves 2},
+    :waves
+    {2
+     {:ops [],
+      :results [{:id "b", :success false} {:id "a", :success false}]}},
+    :errors ["cycle" "cycle"]})},
+ :case-6
+ {:out
+  {:type "text",
+   :text
+   "{\"success\":false,\"summary\":{\"total\":0,\"success\":2,\"failed\":2,\"waves\":2},\"dry_run\":true,\"plan\":{\"wave_2\":[{\"id\":\"a\"},{\"id\":\"b\"}]},\"errors\":[\"cycle\",\"cycle\"]}"},
+  :in
+  ({:success false,
+    :summary {:total 0, :success 2, :failed 2, :waves 2},
+    :dry-run true,
+    :waves
+    {2
+     {:ops [{:id "a"} {:id "b"}],
+      :results [{:id "b", :success true, :result {:n 1}}]}},
+    :errors ["cycle" "cycle"]})},
+ :case-7
+ {:out
+  {:type "text",
+   :text
+   "{\"success\":true,\"summary\":{\"total\":1,\"success\":3,\"failed\":4,\"waves\":1},\"dry_run\":true,\"plan\":{\"wave_3\":[{\"id\":\"b\"},{\"id\":\"b\"}],\"wave_1\":[{\"id\":\"b\"}]}}"},
+  :in
+  ({:success true,
+    :summary {:total 1, :success 3, :failed 4, :waves 1},
+    :dry-run true,
+    :waves
+    {3
+     {:ops [{:id "b"} {:id "b"}],
+      :results
+      [{:id "a", :success false, :result "done", :error "boom"}]},
+     1
+     {:ops [{:id "b"}],
+      :results [{:id "a", :success true, :result {:n 1}}]}}})}}

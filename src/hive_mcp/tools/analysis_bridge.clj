@@ -23,7 +23,8 @@
    Kanban: 20260423132050-0b5d09a6"
   (:require [hive-mcp.extensions.registry :as ext]
             [hive-dsl.result :refer [rescue]]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -200,3 +201,40 @@
                        ":workspaces-resolved (sidecar cache + in-process), "
                        "and :workspace-count = union cardinality.")}})
   (log/info "Installed enriched analysis bridge-status handler"))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def Workspace
+  "One workspace row on either axis; :source says where it came from."
+  [:map
+   [:root {:optional true} [:maybe :string]]
+   [:source {:optional true} [:enum :emacs-lsp :sidecar-cache :in-process]]])
+
+(def ProbeInput
+  "build-status's three probe results; every key may be absent or nil."
+  [:map
+   [:registered {:optional true} [:maybe [:sequential Workspace]]]
+   [:resolved {:optional true} [:maybe [:sequential Workspace]]]
+   [:emacs-probe {:optional true} [:maybe :map]]])
+
+(def BridgeStatus
+  "The enriched bridge-status payload. :workspaces is never nil."
+  [:map
+   [:lsp-available :boolean]
+   [:workspaces-registered [:vector Workspace]]
+   [:workspaces-resolved [:vector Workspace]]
+   [:workspace-count [:int {:min 0}]]
+   [:workspaces [:vector Workspace]]
+   [:sources [:map
+              [:emacs-lsp [:int {:min 0}]]
+              [:sidecar-cache [:int {:min 0}]]
+              [:in-process [:int {:min 0}]]]]])
+
+(m/=> build-status [:=> [:cat ProbeInput] BridgeStatus])
+
+(m/=> bridge-status [:=> [:cat] BridgeStatus])
+
+;; install! answers the trailing log/info call: nil.
+(m/=> install! [:=> [:cat] :nil])

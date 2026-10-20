@@ -1,0 +1,6 @@
+{:help
+ "Available commands:\n  - deep a b\n  - spawn\n  - status\n  - status list",
+ :dispatch "status list",
+ :default "status",
+ :verbs #{"a" "b"},
+ :no-verbs nil}

@@ -1,0 +1,8 @@
+{:offers [:queued :queued :dropped],
+ :appended :dropped,
+ :boot nil,
+ :depth 2,
+ :dropped 2,
+ :stopped false,
+ :thread nil,
+ :capacity 2}

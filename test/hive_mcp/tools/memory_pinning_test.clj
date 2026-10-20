@@ -13,7 +13,8 @@
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.test.stub.memory-store :as stub]
             [hive-mcp.tools.memory :as memory]
-            [hive-spi.memory.registry :as registry]))
+            [hive-spi.memory.registry :as registry]
+            [hive-mcp.test-support.registry-isolation :as isolation]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -78,15 +79,13 @@
       (finally (registry/set-store! prior)))))
 
 (defn with-no-store
-  "Run F with an empty store registry, then restore it."
+  "Run F with an empty store registry, then restore it atomically (no global
+   reset on teardown; refuses a live addon server)."
   [f]
-  (let [prior (registry/registered-stores)]
-    (try
-      (registry/reset-registry!)
-      (f)
-      (finally
-        (registry/reset-registry!)
-        (doseq [[k s] prior] (registry/register-store! k s))))))
+  (isolation/with-restored-store-registry
+    (fn []
+      (isolation/restore-stores! {})
+      (f))))
 
 ;; =============================================================================
 ;; Test: Response Format Contract

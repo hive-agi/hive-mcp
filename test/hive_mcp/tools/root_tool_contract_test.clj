@@ -3,6 +3,7 @@
    (hive-addon.tool-contract): every core tool satisfies the contract, and both
    entry points to the root refuse one that does not."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
+            [hive-addon.tool-contract :as contract]
             [hive-addon.tool-contract.test :refer [assert-root-tools]]
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.server.routes :as routes]
@@ -52,3 +53,34 @@
     (is (contains? (get-in made [:inputSchema :properties]) "x"))
     (is (< 1 (count (get-in made [:inputSchema :properties])))
         "async params are still merged into a conforming tool")))
+
+;; A property with no :description is only a WARNING in hive-addon's
+;; RootToolDef (hive-addon.tool-contract/warnings). For the root tools
+;; hive-mcp OWNS it is a VIOLATION here: a client without source access
+;; operates a parameter only through its description. Addon-served roots
+;; (carto, cluster, firecrawl, observe, self_steer, swarm-view, role,
+;; hive_vtranslate, ...) stay outside this check until each owning repo
+;; describes its properties; then the rule moves into RootToolDef itself.
+;; TODO(kanban 20261001000454-01498cca): promote the rule into hive-addon RootToolDef.
+(defn- undescribed
+  "{tool-name [property-key]} for every property of `tools` lacking a
+   non-blank :description; {} when every property is described."
+  [tools]
+  (into (sorted-map)
+        (keep (fn [t]
+                (when-let [ks (seq (map #(nth (:path %) 2) (contract/warnings t)))]
+                  [(:name t) (vec ks)])))
+        tools))
+
+(deftest every-core-tool-property-is-described
+  (testing "the tool defs hive-mcp owns"
+    (is (= {} (undescribed (registry/core-tools)))))
+  (testing "as advertised, with the async params make-tool merges in"
+    (is (= {} (undescribed (map routes/make-tool (registry/core-tools)))))))
+
+(deftest an-undescribed-property-is-a-violation
+  (doseq [[label prop] {"no description"    {:type "string"}
+                        "blank description" {:type "string" :description "  "}}]
+    (testing label
+      (is (= {probe-name ["y"]}
+             (undescribed [(assoc-in conforming [:inputSchema :properties "y"] prop)]))))))

@@ -1,0 +1,12 @@
+{:all-b ["all" "b"],
+ :blank nil,
+ :empty-vec nil,
+ :kw-all :all,
+ :mixed ["a" "b" ":k"],
+ :nil nil,
+ :one ["a.clj"],
+ :other nil,
+ :spaced ["a.clj" "b.clj"],
+ :str-all :all,
+ :sym-all :all,
+ :vec-all :all}

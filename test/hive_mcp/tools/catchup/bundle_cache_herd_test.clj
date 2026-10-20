@@ -10,7 +10,8 @@
             [hive-mcp.tools.catchup.bundle-cache :as bc]
             [hive-mcp.tools.catchup.hierarchy :as hier]
             [hive-mcp.tools.catchup.scope-filter :as sf]
-            [hive-mcp.memory.write-events :as we]))
+            [hive-mcp.memory.write-events :as we]
+            [hive-mcp.test-support.registry-isolation :as isolation]))
 
 (def ^:private pid "herd-p")
 (def ^:private scope-tag (str "scope:project:" pid))
@@ -33,20 +34,20 @@
 
 (defn- with-herd-store
   "Install an observing stub as :default, pin the hierarchy to `pid`, run F
-   with the store, restore the prior registry."
+   with the store, restore the prior registry (atomically; a live addon
+   server is refused)."
   [f]
-  (let [prior (registry/registered-stores)
-        store (stub/->observing (stub/->stub (seed)))]
-    (try
-      (registry/set-store! store)
-      (bc/reset-cache!)
-      (with-redefs [hier/compute-hierarchy-project-ids (fn [_] [pid])
-                    sf/compute-full-scope-tags         (fn [_] #{scope-tag})]
-        (f store))
-      (finally
-        (bc/reset-cache!)
-        (registry/reset-registry!)
-        (doseq [[k s] prior] (registry/register-store! k s))))))
+  (isolation/with-restored-store-registry
+    (fn []
+      (let [store (stub/->observing (stub/->stub (seed)))]
+        (try
+          (registry/set-store! store)
+          (bc/reset-cache!)
+          (with-redefs [hier/compute-hierarchy-project-ids (fn [_] [pid])
+                        sf/compute-full-scope-tags         (fn [_] #{scope-tag})]
+            (f store))
+          (finally
+            (bc/reset-cache!)))))))
 
 (defn- scans [store] (count (stub/calls-of store :query-entries)))
 (defn- reset-calls! [store] (reset! (:calls store) []))

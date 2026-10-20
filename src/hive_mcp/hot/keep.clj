@@ -17,7 +17,8 @@
    2026-09-17 on the live coordinator (hive-mcp.tools.catchup.hierarchy).
    A keep unloads the namespace normally and carries only its state."
   (:require [clojure.string :as str]
-            [clojure.java.io :as io]))
+            [clojure.java.io :as io]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -44,6 +45,96 @@
 ;; Collect
 ;; =============================================================================
 
+;; =============================================================================
+;; Value schemas
+;; =============================================================================
+
+(def AVar
+  "A var. Generates from vars whose roots span the resource arms: an atom, a
+   delay, a fn, a Var seam, a plain value."
+  [:fn {:error/message "a var"
+        :gen/elements [#'clojure.core/*loaded-libs* #'clojure.core/inc #'clojure.core/*clojure-version*
+                       #'clojure.core/*agent*]}
+   var?])
+
+(def NsSym
+  [:symbol {:gen/elements '[hive-mcp.hot.keep hive-mcp.hot.self clojure.string clojure.core
+                            no.such.namespace]}])
+
+(def LoadedNsSym
+  "A namespace symbol find-ns knows."
+  [:symbol {:gen/elements '[hive-mcp.hot.keep hive-mcp.hot.self clojure.string clojure.set]}])
+
+(def Prefix
+  [:string {:gen/elements ["hive-mcp.hot." "hive-mcp." "no.such.prefix"]}])
+
+(def TopLevelDef
+  [:tuple :symbol :symbol])
+
+(def KeepEntry
+  [:map [:tag [:enum 'defonce 'def]]])
+
+(def KeepPlan
+  "{sym {:tag defonce|def}} as clj-reload keeps them."
+  [:map-of :symbol KeepEntry])
+
+(def Source
+  "Clojure source text."
+  [:string {:gen/elements ["" "(ns x) (def a 1) (defonce b (atom 2)) 3"
+                           "(defn f [] 1) (def ^:private g (delay 1)) [:not :a :form]"]}])
+
+(def DeadLinks
+  "{holder-ns [target-ns ...]}."
+  [:map-of :symbol [:vector :symbol]])
+
+(def ReloadState
+  "The slice of clj-reload's state these fns read."
+  [:map
+   [:namespaces {:optional true}
+    [:map-of {:gen/elements [{'a {:requires #{'b}} 'b {:requires #{}} 'c {:requires #{'a}}} {}]}
+     :symbol [:map [:requires {:optional true} [:set :symbol]]
+              [:ns-files {:optional true} [:set :any]]]]]
+   [:to-load {:optional true} [:maybe [:sequential :symbol]]]
+   [:to-unload {:optional true} [:maybe [:sequential :symbol]]]])
+
+(def Pred
+  "A one-argument predicate: a fn, a set or a map."
+  [:fn {:error/message "an invocable predicate"
+        :gen/elements [(constantly true) (constantly false) '#{a b} symbol?]}
+   ifn?])
+
+(def NsList
+  [:sequential [:symbol {:gen/elements '[a b c d]}]])
+
+(def PassReport
+  "What `prepare-pass!` answers."
+  [:map {:closed true}
+   [:forced [:vector :symbol]]
+   [:orphans [:vector :symbol]]
+   [:dead-links DeadLinks]
+   [:unrepairable [:vector :symbol]]
+   [:kept [:map-of :symbol [:vector :symbol]]]])
+
+(def RepairPreview
+  "What `repair-preview` answers."
+  [:map {:closed true}
+   [:stuck [:vector :symbol]]
+   [:dead-links DeadLinks]
+   [:forced [:vector :symbol]]
+   [:orphans [:vector :symbol]]
+   [:unrepairable [:vector :symbol]]])
+
+(def ReloadAnswer
+  "The shape hive-hot's reloaders answer, as `run-pending!` answers it."
+  [:map
+   [:success :boolean]
+   [:ms nat-int?]
+   [:error [:maybe :string]]
+   [:pending-pass? [:= true]]
+   [:loaded {:optional true} [:sequential :symbol]]
+   [:unloaded {:optional true} [:sequential :symbol]]
+   [:failed {:optional true} :any]])
+
 (defn live-resource?
   "Does the var's ROOT VALUE hold something a reload must not recreate: a
    reference type, a delay, an executor, a channel, a closeable handle, a
@@ -64,10 +155,14 @@
                    (instance? Thread x)
                    (some-> x class .getName (str/includes? "core.async"))))))))
 
+(m/=> live-resource? [:=> [:cat AVar] :boolean])
+
 (defn holds-state?
   "Does `ns-sym` intern a var, public or private, whose root is a live resource?"
   [ns-sym]
   (boolean (some live-resource? (vals (ns-interns ns-sym)))))
+
+(m/=> holds-state? [:=> [:cat LoadedNsSym] :boolean])
 
 (defn top-level-defs
   "[[tag sym] ...] for every top-level `(<tag> <sym> ...)` form in `content`,
@@ -82,6 +177,8 @@
           (recur (if (and (seq? form) (symbol? (first form)) (symbol? (second form)))
                    (conj acc [(first form) (with-meta (second form) nil)])
                    acc)))))))
+
+(m/=> top-level-defs [:=> [:cat Source] [:vector TopLevelDef]])
 
 ;; =============================================================================
 ;; Promote
@@ -99,6 +196,12 @@
                   (and (= 'def tag) (some-> (var-of sym) resource?)) [sym {:tag 'def}])))
         defs))
 
+(m/=> keep-plan
+      [:=> [:cat [:sequential [:tuple [:symbol {:gen/elements '[def defonce defn]}] [:symbol {:gen/elements '[a b c]}]]]
+        [:fn {:gen/elements [{'b (atom 1)} {} (constantly nil)]} ifn?]
+        Pred]
+       KeepPlan])
+
 (defn stuck-namespaces
   "Namespaces clj-reload still has pending to load that are loaded and not
    pending unload: a pass that stopped early, or a :no-unload namespace.
@@ -106,6 +209,9 @@
   [{:keys [to-load to-unload]} loaded]
   (let [unloading (set to-unload)]
     (into [] (filter #(and (contains? loaded %) (not (unloading %)))) to-load)))
+
+(m/=> stuck-namespaces
+      [:=> [:cat ReloadState [:set [:symbol {:gen/elements '[a b c d]}]]] [:vector :symbol]])
 
 (defn dead-links
   "{holder-ns [target-ns ...]}: for every loaded namespace under `prefix`, the
@@ -133,6 +239,8 @@
                       (when (seq targets) [(ns-name n) (vec (sort targets))])))))
           (all-ns))))
 
+(m/=> dead-links [:=> [:cat Prefix] DeadLinks])
+
 (defn repair-plan
   "What a pass must add to heal `links` (from `dead-links`): every holder
    unloads and loads again; a target that is gone from the image loads again,
@@ -142,6 +250,10 @@
         gone    (into [] (comp (mapcat val) (distinct) (remove present?) (filter tracked?)) links)]
     {:unload holders
      :load   (vec (distinct (concat holders gone)))}))
+
+(m/=> repair-plan
+      [:=> [:cat [:map-of [:symbol {:gen/elements '[h1 h2]}] [:sequential [:symbol {:gen/elements '[t1 t2 t3]}]]] Pred Pred]
+       [:map {:closed true} [:unload [:vector :symbol]] [:load [:vector :symbol]]]])
 
 (defn dependents-closure
   "`nses` plus every present namespace that depends on one of them,
@@ -153,6 +265,9 @@
   (let [deps    ((clj-var 'clj-reload.parse/dependees) (:namespaces state))
         closure ((clj-var 'clj-reload.parse/transitive-closure) deps (vec nses))]
     (into [] (comp (distinct) (filter present?) (remove (set pinned))) (concat nses closure))))
+
+(m/=> dependents-closure
+      [:=> [:cat ReloadState NsList Pred [:maybe [:or [:set :symbol] [:sequential :symbol]]]] [:vector :symbol]])
 
 ;; =============================================================================
 ;; Boundary
@@ -185,6 +300,8 @@
             {}
             (get-in state [:namespaces ns-sym :ns-files]))))
 
+(m/=> keeps-for [:=> [:cat ReloadState NsSym] KeepPlan])
+
 (defn inject-keeps!
   "SET the keep entries of every loaded, tracked namespace among `nses` in
    clj-reload's state to exactly `keeps-for`. Set, never merged: clj-reload
@@ -202,6 +319,8 @@
     (swap! state (fn [s] (reduce-kv (fn [s ns p] (assoc-in s [:namespaces ns :keep] p)) s plans)))
     (into {} (keep (fn [[ns p]] (when (seq p) [ns (vec (sort (keys p)))]))) plans)))
 
+(m/=> inject-keeps! [:=> [:cat [:sequential NsSym]] [:map-of :symbol [:vector :symbol]]])
+
 (defn release-no-unload!
   "Drop clj-reload's :no-unload set: a kept namespace unloads normally."
   []
@@ -209,6 +328,8 @@
     (when (bound? v)
       (alter-var-root v assoc :no-unload #{}))
     nil))
+
+(m/=> release-no-unload! [:=> [:cat] :nil])
 
 (defn force-unload!
   "Make `nses` unload at the start of the next pass."
@@ -218,6 +339,8 @@
            (fn [pending] (into (vec pending) (remove (set pending)) nses))))
   (vec nses))
 
+(m/=> force-unload! [:=> [:cat [:sequential :symbol]] [:vector :symbol]])
+
 (defn force-load!
   "Make `nses` load in the next pass; clj-reload sorts them with the rest."
   [nses]
@@ -225,6 +348,8 @@
     (swap! (state-atom) update :to-load
            (fn [pending] (into (vec pending) (remove (set pending)) nses))))
   (vec nses))
+
+(m/=> force-load! [:=> [:cat [:sequential :symbol]] [:vector :symbol]])
 
 (defn prepare-pass!
   "Before a pass that may unload `nses`: drop :no-unload, queue the repairs the
@@ -255,6 +380,8 @@
      :unrepairable (vec (filter pinned (keys links)))
      :kept         kept}))
 
+(m/=> prepare-pass! [:=> [:cat Prefix [:sequential :symbol]] PassReport])
+
 (defn repair-preview
   "What `prepare-pass!` would queue, without touching anything."
   [prefix]
@@ -271,11 +398,15 @@
      :orphans      (vec (remove (set unload) load))
      :unrepairable (vec (filter pinned (keys links)))}))
 
+(m/=> repair-preview [:=> [:cat Prefix] RepairPreview])
+
 (defn pending?
   "Does clj-reload hold work for a pass that no file change would trigger?"
   []
   (let [s @(state-atom)]
     (boolean (or (seq (:to-load s)) (seq (:to-unload s))))))
+
+(m/=> pending? [:=> [:cat] :boolean])
 
 (defn run-pending!
   "Drive one clj-reload pass over what is already queued: no baseline, no
@@ -289,3 +420,5 @@
                :ms (- (System/currentTimeMillis) start)
                :error (some-> (:exception res) ex-message)
                :pending-pass? true))))
+
+(m/=> run-pending! [:=> [:cat] ReloadAnswer])

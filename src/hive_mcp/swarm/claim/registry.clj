@@ -35,7 +35,8 @@
             [hive-mcp.swarm.datascript.lings :as lings]
             [taoensso.timbre :as log]
             [clojure.string :as str]
-            [hive-mcp.swarm.logic :as logic]))
+            [hive-mcp.swarm.logic :as logic]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -43,6 +44,50 @@
 ;; =============================================================================
 ;; Reading held claims back as spans
 ;; =============================================================================
+
+;; =============================================================================
+;; Schemas
+;; =============================================================================
+
+(def ClaimRow
+  "A stored claim row, in either shape `held-spans` accepts: raw :claim/*
+   attributes or get-all-claims' projected keys. Every key is optional; an
+   empty row reads back as a file claim on \"\"."
+  [:map
+   [:claim/file {:optional true} [:maybe :string]]
+   [:claim/qn {:optional true} [:maybe :string]]
+   [:claim/mode {:optional true} [:maybe span/Mode]]
+   [:claim/slave {:optional true} [:maybe :string]]])
+
+(def HeldSpan
+  "A span read back from a claim row, carrying its holder and stored key."
+  [:map
+   [:span/file :string]
+   [:span/mode span/Mode]
+   [:span/qn {:optional true} [:maybe :string]]
+   [:claim/slave [:maybe :string]]
+   [:claim/key :string]])
+
+(def Wanted
+  "What a claimant asks for: spans or bare paths, any collection."
+  [:or [:sequential span/SpanLike] [:set span/SpanLike]])
+
+(def RenderedConflict
+  "A conflict or warning with its rendered :message."
+  [:map [:message :string]])
+
+(def AcquireResult
+  "`acquire!`: all or nothing, with the refusal's rendered collisions."
+  [:map
+   [:acquired? :boolean]
+   [:conflicts [:vector span/Conflict]]
+   [:warnings [:vector [:map]]]
+   [:spans-claimed [:int {:min 0}]]])
+
+(def TxReport
+  "A DataScript transaction report, as lings/claim-file! answers it (a record,
+   so a map)."
+  [:map [:db-after :any] [:tx-data [:sequential :any]]])
 
 (defn row->span
   "Recover a span from a stored claim row.
@@ -65,6 +110,8 @@
              (span/file-span file))
            :claim/slave (:claim/slave row)
            :claim/key   k)))
+
+(m/=> row->span [:=> [:cat ClaimRow] HeldSpan])
 
 (defn- created-ms
   "Epoch millis of a claim row's creation, or nil when it has none.
@@ -129,6 +176,15 @@
             (map row->span))
            (lings/get-all-claims)))))
 
+;; boundary: reads the swarm claim store
+(m/=> held-spans [:function
+                  [:=> [:cat] [:vector HeldSpan]]
+                  [:=> [:cat [:maybe [:map
+                                      [:include-stale? {:optional true} :boolean]
+                                      [:threshold-ms {:optional true} [:maybe [:int {:min 0}]]]
+                                      [:now-ms {:optional true} [:maybe :int]]]]]
+                   [:vector HeldSpan]]])
+
 ;; =============================================================================
 ;; Conflict check
 ;; =============================================================================
@@ -142,11 +198,19 @@
   ([wanted slave-id scope]
    (span/conflicts (graph/callers-fn scope) (held-spans) wanted slave-id)))
 
+(m/=> conflicts-for [:function
+                     [:=> [:cat span/SpanLike [:maybe :string]] [:vector span/Conflict]]
+                     [:=> [:cat span/SpanLike [:maybe :string] [:maybe :string]] [:vector span/Conflict]]])
+
 (defn available?
   "True when nothing blocks `wanted` for `slave-id`."
   ([wanted slave-id] (available? wanted slave-id nil))
   ([wanted slave-id scope]
    (empty? (conflicts-for wanted slave-id scope))))
+
+(m/=> available? [:function
+                  [:=> [:cat span/SpanLike [:maybe :string]] :boolean]
+                  [:=> [:cat span/SpanLike [:maybe :string] [:maybe :string]] :boolean]])
 
 ;; =============================================================================
 ;; Acquire and release
@@ -171,10 +235,21 @@
                                    :qn         (:span/qn sp)
                                    :mode       (:span/mode sp)})))
 
+;; boundary: one claim row upserted; the slave must already be registered
+(m/=> claim-span! [:function
+                   [:=> [:cat span/SpanLike :string] TxReport]
+                   [:=> [:cat span/SpanLike :string [:maybe [:map
+                                                           [:task-id {:optional true} [:maybe :string]]
+                                                           [:prior-hash {:optional true} [:maybe :string]]]]]
+                    TxReport]])
+
 (defn release-span!
   "Release the claim on `s`."
   [s]
   (lings/release-claim! (span/key-of s)))
+
+;; boundary: the tx-report, or nil when nothing held that key
+(m/=> release-span! [:=> [:cat span/SpanLike] [:maybe TxReport]])
 
 (defn- claim-lock
   "THE claim lock, resolved per call and shared.
@@ -231,3 +306,11 @@
                  :conflicts     []
                  :warnings      warned
                  :spans-claimed (count spans)})))))))
+
+(m/=> acquire! [:function
+                [:=> [:cat Wanted :string] AcquireResult]
+                [:=> [:cat Wanted :string [:maybe [:map
+                                                   [:task-id {:optional true} [:maybe :string]]
+                                                   [:scope {:optional true} [:maybe :string]]
+                                                   [:ctx {:optional true} [:maybe span/Ctx]]]]]
+                 AcquireResult]])

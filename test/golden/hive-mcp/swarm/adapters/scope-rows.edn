@@ -1,0 +1,16 @@
+{:case-0
+ {:out [{:k "s2"}],
+  :in ({:session-ref {}, :parent-of nil} :k [{:k "s2"}])},
+ :case-1
+ {:out [{:k "s2"} {:k "s1"} {:k "s1"}],
+  :in ({:parent-of {"" ""}} :k [{:k "s2"} {:k "s1"} {:k "s1"}])},
+ :case-2
+ {:out [{:k "s1"} {:k "s1"}],
+  :in ({:session-ref {}} :k [{:k "s1"} {:k "s1"}])},
+ :case-3
+ {:out [{:k "s2"} {:k "s1"} {:k "s1"}],
+  :in ({:parent-of {}} :k [{:k "s2"} {:k "s1"} {:k "s1"}])},
+ :case-4 {:out [{:k "s1"}], :in ({:session-ref {}} :k [{:k "s1"}])},
+ :case-5 {:out [], :in ({} :k [])},
+ :case-6 {:out [{:k "s1"}], :in ({:parent-of nil} :k [{:k "s1"}])},
+ :case-7 {:out [], :in ({:session-ref {:session-id nil}} :k [])}}

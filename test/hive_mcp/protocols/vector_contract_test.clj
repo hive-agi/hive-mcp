@@ -21,8 +21,14 @@
 
 (def ^:private Outcome
   "Port write returns: nil, an id, an :error-carrying map (its :error may be
-   nil), or a success map without :error."
-  [:or :nil :int
+   nil), or a success map without :error. Half the draws carry :error: a
+   plain four-way :or left the error arm near 13 of 100 against a floor of 12."
+  [:or {:gen/schema [:tuple [:or :nil :int [:map [:id :int]]]
+                     [:map [:error [:maybe [:enum :io/timeout :io/refused]]]
+                      [:message {:optional true} :string]]
+                     :boolean]
+        :gen/fmap (fn [[ok err error?]] (if error? err ok))}
+   :nil :int
    [:map [:error [:maybe [:enum :io/timeout :io/refused]]] [:message {:optional true} :string]]
    [:map [:id :int]]])
 

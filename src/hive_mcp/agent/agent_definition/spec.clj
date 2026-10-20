@@ -128,6 +128,12 @@
   "A collection of definition maps (vector, list or lazy seq)."
   [:sequential AnyMap])
 
+(def PromptHolder
+  "What `get-system-prompt` reads: a definition (map or record) whose
+   :system-prompt is a string, a 0-arity fn returning one, or absent."
+  [:maybe [:map [:system-prompt {:optional true}
+                 [:maybe [:or :string [:=> [:cat] :string]]]]]])
+
 (def LoadError
   "Error row of a loader: {:error msg :file path}."
   [:map [:error :string] [:file :string]])

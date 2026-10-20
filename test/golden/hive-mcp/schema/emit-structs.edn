@@ -1,0 +1,82 @@
+{:case-0 {:out "", :in ([])},
+ :case-1
+ {:out
+  "(cl-defstruct (hive-b (:constructor hive-b-create) (:include base))\n  x ratio kind any)\n\n(cl-defstruct (hive-b (:constructor make-it) (:include base))\n  id type tags)",
+  :in
+  ([[[:map
+      [:x [:or :string :int]]
+      [:ratio :double]
+      [:kind :keyword]
+      [:any :any]]
+     {:name "hive-b", :include "base", :var "row"}]
+    [[:map
+      [:id :string]
+      [:type [:enum :note :snippet]]
+      [:tags [:vector :string]]]
+     {:name "hive-b", :constructor "make-it", :include "base"}]])},
+ :case-2
+ {:out
+  "(cl-defstruct (hive-a (:constructor hive-a-create))\n  enabled port)\n\n(cl-defstruct (hive-a (:constructor make-it) (:include base))\n  x ratio kind any)\n\n(cl-defstruct (hive-b (:constructor make-it))\n  enabled port)",
+  :in
+  ([[[:map [:enabled :boolean] [:port {:optional true} [:maybe :int]]]
+     {:name "hive-a", :var "row"}]
+    [[:map
+      [:x [:or :string :int]]
+      [:ratio :double]
+      [:kind :keyword]
+      [:any :any]]
+     {:name "hive-a",
+      :constructor "make-it",
+      :include "base",
+      :defaults {}}]
+    [[:map [:enabled :boolean] [:port {:optional true} [:maybe :int]]]
+     {:name "hive-b", :constructor "make-it"}]])},
+ :case-3
+ {:out
+  "(cl-defstruct (hive-b (:constructor make-it) (:include base))\n  enabled port)\n\n(cl-defstruct (hive-b (:constructor make-it))\n  id type tags)",
+  :in
+  ([[[:map [:enabled :boolean] [:port {:optional true} [:maybe :int]]]
+     {:name "hive-b",
+      :constructor "make-it",
+      :include "base",
+      :var "e"}]
+    [[:map
+      [:id :string]
+      [:type [:enum :note :snippet]]
+      [:tags [:vector :string]]]
+     {:name "hive-b", :constructor "make-it", :var "e"}]])},
+ :case-4
+ {:out
+  "(cl-defstruct (hive-a (:constructor hive-a-create) (:include base))\n  x ratio kind any)",
+  :in
+  ([[[:map
+      [:x [:or :string :int]]
+      [:ratio :double]
+      [:kind :keyword]
+      [:any :any]]
+     {:name "hive-a", :include "base"}]])},
+ :case-5
+ {:out
+  "(cl-defstruct (hive-a (:constructor hive-a-create))\n  x ratio kind any)",
+  :in
+  ([[[:map
+      [:x [:or :string :int]]
+      [:ratio :double]
+      [:kind :keyword]
+      [:any :any]]
+     {:name "hive-a"}]])},
+ :case-6
+ {:out
+  "(cl-defstruct (hive-b (:constructor hive-b-create) (:include base))\n  id type tags)",
+  :in
+  ([[[:map
+      [:id :string]
+      [:type [:enum :note :snippet]]
+      [:tags [:vector :string]]]
+     {:name "hive-b", :include "base"}]])},
+ :case-7
+ {:out
+  "(cl-defstruct (hive-b (:constructor make-it))\n  enabled port)",
+  :in
+  ([[[:map [:enabled :boolean] [:port {:optional true} [:maybe :int]]]
+     {:name "hive-b", :constructor "make-it", :var "e"}]])}}

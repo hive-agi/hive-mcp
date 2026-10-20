@@ -13,11 +13,12 @@
    Single try-result boundary at each handler level. Zero nested try-catch."
 
   (:require [hive-mcp.dns.result :as result]
-            [hive-mcp.tools.core :refer [mcp-json mcp-error]]
+            [hive-mcp.tools.core :as core :refer [mcp-json mcp-error]]
             [hive-mcp.agora.dialogue :as dialogue]
             [hive-mcp.agora.consensus :as consensus]
             [hive-mcp.agora.schema :as schema]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -251,6 +252,20 @@
   "Retrieve dialogue transcript with all turns."
   [params]
   (result->mcp (try-result :agora/get-history #(get-history* params))))
+
+;; Every handler is a try-result boundary: params in, one MCP text response
+;; out (mcp-json on {:ok}, mcp-error on {:error}); it never throws.
+(m/=> handle-agora-create-dialogue [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-agora-dispatch [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-agora-check-consensus [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-agora-list-dialogues [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-agora-join-dialogue [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-agora-get-history [:=> [:cat [:maybe :map]] core/McpResponse])
 
 ;; ============================================================
 ;; Tool Definitions

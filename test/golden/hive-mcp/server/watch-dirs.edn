@@ -1,0 +1,10 @@
+{:case-0 {:in (nil nil), :out ["<cwd>/src"]},
+ :case-1 {:in ([] ["/repo/src"]), :out ["/repo/src"]},
+ :case-2 {:in (nil nil), :out ["<cwd>/src"]},
+ :case-3 {:in (nil []), :out ["<cwd>/src"]},
+ :case-4
+ {:in (["src" "dev" "/abs/src"] nil),
+  :out ["<cwd>/src" "<cwd>/dev" "/abs/src"]},
+ :case-5 {:in (nil nil), :out ["<cwd>/src"]},
+ :case-6 {:in (nil nil), :out ["<cwd>/src"]},
+ :case-7 {:in (nil nil), :out ["<cwd>/src"]}}

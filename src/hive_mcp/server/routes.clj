@@ -19,6 +19,7 @@
             [hive-addon.tool-contract :as tool-contract]
             [hive-mcp.tools.schema-keys :as schema-keys]
             [hive-mcp.tools.async-params :as async-params]
+            [malli.core :as m]
             [hive-mcp.server.routes.wire-coerce :as wire-coerce]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -128,6 +129,18 @@
                            (wire-coerce/wrap-handler-wire-coerce handler wire-schema)
                            name default-async-commands))))
 
+(def ToolDefIn
+  "A tool definition with a raw :handler."
+  [:map [:name :string] [:description {:optional true} :any]
+   [:inputSchema {:optional true} :map] [:handler :any]])
+
+(def MadeTool
+  "An SDK-format tool: advertised def plus the middleware-wrapped handler."
+  [:map [:name :string] [:inputSchema :map] [:handler :any]
+   [:deprecated {:optional true} [:= true]]])
+
+(m/=> make-tool [:=> [:cat ToolDefIn] MadeTool])
+
 (defn collect-surface-inputs
   "COLLECT: read every source of the advertised surface once, into a
    `tools/SurfaceInputs` value. The only impure step of the table; everything
@@ -143,11 +156,17 @@
    :excluded (if (guards/child-ling?) tools/child-excluded-tool-names #{})
    :visible  (tools/visible-root-names)})
 
+(m/=> collect-surface-inputs [:=> [:cat] [:map [:base [:sequential :map]] [:dynamic [:vector :map]]
+                                          [:addon [:vector :map]] [:absorbed [:set :string]]
+                                          [:excluded [:set :string]] [:visible [:maybe [:set :string]]]]])
+
 (defn advertised-tool-defs
   "The advertised tool defs (raw handlers), deduped and gated: the one surface
    boot, every refresh, every transport and agent delegation agree on."
   []
   (tools/advertised-tools (collect-surface-inputs)))
+
+(m/=> advertised-tool-defs [:=> [:cat] [:sequential [:map [:name :string]]]])
 
 ;; =============================================================================
 ;; Server Spec Building
@@ -159,6 +178,12 @@
   [made-tools]
   (into {} (map (fn [t] [(:name t) {:tool (dissoc t :handler) :handler (:handler t)}]))
         made-tools))
+
+(def Table
+  "A transport's tool table: name -> {:tool def-sans-handler :handler h}."
+  [:map-of :any [:map [:tool :map] [:handler :any]]])
+
+(m/=> tool-table [:=> [:cat [:maybe [:sequential [:map [:name :any]]]]] Table])
 
 (defn build-server-spec
   "Build the MCP server spec from the ONE advertised surface
@@ -178,6 +203,8 @@
     {:name    "hive-mcp"
      :version "0.1.0"
      :tools   (mapv make-tool defs)}))
+
+(m/=> build-server-spec [:=> [:cat] [:map [:name :string] [:version :string] [:tools [:vector MadeTool]]]])
 
 
 ;; =============================================================================
@@ -233,16 +260,22 @@
   (swap! tool-surfaces assoc id surface)
   id)
 
+(m/=> register-surface! [:=> [:cat :any ToolSurface] :any])
+
 (defn unregister-surface!
   "Forget the surface registered under ID. Returns ID."
   [id]
   (swap! tool-surfaces dissoc id)
   id)
 
+(m/=> unregister-surface! [:=> [:cat :any] :any])
+
 (defn registered-surfaces
   "id -> surface, for diagnostics and tests."
   []
   @tool-surfaces)
+
+(m/=> registered-surfaces [:=> [:cat] [:map-of :any ToolSurface]])
 
 (defn changed-tool-names
   "Names whose advertised def differs between OLD and NEW (name -> def), added
@@ -251,6 +284,8 @@
   (into (sorted-set)
         (remove #(= (get old %) (get new %)))
         (concat (keys old) (keys new))))
+
+(m/=> changed-tool-names [:=> [:cat [:maybe [:map-of :any :any]] [:maybe [:map-of :any :any]]] [:set :any]])
 
 (defn- install-everywhere!
   "BOUNDARY: install TABLE into every registered surface. A surface that
@@ -275,6 +310,9 @@
   (if (seq changed)
     (filterv #(some? (:surface/notify! (get surfaces %))) installed)
     []))
+
+(m/=> notification-targets [:=> [:cat [:maybe [:sequential :any]] [:maybe [:sequential :any]] [:maybe [:map-of :any :any]]]
+                            [:vector :any]])
 
 (defn refresh-surfaces!
   "Compute the advertised table ONCE and install it into every registered
@@ -306,6 +344,13 @@
               (count (:changed res)) "changed, into" (:surfaces res))
     res))
 
+(def RefreshReport
+  "refresh-surfaces!' answer."
+  [:map [:count [:int {:min 0}]] [:changed [:vector :any]]
+   [:surfaces [:vector :any]] [:failed [:vector :any]]])
+
+(m/=> refresh-surfaces! [:=> [:cat] RefreshReport])
+
 (defn refresh-tools!
   "Hot-reload all tools in the running server.
 
@@ -332,6 +377,12 @@
                                                 server "notifications/tools/list_changed" {}))))})
     (refresh-surfaces!)))
 
+(def AtomRef
+  "A server context atom."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (atom nil))} #(instance? clojure.lang.IAtom %)])
+
+(m/=> refresh-tools! [:=> [:cat AtomRef] [:maybe RefreshReport]])
+
 (defn debug-tool-handler
   "Get info about a registered tool handler (for debugging)."
   [server-context-atom tool-name]
@@ -342,6 +393,9 @@
         {:name tool-name
          :handler-class (str (type (:handler tool-entry)))
          :tool-keys (keys (:tool tool-entry))}))))
+
+(m/=> debug-tool-handler [:=> [:cat AtomRef :any]
+                          [:maybe [:map [:name :any] [:handler-class :string] [:tool-keys [:maybe [:sequential :keyword]]]]]])
 
 (defn register-tools-for-delegation!
   "Register the advertised surface for agent delegation. Same table as every
@@ -354,3 +408,5 @@
     (log/info "Registered" (count selected-tools) "tools for agent delegation"
               (if (guards/child-ling?) "(child-ling restricted)" ""))
     (count selected-tools)))
+
+(m/=> register-tools-for-delegation! [:=> [:cat] [:int {:min 0}]])

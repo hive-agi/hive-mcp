@@ -1,5 +1,6 @@
 (ns hive-mcp.server.routes.async-ack
-  "The acknowledgement an async:true tool call returns at once.")
+  "The acknowledgement an async:true tool call returns at once."
+  (:require [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -16,3 +17,15 @@
   (cond-> {:queued true :task-id task-id :tool tool-name :result-via result-via}
     timeout-ms     (assoc :timeout-ms timeout-ms)
     (not durable?) (assoc :durable false)))
+
+(def Ack
+  "The acknowledgement of a queued call."
+  [:map
+   [:queued [:= true]]
+   [:task-id :any]
+   [:tool :any]
+   [:result-via :string]
+   [:timeout-ms {:optional true} :any]
+   [:durable {:optional true} [:= false]]])
+
+(m/=> ack [:=> [:cat :any :any :any :any] Ack])

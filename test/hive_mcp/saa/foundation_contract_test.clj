@@ -104,8 +104,23 @@
 ;;; ---------------------------------------------------------------------------
 
 (def ^:private RawProbe
-  ;; :type is weighted so every lifted variant is reached comfortably
-  [:map
+  ;; :type is drawn so every lifted variant is reached comfortably: a
+  ;; uniform pick over the four variants first, then a key that lifts to it.
+  ;; The old weighted :enum, thinned by :optional, left :pm/error and
+  ;; :pm/phase-complete near 13 of 200 against a floor of 12.
+  [:map {:gen/schema [:tuple
+                      [:map
+                       [:phase {:optional true} [:enum :silence :act]]
+                       [:saa-phase {:optional true} [:enum :abstract]]
+                       [:content {:optional true} [:string {:max 4}]]
+                       [:data {:optional true} [:string {:max 4}]]
+                       [:error {:optional true} [:string {:max 4}]]
+                       [:message {:optional true} [:string {:max 4}]]]
+                      [:enum [:message nil :other] [:complete :result] [:error] [:saa-complete]]
+                      [:enum 0 1 2]]
+         :gen/fmap (fn [[m types i]]
+                     (let [t (nth types (mod i (count types)))]
+                       (cond-> m t (assoc :type t))))}
    [:type {:optional true} [:enum :message :complete :result :error :error
                             :saa-complete :saa-complete :saa-complete :other]]
    [:phase {:optional true} [:enum :silence :act]]

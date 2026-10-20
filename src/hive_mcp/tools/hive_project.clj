@@ -12,7 +12,7 @@
    - :watch-dirs - directories to watch for hot-reload
    - :hot-reload - enabled by default for Clojure
    - :presets-path - project-local presets directory"
-  (:require [hive-mcp.tools.core :refer [mcp-json mcp-error]]
+  (:require [hive-mcp.tools.core :as core :refer [mcp-json mcp-error]]
             [hive-spi.editor.services :as svc]
             [hive-mcp.context.request :as ctx]
             [hive-mcp.config.core :as config]
@@ -20,7 +20,8 @@
             [clojure.java.io :as io]
             [hive-mcp.dns.result :refer [rescue]]
             [clojure.string :as str]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [malli.core :as m])
   (:import [java.security MessageDigest]
            [java.time Instant]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -438,6 +439,38 @@
 
       ;; No projectile info available
       (mcp-error "Could not detect project. Ensure directory is a valid project root."))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def ProjectType
+  "Every project type detect-project-type-native can name."
+  (into [:enum "generic"] (distinct (map second marker-file->type))))
+
+(def HeadlessGeneration
+  "generate-hive-project-headless!'s verdict; nil when the generation threw."
+  [:maybe
+   [:or
+    [:map [:success [:= true]] [:path :string] [:config :map]]
+    [:map [:skipped [:= true]] [:reason [:enum "existing" "no-git"]] [:path :string]]]])
+
+(def ScanReport
+  "scan-and-generate-missing!'s counters and per-directory details."
+  [:map
+   [:scanned [:int {:min 0}]]
+   [:generated [:int {:min 0}]]
+   [:skipped [:int {:min 0}]]
+   [:errors [:int {:min 0}]]
+   [:details [:sequential [:map [:directory {:optional true} :string]]]]])
+
+(m/=> detect-project-type-native [:=> [:cat [:maybe :string]] [:maybe ProjectType]])
+
+(m/=> generate-hive-project-headless! [:=> [:cat [:maybe :string]] HeadlessGeneration])
+
+(m/=> scan-and-generate-missing! [:=> [:cat] ScanReport])
+
+(m/=> handle-generate-hive-project [:=> [:cat [:maybe :map]] core/McpResponse])
 
 ;; =============================================================================
 ;; Tool Definition

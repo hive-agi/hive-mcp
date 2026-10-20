@@ -21,7 +21,8 @@
   (:require [hive.events.cofx :as cofx]
             [hive.events.fx :as fx]
             [hive.events.router :as router]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -41,6 +42,26 @@
   (when-let [sym (registry-atoms registry)]
     (some-> (find-var sym) deref)))
 
+;; =============================================================================
+;; Value schemas
+;; =============================================================================
+
+(def Handler
+  "A registered handler fn."
+  [:fn {:error/message "a fn" :gen/elements [inc dec identity]} fn?])
+
+(def Entry
+  "A registry entry: a bare handler fn, or a map holding one under :handler."
+  [:or Handler [:map [:handler Handler]]])
+
+(def RegistryKind
+  "Which hive.events registry. An unknown one is answered nil/false, never
+   refused."
+  [:keyword {:gen/elements [:fx :cofx :event :other]}])
+
+(def RegistrationRow
+  [:map {:closed true} [:registry :keyword] [:id :any] [:owner :any]])
+
 (defn fresh-entry
   "The entry `entry` becomes once its handler `stale` is replaced by `fresh`,
    or nil when `entry` no longer holds `stale` (somebody re-registered it;
@@ -50,6 +71,8 @@
     (identical? entry stale)                               fresh
     (and (map? entry) (identical? (:handler entry) stale)) (assoc entry :handler fresh)
     :else                                                  nil))
+
+(m/=> fresh-entry [:=> [:cat :any :any Handler] [:maybe Entry]])
 
 (defn- registry-fn [entry]
   (cond (var? entry)                              nil
@@ -91,6 +114,9 @@
       (do (write-entry! registry id e) true)
       false)))
 
+(m/=> rebind-entry!
+      [:=> [:cat RegistryKind [:any {:gen/elements [::not-registered "not-registered"]}] :any Handler] :boolean])
+
 (defn- row [{:keys [registry id owner]}] {:registry registry :id id :owner owner})
 
 (defn rebind-stale!
@@ -114,3 +140,9 @@
         (log/info "core hot-reload: rebound stale registrations"
                   {:rebound (count rebound) :remaining (count left)}))
       {:rebound rebound :remaining left})))
+
+(m/=> rebind-stale!
+      [:=> [:cat [:sequential [:or :symbol :string]]]
+       [:maybe [:map {:closed true}
+                [:rebound [:vector RegistrationRow]]
+                [:remaining [:vector RegistrationRow]]]]])

@@ -27,7 +27,9 @@
             [hive-mcp.agent.grant :as grant]
             [hive-mcp.agent.identity :as agent-identity]
             [hive-mcp.server.routes.async-ack :as async-ack]
-            [hive-mcp.tools.async-params :as async-params])
+            [hive-mcp.tools.async-params :as async-params]
+            [malli.core :as m]
+            [hive-mcp.server.routes.async-task.lane :as async-lane])
 (:import [java.util.concurrent RejectedExecutionException]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -49,6 +51,14 @@
         (re-find #"(?i)no.*protocol.*method" msg)
         (instance? IllegalStateException e))))
 
+(def Handler
+  "A tool handler or a wrapped one: a 1-arity fn of the args map."
+  [:=> [:cat :any] :any])
+
+(def ToolName
+  "The tool a wrapper serves; nil for a bare handler under test."
+  [:maybe :string])
+
 (defn wrap-handler-retry
   "Wrap handler with retry logic for hot-reload resilience."
   [handler]
@@ -69,6 +79,8 @@
             (Thread/sleep hot-reload-retry-delay-ms)
             (recur (inc attempt)))
           (:ok result))))))
+
+(m/=> wrap-handler-retry [:=> [:cat Handler] Handler])
 
 
 ;; =============================================================================
@@ -101,6 +113,8 @@
             (log/debug "[NATS] Tool notification failed for" tool-name (.getMessage e)))))
       result)))
 
+(m/=> wrap-handler-nats-notify [:=> [:cat Handler ToolName] Handler])
+
 
 ;; =============================================================================
 ;; Context Binding
@@ -127,6 +141,69 @@
     (fn [] (with-bindings {v lane} (f)))
     f))
 
+(m/=> in-embed-lane [:=> [:cat :keyword [:=> [:cat] :any]] [:=> [:cat] :any]])
+
+;; -----------------------------------------------------------------------------
+;; Activity attribution (REGISTRY-STALE-HIDES-LIVE)
+;;
+;; get-all-slaves hides a row whose :slave/last-active-at is older than the
+;; staleness window. A claude/vterm ling's tool calls arrive as
+;; `_caller_id "<slave-id>:<pid>"` and nothing else attributes them to its
+;; row, so a ling working for 30 min vanished from `agent status`. Every tool
+;; call by a registered, not-dead slave refreshes that stamp, throttled.
+;; -----------------------------------------------------------------------------
+
+(def ^:const activity-touch-interval-ms
+  "Minimum gap between two last-active-at writes for one slave."
+  30000)
+
+(defonce ^:private activity-touched-at (atom {}))
+
+(defn reset-activity-throttle!
+  "Forget every throttle stamp. Test seam."
+  []
+  (reset! activity-touched-at {}))
+
+(m/=> reset-activity-throttle! [:=> [:cat] [:= {} {}]])
+
+(defn- registry-touch-slave!
+  [slave-id updates]
+  (when-let [f (try (requiring-resolve 'hive-mcp.swarm.datascript.lings/update-slave!)
+                    (catch Throwable _ nil))]
+    (f slave-id updates)))
+
+(def ^:dynamic *touch-slave!*
+  "2-arg port: write `updates` onto the registry row `slave-id`. Rebound by tests."
+  registry-touch-slave!)
+
+(defn- claim-touch!
+  "True when `slave-id` was not touched within the interval; records `now`."
+  [slave-id now]
+  (let [[old _] (swap-vals! activity-touched-at
+                            (fn [m] (if (< (- now (get m slave-id 0)) activity-touch-interval-ms)
+                                      m
+                                      (assoc m slave-id now))))]
+    (>= (- now (get old slave-id 0)) activity-touch-interval-ms)))
+
+(defn touch-caller-activity!
+  "Refresh :slave/last-active-at for the registry row `caller-id` belongs to
+   (itself, or `<slave-id>` of `<slave-id>:<instance>`). Rows that are absent
+   or explicitly dead are left alone. Never throws."
+  [get-slave caller-id]
+  (try
+    (when-let [caller (some-> caller-id str not-empty)]
+      (when-let [[id slave] (some (fn [id] (when-let [s (get-slave id)] [id s]))
+                                  (grant/slave-ids caller))]
+        (let [sid (or (:slave/id slave) id)
+              now (System/currentTimeMillis)]
+          (when (and (not (false? (:slave/alive? slave))) (claim-touch! sid now))
+            (*touch-slave!* sid {:slave/last-active-at now})))))
+    (catch Throwable e
+      (log/debug "activity touch failed (non-fatal):" (ex-message e))
+      nil)))
+
+(m/=> touch-caller-activity! [:=> [:cat [:=> [:cat :string] :any] [:maybe :string]] :any])
+
 (defn wrap-handler-context
   "Bind request context: keywordize args, verify identity, resolve ids, bind
    ctx vars.
@@ -142,6 +219,10 @@
    `:identity` in the request context. Under :enforce a request that claims a
    registered spawned agent's id without a valid credential is refused here;
    under :observe (the default) it is logged and counted and proceeds.
+
+   Activity: an admitted call by a registered slave refreshes that row's
+   :slave/last-active-at (`touch-caller-activity!`, throttled), so a live
+   claude/vterm ling is not hidden from get-all-slaves as stale.
 
    Every tool call runs in the :interactive embedding lane
    (embeddings.shared-gate/*lane*, via `in-embed-lane`), so a caller waiting
@@ -161,12 +242,15 @@
                 project-id (id/extract-project-id args)
                 directory (id/extract-directory args)]
             (crystal/record-session-start! agent-id)
+            (touch-caller-activity! *identity-get-slave* (:_caller_id args))
             (ctx/with-request-context {:agent-id agent-id
                                        :caller-id (:_caller_id args)
                                        :identity who
                                        :project-id project-id
                                        :directory directory}
               ((in-embed-lane :interactive #(handler args))))))))))
+
+(m/=> wrap-handler-context [:=> [:cat Handler] Handler])
 
 
 ;; =============================================================================
@@ -179,6 +263,8 @@
   (fn [args]
     (id/normalize-content (handler args))))
 
+(m/=> wrap-handler-normalize [:=> [:cat Handler] Handler])
+
 (defn wrap-handler-compress
   "Apply response compression when `compact` param is present."
   [handler]
@@ -189,11 +275,15 @@
         (compress/compress-content content mode)
         content))))
 
+(m/=> wrap-handler-compress [:=> [:cat Handler] Handler])
+
 (defn wrap-handler-response
   "Wrap handler result in {:content ...} response map."
   [handler]
   (fn [args]
     {:content (handler args)}))
+
+(m/=> wrap-handler-response [:=> [:cat Handler] Handler])
 
 
 ;; =============================================================================
@@ -212,6 +302,8 @@
                  (some? flag)                   (assoc args :async flag)
                  (contains? commands cmd-kw)    (assoc args :async true)
                  :else                          args)))))
+
+(m/=> wrap-handler-default-async-for-commands [:=> [:cat Handler [:maybe [:or [:set :any] [:sequential :any]]]] Handler])
 
 (defn wrap-handler-async
   "Intercept async:true calls: return an ack, run the work on the async pool.
@@ -270,6 +362,9 @@
             :tool       tool-name
             :caller-id  caller-id
             :timeout-ms timeout-ms
+            ;; Execution lane (async-task.lane): a short forge verb must not
+            ;; queue behind hours-long work on the default pool.
+            :lane       (async-lane/classify tool-name (:command args))
             ;; Background work: back to the :batch embedding lane.
             :f          (in-embed-lane :batch (fn []
                           (try
@@ -315,6 +410,8 @@
                              :error "async pool saturated: nothing was started, retry shortly"})}])))
       (handler args))))
 
+(m/=> wrap-handler-async [:=> [:cat Handler ToolName] Handler])
+
 (defn- guard-refusal
   "Render `decision` as the content array for a refused call."
   [tool-name decision]
@@ -347,6 +444,11 @@
              :cwd (id/extract-directory args)}
       caller   (assoc :caller-id caller)
       verified (assoc :verified-caller-id verified))))
+
+(m/=> guard-raw-context [:=> [:cat ToolName [:maybe :map]]
+                         [:map [:tool ToolName] [:input :any] [:agent-id :any] [:cwd :any]
+                          [:caller-id {:optional true} :string]
+                          [:verified-caller-id {:optional true} :string]]])
 
 (defn wrap-handler-guard
   "Gate the call through the `:guard/decide` seam before the handler runs.
@@ -393,6 +495,8 @@
                                 (when-let [rid (:guard/rule-id decision)]
                                   (str " [" rid "]")))})
         (handler args)))))
+
+(m/=> wrap-handler-guard [:=> [:cat Handler ToolName] Handler])
 
 
 ;; =============================================================================
@@ -493,6 +597,9 @@
     {:allowance allowance
      :remaining (max 0 (- remaining (max 0 rendered-chars)))}))
 
+(m/=> spend-piggyback-budget [:=> [:cat :int :int :int]
+                              [:map [:allowance [:int {:min 0}]] [:remaining [:int {:min 0}]]]])
+
 (defn- piggyback-content-chars
   "Total text chars in MCP content, for measuring a channel's actual wire cost."
   [content]
@@ -532,6 +639,8 @@
         (do (log/warn "grant: refused a tool call" {:tool tool-name :command (:command args) :caller caller})
             [{:type "text" :isError true :text no}])
         (handler args)))))
+
+(m/=> wrap-handler-grant [:=> [:cat Handler ToolName] Handler])
 
 (defn wrap-handler-piggybacks
   "Unified piggyback wrapper: drains all 4 channels in a single pass.
@@ -606,6 +715,8 @@
                                                  (ctx-id/caller-id-string caller))]
        (id/wrap-piggyback catchup-content hivemind-msgs)))))
 
+(m/=> wrap-handler-piggybacks [:function [:=> [:cat Handler] Handler] [:=> [:cat Handler ToolName] Handler]])
+
 
 ;; =============================================================================
 ;; Middleware Chain Composition
@@ -635,3 +746,5 @@
       (wrap-handler-piggybacks tool-name)
       wrap-handler-context
       wrap-handler-response))
+
+(m/=> build-middleware-chain [:=> [:cat Handler ToolName [:maybe [:or [:set :any] [:sequential :any]]]] Handler])

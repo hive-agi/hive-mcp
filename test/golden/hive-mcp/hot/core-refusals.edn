@@ -1,0 +1,13 @@
+{:plan-jar
+ {:error :restart-required,
+  :message
+  "hive-mcp core is loaded from a jar; its bytes cannot change without a restart"},
+ :reload-jar
+ {:error :restart-required,
+  :message
+  "hive-mcp core is loaded from a jar; its bytes cannot change without a restart",
+  :ok? false},
+ :reload-no-hot
+ {:error :hive-hot-absent,
+  :message "hive-hot is not on the classpath",
+  :ok? false}}
