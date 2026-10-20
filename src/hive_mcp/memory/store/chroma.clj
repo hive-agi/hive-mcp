@@ -15,7 +15,8 @@
             [hive-mcp.dns.result :as result]
             [taoensso.timbre :as log]
             [clojure.string :as str]
-            [hive-spi.memory.ports :as ports]))
+            [hive-spi.memory.ports :as ports]
+            [hive-mcp.chroma.helpers :as h]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -109,6 +110,20 @@
     (let [ks (conj (set (map field-key output-fields)) :id)]
       (mapv #(select-keys % ks) entries))
     entries))
+
+(defn hit->entry
+  "A Chroma search hit as the entry map the IMemoryStore port promises.
+   The vendor answers {:id :document :metadata :distance ...} with every entry
+   field (:type, :project-id, :tags, ...) nested under :metadata; the port's
+   readers, and the hive-spi conformance filter case, read them top level.
+   The raw hit keys (:metadata, :document, :distance) are kept so callers that
+   read the vendor shape are unaffected."
+  [hit]
+  (if (map? (:metadata hit))
+    (merge hit (h/metadata->entry hit))
+    hit))
+
+(m/=> hit->entry [:=> [:cat [:map [:id :any]]] [:map [:id :any]]])
 
 (m/=> project-fields
       [:=> [:cat [:maybe [:sequential :map]]
@@ -245,11 +260,12 @@
 
   (search-similar [_this query-text opts]
     (let [{:keys [limit type project-ids exclude-tags]} opts]
-      (csearch/search-similar query-text
-                              :limit (or limit 10)
-                              :type type
-                              :project-ids project-ids
-                              :exclude-tags exclude-tags)))
+      (mapv hit->entry
+            (csearch/search-similar query-text
+                                    :limit (or limit 10)
+                                    :type type
+                                    :project-ids project-ids
+                                    :exclude-tags exclude-tags))))
 
   (supports-semantic-search? [_this]
     (boolean (chroma/embedding-configured?)))
