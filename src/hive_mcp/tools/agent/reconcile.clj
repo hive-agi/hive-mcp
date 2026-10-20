@@ -187,3 +187,62 @@
    retired rows, and the hivemind agent registry sixth-sense listens to."
   []
   (->known-agents (disj (registered-ids) nil) (heard-ids) (retired-rows)))
+
+;; =============================================================================
+;; Contracts (kept in this namespace: tools.agent is a frozen extraction prefix)
+;; =============================================================================
+
+(def AgentRow
+  "A swarm row as elisp or the registry reports it. Open: rows carry more."
+  [:map
+   [:slave/id {:optional true} [:maybe :string]]
+   [:slave/name {:optional true} [:maybe :string]]
+   [:slave/status {:optional true} [:maybe :keyword]]
+   [:slave/cwd {:optional true} [:maybe :string]]
+   [:slave/project-id {:optional true} [:maybe :string]]])
+
+(def AgentIds
+  "Agent ids as a caller hands them: any collection, nil for none."
+  [:maybe [:or [:set :string] [:sequential :string]]])
+
+(def KnownAgentsValue
+  "A KnownAgents record (both evidence protocols)."
+  [:fn {:gen/schema [:tuple [:set :string] [:set :string] [:map-of :string AgentRow]]
+        :gen/fmap (fn [[r h d]] (->KnownAgents r h d))}
+   #(instance? KnownAgents %)])
+
+(def LivenessProbe
+  "Anything that answers ILivenessEvidence (IRetirementEvidence optional)."
+  [:fn {:gen/schema [:tuple [:set :string] [:set :string]]
+        :gen/fmap (fn [[r h]] (->KnownAgents r h {}))}
+   #(satisfies? ILivenessEvidence %)])
+
+(def OrphanedRow
+  "A row reconciled to `:orphaned`."
+  [:map
+   [:slave/status [:= :orphaned]]
+   [:slave/orphan-reason :string]])
+
+(m/=> retired? [:=> [:cat [:maybe :map]] :boolean])
+
+(m/=> ->known-agents
+      [:function
+       [:=> [:cat AgentIds AgentIds] KnownAgentsValue]
+       [:=> [:cat AgentIds AgentIds [:maybe [:map-of :string :map]]] KnownAgentsValue]])
+
+(m/=> orphan-row? [:=> [:cat [:maybe :map]] :boolean])
+
+(m/=> phantom-name [:=> [:cat AgentRow] [:maybe :string]])
+
+(m/=> orphan-ghost [:=> [:cat AgentRow [:maybe :map]] OrphanedRow])
+
+(m/=> orphaned-row? [:=> [:cat [:maybe :map]] :boolean])
+
+(m/=> reconcile-row [:=> [:cat LivenessProbe AgentRow] [:maybe AgentRow]])
+
+(m/=> reconcile
+      [:=> [:cat LivenessProbe [:maybe [:sequential AgentRow]]
+            [:maybe [:map [:include-stale? {:optional true} :any]]]]
+       [:vector AgentRow]])
+
+(m/=> live-evidence [:=> [:cat] KnownAgentsValue])

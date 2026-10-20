@@ -149,3 +149,39 @@
   (if (empty? prompt)
     (mcp-error "prompt is required")
     (swarm-status/handle-swarm-broadcast params)))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def LifecycleParams
+  "Params of a lifecycle handler: an open map. Required keys are checked by
+   the body (a missing one answers an MCP error), so all are optional here."
+  [:maybe [:map
+           [:agent_id {:optional true} [:maybe :string]]
+           [:task_id {:optional true} [:maybe :string]]
+           [:prompt {:optional true} [:maybe :string]]]])
+
+(def TaskRow
+  "A swarm task row as the registry stores it."
+  [:map
+   [:task/id :string]
+   [:task/started-at {:optional true} [:maybe inst?]]])
+
+(def LifecycleHandler
+  [:=> [:cat LifecycleParams] rb/McpResponse])
+
+(m/=> handle-interrupt LifecycleHandler)
+
+(m/=> handle-cleanup [:=> [:cat :any] rb/McpResponse])
+
+(m/=> handle-claims LifecycleHandler)
+
+(m/=> latest-task-id [:=> [:cat [:maybe [:sequential TaskRow]]] [:maybe :string]])
+
+(m/=> handle-collect
+      [:function
+       [:=> [:cat LifecycleParams] rb/McpResponse]
+       [:=> [:cat helpers/Port LifecycleParams] rb/McpResponse]])
+
+(m/=> handle-broadcast LifecycleHandler)

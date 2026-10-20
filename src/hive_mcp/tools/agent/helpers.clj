@@ -93,3 +93,62 @@
      (catch Exception e
        (log/warn "Failed to merge elisp lings (returning DataScript only):" (ex-message e))
        ds-agents))))
+
+;; =============================================================================
+;; Contracts (kept in this namespace: tools.agent is a frozen extraction prefix)
+;; =============================================================================
+
+(def Port
+  "A function-valued port argument (status fn, task lookup, normalizer...).
+   ifn?, never fn?: sets, keywords and maps are callable too."
+  [:fn {:gen/elements [(constantly nil) identity :slave/id]} ifn?])
+
+(def FormattedAgent
+  "One agent as `format-agent` reports it. The five base keys are always
+   present (nil when the row lacks them); the rest only when set."
+  [:map
+   [:id [:maybe :string]]
+   [:status [:maybe :keyword]]
+   [:type [:maybe :keyword]]
+   [:cwd [:maybe :string]]
+   [:project-id [:maybe :string]]
+   [:parent {:optional true} :string]
+   [:grant {:optional true} :map]
+   [:presets {:optional true} [:sequential :string]]
+   [:created-at {:optional true} :any]
+   [:liveness {:optional true} [:or :keyword :string]]
+   [:reason {:optional true} :string]
+   [:last-event-at {:optional true} :string]
+   [:liveness-age-ms {:optional true} number?]])
+
+(def AgentRows
+  "Agent rows as callers hand them: a seq of row maps, or nil."
+  [:maybe [:sequential [:maybe reconcile/AgentRow]]])
+
+(def FormattedAgents
+  "What `format-agents` answers."
+  [:map
+   [:agents [:vector FormattedAgent]]
+   [:count nat-int?]
+   [:by-type [:map-of [:maybe :keyword] pos-int?]]
+   [:by-status [:map-of [:maybe :keyword] pos-int?]]])
+
+(def MergeOpts
+  "merge-with-elisp-lings options; :elisp-lings bypasses the editor query."
+  [:maybe [:map
+           [:probe {:optional true} [:maybe reconcile/LivenessProbe]]
+           [:include-stale? {:optional true} :any]
+           [:elisp-lings {:optional true} [:maybe [:sequential reconcile/AgentRow]]]]])
+
+(m/=> generate-agent-id [:=> [:cat [:or :keyword :string]] [:string {:min 1}]])
+
+(m/=> format-agent [:=> [:cat [:maybe reconcile/AgentRow]] [:maybe FormattedAgent]])
+
+(m/=> format-agents [:=> [:cat AgentRows] FormattedAgents])
+
+(m/=> query-elisp-lings [:=> [:cat] [:maybe [:sequential reconcile/AgentRow]]])
+
+(m/=> merge-with-elisp-lings
+      [:function
+       [:=> [:cat AgentRows] [:maybe [:sequential [:maybe reconcile/AgentRow]]]]
+       [:=> [:cat AgentRows MergeOpts] [:maybe [:sequential [:maybe reconcile/AgentRow]]]]])

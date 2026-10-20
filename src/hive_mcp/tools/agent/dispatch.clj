@@ -64,3 +64,21 @@
       (catch Exception e
         (log/error "Failed to dispatch to agent" {:agent_id agent_id :error (ex-message e)})
         (mcp-error (str "Failed to dispatch: " (ex-message e)))))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def DispatchParams
+  "agent dispatch params. agent_id and prompt are validated by the body (a
+   missing one answers an MCP error), so they are optional here."
+  [:maybe [:map
+           [:agent_id {:optional true} [:maybe :string]]
+           [:prompt {:optional true} [:maybe :string]]
+           [:files {:optional true} [:maybe [:sequential :string]]]
+           [:priority {:optional true} [:maybe [:or :string :keyword]]]
+           [:ctx_refs {:optional true} [:maybe [:map-of [:or :string :keyword] :string]]]
+           [:kg_node_ids {:optional true} [:maybe [:sequential :string]]]
+           [:scope {:optional true} [:maybe :string]]]])
+
+(m/=> handle-dispatch [:=> [:cat DispatchParams] rb/McpResponse])
