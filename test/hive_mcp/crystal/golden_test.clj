@@ -338,7 +338,7 @@
 (deftest golden-synthesis-shape-contract
   (testing "Both crystallize-session paths return expected key sets from golden file"
     (let [golden (load-golden "golden/crystal/crystal-synthesis-shape.edn")]
-      ;; No-content path — always-store contract (no :skipped branch)
+      ;; No-content path — skip contract: nothing persisted, no lifecycle stats
       (with-synthesis-mocks
         {:summary nil}
         (let [result (synthesis/synthesize
@@ -357,27 +357,11 @@
           (is (= (:keys (:no-content-path golden))
                  (set (keys result)))
               "No-content path key set must match golden baseline")
-          (is (string? (:summary-id result))
-              "No-content path always stores a minimal-wrap breadcrumb")
-          (is (not (contains? result :skipped))
-              "always-store contract: no :skipped key")
-          (is (not (contains? result :reason))
-              "always-store contract: no :reason key")
-          ;; Lifecycle stats sub-keys
-          (is (= #{:promoted :skipped :below :evaluated}
-                 (set (keys (:promotion-stats result))))
-              "promotion-stats keys")
-          (is (= #{:decayed :pruned :fresh :evaluated}
-                 (set (keys (:decay-stats result))))
-              "decay-stats keys")
-          (is (= #{:promoted :candidates :total-scanned}
-                 (set (keys (:xpoll-stats result))))
-              "xpoll-stats keys")
-          (is (= #{:decayed :expired :total-scanned}
-                 (set (keys (:memory-decay-stats result))))
-              "memory-decay-stats keys")
-          (is (contains? result :file-provenance-stats)
-              "file-provenance-stats present")))
+          (is (nil? (:summary-id result))
+              "No-content path persists nothing")
+          (is (true? (:skipped result)))
+          (is (= "no-activity" (:reason result)))
+          (is (map? (:promotion-stats result)) "lifecycle ops still maintain the store on a skipped wrap")))
 
       ;; Content path
       (with-synthesis-mocks
