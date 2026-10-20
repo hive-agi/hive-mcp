@@ -1,0 +1,14 @@
+{:case-0 {:out {}, :in (nil)},
+ :case-1
+ {:out {"b" {:tool {:name "b", :x -1}, :handler :h2}},
+  :in
+  ([{:name "b", :handler :h2, :x 0}
+    {:name "b", :handler :h2, :x -1}])},
+ :case-2 {:out {}, :in ([])},
+ :case-3
+ {:out {"a" {:tool {:name "a", :x -1}, :handler :h2}},
+  :in ([{:name "a", :handler :h2, :x -1}])},
+ :case-4 {:out {}, :in (nil)},
+ :case-5 {:out {}, :in (nil)},
+ :case-6 {:out {}, :in (nil)},
+ :case-7 {:out {}, :in (nil)}}

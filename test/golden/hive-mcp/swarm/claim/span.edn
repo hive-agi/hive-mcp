@@ -1,0 +1,14 @@
+{:case-0
+ {:out #:span{:file "src/b.clj", :mode :file, :qn nil},
+  :in (#:span{:file "src/b.clj", :mode :file, :qn nil})},
+ :case-1 {:out #:span{:file ":.", :mode :file, :qn nil}, :in (:.)},
+ :case-2
+ {:out #:span{:file "src/a.clj", :mode :file, :qn nil},
+  :in (#:span{:file "src/a.clj", :mode :body, :qn "  "})},
+ :case-3 {:out #:span{:file ":?", :mode :file, :qn nil}, :in (:?)},
+ :case-4 {:out #:span{:file "1", :mode :file, :qn nil}, :in (1)},
+ :case-5 {:out #:span{:file "0", :mode :file, :qn nil}, :in (0)},
+ :case-6 {:out #:span{:file "-14", :mode :file, :qn nil}, :in (-14)},
+ :case-7 {:out #:span{:file "2", :mode :file, :qn nil}, :in (2)},
+ :case-8 {:out #:span{:file "-1", :mode :file, :qn nil}, :in (-1)},
+ :case-9 {:out #:span{:file ":.w?", :mode :file, :qn nil}, :in (:.w?)}}

@@ -100,9 +100,18 @@
 ;;; policy — the decision table is total and consistent with retry?
 ;;; ---------------------------------------------------------------------------
 
+(def ^:private RetryBalancedErrorClass
+  "ErrorClassValue whose variant is :err/transient half the time. Only
+   transient retries, so a uniform pick over the five variants left :retry
+   near 26 of 200 against a floor of 25."
+  [:and {:gen/schema [:tuple proto/ErrorClassValue :boolean]
+         :gen/fmap (fn [[err transient?]]
+                     (cond-> err transient? (assoc :adt/variant :err/transient)))}
+   proto/ErrorClassValue])
+
 (deftrifecta-from-schema decide-total-and-consistent
   #'policy/decide
-  {:in [:cat proto/ErrorClassValue]
+  {:in [:cat RetryBalancedErrorClass]
    :out policy/RetryDecision
    :rel (fn [[err] out]
           (and (= (:retry? out) (policy/retry? err))

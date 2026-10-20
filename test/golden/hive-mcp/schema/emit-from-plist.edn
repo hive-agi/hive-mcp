@@ -1,0 +1,82 @@
+{:case-0
+ {:out
+  "(defun hive-a-from-plist (plist)\n  \"Create hive-a from PLIST.\"\n  (hive-a-create\n   :x (plist-get plist :x)\n   :ratio (plist-get plist :ratio)\n   :kind (plist-get plist :kind)\n   :any (plist-get plist :any)))",
+  :in
+  ([:map
+    [:x [:or :string :int]]
+    [:ratio :double]
+    [:kind :keyword]
+    [:any :any]]
+   {:name "hive-a", :var "row"})},
+ :case-1
+ {:out
+  "(defun hive-a-from-plist (plist)\n  \"Create hive-a from PLIST.\"\n  (hive-a-create\n   :x (plist-get plist :x)\n   :ratio (plist-get plist :ratio)\n   :kind (plist-get plist :kind)\n   :any (plist-get plist :any)))",
+  :in
+  ([:map
+    [:x [:or :string :int]]
+    [:ratio :double]
+    [:kind :keyword]
+    [:any :any]]
+   {:name "hive-a",
+    :constructor "make-it",
+    :include "base",
+    :defaults {},
+    :var "row"})},
+ :case-2
+ {:out
+  "(defun hive-a-from-plist (plist)\n  \"Create hive-a from PLIST.\"\n  (hive-a-create\n   :id (plist-get plist :id)\n   :type (intern (plist-get plist :type))\n   :tags (plist-get plist :tags)))",
+  :in
+  ([:map
+    [:id :string]
+    [:type [:enum :note :snippet]]
+    [:tags [:vector :string]]]
+   {:name "hive-a", :include "base", :var "e"})},
+ :case-3
+ {:out
+  "(defun hive-b-from-plist (plist)\n  \"Create hive-b from PLIST.\"\n  (hive-b-create\n   :enabled (plist-get plist :enabled)\n   :port (or (plist-get plist :port) nil)))",
+  :in
+  ([:map [:enabled :boolean] [:port {:optional true} [:maybe :int]]]
+   {:name "hive-b"})},
+ :case-4
+ {:out
+  "(defun hive-a-from-plist (plist)\n  \"Create hive-a from PLIST.\"\n  (hive-a-create\n   :id (plist-get plist :id)\n   :type (intern (plist-get plist :type))\n   :tags (plist-get plist :tags)))",
+  :in
+  ([:map
+    [:id :string]
+    [:type [:enum :note :snippet]]
+    [:tags [:vector :string]]]
+   {:name "hive-a", :include "base"})},
+ :case-5
+ {:out
+  "(defun hive-a-from-plist (plist)\n  \"Create hive-a from PLIST.\"\n  (hive-a-create\n   :id (plist-get plist :id)\n   :type (intern (plist-get plist :type))\n   :tags (plist-get plist :tags)))",
+  :in
+  ([:map
+    [:id :string]
+    [:type [:enum :note :snippet]]
+    [:tags [:vector :string]]]
+   {:name "hive-a",
+    :include "base",
+    :defaults {:port nil},
+    :var "row"})},
+ :case-6
+ {:out
+  "(defun hive-b-from-plist (plist)\n  \"Create hive-b from PLIST.\"\n  (hive-b-create\n   :enabled (plist-get plist :enabled)\n   :port (or (plist-get plist :port) nil)))",
+  :in
+  ([:map [:enabled :boolean] [:port {:optional true} [:maybe :int]]]
+   {:name "hive-b",
+    :constructor "make-it",
+    :defaults {:port -24, :enabled false},
+    :var "row"})},
+ :case-7
+ {:out
+  "(defun hive-a-from-plist (plist)\n  \"Create hive-a from PLIST.\"\n  (hive-a-create\n   :x (plist-get plist :x)\n   :ratio (plist-get plist :ratio)\n   :kind (plist-get plist :kind)\n   :any (plist-get plist :any)))",
+  :in
+  ([:map
+    [:x [:or :string :int]]
+    [:ratio :double]
+    [:kind :keyword]
+    [:any :any]]
+   {:name "hive-a",
+    :constructor "make-it",
+    :include "base",
+    :var "e"})}}

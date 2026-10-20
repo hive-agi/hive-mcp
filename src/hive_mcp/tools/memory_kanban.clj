@@ -18,7 +18,7 @@
             [hive-mcp.memory.temporal :as temporal]
             [hive-mcp.project.tree :as tree]
             [hive-mcp.swarm.datascript :as ds]
-            [hive-mcp.tools.core :refer [mcp-json mcp-error]]
+            [hive-mcp.tools.core :as core :refer [mcp-json mcp-error]]
             [hive-mcp.tools.kanban.events :as kanban-events]
             [hive-mcp.tools.kanban.predicates :as kp]
             [hive-mcp.tools.kanban.transitions :as kt]
@@ -33,7 +33,8 @@
             [hive-mcp.tools.kanban.filters :as kf]
             [hive-mcp.vectordb.kanban-facade :as kanban-facade]
             [hive-mcp.tools.memory-kanban.query :as query]
-            [hive-mcp.session.current :as session]))
+            [hive-mcp.session.current :as session]
+            [malli.core :as m]))
 
 (declare query-kanban-entries resolve-project-ids-with-descendants effective-dir stats* filter-kanban-by-tags list-slim*)
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -460,6 +461,32 @@
 (defn handle-mem-kanban-quick
   [{:keys [title directory agent_id]}]
   (handle-mem-kanban-create {:title title :directory directory :agent_id agent_id}))
+
+;; ============================================================
+;; Contracts
+;; ============================================================
+
+;; Permissive in: :description is passed through as given (any value wins
+;; over :content); only a non-blank string :content is read as a body.
+(m/=> create-description [:=> [:cat [:maybe :map]] :any])
+
+;; Every handler is a safe-call boundary: params in, one MCP text response
+;; out (mcp-json payload or mcp-error), never a throw.
+(m/=> handle-mem-kanban-create [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-mem-kanban-list-slim [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-mem-kanban-move [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-mem-kanban-retag [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-mem-kanban-delete [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-mem-kanban-stats [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-mem-kanban-get [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-mem-kanban-quick [:=> [:cat [:maybe :map]] core/McpResponse])
 
 (def tools
   "REMOVED: Flat mem-kanban tools no longer exposed. Use consolidated `kanban` tool."

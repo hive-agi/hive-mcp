@@ -1,0 +1,11 @@
+{:exists [true false],
+ :conflicts-none nil,
+ :deadlock false,
+ :all [{:file "f1", :slave-id "s1"}],
+ :release-unclaimed false,
+ :claim-after-task-release nil,
+ :files ["f1"],
+ :conflicts-self [],
+ :conflicts-other [{:file "f1", :held-by "s1"}],
+ :stats {:slaves 1, :tasks 0, :claims 1},
+ :claim {:file "f1", :slave-id "s1"}}

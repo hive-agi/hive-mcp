@@ -24,7 +24,8 @@
             [clojure.string :as str]
             [hive-mcp.extensions.registry :as ext]
             [hive-dsl.result :refer [rescue]]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -212,3 +213,40 @@
     (ext/register-tool! tool-def)
     (update-server-context! tool-def)
     (log/info "Installed clojure discover fallback (JVM-native .nrepl-port scan)")))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def Dir
+  "A directory as a java.io.File."
+  [:fn {:gen/elements [(io/file "/tmp") (io/file "/")]
+        :error/message "must be a java.io.File"}
+   #(instance? java.io.File %)])
+
+(def DiscoveredPort
+  "One discovered nREPL port file."
+  [:map
+   [:host [:= "localhost"]]
+   [:port :int]
+   [:path :string]
+   [:dir :string]
+   [:source [:= :nrepl-port-file]]])
+
+(def ClojureToolResponse
+  "The upstream lsp/basic-tools MCP shape the wrapped handler answers:
+   {:content [{:type \"text\" :text ...}]}, :isError on failure. Delegated
+   commands answer whatever basic-tools-mcp answers, so the map is open."
+  [:map
+   [:content {:optional true} [:vector [:map [:type :string] [:text :string]]]]
+   [:isError {:optional true} :boolean]])
+
+(m/=> candidate-dirs [:=> [:cat] [:vector Dir]])
+
+(m/=> discover-ports [:=> [:cat] [:vector DiscoveredPort]])
+
+(m/=> wrap-handle-clojure
+      [:=> [:cat] [:function [:=> [:cat [:maybe :map]] ClojureToolResponse]]])
+
+;; install! answers the trailing log/info call: nil.
+(m/=> install! [:=> [:cat] :nil])

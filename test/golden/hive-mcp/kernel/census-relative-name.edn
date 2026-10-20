@@ -1,0 +1,8 @@
+{:case-0 {:out "graph.schema", :in (hive-mcp.graph.schema)},
+ :case-1 {:out "hivemind", :in ("hive-mcp.hivemind")},
+ :case-2 {:out "kernel.census", :in ("hive-mcp.kernel.census")},
+ :case-3 {:out nil, :in ("malli.core")},
+ :case-4 {:out "server.core", :in (hive-mcp.server.core)},
+ :case-5 {:out "server.core", :in (hive-mcp.server.core)},
+ :case-6 {:out "agent.cost.model", :in (hive-mcp.agent.cost.model)},
+ :case-7 {:out nil, :in (datascript.core.impl)}}

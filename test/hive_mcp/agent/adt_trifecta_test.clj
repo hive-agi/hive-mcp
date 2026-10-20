@@ -73,7 +73,8 @@
   (is (true? (sm/has-capability? (sm/from-keyword :claude) :interrupt)))
   (is (false? (sm/has-capability? (sm/from-keyword :vterm) :interrupt)))
   (is (true? (sm/mcp-visible? (sm/from-keyword :headless))))
-  (is (false? (sm/mcp-visible? (sm/from-keyword :agent-sdk))))
+  (is (nil? (sm/from-keyword :agent-sdk)) "retired mode is no longer an ADT variant")
+
   (is (every? #(sm/canonical? (sm/from-keyword %)) (:variants sm/SpawnMode)))
   (is (= (sm/from-keyword :headless) (sm/resolve-alias (sm/from-keyword :headless))))
   (is (contains? (sm/capabilities (sm/from-keyword :vterm)) :emacs-visible)))

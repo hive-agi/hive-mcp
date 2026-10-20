@@ -36,7 +36,8 @@
             [hive-mcp.swarm.datascript.lings :as lings]
             [taoensso.timbre :as log]
             [hive-mcp.swarm.delegate :as delegate]
-            [hive-mcp.swarm.datascript :as ds]))
+            [hive-mcp.swarm.datascript :as ds]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -52,6 +53,13 @@
    the piggyback reader and `audience/addressed-to?` both read :to."
   [sender to event-type data]
   (hivemind/shout! sender event-type (assoc data :to to)))
+
+(def NotifyFn
+  "The directed-message port: (fn [sender to event-type data])."
+  [:=> [:cat :string :string :keyword :map] :any])
+
+;; boundary: hivemind/shout!'s answer, true once the shout is recorded
+(m/=> tell! [:=> [:cat :string :string :keyword :map] :boolean])
 
 ;; =============================================================================
 ;; Yield-request ledger (dedup)
@@ -71,6 +79,9 @@
   "Forget every yield request sent. Test seam and operator reset."
   []
   (reset! yield-ledger {}))
+
+;; the emptied ledger, i.e. what reset! returns
+(m/=> reset-yield-ledger! [:=> [:cat] [:map-of {:max 0} :any :any]])
 
 (defn- prune
   "The ledger without entries older than `yield-ttl-ms` at `now`."
@@ -109,6 +120,12 @@
   (span/key-of (if (and qn (not= :file mode))
                  (span/form-span file qn mode)
                  (span/file-span file))))
+
+(m/=> held-key [:=> [:cat [:map
+                           [:file :string]
+                           [:qn {:optional true} [:maybe :string]]
+                           [:mode {:optional true} [:maybe span/Mode]]]]
+                :string])
 
 (defn- holds
   "Distinct {:holder :key} pairs behind a refusal's conflicts."
@@ -194,6 +211,13 @@
                   cycle held
                   (into waiting (map (fn [k] {:key k :agent ling-id})) ks))}))))
 
+(def Deadlock
+  "A wait cycle parking would close, and the agent asked to yield."
+  [:map [:cycle [:sequential :string]] [:victim :string]])
+
+;; boundary: reads the claim and wait-queue rows
+(m/=> foresee-deadlock [:=> [:cat :string [:maybe [:sequential :string]]] [:maybe Deadlock]])
+
 (defn- announce-deadlock!
   "Tell the victim of `deadlock` to release, once per standing cycle."
   [notify! ling-id task-id {:keys [cycle victim] :as deadlock} now]
@@ -251,3 +275,25 @@
                      :deadlock deadlock})
           (cond-> (assoc result :parked parked :yield-requested asked)
             deadlock (assoc :deadlock deadlock)))))))
+
+(def AcquireForLing
+  "registry/acquire!'s map, plus what a refusal did about it."
+  [:map
+   [:acquired? :boolean]
+   [:conflicts [:vector span/Conflict]]
+   [:warnings [:vector :map]]
+   [:spans-claimed [:int {:min 0}]]
+   [:parked {:optional true} [:vector :string]]
+   [:yield-requested {:optional true} [:vector [:map [:holder :string] [:file :string]]]]
+   [:deadlock {:optional true} Deadlock]])
+
+(m/=> acquire-for-ling!
+      [:function
+       [:=> [:cat :string [:maybe registry/Wanted]] AcquireForLing]
+       [:=> [:cat :string [:maybe registry/Wanted]
+             [:maybe [:map
+                      [:task-id {:optional true} [:maybe :string]]
+                      [:cwd {:optional true} [:maybe :string]]
+                      [:notify! {:optional true} NotifyFn]
+                      [:now-ms {:optional true} [:maybe :int]]]]]
+        AcquireForLing]])

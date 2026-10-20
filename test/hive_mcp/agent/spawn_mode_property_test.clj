@@ -166,9 +166,8 @@
                 (let [result (adt-case sm/SpawnMode sm
                                        :claude     :emacs-claude
                                        :vterm      :emacs
-                                       :headless   :subprocess
-                                       :agent-sdk  :sdk)]
-                  (contains? #{:emacs-claude :emacs :subprocess :sdk} result))))
+                                       :headless   :subprocess)]
+                  (contains? #{:emacs-claude :emacs :subprocess} result))))
 
 ;; =============================================================================
 ;; Property: Constructor consistency with registry
@@ -188,13 +187,13 @@
 ;; Deterministic unit tests (edge cases)
 ;; =============================================================================
 
-(deftest exactly-four-variants
-  (testing "SpawnMode has exactly 4 core variants (post-:openrouter cleanup)"
-    (is (= 4 (count sm/all-variants)))))
+(deftest exactly-three-variants
+  (testing "SpawnMode has exactly 3 core variants (post-:agent-sdk retirement)"
+    (is (= 3 (count sm/all-variants)))))
 
 (deftest variant-keywords-correct
   (testing "Variant set matches expected core/abstract modes"
-    (is (= #{:claude :vterm :headless :agent-sdk} sm/all-variants))))
+    (is (= #{:claude :vterm :headless} sm/all-variants))))
 
 (deftest mcp-variants-correct
   (testing "MCP-visible variants are claude, vterm and headless"
@@ -206,7 +205,8 @@
 
 (deftest all-variants-resolve-to-self
   (testing "All variants are canonical post-cleanup"
-    (doseq [kw [:claude :vterm :headless :agent-sdk]]
+    (doseq [kw [:claude :vterm :headless]]
+
       (is (= kw (sm/to-keyword (sm/resolve-alias (sm/spawn-mode kw))))
           (str kw " should resolve to itself")))))
 

@@ -48,7 +48,9 @@
             [hive-system.process.liveness :as liveness]
             [hive-mcp.agent.ling.terminal-registry :as terminals]
             [hive-mcp.agent.ling.headless-registry :as headless-registry]
-            [hive-spi.addon.headless :as headless]))
+            [hive-spi.addon.headless :as headless]
+            [malli.core :as m]
+            [hive-mcp.swarm.bootstrap.protocol :as bp]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -71,6 +73,31 @@
 ;; The integrant init in server/init.clj injects the configured backend.
 (defonce ^:private swarm-bootstrap-atom (atom nil))
 
+;; =============================================================================
+;; Schemas
+;; =============================================================================
+
+(def SwarmRegistry
+  "An ISwarmRegistry implementation."
+  [:fn {:gen/elements [nil]} #(satisfies? proto/ISwarmRegistry %)])
+
+(def HooksRegistry
+  "The hooks registry the server injects (hooks.core/create-registry)."
+  [:fn {:gen/fmap (fn [_] (hooks/create-registry)) :gen/schema :nil} some?])
+
+(def Evidence
+  "Liveness evidence for classify-row."
+  [:map
+   [:emacs [:or [:map [:state [:= :unknown]]]
+            [:map [:state [:= :known]] [:ids [:set :string]]]]]
+   [:live-pids [:set :int]]
+   [:live-ids [:set :string]]
+   [:terminal-modes [:set :keyword]]])
+
+(def SyncState
+  "What start-sync! answers: running, and one channel per subscription."
+  [:map [:running :boolean] [:subscriptions [:vector :any]]])
+
 (defn set-swarm-registry!
   "Inject the swarm registry implementation.
    If not set, uses default DataScript registry."
@@ -78,10 +105,14 @@
   (reset! swarm-registry-atom registry)
   (log/info "Sync: swarm registry injected"))
 
+(m/=> set-swarm-registry! [:=> [:cat [:maybe SwarmRegistry]] :nil])
+
 (defn get-swarm-registry
   "Get the injected swarm registry, or default DataScript registry."
   []
   (or @swarm-registry-atom (registry/get-default-registry)))
+
+(m/=> get-swarm-registry [:=> [:cat] SwarmRegistry])
 
 (defn set-swarm-bootstrap!
   "Inject the ISwarmBootstrap implementation. Called by server/init.clj
@@ -91,6 +122,8 @@
     (rescue nil (bootstrap/close! old)))
   (reset! swarm-bootstrap-atom bs)
   (log/info "Sync: swarm bootstrap injected"))
+
+(m/=> set-swarm-bootstrap! [:=> [:cat [:maybe bp/Bootstrap]] :nil])
 
 (defn get-swarm-bootstrap
   "Get the injected ISwarmBootstrap (defaults to NoopBootstrap).
@@ -102,16 +135,22 @@
   (or @swarm-bootstrap-atom
       (swap! swarm-bootstrap-atom #(or % (bootstrap-noop/make-noop-bootstrap)))))
 
+(m/=> get-swarm-bootstrap [:=> [:cat] bp/Bootstrap])
+
 (defn set-hooks-registry!
   "Inject the hooks registry from server.clj to avoid cyclic dependency."
   [registry]
   (reset! hooks-registry-atom registry)
   (log/info "Sync: hooks registry injected"))
 
+(m/=> set-hooks-registry! [:=> [:cat [:maybe HooksRegistry]] :nil])
+
 (defn get-hooks-registry
   "Get the injected hooks registry."
   []
   @hooks-registry-atom)
+
+(m/=> get-hooks-registry [:=> [:cat] [:maybe HooksRegistry]])
 
 ;; =============================================================================
 ;; Bootstrap Write-Through (defined here so handlers below can call them)
@@ -531,6 +570,9 @@
   [slave-id elisp-ids]
   (not (contains? elisp-ids slave-id)))
 
+;; elisp-ids is read with contains?, so a set is the domain
+(m/=> missing-from-emacs? [:=> [:cat :any [:maybe [:set :any]]] :boolean])
+
 (defn classify-row
   "Pure: only live backing verifies a restored row. Emacs membership can
    verify terminal or legacy mode-less rows, never a named headless backend."
@@ -546,6 +588,10 @@
       (and emacs-tracked? (= :unknown (:state emacs)))
       (assoc row :liveness :unverified)
       :else (assoc row :status :zombie :alive? false))))
+
+(m/=> classify-row [:=> [:cat bp/SlaveRow Evidence]
+                    [:or [:map [:liveness [:enum :verified :unverified]]]
+                     [:map [:status [:= :zombie]] [:alive? [:= false]]]]])
 
 (defn probe-evidence
   "Boundary: query Emacs, OS pids and the registered headless backend's live
@@ -570,6 +616,9 @@
                                             (:adt/variant (liveness/check-pid-alive %)))))
                       rows)}))
 
+;; boundary: Emacs, OS pids and the headless backend registry
+(m/=> probe-evidence [:=> [:cat [:sequential bp/SlaveRow]] Evidence])
+
 (defn full-sync-from-bootstrap!
   "Full sync from the bootstrap source. Classify liveness before any registration.
    probe-fn accepts snapshot rows and returns liveness evidence. The three-arity
@@ -590,12 +639,27 @@
      (run! register! classified)
      (log/info "Full sync complete:" (count classified) "slaves"))))
 
+(def ProbeFn
+  "Snapshot rows -> liveness evidence."
+  [:=> [:cat [:sequential bp/SlaveRow]] Evidence])
+
+;; boundary: answers the closing log call's nil
+(m/=> full-sync-from-bootstrap!
+      [:function
+       [:=> [:cat] :nil]
+       [:=> [:cat bp/Bootstrap ProbeFn] :nil]
+       [:=> [:cat bp/Bootstrap ProbeFn [:map [:reset! [:=> [:cat] :any]]
+                                       [:register! [:=> [:cat :map] :any]]]]
+        :nil]])
+
 ;; Backwards-compatibility alias — keep old call sites working until they
 ;; migrate. Marked deprecated to discourage new use.
 (defn ^:deprecated full-sync-from-emacs!
   "DEPRECATED: use `full-sync-from-bootstrap!`. Retained as a thin alias."
   []
   (full-sync-from-bootstrap!))
+
+(m/=> full-sync-from-emacs! [:=> [:cat] :nil])
 
 ;; =============================================================================
 ;; Public API
@@ -619,6 +683,9 @@
          (log/info "Logic database sync started -" (count subs) "event subscriptions")
          @sync-state)))))
 
+(m/=> start-sync! [:function [:=> [:cat] SyncState]
+                   [:=> [:cat [:map [:bootstrap? {:optional true} :boolean]]] SyncState]])
+
 (defn stop-sync!
   "Stop event synchronization."
   []
@@ -627,6 +694,8 @@
     (reset! sync-state {:running false :subscriptions []})
     (log/info "Logic database sync stopped")))
 
+(m/=> stop-sync! [:=> [:cat] :nil])
+
 (defn sync-status
   "Get current sync status."
   []
@@ -634,6 +703,8 @@
    :subscription-count (count (:subscriptions @sync-state))
    ;; db-stats is a debug function, not in ISwarmRegistry
    :db-stats (queries/db-stats)})
+
+(m/=> sync-status [:=> [:cat] [:map [:running :boolean] [:subscription-count [:int {:min 0}]] [:db-stats :map]]])
 
 (comment
   ;; Development REPL examples

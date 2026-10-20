@@ -7,7 +7,9 @@
 
    Compat shim: moved to hive-agent.swarm.bootstrap.noop in hive-agent. Every public var delegates there
    through requiring-resolve; hive-mcp does not compile-depend on hive-agent."
-  (:require [hive-mcp.swarm.delegate :as delegate]))
+  (:require [hive-mcp.swarm.delegate :as delegate]
+            [malli.core :as m]
+            [hive-mcp.swarm.bootstrap.protocol :as bp]))
 
 (defn- impl [sym]
   (delegate/resolve-var "hive-agent.swarm.bootstrap.noop" sym))
@@ -17,12 +19,19 @@
   [& args]
   (apply (impl '->NoopBootstrap) args))
 
+(m/=> ->NoopBootstrap [:=> [:cat] bp/Bootstrap])
+
 (defn map->NoopBootstrap
   {:arglists '([m])}
   [& args]
   (apply (impl 'map->NoopBootstrap) args))
 
+;; a record takes any extra keys
+(m/=> map->NoopBootstrap [:=> [:cat [:map-of :keyword :any]] bp/Bootstrap])
+
 (defn make-noop-bootstrap
   {:arglists '([])}
   [& args]
   (apply (impl 'make-noop-bootstrap) args))
+
+(m/=> make-noop-bootstrap [:=> [:cat] bp/Bootstrap])

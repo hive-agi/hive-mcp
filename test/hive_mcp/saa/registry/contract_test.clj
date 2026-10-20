@@ -27,8 +27,12 @@
 
 (def ^:private Owner [:enum :owner/a :owner/b :saa/core])
 (def ^:private Id
-  ;; a few repeating ids reach :replaced / :conflict; a fresh uuid reaches :ok
-  [:or [:enum :id/x :id/y :saa/default] :uuid])
+  ;; a few repeating ids reach :replaced / :conflict; a fresh uuid reaches :ok.
+  ;; A repeating id is drawn three times in four: an even :or split left
+  ;; :replaced (a same-owner rewrite) near 20 of 200 against a floor of 16.
+  [:or {:gen/schema [:tuple [:enum :id/x :id/y :saa/default] :uuid [:enum 0 1 2 3]]
+        :gen/fmap (fn [[k u arm]] (if (zero? arm) u k))}
+   [:enum :id/x :id/y :saa/default] :uuid])
 
 ;;; ---------------------------------------------------------------------------
 ;;; Singleton registries — the conflict policy, as a property over all five
