@@ -30,7 +30,8 @@
    namespace through `hive-mcp.extensions.soft`, so behaviour today is
    unchanged and the day the namespace leaves the same call answers the Noop:
    no staleness value, no propagation, no stale files."
-  (:require [hive-mcp.extensions.soft :as soft]))
+  (:require [hive-mcp.extensions.soft :as soft]
+            [malli.core :as m]))
 
 (defprotocol IDiscKnowledge
   "The disc-graph questions the kernel asks."
@@ -150,3 +151,30 @@
   "The stalest files for OPTS {:n :project-id :threshold}; [] when unknown."
   [opts]
   (-top-stale-files (current) opts))
+
+;; ---------------------------------------------------------------------------
+;; Contracts
+;; ---------------------------------------------------------------------------
+
+(def Impl
+  "An `IDiscKnowledge` implementation. Generates as `noop`."
+  [:fn {:error/message "should satisfy IDiscKnowledge"
+        :gen/schema :nil
+        :gen/fmap (fn [_] noop)}
+   (fn [x] (satisfies? IDiscKnowledge x))])
+
+(def StaleOpts
+  [:maybe
+   [:map
+    [:n {:optional true} [:maybe :int]]
+    [:project-id {:optional true} [:maybe :string]]
+    [:threshold {:optional true} [:maybe number?]]]])
+
+(m/=> reset-cache! [:=> [:cat] :nil])
+(m/=> install! [:=> [:cat Impl] Impl])
+(m/=> uninstall! [:=> [:cat] :nil])
+(m/=> current [:=> [:cat] Impl])
+;; reason: the host map is keyed by keyword, but any value is a lookup miss
+(m/=> staleness-value [:=> [:cat :any] [:maybe number?]])
+(m/=> propagate-staleness! [:=> [:cat :any [:maybe number?] :any] [:maybe :map]])
+(m/=> top-stale-files [:=> [:cat StaleOpts] [:sequential :any]])
