@@ -152,7 +152,7 @@
    from strict providers (venice) when hive-agent definitions bypass the
    internal registry shape.
 
-   Public so the dispatch-routed backend (`hive-mcp.agent.dispatch-backend`)
+   Public so the dispatch-routed backend (`hive-mcp.agent.cider/dispatch-backend`)
    sends the router the same tool shape."
   [tools]
   (when (seq tools)

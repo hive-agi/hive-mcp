@@ -6,7 +6,6 @@
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.test.check.generators :as gen]
             [hive-mcp.agent.cider :as cider]
-            [hive-mcp.agent.dispatch-backend :as dispatch]
             [hive-mcp.agent.protocol :as proto]
             [hive-test.trifecta :refer [deftrifecta]]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -16,7 +15,7 @@
 (def ^:private usage {:prompt_tokens 3 :completion_tokens 5 :total_tokens 8})
 
 (deftrifecta router-message-folds-to-backend-result
-  hive-mcp.agent.dispatch-backend/message->result
+  hive-mcp.agent.cider/message->result
   {:golden-path "test/golden/agent/dispatch-message-result.edn"
    :cases {:text      {:role "assistant" :content "hello"}
            :usage     {:role "assistant" :content "hello" :usage usage}
@@ -37,14 +36,13 @@
                 (fn [m] {:type :text :content (:content m)})]]
    :assert (fn []
              (is (= {:type :text :content "hello"}
-                    (dispatch/message->result {:content "hello"})))
+                    (cider/message->result {:content "hello"})))
              (is (= {:input 3 :output 5 :total 8}
-                    (:usage (dispatch/message->result {:content "hello" :usage usage}))))
+                    (:usage (cider/message->result {:content "hello" :usage usage}))))
              (is (= :tool_calls
-                    (:type (dispatch/message->result
-                            {:tool_calls [{:id "c1" :type "function"
+                    (:type (cider/message->result {:tool_calls [{:id "c1" :type "function"
                                            :function {:name "t" :arguments "{}"}}]}))))
-             (is (= :error (:type (dispatch/message->result {:content ""})))))})
+             (is (= :error (:type (cider/message->result {:content ""})))))})
 
 (defn- stub-router
   "A `complete` port that records every params map it is handed and answers
@@ -89,15 +87,15 @@
              (cause #(cider/make-backend :kimi {:complete (fn [_] {})})))))
     (testing "a provider the router has no client for"
       (is (= :dispatch-provider-unroutable
-             (cause #(dispatch/dispatch-backend {:provider :nope :model "m"
-                                                 :complete (fn [_] {})})))))
+             (cause #(cider/dispatch-backend {:provider :nope :model "m"
+                                              :complete (fn [_] {})})))))
     (testing "no router reachable: the resolver port answers nil"
       (is (= :dispatch-router-unavailable
-             (cause #(dispatch/dispatch-backend {:provider :kimi :model "m"
-                                                 :resolve-complete (constantly nil)})))))
+             (cause #(cider/dispatch-backend {:provider :kimi :model "m"
+                                              :resolve-complete (constantly nil)})))))
     (testing "the resolver port supplies the router when no :complete is given"
       (let [calls (atom [])
-            b     (dispatch/dispatch-backend
+            b     (cider/dispatch-backend
                    {:provider :kimi :model "m"
                     :resolve-complete (constantly (stub-router calls {:content "ok"}))})]
         (is (= {:type :text :content "ok"}
