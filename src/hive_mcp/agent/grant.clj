@@ -16,7 +16,8 @@
    spawn credentials are verified (kanban IDENTITY-VERIFIED). This gate stops
    mistakes, not a hostile child."
   (:require [clojure.string :as str]
-            [clojure.data.json :as json]))
+            [clojure.data.json :as json]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -207,3 +208,54 @@
                    "\n\nMissing capability: " (pr-str (:grant/missing no))
                    "\nRequest it from your parent with `hivemind ask`, naming the "
                    "capability and why you need it. Do not retry another way."))))))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+;; ---------------------------------------------------------------------------
+;; Contract schemas. They live in this namespace because hive-mcp.agent.* is a
+;; frozen extraction prefix (hive-mcp.kernel.census): no new namespace may be
+;; added under it. Every schema generates.
+;; ---------------------------------------------------------------------------
+
+(def GetSlave
+  "The registry port: a callable id -> row or nil (a fn, map or keyword all work)."
+  [:fn {:gen/elements [(constantly nil)]} ifn?])
+
+(def Domain
+  "The soft-resolved domain fns of the hive-agent addon (or nil when absent)."
+  [:maybe [:map-of :keyword [:fn {:gen/elements [(constantly nil)]} ifn?]]])
+
+(def RequestedGrant
+  "What `grant/requested-grant` answers: the parsed map, or why it cannot be one."
+  [:or
+   [:map [:ok [:maybe :map]]]
+   [:map [:refused :string]]])
+
+(def ChildGrantDecision
+  "What `grant/child-grant` answers: a recorded grant, or a refusal."
+  [:or
+   [:map [:grant :any]]
+   [:map [:refused :string] [:data {:optional true} :map]]])
+
+(m/=> domain [:=> [:cat] Domain])
+
+(m/=> registry-get-slave [:=> [:cat :any] [:maybe :map]])
+
+;; `slave-ids` splits its argument, so it is a string; the vector is [id] or
+;; [id agent].
+(m/=> slave-ids [:=> [:cat :string] [:vector :string]])
+
+(m/=> lineage [:=> [:cat GetSlave :string] [:vector :map]])
+
+;; A blank or nil caller has no grant; the wire form is a map.
+(m/=> recorded-grant [:=> [:cat GetSlave :any] [:maybe :map]])
+
+(m/=> depth-of [:=> [:cat GetSlave :any] :int])
+
+(m/=> requested-grant [:=> [:cat :any] RequestedGrant])
+
+(m/=> child-grant [:=> [:cat [:maybe :map] :any :any :any] ChildGrantDecision])
+
+(m/=> call-refusal [:=> [:cat [:maybe :map] GetSlave :any :any :any] [:maybe :string]])
