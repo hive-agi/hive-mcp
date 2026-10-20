@@ -127,6 +127,63 @@
     (fn [] (with-bindings {v lane} (f)))
     f))
 
+;; -----------------------------------------------------------------------------
+;; Activity attribution (REGISTRY-STALE-HIDES-LIVE)
+;;
+;; get-all-slaves hides a row whose :slave/last-active-at is older than the
+;; staleness window. A claude/vterm ling's tool calls arrive as
+;; `_caller_id "<slave-id>:<pid>"` and nothing else attributes them to its
+;; row, so a ling working for 30 min vanished from `agent status`. Every tool
+;; call by a registered, not-dead slave refreshes that stamp, throttled.
+;; -----------------------------------------------------------------------------
+
+(def ^:const activity-touch-interval-ms
+  "Minimum gap between two last-active-at writes for one slave."
+  30000)
+
+(defonce ^:private activity-touched-at (atom {}))
+
+(defn reset-activity-throttle!
+  "Forget every throttle stamp. Test seam."
+  []
+  (reset! activity-touched-at {}))
+
+(defn- registry-touch-slave!
+  [slave-id updates]
+  (when-let [f (try (requiring-resolve 'hive-mcp.swarm.datascript.lings/update-slave!)
+                    (catch Throwable _ nil))]
+    (f slave-id updates)))
+
+(def ^:dynamic *touch-slave!*
+  "2-arg port: write `updates` onto the registry row `slave-id`. Rebound by tests."
+  registry-touch-slave!)
+
+(defn- claim-touch!
+  "True when `slave-id` was not touched within the interval; records `now`."
+  [slave-id now]
+  (let [[old _] (swap-vals! activity-touched-at
+                            (fn [m] (if (< (- now (get m slave-id 0)) activity-touch-interval-ms)
+                                      m
+                                      (assoc m slave-id now))))]
+    (>= (- now (get old slave-id 0)) activity-touch-interval-ms)))
+
+(defn touch-caller-activity!
+  "Refresh :slave/last-active-at for the registry row `caller-id` belongs to
+   (itself, or `<slave-id>` of `<slave-id>:<instance>`). Rows that are absent
+   or explicitly dead are left alone. Never throws."
+  [get-slave caller-id]
+  (try
+    (when-let [caller (some-> caller-id str not-empty)]
+      (when-let [[id slave] (some (fn [id] (when-let [s (get-slave id)] [id s]))
+                                  (grant/slave-ids caller))]
+        (let [sid (or (:slave/id slave) id)
+              now (System/currentTimeMillis)]
+          (when (and (not (false? (:slave/alive? slave))) (claim-touch! sid now))
+            (*touch-slave!* sid {:slave/last-active-at now})))))
+    (catch Throwable e
+      (log/debug "activity touch failed (non-fatal):" (ex-message e))
+      nil)))
+
 (defn wrap-handler-context
   "Bind request context: keywordize args, verify identity, resolve ids, bind
    ctx vars.
@@ -142,6 +199,10 @@
    `:identity` in the request context. Under :enforce a request that claims a
    registered spawned agent's id without a valid credential is refused here;
    under :observe (the default) it is logged and counted and proceeds.
+
+   Activity: an admitted call by a registered slave refreshes that row's
+   :slave/last-active-at (`touch-caller-activity!`, throttled), so a live
+   claude/vterm ling is not hidden from get-all-slaves as stale.
 
    Every tool call runs in the :interactive embedding lane
    (embeddings.shared-gate/*lane*, via `in-embed-lane`), so a caller waiting
@@ -161,6 +222,7 @@
                 project-id (id/extract-project-id args)
                 directory (id/extract-directory args)]
             (crystal/record-session-start! agent-id)
+            (touch-caller-activity! *identity-get-slave* (:_caller_id args))
             (ctx/with-request-context {:agent-id agent-id
                                        :caller-id (:_caller_id args)
                                        :identity who
