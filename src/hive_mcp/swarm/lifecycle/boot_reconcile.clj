@@ -27,7 +27,9 @@
             [hive-mcp.swarm.bootstrap.factory :as bootstrap]
             [hive-mcp.agent.ling.terminal-registry :as terminal-reg]
             [hive-system.process.liveness :as liveness]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.swarm.datascript.schema :as s]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -92,6 +94,20 @@
        (log/info "Boot reconciliation: retired rehydrated slaves (JVM restart)" result)
        result))))
 
+;; The registry ports the 1-arity reconciles through.
+(def ReconcilePorts
+  [:map
+   [:load-slaves [:=> [:cat] [:sequential :map]]]
+   [:update! [:=> [:cat :string :map] :any]]
+   [:terminal-modes [:=> [:cat] [:set :keyword]]]])
+
+(def ReconcileResult
+  [:map [:reconciled s/Count] [:spared s/Count] [:skipped s/Count] [:total s/Count]])
+
+(m/=> reconcile-rehydrated-slaves! [:function
+                                    [:=> [:cat] ReconcileResult]
+                                    [:=> [:cat ReconcilePorts] ReconcileResult]])
+
 ;; =============================================================================
 ;; One-time test-junk purge (maintenance helper — NOT boot-wired)
 ;; =============================================================================
@@ -137,3 +153,5 @@
                (log/warn "purge-test-junk!: datahike forget failed for" id ":" (.getMessage t))))))
     (log/info "purge-test-junk!: retracted throwaway lings" {:count (count ids) :ids ids})
     {:purged ids :count (count ids)}))
+
+(m/=> purge-test-junk! [:=> [:cat] [:map [:purged [:vector :string]] [:count s/Count]]])
