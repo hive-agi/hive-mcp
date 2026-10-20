@@ -1,0 +1,17 @@
+{:case-0 {:out nil, :in ({:type "decision", :content "0"})},
+ :case-1 {:out nil, :in ({:type "note", :content "c"})},
+ :case-2
+ {:out
+  {:errors
+   [{:path [:type], :value nil} {:path [:content], :value ""}]},
+  :in ({:content ""})},
+ :case-3
+ {:out {:errors [{:path [:type], :value nil}]}, :in ({:content "4"})},
+ :case-4 {:out nil, :in ({:type "note", :content "c"})},
+ :case-5
+ {:out {:errors [{:path [:content], :value ""}]},
+  :in ({:type "note", :content ""})},
+ :case-6
+ {:out {:errors [{:path [:content], :value ""}]},
+  :in ({:type "Bad", :content ""})},
+ :case-7 {:out nil, :in ({:type "plan", :content "4q"})}}
