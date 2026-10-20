@@ -434,6 +434,8 @@
   "A realized tool table: always a vector of tool defs."
   [:vector ToolDef])
 
+(m/=> get-base-tools [:=> [:cat] ToolDefs])
+
 (m/=> absorbed-root-names [:=> [:cat] [:set :any]])
 
 (m/=> visible-root-names [:=> [:cat] [:maybe [:set :any]]])
