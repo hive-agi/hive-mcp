@@ -33,8 +33,10 @@
 
 (golden/deftest-golden migration-storeless-golden
   "test/golden/hive-mcp/tools/migration-storeless.edn"
+  ;; The adapter registry is process-global and other suites register their
+  ;; own adapters into it, so only the built-in ones are snapshotted.
   {:help-commands (mapv :command (:commands (mig/cmd-help {})))
-   :adapters      (mapv :id (:adapters (mig/cmd-adapters {})))
+   :adapters      (vec (sort (filter #{:edn :json} (map :id (:adapters (mig/cmd-adapters {}))))))
    :refusals      {:switch   (refused #(mig/cmd-switch {}))
                    :sync     (refused #(mig/cmd-sync {}))
                    :validate (refused #(mig/cmd-validate {}))
