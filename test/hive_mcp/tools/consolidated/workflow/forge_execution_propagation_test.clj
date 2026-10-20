@@ -42,7 +42,8 @@
             [hive-spi.memory.registry :as store-registry]
             [hive-test.isolation :as iso]
             [hive-mcp.agent.ling.terminal-registry :as terminal-reg]
-            [hive-addon.terminal :as terminal]))
+            [hive-addon.terminal :as terminal]
+            [hive-mcp.test-support.registry-isolation :as isolation]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -94,16 +95,13 @@
 (defn- store-fixture
   "One decoding stub store under :default and :kanban; the prior registry is restored."
   [f]
-  (let [prior (store-registry/registered-stores)
-        store (mem-stub/->stub nil {:decode-content? true})]
-    (try
-      (store-registry/reset-registry!)
-      (store-registry/register-store! :default store)
-      (store-registry/register-store! :kanban store)
-      (f)
-      (finally
-        (store-registry/reset-registry!)
-        (doseq [[k s] prior] (store-registry/register-store! k s))))))
+  (isolation/with-restored-store-registry
+    (fn []
+      (let [store (mem-stub/->stub nil {:decode-content? true})]
+        (isolation/restore-stores! {})
+        (store-registry/register-store! :default store)
+        (store-registry/register-store! :kanban store)
+        (f)))))
 
 (defn- persona-fixture
   "Recording persona-lens providers; the prior registrations are restored."
