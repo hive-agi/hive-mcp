@@ -1,0 +1,18 @@
+{:roster
+ [{:a "b", :e "completed", :shouts 1, :idle-s 1}
+  {:a "a",
+   :e "progress",
+   :shouts 1,
+   :idle-s 9,
+   :m "hi",
+   :turn 3,
+   :parent "coord"}],
+ :children
+ [{:a "a",
+   :e "progress",
+   :shouts 1,
+   :idle-s 9,
+   :m "hi",
+   :turn 3,
+   :parent "coord"}],
+ :render "b [completed] idle=1s\na [progress] turn=3 idle=9s — hi"}
