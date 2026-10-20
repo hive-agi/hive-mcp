@@ -12,7 +12,8 @@
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.tools.catchup :as catchup]
-            [hive-mcp.tools.catchup.caller :as caller]))
+            [hive-mcp.tools.catchup.caller :as caller]
+            [hive-mcp.test-support.registry-isolation :as isolation]))
 
 ;; =============================================================================
 ;; Pure helper
@@ -55,19 +56,19 @@
 
 (defn- isolate-ports
   "Snapshot the memory-store registry and the per-caller extension slots, run
-   `t`, then restore both."
+   `t`, then restore both. The store registry is restored atomically and a
+   live addon server is refused."
   [t]
-  (let [stores (mem-proto/registered-stores)
-        exts   (into {} (map (juxt identity ext/get-extension)) per-caller-keys)]
-    (try
-      (mem-proto/reset-registry!)
-      (run! ext/deregister! per-caller-keys)
-      (t)
-      (finally
-        (mem-proto/reset-registry!)
-        (doseq [[k store] stores] (mem-proto/register-store! k store))
-        (doseq [[k f] exts]
-          (if f (ext/register! k f) (ext/deregister! k)))))))
+  (let [exts (into {} (map (juxt identity ext/get-extension)) per-caller-keys)]
+    (isolation/with-restored-store-registry
+      (fn []
+        (try
+          (isolation/restore-stores! {})
+          (run! ext/deregister! per-caller-keys)
+          (t)
+          (finally
+            (doseq [[k f] exts]
+              (if f (ext/register! k f) (ext/deregister! k)))))))))
 
 (use-fixtures :each isolate-ports)
 

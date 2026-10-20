@@ -115,7 +115,8 @@
     ;; reasons. That is not a design, it is how it happens to work today.
     (doseq [sweeper-ns '[hive-mcp.system.sweepers.orphan-channel
                          hive-mcp.system.sweepers.async-result
-                         hive-mcp.system.sweepers.heap-pressure]]
+                         hive-mcp.system.sweepers.heap-pressure
+                         hive-mcp.system.sweepers.orphan-edge]]
       (require sweeper-ns))
     ;; ONE OWNER PER SWEEP, enforced at the REGISTRATION SITE, not here.
     ;; :hive/housekeeping owns terminal liveness on its own 5 minute timer, so

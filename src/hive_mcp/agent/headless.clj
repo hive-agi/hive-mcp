@@ -698,6 +698,27 @@
 (m/=> build-child-env
       [:=> [:cat :any [:maybe :map]] [:map-of :string :string]])
 
+;; The ring-buffer aliases at the top of this file hold the Var (`#'rb/x`), so
+;; each carries its own contract, the owner's shape, or instrumentation never
+;; reaches a caller that goes through this facade.
+(m/=> create-ring-buffer
+      [:function
+       [:=> [:cat] rb/RingBuffer]
+       [:=> [:cat :int] rb/RingBuffer]])
+
+(m/=> ring-buffer-append! [:=> [:cat rb/RingBuffer :any] rb/BufferState])
+
+(m/=> ring-buffer-contents
+      [:function
+       [:=> [:cat rb/RingBuffer] [:vector :any]]
+       [:=> [:cat rb/RingBuffer [:maybe [:map [:last-n {:optional true} [:maybe number?]]]]]
+        [:vector :any]]])
+
+(m/=> ring-buffer-contents-since
+      [:=> [:cat rb/RingBuffer [:maybe :int]] [:vector rb/LineEntry]])
+
+(m/=> ring-buffer-stats [:=> [:cat rb/RingBuffer] rb/BufferStats])
+
 (m/=> start-watchdog! [:=> [:cat] :nil])
 
 (m/=> stop-watchdog! [:=> [:cat] :nil])

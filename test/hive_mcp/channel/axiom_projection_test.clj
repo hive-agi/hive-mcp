@@ -72,6 +72,17 @@
 (deftest a-headerless-section-is-never-withheld
   (is (not (ax/withhold? {:header nil :body ["# Title" "opening claim"]}))))
 
+(deftest a-title-that-reads-as-rationale-is-never-withheld
+  (testing "shrunk case of compaction-is-exact-identity-when-nothing-is-withheld, seed 1792518356824"
+    (let [c "# WHY\n\n## The rule\n\n0"]
+      (is (= c (ax/compact c "id"))
+          "the level-1 title carries the opening statement; it is not a rationale section")))
+  (testing "a title opening with a rationale word keeps its opening statement"
+    (doseq [t ["# Why we never force-push" "# Examples of the canon" "# History"]]
+      (is (not (ax/withhold? {:header t :body ["" "Opening claim."]}))
+          (str "withheld the title section: " t))
+      (is (str/includes? (ax/compact (str t "\n\nOpening claim.\n") "id") "Opening claim.")))))
+
 (deftest the-explicit-marker-overrides-an-unrecognised-heading
   (testing "the corpus can declare its own intent where a heading cannot"
     (is (ax/withhold? {:header "## Some bespoke heading"
