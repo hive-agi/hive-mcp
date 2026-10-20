@@ -5,7 +5,9 @@
             [hive-mcp.agent.openrouter :as openrouter]
             [hive-spi.editor.services :as svc]
             [clojure.data.json :as json]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [hive-mcp.agent.dispatch-backend :as dispatch]
+            [hive-mcp.agent.provider.model :as provider-model])
   (:import [java.util.concurrent ArrayBlockingQueue TimeUnit]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -152,7 +154,16 @@
    :llm-providers — e.g. :venice :axon :groq :together :fireworks :openai
    :ollama-compat) is routed through openai-compat-backend with that
    :provider, so config keys like :models.synthesis-backend can select a
-   provider directly without a bespoke case."
+   provider directly without a bespoke case.
+
+   A DISPATCH-routed registry provider (:anthropic :chatgpt :codex :kimi:
+   subscription clients, not chat-completions endpoints) gets a
+   hive-mcp.agent.dispatch-backend/DispatchBackend over the hive-agent
+   LLMRouter instead of the \"not an OpenAI-compat provider\" refusal. It is
+   built eagerly: with no router reachable, no model, or no router client for
+   the provider, this throws ex-info (:error :dispatch-router-unavailable |
+   :model-not-configured | :dispatch-provider-unroutable), so a fallback chain
+   skips the provider at build time. opts :complete overrides the router port."
   ([type] (make-backend type {}))
   ([type opts]
    (case type
@@ -163,9 +174,16 @@
      :openrouter (openrouter/openrouter-backend opts)
      :openai-compat (openrouter/openai-compat-backend opts)
      :auto (openrouter/auto-backend opts)
-     (let [registry (openrouter/effective-provider-registry)]
-       (if (contains? registry type)
+     (let [registry (openrouter/effective-provider-registry)
+           entry    (get registry type)]
+       (cond
+         (provider-model/dispatch-routed? entry)
+         (dispatch/dispatch-backend (assoc opts :provider type :entry entry))
+
+         (contains? registry type)
          (openrouter/openai-compat-backend (assoc opts :provider type))
+
+         :else
          (throw (ex-info "Unknown backend type"
                          {:type type
                           :available (into [:ollama :cider :openrouter

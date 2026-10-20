@@ -1,0 +1,12 @@
+{:empty
+ {:type :error,
+  :error "Provider returned empty response (whitespace-only)"},
+ :nil {:type :error, :error "Provider returned nil message"},
+ :text {:type :text, :content "hello"},
+ :tool-call
+ {:type :tool_calls,
+  :calls [{:id "c1", :name "t", :arguments {:a 1}}]},
+ :usage
+ {:type :text,
+  :content "hello",
+  :usage {:input 3, :output 5, :total 8}}}
