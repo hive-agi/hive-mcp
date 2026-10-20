@@ -394,4 +394,4 @@
 (m/=> reset-registration! [:=> [:cat] [:maybe :boolean]])
 
 (m/=> handle-session-complete
-      [:=> [:cat SessionCompleteParams] hive-mcp.tools.core/McpResponse])
+      [:=> [:cat SessionCompleteParams] rb/McpResponse])

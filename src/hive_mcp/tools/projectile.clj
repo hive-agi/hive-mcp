@@ -10,8 +10,7 @@
             [taoensso.timbre :as log]
             [hive-spi.editor.services :as svc]
             [clojure.string :as str]
-            [malli.core :as m]
-            [hive-mcp.tools.result-bridge :as rb]))
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
