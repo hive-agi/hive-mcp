@@ -8,7 +8,8 @@
   (:require [hive-mcp.embedder.config :as econfig]
             [hive-mcp.router.escalate :as esc]
             [hive-mcp.router.protocol :as proto]
-            [hive-mcp.router.resolve :as resolve]))
+            [hive-mcp.router.resolve :as resolve]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -41,3 +42,13 @@
   ([] (make-router econfig/block))
   ([block-fn]
    (->DefaultRouter block-fn (atom false))))
+
+(def Router
+  "A `DefaultRouter` — satisfies both `IRouter` and `IEscalator`."
+  [:fn {:gen/schema :nil
+        :gen/fmap (fn [_] (->DefaultRouter (constantly {}) (atom false)))}
+   (fn [r] (and (satisfies? proto/IRouter r) (satisfies? proto/IEscalator r)))])
+
+(m/=> make-router [:function
+                   [:=> [:cat] Router]
+                   [:=> [:cat [:=> [:cat] resolve/EmbedderConfig]] Router]])

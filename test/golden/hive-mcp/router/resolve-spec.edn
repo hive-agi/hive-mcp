@@ -1,0 +1,200 @@
+{:case-0
+ {:out
+  {:error :router/invalid-provider-spec,
+   :provider-key :p/broken,
+   :provider
+   {:impl :bogus, :model "broken", :dimension 1, :max-tokens 1},
+   :cause "Invalid ProviderSpec"},
+  :in
+  ({:default :p/broken,
+    :routes {},
+    :providers
+    #:p{:small
+        {:impl :ollama,
+         :model "small",
+         :dimension 1024,
+         :max-tokens 8192},
+        :heavy
+        {:impl :venice,
+         :model "heavy",
+         :dimension 4096,
+         :max-tokens 28000},
+        :broken
+        {:impl :bogus, :model "broken", :dimension 1, :max-tokens 1}},
+    :escalation {:heavy-tier-key :p/heavy}}
+   :type/note)},
+ :case-1
+ {:out
+  {:error :router/no-default,
+   :memory-type :plan,
+   :hint
+   "Set [:embedder :default <provider-key>] or [:embedder :routes <type>]"},
+  :in
+  ({:default nil,
+    :routes {:note :p/missing},
+    :providers
+    #:p{:small
+        {:impl :ollama,
+         :model "small",
+         :dimension 1024,
+         :max-tokens 8192},
+        :heavy
+        {:impl :venice,
+         :model "heavy",
+         :dimension 4096,
+         :max-tokens 28000},
+        :broken
+        {:impl :bogus, :model "broken", :dimension 1, :max-tokens 1}},
+    :escalation {:heavy-tier-key :p/heavy}}
+   :plan)},
+ :case-2
+ {:out
+  {:error :router/invalid-provider-spec,
+   :provider-key :p/broken,
+   :provider
+   {:impl :bogus, :model "broken", :dimension 1, :max-tokens 1},
+   :cause "Invalid ProviderSpec"},
+  :in
+  ({:default :p/broken,
+    :routes {:plan :p/broken, :note :p/missing},
+    :providers
+    #:p{:small
+        {:impl :ollama,
+         :model "small",
+         :dimension 1024,
+         :max-tokens 8192},
+        :heavy
+        {:impl :venice,
+         :model "heavy",
+         :dimension 4096,
+         :max-tokens 28000},
+        :broken
+        {:impl :bogus, :model "broken", :dimension 1, :max-tokens 1}},
+    :escalation {:heavy-tier-key :p/missing}}
+   42)},
+ :case-3
+ {:out
+  {:error :router/no-default,
+   :memory-type "axiom",
+   :hint
+   "Set [:embedder :default <provider-key>] or [:embedder :routes <type>]"},
+  :in
+  ({:default nil,
+    :routes
+    {:type/note :p/missing, :type/plan :p/small, :plan :p/heavy},
+    :providers
+    #:p{:small
+        {:impl :ollama,
+         :model "small",
+         :dimension 1024,
+         :max-tokens 8192},
+        :heavy
+        {:impl :venice,
+         :model "heavy",
+         :dimension 4096,
+         :max-tokens 28000},
+        :broken
+        {:impl :bogus, :model "broken", :dimension 1, :max-tokens 1}},
+    :escalation {:heavy-tier-key :p/heavy}}
+   "axiom")},
+ :case-4
+ {:out
+  {:error :router/invalid-provider-spec,
+   :provider-key :p/broken,
+   :provider
+   {:impl :bogus, :model "broken", :dimension 1, :max-tokens 1},
+   :cause "Invalid ProviderSpec"},
+  :in
+  ({:default :p/broken,
+    :routes {:plan :p/broken},
+    :providers
+    #:p{:small
+        {:impl :ollama,
+         :model "small",
+         :dimension 1024,
+         :max-tokens 8192},
+        :heavy
+        {:impl :venice,
+         :model "heavy",
+         :dimension 4096,
+         :max-tokens 28000},
+        :broken
+        {:impl :bogus, :model "broken", :dimension 1, :max-tokens 1}},
+    :escalation {:heavy-tier-key :p/missing}}
+   "type/plan")},
+ :case-5
+ {:out
+  {:error :router/unknown-provider,
+   :provider-key :p/missing,
+   :memory-type "type/plan",
+   :known [:p/small :p/heavy :p/broken]},
+  :in
+  ({:default nil,
+    :routes
+    {:type/note :p/broken,
+     :plan :p/missing,
+     :type/plan :p/missing,
+     :note :p/broken},
+    :providers
+    #:p{:small
+        {:impl :ollama,
+         :model "small",
+         :dimension 1024,
+         :max-tokens 8192},
+        :heavy
+        {:impl :venice,
+         :model "heavy",
+         :dimension 4096,
+         :max-tokens 28000},
+        :broken
+        {:impl :bogus, :model "broken", :dimension 1, :max-tokens 1}},
+    :escalation {:heavy-tier-key :p/missing}}
+   "type/plan")},
+ :case-6
+ {:out
+  {:error :router/unknown-provider,
+   :provider-key :p/missing,
+   :memory-type "type/plan",
+   :known [:p/small :p/heavy :p/broken]},
+  :in
+  ({:default nil,
+    :routes {:plan :p/missing, :note :p/heavy, :type/note :p/broken},
+    :providers
+    #:p{:small
+        {:impl :ollama,
+         :model "small",
+         :dimension 1024,
+         :max-tokens 8192},
+        :heavy
+        {:impl :venice,
+         :model "heavy",
+         :dimension 4096,
+         :max-tokens 28000},
+        :broken
+        {:impl :bogus, :model "broken", :dimension 1, :max-tokens 1}},
+    :escalation {:heavy-tier-key :p/heavy}}
+   "type/plan")},
+ :case-7
+ {:out
+  {:error :router/unknown-provider,
+   :provider-key :p/missing,
+   :memory-type "note",
+   :known [:p/small :p/heavy :p/broken]},
+  :in
+  ({:default :p/missing,
+    :routes {:plan :p/heavy, :type/plan :p/small},
+    :providers
+    #:p{:small
+        {:impl :ollama,
+         :model "small",
+         :dimension 1024,
+         :max-tokens 8192},
+        :heavy
+        {:impl :venice,
+         :model "heavy",
+         :dimension 4096,
+         :max-tokens 28000},
+        :broken
+        {:impl :bogus, :model "broken", :dimension 1, :max-tokens 1}},
+    :escalation {:heavy-tier-key :p/heavy}}
+   "note")}}
