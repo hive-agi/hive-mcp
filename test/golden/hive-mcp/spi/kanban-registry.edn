@@ -24,7 +24,6 @@
    {:case :transition/missing-task-is-err, :ok? true}
    {:case :create/blank-title-is-err, :ok? true}]},
  :refusals
- {:unknown-port ":malli.core/invalid-input",
-  :wrong-impl ":malli.core/invalid-input"},
+ {:unknown-port :refused, :wrong-impl :refused, :still-live? true},
  :after-unregister false,
  :reset nil}

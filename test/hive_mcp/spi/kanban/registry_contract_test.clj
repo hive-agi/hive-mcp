@@ -58,8 +58,13 @@
               :create (kreg/create-task! {:title "x"})
               :registered? (kreg/registered? :IKanbanRead)
               :conformance (mapv #(dissoc % :detail) (kanban/conformance board board))}
-        refusals {:unknown-port (try (kreg/register! :Nope board) (catch Exception e (ex-message e)))
-                  :wrong-impl   (try (kreg/register! :IKanbanRead :x) (catch Exception e (ex-message e)))}
+        ;; Categorical, not the message: instrumentation is process global, so
+        ;; the refusal comes from the malli contract or from the registry's own
+        ;; guard depending on which tests ran first. Both must refuse.
+        refused? (fn [thunk] (try (thunk) :accepted (catch Throwable _ :refused)))
+        refusals {:unknown-port (refused? #(kreg/register! :Nope board))
+                  :wrong-impl   (refused? #(kreg/register! :IKanbanRead :x))
+                  :still-live?  (kreg/registered? :IKanbanRead)}
         _ (kreg/unregister! :IKanbanRead)]
     {:degraded degraded :live live :refusals refusals
      :after-unregister (kreg/registered? :IKanbanRead)

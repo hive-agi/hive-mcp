@@ -73,8 +73,11 @@
           removed  (cr/unregister-block! :b/boom)]
       {:composed composed :ordered ordered :custom-runner run-with
        :removed removed :still? [(cr/registered? :b/ok) (cr/registered? :b/boom)]
+       ;; Throwable, not Exception: with malli instrumentation on the
+       ;; contract refuses with ExceptionInfo, with it off (another test may
+       ;; have unstrumented) the slot's validator assert throws AssertionError.
        :refused (try (cr/register-block! {:block/id "x"}) :accepted
-                     (catch Exception _ :refused))})))
+                     (catch Throwable _ :refused))})))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Contributions
