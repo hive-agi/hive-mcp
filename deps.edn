@@ -222,7 +222,9 @@
               "-Dclojure.core.async.pool-size=8"
               "--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED"
               "--add-opens=java.base/java.nio=ALL-UNNAMED"
-              "-Dio.netty.tryReflectionSetAccessible=true"]}
+              "-Dio.netty.tryReflectionSetAccessible=true"
+              ;; See :dev: soft refs pin eval classloaders in metaspace.
+              "-XX:SoftRefLRUPolicyMSPerMB=50"]}
 
   ;; One-off KG datahike rebuild (drops legacy structural edges).
   ;; Run STANDALONE with hive-mcp STOPPED:
@@ -299,7 +301,16 @@
               ;; Cost: that sweep's GC becomes a full STW pause (~1s at this heap).
               "-XX:SoftMaxHeapSize=4g"
               "-XX:+ParallelRefProcEnabled"
-              "-XX:-ExplicitGCInvokesConcurrent"]}
+              "-XX:-ExplicitGCInvokesConcurrent"
+              ;; --- Metaspace containment ---
+              ;; Every nREPL eval (one per bb-mcp tool call) compiles classes
+              ;; into a fresh DynamicClassLoader, and DynamicClassLoader's class
+              ;; cache holds them by SoftReference. The default policy keeps a
+              ;; soft ref alive 1000 ms per MB of free heap, so with ~4g free
+              ;; every loader lives ~70 min. Measured 2026-10-20 after 4h:
+              ;; 73,805 loaders reachable after a full GC, 1 GB metaspace,
+              ;; growing ~10 loaders/s. 50 ms/MB keeps them ~3 min instead.
+              "-XX:SoftRefLRUPolicyMSPerMB=50"]}
 
   :nrepl
   {:extra-paths ["dev" "test"]
@@ -355,7 +366,9 @@
               ;; it, 780MB -> 256MB without.
               "-XX:SoftMaxHeapSize=4g"
               "-XX:+ParallelRefProcEnabled"
-              "-XX:-ExplicitGCInvokesConcurrent"]
+              "-XX:-ExplicitGCInvokesConcurrent"
+              ;; Metaspace containment: see :dev.
+              "-XX:SoftRefLRUPolicyMSPerMB=50"]
    ;; Same main as the container. The system's :hive/nrepl component is the
    ;; nREPL (HIVE_MCP_NREPL_PORT, default 7910); it resolves CIDER and
    ;; refactor-nrepl from the classpath this alias supplies.
