@@ -27,7 +27,9 @@
             [hive-mcp.tools.catchup.bundle-cache :as bundle-cache]
             [hive-mcp.channel.context-store :as context-store]
             [hive-mcp.dns.result :refer [rescue rescue-log]]
-            [clojure.tools.logging :as log])
+            [clojure.tools.logging :as log]
+            [malli.core :as m]
+            [hive-mcp.tools.catchup.shapes :as shapes])
   (:import [java.lang.ref WeakReference]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

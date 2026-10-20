@@ -6,7 +6,8 @@
    id. The `:_caller_id` stamped on a tool call may carry a session suffix
    (`<agent-id>:<session-id>`). These functions derive the lookup keys; they do
    not change the raw caller id used for piggyback or hivemind cursors."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -39,3 +40,19 @@
    truthy result, or nil. Exceptions from `f` propagate."
   [f raw-caller-id project-id]
   (some #(f % project-id) (caller-id-candidates raw-caller-id)))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def RawCallerId
+  "A raw `:_caller_id` as a tool call stamps it, or nil. The generator mixes
+   bare ids, session-suffixed ids and the edge shapes the split rule names."
+  [:maybe [:string {:gen/schema [:enum "coordinator" "ling-1" "ling-1:1234" "a:b:42"
+                                 ":99" "ling-1:" "ling-1:12x" "x:0"]}]])
+
+(m/=> caller-id-candidates
+      [:=> [:cat RawCallerId] [:vector {:min 1 :max 2} :string]])
+
+(m/=> resolve-for-caller
+      [:=> [:cat ifn? RawCallerId [:maybe :string]] [:maybe :some]])
