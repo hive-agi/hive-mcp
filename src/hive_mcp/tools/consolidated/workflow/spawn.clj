@@ -27,7 +27,8 @@
             [clojure.data.json :as json]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.workflows.support :as support]))
+            [hive-mcp.workflows.support :as support]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -519,3 +520,11 @@
              (build-spark-response (assoc batch-results
                                           :active-counts active-counts
                                           :max-slots max_slots)))))))))
+
+(def SparkReport
+  "What spark! answers: the spawned lings, the failed ones, and the count."
+  [:map [:spawned [:sequential :any]] [:failed [:sequential :any]] [:count nat-int?]])
+
+(m/=> spark! [:function
+              [:=> [:cat [:maybe :map]] SparkReport]
+              [:=> [:cat [:maybe :map] [:maybe :map]] SparkReport]])

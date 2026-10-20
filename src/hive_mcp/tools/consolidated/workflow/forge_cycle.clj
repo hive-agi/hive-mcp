@@ -11,7 +11,8 @@
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.workflows.forge-belt :as forge-belt]
             [hive-mcp.dns.result :as result]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -93,6 +94,21 @@
                     (when dir (scope/get-current-project-id dir)))
       :clock-fn   #(java.time.Instant/now)})))
 
+(def FsmResources
+  "The Forge Belt FSM resources map build-fsm-resources answers."
+  [:map
+   [:directory [:maybe :string]]
+   [:config [:map [:max-slots :int] [:presets [:sequential :string]]
+             [:spawn-mode [:maybe :keyword]]]]
+   [:agent-ops :map]
+   [:kanban-ops :map]
+   [:scope-fn ifn?]
+   [:clock-fn ifn?]])
+
+(m/=> build-fsm-resources [:function
+                           [:=> [:cat [:maybe :map]] FsmResources]
+                           [:=> [:cat [:maybe :map] [:maybe :map]] FsmResources]])
+
 ;; ── Forge Strike: Legacy (Imperative) ─────────────────────────────────────────
 
 (defn- update-forge-state-after-strike!
@@ -140,6 +156,10 @@
                                  ", sparked " (:count spark-result) " lings"
                                  " (mode: " (or spawn_mode "default")
                                  ", model: " (or model "agent-defaults") ")")})))
+
+(m/=> forge-strike-legacy* [:=> [:cat [:maybe :map] hive-mcp.tools.consolidated.workflow.forge-ops/AtomRef]
+                            [:map [:ok [:map [:success [:= true]] [:mode [:= :imperative]]
+                                        [:deprecated [:= true]] [:summary :string]]]]])
 
 ;; ── Forge Strike: FSM ─────────────────────────────────────────────────────────
 
@@ -196,3 +216,7 @@
                                  ", sparked " (:total-sparked fsm-result 0) " lings"
                                  " (mode: " (or spawn_mode "default")
                                  ", model: " (or model "agent-defaults") ")")})))
+
+(m/=> fsm-forge-strike* [:=> [:cat [:maybe :map] hive-mcp.tools.consolidated.workflow.forge-ops/AtomRef]
+                         [:map [:ok [:map [:success :boolean] [:mode [:= :fsm]]
+                                     [:outcome :keyword] [:summary :string]]]]])

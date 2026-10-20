@@ -1,0 +1,8 @@
+{:case-0 {:out [], :in "not json"},
+ :case-1 {:out [], :in {:text "garbage"}},
+ :case-2 {:out [], :in nil},
+ :case-3 {:out [], :in nil},
+ :case-4 {:out [{:id "c"}], :in {:text "[{\"id\":\"c\"}]"}},
+ :case-5 {:out [{:id "c"}], :in {:text "[{\"id\":\"c\"}]"}},
+ :case-6 {:out [], :in {:text "{\"tasks\":[]}"}},
+ :case-7 {:out [], :in ""}}
