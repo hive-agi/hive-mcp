@@ -1,0 +1,17 @@
+{:empty
+ {:success true,
+  :waves {},
+  :summary {:total 0, :success 0, :failed 0, :waves 0}},
+ :unknown
+ {:success false,
+  :waves
+  {1
+   {:ops [{:id "a", :tool "no-such", :command "x"}],
+    :results
+    [{:id "a",
+      :tool "no-such",
+      :command "x",
+      :success false,
+      :error "Tool not found: no-such",
+      :data nil}]}},
+  :summary {:total 1, :success 0, :failed 1, :waves 1}}}
