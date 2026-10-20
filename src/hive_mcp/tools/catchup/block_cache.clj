@@ -283,7 +283,10 @@
 (m/=> reset-cache! [:=> [:cat] :nil])
 (m/=> cached [:=> [:cat [:any {:gen/schema [:tuple :keyword :string]}] Policy Thunk] :any])
 (m/=> block-policy [:=> [:cat [:maybe BlockIn]] [:maybe Policy]])
-(m/=> block-key [:=> [:cat [:maybe BlockIn] [:maybe Policy] BlockCtx]
+;; block-key reads only :key-by from the policy, so any map (or nil) is accepted.
+(m/=> block-key [:=> [:cat [:maybe BlockIn]
+                       [:maybe [:map [:key-by {:optional true} [:maybe [:sequential :keyword]]]]]
+                       BlockCtx]
                  [:and [:vector :any] [:cat [:= :block] [:* :any]]]])
 (m/=> run-block [:=> [:cat BlockIn BlockCtx] :any])
 (m/=> run-status-provider
