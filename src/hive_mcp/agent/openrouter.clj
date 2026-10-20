@@ -478,3 +478,6 @@
 (m/=> auto-backend [:=> [:cat [:maybe :map]] Backend])
 
 (m/=> openrouter-backend [:=> [:cat [:maybe :map]] Backend])
+
+;; nil for an empty or nil tool list; throws on an unrecognised tool shape.
+(m/=> format-tools [:=> [:cat [:maybe [:sequential :map]]] [:maybe [:vector :map]]])

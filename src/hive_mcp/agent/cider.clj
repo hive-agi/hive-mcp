@@ -344,3 +344,28 @@
       [:function
        [:=> [:cat :any] openrouter/Backend]
        [:=> [:cat :any [:maybe :map]] openrouter/Backend]])
+
+;; nil when the router has no client for the registry provider.
+(m/=> router-key [:=> [:cat :any] [:maybe :keyword]])
+
+;; No :tools key when the tool list is empty or nil.
+(m/=> request-params
+      [:=> [:cat :keyword :string [:sequential :map] [:maybe [:sequential :map]]]
+       [:map
+        [:messages [:sequential :map]]
+        [:model :string]
+        [:provider :keyword]
+        [:tools {:optional true} [:vector :map]]]])
+
+;; nil is a legal message; :usage is added when the message carries one.
+(m/=> message->result
+      [:=> [:cat [:maybe :map]]
+       [:and openrouter/ParsedResponse
+        [:map [:usage {:optional true}
+               [:map [:input [:maybe :int]] [:output [:maybe :int]] [:total [:maybe :int]]]]]]])
+
+;; nil when hive-agent is absent or its router cannot start.
+(m/=> router-complete [:=> [:cat] [:maybe ifn?]])
+
+;; Throws ex-info (unroutable provider, no model, no router) instead of nil.
+(m/=> dispatch-backend [:=> [:cat :map] openrouter/Backend])
