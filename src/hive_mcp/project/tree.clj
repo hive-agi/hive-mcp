@@ -18,7 +18,8 @@
             [hive-mcp.dns.result :refer [rescue]]
             [hive-mcp.project.scope :as project-scope]
             [hive-weave.parallel :as wp]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [malli.core :as m])
   (:import [java.time Instant]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -489,3 +490,85 @@
        :result (scan-project-tree! root-path)})
     {:scanned false
      :reason "Project tree is fresh"}))
+
+;; =============================================================================
+;; Function Contracts (m16 coverage batch)
+;; =============================================================================
+
+(def ^:private Tree
+  "Project tree: {:roots [ids] :by-id {id entity} :children {id [ids]}}."
+  [:map
+   [:roots [:vector :string]]
+   [:by-id :map]
+   [:children :map]])
+
+(m/=> reset-index!
+      [:=> [:cat]
+       :nil])
+
+(m/=> build-project-tree
+      [:=> [:cat [:sequential :map]]
+       Tree])
+
+(m/=> get-descendants
+      [:=> [:cat :map :any]
+       [:vector :string]])
+
+(m/=> get-ancestors
+      [:=> [:cat :map :any]
+       [:vector :string]])
+
+(m/=> persist-project-entities!
+      [:=> [:cat [:sequential :map]]
+       [:maybe :map]])
+
+(m/=> query-all-projects
+      [:=> [:cat]
+       [:vector :map]])
+
+(m/=> query-project-by-id
+      [:=> [:cat :any]
+       [:maybe :map]])
+
+(m/=> query-project-children
+      [:=> [:cat :any]
+       [:vector :map]])
+
+(m/=> get-cached-tree
+      [:=> [:cat]
+       [:maybe Tree]])
+
+(m/=> invalidate-tree-cache!
+      [:=> [:cat]
+       :nil])
+
+(m/=> has-children?
+      [:=> [:cat :any]
+       :any])
+
+(m/=> get-descendant-ids
+      [:=> [:cat :any]
+       [:set :string]])
+
+(m/=> get-descendant-scope-tags
+      [:=> [:cat :any]
+       [:maybe [:set :string]]])
+
+(m/=> get-descendant-scopes
+      [:=> [:cat :any]
+       [:maybe [:vector :string]]])
+
+;; & [opts] optional rest arg: 1- or 2-arity, the second the options map.
+
+(m/=> scan-project-tree!
+      [:function
+       [:=> [:cat :string] [:map [:success :boolean]]]
+       [:=> [:cat :string [:maybe :map]] [:map [:success :boolean]]]])
+
+(m/=> tree-stale?
+      [:=> [:cat :string]
+       :any])
+
+(m/=> maybe-scan-project-tree!
+      [:=> [:cat :string]
+       [:map [:scanned :boolean]]])

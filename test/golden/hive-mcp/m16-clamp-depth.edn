@@ -1,0 +1,8 @@
+{:case-0 {:out "", :in ("")},
+ :case-1 {:out nil, :in (nil)},
+ :case-2 {:out {:x 0}, :in ({:x 0})},
+ :case-3 {:out [], :in ([])},
+ :case-4 {:out false, :in (false)},
+ :case-5 {:out false, :in (false)},
+ :case-6 {:out false, :in (false)},
+ :case-7 {:out 2, :in (2)}}

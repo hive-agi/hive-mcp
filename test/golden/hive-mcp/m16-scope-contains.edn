@@ -1,0 +1,8 @@
+{:case-0 {:out true, :in ("global" "global")},
+ :case-1 {:out false, :in ("a:b:c:d" "hive-mcp:agora")},
+ :case-2 {:out false, :in ("all" "scope:global")},
+ :case-3 {:out true, :in ("global" "a:b")},
+ :case-4 {:out false, :in ("solo" "global")},
+ :case-5 {:out false, :in (nil "scope:global")},
+ :case-6 {:out true, :in ("scope:global" nil)},
+ :case-7 {:out false, :in ("" "global")}}
