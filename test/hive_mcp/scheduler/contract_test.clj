@@ -380,7 +380,14 @@
 
 (golden/deftest-golden kg-gc-lane-golden
   "test/golden/hive-mcp/scheduler/kg-gc-lane.edn"
-  (let [seen (atom nil)
+  ;; The lane keeps process-global bookkeeping (cursor, last run, cycle count)
+  ;; that other tests in the same JVM tick. The test owns it: it resets the
+  ;; lane before driving it, snapshots only the cycle DELTA it caused, and
+  ;; resets again on the way out. The cleanup fn and the heap probe are
+  ;; injected stubs, so no KG or store is read.
+  (let [_ (kg-gc/reset-state!)
+        cycles-before (:cycles (kg-gc/status))
+        seen (atom nil)
         cleanup (fn [opts] (reset! seen (dissoc opts :continue?))
                   {:universe {:sources 2} :scanned 2 :orphaned 1
                    :details [{:complete? true :outcome :orphaned :effect-count 3}]})
@@ -392,7 +399,7 @@
     (kg-gc/reset-state!)
     {:ran (dissoc ran :duration-ms) :cleanup-opts @seen
      :not-due not-due :heavy (dissoc heavy :heap-ratio) :disabled disabled
-     :status (select-keys st [:running? :cycles])
+     :status {:running? (:running? st) :cycles-run (- (:cycles st) cycles-before)}
      :config-validates (m/validate kg-gc/LaneConfig (kg-gc/lane-config))
      :heap-ratio-sane (<= 0.0 (kg-gc/heap-ratio))}))
 

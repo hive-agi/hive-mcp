@@ -19,6 +19,6 @@
  :not-due {:skipped true, :reason "not due or already running"},
  :heavy {:skipped true, :reason "heap-pressure"},
  :disabled {:skipped true, :reason "kg-gc disabled via config"},
- :status {:running? false, :cycles 1},
+ :status {:running? false, :cycles-run 1},
  :config-validates true,
  :heap-ratio-sane true}
