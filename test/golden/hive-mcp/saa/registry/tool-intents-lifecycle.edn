@@ -1,0 +1,7 @@
+{:ok :ok,
+ :read-before {:tools ["x" "y" "z"], :owner :owner/a},
+ :custom-slice #{},
+ :removed #{:read :custom},
+ :restored [:custom :read],
+ :snapshot-shape true,
+ :reset {:by-intent {}, :by-owner {}}}
