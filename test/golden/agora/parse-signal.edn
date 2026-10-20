@@ -1,0 +1,75 @@
+{:case-0
+ {:out
+  {:type :propose,
+   :strength 1.0,
+   :target nil,
+   :evidence [],
+   :message "plain text"},
+  :in "plain text"},
+ :case-1
+ {:out {:error "Cannot parse signal from: class java.lang.Long"},
+  :in 42},
+ :case-10
+ {:out
+  {:error
+   "Invalid signal type: :bogus. Valid: approve, defer, propose, counter, no-change, lgtm",
+   :input {:type "bogus", :message "m"}},
+  :in {:type "bogus", :message "m"}},
+ :case-11 {:out {:error "Cannot parse signal from: "}, :in nil},
+ :case-2
+ {:out
+  {:type :approve,
+   :strength 1.0,
+   :target nil,
+   :evidence [],
+   :message "m"},
+  :in {:type "approve", :message "m"}},
+ :case-3
+ {:out
+  {:type :propose,
+   :strength 1.0,
+   :target nil,
+   :evidence [],
+   :message "m"},
+  :in {:type :propose, :message "m"}},
+ :case-4
+ {:out
+  {:type :approve,
+   :strength 1.0,
+   :target nil,
+   :evidence [],
+   :message "Signal: approve"},
+  :in :approve},
+ :case-5
+ {:out
+  {:type :approve,
+   :strength 1.0,
+   :target nil,
+   :evidence [],
+   :message "Signal: approve"},
+  :in :approve},
+ :case-6
+ {:out
+  {:type :lgtm,
+   :strength 1.0,
+   :target nil,
+   :evidence [],
+   :message "Signal: lgtm"},
+  :in :lgtm},
+ :case-7
+ {:out
+  {:type :propose,
+   :strength 1.0,
+   :target nil,
+   :evidence [],
+   :message ""},
+  :in ""},
+ :case-8 {:out {:error "Invalid signal keyword: :nope"}, :in :nope},
+ :case-9
+ {:out
+  {:type :defer,
+   :strength 1.0,
+   :target nil,
+   :evidence [],
+   :message "Signal: defer"},
+  :in :defer}}

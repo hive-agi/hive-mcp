@@ -1,13 +1,20 @@
-(ns hive-mcp.memory.ingest-search
-  (:require [hive-dsl.result :as r]))
+(ns hive-mcp.memory.ingest-search)
 
 (declare resolve-ingest-search normalize-ingest-results merge-and-rerank)
 
 (defn resolve-ingest-search
-  "Runtime-resolve ingest cross-collection search. Zero compile-time coupling."
+  "Runtime-resolve ingest cross-collection search. Zero compile-time coupling.
+
+   Neutralized after the Chroma retirement: the only implementation this ever
+   resolved, `hive-ingestor.storage.chroma/search-across-collections!`, was
+   deleted from hive-ingestor (its storage/chroma_retired_test pins the
+   absence). Resolving it on every federated search only paid a classpath
+   lookup to throw and land in nil. It now answers nil directly, so
+   `search-federated` returns the default-collection results alone. Kept as
+   the seam a future ingest search port plugs into; callers already treat nil
+   as \"no ingest search\"."
   []
-  (r/guard Exception nil
-    (requiring-resolve 'hive-ingestor.storage.chroma/search-across-collections!)))
+  nil)
 
 (defn normalize-ingest-results
   "Normalize ingest search results to match search-similar output shape."

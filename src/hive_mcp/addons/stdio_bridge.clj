@@ -14,7 +14,9 @@
             [hive-mcp.addons.mcp-bridge :as bridge]
             [hive-mcp.dns.result :as r]
             [clojure.data.json :as json]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.system.child-scope :as child-scope])
   (:import [java.io BufferedReader InputStreamReader OutputStreamWriter BufferedWriter]
            [java.util.concurrent.atomic AtomicLong]
            [java.util.concurrent TimeUnit]))
@@ -115,13 +117,19 @@
     (let [effect (r/try-effect* :bridge/start-failed
                                 (let [command    (:command opts)
                                       env        (:env opts)
+                                      ;; Sibling OOM scope when available (see the child-scope ns doc).
+                                      ;; The builder holds the plain argv; child-scope/start! applies
+                                      ;; the prefix once the env is set, so the command resolves on the
+                                      ;; child's PATH (a missing one still throws here, plain) and a
+                                      ;; scope that fails to start is retried plain. Probe and prefix
+                                      ;; come from child-scope/*probe* / *prefix* at call time.
                                       pb         (ProcessBuilder. ^java.util.List (vec command))
                                       _          (when env
                                                    (let [pe (.environment pb)]
                                                      (doseq [[k v] env]
                                                        (.put pe (str k) (str v)))))
                                       _          (.redirectErrorStream pb false)
-                                      process    (.start pb)
+                                      process    (child-scope/start! pb)
                                       writer     (BufferedWriter.
                                                   (OutputStreamWriter. (.getOutputStream process) "UTF-8"))
                                       reader     (BufferedReader.
@@ -232,3 +240,5 @@
    with {:command [\"python3\" \"path/to/server.py\"]} before use."
   [id]
   (->StdioBridge id (atom nil)))
+
+(m/=> ->stdio-bridge [:=> [:cat :keyword] bridge/BridgeAddon])

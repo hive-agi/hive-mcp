@@ -14,7 +14,8 @@
 
    Called by hive-knowledge.graph-algos.adapters.default/DatahikeKgWriter via
    requiring-resolve."
-  (:require [hive-mcp.knowledge-graph.connection :as kg-conn]
+  (:require [malli.core :as m]
+            [hive-mcp.knowledge-graph.connection :as kg-conn]
             [hive-mcp.knowledge-graph.schema :as kg-schema]
             [taoensso.timbre :as log]))
 
@@ -58,3 +59,7 @@
   [id attr]
   (guarded attr)
   (kg-conn/transact! [[:db/retract [:synth/node-id id] attr]]))
+
+(m/=> write-attr! [:=> [:cat :string :keyword :any] :any])
+(m/=> batch-write! [:=> [:cat [:sequential [:map [:id :string] [:attr :keyword] [:value :any]]]] :any])
+(m/=> delete-attr! [:=> [:cat :string :keyword] :any])

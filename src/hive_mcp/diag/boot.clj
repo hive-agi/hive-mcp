@@ -25,7 +25,8 @@
             [hive-mcp.diag.cache-datahike :as cache-dh]
             [hive-mcp.diag.clinic   :as clinic]
             [hive-di.presets.diag   :as diag-cfg]
-            [hive-dsl.result        :as r]))
+            [hive-dsl.result        :as r]
+            [malli.core :as m]))
 
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -61,11 +62,15 @@
     (cache-dh/make-datahike-query-cache)]
    (resolve-sizer-guard-bytes)))
 
+(m/=> build-clinic [:=> [:cat] [:fn {:gen/fmap (fn [_] (clinic/->MemoryClinic nil nil nil nil [] 1)) :gen/elements [nil]} #(satisfies? p/IMemoryClinic %)]])
+
 (defn clinic
   "The lazily-built, process-wide IMemoryClinic singleton. First call constructs
    and caches it; subsequent calls return the cached instance."
   []
   (or @clinic-atom (reset! clinic-atom (build-clinic))))
+
+(m/=> clinic [:=> [:cat] [:fn {:gen/fmap (fn [_] (clinic/->MemoryClinic nil nil nil nil [] 1)) :gen/elements [nil]} #(satisfies? p/IMemoryClinic %)]])
 
 ;; ---------------------------------------------------------------------------
 ;; REPL toggle surface — thin passthroughs over the clinic + its injected ports.
@@ -76,11 +81,15 @@
   []
   (p/heap-snapshot (:probe (clinic))))
 
+(m/=> snapshot [:=> [:cat] :map])
+
 (defn histogram
   "Top-`n` live classes by retained bytes (IHeapProbe/class-histogram); forces a
    full GC. Defaults to 25 rows."
   ([]  (histogram 25))
   ([n] (p/class-histogram (:probe (clinic)) n)))
+
+(m/=> histogram [:function [:=> [:cat] :map] [:=> [:cat :int] :map]])
 
 (defn diagnose
   "One-shot situational report: snapshot + histogram + allocation verdict +
@@ -88,11 +97,15 @@
   []
   (p/diagnose (clinic)))
 
+(m/=> diagnose [:=> [:cat] [:or [:map [:ok :map]] [:map [:error :keyword]]]])
+
 (defn caches
   "Occupancy of every registered cache probe (counts/capacity only, no value
    realization). Returns a vector of ICacheProbe/cache-occupancy Results."
   []
   (mapv p/cache-occupancy (:cache-probes (clinic))))
+
+(m/=> caches [:=> [:cat] [:vector [:or [:map [:ok :map]] [:map [:error :keyword]]]]])
 
 (defn relieve!
   "Best-effort RSS relief: evict every registered cache probe, GC, and report the
@@ -100,17 +113,23 @@
   []
   (p/relieve! (clinic)))
 
+(m/=> relieve! [:=> [:cat] [:or [:map [:ok :map]] [:map [:error :keyword]]]])
+
 (defn on!
   "Start the sampling profiler (the toggle's ON). Defaults to a :cpu profile;
    pass an event in #{:cpu :alloc :wall :lock}. Returns a Result."
   ([]      (on! :cpu))
   ([event] (p/start-profiling! (:profiler (clinic)) {:diag/event event})))
 
+(m/=> on! [:function [:=> [:cat] [:or [:map [:ok :map]] [:map [:error :keyword]]]] [:=> [:cat :keyword] [:or [:map [:ok :map]] [:map [:error :keyword]]]]])
+
 (defn off!
   "Stop the active profiling session and render its flamegraph (the toggle's
    OFF). Returns a Result — ok FlamegraphArtifact, or err :diag/profiler-not-running."
   []
   (p/stop-profiling! (:profiler (clinic))))
+
+(m/=> off! [:=> [:cat] [:or [:map [:ok :map]] [:map [:error :keyword]]]])
 
 (comment
   ;; Typical live RAM investigation, from symptom to relief to root cause.

@@ -6,7 +6,8 @@
             [hive-mcp.embeddings.resilient :as resilient]
             [hive-weave.safe :as safe]
             [hive-dsl.result :as result]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 (def max-models
   "Boot never schedules more than this many distinct local models."
@@ -39,6 +40,22 @@
                      routed (assoc :spec (select-keys routed
                                                       [:dimension :max-tokens :vram-mb])))))))))
 
+(def LocalModel
+  "One distinct routed Ollama identity selected for a boot probe."
+  [:map
+   [:host :string]
+   [:model :string]
+   [:keys [:set :any]]
+   [:spec {:optional true} [:map
+                            [:dimension {:optional true} :any]
+                            [:max-tokens {:optional true} :any]
+                            [:vram-mb {:optional true} :any]]]])
+
+;; cfg is the global config map; only :embedder :providers and
+;; :embeddings :ollama are read.
+(m/=> local-models [:=> [:cat [:maybe [:map-of :keyword :any]]]
+                    [:vector {:max 4} LocalModel]])
+
 (defn probe!
   "Probe one local identity through an injected embedding port. An unsuccessful
    probe never marks a model warm or touches the live circuit breaker."
@@ -54,6 +71,8 @@
       (do (log/warn "Boot embedding warmup failed (non-fatal):" model (:error answer))
           false))))
 
+(m/=> probe! [:=> [:cat [:=> [:cat LocalModel] :any] LocalModel] :boolean])
+
 (defn embed-local!
   "Production embedding port: registry provider + protocol, not a collection
    write (which would mutate the vector cache). A routed model keeps its
@@ -67,6 +86,8 @@
                                  :vram-mb (:vram-mb spec)})
       (config/ollama-config {:host host :model model})))
    "warmup"))
+
+(m/=> embed-local! [:=> [:cat LocalModel] proto/Vector])
 
 (defn start!
   "Return immediately after starting ONE daemon boot worker. Its work is
@@ -86,3 +107,15 @@
            (.setName "boot-embedding-warmup")
            (.setDaemon true)
            (.start)))))))
+
+(def Worker
+  "The started boot worker thread."
+  [:fn {:gen/fmap (fn [_] (Thread. ^Runnable (fn [])))
+        :gen/schema :nil}
+   #(instance? Thread %)])
+
+;; nil when warmup is disabled or no local model is routed.
+(m/=> start! [:function
+              [:=> [:cat [:maybe [:map-of :keyword :any]]] [:maybe Worker]]
+              [:=> [:cat [:maybe [:map-of :keyword :any]] [:=> [:cat LocalModel] :any]]
+               [:maybe Worker]]])

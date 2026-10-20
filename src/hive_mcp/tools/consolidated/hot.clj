@@ -296,9 +296,17 @@
 ;; Handlers
 ;; =============================================================================
 
+(defn reload-call-opts
+  "Pure. The reload opts for a `reload` call: FORCE re-reads the addon's source
+   roots even when disk is unchanged, and runs that namespace pass itself, so a
+   namespace-seeded reload does not take the callback's already-reloaded path."
+  [base force]
+  (cond-> base
+    (contains? #{true "true"} force) (assoc :force? true :ns-reloaded? false)))
+
 (defn handle-reload
   "Reload one addon (or every addon built from one namespace) plus dependents."
-  [{:keys [addon namespace strategy]}]
+  [{:keys [addon namespace strategy force]}]
   (cond
     (not (bridge-available?)) (mcp-error unavailable-msg)
     (and (nil? addon) (nil? namespace))
@@ -309,12 +317,14 @@
       (if error
         error
         (let [specs  (override-strategy specs addon strategy)
+              opts   (reload-call-opts (reload-opts) force)
               report (if namespace
-                       ((soft 'hive-addon.hot/reload-namespace!) host specs namespace (reload-opts))
-                       ((soft 'hive-addon.hot/reload-addon!) host specs addon (reload-opts)))
+                       ((soft 'hive-addon.hot/reload-namespace!) host specs namespace opts)
+                       ((soft 'hive-addon.hot/reload-addon!) host specs addon opts))
               surface (surface-refreshed!)
               result (report-with-surface (summarize report) surface)]
           (log/info "hot reload" {:addon addon :namespace namespace
+                                  :force? (:force? opts)
                                   :ok? (:ok? result)
                                   :affected (:hot/affected report)})
           (mcp-json (assoc result :hive-hot hot-init)))))))
@@ -1006,7 +1016,8 @@
    (str "Hot-reload and inject IAddon instances via hive-hot. reload (rebuild one "
         "addon from its mount manifest and cascade to every addon holding its "
         "instance; the namespace reload is scoped to the addon's own source roots "
-        "and reports what it declined under :hot/ns-skipped), reload-all (every "
+        "and reports what it declined under :hot/ns-skipped; force re-reads those "
+        "roots even when disk is unchanged), reload-all (every "
         "mounted addon with reloadable source, in dependency order; the rest are "
         "reported under :skipped with a reason), inject (mount an addon that was NOT on "
         "the classpath at boot: a project dir, source dir or jar), eject (plug an addon "
@@ -1051,7 +1062,7 @@
      "cascade" {:type "boolean"
                 :description "[eject/unmount] Also tear down the mounted addons that depend on the target and remount them without it. Default false: such an eject is refused."}
      "force" {:type "boolean"
-              :description "[eject/unmount] Plug out even when calls are still in flight after drain_ms (the report says :forced?). [evict] Also evict a pinned or eager addon. [pin] Allow :lazy on an addon with no surface a stub could advertise. Default false."}
+              :description "[reload] Re-read every file under the addon's source roots, and reload their dependents, even when nothing changed on disk: repairs an image that diverged from its mounted source (a load-file from another checkout). [eject/unmount] Plug out even when calls are still in flight after drain_ms (the report says :forced?). [evict] Also evict a pinned or eager addon. [pin] Allow :lazy on an addon with no surface a stub could advertise. Default false."}
      "drain_ms" {:type "integer"
                  :description "[eject/unmount] How long to wait for the addon's calls in flight before teardown; new calls are refused meanwhile. Still running after it: refused as busy (nothing torn down) unless force. Default 30000."}
      "policy" {:type "string"

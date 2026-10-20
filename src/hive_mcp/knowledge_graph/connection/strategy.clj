@@ -1,5 +1,7 @@
 (ns hive-mcp.knowledge-graph.connection.strategy
-  (:require [hive-dsl.batch :as dsl-batch]
+  (:require [malli.core :as m]
+            [clojure.test.check.generators :as gen]
+            [hive-dsl.batch :as dsl-batch]
             [hive-dsl.result :as r]
             [hive-mcp.knowledge-graph.connection.writer :as writer]
             [hive-mcp.knowledge-graph.protocol :as proto]))
@@ -58,3 +60,9 @@
           (when-not (and (string? from) (string? to))
             (throw (ex-info "Poison KG edge datom rejected: :kg-edge/from and :kg-edge/to must be strings"
                             {:kg-edge/from from :kg-edge/to to}))))))))
+
+(m/=> select-strategy
+  [:=> [:cat [:maybe :any] :boolean [:fn {:gen/gen (gen/return (fn [] nil))} ifn?]]
+   [:fn {:gen/gen (gen/return (->BatchAccumulator (atom [])))} #(satisfies? IWriteStrategy %)]])
+
+(m/=> assert-edge-node-ids! [:=> [:cat :any] :nil])

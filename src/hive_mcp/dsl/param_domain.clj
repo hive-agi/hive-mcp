@@ -8,7 +8,8 @@
      addressable — everything else; `$ref:` strings are live references
 
    Pure leaf: no requires, safe from any stratum (compiler, executor,
-   extensions).")
+   extensions)."
+  (:require [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -48,3 +49,13 @@
             (or (contains? meta-param-keys k)
                 (contains? prose-param-keys k)))
           op))
+
+(def Op
+  "A compiled batch op: a map of param key to value."
+  [:map-of :any :any])
+
+(malli.core/=> op-label? [:=> [:cat :any] :boolean])
+
+(malli.core/=> prose-param? [:=> [:cat :any] :boolean])
+
+(malli.core/=> ref-walkable-entries [:=> [:cat Op] [:sequential [:tuple :any :any]]])

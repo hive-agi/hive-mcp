@@ -12,7 +12,8 @@
    mints a DISTINCT protocol, and every record implementing the original then
    fails `satisfies?` silently."
   (:require [hive-mcp.protocols.registry :as reg]
-            [hive-spi.workflow.engine :as engine]))
+            [hive-spi.workflow.engine :as engine]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -112,20 +113,35 @@
   [engine]
   (reg/install! slot engine))
 
+(def WorkflowEngine
+  "Any value satisfying hive-spi.workflow.engine/IWorkflowEngine; generates
+   the NoopWorkflowEngine."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (->NoopWorkflowEngine))}
+   #(satisfies? engine/IWorkflowEngine %)])
+
+;; The input is loose: the slot's :validate assert rejects a non-engine.
+(m/=> set-workflow-engine! [:=> [:cat :any] WorkflowEngine])
+
 (defn get-workflow-engine
   "Get the active workflow engine, or NoopWorkflowEngine if none set."
   []
   (reg/current slot))
+
+(m/=> get-workflow-engine [:=> [:cat] WorkflowEngine])
 
 (defn workflow-engine-set?
   "Check if an active workflow engine is configured."
   []
   (reg/present? slot))
 
+(m/=> workflow-engine-set? [:=> [:cat] :boolean])
+
 (defn clear-workflow-engine!
   "Clear the active workflow engine."
   []
   (reg/clear! slot))
+
+(m/=> clear-workflow-engine! [:=> [:cat] :nil])
 
 ;;; =============================================================================
 ;;; Utility Functions
@@ -136,16 +152,22 @@
   [x]
   (engine/workflow-engine? x))
 
+(m/=> workflow-engine? [:=> [:cat :any] :boolean])
+
 (defn persistent-engine?
   "Check if workflow engine supports persistence."
   [x]
   (engine/persistent-engine? x))
+
+(m/=> persistent-engine? [:=> [:cat :any] :boolean])
 
 (defn enhanced?
   "Check if a non-noop workflow engine is active."
   []
   (and (workflow-engine-set?)
        (not (instance? NoopWorkflowEngine (get-workflow-engine)))))
+
+(m/=> enhanced? [:=> [:cat] :boolean])
 
 (defn capabilities
   "Get a summary of available workflow capabilities."
@@ -162,3 +184,19 @@
      :get-status? true
      :cancel? true
      :persistence? (persistent-engine? engine)}))
+
+(def WorkflowCapabilities
+  "The summary `capabilities` answers: :engine-type is the engine's simple
+   class name when a non-noop engine is active, :noop otherwise."
+  [:map
+   [:engine-type [:or [:= :noop] :string]]
+   [:enhanced? :boolean]
+   [:load? [:= true]]
+   [:validate? [:= true]]
+   [:execute-step? [:= true]]
+   [:execute-workflow? [:= true]]
+   [:get-status? [:= true]]
+   [:cancel? [:= true]]
+   [:persistence? :boolean]])
+
+(m/=> capabilities [:=> [:cat] WorkflowCapabilities])

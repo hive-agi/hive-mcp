@@ -1,0 +1,76 @@
+{:case-0
+ {:out
+  {:fault :recall/probe-empty,
+   :label :carto-semantic,
+   :probe "",
+   :count "",
+   :diagnosis
+   "the probe returned nothing. An index that answers zero to its own smoke query is down, not empty."},
+  :in ({:label :carto-semantic, :count "", :probe ""})},
+ :case-1
+ {:out
+  {:fault :recall/probe-empty,
+   :label :carto-semantic,
+   :probe "6",
+   :count nil,
+   :diagnosis
+   "the probe returned nothing. An index that answers zero to its own smoke query is down, not empty."},
+  :in ({:label :carto-semantic, :count nil, :probe "6"})},
+ :case-2
+ {:out
+  {:fault :recall/probe-empty,
+   :label :lexical-anchor,
+   :probe "",
+   :count nil,
+   :diagnosis "87"},
+  :in
+  ({:label :lexical-anchor, :count nil, :probe "", :diagnosis "87"})},
+ :case-3
+ {:out
+  {:fault :recall/probe-empty,
+   :label :supersession,
+   :probe "0",
+   :count 0,
+   :diagnosis
+   "the probe returned nothing. An index that answers zero to its own smoke query is down, not empty."},
+  :in ({:label :supersession, :count 0, :probe "0", :diagnosis nil})},
+ :case-4
+ {:out
+  {:fault :recall/probe-empty,
+   :label :lexical-anchor,
+   :probe "",
+   :count "",
+   :diagnosis "Hk"},
+  :in
+  ({:label :lexical-anchor, :count "", :probe "", :diagnosis "Hk"})},
+ :case-5
+ {:out
+  {:fault :recall/probe-empty,
+   :label :lexical-anchor,
+   :probe "Sb",
+   :count nil,
+   :diagnosis "nhe6"},
+  :in
+  ({:label :lexical-anchor,
+    :count nil,
+    :probe "Sb",
+    :diagnosis "nhe6"})},
+ :case-6
+ {:out
+  {:fault :recall/probe-empty,
+   :label :supersession,
+   :probe "Bfv33",
+   :count 0,
+   :diagnosis
+   "the probe returned nothing. An index that answers zero to its own smoke query is down, not empty."},
+  :in
+  ({:label :supersession, :count 0, :probe "Bfv33", :diagnosis nil})},
+ :case-7
+ {:out
+  {:fault :recall/probe-empty,
+   :label :carto-semantic,
+   :probe "hLM4T",
+   :count -1,
+   :diagnosis
+   "the probe returned nothing. An index that answers zero to its own smoke query is down, not empty."},
+  :in ({:label :carto-semantic, :count -1, :probe "hLM4T"})}}

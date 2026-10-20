@@ -1,0 +1,11 @@
+{:case-0 {:out {}, :in {}},
+ :case-1
+ {:out #:slave{:status :working, :project-id "W"},
+  :in #:ling{:status :working, :project-id "W"}},
+ :case-2 {:out {}, :in {}},
+ :case-3 {:out #:slave{:project-id ""}, :in #:ling{:project-id ""}},
+ :case-4
+ {:out #:slave{:status :working}, :in #:ling{:status :working}},
+ :case-5 {:out {}, :in {}},
+ :case-6 {:out {}, :in {}},
+ :case-7 {:out {}, :in {}}}

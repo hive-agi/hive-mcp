@@ -1,0 +1,218 @@
+{:case-0
+ {:out
+  {:umbrella
+   {:cross-pid-edges [],
+    :cross-cutting-decisions [],
+    :session-timing {},
+    :hivemind-shouts-global [],
+    :session-temporal nil}},
+  :in
+  ({:umbrella
+    {:cross-pid-edges [],
+     :cross-cutting-decisions [],
+     :session-timing {},
+     :hivemind-shouts-global []}}
+   {:cross-pid-edges [],
+    :cross-cutting-decisions [],
+    :hivemind-shouts-global []})},
+ :case-1
+ {:out
+  {:umbrella
+   {:cross-pid-edges [{}],
+    :cross-cutting-decisions [[] nil],
+    :session-timing nil,
+    :session-temporal {},
+    :hivemind-shouts-global [nil]}},
+  :in
+  ({:umbrella
+    {:cross-pid-edges [],
+     :cross-cutting-decisions [[]],
+     :session-timing nil,
+     :session-temporal {},
+     :hivemind-shouts-global []}}
+   {:cross-pid-edges [{}],
+    :cross-cutting-decisions [nil],
+    :session-timing nil,
+    :session-temporal nil,
+    :hivemind-shouts-global [nil]})},
+ :case-2
+ {:out
+  {:umbrella
+   {:cross-pid-edges [{} nil nil],
+    :cross-cutting-decisions [nil []],
+    :session-timing {},
+    :session-temporal {},
+    :hivemind-shouts-global
+    [nil
+     {#uuid "792ad46d-9427-4e5b-bab9-fefa57621994" -1.75}
+     nil
+     nil]}},
+  :in
+  ({:umbrella
+    {:cross-pid-edges [{} nil],
+     :cross-cutting-decisions [nil []],
+     :session-timing {},
+     :session-temporal {},
+     :hivemind-shouts-global
+     [nil {#uuid "792ad46d-9427-4e5b-bab9-fefa57621994" -1.75}]}}
+   {:cross-pid-edges [nil],
+    :cross-cutting-decisions [],
+    :session-timing {},
+    :hivemind-shouts-global [nil nil]})},
+ :case-3
+ {:out
+  {:umbrella
+   {:cross-pid-edges [],
+    :cross-cutting-decisions [#{} #{} nil nil],
+    :session-temporal nil,
+    :hivemind-shouts-global
+    [(\o 2) #{} nil (#uuid "eda7b3e5-c2ea-46bb-9f37-9d2e3d828b7c")],
+    :session-timing nil}},
+  :in
+  ({:umbrella
+    {:cross-pid-edges [],
+     :cross-cutting-decisions [#{} #{} nil],
+     :session-temporal nil,
+     :hivemind-shouts-global [(\o 2) #{} nil]}}
+   {:cross-pid-edges [],
+    :cross-cutting-decisions [nil],
+    :hivemind-shouts-global
+    [(#uuid "eda7b3e5-c2ea-46bb-9f37-9d2e3d828b7c")]})},
+ :case-4
+ {:out
+  {:umbrella
+   {:cross-pid-edges [nil 0 nil :Uk/ReP nil [false] nil],
+    :cross-cutting-decisions [#:NU+{T \r}],
+    :session-temporal nil,
+    :hivemind-shouts-global [nil nil nil],
+    :session-timing nil}},
+  :in
+  ({:umbrella
+    {:cross-pid-edges [nil 0 nil],
+     :cross-cutting-decisions [#:NU+{T \r}],
+     :session-temporal nil,
+     :hivemind-shouts-global [nil nil]}}
+   {:cross-pid-edges [:Uk/ReP nil [false] nil],
+    :cross-cutting-decisions [],
+    :session-timing nil,
+    :hivemind-shouts-global [nil]})},
+ :case-5
+ {:out
+  {:umbrella
+   {:cross-pid-edges
+    [([] (:Q-)) (#uuid "49630c9d-5c91-4db6-8679-0237f22e6c3d") nil],
+    :cross-cutting-decisions [#{} nil nil nil bt/Jr- [:!k1/R] ()],
+    :hivemind-shouts-global
+    [{{nG -1.375} -1} nil [] {\l s} nil [] nil #{}],
+    :session-timing {},
+    :session-temporal nil}},
+  :in
+  ({:umbrella
+    {:cross-pid-edges [],
+     :cross-cutting-decisions [#{} nil nil nil bt/Jr-],
+     :hivemind-shouts-global [{{nG -1.375} -1} nil [] {\l s} nil]}}
+   {:cross-pid-edges
+    [([] (:Q-)) (#uuid "49630c9d-5c91-4db6-8679-0237f22e6c3d") nil],
+    :cross-cutting-decisions [[:!k1/R] ()],
+    :session-timing {},
+    :session-temporal nil,
+    :hivemind-shouts-global [[] nil #{}]})},
+ :case-6
+ {:out
+  {:umbrella
+   {:cross-pid-edges [nil],
+    :cross-cutting-decisions
+    [nil
+     nil
+     {X kS/-:*, #uuid "9e8ca181-2815-4d52-b1f3-64b6aa2d8e96" 3}
+     nil
+     {-1 _/D8}
+     #{{#uuid "507152c0-1f25-4f6a-a7e6-b5f23c0a88e0" :_3*/*E6} -6N}
+     nil
+     nil],
+    :session-temporal nil,
+    :hivemind-shouts-global
+    [{} nil nil nil #{"n" -1 -14N} nil {true m} nil nil],
+    :session-timing nil}},
+  :in
+  ({:umbrella
+    {:cross-pid-edges [],
+     :cross-cutting-decisions
+     [nil
+      nil
+      {X kS/-:*, #uuid "9e8ca181-2815-4d52-b1f3-64b6aa2d8e96" 3}],
+     :session-temporal nil,
+     :hivemind-shouts-global [{} nil nil nil #{"n" -1 -14N} nil]}}
+   {:cross-pid-edges [nil],
+    :cross-cutting-decisions
+    [nil
+     {-1 _/D8}
+     #{{#uuid "507152c0-1f25-4f6a-a7e6-b5f23c0a88e0" :_3*/*E6} -6N}
+     nil
+     nil],
+    :session-temporal nil,
+    :hivemind-shouts-global [{true m} nil nil]})},
+ :case-7
+ {:out
+  {:umbrella
+   {:cross-pid-edges
+    [{}
+     nil
+     #{}
+     ["Q Z|"
+      true
+      -/I6
+      #uuid "2337471f-fbd4-4410-91c0-4d57a333609b"
+      false
+      true
+      1463957784N]],
+    :cross-cutting-decisions
+    [nil
+     nil
+     [(-0.65625 false mz*/Z_Az)]
+     nil
+     (:g9/.I3 #uuid "ca8b5a04-ebd7-49b5-bc0d-760020391026" 6)
+     nil
+     nil],
+    :session-timing {},
+    :hivemind-shouts-global
+    [_i
+     nil
+     {#uuid "82d533fa-a238-4f21-ac2f-0876f93dea5a" -10519505N}
+     {}
+     nil
+     nil
+     nil],
+    :session-temporal nil}},
+  :in
+  ({:umbrella
+    {:cross-pid-edges
+     [{}
+      nil
+      #{}
+      ["Q Z|"
+       true
+       -/I6
+       #uuid "2337471f-fbd4-4410-91c0-4d57a333609b"
+       false
+       true
+       1463957784N]],
+     :cross-cutting-decisions [nil nil],
+     :session-timing {},
+     :hivemind-shouts-global []}}
+   {:cross-pid-edges [],
+    :cross-cutting-decisions
+    [[(-0.65625 false mz*/Z_Az)]
+     nil
+     (:g9/.I3 #uuid "ca8b5a04-ebd7-49b5-bc0d-760020391026" 6)
+     nil
+     nil],
+    :session-timing {},
+    :hivemind-shouts-global
+    [_i
+     nil
+     {#uuid "82d533fa-a238-4f21-ac2f-0876f93dea5a" -10519505N}
+     {}
+     nil
+     nil
+     nil]})}}

@@ -1,0 +1,52 @@
+{:case-0
+ {:out [{:header "# Rule", :body ["Do the thing."]}],
+  :in "# Rule\nDo the thing.\n"},
+ :case-1
+ {:out [{:header nil, :body ["no heading at all"]}],
+  :in "no heading at all"},
+ :case-2
+ {:out
+  [{:header "# Rule",
+    :body
+    ["```guard-rule" "{:rule/id :guard/zz-probe}" "```" "after"]}],
+  :in
+  "# Rule\n```guard-rule\n{:rule/id :guard/zz-probe}\n```\nafter\n"},
+ :case-3
+ {:out
+  [{:header "# Rule", :body []}
+   {:header "## Examples", :body ["- a" "- b"]}
+   {:header "## Strict definitions", :body ["X means Y"]}],
+  :in
+  "# Rule\n## Examples\n- a\n- b\n## Strict definitions\nX means Y\n"},
+ :case-4
+ {:out
+  [{:header "# Rule", :body ["Do it."]}
+   {:header "## Why", :body ["Because once it broke." "and twice"]}],
+  :in "# Rule\nDo it.\n## Why\nBecause once it broke.\nand twice\n"},
+ :case-5
+ {:out [{:header nil, :body ["no heading at all"]}],
+  :in "no heading at all"},
+ :case-6
+ {:out
+  [{:header nil, :body ["intro"]}
+   {:header "## Background",
+    :body ["<!-- rationale -->" "old story"]}],
+  :in "intro\n## Background\n<!-- rationale -->\nold story\n"},
+ :case-7
+ {:out
+  [{:header "# Rule", :body ["Do it."]}
+   {:header "## Why", :body ["Because once it broke." "and twice"]}],
+  :in "# Rule\nDo it.\n## Why\nBecause once it broke.\nand twice\n"},
+ :case-8
+ {:out
+  [{:header "# Rule", :body []}
+   {:header "## Examples", :body ["- a" "- b"]}
+   {:header "## Strict definitions", :body ["X means Y"]}],
+  :in
+  "# Rule\n## Examples\n- a\n- b\n## Strict definitions\nX means Y\n"},
+ :case-9
+ {:out
+  [{:header nil, :body ["intro"]}
+   {:header "## Background",
+    :body ["<!-- rationale -->" "old story"]}],
+  :in "intro\n## Background\n<!-- rationale -->\nold story\n"}}

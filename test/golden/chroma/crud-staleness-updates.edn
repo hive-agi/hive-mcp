@@ -1,0 +1,36 @@
+{:case-0
+ {:out {:staleness-alpha 0, :staleness-depth 1},
+  :in {:alpha 0, :depth 1}},
+ :case-1
+ {:out
+  {:staleness-alpha 0,
+   :staleness-source :transitive,
+   :staleness-depth 1},
+  :in
+  {:staleness-alpha 0,
+   :alpha 1,
+   :staleness-source :transitive,
+   :source :direct,
+   :depth 1}},
+ :case-2
+ {:out
+  {:staleness-alpha 2,
+   :staleness-source :transitive,
+   :staleness-depth 1},
+  :in {:alpha 2, :source :transitive, :depth 1}},
+ :case-3 {:out {}, :in {}},
+ :case-4
+ {:out {:staleness-alpha 2, :staleness-source :direct},
+  :in {:staleness-alpha 2, :alpha 2, :source :direct}},
+ :case-5
+ {:out
+  {:staleness-alpha 7,
+   :staleness-source :transitive,
+   :staleness-depth 3},
+  :in {:alpha 7, :source :transitive, :depth 3}},
+ :case-6
+ {:out {:staleness-source :direct, :staleness-depth 3},
+  :in {:staleness-source :direct, :depth 3}},
+ :case-7
+ {:out {:staleness-source :direct},
+  :in {:staleness-source :direct, :source :transitive}}}

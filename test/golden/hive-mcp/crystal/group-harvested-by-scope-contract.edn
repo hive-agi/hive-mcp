@@ -1,0 +1,283 @@
+{:case-0
+ {:out {},
+  :in
+  ({:progress-notes [],
+    :completed-tasks [],
+    :memory-ids-created [],
+    :memory-ids-accessed []}
+   "fallback")},
+ :case-1
+ {:out
+  {"funeraria"
+   {:progress-notes [],
+    :completed-tasks [{:tags ["scope:project:funeraria"]}],
+    :memory-ids-created [],
+    :memory-ids-accessed []},
+   "fallback"
+   {:progress-notes [],
+    :completed-tasks [],
+    :memory-ids-created [{:tags []}],
+    :memory-ids-accessed [{:tags ["note"]}]}},
+  :in
+  ({:progress-notes [],
+    :completed-tasks [{:tags ["scope:project:funeraria"]}],
+    :memory-ids-created [{:tags []}],
+    :memory-ids-accessed [{:tags ["note"]}]}
+   "fallback")},
+ :case-2
+ {:out
+  {"funeraria"
+   {:progress-notes
+    [{:tags ["scope:project:funeraria" "note"]}
+     {:tags ["scope:project:funeraria"]}],
+    :completed-tasks [],
+    :memory-ids-created [{:tags ["scope:project:funeraria" "note"]}],
+    :memory-ids-accessed []},
+   "fallback"
+   {:progress-notes [],
+    :completed-tasks [{:tags []} {:tags ["scope:global"]}],
+    :memory-ids-created [],
+    :memory-ids-accessed []}},
+  :in
+  ({:progress-notes
+    [{:tags ["scope:project:funeraria" "note"]}
+     {:tags ["scope:project:funeraria"]}],
+    :completed-tasks [{:tags []} {:tags ["scope:global"]}],
+    :memory-ids-created [{:tags ["scope:project:funeraria" "note"]}],
+    :memory-ids-accessed []}
+   "fallback")},
+ :case-3
+ {:out
+  {"hive"
+   {:progress-notes [],
+    :completed-tasks
+    [{:tags ["scope:global" "scope:project:hive"]}
+     {:tags ["scope:project:hive" "scope:project:hive" "note"]}],
+    :memory-ids-created [],
+    :memory-ids-accessed []},
+   "fallback"
+   {:progress-notes [],
+    :completed-tasks [{:tags []}],
+    :memory-ids-created [],
+    :memory-ids-accessed [{:tags []}]}},
+  :in
+  ({:progress-notes [],
+    :completed-tasks
+    [{:tags ["scope:global" "scope:project:hive"]}
+     {:tags ["scope:project:hive" "scope:project:hive" "note"]}
+     {:tags []}],
+    :memory-ids-created [],
+    :memory-ids-accessed [{:tags []}]}
+   "fallback")},
+ :case-4
+ {:out
+  {"hive"
+   {:progress-notes [{:tags ["note" "scope:project:hive" "note"]}],
+    :completed-tasks
+    [{:tags
+      ["scope:project:hive"
+       "scope:global"
+       "scope:project:hive"
+       "note"]}],
+    :memory-ids-created
+    [{:tags
+      ["scope:project:hive"
+       "scope:project:funeraria"
+       "scope:project:funeraria"]}],
+    :memory-ids-accessed []},
+   "fallback"
+   {:progress-notes
+    [{:tags []} {:tags ["scope:global" "scope:global"]}],
+    :completed-tasks [],
+    :memory-ids-created [],
+    :memory-ids-accessed []}},
+  :in
+  ({:progress-notes
+    [{:tags []}
+     {:tags ["note" "scope:project:hive" "note"]}
+     {:tags ["scope:global" "scope:global"]}],
+    :completed-tasks
+    [{:tags
+      ["scope:project:hive"
+       "scope:global"
+       "scope:project:hive"
+       "note"]}],
+    :memory-ids-created
+    [{:tags
+      ["scope:project:hive"
+       "scope:project:funeraria"
+       "scope:project:funeraria"]}],
+    :memory-ids-accessed ["O" "vvm"]}
+   "fallback")},
+ :case-5
+ {:out
+  {"hive"
+   {:progress-notes [],
+    :completed-tasks
+    [{:tags ["scope:project:hive" "scope:project:hive"]}
+     {:tags
+      ["scope:project:hive"
+       "scope:global"
+       "scope:project:hive"
+       "note"]}],
+    :memory-ids-created [{:tags ["scope:project:hive"]}],
+    :memory-ids-accessed []},
+   "funeraria"
+   {:progress-notes [],
+    :completed-tasks
+    [{:tags
+      ["scope:project:funeraria"
+       "scope:project:funeraria"
+       "scope:project:funeraria"
+       "scope:project:funeraria"
+       "scope:project:funeraria"]}
+     {:tags ["scope:project:funeraria"]}],
+    :memory-ids-created [],
+    :memory-ids-accessed []},
+   "fallback"
+   {:progress-notes [],
+    :completed-tasks [{:tags []}],
+    :memory-ids-created [],
+    :memory-ids-accessed []}},
+  :in
+  ({:progress-notes [],
+    :completed-tasks
+    [{:tags
+      ["scope:project:funeraria"
+       "scope:project:funeraria"
+       "scope:project:funeraria"
+       "scope:project:funeraria"
+       "scope:project:funeraria"]}
+     {:tags ["scope:project:hive" "scope:project:hive"]}
+     {:tags ["scope:project:funeraria"]}
+     {:tags []}
+     {:tags
+      ["scope:project:hive"
+       "scope:global"
+       "scope:project:hive"
+       "note"]}],
+    :memory-ids-created [{:tags ["scope:project:hive"]}],
+    :memory-ids-accessed []}
+   "fallback")},
+ :case-6
+ {:out
+  {"funeraria"
+   {:progress-notes [],
+    :completed-tasks
+    [{:tags ["scope:global" "note" "scope:project:funeraria"]}
+     {:tags ["scope:project:funeraria"]}
+     {:tags ["scope:project:funeraria" "scope:project:hive" "note"]}],
+    :memory-ids-created [],
+    :memory-ids-accessed
+    [{:tags
+      ["scope:global"
+       "note"
+       "scope:project:funeraria"
+       "scope:project:funeraria"
+       "scope:global"
+       "note"]}]},
+   "fallback"
+   {:progress-notes [],
+    :completed-tasks [],
+    :memory-ids-created [{:tags ["note"]}],
+    :memory-ids-accessed []}},
+  :in
+  ({:progress-notes [],
+    :completed-tasks
+    [{:tags ["scope:global" "note" "scope:project:funeraria"]}
+     {:tags ["scope:project:funeraria"]}
+     {:tags ["scope:project:funeraria" "scope:project:hive" "note"]}],
+    :memory-ids-created [{:tags ["note"]}],
+    :memory-ids-accessed
+    [""
+     {:tags
+      ["scope:global"
+       "note"
+       "scope:project:funeraria"
+       "scope:project:funeraria"
+       "scope:global"
+       "note"]}]}
+   "fallback")},
+ :case-7
+ {:out
+  {"hive"
+   {:progress-notes
+    [{:tags
+      ["scope:project:hive"
+       "scope:project:funeraria"
+       "scope:global"
+       "scope:project:funeraria"
+       "scope:project:hive"
+       "note"]}],
+    :completed-tasks [{:tags ["scope:project:hive"]}],
+    :memory-ids-created
+    [{:tags
+      ["scope:project:hive"
+       "note"
+       "scope:project:funeraria"
+       "scope:project:funeraria"
+       "scope:global"
+       "scope:project:hive"]}],
+    :memory-ids-accessed []},
+   "funeraria"
+   {:progress-notes
+    [{:tags
+      ["scope:global"
+       "scope:project:funeraria"
+       "scope:project:funeraria"
+       "scope:project:hive"
+       "note"]}
+     {:tags
+      ["note"
+       "scope:project:funeraria"
+       "scope:project:hive"
+       "scope:project:funeraria"
+       "scope:project:funeraria"
+       "scope:global"]}],
+    :completed-tasks [{:tags ["scope:project:funeraria"]}],
+    :memory-ids-created [],
+    :memory-ids-accessed []},
+   "fallback"
+   {:progress-notes [{:tags ["scope:global" "note"]}],
+    :completed-tasks [],
+    :memory-ids-created [{:tags ["note"]} {:tags []} {:tags []}],
+    :memory-ids-accessed []}},
+  :in
+  ({:progress-notes
+    [{:tags
+      ["scope:project:hive"
+       "scope:project:funeraria"
+       "scope:global"
+       "scope:project:funeraria"
+       "scope:project:hive"
+       "note"]}
+     {:tags ["scope:global" "note"]}
+     {:tags
+      ["scope:global"
+       "scope:project:funeraria"
+       "scope:project:funeraria"
+       "scope:project:hive"
+       "note"]}
+     {:tags
+      ["note"
+       "scope:project:funeraria"
+       "scope:project:hive"
+       "scope:project:funeraria"
+       "scope:project:funeraria"
+       "scope:global"]}],
+    :completed-tasks
+    [{:tags ["scope:project:hive"]}
+     {:tags ["scope:project:funeraria"]}],
+    :memory-ids-created
+    [{:tags ["note"]}
+     {:tags []}
+     {:tags
+      ["scope:project:hive"
+       "note"
+       "scope:project:funeraria"
+       "scope:project:funeraria"
+       "scope:global"
+       "scope:project:hive"]}
+     {:tags []}],
+    :memory-ids-accessed ["h16qKD"]}
+   "fallback")}}

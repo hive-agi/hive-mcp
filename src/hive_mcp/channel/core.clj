@@ -2,7 +2,8 @@
   "Bidirectional communication channel between Clojure and Emacs via transport abstraction."
   (:require [hive-mcp.transport.core :as t]
             [clojure.core.async :as async :refer [chan pub sub unsub close!]]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -12,6 +13,19 @@
 (defonce ^:private event-chan (chan 1024))
 (defonce ^:private event-pub (pub event-chan :type))
 
+(def Chan
+  "A core.async channel."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (chan))}
+   (fn [x] (satisfies? clojure.core.async.impl.protocols/ReadPort x))])
+
+(def ServerState
+  "The running server's state: the transport server and how it listens."
+  [:map
+   [:server :any]
+   [:type :keyword]
+   [:path [:maybe :string]]
+   [:port [:maybe :int]]])
+
 (defn publish!
   "Publish event to the internal event bus.
    Event must have :type key for routing."
@@ -19,6 +33,10 @@
   (when-not (:type event)
     (throw (ex-info "Event must have :type" {:event event})))
   (async/put! event-chan event))
+
+;; The body refuses an event with no :type by throwing ex-info; the contract
+;; leaves that refusal to it. The answer is put!'s: false once the bus closed.
+(m/=> publish! [:=> [:cat [:maybe :map]] :boolean])
 
 (defn subscribe!
   "Subscribe to events of given type.
@@ -28,11 +46,15 @@
     (sub event-pub event-type ch)
     ch))
 
+(m/=> subscribe! [:=> [:cat :any] Chan])
+
 (defn unsubscribe!
   "Unsubscribe channel from event type."
   [event-type ch]
   (unsub event-pub event-type ch)
   (close! ch))
+
+(m/=> unsubscribe! [:=> [:cat :any Chan] :nil])
 
 ;; Server State
 
@@ -67,6 +89,13 @@
                             :running (:running? server)})  ; Expose transport running? atom
       @server-state)))
 
+(m/=> start-server!
+      [:=> [:cat [:map
+                  [:type {:optional true} [:enum :unix :tcp]]
+                  [:path {:optional true} [:maybe :string]]
+                  [:port {:optional true} [:maybe :int]]]]
+       ServerState])
+
 (defn stop-server!
   "Stop the channel server. No-op if coordinator is running."
   []
@@ -78,6 +107,8 @@
         (reset! server-state nil)
         (log/info "Server stopped")))))
 
+(m/=> stop-server! [:=> [:cat] :nil])
+
 (defn force-stop-server!
   "Force stop the channel server, bypassing coordinator guard."
   []
@@ -86,17 +117,24 @@
     (reset! server-state nil)
     (log/info "Server force-stopped")))
 
+(m/=> force-stop-server! [:=> [:cat] :nil])
+
 (defn mark-coordinator-running!
   "Mark coordinator as running, protecting server from test fixture cleanup."
   []
   (swap! server-state assoc :coordinator-running? true)
   (log/info "Channel server marked as coordinator-owned"))
 
+(m/=> mark-coordinator-running! [:=> [:cat] :nil])
+
 (defn broadcast!
   "Send message to all connected clients."
   [msg]
   (when-let [{:keys [server]} @server-state]
     (t/broadcast! server msg)))
+
+;; nil with no server; otherwise whatever the transport's broadcast! answers.
+(m/=> broadcast! [:=> [:cat :any] :any])
 
 (defn server-connected?
   "Check if the channel server is running and has connected clients."
@@ -105,11 +143,17 @@
     (and (t/server-running? server)
          (pos? (or (t/client-count server) 0)))))
 
+;; nil with no server.
+(m/=> server-connected? [:=> [:cat] [:maybe :boolean]])
+
 (defn client-count
   "Return number of connected clients."
   []
   (when-let [{:keys [server]} @server-state]
     (t/client-count server)))
+
+;; nil with no server.
+(m/=> client-count [:=> [:cat] [:maybe [:int {:min 0}]]])
 
 (def envelope-keys
   "Envelope keys `emit-event!` stamps onto every event it publishes.
@@ -139,6 +183,9 @@
                      :type event-type)]
     (publish! event)
     (broadcast! event)))
+
+;; Publishes, then answers what broadcast! answers.
+(m/=> emit-event! [:=> [:cat [:or :keyword :string] [:maybe [:map-of [:or :keyword :string] :any]]] :any])
 
 (comment
   ;; Development REPL examples

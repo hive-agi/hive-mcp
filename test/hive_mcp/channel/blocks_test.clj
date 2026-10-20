@@ -124,3 +124,12 @@
     (ext/register! :block/alpha (fn [_] "a"))
     (is (= ["ALPHA" "ZEBRA"]
            (mapv first (blocks/render {:tool-name "code" :caller-id "c1"}))))))
+
+(deftest budgeted-one-shot-block-is-retained
+  (let [calls (atom 0)
+        caller "tw5-block-rollover"]
+    (ext/register! :block/once (fn [_] (when (= 1 (swap! calls inc)) "one time")))
+    (is (empty? (blocks/render (assoc ctx :caller-id caller) 8)))
+    (is (= [["ONCE" "one time"]]
+           (blocks/render (assoc ctx :caller-id caller) 100)))
+    (is (= 1 @calls))))

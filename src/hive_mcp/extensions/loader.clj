@@ -17,7 +17,9 @@
             [hive-mcp.tools.composite :as composite]
             [taoensso.timbre :as log]
             [hive-mcp.extensions.reactive :as reactive]
-            [hive-mcp.extensions.runtime :as runtime]))
+            [hive-mcp.extensions.runtime :as runtime]
+            [hive-mcp.server.log-sink :as log-sink]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -126,8 +128,7 @@
     ;; Per-addon boot timing — captures first-time require/compile of the
     ;; addon's transitive graph (via requiring-resolve) plus its init cost.
     (when (boot-timing?)
-      (log/info (format "[boot-timing] addon %-48s %9.1f ms"
-                        (str ns-sym) (/ (- (System/nanoTime) t0) 1e6))))
+      (log/info (log-sink/boot-event ns-sym :addon (/ (- (System/nanoTime) t0) 1e6) :ok)))
     result))
 
 ;; =============================================================================
@@ -141,8 +142,8 @@
   (let [scan-t0 (System/nanoTime)
         {:keys [manifests errors]} (manifest/scan-classpath-manifests)
         _ (when (boot-timing?)
-            (log/info (format "[boot-timing] classpath manifest scan %9.1f ms (%d manifests)"
-                              (/ (- (System/nanoTime) scan-t0) 1e6) (count manifests))))]
+            (log/info (log-sink/boot-event :classpath :manifest-scan
+                                           (/ (- (System/nanoTime) scan-t0) 1e6) :ok)))]
     (when (seq errors)
       (log/warn "Addon manifest scan errors" {:count (count errors) :errors errors}))
     (if (seq manifests)
@@ -225,6 +226,13 @@
      :mounted    (vec (sort mounted))
      :failed     (vec (sort (remove mounted discovered)))}))
 
+(m/=> roster-facts
+      [:=> [:cat [:maybe [:sequential :map]] [:maybe :map] [:maybe [:set :any]]]
+       [:map
+        [:discovered [:vector :any]]
+        [:mounted [:vector :any]]
+        [:failed [:vector :any]]]])
+
 (defn- roster-expectations
   "Operator expectations from `:services :addons`:
      :expected-min n            floor on discovered manifests
@@ -259,6 +267,8 @@
       :warn  (log/warn "Addon mount lifecycle" payload)
       :error (log/error "Addon mount lifecycle" payload)
       (log/info "Addon mount lifecycle" payload))))
+
+(m/=> mount-event-logger [:=> [:cat [:maybe :map]] :nil])
 
 (defn- install-license-gate!
   "Install the gate mount-compose consults for :proprietary specs.
@@ -316,6 +326,8 @@
                 nil)))
         (do (log/warn "Addon lifecycle enabled but hive-mcp.extensions.lifecycle is not resolvable")
             nil)))))
+
+(m/=> load-extensions-via-lifecycle! [:=> [:cat] [:maybe :map]])
 
 (defn load-extensions-via-mount!
   "Mount manifest-discovered addons through hive-addon.mount.compose (MQ-ADOPT).
@@ -376,6 +388,8 @@
               nil))
         (do (log/debug "Mount-compose enabled but hive-addon.mount.compose not on classpath")
             nil)))))
+
+(m/=> load-extensions-via-mount! [:=> [:cat] [:maybe :map]])
 
 (defn load-extensions!
   "Resolve and register all available extensions.
@@ -519,3 +533,14 @@
                :classpath-manifests (count ordered)
                :mount-compose (if mounted? (count (get-in mount-result [:report :order])) 0)
                :manifest-fallback @manifest-init-count}}))
+
+(m/=> load-extensions!
+      [:=> [:cat]
+       [:map
+        [:registered [:vector :any]]
+        [:total [:int {:min 0}]]
+        [:sources [:map
+                   [:initializers number?]
+                   [:classpath-manifests [:int {:min 0}]]
+                   [:mount-compose [:int {:min 0}]]
+                   [:manifest-fallback [:int {:min 0}]]]]]])

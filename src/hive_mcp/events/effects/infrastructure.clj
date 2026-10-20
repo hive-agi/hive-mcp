@@ -15,7 +15,8 @@
    (infra-effects/register-infrastructure-effects!)
    ```"
 
-  (:require [hive-mcp.events.core :as ev]
+  (:require [malli.core :as m]
+            [hive-mcp.events.core :as ev]
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.channel.core :as channel]
             [hive-spi.editor.services :as svc]
@@ -180,3 +181,5 @@
   (ev/reg-fx :report-metrics handle-report-metrics)
   (ev/reg-fx :tool-registry-refresh handle-tool-registry-refresh)
   (log/info "[hive-events.infrastructure] Infrastructure effects registered: :ds-transact :git-commit :kanban-sync :kanban-move-done :report-metrics :tool-registry-refresh"))
+
+(m/=> register-infrastructure-effects! [:=> [:cat] :nil])

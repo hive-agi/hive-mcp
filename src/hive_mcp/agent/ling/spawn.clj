@@ -18,21 +18,69 @@
             [hive-mcp.swarm.claim.negotiate :as claim-negotiate]
             [hive-mcp.agent.ling.start-preflight :as start-preflight]
             [hive-mcp.agent.grant :as grant]
-            [hive-mcp.agent.identity :as agent-identity]))
+            [hive-mcp.agent.identity :as agent-identity]
+            [hive-mcp.swarm.datascript :as ds]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+(declare ordered-presets)
+
+(def Presets
+  "Preset names as a ling carries them: declared order, or sorted."
+  [:vector :string])
+
+(def LingOpts
+  "The construction opts `slave->ling-opts` reads back from a slave row."
+  [:map
+   [:cwd [:maybe :string]]
+   [:presets Presets]
+   [:project-id [:maybe :string]]
+   [:spawn-mode :keyword]
+   [:model [:maybe :string]]
+   [:token-budget :any]
+   [:turn-budget {:optional true} :any]])
+
+(def LingValue
+  "A Ling record, as `->ling` builds it. The six identity fields are always
+   present; the rest appear only when the opts carry them."
+  [:map
+   [:id :string]
+   [:cwd [:maybe :string]]
+   [:presets [:maybe [:or [:sequential :string] [:set :string]]]]
+   [:project-id [:maybe :string]]
+   [:spawn-mode :keyword]
+   [:model [:maybe :string]]])
 
 (defn slave->ling-opts
   "Extract ling construction opts from a DataScript slave entity."
   [slave]
   (cond-> {:cwd (:slave/cwd slave)
-           :presets (:slave/presets slave)
+           :presets (ordered-presets slave)
            :project-id (:slave/project-id slave)
            :spawn-mode (or (:ling/spawn-mode slave) :claude)
            :model (:ling/model slave)
            :token-budget (:ling/token-budget slave)}
     (:ling/turn-budget slave) (assoc :turn-budget (:ling/turn-budget slave))))
+
+(m/=> slave->ling-opts [:=> [:cat [:maybe :map]] LingOpts])
+
+(defn ordered-presets
+  "Read declared order from the scalar EDN snapshot; sort old unordered rows."
+  [slave]
+  (let [legacy (:slave/presets slave)
+        encoded (:slave/preset-order slave)
+        decoded (when (string? encoded)
+                  (try (clojure.edn/read-string encoded)
+                       (catch Exception _ nil)))]
+    (if (and (vector? decoded)
+             (every? string? decoded)
+             (= (set decoded) (set legacy)))
+      decoded
+      (vec (sort legacy)))))
+
+(m/=> ordered-presets [:=> [:cat [:maybe :map]] Presets])
 
 (declare ->ling)
 
@@ -219,6 +267,8 @@
         (do (log/warn "[spawn] row filter failed closed" {:slave-id slave-id})
             (select-keys attrs row-safe-keys))))))
 
+(m/=> row-attrs [:=> [:cat [:maybe ifn?] :any :map] :map])
+
 (defn- row-filter
   "hive-agent's registry row filter chain, resolved softly so core needs no
    swarm addon: nil when hive-agent (or its shout-filters ns) is absent."
@@ -235,11 +285,19 @@
 
    The row attrs pass hive-agent's row filters first (`row-attrs`), so an
    addon such as hive-darkmatter can replace identifying attrs before they
-   reach the registry. The grant is not filtered: it gates, it does not name."
+   reach the registry. The grant is not filtered: it gates, it does not name.
+
+   The filtered presets are also persisted as an ordered scalar snapshot via
+   the spawn-store port before backend start, preserving declared precedence
+   when the cardinality-many preset attribute reads back as a set."
   [store slave-id attrs]
   (spawn-store/ensure-coordinator-session! store (:parent attrs))
-  (let [res (spawn-store/add-slave! store slave-id
-                                    (row-attrs (row-filter) slave-id (dissoc attrs :grant)))]
+  (let [filtered (row-attrs (row-filter) slave-id (dissoc attrs :grant))
+        presets (:presets filtered)
+        res (spawn-store/add-slave! store slave-id filtered)]
+    (when (seq presets)
+      (spawn-store/update-slave! store slave-id
+                                 {:slave/preset-order (pr-str (vec presets))}))
     (when-let [g (:grant attrs)]
       (spawn-store/update-slave! store slave-id {grant/slave-attr g}))
     res))
@@ -392,6 +450,61 @@
       (dispatch-when-ready! plan slave-id enriched-task headless?)
       slave-id)))
 
+(defn dispatch-refusal
+  "The refusal in a strategy-dispatch! ANSWER, or nil when it dispatched.
+   A backend refuses without throwing by answering `false`, a map carrying
+   `:dispatched false`, or a hive-dsl err Result. Any other answer (true,
+   nil, {:dispatched true ...}) is a dispatch."
+  [answer]
+  (cond
+    (false? answer) {:answer false}
+    (and (map? answer) (false? (:dispatched answer))) answer
+    (r/err? answer) answer
+    :else nil))
+
+;; Any answer is read; a refusal is one of the three refused shapes.
+(m/=> dispatch-refusal
+      [:=> [:cat :any]
+       [:maybe [:or
+                [:map [:answer [:= false]]]
+                [:map [:dispatched [:= false]]]
+                [:map [:error :any]]]]])
+
+(defn- status-after-failed-dispatch
+  "The :slave/status a failed dispatch leaves, from the status PRIOR-STATUS
+   the ling had before the dispatch wrote :working and the failure E.
+
+   - A backend that knows what the failure did to the ling names it in the
+     exception's ex-data as :slave-status (e.g. :error when its session is
+     gone, :idle when it refused a start); that status is used.
+   - Any other failure (a refused answer, a thrown backend or bookkeeping
+     error) started nothing on the ling, so it is as it was: PRIOR-STATUS.
+     A failure to dispatch is not evidence the ling is broken; marking it
+     :error would hide a healthy ling from the next dispatch."
+  [prior-status e]
+  (let [named (some-> (ex-data e) :slave-status)]
+    (if (keyword? named) named prior-status)))
+
+(defn- restore-status-after-failed-dispatch!
+  "Set ling ID's :slave/status back after a failed dispatch (see
+   `status-after-failed-dispatch`), but only while it still holds the
+   :working this dispatch wrote: the write is a compare-and-set against
+   :working, so a status another writer set meanwhile (a kill, a completion,
+   an error the backend recorded) is never overwritten. No-op when the ling
+   had no row before the dispatch. Never throws."
+  [id prior-status e]
+  (when-let [target (status-after-failed-dispatch prior-status e)]
+    (when (not= target :working)
+      (try
+        (ds/transact! [[:db/cas [:slave/id id] :slave/status :working target]])
+        (log/info "Restored ling status after failed dispatch"
+                  {:ling-id id :status target})
+        (catch Throwable t
+          (log/info "Ling status changed during failed dispatch; left as is"
+                    {:ling-id id :wanted target
+                     :current (:slave/status (ds-queries/get-slave id))
+                     :reason (ex-message t)}))))))
+
 (defrecord Ling [id cwd presets project-id spawn-mode model provider token-budget kg-compress? sliding-window-size agents max-budget-usd]
   IAgent
 
@@ -413,22 +526,29 @@
                      (:ling/spawn-mode slave))
                    :claude)
           strat (lifecycle/resolve-strategy mode)]
-      (ds-lings/update-slave! id {:slave/status :working})
-      (swarm-channel/record-dispatched-task! task-id)
-      (ds-lings/add-task! task-id id {:status :dispatched
-                                      :prompt resolved-task
-                                      :files files})
-      (when (seq files)
-        (.claim-files! this files task-id))
-
-      ;; NOTE: intentionally do NOT publish :task-dispatched — the JVM-side
-      ;; calls above already do every action handle-task-dispatched would do.
-      ;; :task-failed / :slave-killed below ARE needed (queue + cleanup).
-
-      (let [resolved-opts (cond-> (assoc task-opts :task resolved-task :task-id task-id)
+      (let [prior-status (:slave/status (ds-queries/get-slave id))
+            resolved-opts (cond-> (assoc task-opts :task resolved-task :task-id task-id)
                             ctx (assoc :dispatch-context ctx))]
+        (ds-lings/update-slave! id {:slave/status :working})
+        ;; Everything after the :working write runs inside the try, so no
+        ;; failure (task bookkeeping, claims, strategy) leaves the ling shown
+        ;; as :working when nothing is running.
+        ;;
+        ;; NOTE: intentionally do NOT publish :task-dispatched — the JVM-side
+        ;; calls below already do every action handle-task-dispatched would do.
+        ;; :task-failed / :slave-killed below ARE needed (queue + cleanup).
         (try
-          (strategy/strategy-dispatch! strat (lifecycle/ling-ctx this) resolved-opts)
+          (swarm-channel/record-dispatched-task! task-id)
+          (ds-lings/add-task! task-id id {:status :dispatched
+                                          :prompt resolved-task
+                                          :files files})
+          (when (seq files)
+            (.claim-files! this files task-id))
+          (let [answer (strategy/strategy-dispatch! strat (lifecycle/ling-ctx this) resolved-opts)]
+            (when-let [refusal (dispatch-refusal answer)]
+              (throw (ex-info "Backend refused the dispatch"
+                              {:ling-id id :task-id task-id
+                               :dispatch/refused? true :refusal refusal}))))
           (log/info "Task dispatched to ling" {:ling-id id :task-id task-id
                                                :mode mode :files files
                                                :context-type (when ctx
@@ -444,8 +564,10 @@
           (catch Throwable e
             (log/error "Failed to dispatch to ling"
                        {:ling-id id :task-id task-id :mode mode :error (ex-message e)})
-            (ds-lings/update-task! task-id {:status :failed
-                                            :error (ex-message e)})
+            (restore-status-after-failed-dispatch! id prior-status e)
+            (r/rescue nil
+              (ds-lings/update-task! task-id {:status :failed
+                                              :error (ex-message e)}))
             ;; :task-failed -> swarm/sync releases claims + processes queue.
             (r/rescue nil
               (when-let [publish-slave! (requiring-resolve 'hive-mcp.swarm.event-bridge/publish-slave-event!)]
@@ -569,8 +691,13 @@
                  (:max-budget-usd opts)     (assoc :max-budget-usd (:max-budget-usd opts))
                  (some? (:sandbox opts))    (assoc :sandbox (:sandbox opts))))))
 
+(m/=> ->ling [:=> [:cat :string [:maybe :map]] LingValue])
+
 (defn create-ling!
   "Create and spawn a new ling agent."
   [id opts]
   (let [ling (->ling id opts)]
     (.spawn! ling opts)))
+
+;; The answer is the slave id the strategy's spawn! returned.
+(m/=> create-ling! [:=> [:cat :string [:maybe :map]] [:maybe :string]])

@@ -1,0 +1,64 @@
+{:case-0
+ {:out
+  {:log
+   {:level :debug,
+    :message "File  released by jPl - no waiting lings"}},
+  :in
+  ({:db-snapshot :m11-snapshot}
+   [:claim/file-released {:released-by "jPl"}])},
+ :case-1
+ {:out
+  {:log
+   {:level :debug,
+    :message "File  released by 6UxP5pEx - no waiting lings"}},
+  :in
+  ({:db-snapshot :m11-snapshot}
+   [:claim/file-released {:released-by "6UxP5pEx"}])},
+ :case-2
+ {:out
+  {:log
+   {:level :debug,
+    :message "File  released by FgzII9 - no waiting lings"}},
+  :in
+  ({:db-snapshot :m11-snapshot}
+   [:claim/file-released {:released-by "FgzII9"}])},
+ :case-3
+ {:out
+  {:log
+   {:level :debug,
+    :message "File  released by 0R978Ix - no waiting lings"}},
+  :in
+  ({:db-snapshot :m11-snapshot}
+   [:claim/file-released {:released-by "0R978Ix"}])},
+ :case-4
+ {:out
+  {:log
+   {:level :debug,
+    :message "File  released by bas - no waiting lings"}},
+  :in
+  ({:db-snapshot :m11-snapshot}
+   [:claim/file-released {:released-by "bas"}])},
+ :case-5
+ {:out
+  {:log
+   {:level :debug,
+    :message "File  released by 6W - no waiting lings"}},
+  :in
+  ({:db-snapshot :m11-snapshot}
+   [:claim/file-released {:released-by "6W"}])},
+ :case-6
+ {:out
+  {:log
+   {:level :debug,
+    :message "File  released by c9X - no waiting lings"}},
+  :in
+  ({:db-snapshot :m11-snapshot}
+   [:claim/file-released {:released-by "c9X"}])},
+ :case-7
+ {:out
+  {:log
+   {:level :debug,
+    :message "File  released by 83 - no waiting lings"}},
+  :in
+  ({:db-snapshot :m11-snapshot}
+   [:claim/file-released {:released-by "83"}])}}

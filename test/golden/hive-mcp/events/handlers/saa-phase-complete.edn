@@ -1,0 +1,228 @@
+{:case-0
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "SAA phase complete: validate-plan agent=q5y0 valid=false"},
+   :shout
+   {:agent-id "q5y0",
+    :event-type :progress,
+    :data
+    {:workflow :saa,
+     :phase :validate-plan,
+     :detail
+     {:phase :validate-plan,
+      :plan-valid? false,
+      :silence-iterations 1}}},
+   :channel-publish
+   {:event-type :saa-phase-complete,
+    :data
+    {:agent-id "q5y0",
+     :phase :validate-plan,
+     :grounding-score nil,
+     :plan-valid? false}}},
+  :in
+  ({}
+   [:saa/phase-complete
+    {:agent-id "q5y0",
+     :phase :validate-plan,
+     :plan-valid? false,
+     :silence-iterations 1}])},
+ :case-1
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "SAA phase complete: silence-review agent=7R28yn grounding=1.00 iteration=1"},
+   :shout
+   {:agent-id "7R28yn",
+    :event-type :progress,
+    :data
+    {:workflow :saa,
+     :phase :silence-review,
+     :detail
+     {:phase :silence-review,
+      :grounding-score 1.0,
+      :silence-iterations 1,
+      :abstract-retries 0}}},
+   :channel-publish
+   {:event-type :saa-phase-complete,
+    :data
+    {:agent-id "7R28yn",
+     :phase :silence-review,
+     :grounding-score 1.0,
+     :plan-valid? nil}}},
+  :in
+  ({}
+   [:saa/phase-complete
+    {:agent-id "7R28yn",
+     :phase :silence-review,
+     :grounding-score 1.0,
+     :silence-iterations 1,
+     :abstract-retries 0}])},
+ :case-2
+ {:out
+  {:log
+   {:level :info,
+    :message "SAA phase complete: act-dispatch agent=w37"},
+   :shout
+   {:agent-id "w37",
+    :event-type :progress,
+    :data
+    {:workflow :saa,
+     :phase :act-dispatch,
+     :detail {:phase :act-dispatch, :abstract-retries 2}}},
+   :channel-publish
+   {:event-type :saa-phase-complete,
+    :data
+    {:agent-id "w37",
+     :phase :act-dispatch,
+     :grounding-score nil,
+     :plan-valid? nil}}},
+  :in
+  ({}
+   [:saa/phase-complete
+    {:agent-id "w37", :phase :act-dispatch, :abstract-retries 2}])},
+ :case-3
+ {:out
+  {:log
+   {:level :info,
+    :message "SAA phase complete: silence-review agent=769zs"},
+   :shout
+   {:agent-id "769zs",
+    :event-type :progress,
+    :data
+    {:workflow :saa,
+     :phase :silence-review,
+     :detail
+     {:phase :silence-review,
+      :plan-valid? false,
+      :silence-iterations 0,
+      :abstract-retries 3}}},
+   :channel-publish
+   {:event-type :saa-phase-complete,
+    :data
+    {:agent-id "769zs",
+     :phase :silence-review,
+     :grounding-score nil,
+     :plan-valid? false}}},
+  :in
+  ({}
+   [:saa/phase-complete
+    {:agent-id "769zs",
+     :phase :silence-review,
+     :plan-valid? false,
+     :silence-iterations 0,
+     :abstract-retries 3}])},
+ :case-4
+ {:out
+  {:log
+   {:level :info, :message "SAA phase complete: silence agent=Pf"},
+   :shout
+   {:agent-id "Pf",
+    :event-type :progress,
+    :data
+    {:workflow :saa,
+     :phase :silence,
+     :detail {:phase :silence, :silence-iterations 4}}},
+   :channel-publish
+   {:event-type :saa-phase-complete,
+    :data
+    {:agent-id "Pf",
+     :phase :silence,
+     :grounding-score nil,
+     :plan-valid? nil}}},
+  :in
+  ({}
+   [:saa/phase-complete
+    {:agent-id "Pf", :phase :silence, :silence-iterations 4}])},
+ :case-5
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "SAA phase complete: validate-plan agent=S93Yh valid=true retries=1"},
+   :shout
+   {:agent-id "S93Yh",
+    :event-type :progress,
+    :data
+    {:workflow :saa,
+     :phase :validate-plan,
+     :detail
+     {:phase :validate-plan,
+      :grounding-score 1.0,
+      :plan-valid? true,
+      :silence-iterations 3,
+      :abstract-retries 1}}},
+   :channel-publish
+   {:event-type :saa-phase-complete,
+    :data
+    {:agent-id "S93Yh",
+     :phase :validate-plan,
+     :grounding-score 1.0,
+     :plan-valid? true}}},
+  :in
+  ({}
+   [:saa/phase-complete
+    {:agent-id "S93Yh",
+     :phase :validate-plan,
+     :grounding-score 1.0,
+     :plan-valid? true,
+     :silence-iterations 3,
+     :abstract-retries 1}])},
+ :case-6
+ {:out
+  {:log
+   {:level :info,
+    :message "SAA phase complete: abstract agent=Bfv3hFEH"},
+   :shout
+   {:agent-id "Bfv3hFEH",
+    :event-type :progress,
+    :data
+    {:workflow :saa,
+     :phase :abstract,
+     :detail
+     {:phase :abstract, :grounding-score 1.0, :plan-valid? true}}},
+   :channel-publish
+   {:event-type :saa-phase-complete,
+    :data
+    {:agent-id "Bfv3hFEH",
+     :phase :abstract,
+     :grounding-score 1.0,
+     :plan-valid? true}}},
+  :in
+  ({}
+   [:saa/phase-complete
+    {:agent-id "Bfv3hFEH",
+     :phase :abstract,
+     :grounding-score 1.0,
+     :plan-valid? true}])},
+ :case-7
+ {:out
+  {:log
+   {:level :info,
+    :message "SAA phase complete: silence-review agent=hLM4Q82"},
+   :shout
+   {:agent-id "hLM4Q82",
+    :event-type :progress,
+    :data
+    {:workflow :saa,
+     :phase :silence-review,
+     :detail
+     {:phase :silence-review,
+      :plan-valid? false,
+      :abstract-retries 3}}},
+   :channel-publish
+   {:event-type :saa-phase-complete,
+    :data
+    {:agent-id "hLM4Q82",
+     :phase :silence-review,
+     :grounding-score nil,
+     :plan-valid? false}}},
+  :in
+  ({}
+   [:saa/phase-complete
+    {:agent-id "hLM4Q82",
+     :phase :silence-review,
+     :plan-valid? false,
+     :abstract-retries 3}])}}

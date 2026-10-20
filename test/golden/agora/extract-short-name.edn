@@ -1,0 +1,10 @@
+{:case-0 {:out "skeptic", :in "swarm-agora-docs-skeptic-1769195802"},
+ :case-1 {:out "a-b-c", :in "a-b-c"},
+ :case-2 {:out "writer", :in "writer-123"},
+ :case-3 {:out "writer", :in "agora-preset-docs-writer-12"},
+ :case-4 {:out "ling-agora-critic-456", :in "ling-agora-critic-456"},
+ :case-5 {:out "a-b-c", :in "a-b-c"},
+ :case-6 {:out "plain", :in "plain"},
+ :case-7 {:out "ling-agora-critic-456", :in "ling-agora-critic-456"},
+ :case-8 {:out "writer", :in "agora-preset-docs-writer-12"},
+ :case-9 {:out "plain", :in "plain"}}

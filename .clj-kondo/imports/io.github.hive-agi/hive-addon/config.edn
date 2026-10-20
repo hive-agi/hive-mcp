@@ -1,1 +1,3 @@
-{:hooks {:analyze-call {hive-addon.host/defsoft hive-addon.hooks.host/defsoft}}}
+{:hooks   {:analyze-call {hive-addon.host/defsoft hive-addon.hooks.host/defsoft}}
+ :lint-as {hive-addon.tool-contract/def-root-tool            clojure.core/def
+           hive-addon.tool-contract.test/deftest-root-tools clojure.test/deftest}}

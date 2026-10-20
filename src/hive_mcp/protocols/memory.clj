@@ -152,6 +152,21 @@
   "Check if a default memory store has been configured."
   sreg/store-set?)
 
+(def StoreIds
+  "The ids a batch read takes: any sequential or set of ids."
+  [:maybe [:or [:sequential :any] [:set :any]]])
+
+(def StoreEntries
+  "What a batch read answers: a seq of entry maps, missing ids omitted."
+  [:maybe [:sequential :map]])
+
+(def ProjectionOpts
+  "Options `get-entries-projected` reads; nil and a nil :output-fields mean no
+   projection."
+  [:maybe [:map [:output-fields {:optional true}
+                 [:maybe [:or [:sequential [:or :string :keyword]]
+                          [:set [:or :string :keyword]]]]]]])
+
 (defn reset-active-store!
   "Disconnect the :default store and drop it from the registry. Leaves other
    registry entries untouched. Never deletes store data."
@@ -162,6 +177,8 @@
       (catch Exception _)))
   (unregister-store! :default)
   nil)
+
+(m/=> reset-active-store! [:=> [:cat] :nil])
 
 ;;; ============================================================================
 ;;; Lifecycle Convenience Functions
@@ -180,6 +197,8 @@
       (:healthy? (health-check (get-store)))
       (catch Exception _ false))))
 
+(m/=> active-store-healthy? [:=> [:cat] [:maybe :boolean]])
+
 (defn active-store-status
   "Get comprehensive status of the active store: `store-status` merged with
    `health-check`. Returns nil when no store is registered."
@@ -190,6 +209,8 @@
              (try (health-check store)
                   (catch Exception e
                     {:healthy? false :errors [(.getMessage e)]}))))))
+
+(m/=> active-store-status [:=> [:cat] [:maybe :map]])
 
 ;;; --- IMemoryStoreWithAnalytics ---
 
@@ -215,6 +236,8 @@
   [store]
   (satisfies? ports/IMemoryStoreWithAnalytics store))
 
+(m/=> analytics-store? [:=> [:cat :any] :boolean])
+
 ;;; --- IMemoryStoreBatch (batched reads) ---
 
 (def IMemoryStoreBatch ports/IMemoryStoreBatch)
@@ -229,6 +252,8 @@
   [store]
   (satisfies? ports/IMemoryStoreBatch store))
 
+(m/=> batch-read-store? [:=> [:cat :any] :boolean])
+
 ;;; --- IMemoryStoreMetadataWrite (no-embed metadata writes) ---
 
 (def IMemoryStoreMetadataWrite ports/IMemoryStoreMetadataWrite)
@@ -242,6 +267,8 @@
   "Check if the store supports the no-embed metadata write surface."
   [store]
   (satisfies? ports/IMemoryStoreMetadataWrite store))
+
+(m/=> metadata-write-store? [:=> [:cat :any] :boolean])
 
 ;;; --- IMemoryStoreWithStaleness ---
 
@@ -267,10 +294,14 @@
   [store]
   (satisfies? ports/IMemoryStoreWithStaleness store))
 
+(m/=> staleness-store? [:=> [:cat :any] :boolean])
+
 (defn batch-store?
   "Check if the store supports batched reads."
   [store]
   (satisfies? ports/IMemoryStoreBatch store))
+
+(m/=> batch-store? [:=> [:cat :any] :boolean])
 
 (defn get-entries-projected
   "Batch-fetch entries by IDs, then trim to `output-fields` when provided.
@@ -287,6 +318,12 @@
        (let [ks (set (map keyword output-fields))]
          (mapv #(select-keys % ks) entries))
        entries))))
+
+;; The store input is loose: protocol dispatch rejects a value that does not
+;; extend IMemoryStoreBatch.
+(m/=> get-entries-projected [:function
+                             [:=> [:cat :any StoreIds] StoreEntries]
+                             [:=> [:cat :any StoreIds ProjectionOpts] StoreEntries]])
 
 ;;; --- IMemoryStoreWithRouting (multi-container routing) ---
 
@@ -306,6 +343,8 @@
   "Check if the store supports container-routing introspection + relocation."
   [store]
   (satisfies? ports/IMemoryStoreWithRouting store))
+
+(m/=> routing-store? [:=> [:cat :any] :boolean])
 
 ;;; --- IMemoryStoreTemporal (bitemporal queries) ---
 
@@ -336,6 +375,8 @@
   [store]
   (satisfies? ports/IMemoryStoreTemporal store))
 
+(m/=> temporal-store? [:=> [:cat :any] :boolean])
+
 ;;; IMemoryStoreLiveness lives in its own ns to keep this file from
 ;;; needing reloads. See `hive-mcp.protocols.memory-liveness`.
 
@@ -357,7 +398,9 @@
 
 (def MemoryStore
   "Any value satisfying the canonical hive-spi.memory.ports/IMemoryStore protocol."
-  [:fn #(satisfies? ports/IMemoryStore %)])
+  [:fn {:gen/schema :nil
+        :gen/fmap (fn [_] ((requiring-resolve 'hive-spi.memory.stub/create-store)))}
+   #(satisfies? ports/IMemoryStore %)])
 
 (m/=> get-store [:function
                  [:=> [:cat] MemoryStore]

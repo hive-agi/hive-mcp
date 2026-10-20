@@ -20,7 +20,8 @@
             [hive-mcp.embeddings.protocol :as emb-proto]
             [clojure.data.json :as json]
             [taoensso.timbre :as log]
-            [hive-mcp.embeddings.active :as active])
+            [hive-mcp.embeddings.active :as active]
+            [malli.core :as m])
   (:import [java.net URI]
            [java.net.http HttpClient HttpRequest HttpRequest$BodyPublishers HttpResponse$BodyHandlers]
            [java.time Duration]))
@@ -131,6 +132,17 @@
      (log/info "Created OpenRouter embedder with model:" model "dimension:" dimension "api-base:" api-base)
      (->OpenRouterEmbedder api-base api-key model dimension))))
 
+(def ProviderOpts
+  "Options of `->provider`, per its docstring."
+  [:map
+   [:api-key {:optional true} [:maybe :string]]
+   [:api-base {:optional true} [:maybe :string]]
+   [:model {:optional true} [:maybe :string]]])
+
+(m/=> ->provider [:function
+                  [:=> [:cat] emb-proto/Provider]
+                  [:=> [:cat ProviderOpts] emb-proto/Provider]])
+
 
 (defn set-as-default!
   "Convenience function to set OpenRouter as the default embedding provider.
@@ -139,3 +151,8 @@
   ([opts]
    (active/set-embedding-provider! (->provider opts))
    (log/info "OpenRouter embeddings enabled with" (or (:model opts) (:model (resolve-config! {}))))))
+
+;; Ends in log/info, which returns nil.
+(m/=> set-as-default! [:function
+                       [:=> [:cat] :nil]
+                       [:=> [:cat ProviderOpts] :nil]])

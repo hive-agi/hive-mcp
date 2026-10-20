@@ -18,13 +18,24 @@
             [hive-mcp.chroma.crud :as crud]
             [hive-mcp.chroma.search :as search]
             [hive-mcp.chroma.maintenance :as maint]
-            [hive-mcp.protocols.memory :as pmem]))
+            [hive-mcp.protocols.memory :as pmem]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (defn answer [] 42)
+
+(m/=> answer [:=> [:cat] [:= 42]])
+
+(def ^:private KwOpts
+  "Trailing keyword options: key/value pairs, or one map."
+  [:alt [:* [:cat :keyword :any]] [:cat :map]])
+
+(def ^:private StoredEntry
+  "An entry as the active store (or chroma.crud) answers it."
+  [:map [:id :any]])
 
 ;;; --- Embedding Provider Protocol ---
 (def EmbeddingProvider emb/EmbeddingProvider)
@@ -63,12 +74,16 @@
     (pmem/add-entry! (pmem/get-store) entry)
     (crud/index-memory-entry! entry)))
 
+(m/=> index-memory-entry! [:=> [:cat :map] :string])
+
 (defn get-entry-by-id
   "Fetch entry by id. Dispatches to active IMemoryStore via get-entry."
   [id]
   (if (pmem/store-set?)
     (pmem/get-entry (pmem/get-store) id)
     (crud/get-entry-by-id id)))
+
+(m/=> get-entry-by-id [:=> [:cat :any] [:maybe StoredEntry]])
 
 (defn query-entries
   "Query entries. Legacy kwargs coerced to opts map for protocol."
@@ -77,12 +92,16 @@
     (pmem/query-entries (pmem/get-store) opts)
     (apply crud/query-entries (mapcat identity opts))))
 
+(m/=> query-entries [:=> [:cat KwOpts] [:sequential StoredEntry]])
+
 (defn update-entry!
   "Update entry fields. Dispatches to active IMemoryStore."
   [id updates]
   (if (pmem/store-set?)
     (pmem/update-entry! (pmem/get-store) id updates)
     (crud/update-entry! id updates)))
+
+(m/=> update-entry! [:=> [:cat :any [:maybe :map]] [:maybe StoredEntry]])
 
 (defn delete-entry!
   "Delete entry by id. Dispatches to active IMemoryStore."
@@ -91,12 +110,17 @@
     (pmem/delete-entry! (pmem/get-store) id)
     (crud/delete-entry! id)))
 
+;; The port answers true; the chroma.crud fallback answers the id it deleted.
+(m/=> delete-entry! [:=> [:cat :any] [:or :boolean :string]])
+
 (defn find-duplicate
   "Find duplicate by content-hash. Kwargs form → opts map for protocol."
   [type content-hash & {:as opts}]
   (if (pmem/store-set?)
     (pmem/find-duplicate (pmem/get-store) type content-hash (or opts {}))
     (apply crud/find-duplicate type content-hash (mapcat identity (or opts {})))))
+
+(m/=> find-duplicate [:=> [:cat :any [:maybe :string] KwOpts] [:maybe StoredEntry]])
 
 ;;; Not yet in IMemoryStore protocol — keep concrete chroma.crud:
 (def query-grounded-from #'crud/query-grounded-from)
@@ -113,6 +137,8 @@
     (pmem/search-similar (pmem/get-store) query-text (or opts {}))
     (apply search/search-similar query-text (mapcat identity (or opts {})))))
 
+(m/=> search-similar [:=> [:cat :string KwOpts] [:sequential StoredEntry]])
+
 (def search-by-id #'search/search-by-id)
 
 ;;; --- Maintenance ---
@@ -124,12 +150,16 @@
     (pmem/cleanup-expired! (pmem/get-store))
     (maint/cleanup-expired!)))
 
+(m/=> cleanup-expired! [:=> [:cat] [:map [:count [:int {:min 0}]] [:deleted-ids [:sequential :any]]]])
+
 (defn entries-expiring-soon
   "Entries expiring within N days. Kwargs → opts map for protocol."
   [days & {:as opts}]
   (if (pmem/store-set?)
     (pmem/entries-expiring-soon (pmem/get-store) days (or opts {}))
     (apply maint/entries-expiring-soon days (mapcat identity (or opts {})))))
+
+(m/=> entries-expiring-soon [:=> [:cat number? KwOpts] [:sequential StoredEntry]])
 
 ;;; --- Concurrency Gate ---
 (def gate-stats #'gate/gate-stats)

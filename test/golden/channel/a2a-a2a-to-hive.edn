@@ -1,0 +1,108 @@
+{:case-0
+ {:out
+  {:agent-id nil,
+   :event-type "progress",
+   :message "",
+   :shout-id "m-1",
+   :task "t-1"},
+  :in
+  {:messageId "m-1",
+   :taskId "t-1",
+   :parts [{:kind "file"}],
+   :metadata {}}},
+ :case-1
+ {:out
+  {:agent-id nil,
+   :event-type true,
+   :message "",
+   :shout-id "m-1",
+   :task "t-1",
+   :context-id "c-1"},
+  :in
+  {:messageId "m-1",
+   :taskId "t-1",
+   :contextId "c-1",
+   :parts [{:kind "data", :data nil} {:kind "file"}],
+   :metadata {"hive.swarm/event" true}}},
+ :case-2
+ {:out
+  {:agent-id nil,
+   :event-type "progress",
+   :message "Y\n",
+   :shout-id "m-1",
+   :task "t-1",
+   :to true},
+  :in
+  {:messageId "m-1",
+   :taskId "t-1",
+   :parts
+   [{:kind "file"} {:kind "text", :text "Y"} {:kind "text", :text ""}],
+   :metadata {"hive.swarm/to" true}}},
+ :case-3
+ {:out
+  {:agent-id nil,
+   :event-type "progress",
+   :message "",
+   :shout-id "m-1"},
+  :in {:messageId "m-1", :parts []}},
+ :case-4
+ {:out
+  {:agent-id nil,
+   :event-type "progress",
+   :message "",
+   :shout-id "m-1",
+   :task "t-1"},
+  :in
+  {:messageId "m-1",
+   :taskId "t-1",
+   :parts
+   [{:kind "text", :text ""}
+    {:kind "data", :data nil}
+    {:kind "data", :data [(-1/3) #{0N "G"}]}]}},
+ :case-5
+ {:out
+  {:agent-id "x",
+   :event-type true,
+   :message "6A4",
+   :shout-id "m-1",
+   :task "t-1",
+   :to true,
+   :deliberate? true},
+  :in
+  {:messageId "m-1",
+   :taskId "t-1",
+   :parts [{:kind "data", :data #{}} {:kind "text", :text "6A4"}],
+   :metadata
+   {"hive.swarm/event" true,
+    "hive.swarm/to" true,
+    "hive.swarm/deliberate" "x",
+    "hive.swarm/from" "x"}}},
+ :case-6
+ {:out
+  {:agent-id true,
+   :event-type true,
+   :message "af",
+   :shout-id "m-1",
+   :context-id "c-1",
+   :to "x",
+   :deliberate? true},
+  :in
+  {:messageId "m-1",
+   :contextId "c-1",
+   :parts [{:kind "text", :text "af"}],
+   :metadata
+   {"hive.swarm/event" true,
+    "hive.swarm/to" "x",
+    "hive.swarm/deliberate" true,
+    "hive.swarm/from" true}}},
+ :case-7
+ {:out
+  {:agent-id nil,
+   :event-type "progress",
+   :message "dti43",
+   :shout-id "m-1",
+   :context-id "c-1"},
+  :in
+  {:messageId "m-1",
+   :contextId "c-1",
+   :parts [{:kind "text", :text "dti43"} {:kind "data", :data nil}]}}}

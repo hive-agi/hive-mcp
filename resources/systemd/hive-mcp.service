@@ -1,0 +1,15 @@
+[Unit]
+Description=hive-mcp serving image (nREPL tool server)
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+Environment=PATH=/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin
+WorkingDirectory=%h/PP/hive/hive-mcp
+ExecStart=/usr/bin/env clojure -M:nrepl
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

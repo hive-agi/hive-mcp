@@ -6,7 +6,8 @@
    call refused during an unmount answers with. With a hive-addon that predates
    the drain gate, only the inner wrap applies."
   (:require [hive-mcp.dns.result :refer [rescue]]
-            [hive-mcp.extensions.registry :as ext]))
+            [hive-mcp.extensions.registry :as ext]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -22,6 +23,10 @@
   [message _addon-id]
   {:type "text" :text message :isError true})
 
+(m/=> refused-answer
+      [:=> [:cat [:maybe :string] :any]
+       [:map [:type [:= "text"]] [:text [:maybe :string]] [:isError [:= true]]]])
+
 (defn wrap-addon-handler
   "HANDLER of addon ADDON-ID as it is dispatched."
   [addon-id handler]
@@ -29,3 +34,5 @@
     (if-let [dispatch (*dispatcher*)]
       (dispatch addon-id handler {:inner inner :refused refused-answer})
       (if inner (inner addon-id handler) handler))))
+
+(m/=> wrap-addon-handler [:=> [:cat :any ifn?] ifn?])

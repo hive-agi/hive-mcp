@@ -1,0 +1,169 @@
+{:case-0
+ {:out
+  {:log
+   {:level :info,
+    :message "KG edge removed: q5y0 (:implements) - DFerf10n"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :removed,
+     :edge-id "q5y0",
+     :from nil,
+     :to nil,
+     :relation :implements,
+     :reason "DFerf10n",
+     :removed-by nil}}},
+  :in
+  ({}
+   [:kg/edge-removed
+    {:edge-id "q5y0", :relation :implements, :reason "DFerf10n"}])},
+ :case-1
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG edge removed: 7R28yn from E to 66h - 381In2Rz by m840"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :removed,
+     :edge-id "7R28yn",
+     :from "E",
+     :to "66h",
+     :relation nil,
+     :reason "381In2Rz",
+     :removed-by "m840"}}},
+  :in
+  ({}
+   [:kg/edge-removed
+    {:edge-id "7R28yn",
+     :from "E",
+     :to "66h",
+     :reason "381In2Rz",
+     :removed-by "m840"}])},
+ :case-2
+ {:out
+  {:log
+   {:level :info,
+    :message "KG edge removed: w37 from 8Uo6NwQWfQ by 1u7jLB"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :removed,
+     :edge-id "w37",
+     :from "8Uo6NwQWfQ",
+     :to nil,
+     :relation nil,
+     :reason nil,
+     :removed-by "1u7jLB"}}},
+  :in
+  ({}
+   [:kg/edge-removed
+    {:edge-id "w37", :from "8Uo6NwQWfQ", :removed-by "1u7jLB"}])},
+ :case-3
+ {:out
+  {:log
+   {:level :info,
+    :message "KG edge removed: 769zs (:implements) - LBUaKaf9 by 1"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :removed,
+     :edge-id "769zs",
+     :from nil,
+     :to nil,
+     :relation :implements,
+     :reason "LBUaKaf9",
+     :removed-by "1"}}},
+  :in
+  ({}
+   [:kg/edge-removed
+    {:edge-id "769zs",
+     :relation :implements,
+     :reason "LBUaKaf9",
+     :removed-by "1"}])},
+ :case-4
+ {:out
+  {:log
+   {:level :info, :message "KG edge removed: Pf from H89Lk - 849B6"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :removed,
+     :edge-id "Pf",
+     :from "H89Lk",
+     :to nil,
+     :relation nil,
+     :reason "849B6",
+     :removed-by nil}}},
+  :in
+  ({}
+   [:kg/edge-removed
+    {:edge-id "Pf", :from "H89Lk", :reason "849B6"}])},
+ :case-5
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG edge removed: S93Yh (:depends-on) from nheBCB27X to bR - wy02D by o1a3F3v"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :removed,
+     :edge-id "S93Yh",
+     :from "nheBCB27X",
+     :to "bR",
+     :relation :depends-on,
+     :reason "wy02D",
+     :removed-by "o1a3F3v"}}},
+  :in
+  ({}
+   [:kg/edge-removed
+    {:edge-id "S93Yh",
+     :from "nheBCB27X",
+     :to "bR",
+     :relation :depends-on,
+     :reason "wy02D",
+     :removed-by "o1a3F3v"}])},
+ :case-6
+ {:out
+  {:log
+   {:level :info,
+    :message "KG edge removed: Bfv3hFEH (:depends-on) to Fy1"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :removed,
+     :edge-id "Bfv3hFEH",
+     :from nil,
+     :to "Fy1",
+     :relation :depends-on,
+     :reason nil,
+     :removed-by nil}}},
+  :in
+  ({}
+   [:kg/edge-removed
+    {:edge-id "Bfv3hFEH", :to "Fy1", :relation :depends-on}])},
+ :case-7
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG edge removed: hLM4Q82 (:implements) from y5e20c3K by y9xQ1"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :removed,
+     :edge-id "hLM4Q82",
+     :from "y5e20c3K",
+     :to nil,
+     :relation :implements,
+     :reason nil,
+     :removed-by "y9xQ1"}}},
+  :in
+  ({}
+   [:kg/edge-removed
+    {:edge-id "hLM4Q82",
+     :from "y5e20c3K",
+     :relation :implements,
+     :removed-by "y9xQ1"}])}}

@@ -75,3 +75,10 @@
            (compact-schema {:name "p" :inputSchema {:properties {}}})))
     (is (= {:name "p" :inputSchema {}}
            (compact-schema {:name "p" :inputSchema {}})))))
+
+(deftest compact-memory-schema-retains-async-opt-out
+  (let [tool (first (filter #(= "memory" (:name %))
+                            (reg/get-advertised-tools {:compact-schema? true})))
+        async (get (props tool) "async")]
+    (is (= "boolean" (:type async)))
+    (is (some? async))))

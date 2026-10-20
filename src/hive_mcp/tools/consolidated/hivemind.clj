@@ -71,16 +71,26 @@ Addressing, for shout: `to` names ONE peer and the message reaches that agent an
                               "project_id" {:type "string"
                                             :description "Explicit project-id override. Wins over directory-derivation across shout/ask/status/messages."}
                               "question" {:type "string"
-                                          :description "Question for human coordinator"}
+                                          :description "ask: what you need the human to answer, in one line"}
+                              "context" {:type "string"
+                                         :description "ask: what the human should read before answering (findings, trade-offs, what you tried)"}
+                              "expects" {:type "string"
+                                         :enum ["confirm" "choice" "text"]
+                                         :description "ask: confirm (yes/no), choice (one of options; typed text still accepted) or text (free-form). Default: choice with options, text without"}
                               "options" {:type "array"
                                          :items {:type "string"}
-                                         :description "Available options for ask"}
+                                         :description "ask: suggested answers (omit for free-form text)"}
+                              "cc" {:type "array"
+                                    :items {:type "string"}
+                                    :description "ask: other agent ids that are told the answer"}
                               "timeout_ms" {:type "integer"
                                             :description "Timeout in ms (default 300000)"}
                               "ask_id" {:type "string"
-                                        :description "ID of the ask to respond to"}
+                                        :description "respond: ID of the ask to answer"}
+                              "answer" {:type "string"
+                                        :description "respond: the answer, any text (an option, yes/no, or a typed reply)"}
                               "decision" {:type "string"
-                                          :description "The decision/response"}
+                                          :description "respond: alias of answer"}
                               "agent_id" {:type "string"
                                           :description "Agent identifier"}}
                  :required ["command"]}

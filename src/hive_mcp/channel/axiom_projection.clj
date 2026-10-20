@@ -27,7 +27,8 @@
    misjudgement then costs savings rather than binding text.
 
    Pure, deterministic, no IO."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -63,6 +64,8 @@
       (str/replace #"\s+" " ")
       str/trim))
 
+(m/=> normalise-header [:=> [:cat :any] :string])
+
 (defn explanatory-header?
   "True when HEADER positively reads as rationale.
 
@@ -73,6 +76,13 @@
     (boolean
      (or (str/starts-with? h "why")
          (some explanatory-words (str/split h #" "))))))
+
+(m/=> explanatory-header? [:=> [:cat :any] :boolean])
+
+(def Section
+  "One section of an entry: its heading line (nil for the leading run) and
+   its body lines."
+  [:map [:header [:maybe :string]] [:body [:vector :string]]])
 
 (defn sections
   "CONTENT split into [{:header <line or nil> :body [lines]}].
@@ -90,6 +100,8 @@
             (for [[i j] (partition 2 1 (concat idx [(count lines)]))]
               {:header (nth lines i) :body (subvec lines (inc i) j)})))))
 
+(m/=> sections [:=> [:cat [:maybe :string]] [:vector Section]])
+
 (defn withhold?
   "True when SECTION is rationale: either explicitly marked, or positively
    recognised by its heading. A headerless section is never withheld."
@@ -98,6 +110,11 @@
    (and header
         (or (some #(str/includes? (str %) rationale-marker) (take 2 body))
             (explanatory-header? header)))))
+
+(m/=> withhold?
+      [:=> [:cat [:map [:header {:optional true} [:maybe :string]]
+                  [:body {:optional true} [:maybe [:sequential :any]]]]]
+       :boolean])
 
 (def ^:const llmlingua-rate
   "Rate offered for a rationale span. Normative spans are never given a rate;
@@ -138,6 +155,11 @@
        (str out "\n")
        out))))
 
+(m/=> llmlingua
+      [:function
+       [:=> [:cat [:maybe :string]] :string]
+       [:=> [:cat [:maybe :string] number?] :string]])
+
 (defn strip-llmlingua
   "Inverse of `llmlingua`: drop the control-tag lines and return the source."
   [tagged]
@@ -148,6 +170,8 @@
     (if (str/ends-with? src "\n")
       (str out "\n")
       out)))
+
+(m/=> strip-llmlingua [:=> [:cat [:maybe :string]] :string])
 
 (defn strip-guard-blocks
   "TEXT with every fenced ```guard-rule``` block replaced by a one-line pointer.
@@ -161,6 +185,8 @@
                    (str "[guard-rule" (when gid (str " " gid))
                         " enforced by hive-spi.guard on tool call one;"
                         " source: memory get " id "]")))))
+
+(m/=> strip-guard-blocks [:=> [:cat [:maybe :string] :any] :string])
 
 (defn compact
   "CONTENT with rationale sections and guard sources replaced by pointers.
@@ -188,6 +214,8 @@
       (str out "\n")
       out)))
 
+(m/=> compact [:=> [:cat [:maybe :string] :any] :string])
+
 (defn compact-entry
   "ENTRY with its `:C` compacted.
 
@@ -207,3 +235,8 @@
       (if (< (count out) (count c))
         (assoc entry :C out :compacted true)
         entry))))
+
+(m/=> compact-entry
+      [:=> [:cat [:map [:C {:optional true} :any] [:id {:optional true} :any]
+                  [:compacted {:optional true} :any]]]
+       :map])

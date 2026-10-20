@@ -20,7 +20,8 @@
        {:type \"text\" :text (json/str {:results [...] :summary {...}})}
    with per-op `{:success :command :result|:error}` entries."
   (:require [clojure.data.json :as json]
-            [hive-mcp.tools.core :refer [mcp-error]]))
+            [hive-mcp.tools.core :refer [mcp-error]]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -49,6 +50,18 @@
                    (seq errors) (assoc :errors errors))]
     {:type "text"
      :text (json/write-str payload)}))
+
+(def CliEnvelope
+  "What a CLI batch handler answers: the legacy text envelope, or an MCP
+   error when no operations were given."
+  [:map [:type [:= "text"]] [:text [:maybe :string]] [:isError {:optional true} [:= true]]])
+
+(def HandlerSpec
+  "`cli-batch-handler` options. `:run-fn` is any callable, a var included."
+  [:map
+   [:run-fn ifn?]
+   [:cmd-kw :keyword]
+   [:tool-name {:optional true} [:maybe :string]]])
 
 (defn cli-batch-handler
   "Build a single-command batch handler backed by a Batchable `run-fn`.
@@ -82,3 +95,8 @@
         (let [ops (mapv (fn [op] (assoc op :tool op-tool :command cmd-name))
                         operations)]
           (batchable-result->cli-envelope cmd-name (run-fn ops {})))))))
+
+(m/=> cli-batch-handler
+      [:=> [:cat HandlerSpec]
+       [:=> [:cat [:maybe [:map [:operations {:optional true} [:maybe [:sequential :map]]]]]]
+        CliEnvelope]])

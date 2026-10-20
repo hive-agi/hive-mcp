@@ -1,0 +1,8 @@
+{:case-0 {:out "hive.carto#dormant", :in ("hive.carto")},
+ :case-1 {:out ":probe/kw#dormant", :in (:probe/kw)},
+ :case-2 {:out "probe.a#dormant", :in ("probe.a")},
+ :case-3 {:out "hive.carto#dormant", :in ("hive.carto")},
+ :case-4 {:out "hive.carto#dormant", :in ("hive.carto")},
+ :case-5 {:out ":probe/kw#dormant", :in (:probe/kw)},
+ :case-6 {:out "probe.a#dormant", :in ("probe.a")},
+ :case-7 {:out "hive.carto#dormant", :in ("hive.carto")}}

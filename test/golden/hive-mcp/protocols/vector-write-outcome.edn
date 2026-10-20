@@ -1,0 +1,10 @@
+{:case-0 {:out {:ok 0}, :in (0 0)},
+ :case-1
+ {:out {:error :hive-mcp.protocols.vector/write-failed},
+  :in ({:error nil} -1)},
+ :case-2 {:out {:ok -1}, :in (nil -1)},
+ :case-3 {:out {:ok -1}, :in (0 -1)},
+ :case-4 {:out {:ok 0}, :in ({:id -2} 0)},
+ :case-5 {:out {:ok 3}, :in (-3 3)},
+ :case-6 {:out {:ok 1}, :in (nil 1)},
+ :case-7 {:out {:ok 1}, :in (1 1)}}

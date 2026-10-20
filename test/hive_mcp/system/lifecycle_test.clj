@@ -276,7 +276,7 @@
 (deftest ^:integration desktop-halt-reverses-cleanly
   (with-stubs
     (testing "Desktop: halt completes without exception, system atom is nil"
-      (core/start! :profile :desktop)
+      (core/start! :profile :desktop :hprof-boot! stub-noop)
       (is (some? @core/system))
       (let [result (core/stop!)]
         (is (= :halted result))
@@ -305,7 +305,7 @@
 (deftest ^:integration k8s-headless-no-stdio
   (with-stubs
     (testing "K8s-headless system has no :hive/mcp-stdio at runtime"
-      (core/start! :profile :k8s-headless)
+      (core/start! :profile :k8s-headless :hprof-boot! stub-noop)
       (is (not (contains? @core/system :hive/mcp-stdio)))
       (core/stop!))))
 
@@ -339,9 +339,9 @@
 (deftest ^:integration k8s-minimal-key-count
   (with-stubs
     (testing "K8s-minimal has significantly fewer keys than desktop"
-      (let [desktop-sys (do (core/start! :profile :desktop) @core/system)
+      (let [desktop-sys (do (core/start! :profile :desktop :hprof-boot! stub-noop) @core/system)
             _           (core/stop!)
-            minimal-sys (do (core/start! :profile :k8s-minimal) @core/system)
+            minimal-sys (do (core/start! :profile :k8s-minimal :hprof-boot! stub-noop) @core/system)
             _           (core/stop!)]
         (is (< (count minimal-sys) (count desktop-sys)))
         ;; k8s-minimal excludes 7 keys from base (:hive/addon-hot rides
@@ -355,11 +355,11 @@
 (deftest ^:integration reset-lifecycle
   (with-stubs
     (testing "reset! cycles cleanly: start -> stop -> start"
-      (core/start! :profile :desktop)
+      (core/start! :profile :desktop :hprof-boot! stub-noop)
       (let [first-sys @core/system]
         (is (some? first-sys) "First system should be running")
         ;; reset! calls stop! then start! (with clj-reload skipped in test)
-        (core/reset! :profile :desktop)
+        (core/reset! :profile :desktop :hprof-boot! stub-noop)
         (let [second-sys @core/system]
           (is (some? second-sys) "Second system should be running after reset")
           (is (not (identical? first-sys second-sys))
@@ -371,11 +371,11 @@
 (deftest ^:integration reset-cross-profile
   (with-stubs
     (testing "Stop desktop, start k8s-headless — key set changes"
-      (core/start! :profile :desktop)
+      (core/start! :profile :desktop :hprof-boot! stub-noop)
       (let [desktop-keys (set (keys @core/system))]
         (is (contains? desktop-keys :hive/mcp-stdio))
         (core/stop!)
-        (core/start! :profile :k8s-headless)
+        (core/start! :profile :k8s-headless :hprof-boot! stub-noop)
         (let [headless-keys (set (keys @core/system))]
           (is (not (contains? headless-keys :hive/mcp-stdio)))
           (is (not= desktop-keys headless-keys)))
@@ -388,31 +388,31 @@
 (deftest ^:integration no-dangling-state-after-halt
   (with-stubs
     (testing "System atom is nil after halt"
-      (core/start! :profile :desktop)
+      (core/start! :profile :desktop :hprof-boot! stub-noop)
       (is (some? @core/system))
       (core/stop!)
       (is (nil? @core/system)))
     (testing "Double-stop is safe (idempotent)"
-      (core/start! :profile :desktop)
+      (core/start! :profile :desktop :hprof-boot! stub-noop)
       (core/stop!)
       (is (nil? (core/stop!)) "Second stop! should return nil, not :halted"))))
 
 (deftest ^:integration idempotent-start-guard
   (with-stubs
     (testing "start! throws if system already running"
-      (core/start! :profile :desktop)
+      (core/start! :profile :desktop :hprof-boot! stub-noop)
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"System already running"
-                            (core/start! :profile :desktop)))
+                            (core/start! :profile :desktop :hprof-boot! stub-noop)))
       (core/stop!))))
 
 (deftest ^:integration halt-enables-restart
   (with-stubs
     (testing "After halt, system can be started again cleanly"
-      (core/start! :profile :desktop)
+      (core/start! :profile :desktop :hprof-boot! stub-noop)
       (core/stop!)
       (is (nil? @core/system))
-      (core/start! :profile :desktop)
+      (core/start! :profile :desktop :hprof-boot! stub-noop)
       (is (some? @core/system))
       (core/stop!))))
 

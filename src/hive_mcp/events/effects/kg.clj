@@ -14,7 +14,8 @@
    (kg-effects/register-kg-effects!)
    ```"
 
-  (:require [hive-mcp.events.core :as ev]
+  (:require [malli.core :as m]
+            [hive-mcp.events.core :as ev]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [hive-mcp.concurrency.pool :as pool]
             [taoensso.timbre :as log]))
@@ -233,3 +234,5 @@
   (ev/reg-fx :kg-remove-edge handle-kg-remove-edge)
   (ev/reg-fx :kg-remove-edges-for-node handle-kg-remove-edges-for-node)
   (log/info "[hive-events.kg] KG effects registered: :kg-add-edge :kg-update-confidence :kg-increment-confidence :kg-remove-edge :kg-remove-edges-for-node"))
+
+(m/=> register-kg-effects! [:=> [:cat] :nil])

@@ -44,7 +44,10 @@
             [taoensso.timbre :as log]
             [hive-mcp.embeddings.routing :as routing]
             [clojure.string :as str]
-            [hive-mcp.embeddings.availability.multi :as multi]))
+            [hive-mcp.embeddings.availability.multi :as multi]
+            [hive-mcp.embeddings.space :as space]
+            [malli.core :as m]
+            [hive-mcp.embeddings.protocol :as proto]))
 
 (declare provider-for-collection dimension-for-collection)
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -67,10 +70,29 @@
     (log/info "EmbeddingService initialized"))
   true)
 
+(def Collection
+  "A collection name. Every call site passes a string; nil is tolerated by
+   the lookups, which then find nothing."
+  [:maybe :string])
+
+(def Resolved
+  "A resolved-provider map, per `resolve-provider-for-type`."
+  [:map
+   [:provider proto/Provider]
+   [:dimension pos-int?]
+   [:max-tokens [:maybe :int]]
+   [:collection-name :string]
+   [:provider-key :keyword]
+   [:chars-per-token {:optional true} number?]])
+
+(m/=> init! [:=> [:cat] [:= true]])
+
 (defn initialized?-fn
   "Check if service is initialized."
   []
   @initialized?)
+
+(m/=> initialized?-fn [:=> [:cat] :boolean])
 
 (defn configure-collection!
   "Configure embedding for a specific collection.
@@ -97,22 +119,31 @@
     (log/info "Configured collection" collection-name
               "with" (config/describe config))))
 
+;; An invalid config is admitted; the body throws on it. Ends in log/info.
+(m/=> configure-collection! [:=> [:cat Collection :any] :nil])
+
 (defn unconfigure-collection!
   "Remove collection-specific configuration. Collection will use fallback."
   [collection-name]
   (swap! collection-configs dissoc collection-name)
   (log/debug "Removed configuration for collection:" collection-name))
 
+(m/=> unconfigure-collection! [:=> [:cat Collection] :nil])
+
 (defn get-collection-config
   "Get the EmbeddingConfig for a collection, or nil if not configured."
   [collection-name]
   (get @collection-configs collection-name))
+
+(m/=> get-collection-config [:=> [:cat Collection] [:maybe config/EmbeddingConfigRecord]])
 
 (defn list-configured-collections
   "List all collections with explicit embedding configuration."
   []
   (into {} (for [[k v] @collection-configs]
              [k (config/describe v)])))
+
+(m/=> list-configured-collections [:=> [:cat] [:map-of Collection :string]])
 
 (defn- resolve-provider-for
   "Provider for `collection-name`, in order:
@@ -150,6 +181,17 @@
                        :has-global-fallback? (chroma/embedding-configured?)})))
     provider))
 
+(m/=> get-provider-for [:=> [:cat Collection] proto/Provider])
+
+(defn- space-id-for
+  "Embedding-space id of the explicit config for `collection-name`, or nil when
+   the collection resolves through routing or the global fallback and so has no
+   declared space. Cache keys scope by it, so reconfiguring a collection to
+   another model cannot serve the old model's vectors."
+  [collection-name]
+  (when-let [cfg (get @collection-configs collection-name)]
+    (space/space-id (space/config->space cfg))))
+
 (defn embed-for-collection
   "Embed text using the provider configured for the collection.
 
@@ -160,12 +202,18 @@
    Returns: Vector of floats (embedding).
 
    Results are cached in an in-process LRU+TTL keyed by
-   [collection-name, sha256(text)]. Repeat queries skip the provider."
+   [collection-name, embedding-space-id, sha256(text)]. The space id is that of
+   the collection's explicit config (provider, model, dimension); a collection
+   without one keys by [collection-name, sha256(text)]. Repeat queries skip the
+   provider."
   [collection-name text]
-  (or (embed-cache/lookup collection-name text)
-      (let [provider (get-provider-for collection-name)
-            vec      (chroma/embed-text provider text)]
-        (embed-cache/store! collection-name text vec))))
+  (let [sid (space-id-for collection-name)]
+    (or (embed-cache/lookup collection-name sid text)
+        (let [provider (get-provider-for collection-name)
+              vec      (chroma/embed-text provider text)]
+          (embed-cache/store! collection-name sid text vec)))))
+
+(m/=> embed-for-collection [:=> [:cat Collection :string] proto/Vector])
 
 (defn embed-batch-for-collection
   "Embed multiple texts using the provider configured for the collection.
@@ -179,6 +227,9 @@
   (let [provider (get-provider-for collection-name)]
     (chroma/embed-batch provider texts)))
 
+(m/=> embed-batch-for-collection [:=> [:cat Collection [:sequential :string]]
+                                  [:sequential proto/Vector]])
+
 (defn get-dimension-for
   "Get embedding dimension for a collection's provider.
 
@@ -190,11 +241,15 @@
   (let [provider (get-provider-for collection-name)]
     (chroma/embedding-dimension provider)))
 
+(m/=> get-dimension-for [:=> [:cat Collection] pos-int?])
+
 (defn provider-available-for?
   "Check if an embedding provider is available for a collection.
    Returns true if either collection-specific or global fallback is available."
   [collection-name]
   (boolean (rescue false (resolve-provider-for collection-name) true)))
+
+(m/=> provider-available-for? [:=> [:cat Collection] :boolean])
 
 (defn collection-embedding-status
   "Get embedding status for a specific collection."
@@ -208,6 +263,16 @@
      :has-global-fallback? (some? global)
      :provider-available? (provider-available-for? collection-name)}))
 
+(m/=> collection-embedding-status
+      [:=> [:cat Collection]
+       [:map
+        [:collection Collection]
+        [:has-config? :boolean]
+        [:config [:maybe :string]]
+        [:dimension [:maybe pos-int?]]
+        [:has-global-fallback? :boolean]
+        [:provider-available? :boolean]]])
+
 (defn status
   "Get overall EmbeddingService status."
   []
@@ -216,6 +281,14 @@
    :collection-count (count @collection-configs)
    :global-fallback? (chroma/embedding-configured?)
    :registry (registry/cache-stats)})
+
+(m/=> status [:=> [:cat]
+              [:map
+               [:initialized? :boolean]
+               [:configured-collections [:map-of Collection :string]]
+               [:collection-count [:int {:min 0}]]
+               [:global-fallback? :boolean]
+               [:registry registry/CacheStats]]])
 
 ;; =============================================================================
 ;; Type-based embedder routing (bridge — unblocks ollama 2048-tok ceiling)
@@ -260,6 +333,13 @@
   (when type-str (swap! registered-no-embed-types conj (name type-str)))
   (some-> type-str name))
 
+;; Types arrive as strings, keywords or symbols (anything `name` accepts).
+(def TypeName
+  "A memory type designator."
+  [:or :string :keyword :symbol])
+
+(m/=> register-no-embed-type! [:=> [:cat [:maybe TypeName]] [:maybe :string]])
+
 (defn no-embed-type?
   "True when entries of `type-str` must not be embedded. Union of the
    hive-di-configurable [:embedder :no-embed-types] profile set and any
@@ -270,6 +350,8 @@
      (let [t (name type-str)]
        (or (contains? @registered-no-embed-types t)
            (contains? (into #{} (map name) (:no-embed-types (embedder-config))) t))))))
+
+(m/=> no-embed-type? [:=> [:cat [:maybe TypeName]] :boolean])
 
 (defn- collection-name-for-dimension
   "Collection holding vectors of `dimension`. The 768-d collection keeps the
@@ -293,7 +375,9 @@
 (defn- build-resolved
   "Resolved-provider map for an explicit provider-key (or the global provider
    fallback when the key has no configured spec). Shared by the type resolver
-   and the size-aware escalation resolver so both produce identical shapes."
+   and the size-aware escalation resolver so both produce identical shapes.
+   A provider spec's optional :chars-per-token is carried into the map, so
+   `estimate-tokens` in the router and the size guard read the same ratio."
   [cfg provider-key]
   (let [provider-spec (get-in cfg [:providers provider-key])]
     (if provider-spec
@@ -301,6 +385,7 @@
             model     (:model provider-spec)
             dimension (:dimension provider-spec)
             max-toks  (:max-tokens provider-spec)
+            cpt       (:chars-per-token provider-spec)
             options   (case impl
                         ;; :num-ctx is the provider's declared :max-tokens. Ollama
                         ;; sizes the KV cache from it at load time, so a model loaded
@@ -313,11 +398,12 @@
                         :venice     {:api-key (global-config/get-secret :venice-api-key)}
                         {})
             emb-cfg   (config/->EmbeddingConfig impl model dimension options)]
-        {:provider        (registry/get-provider emb-cfg)
-         :dimension       dimension
-         :max-tokens      max-toks
-         :collection-name (collection-name-for-dimension dimension)
-         :provider-key    provider-key})
+        (cond-> {:provider        (registry/get-provider emb-cfg)
+                 :dimension       dimension
+                 :max-tokens      max-toks
+                 :collection-name (collection-name-for-dimension dimension)
+                 :provider-key    provider-key}
+          cpt (assoc :chars-per-token cpt)))
       ;; No embedder config → fall back to global provider
       (let [global (chroma/get-embedding-provider)]
         (when-not global
@@ -338,12 +424,16 @@
     (some (fn [[k spec]] (when (= dim (:dimension spec)) k))
           (:providers (embedder-config)))))
 
+(m/=> provider-key-for-collection [:=> [:cat Collection] [:maybe :keyword]])
+
 (defn collection-backed?
   "True when a configured provider can embed into `collection-name`'s space.
    Config-only, so boot-time callers (store preload) may ask before the
    registry exists."
   [collection-name]
   (some? (provider-key-for-collection collection-name)))
+
+(m/=> collection-backed? [:=> [:cat Collection] :boolean])
 
 (defn provider-for-collection
   "The configured provider that embeds into `collection-name`'s own vector
@@ -353,6 +443,8 @@
   [collection-name]
   (when-let [k (provider-key-for-collection collection-name)]
     (:provider (build-resolved (embedder-config) k))))
+
+(m/=> provider-for-collection [:=> [:cat Collection] [:maybe proto/Provider]])
 
 (defn- provider-available?
   "Delegates to the open multi."
@@ -366,10 +458,31 @@
   [memory-type]
   (build-resolved (embedder-config) (resolve-provider-key memory-type)))
 
+(m/=> resolve-provider-for-type [:=> [:cat [:maybe TypeName]] Resolved])
+
+(def default-chars-per-token
+  "Characters per token assumed when estimating embedder input size.
+   Measured against qwen3-embedding:4b on Portuguese prose at ~3.0; the old
+   chars/4 basis under-counted non-English text, letting content past the
+   real ceiling through the local guard to fail at the provider."
+  3.0)
+
 (defn estimate-tokens
-  "Cheap token estimate (chars/4 heuristic) — same basis as the size guard."
-  [content]
-  (quot (count (or content "")) 4))
+  "Cheap token estimate: chars / `chars-per-token` (default
+   `default-chars-per-token`), rounded up. Same basis as the size guard
+   `validate-content-size!`, so guard and escalation router agree."
+  ([content] (estimate-tokens content nil))
+  ([content chars-per-token]
+   (let [ratio (if (and (number? chars-per-token) (pos? chars-per-token))
+                 (double chars-per-token)
+                 default-chars-per-token)]
+     (long (Math/ceil (/ (count (or content "")) ratio))))))
+
+;; `count` accepts any counted content (callers pass strings); a
+;; non-positive or non-numeric ratio falls back to the default.
+(m/=> estimate-tokens [:function
+                       [:=> [:cat [:maybe :string]] [:int {:min 0}]]
+                       [:=> [:cat [:maybe :string] :any] [:int {:min 0}]]])
 
 (defn resolve-provider-for-type+size
   "Type-routed provider resolution WITH size-aware auto-escalation. When the
@@ -378,13 +491,19 @@
    the SMALLEST provider that fits; if none fit, the LARGEST available. Logs
    the escalation. Same return shape as `resolve-provider-for-type`.
 
+   Token estimates use each provider's own :chars-per-token (default
+   `default-chars-per-token`), the same basis `validate-content-size!` checks,
+   so a provider picked here is never refused by the guard afterwards.
+
    Coherence: callers MUST use this same resolution for BOTH the embedding
    vector and the target collection (escalation changes dimension). See
    hive-milvus.store.routing/coll-for-entry."
   [memory-type content]
-  (let [cfg  (embedder-config)
-        base (build-resolved cfg (resolve-provider-key memory-type))
-        est  (estimate-tokens content)]
+  (let [cfg   (embedder-config)
+        base  (build-resolved cfg (resolve-provider-key memory-type))
+        est   (estimate-tokens content (:chars-per-token base))
+        fits? (fn [p] (<= (estimate-tokens content (:chars-per-token p))
+                          (:max-tokens p)))]
     ;; Prefer usable providers (secret present / local), smallest that fits,
     ;; then smallest dimension (favors the key-free local 32k embedder over
     ;; remote ones, and avoids wasting a 4096-d vector).
@@ -394,7 +513,7 @@
                         (map (fn [[k spec]] (assoc spec :provider-key k)))
                         (filter provider-available?)
                         (sort-by (juxt :max-tokens :dimension)))
-            pick   (or (first (filter #(<= est (:max-tokens %)) ladder))
+            pick   (or (first (filter fits? ladder))
                        (last ladder))]
         (if (and pick (not= (:provider-key pick) (:provider-key base)))
           (let [esc (build-resolved cfg (:provider-key pick))]
@@ -403,6 +522,8 @@
                       (str "(" est " est-tokens > " (:max-tokens base) " max-tokens)"))
             esc)
           base)))))
+
+(m/=> resolve-provider-for-type+size [:=> [:cat [:maybe TypeName] [:maybe :string]] Resolved])
 
 (defn sibling-failover
   "Given a `resolved` provider that just failed to embed, return an alternative
@@ -418,6 +539,10 @@
                        (provider-available? spec))
               (build-resolved cfg k)))
           (:providers cfg))))
+
+(m/=> sibling-failover [:=> [:cat [:map [:dimension {:optional true} :any]
+                                   [:provider-key {:optional true} :any]]]
+                        [:maybe Resolved]])
 
 (defn resolve-provider-chain-for-type+size
   "Ordered same-dimension provider chain for a memory type + content size:
@@ -437,11 +562,17 @@
                       (map (fn [[k _]] (build-resolved cfg k))))]
     (into [primary] siblings)))
 
+(m/=> resolve-provider-chain-for-type+size
+      [:=> [:cat [:maybe TypeName] [:maybe :string]] [:vector {:min 1} Resolved]])
+
 (defn validate-content-size!
   "Reject content exceeding the resolved provider's max-tokens.
-   Uses chars/4 heuristic for token estimation."
-  [doc-text {:keys [max-tokens provider-key] :as _resolved}]
-  (let [estimated-tokens (quot (count doc-text) 4)]
+   Estimates tokens with the same `estimate-tokens` basis as the escalation
+   resolver (`default-chars-per-token`, or the resolved map's
+   :chars-per-token), so the guard and the router can never disagree about
+   whether content fits."
+  [doc-text {:keys [max-tokens provider-key chars-per-token] :as _resolved}]
+  (let [estimated-tokens (estimate-tokens doc-text chars-per-token)]
     (when (> estimated-tokens max-tokens)
       (throw (ex-info (str "Content too large for embedder " (name provider-key)
                            " (" estimated-tokens " est. tokens > " max-tokens " max)")
@@ -450,6 +581,13 @@
                        :max-tokens  max-tokens
                        :actual      estimated-tokens
                        :fix         "Use a memory type routed to openrouter-qwen3 (decision, plan, etc.)"})))))
+
+;; nil when the content fits; throws :embedder/input-too-large otherwise.
+(m/=> validate-content-size! [:=> [:cat [:maybe :string]
+                                   [:map [:max-tokens :int]
+                                    [:provider-key {:optional true} :keyword]
+                                    [:chars-per-token {:optional true} :any]]]
+                              :nil])
 
 (defn all-collection-names
   "Every collection a configured provider could have written to. Derived from
@@ -463,6 +601,8 @@
        distinct
        vec))
 
+(m/=> all-collection-names [:=> [:cat] [:vector :string]])
+
 (defn type->collection-names
   "Return the collection name(s) to search for a given type.
    If type is nil (unscoped search), returns all known collection names."
@@ -471,6 +611,8 @@
     [(-> (resolve-provider-for-type memory-type) :collection-name)]
     (all-collection-names)))
 
+(m/=> type->collection-names [:=> [:cat [:maybe TypeName]] [:vector :string]])
+
 (defn reset-service!
   "Reset all service state. For testing."
   []
@@ -478,6 +620,8 @@
   (registry/clear-cache!)
   (clojure.core/reset! initialized? false)
   (log/info "EmbeddingService reset"))
+
+(m/=> reset-service! [:=> [:cat] :nil])
 
 (defn- configured-embedding-config
   "EmbeddingConfig for `provider` (:ollama or :openrouter) using the model the
@@ -568,3 +712,5 @@
 
   (log/info "Default embedding configuration applied:"
             (list-configured-collections)))
+
+(m/=> configure-defaults! [:=> [:cat] :nil])

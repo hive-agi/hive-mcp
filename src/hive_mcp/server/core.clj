@@ -43,12 +43,24 @@
 (defonce console-sink
   (log-sink/make-sink (log-sink/err-stream-writer)))
 
+(defonce file-sink
+  (log-sink/make-sink (log-sink/file-line-writer)))
+
+(defn register-coordinator-file!
+  "Install the boot-only file appender over an injected asynchronous sink."
+  [sink]
+  (log/merge-config!
+   {:appenders {:coordinator-file {:enabled? true
+                                   :async? false
+                                   :fn (log-sink/boot-appender-fn sink)}}}))
+
 (log/merge-config!
  {:appenders
   {:println {:enabled? true
              :async? false
              :fn (log-sink/appender-fn console-sink)}}})
 
+(register-coordinator-file! file-sink)
 ;; =============================================================================
 ;; System State — single defonce atom replaces 6 private atoms
 ;; =============================================================================
@@ -155,17 +167,15 @@
                            r  (ig/init-key k v)
                            ms (/ (- (System/nanoTime) s) 1e6)]
                        (swap! timings conj [k ms])
-                       (log/info (format "[boot-timing] init %-30s %9.1f ms" (str k) ms))
+                       (log/info (log-sink/boot-event k :init ms :ok))
                        r))
                    assertf
                    ig/resolve-key)
           total   (/ (- (System/nanoTime) t0) 1e6)
           slowest (take 8 (sort-by (comp - second) @timings))]
-      (log/info (format "[boot-timing] ===== ig/init complete: %.1f ms over %d keys ====="
-                        total (count @timings)))
+      (log/info (log-sink/boot-event :system :complete total :ok))
       (doseq [[k ms] slowest]
-        (log/info (format "[boot-timing]   slowest %-30s %9.1f ms  (%.0f%%)"
-                          (str k) ms (* 100.0 (/ ms (max total 0.001))))))
+        (log/info (log-sink/boot-event k :slowest ms :ok)))
       sys)))
 
 ;; =============================================================================
@@ -181,8 +191,10 @@
    Idempotent guard: throws if system already running.
 
    Accepts optional profile keyword (:desktop, :k8s-headless, :k8s-minimal).
-   Profile precedence: explicit :profile > HIVE_PROFILE env > :desktop."
-  [& {:keys [profile] :or {profile nil}}]
+   Profile precedence: explicit :profile > HIVE_PROFILE env > :desktop.
+   `:hprof-boot!` is a boot port for isolated lifecycle tests; production
+   defaults to hprof/boot! and retains the disk-pressure abort."
+  [& {:keys [profile hprof-boot!] :or {profile nil hprof-boot! hprof/boot!}}]
   (let [profile (resolve-profile profile)]
     (when @system
       (throw (ex-info "System already running. Call (stop!) first or (reset!) to restart."
@@ -192,7 +204,7 @@
       (log/info "Targeting Emacs daemon:" sock))
     ;; ENGINE-L0.3 — rotate stale hprofs and abort early on disk pressure
     ;; before allocating any heap-heavy subsystems.
-    (hprof/boot!)
+    (hprof-boot!)
     ;; ENGINE-L0.5 — cap manifold's wait-pool BEFORE any deferred runs
     ;; (the wait-pool fn is delay-cached, so this must precede ig/init).
     (manifold-pool/boot!)
@@ -225,8 +237,9 @@
   "Stop system, reload changed namespaces via clj-reload, re-init system.
    The full REPL-driven development cycle.
 
-   clj-reload is dev-only (not in main deps), so we use requiring-resolve."
-  [& {:keys [profile] :or {profile nil}}]
+   clj-reload is dev-only (not in main deps), so we use requiring-resolve.
+   Accepts the same optional hprof boot port as start! for isolated tests."
+  [& {:keys [profile hprof-boot!] :or {profile nil hprof-boot! hprof/boot!}}]
   (let [profile (or profile (resolve-profile))]
     (stop!)
     (log/info "Reloading changed namespaces...")
@@ -234,7 +247,7 @@
       (do (reload-fn)
           (log/info "Namespaces reloaded. Restarting..."))
       (log/warn "clj-reload not available (dev-only dep). Skipping reload."))
-    (start! :profile profile)))
+    (start! :profile profile :hprof-boot! hprof-boot!)))
 
 ;; =============================================================================
 ;; Blocking — keepalive integration for -main

@@ -23,7 +23,8 @@
    The renderer in piggyback-tap concatenates this map next to the existing
    ---MEMORY--- and ---HIVEMIND--- blocks under a new ---INBOX--- delimiter."
 
-  (:require [taoensso.timbre :as log]))
+  (:require [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -45,6 +46,9 @@
   [n]
   {:pre [(pos-int? n)]}
   (reset! *section-cap n))
+
+;; The body's own :pre refuses a non-positive cap; the contract leaves it to.
+(m/=> set-section-cap! [:=> [:cat :any] [:int {:min 1}]])
 
 (defonce ^{:doc "Map of agent-id -> {:tell [...] :ask [...] :respond [...]}.
    Each section is a vector of envelopes in insertion order. Drained
@@ -82,6 +86,14 @@
 ;; Public API
 ;; =============================================================================
 
+(def Sections
+  "An agent's inbox: envelopes by section, oldest first. A drained inbox
+   carries only its non-empty sections."
+  [:map
+   [:tell {:optional true} [:vector :map]]
+   [:ask {:optional true} [:vector :map]]
+   [:respond {:optional true} [:vector :map]]])
+
 (defn push!
   "Append `envelope` to `agent-id`'s inbox in the section determined by its
    :event-type. Idempotency / dedup is the caller's job — pushes always grow
@@ -99,6 +111,9 @@
                (select-keys envelope [:from :ask-id]))
     true))
 
+;; The body's own :pre refuses a non-string agent or a non-map envelope.
+(m/=> push! [:=> [:cat :any :any] [:= true]])
+
 (defn peek*
   "Read a snapshot of the agent's inbox without clearing. Returns the
    sectioned map or nil if the inbox is empty / absent."
@@ -107,10 +122,14 @@
     (when (and m (some seq (vals m)))
       m)))
 
+(m/=> peek* [:=> [:cat :any] [:maybe Sections]])
+
 (defn pending?
   "Quick predicate: any pending envelopes for this agent?"
   [agent-id]
   (boolean (peek* agent-id)))
+
+(m/=> pending? [:=> [:cat :any] :boolean])
 
 (defn drain!
   "Atomically read-and-clear the agent's inbox. Returns the sectioned map
@@ -134,6 +153,8 @@
                    (dissoc m agent-id))))))
     @drained))
 
+(m/=> drain! [:=> [:cat :any] [:maybe Sections]])
+
 (defn clear!
   "Clear a single agent's inbox. Returns true if anything was removed."
   [agent-id]
@@ -145,17 +166,25 @@
                m)))
     @hit?))
 
+(m/=> clear! [:=> [:cat :any] :boolean])
+
 (defn reset-all!
   "Drop every inbox. For tests."
   []
   (reset! inboxes {}))
+
+(m/=> reset-all! [:=> [:cat] [:= {} {}]])
 
 (defn agent-count
   "How many agents currently have inboxes registered?"
   []
   (count @inboxes))
 
+(m/=> agent-count [:=> [:cat] [:int {:min 0}]])
+
 (defn pending-count
   "Total envelopes pending for `agent-id` across all sections."
   [agent-id]
   (->> (get @inboxes agent-id) vals (map count) (reduce + 0)))
+
+(m/=> pending-count [:=> [:cat :any] [:int {:min 0}]])

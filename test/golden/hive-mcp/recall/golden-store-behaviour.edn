@@ -1,0 +1,11 @@
+{:contract
+ [{:id "carto-1", :distance 0.21553545944726382}
+  {:id "20260511194834-344a3bc0", :distance 0.434314575050762}
+  {:id "d-01", :distance 0.7763932022500211}],
+ :bugged
+ [{:id "carto-1", :distance 0.7844645405527362}
+  {:id "20260511194834-344a3bc0", :distance 0.565685424949238}
+  {:id "d-01", :distance 0.22360679774997896}],
+ :default-emit true,
+ :empty [],
+ :empty-count 0}

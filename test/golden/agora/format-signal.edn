@@ -1,0 +1,16 @@
+{:case-0 {:out "[SIGNAL: counter] LGTM", :in ("counter" "LGTM")},
+ :case-1
+ {:out "[SIGNAL: counter] Here's my change",
+  :in ("counter" "Here's my change")},
+ :case-2 {:out "[SIGNAL: propose] ", :in (:propose nil)},
+ :case-3 {:out "[SIGNAL: approve] ", :in (:approve nil)},
+ :case-4
+ {:out "[SIGNAL: propose] Here's my change",
+  :in (:propose "Here's my change")},
+ :case-5
+ {:out "[SIGNAL: propose] Here's my change",
+  :in (:propose "Here's my change")},
+ :case-6
+ {:out "[SIGNAL: approve] Here's my change",
+  :in (:approve "Here's my change")},
+ :case-7 {:out "[SIGNAL: counter] LGTM", :in ("counter" "LGTM")}}

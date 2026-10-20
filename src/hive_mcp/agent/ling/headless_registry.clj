@@ -29,7 +29,9 @@
   (:require [hive-spi.addon.headless :as headless]
             [hive-mcp.agent.ling.headless-addon-strategy :as headless-strat]
             [taoensso.timbre :as log]
-            [hive-mcp.config.headless-defaults :as headless-defaults]))
+            [hive-mcp.config.headless-defaults :as headless-defaults]
+            [malli.core :as m]
+            [hive-mcp.agent.ling.strategy :as strategy]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -56,6 +58,28 @@
 ;; =============================================================================
 ;; Public API
 ;; =============================================================================
+
+(def RegistrationOpts
+  "`register-headless!` metadata: providers served, priority, extra capabilities."
+  [:maybe
+   [:map
+    [:provides {:optional true} [:maybe [:or [:set :keyword] [:sequential :keyword]]]]
+    [:priority {:optional true} [:maybe :int]]
+    [:capabilities {:optional true} [:maybe [:or [:set :keyword] [:sequential :keyword]]]]]])
+
+(def BackendMetadata
+  "What the registry records per backend."
+  [:map
+   [:priority :int]
+   [:capabilities [:set :keyword]]
+   [:provides {:optional true} [:set :keyword]]])
+
+(def Registration
+  "The answer of `register-headless!`."
+  [:map
+   [:registered? :boolean]
+   [:headless-id :keyword]
+   [:errors {:optional true} [:vector :string]]])
 
 (defn register-headless!
   "Register a headless backend under a keyword identifier.
@@ -89,6 +113,12 @@
                                                  :priority (:priority meta-entry)})
        {:registered? true :headless-id headless-id}))))
 
+;; The backend is checked inside and refused with :errors, so any value is accepted.
+(m/=> register-headless!
+      [:function
+       [:=> [:cat :keyword :any] Registration]
+       [:=> [:cat :keyword :any RegistrationOpts] Registration]])
+
 (defn resolve-headless-strategy
   "Look up headless-id in registry and wrap as ILingStrategy.
    Returns a HeadlessAddonStrategy instance, or nil if not found."
@@ -96,15 +126,21 @@
   (when-let [backend (get @registry headless-id)]
     (headless-strat/->headless-addon-strategy backend)))
 
+(m/=> resolve-headless-strategy [:=> [:cat :any] [:maybe strategy/LingStrategy]])
+
 (defn registered-headless
   "Return the set of registered headless-id keywords."
   []
   (set (keys @registry)))
 
+(m/=> registered-headless [:=> [:cat] [:set :keyword]])
+
 (defn get-headless-backend
   "Get the raw IHeadlessBackend instance for a headless-id, or nil."
   [headless-id]
   (get @registry headless-id))
+
+(m/=> get-headless-backend [:=> [:cat :any] [:maybe headless-strat/HeadlessBackend]])
 
 (defn headless-capabilities
   "Get declared capabilities for a registered headless backend: the
@@ -114,11 +150,15 @@
   (when (get @registry headless-id)
     (get-in @metadata [headless-id :capabilities])))
 
+(m/=> headless-capabilities [:=> [:cat :any] [:maybe [:set :keyword]]])
+
 (defn headless-metadata
   "Get the registered metadata map for a headless-id, or nil.
    Shape: {:provides #{providers} :priority N}."
   [headless-id]
   (get @metadata headless-id))
+
+(m/=> headless-metadata [:=> [:cat :any] [:maybe BackendMetadata]])
 
 (defn deregister-headless!
   "Remove a headless backend from the registry (for addon shutdown).
@@ -132,6 +172,8 @@
       (log/info "Headless backend deregistered" {:headless-id headless-id}))
     {:deregistered? had-entry?
      :headless-id headless-id}))
+
+(m/=> deregister-headless! [:=> [:cat :any] [:map [:deregistered? :boolean] [:headless-id :any]]])
 
 (defn best-headless-for-provider
   "Return the best headless-id for a provider keyword (:claude, :openai, etc.),
@@ -168,6 +210,8 @@
         (first (filter #(= (some-> provider-kw name)
                            (namespace %))
                        (registered-headless)))))))
+
+(m/=> best-headless-for-provider [:=> [:cat [:maybe :keyword]] [:maybe :keyword]])
 
 (defn resolve-default-backend
   "Resolve the configured default headless-backend keyword.
@@ -210,9 +254,13 @@
                      :provider   provider-kw})
           (best-headless-for-provider provider-kw)))))
 
+(m/=> resolve-default-backend [:=> [:cat [:maybe :keyword]] [:maybe :keyword]])
+
 (defn clear-registry!
   "Reset the headless registry. Intended for testing only."
   []
   (reset! registry {})
   (reset! metadata {})
   nil)
+
+(m/=> clear-registry! [:=> [:cat] :nil])

@@ -1,0 +1,4 @@
+{:dedup [{:id "a", :distance 0.2} {:id "b", :distance 0.5}],
+ :empty [],
+ :one [{:id "a", :distance 0.4}],
+ :truncated [{:id "b", :distance 0.1} {:id "c", :distance 0.2}]}

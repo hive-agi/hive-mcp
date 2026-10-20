@@ -27,7 +27,8 @@
             [taoensso.timbre :as log]
             [hive-mcp.dsl.param-domain :as pd]
             [hive.events.multi :as ev-multi]
-            [hive-mcp.tools.op-outcome :as op-outcome]))
+            [hive-mcp.tools.op-outcome :as op-outcome]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -86,6 +87,7 @@
   [s]
   (delegate-or-noop :bx/a nil [s]))
 
+
 (defn extract-result-data
   "Delegate to extension for result data extraction."
   [handler-result]
@@ -138,6 +140,8 @@
   "Delegate to extension for reference collection."
   [op]
   (delegate-or-noop :bx/f #{} [op]))
+
+(m/=> extract-result-data [:=> [:cat :any] :any])
 
 (defn- validate-ref-deps
   "Delegate to extension for reference-dependency validation."
@@ -659,3 +663,135 @@
      (proto/batch-execute runner ops {:dry-run? true})"
   [{:keys [resolve-handler emit-fx] :as _cfg}]
   (->DefaultBatchRunner resolve-handler emit-fx))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+;;
+;; The value objects of the batch runner. They are defined HERE, beside the
+;; runner, and not in hive-mcp.batch.* (that directory holds the Batchable
+;; protocol and its adapters, not the runner's values).
+
+(def Op
+  "An operation map with KEYWORD keys (the DSL). `:depends_on` is a vector, or
+   a single id string (`normalize-op` coerces it). Open: handlers read
+   arbitrary params."
+  [:map
+   [:id {:optional true} [:maybe :string]]
+   [:tool {:optional true} [:maybe :string]]
+   [:command {:optional true} :any]
+   [:depends_on {:optional true} [:maybe [:or :string [:sequential :string]]]]
+   [:wave {:optional true} [:maybe :int]]])
+
+(def RawOp
+  "An operation as it arrives: keyword keys (the DSL) or string keys (MCP
+   JSON). `normalize-op` makes the keys keywords."
+  [:or Op [:map-of {:min 1} :string :any]])
+
+(def NormalizedOp
+  "An op after `normalize-op`: keyword keys, a non-blank :id, deps a vector."
+  [:map
+   [:id [:string {:min 1}]]
+   [:depends_on {:optional true} [:maybe [:vector :any]]]])
+
+(def ResolveHandler
+  "`(fn [tool-name] handler-fn-or-nil)`; callable, so `ifn?`, never `fn?`."
+  [:fn {:gen/elements [(constantly nil)
+                       (constantly (fn [_op] {:ok true}))
+                       (constantly (fn [_op] (throw (ex-info "boom" {}))))]}
+   ifn?])
+
+(def EmitFx
+  "`(fn [fx-id fx-data])`: the observability hook."
+  [:fn {:gen/elements [(fn [_id _data] nil)]} ifn?])
+
+(def OpResult
+  "What `execute-op` answers. :result on success, :error on failure."
+  [:map
+   [:id :any]
+   [:tool :any]
+   [:command :any]
+   [:success :boolean]
+   [:result {:optional true} :any]
+   [:error {:optional true} [:maybe :string]]])
+
+(def EnrichableResult
+  "An op result as `enrich-op-result` reads it."
+  [:map
+   [:tool {:optional true} :any]
+   [:success {:optional true} :any]
+   [:result {:optional true} :any]
+   [:error {:optional true} :any]])
+
+(def Validation
+  "`validate-ops`: valid, or invalid with the reasons."
+  [:or
+   [:map [:valid [:= true]]]
+   [:map [:valid [:= false]] [:errors [:sequential :string]]]])
+
+(def RunOpts
+  "Options of `run-operations`."
+  [:map
+   [:resolve-handler ResolveHandler]
+   [:dry-run? {:optional true} [:maybe :boolean]]
+   [:emit-fx {:optional true} [:maybe EmitFx]]])
+
+(def Summary
+  "The counters of a run."
+  [:map
+   [:total :int]
+   [:success :int]
+   [:failed :int]
+   [:waves :int]
+   [:timed-out {:optional true} :int]])
+
+(def RunResult
+  "What `run-operations` answers: a validation refusal, a dry-run plan, or an
+   executed run. `:success`, `:summary` always; the rest by arm."
+  [:map
+   [:success :boolean]
+   [:summary Summary]
+   [:waves {:optional true} :map]
+   [:errors {:optional true} [:sequential :string]]
+   [:dry-run {:optional true} :boolean]])
+
+(def RunnerConfig
+  "Baked-in defaults of a `DefaultBatchRunner`."
+  [:map
+   [:resolve-handler {:optional true} [:maybe ResolveHandler]]
+   [:emit-fx {:optional true} [:maybe EmitFx]]])
+
+(def DefaultRunner
+  "A `DefaultBatchRunner` record."
+  [:fn {:gen/elements [(->DefaultBatchRunner nil nil)]
+        :error/message "must be a hive-mcp.batch.DefaultBatchRunner"}
+   #(instance? DefaultBatchRunner %)])
+
+(m/=> normalize-op [:=> [:cat RawOp] NormalizedOp])
+
+(m/=> ref? [:=> [:cat :any] :boolean])
+
+;; Permissive in: the ref walkers are fed whatever a param holds (a nil, or the
+;; meta keys of an op with non-string values), so the input is :any / :map.
+(m/=> parse-ref [:=> [:cat :any] [:maybe :map]])
+
+(m/=> collect-ref-op-ids [:=> [:cat :map] [:set :any]])
+
+(m/=> resolve-ref [:=> [:cat [:maybe :map] :map] :any])
+
+(m/=> resolve-refs-in-value [:=> [:cat :any :map] :any])
+
+(m/=> resolve-op-refs [:=> [:cat :map :map] :map])
+
+
+(m/=> enrich-op-result [:=> [:cat EnrichableResult] [:map [:data :any] [:success :any]]])
+
+(m/=> validate-ops [:=> [:cat [:sequential Op]] Validation])
+
+(m/=> assign-waves [:=> [:cat [:sequential Op]] [:sequential [:map [:wave :int]]]])
+
+(m/=> execute-op [:=> [:cat ResolveHandler Op] OpResult])
+
+(m/=> run-operations [:=> [:cat [:sequential Op] RunOpts] RunResult])
+
+(m/=> make-default-runner [:=> [:cat [:maybe RunnerConfig]] DefaultRunner])

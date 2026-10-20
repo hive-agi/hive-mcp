@@ -7,7 +7,9 @@
    counters is owned by `edges.stats-events`, which translates
    :kg.edges/added, :kg.edges/removed, and :kg.edges/scope-migrated
    events into delta calls below."
-  (:require [hive-mcp.knowledge-graph.connection :as conn]))
+  (:require [hive-mcp.knowledge-graph.connection :as conn]
+            [malli.core :as m]
+            [hive-mcp.knowledge-graph.edges.schema :as es]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -157,3 +159,10 @@
     {:total-edges (:total-edges s)
      :by-relation (:by-relation s)
      :by-scope    (:by-scope s)}))
+
+(m/=> refresh! [:=> [:cat] :nil])
+(m/=> reset-cache! [:=> [:cat] :nil])
+;; a nil relation or scope leaves that bucket untouched
+(m/=> apply-delta! [:=> [:cat :any :any number?] es/StatsCache])
+(m/=> migrate-scope! [:=> [:cat :any :any number?] [:maybe es/StatsCache]])
+(m/=> snapshot [:=> [:cat] es/StatsSnapshot])

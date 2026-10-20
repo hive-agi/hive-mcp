@@ -1,0 +1,178 @@
+{:case-0
+ {:out
+  {:channel-publish
+   {:event :hot-reload-success,
+    :data
+    {:loaded [],
+     :unloaded [],
+     :duration-ms nil,
+     :timestamp #inst "1970-01-01T00:00:00.000-00:00"}},
+   :log
+   {:level :info, :message "Hot-reload success: 0 loaded, 0 unloaded"},
+   :prometheus
+   {:counter :hot_reload_success,
+    :labels {},
+    :histogram {:name :hot_reload_duration_seconds, :value nil}},
+   :tool-registry-refresh true},
+  :in
+  ({}
+   [:hot/reload-success
+    {:loaded [], :timestamp #inst "1970-01-01T00:00:00.000-00:00"}])},
+ :case-1
+ {:out
+  {:channel-publish
+   {:event :hot-reload-success,
+    :data
+    {:loaded [W],
+     :unloaded [],
+     :duration-ms 1,
+     :timestamp #inst "1970-01-01T00:00:00.000-00:00"}},
+   :log
+   {:level :info,
+    :message "Hot-reload success: 1 loaded, 0 unloaded in 1ms"},
+   :prometheus
+   {:counter :hot_reload_success,
+    :labels {},
+    :histogram {:name :hot_reload_duration_seconds, :value 0.001}},
+   :tool-registry-refresh true},
+  :in
+  ({}
+   [:hot/reload-success
+    {:loaded [W],
+     :unloaded [],
+     :ms 1,
+     :timestamp #inst "1970-01-01T00:00:00.000-00:00"}])},
+ :case-2
+ {:out
+  {:channel-publish
+   {:event :hot-reload-success,
+    :data
+    {:loaded [],
+     :unloaded [+a .],
+     :duration-ms nil,
+     :timestamp #inst "1969-12-31T23:59:59.999-00:00"}},
+   :log
+   {:level :info, :message "Hot-reload success: 0 loaded, 2 unloaded"},
+   :prometheus
+   {:counter :hot_reload_success,
+    :labels {},
+    :histogram {:name :hot_reload_duration_seconds, :value nil}},
+   :tool-registry-refresh true},
+  :in
+  ({}
+   [:hot/reload-success
+    {:loaded [],
+     :unloaded [+a .],
+     :timestamp #inst "1969-12-31T23:59:59.999-00:00"}])},
+ :case-3
+ {:out
+  {:channel-publish
+   {:event :hot-reload-success,
+    :data
+    {:loaded [!7],
+     :unloaded [],
+     :duration-ms nil,
+     :timestamp #inst "1969-12-31T23:59:59.999-00:00"}},
+   :log
+   {:level :info, :message "Hot-reload success: 1 loaded, 0 unloaded"},
+   :prometheus
+   {:counter :hot_reload_success,
+    :labels {},
+    :histogram {:name :hot_reload_duration_seconds, :value nil}},
+   :tool-registry-refresh true},
+  :in
+  ({}
+   [:hot/reload-success
+    {:loaded [!7],
+     :timestamp #inst "1969-12-31T23:59:59.999-00:00"}])},
+ :case-4
+ {:out
+  {:channel-publish
+   {:event :hot-reload-success,
+    :data
+    {:loaded [],
+     :unloaded [p _y4],
+     :duration-ms nil,
+     :timestamp #inst "1970-01-01T00:00:00.003-00:00"}},
+   :log
+   {:level :info, :message "Hot-reload success: 0 loaded, 2 unloaded"},
+   :prometheus
+   {:counter :hot_reload_success,
+    :labels {},
+    :histogram {:name :hot_reload_duration_seconds, :value nil}},
+   :tool-registry-refresh true},
+  :in
+  ({}
+   [:hot/reload-success
+    {:loaded [],
+     :unloaded [p _y4],
+     :timestamp #inst "1970-01-01T00:00:00.003-00:00"}])},
+ :case-5
+ {:out
+  {:channel-publish
+   {:event :hot-reload-success,
+    :data
+    {:loaded [m6 OLM],
+     :unloaded [? - U6 s],
+     :duration-ms 4,
+     :timestamp #inst "1969-12-31T23:59:59.997-00:00"}},
+   :log
+   {:level :info,
+    :message "Hot-reload success: 2 loaded, 4 unloaded in 4ms"},
+   :prometheus
+   {:counter :hot_reload_success,
+    :labels {},
+    :histogram {:name :hot_reload_duration_seconds, :value 0.004}},
+   :tool-registry-refresh true},
+  :in
+  ({}
+   [:hot/reload-success
+    {:loaded [m6 OLM],
+     :unloaded [? - U6 s],
+     :ms 4,
+     :timestamp #inst "1969-12-31T23:59:59.997-00:00"}])},
+ :case-6
+ {:out
+  {:channel-publish
+   {:event :hot-reload-success,
+    :data
+    {:loaded [s w B*e f v],
+     :unloaded [],
+     :duration-ms 7,
+     :timestamp #inst "1969-12-31T23:59:59.975-00:00"}},
+   :log
+   {:level :info,
+    :message "Hot-reload success: 5 loaded, 0 unloaded in 7ms"},
+   :prometheus
+   {:counter :hot_reload_success,
+    :labels {},
+    :histogram {:name :hot_reload_duration_seconds, :value 0.007}},
+   :tool-registry-refresh true},
+  :in
+  ({}
+   [:hot/reload-success
+    {:loaded [s w B*e f v],
+     :ms 7,
+     :timestamp #inst "1969-12-31T23:59:59.975-00:00"}])},
+ :case-7
+ {:out
+  {:channel-publish
+   {:event :hot-reload-success,
+    :data
+    {:loaded [f!?_ - *K! l!K -l],
+     :unloaded [E.s K I0- RQM G],
+     :duration-ms nil,
+     :timestamp #inst "1970-01-01T00:00:00.006-00:00"}},
+   :log
+   {:level :info, :message "Hot-reload success: 5 loaded, 5 unloaded"},
+   :prometheus
+   {:counter :hot_reload_success,
+    :labels {},
+    :histogram {:name :hot_reload_duration_seconds, :value nil}},
+   :tool-registry-refresh true},
+  :in
+  ({}
+   [:hot/reload-success
+    {:loaded [f!?_ - *K! l!K -l],
+     :unloaded [E.s K I0- RQM G],
+     :timestamp #inst "1970-01-01T00:00:00.006-00:00"}])}}

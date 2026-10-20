@@ -7,11 +7,48 @@
             [hive-mcp.embeddings.service :as embedding-service]
             [hive-dsl.result :as r]
             [taoensso.timbre :as log]
-            [hive-mcp.memory.ingest-search :as ingest-search]))
+            [hive-mcp.memory.ingest-search :as ingest-search]
+            [hive-mcp.embeddings.role :as role]
+            [hive-mcp.config.core :as config]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+(def TagSet
+  "Tags or project ids as callers hold them: any sequential or a set."
+  [:maybe [:or [:sequential :any] [:set :any]]])
+
+(def KwOpts
+  "Trailing keyword options (`& {:keys ...}`): key/value pairs, or one map."
+  [:alt [:* [:cat :keyword :any]] [:cat :map]])
+
+(def WhereFilters
+  "The filters build-where-clause reads."
+  [:map
+   [:type {:optional true} :any]
+   [:project-ids {:optional true} TagSet]])
+
+(def WhereClause
+  "A Chroma metadata where clause, nil when no filter applies."
+  [:maybe [:map
+           [:type {:optional true} some?]
+           [:project-id {:optional true} [:map [:$in [:vector :any]]]]]])
+
+(def NotContains
+  "One document-level tag exclusion."
+  [:map {:closed true} [:$not_contains :any]])
+
+(def WhereDocumentClause
+  "Document-level exclusion: one $not_contains, or an $and of several."
+  [:maybe [:or
+           NotContains
+           [:map {:closed true} [:$and [:vector {:min 2} NotContains]]]]])
+
+(def Hit
+  "A search result record as the vendor returns it."
+  [:map [:id :any]])
 
 (defn build-where-clause
   "Build Chroma where clause from type and project-id filters.
@@ -22,6 +59,8 @@
                project-ids (assoc :project-id {:$in (vec project-ids)}))]
     (when (seq base) base)))
 
+(m/=> build-where-clause [:=> [:cat WhereFilters] WhereClause])
+
 (defn build-where-document-clause
   "Build Chroma where-document clause for tag exclusion.
    Uses document-level $not_contains since tags are embedded in document text.
@@ -31,6 +70,8 @@
     (if (= 1 (count exclude-tags))
       {:$not_contains (first exclude-tags)}
       {:$and (mapv (fn [t] {:$not_contains t}) exclude-tags)})))
+
+(m/=> build-where-document-clause [:=> [:cat TagSet] WhereDocumentClause])
 
 (defn- search-collection
   "Search a single collection with the given embedding and filters."
@@ -49,11 +90,16 @@
   "Search for memory entries similar to the query text.
    Routes to type-specific collection when type is provided.
    Fans out to all collections when type is nil.
-   :exclude-tags — seq of tags to exclude via where-document $not_contains."
-  [query-text & {:keys [limit type project-ids exclude-tags] :or {limit 10}}]
+   :exclude-tags — seq of tags to exclude via where-document $not_contains.
+   :query-template overrides embeddings.query-template (:raw by default)."
+  [query-text & {:keys [limit type project-ids exclude-tags query-template] :or {limit 10}}]
   (emb/require-embedding!)
   (let [where-clause    (build-where-clause {:type type :project-ids project-ids})
         where-doc-clause (build-where-document-clause exclude-tags)
+        shaped-query (role/shape-query (or query-template
+                                           (config/get-in-config [:embeddings :query-template])
+                                           :raw)
+                                       query-text)
         coll-names      (try (embedding-service/type->collection-names type)
                              (catch Exception _ [nil]))]
     (if (= 1 (count coll-names))
@@ -64,7 +110,7 @@
                        (conn/get-or-create-named-collection
                          (:collection-name resolved) (:dimension resolved))
                        (conn/get-or-create-collection))
-            query-emb (emb/embed-text provider query-text)
+            query-emb (emb/embed-text provider shaped-query)
             results   (search-collection coll query-emb limit where-clause where-doc-clause)]
         (log/debug "Semantic search for:" (subs query-text 0 (min 50 (count query-text)))
                    "found:" (count results))
@@ -79,7 +125,7 @@
                         provider (:provider resolved)
                         coll     (conn/get-or-create-named-collection
                                    cn (:dimension resolved))
-                        query-emb (emb/embed-text provider query-text)]
+                        query-emb (emb/embed-text provider shaped-query)]
                     (search-collection coll query-emb limit where-clause where-doc-clause))
                   (catch Exception e
                     (log/debug "Fan-out search failed for" cn ":" (.getMessage e))
@@ -92,12 +138,16 @@
              (take limit)
              vec)))))
 
+(m/=> search-similar [:=> [:cat :string KwOpts] [:sequential Hit]])
+
 (defn search-by-id
   "Get a specific entry by ID from Chroma."
   [id]
   (let [coll (conn/get-or-create-collection)
         results (gate/deref-read (chroma/get coll :ids [id] :include #{:documents :metadatas}))]
     (first results)))
+
+(m/=> search-by-id [:=> [:cat :any] [:maybe Hit]])
 
 ;; --- Federated Search (default + ingest collections) ---
 
@@ -119,3 +169,5 @@
     (log/debug "Federated search:" (count default-results) "default +"
                (count ingest-results) "ingest =" (count merged) "merged")
     merged))
+
+(m/=> search-federated [:=> [:cat :string KwOpts] [:vector Hit]])

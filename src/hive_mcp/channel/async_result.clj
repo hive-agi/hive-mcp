@@ -2,7 +2,8 @@
   "Async tool result buffer for piggyback delivery with cursor+budget drain."
   (:require [taoensso.timbre :as log]
             [hive-dsl.context.identity :as ctx-id]
-            [hive-mcp.channel.async-result-journal :as journal])
+            [hive-mcp.channel.async-result-journal :as journal]
+            [malli.core :as m])
   (:import [java.time Instant]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -127,7 +128,31 @@
     (journal/compact! new)
     total))
 
+(m/=> gc-expired! [:=> [:cat] [:int {:min 0}]])
+
 ;; Public API
+
+(def CallerId
+  "A caller id as the transport spells it; parsed to its buffer key."
+  [:maybe :string])
+
+(def AsyncResult
+  "A completed async result: the task it answers and what it produced."
+  [:map
+   [:task-id :any]
+   [:tool {:optional true} :any]
+   [:status {:optional true} :any]
+   [:result {:optional true} :any]])
+
+(def DrainBatch
+  "One drain: the delivered results and where the cursor now stands."
+  [:maybe
+   [:map
+    [:results [:vector :map]]
+    [:remaining [:int {:min 0}]]
+    [:total [:int {:min 0}]]
+    [:delivered [:int {:min 0}]]
+    [:done {:optional true} [:= true]]]])
 
 (defn enqueue-result!
   "Enqueue a completed async result into the buffer with content-hash dedup.
@@ -164,6 +189,9 @@
               "tool:" (:tool result-map) "status:" (:status result-map)
               "buffer:" buffer-key)))
 
+;; The body ends in a log call, so the enqueue answers nil.
+(m/=> enqueue-result! [:=> [:cat CallerId AsyncResult] :nil])
+
 (defn- next-batch
   "The batch one drain would take from `buf`, as [entries new-cursor]. PURE.
 
@@ -172,18 +200,36 @@
    the caller's payload. Both applications see the same buffer value, so the
    payload cannot disagree with the cursor that was committed.
 
-   At least one entry is always taken, even when that single entry is over
-   budget, or an oversized result would wedge the buffer forever."
-  [{:keys [entries cursor]}]
+   A budgeted oversized entry is delivered as a marked preview; the caller
+   can see that its result was truncated. The default drain retains its legacy
+   at-least-one contract."
+  [{:keys [entries cursor]} budget legacy?]
   (let [total (count entries)]
     (loop [batch [] chars 0 idx cursor]
       (if (>= idx total)
         [batch idx]
         (let [output-entry (dissoc (nth entries idx) :timestamp :content-hash)
-              new-chars    (+ chars (count (pr-str output-entry)))]
-          (if (and (seq batch) (> new-chars drain-char-budget))
-            [batch idx]
-            (recur (conj batch output-entry) new-chars (inc idx))))))))
+              new-chars (+ chars (count (pr-str output-entry)))]
+          (cond
+            (<= new-chars budget)
+            (recur (conj batch output-entry) new-chars (inc idx))
+
+            (seq batch) [batch idx]
+            legacy? [[output-entry] (inc idx)]
+            :else
+            (let [marker "...[truncated; oversized async result]"
+                  original (pr-str output-entry)
+                  base (assoc (select-keys output-entry [:task-id :status])
+                              :result marker)
+                  preview (loop [n (min (count original)
+                                        (max 0 (- budget (count (pr-str base)))))]
+                            (let [p (assoc base :result (str (subs original 0 n) marker))]
+                              (if (or (zero? n) (<= (count (pr-str p)) budget))
+                                p
+                                (recur (dec n)))))]
+              (if (<= (count (pr-str preview)) budget)
+                [[preview] (inc idx)]
+                [batch idx]))))))))
 
 (defn- drainable?
   "True when `buf` exists and holds an entry the caller has not been given."
@@ -211,28 +257,41 @@
    The delivery is journalled AFTER the cursor has moved, so a crash between
    the two re-delivers rather than drops. At-least-once is the correct
    direction to fail for something the caller has already been promised."
-  [caller-id]
-  (let [buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))
-        [old _new] (swap-vals!
-                    buffers
-                    (fn [bufs]
-                      (let [buf (get bufs buffer-key)]
-                        (if-not (drainable? buf)
-                          bufs
-                          (let [[_ new-cursor] (next-batch buf)]
-                            (if (>= new-cursor (count (:entries buf)))
-                              (dissoc bufs buffer-key)
-                              (assoc bufs buffer-key (assoc buf :cursor new-cursor))))))))
-        buf (get old buffer-key)]
-    (when (drainable? buf)
-      (let [[batch new-cursor] (next-batch buf)
-            total              (count (:entries buf))]
-        (journal/record-delivered! buffer-key (keep :task-id batch))
-        (cond-> {:results   batch
-                 :remaining (- total new-cursor)
-                 :total     total
-                 :delivered new-cursor}
-          (>= new-cursor total) (assoc :done true))))))
+  ([caller-id] (drain! caller-id drain-char-budget true))
+  ([caller-id budget] (drain! caller-id budget false))
+  ([caller-id budget legacy?]
+   (when (pos? budget)
+     (let [buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))
+           [old _new] (swap-vals!
+                       buffers
+                       (fn [bufs]
+                         (let [buf (get bufs buffer-key)]
+                           (if-not (drainable? buf)
+                             bufs
+                             (let [[_ new-cursor] (next-batch buf budget legacy?)]
+                               (if (= new-cursor (:cursor buf))
+                                 bufs
+                                 (if (>= new-cursor (count (:entries buf)))
+                                   (dissoc bufs buffer-key)
+                                   (assoc bufs buffer-key (assoc buf :cursor new-cursor)))))))))
+           buf (get old buffer-key)]
+       (when (drainable? buf)
+         (let [[batch new-cursor] (next-batch buf budget legacy?)
+               total (count (:entries buf))]
+           (when (seq batch)
+             (journal/record-delivered! buffer-key (keep :task-id batch))
+             (cond-> {:results batch
+                      :remaining (- total new-cursor)
+                      :total total
+                      :delivered new-cursor}
+               (>= new-cursor total) (assoc :done true)))))))))
+
+;; nil when the budget is not positive or nothing is owed.
+(m/=> drain!
+      [:function
+       [:=> [:cat CallerId] DrainBatch]
+       [:=> [:cat CallerId :int] DrainBatch]
+       [:=> [:cat CallerId :int :boolean] DrainBatch]])
 
 (defn has-pending?
   "Check if a caller session has undrained async results."
@@ -241,6 +300,8 @@
         buf (get @buffers buffer-key)]
     (and (some? buf)
          (< (:cursor buf) (count (:entries buf))))))
+
+(m/=> has-pending? [:=> [:cat CallerId] :boolean])
 
 (defn poll-task
   "Get status of a specific async task by task-id across all buffers."
@@ -251,16 +312,23 @@
                 entries))
         @buffers))
 
+(m/=> poll-task [:=> [:cat :any] [:maybe :map]])
+
 (defn clear-buffer!
   "Clear buffer for a specific caller session. For testing."
   [caller-id]
   (let [buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))]
     (swap! buffers dissoc buffer-key)))
 
+;; The buffers left after the swap.
+(m/=> clear-buffer! [:=> [:cat CallerId] journal/Buffers])
+
 (defn reset-all!
   "Reset all buffers. For testing."
   []
   (reset! buffers {}))
+
+(m/=> reset-all! [:=> [:cat] [:= {} {}]])
 
 (defn restore!
   "Restore undelivered results from the journal into `buffers`.
@@ -275,7 +343,11 @@
 
    Returns the number of entries restored. A positive count is logged at WARN
    because it means the previous process did not shut down cleanly, which is
-   worth noticing even though it was survived."
+   worth noticing even though it was survived.
+
+   Compacts the replayed journal at startup, even when no GC sweep is running:
+   delivered tombstones and superseded submissions cannot accumulate across
+   restarts. The sweep still handles compaction during a long-lived process."
   []
   (let [restored (journal/restore)
         n (reduce + 0 (map (comp count :entries val) restored))]
@@ -284,8 +356,11 @@
                 "undelivered result(s) from the journal; the previous process"
                 "did not shut down cleanly"
                 {:callers (vec (keys restored))}))
-    (swap! buffers #(merge restored %))
+    (let [[_ current] (swap-vals! buffers #(merge restored %))]
+      (journal/compact! current))
     n))
+
+(m/=> restore! [:=> [:cat] [:int {:min 0}]])
 
 (defn record-submission!
   "Journal that an async task was accepted for `caller-id`, before its ack.
@@ -305,6 +380,8 @@
    task-id
    tool))
 
+(m/=> record-submission! [:=> [:cat CallerId :any :any] :boolean])
+
 (defn stats
   "Get buffer statistics. For monitoring/debugging."
   []
@@ -321,3 +398,13 @@
                                :cursor cursor
                                :pending (- (count entries) cursor)}])
                          bufs))}))
+
+(m/=> stats
+      [:=> [:cat]
+       [:map
+        [:buffer-count [:int {:min 0}]]
+        [:total-entries [:int {:min 0}]]
+        [:pending-entries :int]
+        [:buffers [:map-of :any [:map [:entries [:int {:min 0}]]
+                                 [:cursor [:int {:min 0}]]
+                                 [:pending :int]]]]]])

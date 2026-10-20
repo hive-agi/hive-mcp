@@ -7,7 +7,8 @@
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
             [hive-mcp.config.ling-defaults :as ling-defaults]
-            [hive-mcp.config.schema :as config-schema]))
+            [hive-mcp.config.schema :as config-schema]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -44,3 +45,11 @@
   (is (:valid? (config-schema/validate-config {:ling {:default-spawn-mode :claude}})))
   (is (:valid? (config-schema/validate-config {:ling {:default-spawn-mode "headless"}})))
   (is (not (:valid? (config-schema/validate-config {:ling {:default-spawn-mode 7}})))))
+
+(deftrifecta-from-schema ling-mode-precedence hive-mcp.config.ling-defaults/pick
+  {:in [:cat [:maybe [:enum :headless :claude :vterm]]
+              [:maybe [:enum :headless :claude :vterm]]]
+   :out :keyword
+   :rel (fn [[config env] out] (= out (or config env :headless)))
+   :golden-path "test/golden/config/ling-mode-precedence.edn"
+   :num-tests 500})

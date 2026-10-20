@@ -1,0 +1,136 @@
+{:case-0
+ {:out
+  {:targeted-shout
+   {:target-agent-id "q5y0",
+    :sender-id "2F2",
+    :event-type :file-available,
+    :data
+    {:file "src/a.clj",
+     :task-id nil,
+     :message "File src/a.clj is now available"}}},
+  :in
+  ({}
+   [:claim/notify-waiting
+    {:target-agent-id "q5y0",
+     :file "src/a.clj",
+     :released-by "2F2"}])},
+ :case-1
+ {:out
+  {:targeted-shout
+   {:target-agent-id "7R28yn",
+    :sender-id nil,
+    :event-type :file-available,
+    :data
+    {:file "src/core.clj",
+     :task-id nil,
+     :message "File src/core.clj is now available"}}},
+  :in
+  ({}
+   [:claim/notify-waiting
+    {:target-agent-id "7R28yn", :file "src/core.clj", :task-id nil}])},
+ :case-2
+ {:out
+  {:targeted-shout
+   {:target-agent-id "w37",
+    :sender-id nil,
+    :event-type :file-available,
+    :data
+    {:file "test/b_test.clj",
+     :task-id nil,
+     :message "File test/b_test.clj is now available"}}},
+  :in
+  ({}
+   [:claim/notify-waiting
+    {:target-agent-id "w37",
+     :file "test/b_test.clj",
+     :parked? false}])},
+ :case-3
+ {:out
+  {:targeted-shout
+   {:target-agent-id "769zs",
+    :sender-id "3HLVuR",
+    :event-type :file-available,
+    :data
+    {:file "src/a.clj",
+     :task-id nil,
+     :message "File src/a.clj is now available"}},
+   :ds-transact
+   [[:db/retractEntity [:wait-queue/id "wait:769zs:src/a.clj"]]]},
+  :in
+  ({}
+   [:claim/notify-waiting
+    {:target-agent-id "769zs",
+     :file "src/a.clj",
+     :released-by "3HLVuR",
+     :parked? true}])},
+ :case-4
+ {:out
+  {:targeted-shout
+   {:target-agent-id "Pf",
+    :sender-id nil,
+    :event-type :file-available,
+    :data
+    {:file "src/core.clj",
+     :task-id nil,
+     :message "File src/core.clj is now available"}}},
+  :in
+  ({}
+   [:claim/notify-waiting
+    {:target-agent-id "Pf", :file "src/core.clj"}])},
+ :case-5
+ {:out
+  {:targeted-shout
+   {:target-agent-id "S93Yh",
+    :sender-id "mPcJ8n",
+    :event-type :file-available,
+    :data
+    {:file "test/b_test.clj",
+     :task-id nil,
+     :message "File test/b_test.clj is now available"}},
+   :ds-transact
+   [[:db/retractEntity
+     [:wait-queue/id "wait:S93Yh:test/b_test.clj"]]]},
+  :in
+  ({}
+   [:claim/notify-waiting
+    {:target-agent-id "S93Yh",
+     :file "test/b_test.clj",
+     :task-id nil,
+     :released-by "mPcJ8n",
+     :parked? true}])},
+ :case-6
+ {:out
+  {:targeted-shout
+   {:target-agent-id "Bfv3hFEH",
+    :sender-id "1RQxWK2Gc7",
+    :event-type :file-available,
+    :data
+    {:file "src/a.clj",
+     :task-id nil,
+     :message "File src/a.clj is now available"}},
+   :ds-transact
+   [[:db/retractEntity [:wait-queue/id "wait:Bfv3hFEH:src/a.clj"]]]},
+  :in
+  ({}
+   [:claim/notify-waiting
+    {:target-agent-id "Bfv3hFEH",
+     :file "src/a.clj",
+     :task-id nil,
+     :released-by "1RQxWK2Gc7",
+     :parked? true}])},
+ :case-7
+ {:out
+  {:targeted-shout
+   {:target-agent-id "hLM4Q82",
+    :sender-id "I1OwN5",
+    :event-type :file-available,
+    :data
+    {:file "src/a.clj",
+     :task-id nil,
+     :message "File src/a.clj is now available"}}},
+  :in
+  ({}
+   [:claim/notify-waiting
+    {:target-agent-id "hLM4Q82",
+     :file "src/a.clj",
+     :released-by "I1OwN5"}])}}

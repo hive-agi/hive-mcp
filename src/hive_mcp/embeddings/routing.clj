@@ -12,7 +12,8 @@
    for log output (backticks, join-lines)."
   (:require [clojure.tools.logging :as log]
             [hive-help.core :as hh]
-            [hive-mcp.config.core :as global-config]))
+            [hive-mcp.config.core :as global-config]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -44,6 +45,24 @@
              (str "pinned to " (hh/backtick current) " by user config")
              "unset (no merge.clj default)"))
    (str "  (would have flipped to " (hh/backtick to) ")")))
+
+(def CollectionFlip
+  "Options of `apply-collection-flip!`, per its docstring."
+  [:map
+   [:collection :string]
+   [:default {:optional true} [:maybe :keyword]]
+   [:to-id {:optional true} [:maybe :keyword]]
+   [:configure-fn [:=> [:cat] :any]]
+   [:reason {:optional true} [:maybe :string]]])
+
+(def RouteFlip
+  "Options of `apply-route-flip!`, per its docstring."
+  [:map
+   [:route :keyword]
+   [:default {:optional true} [:maybe :keyword]]
+   [:to :keyword]
+   [:secret :keyword]
+   [:reason {:optional true} [:maybe :string]]])
 
 ;; =============================================================================
 ;; Public API
@@ -100,6 +119,8 @@
                             (hh/backtick collection) (.getMessage e)))
           :error)))))
 
+(m/=> apply-collection-flip! [:=> [:cat CollectionFlip] [:enum :flipped :pinned :error]])
+
 (defn apply-route-flip!
   "Apply a boot-time per-type embedding route flip.
 
@@ -135,3 +156,5 @@
                        {:secret secret :route route
                         :current current :to to}))
             :pinned)))))
+
+(m/=> apply-route-flip! [:=> [:cat RouteFlip] [:enum :flipped :pinned :no-secret]])

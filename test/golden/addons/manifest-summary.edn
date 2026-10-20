@@ -1,0 +1,88 @@
+{:case-0
+ {:out
+  {:id "",
+   :type :native,
+   :version "0.0.0",
+   :capabilities #{},
+   :dependencies #{}},
+  :in #:addon{:id "", :type :native, :dependencies #{}}},
+ :case-1
+ {:out
+  {:id "6",
+   :type :mcp-bridge,
+   :version "2.0.0",
+   :capabilities #{},
+   :dependencies #{"hive.memory"}},
+  :in
+  #:addon{:id "6",
+          :type :mcp-bridge,
+          :version "2.0.0",
+          :capabilities #{},
+          :dependencies #{"hive.memory"}}},
+ :case-2
+ {:out
+  {:id "",
+   :type :native,
+   :version "0.0.0",
+   :capabilities #{:mcp-bridge :tools},
+   :dependencies #{"hive.kg"}},
+  :in
+  #:addon{:id "",
+          :type :native,
+          :capabilities #{:mcp-bridge :tools},
+          :dependencies #{"hive.kg"}}},
+ :case-3
+ {:out
+  {:id "4",
+   :type :external,
+   :version "0.0.0",
+   :capabilities #{},
+   :dependencies #{}},
+  :in #:addon{:id "4", :type :external}},
+ :case-4
+ {:out
+  {:id "24b7",
+   :type :native,
+   :version "0.0.0",
+   :capabilities #{:mcp-bridge :tools},
+   :dependencies #{}},
+  :in
+  #:addon{:id "24b7",
+          :type :native,
+          :capabilities #{:mcp-bridge :tools}}},
+ :case-5
+ {:out
+  {:id "Uo",
+   :type :native,
+   :version "0.0.0",
+   :capabilities #{:mcp-bridge :tools},
+   :dependencies #{"hive.kg" "hive.memory"}},
+  :in
+  #:addon{:id "Uo",
+          :type :native,
+          :capabilities #{:mcp-bridge :tools},
+          :dependencies #{"hive.kg" "hive.memory"}}},
+ :case-6
+ {:out
+  {:id "8",
+   :type :external,
+   :version "0.1.0",
+   :capabilities #{},
+   :dependencies #{"hive.kg" "hive.memory"}},
+  :in
+  #:addon{:id "8",
+          :type :external,
+          :version "0.1.0",
+          :dependencies #{"hive.kg" "hive.memory"}}},
+ :case-7
+ {:out
+  {:id "z5b",
+   :type :native,
+   :version "0.1.0",
+   :capabilities #{:mcp-bridge :tools},
+   :dependencies #{}},
+  :in
+  #:addon{:id "z5b",
+          :type :native,
+          :version "0.1.0",
+          :capabilities #{:mcp-bridge :tools}}}}

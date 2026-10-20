@@ -1,6 +1,7 @@
 (ns hive-mcp.protocols.dispatch
   "Polymorphic dispatch context protocol for agent communication."
-  (:require [hive-dsl.result :refer [rescue]]))
+  (:require [hive-dsl.result :refer [rescue]]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -64,6 +65,18 @@
   [prompt]
   (->TextContext prompt))
 
+(def DispatchContext
+  "Any value satisfying IDispatchContext; generates TextContexts."
+  [:fn {:gen/schema :string :gen/fmap ->TextContext}
+   #(satisfies? IDispatchContext %)])
+
+(def TextContextValue
+  "A TextContext record."
+  [:fn {:gen/schema :string :gen/fmap ->TextContext}
+   #(instance? TextContext %)])
+
+(m/=> ->text-context [:=> [:cat :any] TextContextValue])
+
 (defn ->ref-context
   "Create a RefContext for pass-by-reference dispatch."
 
@@ -82,6 +95,21 @@
                   scope
                   effective-fn)))
 
+(def RefContextOpts
+  "The options `->ref-context` destructures; nil reads as {}."
+  [:maybe [:map
+           [:ctx-refs {:optional true} [:maybe [:map-of :any :any]]]
+           [:kg-node-ids {:optional true} [:maybe [:or [:sequential :any] [:set :any]]]]
+           [:scope {:optional true} :any]
+           [:reconstruct-fn {:optional true} [:maybe ifn?]]]])
+
+(def RefContextValue
+  "A RefContext record."
+  [:fn {:gen/schema :string :gen/fmap (fn [p] (->ref-context p {}))}
+   #(instance? RefContext %)])
+
+(m/=> ->ref-context [:=> [:cat :any RefContextOpts] RefContextValue])
+
 (defn ->graph-context
   "Create an extension-backed dispatch context."
 
@@ -91,6 +119,8 @@
                  (get-ext :dp/graph-ctx)))]
     (f task-node-id kg-store)
     (->TextContext (str "Extension context unavailable. Task node: " task-node-id))))
+
+(m/=> ->graph-context [:=> [:cat :any :any] DispatchContext])
 
 ;;; ============================================================================
 ;;; Backward Compatibility
@@ -102,3 +132,5 @@
   (if (satisfies? IDispatchContext prompt-or-context)
     prompt-or-context
     (->TextContext (str prompt-or-context))))
+
+(m/=> ensure-context [:=> [:cat :any] DispatchContext])

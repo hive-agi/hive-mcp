@@ -3,7 +3,9 @@
    fallback semantics when :services :carto-store is absent."
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.config.resolve :as resolve]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]
+            [clojure.string :as str]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -54,3 +56,13 @@
           warns (capture-warnings
                  #(is (nil? (resolve/resolve-carto-store cfg))))]
       (is (seq warns)))))
+
+(deftrifecta-from-schema parent-rule-selection hive-mcp.config.resolve/get-parent-for-path
+  {:in [:cat [:vector [:map [:path-prefix :string] [:parent-id :string]]]
+              [:enum "/home/alpha" "/home/beta" "/other"]]
+   :out [:maybe :string]
+   :rel (fn [[rules directory] out]
+          (= out (:parent-id (first (filter
+            #(clojure.string/starts-with? (str directory "/") (:path-prefix %)) rules)))))
+   :golden-path "test/golden/config/parent-rule-selection.edn"
+   :num-tests 500})

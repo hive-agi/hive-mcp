@@ -22,7 +22,8 @@
    - hive-addon.vessel   -- IVessel itself
    - hive-addon.terminal -- ITerminalAddon, returned by (addon v :terminal)"
   (:require [hive-addon.vessel :as vessel]
-            [hive-mcp.protocols.registry :as reg]))
+            [hive-mcp.protocols.registry :as reg]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -100,3 +101,24 @@
   "Create a no-op vessel fallback."
   []
   (->NoopVessel))
+
+(def Vessel
+  "Any value satisfying hive-addon.vessel/IVessel; generates NoopVessels."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (->NoopVessel))}
+   #(satisfies? vessel/IVessel %)])
+
+;; register-vessel! rejects a non-vessel through its own :pre, so its input is
+;; loose.
+(m/=> register-vessel! [:=> [:cat :any] Vessel])
+
+(m/=> unregister-vessel! [:=> [:cat :any] :nil])
+
+(m/=> get-vessel [:=> [:cat :any] [:maybe Vessel]])
+
+(m/=> get-vessels [:=> [:cat] [:maybe [:sequential Vessel]]])
+
+(m/=> clear-vessels! [:=> [:cat] :nil])
+
+(m/=> resolve-agent-context [:=> [:cat :any] [:maybe :map]])
+
+(m/=> noop-vessel [:=> [:cat] Vessel])

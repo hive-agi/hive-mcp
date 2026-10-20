@@ -2,7 +2,8 @@
   "Pure config transformations — no IO, no atoms, no logging.
    Collect/Promote layer: defaults, deep-merge, key-path parsing."
   (:require [clojure.string :as str]
-            [hive-mcp.agent.provider.model :as model]))
+            [hive-mcp.agent.provider.model :as model]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -175,3 +176,15 @@
   [key-str]
   (when (and key-str (not (str/blank? key-str)))
     (mapv keyword (str/split key-str #"\."))))
+
+(def ConfigMap
+  "A config map: keyword keys, nested maps allowed."
+  [:map-of :any :any])
+
+(def KeyPath
+  "A parsed dotted key path."
+  [:vector :keyword])
+
+(m/=> deep-merge [:=> [:cat ConfigMap [:maybe ConfigMap]] [:maybe ConfigMap]])
+
+(m/=> parse-key-path [:=> [:cat [:maybe :string]] [:maybe KeyPath]])

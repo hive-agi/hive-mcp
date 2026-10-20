@@ -1,0 +1,4 @@
+{:valid? true,
+ :expected {:edges 0, :disc 0, :synthetic 0},
+ :actual {:edges 0, :disc 0, :synthetic 0},
+ :missing {:edges 0, :disc 0, :synthetic 0}}

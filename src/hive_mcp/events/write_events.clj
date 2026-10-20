@@ -23,7 +23,8 @@
    vector from it and never restates the table.
 
    Payload keys (all optional): :id :memory-type :tags :project-id :fields."
-  (:require [hive-mcp.events.bridge :as bridge]
+  (:require [malli.core :as m]
+            [hive-mcp.events.bridge :as bridge]
             [hive-mcp.dns.result :refer [rescue]]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -53,12 +54,16 @@
   (assoc (select-keys payload payload-keys)
          :type (op->channel-type op)))
 
+(m/=> ->event [:=> [:cat :keyword [:maybe :map]] [:map [:type [:maybe :keyword]]]])
+
 (defn event->write
   "Inverse of `->event`: a channel event map -> {:op ... payload-keys...}.
    Returns nil when the event :type is not a write op."
   [event]
   (when-let [op (channel-type->op (:type event))]
     (assoc (select-keys event payload-keys) :op op)))
+
+(m/=> event->write [:=> [:cat [:maybe :map]] [:maybe [:map [:op :keyword]]]])
 
 (defonce ^:private listeners
   ^{:doc "{key -> (fn [write])}, each called synchronously by notify! before the buses."}
@@ -73,16 +78,22 @@
   (swap! listeners assoc key f)
   key)
 
+(m/=> register-listener! [:=> [:cat :any ifn?] :any])
+
 (defn unregister-listener!
   "Remove the listener under `key`. No-op when absent. Returns nil."
   [key]
   (swap! listeners dissoc key)
   nil)
 
+(m/=> unregister-listener! [:=> [:cat :any] :nil])
+
 (defn listener-keys
   "Keys of the registered listeners."
   []
   (set (keys @listeners)))
+
+(m/=> listener-keys [:=> [:cat] [:set :any]])
 
 (defn- call-listeners!
   [event]
@@ -127,3 +138,5 @@
       (publish-channel! event)
       (dispatch-hive-event! event)))
   nil)
+
+(m/=> notify! [:=> [:cat :keyword [:maybe :map]] :nil])

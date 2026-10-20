@@ -1,0 +1,34 @@
+{:case-0
+ {:out :pool,
+  :in
+  ({:id "e1",
+    :T :note,
+    :C "ljMHN1q4wY6qHgtn0ldC550QXS6Hud7XtiD",
+    :F -1}
+   nil)},
+ :case-1
+ {:out :pool,
+  :in
+  ({:id "e5",
+    :T :principle,
+    :C "aLf2hr",
+    :tags ["drain" "memory" "memory"],
+    :A 1}
+   #{"e2"})},
+ :case-2
+ {:out :floor,
+  :in
+  ({:id "e3",
+    :T :axiom,
+    :C "m656eDd9412hQrp6Y3xWDn4J7C87F",
+    :tags ["memory" "carto"],
+    :A 0}
+   nil)},
+ :case-3 {:out :floor, :in ({:id "e1", :T :axiom, :tags []} #{})},
+ :case-4
+ {:out :pool, :in ({:id "e5", :T :note, :tags ["memory"]} nil)},
+ :case-5 {:out :floor, :in ({:id "e5", :T :axiom} nil)},
+ :case-6 {:out :pool, :in ({:id "e2", :T "note", :tags []} nil)},
+ :case-7
+ {:out :pool,
+  :in ({:id "e4", :T :note, :C "N9I9SOs4MLCCVm8QRD8pU5BKJ", :F 2} nil)}}

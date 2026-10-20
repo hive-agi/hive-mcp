@@ -237,14 +237,15 @@
   "Edit a kanban task's title/description/priority via the event bus.
    Like `move*`, the slim view is derived from the committed effect payload
    rather than a read-back, because some vector backends are eventual here."
-  [{:keys [task_id id title description priority directory]}]
+  [{:keys [task_id id title description append_description priority directory]}]
   (let [task-id (or task_id id)
         result  (kanban-events/dispatch-edit!
-                 {:task-id     task-id
-                  :title       title
-                  :description description
-                  :priority    priority
-                  :directory   directory})]
+                 {:task-id            task-id
+                  :title              title
+                  :description        description
+                  :append-description append_description
+                  :priority           priority
+                  :directory          directory})]
     (if (r/ok? result)
       (let [{:keys [content tags]} (get-in result [:ok :kanban/facade-update :payload])]
         (mcp-json (kt/task->slim {:id task-id :content content :tags tags})))
@@ -256,13 +257,15 @@
 
    `new_status`/`status` moves; `title`/`description`/`priority` edit. When
    both are given the move commits first, so the edit's coeffect reads the
-   already-moved entry and the returned slim view carries both changes."
-  [{:keys [new_status status title description priority] :as params}]
+   already-moved entry and the returned slim view carries both changes.
+   `append_description` extends the existing description without replacing it."
+  [{:keys [new_status status title description append_description priority] :as params}]
   (let [given? (fn [v] (and (string? v) (not (str/blank? v))))
         move?  (some given? [new_status status])
-        edit?  (some given? [title description priority])]
+        edit?  (some given? [title description append_description priority])]
     (cond
-      (and move? edit?) (do (move* params) (edit* params))
+      (and move? edit?) (let [moved (move* params)]
+                          (if (:isError moved) moved (edit* params)))
       edit?             (edit* params)
       :else             (move* params))))
 

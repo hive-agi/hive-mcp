@@ -1,0 +1,118 @@
+{:case-0 {:out [[] []], :in ([] "proj-a")},
+ :case-1
+ {:out
+  [[]
+   [{:adt/variant :entry/scoped,
+     :id "l",
+     :timestamp "",
+     :project-id ""}]],
+  :in
+  ([{:adt/variant :entry/scoped,
+     :id "l",
+     :timestamp "",
+     :project-id ""}]
+   "proj-b")},
+ :case-2 {:out [[] []], :in ([] "proj-b")},
+ :case-3
+ {:out
+  [[]
+   [{:adt/variant :entry/scoped,
+     :id "rw",
+     :timestamp "",
+     :project-id "9e"}]],
+  :in
+  ([{:adt/variant :entry/scoped,
+     :id "rw",
+     :timestamp "",
+     :project-id "9e"}]
+   "proj-b")},
+ :case-4
+ {:out
+  [[{:adt/variant :entry/unscoped, :id "W12", :timestamp "KT"}]
+   [{:adt/variant :entry/scoped,
+     :id "39s",
+     :timestamp "59d",
+     :project-id "4"}
+    {:adt/variant :entry/scoped,
+     :id "dp",
+     :timestamp "NN",
+     :project-id "q7",
+     :type "hDJS"}
+    {:adt/variant :entry/scoped,
+     :id "2",
+     :timestamp "g",
+     :project-id "W2"}]],
+  :in
+  ([{:adt/variant :entry/scoped,
+     :id "39s",
+     :timestamp "59d",
+     :project-id "4"}
+    {:adt/variant :entry/scoped,
+     :id "dp",
+     :timestamp "NN",
+     :project-id "q7",
+     :type "hDJS"}
+    {:adt/variant :entry/unscoped, :id "W12", :timestamp "KT"}
+    {:adt/variant :entry/scoped,
+     :id "2",
+     :timestamp "g",
+     :project-id "W2"}]
+   "proj-a")},
+ :case-5
+ {:out
+  [[{:adt/variant :entry/unscoped,
+     :id "c6L0",
+     :timestamp "m",
+     :type "h5I"}
+    {:adt/variant :entry/unscoped, :id "Sfy5i", :timestamp "0ZH"}]
+   []],
+  :in
+  ([{:adt/variant :entry/unscoped,
+     :id "c6L0",
+     :timestamp "m",
+     :type "h5I"}
+    {:adt/variant :entry/unscoped, :id "Sfy5i", :timestamp "0ZH"}]
+   "proj-a")},
+ :case-6
+ {:out
+  [[]
+   [{:adt/variant :entry/scoped,
+     :id "2OaZtR",
+     :timestamp "yZp",
+     :project-id "vnf3",
+     :type "ftY"}]],
+  :in
+  ([{:adt/variant :entry/scoped,
+     :id "2OaZtR",
+     :timestamp "yZp",
+     :project-id "vnf3",
+     :type "ftY"}]
+   "proj-a")},
+ :case-7
+ {:out
+  [[{:adt/variant :entry/unscoped,
+     :id "jC5MI",
+     :timestamp "o",
+     :type "1OiCe2M"}
+    {:adt/variant :entry/unscoped,
+     :id "2",
+     :timestamp "74lN",
+     :type "3pGRQ0L"}]
+   [{:adt/variant :entry/scoped,
+     :id "9qL",
+     :timestamp "9ag2Q2",
+     :project-id "OUKZn"}]],
+  :in
+  ([{:adt/variant :entry/unscoped,
+     :id "jC5MI",
+     :timestamp "o",
+     :type "1OiCe2M"}
+    {:adt/variant :entry/scoped,
+     :id "9qL",
+     :timestamp "9ag2Q2",
+     :project-id "OUKZn"}
+    {:adt/variant :entry/unscoped,
+     :id "2",
+     :timestamp "74lN",
+     :type "3pGRQ0L"}]
+   "proj-a")}}

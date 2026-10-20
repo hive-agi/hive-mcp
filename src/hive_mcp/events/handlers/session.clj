@@ -6,7 +6,9 @@
    - :session/wrap - Trigger wrap workflow"
 
   (:require [hive-mcp.events.core :as ev]
-            [hive-mcp.events.interceptors :as interceptors]))
+            [hive-mcp.events.interceptors :as interceptors]
+            [malli.core :as m]
+            [hive-mcp.events.handlers.schema :as hs]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -42,6 +44,15 @@
                    :session-id session-id
                    :stats {:triggered-by "auto-wrap"
                            :reason (or reason "session-end")}}}))
+
+(m/=> handle-session-end
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:wrap-notify [:map
+                       [:agent-id :any]
+                       [:session-id :any]
+                       [:stats [:map [:triggered-by [:= "auto-wrap"]] [:reason :any]]]]]]])
 
 ;; =============================================================================
 ;; Handler: :session/wrap (P5-3)
@@ -80,6 +91,12 @@
                         :session-id effective-session-id
                         :project project}}))
 
+(m/=> handle-session-wrap
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:wrap-crystallize [:map [:agent-id :any] [:session-id :any] [:project :any]]]]])
+
 ;; =============================================================================
 ;; Registration
 ;; =============================================================================
@@ -94,3 +111,5 @@
   (ev/reg-event :session/wrap
                 [interceptors/debug]
                 handle-session-wrap))
+
+(m/=> register-handlers! [:=> [:cat] hs/HandlerRegistry])

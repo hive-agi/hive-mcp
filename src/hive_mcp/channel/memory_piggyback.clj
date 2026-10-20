@@ -8,7 +8,8 @@
             [hive-mcp.channel.drain-rank :as rank]
             [hive-mcp.channel.drain-telemetry :as telemetry]
             [clojure.string :as str]
-            [hive-mcp.channel.drain-projection :as proj]))
+            [hive-mcp.channel.drain-projection :as proj]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -44,6 +45,31 @@
       (and access (pos? access)) (assoc :A access)
       (not (zero? net)) (assoc :F net))))
 
+(def CallerId
+  "Caller identity as the route layer passes it (string or keyword). nil is
+   accepted: ctx-id/parse-caller-id falls back to the default caller."
+  [:maybe [:or :string :keyword]])
+
+(def DrainCtx
+  "Optional drain ctx: task tokens, pins, floor cap and wire policy override."
+  [:maybe [:map
+           [:tokens {:optional true} [:maybe [:or [:set :string] [:sequential :string]]]]
+           [:pins {:optional true} :any]
+           [:floor-cap {:optional true} [:maybe :int]]
+           [:policy {:optional true} :any]]])
+
+(def DrainResult
+  "One drained batch plus the buffer position after it."
+  [:map
+   [:batch [:vector :map]]
+   [:remaining [:int {:min 0}]]
+   [:total [:int {:min 0}]]
+   [:delivered [:int {:min 0}]]
+   [:seq pos-int?]
+   [:done {:optional true} [:= true]]
+   [:context-refs {:optional true} :any]
+   [:pull {:optional true} :any]])
+
 (defn enqueue!
   "Enqueue entries into the memory piggyback buffer.
 
@@ -66,23 +92,27 @@
          fresh      (filterv #(not (and (:id %) (contains? known (:id %)))) formatted)
          merged     (into prior fresh)
          cursor     (min (:cursor existing 0) (count merged))
-         refs       (or context-refs (:context-refs existing))]
+         refs       (or context-refs (:context-refs existing))
+         refs-delivered? (if (some? context-refs)
+                           false (boolean (:refs-delivered? existing)))]
      (bput! buffers buffer-key
             (cond-> {:entries merged
-                     :cursor  cursor
-                     :done    (empty? (drop cursor merged))
+                     :cursor cursor
+                     :done (and (empty? (drop cursor merged))
+                                (or (nil? refs) refs-delivered?))
                      :seq-num (:seq-num existing 0)
-                     :sent    (set (:sent existing))}
+                     :sent (set (:sent existing))}
               (some? refs)
-              (assoc :context-refs refs
-                     :refs-delivered? (if (some? context-refs)
-                                        false
-                                        (boolean (:refs-delivered? existing))))))
+              (assoc :context-refs refs :refs-delivered? refs-delivered?)))
      (log/info "memory-piggyback: enqueued" (count fresh) "new of" (count formatted)
                "offered for" buffer-key
                "- buffer now" (count merged) "entries, cursor" cursor
                (when (seq (:sent existing)) (str ", " (count (:sent existing)) " already delivered"))
                (when context-refs (str ", " (count context-refs) " context-refs"))))))
+
+(m/=> enqueue! [:function
+                [:=> [:cat CallerId [:maybe [:sequential :map]]] :nil]
+                [:=> [:cat CallerId [:maybe [:sequential :map]] :any] :nil]])
 
 (defn drain!
   "Drain next batch of entries within char budget for a caller session.
@@ -112,92 +142,91 @@
    Every drain folds its offered / delivered ids into `drain-telemetry`."
   ([caller-id] (drain! caller-id nil))
   ([caller-id ctx]
-   (let [buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))
-         buf (bget buffers buffer-key)]
+   (let [budget (max 0 (min drain-char-budget (or (:char-budget ctx) drain-char-budget)))
+         strict? (some? (:char-budget ctx))
+         buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))
+         buf (when (pos? budget) (bget buffers buffer-key))]
      (when (and buf (not (:done buf)))
        (let [{:keys [cursor seq-num context-refs refs-delivered? sent offers]} buf
              policy (proj/resolve-policy (:policy ctx))
-             entries (proj/project (:entries buf) {:policy policy
-                                                   :pins (:pins ctx)})
+             entries (proj/project (:entries buf) {:policy policy :pins (:pins ctx)})
              total (count entries)
              tokens (:tokens ctx)
-             pending (when (seq tokens)
-                       (subvec (vec entries) (min cursor total)))
+             pending (when (seq tokens) (subvec (vec entries) (min cursor total)))
              ranked (when (seq pending)
-                      (rank/select-batch pending {:tokens tokens
-                                                  :offers offers
+                      (rank/select-batch pending {:tokens tokens :offers offers
                                                   :pins (:pins ctx)
                                                   :floor-cap (:floor-cap ctx)
-                                                  :char-budget drain-char-budget}))
+                                                  :char-budget budget :strict-budget? strict?}))
              entries* (if ranked
-                        (into (subvec (vec entries) 0 (min cursor total))
-                              (:ordered ranked))
+                        (into (subvec (vec entries) 0 (min cursor total)) (:ordered ranked))
                         entries)
-             [batch new-cursor]
+             [candidate _]
              (if ranked
                [(:batch ranked) (+ cursor (:taken ranked))]
-               (loop [batch []
-                      chars 0
-                      idx cursor]
+               (loop [batch [] chars 0 idx cursor]
                  (if (>= idx total)
                    [batch idx]
                    (let [entry (nth entries idx)
-                         entry-str (pr-str entry)
-                         entry-chars (count entry-str)
-                         new-chars (+ chars entry-chars)]
-                     (if (and (seq batch) (> new-chars drain-char-budget))
+                         new-chars (+ chars (count (pr-str entry)))]
+                     (if (and (> new-chars budget) (or strict? (seq batch)))
                        [batch idx]
-                       (recur (conj batch entry)
-                              new-chars
-                              (inc idx)))))))
-             is-done (>= new-cursor total)
+                       (recur (conj batch entry) new-chars (inc idx)))))))
              new-seq (inc seq-num)
-             delivered new-cursor
-             remaining (- total new-cursor)
-             send-refs? (and (some? context-refs) (not refs-delivered?))
-             taken-ids (when ranked (into #{} (keep :id) (:batch ranked)))
+             refs-pending? (and (some? context-refs) (not refs-delivered?))
+             ;; Charge the actual serialized result, including refs, pull hint,
+             ;; metadata and the MEMORY delimiters (the caller reserves 200).
+             result-for (fn [batch refs?]
+                          (let [new-cursor (+ cursor (count batch))
+                                done? (>= new-cursor total)]
+                            (cond-> {:batch batch :remaining (- total new-cursor)
+                                     :total total :delivered new-cursor :seq new-seq}
+                              done? (assoc :done true)
+                              refs? (assoc :context-refs context-refs)
+                              (proj/pull-hint batch) (assoc :pull (proj/pull-hint batch)))))
+             fits? (fn [batch refs?]
+                     (or (not strict?)
+                         (<= (+ 30 (count (pr-str (result-for batch refs?)))) budget)))
+             ;; Refs have priority over entries, but must never be marked sent
+             ;; unless they really fit. An oversized ref waits in the buffer.
+             send-refs? (and refs-pending? (fits? [] true))
+             batch (if strict?
+                     (loop [remaining candidate acc []]
+                       (if (and (seq remaining)
+                                (fits? (conj acc (first remaining)) send-refs?))
+                         (recur (rest remaining) (conj acc (first remaining)))
+                         acc))
+                     candidate)
+             new-cursor (+ cursor (count batch))
+             is-done (and (>= new-cursor total) (or (not refs-pending?) send-refs?))
+             taken-ids (when ranked (into #{} (keep :id) batch))
              next-offers (if ranked
                            (reduce (fn [m e]
                                      (let [eid (:id e)]
                                        (if (and eid (not (contains? taken-ids eid)))
-                                         (update m eid (fnil inc 0))
-                                         m)))
-                                   (or offers {})
-                                   pending)
-                           offers)
-             hint (proj/pull-hint batch)]
-         (telemetry/record!
-          {:seq-num new-seq
-           :batch batch
-           :delivered-ids (into [] (keep :id) batch)
-           :offered-ids (when ranked
-                          (into [] (comp (keep :id) (remove taken-ids)) pending))})
-         (bput! buffers buffer-key
-                (cond-> (if is-done
-                          {:entries []
-                           :cursor  0
-                           :done    true
-                           :seq-num new-seq
-                           :sent    (into (set sent) (keep :id) entries*)}
-                          {:entries entries*
-                           :cursor  new-cursor
-                           :done    false
-                           :seq-num new-seq
-                           :sent    (set sent)})
-                  (some? context-refs)
-                  (assoc :context-refs context-refs
-                         :refs-delivered? (or (boolean refs-delivered?) send-refs?))
+                                         (update m eid (fnil inc 0)) m)))
+                                   (or offers {}) pending)
+                           offers)]
+         (when (or (seq batch) send-refs?)
+           (telemetry/record! {:seq-num new-seq :batch batch
+                               :delivered-ids (into [] (keep :id) batch)
+                               :offered-ids (when ranked
+                                              (into [] (comp (keep :id) (remove taken-ids)) pending))})
+           (bput! buffers buffer-key
+                  (cond-> (if is-done
+                            {:entries [] :cursor 0 :done true :seq-num new-seq
+                             :sent (into (set sent) (keep :id) entries*)}
+                            {:entries entries* :cursor new-cursor :done false
+                             :seq-num new-seq :sent (set sent)})
+                    (some? context-refs)
+                    (assoc :context-refs context-refs
+                           :refs-delivered? (or (boolean refs-delivered?) send-refs?))
+                    (some? next-offers) (assoc :offers next-offers)))
+           (result-for batch send-refs?)))))))
 
-                  (some? next-offers)
-                  (assoc :offers next-offers)))
-         (cond-> {:batch batch
-                  :remaining remaining
-                  :total total
-                  :delivered delivered
-                  :seq new-seq}
-           is-done (assoc :done true)
-           send-refs? (assoc :context-refs context-refs)
-           hint (assoc :pull hint)))))))
+(m/=> drain! [:function
+              [:=> [:cat CallerId] [:maybe DrainResult]]
+              [:=> [:cat CallerId DrainCtx] [:maybe DrainResult]]])
 
 (defn has-pending?
   "Check if a caller session has undrained memory entries."
@@ -206,11 +235,15 @@
         buf (bget buffers buffer-key)]
     (and (some? buf) (not (:done buf)))))
 
+(m/=> has-pending? [:=> [:cat CallerId] :boolean])
+
 (defn clear-buffer!
   "Clear buffer for a specific caller session. For testing."
   [caller-id]
   (let [buffer-key (ctx-id/caller-id-key (ctx-id/parse-caller-id caller-id))]
     (bounded-swap! buffers dissoc buffer-key)))
+
+(m/=> clear-buffer! [:=> [:cat CallerId] :any])
 
 (defn reset-all!
   "Reset all buffers. For testing.
@@ -221,6 +254,8 @@
   (guards/when-not-coordinator
    "channel.memory-piggyback/reset-all! blocked"
    (bclear! buffers)))
+
+(m/=> reset-all! [:=> [:cat] :any])
 
 (defn adopt-buffer!
   "Adopt an orphaned buffer from a previous coordinator instance.
@@ -249,6 +284,8 @@
                   "(" (- (count (:entries donor-buf)) (:cursor donor-buf)) "entries remaining)")
         true))))
 
+(m/=> adopt-buffer! [:=> [:cat CallerId] [:maybe [:= true]]])
+
 (defn evict-orphaned-buffers!
   "Evict coordinator buffers that have no matching active caller.
    Called during catchup to clean up buffers from dead bb-mcp processes.
@@ -268,3 +305,5 @@
       (bounded-swap! buffers #(apply dissoc % orphaned))
       (log/info "memory-piggyback: evicted" (count orphaned) "orphaned buffers:" orphaned))
     (count orphaned)))
+
+(m/=> evict-orphaned-buffers! [:=> [:cat :any] [:int {:min 0}]])

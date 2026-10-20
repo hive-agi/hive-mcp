@@ -21,7 +21,8 @@
 
   (:require [hive-mcp.events.core :as ev]
             [taoensso.timbre :as log]
-            [hive-mcp.saa.registry :as saa-registry]))
+            [hive-mcp.saa.registry :as saa-registry]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -164,6 +165,11 @@
        :result  {:status :no-dispatch-for-mode
                  :mode   mode}})))
 
+(m/=> default-dispatch-fn
+      [:=> [:cat [:maybe :string]]
+       [:=> [:cat :any :any :any [:maybe :map]]
+        [:map [:wave-id :any] [:result :any]]]])
+
 (defn- scope-port
   "Resolve a directory to its project id; \"unknown\" when resolution fails."
   [dir]
@@ -196,6 +202,15 @@
              :dispatch-fn (default-dispatch-fn directory)
              :clock-fn    #(java.time.Instant/now)}
       store (assoc :store-plan-fn store))))
+
+(m/=> default-resources
+      [:=> [:cat [:maybe :string] [:maybe :map]]
+       [:map
+        [:scope-fn ifn?]
+        [:shout-fn ifn?]
+        [:dispatch-fn ifn?]
+        [:clock-fn ifn?]
+        [:store-plan-fn {:optional true} :some]]])
 
 ;; =============================================================================
 ;; Effect: :saa/run-workflow
@@ -276,3 +291,5 @@
   (ev/reg-fx :saa/context-inject handle-saa-context-inject)
   (ev/reg-fx :saa/shout handle-saa-shout)
   (log/info "[hive-events.saa-fx] SAA FX registered: :saa/run-workflow :saa/tool-gate :saa/context-inject :saa/shout"))
+
+(m/=> register-saa-fx! [:=> [:cat] :nil])

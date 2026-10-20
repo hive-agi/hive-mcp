@@ -7,7 +7,8 @@
   (:require [datascript.core :as d]
             [hive-mcp.protocols.kg :as kg]
             [hive-mcp.knowledge-graph.schema :as schema]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -71,3 +72,12 @@
   []
   (log/info "Creating DataScript graph store (in-memory)")
   (->DataScriptStore (atom nil)))
+
+(def KGStore
+  "An IKGStore. Generates a fresh, unopened DataScript store."
+  [:fn {:error/message "should satisfy IKGStore"
+        :gen/schema :nil
+        :gen/fmap (fn [_] (->DataScriptStore (atom nil)))}
+   #(satisfies? kg/IKGStore %)])
+
+(m/=> create-store [:=> [:cat] KGStore])

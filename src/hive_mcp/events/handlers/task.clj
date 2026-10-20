@@ -7,7 +7,9 @@
    - :git/commit-modified - Git commit if files changed"
 
   (:require [hive-mcp.events.core :as ev]
-            [hive-mcp.events.interceptors :as interceptors]))
+            [hive-mcp.events.interceptors :as interceptors]
+            [malli.core :as m]
+            [hive-mcp.events.handlers.schema :as hs]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -45,6 +47,15 @@
            :data {:task-id task-id
                   :result result}}})
 
+(m/=> handle-task-complete
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:shout [:map
+                 [:agent-id :any]
+                 [:event-type [:= :completed]]
+                 [:data [:map [:task-id :any] [:result :any]]]]]]])
+
 ;; =============================================================================
 ;; Handler: :task/shout-complete
 ;; =============================================================================
@@ -75,9 +86,28 @@
                     :agent-id effective-agent
                     :project project}}}))
 
+(m/=> handle-task-shout-complete
+      [:=> hs/HandlerArgs
+       [:map
+        [:shout [:map
+                 [:agent-id :any]
+                 [:event-type [:= :completed]]
+                 [:message :string]
+                 [:data [:map [:task-id :any] [:title :any] [:agent-id :any] [:project :any]]]]]]])
+
 ;; =============================================================================
 ;; Handler: :git/commit-modified
 ;; =============================================================================
+
+(def ^:private GitCommitEffects
+  "The effects of a task that modified files: a log line and the commit."
+  [:map
+   [:log hs/LogEffect]
+   [:git-commit [:map [:files [:vector :any]] [:message :string] [:task-id :any]]]])
+
+(def ^:private NoEffects
+  "The empty effects map: nothing was modified, nothing happens."
+  [:map {:closed true}])
 
 (defn handle-git-commit-modified
   "Handler for :git/commit-modified events.
@@ -109,6 +139,8 @@
     ;; No files modified - return empty effects map (no-op)
     {}))
 
+(m/=> handle-git-commit-modified [:=> hs/HandlerArgs [:or GitCommitEffects NoEffects]])
+
 ;; =============================================================================
 ;; Registration
 ;; =============================================================================
@@ -127,3 +159,5 @@
   (ev/reg-event :git/commit-modified
                 [interceptors/debug]
                 handle-git-commit-modified))
+
+(m/=> register-handlers! [:=> [:cat] hs/HandlerRegistry])

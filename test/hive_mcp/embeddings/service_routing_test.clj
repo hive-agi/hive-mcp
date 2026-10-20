@@ -18,7 +18,8 @@
             [hive-mcp.config.core :as global-config]
             [hive-mcp.config.test-support :as cfg-test]
             [hive-mcp.embeddings.registry :as registry]
-            [hive-mcp.embeddings.service :as service]))
+            [hive-mcp.embeddings.service :as service]
+            [hive-mcp.embeddings.protocol :as proto]))
 
 (def ^:private fixture-path "embedder_routing_fixture.edn")
 
@@ -64,11 +65,19 @@
 (defn- plan-route []
   (-> (global-config/get-global-config) :embedder :routes :type/plan))
 
+(defrecord StubProvider [emb-cfg]
+  ;; Satisfies the port, so the contracted resolver accepts it; :emb-cfg stays
+  ;; readable by keyword like the plain map this stub used to be.
+  proto/EmbeddingProvider
+  (embed-text [_ _] [0.0])
+  (embed-batch [_ texts] (mapv (constantly [0.0]) texts))
+  (embedding-dimension [_] (:dimension emb-cfg)))
+
 (defn- stub-registry
   "registry/get-provider returns the EmbeddingConfig it was handed, so a test can
    assert WHICH provider spec was dispatched without building a live client."
   [emb-cfg]
-  {:emb-cfg emb-cfg})
+  (->StubProvider emb-cfg))
 
 (defn- no-secrets [_] nil)
 

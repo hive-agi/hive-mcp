@@ -50,7 +50,8 @@
 
   (:require [hive-mcp.protocols.event-backbone :as eb]
             [taoensso.timbre :as log]
-            [hive-mcp.protocols.registry :as reg])
+            [hive-mcp.protocols.registry :as reg]
+            [malli.core :as m])
   (:import [java.util UUID]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -63,11 +64,28 @@
 
 (def ^:private instruction-prefix "hive.v1.instruction")
 
+(def Subject
+  "A NATS subject string."
+  :string)
+
+(def Envelope
+  "Transport envelope wrapping one raw instruction."
+  [:map
+   [:instr/id :string]
+   [:instr/agent :any]
+   [:instr/payload :any]])
+
+(def Queues
+  "Map of agent-id -> vector of envelopes (or legacy raw instructions)."
+  [:map-of :any [:vector :any]])
+
 (defn instruction-subject
   "Pure: build the NATS subject for an agent's instruction stream.
    E.g. (instruction-subject \"ling-1\") => \"hive.v1.instruction.ling-1\""
   [agent-id]
   (str instruction-prefix "." (or agent-id "unknown")))
+
+(m/=> instruction-subject [:=> [:cat :any] Subject])
 
 (def instruction-wildcard
   "Wildcard subject covering every agent's instruction stream."
@@ -81,6 +99,8 @@
              (.startsWith ^String subject (str instruction-prefix ".")))
     (subs subject (inc (count instruction-prefix)))))
 
+(m/=> agent-id-from-subject [:=> [:cat :any] [:maybe :string]])
+
 ;; =============================================================================
 ;; Envelope helpers (pure)
 ;; =============================================================================
@@ -90,6 +110,11 @@
   []
   (str (UUID/randomUUID)))
 
+(m/=> new-instruction-id
+      [:=> [:cat]
+       [:re {:gen/schema :uuid :gen/fmap str}
+        #"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"]])
+
 (defn wrap-envelope
   "Pure: wrap a raw instruction into a transport envelope with id + agent-id.
    If the caller already supplied `:instr/id` (rare, mostly tests), reuse it."
@@ -97,6 +122,8 @@
   {:instr/id      (or (:instr/id instruction) (new-instruction-id))
    :instr/agent   agent-id
    :instr/payload (dissoc instruction :instr/id)})
+
+(m/=> wrap-envelope [:=> [:cat :any [:maybe :map]] Envelope])
 
 (defn unwrap-envelope
   "Pure: return the raw instruction payload from an envelope.
@@ -106,10 +133,14 @@
     (:instr/payload envelope)
     envelope))
 
+(m/=> unwrap-envelope [:=> [:cat :any] :any])
+
 (defn envelope-id
   "Pure: return `:instr/id` of an envelope, or nil for legacy shapes."
   [envelope]
   (when (map? envelope) (:instr/id envelope)))
+
+(m/=> envelope-id [:=> [:cat :any] :any])
 
 ;; =============================================================================
 ;; Seen-id dedup (bounded LRU-ish set)
@@ -158,10 +189,14 @@
   [queues agent-id envelope]
   (update queues agent-id (fnil conj []) envelope))
 
+(m/=> append-envelope [:=> [:cat [:maybe Queues] :any :any] Queues])
+
 (defn take-queue
   "Pure: return [envelopes new-queues-map] after removing `agent-id`."
   [queues agent-id]
   [(get queues agent-id []) (dissoc queues agent-id)])
+
+(m/=> take-queue [:=> [:cat [:maybe Queues] :any] [:tuple [:vector :any] [:maybe Queues]]])
 
 ;; =============================================================================
 ;; Protocol
@@ -219,12 +254,25 @@
   (start! [_] nil)
   (stop!  [_] nil))
 
+(def QueuesAtom
+  "Atom holding `Queues`, shared between the facade and every store record."
+  [:fn {:gen/schema [:map-of :string [:vector :map]] :gen/fmap atom}
+   #(instance? clojure.lang.IAtom %)])
+
+(def InstructionStore
+  "Any `IInstructionStore` implementation. Generates a fresh local store."
+  [:fn {:gen/schema [:map-of :string [:vector :map]]
+        :gen/fmap #(->LocalInstructionStore (atom %))}
+   #(satisfies? IInstructionStore %)])
+
 (defn local-store
   "Create a LocalInstructionStore sharing an externally-held queues atom.
    Sharing the atom lets the facade expose the same `defonce` to callers
    that historically reached in."
   [queues-atom]
   (->LocalInstructionStore queues-atom))
+
+(m/=> local-store [:=> [:cat QueuesAtom] InstructionStore])
 
 ;; =============================================================================
 ;; NatsBackedInstructionStore — atom fast-path + wildcard subscription
@@ -323,6 +371,8 @@
                                 backbone
                                 (atom false)))
 
+(m/=> nats-backed-store [:=> [:cat QueuesAtom :any] InstructionStore])
+
 ;; =============================================================================
 ;; Active store management (defonce — persists across reloads)
 ;; =============================================================================
@@ -340,16 +390,24 @@
     (try (stop! prev) (catch Exception _)))
   (reg/install! slot store))
 
+;; Input is :any on purpose: the body's :pre is the guard, and callers rely on
+;; its AssertionError for a non-store argument.
+(m/=> set-store! [:=> [:cat :any] InstructionStore])
+
 (defn get-store
   "Return the active instruction store, or nil if none has been set.
    The facade uses this with a lazy default."
   []
   (reg/current slot))
 
+(m/=> get-store [:=> [:cat] [:maybe InstructionStore]])
+
 (defn clear-store!
   "Remove the active store (stopping it first). Primarily for tests."
   []
   (reg/clear! slot))
+
+(m/=> clear-store! [:=> [:cat] :any])
 
 ;; =============================================================================
 ;; Bootstrap helper — invoked from server/init once the backbone is ready
@@ -364,3 +422,5 @@
     (set-store! store)
     (start! store)
     store))
+
+(m/=> rewire! [:=> [:cat QueuesAtom :any] InstructionStore])

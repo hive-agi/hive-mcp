@@ -39,6 +39,7 @@
   :recall-count 2,
   :hivemind-shout-count 3,
   :kanban-completed 1,
+  :kanban-closed-transitions 0,
   :kg-edge-count 0,
   :kanban-movement-count 0,
   :created-count 2,

@@ -1,0 +1,105 @@
+{:case-0
+ {:out
+  {:ok? true,
+   :ran 0,
+   :passed 0,
+   :faults [],
+   :skipped [],
+   :ran-labels #{}},
+  :in ([])},
+ :case-1
+ {:out
+  {:ok? true,
+   :ran 3,
+   :passed 2,
+   :faults [],
+   :skipped [{:label :supersession, :reason "absent"}],
+   :ran-labels #{:carto-tag :carto-semantic}},
+  :in
+  ([{:label :carto-semantic, :status :ok}
+    {:label :supersession, :status :skipped, :reason "absent"}
+    {:label :carto-tag, :status :ok}])},
+ :case-2
+ {:out
+  {:ok? false,
+   :ran 5,
+   :passed 0,
+   :faults [{:fault :recall/anchor-missing}],
+   :skipped
+   [{:label :lexical-anchor, :reason "no store"}
+    {:label :carto-semantic, :reason "absent"}
+    {:label :carto-semantic, :reason "absent"}
+    {:label :lexical-anchor, :reason "absent"}],
+   :ran-labels #{:carto-tag}},
+  :in
+  ([{:label :lexical-anchor, :status :skipped, :reason "no store"}
+    {:label :carto-semantic, :status :skipped, :reason "absent"}
+    {:label :carto-tag,
+     :status :fault,
+     :fault {:fault :recall/anchor-missing}}
+    {:label :carto-semantic, :status :skipped, :reason "absent"}
+    {:label :lexical-anchor, :status :skipped, :reason "absent"}])},
+ :case-3
+ {:out
+  {:ok? false,
+   :ran 4,
+   :passed 2,
+   :faults [{:fault :recall/anchor-missing}],
+   :skipped [{:label :carto-semantic, :reason "no store"}],
+   :ran-labels #{:supersession :lexical-anchor :carto-semantic}},
+  :in
+  ([{:label :supersession, :status :ok}
+    {:label :carto-semantic, :status :skipped, :reason "no store"}
+    {:label :lexical-anchor, :status :ok}
+    {:label :carto-semantic,
+     :status :fault,
+     :fault {:fault :recall/anchor-missing}}])},
+ :case-4
+ {:out
+  {:ok? false,
+   :ran 2,
+   :passed 0,
+   :faults [{:fault :recall/rank-inverted}],
+   :skipped [{:label :lexical-anchor, :reason "absent"}],
+   :ran-labels #{:carto-tag}},
+  :in
+  ([{:label :lexical-anchor, :status :skipped, :reason "absent"}
+    {:label :carto-tag,
+     :status :fault,
+     :fault {:fault :recall/rank-inverted}}])},
+ :case-5
+ {:out
+  {:ok? true,
+   :ran 2,
+   :passed 2,
+   :faults [],
+   :skipped [],
+   :ran-labels #{:supersession :carto-semantic}},
+  :in
+  ([{:label :carto-semantic, :status :ok}
+    {:label :supersession, :status :ok}])},
+ :case-6
+ {:out
+  {:ok? false,
+   :ran 2,
+   :passed 1,
+   :faults [{:fault :recall/anchor-missing}],
+   :skipped [],
+   :ran-labels #{:supersession :carto-semantic}},
+  :in
+  ([{:label :carto-semantic, :status :ok}
+    {:label :supersession,
+     :status :fault,
+     :fault {:fault :recall/anchor-missing}}])},
+ :case-7
+ {:out
+  {:ok? false,
+   :ran 1,
+   :passed 0,
+   :faults [{:fault :recall/anchor-missing}],
+   :skipped [],
+   :ran-labels #{:carto-semantic}},
+  :in
+  ([{:label :carto-semantic,
+     :status :fault,
+     :fault {:fault :recall/anchor-missing}}])}}

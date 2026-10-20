@@ -1,0 +1,118 @@
+{:case-0
+ {:out
+  {:id "l",
+   :cwd "/w",
+   :presets nil,
+   :project-id nil,
+   :spawn-mode :claude,
+   :model nil,
+   :sandbox false},
+  :in {:id "l", :cwd "/w", :spawn-mode :claude, :sandbox false}},
+ :case-1
+ {:out
+  {:id "l",
+   :cwd "/w",
+   :presets nil,
+   :project-id nil,
+   :spawn-mode :claude,
+   :model nil,
+   :provider :venice,
+   :verbose? true},
+  :in
+  {:id "l",
+   :cwd "/w",
+   :spawn-mode :claude,
+   :provider :venice,
+   :verbose? true}},
+ :case-2
+ {:out
+  {:id "l",
+   :cwd "/w",
+   :presets nil,
+   :project-id nil,
+   :spawn-mode :claude,
+   :model nil,
+   :provider :venice},
+  :in
+  {:id "l",
+   :cwd "/w",
+   :spawn-mode :claude,
+   :provider :venice,
+   :unrelated 1}},
+ :case-3
+ {:out
+  {:id "l",
+   :cwd "/w",
+   :presets nil,
+   :project-id nil,
+   :spawn-mode :claude,
+   :model nil,
+   :sandbox false},
+  :in
+  {:id "l",
+   :cwd "/w",
+   :spawn-mode :claude,
+   :sandbox false,
+   :unrelated 1}},
+ :case-4
+ {:out
+  {:id "l",
+   :cwd "/w",
+   :presets nil,
+   :project-id nil,
+   :spawn-mode :claude,
+   :model nil,
+   :provider :venice},
+  :in {:id "l", :cwd "/w", :spawn-mode :claude, :provider :venice}},
+ :case-5
+ {:out
+  {:verbose? false,
+   :cwd "/w",
+   :sandbox {:net false},
+   :presets nil,
+   :id "l",
+   :spawn-mode :claude,
+   :project-id nil,
+   :provider :venice,
+   :model nil},
+  :in
+  {:id "l",
+   :cwd "/w",
+   :spawn-mode :claude,
+   :provider :venice,
+   :verbose? false,
+   :sandbox {:net false},
+   :unrelated 1}},
+ :case-6
+ {:out
+  {:id "l",
+   :cwd "/w",
+   :presets nil,
+   :project-id nil,
+   :spawn-mode :claude,
+   :model nil,
+   :verbose? false,
+   :sandbox {:net false}},
+  :in
+  {:id "l",
+   :cwd "/w",
+   :spawn-mode :claude,
+   :verbose? false,
+   :sandbox {:net false},
+   :unrelated 1}},
+ :case-7
+ {:out
+  {:id "l",
+   :cwd "/w",
+   :presets nil,
+   :project-id nil,
+   :spawn-mode :claude,
+   :model nil,
+   :provider :venice,
+   :sandbox false},
+  :in
+  {:id "l",
+   :cwd "/w",
+   :spawn-mode :claude,
+   :provider :venice,
+   :sandbox false}}}
