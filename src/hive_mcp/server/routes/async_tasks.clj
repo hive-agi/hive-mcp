@@ -16,7 +16,9 @@
             [hive-weave.pool :as pool]
             [hive-weave.safe :as safe]
             [hive-mcp.server.routes.async-task.state :as st]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.server.routes.async-task.schema :as s])
   (:import [java.util.concurrent Future]
 [java.util.concurrent RejectedExecutionException]))
 
@@ -161,31 +163,36 @@
    Throws `RejectedExecutionException` when the pool is saturated. The row this
    function wrote a moment earlier is removed first, because a registry that
    lists a queued task nobody will ever run is worse than no row at all: it is
-   a task `list-tasks` reports, `cancel!` accepts, and nothing completes."
+   a task `list-tasks` reports, `cancel!` accepts, and nothing completes.
+
+   The row records `:timeout-ms` only when it is a positive int, the only
+   value `bounded-body` enforces. A zero or a junk value from the caller
+   bounds nothing, and recording it would report a bound that does not exist."
   [{:keys [task-id tool caller-id timeout-ms f]}]
-  (bput! tasks task-id {:tool       tool
-                        :caller-id  caller-id
-                        :state      :task/queued
-                        :started-at (System/currentTimeMillis)
-                        :timeout-ms timeout-ms
-                        :handle-obj nil})
-  (let [body   (bounded-body task-id f timeout-ms)
-        handle (try
-                 (-run (current-runner)
-                       (fn []
-                         (set-state! task-id :task/running)
-                         (try
-                           (body)
-                           (finally
-                             (complete-state! task-id)))))
-                 (catch RejectedExecutionException e
-                   (bounded-swap! tasks #(dissoc % task-id))
-                   (log/warn "async task refused: pool saturated"
-                             {:task-id task-id :tool tool})
-                   (throw e)))]
-    (when-let [e (bget tasks task-id)]
-      (bput! tasks task-id (assoc e :handle-obj handle)))
-    handle))
+  (let [timeout-ms (when (pos-int? timeout-ms) timeout-ms)]
+    (bput! tasks task-id {:tool       tool
+                          :caller-id  caller-id
+                          :state      :task/queued
+                          :started-at (System/currentTimeMillis)
+                          :timeout-ms timeout-ms
+                          :handle-obj nil})
+    (let [body   (bounded-body task-id f timeout-ms)
+          handle (try
+                   (-run (current-runner)
+                         (fn []
+                           (set-state! task-id :task/running)
+                           (try
+                             (body)
+                             (finally
+                               (complete-state! task-id)))))
+                   (catch RejectedExecutionException e
+                     (bounded-swap! tasks #(dissoc % task-id))
+                     (log/warn "async task refused: pool saturated"
+                               {:task-id task-id :tool tool})
+                     (throw e)))]
+      (when-let [e (bget tasks task-id)]
+        (bput! tasks task-id (assoc e :handle-obj handle)))
+      handle)))
 
 (defn cancel!
   "Stop `task-id`. Returns an `AsyncCancelOutcome`; never throws for a stranger.
@@ -218,3 +225,44 @@
   "Clear every row. For tests and for a cold boot, not for operational use."
   []
   (bclear! tasks))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def Runner
+  "An `ITaskRunner`. Generates the inline runner a test would substitute."
+  [:fn {:error/message "should satisfy ITaskRunner"
+        :gen/schema :nil
+        :gen/fmap (fn [_] (reify ITaskRunner
+                            (-run [_ f] (f) ::inline)
+                            (-cancel [_ _] false)
+                            (-view [_ h] {:present? (some? h) :done? true :cancelled? false})))}
+   #(satisfies? ITaskRunner %)])
+
+(def SubmitSpec
+  "What `submit!` accepts: `schema/TaskSpec` with `:timeout-ms` left open.
+
+   The middleware forwards the caller's `:async-timeout-ms` untouched and
+   `bounded-body` ignores anything that is not a positive int, so the
+   contract does not refuse a zero or a nil the code deliberately tolerates."
+  [:map
+   [:task-id   s/TaskId]
+   [:tool      s/ToolName]
+   [:caller-id s/CallerId]
+   [:timeout-ms {:optional true} :any]
+   [:f [:fn {:error/message "should be a fn"
+             :gen/schema :nil
+             :gen/fmap (fn [_] (fn [] nil))}
+        fn?]]])
+
+(def ForgetReport [:map {:closed true} [:forgotten nat-int?]])
+
+(m/=> current-runner [:=> [:cat] Runner])
+(m/=> get-task [:=> [:cat s/TaskId] [:maybe s/TaskSummary]])
+(m/=> list-tasks [:=> [:cat] [:vector s/TaskSummary]])
+(m/=> running-tasks [:=> [:cat] [:vector s/TaskSummary]])
+(m/=> submit! [:=> [:cat SubmitSpec] :any])
+(m/=> cancel! [:=> [:cat s/TaskId] s/CancelOutcome])
+(m/=> forget! [:=> [:cat] ForgetReport])
+(m/=> reset-registry! [:=> [:cat] :nil])
