@@ -1,0 +1,169 @@
+{:case-0
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "SAA workflow started: q5y0 task=0Q2WY73hg3090UEv73tYwVbQ48LQcMCG mode=plan-only"},
+   :shout
+   {:agent-id "q5y0",
+    :event-type :started,
+    :data
+    {:task "0Q2WY73hg3090UEv73tYwVbQ48LQcMCG",
+     :directory nil,
+     :workflow :saa,
+     :mode "plan-only"}}},
+  :in
+  ({}
+   [:saa/started
+    {:agent-id "q5y0",
+     :task "0Q2WY73hg3090UEv73tYwVbQ48LQcMCG",
+     :plan-only? true}])},
+ :case-1
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "SAA workflow started: 7R28yn task=E9hV1oF5lcP73PSKSrh31j6889WG0Mdz1s08Gq1TLF51F3ReF12io023jJ4YQW3m463iK7dr5fCU7DD3 mode=plan-only"},
+   :shout
+   {:agent-id "7R28yn",
+    :event-type :started,
+    :data
+    {:task
+     "E9hV1oF5lcP73PSKSrh31j6889WG0Mdz1s08Gq1TLF51F3ReF12io023jJ4YQW3m463iK7dr5fCU7DD39",
+     :directory "66h",
+     :workflow :saa,
+     :mode "plan-only"}}},
+  :in
+  ({}
+   [:saa/started
+    {:agent-id "7R28yn",
+     :task
+     "E9hV1oF5lcP73PSKSrh31j6889WG0Mdz1s08Gq1TLF51F3ReF12io023jJ4YQW3m463iK7dr5fCU7DD39",
+     :directory "66h",
+     :plan-only? true}])},
+ :case-2
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "SAA workflow started: w37 task=q3BeL8CcDw3Tav6jQqvNSDOu6rChLX36P3x28Ia9W0LB305mwfsf78ggamdwQn7uePbRBxRb2dl3WP3F mode=full"},
+   :shout
+   {:agent-id "w37",
+    :event-type :started,
+    :data
+    {:task
+     "q3BeL8CcDw3Tav6jQqvNSDOu6rChLX36P3x28Ia9W0LB305mwfsf78ggamdwQn7uePbRBxRb2dl3WP3FIK8B54g2jt978A9ahAL7aSOlY38D04EQE1A7",
+     :directory nil,
+     :workflow :saa,
+     :mode "full"}}},
+  :in
+  ({}
+   [:saa/started
+    {:agent-id "w37",
+     :task
+     "q3BeL8CcDw3Tav6jQqvNSDOu6rChLX36P3x28Ia9W0LB305mwfsf78ggamdwQn7uePbRBxRb2dl3WP3FIK8B54g2jt978A9ahAL7aSOlY38D04EQE1A7",
+     :plan-only? false}])},
+ :case-3
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "SAA workflow started: 769zs task=92Ddtr0Rtt2M3tv5tVw mode=full"},
+   :shout
+   {:agent-id "769zs",
+    :event-type :started,
+    :data
+    {:task "92Ddtr0Rtt2M3tv5tVw",
+     :directory nil,
+     :workflow :saa,
+     :mode "full"}}},
+  :in
+  ({}
+   [:saa/started {:agent-id "769zs", :task "92Ddtr0Rtt2M3tv5tVw"}])},
+ :case-4
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "SAA workflow started: Pf task=1JuS3N76s6iortqzE8APiwyg49uqUa8qGelwRENZTa9DZwfsC1Lqsr00TB1t0a2MzW5Oes9k12OfoIJx mode=full"},
+   :shout
+   {:agent-id "Pf",
+    :event-type :started,
+    :data
+    {:task
+     "1JuS3N76s6iortqzE8APiwyg49uqUa8qGelwRENZTa9DZwfsC1Lqsr00TB1t0a2MzW5Oes9k12OfoIJx629Gp449v7GOJLnK4aC0y0",
+     :directory nil,
+     :workflow :saa,
+     :mode "full"}}},
+  :in
+  ({}
+   [:saa/started
+    {:agent-id "Pf",
+     :task
+     "1JuS3N76s6iortqzE8APiwyg49uqUa8qGelwRENZTa9DZwfsC1Lqsr00TB1t0a2MzW5Oes9k12OfoIJx629Gp449v7GOJLnK4aC0y0"}])},
+ :case-5
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "SAA workflow started: S93Yh task=N95Yt58hiDBy0TDE8sX5eTjq8Iv0a5iYM89lg75bG5uLv9hPP3JE1C2m9P907wO161h7dGosf0NIuoMl mode=plan-only"},
+   :shout
+   {:agent-id "S93Yh",
+    :event-type :started,
+    :data
+    {:task
+     "N95Yt58hiDBy0TDE8sX5eTjq8Iv0a5iYM89lg75bG5uLv9hPP3JE1C2m9P907wO161h7dGosf0NIuoMl",
+     :directory "bR",
+     :workflow :saa,
+     :mode "plan-only"}}},
+  :in
+  ({}
+   [:saa/started
+    {:agent-id "S93Yh",
+     :task
+     "N95Yt58hiDBy0TDE8sX5eTjq8Iv0a5iYM89lg75bG5uLv9hPP3JE1C2m9P907wO161h7dGosf0NIuoMl",
+     :directory "bR",
+     :plan-only? true}])},
+ :case-6
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "SAA workflow started: Bfv3hFEH task=K2gqvA0OqcG0W4FfSG6zTjL1683M8lL5xbHgl6TIqY57jnvV2px mode=plan-only"},
+   :shout
+   {:agent-id "Bfv3hFEH",
+    :event-type :started,
+    :data
+    {:task "K2gqvA0OqcG0W4FfSG6zTjL1683M8lL5xbHgl6TIqY57jnvV2px",
+     :directory "Fy1",
+     :workflow :saa,
+     :mode "plan-only"}}},
+  :in
+  ({}
+   [:saa/started
+    {:agent-id "Bfv3hFEH",
+     :task "K2gqvA0OqcG0W4FfSG6zTjL1683M8lL5xbHgl6TIqY57jnvV2px",
+     :directory "Fy1",
+     :plan-only? true}])},
+ :case-7
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "SAA workflow started: hLM4Q82 task=4zU2ClF17llCo36t53orbYpJGdsx3eKVSf9Slu4GbZ4wA68q2D8sRqg9YQfcV0SLvkDTY10Vs336rv4b mode=full"},
+   :shout
+   {:agent-id "hLM4Q82",
+    :event-type :started,
+    :data
+    {:task
+     "4zU2ClF17llCo36t53orbYpJGdsx3eKVSf9Slu4GbZ4wA68q2D8sRqg9YQfcV0SLvkDTY10Vs336rv4b",
+     :directory nil,
+     :workflow :saa,
+     :mode "full"}}},
+  :in
+  ({}
+   [:saa/started
+    {:agent-id "hLM4Q82",
+     :task
+     "4zU2ClF17llCo36t53orbYpJGdsx3eKVSf9Slu4GbZ4wA68q2D8sRqg9YQfcV0SLvkDTY10Vs336rv4b",
+     :plan-only? false}])}}

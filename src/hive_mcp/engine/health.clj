@@ -39,6 +39,7 @@
    manifests as the next OOM cascade."
   (:refer-clojure :exclude [reset!])
   (:require [hive-dsl.result :refer [rescue]]
+            [malli.core :as m]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -66,11 +67,28 @@
   []
   (some? (thread-allocated-bytes)))
 
+(m/=> allocation-tracking-supported? [:=> [:cat] :boolean])
+
 ;; -----------------------------------------------------------------------------
 ;; State
 ;; -----------------------------------------------------------------------------
 
 (defn- now-ms [] (System/currentTimeMillis))
+
+(def SubsystemId
+  "A subsystem identifier such as `:hive/embedding`. Any map key works;
+   keywords are the convention."
+  [:or :keyword :string :symbol])
+
+(def Counters
+  "A subsystem's counter map, as built by `fresh` and accumulated by
+   `record-cycle!` / `record-restart!`."
+  [:map
+   [:alloc-bytes :int]
+   [:cycle-ms :int]
+   [:cycle-count [:int {:min 0}]]
+   [:restarts [:int {:min 0}]]
+   [:last-reset :int]])
 
 (defn fresh
   "Initial counter map for a subsystem."
@@ -80,6 +98,8 @@
    :cycle-count 0
    :restarts    0
    :last-reset  (now-ms)})
+
+(m/=> fresh [:=> [:cat] Counters])
 
 (defonce ^{:private true
            :doc "subsystem-id -> counter map. Lives for the JVM. Reset
@@ -93,15 +113,21 @@
   (-> (swap! *health update subsystem-id #(or % (fresh)))
       (get subsystem-id)))
 
+(m/=> register! [:=> [:cat SubsystemId] Counters])
+
 (defn snapshot
   "Read-only snapshot of every subsystem's counters."
   []
   @*health)
 
+(m/=> snapshot [:=> [:cat] [:map-of SubsystemId Counters]])
+
 (defn snapshot-of
   "Counters for one subsystem, or nil if unregistered."
   [subsystem-id]
   (get @*health subsystem-id))
+
+(m/=> snapshot-of [:=> [:cat SubsystemId] [:maybe Counters]])
 
 (defn reset!
   "Zero counters for `subsystem-id`. Use on supervisor restart so the
@@ -110,10 +136,14 @@
   (swap! *health assoc subsystem-id (fresh))
   nil)
 
+(m/=> reset! [:=> [:cat SubsystemId] :nil])
+
 (defn reset-all!
   "Clear every subsystem's counters. Tests / ops surface."
   []
   (clojure.core/reset! *health {}))
+
+(m/=> reset-all! [:=> [:cat] [:map-of {:max 0} SubsystemId Counters]])
 
 ;; -----------------------------------------------------------------------------
 ;; Accounting
@@ -133,6 +163,8 @@
                       :cycle-count (inc (or cycle-count 0)))))
       (get subsystem-id)))
 
+(m/=> record-cycle! [:=> [:cat SubsystemId [:maybe :int] [:maybe :int]] Counters])
+
 (defn record-restart!
   "Increment `:restarts` for `subsystem-id`. Called by L2.1 supervisor
    on each restart event."
@@ -140,6 +172,8 @@
   (register! subsystem-id)
   (-> (swap! *health update-in [subsystem-id :restarts] (fnil inc 0))
       (get subsystem-id)))
+
+(m/=> record-restart! [:=> [:cat SubsystemId] Counters])
 
 ;; -----------------------------------------------------------------------------
 ;; Budget enforcement
@@ -152,6 +186,15 @@
    :max-cycle-ms       nil          ;; cumulative wall-time since reset
    :max-restarts       10
    :max-cycle-ms-once  5000})       ;; single cycle's wall-time
+
+(def Budget
+  "A budget map: each ceiling is an integer, or nil for no ceiling.
+   Absent keys impose no ceiling either."
+  [:map
+   [:max-alloc-bytes {:optional true} [:maybe :int]]
+   [:max-cycle-ms {:optional true} [:maybe :int]]
+   [:max-restarts {:optional true} [:maybe :int]]
+   [:max-cycle-ms-once {:optional true} [:maybe :int]]])
 
 (defn- exceeded
   "Pure breach check — returns a vector of breach keywords for
@@ -175,6 +218,9 @@
   [subsystem-id budget]
   (when-let [c (snapshot-of subsystem-id)]
     (exceeded c budget nil (:max-cycle-ms-once budget))))
+
+(m/=> budget-exceeded? [:=> [:cat SubsystemId Budget]
+                        [:maybe [:vector [:enum :alloc-bytes :cycle-ms :restarts :cycle-ms-once]]]])
 
 ;; -----------------------------------------------------------------------------
 ;; Telemetry
@@ -230,6 +276,10 @@
     (if-let [ex (:ex result)]
       (throw ex)
       (:ok result))))
+
+(m/=> track-cycle! [:=> [:cat SubsystemId [:maybe [:map [:budget {:optional true} [:maybe Budget]]]]
+                         [:=> [:cat] :any]]
+                    :any])
 
 (defmacro with-cycle-tracking
   "Macro sugar for `track-cycle!`.

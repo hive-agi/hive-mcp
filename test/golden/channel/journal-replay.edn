@@ -1,0 +1,179 @@
+{:case-0 {:out {}, :in []},
+ :case-1
+ {:out
+  {"c2"
+   {:entries
+    [{:task-id "t1",
+      :tool "memory",
+      :status :interrupted,
+      :error "the coordinator died before this task produced a result",
+      :timestamp 5}],
+    :cursor 0}},
+  :in
+  [{:op :submitted,
+    :caller "c2",
+    :task-id "t3",
+    :tool "memory",
+    :at 1000}
+   {:op :delivered, :caller "c2", :task-ids ["t3"]}
+   {:op :submitted,
+    :caller "c2",
+    :task-id "t1",
+    :tool "memory",
+    :at 5000}]},
+ :case-2
+ {:out
+  {"c2" {:entries [{:task-id "t3", :status :error}], :cursor 0},
+   "c1"
+   {:entries
+    [{:task-id "t2", :status :error}
+     {:task-id "t1",
+      :tool "memory",
+      :status :interrupted,
+      :error "the coordinator died before this task produced a result",
+      :timestamp 1}],
+    :cursor 0}},
+  :in
+  [{:op :delivered, :caller "c1", :task-ids []}
+   {:op :delivered, :caller "c2", :task-ids []}
+   {:op :result,
+    :caller "c2",
+    :task-id "t3",
+    :entry {:task-id "t3", :status :error}}
+   {:op :delivered, :caller "c2", :task-ids []}
+   {:op :result,
+    :caller "c1",
+    :task-id "t2",
+    :entry {:task-id "t2", :status :error}}
+   {:op :submitted,
+    :caller "c1",
+    :task-id "t1",
+    :tool "memory",
+    :at 1000}]},
+ :case-3
+ {:out
+  {"c2"
+   {:entries
+    [{:task-id "t3",
+      :tool "memory",
+      :status :interrupted,
+      :error "the coordinator died before this task produced a result",
+      :timestamp 5}
+     {:task-id "t1", :status :error}],
+    :cursor 0},
+   "c1"
+   {:entries
+    [{:task-id "t1",
+      :tool "memory",
+      :status :interrupted,
+      :error "the coordinator died before this task produced a result",
+      :timestamp 5}],
+    :cursor 0}},
+  :in
+  [{:op :submitted,
+    :caller "c2",
+    :task-id "t3",
+    :tool "memory",
+    :at 5000}
+   {:op :delivered, :caller "c1", :task-ids []}
+   {:op :submitted,
+    :caller "c1",
+    :task-id "t1",
+    :tool "memory",
+    :at 5000}
+   {:op :result,
+    :caller "c2",
+    :task-id "t1",
+    :entry {:task-id "t1", :status :error}}]},
+ :case-4
+ {:out {"c1" {:entries [{:task-id "t3", :status :error}], :cursor 0}},
+  :in
+  [{:op :delivered, :caller "c1", :task-ids ["t1"]}
+   {:op :result,
+    :caller "c1",
+    :task-id "t3",
+    :entry {:task-id "t3", :status :error}}]},
+ :case-5
+ {:out
+  {"c2"
+   {:entries
+    [{:task-id "t3",
+      :tool "memory",
+      :status :interrupted,
+      :error "the coordinator died before this task produced a result",
+      :timestamp 5}],
+    :cursor 0},
+   "c1"
+   {:entries
+    [{:task-id "t3",
+      :tool "memory",
+      :status :interrupted,
+      :error "the coordinator died before this task produced a result",
+      :timestamp 1}],
+    :cursor 0}},
+  :in
+  [{:op :submitted,
+    :caller "c2",
+    :task-id "t3",
+    :tool "memory",
+    :at 5000}
+   {:op :submitted,
+    :caller "c1",
+    :task-id "t3",
+    :tool "memory",
+    :at 1000}]},
+ :case-6
+ {:out
+  {"c1"
+   {:entries
+    [{:task-id "t3",
+      :tool "memory",
+      :status :interrupted,
+      :error "the coordinator died before this task produced a result",
+      :timestamp 5}],
+    :cursor 0},
+   "c2"
+   {:entries
+    [{:task-id "t1", :status :error}
+     {:task-id "t2",
+      :tool "memory",
+      :status :interrupted,
+      :error "the coordinator died before this task produced a result",
+      :timestamp 1}],
+    :cursor 0}},
+  :in
+  [{:op :submitted,
+    :caller "c1",
+    :task-id "t3",
+    :tool "memory",
+    :at 5000}
+   {:op :result,
+    :caller "c2",
+    :task-id "t1",
+    :entry {:task-id "t1", :status :error}}
+   {:op :submitted,
+    :caller "c2",
+    :task-id "t2",
+    :tool "memory",
+    :at 1000}]},
+ :case-7
+ {:out
+  {"c1" {:entries [{:task-id "t3", :status :error}], :cursor 0},
+   "c2"
+   {:entries
+    [{:task-id "t3",
+      :tool "memory",
+      :status :interrupted,
+      :error "the coordinator died before this task produced a result",
+      :timestamp 5}],
+    :cursor 0}},
+  :in
+  [{:op :result,
+    :caller "c1",
+    :task-id "t3",
+    :entry {:task-id "t3", :status :error}}
+   {:op :submitted,
+    :caller "c2",
+    :task-id "t3",
+    :tool "memory",
+    :at 5000}]}}

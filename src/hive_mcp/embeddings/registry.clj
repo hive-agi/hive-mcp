@@ -18,7 +18,9 @@
   (:require [hive-mcp.embeddings.config :as config]
             [taoensso.timbre :as log]
             [hive-mcp.embeddings.shared-gate :as shared]
-            [hive-mcp.protocols.registry :as reg]))
+            [hive-mcp.protocols.registry :as reg]
+            [malli.core :as m]
+            [hive-mcp.embeddings.protocol :as proto]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -85,6 +87,16 @@
     (factory {:api-key (get-in config [:options :api-key])
               :model (:model config)})))
 
+(def Factory
+  "A provider factory: EmbeddingConfig -> EmbeddingProvider."
+  [:=> [:cat config/ConfigShape] proto/Provider])
+
+(def CacheStats
+  "What `cache-stats` reports."
+  [:map
+   [:cached-count [:int {:min 0}]]
+   [:factories [:vector :keyword]]])
+
 
 (defn register-factory!
   "Register a factory function for a provider type.
@@ -97,11 +109,18 @@
   (reg/reg-put! provider-factories provider-type factory-fn)
   (log/debug "Registered embedding provider factory:" provider-type))
 
+;; Ends in log/debug, which returns nil. Provider types are keywords at every
+;; call site; any registry key is admitted.
+(m/=> register-factory! [:=> [:cat :keyword Factory] :nil])
+
 (defn unregister-factory!
   "Remove a registered factory. For testing."
   [provider-type]
   (reg/reg-remove! provider-factories provider-type)
   (reg/reg-snapshot provider-factories))
+
+;; Answers the remaining factory map.
+(m/=> unregister-factory! [:=> [:cat :keyword] [:map-of :keyword ifn?]])
 
 (defn init!
   "Initialize registry with built-in provider factories.
@@ -115,6 +134,8 @@
             (keys (reg/reg-snapshot provider-factories)))
   true)
 
+(m/=> init! [:=> [:cat] [:= true]])
+
 (defn register-venice!
   "Idempotent registration of the Venice factory. Used by the addon manifest
    bridge in `hive-mcp.embeddings.init` so Venice self-registers on classpath
@@ -122,6 +143,8 @@
   []
   (register-factory! :venice create-venice-provider)
   true)
+
+(m/=> register-venice! [:=> [:cat] [:= true]])
 
 (defn get-provider
   "Get or create an embedding provider for the given config.
@@ -157,17 +180,24 @@
           (swap! provider-cache assoc cache-key provider)
           provider)))))
 
+;; An invalid config is admitted at the boundary; the body throws on it.
+(m/=> get-provider [:=> [:cat :any] proto/Provider])
+
 (defn clear-cache!
   "Clear all cached providers. For testing or after config changes."
   []
   (reset! provider-cache {})
   (log/debug "Provider cache cleared"))
 
+(m/=> clear-cache! [:=> [:cat] :nil])
+
 (defn cache-stats
   "Get statistics about the provider cache."
   []
   {:cached-count (count @provider-cache)
    :factories (vec (keys (reg/reg-snapshot provider-factories)))})
+
+(m/=> cache-stats [:=> [:cat] CacheStats])
 
 
 (defn provider-available?
@@ -181,7 +211,12 @@
       (log/debug "Provider unavailable:" (config/describe config) (.getMessage e))
       false)))
 
+(m/=> provider-available? [:=> [:cat :any] :boolean])
+
 (defn list-factories
   "List all registered provider factories."
   []
   (keys (reg/reg-snapshot provider-factories)))
+
+;; `keys` answers nil, not (), for an empty registry.
+(m/=> list-factories [:=> [:cat] [:maybe [:sequential :keyword]]])

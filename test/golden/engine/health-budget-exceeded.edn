@@ -1,0 +1,40 @@
+{:case-0 {:out [], :in (:sub/idle {:max-cycle-ms-once nil})},
+ :case-1
+ {:out [],
+  :in (:sub/heavy {:max-cycle-ms nil, :max-cycle-ms-once nil})},
+ :case-10
+ {:out nil,
+  :in
+  (:sub/unregistered
+   {:max-alloc-bytes nil,
+    :max-cycle-ms nil,
+    :max-restarts nil,
+    :max-cycle-ms-once 1})},
+ :case-11
+ {:out [],
+  :in
+  (:sub/idle
+   {:max-alloc-bytes 9, :max-restarts nil, :max-cycle-ms-once 2})},
+ :case-2
+ {:out [:alloc-bytes :cycle-ms],
+  :in (:sub/light {:max-alloc-bytes 1, :max-cycle-ms 2})},
+ :case-3 {:out [:restarts], :in (:sub/heavy {:max-restarts 1})},
+ :case-4
+ {:out [:cycle-ms],
+  :in
+  (:sub/light
+   {:max-cycle-ms 0, :max-restarts nil, :max-cycle-ms-once nil})},
+ :case-5
+ {:out [], :in (:sub/light {:max-alloc-bytes nil, :max-cycle-ms 11})},
+ :case-6 {:out [], :in (:sub/heavy {:max-cycle-ms-once nil})},
+ :case-7 {:out nil, :in (:sub/unregistered {:max-alloc-bytes nil})},
+ :case-8
+ {:out [:alloc-bytes],
+  :in
+  (:sub/heavy
+   {:max-alloc-bytes 2, :max-cycle-ms nil, :max-cycle-ms-once nil})},
+ :case-9
+ {:out [],
+  :in
+  (:sub/light
+   {:max-alloc-bytes 7, :max-cycle-ms nil, :max-cycle-ms-once 6})}}

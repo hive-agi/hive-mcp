@@ -12,7 +12,9 @@
    - Telemetry captures reload latency and success rates"
 
   (:require [hive-mcp.events.core :as ev]
-            [hive-mcp.events.interceptors :as interceptors]))
+            [hive-mcp.events.interceptors :as interceptors]
+            [malli.core :as m]
+            [hive-mcp.events.handlers.schema :as hs]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -47,6 +49,17 @@
                        (when trigger (str " trigger: " (name trigger))))}
    :prometheus {:counter :hot_reload_started
                 :labels {:trigger (name (or trigger :unknown))}}})
+
+(m/=> handle-hot-reload-start
+      [:=> hs/HandlerArgs
+       [:map
+        [:channel-publish [:map
+                           [:event [:= :hot-reload-start]]
+                           [:data [:map [:dirs :any] [:trigger :any] [:timestamp :any]]]]]
+        [:log hs/LogEffect]
+        [:prometheus [:map
+                      [:counter [:= :hot_reload_started]]
+                      [:labels [:map [:trigger :string]]]]]]])
 
 ;; =============================================================================
 ;; Handler: :hot/reload-success
@@ -87,6 +100,22 @@
    ;; FIX: Refresh tool handlers to pick up reloaded code
    :tool-registry-refresh true})
 
+(m/=> handle-hot-reload-success
+      [:=> hs/HandlerArgs
+       [:map
+        [:channel-publish [:map
+                           [:event [:= :hot-reload-success]]
+                           [:data [:map [:loaded :any] [:unloaded :any]
+                                   [:duration-ms :any] [:timestamp :any]]]]]
+        [:log hs/LogEffect]
+        [:prometheus [:map
+                      [:counter [:= :hot_reload_success]]
+                      [:labels [:map {:closed true}]]
+                      [:histogram [:map
+                                   [:name [:= :hot_reload_duration_seconds]]
+                                   [:value [:maybe number?]]]]]]
+        [:tool-registry-refresh [:= true]]]])
+
 ;; =============================================================================
 ;; Handler: :file/changed
 ;; =============================================================================
@@ -117,6 +146,17 @@
    :prometheus {:counter :file_changed
                 :labels {:event_type (name (or event-type :modify))}}})
 
+(m/=> handle-file-changed
+      [:=> hs/HandlerArgs
+       [:map
+        [:channel-publish [:map
+                           [:event [:= :file-changed]]
+                           [:data [:map [:file :any] [:event-type :any] [:timestamp :any]]]]]
+        [:log hs/LogEffect]
+        [:prometheus [:map
+                      [:counter [:= :file_changed]]
+                      [:labels [:map [:event_type :string]]]]]]])
+
 ;; =============================================================================
 ;; Registration
 ;; =============================================================================
@@ -135,3 +175,5 @@
   (ev/reg-event :file/changed
                 [interceptors/debug]
                 handle-file-changed))
+
+(m/=> register-handlers! [:=> [:cat] hs/HandlerRegistry])

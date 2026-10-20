@@ -1,0 +1,41 @@
+{:case-0
+ {:out
+  "<llmlingua, compress=False>\n# Rule\nDo the thing.\n</llmlingua>\n",
+  :in "# Rule\nDo the thing.\n"},
+ :case-1
+ {:out "<llmlingua, compress=False>\nno heading at all\n</llmlingua>",
+  :in "no heading at all"},
+ :case-2
+ {:out
+  "<llmlingua, compress=False>\n# Rule\n```guard-rule\n{:rule/id :guard/zz-probe}\n```\nafter\n</llmlingua>\n",
+  :in
+  "# Rule\n```guard-rule\n{:rule/id :guard/zz-probe}\n```\nafter\n"},
+ :case-3
+ {:out
+  "<llmlingua, compress=False>\n# Rule\n</llmlingua>\n<llmlingua, rate=0.4>\n## Examples\n- a\n- b\n</llmlingua>\n<llmlingua, compress=False>\n## Strict definitions\nX means Y\n</llmlingua>\n",
+  :in
+  "# Rule\n## Examples\n- a\n- b\n## Strict definitions\nX means Y\n"},
+ :case-4
+ {:out
+  "<llmlingua, compress=False>\n# Rule\nDo it.\n</llmlingua>\n<llmlingua, rate=0.4>\n## Why\nBecause once it broke.\nand twice\n</llmlingua>\n",
+  :in "# Rule\nDo it.\n## Why\nBecause once it broke.\nand twice\n"},
+ :case-5
+ {:out "<llmlingua, compress=False>\nno heading at all\n</llmlingua>",
+  :in "no heading at all"},
+ :case-6
+ {:out
+  "<llmlingua, compress=False>\nintro\n</llmlingua>\n<llmlingua, rate=0.4>\n## Background\n<!-- rationale -->\nold story\n</llmlingua>\n",
+  :in "intro\n## Background\n<!-- rationale -->\nold story\n"},
+ :case-7
+ {:out
+  "<llmlingua, compress=False>\n# Rule\nDo it.\n</llmlingua>\n<llmlingua, rate=0.4>\n## Why\nBecause once it broke.\nand twice\n</llmlingua>\n",
+  :in "# Rule\nDo it.\n## Why\nBecause once it broke.\nand twice\n"},
+ :case-8
+ {:out
+  "<llmlingua, compress=False>\n# Rule\n</llmlingua>\n<llmlingua, rate=0.4>\n## Examples\n- a\n- b\n</llmlingua>\n<llmlingua, compress=False>\n## Strict definitions\nX means Y\n</llmlingua>\n",
+  :in
+  "# Rule\n## Examples\n- a\n- b\n## Strict definitions\nX means Y\n"},
+ :case-9
+ {:out
+  "<llmlingua, compress=False>\nintro\n</llmlingua>\n<llmlingua, rate=0.4>\n## Background\n<!-- rationale -->\nold story\n</llmlingua>\n",
+  :in "intro\n## Background\n<!-- rationale -->\nold story\n"}}

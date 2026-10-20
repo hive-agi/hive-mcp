@@ -1,0 +1,83 @@
+{:case-0
+ {:out {:discovered [], :mounted [], :failed []},
+  :in ([] {:report {:mounted []}} #{})},
+ :case-1
+ {:out
+  {:discovered ["m11.probe.c"], :mounted [], :failed ["m11.probe.c"]},
+  :in
+  ([#:addon{:id "m11.probe.c", :init-ns "m11.a.init"}]
+   {:report {:mounted [{:addon/id "m11.probe.a", :success? true}]},
+    :lifecycle {:dormant ["m11.probe.a"]}}
+   #{m11.b.init})},
+ :case-2
+ {:out {:discovered [], :mounted [], :failed []},
+  :in
+  ([]
+   {:report {:mounted [{:addon/id "m11.probe.a", :success? true}]},
+    :lifecycle {:dormant ["m11.probe.b"]}}
+   #{m11.a.init})},
+ :case-3
+ {:out
+  {:discovered ["m11.probe.b"], :mounted ["m11.probe.b"], :failed []},
+  :in
+  ([#:addon{:id "m11.probe.b", :init-ns "m11.a.init"}]
+   nil
+   #{m11.b.init m11.a.init})},
+ :case-4
+ {:out
+  {:discovered
+   ["m11.probe.a" "m11.probe.b" "m11.probe.a" "m11.probe.c"],
+   :mounted ["m11.probe.a" "m11.probe.b" "m11.probe.c"],
+   :failed []},
+  :in
+  ([#:addon{:id "m11.probe.a", :init-ns "m11.a.init"}
+    #:addon{:id "m11.probe.b", :init-ns "m11.a.init"}
+    #:addon{:id "m11.probe.a", :init-ns "m11.b.init"}
+    #:addon{:id "m11.probe.c", :init-ns "m11.a.init"}]
+   {:report
+    {:mounted
+     [{:addon/id "m11.probe.c", :success? false}
+      {:addon/id "m11.probe.b", :success? false}
+      {:addon/id "m11.probe.b", :success? true}]}}
+   #{m11.a.init})},
+ :case-5
+ {:out
+  {:discovered ["m11.probe.c" "m11.probe.b"],
+   :mounted ["m11.probe.b" "m11.probe.c"],
+   :failed []},
+  :in
+  ([#:addon{:id "m11.probe.c", :init-ns "m11.b.init"}
+    #:addon{:id "m11.probe.b", :init-ns "m11.b.init"}]
+   {:report
+    {:mounted
+     [{:addon/id "m11.probe.a", :success? false}
+      {:addon/id "m11.probe.b", :success? true}
+      {:addon/id "m11.probe.c", :success? true}
+      {:addon/id "m11.probe.b", :success? false}
+      {:addon/id "m11.probe.a", :success? false}]},
+    :lifecycle
+    {:dormant
+     ["m11.probe.b"
+      "m11.probe.a"
+      "m11.probe.b"
+      "m11.probe.a"
+      "m11.probe.b"]}}
+   #{})},
+ :case-6
+ {:out
+  {:discovered ["m11.probe.c"], :mounted [], :failed ["m11.probe.c"]},
+  :in
+  ([#:addon{:id "m11.probe.c", :init-ns "m11.a.init"}]
+   nil
+   #{m11.b.init})},
+ :case-7
+ {:out
+  {:discovered ["m11.probe.c" "m11.probe.b" "m11.probe.a"],
+   :mounted [],
+   :failed ["m11.probe.a" "m11.probe.b" "m11.probe.c"]},
+  :in
+  ([#:addon{:id "m11.probe.c", :init-ns "m11.b.init"}
+    #:addon{:id "m11.probe.b", :init-ns "m11.a.init"}
+    #:addon{:id "m11.probe.a", :init-ns "m11.b.init"}]
+   nil
+   #{})}}

@@ -461,6 +461,18 @@
 (defn- ask-impl [sym]
   (delegate/resolve-var "hive-agent.swarm.hivemind.ask" sym))
 
+(defn- ask-popup
+  "The native popup port: hive-notify's backend race, when hive-notify is on
+   the classpath and [:hivemind :ask-popup?] is not false. Resolved per call,
+   so neither a missing library nor a reload breaks an ask."
+  []
+  (let [enabled? (try (not (false? ((requiring-resolve 'hive-mcp.config.core/get-in-config)
+                                    [:hivemind :ask-popup?])))
+                      (catch Exception _ true))]
+    (when enabled?
+      (try (requiring-resolve 'hive-notify.registry/ask-first!)
+           (catch Throwable _ nil)))))
+
 (defn- ask-ports
   "The host effects an ask needs. Each is read through its var at call time,
    so a test's with-redefs still reaches it."
@@ -468,7 +480,8 @@
   {:asks state/pending-asks
    :broadcast! (fn [event] (channel/broadcast! event))
    :shout! (fn [agent-id event-type data] (shout! agent-id event-type data))
-   :parent-of asker-parent-id})
+   :parent-of asker-parent-id
+   :prompt! (ask-popup)})
 
 (defn pending-ask-entry
   {:arglists '([{:keys [agent-id question options response-chan project-id parent-id asked-at

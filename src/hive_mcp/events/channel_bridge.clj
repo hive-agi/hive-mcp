@@ -28,7 +28,8 @@
    Channel: {\"type\" \"task-complete\" \"data\" {...}}
    → Events: [:task/complete {...}]"
    
-  (:require [hive-mcp.channel.core :as channel]
+  (:require [malli.core :as m]
+            [hive-mcp.channel.core :as channel]
             [hive-mcp.events.core :as ev]
             [hive-mcp.events.bridge :as bridge]
             [clojure.core.async :as async :refer [go-loop <!]]
@@ -93,6 +94,8 @@
           (let [event-kw (kebab->ns-keyword (name hook-kw))]
             [event-kw data]))))))
 
+(m/=> hook->event [:=> [:cat [:maybe :map]] [:maybe [:tuple :keyword :map]]])
+
 ;; =============================================================================
 ;; Channel Event Handler
 ;; =============================================================================
@@ -117,6 +120,8 @@
     (catch Throwable e
       (log/error "[channel-bridge] Error handling event:" (.getMessage e))
       nil)))
+
+(m/=> on-channel-event [:=> [:cat [:maybe :map]] :any])
 
 ;; =============================================================================
 ;; Subscription Management
@@ -147,6 +152,8 @@
        (log/info "[channel-bridge] Subscribed to channel events:" event-type)
        true))))
 
+(m/=> subscribe-channel! [:=> [:cat] :boolean])
+
 (defn unsubscribe-channel!
   "Unsubscribe from channel events.
    
@@ -163,10 +170,14 @@
       (log/debug "[channel-bridge] Not subscribed")
       false)))
 
+(m/=> unsubscribe-channel! [:=> [:cat] :boolean])
+
 (defn subscribed?
   "Check if currently subscribed to channel events."
   []
   (some? @*subscription))
+
+(m/=> subscribed? [:=> [:cat] :boolean])
 
 ;; =============================================================================
 ;; Initialization
@@ -180,8 +191,12 @@
   (subscribe-channel!)
   (log/info "[channel-bridge] Initialized"))
 
+(m/=> init! [:=> [:cat] :nil])
+
 (defn shutdown!
   "Shutdown the channel bridge cleanly."
   []
   (unsubscribe-channel!)
   (log/info "[channel-bridge] Shutdown"))
+
+(m/=> shutdown! [:=> [:cat] :nil])

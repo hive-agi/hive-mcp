@@ -1,0 +1,119 @@
+{:case-0
+ {:out
+  {:log
+   {:level :warn,
+    :event :resilience/dim-mismatch,
+    :message "q5yD8Oy4",
+    :ex-class nil,
+    :details nil,
+    :data {:message "q5yD8Oy4", :ex-class nil}}},
+  :in
+  ({}
+   [:resilience/dim-mismatch {:message "q5yD8Oy4", :ex-class nil}])},
+ :case-1
+ {:out
+  {:log
+   {:level :warn,
+    :event :resilience/dim-mismatch,
+    :message "7R28yK6Y9BWa",
+    :ex-class "clojure.lang.ExceptionInfo",
+    :details {:expected 2, :actual 1},
+    :data
+    {:message "7R28yK6Y9BWa",
+     :details {:expected 2, :actual 1},
+     :ex-class "clojure.lang.ExceptionInfo"}}},
+  :in
+  ({}
+   [:resilience/dim-mismatch
+    {:message "7R28yK6Y9BWa",
+     :details {:expected 2, :actual 1},
+     :ex-class "clojure.lang.ExceptionInfo"}])},
+ :case-2
+ {:out
+  {:log
+   {:level :warn,
+    :event :resilience/dim-mismatch,
+    :message "w3nCZ",
+    :ex-class nil,
+    :details {:expected 1, :actual 1},
+    :data
+    {:message "w3nCZ",
+     :details {:expected 1, :actual 1},
+     :ex-class nil}}},
+  :in
+  ({}
+   [:resilience/dim-mismatch
+    {:message "w3nCZ",
+     :details {:expected 1, :actual 1},
+     :ex-class nil}])},
+ :case-3
+ {:out
+  {:log
+   {:level :warn,
+    :event :resilience/dim-mismatch,
+    :message "769zFj7ex",
+    :ex-class nil,
+    :details nil,
+    :data {:message "769zFj7ex"}}},
+  :in ({} [:resilience/dim-mismatch {:message "769zFj7ex"}])},
+ :case-4
+ {:out
+  {:log
+   {:level :warn,
+    :event :resilience/dim-mismatch,
+    :message "Pvx",
+    :ex-class nil,
+    :details {:expected 2, :actual 2},
+    :data {:message "Pvx", :details {:expected 2, :actual 2}}}},
+  :in
+  ({}
+   [:resilience/dim-mismatch
+    {:message "Pvx", :details {:expected 2, :actual 2}}])},
+ :case-5
+ {:out
+  {:log
+   {:level :warn,
+    :event :resilience/dim-mismatch,
+    :message "S93Y8Z9zf7",
+    :ex-class "clojure.lang.ExceptionInfo",
+    :details {:expected 4, :actual 1},
+    :data
+    {:message "S93Y8Z9zf7",
+     :details {:expected 4, :actual 1},
+     :ex-class "clojure.lang.ExceptionInfo"}}},
+  :in
+  ({}
+   [:resilience/dim-mismatch
+    {:message "S93Y8Z9zf7",
+     :details {:expected 4, :actual 1},
+     :ex-class "clojure.lang.ExceptionInfo"}])},
+ :case-6
+ {:out
+  {:log
+   {:level :warn,
+    :event :resilience/dim-mismatch,
+    :message "Bfv3hFE0cAKQNQ2",
+    :ex-class "clojure.lang.ExceptionInfo",
+    :details nil,
+    :data
+    {:message "Bfv3hFE0cAKQNQ2",
+     :ex-class "clojure.lang.ExceptionInfo"}}},
+  :in
+  ({}
+   [:resilience/dim-mismatch
+    {:message "Bfv3hFE0cAKQNQ2",
+     :ex-class "clojure.lang.ExceptionInfo"}])},
+ :case-7
+ {:out
+  {:log
+   {:level :warn,
+    :event :resilience/dim-mismatch,
+    :message "hLM4Q8960lvJr",
+    :ex-class nil,
+    :details {:expected 2, :actual 13},
+    :data
+    {:message "hLM4Q8960lvJr", :details {:expected 2, :actual 13}}}},
+  :in
+  ({}
+   [:resilience/dim-mismatch
+    {:message "hLM4Q8960lvJr", :details {:expected 2, :actual 13}}])}}

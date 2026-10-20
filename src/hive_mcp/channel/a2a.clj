@@ -21,7 +21,8 @@
    `contextId` is A2A's own grouping id and is used as such: it groups the
    messages of one exchange so a reader can fetch the exchange by id rather than
    receive every turn of it."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -98,15 +99,82 @@
   "States in which the task is waiting on somebody outside it."
   #{"TASK_STATE_INPUT_REQUIRED" "TASK_STATE_AUTH_REQUIRED"})
 
+;; =============================================================================
+;; Value schemas for the contracts in this namespace
+;; =============================================================================
+
+(def TaskState
+  "An A2A TaskState, wire spelling."
+  (into [:enum] (sort task-states)))
+
+(def TextPart
+  "An A2A TextPart."
+  [:map [:kind [:= "text"]] [:text :string]])
+
+(def DataPart
+  "An A2A DataPart."
+  [:map [:kind [:= "data"]] [:data :any]])
+
+(def Shout
+  "The internal shout shape `hive->a2a` reads; every key is optional."
+  [:map
+   [:agent-id {:optional true} :any]
+   [:event-type {:optional true} [:maybe [:or :keyword :string]]]
+   [:message {:optional true} [:maybe :string]]
+   [:task {:optional true} [:maybe :string]]
+   [:shout-id {:optional true} [:maybe :string]]
+   [:to {:optional true} :any]
+   [:context-id {:optional true} :any]
+   [:broadcast? {:optional true} :any]
+   [:broadcast-reason {:optional true} :any]
+   [:deliberate? {:optional true} :any]
+   [:ref {:optional true} :any]
+   [:timestamp {:optional true} :any]
+   [:project-id {:optional true} :any]])
+
+(def Message
+  "An A2A Message as `hive->a2a` emits it: one text part, the swarm-routing
+   extension declared, hive fields under `hive.swarm/*` metadata keys."
+  [:map
+   [:messageId :string]
+   [:role [:= "ROLE_AGENT"]]
+   [:parts [:vector TextPart]]
+   [:extensions [:vector :string]]
+   [:metadata [:map-of :string :any]]
+   [:contextId {:optional true} :string]
+   [:taskId {:optional true} :string]])
+
+(def ForeignMessage
+  "Any A2A Message `a2a->hive` reads, a foreign agent's included."
+  [:maybe
+   [:map
+    [:messageId {:optional true} :any]
+    [:contextId {:optional true} :any]
+    [:taskId {:optional true} :any]
+    [:parts {:optional true} [:maybe [:sequential [:maybe :map]]]]
+    [:metadata {:optional true} [:maybe [:map-of :string :any]]]]])
+
+(def ShoutBack
+  "The internal shout `a2a->hive` rebuilds."
+  [:map
+   [:agent-id :any]
+   [:event-type :any]
+   [:message :string]
+   [:shout-id :any]])
+
 (defn terminal-state?
   "Is `s` a state after which the task is finished?"
   [s]
   (contains? terminal-states s))
 
+(m/=> terminal-state? [:=> [:cat :any] :boolean])
+
 (defn interrupted-state?
   "Is `s` a state in which the task awaits an outside party?"
   [s]
   (contains? interrupted-states s))
+
+(m/=> interrupted-state? [:=> [:cat :any] :boolean])
 
 (def ^:private hive-event->task-state
   "hive event-type -> A2A TaskState. Events with no A2A counterpart map to
@@ -131,6 +199,9 @@
             :else (str event-type))]
     (get hive-event->task-state k "TASK_STATE_WORKING")))
 
+;; Total: an unknown event is WORKING, so any value is read.
+(m/=> event->task-state [:=> [:cat :any] TaskState])
+
 ;; =============================================================================
 ;; Parts
 ;; =============================================================================
@@ -140,21 +211,30 @@
   [s]
   {:kind "text" :text (str s)})
 
+(m/=> text-part [:=> [:cat :any] TextPart])
+
 (defn data-part
   "A2A DataPart — structured content."
   [m]
   {:kind "data" :data m})
+
+(m/=> data-part [:=> [:cat :any] DataPart])
 
 (defn part-text
   "The text a Part carries, or nil for a part that carries none."
   [{:keys [kind text]}]
   (when (= "text" kind) text))
 
+;; A foreign part's :text is passed through as it came.
+(m/=> part-text [:=> [:cat [:maybe :map]] :any])
+
 (defn parts-text
   "Concatenate the text of every TextPart in `parts`. Non-text parts contribute
    nothing, so a data-only message yields \"\"."
   [parts]
   (->> parts (keep part-text) (str/join "\n")))
+
+(m/=> parts-text [:=> [:cat [:maybe [:sequential [:maybe :map]]]] :string])
 
 ;; =============================================================================
 ;; Identity
@@ -165,11 +245,17 @@
   []
   (str "msg-" (random-uuid)))
 
+(m/=> new-message-id
+      [:=> [:cat] [:string {:min 40 :max 40 :gen/schema :uuid :gen/fmap #(str "msg-" %)}]])
+
 (defn new-context-id
   "A fresh A2A contextId. Opaque to clients by contract, so the shape is ours:
    a `ctx-` prefix keeps it visually distinct from a messageId in a transcript."
   []
   (str "a2actx-" (random-uuid)))
+
+(m/=> new-context-id
+      [:=> [:cat] [:string {:min 43 :max 43 :gen/schema :uuid :gen/fmap #(str "a2actx-" %)}]])
 
 ;; =============================================================================
 ;; Projection: hive shout <-> A2A Message
@@ -209,6 +295,8 @@
       context-id (assoc :contextId (str context-id))
       (non-blank task) (assoc :taskId (str task)))))
 
+(m/=> hive->a2a [:=> [:cat [:maybe Shout]] Message])
+
 (defn a2a->hive
   "Project an A2A Message back onto the internal shout shape. Inverse of
    `hive->a2a` for every field that round-trips; a Message from a foreign A2A
@@ -230,3 +318,5 @@
       (get m meta-ref)              (assoc :ref (get m meta-ref))
       (get m "hive.swarm/timestamp")  (assoc :timestamp (get m "hive.swarm/timestamp"))
       (get m "hive.swarm/project-id") (assoc :project-id (get m "hive.swarm/project-id")))))
+
+(m/=> a2a->hive [:=> [:cat ForeignMessage] ShoutBack])

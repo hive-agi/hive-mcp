@@ -1,0 +1,39 @@
+{:score-nil 0.5,
+ :top-high [],
+ :warnings-empty nil,
+ :top
+ [{:days-since-read nil,
+   :hash-mismatch? true,
+   :never-analyzed? false,
+   :path "<tmp>/m14-staleness-stale.txt",
+   :score 0.8}],
+ :ctx-known-status
+ [{:hash-mismatch? false,
+   :days-since-read 0,
+   :staleness-score 0.0,
+   :read-count 1,
+   :never-analyzed? false}],
+ :ctx-stale ["<tmp>/m14-staleness-stale.txt"],
+ :warnings
+ [{:message
+   "NOTE: file <tmp>/m14-staleness-stale.txt is stale (staleness: 0.8, never read, hash mismatch). Re-read carefully.",
+   :path "<tmp>/m14-staleness-stale.txt",
+   :staleness 0.8}],
+ :ctx-summary {:total 3, :known 1, :needs-read 1, :stale 1},
+ :score-stale 0.8,
+ :top-map
+ [{:days-since-read nil,
+   :hash-mismatch? true,
+   :never-analyzed? false,
+   :path "<tmp>/m14-staleness-stale.txt",
+   :score 0.8}],
+ :score-fresh 0.0,
+ :ctx-strict {:total 2, :known 1, :needs-read 0, :stale 1},
+ :ctx-known ["<tmp>/m14-staleness-fresh.txt"],
+ :ctx-needs-read ["/m14/staleness/missing.clj"],
+ :warnings-set 1,
+ :report-stale
+ {:score 0.8,
+  :days-since-read nil,
+  :hash-mismatch? true,
+  :never-analyzed? false}}

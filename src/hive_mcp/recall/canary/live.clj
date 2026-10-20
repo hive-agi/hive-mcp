@@ -19,7 +19,8 @@
             [hive-mcp.dns.result :as result]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.recall.canary :as canary]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -135,6 +136,23 @@
                    true)]
     (assoc ids :created (vec (keys created)) :linked? linked?)))
 
+(def FixtureId
+  "A fixture's id: the found entry's :id, or what add-entry! answered (an id,
+   or a queued / failure map); nil when the store refused."
+  [:maybe [:or :string :int :uuid :keyword :map]])
+
+(def FixtureIds
+  "What `ensure-fixtures!` answers."
+  [:map
+   [:anchor FixtureId]
+   [:superseded FixtureId]
+   [:current FixtureId]
+   [:created [:vector :keyword]]
+   [:linked? :boolean]])
+
+;; Every store read and write here is rescued, so the store input is loose.
+(m/=> ensure-fixtures! [:=> [:cat :any] FixtureIds])
+
 ;; =============================================================================
 ;; Probes
 ;; =============================================================================
@@ -157,6 +175,8 @@
                                                  :readings readings})))
       (canary/outcome :dimension-invariant nil "embedding service not available"))))
 
+(m/=> probe-dimension [:=> [:cat] canary/Outcome])
+
 (defn probe-anchor
   "CASE 1 — the anchor's rare tokens must retrieve the anchor, nearest first."
   [st ids]
@@ -177,6 +197,8 @@
                                                   :must-contain [(:anchor ids)]})
                             (canary/rank-fault {:label   :lexical-anchor-ordering
                                                 :results results})))))))
+
+(m/=> probe-anchor [:=> [:cat :any [:maybe :map]] canary/Outcome])
 
 (defn probe-supersession
   "CASE 2 — a retracted entry must not come back from any retrieval path."
@@ -200,6 +222,8 @@
                                                     :superseded-id (:superseded ids)
                                                     :current-id    (:current ids)}))))))
 
+(m/=> probe-supersession [:=> [:cat [:maybe :map]] canary/Outcome])
+
 (defn probe-carto-tag
   "CASE 3 — the code index answers its own match-all tag query."
   [scope]
@@ -216,6 +240,8 @@
                                       "answer above it is vacuous.")}))
     (canary/outcome :carto-tag nil "hive-carto not loaded")))
 
+(m/=> probe-carto-tag [:=> [:cat :any] canary/Outcome])
+
 (defn probe-carto-semantic
   "CASE 4 — the carto vector lane answers a natural-language query."
   [scope]
@@ -231,6 +257,8 @@
                                       "a query drawn from the corpus's own "
                                       "docstrings — the vector side is dead.")}))
     (canary/outcome :carto-semantic nil "hive-carto not loaded")))
+
+(m/=> probe-carto-semantic [:=> [:cat :any] canary/Outcome])
 
 ;; =============================================================================
 ;; The pass
@@ -268,3 +296,25 @@
       (when (seq (:skipped v))
         (log/warn "Recall canary skipped probes:" (:skipped v)))
       v))))
+
+(def RunOpts
+  "Options `run!` reads; nil reads as {}."
+  [:maybe [:map
+           [:scope {:optional true} :any]
+           [:carto? {:optional true} :any]]])
+
+(def RunVerdict
+  "What `run!` answers: a canary verdict, plus :fixtures-created when this
+   pass wrote fixtures. The crash fallback carries no :ran-labels."
+  [:map
+   [:ok? :boolean]
+   [:ran nat-int?]
+   [:passed nat-int?]
+   [:faults [:vector :any]]
+   [:skipped [:vector :map]]
+   [:ran-labels {:optional true} [:set :any]]
+   [:fixtures-created {:optional true} [:vector :keyword]]])
+
+(m/=> run! [:function
+            [:=> [:cat] RunVerdict]
+            [:=> [:cat RunOpts] RunVerdict]])

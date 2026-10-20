@@ -7,7 +7,8 @@
    Pattern: follows protocols/kg.clj (active atom + NoopEditor fallback).
    Unlike kg.clj which throws when no store is set, get-editor returns
    NoopEditor — headless mode is a first-class citizen."
-  (:require [hive-mcp.protocols.registry :as reg]))
+  (:require [hive-mcp.protocols.registry :as reg]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -99,3 +100,19 @@
   "Create a no-op editor fallback."
   []
   (->NoopEditor))
+
+(def Editor
+  "Any value satisfying IEditor; generates NoopEditors."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (->NoopEditor))}
+   #(satisfies? IEditor %)])
+
+;; The input is loose: the slot's :validate assert rejects a non-editor.
+(m/=> set-editor! [:=> [:cat :any] Editor])
+
+(m/=> editor-set? [:=> [:cat] :boolean])
+
+(m/=> get-editor [:=> [:cat] Editor])
+
+(m/=> clear-editor! [:=> [:cat] :nil])
+
+(m/=> noop-editor [:=> [:cat] Editor])

@@ -1,0 +1,32 @@
+{:case-0
+ {:out
+  "Claude Code has not trusted /w (spawn cwd /w/b/c). A claude ling started there opens on the folder-trust dialog and exits when its task is typed. Fix: run `claude` once in /w and choose \"Yes, I trust this folder\", or set projects[\"/w\"].hasTrustDialogAccepted to true in ~/.claude.json. Or spawn with a trusted cwd.",
+  :in ("/w/b/c" "/w")},
+ :case-1
+ {:out
+  "Claude Code has not trusted /w/b (spawn cwd /w/b/c). A claude ling started there opens on the folder-trust dialog and exits when its task is typed. Fix: run `claude` once in /w/b and choose \"Yes, I trust this folder\", or set projects[\"/w/b\"].hasTrustDialogAccepted to true in ~/.claude.json. Or spawn with a trusted cwd.",
+  :in ("/w/b/c" "/w/b")},
+ :case-2
+ {:out
+  "Claude Code has not trusted /w/b (spawn cwd /w/a). A claude ling started there opens on the folder-trust dialog and exits when its task is typed. Fix: run `claude` once in /w/b and choose \"Yes, I trust this folder\", or set projects[\"/w/b\"].hasTrustDialogAccepted to true in ~/.claude.json. Or spawn with a trusted cwd.",
+  :in ("/w/a" "/w/b")},
+ :case-3
+ {:out
+  "Claude Code has not trusted /w/b (spawn cwd /w/a). A claude ling started there opens on the folder-trust dialog and exits when its task is typed. Fix: run `claude` once in /w/b and choose \"Yes, I trust this folder\", or set projects[\"/w/b\"].hasTrustDialogAccepted to true in ~/.claude.json. Or spawn with a trusted cwd.",
+  :in ("/w/a" "/w/b")},
+ :case-4
+ {:out
+  "Claude Code has not trusted /w (spawn cwd /w/a). A claude ling started there opens on the folder-trust dialog and exits when its task is typed. Fix: run `claude` once in /w and choose \"Yes, I trust this folder\", or set projects[\"/w\"].hasTrustDialogAccepted to true in ~/.claude.json. Or spawn with a trusted cwd.",
+  :in ("/w/a" "/w")},
+ :case-5
+ {:out
+  "Claude Code has not trusted /w (spawn cwd /w/a). A claude ling started there opens on the folder-trust dialog and exits when its task is typed. Fix: run `claude` once in /w and choose \"Yes, I trust this folder\", or set projects[\"/w\"].hasTrustDialogAccepted to true in ~/.claude.json. Or spawn with a trusted cwd.",
+  :in ("/w/a" "/w")},
+ :case-6
+ {:out
+  "Claude Code has not trusted /w (spawn cwd /w/a). A claude ling started there opens on the folder-trust dialog and exits when its task is typed. Fix: run `claude` once in /w and choose \"Yes, I trust this folder\", or set projects[\"/w\"].hasTrustDialogAccepted to true in ~/.claude.json. Or spawn with a trusted cwd.",
+  :in ("/w/a" "/w")},
+ :case-7
+ {:out
+  "Claude Code has not trusted /w (spawn cwd /w/b/c). A claude ling started there opens on the folder-trust dialog and exits when its task is typed. Fix: run `claude` once in /w and choose \"Yes, I trust this folder\", or set projects[\"/w\"].hasTrustDialogAccepted to true in ~/.claude.json. Or spawn with a trusted cwd.",
+  :in ("/w/b/c" "/w")}}

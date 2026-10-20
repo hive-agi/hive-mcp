@@ -1,0 +1,15 @@
+[[:slot/ok
+  {:adt/variant :slot/ok,
+   :adt/type :SlotInit,
+   :slot :carto,
+   :backend :datascript}]
+ [:slot/missing-backend
+  {:adt/variant :slot/missing-backend,
+   :adt/type :SlotInit,
+   :slot :carto}]
+ [:slot/factory-failed
+  {:adt/variant :slot/factory-failed,
+   :adt/type :SlotInit,
+   :slot :carto,
+   :backend :datalevin,
+   :reason :factory-returned-nil}]]

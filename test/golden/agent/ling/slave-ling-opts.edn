@@ -1,0 +1,96 @@
+{:case-0
+ {:out
+  {:cwd nil,
+   :presets [],
+   :project-id nil,
+   :spawn-mode :claude,
+   :model "m",
+   :token-budget nil},
+  :in {:slave/preset-order "[\"b\" \"a\"]", :ling/model "m"}},
+ :case-1
+ {:out
+  {:cwd "/w",
+   :presets [],
+   :project-id "p",
+   :spawn-mode :claude,
+   :model nil,
+   :token-budget nil},
+  :in
+  {:slave/presets #{},
+   :slave/preset-order "[1 2]",
+   :slave/cwd "/w",
+   :slave/project-id "p",
+   :ling/spawn-mode :claude}},
+ :case-2
+ {:out
+  {:cwd nil,
+   :presets [],
+   :project-id "p",
+   :spawn-mode :claude,
+   :model nil,
+   :token-budget nil,
+   :turn-budget 10},
+  :in
+  {:slave/preset-order "not edn ((",
+   :slave/project-id "p",
+   :ling/turn-budget 10}},
+ :case-3
+ {:out
+  {:cwd nil,
+   :presets [],
+   :project-id nil,
+   :spawn-mode :claude,
+   :model "m",
+   :token-budget nil,
+   :turn-budget 10},
+  :in #:ling{:model "m", :turn-budget 10}},
+ :case-4
+ {:out
+  {:cwd nil,
+   :presets ["a" "b" "c"],
+   :project-id "p",
+   :spawn-mode :claude,
+   :model nil,
+   :token-budget nil},
+  :in
+  #:slave{:presets #{"a" "b" "c"},
+          :preset-order "[1 2]",
+          :project-id "p"}},
+ :case-5
+ {:out
+  {:cwd nil,
+   :presets [],
+   :project-id "p",
+   :spawn-mode :vterm,
+   :model "m",
+   :token-budget nil,
+   :turn-budget 10},
+  :in
+  {:slave/preset-order "[1 2]",
+   :slave/project-id "p",
+   :ling/spawn-mode :vterm,
+   :ling/model "m",
+   :ling/turn-budget 10}},
+ :case-6
+ {:out
+  {:cwd "/w",
+   :presets [],
+   :project-id nil,
+   :spawn-mode :vterm,
+   :model "m",
+   :token-budget nil,
+   :turn-budget 10},
+  :in
+  {:slave/cwd "/w",
+   :ling/spawn-mode :vterm,
+   :ling/model "m",
+   :ling/turn-budget 10}},
+ :case-7
+ {:out
+  {:cwd "/w",
+   :presets [],
+   :project-id "p",
+   :spawn-mode :claude,
+   :model "m",
+   :token-budget nil},
+  :in {:slave/cwd "/w", :slave/project-id "p", :ling/model "m"}}}

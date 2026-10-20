@@ -1,0 +1,8 @@
+{:start #{:noop :m17-tmux},
+ :replaced :m17-tmux,
+ :after-replace nil,
+ :unregistered nil,
+ :after-unregister #{:m17-tmux},
+ :cleared nil,
+ :after-clear nil,
+ :resolve-with-none nil}

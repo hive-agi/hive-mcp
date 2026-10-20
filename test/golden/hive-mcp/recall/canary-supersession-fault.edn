@@ -1,0 +1,98 @@
+{:case-0
+ {:out
+  {:fault :recall/superseded-returned,
+   :label :supersession,
+   :diagnosis
+   "a retrieval path returned an entry that a newer entry supersedes. Wrongness is not a ranking preference — suppression must happen at the exit of every path.",
+   :superseded-id "e4",
+   :returned-ids ["e4" "e1" "e3"]},
+  :in
+  ({:label :supersession,
+    :results
+    [{:id "e1", :distance 2.0}
+     {:id "e3", :distance 1.0}
+     {:id "e4"}
+     {:id "e3"}],
+    :superseded-id "e4",
+    :current-id nil})},
+ :case-1
+ {:out nil,
+  :in
+  ({:label :supersession,
+    :results [{:id "e4", :distance nil} {:id "e3"}],
+    :superseded-id "e2",
+    :current-id nil})},
+ :case-2
+ {:out nil,
+  :in
+  ({:label :supersession,
+    :results
+    [{:id "e3", :distance 2.0}
+     {:id "e3", :distance nil}
+     {:id "e4", :distance nil}],
+    :superseded-id "e1",
+    :current-id "e4"})},
+ :case-3
+ {:out
+  {:fault :recall/current-missing,
+   :label :supersession,
+   :diagnosis
+   "the superseding entry did not come back either, so the clean result proves nothing about suppression — the lane itself returned nothing relevant.",
+   :current-id "e2",
+   :returned-ids []},
+  :in
+  ({:label :supersession,
+    :results [],
+    :superseded-id "e2",
+    :current-id "e2"})},
+ :case-4
+ {:out
+  {:fault :recall/superseded-returned,
+   :label :supersession,
+   :diagnosis
+   "a retrieval path returned an entry that a newer entry supersedes. Wrongness is not a ranking preference — suppression must happen at the exit of every path.",
+   :superseded-id "e2",
+   :returned-ids ["e2" "e4" "e1"]},
+  :in
+  ({:label :supersession,
+    :results
+    [{:id "e2"}
+     {:id "e1", :distance 2.0}
+     {:id "e4", :distance 1.5}
+     {:id "e1"}],
+    :superseded-id "e2",
+    :current-id "e1"})},
+ :case-5
+ {:out
+  {:fault :recall/current-missing,
+   :label :supersession,
+   :diagnosis
+   "the superseding entry did not come back either, so the clean result proves nothing about suppression — the lane itself returned nothing relevant.",
+   :current-id "e3",
+   :returned-ids ["e2" "e1"]},
+  :in
+  ({:label :supersession,
+    :results
+    [{:id "e2"} {:id "e2", :distance nil} {:id "e1", :distance nil}],
+    :superseded-id "e4",
+    :current-id "e3"})},
+ :case-6
+ {:out
+  {:fault :recall/current-missing,
+   :label :supersession,
+   :diagnosis
+   "the superseding entry did not come back either, so the clean result proves nothing about suppression — the lane itself returned nothing relevant.",
+   :current-id "e3",
+   :returned-ids ["e4"]},
+  :in
+  ({:label :supersession,
+    :results [{:id "e4"}],
+    :superseded-id "e2",
+    :current-id "e3"})},
+ :case-7
+ {:out nil,
+  :in
+  ({:label :supersession,
+    :results [],
+    :superseded-id "e3",
+    :current-id nil})}}

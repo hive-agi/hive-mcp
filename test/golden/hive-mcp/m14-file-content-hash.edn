@@ -1,0 +1,11 @@
+{:cleared {},
+ :existing
+ {:hash
+  "f0591194a23a8bb06fb90340d2395da36b5309cf0ad1ead351f291ebfaefef12",
+  :exists? true},
+ :other
+ {:hash
+  "db3fe464d79324144e7fb7ce6fe28e05d581eb69dbcd0ca18f520aec3ef663e3",
+  :exists? true},
+ :missing {:exists? false},
+ :nil-path {:exists? false}}

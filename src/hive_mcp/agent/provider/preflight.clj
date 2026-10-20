@@ -13,7 +13,8 @@
             [clojure.data.json :as json]
             [hive-mcp.agent.provider :as provider]
             [taoensso.timbre :as log]
-            [hive-dsl.result :as r]))
+            [hive-dsl.result :as r]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -80,3 +81,7 @@
   (when provider
     (or (provider/missing-secret provider)
         (probe-refusal provider))))
+
+(m/=> refusal
+      [:=> [:cat [:maybe :keyword]]
+       [:maybe [:map [:error :keyword] [:provider :keyword] [:fix :string]]]])

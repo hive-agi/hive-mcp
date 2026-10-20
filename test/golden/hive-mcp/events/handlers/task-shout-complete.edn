@@ -1,0 +1,132 @@
+{:case-0
+ {:out
+  {:shout
+   {:agent-id "THA9",
+    :event-type :completed,
+    :message "Task completed: q5y0",
+    :data
+    {:task-id "q5y0",
+     :title "q5y0",
+     :agent-id "THA9",
+     :project "0SLtyVN5"}}},
+  :in
+  ({}
+   [:task/shout-complete
+    {:task-id "q5y0", :agent-id "THA9", :project "0SLtyVN5"}])},
+ :case-1
+ {:out
+  {:shout
+   {:agent-id "k367OXlr2W",
+    :event-type :completed,
+    :message "Task completed: E",
+    :data
+    {:task-id "7R28yn",
+     :title "E",
+     :agent-id "k367OXlr2W",
+     :project "59sD9j"}}},
+  :in
+  ({}
+   [:task/shout-complete
+    {:task-id "7R28yn",
+     :title "E",
+     :agent-id "k367OXlr2W",
+     :project "59sD9j"}])},
+ :case-2
+ {:out
+  {:shout
+   {:agent-id "XJn2",
+    :event-type :completed,
+    :message "Task completed: 8Uo6NwQWfQ",
+    :data
+    {:task-id "w37",
+     :title "8Uo6NwQWfQ",
+     :agent-id "XJn2",
+     :project "55QK4IL7fs"}}},
+  :in
+  ({}
+   [:task/shout-complete
+    {:task-id "w37",
+     :title "8Uo6NwQWfQ",
+     :agent-id "XJn2",
+     :project "55QK4IL7fs"}])},
+ :case-3
+ {:out
+  {:shout
+   {:agent-id "OVP",
+    :event-type :completed,
+    :message "Task completed: 769zs",
+    :data
+    {:task-id "769zs",
+     :title "769zs",
+     :agent-id "OVP",
+     :project "B0mu"}}},
+  :in
+  ({}
+   [:task/shout-complete
+    {:task-id "769zs", :agent-id "OVP", :project "B0mu"}])},
+ :case-4
+ {:out
+  {:shout
+   {:agent-id "R4",
+    :event-type :completed,
+    :message "Task completed: H89Lk",
+    :data
+    {:task-id "Pf", :title "H89Lk", :agent-id "R4", :project "CiMI"}}},
+  :in
+  ({}
+   [:task/shout-complete
+    {:task-id "Pf",
+     :title "H89Lk",
+     :agent-id "R4",
+     :project "CiMI"}])},
+ :case-5
+ {:out
+  {:shout
+   {:agent-id "3e6NP4kd8g",
+    :event-type :completed,
+    :message "Task completed: nheBCB27X",
+    :data
+    {:task-id "S93Yh",
+     :title "nheBCB27X",
+     :agent-id "3e6NP4kd8g",
+     :project "B32bEp1"}}},
+  :in
+  ({}
+   [:task/shout-complete
+    {:task-id "S93Yh",
+     :title "nheBCB27X",
+     :agent-id "3e6NP4kd8g",
+     :project "B32bEp1"}])},
+ :case-6
+ {:out
+  {:shout
+   {:agent-id "qDTHJnX5",
+    :event-type :completed,
+    :message "Task completed: Bfv3hFEH",
+    :data
+    {:task-id "Bfv3hFEH",
+     :title "Bfv3hFEH",
+     :agent-id "qDTHJnX5",
+     :project "h09mV1"}}},
+  :in
+  ({}
+   [:task/shout-complete
+    {:task-id "Bfv3hFEH", :agent-id "qDTHJnX5", :project "h09mV1"}])},
+ :case-7
+ {:out
+  {:shout
+   {:agent-id "2P4",
+    :event-type :completed,
+    :message "Task completed: y5e20c3K",
+    :data
+    {:task-id "hLM4Q82",
+     :title "y5e20c3K",
+     :agent-id "2P4",
+     :project "GKef7D7fge"}}},
+  :in
+  ({}
+   [:task/shout-complete
+    {:task-id "hLM4Q82",
+     :title "y5e20c3K",
+     :agent-id "2P4",
+     :project "GKef7D7fge"}])}}

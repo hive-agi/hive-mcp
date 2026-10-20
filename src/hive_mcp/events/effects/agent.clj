@@ -17,7 +17,8 @@
    (agent-effects/register-agent-effects!)
    ```"
 
-  (:require [hive-mcp.events.core :as ev]
+  (:require [malli.core :as m]
+            [hive-mcp.events.core :as ev]
             [hive-mcp.events.handlers.saa-fx :as saa-fx]
             [hive-mcp.swarm.coordinator :as coordinator]
             [hive-spi.editor.services :as svc]
@@ -106,3 +107,5 @@
   ;; SAA FX (all SAA effects delegated to saa_fx.clj for SRP compliance)
   (saa-fx/register-saa-fx!)
   (log/info "[hive-events.agent] Agent effects registered: :dispatch-task :swarm-send-prompt + SAA FX (4)"))
+
+(m/=> register-agent-effects! [:=> [:cat] :nil])

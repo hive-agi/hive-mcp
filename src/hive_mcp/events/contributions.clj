@@ -23,7 +23,8 @@
    at boot rather than required. An entry that does not resolve is ABSENT: the
    domain is not in this build, its events drop out of `declared-events`, and
    `verify-handlers!` stops demanding handlers nobody promised."
-  (:require [hive-mcp.spi.contributions :as contrib]))
+  (:require [malli.core :as m]
+            [hive-mcp.spi.contributions :as contrib]))
 
 (def manifest-resource
   "Classpath resource naming the event domains still shipped inside core."
@@ -42,15 +43,21 @@
   {:pre [(contains? kinds kind) (ifn? (:install! entry))]}
   (contrib/contribute! kind key (merge {:events #{}} entry)))
 
+(m/=> contribute! [:=> [:cat :keyword :keyword [:map [:install! ifn?] [:events {:optional true} [:set :keyword]]]] :keyword])
+
 (defn forget!
   "Drop KEY from KIND. Returns nil."
   [kind key]
   (contrib/forget! kind key))
 
+(m/=> forget! [:=> [:cat :keyword :keyword] :nil])
+
 (defn contributed
   "Everything contributed for KIND, as {key entry}."
   [kind]
   (contrib/contributed kind))
+
+(m/=> contributed [:=> [:cat :keyword] [:map-of :keyword :map]])
 
 (defn declared-events
   "Every event id the contributed HANDLERS say they register. The union is
@@ -58,10 +65,14 @@
   []
   (into #{} (mapcat :events) (vals (contributed :handlers))))
 
+(m/=> declared-events [:=> [:cat] [:set :keyword]])
+
 (defn read-manifest
   "The in-core manifest as data: {:handlers [entry ...] :effects [entry ...]}."
   []
   (contrib/read-manifest manifest-resource))
+
+(m/=> read-manifest [:=> [:cat] [:map [:handlers [:vector :map]] [:effects [:vector :map]]]])
 
 (defn load-manifest!
   "Contribute every in-core event domain the manifest names. Returns
@@ -69,11 +80,15 @@
   []
   (contrib/load-manifest! manifest-resource))
 
+(m/=> load-manifest! [:=> [:cat] :map])
+
 (defn register-all!
   "Call every contributed :install! for KIND. Returns
    {:ran [key ...] :failed {key throwable}}."
   [kind]
   (contrib/register-all! kind))
+
+(m/=> register-all! [:=> [:cat :keyword] :map])
 
 (defn reset!!
   "Forget every event contribution. For tests; the live boot path re-runs
@@ -81,3 +96,5 @@
   []
   (run! contrib/reset-kind! kinds)
   nil)
+
+(m/=> reset!! [:=> [:cat] :nil])

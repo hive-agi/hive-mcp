@@ -7,7 +7,9 @@
 
   (:require [hive-mcp.events.core :as ev]
             [hive-mcp.events.interceptors :as interceptors]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [malli.core :as m]
+            [hive-mcp.events.handlers.schema :as hs]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -58,6 +60,30 @@
    "plan"       :plans
    "knowledge"  :knowledge})
 
+(def ^:private consumer-buckets
+  "The per-type bucket keys the wrap-notify consumer reads."
+  [:decisions :conventions :notes :principles :axioms :snippets :plans :knowledge :other])
+
+(def ^:private WrapSummary
+  "What `project-wrap-stats` reads: a HarvestSummary (:created-by-type,
+   :created-count, :kg-edge-count, :kanban-closed-transitions) or a stats map
+   already in the consumer vocabulary (:decisions, :conventions, ...). Counts
+   only, every key optional; any other key is ignored."
+  (-> [:map [:created-by-type {:optional true} [:maybe [:map-of :any number?]]]]
+      (into (map (fn [k] [k {:optional true} number?]))
+            (conj consumer-buckets :accomplishments))
+      (into (map (fn [k] [k {:optional true} [:maybe number?]]))
+            [:kanban-closures :kanban-closed-transitions :kg-edges :kg-edge-count
+             :memories-created :created-count])))
+
+(def ^:private WrapStats
+  "The consumer vocabulary `format-bucket-message` reads: every bucket count,
+   the kanban/KG/total deltas, and :accomplishments when the producer set it."
+  (-> [:map]
+      (into (map (fn [k] [k number?]))
+            (into consumer-buckets [:kanban-closures :kg-edges :memories-created]))
+      (conj [:accomplishments {:optional true} number?])))
+
 (defn project-wrap-stats
   "Reconcile a harvest `:summary` map (producer) into the wrap-notify consumer
    vocabulary read by `format-bucket-message`.
@@ -93,6 +119,8 @@
      {:kanban-closures  (or (:kanban-closures m) (:kanban-closed-transitions m) 0)
       :kg-edges         (or (:kg-edges m) (:kg-edge-count m) 0)
       :memories-created (or (:memories-created m) (:created-count m) 0)})))
+
+(m/=> project-wrap-stats [:=> [:cat [:maybe WrapSummary]] WrapStats])
 
 (defn- format-bucket-message
   "Format a session-wrap shout message from a stats-like map.
@@ -234,9 +262,33 @@
     ;; Merge all effects
     (merge base-effects summary-effect notify-effect shout-effect)))
 
+(m/=> handle-crystal-wrap-request
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:memory-write [:map
+                        [:type [:= "note"]]
+                        [:content :string]
+                        [:tags [:vector :string]]
+                        [:duration [:= "short"]]
+                        [:directory :any]]]
+        [:wrap-notify [:map
+                       [:agent-id :any]
+                       [:session-id :string]
+                       [:stats [:map-of :keyword [:int {:min 0}]]]]]
+        [:shout [:map
+                 [:agent-id :any]
+                 [:event-type [:= :completed]]
+                 [:message :string]]]]])
+
 ;; =============================================================================
 ;; Handler: :crystal/wrap-notify
 ;; =============================================================================
+
+(def ^:private NotifiedStats
+  "The projected stats a wrap notification carries: `WrapStats` plus the
+   :wrapped disposition count."
+  (conj WrapStats [:wrapped [:int {:min 0}]]))
 
 (defn handle-crystal-wrap-notify
   "Handler for :crystal/wrap-notify events.
@@ -283,6 +335,22 @@
                     :stats projected
                     :message message}}}))
 
+(m/=> handle-crystal-wrap-notify
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:wrap-notify [:map
+                       [:agent-id :any] [:session-id :any] [:project-id :any]
+                       [:created-ids :any]
+                       [:stats NotifiedStats]]]
+        [:shout [:map
+                 [:agent-id :any]
+                 [:event-type [:= :wrap_notify]]
+                 [:data [:map
+                         [:session-id :any] [:project-id :any]
+                         [:stats NotifiedStats]
+                         [:message :string]]]]]]])
+
 ;; =============================================================================
 ;; Registration
 ;; =============================================================================
@@ -297,3 +365,5 @@
   (ev/reg-event :crystal/wrap-notify
                 [interceptors/debug]
                 handle-crystal-wrap-notify))
+
+(m/=> register-handlers! [:=> [:cat] hs/HandlerRegistry])

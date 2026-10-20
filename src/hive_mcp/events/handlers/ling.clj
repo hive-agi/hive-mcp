@@ -7,7 +7,9 @@
    - :ling/ready-for-wrap - Auto-wrap hook on ling completion"
 
   (:require [hive-mcp.events.core :as ev]
-            [hive-mcp.events.interceptors :as interceptors]))
+            [hive-mcp.events.interceptors :as interceptors]
+            [malli.core :as m]
+            [hive-mcp.events.handlers.schema :as hs]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -47,6 +49,20 @@
                     :slave/presets (vec (or presets []))
                     :slave/cwd cwd}]}))
 
+(m/=> handle-ling-started
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:ds-transact [:vector [:map
+                                [:slave/id :any]
+                                [:slave/name :any]
+                                [:slave/status [:= :starting]]
+                                [:slave/depth :any]
+                                [:slave/tasks-completed [:= 0]]
+                                [:slave/created-at inst?]
+                                [:slave/presets [:vector :any]]
+                                [:slave/cwd :any]]]]]])
+
 ;; =============================================================================
 ;; Handler: :ling/completed (EVENTS-03)
 ;; =============================================================================
@@ -78,6 +94,13 @@
                                 :reason (or reason "ling-completed")}]}
       {:log {:level :warn
              :message "Ling completed event with no slave-id or agent-id — dropped"}})))
+
+(m/=> handle-ling-completed
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:dispatch {:optional true}
+         [:tuple [:= :session/end] [:map [:slave-id :any] [:reason :any]]]]]])
 
 ;; =============================================================================
 ;; Handler: :ling/ready-for-wrap
@@ -111,6 +134,18 @@
       {:log {:level :warn
              :message "Ready-for-wrap event with no slave-id or agent-id — dropped"}})))
 
+(m/=> handle-ling-ready-for-wrap
+      [:=> hs/HandlerArgs
+       [:map
+        [:log hs/LogEffect]
+        [:dispatch {:optional true}
+         [:tuple [:= :session/wrap]
+          [:map
+           [:session-id :any]
+           [:slave-id :any]
+           [:triggered-by [:= "auto-wrap"]]
+           [:reason :any]]]]]])
+
 ;; =============================================================================
 ;; Registration
 ;; =============================================================================
@@ -129,3 +164,5 @@
   (ev/reg-event :ling/ready-for-wrap
                 [interceptors/debug]
                 handle-ling-ready-for-wrap))
+
+(m/=> register-handlers! [:=> [:cat] hs/HandlerRegistry])

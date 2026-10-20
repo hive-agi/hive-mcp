@@ -18,7 +18,8 @@
             [taoensso.timbre :as log]
             [hive-mcp.extensions.reactive :as reactive]
             [hive-mcp.extensions.runtime :as runtime]
-            [hive-mcp.server.log-sink :as log-sink]))
+            [hive-mcp.server.log-sink :as log-sink]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -225,6 +226,13 @@
      :mounted    (vec (sort mounted))
      :failed     (vec (sort (remove mounted discovered)))}))
 
+(m/=> roster-facts
+      [:=> [:cat [:maybe [:sequential :map]] [:maybe :map] [:maybe [:set :any]]]
+       [:map
+        [:discovered [:vector :any]]
+        [:mounted [:vector :any]]
+        [:failed [:vector :any]]]])
+
 (defn- roster-expectations
   "Operator expectations from `:services :addons`:
      :expected-min n            floor on discovered manifests
@@ -259,6 +267,8 @@
       :warn  (log/warn "Addon mount lifecycle" payload)
       :error (log/error "Addon mount lifecycle" payload)
       (log/info "Addon mount lifecycle" payload))))
+
+(m/=> mount-event-logger [:=> [:cat [:maybe :map]] :nil])
 
 (defn- install-license-gate!
   "Install the gate mount-compose consults for :proprietary specs.
@@ -316,6 +326,8 @@
                 nil)))
         (do (log/warn "Addon lifecycle enabled but hive-mcp.extensions.lifecycle is not resolvable")
             nil)))))
+
+(m/=> load-extensions-via-lifecycle! [:=> [:cat] [:maybe :map]])
 
 (defn load-extensions-via-mount!
   "Mount manifest-discovered addons through hive-addon.mount.compose (MQ-ADOPT).
@@ -376,6 +388,8 @@
               nil))
         (do (log/debug "Mount-compose enabled but hive-addon.mount.compose not on classpath")
             nil)))))
+
+(m/=> load-extensions-via-mount! [:=> [:cat] [:maybe :map]])
 
 (defn load-extensions!
   "Resolve and register all available extensions.
@@ -519,3 +533,14 @@
                :classpath-manifests (count ordered)
                :mount-compose (if mounted? (count (get-in mount-result [:report :order])) 0)
                :manifest-fallback @manifest-init-count}}))
+
+(m/=> load-extensions!
+      [:=> [:cat]
+       [:map
+        [:registered [:vector :any]]
+        [:total [:int {:min 0}]]
+        [:sources [:map
+                   [:initializers number?]
+                   [:classpath-manifests [:int {:min 0}]]
+                   [:mount-compose [:int {:min 0}]]
+                   [:manifest-fallback [:int {:min 0}]]]]]])

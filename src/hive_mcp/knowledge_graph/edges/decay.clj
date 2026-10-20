@@ -8,7 +8,9 @@
             [hive-mcp.knowledge-graph.edges.stats :as stats]
             [taoensso.timbre :as log]
             [hive-mcp.knowledge-graph.edges.queries :as queries]
-            [hive-mcp.knowledge-graph.edge-cycle :as edge-cycle]))
+            [hive-mcp.knowledge-graph.edge-cycle :as edge-cycle]
+            [malli.core :as m]
+            [hive-mcp.knowledge-graph.edges.schema :as es]))
 
 (def ^:const co-access-decay-rate
   "Confidence decay per wrap cycle for co-access edges.
@@ -164,3 +166,12 @@
                           (log/info "Edge decay:" (:decayed tally) "decayed,"
                                     (:pruned tally) "pruned"
                                     (when created-by (str " by:" created-by)))))}))))
+
+;; the edge predicates read their keys with defaults, so any map (or nil) is
+;; an edge to them
+(m/=> edge-stale? [:=> [:cat [:maybe :map] number? number?] :boolean])
+(m/=> decay-rate-for-edge [:=> [:cat [:maybe :map]] [:enum semantic-decay-rate co-access-decay-rate]])
+(m/=> remove-edge! [:=> [:cat :string] :boolean])
+(m/=> decay-step! [:=> [:cat number? number? [:maybe :map]] [:enum :fresh :decayed :pruned]])
+(m/=> last-verified-millis [:=> [:cat [:maybe :map]] :int])
+(m/=> decay-unverified-edges! [:=> [:cat [:? es/DecayOpts]] es/DecayTally])

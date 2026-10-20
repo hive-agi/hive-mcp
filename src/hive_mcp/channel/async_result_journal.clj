@@ -33,10 +33,25 @@
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+;; Value schemas for the contracts in this namespace (and async-result's).
+
+(def Buffer
+  "One caller's buffer: its entries and the cursor past the delivered ones."
+  [:map [:entries [:vector [:maybe :map]]] [:cursor [:int {:min 0}]]])
+
+(def Buffers
+  "Buffers by caller key."
+  [:map-of :any Buffer])
+
+(def JournalRecord
+  "One journal line: an :op and whatever that op records."
+  [:map [:op :any]])
 
 (defn default-path
   "Where the journal lives when nothing overrides it.
@@ -47,11 +62,15 @@
   (str (System/getProperty "user.home")
        "/.config/hive-mcp/data/async-result/journal.edn"))
 
+(m/=> default-path [:=> [:cat] [:string {:min 1}]])
+
 (def ^:dynamic *journal-path*
   "The journal file. Rebound by tests; there is one per coordinator process."
   nil)
 
 (defn journal-path [] (or *journal-path* (default-path)))
+
+(m/=> journal-path [:=> [:cat] [:string {:min 1}]])
 
 (defonce ^:private degraded
   ;; Set when an append fails. Durability that has silently stopped working
@@ -67,6 +86,14 @@
      :exists? (.exists f)
      :size-bytes (if (.exists f) (.length f) 0)
      :degraded (deref degraded)}))
+
+(m/=> status
+      [:=> [:cat]
+       [:map
+        [:path :string]
+        [:exists? :boolean]
+        [:size-bytes [:int {:min 0}]]
+        [:degraded [:maybe :string]]]])
 
 ;; ---------------------------------------------------------------- write
 
@@ -94,17 +121,24 @@
       (reset! degraded (str (.getName (class t)) ": " (.getMessage t)))
       false)))
 
+;; Never throws: false is the answer when the write did not reach the file.
+(m/=> append! [:=> [:cat JournalRecord] :boolean])
+
 (defn record-submitted!
   "Journal that `task-id` was accepted for `caller` and acknowledged."
   [caller task-id tool]
   (append! {:op :submitted :caller caller :task-id task-id :tool tool
             :at (System/currentTimeMillis)}))
 
+(m/=> record-submitted! [:=> [:cat :any :any :any] :boolean])
+
 (defn record-result!
   "Journal the result now owed to `caller`."
   [caller task-id entry]
   (append! {:op :result :caller caller :task-id task-id :entry entry
             :at (System/currentTimeMillis)}))
+
+(m/=> record-result! [:=> [:cat :any :any [:maybe :map]] :boolean])
 
 (defn record-delivered!
   "Journal that `caller` has been handed `task-ids`, so replay skips them."
@@ -113,6 +147,8 @@
     (append! {:op :delivered :caller caller :task-ids (vec task-ids)
               :at (System/currentTimeMillis)})
     true))
+
+(m/=> record-delivered! [:=> [:cat :any [:maybe [:sequential :any]]] :boolean])
 
 ;; ---------------------------------------------------------------- read
 
@@ -147,6 +183,8 @@
         (catch Throwable t
           (log/error t "async-result journal: unreadable; replay will restore nothing")
           [])))))
+
+(m/=> read-records [:=> [:cat] [:vector JournalRecord]])
 
 ;; ---------------------------------------------------------------- replay
 
@@ -191,10 +229,17 @@
      {}
      order)))
 
+;; Every restored buffer is undelivered, so its cursor is 0.
+(m/=> replay
+      [:=> [:cat [:sequential JournalRecord]]
+       [:map-of :any [:map [:entries [:vector [:maybe :map]]] [:cursor [:= 0]]]]])
+
 (defn restore
   "The buffers the journal on disk implies. Never throws."
   []
   (replay (read-records)))
+
+(m/=> restore [:=> [:cat] Buffers])
 
 ;; ---------------------------------------------------------------- compact
 
@@ -226,3 +271,6 @@
     (catch Throwable t
       (log/error t "async-result journal: compaction failed; the journal keeps growing")
       nil)))
+
+;; The records written, or nil when compaction failed.
+(m/=> compact! [:=> [:cat [:maybe Buffers]] [:maybe [:int {:min 0}]]])

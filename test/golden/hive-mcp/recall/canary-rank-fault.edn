@@ -1,0 +1,71 @@
+{:case-0
+ {:out
+  {:fault :recall/rank-inverted,
+   :label :carto-semantic,
+   :diagnosis
+   "results are not ordered nearest-first. Either the sort reversed, or a similarity (higher = better) is being carried in the :distance field (lower = better).",
+   :distances [2.0 0.0]},
+  :in
+  ({:label :carto-semantic,
+    :results [{:id "e4", :distance 2.0} {:id "e4", :distance 0.0}]})},
+ :case-1
+ {:out nil,
+  :in
+  ({:label :carto-semantic,
+    :results
+    [{:id "e4", :distance nil}
+     {:id "e1", :distance 0.75}
+     {:id "e4", :distance nil}
+     {:id "e1", :distance nil}]})},
+ :case-2
+ {:out
+  {:fault :recall/rank-inverted,
+   :label :lexical-anchor,
+   :diagnosis
+   "results are not ordered nearest-first. Either the sort reversed, or a similarity (higher = better) is being carried in the :distance field (lower = better).",
+   :distances [1.0 0.5]},
+  :in
+  ({:label :lexical-anchor,
+    :results
+    [{:id "e2", :distance nil}
+     {:id "e3", :distance 1.0}
+     {:id "e4", :distance 0.5}]})},
+ :case-3
+ {:out nil,
+  :in
+  ({:label :supersession,
+    :results
+    [{:id "e4", :distance 0.75}
+     {:id "e3", :distance nil}
+     {:id "e3", :distance 0.75}]})},
+ :case-4
+ {:out
+  {:fault :recall/rank-inverted,
+   :label :lexical-anchor,
+   :diagnosis
+   "results are not ordered nearest-first. Either the sort reversed, or a similarity (higher = better) is being carried in the :distance field (lower = better).",
+   :distances [0.875 -0.0 1.0]},
+  :in
+  ({:label :lexical-anchor,
+    :results
+    [{:id "e4", :distance 0.875}
+     {:id "e4", :distance -0.0}
+     {:id "e1", :distance 1.0}]})},
+ :case-5
+ {:out nil,
+  :in
+  ({:label :lexical-anchor,
+    :results
+    [{:id "e2", :distance nil}
+     {:id "e3", :distance nil}
+     {:id "e2", :distance 0.5}]})},
+ :case-6
+ {:out nil,
+  :in
+  ({:label :supersession,
+    :results [{:id "e4", :distance 0.75} {:id "e1", :distance nil}]})},
+ :case-7
+ {:out nil,
+  :in
+  ({:label :carto-semantic,
+    :results [{:id "e4", :distance nil} {:id "e4", :distance nil}]})}}

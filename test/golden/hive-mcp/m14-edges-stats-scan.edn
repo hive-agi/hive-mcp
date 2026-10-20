@@ -1,0 +1,10 @@
+{:first-read
+ {:total-edges 4,
+  :by-relation {:implements 1, :refines 1, :relates 1, :depends-on 1},
+  :by-scope {"s2" 1, "s1" 1}},
+ :refresh nil,
+ :register nil,
+ :after-event
+ {:total-edges 5,
+  :by-relation {:implements 2, :refines 1, :relates 1, :depends-on 1},
+  :by-scope {"s2" 1, "s1" 2}}}

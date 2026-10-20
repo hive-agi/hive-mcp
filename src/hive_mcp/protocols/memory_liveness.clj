@@ -10,7 +10,8 @@
 
    Stores that don't extend it fall through to a pass-through path in
    `hive-mcp.vectordb.resilience` (catch, log, re-raise; no kick/retry)."
-  (:require [hive-spi.memory.ports :as ports]))
+  (:require [hive-spi.memory.ports :as ports]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -33,3 +34,5 @@
   "Check if the store extends the resilience seam."
   [store]
   (satisfies? ports/IMemoryStoreLiveness store))
+
+(m/=> liveness-store? [:=> [:cat :any] :boolean])

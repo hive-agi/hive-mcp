@@ -17,6 +17,11 @@
 ;;; Registry overlay
 ;;; ---------------------------------------------------------------------------
 
+;; Contracts are written `malli.core/=>`, fully qualified, because this stratum
+;; may require only the domain layer and clojure.string
+;; (`hive-mcp.agent.provider.strata-test`). malli is loaded by the domain layer
+;; it requires, and the value schemas live there too.
+
 (defn overlay
   "Overlay a config `:llm-providers` map onto `seed`, returning the effective
    registry.
@@ -38,6 +43,8 @@
                seed
                config-providers)
     seed))
+
+(malli.core/=> overlay [:=> [:cat model/Registry :any] model/Registry])
 
 ;;; ---------------------------------------------------------------------------
 ;;; Discovery order
@@ -67,6 +74,11 @@
                  (filter compat?)
                  (sort-by name))))))
 
+;; `configured` replaces the order only when it is sequential, so any value is
+;; accepted there.
+(malli.core/=> discovery-order
+               [:=> [:cat model/Registry [:maybe [:sequential :keyword]] :any] [:vector :keyword]])
+
 (defn available
   "Providers in `order` that can actually be called: an entry whose :secret-key
    is nil needs no auth, otherwise its key must be in `present-secret-keys`."
@@ -77,11 +89,18 @@
                  (or (nil? secret-key) (contains? present? secret-key))))
              order)))
 
+(malli.core/=> available
+               [:=> [:cat model/Registry [:maybe [:sequential :keyword]] model/SecretKeys]
+                [:vector :keyword]])
+
 (defn secret-keys-of
   "The secret keys `order` would consult, in order, ready for a collector to
    resolve. nil entries (no auth needed) are dropped."
   [registry order]
   (into [] (comp (map #(:secret-key (get registry %))) (remove nil?)) order))
+
+(malli.core/=> secret-keys-of
+               [:=> [:cat model/Registry [:maybe [:sequential :keyword]]] [:vector :keyword]])
 
 ;;; ---------------------------------------------------------------------------
 ;;; Validation
@@ -97,6 +116,9 @@
      :available (vec (keys registry))
      :fix       "Use one of the available providers, or add via: hive config set llm-providers.<name>.api-url <url>"}))
 
+(malli.core/=> validate-provider
+               [:=> [:cat model/Registry :any] [:maybe model/UnknownProvider]])
+
 (defn validate-model
   "Validate a model against a provider's :available-models, when it declares
    any. nil on success, error map on failure."
@@ -110,6 +132,9 @@
        :fix       (str "Use one of the available models for " (name provider)
                        ", or add via: hive config set llm-providers." (name provider)
                        ".available-models [...]")})))
+
+(malli.core/=> validate-model
+               [:=> [:cat model/Registry [:maybe :keyword] :any] [:maybe model/UnknownModel]])
 
 (defn model-refusal
   "nil when `provider`'s entry in `registry` permits `model`, else an error map
@@ -135,6 +160,9 @@
                         "run on their subscription runtimes), or name "
                         "llm-providers." (name provider) ".deny-models [...]")}))))
 
+(malli.core/=> model-refusal
+               [:=> [:cat model/Registry [:maybe :keyword] :any] [:maybe model/ModelDenied]])
+
 (defn unresolved-routing
   "nil when `resolved` names both a provider and a model, else an error map
    naming the config keys that would supply the missing value.
@@ -155,6 +183,12 @@
                          ", e.g. hive config set agent-defaults." type-key
                          " '{:provider :venice :model \"<model-id>\"}'")})))
 
+(malli.core/=> unresolved-routing
+               [:=> [:cat [:maybe [:or :keyword :string]]
+                     [:maybe [:map [:provider {:optional true} [:maybe :keyword]]
+                              [:model {:optional true} [:maybe :string]]]]]
+                [:maybe model/UnresolvedRouting]])
+
 ;;; ---------------------------------------------------------------------------
 ;;; Model-name policy
 ;;; ---------------------------------------------------------------------------
@@ -173,6 +207,10 @@
         [nil model]))
     [nil model]))
 
+(malli.core/=> parse-model-prefix
+               [:=> [:cat model/Registry [:maybe :string]]
+                [:tuple [:maybe :keyword] [:maybe :string]]])
+
 (defn claude-model-name?
   "True if the model string identifies a native Anthropic Claude model.
    Routes directly through Anthropic OAuth/API (bypassing OpenRouter relay).
@@ -184,6 +222,9 @@
                   (subs model (count "anthropic/"))
                   model)]
       (boolean (re-find #"^claude-" clean)))))
+
+;; nil, not false, for a non-string model.
+(malli.core/=> claude-model-name? [:=> [:cat :any] [:maybe :boolean]])
 
 (def subscription-routes
   "Where each subscription-only model family runs, first match wins.
@@ -235,6 +276,11 @@
   (when (string? model)
     (some #(route-match registry % model) subscription-routes)))
 
+;; A bare alias takes the provider's :default-model, which may be unset.
+(malli.core/=> subscription-route
+               [:=> [:cat model/Registry :any]
+                [:maybe [:map [:provider :keyword] [:model [:maybe :string]]]]])
+
 ;;; ---------------------------------------------------------------------------
 ;;; Spawn refusals: a pair no client can serve, a credential that cannot work
 ;;; ---------------------------------------------------------------------------
@@ -261,6 +307,9 @@
                       "that serves " model ": the provider param, or a "
                       "'<provider>:<model>' prefix")})))
 
+(malli.core/=> routing-refusal
+               [:=> [:cat model/Registry [:maybe :keyword] :any] [:maybe model/ModelUnroutable]])
+
 (defn missing-secret
   "nil when `provider` needs no secret or `present-secret-keys` holds its
    :secret-key, else an error map. A dispatch-routed provider authenticates in
@@ -275,6 +324,10 @@
        :secret-key secret-key
        :fix        (str "Configure the secret " (name secret-key)
                         ", or name another provider for this spawn")})))
+
+(malli.core/=> missing-secret
+               [:=> [:cat model/Registry [:maybe :keyword] model/SecretKeys]
+                [:maybe model/SecretMissing]])
 
 (defn credential-refusal
   "nil when a credential probe of `provider` shows a usable credential, else an
@@ -298,6 +351,9 @@
                      remaining "). Raise its limit, or name another provider "
                      "for this spawn")}))
 
+(malli.core/=> credential-refusal
+               [:=> [:cat :keyword model/CredentialProbe] [:maybe model/CredentialRefused]])
+
 (defn strip-anthropic-prefix
   "Strip the `anthropic/` prefix from a model name so native Anthropic API
    receives `claude-sonnet-4-6` rather than `anthropic/claude-sonnet-4-6`
@@ -306,6 +362,8 @@
   (if (and (string? model) (str/starts-with? model "anthropic/"))
     (subs model (count "anthropic/"))
     model))
+
+(malli.core/=> strip-anthropic-prefix [:=> [:cat [:maybe :string]] [:maybe :string]])
 
 ;;; ---------------------------------------------------------------------------
 ;;; Routing
@@ -354,3 +412,5 @@
                  (:model sub-route)
                  (or candidate-model
                      (:default-model (get registry eff-provider))))}))
+
+(malli.core/=> resolve-routing [:=> [:cat model/Registry model/RoutingRequest] model/Routing])

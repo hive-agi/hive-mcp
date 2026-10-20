@@ -1,0 +1,22 @@
+{:case-0 {:out nil, :in "task-1"},
+ :case-1 {:out nil, :in {:dispatched true, :task-id "t"}},
+ :case-10
+ {:out {:error :dispatch/refused, :message "busy"},
+  :in {:error :dispatch/refused, :message "busy"}},
+ :case-11 {:out nil, :in {:dispatched true}},
+ :case-2
+ {:out {:error :dispatch/refused, :message "busy"},
+  :in {:error :dispatch/refused, :message "busy"}},
+ :case-3
+ {:out {:error :dispatch/refused, :message "busy"},
+  :in {:error :dispatch/refused, :message "busy"}},
+ :case-4 {:out nil, :in {:dispatched true}},
+ :case-5 {:out nil, :in {:dispatched true}},
+ :case-6
+ {:out {:dispatched false, :task-id "t"},
+  :in {:dispatched false, :task-id "t"}},
+ :case-7 {:out nil, :in "task-1"},
+ :case-8
+ {:out {:dispatched false, :task-id "t"},
+  :in {:dispatched false, :task-id "t"}},
+ :case-9 {:out {:dispatched false}, :in {:dispatched false}}}

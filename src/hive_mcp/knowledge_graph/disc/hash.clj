@@ -8,7 +8,9 @@
    of the kernel var would not reach callers of this name, and the cache the
    kernel namespace owns must stay single-source. See memory
    20260919135346-7838bb58."
-  (:require [hive-mcp.storage.file-hash :as fh]))
+  (:require [hive-mcp.storage.file-hash :as fh]
+            [malli.core :as m]
+            [hive-mcp.knowledge-graph.disc.schema :as ds]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -28,3 +30,9 @@
   "See `hive-mcp.storage.file-hash/file-content-hash`."
   [path]
   (fh/file-content-hash path))
+
+;; compute-hash hashes `(str content)`, so any value is content.
+(m/=> compute-hash [:=> [:cat :any] ds/Sha256Hex])
+(m/=> clear-hash-cache! [:=> [:cat] [:map-of {:max 0} :any :any]])
+;; a nil or unreadable path is rescued to the absence marker
+(m/=> file-content-hash [:=> [:cat [:maybe [:or :string ds/File]]] ds/HashResult])
