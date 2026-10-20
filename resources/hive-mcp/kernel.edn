@@ -50,6 +50,7 @@
   hive-mcp.tools.registry
   hive-mcp.tools.composite
   hive-mcp.tools.composite.default-async
+  hive-mcp.tools.composite.departed
   hive-mcp.tools.schema-keys
   hive-mcp.tools.async-params
   hive-mcp.tools.cli
