@@ -4,7 +4,6 @@
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [hive-mcp.agent.openrouter :as openrouter]
-            [hive-mcp.agent.schema :as schema]
             [hive-schemas.coverage :refer [deftest-contract-coverage]]
             [hive-schemas.test :refer [deftrifecta-from-schema]]
             [hive-test.golden :as golden]
@@ -31,7 +30,7 @@
 (deftrifecta-from-schema parse-response-trifecta
   hive-mcp.agent.openrouter/parse-response
   {:in Choice
-   :out schema/ParsedResponse
+   :out openrouter/ParsedResponse
    :rel (fn [choice out]
           (cond
             (nil? choice) (= :error (:type out))
@@ -54,14 +53,14 @@
             [other sch] arm-schemas]
       (is (= (= arm other) (m/validate sch out))
           (str arm " output vs " other " schema")))
-    (is (m/validate schema/ParsedResponse (:error outs)))))
+    (is (m/validate openrouter/ParsedResponse (:error outs)))))
 
 (deftest metrics-counters-reset-and-average
-  (is (m/validate schema/MetricCounters (openrouter/reset-metrics!)))
+  (is (m/validate openrouter/MetricCounters (openrouter/reset-metrics!)))
   (let [mm (openrouter/get-metrics)]
     (is (= 0 (:avg-latency-ms mm)))
     (is (= 0.0 (:error-rate mm)))
-    (is (m/validate schema/Metrics mm))))
+    (is (m/validate openrouter/Metrics mm))))
 
 (golden/deftest-golden-fn parse-response-golden
   "test/golden/agent/openrouter-parse-response.edn"

@@ -4,7 +4,6 @@
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.string :as str]
             [hive-mcp.agent.grant :as grant]
-            [hive-mcp.agent.schema :as schema]
             [hive-schemas.coverage :refer [deftest-contract-coverage]]
             [hive-schemas.test :refer [deftrifecta-from-schema]]
             [hive-test.golden :as golden]))
@@ -39,7 +38,7 @@
         [:string {:gen/fmap (fn [s] (str "{\"k\": \"" (str/replace s #"[\"\\]" "") "\"}"))}]
         [:string {:max 3 :gen/fmap (fn [s] (str " " s))}]
         [:int]]
-   :out schema/RequestedGrant
+   :out grant/RequestedGrant
    :rel (fn [x out]
           (cond
             (nil? x) (= {:ok nil} out)

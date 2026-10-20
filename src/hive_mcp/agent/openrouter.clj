@@ -13,7 +13,6 @@
             [hive-mcp.agent.provider :as provider]
             [hive-mcp.agent.provider.model :as model]
             [hive-mcp.agent.cache :as cache]
-            [hive-mcp.agent.schema :as schema]
             [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -420,19 +419,59 @@
 
 (m/=> resolve-provider-model [:=> [:cat [:maybe :map]] :map])
 
-(m/=> reset-metrics! [:=> [:cat] schema/MetricCounters])
+;; ---------------------------------------------------------------------------
+;; Contract schemas. They live in this namespace because hive-mcp.agent.* is a
+;; frozen extraction prefix (hive-mcp.kernel.census): no new namespace may be
+;; added under it. Every schema generates.
+;; ---------------------------------------------------------------------------
 
-(m/=> get-metrics [:=> [:cat] schema/Metrics])
+(def Backend
+  "Anything implementing the LLMBackend protocol."
+  [:fn {:gen/elements [(reify proto/LLMBackend
+                         (chat [_ _ _] {:type :text :content ""})
+                         (model-name [_] "schema/backend"))]}
+   (fn [x] (satisfies? proto/LLMBackend x))])
+
+(def ParsedResponse
+  "What `parse-response` answers: an error, a tool-call batch, or text."
+  [:multi {:dispatch :type}
+   [:error [:map [:type [:= :error]] [:error :string]]]
+   [:tool_calls [:map [:type [:= :tool_calls]] [:calls [:vector :map]]]]
+   [:text [:map [:type [:= :text]] [:content :string]]]])
+
+(def Metrics
+  "What `get-metrics` reports: the counters plus the computed averages."
+  [:map
+   [:request-count :int]
+   [:success-count :int]
+   [:error-count :int]
+   [:timeout-count :int]
+   [:total-latency-ms :int]
+   [:avg-latency-ms number?]
+   [:error-rate number?]])
+
+(def MetricCounters
+  "The raw counters `reset-metrics!` answers (no computed averages)."
+  [:map
+   [:request-count :int]
+   [:success-count :int]
+   [:error-count :int]
+   [:timeout-count :int]
+   [:total-latency-ms :int]])
+
+(m/=> reset-metrics! [:=> [:cat] MetricCounters])
+
+(m/=> get-metrics [:=> [:cat] Metrics])
 
 ;; nil is a legal message (a provider that returns no choice).
-(m/=> parse-response [:=> [:cat [:maybe :map]] schema/ParsedResponse])
+(m/=> parse-response [:=> [:cat [:maybe :map]] ParsedResponse])
 
 (m/=> available-providers [:=> [:cat] [:sequential :keyword]])
 
 (m/=> best-available-provider [:=> [:cat] [:maybe :keyword]])
 
-(m/=> openai-compat-backend [:=> [:cat [:maybe :map]] schema/Backend])
+(m/=> openai-compat-backend [:=> [:cat [:maybe :map]] Backend])
 
-(m/=> auto-backend [:=> [:cat [:maybe :map]] schema/Backend])
+(m/=> auto-backend [:=> [:cat [:maybe :map]] Backend])
 
-(m/=> openrouter-backend [:=> [:cat [:maybe :map]] schema/Backend])
+(m/=> openrouter-backend [:=> [:cat [:maybe :map]] Backend])

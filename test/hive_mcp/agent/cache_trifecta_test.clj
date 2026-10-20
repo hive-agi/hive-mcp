@@ -5,7 +5,6 @@
    declares no dialect is left byte-identical."
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.agent.cache :as cache]
-            [hive-mcp.agent.schema :as schema]
             [hive-schemas.coverage :refer [deftest-contract-coverage]]
             [hive-schemas.test :refer [deftrifecta-from-schema]]
             [hive-test.golden :as golden]))

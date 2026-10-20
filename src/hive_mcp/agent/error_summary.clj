@@ -21,8 +21,7 @@
 
    All rendering is pure; callers choose how to ship the summary (log, shout,
    metric). `summary->line` provides a single-line renderer honoring a budget."
-  (:require [malli.core :as m]
-            [hive-mcp.agent.schema :as schema]))
+  (:require [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -223,11 +222,36 @@
            [:max-frames {:optional true} :int]
            [:max-cause-depth {:optional true} :int]]])
 
+;; ---------------------------------------------------------------------------
+;; Contract schemas. They live in this namespace because hive-mcp.agent.* is a
+;; frozen extraction prefix (hive-mcp.kernel.census): no new namespace may be
+;; added under it. Every schema generates.
+;; ---------------------------------------------------------------------------
+
+(def Frame
+  "One stack frame of an error summary."
+  [:map
+   [:class :string]
+   [:method :string]
+   [:file [:maybe :string]]
+   [:line :int]])
+
+(def ErrorSummary
+  "A bounded, structured summary of an error payload (see error-summary)."
+  [:schema {:registry {::summary
+                       [:map
+                        [:class :string]
+                        [:message :string]
+                        [:frames [:vector Frame]]
+                        [:error-type {:optional true} :any]
+                        [:cause {:optional true} [:ref ::summary]]]}}
+   ::summary])
+
 ;; Any value is an error payload: nil, Throwable, string, map, coll or other.
 (m/=> summarize-error
       [:function
-       [:=> [:cat :any] schema/ErrorSummary]
-       [:=> [:cat :any SummarizeOpts] schema/ErrorSummary]])
+       [:=> [:cat :any] ErrorSummary]
+       [:=> [:cat :any SummarizeOpts] ErrorSummary]])
 
 ;; The renderer destructures its argument, so any map is read; the line is a
 ;; string whatever is missing.

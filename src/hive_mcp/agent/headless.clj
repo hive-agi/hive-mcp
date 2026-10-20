@@ -9,8 +9,7 @@
             [taoensso.timbre :as log]
             [hive-mcp.agent.identity :as agent-identity]
             [hive-mcp.system.child-scope :as child-scope]
-            [malli.core :as m]
-            [hive-mcp.agent.schema :as schema])
+            [malli.core :as m])
   (:import [java.lang ProcessBuilder]
            [java.io BufferedReader InputStreamReader BufferedWriter OutputStreamWriter]
            [java.util.concurrent ConcurrentHashMap]))
@@ -642,13 +641,57 @@
    [:buffer-capacity {:optional true} :int]
    [:system-prompt {:optional true} [:maybe :string]]])
 
+;; ---------------------------------------------------------------------------
+;; Contract schemas. They live in this namespace because hive-mcp.agent.* is a
+;; frozen extraction prefix (hive-mcp.kernel.census): no new namespace may be
+;; added under it. Every schema generates.
+;; ---------------------------------------------------------------------------
+
+(def HeadlessStatus
+  "What `headless-status` reports for a registered ling process."
+  [:map
+   [:ling-id :any]
+   [:pid :int]
+   [:alive? :boolean]
+   [:exit-code [:maybe :int]]
+   [:cwd :any]
+   [:model :any]
+   [:started-at :int]
+   [:uptime-ms :int]
+   [:stdout rb/BufferStats]
+   [:stderr rb/BufferStats]])
+
+(def ProcessCounts
+  "What `active-process-count` reports."
+  [:map [:active :int] [:total :int] [:dead :int]])
+
+(def WatchdogState
+  "What `watchdog-status` reports."
+  [:map
+   [:running? :boolean]
+   [:sweep-count :int]
+   [:last-sweep-at [:maybe :int]]
+   [:last-cleaned [:sequential :any]]])
+
+(def KillAllResult
+  "What `kill-all-headless!` reports."
+  [:map [:killed :int] [:errors :int]])
+
+(def KillResult
+  "What `kill-headless!` reports."
+  [:map
+   [:killed? :boolean]
+   [:ling-id :any]
+   [:pid :int]
+   [:exit-code :int]])
+
 (def ^:private SpawnResult
   [:map
    [:ling-id :string]
    [:pid :int]
    [:process [:fn {:gen/elements [nil]} #(instance? Process %)]]
-   [:stdout-buf schema/RingBuffer]
-   [:stderr-buf schema/RingBuffer]
+   [:stdout-buf rb/RingBuffer]
+   [:stderr-buf rb/RingBuffer]
    [:model [:maybe :string]]])
 
 ;; Env names and values are strings; the withheld names never appear.
@@ -666,10 +709,10 @@
 
 (m/=> kill-headless!
       [:function
-       [:=> [:cat :any] schema/KillResult]
-       [:=> [:cat :any [:maybe :map]] schema/KillResult]])
+       [:=> [:cat :any] KillResult]
+       [:=> [:cat :any [:maybe :map]] KillResult]])
 
-(m/=> headless-status [:=> [:cat :any] [:maybe schema/HeadlessStatus]])
+(m/=> headless-status [:=> [:cat :any] [:maybe HeadlessStatus]])
 
 (m/=> get-stdout
       [:function
@@ -683,23 +726,23 @@
 
 (m/=> get-stdout-since [:=> [:cat :any :any] [:maybe [:sequential :map]]])
 
-(m/=> list-headless [:=> [:cat] [:vector schema/HeadlessStatus]])
+(m/=> list-headless [:=> [:cat] [:vector HeadlessStatus]])
 
 (m/=> headless-count [:=> [:cat] :int])
 
-(m/=> active-process-count [:=> [:cat] schema/ProcessCounts])
+(m/=> active-process-count [:=> [:cat] ProcessCounts])
 
-(m/=> watchdog-status [:=> [:cat] schema/WatchdogState])
+(m/=> watchdog-status [:=> [:cat] WatchdogState])
 
 (m/=> headless? [:=> [:cat :any] :boolean])
 
 (m/=> get-process [:=> [:cat :any] [:maybe [:fn {:gen/elements [nil]} #(instance? Process %)]]])
 
-(m/=> get-stdout-buffer [:=> [:cat :any] [:maybe schema/RingBuffer]])
+(m/=> get-stdout-buffer [:=> [:cat :any] [:maybe rb/RingBuffer]])
 
-(m/=> get-stderr-buffer [:=> [:cat :any] [:maybe schema/RingBuffer]])
+(m/=> get-stderr-buffer [:=> [:cat :any] [:maybe rb/RingBuffer]])
 
-(m/=> kill-all-headless! [:=> [:cat] schema/KillAllResult])
+(m/=> kill-all-headless! [:=> [:cat] KillAllResult])
 
 (comment)
   ;; (spawn-headless! "test-ling-1" {:cwd "/home/user/project"})

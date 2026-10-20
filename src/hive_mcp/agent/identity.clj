@@ -30,7 +30,7 @@
             [hive-system.crypto.ed25519-der :as ed]
             [hive-dsl.result :as r]
             [taoensso.timbre :as log]
-            [hive-mcp.agent.schema :as schema]
+            [hive-mcp.agent.grant :as grant]
             [malli.core :as m])
   (:import [java.nio.file Files LinkOption StandardCopyOption]
            [java.nio.file.attribute FileAttribute PosixFilePermissions]))
@@ -331,41 +331,85 @@
 ;; Contracts
 ;; =============================================================================
 
-(m/=> domain [:=> [:cat] schema/Domain])
+;; ---------------------------------------------------------------------------
+;; Contract schemas. They live in this namespace because hive-mcp.agent.* is a
+;; frozen extraction prefix (hive-mcp.kernel.census): no new namespace may be
+;; added under it. Every schema generates.
+;; ---------------------------------------------------------------------------
+
+(def SigningKey
+  "{:kid :private :public} as `identity/load-or-create-key!` returns it."
+  [:map
+   [:kid :string]
+   [:private bytes?]
+   [:public bytes?]])
+
+(def Signer
+  "The signer port: a kid and sign/verify fns."
+  [:map
+   [:kid :string]
+   [:sign ifn?]
+   [:verify ifn?]])
+
+(def Claimant
+  "What the registry says a caller is."
+  [:enum :coordinator :spawned :unknown])
+
+(def Mode
+  "Identity policy mode."
+  [:enum :observe :enforce])
+
+(def File
+  "A java.io.File."
+  [:fn {:gen/elements [(io/file "hive-mcp-agent-schema-file")]}
+   (fn [x] (instance? java.io.File x))])
+
+(def ResolveResult
+  "What `identity/resolve-request` answers."
+  [:map
+   [:args :map]
+   [:identity [:map
+               [:caller-id :any]
+               [:claimant Claimant]
+               [:verified? :boolean]
+               [:claims {:optional true} :any]]]
+   [:decision :map]])
+
+(m/=> domain [:=> [:cat] grant/Domain])
 
 ;; Unknown values (nil, numbers, junk strings) read as :observe.
-(m/=> parse-mode [:=> [:cat :any] schema/Mode])
+(m/=> parse-mode [:=> [:cat :any] Mode])
 
-(m/=> configured-mode [:=> [:cat] schema/Mode])
+(m/=> configured-mode [:=> [:cat] Mode])
 
 (m/=> configured-ttl-ms [:=> [:cat] [:and :int [:> 0]]])
 
-(m/=> default-key-file [:=> [:cat] schema/File])
+(m/=> default-key-file [:=> [:cat] File])
 
-(m/=> load-or-create-key! [:=> [:cat schema/File] schema/SigningKey])
+(m/=> load-or-create-key! [:=> [:cat File] SigningKey])
 
-(m/=> ->signer [:=> [:cat schema/SigningKey] schema/Signer])
+(m/=> ->signer [:=> [:cat SigningKey] Signer])
 
-(m/=> signer [:=> [:cat] schema/Signer])
+(m/=> signer [:=> [:cat] Signer])
 
 ;; Every key is read with destructuring, so any map (or nil) is accepted; the
 ;; token is nil when the domain is absent or minting fails.
 (m/=> mint-for-child [:=> [:cat [:maybe :map]] [:maybe :any]])
 
-(m/=> mint-for-slave [:=> [:cat schema/GetSlave :any] [:maybe :any]])
+(m/=> mint-for-slave [:=> [:cat grant/GetSlave :any] [:maybe :any]])
 
 ;; Keys of env-extra may be keywords or strings; names and values come out as
 ;; strings.
 (m/=> child-env [:=> [:cat [:maybe :map] :any :any] [:map-of :string :string]])
 
-(m/=> claimant [:=> [:cat schema/GetSlave :any] schema/Claimant])
+(m/=> claimant [:=> [:cat grant/GetSlave :any] Claimant])
 
 (m/=> anomaly-counts [:=> [:cat] :map])
 
-(m/=> resolve-request [:=> [:cat :map [:maybe :map]] schema/ResolveResult])
+(m/=> resolve-request [:=> [:cat :map [:maybe :map]] ResolveResult])
 
 (m/=> refusal-text [:=> [:cat [:maybe :map] :any] :string])
 
 (m/=> note-anomaly! [:=> [:cat [:maybe :map] :any :any] :nil])
 
-(m/=> verify-request! [:=> [:cat [:maybe :map] :any schema/GetSlave] schema/ResolveResult])
+(m/=> verify-request! [:=> [:cat [:maybe :map] :any grant/GetSlave] ResolveResult])

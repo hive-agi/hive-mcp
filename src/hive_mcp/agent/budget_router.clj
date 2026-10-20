@@ -22,8 +22,7 @@
   (:require [hive-mcp.config.core :as config]
             [hive-dsl.result :as r]
             [taoensso.timbre :as log]
-            [malli.core :as m]
-            [hive-mcp.agent.schema :as schema]))
+            [malli.core :as m]))
 
 ;; ---------------------------------------------------------------------------
 ;; Config helpers
@@ -414,8 +413,90 @@
 ;; up in a config map, so any value is accepted.
 (m/=> tier-models [:=> [:cat :any] [:vector :any]])
 
+;; ---------------------------------------------------------------------------
+;; Contract schemas. They live in this namespace because hive-mcp.agent.* is a
+;; frozen extraction prefix (hive-mcp.kernel.census): no new namespace may be
+;; added under it. Every schema generates.
+;; ---------------------------------------------------------------------------
+
+(def Tier
+  "A model cost tier, cheapest first."
+  [:enum :free :economy :standard :premium])
+
+(def Health
+  "Fleet budget health."
+  [:enum :healthy :caution :critical :exhausted])
+
+(def BudgetStatus
+  "A budget status row as hooks.budget reports it. Open: only the keys the
+   router reads are named, all optional (nil status = unrestricted).
+   `:pct-used` is a double: `select-tier` formats it with %.0f, which throws
+   on a Long."
+  [:maybe [:map
+           [:pct-used {:optional true} [:maybe :double]]
+           [:exceeded? {:optional true} :any]
+           [:remaining-usd {:optional true} [:maybe number?]]]])
+
+(def TierSelection
+  "What `select-tier` answers (open: route-model assoc's more onto it)."
+  [:map
+   [:tier Tier]
+   [:reason :string]
+   [:max-tier Tier]
+   [:downgraded? :boolean]
+   [:budget-status :any]])
+
+(def RouteResult
+  "What `route-model` answers, enabled or not."
+  [:map
+   [:model :any]
+   [:tier Tier]
+   [:reason :string]
+   [:downgraded? :boolean]])
+
+(def FleetStatus
+  "The fleet roll-up inside a `suggest-model` answer."
+  [:map
+   [:spent number?]
+   [:budget number?]
+   [:remaining number?]
+   [:pct-used number?]
+   [:agents number?]])
+
+(def ModelSuggestion
+  "What `suggest-model` answers."
+  [:map
+   [:tier Tier]
+   [:model :any]
+   [:reason :string]
+   [:max-tier Tier]
+   [:projected-tasks :int]
+   [:per-agent-share number?]
+   [:fleet-status FleetStatus]])
+
+(def BudgetRecommendation
+  "What `recommend-budget` answers."
+  [:map
+   [:recommended-budget-usd number?]
+   [:fleet-remaining-usd number?]
+   [:fleet-spent-usd number?]
+   [:fleet-budget-usd number?]
+   [:planned-agents number?]
+   [:tier-at-budget Tier]])
+
+(def FleetSummary
+  "What `fleet-budget-summary` answers."
+  [:map
+   [:fleet-budget-usd number?]
+   [:fleet-spent-usd number?]
+   [:fleet-remaining-usd number?]
+   [:fleet-pct-used number?]
+   [:agent-count :int]
+   [:agents [:vector :map]]
+   [:health Health]])
+
 ;; A non-string model classifies as :standard, so the input is :any.
-(m/=> classify-model-tier [:=> [:cat :any] schema/Tier])
+(m/=> classify-model-tier [:=> [:cat :any] Tier])
 
 ;; An unknown tier falls back to 9.0 (existing test), so any keyword is valid.
 (m/=> tier-cost-per-1m [:=> [:cat :keyword] :double])
@@ -430,46 +511,46 @@
        [:=> [:cat number? :keyword] :int]
        [:=> [:cat number? :keyword [:maybe [:map [:tokens {:optional true} number?]]]] :int]])
 
-(m/=> max-tier-for-budget [:=> [:cat number?] schema/Tier])
+(m/=> max-tier-for-budget [:=> [:cat number?] Tier])
 
 ;; Unknown tiers read as :standard / :premium in the body, so keywords.
 (m/=> tier-allowed? [:=> [:cat :keyword :keyword] :boolean])
 
 (m/=> select-tier
       [:function
-       [:=> [:cat schema/BudgetStatus] schema/TierSelection]
-       [:=> [:cat schema/BudgetStatus
-             [:maybe [:map [:preferred-tier {:optional true} [:maybe schema/Tier]]]]]
-        schema/TierSelection]])
+       [:=> [:cat BudgetStatus] TierSelection]
+       [:=> [:cat BudgetStatus
+             [:maybe [:map [:preferred-tier {:optional true} [:maybe Tier]]]]]
+        TierSelection]])
 
 (m/=> route-model
       [:function
-       [:=> [:cat :any :any] schema/RouteResult]
+       [:=> [:cat :any :any] RouteResult]
        [:=> [:cat :any :any [:maybe [:map [:force? {:optional true} :any]]]]
-        schema/RouteResult]])
+        RouteResult]])
 
 (def ^:private SuggestOpts
   [:maybe [:map
            [:budget-usd {:optional true} [:maybe number?]]
            [:model {:optional true} :any]
-           [:preferred-tier {:optional true} [:maybe schema/Tier]]
+           [:preferred-tier {:optional true} [:maybe Tier]]
            [:active-agents {:optional true} [:maybe number?]]]])
 
 (m/=> suggest-model
       [:function
-       [:=> [:cat] schema/ModelSuggestion]
-       [:=> [:cat SuggestOpts] schema/ModelSuggestion]])
+       [:=> [:cat] ModelSuggestion]
+       [:=> [:cat SuggestOpts] ModelSuggestion]])
 
 (m/=> recommend-budget
       [:function
-       [:=> [:cat] schema/BudgetRecommendation]
+       [:=> [:cat] BudgetRecommendation]
        [:=> [:cat [:maybe [:map
                            [:fleet-budget-usd {:optional true} [:maybe number?]]
                            [:planned-agents {:optional true} [:maybe number?]]]]]
-        schema/BudgetRecommendation]])
+        BudgetRecommendation]])
 
 (m/=> fleet-budget-summary
       [:function
-       [:=> [:cat] schema/FleetSummary]
+       [:=> [:cat] FleetSummary]
        [:=> [:cat [:maybe [:map [:fleet-budget-usd {:optional true} [:maybe number?]]]]]
-        schema/FleetSummary]])
+        FleetSummary]])

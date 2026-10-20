@@ -5,7 +5,7 @@
    aliases count)."
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.agent.agent-definition :as ad]
-            [hive-mcp.agent.schema :as schema]
+            [hive-mcp.agent.agent-definition.spec :as spec]
             [hive-schemas.coverage :refer [deftest-contract-coverage]]
             [hive-schemas.test :refer [deftrifecta-from-schema]]
             [hive-test.golden :as golden]
@@ -20,7 +20,7 @@
   [:map
    [:agent-type [:string {:min 1}]]
    [:description :string]
-   [:source {:optional true} schema/DefSource]
+   [:source {:optional true} spec/Source]
    [:tools {:optional true} [:vector :string]]])
 
 (deftrifecta-from-schema built-in-trifecta
@@ -62,8 +62,8 @@
     (is (not (m/validate bad-s good)))
     (is (m/validate bad-s bad))
     (is (not (m/validate ok-s bad)))
-    (is (m/validate schema/Validation good))
-    (is (m/validate schema/Validation bad))))
+    (is (m/validate spec/Validation good))
+    (is (m/validate spec/Validation bad))))
 
 (deftest record-boundary
   (let [rec (ad/make-agent-def {:agent-type "x" :description "d" :system-prompt "p"})]
@@ -78,10 +78,10 @@
     (is (thrown? clojure.lang.ExceptionInfo (ad/validate-or-throw! {})))))
 
 (deftest loaders-answer-their-error-arms
-  (is (m/validate schema/LoadResult (ad/load-agent-file "/nonexistent/agent.md" :user)))
+  (is (m/validate spec/LoadResult (ad/load-agent-file "/nonexistent/agent.md" :user)))
   (is (= {:agents [] :errors []} (ad/load-agents-dir "/nonexistent/dir" :user)))
-  (is (m/validate schema/FrontmatterResult (ad/parse-frontmatter "---\nname: a\n---\nbody")))
-  (is (m/validate schema/CoerceResult
+  (is (m/validate spec/FrontmatterResult (ad/parse-frontmatter "---\nname: a\n---\nbody")))
+  (is (m/validate spec/CoerceResult
                   (ad/frontmatter->agent-def {:name "a" :description "d"} "body" :user))))
 
 (golden/deftest-golden-fn agent-definition-facade-golden
