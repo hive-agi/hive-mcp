@@ -1,0 +1,8 @@
+{:no-git nil,
+ :generic "generic",
+ :clojure-cli "clojure-cli",
+ :npm "npm",
+ :make "make",
+ :gradle-kts "gradle",
+ :nil-dir nil,
+ :missing-dir nil}
