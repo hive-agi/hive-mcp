@@ -23,7 +23,8 @@
    No I/O. Property-testable. Single fn `classify` is the public
    surface; everything else is private."
   (:require [clojure.string :as str]
-            [hive-mcp.resilience.protocol :as proto]))
+            [hive-mcp.resilience.protocol :as proto]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -133,12 +134,20 @@
       (io-class link)
       (message-class link)))
 
+(def Throwable_
+  "A java.lang.Throwable, generated as an ex-info."
+  [:fn {:gen/schema [:map [:msg :string]]
+        :gen/fmap (fn [{:keys [msg]}] (ex-info msg {}))}
+   (partial instance? Throwable)])
+
 (defn classify
   "Total fn — Throwable → `ErrorClass` ADT. Never throws."
   [^Throwable t]
   (or (some link-class (causal-chain t))
       (proto/error-class :err/unknown
                          {:message (->msg (some-> t .getMessage))})))
+
+(m/=> classify [:=> [:cat Throwable_] proto/ErrorClassValue])
 
 (deftype DefaultClassifier []
   proto/IErrorClassifier
@@ -148,3 +157,8 @@
   "Construct the default `IErrorClassifier`. No state — safe to share."
   []
   (->DefaultClassifier))
+
+(m/=> default-classifier
+      [:=> [:cat]
+       [:fn {:gen/schema :nil :gen/fmap (fn [_] (->DefaultClassifier))}
+        (partial satisfies? proto/IErrorClassifier)]])

@@ -21,7 +21,6 @@
             [clojure.data.json :as json]
             [hive-mcp.tools.core :as core]
             [hive-mcp.tools.memory :as memory]
-            [hive-mcp.chroma.core :as chroma]
             [hive-mcp.emacs.client :as ec]
             [hive-spi.editor.elisp :as el]
             [hive-mcp.test.stub.memory-store :as stub]

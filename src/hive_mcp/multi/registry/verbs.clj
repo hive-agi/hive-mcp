@@ -6,7 +6,8 @@
 
    Owner :multi/core seeds the existing 36 verbs from hive-mcp.dsl.verbs/verb-table.
    Addons add verbs via the :multi/verb hook key."
-  (:require [hive-mcp.multi.registry.owned :as owned]))
+  (:require [malli.core :as m]
+            [hive-mcp.multi.registry.owned :as owned]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -24,24 +25,36 @@
   (owned/register! state :by-code owner code entry
                    "[multi.registry.verbs]" :code))
 
+(m/=> register! [:=> [:cat [:or :keyword :string] :string [:map [:tool :string] [:command :string]]] [:enum :ok :replaced :conflict]])
+
 (defn deregister-by-owner!
   "Remove every verb registered by `owner`. Returns set of removed codes."
   [owner]
   (owned/deregister-by-owner! state :by-code owner))
+
+(m/=> deregister-by-owner! [:=> [:cat [:or :keyword :string]] [:set :string]])
 
 (defn lookup
   "Return {:tool :command :owner} for a verb code, or nil."
   [code]
   (owned/lookup state :by-code code))
 
+(m/=> lookup [:=> [:cat :string] [:maybe [:map [:tool :string] [:command :string] [:owner [:or :keyword :string]]]]])
+
 (defn all-codes
   "Sorted vector of all registered verb codes."
   []
   (vec (sort (keys (owned/all state :by-code)))))
 
+(m/=> all-codes [:=> [:cat] [:vector :string]])
+
 (defn snapshot []
   (let [s @state]
     {:version (hash s) :data s}))
 
+(m/=> snapshot [:=> [:cat] [:map [:version :int] [:data :map]]])
+
 (defn reset-for-test! []
   (reset! state {:by-code {} :by-owner {}}))
+
+(m/=> reset-for-test! [:=> [:cat] :map])

@@ -10,7 +10,8 @@
 
    Extension point: addons can register additional types via
    register-memory-type! / register-memory-types! before tool handlers run."
-  (:require [clojure.string :as str]
+  (:require [malli.core :as m]
+            [clojure.string :as str]
             [hive-mcp.schema.type-token :as token]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -141,10 +142,14 @@
   [t]
   (token/sanitize-type t))
 
+(m/=> sanitize-type [:=> [:cat :any] [:maybe :string]])
+
 (defn safe-type?
   "See `hive-mcp.schema.type-token/safe-type?`."
   [t]
   (token/safe-type? t))
+
+(m/=> safe-type? [:=> [:cat :any] :boolean])
 
 ;; =============================================================================
 ;; Extension registry (addon- + user-contributed types) + persistence
@@ -210,6 +215,8 @@
             (swap! registry-extensions merge safe))))
       (catch Throwable _ nil))))
 
+(m/=> load-persisted! [:=> [:cat] :any])
+
 (defn register-memory-type!
   "Register an addon-/user-contributed memory type and persist it.
    Must be called before tool handlers run for addon types (addon init time);
@@ -221,6 +228,8 @@
   (persist-extensions!)
   type-kw)
 
+(m/=> register-memory-type! [:=> [:cat :keyword :map] :keyword])
+
 (defn register-memory-types!
   "Register multiple addon-contributed memory types at once, then persist.
    types-map: map of {type-kw type-def}."
@@ -229,12 +238,16 @@
   (persist-extensions!)
   (keys types-map))
 
+(m/=> register-memory-types! [:=> [:cat :map] [:sequential :keyword]])
+
 (defn registry
   "Returns the full memory type registry (core + addon + persisted extensions).
    Lazily loads persisted user/addon types on first call (CAS-guarded once)."
   []
   (load-persisted!)
   (merge base-registry @registry-extensions))
+
+(m/=> registry [:=> [:cat] [:map-of :keyword :map]])
 
 ;; =============================================================================
 ;; Derived views (recomputed dynamically to include addon extensions)
@@ -245,10 +258,14 @@
   []
   (set (keys (registry))))
 
+(m/=> all-types [:=> [:cat] [:set :keyword]])
+
 (defn all-type-strings
   "Set of all valid memory type strings (for Chroma/MCP)."
   []
   (set (map name (all-types))))
+
+(m/=> all-type-strings [:=> [:cat] [:set :string]])
 
 (defn mcp-types
   "Ordered vector of type strings visible in MCP tool enums."
@@ -257,6 +274,8 @@
        (filter (fn [[_k v]] (get v :mcp? true)))
        (map (comp name key))
        vec))
+
+(m/=> mcp-types [:=> [:cat] [:vector :string]])
 
 (defn mcp-types-with-conversation
   "MCP types + 'conversation' for query compatibility."
@@ -267,6 +286,8 @@
       (vec (concat (subvec types 0 idx) ["conversation"] (subvec types idx)))
       (conj types "conversation"))))
 
+(m/=> mcp-types-with-conversation [:=> [:cat] [:vector :string]])
+
 (defn core-type-set
   "Set of core type keywords (mcp-visible)."
   []
@@ -275,10 +296,14 @@
        (map key)
        set))
 
+(m/=> core-type-set [:=> [:cat] [:set :keyword]])
+
 (defn type->abstraction
   "Map of type string -> abstraction level."
   []
   (into {} (map (fn [[k v]] [(name k) (:abstraction v)])) (registry)))
+
+(m/=> type->abstraction [:=> [:cat] [:map-of :string :int]])
 
 (defn catchup-categories
   "Ordered sequence of catchup category configs, sorted by :order.
@@ -290,6 +315,8 @@
        (sort-by :order)
        vec))
 
+(m/=> catchup-categories [:=> [:cat] [:vector :map]])
+
 (defn piggyback-types
   "Set of type keywords included in catchup piggyback delivery."
   []
@@ -297,6 +324,8 @@
        (filter :piggyback?)
        (map :type)
        set))
+
+(m/=> piggyback-types [:=> [:cat] [:set :keyword]])
 
 ;; =============================================================================
 ;; Functions
@@ -310,6 +339,8 @@
   (let [s (sanitize-type t)]
     (boolean (and s (contains? (all-type-strings) s)))))
 
+(m/=> known-type? [:=> [:cat :any] :boolean])
+
 (defn valid-type?
   "Permissive validation gate: a type is *valid* when it is a SAFE token
    (sane charset + bounded length — see safe-type?), NOT when it happens to be
@@ -322,6 +353,8 @@
   [t]
   (or (known-type? t) (safe-type? t)))
 
+(m/=> valid-type? [:=> [:cat :any] :boolean])
+
 (defn type-def
   "Resolve the registry definition for a type (string or keyword). Falls back
    to default-type-def for safe-but-unknown types so every downstream consumer
@@ -331,6 +364,8 @@
   (when-let [s (sanitize-type t)]
     (or (get (registry) (keyword s))
         (when (safe-type? s) default-type-def))))
+
+(m/=> type-def [:=> [:cat :any] [:maybe :map]])
 
 (defn ensure-type!
   "Ensure a safe type token is registered, auto-registering unknown ones with
@@ -348,6 +383,8 @@
                                          :description
                                          (str "Auto-registered memory type '" s "'."))))
       s)))
+
+(m/=> ensure-type! [:=> [:cat :any] [:maybe :string]])
 
 ;; =============================================================================
 ;; Write gates (human review queue)
@@ -370,10 +407,14 @@
   [t]
   (:gate (type-def t)))
 
+(m/=> gate-of [:=> [:cat :any] [:maybe :map]])
+
 (defn gated-type?
   "True when writing `t` directly is gated behind review."
   [t]
   (some? (gate-of t)))
+
+(m/=> gated-type? [:=> [:cat :any] :boolean])
 
 (defn queue-target
   "Canonical type string a gated write is parked as, or nil when `t` is not
@@ -381,6 +422,8 @@
   [t]
   (when-let [g (gate-of t)]
     (sanitize-type (:queue-as g))))
+
+(m/=> queue-target [:=> [:cat :any] [:maybe :string]])
 
 (defn resolve-write-type
   "Resolve the type a write should actually land as.
@@ -402,6 +445,8 @@
           {:type target :requested requested :queued? true :gate gate}
           {:type requested :requested requested :queued? false :gate nil})))))
 
+(m/=> resolve-write-type [:=> [:cat :any] [:maybe [:map [:type :string] [:requested :string] [:queued? :boolean] [:gate [:maybe :map]]]]])
+
 (def requested-type-tag-prefix
   "See `hive-mcp.schema.type-token/requested-type-tag-prefix`."
   token/requested-type-tag-prefix)
@@ -418,6 +463,8 @@
             (vec tags)
             extra)))
 
+(m/=> queued-tags [:=> [:cat [:sequential :string] :map [:maybe :string]] [:vector :string]])
+
 (defn strip-queue-tags
   "Remove the queue tag and any requested-type marker from `tags`. Used when a
    review resolves an entry, so a promoted axiom carries no pending residue."
@@ -429,16 +476,22 @@
                          (str/starts-with? s requested-type-tag-prefix))))
                  tags))))
 
+(m/=> strip-queue-tags [:=> [:cat [:sequential :string]] [:vector :string]])
+
 (defn requested-type-of
   "See `hive-mcp.schema.type-token/requested-type-of`."
   [tags]
   (token/requested-type-of tags))
+
+(m/=> requested-type-of [:=> [:cat [:sequential :string]] [:maybe :string]])
 
 (defn abstraction-level
   "Get the abstraction level for a type (string or keyword). Default: 2."
   [t]
   (let [s (if (keyword? t) (name t) t)]
     (get (type->abstraction) s 2)))
+
+(m/=> abstraction-level [:=> [:cat :any] :int])
 
 (defn mcp-enum
   "Generate MCP JSON schema enum for tool definitions.
@@ -448,6 +501,8 @@
    (if include-conversation?
      (mcp-types-with-conversation)
      (mcp-types))))
+
+(m/=> mcp-enum [:function [:=> [:cat] [:vector :string]] [:=> [:cat [:maybe :map]] [:vector :string]]])
 
 (defn mcp-type-hint
   "Description fragment for the open `type` MCP param: lists the well-known
@@ -459,3 +514,5 @@
        ". Any safe custom type token is also accepted (letters, digits, '_' or "
        "'-', starting with a letter, max " max-type-length " chars) and is "
        "auto-registered with sane defaults."))
+
+(m/=> mcp-type-hint [:=> [:cat] :string])

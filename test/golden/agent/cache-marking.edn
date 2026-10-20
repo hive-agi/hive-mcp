@@ -1,0 +1,39 @@
+{:marked
+ [{:role "system",
+   :content
+   [{:type "text", :text "sys", :cache_control {:type "ephemeral"}}]}
+  {:role "user",
+   :content
+   [{:type "text", :text "u1", :cache_control {:type "ephemeral"}}]}
+  {:role "assistant", :content "a1"}
+  {:role "user",
+   :content
+   [{:type "text", :text "u2", :cache_control {:type "ephemeral"}}]}
+  {:role "tool",
+   :content
+   [{:type "text", :text "t1", :cache_control {:type "ephemeral"}}]}],
+ :marked-1h
+ [{:role "system",
+   :content
+   [{:type "text",
+     :text "sys",
+     :cache_control {:type "ephemeral", :ttl "1h"}}]}
+  {:role "user",
+   :content
+   [{:type "text",
+     :text "u1",
+     :cache_control {:type "ephemeral", :ttl "1h"}}]}
+  {:role "assistant", :content "a1"}
+  {:role "user",
+   :content
+   [{:type "text",
+     :text "u2",
+     :cache_control {:type "ephemeral", :ttl "1h"}}]}
+  {:role "tool",
+   :content
+   [{:type "text",
+     :text "t1",
+     :cache_control {:type "ephemeral", :ttl "1h"}}]}],
+ :undeclared true,
+ :declared-count 4,
+ :family [true true false false]}

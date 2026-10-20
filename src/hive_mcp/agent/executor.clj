@@ -10,7 +10,8 @@
             [taoensso.timbre :as log]
             [hive-mcp.channel.task-signal :as task-signal]
             [hive-mcp.agent.grant :as grant]
-            [hive-mcp.channel.activation :as activation]))
+            [hive-mcp.channel.activation :as activation]
+            [malli.core :as m]))
 
 #_{:clj-kondo/ignore [:deprecated-var]}
 (def ^:dynamic ^:deprecated *current-agent-id* ctx/*current-agent-id*)
@@ -140,3 +141,50 @@
            ;; Drain piggyback channels — bridges hivemind shouts to agentic loop
            piggyback-text ((drain-fn-for opts) agent-id project-id drain-ctx)]
        (append-piggyback-to-results all-results piggyback-text)))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> current-agent-id [:=> [:cat] :any])
+
+;; ---------------------------------------------------------------------------
+;; Contract schemas. They live in this namespace because hive-mcp.agent.* is a
+;; frozen extraction prefix (hive-mcp.kernel.census): no new namespace may be
+;; added under it. Every schema generates.
+;; ---------------------------------------------------------------------------
+
+(def ToolResult
+  "What `executor/execute-tool` answers."
+  [:map
+   [:success :boolean]
+   [:result {:optional true} :any]
+   [:error {:optional true} :any]])
+
+(def ToolMessage
+  "A role:tool message for conversation history."
+  [:map
+   [:role [:= "tool"]]
+   [:tool_call_id :any]
+   [:name :any]
+   [:content :string]])
+
+(def Permissions
+  "Permission flags a tool call runs with (a coll, `(set perms)` is taken)."
+  [:maybe [:or [:sequential :any] [:set :any]]])
+
+;; `and` answers false/nil/true, so the result is a maybe-boolean.
+(m/=> requires-approval? [:=> [:cat :any Permissions] [:maybe :boolean]])
+
+(m/=> request-approval! [:=> [:cat :any :any :any] :boolean])
+
+(m/=> execute-tool [:=> [:cat :any :any] ToolResult])
+
+;; `result` is only read with keyword lookups, so any map (or nil) is fine.
+(m/=> format-tool-result [:=> [:cat :any :any [:maybe :map]] ToolMessage])
+
+(m/=> execute-tool-calls
+      [:function
+       [:=> [:cat :any [:sequential :map] Permissions] [:sequential ToolMessage]]
+       [:=> [:cat :any [:sequential :map] Permissions [:maybe :map]]
+        [:sequential ToolMessage]]])

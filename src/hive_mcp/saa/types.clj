@@ -6,7 +6,8 @@
 
    Compile-time exhaustiveness via `hive-dsl.adt/adt-case`. raw-msg->phase-message
    lifts the bridge query! raw message shapes into PhaseMessage variants."
-  (:require [hive-dsl.adt :as adt]))
+  (:require [hive-dsl.adt :as adt]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -62,6 +63,55 @@
 ;; raw-msg->phase-message — bridge query! raw → PhaseMessage (FIX#6)
 ;; =============================================================================
 
+;; =============================================================================
+;; Malli shapes — the ADT values, and the child-registry state they land in
+;; =============================================================================
+
+(def PhaseMessageVariant
+  "The closed set of `PhaseMessage` variants."
+  [:enum :pm/started :pm/chunk :pm/observation :pm/phase-complete :pm/error
+   :pm/saa-complete])
+
+(def PhaseMessageValue
+  "Any `PhaseMessage` ADT value; payload keys depend on the variant."
+  [:map
+   [:adt/type [:= :PhaseMessage]]
+   [:adt/variant PhaseMessageVariant]])
+
+(def RawMsg
+  "A bridge query! raw message. Open map: an unrecognized `:type` (or none)
+   becomes an opaque :pm/chunk."
+  [:map [:type {:optional true} :any]])
+
+(def Owner
+  "A registry owner — an addon-id keyword, or :saa/core for boot seeds."
+  :keyword)
+
+(def RegisterOutcome
+  "What a singleton child registry's `register!` answers."
+  [:enum :ok :replaced :conflict])
+
+(def RegistryRecord
+  "One stored singleton-registry entry: the contributed entry map stamped
+   with its owner and registration instant. The owner is stored as given
+   (an addon id, documented as a keyword)."
+  [:map [:owner :any] [:registered-at inst?]])
+
+(def RegistryState
+  "State of a singleton child registry (providers, scorers, planners,
+   plan-stores, dispatch-modes): id → record, owner → set of ids."
+  [:map
+   [:by-id [:map-of :any RegistryRecord]]
+   [:by-owner [:map-of :any [:set :any]]]])
+
+(def RegistrySnapshot
+  "A singleton child registry's `snapshot` value."
+  [:map [:version :int] [:data RegistryState]])
+
+(def RestoreArg
+  "What `restore!` accepts: a prior snapshot, or nil (restore to empty)."
+  [:maybe [:map [:data {:optional true} [:maybe :map]]]])
+
 (defn raw-msg->phase-message
   "Map a bridge query! raw message into a PhaseMessage variant.
 
@@ -90,3 +140,7 @@
 
       ;; default: treat any unrecognized shape as an opaque chunk
       (phase-message :pm/chunk {:phase ph :content raw-msg}))))
+
+;; phase is the stamp for a raw message without one — the adapter passes the
+;; provider-options :phase, which may be absent
+(m/=> raw-msg->phase-message [:=> [:cat RawMsg [:maybe :keyword]] PhaseMessageValue])

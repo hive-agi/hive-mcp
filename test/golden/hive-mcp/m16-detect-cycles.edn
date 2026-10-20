@@ -1,0 +1,44 @@
+{:case-0
+ {:out {:valid true},
+  :in
+  ({:id "",
+    :title "",
+    :steps [{:id "b", :title "", :depends-on ["a"]}]})},
+ :case-1
+ {:out {:valid false, :cycle "Circular dependency detected"},
+  :in
+  ({:id "6",
+    :title "W",
+    :steps
+    [{:id "c", :title "F"}
+     {:id "d", :title "", :depends-on ["d"]}
+     {:id "a", :title ""}]})},
+ :case-2
+ {:out {:valid true},
+  :in
+  ({:id "",
+    :title "3",
+    :steps
+    [{:id "a", :title ""}
+     {:id "c", :title "0a", :depends-on ["b"]}]})},
+ :case-3
+ {:out {:valid true},
+  :in
+  ({:id "4",
+    :title "",
+    :steps
+    [{:id "a", :title ""}
+     {:id "c", :title "0", :depends-on ["a"]}
+     {:id "b", :title ""}]})},
+ :case-4
+ {:out {:valid true},
+  :in
+  ({:id "24b7",
+    :title "m2Z2",
+    :steps [{:id "c", :title "CeJ", :depends-on []}]})},
+ :case-5
+ {:out {:valid true}, :in ({:id "Uo", :title "ih1", :steps []})},
+ :case-6
+ {:out {:valid true},
+  :in ({:id "8", :title "8", :steps [{:id "a", :title "jk"}]})},
+ :case-7 {:out {:valid true}, :in ({:id "z5b", :title "", :steps []})}}
