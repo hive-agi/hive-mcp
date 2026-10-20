@@ -1,0 +1,22 @@
+{:finished-handle
+ {:adt/variant :cancel/already-finished,
+  :adt/type :AsyncCancelOutcome,
+  :task-id "t",
+  :state :task/cancelled},
+ :finished-record
+ {:adt/variant :cancel/already-finished,
+  :adt/type :AsyncCancelOutcome,
+  :task-id "t",
+  :state :task/timed-out},
+ :interrupted
+ {:adt/variant :cancel/interrupted,
+  :adt/type :AsyncCancelOutcome,
+  :task-id "t"},
+ :not-started
+ {:adt/variant :cancel/not-started,
+  :adt/type :AsyncCancelOutcome,
+  :task-id "t"},
+ :unknown
+ {:adt/variant :cancel/unknown-task,
+  :adt/type :AsyncCancelOutcome,
+  :task-id "t"}}
