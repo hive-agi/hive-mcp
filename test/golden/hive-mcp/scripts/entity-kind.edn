@@ -1,0 +1,13 @@
+{:case-0
+ {:out :edge-durable,
+  :in (#:kg-edge{:id "e1", :from "20260101-abc", :to "node-1"})},
+ :case-1 {:out :unknown, :in (#:some{:attr "6"})},
+ :case-2 {:out :unknown, :in ("")},
+ :case-3 {:out :unknown, :in (nil)},
+ :case-4
+ {:out :mutation, :in (#:mem-mutation{:id "mut-2", :op :feedback})},
+ :case-5
+ {:out :mutation, :in (#:mem-mutation{:id "mut-2", :op :decay})},
+ :case-6 {:out :unknown, :in (#:some{:attr "8"})},
+ :case-7
+ {:out :mutation, :in (#:mem-mutation{:id "mut-2", :op :decay})}}

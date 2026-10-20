@@ -9,7 +9,8 @@
 
    Rationale lives in hive memory (KG-linked), not here."
   (:require [clojure.java.io :as io]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -38,6 +39,8 @@
         specs    (:specs (discover))]
     (into [] (comp (map :addon/init-ns) (map symbol))
           (:ordered (solve specs)))))
+
+(m/=> ctor-namespaces [:=> [:cat] [:vector :symbol]])
 
 (defn- newest-source-mtime
   "Newest mtime across every source root on the classpath, so a boot can tell
