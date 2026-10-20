@@ -5,7 +5,8 @@
             [hive-mcp.dns.result :refer [rescue]]
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
-            [hive-spi.memory.contract :as contract]))
+            [hive-spi.memory.contract :as contract]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -79,3 +80,42 @@
     (let [result @stats]
       (log/info "migrate-backend! complete" result)
       result)))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def WriteStatus [:enum :migrated :queued :failed])
+
+(def MemoryStore
+  "An IMemoryStore port."
+  [:fn {:gen/elements [(reify mem-proto/IMemoryStore
+                         (query-entries [_ _] [])
+                         (get-entry [_ _] nil)
+                         (add-entry! [_ e] (:id e)))]}
+   #(satisfies? mem-proto/IMemoryStore %)])
+
+(def MigrateOpts
+  [:maybe
+   [:map
+    [:batch-size {:optional true} [:int {:min 1}]]
+    [:max-entries {:optional true} [:int {:min 0}]]
+    [:dry-run? {:optional true} :boolean]
+    [:project-id {:optional true} [:maybe :string]]
+    [:on-progress {:optional true} [:maybe ifn?]]]])
+
+(def MigrateStats
+  [:map
+   [:migrated [:int {:min 0}]]
+   [:skipped [:int {:min 0}]]
+   [:errors [:int {:min 0}]]
+   [:failed [:int {:min 0}]]
+   [:queued [:int {:min 0}]]
+   [:total-source [:int {:min 0}]]])
+
+(m/=> write-status [:=> [:cat :any] WriteStatus])
+
+(m/=> migrate-backend!
+  [:function
+   [:=> [:cat MemoryStore MemoryStore] MigrateStats]
+   [:=> [:cat MemoryStore MemoryStore MigrateOpts] MigrateStats]])
