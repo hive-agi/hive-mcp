@@ -65,22 +65,29 @@
    [:done?    :boolean]
    [:cancelled? :boolean]])
 
+(def Lane
+  "The execution lane a task runs on (`async-task.lane/lanes`)."
+  [:enum :batch :short])
+
 (def TaskEntry
   "One registry row, as the pure layer sees it."
   [:map {:closed true}
    [:tool        ToolName]
    [:caller-id   CallerId]
+   [:lane {:optional true} Lane]
    [:state       TaskState]
    [:started-at  :int]
    [:timeout-ms  [:maybe pos-int?]]
    [:handle      HandleView]])
 
 (def TaskSummary
-  "One row rendered for a caller."
+  "One row rendered for a caller. A :task/queued row's :elapsed-ms is how long
+   it has waited for a slot on its :lane."
   [:map {:closed true}
    [:task-id     TaskId]
    [:tool        ToolName]
    [:caller-id   CallerId]
+   [:lane {:optional true} Lane]
    [:state       TaskState]
    [:elapsed-ms  :int]
    [:timeout-ms {:optional true} pos-int?]])
@@ -127,12 +134,14 @@
 
    `:timeout-ms` is optional because most async calls have no defensible
    bound; a caller who knows one supplies it, and the task then ends by itself
-   rather than needing an operator."
+   rather than needing an operator. `:lane` is optional too: omitted, the task
+   runs on the default lane (`async-task.lane/default-lane`)."
   [:map
    [:task-id    TaskId]
    [:tool       ToolName]
    [:caller-id  CallerId]
    [:timeout-ms {:optional true} [:maybe pos-int?]]
+   [:lane       {:optional true} [:maybe Lane]]
    [:f          fn?]])
 
 (def valid-state? (m/validator TaskState))
