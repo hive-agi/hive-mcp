@@ -1,38 +1,13 @@
-{:case-0
- {:out [],
-  :in
-  ({:deprecated #'hive-mcp.server.registration/deprecated-tool?} nil)},
+{:case-0 {:out [], :in (nil)},
  :case-1
- {:out
-  [{:name "a", :deprecated nil}
-   {:name "c"}
-   {:name "memory", :deprecated nil}],
+ {:out [{:name "memory"} {:name "memory", :deprecated nil}],
   :in
-  ({:deprecated #'hive-mcp.server.registration/deprecated-tool?}
-   [{:tool {:name "memory", :deprecated nil}}
-    {:tool {:name "a", :deprecated nil}}
-    {:tool {:name "c"}}])},
- :case-2
- {:out [],
-  :in
-  ({:deprecated #'hive-mcp.server.registration/deprecated-tool?} nil)},
- :case-3
- {:out [],
-  :in
-  ({:deprecated #'hive-mcp.server.registration/deprecated-tool?} [])},
- :case-4
- {:out [],
-  :in
-  ({:deprecated #'hive-mcp.server.registration/deprecated-tool?} nil)},
- :case-5
- {:out [],
-  :in
-  ({:deprecated #'hive-mcp.server.registration/deprecated-tool?} nil)},
- :case-6
- {:out [],
-  :in
-  ({:deprecated #'hive-mcp.server.registration/deprecated-tool?} nil)},
- :case-7
- {:out [],
-  :in
-  ({:deprecated #'hive-mcp.server.registration/deprecated-tool?} nil)}}
+  ([{:tool {:name "memory"}}
+    {:tool {:name "memory", :deprecated nil}}
+    {:tool {:name "memory", :deprecated true}}])},
+ :case-2 {:out [], :in ([])},
+ :case-3 {:out [{:name "c"}], :in ([{:tool {:name "c"}}])},
+ :case-4 {:out [], :in (nil)},
+ :case-5 {:out [], :in (nil)},
+ :case-6 {:out [], :in (nil)},
+ :case-7 {:out [], :in (nil)}}

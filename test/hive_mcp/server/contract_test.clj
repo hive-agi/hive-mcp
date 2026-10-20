@@ -161,17 +161,23 @@
   [:map [:tool [:map [:name [:enum "a" "b" "c" "zeta" "memory"]]
                 [:deprecated {:optional true} [:maybe :boolean]]]]])
 
-(def ^:private BootRules {:deprecated #'reg/deprecated-tool?})
+(def ^:private BootRules
+  "The boot rule set, owned by this test: the subjects below never read the
+   process-global registry, which other tests populate."
+  {:deprecated #'reg/deprecated-tool?})
 
-(def ^:private BootRulesSchema
-  ;; [:= {} v]: a bare map literal after :=  would be read as properties
-  [:= {} BootRules])
+;; The subjects close over BootRules so a generated case (and so the golden)
+;; holds only plain data: the entries in, the tool-defs out. The rules map
+;; carries a var, which EDN cannot read back.
+(defn- listed-under-boot-rules [entries] (reg/listed-tools BootRules entries))
+
+(defn- visible-under-boot-rules [entries] (reg/visible-tools BootRules entries))
 
 (deftrifecta-from-schema listed-tools-hides-deprecated-and-sorts
-  #'reg/listed-tools
-  {:in [:cat BootRulesSchema [:maybe [:vector {:max 5} GenEntry]]]
+  #'listed-under-boot-rules
+  {:in [:cat [:maybe [:vector {:max 5} GenEntry]]]
    :out [:vector reg/ToolDef]
-   :rel (fn [[_ entries] out]
+   :rel (fn [[entries] out]
           (and (= out (sort-by :name out))
                (= (frequencies (map :name out))
                   (frequencies (map :name (remove :deprecated (map :tool entries)))))))
@@ -179,10 +185,10 @@
    :num-tests 200})
 
 (deftrifecta-from-schema visible-tools-keeps-table-order
-  #'reg/visible-tools
-  {:in [:cat BootRulesSchema [:maybe [:vector {:max 5} GenEntry]]]
+  #'visible-under-boot-rules
+  {:in [:cat [:maybe [:vector {:max 5} GenEntry]]]
    :out [:vector reg/ToolDef]
-   :rel (fn [[_ entries] out] (= out (vec (remove :deprecated (map :tool entries)))))
+   :rel (fn [[entries] out] (= out (vec (remove :deprecated (map :tool entries)))))
    :golden-path "test/golden/hive-mcp/server/visible-tools.edn"
    :num-tests 200})
 
