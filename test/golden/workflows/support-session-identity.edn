@@ -1,0 +1,30 @@
+{:case-0
+ {:out {:agent-id "coordinator", :directory nil, :project-id nil},
+  :in
+  ({:directory nil, :agent-id nil}
+   {:directory nil, :agent-id "coordinator"}
+   nil)},
+ :case-1
+ {:out {:agent-id "coordinator", :directory "/w/b", :project-id nil},
+  :in ({:agent-id "coordinator"} {:directory "/w/b"} {})},
+ :case-2
+ {:out {:agent-id "coordinator", :directory "/w/a", :project-id nil},
+  :in
+  ({:directory "/w/a"}
+   {:agent-id "coordinator"}
+   {:derive-project? false})},
+ :case-3
+ {:out {:agent-id "coordinator", :directory nil, :project-id nil},
+  :in ({:agent-id "coordinator"} {:directory nil, :agent-id nil} {})},
+ :case-4
+ {:out {:agent-id "coordinator", :directory nil, :project-id nil},
+  :in ({:directory nil} {:agent-id "coordinator"} nil)},
+ :case-5
+ {:out {:agent-id nil, :directory nil, :project-id nil},
+  :in ({} {} nil)},
+ :case-6
+ {:out {:agent-id "ling-1", :directory nil, :project-id nil},
+  :in ({:agent-id nil} {:agent-id "ling-1"} nil)},
+ :case-7
+ {:out {:agent-id nil, :directory "/w/b", :project-id nil},
+  :in ({:directory "/w/b"} {:directory "/w/b", :agent-id nil} nil)}}
