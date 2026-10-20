@@ -1,0 +1,5 @@
+{:caller-empty [],
+ :caller-keeps-own ["ingestion-chunk"],
+ :caller-wins ["kanban"],
+ :default-applies ["carto" "ingestion-chunk"],
+ :required-lifts ["carto"]}
