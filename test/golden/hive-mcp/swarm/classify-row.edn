@@ -1,0 +1,74 @@
+{:case-0
+ {:out {:slave-id "a", :status :zombie, :alive? false},
+  :in
+  ({:slave-id "a"}
+   {:emacs {:state :known, :ids #{}},
+    :live-pids #{},
+    :live-ids #{},
+    :terminal-modes #{:vterm}})},
+ :case-1
+ {:out {:slave-id "b", :spawn-mode :vterm, :liveness :verified},
+  :in
+  ({:slave-id "b", :spawn-mode :vterm}
+   {:emacs {:state :known, :ids #{"z"}},
+    :live-pids #{11},
+    :live-ids #{"b"},
+    :terminal-modes #{:vterm}})},
+ :case-2
+ {:out
+  {:slave-id "a",
+   :spawn-mode :headless,
+   :process-pid 11,
+   :status :zombie,
+   :alive? false},
+  :in
+  ({:slave-id "a", :spawn-mode :headless, :process-pid 11}
+   {:emacs {:state :known, :ids #{"a"}},
+    :live-pids #{},
+    :live-ids #{"z"},
+    :terminal-modes #{:vterm}})},
+ :case-3
+ {:out {:slave-id "a", :spawn-mode nil, :liveness :unverified},
+  :in
+  ({:slave-id "a", :spawn-mode nil}
+   {:emacs {:state :unknown},
+    :live-pids #{},
+    :live-ids #{},
+    :terminal-modes #{}})},
+ :case-4
+ {:out {:slave-id "b", :process-pid nil, :liveness :verified},
+  :in
+  ({:slave-id "b", :process-pid nil}
+   {:emacs {:state :known, :ids #{}},
+    :live-pids #{},
+    :live-ids #{"b"},
+    :terminal-modes #{}})},
+ :case-5
+ {:out
+  {:slave-id "b",
+   :spawn-mode :headless,
+   :process-pid nil,
+   :status :zombie,
+   :alive? false},
+  :in
+  ({:slave-id "b", :spawn-mode :headless, :process-pid nil}
+   {:emacs {:state :known, :ids #{"z"}},
+    :live-pids #{},
+    :live-ids #{"z"},
+    :terminal-modes #{:vterm}})},
+ :case-6
+ {:out {:slave-id "a", :liveness :unverified},
+  :in
+  ({:slave-id "a"}
+   {:emacs {:state :unknown},
+    :live-pids #{99},
+    :live-ids #{},
+    :terminal-modes #{:vterm}})},
+ :case-7
+ {:out {:slave-id "b", :liveness :unverified},
+  :in
+  ({:slave-id "b"}
+   {:emacs {:state :unknown},
+    :live-pids #{11},
+    :live-ids #{"z"},
+    :terminal-modes #{}})}}

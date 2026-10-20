@@ -1,0 +1,97 @@
+{:case-0
+ {:out
+  {:agent-id "ling-1",
+   :session-id "sess",
+   :project-id "proj",
+   :created-ids ["m1" "m2" "s2" "s1"],
+   :stats {:x -1, :wrapped 4}},
+  :in
+  ("ling-1"
+   {:memory-ids-created [{:id "m1"} {:id "m2"} {:id "s2"}]}
+   {:session "sess",
+    :summary-id "s1",
+    :sub-summaries [{:summary-id "s1"} {:summary-id nil}]}
+   "proj"
+   {:x -1})},
+ :case-1
+ {:out
+  {:agent-id "ling-1",
+   :session-id nil,
+   :project-id "proj",
+   :created-ids ["m1" "m2" "s2"],
+   :stats {:x -1, :wrapped 3}},
+  :in
+  ("ling-1"
+   {:memory-ids-created [{:id nil} {:id nil}]}
+   {:summary-id nil,
+    :sub-summaries
+    [{:summary-id "m1"} {:summary-id "m2"} {:summary-id "s2"}]}
+   "proj"
+   {:x -1})},
+ :case-2
+ {:out
+  {:agent-id "ling-1",
+   :session-id "sess",
+   :project-id "proj",
+   :created-ids ["m1"],
+   :stats {:x -1, :wrapped 1}},
+  :in
+  ("ling-1"
+   {:memory-ids-created []}
+   {:session "sess",
+    :summary-id "m2",
+    :sub-summaries
+    [{:summary-id "m1"} {:summary-id "m1"} {:summary-id nil}]}
+   "proj"
+   {:x -1})},
+ :case-3
+ {:out
+  {:agent-id "ling-1",
+   :session-id nil,
+   :project-id "proj",
+   :created-ids [],
+   :stats {:wrapped 0}},
+  :in ("ling-1" {} {:sub-summaries []} "proj" {})},
+ :case-4
+ {:out
+  {:agent-id "ling-1",
+   :session-id "sess",
+   :project-id "proj",
+   :created-ids [],
+   :stats {:wrapped 0}},
+  :in
+  ("ling-1"
+   {:memory-ids-created []}
+   {:session "sess", :summary-id "m1", :sub-summaries []}
+   "proj"
+   {})},
+ :case-5
+ {:out
+  {:agent-id "ling-1",
+   :session-id nil,
+   :project-id "proj",
+   :created-ids ["m2"],
+   :stats {:x -7, :wrapped 1}},
+  :in ("ling-1" {:memory-ids-created [{:id "m2"}]} {} "proj" {:x -7})},
+ :case-6
+ {:out
+  {:agent-id "ling-1",
+   :session-id "sess",
+   :project-id "proj",
+   :created-ids [],
+   :stats {:x -3, :wrapped 0}},
+  :in ("ling-1" {} {:session "sess"} "proj" {:x -3})},
+ :case-7
+ {:out
+  {:agent-id "ling-1",
+   :session-id nil,
+   :project-id "proj",
+   :created-ids ["s2" "m1"],
+   :stats {:wrapped 2}},
+  :in
+  ("ling-1"
+   {}
+   {:summary-id "m2",
+    :sub-summaries [{:summary-id "s2"} {:summary-id "m1"}]}
+   "proj"
+   {})}}

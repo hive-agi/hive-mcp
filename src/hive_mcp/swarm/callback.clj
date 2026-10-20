@@ -17,7 +17,8 @@
             [hive-mcp.channel.core :as channel]
             [hive-mcp.agent.protocol :as proto]
             [hive-mcp.agent.ling :as ling]
-            [hive-mcp.swarm.datascript.queries :as ds-queries]))
+            [hive-mcp.swarm.datascript.queries :as ds-queries]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -78,21 +79,39 @@
   (log/info "Callback registered" {:task-id task-id :ling-id ling-id})
   task-id)
 
+(def FormatFn
+  "(fn [task-id event] -> string), the dispatch prompt a callback sends."
+  [:=> [:cat :string :map] :string])
+
+(def Registration
+  "A stored callback."
+  [:map [:ling-id :string] [:registered-at :int] [:format-fn FormatFn]])
+
+;; :pre requires both ids to be strings; answers the task-id
+(m/=> register! [:=> [:cat :string [:map [:ling-id :string] [:format-fn {:optional true} [:maybe FormatFn]]]]
+                 :string])
+
 (defn unregister!
   "Remove a callback registration."
   [task-id]
   (swap! callbacks dissoc task-id)
   (log/debug "Callback unregistered" {:task-id task-id}))
 
+(m/=> unregister! [:=> [:cat :any] :nil])
+
 (defn registered?
   "Check if a callback is registered for a task."
   [task-id]
   (contains? @callbacks task-id))
 
+(m/=> registered? [:=> [:cat :any] :boolean])
+
 (defn registrations
   "List all active callback registrations."
   []
   @callbacks)
+
+(m/=> registrations [:=> [:cat] [:map-of :string Registration]])
 
 ;; =============================================================================
 ;; Callback Execution
@@ -163,6 +182,9 @@
               (recur)))))
       (log/info "Callback listener started" {:channels [:task-completed :task-failed]}))))
 
+;; nil either way: idempotent, the effect is the go-loop
+(m/=> start-listener! [:=> [:cat] :nil])
+
 (defn stop-listener!
   "Stop the background callback listener."
   []
@@ -176,6 +198,8 @@
           (log/debug "Unsubscribe error:" (.getMessage e)))))
     (reset! listener-channels [])
     (log/info "Callback listener stopped")))
+
+(m/=> stop-listener! [:=> [:cat] :nil])
 
 ;; =============================================================================
 ;; Convenience: dispatch-and-callback
@@ -215,6 +239,10 @@
       (throw (ex-info "Dispatch did not return task-id"
                       {:target target-agent-id :result result})))))
 
+;; boundary: dispatches through tools.agent.dispatch; throws when the dispatch
+;; answers no task-id. The trailing opts are keyword args.
+(m/=> dispatch-and-callback! [:=> [:cat :string :string :string [:* :any]] :string])
+
 ;; =============================================================================
 ;; Cleanup: expire stale callbacks
 ;; =============================================================================
@@ -232,6 +260,8 @@
      (when (seq stale)
        (log/info "Cleaned up stale callbacks" {:count (count stale)})))))
 
+(m/=> cleanup-stale! [:function [:=> [:cat] :nil] [:=> [:cat :int] :nil]])
+
 (defn cleanup-for-agent!
   "Remove all callbacks registered by a specific ling (on ling death)."
   [ling-id]
@@ -244,6 +274,8 @@
       (log/info "Cleaned up callbacks for dead ling" {:ling-id ling-id
                                                       :count (count agent-callbacks)}))))
 
+(m/=> cleanup-for-agent! [:=> [:cat :any] :nil])
+
 (defn status
   "Get callback system status."
   []
@@ -252,6 +284,11 @@
    :registrations (mapv (fn [[tid {:keys [ling-id registered-at]}]]
                           {:task-id tid :ling-id ling-id :registered-at registered-at})
                         @callbacks)})
+
+(m/=> status [:=> [:cat] [:map [:listener-active? :boolean]
+                          [:registered-count [:int {:min 0}]]
+                          [:registrations [:vector [:map [:task-id :string] [:ling-id :string]
+                                                    [:registered-at :int]]]]]])
 
 (comment
   ;; REPL testing

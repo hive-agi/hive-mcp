@@ -103,9 +103,26 @@
           (= out (and (number? size) (> size (:provider/max-tokens spec)))))
    :num-tests 200})
 
+(defn- steer-escalation
+  "Uniform over four arms: an over-budget small spec with a heavy tier
+   (:escalated), the same with a missing heavy tier (:err), or the raw draw
+   twice. Independent draws reached :escalated near 13 of 200 against a
+   floor of 16."
+  [[[config spec size] arm]]
+  (let [over (fn [heavy] [(assoc-in config [:escalation :heavy-tier-key] heavy)
+                          small-spec
+                          (if (and (number? size) (> size 8192)) size 20000)])]
+    (case arm
+      0 (over :p/heavy)
+      1 (over :p/missing)
+      [config spec size])))
+
 (deftrifecta-from-schema escalation-reaches-the-heavy-tier
   #'esc/maybe-escalate
-  {:in [:cat Config [:enum {} small-spec heavy-spec] DocSize]
+  {:in [:cat {:gen/schema [:tuple [:cat Config [:enum {} small-spec heavy-spec] DocSize]
+                           [:enum 0 1 2 3]]
+              :gen/fmap steer-escalation}
+        Config [:enum {} small-spec heavy-spec] DocSize]
    :out [:or [:map [:ok esc/SpecWithCeiling]] [:map [:error resolve/RouterError]]]
    :rel (fn [[config spec size] out]
           (let [heavy (get-in config [:escalation :heavy-tier-key])]

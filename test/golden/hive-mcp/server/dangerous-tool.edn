@@ -1,0 +1,8 @@
+{:case-0 {:out true, :in ("bash")},
+ :case-1 {:out false, :in ("memory")},
+ :case-2 {:out true, :in ("swarm_kill")},
+ :case-3 {:out true, :in ("eval_elisp")},
+ :case-4 {:out true, :in ("magit_commit")},
+ :case-5 {:out false, :in ("memory")},
+ :case-6 {:out false, :in ("file_edit")},
+ :case-7 {:out true, :in ("magit_commit")}}

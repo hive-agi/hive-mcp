@@ -1,0 +1,25 @@
+{:friction
+ #:friction{:context "no grep",
+            :count 1,
+            :reported-by [:agent/id "a"],
+            :resolved? false,
+            :type :tool-missing,
+            :workaround "used carto"},
+ :knowledge
+ #:knowledge{:confidence 0.5,
+             :content "use carto",
+             :tags #{"tools"},
+             :type :decision},
+ :agent
+ #:agent{:id "ling-1", :spawned-by [:agent/id "coord"], :type :ling},
+ :memory
+ #:memory{:duration :long,
+          :id "m-1",
+          :references [1 2],
+          :tags #{"a"},
+          :type :note},
+ :memory-bare #:memory{:duration :short, :id "m-2", :type :plan},
+ :recall
+ #:recall{:context :cross-project,
+          :count 3,
+          :memory [:memory/id "m-1"]}}

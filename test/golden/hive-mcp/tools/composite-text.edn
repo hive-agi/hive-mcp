@@ -1,0 +1,8 @@
+{:text
+ "Addon-contributed (`<name> help` lists a subdomain's verbs): belt - Scan; ship - Land a branch; zz.",
+ :empty nil,
+ :names ["ship" "ship land"],
+ :stripped "search",
+ :kept "kg traverse",
+ :no-addon {:name "m24-no-such-tool", :description "d"},
+ :lazy-miss {}}

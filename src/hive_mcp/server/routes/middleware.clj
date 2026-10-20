@@ -28,6 +28,7 @@
             [hive-mcp.agent.identity :as agent-identity]
             [hive-mcp.server.routes.async-ack :as async-ack]
             [hive-mcp.tools.async-params :as async-params]
+            [malli.core :as m]
             [hive-mcp.server.routes.async-task.lane :as async-lane])
 (:import [java.util.concurrent RejectedExecutionException]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -50,6 +51,14 @@
         (re-find #"(?i)no.*protocol.*method" msg)
         (instance? IllegalStateException e))))
 
+(def Handler
+  "A tool handler or a wrapped one: a 1-arity fn of the args map."
+  [:=> [:cat :any] :any])
+
+(def ToolName
+  "The tool a wrapper serves; nil for a bare handler under test."
+  [:maybe :string])
+
 (defn wrap-handler-retry
   "Wrap handler with retry logic for hot-reload resilience."
   [handler]
@@ -70,6 +79,8 @@
             (Thread/sleep hot-reload-retry-delay-ms)
             (recur (inc attempt)))
           (:ok result))))))
+
+(m/=> wrap-handler-retry [:=> [:cat Handler] Handler])
 
 
 ;; =============================================================================
@@ -102,6 +113,8 @@
             (log/debug "[NATS] Tool notification failed for" tool-name (.getMessage e)))))
       result)))
 
+(m/=> wrap-handler-nats-notify [:=> [:cat Handler ToolName] Handler])
+
 
 ;; =============================================================================
 ;; Context Binding
@@ -128,6 +141,8 @@
     (fn [] (with-bindings {v lane} (f)))
     f))
 
+(m/=> in-embed-lane [:=> [:cat :keyword [:=> [:cat] :any]] [:=> [:cat] :any]])
+
 ;; -----------------------------------------------------------------------------
 ;; Activity attribution (REGISTRY-STALE-HIDES-LIVE)
 ;;
@@ -148,6 +163,8 @@
   "Forget every throttle stamp. Test seam."
   []
   (reset! activity-touched-at {}))
+
+(m/=> reset-activity-throttle! [:=> [:cat] [:= {} {}]])
 
 (defn- registry-touch-slave!
   [slave-id updates]
@@ -184,6 +201,8 @@
     (catch Throwable e
       (log/debug "activity touch failed (non-fatal):" (ex-message e))
       nil)))
+
+(m/=> touch-caller-activity! [:=> [:cat [:=> [:cat :string] :any] [:maybe :string]] :any])
 
 (defn wrap-handler-context
   "Bind request context: keywordize args, verify identity, resolve ids, bind
@@ -231,6 +250,8 @@
                                        :directory directory}
               ((in-embed-lane :interactive #(handler args))))))))))
 
+(m/=> wrap-handler-context [:=> [:cat Handler] Handler])
+
 
 ;; =============================================================================
 ;; Content Transform Wrappers
@@ -242,6 +263,8 @@
   (fn [args]
     (id/normalize-content (handler args))))
 
+(m/=> wrap-handler-normalize [:=> [:cat Handler] Handler])
+
 (defn wrap-handler-compress
   "Apply response compression when `compact` param is present."
   [handler]
@@ -252,11 +275,15 @@
         (compress/compress-content content mode)
         content))))
 
+(m/=> wrap-handler-compress [:=> [:cat Handler] Handler])
+
 (defn wrap-handler-response
   "Wrap handler result in {:content ...} response map."
   [handler]
   (fn [args]
     {:content (handler args)}))
+
+(m/=> wrap-handler-response [:=> [:cat Handler] Handler])
 
 
 ;; =============================================================================
@@ -275,6 +302,8 @@
                  (some? flag)                   (assoc args :async flag)
                  (contains? commands cmd-kw)    (assoc args :async true)
                  :else                          args)))))
+
+(m/=> wrap-handler-default-async-for-commands [:=> [:cat Handler [:maybe [:or [:set :any] [:sequential :any]]]] Handler])
 
 (defn wrap-handler-async
   "Intercept async:true calls: return an ack, run the work on the async pool.
@@ -381,6 +410,8 @@
                              :error "async pool saturated: nothing was started, retry shortly"})}])))
       (handler args))))
 
+(m/=> wrap-handler-async [:=> [:cat Handler ToolName] Handler])
+
 (defn- guard-refusal
   "Render `decision` as the content array for a refused call."
   [tool-name decision]
@@ -413,6 +444,11 @@
              :cwd (id/extract-directory args)}
       caller   (assoc :caller-id caller)
       verified (assoc :verified-caller-id verified))))
+
+(m/=> guard-raw-context [:=> [:cat ToolName [:maybe :map]]
+                         [:map [:tool ToolName] [:input :any] [:agent-id :any] [:cwd :any]
+                          [:caller-id {:optional true} :string]
+                          [:verified-caller-id {:optional true} :string]]])
 
 (defn wrap-handler-guard
   "Gate the call through the `:guard/decide` seam before the handler runs.
@@ -459,6 +495,8 @@
                                 (when-let [rid (:guard/rule-id decision)]
                                   (str " [" rid "]")))})
         (handler args)))))
+
+(m/=> wrap-handler-guard [:=> [:cat Handler ToolName] Handler])
 
 
 ;; =============================================================================
@@ -559,6 +597,9 @@
     {:allowance allowance
      :remaining (max 0 (- remaining (max 0 rendered-chars)))}))
 
+(m/=> spend-piggyback-budget [:=> [:cat :int :int :int]
+                              [:map [:allowance [:int {:min 0}]] [:remaining [:int {:min 0}]]]])
+
 (defn- piggyback-content-chars
   "Total text chars in MCP content, for measuring a channel's actual wire cost."
   [content]
@@ -598,6 +639,8 @@
         (do (log/warn "grant: refused a tool call" {:tool tool-name :command (:command args) :caller caller})
             [{:type "text" :isError true :text no}])
         (handler args)))))
+
+(m/=> wrap-handler-grant [:=> [:cat Handler ToolName] Handler])
 
 (defn wrap-handler-piggybacks
   "Unified piggyback wrapper: drains all 4 channels in a single pass.
@@ -672,6 +715,8 @@
                                                  (ctx-id/caller-id-string caller))]
        (id/wrap-piggyback catchup-content hivemind-msgs)))))
 
+(m/=> wrap-handler-piggybacks [:function [:=> [:cat Handler] Handler] [:=> [:cat Handler ToolName] Handler]])
+
 
 ;; =============================================================================
 ;; Middleware Chain Composition
@@ -701,3 +746,5 @@
       (wrap-handler-piggybacks tool-name)
       wrap-handler-context
       wrap-handler-response))
+
+(m/=> build-middleware-chain [:=> [:cat Handler ToolName [:maybe [:or [:set :any] [:sequential :any]]]] Handler])

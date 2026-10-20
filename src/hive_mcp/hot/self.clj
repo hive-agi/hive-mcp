@@ -19,7 +19,8 @@
    Single-Source Lever forbids (20260817195814-7eebeaf4): it would be correct
    on the day it was written and silently wrong the first time somebody adds,
    moves or deletes a protocol."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -41,6 +42,16 @@
   [v]
   (boolean (:protocol (meta v))))
 
+;; A namespace symbol; generated from namespaces this image always has, so a
+;; property reads a live namespace rather than one find-ns does not know.
+(def LoadedNs
+  [:symbol {:gen/elements '[hive-mcp.hot.self hive-mcp.hot.core hive-mcp.protocols.kg
+                            hive-mcp.protocols.vector clojure.core clojure.string]}])
+
+(def Prefix
+  "A namespace-name prefix, matched with starts-with?."
+  [:string {:gen/elements ["hive-mcp." "hive-mcp.protocols" "hive-mcp.hot." "no.such.prefix"]}])
+
 (defn defines-protocol?
   "Does `ns-sym` intern the methods of a protocol it defines?
 
@@ -49,6 +60,8 @@
    this interlock leaves free to reload."
   [ns-sym]
   (boolean (some protocol-method? (vals (ns-publics ns-sym)))))
+
+(m/=> defines-protocol? [:=> [:cat LoadedNs] :boolean])
 
 (defn protocol-namespaces
   "The LOADED namespaces under `prefix` that define a protocol.
@@ -71,3 +84,8 @@
                (filter #(str/starts-with? (str %) prefix))
                (filter defines-protocol?))
          (all-ns))))
+
+(m/=> protocol-namespaces
+      [:function
+       [:=> [:cat] [:set :symbol]]
+       [:=> [:cat Prefix] [:set :symbol]]])

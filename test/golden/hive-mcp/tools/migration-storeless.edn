@@ -1,0 +1,18 @@
+{:help-commands
+ ["status"
+  "backup"
+  "restore"
+  "list"
+  "switch"
+  "sync"
+  "export"
+  "import"
+  "validate"
+  "adapters"],
+ :adapters [:edn :json],
+ :refusals
+ {:switch :refused,
+  :sync :refused,
+  :validate :refused,
+  :export :refused,
+  :import :refused}}

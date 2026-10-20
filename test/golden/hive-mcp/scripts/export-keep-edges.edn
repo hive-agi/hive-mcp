@@ -1,0 +1,8 @@
+{:report
+ {:scanned 3,
+  :kept 2,
+  :dropped 1,
+  :mutations 1,
+  :max-heap-pct :bounded},
+ :ids ("d1" "d2" "mut-1"),
+ :no-db-id true}

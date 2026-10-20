@@ -1,0 +1,6 @@
+{:decoded {:a 12, :b "x"},
+ :bad-field {:param "a", :errors {:a ["should be an integer"]}},
+ :two-bad
+ {:param "p",
+  :errors {:a ["should be an integer"], :b ["should be a string"]}},
+ :decoded-spawn {:llm_retries 2, :chat_run_id nil}}

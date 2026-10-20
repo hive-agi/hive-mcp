@@ -1,0 +1,74 @@
+(ns hive-mcp.tools.cli-contract-test
+  "Contract facets for the CLI dispatcher's pure surface: command parsing,
+   tree resolution and help formatting over a fixed handler tree."
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is]]
+            [hive-mcp.tools.cli :as cli]
+            [hive-mcp.tools.core :as core]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]
+            [hive-test.golden :as golden]
+            [malli.core :as m]))
+
+;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
+;;
+;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+(defn- leaf [tag] (fn [_] {:type "text" :text tag}))
+
+(def ^:private tree
+  {:status {:_handler (leaf "status") :list (leaf "status list")}
+   :spawn  (leaf "spawn")
+   :deep   {:a {:b (leaf "deep a b")}}})
+
+(def ^:private Command
+  [:or :nil [:enum "" "   " "status" "status list" " spawn  " "deep a b" "deep a" "nope" "status nope"]])
+
+(deftrifecta-from-schema parse-command-splits-on-whitespace
+  #'cli/parse-command
+  {:in [:cat Command]
+   :out [:maybe [:vector :keyword]]
+   :rel (fn [[c] out]
+          (if (str/blank? c)
+            (nil? out)
+            (= out (mapv keyword (str/split (str/trim c) #"\s+")))))
+   :golden-path "test/golden/hive-mcp/tools/cli-parse-command.edn"
+   :num-tests 100})
+
+(def ^:private Path
+  (into [:enum] (keep cli/parse-command ["status" "status list" "spawn" "deep a b"
+                                         "deep a" "nope" "status nope" "spawn extra"])))
+
+(deftrifecta-from-schema resolve-handler-walks-the-tree
+  #'cli/resolve-handler
+  {:in [:cat [:= {} tree] Path]
+   :out cli/Resolution
+   :rel (fn [[_ p] out]
+          (case p
+            [:status]       (= "status" (:text ((:handler out) {})))
+            [:status :list] (= "status list" (:text ((:handler out) {})))
+            [:status :nope] (= [:nope] (:remaining out))
+            [:spawn]        (= [] (:remaining out))
+            [:spawn :extra] (= [:extra] (:remaining out))
+            [:deep :a :b]   (= "deep a b" (:text ((:handler out) {})))
+            [:deep :a]      (contains? out :tree)
+            [:nope]         (= :not-found (:error out))))
+   :classify (fn [_ out] (cond (:handler out) :handler (:tree out) :tree :else :error))
+   :classify-domain #{:handler :tree :error}
+   :num-tests 200})
+
+(golden/deftest-golden help-and-dispatch-golden
+  "test/golden/hive-mcp/tools/cli-help.edn"
+  (let [h (cli/make-cli-handler tree)]
+    {:help      (cli/format-help tree)
+     :dispatch  (:text (h {:command "status list"}))
+     :default   (:text (h {:command "status"}))
+     :verbs     (cli/declared-verbs (with-meta {:x (with-meta {} {::cli/verbs ["A" :b]})} {}) :x)
+     :no-verbs  (cli/declared-verbs tree :spawn)}))
+
+(deftest handlers-answer-mcp-responses
+  (let [h (cli/make-cli-handler tree)
+        b (cli/make-batch-handler tree)]
+    (is (m/validate core/McpResponse (h {:command "nope"})))
+    (is (:isError (h {:command "nope"})))
+    (is (m/validate core/McpResponse (b {:operations [{:command "spawn"} {:command "zz"}]})))
+    (is (:isError (b {})))))

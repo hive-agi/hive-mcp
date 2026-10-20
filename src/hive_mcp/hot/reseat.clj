@@ -45,6 +45,25 @@
             [:map [:ns :string] [:result :any]]
             [:map [:ns :string] [:error :string]]]])
 
+;; Reseater above generates through :gen/elements below; the run-plan arms
+;; are told apart by the report schema's own :or.
+(def ^:private reseater-gen
+  [(fn [loaded] (count loaded))
+   (fn [_] :seated)
+   (fn [_] (throw (ex-info "re-seat failed" {})))])
+
+(def GenReseater
+  "Reseater, generating."
+  [:fn {:error/message "a re-seater must be invocable" :gen/elements reseater-gen} ifn?])
+
+(def Loaded
+  "The namespace names a pass loaded, as strings or symbols."
+  [:sequential [:or {:gen/elements ["hive-mcp.a" "hive-mcp.b" 'hive-mcp.c]} :string :symbol]])
+
+(def Registry
+  "{ns-sym Reseater}."
+  [:map-of [:symbol {:gen/elements '[hive-mcp.a hive-mcp.b hive-mcp.c hive-mcp.d]}] GenReseater])
+
 ;; =============================================================================
 ;; Collect
 ;; =============================================================================
@@ -59,14 +78,20 @@
   (swap! registry assoc ns-sym f)
   ns-sym)
 
+(m/=> register-reseater! [:=> [:cat :symbol GenReseater] :symbol])
+
 (defn unregister-reseater! [ns-sym]
   (swap! registry dissoc ns-sym)
   nil)
+
+(m/=> unregister-reseater! [:=> [:cat :any] :nil])
 
 (defn registered
   "The registry now: {ns-sym Reseater}."
   []
   @registry)
+
+(m/=> registered [:=> [:cat] Registry])
 
 ;; =============================================================================
 ;; Promote
@@ -81,6 +106,9 @@
               (distinct)
               (keep (fn [n] (when-let [f (get registry n)] [n f]))))
         loaded))
+
+(m/=> reseat-plan
+      [:=> [:cat [:maybe Registry] Loaded] [:vector [:tuple :symbol GenReseater]]])
 
 ;; =============================================================================
 ;; Boundary
@@ -97,10 +125,14 @@
               {:ns (str n) :result (:ok res)})))
         plan))
 
+(m/=> run-plan! [:=> [:cat [:sequential [:tuple :symbol GenReseater]] :any] ReseatReport])
+
 (defn reseat!
   "Run the registered re-seaters for the namespaces a pass loaded."
   [loaded]
   (run-plan! (reseat-plan (registered) loaded) (vec loaded)))
+
+(m/=> reseat! [:=> [:cat Loaded] ReseatReport])
 
 (defn via-var
   "A fn that calls the var `qsym` names, resolving it on EVERY call. Unlike a
@@ -112,3 +144,8 @@
     (if-let [v (resolve qsym)]
       (apply v args)
       (throw (ex-info (str "via-var: " qsym " is not loaded") {:var qsym})))))
+
+;; The answer is a fn that calls the named var on every call.
+(m/=> via-var
+      [:=> [:cat [:qualified-symbol {:gen/elements '[clojure.core/inc clojure.core/str]}]]
+       [:fn {:gen/elements [(fn via-var-call [& args] (apply str args))]} fn?]])

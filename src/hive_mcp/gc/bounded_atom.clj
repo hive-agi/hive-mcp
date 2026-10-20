@@ -25,7 +25,8 @@
 
    (sweep-all!)  ;; => {:total-evicted N :per-atom [...] :duration-ms T}
    ```"
-  (:require [taoensso.timbre :as log]))
+  (:require [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -43,6 +44,74 @@
 ;; =============================================================================
 ;; Registration API
 ;; =============================================================================
+
+;; =============================================================================
+;; Value schemas
+;; =============================================================================
+
+(def AtomRef
+  "What a bounded atom manages: an atom or any IDeref, never nil."
+  [:fn {:error/message "an IDeref"
+        :gen/schema [:map-of :keyword :int]
+        :gen/fmap atom}
+   #(instance? clojure.lang.IDeref %)])
+
+(def CountFn
+  "(fn [atom-ref]) -> current entry count. `register!` asserts `fn?`."
+  [:fn {:error/message "a fn"
+        :gen/elements [(fn [a] (count @a))]}
+   fn?])
+
+(def EvictFn
+  "(fn [atom-ref {:keys [max-entries ttl-ms now-ms]}]) -> evicted count."
+  [:fn {:error/message "a fn"
+        :gen/elements [(fn [_ _] 0)
+                       (fn [a {:keys [max-entries]}]
+                         (let [n (count @a)
+                               drop-n (max 0 (- n max-entries))]
+                           (swap! a #(into {} (drop drop-n) %))
+                           drop-n))]}
+   fn?])
+
+(def Spec
+  "A bounded-atom spec as `register!` reads it. Open: a caller may carry its
+   own keys along."
+  [:map
+   [:name {:optional true} [:maybe :string]]
+   [:atom-ref AtomRef]
+   [:max-entries pos-int?]
+   [:ttl-ms {:optional true} [:maybe :int]]
+   [:count-fn CountFn]
+   [:evict-fn EvictFn]])
+
+(def RegisteredSpec
+  "A spec as the registry holds it: :name is always filled in."
+  [:map
+   [:name :string]
+   [:atom-ref AtomRef]
+   [:max-entries pos-int?]
+   [:ttl-ms {:optional true} [:maybe :int]]
+   [:count-fn CountFn]
+   [:evict-fn EvictFn]])
+
+(def AtomSweep
+  "One atom's sweep stats. A failed sweep reports :evicted 0, :remaining -1
+   and the exception message under :error."
+  [:map {:closed true}
+   [:atom-id :keyword]
+   [:name [:maybe :string]]
+   [:evicted :int]
+   [:remaining :int]
+   [:error [:maybe :string]]])
+
+(def SweepStats
+  "What `sweep-all!` answers."
+  [:map {:closed true}
+   [:total-evicted :int]
+   [:errors nat-int?]
+   [:per-atom [:vector AtomSweep]]
+   [:duration-ms nat-int?]
+   [:atom-count nat-int?]])
 
 (defn register!
   "Register a bounded atom for lifecycle sweep management.
@@ -72,6 +141,8 @@
                "ttl-ms:" (:ttl-ms spec))
     id))
 
+(m/=> register! [:=> [:cat :keyword Spec] :keyword])
+
 (defn deregister!
   "Remove a bounded atom from the registry.
    Returns true if it was registered, false otherwise."
@@ -80,20 +151,28 @@
     (swap! *registry dissoc id)
     existed?))
 
+(m/=> deregister! [:=> [:cat :any] :boolean])
+
 (defn registered?
   "Check if a bounded atom is registered."
   [id]
   (contains? @*registry id))
+
+(m/=> registered? [:=> [:cat :any] :boolean])
 
 (defn registered-ids
   "Return the set of all registered bounded atom IDs."
   []
   (set (keys @*registry)))
 
+(m/=> registered-ids [:=> [:cat] [:set :keyword]])
+
 (defn get-spec
   "Get the spec for a registered bounded atom. Returns nil if not registered."
   [id]
   (get @*registry id))
+
+(m/=> get-spec [:=> [:cat :any] [:maybe RegisteredSpec]])
 
 ;; =============================================================================
 ;; Sweep Logic
@@ -159,6 +238,8 @@
      :duration-ms   elapsed
      :atom-count    (count registry)}))
 
+(m/=> sweep-all! [:=> [:cat] SweepStats])
+
 ;; =============================================================================
 ;; Testing Helpers
 ;; =============================================================================
@@ -168,3 +249,5 @@
   []
   (reset! *registry {})
   nil)
+
+(m/=> reset-registry! [:=> [:cat] :nil])
