@@ -1,0 +1,8 @@
+{:case-0 {:out nil, :in (nil)},
+ :case-1 {:out ["all" "b"], :in (["all" " b "])},
+ :case-2 {:out nil, :in (#{})},
+ :case-3 {:out ["a"], :in (["a"])},
+ :case-4 {:out :all, :in (:all)},
+ :case-5 {:out nil, :in (:other)},
+ :case-6 {:out nil, :in (x)},
+ :case-7 {:out ["all" "b"], :in ("all b")}}
