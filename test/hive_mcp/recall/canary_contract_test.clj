@@ -106,7 +106,15 @@
 
 (deftrifecta-from-schema presence-fault-wants-a-positive-count
   #'c/presence-fault
-  {:in [:cat [:map [:label Label] [:count [:or [:int {:min -2 :max 3}] :nil :string]]
+  ;; :count is drawn uniformly between a positive count (:present) and the
+  ;; rest of its domain: the bare :or reached :present near 30 of 200
+  ;; against a floor of 25.
+  {:in [:cat [:map [:label Label]
+              [:count [:or {:gen/schema [:tuple [:int {:min 1 :max 3}]
+                                         [:or [:int {:min -2 :max 0}] :nil :string]
+                                         :boolean]
+                            :gen/fmap (fn [[pos other pos?]] (if pos? pos other))}
+                       [:int {:min -2 :max 3}] :nil :string]]
               [:probe :string] [:diagnosis {:optional true} [:maybe :string]]]]
    :out [:maybe c/PresenceFault]
    :rel (fn [[{:keys [count diagnosis]}] out]
