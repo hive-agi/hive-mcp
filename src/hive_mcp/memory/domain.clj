@@ -94,4 +94,41 @@
     :scope/auto    (let [pid (:project-id sf)]
                      [pid (and pid (not= pid "global"))])))
 
+(defn scope->search-project-ids
+  "Project-ids a semantic search may return hits from, as [string?] or nil
+   (nil = no project filter).
+
+   Takes the ScopeFilter SF and an options map:
+     :include-descendants?  also admit child projects (HCR)
+     :strict?               an EXPLICIT project scope admits only that project
+                            (+ descendants), not its ancestors and global
+     :visible-scopes        fn pid -> ancestors-inclusive scopes
+     :descendant-scopes     fn pid -> child scopes
+   The two fns default to the knowledge-graph scope helpers; tests inject
+   stubs. An explicit \"global\" scope is only ever the global entries.
+   An auto-derived scope keeps the hierarchy (a child sees its parent): it was
+   never something the caller named, so it must not narrow to one project.
+   Explicit scope used to behave like auto, which is why scope=\"topic:x\"
+   returned off-scope hits from the parent and global scopes
+   (kanban 20260519145016-4561f6bc)."
+  [sf {:keys [include-descendants? strict? visible-scopes descendant-scopes]}]
+  (let [visible     (or visible-scopes kg-scope/visible-scopes)
+        descendants (or descendant-scopes kg-scope/descendant-scopes)
+        expand      (fn [base pid]
+                      (vec (distinct (concat base
+                                             (when include-descendants?
+                                               (descendants pid))))))]
+    (adt-case ScopeFilter sf
+      :scope/all     nil
+      :scope/global  ["global"]
+      :scope/project (let [pid (:project-id sf)]
+                       (if strict?
+                         (expand [pid] pid)
+                         (expand (visible pid) pid)))
+      :scope/auto    (let [pid (:project-id sf)]
+                       (when (and pid (not= pid "global"))
+                         (expand (visible pid) pid))))))
+
+(m/=> scope->search-project-ids [:=> [:cat [:map [:adt/type :keyword] [:adt/variant :keyword]] :map] [:maybe [:vector :string]]])
+
 (m/=> scope->effective [:=> [:cat [:map [:adt/type :keyword] [:adt/variant :keyword]]] [:tuple [:maybe :string] [:maybe :boolean]]])

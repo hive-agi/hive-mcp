@@ -298,7 +298,10 @@
   "Hard-delete a kanban entry. In :dual-read, attempts both slots so
    the entry can't resurrect from the legacy slot during soak. Announces
    the write through write-events once the primary delete returned, and drops
-   any remembered write so a deleted entry is not served from the overlay."
+   any remembered write so a deleted entry is not served from the overlay.
+   A refused delete (a hive-spi failure map, see `write-rejected?`) removed
+   nothing: it is neither announced nor forgotten, and the store's answer is
+   returned unchanged."
   [id]
   (let [result (case (mode)
                  :default   (proto/delete-entry! (proto/get-store) id)
@@ -306,8 +309,9 @@
                  :dual-read (let [primary (proto/delete-entry! (proto/get-store :kanban) id)]
                               (mirror-write! (fn [s] (proto/delete-entry! s id)))
                               primary))]
-    (forget-write! id)
-    (announce! :deleted {:id id})
+    (when-not (write-rejected? result)
+      (forget-write! id)
+      (announce! :deleted {:id id}))
     result))
 
 ;;; ============================================================================

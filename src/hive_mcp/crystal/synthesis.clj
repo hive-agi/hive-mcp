@@ -60,11 +60,16 @@
 
 (def SessionSummary
   "`synthesize` result. A store failure answers {:error :project-id :session}
-   instead of the :summary-id shape."
+   instead of the :summary-id shape. A harvest that is not persist-worthy
+   answers {:skipped true :reason \"no-activity\" ...} merged with the
+   lifecycle stats, and persists no summary."
   [:or
    [:map [:summary-id :string] [:session :string] [:project-id :string]
     [:session-timing :map] [:stats :any]
     [:sub-summaries {:optional true} [:vector :map]]]
+   [:map [:skipped [:= true]] [:reason [:= "no-activity"]]
+    [:session :string] [:project-id :string]
+    [:session-timing :map] [:stats :any]]
    [:map [:error [:maybe :string]] [:project-id :string] [:session :string]]])
 
 ;; =============================================================================
@@ -392,6 +397,16 @@
        :scope-tag scope-tag
        :session (crystal/session-id)})))
 
+(defn- persist-worthy?
+  "True when the harvest shows write-shaped work: its summary counts say so
+   (`crystal/meaningful-harvest?`), or it carries progress notes, completed
+   tasks or commits that the counts have not caught up with."
+  [harvested]
+  (boolean (or (crystal/meaningful-harvest? harvested)
+               (seq (:progress-notes harvested))
+               (seq (:completed-tasks harvested))
+               (seq (:git-commits harvested)))))
+
 (defn synthesize
   "Synthesize harvested session data into long-term memory.
 
@@ -407,7 +422,14 @@
    Returns the umbrella summary (multi-project) or the single summary
    (single-project), with a :sub-summaries vector of all emitted summaries
    (including the umbrella itself). Back-compat: callers that read only
-   :summary-id / :project-id / :stats / lifecycle stats continue to work."
+   :summary-id / :project-id / :stats / lifecycle stats continue to work.
+
+   Guard: a harvest that is not `persist-worthy?` (reads only, or nothing)
+   persists no summary and returns
+   {:skipped true :reason \"no-activity\" :session :project-id :stats
+    :session-timing} merged with the lifecycle stats. Lifecycle ops (decay,
+   cross-pollination) still run: they maintain the store, whatever this
+   session did."
   [{:keys [directory] :as harvested}]
   (log/info "Synthesizing session:" (crystal/session-id)
             (when directory (str "directory:" directory)))
@@ -415,7 +437,25 @@
                            "global")
         project-scopes (extract-project-scopes harvested)
         multi? (> (count project-scopes) 1)]
-    (if multi?
+    (cond
+      (not (persist-worthy? harvested))
+      (let [pid (or (first project-scopes) cwd-project-id)
+            lifecycle (deref (pool/with-solo
+                               (run-lifecycle-ops! pid directory :harvested harvested))
+                             op-timeout
+                             {:lifecycle-error "timeout"})]
+        (log/info "synthesize: skipped no-activity harvest, no summary persisted")
+        (merge {:skipped true
+                :reason "no-activity"
+                :session (crystal/session-id)
+                :project-id pid
+                :stats (:summary harvested)
+                :session-timing (or (:session-timing harvested)
+                                    (crystal/session-timing-metadata
+                                     nil (java.time.Instant/now)))}
+               lifecycle))
+
+      multi?
       ;; Per-project summaries + global umbrella.
       (let [groups (group-harvested-by-scope harvested cwd-project-id)
             sub-summaries (vec
@@ -433,6 +473,8 @@
         (log/info "synthesize: emitted" (inc (count sub-summaries))
                   "summaries (per-project + umbrella) for projects:" project-scopes)
         (assoc umbrella :sub-summaries (conj sub-summaries umbrella)))
+
+      :else
       ;; Single-project (or no project) path — back-compat.
       (let [effective-pid (or (first project-scopes) cwd-project-id)
             scope-tag (if (= effective-pid "global")

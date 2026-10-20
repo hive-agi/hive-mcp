@@ -6,7 +6,8 @@
             [hive-spi.editor.services :as svc]
             [clojure.data.json :as json]
             [taoensso.timbre :as log]
-            [hive-mcp.agent.provider.model :as provider-model])
+            [hive-mcp.agent.provider.model :as provider-model]
+            [malli.core :as m])
   (:import [java.util.concurrent ArrayBlockingQueue TimeUnit]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -316,3 +317,55 @@
                           :available (into [:ollama :cider :openrouter
                                             :openai-compat :auto]
                                            (keys registry))})))))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> init-pool! [:=> [:cat :int] :nil])
+
+(m/=> shutdown-pool! [:=> [:cat] :map])
+
+(m/=> acquire-session! [:=> [:cat :int] [:maybe :map]])
+
+(m/=> release-session! [:=> [:cat :any] :boolean])
+
+(m/=> pool-status [:=> [:cat] [:map [:total :int] [:available :int] [:sessions [:sequential :any]]]])
+
+(m/=> cider-backend
+      [:function
+       [:=> [:cat] openrouter/Backend]
+       [:=> [:cat [:maybe :map]] openrouter/Backend]])
+
+;; Requires :ollama-model; the answer is a map of the two backends.
+(m/=> hybrid-backend [:=> [:cat :map] [:map [:ollama openrouter/Backend] [:cider openrouter/Backend]]])
+
+(m/=> make-backend
+      [:function
+       [:=> [:cat :any] openrouter/Backend]
+       [:=> [:cat :any [:maybe :map]] openrouter/Backend]])
+
+;; nil when the router has no client for the registry provider.
+(m/=> router-key [:=> [:cat :any] [:maybe :keyword]])
+
+;; No :tools key when the tool list is empty or nil.
+(m/=> request-params
+      [:=> [:cat :keyword :string [:sequential :map] [:maybe [:sequential :map]]]
+       [:map
+        [:messages [:sequential :map]]
+        [:model :string]
+        [:provider :keyword]
+        [:tools {:optional true} [:vector :map]]]])
+
+;; nil is a legal message; :usage is added when the message carries one.
+(m/=> message->result
+      [:=> [:cat [:maybe :map]]
+       [:and openrouter/ParsedResponse
+        [:map [:usage {:optional true}
+               [:map [:input [:maybe :int]] [:output [:maybe :int]] [:total [:maybe :int]]]]]]])
+
+;; nil when hive-agent is absent or its router cannot start.
+(m/=> router-complete [:=> [:cat] [:maybe ifn?]])
+
+;; Throws ex-info (unroutable provider, no model, no router) instead of nil.
+(m/=> dispatch-backend [:=> [:cat :map] openrouter/Backend])

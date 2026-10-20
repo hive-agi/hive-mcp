@@ -5,7 +5,8 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.string :as str]
             [hive-mcp.protocols.memory :as proto]
-            [hive-mcp.tools.memory.crud.edit :as edit]))
+            [hive-mcp.tools.memory.crud.edit :as edit]
+            [hive-mcp.test-support.registry-isolation :as isolation]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -38,13 +39,10 @@
 
 (defn- isolated-registry
   [f]
-  (let [saved (proto/registered-stores)]
-    (proto/reset-registry!)
-    (try
-      (f)
-      (finally
-        (proto/reset-registry!)
-        (doseq [[k s] saved] (proto/register-store! k s))))))
+  (isolation/with-restored-store-registry
+    (fn []
+      (isolation/restore-stores! {})
+      (f))))
 
 (use-fixtures :each isolated-registry)
 

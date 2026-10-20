@@ -14,7 +14,8 @@
             [hive-mcp.config.core :as cfg-core]
             [hive-mcp.protocols.memory :as proto]
             [hive-mcp.vectordb.kanban-facade :as kf]
-            [hive-test.trifecta :refer [deftrifecta]]))
+            [hive-test.trifecta :refer [deftrifecta]]
+            [hive-mcp.events.write-events :as write-events]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -295,6 +296,71 @@
     (is (nil? (get @rec :stub-kanban)))
     (is (= [[:delete "legacy-1"]] (get @rec :stub-default))
         "delete routed to the :default slot that holds the legacy entry")))
+
+;; =============================================================================
+;; Integration — delete-entry! honours the hive-spi failure contract
+;; =============================================================================
+
+(defn- delete-refusing-stub
+  "Stub that accepts updates, answers `delete-answer` to every delete, and
+   serves a stale `{:status \"old\"}` entry so the write overlay is observable."
+  [slot-name delete-answer]
+  (reify proto/IMemoryStore
+    (connect!       [_ _] {:success? true})
+    (disconnect!    [_] nil)
+    (connected?     [_] true)
+    (health-check   [_] {:healthy? true})
+    (add-entry!     [_ e] (:id e))
+    (get-entry      [_ id] {:id id :slot slot-name :content {:status "old"}})
+    (update-entry!  [_ id _] {:id id :slot slot-name})
+    (delete-entry!  [_ _] delete-answer)
+    (query-entries  [_ _] [])
+    (search-similar [_ _ _] [])
+    (supports-semantic-search? [_] false)
+    (cleanup-expired! [_] {:cleaned 0})
+    (entries-expiring-soon [_ _ _] [])
+    (find-duplicate [_ _ _ _] nil)
+    (store-status   [_] {:slot slot-name})
+    (reset-store!   [_] nil)))
+
+(defn- delete-with-answer
+  "Update then delete `id` against a store answering `delete-answer` to the
+   delete. Returns {:result :announced :read-back}."
+  [mode-kw id delete-answer]
+  (let [announced (atom [])]
+    (proto/register-store! :default (delete-refusing-stub :stub-default delete-answer))
+    (proto/register-store! :kanban  (delete-refusing-stub :stub-kanban  delete-answer))
+    (with-redefs [cfg-core/get-kanban-store-mode (constantly mode-kw)
+                  write-events/notify!           (fn [op payload] (swap! announced conj [op (:id payload)]))]
+      (kf/update-entry! id {:content {:status "new"}})
+      (reset! announced [])
+      (let [result (kf/delete-entry! id)]
+        {:result    result
+         :announced @announced
+         :read-back (kf/get-entry-by-id id)}))))
+
+(deftest delete-entry--refused-delete-is-not-announced-nor-forgotten
+  (doseq [mode-kw [:default :kanban :dual-read]
+          refusal [{:success? false :error "qdrant down"}
+                   {:error :milvus/unavailable}]]
+    (testing (str mode-kw " / " (pr-str refusal))
+      (let [{:keys [result announced read-back]}
+            (delete-with-answer mode-kw (str "refused-" (name mode-kw)) refusal)]
+        (is (= refusal result) "the store's answer is returned unchanged")
+        (is (= [] announced) "a refused delete announces nothing")
+        (is (= "new" (get-in read-back [:content :status]))
+            "a refused delete keeps the remembered write")))))
+
+(deftest delete-entry--accepted-delete-announces-and-forgets
+  (doseq [mode-kw [:default :kanban :dual-read]
+          answer  [true {:queued? true}]]
+    (testing (str mode-kw " / " (pr-str answer))
+      (let [id (str "deleted-" (name mode-kw))
+            {:keys [result announced read-back]} (delete-with-answer mode-kw id answer)]
+        (is (= answer result))
+        (is (= [[:deleted id]] announced))
+        (is (= "old" (get-in read-back [:content :status]))
+            "the overlay is dropped once the delete landed")))))
 
 (deftest update-entry--kanban-mode-new-id-uses-active-slot
   (let [rec (atom {})]

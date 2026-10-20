@@ -1,0 +1,3 @@
+{:classify [:premium :free :standard :standard],
+ :max-tier [:premium :premium :free],
+ :allowed [false true true]}

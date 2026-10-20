@@ -39,7 +39,8 @@
        :cap/multi-turn    :multi-turn
        :cap/budget-guard  :budgeted
        :cap/saa           :saa-enabled)"
-  (:require [hive-dsl.adt :refer [defadt adt-variant]]))
+  (:require [hive-dsl.adt :refer [defadt adt-variant]]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -94,6 +95,31 @@
    (to-keyword (headless-capability :cap/hooks)) => :cap/hooks"
   [hc]
   (adt-variant hc))
+
+;; ---------------------------------------------------------------------------
+;; Contract schemas. They live in this namespace because hive-mcp.agent.* is a
+;; frozen extraction prefix (hive-mcp.kernel.census): no new namespace may be
+;; added under it. Every schema generates.
+;; ---------------------------------------------------------------------------
+
+(def CapabilityKw
+  "The closed set of headless capability variants."
+  [:enum :cap/hooks :cap/interrupts :cap/subagents :cap/checkpointing
+   :cap/mcp-tools :cap/streaming :cap/multi-turn :cap/budget-guard :cap/saa])
+
+(def HeadlessCapabilityValue
+  "A HeadlessCapability ADT value."
+  [:map
+   [:adt/type [:= :HeadlessCapability]]
+   [:adt/variant CapabilityKw]])
+
+;; Input: any keyword or string is tried (the body coerces and returns nil for
+;; the rest), and any other value reaches the `:else nil` branch, so the input
+;; is :any. Output is a capability ADT value or nil.
+(m/=> from-keyword [:=> [:cat :any] [:maybe HeadlessCapabilityValue]])
+
+;; Input is a capability ADT value; the variant keyword comes back.
+(m/=> to-keyword [:=> [:cat HeadlessCapabilityValue] CapabilityKw])
 
 ;; =============================================================================
 ;; Variant Sets

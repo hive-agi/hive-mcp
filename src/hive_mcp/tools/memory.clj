@@ -26,7 +26,8 @@
             [hive-mcp.tools.memory.analytics :as analytics]
             [hive-mcp.tools.memory.migration :as migration]
             [hive-mcp.tools.memory.review :as review]
-            [hive-mcp.memory.type-registry :as type-registry]))
+            [hive-mcp.memory.type-registry :as type-registry]
+            [hive-mcp.tools.memory.reconcile :as reconcile]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -66,6 +67,10 @@
 (def handle-mcp-memory-batch-reembed
   "Batch re-embed; sequential per-op; summary + per-op results."
   #'crud/handle-batch-reembed)
+
+(def handle-mcp-memory-reconcile
+  "Report vector-index ids absent from the entry store, and the reverse. Read-only."
+  #'reconcile/handle-reconcile)
 
 ;; Search Operations
 (def handle-mcp-memory-search-semantic #'search/handle-search-semantic)

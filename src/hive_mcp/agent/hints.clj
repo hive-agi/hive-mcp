@@ -7,7 +7,8 @@
             [hive-mcp.knowledge-graph.queries :as kg-queries]
             [hive-mcp.agent.hints.domain :as domain]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -297,3 +298,63 @@
              :entries-fetched (count read-entries)
              :queries-run (count (domain/or-val (:queries hints) []))
              :kg-seeds-traversed (count (domain/or-val (:kg-seeds hints) []))}}))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def ^:private MemoryHints
+  [:map
+   [:axiom-ids [:sequential :any]]
+   [:read-ids {:optional true} [:sequential :any]]
+   [:queries {:optional true} [:sequential :any]]
+   [:tags {:optional true} [:sequential :any]]
+   [:kg-seeds {:optional true} [:sequential :any]]
+   [:kg-depth {:optional true} :int]])
+
+(def ^:private TaskHints
+  [:maybe [:map
+           [:l1-ids [:sequential :any]]
+           [:l2-queries [:sequential :any]]
+           [:l3-seeds [:sequential :any]]]])
+
+(def ^:private ParsedHints
+  [:maybe [:map
+           [:axiom-ids {:optional true} [:sequential :any]]
+           [:read-ids {:optional true} [:sequential :any]]
+           [:queries {:optional true} [:sequential :any]]
+           [:tags {:optional true} [:sequential :any]]
+           [:kg-seeds {:optional true} [:sequential :any]]
+           [:kg-depth {:optional true} :any]]])
+
+(m/=> generate-hints
+      [:function
+       [:=> [:cat :any] [:map [:memory-hints MemoryHints]]]
+       [:=> [:cat :any [:maybe :map]] [:map [:memory-hints MemoryHints]]]])
+
+(m/=> generate-task-hints [:=> [:cat [:maybe :map]] TaskHints])
+
+;; Trailing keyword args: :project-name, :git-info.
+(m/=> serialize-hints [:=> [:cat [:maybe :map] [:* :any]] :string])
+
+;; A non-string context throws in the body, so the true domain is nil or string.
+(m/=> parse-hints-from-context [:=> [:cat [:maybe :string]] ParsedHints])
+
+(m/=> execute-hint-ids [:=> [:cat :any] [:maybe [:vector :map]]])
+
+(m/=> execute-hint-queries [:=> [:cat :any] [:maybe [:vector :map]]])
+
+(m/=> execute-hint-kg-traversal [:=> [:cat :any :any] [:maybe [:vector :map]]])
+
+(m/=> execute-all-hints
+      [:=> [:cat [:maybe :map]]
+       [:map
+        [:axioms [:maybe [:vector :map]]]
+        [:entries [:maybe [:vector :map]]]
+        [:search-results [:maybe [:vector :map]]]
+        [:kg-graph [:maybe [:vector :map]]]
+        [:stats [:map
+                 [:axioms-fetched :int]
+                 [:entries-fetched :int]
+                 [:queries-run :int]
+                 [:kg-seeds-traversed :int]]]]])

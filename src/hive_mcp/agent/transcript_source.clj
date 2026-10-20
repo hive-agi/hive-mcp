@@ -181,7 +181,8 @@
 
 (defn default-parent-index [] (->SwarmParentIndex))
 
-(m/=> entry-turn [:=> [:cat [:maybe [:map-of :any :any]]] :any])
+;; Defaults to 0, so never nil.
+(m/=> entry-turn [:=> [:cat [:maybe [:map-of :any :any]]] :some])
 
 (m/=> hive-agent-read-dir
       [:=> [:cat :any :any] [:map-of :any :any]])
