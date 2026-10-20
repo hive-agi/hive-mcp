@@ -11,7 +11,9 @@
    A lane is a separate pool. `:batch` is the default and keeps the old pool's
    shape; `:short` is a small pool for bounded verbs a caller is waiting on, so
    long work cannot starve them. Which verbs are short is DATA
-   (`declared-lanes`), not a branch in the middleware.")
+   (`declared-lanes`), not a branch in the middleware."
+  (:require [malli.core :as m]
+            [hive-mcp.server.routes.async-task.schema :as s]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -58,3 +60,16 @@
   ([table tool-name command]
    (or (get-in table [(some-> tool-name str) (command-string command)])
        default-lane)))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def ^:private LaneTable
+  "tool name -> command string -> lane, the shape of `declared-lanes`."
+  [:map-of :string [:map-of :string s/Lane]])
+
+(m/=> known-lane [:=> [:cat :any] s/Lane])
+(m/=> classify [:function
+                [:=> [:cat :any :any] s/Lane]
+                [:=> [:cat LaneTable :any :any] s/Lane]])
