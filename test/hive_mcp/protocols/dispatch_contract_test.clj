@@ -17,7 +17,11 @@
 
 (deftrifecta-from-schema ensure-context-keeps-a-context-and-wraps-the-rest
   #'dp/ensure-context
-  {:in [:cat [:or :string :int :nil :keyword dp/DispatchContext]]
+  ;; Half the draws are a DispatchContext: a plain five-way :or left :context
+  ;; near 9 of 100 against a floor of 12.
+  {:in [:cat [:or {:gen/schema [:tuple [:or :string :int :nil :keyword] dp/DispatchContext :boolean]
+                   :gen/fmap (fn [[raw ctx ctx?]] (if ctx? ctx raw))}
+              :string :int :nil :keyword dp/DispatchContext]]
    :out dp/DispatchContext
    :rel (fn [[x] out]
           (if (satisfies? dp/IDispatchContext x)

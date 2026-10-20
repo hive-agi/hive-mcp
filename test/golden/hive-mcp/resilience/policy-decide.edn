@@ -1,40 +1,42 @@
 {:case-0
- {:out {:retry? false, :backoff-ms 0, :escalate? true},
+ {:out {:retry? true, :backoff-ms 8000, :escalate? false},
   :in
-  ({:adt/variant :err/validation,
-    :adt/type :ErrorClass,
-    :message ""})},
+  ({:adt/variant :err/transient, :adt/type :ErrorClass, :message ""})},
  :case-1
- {:out {:retry? false, :backoff-ms 0, :escalate? true},
+ {:out {:retry? true, :backoff-ms 8000, :escalate? false},
   :in
-  ({:adt/variant :err/unknown, :adt/type :ErrorClass, :message "Y"})},
+  ({:adt/variant :err/transient, :adt/type :ErrorClass, :message ""})},
  :case-2
  {:out {:retry? true, :backoff-ms 8000, :escalate? false},
   :in
   ({:adt/variant :err/transient,
     :adt/type :ErrorClass,
-    :message "0"})},
+    :message "rw"})},
  :case-3
- {:out {:retry? false, :backoff-ms 0, :escalate? true},
-  :in
-  ({:adt/variant :err/auth, :adt/type :ErrorClass, :message "0D"})},
- :case-4
  {:out {:retry? true, :backoff-ms 8000, :escalate? false},
   :in
   ({:adt/variant :err/transient,
     :adt/type :ErrorClass,
-    :message "6"})},
- :case-5
- {:out {:retry? true, :backoff-ms 8000, :escalate? false},
+    :message "1"})},
+ :case-4
+ {:out {:retry? false, :backoff-ms 0, :escalate? true},
   :in
-  ({:adt/variant :err/transient, :adt/type :ErrorClass, :message ""})},
+  ({:adt/variant :err/unknown,
+    :adt/type :ErrorClass,
+    :message "WKo"})},
+ :case-5
+ {:out {:retry? false, :backoff-ms 0, :escalate? true},
+  :in
+  ({:adt/variant :err/unknown,
+    :adt/type :ErrorClass,
+    :message "1QNc"})},
  :case-6
  {:out {:retry? false, :backoff-ms 0, :escalate? true},
   :in
   ({:adt/variant :err/schema-mismatch,
     :adt/type :ErrorClass,
-    :message "e"})},
+    :message "76"})},
  :case-7
  {:out {:retry? false, :backoff-ms 0, :escalate? true},
   :in
-  ({:adt/variant :err/unknown, :adt/type :ErrorClass, :message ""})}}
+  ({:adt/variant :err/validation, :adt/type :ErrorClass, :message ""})}}

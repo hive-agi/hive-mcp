@@ -1,0 +1,105 @@
+{:case-0
+ {:out
+  {:a "ling-a",
+   :e "completed",
+   :shouts 1,
+   :idle-s 9,
+   :m "a lon…",
+   :turn 0},
+  :in
+  (10000
+   "ling-a"
+   {:data
+    {:messages
+     [{:timestamp 1,
+       :event-type :completed,
+       :message "a long message here",
+       :data {:turn 0}}]}}
+   5)},
+ :case-1
+ {:out
+  {:a "ling-a",
+   :e "completed",
+   :shouts 2,
+   :idle-s 10,
+   :turn 1,
+   :parent "other"},
+  :in
+  (10000
+   "ling-a"
+   {:data
+    {:messages
+     [{:timestamp 0,
+       :event-type :completed,
+       :message "a long message here",
+       :data {:turn 1}}
+      {:timestamp 0,
+       :event-type :completed,
+       :parent-id "other",
+       :data {:turn 1}}]}}
+   200)},
+ :case-2 {:out nil, :in (10000 "ling-a" {:data {:messages []}} 200)},
+ :case-3
+ {:out
+  {:a "ling-b",
+   :e "progress",
+   :shouts 1,
+   :idle-s 9,
+   :turn 0,
+   :parent "other"},
+  :in
+  (10000
+   "ling-b"
+   {:data
+    {:messages
+     [{:timestamp 1,
+       :event-type :progress,
+       :parent-id "other",
+       :data {:turn 0}}]}}
+   200)},
+ :case-4 {:out nil, :in (10000 "ling-a" {:data {:messages []}} 5)},
+ :case-5
+ {:out {:a "ling-a", :e "progress", :shouts 1, :idle-s 9, :turn 0},
+  :in
+  (10000
+   "ling-a"
+   {:data
+    {:messages
+     [{:timestamp 11, :event-type :progress, :data {:turn 0}}]}}
+   5)},
+ :case-6
+ {:out
+  {:a "ling-b",
+   :e "progress",
+   :shouts 2,
+   :idle-s 10,
+   :turn 1,
+   :parent "coord"},
+  :in
+  (10000
+   "ling-b"
+   {:data
+    {:messages
+     [{:timestamp 31,
+       :event-type :progress,
+       :message "a long message here",
+       :parent-id "other",
+       :data {:turn 1}}
+      {:timestamp 0,
+       :event-type :progress,
+       :parent-id "coord",
+       :data {:turn 1}}]}}
+   5)},
+ :case-7
+ {:out {:a "ling-a", :e "completed", :shouts 2, :idle-s 9},
+  :in
+  (10000
+   "ling-a"
+   {:data
+    {:messages
+     [{:timestamp 6,
+       :event-type :progress,
+       :message "hi",
+       :parent-id "coord"}
+      {:timestamp 3, :event-type :completed}]}}
+   5)}}

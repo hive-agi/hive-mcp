@@ -16,8 +16,17 @@
 
 (def ^:private SkipIds
   "Fixture ids that never reach the search seam: an id is missing, or the
-   supersedes edge was not written."
-  [:or
+   supersedes edge was not written. Half the draws are the unwritten-edge arm:
+   one :or branch in four (and a quarter of nils) left it near 16 of 100
+   against a floor of 12."
+  [:or {:gen/schema [:tuple
+                     [:or
+                      [:map [:superseded [:maybe [:= "s1"]]] [:current :nil] [:linked? :boolean]]
+                      [:map [:superseded :nil] [:current [:maybe [:= "c1"]]] [:linked? :boolean]]
+                      :nil]
+                     :boolean]
+        :gen/fmap (fn [[absent unlinked?]]
+                    (if unlinked? {:superseded "s1" :current "c1" :linked? false} absent))}
    [:map [:superseded [:maybe [:= "s1"]]] [:current :nil] [:linked? :boolean]]
    [:map [:superseded :nil] [:current [:maybe [:= "c1"]]] [:linked? :boolean]]
    [:map [:superseded [:= "s1"]] [:current [:= "c1"]] [:linked? [:= false]]]

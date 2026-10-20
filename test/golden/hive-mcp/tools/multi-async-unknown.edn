@@ -1,0 +1,4 @@
+{:collect {:status "not-found", :batch-id "batch-m24-none"},
+ :await {:status "not-found", :batch-id "batch-m24-none"},
+ :cancel
+ {:cancelled false, :batch-id "batch-m24-none", :reason "not-found"}}

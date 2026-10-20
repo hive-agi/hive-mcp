@@ -19,7 +19,8 @@
             [hive-mcp.swarm.datascript.coordination :as coordination]
             [datascript.core :as d]
             [hive-spi.swarm.protocol :as proto]
-            [hive-mcp.swarm.datascript.registry :as registry])
+            [hive-mcp.swarm.datascript.registry :as registry]
+            [malli.core :as m])
   (:refer-clojure :exclude []))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -121,15 +122,37 @@
   []
   (registry/get-default-db))
 
+(def SwarmDb
+  "The ISwarmDb port."
+  [:fn {:gen/elements [nil]} #(satisfies? proto/ISwarmDb %)])
+
+(def Db
+  "A DataScript db value."
+  [:fn {:gen/fmap (fn [_] (d/empty-db)) :gen/schema :nil} d/db?])
+
+(def Query
+  "A Datalog query, in vector or map form."
+  [:or [:vector :any] [:map [:find :any]]])
+
+(def TxReport
+  "A transaction report (a record, so a map)."
+  [:map [:db-after :any] [:tx-data [:sequential :any]]])
+
+(m/=> db-handle [:=> [:cat] SwarmDb])
+
 (defn transact!
   "Transact tx-data against the swarm store. Returns the tx-report."
   [tx-data]
   (proto/-transact! (db-handle) tx-data))
 
+(m/=> transact! [:=> [:cat [:sequential :any]] TxReport])
+
 (defn current-db
   "Snapshot (db value) of the swarm store."
   []
   (proto/-current-db (db-handle)))
+
+(m/=> current-db [:=> [:cat] Db])
 
 (defn q
   "Datalog query against the current swarm store snapshot; inputs follow the
@@ -137,11 +160,16 @@
   [query & inputs]
   (apply d/q query (current-db) inputs))
 
+;; the result is whatever the :find spec projects
+(m/=> q [:=> [:cat Query [:* :any]] :any])
+
 (defn q-db
   "Datalog query against db, a snapshot from current-db or a :db-snapshot
    coeffect; inputs follow the db in :in."
   [db query & inputs]
   (apply d/q query db inputs))
+
+(m/=> q-db [:=> [:cat Db Query [:* :any]] :any])
 
 (defn pull
   "Pull pattern for eid (entity id or lookup ref) from the swarm store.
@@ -149,12 +177,21 @@
   [pattern eid]
   (d/pull (current-db) pattern eid))
 
+;; nil when the entity does not exist
+(m/=> pull [:=> [:cat [:vector :any] [:or :int [:tuple :keyword :any]]] [:maybe :map]])
+
 (defn listen!
   "Register a tx listener under key on the swarm store. Returns key."
   [key callback]
   (proto/-listen! (db-handle) key callback))
 
+;; answers what the port answers for the registration (the key on the
+;; default store)
+(m/=> listen! [:=> [:cat :any [:=> [:cat :any] :any]] :any])
+
 (defn unlisten!
   "Remove the tx listener registered under key on the swarm store."
   [key]
   (proto/-unlisten! (db-handle) key))
+
+(m/=> unlisten! [:=> [:cat :any] :any])

@@ -27,7 +27,8 @@
    adapter runs on the SPI's Noop (readiness: {:ready? false :phase
    :no-host ...}; catchup: nil)."
   (:require [hive-spi.swarm.ports.ling-host :as spi]
-            [hive-mcp.extensions.soft :as soft]))
+            [hive-mcp.extensions.soft :as soft]
+            [malli.core :as m]))
 
 (def ^:private wait-for-ling-ready-sym
   'hive-mcp.tools.consolidated.workflow.readiness/wait-for-ling-ready)
@@ -51,8 +52,17 @@
                       opts)
         (catch Throwable _ nil)))))
 
+(def Adapter
+  "Something that fills the ling-host port: readiness and catchup."
+  [:fn {:gen/fmap (fn [_] (make-adapter)) :gen/schema :nil}
+   #(and (satisfies? spi/ILingReadiness %) (satisfies? spi/ILingCatchup %))])
+
+(m/=> make-adapter [:=> [:cat] Adapter])
+
 (defn install!
   "Install the hive-mcp adapter into the SPI slot. Idempotent by overwrite —
    the last installer wins, which is what a re-init should do."
   []
   (spi/set-ling-host! (make-adapter)))
+
+(m/=> install! [:=> [:cat] Adapter])

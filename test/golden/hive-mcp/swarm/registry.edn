@@ -1,0 +1,12 @@
+{:exists [true false],
+ :idle ("s1" "s2"),
+ :update-missing nil,
+ :task #:task{:id "t1", :status :dispatched, :files #{"/f.clj"}},
+ :has-conflict {:conflict? false},
+ :ids ("s1" "s2"),
+ :can-kill {:can-kill? true, :blocking-ops #{}},
+ :after-remove ("s1"),
+ :slave #:slave{:id "s1", :name "one", :status :idle},
+ :stats {:slaves 2, :tasks 1, :claims 1},
+ :check-file-conflicts [],
+ :remove-missing nil}
