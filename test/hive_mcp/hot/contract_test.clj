@@ -141,7 +141,8 @@
             (identical? entry stale) (identical? out fresh)
             (and (map? entry) (identical? (:handler entry) stale)) (= out (assoc entry :handler fresh))
             :else (nil? out)))
-   :golden-path "test/golden/hive-mcp/hot/registrations-fresh-entry.edn"})
+   ;; No golden: the inputs are fn values, which do not round-trip through EDN.
+   :num-tests 100})
 
 (deftrifecta-from-schema rebind-entry-of-an-unregistered-id-replaces-nothing
   #'regs/rebind-entry!
@@ -189,7 +190,8 @@
                       def (or (contains? out sym)
                               (not (and (var-of sym) (resource? (var-of sym)))))))
                   defs))
-   :golden-path "test/golden/hive-mcp/hot/keep-plan.edn"})
+   ;; No golden: the inputs carry fns and an atom, which do not round-trip through EDN.
+   :num-tests 100})
 
 (deftrifecta-from-schema stuck-namespaces-are-loaded-and-not-unloading
   #'keep/stuck-namespaces
@@ -205,7 +207,8 @@
    :rel (fn [[links] {:keys [unload load]}]
           (and (= (set unload) (set (keys links)))
                (every? (set load) unload)))
-   :golden-path "test/golden/hive-mcp/hot/keep-repair-plan.edn"})
+   ;; No golden: the predicates are fns, which do not round-trip through EDN.
+   :num-tests 100})
 
 (deftrifecta-from-schema dependents-closure-starts-from-the-seeds
   #'keep/dependents-closure
