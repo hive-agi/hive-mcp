@@ -1,0 +1,48 @@
+{:case-0
+ {:out {:state :closed, :failures 0, :opened-at 0, :cooldown-ms -1},
+  :in
+  ({:state :closed, :failures -1, :opened-at 0, :cooldown-ms -1}
+   {:max-failures 1, :initial-cooldown-ms 0, :max-cooldown-ms 1}
+   0)},
+ :case-1
+ {:out {:state :open, :failures 1, :opened-at 0, :cooldown-ms 0},
+  :in
+  ({:state :half-open, :failures 0, :opened-at -1, :cooldown-ms 0}
+   {:max-failures 2, :initial-cooldown-ms 0, :max-cooldown-ms 1}
+   0)},
+ :case-2
+ {:out {:state :closed, :failures 1, :opened-at 1, :cooldown-ms -1},
+  :in
+  ({:state :open, :failures 0, :opened-at 1, :cooldown-ms -1}
+   {:max-failures 3, :initial-cooldown-ms 0, :max-cooldown-ms 0}
+   1)},
+ :case-3
+ {:out {:state :open, :failures 1, :opened-at 1, :cooldown-ms 0},
+  :in
+  ({:state :closed, :failures 0, :opened-at nil, :cooldown-ms -1}
+   {:max-failures 1, :initial-cooldown-ms 4, :max-cooldown-ms 0}
+   1)},
+ :case-4
+ {:out {:state :open, :failures 0, :opened-at 1, :cooldown-ms 0},
+  :in
+  ({:state :half-open, :failures -1, :opened-at nil, :cooldown-ms 0}
+   {:max-failures 3, :initial-cooldown-ms 0, :max-cooldown-ms 0}
+   1)},
+ :case-5
+ {:out {:state :open, :failures 1, :opened-at 7, :cooldown-ms 0},
+  :in
+  ({:state :half-open, :failures 0, :opened-at nil, :cooldown-ms -1}
+   {:max-failures 8, :initial-cooldown-ms 8, :max-cooldown-ms 0}
+   7)},
+ :case-6
+ {:out {:state :open, :failures 9, :opened-at 4, :cooldown-ms 11},
+  :in
+  ({:state :closed, :failures 8, :opened-at nil, :cooldown-ms -2}
+   {:max-failures 1, :initial-cooldown-ms 22, :max-cooldown-ms 11}
+   4)},
+ :case-7
+ {:out {:state :closed, :failures 0, :opened-at -19, :cooldown-ms 0},
+  :in
+  ({:state :open, :failures -1, :opened-at -19, :cooldown-ms 0}
+   {:max-failures 2, :initial-cooldown-ms 13, :max-cooldown-ms 30}
+   1)}}
