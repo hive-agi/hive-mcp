@@ -22,6 +22,7 @@
             [hive-mcp.protocols.lifecycle :as lifecycle]
             [hive-mcp.server.lifecycle :as server-lifecycle]
             [hive-mcp.system.registry :as reg]
+            [malli.core :as m]
             [taoensso.timbre :as log]))
 
 ;; =============================================================================
@@ -96,3 +97,9 @@
   (reg/register-shutdown! (->CoordinatorMarkTerminated coordinator-id-atom))
   (reg/register-shutdown! (->SessionEndHooks hooks-registry-atom))
   :registered)
+
+(def ^:private AtomRef
+  "An atom the hook reads at shutdown time (its value may be nil)."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (atom nil))} #(instance? clojure.lang.IAtom %)])
+
+(m/=> register-in-core-shutdown! [:=> [:cat AtomRef AtomRef] [:= :registered]])

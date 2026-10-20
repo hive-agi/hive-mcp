@@ -26,7 +26,8 @@
   (:require [integrant.core :as ig]
             [hive-mcp.dns.result :as r]
             [hive-mcp.hot.claims :as claims]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -55,6 +56,83 @@
 ;; Pure
 ;; =============================================================================
 
+;; =============================================================================
+;; Schemas
+;; =============================================================================
+
+(def ^:private gen-catalog
+  (reify IAddonCatalog
+    (mounted-specs [_] [])
+    (mount-host [_] nil)))
+
+(def ^:private gen-engine
+  (reify IHotEngine
+    (plan [_ _host _specs] {})
+    (ensure-init! [_ _opts] {})
+    (extend-dirs! [_ req] {:dirs (:dirs req) :added []})
+    (register! [_ _host _specs] {:ok? true :hot/registered []})
+    (unregister! [_ _specs] nil)))
+
+(def AddonCatalog
+  "An IAddonCatalog port."
+  [:fn {:gen/elements [gen-catalog]} #(satisfies? IAddonCatalog %)])
+
+(def HotEngine
+  "An IHotEngine port."
+  [:fn {:gen/elements [gen-engine]} #(satisfies? IHotEngine %)])
+
+(def MountSpec
+  "A MountSpec as this namespace reads it: keyed by :addon/id. Open map."
+  [:map [:addon/id {:optional true} :any]])
+
+(def HotPlan
+  "hive-addon.hot/plan's answer, the keys init-opts and boot-report read."
+  [:map
+   [:hot/dirs {:optional true} [:maybe [:or [:set :string] [:sequential :string]]]]
+   [:hot/no-reload {:optional true} [:maybe [:or [:set :symbol] [:sequential :symbol]]]]
+   [:hot/registered {:optional true} [:maybe [:sequential MountSpec]]]
+   [:hot/skipped {:optional true} [:maybe [:sequential MountSpec]]]])
+
+(def HotRegistration
+  "register!'s answer (hive-addon.hot/hot!): what was registered."
+  [:map
+   [:ok? {:optional true} :any]
+   [:hot/registered {:optional true} [:maybe [:sequential MountSpec]]]
+   [:errors {:optional true} [:maybe [:sequential :any]]]])
+
+(def InitOpts
+  "hive-hot ensure-init! options: baseline and interlock, never an addon dir."
+  [:map [:dirs [:vector :string]] [:no-reload [:set :symbol]] [:since {:optional true} :int]])
+
+(def BootReport
+  "The data `hot status` shows under :boot."
+  [:map
+   [:mounted :int]
+   [:claims [:maybe :map]]
+   [:dirs [:vector :string]]
+   [:registered [:vector :string]]
+   [:skipped [:vector :string]]
+   [:fresh? :boolean]
+   [:ok? :boolean]
+   [:errors [:vector :any]]])
+
+(def BootResult
+  "boot! Result: (ok report) - the full BootReport, or {:mounted 0 :skipped-boot
+   ...} for an empty catalog - or (err category data)."
+  [:or
+   [:map [:ok [:map [:mounted :int]]]]
+   [:map [:error :keyword]]])
+
+(def BootRegistration
+  "boot-registration Result: the report plus the specs it registered."
+  [:or
+   [:map [:ok [:map [:report [:map [:mounted :int]]] [:registered [:vector MountSpec]]]]]
+   [:map [:error :keyword]]])
+
+(def ComponentState
+  "start!'s component state, which stop! consumes."
+  [:map [:engine HotEngine] [:result BootResult] [:registered [:vector MountSpec]]])
+
 (defn init-opts
   "Pure. hive-hot init options from a PLAN: the baseline and the protocol
    interlock, with NO addon dir. An addon dir handed to init! would become a
@@ -64,6 +142,8 @@
    reload."
   [plan since]
   (claims/base-opts (:hot/no-reload plan) since))
+
+(m/=> init-opts [:=> [:cat [:maybe HotPlan] [:maybe :int]] InitOpts])
 
 (defn boot-report
   "Pure. The data `hot status` shows under :boot. CLAIMS is
@@ -78,6 +158,11 @@
    :ok?        (boolean (:ok? reg true))
    :errors     (into (vec (:errors reg)) (:errors claimed))})
 
+(m/=> boot-report [:=> [:cat [:maybe [:sequential MountSpec]] [:maybe HotPlan] [:maybe :map]
+                            [:maybe HotRegistration] [:maybe [:map [:claims {:optional true} [:maybe :map]]
+                                                              [:errors {:optional true} [:maybe [:sequential :any]]]]]]
+                   BootReport])
+
 ;; =============================================================================
 ;; Boundary
 ;; =============================================================================
@@ -88,6 +173,8 @@
   [specs reg]
   (let [ids (set (map (comp str :addon/id) (:hot/registered reg)))]
     (filterv (comp ids str :addon/id) specs)))
+
+(m/=> registered-specs [:=> [:cat [:maybe [:sequential MountSpec]] [:maybe HotRegistration]] [:vector MountSpec]])
 
 (defn boot-registration
   "Initialize hive-hot with every mounted addon's source dirs and register the
@@ -112,11 +199,15 @@
         (r/ok {:report     (boot-report specs p init reg claimed)
                :registered (registered-specs specs reg)})))))
 
+(m/=> boot-registration [:=> [:cat AddonCatalog HotEngine [:maybe :int]] BootRegistration])
+
 (defn boot!
   "boot-registration, projected to its BootReport: (ok BootReport) or the error."
   [catalog engine since]
   (let [res (boot-registration catalog engine since)]
     (if (r/ok? res) (r/ok (:report (:ok res))) res)))
+
+(m/=> boot! [:=> [:cat AddonCatalog HotEngine [:maybe :int]] BootResult])
 
 (defonce ^{:doc "The last boot! Result, for `hot status`."} last-boot (atom nil))
 
@@ -124,6 +215,8 @@
   "The last boot Result, or nil before the key initialized."
   []
   @last-boot)
+
+(m/=> last-report [:=> [:cat] [:maybe BootResult]])
 
 ;; -----------------------------------------------------------------------------
 ;; Live adapters — everything resolved softly, through vars, at call time
@@ -145,6 +238,8 @@
     (mounted-specs [_] (call 'hive-mcp.tools.consolidated.hot/effective-specs))
     (mount-host [_] (call 'hive-mcp.extensions.mount-host/addon-registry-host))))
 
+(m/=> live-catalog [:=> [:cat] AddonCatalog])
+
 (defn- live-reload-opts
   "The same :mount-opts the `hot` tool remounts with: the host config resolver
    plus the client-runtime provisioner."
@@ -161,6 +256,8 @@
     (extend-dirs! [_ req] (call 'hive-hot.core/extend-init! req))
     (register! [_ host specs] (call 'hive-addon.hot/hot! host specs (live-reload-opts)))
     (unregister! [_ specs] (call 'hive-addon.hot/unhot! specs))))
+
+(m/=> live-engine [:=> [:cat] HotEngine])
 
 (defn- jvm-start-ms []
   (r/rescue nil (.getStartTime (java.lang.management.ManagementFactory/getRuntimeMXBean))))
@@ -181,6 +278,8 @@
      :result     res
      :registered (if (r/ok? res0) (vec (:registered (:ok res0))) [])}))
 
+(m/=> start! [:=> [:cat AddonCatalog HotEngine [:maybe :int]] ComponentState])
+
 (defn stop!
   "Deregister exactly the addon components start! registered, not whatever is
    mounted at halt time (addons activated or evicted since boot differ). The
@@ -188,6 +287,12 @@
   [{:keys [engine registered]}]
   (when (and engine (seq registered))
     (r/rescue nil (unregister! engine registered))))
+
+;; answers what the engine's unregister! answers, nil when there is nothing
+;; to deregister or unregister! threw (rescued)
+(m/=> stop! [:=> [:cat [:maybe [:map [:engine {:optional true} [:maybe HotEngine]]
+                                [:registered {:optional true} [:maybe [:sequential MountSpec]]]]]]
+             :any])
 
 (defmethod ig/init-key :hive/addon-hot
   [_ config]

@@ -1,0 +1,8 @@
+{:case-0 {:out :classpath, :in (nil)},
+ :case-1 {:out :other, :in ({:discover :other})},
+ :case-2 {:out :classpath, :in ({})},
+ :case-3 {:out :classpath, :in ({})},
+ :case-4 {:out :classpath, :in (nil)},
+ :case-5 {:out :classpath, :in (nil)},
+ :case-6 {:out :classpath, :in (nil)},
+ :case-7 {:out :classpath, :in (nil)}}

@@ -14,7 +14,24 @@
   ;; SPDX-License-Identifier: AGPL-3.0-or-later
   (:require [integrant.core :as ig]
             [clojure.core.async :as async]
+            [malli.core :as m]
             [taoensso.timbre :as log]))
+
+;; =============================================================================
+;; Schemas
+;; =============================================================================
+
+(def Chan
+  "A core.async channel (the keepalive's shutdown promise-chan)."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (async/promise-chan))}
+   #(satisfies? clojure.core.async.impl.protocols/ReadPort %)])
+
+(def KeepaliveState
+  "What init-key :hive/keepalive answers, as the await fns read it."
+  [:map
+   [:mode {:optional true} [:enum :stdio :promise]]
+   [:shutdown-ch Chan]
+   [:status {:optional true} :keyword]])
 
 ;; =============================================================================
 ;; Helpers
@@ -104,6 +121,9 @@
       (log/info ":hive/keepalive await-shutdown! — unblocked with" result)
       result)))
 
+;; :shutdown or :done as documented; nil once the channel is closed
+(m/=> await-shutdown! [:=> [:cat KeepaliveState] [:maybe :keyword]])
+
 (defn await-shutdown-or-stdio!
   "For :stdio mode — races the MCP stdio join promise against the keepalive
    shutdown-ch. Whichever fires first unblocks the main thread.
@@ -126,3 +146,9 @@
             [:shutdown val])
         (do (log/info ":hive/keepalive — stdio EOF won the race")
             [:stdio val])))))
+
+;; the stdio join may deliver any value; the shutdown side delivers :shutdown
+(m/=> await-shutdown-or-stdio!
+  [:=> [:cat KeepaliveState [:fn {:gen/schema :nil :gen/fmap (fn [_] (doto (promise) (deliver :done)))}
+                             #(instance? clojure.lang.IDeref %)]]
+   [:tuple [:enum :stdio :shutdown] :any]])

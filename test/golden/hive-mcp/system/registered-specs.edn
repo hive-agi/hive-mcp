@@ -1,0 +1,34 @@
+{:case-0 {:out [], :in ([] #:hot{:registered []})},
+ :case-1
+ {:out [],
+  :in
+  ([#:addon{:id :hive.c}] #:hot{:registered [#:addon{:id "hive.b"}]})},
+ :case-2
+ {:out [], :in ([] #:hot{:registered [#:addon{:id "hive.a"}]})},
+ :case-3
+ {:out [#:addon{:id "hive.a"}],
+  :in
+  ([#:addon{:id "hive.a"}]
+   #:hot{:registered [#:addon{:id :hive.c} #:addon{:id "hive.a"}]})},
+ :case-4
+ {:out [#:addon{:id :hive.c} #:addon{:id :hive.c}],
+  :in
+  ([#:addon{:id "hive.b"}
+    #:addon{:id :hive.c}
+    #:addon{:id "hive.b"}
+    #:addon{:id :hive.c}]
+   #:hot{:registered [#:addon{:id :hive.c} #:addon{:id :hive.c}]})},
+ :case-5
+ {:out [#:addon{:id "hive.b"}],
+  :in
+  ([#:addon{:id "hive.b"} #:addon{:id "hive.a"}]
+   #:hot{:registered [#:addon{:id :hive.c} #:addon{:id "hive.b"}]})},
+ :case-6
+ {:out [],
+  :in
+  ([#:addon{:id "hive.a"}] #:hot{:registered [#:addon{:id :hive.c}]})},
+ :case-7
+ {:out [#:addon{:id "hive.a"} #:addon{:id "hive.a"}],
+  :in
+  ([#:addon{:id :hive.c} #:addon{:id "hive.a"} #:addon{:id "hive.a"}]
+   #:hot{:registered [#:addon{:id "hive.a"} #:addon{:id "hive.a"}]})}}
