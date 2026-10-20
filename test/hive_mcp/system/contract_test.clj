@@ -22,7 +22,8 @@
             [hive-schemas.test :refer [deftrifecta-from-schema]]
             [hive-test.golden :as golden]
             [malli.core :as m]
-            [malli.generator :as mg]))
+            [malli.generator :as mg]
+            [hive-mcp.system.sweepers.orphan-edge :as oe]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -363,14 +364,15 @@
 
 (deftest system-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths ["src/hive_mcp/system"]})]
-    (is (= 48 (count (:universe report))) "every public defn of the tree")
-    (is (= 48 (count (:covered report))))))
+    (is (= 55 (count (:universe report))) "every public defn of the tree")
+    (is (= 55 (count (:covered report))))))
 
 (deftest every-system-contract-generates-both-sides
   (doseq [ns-sym '[hive-mcp.system.registry hive-mcp.system.addon-hot hive-mcp.system.keepalive
                    hive-mcp.system.layer3 hive-mcp.system.layer5 hive-mcp.system.child-scope
                    hive-mcp.system.sweep-coordinator hive-mcp.system.shutdown.in-core
-                   hive-mcp.system.sweepers.heap-pressure hive-mcp.system.sweepers.stale-cache]
+                   hive-mcp.system.sweepers.heap-pressure hive-mcp.system.sweepers.stale-cache
+                   hive-mcp.system.sweepers.orphan-edge]
           [fn-sym {:keys [schema]}] (get (m/function-schemas) ns-sym)
           arity (if (= :function (m/type schema)) (m/children schema) [schema])
           side (take 2 (m/children arity))]

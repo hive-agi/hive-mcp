@@ -1,0 +1,130 @@
+{:case-0
+ {:out [],
+  :in
+  ({"20260101000000-aaaaaaaa" :present,
+    "20260101000001-bbbbbbbb" :absent,
+    "20260101000002-cccccccc" :unknown}
+   [#:kg-edge{:id "e1",
+              :from "not-a-memory-id",
+              :source-type "co-access"}])},
+ :case-1
+ {:out [],
+  :in
+  ({"20260101000000-aaaaaaaa" :unknown,
+    "20260101000001-bbbbbbbb" :present,
+    "20260101000002-cccccccc" :unknown}
+   [#:kg-edge{:id "e3",
+              :from "20260101000002-cccccccc",
+              :source-type "manual"}
+    #:kg-edge{:id "e1",
+              :from "20260101000000-aaaaaaaa",
+              :source-type :inferred}
+    #:kg-edge{:id "e3",
+              :from "20260101000000-aaaaaaaa",
+              :source-type "co-access"}
+    #:kg-edge{:id "e3",
+              :from "20260101000002-cccccccc",
+              :source-type :manual}
+    #:kg-edge{:id "e1", :from "not-a-memory-id", :source-type nil}
+    #:kg-edge{:id "e1",
+              :from "not-a-memory-id",
+              :source-type "automated"}])},
+ :case-2
+ {:out
+  [#:kg-edge{:id "e3",
+             :from "20260101000002-cccccccc",
+             :source-type :co-access}],
+  :in
+  ({"20260101000000-aaaaaaaa" :absent,
+    "20260101000001-bbbbbbbb" :present,
+    "20260101000002-cccccccc" :absent}
+   [#:kg-edge{:id "e2",
+              :from "not-a-memory-id",
+              :source-type "automated"}
+    #:kg-edge{:id "e3",
+              :from "20260101000001-bbbbbbbb",
+              :source-type :automated}
+    #:kg-edge{:id "e3",
+              :from "20260101000002-cccccccc",
+              :source-type :co-access}])},
+ :case-3
+ {:out
+  [#:kg-edge{:id "e3",
+             :from "20260101000002-cccccccc",
+             :source-type "automated"}
+   #:kg-edge{:id "e2",
+             :from "20260101000002-cccccccc",
+             :source-type :automated}],
+  :in
+  ({"20260101000000-aaaaaaaa" :present,
+    "20260101000001-bbbbbbbb" :present,
+    "20260101000002-cccccccc" :absent}
+   [#:kg-edge{:id "e3",
+              :from "not-a-memory-id",
+              :source-type :automated}
+    #:kg-edge{:id "e3",
+              :from "20260101000002-cccccccc",
+              :source-type "automated"}
+    #:kg-edge{:id "e2",
+              :from "20260101000002-cccccccc",
+              :source-type :automated}
+    #:kg-edge{:id "e1",
+              :from "20260101000001-bbbbbbbb",
+              :source-type nil}])},
+ :case-4
+ {:out [],
+  :in
+  ({"20260101000000-aaaaaaaa" :unknown,
+    "20260101000001-bbbbbbbb" :absent,
+    "20260101000002-cccccccc" :absent}
+   [#:kg-edge{:id "e3",
+              :from "not-a-memory-id",
+              :source-type :co-access}
+    #:kg-edge{:id "e3",
+              :from "20260101000000-aaaaaaaa",
+              :source-type :automated}
+    #:kg-edge{:id "e1",
+              :from "20260101000000-aaaaaaaa",
+              :source-type :manual}])},
+ :case-5
+ {:out [],
+  :in
+  ({"20260101000000-aaaaaaaa" :unknown,
+    "20260101000001-bbbbbbbb" :present,
+    "20260101000002-cccccccc" :present}
+   [#:kg-edge{:id "e2",
+              :from "not-a-memory-id",
+              :source-type "automated"}
+    #:kg-edge{:id "e2",
+              :from "not-a-memory-id",
+              :source-type "automated"}
+    #:kg-edge{:id "e2",
+              :from "20260101000000-aaaaaaaa",
+              :source-type :co-access}])},
+ :case-6
+ {:out [],
+  :in
+  ({"20260101000000-aaaaaaaa" :present,
+    "20260101000001-bbbbbbbb" :unknown,
+    "20260101000002-cccccccc" :absent}
+   [#:kg-edge{:id "e2",
+              :from "20260101000000-aaaaaaaa",
+              :source-type "automated"}])},
+ :case-7
+ {:out
+  [#:kg-edge{:id "e3",
+             :from "20260101000000-aaaaaaaa",
+             :source-type "automated"}
+   #:kg-edge{:id "e3",
+             :from "20260101000001-bbbbbbbb",
+             :source-type "automated"}],
+  :in
+  ({"20260101000000-aaaaaaaa" :absent,
+    "20260101000001-bbbbbbbb" :absent,
+    "20260101000002-cccccccc" :present}
+   [#:kg-edge{:id "e3",
+              :from "20260101000000-aaaaaaaa",
+              :source-type "automated"}
+    #:kg-edge{:id "e3",
+              :from "20260101000001-bbbbbbbb",
+              :source-type "automated"}])}}

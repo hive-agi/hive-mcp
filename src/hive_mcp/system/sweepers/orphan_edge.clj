@@ -32,7 +32,8 @@
   ;; SPDX-License-Identifier: AGPL-3.0-or-later
   (:require [hive-mcp.protocols.lifecycle :as lifecycle]
             [hive-mcp.system.registry :as reg]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 (def ^:const default-scan-window
   "Edges read per sweep."
@@ -44,12 +45,99 @@
 
 (def ^:private auto-source-types #{"automated" "co-access"})
 
+;;; ---------------------------------------------------------------------------
+;;; Schemas
+;;; ---------------------------------------------------------------------------
+
+(def MemoryId
+  "The shape of a memory entry id: 14 digits, a dash, 8 lowercase hex."
+  [:string {:gen/schema [:tuple [:int {:min 0 :max 99999999999999}]
+                         [:int {:min 0 :max 4294967295}]]
+            :gen/fmap (fn [[d h]] (format "%014d-%08x" d h))}])
+
+(def OrphanEdge
+  "The edge keys the sweep reads. Open map; every key may be absent, and an
+   unknown :kg-edge/source-type or a non-memory :kg-edge/from only means the
+   edge is not a candidate."
+  [:map
+   [:kg-edge/id {:optional true} [:maybe :string]]
+   [:kg-edge/from {:optional true}
+    [:maybe [:string {:gen/schema [:or MemoryId [:enum "not-a-memory-id" "x"]]}]]]
+   [:kg-edge/source-type {:optional true}
+    [:maybe [:or [:keyword {:gen/elements [:automated :co-access :manual :inferred]}]
+             [:string {:gen/elements ["automated" "co-access" "manual"]}]]]]])
+
+(def EntryState
+  "Whether a memory entry exists. Only :absent makes an edge an orphan."
+  [:enum :present :absent :unknown])
+
+(def EntryStateFn
+  "Port: memory id -> EntryState."
+  [:=> [:cat :string] EntryState])
+
+(def ScanWindow
+  "One window of edges; :taken counts the edge entity ids enumerated."
+  [:map [:edges [:sequential OrphanEdge]] [:taken [:int {:min 0}]]])
+
+(def ScanFn
+  "Port: (offset, limit) -> ScanWindow."
+  [:=> [:cat [:int {:min 0}] [:int {:min 0}]] ScanWindow])
+
+(def RemoveFn
+  "Port: edge id -> truthy when the edge was removed."
+  [:=> [:cat [:maybe :string]] :boolean])
+
+(def RemoveError
+  "One failed retraction."
+  [:map [:edge-id [:maybe :string]] [:error [:maybe :string]]])
+
+(def SweepOpts
+  "Port overrides and knobs accepted by `config`; nil keys take the default."
+  [:maybe
+   [:map
+    [:scan-fn {:optional true} [:maybe ScanFn]]
+    [:entry-state-fn {:optional true} [:maybe EntryStateFn]]
+    [:remove-fn {:optional true} [:maybe RemoveFn]]
+    [:retract? {:optional true} [:maybe :boolean]]
+    [:scan-window {:optional true} [:maybe [:int {:min 1}]]]
+    [:prune-cap {:optional true} [:maybe [:int {:min 0}]]]]])
+
+(def SweepConfig
+  "`config`'s result: every port resolved, every knob set."
+  [:map
+   [:scan-fn ScanFn]
+   [:entry-state-fn EntryStateFn]
+   [:remove-fn RemoveFn]
+   [:retract? :boolean]
+   [:scan-window [:int {:min 1}]]
+   [:prune-cap [:int {:min 0}]]])
+
+(def WindowResult
+  "`sweep-window!`'s result."
+  [:map
+   [:next-offset [:int {:min 0}]]
+   [:scanned [:int {:min 0}]]
+   [:orphans [:int {:min 0}]]
+   [:swept [:int {:min 0}]]
+   [:errors [:vector RemoveError]]])
+
+(def BackfillResult
+  "`backfill`'s result."
+  [:map
+   [:scanned [:int {:min 0}]]
+   [:orphans [:int {:min 0}]]
+   [:swept [:int {:min 0}]]
+   [:errors [:vector RemoveError]]
+   [:dry-run? :boolean]])
+
 (defn auto-kg-edge?
   "True iff the edge was established by the system, not by a caller."
   [edge]
   (let [st (:kg-edge/source-type edge)]
     (boolean (and (or (keyword? st) (string? st))
                   (contains? auto-source-types (name st))))))
+
+(m/=> auto-kg-edge? [:=> [:cat [:maybe OrphanEdge]] :boolean])
 
 (defn- hex-char? [c]
   (or (Character/isDigit (char c))
@@ -64,6 +152,8 @@
         (= \- (nth id 14))
         (every? #(Character/isDigit (char %)) (subs id 0 14))
         (every? hex-char? (subs id 15)))))
+
+(m/=> memory-id? [:=> [:cat [:any {:gen/schema [:or MemoryId :string :nil :int]}]] :boolean])
 
 (defn- resolve-var
   "The var at `sym`, or nil when its namespace is not loadable."
@@ -111,6 +201,9 @@
                          (distinct (map :kg-edge/from candidates)))]
     (filterv #(= :absent (get states (:kg-edge/from %))) candidates)))
 
+(m/=> find-orphans [:=> [:cat EntryStateFn [:maybe [:sequential OrphanEdge]]]
+                    [:vector OrphanEdge]])
+
 (defn- retract-orphans!
   "Remove up to `cap` of `orphans`. Returns {:pruned n :errors [...]}."
   [remove-fn cap orphans]
@@ -142,6 +235,8 @@
      :swept       pruned
      :errors      errors}))
 
+(m/=> sweep-window! [:=> [:cat SweepConfig [:int {:min 0}]] WindowResult])
+
 (defn config
   "Sweep configuration with production defaults for every port left nil."
   [{:keys [scan-fn entry-state-fn remove-fn retract? scan-window prune-cap]}]
@@ -151,6 +246,8 @@
    :retract?       (boolean retract?)
    :scan-window    (or scan-window default-scan-window)
    :prune-cap      (or prune-cap default-prune-cap)})
+
+(m/=> config [:=> [:cat SweepOpts] SweepConfig])
 
 (defrecord OrphanEdgeSweep [opts cursor]
   lifecycle/ISweepable
@@ -174,6 +271,11 @@
   [opts]
   (->OrphanEdgeSweep opts (atom 0)))
 
+(m/=> ->sweep [:=> [:cat SweepOpts]
+               [:fn {:gen/schema [:map [:retract? :boolean]]
+                     :gen/fmap #(->OrphanEdgeSweep % (atom 0))}
+                #(instance? OrphanEdgeSweep %)]])
+
 (defn backfill
   "One-time pass over the whole graph, a window at a time. Dry-run unless
    `:retract? true`, so the orphan count is reported before anything is
@@ -192,6 +294,8 @@
         (if (zero? (:next-offset r))
           (assoc acc :dry-run? (not (:retract? cfg)))
           (recur (:next-offset r) acc))))))
+
+(m/=> backfill [:=> [:cat [:? SweepOpts]] BackfillResult])
 
 (def ^:private -registered?
   "Auto-registration. `def`, deliberately NOT `defonce`, for the reason given
