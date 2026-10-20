@@ -2,7 +2,8 @@
   "Pure SAA phase-prompt construction. Preserves the intent of the legacy
    orchestrator build-phase-prompt while drawing the goal fragment from the
    provider-neutral phase model."
-  (:require [hive-mcp.saa.model :as model]))
+  (:require [hive-mcp.saa.model :as model]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -45,7 +46,19 @@
       (str fragment "\n\n" body)
       body)))
 
+(def PhaseModel
+  "A phase model as build-phase-prompt reads it: descriptors keyed by
+   :phase, each with an optional goal fragment."
+  [:sequential [:map [:phase :keyword] [:goal-prompt-fragment {:optional true} [:maybe :string]]]])
+
+;; phase is the closed model enum: the body's `case` has no default branch, so
+;; any other phase throws. content and extra-context are rendered by str /
+;; pr-str and may be any value.
+(m/=> build-phase-prompt [:=> [:cat model/SaaPhase :any :any PhaseModel] :string])
+
 (defn build-phase-prompt*
   "build-phase-prompt against the default phase model."
   [phase content extra-context]
   (build-phase-prompt phase content extra-context model/saa-phase-model))
+
+(m/=> build-phase-prompt* [:=> [:cat model/SaaPhase :any :any] :string])

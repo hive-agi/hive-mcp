@@ -1,0 +1,7 @@
+{:counts
+ {:providers 1,
+  :scorers 1,
+  :planners 1,
+  :tool-intents 5,
+  :dispatch-modes 1},
+ :validates true}

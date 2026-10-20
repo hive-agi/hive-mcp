@@ -1,0 +1,68 @@
+{:case-0
+ {:out
+  {:adt/variant :pm/error,
+   :adt/type :PhaseMessage,
+   :phase :abstract,
+   :error ""},
+  :in
+  ({:type :error, :saa-phase :abstract, :error "", :message "hX"}
+   nil)},
+ :case-1
+ {:out
+  {:adt/variant :pm/chunk,
+   :adt/type :PhaseMessage,
+   :phase :abstract,
+   :content
+   {:phase :act, :saa-phase :abstract, :content "9rZJ", :data "3m3"}},
+  :in
+  ({:phase :act, :saa-phase :abstract, :content "9rZJ", :data "3m3"}
+   :silence)},
+ :case-2
+ {:out
+  {:adt/variant :pm/error,
+   :adt/type :PhaseMessage,
+   :phase :abstract,
+   :error "8"},
+  :in
+  ({:type :error,
+    :phase :act,
+    :saa-phase :abstract,
+    :content "c2",
+    :data "Y",
+    :message "8"}
+   nil)},
+ :case-3
+ {:out
+  {:adt/variant :pm/chunk,
+   :adt/type :PhaseMessage,
+   :phase :act,
+   :content {:phase :act, :content "", :message "oY9"}},
+  :in ({:phase :act, :content "", :message "oY9"} :act)},
+ :case-4
+ {:out
+  {:adt/variant :pm/error,
+   :adt/type :PhaseMessage,
+   :phase nil,
+   :error "uQy"},
+  :in ({:type :error, :content "Ou", :error "uQy"} nil)},
+ :case-5
+ {:out
+  {:adt/variant :pm/chunk,
+   :adt/type :PhaseMessage,
+   :phase :silence,
+   :content {:phase :silence}},
+  :in ({:phase :silence} nil)},
+ :case-6
+ {:out
+  {:adt/variant :pm/chunk,
+   :adt/type :PhaseMessage,
+   :phase nil,
+   :content {:content "", :message "q5"}},
+  :in ({:content "", :message "q5"} nil)},
+ :case-7
+ {:out
+  {:adt/variant :pm/chunk,
+   :adt/type :PhaseMessage,
+   :phase :abstract,
+   :content {:type :other, :saa-phase :abstract, :error "7"}},
+  :in ({:type :other, :saa-phase :abstract, :error "7"} nil)}}

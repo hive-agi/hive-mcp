@@ -1,0 +1,13 @@
+{:provider {:backend-or-session nil},
+ :provider-bound {:backend-or-session :backend},
+ :build-options
+ {:phase :act,
+  :capabilities #{:read :exec :write},
+  :permission-intent :mutate,
+  :extra 1},
+ :scored
+ [{:observation {:data "a bug"}, :score 4.0}
+  {:observation {:data "plain"}, :score 1.0}],
+ :grounding 0.7,
+ :planned nil,
+ :satisfies [true true true]}
