@@ -19,6 +19,7 @@
             [hive-mcp.swarm.datascript.queries :as q]
             [hive-mcp.swarm.datascript.registry :as registry]
             [hive-mcp.swarm.datascript.schema :as s]
+            [hive-mcp.swarm.delegate :as delegate]
             [hive-mcp.swarm.ledger.default :as ledger]
             [hive-spi.swarm.ledger :as ledger-port]
             [hive-schemas.test :as hst]
@@ -49,9 +50,24 @@
     (append! [_ e] (swap! ledger-events conj (:type e)) (assoc e :seq (count @ledger-events)))
     (close! [_] nil)))
 
+(def ^:private store-present?
+  "Is hive-datascript on this classpath? The swarm library is optional; a
+   classpath without it (the public :test:test-swarm build) skips the bodies
+   instead of failing on :swarm/addon-missing. The addon-missing refusal
+   itself is asserted in test/hive_mcp/swarm/store_contract_coverage_test."
+  (delegate/available? "hive-datascript.swarm.lings"))
+
+(declare isolated*)
+
 (defn- isolated
   "Fresh conn for this thread, scenario built, stdout buffers reset and a
-   recording ledger installed around it."
+   recording ledger installed around it. Skipped when the library is absent."
+  [f]
+  (if-not store-present?
+    (is true "hive-datascript absent: store trifectas skipped")
+    (isolated* f)))
+
+(defn- isolated*
   [f]
   (lings/reset-stdout-buffers!)
   (reset! ledger-events [])

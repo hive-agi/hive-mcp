@@ -3,6 +3,7 @@
 
    Compat shim: moved to hive-agent.swarm.datascript.schema in hive-agent. Every public var delegates there
    through requiring-resolve; hive-mcp does not compile-depend on hive-agent."
+  (:refer-clojure :exclude [Inst])
   (:require [hive-mcp.swarm.delegate :as delegate]
             [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
