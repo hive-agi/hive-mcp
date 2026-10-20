@@ -1,0 +1,18 @@
+{:case-0 {:out {:failed? false}, :in (nil)},
+ :case-1 {:out {:failed? false}, :in ({:text "plain"})},
+ :case-2 {:out {:failed? false}, :in ({:error nil})},
+ :case-3 {:out {:failed? false}, :in ({:isError false})},
+ :case-4
+ {:out
+  {:failed? true,
+   :kind :success-false,
+   :message "tool reported failure (:success false)"},
+  :in ({:success false})},
+ :case-5 {:out {:failed? false}, :in ([1 -2])},
+ :case-6
+ {:out
+  {:failed? true,
+   :kind :success-false,
+   :message "tool reported failure (:success false)"},
+  :in ({:success false})},
+ :case-7 {:out {:failed? false}, :in ([3 -49 -4])}}
