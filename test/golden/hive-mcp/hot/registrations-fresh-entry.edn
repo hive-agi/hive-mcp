@@ -1,0 +1,53 @@
+{:case-0
+ {:out
+  #object[clojure.core$inc 0x2a897bf5 "clojure.core$inc@2a897bf5"],
+  :in
+  (#object[clojure.core$inc 0x2a897bf5 "clojure.core$inc@2a897bf5"]
+   #object[clojure.core$inc 0x2a897bf5 "clojure.core$inc@2a897bf5"]
+   #object[clojure.core$inc 0x2a897bf5 "clojure.core$inc@2a897bf5"])},
+ :case-1
+ {:out nil,
+  :in
+  ({:handler
+    #object[clojure.core$identity 0xf382f3c "clojure.core$identity@f382f3c"],
+    :k 0}
+   #object[clojure.core$dec 0x2667e96b "clojure.core$dec@2667e96b"]
+   #object[clojure.core$identity 0xf382f3c "clojure.core$identity@f382f3c"])},
+ :case-2
+ {:out nil,
+  :in
+  (#object[clojure.core$dec 0x2667e96b "clojure.core$dec@2667e96b"]
+   #object[clojure.core$inc 0x2a897bf5 "clojure.core$inc@2a897bf5"]
+   #object[clojure.core$dec 0x2667e96b "clojure.core$dec@2667e96b"])},
+ :case-3
+ {:out nil,
+  :in
+  (#object[clojure.core$inc 0x2a897bf5 "clojure.core$inc@2a897bf5"]
+   #object[clojure.core$identity 0xf382f3c "clojure.core$identity@f382f3c"]
+   #object[clojure.core$dec 0x2667e96b "clojure.core$dec@2667e96b"])},
+ :case-4
+ {:out nil,
+  :in
+  ({:handler
+    #object[clojure.core$dec 0x2667e96b "clojure.core$dec@2667e96b"],
+    :k -1}
+   #object[clojure.core$inc 0x2a897bf5 "clojure.core$inc@2a897bf5"]
+   #object[clojure.core$dec 0x2667e96b "clojure.core$dec@2667e96b"])},
+ :case-5
+ {:out nil,
+  :in
+  (#object[clojure.core$identity 0xf382f3c "clojure.core$identity@f382f3c"]
+   #object[clojure.core$inc 0x2a897bf5 "clojure.core$inc@2a897bf5"]
+   #object[clojure.core$dec 0x2667e96b "clojure.core$dec@2667e96b"])},
+ :case-6
+ {:out nil,
+  :in
+  (#object[clojure.core$inc 0x2a897bf5 "clojure.core$inc@2a897bf5"]
+   #object[clojure.core$identity 0xf382f3c "clojure.core$identity@f382f3c"]
+   #object[clojure.core$inc 0x2a897bf5 "clojure.core$inc@2a897bf5"])},
+ :case-7
+ {:out nil,
+  :in
+  (#object[clojure.core$dec 0x2667e96b "clojure.core$dec@2667e96b"]
+   #object[clojure.core$inc 0x2a897bf5 "clojure.core$inc@2a897bf5"]
+   #object[clojure.core$inc 0x2a897bf5 "clojure.core$inc@2a897bf5"])}}

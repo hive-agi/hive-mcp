@@ -1,0 +1,10 @@
+{:case-0 {:out {:no-reload #{}}, :in ({:state #{}})},
+ :case-1
+ {:out {:no-reload #{}},
+  :in ({:protocol nil, :state #{XW}, :record #{}})},
+ :case-2 {:out {:no-reload #{}}, :in ({:state nil, :record nil})},
+ :case-3 {:out {:no-reload #{}}, :in ({:record nil})},
+ :case-4 {:out {:no-reload #{}}, :in ({:protocol #{}, :state nil})},
+ :case-5 {:out {:no-reload #{}}, :in ({:state nil})},
+ :case-6 {:out {:no-reload #{}}, :in ({})},
+ :case-7 {:out {:no-reload #{}}, :in ({})}}

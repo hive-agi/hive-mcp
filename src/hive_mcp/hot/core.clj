@@ -28,7 +28,8 @@
             [hive-mcp.hot.self :as self]
             [taoensso.timbre :as log]
             [hive-mcp.hot.reseat :as reseat]
-            [hive-mcp.hot.registrations :as registrations])
+            [hive-mcp.hot.registrations :as registrations]
+            [malli.core :as m])
   (:import [java.io File]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -43,6 +44,96 @@
   "The namespace whose classpath location names core's source root."
   'hive-mcp.server.core)
 
+;; =============================================================================
+;; Value schemas
+;; =============================================================================
+
+(def NsSym
+  [:symbol {:gen/elements '[hive-mcp.server.core hive-mcp.hot.core malli.core no.such.namespace]}])
+
+(def Prefix
+  [:string {:gen/elements ["hive-mcp.hot." "hive-mcp.protocols" "no.such.prefix"]}])
+
+(def Classes
+  "The three classes of loaded namespaces the interlock and report read."
+  [:map
+   [:protocol {:optional true} [:maybe [:set :symbol]]]
+   [:state {:optional true} [:maybe [:set :symbol]]]
+   [:record {:optional true} [:maybe [:set :symbol]]]])
+
+(def Interlock
+  [:map {:closed true} [:no-reload [:set :any]]])
+
+(def Roots
+  [:sequential [:string {:gen/elements ["/r/src" "/o/src"]}]])
+
+(def FileLike
+  "A path string or java.io.File."
+  [:or [:string {:gen/elements ["/r/src/hive_mcp/a_b/c.clj" "/o/src/o/b.cljc" "/elsewhere/x.clj"]}]
+   [:fn {:error/message "a java.io.File"
+         :gen/schema [:enum "/r/src/hive_mcp/x.clj" "/o/src/o/b.clj"] :gen/fmap io/file}
+    #(instance? File %)]])
+
+(def ScopePlan
+  "The slice of a hive-hot scope-plan this namespace reads."
+  [:map
+   [:want {:optional true} [:maybe [:sequential FileLike]]]
+   [:dragged {:optional true} [:maybe [:sequential FileLike]]]
+   [:skipped {:optional true} [:maybe [:sequential FileLike]]]
+   [:cascade {:optional true} [:maybe [:sequential [:symbol {:gen/elements '[hive-mcp.a hive-mcp.p hive-mcp.s]}]]]]])
+
+(def PlanReport
+  "What `plan-report` answers."
+  [:map {:closed true}
+   [:roots [:vector :any]]
+   [:pending [:vector :string]]
+   [:dragged [:vector :string]]
+   [:skipped [:vector :string]]
+   [:cascade [:vector :string]]
+   [:pinned [:vector :string]]
+   [:kept-state [:vector :string]]
+   [:records-redefined [:vector :string]]
+   [:interlock [:map {:closed true} [:no-reload nat-int?]]]
+   [:unchanged? :boolean]])
+
+(def PortFn
+  [:maybe [:fn {:error/message "an invocable port" :gen/elements [(fn [& _] nil)]} ifn?]])
+
+(def Ports
+  "The effects a reload drives. Every port may be absent (nil)."
+  [:map-of {:gen/elements [{}]} :keyword PortFn])
+
+(def Refusal
+  "What plan and reload! answer when the pass cannot start."
+  [:map [:error :keyword] [:message :string]])
+
+(def Opts
+  "plan / reload! options; every key optional. Generates the jar-root refusal
+   and an empty port map, so a sampled call never reaches hive-hot."
+  [:map {:gen/elements [{:roots []} {:ports {} :roots ["/r/src"]}]}
+   [:prefix {:optional true} [:maybe :string]]
+   [:ports {:optional true} [:maybe Ports]]
+   [:roots {:optional true} [:maybe [:sequential :string]]]])
+
+(def ReloadReport
+  "What `reload!` answers on a pass that started. Values pass through from the
+   reloader and the host ports, so most are open."
+  [:map
+   [:ok? :boolean]
+   [:pass [:enum :scoped :pending :none]]
+   [:roots [:sequential :any]]
+   [:loaded [:vector :string]]
+   [:unloaded [:vector :string]]
+   [:failed [:maybe :string]]
+   [:skipped [:vector :any]]
+   [:dragged [:vector :any]]
+   [:unchanged? :boolean]
+   [:interlock [:map [:no-reload nat-int?]]]
+   [:forced-unload [:vector :string]]
+   [:orphans [:vector :string]]
+   [:kept-state [:vector :string]]
+   [:records-redefined [:vector :string]]])
+
 (defn ns-root
   "Classpath ROOT directory `ns-sym`'s source is loaded from, or nil when the
    namespace resolves to a jar or to nothing."
@@ -55,15 +146,23 @@
         (when (str/ends-with? path suffix)
           (subs path 0 (- (count path) (count suffix))))))))
 
+(m/=> ns-root [:=> [:cat NsSym] [:maybe :string]])
+
 (defn core-roots
   "Directory roots core is loaded from: [root], or [] when core runs from a jar."
   ([] (core-roots anchor-ns))
   ([ns-sym] (if-let [root (ns-root ns-sym)] [root] [])))
 
+(m/=> core-roots
+      [:function [:=> [:cat] [:vector :string]] [:=> [:cat NsSym] [:vector :string]]])
+
 (defn defines-record?
   "Does `ns-sym` define a record? `defrecord` interns map->Name."
   [ns-sym]
   (boolean (some #(str/starts-with? (name %) "map->") (keys (ns-publics ns-sym)))))
+
+(m/=> defines-record?
+      [:=> [:cat [:symbol {:gen/elements '[hive-mcp.hot.core hive-mcp.hot.reseat clojure.string]}]] :boolean])
 
 (defn- loaded-under
   [prefix]
@@ -79,6 +178,11 @@
       :state    (into #{} (filter keep/holds-state?) nses)
       :record   (into #{} (filter defines-record?) nses)})))
 
+(m/=> classify
+      [:function
+       [:=> [:cat] [:map {:closed true} [:protocol [:set :symbol]] [:state [:set :symbol]] [:record [:set :symbol]]]]
+       [:=> [:cat Prefix] [:map {:closed true} [:protocol [:set :symbol]] [:state [:set :symbol]] [:record [:set :symbol]]]]])
+
 ;; =============================================================================
 ;; Promote
 ;; =============================================================================
@@ -88,6 +192,8 @@
    not pinned; it is kept (hive-mcp.hot.keep)."
   [{:keys [protocol]}]
   {:no-reload (set protocol)})
+
+(m/=> interlock [:=> [:cat Classes] Interlock])
 
 (defn file->ns
   "Namespace a source file under one of `roots` conventionally defines, or nil."
@@ -102,11 +208,15 @@
                     (str/replace "_" "-")))))
           roots)))
 
+(m/=> file->ns [:=> [:cat Roots FileLike] [:maybe :string]])
+
 (defn affected
   "The namespaces a pass over `scope-plan` may unload: the cascade minus what
    the interlock pins."
   [{:keys [cascade]} classes]
   (vec (remove (:no-reload (interlock classes)) cascade)))
+
+(m/=> affected [:=> [:cat ScopePlan Classes] [:vector :any]])
 
 (defn plan-report
   "Project a hive-hot scope-plan onto the reload it describes. `ns-of` maps a
@@ -127,6 +237,10 @@
      :records-redefined (names (set/intersection cascade (set (:record classes))))
      :interlock         {:no-reload (count no-reload)}
      :unchanged?        (empty? want)}))
+
+(m/=> plan-report
+      [:=> [:cat ScopePlan Roots Classes [:fn {:gen/elements [(constantly nil) (partial file->ns ["/r/src"])]} ifn?]]
+       PlanReport])
 
 ;; =============================================================================
 ;; Boundary
@@ -165,6 +279,8 @@
    :host/remount!         nil
    :host/reseat!          (reseat/via-var `reseat/reseat!)
    :host/rebind-registrations! (reseat/via-var `registrations/rebind-stale!)})
+
+(m/=> default-ports [:=> [:cat] Ports])
 
 (defn- prepare!
   "Extend hive-hot with core's roots and the interlock. Returns
@@ -217,6 +333,12 @@
          (assoc (plan-report sp roots classes (partial file->ns dirs))
                 :repair (repair! ports :hot/repair-preview prefix)))))))
 
+(m/=> plan
+      [:function
+       [:=> [:cat] [:or Refusal [:map [:repair :any]]]]
+       [:=> [:cat Opts]
+        [:or Refusal [:map [:repair :any]]]]])
+
 (defn tools-refreshed
   "What the report's :tools-refreshed says. PORTS with a :host/refresh-tools!
    port answer what it returned (TOOLS); otherwise the table refresh is the
@@ -225,6 +347,8 @@
   (if (contains? ports :host/refresh-tools!)
     tools
     (when (map? surface) (:server-tools surface))))
+
+(m/=> tools-refreshed [:=> [:cat Ports :any :any] :any])
 
 (defn stale-registrations
   "What the report's :stale-registrations says. hive-hot scans the registries
@@ -236,6 +360,11 @@
   (if (and (map? rebind) (contains? rebind :remaining))
     (not-empty (vec (:remaining rebind)))
     (:stale-registrations res)))
+
+(m/=> stale-registrations
+      [:=> [:cat [:map [:stale-registrations {:optional true} :any]]
+            [:maybe [:or [:map [:remaining {:optional true} [:maybe [:sequential :any]]]] :string]]]
+       :any])
 
 (defn reload!
   "Reload the changes under core's roots, plus whatever repair the image
@@ -310,3 +439,9 @@
           :tools-refreshed       (tools-refreshed ports tools surface)
           :surface               surface
           :hive-hot              hot-init})))))
+
+(m/=> reload!
+      [:function
+       [:=> [:cat] [:or [:map [:error :keyword] [:message :string] [:ok? [:= false]]] ReloadReport]]
+       [:=> [:cat Opts]
+        [:or [:map [:error :keyword] [:message :string] [:ok? [:= false]]] ReloadReport]]])

@@ -1,0 +1,48 @@
+{:case-0
+ {:out {},
+  :in
+  ([]
+   {}
+   #object[clojure.core$constantly$fn__5759 0x2835de0c "clojure.core$constantly$fn__5759@2835de0c"])},
+ :case-1
+ {:out {},
+  :in
+  ([[defn a]]
+   {}
+   #object[clojure.core$constantly$fn__5759 0x5bcdbb5a "clojure.core$constantly$fn__5759@5bcdbb5a"])},
+ :case-2
+ {:out {},
+  :in
+  ([]
+   {}
+   #object[clojure.core$constantly$fn__5759 0x2835de0c "clojure.core$constantly$fn__5759@2835de0c"])},
+ :case-3
+ {:out {a {:tag defonce}},
+  :in
+  ([[defonce a]]
+   {b #<Atom@54f98f3: 1>}
+   #object[clojure.core$constantly$fn__5759 0x5bcdbb5a "clojure.core$constantly$fn__5759@5bcdbb5a"])},
+ :case-4
+ {:out {a {:tag defonce}},
+  :in
+  ([[def a] [defonce a] [def c] [defn a]]
+   {}
+   #object[clojure.core$constantly$fn__5759 0x2835de0c "clojure.core$constantly$fn__5759@2835de0c"])},
+ :case-5
+ {:out {c {:tag defonce}},
+  :in
+  ([[defn b] [defonce c]]
+   {}
+   #object[clojure.core$constantly$fn__5759 0x2835de0c "clojure.core$constantly$fn__5759@2835de0c"])},
+ :case-6
+ {:out {},
+  :in
+  ([[defn a]]
+   {b #<Atom@54f98f3: 1>}
+   #object[clojure.core$constantly$fn__5759 0x2835de0c "clojure.core$constantly$fn__5759@2835de0c"])},
+ :case-7
+ {:out {a {:tag defonce}},
+  :in
+  ([[defn c] [defonce a] [def c]]
+   {b #<Atom@54f98f3: 1>}
+   #object[clojure.core$constantly$fn__5759 0x2835de0c "clojure.core$constantly$fn__5759@2835de0c"])}}
