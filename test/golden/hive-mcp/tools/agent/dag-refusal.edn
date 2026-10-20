@@ -1,0 +1,32 @@
+{:case-0
+ {:out
+  "The swarm needs hive-agent, which is not on the classpath (hive-agent.swarm.tools.agent.dag/handle-dag-stop)",
+  :in (:stop {:plan_id "p1"})},
+ :case-1
+ {:out
+  "The swarm needs hive-agent, which is not on the classpath (hive-agent.swarm.tools.agent.dag/handle-dag-stop)",
+  :in (:stop {:plan_id "p1", :cwd "/w"})},
+ :case-2
+ {:out
+  "The swarm needs hive-agent, which is not on the classpath (hive-agent.swarm.tools.agent.dag/handle-dag-start)",
+  :in (:start {:plan_id "p1", :cwd "/w"})},
+ :case-3
+ {:out
+  "The swarm needs hive-agent, which is not on the classpath (hive-agent.swarm.tools.agent.dag/handle-dag-status)",
+  :in (:status {:cwd "/w"})},
+ :case-4
+ {:out
+  "The swarm needs hive-agent, which is not on the classpath (hive-agent.swarm.tools.agent.dag/handle-dag-start)",
+  :in (:start {:plan_id "p1"})},
+ :case-5
+ {:out
+  "The swarm needs hive-agent, which is not on the classpath (hive-agent.swarm.tools.agent.dag/handle-dag-start)",
+  :in (:start {:plan_id "p1"})},
+ :case-6
+ {:out
+  "The swarm needs hive-agent, which is not on the classpath (hive-agent.swarm.tools.agent.dag/handle-dag-status)",
+  :in (:status {})},
+ :case-7
+ {:out
+  "The swarm needs hive-agent, which is not on the classpath (hive-agent.swarm.tools.agent.dag/handle-dag-stop)",
+  :in (:stop {})}}
