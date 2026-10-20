@@ -9,7 +9,8 @@
      :scope/global  — only scope:global entries
      :scope/project — specific project (+ hierarchy)
      :scope/auto    — auto-derived from directory"
-  (:require [hive-dsl.adt :refer [defadt adt-case]]
+  (:require [malli.core :as m]
+            [hive-dsl.adt :refer [defadt adt-case]]
             [hive-mcp.knowledge-graph.scope :as kg-scope]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -35,6 +36,8 @@
     (= scope-str "global") (scope-filter :scope/global)
     (some? scope-str)       (scope-filter :scope/project {:project-id scope-str})
     :else                   (scope-filter :scope/auto {:project-id project-id})))
+
+(m/=> parse-scope [:=> [:cat [:maybe :string] [:maybe :string]] [:map [:adt/type :keyword] [:adt/variant :keyword]]])
 
 ;; =============================================================================
 ;; Projection Helpers
@@ -62,6 +65,8 @@
                                        (kg-scope/descendant-scopes pid))]
                      (vec (distinct (concat filtered descendants))))))
 
+(m/=> scope->project-ids [:=> [:cat [:map [:adt/type :keyword] [:adt/variant :keyword]] :boolean] [:maybe [:vector :string]]])
+
 (defn scope->tag-set
   "Compute visible scope tags for in-memory filtering.
    Returns #{string?} or nil (nil = no filtering / pass all)."
@@ -76,6 +81,8 @@
                      (kg-scope/full-hierarchy-scope-tags (:project-id sf))
                      (kg-scope/visible-scope-tags (:project-id sf)))))
 
+(m/=> scope->tag-set [:=> [:cat [:map [:adt/type :keyword] [:adt/variant :keyword]] :boolean] [:maybe [:set :string]]])
+
 (defn scope->effective
   "Compute [effective-pid in-project?] for search dispatch.
    Used by search-semantic* to determine filtering mode."
@@ -86,3 +93,5 @@
     :scope/project [(:project-id sf) true]
     :scope/auto    (let [pid (:project-id sf)]
                      [pid (and pid (not= pid "global"))])))
+
+(m/=> scope->effective [:=> [:cat [:map [:adt/type :keyword] [:adt/variant :keyword]]] [:tuple [:maybe :string] [:maybe :boolean]]])

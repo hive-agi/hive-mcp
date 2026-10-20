@@ -1,0 +1,5 @@
+{:decay-stop {:stopped false, :reason "not-running"},
+ :decay-status {:running? false},
+ :hk-stop {:stopped false, :reason "not-running"},
+ :hk-status
+ {:running? false, :config {:enabled true, :interval-minutes 5}}}

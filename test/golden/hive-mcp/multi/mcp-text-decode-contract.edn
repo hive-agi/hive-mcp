@@ -1,0 +1,8 @@
+{:case-0 {:out {:text "not-json"}, :in {:text "not-json"}},
+ :case-1 {:out "raw", :in "raw"},
+ :case-2 {:out {:id "a"}, :in {:id "a"}},
+ :case-3 {:out {:text "not-json"}, :in {:text "not-json"}},
+ :case-4 {:out {:text "not-json"}, :in {:text "not-json"}},
+ :case-5 {:out "raw", :in "raw"},
+ :case-6 {:out {:id "a"}, :in {:id "a"}},
+ :case-7 {:out {:text "not-json"}, :in {:text "not-json"}}}

@@ -11,7 +11,8 @@
    variant cannot be ignored by a `:transient`-only retry policy.
 
    Reload-safety: `defonce`-guarded for `IErrorClassifier`."
-  (:require [hive-dsl.adt :as adt]))
+  (:require [hive-dsl.adt :as adt]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -35,6 +36,22 @@
   [:err/validation       {:message string?}]
   [:err/unknown          {:message string?}])
 
+;;; ---------------------------------------------------------------------------
+;;; Malli shape of an ErrorClass value (the ADT's runtime representation)
+;;; ---------------------------------------------------------------------------
+
+(def ErrorClassVariant
+  "The closed set of `ErrorClass` variants."
+  [:enum :err/transient :err/schema-mismatch :err/auth :err/validation :err/unknown])
+
+(def ErrorClassValue
+  "Any `ErrorClass` ADT value. The payload key set depends on the variant
+   (see `defadt ErrorClass` above), so the map is open beyond :adt/*."
+  [:map
+   [:adt/variant ErrorClassVariant]
+   [:adt/type [:= :ErrorClass]]
+   [:message :string]])
+
 (defonce ^:private -ierrorclassifier-defined? (atom false))
 
 (when (compare-and-set! -ierrorclassifier-defined? false true)
@@ -53,7 +70,12 @@
   [err-class]
   (= :err/schema-mismatch (adt/adt-variant err-class)))
 
+;; accepts any value — adt-variant of a non-ADT value answers nil, hence false
+(m/=> schema-mismatch? [:=> [:cat :any] :boolean])
+
 (defn transient?
   "True if `err-class` is the `:err/transient` variant."
   [err-class]
   (= :err/transient (adt/adt-variant err-class)))
+
+(m/=> transient? [:=> [:cat :any] :boolean])

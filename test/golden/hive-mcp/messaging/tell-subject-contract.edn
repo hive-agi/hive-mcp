@@ -1,0 +1,8 @@
+{:case-0 {:out "hive.conv.tell.ling-1", :in "ling-1"},
+ :case-1 {:out "hive.conv.tell.foo.bar", :in "foo.bar"},
+ :case-2 {:out "hive.conv.tell.a", :in "a"},
+ :case-3 {:out "hive.conv.tell.ling-1", :in "ling-1"},
+ :case-4 {:out "hive.conv.tell.ling-1", :in "ling-1"},
+ :case-5 {:out "hive.conv.tell.foo.bar", :in "foo.bar"},
+ :case-6 {:out "hive.conv.tell.a", :in "a"},
+ :case-7 {:out "hive.conv.tell.ling-1", :in "ling-1"}}

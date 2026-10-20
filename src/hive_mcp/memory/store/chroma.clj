@@ -6,14 +6,36 @@
    later (e.g., Milvus, DataScript-for-testing).
 
    DDD: Repository pattern - ChromaMemoryStore is the Chroma aggregate adapter."
-  (:require [hive-mcp.protocols.memory :as proto]
+  (:require [malli.core :as m]
+            [hive-mcp.protocols.memory :as proto]
             [hive-mcp.chroma.core :as chroma]
             [hive-mcp.chroma.crud :as ccrud]
             [hive-mcp.chroma.search :as csearch]
             [hive-mcp.chroma.maintenance :as cmaint]
             [hive-mcp.dns.result :as result]
             [taoensso.timbre :as log]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [hive-spi.memory.ports :as ports]))
+
+;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
+;;
+;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+;; =========================================================================
+;; Pure Calculations (extracted to lower per-fn CC)
+;; =========================================================================
+
+(def capabilities
+  "What callers may rely on beyond the IMemoryStore port, declared under
+   :capabilities in store-status (the hive-spi.memory.decorate contract).
+
+   :embed-text  an entry's transient :embed-text is embedded in place of the
+                document built from its :content, and is never persisted
+                (chroma.crud/strip-transient). A decorator that changes
+                :content at rest (hive-knowledge's seal encrypts it) hands the
+                store the text it may index this way; without it the
+                collection would index ciphertext."
+  [:embed-text])
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -75,6 +97,8 @@
   (let [s (if (instance? clojure.lang.Named field) (name field) (str field))]
     (keyword (str/replace s "_" "-"))))
 
+(m/=> field-key [:=> [:cat :any] :keyword])
+
 (defn project-fields
   "ENTRIES trimmed to OUTPUT-FIELDS (entry-key names as strings or keywords,
    kebab-case or Milvus snake_case column names, see field-key). :id always
@@ -85,6 +109,11 @@
     (let [ks (conj (set (map field-key output-fields)) :id)]
       (mapv #(select-keys % ks) entries))
     entries))
+
+(m/=> project-fields
+      [:=> [:cat [:maybe [:sequential :map]]
+             [:maybe [:sequential [:or :string :keyword :symbol]]]]
+       [:maybe [:sequential :map]]])
 
 (defn- build-health-map
   "Build health-check response from probe result and latency.
@@ -247,7 +276,8 @@
       {:backend          "chroma"
        :configured?      (:configured? status)
        :entry-count      (safe-entry-count)
-       :supports-search? (:configured? status)}))
+       :supports-search? (:configured? status)
+       :capabilities     capabilities}))
 
   ;; The port promises an EMPTY store afterwards, not only a cold cache.
   (reset-store! [_this]
@@ -371,3 +401,14 @@
                                       :port 8000
                                       :collection-name "hive-mcp-memory"}
                                      opts)))))
+
+(m/=> create-store [:function [:=> [:cat] [:fn {:gen/elements [(->ChromaMemoryStore (atom {}))]} #(satisfies? proto/IMemoryStore %)]] [:=> [:cat :map] [:fn {:gen/elements [(->ChromaMemoryStore (atom {}))]} #(satisfies? proto/IMemoryStore %)]]])
+
+;; =========================================================================
+;; IMemoryStoreScan — complete enumeration (seal.migrate, `seal project`)
+;; =========================================================================
+
+(extend-protocol ports/IMemoryStoreScan
+  ChromaMemoryStore
+  (scan-ids [_this opts]
+    (ccrud/scan-ids (or opts {}))))

@@ -1,7 +1,8 @@
 (ns hive-mcp.saa.model
   "Provider-neutral SAA phase model. Ordered phase descriptors with tool/permission
    intent and goal-prompt fragments. NO vendor strings — vendor tokens are emitted
-   solely by IPhaseProvider/build-options.")
+   solely by IPhaseProvider/build-options."
+  (:require [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -41,18 +42,41 @@
          "- Make precise, focused changes\n"
          "- Verify each change before moving to the next")}])
 
+(def SaaPhase
+  "The three phases of the model, in no particular order."
+  [:enum :silence :abstract :act])
+
+(def PhaseDescriptor
+  "One `saa-phase-model` entry."
+  [:map
+   [:phase SaaPhase]
+   [:tool-intent [:set :keyword]]
+   [:permission-intent :keyword]
+   [:goal-prompt-fragment :string]])
+
+(def PhaseIntent
+  "The intent slice of a descriptor `phase->intent` answers."
+  [:map [:tool-intent [:set :keyword]] [:permission-intent :keyword]])
+
 (defn phase-descriptor
   "Return the descriptor map for phase, or nil."
   [phase]
   (some #(when (= phase (:phase %)) %) saa-phase-model))
+
+;; an unknown phase (any value) answers nil
+(m/=> phase-descriptor [:=> [:cat [:maybe [:or :keyword :string]]] [:maybe PhaseDescriptor]])
 
 (defn ordered-phases
   "Return phases in canonical order."
   []
   (mapv :phase saa-phase-model))
 
+(m/=> ordered-phases [:=> [:cat] [:vector SaaPhase]])
+
 (defn phase->intent
   "Return {:tool-intent _ :permission-intent _} for phase, or nil."
   [phase]
   (when-let [d (phase-descriptor phase)]
     (select-keys d [:tool-intent :permission-intent])))
+
+(m/=> phase->intent [:=> [:cat [:maybe [:or :keyword :string]]] [:maybe PhaseIntent]])

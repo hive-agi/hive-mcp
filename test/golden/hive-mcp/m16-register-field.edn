@@ -1,0 +1,11 @@
+{:case-0 {:out :method, :in ({:scope :plan, :key :method})},
+ :case-1
+ {:out :agent, :in ({:scope :plan, :key :agent, :project? false})},
+ :case-2
+ {:out :agent, :in ({:scope :step, :key :agent, :project? false})},
+ :case-3
+ {:out :wave, :in ({:scope :step, :key :wave, :project? false})},
+ :case-4 {:out :method, :in ({:scope :step, :key :method})},
+ :case-5 {:out :agent, :in ({:scope :step, :key :agent})},
+ :case-6 {:out :verify, :in ({:scope :step, :key :verify})},
+ :case-7 {:out :method, :in ({:scope :plan, :key :method})}}

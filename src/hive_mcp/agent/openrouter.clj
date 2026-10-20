@@ -142,7 +142,7 @@
 ;;; Request/Response (OpenAI-compatible shape)
 ;;; ---------------------------------------------------------------------------
 
-(defn- format-tools
+(defn format-tools
   "Convert a tool schema vector to OpenAI function-calling format.
 
    Accepts two input shapes (shape-tolerant):
@@ -151,7 +151,10 @@
 
    Already-OpenAI entries pass through unchanged. This prevents nil-field 400s
    from strict providers (venice) when hive-agent definitions bypass the
-   internal registry shape."
+   internal registry shape.
+
+   Public so the dispatch-routed backend (`hive-mcp.agent.cider/dispatch-backend`)
+   sends the router the same tool shape."
   [tools]
   (when (seq tools)
     (mapv (fn [t]

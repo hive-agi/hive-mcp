@@ -28,7 +28,10 @@
             [hive-mcp.test.stub.memory-store :as stub]
             [clojure.string]
             [hive-mcp.protocols.memory :as mem-proto]
-            [hive-mcp.tools.catchup.hierarchy :as hier]))
+            [hive-mcp.tools.catchup.hierarchy :as hier]
+            [hive-spi.memory.ports :as ports]
+            [hive-spi.memory.decorate :as decorate]
+            [hive-spi.embeddings.ports :as emb-ports]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -39,14 +42,34 @@
    (mock) provider and its default collection."
   {:embedder {:no-embed-types #{} :routes {}}})
 
+(defrecord LetterEmbedder []
+  ;; A similarity-preserving stub: the unit vector of a text's letter counts
+  ;; (a-z, plus one slot for every other character). Texts sharing letters
+  ;; land near each other, so a query finds the entry whose embedded text it
+  ;; resembles, which a hash embedder cannot show: under one, the Chroma
+  ;; document (Type/Tags/Content) is no nearer its own content than any text.
+  emb-ports/EmbeddingProvider
+  (embed-text [_ text]
+    (let [counts (reduce (fn [v ch]
+                           (let [i (- (int (Character/toLowerCase (char ch))) (int \a))]
+                             (update v (if (<= 0 i 25) i 26) inc)))
+                         (vec (repeat 27 0.0))
+                         (str text))
+          norm   (Math/sqrt (reduce + 1e-9 (map #(* % %) counts)))]
+      (mapv #(/ % norm) counts)))
+  (embed-batch [this texts]
+    (mapv #(emb-ports/embed-text this %) texts))
+  (embedding-dimension [_] 27))
+
 (defn chroma-without-server
-  "Fixture: a fresh in-memory transport, a mock embedder and a static config
-   for each test, restoring the prior transport and provider afterwards."
+  "Fixture: a fresh in-memory transport, a similarity-preserving stub
+   embedder (LetterEmbedder) and a static config for each test, restoring the
+   prior transport and provider afterwards."
   [f]
   (let [prior-transport (client/transport)
         prior-provider  (active/get-embedding-provider)]
     (client/set-transport! (transport/->transport))
-    (active/set-embedding-provider! (fixtures/->MockEmbedder 16))
+    (active/set-embedding-provider! (->LetterEmbedder))
     (conn/reset-collection-cache!)
     (try
       (cfg/with-config test-config (f))
@@ -173,3 +196,60 @@
                                          (:beta opts)  (assoc :staleness-beta (:beta opts))
                                          (:depth opts) (assoc :staleness-depth (:depth opts))))]
                ["passes-through" (fn [opts] opts)]]})
+
+;; =============================================================================
+;; Seal readiness: :embed-text and IMemoryStoreScan beyond the conformance cases
+;; =============================================================================
+
+(defn- stored-text
+  "Every document and metadata value the in-memory transport holds, as one
+   string: what is at rest, whatever spelling put it there."
+  []
+  (pr-str (for [[_ c] @(:state (client/transport))
+                r (vals (:records c))]
+            [(:document r) (:metadata r)])))
+
+(deftest chroma-declares-seal-capabilities
+  (let [s (chroma-store/create-store)]
+    (is (decorate/embed-text-capable? (mem-proto/store-status s)))
+    (is (satisfies? ports/IMemoryStoreScan s))))
+
+(deftest chroma-never-persists-embed-text-in-any-spelling
+  (let [s  (chroma-store/create-store)
+        _  (mem-proto/reset-store! s)
+        id (mem-proto/add-entry! s {:type "note" :content {:body "visible" :embed-text "nested-secret"}
+                                    :tags ["t"] :duration :medium
+                                    :embed-text "top-secret"
+                                    "embed-text" "string-secret"
+                                    :x/embed-text "ns-secret"})]
+    (is (string? id))
+    (doseq [secret ["top-secret" "string-secret" "ns-secret" "nested-secret" "embed-text"]]
+      (is (not (clojure.string/includes? (stored-text) secret)) secret))
+    (is (= "visible" (get-in (mem-proto/get-entry s id) [:content :body])))))
+
+(deftest chroma-update-without-content-reembeds-from-embed-text
+  (let [s     (chroma-store/create-store)
+        _     (mem-proto/reset-store! s)
+        id    (mem-proto/add-entry! s {:type "note" :content "cipher-0" :tags ["t"] :duration :medium
+                                       :embed-text "before"})
+        other (mem-proto/add-entry! s {:type "note" :content "cipher-1" :tags ["t"] :duration :medium})]
+    (is (= id (:id (first (mem-proto/search-similar s "before" {:limit 2})))))
+    (let [r (mem-proto/update-entry! s id {:embed-text "after"})]
+      (is (= "cipher-0" (:content r)) "content untouched")
+      (is (not (contains? r :embed-text))))
+    (is (= id (:id (first (mem-proto/search-similar s "after" {:limit 2}))))
+        "the vector now comes from the new :embed-text")
+    (is (not= other id))
+    (is (not (clojure.string/includes? (stored-text) "after")))))
+
+(deftest chroma-scan-ids-pages-past-one-page
+  (let [s   (chroma-store/create-store)
+        _   (mem-proto/reset-store! s)
+        es  (mapv (fn [i] {:id (format "scan-%05d" i) :type "note" :content (str "row " i)
+                           :tags ["t"] :duration "medium"})
+                  (range 1203))
+        _   (crud/index-memory-entries! es)
+        ids (ports/scan-ids s {})]
+    (is (= 1203 (count ids)))
+    (is (= (set (map :id es)) (set ids)))
+    (is (= (count ids) (count (distinct ids))))))

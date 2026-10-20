@@ -1,7 +1,8 @@
 (ns hive-mcp.multi.registry.owned
   "Owner-tagged two-index registry operations. Each caller owns its state atom
    and chooses its primary index and conflict-reporting policy."
-  (:require [taoensso.timbre :as log]))
+  (:require [malli.core :as m]
+            [taoensso.timbre :as log]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -46,6 +47,8 @@
                outcome)
            (recur)))))))
 
+(m/=> register! [:function [:=> [:cat [:fn {:gen/elements [(atom {:by-name {} :by-owner {}})]} #(instance? clojure.lang.Atom %)] :keyword [:or :keyword :string] :string :map :string :keyword] [:enum :ok :replaced :conflict]] [:=> [:cat [:fn {:gen/elements [(atom {:by-name {} :by-owner {}})]} #(instance? clojure.lang.Atom %)] :keyword [:or :keyword :string] :string :map :string :keyword [:maybe :map]] [:enum :ok :replaced :conflict]]])
+
 (defn deregister-by-owner!
   "Remove only ids owned by owner; return the removed set."
   [state index-key owner]
@@ -59,8 +62,14 @@
         ids
         (recur)))))
 
+(m/=> deregister-by-owner! [:=> [:cat [:fn {:gen/elements [(atom {:by-name {} :by-owner {}})]} #(instance? clojure.lang.Atom %)] :keyword [:or :keyword :string]] [:set :any]])
+
 (defn lookup [state index-key id]
   (get-in @state [index-key id]))
 
+(m/=> lookup [:=> [:cat [:fn {:gen/elements [(atom {:by-name {} :by-owner {}})]} #(instance? clojure.lang.Atom %)] :keyword :string] [:maybe :map]])
+
 (defn all [state index-key]
   (get @state index-key))
+
+(m/=> all [:=> [:cat [:fn {:gen/elements [(atom {:by-name {} :by-owner {}})]} #(instance? clojure.lang.Atom %)] :keyword] :map])

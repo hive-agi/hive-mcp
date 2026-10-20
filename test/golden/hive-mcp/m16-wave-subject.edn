@@ -1,0 +1,8 @@
+{:case-0 {:out "hive.v1.wave.t.completed.unknown", :in (:t "")},
+ :case-1 {:out "hive.v1.wave.kY5.completed.unknown", :in (kY5 nil)},
+ :case-2 {:out "hive.v1.wave.sJ.completed.?", :in ("sJ" :?)},
+ :case-3 {:out "hive.v1.wave.e.completed.V", :in (:e V)},
+ :case-4 {:out "hive.v1.wave.unknown.completed..-", :in (nil :.-)},
+ :case-5 {:out "hive.v1.wave.o98.completed._T", :in (:o98 :_T)},
+ :case-6 {:out "hive.v1.wave.unknown.completed.e-", :in ("" :e-)},
+ :case-7 {:out "hive.v1.wave.g22!.completed.ss5", :in (:g22! :ss5)}}

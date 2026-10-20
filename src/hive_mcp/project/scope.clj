@@ -19,7 +19,8 @@
             [clojure.edn :as edn]
             [clojure.set]
             [hive-mcp.dns.result :refer [rescue]]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -385,3 +386,65 @@
   (case scope
     (nil "all") nil
     (visible-scope-tags scope)))
+
+;; =============================================================================
+;; Function Contracts (m16 coverage batch)
+;; =============================================================================
+
+;; Scope strings flow in from every layer; nil and non-strings normalize away.
+;; Permissive in, strict out.
+
+(m/=> read-direct-project-config
+      [:=> [:cat :any]
+       [:maybe :map]])
+
+(m/=> resolve-project-id
+      [:=> [:cat :any]
+       :any])
+
+(m/=> register-project-config!
+      [:=> [:cat :any :any]
+       :any])
+
+(m/=> deregister-project-config!
+      [:=> [:cat :any]
+       :any])
+
+(m/=> get-project-config
+      [:=> [:cat :any]
+       [:maybe :map]])
+
+(m/=> get-alias-index
+      [:=> [:cat]
+       :map])
+
+(m/=> clear-config-cache!
+      [:=> [:cat]
+       :map])
+
+(m/=> get-parent-scope [:=> [:cat [:maybe :string]] [:maybe :string]])
+
+(m/=> visible-scopes [:=> [:cat [:maybe :string]] [:vector :string]])
+
+(m/=> scope-contains? [:=> [:cat [:maybe :string] [:maybe :string]] :boolean])
+
+(m/=> infer-scope-from-path
+      [:=> [:cat :any]
+       :string])
+
+(m/=> get-current-project-id
+      [:function
+       [:=> [:cat] :string]
+       [:=> [:cat :any] :string]])
+
+(m/=> scope->tag [:=> [:cat [:maybe :string]] :string])
+
+(m/=> visible-scope-tags [:=> [:cat [:maybe :string]] [:set :string]])
+
+(m/=> descendant-scope-tags [:=> [:cat [:maybe :string]] [:maybe [:set :string]]])
+
+(m/=> descendant-scopes [:=> [:cat [:maybe :string]] [:maybe [:vector :string]]])
+
+(m/=> full-hierarchy-scope-tags [:=> [:cat [:maybe :string]] [:set :string]])
+
+(m/=> derive-hierarchy-scope-filter [:=> [:cat [:maybe :string]] [:maybe [:set :string]]])

@@ -1,0 +1,29 @@
+{:note
+ {:ok
+  #:provider{:key :p/small,
+             :impl :ollama,
+             :model "small",
+             :dim 1024,
+             :max-tokens 8192}},
+ :plan
+ {:ok
+  #:provider{:key :p/heavy,
+             :impl :venice,
+             :model "heavy",
+             :dim 4096,
+             :max-tokens 28000}},
+ :fits
+ {:ok
+  #:provider{:key :p/small,
+             :impl :ollama,
+             :model "small",
+             :dim 1024,
+             :max-tokens 8192}},
+ :escalated
+ {:ok
+  #:provider{:key :p/heavy,
+             :impl :venice,
+             :model "heavy",
+             :dim 4096,
+             :max-tokens 28000}},
+ :invalidated [false true]}

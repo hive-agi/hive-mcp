@@ -52,3 +52,13 @@
             "relation enum is frozen in a static def — it cannot mirror the registry")
         (finally
           (swap! exts disj probe))))))
+
+(deftest memory-tool-documents-scope-tag-resolution-rule
+  (testing "the advertised tool text states that an explicit scope:project tag wins"
+    (let [tool  (->> (:tools (routes/build-server-spec))
+                     (filter #(= "memory" (:name %)))
+                     first)
+          props (get-in tool [:inputSchema :properties])]
+      (is (clojure.string/includes? (:description tool) "caller-explicit wins"))
+      (is (clojure.string/includes? (get-in props ["tags" :description]) "scope:project:<id>"))
+      (is (clojure.string/includes? (get-in props ["directory" :description]) "scope:project:<id>")))))

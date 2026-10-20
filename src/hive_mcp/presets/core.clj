@@ -32,7 +32,8 @@
             [taoensso.timbre :as log]
             [hive-spi.embeddings.ports :as embed]
             [hive-mcp.embeddings.active :as active]
-            [hive-mcp.protocols.vector :as vp]))
+            [hive-mcp.protocols.vector :as vp]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -467,3 +468,63 @@
      :category (or category (detect-category md-content))
      :summary (or summary "No summary available")
      :key-points (if (seq key-points) key-points [])}))
+
+;; =============================================================================
+;; Function Contracts (m16 coverage batch)
+;; =============================================================================
+
+;; IO boundary: vector store + embedding provider. Inputs permissive;
+;; outputs follow the docstrings / hive-dsl Result shape.
+
+(m/=> reset-collection-cache!
+      [:=> [:cat]
+       :nil])
+
+(m/=> scan-presets-dir
+      [:=> [:cat :any]
+       [:maybe [:sequential :map]]])
+
+(m/=> index-preset!
+      [:=> [:cat :map]
+       :map])
+
+(m/=> index-presets!
+      [:=> [:cat [:sequential :map]]
+       :map])
+
+(m/=> migrate-presets-from-dir!
+      [:=> [:cat :any]
+       [:map
+        [:migrated [:sequential :any]]
+        [:failed [:sequential :any]]]])
+
+(m/=> search-presets
+      [:=> [:cat :string [:* :any]] [:vector :map]])
+
+(m/=> get-preset
+      [:=> [:cat :any]
+       [:maybe :map]])
+
+(m/=> list-presets
+      [:=> [:cat]
+       [:sequential :map]])
+
+(m/=> get-preset-from-file
+      [:=> [:cat :any :any]
+       [:maybe :map]])
+
+(m/=> status
+      [:=> [:cat]
+       :map])
+
+(m/=> delete-preset!
+      [:=> [:cat :any]
+       :map])
+
+(m/=> extract-preset-core
+      [:=> [:cat :map]
+       [:map
+        [:title :any]
+        [:category :string]
+        [:summary :string]
+        [:key-points [:vector :string]]]])
