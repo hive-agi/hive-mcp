@@ -135,6 +135,45 @@
         "cancellation must reach the task's own thread, not merely mark a flag")
     (is (= :task/cancelled (:state (at/get-task "t-cancel"))))))
 
+(deftest a-started-task-never-loses-its-handle-or-its-running-state
+  ;; CI (hive-mcp PR #447): cancel! answered :cancel/not-started for a task
+  ;; whose body was already running. submit! attached the handle with a
+  ;; read-then-write of the row while the pool thread's `set-state!` did its
+  ;; own read-then-write; whichever wrote second erased the other's field.
+  ;; One thread per task makes the two writers race on every submission.
+  (let [n       300
+        started (CountDownLatch. n)
+        release (CountDownLatch. 1)
+        thread-runner
+        (reify at/ITaskRunner
+          (-run [_ f] (let [t (Thread. ^Runnable f)] (.start t) t))
+          (-cancel [_ t] (.interrupt ^Thread t) true)
+          (-view [_ t] {:present?   (some? t)
+                        :done?      (boolean (and t (not (.isAlive ^Thread t))))
+                        :cancelled? false}))]
+    (reset! at/runner thread-runner)
+    (try
+      (dotimes [i n]
+        (at/submit! {:task-id (str "t-race-" i) :tool "memory" :caller-id "test"
+                     :f (fn [] (.countDown started) (await-latch release 30000))}))
+      (is (await-latch started 10000) "every task's body started")
+      ;; A body has started, so its :task/running write has been issued, but
+      ;; that write lands just after the latch. Wait for the state itself.
+      (let [rows (mapv #(at/get-task (str "t-race-" %)) (range n))
+            lost-state  (remove #(await-state (:task-id %) :task/running 5000) rows)
+            lost-handle (remove #(= :cancel/interrupted
+                                    (:adt/variant (st/cancel-outcome
+                                                   (:task-id %)
+                                                   (#'at/entry-view (:task-id %)))))
+                                rows)]
+        (is (empty? (map :task-id lost-state))
+            "a started task must not be put back to :task/queued")
+        (is (empty? (map :task-id lost-handle))
+            "a started task must keep the handle cancel! needs"))
+      (finally
+        (.countDown release)
+        (reset! at/runner nil)))))
+
 (deftest cancelling-an-unknown-task-answers-rather-than-throws
   ;; Asking about a task that already finished, or never existed, is a
   ;; reasonable question. It gets an answer with a reason.

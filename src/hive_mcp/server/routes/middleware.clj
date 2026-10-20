@@ -27,7 +27,8 @@
             [hive-mcp.agent.grant :as grant]
             [hive-mcp.agent.identity :as agent-identity]
             [hive-mcp.server.routes.async-ack :as async-ack]
-            [hive-mcp.tools.async-params :as async-params])
+            [hive-mcp.tools.async-params :as async-params]
+            [hive-mcp.server.routes.async-task.lane :as async-lane])
 (:import [java.util.concurrent RejectedExecutionException]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -332,6 +333,9 @@
             :tool       tool-name
             :caller-id  caller-id
             :timeout-ms timeout-ms
+            ;; Execution lane (async-task.lane): a short forge verb must not
+            ;; queue behind hours-long work on the default pool.
+            :lane       (async-lane/classify tool-name (:command args))
             ;; Background work: back to the :batch embedding lane.
             :f          (in-embed-lane :batch (fn []
                           (try
