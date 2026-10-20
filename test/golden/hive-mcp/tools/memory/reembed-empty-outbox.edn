@@ -1,0 +1,9 @@
+{:drain {:total 0, :reembedded 0, :not-found 0, :errors 0},
+ :batch
+ {:type "text",
+  :text
+  "{\"total\":0,\"reembedded\":0,\"not-found\":0,\"errors\":0,\"results\":[]}"},
+ :blank
+ {:type "text",
+  :text "id is required (non-blank string)",
+  :isError true}}
