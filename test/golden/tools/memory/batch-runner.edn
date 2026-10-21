@@ -1,0 +1,73 @@
+{:flat
+ {:success true,
+  :waves
+  {1
+   {:ops [{:id "a", :tool "add"}],
+    :results
+    [{:id "a",
+      :tool "add",
+      :command nil,
+      :success true,
+      :result {:type "text", :text "added hello"},
+      :data {:type "text", :text "added hello"}}]}},
+  :summary {:total 1, :success 1, :failed 0, :waves 1}},
+ :nested
+ {:success true,
+  :waves
+  {1
+   {:ops
+    [{:id "a", :tool "kg edge"} {:id "b", :tool "migration.backup"}],
+    :results
+    [{:id "a",
+      :tool "kg edge",
+      :command nil,
+      :success true,
+      :result {:type "text", :text "kg edge x"},
+      :data {:type "text", :text "kg edge x"}}
+     {:id "b",
+      :tool "migration.backup",
+      :command nil,
+      :success true,
+      :result {:type "text", :text "backed up"},
+      :data {:type "text", :text "backed up"}}]}},
+  :summary {:total 2, :success 2, :failed 0, :waves 1}},
+ :mixed
+ {:success false,
+  :waves
+  {1
+   {:ops [{:id "a", :tool "get"} {:id "c", :tool "nope"}],
+    :results
+    [{:id "a",
+      :tool "get",
+      :command nil,
+      :success true,
+      :result {:type "text", :text "got a"},
+      :data {:type "text", :text "got a"}}
+     {:id "c",
+      :tool "nope",
+      :command nil,
+      :success false,
+      :error "Tool not found: nope",
+      :data nil}]},
+   2
+   {:ops [{:id "b", :tool "boom"}],
+    :results
+    [{:id "b",
+      :tool "boom",
+      :command nil,
+      :success false,
+      :error "kaboom",
+      :data nil}]}},
+  :summary {:total 3, :success 1, :failed 2, :waves 2}},
+ :dry-run
+ {:success true,
+  :dry-run true,
+  :waves
+  {1 {:ops [{:id "a", :tool "add", :entity_id "a"}]},
+   2
+   {:ops [{:id "b", :tool "get", :depends_on ["a"], :entity_id "b"}]}},
+  :summary {:total 2, :success 0, :failed 0, :waves 2}},
+ :empty
+ {:success true,
+  :waves {},
+  :summary {:total 0, :success 0, :failed 0, :waves 0}}}
