@@ -48,5 +48,5 @@
 
 (deftest nil-inputs-test
   (binding [config/*config-source* (source/static-source populated)]
-    (is (nil? (collect/agent-type-defaults nil)))
+    (is (nil? (apply collect/agent-type-defaults [nil])))
     (is (= #{} (collect/present-secret-keys nil)))))

@@ -78,5 +78,5 @@
 (deftest provider-key-resolution-test
   ;; an unknown provider has no secret key mapped and short-circuits to nil
   (is (nil? (lc/resolve-api-key-for-provider :no-such-provider)))
-  (is (nil? (lc/resolve-api-key-for-provider nil)))
+  (is (nil? (apply lc/resolve-api-key-for-provider [nil])))
   (is (keyword? (lc/default-spawn-mode))))
