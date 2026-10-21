@@ -275,6 +275,21 @@
 
 (m/=> immediately-retryable? [:=> [:cat [:maybe :map]] :boolean])
 
-(m/=> call-with-embed-retry [:=> [:cat [:fn ifn?] [:maybe :map] [:fn ifn?]] [:map]])
+(def ^:private Thunk
+  "A store add; generates thunks answering a plain stored-entry result."
+  [:fn {:gen/schema [:enum :stored] :gen/fmap (fn [k] (constantly {:id (name k)}))}
+   ifn?])
+
+(def ^:private Sleep
+  "The injected pause; generates a no-op."
+  [:fn {:gen/schema [:enum :nop] :gen/fmap (fn [_] (constantly nil))} ifn?])
+
+(def ^:private RetryPolicy
+  [:maybe
+   [:map
+    [:attempts {:optional true} [:int {:min 1 :max 3}]]
+    [:delay-ms {:optional true} [:int {:min 0 :max 5}]]]])
+
+(m/=> call-with-embed-retry [:=> [:cat Thunk RetryPolicy Sleep] [:map]])
 
 (m/=> record-failure! [:=> [:cat EntryId [:or Throwable_ :map] :string] [:maybe :map]])
