@@ -344,16 +344,15 @@
   "Check if dialogue has reached Nash equilibrium.
 
    Returns true when all participants have signaled :no-change or :approve
-   in their most recent turn.
-
-   NOTE: This is a basic implementation. The consensus namespace provides
-   more sophisticated detection with thresholds and timeout handling."
+   in their most recent turn. An unknown dialogue, or one with no
+   participants left, is false: nobody agreeing is not a consensus.
+   The consensus namespace adds thresholds and timeout handling."
   [dialogue-id]
   (let [participants (get-participants dialogue-id)
         last-turns (map #(get-last-turn-for dialogue-id %) participants)
         signals (map :signal (filter some? last-turns))]
-    (and (= (count signals) (count participants))
-         (every? equilibrium-signals signals))))
+    (boolean (and (seq participants) (= (count signals) (count participants))
+                  (every? equilibrium-signals signals)))))
 
 (m/=> nash-equilibrium? [:=> [:cat schema/DialogueId] :boolean])
 
