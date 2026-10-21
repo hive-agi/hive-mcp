@@ -14,7 +14,13 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (def ^:private RawScope
-  [:maybe [:string {:gen/elements ["all" "global" "hive-mcp" "topic:x" "p1"]}]])
+  "Raw scope strings, one variant picked uniformly first so each of the four
+   ScopeFilter arms gets about a quarter of the draws (a flat element list
+   plus the :maybe nil left \"all\" under the classification floor)."
+  [:maybe {:gen/schema [:tuple [:enum :all :global :project :auto]
+                        [:enum "hive-mcp" "topic:x" "p1"]]
+           :gen/fmap (fn [[arm pid]] (case arm :all "all" :global "global" :project pid :auto nil))}
+   :string])
 
 (def ^:private ProjectId
   [:maybe [:string {:gen/elements ["hive-mcp" "global" "p2"]}]])
