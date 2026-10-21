@@ -11,7 +11,9 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-spi.memory.ports :as ports]
             [hive-spi.memory.registry :as registry]
-            [hive-mcp.resilience.store :as resilience]))
+            [hive-mcp.resilience.store :as resilience]
+            [hive-test.golden :refer [deftest-golden]]
+            [hive-mcp.vectordb.resilience :as vr]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -227,3 +229,27 @@
             (resilience/call-with-resilience
              (fn [] (throw (java.io.IOException. "still dead")))
              100))))))
+
+;; The DEPRECATED facade names (hive-mcp.vectordb.resilience), driven through
+;; the same LiveStub port: every call-through and both macros, with the
+;; liveness calls each path made.
+(deftest-golden facade-call-throughs-golden
+  "test/golden/hive-mcp/vectordb/resilience-facade.edn"
+  (let [calls (atom [])
+        _     (put-store! :default (live-stub calls :await-result true))
+        run   (fn [thunk] (reset! calls []) {:out (thunk) :calls @calls})
+        flaky (fn [] (let [n (atom 0)]
+                       (fn [] (if (= 1 (swap! n inc))
+                                (throw (java.io.IOException. "Connection reset"))
+                                :recovered))))]
+    {:budget       vr/default-budget-ms
+     :transient?   (mapv vr/transient-failure? [(java.io.IOException. "x")
+                                                (ex-info "t" {:cause :io})
+                                                (IllegalStateException. "schema")])
+     :kick         (run #(vr/kick-and-wait! 250))
+     :ok           (run #(vr/call-with-resilience (constantly 7)))
+     :retried      (run #(vr/call-with-resilience (flaky) 300))
+     :result-ok    (run #(vr/call-with-resilience-result (constantly 8)))
+     :result-retry (run #(vr/call-with-resilience-result (flaky) 300))
+     :macro        (run #(vr/with-resilience (+ 1 2)))
+     :macro-result (run #(vr/with-resilience-result :v))}))
