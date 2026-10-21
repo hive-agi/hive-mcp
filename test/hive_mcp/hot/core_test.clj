@@ -84,7 +84,7 @@
       :hot/repair-preview    (fn [prefix] (swap! log conj [:repair-preview [prefix]]) {:stuck [] :dead-links {} :orphans []})
       :hot/prepare-pass!     (fn [prefix nses] (swap! log conj [:prepare-pass! [prefix nses]]) pass)
       :hot/reload-scoped!    (fn [roots] (swap! log conj [:reload-scoped! [roots]]) reload-result)
-      :hot/reload-pending!   (fn [] (swap! log conj [:reload-pending! []]) reload-result)
+      :hot/reload-pending!   (fn [roots] (swap! log conj [:reload-pending! [roots]]) reload-result)
       :host/remount!         (fn [loaded] (swap! log conj [:remount! [loaded]]) {:remounted (count loaded)})
       :host/reseat!          (fn [loaded] (swap! log conj [:reseat! [loaded]]) [{:ns "hive-mcp.other" :result :seated}])
       :host/refresh-tools!   (fn [] (swap! log conj [:refresh-tools! []]) 42)
@@ -176,7 +176,7 @@
 
 (deftest an-unchanged-tree-with-repairs-queued-runs-the-pending-pass
   (let [log    (atom [])
-        ports  (-> (recording-ports log {:success true :loaded ['hive-mcp.gone] :unloaded [] :pending-pass? true}
+        ports  (-> (recording-ports log {:success true :loaded ['hive-mcp.gone] :unloaded [] :pending? true}
                                     {:forced ['hive-mcp.holder] :orphans ['hive-mcp.gone]
                                      :dead-links {'hive-mcp.holder ['hive-mcp.gone]} :kept {}})
                    (assoc :hot/scope-plan (fn [_] {:want [] :cascade []})))
@@ -186,9 +186,16 @@
     (is (= [:ensure-init! :prepare-pass! :reload-pending! :remount! :reseat! :refresh-tools! :refresh-surface!]
            (map first @log))
         "the pending pass replaces the scoped one and is repaired like any other")
+    (is (= [["/r/src"]] (second (nth @log 2)))
+        "the pending pass is scoped to core's roots, so another root's queued work is withheld")
     (is (= ["hive-mcp.holder"] (:forced-unload report)))
     (is (= ["hive-mcp.gone"] (:orphans report)))
     (is (= {'hive-mcp.holder ['hive-mcp.gone]} (:dead-links report)))))
+
+(deftest the-default-pending-port-is-hive-hots-pending-aware-reload-scoped
+  (is (= (requiring-resolve 'hive-hot.core/reload-scoped!)
+         (:hot/reload-pending! (core/default-ports)))
+      "hive-hot's reload-scoped! runs queued work when nothing changed; hive-mcp keeps no reloader of its own"))
 
 (deftest a-jar-backed-core-refuses-with-restart-required
   (let [log (atom [])]

@@ -254,6 +254,9 @@
 
 (defn default-ports
   "The effects a reload drives, each resolved through its var now.
+   :hot/reload-pending! is hive-hot's reload-scoped! too: handed core's roots
+   with nothing changed under them, it runs the work clj-reload holds queued
+   (:pending? true) and withholds queued work outside the roots.
    :host/remount! is nil here: only the `hot` tool knows the mounted specs.
    :host/reseat! runs the open registry of hive-mcp.hot.reseat: every loaded
    namespace that holds live record instances rebuilds them itself.
@@ -273,7 +276,7 @@
    :hot/repair-preview    keep/repair-preview
    :hot/prepare-pass!     keep/prepare-pass!
    :hot/reload-scoped!    (soft 'hive-hot.core/reload-scoped!)
-   :hot/reload-pending!   keep/run-pending!
+   :hot/reload-pending!   (soft 'hive-hot.core/reload-scoped!)
    :host/refresh-surface! (when-let [refresh (soft 'hive-mcp.extensions.reactive/refresh-surface!)]
                             (fn [] (refresh nil)))
    :host/remount!         nil
@@ -398,7 +401,7 @@
              kind     (cond changed? :scoped queued? :pending :else :none)
              res      (let [r (case kind
                                 :scoped  ((:hot/reload-scoped! ports) roots)
-                                :pending ((:hot/reload-pending! ports))
+                                :pending ((:hot/reload-pending! ports) roots)
                                 :none    {:success true :loaded [] :unloaded [] :unchanged? true})]
                         (if (map? r) r {:success false :error (str "reloader answered " (pr-str r))}))
              ok?      (boolean (:success res))

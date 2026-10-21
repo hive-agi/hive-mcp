@@ -31,8 +31,9 @@
         {:git/tag "v0.1.1" :git/sha "49203a6"
          :exclusions [org.apache.logging.log4j/log4j-slf4j2-impl]}
 
-        ;; Python interop for Claude Agent SDK bridge
-        clj-python/libpython-clj {:mvn/version "2.026"}
+        ;; JNA: server/log_sink.clj calls libc (stat/open/write) through it.
+        ;; Declared directly; it used to arrive transitively via libpython-clj.
+        net.java.dev.jna/jna {:mvn/version "5.12.1"}
 
         ;; nREPL client support
         nrepl/bencode {:mvn/version "1.2.0"}

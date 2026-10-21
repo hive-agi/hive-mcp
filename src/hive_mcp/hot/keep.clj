@@ -124,17 +124,6 @@
    [:orphans [:vector :symbol]]
    [:unrepairable [:vector :symbol]]])
 
-(def ReloadAnswer
-  "The shape hive-hot's reloaders answer, as `run-pending!` answers it."
-  [:map
-   [:success :boolean]
-   [:ms nat-int?]
-   [:error [:maybe :string]]
-   [:pending-pass? [:= true]]
-   [:loaded {:optional true} [:sequential :symbol]]
-   [:unloaded {:optional true} [:sequential :symbol]]
-   [:failed {:optional true} :any]])
-
 (defn live-resource?
   "Does the var's ROOT VALUE hold something a reload must not recreate: a
    reference type, a delay, an executor, a channel, a closeable handle, a
@@ -407,18 +396,3 @@
     (boolean (or (seq (:to-load s)) (seq (:to-unload s))))))
 
 (m/=> pending? [:=> [:cat] :boolean])
-
-(defn run-pending!
-  "Drive one clj-reload pass over what is already queued: no baseline, no
-   scope, the order is clj-reload's own. Answers the shape hive-hot's
-   reloaders answer, so a caller treats both alike."
-  []
-  (let [start (System/currentTimeMillis)
-        res   ((clj-var 'clj-reload.core/reload) {:throw false})]
-    (-> (select-keys res [:loaded :unloaded :failed])
-        (assoc :success (nil? (:failed res))
-               :ms (- (System/currentTimeMillis) start)
-               :error (some-> (:exception res) ex-message)
-               :pending-pass? true))))
-
-(m/=> run-pending! [:=> [:cat] ReloadAnswer])
