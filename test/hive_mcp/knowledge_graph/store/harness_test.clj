@@ -28,15 +28,16 @@
 
 (defn- observe
   "What the body sees under a strategy: whether the thread-local override is
-   bound, whether the global slot holds the ephemeral store, sync-writes."
+   bound, whether the strategy changed the global slot from its prior value,
+   sync-writes."
   [strategy]
   (let [events (atom [])
         before (global-slot)
         seen   (harness/with-disposable-store
                  (->RecordingFactory events) strategy
-                 (fn [] {:thread-local? (some? cstore/*test-store*)
-                         :global-set?   (some? (global-slot))
-                         :sync-writes?  (boolean conn/*sync-writes*)}))]
+                 (fn [] {:thread-local?   (some? cstore/*test-store*)
+                         :global-changed? (not (identical? before (global-slot)))
+                         :sync-writes?    (boolean conn/*sync-writes*)}))]
     {:seen seen :events @events :global-restored? (identical? before (global-slot))}))
 
 (deftest-golden harness-isolations-golden
