@@ -5,7 +5,8 @@
   (:require [clojure.test :refer [deftest is use-fixtures]]
             [hive-mcp.protocols.vector :as pv]
             [hive-schemas.test :refer [deftrifecta-from-schema]]
-            [hive-test.golden :as golden]))
+            [hive-test.golden :as golden]
+            [hive-mcp.protocols.store-metrics :as sm]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -65,7 +66,9 @@
                      (catch clojure.lang.ExceptionInfo e (:reason (ex-data e))))
         s (reify pv/IVectorCollectionStore)
         installed (pv/set-store! s)
-        during {:set? (pv/store-set?) :same? (every? #(identical? s %) [installed (pv/get-store) (pv/require-store)])}
+        during {:set? (pv/store-set?)
+                :same? (every? #(identical? s (sm/unwrap %))
+                               [installed (pv/get-store) (pv/require-store)])}
         cleared (pv/clear-store!)]
     {:before before :refused refused :during during :cleared cleared
      :after {:set? (pv/store-set?) :get (pv/get-store)}}))
