@@ -1,0 +1,69 @@
+{:reset nil,
+ :pending
+ {:errors [],
+  :current-step nil,
+  :name "two-step",
+  :steps-completed 0,
+  :status :pending,
+  :progress 0.0,
+  :steps-total 1},
+ :completed
+ {:errors [],
+  :current-step nil,
+  :name "two-step",
+  :steps-completed 1,
+  :status :completed,
+  :progress 1.0,
+  :steps-total 1},
+ :cancelled-status ["Cancelled: test"],
+ :loaded
+ {:name "two-step",
+  :steps
+  [{:step-id ":wf/work",
+    :title "work",
+    :description "FSM state: :wf/work",
+    :dependencies []}],
+  :metadata {:engine :fsm, :compiled? true, :scope "proj"},
+  :loaded? true,
+  :errors []},
+ :stepped-own-id
+ {:success? false,
+  :step-id ":wf/work",
+  :context {:n 5},
+  :errors ["no handler for state"]},
+ :cancelled
+ {:success? true, :status :cancelled, :steps-completed 0, :errors []},
+ :cancel-done
+ {:success? true, :status :completed, :steps-completed 1, :errors []},
+ :missing
+ {:name "missing",
+  :steps [],
+  :metadata {:engine :fsm, :compiled? false},
+  :loaded? false,
+  :errors ["Workflow not found in registry: :missing"]},
+ :unloaded
+ {:valid? false,
+  :errors ["Workflow not found in registry: :missing"],
+  :warnings [],
+  :dependency-order []},
+ :failed-status :failed,
+ :validated
+ {:valid? true,
+  :errors [],
+  :warnings [],
+  :dependency-order [":wf/work"]},
+ :stepped-bare-id {:success? false, :step-id "wf/work"},
+ :failed
+ {:success? false,
+  :steps-completed 0,
+  :steps-total 0,
+  :results {},
+  :errors ["handler error"],
+  :final-context {}},
+ :executed
+ {:success? true,
+  :steps-completed 1,
+  :steps-total 1,
+  :results {:final {:n 1, :started true}},
+  :errors [],
+  :final-context {:n 1, :started true}}}
