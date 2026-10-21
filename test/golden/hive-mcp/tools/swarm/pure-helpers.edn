@@ -1,0 +1,20 @@
+{:changes-none nil,
+ :changes-one
+ "## Recent File Changes\nOther agents recently modified these files:\n\n| File | Lines | Agent | Time |\n|------|-------|-------|------|\n| a.clj | (no line changes) | unknown |  |\n\n",
+ :chat-point {:run_id "r1", :tip 4, :resumable true},
+ :error {:type "text", :text "boom", :isError true},
+ :lings-empty {},
+ :not-loaded
+ {:type "text",
+  :text
+  "Swarm host unavailable: no :vessel :dispatch capability is registered, or the vessel reports its swarm addon unloaded.",
+  :isError true},
+ :preset-header
+ "## Assigned Presets\n\nYou have access to: **tdd, clarity**\n\n### IMMEDIATE: Fetch at Session Start\n\n**Before starting work**, fetch your assigned presets:\n```\npreset(command: \"get\", name: \"tdd\")\npreset(command: \"get\", name: \"clarity\")\n```\n\n### Quick Summary (Lower Tokens)\n\nFor orientation without full content (~200 tokens vs ~1500):\n```\npreset(command: \"core\", name: \"<preset-name>\")\n```\n\n### Discovery\n\nFind presets by topic:\n```\npreset(command: \"search\", query: \"testing patterns\")\npreset(command: \"list_slim\")  ; Names + categories only\n```\n\n### When to Fetch\n\n- Session start: fetch assigned presets\n- Unfamiliar task: search for relevant presets\n- Need guidance: use `core` for quick summary\n",
+ :preset-none nil,
+ :staleness-none "prompt",
+ :timeout
+ {:type "text",
+  :text
+  "{\"error\":\"Status check timed out\",\"status\":\"timeout\",\"slave_id\":\"s1\"}",
+  :isError true}}

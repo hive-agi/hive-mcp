@@ -1,0 +1,15 @@
+{:case-0
+ {:out {:jsonrpc "2.0", :id 0, :result {:x 1}}, :in (0 {:x 1})},
+ :case-1
+ {:out {:jsonrpc "2.0", :id 0, :result {:x 2}}, :in (0 {:x 2})},
+ :case-2
+ {:out {:jsonrpc "2.0", :id "1", :result {:x 2}}, :in ("1" {:x 2})},
+ :case-3
+ {:out {:jsonrpc "2.0", :id "1", :result {:x 2}}, :in ("1" {:x 2})},
+ :case-4
+ {:out {:jsonrpc "2.0", :id nil, :result {:x 1}}, :in (nil {:x 1})},
+ :case-5
+ {:out {:jsonrpc "2.0", :id 3, :result {:x 1}}, :in (3 {:x 1})},
+ :case-6
+ {:out {:jsonrpc "2.0", :id "1", :result {:x 1}}, :in ("1" {:x 1})},
+ :case-7 {:out {:jsonrpc "2.0", :id 1, :result {:x 1}}, :in (1 {:x 1})}}

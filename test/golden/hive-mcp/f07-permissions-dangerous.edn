@@ -1,0 +1,8 @@
+{:case-0 {:out false, :in ("memory_add")},
+ :case-1 {:out true, :in ("mcp_memory_cleanup_expired")},
+ :case-2 {:out true, :in ("eval_elisp")},
+ :case-3 {:out true, :in ("preset_delete")},
+ :case-4 {:out false, :in ("file_write")},
+ :case-5 {:out false, :in ("file_write")},
+ :case-6 {:out false, :in ("clojure_edit")},
+ :case-7 {:out false, :in ("kanban")}}

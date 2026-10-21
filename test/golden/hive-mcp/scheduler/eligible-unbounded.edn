@@ -1,0 +1,47 @@
+{:case-0
+ {:out [{:id "b", :title "xPEDRO DECISION", :tags #{}}],
+  :in (false #{} [{:id "b", :title "xPEDRO DECISION", :tags #{}}])},
+ :case-1
+ {:out
+  [{:id "c", :title "decide later"}
+   {:id "d", :tags []}
+   {:id "d", :title "humanonly"}
+   {:id "a", :tags #{"wave:1"}}],
+  :in
+  (false
+   #{"a"}
+   [{:id "c", :title "decide later"}
+    {:id "d", :tags []}
+    {:id "d", :title "humanonly"}
+    {:id "a", :tags #{"wave:1"}}])},
+ :case-2
+ {:out
+  [{:id "a"}
+   {:id "b", :tags ["wave:x" :human-only :human-only]}
+   {:id "a", :tags #{}}],
+  :in
+  (false
+   #{"a"}
+   [{:id "a"}
+    {:id "b", :tags ["wave:x" :human-only :human-only]}
+    {:id "a", :tags #{}}])},
+ :case-3
+ {:out
+  [{:id "a"}
+   {:id "c", :tags #{}}
+   {:id "d", :tags ["kanban"]}
+   {:id "a"}],
+  :in
+  (false
+   #{}
+   [{:id "a"}
+    {:id "c", :tags #{}}
+    {:id "d", :tags ["kanban"]}
+    {:id "a"}])},
+ :case-4
+ {:out [],
+  :in
+  (false #{"a"} [{:id "c", :title "pedro_decision: logo", :tags []}])},
+ :case-5 {:out [], :in (false #{"a"} [])},
+ :case-6 {:out [{:id "a"}], :in (false #{"a"} [{:id "a"}])},
+ :case-7 {:out [], :in (false #{} [])}}

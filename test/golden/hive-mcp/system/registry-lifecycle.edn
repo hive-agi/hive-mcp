@@ -1,0 +1,19 @@
+{:captured-keys
+ {:shutdown ["c/early" "c/late"],
+  :sweep ["c/sweep"],
+  :resource ["c/owner"]},
+ :full
+ {:shutdown [["c/early" 10] ["c/late" 400]],
+  :sweeps [["c/sweep" 120]],
+  :resources ("c/owner")},
+ :after-unregister
+ {:shutdown [["c/early" 10]], :sweeps [], :resources nil},
+ :restored
+ {:shutdown [["c/early" 10] ["c/late" 400]],
+  :sweeps [["c/sweep" 120]],
+  :resources ("c/owner")},
+ :empty-sweeps nil,
+ :got "c/owner",
+ :absent nil,
+ :order ["c/early" "c/late"],
+ :empty-snap {:shutdown [], :sweeps [], :resources nil}}

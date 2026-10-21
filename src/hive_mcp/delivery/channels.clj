@@ -13,7 +13,8 @@
 
   (:require [hive-mcp.protocols.delivery-channel :as dc]
             [taoensso.timbre :as log]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -228,13 +229,31 @@
 ;;; Factory Functions
 ;;; ============================================================================
 
+(defn- record-of
+  "Schema for an instance of the channel record built by `ctor`. Generates
+   by calling the constructor, so the factory contracts stay sampleable."
+  [klass ctor]
+  [:fn {:gen/fmap (fn [_] (ctor)) :gen/schema :nil} #(instance? klass %)])
+
 (defn create-websocket-channel [] (->WebSocketChannel))
+
+(m/=> create-websocket-channel [:=> [:cat] (record-of WebSocketChannel ->WebSocketChannel)])
 (defn create-core-async-channel [] (->CoreAsyncChannel))
+
+(m/=> create-core-async-channel [:=> [:cat] (record-of CoreAsyncChannel ->CoreAsyncChannel)])
 (defn create-channel-broadcast-channel [] (->ChannelBroadcastChannel))
+
+(m/=> create-channel-broadcast-channel [:=> [:cat] (record-of ChannelBroadcastChannel ->ChannelBroadcastChannel)])
 (defn create-olympus-channel [] (->OlympusChannel))
+
+(m/=> create-olympus-channel [:=> [:cat] (record-of OlympusChannel ->OlympusChannel)])
 (defn create-piggyback-channel [] (->PiggybackChannel))
 
+(m/=> create-piggyback-channel [:=> [:cat] (record-of PiggybackChannel ->PiggybackChannel)])
+
 (defn create-nats-channel [] (->NatsChannel))
+
+(m/=> create-nats-channel [:=> [:cat] (record-of NatsChannel ->NatsChannel)])
 
 (defn default-file-tail-path
   "Resolve a frontend-agnostic default path for FileTailChannel.
@@ -248,9 +267,16 @@
         (str tmp "/hivemind-shouts.jsonl"))
       "/tmp/hivemind-shouts.jsonl"))
 
+(m/=> default-file-tail-path [:=> [:cat] [:string {:min 1}]])
+
 (defn create-file-tail-channel
   ([] (create-file-tail-channel (default-file-tail-path)))
   ([path] (->FileTailChannel path)))
+
+(m/=> create-file-tail-channel
+      [:function
+       [:=> [:cat] [:and (record-of FileTailChannel #(->FileTailChannel "/tmp/hivemind-shouts.jsonl")) [:map [:path :string]]]]
+       [:=> [:cat :string] [:and (record-of FileTailChannel #(->FileTailChannel "/tmp/hivemind-shouts.jsonl")) [:map [:path :string]]]]])
 
 (def ^:private channel-factories
   "Static DI table for IDeliveryChannel impls.
@@ -324,3 +350,9 @@
                                        (dc/get-channels))
                ")")
      @registered)))
+
+(m/=> register-default-channels!
+      [:function
+       [:=> [:cat] [:vector [:keyword {:gen/elements [:websocket :core-async :channel-broadcast :olympus :piggyback :nats :file-tail]}]]]
+       ;; Any non-set `ids` (nil, a vector) falls through to env/default selection.
+       [:=> [:cat :any] [:vector [:keyword {:gen/elements [:websocket :core-async :channel-broadcast :olympus :piggyback :nats :file-tail]}]]]])

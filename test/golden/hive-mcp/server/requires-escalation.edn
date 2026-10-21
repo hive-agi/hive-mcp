@@ -1,0 +1,12 @@
+{:case-0 {:out false, :in ("memory" nil)},
+ :case-1
+ {:out false, :in ("memory" {"file_path" "a/generated/b.clj"})},
+ :case-2 {:out false, :in ("file_write" nil)},
+ :case-3
+ {:out true,
+  :in
+  ("bash" {"file_path" "a/generated/b.clj", "command" "rm -rf x"})},
+ :case-4 {:out false, :in ("file_write" nil)},
+ :case-5 {:out false, :in ("file_write" nil)},
+ :case-6 {:out true, :in ("bash" nil)},
+ :case-7 {:out false, :in ("clojure_edit" nil)}}

@@ -7,7 +7,8 @@
    the stale-ling threshold from config.edn. Every piece resolves late and
    is skipped when absent."
   (:require [taoensso.timbre :as log]
-            [hive-mcp.session.identity :as sid]))
+            [hive-mcp.session.identity :as sid]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -35,6 +36,15 @@
                      session-ref
                      rows)))
 
+;; rows and session-key are whatever the store hands in: the key is a fn or
+;; keyword over a row; rows pass through unchanged without a valid session-ref
+(m/=> scope-rows [:=> [:cat [:map
+                             [:session-ref {:optional true} :any]
+                             [:parent-of {:optional true} [:maybe :map]]]
+                       [:or :keyword [:=> [:cat :map] :any]]
+                       [:sequential :map]]
+                  [:sequential :map]])
+
 (defn install!
   "Install the store hooks into hive-datascript. Returns the installed map,
    or nil when hive-datascript is not on the classpath."
@@ -49,3 +59,14 @@
                         threshold (assoc :stale-threshold-ms threshold))))
     (do (log/debug "hive-datascript absent; swarm store hooks not installed")
         nil)))
+
+(def Hooks
+  "The hook map handed to hive-datascript; only :scope-rows is always present."
+  [:map
+   [:scope-rows ifn?]
+   [:ledger-append {:optional true} ifn?]
+   [:claim-released {:optional true} ifn?]
+   [:stale-threshold-ms {:optional true} :any]])
+
+;; nil when hive-datascript is not on the classpath
+(m/=> install! [:=> [:cat] [:maybe Hooks]])

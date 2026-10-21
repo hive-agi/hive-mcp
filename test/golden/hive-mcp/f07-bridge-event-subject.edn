@@ -1,0 +1,8 @@
+{:case-0 {:out "hive.v1.event.x_1", :in ("x_1")},
+ :case-1 {:out "hive.v1.event..", :in (:.)},
+ :case-2 {:out "hive.v1.event.H", :in (H)},
+ :case-3 {:out "hive.v1.event.e", :in (e)},
+ :case-4 {:out "hive.v1.event.oD-", :in (:oD-)},
+ :case-5 {:out "hive.v1.event.!n+", :in (:!n+)},
+ :case-6 {:out "hive.v1.event.g", :in (:g)},
+ :case-7 {:out "hive.v1.event.x_1", :in ("x_1")}}

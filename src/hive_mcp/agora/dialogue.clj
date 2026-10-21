@@ -40,9 +40,9 @@
             [hive-mcp.agora.signal :as signal]
             [hive-mcp.tools.swarm.dispatch :as dispatch]
             [hive-spi.swarm.ports.messaging :as push]
-            [datascript.core :as d]
             [clojure.data.json :as json]
-            [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]))
+            [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -82,6 +82,61 @@
 ;; Signal Parsing - Delegated to signal.clj
 ;; =============================================================================
 
+;; =============================================================================
+;; Value schemas for the contracts below
+;; =============================================================================
+
+(def DialogueView
+  "A dialogue in this namespace's shape (`get-dialogue`)."
+  [:map
+   [:id :string]
+   [:participants [:set :string]]
+   [:topic [:maybe :string]]
+   [:created-at [:maybe inst?]]
+   [:status schema/DialogueStatus]])
+
+(def TurnView
+  "A turn in this namespace's shape (`get-dialogue-turns`)."
+  [:map
+   [:id :string]
+   [:turn-num [:int {:min 1}]]
+   [:sender :string]
+   [:receiver :string]
+   [:message :string]
+   [:signal schema/TurnSignal]
+   [:timestamp [:maybe inst?]]
+   [:task-id :any]])
+
+(def Detection
+  "How a turn's signal was found."
+  [:enum :explicit :prefix :default])
+
+(def DispatchOpts
+  "`dialogue-dispatch` arguments. `:signal`, when it names a known signal,
+   wins over the message prefix."
+  [:map
+   [:dialogue-id :string]
+   [:to :string]
+   [:message :string]
+   [:from {:optional true} [:maybe :string]]
+   [:timeout_ms {:optional true} [:maybe :int]]
+   [:files {:optional true} [:maybe [:sequential :string]]]
+   [:signal {:optional true} [:maybe [:or :keyword :string]]]])
+
+(def DispatchResult
+  "What a dialogue dispatch answers: the recorded turn and the swarm
+   dispatch's own result."
+  [:map
+   [:dialogue-id :string]
+   [:turn [:maybe [:int {:min 1}]]]
+   [:signal schema/TurnSignal]
+   [:signal-detection Detection]
+   [:dispatch-result [:maybe :map]]])
+
+(def ShorthandArgs
+  "dialogue-id, receiver, message, then keyword options."
+  [:cat :string :string :string [:* :any]])
+
 (defn parse-signal
   "Parse signal from message. Delegates to signal/parse-signal.
 
@@ -100,6 +155,8 @@
   (let [[signal-map cleaned method] (signal/signal-from-legacy message)]
     [(:type signal-map) cleaned method]))
 
+(m/=> parse-signal [:=> [:cat :string] [:tuple signal/SignalType :string Detection]])
+
 (defn format-signal
   "Format a signal into message prefix.
 
@@ -107,6 +164,8 @@
    => \"[SIGNAL: approve] LGTM\""
   [signal message]
   (str "[SIGNAL: " (name signal) "] " message))
+
+(m/=> format-signal [:=> [:cat [:or :keyword :string :symbol] :any] :string])
 
 ;; =============================================================================
 ;; Turn Recording (delegates to schema)
@@ -165,19 +224,22 @@
                            :topic topic})
     id))
 
+(m/=> create-dialogue
+      [:=> [:cat [:map
+                  [:participants [:vector :string]]
+                  [:topic {:optional true} [:maybe :string]]]]
+       :string])
+
 (defn join-dialogue
   "Add a participant to an existing dialogue.
 
-   Used for dynamic role assignment when lings recruit new voices.
+   Used for dynamic role assignment when lings recruit new voices. The agora
+   store's owner writes the membership (schema/add-participant!).
 
    Returns: true if joined, false if dialogue not found"
   [dialogue-id slave-id]
-  (if-let [_dialogue (schema/get-dialogue dialogue-id)]
-    (let [c (schema/get-conn)
-          db @c
-          eid (:db/id (d/entity db [:agora.dialogue/id dialogue-id]))]
-      (d/transact! c [{:db/id eid
-                       :agora.dialogue/participants slave-id}])
+  (if (schema/add-participant! dialogue-id slave-id)
+    (do
       (log/info "Participant" slave-id "joined dialogue" dialogue-id)
       (emit! :agora/participant-joined {:dialogue-id dialogue-id
                                         :slave-id slave-id})
@@ -186,20 +248,19 @@
       (log/warn "Cannot join - dialogue not found:" dialogue-id)
       false)))
 
+(m/=> join-dialogue [:=> [:cat schema/DialogueId :string] :boolean])
+
 (defn leave-dialogue
   "Remove a participant from a dialogue.
 
-   Typically called during ling /wrap or session end.
-   If participant was in active turn, marks as :defer.
+   Typically called during ling /wrap or session end. The agora store's
+   owner writes the membership (schema/remove-participant!); a dialogue left
+   with fewer than two participants is marked :aborted.
 
    Returns: true if left, false if not found"
   [dialogue-id slave-id]
-  (if-let [_dialogue (schema/get-dialogue dialogue-id)]
-    (let [c (schema/get-conn)
-          db @c
-          eid (:db/id (d/entity db [:agora.dialogue/id dialogue-id]))]
-      ;; Retract the participant
-      (d/transact! c [[:db/retract eid :agora.dialogue/participants slave-id]])
+  (if (schema/remove-participant! dialogue-id slave-id)
+    (do
       (log/info "Participant" slave-id "left dialogue" dialogue-id)
       (emit! :agora/participant-left {:dialogue-id dialogue-id
                                       :slave-id slave-id})
@@ -213,6 +274,8 @@
     (do
       (log/warn "Cannot leave - dialogue not found:" dialogue-id)
       false)))
+
+(m/=> leave-dialogue [:=> [:cat schema/DialogueId :string] :boolean])
 
 ;; =============================================================================
 ;; Dialogue Queries
@@ -229,6 +292,8 @@
      :created-at (when-let [ts (:created d)] (java.util.Date. ts))
      :status (:status d)}))
 
+(m/=> get-dialogue [:=> [:cat schema/DialogueId] [:maybe DialogueView]])
+
 (defn get-dialogue-turns
   "Get all turns in a dialogue from schema's DataScript."
   [dialogue-id]
@@ -243,6 +308,8 @@
                :timestamp (when-let [ts (:timestamp t)] (java.util.Date. ts))
                :task-id (:task-ref t)}))))
 
+(m/=> get-dialogue-turns [:=> [:cat schema/DialogueId] [:sequential TurnView]])
+
 (defn get-last-turn-for
   "Get the most recent turn addressed to a specific participant.
    Returns the last turn where this agent was the receiver."
@@ -251,6 +318,8 @@
        (filter #(= (:receiver %) slave-id))
        last))
 
+(m/=> get-last-turn-for [:=> [:cat schema/DialogueId [:maybe :string]] [:maybe TurnView]])
+
 (defn get-participants
   "Get current participants in a dialogue."
   [dialogue-id]
@@ -258,10 +327,14 @@
     (set (:participants d))
     #{}))
 
+(m/=> get-participants [:=> [:cat schema/DialogueId] [:set :string]])
+
 (defn dialogue-active?
   "Check if dialogue is still active."
   [dialogue-id]
   (= :active (:status (schema/get-dialogue dialogue-id))))
+
+(m/=> dialogue-active? [:=> [:cat schema/DialogueId] :boolean])
 
 ;; =============================================================================
 ;; Nash Equilibrium Detection (delegated to consensus namespace)
@@ -271,16 +344,17 @@
   "Check if dialogue has reached Nash equilibrium.
 
    Returns true when all participants have signaled :no-change or :approve
-   in their most recent turn.
-
-   NOTE: This is a basic implementation. The consensus namespace provides
-   more sophisticated detection with thresholds and timeout handling."
+   in their most recent turn. An unknown dialogue, or one with no
+   participants left, is false: nobody agreeing is not a consensus.
+   The consensus namespace adds thresholds and timeout handling."
   [dialogue-id]
   (let [participants (get-participants dialogue-id)
         last-turns (map #(get-last-turn-for dialogue-id %) participants)
         signals (map :signal (filter some? last-turns))]
-    (and (= (count signals) (count participants))
-         (every? equilibrium-signals signals))))
+    (boolean (and (seq participants) (= (count signals) (count participants))
+                  (every? equilibrium-signals signals)))))
+
+(m/=> nash-equilibrium? [:=> [:cat schema/DialogueId] :boolean])
 
 ;; =============================================================================
 ;; Dialogue Dispatch
@@ -372,7 +446,8 @@
                               :timeout_ms timeout_ms
                               :files files})]
 
-        ;; Emit turn-dispatched event for relay handler
+        ;; Notify UI spectators the turn went out. Frontend push only: the
+        ;; turn itself was delivered by handle-swarm-dispatch above.
         (emit! :agora/turn-dispatched {:dialogue-id dialogue-id
                                        :from sender-id
                                        :to to
@@ -394,6 +469,8 @@
          :signal-detection final-detection
          :dispatch-result dispatch-result}))))
 
+(m/=> dialogue-dispatch [:=> [:cat DispatchOpts] DispatchResult])
+
 ;; =============================================================================
 ;; Convenience Functions for Lings
 ;; =============================================================================
@@ -408,6 +485,8 @@
                       :timeout_ms timeout_ms
                       :files files}))
 
+(m/=> propose [:=> ShorthandArgs DispatchResult])
+
 (defn approve
   "Send approval in a dialogue.
    Shorthand for dialogue-dispatch with :approve signal."
@@ -416,6 +495,8 @@
                       :to to
                       :message (format-signal :approve message)
                       :timeout_ms timeout_ms}))
+
+(m/=> approve [:=> ShorthandArgs DispatchResult])
 
 (defn counter
   "Send counter-proposal in a dialogue.
@@ -427,6 +508,8 @@
                       :timeout_ms timeout_ms
                       :files files}))
 
+(m/=> counter [:=> ShorthandArgs DispatchResult])
+
 (defn no-change
   "Signal no changes needed in a dialogue.
    Shorthand for dialogue-dispatch with :no-change signal."
@@ -435,6 +518,8 @@
                       :to to
                       :message (format-signal :no-change message)
                       :timeout_ms timeout_ms}))
+
+(m/=> no-change [:=> ShorthandArgs DispatchResult])
 
 ;; =============================================================================
 ;; Testing/Debug Utilities
@@ -452,12 +537,23 @@
        (sort-by :created-at)
        reverse))
 
+(m/=> list-dialogues
+      [:=> [:cat]
+       [:sequential [:map
+                     [:id :string]
+                     [:topic :string]
+                     [:status schema/DialogueStatus]
+                     [:created-at [:maybe inst?]]]]])
+
 (defn reset-dialogues!
   "Clear all dialogue state. For testing.
    Delegates to schema's reset-conn!"
   []
   (schema/reset-conn!)
   (log/info "Dialogue state reset (via schema)"))
+
+;; The body ends in a log call, so the reset answers nil.
+(m/=> reset-dialogues! [:=> [:cat] :nil])
 
 (defn dialogue-summary
   "Get a human-readable summary of a dialogue.
@@ -474,3 +570,14 @@
        :turn-count (count turns)
        :last-signal (some-> (last turns) :signal)
        :consensus? (= :consensus (:status d))})))
+
+(m/=> dialogue-summary
+      [:=> [:cat schema/DialogueId]
+       [:maybe [:map
+                [:id :string]
+                [:topic [:maybe :string]]
+                [:status schema/DialogueStatus]
+                [:participants [:vector :string]]
+                [:turn-count [:int {:min 0}]]
+                [:last-signal [:maybe schema/TurnSignal]]
+                [:consensus? :boolean]]]])

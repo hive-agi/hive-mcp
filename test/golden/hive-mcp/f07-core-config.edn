@@ -1,0 +1,43 @@
+{:base-keys
+ [:hive/a2a-gateway
+  :hive/addon-hot
+  :hive/channel-bridge
+  :hive/config
+  :hive/coordinator
+  :hive/decay-scheduler
+  :hive/delivery-channels
+  :hive/embedding
+  :hive/events
+  :hive/extensions
+  :hive/forge-belt
+  :hive/guards
+  :hive/hooks
+  :hive/hot-reload
+  :hive/housekeeping
+  :hive/keepalive
+  :hive/legacy-channel
+  :hive/mcp-http
+  :hive/mcp-stdio
+  :hive/memory-store
+  :hive/nats
+  :hive/nrepl
+  :hive/olympus
+  :hive/registry-sync
+  :hive/swarm-sync
+  :hive/sweep-coordinator
+  :hive/tool-delegation
+  :hive/websocket-mcp
+  :hive/workflow-engine
+  :hive/ws-channel],
+ :missing-profile {},
+ :headless-keys
+ [:hive/a2a-gateway
+  :hive/keepalive
+  :hive/legacy-channel
+  :hive/mcp-http
+  :hive/mcp-stdio
+  :hive/nats
+  :hive/swarm-sync
+  :hive/websocket-mcp],
+ :explicit-profile :k8s-minimal,
+ :stop-when-stopped nil}

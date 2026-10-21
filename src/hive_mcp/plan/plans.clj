@@ -48,7 +48,8 @@
             [taoensso.timbre :as log]
             [hive-spi.embeddings.ports :as embed]
             [hive-mcp.protocols.vector :as vp]
-            [hive-mcp.embeddings.active :as active]))
+            [hive-mcp.embeddings.active :as active]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -420,3 +421,51 @@
                  :statuses (frequencies (map :plan-status plans))
                  :projects (frequencies (map :project-id plans)))))
       base)))
+
+;; =============================================================================
+;; Function Contracts (m16 coverage batch)
+;; =============================================================================
+
+;; IO boundary: these fns talk to the vector store and embedding provider.
+;; Inputs permissive; outputs follow the docstrings.
+
+(m/=> high-abstraction-type?
+      [:=> [:cat :any]
+       :boolean])
+
+(m/=> reset-collection-cache!
+      [:=> [:cat]
+       :nil])
+
+(m/=> count-plan-steps
+      [:=> [:cat :any]
+       [:maybe :int]])
+
+(m/=> index-plan!
+      [:=> [:cat :map]
+       :string])
+
+;; & {:keys ...} rest-arg arity: keyword options are splatted at call
+;; sites ((f "q" :limit 5)), modeled as a trailing [:* :any] in one :cat.
+
+(m/=> search-plans
+      [:=> [:cat :string [:* :any]] [:vector :map]])
+
+(m/=> get-plan
+      [:=> [:cat :any]
+       [:maybe :map]])
+
+(m/=> query-plans
+      [:=> [:cat [:* :any]] [:vector :map]])
+
+(m/=> update-plan-status!
+      [:=> [:cat :any :any]
+       [:maybe :string]])
+
+(m/=> delete-plan!
+      [:=> [:cat :any]
+       :any])
+
+(m/=> status
+      [:=> [:cat]
+       :map])

@@ -1,0 +1,24 @@
+{:calls
+ {"clear-db!"
+  {:ns "hive-agent.swarm.datalevin.connection", :var "clear-db!"},
+  "close!"
+  {:ns "hive-agent.swarm.datalevin.connection", :var "close!"},
+  "create-conn"
+  {:ns "hive-agent.swarm.datalevin.connection", :var "create-conn"},
+  "current-db"
+  {:ns "hive-agent.swarm.datalevin.connection", :var "current-db"},
+  "db" {:ns "hive-agent.swarm.datalevin.connection", :var "db"},
+  "ensure-conn"
+  {:ns "hive-agent.swarm.datalevin.connection", :var "ensure-conn"},
+  "gen-id"
+  {:ns "hive-agent.swarm.datalevin.connection", :var "gen-id"},
+  "get-conn"
+  {:ns "hive-agent.swarm.datalevin.connection", :var "get-conn"},
+  "get-db-path"
+  {:ns "hive-agent.swarm.datalevin.connection", :var "get-db-path"},
+  "now" {:ns "hive-agent.swarm.datalevin.connection", :var "now"},
+  "reset-conn!"
+  {:ns "hive-agent.swarm.datalevin.connection", :var "reset-conn!"},
+  "set-db-path!"
+  {:ns "hive-agent.swarm.datalevin.connection", :var "set-db-path!"}},
+ :values {}}

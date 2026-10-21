@@ -2,7 +2,9 @@
   "Trifecta tests for apply-route-flip! — pins the user-intent guard."
   (:require [clojure.test :refer [deftest testing is]]
             [hive-mcp.embeddings.routing :as routing]
-            [hive-mcp.config.core :as global-config]))
+            [hive-mcp.config.core :as global-config]
+            [hive-test.golden :refer [deftest-golden]]
+            [hive-mcp.config.test-support :as cfg]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -98,3 +100,39 @@
                        :opts    (assoc base-opts :route :type/decision)})]
       (is (= :flipped (:action r)))
       (is (= :type/decision (-> r :mutations first :route))))))
+
+;; The config PORT injected (an in-memory config source via cfg/with-config),
+;; no with-redefs: every branch of both flips, with the config each leaves.
+(defn- flip-in [config f opts]
+  (cfg/with-config config
+    (let [action (f opts)]
+      {:action action :embedder (:embedder (global-config/get-global-config))})))
+
+(deftest-golden route-and-collection-flips-golden
+  "test/golden/hive-mcp/embeddings/routing-flips.edn"
+  (let [route-opts {:route :type/plan :default :openrouter-qwen3 :to :venice-qwen3
+                    :secret :f04-test-key :reason "golden"}
+        calls      (atom 0)
+        coll-opts  (fn [cfg-fn] {:collection "hive-mcp-presets" :default :ollama
+                                 :to-id :openrouter :configure-fn cfg-fn :reason "golden"})
+        counted    (coll-opts #(swap! calls inc))
+        ;; a vector, not a map literal: the cases run in this order and
+        ;; :configure-calls is read after all of them
+        cases      [[:route/no-secret (flip-in {:embedder {:routes {:type/plan :openrouter-qwen3}}}
+                                               routing/apply-route-flip! route-opts)]
+                    [:route/flipped (flip-in {:secrets {:f04-test-key "sk"}
+                                              :embedder {:routes {:type/plan :openrouter-qwen3}}}
+                                             routing/apply-route-flip! route-opts)]
+                    [:route/pinned (flip-in {:secrets {:f04-test-key "sk"}
+                                             :embedder {:routes {:type/plan :ollama-nomic}}}
+                                            routing/apply-route-flip! route-opts)]
+                    [:route/unset (flip-in {:secrets {:f04-test-key "sk"}}
+                                           routing/apply-route-flip! route-opts)]
+                    [:coll/pinned (flip-in {:embedder {:collections {"hive-mcp-presets" :venice}}}
+                                           routing/apply-collection-flip! counted)]
+                    [:coll/default (flip-in {:embedder {:collections {"hive-mcp-presets" :ollama}}}
+                                            routing/apply-collection-flip! counted)]
+                    [:coll/unpinned (flip-in {} routing/apply-collection-flip! counted)]
+                    [:coll/error (flip-in {} routing/apply-collection-flip!
+                                          (coll-opts #(throw (ex-info "bad provider" {}))))]]]
+    (assoc (into {} cases) :configure-calls @calls)))

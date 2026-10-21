@@ -1,0 +1,205 @@
+{:case-0
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG edge created: :depends-on (0Qp -> THA9) [scope: DFerf10n] by 6 [id: q5y0]"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :created,
+     :edge-id "q5y0",
+     :from "0Qp",
+     :to "THA9",
+     :relation :depends-on,
+     :scope "DFerf10n",
+     :confidence 1.0,
+     :created-by "6"}}},
+  :in
+  ({}
+   [:kg/edge-created
+    {:edge-id "q5y0",
+     :from "0Qp",
+     :to "THA9",
+     :relation :depends-on,
+     :scope "DFerf10n",
+     :created-by "6"}])},
+ :case-1
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG edge created: :depends-on (E9hV1o7 -> k367OXlr2W) [scope: 381In2Rz] by Ny [id: 7R28yn]"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :created,
+     :edge-id "7R28yn",
+     :from "E9hV1o7",
+     :to "k367OXlr2W",
+     :relation :depends-on,
+     :scope "381In2Rz",
+     :confidence 1.0,
+     :created-by "Ny"}}},
+  :in
+  ({}
+   [:kg/edge-created
+    {:edge-id "7R28yn",
+     :from "E9hV1o7",
+     :to "k367OXlr2W",
+     :relation :depends-on,
+     :scope "381In2Rz",
+     :created-by "Ny"}])},
+ :case-2
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG edge created: :implements (q3BeL8CcDs -> XJn2) [conf: 0.5] [id: w37]"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :created,
+     :edge-id "w37",
+     :from "q3BeL8CcDs",
+     :to "XJn2",
+     :relation :implements,
+     :scope nil,
+     :confidence 0.5,
+     :created-by nil}}},
+  :in
+  ({}
+   [:kg/edge-created
+    {:edge-id "w37",
+     :from "q3BeL8CcDs",
+     :to "XJn2",
+     :relation :implements,
+     :confidence 0.5}])},
+ :case-3
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG edge created: :depends-on (99 -> OVP) [scope: LBUaKaf9] by tIx5 [id: 769zs]"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :created,
+     :edge-id "769zs",
+     :from "99",
+     :to "OVP",
+     :relation :depends-on,
+     :scope "LBUaKaf9",
+     :confidence 1.0,
+     :created-by "tIx5"}}},
+  :in
+  ({}
+   [:kg/edge-created
+    {:edge-id "769zs",
+     :from "99",
+     :to "OVP",
+     :relation :depends-on,
+     :scope "LBUaKaf9",
+     :created-by "tIx5"}])},
+ :case-4
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG edge created: :implements (1JuS3N76R -> R4) [scope: 849B6] [conf: 1.0] [id: Pf]"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :created,
+     :edge-id "Pf",
+     :from "1JuS3N76R",
+     :to "R4",
+     :relation :implements,
+     :scope "849B6",
+     :confidence 1.0,
+     :created-by nil}}},
+  :in
+  ({}
+   [:kg/edge-created
+    {:edge-id "Pf",
+     :from "1JuS3N76R",
+     :to "R4",
+     :relation :implements,
+     :scope "849B6",
+     :confidence 1.0}])},
+ :case-5
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG edge created: :supersedes (N95Yt55 -> 3e6NP4kd8g) [scope: wy02D] [conf: 0.5] by A0 [id: S93Yh]"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :created,
+     :edge-id "S93Yh",
+     :from "N95Yt55",
+     :to "3e6NP4kd8g",
+     :relation :supersedes,
+     :scope "wy02D",
+     :confidence 0.5,
+     :created-by "A0"}}},
+  :in
+  ({}
+   [:kg/edge-created
+    {:edge-id "S93Yh",
+     :from "N95Yt55",
+     :to "3e6NP4kd8g",
+     :relation :supersedes,
+     :scope "wy02D",
+     :confidence 0.5,
+     :created-by "A0"}])},
+ :case-6
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG edge created: :supersedes (K2gqM -> qDTHJnX5) by Cexk [id: Bfv3hFEH]"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :created,
+     :edge-id "Bfv3hFEH",
+     :from "K2gqM",
+     :to "qDTHJnX5",
+     :relation :supersedes,
+     :scope nil,
+     :confidence 1.0,
+     :created-by "Cexk"}}},
+  :in
+  ({}
+   [:kg/edge-created
+    {:edge-id "Bfv3hFEH",
+     :from "K2gqM",
+     :to "qDTHJnX5",
+     :relation :supersedes,
+     :created-by "Cexk"}])},
+ :case-7
+ {:out
+  {:log
+   {:level :info,
+    :message
+    "KG edge created: :refines (4zU2Cl6 -> 2P4) [id: hLM4Q82]"},
+   :channel-publish
+   {:event-type :kg-change,
+    :data
+    {:action :created,
+     :edge-id "hLM4Q82",
+     :from "4zU2Cl6",
+     :to "2P4",
+     :relation :refines,
+     :scope nil,
+     :confidence 1.0,
+     :created-by nil}}},
+  :in
+  ({}
+   [:kg/edge-created
+    {:edge-id "hLM4Q82",
+     :from "4zU2Cl6",
+     :to "2P4",
+     :relation :refines}])}}

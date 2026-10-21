@@ -1,0 +1,12 @@
+{:refs
+ {:required ["id" "steps"],
+  :step-required ["id"],
+  :step-enums {:priority ["high" "low"], :estimate ["s"]}},
+ :string-keys
+ {:required ["a"],
+  :step-required ["x" "y"],
+  :step-enums {:priority nil, :estimate nil}},
+ :empty
+ {:required [],
+  :step-required [],
+  :step-enums {:priority nil, :estimate nil}}}

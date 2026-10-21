@@ -1,0 +1,38 @@
+{:valid-edn
+ {:valid? true,
+  :metadata
+  {:steps-count 2,
+   :decision-id nil,
+   :has-dependencies? true,
+   :source-format :edn}},
+ :valid-markdown
+ {:valid? true,
+  :metadata
+  {:steps-count 2,
+   :decision-id nil,
+   :has-dependencies? false,
+   :source-format :markdown}},
+ :empty-steps
+ {:valid? false,
+  :phase :empty-steps,
+  :errors
+  ["Plan has no steps. At least one step is required for plan-to-kanban."]},
+ :missing-dep
+ {:valid? false,
+  :phase :dependencies,
+  :errors
+  ["Dependencies: steps reference non-existent IDs: s1 -> s9"]},
+ :cycle
+ {:valid? false,
+  :phase :cycles,
+  :errors ["Cycles: Circular dependency detected"]},
+ :unparseable
+ {:valid? false,
+  :phase :parse,
+  :errors
+  ["parse failed: Plan validation failed: No ## headers found in content"]},
+ :nil
+ {:valid? false,
+  :phase :validation,
+  :errors
+  ["validation failed: Plan validation failed: No content or plan provided"]}}

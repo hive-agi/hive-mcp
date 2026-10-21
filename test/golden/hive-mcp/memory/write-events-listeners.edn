@@ -1,0 +1,8 @@
+{:registered :hive-mcp.memory.write-events-test/f04-recorder,
+ :listed? true,
+ :notify nil,
+ :unregister nil,
+ :seen [[{:id "m1", :tags ["x"], :op :updated}]],
+ :after? false,
+ :non-write nil,
+ :channel-types [:memory-added :memory-updated :memory-deleted]}

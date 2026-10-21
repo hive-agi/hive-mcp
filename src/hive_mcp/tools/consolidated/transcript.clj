@@ -1,20 +1,24 @@
 (ns hive-mcp.tools.consolidated.transcript
   "MCP transcript supertool: query agent conversation transcripts.
 
-   Commands: help, list, query, tail, since, stats, replay, report.
+   Commands: help, list, runs, find, digest, query, tail, since, stats,
+   replay, report.
 
    Entries carry a 120-char `preview` by default; `full true` returns each
    entry's whole `content`, `max_chars N` returns up to N chars of it. Every
    entry names its tool calls (`tool_calls`) and is marked `empty true` when
    it has neither text nor tool calls. `report` is what a coordinator reads
    when a ling finishes: its last assistant text in full, turn count, how the
-   transcript ends, and the last tool result.
+   transcript ends, and the last tool result. `runs` lists the chat-point
+   runs a spawn's `resume {run_id}` continues; each `list` row carries its
+   agent's newest `run_id`.
 
    Reads go through the `TranscriptSource` port
    (hive-mcp.agent.transcript-source), which covers legacy JSONL files and
-   the Datalevin stores headless hive-agent lings write. Params are coerced
-   at this boundary (strings and numbers alike), and every failure, thrown
-   or returned, leaves as an MCP error envelope."
+   the Datalevin stores headless hive-agent lings write, and the `:runs`
+   port over hive-agent's chat-point store (see `handle-transcript`). Params
+   are coerced at this boundary (strings and numbers alike), and every
+   failure, thrown or returned, leaves as an MCP error envelope."
   (:require [hive-mcp.agent.transcript-query :as tq]
             [hive-mcp.agent.transcript-insight :as ti]
             [hive-mcp.agent.transcript-source :as src]
@@ -22,7 +26,8 @@
             [hive-dsl.result :as r]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.tools.core :as tcore]))
+            [hive-mcp.tools.core :as tcore]
+            [malli.core :as m]))
 
 ;; =============================================================================
 ;; Query Execution
@@ -189,7 +194,9 @@
               "since"   "30m, 2h, 1d, or an ISO-8601 instant"
               "limit"   "max rows/hits (default 25)"}
    :commands [{:command "list"   :params ["agent" "project" "parent" "since" "limit"]
-               :description "Runs, newest first: agent project parent turns modified ending (matched = total before limit)"}
+               :description "Transcripts, newest first: agent project parent turns modified ending run_id (the agent's newest chat-point run, null when none; matched = total before limit)"}
+              {:command "runs"   :params ["agent" "project" "parent" "since" "limit"]
+               :description "Chat-point runs, newest first: run_id agent project parent parent_point {run_id seq turn} model created tip {seq turn} ended. agent spawn resume={run_id} continues any of them, dead lings included"}
               {:command "find"   :params ["query" "role" "tool" "agent" "project" "parent" "since" "limit" "runs"]
                :description "Cross-run search. query: substring (case-insensitive) or /regex/[i]; role assistant|tool|user; tool: tool name; runs: newest runs scanned (default 50). Hits: agent run turn role tool snippet"}
               {:command "digest" :params ["agent" "parent" "project" "since" "limit"]
@@ -246,18 +253,32 @@
       {:turns (ti/max-turn (:ok res)) :ending (ti/ending (:ok res))}
       {})))
 
+(defn- latest-runs
+  "{agent-id run-id}: each agent's newest chat-point run, read through
+   `runs`; {} when the store is unreadable, so a listing never fails on it."
+  [runs]
+  (let [res ((:list-runs runs))]
+    (if-not (r/ok? res)
+      (do (log/warn "[transcript] chat-point runs unreadable:" (err-message res)) {})
+      (->> (:ok res)
+           (filter :agent-id)
+           (sort-by #(or (:created %) 0))
+           (reduce #(assoc %1 (:agent-id %2) (:run-id %2)) {})))))
+
 (defn- list-row
-  "Wire projection of one listing row: strings and numbers only."
-  [source parents row]
+  "Wire projection of one listing row: strings and numbers only. `latest`
+   is {agent-id run-id}."
+  [source parents latest row]
   (let [{:keys [turns ending]} (run-summary source (:agent-id row))]
     {:agent    (:agent-id row)
      :project  (:project-id row)
      :parent   (or (:parent row) (src/parent-of parents (:agent-id row)))
      :turns    turns
      :modified (ti/iso (:modified row))
-     :ending   ending}))
+     :ending   ending
+     :run_id   (get latest (:agent-id row))}))
 
-(defn- list-response [source parents params now-ms]
+(defn- list-response [source parents runs params now-ms]
   (with-filters params now-ms
     (fn [opts]
       (with-limit (:limit params) :limit default-list-limit
@@ -266,10 +287,48 @@
             (if-not (r/ok? res)
               (tcore/mcp-error (err-message res))
               (let [matched (:ok res)
-                    page    (take limit matched)]
-                (tcore/mcp-json {:transcripts (mapv #(list-row source parents %) page)
+                    page    (take limit matched)
+                    latest  (if (seq page) (latest-runs runs) {})]
+                (tcore/mcp-json {:transcripts (mapv #(list-row source parents latest %) page)
                                  :count       (count page)
                                  :matched     (count matched)})))))))))
+
+;; =============================================================================
+;; runs: chat-point runs a spawn's resume can continue
+;; =============================================================================
+
+(defn- run-wire
+  "Wire projection of one run summary, its tip read through `runs`."
+  [runs parents {:keys [run-id agent-id parent-point created] :as row}]
+  (let [tip (let [res ((:run-tip runs) run-id)] (when (r/ok? res) (:ok res)))]
+    {:run_id       run-id
+     :agent        agent-id
+     :project      (:project-id row)
+     :parent       (or (:parent row) (when agent-id (src/parent-of parents agent-id)))
+     :parent_point (when parent-point
+                     {:run_id (:run-id parent-point) :seq (:seq parent-point) :turn (:turn parent-point)})
+     :model        (:model row)
+     :created      (some-> created ti/iso)
+     :tip          (when tip (select-keys tip [:seq :turn]))
+     :ended        (boolean (:ended? tip))}))
+
+(defn- runs-response [runs parents params now-ms]
+  (with-filters params now-ms
+    (fn [opts]
+      (with-limit (:limit params) :limit default-list-limit
+        (fn [limit]
+          (let [res ((:list-runs runs))]
+            (if-not (r/ok? res)
+              (tcore/mcp-error (str "transcript runs: chat-point store unreadable: " (err-message res)))
+              (let [rows    (map #(cond-> (assoc % :modified (:created %))
+                                    (:parent opts)
+                                    (assoc :parent (some->> (:agent-id %) (src/parent-of parents))))
+                                 (:ok res))
+                    matched (ti/select-listing rows opts)
+                    page    (take limit matched)]
+                (tcore/mcp-json {:runs    (mapv #(run-wire runs parents %) page)
+                                 :count   (count page)
+                                 :matched (count matched)})))))))))
 
 ;; =============================================================================
 ;; find: cross-run full-text search
@@ -356,7 +415,7 @@
                                  (:ok sel))]
                   (tcore/mcp-json {:lings (vec rows) :count (count rows)}))))))))))
 
-(defn- dispatch [{:keys [source parents now-ms]}
+(defn- dispatch [{:keys [source parents runs now-ms]}
                  {:keys [command agent-id agent_id id n turn full max_chars max-chars] :as params}]
   (let [agent-id  (or agent-id agent_id id)
         max-chars (or max_chars max-chars)
@@ -370,7 +429,8 @@
                       (fn [mode] (f #(entries-response %1 %2 mode)))))]
     (case command
       "help"   (tcore/mcp-json help-response)
-      "list"   (list-response source parents params (now-ms))
+      "list"   (list-response source parents runs params (now-ms))
+      "runs"   (runs-response runs parents params (now-ms))
       ("find" "search") (find-response source parents params (now-ms))
       "digest" (digest-response source parents params (now-ms))
       "query"  (listing by-agent)
@@ -399,19 +459,57 @@
                                      #(render aid %))))))))
       (tcore/mcp-error (str "Unknown transcript command: " command)))))
 
+(defn- soft-resolve [sym]
+  (try (requiring-resolve sym)
+       (catch Throwable _hive-agent-absent nil)))
+
+(defn hive-agent-runs
+  "The `:runs` port over hive-agent's configured chat-point store
+   (hive-agent.loop.chat-point run-summaries / tip-summary); an empty port
+   when hive-agent is not on the classpath."
+  []
+  (let [store     (soft-resolve 'hive-agent.config/resolve-chat-point-store)
+        summaries (soft-resolve 'hive-agent.loop.chat-point/run-summaries)
+        tip       (soft-resolve 'hive-agent.loop.chat-point/tip-summary)]
+    (if (and store summaries tip)
+      {:list-runs (fn [] (r/try-effect (summaries (store))))
+       :run-tip   (fn [run-id] (r/try-effect (tip (store) run-id)))}
+      {:list-runs (constantly (r/ok []))
+       :run-tip   (constantly (r/ok nil))})))
+
+(def RunsPort
+  "The `:runs` port: list-runs answers Result<[run-summary]>, run-tip answers
+   Result<tip|nil> for a run id. Callable members are `ifn?`; the generator
+   yields the empty port hive-agent-runs answers without hive-agent."
+  [:map
+   [:list-runs [:fn {:gen/elements [(constantly {:ok []})]} ifn?]]
+   [:run-tip [:fn {:gen/elements [(constantly {:ok nil})]} ifn?]]])
+
+(m/=> hive-agent-runs [:=> [:cat] RunsPort])
+
 (defn handle-transcript
   "Route transcript MCP commands. Returns an MCP-envelope result, never throws.
 
    ([params])        reads `src/default-source`.
    ([ports params])  `ports` is a TranscriptSource, or a map
                      {:source TranscriptSource :parents ParentIndex
+                      :runs {:list-runs (fn [] Result<[run-summary]>)
+                             :run-tip   (fn [run-id] Result<{:seq :turn :ended?}|nil>)}
                       :now-ms (fn [] epoch-ms)}; absent ports take defaults.
+                     A run-summary is {:run-id :agent-id :project-id :model
+                     :created :parent-point}, as hive-agent.loop.chat-point
+                     run-summaries returns it.
 
    Commands:
      help                     This command list
      list   {:agent :project :parent :since :limit}
-                              Runs newest first (default limit 25), compact
-                              rows: agent project parent turns modified ending
+                              Transcripts newest first (default limit 25),
+                              rows: agent project parent turns modified
+                              ending run_id
+     runs   {:agent :project :parent :since :limit}
+                              Chat-point runs newest first, rows: run_id
+                              agent project parent parent_point model
+                              created tip ended
      find   {:query :role :tool :agent :project :parent :since :limit :runs}
                               Cross-run search; query is a substring or /re/
      digest {:agent | :parent | agent glob}
@@ -428,12 +526,16 @@
      replay {:agent-id}       Formatted markdown conversation"
   ([params] (handle-transcript (src/default-source) params))
   ([ports params]
-   ;; ports: {:source TranscriptSource :parents ParentIndex :now-ms (fn [])}
    (try
      (dispatch (merge {:parents (src/default-parent-index)
+                       :runs    (hive-agent-runs)
                        :now-ms  #(System/currentTimeMillis)}
                       (if (satisfies? src/TranscriptSource ports) {:source ports} ports))
                params)
      (catch Throwable e
        (log/warn e "[transcript] command failed" (:command params))
        (tcore/mcp-error (str "transcript " (:command params) " failed: " (ex-message e)))))))
+
+(m/=> handle-transcript [:function
+                         [:=> [:cat [:maybe :map]] hive-mcp.tools.core/McpResponse]
+                         [:=> [:cat :any [:maybe :map]] hive-mcp.tools.core/McpResponse]])

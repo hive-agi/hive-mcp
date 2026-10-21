@@ -17,7 +17,8 @@
             [hive-mcp.tools.kanban.predicates :as kp]
             [hive-mcp.tools.kanban.transitions :as kt]
             [malli.core :as m]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [hive-mcp.tools.kanban.schema :as ks]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -141,6 +142,17 @@
          kt/sort-by-priority-then-created
          (#(kf/paginate % offset limit))
          (mapv #(kf/project-fields % fields)))))
+
+(m/=> tag-mode      [:=> [:cat [:maybe [:or :string :keyword]]] [:enum :all :any]])
+(m/=> opt-in?       [:=> [:cat :any] :boolean])
+(m/=> hidden-tags   [:=> [:cat [:maybe [:map [:tags {:optional true} ks/TagsIn]
+                                         [:include_session_todos {:optional true} :any]]]]
+                     [:vector :string]])
+(m/=> drop-hidden   [:=> [:cat [:maybe [:sequential ks/EntryIn]] [:maybe [:sequential :string]]]
+                     [:vector ks/EntryIn]])
+(m/=> tagged-with?  [:=> [:cat ks/MaybeEntry [:maybe [:sequential :any]]] :boolean])
+(m/=> select-tagged [:=> [:cat [:maybe [:sequential ks/EntryIn]] [:maybe [:sequential :any]]]
+                     [:sequential ks/EntryIn]])
 
 (m/=> required-tags [:=> [:cat s/ListRequest] [:vector {:min 1} s/Tag]])
 (m/=> page-cap      [:=> [:cat s/ListRequest] [:maybe s/PageIndex]])

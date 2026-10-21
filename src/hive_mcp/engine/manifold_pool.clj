@@ -31,7 +31,8 @@
    gets the executor — see the bounded one.
 
    Safe to call once; idempotent guard via `*installed*`."
-  (:require [manifold.executor :as ex]
+  (:require [malli.core :as m]
+            [manifold.executor :as ex]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -54,6 +55,8 @@
   (let [cpus (.availableProcessors (Runtime/getRuntime))]
     (max 64 (* 4 cpus))))
 
+(m/=> default-max-threads [:=> [:cat] [:int {:min 64}]])
+
 (defn- read-int [s]
   (try (when s (Long/parseLong (str s))) (catch Throwable _ nil)))
 
@@ -72,6 +75,8 @@
     (or (some #(when (and % (pos? %)) %) candidates)
         (default-max-threads))))
 
+(m/=> resolve-max-threads [:=> [:cat [:map [:max-threads {:optional true} [:maybe :int]]]] [:int {:min 1}]])
+
 ;; -----------------------------------------------------------------------------
 ;; Install state — idempotent
 ;; -----------------------------------------------------------------------------
@@ -87,11 +92,15 @@
   []
   (some? @*installed))
 
+(m/=> installed? [:=> [:cat] :boolean])
+
 (defn snapshot
   "Return the currently-installed bounded pool, or nil if `boot!` hasn't
    run yet. Useful for tests and ops drilldowns."
   []
   @*installed)
+
+(m/=> snapshot [:=> [:cat] [:maybe [:fn {:gen/elements [(reify java.util.concurrent.Executor (execute [_ _] nil))]} #(instance? java.util.concurrent.Executor %)]]])
 
 ;; -----------------------------------------------------------------------------
 ;; Boot
@@ -127,3 +136,5 @@
                  {:max-threads max-threads
                   :target-utilization target-utilization})
        bounded))))
+
+(m/=> boot! [:function [:=> [:cat] [:maybe [:fn {:gen/elements [(reify java.util.concurrent.Executor (execute [_ _] nil))]} #(instance? java.util.concurrent.Executor %)]]] [:=> [:cat [:map [:max-threads {:optional true} [:int {:min 1}]] [:target-utilization {:optional true} [:or :int [:double {:min 0.0 :max 1.0}]]]]] [:maybe [:fn {:gen/elements [(reify java.util.concurrent.Executor (execute [_ _] nil))]} #(instance? java.util.concurrent.Executor %)]]]])

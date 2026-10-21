@@ -12,7 +12,8 @@
    (lifecycle-effects/register-lifecycle-effects!)
    ```"
 
-  (:require [hive-mcp.events.core :as ev]
+  (:require [malli.core :as m]
+            [hive-mcp.events.core :as ev]
             [hive-mcp.gc.bounded-atom :as batom]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -79,6 +80,8 @@
   []
   @*last-sweep-result)
 
+(m/=> last-sweep-result [:=> [:cat] [:maybe :map]])
+
 ;; =============================================================================
 ;; Registration
 ;; =============================================================================
@@ -94,6 +97,8 @@
   (ev/reg-fx :lifecycle/sweep-fx handle-sweep-fx)
   (log/info "[hive-events.lifecycle] Lifecycle effects registered: :lifecycle/sweep-fx"))
 
+(m/=> register-lifecycle-effects! [:=> [:cat] :nil])
+
 ;; =============================================================================
 ;; Testing Helpers
 ;; =============================================================================
@@ -102,3 +107,5 @@
   "Reset lifecycle effect state. For testing only."
   []
   (reset! *last-sweep-result nil))
+
+(m/=> reset-state! [:=> [:cat] :nil])

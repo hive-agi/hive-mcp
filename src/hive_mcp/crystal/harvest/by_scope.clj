@@ -69,6 +69,8 @@
        (not (reserved-pid-strings s))
        (not (clojure.string/starts-with? s "scope:"))))
 
+(m/=> valid-pid? [:=> [:cat :any] :boolean])
+
 ;; =============================================================================
 ;; Schemas
 ;; =============================================================================
@@ -137,15 +139,25 @@
   [hbs]
   (m/validate HarvestByScope hbs))
 
+(m/=> valid? [:=> [:cat :any] :boolean])
+
 (defn explain
   "Returns malli error map (or nil if valid) for debugging shape failures."
   [hbs]
   (some-> (m/explain HarvestByScope hbs) (me/humanize)))
 
+(m/=> explain [:=> [:cat :any]
+               ;; nil when valid; a humanized key->messages map for a map input,
+               ;; or a vector of messages when the value is not a map at all.
+               [:maybe [:or [:map-of :keyword :any] [:vector :string]]]])
+
 (defn scope-pids
   "Set of project-ids present in :by-scope. Excludes umbrella by construction."
   [hbs]
   (set (keys (:by-scope hbs))))
+
+(m/=> scope-pids [:=> [:cat [:maybe [:map [:by-scope {:optional true} [:maybe [:map-of :string :any]]]]]]
+                  [:set :string]])
 
 (defn umbrella-empty?
   "True when umbrella has no cross-cutting payload (only defaults)."
@@ -156,6 +168,8 @@
          (empty? (:hivemind-shouts-global u))
          (nil? (:session-timing u))
          (nil? (:session-temporal u)))))
+
+(m/=> umbrella-empty? [:=> [:cat [:maybe [:map [:umbrella {:optional true} [:maybe UmbrellaSlice]]]]] :boolean])
 
 ;; =============================================================================
 ;; Constructors
@@ -200,12 +214,23 @@
      directory (assoc :directory directory)
      agent-id  (assoc :agent-id agent-id))))
 
+(m/=> empty-by-scope
+      [:function
+       [:=> [:cat] HarvestByScope]
+       [:=> [:cat [:maybe [:map [:session {:optional true} [:maybe :string]]
+                           [:directory {:optional true} [:maybe :string]]
+                           [:agent-id {:optional true} [:maybe :string]]]]]
+        HarvestByScope]])
+
 (defn assoc-scope
   "Set the slice for `pid`. Replaces any existing slice. Idempotent on
    identical input. Throws (via malli) if `pid` is not a valid project-id."
   [hbs pid slice]
   {:pre [(valid-pid? pid)]}
   (assoc-in hbs [:by-scope pid] slice))
+
+(m/=> assoc-scope [:=> [:cat :map [:and :string [:fn valid-pid?]] ScopeSlice]
+                   [:map [:by-scope [:map-of :string ScopeSlice]]]])
 
 (defn merge-umbrella
   "Deep-merge `extra` into the umbrella slice. Sequential fields are
@@ -224,7 +249,13 @@
                              scalar-keys)]
     (assoc hbs :umbrella (merge umb merged-seqs merged-scals))))
 
+(m/=> merge-umbrella [:=> [:cat [:map [:umbrella {:optional true} [:maybe :map]]] [:maybe :map]]
+                      [:map [:umbrella UmbrellaSlice]]])
+
 (defn record-error
   "Append a harvest error map to `:errors`."
   [hbs err]
   (update hbs :errors (fnil conj []) err))
+
+(m/=> record-error [:=> [:cat [:map [:errors {:optional true} [:maybe [:sequential :map]]]] :map]
+                    [:map [:errors [:sequential :map]]]])

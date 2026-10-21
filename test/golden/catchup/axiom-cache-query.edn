@@ -1,0 +1,2 @@
+[{:id "e2", :type "convention", :tags ["axiom"]}
+ {:id "e1", :type "axiom", :tags ["scope:global" "clojure"]}]

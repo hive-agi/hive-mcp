@@ -1,0 +1,2 @@
+{:full {:run_id "r", :tip 2, :resumable true},
+ :empty {:run_id nil, :tip nil, :resumable false}}

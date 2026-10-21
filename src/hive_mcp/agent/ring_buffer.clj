@@ -3,7 +3,8 @@
 
    Provider-agnostic infrastructure used by ProcessBuilder and OpenRouter
    backends for streaming output capture. Extracted from agent/headless.clj
-   to enable reuse across headless backend implementations.")
+   to enable reuse across headless backend implementations."
+  (:require [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -16,6 +17,44 @@
 (def ^:const default-buffer-capacity
   "Default max lines in ring buffer."
   5000)
+
+;; ---------------------------------------------------------------------------
+;; Schemas (value objects of the ring buffer). Every schema here GENERATES
+;; (mg/sample); the atom-valued one carries :gen/schema + :gen/fmap so a test
+;; can derive an instance from the schema alone.
+;; ---------------------------------------------------------------------------
+
+(def BufferState
+  "The map held by a ring-buffer atom."
+  [:map
+   [:lines [:vector :any]]
+   [:capacity [:int {:min 1}]]
+   [:total-lines-seen :int]
+   [:dropped :int]
+   [:timestamps {:optional true} [:vector :int]]])
+
+(def RingBuffer
+  "A ring-buffer atom holding a BufferState. The generator builds a
+   CONSISTENT buffer (lines and sorted timestamps of equal length)."
+  [:fn {:gen/schema [:vector {:max 12} [:tuple :string [:int {:min 0 :max 1000000}]]]
+        :gen/fmap   (fn [pairs]
+                      (atom {:lines            (mapv first pairs)
+                             :timestamps       (vec (sort (map second pairs)))
+                             :capacity         (max 1 (count pairs))
+                             :total-lines-seen (count pairs)
+                             :dropped          0}))}
+   (fn [a] (and (instance? clojure.lang.IDeref a) (map? @a)))])
+
+(def LineEntry
+  "One line with its append timestamp."
+  [:map [:text :any] [:ts :int]])
+
+(def BufferStats
+  [:map
+   [:current-lines :int]
+   [:capacity :int]
+   [:total-lines-seen :int]
+   [:dropped :int]])
 
 (defn create-ring-buffer
   "Create a bounded ring buffer for stdout/stderr capture."
@@ -97,3 +136,23 @@
      :capacity capacity
      :total-lines-seen total-lines-seen
      :dropped dropped}))
+
+(m/=> create-ring-buffer
+      [:function
+       [:=> [:cat] RingBuffer]
+       [:=> [:cat :int] RingBuffer]])
+
+(m/=> ring-buffer-append!
+      [:=> [:cat RingBuffer :any] BufferState])
+
+(m/=> ring-buffer-contents
+      [:function
+       [:=> [:cat RingBuffer] [:vector :any]]
+       [:=> [:cat RingBuffer [:maybe [:map [:last-n {:optional true} [:maybe number?]]]]]
+        [:vector :any]]])
+
+(m/=> ring-buffer-contents-since
+      [:=> [:cat RingBuffer [:maybe :int]] [:vector LineEntry]])
+
+(m/=> ring-buffer-stats
+      [:=> [:cat RingBuffer] BufferStats])

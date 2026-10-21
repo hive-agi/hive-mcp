@@ -1,0 +1,14 @@
+{:decoded [{:name "w", :n 3} {:name "w"}],
+ :one-bad-field
+ ["name is invalid: {:name [\"should be at least 1 character\"]}"
+  {:param "name", :errors {:name ["should be at least 1 character"]}}],
+ :two-bad-fields
+ ["p is invalid: {:name [\"should be at least 1 character\"], :n [\"should be an integer\"]}"
+  {:param "p",
+   :errors
+   {:name ["should be at least 1 character"],
+    :n ["should be an integer"]}}],
+ :not-a-map
+ ["p is invalid: [\"invalid type\"]"
+  {:param "p", :errors ["invalid type"]}],
+ :coerce-and-validate [{:valid true} false]}

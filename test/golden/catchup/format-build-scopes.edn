@@ -1,0 +1,11 @@
+{:case-0 {:out ["scope:global"], :in (nil nil)},
+ :case-1
+ {:out ["scope:project:x" "scope:project:hive-mcp"],
+  :in ("x" "hive-mcp")},
+ :case-2 {:out ["scope:global"], :in (nil nil)},
+ :case-3
+ {:out ["scope:project:nonexistent-m26"], :in (nil "nonexistent-m26")},
+ :case-4 {:out ["scope:global" "scope:project:x"], :in ("x" nil)},
+ :case-5 {:out ["scope:global"], :in (nil nil)},
+ :case-6 {:out ["scope:global"], :in (nil nil)},
+ :case-7 {:out ["scope:global"], :in (nil nil)}}

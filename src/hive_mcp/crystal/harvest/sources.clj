@@ -19,7 +19,8 @@
             [hive-mcp.dns.result :as result]
             [clojure.java.shell :refer [sh]]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -55,6 +56,13 @@
 ;; memory-source — Progress notes from Chroma
 ;; =============================================================================
 
+(defn- source-schema
+  "Schema for an IHarvestSource whose `source-id` is `id`. Generates by
+   calling `ctor`: the reified source is the only inhabitant."
+  [id ctor]
+  [:fn {:gen/fmap (fn [_] (ctor)) :gen/schema :nil}
+   #(and (satisfies? proto/IHarvestSource %) (= id (proto/source-id %)))])
+
 (defn memory-source
   "IHarvestSource: progress notes from Chroma (ephemeral duration).
    Data shape: {:notes [...] :count int :project-id string?}"
@@ -85,6 +93,8 @@
           (if (pos? (:count data))
             (harvest-ok :memory data ms)
             (harvest-empty :memory "no ephemeral notes found")))))))
+
+(m/=> memory-source [:=> [:cat] (source-schema :memory memory-source)])
 
 ;; =============================================================================
 ;; hivemind-source — Shouts from piggyback history
@@ -119,6 +129,8 @@
           (if (pos? (:count data))
             (harvest-ok :hivemind data ms)
             (harvest-empty :hivemind "no hivemind messages since session start")))))))
+
+(m/=> hivemind-source [:=> [:cat] (source-schema :hivemind hivemind-source)])
 
 ;; =============================================================================
 ;; kanban-source — Completed tasks from DataScript
@@ -156,6 +168,8 @@
           (if (pos? (:completed-count data))
             (harvest-ok :kanban data ms)
             (harvest-empty :kanban "no completed tasks this session")))))))
+
+(m/=> kanban-source [:=> [:cat] (source-schema :kanban kanban-source)])
 
 ;; =============================================================================
 ;; git-source — Commits via JVM subprocess
@@ -197,6 +211,8 @@
               (harvest-ok :git data ms)
               (harvest-empty :git "no commits since session start"))))))))
 
+(m/=> git-source [:=> [:cat] (source-schema :git git-source)])
+
 ;; =============================================================================
 ;; Registry — all default sources
 ;; =============================================================================
@@ -205,3 +221,8 @@
   "Return a vector of all default IHarvestSource instances."
   []
   [(memory-source) (hivemind-source) (kanban-source) (git-source)])
+
+(m/=> default-sources [:=> [:cat] [:tuple (source-schema :memory memory-source)
+                                    (source-schema :hivemind hivemind-source)
+                                    (source-schema :kanban kanban-source)
+                                    (source-schema :git git-source)]])

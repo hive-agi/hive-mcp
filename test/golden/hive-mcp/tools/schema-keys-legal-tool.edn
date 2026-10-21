@@ -1,0 +1,12 @@
+{:tool
+ {:name "carto",
+  :inputSchema
+  {:properties
+   {:kg-rank_ {:type "boolean"},
+    :scope {:type "string"},
+    :preview_ {}},
+   :required ["scope" "kg-rank_"]}},
+ :illegal [:kg-rank? "bad key" :preview?],
+ :legal-after [],
+ :no-props {:name "x"},
+ :keys [true true false false false true]}

@@ -1,0 +1,24 @@
+{:empty
+ {:configured? false,
+  :provider nil,
+  :require
+  ["Embedding provider not configured. Call set-embedding-provider! first."
+   {:type :no-embedding-provider}]},
+ :full
+ {:configured? true,
+  :require nil,
+  :dimension 4,
+  :one [-0.642 -0.644 -0.646 -0.648],
+  :batch
+  [[-0.598 -0.6 -0.594 -0.596]
+   [0.44399999999999995
+    0.44599999999999995
+    0.43999999999999995
+    0.44199999999999995]],
+  :one-off [-0.642 -0.644 -0.646]},
+ :routed
+ {:text [-0.642 -0.644 -0.646 -0.648],
+  :batch [[-0.598 -0.6 -0.594 -0.596]],
+  :dimension 4},
+ :reset nil,
+ :after false}

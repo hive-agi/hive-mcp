@@ -1,0 +1,18 @@
+{:not-armed {:failed? false},
+ :null-id
+ {:failed? true,
+  :kind :null-id,
+  :message "creation tool returned nil id, degraded backend?"},
+ :body-failure {:failed? true, :kind :body-failure, :message "boom"},
+ :success-wins {:failed? false},
+ :is-error {:failed? true, :kind :is-error, :message "bad"},
+ :ok-false
+ {:failed? true,
+  :kind :ok-false,
+  :message "tool reported failure (:isError/:ok false)"},
+ :success-false
+ {:failed? true, :kind :success-false, :message "first"},
+ :nil {:failed? false},
+ :error-key {:failed? true, :kind :error-key, :message "e"},
+ :body [{:success false, :error "boom"} nil],
+ :failed? [true false]}

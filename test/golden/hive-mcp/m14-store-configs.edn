@@ -1,0 +1,16 @@
+{:datahike
+ {:file {:db-path "/f/dh", :store-id "abcd", :backend :file},
+  :env {:db-path "/e/dh", :store-id "abcd", :backend :memory},
+  :default
+  {:db-path "~/.local/share/hive-mcp/datahike",
+   :store-id nil,
+   :backend :file}},
+ :datalevin
+ {:file {:db-path "/f/dl", :cache-limit 7},
+  :env {:db-path "/e/dl", :cache-limit 7},
+  :default
+  {:db-path "~/.local/share/hive-mcp/datalevin", :cache-limit 64}},
+ :defaults
+ ["~/.local/share/hive-mcp/datahike"
+  "~/.local/share/hive-mcp/datalevin"
+  64]}

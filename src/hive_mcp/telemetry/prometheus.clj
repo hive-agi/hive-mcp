@@ -25,6 +25,7 @@
   (:require [iapetos.core :as prometheus]
             [iapetos.collector.jvm :as jvm]
             [iapetos.export :as export]
+            [malli.core :as m]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -164,6 +165,30 @@
          wave-failures-total-collector))))
 
 
+;; =============================================================================
+;; Schemas
+;; =============================================================================
+
+(def CounterChild
+  "What prometheus/inc answers: the labelled counter child."
+  [:fn {:gen/elements [(new io.prometheus.client.Counter$Child)]}
+   #(instance? io.prometheus.client.Counter$Child %)])
+
+(def GaugeChild
+  "What prometheus/set answers: the gauge child."
+  [:fn {:gen/elements [(new io.prometheus.client.Gauge$Child)]}
+   #(instance? io.prometheus.client.Gauge$Child %)])
+
+(def HistogramChild
+  "What prometheus/observe answers: the histogram child."
+  [:fn {:gen/elements [(-> (io.prometheus.client.Histogram/build) (.name "gen_histogram") (.help "gen")
+                           (.create) (.labels (into-array String [])))]}
+   #(instance? io.prometheus.client.Histogram$Child %)])
+
+(def LabelName
+  "A label value read through `name`: a keyword or a string (symbols too)."
+  [:or :keyword :string :symbol])
+
 (defn inc-events-total!
   "Increment events counter.
    type: :progress :completed :error :blocked :started
@@ -172,6 +197,8 @@
   (prometheus/inc
    (@registry events-total-name {:type (name type)
                                  :severity (name severity)})))
+
+(m/=> inc-events-total! [:=> [:cat LabelName LabelName] CounterChild])
 
 (defn inc-errors-total!
   "Increment errors counter.
@@ -182,15 +209,21 @@
    (@registry errors-total-name {:error-type (name error-type)
                                  :recoverable (str recoverable?)})))
 
+(m/=> inc-errors-total! [:=> [:cat LabelName :any] CounterChild])
+
 (defn set-lings-active!
   "Set number of active lings."
   [n]
   (prometheus/set (@registry lings-active-name) n))
 
+(m/=> set-lings-active! [:=> [:cat number?] GaugeChild])
+
 (defn set-ws-clients!
   "Set number of connected WebSocket clients."
   [n]
   (prometheus/set (@registry ws-clients-name) n))
+
+(m/=> set-ws-clients! [:=> [:cat number?] GaugeChild])
 
 (defn inc-mcp-requests!
   "Increment MCP tool request counter.
@@ -198,6 +231,9 @@
   [tool]
   (prometheus/inc
    (@registry mcp-requests-total-name {:tool (str tool)})))
+
+;; tool is stringified with str: any value
+(m/=> inc-mcp-requests! [:=> [:cat :any] CounterChild])
 
 (defn observe-request-duration!
   "Observe request duration.
@@ -208,6 +244,8 @@
    (@registry request-duration-seconds-name {:tool (str tool)})
    seconds))
 
+(m/=> observe-request-duration! [:=> [:cat :any number?] HistogramChild])
+
 (defn inc-memory-ops!
   "Increment memory operation counter.
    operation: :add :query :search
@@ -217,12 +255,16 @@
    (@registry memory-ops-total-name {:operation (name operation)
                                      :result (name result)})))
 
+(m/=> inc-memory-ops! [:=> [:cat LabelName LabelName] CounterChild])
+
 (defn inc-hivemind-shouts!
   "Increment hivemind shouts counter.
    event-type: :progress :completed :error :blocked :started"
   [event-type]
   (prometheus/inc
    (@registry hivemind-shouts-total-name {:event-type (name event-type)})))
+
+(m/=> inc-hivemind-shouts! [:=> [:cat LabelName] CounterChild])
 
 (defn observe-chroma-query!
   "Observe Chroma query duration.
@@ -233,6 +275,8 @@
    (@registry chroma-query-seconds-name {:operation (name operation)})
    seconds))
 
+(m/=> observe-chroma-query! [:=> [:cat LabelName number?] HistogramChild])
+
 
 (defn set-wave-success-rate!
   "Set wave success rate gauge (0.0 to 1.0).
@@ -240,12 +284,16 @@
   [rate]
   (prometheus/set (@registry wave-success-rate-name) (double rate)))
 
+(m/=> set-wave-success-rate! [:=> [:cat number?] GaugeChild])
+
 (defn inc-wave-items!
   "Increment wave items counter.
    status: :success or :failed"
   [status]
   (prometheus/inc
    (@registry wave-items-total-name {:status (name status)})))
+
+(m/=> inc-wave-items! [:=> [:cat LabelName] CounterChild])
 
 (defn observe-wave-duration!
   "Observe wave execution duration.
@@ -256,6 +304,9 @@
      (@registry wave-duration-seconds-name)
      seconds)))
 
+;; nil seconds is a no-op answering nil
+(m/=> observe-wave-duration! [:=> [:cat [:maybe number?]] [:maybe HistogramChild]])
+
 (defn inc-wave-failures!
   "Increment wave failures counter.
    wave-id: wave identifier
@@ -264,6 +315,8 @@
   (prometheus/inc
    (@registry wave-failures-total-name {:wave-id (str wave-id)
                                         :reason (name (or reason :unknown))})))
+
+(m/=> inc-wave-failures! [:=> [:cat :any [:maybe LabelName]] CounterChild])
 
 (defmacro with-wave-timing
   "Execute body and record duration in wave-duration-seconds histogram.
@@ -308,6 +361,14 @@
     (when-let [{:keys [name]} histogram]
       (log/debug "Unknown prometheus histogram:" name))))
 
+;; effect only: the counter is bumped, nil is answered
+(m/=> handle-prometheus-effect!
+  [:=> [:cat [:map
+              [:counter {:optional true} [:maybe LabelName]]
+              [:labels {:optional true} [:maybe :map]]
+              [:histogram {:optional true} [:maybe [:map [:name {:optional true} :any]]]]]]
+   :nil])
+
 
 (defmacro with-request-timing
   "Execute body and record duration in request-duration-seconds histogram.
@@ -346,6 +407,8 @@
   []
   (export/text-format @registry))
 
+(m/=> metrics-response [:=> [:cat] :string])
+
 (defn metrics-handler
   "Ring-compatible handler for /metrics endpoint.
    Returns {:status 200 :headers {...} :body <metrics>}"
@@ -353,6 +416,12 @@
   {:status 200
    :headers {"Content-Type" "text/plain; version=0.0.4; charset=utf-8"}
    :body (metrics-response)})
+
+(m/=> metrics-handler
+  [:=> [:cat :any]
+   [:map [:status [:= 200]]
+    [:headers [:map ["Content-Type" [:= "text/plain; version=0.0.4; charset=utf-8"]]]]
+    [:body :string]]])
 
 
 (defn init!
@@ -369,6 +438,8 @@
     (catch Exception e
       (log/error e "Failed to initialize Prometheus metrics")
       false)))
+
+(m/=> init! [:=> [:cat] :boolean])
 
 (comment
   ;; REPL examples

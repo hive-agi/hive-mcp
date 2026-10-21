@@ -4,7 +4,8 @@
    over a temp directory and restores its global config afterwards."
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
-            [hive-mcp.hot.keep :as keep]))
+            [hive-mcp.hot.keep :as keep]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -133,3 +134,49 @@
           (alter-var-root cfg-var (constantly old-cfg))
           (reset! state old-st))
         (doseq [f (reverse (file-seq dir))] (io/delete-file f true))))))
+
+;; ---------------------------------------------------------------------------
+;; Trifectas over the pure planners. The predicates are sets (callable, and
+;; EDN), so the golden can snapshot the inputs.
+;; ---------------------------------------------------------------------------
+
+(def ^:private Target [:enum 't1 't2 't3])
+
+(deftrifecta-from-schema repair-plan-reloads-holders-and-tracked-gone-targets
+  #'keep/repair-plan
+  ;; tracked is mostly the full target set and present mostly a single target,
+  ;; so a tracked, gone target (the :reloads-gone arm) is drawn often
+  {:in [:cat [:map-of {:min 1} [:enum 'h1 'h2] [:vector {:min 1 :max 3} Target]]
+        [:enum #{'t1 't2 't3} #{'t1 't2 't3} #{'t1} #{}]
+        [:enum #{} #{'t1} #{'t2} #{'t1 't2 't3}]]
+   :out [:map [:unload [:vector :symbol]] [:load [:vector :symbol]]]
+   :rel (fn [[links tracked present] out]
+          (let [holders (vec (keys links))
+                gone    (distinct (filter #(and (tracked %) (not (present %))) (mapcat val links)))]
+            (= out {:unload holders :load (vec (distinct (concat holders gone)))})))
+   :classify (fn [[links] out] (if (> (count (:load out)) (count links)) :reloads-gone :holders-only))
+   :classify-domain #{:reloads-gone :holders-only}
+   :golden-path "test/golden/hive-mcp/hot/keep-repair-plan.edn"
+   :num-tests 300})
+
+(def ^:private Def
+  [:tuple [:enum 'def 'defonce 'defn 'ns] [:enum 'a 'b 'c 'd]])
+
+(deftrifecta-from-schema keep-plan-keeps-defonces-and-resource-defs
+  #'keep/keep-plan
+  ;; at least two forms, and var-of maps at least three of the four symbols,
+  ;; mostly to :resource, so a kept def is drawn about as often as not
+  {:in [:cat [:vector {:min 2 :max 5} Def]
+        [:map-of {:min 3} [:enum 'a 'b 'c 'd] [:enum :resource :resource :plain]]
+        [:enum #{:resource}]]
+   :out [:map-of :symbol [:map [:tag [:enum 'defonce 'def]]]]
+   :rel (fn [[defs var-of resource?] out]
+          (= out (into {} (keep (fn [[tag sym]]
+                                  (cond (= 'defonce tag) [sym {:tag 'defonce}]
+                                        (and (= 'def tag) (some-> (var-of sym) resource?))
+                                        [sym {:tag 'def}])))
+                       defs)))
+   :classify (fn [_ out] (if (some #(= 'def (:tag %)) (vals out)) :keeps-a-def :no-def-kept))
+   :classify-domain #{:keeps-a-def :no-def-kept}
+   :golden-path "test/golden/hive-mcp/hot/keep-plan.edn"
+   :num-tests 300})

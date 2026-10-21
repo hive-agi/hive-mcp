@@ -1,0 +1,40 @@
+{:case-0
+ {:out nil, :in ({:label :carto-semantic, :count 1, :probe ""})},
+ :case-1
+ {:out
+  {:fault :recall/probe-empty,
+   :label :carto-semantic,
+   :probe "6",
+   :count "",
+   :diagnosis
+   "the probe returned nothing. An index that answers zero to its own smoke query is down, not empty."},
+  :in ({:label :carto-semantic, :count "", :probe "6"})},
+ :case-2
+ {:out nil,
+  :in
+  ({:label :lexical-anchor, :count 3, :probe "", :diagnosis "87"})},
+ :case-3
+ {:out nil,
+  :in ({:label :supersession, :count 1, :probe "0", :diagnosis nil})},
+ :case-4
+ {:out nil,
+  :in
+  ({:label :lexical-anchor, :count 3, :probe "", :diagnosis "Hk"})},
+ :case-5
+ {:out
+  {:fault :recall/probe-empty,
+   :label :lexical-anchor,
+   :probe "Sb",
+   :count "ce",
+   :diagnosis "nhe6"},
+  :in
+  ({:label :lexical-anchor,
+    :count "ce",
+    :probe "Sb",
+    :diagnosis "nhe6"})},
+ :case-6
+ {:out nil,
+  :in
+  ({:label :supersession, :count 1, :probe "Bfv33", :diagnosis nil})},
+ :case-7
+ {:out nil, :in ({:label :carto-semantic, :count 2, :probe "hLM4T"})}}

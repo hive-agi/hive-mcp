@@ -1,0 +1,7 @@
+{:with-registry [:wrapped],
+ :handler-saw [:test-end],
+ :without-registry nil,
+ :get-registry true,
+ :get-empty nil,
+ :init-when-set nil,
+ :register-when-set nil}

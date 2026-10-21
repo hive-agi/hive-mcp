@@ -1,0 +1,8 @@
+{:case-0 {:out "Y", :in :x/y},
+ :case-1 {:out "MIXED-CASE", :in "Mixed-Case"},
+ :case-2 {:out "SYM", :in sym},
+ :case-3 {:out "SYM", :in sym},
+ :case-4 {:out "ABC", :in "abc"},
+ :case-5 {:out "ABC", :in "abc"},
+ :case-6 {:out "ABC", :in "abc"},
+ :case-7 {:out "Y", :in :x/y}}

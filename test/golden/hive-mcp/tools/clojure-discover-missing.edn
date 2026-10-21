@@ -1,0 +1,5 @@
+{:content
+ [{:type "text",
+   :text
+   "{:error :clojure/handler-missing, :command \"eval\", :hint \"basic-tools-mcp.tools/handle-clojure not on classpath\"}"}],
+ :isError true}

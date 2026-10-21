@@ -4,7 +4,9 @@
   (:require [clojure.test :refer [deftest testing is use-fixtures]]
             [hive-spi.memory.ports :as ports]
             [hive-mcp.knowledge-graph.connection :as conn]
-            [hive-mcp.memory.synthesis-protection :as sp]))
+            [hive-mcp.memory.synthesis-protection :as sp]
+            [hive-test.golden :refer [deftest-golden]]
+            [hive-mcp.knowledge-graph.store.fixtures :as kg-fixtures]))
 
 ;; Restore whatever provider the running system had, so tests don't leave the
 ;; live reaper mis-wired.
@@ -53,3 +55,24 @@
   (testing "synthesis-protected-ids yields #{} when the KG read throws"
     (with-redefs [conn/db-snapshot (fn [] (throw (ex-info "kg down" {})))]
       (is (= #{} (sp/synthesis-protected-ids))))))
+
+;; Against a REAL (fresh, in-memory) KG store, no redefs. KNOWN BUG, pinned
+;; on purpose so a fix shows up as a golden diff: synthesis-protected-ids
+;; calls (conn/query q db), which forwards db as an extra :in input to a query
+;; that declares none; DataScript throws "Extra inputs passed", the catch
+;; answers #{}, and the seeded members are NOT protected. See the f04 report.
+(deftest-golden real-store-protection-golden
+  "test/golden/hive-mcp/memory/synthesis-protection-real-store.edn"
+  (kg-fixtures/datascript-fixture
+   (fn []
+     (let [empty-kg (sp/synthesis-protected-ids)
+           _        (conn/transact! [{:kg-synthetic/id "s1" :kg-synthetic/members ["a1" "a2"]
+                                      :kg-synthetic/confidence 0.5}
+                                     {:kg-synthetic/id "s2" :kg-synthetic/members ["c1"]
+                                      :kg-synthetic/confidence 0.29}])
+           seeded   (sp/synthesis-protected-ids)
+           install  (sp/install!)]
+       {:empty-kg (vec (sort empty-kg))
+        :seeded   (vec (sort seeded))
+        :install  install
+        :floor    sp/protection-confidence-floor}))))

@@ -5,7 +5,9 @@
             [hive-mcp.knowledge-graph.disc.volatility :as vol]
             [hive-mcp.concurrency.pool :as pool]
             [hive-dsl.result :as r]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.knowledge-graph.disc.schema :as ds]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -139,3 +141,11 @@
                :known (count kg-known)
                :needs-read (count needs-read)
                :stale (count stale)}}))
+
+(m/=> staleness-score [:=> [:cat [:maybe ds/Disc]] ds/Score])
+(m/=> staleness-report [:=> [:cat [:maybe ds/Disc]] ds/StalenessReport])
+(m/=> staleness-warnings [:=> [:cat [:maybe [:or [:sequential :string] [:set :string]]]]
+                          [:maybe [:vector ds/StalenessWarning]]])
+(m/=> top-stale-files [:=> [:cat ds/TopStaleOpts] [:vector ds/PathStalenessReport]])
+;; non-string and blank paths are filtered out by the body
+(m/=> kg-first-context [:=> [:cat ds/PathColl [:? ds/KgFirstOpts]] ds/KgFirstContext])

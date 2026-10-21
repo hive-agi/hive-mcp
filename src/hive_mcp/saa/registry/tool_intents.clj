@@ -11,7 +11,9 @@
 
    Storage:
      :by-intent  intent-kw → {owner-kw → #{tool ...}}
-     :by-owner   owner-kw  → #{intent-kw ...}")
+     :by-owner   owner-kw  → #{intent-kw ...}"
+  (:require [malli.core :as m]
+            [hive-mcp.saa.types :as types]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -20,6 +22,16 @@
 (defonce ^:private state
   (atom {:by-intent {}    ;; :read → {:saa/core #{"read" "grep"}}
          :by-owner  {}})) ;; kw → #{:read :search}
+
+(def ToolIntentState
+  "State of the accumulative tool-intent registry (see the ns docstring)."
+  [:map
+   [:by-intent [:map-of :any [:map-of :any [:set :any]]]]
+   [:by-owner [:map-of :any [:set :any]]]])
+
+(def ToolIntentSnapshot
+  "The tool-intent registry's `snapshot` value."
+  [:map [:version :int] [:data ToolIntentState]])
 
 (defn register!
   "Add `owner`'s tools to the intent's per-owner slice. Returns :ok.
@@ -35,6 +47,9 @@
              {:by-intent (assoc-in by-intent [intent owner] tools)
               :by-owner  (update by-owner owner (fnil conj #{}) intent)}))
     :ok))
+
+;; entry :tools is any collection (or absent), coerced with `set`
+(m/=> register! [:=> [:cat :any :any [:map [:tools {:optional true} [:maybe [:or [:sequential :any] [:set :any]]]]]] [:= :ok]])
 
 (defn deregister-by-owner!
   "Remove only `owner`'s slice from every intent it contributed to.
@@ -55,6 +70,8 @@
                 :by-owner  (dissoc by-owner owner)})))
     @removed))
 
+(m/=> deregister-by-owner! [:=> [:cat :any] [:set :any]])
+
 (defn lookup
   "Return {:tools [...] :owner kw} for an intent, or nil.
 
@@ -66,25 +83,37 @@
       {:tools (vec (sort (reduce into #{} (vals slices))))
        :owner (if (contains? slices :saa/core) :saa/core (first (keys slices)))})))
 
+(m/=> lookup [:=> [:cat :any] [:maybe [:map [:tools [:vector :any]] [:owner :any]]]])
+
 (defn lookup-owner-slice
   "Return the tool set `owner` contributed to `intent`, or nil.
    Provider-scoped resolution uses this to read one owner's slice."
   [owner intent]
   (get-in @state [:by-intent intent owner]))
 
+(m/=> lookup-owner-slice [:=> [:cat :any :any] [:maybe [:set :any]]])
+
 (defn all-intents
   "Sorted vector of all registered intent keywords."
   []
   (vec (sort (keys (:by-intent @state)))))
 
+(m/=> all-intents [:=> [:cat] [:vector :any]])
+
 (defn snapshot []
   (let [s @state]
     {:version (hash s) :data s}))
+
+(m/=> snapshot [:=> [:cat] ToolIntentSnapshot])
 
 (defn restore!
   "Replace the registry state with a prior `snapshot` value. Test-only."
   [{:keys [data]}]
   (reset! state (or data {:by-intent {} :by-owner {}})))
 
+(m/=> restore! [:=> [:cat types/RestoreArg] :map])
+
 (defn reset-for-test! []
   (reset! state {:by-intent {} :by-owner {}}))
+
+(m/=> reset-for-test! [:=> [:cat] ToolIntentState])

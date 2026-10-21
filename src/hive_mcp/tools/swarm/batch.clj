@@ -24,7 +24,8 @@
             [hive-mcp.batch.protocol :as proto]
             [hive-dsl.result :refer [rescue]]
             [hive-mcp.tools.cli :as cli]
-            [hive-mcp.dispatch.handler :as dispatch]))
+            [hive-mcp.dispatch.handler :as dispatch]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -92,3 +93,28 @@
   ([ops] (run-batch ops {}))
   ([ops opts]
    (proto/batch-execute @default-runner ops opts)))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def Batchable
+  [:fn {:gen/elements [(->SwarmBatchRunner {} nil)]} #(satisfies? proto/Batchable %)])
+
+(def RunnerOpts
+  [:maybe [:map [:handlers {:optional true} [:maybe :map]]
+           [:emit-fx {:optional true} [:maybe ifn?]]]])
+
+(def SwarmOp
+  [:map [:id {:optional true} :any] [:tool {:optional true} :any] [:command {:optional true} :any]])
+
+(def BatchResult
+  "The standard Batchable result shape."
+  [:map [:success :boolean] [:summary {:optional true} :map]])
+
+(m/=> make-swarm-runner [:function [:=> [:cat] Batchable] [:=> [:cat RunnerOpts] Batchable]])
+
+(m/=> run-batch
+  [:function
+   [:=> [:cat [:sequential SwarmOp]] BatchResult]
+   [:=> [:cat [:sequential SwarmOp] [:maybe :map]] BatchResult]])

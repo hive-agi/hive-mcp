@@ -1,0 +1,27 @@
+{:reset
+ {:entity-count 0,
+  :friction-count 0,
+  :knowledge-count 0,
+  :agent-count 0,
+  :persist-path nil},
+ :unknown nil,
+ :missing-retract nil,
+ :by-map :coordinator,
+ :no-in 2,
+ :history nil,
+ :persist nil,
+ :by-vec :ling,
+ :similar [["file search broken" 1.0] ["file search slow today" 0.4]],
+ :after
+ {:entity-count 5,
+  :friction-count 3,
+  :knowledge-count 1,
+  :agent-count 1,
+  :persist-path nil},
+ :before
+ {:entity-count 6,
+  :friction-count 3,
+  :knowledge-count 1,
+  :agent-count 2,
+  :persist-path nil},
+ :a1-type-after-datom-retract nil}

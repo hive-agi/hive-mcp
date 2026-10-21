@@ -1,0 +1,56 @@
+{:case-0
+ {:out [],
+  :in
+  ({:session-ref #:session{:id "s2", :kind :ling},
+    :parent-of {"s2" "s1", "s3" "s2"}}
+   :k
+   [{:k "s4"}])},
+ :case-1
+ {:out [],
+  :in
+  ({:session-ref #:session{:id "s3", :kind :coordinator},
+    :parent-of {"s2" "s1", "s3" "s2"}}
+   :k
+   [{:k "s4"} {:k "s2"} {:k "s1"} {:k "s1"} {:k "s4"}])},
+ :case-2
+ {:out [],
+  :in
+  ({:session-ref #:session{:id "s2", :kind :ling},
+    :parent-of {"s2" "s1", "s3" "s2"}}
+   :k
+   [{:k "s1"} {:k "s3"} {:k "s1"} {:k "s3"}])},
+ :case-3
+ {:out [{:k "s3"} {:k "s2"}],
+  :in
+  ({:session-ref #:session{:id "s2", :kind :coordinator},
+    :parent-of {"s2" "s1", "s3" "s2"}}
+   :k
+   [{:k "s3"} {:k "s1"} {:k "s2"} {:k "s4"}])},
+ :case-4
+ {:out [{:k "s2"}],
+  :in
+  ({:session-ref #:session{:id "s2", :kind :ling},
+    :parent-of {"s2" "s1", "s3" "s2"}}
+   :k
+   [{:k "s2"}])},
+ :case-5
+ {:out [],
+  :in
+  ({:session-ref #:session{:id "s2", :kind :coordinator},
+    :parent-of {"s2" "s1", "s3" "s2"}}
+   :k
+   [])},
+ :case-6
+ {:out [],
+  :in
+  ({:session-ref #:session{:id "s3", :kind :coordinator},
+    :parent-of {"s2" "s1", "s3" "s2"}}
+   :k
+   [{:k "s2"}])},
+ :case-7
+ {:out [],
+  :in
+  ({:session-ref #:session{:id "s3", :kind :ling},
+    :parent-of {"s2" "s1", "s3" "s2"}}
+   :k
+   [])}}

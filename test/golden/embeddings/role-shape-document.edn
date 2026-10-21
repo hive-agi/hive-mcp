@@ -1,0 +1,30 @@
+{:case-0
+ {:out "Type: decision\nContent: ",
+  :in (:metadata-envelope {:content "", :type "decision", :tags []})},
+ :case-1
+ {:out "Type: note\nContent: ",
+  :in (:metadata-envelope {:content "", :type "note", :tags []})},
+ :case-2
+ {:out "Type: note\nContent: z",
+  :in (:metadata-envelope {:content "z", :type "note", :tags []})},
+ :case-3
+ {:out "4",
+  :in (:content-only {:content "4", :type "decision", :tags []})},
+ :case-4
+ {:out "Type: note\nContent: Y",
+  :in (:metadata-envelope {:content "Y", :type "note", :tags []})},
+ :case-5
+ {:out "Type: note\nTags: a, a\nContent: 78Wj",
+  :in
+  (:metadata-envelope
+   {:content "78Wj", :type "note", :tags ["a" "a"]})},
+ :case-6
+ {:out "G7Q1z",
+  :in
+  (:content-only
+   {:content "G7Q1z", :type "decision", :tags ["a" "a"]})},
+ :case-7
+ {:out "Type: decision\nTags: b\nContent: 396CBr2",
+  :in
+  (:metadata-envelope
+   {:content "396CBr2", :type "decision", :tags ["b"]})}}

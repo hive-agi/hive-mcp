@@ -4,7 +4,8 @@
    Single source of truth: clj-kondo-mcp.core/run-analysis.
    Internal consumers use this resolver for graceful degradation
    when the kondo addon is absent from the classpath."
-  (:require [hive-dsl.result :refer [rescue]]))
+  (:require [hive-dsl.result :refer [rescue]]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -14,3 +15,6 @@
   "Resolve clj-kondo-mcp.core/run-analysis. Returns fn or nil."
   []
   (rescue nil (requiring-resolve 'clj-kondo-mcp.core/run-analysis)))
+
+;; The resolved var (callable), or nil when the kondo addon is absent.
+(m/=> resolve-kondo-analysis [:=> [:cat] [:maybe ifn?]])

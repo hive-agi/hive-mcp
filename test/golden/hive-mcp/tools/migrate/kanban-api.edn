@@ -1,0 +1,43 @@
+{:init {:ok {:total 1, :per-collection {}}},
+ :status
+ {:ok
+  {:remaining 1,
+   :unreadable [],
+   :cursor 0,
+   :phase :ids-listed,
+   :failed-count 0,
+   :total 1,
+   :last-step nil,
+   :phase-a-summary {},
+   :last-step-at nil,
+   :stats
+   {:missing-from-source 0,
+    :unreadable 0,
+    :written 0,
+    :not-task 0,
+    :ready-to-write 0,
+    :already-full 0,
+    :would-write 0,
+    :failed 0,
+    :scanned 0}}},
+ :reset
+ {:ok
+  {:started-at nil,
+   :unreadable [],
+   :cursor 0,
+   :phase :ready,
+   :all-ids [],
+   :last-step nil,
+   :phase-a-at nil,
+   :last-step-at nil,
+   :stats
+   {:missing-from-source 0,
+    :unreadable 0,
+    :written 0,
+    :not-task 0,
+    :ready-to-write 0,
+    :already-full 0,
+    :would-write 0,
+    :failed 0,
+    :scanned 0},
+   :failed []}}}

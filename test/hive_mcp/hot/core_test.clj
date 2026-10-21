@@ -6,7 +6,8 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [hive-mcp.hot.core :as core]
-            [hive-mcp.hot.reseat :as reseat]))
+            [hive-mcp.hot.reseat :as reseat]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -84,7 +85,7 @@
       :hot/repair-preview    (fn [prefix] (swap! log conj [:repair-preview [prefix]]) {:stuck [] :dead-links {} :orphans []})
       :hot/prepare-pass!     (fn [prefix nses] (swap! log conj [:prepare-pass! [prefix nses]]) pass)
       :hot/reload-scoped!    (fn [roots] (swap! log conj [:reload-scoped! [roots]]) reload-result)
-      :hot/reload-pending!   (fn [] (swap! log conj [:reload-pending! []]) reload-result)
+      :hot/reload-pending!   (fn [roots] (swap! log conj [:reload-pending! [roots]]) reload-result)
       :host/remount!         (fn [loaded] (swap! log conj [:remount! [loaded]]) {:remounted (count loaded)})
       :host/reseat!          (fn [loaded] (swap! log conj [:reseat! [loaded]]) [{:ns "hive-mcp.other" :result :seated}])
       :host/refresh-tools!   (fn [] (swap! log conj [:refresh-tools! []]) 42)
@@ -176,7 +177,7 @@
 
 (deftest an-unchanged-tree-with-repairs-queued-runs-the-pending-pass
   (let [log    (atom [])
-        ports  (-> (recording-ports log {:success true :loaded ['hive-mcp.gone] :unloaded [] :pending-pass? true}
+        ports  (-> (recording-ports log {:success true :loaded ['hive-mcp.gone] :unloaded [] :pending? true}
                                     {:forced ['hive-mcp.holder] :orphans ['hive-mcp.gone]
                                      :dead-links {'hive-mcp.holder ['hive-mcp.gone]} :kept {}})
                    (assoc :hot/scope-plan (fn [_] {:want [] :cascade []})))
@@ -186,9 +187,16 @@
     (is (= [:ensure-init! :prepare-pass! :reload-pending! :remount! :reseat! :refresh-tools! :refresh-surface!]
            (map first @log))
         "the pending pass replaces the scoped one and is repaired like any other")
+    (is (= [["/r/src"]] (second (nth @log 2)))
+        "the pending pass is scoped to core's roots, so another root's queued work is withheld")
     (is (= ["hive-mcp.holder"] (:forced-unload report)))
     (is (= ["hive-mcp.gone"] (:orphans report)))
     (is (= {'hive-mcp.holder ['hive-mcp.gone]} (:dead-links report)))))
+
+(deftest the-default-pending-port-is-hive-hots-pending-aware-reload-scoped
+  (is (= (requiring-resolve 'hive-hot.core/reload-scoped!)
+         (:hot/reload-pending! (core/default-ports)))
+      "hive-hot's reload-scoped! runs queued work when nothing changed; hive-mcp keeps no reloader of its own"))
 
 (deftest a-jar-backed-core-refuses-with-restart-required
   (let [log (atom [])]
@@ -226,3 +234,48 @@
     (is (= 1 (core/tools-refreshed {} nil {:server-tools 1})))
     (is (nil? (core/tools-refreshed {} nil {:error "boom"}))
         "a failed surface refresh is reported under :surface, not invented here")))
+
+;; ---------------------------------------------------------------------------
+;; Trifectas over the pure planning pieces
+;; ---------------------------------------------------------------------------
+
+(def ^:private SrcFile
+  "Paths under the roots and outside them, in .clj / .cljc / .cljs, with
+   underscores in the segments (the munged form file->ns must undo)."
+  [:enum "/r/src/hive_mcp/a_b/c.clj" "/r/src/hive_mcp/x.cljc" "/r/src/hive_mcp/ui.cljs"
+   "/o/src/o/b_c.clj" "/elsewhere/hive_mcp/x.clj" "/r/srcx/hive_mcp/y.clj"])
+
+(defn- expected-ns
+  "Oracle: strip the first root that is a whole-segment prefix, drop the
+   extension, and turn / and _ into . and -."
+  [roots path]
+  (some (fn [root]
+          (when (str/starts-with? path (str root "/"))
+            (-> (subs path (inc (count root)))
+                (str/replace #"\.clj[cs]?$" "")
+                (str/replace "/" ".")
+                (str/replace "_" "-"))))
+        roots))
+
+(deftrifecta-from-schema file->ns-undoes-the-munged-path
+  #'core/file->ns
+  {:in [:cat [:vector {:max 2} [:enum "/r/src" "/o/src"]] SrcFile]
+   :out [:maybe :string]
+   :rel (fn [[roots path] out] (= out (expected-ns roots path)))
+   :classify (fn [_ out] (if out :under-a-root :outside))
+   :classify-domain #{:under-a-root :outside}
+   :golden-path "test/golden/hive-mcp/hot/core-file-ns-munged.edn"
+   :num-tests 300})
+
+(def ^:private Ns [:enum 'hive-mcp.a 'hive-mcp.p 'hive-mcp.s 'hive-mcp.rec])
+
+(deftrifecta-from-schema affected-is-the-cascade-minus-the-pinned
+  #'core/affected
+  {:in [:cat [:map [:cascade [:vector {:max 4} Ns]]]
+        [:map [:protocol [:set Ns]] [:state {:optional true} [:set Ns]]]]
+   :out [:vector :symbol]
+   :rel (fn [[{:keys [cascade]} {:keys [protocol]}] out]
+          (= out (vec (remove protocol cascade))))
+   :classify (fn [[{:keys [cascade]}] out] (if (= (count out) (count cascade)) :none-pinned :some-pinned))
+   :classify-domain #{:none-pinned :some-pinned}
+   :num-tests 300})

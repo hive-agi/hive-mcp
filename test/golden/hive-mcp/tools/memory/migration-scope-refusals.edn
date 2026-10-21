@@ -1,0 +1,6 @@
+{:no-new {:type "text", :text "new_scope is required", :isError true},
+ :no-old {:type "text", :text "old_scope is required", :isError true},
+ :same
+ {:type "text",
+  :text "old_scope and new_scope must be different",
+  :isError true}}

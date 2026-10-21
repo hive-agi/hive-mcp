@@ -21,7 +21,8 @@
             [hive-spi.memory.ports :as ports]
             [hive-spi.memory.registry :as mp]
             [taoensso.timbre :as log]
-            [hive-mcp.channel.drain-metrics :as dm]))
+            [hive-mcp.channel.drain-metrics :as dm]
+            [malli.core :as m]))
 
 (defonce ^{:doc "Map of memory entry id -> {:offers :delivered :last-seq}."}
   ledger
@@ -36,6 +37,14 @@
   200)
 
 (defonce ^:private drains (atom []))
+
+(def LedgerRow
+  "One ledger value: how often an entry was offered and delivered, and the
+   drain sequence number that last touched it."
+  [:map
+   [:offers [:int {:min 0}]]
+   [:delivered [:int {:min 0}]]
+   [:last-seq {:optional true} :any]])
 
 (defn record!
   "Fold one drain outcome into the ledger.
@@ -65,10 +74,19 @@
                            vec))))
     nil))
 
+(m/=> record! [:=> [:cat [:map
+                          [:offered-ids {:optional true} [:maybe [:sequential :any]]]
+                          [:delivered-ids {:optional true} [:maybe [:sequential :any]]]
+                          [:seq-num {:optional true} :any]
+                          [:batch {:optional true} [:maybe [:sequential :map]]]]]
+                :nil])
+
 (defn commitment-log
   "The retained per-drain Context Codec metrics, oldest first."
   []
   @drains)
+
+(m/=> commitment-log [:=> [:cat] [:vector :map]])
 
 (defn commitment-summary
   "Aggregate of the retained drains. `:worst-critical-atom-recall` is the
@@ -89,12 +107,22 @@
      :mean-commitment-density (avg (keep :commitment-density ds))
      :withheld-by-class (apply merge-with + {} (map :withheld-by-class ds))}))
 
+(m/=> commitment-summary [:=> [:cat] [:map
+                                      [:drains [:int {:min 0}]]
+                                      [:worst-critical-atom-recall [:maybe number?]]
+                                      [:mean-weighted-atom-recall [:maybe number?]]
+                                      [:worst-round-trip-recoverability [:maybe number?]]
+                                      [:mean-commitment-density [:maybe number?]]
+                                      [:withheld-by-class [:map-of :any number?]]]])
+
 (defn snapshot
   "Ledger as a plain map of id -> {:offers :delivered :last-seq}."
   []
   (reduce-kv (fn [m id entry] (assoc m id (:data entry)))
              {}
              @(:atom ledger)))
+
+(m/=> snapshot [:=> [:cat] [:map-of :any LedgerRow]])
 
 (defn reset!
   "Clear the ledger and the drain log. For testing and for starting a fresh
@@ -103,6 +131,8 @@
   (bclear! ledger)
   (swap! drains empty)
   nil)
+
+(m/=> reset! [:=> [:cat] :nil])
 
 (defn store-lookup
   "Store-backed `lookup` for `shelf-report`: id -> {:access-count :helpful-count
@@ -119,6 +149,11 @@
           (catch Throwable t
             (log/debug t "drain-telemetry: lookup failed for" id)
             nil))))))
+
+(m/=> store-lookup [:=> [:cat] [:=> [:cat :any] [:maybe [:map
+                                                        [:access-count {:optional true} [:maybe :int]]
+                                                        [:helpful-count {:optional true} [:maybe :int]]
+                                                        [:unhelpful-count {:optional true} [:maybe :int]]]]]])
 
 (defn shelf-report
   "One row per ledgered id, joined against `lookup`, worst shelf first.
@@ -146,6 +181,16 @@
        (sort-by (juxt (comp - :shelf-score) :id))
        vec))
 
+(m/=> shelf-report [:=> [:cat ifn?] [:vector [:map
+                                              [:id :any]
+                                              [:offers [:int {:min 0}]]
+                                              [:delivered [:int {:min 0}]]
+                                              [:last-seq :any]
+                                              [:access-count :int]
+                                              [:helpful-count :int]
+                                              [:unhelpful-count :int]
+                                              [:shelf-score :double]]]])
+
 (defn summary
   "Aggregate counters over the ledger: entry count, total offers, total
    deliveries, and the offer:delivery ratio (nil when nothing was delivered)."
@@ -157,3 +202,9 @@
      :offers offers
      :delivered delivered
      :offer-per-delivery (when (pos? delivered) (double (/ offers delivered)))}))
+
+(m/=> summary [:=> [:cat] [:map
+                           [:entries [:int {:min 0}]]
+                           [:offers [:int {:min 0}]]
+                           [:delivered [:int {:min 0}]]
+                           [:offer-per-delivery [:maybe :double]]]])

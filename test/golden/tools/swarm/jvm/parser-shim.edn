@@ -1,0 +1,14 @@
+{:etime
+ [:missing
+  {:swarm/addon-missing true,
+   :addon "hive-agent",
+   :ns "hive-agent.swarm.tools.jvm.parser",
+   :var "parse-etime-to-minutes"}],
+ :etime-nil
+ [:missing
+  {:swarm/addon-missing true,
+   :addon "hive-agent",
+   :ns "hive-agent.swarm.tools.jvm.parser",
+   :var "parse-etime-to-minutes"}],
+ :process-line nil,
+ :process-line-ext nil}

@@ -1,0 +1,48 @@
+{:case-0
+ {:out
+  {:label :supersession,
+   :status :skipped,
+   :reason "supersession fixtures absent"},
+  :in ({:superseded nil, :current "c1", :linked? false})},
+ :case-1
+ {:out
+  {:label :supersession,
+   :status :skipped,
+   :reason "supersedes edge could not be written"},
+  :in ({:superseded "s1", :current "c1", :linked? false})},
+ :case-2
+ {:out
+  {:label :supersession,
+   :status :skipped,
+   :reason "supersedes edge could not be written"},
+  :in ({:superseded "s1", :current "c1", :linked? false})},
+ :case-3
+ {:out
+  {:label :supersession,
+   :status :skipped,
+   :reason "supersedes edge could not be written"},
+  :in ({:superseded "s1", :current "c1", :linked? false})},
+ :case-4
+ {:out
+  {:label :supersession,
+   :status :skipped,
+   :reason "supersession fixtures absent"},
+  :in (nil)},
+ :case-5
+ {:out
+  {:label :supersession,
+   :status :skipped,
+   :reason "supersession fixtures absent"},
+  :in ({:superseded nil, :current nil, :linked? true})},
+ :case-6
+ {:out
+  {:label :supersession,
+   :status :skipped,
+   :reason "supersession fixtures absent"},
+  :in ({:superseded "s1", :current nil, :linked? true})},
+ :case-7
+ {:out
+  {:label :supersession,
+   :status :skipped,
+   :reason "supersession fixtures absent"},
+  :in ({:superseded nil, :current nil, :linked? false})}}

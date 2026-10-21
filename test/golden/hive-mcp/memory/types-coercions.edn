@@ -1,0 +1,5 @@
+{:valid?
+ {"" false, "axiom" true, "brand-new-type" true, "has space" false},
+ :variant [:plan nil "lesson" nil],
+ :core [:axiom :convention :decision :note :plan :principle :snippet],
+ :count 21}

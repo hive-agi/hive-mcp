@@ -1,0 +1,19 @@
+{:mixed
+ {:returned nil,
+  :calls
+  [[:probe ["live" "emacs" "dead"]]
+   [:reset]
+   [:register
+    {:slave-id "live", :status :working, :liveness :verified}]
+   [:register {:slave-id "emacs", :status :idle, :liveness :verified}]
+   [:register {:slave-id "dead", :status :zombie, :alive? false}]]},
+ :unknown-emacs
+ {:returned nil,
+  :calls
+  [[:probe ["vt"]]
+   [:reset]
+   [:register
+    {:slave-id "vt", :status :working, :liveness :unverified}]]},
+ :empty {:returned nil, :calls [[:probe []] [:reset]]},
+ :load-throws {:returned nil, :calls [[:probe []] [:reset]]},
+ :missing-from-emacs [false true true]}

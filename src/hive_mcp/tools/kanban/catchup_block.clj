@@ -1,7 +1,7 @@
 (ns hive-mcp.tools.kanban.catchup-block
   "The kanban contribution to catchup: bucket counts and the most recent
    todos of the caller's project and its descendants, registered as a
-   catchup block (hive-mcp.spi.catchup-registry) under :kanban."
+   catchup block (hive-spi.catchup.registry) under :kanban."
   (:require [clojure.string :as str]
             [hive-dsl.result :refer [ok ok? let-ok try-effect*]]
             [hive-mcp.project.scope :as project-scope]
@@ -10,7 +10,9 @@
             [hive-mcp.tools.kanban.list.source :as src]
             [hive-mcp.tools.kanban.transitions :as kt]
             [hive-mcp.tools.memory-kanban.query :as mkq]
-            [hive-mcp.spi.catchup-registry :as blocks]))
+            [hive-spi.catchup.registry :as blocks]
+            [hive-mcp.tools.kanban.schema :as ks]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -135,3 +137,10 @@
   "Install the kanban block in the catchup block registry. Returns it."
   []
   (blocks/register-block! block))
+
+(m/=> gather-kanban-summary [:=> [:cat [:maybe :string]] ks/Summary])
+(m/=> catchup-section [:=> [:cat ks/SummaryIn] ks/Section])
+(m/=> register! [:=> [:cat] ks/CatchupBlock])
+(m/=> board-view [:=> [:cat [:maybe ks/ProjectId]] ks/BoardView])
+(m/=> gate-board [:=> [:cat ks/BoardGate [:maybe [:sequential ks/EntryIn]]] [:vector ks/EntryIn]])
+(m/=> summarize-board [:=> [:cat [:maybe [:sequential ks/EntryIn]]] ks/BoardSummary])

@@ -1,0 +1,13 @@
+{:entry
+ {:adt/variant :saa/tool-intent,
+  :adt/type :SaaRegistryEntry,
+  :intent :read,
+  :tools ["r"],
+  :owner :o},
+ :entry? true,
+ :not-entry? false,
+ :message
+ {:adt/variant :pm/started, :adt/type :PhaseMessage, :phase :silence},
+ :message? true,
+ :phase-value-valid true,
+ :restore-arg-nil true}

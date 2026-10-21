@@ -1,0 +1,10 @@
+{:case-0 {:out [], :in (nil)},
+ :case-1 {:out [], :in ("")},
+ :case-2
+ {:out ["question: What is this thing for?"],
+  :in ("What is this thing for?")},
+ :case-3 {:out ["missing: missing tests"], :in ("missing: tests")},
+ :case-4 {:out [], :in (nil)},
+ :case-5 {:out [], :in (nil)},
+ :case-6 {:out [], :in (nil)},
+ :case-7 {:out [], :in (nil)}}

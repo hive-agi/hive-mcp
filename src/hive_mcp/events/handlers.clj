@@ -10,7 +10,7 @@
    - handlers.claim   - File claims (:claim/file-released, :claim/notify-waiting)
    - handlers.hot-reload - Hot reload lifecycle (:hot/reload-start, :hot/reload-success, :file/changed)
    - handlers.kg     - Knowledge Graph (:kg/edge-created, :kg/edge-updated, :kg/edge-removed, :kg/node-promoted)
-   - handlers.agora  - Agora dialogue events (:agora/turn-dispatched, :agora/timeout, :agora/turn-completed, :agora/dispatch-next, :agora/consensus)
+   - handlers.agora  - Agora dialogue events (:agora/turn-completed, :agora/dispatch-next, :agora/consensus)
    - handlers.saa    - SAA workflow (:saa/started, :saa/phase-complete, :saa/completed, :saa/failed)
    - handlers.lifecycle - GC lifecycle (:lifecycle/sweep)
 
@@ -43,8 +43,6 @@
    - :kg/edge-updated       - KG edge confidence changed
    - :kg/edge-removed       - KG edge deleted
    - :kg/node-promoted      - Knowledge promoted to parent scope
-   - :agora/turn-dispatched   - Agora turn dispatched to ling
-   - :agora/timeout           - Agora timeout
    - :agora/turn-completed    - Unified ling turn completion
    - :agora/dispatch-next     - Relay the next turn to a ling participant
    - :agora/consensus         - Crystallize dialogue result to memory
@@ -62,7 +60,8 @@
             [hive-spi.swarm.guards :as guards]
             [clojure.set :as set]
             [hive-mcp.events.handlers.resilience :as resilience]
-            [hive-mcp.events.contributions :as contrib]))
+            [hive-mcp.events.contributions :as contrib]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -97,6 +96,8 @@
   []
   (into kernel-events (contrib/declared-events)))
 
+(m/=> expected-events [:=> [:cat] [:set :keyword]])
+
 (defn verify-handlers!
   "Compare the live event-handler registry against `(expected-events)` and
    emit a structured WARN for each missing handler. Returns
@@ -117,6 +118,13 @@
     (when (seq extra)
       (println "[hive-events] Extra handlers registered (not declared):" (sort extra)))
     {:registered registered :missing missing :extra extra}))
+
+(m/=> verify-handlers!
+      [:=> [:cat]
+       [:map
+        [:registered [:set :keyword]]
+        [:missing [:set :keyword]]
+        [:extra [:set :keyword]]]])
 
 (defn register-handlers!
   "Register all event handlers. Call at startup.
@@ -173,6 +181,8 @@
       (println "[hive-events] Handlers registered:" (sort (expected-events))))
     true))
 
+(m/=> register-handlers! [:=> [:cat] [:= true]])
+
 (defn reset-registration!
   "Reset registration state. Primarily for testing.
 
@@ -183,3 +193,5 @@
   (guards/when-not-coordinator
    "events.handlers/reset-registration! blocked"
    (reset! *registered false)))
+
+(m/=> reset-registration! [:=> [:cat] [:maybe [:= false]]])

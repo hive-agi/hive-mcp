@@ -14,7 +14,7 @@
             [hive-mcp.tools.memory.duration :as dur]
             [hive-mcp.tools.memory.decay :as decay]
             [hive-mcp.tools.memory.promotion :as promo]
-            [hive-mcp.tools.core :refer [mcp-error coerce-int!]]
+            [hive-mcp.tools.core :as tcore :refer [mcp-error coerce-int!]]
             [hive-mcp.tools.result-bridge :as rb]
             [hive-mcp.dns.result :as result]
             [hive-mcp.memory.types :as mt]
@@ -26,7 +26,9 @@
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
             [hive-mcp.memory.write-events :as write-events]
-            [hive-mcp.addons.boot-health :as boot-health]))
+            [hive-mcp.addons.boot-health :as boot-health]
+            [malli.core :as m]
+            [hive-mcp.tools.memory.schema :as ms]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -217,3 +219,39 @@
   "Run bounded xpoll auto-promotion cycle for crystallize-session hooks.
    Delegated to hive-mcp.tools.memory.promotion."
   #'promo/run-xpoll-cycle!)
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> handle-set-duration
+      [:=> [:cat (ms/params [:map [:duration {:optional true} [:maybe ms/DurationName]]])]
+
+       tcore/McpResponse])
+
+(m/=> handle-promote [:=> [:cat ms/McpParams] tcore/McpResponse])
+(m/=> handle-demote [:=> [:cat ms/McpParams] tcore/McpResponse])
+
+(m/=> normalize-cleanup-result
+      [:=> [:cat [:any {:gen/schema [:or :nil nat-int?
+                                     [:map [:count {:optional true} nat-int?]
+                                      [:deleted-ids {:optional true} [:vector :string]]
+                                      [:repaired {:optional true} nat-int?]]]}]]
+       ms/CleanupResult])
+
+(m/=> handle-cleanup-expired [:=> [:cat :any] tcore/McpResponse])
+(m/=> handle-expire [:=> [:cat ms/McpParams] tcore/McpResponse])
+
+(m/=> handle-expiring-soon
+      [:=> [:cat (ms/params
+                  [:map [:days {:optional true} [:maybe [:int {:min 0 :gen/max 30}]]]
+                   [:include-short {:optional true} [:maybe :boolean]]])]
+
+       tcore/McpResponse])
+
+;; Facade aliases capture the VALUE of the delegate var, so each carries its
+;; own contract (the delegate's contract does not reach callers of these).
+(m/=> handle-decay [:=> [:cat ms/McpParams] tcore/McpResponse])
+(m/=> handle-xpoll-promote [:=> [:cat ms/McpParams] tcore/McpResponse])
+(m/=> run-decay-cycle! [:=> [:cat ms/McpParams] ms/DecayCycle])
+(m/=> run-xpoll-cycle! [:=> [:cat ms/McpParams] ms/XpollCycle])

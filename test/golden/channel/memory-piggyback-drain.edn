@@ -1,0 +1,6 @@
+{:pending? true,
+ :batch [["ax-1" "axiom"] ["c-1" "convention"] ["n-1" "note"]],
+ :delivered 3,
+ :done true,
+ :second nil,
+ :after false}

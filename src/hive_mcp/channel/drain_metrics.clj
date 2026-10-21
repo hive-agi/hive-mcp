@@ -88,6 +88,8 @@
     (* 1000.0 (/ (double (count atoms)) wire-chars))
     0.0))
 
+(m/=> commitment-density [:=> [:cat [:sequential :any] number?] [:double {:min 0.0}]])
+
 (defn round-trip-recoverability
   "Fraction of atoms whose content is either present or still fetchable."
   [atoms]

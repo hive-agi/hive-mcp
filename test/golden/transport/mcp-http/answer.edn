@@ -1,0 +1,30 @@
+{:case-0 {:out {:status 202}, :in {:jsonrpc "2.0", :method "ping"}},
+ :case-1
+ {:out
+  {:status 200,
+   :body
+   {:jsonrpc "2.0",
+    :id "a",
+    :error {:code -32601, :message "Unknown method: nope"}}},
+  :in {:jsonrpc "2.0", :id "a", :method "nope"}},
+ :case-2
+ {:out
+  {:status 200,
+   :body
+   {:jsonrpc "2.0",
+    :id "a",
+    :error {:code -32603, :message "Request handler failed"}}},
+  :in {:jsonrpc "2.0", :id "a", :method "boom"}},
+ :case-3
+ {:out
+  {:status 200,
+   :body
+   {:jsonrpc "2.0",
+    :id "a",
+    :error {:code -32603, :message "Request handler failed"}}},
+  :in {:jsonrpc "2.0", :id "a", :method "boom"}},
+ :case-4
+ {:out {:status 202}, :in {:jsonrpc "2.0", :method "notifications/x"}},
+ :case-5 {:out {:status 202}, :in {:jsonrpc "2.0", :method "ping"}},
+ :case-6 {:out {:status 202}, :in {:jsonrpc "2.0", :method "ping"}},
+ :case-7 {:out {:status 202}, :in {:jsonrpc "2.0", :method "ping"}}}

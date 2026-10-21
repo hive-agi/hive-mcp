@@ -28,9 +28,11 @@
 
    Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
    SPDX-License-Identifier: AGPL-3.0-or-later"
-  (:require [hive-mcp.knowledge-graph.connection :as kg-conn]
+  (:require [malli.core :as m]
+            [hive-mcp.knowledge-graph.connection :as kg-conn]
             [hive-mcp.context.request :as ctx]
-            [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]))
+            [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
+            [hive-mcp.extensions.record-hooks :as record-hooks]))
 
 ;; =============================================================================
 ;; Mutation ID Generation
@@ -94,46 +96,58 @@
    A mutation whose writer's spawn credential verified also carries
    :mem-mutation/agent-verified true.
 
+   `opts` first passes the :temporal/mutation record hooks
+   (hive-mcp.extensions.record-hooks), which may rewrite it or drop it.
+
    Returns:
      {:ok true :mutation-id \"mut-...\"} on success
-     {:ok false :error \"...\"} on failure (non-fatal, logs warning)
+     {:ok true :dropped true} when a record hook dropped the mutation
+     {:ok false :error \"...\"} on failure (non-fatal, logs warning; a hook
+     that throws is a failure, so nothing is written)
 
    Note: Failures are non-fatal — Chroma write already succeeded.
    This is a best-effort temporal trail, not a transaction coordinator."
-  [{:keys [entry-id op data previous-value agent-id project-id]}]
-  {:pre [(string? entry-id) (contains? valid-ops op)]}
+  [opts]
+  {:pre [(string? (:entry-id opts)) (contains? valid-ops (:op opts))]}
   (try
-    (when (and (persist-mutation? op) (kg-conn/temporal-store?))
-      (let [mutation-id (gen-mutation-id)
-            {agent-id :id verified? :verified?} (mutation-attribution agent-id)
-            project-id (or project-id "unknown")
-            tx-data [(cond-> {:mem-mutation/id        mutation-id
-                              :mem-mutation/entry-id  entry-id
-                              :mem-mutation/op        op
-                              :mem-mutation/timestamp (java.util.Date.)
-                              :mem-mutation/agent-id  agent-id
-                              :mem-mutation/project-id project-id}
-                       verified?
-                       (assoc :mem-mutation/agent-verified true)
+    (when (and (persist-mutation? (:op opts)) (kg-conn/temporal-store?))
+      (if-let [{:keys [entry-id op data previous-value agent-id project-id]}
+               (record-hooks/apply-hooks :temporal/mutation opts)]
+        (let [mutation-id (gen-mutation-id)
+              {agent-id :id verified? :verified?} (mutation-attribution agent-id)
+              project-id (or project-id "unknown")
+              tx-data [(cond-> {:mem-mutation/id        mutation-id
+                                :mem-mutation/entry-id  entry-id
+                                :mem-mutation/op        op
+                                :mem-mutation/timestamp (java.util.Date.)
+                                :mem-mutation/agent-id  agent-id
+                                :mem-mutation/project-id project-id}
+                         verified?
+                         (assoc :mem-mutation/agent-verified true)
 
-                       data
-                       (assoc :mem-mutation/data (pr-str data))
+                         data
+                         (assoc :mem-mutation/data (pr-str data))
 
-                       previous-value
-                       (assoc :mem-mutation/previous-value (pr-str previous-value)))]]
-        (kg-conn/transact! tx-data)
-        (log/debug "Temporal mutation recorded" {:id mutation-id :op op :entry-id entry-id})
-        {:ok true :mutation-id mutation-id}))
+                         previous-value
+                         (assoc :mem-mutation/previous-value (pr-str previous-value)))]]
+          (kg-conn/transact! tx-data)
+          (log/debug "Temporal mutation recorded" {:id mutation-id :op op :entry-id entry-id})
+          {:ok true :mutation-id mutation-id})
+        {:ok true :dropped true}))
     (catch Exception e
       (log/warn "Temporal mutation recording failed (non-fatal)"
-                {:op op :entry-id entry-id :error (.getMessage e)})
+                {:op (:op opts) :entry-id (:entry-id opts) :error (.getMessage e)})
       {:ok false :error (.getMessage e)})))
+
+(m/=> record-mutation! [:=> [:cat [:map [:entry-id :string] [:op [:enum :feedback :kanban-done :kanban-move :kanban-delete :kanban-retag :kanban-edit :expire :decay :promote :reground :migrate :log-access :cleanup]] [:data {:optional true} :map] [:previous-value {:optional true} :map] [:agent-id {:optional true} :string] [:project-id {:optional true} :string]]] [:maybe [:or [:map [:ok [:= true]] [:mutation-id :string]] [:map [:ok [:= true]] [:dropped [:= true]]] [:map [:ok [:= false]] [:error :string]]]]])
 
 (defn record-mutation-silent!
   "Like record-mutation! but swallows all errors completely.
    Use in hot paths where even logging overhead matters."
   [opts]
   (rescue nil (record-mutation! opts)))
+
+(m/=> record-mutation-silent! [:=> [:cat :map] [:maybe :map]])
 
 ;; =============================================================================
 ;; Batch Recording (for cleanup/decay cycles)
@@ -146,14 +160,20 @@
    Arguments:
      mutations - Sequence of mutation option maps (same shape as record-mutation!)
 
+   Each mutation first passes the :temporal/mutation record hooks
+   (hive-mcp.extensions.record-hooks); one a hook drops is not written.
+
    Returns:
-     {:ok true :count N} on success
-     {:ok false :error \"...\"} on failure"
+     {:ok true :count N} on success, N the mutations written
+     {:ok false :error \"...\"} on failure (a hook that throws fails the batch)"
   [mutations]
   (try
     (when (and (seq mutations) (kg-conn/temporal-store?))
       (let [now (java.util.Date.)
             agent-id (:id (mutation-attribution nil))
+            kept (->> mutations
+                      (filter (comp persist-mutation? :op))
+                      (keep #(record-hooks/apply-hooks :temporal/mutation %)))
             tx-data (mapv (fn [{:keys [entry-id op data previous-value project-id]}]
                             (cond-> {:mem-mutation/id         (gen-mutation-id)
                                      :mem-mutation/entry-id   (or entry-id "unknown")
@@ -165,14 +185,17 @@
                               (assoc :mem-mutation/data (pr-str data))
                               previous-value
                               (assoc :mem-mutation/previous-value (pr-str previous-value))))
-                          (filter (comp persist-mutation? :op) mutations))]
-        (kg-conn/transact! tx-data)
+                          kept)]
+        (when (seq tx-data)
+          (kg-conn/transact! tx-data))
         (log/debug "Temporal batch recorded" {:count (count tx-data)})
         {:ok true :count (count tx-data)}))
     (catch Exception e
       (log/warn "Temporal batch recording failed (non-fatal)"
                 {:count (count mutations) :error (.getMessage e)})
       {:ok false :error (.getMessage e)})))
+
+(m/=> record-mutations-batch! [:=> [:cat [:sequential :map]] [:maybe [:map [:ok :boolean]]]])
 
 ;; =============================================================================
 ;; Query Helpers (for addon consumers)
@@ -219,6 +242,8 @@
         (log/warn "Mutation query failed" {:entry-id entry-id :error (.getMessage e)})
         nil))))
 
+(m/=> query-mutations [:function [:=> [:cat :string] [:maybe [:vector :map]]] [:=> [:cat :string [:maybe :map]] [:maybe [:vector :map]]]])
+
 (defn mutation-count
   "Count total mutations for an entry or globally.
 
@@ -242,6 +267,8 @@
             0))
       (catch Exception _
         0))))
+
+(m/=> mutation-count [:function [:=> [:cat] [:int {:min 0}]] [:=> [:cat [:maybe :string]] [:int {:min 0}]]])
 
 ;; =============================================================================
 ;; Guarded Prune (heap-pressure-gated retention bound)
@@ -303,6 +330,8 @@
          (take batch-cap)
          vec)))
 
+(m/=> prune-victims [:=> [:cat [:sequential [:tuple :int :string [:fn {:gen/elements [(java.util.Date.)]} #(instance? java.util.Date %)] :keyword]] [:fn {:gen/elements [(java.util.Date.)]} #(instance? java.util.Date %)] [:map [:max-per-entry [:int {:min 0}]] [:batch-cap [:int {:min 0}]]]] [:vector :int]])
+
 (defn prune-mutations!
   "GUARDED prune of the :mem-mutation audit trail. Best-effort, non-fatal.
 
@@ -351,3 +380,5 @@
     (catch Exception e
       (log/warn "Mutation prune failed (non-fatal)" {:error (.getMessage e)})
       {:ok false :error (.getMessage e)})))
+
+(m/=> prune-mutations! [:function [:=> [:cat] [:map [:ok :boolean]]] [:=> [:cat [:maybe :map]] [:map [:ok :boolean]]]])

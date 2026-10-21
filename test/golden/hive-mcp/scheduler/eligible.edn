@@ -1,0 +1,41 @@
+{:case-0
+ {:out [],
+  :in (true #{} [{:id "b", :title "human only review", :tags []}])},
+ :case-1
+ {:out [{:id "e", :tags []} {:id "c"}],
+  :in
+  (true
+   #{"b"}
+   [{:id "d", :title "human only review"}
+    {:id "e", :tags []}
+    {:id "e", :title "PEDRO DECISION: pick"}
+    {:id "c"}
+    {:id "d", :title "human only review", :tags ["wave:2"]}])},
+ :case-2
+ {:out [{:id "b"} {:id "b", :tags ["wave:1"]} {:id "e", :tags []}],
+  :in
+  (false
+   #{"a"}
+   [{:id "b"}
+    {:id "b", :tags ["wave:1"]}
+    {:id "e", :tags []}
+    {:id "b", :title "PEDRO DECISION: pick"}])},
+ :case-3
+ {:out
+  [{:id "a"}
+   {:id "d", :tags ["wave:3" "wave:1"]}
+   {:id "e", :tags ["x"]}
+   {:id "a"}],
+  :in
+  (false
+   #{}
+   [{:id "a"}
+    {:id "d", :tags ["wave:3" "wave:1"]}
+    {:id "e", :tags ["x"]}
+    {:id "a"}])},
+ :case-4
+ {:out [{:id "d", :title "Fix it", :tags []}],
+  :in (false #{"a" "b"} [{:id "d", :title "Fix it", :tags []}])},
+ :case-5 {:out [], :in (false #{"a" "b"} [])},
+ :case-6 {:out [{:id "a"}], :in (false #{"a"} [{:id "a"}])},
+ :case-7 {:out [], :in (true #{} [])}}

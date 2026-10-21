@@ -1,0 +1,45 @@
+#:err{:auth
+      {:value
+       {:adt/variant :err/auth,
+        :adt/type :ErrorClass,
+        :message "auth",
+        :details {:k 1}},
+       :valid? true,
+       :schema-mismatch? false,
+       :transient? false},
+      :schema-mismatch
+      {:value
+       {:adt/variant :err/schema-mismatch,
+        :adt/type :ErrorClass,
+        :message "schema-mismatch",
+        :details {:k 1}},
+       :valid? true,
+       :schema-mismatch? true,
+       :transient? false},
+      :transient
+      {:value
+       {:adt/variant :err/transient,
+        :adt/type :ErrorClass,
+        :message "transient",
+        :details {:k 1}},
+       :valid? true,
+       :schema-mismatch? false,
+       :transient? true},
+      :unknown
+      {:value
+       {:adt/variant :err/unknown,
+        :adt/type :ErrorClass,
+        :message "unknown",
+        :details {:k 1}},
+       :valid? true,
+       :schema-mismatch? false,
+       :transient? false},
+      :validation
+      {:value
+       {:adt/variant :err/validation,
+        :adt/type :ErrorClass,
+        :message "validation",
+        :details {:k 1}},
+       :valid? true,
+       :schema-mismatch? false,
+       :transient? false}}

@@ -32,6 +32,8 @@
             [hive-mcp.swarm.datascript.schema :as schema]
             [hive-mcp.agent.headless :as headless]
             [hive-mcp.agent.context-envelope :as envelope]
+            [hive-test.isolation :as iso]
+            [hive-mcp.isolation-methods]
             ;; Collaborators registered in their REAL registries (DIP), because
             ;; a cold test JVM never runs server boot:
             ;;   stub-belt  -> :fb/* forge-belt defaults (else every belt op noops)
@@ -100,7 +102,13 @@
   reset-forge-state-fixture
   ready-lings-fixture
   stub-belt/forge-belt-fixture
-  stub-term/with-terminal)
+  stub-term/with-terminal
+  ;; survey reads :depends-on edges from the KG (vulcan/get-task-deps) and
+  ;; blocks a task whose lookup throws. On the process-wide store that
+  ;; depended on what earlier namespaces left behind: in the full --swarm run
+  ;; the first strike of headless-forge-state-accumulation surveyed 0 tasks
+  ;; (SWARM-SUITE-ORDER). Each test gets its own fresh KG store.
+  (iso/with-isolations :kg-conn))
 
 ;; =============================================================================
 ;; Test Helpers

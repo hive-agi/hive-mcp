@@ -50,4 +50,4 @@
 (m/=> available? [:=> [:cat QueryOutcome] :boolean])
 (m/=> value-or [:=> [:cat QueryOutcome :any] :any])
 (m/=> summary [:=> [:cat QueryOutcome] [:map [:status Status] [:warnings [:vector Warning]]]])
-(m/=> map-value [:=> [:cat QueryOutcome fn?] QueryOutcome])
+(m/=> map-value [:=> [:cat QueryOutcome ifn?] QueryOutcome])

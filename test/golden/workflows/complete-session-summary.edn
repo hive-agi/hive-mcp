@@ -1,0 +1,23 @@
+{:with-tasks
+ {:task-ids ["t1" "t2"],
+  :agent-id "ling-1",
+  :commit-msg "feat: x",
+  :tasks-completed 2,
+  :commit-result {:success true},
+  :crystal-result {:summary-id "s"},
+  :eviction {:evicted 1},
+  :shout-sent? true,
+  :kanban-result {:moved 2},
+  :plan-result nil,
+  :status :ok},
+ :no-tasks
+ {:task-ids [],
+  :agent-id "ling-1",
+  :commit-msg "feat: y",
+  :tasks-completed 0,
+  :commit-result {:success true},
+  :crystal-result {:summary-id "s"},
+  :eviction {:evicted 1},
+  :shout-sent? true,
+  :plan-result nil,
+  :status :ok}}

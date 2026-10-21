@@ -9,7 +9,9 @@
             [hive-mcp.tools.memory.scope :as scope]
             [clojure.string :as str]
             [clojure.data.json :as json]
-            [clojure.walk :as walk])
+            [clojure.walk :as walk]
+            [hive-mcp.tools.kanban.schema :as ks]
+            [malli.core :as m])
   (:import [java.time ZonedDateTime]
            [java.time.format DateTimeFormatter]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -179,10 +181,26 @@
   [content k v]
   (-> content (dissoc (name k)) (assoc k v)))
 
+(defn append-description
+  "Pure: `current` description with the non-blank `addition` appended after a
+   blank line. A blank/nil `addition` leaves `current` standing; a blank/nil
+   `current` yields the addition alone. Unlike `description=` (a full replace)
+   this never loses the existing text."
+  [current addition]
+  (if (and (string? addition) (not (str/blank? addition)))
+    (if (and (string? current) (not (str/blank? current)))
+      (str current "\n\n" addition)
+      addition)
+    current))
+
 (defn edit-transition
   "Pure: derive the content edit for a task. A field is edited only when
    `edits` carries a non-blank string for it; anything else leaves the
    current value standing. Status, scope and every other tag are preserved.
+
+   `:append-description` is applied AFTER `:description`: it extends the
+   description that results (the replaced one when both are given, else the
+   current one), so history can grow without being rewritten.
 
    `:new-tags` is nil unless the priority changed. Priority lives in BOTH
    the content map and a `priority-*` tag — `kanban get` reads content while
@@ -202,7 +220,8 @@
         old-desc  (content-val content :description nil)
         old-prio  (current-priority entry)
         new-title (pick :title old-title)
-        new-desc  (pick :description old-desc)
+        new-desc  (append-description (pick :description old-desc)
+                                      (get edits :append-description))
         new-prio  (pick :priority old-prio)
         changed   (cond-> #{}
                     (not= new-title old-title) (conj :title)
@@ -349,3 +368,43 @@
                offset
                limit
                (seq fields))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def ^:private Supplier
+  "A zero-arg directory supplier (`ctx/current-directory`)."
+  [:fn {:gen/elements [(constantly nil) (constantly "/tmp/proj")]} ifn?])
+
+(m/=> kanban-timestamp [:=> [:cat] ks/KanbanTimestamp])
+(m/=> content-val [:=> [:cat :any :keyword :any] :any])
+(m/=> build-kanban-tags [:=> [:cat [:maybe :string] :any [:maybe :string]] [:vector [:maybe :string]]])
+(m/=> extract-project-id-from-tags [:=> [:cat ks/MaybeEntry] [:maybe :string]])
+(m/=> task->slim [:function
+                  [:=> [:cat ks/EntryIn] ks/SlimTask]
+                  [:=> [:cat ks/EntryIn :any] ks/SlimTask]])
+(m/=> entry-content [:=> [:cat ks/MaybeEntry] [:maybe [:map-of :any :any]]])
+(m/=> task->detail [:function
+                    [:=> [:cat ks/EntryIn] ks/DetailTask]
+                    [:=> [:cat ks/EntryIn :any] ks/DetailTask]])
+(m/=> compute-new-content [:=> [:cat [:maybe [:map-of :any :any]] [:maybe :string]] [:map-of :any :any]])
+(m/=> compute-new-tags [:=> [:cat ks/TagsIn [:maybe :string] :any [:maybe :string]] [:vector [:maybe :string]]])
+(m/=> current-status [:=> [:cat ks/MaybeEntry] :any])
+(m/=> current-priority [:=> [:cat ks/MaybeEntry] :any])
+(m/=> current-title [:=> [:cat ks/MaybeEntry] :any])
+(m/=> retag-transition [:=> [:cat ks/EntryIn [:maybe :string] ks/RetagOpts] ks/RetagResult])
+(m/=> reprioritize-tags [:=> [:cat ks/TagsIn :any] ks/StringTags])
+(m/=> append-description [:=> [:cat :any [:maybe :string]] :any])
+(m/=> edit-transition [:=> [:cat ks/EntryIn ks/Edits] ks/EditResult])
+(m/=> transition [:=> [:cat ks/EntryIn [:maybe :string] [:maybe :string]] ks/TransitionResult])
+(m/=> sort-by-priority-then-created [:=> [:cat [:maybe [:sequential ks/Task]]] [:sequential ks/Task]])
+(m/=> effective-dir [:=> [:cat [:maybe :string] Supplier] [:maybe :string]])
+(m/=> substring-ci? [:=> [:cat [:maybe :string] :any] :boolean])
+(m/=> entry-matches-query? [:=> [:cat ks/EntryIn [:maybe :string]] :boolean])
+(m/=> entry-tags-match? [:=> [:cat ks/EntryIn ks/TagsIn [:maybe [:or :keyword :string]]] :boolean])
+(m/=> entry-priority? [:=> [:cat ks/EntryIn [:maybe :string]] :boolean])
+(m/=> entry-after-ts? [:=> [:cat ks/EntryIn :keyword [:maybe :string]] :boolean])
+(m/=> paginate [:=> [:cat [:maybe [:sequential :any]] :any :any] [:maybe [:sequential :any]]])
+(m/=> project-fields [:=> [:cat [:maybe [:map-of :any :any]] ks/Fields] [:maybe [:map-of :any :any]]])
+(m/=> post-filters? [:=> [:cat ks/ListParams] :boolean])

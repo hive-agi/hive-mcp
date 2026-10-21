@@ -1,0 +1,84 @@
+{:case-0
+ {:out
+  {:error "Agent 'a1' missing required 'description' in frontmatter"},
+  :in
+  ({:name "a1", :tools ["y"], :skills "", :hivemind-role "nope"}
+   ""
+   :built-in)},
+ :case-1
+ {:out nil,
+  :in
+  ({:description "d1\\nmore",
+    :tools "*",
+    :model "INHERIT",
+    :max-turns "x"}
+   "  "
+   :plugin)},
+ :case-10
+ {:out nil,
+  :in
+  ({:description "d1\\nmore", :tools "*", :max-turns 0, :skills ""}
+   ""
+   :built-in)},
+ :case-11
+ {:out nil,
+  :in ({:tools ["*" "*" "*"], :max-turns "12"} "  " :plugin)},
+ :case-2
+ {:out
+  {:agent-type "a1",
+   :description "d1\nmore",
+   :system-prompt "You are a1.",
+   :source :project,
+   :model :inherit,
+   :max-turns 7,
+   :hivemind-role :role/worker},
+  :in
+  ({:name "a1",
+    :description "d1\\nmore",
+    :tools ["y" "*"],
+    :model "inherit",
+    :max-turns 7,
+    :hivemind-role "role/worker"}
+   ""
+   :project)},
+ :case-3
+ {:out nil,
+  :in
+  ({:description "d1\\nmore",
+    :model nil,
+    :hivemind-role :role/hivemind}
+   "You scout."
+   :user)},
+ :case-4
+ {:out
+  {:error "Agent 'a1' missing required 'description' in frontmatter"},
+  :in ({:name "a1", :model " opus ", :skills "a, b"} "" :project)},
+ :case-5 {:out nil, :in ({:description "finds"} "" :project)},
+ :case-6
+ {:out nil,
+  :in
+  ({:model "inherit", :hivemind-role "role/worker"}
+   "You scout."
+   :project)},
+ :case-7
+ {:out
+  {:error "Agent 'a1' missing required 'description' in frontmatter"},
+  :in ({:name "a1", :tools [], :skills ""} "" :project)},
+ :case-8
+ {:out
+  {:error
+   "Agent 'scout' missing required 'description' in frontmatter"},
+  :in ({:name "scout", :tools ["y"]} "You scout." :built-in)},
+ :case-9
+ {:out
+  {:agent-type "a1",
+   :description "d1\nmore",
+   :system-prompt "You are a1.",
+   :source :built-in,
+   :hivemind-role :role/hivemind},
+  :in
+  ({:name "a1",
+    :description "d1\\nmore",
+    :hivemind-role :role/hivemind}
+   "  "
+   :built-in)}}

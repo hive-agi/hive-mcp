@@ -20,7 +20,8 @@
   (:require [hive-dsl.bounded-atom :refer [bounded-atom bput! bget bounded-swap! bclear! register-sweepable!]]
             [hive-mcp.channel.context-store :as ctx]
             [hive-mcp.dns.result :as result]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -357,3 +358,67 @@
         (future-cancel fut)
         (try (deref fut 100 nil) (catch Exception _)))))
   (bclear! batches))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def BatchStatus
+  "Every status a batch descriptor can report."
+  [:enum "running" "completed" "failed" "cancelled" "expired" "not-found" "unknown"])
+
+(def Dispatched
+  "run-multi-async's descriptor, or the engine-unavailable Result error."
+  [:or
+   [:map
+    [:batch-id :string]
+    [:status [:= "running"]]
+    [:ops [:int {:min 0}]]
+    [:created-at :int]]
+   [:map
+    [:error [:= :multi-async/engine-unavailable]]
+    [:message {:optional true} :string]]])
+
+(def Collected
+  "collect-async-result's per-status descriptor."
+  [:multi {:dispatch :status}
+   ["running" [:map [:status [:= "running"]] [:batch-id :any] [:ops :int]
+               [:created-at :int] [:elapsed-ms :int]]]
+   ["completed" [:map [:status [:= "completed"]] [:batch-id :any] [:results :any]]]
+   ["failed" [:map [:status [:= "failed"]] [:batch-id :any] [:error [:maybe :string]]]]
+   ["cancelled" [:map [:status [:= "cancelled"]] [:batch-id :any]]]
+   ["expired" [:map [:status [:= "expired"]] [:batch-id :any] [:message :string]]]
+   ["not-found" [:map [:status [:= "not-found"]] [:batch-id :any]]]
+   ["unknown" [:map [:status [:= "unknown"]] [:batch-id :any] [:raw-status :any]]]])
+
+(def BatchSummary
+  "One list-async-batches row (no :future ref)."
+  [:map
+   [:batch-id :any]
+   [:status [:maybe :string]]
+   [:ops [:maybe :int]]
+   [:created-at [:maybe :int]]
+   [:completed-at {:optional true} :int]
+   [:elapsed-ms {:optional true} :int]
+   [:error {:optional true} :string]])
+
+(def Cancelled
+  "cancel-async-batch's verdict."
+  [:or
+   [:map [:cancelled [:= true]] [:batch-id :any]]
+   [:map [:cancelled [:= false]] [:batch-id :any] [:reason [:enum "not-running" "not-found"]]]])
+
+(m/=> run-multi-async [:=> [:cat [:sequential :any] [:* :any]] Dispatched])
+
+(m/=> collect-async-result [:=> [:cat :any] Collected])
+
+(m/=> await-async-batch [:=> [:cat :any [:* :any]] Collected])
+
+(m/=> list-async-batches [:=> [:cat] [:vector BatchSummary]])
+
+(m/=> cancel-async-batch [:=> [:cat :any] Cancelled])
+
+(m/=> gc-completed! [:=> [:cat] [:int {:min 0}]])
+
+;; reset-all! answers bclear!'s value; callers use it for effect only.
+(m/=> reset-all! [:=> [:cat] :any])

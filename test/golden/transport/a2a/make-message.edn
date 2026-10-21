@@ -1,0 +1,33 @@
+{:case-0 {:out {:role "agent", :parts []}, :in ("agent" [])},
+ :case-1
+ {:out
+  {:role "agent",
+   :parts
+   [{:type "text", :text "b"}
+    {:type "text", :text "b"}
+    {:type "text", :text "a"}]},
+  :in
+  ("agent"
+   [{:type "text", :text "b"}
+    {:type "text", :text "b"}
+    {:type "text", :text "a"}])},
+ :case-2
+ {:out {:role "user", :parts [{:type "text", :text "b"}]},
+  :in ("user" [{:type "text", :text "b"}])},
+ :case-3
+ {:out
+  {:role "user",
+   :parts [{:type "text", :text "b"} {:type "text", :text "b"}]},
+  :in ("user" [{:type "text", :text "b"} {:type "text", :text "b"}])},
+ :case-4
+ {:out {:role "user", :parts [{:type "text", :text "b"}]},
+  :in ("user" [{:type "text", :text "b"}])},
+ :case-5
+ {:out {:role "user", :parts [{:type "text", :text "b"}]},
+  :in ("user" [{:type "text", :text "b"}])},
+ :case-6
+ {:out {:role "user", :parts [{:type "text", :text "a"}]},
+  :in ("user" [{:type "text", :text "a"}])},
+ :case-7
+ {:out {:role "agent", :parts [{:type "text", :text "a"}]},
+  :in ("agent" [{:type "text", :text "a"}])}}

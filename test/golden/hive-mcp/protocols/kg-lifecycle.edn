@@ -1,0 +1,7 @@
+{:before
+ {:set? false,
+  :temporal? false,
+  :get "No graph store configured. Call set-store! first."},
+ :during {:set? true, :temporal? false, :kg-store? true},
+ :cleared nil,
+ :after {:set? false, :temporal? false}}

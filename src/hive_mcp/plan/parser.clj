@@ -19,7 +19,8 @@
    - hive-mcp.plan.parser.util     — Task-spec conversion, dependency validation"
   (:require [hive-mcp.plan.parser.edn :as edn-parser]
             [hive-mcp.plan.parser.markdown :as md-parser]
-            [hive-mcp.plan.parser.util :as util]))
+            [hive-mcp.plan.parser.util :as util]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -122,3 +123,16 @@
 
    Returns: {:valid true} or {:valid false :missing [...] :step ...}"
   #'util/validate-dependencies)
+
+;; =============================================================================
+;; Function Contracts (m16 coverage batch)
+;; =============================================================================
+
+;; Facade aliases (`def` holding the parser.edn/markdown/util Var) are exempt
+;; from m/=>: the contract belongs to the aliased fn so redefinition of the
+;; target reaches callers through this name.
+
+(m/=> parse-plan
+      [:function
+       [:=> [:cat :any] [:map [:success :boolean]]]
+       [:=> [:cat :any :any] [:map [:success :boolean]]]])

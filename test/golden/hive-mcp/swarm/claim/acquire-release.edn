@@ -1,0 +1,37 @@
+{:a1 {:acquired? true, :conflicts [], :warnings [], :spans-claimed 2},
+ :a2
+ {:acquired? false,
+  :spans-claimed 0,
+  :conflicts
+  [{:file "src/x.clj",
+    :qn nil,
+    :mode :file,
+    :held-by "ling-a",
+    :reason :file-claim}],
+  :warnings []},
+ :a3 {:acquired? true, :conflicts [], :warnings [], :spans-claimed 1},
+ :a4 {:acquired? true, :conflicts [], :warnings [], :spans-claimed 0},
+ :held
+ ({:span/file "src/w.clj",
+   :span/mode :body,
+   :span/qn "w/f",
+   :claim/slave "ling-a",
+   :claim/key "src/w.clj#w/f"}
+  {:span/file "src/w.clj",
+   :span/mode :body,
+   :span/qn "w/g",
+   :claim/slave "ling-b",
+   :claim/key "src/w.clj#w/g"}
+  {:span/file "src/x.clj",
+   :span/mode :file,
+   :span/qn nil,
+   :claim/slave "ling-a",
+   :claim/key "src/x.clj"}),
+ :conflicts-for
+ [{:file "src/x.clj",
+   :qn nil,
+   :mode :file,
+   :held-by "ling-a",
+   :reason :file-claim}],
+ :available [false true],
+ :available-after-release true}

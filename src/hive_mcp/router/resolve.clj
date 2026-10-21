@@ -18,7 +18,8 @@
    `ProviderSpec` via `embedder.spec/make`. Unknown provider keys
    surface as `:router/unknown-provider`."
   (:require [hive-dsl.result :as r]
-            [hive-mcp.embedder.spec :as spec]))
+            [hive-mcp.embedder.spec :as spec]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -41,6 +42,40 @@
       [(keyword "type" bare)
        (keyword bare)])))
 
+;;; ---------------------------------------------------------------------------
+;;; Schemas
+;;; ---------------------------------------------------------------------------
+
+(def ProviderEntry
+  "One `[:providers <key>]` entry of the `:embedder` block. Every key is
+   optional here: `embedder.spec/make` is the validator, and a malformed
+   entry surfaces as `:router/invalid-provider-spec`."
+  [:map
+   [:impl {:optional true} :keyword]
+   [:model {:optional true} :string]
+   [:dimension {:optional true} :int]
+   [:max-tokens {:optional true} :int]])
+
+(def EmbedderConfig
+  "The resolved `:embedder` config block the resolvers read verbatim.
+   Open map; nil reads as an empty block (every lookup misses)."
+  [:maybe
+   [:map
+    [:default {:optional true} [:maybe :keyword]]
+    [:routes {:optional true} [:maybe [:map-of :keyword :keyword]]]
+    [:providers {:optional true} [:maybe [:map-of :keyword ProviderEntry]]]
+    [:escalation {:optional true} [:maybe [:map [:heavy-tier-key {:optional true} :keyword]]]]]])
+
+(def RouterError
+  "The err variants the resolvers name (see the ns docstring)."
+  [:enum :router/no-default :router/unknown-provider :router/invalid-provider-spec])
+
+(def SpecResult
+  "`Result<ProviderSpec>` — `{:ok ProviderSpec}` or `{:error RouterError ...}`."
+  [:or
+   [:map [:ok spec/schema]]
+   [:map [:error RouterError]]])
+
 (defn resolve-provider-key
   "Pure — return the provider key for `memory-type` per the resolution
    order in this ns docstring. Returns a keyword or nil."
@@ -48,6 +83,10 @@
   (let [routes (:routes config)]
     (or (some #(get routes %) (type->keys memory-type))
         (:default config))))
+
+;; memory-type: the body accepts any value (a non keyword/string resolves via
+;; :default only)
+(m/=> resolve-provider-key [:=> [:cat EmbedderConfig :any] [:maybe :keyword]])
 
 (defn resolve-spec
   "Pure — return `(ok ProviderSpec)` for `memory-type`, or an err
@@ -76,3 +115,5 @@
     (r/err :router/no-default
            {:memory-type memory-type
             :hint        "Set [:embedder :default <provider-key>] or [:embedder :routes <type>]"})))
+
+(m/=> resolve-spec [:=> [:cat EmbedderConfig :any] SpecResult])

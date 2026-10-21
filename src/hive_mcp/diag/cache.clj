@@ -12,7 +12,8 @@
    If datalevin is not on the classpath, every method degrades to an `err`
    Result — the probe is inert, not fatal."
   (:require [hive-spi.diag.ports :as p]
-            [hive-dsl.result :as r]))
+            [hive-dsl.result :as r]
+            [malli.core :as m]))
 
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -84,3 +85,5 @@
    even before any datalevin store is opened."
   []
   (->DatalevinQueryCache))
+
+(m/=> make-datalevin-query-cache [:=> [:cat] [:fn {:gen/fmap (fn [_] (->DatalevinQueryCache)) :gen/elements [nil]} #(satisfies? p/ICacheProbe %)]])

@@ -17,7 +17,8 @@
 
   (:require [hive-mcp.nats.client :as nats]
             [hive-mcp.protocols.event-backbone :as eb]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -68,3 +69,21 @@
   "Create a NatsBackbone instance."
   []
   (->NatsBackbone))
+
+;; =============================================================================
+;; Function Contracts (m16 coverage batch)
+;; =============================================================================
+
+;; Record lifecycle boundary fns: protocol-bearing instance + open opts map.
+
+(m/=> start-backbone!
+      [:=> [:cat :any :map]
+       :any])
+
+(m/=> stop-backbone!
+      [:=> [:cat :any]
+       :any])
+
+(m/=> create-backbone
+      [:=> [:cat]
+       :any])

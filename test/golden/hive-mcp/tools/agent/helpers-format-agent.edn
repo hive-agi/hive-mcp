@@ -1,0 +1,14 @@
+{:nil nil,
+ :bare {:id "a", :status nil, :type :ling, :cwd nil, :project-id nil},
+ :full
+ {:parent "c",
+  :cwd "/w",
+  :type :ling,
+  :reason "r",
+  :presets ["tdd"],
+  :liveness-age-ms 0,
+  :status :orphaned,
+  :id "a",
+  :project-id "p",
+  :last-event-at "t"},
+ :merge-ds ("a" "b")}

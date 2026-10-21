@@ -1,0 +1,23 @@
+{:calls
+ {"clear-completed-tasks!"
+  {:ns "hive-datascript.swarm.coordination.session-registry",
+   :var "clear-completed-tasks!"},
+  "clear-kanban-movements!"
+  {:ns "hive-datascript.swarm.coordination.session-registry",
+   :var "clear-kanban-movements!"},
+  "get-completed-task"
+  {:ns "hive-datascript.swarm.coordination.session-registry",
+   :var "get-completed-task"},
+  "get-completed-tasks-this-session"
+  {:ns "hive-datascript.swarm.coordination.session-registry",
+   :var "get-completed-tasks-this-session"},
+  "get-kanban-movements-this-session"
+  {:ns "hive-datascript.swarm.coordination.session-registry",
+   :var "get-kanban-movements-this-session"},
+  "register-completed-task!"
+  {:ns "hive-datascript.swarm.coordination.session-registry",
+   :var "register-completed-task!"},
+  "register-kanban-movement!"
+  {:ns "hive-datascript.swarm.coordination.session-registry",
+   :var "register-kanban-movement!"}},
+ :values {}}

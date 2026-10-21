@@ -1,0 +1,58 @@
+{:case-0
+ {:out true,
+  :in
+  {:grounding-threshold 0.5, :plan-only? nil, :tests-passed? true}},
+ :case-1
+ {:out true,
+  :in
+  {:grounding-score 1.0,
+   :grounding-threshold 0.8,
+   :silence-iterations 4,
+   :abstract-retries 0,
+   :plan-valid? nil,
+   :tests-passed? false,
+   :task "t"}},
+ :case-2
+ {:out false,
+  :in
+  {:grounding-threshold 0.8,
+   :abstract-retries 2,
+   :context-loaded? nil,
+   :plan {:steps ["WK" "3d"]},
+   :agent-id nil}},
+ :case-3 {:out true, :in {:plan-only? false, :tests-passed? false}},
+ :case-4
+ {:out true,
+  :in
+  {:grounding-score 1.0,
+   :grounding-threshold 0.8,
+   :abstract-retries 1,
+   :tests-passed? nil,
+   :context-loaded? nil,
+   :plan nil}},
+ :case-5
+ {:out false,
+  :in
+  {:grounding-threshold 0.8,
+   :abstract-retries 2,
+   :plan-valid? nil,
+   :plan-only? false,
+   :tests-passed? nil,
+   :context-loaded? true,
+   :error "boom",
+   :task nil}},
+ :case-6
+ {:out true,
+  :in
+  {:silence-iterations 0,
+   :plan-valid? nil,
+   :plan-only? false,
+   :error nil,
+   :task nil}},
+ :case-7
+ {:out false,
+  :in
+  {:silence-iterations 1,
+   :abstract-retries 2,
+   :plan-only? false,
+   :plan {:steps ["" ""]}}}}

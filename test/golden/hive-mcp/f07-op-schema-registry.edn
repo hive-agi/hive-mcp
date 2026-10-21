@@ -1,0 +1,6 @@
+{:registered [[:f07.op/alpha :f07.op/beta] [:f07.op/gamma] nil],
+ :owned
+ #:f07{:addon-a [:f07.op/alpha :f07.op/beta],
+       :addon-b [:f07.op/gamma]},
+ :deregister [[:f07.op/alpha :f07.op/beta] []],
+ :owned-after #:f07{:addon-b [:f07.op/gamma]}}

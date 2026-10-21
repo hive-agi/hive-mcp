@@ -1,0 +1,18 @@
+{:case-0
+ {:out {:enabled? false, :home "/h/a"},
+  :in ({:runtime {:enabled? false, :home "/h/a"}})},
+ :case-1 {:out {}, :in ({:runtime :off})},
+ :case-2 {:out {}, :in ({:runtime "on"})},
+ :case-3 {:out {}, :in ({:runtime "on"})},
+ :case-4
+ {:out {:enabled? true, :home "/h/b"},
+  :in ({:runtime {:enabled? true, :home "/h/b"}})},
+ :case-5
+ {:out {:enabled? true, :home "/h/a"},
+  :in ({:runtime {:enabled? true, :home "/h/a"}})},
+ :case-6
+ {:out {:enabled? false, :home "/h/a"},
+  :in ({:runtime {:enabled? false, :home "/h/a"}})},
+ :case-7
+ {:out {:enabled? true, :home "/h/a"},
+  :in ({:runtime {:enabled? true, :home "/h/a"}})}}

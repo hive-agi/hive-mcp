@@ -1,0 +1,9 @@
+{:calls
+ {"clear-agent!" {:threw "java.lang.NullPointerException"},
+  "get-agent-messages" {:threw "java.lang.NullPointerException"},
+  "get-status" {:threw "java.lang.NullPointerException"},
+  "register-agent!" {:threw "java.lang.NullPointerException"}},
+ :values
+ {"AgentId" "clojure.lang.PersistentVector",
+  "AgentView" "clojure.lang.PersistentVector",
+  "Status" "clojure.lang.PersistentVector"}}

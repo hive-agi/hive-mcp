@@ -29,7 +29,9 @@
   (resources data) -> data' (terminals (resources fsm) -> result); this ns is
   called FROM WITHIN handler bodies."
   (:require [hive-mcp.dns.result :refer [rescue]]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.workflows.schema :as wfs]))
 
 (defn- log-at
   "Dispatch a RUNTIME log level to timbre's compile-time level macros. Avoids the
@@ -78,6 +80,20 @@
   "Shared DegradeContinue policy singleton."
   (->DegradeContinue))
 
+(def Policy
+  "An IDegradePolicy, or nil for the hard-propagate (no catch) mode."
+  [:maybe [:fn {:gen/elements [fatal continue] :error/message "must satisfy IDegradePolicy"}
+           #(satisfies? IDegradePolicy %)]])
+
+(def Step
+  "A boundary-step descriptor."
+  [:map
+   [:present? {:optional true} :any]
+   [:run {:optional true} wfs/Fn]
+   [:absent {:optional true} wfs/Fn]
+   [:policy {:optional true} Policy]
+   [:spec {:optional true} [:maybe :map]]])
+
 (defn boundary-step
   "Invariant effect envelope: guard -> try effect -> on-success | on-throw ->
    policy | absent. step keys:
@@ -97,12 +113,16 @@
       (run data))
     (absent data)))
 
+(m/=> boundary-step [:=> [:cat wfs/Data Step] wfs/Data])
+
 (defn now-str
   "Current time as a string via the injectable clock (:clock-fn resources),
    defaulting to java.time.Instant/now. The single clock seam; default output is
    byte-identical to the old direct (str (java.time.Instant/now)) calls."
   [resources]
   (str ((or (:clock-fn resources) #(java.time.Instant/now)))))
+
+(m/=> now-str [:=> [:cat wfs/Resources] :string])
 
 (defn shout!
   "Rescue-guarded always-fires non-critical hook (ex saa maybe-shout!). A shout
@@ -111,10 +131,14 @@
   (when-let [f (:shout-fn resources)]
     (rescue nil (f agent-id phase message))))
 
+(m/=> shout! [:=> [:cat wfs/Resources :any :keyword :string] :any])
+
 (defn always
   "Trivial dispatch predicate — always true. Single home for the copies in
    wrap/complete/catchup/saa.predicates."
   [_data] true)
+
+(m/=> always [:=> [:cat :any] [:= true]])
 
 (defn trace-log-enter
   "Clock-injected :pre interceptor (fsm resources)->fsm appending an :enter trace
@@ -124,11 +148,15 @@
   (update-in fsm [:data :trace-log] (fnil conj [])
              {:state current-state-id :at (now-str resources) :direction :enter}))
 
+(m/=> trace-log-enter [:=> [:cat [:map [:current-state-id {:optional true} :any] [:data {:optional true} wfs/Data]] wfs/Resources] wfs/TracedFsm])
+
 (defn trace-log-exit
   "Clock-injected :post interceptor twin appending an :exit trace entry."
   [{:keys [current-state-id] :as fsm} resources]
   (update-in fsm [:data :trace-log] (fnil conj [])
              {:state current-state-id :at (now-str resources) :direction :exit}))
+
+(m/=> trace-log-exit [:=> [:cat [:map [:current-state-id {:optional true} :any] [:data {:optional true} wfs/Data]] wfs/Resources] wfs/TracedFsm])
 
 (defn default-handle-error
   "Factory returning a terminal (resources fsm)->throws handler for the wrap+complete
@@ -141,6 +169,8 @@
                     {:agent-id (:agent-id data)
                      :data (select-keys data data-keys)
                      :error error}))))
+
+(m/=> default-handle-error [:=> [:cat :string [:sequential :any]] wfs/Fn])
 
 (defn resolve-session-identity
   "Resolve the {:agent-id :directory :project-id} triad with data-then-resources
@@ -164,6 +194,19 @@
       :directory directory
       :project-id (when derive-project? (or raw project-default))})))
 
+(def SessionIdentity
+  "The {:agent-id :directory :project-id} triad; every key is present, any may be nil."
+  [:map [:agent-id :any] [:directory :any] [:project-id :any]])
+
+(m/=> resolve-session-identity
+  [:function
+   [:=> [:cat wfs/Resources wfs/Data] SessionIdentity]
+   [:=> [:cat wfs/Resources wfs/Data
+         [:maybe [:map [:derive-project? {:optional true} :boolean]
+                  [:rescue-scope? {:optional true} :boolean]
+                  [:project-default {:optional true} :any]]]]
+    SessionIdentity]])
+
 (defn handle-evict
   "Shared evict boundary step. `policy` selects the fatal-vs-degrade twin:
      nil        (complete-session) => NO catch, a thrown evict-fn propagates.
@@ -181,6 +224,8 @@
                  :delta (fn [ex] {:eviction {:evicted 0 :skipped true
                                              :degraded true :error (ex-message ex)}})}})))
 
+(m/=> handle-evict [:=> [:cat wfs/Resources wfs/Data Policy] [:map [:eviction wfs/Eviction]]])
+
 (defn mark-task-inprogress!
   "Mark a single kanban task in-progress. `update-fn` is INJECTED (callers pass
    c-kanban/handle-kanban) so support stays below the tools stratum. Skips nil
@@ -190,6 +235,8 @@
     (rescue nil
             (update-fn {:command "update" :task_id task-id
                         :new_status "inprogress" :directory directory}))))
+
+(m/=> mark-task-inprogress! [:=> [:cat wfs/Fn [:maybe :string] :any] :any])
 
 (defn mark-tasks-inprogress!
   "Batch in-progress marker with per-item rescue (one bad task never aborts the rest).
@@ -206,3 +253,10 @@
      (rescue nil
              (update-fn {:command "update" :task_id task-id
                          :new_status "inprogress" :directory directory})))))
+
+(m/=> mark-tasks-inprogress!
+  [:function
+   [:=> [:cat wfs/Fn [:maybe :string] [:maybe [:sequential [:maybe :map]]]] :nil]
+   [:=> [:cat wfs/Fn [:maybe :string] [:maybe [:sequential [:maybe :map]]]
+         [:maybe [:map [:skip-nil? {:optional true} :boolean]]]]
+    :nil]])

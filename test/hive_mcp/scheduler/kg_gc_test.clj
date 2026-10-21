@@ -1,7 +1,9 @@
 (ns hive-mcp.scheduler.kg-gc-test
   "The KG GC lane must not read an invisible universe as a clean graph."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
-            [hive-mcp.scheduler.kg-gc :as lane]))
+            [hive-mcp.scheduler.kg-gc :as lane]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]
+            [hive-test.golden :refer [deftest-golden]]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -74,3 +76,65 @@
   (is (thrown? Exception (lane/run-lane! {:cleanup-fn (fn [_] (throw (Exception. "boom")))
                                           :heap-fn (constantly 0.1) :enabled true :force? true})))
   (is (false? (:running? (lane/status)))))
+
+;;; ---------------------------------------------------------------------------
+;;; verdict: the selected / collected split. :collected counts only finished
+;;; details; :edges-removed sums effect counts of every non-demoted detail,
+;;; finished or not (a partial prune has already removed what it removed).
+;;; ---------------------------------------------------------------------------
+
+(def ^:private CleanupResult
+  [:map
+   [:universe [:map [:sources [:enum 0 4 9]]]]
+   [:blind [:enum [] [] [{:class :edges :reason "io"}]]]
+   [:orphaned [:int {:min 0 :max 4}]]
+   [:pruned {:optional true} [:int {:min 0 :max 4}]]
+   [:errors {:optional true} [:enum 0 0 2]]
+   [:error {:optional true} [:enum "store down"]]
+   [:next-cursor {:optional true} [:enum "synth-1" "synth-9"]]
+   [:partial {:optional true} [:vector {:max 2} [:map [:stopped [:enum :deadline :heap-pressure]]]]]
+   [:details [:vector {:max 5} [:map [:complete? :boolean]
+                                [:outcome [:enum :orphaned :pruned :demoted]]
+                                [:effect-count [:int {:min 0 :max 5}]]]]]])
+
+(deftrifecta-from-schema verdict-splits-selected-from-collected
+  #'lane/verdict
+  {:in [:cat CleanupResult]
+   :out lane/Verdict
+   :rel (fn [[r] out]
+          (let [done  (filter :complete? (:details r))
+                n     (fn [o] (count (filter #(= o (:outcome %)) done)))]
+            (and (= (:collected out)
+                    {:orphaned (n :orphaned) :pruned (n :pruned) :demoted (n :demoted)
+                     :total (+ (n :orphaned) (n :pruned) (n :demoted))
+                     :edges-removed (reduce + 0 (map :effect-count
+                                                     (remove #(= :demoted (:outcome %)) (:details r))))})
+                 (= (:selected out) {:orphaned (:orphaned r) :pruned (or (:pruned r) 0) :demoted 0})
+                 (= (:errors out) (or (:errors r) 0))
+                 (= (get-in out [:coverage :cursor]) (:next-cursor r))
+                 (= (:stopped out) (some :stopped (:partial r)))
+                 (= (some #(= :lane (:class %)) (:blind out)) (when (:error r) true)))))
+   :classify (fn [_ out] (cond (:vacuous? out) :vacuous (:ok? out) :ok :else :blind))
+   :classify-domain #{:vacuous :ok :blind}
+   :classify-floor 15
+   :num-tests 300})
+
+(deftest-golden lane-cycle-golden
+  "test/golden/hive-mcp/scheduler/kg-gc-lane-cycles.edn"
+  ;; Every port is injected (cleanup-fn, heap-fn); :duration-ms is the only
+  ;; clock-derived field and is dropped. The fixture resets the lane state.
+  (let [results [{:universe {:sources 3} :blind [] :scanned 3 :orphaned 1 :errors 0
+                  :next-cursor "synth-1"
+                  :details [{:complete? true :outcome :orphaned :effect-count 2}]}
+                 {:universe {:sources 0} :blind [] :scanned 0 :orphaned 0 :errors 0
+                  :details []}]
+        seen    (atom [])
+        cleanup (fn [opts] (swap! seen conj (select-keys opts [:after]))
+                  (nth results (dec (count @seen))))
+        run     #(dissoc (lane/run-lane! (merge {:cleanup-fn cleanup :heap-fn (constantly 0.2)
+                                                 :enabled true :force? true} %))
+                         :duration-ms)]
+    {:first  (run {})
+     :second (run {})
+     :gated  (run {:force? false})
+     :cursors @seen}))

@@ -1,0 +1,17 @@
+{:case-0 {:out ["synth-c" "synth-c"], :in (["synth-c" "synth-c"] nil)},
+ :case-1
+ {:out ["synth-c" "synth-c" "synth-a"],
+  :in (["synth-c" "synth-c" "synth-a"] "synth-b")},
+ :case-2 {:out [], :in ([] nil)},
+ :case-3 {:out ["synth-a"], :in (["synth-a"] "synth-c")},
+ :case-4
+ {:out
+  ["synth-c" "synth-20260101T000000-x" "synth-b" "synth-c" "synth-a"],
+  :in
+  (["synth-c" "synth-20260101T000000-x" "synth-b" "synth-c" "synth-a"]
+   nil)},
+ :case-5 {:out ["synth-c" "synth-a"], :in (["synth-c" "synth-a"] nil)},
+ :case-6 {:out ["synth-b"], :in (["synth-b"] nil)},
+ :case-7
+ {:out ["synth-20260101T000000-x" "synth-c"],
+  :in (["synth-20260101T000000-x" "synth-c"] nil)}}

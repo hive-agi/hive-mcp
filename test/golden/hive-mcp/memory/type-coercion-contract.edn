@@ -1,0 +1,8 @@
+{:case-0 {:out #:adt{:variant :axiom, :type :MemoryType}, :in "axiom"},
+ :case-1 {:out nil, :in "unknown-safe-type"},
+ :case-2 {:out #:adt{:variant :note, :type :MemoryType}, :in "note"},
+ :case-3 {:out #:adt{:variant :axiom, :type :MemoryType}, :in "axiom"},
+ :case-4 {:out #:adt{:variant :axiom, :type :MemoryType}, :in "axiom"},
+ :case-5 {:out nil, :in "unknown-safe-type"},
+ :case-6 {:out #:adt{:variant :note, :type :MemoryType}, :in "note"},
+ :case-7 {:out #:adt{:variant :axiom, :type :MemoryType}, :in "axiom"}}

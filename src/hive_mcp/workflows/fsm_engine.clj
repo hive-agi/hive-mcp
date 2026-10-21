@@ -16,7 +16,8 @@
   (:require [clojure.string]
             [hive-mcp.protocols.workflow :as proto]
             [hive-mcp.workflows.registry :as registry]
-            [hive.events.fsm :as fsm]))
+            [hive.events.fsm :as fsm]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -328,6 +329,10 @@
   []
   (->FSMWorkflowEngine))
 
+(m/=> create-engine [:=> [:cat] [:fn {:gen/fmap (fn [_] (->FSMWorkflowEngine)) :gen/schema :nil
+                                     :error/message "must be an FSMWorkflowEngine"}
+                                 #(instance? FSMWorkflowEngine %)]])
+
 ;; =============================================================================
 ;; Utility
 ;; =============================================================================
@@ -337,3 +342,5 @@
   []
   (reset! workflow-statuses {})
   nil)
+
+(m/=> reset-statuses! [:=> [:cat] :nil])

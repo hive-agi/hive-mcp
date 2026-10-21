@@ -10,7 +10,8 @@
    - validate-backup exposes :backup/project-id
    - Prevents cross-project restore contamination"
 
-  (:require [clojure.java.io :as io]
+  (:require [malli.core :as m]
+            [clojure.java.io :as io]
             [clojure.edn :as edn]
             [clojure.string :as str]
             [hive-mcp.knowledge-graph.scope :as kg-scope]
@@ -44,6 +45,8 @@
       (.mkdirs f))
     dir))
 
+(m/=> ensure-backup-dir! [:=> [:cat :string] :string])
+
 (defn generate-backup-name
   "Generate unique backup filename with timestamp.
 
@@ -60,6 +63,8 @@
         timestamp (.format now formatter)]
     (format "%s-%s-%s.edn" (name scope) (name backend) timestamp)))
 
+(m/=> generate-backup-name [:=> [:cat :keyword :keyword] :string])
+
 (defn parse-backup-name
   "Parse backup filename to extract metadata.
 
@@ -72,6 +77,8 @@
      :backend (keyword backend)
      :timestamp timestamp
      :filename filename}))
+
+(m/=> parse-backup-name [:=> [:cat :string] [:maybe [:map [:scope :keyword] [:backend :keyword] [:timestamp :string] [:filename :string]]]])
 
 ;; =============================================================================
 ;; Backup Listing
@@ -138,6 +145,8 @@
            vec)
       [])))
 
+(m/=> list-backups [:function [:=> [:cat] [:vector :map]] [:=> [:cat [:maybe :map]] [:vector :map]]])
+
 (defn latest-backup
   "Get the most recent backup matching criteria.
 
@@ -148,6 +157,8 @@
    Returns backup metadata map or nil."
   [scope & [opts]]
   (first (list-backups (assoc opts :scope scope :limit 1))))
+
+(m/=> latest-backup [:function [:=> [:cat :keyword] [:maybe :map]] [:=> [:cat :keyword [:maybe :map]] [:maybe :map]]])
 
 ;; =============================================================================
 ;; Backup Metadata
@@ -177,6 +188,8 @@
             :backup/hostname (rescue "unknown" (.getHostName (java.net.InetAddress/getLocalHost)))
             :backup/counts counts})))
 
+(m/=> backup-metadata [:function [:=> [:cat :keyword :keyword :map] :map] [:=> [:cat :keyword :keyword :map [:maybe :string]] :map]])
+
 ;; =============================================================================
 ;; File I/O
 ;; =============================================================================
@@ -203,6 +216,8 @@
          :size size
          :metadata metadata}))))
 
+(m/=> write-backup! [:=> [:cat :string :map :map] [:map [:success :boolean] [:path :string] [:size :int] [:metadata :map]]])
+
 (defn read-backup
   "Read backup file and parse EDN.
 
@@ -218,6 +233,8 @@
                                :scope (:backup/scope data)
                                :counts (:backup/counts data)})
     data))
+
+(m/=> read-backup [:=> [:cat :string] :map])
 
 ;; =============================================================================
 ;; Validation
@@ -251,6 +268,8 @@
       {:valid? false
        :errors [(str "Failed to read backup: " (.getMessage e))]
        :metadata nil})))
+
+(m/=> validate-backup [:=> [:cat :string] [:map [:valid? :boolean] [:errors [:sequential :string]] [:metadata [:maybe :map]]]])
 
 ;; =============================================================================
 ;; Scope Guard for Restore
@@ -299,3 +318,5 @@
        :target-project-id target-project-id
        :reason (format "Backup is from project '%s' but target is '%s'. Use :force-cross-project to override."
                        backup-pid target-project-id)})))
+
+(m/=> check-scope-compatibility [:=> [:cat :map [:maybe :string]] [:map [:compatible? :boolean] [:backup-project-id :string] [:target-project-id [:maybe :string]] [:reason :string]]])

@@ -1,0 +1,25 @@
+{:installed [true true true true],
+ :answers
+ {:disc [5.0 {:propagated 1} []],
+  :emacs [:d1 {:daemon-id :d1, :reason :test} true true :d1 :d1],
+  :metrics [nil nil nil nil],
+  :session [nil nil]},
+ :current [true true true true],
+ :calls
+ [[:disc/value :hash-mismatch]
+  [:disc/propagate "f.clj" 5.0 :hash-mismatch]
+  [:disc/top {:n 2}]
+  [:emacs/ensure]
+  [:emacs/select "l"]
+  [:emacs/bind :d1 "l"]
+  [:emacs/unbind :d1 "l"]
+  [:emacs/get "l"]
+  [:emacs/default]
+  [:metrics/inc :e/x :info]
+  [:metrics/observe "t" 0.5]
+  [:metrics/lings 3]
+  [:metrics/effect {:counter :c}]
+  [:session/start "a"]
+  [:session/hooks {:hooks []}]],
+ :uninstalled [nil nil nil nil nil nil nil nil],
+ :fallback-is-not-the-stub [false false]}

@@ -1,0 +1,32 @@
+{:case-0
+ {:out
+  "Operation '' has $ref to 'x' but doesn't declare it in depends_on",
+  :in (nil "x")},
+ :case-1
+ {:out
+  "Operation '' has $ref to 'ghost' but doesn't declare it in depends_on",
+  :in (nil "ghost")},
+ :case-2
+ {:out
+  "Operation 'a' has $ref to '' but doesn't declare it in depends_on",
+  :in ("a" "")},
+ :case-3
+ {:out
+  "Operation 'b' has $ref to '' but doesn't declare it in depends_on",
+  :in ("b" "")},
+ :case-4
+ {:out
+  "Operation 'a' has $ref to 'ghost' but doesn't declare it in depends_on",
+  :in ("a" "ghost")},
+ :case-5
+ {:out
+  "Operation 'a' has $ref to 'ghost' but doesn't declare it in depends_on",
+  :in ("a" "ghost")},
+ :case-6
+ {:out
+  "Operation 'b' has $ref to 'ghost' but doesn't declare it in depends_on",
+  :in ("b" "ghost")},
+ :case-7
+ {:out
+  "Operation '' has $ref to 'x' but doesn't declare it in depends_on",
+  :in (nil "x")}}

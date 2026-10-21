@@ -105,6 +105,26 @@
             (is (= 1 (:count parsed)))
             (is (= "n-1" (-> parsed :results first :id)))))))))
 
+(deftest explicit-scope-is-a-strict-store-filter-test
+  (testing "an explicit scope reaches the store as that project alone, not its
+            ancestors or global (kanban 20260519145016-4561f6bc); a required
+            ingestion-chunk tag lifts only that default exclusion"
+    (let [seen  (atom [])
+          store (->StubStore (fn [_q opts] (swap! seen conj opts) []))]
+      (with-stubs
+        (with-stub-store store
+          (search/handle-search-semantic
+           {:query "consensus" :scope "topic:data" :include_descendants false
+            :tags ["ingestion-chunk"] :directory "/tmp/test"})
+          (is (= ["topic:data"] (:project-ids (first @seen)))
+              "visible-scopes would have added test-proj's ancestors and global")
+          (is (= ["carto"] (:exclude-tags (first @seen)))
+              "asking for ingestion-chunk by name must not exclude it")
+          (reset! seen [])
+          (search/handle-search-semantic
+           {:query "consensus" :scope "all" :directory "/tmp/test"})
+          (is (nil? (:project-ids (first @seen))) "scope=all lifts the project filter"))))))
+
 ;; =============================================================================
 ;; Slow embedding → structured err within budget
 ;; =============================================================================

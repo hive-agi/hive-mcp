@@ -20,7 +20,8 @@
    With nothing installed it late-binds BY SYMBOL through
    `hive-mcp.extensions.soft` for as long as `emacs-ext` ships in core,
    and answers the Noop once it does not."
-  (:require [hive-mcp.extensions.soft :as soft]))
+  (:require [hive-mcp.extensions.soft :as soft]
+            [malli.core :as m]))
 
 (defprotocol IEmacsDaemons
   "Placing a ling on an Emacs daemon."
@@ -130,3 +131,33 @@
 (defn unbind-ling! [daemon-id slave-id] (-unbind-ling! (current) daemon-id slave-id))
 (defn get-daemon-for-ling [slave-id] (-get-daemon-for-ling (current) slave-id))
 (defn default-daemon-id [] (-default-daemon-id (current)))
+
+;; ---------------------------------------------------------------------------
+;; Contracts
+;; ---------------------------------------------------------------------------
+
+(def Impl
+  "An `IEmacsDaemons` host. Generates as `noop`."
+  [:fn {:error/message "should satisfy IEmacsDaemons"
+        :gen/schema :nil
+        :gen/fmap (fn [_] noop)}
+   (fn [x] (satisfies? IEmacsDaemons x))])
+
+(def Selection
+  "{:daemon-id ... :reason ...}, or nil when there is no host."
+  [:maybe [:map [:daemon-id {:optional true} :any] [:reason {:optional true} :any]]])
+
+(m/=> reset-cache! [:=> [:cat] :nil])
+(m/=> install! [:=> [:cat Impl] Impl])
+(m/=> uninstall! [:=> [:cat] :nil])
+(m/=> current [:=> [:cat] Impl])
+;; The daemon questions forward the host's own answer, whose shape the port
+;; does not fix (daemon ids are strings or keywords, a placement is a store
+;; row); swarm.sync passes select-daemon-for-ling a {:project-id ..} map, so
+;; the ids are :any too. Only the selection is promised a shape.
+(m/=> ensure-default-daemon! [:=> [:cat] :any])
+(m/=> select-daemon-for-ling [:=> [:cat :any] Selection])
+(m/=> bind-ling! [:=> [:cat :any :any] :any])
+(m/=> unbind-ling! [:=> [:cat :any :any] :any])
+(m/=> get-daemon-for-ling [:=> [:cat :any] :any])
+(m/=> default-daemon-id [:=> [:cat] :any])

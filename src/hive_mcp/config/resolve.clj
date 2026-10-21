@@ -4,7 +4,8 @@
   (:require [clojure.java.shell :as shell]
             [clojure.string :as str]
             [hive-dsl.result :refer [rescue]]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -32,6 +33,8 @@
                     (if parse (parse raw) raw)))]
     (or effective-val env-val default)))
 
+(m/=> get-service-value [:=> [:cat :map :keyword :keyword [:* :any]] :any])
+
 ;; =============================================================================
 ;; Carto Store Resolution
 ;; =============================================================================
@@ -58,6 +61,8 @@
                    fallback)
       :else (do (log/warn "resolve-carto-store: neither :carto-store nor :memory-store configured.")
                 nil))))
+
+(m/=> resolve-carto-store [:=> [:cat :map] [:maybe :map]])
 
 ;; =============================================================================
 ;; Secrets
@@ -97,6 +102,8 @@
         resolved   (resolve-secret-value config-val)]
     (or resolved (System/getenv env-name))))
 
+(m/=> get-secret [:=> [:cat :map :keyword] :any])
+
 ;; =============================================================================
 ;; Parent Rules
 ;; =============================================================================
@@ -115,3 +122,5 @@
                           (.startsWith norm-path path-prefix))))
            first
            :parent-id))))
+
+(m/=> get-parent-for-path [:=> [:cat [:maybe [:sequential [:map [:path-prefix {:optional true} :string] [:parent-id {:optional true} :any]]]] :any] :any])

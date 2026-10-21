@@ -7,7 +7,8 @@
    A HprofFile is the addressable unit of work: a path on disk, a byte
    size, and a last-modified timestamp. Policies describe retention
    intent — how many dumps to keep, whether to compress survivors, and
-   the disk-pressure floor that must hold for the JVM to safely boot.")
+   the disk-pressure floor that must hold for the JVM to safely boot."
+  (:require [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -32,3 +33,5 @@
    Always returns a complete policy map (never nil)."
   [overrides]
   (merge default-policy (or overrides {})))
+
+(m/=> merge-policy [:=> [:cat [:maybe :map]] [:map [:dir :string] [:keep-n :int] [:gzip? :boolean] [:min-free-gb :int]]])

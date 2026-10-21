@@ -1,0 +1,3 @@
+{:status
+ {:running? false, :port nil, :bind nil, :clients 0, :auth? false},
+ :stop-again nil}

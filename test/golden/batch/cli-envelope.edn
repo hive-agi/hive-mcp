@@ -1,0 +1,9 @@
+{:empty
+ {:type "text",
+  :text
+  "operations is required (array of {command, ...} objects) for batch-add",
+  :isError true},
+ :two-ops
+ {:type "text",
+  :text
+  "{\"results\":[{\"success\":true,\"command\":\"add\",\"result\":{\"id\":1}},{\"success\":true,\"command\":\"add\",\"result\":{\"id\":2}},{\"success\":false,\"command\":\"add\",\"error\":\"boom\"}],\"summary\":{\"total\":3,\"success\":2,\"failed\":1},\"errors\":[\"one op failed\"]}"}}

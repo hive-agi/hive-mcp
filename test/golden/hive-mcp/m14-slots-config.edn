@@ -1,0 +1,20 @@
+{:policy
+ {:carto {:strategy [:truncate :throw]},
+  :default {:strategy :audit, :max-attempts 1},
+  :memory {:strategy :audit, :max-attempts 2},
+  :sessions {:strategy [:truncate :throw], :max-attempts 2},
+  :unknown nil},
+ :backend
+ {:carto :datascript,
+  :carto-vec :proximum,
+  :memory :datalevin,
+  :sessions :datalevin,
+  :unknown :datahike},
+ :custom-defaults [:datascript :datahike {:only :datascript}],
+ :production-default-mapping
+ {:carto :datalevin,
+  :memory :datahike,
+  :sessions :datalevin,
+  :default :datahike,
+  :carto-vec :proximum,
+  :memory-vec :proximum}}

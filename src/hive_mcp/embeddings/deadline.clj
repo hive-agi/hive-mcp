@@ -131,6 +131,36 @@
   [d]
   (not (viable? d)))
 
+(def Clock
+  "Anything satisfying IClock. Generates FixedClocks."
+  [:fn {:gen/schema [:int {:min 0 :max 1000000}]
+        :gen/fmap #(->FixedClock (atom %))}
+   #(satisfies? IClock %)])
+
+(def FixedClockSchema
+  "A FixedClock: an IClock whose time lives in `:now-ms-atom`."
+  [:fn {:gen/schema [:int {:min 0 :max 1000000}]
+        :gen/fmap #(->FixedClock (atom %))}
+   #(instance? FixedClock %)])
+
+(def DeadlineSchema
+  "A Deadline record: a clock plus the monotonic ms it expires at."
+  [:and
+   [:fn {:gen/schema [:int {:min 0 :max 1000000}]
+         :gen/fmap #(->Deadline (->FixedClock (atom 0)) %)}
+    #(instance? Deadline %)]
+   [:map [:clock Clock] [:expires-at-ms :int]]])
+
+(m/=> system-clock [:=> [:cat] [:fn {:gen/elements [(->SystemClock)]} #(instance? SystemClock %)]])
+
+(m/=> fixed-clock [:=> [:cat :int] FixedClockSchema])
+
+(m/=> advance! [:=> [:cat FixedClockSchema :int] :int])
+
+(m/=> deadline [:function
+                [:=> [:cat :int] DeadlineSchema]
+                [:=> [:cat Clock :int] DeadlineSchema]])
+
 ;; =============================================================================
 ;; Contracts (malli, Rung 2)
 ;; =============================================================================
@@ -139,7 +169,9 @@
 
 (m/=> cap-budget [:=> [:cat Budget] Ms])
 
-(m/=> viable-remaining? [:=> [:cat Remaining] :boolean])
+;; The docstring promises a malformed budget is "simply not viable", so the
+;; input admits any value; Remaining is listed first so generation favours it.
+(m/=> viable-remaining? [:=> [:cat [:or Remaining :any]] :boolean])
 
 (m/=> remaining-ms [:=> [:cat HasExpiry] [:int {:min 0}]])
 

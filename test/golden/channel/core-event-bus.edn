@@ -1,0 +1,13 @@
+[[:publish true]
+ [:got-alpha {:type :f02/alpha, :n 1}]
+ [:emit nil]
+ [:got-beta
+  {"agent-id" "l1",
+   "already" "str",
+   "type" "beta",
+   "timestamp" true,
+   :type :f02/beta}]
+ [:no-type "Event must have :type"]
+ [:no-server [nil nil nil nil]]
+ [:unsubscribe nil]
+ [:closed-take nil]]

@@ -1,0 +1,36 @@
+{:ping {:status 200, :body {:jsonrpc "2.0", :id 1, :result {}}},
+ :right-token {:status 200, :body {:jsonrpc "2.0", :id 4, :result {}}},
+ :bearer [true true false],
+ :wrong-token
+ {:status 401,
+  :www-auth "Bearer",
+  :body {:error "Invalid or missing bearer token"}},
+ :unknown
+ {:status 200,
+  :body
+  {:jsonrpc "2.0",
+   :id 2,
+   :error {:code -32601, :message "Unknown method: no/such"}}},
+ :notification {:status 202},
+ :throws
+ {:status 200,
+  :body
+  {:jsonrpc "2.0",
+   :id 3,
+   :error {:code -32603, :message "Request handler failed"}}},
+ :no-token
+ {:status 401,
+  :www-auth "Bearer",
+  :body {:error "Invalid or missing bearer token"}},
+ :list
+ {:status 200,
+  :body {:jsonrpc "2.0", :id "a", :result {:tools [{:name "echo"}]}}},
+ :not-found {:status 404, :body {:error "not found"}},
+ :health {:status 200, :body {:status "healthy", :service "mcp-http"}},
+ :get-mcp {:status 405, :allow "POST", :body {:error "POST only"}},
+ :not-json
+ {:status 400,
+  :body
+  {:jsonrpc "2.0",
+   :id nil,
+   :error {:code -32700, :message "Body is not JSON"}}}}

@@ -2,7 +2,8 @@
   "Pure domain calculations for hint generation.
   Extracted from hints.clj to reduce cyclomatic complexity.
   All functions are pure calculations (no I/O, no side effects)."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -148,3 +149,59 @@
            (mapcat (fn [[_ ids-str]] (str/split (str/trim ids-str) #"\s+")))
            (remove str/blank?)
            vec))))
+
+;; ---------------------------------------------------------------------------
+;; Contract schemas for the pure hint-domain calculations. They live here,
+;; beside the fns they describe, because hive-mcp.agent.* is a frozen
+;; extraction prefix (hive-mcp.kernel.census): no new namespace may be added
+;; under it.
+;; ---------------------------------------------------------------------------
+
+(def Items
+  "Any collection of items the sections iterate (vector, list, set, lazy seq)."
+  [:maybe [:or [:sequential :any] [:set :any]]])
+
+(def Strings
+  "A collection of strings (tags): vector, list or set."
+  [:maybe [:or [:sequential :string] [:set :string]]])
+
+(def TagSets
+  "A collection of tag collections."
+  [:maybe [:sequential [:sequential :string]]])
+
+(def Section
+  "A rendered section: lines, or nil when there is nothing to render."
+  [:maybe [:vector :string]])
+
+(def GitInfo
+  [:maybe [:map-of :any :any]])
+
+(m/=> or-val [:=> [:cat :any :any] :any])
+
+(m/=> meaningful-tags [:=> [:cat Strings] [:vector :string]])
+
+;; Truthy answer: the matching scope tag (a string), else `contains?`'s boolean.
+(m/=> scope-visible? [:=> [:cat Strings :any [:maybe [:map-of :any :any]]] [:or :string :boolean]])
+
+(m/=> axiom-section [:=> [:cat Items] Section])
+
+(m/=> read-id-section [:=> [:cat Items] Section])
+
+(m/=> query-section [:=> [:cat Items] Section])
+
+(m/=> tag-section [:=> [:cat TagSets] Section])
+
+(m/=> kg-section [:=> [:cat Items [:maybe :int]] Section])
+
+(m/=> git-section [:=> [:cat GitInfo] Section])
+
+(m/=> parse-memory-ids [:=> [:cat [:maybe :string]] [:maybe [:vector :string]]])
+
+(m/=> parse-search-queries [:=> [:cat [:maybe :string]] [:maybe [:vector :string]]])
+
+(m/=> parse-tag-queries [:=> [:cat [:maybe :string]] [:maybe [:vector [:vector :string]]]])
+
+(m/=> parse-kg-traversals
+      [:=> [:cat [:maybe :string]] [:maybe [:map [:seeds [:vector :string]] [:depth :int]]]])
+
+(m/=> parse-axiom-ids [:=> [:cat [:maybe :string]] [:maybe [:vector :string]]])

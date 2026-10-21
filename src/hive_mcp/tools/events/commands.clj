@@ -12,7 +12,8 @@
 
    The router (`core.clj`) wraps these with `mcp-json` for the MCP boundary."
   (:require [clojure.string  :as str]
-            [hive-dsl.result :as r]))
+            [hive-dsl.result :as r]
+            [malli.core :as m]))
 
 ;; =============================================================================
 ;; Helpers
@@ -79,6 +80,20 @@
                                  :else        flt)
                        :enabled? true}))))))
 
+(def EventsReply
+  "Every events subcommand answers this envelope (see the ns docstring):
+   success {:ok true :command kw :result data}, error {:ok false :command kw
+   :error msg}."
+  [:or
+   [:map [:ok [:= true]] [:command :keyword] [:result :any]]
+   [:map [:ok [:= false]] [:command :any] [:error :string]]])
+
+(def EventsParams
+  "The params a subcommand reads; open, since MCP forwards every key."
+  [:maybe :map])
+
+(m/=> handle-enable [:=> [:cat EventsParams] EventsReply])
+
 (defn handle-disable
   [params]
   (r/rescue (err :disable "Internal error in events.disable")
@@ -90,6 +105,8 @@
                               (set? flt)   (vec flt)
                               :else        flt)
                     :enabled? (boolean flt)}))))
+
+(m/=> handle-disable [:=> [:cat EventsParams] EventsReply])
 
 ;; =============================================================================
 ;; tail / dump / stats
@@ -118,6 +135,8 @@
                      :count    (count entries)
                      :entries  (mapv entry->edn entries)}))))))
 
+(m/=> handle-tail [:=> [:cat EventsParams] EventsReply])
+
 (defn handle-dump
   [params]
   (r/rescue (err :dump "Internal error in events.dump")
@@ -129,6 +148,8 @@
           (ok :dump {:agent-id aid
                      :count    (count entries)
                      :entries  (mapv entry->edn entries)}))))))
+
+(m/=> handle-dump [:=> [:cat EventsParams] EventsReply])
 
 (defn- handler-registered?-fn
   []
@@ -163,6 +184,8 @@
                                       (update :last-ts  #(some-> % str))))
                       :handlers registered}))))))
 
+(m/=> handle-stats [:=> [:cat EventsParams] EventsReply])
+
 ;; =============================================================================
 ;; register-handler / unreg-fx
 ;; =============================================================================
@@ -187,6 +210,8 @@
           (ok :register-handler {:event-id eid-kw
                                  :symbol   (str fq)}))))))
 
+(m/=> handle-register-handler [:=> [:cat EventsParams] EventsReply])
+
 (defn handle-unreg-fx
   [{:keys [fx-id fx_id]}]
   (r/rescue (err :unreg-fx "Internal error in events.unreg-fx")
@@ -197,6 +222,8 @@
               unreg (resolve-or-throw 'hive.events.fx/unreg-fx)]
           (unreg fxkw)
           (ok :unreg-fx {:fx-id fxkw}))))))
+
+(m/=> handle-unreg-fx [:=> [:cat EventsParams] EventsReply])
 
 ;; =============================================================================
 ;; help
@@ -226,3 +253,5 @@
 (defn handle-help
   [_params]
   (ok :help help-text))
+
+(m/=> handle-help [:=> [:cat EventsParams] [:map [:ok [:= true]] [:command [:= :help]] [:result :string]]])

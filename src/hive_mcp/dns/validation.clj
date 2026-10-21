@@ -8,7 +8,8 @@
    - Mode must be :silent or :explicit (if provided)
    - Port must be valid port number (1-65535) if provided
    - Timeout must be positive integer if provided"
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -36,6 +37,8 @@
                      :field :code
                      :reason :blank}))))
 
+(m/=> validate-code [:=> [:cat :any] :nil])
+
 (defn validate-mode
   "Validate that mode is :silent or :explicit (if provided).
    
@@ -55,6 +58,8 @@
                        :reason :invalid-value
                        :valid #{:silent :explicit}
                        :received mode})))))
+
+(m/=> validate-mode [:=> [:cat :any] :nil])
 
 (defn validate-port
   "Validate that port is a valid port number (1-65535) if provided.
@@ -76,6 +81,8 @@
                        :valid-range [1 65535]
                        :received port})))))
 
+(m/=> validate-port [:=> [:cat :any] :nil])
+
 (defn validate-timeout
   "Validate that timeout is a positive integer if provided.
    
@@ -95,6 +102,8 @@
                        :reason :invalid-value
                        :received timeout})))))
 
+(m/=> validate-timeout [:=> [:cat :any] :nil])
+
 (defn validate-buffer-name
   "Validate that buffer_name is a non-empty string if provided.
    
@@ -112,6 +121,8 @@
                       {:type :validation
                        :field :buffer_name
                        :reason :blank})))))
+
+(m/=> validate-buffer-name [:=> [:cat :any] :nil])
 
 (defn validate-line-number
   "Validate that line is a positive integer if provided.
@@ -131,6 +142,8 @@
                        :field :line
                        :reason :invalid-value
                        :received line})))))
+
+(m/=> validate-line-number [:=> [:cat :any] :nil])
 
 (defn validate-eval-request
   "Validate a REPL evaluation request.
@@ -158,6 +171,8 @@
   (validate-port port)
   (validate-timeout timeout))
 
+(m/=> validate-eval-request [:=> [:cat [:maybe :map]] :nil])
+
 (defn validate-cider-eval-request
   "Validate a CIDER evaluation request (code only required).
    
@@ -170,6 +185,8 @@
    (ex-info \"Code is required\" {:type :validation :field :code :reason :missing})"
   [{:keys [code]}]
   (validate-code code))
+
+(m/=> validate-cider-eval-request [:=> [:cat [:maybe :map]] :nil])
 
 (defn validate-buffer-request
   "Validate a buffer operation request (buffer_name required).
@@ -184,6 +201,8 @@
   [{:keys [buffer_name]}]
   (validate-buffer-name buffer_name))
 
+(m/=> validate-buffer-request [:=> [:cat [:maybe :map]] :nil])
+
 (defn validate-goto-line-request
   "Validate a goto-line request (line number required).
    
@@ -196,6 +215,8 @@
    (ex-info \"Line number must be positive\" {:type :validation :field :line ...})"
   [{:keys [line]}]
   (validate-line-number line))
+
+(m/=> validate-goto-line-request [:=> [:cat [:maybe :map]] :nil])
 
 (defn wrap-validation-error
   "Wrap a validation error for MCP response format.
@@ -215,6 +236,8 @@
                   (str " (valid range: " (first range) "-" (second range) ")")))
      :isError true}))
 
+(m/=> wrap-validation-error [:=> [:cat :any] [:map [:type [:= "text"]] [:text :string] [:isError [:= true]]]])
+
 (defn escape-elisp-string
   "Escape a string for safe inclusion in Elisp code.
 
@@ -229,6 +252,8 @@
         (str/replace "\\" "\\\\")
         (str/replace "\"" "\\\""))))
 
+(m/=> escape-elisp-string [:=> [:cat [:maybe :string]] [:maybe :string]])
+
 (defn elisp-string
   "Wrap a string as an escaped Elisp string literal with quotes.
 
@@ -241,6 +266,8 @@
   [s]
   (when s
     (str "\"" (escape-elisp-string s) "\"")))
+
+(m/=> elisp-string [:=> [:cat [:maybe :string]] [:maybe :string]])
 
 (defn elisp-optional
   "Wrap an optional value as an Elisp string or return nil.
@@ -255,6 +282,8 @@
   [s]
   (when (and s (seq s))
     (elisp-string s)))
+
+(m/=> elisp-optional [:=> [:cat [:maybe :string]] [:maybe :string]])
 
 ;; ============================================================
 ;; Case Conversion (snake_case <-> kebab-case)
@@ -273,6 +302,8 @@
   (when s
     (str/replace s "_" "-")))
 
+(m/=> snake->kebab [:=> [:cat [:maybe :string]] [:maybe :string]])
+
 (defn normalize-key
   "Convert snake_case keyword to kebab-case keyword.
 
@@ -286,6 +317,8 @@
   (if (keyword? k)
     (keyword (namespace k) (snake->kebab (name k)))
     k))
+
+(m/=> normalize-key [:=> [:cat :any] :any])
 
 (defn normalize-params
   "Convert all snake_case keys in a map to kebab-case.
@@ -302,3 +335,5 @@
   [m]
   (when m
     (into {} (map (fn [[k v]] [(normalize-key k) v]) m))))
+
+(m/=> normalize-params [:=> [:cat [:maybe :map]] [:maybe :map]])

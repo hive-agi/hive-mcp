@@ -1,0 +1,22 @@
+{:step-fresh :fresh,
+ :step-decayed :decayed,
+ :step-pruned :pruned,
+ :after
+ [#:kg-edge{:from "d1",
+            :to "d2",
+            :relation :implements,
+            :confidence 0.48}
+  #:kg-edge{:from "d2",
+            :to "d3",
+            :relation :refines,
+            :confidence 1.0}],
+ :cycle {:evaluated 2, :errors 0, :decayed 1, :pruned 0, :fresh 1},
+ :cycle-scoped
+ {:evaluated 0, :errors 0, :decayed 0, :pruned 0, :fresh 0},
+ :remove-missing false,
+ :final
+ [#:kg-edge{:from "d1",
+            :to "d2",
+            :relation :implements,
+            :confidence 0.45999999999999996}
+  #:kg-edge{:from "d2", :to "d3", :relation :refines, :confidence 1.0}]}

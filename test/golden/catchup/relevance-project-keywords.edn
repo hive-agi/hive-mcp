@@ -1,0 +1,8 @@
+{:case-0 {:out #{}, :in (nil)},
+ :case-1 {:out #{"a-b-c" "a" "b" "c"}, :in ("a-b-c")},
+ :case-2 {:out #{"hive-mcp" "hive" "mcp"}, :in ("hive-mcp")},
+ :case-3 {:out #{}, :in ("global")},
+ :case-4 {:out #{}, :in (nil)},
+ :case-5 {:out #{}, :in (nil)},
+ :case-6 {:out #{}, :in (nil)},
+ :case-7 {:out #{}, :in (nil)}}

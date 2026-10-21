@@ -1,0 +1,5 @@
+{:with-tools-atom
+ {:ret :mcp-stdio, :registered [[:mcp-stdio :tools-atom]]},
+ :without-tools {:ret nil, :registered []},
+ :nil-deps {:ret nil, :registered []},
+ :nil-tools {:ret nil, :registered []}}

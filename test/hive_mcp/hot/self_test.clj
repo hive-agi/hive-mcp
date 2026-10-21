@@ -7,7 +7,8 @@
             [clojure.string]
             [hive-mcp.dispatch.handler]
             [hive-mcp.hot.self :as self]
-            [hive-mcp.protocols.dispatch]))
+            [hive-mcp.protocols.dispatch]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -61,3 +62,41 @@
   (testing "a namespace defining a protocol is picked up with no edit anywhere"
     (is (contains? (self/protocol-namespaces "hive-mcp.hot.") 'hive-mcp.hot.self-test)
         "this test namespace was never added to any list, and is found because it defines a protocol")))
+
+;; ---------------------------------------------------------------------------
+;; Trifectas: the predicate reads protocol METADATA off the publics, and the
+;; derived set is exactly the prefix-scoped loaded namespaces that pass it.
+;; ---------------------------------------------------------------------------
+
+(def ^:private LoadedNs
+  [:enum 'hive-mcp.hot.self-test 'hive-mcp.protocols.dispatch 'hive-mcp.dispatch.handler
+   'hive-mcp.hot.self 'clojure.string 'clojure.core])
+
+(defn- protocol-oracle
+  "Independent reading: some public var carries :protocol metadata."
+  [ns-sym]
+  (boolean (some (comp :protocol meta) (vals (ns-publics ns-sym)))))
+
+(deftrifecta-from-schema defines-protocol?-reads-var-metadata
+  #'self/defines-protocol?
+  {:in [:cat LoadedNs]
+   :out :boolean
+   :rel (fn [[ns-sym] out] (= out (protocol-oracle ns-sym)))
+   :classify (fn [_ out] out)
+   :classify-domain #{true false}
+   ;; distinct from contract-test's self-defines-protocol.edn (other inputs)
+   :golden-path "test/golden/hive-mcp/hot/self-defines-protocol-loaded.edn"
+   :num-tests 100})
+
+(deftrifecta-from-schema protocol-namespaces-is-the-filtered-loaded-set
+  #'self/protocol-namespaces
+  {:in [:cat [:enum "hive-mcp.protocols" "hive-mcp.hot." "hive-mcp.dispatch." "no.such.prefix."]]
+   :out [:set :symbol]
+   :rel (fn [[prefix] out]
+          (= out (into #{} (comp (map ns-name)
+                                 (filter #(clojure.string/starts-with? (str %) prefix))
+                                 (filter protocol-oracle))
+                       (all-ns))))
+   :classify (fn [_ out] (if (empty? out) :empty :found))
+   :classify-domain #{:empty :found}
+   :num-tests 40})

@@ -1,0 +1,22 @@
+{:quota-exhausted
+ {:error :provider-quota-exhausted,
+  :provider :openrouter,
+  :remaining 0,
+  :fix true},
+ :rejected
+ {:error :provider-credential-rejected,
+  :provider :openrouter,
+  :status 401,
+  :fix true},
+ :missing-secret
+ {:error :provider-secret-missing,
+  :provider :f02-custom,
+  :secret-key :f02-missing-key,
+  :fix
+  "Configure the secret f02-missing-key, or name another provider for this spawn"},
+ :custom-has-key nil,
+ :probe-throws nil,
+ :no-provider nil,
+ :openrouter-ok nil,
+ :keyless nil,
+ :subscription nil}

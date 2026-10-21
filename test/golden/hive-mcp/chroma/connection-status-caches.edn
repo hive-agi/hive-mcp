@@ -1,0 +1,22 @@
+{:named-cached? true,
+ :reset {},
+ :config
+ {:host "chroma.test", :port 9000, :collection-name "f04-coll"},
+ :coll "f04-coll",
+ :available? true,
+ :unprovided
+ {:status
+  {:configured? false,
+   :provider nil,
+   :collection "hive-mcp-memory",
+   :host "localhost",
+   :port 8000},
+  :available? nil},
+ :cached? true,
+ :named "f04-named",
+ :provided
+ {:configured? true,
+  :provider true,
+  :collection "f04-coll",
+  :host "chroma.test",
+  :port 9000}}

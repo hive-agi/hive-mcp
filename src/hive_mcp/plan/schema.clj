@@ -405,3 +405,70 @@
         (if cycle-found
           {:valid false :cycle "Circular dependency detected"}
           {:valid true})))))
+
+;; =============================================================================
+;; Function Contracts (m16 coverage batch)
+;; =============================================================================
+
+;; Step/plan inputs are permissive: validators accept any value and answer
+;; {:valid false ...} rather than throwing (docstrings, parser callers).
+
+(m/=> validate-step
+      [:=> [:cat :any]
+       [:map [:valid :boolean]]])
+
+(m/=> validate-plan
+      [:=> [:cat :any]
+       [:map [:valid :boolean]]])
+
+(m/=> valid-step?
+      [:=> [:cat :any]
+       :boolean])
+
+(m/=> valid-plan?
+      [:=> [:cat :any]
+       :boolean])
+
+(m/=> explain-plan
+      [:=> [:cat :any]
+       :any])
+
+(m/=> explain-step
+      [:=> [:cat :any]
+       :any])
+
+(m/=> normalize-priority
+      [:=> [:cat :any]
+       Priority])
+
+(m/=> normalize-estimate
+      [:=> [:cat :any]
+       Estimate])
+
+(m/=> normalize-step
+      [:=> [:cat :map]
+       :map])
+
+(m/=> normalize-plan
+      [:=> [:cat :map]
+       :map])
+
+(m/=> valid-plan-to-kanban-result?
+      [:=> [:cat :any]
+       :boolean])
+
+(m/=> explain-plan-to-kanban-result
+      [:=> [:cat :any]
+       :any])
+
+(m/=> build-step-index
+      [:=> [:cat [:sequential :map]]
+       [:map-of :any :map]])
+
+(m/=> validate-dependencies
+      [:=> [:cat :map]
+       [:map [:valid :boolean]]])
+
+(m/=> detect-cycles
+      [:=> [:cat :map]
+       [:map [:valid :boolean]]])

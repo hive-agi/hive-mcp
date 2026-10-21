@@ -1,0 +1,26 @@
+{:case-0
+ {:out false,
+  :in ({:tags ["kanban"]} ["kanban" "kanban" "priority-high"] :all)},
+ :case-1
+ {:out false,
+  :in ({:tags ["priority-high" "todo"]} ["infra" "infra"] "all")},
+ :case-10 {:out true, :in ({:tags ["infra"]} nil :all)},
+ :case-11 {:out true, :in ({:tags []} nil "all")},
+ :case-2 {:out true, :in ({:tags []} [] :any)},
+ :case-3 {:out true, :in ({:tags ["kanban"]} nil :any)},
+ :case-4
+ {:out true,
+  :in ({:tags ["doing" "infra" "doing" "priority-high"]} [] :any)},
+ :case-5
+ {:out false, :in ({:tags ["priority-high" "kanban"]} ["todo"] :any)},
+ :case-6 {:out true, :in ({:tags []} nil :all)},
+ :case-7 {:out true, :in ({:tags ["infra" "doing"]} nil :all)},
+ :case-8
+ {:out false,
+  :in ({:tags ["todo" "priority-high"]} ["infra" "kanban"] :all)},
+ :case-9
+ {:out true,
+  :in
+  ({:tags ["priority-high" "infra" "priority-high" "kanban"]}
+   ["kanban" "kanban" "infra"]
+   :all)}}

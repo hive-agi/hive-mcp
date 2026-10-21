@@ -12,7 +12,8 @@
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [hive-dsl.result :as r]))
+            [hive-dsl.result :as r]
+            [malli.core :as m]))
 
 (defprotocol TranscriptSource
   (list-transcripts [this] "Result<[{:agent-id :source ...}]>.")
@@ -179,3 +180,27 @@
       (catch Throwable _ nil))))
 
 (defn default-parent-index [] (->SwarmParentIndex))
+
+;; Defaults to 0, so never nil.
+(m/=> entry-turn [:=> [:cat [:maybe [:map-of :any :any]]] :some])
+
+(m/=> hive-agent-read-dir
+      [:=> [:cat :any :any] [:map-of :any :any]])
+
+(m/=> hive-agent-datalevin-root [:=> [:cat] :string])
+
+(def CompositeSourceValue
+  "A CompositeSource. Generates an empty composite so output schemas sample."
+  [:fn {:gen/elements [(->CompositeSource [])]}
+   #(instance? hive_mcp.agent.transcript_source.CompositeSource %)])
+
+(def SwarmParentIndexValue
+  "A SwarmParentIndex. Generates the (stateless) index itself."
+  [:fn {:gen/elements [(->SwarmParentIndex)]}
+   #(instance? hive_mcp.agent.transcript_source.SwarmParentIndex %)])
+
+(m/=> composite [:=> [:cat [:sequential :any]] CompositeSourceValue])
+
+(m/=> default-source [:=> [:cat] CompositeSourceValue])
+
+(m/=> default-parent-index [:=> [:cat] SwarmParentIndexValue])

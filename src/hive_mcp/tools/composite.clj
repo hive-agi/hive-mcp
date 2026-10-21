@@ -15,7 +15,10 @@
             [hive-addon.registry.commands :as acmds]
             [hive-mcp.dispatch.verbs :as verbs]
             [hive-mcp.extensions.dispatch-wrap :as dispatch-wrap]
-            [hive-mcp.tools.composite.default-async :as default-async]))
+            [hive-mcp.tools.composite.default-async :as default-async]
+            [hive-mcp.tools.composite.departed :as departed]
+            [malli.core :as m]
+            [hive-mcp.tools.core :as core]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -133,13 +136,15 @@
 
    Every root is contributed, so all of them are recorded under
    ::cli/opaque-roots in the tree's metadata, beside the ::cli/verb-oracle
-   port that says which verbs each one routes."
+   port that says which verbs each one routes. A root that departed with a
+   remounting addon is waited for (`departed/dispatch`)."
   [tool-name]
   (fn [params]
-    (let [addon-cmds (or (addon-commands->handlers tool-name) {})
-          handlers   (with-contribution-meta addon-cmds tool-name addon-cmds)
-          cli-fn     (cli/make-cli-handler handlers)]
-      (cli-fn params))))
+    (departed/dispatch tool-name
+                       #(let [addon-cmds (or (addon-commands->handlers tool-name) {})]
+                          (with-contribution-meta addon-cmds tool-name addon-cmds))
+                       (fn [handlers p] ((cli/make-cli-handler handlers) p))
+                       params)))
 
 (defn subdomain-handler
   "Wrap INNER as the handler for SUBDOMAIN-NAME: strips the \"<subdomain> \"
@@ -194,17 +199,18 @@
    reload reaches dispatch without the consolidated namespace having to be
    reloaded in the same pass. See `effective-handlers`.
 
-   tool-name: string name used for addon contribution lookup.
+   tool-name: string name used for addon contribution lookup. A root that
+   departed with a remounting addon is waited for (`departed/dispatch`).
 
    Optional coerce-schema: passed through to cli/make-cli-handler."
   ([tool-name canonical-handlers]
    (build-merged-handler tool-name canonical-handlers nil))
   ([tool-name canonical-handlers coerce-schema]
    (fn [params]
-     (let [cli-fn (cli/make-cli-handler
-                   (effective-handlers tool-name canonical-handlers)
-                   coerce-schema)]
-       (cli-fn params)))))
+     (departed/dispatch tool-name
+                        #(effective-handlers tool-name canonical-handlers)
+                        (fn [handlers p] ((cli/make-cli-handler handlers coerce-schema) p))
+                        params))))
 
 ;; =============================================================================
 ;; Composite Tool Definition Builder
@@ -411,3 +417,67 @@
              :when (contains? descriptions tool-name)
              :let [desc (get descriptions tool-name)]]
          (build-composite-tool tool-name desc))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def ToolDef
+  "A consolidated MCP tool definition. Open: callers attach more keys."
+  [:map
+   [:name :string]
+   [:description {:optional true} [:maybe :string]]
+   [:inputSchema {:optional true} :map]
+   [:handler {:optional true} core/ToolHandler]])
+
+(def CanonicalHandlers
+  "A core handler tree, or the VAR holding it (the reload-transparent spelling)."
+  [:fn {:gen/elements [{} {:status (fn [_] {:type "text" :text "ok"})}]
+        :error/message "must be a handler map or a var holding one"}
+   #(or (nil? %) (map? %) (var? %))])
+
+(def ContributionSpec
+  "One addon command contribution: its handler and the docs it advertises."
+  [:map
+   [:handler {:optional true} :any]
+   [:summary {:optional true} [:maybe :string]]
+   [:description {:optional true} [:maybe :string]]
+   [:params {:optional true} [:maybe :map]]])
+
+(m/=> lazy-resolve-handlers [:=> [:cat :symbol] :map])
+
+(m/=> lazy-resolve-schema-props [:=> [:cat :symbol] :map])
+
+(m/=> contributed-verbs [:=> [:cat :string [:or :keyword :string :symbol]]
+                         [:maybe [:sequential :any]]])
+
+(m/=> build-composite-handler [:=> [:cat :string] core/ToolHandler])
+
+(m/=> subdomain-handler [:=> [:cat :string core/ToolHandler] core/ToolHandler])
+
+(m/=> effective-handlers [:=> [:cat :string CanonicalHandlers] [:maybe :map]])
+
+(m/=> build-merged-handler
+      [:function
+       [:=> [:cat :string CanonicalHandlers] core/ToolHandler]
+       [:=> [:cat :string CanonicalHandlers [:maybe :map]] core/ToolHandler]])
+
+(m/=> build-composite-tool [:=> [:cat :string [:maybe :string]] ToolDef])
+
+(m/=> contribution-summary [:=> [:cat [:maybe ContributionSpec]] [:maybe :string]])
+
+(m/=> contributed-commands-text
+      [:=> [:cat [:maybe [:map-of :string ContributionSpec]]] [:maybe :string]])
+
+(m/=> contributed-command-names
+      [:=> [:cat [:maybe [:map-of :string ContributionSpec]]] [:vector :string]])
+
+(m/=> fold-verb-contributions [:=> [:cat ToolDef] ToolDef])
+
+(m/=> build-merged-tool [:=> [:cat ToolDef] ToolDef])
+
+(m/=> build-composite-handlers [:=> [:cat :string] [:map-of :keyword :any]])
+
+(m/=> build-merged-handlers [:=> [:cat :string CanonicalHandlers] [:maybe :map]])
+
+(m/=> build-all-composite-tools [:=> [:cat [:maybe :map]] [:vector ToolDef]])

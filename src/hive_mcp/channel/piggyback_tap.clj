@@ -21,7 +21,8 @@
             [hive-dsl.context.identity :as ctx-id]
             [clojure.string :as str]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
-            [hive-mcp.channel.conversation-inbox :as conv-inbox]))
+            [hive-mcp.channel.conversation-inbox :as conv-inbox]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -154,3 +155,7 @@
      (catch Exception e
        (log/warn "piggyback-tap: drain-all! failed:" (.getMessage e))
        nil))))
+
+(m/=> drain-all! [:function
+                  [:=> [:cat :string [:maybe :string]] [:maybe [:string {:min 1}]]]
+                  [:=> [:cat :string [:maybe :string] [:maybe :map]] [:maybe [:string {:min 1}]]]])

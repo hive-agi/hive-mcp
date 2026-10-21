@@ -45,7 +45,8 @@
    Total: an emitter that throws costs its own block and nothing else."
   (:require [clojure.string :as str]
             [hive-mcp.extensions.registry :as ext]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 (def key-namespace
   "Extension keys in this namespace are block emitters."
@@ -80,10 +81,14 @@
        sort
        vec))
 
+(m/=> emitter-keys [:=> [:cat] [:vector :keyword]])
+
 (defn tag-of
   "Wire tag for an emitter key: `:block/frontier` -> \"FRONTIER\"."
   [k]
   (str/upper-case (name k)))
+
+(m/=> tag-of [:=> [:cat [:or :keyword :string :symbol]] :string])
 
 (defn- emit-one
   "[tag body] for one emitter, or nil.
@@ -112,6 +117,18 @@
                      (let [s (str/lower-case (str c))]
                        (and (>= (count s) 3) (str/includes? hay s))))
                    cues))))
+
+(def BlockCtx
+  "The per-request view an emitter receives. Cues come as a set from the
+   activation seam, or as any collection."
+  [:maybe [:map
+           [:tool-name {:optional true} :any]
+           [:cues {:optional true} [:maybe [:or [:set :any] [:sequential :any]]]]
+           [:caller-id {:optional true} :any]]])
+
+(def Blocks
+  "Rendered blocks: [tag body] pairs."
+  [:vector [:tuple :string :string]])
 
 (defn render
   "`[[tag body] ...]` for every registered emitter that produced something.
@@ -171,3 +188,10 @@
      (catch Throwable t
        (log/debug t "blocks: render failed; response carries no blocks")
        []))))
+
+;; Never throws: a failure renders no blocks.
+(m/=> render
+      [:function
+       [:=> [:cat BlockCtx] Blocks]
+       [:=> [:cat BlockCtx :int] Blocks]
+       [:=> [:cat BlockCtx :int :boolean] Blocks]])

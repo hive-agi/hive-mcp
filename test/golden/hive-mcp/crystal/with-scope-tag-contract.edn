@@ -1,0 +1,38 @@
+{:case-0
+ {:out {:tags ["scope:multi-project"]}, :in ({:tags []} :umbrella)},
+ :case-1
+ {:out {:tags ["scope:project:funeraria" "scope:multi-project"]},
+  :in ({:tags ["scope:multi-project"]} "funeraria")},
+ :case-2
+ {:out {:tags ["scope:multi-project"]}, :in ({:tags []} :umbrella)},
+ :case-3
+ {:out {:tags ["scope:project:sisf-crm" "session-summary"]},
+  :in ({:tags ["session-summary"]} "sisf-crm")},
+ :case-4
+ {:out
+  {:tags
+   ["scope:project:hive"
+    "scope:multi-project"
+    "scope:project:hive"
+    "scope:multi-project"]},
+  :in
+  ({:tags
+    ["scope:project:hive"
+     "scope:multi-project"
+     "scope:project:hive"
+     "scope:multi-project"]}
+   :umbrella)},
+ :case-5
+ {:out
+  {:tags
+   ["scope:multi-project" "scope:project:hive" "session-summary"]},
+  :in ({:tags ["scope:project:hive" "session-summary"]} :umbrella)},
+ :case-6
+ {:out {:tags ["scope:multi-project" "session-summary"]},
+  :in ({:tags ["session-summary"]} :umbrella)},
+ :case-7
+ {:out
+  {:tags ["scope:multi-project" "session-summary" "session-summary"]},
+  :in
+  ({:tags ["scope:multi-project" "session-summary" "session-summary"]}
+   :umbrella)}}

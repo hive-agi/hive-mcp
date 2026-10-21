@@ -1,0 +1,13 @@
+{:case-0 {:out [], :in ({:method :Bad, :mode "Wave"} :step)},
+ :case-1 {:out [], :in ({:verify "Wave", :mode :SAA, :other 0} :plan)},
+ :case-2
+ {:out [{:scope :plan, :key :mode, :value "bad", :error "bad mode"}],
+  :in ({:method "Wave", :verify "bad", :mode "bad"} :plan)},
+ :case-3 {:out [], :in ({:verify :Bad} :plan)},
+ :case-4 {:out [], :in ({:method :SAA, :other 1} :step)},
+ :case-5
+ {:out
+  [{:scope :step, :key :verify, :value "bad", :error "not a keyword"}],
+  :in ({:verify "bad"} :step)},
+ :case-6 {:out [], :in ({} :step)},
+ :case-7 {:out [], :in ({:method "bad", :mode "Wave"} :step)}}

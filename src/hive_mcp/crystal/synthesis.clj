@@ -35,10 +35,42 @@
             [hive-mcp.dns.result :as result]
             [hive-mcp.concurrency.pool :as pool]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+;; =============================================================================
+;; Contract schemas
+;; =============================================================================
+
+(def ^:private ErrKeys
+  [[:error {:optional true} [:maybe :string]] [:latency-ms {:optional true} :int] [:cause {:optional true} [:maybe :string]]])
+
+(def LifecycleStats
+  "`run-lifecycle-ops!` result: exactly `lifecycle-stat-keys`, each a stats map
+   that may carry {:error :latency-ms :cause} on a failed branch."
+  [:map
+   [:promotion-stats (into [:map] ErrKeys)]
+   [:decay-stats (into [:map] ErrKeys)]
+   [:xpoll-stats (into [:map] ErrKeys)]
+   [:memory-decay-stats (into [:map] ErrKeys)]
+   [:file-provenance-stats (into [:map] ErrKeys)]])
+
+(def SessionSummary
+  "`synthesize` result. A store failure answers {:error :project-id :session}
+   instead of the :summary-id shape. A harvest that is not persist-worthy
+   answers {:skipped true :reason \"no-activity\" ...} merged with the
+   lifecycle stats, and persists no summary."
+  [:or
+   [:map [:summary-id :string] [:session :string] [:project-id :string]
+    [:session-timing :map] [:stats :any]
+    [:sub-summaries {:optional true} [:vector :map]]]
+   [:map [:skipped [:= true]] [:reason [:= "no-activity"]]
+    [:session :string] [:project-id :string]
+    [:session-timing :map] [:stats :any]]
+   [:map [:error [:maybe :string]] [:project-id :string] [:session :string]]])
 
 ;; =============================================================================
 ;; Pure Formatting
@@ -60,6 +92,8 @@
                 (conj (str "- Memory entries accessed: " (count memory-ids-accessed))))]
     (str/join "\n" lines)))
 
+(m/=> format-temporal-block [:=> [:cat [:maybe [:map [:session-start {:optional true} :any] [:session-end {:optional true} :any] [:duration-minutes {:optional true} :any]]] [:maybe [:map [:memory-ids-created {:optional true} [:maybe [:sequential :any]]] [:memory-ids-accessed {:optional true} [:maybe [:sequential :any]]]]]] [:re {:gen/elements ["\n\n### Temporal Metadata\n- Session start: unknown\n- Session end: unknown\n- Duration: 0 minutes"]} #"(?s)^\n\n### Temporal Metadata.*$"]])
+
 (defn build-summary-content
   "Build the session summary content string from summary + temporal metadata.
    Pure function — no IO."
@@ -67,12 +101,16 @@
   (let [temporal-block (format-temporal-block session-timing harvested)]
     (str (:content summary) temporal-block)))
 
+(m/=> build-summary-content [:=> [:cat [:maybe [:map [:content {:optional true} :any]]] [:maybe :map] [:maybe :map]] :string])
+
 (defn build-summary-tags
   "Build tags vector with project scope injection.
    Pure function — no IO."
   [summary project-id]
   (let [base-tags (into (or (:tags summary) []) ["auto-kg" "session-wrap" "temporal"])]
     (scope/inject-project-scope base-tags project-id)))
+
+(m/=> build-summary-tags [:=> [:cat [:maybe [:map [:tags {:optional true} [:maybe [:sequential :string]]]]] [:maybe :string]] [:sequential :string]])
 
 (defn minimal-wrap-summary
   "Build a minimal session-wrap summary when no progress/activity was harvested.
@@ -93,6 +131,8 @@
                    "\n(Quiet session — no synthesized progress; breadcrumb persisted for catchup.)")
      :tags ["session-summary" "wrap-generated" "wrap-minimal"]
      :duration :short}))
+
+(m/=> minimal-wrap-summary [:=> [:cat :any [:maybe [:map [:summary {:optional true} [:maybe :map]]]]] [:map [:type [:= :note]] [:content :string] [:tags [:= ["session-summary" "wrap-generated" "wrap-minimal"]]] [:duration [:= :short]]]])
 
 ;; =============================================================================
 ;; Extension Delegation Helpers
@@ -224,6 +264,8 @@
     (zipmap lifecycle-stat-keys
             (mapv #(select-keys %1 (into %2 err-keys)) results stat-keys))))
 
+(m/=> run-lifecycle-ops! [:=> [:cat [:maybe :string] [:maybe :string] [:* :any]] LifecycleStats])
+
 ;; =============================================================================
 ;; Scope grouping (pure — no IO)
 ;; =============================================================================
@@ -254,6 +296,8 @@
                     (collect (:memory-ids-accessed harvested)))]
     (set all)))
 
+(m/=> extract-project-scopes [:=> [:cat [:maybe :map]] [:set :string]])
+
 (defn group-harvested-by-scope
   "Partition harvested data into per-project sub-harvests keyed by project-id.
    Entries without a scope:project:* tag land in the default `fallback-pid`
@@ -279,6 +323,8 @@
                         :completed-tasks     (get tasks pid [])
                         :memory-ids-created  (get created pid [])
                         :memory-ids-accessed (get accessed pid []))]))))
+
+(m/=> group-harvested-by-scope [:=> [:cat [:maybe :map] :any] [:map-of :any :map]])
 
 ;; =============================================================================
 ;; Session Synthesis (main entry point)
@@ -351,6 +397,16 @@
        :scope-tag scope-tag
        :session (crystal/session-id)})))
 
+(defn- persist-worthy?
+  "True when the harvest shows write-shaped work: its summary counts say so
+   (`crystal/meaningful-harvest?`), or it carries progress notes, completed
+   tasks or commits that the counts have not caught up with."
+  [harvested]
+  (boolean (or (crystal/meaningful-harvest? harvested)
+               (seq (:progress-notes harvested))
+               (seq (:completed-tasks harvested))
+               (seq (:git-commits harvested)))))
+
 (defn synthesize
   "Synthesize harvested session data into long-term memory.
 
@@ -366,7 +422,14 @@
    Returns the umbrella summary (multi-project) or the single summary
    (single-project), with a :sub-summaries vector of all emitted summaries
    (including the umbrella itself). Back-compat: callers that read only
-   :summary-id / :project-id / :stats / lifecycle stats continue to work."
+   :summary-id / :project-id / :stats / lifecycle stats continue to work.
+
+   Guard: a harvest that is not `persist-worthy?` (reads only, or nothing)
+   persists no summary and returns
+   {:skipped true :reason \"no-activity\" :session :project-id :stats
+    :session-timing} merged with the lifecycle stats. Lifecycle ops (decay,
+   cross-pollination) still run: they maintain the store, whatever this
+   session did."
   [{:keys [directory] :as harvested}]
   (log/info "Synthesizing session:" (crystal/session-id)
             (when directory (str "directory:" directory)))
@@ -374,7 +437,25 @@
                            "global")
         project-scopes (extract-project-scopes harvested)
         multi? (> (count project-scopes) 1)]
-    (if multi?
+    (cond
+      (not (persist-worthy? harvested))
+      (let [pid (or (first project-scopes) cwd-project-id)
+            lifecycle (deref (pool/with-solo
+                               (run-lifecycle-ops! pid directory :harvested harvested))
+                             op-timeout
+                             {:lifecycle-error "timeout"})]
+        (log/info "synthesize: skipped no-activity harvest, no summary persisted")
+        (merge {:skipped true
+                :reason "no-activity"
+                :session (crystal/session-id)
+                :project-id pid
+                :stats (:summary harvested)
+                :session-timing (or (:session-timing harvested)
+                                    (crystal/session-timing-metadata
+                                     nil (java.time.Instant/now)))}
+               lifecycle))
+
+      multi?
       ;; Per-project summaries + global umbrella.
       (let [groups (group-harvested-by-scope harvested cwd-project-id)
             sub-summaries (vec
@@ -392,6 +473,8 @@
         (log/info "synthesize: emitted" (inc (count sub-summaries))
                   "summaries (per-project + umbrella) for projects:" project-scopes)
         (assoc umbrella :sub-summaries (conj sub-summaries umbrella)))
+
+      :else
       ;; Single-project (or no project) path — back-compat.
       (let [effective-pid (or (first project-scopes) cwd-project-id)
             scope-tag (if (= effective-pid "global")
@@ -403,6 +486,8 @@
                     (:summary-id r) "project:" effective-pid))
         ;; Strip internal helper keys to preserve back-compat key set.
         (dissoc r :scope-tag :umbrella?)))))
+
+(m/=> synthesize [:=> [:cat [:map [:directory {:optional true} [:maybe :string]]]] SessionSummary])
 
 (comment
   ;; Example: synthesize with minimal harvested data

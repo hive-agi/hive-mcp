@@ -6,7 +6,9 @@
    branch-compare verification (capture db-pre / db-post around a tx,
    diff the two edge sets) without forcing callers to reach into the
    backend-specific Datalog API."
-  (:require [hive-mcp.knowledge-graph.connection :as conn]))
+  (:require [hive-mcp.knowledge-graph.connection :as conn]
+            [malli.core :as m]
+            [hive-mcp.knowledge-graph.edges.schema :as es]))
 
 (declare batch-get-edges-from batch-get-edges-to batch-get-co-accessed)
 
@@ -22,7 +24,7 @@
   ([node-ids scope]
    (if (empty? node-ids)
      {}
-     (let [ids-vec (vec (distinct node-ids))
+     (let [ids-vec (vec (distinct (seq node-ids)))
            base-q '[:find [(pull ?e [*]) ...]
                     :in $ [?from ...]
                     :where [?e :kg-edge/from ?from]]
@@ -47,7 +49,7 @@
   ([node-ids scope]
    (if (empty? node-ids)
      {}
-     (let [ids-vec (vec (distinct node-ids))
+     (let [ids-vec (vec (distinct (seq node-ids)))
            base-q '[:find [(pull ?e [*]) ...]
                     :in $ [?to ...]
                     :where [?e :kg-edge/to ?to]]
@@ -69,7 +71,7 @@
   ([db node-ids scope]
    (if (empty? node-ids)
      {}
-     (let [ids-vec (vec (distinct node-ids))
+     (let [ids-vec (vec (distinct (seq node-ids)))
            base-q '[:find [(pull ?e [*]) ...]
                     :in $ [?from ...]
                     :where [?e :kg-edge/from ?from]]
@@ -90,7 +92,7 @@
   ([db node-ids scope]
    (if (empty? node-ids)
      {}
-     (let [ids-vec (vec (distinct node-ids))
+     (let [ids-vec (vec (distinct (seq node-ids)))
            base-q '[:find [(pull ?e [*]) ...]
                     :in $ [?to ...]
                     :where [?e :kg-edge/to ?to]]
@@ -113,7 +115,7 @@
   [entry-ids]
   (if (empty? entry-ids)
     {}
-    (let [ids-vec (vec (distinct entry-ids))
+    (let [ids-vec (vec (distinct (seq entry-ids)))
           ids-set (set ids-vec)
           ;; Single query for all outgoing co-access edges from any of the IDs
           outgoing-q '[:find [(pull ?e [*]) ...]
@@ -153,3 +155,18 @@
                            $ incoming))]
       ;; Sort each entry's neighbors by confidence descending
       (into {} (map (fn [[k v]] [k (vec (sort-by :confidence > v))]) result)))))
+
+(m/=> batch-get-edges-from [:function
+                            [:=> [:cat es/NodeIds] es/EdgesByNode]
+                            [:=> [:cat es/NodeIds es/Scope] es/EdgesByNode]])
+(m/=> batch-get-edges-to [:function
+                          [:=> [:cat es/NodeIds] es/EdgesByNode]
+                          [:=> [:cat es/NodeIds es/Scope] es/EdgesByNode]])
+;; db is a backend-specific db value with no stable shape
+(m/=> batch-get-edges-from-with-db [:function
+                                    [:=> [:cat :any es/NodeIds] es/EdgesByNode]
+                                    [:=> [:cat :any es/NodeIds es/Scope] es/EdgesByNode]])
+(m/=> batch-get-edges-to-with-db [:function
+                                  [:=> [:cat :any es/NodeIds] es/EdgesByNode]
+                                  [:=> [:cat :any es/NodeIds es/Scope] es/EdgesByNode]])
+(m/=> batch-get-co-accessed [:=> [:cat es/NodeIds] [:map-of :string [:vector es/Neighbor]]])

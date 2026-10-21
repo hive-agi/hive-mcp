@@ -1,0 +1,97 @@
+{:case-0
+ {:out {:agents [], :count 0, :by-type {}, :by-status {}}, :in ([])},
+ :case-1
+ {:out
+  {:agents
+   [{:id "b",
+     :status :working,
+     :type :ling,
+     :cwd nil,
+     :project-id nil}],
+   :count 1,
+   :by-type {:ling 1},
+   :by-status {:working 1}},
+  :in ([nil #:slave{:id "b", :status :working, :depth 2} nil])},
+ :case-2
+ {:out
+  {:agents
+   [{:id "a", :status :idle, :type :ling, :cwd nil, :project-id nil}
+    {:id "c",
+     :status :working,
+     :type :coordinator,
+     :cwd nil,
+     :project-id nil}
+    {:id "b",
+     :status :working,
+     :type :ling,
+     :cwd nil,
+     :project-id nil,
+     :parent "coordinator:s1"}
+    {:id "c",
+     :status :working,
+     :type :ling,
+     :cwd nil,
+     :project-id nil,
+     :parent "coordinator:s1"}
+    {:id "a", :status :idle, :type :ling, :cwd nil, :project-id nil}],
+   :count 5,
+   :by-type {:ling 4, :coordinator 1},
+   :by-status {:idle 2, :working 3}},
+  :in
+  ([#:slave{:id "a", :status :idle, :depth 1}
+    #:slave{:id "c", :status :working, :depth 0}
+    #:slave{:id "b",
+            :status :working,
+            :depth 2,
+            :parent "coordinator:s1"}
+    #:slave{:id "c",
+            :status :working,
+            :depth 2,
+            :parent "coordinator:s1"}
+    #:slave{:id "a", :status :idle, :depth 2}])},
+ :case-3
+ {:out
+  {:agents
+   [{:id "c",
+     :status :idle,
+     :type :ling,
+     :cwd nil,
+     :project-id nil,
+     :parent "coordinator:s1"}],
+   :count 1,
+   :by-type {:ling 1},
+   :by-status {:idle 1}},
+  :in
+  ([nil
+    #:slave{:id "c", :status :idle, :depth 1, :parent "coordinator:s1"}
+    nil
+    nil])},
+ :case-4
+ {:out
+  {:agents
+   [{:id "a",
+     :status :idle,
+     :type :coordinator,
+     :cwd nil,
+     :project-id nil}],
+   :count 1,
+   :by-type {:coordinator 1},
+   :by-status {:idle 1}},
+  :in ([#:slave{:id "a", :status :idle, :depth 0} nil])},
+ :case-5
+ {:out {:agents [], :count 0, :by-type {}, :by-status {}},
+  :in ([nil nil])},
+ :case-6
+ {:out
+  {:agents
+   [{:id "b",
+     :status :working,
+     :type :coordinator,
+     :cwd nil,
+     :project-id nil}],
+   :count 1,
+   :by-type {:coordinator 1},
+   :by-status {:working 1}},
+  :in ([nil #:slave{:id "b", :status :working, :depth 0}])},
+ :case-7
+ {:out {:agents [], :count 0, :by-type {}, :by-status {}}, :in ([nil])}}

@@ -1,0 +1,17 @@
+{:claim-span! [:delegates-to "hive-agent.swarm.claim.span" "span"],
+ :row->span-file
+ [:delegates-to "hive-agent.swarm.claim.span" "file-span"],
+ :conflicts-for
+ [:delegates-to "hive-agent.swarm.claim.graph" "callers-fn"],
+ :available?
+ [:delegates-to "hive-agent.swarm.claim.graph" "callers-fn"],
+ :acquire-nothing
+ {:acquired? true, :conflicts [], :warnings [], :spans-claimed 0},
+ :acquire-nothing-set
+ {:acquired? true, :conflicts [], :warnings [], :spans-claimed 0},
+ :release-span! [:delegates-to "hive-agent.swarm.claim.span" "key-of"],
+ :acquire-one [:delegates-to "hive-agent.swarm.claim.span" "span"],
+ :held-spans
+ [:delegates-to "hive-datascript.swarm.lings" "get-all-claims"],
+ :row->span-parsed-qn
+ [:delegates-to "hive-agent.swarm.claim.span" "form-span"]}

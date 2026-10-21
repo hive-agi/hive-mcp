@@ -6,7 +6,8 @@
             [hive-dsl.adt :refer [adt-case]]
             [clojure.set]
             [clojure.string :as str]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.tools.memory.schema :as ms]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -42,6 +43,29 @@
       (if (= project-id "global")
         (conj (vec tags) "scope:global")
         (conj (vec tags) (str "scope:project:" project-id))))))
+
+(defn explicit-project-id
+  "The project-id a caller NAMED through a `scope:project:<id>` tag, or nil.
+
+   Resolution rule for `memory add` (kanban 20260519173408-30f0a6a6): a
+   caller-explicit scope tag wins over the project inferred from the request
+   directory or the agent session. Without it a coordinator anchored in
+   project A that wrote `scope:project:B` stored the entry with :project-id A
+   while the tag said B, so project-scoped queries missed it.
+
+   Only `scope:project:<id>` tags count; `scope:global` is a visibility tag
+   that long-standing callers attach from inside a project, so it never
+   overrides the inferred project. The first such tag wins. The id is
+   alias-resolved to its canonical form. A blank id yields nil. Pure apart
+   from the alias lookup; no regex."
+  [tags]
+  (let [prefix "scope:project:"]
+    (some (fn [tag]
+            (when (and (string? tag) (str/starts-with? tag prefix))
+              (let [id (str/trim (subs tag (count prefix)))]
+                (when-not (str/blank? id)
+                  (kg-scope/resolve-project-id id)))))
+          tags)))
 
 (defn make-scope-tag
   "Create a scope tag for a project-id."
@@ -170,9 +194,44 @@
 
 (def ProjectId
   "Non-blank project identifier string; \"global\" is the root scope."
-  [:and :string [:fn (fn [s] (not (str/blank? s)))]])
+  [:and {:gen/elements ["global" "hive-mcp" "proj-a"]}
+   :string [:fn (fn [s] (not (str/blank? s)))]])
+
 
 (m/=> get-current-project-id
       [:function
        [:=> [:cat] ProjectId]
        [:=> [:cat [:maybe :string]] ProjectId]])
+
+(m/=> effective-directory [:=> [:cat ms/DirectoryInput] [:maybe :string]])
+
+(m/=> inject-project-scope
+      [:=> [:cat ms/Tags ms/ProjectIdText] [:vector :string]])
+
+(m/=> explicit-project-id [:=> [:cat ms/Tags] [:maybe :string]])
+
+(m/=> make-scope-tag [:=> [:cat [:maybe ms/ProjectIdText]] :string])
+
+(m/=> retag-scope [:=> [:cat ms/Tags ms/ScopeTag ms/ScopeTag] [:vector :string]])
+
+(m/=> matches-scope? [:=> [:cat ms/Entry ms/ScopeFilter] ms/ScopeMatch])
+
+(m/=> derive-scope-filter
+      [:=> [:cat [:maybe [:string {:gen/elements ["all" "global" "auto" "hive-mcp" "scope:global"]}]]
+            [:maybe ms/ProjectIdText]]
+
+       domain/ScopeFilterMalli])
+
+(m/=> resolve-scope-chain [:=> [:cat [:maybe ms/ProjectIdText]] [:vector :string]])
+
+(m/=> expand-scope-tags
+      [:function
+       [:=> [:cat [:maybe ms/ProjectIdText]] [:set :string]]
+       [:=> [:cat [:maybe ms/ProjectIdText] :any] [:set :string]]])
+
+(m/=> derive-hierarchy-scope-filter
+      [:=> [:cat [:or domain/ScopeFilterMalli [:maybe ms/ProjectIdText] [:enum "all"]]]
+       [:maybe [:set :string]]])
+
+(m/=> matches-hierarchy-scopes?
+      [:=> [:cat ms/Entry [:maybe [:set :string]]] ms/ScopeMatch])

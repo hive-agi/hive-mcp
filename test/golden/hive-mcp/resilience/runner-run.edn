@@ -1,0 +1,43 @@
+{:fatal
+ {:result
+  {:error :runner/fatal,
+   :throwable "ExceptionInfo: too large",
+   :class :err/validation},
+  :calls 1,
+  :kicks 0,
+  :valid? true},
+ :ok-first {:result {:ok 42}, :calls 1, :kicks 0, :valid? true},
+ :schema-mismatch
+ {:result
+  {:error :embedder/dim-mismatch,
+   :message "dim",
+   :details {:code 1804, :message "dim"},
+   :throwable "ExceptionInfo: Milvus code=1804"},
+  :calls 1,
+  :kicks 0,
+  :valid? true},
+ :transient-no-kick
+ {:result {:ok :recovered}, :calls 2, :kicks 0, :valid? true},
+ :transient-recovers
+ {:result {:ok :recovered}, :calls 2, :kicks 1, :valid? true},
+ :transient-then-fatal
+ {:result
+  {:error :runner/retry-failed, :throwable "ExceptionInfo: too large"},
+  :calls 2,
+  :kicks 1,
+  :valid? true},
+ :transient-twice
+ {:result
+  {:error :runner/retry-failed,
+   :throwable "IOException: Connection reset"},
+  :calls 2,
+  :kicks 1,
+  :valid? true},
+ :unknown
+ {:result
+  {:error :runner/fatal,
+   :throwable "RuntimeException: something else",
+   :class :err/unknown},
+  :calls 1,
+  :kicks 0,
+  :valid? true}}

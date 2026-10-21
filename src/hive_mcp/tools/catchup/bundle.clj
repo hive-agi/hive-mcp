@@ -22,7 +22,9 @@
             [clojure.set :as set]
             [hive-mcp.resilience.store :refer [with-resilience]]
             [hive-mcp.tools.catchup.bundle-cache :as bc]
-            [hive-mcp.tools.catchup.bucket-types :as bt]))
+            [hive-mcp.tools.catchup.bucket-types :as bt]
+            [hive-mcp.tools.catchup.shapes :as shapes]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -360,3 +362,51 @@
                                   {:by-type {} :all []})]
      (-> (split-by-type by-type all caps)
          hydr/hydrate-buckets))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def EntryType
+  "A memory type token as the store filters on it, or nil for every type."
+  [:maybe [:string {:gen/schema [:enum bt/axiom bt/convention bt/decision bt/note]}]])
+
+(def Limit
+  "A row cap, or nil for the default."
+  [:maybe [:int {:min 0}]])
+
+(def IdSet
+  "Entry ids to exclude, or nil."
+  [:maybe [:set :any]])
+
+(def AllScoped
+  "`query-all-scoped`: entries grouped by type name, plus the merged list."
+  [:map
+   [:by-type [:map-of [:maybe :string] [:vector shapes/Entry]]]
+   [:all [:sequential shapes/Entry]]])
+
+(def CatchupBundle
+  "A freshly computed catchup bundle: every bucket, each a vector."
+  [:map {:closed true}
+   [:axioms [:vector shapes/Entry]]
+   [:axiom-candidates [:vector shapes/Entry]]
+   [:priority-principles [:vector shapes/Entry]]
+   [:principles [:vector shapes/Entry]]
+   [:priority-conventions [:vector shapes/Entry]]
+   [:sessions [:vector shapes/Entry]]
+   [:recent-wraps [:vector shapes/Entry]]
+   [:decisions [:vector shapes/Entry]]
+   [:conventions [:vector shapes/Entry]]
+   [:snippets [:vector shapes/Entry]]
+   [:expiring [:vector shapes/Entry]]])
+
+(m/=> query-scoped-entries
+      [:=> [:cat EntryType shapes/Tags shapes/ProjectId Limit] [:maybe [:sequential shapes/Entry]]])
+(m/=> query-expiring-entries [:=> [:cat shapes/ProjectId Limit] [:sequential shapes/Entry]])
+(m/=> query-regular-conventions [:=> [:cat shapes/ProjectId IdSet IdSet] [:sequential shapes/Entry]])
+(m/=> query-all-scoped [:=> [:cat shapes/ProjectId] [:maybe AllScoped]])
+(m/=> query-catchup-bundle
+      [:function
+       ;; arity 1 may answer the cached value bundle-cache holds for the project
+       [:=> [:cat shapes/ProjectId] shapes/Buckets]
+       [:=> [:cat shapes/ProjectId [:maybe [:map [:caps {:optional true} [:maybe :map]]]]] CatchupBundle]])

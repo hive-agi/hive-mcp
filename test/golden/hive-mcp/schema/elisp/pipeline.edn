@@ -1,0 +1,10 @@
+{:struct
+ "(cl-defstruct (hive-a (:constructor make-a))\n  id type port)",
+ :defaults
+ "(cl-defstruct (hive-a (:constructor make-a))\n  id type (port 7910))",
+ :validator
+ "(defun hive-a-valid-p (ROW)\n  \"Validate ROW against hive-a schema.\"\n  (and (hive-a-p row)\n       (stringp (hive-a-id row))\n       (memq (hive-a-type row) '(note snippet))\n       (or (null (hive-a-port row)) (or (null (hive-a-port row)) (integerp (hive-a-port row))))))",
+ :from-plist
+ "(defun hive-a-from-plist (plist)\n  \"Create hive-a from PLIST.\"\n  (hive-a-create\n   :id (plist-get plist :id)\n   :type (intern (plist-get plist :type))\n   :port (or (plist-get plist :port) nil)))",
+ :batch
+ "(cl-defstruct (hive-a (:constructor make-a))\n  id type port)\n\n(cl-defstruct (hive-b (:constructor hive-b-create))\n  x)"}

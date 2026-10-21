@@ -1,0 +1,10 @@
+{:case-0 {:out ["$ref:"], :in "$ref:"},
+ :case-1 {:out ["$ref:P.data.id"], :in {:c4 "$ref:P.data.id"}},
+ :case-2 {:out [], :in 0},
+ :case-3 {:out [], :in {}},
+ :case-4
+ {:out ["$ref:.data.id" "$ref:J.data.id"],
+  :in ["$ref:.data.id" "$ref:J.data.id" "1uG9"]},
+ :case-5 {:out ["$ref:rb6.data.id"], :in ["$ref:rb6.data.id"]},
+ :case-6 {:out [], :in []},
+ :case-7 {:out ["$ref:2Y7n83"], :in ["$ref:2Y7n83"]}}

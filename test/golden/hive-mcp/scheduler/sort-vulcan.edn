@@ -1,0 +1,54 @@
+{:case-0 {:out [], :in ([])},
+ :case-1
+ {:out
+  [{:id "zz", :priority "high", :wave-number 0}
+   {:id "t5", :priority "odd"}
+   {:id "t5", :priority "medium"}],
+  :in
+  ([{:id "t5", :priority "odd"}
+    {:id "zz", :priority "high", :wave-number 0}
+    {:id "t5", :priority "medium"}])},
+ :case-2
+ {:out
+  [{:id "zz", :priority "priority-high"}
+   {:id "t2"}
+   {:id "t5"}
+   {:id "zz"}
+   {:id "t1", :priority "medium", :wave-number 2}
+   {:id "t1", :priority "low"}],
+  :in
+  ([{:id "t5"}
+    {:id "zz", :priority "priority-high"}
+    {:id "t1", :priority "medium", :wave-number 2}
+    {:id "t2"}
+    {:id "t1", :priority "low"}
+    {:id "zz"}])},
+ :case-3
+ {:out
+  [{:id "t1", :priority "high"}
+   {:id "t4"}
+   {:id "t5"}
+   {:id "x", :wave-number 1}],
+  :in
+  ([{:id "t4"}
+    {:id "x", :wave-number 1}
+    {:id "t1", :priority "high"}
+    {:id "t5"}])},
+ :case-4
+ {:out [{:id "t5", :wave-number 0} {:id "t4", :wave-number 1}],
+  :in ([{:id "t5", :wave-number 0} {:id "t4", :wave-number 1}])},
+ :case-5
+ {:out [{:id "t1"} {:id "t5", :wave-number 0}],
+  :in ([{:id "t5", :wave-number 0} {:id "t1"}])},
+ :case-6
+ {:out
+  [{:id "x", :priority "high", :wave-number 1}
+   {:id "zz"}
+   {:id "t3", :wave-number 3}],
+  :in
+  ([{:id "zz"}
+    {:id "t3", :wave-number 3}
+    {:id "x", :priority "high", :wave-number 1}])},
+ :case-7
+ {:out [{:id "t4", :priority "odd"} {:id "zz", :wave-number 2}],
+  :in ([{:id "zz", :wave-number 2} {:id "t4", :priority "odd"}])}}

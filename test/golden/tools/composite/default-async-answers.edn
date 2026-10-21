@@ -1,0 +1,9 @@
+{:nil-cmds #{},
+ :true-command #{"kg"},
+ :false-command #{},
+ :verb-vector #{"memory add" "memory search"},
+ :verb-set #{"carto scan"},
+ :mixed #{"agent spawn" "kg"},
+ :fold-joins
+ {:name "kg", :default-async-commands #{"agent spawn" "batch"}},
+ :fold-noop {:name "kg"}}

@@ -1,0 +1,12 @@
+{:case-0 {:out nil, :in nil},
+ :case-1 {:out "review", :in "inreview"},
+ :case-10 {:out "todo", :in "todo"},
+ :case-11 {:out "bogus", :in "bogus"},
+ :case-2 {:out "todo", :in "todo"},
+ :case-3 {:out "done", :in "done"},
+ :case-4 {:out nil, :in nil},
+ :case-5 {:out nil, :in nil},
+ :case-6 {:out nil, :in nil},
+ :case-7 {:out nil, :in nil},
+ :case-8 {:out nil, :in nil},
+ :case-9 {:out "review", :in "review"}}

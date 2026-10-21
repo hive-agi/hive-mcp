@@ -20,7 +20,9 @@
        {:type \"text\" :text (json/str {:results [...] :summary {...}})}
    with per-op `{:success :command :result|:error}` entries."
   (:require [clojure.data.json :as json]
-            [hive-mcp.tools.core :refer [mcp-error]]))
+            [hive-mcp.tools.core :refer [mcp-error]]
+            [malli.core :as m]
+            [clojure.string :as str]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -50,6 +52,19 @@
     {:type "text"
      :text (json/write-str payload)}))
 
+(def CliEnvelope
+  "What a CLI batch handler answers: the legacy text envelope, or an MCP
+   error when no operations were given."
+  [:map [:type [:= "text"]] [:text [:maybe :string]] [:isError {:optional true} [:= true]]])
+
+(def HandlerSpec
+  "`cli-batch-handler` options. `:run-fn` is any callable, a var included."
+  [:map
+   [:run-fn ifn?]
+   [:cmd-kw :keyword]
+   [:tool-name {:optional true} [:maybe :string]]
+   [:shared-params? {:optional true} [:maybe :boolean]]])
+
 (defn cli-batch-handler
   "Build a single-command batch handler backed by a Batchable `run-fn`.
 
@@ -66,19 +81,32 @@
                    resolver. Defaults to `(name cmd-kw)`. Use this when
                    the underlying runner expects a nested path
                    (e.g. `\"agent spawn\"` for `swarm.batch/run-batch`).
+     `:shared-params?`  when true, the params of the outer call (minus
+                   `:operations`, `:parallel` and `:command`) are merged under
+                   each op, the op's own params winning on conflict — what
+                   `make-batch-handler` has always done. Default false, which
+                   hands the runner the ops exactly as given.
 
    Per-op `:command` is forced to `(name cmd-kw)` so callers cannot
    smuggle a different command in via the operation map."
-  [{:keys [run-fn cmd-kw tool-name]}]
+  [{:keys [run-fn cmd-kw tool-name shared-params?]}]
   (assert (ifn? run-fn)         ":run-fn must be a fn")
   (assert (keyword? cmd-kw)     ":cmd-kw must be a keyword")
   (let [cmd-name (name cmd-kw)
         op-tool  (or tool-name cmd-name)]
-    (fn [{:keys [operations] :as _params}]
+    (fn [{:keys [operations] :as params}]
       (if (or (nil? operations) (empty? operations))
         (mcp-error
          (str "operations is required (array of {command, ...} objects) for batch-"
               cmd-name))
-        (let [ops (mapv (fn [op] (assoc op :tool op-tool :command cmd-name))
-                        operations)]
+        (let [shared (when shared-params?
+                       (dissoc params :operations :parallel :command))
+              ops    (mapv (fn [op]
+                             (assoc (merge shared op) :tool op-tool :command cmd-name))
+                           operations)]
           (batchable-result->cli-envelope cmd-name (run-fn ops {})))))))
+
+(m/=> cli-batch-handler
+      [:=> [:cat HandlerSpec]
+       [:=> [:cat [:maybe [:map [:operations {:optional true} [:maybe [:sequential :map]]]]]]
+        CliEnvelope]])

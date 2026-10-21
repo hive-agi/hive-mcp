@@ -1,0 +1,15 @@
+{:available
+ ["systemd-run"
+  "--user"
+  "--scope"
+  "--collect"
+  "--quiet"
+  "-p"
+  "ManagedOOMPreference=none"
+  "claude"
+  "-p"
+  "hi"],
+ :empty-argv [],
+ :nil-answer ["bash" "-c" "ls"],
+ :truthy-not-true ["bash" "-c" "ls"],
+ :unavailable ["claude" "-p" "hi"]}

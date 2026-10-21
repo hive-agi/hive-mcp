@@ -1,0 +1,5 @@
+{:registered "stub-term:l9",
+ :missing
+ {:msg "No strategy registered for mode: :no-such-mode-f02",
+  :mode :no-such-mode-f02,
+  :terminals #{:stub-term}}}

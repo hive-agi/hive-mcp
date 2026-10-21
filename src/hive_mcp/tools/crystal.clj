@@ -8,7 +8,7 @@
    Result DSL: Internal logic returns Result maps ({:ok val} or {:error category}).
    Single try-result boundary at each handler level. Zero nested try-catch."
   (:require [hive-mcp.dns.result :as result]
-            [hive-mcp.tools.core :refer [mcp-json mcp-error]]
+            [hive-mcp.tools.core :as core :refer [mcp-json mcp-error]]
             [hive-spi.editor.services :as svc]
             [hive-mcp.crystal.core :as crystal]
             [hive-mcp.crystal.harvest.collect :as collect]
@@ -20,7 +20,9 @@
             [hive-mcp.context.request :as ctx]
             [hive-mcp.extensions.registry :as ext]
             [clojure.data.json :as json]
-            [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]))
+            [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
+            [hive-mcp.embeddings.shared-gate :as embed-gate]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -230,14 +232,13 @@
           (let [safe-stats (or (when (map? (:stats cr-result)) (:stats cr-result)) {})
                 summary-id (:summary-id cr-result)]
             (when summary-id
-              (future
-                (try
+              (future (embed-gate/with-lane :batch (try
                   (let [kg-result (ck-a summary-id harvested project-id effective-agent)]
                     (log/info "wrap-crystallize: KG edges completed"
                               "edges:" (:total-edges kg-result)
                               "capped?" (:capped? kg-result)))
                   (catch Throwable t
-                    (log/warn "wrap-crystallize: KG edges failed" (ex-message t))))))
+                    (log/warn "wrap-crystallize: KG edges failed" (ex-message t)))))))
             (emit-wrap-notify! effective-agent harvested cr-result project-id safe-stats)
             (crystal/reset-session-start! effective-agent)
             (log/info "wrap-crystallize: total" (- (System/currentTimeMillis) t-start) "ms")
@@ -315,6 +316,31 @@
    - include_children: When true (default), includes wraps from child projects."
   [params]
   (result->mcp (try-result :crystal/permeate-failed #(permeate* params))))
+
+;;; =============================================================================
+;;; Contracts
+;;; =============================================================================
+
+(def WrapNotify
+  "The :crystal/wrap-notify payload wrap-notify-data builds."
+  [:map
+   [:agent-id :any]
+   [:session-id :any]
+   [:project-id :any]
+   [:created-ids [:vector :any]]
+   [:stats [:map [:wrapped [:int {:min 0}]]]]])
+
+(m/=> resolve-agent [:=> [:cat [:maybe :map]] :string])
+
+(m/=> wrap-notify-data
+      [:=> [:cat :any [:maybe :map] [:maybe :map] :any [:maybe :map]] WrapNotify])
+
+;; The handlers are try-result boundaries: one MCP text response, never a throw.
+(m/=> handle-wrap-gather [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-wrap-crystallize [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-permeate-crystals [:=> [:cat [:maybe :map]] core/McpResponse])
 
 ;; Tool definitions
 (def tools

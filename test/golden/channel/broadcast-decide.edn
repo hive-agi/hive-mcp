@@ -1,0 +1,45 @@
+{:case-0
+ {:out {:verdict :spawner, :refused :no-reason-given},
+  :in ({:broadcast? true} nil)},
+ :case-1
+ {:out {:verdict :spawner},
+  :in ({:broadcast-reason nil} {:recent-broadcasts 50})},
+ :case-10
+ {:out {:verdict :direct},
+  :in ({:broadcast-reason "gossip", :to "ling-2"} nil)},
+ :case-11
+ {:out {:verdict :direct},
+  :in ({:to "ling-2"} {:recent-broadcasts 7})},
+ :case-12
+ {:out {:verdict :spawner},
+  :in ({:broadcast? false, :broadcast-reason :because} {})},
+ :case-13 {:out {:verdict :spawner}, :in ({} nil)},
+ :case-14
+ {:out {:verdict :spawner, :refused :no-reason-given},
+  :in ({:broadcast? true} nil)},
+ :case-15
+ {:out {:verdict :direct},
+  :in ({:broadcast? false, :broadcast-reason "", :to "ling-2"} nil)},
+ :case-2
+ {:out {:verdict :direct, :refused :addressed-to-a-peer},
+  :in ({:broadcast? true, :broadcast-reason "", :to "ling-2"} nil)},
+ :case-3
+ {:out {:verdict :spawner},
+  :in
+  ({:broadcast-reason :because} {:recent-broadcasts 50, :budget 8})},
+ :case-4
+ {:out {:verdict :direct, :refused :addressed-to-a-peer},
+  :in ({:broadcast? true, :to "ling-2"} nil)},
+ :case-5
+ {:out {:verdict :direct},
+  :in ({:broadcast-reason :shared-discovery, :to "ling-2"} nil)},
+ :case-6 {:out {:verdict :spawner}, :in ({} nil)},
+ :case-7
+ {:out {:verdict :spawner, :refused :no-reason-given},
+  :in ({:broadcast? true} nil)},
+ :case-8
+ {:out {:verdict :direct},
+  :in ({:broadcast? false, :to "ling-2"} nil)},
+ :case-9
+ {:out {:verdict :direct, :refused :addressed-to-a-peer},
+  :in ({:broadcast? true, :broadcast-reason nil, :to "ling-2"} nil)}}

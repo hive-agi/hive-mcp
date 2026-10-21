@@ -1,0 +1,7 @@
+{:ranked
+ [{:observation "fix the bug in the test", :score 5.5}
+  {:observation {:data "convention"}, :score 3.0}
+  {:observation "plain note", :score 1.0}],
+ :empty [],
+ :grounding {:none 0.0, :files-only 0.3, :some 0.5, :saturated 1.0},
+ :satisfies? true}

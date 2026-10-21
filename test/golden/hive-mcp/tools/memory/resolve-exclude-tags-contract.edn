@@ -1,0 +1,22 @@
+{:case-0
+ {:out ["ingestion-chunk" "ingestion-chunk"],
+  :in ({:default-excludes ["ingestion-chunk" "ingestion-chunk"]})},
+ :case-1
+ {:out ["ingestion-chunk"],
+  :in
+  ({:exclude-tags nil,
+    :default-excludes ["ingestion-chunk"],
+    :required-tags ["a"]})},
+ :case-2
+ {:out ["ingestion-chunk"],
+  :in ({:default-excludes ["ingestion-chunk"], :required-tags []})},
+ :case-3 {:out [], :in ({:default-excludes [], :required-tags ["a"]})},
+ :case-4
+ {:out [],
+  :in
+  ({:exclude-tags [], :default-excludes ["ingestion-chunk" "carto"]})},
+ :case-5
+ {:out ["ingestion-chunk"],
+  :in ({:default-excludes ["ingestion-chunk"]})},
+ :case-6 {:out [], :in ({:default-excludes []})},
+ :case-7 {:out [], :in ({:default-excludes []})}}

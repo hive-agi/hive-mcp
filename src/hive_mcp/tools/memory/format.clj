@@ -1,6 +1,8 @@
 (ns hive-mcp.tools.memory.format
   "JSON formatting utilities for memory entries."
-  (:require [clojure.data.json :as json]))
+  (:require [clojure.data.json :as json]
+            [malli.core :as m]
+            [hive-mcp.tools.memory.schema :as ms]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -108,3 +110,17 @@
   "Convert collection of entries to metadata-only JSON string."
   [entries]
   (json/write-str (mapv entry->metadata entries)))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> entry->json-alist [:=> [:cat ms/MaybeEntry] [:maybe [:map [:tags any?]]]])
+
+(m/=> entry->metadata
+      [:function
+       [:=> [:cat [:maybe ms/Entry]] ms/EntryMetadata]
+       [:=> [:cat [:maybe ms/Entry] ms/PreviewLen] ms/EntryMetadata]])
+
+(m/=> entries->json [:=> [:cat [:maybe [:sequential ms/MaybeEntry]]] :string])
+(m/=> entries->metadata-json [:=> [:cat [:maybe [:sequential ms/MaybeEntry]]] :string])

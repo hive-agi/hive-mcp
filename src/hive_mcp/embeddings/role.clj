@@ -4,7 +4,8 @@
    know about query/document roles. A template revision must be included in
    the embedding-space identity before a non-raw template is enabled."
   (:require [clojure.data.json :as json]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -12,6 +13,11 @@
 
 (def qwen-retrieval-instruction
   "Given a memory search query, retrieve stored memory passages relevant to the query")
+
+(def TemplateSpec
+  "A template revision, bare or under :template; nil means :raw. Unknown
+   revisions are admitted and fail closed in the body."
+  [:or [:maybe :keyword] [:map [:template {:optional true} [:maybe :keyword]]]])
 
 (defn shape-query
   "Shape query TEXT according to SPEC (:template revision or revision keyword).
@@ -24,6 +30,8 @@
       (str "Instruct: " qwen-retrieval-instruction "\nQuery: " text)
       (throw (ex-info "Unknown query template revision"
                       {:template revision :role :query})))))
+
+(m/=> shape-query [:=> [:cat TemplateSpec :string] :string])
 
 (defn shape-document
   "Serialize ENTRY for a backend's document role. :raw/:content-only
@@ -41,3 +49,11 @@
            "Content: " serialized)
       (throw (ex-info "Unknown document template revision"
                       {:template revision :role :document})))))
+
+;; Non-string content is JSON-serialized, so content is open.
+(m/=> shape-document [:=> [:cat TemplateSpec
+                           [:map
+                            [:content :any]
+                            [:type {:optional true} :any]
+                            [:tags {:optional true} [:maybe [:sequential :any]]]]]
+                      :string])

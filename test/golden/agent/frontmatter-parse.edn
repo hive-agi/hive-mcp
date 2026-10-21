@@ -1,0 +1,37 @@
+{:case-0
+ {:out {:frontmatter {}, :content "scout body"}, :in "scout body"},
+ :case-1
+ {:out {:frontmatter {}, :content "a1 line1\nline2"},
+  :in "a1 line1\nline2"},
+ :case-10
+ {:out
+  {:frontmatter {:name "scout", :description "finds"}, :content ""},
+  :in "---\nname: scout\ndescription: finds\n---\n"},
+ :case-11
+ {:out {:frontmatter {}, :content "a1 line1\nline2"},
+  :in "a1 line1\nline2"},
+ :case-2
+ {:out
+  {:frontmatter {:name "scout", :description "finds"}, :content ""},
+  :in "---\nname: scout\ndescription: finds\n---\n"},
+ :case-3
+ {:out {:frontmatter {:name "x-y", :description "finds"}, :content ""},
+  :in "---\nname: x-y\ndescription: finds\n---\n"},
+ :case-4
+ {:out
+  {:frontmatter {:name "scout", :description "d1"}, :content "body"},
+  :in "---\nname: scout\ndescription: d1\n---\nbody"},
+ :case-5
+ {:out {:frontmatter {:name "scout"}, :content "body"},
+  :in "---\nname: scout\n---\nbody"},
+ :case-6
+ {:out
+  {:frontmatter {:name "x-y", :description "d1"}, :content "body"},
+  :in "---\nname: x-y\ndescription: d1\n---\nbody"},
+ :case-7
+ {:out {:frontmatter {}, :content "scout body"}, :in "scout body"},
+ :case-8
+ {:out {:frontmatter {}, :content "x-y  pad "}, :in "x-y  pad "},
+ :case-9
+ {:out {:frontmatter {:name "a1"}, :content "pad"},
+  :in "---\nname: a1\n---\n pad "}}

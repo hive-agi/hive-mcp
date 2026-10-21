@@ -1,0 +1,24 @@
+{:qwen
+ {:api-base "http://stub/v1",
+  :api-key "sk-t",
+  :model "qwen/qwen3-embedding-8b",
+  :dimension 4096,
+  :dimension* 4096},
+ :small
+ {:api-base "http://stub/v1",
+  :api-key "sk-t",
+  :model "openai/text-embedding-3-small",
+  :dimension 1536,
+  :dimension* 1536},
+ :cohere
+ {:api-base "http://stub/v1",
+  :api-key "sk-t",
+  :model "cohere/embed-english-v3.0",
+  :dimension 1024,
+  :dimension* 1024},
+ :unknown
+ {:api-base "http://stub/v1",
+  :api-key "sk-t",
+  :model "someone/new-model",
+  :dimension 4096,
+  :dimension* 4096}}

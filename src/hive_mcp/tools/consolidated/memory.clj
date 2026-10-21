@@ -8,9 +8,11 @@
             [clojure.string :as str]
             [hive-mcp.events.core :as ev]
             [hive-mcp.memory.type-registry :as type-registry]
-            [hive-mcp.tools.cli :refer [make-batch-handler]]
             [hive-mcp.tools.composite :as composite]
-            [hive-mcp.tools.memory :as mem]))
+            [hive-mcp.tools.memory :as mem]
+            [hive-mcp.tools.memory.batch :as memory-batch]
+            [hive-mcp.batch.cli-adapter :as bca]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -74,79 +76,136 @@
    :batch-edit        #'mem/handle-mcp-memory-batch-edit
    :reembed           #'mem/handle-mcp-memory-reembed
    :batch-reembed     #'mem/handle-mcp-memory-batch-reembed
+   ;; Read-only drift report (vector ids vs entry-store ids); not a write command.
+   :reconcile         #'mem/handle-mcp-memory-reconcile
    ;; Human review queue for write-gated types. Deliberately NOT in
    ;; write-commands: a reviewer wants the verdict applied and reported in the
    ;; same turn, not queued behind an async task.
    :review            #'mem/handle-mcp-memory-review})
 
 (defn- make-single-command-batch
-  "Wrap make-batch-handler for batch ops targeting one command.
+  "Batch handler for ops targeting one memory command, run through a
+   `Batchable` runner (RUN-FN, default `hive-mcp.tools.memory.batch/run-batch`)
+   by way of `bca/cli-batch-handler`, which answers the `{:results :summary}`
+   envelope `make-batch-handler` always did. The default runner resolves CMD-KW
+   in `canonical-handlers`, so the verb's handler is the one registered there.
+   The outer call's params are merged under each op, as before.
 
-   An op that names CMD-KW, or names nothing at all, reaches the wrapped
-   handler with :command set to `(name cmd-kw)` — the behaviour a defaulted op
-   has always had, and the reason an op may still omit :command. An op naming
-   anything else — a nested sub-domain like \"kg edge\", or an unknown verb — is
-   answered per-op WITHOUT invoking the handler.
+   An op that names CMD-KW, or names nothing at all, reaches the runner with
+   :command set to `(name cmd-kw)` — the behaviour a defaulted op has always
+   had, and the reason an op may still omit :command. An op naming
+   anything else — a nested sub-domain like \"kg edge\", or an unknown verb —
+   is answered per-op WITHOUT invoking the runner.
 
    Rewriting EVERY op's :command (the 20260803 behaviour) coerced nine `memory
    batch-add :command \"kg edge\"` ops into nine `add` calls that each answered
    \"Invalid memory type: nil\", while the envelope still reported
-   {:success true} for all nine and summary {:total 9 :success 9 :failed 0}."
-  [cmd-kw handler-fn]
-  (let [cmd-name (name cmd-kw)
-        batch-fn (make-batch-handler {cmd-kw handler-fn})
-        targets? (fn [op]
-                   (let [c (some-> (:command op) (str/trim) (str/lower-case))]
-                     (or (nil? c) (str/blank? c) (= c cmd-name))))
-        rejection (fn [op]
-                    {:success false
-                     :command (:command op)
-                     :error (str "batch-" cmd-name " only accepts '" cmd-name
-                                 "' operations; got: " (pr-str (:command op))
-                                 ". Use the multi tool's operations batch for mixed-command batches.")})]
-    (fn [{:keys [operations] :as params}]
-      (if (or (nil? operations) (empty? operations))
-        (batch-fn params)
-        (let [accepted (into [] (comp (filter targets?)
-                                      (map #(assoc % :command cmd-name)))
-                             operations)
-              ;; Only accepted ops reach the wrapped handler, so its results
-              ;; vector is aligned with ACCEPTED, not with OPERATIONS. Zip it
-              ;; back onto the positions the caller supplied.
-              by-index (if (empty? accepted)
-                         {}
-                         (zipmap (->> operations
-                                      (map-indexed (fn [i op] (when (targets? op) i)))
-                                      (remove nil?))
-                                 (:results (json/read-str
-                                            (:text (batch-fn (assoc params :operations accepted)))
-                                            :key-fn keyword))))
-              results (mapv (fn [i op]
-                              (if (targets? op) (get by-index i) (rejection op)))
-                            (range) operations)
-              succeeded (count (filter :success results))]
-          {:type "text"
-           :text (json/write-str
-                  {:results results
-                   :summary {:total   (count operations)
-                             :success succeeded
-                             :failed  (- (count operations) succeeded)}})})))))
+   {:success true} for all nine and summary {:total 9 :success 9 :failed 0}.
+
+   A batch the runner refuses before executing anything (duplicate op ids, a
+   dependency cycle) answers no per-op results, only :errors; each accepted op
+   is then reported failed with those errors rather than left empty."
+  ([cmd-kw] (make-single-command-batch cmd-kw #'memory-batch/run-batch))
+  ([cmd-kw run-fn]
+   (let [cmd-name (name cmd-kw)
+         batch-fn (bca/cli-batch-handler {:run-fn run-fn
+                                          :cmd-kw cmd-kw
+                                          :shared-params? true})
+         targets? (fn [op]
+                    (let [c (some-> (:command op) (str/trim) (str/lower-case))]
+                      (or (nil? c) (str/blank? c) (= c cmd-name))))
+         rejection (fn [op]
+                     {:success false
+                      :command (:command op)
+                      :error (str "batch-" cmd-name " only accepts '" cmd-name
+                                  "' operations; got: " (pr-str (:command op))
+                                  ". Use the multi tool's operations batch for mixed-command batches.")})]
+     (fn [{:keys [operations] :as params}]
+       (if (or (nil? operations) (empty? operations))
+         (batch-fn params)
+         (let [accepted (filterv targets? operations)
+               ;; Only accepted ops reach the runner, so its results vector is
+               ;; aligned with ACCEPTED, not with OPERATIONS. Zip it back onto
+               ;; the positions the caller supplied.
+               body     (when (seq accepted)
+                          (json/read-str (:text (batch-fn (assoc params :operations accepted)))
+                                         :key-fn keyword))
+               refused  (fn [] {:success false
+                                :command cmd-name
+                                :error (str "batch refused: " (str/join "; " (:errors body)))})
+               by-index (zipmap (->> operations
+                                     (map-indexed (fn [i op] (when (targets? op) i)))
+                                     (remove nil?))
+                                (concat (:results body) (repeatedly refused)))
+               results (mapv (fn [i op]
+                               (if (targets? op) (get by-index i) (rejection op)))
+                             (range) operations)
+               succeeded (count (filter :success results))]
+           {:type "text"
+            :text (json/write-str
+                   {:results results
+                    :summary {:total   (count operations)
+                              :success succeeded
+                              :failed  (- (count operations) succeeded)}})}))))))
+
+(def ^:private bare-batch-pointer
+  (str "memory has no generic `batch` verb. To batch memory sub-commands call "
+       "command=batch-add, batch-edit, batch-get (or batch-feedback, batch-tags, "
+       "batch-duration, batch-promote, batch-demote, batch-reembed); for mixed "
+       "commands such as `kg edge` use the multi tool's operations batch. Bare "
+       "`batch` belongs to the ingest addon: file ingestion is "
+       "command=\"ingest batch\" with paths (array of file paths) or dir."))
+
+(defn bare-batch-refusal
+  "The refusal text for a bare `memory batch` call PARAMS, or nil when PARAMS
+   name files (paths or dir) and no operations, so the call is the ingest
+   addon's file batch. Pure."
+  [{:keys [operations paths dir]}]
+  (let [has-ops?   (if (string? operations)
+                     (not (str/blank? operations))
+                     (seq operations))
+        has-files? (or (if (string? paths) (not (str/blank? paths)) (seq paths))
+                       (and (string? dir) (not (str/blank? dir))))]
+    (cond
+      has-ops?         (str "Refused: operations were given to bare `batch`, which is not run. "
+                            bare-batch-pointer)
+      (not has-files?) (str "Refused: bare `batch` with no operations and no files. "
+                            bare-batch-pointer)
+      :else            nil)))
+
+(m/=> bare-batch-refusal [:=> [:cat [:maybe :map]] [:maybe [:string {:min 1}]]])
+
+(defn make-bare-batch-handler
+  "Handler for the bare `batch` verb of the memory tool. A call naming files is
+   handed to DELEGATE as `ingest batch`, the addon verb it used to reach by
+   auto-qualification; anything else is refused synchronously by
+   `bare-batch-refusal`, so no ingest job is started for it."
+  [delegate]
+  (fn [params]
+    (if-let [msg (bare-batch-refusal params)]
+      {:type "text" :text msg :isError true}
+      (delegate (assoc params :command "ingest batch")))))
+
+(m/=> make-bare-batch-handler [:=> [:cat hive-mcp.tools.core/ToolHandler] hive-mcp.tools.core/ToolHandler])
 
 ;; =============================================================================
 ;; Canonical Handlers — memory flat + kg/migration nested (core-owned)
 ;; Addon subdomains (ingest, enrich) injected via contribute-commands! "memory"
 ;; =============================================================================
 
+(declare handle-memory)
+
 (def canonical-handlers
   (merge handlers
-         {:batch-add      (make-single-command-batch :add (:add handlers))
-          :batch-feedback (make-single-command-batch :feedback (:feedback handlers))
+         {:batch-add      (make-single-command-batch :add)
+          :batch-feedback (make-single-command-batch :feedback)
           ;; PR4.3 — additional batch siblings via the same iterator pattern.
           ;; A real single-store-call optimization for these is PR5+ work.
-          :batch-tags     (make-single-command-batch :tags (:tags handlers))
-          :batch-duration (make-single-command-batch :duration (:duration handlers))
-          :batch-promote  (make-single-command-batch :promote (:promote handlers))
-          :batch-demote   (make-single-command-batch :demote (:demote handlers))
+          :batch-tags     (make-single-command-batch :tags)
+          :batch-duration (make-single-command-batch :duration)
+          :batch-promote  (make-single-command-batch :promote)
+          :batch-demote   (make-single-command-batch :demote)
+          :batch          (make-bare-batch-handler #'handle-memory)
           ;; Nested subdomains resolved lazily via composite/lazy-resolve-handlers
           ;; — drops the static `c-kg`/`c-mig` :requires that previously
           ;; coupled this ns to those consolidators (DIP).
@@ -176,7 +235,7 @@
   {:name "memory"
    :consolidated true
    :default-async-commands write-commands
-   :description "Consolidated memory operations. Commands: add, query, metadata, get, search, duration, promote, demote, log_access, feedback, helpfulness, tags, cleanup, expiring, expire, migrate, migrate-scoped, import, decay, xpoll, rename, edit, review, reembed, batch-add, batch-edit, batch-feedback, batch-get, batch-reembed. Use 'query' only for structured filters (type/tags/scope/duration); use 'search' for natural-language semantic retrieval. Use 'help' command to list all.\n\nAxiom gate: `type: \"axiom\"` is NOT written directly — it is a NOMINATION. The entry is parked as type `axiom-candidate`, tagged `axiom-pending`, and listed for human review at the next catchup; the add response carries `queued_for_review`. Nominate freely, but write the entry so a reviewer can judge it: state the invariant and why breaking it is a category error rather than a footgun. Only a human resolves it, via 'review'.\n\nReview: 'review' with NO id lists EVERY gate's pending queue, grouped by queue type (limit per queue, default 25, scope all, metadata). Optional `type` narrows listing to one queue type. 'review' with id + verdict=\"approve\" lands the originally requested type (axiom); verdict=\"reject\" lands `as` (default principle). Both strip the pending tags and stamp an audit trail. Reviewing is a human decision — do not call approve on your own nomination unless the user asked you to.\n\nEdit: 'edit' mutates an entry in place (id preserved → KG edges preserved). Params: id (required), type, content, find+replace, tags, duration, abstraction_level, reason. find+replace (exclusive with content) swaps the one exact occurrence of find in the content; zero or several occurrences is an error. Any other param is rejected with an error, never ignored. Content change triggers re-embed. 'batch-edit' takes operations:[...] and optional dry-run:true for validation preview.\n\nReembed: 'reembed' re-vectorizes an entry without rewriting content (id required). Use after embedding-model swaps, vector-index rebuilds, or stale-vector recovery. Preserves id, content, tags, edges, duration, abstraction-level, project-id. 'batch-reembed' takes ids:[...] for sequential per-op processing.\n\nWrites default to async: they return {:queued true :task-id ...} immediately and deliver the real result via ---TOOLRESULT--- on the caller's next tool call. Pass async:false to force sync. Reads (query/metadata/get/search/expiring/batch-get/review) stay synchronous by default; pass async:true to queue them."
+   :description "Consolidated memory operations. Commands: add, query, metadata, get, search, duration, promote, demote, log_access, feedback, helpfulness, tags, cleanup, expiring, expire, migrate, migrate-scoped, import, decay, xpoll, rename, edit, review, reembed, batch-add, batch-edit, batch-feedback, batch-get, batch-reembed. There is no generic 'batch': batch memory sub-commands with batch-add/batch-edit/batch-get (mixed commands such as 'kg edge' go through the multi tool's operations); bare 'batch' is the ingest addon's file batch (paths or dir) and refuses an operations array. Use 'query' only for structured filters (type/tags/scope/duration); use 'search' for natural-language semantic retrieval. Use 'help' command to list all.\n\nProject scope on add: the entry's project-id is resolved in this order: (1) the first `scope:project:<id>` tag in `tags` (caller-explicit wins), (2) the project of `directory`, (3) the session project. `scope:global` is a visibility tag and never overrides the project-id. migrate-scoped is a write and is queued; if no ---TOOLRESULT--- arrives, read the result back with batch-get (project-id).\n\nAxiom gate: `type: \"axiom\"` is NOT written directly — it is a NOMINATION. The entry is parked as type `axiom-candidate`, tagged `axiom-pending`, and listed for human review at the next catchup; the add response carries `queued_for_review`. Nominate freely, but write the entry so a reviewer can judge it: state the invariant and why breaking it is a category error rather than a footgun. Only a human resolves it, via 'review'.\n\nReview: 'review' with NO id lists EVERY gate's pending queue, grouped by queue type (limit per queue, default 25, scope all, metadata). Optional `type` narrows listing to one queue type. 'review' with id + verdict=\"approve\" lands the originally requested type (axiom); verdict=\"reject\" lands `as` (default principle). Both strip the pending tags and stamp an audit trail. Reviewing is a human decision — do not call approve on your own nomination unless the user asked you to.\n\nEdit: 'edit' mutates an entry in place (id preserved → KG edges preserved). Params: id (required), type, content, find+replace, tags, duration, abstraction_level, reason. find+replace (exclusive with content) swaps the one exact occurrence of find in the content; zero or several occurrences is an error. Any other param is rejected with an error, never ignored. Content change triggers re-embed. 'batch-edit' takes operations:[...] and optional dry-run:true for validation preview.\n\nReembed: 'reembed' re-vectorizes an entry without rewriting content (id required). Use after embedding-model swaps, vector-index rebuilds, or stale-vector recovery. Preserves id, content, tags, edges, duration, abstraction-level, project-id. 'batch-reembed' takes ids:[...] for sequential per-op processing.\n\nWrites default to async: they return {:queued true :task-id ...} immediately and deliver the real result via ---TOOLRESULT--- on the caller's next tool call. Pass async:false to force sync. Reads (query/metadata/get/search/expiring/batch-get/review) stay synchronous by default; pass async:true to queue them."
    :inputSchema {:type "object"
                  :properties {"command" {:type "string"
                                          :description "Command to execute. Memory commands are flat (add, query, etc.). Subdomains: 'kg edge', 'kg traverse', 'migration backup', 'ingest file', 'enrich enrich'. Use command='help' to list all."}
@@ -196,12 +255,12 @@
                                          :description "[edit] Replacement for find (may be empty to delete it)."}
                               "tags" {:type "array"
                                       :items {:type "string"}
-                                      :description "[add/query/tags] Tags for categorization"}
+                                      :description "[add/query/tags] Tags for categorization. On add, a scope:project:<id> tag sets the entry's project-id and wins over `directory` and the session project."}
                               "duration" {:type "string"
                                           :enum ["ephemeral" "short" "medium" "long" "permanent"]
                                           :description "[add/query] Duration/TTL category"}
                               "directory" {:type "string"
-                                           :description "[add/query/search] Working directory for project scope"}
+                                           :description "[add/query/search] Working directory for project scope. On add, an explicit scope:project:<id> tag overrides it."}
                               "agent_id" {:type "string"
                                           :description "[add] Agent identifier for attribution"}
                               "kg_implements" {:type "array"
@@ -268,6 +327,8 @@
                               "path" {:type "string" :description "[migration] Backup file path"}
                               "backend" {:type "string" :description "[migration] Backend filter"}
                               ;; Shared
+                              "async" {:type "boolean"
+                                       :description "Run in background by default for writes; pass false to wait for the result."}
                               "operations" {:type "array"
                                             :items {:type "object"}
                                             :description "Array of operation objects for batch commands"}
@@ -325,5 +386,15 @@
                                           "(e.g. \"causes\", \"part-of\", \"motivates\"). Use with relation=\"relates\"; "
                                           "normalized to kebab-case; ignored for structural relations.")}))])
       (catch Exception _ [base]))))
+
+(def AdvertisedToolDef
+  "One advertised MCP tool-def: a name, a description and an object
+   inputSchema whose properties are keyed by param name."
+  [:map
+   [:name [:string {:min 1}]]
+   [:description :string]
+   [:inputSchema [:map [:type [:= "object"]] [:properties [:map-of :string :map]]]]])
+
+(m/=> tool-defs [:=> [:cat] [:vector {:min 1 :max 1} AdvertisedToolDef]])
 
 (def tools [tool-def])

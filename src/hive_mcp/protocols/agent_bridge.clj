@@ -2,7 +2,8 @@
   "Protocols for agent backend abstraction and session lifecycle."
   (:require [clojure.core.async :as async]
             [hive-mcp.protocols.registry :as reg]
-            [hive-mcp.protocols.saa :as psaa]))
+            [hive-mcp.protocols.saa :as psaa]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -129,6 +130,15 @@
   ([] (->noop-session (str "noop-agent-session-" (System/currentTimeMillis))))
   ([id] (->NoopAgentSession id (java.time.Instant/now))))
 
+(def AgentSession
+  "Any value satisfying IAgentSession; generates NoopAgentSessions."
+  [:fn {:gen/schema :string :gen/fmap (fn [id] (->NoopAgentSession id (java.time.Instant/now)))}
+   #(satisfies? IAgentSession %)])
+
+(m/=> ->noop-session [:function
+                      [:=> [:cat] AgentSession]
+                      [:=> [:cat :any] AgentSession]])
+
 ;;; ============================================================================
 ;;; NoopAgentBackend (No-Op Fallback)
 ;;; ============================================================================
@@ -221,20 +231,34 @@
   [impl]
   (reg/install! slot impl))
 
+(def AgentBackend
+  "Any value satisfying IAgentBackend; generates the NoopAgentBackend."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (->NoopAgentBackend))}
+   #(satisfies? IAgentBackend %)])
+
+;; The input is loose: the slot's :validate assert rejects a non-backend.
+(m/=> set-agent-backend! [:=> [:cat :any] AgentBackend])
+
 (defn get-agent-backend
   "Get the active agent backend, or NoopAgentBackend if none set."
   []
   (reg/current slot))
+
+(m/=> get-agent-backend [:=> [:cat] AgentBackend])
 
 (defn agent-backend-set?
   "Check if an agent backend is configured."
   []
   (reg/present? slot))
 
+(m/=> agent-backend-set? [:=> [:cat] :boolean])
+
 (defn clear-agent-backend!
   "Clear the active agent backend."
   []
   (reg/clear! slot))
+
+(m/=> clear-agent-backend! [:=> [:cat] :nil])
 
 ;;; ============================================================================
 ;;; Utility Functions
@@ -245,16 +269,22 @@
   [x]
   (satisfies? IAgentBackend x))
 
+(m/=> agent-backend? [:=> [:cat :any] :boolean])
+
 (defn agent-session?
   "Check if object implements IAgentSession protocol."
   [x]
   (satisfies? IAgentSession x))
+
+(m/=> agent-session? [:=> [:cat :any] :boolean])
 
 (defn enhanced?
   "Check if a non-noop agent backend is active."
   []
   (and (agent-backend-set?)
        (not (instance? NoopAgentBackend (get-agent-backend)))))
+
+(m/=> enhanced? [:=> [:cat] :boolean])
 
 (defn backend-capabilities
   "Get a summary of available agent backend capabilities."
@@ -264,3 +294,13 @@
      :enhanced? (enhanced?)
      :available? (available? backend)
      :capabilities (capabilities backend)}))
+
+(def BackendCapabilities
+  "The summary `backend-capabilities` answers for the active backend."
+  [:map
+   [:backend-id :keyword]
+   [:enhanced? :boolean]
+   [:available? :boolean]
+   [:capabilities [:set :keyword]]])
+
+(m/=> backend-capabilities [:=> [:cat] BackendCapabilities])

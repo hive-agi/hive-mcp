@@ -11,7 +11,9 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.config.schema :as schema]
             [hive-mcp.config.merge :as merge]
-            [hive-mcp.config.core :as config]))
+            [hive-mcp.config.core :as config]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -96,6 +98,27 @@
   (testing "Default config passes full validation"
     (let [result (schema/validate-config merge/default-config)]
       (is (:valid? result) (str "Default config failed validation: " (:humanized result))))))
+
+(deftrifecta-from-schema valid-memory-validation hive-mcp.config.schema/validate-memory-config
+  {:in [:map [:memory [:map [:default-store :keyword]
+                         [:routes {:optional true} [:map-of :keyword :keyword]]]]]
+   :out [:map [:valid? [:= true]] [:value schema/MemoryConfig]]
+   :rel (fn [input out] (= (:memory input) (:value out)))
+   :num-tests 500})
+
+(deftest validation-result-arms
+  (testing "each arm of the validation result validates against itself only"
+    (let [ok   (schema/validate-section :memory {:default-store :chroma})
+          bad  (schema/validate-section :memory {:routes {}})
+          cfg  (schema/validate-config {:memory 1})
+          ok-arm   [:map [:valid? [:= true]] [:value schema/MemoryConfig]]]
+      (is (m/validate ok-arm ok))
+      (is (not (m/validate schema/ValidationFailure ok)))
+      (is (m/validate schema/ValidationFailure bad))
+      (is (not (m/validate ok-arm bad)))
+      (is (m/validate schema/ValidationFailure cfg))
+      (is (m/validate schema/ConfigValidation (schema/validate-config merge/default-config)))
+      (is (thrown? clojure.lang.ExceptionInfo (schema/validate-section :other {}))))))
 
 (deftest test-full-config-with-memory
   (testing "Full config with memory section validates"

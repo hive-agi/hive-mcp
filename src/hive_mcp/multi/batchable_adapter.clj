@@ -12,7 +12,8 @@
    batchable_adapter_test enforces this.
 
    Decision: 20260429230453-7e7627cc"
-  (:require [hive-mcp.batch :as batch]
+  (:require [malli.core :as m]
+            [hive-mcp.batch :as batch]
             [hive-mcp.batch.protocol :as proto]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -39,3 +40,5 @@
    (->DefaultBatchableAdapter tool-name resolve-handler nil))
   ([tool-name resolve-handler emit-fx]
    (->DefaultBatchableAdapter tool-name resolve-handler emit-fx)))
+
+(m/=> make-default-adapter [:function [:=> [:cat :string [:fn {:gen/elements [identity]} ifn?]] [:fn {:gen/elements [(->DefaultBatchableAdapter "tool" identity nil)]} #(satisfies? proto/Batchable %)]] [:=> [:cat :string [:fn {:gen/elements [identity]} ifn?] [:maybe [:fn {:gen/elements [identity]} ifn?]]] [:fn {:gen/elements [(->DefaultBatchableAdapter "tool" identity nil)]} #(satisfies? proto/Batchable %)]]])

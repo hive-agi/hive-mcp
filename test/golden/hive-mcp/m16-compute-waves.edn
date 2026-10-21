@@ -1,0 +1,29 @@
+{:case-0 {:out {}, :in ([])},
+ :case-1
+ {:out {"s5" 0, "s4" 0},
+  :in ([{:id "s4"} {:id "s5"} {:id "s4", :depends-on ["s2" "s3"]}])},
+ :case-2
+ {:out {"s5" 0, "s1" 0, "s3" 0, "s4" 0},
+  :in
+  ([{:id "s4", :depends-on ["s2"]}
+    {:id "s5"}
+    {:id "s1", :depends-on ["s1"]}
+    {:id "s1"}
+    {:id "s3"}])},
+ :case-3
+ {:out {"s3" 0, "s4" 0, "s1" 0},
+  :in
+  ([{:id "s3"}
+    {:id "s4"}
+    {:id "s1", :depends-on ["s2" "s1"]}
+    {:id "s3", :depends-on []}])},
+ :case-4
+ {:out {"s3" 0},
+  :in ([{:id "s3", :depends-on []} {:id "s3", :depends-on ["s3"]}])},
+ :case-5
+ {:out {"s4" 0, "s1" 0},
+  :in ([{:id "s4", :depends-on []} {:id "s1", :depends-on []}])},
+ :case-6
+ {:out {"s5" 0, "s4" 0},
+  :in ([{:id "s5", :depends-on []} {:id "s4"}])},
+ :case-7 {:out {"s4" 0}, :in ([{:id "s4"}])}}

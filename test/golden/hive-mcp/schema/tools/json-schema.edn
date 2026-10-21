@@ -1,0 +1,19 @@
+{:case-0 {:out {:type "integer"}, :in :int},
+ :case-1
+ {:out {:oneOf [{:type "string"} {:type "null"}]},
+  :in [:maybe :string]},
+ :case-2
+ {:out {:type "array", :items {:type "string"}},
+  :in [:vector :keyword]},
+ :case-3
+ {:out
+  {:type "object",
+   :properties {"a" {:type "integer"}},
+   :required ["a"]},
+  :in [:map [:a :int]]},
+ :case-4 {:out {:type "string"}, :in :string},
+ :case-5
+ {:out {:oneOf [{:type "string"} {:type "null"}]},
+  :in [:maybe :string]},
+ :case-6 {:out {:type "string", :enum ["a" "b"]}, :in [:enum "a" "b"]},
+ :case-7 {:out {:type "string"}, :in :string}}

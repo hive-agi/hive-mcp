@@ -52,13 +52,13 @@
                                   :error (str "Entry not found: " (:id op))})})]]})
 
 (defn- recording-store
-  "IMemoryStore stub serving `stored` and recording every write."
-  [writes]
+  "IMemoryStore stub serving `entries` and recording every write."
+  [entries writes]
   (reify mem-proto/IMemoryStore
     (connect! [_ _] nil) (disconnect! [_] nil) (connected? [_] true)
     (health-check [_] {})
     (add-entry! [_ e] (swap! writes conj [:add e]) (:id e))
-    (get-entry [_ id] (stored id))
+    (get-entry [_ id] (entries id))
     (update-entry! [_ id u] (swap! writes conj [:update id u]) nil)
     (delete-entry! [_ id] (swap! writes conj [:delete id]) nil)
     (query-entries [_ _] [])
@@ -68,14 +68,17 @@
     (reset-store! [_] nil)))
 
 (deftest dry-run-reports-per-op-and-writes-nothing
+  ;; Distinct ids per op: a batch naming one id twice is refused before any
+  ;; check runs (edit-concurrency), and a dry run mirrors the real edit.
   (let [writes   (atom [])
+        entries  (assoc stored "e2" {:id "e2" :type "note" :content "alpha beta beta"})
         snapshot (mem-proto/registered-stores)]
     (try
-      (mem-proto/register-store! :default (recording-store writes))
+      (mem-proto/register-store! :default (recording-store entries writes))
       (let [resp (edit/handle-batch-edit
                   {:dry-run true
                    :operations [{:id "e1" :find "alpha" :replace "z"}
-                                {:id "e1" :find "beta" :replace "z"}
+                                {:id "e2" :find "beta" :replace "z"}
                                 {:id "gone" :content "x"}]})
             body (json/read-str (:text resp) :key-fn keyword)]
         (is (= [true false false] (mapv :ok (:results body))))

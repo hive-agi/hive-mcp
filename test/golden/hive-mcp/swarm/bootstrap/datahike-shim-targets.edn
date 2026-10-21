@@ -1,0 +1,12 @@
+{"->DatahikeBootstrap"
+ [:delegates-to
+  "hive-agent.swarm.bootstrap.datahike"
+  "->DatahikeBootstrap"],
+ "make-datahike-bootstrap"
+ [:delegates-to
+  "hive-agent.swarm.bootstrap.datahike"
+  "make-datahike-bootstrap"],
+ "map->DatahikeBootstrap"
+ [:delegates-to
+  "hive-agent.swarm.bootstrap.datahike"
+  "map->DatahikeBootstrap"]}

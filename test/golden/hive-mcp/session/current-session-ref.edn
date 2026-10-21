@@ -1,0 +1,24 @@
+{:adopted
+ #:session{:id "s-ed",
+           :kind :adhoc,
+           :parent-id "s-a",
+           :depth nil,
+           :project-id "hive"},
+ :blank-id
+ #:session{:id nil,
+           :kind :adhoc,
+           :parent-id nil,
+           :depth nil,
+           :project-id nil},
+ :loose
+ #:session{:id "s-ed",
+           :kind :adhoc,
+           :parent-id nil,
+           :depth nil,
+           :project-id "other"},
+ :no-world
+ #:session{:id "s-ed",
+           :kind :adhoc,
+           :parent-id nil,
+           :depth nil,
+           :project-id nil}}

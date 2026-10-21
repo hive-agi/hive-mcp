@@ -72,7 +72,8 @@
    delivered) goes through the :block/* emitter seam, hive-mcp.channel.blocks,
    where the per-response budget applies to it."
   (:require [hive-mcp.extensions.registry :as ext]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 (def key-namespace
   "Extension keys in this namespace are row transforms."
@@ -99,10 +100,14 @@
              (conj steps [k f]))))
   k)
 
+(m/=> register-core-transform! [:=> [:cat :keyword ifn?] :keyword])
+
 (defn core-transform-keys
   "Reserved keys of the core transforms, in the order they run."
   []
   (mapv first @core-steps))
+
+(m/=> core-transform-keys [:=> [:cat] [:vector :keyword]])
 
 (defn transform-keys
   "Registered (non-core) row-transform keys, sorted, so the chain's order is
@@ -116,6 +121,8 @@
          (remove reserved)
          sort
          vec)))
+
+(m/=> transform-keys [:=> [:cat] [:vector :keyword]])
 
 (defn- valid-row?
   [row]
@@ -201,3 +208,5 @@
                    (fn [] (mapv (juxt identity ext/get-extension) (transform-keys)))
                    read-ctx
                    core-out)))))
+
+(m/=> apply-transforms [:=> [:cat [:sequential :map] :map] [:vector :map]])

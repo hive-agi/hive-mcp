@@ -84,10 +84,20 @@
           (reg/unregister-shutdown! n1)
           (reg/unregister-shutdown! n2))))))
 
+(defn- refused?
+  "True when THUNK is refused: the register-* `:pre` AssertionError, or the
+   malli :invalid-input the register-* contract raises first when the
+   contracts are instrumented. Either is the same refusal."
+  [thunk]
+  (try (thunk) false
+       (catch Throwable t
+         (or (instance? AssertionError t)
+             (= :malli.core/invalid-input (:type (ex-data t)))))))
+
 (deftest shutdown-register-rejects-non-impl
   (testing "register-shutdown! :pre rejects a non-IShutdownHook (AssertionError)"
-    (is (thrown? AssertionError (reg/register-shutdown! {:not "a hook"})))
-    (is (thrown? AssertionError (reg/register-shutdown! (mk-sweep (str k-pfx "x") 1)))
+    (is (refused? #(reg/register-shutdown! {:not "a hook"})))
+    (is (refused? #(reg/register-shutdown! (mk-sweep (str k-pfx "x") 1)))
         "an ISweepable is not an IShutdownHook")))
 
 ;; =============================================================================
@@ -106,7 +116,7 @@
 
 (deftest sweep-register-rejects-non-impl
   (testing "register-sweep! :pre rejects a non-ISweepable"
-    (is (thrown? AssertionError (reg/register-sweep! {:not "a sweep"})))))
+    (is (refused? #(reg/register-sweep! {:not "a sweep"})))))
 
 ;; =============================================================================
 ;; Resource-owner registry
@@ -126,7 +136,7 @@
 
 (deftest resource-register-rejects-non-impl
   (testing "register-resource-owner! :pre rejects a non-IResourceOwner"
-    (is (thrown? AssertionError (reg/register-resource-owner! {:not "an owner"})))))
+    (is (refused? #(reg/register-resource-owner! {:not "an owner"})))))
 
 ;; =============================================================================
 ;; Cross-registry snapshot shape

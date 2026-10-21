@@ -1,0 +1,8 @@
+{:seeded [:wf/default],
+ :empty-default true,
+ :outcomes [:ok :replaced :conflict :ok],
+ :by-owner #:facet{:a [:facet/m1], :b [:facet/m2]},
+ :removed [:facet/m1],
+ :after [:facet/m2],
+ :owner-of-m2 :facet/b,
+ :reset {:by-id {}, :by-owner {}}}

@@ -1,0 +1,19 @@
+{:slave-ids [["solo"] ["w:1" "w"] ["coordinator:9"]],
+ :requested
+ [{:ok nil}
+  {:ok nil}
+  {:ok {:a 1}}
+  {:ok {"a" 1}}
+  {:refused
+   "SPAWN DENIED: `grant` must be a JSON object such as {\"tools\": [\"memory:search\"], \"may_spawn\": false}; got a JSON string holding PersistentVector. Nothing was spawned."}
+  true],
+ :lineage ["leaf" "mid" "root"],
+ :depth [1 0],
+ :always-permitted
+ ["hivemind:ask"
+  "hivemind:messages"
+  "hivemind:respond"
+  "swarm:hivemind ask"
+  "swarm:hivemind messages"
+  "swarm:hivemind respond"],
+ :child-no-domain true}

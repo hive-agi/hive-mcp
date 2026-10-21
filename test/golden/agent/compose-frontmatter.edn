@@ -1,0 +1,31 @@
+{:parsed
+ {:frontmatter
+  {:name "scout",
+   :description "finds things",
+   :tools ("read_file" "grep"),
+   :model "INHERIT",
+   :max-turns "7",
+   :hivemind-role "role/worker",
+   :spawn-mode "headless",
+   :skills "a, b"},
+  :content "You scout."},
+ :agent
+ {:description "finds things",
+  :tools ["read_file" "grep"],
+  :source :project,
+  :hivemind-role :role/worker,
+  :filename "scout",
+  :skills ["a" "b"],
+  :base-dir "/x/y",
+  :system-prompt "You scout.",
+  :spawn-mode :headless,
+  :max-turns 7,
+  :model :inherit,
+  :agent-type "scout"},
+ :no-fm {:frontmatter {}, :content "just text"},
+ :bad-yaml {:content "body"},
+ :missing-desc
+ {:error "Agent 'n' missing required 'description' in frontmatter"},
+ :not-agent nil,
+ :all-tools nil,
+ :default-prompt "You are n."}

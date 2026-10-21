@@ -1,0 +1,32 @@
+{:case-0
+ {:out {:commits [], :count 0}, :in ({:commits [], :count 0} [])},
+ :case-1
+ {:out {:commits [], :count 0},
+  :in ({:commits [], :count 0} [{:pid "z", :commits []}])},
+ :case-2
+ {:out {:commits ["NL" "r" "[] " "[] "], :count 4, :by-scope {"" 2}},
+  :in
+  ({:commits ["NL" "r"], :count -1} [{:pid "", :commits ["" ""]}])},
+ :case-3
+ {:out {:commits [], :count 0},
+  :in
+  ({:commits [], :count 1}
+   [{:pid "g", :commits []} {:pid "", :commits []}])},
+ :case-4
+ {:out
+  {:commits ["" "R0a" "22" "[ikyl] z42" "[ikyl] "],
+   :count 5,
+   :by-scope {"ikyl" 2}},
+  :in
+  ({:commits ["" "R0a" "22"], :count -1}
+   [{:pid "86I", :commits []} {:pid "ikyl", :commits ["z42" ""]}])},
+ :case-5
+ {:out
+  {:commits
+   ["[0ox5C] a" "[0ox5C] WZ" "[0ox5C] 00" "[V698] 7x" "[V698] "],
+   :count 5,
+   :by-scope {"0ox5C" 3, "V698" 2}},
+  :in
+  ({:commits [], :count -2}
+   [{:pid "0ox5C", :commits ["a" "WZ" "00"]}
+    {:pid "V698", :commits ["7x" ""]}])}}

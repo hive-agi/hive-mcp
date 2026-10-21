@@ -1,0 +1,5 @@
+{:valid-type [true true false false false],
+ :valid-duration [true false],
+ :valid-entry [true false],
+ :explain-paths [[:id] [:type]],
+ :add-request [nil {:errors [{:path [:content], :value ""}]}]}

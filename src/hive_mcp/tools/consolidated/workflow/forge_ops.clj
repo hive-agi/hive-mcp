@@ -23,7 +23,8 @@
             [hive-mcp.vectordb.facade :as memory]
             [hive-mcp.vectordb.kanban-facade :as kanban]
             [hive-mcp.plan.parser :as plan-parser]
-            [hive-mcp.tools.kanban.transitions :as kt]))
+            [hive-mcp.tools.kanban.transitions :as kt]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -101,6 +102,14 @@
       :failed (filterv (complement :killed) results)
       :count (count (filter :killed results))})))
 
+(def SmiteReport
+  "What smite! reaped: the killed results, the failed ones, and the count."
+  [:map [:smited [:vector :any]] [:failed [:vector :any]] [:count nat-int?]])
+
+(m/=> smite! [:function
+              [:=> [:cat [:maybe :map]] SmiteReport]
+              [:=> [:cat [:maybe :map] [:maybe :map]] SmiteReport]])
+
 ;; ── Survey (query + prioritize kanban) ──────────────────────────────────────
 
 (defn parse-kanban-tasks
@@ -113,6 +122,8 @@
       (sequential? parsed) parsed
       (map? parsed)        (or (:tasks parsed) [])
       :else                [])))
+
+(m/=> parse-kanban-tasks [:=> [:cat :any] [:sequential :any]])
 
 (defn sort-by-priority-then-created
   "Sort tasks by priority DESC then creation-date ASC."
@@ -127,6 +138,8 @@
                      (compare (str (:id a)) (str (:id b)))
                      (compare pa pb))))
                tasks))))
+
+(m/=> sort-by-priority-then-created [:=> [:cat [:maybe [:sequential :map]]] [:vector :map]])
 
 (defn- apply-milestone-boundary-filter
   "Post-filter: exclude tasks from milestones whose prerequisites are incomplete.
@@ -191,6 +204,8 @@
         (throw (ex-info "Forge plan dependency edge missing; repair conversion before dispatch"
                         {:plan-id plan-id :task-id id :dependency-step dependency}))))
     ids))
+
+(m/=> plan-task-ids [:=> [:cat :any [:maybe :map]] [:set :any]])
 
 (defn- hydrate-task
   "Outcome of filling a ready task from its stored card read through `lookup`:
@@ -271,6 +286,15 @@
                         {:plan-id plan_id :error (ex-message e)} e))
         {:tasks [] :count 0 :selection-status :error :error (ex-message e)}))))
 
+(def SurveyResult
+  "A survey selection: the tasks it picked, how many, and why."
+  [:map
+   [:tasks [:sequential :map]]
+   [:count nat-int?]
+   [:selection-status [:enum :ready :blocked :no-ready :complete :error]]])
+
+(m/=> survey [:=> [:cat [:maybe :map]] SurveyResult])
+
 (defn survey-view
   "A survey result shaped for an MCP answer. Each task keeps :id :title :priority
    :project :wave-number, gains :execution (its card's provider, model, spawn-mode
@@ -289,6 +313,8 @@
                           (:persona execution)
                           (assoc :persona? true))))
                     tasks)))))
+
+(m/=> survey-view [:=> [:cat :map] :map])
 
 ;; ── Forge Status ────────────────────────────────────────────────────────────
 
@@ -316,3 +342,12 @@
                                  :ids      (mapv :slave/id active-lings)}
                         :kanban kanban-result}
                  budget-summary (assoc :budget budget-summary)))))
+
+(def AtomRef
+  "A derefable state holder (the forge-state atom)."
+  [:fn {:gen/fmap (fn [m] (atom m)) :gen/schema :map} #(instance? clojure.lang.IDeref %)])
+
+(m/=> forge-status* [:=> [:cat [:maybe :map] AtomRef]
+                     [:map [:ok [:map [:forge :map] [:lings [:map [:total nat-int?] [:active nat-int?]
+                                                             [:terminal nat-int?] [:ids [:vector :any]]]]
+                                 [:kanban :any] [:budget {:optional true} :any]]]]])

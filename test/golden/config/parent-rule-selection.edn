@@ -1,0 +1,30 @@
+{:case-0 {:out nil, :in ([] "/home/alpha")},
+ :case-1
+ {:out "", :in ([{:path-prefix "", :parent-id ""}] "/home/beta")},
+ :case-2 {:out nil, :in ([] "/other")},
+ :case-3
+ {:out nil, :in ([{:path-prefix "gLw", :parent-id ""}] "/other")},
+ :case-4
+ {:out "T3",
+  :in
+  ([{:path-prefix "", :parent-id "T3"}
+    {:path-prefix "J", :parent-id "6"}
+    {:path-prefix "1", :parent-id ""}
+    {:path-prefix "", :parent-id "J7"}]
+   "/home/beta")},
+ :case-5
+ {:out nil,
+  :in
+  ([{:path-prefix "5i1", :parent-id ""}
+    {:path-prefix "O", :parent-id "28GE0"}]
+   "/home/beta")},
+ :case-6
+ {:out nil,
+  :in ([{:path-prefix "j2v1m", :parent-id "7uN4ok"}] "/home/beta")},
+ :case-7
+ {:out nil,
+  :in
+  ([{:path-prefix "tVGKr6", :parent-id "Ya7"}
+    {:path-prefix "fpwl", :parent-id "3uw8"}
+    {:path-prefix "Z", :parent-id "62T2"}]
+   "/home/alpha")}}

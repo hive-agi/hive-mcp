@@ -14,7 +14,9 @@
             [hive-mcp.tools.catchup.hierarchy :as hier]
             [clojure.tools.logging :as log]
             [hive-mcp.resilience.store :refer [with-resilience]]
-            [hive-mcp.tools.catchup.scope-filter :as sf])
+            [hive-mcp.tools.catchup.scope-filter :as sf]
+            [hive-mcp.tools.catchup.shapes :as shapes]
+            [malli.core :as m])
   (:import [java.util.concurrent Future TimeUnit TimeoutException]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -207,3 +209,19 @@
       fresh         (:result hit)
       hit           (do (trigger-refresh! project-id) (:result hit))
       :else         (fetch-axioms-sync! project-id now))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def AxiomCache
+  "The axiom cache value: project-id -> stored result."
+  [:map-of shapes/ProjectId
+   [:map [:result [:vector shapes/Entry]] [:expires-at :int] [:stored-at :int]]])
+
+(m/=> invalidate-axioms-cache!
+      [:function
+       [:=> [:cat] AxiomCache]
+       [:=> [:cat shapes/ProjectId] AxiomCache]])
+(m/=> evict-stale! [:=> [:cat] nat-int?])
+(m/=> query-axioms [:=> [:cat shapes/ProjectId] [:vector {:max 100} shapes/Entry]])

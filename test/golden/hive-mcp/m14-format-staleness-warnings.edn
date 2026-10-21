@@ -1,0 +1,13 @@
+{:case-0 {:out nil, :in (nil)},
+ :case-1
+ {:out
+  "## file-level Staleness Warnings\nNOTE: b is stale\nNOTE: a is stale\n\n",
+  :in ([{:message "NOTE: b is stale"} {:message "NOTE: a is stale"}])},
+ :case-2 {:out nil, :in ([])},
+ :case-3
+ {:out "## file-level Staleness Warnings\nNOTE: a is stale\n\n",
+  :in ([{:message "NOTE: a is stale"}])},
+ :case-4 {:out nil, :in (nil)},
+ :case-5 {:out nil, :in (nil)},
+ :case-6 {:out nil, :in (nil)},
+ :case-7 {:out nil, :in (nil)}}

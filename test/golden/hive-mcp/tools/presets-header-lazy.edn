@@ -1,0 +1,48 @@
+{:case-0
+ {:out
+  {:type "text",
+   :text
+   "{\"header\":\"## Assigned Presets\\n\\nYou have access to: **reviewer**\\n\\n### IMMEDIATE: Fetch at Session Start\\n\\n**Before starting work**, fetch your assigned presets:\\n```\\npreset(command: \\\"get\\\", name: \\\"reviewer\\\")\\n```\\n\\n### Quick Summary (Lower Tokens)\\n\\nFor orientation without full content (~200 tokens vs ~1500):\\n```\\npreset(command: \\\"core\\\", name: \\\"<preset-name>\\\")\\n```\\n\\n### Discovery\\n\\nFind presets by topic:\\n```\\npreset(command: \\\"search\\\", query: \\\"testing patterns\\\")\\npreset(command: \\\"list_slim\\\")  ; Names + categories only\\n```\\n\\n### When to Fetch\\n\\n- Session start: fetch assigned presets\\n- Unfamiliar task: search for relevant presets\\n- Need guidance: use `core` for quick summary\\n\",\"mode\":\"lazy\",\"preset-count\":1,\"approx-tokens\":300}"},
+  :in ({:presets ["reviewer"]})},
+ :case-1
+ {:out
+  {:type "text",
+   :text
+   "{\"header\":\"## Assigned Presets\\n\\nYou have access to: **reviewer, clarity**\\n\\n### IMMEDIATE: Fetch at Session Start\\n\\n**Before starting work**, fetch your assigned presets:\\n```\\npreset(command: \\\"get\\\", name: \\\"reviewer\\\")\\npreset(command: \\\"get\\\", name: \\\"clarity\\\")\\n```\\n\\n### Quick Summary (Lower Tokens)\\n\\nFor orientation without full content (~200 tokens vs ~1500):\\n```\\npreset(command: \\\"core\\\", name: \\\"<preset-name>\\\")\\n```\\n\\n### Discovery\\n\\nFind presets by topic:\\n```\\npreset(command: \\\"search\\\", query: \\\"testing patterns\\\")\\npreset(command: \\\"list_slim\\\")  ; Names + categories only\\n```\\n\\n### When to Fetch\\n\\n- Session start: fetch assigned presets\\n- Unfamiliar task: search for relevant presets\\n- Need guidance: use `core` for quick summary\\n\",\"mode\":\"lazy\",\"preset-count\":2,\"approx-tokens\":300}"},
+  :in ({:presets ["reviewer" "clarity"]})},
+ :case-2
+ {:out
+  {:type "text",
+   :text
+   "{\"header\":\"## Assigned Presets\\n\\nYou have access to: **clarity, tdd, clarity**\\n\\n### IMMEDIATE: Fetch at Session Start\\n\\n**Before starting work**, fetch your assigned presets:\\n```\\npreset(command: \\\"get\\\", name: \\\"clarity\\\")\\npreset(command: \\\"get\\\", name: \\\"tdd\\\")\\npreset(command: \\\"get\\\", name: \\\"clarity\\\")\\n```\\n\\n### Quick Summary (Lower Tokens)\\n\\nFor orientation without full content (~200 tokens vs ~1500):\\n```\\npreset(command: \\\"core\\\", name: \\\"<preset-name>\\\")\\n```\\n\\n### Discovery\\n\\nFind presets by topic:\\n```\\npreset(command: \\\"search\\\", query: \\\"testing patterns\\\")\\npreset(command: \\\"list_slim\\\")  ; Names + categories only\\n```\\n\\n### When to Fetch\\n\\n- Session start: fetch assigned presets\\n- Unfamiliar task: search for relevant presets\\n- Need guidance: use `core` for quick summary\\n\",\"mode\":\"lazy\",\"preset-count\":3,\"approx-tokens\":300}"},
+  :in ({:presets ["clarity" "tdd" "clarity"]})},
+ :case-3
+ {:out
+  {:type "text",
+   :text
+   "{\"header\":\"## Assigned Presets\\n\\nYou have access to: **tdd, tdd, clarity**\\n\\n### IMMEDIATE: Fetch at Session Start\\n\\n**Before starting work**, fetch your assigned presets:\\n```\\npreset(command: \\\"get\\\", name: \\\"tdd\\\")\\npreset(command: \\\"get\\\", name: \\\"tdd\\\")\\npreset(command: \\\"get\\\", name: \\\"clarity\\\")\\n```\\n\\n### Quick Summary (Lower Tokens)\\n\\nFor orientation without full content (~200 tokens vs ~1500):\\n```\\npreset(command: \\\"core\\\", name: \\\"<preset-name>\\\")\\n```\\n\\n### Discovery\\n\\nFind presets by topic:\\n```\\npreset(command: \\\"search\\\", query: \\\"testing patterns\\\")\\npreset(command: \\\"list_slim\\\")  ; Names + categories only\\n```\\n\\n### When to Fetch\\n\\n- Session start: fetch assigned presets\\n- Unfamiliar task: search for relevant presets\\n- Need guidance: use `core` for quick summary\\n\",\"mode\":\"lazy\",\"preset-count\":3,\"approx-tokens\":300}"},
+  :in ({:presets ["tdd" "tdd" "clarity"]})},
+ :case-4
+ {:out
+  {:type "text",
+   :text
+   "{\"header\":\"## Assigned Presets\\n\\nYou have access to: **reviewer, reviewer**\\n\\n### IMMEDIATE: Fetch at Session Start\\n\\n**Before starting work**, fetch your assigned presets:\\n```\\npreset(command: \\\"get\\\", name: \\\"reviewer\\\")\\npreset(command: \\\"get\\\", name: \\\"reviewer\\\")\\n```\\n\\n### Quick Summary (Lower Tokens)\\n\\nFor orientation without full content (~200 tokens vs ~1500):\\n```\\npreset(command: \\\"core\\\", name: \\\"<preset-name>\\\")\\n```\\n\\n### Discovery\\n\\nFind presets by topic:\\n```\\npreset(command: \\\"search\\\", query: \\\"testing patterns\\\")\\npreset(command: \\\"list_slim\\\")  ; Names + categories only\\n```\\n\\n### When to Fetch\\n\\n- Session start: fetch assigned presets\\n- Unfamiliar task: search for relevant presets\\n- Need guidance: use `core` for quick summary\\n\",\"mode\":\"lazy\",\"preset-count\":2,\"approx-tokens\":300}"},
+  :in ({:presets ["reviewer" "reviewer"]})},
+ :case-5
+ {:out
+  {:type "text",
+   :text
+   "{\"header\":\"## Assigned Presets\\n\\nYou have access to: **reviewer, clarity**\\n\\n### IMMEDIATE: Fetch at Session Start\\n\\n**Before starting work**, fetch your assigned presets:\\n```\\npreset(command: \\\"get\\\", name: \\\"reviewer\\\")\\npreset(command: \\\"get\\\", name: \\\"clarity\\\")\\n```\\n\\n### Quick Summary (Lower Tokens)\\n\\nFor orientation without full content (~200 tokens vs ~1500):\\n```\\npreset(command: \\\"core\\\", name: \\\"<preset-name>\\\")\\n```\\n\\n### Discovery\\n\\nFind presets by topic:\\n```\\npreset(command: \\\"search\\\", query: \\\"testing patterns\\\")\\npreset(command: \\\"list_slim\\\")  ; Names + categories only\\n```\\n\\n### When to Fetch\\n\\n- Session start: fetch assigned presets\\n- Unfamiliar task: search for relevant presets\\n- Need guidance: use `core` for quick summary\\n\",\"mode\":\"lazy\",\"preset-count\":2,\"approx-tokens\":300}"},
+  :in ({:presets ["reviewer" "clarity"]})},
+ :case-6
+ {:out
+  {:type "text",
+   :text
+   "{\"header\":\"## Assigned Presets\\n\\nYou have access to: **tdd, tdd**\\n\\n### IMMEDIATE: Fetch at Session Start\\n\\n**Before starting work**, fetch your assigned presets:\\n```\\npreset(command: \\\"get\\\", name: \\\"tdd\\\")\\npreset(command: \\\"get\\\", name: \\\"tdd\\\")\\n```\\n\\n### Quick Summary (Lower Tokens)\\n\\nFor orientation without full content (~200 tokens vs ~1500):\\n```\\npreset(command: \\\"core\\\", name: \\\"<preset-name>\\\")\\n```\\n\\n### Discovery\\n\\nFind presets by topic:\\n```\\npreset(command: \\\"search\\\", query: \\\"testing patterns\\\")\\npreset(command: \\\"list_slim\\\")  ; Names + categories only\\n```\\n\\n### When to Fetch\\n\\n- Session start: fetch assigned presets\\n- Unfamiliar task: search for relevant presets\\n- Need guidance: use `core` for quick summary\\n\",\"mode\":\"lazy\",\"preset-count\":2,\"approx-tokens\":300}"},
+  :in ({:presets ["tdd" "tdd"]})},
+ :case-7
+ {:out
+  {:type "text",
+   :text
+   "{\"header\":\"## Assigned Presets\\n\\nYou have access to: **reviewer**\\n\\n### IMMEDIATE: Fetch at Session Start\\n\\n**Before starting work**, fetch your assigned presets:\\n```\\npreset(command: \\\"get\\\", name: \\\"reviewer\\\")\\n```\\n\\n### Quick Summary (Lower Tokens)\\n\\nFor orientation without full content (~200 tokens vs ~1500):\\n```\\npreset(command: \\\"core\\\", name: \\\"<preset-name>\\\")\\n```\\n\\n### Discovery\\n\\nFind presets by topic:\\n```\\npreset(command: \\\"search\\\", query: \\\"testing patterns\\\")\\npreset(command: \\\"list_slim\\\")  ; Names + categories only\\n```\\n\\n### When to Fetch\\n\\n- Session start: fetch assigned presets\\n- Unfamiliar task: search for relevant presets\\n- Need guidance: use `core` for quick summary\\n\",\"mode\":\"lazy\",\"preset-count\":1,\"approx-tokens\":300}"},
+  :in ({:presets ["reviewer"]})}}

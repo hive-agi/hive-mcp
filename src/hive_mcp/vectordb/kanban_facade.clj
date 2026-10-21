@@ -28,7 +28,10 @@
             [hive-mcp.config.core :as cfg-core]
             [hive-mcp.protocols.memory :as proto]
             [taoensso.timbre :as log]
-            [hive-mcp.events.write-events :as write-events]))
+            [hive-mcp.events.write-events :as write-events]
+            [hive-spi.memory.contract :as contract]
+            [malli.core :as m]
+            [hive-mcp.vectordb.facade :as facade]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -45,6 +48,12 @@
   []
   (cfg-core/get-kanban-store-mode))
 
+(def Mode
+  "A kanban-store routing mode."
+  [:enum :default :dual-read :kanban])
+
+(m/=> mode [:=> [:cat] Mode])
+
 (defn active-key
   "Registry slot the *write* side targets:
      :default → :default      (legacy / milvus)
@@ -58,6 +67,8 @@
     :default :default
     (:kanban :dual-read) :kanban))
 
+(m/=> active-key [:=> [:cat] [:enum :default :kanban]])
+
 (defn registered?
   "True iff the registry has an entry under `slot-kw`. Wraps
    protocols.memory/registered-stores so callers don't reach for the
@@ -65,12 +76,16 @@
   [slot-kw]
   (some? (get (proto/registered-stores) slot-kw)))
 
+(m/=> registered? [:=> [:cat :any] :boolean])
+
 (defn available?
   "True iff the :kanban slot is currently registered. The kanban codepath
    uses this to decide whether to gate dual-read fallback or fail loud
    in :kanban mode at boot time."
   []
   (registered? :kanban))
+
+(m/=> available? [:=> [:cat] :boolean])
 
 ;;; ============================================================================
 ;;; Store resolution (mode-aware)
@@ -87,18 +102,68 @@
 ;;; CRUD — read path
 ;;; ============================================================================
 
+;; Read-your-writes overlay. The vector backends behind the kanban slot are
+;; read-after-write eventual: an entry read straight after `update-entry!` can
+;; still carry the PRE-write :content/:tags. Every kanban verb is a
+;; read-modify-write of the whole content map or tag vector, so a second verb
+;; issued right after the first (update then retag, move then edit) rebuilt its
+;; write from the stale entry and silently reverted the first one (status back
+;; to old, added tags gone, while both calls reported ok). The facade therefore
+;; remembers what it last wrote per id for `overlay-ttl-ms` and lays it over
+;; what the store answers. Bounded by the TTL, so a write from another process
+;; is only masked for that long.
+(def ^:private overlay-ttl-ms 15000)
+
+(defonce ^:private write-overlay (atom {}))
+
+(defn- now-ms [] (System/currentTimeMillis))
+
+(defn- remember-write!
+  "Record the :content/:tags a write put in the store, and drop expired rows."
+  [id updates]
+  (let [t    (now-ms)
+        kept (select-keys updates [:content :tags])
+        stores (select-keys (proto/registered-stores) [:default :kanban])]
+    (swap! write-overlay
+           (fn [m]
+             (let [live (into {} (filter (fn [[_ v]] (< (- t (:at v)) overlay-ttl-ms))) m)]
+               (if (seq kept)
+                 (update live id (fn [prev]
+                                   (assoc (merge (when (= stores (:stores prev))
+                                                   (dissoc prev :at :stores))
+                                                 kept)
+                                          :stores stores :at t)))
+                 live))))))
+
+(defn- forget-write! [id] (swap! write-overlay dissoc id))
+
+(defn- overlay-entry
+  "`entry` with the facade's own last write for its id laid over it."
+  [id entry]
+  (let [{:keys [at stores] :as w} (get @write-overlay id)]
+    (if (and (map? entry) at
+             (= stores (select-keys (proto/registered-stores) [:default :kanban]))
+             (< (- (now-ms) at) overlay-ttl-ms))
+      (merge entry (select-keys w [:content :tags]))
+      entry)))
+
 (defn get-entry-by-id
   "Read a kanban entry by id. In :kanban and :dual-read modes, falls back
    across the :kanban and :default stores so legacy entries in either slot
-   stay retrievable."
+   stay retrievable. The facade's own recent writes are laid over the answer
+   (see `write-overlay`) so a read straight after a write sees the write."
   [id]
-  (case (mode)
-    :default   (proto/get-entry (proto/get-store) id)
-    :kanban    (or (rescue nil (proto/get-entry (proto/get-store :kanban) id))
-                   (rescue nil (proto/get-entry (proto/get-store) id)))
-    :dual-read (or (when (registered? :kanban)
-                     (rescue nil (proto/get-entry (proto/get-store :kanban) id)))
-                   (proto/get-entry (proto/get-store) id))))
+  (overlay-entry
+   id
+   (case (mode)
+     :default   (proto/get-entry (proto/get-store) id)
+     :kanban    (or (rescue nil (proto/get-entry (proto/get-store :kanban) id))
+                    (rescue nil (proto/get-entry (proto/get-store) id)))
+     :dual-read (or (when (registered? :kanban)
+                      (rescue nil (proto/get-entry (proto/get-store :kanban) id)))
+                    (proto/get-entry (proto/get-store) id)))))
+
+(m/=> get-entry-by-id [:=> [:cat [:maybe :string]] [:maybe facade/Entry]])
 
 (defn query-entries
   "Query kanban entries with filtering. Mirrors hive-mcp.vectordb.facade
@@ -157,6 +222,10 @@
       :kanban    (merged-query)
       :dual-read (merged-query))))
 
+;; :default mode passes the store's answer through (nil allowed); the merging
+;; modes always answer a vector.
+(m/=> query-entries [:=> [:cat facade/KwTail] [:maybe facade/Entries]])
+
 ;;; ============================================================================
 ;;; CRUD — write path
 ;;; ============================================================================
@@ -212,10 +281,29 @@
                          :project-id  (:project-id entry)}))
     id))
 
+(m/=> add-entry! [:=> [:cat facade/EntryIn] facade/StoreAnswer])
+
+(defn write-rejected?
+  "True when a store's answer to a write means nothing landed: nil (unknown
+   id, the hive-spi :absent answer) or a hive-spi failure map, i.e.
+   `{:success? false ...}` (hive-qdrant) or `{:error <category> ...}`
+   (hive-milvus). Any other answer, an id string, true, a `{:queued? true}`
+   ack or a queued-op map, is an accepted write."
+  [result]
+  (or (nil? result)
+      (contract/failure? result)))
+
+(m/=> write-rejected? [:=> [:cat :any] :boolean])
+
 (defn update-entry!
   "Soft-update a kanban entry (status retag, tag rewrite). In :dual-read,
    primary = :kanban, mirror best-effort to :default. Announces the write
-   through write-events once the primary write returned."
+   through write-events once the primary write returned, and remembers the
+   written :content/:tags so the next `get-entry-by-id` reads its own write
+   (see `write-overlay`). Only a write the store accepted is remembered: an
+   unknown id answers nil (hive-spi contract :absent) and must not be served
+   from the overlay as if it had landed. A `{:success? false}` failure map
+   (see `write-rejected?`) is a refusal too, and is never remembered."
   [id updates]
   (let [result (case (mode)
                  :default   (proto/update-entry! (proto/get-store) id updates)
@@ -223,16 +311,23 @@
                  :dual-read (let [primary (proto/update-entry! (proto/get-store :kanban) id updates)]
                               (mirror-write! (fn [s] (proto/update-entry! s id updates)))
                               primary))]
+    (when-not (write-rejected? result) (remember-write! id updates))
     (announce! :updated {:id         id
                          :tags       (:tags updates)
                          :project-id (:project-id updates)
                          :fields     (vec (keys updates))})
     result))
 
+(m/=> update-entry! [:=> [:cat :string [:map-of :keyword :any]] facade/StoreAnswer])
+
 (defn delete-entry!
   "Hard-delete a kanban entry. In :dual-read, attempts both slots so
    the entry can't resurrect from the legacy slot during soak. Announces
-   the write through write-events once the primary delete returned."
+   the write through write-events once the primary delete returned, and drops
+   any remembered write so a deleted entry is not served from the overlay.
+   A refused delete (a hive-spi failure map, see `write-rejected?`) removed
+   nothing: it is neither announced nor forgotten, and the store's answer is
+   returned unchanged."
   [id]
   (let [result (case (mode)
                  :default   (proto/delete-entry! (proto/get-store) id)
@@ -240,8 +335,12 @@
                  :dual-read (let [primary (proto/delete-entry! (proto/get-store :kanban) id)]
                               (mirror-write! (fn [s] (proto/delete-entry! s id)))
                               primary))]
-    (announce! :deleted {:id id})
+    (when-not (write-rejected? result)
+      (forget-write! id)
+      (announce! :deleted {:id id}))
     result))
+
+(m/=> delete-entry! [:=> [:cat :string] facade/StoreAnswer])
 
 ;;; ============================================================================
 ;;; Boot-time validation
@@ -274,3 +373,6 @@
                   nil)]
     (when warning (log/warn warning {:mode m}))
     {:mode m :ok? ok :warning warning}))
+
+(m/=> validate-mode!
+      [:=> [:cat] [:map [:mode Mode] [:ok? :boolean] [:warning [:maybe :string]]]])

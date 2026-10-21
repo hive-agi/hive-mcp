@@ -27,7 +27,8 @@
    Exercised by `hive-mcp.batch.ref-conformance-test`, which runs the corpora
    against every provider on the classpath."
   (:require [clojure.string :as str]
-            [hive-mcp.dsl.param-domain :as pd]))
+            [hive-mcp.dsl.param-domain :as pd]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -115,6 +116,8 @@
   [v]
   (and (string? v) (str/starts-with? v ref-prefix)))
 
+(m/=> ref-string? [:=> [:cat :any] :boolean])
+
 (defn parsed-ref-faithful?
   "Does OUT answer IN under the :bx/a contract? Decides WITHOUT re-parsing:
 
@@ -137,6 +140,9 @@
            (and (str/starts-with? body joined)
                 (every? #{\.} (subs body (count joined))))))))
 
+;; IN is any candidate (nil included); OUT is whatever a provider answered.
+(m/=> parsed-ref-faithful? [:=> [:cat [:maybe :string] :any] :boolean])
+
 (defn ref-op-id
   "The op-id S designates — the ref body up to the first dot. The
    specification's own reader: `undeclared-ref-pairs` must not borrow a
@@ -147,6 +153,9 @@
           i    (str/index-of body ".")]
       (if i (subs body 0 i) body))))
 
+;; Total over every value: a non-ref answers nil.
+(m/=> ref-op-id [:=> [:cat :any] [:maybe OpId]])
+
 (defn ref-strings
   "Every $ref string inside V, at any depth."
   [v]
@@ -156,6 +165,9 @@
     (sequential? v)  (into [] (mapcat ref-strings) v)
     :else            []))
 
+;; Total over every value: it walks maps and sequentials, ignores the rest.
+(m/=> ref-strings [:=> [:cat :any] [:vector :string]])
+
 (defn op-ref-op-ids
   "The set of op-ids OP references through its addressable params. Prose
    params are quotation and contribute nothing. The :bx/f rule."
@@ -164,6 +176,8 @@
         (comp (mapcat (fn [[_ v]] (ref-strings v)))
               (map ref-op-id))
         (pd/ref-walkable-entries op)))
+
+(m/=> op-ref-op-ids [:=> [:cat Op] OpIds])
 
 (defn undeclared-ref-pairs
   "#{[op-id ref-id] ...} for every $ref in OPS whose target the referencing
@@ -178,17 +192,24 @@
                       [id ref-id]))))
         ops))
 
+;; The referencing op's :id is whatever the op carries, nil when absent.
+(m/=> undeclared-ref-pairs [:=> [:cat [:sequential Op]] [:set [:tuple :any OpId]]])
+
 (defn undeclared-ref-error
   "The error string :bx/g emits for one [op-id ref-id] violation."
   [op-id ref-id]
   (str "Operation '" op-id "' has $ref to '" ref-id
        "' but doesn't declare it in depends_on"))
 
+(m/=> undeclared-ref-error [:=> [:cat :any [:maybe OpId]] :string])
+
 (defn expected-ref-dep-errors
   "The set of error strings a conforming :bx/g answers OPS with."
   [ops]
   (into #{} (map (fn [[op-id ref-id]] (undeclared-ref-error op-id ref-id)))
         (undeclared-ref-pairs ops)))
+
+(m/=> expected-ref-dep-errors [:=> [:cat [:sequential Op]] [:set :string]])
 
 (defn not-found-sentinel?
   "Is V a resolve-ref (:bx/c) not-found sentinel — a namespaced keyword named
@@ -200,6 +221,8 @@
   (and (keyword? v)
        (some? (namespace v))
        (= "ref-not-found" (name v))))
+
+(m/=> not-found-sentinel? [:=> [:cat :any] :boolean])
 
 ;; =============================================================================
 ;; Corpora — the rows every provider must answer identically

@@ -1,0 +1,27 @@
+{:case-0
+ {:out {:type "text", :text "scope is required", :isError true},
+  :in ({})},
+ :case-1
+ {:out
+  {:type "text",
+   :text
+   "{\"success\":true,\"scope\":\"hive-mcp:agora\",\"visible-scopes\":[\"hive-mcp:agora\",\"hive-mcp\",\"global\"],\"node-count\":0,\"edge-count\":0,\"nodes\":[],\"edges\":[]}"},
+  :in ({:scope "hive-mcp:agora"})},
+ :case-2
+ {:out {:type "text", :text "scope is required", :isError true},
+  :in ({:scope nil})},
+ :case-3
+ {:out {:type "text", :text "scope is required", :isError true},
+  :in ({:scope nil})},
+ :case-4
+ {:out {:type "text", :text "scope is required", :isError true},
+  :in ({})},
+ :case-5
+ {:out {:type "text", :text "scope is required", :isError true},
+  :in ({})},
+ :case-6
+ {:out {:type "text", :text "scope is required", :isError true},
+  :in ({})},
+ :case-7
+ {:out {:type "text", :text "scope is required", :isError true},
+  :in ({})}}

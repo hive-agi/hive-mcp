@@ -1,0 +1,66 @@
+{:case-0
+ {:out
+  {:id "t2",
+   :status
+   {:state "working",
+    :message {:role "agent", :parts [{:type "text", :text "m"}]}},
+   :kind "status-update"},
+  :in ("t2" "working" "m")},
+ :case-1
+ {:out
+  {:id "t2",
+   :status
+   {:state "completed",
+    :message
+    {:role "agent", :parts [{:type "text", :text "connected"}]}},
+   :kind "status-update"},
+  :in ("t2" "completed" "connected")},
+ :case-2
+ {:out
+  {:id "t1",
+   :status
+   {:state "completed",
+    :message {:role "agent", :parts [{:type "text", :text "m"}]}},
+   :kind "status-update"},
+  :in ("t1" "completed" "m")},
+ :case-3
+ {:out
+  {:id "t1",
+   :status
+   {:state "failed",
+    :message
+    {:role "agent", :parts [{:type "text", :text "connected"}]}},
+   :kind "status-update"},
+  :in ("t1" "failed" "connected")},
+ :case-4
+ {:out
+  {:id "t1",
+   :status
+   {:state "working",
+    :message {:role "agent", :parts [{:type "text", :text "m"}]}},
+   :kind "status-update"},
+  :in ("t1" "working" "m")},
+ :case-5
+ {:out
+  {:id "t1",
+   :status
+   {:state "completed",
+    :message {:role "agent", :parts [{:type "text", :text "m"}]}},
+   :kind "status-update"},
+  :in ("t1" "completed" "m")},
+ :case-6
+ {:out
+  {:id "t1",
+   :status
+   {:state "canceled",
+    :message {:role "agent", :parts [{:type "text", :text "m"}]}},
+   :kind "status-update"},
+  :in ("t1" "canceled" "m")},
+ :case-7
+ {:out
+  {:id "t2",
+   :status
+   {:state "working",
+    :message {:role "agent", :parts [{:type "text", :text "m"}]}},
+   :kind "status-update"},
+  :in ("t2" "working" "m")}}

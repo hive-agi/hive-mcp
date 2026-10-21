@@ -38,7 +38,9 @@
             [taoensso.timbre :as log]
             [hive-mcp.tools.consolidated.hot :as c-hot]
             [hive-mcp.spi.contributions :as contrib]
-            [hive-mcp.tools.schema-keys :as schema-keys]))
+            [hive-mcp.tools.schema-keys :as schema-keys]
+            [hive-mcp.tools.async-params :as async-params]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -232,9 +234,14 @@
       (filterv #(not (:deprecated %)) all-tools))))
 
 (defn get-consolidated-tools
-  "Get only the 9 domain-grouped root tools for minimal tool listing."
+  "Get only the 9 domain-grouped root tools for minimal tool listing.
+
+   Each carries the `async` params (`async-params/with-async-params`): bb-mcp's
+   compact mode advertises exactly these schemas, and without the declaration
+   a client strips `async:false` before it reaches the server."
   []
-  (filterv :consolidated (get-all-tools :include-deprecated? false)))
+  (into [] (comp (filter :consolidated) (map async-params/with-async-params))
+        (get-all-tools :include-deprecated? false)))
 
 (defn get-filtered-tools
   "Get tools for MCP tools/list response."
@@ -304,6 +311,7 @@
                 (into (empty props)
                       (remove (fn [[k v]]
                                 (and (not (contains? required (name k)))
+                                     (not= "async" (name k))
                                      (subcommand-scoped? v))))
                       props)))))
 
@@ -312,10 +320,12 @@
 
    = consolidated native roots ++ addon/extension tools, deduped by name
    (consolidated wins), with the visibility gate applied, and with addon
-   command contributions (`fold-contributions`) and addon schema extensions
-   merged into each :inputSchema. Non-allowlisted tools are KEPT in
-   the list but marked :deprecated, so a consumer can hide them from tools/list
-   while still dispatching them via tools/call (back-compat).
+   command contributions (`fold-contributions`), addon schema extensions and
+   the `async` params (`async-params/with-async-params`, after the fold so a
+   contributed default-async verb gets the opt-out wording) merged into each
+   :inputSchema. Non-allowlisted tools are KEPT in the list but marked
+   :deprecated, so a consumer can hide them from tools/list while still
+   dispatching them via tools/call (back-compat).
 
    Single-sources the gate: build-server-spec, refresh-tools! and any external
    loader all derive their surface from `apply-visibility-gate`, so the
@@ -331,10 +341,11 @@
    every dispatch path are unchanged."
   ([] (get-advertised-tools nil))
   ([{:keys [compact-schema?]}]
-   (let [tools (mapv (comp schema-keys/legal-tool merge-schema-ext fold-contributions)
+   (let [tools (mapv (comp schema-keys/legal-tool async-params/with-async-params
+                           merge-schema-ext fold-contributions)
                      (apply-visibility-gate
                       (distinct-by-name
-                       (concat (get-consolidated-tools)
+                       (concat (filterv :consolidated (get-all-tools :include-deprecated? false))
                                (ext/get-registered-tools)))))]
      (if compact-schema?
        (mapv compact-schema tools)
@@ -414,6 +425,53 @@
   "Find a tool definition by name."
   [name]
   (first (filter #(= (:name %) name) (get-all-tools))))
+
+;; -----------------------------------------------------------------------------
+;; Contracts
+;; -----------------------------------------------------------------------------
+
+(def ToolDefs
+  "A realized tool table: always a vector of tool defs."
+  [:vector ToolDef])
+
+(m/=> get-base-tools [:=> [:cat] ToolDefs])
+
+(m/=> absorbed-root-names [:=> [:cat] [:set :any]])
+
+(m/=> visible-root-names [:=> [:cat] [:maybe [:set :any]]])
+
+(m/=> apply-visibility-gate
+      [:function
+       [:=> [:cat [:maybe [:sequential :map]]] [:vector :map]]
+       [:=> [:cat [:maybe [:sequential :map]] [:maybe [:set :any]]] [:vector :map]]])
+
+(m/=> loaded-tool-domains
+      [:=> [:cat] [:map
+                   [:contributed {:optional true} [:sequential :keyword]]
+                   [:absent {:optional true} [:sequential :keyword]]]])
+
+(m/=> contributed-roots [:=> [:cat] ToolDefs])
+
+(m/=> core-tools [:=> [:cat] ToolDefs])
+
+(m/=> child-ling-excluded? [:=> [:cat [:maybe :map]] :boolean])
+
+(m/=> get-child-ling-tools [:=> [:cat] ToolDefs])
+
+(m/=> get-all-tools [:=> [:cat [:* :any]] ToolDefs])
+
+(m/=> get-consolidated-tools [:=> [:cat] ToolDefs])
+
+(m/=> get-filtered-tools [:=> [:cat] ToolDefs])
+
+(m/=> get-advertised-tools
+      [:function
+       [:=> [:cat] ToolDefs]
+       [:=> [:cat [:maybe [:map [:compact-schema? {:optional true} :any]]]] ToolDefs]])
+
+(m/=> advertised-tools [:=> [:cat SurfaceInputs] ToolDefs])
+
+(m/=> get-tool-by-name [:=> [:cat :any] [:maybe ToolDef]])
 
 ;; =============================================================================
 ;; Sub-command introspection

@@ -39,7 +39,8 @@
    This namespace is pure — no IO, no protocols, no logging. Trifecta tests
    in `hive-mcp.crystal.harvest.attribution-test`."
   (:require [clojure.string :as str]
-            [hive-mcp.crystal.harvest.by-scope :as bs]))
+            [hive-mcp.crystal.harvest.by-scope :as bs]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -50,6 +51,27 @@
 
 (def ^:private scope-tag-prefix "scope:project:")
 
+(def ValidPid
+  "A project-id usable as a :by-scope key (see `bs/valid-pid?`)."
+  [:and :string [:fn {:gen/elements ["hive" "funeraria" "proj-a" "hive-mcp"]} bs/valid-pid?]])
+
+(def SourcePid
+  "The harvest-context pid a datum falls back to. Passed through as-is, so
+   the attributors accept any string or nil."
+  [:maybe :string])
+
+(def Attributed
+  "One tagged datum: `{:pid <pid-or-:umbrella> :datum <orig>}`. A non-nil
+   source-pid is carried through unvalidated, hence `:string` not ValidPid."
+  [:map [:pid [:or [:= :umbrella] :string]] [:datum :any]])
+
+(def SourceAttribution
+  "`{:slice-key <ScopeSlice key> :datums [Attributed ...]}`."
+  [:map [:slice-key [:enum :progress-notes :completed-tasks :git-commits :hivemind-messages
+                     :kg-edges-created :kanban-movements :recalls
+                     :memory-ids-created :memory-ids-accessed]]
+   [:datums [:vector Attributed]]])
+
 (defn pid-from-tag
   "Pull a pid out of a single tag string. Returns the pid (the substring
    after `scope:project:`) when the tag has that prefix and the rest is
@@ -59,11 +81,15 @@
     (let [pid (subs tag (count scope-tag-prefix))]
       (when (bs/valid-pid? pid) pid))))
 
+(m/=> pid-from-tag [:=> [:cat :any] [:maybe ValidPid]])
+
 (defn pid-from-tags
   "Scan a tag collection (vector / seq / set) for the first
    `scope:project:X` and return X. Nil if none found."
   [tags]
   (some pid-from-tag tags))
+
+(m/=> pid-from-tags [:=> [:cat [:maybe [:or [:sequential :any] [:set :any]]]] [:maybe ValidPid]])
 
 (defn pid-from-entry
   "Resolve pid from a memory-style entry map. Precedence:
@@ -74,6 +100,8 @@
   (or (let [pid (:project-id entry)]
         (when (bs/valid-pid? pid) pid))
       (pid-from-tags (:tags entry))))
+
+(m/=> pid-from-entry [:=> [:cat [:maybe :map]] [:maybe ValidPid]])
 
 (defn pid-from-kg-edge
   "Resolve pid from a Datahike KG edge entity-map. Precedence:
@@ -87,6 +115,8 @@
   (let [scope (:kg-edge/scope edge)]
     (when (bs/valid-pid? scope) scope)))
 
+(m/=> pid-from-kg-edge [:=> [:cat [:maybe :map]] [:maybe ValidPid]])
+
 (defn pid-from-kanban-movement
   "Resolve pid from a DataScript kanban-movement entity. Precedence:
      1. `:kanban-movement/project-id`
@@ -94,6 +124,8 @@
   [mv]
   (let [pid (:kanban-movement/project-id mv)]
     (when (bs/valid-pid? pid) pid)))
+
+(m/=> pid-from-kanban-movement [:=> [:cat [:maybe :map]] [:maybe ValidPid]])
 
 (defn pid-from-completed-task
   "Resolve pid from a completed-task entry. Handles both DataScript
@@ -104,12 +136,16 @@
         (when (bs/valid-pid? pid) pid))
       (pid-from-entry task)))
 
+(m/=> pid-from-completed-task [:=> [:cat [:maybe :map]] [:maybe ValidPid]])
+
 (defn pid-from-shout
   "Resolve pid from a hivemind message. Messages may carry `:project-id`
    directly. Returns nil if absent (caller falls back to source-pid)."
   [msg]
   (let [pid (or (:project-id msg) (:scope msg))]
     (when (bs/valid-pid? pid) pid)))
+
+(m/=> pid-from-shout [:=> [:cat [:maybe :map]] [:maybe ValidPid]])
 
 ;; =============================================================================
 ;; Datum-level attributors
@@ -128,9 +164,13 @@
   [source-pid note]
   (with-attribution (or (pid-from-entry note) source-pid) note))
 
+(m/=> attribute-progress-note [:=> [:cat SourcePid [:maybe :map]] Attributed])
+
 (defn attribute-completed-task
   [source-pid task]
   (with-attribution (or (pid-from-completed-task task) source-pid) task))
+
+(m/=> attribute-completed-task [:=> [:cat SourcePid [:maybe :map]] Attributed])
 
 (defn attribute-commit
   "Per-commit pid is unavailable without changed-file inspection. Always
@@ -138,6 +178,8 @@
    resolve per-file scopes."
   [source-pid commit-str]
   (with-attribution source-pid commit-str))
+
+(m/=> attribute-commit [:=> [:cat SourcePid :any] Attributed])
 
 (defn attribute-recall
   "Recalls arrive as `{id entry}` map entries. Entry carries scope info."
@@ -149,9 +191,14 @@
     (with-attribution (or (pid-from-entry entry) source-pid)
                       [id entry])))
 
+(m/=> attribute-recall [:=> [:cat SourcePid [:or [:tuple :any [:maybe :map]] [:maybe :map]]]
+                        [:map [:pid [:or [:= :umbrella] :string]] [:datum [:tuple :any :any]]]])
+
 (defn attribute-hivemind-message
   [source-pid msg]
   (with-attribution (or (pid-from-shout msg) source-pid) msg))
+
+(m/=> attribute-hivemind-message [:=> [:cat SourcePid [:maybe :map]] Attributed])
 
 (defn attribute-kg-edge
   "KG edges carry their own scope. Edges with no scope or a non-pid scope
@@ -159,20 +206,29 @@
   [_source-pid edge]
   (with-attribution (pid-from-kg-edge edge) edge))
 
+(m/=> attribute-kg-edge [:=> [:cat :any [:maybe :map]]
+                         [:map [:pid [:or [:= :umbrella] ValidPid]] [:datum :any]]])
+
 (defn attribute-kanban-movement
   [source-pid mv]
   (with-attribution (or (pid-from-kanban-movement mv) source-pid) mv))
+
+(m/=> attribute-kanban-movement [:=> [:cat SourcePid [:maybe :map]] Attributed])
 
 (defn attribute-memory-id-created
   "memory-ids-created entries are `{:id ... :project-id ...}` maps."
   [source-pid entry]
   (with-attribution (or (pid-from-entry entry) source-pid) entry))
 
+(m/=> attribute-memory-id-created [:=> [:cat SourcePid [:maybe :map]] Attributed])
+
 (defn attribute-memory-id-accessed
   "memory-ids-accessed is a flat list of id strings — no per-id pid signal
    without a store lookup. Inherits source-pid; step-4 may enrich."
   [source-pid id]
   (with-attribution source-pid id))
+
+(m/=> attribute-memory-id-accessed [:=> [:cat SourcePid :any] Attributed])
 
 ;; =============================================================================
 ;; Source-level attribution
@@ -227,6 +283,8 @@
   []
   (set (keys source-attributors)))
 
+(m/=> source-keys [:=> [:cat] [:set [:enum :progress :tasks :commits :hivemind :kanban :kg-edges :kanban-mvs]]])
+
 (defn attribute-source
   "Attribute every datum in `source-result` (a map produced by one of the
    `harvest-*` fns). Returns `{:slice-key <ScopeSlice key>
@@ -242,6 +300,13 @@
     {:slice-key slice-key
      :datums    (attribute-seq attributor source-pid (get source-result datum-key))}))
 
+(m/=> attribute-source [:=> [:cat
+                              ;; Open keyword: an unknown key is the documented throw.
+                              [:keyword {:gen/elements [:progress :tasks :commits :hivemind :kanban :kg-edges :kanban-mvs]}]
+                              [:maybe :map]
+                              SourcePid]
+                        SourceAttribution])
+
 ;; =============================================================================
 ;; Whole-harvest attribution
 ;; =============================================================================
@@ -255,17 +320,27 @@
                       (attribute-recall source-pid [id entry]))
                     (or recalls-map {}))})
 
+(m/=> attribute-recalls-map [:=> [:cat [:maybe [:map-of :any [:maybe :map]]] SourcePid]
+                             [:map [:slice-key [:= :recalls]]
+                              [:datums [:vector [:map [:pid [:or [:= :umbrella] :string]] [:datum [:tuple :any :any]]]]]]])
+
 (defn attribute-memory-ids-created
   [created source-pid]
   {:slice-key :memory-ids-created
    :datums    (mapv (partial attribute-memory-id-created source-pid)
                     (or created []))})
 
+(m/=> attribute-memory-ids-created [:=> [:cat [:maybe [:sequential [:maybe :map]]] SourcePid]
+                                    [:map [:slice-key [:= :memory-ids-created]] [:datums [:vector Attributed]]]])
+
 (defn attribute-memory-ids-accessed
   [accessed source-pid]
   {:slice-key :memory-ids-accessed
    :datums    (mapv (partial attribute-memory-id-accessed source-pid)
                     (or accessed []))})
+
+(m/=> attribute-memory-ids-accessed [:=> [:cat [:maybe [:or [:sequential :any] [:set :any]]] SourcePid]
+                                     [:map [:slice-key [:= :memory-ids-accessed]] [:datums [:vector Attributed]]]])
 
 (defn extract-umbrella-scalars
   "Pull whole-session scalar facts out of a legacy harvest-all result.
@@ -274,6 +349,10 @@
   (cond-> {}
     (:session-timing   harvest-result) (assoc :session-timing   (:session-timing   harvest-result))
     (:session-temporal harvest-result) (assoc :session-temporal (:session-temporal harvest-result))))
+
+(m/=> extract-umbrella-scalars [:=> [:cat [:maybe :map]]
+                                [:map [:session-timing {:optional true} :any]
+                                 [:session-temporal {:optional true} :any]]])
 
 (defn attribute-harvest
   "Walk a legacy `harvest-all` result + caller-supplied source-pid and
@@ -335,3 +414,12 @@
       (:directory harvest-result) (assoc :directory (:directory harvest-result))
       (:agent-id  harvest-result) (assoc :agent-id  (:agent-id  harvest-result))
       (:errors    harvest-result) (assoc :errors    (:errors    harvest-result)))))
+
+(m/=> attribute-harvest [:=> [:cat [:maybe :map] SourcePid]
+                         [:map
+                          [:by-source [:map-of :keyword [:vector Attributed]]]
+                          [:umbrella-scalars :map]
+                          [:session {:optional true} :any]
+                          [:directory {:optional true} :any]
+                          [:agent-id {:optional true} :any]
+                          [:errors {:optional true} :any]]])

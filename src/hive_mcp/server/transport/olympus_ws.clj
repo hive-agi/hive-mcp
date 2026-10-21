@@ -4,7 +4,8 @@
    Single responsibility: start Olympus WS server and wire hivemind events."
   (:require [hive-mcp.dns.result :as result]
             [hive-mcp.extensions.soft :as soft]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -25,3 +26,6 @@
                          (wire!))
                        (log/info "Olympus WebSocket server started on port 7911"))
                    (log/debug "no Olympus transport in this build; skipping WS startup"))))
+
+;; every path ends in a log call or the rescue's nil
+(m/=> start-olympus-ws! [:=> [:cat] :nil])

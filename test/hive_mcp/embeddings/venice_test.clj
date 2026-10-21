@@ -11,7 +11,9 @@
             [clojure.data.json :as json]
             [hive-mcp.config.core :as global-config]
             [hive-mcp.embeddings.protocol :as proto]
-            [hive-mcp.embeddings.venice :as venice]))
+            [hive-mcp.embeddings.venice :as venice]
+            [hive-test.golden :refer [deftest-golden]]
+            [hive-mcp.config.test-support :as cfg]))
 
 ;; =============================================================================
 ;; Structural tests — pure, no network
@@ -121,3 +123,14 @@
       (is (= 1 (count (:data parsed))))
       (is (= [0.1 0.2 0.3] (:embedding (first (:data parsed)))))
       (is (= 0 (:index (first (:data parsed))))))))
+
+;; Construction over an EDN-bound config (no ambient config, no network):
+;; the known model, the unknown-model default dimension and the record fields.
+(deftest-golden provider-construction-golden
+  "test/golden/hive-mcp/embeddings/venice-construction.edn"
+  (cfg/with-config {}
+    (let [build (fn [opts]
+                  (let [p (venice/->provider opts)]
+                    (assoc (into {} p) :dimension* (proto/embedding-dimension p))))]
+      {:qwen    (build {:api-key "k1" :model "text-embedding-qwen3-8b" :api-base "http://stub/v1"})
+       :unknown (build {:api-key "k2" :model "venice-other" :api-base "http://alt/v1"})})))

@@ -1,0 +1,51 @@
+{:case-0 {:out {:visible? true, :records #{}}, :in ([])},
+ :case-1
+ {:out
+  {:visible? false,
+   :records #{},
+   :reason
+   "no :kg-synthetic/id record exists while 3 synth- edge sources do; the record layer is absent or unloaded, so a missing record proves nothing"},
+  :in
+  (["synth-20260101T000000-x" "synth-a" "synth-20260101T000000-x"])},
+ :case-2
+ {:out
+  {:visible? false,
+   :records #{},
+   :reason
+   "no :kg-synthetic/id record exists while 5 synth- edge sources do; the record layer is absent or unloaded, so a missing record proves nothing"},
+  :in (["synth-b" "synth-a" "synth-c" "synth-c" "synth-a"])},
+ :case-3
+ {:out
+  {:visible? false,
+   :records #{},
+   :reason
+   "no :kg-synthetic/id record exists while 4 synth- edge sources do; the record layer is absent or unloaded, so a missing record proves nothing"},
+  :in (["synth-a" "synth-a" "synth-c" "synth-b"])},
+ :case-4
+ {:out
+  {:visible? false,
+   :records #{},
+   :reason
+   "no :kg-synthetic/id record exists while 2 synth- edge sources do; the record layer is absent or unloaded, so a missing record proves nothing"},
+  :in (["synth-20260101T000000-x" "synth-20260101T000000-x"])},
+ :case-5
+ {:out
+  {:visible? false,
+   :records #{},
+   :reason
+   "no :kg-synthetic/id record exists while 2 synth- edge sources do; the record layer is absent or unloaded, so a missing record proves nothing"},
+  :in (["synth-20260101T000000-x" "synth-b"])},
+ :case-6
+ {:out
+  {:visible? false,
+   :records #{},
+   :reason
+   "no :kg-synthetic/id record exists while 2 synth- edge sources do; the record layer is absent or unloaded, so a missing record proves nothing"},
+  :in (["synth-b" "synth-a"])},
+ :case-7
+ {:out
+  {:visible? false,
+   :records #{},
+   :reason
+   "no :kg-synthetic/id record exists while 1 synth- edge sources do; the record layer is absent or unloaded, so a missing record proves nothing"},
+  :in (["synth-20260101T000000-x"])}}

@@ -54,7 +54,9 @@
       :error          any}     ;; error info if in error state"
 
   (:require [hive.events.fsm :as fsm]
-            [hive-mcp.workflows.support :as support]))
+            [hive-mcp.workflows.support :as support]
+            [malli.core :as m]
+            [hive-mcp.workflows.schema :as wfs]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -68,6 +70,8 @@
   [data]
   (some? (:harvested data)))
 
+(m/=> harvested? [:=> [:cat wfs/Data] :boolean])
+
 (defn crystallized?
   "Check if crystallization succeeded (no error in result).
    Degraded/skipped results are treated as non-fatal: the flow continues."
@@ -76,6 +80,8 @@
        (or (:degraded (:crystal-result data))
            (:skipped (:crystal-result data))
            (not (get-in data [:crystal-result :error])))))
+
+(m/=> crystallized? [:=> [:cat wfs/Data] wfs/Truthy])
 
 (defn crystal-error?
   "Check if crystallization returned a FATAL error.
@@ -87,6 +93,8 @@
     (and (some? (:error cr))
          (not (:degraded cr))
          (not (:skipped cr)))))
+
+(m/=> crystal-error? [:=> [:cat wfs/Data] :boolean])
 
 (def always
   "Dispatch predicate — always true. Shared seam (support/always)."
@@ -123,6 +131,11 @@
            :parent-of (or (:parent-of resources) {})
            :error nil)))
 
+(m/=> handle-start
+  [:=> [:cat wfs/Resources wfs/Data]
+   [:map [:agent-id :any] [:directory :any] [:project-id :any]
+    [:session-ref :any] [:parent-of :any] [:error :nil]]])
+
 (defn handle-adopt
   "Absorb the wraps this session OWNS before crystallizing.
    EDN handler key: :adopt
@@ -149,6 +162,8 @@
                 :delta (fn [t] {:adopted []
                                 :adopt-degraded true
                                 :adopt-error (ex-message t)})}})))
+
+(m/=> handle-adopt [:=> [:cat wfs/Resources wfs/Data] [:map [:adopted :any]]])
 
 (defn handle-gather
   "Harvest session data for crystallization.
@@ -179,6 +194,8 @@
                                            :git-commits []
                                            :summary {}}})}})))
 
+(m/=> handle-gather [:=> [:cat wfs/Resources wfs/Data] [:map [:harvested :any]]])
+
 (defn handle-crystallize
   "Crystallize harvested session data into long-term memory.
    EDN handler key: :crystallize
@@ -204,6 +221,8 @@
                                                 :stats {}}
                                :source-ids []})}})))
 
+(m/=> handle-crystallize [:=> [:cat wfs/Resources wfs/Data] [:map [:crystal-result :any] [:source-ids :any]]])
+
 (defn adopted-entry-ids
   "Memory entry ids carried by the wraps this coordinator absorbed.
 
@@ -216,6 +235,8 @@
        (remove nil?)
        distinct
        vec))
+
+(m/=> adopted-entry-ids [:=> [:cat [:maybe [:sequential [:maybe :map]]]] [:vector :any]])
 
 (defn handle-kg-edges
   "Create :derived-from KG edges linking summary to source entries, and
@@ -261,6 +282,8 @@
                                                   :degraded true
                                                   :error (ex-message t)}})}})))
 
+(m/=> handle-kg-edges [:=> [:cat wfs/Resources wfs/Data] [:map [:kg-result :map] [:contains-result :map]]])
+
 (defn handle-notify
   "Emit wrap_notify event for hivemind permeation.
    EDN handler key: :notify
@@ -283,6 +306,8 @@
                                 :notify-degraded true
                                 :notify-error (ex-message t)})}})))
 
+(m/=> handle-notify [:=> [:cat wfs/Resources wfs/Data] [:map [:notify-sent? :boolean]]])
+
 (defn handle-evict
   "Evict context-store entries for the completing agent.
    EDN handler key: :evict
@@ -291,6 +316,8 @@
    {:skipped true :degraded true}; wrap continues to :end."
   [resources data]
   (support/handle-evict resources data support/continue))
+
+(m/=> handle-evict [:=> [:cat wfs/Resources wfs/Data] [:map [:eviction wfs/Eviction]]])
 
 (defn handle-end
   "Terminal state handler. Returns final wrap summary.
@@ -305,6 +332,8 @@
                      :notify-sent? :notify-degraded :notify-error
                      :adopted :adopt-degraded :adopt-error
                      :eviction]))
+
+(m/=> handle-end [:=> [:cat wfs/Resources wfs/Fsm] :map])
 
 (def handle-error
   "Error state handler. Captures error context and throws.
@@ -404,6 +433,8 @@
   []
   (fsm/compile wrap-session-spec))
 
+(m/=> compile-wrap [:=> [:cat] wfs/CompiledFsm])
+
 (defn run-wrap
   "Execute a compiled wrap session FSM.
 
@@ -423,6 +454,11 @@
                            :directory nil
                            :project-id nil}
                           opts)})))
+
+(m/=> run-wrap
+  [:function
+   [:=> [:cat wfs/CompiledFsm wfs/Resources] wfs/RunResult]
+   [:=> [:cat wfs/CompiledFsm wfs/Resources [:maybe :map]] wfs/RunResult]])
 
 (defn run-wrap-session
   "Convenience: compile and run a single wrap session.
@@ -444,3 +480,8 @@
    (run-wrap-session resources {}))
   ([resources opts]
    (run-wrap (compile-wrap) resources opts)))
+
+(m/=> run-wrap-session
+  [:function
+   [:=> [:cat wfs/Resources] wfs/RunResult]
+   [:=> [:cat wfs/Resources [:maybe :map]] wfs/RunResult]])

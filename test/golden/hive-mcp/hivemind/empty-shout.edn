@@ -1,0 +1,8 @@
+{:case-0 {:out true, :in (nil)},
+ :case-1 {:out true, :in ({:extra nil})},
+ :case-2 {:out true, :in ({:task ""})},
+ :case-3 {:out true, :in ({})},
+ :case-4 {:out true, :in ([])},
+ :case-5 {:out false, :in ("text")},
+ :case-6 {:out false, :in ({:task "t"})},
+ :case-7 {:out true, :in ([])}}

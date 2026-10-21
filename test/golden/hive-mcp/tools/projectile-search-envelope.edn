@@ -1,0 +1,20 @@
+{:case-0
+ {:out {:type "text", :text "[\"defn\"]"}, :in ({:pattern "defn"})},
+ :case-1
+ {:out
+  {:type "text", :text "Error: projectile not loaded", :isError true},
+  :in ({:pattern "down"})},
+ :case-2
+ {:out {:type "text", :text "[\"ns\"]"}, :in ({:pattern "ns"})},
+ :case-3
+ {:out {:type "text", :text "[\"defn\"]"}, :in ({:pattern "defn"})},
+ :case-4
+ {:out {:type "text", :text "[\"defn\"]"}, :in ({:pattern "defn"})},
+ :case-5
+ {:out
+  {:type "text", :text "Error: projectile not loaded", :isError true},
+  :in ({:pattern "down"})},
+ :case-6
+ {:out {:type "text", :text "[\"ns\"]"}, :in ({:pattern "ns"})},
+ :case-7
+ {:out {:type "text", :text "[\"defn\"]"}, :in ({:pattern "defn"})}}

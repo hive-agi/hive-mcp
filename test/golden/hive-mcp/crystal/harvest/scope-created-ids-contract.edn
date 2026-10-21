@@ -1,0 +1,21 @@
+{:case-0 {:out [], :in ([] "hive")},
+ :case-1 {:out [], :in ([{:id ""}] "funeraria")},
+ :case-2 {:out [], :in ([] "funeraria")},
+ :case-3 {:out [], :in ([{:id "gLw"}] "funeraria")},
+ :case-4
+ {:out [{:id "", :project-id "hive"}],
+  :in
+  ([{:id "", :project-id "hive"} {:id "J"} {:id "1"} {:id ""}]
+   "hive")},
+ :case-5
+ {:out [],
+  :in ([{:id "5i1"} {:id "O", :project-id "funeraria"}] "hive")},
+ :case-6
+ {:out [], :in ([{:id "j2v1m", :project-id "funeraria"}] "hive")},
+ :case-7
+ {:out [{:id "Z", :project-id "hive"}],
+  :in
+  ([{:id "tVGKr6"}
+    {:id "fpwl", :project-id "funeraria"}
+    {:id "Z", :project-id "hive"}]
+   "hive")}}

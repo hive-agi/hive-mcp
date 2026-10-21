@@ -1,0 +1,66 @@
+{:aliases
+ {"add-slave!" hive-mcp.swarm.datascript.lings/add-slave!,
+  "add-task!" hive-mcp.swarm.datascript.lings/add-task!,
+  "add-wrap-notification!"
+  hive-mcp.swarm.datascript.coordination/add-wrap-notification!,
+  "can-kill?" hive-mcp.swarm.datascript.lings/can-kill?,
+  "check-file-conflicts"
+  hive-mcp.swarm.datascript.queries/check-file-conflicts,
+  "claim-file!" hive-mcp.swarm.datascript.lings/claim-file!,
+  "cleanup-stale-claims!"
+  hive-mcp.swarm.datascript.coordination/cleanup-stale-claims!,
+  "clear-completed-tasks!"
+  hive-mcp.swarm.datascript.coordination/clear-completed-tasks!,
+  "clear-kanban-movements!"
+  hive-mcp.swarm.datascript.coordination/clear-kanban-movements!,
+  "complete-task!" hive-mcp.swarm.datascript.lings/complete-task!,
+  "db-stats" hive-mcp.swarm.datascript.queries/db-stats,
+  "get-all-slaves" hive-mcp.swarm.datascript.queries/get-all-slaves,
+  "get-claims-for-file"
+  hive-mcp.swarm.datascript.queries/get-claims-for-file,
+  "get-completed-task"
+  hive-mcp.swarm.datascript.coordination/get-completed-task,
+  "get-completed-tasks-this-session"
+  hive-mcp.swarm.datascript.coordination/get-completed-tasks-this-session,
+  "get-conn" hive-mcp.swarm.datascript.connection/get-conn,
+  "get-kanban-movements-this-session"
+  hive-mcp.swarm.datascript.coordination/get-kanban-movements-this-session,
+  "get-slave" hive-mcp.swarm.datascript.queries/get-slave,
+  "get-slave-ids-by-project"
+  hive-mcp.swarm.datascript.queries/get-slave-ids-by-project,
+  "get-slaves-by-project"
+  hive-mcp.swarm.datascript.queries/get-slaves-by-project,
+  "get-slaves-by-status"
+  hive-mcp.swarm.datascript.queries/get-slaves-by-status,
+  "get-task" hive-mcp.swarm.datascript.queries/get-task,
+  "get-unprocessed-wraps-for-hierarchy"
+  hive-mcp.swarm.datascript.coordination/get-unprocessed-wraps-for-hierarchy,
+  "get-unprocessed-wraps-for-project"
+  hive-mcp.swarm.datascript.coordination/get-unprocessed-wraps-for-project,
+  "get-unprocessed-wraps-for-session"
+  hive-mcp.swarm.datascript.coordination/get-unprocessed-wraps-for-session,
+  "has-conflict?" hive-mcp.swarm.datascript.queries/has-conflict?,
+  "mark-coordinator-terminated!"
+  hive-mcp.swarm.datascript.coordination/mark-coordinator-terminated!,
+  "mark-wrap-processed!"
+  hive-mcp.swarm.datascript.coordination/mark-wrap-processed!,
+  "register-completed-task!"
+  hive-mcp.swarm.datascript.coordination/register-completed-task!,
+  "register-coordinator!"
+  hive-mcp.swarm.datascript.coordination/register-coordinator!,
+  "register-kanban-movement!"
+  hive-mcp.swarm.datascript.coordination/register-kanban-movement!,
+  "release-claim!" hive-mcp.swarm.datascript.lings/release-claim!,
+  "remove-slave!" hive-mcp.swarm.datascript.lings/remove-slave!,
+  "reset-conn!" hive-mcp.swarm.datascript.connection/reset-conn!,
+  "update-slave!" hive-mcp.swarm.datascript.lings/update-slave!},
+ :store-fns
+ {:db-handle
+  [:delegates-to "hive-datascript.swarm.registry" "get-default-db"],
+  :current-db
+  [:delegates-to "hive-datascript.swarm.registry" "get-default-db"],
+  :q [:delegates-to "hive-datascript.swarm.registry" "get-default-db"],
+  :pull
+  [:delegates-to "hive-datascript.swarm.registry" "get-default-db"],
+  :transact!
+  [:delegates-to "hive-datascript.swarm.registry" "get-default-db"]}}

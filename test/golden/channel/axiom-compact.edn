@@ -1,0 +1,35 @@
+{:case-0 {:out "no heading at all", :in ("no heading at all" "mem-1")},
+ :case-1 {:out "no heading at all", :in ("no heading at all" "mem-1")},
+ :case-2
+ {:out "# Rule\nDo the thing.\n",
+  :in ("# Rule\nDo the thing.\n" "mem-1")},
+ :case-3
+ {:out
+  "# Rule\n[guard-rule :guard/zz-probe enforced by hive-spi.guard on tool call one; source: memory get mem-1]\nafter\n",
+  :in
+  ("# Rule\n```guard-rule\n{:rule/id :guard/zz-probe}\n```\nafter\n"
+   "mem-1")},
+ :case-4
+ {:out "# Rule\nDo the thing.\n",
+  :in ("# Rule\nDo the thing.\n" "mem-1")},
+ :case-5
+ {:out "# Rule\nDo the thing.\n",
+  :in ("# Rule\nDo the thing.\n" "mem-1")},
+ :case-6
+ {:out
+  "# Rule\n## Examples\n[rationale withheld, 2 lines; pull with: memory get mem-1]\n## Strict definitions\nX means Y\n",
+  :in
+  ("# Rule\n## Examples\n- a\n- b\n## Strict definitions\nX means Y\n"
+   "mem-1")},
+ :case-7 {:out "", :in ("" "mem-1")},
+ :case-8
+ {:out
+  "intro\n## Background\n[rationale withheld, 2 lines; pull with: memory get mem-1]\n",
+  :in
+  ("intro\n## Background\n<!-- rationale -->\nold story\n" "mem-1")},
+ :case-9
+ {:out
+  "# Rule\n## Examples\n[rationale withheld, 2 lines; pull with: memory get mem-1]\n## Strict definitions\nX means Y\n",
+  :in
+  ("# Rule\n## Examples\n- a\n- b\n## Strict definitions\nX means Y\n"
+   "mem-1")}}

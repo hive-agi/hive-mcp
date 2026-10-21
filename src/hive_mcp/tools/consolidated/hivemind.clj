@@ -5,7 +5,8 @@
             [hive-mcp.hivemind.event-registry :as event-registry]
             [hive-mcp.tools.core :refer [mcp-error]]
             [clojure.string :as str]
-            [hive-mcp.extensions.soft :as soft]))
+            [hive-mcp.extensions.soft :as soft]
+            [malli.core :as m]))
 
 (def ^:private tools-by-name
   (into {} (map (fn [t] [(keyword (str/replace (:name t) "hivemind_" "")) (:handler t)])
@@ -13,6 +14,13 @@
 
 (def ^:const default-nudge-template
   "MIDFLIGHT NUDGE: Shout your current state via mcp__hive__hivemind event='progress' — what phase you're in (survey/implement/verify), what you've done recently, what you're currently working on, any blockers. Then continue your task. Report progress at checkpoints per your instructions; don't batch everything into a final shout.")
+
+(def NudgeResponse
+  "What handle-nudge answers: its own mcp-error, or whatever the agent
+   domain's handle-dispatch answers, passed through untouched. That is a
+   text-content response or a CallToolResult :content envelope."
+  [:or hive-mcp.tools.core/McpResponse
+   [:map [:content [:sequential [:map [:type :string] [:text {:optional true} :string]]]]]])
 
 (defn handle-nudge
   "Nudge a silent ling into shouting its current state.
@@ -28,6 +36,8 @@
           result (if-let [handle-dispatch (soft/resolve-soft 'hive-mcp.tools.agent.dispatch/handle-dispatch)] (handle-dispatch {:agent_id agent_id
                                             :prompt   nudge-prompt}) (mcp-error "nudge needs the agent domain (hive-agent)"))]
       result)))
+
+(m/=> handle-nudge [:=> [:cat [:maybe [:map [:agent_id {:optional true} [:maybe :string]] [:message {:optional true} [:maybe :string]]]]] NudgeResponse])
 
 (def handlers
   {:shout    (:shout tools-by-name)
@@ -71,16 +81,26 @@ Addressing, for shout: `to` names ONE peer and the message reaches that agent an
                               "project_id" {:type "string"
                                             :description "Explicit project-id override. Wins over directory-derivation across shout/ask/status/messages."}
                               "question" {:type "string"
-                                          :description "Question for human coordinator"}
+                                          :description "ask: what you need the human to answer, in one line"}
+                              "context" {:type "string"
+                                         :description "ask: what the human should read before answering (findings, trade-offs, what you tried)"}
+                              "expects" {:type "string"
+                                         :enum ["confirm" "choice" "text"]
+                                         :description "ask: confirm (yes/no), choice (one of options; typed text still accepted) or text (free-form). Default: choice with options, text without"}
                               "options" {:type "array"
                                          :items {:type "string"}
-                                         :description "Available options for ask"}
+                                         :description "ask: suggested answers (omit for free-form text)"}
+                              "cc" {:type "array"
+                                    :items {:type "string"}
+                                    :description "ask: other agent ids that are told the answer"}
                               "timeout_ms" {:type "integer"
                                             :description "Timeout in ms (default 300000)"}
                               "ask_id" {:type "string"
-                                        :description "ID of the ask to respond to"}
+                                        :description "respond: ID of the ask to answer"}
+                              "answer" {:type "string"
+                                        :description "respond: the answer, any text (an option, yes/no, or a typed reply)"}
                               "decision" {:type "string"
-                                          :description "The decision/response"}
+                                          :description "respond: alias of answer"}
                               "agent_id" {:type "string"
                                           :description "Agent identifier"}}
                  :required ["command"]}

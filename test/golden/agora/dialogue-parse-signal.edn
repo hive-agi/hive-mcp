@@ -1,0 +1,16 @@
+{:case-0
+ {:out [:propose "Here's my change" :prefix],
+  :in "[SIGNAL: propose] Here's my change"},
+ :case-1 {:out [:propose "plain" :default], :in "plain"},
+ :case-2
+ {:out [:no-change "Nothing" :prefix],
+  :in "[SIGNAL: no-change] Nothing"},
+ :case-3
+ {:out [:approve "test" :prefix], :in "[SIGNAL: Approve] test"},
+ :case-4
+ {:out [:approve "test" :prefix], :in "[SIGNAL: Approve] test"},
+ :case-5 {:out [:propose "" :default], :in ""},
+ :case-6
+ {:out [:propose "[SIGNAL: unknown] text" :default],
+  :in "[SIGNAL: unknown] text"},
+ :case-7 {:out [:approve "test" :prefix], :in "[SIGNAL: Approve] test"}}

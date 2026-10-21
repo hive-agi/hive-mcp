@@ -1,0 +1,17 @@
+{:happy
+ {:spawn "slave-ling-3",
+  :dispatch {:queued "t"},
+  :status #:slave{:id "ling-3", :status :busy},
+  :status-nil #:slave{:id "ling-3"},
+  :kill {:killed? true, :id "ling-3"},
+  :interrupt {:success? true, :ling-id "ling-3"}},
+ :throwing
+ {:spawn {:thrown "spawn failed"},
+  :dispatch {:thrown "dispatch failed"},
+  :status {:slave/status :busy, :terminal-addon-error? true},
+  :status-nil nil,
+  :kill {:killed? false, :id "ling-3", :reason :addon-exception},
+  :interrupt
+  {:success? false,
+   :ling-id "ling-3",
+   :errors ["Terminal addon interrupt threw exception"]}}}

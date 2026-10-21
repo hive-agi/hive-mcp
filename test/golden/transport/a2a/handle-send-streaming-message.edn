@@ -1,0 +1,46 @@
+{:case-0
+ {:out
+  {:error
+   {:code -32602, :message "configuration.agentId is required"}},
+  :in
+  {:configuration {:agentId ""},
+   :message
+   {:parts [{:type "text", :text "x"} {:type "text", :text "x"}]}}},
+ :case-1
+ {:out {:error {:code -32602, :message "message.parts is required"}},
+  :in {:configuration {:agentId "a2"}, :message {:parts []}}},
+ :case-2
+ {:out {:error {:code -32602, :message "message.parts is required"}},
+  :in {:configuration {:agentId "a1"}, :message {:parts []}}},
+ :case-3
+ {:out {:error {:code -32602, :message "message.parts is required"}},
+  :in {:configuration {:agentId "a1"}, :message {:parts []}}},
+ :case-4
+ {:out
+  {:error
+   {:code -32602, :message "configuration.agentId is required"}},
+  :in
+  {:configuration {:agentId ""},
+   :message {:parts [{:type "text", :text "x"}]}}},
+ :case-5
+ {:out
+  {:error
+   {:code -32602, :message "configuration.agentId is required"}},
+  :in
+  {:configuration {:agentId ""},
+   :message {:parts [{:type "text", :text "x"}]}}},
+ :case-6
+ {:out
+  {:error
+   {:code -32602, :message "configuration.agentId is required"}},
+  :in
+  {:configuration {:agentId ""},
+   :message
+   {:parts [{:type "text", :text "x"} {:type "text", :text "x"}]}}},
+ :case-7
+ {:out
+  {:error
+   {:code -32602, :message "configuration.agentId is required"}},
+  :in
+  {:configuration {:agentId ""},
+   :message {:parts [{:type "text", :text "x"}]}}}}

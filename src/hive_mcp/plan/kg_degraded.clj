@@ -36,7 +36,8 @@
             [hive-dsl.result :as r]
             [hive-mcp.config.core :as config]
             [hive-weave.safe :as weave-safe]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -156,3 +157,30 @@
   [{:keys [warnings]} ctx]
   (log/warn "plan_to_kanban: KG enrichment degraded — tasks created, edges skipped"
             (merge {:warnings warnings} ctx)))
+
+;; =============================================================================
+;; Function Contracts (m16 coverage batch)
+;; =============================================================================
+
+(m/=> kg-call-timeout-ms
+      [:=> [:cat]
+       :int])
+
+(m/=> warning-tag
+      [:=> [:cat :string :map]
+       :string])
+
+(m/=> call-with-timeout
+      [:=> [:cat :string [:fn ifn?]]
+       :map])
+
+(m/=> apply-kg-calls
+      [:=> [:cat [:sequential :any]]
+       [:map
+        [:edges [:vector :any]]
+        [:warnings [:vector :string]]
+        [:degraded? :boolean]]])
+
+(m/=> log-degradation!
+      [:=> [:cat :map :map]
+       :any])

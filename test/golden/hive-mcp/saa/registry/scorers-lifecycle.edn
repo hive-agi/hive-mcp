@@ -1,0 +1,14 @@
+{:after-dereg [:id/y],
+ :reset {:by-id {}, :by-owner {}},
+ :restored [:id/x :id/y :id/z],
+ :held
+ [{:owner :owner/a, :v 2}
+  {:owner :owner/b, :v 4}
+  {:owner :owner/a, :v 5}
+  nil],
+ :by-owner #:owner{:a [:id/x :id/z], :b [:id/y]},
+ :removed-again #{},
+ :removed [:id/x :id/z],
+ :outcomes [:ok :replaced :conflict :ok :ok],
+ :snapshot-valid true,
+ :emptied []}

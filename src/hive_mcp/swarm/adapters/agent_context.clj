@@ -26,7 +26,8 @@
   ;; SPDX-License-Identifier: AGPL-3.0-or-later
   (:require [hive-spi.swarm.ports.agent-context :as spi]
             [hive-mcp.context.request :as ctx]
-            [hive-mcp.extensions.soft :as soft]))
+            [hive-mcp.extensions.soft :as soft]
+            [malli.core :as m]))
 
 (defn make-adapter
   "An IAgentCallContext + IBudgetGuardrail reify delegating to hive-mcp's
@@ -51,14 +52,25 @@
                       agent-id)
         (catch Exception _ nil)))))
 
+(def Adapter
+  "Something that fills the agent-context port: both protocols at once."
+  [:fn {:gen/fmap (fn [_] (make-adapter)) :gen/schema :nil}
+   #(and (satisfies? spi/IAgentCallContext %) (satisfies? spi/IBudgetGuardrail %))])
+
+(m/=> make-adapter [:=> [:cat] Adapter])
+
 (defn install!
   "Install the hive-mcp adapter into the swarm agent-context port.
    Last installer wins. Returns the adapter."
   []
   (spi/set-agent-context! (make-adapter)))
 
+(m/=> install! [:=> [:cat] Adapter])
+
 (defn uninstall!
   "Clear the installed adapter so consumers fall back to the port's Noop.
    Returns nil."
   []
   (spi/clear-agent-context!))
+
+(m/=> uninstall! [:=> [:cat] :nil])

@@ -1,0 +1,8 @@
+{:all-bad
+ {:successes [false false],
+  :summary {:total 2, :success 0, :failed 2}},
+ :mixed
+ {:successes [true false true],
+  :summary {:total 3, :success 2, :failed 1}},
+ :single
+ {:successes [true], :summary {:total 1, :success 1, :failed 0}}}

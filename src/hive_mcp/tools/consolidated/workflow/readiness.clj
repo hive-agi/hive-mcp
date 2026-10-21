@@ -4,7 +4,6 @@
    Provides spawn-mode-dispatched readiness checks:
    - vterm: Emacs buffer ready for input
    - headless: subprocess alive (process running)
-   - agent-sdk: session idle with event loop thread
    - openrouter: always ready (stateless API)
 
    Extracted from workflow.clj to reduce cyclomatic complexity."
@@ -15,7 +14,8 @@
             [hive-mcp.dns.result :as result]
             [taoensso.timbre :as log]
             [hive-mcp.agent.ling.headless-registry :as headless-registry]
-            [hive-spi.addon.headless :as headless-spi]))
+            [hive-spi.addon.headless :as headless-spi]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -46,7 +46,7 @@
 (defn- timeout-ms-for-spawn-mode
   "Return the appropriate readiness timeout for the given spawn-mode.
    vterm/claude modes use a shorter timeout (10s) since Emacs is already live.
-   All other modes (headless, agent-sdk, etc.) use the configured timeout (default 60s)."
+   All other modes (headless, etc.) use the configured timeout (default 60s)."
   [spawn-mode]
   (case spawn-mode
     (:vterm :claude) vterm-ling-ready-timeout-ms
@@ -68,6 +68,8 @@
                                    2000)]
                    (and success (= "t" result)))))
 
+(m/=> vterm-ready? [:=> [:cat [:maybe :string]] :boolean])
+
 (defn headless-ready?
   "Check if a headless ling's process is alive.
    Relaxed from requiring stdout output — Claude CLI may take 10+ seconds
@@ -78,22 +80,7 @@
                  (when-let [status (headless/headless-status agent-id)]
                    (:alive? status))))
 
-(defn agent-sdk-ready?
-  "Check if an agent-sdk ling's session is idle and event loop thread is alive."
-  [agent-id]
-  (result/rescue false
-                 (when-let [get-session-fn (requiring-resolve 'hive-claude.sdk.session/get-session)]
-                   (when-let [sess (get-session-fn agent-id)]
-                     (and (= :idle (:phase sess))
-                          (some? (:client-ref sess))
-                          (let [safe-id (:py-safe-id sess)]
-                            (if safe-id
-                              (when-let [py-get-fn (requiring-resolve 'hive-claude.sdk.python/py-get-global)]
-                                (let [thread-obj (py-get-fn (str "_hive_loop_thread_" safe-id))]
-                                  (when thread-obj
-                                    (when-let [py-call-fn (requiring-resolve 'hive-claude.sdk.python/py-call)]
-                                      (boolean (py-call-fn thread-obj "is_alive"))))))
-                              false)))))))
+(m/=> headless-ready? [:=> [:cat [:maybe :string]] [:maybe :boolean]])
 
 (defn registered-backend-ready?
   "Check a ling whose spawn-mode names a registered headless backend: ready
@@ -103,11 +90,13 @@
                  (contains? #{:idle :running}
                             (:slave/status (headless-spi/headless-status backend {:id agent-id} nil)))))
 
+(m/=> registered-backend-ready? [:=> [:cat [:maybe :string] :any] :boolean])
+
 ;; ── Mode Dispatch ───────────────────────────────────────────────────────────
 
 (defn ling-cli-ready?
   "Mode-dispatch readiness check for a ling's CLI.
-   Checks terminal modes via Emacs, headless via process/SDK status, and a
+   Checks terminal modes via Emacs, headless via process status, and a
    mode naming a backend in the headless registry via that backend's
    headless-status."
   [agent-id spawn-mode]
@@ -115,12 +104,12 @@
     :headless        (headless-ready? agent-id)
     :claude-process  (headless-ready? agent-id)
     :openrouter      true
-    :agent-sdk       (agent-sdk-ready? agent-id)
-    :claude-sdk      (agent-sdk-ready? agent-id)
     (:claude :vterm) (vterm-ready? agent-id)
     (if-let [backend (headless-registry/get-headless-backend spawn-mode)]
       (registered-backend-ready? agent-id backend)
       (vterm-ready? agent-id))))
+
+(m/=> ling-cli-ready? [:=> [:cat [:maybe :string] [:maybe :keyword]] [:maybe :boolean]])
 
 ;; ── Polling Loop ────────────────────────────────────────────────────────────
 
@@ -167,7 +156,7 @@
 
    Timeout is spawn-mode aware:
    - vterm/claude: 10s (Emacs buffer creation ~3-5s + CLI init)
-   - headless/agent-sdk and others: configurable via
+   - headless and others: configurable via
      {:services {:forge {:readiness-timeout-ms N}}} in
      ~/.config/hive-mcp/config.edn (default: 60000 ms)."
   [agent-id spawn-mode]
@@ -206,3 +195,6 @@
                          :spawn-mode       spawn-mode
                          :ds-found?        (some? (:slave retry))})
               (assoc retry :elapsed-ms total-elapsed))))))))
+
+(m/=> wait-for-ling-ready [:=> [:cat [:maybe :string] [:maybe :keyword]]
+                           [:map [:ready? :boolean] [:elapsed-ms :int]]])

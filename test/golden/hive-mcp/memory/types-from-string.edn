@@ -1,0 +1,12 @@
+{:case-0
+ {:out #:adt{:variant :axiom, :type :MemoryType}, :in ("axiom")},
+ :case-1
+ {:out #:adt{:variant :ingestion, :type :MemoryType},
+  :in ("ingestion")},
+ :case-2 {:out nil, :in ("")},
+ :case-3 {:out nil, :in (:axiom)},
+ :case-4 {:out nil, :in ("")},
+ :case-5 {:out nil, :in ("")},
+ :case-6 {:out nil, :in ("has space")},
+ :case-7
+ {:out #:adt{:variant :axiom, :type :MemoryType}, :in ("axiom")}}

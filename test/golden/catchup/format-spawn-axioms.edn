@@ -1,0 +1,29 @@
+{:case-0 {:out nil, :in ([])},
+ :case-1
+ {:out
+  "### Axioms (INVIOLABLE — follow word-for-word)\n\n1. second rule\n\n2. second rule\n\n",
+  :in ([{:content "second rule"} {:content "second rule"}])},
+ :case-2
+ {:out
+  "### Axioms (INVIOLABLE — follow word-for-word)\n\n1. first\n\n2. first\n\n3. first\n\n",
+  :in ([{:content "first"} {:content "first"} {:content "first"}])},
+ :case-3
+ {:out
+  "### Axioms (INVIOLABLE — follow word-for-word)\n\n1. first\n\n2. first\n\n",
+  :in ([{:content "first"} {:content "first"}])},
+ :case-4
+ {:out
+  "### Axioms (INVIOLABLE — follow word-for-word)\n\n1. first\n\n",
+  :in ([{:content "first"}])},
+ :case-5
+ {:out
+  "### Axioms (INVIOLABLE — follow word-for-word)\n\n1. first\n\n",
+  :in ([{:content "first"}])},
+ :case-6
+ {:out
+  "### Axioms (INVIOLABLE — follow word-for-word)\n\n1. first\n\n",
+  :in ([{:content "first"}])},
+ :case-7
+ {:out
+  "### Axioms (INVIOLABLE — follow word-for-word)\n\n1. second rule\n\n",
+  :in ([{:content "second rule"}])}}

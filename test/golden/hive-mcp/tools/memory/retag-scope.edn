@@ -1,0 +1,31 @@
+{:case-0
+ {:out ["a" "scope:global"],
+  :in (["a"] "scope:global" "scope:global")},
+ :case-1
+ {:out ["b" "scope:project:x"],
+  :in
+  (["scope:project:x" "b"]
+   "scope:project:hive-mcp"
+   "scope:project:x")},
+ :case-2
+ {:out ["scope:project:hive-mcp"],
+  :in ([] "scope:global" "scope:project:hive-mcp")},
+ :case-3
+ {:out ["a" "scope:project:hive-mcp"],
+  :in (["a"] "scope:project:x" "scope:project:hive-mcp")},
+ :case-4
+ {:out ["scope:project:y" "scope:project:x" "scope:project:hive-mcp"],
+  :in
+  (["scope:global" "scope:project:y" "scope:global" "scope:project:x"]
+   "scope:global"
+   "scope:project:hive-mcp")},
+ :case-5
+ {:out ["scope:project:x" "a" "scope:project:hive-mcp"],
+  :in
+  (["scope:project:x" "a"] "scope:global" "scope:project:hive-mcp")},
+ :case-6
+ {:out ["scope:global"], :in ([] "scope:project:x" "scope:global")},
+ :case-7
+ {:out ["scope:project:y" "scope:global"],
+  :in
+  (["scope:project:y" "scope:global"] "scope:global" "scope:global")}}

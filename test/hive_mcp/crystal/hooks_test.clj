@@ -8,7 +8,7 @@
    - Xpoll failure does NOT block crystallization
    - Correct args passed to lifecycle/run-xpoll-cycle!"
   (:require [hive-mcp.project.scope]
-            [clojure.test :refer [deftest testing is are]]
+            [clojure.test :refer [deftest testing is are use-fixtures]]
             [hive-mcp.crystal.harvest.collect :as collect]
             [hive-mcp.crystal.synthesis :as synthesis]
             [hive-mcp.crystal.core :as crystal]
@@ -19,7 +19,8 @@
             [hive-mcp.test.stub.memory-store :as stub]
             [hive-spi.memory.registry :as registry]
             [hive-mcp.context.request :as ctx]
-            [clojure.string]))
+            [clojure.string]
+            [hive-mcp.test-support.registry-isolation :as isolation]))
 
 ;; =============================================================================
 ;; Test helpers
@@ -103,11 +104,13 @@
             :xpoll-calls @xpoll-calls#
             :memory-decay-calls @memory-decay-calls#}))
        (finally
-         (registry/reset-registry!)
+         (isolation/restore-stores! {})
          (ext/deregister! :ch/a)
          (ext/deregister! :ch/b)
          (ext/deregister! :ch/c)
          (ext/deregister! :ch/d)))))
+
+(use-fixtures :each isolation/with-restored-store-registry)
 
 ;; =============================================================================
 ;; No-content path tests
@@ -120,8 +123,7 @@
             {:summary nil
              :xpoll {:promoted 0 :candidates 0 :total-scanned 50}}
             (synthesis/synthesize base-harvested))]
-      (is (:summary-id result)
-          "No-content path persists a minimal wrap summary")
+      (is (and (:skipped result) (nil? (:summary-id result))) "No-content path persists no summary (no-activity skip)")
       (is (contains? result :xpoll-stats) "Return map must include :xpoll-stats")
       (is (= 0 (:promoted (:xpoll-stats result))))
       (is (= 0 (:candidates (:xpoll-stats result))))
@@ -134,8 +136,7 @@
             {:summary nil
              :xpoll {:promoted 3 :candidates 5 :total-scanned 100}}
             (synthesis/synthesize base-harvested))]
-      (is (:summary-id result)
-          "No-content path persists a minimal wrap summary")
+      (is (and (:skipped result) (nil? (:summary-id result))) "No-content path persists no summary (no-activity skip)")
       (is (= 3 (:promoted (:xpoll-stats result))))
       (is (= 5 (:candidates (:xpoll-stats result))))
       (is (= 100 (:total-scanned (:xpoll-stats result)))))))
@@ -147,8 +148,7 @@
             {:summary nil
              :xpoll-fn (fn [_] (throw (Exception. "Chroma connection refused")))}
             (synthesis/synthesize base-harvested))]
-      (is (:summary-id result)
-          "No-content path persists a minimal wrap summary")
+      (is (and (:skipped result) (nil? (:summary-id result))) "No-content path persists no summary (no-activity skip)")
       (is (contains? result :xpoll-stats) "Must still have :xpoll-stats key")
       (is (string? (:error (:xpoll-stats result))) "Should contain error message")
       (is (= 0 (:promoted (:xpoll-stats result))) "Promoted should be 0 on error"))))
@@ -302,8 +302,7 @@
             {:summary nil
              :memory-decay {:decayed 5 :expired 2 :total-scanned 50}}
             (synthesis/synthesize base-harvested))]
-      (is (:summary-id result)
-          "No-content path persists a minimal wrap summary")
+      (is (and (:skipped result) (nil? (:summary-id result))) "No-content path persists no summary (no-activity skip)")
       (is (contains? result :memory-decay-stats) "Return map must include :memory-decay-stats")
       (is (= 5 (:decayed (:memory-decay-stats result))))
       (is (= 2 (:expired (:memory-decay-stats result))))
@@ -331,8 +330,7 @@
             {:summary nil
              :memory-decay-fn (fn [_] (throw (Exception. "Chroma timeout")))}
             (synthesis/synthesize base-harvested))]
-      (is (:summary-id result)
-          "No-content path persists a minimal wrap summary")
+      (is (and (:skipped result) (nil? (:summary-id result))) "No-content path persists no summary (no-activity skip)")
       (is (contains? result :memory-decay-stats) "Must still have :memory-decay-stats key")
       (is (string? (:error (:memory-decay-stats result))) "Should contain error message")
       (is (= 0 (:decayed (:memory-decay-stats result))) "Decayed should be 0 on error"))))
@@ -390,8 +388,7 @@
                     :session-timing {:session-start "2026-02-11T10:00:00Z"
                                      :session-end "2026-02-11T11:30:00Z"
                                      :duration-minutes 90})))]
-      (is (:summary-id result)
-          "No-content path persists a minimal wrap summary")
+      (is (and (:skipped result) (nil? (:summary-id result))) "No-content path persists no summary (no-activity skip)")
       (is (contains? result :session-timing) "Return map must include :session-timing")
       (is (= "2026-02-11T10:00:00Z" (:session-start (:session-timing result))))
       (is (= "2026-02-11T11:30:00Z" (:session-end (:session-timing result))))
@@ -421,8 +418,7 @@
           (with-crystallize-mocks
             {:summary nil}
             (synthesis/synthesize base-harvested))]
-      (is (:summary-id result)
-          "No-content path persists a minimal wrap summary")
+      (is (and (:skipped result) (nil? (:summary-id result))) "No-content path persists no summary (no-activity skip)")
       (is (contains? result :session-timing) "Must have :session-timing even without input")
       (is (nil? (:session-start (:session-timing result)))
           "Session start should be nil when not tracked")

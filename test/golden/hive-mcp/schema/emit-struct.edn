@@ -1,0 +1,82 @@
+{:case-0
+ {:out
+  "(cl-defstruct (hive-a (:constructor hive-a-create))\n  x ratio kind any)",
+  :in
+  ([:map
+    [:x [:or :string :int]]
+    [:ratio :double]
+    [:kind :keyword]
+    [:any :any]]
+   {:name "hive-a", :var "row"})},
+ :case-1
+ {:out
+  "(cl-defstruct (hive-a (:constructor make-it) (:include base))\n  x ratio kind any)",
+  :in
+  ([:map
+    [:x [:or :string :int]]
+    [:ratio :double]
+    [:kind :keyword]
+    [:any :any]]
+   {:name "hive-a",
+    :constructor "make-it",
+    :include "base",
+    :defaults {},
+    :var "row"})},
+ :case-2
+ {:out
+  "(cl-defstruct (hive-a (:constructor hive-a-create) (:include base))\n  id type tags)",
+  :in
+  ([:map
+    [:id :string]
+    [:type [:enum :note :snippet]]
+    [:tags [:vector :string]]]
+   {:name "hive-a", :include "base", :var "e"})},
+ :case-3
+ {:out
+  "(cl-defstruct (hive-b (:constructor hive-b-create))\n  enabled port)",
+  :in
+  ([:map [:enabled :boolean] [:port {:optional true} [:maybe :int]]]
+   {:name "hive-b"})},
+ :case-4
+ {:out
+  "(cl-defstruct (hive-a (:constructor hive-a-create) (:include base))\n  id type tags)",
+  :in
+  ([:map
+    [:id :string]
+    [:type [:enum :note :snippet]]
+    [:tags [:vector :string]]]
+   {:name "hive-a", :include "base"})},
+ :case-5
+ {:out
+  "(cl-defstruct (hive-a (:constructor hive-a-create) (:include base))\n  id type tags)",
+  :in
+  ([:map
+    [:id :string]
+    [:type [:enum :note :snippet]]
+    [:tags [:vector :string]]]
+   {:name "hive-a",
+    :include "base",
+    :defaults {:port nil},
+    :var "row"})},
+ :case-6
+ {:out
+  "(cl-defstruct (hive-b (:constructor make-it))\n  enabled port)",
+  :in
+  ([:map [:enabled :boolean] [:port {:optional true} [:maybe :int]]]
+   {:name "hive-b",
+    :constructor "make-it",
+    :defaults {:port -24, :enabled false},
+    :var "row"})},
+ :case-7
+ {:out
+  "(cl-defstruct (hive-a (:constructor make-it) (:include base))\n  x ratio kind any)",
+  :in
+  ([:map
+    [:x [:or :string :int]]
+    [:ratio :double]
+    [:kind :keyword]
+    [:any :any]]
+   {:name "hive-a",
+    :constructor "make-it",
+    :include "base",
+    :var "e"})}}

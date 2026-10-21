@@ -1,0 +1,19 @@
+{:case-0 {:out [], :in (nil)},
+ :case-1
+ {:out [datascript.core clojure.string],
+  :in
+  ((ns
+    hive-mcp.swarm.datascript.lings
+    (:require [datascript.core :as d] [clojure.string :as str])))},
+ :case-2
+ {:out [x.y z.w p.q p.r t.u],
+  :in
+  ((ns
+    a.b
+    (:require [x.y :as y] z.w [p q [r :as s]] [t.u :refer [v]])
+    (:import [java.io File])))},
+ :case-3 {:out [], :in ((ns hive-mcp.kernel.census))},
+ :case-4 {:out [], :in (nil)},
+ :case-5 {:out [], :in (nil)},
+ :case-6 {:out [], :in (nil)},
+ :case-7 {:out [], :in (nil)}}

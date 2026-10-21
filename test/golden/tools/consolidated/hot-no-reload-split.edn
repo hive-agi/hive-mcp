@@ -1,0 +1,56 @@
+{:case-0
+ {:out
+  {:effective [],
+   :core [],
+   :addon [],
+   :counts {:core 0, :addon 0, :effective 0}},
+  :in (nil nil)},
+ :case-1
+ {:out
+  {:effective ["!" "b.ns"],
+   :core ["!"],
+   :addon ["b.ns"],
+   :counts {:core 1, :addon 1, :effective 2}},
+  :in ([!] ["b.ns" "b.ns"])},
+ :case-2
+ {:out
+  {:effective [],
+   :core [],
+   :addon [],
+   :counts {:core 0, :addon 0, :effective 0}},
+  :in (nil nil)},
+ :case-3
+ {:out
+  {:effective [],
+   :core [],
+   :addon [],
+   :counts {:core 0, :addon 0, :effective 0}},
+  :in (nil [])},
+ :case-4
+ {:out
+  {:effective ["O" "b.ns" "x_"],
+   :core ["O" "b.ns" "x_"],
+   :addon [],
+   :counts {:core 3, :addon 0, :effective 3}},
+  :in ([x_ "b.ns" O] nil)},
+ :case-5
+ {:out
+  {:effective [],
+   :core [],
+   :addon [],
+   :counts {:core 0, :addon 0, :effective 0}},
+  :in (nil nil)},
+ :case-6
+ {:out
+  {:effective [],
+   :core [],
+   :addon [],
+   :counts {:core 0, :addon 0, :effective 0}},
+  :in (nil nil)},
+ :case-7
+ {:out
+  {:effective [],
+   :core [],
+   :addon [],
+   :counts {:core 0, :addon 0, :effective 0}},
+  :in (nil nil)}}

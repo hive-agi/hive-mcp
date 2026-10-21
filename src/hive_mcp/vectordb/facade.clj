@@ -13,7 +13,8 @@
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
             [hive-mcp.memory.write-events :as write-events]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -32,6 +33,45 @@
     (throw (ex-info "Memory store did not return an entry ID"
                     {:error :vectordb/invalid-write-result :result result}))))
 
+;;; ============================================================================
+;;; Schemas (backend-free: the shapes the IMemoryStore port speaks)
+;;; ============================================================================
+
+(def EntryId
+  "A persisted entry id."
+  [:string {:min 1}])
+
+(def EntryIn
+  "An entry to index. The facade reads :type, :tags and :project-id to
+   announce the write; the rest goes to the store as given."
+  [:map
+   [:type {:optional true} [:maybe [:or :string :keyword]]]
+   [:tags {:optional true} [:maybe [:sequential :string]]]
+   [:project-id {:optional true} [:maybe :string]]])
+
+(def Entry
+  "An entry a store answers. Open: each backend adds its own keys."
+  [:map-of :keyword :any])
+
+(def Entries
+  "Entries a store answers to a query or search."
+  [:sequential Entry])
+
+(def StoreAnswer
+  "What a store answers to a write: an id, true, a queue ack, an entry, a
+   failure map, or nil (unknown id). The facade passes it through unchanged."
+  [:maybe [:or :string :boolean [:map-of :any :any]]])
+
+(def KwTail
+  "A `& {:keys [...]}` tail: alternating keyword/value pairs or one map."
+  [:alt [:cat] [:+ [:cat :keyword :any]] [:cat [:map-of :keyword :any]]])
+
+(def Store
+  "An IMemoryStore port value."
+  (m/form (m/schema (-> (m/function-schemas)
+                        (get-in ['hive-mcp.protocols.memory 'get-store :schema])
+                        m/schema m/children first m/children last))))
+
 (defn index-memory-entry!
   "Index a memory entry via the active backend. Returns entry ID.
    Announces the write through write-events when the backend returned an id.
@@ -44,6 +84,9 @@
     (write-events/notify! :added {:id id :memory-type (:type entry)
                                   :tags (:tags entry) :project-id (:project-id entry)})
     id))
+
+;; Throws on a non-id store answer (see require-entry-id).
+(m/=> index-memory-entry! [:=> [:cat EntryIn] EntryId])
 
 (defn index-memory-entries!
   "Batch-index multiple memory entries via the active backend.
@@ -75,11 +118,15 @@
                 nil)))
           entries)))
 
+(m/=> index-memory-entries! [:=> [:cat [:sequential EntryIn]] [:vector [:maybe EntryId]]])
+
 (defn get-entry-by-id
   "Get a memory entry by ID from the active backend."
   [id]
   (with-resilience
     (proto/get-entry (proto/get-store) id)))
+
+(m/=> get-entry-by-id [:=> [:cat [:maybe :string]] [:maybe Entry]])
 
 (defn- registered-stores-in-read-order
   []
@@ -108,6 +155,8 @@
               nil)))
         (registered-stores-in-read-order)))
 
+(m/=> get-entry-any-store [:=> [:cat [:maybe :string]] [:maybe Entry]])
+
 (defn get-entries-by-ids
   "Batch-fetch memory entries by IDs from the active backend.
 
@@ -124,6 +173,11 @@
         (if (proto/batch-store? store)
           (with-resilience (vec (proto/get-entries store ids)))
           (vec (keep #(rescue nil (with-resilience (proto/get-entry store %))) ids)))))))
+
+;; nil when no non-nil id was asked for.
+(m/=> get-entries-by-ids
+      [:=> [:cat [:maybe [:or [:sequential [:maybe :string]] [:set [:maybe :string]]]]]
+       [:maybe [:vector Entry]]])
 
 (defn query-entries
   "Query memory entries with filtering.
@@ -144,6 +198,8 @@
                                   :include-expired? include-expired?}
                            output-fields (assoc :output-fields output-fields)))))
 
+(m/=> query-entries [:=> [:cat KwTail] [:maybe Entries]])
+
 (defn find-duplicate
   "Find entry with matching content-hash in the given type.
    Accepts keyword args for backward compat with chroma API."
@@ -151,6 +207,9 @@
   (with-resilience
     (proto/find-duplicate (proto/get-store) type content-hash
                           {:project-id project-id})))
+
+(m/=> find-duplicate
+      [:=> [:cat [:maybe [:or :string :keyword]] [:maybe :string] KwTail] [:maybe Entry]])
 
 ;;; ============================================================================
 ;;; Semantic Search
@@ -168,6 +227,8 @@
                            :project-ids  project-ids
                            :exclude-tags exclude-tags})))
 
+(m/=> search-similar [:=> [:cat [:maybe :string] KwTail] [:maybe Entries]])
+
 ;;; ============================================================================
 ;;; Mutation Operations
 ;;; ============================================================================
@@ -181,6 +242,8 @@
     (write-events/notify! :updated {:id id :fields (vec (keys updates))})
     result))
 
+(m/=> update-entry! [:=> [:cat :string [:map-of :keyword :any]] StoreAnswer])
+
 (defn delete-entry!
   "Delete an entry from the active backend and announce the write through
    write-events."
@@ -189,6 +252,8 @@
                  (proto/delete-entry! (proto/get-store) id))]
     (write-events/notify! :deleted {:id id})
     result))
+
+(m/=> delete-entry! [:=> [:cat :string] StoreAnswer])
 
 ;;; ============================================================================
 ;;; Utilities
@@ -200,11 +265,23 @@
   [content]
   (proto/content-hash content))
 
+;; SHA-256 hex. nil hashes like any other value (it is normalized to a string).
+(m/=> content-hash
+      [:=> [:cat :any]
+       [:re {:gen/fmap (fn [n] (format "%064x" (biginteger n))) :gen/schema [:int {:min 0}]}
+        #"^[0-9a-f]{64}$"]])
+
 (defn generate-id
   "Generate a unique timestamped ID for memory entries.
    Delegates to protocols.memory/generate-id."
   []
   (proto/generate-id))
+
+(m/=> generate-id
+      [:=> [:cat]
+       [:re {:gen/fmap (fn [n] (format "20260101%06d-%08x" (mod n 1000000) n))
+             :gen/schema [:int {:min 0 :max 2147483647}]}
+        #"^\d{14}-[0-9a-f]{8}$"]])
 
 (defn get-embedding-provider
   "Get the current embedding provider.
@@ -214,6 +291,12 @@
   (when-let [f (rescue nil (requiring-resolve 'hive-mcp.embeddings.active/get-embedding-provider))]
     (f)))
 
+;; The embedding provider port, or nil when none is configured or the
+;; embeddings namespace is absent.
+(m/=> get-embedding-provider
+      [:=> [:cat]
+       [:maybe [:fn {:gen/schema :nil :gen/fmap (fn [_] nil)} some?]]])
+
 (defn embedding-configured?
   "Check if an embedding provider is configured and available.
    Delegates to chroma.embeddings/embedding-configured? (embedding
@@ -222,11 +305,17 @@
   (when-let [f (rescue nil (requiring-resolve 'hive-mcp.embeddings.active/embedding-configured?))]
     (f)))
 
+;; nil only when the embeddings namespace cannot be resolved.
+(m/=> embedding-configured? [:=> [:cat] [:maybe :boolean]])
+
 (defn cleanup-expired!
   "Delete expired entries via the active backend."
   []
   (with-resilience
     (proto/cleanup-expired! (proto/get-store))))
+
+;; Whatever the backend reports (a count, or a map of counts).
+(m/=> cleanup-expired! [:=> [:cat] [:maybe [:or :int [:map-of :any :any]]]])
 
 (defn get-store
   "Return the active memory store from the registry.
@@ -240,7 +329,15 @@
   ([] (proto/get-store))
   ([key] (proto/get-store key)))
 
+;; Throws when the slot holds no store.
+(m/=> get-store
+      [:function
+       [:=> [:cat] Store]
+       [:=> [:cat :keyword] Store]])
+
 (defn available?
   "Check if a memory store backend is configured and ready."
   []
   (proto/store-set?))
+
+(m/=> available? [:=> [:cat] :boolean])

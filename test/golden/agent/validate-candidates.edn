@@ -1,0 +1,126 @@
+{:case-0
+ {:out
+  {:valid false,
+   :errors
+   {:agent-type ["should be a string"],
+    :system-prompt ["should be a string" "should be a fn"]}},
+  :in
+  {:agent-type 7,
+   :description "Fast",
+   :system-prompt :nope,
+   :model :inherit}},
+ :case-1
+ {:out
+  {:valid false,
+   :errors
+   {:agent-type ["should be a string"],
+    :source ["should be either :built-in, :project, :user or :plugin"],
+    :model ["should be a string" "should be :inherit"]}},
+  :in
+  {:agent-type 7,
+   :description "Fast",
+   :system-prompt "You search.",
+   :max-turns 3,
+   :source :bogus,
+   :model :gpt}},
+ :case-10
+ {:out
+  {:valid true,
+   :data
+   {:agent-type "explore",
+    :description "Fast",
+    :system-prompt "You search.",
+    :source :user}},
+  :in
+  {:agent-type "explore",
+   :description "Fast",
+   :system-prompt "You search.",
+   :source :user}},
+ :case-11
+ {:out {:valid false, :errors {:agent-type ["should be a string"]}},
+  :in {:agent-type 7, :description "", :system-prompt "You search."}},
+ :case-2
+ {:out
+  {:valid false, :errors {:max-turns ["should be a positive int"]}},
+  :in
+  {:agent-type "explore",
+   :description "Fast",
+   :system-prompt "You search.",
+   :max-turns 0,
+   :model "opus"}},
+ :case-3
+ {:out
+  {:valid true,
+   :data
+   {:agent-type "a1", :description "", :system-prompt "You search."}},
+  :in
+  {:agent-type "a1", :description "", :system-prompt "You search."}},
+ :case-4
+ {:out
+  {:valid true,
+   :data
+   {:agent-type "explore",
+    :description "Fast",
+    :system-prompt "You search.",
+    :max-turns 3}},
+  :in
+  {:agent-type "explore",
+   :description "Fast",
+   :system-prompt "You search.",
+   :max-turns 3}},
+ :case-5
+ {:out
+  {:valid false,
+   :errors
+   {:system-prompt ["should be a string" "should be a fn"],
+    :model ["should be a string" "should be :inherit"],
+    :max-turns ["should be a positive int"]}},
+  :in
+  {:agent-type "explore",
+   :description "Fast",
+   :system-prompt :nope,
+   :max-turns 0,
+   :source :user,
+   :model :gpt}},
+ :case-6
+ {:out
+  {:valid false,
+   :errors {:model ["should be a string" "should be :inherit"]}},
+  :in
+  {:agent-type "a1",
+   :description "",
+   :system-prompt "You search.",
+   :source :plugin,
+   :model :gpt}},
+ :case-7
+ {:out
+  {:valid false,
+   :errors
+   {:agent-type ["should be a string"],
+    :system-prompt ["should be a string" "should be a fn"],
+    :max-turns ["should be a positive int"]}},
+  :in
+  {:agent-type 7,
+   :description "Fast",
+   :system-prompt :nope,
+   :max-turns 0,
+   :model :inherit}},
+ :case-8
+ {:out
+  {:valid false, :errors {:max-turns ["should be a positive int"]}},
+  :in
+  {:agent-type "a1",
+   :description "",
+   :system-prompt "You search.",
+   :max-turns 0,
+   :model :inherit}},
+ :case-9
+ {:out
+  {:valid false,
+   :errors {:system-prompt ["should be a string" "should be a fn"]}},
+  :in
+  {:agent-type "explore",
+   :description "",
+   :system-prompt :nope,
+   :max-turns 3,
+   :model "opus"}}}

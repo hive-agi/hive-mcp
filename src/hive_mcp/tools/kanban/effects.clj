@@ -22,7 +22,10 @@
             [hive-mcp.swarm.datascript :as ds]
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.kanban-facade :as kanban-facade]
-            [hive-mcp.session.current :as session]))
+            [hive-mcp.session.current :as session]
+            [hive-mcp.tools.kanban.schema :as ks]
+            [malli.core :as m]
+            [hive-mcp.extensions.record-hooks :as record-hooks]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -67,18 +70,24 @@
 
 (defn- archive-external!
   "Archive task data via extension registry. Non-blocking, non-fatal.
-   Delegates to `:da/archive!` extension if available; otherwise no-op."
+   Delegates to `:da/archive!` extension if available; otherwise no-op.
+   The payload first passes the :archive/record record hooks
+   (hive-mcp.extensions.record-hooks); one a hook drops is not archived, and
+   a hook that throws archives nothing."
   [{:keys [entry task-id]}]
   (try
     (when-let [archive-fn (ext/get-extension :da/archive!)]
-      (archive-fn
-       (assoc (archive-task-data entry task-id)
-              :completed-at (java.util.Date.)
-              :session-id (rescue nil
-                                  (when-let [sid (requiring-resolve
-                                                  'hive-mcp.crystal.core/session-id)]
-                                    (sid)))))
-      (log/info "Archived done task via extension:" task-id))
+      (if-let [payload (record-hooks/apply-hooks
+                        :archive/record
+                        (assoc (archive-task-data entry task-id)
+                               :completed-at (java.util.Date.)
+                               :session-id (rescue nil
+                                                   (when-let [sid (requiring-resolve
+                                                                   'hive-mcp.crystal.core/session-id)]
+                                                     (sid)))))]
+        (do (archive-fn payload)
+            (log/info "Archived done task via extension:" task-id))
+        (log/info "Done task not archived (a record hook dropped it):" task-id)))
     (catch Exception e
       (log/debug "Done-archive extension not available (non-fatal):"
                  (.getMessage e)))))
@@ -98,13 +107,25 @@
   [m]
   (temporal/record-mutation-silent! m))
 
+(def ^:dynamic *write-outcome*
+  "Bound by the dispatch entry points (hive-mcp.tools.kanban.events) to an
+   atom that `facade-update!` resets to the store's answer. The fx runner
+   discards an effect's return value, so this is how a refused commit
+   reaches the caller instead of being reported as success. Unbound: the
+   answer is only returned, as before."
+  nil)
+
 (defn- facade-update!
   "Apply a soft-mutation to the underlying memory store.
    Routes via kanban-facade so the write lands in the configured slot
    (`:default` legacy / `:kanban` post-cutover / both during dual-read).
-   This is the COMMIT — preserves entry id, content, KG edges."
+   This is the COMMIT — preserves entry id, content, KG edges.
+   The store's answer is published to `*write-outcome*` when bound."
   [{:keys [task-id payload]}]
-  (kanban-facade/update-entry! task-id payload))
+  (let [result (kanban-facade/update-entry! task-id payload)]
+    (when-let [outcome *write-outcome*]
+      (reset! outcome {:result result}))
+    result))
 
 (defn register-all!
   "Idempotent registration of every kanban effect interpreter.
@@ -115,3 +136,6 @@
   (fx/reg-fx :kanban/notify-done      notify-done!)
   (fx/reg-fx :kanban/temporal-record  temporal-record!)
   (fx/reg-fx :kanban/facade-update    facade-update!))
+
+(m/=> archive-task-data [:=> [:cat ks/MaybeEntry :any] ks/ArchiveData])
+(m/=> register-all! [:=> [:cat] ks/HandlerRegistry])

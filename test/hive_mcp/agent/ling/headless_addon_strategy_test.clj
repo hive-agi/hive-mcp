@@ -9,7 +9,8 @@
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.agent.ling.headless-addon-strategy :as has]
             [hive-mcp.addons.headless :as headless]
-            [hive-mcp.agent.ling.strategy :as strategy]))
+            [hive-mcp.agent.ling.strategy :as strategy]
+            [hive-test.golden :refer [deftest-golden-fn]]))
 
 ;; =============================================================================
 ;; Mock Backend Factories
@@ -159,3 +160,27 @@
   (testing "->headless-addon-strategy rejects objects that don't satisfy IHeadlessBackend"
     (is (thrown? AssertionError
                  (has/->headless-addon-strategy {:not "a backend"})))))
+
+;; =============================================================================
+;; Golden: every ILingStrategy method over a happy and a throwing backend
+;; =============================================================================
+
+(defn- drive
+  "Run all five strategy methods of the adapter built over `backend`. Critical
+   paths that throw are recorded as their ex-message."
+  [backend]
+  (let [strat (has/->headless-addon-strategy backend)
+        ctx   {:id "ling-7"}
+        try*  (fn [f] (try (f) (catch clojure.lang.ExceptionInfo e {:thrown (ex-message e)})))]
+    {:spawn       (try* #(strategy/strategy-spawn! strat ctx {}))
+     :dispatch    (try* #(strategy/strategy-dispatch! strat ctx {:task "t"}))
+     :status      (strategy/strategy-status strat ctx {:slave/status :idle})
+     :status-nil  (strategy/strategy-status strat ctx nil)
+     :kill        (strategy/strategy-kill! strat ctx)
+     :interrupt   (strategy/strategy-interrupt! strat ctx)}))
+
+(deftest-golden-fn headless-addon-strategy-golden
+  "test/golden/agent/headless-addon-strategy.edn"
+  (fn []
+    {:happy    (drive (make-happy-backend :gold))
+     :throwing (drive (make-throwing-backend :gold))}))

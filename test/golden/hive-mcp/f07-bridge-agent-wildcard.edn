@@ -1,0 +1,8 @@
+{:case-0 {:out "hive.v1.agent.completed.>", :in (:completed)},
+ :case-1 {:out "hive.v1.agent.progress.>", :in ("progress")},
+ :case-2 {:out "hive.v1.agent.failed.>", :in (:failed)},
+ :case-3 {:out "hive.v1.agent.completed.>", :in (:completed)},
+ :case-4 {:out "hive.v1.agent.completed.>", :in (:completed)},
+ :case-5 {:out "hive.v1.agent.progress.>", :in ("progress")},
+ :case-6 {:out "hive.v1.agent.failed.>", :in (:failed)},
+ :case-7 {:out "hive.v1.agent.completed.>", :in (:completed)}}

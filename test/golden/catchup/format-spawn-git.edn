@@ -1,0 +1,17 @@
+{:case-0 {:out nil, :in (nil)},
+ :case-1
+ {:out
+  "### Git Status\n\n- **Branch**: unknown\n- **Uncommitted changes**: yes\n- **Last commit**: unknown\n",
+  :in ({:uncommitted true})},
+ :case-2
+ {:out
+  "### Git Status\n\n- **Branch**: main\n- **Uncommitted changes**: yes\n- **Last commit**: abc - x\n",
+  :in ({:branch "main", :uncommitted true, :last-commit "abc - x"})},
+ :case-3
+ {:out
+  "### Git Status\n\n- **Branch**: unknown\n- **Uncommitted changes**: yes\n- **Last commit**: unknown\n",
+  :in ({:uncommitted true})},
+ :case-4 {:out nil, :in (nil)},
+ :case-5 {:out nil, :in (nil)},
+ :case-6 {:out nil, :in (nil)},
+ :case-7 {:out nil, :in (nil)}}

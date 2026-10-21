@@ -2,13 +2,14 @@
   "JSON import: migrate legacy Emacs-backed memory JSON into the current store."
   (:require [hive-mcp.tools.memory.core :refer [with-store]]
             [hive-mcp.tools.memory.scope :as scope]
-            [hive-mcp.tools.core :refer [mcp-json]]
+            [hive-mcp.tools.core :as core :refer [mcp-json]]
             [hive-mcp.protocols.memory :as mem-proto]
             [clojure.data.json :as json]
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
             [clojure.java.io :as io]
-            [hive-spi.memory.contract :as contract]))
+            [hive-spi.memory.contract :as contract]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -125,3 +126,36 @@
                                    :by-id skipped-id
                                    :total (+ skipped-hash skipped-id)}
                          :project-id pid}))))))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def LegacyEntry
+  "A legacy JSON entry as read with keyword keys; every field optional."
+  [:map
+   [:id {:optional true} :any]
+   [:type {:optional true} [:maybe :string]]
+   [:content {:optional true} :any]
+   [:tags {:optional true} :any]])
+
+(def ImportOutcome [:enum :imported :failed :skipped-hash :skipped-id])
+
+(def File_
+  [:fn {:gen/schema :string :gen/fmap io/file} #(instance? java.io.File %)])
+
+(def LegacyExport
+  [:or
+   [:map [:success [:= true]]
+    [:result [:map-of [:enum :notes :snippets :conventions :decisions] [:vector :any]]]]
+   [:map [:success [:= false]] [:error :string]]])
+
+(m/=> import-entry! [:=> [:cat LegacyEntry [:maybe :string]] ImportOutcome])
+
+(m/=> default-legacy-dir [:=> [:cat] :string])
+
+(m/=> legacy-project-dir [:=> [:cat :string [:maybe :string]] File_])
+
+(m/=> read-legacy-export [:=> [:cat :string [:maybe :string]] LegacyExport])
+
+(m/=> handle-import-json [:=> [:cat [:maybe :map]] core/McpResponse])

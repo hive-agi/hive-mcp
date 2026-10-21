@@ -4,7 +4,9 @@
             [hive-mcp.addons.boot-health :as boot-health]
             [hive-mcp.addons.doctor :as doctor]
             [hive-mcp.tools.cli :refer [make-cli-handler]]
-            [hive-mcp.tools.result-bridge :as rb]))
+            [hive-mcp.tools.result-bridge :as rb]
+            [malli.core :as m]
+            [hive-mcp.tools.core :as tc]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -31,6 +33,8 @@
      :text (json/write-str report)
      :isError (not (:ready? report))}))
 
+(m/=> handle-readiness [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (defn handle-doctor
   "Run the read-only addon doctor and return its evidence report as JSON.
    Without an addon_id it answers the boot readiness probe instead."
@@ -41,6 +45,8 @@
       (rb/result->mcp
        (rb/try-result :addon-doctor/failed
                       #(doctor/run-doctor input))))))
+
+(m/=> handle-doctor [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (def handlers
   {:doctor    handle-doctor

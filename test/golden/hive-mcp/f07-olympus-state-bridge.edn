@@ -1,0 +1,9 @@
+{:throttle-ms 200,
+ :wire nil,
+ :thread-kept true,
+ :running {:thread? true, :alive? true, :queue 0},
+ :stop nil,
+ :after {:thread? false, :alive? false, :queue 0},
+ :rewire nil,
+ :stop-again nil,
+ :before {:thread? false, :alive? false, :queue 0}}

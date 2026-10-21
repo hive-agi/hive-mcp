@@ -3,7 +3,11 @@
   (:require [hive-mcp.tools.memory.core :refer [with-store]]
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.tools.memory.format :as fmt]
-            [hive-mcp.tools.core :refer [mcp-json mcp-error coerce-int! coerce-vec!]]
+            [hive-mcp.tools.core
+ :as
+ core
+ :refer
+ [mcp-json mcp-error coerce-int! coerce-vec!]]
             [hive-mcp.memory.domain :as domain]
             [hive-dsl.adt :refer [adt-case]]
             [hive-mcp.protocols.memory :as mem-proto]
@@ -12,7 +16,8 @@
             [hive-mcp.context.request :as ctx]
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -43,6 +48,11 @@
   (or (nil? threshold)
       (let [ts (get entry k)]
         (boolean (and ts (pos? (compare (str ts) (str threshold))))))))
+
+(def max-query-limit
+  "Largest safe memory-query page before per-store over-fetch and backend timeouts.
+   Narrow with temporal filters for larger audits."
+  1000)
 
 (defn- record-batch-co-access!
   "Record co-access pattern for batch query results (non-blocking)."
@@ -225,22 +235,26 @@
 
         :else
         (let [limit-val (coerce-int! limit :limit 20)]
-          (with-store
-            (let [project-id  (scope/get-current-project-id directory)
-                  sf          (domain/parse-scope scope project-id)
-                  project-ids (resolve-project-ids-for-db sf include-descendants?)
-                  entries     (fetch-entries type project-ids tags limit-val include-descendants?
-                                             :exclude-tags exclude-tags
-                                             :created-after created_after
-                                             :updated-after updated_after)
-                  filtered    (apply-scope-filter entries sf include-descendants?)
-                  results     (apply-post-filters filtered
-                                                  {:tags tags
-                                                   :duration duration
-                                                   :created-after created_after
-                                                   :updated-after updated_after
-                                                   :limit-val limit-val})]
-              (format-query-results results project-id metadata-only?)))))
+          (if (or (neg? limit-val) (> limit-val max-query-limit))
+            (mcp-error (str "memory query :limit must be between 0 and " max-query-limit
+                            "; large backend reads can time out and masquerade as empty results. "
+                            "Narrow with :created_after / :updated_after and use smaller pages."))
+            (with-store
+              (let [project-id  (scope/get-current-project-id directory)
+                    sf          (domain/parse-scope scope project-id)
+                    project-ids (resolve-project-ids-for-db sf include-descendants?)
+                    entries     (fetch-entries type project-ids tags limit-val include-descendants?
+                                               :exclude-tags exclude-tags
+                                               :created-after created_after
+                                               :updated-after updated_after)
+                    filtered    (apply-scope-filter entries sf include-descendants?)
+                    results     (apply-post-filters filtered
+                                                    {:tags tags
+                                                     :duration duration
+                                                     :created-after created_after
+                                                     :updated-after updated_after
+                                                     :limit-val limit-val})]
+                (format-query-results results project-id metadata-only?))))))
       (catch clojure.lang.ExceptionInfo e
         (if (= :coercion-error (:type (ex-data e)))
           (mcp-error (.getMessage e))
@@ -250,3 +264,24 @@
   "Backward-compatible alias: delegates to handle-query with verbosity=metadata."
   [params]
   (handle-query (assoc params :verbosity "metadata")))
+
+;;; =============================================================================
+;;; Contracts
+;;; =============================================================================
+
+(def ScopedEntry
+  "An entry as the scope filter reads it: :tags and :project-id, both optional."
+  [:map
+   [:tags {:optional true} [:maybe [:sequential :string]]]
+   [:project-id {:optional true} [:maybe :string]]])
+
+(m/=> entry-after? [:=> [:cat [:maybe :map] :keyword :any] :boolean])
+
+(m/=> apply-auto-scope-filter
+  [:function
+   [:=> [:cat [:sequential ScopedEntry] [:maybe :string]] [:sequential ScopedEntry]]
+   [:=> [:cat [:sequential ScopedEntry] [:maybe :string] :any] [:sequential ScopedEntry]]])
+
+(m/=> handle-query [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-query-metadata [:=> [:cat [:maybe :map]] core/McpResponse])

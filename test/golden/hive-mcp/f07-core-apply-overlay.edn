@@ -1,0 +1,15 @@
+{:case-0 {:out #:hive{:a {}}, :in (#:hive{:a {}} {})},
+ :case-1
+ {:out {},
+  :in
+  (#:hive{:a {:x 0, :y -1}, :c nil} #:hive{:a nil, :c nil, :b nil})},
+ :case-2 {:out {}, :in ({} #:hive{:c nil})},
+ :case-3 {:out {}, :in (#:hive{:c nil} #:hive{:b nil, :c nil})},
+ :case-4
+ {:out #:hive{:c {:y -1, :x 1}, :b nil},
+  :in (#:hive{:c {:y -1, :x 1}, :a nil, :b nil} #:hive{:a nil})},
+ :case-5 {:out {}, :in (#:hive{:b {:x -4, :y 1}} #:hive{:b nil})},
+ :case-6 {:out #:hive{:a {:y -16}}, :in ({} #:hive{:a {:y -16}})},
+ :case-7
+ {:out #:hive{:a {}, :c {:x -48}},
+  :in (#:hive{:a {}} #:hive{:c {:x -48}})}}

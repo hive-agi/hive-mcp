@@ -1,0 +1,15 @@
+[[:info
+  :eval-request
+  {:mode :elisp,
+   :code-length 60,
+   :code-preview
+   "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...",
+   :u "a"}]
+ [:info
+  :eval-request
+  {:mode :cider-silent, :code-length 7, :code-preview "(+ 1 2)"}]
+ [:info :eval-success {:duration-ms 4, :result-length 9, :s 1}]
+ [:warn :eval-failure {:error "boom", :duration-ms 7}]
+ [:error
+  :eval-exception
+  {:operation "eval-x", :exception-message "kaput"}]]

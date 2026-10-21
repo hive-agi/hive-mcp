@@ -1,0 +1,128 @@
+{:case-0
+ {:out
+  {:score 30.0,
+   :factors
+   {:approval-momentum 0.0,
+    :participation 0.0,
+    :recent-activity 30.0}},
+  :in "scn-missing"},
+ :case-1
+ {:out
+  {:score 2.7272727272727275,
+   :factors
+   {:approval-momentum 0.0,
+    :participation 2.7272727272727275,
+    :recent-activity 0.0}},
+  :in "scn-stuck"},
+ :case-10
+ {:out
+  {:score 65.0,
+   :factors
+   {:approval-momentum 20.0,
+    :participation 15.0,
+    :recent-activity 30.0}},
+  :in "scn-self"},
+ :case-11
+ {:out
+  {:score 80.0,
+   :factors
+   {:approval-momentum 40.0,
+    :participation 10.0,
+    :recent-activity 30.0}},
+  :in "scn-agree"},
+ :case-12
+ {:out
+  {:score 30.0,
+   :factors
+   {:approval-momentum 0.0,
+    :participation 0.0,
+    :recent-activity 30.0}},
+  :in "scn-empty"},
+ :case-13
+ {:out
+  {:score 2.7272727272727275,
+   :factors
+   {:approval-momentum 0.0,
+    :participation 2.7272727272727275,
+    :recent-activity 0.0}},
+  :in "scn-stuck"},
+ :case-14
+ {:out
+  {:score 30.0,
+   :factors
+   {:approval-momentum 0.0,
+    :participation 0.0,
+    :recent-activity 30.0}},
+  :in "scn-empty"},
+ :case-15
+ {:out
+  {:score 65.0,
+   :factors
+   {:approval-momentum 20.0,
+    :participation 15.0,
+    :recent-activity 30.0}},
+  :in "scn-self"},
+ :case-2
+ {:out
+  {:score 65.0,
+   :factors
+   {:approval-momentum 20.0,
+    :participation 15.0,
+    :recent-activity 30.0}},
+  :in "scn-self"},
+ :case-3
+ {:out
+  {:score 80.0,
+   :factors
+   {:approval-momentum 40.0,
+    :participation 10.0,
+    :recent-activity 30.0}},
+  :in "scn-agree"},
+ :case-4
+ {:out
+  {:score 30.0,
+   :factors
+   {:approval-momentum 0.0,
+    :participation 0.0,
+    :recent-activity 30.0}},
+  :in "scn-empty"},
+ :case-5
+ {:out
+  {:score 2.7272727272727275,
+   :factors
+   {:approval-momentum 0.0,
+    :participation 2.7272727272727275,
+    :recent-activity 0.0}},
+  :in "scn-stuck"},
+ :case-6
+ {:out
+  {:score 60.0,
+   :factors
+   {:approval-momentum 0.0,
+    :participation 30.0,
+    :recent-activity 30.0}},
+  :in "scn-open"},
+ :case-7
+ {:out
+  {:score 30.0,
+   :factors
+   {:approval-momentum 0.0,
+    :participation 0.0,
+    :recent-activity 30.0}},
+  :in "scn-empty"},
+ :case-8
+ {:out
+  {:score 80.0,
+   :factors
+   {:approval-momentum 40.0,
+    :participation 10.0,
+    :recent-activity 30.0}},
+  :in "scn-agree"},
+ :case-9
+ {:out
+  {:score 60.0,
+   :factors
+   {:approval-momentum 0.0,
+    :participation 30.0,
+    :recent-activity 30.0}},
+  :in "scn-deadlock"}}

@@ -3,8 +3,8 @@
 
    Loading this namespace is what makes core the kanban CONTRIBUTOR: it
    installs core's IKanbanRead / IKanbanWrite provider in
-   hive-mcp.spi.kanban.registry and the :kanban catchup block in
-   hive-mcp.spi.catchup-registry. An addon that owns the board does the same at
+   hive-spi.kanban.registry and the :kanban catchup block in
+   hive-spi.catchup.registry. An addon that owns the board does the same at
    its initialize! and replaces both."
   (:require [clojure.tools.logging :as log]
             [hive-mcp.tools.cli :refer [make-cli-handler make-batch-handler]]
@@ -100,7 +100,10 @@
   {:list           #'mem-kanban/handle-mem-kanban-list-slim
    :get            #'mem-kanban/handle-mem-kanban-get
    :create         #'mem-kanban/handle-mem-kanban-create
-   :update         #'mem-kanban/handle-mem-kanban-move
+   :update         (fn [params]
+                     (if (contains? params :operations)
+                       (handle-batch-update params)
+                       (mem-kanban/handle-mem-kanban-move params)))
    :delete         #'mem-kanban/handle-mem-kanban-delete
    :status         #'mem-kanban/handle-mem-kanban-stats
    :retag          #'mem-kanban/handle-mem-kanban-retag
@@ -155,6 +158,7 @@
                                        :description "[create|update] Task title. On update a non-blank value replaces the current title in place — entry id, KG edges, status and scope are preserved."}
                               "description" {:type "string"
                                              :description "[create|update] Task description. On update a non-blank value replaces the current description in place."}
+                              "append_description" {:type "string" :description "[update] Append text to the existing description; description replaces it."}
                               "task_id" {:type "string"
                                          :description "Task ID to get/move/update/retag/delete"}
                               "id" {:type "string"

@@ -1,0 +1,40 @@
+{:case-0 {:out false, :in {:exit 2, :stdout-quiet? false, :stderr ""}},
+ :case-1
+ {:out false,
+  :in
+  {:exit 2,
+   :stdout-quiet? false,
+   :stderr "Failed to connect to bus\na\nb"}},
+ :case-2
+ {:out false,
+  :in
+  {:exit 0,
+   :stdout-quiet? false,
+   :stderr "Failed to connect to bus: no"}},
+ :case-3
+ {:out false,
+  :in {:exit 1, :stdout-quiet? true, :stderr "real error"}},
+ :case-4
+ {:out false,
+  :in
+  {:exit 0,
+   :stdout-quiet? false,
+   :stderr "Failed to connect to bus: no"}},
+ :case-5
+ {:out false,
+  :in
+  {:exit 0,
+   :stdout-quiet? false,
+   :stderr "Failed to connect to bus: no"}},
+ :case-6
+ {:out true,
+  :in
+  {:exit 1,
+   :stdout-quiet? true,
+   :stderr "Failed to start transient scope unit: x"}},
+ :case-7
+ {:out false,
+  :in
+  {:exit 2,
+   :stdout-quiet? false,
+   :stderr "Failed to start transient scope unit: x"}}}

@@ -18,7 +18,9 @@
             [hive-mcp.dns.result :refer [rescue]]
             [hive-mcp.project.scope :as project-scope]
             [hive-weave.parallel :as wp]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.extensions.record-hooks :as record-hooks])
   (:import [java.time Instant]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -290,10 +292,36 @@
   [project-id]
   (get @index project-id))
 
+(defn visible-projects
+  "ENTITIES as the calling session may see them: passed through the
+   :project/visible record hooks (hive-mcp.extensions.record-hooks), which
+   may remove projects. With no hook, all of them. Always a vector."
+  [entities]
+  (vec (or (record-hooks/apply-hooks :project/visible (vec entities)) [])))
+
+(defn visible-project-ids
+  "IDS without the ones `visible-projects` hides, order kept. An id the index
+   does not hold is kept."
+  [ids]
+  (let [ents  (keep query-project-by-id ids)
+        known (set (map :project/id ents))
+        shown (set (map :project/id (visible-projects ents)))]
+    (filterv #(or (not (contains? known %)) (contains? shown %)) ids)))
+
+(defn query-visible-projects
+  "Every indexed project the calling session may see, ordered by project-id."
+  []
+  (visible-projects (query-all-projects)))
+
+(m/=> visible-projects [:=> [:cat [:sequential :map]] [:vector :map]])
+(m/=> visible-project-ids [:=> [:cat [:maybe [:sequential :any]]] [:vector :any]])
+(m/=> query-visible-projects [:=> [:cat] [:vector :map]])
+
 (defn query-project-children
-  "Direct children of PROJECT-ID, ordered by project-id."
+  "Direct children of PROJECT-ID the calling session may see, ordered by
+   project-id."
   [project-id]
-  (filterv #(= project-id (:project/parent-id %)) (vals @index)))
+  (visible-projects (filterv #(= project-id (:project/parent-id %)) (vals @index))))
 
 ;; =============================================================================
 ;; Tree Cache (HCR Wave 5: Avoid re-traversal)
@@ -316,15 +344,15 @@
   (reset! tree-cache nil))
 
 (defn has-children?
-  "Check if a project has any children in the hierarchy.
+  "Check if a project has any child the calling session may see.
    Uses cached tree for O(1) lookup."
   [project-id]
   (when-let [tree (get-cached-tree)]
-    (boolean (seq (get (:children tree) project-id)))))
+    (boolean (seq (visible-project-ids (get (:children tree) project-id))))))
 
 (defn get-descendant-ids
-  "Get all descendant project IDs as a set.
-   Uses cached tree for efficient traversal.
+  "Get all descendant project IDs the calling session may see, as a set
+   (see `visible-project-ids`). Uses cached tree for efficient traversal.
 
    Example:
      (get-descendant-ids \"hive\")
@@ -333,7 +361,7 @@
    Returns empty set if project has no children or tree not populated."
   [project-id]
   (if-let [tree (get-cached-tree)]
-    (set (get-descendants tree project-id))
+    (set (visible-project-ids (get-descendants tree project-id)))
     #{}))
 
 ;; =============================================================================
@@ -397,6 +425,8 @@
       :projects-found N
       :roots [project-ids...]
       :tree {...}}
+   The report shows only the projects the calling session may see
+   (`visible-projects`); the index and the cached tree hold all of them.
 
    Side effects:
      - Persists project entities to the index
@@ -404,36 +434,27 @@
   [root-path & [{:keys [max-depth] :or {max-depth 5}}]]
   (log/info "Scanning project tree from:" root-path {:max-depth max-depth})
   (try
-    (let [;; Discover all .hive-project.edn files
-          discovered (discover-hive-projects root-path {:max-depth max-depth})
+    (let [discovered (discover-hive-projects root-path {:max-depth max-depth})
           _ (log/debug "Discovered" (count discovered) "projects")
-
-          ;; Convert to entities
           entities (->> discovered
                         (map config->entity)
                         (filter some?))
-
-          ;; Build tree structure and cache for cheap subsequent lookups
-          tree (build-project-tree entities)
-          _ (reset! tree-cache tree)
-
-          ;; Register configs in scope cache for HCR resolution
+          _ (reset! tree-cache (build-project-tree entities))
           _ (doseq [{:keys [config]} discovered]
               (when-let [project-id (:project-id config)]
                 (project-scope/register-project-config! project-id config)))
-
-          ;; Persist to the index
-          persist-result (persist-project-entities! entities)]
-
+          persist-result (persist-project-entities! entities)
+          shown (visible-projects entities)
+          tree (build-project-tree shown)]
       (if (:success persist-result)
         {:success true
-         :projects-found (count entities)
+         :projects-found (count shown)
          :roots (:roots tree)
          :tree tree
          :scan-time (str (Instant/now))}
         {:success false
          :error (:error persist-result)
-         :projects-found (count entities)}))
+         :projects-found (count shown)}))
 
     (catch Exception e
       (log/error "Project tree scan failed:" (.getMessage e))
@@ -489,3 +510,85 @@
        :result (scan-project-tree! root-path)})
     {:scanned false
      :reason "Project tree is fresh"}))
+
+;; =============================================================================
+;; Function Contracts (m16 coverage batch)
+;; =============================================================================
+
+(def ^:private Tree
+  "Project tree: {:roots [ids] :by-id {id entity} :children {id [ids]}}."
+  [:map
+   [:roots [:vector :string]]
+   [:by-id :map]
+   [:children :map]])
+
+(m/=> reset-index!
+      [:=> [:cat]
+       :nil])
+
+(m/=> build-project-tree
+      [:=> [:cat [:sequential :map]]
+       Tree])
+
+(m/=> get-descendants
+      [:=> [:cat :map :any]
+       [:vector :string]])
+
+(m/=> get-ancestors
+      [:=> [:cat :map :any]
+       [:vector :string]])
+
+(m/=> persist-project-entities!
+      [:=> [:cat [:sequential :map]]
+       [:maybe :map]])
+
+(m/=> query-all-projects
+      [:=> [:cat]
+       [:vector :map]])
+
+(m/=> query-project-by-id
+      [:=> [:cat :any]
+       [:maybe :map]])
+
+(m/=> query-project-children
+      [:=> [:cat :any]
+       [:vector :map]])
+
+(m/=> get-cached-tree
+      [:=> [:cat]
+       [:maybe Tree]])
+
+(m/=> invalidate-tree-cache!
+      [:=> [:cat]
+       :nil])
+
+(m/=> has-children?
+      [:=> [:cat :any]
+       :any])
+
+(m/=> get-descendant-ids
+      [:=> [:cat :any]
+       [:set :string]])
+
+(m/=> get-descendant-scope-tags
+      [:=> [:cat :any]
+       [:maybe [:set :string]]])
+
+(m/=> get-descendant-scopes
+      [:=> [:cat :any]
+       [:maybe [:vector :string]]])
+
+;; & [opts] optional rest arg: 1- or 2-arity, the second the options map.
+
+(m/=> scan-project-tree!
+      [:function
+       [:=> [:cat :string] [:map [:success :boolean]]]
+       [:=> [:cat :string [:maybe :map]] [:map [:success :boolean]]]])
+
+(m/=> tree-stale?
+      [:=> [:cat :string]
+       :any])
+
+(m/=> maybe-scan-project-tree!
+      [:=> [:cat :string]
+       [:map [:scanned :boolean]]])

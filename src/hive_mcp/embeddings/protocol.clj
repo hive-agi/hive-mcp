@@ -15,3 +15,28 @@
   (def embed-text ports/embed-text)
   (def embed-batch ports/embed-batch)
   (def embedding-dimension ports/embedding-dimension))
+
+;; =============================================================================
+;; Value-object schemas for the port (shared by every embeddings namespace)
+;; =============================================================================
+
+(defn- fixed-provider
+  "A deterministic EmbeddingProvider of dimension `dim`: the generator behind
+   `Provider`, so every contract mentioning a provider can generate one."
+  [dim]
+  (reify ports/EmbeddingProvider
+    (embed-text [_ _] (vec (repeat dim 0.5)))
+    (embed-batch [_ texts] (mapv (fn [_] (vec (repeat dim 0.5))) texts))
+    (embedding-dimension [_] dim)))
+
+(def Provider
+  "Anything satisfying hive-spi's EmbeddingProvider port. Generates small
+   fixed providers."
+  [:fn {:error/message "should satisfy EmbeddingProvider"
+        :gen/schema [:int {:min 1 :max 8}]
+        :gen/fmap fixed-provider}
+   #(satisfies? ports/EmbeddingProvider %)])
+
+(def Vector
+  "One embedding: a sequence of numbers (providers return vectors of doubles)."
+  [:sequential number?])

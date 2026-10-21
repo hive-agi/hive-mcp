@@ -1,0 +1,11 @@
+{:format-empty nil,
+ :format-two
+ "## file-level Staleness Warnings\na.clj changed\nb.clj changed\n\n",
+ :warnings-empty nil,
+ :context-empty
+ {:kg-known {},
+  :needs-read [],
+  :stale [],
+  :summary {:total 0, :known 0, :needs-read 0, :stale 0}},
+ :project-id "proj",
+ :scope "global"}

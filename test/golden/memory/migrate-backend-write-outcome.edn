@@ -1,0 +1,4 @@
+{:errored {:migrated 0, :failed 1, :queued 0, :errors 0, :skipped 0},
+ :landed {:migrated 1, :failed 0, :queued 0, :errors 0, :skipped 0},
+ :queued {:migrated 0, :failed 0, :queued 1, :errors 0, :skipped 0},
+ :refused {:migrated 0, :failed 1, :queued 0, :errors 0, :skipped 0}}

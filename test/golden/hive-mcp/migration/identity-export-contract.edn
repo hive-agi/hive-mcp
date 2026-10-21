@@ -1,0 +1,8 @@
+{:case-0 {:out {:item 0}, :in (:edn {:item 0})},
+ :case-1 {:out {:item -1}, :in (:edn {:item -1})},
+ :case-2 {:out {:item -1}, :in (:edn {:item -1})},
+ :case-3 {:out {:item -1}, :in (:edn {:item -1})},
+ :case-4 {:out {:item 0}, :in (:edn {:item 0})},
+ :case-5 {:out {:item 3}, :in (:edn {:item 3})},
+ :case-6 {:out {:item 1}, :in (:edn {:item 1})},
+ :case-7 {:out {:item 1}, :in (:edn {:item 1})}}

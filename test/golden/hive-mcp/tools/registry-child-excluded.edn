@@ -1,0 +1,8 @@
+{:case-0 {:out false, :in ({:name "memory"})},
+ :case-1 {:out false, :in ({:name "memory", :deprecated false})},
+ :case-2 {:out true, :in ({:name "swarm"})},
+ :case-3 {:out true, :in ({:name "emacs", :deprecated true})},
+ :case-4 {:out true, :in ({:name "swarm"})},
+ :case-5 {:out true, :in ({:name "swarm"})},
+ :case-6 {:out true, :in ({:name "emacs"})},
+ :case-7 {:out false, :in ({:name "Swarm"})}}

@@ -5,7 +5,8 @@
   (:require [hive-mcp.config.core :as config]
             [hive-mcp.dns.result :as result]
             [hive-mcp.channel.core :as channel]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -24,3 +25,6 @@
       ;; the production server when tests run in the same JVM
                    (channel/mark-coordinator-running!)
                    (log/info "Legacy channel server started on TCP port" channel-port))))
+
+;; every path ends in log/info or the rescue's nil
+(m/=> start-legacy-channel! [:=> [:cat] :nil])

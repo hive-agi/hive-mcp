@@ -1,0 +1,18 @@
+{:grounded ["body one"],
+ :updated ["z"],
+ :read-colls 1,
+ :deleted? true,
+ :update-miss nil,
+ :stale {:staleness-alpha 3, :staleness-beta 4},
+ :got
+ {:type "note",
+  :content "body one",
+  :tags ["x" "y"],
+  :project-id "p1"},
+ :after {:count 0, :types {}},
+ :batch-ids ["batch-1" "batch-2"],
+ :missing nil,
+ :stats {:count 3, :types {"note" 1, "decision" 2}},
+ :removed 2,
+ :queried ["b1" "b2"],
+ :dup? true}

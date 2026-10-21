@@ -1,0 +1,8 @@
+{:case-0 {:out 0, :in (nil)},
+ :case-1 {:out 0, :in (#:kg-edge{:relation :refines})},
+ :case-2 {:out 0, :in (#:kg-edge{:last-verified "not-a-date"})},
+ :case-3 {:out 0, :in (#:kg-edge{:relation :implements})},
+ :case-4 {:out 0, :in (nil)},
+ :case-5 {:out 0, :in (nil)},
+ :case-6 {:out 0, :in (nil)},
+ :case-7 {:out 0, :in (nil)}}

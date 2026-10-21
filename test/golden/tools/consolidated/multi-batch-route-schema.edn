@@ -1,0 +1,27 @@
+{:case-0 {:out nil, :in {}},
+ :case-1
+ {:out nil,
+  :in {:tool "kanban", :command "batch-add", :operations [{:id "1"}]}},
+ :case-2
+ {:out
+  {:operations
+   [{:tool "memory", :command ""}
+    {:tool "kg", :command ""}
+    {:tool "memory", :command ""}]},
+  :in
+  {:tool "memory",
+   :command "",
+   :operations [{:tool ""} {:tool "kg"} {:tool ""}]}},
+ :case-3
+ {:out nil,
+  :in {:tool "memory", :command "batch-add", :operations [{:id ""}]}},
+ :case-4
+ {:out {:tool " ", :operations [{:id "o"}]},
+  :in {:tool " ", :operations [{:id "o"}]}},
+ :case-5
+ {:out {:tool nil, :operations []}, :in {:tool nil, :operations []}},
+ :case-6
+ {:out {:tool nil, :operations [{:id "8Wj2fy"} {:id "N"}]},
+  :in {:tool nil, :operations [{:id "8Wj2fy"} {:id "N"}]}},
+ :case-7
+ {:out {:tool " ", :operations []}, :in {:tool " ", :operations []}}}

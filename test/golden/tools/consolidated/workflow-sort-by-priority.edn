@@ -1,0 +1,40 @@
+{:case-0 {:out [], :in []},
+ :case-1
+ {:out [{:id "t3"} {:id "t3", :priority "medium"} {:id "t4"}],
+  :in [{:id "t3"} {:id "t4"} {:id "t3", :priority "medium"}]},
+ :case-2
+ {:out
+  [{:id "t1", :priority "priority-high"}
+   {:id "t1", :priority "medium"}
+   {:id "t1"}
+   {:id "t3", :priority nil}
+   {:id "t4"}
+   {:id "t4", :priority nil}],
+  :in
+  [{:id "t3", :priority nil}
+   {:id "t4"}
+   {:id "t1", :priority "medium"}
+   {:id "t1"}
+   {:id "t1", :priority "priority-high"}
+   {:id "t4", :priority nil}]},
+ :case-3
+ {:out
+  [{:id "t1", :priority "high"}
+   {:id "t2"}
+   {:id "t3", :priority nil}
+   {:id "t4"}],
+  :in
+  [{:id "t2"}
+   {:id "t4"}
+   {:id "t1", :priority "high"}
+   {:id "t3", :priority nil}]},
+ :case-4
+ {:out [{:id "t2", :priority nil} {:id "t3", :priority nil}],
+  :in [{:id "t3", :priority nil} {:id "t2", :priority nil}]},
+ :case-5
+ {:out [{:id "t1", :priority nil} {:id "t3", :priority nil}],
+  :in [{:id "t3", :priority nil} {:id "t1", :priority nil}]},
+ :case-6
+ {:out [{:id "t2"} {:id "t4", :priority nil} {:id "t4"}],
+  :in [{:id "t4", :priority nil} {:id "t2"} {:id "t4"}]},
+ :case-7 {:out [{:id "t3"} {:id "t4"}], :in [{:id "t4"} {:id "t3"}]}}

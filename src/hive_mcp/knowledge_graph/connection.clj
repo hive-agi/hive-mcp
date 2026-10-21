@@ -10,11 +10,13 @@
    3. :kg-backend in .hive-project.edn
    4. Default: config/default-kg-backend (persistent — compounding axiom)"
 
-  (:require [hive-mcp.knowledge-graph.protocol :as proto]
+  (:require [malli.core :as m]
+            [hive-mcp.knowledge-graph.protocol :as proto]
             [hive-dsl.batch :as dsl-batch]
             [hive-mcp.knowledge-graph.connection.store :as store]
             [hive-mcp.knowledge-graph.connection.writer :as writer]
             [hive-mcp.knowledge-graph.connection.strategy :as strategy]
+            [hive-mcp.knowledge-graph.tx-hooks :as tx-hooks]
             [hive-mcp.knowledge-graph.connection.temporal :as temporal]))
 
 (declare ensure-writer! stop-writer! writer-stats flush-pending! in-flight)
@@ -72,19 +74,24 @@
      - otherwise          → route through the write-coalescing queue
 
    The coalescing queue drains items within a 25ms window and flushes as a
-   single transaction, eliminating the 'Transacting 1 objects' pattern."
+   single transaction, eliminating the 'Transacting 1 objects' pattern.
+   Registered tx-hooks see (and may rewrite or refuse) tx-data first, on
+   the caller's thread."
   [tx-data]
-  (strategy/assert-edge-node-ids! tx-data)
-  (strategy/apply-tx! (strategy/select-strategy *tx-batch* *sync-writes* ensure-store!) tx-data))
+  (let [tx-data (tx-hooks/apply-hooks tx-data)]
+    (strategy/assert-edge-node-ids! tx-data)
+    (strategy/apply-tx! (strategy/select-strategy *tx-batch* *sync-writes* ensure-store!) tx-data)))
 
 (defn transact-sync!
   "Synchronous transact — bypasses the coalescing queue.
    Use ONLY when the caller needs the tx-report return value
    (e.g., extracting entity IDs from :tx-data).
-   Most callers should use transact! (async coalesced) instead."
+   Most callers should use transact! (async coalesced) instead.
+   Registered tx-hooks see (and may rewrite or refuse) tx-data first."
   [tx-data]
-  (strategy/assert-edge-node-ids! tx-data)
-  (proto/transact! (ensure-store!) tx-data))
+  (let [tx-data (tx-hooks/apply-hooks tx-data)]
+    (strategy/assert-edge-node-ids! tx-data)
+    (proto/transact! (ensure-store!) tx-data)))
 
 (defmacro with-tx-batch
   "Collect all transact! calls within body into a single transaction.
@@ -253,3 +260,17 @@
 ;; requiring-resolves connection/in-flight to observe queue depth; the canonical
 ;; counter lives in connection.writer.
 (def ^:private in-flight hive-mcp.knowledge-graph.connection.writer/in-flight)
+
+(m/=> query [:=> [:cat :any [:* :any]] :any])
+(m/=> entity [:=> [:cat :any] :any])
+(m/=> entid [:=> [:cat :any] [:maybe :int]])
+(m/=> pull-entity [:=> [:cat :any :any] [:maybe :map]])
+(m/=> eids-by-attr [:=> [:cat :keyword] [:sequential :int]])
+(m/=> query-with-db [:=> [:cat :any :any [:* :any]] :any])
+(m/=> gen-edge-id [:=> [:cat] [:string {:min 1}]])
+(m/=> now [:=> [:cat] inst?])
+
+(m/=> transact! [:=> [:cat [:or :map [:sequential :any]]] [:maybe [:or :map [:vector :any]]]])
+(m/=> transact-sync! [:=> [:cat [:or :map [:sequential :any]]] [:maybe :map]])
+;; Backend snapshots are opaque host DB values; the protocol owns their shape.
+(m/=> db-snapshot [:=> [:cat] :any])

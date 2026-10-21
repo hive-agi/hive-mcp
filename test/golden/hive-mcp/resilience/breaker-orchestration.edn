@@ -1,0 +1,41 @@
+{:steps
+ [[:attempt
+   {:state :closed, :failures 0, :opened-at nil, :cooldown-ms 0}]
+  [:failure-1
+   {:state :closed, :failures 1, :opened-at nil, :cooldown-ms 0}]
+  [:failure-2
+   {:state :closed, :failures 2, :opened-at nil, :cooldown-ms 0}]
+  [:failure-3
+   {:state :open,
+    :failures 3,
+    :opened-at :stamped,
+    :cooldown-ms 30000}]
+  [:attempt-open
+   {:state :open,
+    :failures 3,
+    :opened-at :stamped,
+    :cooldown-ms 30000}]
+  [:other-slot
+   {:state :closed, :failures 0, :opened-at nil, :cooldown-ms 0}]],
+ :decisions
+ [[:attempt :pass]
+  [:failure-1 :pass]
+  [:failure-2 :pass]
+  [:failure-3 :block]
+  [:attempt-open :block]
+  [:other-slot :pass]],
+ :snapshot
+ #:slot{:x
+        {:state :open,
+         :failures 3,
+         :opened-at :stamped,
+         :cooldown-ms 30000},
+        :y
+        {:state :closed, :failures 0, :opened-at nil, :cooldown-ms 0}},
+ :after-success
+ #:slot{:x
+        {:state :closed, :failures 0, :opened-at nil, :cooldown-ms 0},
+        :y
+        {:state :closed, :failures 0, :opened-at nil, :cooldown-ms 0}},
+ :after-reset {},
+ :snapshot-after-reset {}}

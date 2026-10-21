@@ -24,6 +24,14 @@
   "Non-empty string type."
   [:string {:min 1}])
 
+(def SchemaForm
+  "Any malli schema, as a form or a compiled schema."
+  [:fn {:error/message "must be a malli schema"
+        :gen/elements [:int :string [:map [:a :int]] [:vector :keyword]
+                       [:enum "a" "b"] [:maybe :string]
+                       [:map [:name [:string {:min 1}]] [:n {:optional true} :int]]]}
+   #(try (m/schema %) true (catch Exception _ false))])
+
 (defn- construct-expr
   "The regex source of hive-system construct FORM in DIALECT (:java | :ecma).
    A construct the dialect cannot express fails loudly at load time."
@@ -101,7 +109,7 @@
   "Spawn `resume`: continue run_id at its tip, or fork it at `at`."
   [:map {:closed true
          :decode/string {:leave drop-absent-resume-keys}}
-   [:run_id {:json-schema/description "Chat-point run id to continue: a prior collect's chat_point.run_id, or the transcript tool's runs command."}
+   [:run_id {:json-schema/description "Chat-point run id to continue, dead lings included: the run_id of a `transcript runs` row, the run_id on a `transcript list` row (that agent's newest run), or a prior collect's chat_point.run_id."}
     NonBlankString]
    [:at {:optional true} ChatPointAt]
    [:prompt {:optional true :json-schema/description "Optional message appended at the resume/branch point."}
@@ -244,6 +252,10 @@
   (if-let [relation-types (soft/resolve-soft 'hive-mcp.knowledge-graph.schema/relation-types)]
     (into [:enum] (sort (map name (relation-types))))
     [:string {:min 1}]))
+
+(m/=> KGRelationType [:=> [:cat]
+                      [:or [:cat [:= :enum] [:+ :string]]
+                       [:tuple [:= :string] [:map [:min [:= 1]]]]]])
 
 (def KGSourceType
   "How an edge was established."
@@ -393,6 +405,13 @@
     {:valid false
      :errors (m/explain schema params)}))
 
+(def ValidationResult
+  "validate-params' answer: {:valid true}, or {:valid false :errors explanation}."
+  [:or [:map [:valid [:= true]]]
+   [:map [:valid [:= false]] [:errors [:map [:value :any] [:errors [:sequential :map]]]]]])
+
+(m/=> validate-params [:=> [:cat SchemaForm :any] ValidationResult])
+
 (def json-params-transformer
   "Decodes an MCP JSON param: string keys become keywords, numeric strings
    become numbers. Schema-declared :decode/string rules run here too."
@@ -410,6 +429,8 @@
                  (throw (ex-info (str field " is invalid: " (pr-str errors))
                                  {:param field :errors errors}))))))
 
+(m/=> param-coercer [:=> [:cat :string SchemaForm] [:=> [:cat :any] :any]])
+
 (defn json-schema
   "The MCP inputSchema projection of a malli `schema`, string-keyed like the
    hand-written tool schemas, so advertised and validated shape are one
@@ -423,11 +444,15 @@
                      node))
                  (json-schema/transform schema)))
 
+(m/=> json-schema [:=> [:cat SchemaForm] [:map-of :keyword :any]])
+
 (defn coerce-and-validate
   "Coerce and validate parameters."
   [schema params]
   ;; For now, just validate - coercion can be added with malli.transform
   (validate-params schema params))
+
+(m/=> coerce-and-validate [:=> [:cat SchemaForm :any] ValidationResult])
 
 (comment
   ;; Example usage

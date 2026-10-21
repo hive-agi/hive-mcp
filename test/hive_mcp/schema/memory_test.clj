@@ -4,7 +4,10 @@
    TDD via nREPL - evaluate in CIDER to run tests."
   (:require [clojure.test :refer [deftest is testing]]
             [malli.core :as m]
-            [hive-mcp.schema.memory :as mem]))
+            [hive-mcp.schema.memory :as mem]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]
+            [hive-test.golden :refer [deftest-golden]]
+            [hive-mcp.schema.type-token :as tt]))
 
 ;; =============================================================================
 ;; MemoryType Tests
@@ -176,6 +179,79 @@
          {:id "123" :type "note" :content "test"}))
     (is (not (mem/valid-entry?
               {:type "note" :content "missing id"})))))
+
+;; =============================================================================
+;; Facets over the validators' contracts
+;; =============================================================================
+;;
+;; The contracts take :any (a validator must answer for anything). Each :in
+;; below is that domain narrowed to values that REACH both answers: entries
+;; the schema generates, the same entries broken one field at a time, and
+;; values that are not entries at all.
+
+(def ^:private BrokenEntry
+  "A generated MemoryEntry with one required field removed or corrupted."
+  [:and {:gen/fmap (fn [[e k bad]] (if (= bad ::drop) (dissoc e k) (assoc e k bad)))
+         :gen/schema [:tuple mem/MemoryEntry [:enum :id :type :content]
+                      [:enum ::drop "" "bad type!" 42 nil]]}
+   :map])
+
+(def ^:private EntryLike [:or mem/MemoryEntry BrokenEntry [:enum nil "entry" [] {}]])
+
+;; Oracle from the docstring of MemoryEntry's required keys; the optional keys
+;; come from the generator and are never corrupted, so they cannot decide.
+(deftrifecta-from-schema valid-entry-is-membership-in-memory-entry
+  hive-mcp.schema.memory/valid-entry?
+  {:in EntryLike
+   :out :boolean
+   :rel (fn [e out]
+          (= out (boolean (and (map? e)
+                               (string? (:id e)) (seq (:id e))
+                               (tt/safe-type? (:type e))
+                               (string? (:content e))))))
+   :classify (fn [_ out] out)
+   :classify-domain #{true false}
+   :num-tests 300
+   :golden-path "test/golden/hive-mcp/schema/memory/valid-entry.edn"})
+
+(def ^:private AddRequest
+  [:or mem/MemoryEntryMinimal
+   [:and {:gen/fmap (fn [[e k bad]] (if (= bad ::drop) (dissoc e k) (assoc e k bad)))
+          :gen/schema [:tuple mem/MemoryEntryMinimal [:enum :type :content] [:enum ::drop "" "no way" 7]]}
+    :map]])
+
+(deftrifecta-from-schema validate-add-request-is-nil-exactly-when-minimal-validates
+  hive-mcp.schema.memory/validate-add-request
+  {:in AddRequest
+   :out [:maybe mem/AddRequestErrors]
+   :rel (fn [e out]
+          (if (m/validate mem/MemoryEntryMinimal e)
+            (nil? out)
+            (and (seq (:errors out))
+                 (every? #(= (:value %) (get-in e (:path %))) (:errors out)))))
+   :classify (fn [_ out] (if out :rejected :accepted))
+   :classify-domain #{:rejected :accepted}
+   :num-tests 300
+   :golden-path "test/golden/hive-mcp/schema/memory/validate-add-request.edn"})
+
+(deftrifecta-from-schema valid-duration-is-the-five-durations
+  hive-mcp.schema.memory/valid-duration?
+  {:in [:or mem/MemoryDuration [:enum "forever" "LONG" "" nil :long]]
+   :out :boolean
+   :rel (fn [d out] (= out (contains? #{"ephemeral" "short" "medium" "long" "permanent"} d)))
+   :classify (fn [_ out] out)
+   :classify-domain #{true false}
+   :num-tests 200
+   :golden-path "test/golden/hive-mcp/schema/memory/valid-duration.edn"})
+
+(deftest-golden memory-validators-on-the-docstring-examples-golden
+  "test/golden/hive-mcp/schema/memory/examples.edn"
+  {:valid-type (mapv mem/valid-type? ["decision" "insight" "bad type!" nil "9lives"])
+   :valid-duration (mapv mem/valid-duration? ["long" "forever"])
+   :valid-entry (mapv mem/valid-entry? [{:id "1" :type "note" :content "c"} {:type "note" :content "c"}])
+   :explain-paths (mapv :path (:errors (mem/explain-entry {:type "invalid type" :content "test"})))
+   :add-request [(mem/validate-add-request {:type "snippet" :content "x"})
+                 (mem/validate-add-request {:type "snippet" :content ""})]})
 
 (comment
   ;; Run all tests in REPL

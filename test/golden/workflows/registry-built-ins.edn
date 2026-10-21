@@ -1,0 +1,10 @@
+{:catchup
+ {:has-spec? true, :has-handlers? true, :compiled? true, :error nil},
+ :complete-session
+ {:has-spec? true, :has-handlers? true, :compiled? true, :error nil},
+ :forge-belt
+ {:has-spec? true, :has-handlers? true, :compiled? true, :error nil},
+ :saa-workflow
+ {:has-spec? true, :has-handlers? true, :compiled? true, :error nil},
+ :wrap-session
+ {:has-spec? true, :has-handlers? true, :compiled? true, :error nil}}
