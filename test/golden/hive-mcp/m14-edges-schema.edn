@@ -65,7 +65,7 @@
   :half false,
   :ids-empty-set true,
   :ids-list true,
-  :ids-set false,
+  :ids-set true,
   :ids-vec true,
   :keyword false,
   :nil true,
