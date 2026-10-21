@@ -1,0 +1,18 @@
+{:case-0 {:out true, :in ({:tags ["a"]} nil)},
+ :case-1
+ {:out nil, :in ({:tags ["scope:project:x" "b"]} #{"scope:global"})},
+ :case-2 {:out true, :in ({:tags []} nil)},
+ :case-3 {:out nil, :in ({:tags ["a"]} #{})},
+ :case-4
+ {:out true,
+  :in
+  ({:tags
+    ["scope:global"
+     "scope:project:y"
+     "scope:global"
+     "scope:project:x"]}
+   nil)},
+ :case-5 {:out true, :in ({:tags ["scope:project:x" "a"]} nil)},
+ :case-6 {:out true, :in ({:tags []} nil)},
+ :case-7
+ {:out true, :in ({:tags ["scope:project:y" "scope:global"]} nil)}}

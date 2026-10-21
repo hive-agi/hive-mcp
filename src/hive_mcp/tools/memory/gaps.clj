@@ -2,7 +2,9 @@
   "Knowledge gap auto-detection via regex/keyword analysis of memory content."
   (:require [hive-mcp.extensions.registry :as ext]
             [hive-dsl.result :refer [rescue]]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [malli.core :as m]
+            [hive-mcp.tools.memory.schema :as ms]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -124,3 +126,16 @@
           enhanced-gaps (when-let [analyze-fn (ext/get-extension :gs/detect-gaps)]
                           (rescue nil (analyze-fn content-str all-gaps)))]
       (or enhanced-gaps all-gaps))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> extract-questions [:=> [:cat ms/GapText] [:vector :string]])
+(m/=> extract-todo-markers [:=> [:cat ms/GapText] [:vector :string]])
+(m/=> extract-uncertainty [:=> [:cat ms/GapText] [:vector :string]])
+(m/=> extract-missing [:=> [:cat ms/GapText] [:vector :string]])
+(m/=> extract-assumptions [:=> [:cat ms/GapText] [:vector :string]])
+
+(m/=> extract-knowledge-gaps
+      [:=> [:cat [:any {:gen/schema [:maybe ms/GapText]}]] [:sequential :string]])

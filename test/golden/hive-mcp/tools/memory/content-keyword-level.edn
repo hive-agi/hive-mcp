@@ -1,0 +1,8 @@
+{:case-0 {:out nil, :in (nil)},
+ :case-1 {:out nil, :in ("")},
+ :case-2 {:out 4, :in ("This MUST ALWAYS hold.")},
+ :case-3 {:out 1, :in ("see file: src/a.clj at line 12")},
+ :case-4 {:out nil, :in (nil)},
+ :case-5 {:out nil, :in (nil)},
+ :case-6 {:out nil, :in (nil)},
+ :case-7 {:out nil, :in (nil)}}

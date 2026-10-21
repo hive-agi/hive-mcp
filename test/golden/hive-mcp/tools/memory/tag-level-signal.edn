@@ -1,0 +1,8 @@
+{:case-0 {:out 4, :in (["axiom"])},
+ :case-1 {:out nil, :in (["plain"])},
+ :case-2 {:out 1, :in (["lint"])},
+ :case-3 {:out 3, :in (["convention"])},
+ :case-4 {:out 4, :in (["axiom"])},
+ :case-5 {:out nil, :in (nil)},
+ :case-6 {:out 1, :in (["lint"])},
+ :case-7 {:out 3, :in (["convention"])}}
