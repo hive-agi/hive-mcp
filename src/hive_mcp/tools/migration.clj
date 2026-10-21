@@ -27,7 +27,8 @@
             [clojure.edn :as edn]
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.facade :as facade]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.extensions.record-hooks :as record-hooks]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -73,13 +74,14 @@
 
 (defn- export-memory-to-edn
   "Export all Chroma memory entries to EDN format for backup.
+   Each entry first passes the :export/entry record hooks
+   (hive-mcp.extensions.record-hooks); one a hook drops is left out.
    Returns {:entries [...] :counts {:note N :snippet N ...} :total N}"
   []
-  (let [;; Get all entries including expired for complete backup
-        entries (facade/query-entries :limit 50000 :include-expired? true)
-        ;; Remove :document field (regenerated on import from content)
+  (let [entries (->> (facade/query-entries :limit 50000 :include-expired? true)
+                     (keep #(record-hooks/apply-hooks :export/entry %))
+                     vec)
         clean-entries (mapv #(dissoc % :document) entries)
-        ;; Group by type for counts
         by-type (group-by :type entries)]
     {:entries clean-entries
      :counts (into {} (map (fn [[k v]] [(keyword k) (count v)]) by-type))

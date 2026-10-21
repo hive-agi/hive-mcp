@@ -32,12 +32,12 @@
 (defn- tree*
   [{:keys [project_id]}]
   (log/info "project tree" {:project-id project_id})
-  (let [all-projects (tree/query-all-projects)
+  (let [all-projects (tree/query-visible-projects)
         tree-data (tree/build-project-tree all-projects)]
     (if project_id
       (let [descendants (tree/get-descendants tree-data project_id)
             ancestors (tree/get-ancestors tree-data project_id)
-            project (tree/query-project-by-id project_id)]
+            project (get (:by-id tree-data) project_id)]
         (result/ok {:project project
                     :ancestors ancestors
                     :descendants descendants
