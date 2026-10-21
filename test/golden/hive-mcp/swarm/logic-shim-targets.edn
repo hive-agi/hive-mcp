@@ -1,0 +1,28 @@
+{"add-claim!" [:delegates-to "hive-agent.swarm.logic" "add-claim!"],
+ "add-slave!" [:delegates-to "hive-agent.swarm.logic" "add-slave!"],
+ "add-task-file!"
+ [:delegates-to "hive-agent.swarm.logic" "add-task-file!"],
+ "check-file-conflicts"
+ [:delegates-to "hive-agent.swarm.logic" "check-file-conflicts"],
+ "check-would-deadlock"
+ [:delegates-to "hive-agent.swarm.logic" "check-would-deadlock"],
+ "db-stats" [:delegates-to "hive-agent.swarm.logic" "db-stats"],
+ "get-all-claims"
+ [:delegates-to "hive-agent.swarm.logic" "get-all-claims"],
+ "get-claim-for-file"
+ [:delegates-to "hive-agent.swarm.logic" "get-claim-for-file"],
+ "get-files-for-task"
+ [:delegates-to "hive-agent.swarm.logic" "get-files-for-task"],
+ "get-logic-db-atom"
+ [:delegates-to "hive-agent.swarm.logic" "get-logic-db-atom"],
+ "release-claim-for-file!"
+ [:delegates-to "hive-agent.swarm.logic" "release-claim-for-file!"],
+ "release-claims-for-slave!"
+ [:delegates-to "hive-agent.swarm.logic" "release-claims-for-slave!"],
+ "release-claims-for-task!"
+ [:delegates-to "hive-agent.swarm.logic" "release-claims-for-task!"],
+ "remove-claim!"
+ [:delegates-to "hive-agent.swarm.logic" "remove-claim!"],
+ "reset-db!" [:delegates-to "hive-agent.swarm.logic" "reset-db!"],
+ "slave-exists?"
+ [:delegates-to "hive-agent.swarm.logic" "slave-exists?"]}
