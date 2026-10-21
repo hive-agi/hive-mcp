@@ -1,0 +1,34 @@
+{:14-maybe-scan {:scanned false, :reason "Project tree is fresh"},
+ :13-scope-parent "f08-mid",
+ :7-children ["f08-mid"],
+ :11-desc-global nil,
+ :5-by-id
+ {:project/id "f08-leaf",
+  :project/type :generic,
+  :project/parent-id "f08-mid",
+  :has-path? true},
+ :12-desc-scopes [],
+ :4-all
+ [{:project/id "f08-leaf",
+   :project/type :generic,
+   :project/parent-id "f08-mid",
+   :has-path? true}
+  {:project/id "f08-mid",
+   :project/type :library,
+   :project/parent-id "f08-root",
+   :project/tags ["clj"],
+   :has-path? true}
+  {:project/id "f08-root", :project/type :generic, :has-path? true}],
+ :10-desc-tags ["scope:project:f08-leaf"],
+ :2-scan
+ {:success true,
+  :projects-found 3,
+  :roots ["f08-root"],
+  :tree-children {"f08-root" ["f08-mid"], "f08-mid" ["f08-leaf"]}},
+ :3-after {:stale-root? false, :stale-elsewhere? true},
+ :9-descendants ["f08-leaf" "f08-mid"],
+ :8-has-children {:root true, :leaf false},
+ :15-persist-none nil,
+ :16-missing-root {:success false, :error nil, :projects-found 0},
+ :6-missing nil,
+ :1-before {:stale? true, :cached nil}}
