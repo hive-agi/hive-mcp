@@ -15,6 +15,7 @@
    - KG GC lane (synthetic cleanup), self-gated to its own interval; see
      hive-mcp.scheduler.kg-gc"
   (:require [hive-mcp.dns.result :as result]
+            [hive-mcp.scheduler.gc-gate :as gc-gate]
             [hive-mcp.config.core :as config]
             [taoensso.timbre :as log]
             [clojure.set :as set])
@@ -87,8 +88,12 @@
                             (set registered-names))))
 
 (defn housekeeping-sweep!
-  "Run a single housekeeping sweep. Each task is guarded independently."
-  []
+  "Run a single housekeeping sweep. Each task is guarded independently.
+
+   opts :gc-ports are the injected ports of `gc-gate/gc-hint!` (:probe, :gc!,
+   :thresholds); omitted, the live heap and Runtime.gc are used."
+  ([] (housekeeping-sweep! {}))
+  ([{:keys [gc-ports] :or {gc-ports {}}}]
   (let [start-ms (System/currentTimeMillis)
         sweep-num (-> (swap! scheduler-state update :sweep-count inc)
                       :sweep-count)
@@ -145,33 +150,11 @@
          'hive-mcp.scheduler.kg-gc/run-lane!
          #(%) {:skipped true :reason "kg-gc lane failed"})
 
-        ;; 6. JVM GC hint — nudge G1GC to collect old gen AND return committed
-        ;; heap to the OS.
-        ;;
-        ;; Reports COMMITTED, not just used. `.totalMemory` IS committed, so the
-        ;; old (total - free) metric measured live-set only: it happily logged
-        ;; "freed 1452 MB" while committed sat at 3576 MB against 622 MB used.
-        ;; RSS is driven by committed, so used-only instrumentation hides
-        ;; exactly the ratchet this task exists to prevent.
-        ;;
-        ;; Requires -XX:-ExplicitGCInvokesConcurrent (see deps.edn :jvm-opts):
-        ;; a concurrent explicit GC never uncommits.
-        gc-hint-result
-        (try
-          (let [heap-bean (java.lang.management.ManagementFactory/getMemoryMXBean)
-                usage     (fn [] (.getHeapMemoryUsage heap-bean))
-                mb        (fn [^long b] (Math/round (/ b 1048576.0)))
-                before    (usage)
-                before-committed (.getCommitted before)
-                before-used      (.getUsed before)]
-            (.gc (Runtime/getRuntime))
-            (let [after (usage)]
-              {:freed-mb           (mb (- before-used (.getUsed after)))
-               :before-mb          (mb before-used)
-               :committed-mb       (mb (.getCommitted after))
-               :committed-freed-mb (mb (- before-committed (.getCommitted after)))
-               :used-mb            (mb (.getUsed after))}))
-          (catch Exception _ {:freed-mb 0 :committed-freed-mb 0}))
+        ;; 6. JVM GC hint, GATED on real fragmentation (scheduler.gc-gate).
+        ;; An unconditional System/gc here was a stop-the-world Old collection
+        ;; every sweep under -XX:-ExplicitGCInvokesConcurrent (18 in 83 min,
+        ;; 25.5 s total). Below the gate G1PeriodicGCInterval does the uncommit.
+        gc-hint-result (gc-gate/gc-hint! gc-ports)
 
         elapsed-ms (- (System/currentTimeMillis) start-ms)
         result {:callbacks callback-result
@@ -205,13 +188,11 @@
 
     ;; A large committed/used gap that survives an explicit GC means committed
     ;; heap is NOT being returned — the ratchet. Warn rather than stay silent.
-    (let [{:keys [committed-mb used-mb]} gc-hint-result]
-      (when (and committed-mb used-mb (pos? used-mb)
-                 (> committed-mb (* 2 used-mb))
-                 (> (- committed-mb used-mb) 1024))
-        (log/warn "Housekeeping: committed heap not returning to the OS —"
-                  "committed" committed-mb "MB vs used" used-mb "MB."
-                  "Check -XX:-ExplicitGCInvokesConcurrent is set.")))
+    (when (and (:gc? gc-hint-result) (:still-fragmented? gc-hint-result))
+      (log/warn "Housekeeping: committed heap not returning to the OS —"
+                "committed" (:committed-mb gc-hint-result) "MB vs used"
+                (:used-mb gc-hint-result) "MB."
+                "Check -XX:-ExplicitGCInvokesConcurrent is set."))
 
     ;; Update state
     (swap! scheduler-state assoc
@@ -219,7 +200,7 @@
            :last-result result)
 
     (log/info "Housekeeping: sweep" sweep-num "completed in" elapsed-ms "ms")
-    result))
+    result)))
 
 ;; =============================================================================
 ;; Scheduler Lifecycle

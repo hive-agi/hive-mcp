@@ -41,6 +41,7 @@
   "hot"
   "scripts.aot-boot"
   "scheduler.housekeeping"
+  "scheduler.gc-gate"
   "tools.catchup"
   "tools.events"
   "tools.consolidated.project"]
