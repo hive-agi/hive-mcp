@@ -58,16 +58,31 @@
         b (or (:disc/certainty-beta disc) 2.0)]
     (/ a (+ a b))))
 
+(defn- finite-positive
+  "x as a double, with +Infinity (an overflowed bigint) clamped to
+   Double/MAX_VALUE."
+  ^double [x]
+  (min (double x) Double/MAX_VALUE))
+
 (defn beta-lower-bound
-  "Lower bound of 95% credible interval for certainty."
+  "Lower bound of 95% credible interval for certainty.
+
+   Computed in double space on parameters scaled by their maximum, with the
+   variance as mean*(1-mean)/(sum+1), so no intermediate overflows long
+   arithmetic, underflows to a zero denominator or reaches Infinity/Infinity
+   at extreme alpha and beta."
   [disc]
-  (let [a (or (:disc/certainty-alpha disc) 5.0)
-        b (or (:disc/certainty-beta disc) 2.0)
-        sum (+ a b)
-        mean (/ a sum)
-        variance (/ (* a b) (* sum sum (+ sum 1)))
-        std-dev (Math/sqrt variance)]
-    (max 0.0 (- mean (* 2 std-dev)))))
+  (let [a (finite-positive (or (:disc/certainty-alpha disc) 5.0))
+        b (finite-positive (or (:disc/certainty-beta disc) 2.0))
+        m (max a b)]
+    (if-not (pos? m)
+      0.0
+      (let [a' (/ a m)
+            b' (/ b m)
+            mean (/ a' (+ a' b'))
+            variance (/ (* mean (/ b' (+ a' b'))) (+ a b 1.0))
+            std-dev (Math/sqrt variance)]
+        (min 1.0 (max 0.0 (- mean (* 2.0 std-dev))))))))
 
 (defn needs-read?
   "True if certainty below threshold or credible interval too wide."
@@ -189,7 +204,7 @@
 
 (m/=> classify-volatility [:=> [:cat :string] ds/VolatilityClass])
 (m/=> current-certainty [:=> [:cat [:maybe ds/Disc]] ds/Score])
-(m/=> beta-lower-bound [:=> [:cat [:maybe ds/Disc]] ds/Score])
+(m/=> beta-lower-bound [:=> [:cat [:maybe ds/BetaDisc]] ds/Score])
 (m/=> needs-read? [:function
                    [:=> [:cat [:maybe ds/Disc]] :boolean]
                    [:=> [:cat [:maybe ds/Disc] number?] :boolean]])

@@ -76,7 +76,7 @@
    :rel (fn [[{:keys [entry_id]}] out]
           (if (and (string? entry_id) (seq entry_id) (not= \$ (first entry_id)))
             (m/validate core/McpResponse out)
-            (m/validate ks/NodeIdError out)))
+            (m/validate ks/NodeIdRefusal out)))
    :num-tests 40})
 
 (deftrifecta-from-schema backfill-without-a-memory-store-is-an-error
