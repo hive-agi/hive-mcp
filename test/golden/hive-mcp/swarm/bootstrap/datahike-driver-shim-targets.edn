@@ -1,0 +1,25 @@
+{"connect"
+ [:delegates-to
+  "hive-agent.swarm.bootstrap.datahike-driver"
+  "connect"],
+ "create-database"
+ [:delegates-to
+  "hive-agent.swarm.bootstrap.datahike-driver"
+  "create-database"],
+ "database-exists?"
+ [:delegates-to
+  "hive-agent.swarm.bootstrap.datahike-driver"
+  "database-exists?"],
+ "db"
+ [:delegates-to "hive-agent.swarm.bootstrap.datahike-driver" "db"],
+ "pull"
+ [:delegates-to "hive-agent.swarm.bootstrap.datahike-driver" "pull"],
+ "q" [:delegates-to "hive-agent.swarm.bootstrap.datahike-driver" "q"],
+ "release"
+ [:delegates-to
+  "hive-agent.swarm.bootstrap.datahike-driver"
+  "release"],
+ "transact"
+ [:delegates-to
+  "hive-agent.swarm.bootstrap.datahike-driver"
+  "transact"]}
