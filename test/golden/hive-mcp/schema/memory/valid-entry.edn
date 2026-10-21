@@ -1,0 +1,60 @@
+{:case-0
+ {:out true,
+  :in
+  {:id "V",
+   :type "plan",
+   :content "",
+   :project-id nil,
+   :created-at nil,
+   :kg-incoming nil}},
+ :case-1
+ {:out false,
+  :in
+  {:tags [],
+   :content-hash nil,
+   :content "",
+   :abstraction-level 2,
+   :type "principle",
+   :expires nil,
+   :kg-incoming [""],
+   :id 42,
+   :created-at #inst "1970-01-01T00:00:00.000-00:00"}},
+ :case-2 {:out false, :in "entry"},
+ :case-3 {:out false, :in []},
+ :case-4
+ {:out false,
+  :in
+  {:id "3",
+   :type "",
+   :content "1uG9",
+   :content-hash nil,
+   :abstraction-level 1,
+   :kg-incoming nil}},
+ :case-5
+ {:out false,
+  :in
+  {:type "plan",
+   :content "9fTnM",
+   :duration "ephemeral",
+   :created-at nil,
+   :abstraction-level 4,
+   :kg-incoming []}},
+ :case-6
+ {:out true,
+  :in
+  {:id "j2v1zh",
+   :type "x",
+   :content "bad type!",
+   :created-at #inst "1969-12-31T23:59:59.993-00:00",
+   :expires nil,
+   :content-hash nil,
+   :kg-outgoing nil}},
+ :case-7
+ {:out true,
+  :in
+  {:id "i8as9",
+   :type "axiom",
+   :content "66s3",
+   :project-id nil,
+   :abstraction-level 3,
+   :kg-incoming nil}}}

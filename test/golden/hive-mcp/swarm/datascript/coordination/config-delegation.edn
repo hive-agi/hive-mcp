@@ -1,0 +1,18 @@
+{:calls
+ {"->coordination-config"
+  {:ns "hive-datascript.swarm.coordination.config",
+   :var "->coordination-config"},
+  "coordination-config"
+  {:ns "hive-datascript.swarm.coordination.config",
+   :var "coordination-config"},
+  "coordination-config?"
+  {:ns "hive-datascript.swarm.coordination.config",
+   :var "coordination-config?"},
+  "resolve-CoordinationConfig"
+  {:ns "hive-datascript.swarm.coordination.config",
+   :var "resolve-CoordinationConfig"}},
+ :values
+ {"CoordinationConfig" nil,
+  "CoordinationConfig-fields" nil,
+  "CoordinationConfig-schema" nil,
+  "CoordinationConfigMalli" nil}}

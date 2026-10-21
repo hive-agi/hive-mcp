@@ -1,0 +1,42 @@
+{:registered
+ [{:name "hivemind_shout",
+   :required ["event_type"],
+   :properties
+   ["agent_id"
+    "broadcast"
+    "broadcast_reason"
+    "context_id"
+    "data"
+    "directory"
+    "event_type"
+    "message"
+    "project_id"
+    "task"
+    "to"]}
+  {:name "hivemind_ask",
+   :required ["question"],
+   :properties
+   ["agent_id"
+    "cc"
+    "context"
+    "directory"
+    "expects"
+    "options"
+    "project_id"
+    "question"
+    "timeout_ms"]}
+  {:name "hivemind_status",
+   :required [],
+   :properties ["directory" "project_id"]}
+  {:name "hivemind_respond",
+   :required ["ask_id"],
+   :properties ["answer" "ask_id" "decision"]}
+  {:name "hivemind_messages",
+   :required [],
+   :properties
+   ["agent_id" "context_id" "directory" "limit" "project_id"]}],
+ :respond-blank
+ [{:error "answer is required"} {:error "answer is required"}],
+ :messages-without-ids
+ [{:error "hivemind_messages needs either agent_id or context_id"}
+  {:error "hivemind_messages needs either agent_id or context_id"}]}

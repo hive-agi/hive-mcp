@@ -1,0 +1,37 @@
+{:calls
+ {"ask-envelope"
+  {:ns "hive-agent.swarm.hivemind.conversation", :var "ask-envelope"},
+  "await-response!"
+  {:ns "hive-agent.swarm.hivemind.conversation",
+   :var "await-response!"},
+  "build-ask!"
+  {:ns "hive-agent.swarm.hivemind.conversation", :var "build-ask!"},
+  "cancel-ask!"
+  {:ns "hive-agent.swarm.hivemind.conversation", :var "cancel-ask!"},
+  "clear-pending!"
+  {:ns "hive-agent.swarm.hivemind.conversation",
+   :var "clear-pending!"},
+  "deliver-response!"
+  {:ns "hive-agent.swarm.hivemind.conversation",
+   :var "deliver-response!"},
+  "pending-ask"
+  {:ns "hive-agent.swarm.hivemind.conversation", :var "pending-ask"},
+  "pending-count"
+  {:ns "hive-agent.swarm.hivemind.conversation", :var "pending-count"},
+  "register-ask!"
+  {:ns "hive-agent.swarm.hivemind.conversation", :var "register-ask!"},
+  "respond-envelope"
+  {:ns "hive-agent.swarm.hivemind.conversation",
+   :var "respond-envelope"},
+  "tell-envelope"
+  {:ns "hive-agent.swarm.hivemind.conversation",
+   :var "tell-envelope"}},
+ :values
+ {"AgentId" "clojure.lang.PersistentVector",
+  "AskId" "clojure.lang.PersistentVector",
+  "Chan" "clojure.lang.PersistentVector",
+  "Envelope" "clojure.lang.PersistentVector",
+  "EnvelopeOpts" "clojure.lang.PersistentVector",
+  "PendingAsk" "clojure.lang.PersistentVector",
+  "default-ask-timeout-ms" nil,
+  "pending-asks" nil}}

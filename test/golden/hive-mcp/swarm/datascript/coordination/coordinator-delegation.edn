@@ -1,0 +1,29 @@
+{:calls
+ {"get-all-coordinators"
+  {:ns "hive-datascript.swarm.coordination.coordinator",
+   :var "get-all-coordinators"},
+  "get-coordinator"
+  {:ns "hive-datascript.swarm.coordination.coordinator",
+   :var "get-coordinator"},
+  "get-coordinators-by-status"
+  {:ns "hive-datascript.swarm.coordination.coordinator",
+   :var "get-coordinators-by-status"},
+  "get-coordinators-for-project"
+  {:ns "hive-datascript.swarm.coordination.coordinator",
+   :var "get-coordinators-for-project"},
+  "mark-coordinator-stale!"
+  {:ns "hive-datascript.swarm.coordination.coordinator",
+   :var "mark-coordinator-stale!"},
+  "mark-coordinator-terminated!"
+  {:ns "hive-datascript.swarm.coordination.coordinator",
+   :var "mark-coordinator-terminated!"},
+  "register-coordinator!"
+  {:ns "hive-datascript.swarm.coordination.coordinator",
+   :var "register-coordinator!"},
+  "remove-coordinator!"
+  {:ns "hive-datascript.swarm.coordination.coordinator",
+   :var "remove-coordinator!"},
+  "update-heartbeat!"
+  {:ns "hive-datascript.swarm.coordination.coordinator",
+   :var "update-heartbeat!"}},
+ :values {}}

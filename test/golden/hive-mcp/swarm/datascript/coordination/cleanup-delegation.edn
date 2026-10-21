@@ -1,0 +1,17 @@
+{:calls
+ {"cleanup-old-claim-history!"
+  {:ns "hive-datascript.swarm.coordination.cleanup",
+   :var "cleanup-old-claim-history!"},
+  "cleanup-stale-claims!"
+  {:ns "hive-datascript.swarm.coordination.cleanup",
+   :var "cleanup-stale-claims!"},
+  "cleanup-stale-coordinators!"
+  {:ns "hive-datascript.swarm.coordination.cleanup",
+   :var "cleanup-stale-coordinators!"},
+  "cleanup-terminal-tasks!"
+  {:ns "hive-datascript.swarm.coordination.cleanup",
+   :var "cleanup-terminal-tasks!"},
+  "sweep-ledger-cold!"
+  {:ns "hive-datascript.swarm.coordination.cleanup",
+   :var "sweep-ledger-cold!"}},
+ :values {"default-ledger-retain-ms" nil}}

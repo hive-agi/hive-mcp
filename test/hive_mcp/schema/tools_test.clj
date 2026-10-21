@@ -4,7 +4,11 @@
    TDD via nREPL - evaluate in CIDER to run tests."
   (:require [clojure.test :refer [deftest is testing]]
             [malli.core :as m]
-            [hive-mcp.schema.tools :as tools]))
+            [hive-mcp.schema.tools :as tools]
+            [malli.generator :as mg]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]
+            [hive-test.golden :refer [deftest-golden]]
+            [malli.util :as mu]))
 
 ;; =============================================================================
 ;; Agent Tool Schema Tests
@@ -314,6 +318,75 @@
                     {:type "text" :text "ok"}))
     (is (m/validate tools/MCPResponse
                     {:type "text" :text "error" :isError true}))))
+
+;; =============================================================================
+;; Facets over the helpers' contracts
+;; =============================================================================
+;;
+;; The schema argument of every helper comes from its OWN contract (the
+;; :gen/elements on the m/=> input), so a schema added there is exercised here
+;; too. Values are generated from that schema and then perturbed, so both
+;; arms of the result are reached.
+
+(defn- contract-input
+  "The Nth input schema of hive-mcp.schema.tools/SYM's contract."
+  [sym n]
+  (nth (m/children (first (m/children (m/schema (get-in (m/function-schemas) ['hive-mcp.schema.tools sym :schema])))))
+       n))
+
+(def ^:private SchemaAndValue
+  "validate-params' argument list: a schema from its contract and a value
+   for it, generated from the schema (validates) or a foreign value (usually
+   does not)."
+  [:cat {:gen/fmap (fn [[s pick foreign]]
+                     [s (if pick (mg/generate s {:seed (hash foreign)}) foreign)])
+         :gen/schema [:tuple (contract-input 'validate-params 0) :boolean
+                      [:enum nil 1 "x" {} {:a "no"} [:kw]]]}
+   :any :any])
+
+(deftrifecta-from-schema validate-params-is-malli-validate
+  hive-mcp.schema.tools/validate-params
+  {:in SchemaAndValue
+   :out tools/ValidationResult
+   :rel (fn [[s p] out]
+          (and (= (:valid out) (m/validate s p))
+               (= (some? (:errors out)) (not (m/validate s p)))))
+   :classify (fn [_ out] (:valid out))
+   :classify-domain #{true false}
+   ;; the :errors arm holds malli schema objects, which an EDN golden cannot
+   ;; print back; the mutation facet would snapshot them the same way
+   :mutation false
+   :num-tests 300})
+
+(deftrifecta-from-schema json-schema-object-names-its-required-keys
+  hive-mcp.schema.tools/json-schema
+  {:in (contract-input 'json-schema 0)
+   :out [:map-of :keyword :any]
+   :rel (fn [s out]
+          (let [ms (m/schema s)]
+            (if (= :map (m/type ms))
+              (and (= "object" (:type out))
+                   (= (set (map (comp name first) (m/children ms))) (set (keys (:properties out))))
+                   (= (set (keep (fn [[k p]] (when-not (:optional p) (name k))) (m/children ms)))
+                      (set (:required out))))
+              (not= "object" (:type out)))))
+   :classify (fn [_ out] (= "object" (:type out)))
+   :classify-domain #{true false}
+   :num-tests 200
+   :golden-path "test/golden/hive-mcp/schema/tools/json-schema.edn"})
+
+(deftest-golden param-coercer-decodes-json-and-names-the-field-golden
+  "test/golden/hive-mcp/schema/tools/param-coercer.edn"
+  (let [schema [:map [:name [:string {:min 1}]] [:n {:optional true} :int]]
+        c (tools/param-coercer "p" schema)
+        thrown (fn [x] (try (c x) :no-throw
+                            (catch clojure.lang.ExceptionInfo e [(ex-message e) (ex-data e)])))]
+    {:decoded [(c {"name" "w" "n" "3"}) (c {:name "w"})]
+     :one-bad-field (thrown {"name" ""})
+     :two-bad-fields (thrown {"name" "" "n" "x"})
+     :not-a-map (thrown 5)
+     :coerce-and-validate [(tools/coerce-and-validate [:int] 1)
+                           (:valid (tools/coerce-and-validate [:int] "1"))]}))
 
 (comment
   ;; Run all tests in REPL

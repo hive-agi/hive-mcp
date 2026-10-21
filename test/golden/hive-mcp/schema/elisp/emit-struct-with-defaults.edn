@@ -1,0 +1,61 @@
+{:case-0
+ {:out "(cl-defstruct (hive-a (:constructor hive-a-create))\n  name)",
+  :in ([:map [:name :string]] {:name "hive-a", :var "W"})},
+ :case-1
+ {:out "(cl-defstruct (hive-b (:constructor hive-b-create))\n  name)",
+  :in
+  ([:map [:name :string]]
+   {:name "hive-b",
+    :constructor nil,
+    :include nil,
+    :defaults nil,
+    :var nil})},
+ :case-2
+ {:out
+  "(cl-defstruct (hive-a (:constructor hive-a-create))\n  id type content tags)",
+  :in
+  ([:map
+    [:id :string]
+    [:type [:enum :note :snippet :decision]]
+    [:content :string]
+    [:tags [:vector :string]]]
+   {:name "hive-a", :include "aO2", :var nil})},
+ :case-3
+ {:out
+  "(cl-defstruct (hive-cfg (:constructor hive-cfg-create))\n  enabled port)",
+  :in
+  ([:map [:enabled :boolean] [:port {:optional true} [:maybe :int]]]
+   {:name "hive-cfg"})},
+ :case-4
+ {:out
+  "(cl-defstruct (hive-a (:constructor hive-a-create))\n  id type content tags)",
+  :in
+  ([:map
+    [:id :string]
+    [:type [:enum :note :snippet :decision]]
+    [:content :string]
+    [:tags [:vector :string]]]
+   {:name "hive-a", :include nil})},
+ :case-5
+ {:out
+  "(cl-defstruct (hive-a (:constructor hive-a-create))\n  id type content tags)",
+  :in
+  ([:map
+    [:id :string]
+    [:type [:enum :note :snippet :decision]]
+    [:content :string]
+    [:tags [:vector :string]]]
+   {:name "hive-a", :include "25f3", :defaults nil, :var "mPc9"})},
+ :case-6
+ {:out "(cl-defstruct (hive-cfg (:constructor dM1))\n  enabled port)",
+  :in
+  ([:map [:enabled :boolean] [:port {:optional true} [:maybe :int]]]
+   {:name "hive-cfg",
+    :constructor "dM1",
+    :defaults nil,
+    :var "1RQxWKk"})},
+ :case-7
+ {:out "(cl-defstruct (hive-a (:constructor hive-a-create))\n  name)",
+  :in
+  ([:map [:name :string]]
+   {:name "hive-a", :constructor nil, :include "y", :var "I1OwW"})}}

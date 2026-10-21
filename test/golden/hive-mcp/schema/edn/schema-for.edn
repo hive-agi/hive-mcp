@@ -1,0 +1,9 @@
+{:forms
+ {":covtest/mode" [:enum "a" "b"],
+  ":covtest/name" [:string {:min 1}],
+  ":covtest/nope" nil,
+  ":covtest/point" [:map [:x :int] [:y :int]],
+  ":plain" nil},
+ :cached-identical true,
+ :reload-answers {},
+ :fresh-after-reload true}
