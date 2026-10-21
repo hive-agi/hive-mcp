@@ -1,0 +1,17 @@
+{:case-0 {:out ["/a/hive" "/a" "/"], :in ("/a/hive" nil)},
+ :case-1 {:out ["/"], :in ("/" "/ws/hive")},
+ :case-10 {:out ["/hive" "/"], :in ("/hive" nil)},
+ :case-11 {:out ["/"], :in ("/" "/ws/hive")},
+ :case-2
+ {:out ["/ws/hive/hive" "/ws/hive" "/ws" "/"],
+  :in ("/ws/hive/hive" nil)},
+ :case-3 {:out ["/"], :in ("/" "/elsewhere")},
+ :case-4
+ {:out ["/ws/hive/hive" "/ws/hive" "/ws" "/"],
+  :in ("/ws/hive/hive/" nil)},
+ :case-5 {:out ["/"], :in ("/" nil)},
+ :case-6 {:out ["/"], :in ("/" nil)},
+ :case-7 {:out ["/a/a" "/a" "/"], :in ("/a/a" nil)},
+ :case-8 {:out ["/a/hive" "/a" "/"], :in ("/a/hive" nil)},
+ :case-9
+ {:out ["/hive/a/ws" "/hive/a" "/hive" "/"], :in ("/hive/a/ws/" nil)}}
