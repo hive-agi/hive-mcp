@@ -16,7 +16,8 @@
             [hive-mcp.knowledge-graph.connection.store :as store]
             [hive-mcp.knowledge-graph.connection.writer :as writer]
             [hive-mcp.knowledge-graph.connection.strategy :as strategy]
-            [hive-mcp.knowledge-graph.connection.temporal :as temporal]))
+            [hive-mcp.knowledge-graph.connection.temporal :as temporal]
+            [hive-mcp.knowledge-graph.connection.avet :as avet]))
 
 (declare ensure-writer! stop-writer! writer-stats flush-pending! in-flight)
 
@@ -149,6 +150,13 @@
    materializing entity values. Delegates to the active store."
   [attr]
   (proto/eids-by-attr (ensure-store!) attr))
+
+(defn attr-values-ascending
+  "Lazy seq of [eid value] for every datom of `attr`, ascending by value,
+   read from the active store's value-first index (see connection.avet).
+   Realizing the first N pairs touches O(N) datoms."
+  [attr]
+  (avet/attr-values-ascending (ensure-store!) attr))
 
 (defn db-snapshot
   "Get the current database snapshot.

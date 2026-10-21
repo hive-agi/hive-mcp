@@ -234,6 +234,33 @@
            (conn/query scoped-edge-arc-query scope)
            (conn/query edge-arc-query)))))
 
+(defn get-oldest-verified-edges
+  "The `limit` edges with the oldest :kg-edge/last-verified, oldest first
+   (ties by entity id), optionally restricted to `scope`.
+
+   Walks the last-verified value index (conn/attr-values-ascending, AVET -
+   norm 010) and stops after `limit` hits, so it touches O(limit) entities
+   for an unscoped read instead of pulling every edge and sorting in memory.
+   With :scope it reads each candidate's scope until `limit` match.
+
+   Same rows, same order as
+     (take limit (sort-by last-verified (filter in-scope (get-all-edges))))
+   for every edge that carries a last-verified datom. An edge with NO
+   last-verified is not in the index and is not returned; `add-edge!` always
+   stamps one (defaulting to creation time).
+
+   Options:
+     :scope - restrict to edges with this :kg-edge/scope
+     :limit - cap on edges returned (nil = all, which walks the whole index)
+
+   Returns a vector of edge maps shaped like `get-all-edges` rows."
+  [& [{:keys [scope limit]}]]
+  (let [eids     (map first (conn/attr-values-ascending :kg-edge/last-verified))
+        in-scope (if scope
+                   (filter #(= scope (:kg-edge/scope (conn/pull-entity [:kg-edge/scope] %))) eids)
+                   eids)]
+    (pull-edge-batch (cond->> in-scope limit (take limit)))))
+
 (defn count-edges
   "Count total edges, optionally filtered by scope.
    Uses aggregate query — does not load all edges into memory."

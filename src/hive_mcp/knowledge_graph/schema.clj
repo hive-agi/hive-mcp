@@ -78,6 +78,7 @@
    :kg-edge/created-at    {:db/noHistory true
                            :db/doc "Creation timestamp (inst)"}
    :kg-edge/last-verified {:db/noHistory true
+                           :db/index true
                            :db/doc "Timestamp of last verification that this edge is still valid (inst)"}
    :kg-edge/source-type   {:db/noHistory true
                            :db/doc "How this edge was established: :manual, :automated, :inferred, :co-access"}
