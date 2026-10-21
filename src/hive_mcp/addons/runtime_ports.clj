@@ -90,6 +90,25 @@
       (call-fn 'hive-mcp.swarm.datascript.lings/update-slave!
                ling-id (ling-updates->slave updates)))}))
 
+(defn terminal-ports
+  "The terminal and spawn-context ports a vessel addon uses to contribute a
+   ling terminal without naming the host: hive-emacs registers its :claude
+   terminal through :terminal/register!. CALL-FN resolves and calls a host
+   symbol; arity 0 uses the lazy `call`."
+  ([] (terminal-ports call))
+  ([call-fn]
+   {:terminal/register!
+    (fn [terminal-id terminal]
+      (call-fn 'hive-mcp.agent.ling.terminal-registry/register-terminal! terminal-id terminal))
+
+    :terminal/deregister!
+    (fn [terminal-id]
+      (call-fn 'hive-mcp.agent.ling.terminal-registry/deregister-terminal! terminal-id))
+
+    :catchup/spawn-context
+    (fn [cwd]
+      (call-fn 'hive-mcp.tools.catchup/spawn-context cwd))}))
+
 (defn runtime-ports
   "Return a fresh map of host-neutral function ports for addon injection."
   []
@@ -163,8 +182,9 @@
    :extension/retract-contributions!
    (fn [addon-id]
      (call 'hive-mcp.extensions.registry/retract-all-by-addon! addon-id))}
-  ;; hive-emacs daemon redistribution / autoheal swarm ports (:emacs/*).
-  (emacs-ling-ports)))
+  ;; hive-emacs daemon redistribution / autoheal swarm ports (:emacs/*), and
+  ;; the terminal ports a vessel contributes its ling terminal through.
+  (merge (emacs-ling-ports) (terminal-ports))))
 
 ;; Contracts
 
@@ -189,3 +209,8 @@
        [:=> [:cat schema/Invokable] Ports]])
 
 (m/=> runtime-ports [:=> [:cat] Ports])
+
+(m/=> terminal-ports
+      [:function
+       [:=> [:cat] Ports]
+       [:=> [:cat schema/Invokable] Ports]])
