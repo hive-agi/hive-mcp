@@ -1,0 +1,8 @@
+{:case-0 {:out "multi-project", :in (:umbrella)},
+ :case-1 {:out "", :in ("")},
+ :case-2 {:out "", :in (nil)},
+ :case-3 {:out "", :in (nil)},
+ :case-4 {:out "hive", :in ("hive")},
+ :case-5 {:out "hive", :in ("hive")},
+ :case-6 {:out "funeraria", :in ("funeraria")},
+ :case-7 {:out "multi-project", :in (:umbrella)}}

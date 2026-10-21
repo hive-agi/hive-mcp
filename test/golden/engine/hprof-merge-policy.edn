@@ -1,0 +1,24 @@
+{:case-0
+ {:out {:dir "/var/hprof", :keep-n 0, :gzip? true, :min-free-gb 5},
+  :in ({:dir "/var/hprof", :keep-n 0})},
+ :case-1
+ {:out {:dir "/var/hprof", :keep-n 1, :gzip? true, :min-free-gb 5},
+  :in ({:dir "/var/hprof", :keep-n 1, :gzip? true})},
+ :case-2
+ {:out {:dir "/tmp/hprof-a", :keep-n 2, :gzip? true, :min-free-gb 0},
+  :in ({:dir "/tmp/hprof-a", :keep-n 2, :min-free-gb 0})},
+ :case-3
+ {:out {:dir "/tmp/hprof-a", :keep-n 3, :gzip? true, :min-free-gb 2},
+  :in ({:dir "/tmp/hprof-a", :min-free-gb 2})},
+ :case-4
+ {:out {:dir "/tmp/hprof-a", :keep-n 2, :gzip? true, :min-free-gb 1},
+  :in ({:dir "/tmp/hprof-a", :keep-n 2, :min-free-gb 1})},
+ :case-5
+ {:out {:dir "/tmp/hprof-a", :keep-n 7, :gzip? true, :min-free-gb 1},
+  :in ({:dir "/tmp/hprof-a", :keep-n 7, :min-free-gb 1})},
+ :case-6
+ {:out {:dir "/tmp/hprof-a", :keep-n 3, :gzip? false, :min-free-gb 1},
+  :in ({:dir "/tmp/hprof-a", :gzip? false, :min-free-gb 1})},
+ :case-7
+ {:out {:dir "/var/hprof", :keep-n 3, :gzip? false, :min-free-gb 5},
+  :in ({:dir "/var/hprof", :gzip? false})}}

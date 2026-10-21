@@ -1,0 +1,8 @@
+{:case-0 {:out 1, :in ({:max-threads 1})},
+ :case-1 {:out 2, :in ({:max-threads 2})},
+ :case-2 {:out 1, :in ({:max-threads 1})},
+ :case-3 {:out 4, :in ({:max-threads 4})},
+ :case-4 {:out 1, :in ({:max-threads 1})},
+ :case-5 {:out 2, :in ({:max-threads 2})},
+ :case-6 {:out 17, :in ({:max-threads 17})},
+ :case-7 {:out 1, :in ({:max-threads 1})}}

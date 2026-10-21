@@ -1,0 +1,8 @@
+{:case-0 {:out "scope:multi-project", :in (:umbrella)},
+ :case-1 {:out "scope:project:a.b", :in ("a.b")},
+ :case-2 {:out "scope:project:hive", :in ("hive")},
+ :case-3 {:out "scope:project:funeraria", :in ("funeraria")},
+ :case-4 {:out "scope:multi-project", :in (:umbrella)},
+ :case-5 {:out "scope:multi-project", :in (:umbrella)},
+ :case-6 {:out "scope:multi-project", :in (:umbrella)},
+ :case-7 {:out "scope:multi-project", :in (:umbrella)}}

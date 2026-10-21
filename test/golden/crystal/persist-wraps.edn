@@ -1,0 +1,54 @@
+{:no-store
+ {:total 5,
+  :persisted 0,
+  :failed 5,
+  :results [],
+  :error "IMemoryStore not registered"},
+ :stubbed
+ {:total 5,
+  :persisted 3,
+  :failed 2,
+  :results
+  [{:pid "hive",
+    :project-id "hive",
+    :id "mem-1",
+    :success? true,
+    :error nil}
+   {:pid "refuse",
+    :project-id "refuse",
+    :id nil,
+    :success? false,
+    :error "add-entry! returned non-id: nil"}
+   {:pid "explode",
+    :project-id "explode",
+    :id nil,
+    :success? false,
+    :error "store down"}
+   {:pid "", :project-id nil, :id "mem-4", :success? true, :error nil}
+   {:pid :umbrella,
+    :project-id "multi-project",
+    :id "mem-5",
+    :success? true,
+    :error nil}]},
+ :written
+ [{:project-id "hive",
+   :type "note",
+   :duration "short",
+   :tags ["scope:project:hive"],
+   :content "h"}
+  {:project-id "refuse",
+   :type "note",
+   :duration "short",
+   :tags [],
+   :content "r"}
+  {:project-id "explode",
+   :type "decision",
+   :duration "long",
+   :tags [],
+   :content "e"}
+  {:type "note", :duration "short", :tags [], :content "blank pid"}
+  {:project-id "multi-project",
+   :type "note",
+   :duration "short",
+   :tags ["scope:multi-project"],
+   :content "u"}]}

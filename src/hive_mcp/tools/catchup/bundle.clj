@@ -38,27 +38,23 @@
   60000)
 
 (def ^:private bundle-global-limit
-  "Cap on global scope-pierce fetch. Only axioms + catchup-priority conventions
-   cross boundary, so this stays small."
+  "Fetch cap for each global-pierce branch (`global-pierce-filters`)."
   200)
 
 (def ^:private bundle-axioms-limit
-  "Cap on the cross-project axiom pull. Axioms are by definition global —
-   visible regardless of authoring scope. The hierarchy + global-pierce
-   branches miss sibling-authored axioms, so we add a dedicated `type=axiom`
-   branch with no project filter. Kept small because axiom cardinality is low."
+  "Fetch cap for the unfiltered `type=axiom` branch, which catches axioms
+   authored outside the hierarchy. Its rows pass the HCR gate: only
+   `scope:global` axioms and those scoped to a visible project survive."
   200)
 
 (def ^:private bundle-axiom-candidates-limit
-  "Cap on the cross-project pull of axiom nominations awaiting review. Same
-   global reasoning as axioms; much smaller because a review queue that has
-   grown past this is itself the signal that reviewing has fallen behind."
+  "Fetch cap for the unfiltered axiom-nomination branch; rows pass the HCR
+   gate like axioms."
   25)
 
 (def ^:private bundle-principles-limit
-  "Cap on cross-project principle pull. Like axioms, principles are visible
-   regardless of authoring scope, so a dedicated fetch catches sibling/parent
-   authored entries the hierarchy + global-pierce branches would drop."
+  "Fetch cap for the unfiltered `type=principle` branch; rows pass the HCR
+   gate like axioms."
   100)
 
 (def ^:private bundle-priority-principles-limit
@@ -69,21 +65,9 @@
 (def ^:private bundle-sessions-fresh-limit 25)
 
 (def ^:private bundle-recent-wraps-limit
-  "Cap on cross-project wrap-generated note pull. Surfaces the last N
-   persisted wrap syntheses (LLM-authored session summaries) so the
-   ---RECENT-WRAPS--- block carries prior-session insight forward without
-   re-running synthesis. Notes tagged 'wrap-generated' are sparse and
-   project-scoped; a dedicated branch with no project filter catches
-   sibling/parent authored entries the hierarchy + global-pierce branches
-   would miss.
-
-   Sized to over-fetch by ~20× the display cap (10 wraps shown in the
-   ---recent-wraps--- block). Backends like Milvus query-scalar lack
-   server-side ORDER BY, so we pair this with `:order-by [:created :desc]`
-   in the query opts: the impl sorts the returned set in-memory, then
-   `split-by-type` trims to the display cap. Without this over-fetch + sort
-   pair, scan-order results froze the visible wraps to whatever segment
-   Milvus happened to scan first."
+  "Fetch cap for the unfiltered `wrap-generated` note branch, ordered
+   `:created :desc` and over-fetched ~20x the display cap of 10 because
+   Milvus has no server-side ORDER BY. Rows pass the HCR gate."
   200)
 
 ;; =============================================================================
@@ -135,17 +119,35 @@
 ;; Per-type fork-joined queries
 ;; =============================================================================
 
+(def ^:private global-pierce-filters
+  "Store filters of the global-pierce fetches, keyed by branch: rows stored
+   under project_id \"global\", and rows tagged `scope:global` wherever they
+   were authored. Only `sf/scope-pierce-entries` kinds of them pierce."
+  {:global        {:project-id "global"}
+   :global-tagged {:tags ["scope:global"]}})
+
+(defn- pierce-tasks
+  "Fork-join tasks [k thunk []] for the `global-pierce-filters` fetches, each
+   merged over OPTS."
+  [store label opts]
+  (for [[k filters] global-pierce-filters]
+    [k (timed-query (str label "/" (name k))
+                    #(with-resilience
+                       (mem-proto/query-entries store (merge opts filters))))
+     []]))
+
 (defn query-scoped-entries
   "Query memory store entries filtered by project scope with hierarchy and
-   scope-piercing. The two Milvus calls (hierarchy fetch + global-piercing
-   fetch) run concurrently via hive-weave fork-join with independent per-branch
-   budgets so a slow cold-path query on one branch doesn't block the other.
-   Branches that exceed their budget return [] (partial results)."
+   scope-piercing. The hierarchy fetch and the `global-pierce-filters`
+   fetches run concurrently via hive-weave fork-join with independent
+   per-branch budgets so a slow cold-path query on one branch doesn't block
+   the others. Branches that exceed their budget return [] (partial
+   results). Every branch passes the HCR gate of `sf/hcr-view`."
   [entry-type tags project-id limit]
   (when (mem-proto/store-set?)
     (let [store (mem-proto/get-store)
           limit-val (or limit 20)
-          in-project? (and project-id (not= project-id "global"))
+          in-project? (sf/in-project? project-id)
           hierarchy-ids (hier/compute-hierarchy-project-ids project-id)
           over-fetch-factor (if hierarchy-ids 3 4)
           tasks (cond-> [[:hierarchy
@@ -158,25 +160,15 @@
                                              :limit (min (* limit-val over-fetch-factor) 500)})))
                           []]]
                   in-project?
-                  (conj [:global
-                         (timed-query "query-scoped/global"
-                                      #(with-resilience
-                                         (mem-proto/query-entries
-                                           store
-                                           {:type entry-type
-                                            :project-id "global"
-                                            :limit 100})))
-                         []]))
-          {:keys [hierarchy global]} (apply wpar/fork-join
-                                            {:budget-ms scoped-branch-budget-ms}
-                                            tasks)
-          entries         (or hierarchy [])
-          global-entries  (or global [])
-          full-scope-tags (sf/compute-full-scope-tags project-id)
-          all-visible-ids (set (or hierarchy-ids ["global"]))
-          scoped (sf/scope-filter-entries entries full-scope-tags all-visible-ids)
+                  (into (pierce-tasks store "query-scoped" {:type entry-type :limit 100})))
+          {:keys [hierarchy global global-tagged]} (apply wpar/fork-join
+                                                          {:budget-ms scoped-branch-budget-ms}
+                                                          tasks)
+          view (sf/hcr-view project-id hierarchy-ids)
+          scoped (sf/scope-filter-entries (or hierarchy []) (:scope-tags view) (:visible-ids view))
           scope-piercing (when in-project?
-                           (sf/scope-pierce-entries global-entries project-id))
+                           (sf/hcr-gate view (sf/scope-pierce-entries (concat global global-tagged)
+                                                                      project-id)))
           scoped (sf/distinct-by :id (concat scoped scope-piercing))
           filtered (sf/filter-by-tags scoped tags)]
       (->> filtered
@@ -184,24 +176,25 @@
            (take limit-val)))))
 
 (defn query-expiring-entries
-  "Query entries expiring within 7 days, scoped to project with scope-piercing."
+  "Query entries expiring within 7 days, scoped to project with scope-piercing
+   (`global-pierce-filters`, fork-joined). The hierarchy and the pierced rows
+   pass the HCR gate of `sf/hcr-view`."
   [project-id limit]
-  (let [in-project? (and project-id (not= project-id "global"))
+  (let [in-project? (sf/in-project? project-id)
         store (mem-proto/get-store)
         hierarchy-ids (hier/compute-hierarchy-project-ids project-id)
         entries ((timed-query "expiring/hierarchy"
                               #(with-resilience
                                  (mem-proto/query-entries store {:project-ids hierarchy-ids
                                                                  :limit 200}))))
-        full-scope-tags (sf/compute-full-scope-tags project-id)
-        all-visible-ids (set (or hierarchy-ids ["global"]))
-        scoped (sf/scope-filter-entries entries full-scope-tags all-visible-ids)
+        view (sf/hcr-view project-id hierarchy-ids)
+        scoped (sf/scope-filter-entries (or entries []) (:scope-tags view) (:visible-ids view))
         scope-piercing (when in-project?
-                         (let [global-entries ((timed-query "expiring/global"
-                                                            #(with-resilience
-                                                               (mem-proto/query-entries store {:project-id "global"
-                                                                                               :limit 100}))))]
-                           (sf/scope-pierce-entries global-entries project-id)))
+                         (let [{:keys [global global-tagged]}
+                               (apply wpar/fork-join {:budget-ms scoped-branch-budget-ms}
+                                      (pierce-tasks store "expiring" {:limit 100}))]
+                           (sf/hcr-gate view (sf/scope-pierce-entries (concat global global-tagged)
+                                                                      project-id))))
         scoped (sf/distinct-by :id (concat scoped scope-piercing))]
     (->> scoped
          (filter sf/entry-expiring-soon?)
@@ -221,143 +214,104 @@
 ;; scalar-scan storms on the cold path.
 ;; =============================================================================
 
+(def ^:private branch-order
+  "Fork-join branch keys of `query-all-scoped`, in merge order."
+  [:hierarchy :global :global-tagged :axioms-global :axiom-candidates-global
+   :principles-priority :principles-global :sessions-fresh :recent-wraps-global])
+
+(def ^:private always-gated
+  "Branches scope-filtered at global scope too (see `sf/gate-branches`)."
+  #{:hierarchy :sessions-fresh :recent-wraps-global})
+
+(defn- scan-task
+  "Fork-join task [k thunk fallback] for one metadata-projected store scan."
+  [store k label opts]
+  [k (timed-query label
+                  #(with-resilience
+                     (mem-proto/query-entries
+                      store (assoc opts :output-fields hier/metadata-projection))))
+   []])
+
 (defn query-all-scoped
-  "Single-shot scoped pull: chunked-parallel hierarchy query + global-pierce +
-   global-axioms + global-principles + priority-principles, merged + deduped.
-   Returns
+  "Single-shot scoped pull: chunked-parallel hierarchy query + the two
+   global-pierce fetches (`global-pierce-filters`, in a project only) +
+   axioms + axiom candidates + principles + priority principles + fresh
+   sessions + recent wraps, each branch passed through the HCR gate of
+   `sf/hcr-view` (`sf/gate-branches`), then merged + deduped. Returns
 
      {:by-type {\"axiom\" [...] \"decision\" [...] ...}
       :all     [<merged entries, newest-first>]}
 
+   A pierced row reaches the result only when it is an
+   `sf/scope-pierce-entries` kind (axiom, catchup-priority, session-summary).
+   At global scope only `always-gated` branches are filtered.
    Metadata-only projection — `content` hydrated lazily by hydrate-buckets.
-   Fork-joined with `scoped-branch-budget-ms`. Falls back to partial results
-   when a branch exceeds budget; `timed-query` surfaces empties (which in
-   practice are almost always fork-join fallbacks) as :warn log lines.
-
-   The `sessions-fresh` and `recent-wraps-global` branches carry
-   `:created-after` = now minus `fresh-window-days`; every other branch is
-   unbounded in time."
+   Fork-joined with `scoped-branch-budget-ms`; a branch past budget
+   contributes []. The `sessions-fresh` and `recent-wraps-global` branches
+   carry `:created-after` = now minus `fresh-window-days`; every other branch
+   is unbounded in time."
   [project-id]
   (when (mem-proto/store-set?)
     (let [store (mem-proto/get-store)
-          in-project? (and project-id (not= project-id "global"))
+          in-project? (sf/in-project? project-id)
           hierarchy-ids (hier/compute-hierarchy-project-ids project-id)
           per-chunk-limit (max 50 (int (/ hier/bundle-hierarchy-limit
                                           (hier/chunk-count hierarchy-ids))))
           fresh-window-days 45
           fresh-window-cutoff (str (.minusDays (java.time.ZonedDateTime/now)
                                                fresh-window-days))
+          fresh (fn [tag limit] {:type bt/note :tags [tag] :limit limit
+                                 :created-after fresh-window-cutoff
+                                 :order-by [:created :desc]})
           tasks (cond-> [[:hierarchy
                           (timed-query "hierarchy"
                                        #(hier/chunked-hierarchy-fetch store hierarchy-ids per-chunk-limit))
                           []]
-                         [:axioms-global
-                          (timed-query "axioms-global"
-                                       #(with-resilience
-                                          (mem-proto/query-entries
-                                            store
-                                            {:type bt/axiom
-                                             :limit bundle-axioms-limit
-                                             :output-fields hier/metadata-projection})))
-                          []]
-                         ;; Nominations are global for the same reason axioms
-                         ;; are: one queued in a sibling repo still needs the
-                         ;; reviewer's eyes. Low cardinality — capped at 25.
-                         [:axiom-candidates-global
-                          (timed-query "axiom-candidates-global"
-                                       #(with-resilience
-                                          (mem-proto/query-entries
-                                            store
-                                            {:type bt/axiom-candidate
-                                             :limit bundle-axiom-candidates-limit
-                                             :output-fields hier/metadata-projection})))
-                          []]
-                         [:principles-global
-                          (timed-query "principles-global"
-                                       #(with-resilience
-                                          (mem-proto/query-entries
-                                            store
-                                            {:type bt/principle
-                                             :limit bundle-principles-limit
-                                             :output-fields hier/metadata-projection})))
-                          []]
-                         [:principles-priority
-                          (timed-query "principles-priority"
-                                       #(with-resilience
-                                          (mem-proto/query-entries
-                                            store
-                                            {:type bt/principle
-                                             :tags ["catchup-priority"]
-                                             :limit bundle-priority-principles-limit
-                                             :output-fields hier/metadata-projection})))
-                          []]
-                         [:sessions-fresh
-                          (timed-query "sessions-fresh"
-                                       #(with-resilience
-                                          (mem-proto/query-entries
-                                            store
-                                            {:type bt/note
-                                             :tags ["session-summary"]
-                                             :limit bundle-sessions-fresh-limit
-                                             :created-after fresh-window-cutoff
-                                             :order-by [:created :desc]
-                                             :output-fields hier/metadata-projection})))
-                          []]
-                         [:recent-wraps-global
-                          (timed-query "recent-wraps-global"
-                                       #(with-resilience
-                                          (mem-proto/query-entries
-                                            store
-                                            {:type bt/note
-                                             :tags ["wrap-generated"]
-                                             :limit bundle-recent-wraps-limit
-                                             :created-after fresh-window-cutoff
-                                             :order-by [:created :desc]
-                                             :output-fields hier/metadata-projection})))
-                          []]]
+                         (scan-task store :axioms-global "axioms-global"
+                                    {:type bt/axiom :limit bundle-axioms-limit})
+                         (scan-task store :axiom-candidates-global "axiom-candidates-global"
+                                    {:type bt/axiom-candidate :limit bundle-axiom-candidates-limit})
+                         (scan-task store :principles-global "principles-global"
+                                    {:type bt/principle :limit bundle-principles-limit})
+                         (scan-task store :principles-priority "principles-priority"
+                                    {:type bt/principle :tags ["catchup-priority"]
+                                     :limit bundle-priority-principles-limit})
+                         (scan-task store :sessions-fresh "sessions-fresh"
+                                    (fresh "session-summary" bundle-sessions-fresh-limit))
+                         (scan-task store :recent-wraps-global "recent-wraps-global"
+                                    (fresh "wrap-generated" bundle-recent-wraps-limit))]
                   in-project?
-                  (conj [:global
-                         (timed-query "global-pierce"
-                                      #(with-resilience
-                                         (mem-proto/query-entries
-                                           store
-                                           {:project-id "global"
-                                            :limit bundle-global-limit
-                                            :output-fields hier/metadata-projection})))
-                         []]))
-          {:keys [hierarchy global axioms-global axiom-candidates-global
+                  (into (for [[k filters] global-pierce-filters]
+                          (scan-task store k (str "global-pierce/" (name k))
+                                     (assoc filters :limit bundle-global-limit)))))
+          {:keys [hierarchy global global-tagged axioms-global axiom-candidates-global
                   principles-global principles-priority
                   sessions-fresh recent-wraps-global]}
           (apply wpar/fork-join {:budget-ms scoped-branch-budget-ms} tasks)
-          full-scope-tags (sf/compute-full-scope-tags project-id)
-          all-visible-ids (set (or hierarchy-ids ["global"]))
-          scoped (sf/scope-filter-entries (or hierarchy []) full-scope-tags all-visible-ids)
-          pierced (when in-project?
-                    (sf/scope-pierce-entries (or global []) project-id))
-          axioms-all (warn-if-saturated "axioms-global" bundle-axioms-limit
-                                        (or axioms-global []))
-          axiom-candidates-all (warn-if-saturated "axiom-candidates-global"
-                                                  bundle-axiom-candidates-limit
-                                                  (or axiom-candidates-global []))
-          principles-all (warn-if-saturated "principles-global" bundle-principles-limit
-                                            (or principles-global []))
-          principles-priority-all (warn-if-saturated "principles-priority"
-                                                     bundle-priority-principles-limit
-                                                     (or principles-priority []))
-          ;; Sessions and wraps are project-scoped — their dedicated branches
-          ;; query without project filter to dodge the per-descendant fairness
-          ;; cap (see sessions_freshness_regression_test). The result MUST
-          ;; then be scope-filtered to hierarchy-ids (self + descendants) +
-          ;; global. Without this filter, sibling-project sessions leak through
-          ;; (e.g. funeraria sessions surfacing in hive catchup). HCR is
-          ;; strictly top-down — never include siblings.
-          sessions-fresh-all (sf/scope-filter-entries (or sessions-fresh []) full-scope-tags all-visible-ids)
-          recent-wraps-all   (sf/scope-filter-entries (or recent-wraps-global []) full-scope-tags all-visible-ids)
-          merged (sf/distinct-by :id (concat scoped pierced axioms-all
-                                             axiom-candidates-all
-                                             principles-priority-all principles-all
-                                             sessions-fresh-all recent-wraps-all))
-          sorted (sf/newest-first merged)]
+          pierced (fn [label rows]
+                    (when in-project?
+                      (sf/scope-pierce-entries
+                       (warn-if-saturated label bundle-global-limit (or rows []))
+                       project-id)))
+          gated (sf/gate-branches
+                 (sf/hcr-view project-id hierarchy-ids)
+                 always-gated
+                 {:hierarchy               (or hierarchy [])
+                  :global                  (pierced "global-pierce/global" global)
+                  :global-tagged           (pierced "global-pierce/global-tagged" global-tagged)
+                  :axioms-global           (warn-if-saturated "axioms-global" bundle-axioms-limit
+                                                              (or axioms-global []))
+                  :axiom-candidates-global (warn-if-saturated "axiom-candidates-global"
+                                                              bundle-axiom-candidates-limit
+                                                              (or axiom-candidates-global []))
+                  :principles-global       (warn-if-saturated "principles-global" bundle-principles-limit
+                                                              (or principles-global []))
+                  :principles-priority     (warn-if-saturated "principles-priority"
+                                                              bundle-priority-principles-limit
+                                                              (or principles-priority []))
+                  :sessions-fresh          (or sessions-fresh [])
+                  :recent-wraps-global     (or recent-wraps-global [])})
+          sorted (sf/newest-first (sf/distinct-by :id (mapcat gated branch-order)))]
       {:by-type (group-by #(some-> (:type %) name) sorted)
        :all     sorted})))
 

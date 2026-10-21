@@ -1,0 +1,13 @@
+{:json-export
+ {"memory/type" "note/decision", "/tags" ["a"], "/plain" "/k"},
+ :json-import {:memory/type :note/decision, "x" "a/b/c"},
+ :edn-export {:a 1},
+ :validate
+ {:edn-map {:valid? true, :errors nil},
+  :edn-vec {:valid? false, :errors ["Expected map"]},
+  :json-vec {:valid? true, :errors nil},
+  :json-str {:valid? false, :errors ["Expected map or collection"]}},
+ :unknown {:msg "Unknown adapter", :adapter :nope},
+ :unknown-imp "Unknown adapter",
+ :listed-ids [:edn :json],
+ :missing nil}

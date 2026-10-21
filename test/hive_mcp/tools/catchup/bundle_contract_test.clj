@@ -31,7 +31,7 @@
       (is (m/validate bundle/CatchupBundle b))
       (is (= ["e1"] (ids (:axioms b))))
       (is (= ["e4"] (ids (:priority-conventions b))))
-      (is (= ["e5"] (ids (:conventions b))))
+      (is (= ["e5" "e2"] (ids (:conventions b))) "an untagged row of \"p\" is visible by :project-id")
       (is (= ["e3"] (ids (:decisions b))) "the sibling project's decision never surfaces")
       (is (= "decision one" (:content (first (:decisions b)))))))
   (testing "shared arity goes through the bundle cache"
@@ -42,7 +42,7 @@
   (let [{:keys [by-type all]} (bundle/query-all-scoped "p")]
     (is (m/validate bundle/AllScoped {:by-type by-type :all all}))
     (is (= #{"axiom" "decision" "convention"} (set (keys by-type))))
-    (is (= ["e3" "e5" "e4" "e1"] (ids all)) "merged, newest first")))
+    (is (= ["e3" "e5" "e2" "e4" "e1"] (ids all)) "merged, newest first")))
 
 (deftest per-type-queries
   (is (= ["e3"] (ids (bundle/query-scoped-entries "decision" nil "p" 10))))

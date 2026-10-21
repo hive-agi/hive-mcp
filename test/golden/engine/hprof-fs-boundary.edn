@@ -1,0 +1,13 @@
+{:moved {:name "java_pid1.hprof", :bytes 10},
+ :dst-after ["java_pid1.hprof.gz"],
+ :deleted? true,
+ :gzip-suffix "java_pid1.hprof.gz",
+ :move-missing nil,
+ :listed-bytes
+ {"java_pid1.hprof" 10, "java_pid2.hprof" 5, "old.hprof.gz" 2},
+ :gzip-missing nil,
+ :src-after ["old.hprof.gz"],
+ :ensured-is-dir? true,
+ :missing-dir [],
+ :delete-again? false,
+ :listed ["java_pid1.hprof" "java_pid2.hprof" "old.hprof.gz"]}
