@@ -72,15 +72,34 @@
 ;; Event Handler Tests (Mocked Channel)
 ;; =============================================================================
 
+(def ^:private event-timeout-ms
+  "How long an emitted event may take to reach the registry. The events are
+   delivered on another thread; a fixed 200 ms sleep was not enough on a box
+   at load 35 (SWARM-SUITE-ORDER), so the tests wait for the effect instead."
+  10000)
+
+(defn- eventually
+  "Poll `pred` every 10 ms until it returns truthy or `event-timeout-ms`
+   passes. Returns its last value."
+  [pred]
+  (let [deadline (+ (System/currentTimeMillis) event-timeout-ms)]
+    (loop []
+      (let [v (pred)]
+        (if (or v (> (System/currentTimeMillis) deadline))
+          v
+          (do (Thread/sleep 10) (recur)))))))
+
+(defn- start-sync!
+  "Start the channel server on `sock` and the registry sync subscriptions."
+  [sock]
+  (ch/start-server! {:type :unix :path sock})
+  (Thread/sleep 100)
+  (swarm/start-registry-sync!)
+  (Thread/sleep 100))
+
 (deftest handle-ling-registered-event-test
   (testing "slave-spawned event triggers register-ling!"
-    ;; Start channel server
-    (ch/start-server! {:type :unix :path "/tmp/hive-mcp-sync-test1.sock"})
-    (Thread/sleep 100)
-
-    ;; Start registry sync subscriptions
-    (swarm/start-registry-sync!)
-    (Thread/sleep 100)
+    (start-sync! "/tmp/hive-mcp-sync-test1.sock")
 
     ;; Emit the registration event (simulating elisp -> clojure)
     (ch/emit-event! :slave-spawned
@@ -89,47 +108,30 @@
                      :presets ["hivemind"]
                      :cwd "/tmp/test-project"})
 
-    ;; Wait for event processing
-    (Thread/sleep 200)
-
-    ;; Verify ling was registered
-    (let [ling (ds/get-slave "spawned-via-event-1")]
+    (let [ling (eventually #(ds/get-slave "spawned-via-event-1"))]
       (is (some? ling) "Ling should be registered via event")
       (is (= "test-worker" (:slave/name ling)))
       ;; DataScript cardinality-many stores presets as a set
       (is (= #{"hivemind"} (:slave/presets ling)))
       (is (= "/tmp/test-project" (:slave/cwd ling))))
 
-    ;; Cleanup
     (swarm/stop-registry-sync!)))
 
 (deftest handle-ling-unregistered-event-test
   (testing "slave-killed event triggers unregister-ling!"
-    ;; Setup: pre-register a ling
     (swarm/register-ling! "to-be-killed-1"
                           {:name "doomed" :presets [] :cwd "/"})
     (is (some? (ds/get-slave "to-be-killed-1")))
 
-    ;; Start channel server
-    (ch/start-server! {:type :unix :path "/tmp/hive-mcp-sync-test2.sock"})
-    (Thread/sleep 100)
-
-    ;; Start registry sync subscriptions
-    (swarm/start-registry-sync!)
-    (Thread/sleep 100)
+    (start-sync! "/tmp/hive-mcp-sync-test2.sock")
 
     ;; Emit the unregistration event (simulating elisp -> clojure)
     (ch/emit-event! :slave-killed
                     {:slave-id "to-be-killed-1"})
 
-    ;; Wait for event processing
-    (Thread/sleep 200)
-
-    ;; Verify ling was unregistered
-    (is (nil? (ds/get-slave "to-be-killed-1"))
+    (is (eventually #(nil? (ds/get-slave "to-be-killed-1")))
         "Ling should be unregistered via event")
 
-    ;; Cleanup
     (swarm/stop-registry-sync!)))
 
 ;; =============================================================================
@@ -138,11 +140,7 @@
 
 (deftest spawn-kill-sync-lifecycle-test
   (testing "Full spawn/kill lifecycle syncs via events"
-    ;; Start channel infrastructure
-    (ch/start-server! {:type :unix :path "/tmp/hive-mcp-sync-test3.sock"})
-    (Thread/sleep 100)
-    (swarm/start-registry-sync!)
-    (Thread/sleep 100)
+    (start-sync! "/tmp/hive-mcp-sync-test3.sock")
 
     ;; Simulate spawn event from elisp
     (ch/emit-event! :slave-spawned
@@ -150,10 +148,8 @@
                      :name "lifecycle-worker"
                      :presets ["tdd"]
                      :cwd "/tmp/lifecycle"})
-    (Thread/sleep 200)
 
-    ;; Verify registered
-    (is (some? (ds/get-slave "lifecycle-test-1")))
+    (is (some? (eventually #(ds/get-slave "lifecycle-test-1"))))
     (is (= 1 (count (ds/get-all-slaves))))
 
     ;; Simulate another spawn
@@ -162,45 +158,33 @@
                      :name "another-worker"
                      :presets []
                      :cwd "/tmp/lifecycle2"})
-    (Thread/sleep 200)
 
-    ;; Verify both registered
-    (is (= 2 (count (ds/get-all-slaves))))
+    (is (eventually #(= 2 (count (ds/get-all-slaves)))) "both registered")
 
     ;; Simulate kill event for first ling
     (ch/emit-event! :slave-killed
                     {:slave-id "lifecycle-test-1"})
-    (Thread/sleep 200)
 
-    ;; Verify first unregistered, second still there
-    (is (nil? (ds/get-slave "lifecycle-test-1")))
+    (is (eventually #(nil? (ds/get-slave "lifecycle-test-1"))))
     (is (some? (ds/get-slave "lifecycle-test-2")))
     (is (= 1 (count (ds/get-all-slaves))))
 
-    ;; Cleanup
     (swarm/stop-registry-sync!)))
 
 (deftest event-with-missing-fields-test
   (testing "Events with missing optional fields handled gracefully"
-    ;; Start channel infrastructure
-    (ch/start-server! {:type :unix :path "/tmp/hive-mcp-sync-test4.sock"})
-    (Thread/sleep 100)
-    (swarm/start-registry-sync!)
-    (Thread/sleep 100)
+    (start-sync! "/tmp/hive-mcp-sync-test4.sock")
 
-    ;; Emit event with minimal fields (only slave-id is truly required)
+    ;; Emit event with minimal fields (only slave-id is truly required);
+    ;; presets and cwd may be nil
     (ch/emit-event! :slave-spawned
                     {:slave-id "minimal-ling"
                      :name "minimal"})
-    ;; Note: presets and cwd may be nil
-    (Thread/sleep 200)
 
-    ;; Should still register with what we have
-    (let [ling (ds/get-slave "minimal-ling")]
+    (let [ling (eventually #(ds/get-slave "minimal-ling"))]
       (is (some? ling))
       (is (= "minimal" (:slave/name ling))))
 
-    ;; Cleanup
     (swarm/stop-registry-sync!)))
 
 ;; =============================================================================
