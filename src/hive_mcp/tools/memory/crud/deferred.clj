@@ -4,8 +4,8 @@
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [malli.core :as m]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 (def ^:dynamic *queue-dir*
   (str (System/getProperty "user.home") "/.local/share/hive/pending-reembed"))
@@ -240,6 +240,13 @@
   "A character: what a bare-string Tags input contributes per element."
   [:fn {:gen/schema [:int {:min 97 :max 122}] :gen/fmap char} char?])
 
+(def Failure
+  "The {:error :message} a failed embed leaves on an outbox record. Either
+   field may be nil (a Throwable with no message, an error with no keyword)."
+  [:map
+   [:error [:maybe :keyword]]
+   [:message [:maybe :string]]])
+
 (m/=> reembed-tags [:=> [:cat Tags :any] [:vector [:or :string Char_]]])
 
 (m/=> embedding-failure? [:=> [:cat Throwable_] [:maybe [:or :boolean :keyword]]])
@@ -261,3 +268,13 @@
 (m/=> id-of-file-name [:=> [:cat [:maybe :string]] [:maybe :string]])
 
 (m/=> pending-ids [:=> [:cat] [:vector :string]])
+
+(m/=> failure-of [:=> [:cat [:or Throwable_ :map]] Failure])
+
+(m/=> with-failure [:=> [:cat ParkedEntry Failure :string] :map])
+
+(m/=> immediately-retryable? [:=> [:cat [:maybe :map]] :boolean])
+
+(m/=> call-with-embed-retry [:=> [:cat [:fn ifn?] [:maybe :map] [:fn ifn?]] [:map]])
+
+(m/=> record-failure! [:=> [:cat EntryId [:or Throwable_ :map] :string] [:maybe :map]])
