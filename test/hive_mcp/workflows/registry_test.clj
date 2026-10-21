@@ -14,7 +14,9 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.workflows.registry :as reg]
             [hive.events.fsm :as fsm]
-            [hive-mcp.test.stub.forge-belt :as stub-fb]))
+            [hive-mcp.test.stub.forge-belt :as stub-fb]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]
+            [hive-test.golden :as golden]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -30,7 +32,17 @@
   (f)
   (reg/reset-registry!))
 
-(use-fixtures :each clean-registry-fixture stub-fb/forge-belt-fixture)
+(declare mock-spec)
+
+(defn- facet-registry-fixture
+  "Install two spec-only workflows for the facet section's property, which
+   registers handlers against them; the deftests above reset the registry
+   themselves before use."
+  [f]
+  (reset! @#'reg/registry {:test-wf {:spec mock-spec} :other-wf {:spec mock-spec}})
+  (f))
+
+(use-fixtures :each clean-registry-fixture stub-fb/forge-belt-fixture facet-registry-fixture)
 
 ;; =============================================================================
 ;; Mock FSM Spec (minimal valid spec for testing)
@@ -246,3 +258,53 @@
           "Same total smited")
       (is (= (:total-sparked registry-result) (:total-sparked direct-result))
           "Same total sparked"))))
+
+;; =============================================================================
+;; 7. Facets
+;; =============================================================================
+
+(def ^:private mock-spec
+  {:fsm {:hive.events.fsm/start {:handler :start
+                                 :dispatches [[:test/process '(fn [_] true)]]}
+         :test/process {:handler :process
+                        :dispatches [[:hive.events.fsm/end :done?]]}
+         :hive.events.fsm/end {:handler :end}
+         :hive.events.fsm/error {:handler :error}}})
+
+;; Workflow names drawn from the two the facet fixture installs and one
+;; absent name, with handler maps that may be nil; the relation checks
+;; list-workflows against what was registered.
+(deftrifecta-from-schema register-handlers-updates-the-listing
+  #'reg/register-handlers!
+  {:in [:cat [:enum :test-wf :other-wf :absent-wf]
+        [:maybe [:map-of {:gen/max 3} [:enum :start :process :end :error]
+                 [:fn {:gen/elements [identity]} ifn?]]]
+        [:maybe [:map-of {:gen/max 1} [:enum :done?] [:fn {:gen/elements [(constantly true)]} ifn?]]]]
+   :out :nil
+   :rel (fn [[wf-name handler-map _] _]
+          (let [listing (reg/list-workflows)]
+            (if (= :absent-wf wf-name)
+              (not (contains? listing :absent-wf))
+              (= (boolean handler-map) (get-in listing [wf-name :has-handlers?])))))
+   ;; Mutation facet off: :out is :nil, so the only schema mutants are
+   ;; non-nil constants and the facet would test malli, not the registry.
+   :mutation false
+   :num-tests 60})
+
+(golden/deftest-golden registry-lifecycle-golden
+  "test/golden/hive-mcp/workflows/registry-lifecycle.edn"
+  (let [_ (reg/reset-registry!)
+        empty-listing (reg/list-workflows)
+        _ (reset! @#'reg/registry {:test-wf {:spec mock-spec} :orphan {:spec {:fsm {}}}
+                                   :broken {:spec {:fsm {:hive.events.fsm/start {:handler :nope}}}}})
+        _ (reg/register-handlers! :test-wf mock-handler-map {:done? (constantly true)})
+        _ (reg/register-handlers! :broken {:start identity})
+        compiled (reg/compile-registry!)
+        listing (into (sorted-map) (update-vals (reg/list-workflows) #(update % :error some?)))
+        run (fsm/run (reg/get-workflow :test-wf) {} {:data {}})
+        init-listing (into (sorted-map)
+                           (update-vals (reg/init!) #(select-keys % [:has-spec? :has-handlers? :compiled?])))]
+    {:empty empty-listing :compiled compiled :listing listing :run run
+     :scanned (vec (sort (keys (reg/scan-fsm-specs))))
+     :init init-listing
+     :spec-keys (vec (sort (keys (reg/get-spec :forge-belt))))}))
