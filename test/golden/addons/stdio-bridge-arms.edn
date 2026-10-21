@@ -1,0 +1,21 @@
+{:identity
+ {:addon-id :bridge/f08-fresh,
+  :addon-type :mcp-bridge,
+  :caps [:mcp-bridge :tools],
+  :transport :stdio,
+  :schema {},
+  :excluded [],
+  :hooks {}},
+ :fresh
+ {:status
+  {:connected? false,
+   :transport :stdio,
+   :uptime-ms nil,
+   :remote-tool-count 0},
+  :health {:status :down, :details {:version "0.1.0"}},
+  :tools [],
+  :call
+  {:msg "Bridge not connected", :data {:bridge :bridge/f08-fresh}},
+  :stop {:success? true, :errors []}},
+ :missing {:start {:success? false, :errors [true]}, :state nil},
+ :not-mcp {:start {:success? false, :errors [true]}, :state nil}}

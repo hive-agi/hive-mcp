@@ -1,0 +1,58 @@
+{:case-0
+ {:out
+  {:compatible? true,
+   :backup-project-id "global",
+   :target-project-id "global",
+   :reason "Same project scope"},
+  :in [{} "global"]},
+ :case-1
+ {:out
+  {:compatible? false,
+   :backup-project-id "other",
+   :target-project-id "hive-mcp",
+   :reason
+   "Backup is from project 'other' but target is 'hive-mcp'. Use :force-cross-project to override."},
+  :in [#:backup{:project-id "other"} "hive-mcp"]},
+ :case-2
+ {:out
+  {:compatible? true,
+   :backup-project-id "global",
+   :target-project-id "hive-mcp:agora",
+   :reason "Global backup is compatible with any project"},
+  :in [{} "hive-mcp:agora"]},
+ :case-3
+ {:out
+  {:compatible? false,
+   :backup-project-id "other",
+   :target-project-id "hive-mcp",
+   :reason
+   "Backup is from project 'other' but target is 'hive-mcp'. Use :force-cross-project to override."},
+  :in [#:backup{:project-id "other"} "hive-mcp"]},
+ :case-4
+ {:out
+  {:compatible? true,
+   :backup-project-id "other",
+   :target-project-id "other",
+   :reason "Same project scope"},
+  :in [#:backup{:project-id "other"} "other"]},
+ :case-5
+ {:out
+  {:compatible? true,
+   :backup-project-id "global",
+   :target-project-id "other",
+   :reason "Global backup is compatible with any project"},
+  :in [{} "other"]},
+ :case-6
+ {:out
+  {:compatible? true,
+   :backup-project-id "global",
+   :target-project-id nil,
+   :reason "No target scope specified, skipping check"},
+  :in [{} nil]},
+ :case-7
+ {:out
+  {:compatible? true,
+   :backup-project-id "global",
+   :target-project-id nil,
+   :reason "No target scope specified, skipping check"},
+  :in [{} nil]}}

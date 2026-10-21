@@ -4,7 +4,8 @@
    Verifies noop fallback shapes and extension delegation."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.context.reconstruction :as recon]
-            [hive-mcp.extensions.registry :as ext]))
+            [hive-mcp.extensions.registry :as ext]
+            [hive-test.golden :refer [deftest-golden-fn]]))
 
 ;; =============================================================================
 ;; Fixtures
@@ -142,3 +143,41 @@
   (testing "noop reconstruct-fn points to local reconstruct-context"
     (let [opts (recon/catchup-refs->ref-context-opts {} "test")]
       (is (= "" ((:reconstruct-fn opts) {} [] "test"))))))
+
+;; =============================================================================
+;; Golden: every public fn, noop arm and delegated arm
+;; =============================================================================
+
+(defn- opts-shape
+  "The reconstruct-fn is a fn value; record whether it is callable."
+  [opts]
+  (update opts :reconstruct-fn ifn?))
+
+(defn- all-fns []
+  {:fetch     (recon/fetch-ref-data {:axioms "ax-1" :decisions "dec-1"})
+   :gather    (recon/gather-kg-context ["A" "B"] "hive-mcp")
+   :compress  (recon/compress-kg-subgraph {:nodes #{"A" "B"} :edges []})
+   :render    (recon/render-compressed-context {:axioms []} {:nodes #{}})
+   :recon     (recon/reconstruct-context {:axioms "ax-1"} ["A"] "hive-mcp")
+   :catchup   (opts-shape (recon/catchup-refs->ref-context-opts {:context-refs {:a "x"}} "proj"))})
+
+(defn- golden-scenario
+  "Run every fn with no extension (noop arm), then with recording stub
+   extensions registered under the :cr/* keys (delegated arm)."
+  []
+  (doseq [k cr-keys] (ext/deregister! k))
+  (let [noop (all-fns)]
+    (ext/register! :cr/e (fn [refs] {:resolved (into (sorted-map) refs)}))
+    (ext/register! :cr/f (fn [ids scope] {:nodes (vec (sort ids)) :scope scope}))
+    (ext/register! :cr/g (fn [ctx] (str "KG: " (count (:nodes ctx)) " nodes")))
+    (ext/register! :cr/h (fn [refs kg] (str "refs=" (count refs) " kg=" (some? kg))))
+    (ext/register! :cr/i (fn [refs ids scope] (str scope ":" (count refs) "/" (count ids))))
+    (ext/register! :cr/j (fn [resp scope] {:ctx-refs (:context-refs resp) :kg-node-ids ["x"]
+                                           :scope scope :reconstruct-fn identity}))
+    (try
+      {:noop noop :delegated (all-fns)}
+      (finally (doseq [k cr-keys] (ext/deregister! k))))))
+
+(deftest-golden-fn reconstruction-arms-golden
+  "test/golden/context/reconstruction-arms.edn"
+  golden-scenario)

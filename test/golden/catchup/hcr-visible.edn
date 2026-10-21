@@ -1,0 +1,12 @@
+{:ancestor-tag true,
+ :descendant-tag-foreign-author true,
+ :foreign-project-tag false,
+ :foreign-tag-wins-over-global-pid false,
+ :global-tag-foreign-author true,
+ :misfiled-tag-wins-over-visible-pid false,
+ :mixed-global-and-foreign true,
+ :no-tags-key-foreign-pid false,
+ :sibling-tag-seen-from-a false,
+ :untagged-foreign-pid false,
+ :untagged-global-pid true,
+ :untagged-visible-pid true}

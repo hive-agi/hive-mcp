@@ -1,0 +1,15 @@
+{:ids [:memory :hivemind :kanban :git],
+ :git-available? true,
+ :git-non-repo
+ {:adt/variant :harvest/error, :source :git, :error-type :git-failed},
+ :git-no-commits
+ {:adt/variant :harvest/error, :source :git, :error-type :git-failed},
+ :git-one-commit {:adt/variant :harvest/ok, :source :git, :count 1},
+ :kanban-absent
+ {:adt/variant :harvest/error,
+  :source :kanban,
+  :error-type :rescue-caught},
+ :memory-absent
+ {:adt/variant :harvest/error,
+  :source :memory,
+  :error-type :rescue-caught}}

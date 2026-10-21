@@ -1,0 +1,5 @@
+{:liveness-store? {:stub true, :plain-map false, :nil false},
+ :up {:probe true, :kick :kicked, :await true},
+ :down {:probe false, :await false},
+ :calls
+ {:up [[:probe] [:kick] [:await 500]], :down [[:probe] [:await 5000]]}}

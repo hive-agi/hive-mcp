@@ -15,11 +15,13 @@
      "todo"
      "priority-medium"
      "scope:project:kanban-block-test"]}),
-  :scope-tag "scope:project:kanban-block-test"},
+  :scope-tag "scope:project:kanban-block-test",
+  :projects 1},
  :other
  {:counts {:todo 0, :inprogress 0, :inreview 0, :done 0},
   :recent-todos [],
-  :scope-tag "scope:project:no-such-project"},
+  :scope-tag "scope:project:no-such-project",
+  :projects 0},
  :no-store
  {:counts {},
   :recent-todos [],
