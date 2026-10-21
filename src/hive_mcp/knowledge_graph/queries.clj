@@ -13,6 +13,7 @@
   (:require [malli.core :as m]
             [clojure.set :as set]
             [hive-mcp.knowledge-graph.edges :as edges]
+            [hive-mcp.knowledge-graph.edges.scoped :as scoped]
             [hive-mcp.knowledge-graph.scope :as scope]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -36,15 +37,9 @@
 ;;; Helper Functions
 ;;; =============================================================================
 
-(defn- edge-matches-scope?
-  "Check if edge is visible from given scope.
-   If no scope provided, all edges match."
-  [edge scope-set]
-  (if (nil? scope-set)
-    true
-    (let [edge-scope (:kg-edge/scope edge)]
-      (or (nil? edge-scope)  ;; Edges without scope are visible everywhere
-          (contains? scope-set edge-scope)))))
+(def ^:private edge-matches-scope?
+  "Edge visible from scope-set (nil = all); see edges.scoped/visible?."
+  scoped/visible?)
 
 (defn- edge-matches-relations?
   "Check if edge relation is in the allowed set.
@@ -278,27 +273,37 @@
 
    Arguments:
      scope - Scope string (e.g., 'hive-mcp:agora')
+     opts  - Optional map:
+             :node-id   - only the neighborhood of this node: edges reachable
+                          from it (either direction) through visible edges
+             :max-depth - hop bound for :node-id (default 3)
+
+   Reads the scope index (edges.scoped/visible-edges) or, with :node-id,
+   walks per-node index lookups hop by hop (edges.scoped/neighborhood-edges);
+   neither pulls an edge that is not returned.
 
    Returns:
      {:nodes [<unique node IDs>]
       :edges [<edge maps>]
       :node-count n
       :edge-count n}"
-  [scope]
-  {:pre [(or (nil? scope) (string? scope))]}
-  (let [scope-set (scope/visible-scope-tags scope)
-        all-edges (edges/get-all-edges)
-        visible-edges (filter #(edge-matches-scope? % scope-set) all-edges)
-        ;; Extract unique nodes from edges
-        nodes-from-edges (set (concat (map :kg-edge/from visible-edges)
-                                      (map :kg-edge/to visible-edges)))]
-    (log/debug "Subgraph for scope:" scope
-               "- edges:" (count visible-edges)
-               "- nodes:" (count nodes-from-edges))
-    {:nodes (vec nodes-from-edges)
-     :edges visible-edges
-     :node-count (count nodes-from-edges)
-     :edge-count (count visible-edges)}))
+  ([scope] (subgraph scope nil))
+  ([scope {:keys [node-id max-depth] :or {max-depth default-max-depth}}]
+   {:pre [(or (nil? scope) (string? scope))]}
+   (let [scope-set (set (scope/visible-scope-tags scope))
+         visible-edges (if node-id
+                         (scoped/neighborhood-edges node-id {:scope-set scope-set
+                                                             :max-depth max-depth})
+                         (scoped/visible-edges scope-set))
+         nodes-from-edges (set (concat (map :kg-edge/from visible-edges)
+                                       (map :kg-edge/to visible-edges)))]
+     (log/debug "Subgraph for scope:" scope
+                "- edges:" (count visible-edges)
+                "- nodes:" (count nodes-from-edges))
+     {:nodes (vec nodes-from-edges)
+      :edges visible-edges
+      :node-count (count nodes-from-edges)
+      :edge-count (count visible-edges)})))
 
 ;;; =============================================================================
 ;;; Contradiction Detection
@@ -466,21 +471,23 @@
    This function only finds nodes that appear in edges but have no other connections.
    For full orphan detection, integrate with Chroma memory query.
 
+   Degrees come from index-only aggregates over :kg-edge/from and
+   :kg-edge/to (edges.scoped/node-occurrences); no edge is pulled.
+
    Returns:
      Set of node IDs that appear only once in the graph (potential orphans)"
   []
-  (let [all-edges (edges/get-all-edges)
-        node-occurrences (frequencies
-                          (concat (map :kg-edge/from all-edges)
-                                  (map :kg-edge/to all-edges)))]
-    ;; Nodes with only one occurrence might be leaf nodes
-    ;; True orphan detection requires memory integration
-    (set (keys (filter #(= 1 (val %)) node-occurrences)))))
+  (into #{}
+        (keep (fn [[node-id n]] (when (= 1 n) node-id)))
+        (scoped/node-occurrences)))
 
 (m/=> traverse [:=> [:cat :string :map] [:sequential [:map [:node-id :string] [:edge :map] [:depth [:int {:min 0}]] [:path [:vector :string]]]]])
 (m/=> find-path [:=> [:cat :string :string :map] [:maybe [:map [:path [:vector :string]] [:edges [:vector :map]] [:length [:int {:min 0}]]]]])
 (m/=> impact-analysis [:function [:=> [:cat :string] [:map [:direct [:sequential :string]] [:transitive [:sequential :string]] [:total-count [:int {:min 0}]] [:by-relation :map]]] [:=> [:cat :string [:maybe :map]] [:map [:direct [:sequential :string]] [:transitive [:sequential :string]] [:total-count [:int {:min 0}]] [:by-relation :map]]]])
-(m/=> subgraph [:=> [:cat [:maybe :string]] [:map [:nodes [:sequential :string]] [:edges [:sequential :map]] [:node-count [:int {:min 0}]] [:edge-count [:int {:min 0}]]]])
+(m/=> subgraph [:function
+                [:=> [:cat [:maybe :string]] [:map [:nodes [:sequential :string]] [:edges [:sequential :map]] [:node-count [:int {:min 0}]] [:edge-count [:int {:min 0}]]]]
+                [:=> [:cat [:maybe :string] [:maybe [:map [:node-id {:optional true} [:maybe :string]] [:max-depth {:optional true} nat-int?]]]]
+                 [:map [:nodes [:sequential :string]] [:edges [:sequential :map]] [:node-count [:int {:min 0}]] [:edge-count [:int {:min 0}]]]]])
 (m/=> find-contradictions [:function [:=> [:cat] [:sequential [:map [:node-a :string] [:node-b :string] [:edge :map]]]] [:=> [:cat [:maybe :string]] [:sequential [:map [:node-a :string] [:node-b :string] [:edge :map]]]]])
 (m/=> get-node-context [:=> [:cat :string] [:map [:node-id :string] [:incoming :map] [:outgoing :map] [:confidence [:maybe :map]] [:scopes [:sequential :string]]]])
 (m/=> batch-get-node-contexts [:=> [:cat [:sequential :string]] [:map-of :string :map]])
