@@ -4,7 +4,7 @@
    .hive-project.edn updates."
   (:require [hive-mcp.tools.memory.core :refer [with-store]]
             [hive-mcp.tools.memory.scope :as scope]
-            [hive-mcp.tools.core :refer [mcp-json mcp-error]]
+            [hive-mcp.tools.core :as core :refer [mcp-json mcp-error]]
             [hive-mcp.memory.temporal :as temporal]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [hive-mcp.knowledge-graph.connection :as kg-conn]
@@ -16,7 +16,8 @@
             [hive-mcp.dns.result :refer [rescue]]
             [hive-weave.parallel :as wpar]
             [taoensso.timbre :as log]
-            [hive-mcp.vectordb.resilience :refer [with-resilience]]))
+            [hive-mcp.vectordb.resilience :refer [with-resilience]]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -270,6 +271,19 @@
                            :dry-run           dry-run
                            :from              old-project-id
                            :to                new-project-id})))))))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+;;
+;; Every migration handler answers one MCP text response (mcp-json report or
+;; mcp-error refusal); with-store turns a store failure into mcp-error.
+
+(m/=> handle-migrate-project [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-rename-project [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-migrate-scoped [:=> [:cat [:maybe :map]] core/McpResponse])
 
 (defn handle-rename-project
   "Unified rename-project orchestrating Chroma, KG, .edn, and config migration."

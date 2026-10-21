@@ -1,0 +1,24 @@
+{:elisp-list
+ {"s1"
+  {:name "n",
+   :presets nil,
+   :cwd nil,
+   :project-id nil,
+   :status "idle",
+   :age-minutes nil}},
+ :other {},
+ :broadcast
+ {:type "text",
+  :text
+  "Swarm host unavailable: no :vessel :dispatch capability is registered, or the vessel reports its swarm addon unloaded.",
+  :isError true},
+ :presets
+ {:type "text",
+  :text
+  "Swarm host unavailable: no :vessel :dispatch capability is registered, or the vessel reports its swarm addon unloaded.",
+  :isError true},
+ :status
+ {:type "text",
+  :text
+  "Swarm host unavailable: no :vessel :dispatch capability is registered, or the vessel reports its swarm addon unloaded.",
+  :isError true}}

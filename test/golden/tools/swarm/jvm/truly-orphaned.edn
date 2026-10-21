@@ -1,0 +1,8 @@
+{:case-0 {:out nil, :in {}},
+ :case-1 {:out true, :in {:truly-orphaned true}},
+ :case-2 {:out nil, :in {:truly-orphaned nil}},
+ :case-3 {:out nil, :in {:truly-orphaned nil}},
+ :case-4 {:out nil, :in {}},
+ :case-5 {:out nil, :in {}},
+ :case-6 {:out nil, :in {}},
+ :case-7 {:out nil, :in {}}}

@@ -24,7 +24,7 @@
   (:require [hive-mcp.addons.core :as addon-core]
             [hive-mcp.addons.manifest :as manifest]
             [hive-mcp.tools.composite :as composite]
-            [hive-mcp.tools.core :refer [mcp-json mcp-error]]
+            [hive-mcp.tools.core :as tc :refer [mcp-json mcp-error]]
             [taoensso.timbre :as log]
             [hive-mcp.hot.core :as core-hot]
             [hive-mcp.hot.claims :as claims]
@@ -74,6 +74,12 @@
     (let [live (mounted-ids)]
       (into [] (filter #(contains? live (:addon/id %))) (:specs (discover))))
     []))
+
+(def MountSpec
+  "A hive-addon MountSpec as `effective-specs` filters it: open, keyed by id."
+  [:map [:addon/id :string]])
+
+(m/=> effective-specs [:=> [:cat] [:vector MountSpec]])
 
 (defn- host []
   (when-let [ctor (soft 'hive-mcp.extensions.mount-host/addon-registry-host)]
@@ -161,6 +167,28 @@
         (catch Throwable t
           (log/warn "hive-hot init failed" {:error (ex-message t)})
           {:initialized? false :dirs [] :reason (ex-message t)})))))
+
+(def HotInit
+  "What `ensure-hot-init!` reports: whether hive-hot is initialized and over
+   which dirs, plus why not, or what an extension added and claimed."
+  [:map
+   [:initialized? :boolean]
+   [:dirs [:vector :string]]
+   [:already? {:optional true} :boolean]
+   [:reason {:optional true} [:or :keyword :string :nil]]
+   [:added {:optional true} [:vector :string]]
+   [:claims {:optional true} :map]
+   [:claim-errors {:optional true} [:sequential :any]]])
+
+(def HotPlan
+  "The slice of a hive-addon.hot/plan verdict this namespace reads."
+  [:map
+   [:hot/dirs {:optional true} [:maybe [:sequential :string]]]
+   [:hot/no-reload {:optional true} [:maybe [:or [:set :any] [:sequential :any]]]]
+   [:hot/registered {:optional true} [:sequential [:map [:addon/id :string]]]]
+   [:hot/skipped {:optional true} [:sequential [:map [:addon/id :string]]]]])
+
+(m/=> ensure-hot-init! [:=> [:cat HotPlan] HotInit])
 
 (defn- reload-opts
   "Options handed to the bridge.
@@ -250,6 +278,12 @@
   (cond-> {:cascade? (true? cascade) :force? (true? force)}
     (pos-int? drain_ms) (assoc :drain-ms drain_ms)))
 
+(def PlugOutOpts
+  "The eject!/plug-out! opts: both flags always, :drain-ms only when given."
+  [:map [:cascade? :boolean] [:force? :boolean] [:drain-ms {:optional true} pos-int?]])
+
+(m/=> plug-out-opts [:=> [:cat [:maybe :map]] PlugOutOpts])
+
 (def mount-result-keys
   "The per-addon MountResult keys shown under :mounted."
   [:addon/id :success? :phase :errors :diagnostic])
@@ -279,6 +313,11 @@
       failure (-> (assoc :ok? false :surface-stale? true)
                   (update :errors (fnil conj []) failure)))))
 
+(m/=> report-with-surface [:=> [:cat :map [:maybe :map]]
+                           [:map [:surface [:maybe :map]]
+                            [:surface-stale? {:optional true} [:= true]]
+                            [:errors {:optional true} [:sequential :any]]]])
+
 (defn- surface-refreshed!
   "After a remount or an injection the addon's contributions are live in
    dispatch but the advertised surface — composites, tools/list, schema
@@ -304,6 +343,8 @@
   (cond-> base
     (contains? #{true "true"} force) (assoc :force? true :ns-reloaded? false)))
 
+(m/=> reload-call-opts [:=> [:cat :map :any] :map])
+
 (defn handle-reload
   "Reload one addon (or every addon built from one namespace) plus dependents."
   [{:keys [addon namespace strategy force]}]
@@ -328,6 +369,8 @@
                                   :ok? (:ok? result)
                                   :affected (:hot/affected report)})
           (mcp-json (assoc result :hive-hot hot-init)))))))
+
+(m/=> handle-reload [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (defmulti skip-reason
   "Why `reload-all` leaves an addon out, from its AddonSource (a row of
@@ -365,6 +408,8 @@
                      :reason          (skip-reason src)})
                   (:hot/skipped plan))})
 
+(m/=> reload-all-seeds [:=> [:cat HotPlan] ReloadAllSeeds])
+
 (defn handle-reload-all
   "Reload every mounted addon that hive-addon.hot/plan marks reloadable, in
    dependency order. The rest are reported under :skipped with a reason."
@@ -382,6 +427,8 @@
                   surface (surface-refreshed!)]
               (mcp-json (assoc (report-with-surface (summarize report) surface)
                                :skipped skipped :hive-hot hot-init)))))))))
+
+(m/=> handle-reload-all [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (defn handle-inject
   "Mount an addon that was NOT on the classpath at boot.
@@ -429,6 +476,8 @@
                       "hive-addon >= 0.3.8; bump the pin (or point local.deps.edn at "
                       "../hive-addon) and restart the server.")))))
 
+(m/=> handle-inject [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (defn handle-list
   "Per-addon hot-reload readiness: strategy, where its source lives, and whether
    it can be reloaded at all. Effect-free apart from hive-hot init."
@@ -448,6 +497,8 @@
           :watch-dirs (vec (:hot/dirs plan))
           :never-reload (mapv str (:hot/no-reload plan))
           :hive-hot-available? (:hot/available? plan)})))))
+
+(m/=> handle-list [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (defn handle-watch
   "Register every reloadable addon with hive-hot and START the file watcher, so
@@ -480,6 +531,8 @@
                          :ok? (:ok? report)
                          :errors (:errors report)}))))))))
 
+(m/=> handle-watch [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (defn handle-unwatch
   "Stop the hive-hot file watcher and deregister every addon component."
   [_params]
@@ -490,6 +543,8 @@
           un    ((soft 'hive-addon.hot/unhot!) specs)]
       (mcp-json {:watcher (if stop! (str (stop!)) "hive-hot absent")
                  :unregistered (:hot/unregistered un)}))))
+
+(m/=> handle-unwatch [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (defn no-reload-split
   "Pure. The effective no-reload set, split by who pins it: CORE-PINS are
@@ -504,6 +559,18 @@
      :addon     (vec addon)
      :counts    {:core (count core) :addon (count addon)
                  :effective (count (into core addon))}}))
+
+(def NoReloadSplit
+  "The no-reload set split by pinner, as sorted strings with counts."
+  [:map
+   [:effective [:vector :string]]
+   [:core [:vector :string]]
+   [:addon [:vector :string]]
+   [:counts [:map [:core nat-int?] [:addon nat-int?] [:effective nat-int?]]]])
+
+(m/=> no-reload-split [:=> [:cat [:maybe [:or [:sequential :any] [:set :any]]]
+                                 [:maybe [:or [:sequential :any] [:set :any]]]]
+                       NoReloadSplit])
 
 (defn- core-pins
   "hive-mcp core's protocol pins, as the core reload would apply them. [] when
@@ -525,6 +592,8 @@
             :else             (assoc res :state :failed)))
     {:state :not-booted}))
 
+(m/=> boot-status [:=> [:cat] [:map [:state [:enum :not-booted :initialized :failed]]]])
+
 (defn handle-status
   "hive-hot availability + watcher state, the installed strategy chain, and the
    protocol interlock: the effective no-reload set, split into core and addon
@@ -542,6 +611,8 @@
                            :watcher (when watcher (watcher))
                            :boot (boot-status)))))))
 
+(m/=> handle-status [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (defn handle-strategies
   "The installed reload-strategy chain, in selection order."
   [_params]
@@ -553,6 +624,8 @@
                  :note (str "Selection order. A spec may name one explicitly via "
                             ":addon/reload-strategy; modules add their own with "
                             "hive-addon.hot/register-strategy!.")}))))
+
+(m/=> handle-strategies [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 ;; =============================================================================
 ;; Tool definition
@@ -574,6 +647,8 @@
   "Per-addon lifecycle phase, policy, last use and parts."
   [_params]
   (with-manager #(mcp-json ((soft 'hive-addon.lifecycle/status) %))))
+
+(m/=> handle-lifecycle [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 ;; -----------------------------------------------------------------------------
 ;; Lifecycle bridge verbs — the registration seam
@@ -625,6 +700,8 @@
           (mcp-error (str bridge " is not on the classpath; the hive-addon in this "
                           "image predates it. Bump the hive-addon pin and restart.")))))))
 
+(m/=> run-lifecycle-verb [:=> [:cat :map [:maybe :map]] tc/McpResponse])
+
 (defn lifecycle-verb
   "A `hot` handler for the LifecycleVerb DESCRIPTOR. The returned fn closes over
    data only and calls `run-lifecycle-verb` through its var, so a reload of
@@ -633,6 +710,10 @@
   {:pre [(m/validate LifecycleVerb descriptor)]}
   (fn lifecycle-verb-handler [params]
     (run-lifecycle-verb descriptor params)))
+
+;; Input is :map, not LifecycleVerb: the fn's own :pre refuses a malformed
+;; descriptor with an AssertionError, which callers (hot-test) pin.
+(m/=> lifecycle-verb [:=> [:cat :map] tc/ToolHandler])
 
 (def handle-activate
   "Mount a dormant addon now, with the dependencies it lacks."
@@ -650,6 +731,8 @@
                (and (false? (:evicted? report)) (some? (:reason report)))))
     (assoc report :ok? false :refused? true)
     report))
+
+(m/=> eviction-outcome [:=> [:cat :any] :any])
 
 (def handle-evict
   "Release an addon to dormant stubs (force for pinned/eager). A refusal
@@ -695,6 +778,8 @@
    :reload-opts #'reload-opts
    :refresh!    #'surface-refreshed!})
 
+(m/=> default-host-ports [:=> [:cat] HostPorts])
+
 (defn unsupported-report
   "Pure. What a host verb answers when BRIDGE is absent from this image."
   [bridge]
@@ -704,6 +789,10 @@
    :message (str bridge " is not on the classpath; the hive-addon in this image "
                  "predates it. Bump the hive-addon pin (or point local.deps.edn at "
                  "../hive-addon) and restart.")})
+
+(m/=> unsupported-report [:=> [:cat [:or :symbol :string]]
+                          [:map [:ok? [:= false]] [:reason [:= :unsupported]]
+                           [:bridge :string] [:message :string]]])
 
 (defn run-host-verb
   "Run a HostVerb descriptor against PARAMS over PORTS: derive the target,
@@ -731,6 +820,8 @@
         (mcp-json (cond-> (assoc (select-keys report report-keys) :surface surface)
                     (:reason report) (assoc :reason (:reason report))))))))
 
+(m/=> run-host-verb [:=> [:cat :map :map [:maybe :map]] tc/McpResponse])
+
 (defn host-verb
   "A `hot` handler for the HostVerb DESCRIPTOR over `default-host-ports`. The
    returned fn closes over data only and calls `run-host-verb` through its var."
@@ -739,10 +830,16 @@
   (fn host-verb-handler [params]
     (run-host-verb descriptor (default-host-ports) params)))
 
+;; Input is :map, not HostVerb: the fn's own :pre refuses a malformed
+;; descriptor with an AssertionError, which callers (hot-test) pin.
+(m/=> host-verb [:=> [:cat :map] tc/ToolHandler])
+
 (defn eject-target
   "Pure. What `eject` plugs out: the addon id, else the path it was injected from."
   [{:keys [addon path]}]
   (or addon path))
+
+(m/=> eject-target [:=> [:cat [:maybe :map]] [:maybe [:or :string :keyword :symbol]]])
 
 (def handle-eject
   "Plug an addon OUT of the running host (the inverse of inject). Calls in
@@ -781,6 +878,17 @@
       (nil? (:message res)) (assoc :message (str (:error res))))
     :else res))
 
+(def UnmountOutcome
+  "unmount-outcome's answer: an EjectReport, an err Result projected to
+   {:ok? false :reason \"cat/egory\" :message ..}, or whatever a bridge that
+   answers no Result handed in, passed through."
+  [:or
+   [:map [:ok? [:= false]] [:reason :string] [:message :any]]
+   :map
+   :any])
+
+(m/=> unmount-outcome [:=> [:cat :any] UnmountOutcome])
+
 (def unmount-verb
   "The HostVerb descriptor `unmount` runs."
   {:bridge      'hive-addon.hot.inject/plug-out!
@@ -818,6 +926,8 @@
   (into [:enum] (sort (or (some-> (soft 'hive-addon.lifecycle.policy/policies) deref)
                           fallback-policies))))
 
+(m/=> policy-schema [:=> [:cat] [:vector {:min 2} :keyword]])
+
 (defn pin-decl
   "Pure. The LifecycleDecl a `pin` call sets, or {:error msg}.
 
@@ -837,6 +947,14 @@
 
       :else
       {:policy p :idle-ms (or idle_ms baseline-idle-ms)})))
+
+(def PinDecl
+  "pin-decl's answer: the LifecycleDecl to set, or the refusal text."
+  [:or
+   [:map [:policy :keyword] [:idle-ms :int]]
+   [:map [:error :string]]])
+
+(m/=> pin-decl [:=> [:cat [:maybe :map] :some :int] PinDecl])
 
 (defmulti dormant-pin-note
   "What to tell the caller when POLICY is set on an addon in PHASE. A policy
@@ -877,6 +995,8 @@
   [v n]
   (boolean (some #(= n (count %)) (:arglists (meta v)))))
 
+(m/=> accepts-arity? [:=> [:cat :any nat-int?] :boolean])
+
 (defn set-policy-call!
   "Call SET-POLICY! (a var) with the force flag when it takes one (4-arity);
    against an older hive-addon, call the 3-arity and say that force was not
@@ -886,6 +1006,9 @@
     {:lifecycle (set-policy! mgr addon decl {:force? force?})}
     (cond-> {:lifecycle (set-policy! mgr addon decl)}
       force? (assoc :force-unsupported? true))))
+
+(m/=> set-policy-call! [:=> [:cat ifn? :any :any :map :any]
+                        [:map [:lifecycle :any] [:force-unsupported? {:optional true} [:= true]]]])
 
 (defn handle-pin
   "Set an addon's lifecycle policy at runtime (default :pinned). The policy is
@@ -912,10 +1035,14 @@
                           force-unsupported? (assoc :force-unsupported? true
                                                     :force-note "this hive-addon's set-policy! takes no force flag; force was not applied"))))))))))
 
+(m/=> handle-pin [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (defn handle-sweep
   "Evict every idle lazy addon and close idle parts now."
   [_params]
   (with-manager #(mcp-json (update ((soft 'hive-addon.lifecycle/sweep!) %) :plan dissoc :kept))))
+
+(m/=> handle-sweep [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (defn- core-remounter
   "The addon widening a core reload hands hive-mcp.hot.core: remount every
@@ -943,6 +1070,8 @@
   [_params]
   (mcp-json (core-hot/plan)))
 
+(m/=> handle-core-plan [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (defn handle-core-reload
   "Reload the changes under hive-mcp's own source root: protocol definers
    pinned, state holders kept, then the live records re-seated (:reseated),
@@ -953,6 +1082,8 @@
                                                 :host/remount! (core-remounter))})]
     (log/info "hot core-reload" (select-keys report [:ok? :loaded :failed :error :ms :reseated]))
     (mcp-json report)))
+
+(m/=> handle-core-reload [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (def canonical-handlers
   "The `hot` verbs, stored as VARS so a reload of this namespace reaches the
@@ -1008,6 +1139,8 @@
    Derived, so registering a verb in canonical-handlers advertises it."
   []
   (conj (vec (sort (map name (keys canonical-handlers)))) "help"))
+
+(m/=> command-enum [:=> [:cat] [:vector {:min 1} :string]])
 
 (def tool-def
   {:name "hot"

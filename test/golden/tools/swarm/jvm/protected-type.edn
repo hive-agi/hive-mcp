@@ -1,0 +1,10 @@
+{:case-0 {:out false, :in ({:type :other} #{})},
+ :case-1 {:out false, :in ({:type :other} #{"shadow-cljs"})},
+ :case-2 {:out false, :in ({:type :nrepl} #{"shadow-cljs"})},
+ :case-3
+ {:out false, :in ({:type :shadow-cljs} #{"nrepl" "leiningen"})},
+ :case-4 {:out true, :in ({:type :nrepl} #{"nrepl" "leiningen"})},
+ :case-5
+ {:out false, :in ({:type :nrepl} #{"leiningen" "shadow-cljs"})},
+ :case-6 {:out false, :in ({:type :shadow-cljs} #{"nrepl"})},
+ :case-7 {:out false, :in ({:type :other} #{"nrepl" "shadow-cljs"})}}

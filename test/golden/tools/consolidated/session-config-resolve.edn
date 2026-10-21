@@ -1,0 +1,8 @@
+{:case-0 {:out {:swarm-slave-id nil}, :in {:swarm-slave-id nil}},
+ :case-1 {:out {:swarm-slave-id "V7"}, :in {:swarm-slave-id "V7"}},
+ :case-2 {:out {:swarm-slave-id "p"}, :in {:swarm-slave-id "p"}},
+ :case-3 {:out {:swarm-slave-id "j8"}, :in {:swarm-slave-id "j8"}},
+ :case-4 {:out {:swarm-slave-id nil}, :in {:swarm-slave-id nil}},
+ :case-5 {:out {:swarm-slave-id nil}, :in {:swarm-slave-id nil}},
+ :case-6 {:out {:swarm-slave-id nil}, :in {:swarm-slave-id nil}},
+ :case-7 {:out {:swarm-slave-id nil}, :in {:swarm-slave-id nil}}}

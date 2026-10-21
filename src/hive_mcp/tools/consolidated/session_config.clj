@@ -21,7 +21,8 @@
    optional — coordinator processes resolve to nil here and the call sites
    then fall back to literal \"unknown\" / \"coordinator\" sentinels."
   (:require [hive-di.core :refer [defconfig env]]
-            [hive-dsl.result :as r]))
+            [hive-dsl.result :as r]
+            [malli.core :as m]))
 
 (defconfig SessionToolConfig
   :swarm-slave-id (env "CLAUDE_SWARM_SLAVE_ID"
@@ -42,8 +43,18 @@
        (throw (ex-info "SessionToolConfig resolution failed"
                        {:result result :overrides overrides}))))))
 
+(def ResolvedSessionToolConfig
+  "The resolved SessionToolConfig map: the slave-id is nil outside a ling."
+  [:map [:swarm-slave-id {:optional true} [:maybe :string]]])
+
+(m/=> resolve! [:function
+                [:=> [:cat] ResolvedSessionToolConfig]
+                [:=> [:cat [:maybe :map]] ResolvedSessionToolConfig]])
+
 (defn swarm-slave-id
   "Return CLAUDE_SWARM_SLAVE_ID resolved via defconfig.
    Returns nil when unset (coordinator / non-swarm processes)."
   []
   (:swarm-slave-id (resolve!)))
+
+(m/=> swarm-slave-id [:=> [:cat] [:maybe :string]])

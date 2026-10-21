@@ -1,7 +1,8 @@
 (ns hive-mcp.tools.swarm.core
   "Core utilities for swarm tool handlers including response builders and swarm availability check."
   (:require [hive-spi.editor.services :as svc]
-            [clojure.data.json :as json]))
+            [clojure.data.json :as json]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -10,6 +11,30 @@
   "True when a :vessel :dispatch capability is registered and reports the swarm addon loaded."
   []
   (= "t" (:result (svc/invoke :vessel :dispatch {:op :swarm/available?} 2000))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def SwarmResponse
+  "One MCP text response, as every swarm handler answers."
+  [:map [:type [:= "text"]] [:text :string] [:isError {:optional true} :boolean]])
+
+(def SwarmError
+  [:map [:type [:= "text"]] [:text :string] [:isError [:= true]]])
+
+(m/=> addon-not-loaded-error [:=> [:cat] SwarmError])
+
+(m/=> mcp-error [:=> [:cat :any] SwarmError])
+
+(m/=> mcp-error-json [:=> [:cat :any] SwarmError])
+
+(m/=> mcp-success [:=> [:cat :any] [:map [:type [:= "text"]] [:text :string]]])
+
+(m/=> mcp-timeout-error
+  [:=> [:cat :any [:* [:cat [:= :extra-data] [:maybe :map]]]] SwarmError])
+
+(m/=> swarm-addon-available? [:=> [:cat] :boolean])
 
 (defn mcp-success
   "Build a successful MCP response."

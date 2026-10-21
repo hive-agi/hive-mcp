@@ -1,12 +1,13 @@
 (ns hive-mcp.tools.memory-kanban.query
   (:require [hive-mcp.context.request :as ctx]
             [hive-mcp.project.tree :as tree]
-            [hive-mcp.tools.core :refer [mcp-json]]
+            [hive-mcp.tools.core :as core :refer [mcp-json]]
             [hive-mcp.tools.kanban.list.plan :as plan]
             [hive-mcp.tools.kanban.list.source :as src]
             [hive-mcp.tools.kanban.transitions :as kt]
             [hive-mcp.tools.memory.scope :as scope]
-            [hive-mcp.vectordb.kanban-facade :as kanban-facade]))
+            [hive-mcp.vectordb.kanban-facade :as kanban-facade]
+            [malli.core :as m]))
 
 (declare query-kanban-entries resolve-project-ids-with-descendants resolve-visible-project-ids effective-dir stats* filter-kanban-by-tags list-slim* list-slim-data)
 
@@ -214,3 +215,57 @@
     (plan/shape fetch-plan
                 (plan/drop-hidden entries (plan/hidden-tags params))
                 multi-project?)))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def ProjectId
+  "A project id; \"global\" and nil both mean no project filter."
+  [:maybe :string])
+
+(def ProjectIds
+  "Visible project ids in order: self, ancestors, then descendants; nil for
+   global or no project."
+  [:maybe [:vector :string]])
+
+(def KanbanEntries
+  "Entries as the kanban facade answers them: memory entry maps."
+  [:sequential [:map [:tags {:optional true} [:maybe [:sequential :string]]]]])
+
+(def ScopedBoard
+  [:map [:entries [:maybe KanbanEntries]] [:multi-project? :boolean]])
+
+(def VisibleIdsInput
+  "The chain arrives as a sequence; the project tree answers descendants as
+   a SET, so either collection is accepted for both."
+  [:map
+   [:project-id ProjectId]
+   [:chain {:optional true} [:maybe [:or [:sequential :string] [:set :string]]]]
+   [:descendants {:optional true} [:maybe [:or [:sequential :string] [:set :string]]]]
+   [:include-ancestors? {:optional true} :any]
+   [:include-descendants? {:optional true} :any]])
+
+(m/=> query-kanban-entries
+  [:function
+   [:=> [:cat ProjectId :any [:maybe [:int {:min 0}]] [:maybe [:sequential :string]]] ScopedBoard]
+   [:=> [:cat ProjectId :any [:maybe [:int {:min 0}]] [:maybe [:sequential :string]] [:maybe :map]] ScopedBoard]])
+
+(m/=> resolve-project-ids-with-descendants [:=> [:cat ProjectId] ProjectIds])
+
+(m/=> visible-project-ids [:=> [:cat VisibleIdsInput] ProjectIds])
+
+(m/=> resolve-visible-project-ids
+  [:function
+   [:=> [:cat ProjectId :any] ProjectIds]
+   [:=> [:cat ProjectId :any :any] ProjectIds]])
+
+(m/=> effective-dir [:=> [:cat [:maybe :string]] [:maybe :string]])
+
+(m/=> stats* [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> filter-kanban-by-tags [:=> [:cat [:maybe KanbanEntries] [:maybe [:sequential :string]]] [:sequential :map]])
+
+(m/=> list-slim* [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> list-slim-data [:=> [:cat [:maybe :map]] [:vector :map]])

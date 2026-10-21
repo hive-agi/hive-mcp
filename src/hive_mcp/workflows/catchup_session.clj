@@ -83,7 +83,9 @@
             [hive-mcp.concurrency.pool :as pool]
             [hive-dsl.context.identity :as ctx-id]
             [taoensso.timbre :as log]
-            [hive-mcp.workflows.support :as support]))
+            [hive-mcp.workflows.support :as support]
+            [malli.core :as m]
+            [hive-mcp.workflows.schema :as wfs]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -266,6 +268,10 @@
            :chroma-configured? (boolean (chroma-check-fn))
            :error nil)))
 
+(m/=> handle-start
+  [:=> [:cat wfs/Resources wfs/Data]
+   [:map [:directory :any] [:chroma-configured? :boolean] [:error :nil]]])
+
 (defn handle-scope-resolve
   "Resolve project scope from directory AND ensure project tree is populated.
    EDN handler key: :scope-resolve
@@ -290,6 +296,10 @@
            :project-name project-name
            :scopes scopes)))
 
+(m/=> handle-scope-resolve
+  [:=> [:cat wfs/Resources wfs/Data]
+   [:map [:project-id :any] [:project-name :any] [:scopes :any]]])
+
 (defn handle-query-memory
   "Query all Chroma memory categories with project scoping IN PARALLEL.
    EDN handler key: :query-memory
@@ -310,6 +320,14 @@
              :query-failed? true
              :error (str "Query failed: " (:message r))))))
 
+(m/=> handle-query-memory
+  [:=> [:cat wfs/Resources wfs/Data]
+   [:or
+    [:map [:query-failed? [:= false]] [:axioms :any] [:conventions :any] [:expiring :any]
+     [:priority-conventions :any] [:sessions :any] [:decisions :any] [:snippets :any]
+     [:axiom-candidates :any]]
+    [:map [:query-failed? [:= true]] [:error :string]]]])
+
 (defn handle-transform
   "Transform raw entries to metadata and fetch git info.
    EDN handler key: :transform"
@@ -318,6 +336,14 @@
                      (call-resource resources :git-fn dir))
         transforms (apply-meta-transforms (:entry->meta-fns resources) data)]
     (merge data transforms {:git-info git-info})))
+
+(m/=> handle-transform
+  [:=> [:cat wfs/Resources wfs/Data]
+   [:map [:git-info :any]
+    [:axioms-meta [:vector :any]] [:axiom-candidates-meta [:vector :any]]
+    [:priority-meta [:vector :any]] [:sessions-meta [:vector :any]]
+    [:snippets-meta [:vector :any]] [:expiring-meta [:vector :any]]
+    [:decisions-base [:vector :any]] [:conventions-base [:vector :any]]]])
 
 (defn handle-addon-pass
   "Addon processing step. Delegates to :addon-fn if provided.
@@ -333,6 +359,8 @@
         (merge data result)
         data))
     data))
+
+(m/=> handle-addon-pass [:=> [:cat wfs/Resources wfs/Data] wfs/Data])
 
 (defn handle-maintenance
   "Run maintenance tasks IN PARALLEL using futures for graceful error recovery.
@@ -361,6 +389,10 @@
                                           {:scanned false :error "tree scan timed out"})
            :disc-decay (safe-deref f-disc-decay query-timeout-ms
                                    {:updated 0 :skipped 0 :errors 1}))))
+
+(m/=> handle-maintenance
+  [:=> [:cat wfs/Resources wfs/Data]
+   [:map [:permeation :any] [:project-tree-scan :any] [:disc-decay :any]]])
 
 (defn handle-deliver
   "Enqueue piggyback entries and cache in context-store.
@@ -391,6 +423,10 @@
            :context-refs context-refs
            :piggyback-enqueued? (boolean (seq piggyback-entries)))))
 
+(m/=> handle-deliver
+  [:=> [:cat wfs/Resources wfs/Data]
+   [:map [:context-refs [:maybe [:map-of :keyword :any]]] [:piggyback-enqueued? :boolean]]])
+
 (defn handle-end
   "Terminal state handler. Format and return final catchup response.
    EDN handler key: :end"
@@ -406,6 +442,8 @@
      :decisions-meta (:decisions-base data)
      :conventions-meta (:conventions-base data))))
 
+(m/=> handle-end [:=> [:cat wfs/Resources wfs/Fsm] wfs/RunResult])
+
 (defn handle-error
   "Error state handler. Captures error context.
    EDN handler key: :error"
@@ -415,6 +453,8 @@
     (throw (ex-info "Catchup workflow error"
                     {:data (select-keys data [:directory :project-id :error])
                      :error error}))))
+
+(m/=> handle-error [:=> [:cat wfs/Resources wfs/Fsm] wfs/RunResult])
 
 ;; =============================================================================
 ;; Handler Map (for EDN spec registration in workflow registry)
@@ -509,6 +549,8 @@
   []
   (fsm/compile catchup-session-spec))
 
+(m/=> compile-catchup [:=> [:cat] wfs/CompiledFsm])
+
 (defn run-catchup
   "Execute a compiled catchup session FSM.
 
@@ -528,6 +570,11 @@
                            :chroma-configured? false
                            :query-failed? false}
                           opts)})))
+
+(m/=> run-catchup
+  [:function
+   [:=> [:cat wfs/CompiledFsm wfs/Resources] wfs/RunResult]
+   [:=> [:cat wfs/CompiledFsm wfs/Resources [:maybe :map]] wfs/RunResult]])
 
 (defn run-catchup-session
   "Convenience: compile and run a single catchup session.
@@ -562,3 +609,8 @@
    (run-catchup-session resources {}))
   ([resources opts]
    (run-catchup (compile-catchup) resources opts)))
+
+(m/=> run-catchup-session
+  [:function
+   [:=> [:cat wfs/Resources] wfs/RunResult]
+   [:=> [:cat wfs/Resources [:maybe :map]] wfs/RunResult]])

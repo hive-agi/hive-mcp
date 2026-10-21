@@ -1,0 +1,192 @@
+{:case-0
+ {:out
+  {:parent-is-claude false,
+   :parent-comm "bash",
+   :type :nrepl,
+   :truly-orphaned true,
+   :etime "02:00:00",
+   :ppid "100",
+   :reason "truly-orphaned (parent: bash)",
+   :orphan true,
+   :age-minutes 120},
+  :in
+  ({:type :nrepl,
+    :truly-orphaned true,
+    :parent-is-claude false,
+    :parent-comm "bash",
+    :ppid "100",
+    :etime "02:00:00"}
+   :protected-types
+   #{}
+   :true-orphans-only
+   false
+   :min-age-minutes
+   60)},
+ :case-1
+ {:out
+  {:parent-is-claude true,
+   :parent-comm "claude",
+   :type :other,
+   :truly-orphaned false,
+   :etime "45:00",
+   :ppid "1",
+   :reason "managed-by-claude (ppid: 1)",
+   :orphan false,
+   :age-minutes 45},
+  :in
+  ({:type :other,
+    :truly-orphaned false,
+    :parent-is-claude true,
+    :parent-comm "claude",
+    :ppid "1",
+    :etime "45:00"}
+   :protected-types
+   #{"shadow-cljs"}
+   :true-orphans-only
+   false
+   :min-age-minutes
+   30)},
+ :case-2
+ {:out
+  {:parent-is-claude true,
+   :parent-comm "claude",
+   :type :shadow-cljs,
+   :truly-orphaned false,
+   :etime "02:00:00",
+   :ppid "100",
+   :reason "managed-by-claude (ppid: 100)",
+   :orphan false,
+   :age-minutes 120},
+  :in
+  ({:type :shadow-cljs,
+    :truly-orphaned false,
+    :parent-is-claude true,
+    :parent-comm "claude",
+    :ppid "100",
+    :etime "02:00:00"}
+   :protected-types
+   #{}
+   :true-orphans-only
+   false
+   :min-age-minutes
+   60)},
+ :case-3
+ {:out
+  {:parent-is-claude true,
+   :parent-comm "claude",
+   :type :nrepl,
+   :truly-orphaned false,
+   :etime "02:00:00",
+   :ppid "1",
+   :reason "managed-by-claude (ppid: 1)",
+   :orphan false,
+   :age-minutes 120},
+  :in
+  ({:type :nrepl,
+    :truly-orphaned false,
+    :parent-is-claude true,
+    :parent-comm "claude",
+    :ppid "1",
+    :etime "02:00:00"}
+   :protected-types
+   #{"shadow-cljs"}
+   :true-orphans-only
+   true
+   :min-age-minutes
+   30)},
+ :case-4
+ {:out
+  {:parent-is-claude false,
+   :parent-comm "bash",
+   :type :other,
+   :truly-orphaned false,
+   :etime "45:00",
+   :ppid "100",
+   :reason "has-parent: bash",
+   :orphan false,
+   :age-minutes 45},
+  :in
+  ({:type :other,
+    :truly-orphaned false,
+    :parent-is-claude false,
+    :parent-comm "bash",
+    :ppid "100",
+    :etime "45:00"}
+   :protected-types
+   #{}
+   :true-orphans-only
+   false
+   :min-age-minutes
+   0)},
+ :case-5
+ {:out
+  {:parent-is-claude true,
+   :parent-comm "claude",
+   :type :other,
+   :truly-orphaned false,
+   :etime "02:00:00",
+   :ppid "1",
+   :reason "managed-by-claude (ppid: 1)",
+   :orphan false,
+   :age-minutes 120},
+  :in
+  ({:type :other,
+    :truly-orphaned false,
+    :parent-is-claude true,
+    :parent-comm "claude",
+    :ppid "1",
+    :etime "02:00:00"}
+   :protected-types
+   #{"leiningen" "shadow-cljs"}
+   :true-orphans-only
+   false
+   :min-age-minutes
+   30)},
+ :case-6
+ {:out
+  {:parent-is-claude true,
+   :parent-comm nil,
+   :type :shadow-cljs,
+   :truly-orphaned true,
+   :etime "02:00:00",
+   :ppid "1",
+   :reason "protected-type",
+   :orphan false,
+   :age-minutes 120},
+  :in
+  ({:type :shadow-cljs,
+    :truly-orphaned true,
+    :parent-is-claude true,
+    :parent-comm nil,
+    :ppid "1",
+    :etime "02:00:00"}
+   :protected-types
+   #{"leiningen" "shadow-cljs"}
+   :true-orphans-only
+   true
+   :min-age-minutes
+   30)},
+ :case-7
+ {:out
+  {:parent-is-claude false,
+   :parent-comm nil,
+   :type :leiningen,
+   :truly-orphaned true,
+   :etime "05:00",
+   :ppid "100",
+   :reason "protected-type",
+   :orphan false,
+   :age-minutes 5},
+  :in
+  ({:type :leiningen,
+    :truly-orphaned true,
+    :parent-is-claude false,
+    :parent-comm nil,
+    :ppid "100",
+    :etime "05:00"}
+   :protected-types
+   #{"leiningen" "shadow-cljs"}
+   :true-orphans-only
+   true
+   :min-age-minutes
+   60)}}

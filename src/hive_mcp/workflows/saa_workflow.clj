@@ -28,7 +28,9 @@
             [clojure.java.io :as io]
             [clojure.edn :as edn]
             [taoensso.timbre :as log]
-            [hive-mcp.dispatch.handler :as dh]))
+            [hive-mcp.dispatch.handler :as dh]
+            [malli.core :as m]
+            [hive-mcp.workflows.schema :as wfs]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -308,6 +310,8 @@
       edn/read-string
       resolve-spec))
 
+(m/=> load-edn-spec [:=> [:cat] [:map [:fsm [:map-of :keyword :map]] [:opts {:optional true} [:maybe :map]]]])
+
 
 ;; =============================================================================
 ;; Compilation & Execution API
@@ -333,6 +337,8 @@
                      saa-workflow-spec))]
     (fsm/compile (resolve-spec spec))))
 
+(m/=> compile-saa [:=> [:cat] wfs/CompiledFsm])
+
 (defn run-saa
   "Execute a compiled SAA workflow FSM.
    Args: compiled-fsm, resources (side-effect fns), opts (must include :task, :agent-id)"
@@ -350,12 +356,21 @@
                            :abstract-retries 0}
                           opts)})))
 
+(m/=> run-saa
+  [:function
+   [:=> [:cat wfs/CompiledFsm wfs/Resources] wfs/RunResult]
+   [:=> [:cat wfs/CompiledFsm wfs/Resources [:maybe :map]] wfs/RunResult]])
+
 (defn run-full-saa
   "Convenience: compile and run a full SAA cycle."
   [resources opts]
   (run-saa (compile-saa) resources opts))
 
+(m/=> run-full-saa [:=> [:cat wfs/Resources [:maybe :map]] wfs/RunResult])
+
 (defn run-plan-only
   "Convenience: compile and run SAA without Act phase (plan-only mode)."
   [resources opts]
   (run-saa (compile-saa) resources (assoc opts :plan-only? true)))
+
+(m/=> run-plan-only [:=> [:cat wfs/Resources [:maybe :map]] wfs/RunResult])

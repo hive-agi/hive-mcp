@@ -15,7 +15,8 @@
             [hive-mcp.dns.result :as result]
             [hive-mcp.concurrency.pool :as pool]
             [hive-mcp.transport.olympus.snapshots :as snap]
-            [hive-mcp.transport.olympus.state-bridge :as state-bridge]))
+            [hive-mcp.transport.olympus.state-bridge :as state-bridge]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -25,6 +26,14 @@
 ;; =============================================================================
 
 (defonce clients (atom #{}))
+
+(def Event
+  "An Olympus protocol event: a typed, JSON-writable map."
+  [:map [:type [:or :keyword :string]]])
+
+(def EventType
+  "The :type an emitter stamps on its event."
+  [:or :keyword :string])
 
 ;; =============================================================================
 ;; WebSocket Handler
@@ -94,6 +103,11 @@
 
                 socket)))
 
+;; A manifold deferred yielding the connected socket stream.
+(m/=> ws-connection-handler
+      [:=> [:cat :map]
+       [:fn {:gen/fmap (fn [_] (d/success-deferred nil)) :gen/schema :nil} d/deferrable?]])
+
 ;; =============================================================================
 ;; Public API - Event Broadcasting
 ;; =============================================================================
@@ -118,6 +132,9 @@
              (log/debug "Olympus broadcast failed:" (.getMessage e))
              (swap! clients disj client))))))))
 
+;; The event must be JSON-writable; the answer is always nil.
+(m/=> broadcast! [:=> [:cat [:map-of :any :any]] :nil])
+
 (defn emit!
   "Emit a typed event to all Olympus clients.
    Convenience wrapper that adds timestamp."
@@ -125,6 +142,10 @@
   (broadcast! (merge {:type event-type
                       :timestamp (System/currentTimeMillis)}
                      data)))
+
+;; data is merged over the stamped type and timestamp, so a nil data is the
+;; bare event.
+(m/=> emit! [:=> [:cat EventType [:maybe [:map-of :any :any]]] :nil])
 
 ;; =============================================================================
 ;; Event Adapters (Transform hivemind events to Olympus protocol)
@@ -140,6 +161,8 @@
   [event-type agent-data]
   (emit! event-type {:agent agent-data}))
 
+(m/=> emit-agent-event! [:=> [:cat EventType :any] :nil])
+
 (defn emit-hivemind-shout!
   "Emit hivemind shout in Olympus protocol.
    Called from hivemind/shout! to keep Olympus in sync."
@@ -151,10 +174,21 @@
           :task task
           :data data}))
 
+(m/=> emit-hivemind-shout!
+      [:=> [:cat [:map
+                  [:agent-id {:optional true} :any]
+                  [:event-type {:optional true} :any]
+                  [:message {:optional true} :any]
+                  [:task {:optional true} :any]
+                  [:data {:optional true} :any]]]
+       :nil])
+
 (defn emit-kg-event!
   "Emit KG change event in Olympus protocol."
   [event-type kg-data]
   (emit! event-type kg-data))
+
+(m/=> emit-kg-event! [:=> [:cat EventType [:maybe [:map-of :any :any]]] :nil])
 
 ;; =============================================================================
 ;; Integration Hooks (Wire into existing event sources)
@@ -203,3 +237,7 @@
                  (state-bridge/wire-ds-state-bridge!)
 
                  (log/info "Olympus event wiring complete - :olympus-broadcast effect + memory sub + DS state bridge")))
+
+;; Never throws: a wiring failure is rescued to nil, and the success path ends
+;; on a log call.
+(m/=> wire-hivemind-events! [:=> [:cat] :nil])

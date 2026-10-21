@@ -1,7 +1,8 @@
 (ns hive-mcp.tools.memory.crud.edge-outcome
   "Outcome of the KG edge step of a memory add: the edge ids written, or one
    error row per requested edge when the edge write failed."
-  (:require [taoensso.timbre :as log]))
+  (:require [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -35,3 +36,33 @@
       (log/error e "KG edge creation failed; entry kept without edges")
       {:edge-ids    []
        :edge-errors (mapv #(assoc % :error (error-message e)) requests)})))
+
+;;; =============================================================================
+;;; Contracts
+;;; =============================================================================
+
+(def Relation
+  "The four relations a memory add can request, in creation order."
+  [:enum "implements" "supersedes" "depends-on" "refines"])
+
+(def EdgeRequest
+  [:map [:relation Relation] [:to :any]])
+
+(def KgParams
+  "The kg_* params of a memory add: each a seq of target entry ids, or nil."
+  [:maybe
+   [:map
+    [:kg_implements {:optional true} [:maybe [:sequential :any]]]
+    [:kg_supersedes {:optional true} [:maybe [:sequential :any]]]
+    [:kg_depends_on {:optional true} [:maybe [:sequential :any]]]
+    [:kg_refines {:optional true} [:maybe [:sequential :any]]]]])
+
+(def EdgeOutcome
+  "Edge ids written, or one error row per request when the write threw."
+  [:map
+   [:edge-ids [:vector :any]]
+   [:edge-errors [:vector [:map [:relation Relation] [:to :any] [:error :string]]]]])
+
+(m/=> edge-requests [:=> [:cat KgParams] [:vector EdgeRequest]])
+
+(m/=> attempt-edges [:=> [:cat ifn? [:sequential EdgeRequest]] EdgeOutcome])

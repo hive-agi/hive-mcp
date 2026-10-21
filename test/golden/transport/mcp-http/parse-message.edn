@@ -1,0 +1,55 @@
+{:case-0
+ {:out {:ok {:jsonrpc "2.0", :id 1, :method "ping"}},
+  :in "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"},
+ :case-1
+ {:out
+  {:error
+   {:status 400,
+    :body
+    {:jsonrpc "2.0",
+     :id nil,
+     :error {:code -32700, :message "Body is not JSON"}}}},
+  :in "not json"},
+ :case-2
+ {:out
+  {:error
+   {:status 400,
+    :body
+    {:jsonrpc "2.0",
+     :id 2,
+     :error
+     {:code -32600, :message "Expected one JSON-RPC 2.0 message"}}}},
+  :in "{\"jsonrpc\":\"1.0\",\"id\":2,\"method\":\"ping\"}"},
+ :case-3
+ {:out {:ok {:jsonrpc "2.0", :method "notifications/initialized"}},
+  :in
+  "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}"},
+ :case-4
+ {:out
+  {:ok {:jsonrpc "2.0", :id "a", :method "tools/list", :params {}}},
+  :in
+  "{\"jsonrpc\":\"2.0\",\"id\":\"a\",\"method\":\"tools/list\",\"params\":{}}"},
+ :case-5
+ {:out
+  {:error
+   {:status 400,
+    :body
+    {:jsonrpc "2.0",
+     :id nil,
+     :error {:code -32700, :message "Body is not JSON"}}}},
+  :in "not json"},
+ :case-6
+ {:out
+  {:error
+   {:status 400,
+    :body
+    {:jsonrpc "2.0",
+     :id 3,
+     :error
+     {:code -32600, :message "Expected one JSON-RPC 2.0 message"}}}},
+  :in "{\"jsonrpc\":\"2.0\",\"id\":3}"},
+ :case-7
+ {:out
+  {:ok {:jsonrpc "2.0", :id "a", :method "tools/list", :params {}}},
+  :in
+  "{\"jsonrpc\":\"2.0\",\"id\":\"a\",\"method\":\"tools/list\",\"params\":{}}"}}

@@ -1,0 +1,21 @@
+{:listed {:ok {:total 2, :per-collection {"kanban" 2}}},
+ :status
+ {:remaining 2,
+  :unreadable [],
+  :cursor 0,
+  :phase :ids-listed,
+  :failed-count 0,
+  :total 2,
+  :last-step nil,
+  :phase-a-summary {"kanban" 2},
+  :last-step-at nil,
+  :stats
+  {:missing-from-source 0,
+   :unreadable 0,
+   :written 0,
+   :not-task 0,
+   :ready-to-write 0,
+   :already-full 0,
+   :would-write 0,
+   :failed 0,
+   :scanned 0}}}

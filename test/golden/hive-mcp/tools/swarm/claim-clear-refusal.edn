@@ -1,0 +1,4 @@
+{:no-path
+ {:type "text", :text "{\"error\":\"file_path is required\"}"},
+ :blank-path
+ {:type "text", :text "{\"error\":\"file_path is required\"}"}}

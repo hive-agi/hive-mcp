@@ -19,7 +19,8 @@
             [clojure.pprint :as pprint]
             [hive-dsl.result :as r]
             [hive-mcp.tools.migrate.kanban.pure :as pure]
-            [hive-mcp.tools.migrate.kanban.ports :as ports])
+            [hive-mcp.tools.migrate.kanban.ports :as ports]
+            [malli.core :as m])
   (:import [java.nio.file Files StandardCopyOption]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -101,3 +102,13 @@
   "Construct a FileState. With no args defaults to `default-path`."
   ([] (make default-path))
   ([path] (->FileState path)))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def State
+  [:fn {:gen/elements [(->FileState "/tmp/kanban-mig-state.edn")]}
+   #(satisfies? ports/IState %)])
+
+(m/=> make [:function [:=> [:cat] State] [:=> [:cat :string] State]])

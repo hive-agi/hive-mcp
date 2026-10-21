@@ -6,7 +6,8 @@
             [hive-spi.editor.services :as svc]
             [clojure.data.json :as json]
             [taoensso.timbre :as log]
-            [hive-dsl.result :refer [rescue]]))
+            [hive-dsl.result :refer [rescue]]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -22,6 +23,26 @@
                 (let [parsed (json/read-str result :key-fn keyword)]
                   (when (sequential? parsed)
                     parsed)))))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def LingsData
+  "Registry lings keyed by id, or the elisp list of ling maps."
+  [:maybe [:or [:map-of :any :map] [:sequential :map]]])
+
+(m/=> format-lings-for-response [:=> [:cat LingsData] [:map-of :any [:map [:age-minutes [:maybe :int]]]]])
+
+(m/=> query-elisp-lings [:=> [:cat] [:maybe [:sequential :any]]])
+
+(m/=> handle-lings-available [:=> [:cat :any] core/SwarmResponse])
+
+(m/=> handle-swarm-broadcast [:=> [:cat [:maybe :map]] core/SwarmResponse])
+
+(m/=> handle-swarm-list-presets [:=> [:cat :any] core/SwarmResponse])
+
+(m/=> handle-swarm-status [:=> [:cat [:maybe :map]] core/SwarmResponse])
 
 (defn format-lings-for-response
   "Format lings data for MCP response."

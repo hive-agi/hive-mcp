@@ -1,0 +1,3 @@
+{:other-unknown {:isError true, :head "Unknown config section: :zzz"},
+ :unknown-section
+ {:isError true, :head "Unknown config section: :m27-nope"}}

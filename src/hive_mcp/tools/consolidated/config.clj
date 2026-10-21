@@ -8,7 +8,9 @@
             [clojure.java.io :as io]
             [taoensso.timbre :as log]
             [clojure.edn :as edn]
-            [hive-mcp.config.path :as config-path]))
+            [hive-mcp.config.path :as config-path]
+            [malli.core :as m]
+            [hive-mcp.tools.core :as tc]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -102,30 +104,42 @@
   [params]
   (rb/result->mcp (rb/try-result :config/get-failed #(get* params))))
 
+(m/=> handle-get [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (defn handle-set
   "Set a config value at a dotted key path and persist to disk."
   [params]
   (rb/result->mcp (rb/try-result :config/set-failed #(set* params))))
+
+(m/=> handle-set [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (defn handle-list
   "List all configuration values."
   [params]
   (rb/result->mcp (rb/try-result :config/list-failed #(list-config* params))))
 
+(m/=> handle-list [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (defn handle-reload
   "Reload config from disk, merging with defaults."
   [params]
   (rb/result->mcp (rb/try-result :config/reload-failed #(reload* params))))
+
+(m/=> handle-reload [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (defn handle-path
   "Show config file path."
   [params]
   (rb/result->mcp (rb/try-result :config/path-failed #(path* params))))
 
+(m/=> handle-path [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (defn handle-validate
   "Validate config against malli schema."
   [params]
   (rb/result->mcp (rb/try-result :config/validate-failed #(validate* params))))
+
+(m/=> handle-validate [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (def handlers
   "The `config` verbs, stored as VARS so a reload of THIS namespace reaches the

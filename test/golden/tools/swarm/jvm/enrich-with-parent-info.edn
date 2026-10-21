@@ -1,0 +1,72 @@
+{:case-0
+ {:out
+  {:pid "7",
+   :ppid "50",
+   :parent-alive false,
+   :parent-comm nil,
+   :parent-is-claude false,
+   :truly-orphaned true},
+  :in ({:pid "7", :ppid "50"} {})},
+ :case-1
+ {:out
+  {:pid "8",
+   :ppid "1",
+   :parent-alive false,
+   :parent-comm nil,
+   :parent-is-claude false,
+   :truly-orphaned true},
+  :in ({:pid "8", :ppid "1"} {})},
+ :case-2
+ {:out
+  {:pid "7",
+   :ppid "100",
+   :parent-alive false,
+   :parent-comm nil,
+   :parent-is-claude false,
+   :truly-orphaned true},
+  :in ({:pid "7", :ppid "100"} {})},
+ :case-3
+ {:out
+  {:pid "7",
+   :ppid "50",
+   :parent-alive false,
+   :parent-comm nil,
+   :parent-is-claude false,
+   :truly-orphaned true},
+  :in ({:pid "7", :ppid "50"} {})},
+ :case-4
+ {:out
+  {:pid "8",
+   :ppid "9999",
+   :parent-alive false,
+   :parent-comm nil,
+   :parent-is-claude false,
+   :truly-orphaned true},
+  :in ({:pid "8", :ppid "9999"} {})},
+ :case-5
+ {:out
+  {:pid "8",
+   :ppid "50",
+   :parent-alive false,
+   :parent-comm nil,
+   :parent-is-claude false,
+   :truly-orphaned true},
+  :in ({:pid "8", :ppid "50"} {})},
+ :case-6
+ {:out
+  {:pid "7",
+   :ppid "100",
+   :parent-alive false,
+   :parent-comm nil,
+   :parent-is-claude false,
+   :truly-orphaned true},
+  :in ({:pid "7", :ppid "100"} {})},
+ :case-7
+ {:out
+  {:pid "8",
+   :ppid "50",
+   :parent-alive false,
+   :parent-comm nil,
+   :parent-is-claude false,
+   :truly-orphaned true},
+  :in ({:pid "8", :ppid "50"} {})}}

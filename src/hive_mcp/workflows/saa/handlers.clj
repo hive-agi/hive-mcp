@@ -12,7 +12,9 @@
    The try/catch/log envelope + clock + shout seams live in
    hive-mcp.workflows.support (boundary-step / fatal / continue / now-str / shout!)."
   (:require [taoensso.timbre :as log]
-            [hive-mcp.workflows.support :as support]))
+            [hive-mcp.workflows.support :as support]
+            [malli.core :as m]
+            [hive-mcp.workflows.schema :as wfs]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -21,6 +23,10 @@
 ;; =============================================================================
 ;; Normal State Handlers: (resources, data) -> data'
 ;; =============================================================================
+
+(def ^:private Handler
+  "A normal SAA handler's arglist: (resources data)."
+  [:cat wfs/Resources wfs/Data])
 
 (defn handle-start
   "Initialize SAA session, resolve agent/project context.
@@ -46,6 +52,13 @@
                :plan-only? (get data :plan-only? false)
                :error nil))
       (assoc data :error "Missing required fields: :agent-id and :task"))))
+
+(m/=> handle-start
+  [:=> Handler
+   [:or
+    [:map [:phase [:= :start]] [:started-at :string] [:project-id :any]
+     [:silence-iterations [:= 0]] [:abstract-retries [:= 0]] [:error :nil]]
+    [:map [:error [:= "Missing required fields: :agent-id and :task"]]]]])
 
 (defn handle-catchup
   "Load project context from memory (axioms, conventions, decisions, KG).
@@ -76,6 +89,13 @@
        :spec   {:log-msg "[saa-fsm] Catchup failed"
                 :label "Catchup"
                 :degrade-keys {:phase :catchup :context-loaded? false}}})))
+
+(m/=> handle-catchup
+  [:=> Handler
+   [:or
+    [:map [:phase [:= :catchup]] [:context-loaded? [:= true]]
+     [:axioms :any] [:conventions :any] [:decisions :any]]
+    [:map [:phase [:= :catchup]] [:context-loaded? [:= false]] [:error :string]]]])
 
 (defn handle-silence
   "Execute Silence phase: explore codebase with read-only tools.
@@ -111,6 +131,10 @@
                 :label "Silence"
                 :degrade-keys {:phase :silence :silence-iterations iteration}}})))
 
+(m/=> handle-silence
+  [:=> Handler
+   [:map [:phase [:= :silence]] [:silence-iterations pos-int?]]])
+
 (defn handle-silence-review
   "Evaluate observations and decide if grounding is sufficient.
    EDN handler key: :silence-review"
@@ -133,6 +157,10 @@
            :phase :silence-review
            :grounding-score score
            :silence-ended (support/now-str resources))))
+
+(m/=> handle-silence-review
+  [:=> Handler
+   [:map [:phase [:= :silence-review]] [:grounding-score :double] [:silence-ended :string]]])
 
 (defn handle-abstract
   "Synthesize observations into a structured EDN plan.
@@ -178,6 +206,10 @@
                 :label "Synthesis"
                 :degrade-keys {:phase :abstract :plan nil :abstract-retries retries}}})))
 
+(m/=> handle-abstract
+  [:=> Handler
+   [:map [:phase [:= :abstract]] [:abstract-retries pos-int?] [:plan :any]]])
+
 (defn handle-validate-plan
   "Validate plan integrity: dependencies, files, waves, no cycles.
    EDN handler key: :validate-plan"
@@ -208,6 +240,10 @@
                                 :plan-valid? false
                                 :validation-errors [(str "Validation exception: " (ex-message ex))]})}})))
 
+(m/=> handle-validate-plan
+  [:=> Handler
+   [:map [:phase [:= :validate-plan]] [:plan-valid? :boolean] [:validation-errors :any]]])
+
 (defn handle-store-plan
   "Store plan in memory and optionally convert to kanban tasks.
    EDN handler key: :store-plan"
@@ -235,6 +271,11 @@
                 :log-msg "[saa-fsm] Plan storage failed"
                 :log-arg (fn [ex] {:error (ex-message ex)})
                 :delta skip}})))
+
+(m/=> handle-store-plan
+  [:=> Handler
+   [:map [:phase [:= :store-plan]] [:plan-memory-id :any]
+    [:kanban-task-ids :any] [:kg-edges-created :any]]])
 
 (defn handle-act-dispatch
   "Dispatch plan execution through the resources :dispatch-fn.
@@ -272,6 +313,10 @@
                 :label "Dispatch"
                 :degrade-keys {:phase :act-dispatch :execution-mode mode}}})))
 
+(m/=> handle-act-dispatch
+  [:=> Handler
+   [:map [:phase [:= :act-dispatch]] [:execution-mode :any]]])
+
 (defn handle-act-verify
   "Verify execution results with TDD, lint, integration checks.
    EDN handler key: :act-verify"
@@ -304,6 +349,10 @@
                                  :verification {:error (ex-message ex)}
                                  :act-ended (support/now-str resources)})}})))
 
+(m/=> handle-act-verify
+  [:=> Handler
+   [:map [:phase [:= :act-verify]] [:tests-passed? :boolean] [:verification :any] [:act-ended :string]]])
+
 
 ;; =============================================================================
 ;; Terminal State Handlers: (resources, fsm) -> result
@@ -333,6 +382,8 @@
                          :silence-iterations :abstract-retries
                          :plan-only?]))))
 
+(m/=> handle-end [:=> [:cat wfs/Resources wfs/Fsm] wfs/RunResult])
+
 (defn handle-error
   "Error state handler. Captures error context.
    EDN handler key: :error"
@@ -356,3 +407,5 @@
                        :data (select-keys data [:error :plan-valid? :validation-errors
                                                 :grounding-score :tests-passed?])
                        :error error})))))
+
+(m/=> handle-error [:=> [:cat wfs/Resources wfs/Fsm] wfs/RunResult])

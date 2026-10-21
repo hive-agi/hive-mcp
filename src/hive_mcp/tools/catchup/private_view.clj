@@ -20,7 +20,9 @@
   (:require [hive-mcp.extensions.registry :as ext]
             [hive-mcp.tools.catchup.bundle-cache :as bc]
             [hive-mcp.tools.catchup.caller :as catchup-caller]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.tools.catchup.shapes :as shapes]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -80,3 +82,41 @@
   [private? f]
   (binding [bc/*private-view* (boolean private?)]
     (f)))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def HookValue
+  "An extension value naming hooks: one fn, a collection, or anything else."
+  [:any {:gen/elements [nil "junk" 7 identity [identity "x" str] #{} '(1 2)]}])
+
+(def Hook
+  "A pre-query hook fn."
+  [:fn {:gen/elements [identity str]} fn?])
+
+(def PreQueryCtx
+  "What a pre-query hook is called with."
+  [:maybe [:map
+           [:caller-id {:optional true} [:maybe :string]]
+           [:directory {:optional true} [:maybe :string]]
+           [:project-id {:optional true} shapes/ProjectId]]])
+
+(def HookResult
+  "One hook's outcome."
+  [:or
+   [:map [:ok :any]]
+   [:map [:error :string]]
+   [:map [:timeout [:= true]]]])
+
+(def Thunk
+  "A 0-arity fn."
+  [:fn {:gen/elements [(constantly :v) (constantly nil) (constantly {:axioms []})]} ifn?])
+
+(m/=> hooks-of [:=> [:cat HookValue] [:vector Hook]])
+(m/=> run-pre-query!
+      [:function
+       [:=> [:cat PreQueryCtx] [:vector HookResult]]
+       [:=> [:cat PreQueryCtx nat-int?] [:vector HookResult]]])
+(m/=> private-view? [:=> [:cat catchup-caller/RawCallerId shapes/ProjectId] :boolean])
+(m/=> in-view [:=> [:cat [:any {:gen/schema [:maybe :boolean]}] Thunk] :any])

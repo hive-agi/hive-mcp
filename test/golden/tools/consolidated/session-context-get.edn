@@ -1,0 +1,7 @@
+{:nil
+ {:type "text", :text "Missing required field: ctx_id", :isError true},
+ :no-id
+ {:type "text", :text "Missing required field: ctx_id", :isError true},
+ :unknown
+ {:type "text",
+  :text "{\"not-found\":true,\"ctx-id\":\"m27-no-such-ctx\"}"}}
