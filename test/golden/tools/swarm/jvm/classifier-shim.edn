@@ -1,0 +1,15 @@
+{:classify-type
+ [:missing
+  "hive-agent"
+  "hive-agent.swarm.tools.jvm.classifier"
+  "classify-type"],
+ :swarm-info
+ [:missing
+  "hive-agent"
+  "hive-agent.swarm.tools.jvm.classifier"
+  "get-process-swarm-info"],
+ :find
+ [:missing
+  "hive-agent"
+  "hive-agent.swarm.tools.jvm.classifier"
+  "find-jvm-processes"]}

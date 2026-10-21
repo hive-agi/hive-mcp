@@ -1,0 +1,21 @@
+{:calls
+ {"claims" {:ns "hive-agent.swarm.logic.predicates", :var "claims"},
+  "depends-on"
+  {:ns "hive-agent.swarm.logic.predicates", :var "depends-on"},
+  "file-conflicto"
+  {:ns "hive-agent.swarm.logic.predicates", :var "file-conflicto"},
+  "reachable-fromo"
+  {:ns "hive-agent.swarm.logic.predicates", :var "reachable-fromo"},
+  "slave" {:ns "hive-agent.swarm.logic.predicates", :var "slave"},
+  "task" {:ns "hive-agent.swarm.logic.predicates", :var "task"},
+  "task-completedo"
+  {:ns "hive-agent.swarm.logic.predicates", :var "task-completedo"},
+  "task-files"
+  {:ns "hive-agent.swarm.logic.predicates", :var "task-files"},
+  "task-pendingo"
+  {:ns "hive-agent.swarm.logic.predicates", :var "task-pendingo"},
+  "would-deadlocko"
+  {:ns "hive-agent.swarm.logic.predicates", :var "would-deadlocko"}},
+ :values
+ {"Goal" "clojure.lang.PersistentVector",
+  "Lvar" "clojure.lang.Keyword"}}

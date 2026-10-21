@@ -1,0 +1,14 @@
+{:case-0 {:out "[SIGNAL: approve] LGTM", :in ("approve" "LGTM")},
+ :case-1 {:out "[SIGNAL: custom] 42", :in ("custom" 42)},
+ :case-10 {:out "[SIGNAL: custom] LGTM", :in ("custom" "LGTM")},
+ :case-11 {:out "[SIGNAL: defer] 42", :in (:defer 42)},
+ :case-2 {:out "[SIGNAL: approve] ", :in (:approve nil)},
+ :case-3 {:out "[SIGNAL: propose] ", :in (:propose nil)},
+ :case-4 {:out "[SIGNAL: sym] ", :in (sym nil)},
+ :case-5 {:out "[SIGNAL: custom] ", :in ("custom" nil)},
+ :case-6
+ {:out "[SIGNAL: counter] multi\nline", :in (:counter "multi\nline")},
+ :case-7 {:out "[SIGNAL: custom] LGTM", :in ("custom" "LGTM")},
+ :case-8
+ {:out "[SIGNAL: approve] multi\nline", :in ("approve" "multi\nline")},
+ :case-9 {:out "[SIGNAL: sym] ", :in (sym "")}}

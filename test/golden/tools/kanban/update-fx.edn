@@ -1,0 +1,127 @@
+{:to-doing-priority
+ #:kanban{:facade-update
+          {:task-id "t1",
+           :payload
+           {:content
+            {:task-type "kanban",
+             :title "T",
+             :description "d",
+             :status "doing",
+             :priority "high"},
+            :tags
+            ["priority-high" "kanban" "doing" "scope:project:p"]}},
+          :track-movement
+          {:task-id "t1",
+           :title "T",
+           :from "todo",
+           :to "doing",
+           :project-id "p"},
+          :temporal-record
+          {:entry-id "t1",
+           :op :kanban-move,
+           :data {:old-status "todo", :new-status "doing"},
+           :project-id "p"},
+          :edit-temporal-record
+          {:entry-id "t1",
+           :op :kanban-edit,
+           :data
+           {:changed ["priority"],
+            :old-title "T",
+            :new-title "T",
+            :old-priority "medium",
+            :new-priority "high"},
+           :project-id "p"}},
+ :to-done-title
+ #:kanban{:facade-update
+          {:task-id "t1",
+           :payload
+           {:content
+            {:task-type "kanban",
+             :title "T2",
+             :description "d",
+             :status "done",
+             :priority "medium"},
+            :tags
+            ["kanban" "done" "priority-medium" "scope:project:p"]}},
+          :track-movement
+          {:task-id "t1",
+           :title "T",
+           :from "todo",
+           :to "done",
+           :project-id "p"},
+          :temporal-record
+          {:entry-id "t1",
+           :op :kanban-done,
+           :data {:old-status "todo", :new-status "done"},
+           :project-id "p"},
+          :notify-done
+          {:entry
+           {:id "t1",
+            :type "note",
+            :tags
+            ["kanban" "done" "priority-medium" "scope:project:p"],
+            :content
+            {:task-type "kanban",
+             :title "T2",
+             :description "d",
+             :status "done",
+             :priority "medium"}},
+           :task-id "t1"},
+          :archive-external
+          {:entry
+           {:id "t1",
+            :type "note",
+            :tags
+            ["kanban" "done" "priority-medium" "scope:project:p"],
+            :content
+            {:task-type "kanban",
+             :title "T2",
+             :description "d",
+             :status "done",
+             :priority "medium"}},
+           :task-id "t1"},
+          :edit-temporal-record
+          {:entry-id "t1",
+           :op :kanban-edit,
+           :data
+           {:changed ["title"],
+            :old-title "T",
+            :new-title "T2",
+            :old-priority "medium",
+            :new-priority "medium"},
+           :project-id "p"}},
+ :append
+ #:kanban{:facade-update
+          {:task-id "t1",
+           :payload
+           {:content
+            {:task-type "kanban",
+             :title "T",
+             :description "d\n\nmore",
+             :status "review",
+             :priority "medium"},
+            :tags
+            ["kanban" "review" "priority-medium" "scope:project:p"]}},
+          :track-movement
+          {:task-id "t1",
+           :title "T",
+           :from "todo",
+           :to "review",
+           :project-id "p"},
+          :temporal-record
+          {:entry-id "t1",
+           :op :kanban-move,
+           :data {:old-status "todo", :new-status "review"},
+           :project-id "p"},
+          :edit-temporal-record
+          {:entry-id "t1",
+           :op :kanban-edit,
+           :data
+           {:changed ["description"],
+            :old-title "T",
+            :new-title "T",
+            :old-priority "medium",
+            :new-priority "medium"},
+           :project-id "p"}},
+ :missing-entry nil,
+ :non-kanban nil}

@@ -1,0 +1,20 @@
+{:provider-both? [true true],
+ :list-all
+ ({:id "kp-1", :status "todo"}
+  {:id "kp-2", :status "inprogress"}
+  {:id "kp-3", :status "inreview"}),
+ :list-review ["kp-3"],
+ :get
+ {:id "kp-2",
+  :title "Ship",
+  :status "inprogress",
+  :priority "medium",
+  :project "kanban-port-test",
+  :description "about Ship"},
+ :get-missing nil,
+ :move
+ {:id "kp-2", :title "Ship", :status "inreview", :priority "medium"},
+ :move-missing
+ {:error :kanban/invalid-task,
+  :message "Entry not found or not a kanban task: kp-none"},
+ :create-ok? true}

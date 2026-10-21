@@ -11,6 +11,7 @@
 #            MALLOC_ARENA_MAX (4) HIVE_MCP_SUPERVISE (1: restart on OOM kill)
 #            HIVE_MCP_MAX_RESTARTS (5) HIVE_MCP_RESTART_WINDOW (600s)
 #            HIVE_MCP_OOM_SCORE_ADJ (-500) HIVE_MCP_OOMD_PREFERENCE (avoid)
+#            HIVE_MCP_COREDUMP (0: 1 raises ulimit -c for crash forensics)
 #
 # Profile precedence: --profile flag > HIVE_PROFILE env > config.edn
 # [:system :profile] > "desktop". Unset here means config.edn decides.
@@ -117,6 +118,18 @@ export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-4}"
 
 JVM_ARGS=(-J-Xmx"$HIVE_MCP_XMX" -J-Xms"$HIVE_MCP_XMS"
           -J-XX:SoftMaxHeapSize="$HIVE_MCP_SOFT_MAX_HEAP")
+
+# ── Crash forensics ─────────────────────────────────────────────────
+# A native crash (SIGSEGV) leaves hs_err_pid<pid>.log in the project dir, but
+# a core dump only when the core limit is non-zero; most shells default to 0.
+# HIVE_MCP_COREDUMP=1 raises the soft limit as far as the hard limit allows,
+# for this JVM only. Cores go wherever /proc/sys/kernel/core_pattern says
+# (systemd-coredump: `coredumpctl list java`).
+if [[ "${HIVE_MCP_COREDUMP:-0}" == "1" ]]; then
+  ulimit -c "$(ulimit -H -c)" 2>/dev/null || true
+  echo "hive-mcp: core dumps enabled (ulimit -c $(ulimit -c))" >&2
+fi
+JVM_ARGS+=(-J-XX:+CreateCoredumpOnCrash)
 
 # ── OOM standing: the server outlives a runaway test JVM ────────────
 # Kernel OOM killer: try to lower our oom_score_adj (inherited by the JVM).

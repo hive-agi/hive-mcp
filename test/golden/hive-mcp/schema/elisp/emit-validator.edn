@@ -1,0 +1,65 @@
+{:case-0
+ {:out
+  "(defun hive-a-valid-p (W)\n  \"Validate W against hive-a schema.\"\n  (and (hive-a-p W)\n       (stringp (hive-a-name W))))",
+  :in ([:map [:name :string]] {:name "hive-a", :var "W"})},
+ :case-1
+ {:out
+  "(defun hive-b-valid-p (ENTRY)\n  \"Validate ENTRY against hive-b schema.\"\n  (and (hive-b-p entry)\n       (stringp (hive-b-name entry))))",
+  :in
+  ([:map [:name :string]]
+   {:name "hive-b",
+    :constructor nil,
+    :include nil,
+    :defaults nil,
+    :var nil})},
+ :case-2
+ {:out
+  "(defun hive-a-valid-p (ENTRY)\n  \"Validate ENTRY against hive-a schema.\"\n  (and (hive-a-p entry)\n       (stringp (hive-a-id entry))\n       (memq (hive-a-type entry) '(note snippet decision))\n       (stringp (hive-a-content entry))\n       (listp (hive-a-tags entry))))",
+  :in
+  ([:map
+    [:id :string]
+    [:type [:enum :note :snippet :decision]]
+    [:content :string]
+    [:tags [:vector :string]]]
+   {:name "hive-a", :include "aO2", :var nil})},
+ :case-3
+ {:out
+  "(defun hive-cfg-valid-p (ENTRY)\n  \"Validate ENTRY against hive-cfg schema.\"\n  (and (hive-cfg-p entry)\n       (booleanp (hive-cfg-enabled entry))\n       (or (null (hive-cfg-port entry)) (or (null (hive-cfg-port entry)) (integerp (hive-cfg-port entry))))))",
+  :in
+  ([:map [:enabled :boolean] [:port {:optional true} [:maybe :int]]]
+   {:name "hive-cfg"})},
+ :case-4
+ {:out
+  "(defun hive-a-valid-p (ENTRY)\n  \"Validate ENTRY against hive-a schema.\"\n  (and (hive-a-p entry)\n       (stringp (hive-a-id entry))\n       (memq (hive-a-type entry) '(note snippet decision))\n       (stringp (hive-a-content entry))\n       (listp (hive-a-tags entry))))",
+  :in
+  ([:map
+    [:id :string]
+    [:type [:enum :note :snippet :decision]]
+    [:content :string]
+    [:tags [:vector :string]]]
+   {:name "hive-a", :include nil})},
+ :case-5
+ {:out
+  "(defun hive-a-valid-p (MPC9)\n  \"Validate MPC9 against hive-a schema.\"\n  (and (hive-a-p mPc9)\n       (stringp (hive-a-id mPc9))\n       (memq (hive-a-type mPc9) '(note snippet decision))\n       (stringp (hive-a-content mPc9))\n       (listp (hive-a-tags mPc9))))",
+  :in
+  ([:map
+    [:id :string]
+    [:type [:enum :note :snippet :decision]]
+    [:content :string]
+    [:tags [:vector :string]]]
+   {:name "hive-a", :include "25f3", :defaults nil, :var "mPc9"})},
+ :case-6
+ {:out
+  "(defun hive-cfg-valid-p (1RQXWKK)\n  \"Validate 1RQXWKK against hive-cfg schema.\"\n  (and (hive-cfg-p 1RQxWKk)\n       (booleanp (hive-cfg-enabled 1RQxWKk))\n       (or (null (hive-cfg-port 1RQxWKk)) (or (null (hive-cfg-port 1RQxWKk)) (integerp (hive-cfg-port 1RQxWKk))))))",
+  :in
+  ([:map [:enabled :boolean] [:port {:optional true} [:maybe :int]]]
+   {:name "hive-cfg",
+    :constructor "dM1",
+    :defaults nil,
+    :var "1RQxWKk"})},
+ :case-7
+ {:out
+  "(defun hive-a-valid-p (I1OWW)\n  \"Validate I1OWW against hive-a schema.\"\n  (and (hive-a-p I1OwW)\n       (stringp (hive-a-name I1OwW))))",
+  :in
+  ([:map [:name :string]]
+   {:name "hive-a", :constructor nil, :include "y", :var "I1OwW"})}}

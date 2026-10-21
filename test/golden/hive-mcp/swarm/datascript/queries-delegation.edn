@@ -1,0 +1,40 @@
+{:calls
+ {"check-file-conflicts"
+  {:ns "hive-datascript.swarm.queries", :var "check-file-conflicts"},
+  "db-stats" {:ns "hive-datascript.swarm.queries", :var "db-stats"},
+  "dump-db" {:ns "hive-datascript.swarm.queries", :var "dump-db"},
+  "get-all-claims"
+  {:ns "hive-datascript.swarm.queries", :var "get-all-claims"},
+  "get-all-slaves"
+  {:ns "hive-datascript.swarm.queries", :var "get-all-slaves"},
+  "get-child-project-ids"
+  {:ns "hive-datascript.swarm.queries", :var "get-child-project-ids"},
+  "get-claims-for-file"
+  {:ns "hive-datascript.swarm.queries", :var "get-claims-for-file"},
+  "get-completed-tasks"
+  {:ns "hive-datascript.swarm.queries", :var "get-completed-tasks"},
+  "get-recent-claim-history"
+  {:ns "hive-datascript.swarm.queries",
+   :var "get-recent-claim-history"},
+  "get-slave" {:ns "hive-datascript.swarm.queries", :var "get-slave"},
+  "get-slave-by-kanban-task"
+  {:ns "hive-datascript.swarm.queries",
+   :var "get-slave-by-kanban-task"},
+  "get-slave-by-name"
+  {:ns "hive-datascript.swarm.queries", :var "get-slave-by-name"},
+  "get-slave-by-name-or-id"
+  {:ns "hive-datascript.swarm.queries",
+   :var "get-slave-by-name-or-id"},
+  "get-slave-ids-by-project"
+  {:ns "hive-datascript.swarm.queries",
+   :var "get-slave-ids-by-project"},
+  "get-slaves-by-project"
+  {:ns "hive-datascript.swarm.queries", :var "get-slaves-by-project"},
+  "get-slaves-by-status"
+  {:ns "hive-datascript.swarm.queries", :var "get-slaves-by-status"},
+  "get-task" {:ns "hive-datascript.swarm.queries", :var "get-task"},
+  "get-tasks-for-slave"
+  {:ns "hive-datascript.swarm.queries", :var "get-tasks-for-slave"},
+  "has-conflict?"
+  {:ns "hive-datascript.swarm.queries", :var "has-conflict?"}},
+ :values {}}

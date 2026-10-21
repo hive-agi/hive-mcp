@@ -1,0 +1,76 @@
+{:case-0
+ {:out
+  {:slave-id "s1", :spawn-mode :vterm, :status :zombie, :alive? false},
+  :in
+  ({:slave-id "s1", :spawn-mode :vterm}
+   {:emacs {:state :known, :ids #{}},
+    :live-pids #{42},
+    :live-ids #{},
+    :terminal-modes #{:vterm}})},
+ :case-1
+ {:out
+  {:slave-id "s3",
+   :status :idle,
+   :spawn-mode nil,
+   :process-pid 41,
+   :liveness :verified},
+  :in
+  ({:slave-id "s3", :status :idle, :spawn-mode nil, :process-pid 41}
+   {:emacs {:state :known, :ids #{"s3" "s1" "s2"}},
+    :live-pids #{41},
+    :live-ids #{"s1" "s2"},
+    :terminal-modes #{:vterm}})},
+ :case-2
+ {:out
+  {:slave-id "s2",
+   :status :zombie,
+   :spawn-mode :headless,
+   :alive? false},
+  :in
+  ({:slave-id "s2", :status :idle, :spawn-mode :headless}
+   {:emacs {:state :known, :ids #{"s3" "s2"}},
+    :live-pids #{},
+    :live-ids #{"s3" "s1"},
+    :terminal-modes #{:vterm}})},
+ :case-3
+ {:out {:slave-id "s1", :status :idle, :liveness :unverified},
+  :in
+  ({:slave-id "s1", :status :idle}
+   {:emacs {:state :unknown},
+    :live-pids #{41},
+    :live-ids #{},
+    :terminal-modes #{}})},
+ :case-4
+ {:out
+  {:slave-id "s3", :process-pid 42, :status :zombie, :alive? false},
+  :in
+  ({:slave-id "s3", :process-pid 42}
+   {:emacs {:state :known, :ids #{}},
+    :live-pids #{},
+    :live-ids #{"s1" "s2"},
+    :terminal-modes #{}})},
+ :case-5
+ {:out {:slave-id "s3", :status :working, :liveness :verified},
+  :in
+  ({:slave-id "s3", :status :working}
+   {:emacs {:state :known, :ids #{"s3" "s1"}},
+    :live-pids #{41},
+    :live-ids #{"s3"},
+    :terminal-modes #{:vterm}})},
+ :case-6
+ {:out {:slave-id "s1", :liveness :verified},
+  :in
+  ({:slave-id "s1"}
+   {:emacs {:state :unknown},
+    :live-pids #{41 42},
+    :live-ids #{"s1"},
+    :terminal-modes #{:vterm}})},
+ :case-7
+ {:out
+  {:slave-id "s2", :spawn-mode :vterm, :status :zombie, :alive? false},
+  :in
+  ({:slave-id "s2", :spawn-mode :vterm}
+   {:emacs {:state :unknown},
+    :live-pids #{41},
+    :live-ids #{"s3" "s1"},
+    :terminal-modes #{}})}}

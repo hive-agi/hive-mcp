@@ -1,0 +1,16 @@
+{:before
+ {:status "not-wired",
+  :message
+  "no reconcile sources installed; the live store/vector adapter is a follow-up slice"},
+ :installed
+ {:store-count 4,
+  :orphan-vector-ids ["x" "y"],
+  :nil-vector-ids 1,
+  :status "ok",
+  :unindexed-store-ids ["a" "c"],
+  :unindexed-count 3,
+  :consistent-count 1,
+  :truncated? true,
+  :consistent? false,
+  :vector-count 3,
+  :orphan-count 2}}

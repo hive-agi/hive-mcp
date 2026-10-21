@@ -1,0 +1,11 @@
+{:calls
+ {"check-pid-alive?"
+  {:ns "hive-agent.swarm.lifecycle.sweep", :var "check-pid-alive?"},
+  "sweep-on-boot!"
+  {:ns "hive-agent.swarm.lifecycle.sweep", :var "sweep-on-boot!"},
+  "sweep-once!"
+  {:ns "hive-agent.swarm.lifecycle.sweep", :var "sweep-once!"}},
+ :values
+ {"LivenessSignal" "clojure.lang.PersistentVector",
+  "SweepResult" "clojure.lang.PersistentVector",
+  "default-stale-threshold-ms" nil}}

@@ -1,0 +1,15 @@
+{:present nil,
+ :never-left nil,
+ :departed {:addon :hive.carto, :root "carto"},
+ :run-present {:ran "memory add", :handlers ("kg" "memory")},
+ :old-gone
+ {:type "text",
+  :text
+  "Subdomain 'olds' is not loaded on this server: it left with addon :hive.old Ns ago and has not returned. Valid commands now: kg, memory",
+  :isError true},
+ :reload-timeout
+ {:type "text",
+  :text
+  "Subdomain 'carto' is reloading (addon :hive.carto remount in progress), so 'carto scan' is temporarily unregistered on this instance. Retryable: retry this call in a few seconds. If it persists, the subdomain is not loaded on this server. Valid commands now: kg, memory",
+  :isError true},
+ :returns {:ran "carto scan", :handlers ("carto" "kg" "memory")}}
