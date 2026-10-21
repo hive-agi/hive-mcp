@@ -1145,7 +1145,7 @@
       (is (not (contains? enum "wave")))
       (is (contains? enum "magit"))
       (is (contains? enum "analysis"))
-      (is (contains? enum "agora"))
+      (is (not (contains? enum "agora")) "agora is reached through swarm agora, not as a multi leaf")
       (is (contains? enum "olympus"))
       (is (contains? enum "project"))
       (is (contains? enum "session"))
