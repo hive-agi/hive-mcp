@@ -1,0 +1,36 @@
+{:case-0
+ {:out
+  {:adt/variant :scope/auto, :adt/type :ScopeFilter, :project-id nil},
+  :in (nil nil)},
+ :case-1
+ {:out
+  {:adt/variant :scope/project,
+   :adt/type :ScopeFilter,
+   :project-id "p1"},
+  :in ("p1" "global")},
+ :case-2
+ {:out
+  {:adt/variant :scope/auto, :adt/type :ScopeFilter, :project-id nil},
+  :in (nil nil)},
+ :case-3
+ {:out
+  {:adt/variant :scope/auto, :adt/type :ScopeFilter, :project-id "p2"},
+  :in (nil "p2")},
+ :case-4
+ {:out
+  {:adt/variant :scope/project,
+   :adt/type :ScopeFilter,
+   :project-id "p1"},
+  :in ("p1" nil)},
+ :case-5
+ {:out
+  {:adt/variant :scope/auto, :adt/type :ScopeFilter, :project-id nil},
+  :in (nil nil)},
+ :case-6
+ {:out
+  {:adt/variant :scope/auto, :adt/type :ScopeFilter, :project-id nil},
+  :in (nil nil)},
+ :case-7
+ {:out
+  {:adt/variant :scope/auto, :adt/type :ScopeFilter, :project-id nil},
+  :in (nil nil)}}
