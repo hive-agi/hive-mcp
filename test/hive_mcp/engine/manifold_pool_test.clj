@@ -5,7 +5,8 @@
    side-effecting and JVM-global; only one test in this ns actually runs
    `boot!`, and it asserts idempotency rather than re-installation."
   (:require [clojure.test :refer [deftest testing is]]
-            [hive-mcp.engine.manifold-pool :as mp]))
+            [hive-mcp.engine.manifold-pool :as mp]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -34,6 +35,17 @@
     (let [n (mp/resolve-max-threads {})]
       (is (pos? n))
       (is (>= n 64)))))
+
+(deftrifecta-from-schema resolve-max-threads-explicit-positive-wins
+  #'mp/resolve-max-threads
+  ;; Only positive explicit values are generated: a non-positive or absent
+  ;; one falls through to env / sys-prop / CPU count, which would make the
+  ;; golden host-specific. That fall-through is pinned by the deftests above.
+  {:in [:cat [:map [:max-threads [:int {:min 1 :max 4096}]]]]
+   :out [:int {:min 1}]
+   :rel (fn [[{:keys [max-threads]}] out] (= max-threads out))
+   :golden-path "test/golden/engine/manifold-pool-resolve-max-threads.edn"
+   :num-tests 200})
 
 (deftest boot-is-idempotent
   (testing "second boot! returns nil and leaves the first pool in place"
