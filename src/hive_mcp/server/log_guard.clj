@@ -96,6 +96,13 @@
     (.addShutdownHook (Runtime/getRuntime) hook)
     hook))
 
+(def HookThread
+  "A shutdown-hook thread."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (Thread. ^Runnable (fn [])))}
+   #(instance? Thread %)])
+
+(m/=> register-close-on-shutdown! [:=> [:cat [:sequential sink/Sink] :int] HookThread])
+
 ;; =============================================================================
 ;; Embedding warnings -> file
 ;; =============================================================================

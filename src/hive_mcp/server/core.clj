@@ -57,7 +57,7 @@
            (log-sink/file-line-writer
             (io/file (.getParentFile ^java.io.File (log-sink/file-path)) "embeddings.log"))))))
 
-(defn install-log-files!
+(defn- install-log-files!
   "Production wiring, called from -main: route embedding warnings to
    embeddings.log, and close both file sinks in a JVM shutdown hook. Those
    sinks call libc through JNA on daemon threads; closing them first means no
@@ -71,8 +71,6 @@
                    :async? false
                    :fn (log-guard/ns-warn-appender-fn embed ["hive-mcp.embeddings."])}}})
     (log-guard/register-close-on-shutdown! [file-sink embed] 2000)))
-
-(m/=> install-log-files! [:=> [:cat] [:fn #(instance? Thread %)]])
 
 (defn register-coordinator-file!
   "Install the boot-only file appender over an injected asynchronous sink."
