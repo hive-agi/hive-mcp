@@ -261,6 +261,12 @@
                    eids)]
     (pull-edge-batch (cond->> in-scope limit (take limit)))))
 
+(m/=> get-oldest-verified-edges
+     [:=> [:cat [:? [:maybe [:map
+                             [:scope {:optional true} [:maybe es/Scope]]
+                             [:limit {:optional true} [:maybe nat-int?]]]]]]
+      [:vector es/Edge]])
+
 (defn count-edges
   "Count total edges, optionally filtered by scope.
    Uses aggregate query — does not load all edges into memory."

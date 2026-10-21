@@ -158,6 +158,8 @@
   [attr]
   (avet/attr-values-ascending (ensure-store!) attr))
 
+(m/=> attr-values-ascending [:=> [:cat :keyword] [:sequential [:tuple :int :any]]])
+
 (defn db-snapshot
   "Get the current database snapshot.
    Delegates to the active store."
