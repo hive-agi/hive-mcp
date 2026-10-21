@@ -1,0 +1,30 @@
+{:no-command
+ [false
+  {:ok true,
+   :command "help",
+   :result "events tool — hive-agent observability surface"}],
+ :help
+ [false
+  {:ok true,
+   :command "help",
+   :result "events tool — hive-agent observability surface"}],
+ :non-string
+ {:ok true,
+  :command "help",
+  :result "events tool — hive-agent observability surface"},
+ :unknown
+ [true
+  {:ok false,
+   :command "bogus",
+   :error
+   "Unknown command: bogus. Valid: disable, dump, enable, help, register-handler, stats, tail, unreg-fx",
+   :result nil}],
+ :stats-no-id
+ {:ok false,
+  :command "stats",
+  :error "Missing :agent-id",
+  :result nil},
+ :tail-no-id
+ {:ok false, :command "tail", :error "Missing :agent-id", :result nil},
+ :unreg-no-id
+ {:ok false, :command "unreg-fx", :error "Missing :fx-id", :result nil}}
