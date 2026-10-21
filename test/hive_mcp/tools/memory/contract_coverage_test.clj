@@ -7,7 +7,9 @@
    carries an m/=> contract; there are no exemptions.
 
    Also the facets of the search pure helpers and the memory batch runner."
-  (:require [clojure.test :refer [deftest is]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is]]
+
             [hive-mcp.batch :as batch]
             [hive-mcp.tools.memory.batch :as mbatch]
             [hive-mcp.tools.memory.schema :as ms]

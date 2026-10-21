@@ -1,6 +1,8 @@
 (ns hive-mcp.tools.memory.scope-contract-test
   "Contract facets for hive-mcp.tools.memory.scope (pure scope-tag helpers)."
-  (:require [clojure.test :refer [deftest is]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is]]
+
             [hive-mcp.memory.domain :as domain]
             [hive-mcp.tools.memory.schema :as ms]
             [hive-mcp.tools.memory.scope :as scope]
@@ -21,7 +23,11 @@
    :rel (fn [[tags old new] out]
           (and (= 1 (count (filter #{new} out)))
                (= new (peek out))
-               (not-any? #{old} (butlast out))))
+               (not-any? #{old} (butlast out))
+               (= (seq (remove (set [old new]) tags)) (butlast out))))
+
+
+
    :golden-path "test/golden/hive-mcp/tools/memory/retag-scope.edn"
    :num-tests 200})
 
