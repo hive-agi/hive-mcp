@@ -3,8 +3,14 @@
    same-named var of hive-agent.swarm.hivemind.conversation. Offline (no
    swarm library, this tree) a call raises addon-missing naming the var it
    reached for; the golden, property and mutants pin that. The protocol
-   itself is driven in test-swarm/ (conversation_round_trip_test)."
-  (:require [clojure.test.check.clojure-test :refer [defspec]]
+   itself is driven in test-swarm/ (conversation_round_trip_test).
+
+   clojure.core.async is required BEFORE the shim on purpose: the shim's
+   Chan schema names clojure.core.async/promise-chan in a :gen/fmap without
+   requiring it (pre-existing, src unchanged), so a JVM that loads the shim
+   first fails to compile it."
+  (:require [clojure.core.async]
+            [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.properties :as prop]
             [hive-mcp.hivemind.conversation]
             [hive-mcp.test.shim-facets :as sf]
