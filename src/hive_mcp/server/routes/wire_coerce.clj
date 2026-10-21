@@ -53,6 +53,16 @@
   (let [t (when (map? prop) (or (:type prop) (get prop "type")))]
     (when (string? t) t)))
 
+(def InputSchema
+  "A tool's JSON-schema inputSchema as read here: its :properties (or
+   \"properties\"), keyed by name. Anything else declares no scalars."
+  [:maybe [:map [:properties {:optional true}
+                 [:maybe [:map-of [:or :string :keyword] :any]]]]])
+
+(def HandlerFn
+  "A tool handler or a text decoder."
+  [:fn {:gen/elements [identity]} ifn?])
+
 (defn scalar-spec
   "{param-name decoder} for every property of INPUT-SCHEMA declaring a single
    integer / number / boolean type. Names are strings, whatever the schema's
@@ -65,6 +75,8 @@
                   (when-let [decode (decoders (declared-type prop))]
                     [(name k) decode])))
           props)))
+
+(m/=> scalar-spec [:=> [:cat InputSchema] [:map-of :string HandlerFn]])
 
 (defn- coerce-with-spec [spec params]
   (if (or (empty? spec) (not (map? params)))
@@ -94,5 +106,7 @@
     (if (empty? spec)
       handler
       (fn [args] (handler (coerce-with-spec spec args))))))
+
+(m/=> wrap-handler-wire-coerce [:=> [:cat HandlerFn InputSchema] HandlerFn])
 
 (m/=> coerce-wire-params [:=> [:cat :any :any] :any])
