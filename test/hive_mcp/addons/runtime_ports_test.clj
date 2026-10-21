@@ -25,7 +25,10 @@
     :emacs/tasks-for-ling-fn
     :emacs/fail-task-fn
     :emacs/release-claims-fn
-    :emacs/update-ling-fn})
+    :emacs/update-ling-fn
+    :terminal/register!
+    :terminal/deregister!
+    :catchup/spawn-context})
 
 (deftest composition-root-exposes-callable-adapters
   (let [ports (runtime-ports/runtime-ports)]
@@ -101,3 +104,16 @@
            @calls))
     (testing "an unknown ling is nil, not an error"
       (is (nil? ((:emacs/lookup-ling-fn (runtime-ports/emacs-ling-ports (constantly nil))) "zz"))))))
+
+(deftest terminal-ports-route-to-the-host-registries
+  (let [calls   (atom [])
+        call-fn (fn [sym & args] (swap! calls conj (into [sym] args)) {:registered? true})
+        ports   (runtime-ports/terminal-ports call-fn)
+        term    (Object.)]
+    (is (= {:registered? true} ((:terminal/register! ports) :claude term)))
+    ((:terminal/deregister! ports) :claude)
+    ((:catchup/spawn-context ports) "/w")
+    (is (= [['hive-mcp.agent.ling.terminal-registry/register-terminal! :claude term]
+            ['hive-mcp.agent.ling.terminal-registry/deregister-terminal! :claude]
+            ['hive-mcp.tools.catchup/spawn-context "/w"]]
+           @calls))))
