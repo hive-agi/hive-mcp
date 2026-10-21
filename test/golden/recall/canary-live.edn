@@ -1,0 +1,65 @@
+{:ensure-created
+ {:anchor "fx-1",
+  :superseded "fx-2",
+  :current "fx-3",
+  :created [:anchor :superseded :current],
+  :linked? true},
+ :run-no-store
+ {:ok? false,
+  :ran 3,
+  :passed 0,
+  :faults [:recall/no-collections-configured],
+  :skipped
+  [{:label :lexical-anchor,
+    :reason "no :default IMemoryStore registered"}
+   {:label :supersession,
+    :reason "no :default IMemoryStore registered"}]},
+ :carto
+ {:tag
+  {:label :carto-tag,
+   :status :skipped,
+   :reason "hive-carto not loaded"},
+  :semantic
+  {:label :carto-semantic,
+   :status :skipped,
+   :reason "hive-carto not loaded"}},
+ :ensure-found
+ {:anchor "seeded-anchor",
+  :superseded "seeded-superseded",
+  :current "seeded-current",
+  :created [],
+  :linked? true},
+ :supersession
+ {:no-ids
+  {:label :supersession,
+   :status :skipped,
+   :reason "supersession fixtures absent"},
+  :not-linked
+  {:label :supersession,
+   :status :skipped,
+   :reason "supersedes edge could not be written"}},
+ :fresh-calls
+ [[:query ["recall-canary" "recall-canary-anchor"]]
+  [:query ["recall-canary" "recall-canary-superseded"]]
+  [:query ["recall-canary" "recall-canary-current"]]
+  [:add "note" "permanent" "hive"]
+  [:add "note" "permanent" "hive"]
+  [:add "note" "permanent" "hive"]],
+ :run-carto
+ {:ok? false,
+  :ran 5,
+  :passed 0,
+  :faults [:recall/no-collections-configured],
+  :skipped
+  [{:label :carto-semantic, :reason "hive-carto not loaded"}
+   {:label :carto-tag, :reason "hive-carto not loaded"}
+   {:label :lexical-anchor,
+    :reason "no :default IMemoryStore registered"}
+   {:label :supersession,
+    :reason "no :default IMemoryStore registered"}]},
+ :dimension :fault,
+ :anchor-absent
+ {:label :lexical-anchor,
+  :status :skipped,
+  :reason "anchor fixture absent and could not be written"},
+ :seeded-writes 0}
