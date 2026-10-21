@@ -9,16 +9,19 @@
             [hive-schemas.test :refer [deftrifecta-from-schema]]
             [hive-test.golden :as golden]
             [malli.core :as m]
-            [malli.generator :as mg]))
+            [malli.generator :as mg]
+            [hive-spi.kanban.registry :as lib-kreg]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-(defn- own-providers [f]
-  (let [prior @@#'kreg/-providers]
+(defn- own-providers
+  "The shim keeps no table; the provider table it drives is the library's."
+  [f]
+  (let [prior @@#'lib-kreg/-providers]
     (try (kreg/reset-providers!) (f)
-         (finally (kreg/reset-providers!) (reset! @#'kreg/-providers prior)))))
+         (finally (kreg/reset-providers!) (reset! @#'lib-kreg/-providers prior)))))
 
 (use-fixtures :each own-providers)
 

@@ -1,16 +1,16 @@
 (ns hive-mcp.tools.kanban.port
-  "Core's provider for the kanban ports (hive-mcp.spi.kanban).
+  "Core's provider for the kanban ports (hive-spi.kanban).
 
    `CoreKanban` implements IKanbanRead and IKanbanWrite over the kanban
    domain (list plan, facade, move event bus, create handler) and speaks the
    port's public status vocabulary. `register!` installs it under
-   :IKanbanRead and :IKanbanWrite in hive-mcp.spi.kanban.registry; consumers
+   :IKanbanRead and :IKanbanWrite in hive-spi.kanban.registry; consumers
    resolve the provider through that registry on every call."
   (:require [clojure.data.json :as json]
             [clojure.set :as set]
             [clojure.string :as str]
-            [hive-mcp.spi.kanban :as kanban]
-            [hive-mcp.spi.kanban.registry :as registry]
+            [hive-spi.kanban :as kanban]
+            [hive-spi.kanban.registry :as registry]
             [hive-dsl.result :as r :refer [rescue]]
             [hive-mcp.tools.kanban.events :as kanban-events]
             [hive-mcp.tools.kanban.predicates :as kp]

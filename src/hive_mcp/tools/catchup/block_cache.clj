@@ -1,6 +1,6 @@
 (ns hive-mcp.tools.catchup.block-cache
   "Process-wide cache for the parts of catchup that are not the memory bundle:
-   contributed blocks (hive-mcp.spi.catchup-registry), status providers
+   contributed blocks (hive-spi.catchup.registry), status providers
    (:catchup/status-providers) and the context-store refs of a bundle.
 
    The bundle has its own cache (`bundle-cache`). Before this namespace, every
@@ -27,7 +27,8 @@
             [hive-mcp.tools.catchup.bundle-cache :as bundle-cache]
             [hive-mcp.channel.context-store :as context-store]
             [hive-mcp.dns.result :refer [rescue rescue-log]]
-            [clojure.tools.logging :as log])
+            [clojure.tools.logging :as log]
+            [hive-spi.catchup.registry :as blocks])
   (:import [java.lang.ref WeakReference]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -166,6 +167,20 @@
   (if-let [policy (block-policy block)]
     (cached (block-key block policy ctx) policy #((:block/fn block) ctx))
     ((:block/fn block) ctx)))
+
+(defn compose
+  "Run every block registered in hive-spi.catchup.registry against CTX in
+   :block/order, each through `run-block` so a block that opts in is served
+   from this cache. Returns {:blocks {id value} :failed {id message}}: a block
+   that throws lands in :failed and never aborts the others."
+  [ctx]
+  (reduce (fn [acc {:block/keys [id] :as block}]
+            (try
+              (assoc-in acc [:blocks id] (run-block block ctx))
+              (catch Throwable t
+                (assoc-in acc [:failed id] (or (ex-message t) (str (class t)))))))
+          {:blocks {} :failed {}}
+          (blocks/registered-blocks)))
 
 (defn run-status-provider
   "Run status provider K (fn [project-id]) for PROJECT-ID through the cache."

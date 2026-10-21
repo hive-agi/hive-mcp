@@ -4,7 +4,7 @@
    status providers, and shared context-store refs. No store."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.tools.catchup.block-cache :as bc]
-            [hive-mcp.spi.catchup-registry :as blocks]
+            [hive-spi.catchup.registry :as blocks]
             [hive-mcp.events.write-events :as write-events]
             [hive-mcp.channel.context-store :as context-store])
   (:import [java.util.concurrent CountDownLatch TimeUnit]))
@@ -120,10 +120,10 @@
   (let [computes (atom 0)]
     (try
       (blocks/register-block! (counting-block computes true))
-      (dotimes [_ 5] (blocks/compose {:project-id "p"} bc/run-block))
+      (dotimes [_ 5] (bc/compose {:project-id "p"}))
       (is (= 1 @computes))
       (blocks/compose {:project-id "p"})
-      (is (= 2 @computes) "the 1-arity compose stays uncached")
+      (is (= 2 @computes) "the library's compose stays uncached")
       (finally (blocks/unregister-block! :probe)))))
 
 ;; =============================================================================

@@ -1,6 +1,6 @@
 (ns hive-mcp.scheduler.dag-waves
   "DAGWave scheduler for dependency-ordered task dispatch."
-  (:require [hive-mcp.spi.kanban.registry :as kanban-port]
+  (:require [hive-spi.kanban.registry :as kanban-port]
             [hive-mcp.dns.result :as result]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [hive-mcp.agent.ling :as ling]

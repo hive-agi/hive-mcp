@@ -1,9 +1,9 @@
 (ns hive-mcp.tools.kanban.catchup-block-test
   "The kanban catchup block: bucket counts and recent todos for a project,
-   contributed through hive-mcp.spi.catchup-registry so catchup composes it
+   contributed through hive-spi.catchup.registry so catchup composes it
    without naming the kanban domain."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
-            [hive-mcp.spi.catchup-registry :as blocks]
+            [hive-spi.catchup.registry :as blocks]
             [hive-mcp.test.stub.memory-store :as mem-stub]
             [hive-mcp.tools.kanban.catchup-block :as sut]
             [hive-spi.memory.registry :as sreg]))
