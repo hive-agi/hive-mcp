@@ -37,6 +37,30 @@
 
 (m/=> resolve-soft [:=> [:cat :symbol] [:maybe ifn?]])
 
+(def ^:private miss-retry-ms
+  "How long `resolve-cached` remembers a miss before it tries the symbol again."
+  10000)
+
+(defonce ^:private cache (atom {}))
+
+(defn resolve-cached
+  "As `resolve-soft`, remembered per symbol and resolver. A hit is kept: the
+   var follows reloads of its namespace. A miss is tried again only after
+   `miss-retry-ms`, so a namespace that loads later is still found. For a
+   per-request path, where an absent namespace would otherwise cost a failed
+   load on every call."
+  [sym]
+  (let [k   [*resolve* sym]
+        now (System/currentTimeMillis)
+        {:keys [hit retry-at]} (get @cache k)]
+    (if (or hit (and retry-at (< now (long retry-at))))
+      hit
+      (let [v (resolve-soft sym)]
+        (swap! cache assoc k (if v {:hit v} {:retry-at (+ now miss-retry-ms)}))
+        v))))
+
+(m/=> resolve-cached [:=> [:cat :symbol] [:maybe ifn?]])
+
 (defn host-or
   "Call the host function SYM with ARGS when its namespace loads; otherwise
    call FALLBACK with no arguments. Only the resolution is guarded: a throw
