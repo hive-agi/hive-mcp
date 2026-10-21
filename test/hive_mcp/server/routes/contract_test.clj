@@ -45,7 +45,7 @@
    :exempt {}})
 
 (deftest the-gate-is-not-vacuous
-  (is (= 44  (count (:universe (coverage/coverage {:paths batch-paths}))))))
+  (is (= 46 (count (:universe (coverage/coverage {:paths batch-paths}))))))
 
 (deftest every-routes-contract-generates-both-sides
   (doseq [ns-sym '[hive-mcp.server.routes hive-mcp.server.routes.async-ack
