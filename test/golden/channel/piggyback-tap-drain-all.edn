@@ -1,0 +1,8 @@
+[[:inbox-only
+  "\n---INBOX---\n{:tell [{:event-type :conversation/tell, :from \"coord\", :message \"hi\"}], :ask [{:event-type :conversation/ask, :from \"coord\", :ask-id \"q1\", :question \"ok?\"}]}\n---/INBOX---"]
+ [:inbox-drained nil]
+ [:catchup-only
+  "\n---AXIOMS---\nremember the axiom\n---/AXIOMS---\n---KANBAN-HINTS---\n{:todo 2}\n---/KANBAN-HINTS---"]
+ [:catchup-throws
+  "\n---INBOX---\n{:respond [{:event-type :conversation/respond, :ask-id \"q1\", :answer \"yes\"}]}\n---/INBOX---"]
+ [:nothing nil]]
