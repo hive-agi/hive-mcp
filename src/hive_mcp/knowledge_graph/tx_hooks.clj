@@ -12,13 +12,13 @@
    promotion), not only through one function."
   (:require [taoensso.timbre :as log]))
 
-
 (defonce ^:private hooks (atom (sorted-map)))
 
 (defn register!
-  "Register (or replace) hook `f` under keyword `id`. Returns id."
+  "Register (or replace) hook `f` under keyword `id`. `f` may be a var, so a
+   re-evaluated hook applies at once. Returns id."
   [id f]
-  {:pre [(keyword? id) (fn? f)]}
+  {:pre [(keyword? id) (ifn? f)]}
   (swap! hooks assoc id f)
   (log/info "kg tx-hook registered:" id)
   id)

@@ -26,6 +26,12 @@
   (tx-hooks/register! :x/refuse (fn [_] (throw (ex-info "refused" {:id :x}))))
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"refused" (tx-hooks/apply-hooks [edge]))))
 
+(defn tag-hook [tx] (conj tx :tagged))
+
+(deftest a-var-is-a-hook
+  (tx-hooks/register! :x/var #'tag-hook)
+  (is (= [edge :tagged] (tx-hooks/apply-hooks [edge]))))
+
 (deftest register-replaces-and-unregister-removes
   (tx-hooks/register! :x/h (fn [tx] (conj tx 1)))
   (tx-hooks/register! :x/h (fn [tx] (conj tx 2)))
