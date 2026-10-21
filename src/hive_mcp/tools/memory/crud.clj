@@ -4,14 +4,16 @@
             [hive-mcp.tools.memory.crud.query :as query]
             [hive-mcp.tools.memory.crud.retrieve :as retrieve]
             [hive-mcp.tools.memory.crud.edit :as edit]
-            [hive-mcp.tools.memory.crud.reembed :as reembed]))
+            [hive-mcp.tools.memory.crud.reembed :as reembed]
+            [hive-mcp.tools.memory.crud.add-params :as add-params]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (def handle-add
-  "Add an entry to project memory with optional KG edge creation."
-  #'write/handle-add)
+  "Add an entry to project memory with optional KG edge creation. An
+   unsupported param (embedder) is refused before anything is written."
+  (add-params/guard #'write/handle-add))
 
 (def handle-query
   "Query project memory by type with scope filtering."
