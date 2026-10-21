@@ -5,16 +5,18 @@
    `hive-mcp.swarm.delegate`. `routing` answers {fn-name target} the same
    way whether or not the addon is on the classpath:
 
-   - addon absent: each fn is CALLED and the target is read off the
-     `:swarm/addon-missing` ex-data the stand-in raises, so the table is
-     what the shim actually routes to;
+   - addon absent: each fn is CALLED with arguments generated from its own
+     contract's input schema (so the call is admitted under `mi/instrument!`
+     too), and the target is read off the `:swarm/addon-missing` ex-data
+     the stand-in raises: the table is what the shim actually routes to;
    - addon present: each fn's expected target (from `expected`) is checked
      to RESOLVE, and kept only when it does.
 
    A golden over this table pins the routing of a shim in both worlds; in
    the absent world it catches a shim pointed at the wrong var."
   (:require [hive-mcp.swarm.delegate :as delegate]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [malli.generator :as mg]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -24,6 +26,14 @@
   "Sorted names of the contracted public fns of `nsym`."
   [nsym]
   (sort (keys (get (m/function-schemas) nsym))))
+
+(defn contract-args
+  "One argument vector for `nsym`/`s`, generated (seeded) from the input
+   schema of its contract's first arity."
+  [nsym s]
+  (let [sch   (m/schema (:schema (get-in (m/function-schemas) [nsym s])))
+        arity (if (= :function (m/type sch)) (first (m/children sch)) sch)]
+    (vec (mg/generate (first (m/children arity)) {:seed 7 :size 2}))))
 
 (defn- called-target [f args]
   (try (apply f args)
@@ -37,14 +47,16 @@
 
    `addon-ns` is the namespace whose presence decides the world, `expected`
    is fn-name -> target string (read only when the addon is present), and
-   `args` is fn-name -> argument vector for the call (default [])."
+   `args` is fn-name -> argument vector for the call (default: generated
+   from the fn's contract)."
   [nsym addon-ns expected args]
   (into (sorted-map)
         (for [s (contracted-fns nsym)]
           [s (if (delegate/available? addon-ns)
                (let [t (get expected s)]
                  (if (and t (some? (requiring-resolve (symbol t)))) t [:unresolved t]))
-               (called-target (var-get (ns-resolve nsym s)) (get args s [])))])))
+               (called-target (var-get (ns-resolve nsym s))
+                              (get args s (contract-args nsym s))))])))
 
 (defn same-name-targets
   "fn-name -> \"<addon-ns>/<fn-name>\" for every contracted fn of `nsym`:

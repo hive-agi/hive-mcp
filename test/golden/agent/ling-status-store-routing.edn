@@ -1,5 +1,8 @@
-{get-ling "hive-datascript.swarm.queries/get-slave",
- get-ling-for-task
- "hive-datascript.swarm.queries/get-slave-by-kanban-task",
- interrupt-ling! "hive-datascript.swarm.queries/get-slave",
- list-lings "hive-datascript.swarm.queries/get-all-slaves"}
+{:unscoped
+ {get-ling "hive-datascript.swarm.queries/get-slave",
+  get-ling-for-task
+  "hive-datascript.swarm.queries/get-slave-by-kanban-task",
+  interrupt-ling! "hive-datascript.swarm.queries/get-slave",
+  list-lings "hive-datascript.swarm.queries/get-all-slaves"},
+ :by-project
+ {list-lings "hive-datascript.swarm.queries/get-slaves-by-project"}}

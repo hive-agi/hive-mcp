@@ -1,7 +1,8 @@
 (ns hive-mcp.agent.ling.status-test
   "Golden over what `hive-mcp.agent.ling.status` reads: each ling lookup
    goes to `hive-mcp.swarm.datascript.queries`, a shim over
-   hive-datascript, and the table pins which query each fn reaches.
+   hive-datascript, and the tables pin which query each fn reaches,
+   including both arms of `list-lings` (all slaves vs by project).
 
    The namespace has no injectable seam for the slave store (the queries
    are called directly, not through a port), so its behaviour over real
@@ -25,11 +26,18 @@
    'list-lings        (str addon "/get-all-slaves")})
 
 (def ^:private args
-  {'get-ling ["ling-f02"] 'get-ling-for-task ["task-f02"] 'interrupt-ling! ["ling-f02"]})
+  {'get-ling ["ling-f02"] 'get-ling-for-task ["task-f02"] 'interrupt-ling! ["ling-f02"]
+   'list-lings []})
 
 (deftest-golden-fn status-store-routing-golden
   "test/golden/agent/ling-status-store-routing.edn"
-  (fn [] (routing/routing 'hive-mcp.agent.ling.status addon expected args)))
+  (fn []
+    {:unscoped (routing/routing 'hive-mcp.agent.ling.status addon expected args)
+     :by-project (select-keys
+                  (routing/routing 'hive-mcp.agent.ling.status addon
+                                   (assoc expected 'list-lings (str addon "/get-slaves-by-project"))
+                                   (assoc args 'list-lings ["hive-mcp"]))
+                  ['list-lings])}))
 
 (deftest every-contracted-fn-has-an-expected-route-test
   (is (= (set (keys expected)) (set (routing/contracted-fns 'hive-mcp.agent.ling.status)))))
