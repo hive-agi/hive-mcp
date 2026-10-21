@@ -145,3 +145,12 @@
             "the index walk is nowhere near the whole graph")
         (is (zero? (:eids-by-attr c)) "no full :kg-edge/id enumeration")
         (is (zero? (:query c)) "no Datalog scan")))))
+
+(deftest unindexed-attribute-falls-back-to-a-sorted-read
+  (testing "a database whose attribute carries no :db/index (a DB created before
+            the index existed) still answers every datom in value order, rather
+            than an empty walk of an AVET index that holds nothing for it"
+    (let [ds (ds-store/create-store)]
+      (spi/ensure-conn! ds)
+      (spi/transact! ds [{:test/rank 3} {:test/rank 1} {:test/rank 2}])
+      (is (= [1 2 3] (map second (avet/attr-values-ascending ds :test/rank)))))))

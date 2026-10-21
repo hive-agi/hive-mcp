@@ -1,9 +1,0 @@
-{:tx-data
- ;; Index :kg-edge/last-verified (AVET) so the hourly edge decay can range-read
- ;; "verified before the staleness cutoff, oldest first" instead of pulling every
- ;; edge and sorting in memory (queries/get-stale-edges).
- ;; datahike enables :db/index on an existing attribute and backfills AVET at the
- ;; end of the transaction (schema/assess-schema-transition :index-backfill) - the
- ;; 001/004 note that it could not is out of date for the pinned datahike.
- ;; One-time cost on first open of an existing DB; sorts after 001 so the attr exists.
- [{:db/ident :kg-edge/last-verified :db/index true}]}
