@@ -1,0 +1,52 @@
+{:get-error
+ {:type "text",
+  :text "{:error :workflow/not-found, :id \"boom\"}",
+  :isError true},
+ :vocab-one
+ {:type "text",
+  :text
+  "{\"called\":\"describe-vocabulary\",\"args\":[\"demo\\/scan\"]}"},
+ :get
+ {:type "text",
+  :text "{\"called\":\"get-workflow\",\"args\":[\"wf-1\"]}"},
+ :run-default
+ {:type "text", :text "{\"called\":\"run\",\"args\":[\"wf-1\",{}]}"},
+ :vocab-all
+ {:type "text",
+  :text "{\"called\":\"describe-vocabulary\",\"args\":[]}"},
+ :author-str
+ {:type "text",
+  :text
+  "{\"called\":\"author\",\"args\":[{\"op\":\"par\"},{\"workflow-id\":null,\"directory\":\"\\/tmp\\/x\",\"predicates\":[]}]}"},
+ :list
+ {:type "text",
+  :text
+  "{\"called\":\"list-workflows\",\"args\":[{\"tags\":[\"ci\"],\"limit\":3}]}"},
+ :status
+ {:type "text", :text "{\"called\":\"status\",\"args\":[\"wf-1\"]}"},
+ :author-noast
+ {:type "text",
+  :text "author/register require an :ast (EDN string or map).",
+  :isError true},
+ :register
+ {:type "text",
+  :text
+  "{\"called\":\"register\",\"args\":[{\"op\":\"seq\"},{\"workflow-id\":null,\"directory\":null,\"predicates\":[]}]}"},
+ :describe
+ {:type "text",
+  :text "{\"called\":\"describe-workflow\",\"args\":[\"wf-1\"]}"},
+ :method-one
+ {:type "text",
+  :text "{\"called\":\"describe-method\",\"args\":[\"seq\"]}"},
+ :author-map
+ {:type "text",
+  :text
+  "{\"called\":\"author\",\"args\":[{\"op\":\"seq\"},{\"workflow-id\":\"w\",\"directory\":null,\"predicates\":[\"p\"]}]}"},
+ :run-opts
+ {:type "text",
+  :text "{\"called\":\"run\",\"args\":[\"wf-1\",{\"dry-run\":true}]}"},
+ :cancel
+ {:type "text",
+  :text "{\"called\":\"cancel\",\"args\":[\"wf-1\",{}]}"},
+ :method-all
+ {:type "text", :text "{\"called\":\"describe-method\",\"args\":[]}"}}
