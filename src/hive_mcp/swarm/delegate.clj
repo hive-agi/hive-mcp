@@ -82,3 +82,39 @@
 (m/=> resolve-var [:=> [:cat NsStr [:or :symbol :string]]
                    [:maybe [:fn {:gen/elements [#'clojure.core/identity]}
                             #(instance? clojure.lang.IDeref %)]]])
+
+(defn addon-outdated
+  "The ex-info a shim raises when NS-STR is on the classpath but its version
+   predates SYM: the addon is installed, just older than this host expects."
+  [ns-str sym]
+  (let [lib (first (.split ^String ns-str "\\."))]
+    (ex-info (str ns-str "/" (name sym) " is not in the " lib " on the classpath; "
+                  "it predates this host. Upgrade " lib ".")
+             {:swarm/addon-outdated true
+              :addon lib
+              :ns ns-str
+              :var (name sym)})))
+
+(def AddonOutdated
+  "The ex-info a shim raises with an addon older than the var it needs."
+  [:fn {:gen/fmap (fn [_] (ex-info "addon" {:swarm/addon-outdated true :addon "x" :ns "x.y" :var "z"}))
+        :gen/schema :nil}
+   #(and (instance? clojure.lang.ExceptionInfo %)
+         (true? (:swarm/addon-outdated (ex-data %))))])
+
+(m/=> addon-outdated [:=> [:cat NsStr [:or :symbol :keyword :string]] AddonOutdated])
+
+(defn resolve-required
+  "Like `resolve-var`, for a var a NEWER addon introduced. Present namespace
+   and var: the var. Absent namespace: the missing-var stand-in, whose call
+   raises addon-missing. Present namespace WITHOUT the var: throws
+   addon-outdated here, so an older addon is a clear error rather than a
+   call on nil."
+  [ns-str sym]
+  (or (resolve-var ns-str sym)
+      (throw (addon-outdated ns-str sym))))
+
+;; never nil: an outdated addon throws AddonOutdated instead
+(m/=> resolve-required [:=> [:cat NsStr [:or :symbol :string]]
+                        [:fn {:gen/elements [#'clojure.core/identity]}
+                         #(instance? clojure.lang.IDeref %)]])
