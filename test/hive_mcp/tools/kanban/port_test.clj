@@ -6,11 +6,13 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [malli.core :as m]
             [hive-mcp.isolation-methods]
+            [hive-mcp.tools.kanban.port :as core-port]
             [hive-spi.kanban :as kanban]
             [hive-spi.kanban.registry :as kanban-port]
             [hive-mcp.test.stub.kanban :as kport]
             [hive-mcp.test.stub.memory-store :as mem-stub]
             [hive-spi.memory.registry :as sreg]
+            [hive-test.golden :refer [deftest-golden]]
             [hive-test.isolation :as iso]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -87,3 +89,24 @@
           "a later registration is what the facade answers from")))
   (is (seq (kanban-port/list-tasks {:project-id pid}))
       "and the prior provider comes back when the double is removed"))
+
+(defn- task-view [t] (select-keys t [:id :title :status :priority :project :description]))
+
+;; Golden over what core's provider answers through each port method, read
+;; and write, on the stub store; ids a fresh create mints are not pinned.
+(deftest-golden core-provider-port-answers
+  "test/golden/tools/kanban/port-answers.edn"
+  (do (seed-board!)
+      (let [impl (core-port/register!)]
+        {:provider-both? [(satisfies? kanban/IKanbanRead impl) (satisfies? kanban/IKanbanWrite impl)]
+         :list-all       (sort-by :id (map #(select-keys % [:id :status]) (kanban/list-tasks impl {:project-id pid})))
+         :list-review    (mapv :id (kanban/list-tasks impl {:project-id pid :status "inreview"}))
+         :get            (task-view (kanban/get-task impl "kp-2"))
+         :get-missing    (kanban/get-task impl "kp-none")
+         :move           (task-view (:ok (kanban/transition! impl {:task-id "kp-2" :new-status "inreview"
+                                                                   :directory "/tmp/kanban-port-test"})))
+         :move-missing   (:err (kanban/transition! impl {:task-id "kp-none" :new-status "done"
+                                                         :directory "/tmp/kanban-port-test"}))
+         :create-ok?     (string? (get-in (kanban/create-task! impl {:title "Golden" :priority "high"
+                                                                     :directory "/tmp/kanban-port-test"})
+                                          [:ok :id]))})))
