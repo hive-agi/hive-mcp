@@ -1,0 +1,42 @@
+{:case-0 {:out nil, :in (nil {:agent {:default-async false}})},
+ :case-1
+ {:out {:name "kg", :default-async-commands #{:kg run :agent}},
+  :in
+  ({:name "kg"}
+   {"memory" {:default-async nil},
+    :agent {:default-async true},
+    :kg {:default-async #{:run}},
+    carto {:default-async nil}})},
+ :case-2
+ {:out {:default-async-commands #{:kg run}},
+  :in
+  (nil
+   {:agent {:default-async nil},
+    :kg {:default-async [:run :run :run]}})},
+ :case-3
+ {:out {:default-async-commands #{:memory :agent}},
+  :in
+  (nil
+   {:kg {:default-async nil},
+    "memory" {:default-async true},
+    :agent {:default-async true}})},
+ :case-4
+ {:out {:name "kg", :default-async-commands nil},
+  :in
+  ({:name "kg", :default-async-commands nil}
+   {:agent {:default-async false}, "memory" {:default-async nil}})},
+ :case-5
+ {:out nil,
+  :in
+  (nil
+   {:agent {:default-async false}, "memory" {:default-async nil}})},
+ :case-6
+ {:out {:default-async-commands #{:kg list :kg scan}},
+  :in
+  (nil
+   {carto {:default-async nil}, :kg {:default-async #{"scan" list}}})},
+ :case-7
+ {:out {:default-async-commands #{:agent list :agent run}},
+  :in
+  (nil
+   {:kg {:default-async false}, :agent {:default-async [list :run]}})}}
