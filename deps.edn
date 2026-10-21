@@ -187,7 +187,7 @@
 
         ;; hive-ttracking — telemetry/timing (timed-query, track*, bench*).
         ;; Consumed by catchup.clj and siblings (bundle/hydration/hierarchy).
-        io.github.hive-agi/hive-ttracking {:mvn/version "0.1.24"}
+        io.github.hive-agi/hive-ttracking {:mvn/version "0.2.2"}
 
         ;; hive-system — system-level abstractions (IProcess, INetwork,
         ;; process liveness, secrets, shell, redaction).
