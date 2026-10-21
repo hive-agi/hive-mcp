@@ -27,6 +27,14 @@
 
 (m/=> validate-node-id [:=> [:cat ks/NodeIdArg :string] [:maybe ks/NodeIdError]])
 
+(defn refuse-node-id
+  "validate-node-id's refusal as an MCP error result (:isError true), or nil
+   for an id the handler may use. Handlers return this, never the bare map."
+  [node-id param-name]
+  (some-> (validate-node-id node-id param-name) :error mcp-error))
+
+(m/=> refuse-node-id [:=> [:cat ks/NodeIdArg :string] [:maybe ks/NodeIdRefusal]])
+
 (defn parse-relations-filter
   "Parse relations filter from string or array to set of keywords."
   [relations]
@@ -65,7 +73,7 @@
   [{:keys [start_node direction relations max_depth scope]}]
   (log/info "kg_traverse" {:start start_node :direction direction})
   (try
-    (or (validate-node-id start_node "start_node")
+    (or (refuse-node-id start_node "start_node")
         (let [dir-kw (case direction
                        (:incoming "incoming") :incoming
                        (:both "both")         :both
@@ -100,7 +108,7 @@
   [{:keys [node_id max_depth scope]}]
   (log/info "kg_impact_analysis" {:node node_id})
   (try
-    (or (validate-node-id node_id "node_id")
+    (or (refuse-node-id node_id "node_id")
         (let [opts (cond-> {}
                      max_depth (assoc :max-depth max_depth)
                      scope (assoc :scope scope))
@@ -124,8 +132,8 @@
   [{:keys [from_node to_node direction relations max_depth scope]}]
   (log/info "kg_find_path" {:from from_node :to to_node})
   (try
-    (or (validate-node-id from_node "from_node")
-        (validate-node-id to_node "to_node")
+    (or (refuse-node-id from_node "from_node")
+        (refuse-node-id to_node "to_node")
         (let [dir-kw (case direction
                        (:outgoing "outgoing") :outgoing
                        (:incoming "incoming") :incoming
@@ -198,7 +206,7 @@
   [{:keys [node_id]}]
   (log/info "kg_node_context" {:node node_id})
   (try
-    (or (validate-node-id node_id "node_id")
+    (or (refuse-node-id node_id "node_id")
         (let [result (queries/get-node-context node_id)]
           (mcp-json {:success true
                      :node-id node_id

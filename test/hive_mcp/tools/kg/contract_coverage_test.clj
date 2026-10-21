@@ -25,8 +25,8 @@
 
 (deftest tools-kg-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths [kg-dir]})]
-    (is (= 27 (count (:universe report))) "every public defn of tools/kg")
-    (is (= 27 (count (:covered report))))))
+    (is (= 28 (count (:universe report))) "every public defn of tools/kg")
+    (is (= 28 (count (:covered report))))))
 
 (deftest every-tools-kg-contract-generates-both-sides
   (doseq [ns-sym kg-nss

@@ -24,7 +24,7 @@
   ([node-ids scope]
    (if (empty? node-ids)
      {}
-     (let [ids-vec (vec (distinct node-ids))
+     (let [ids-vec (vec (distinct (seq node-ids)))
            base-q '[:find [(pull ?e [*]) ...]
                     :in $ [?from ...]
                     :where [?e :kg-edge/from ?from]]
@@ -49,7 +49,7 @@
   ([node-ids scope]
    (if (empty? node-ids)
      {}
-     (let [ids-vec (vec (distinct node-ids))
+     (let [ids-vec (vec (distinct (seq node-ids)))
            base-q '[:find [(pull ?e [*]) ...]
                     :in $ [?to ...]
                     :where [?e :kg-edge/to ?to]]
@@ -71,7 +71,7 @@
   ([db node-ids scope]
    (if (empty? node-ids)
      {}
-     (let [ids-vec (vec (distinct node-ids))
+     (let [ids-vec (vec (distinct (seq node-ids)))
            base-q '[:find [(pull ?e [*]) ...]
                     :in $ [?from ...]
                     :where [?e :kg-edge/from ?from]]
@@ -92,7 +92,7 @@
   ([db node-ids scope]
    (if (empty? node-ids)
      {}
-     (let [ids-vec (vec (distinct node-ids))
+     (let [ids-vec (vec (distinct (seq node-ids)))
            base-q '[:find [(pull ?e [*]) ...]
                     :in $ [?to ...]
                     :where [?e :kg-edge/to ?to]]
@@ -115,7 +115,7 @@
   [entry-ids]
   (if (empty? entry-ids)
     {}
-    (let [ids-vec (vec (distinct entry-ids))
+    (let [ids-vec (vec (distinct (seq entry-ids)))
           ids-set (set ids-vec)
           ;; Single query for all outgoing co-access edges from any of the IDs
           outgoing-q '[:find [(pull ?e [*]) ...]

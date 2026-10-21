@@ -117,7 +117,7 @@
     (is (fn? cmd/with-kg-flush))
     ;; Validation failures still return an error envelope without throwing —
     ;; the wrapped flush is a cheap no-op when nothing was enqueued.
-    (is (some? (:error (cmd/handle-kg-add-edge {}))) "add-edge {} → bare :error envelope")
+    (is (:isError (cmd/handle-kg-add-edge {}))      "add-edge {} → mcp-error envelope")
     (is (:isError (cmd/handle-kg-promote {}))        "promote {} → mcp-error envelope")))
 
 ;; =============================================================================
