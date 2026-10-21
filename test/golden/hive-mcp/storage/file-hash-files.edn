@@ -1,0 +1,16 @@
+{:hello
+ {:hash
+  "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+  :exists? true},
+ :cached true,
+ :changed
+ {:hash
+  "d67e2e944994496c8d8ec76eed0cf9f09679448d584b532bebf941852a37f5ed",
+  :exists? true},
+ :empty
+ {:hash
+  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  :exists? true},
+ :absent {:exists? false},
+ :nil {:exists? false},
+ :clear {}}

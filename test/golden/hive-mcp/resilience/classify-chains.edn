@@ -1,0 +1,58 @@
+[{:chain ["IOException: eof"],
+  :class
+  {:adt/variant :err/transient, :adt/type :ErrorClass, :message "eof"}}
+ {:chain ["ExceptionInfo: Milvus code=1804"],
+  :class
+  {:adt/variant :err/schema-mismatch,
+   :adt/type :ErrorClass,
+   :message "dim"}}
+ {:chain ["ExceptionInfo: auth"],
+  :class
+  {:adt/variant :err/auth, :adt/type :ErrorClass, :message "HTTP 401"}}
+ {:chain
+  ["ExecutionException: wrapped"
+   "RuntimeException: wrapped"
+   "RuntimeException: wrapped"
+   "RuntimeException: something else"],
+  :class
+  {:adt/variant :err/unknown,
+   :adt/type :ErrorClass,
+   :message "wrapped"}}
+ {:chain ["RuntimeException: Broken pipe"],
+  :class
+  {:adt/variant :err/transient,
+   :adt/type :ErrorClass,
+   :message "Broken pipe"}}
+ {:chain ["ExceptionInfo: wrapped" "ExceptionInfo: too large"],
+  :class
+  {:adt/variant :err/validation,
+   :adt/type :ErrorClass,
+   :message "too large"}}
+ {:chain
+  ["ExecutionException: wrapped"
+   "ExecutionException: wrapped"
+   "RuntimeException: wrapped"
+   "ExceptionInfo: auth"],
+  :class
+  {:adt/variant :err/auth, :adt/type :ErrorClass, :message "HTTP 401"}}
+ {:chain
+  ["ExecutionException: wrapped"
+   "RuntimeException: wrapped"
+   "RuntimeException: wrapped"
+   "ExceptionInfo: auth"],
+  :class
+  {:adt/variant :err/auth, :adt/type :ErrorClass, :message "HTTP 401"}}
+ {:chain ["ExecutionException: wrapped" "ExceptionInfo: too large"],
+  :class
+  {:adt/variant :err/validation,
+   :adt/type :ErrorClass,
+   :message "too large"}}
+ {:chain
+  ["ExceptionInfo: wrapped"
+   "RuntimeException: wrapped"
+   "RuntimeException: wrapped"
+   "ExceptionInfo: transport drop"],
+  :class
+  {:adt/variant :err/transient,
+   :adt/type :ErrorClass,
+   :message "transport drop"}}]

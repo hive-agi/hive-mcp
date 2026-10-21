@@ -8,7 +8,9 @@
    - Error isolation (individual failures don't crash cycle)
    - Config reading"
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
-            [hive-mcp.scheduler.decay :as decay]))
+            [hive-mcp.scheduler.decay :as decay]
+            [hive-test.golden :refer [deftest-golden]]
+            [malli.core :as m]))
 
 ;; =============================================================================
 ;; Fixtures
@@ -172,3 +174,40 @@
       (is (pos? (:cycle-count s)) "should have cycle count > 0")
       (is (some? (:last-run s)) "should have last-run timestamp")
       (is (map? (:last-result s)) "should have last-result summary"))))
+
+;; =============================================================================
+;; Golden: the deterministic projection of a cycle. The memory and edge passes
+;; reach concrete namespaces through requiring-resolve (no injectable port),
+;; so their stats depend on the JVM's stores and are projected to "is a map".
+;; Every gated pass is driven through both of its arms; :cycle-number,
+;; :duration-ms and :timestamp are clock / counter values and are projected to
+;; their contract shape, never their value.
+;; =============================================================================
+
+(defn- project-cycle [r]
+  {:keys            (vec (sort (keys r)))
+   :valid?          (m/validate decay/DecayCycleResult r)
+   :memory-is-map?  (map? (:memory-stats r))
+   :edge-is-map?    (map? (:edge-stats r))
+   :disc-stats      (if (:skipped (:disc-stats r)) (:disc-stats r) :ran)
+   :grounding-stats (if (:skipped (:grounding-stats r)) (:grounding-stats r) :ran)
+   :canary-stats    (if (:skipped (:canary-stats r)) (:canary-stats r) :ran)})
+
+(deftest-golden decay-cycle-projection-golden
+  "test/golden/hive-mcp/scheduler/decay-cycle-projection.edn"
+  (let [base {:memory-limit 1 :edge-limit 1 :grounding-limit 1}
+        a    (decay/run-decay-cycle! (assoc base :disc-enabled false :grounding-enabled false
+                                            :canary-enabled false))
+        b    (decay/run-decay-cycle! (assoc base :disc-enabled false :grounding-enabled false
+                                            :canary-enabled false))]
+    {:all-gated-off   (project-cycle a)
+     :counter-steps   (= (inc (:cycle-number a)) (:cycle-number b))
+     :disc-only-off   (select-keys (project-cycle
+                                    (decay/run-decay-cycle! (assoc base :disc-enabled false
+                                                                   :canary-enabled false)))
+                                   [:disc-stats :grounding-stats :canary-stats])
+     :stop-when-idle  (decay/stop!)
+     :status-shape    (let [s (decay/status)]
+                        {:running? (:running? s)
+                         :has-last-result? (some? (:last-result s))
+                         :config-keys (vec (sort (keys (:config s))))})}))

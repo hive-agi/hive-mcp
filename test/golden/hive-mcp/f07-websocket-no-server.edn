@@ -1,0 +1,4 @@
+{:connected? false,
+ :notify nil,
+ :stop-twice [nil nil],
+ :connected-after false}

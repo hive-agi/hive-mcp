@@ -1,0 +1,4 @@
+{:registered-on-load true,
+ :register-idempotent true,
+ :hook-name "nats/close",
+ :hook-priority 200}

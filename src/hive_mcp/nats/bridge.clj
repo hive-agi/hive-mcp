@@ -491,7 +491,9 @@
        [:=> [:cat :any] :string]])
 
 (m/=> event-subject
-      [:=> [:cat [:or :string :keyword :symbol :nil]]
+      ;; event-type is (name x)'d: nil throws NPE, so nil is outside the domain
+      ;; (corrected in cov-facets f07).
+      [:=> [:cat [:or :string :keyword :symbol]]
        :string])
 
 (m/=> event-wildcard
@@ -499,11 +501,14 @@
        :string])
 
 (m/=> agent-subject
-      [:=> [:cat [:or :string :keyword :symbol :nil] [:or :string :keyword :symbol :nil]]
+      ;; ling-id is str'd (nil ok); event-type is (name x)'d and nil throws NPE
+      ;; (corrected in cov-facets f07).
+      [:=> [:cat [:or :string :keyword :symbol :nil] [:or :string :keyword :symbol]]
        :string])
 
 (m/=> agent-wildcard
-      [:=> [:cat [:or :string :keyword :symbol :nil]]
+      ;; (name nil) throws NPE: nil is outside the domain (corrected in cov-facets f07).
+      [:=> [:cat [:or :string :keyword :symbol]]
        :string])
 
 (m/=> tool-subject

@@ -1,0 +1,35 @@
+{:after-forget [],
+ :short
+ {:task-id "t-short",
+  :tool "git",
+  :caller-id "c3",
+  :state :task/done,
+  :lane :short,
+  :timeout-ms 5000},
+ :cancel-unknown
+ {:adt/variant :cancel/unknown-task,
+  :adt/type :AsyncCancelOutcome,
+  :task-id "t-none"},
+ :reset nil,
+ :forget {:forgotten 3},
+ :running [],
+ :cancel-done
+ {:adt/variant :cancel/already-finished,
+  :adt/type :AsyncCancelOutcome,
+  :task-id "t-ok",
+  :state :task/done},
+ :ok
+ {:task-id "t-ok",
+  :tool "memory",
+  :caller-id "c1",
+  :state :task/done,
+  :lane :batch},
+ :runner-is-injected true,
+ :boom
+ {:task-id "t-boom",
+  :tool "kanban",
+  :caller-id "c2",
+  :state :task/done,
+  :lane :batch},
+ :missing nil,
+ :listed ("t-boom" "t-ok" "t-short")}

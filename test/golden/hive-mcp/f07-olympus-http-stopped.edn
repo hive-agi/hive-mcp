@@ -1,0 +1,13 @@
+{:stopped
+ {:running? false,
+  :port nil,
+  :clients 0,
+  :connected? false,
+  :ds-bridge {:active? false, :queue-size 0}},
+ :with-client
+ {:running? false,
+  :port nil,
+  :clients 1,
+  :connected? true,
+  :ds-bridge {:active? false, :queue-size 0}},
+ :stop-again nil}

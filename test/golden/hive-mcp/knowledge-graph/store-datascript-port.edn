@@ -1,0 +1,11 @@
+{:same-conn true,
+ :q1 "c",
+ :unopened true,
+ :pulled #:kg-edge{:from "b", :to "c"},
+ :q0 ["e1" "e2"],
+ :by-attr 2,
+ :close nil,
+ :after-reset [],
+ :entid? true,
+ :entity-relation :implements,
+ :snapshot-db? true}

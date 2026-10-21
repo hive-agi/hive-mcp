@@ -1,0 +1,8 @@
+{:case-0 {:out :batch, :in (:batch)},
+ :case-1 {:out :batch, :in ("short")},
+ :case-2 {:out :batch, :in (:typo)},
+ :case-3 {:out :short, :in (:short)},
+ :case-4 {:out :batch, :in (:batch)},
+ :case-5 {:out :batch, :in (nil)},
+ :case-6 {:out :batch, :in (:typo)},
+ :case-7 {:out :short, :in (:short)}}

@@ -1,0 +1,8 @@
+{:case-0 {:out false, :in ("memory_add" nil)},
+ :case-1 {:out false, :in ("memory_add" {"path" "x_mock.js"})},
+ :case-2 {:out false, :in ("file_write" nil)},
+ :case-3 {:out true, :in ("bash" {})},
+ :case-4 {:out false, :in ("file_write" nil)},
+ :case-5 {:out false, :in ("file_write" nil)},
+ :case-6 {:out false, :in ("clojure_edit" nil)},
+ :case-7 {:out false, :in ("kanban" nil)}}

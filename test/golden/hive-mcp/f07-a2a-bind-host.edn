@@ -1,0 +1,8 @@
+{:case-0 {:out "127.0.0.1", :in (nil nil)},
+ :case-1 {:out "10.1.2.3", :in ("key-1" "10.1.2.3")},
+ :case-2 {:out "127.0.0.1", :in (nil nil)},
+ :case-3 {:out "127.0.0.1", :in (nil "127.0.0.1")},
+ :case-4 {:out "0.0.0.0", :in ("key-1" nil)},
+ :case-5 {:out "127.0.0.1", :in (nil nil)},
+ :case-6 {:out "127.0.0.1", :in (nil nil)},
+ :case-7 {:out "127.0.0.1", :in (nil nil)}}

@@ -1,0 +1,24 @@
+{:case-0
+ {:out {:unload [h1], :load [h1 t2]},
+  :in ({h1 [t2 t2 t2]} #{t1 t2 t3} #{})},
+ :case-1
+ {:out {:unload [h1 h2], :load [h1 h2]},
+  :in ({h1 [t2 t1 t1], h2 [t2 t1]} #{t1 t2 t3} #{t1 t2 t3})},
+ :case-2
+ {:out {:unload [h1], :load [h1 t3]},
+  :in ({h1 [t3]} #{t1 t2 t3} #{t1})},
+ :case-3
+ {:out {:unload [h1 h2], :load [h1 h2 t1]},
+  :in ({h1 [t3 t3 t1], h2 [t1]} #{t1} #{t2})},
+ :case-4
+ {:out {:unload [h1 h2], :load [h1 h2 t3]},
+  :in ({h1 [t3 t3], h2 [t1 t3 t1]} #{t1 t2 t3} #{t1})},
+ :case-5
+ {:out {:unload [h1 h2], :load [h1 h2 t2]},
+  :in ({h1 [t2], h2 [t1 t1 t1]} #{t1 t2 t3} #{t1})},
+ :case-6
+ {:out {:unload [h2 h1], :load [h2 h1]},
+  :in ({h2 [t2 t1], h1 [t1 t2]} #{} #{t1})},
+ :case-7
+ {:out {:unload [h1 h2], :load [h1 h2 t2 t3]},
+  :in ({h1 [t1 t2 t3], h2 [t3 t3 t2]} #{t1 t2 t3} #{t1})}}

@@ -1,0 +1,17 @@
+{:case-0 {:out :missing, :in (nil)},
+ :case-1 {:out :missing, :in (nil)},
+ :case-2
+ {:out :open,
+  :in ({:content {"task-type" "kanban", "status" "doing"}})},
+ :case-3
+ {:out :invalid,
+  :in ({:content "{\"task-type\":\"note\",\"status\":\"doing\"}"})},
+ :case-4
+ {:out :open,
+  :in ({:content {:task-type "kanban", :status "inprogress"}})},
+ :case-5
+ {:out :invalid, :in ({:content {:task-type "kanban", :status nil}})},
+ :case-6
+ {:out :invalid,
+  :in ({:content {:task-type nil, :status "inprogress"}})},
+ :case-7 {:out :invalid, :in ({:content "{not json"})}}

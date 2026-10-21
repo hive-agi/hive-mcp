@@ -1,0 +1,9 @@
+{:intents [:read],
+ :after {:tools ["cat" "only"], :owner :saa/core},
+ :custom-after nil,
+ :seeded [:exec :read :search :web :write],
+ :union {:tools ["cat" "grep" "read" "view"], :owner :saa/core},
+ :removed [:custom :read],
+ :missing-slice nil,
+ :outcomes [:ok :ok :ok],
+ :replaced {:tools ["cat" "only" "view"], :owner :saa/core}}

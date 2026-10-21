@@ -1,0 +1,14 @@
+{:updated-tags ["x" "z"],
+ :deleted true,
+ :connected? true,
+ :added ["e1" "e2"],
+ :all ["e1" "e2"],
+ :got
+ {:id "e1",
+  :content "alpha",
+  :type "note",
+  :tags ["x"],
+  :project-id "p"},
+ :after nil,
+ :notes ["e1"],
+ :semantic? true}

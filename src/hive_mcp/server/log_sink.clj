@@ -149,7 +149,8 @@
     (when-not (= (long (alength bytes))
                  (long (.invoke (.getFunction libc "write") Long/TYPE
                                 (object-array [fd buf (long (alength bytes))]))))
-      (throw (ex-info "Log write failed or incomplete" {})))))
+      (throw (ex-info "Log write failed or incomplete" {})))
+    (java.lang.ref.Reference/reachabilityFence buf))) ; Memory frees its peer once collected
 
 (declare rotate-generations!)
 
@@ -252,7 +253,7 @@
                      (.setDaemon true)
                      (.start)))]
      {:queue q :dropped dropped :failed failed :running running :thread thread
-      :capacity capacity})))
+      :capacity capacity :writer writer})))
 
 (def SinkOpts
   "make-sink options."
@@ -282,9 +283,9 @@
                  [:=> [:cat Writer SinkOpts] Sink]])
 
 (defn offer!
-  "Hand `line` to the sink without blocking. Returns :queued or :dropped."
-  [{:keys [^BlockingQueue queue ^AtomicLong dropped]} line]
-  (if (.offer queue line)
+  "Hand `line` to the sink without blocking: :queued, or :dropped when full or stopped."
+  [{:keys [^BlockingQueue queue ^AtomicLong dropped running]} line]
+  (if (and @running (.offer queue line))
     :queued
     (do (.incrementAndGet dropped) :dropped)))
 

@@ -1,0 +1,120 @@
+{:future
+ {:out
+  {:add-nil nil,
+   :get [{:id "a"} {:id "b"}],
+   :create-0 {:name "c"},
+   :create {:name "c"},
+   :delete-0 nil,
+   :get-0 [{:id "a"} {:id "b"}],
+   :del-coll nil,
+   :update nil,
+   :delete nil,
+   :configure true,
+   :get-coll {:name "c"},
+   :query
+   [{:id "nil-d"}
+    {:id "near", :distance 0.1}
+    {:id "far", :distance 0.9}],
+   :add nil},
+  :calls
+  [[:add {:name "c"} [{:id "b"}] {}]
+   [:get
+    {:name "c"}
+    {:include #{:documents :distances :metadatas},
+     :ids ["a"],
+     :where {:t "x"},
+     :limit 2}]
+   [:create-collection "c" {}]
+   [:create-collection "c" {:metadata {:d 2}, :get-or-create true}]
+   [:delete {:name "c"} {}]
+   [:get {:name "c"} {:include #{:documents :distances :metadatas}}]
+   [:delete-collection {:name "c"}]
+   [:update {:name "c"} [{:id "a"}]]
+   [:delete {:name "c"} {:ids ["a"], :where {:t "x"}}]
+   [:configure {:host "h"}]
+   [:get-collection "c"]
+   [:query
+    {:name "c"}
+    [0.0 1.0]
+    {:include #{:metadatas}, :num-results 3, :where {:t "x"}}]
+   [:add {:name "c"} [{:id "a"}] {:upsert? true}]]},
+ :deref
+ {:out
+  {:add-nil nil,
+   :get [{:id "a"} {:id "b"}],
+   :create-0 {:name "c"},
+   :create {:name "c"},
+   :delete-0 nil,
+   :get-0 [{:id "a"} {:id "b"}],
+   :del-coll nil,
+   :update nil,
+   :delete nil,
+   :configure true,
+   :get-coll {:name "c"},
+   :query
+   [{:id "nil-d"}
+    {:id "near", :distance 0.1}
+    {:id "far", :distance 0.9}],
+   :add nil},
+  :calls
+  [[:add {:name "c"} [{:id "b"}] {}]
+   [:get
+    {:name "c"}
+    {:include #{:documents :distances :metadatas},
+     :ids ["a"],
+     :where {:t "x"},
+     :limit 2}]
+   [:create-collection "c" {}]
+   [:create-collection "c" {:metadata {:d 2}, :get-or-create true}]
+   [:delete {:name "c"} {}]
+   [:get {:name "c"} {:include #{:documents :distances :metadatas}}]
+   [:delete-collection {:name "c"}]
+   [:update {:name "c"} [{:id "a"}]]
+   [:delete {:name "c"} {:ids ["a"], :where {:t "x"}}]
+   [:configure {:host "h"}]
+   [:get-collection "c"]
+   [:query
+    {:name "c"}
+    [0.0 1.0]
+    {:include #{:metadatas}, :num-results 3, :where {:t "x"}}]
+   [:add {:name "c"} [{:id "a"}] {:upsert? true}]]},
+ :plain
+ {:out
+  {:add-nil nil,
+   :get [{:id "a"} {:id "b"}],
+   :create-0 {:name "c"},
+   :create {:name "c"},
+   :delete-0 nil,
+   :get-0 [{:id "a"} {:id "b"}],
+   :del-coll nil,
+   :update nil,
+   :delete nil,
+   :configure true,
+   :get-coll {:name "c"},
+   :query
+   [{:id "nil-d"}
+    {:id "near", :distance 0.1}
+    {:id "far", :distance 0.9}],
+   :add nil},
+  :calls
+  [[:add {:name "c"} [{:id "b"}] {}]
+   [:get
+    {:name "c"}
+    {:include #{:documents :distances :metadatas},
+     :ids ["a"],
+     :where {:t "x"},
+     :limit 2}]
+   [:create-collection "c" {}]
+   [:create-collection "c" {:metadata {:d 2}, :get-or-create true}]
+   [:delete {:name "c"} {}]
+   [:get {:name "c"} {:include #{:documents :distances :metadatas}}]
+   [:delete-collection {:name "c"}]
+   [:update {:name "c"} [{:id "a"}]]
+   [:delete {:name "c"} {:ids ["a"], :where {:t "x"}}]
+   [:configure {:host "h"}]
+   [:get-collection "c"]
+   [:query
+    {:name "c"}
+    [0.0 1.0]
+    {:include #{:metadatas}, :num-results 3, :where {:t "x"}}]
+   [:add {:name "c"} [{:id "a"}] {:upsert? true}]]}}

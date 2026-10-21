@@ -1,0 +1,22 @@
+{:one [3.0 0.5],
+ :non-result ["Executor returned non-Result shape" {:resp {:weird 1}}],
+ :unknown
+ ["Unknown model: no-such-model. Declare its :dimension in the provider config, or use one of: (\"nomic-embed-text\" \"mxbai-embed-large\" \"all-minilm\" \"snowflake-arctic-embed\" \"qwen3-embedding:0.6b\" \"qwen3-embedding:4b\" \"qwen3-embedding:8b\")"
+  {:type :unknown-model, :model "no-such-model"}],
+ :requests
+ [#:gpu{:op :embed,
+        :vram-mb 700,
+        :payload {:text "abc"},
+        :model "nomic-embed-text"}],
+ :exec-err
+ ["Executor embed failed"
+  {:executor :executor-fn,
+   :host "http://stub",
+   :model "nomic-embed-text",
+   :error :gpu/oom,
+   :data {}}],
+ :empty [],
+ :batch [[1.0 0.5] [2.0 0.5] [4.0 0.5]],
+ :spec {:dimension 768, :num-ctx 2048, :vram-mb 700},
+ :record {:host "http://stub", :model "nomic-embed-text"},
+ :dims [768 1024 12]}

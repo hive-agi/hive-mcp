@@ -1,0 +1,9 @@
+{:scope-s1 ("n1" "n2"),
+ :bad-dir {:direction :sideways, :valid #{:out :both :in}},
+ :n1-both ("n2" "n3"),
+ :all-nil ("n1" "n2" "n3"),
+ :all ("n1" "n2" "n3"),
+ :n2-nil ("n1" "n3"),
+ :n3-in ("n1" "n2"),
+ :scope-none [],
+ :n3-out []}

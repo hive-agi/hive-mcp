@@ -1,0 +1,5 @@
+{:encoded-str "d2:idi1e4:type4:pinge",
+ :decode-garbage nil,
+ :stream-message {"n" [1 2], "op" "eval"},
+ :stream-eof :eof,
+ :stream-garbage :eof}

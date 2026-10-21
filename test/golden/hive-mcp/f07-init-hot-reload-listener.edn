@@ -1,0 +1,3 @@
+{:returned :mcp-auto-heal,
+ :registered [[:mcp-auto-heal true]],
+ :ignored-events [nil nil nil]}

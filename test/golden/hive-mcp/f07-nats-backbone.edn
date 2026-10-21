@@ -1,0 +1,5 @@
+{:record-type "class hive_mcp.nats.backbone.NatsBackbone",
+ :satisfies? true,
+ :backbone-id :nats,
+ :stop nil,
+ :publish-down nil}

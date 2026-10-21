@@ -135,9 +135,38 @@
       (message-class link)))
 
 (def Throwable_
-  "A java.lang.Throwable, generated as an ex-info."
-  [:fn {:gen/schema [:map [:msg :string]]
-        :gen/fmap (fn [{:keys [msg]}] (ex-info msg {}))}
+  "A java.lang.Throwable. Generated as a root cause from each arm of the
+   classifier's domain (Milvus validation code, HTTP auth, `:cause :io`,
+   the `:err/tag` families, raw IOException, a transient message marker,
+   an untagged RuntimeException), wrapped in zero to three
+   ExecutionException / RuntimeException / empty-ex-data ex-info links, so
+   a generated value reaches every branch and the cause-chain walk."
+  [:fn {:gen/schema [:tuple
+                     [:enum :milvus-validation :http-auth :cause-io :input-too-large
+                      :dim-mismatch :io-exception :message-marker :untagged]
+                     [:vector {:max 3} [:enum :execution :runtime :ex-info]]]
+        :gen/fmap (fn [[root wraps]]
+                    (reduce (fn [^Throwable t w]
+                              (case w
+                                :execution (java.util.concurrent.ExecutionException. "wrapped" t)
+                                :runtime   (RuntimeException. "wrapped" t)
+                                :ex-info   (ex-info "wrapped" {} t)))
+                            (case root
+                              :milvus-validation (ex-info "Milvus code=1804"
+                                                          {:milvus-clj.client/transport :http
+                                                           :code 1804 :message "dim"})
+                              :http-auth         (ex-info "auth"
+                                                          {:milvus-clj.client/transport :http
+                                                           :status 401})
+                              :cause-io          (ex-info "transport drop" {:cause :io})
+                              :input-too-large   (ex-info "too large"
+                                                          {:err/tag :embedder/input-too-large})
+                              :dim-mismatch      (ex-info "dim mismatch"
+                                                          {:err/tag :collection/dim-mismatch})
+                              :io-exception      (java.io.IOException. "eof")
+                              :message-marker    (RuntimeException. "Broken pipe")
+                              :untagged          (RuntimeException. "something else"))
+                            wraps))}
    (partial instance? Throwable)])
 
 (defn classify

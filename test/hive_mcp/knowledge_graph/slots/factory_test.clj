@@ -7,7 +7,8 @@
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.knowledge-graph.slots.protocol :as p]
             [hive-mcp.knowledge-graph.slots.factory :as fact]
-            [hive-mcp.protocols.kg :as pkg]))
+            [hive-mcp.protocols.kg :as pkg]
+            [hive-test.golden :refer [deftest-golden]]))
 
 ;; -----------------------------------------------------------------------------
 ;; Stub IKGStore — minimal satisfaction for factory-injection tests
@@ -86,3 +87,24 @@
             :backend :datascript
             :store-class (str (class store))}
            (fact/backend-health :datascript store)))))
+
+;; The factory port with its factory-fn INJECTED (1- and 2-arity), plus the
+;; production multimethod arms that need no external backend: :datascript
+;; builds an in-memory store, an unknown backend answers nil.
+(deftest-golden factory-dispatch-golden
+  "test/golden/hive-mcp/knowledge-graph/slots-factory-dispatch.edn"
+  (let [calls (atom [])
+        one   (fact/->factory (fn [be] (swap! calls conj [:one be]) (stub-store be)))
+        two   (fact/->factory (fn [be opts] (swap! calls conj [:two be opts]) (stub-store [be opts])))
+        none  (fact/->factory (constantly nil))
+        ds    (fact/backend->store :datascript)]
+    {:one        (:label (p/make-store one :datalevin))
+     :one-opts   (:label (p/make-store one :datahike {:fresh? true}))
+     :two        (:label (p/make-store two :datalevin))
+     :two-opts   (:label (p/make-store two :datalevin {:recovery-policy :strict}))
+     :none       (p/make-store none :imaginary)
+     :calls      @calls
+     :supported  (vec (sort (p/supported-backends one)))
+     :datascript (some? (pkg/ensure-conn! ds))
+     :ds-health  (dissoc (fact/backend-health :datascript ds) :store-class)
+     :unknown    [(fact/backend->store :unknown) (fact/backend->store :unknown {:x 1})]}))

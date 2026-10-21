@@ -1,0 +1,49 @@
+{:co-c
+ #{{:entry-id "a", :confidence 0.3} {:entry-id "b", :confidence 0.3}},
+ :co-none [],
+ :first-batch 3,
+ :default {:evaluated 3, :errors 0, :promoted 1, :skipped 0, :below 2},
+ :co-a
+ [{:entry-id "b", :confidence 0.7} {:entry-id "c", :confidence 0.3}],
+ :too-few nil,
+ :depends-on
+ [#:kg-edge{:from "a",
+            :to "b",
+            :relation :depends-on,
+            :confidence 0.5,
+            :source-type :inferred}
+  #:kg-edge{:from "a",
+            :to "c",
+            :relation :depends-on,
+            :confidence 0.4,
+            :source-type :inferred}
+  #:kg-edge{:from "b",
+            :to "c",
+            :relation :depends-on,
+            :confidence 0.4,
+            :source-type :inferred}],
+ :co-accessed
+ [#:kg-edge{:from "a",
+            :to "b",
+            :relation :co-accessed,
+            :scope "s",
+            :confidence 0.7,
+            :source-type :co-access,
+            :created-by "t"}
+  #:kg-edge{:from "a",
+            :to "c",
+            :relation :co-accessed,
+            :scope "s",
+            :confidence 0.3,
+            :source-type :co-access,
+            :created-by "t"}
+  #:kg-edge{:from "b",
+            :to "c",
+            :relation :co-accessed,
+            :scope "s",
+            :confidence 0.3,
+            :source-type :co-access,
+            :created-by "t"}],
+ :lowered {:evaluated 3, :errors 0, :promoted 2, :skipped 1, :below 0},
+ :rerun {:evaluated 3, :errors 0, :promoted 0, :skipped 1, :below 2},
+ :reinforced [1 1 1 1]}

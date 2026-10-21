@@ -1,0 +1,17 @@
+{:coll/error {:action :error, :embedder nil},
+ :configure-calls 2,
+ :route/unset {:action :pinned, :embedder nil},
+ :coll/pinned
+ {:action :pinned,
+  :embedder {:collections {"hive-mcp-presets" :venice}}},
+ :route/flipped
+ {:action :flipped, :embedder {:routes #:type{:plan :venice-qwen3}}},
+ :route/pinned
+ {:action :pinned, :embedder {:routes #:type{:plan :ollama-nomic}}},
+ :coll/default
+ {:action :flipped,
+  :embedder {:collections {"hive-mcp-presets" :ollama}}},
+ :coll/unpinned {:action :flipped, :embedder nil},
+ :route/no-secret
+ {:action :no-secret,
+  :embedder {:routes #:type{:plan :openrouter-qwen3}}}}

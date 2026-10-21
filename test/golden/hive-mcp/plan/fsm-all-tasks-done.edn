@@ -1,0 +1,10 @@
+{:case-0 {:out nil, :in ({})},
+ :case-1 {:out nil, :in ({:task-statuses {}})},
+ :case-2 {:out true, :in ({:task-statuses {"t1" "done"}})},
+ :case-3 {:out true, :in ({:task-statuses {"t1" "done"}})},
+ :case-4
+ {:out false,
+  :in ({:task-statuses {"t3" "done", "t1" "done", "t2" "todo"}})},
+ :case-5 {:out nil, :in ({})},
+ :case-6 {:out nil, :in ({})},
+ :case-7 {:out nil, :in ({})}}

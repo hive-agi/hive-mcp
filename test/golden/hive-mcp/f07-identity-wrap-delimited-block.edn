@@ -1,0 +1,47 @@
+{:case-0
+ {:out [{:type "image", :data "080x"}],
+  :in ([{:type "image", :data "080x"}] "HIVEMIND" nil)},
+ :case-1
+ {:out
+  [{:type "text", :text "4"}
+   {:type "text",
+    :text "CI7J9\n\n---HIVEMIND---\n7R2D\n---/HIVEMIND---"}],
+  :in
+  ([{:type "text", :text "4"} {:type "text", :text "CI7J9"}]
+   "HIVEMIND"
+   "7R2D")},
+ :case-2
+ {:out
+  [{:type "text", :text "\n\n---HIVEMIND---\nF\n---/HIVEMIND---"}],
+  :in ([] "HIVEMIND" "F")},
+ :case-3
+ {:out
+  [{:type "text",
+    :text "47TY0Y7\n\n---MEMORY---\n76P\n---/MEMORY---"}],
+  :in ([{:type "text", :text "47TY0Y7"}] "MEMORY" "76P")},
+ :case-4
+ {:out
+  [{:type "text", :text ""}
+   {:type "text", :text "Dl"}
+   {:type "image", :data "78"}
+   {:type "text", :text "2R"}],
+  :in
+  ([{:type "text", :text ""}
+    {:type "text", :text "Dl"}
+    {:type "image", :data "78"}
+    {:type "text", :text "2R"}]
+   "HIVEMIND"
+   nil)},
+ :case-5
+ {:out [{:type "image", :data "7hcJ"} {:type "image", :data "J0t9"}],
+  :in
+  ([{:type "image", :data "7hcJ"} {:type "image", :data "J0t9"}]
+   "HIVEMIND"
+   nil)},
+ :case-6 {:out [], :in ([] "MEMORY" nil)},
+ :case-7
+ {:out [{:type "image", :data "yuM"} {:type "text", :text "3uwj7"}],
+  :in
+  ([{:type "image", :data "yuM"} {:type "text", :text "3uwj7"}]
+   "HIVEMIND"
+   nil)}}

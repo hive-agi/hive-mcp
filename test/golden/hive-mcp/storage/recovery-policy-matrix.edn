@@ -1,0 +1,70 @@
+{:classify
+ {"MDB_BUSY" :lock-contention,
+  "MDB_CORRUPTED" :wal-corrupt,
+  "MDB_VERSION_MISMATCH" :version-mismatch,
+  "file lock held" :lock-contention,
+  "schema version 3" :version-mismatch,
+  "txn-log corruption at 1" :wal-corrupt,
+  "unrelated" :unknown},
+ :wrapped :lock-contention,
+ :default-policy {:strategy :throw, :max-attempts 2},
+ :quarantine-path "/db/kg.corrupt.42",
+ :matrix
+ {"audit/MDB_BUSY"
+  {:out
+   ["Datalevin open failed and policy aborted retry"
+    :storage/open-aborted],
+   :opens 1},
+  "audit/MDB_CORRUPTED"
+  {:out
+   ["Datalevin open failed and policy aborted retry"
+    :storage/open-aborted],
+   :opens 1},
+  "audit/unrelated"
+  {:out
+   ["Datalevin open failed and policy aborted retry"
+    :storage/open-aborted],
+   :opens 1},
+  "quarantine/MDB_BUSY"
+  {:out
+   ["Datalevin open failed and policy aborted retry"
+    :storage/open-aborted],
+   :opens 1},
+  "quarantine/MDB_CORRUPTED"
+  {:out ["heal-and-open! exhausted attempts" :storage/heal-exhausted],
+   :opens 2},
+  "quarantine/unrelated"
+  {:out
+   ["Datalevin open failed and policy aborted retry"
+    :storage/open-aborted],
+   :opens 1},
+  "throw/MDB_BUSY"
+  {:out
+   ["Datalevin open failed and policy aborted retry"
+    :storage/open-aborted],
+   :opens 1},
+  "throw/MDB_CORRUPTED"
+  {:out
+   ["Datalevin open failed and policy aborted retry"
+    :storage/open-aborted],
+   :opens 1},
+  "throw/unrelated"
+  {:out
+   ["Datalevin open failed and policy aborted retry"
+    :storage/open-aborted],
+   :opens 1},
+  "truncate/MDB_BUSY"
+  {:out
+   ["Datalevin open failed and policy aborted retry"
+    :storage/open-aborted],
+   :opens 1},
+  "truncate/MDB_CORRUPTED"
+  {:out
+   ["Datalevin open failed and policy aborted retry"
+    :storage/open-aborted],
+   :opens 1},
+  "truncate/unrelated"
+  {:out
+   ["Datalevin open failed and policy aborted retry"
+    :storage/open-aborted],
+   :opens 1}}}

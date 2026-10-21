@@ -1,0 +1,11 @@
+{:case-0 {:out false, :in (nil)},
+ :case-1 {:out false, :in (nil)},
+ :case-2
+ {:out true, :in ("FRICTION: x\n{:plan/steps [{:step/id \"s1\"}]}")},
+ :case-3 {:out false, :in ("# Title only\n  ")},
+ :case-4
+ {:out true, :in ("Just a note\n{:plan/steps [{:step/id \"s1\"}]}")},
+ :case-5
+ {:out true, :in ("FRICTION: x\n{:plan/steps [{:step/id \"s1\"}]}")},
+ :case-6 {:out false, :in ("{:x 1}\n{:x 1}")},
+ :case-7 {:out false, :in (nil)}}

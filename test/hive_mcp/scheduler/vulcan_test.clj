@@ -3,8 +3,10 @@
 
    All tests use with-redefs to mock KG edge queries and Chroma lookups,
    keeping tests fast and isolated (FIRST: Fast, Isolated)."
-  (:require [clojure.test :refer [deftest is testing]]
-            [hive-mcp.scheduler.vulcan :as vulcan]))
+  (:require [clojure.data.json :as json]
+            [clojure.test :refer [deftest is testing]]
+            [hive-mcp.scheduler.vulcan :as vulcan]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]))
 
 ;; =============================================================================
 ;; Test Data
@@ -215,3 +217,53 @@
           ;; high-wave0 before high-wave1 before medium-wave1
           (is (= "20260210-task-c" (last ids)))  ;; medium is last
           )))))
+
+;; =============================================================================
+;; entry-state trifecta: a kanban entry built from every status the docstring
+;; names, both key styles (keyword / string), keyword statuses, JSON-encoded
+;; content, non-kanban task types, malformed JSON, and nil.
+;; =============================================================================
+
+(def ^:private Entry
+  [:or {:gen/schema [:tuple
+                     [:enum :entry :entry :entry :entry :nil :bad-json]
+                     [:enum "kanban" "kanban" "note" nil]
+                     [:enum "done" "todo" "doing" "review" "inprogress" "inreview"
+                      :done :todo "parked" nil]
+                     [:enum :kw-keys :str-keys :json]]
+        :gen/fmap (fn [[shape task-type status style]]
+                    (case shape
+                      :nil      nil
+                      :bad-json {:content "{not json"}
+                      :entry    (let [c {:task-type task-type :status status}]
+                                  {:content (case style
+                                              :kw-keys  c
+                                              :str-keys {"task-type" task-type "status" status}
+                                              :json     (json/write-str c))})))}
+   :nil [:map [:content :any]]])
+
+(defn- entry-oracle [entry]
+  (if (nil? entry)
+    :missing
+    (let [raw (:content entry)
+          c   (cond (and (string? raw) (= raw "{not json")) ::bad
+                    (string? raw) (json/read-str raw)
+                    :else raw)
+          get* (fn [k] (when (map? c) (or (get c (keyword k)) (get c k))))
+          s   (let [s (get* "status")] (if (keyword? s) (name s) s))]
+      (cond (= ::bad c)                        :invalid
+            (not= "kanban" (get* "task-type")) :invalid
+            (= "done" s)                       :done
+            (contains? #{"todo" "doing" "review" "inprogress" "inreview"} s) :open
+            :else                              :invalid))))
+
+(deftrifecta-from-schema entry-state-classifies-every-content-shape
+  #'vulcan/entry-state
+  {:in [:cat Entry]
+   :out [:enum :done :open :missing :invalid]
+   :rel (fn [[e] out] (= out (entry-oracle e)))
+   :classify (fn [_ out] out)
+   :classify-domain #{:done :open :missing :invalid}
+   :classify-floor 10
+   :golden-path "test/golden/hive-mcp/scheduler/vulcan-entry-state.edn"
+   :num-tests 300})

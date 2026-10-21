@@ -1,0 +1,15 @@
+{:read-missing {},
+ :read-kinds [:f07/tools],
+ :load
+ #:f07{:tools {:contributed [:present :partial], :absent [:absent]}},
+ :present
+ {:source :manifest,
+  :key :present,
+  :install! "clojure.core/list",
+  :addon :f07},
+ :partial
+ {:source :manifest,
+  :key :partial,
+  :install! "clojure.core/vector",
+  :addon :f07},
+ :absent nil}

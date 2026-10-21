@@ -12,7 +12,8 @@
             [hive.events.router :as router]
             [hive.events.staleness :as staleness]
             [hive-mcp.hot.core :as core]
-            [hive-mcp.hot.registrations :as registrations]))
+            [hive-mcp.hot.registrations :as registrations]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -123,3 +124,37 @@
     (is (= [:a] (core/stale-registrations {:stale-registrations [:a]} nil)))
     (is (= [:a] (core/stale-registrations {:stale-registrations [:a]} {:error "boom"})))
     (is (nil? (core/stale-registrations {:stale-registrations [:a]} {:rebound [] :remaining []})))))
+
+;; ---------------------------------------------------------------------------
+;; Trifecta on fresh-entry: entries are a bare handler or a map holding one,
+;; built from the same three fns the stale / fresh arguments are drawn from,
+;; so identity matches and mismatches are both reached.
+;; ---------------------------------------------------------------------------
+
+(def ^:private Handler [:enum inc dec identity])
+
+(def ^:private Entry
+  "A registry entry: the handler itself, a map carrying it under :handler
+   (with or without interceptors), or something that holds no handler."
+  [:or Handler
+   [:map [:handler Handler] [:interceptors {:optional true} [:= []]]]
+   [:enum :not-a-handler nil]])
+
+(deftrifecta-from-schema fresh-entry-swaps-only-an-identical-stale-handler
+  #'registrations/fresh-entry
+  {:in [:cat Entry Handler Handler]
+   :out [:maybe [:or Handler [:map [:handler Handler]]]]
+   :rel (fn [[entry stale fresh] out]
+          (cond
+            (identical? entry stale)                               (identical? out fresh)
+            (and (map? entry) (identical? (:handler entry) stale)) (= out (assoc entry :handler fresh))
+            :else                                                  (nil? out)))
+   :classify (fn [[entry stale] _]
+               (cond (identical? entry stale) :bare
+                     (and (map? entry) (identical? (:handler entry) stale)) :wrapped
+                     :else :untouched))
+   :classify-domain #{:bare :wrapped :untouched}
+   :classify-floor 15
+   ;; inputs are fns, which EDN cannot snapshot, so no golden; the-pure-pieces
+   ;; pins the three arms by example
+   :num-tests 300})

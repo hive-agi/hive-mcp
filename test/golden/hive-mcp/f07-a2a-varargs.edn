@@ -1,0 +1,34 @@
+{:task-with-opts
+ {:id "t1",
+  :contextId "c1",
+  :status
+  {:state "working",
+   :message {:role "agent", :parts [{:type "text", :text "busy"}]}},
+  :kind "task",
+  :messages [{:role "user", :parts [{:type "text", :text "hi"}]}],
+  :metadata {:agent "ling-1"}},
+ :task-map-opts
+ {:id "t2",
+  :contextId "c1",
+  :status
+  {:state "completed",
+   :message {:role "agent", :parts [{:type "text", :text "done"}]}},
+  :kind "task",
+  :artifacts [{:name "out"}]},
+ :error-plain
+ {:jsonrpc "2.0",
+  :id 7,
+  :error {:code -32001, :message "no such task"}},
+ :error-data
+ {:jsonrpc "2.0",
+  :id "r",
+  :error {:code -32602, :message "bad", :data {:field "id"}}},
+ :error-nil-code
+ {:jsonrpc "2.0", :id nil, :error {:code nil, :message nil}},
+ :state-map
+ {:blocked "input-required",
+  :error "failed",
+  :idle "completed",
+  :spawning "submitted",
+  :terminated "canceled",
+  :working "working"}}

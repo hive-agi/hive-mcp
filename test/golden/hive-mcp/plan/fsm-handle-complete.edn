@@ -1,0 +1,13 @@
+{:case-0 {:out {:status :completed}, :in (nil {:status :draft})},
+ :case-1
+ {:out {:status :completed, :plan-id "p1"},
+  :in (nil {:status :validated, :plan-id "p1"})},
+ :case-2
+ {:out {:status :completed, :plan-id "p1"},
+  :in (nil {:status :validated, :plan-id "p1"})},
+ :case-3
+ {:out {:plan-id "p1", :status :completed}, :in (nil {:plan-id "p1"})},
+ :case-4 {:out {:status :completed}, :in (nil {:status :validated})},
+ :case-5 {:out {:status :completed}, :in (nil {:status :validated})},
+ :case-6 {:out {:status :completed}, :in (nil {})},
+ :case-7 {:out {:status :completed}, :in (nil {})}}

@@ -1,0 +1,46 @@
+{:case-0 {:out nil, :in ("9lives")},
+ :case-1 {:out nil, :in ("9lives")},
+ :case-2
+ {:out
+  {:type "axiom-candidate",
+   :requested "axiom",
+   :queued? true,
+   :gate
+   {:queue-as :axiom-candidate,
+    :queue-tag "axiom-pending",
+    :reason
+    "`:axiom` is human-gated. The entry was parked as :axiom-candidate and will be listed for review at the next catchup. `memory review` promotes it to :axiom or demotes it to another type."}},
+  :in ("axiom")},
+ :case-3
+ {:out {:type "note", :requested "note", :queued? false, :gate nil},
+  :in ("note")},
+ :case-4
+ {:out
+  {:type "axiom-candidate",
+   :requested "axiom",
+   :queued? true,
+   :gate
+   {:queue-as :axiom-candidate,
+    :queue-tag "axiom-pending",
+    :reason
+    "`:axiom` is human-gated. The entry was parked as :axiom-candidate and will be listed for review at the next catchup. `memory review` promotes it to :axiom or demotes it to another type."}},
+  :in ("axiom")},
+ :case-5
+ {:out
+  {:type "axiom-candidate",
+   :requested "axiom",
+   :queued? true,
+   :gate
+   {:queue-as :axiom-candidate,
+    :queue-tag "axiom-pending",
+    :reason
+    "`:axiom` is human-gated. The entry was parked as :axiom-candidate and will be listed for review at the next catchup. `memory review` promotes it to :axiom or demotes it to another type."}},
+  :in ("axiom")},
+ :case-6
+ {:out
+  {:type "principle",
+   :requested "principle",
+   :queued? false,
+   :gate nil},
+  :in (" Principle")},
+ :case-7 {:out nil, :in ("bad type!")}}
