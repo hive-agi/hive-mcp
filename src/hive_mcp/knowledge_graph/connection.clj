@@ -16,6 +16,7 @@
             [hive-mcp.knowledge-graph.connection.store :as store]
             [hive-mcp.knowledge-graph.connection.writer :as writer]
             [hive-mcp.knowledge-graph.connection.strategy :as strategy]
+            [hive-mcp.knowledge-graph.tx-hooks :as tx-hooks]
             [hive-mcp.knowledge-graph.connection.temporal :as temporal]))
 
 (declare ensure-writer! stop-writer! writer-stats flush-pending! in-flight)
@@ -73,19 +74,24 @@
      - otherwise          → route through the write-coalescing queue
 
    The coalescing queue drains items within a 25ms window and flushes as a
-   single transaction, eliminating the 'Transacting 1 objects' pattern."
+   single transaction, eliminating the 'Transacting 1 objects' pattern.
+   Registered tx-hooks see (and may rewrite or refuse) tx-data first, on
+   the caller's thread."
   [tx-data]
-  (strategy/assert-edge-node-ids! tx-data)
-  (strategy/apply-tx! (strategy/select-strategy *tx-batch* *sync-writes* ensure-store!) tx-data))
+  (let [tx-data (tx-hooks/apply-hooks tx-data)]
+    (strategy/assert-edge-node-ids! tx-data)
+    (strategy/apply-tx! (strategy/select-strategy *tx-batch* *sync-writes* ensure-store!) tx-data)))
 
 (defn transact-sync!
   "Synchronous transact — bypasses the coalescing queue.
    Use ONLY when the caller needs the tx-report return value
    (e.g., extracting entity IDs from :tx-data).
-   Most callers should use transact! (async coalesced) instead."
+   Most callers should use transact! (async coalesced) instead.
+   Registered tx-hooks see (and may rewrite or refuse) tx-data first."
   [tx-data]
-  (strategy/assert-edge-node-ids! tx-data)
-  (proto/transact! (ensure-store!) tx-data))
+  (let [tx-data (tx-hooks/apply-hooks tx-data)]
+    (strategy/assert-edge-node-ids! tx-data)
+    (proto/transact! (ensure-store!) tx-data)))
 
 (defmacro with-tx-batch
   "Collect all transact! calls within body into a single transaction.

@@ -195,6 +195,33 @@
 
 (m/=> update-dialogue-status! [:=> [:cat DialogueId DialogueStatus] [:maybe TxReport]])
 
+(defn- required-impl
+  "Like `impl`, for a var hive-agent added after the shim's other vars: an
+   older hive-agent raises :swarm/addon-outdated instead of a call on nil."
+  [sym]
+  (delegate/resolve-required "hive-agent.swarm.agora.schema" sym))
+
+(defn add-participant!
+  "Add SLAVE-ID to dialogue DIALOGUE-ID's participants in the agora store.
+   Answers the transaction report, or nil when no such dialogue exists.
+   Without hive-agent the call raises :swarm/addon-missing; with a hive-agent
+   that predates the verb it raises :swarm/addon-outdated."
+  {:arglists '([dialogue-id slave-id])}
+  [& args]
+  (apply (required-impl 'add-participant!) args))
+
+(m/=> add-participant! [:=> [:cat DialogueId :string] [:maybe TxReport]])
+
+(defn remove-participant!
+  "Remove SLAVE-ID from dialogue DIALOGUE-ID's participants in the agora
+   store. Answers the transaction report, or nil when no such dialogue
+   exists. Raises like `add-participant!` without a recent enough hive-agent."
+  {:arglists '([dialogue-id slave-id])}
+  [& args]
+  (apply (required-impl 'remove-participant!) args))
+
+(m/=> remove-participant! [:=> [:cat DialogueId :string] [:maybe TxReport]])
+
 (defn list-dialogues
   {:arglists '([] [status])}
   [& args]
