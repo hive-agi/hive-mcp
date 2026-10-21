@@ -261,3 +261,37 @@
 (m/=> id-of-file-name [:=> [:cat [:maybe :string]] [:maybe :string]])
 
 (m/=> pending-ids [:=> [:cat] [:vector :string]])
+
+(def Failure
+  "The cause a failed embed leaves on its outbox record."
+  [:map [:error [:maybe :keyword]] [:message [:maybe :string]]])
+
+(def ^:private FailureSource
+  "What `failure-of` reads a cause from: a thrown embed failure or an
+   error-result map."
+  [:or Throwable_
+   [:map [:error {:optional true} :keyword] [:message {:optional true} :string]]])
+
+(def ^:private Thunk
+  "A store add; generates thunks answering a plain stored-entry result."
+  [:fn {:gen/schema [:enum :stored] :gen/fmap (fn [k] (constantly {:id (name k)}))}
+   ifn?])
+
+(def ^:private Sleep
+  "The injected pause; generates a no-op."
+  [:fn {:gen/schema [:enum :nop] :gen/fmap (fn [_] (constantly nil))} ifn?])
+
+(def ^:private RetryPolicy
+  [:map
+   [:attempts {:optional true} [:int {:min 1 :max 3}]]
+   [:delay-ms {:optional true} [:int {:min 0 :max 5}]]])
+
+(m/=> failure-of [:=> [:cat FailureSource] Failure])
+
+(m/=> with-failure [:=> [:cat :map Failure :string] :map])
+
+(m/=> immediately-retryable? [:=> [:cat [:maybe :map]] :boolean])
+
+(m/=> call-with-embed-retry [:=> [:cat Thunk RetryPolicy Sleep] :map])
+
+(m/=> record-failure! [:=> [:cat EntryId FailureSource :string] [:maybe :map]])
