@@ -134,6 +134,11 @@
   "Decay confidence of edges not verified within the staleness window.
    Edges falling below `prune-threshold` are removed entirely.
 
+   Candidates are the `limit` least-recently-verified edges, read from the
+   :kg-edge/last-verified index (`queries/get-oldest-verified-edges`), so a
+   cycle touches O(limit) edges however large the graph is. They are the same
+   edges, in the same order, the previous fetch-all -> sort -> take produced.
+
    See `decay-step!` for per-edge logic and `edge-cycle/run-cycle!` for
    the shared skeleton.
 
@@ -153,7 +158,7 @@
   (conn/with-tx-batch
     (let [now-millis (System/currentTimeMillis)]
       (edge-cycle/run-cycle!
-       {:fetch        #(if scope (queries/get-edges-by-scope scope) (queries/get-all-edges))
+       {:fetch        #(queries/get-oldest-verified-edges {:scope scope :limit limit})
         :sort-key     last-verified-millis
         :limit        limit
         :outcome-keys [:decayed :pruned :fresh]
