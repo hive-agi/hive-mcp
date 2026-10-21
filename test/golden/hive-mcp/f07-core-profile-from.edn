@@ -1,0 +1,8 @@
+{:case-0 {:out :desktop, :in (nil "desktop" nil)},
+ :case-1 {:out :custom, :in (:custom :custom "k8s-headless")},
+ :case-2 {:out :k8s-minimal, :in (nil :k8s-minimal "desktop")},
+ :case-3 {:out :k8s-headless, :in (nil nil "k8s-headless")},
+ :case-4 {:out :custom, :in (:custom :custom nil)},
+ :case-5 {:out :custom, :in (nil :custom nil)},
+ :case-6 {:out :desktop, :in (nil nil nil)},
+ :case-7 {:out :desktop, :in (nil nil nil)}}
