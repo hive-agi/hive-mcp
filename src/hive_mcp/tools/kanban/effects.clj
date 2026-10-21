@@ -24,7 +24,8 @@
             [hive-mcp.vectordb.kanban-facade :as kanban-facade]
             [hive-mcp.session.current :as session]
             [hive-mcp.tools.kanban.schema :as ks]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.extensions.record-hooks :as record-hooks]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -69,18 +70,24 @@
 
 (defn- archive-external!
   "Archive task data via extension registry. Non-blocking, non-fatal.
-   Delegates to `:da/archive!` extension if available; otherwise no-op."
+   Delegates to `:da/archive!` extension if available; otherwise no-op.
+   The payload first passes the :archive/record record hooks
+   (hive-mcp.extensions.record-hooks); one a hook drops is not archived, and
+   a hook that throws archives nothing."
   [{:keys [entry task-id]}]
   (try
     (when-let [archive-fn (ext/get-extension :da/archive!)]
-      (archive-fn
-       (assoc (archive-task-data entry task-id)
-              :completed-at (java.util.Date.)
-              :session-id (rescue nil
-                                  (when-let [sid (requiring-resolve
-                                                  'hive-mcp.crystal.core/session-id)]
-                                    (sid)))))
-      (log/info "Archived done task via extension:" task-id))
+      (if-let [payload (record-hooks/apply-hooks
+                        :archive/record
+                        (assoc (archive-task-data entry task-id)
+                               :completed-at (java.util.Date.)
+                               :session-id (rescue nil
+                                                   (when-let [sid (requiring-resolve
+                                                                   'hive-mcp.crystal.core/session-id)]
+                                                     (sid)))))]
+        (do (archive-fn payload)
+            (log/info "Archived done task via extension:" task-id))
+        (log/info "Done task not archived (a record hook dropped it):" task-id)))
     (catch Exception e
       (log/debug "Done-archive extension not available (non-fatal):"
                  (.getMessage e)))))
