@@ -86,7 +86,7 @@
                         :else :baseline-idle))
    :classify-domain #{:bad-policy :bad-idle :explicit-idle :baseline-idle}
    :golden-path "test/golden/tools/consolidated/hot-pin-decl.edn"
-   :num-tests   300})
+   :num-tests   350 :classify-floor 11})
 
 (def ReloadBase [:map [:mount-opts {:optional true} [:map [:x :int]]]])
 

@@ -97,7 +97,7 @@
                      :else :flat))
    :classify-domain #{:no-user :nested-merge :flat}
    :golden-path "test/golden/config/merge-deep-merge.edn"
-   :num-tests 300})
+   :num-tests 300 :classify-floor 13})
 
 ;; Segments are non-blank so every parsed keyword reads back as EDN in the
 ;; golden; the blank-segment case is pinned in parse-key-path-keeps-empty-segments.

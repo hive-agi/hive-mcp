@@ -23,7 +23,7 @@
             (nil? out)))
    :classify (fn [[names] _] (if (seq names) :some :none))
    :classify-domain #{:some :none}
-   :num-tests 100})
+   :num-tests 150 :classify-floor 13})
 
 (golden/deftest-golden prompt-hostless-golden
   "test/golden/hive-mcp/tools/swarm/prompt-hostless.edn"

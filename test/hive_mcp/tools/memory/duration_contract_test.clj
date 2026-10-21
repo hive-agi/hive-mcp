@@ -33,7 +33,7 @@
    :classify (fn [_ out] (if (:changed? out) :moved :held))
    :classify-domain #{:moved :held}
    :golden-path "test/golden/hive-mcp/tools/memory/shift-duration.edn"
-   :num-tests 200})
+   :num-tests 200 :classify-floor 14})
 
 (deftrifecta-from-schema valid-duration-is-membership
   #'dur/valid-duration?

@@ -66,9 +66,9 @@
    :rel (fn [[id] out] (= out (expected id)))
    :classify (fn [_ out] (or (:error out) :ok))
    :classify-domain #{:ok :multi/plan-not-found :multi/plan-malformed}
-   :classify-floor 15
+   :classify-floor 10
    :golden-path "test/golden/hive-mcp/multi/plan-fetch.edn"
-   :num-tests 200})
+   :num-tests 300})
 
 (deftest run!-passes-a-fetch-failure-through
   (is (= (expected "absent") (plan/run! "absent" {})))

@@ -136,7 +136,7 @@
           (= (:promoted out) (and (pos? n) (not= "permanent" duration))))
    :classify (fn [_ out] (if (:promoted out) :promoted :held))
    :classify-domain #{:promoted :held}
-   :num-tests 100})
+   :num-tests 150 :classify-floor 11})
 
 (deftest decay-and-promotion-reports
   (is (m/validate ms/DecayCycle (decay/run-decay-cycle! {})))

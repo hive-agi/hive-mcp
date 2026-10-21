@@ -127,9 +127,9 @@
    :rel (fn [[t a] out] (= out (oracle-tier t a)))
    :classify (fn [_ out] out)
    :classify-domain perm/Tier
-   :classify-floor 5
+   :classify-floor 10
    :golden-path "test/golden/hive-mcp/server/get-tier.edn"
-   :num-tests 300})
+   :num-tests 600})
 
 (deftrifecta-from-schema requires-escalation-is-not-allowed
   #'perm/requires-escalation?

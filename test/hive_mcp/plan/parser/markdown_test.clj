@@ -103,7 +103,7 @@
                                          (= (or (:depends-on s) []) (:depends-on p))))
                                   steps (:steps plan))))))))
    :classify (fn [_ out] (if (:success out) :parsed :no-steps))
-   :classify-domain #{:parsed :no-steps}})
+   :classify-domain #{:parsed :no-steps} :classify-floor 13 :num-tests 150})
 
 (hst/deftrifecta-from-schema extract-title-contract
   hive-mcp.plan.parser.markdown/extract-title

@@ -64,8 +64,8 @@
             :extract (contains? (set (vals (:extraction al))) target)))
    :classify (fn [_ out] (:class out))
    :classify-domain c/ClassKw
-   :classify-floor 3
-   :num-tests 200
+   :classify-floor 10
+   :num-tests 600
    :golden-path "test/golden/hive-mcp/kernel/census-classify.edn"})
 
 (deftrifecta-from-schema classified-merges-every-row

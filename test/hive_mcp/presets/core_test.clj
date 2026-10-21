@@ -61,7 +61,7 @@
                                :else :no-bullets))
    :classify-domain #{:capped :some-bullets :no-bullets}
    :golden-path "test/golden/presets/core-extract-preset-core.edn"
-   :num-tests 300})
+   :num-tests 300 :classify-floor 13})
 
 (defn- temp-dir []
   (.toFile (java.nio.file.Files/createTempDirectory
