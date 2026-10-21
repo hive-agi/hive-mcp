@@ -1,0 +1,20 @@
+{:counts
+ {:providers 1,
+  :scorers 1,
+  :planners 1,
+  :tool-intents 5,
+  :dispatch-modes 1},
+ :installed-shape true,
+ :tool-intents
+ {:exec {:tools ["bash" "shell"], :owner :saa/core},
+  :read {:tools ["read" "view"], :owner :saa/core},
+  :search {:tools ["find" "glob" "grep"], :owner :saa/core},
+  :web {:tools ["web-fetch" "web-search"], :owner :saa/core},
+  :write {:tools ["edit" "write"], :owner :saa/core}},
+ :dag-wave? true,
+ :reinstall
+ {:providers 1,
+  :scorers 1,
+  :planners 1,
+  :tool-intents 5,
+  :dispatch-modes 1}}
