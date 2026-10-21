@@ -1,0 +1,28 @@
+{:case-0 {:out nil, :in ("Preamble text.\n\n")},
+ :case-1
+ {:out "Other Plan",
+  :in
+  ("# Other Plan\n\nPreamble text.\n\n## Write tests [id: t1] [priority: high] [depends: t1]\nMore notes.\n\n## Setup [id: t2] [priority: high] [estimate: small] [depends: t1, t1]\nMore notes.\n\n## Write tests [priority: high] [depends: t1, t1]\nSome details.\n")},
+ :case-2
+ {:out nil,
+  :in ("Preamble text.\n\n## Write tests [id: t2] [priority: low]\n")},
+ :case-3
+ {:out nil,
+  :in
+  ("Preamble text.\n\n## Write tests [depends: t2, t2]\nSome details.\n\n## Build thing [id: t1] [estimate: small]\n")},
+ :case-4
+ {:out "Other Plan",
+  :in
+  ("# Other Plan\n\nPreamble text.\n\n## Write tests [id: t2] [priority: medium] [estimate: large]\n")},
+ :case-5
+ {:out nil,
+  :in
+  ("Preamble text.\n\n## Write tests [id: t2] [estimate: large] [depends: t2, t1]\nSome details.\n")},
+ :case-6
+ {:out nil,
+  :in
+  ("Preamble text.\n\n## Build thing [id: t1] [priority: medium] [depends: t2, t1]\nSome details.\n")},
+ :case-7
+ {:out nil,
+  :in
+  ("Preamble text.\n\n## Setup [priority: medium] [estimate: small] [depends: t1, t2]\n")}}
