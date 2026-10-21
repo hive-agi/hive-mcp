@@ -31,7 +31,7 @@
             (nil? out)))
    :classify (fn [_ out] (:status out :disabled))
    :classify-domain #{:disabled :failed}
-   :num-tests 60})
+   :num-tests 150 :classify-floor 11})
 
 (golden/deftest-golden websocket-start-paths-golden
   "test/golden/hive-mcp/server/transport/websocket-mcp.edn"

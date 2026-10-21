@@ -19,7 +19,7 @@
    :rel (fn [[slaves] out] (if (seq slaves) (= out slaves) (nil? out)))
    :classify (fn [[slaves] _] (if (seq slaves) :some :none))
    :classify-domain #{:some :none}
-   :num-tests 100})
+   :num-tests 150 :classify-floor 13})
 
 (golden/deftest-golden state-merge-golden
   "test/golden/hive-mcp/tools/swarm/state-merge.edn"

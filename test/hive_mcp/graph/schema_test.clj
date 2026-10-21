@@ -35,7 +35,7 @@
                (= (boolean derived-from) (contains? out :knowledge/derived-from))))
    :classify (fn [[{:keys [confidence]}] _] (if confidence :explicit :defaulted))
    :classify-domain #{:explicit :defaulted}
-   :num-tests 100})
+   :num-tests 150 :classify-floor 12})
 
 (deftrifecta-from-schema make-agent-stamps-one-instant
   #'schema/make-agent

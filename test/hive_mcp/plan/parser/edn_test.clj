@@ -107,7 +107,7 @@
    :rel (fn [[content] out] (= out (str/includes? content "```edn")))
    :classify (fn [_ out] out)
    :classify-domain #{true false}
-   :golden-path "test/golden/hive-mcp/plan/parser/edn-contains-edn-block.edn"})
+   :golden-path "test/golden/hive-mcp/plan/parser/edn-contains-edn-block.edn" :classify-floor 11 :num-tests 150})
 
 (golden/deftest-golden parse-edn-plan-strategies-golden
   "test/golden/hive-mcp/plan/parser/edn-strategies.edn"

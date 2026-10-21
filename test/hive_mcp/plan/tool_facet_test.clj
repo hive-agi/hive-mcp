@@ -79,7 +79,7 @@
    :rel (fn [[steps] out] (= out (expected-waves steps)))
    :classify (fn [_ out] (if (some pos? (vals out)) :layered :flat))
    :classify-domain #{:layered :flat}
-   :golden-path "test/golden/hive-mcp/plan/tool-compute-waves-dag.edn"})
+   :golden-path "test/golden/hive-mcp/plan/tool-compute-waves-dag.edn" :classify-floor 11 :num-tests 250})
 
 ;; -----------------------------------------------------------------------------
 ;; plan-to-kanban with the kanban write port stubbed

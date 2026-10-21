@@ -85,9 +85,9 @@
    :classify (fn [_ out] out)
    :classify-domain rebuild/EntityKind
    ;; structural edges are about one draw in twenty; 5 of 300 is a firm floor
-   :classify-floor 5
+   :classify-floor 10
    :golden-path "test/golden/hive-mcp/scripts/entity-kind.edn"
-   :num-tests 300})
+   :num-tests 550})
 
 (deftrifecta-from-schema keep-entity-keeps-mutations-and-durable-edges
   #'rebuild/keep-entity?
@@ -108,7 +108,7 @@
    :classify-domain #{true false}
    :classify-floor 10
    :golden-path "test/golden/hive-mcp/scripts/structural-edge.edn"
-   :num-tests 200})
+   :num-tests 250})
 
 ;; =============================================================================
 ;; Export / import / verify over a fresh DataScript store

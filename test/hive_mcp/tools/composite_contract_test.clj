@@ -33,7 +33,7 @@
    :classify (fn [_ out] (cond (nil? out) :none (str/ends-with? out "…") :capped :else :line))
    :classify-domain #{:none :capped :line}
    :golden-path "test/golden/hive-mcp/tools/composite-contribution-summary.edn"
-   :num-tests 200})
+   :num-tests 200 :classify-floor 10})
 
 (def ^:private Cmds
   [:map-of {:max 3} [:enum "ship" "belt" "carto"]

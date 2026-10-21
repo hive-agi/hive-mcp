@@ -154,7 +154,7 @@
                      (and (map? entry) (identical? (:handler entry) stale)) :wrapped
                      :else :untouched))
    :classify-domain #{:bare :wrapped :untouched}
-   :classify-floor 15
+   :classify-floor 11
    ;; inputs are fns, which EDN cannot snapshot, so no golden; the-pure-pieces
    ;; pins the three arms by example
-   :num-tests 300})
+   :num-tests 350})

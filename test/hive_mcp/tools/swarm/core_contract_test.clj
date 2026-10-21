@@ -64,7 +64,7 @@
    :rel (fn [[d] out] (= out (or (:ling/spawn-mode d) :claude)))
    :classify (fn [[d] _] (if (:ling/spawn-mode d) :explicit :default))
    :classify-domain #{:explicit :default}
-   :num-tests 100})
+   :num-tests 150 :classify-floor 13})
 
 (deftrifecta-from-schema chat-point-response-is-snake-case
   #'collect/chat-point->response

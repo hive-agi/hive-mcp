@@ -86,9 +86,9 @@
                   (:excludes-source out))))
    :classify (fn [_ out] (:excludes-source out))
    :classify-domain #{:none :default :caller}
-   :classify-floor 5
+   :classify-floor 10
    :golden-path "test/golden/hive-mcp/tools/memory/search-payload-contract.edn"
-   :num-tests 200})
+   :num-tests 450})
 
 (deftrifecta-from-schema filter-required-tags-keeps-supersets
   #'search/filter-required-tags

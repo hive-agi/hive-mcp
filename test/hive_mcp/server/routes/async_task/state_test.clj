@@ -78,7 +78,7 @@
    :rel (fn [[state] out] (= out (contains? s/terminal-states state)))
    :classify (fn [_ out] out)
    :classify-domain #{true false}
-   :num-tests 200})
+   :num-tests 200 :classify-floor 14})
 
 (deftrifecta-from-schema reported-state-lets-the-handle-win
   #'st/reported-state
@@ -130,7 +130,7 @@
                             (expected-reported (:state entry) (:handle entry)))))
    :classify (fn [_ out] out)
    :classify-domain #{true false}
-   :num-tests 200})
+   :num-tests 200 :classify-floor 13})
 
 (deftrifecta-from-schema stops-the-work-only-when-interrupted
   #'st/stops-the-work?
@@ -217,7 +217,7 @@
    :rel (fn [[table tool command] out] (= out (expected-classified table tool command)))
    :classify (fn [_ out] out)
    :classify-domain #{:batch :short}
-   :num-tests 300})
+   :num-tests 300 :classify-floor 17})
 
 (deftest every-declared-verb-classifies-to-its-lane
   (doseq [[tool cmds] lane/declared-lanes

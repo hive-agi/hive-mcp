@@ -44,7 +44,7 @@
             (nil? out)))
    :classify (fn [_ out] (:status out :disabled))
    :classify-domain #{:disabled :running}
-   :num-tests 60})
+   :num-tests 150 :classify-floor 13})
 
 (golden/deftest-golden a2a-gateway-paths-golden
   "test/golden/hive-mcp/server/transport/a2a-gateway.edn"

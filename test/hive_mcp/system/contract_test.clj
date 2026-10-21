@@ -115,9 +115,9 @@
             (= out argv)))
    :classify (fn [[_ argv _] out] (if (= out argv) :plain :scoped))
    :classify-domain #{:plain :scoped}
-   :classify-floor 5
+   :classify-floor 11
    :golden-path "test/golden/hive-mcp/system/plan-argv.edn"
-   :num-tests 200})
+   :num-tests 500})
 
 (deftrifecta-from-schema scope-start-failure-needs-every-signal
   #'cs/scope-start-failure?
@@ -132,9 +132,9 @@
                                  stderr))))
    :classify (fn [_ out] out)
    :classify-domain #{true false}
-   :classify-floor 3
+   :classify-floor 10
    :golden-path "test/golden/hive-mcp/system/scope-start-failure.edn"
-   :num-tests 200})
+   :num-tests 500})
 
 (deftest probes-cache-expire-and-record
   (let [calls (atom 0)

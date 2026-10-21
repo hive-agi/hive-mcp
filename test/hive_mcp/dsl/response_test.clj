@@ -420,7 +420,7 @@
    :classify (fn [_ out] (if out :ling :other))
    :classify-domain #{:ling :other}
    :golden-path "test/golden/dsl/response-ling-caller.edn"
-   :num-tests 200})
+   :num-tests 200 :classify-floor 13})
 
 (def ^:private CompressArgs
   ;; Drawn from a flat list of :compact values so every mode is reached at
