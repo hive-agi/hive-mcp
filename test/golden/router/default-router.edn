@@ -1,0 +1,56 @@
+{:routed-keyword
+ {:ok
+  #:provider{:key :small,
+             :impl :ollama,
+             :model "s",
+             :dim 384,
+             :max-tokens 100}},
+ :routed-string
+ {:ok
+  #:provider{:key :heavy,
+             :impl :venice,
+             :model "h",
+             :dim 768,
+             :max-tokens 10000}},
+ :unrouted-default
+ {:ok
+  #:provider{:key :small,
+             :impl :ollama,
+             :model "s",
+             :dim 384,
+             :max-tokens 100}},
+ :no-default
+ {:error :router/no-default,
+  :memory-type :note,
+  :hint
+  "Set [:embedder :default <provider-key>] or [:embedder :routes <type>]"},
+ :small-doc
+ {:ok
+  #:provider{:key :small,
+             :impl :ollama,
+             :model "s",
+             :dim 384,
+             :max-tokens 100}},
+ :large-doc
+ {:ok
+  #:provider{:key :heavy,
+             :impl :venice,
+             :model "h",
+             :dim 768,
+             :max-tokens 10000}},
+ :hot-flip
+ {:before
+  {:ok
+   #:provider{:key :small,
+              :impl :ollama,
+              :model "s",
+              :dim 384,
+              :max-tokens 100}},
+  :after
+  {:ok
+   #:provider{:key :heavy,
+              :impl :venice,
+              :model "h",
+              :dim 768,
+              :max-tokens 10000}}},
+ :invalidated {:before false, :after true}}
