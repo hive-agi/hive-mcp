@@ -1,0 +1,53 @@
+{:valid
+ {:valid? true,
+  :errors [],
+  :metadata
+  #:backup{:version 2,
+           :scope :kg,
+           :backend :datalevin,
+           :counts {:n 1},
+           :project-id "hive-mcp"}},
+ :chroma-only
+ ["memory-chroma-20260601T000000.edn"
+  "memory-chroma-20260301T000000.edn"],
+ :read
+ {:backup/version 2,
+  :backup/scope :kg,
+  :backup/backend :datalevin,
+  :backup/project-id "hive-mcp",
+  :backup/counts {:n 1},
+  :kg/edges [2]},
+ :latest-kg "kg-datalevin-20260501T000000.edn",
+ :unreadable {:valid? false, :errors [true], :metadata nil},
+ :missing-keys
+ {:valid? false,
+  :errors ["Missing :backup/version" "Missing :backup/counts"],
+  :metadata #:backup{:scope :memory}},
+ :limit-2
+ ["memory-chroma-20260601T000000.edn"
+  "kg-datalevin-20260501T000000.edn"],
+ :all
+ ["memory-chroma-20260601T000000.edn"
+  "kg-datalevin-20260501T000000.edn"
+  "kg-datalevin-20260401T000000.edn"
+  "memory-chroma-20260301T000000.edn"
+  "kg-datalevin-20260201T000000.edn"
+  "kg-datalevin-20260101T000000.edn"],
+ :latest-none nil,
+ :kg-only
+ ["kg-datalevin-20260501T000000.edn"
+  "kg-datalevin-20260401T000000.edn"
+  "kg-datalevin-20260201T000000.edn"
+  "kg-datalevin-20260101T000000.edn"],
+ :missing-dir [],
+ :metadata
+ #:backup{:version 2,
+          :scope :kg,
+          :backend :datalevin,
+          :project-id "global",
+          :counts {:n 1}},
+ :agora-sees
+ ["memory-chroma-20260601T000000.edn"
+  "kg-datalevin-20260501T000000.edn"
+  "kg-datalevin-20260201T000000.edn"
+  "kg-datalevin-20260101T000000.edn"]}
