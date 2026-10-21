@@ -1,0 +1,22 @@
+{:conflict
+ {:steps [:ok :conflict],
+  :index {"x" {:record :memory-batchable, :owner :multi/core}},
+  :by-owner #:multi{:core #{"x"}},
+  :lookups
+  {"x" {:record :memory-batchable, :owner :multi/core},
+   "y" nil,
+   "z" nil}},
+ :deregister
+ {:steps [:ok :ok #{"y"}],
+  :index {"x" {:record :memory-batchable, :owner :addon/a}},
+  :by-owner #:addon{:a #{"x"}},
+  :lookups
+  {"x" {:record :memory-batchable, :owner :addon/a},
+   "y" nil,
+   "z" nil}},
+ :fresh
+ {:steps [:ok],
+  :index {"x" {:record :memory-batchable, :owner :addon/a}},
+  :by-owner #:addon{:a #{"x"}},
+  :lookups
+  {"x" {:record :memory-batchable, :owner :addon/a}, "y" nil, "z" nil}}}
