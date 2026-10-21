@@ -6,6 +6,9 @@
             [hive-spi.catchup.registry :as blocks]
             [hive-mcp.test.stub.memory-store :as mem-stub]
             [hive-mcp.tools.kanban.catchup-block :as sut]
+            [hive-mcp.tools.kanban.schema :as ks]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]
+            [hive-test.golden :refer [deftest-golden]]
             [hive-spi.memory.registry :as sreg]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -54,3 +57,34 @@
         (is (= 2 (get-in blocks [:kanban :counts :todo])))))
     (finally
       (blocks/unregister-block! :kanban))))
+
+;; -----------------------------------------------------------------------------
+;; Facets
+;; -----------------------------------------------------------------------------
+
+(def ^:private Summary
+  "Summaries over empty, zero-count and non-empty boards, with and without
+   recent todos, so both arms of catchup-section are reached."
+  [:map
+   [:counts [:map-of [:enum :todo :inprogress :done] [:int {:min 0 :max 3}]]]
+   [:recent-todos [:vector {:max 2} [:map [:id [:enum "t1" "t2"]] [:title [:enum "One"]] [:tags [:= ["kanban"]]]]]]
+   [:scope-tag [:maybe [:enum "scope:project:p"]]]])
+
+(deftrifecta-from-schema catchup-section-is-nil-for-an-empty-board
+  hive-mcp.tools.kanban.catchup-block/catchup-section
+  {:in          Summary
+   :out         ks/Section
+   :rel         (fn [in out]
+                  (if (or (pos? (apply + (vals (:counts in)))) (seq (:recent-todos in)))
+                    (= out (assoc in :hint (:hint out)))
+                    (nil? out)))
+   :num-tests   300
+   :n-cases     10
+   :golden-path "test/golden/tools/kanban/catchup-section.edn"})
+
+(deftest-golden gather-kanban-summary-over-a-stub-board
+  "test/golden/tools/kanban/catchup-gather.edn"
+  (do (seed-board!)
+      {:scoped   (update (sut/gather-kanban-summary pid) :recent-todos #(sort-by :id %))
+       :other    (sut/gather-kanban-summary "no-such-project")
+       :no-store (do (sreg/reset-registry!) (sut/gather-kanban-summary pid))}))
