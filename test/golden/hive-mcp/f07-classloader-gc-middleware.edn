@@ -1,0 +1,41 @@
+{:pin-reuse-rotate
+ {:downstream
+  [{:op "eval", :id "1"}
+   {:op "eval", :session "s-1", :id "2"}
+   {:op "eval", :session "s-1", :id "3"}
+   {:op "eval", :id "4"}
+   {:op "eval", :session "s-2", :id "5"}],
+  :client-got
+  [{:id "1", :session "s-1"}
+   {:id "2", :session "s-1"}
+   {:id "3", :session "s-1"}
+   {:id "4", :session "s-2"}
+   {:id "5", :session "s-2"}],
+  :status
+  [{:shared-session-id "s-1", :eval-count 1}
+   {:shared-session-id "s-1", :eval-count 2}
+   {:shared-session-id nil, :eval-count 0}
+   {:shared-session-id "s-2", :eval-count 1}
+   {:shared-session-id "s-2", :eval-count 2}]},
+ :explicit-session-passthrough
+ {:downstream
+  [{:op "eval", :session "cider-1", :id "a"}
+   {:op "describe", :id "b"}],
+  :client-got
+  [{:id "a", :session "cider-1"} {:id "b", :session "s-1"}],
+  :status
+  [{:shared-session-id nil, :eval-count 0}
+   {:shared-session-id nil, :eval-count 0}]},
+ :rotation-disabled
+ {:downstream
+  [{:op "eval", :id "x"}
+   {:op "eval", :session "s-1", :id "y"}
+   {:op "eval", :session "s-1", :id "z"}],
+  :client-got
+  [{:id "x", :session "s-1"}
+   {:id "y", :session "s-1"}
+   {:id "z", :session "s-1"}],
+  :status
+  [{:shared-session-id "s-1", :eval-count 1}
+   {:shared-session-id "s-1", :eval-count 2}
+   {:shared-session-id "s-1", :eval-count 3}]}}
