@@ -1,14 +1,14 @@
 (ns hive-mcp.spi.ports-contract-test
   "Contract facets for the host-local kernel ports (disc, emacs, metrics,
-   session) and the two registries (catchup blocks, contributions,
-   op-schemas), plus the contract-coverage gate for spi/.
+   session) and the two registries (contributions, op-schemas), plus the
+   contract-coverage gate for spi/. The catchup block registry and the
+   kanban ports live in hive-spi and are tested there.
 
    Every port test installs a recording stub and uninstalls it after, so no
    late-bound host namespace is reached. Every registry test snapshots the
    process-global registry it drives and restores it, so the goldens do not
    depend on test order and the boot-time contributions survive."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
-            [hive-mcp.spi.catchup-registry :as cr]
             [hive-mcp.spi.contributions :as con]
             [hive-mcp.spi.disc :as disc]
             [hive-mcp.spi.emacs :as emacs]
@@ -16,7 +16,6 @@
             [hive-mcp.spi.op-schema-registry :as opreg]
             [hive-mcp.spi.session :as session]
             [hive-schemas.coverage :as coverage]
-            [hive-schemas.test :refer [deftrifecta-from-schema]]
             [hive-spi.schema.registry :as reg]
             [hive-test.golden :as golden]
             [malli.core :as m]
@@ -29,55 +28,17 @@
 (defn- own-registries
   "Snapshot every registry and port this namespace drives; restore after."
   [f]
-  (let [blocks (cr/registered-blocks)
-        contribs @@#'con/registry
+  (let [contribs @@#'con/registry
         owners (opreg/owned)]
     (try
-      (cr/reset-registry!)
       (f)
       (finally
-        (cr/reset-registry!)
-        (run! cr/register-block! blocks)
         (reset! @#'con/registry contribs)
         (opreg/reset-for-test!)
         (reset! @#'opreg/owners* owners)
         (disc/uninstall!) (emacs/uninstall!) (metrics/uninstall!) (session/uninstall!)))))
 
 (use-fixtures :each own-registries)
-
-;;; ---------------------------------------------------------------------------
-;;; Catchup registry
-;;; ---------------------------------------------------------------------------
-
-(deftrifecta-from-schema block-shape-predicate
-  #'cr/block?
-  {:in [:cat [:or cr/BlockValue :map :nil
-              [:map [:block/id :string] [:block/fn [:= {} identity]] [:block/order :int]]]]
-   :out :boolean
-   :rel (fn [[x] out]
-          (= out (boolean (and (map? x) (keyword? (:block/id x))
-                               (fn? (:block/fn x)) (integer? (:block/order x))))))
-   :classify (fn [_ out] out)
-   :classify-domain #{true false}
-   :num-tests 200})
-
-(golden/deftest-golden catchup-compose-golden
-  "test/golden/hive-mcp/spi/catchup-compose.edn"
-  (let [ok   {:block/id :b/ok :block/fn (fn [ctx] {:n (:n ctx)}) :block/order 2}
-        boom {:block/id :b/boom :block/fn (fn [_] (throw (ex-info "boom" {}))) :block/order 1}
-        nada {:block/id :b/nil :block/fn (constantly nil) :block/order 2}]
-    (run! cr/register-block! [ok boom nada])
-    (let [composed (cr/compose {:n 3})
-          ordered  (mapv :block/id (cr/registered-blocks))
-          run-with (cr/compose {:n 3} (fn [b _] (:block/order b)))
-          removed  (cr/unregister-block! :b/boom)]
-      {:composed composed :ordered ordered :custom-runner run-with
-       :removed removed :still? [(cr/registered? :b/ok) (cr/registered? :b/boom)]
-       ;; Throwable, not Exception: with malli instrumentation on the
-       ;; contract refuses with ExceptionInfo, with it off (another test may
-       ;; have unstrumented) the slot's validator assert throws AssertionError.
-       :refused (try (cr/register-block! {:block/id "x"}) :accepted
-                     (catch Throwable _ :refused))})))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Contributions
@@ -183,15 +144,15 @@
   (is (nil? (session/record-session-start! nil))))
 
 ;;; ---------------------------------------------------------------------------
-;;; Coverage gate for spi/ (spi/kanban has its own)
+;;; Coverage gate for spi/
 ;;; ---------------------------------------------------------------------------
 
 (def ^:private spi-nss
-  '[hive-mcp.spi.catchup-registry hive-mcp.spi.contributions hive-mcp.spi.disc
-    hive-mcp.spi.emacs hive-mcp.spi.kanban hive-mcp.spi.metrics
+  '[hive-mcp.spi.contributions hive-mcp.spi.disc
+    hive-mcp.spi.emacs hive-mcp.spi.metrics
     hive-mcp.spi.op-schema-registry hive-mcp.spi.session])
 
-(run! require (conj spi-nss 'hive-mcp.spi.kanban.registry))
+(run! require spi-nss)
 
 (coverage/deftest-contract-coverage spi-contracts
   {:paths ["src/hive_mcp/spi"]})
