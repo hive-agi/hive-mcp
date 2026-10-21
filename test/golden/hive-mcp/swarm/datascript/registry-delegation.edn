@@ -1,0 +1,38 @@
+{:calls
+ {"->DataScriptClaimStore"
+  {:ns "hive-datascript.swarm.registry",
+   :var "->DataScriptClaimStore"},
+  "->DataScriptCoordination"
+  {:ns "hive-datascript.swarm.registry",
+   :var "->DataScriptCoordination"},
+  "->DataScriptCriticalOps"
+  {:ns "hive-datascript.swarm.registry",
+   :var "->DataScriptCriticalOps"},
+  "->DataScriptDb"
+  {:ns "hive-datascript.swarm.registry", :var "->DataScriptDb"},
+  "->DataScriptRegistry"
+  {:ns "hive-datascript.swarm.registry", :var "->DataScriptRegistry"},
+  "get-default-claim-store"
+  {:ns "hive-datascript.swarm.registry",
+   :var "get-default-claim-store"},
+  "get-default-coordination"
+  {:ns "hive-datascript.swarm.registry",
+   :var "get-default-coordination"},
+  "get-default-critical-ops"
+  {:ns "hive-datascript.swarm.registry",
+   :var "get-default-critical-ops"},
+  "get-default-db"
+  {:ns "hive-datascript.swarm.registry", :var "get-default-db"},
+  "get-default-registry"
+  {:ns "hive-datascript.swarm.registry", :var "get-default-registry"}},
+ :values
+ {"ClaimStore" "clojure.lang.PersistentVector",
+  "Coordination" "clojure.lang.PersistentVector",
+  "CriticalOps" "clojure.lang.PersistentVector",
+  "SwarmDb" "clojure.lang.PersistentVector",
+  "SwarmRegistry" "clojure.lang.PersistentVector",
+  "default-claim-store" nil,
+  "default-coordination" nil,
+  "default-critical-ops" nil,
+  "default-db" nil,
+  "default-registry" nil}}
