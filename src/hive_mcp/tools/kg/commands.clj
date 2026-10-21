@@ -74,9 +74,9 @@
   (log/info "kg_add_edge" {:from from :to to :relation relation})
   (try
     ;; Validate inputs
-    (or (q/validate-node-id from "from")
-        (q/validate-node-id to "to")
-        (validate-relation relation)
+    (or (q/refuse-node-id from "from")
+        (q/refuse-node-id to "to")
+        (some-> (validate-relation relation) :error mcp-error)
         ;; Execute
         (let [relation-kw (if (keyword? relation) relation (keyword relation))
               created-by (edge-created-by created_by)
@@ -275,7 +275,7 @@
   [{:keys [entry_id force]}]
   (log/info "kg_reground" {:entry-id entry_id :force force})
   (try
-    (or (q/validate-node-id entry_id "entry_id")
+    (or (q/refuse-node-id entry_id "entry_id")
         (let [result (grounding/reground-entry! entry_id)]
           (mcp-json {:success true
                      :status (name (:status result))
