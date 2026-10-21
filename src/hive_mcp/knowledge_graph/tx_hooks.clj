@@ -10,7 +10,8 @@
    Both connection/transact! and connection/transact-sync! apply them, so a
    hook sees edges written through any path (add-edge(s)!, batch, events,
    promotion), not only through one function."
-  (:require [taoensso.timbre :as log]))
+  (:require [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 (defonce ^:private hooks (atom (sorted-map)))
 
@@ -39,3 +40,12 @@
    refuses the transaction: the exception reaches the writer."
   [tx-data]
   (reduce (fn [tx [_ f]] (f tx)) tx-data @hooks))
+
+(def ^:private Hook
+  [:fn {:gen/elements [identity]} ifn?])
+
+(m/=> register! [:=> [:cat :keyword Hook] :keyword])
+(m/=> unregister! [:=> [:cat :keyword] :keyword])
+(m/=> registered [:=> [:cat] [:vector :keyword]])
+;; tx-data is backend tx-data (maps or datom vectors); a hook may rewrite it
+(m/=> apply-hooks [:=> [:cat :any] :any])

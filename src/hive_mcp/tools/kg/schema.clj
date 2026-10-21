@@ -34,13 +34,18 @@
   "What `queries/validate-node-id` answers for a refused id."
   [:map {:closed true} [:error :string]])
 
+(def NodeIdRefusal
+  "What a handler answers for a refused node id: an MCP error result."
+  [:map
+   [:type [:= "text"]]
+   [:text :string]
+   [:isError [:= true]]])
+
 (def KgResponse
-  "What a KG handler that validates node ids answers: an MCP response, or
-   the bare `{:error msg}` map `validate-node-id` produced.
-   BUG: the refusal escapes the handler as a plain map, not as an MCP error
-   (handle-kg-traverse {:start_node nil} => {:error \"start_node must be a
-   non-empty string\"}). The schema records current behaviour."
-  [:or core/McpResponse NodeIdError])
+  "What a KG handler that validates node ids answers: an MCP response. A
+   refused id is an MCP error (NodeIdRefusal), never the bare `{:error msg}`
+   map validate-node-id produces."
+  core/McpResponse)
 
 (def Relations
   "The relations filter a caller may send: absent, one name, a list of names
