@@ -1,0 +1,9 @@
+{:absolute ["/tmp/z.txt"],
+ :backticks ["src/a.clj" "b.edn"],
+ :dedup ["a.clj"],
+ :edit-verb ["src/foo.clj" "core.clj"],
+ :no-files [],
+ :not-string nil,
+ :quoted ["docs/x.md"],
+ :relative ["./rel/y.md" "../up/w.clj"],
+ :url []}

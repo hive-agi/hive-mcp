@@ -1,0 +1,7 @@
+{:ids ["t-a" "t-b"],
+ :two
+ [{:id "t-a", :slave-id "s1", :files ["a.clj"]}
+  {:id "t-b", :slave-id "s2"}],
+ :after-remove [{:id "t-b", :slave-id "s2"}],
+ :remove-absent [{:id "t-b", :slave-id "s2"}],
+ :cleared []}
