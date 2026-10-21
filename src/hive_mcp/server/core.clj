@@ -30,7 +30,8 @@
             [hive-mcp.engine.manifold-pool :as manifold-pool]
             [hive-mcp.config.io :as config-io]
             [hive-mcp.server.log-sink :as log-sink]
-            [malli.core :as m])
+            [malli.core :as m]
+            [hive-mcp.server.log-guard :as log-guard])
   (:gen-class))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -45,7 +46,33 @@
   (log-sink/make-sink (log-sink/err-stream-writer)))
 
 (defonce file-sink
-  (log-sink/make-sink (log-sink/file-line-writer)))
+  (log-sink/make-sink (log-guard/guarded-writer (log-sink/file-line-writer))))
+
+(defonce ^{:doc "Embedding warnings beside coordinator.log, so a starved or failing
+   embedder leaves an on-disk trace (kanban 20261020223606-16e6e1ef). A delay:
+   only `install-log-files!` (the -main path) starts its drain thread."}
+  embed-log-sink
+  (delay (log-sink/make-sink
+          (log-guard/guarded-writer
+           (log-sink/file-line-writer
+            (io/file (.getParentFile ^java.io.File (log-sink/file-path)) "embeddings.log"))))))
+
+(defn install-log-files!
+  "Production wiring, called from -main: route embedding warnings to
+   embeddings.log, and close both file sinks in a JVM shutdown hook. Those
+   sinks call libc through JNA on daemon threads; closing them first means no
+   native log call is in flight while the JVM tears down (kanban
+   20261020231003-2a41a962). Returns the hook thread."
+  []
+  (let [embed @embed-log-sink]
+    (log/merge-config!
+     {:appenders {:embedding-warnings
+                  {:enabled? true
+                   :async? false
+                   :fn (log-guard/ns-warn-appender-fn embed ["hive-mcp.embeddings."])}}})
+    (log-guard/register-close-on-shutdown! [file-sink embed] 2000)))
+
+(m/=> install-log-files! [:=> [:cat] [:fn #(instance? Thread %)]])
 
 (defn register-coordinator-file!
   "Install the boot-only file appender over an injected asynchronous sink."
@@ -345,6 +372,7 @@
 
    Profile precedence: --profile flag > HIVE_PROFILE env > desktop"
   [& args]
+  (install-log-files!)
   (let [{:keys [profile]} (parse-cli-args args)
         sys (start! :profile profile)]
     (block-until-shutdown! sys)))

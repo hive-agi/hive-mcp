@@ -107,7 +107,8 @@
      (when-let [provider (:provider
                           (call 'hive-mcp.embeddings.service/resolve-provider-for-type
                                 memory-type))]
-       (call 'hive-mcp.embeddings.protocol/embed-batch provider texts)))
+       ;; Bulk work: :batch lane, chunked, so it cannot starve interactive embeds.
+       (call 'hive-mcp.embeddings.bulk/embed-batch! provider texts)))
 
    :embedding/provider
    (fn []
