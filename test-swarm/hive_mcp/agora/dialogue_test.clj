@@ -175,6 +175,16 @@
                                {:sender "a" :receiver "b" :message "x" :signal :approve})
       (is (false? (dialogue/nash-equilibrium? dialogue-id))))))
 
+(deftest nash-equilibrium-needs-someone-to-agree-test
+  (testing "an unknown dialogue id is 'could not look', not consensus"
+    (is (false? (dialogue/nash-equilibrium? "no-such-dialogue"))))
+  (testing "a dialogue everyone has left has nobody agreeing"
+    (let [dialogue-id (dialogue/create-dialogue {:participants ["a" "b"]})]
+      (dialogue/leave-dialogue dialogue-id "a")
+      (dialogue/leave-dialogue dialogue-id "b")
+      (is (empty? (dialogue/get-participants dialogue-id)))
+      (is (false? (dialogue/nash-equilibrium? dialogue-id))))))
+
 (deftest nash-equilibrium-disrupted-test
   (testing "nash-equilibrium? returns false when any signal is disruptive"
     (let [dialogue-id (dialogue/create-dialogue
