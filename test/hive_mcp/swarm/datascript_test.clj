@@ -36,9 +36,7 @@
    :out [:maybe [:sequential [:enum "a" "b" "c" "d"]]]
    :rel (fn [[db _] out]
           (= (set (map :v (d/datoms db :aevt :slave/name))) (set out)))
-   :num-tests 200
-   ;; dbs are not EDN; the golden below pins q-db over named cases instead
-   :mutation true})
+   :num-tests 200})
 
 (deftest-golden q-db-cases-golden
   "test/golden/hive-mcp/swarm/datascript-q-db.edn"

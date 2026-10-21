@@ -4,10 +4,12 @@
 
    On the unit classpath hive-agent is absent, so a shim's only behaviour is
    WHERE it delegates: calling it raises :swarm/addon-missing naming the
-   hive-agent ns and var it resolves. `targets` collects that mapping as data
-   for a golden, so a shim that points a var at the wrong target (a typo in
-   its `(impl 'sym)`, a moved namespace) changes the snapshot. The suites
-   that run the shims against hive-agent itself live in test-swarm/."
+   hive-agent ns and var it resolves. `target` / `targets` collect that
+   mapping as data for a golden, so a shim that points a var at the wrong
+   target (a typo in its `(impl 'sym)`, a moved namespace) changes the
+   snapshot. Each shim is called with arguments its contract accepts, so the
+   answer is the same with the contracts instrumented. The suites that run
+   the shims against hive-agent itself live in test-swarm/."
   (:require [hive-mcp.swarm.delegate :as delegate]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -28,9 +30,14 @@
        (catch Throwable e [:threw (.getName (class e))])))
 
 (defn targets
-  "{var-name -> (target var)} for every var in VARS, each called with no args."
-  [vars]
-  (into (sorted-map) (map (fn [v] [(str (:name (meta v))) (target @v)])) vars))
+  "{var-name -> (target var & args)} for each [var & args] in CALLS (a bare var
+   is called with no args)."
+  [calls]
+  (into (sorted-map)
+        (map (fn [c]
+               (let [[v & args] (if (var? c) [c] c)]
+                 [(str (:name (meta v))) (apply target @v args)])))
+        calls))
 
 (defn addon-absent?
   "True when NS-STR (a hive-agent namespace) is not on the classpath, which is

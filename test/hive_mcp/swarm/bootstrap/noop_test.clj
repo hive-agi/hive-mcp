@@ -20,4 +20,4 @@
 
 (deftest-golden noop-shim-targets-golden
   "test/golden/hive-mcp/swarm/bootstrap/noop-shim-targets.edn"
-  (shim/targets [#'noop/->NoopBootstrap #'noop/map->NoopBootstrap #'noop/make-noop-bootstrap]))
+  (shim/targets [#'noop/->NoopBootstrap [#'noop/map->NoopBootstrap {}] #'noop/make-noop-bootstrap]))

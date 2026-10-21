@@ -17,7 +17,10 @@
   (is (shim/addon-absent? "hive-agent.swarm.bootstrap.datahike-driver")
       "the golden below is the unit-classpath answer"))
 
+(def ^:private cfg {:store {:backend :file :path "/nonexistent-f00/datahike"}})
+
 (deftest-golden driver-shim-targets-golden
   "test/golden/hive-mcp/swarm/bootstrap/datahike-driver-shim-targets.edn"
   (shim/targets [#'driver/create-database #'driver/connect #'driver/transact #'driver/q
-                 #'driver/pull #'driver/db #'driver/release #'driver/database-exists?]))
+                 #'driver/pull #'driver/db #'driver/release
+                 [#'driver/database-exists? cfg]]))

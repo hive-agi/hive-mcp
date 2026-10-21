@@ -24,11 +24,15 @@
   (fn [sender to event-type data] (swap! sent conj [sender to event-type data]) true))
 
 (defn- unit-answers []
-  (let [sent (atom [])
-        opts {:notify! (recording-notify sent) :task-id "t1" :now-ms 0}]
-    {:acquire-empty      (negotiate/acquire-for-ling! "ling-a" [] opts)
-     :acquire-nil        (negotiate/acquire-for-ling! "ling-a" nil opts)
-     :acquire-one        (shim/target negotiate/acquire-for-ling! "ling-a" ["a.clj"] opts)
+  (let [sent    (atom [])
+        opts    {:notify! (recording-notify sent) :task-id "t1" :now-ms 0}
+        ;; sequenced in the let: a large map literal evaluates in hash order
+        empty-a (negotiate/acquire-for-ling! "ling-a" [] opts)
+        nil-a   (negotiate/acquire-for-ling! "ling-a" nil opts)
+        one-a   (shim/target negotiate/acquire-for-ling! "ling-a" ["a.clj"] opts)]
+    {:acquire-empty      empty-a
+     :acquire-nil        nil-a
+     :acquire-one        one-a
      :sent               @sent
      :deadlock-no-keys   (negotiate/foresee-deadlock "ling-a" [])
      :deadlock-no-graph  (negotiate/foresee-deadlock "ling-a" ["a.clj"])

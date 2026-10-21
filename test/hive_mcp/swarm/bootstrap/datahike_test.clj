@@ -22,9 +22,12 @@
   (is (shim/addon-absent? "hive-agent.swarm.bootstrap.datahike")
       "the golden below is the unit-classpath answer"))
 
+(def ^:private cfg {:store {:backend :file :path "/nonexistent-f00/datahike"}})
+
 (deftest-golden datahike-shim-targets-golden
   "test/golden/hive-mcp/swarm/bootstrap/datahike-shim-targets.edn"
-  (shim/targets [#'datahike/->DatahikeBootstrap #'datahike/map->DatahikeBootstrap
+  (shim/targets [[#'datahike/->DatahikeBootstrap (atom nil) cfg]
+                 [#'datahike/map->DatahikeBootstrap {:conn-atom (atom nil) :cfg cfg}]
                  #'datahike/make-datahike-bootstrap]))
 
 (deftest config-and-conn-schemas-test
