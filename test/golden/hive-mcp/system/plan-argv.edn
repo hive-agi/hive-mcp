@@ -1,42 +1,46 @@
 {:case-0
  {:out ["-c" "-c" "ls" "nope-not-a-binary"],
   :in
-  (:yes
+  [:yes
    ["-c" "-c" "ls" "nope-not-a-binary"]
-   {:path "/nonexistent", :cwd "/tmp", :prefix ["env" "S=1"]})},
+   {:path "", :cwd "/tmp", :prefix ["env" "S=1"]}]},
  :case-1
- {:out ["-c" "/bin/sh"],
+ {:out ["env" "S=1" "sh" "-c" "/bin/sh"],
   :in
-  (:yes ["-c" "/bin/sh"] {:path "", :cwd "/", :prefix ["env" "S=1"]})},
+  [true
+   ["sh" "-c" "/bin/sh"]
+   {:path "/bin:/usr/bin", :cwd "/", :prefix ["env" "S=1"]}]},
  :case-2
- {:out ["systemd-run" "ls" "-c" "/bin/sh"],
+ {:out ["env" "S=1" "sh" "ls" "-c" "/bin/sh"],
   :in
-  (true
-   ["ls" "-c" "/bin/sh"]
-   {:path "/bin:/usr/bin", :cwd "/tmp", :prefix ["systemd-run"]})},
+  [true
+   ["sh" "ls" "-c" "/bin/sh"]
+   {:path "/bin:/usr/bin", :cwd "/tmp", :prefix ["env" "S=1"]}]},
  :case-3
- {:out [],
+ {:out ["env" "S=1" "sh"],
   :in
-  (false
-   []
-   {:path "/bin:/usr/bin", :cwd "/", :prefix ["systemd-run"]})},
+  [true
+   ["sh"]
+   {:path "/bin:/usr/bin", :cwd "/", :prefix ["env" "S=1"]}]},
  :case-4
  {:out ["-c" "-c" "ls" "sh"],
   :in
-  (true
+  [true
    ["-c" "-c" "ls" "sh"]
-   {:path "", :cwd "/", :prefix ["systemd-run"]})},
+   {:path "/nonexistent", :cwd "/tmp", :prefix ["systemd-run"]}]},
  :case-5
  {:out ["ls" "-c" "/bin/sh"],
   :in
-  (true
+  [true
    ["ls" "-c" "/bin/sh"]
-   {:path "/nonexistent", :cwd "/tmp", :prefix ["systemd-run"]})},
+   {:path "", :cwd "/tmp", :prefix ["env" "S=1"]}]},
  :case-6
  {:out ["/bin/sh"],
   :in
-  (false
+  [false
    ["/bin/sh"]
-   {:path "", :cwd "/tmp", :prefix ["systemd-run"]})},
+   {:path "/bin:/usr/bin", :cwd "/tmp", :prefix ["systemd-run"]}]},
  :case-7
- {:out [], :in (:yes [] {:path "", :cwd "/", :prefix ["env" "S=1"]})}}
+ {:out [],
+  :in
+  [:yes [] {:path "/bin:/usr/bin", :cwd "/", :prefix ["env" "S=1"]}]}}
