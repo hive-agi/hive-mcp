@@ -1,9 +1,10 @@
 (ns hive-mcp.telemetry.metrics-tool
-  "MCP verbs `project metrics snapshot|hotspots|reset`, contributed through
+  "MCP verbs `project metrics snapshot|hotspots|resources|reset`, contributed through
    hive-addon.registry.commands. Every verb reads the metrics port late via
    hive-mcp.telemetry.metrics; with the port absent they answer empty data."
   (:require [hive-addon.registry.commands :as addon-cmds]
             [hive-mcp.telemetry.metrics :as metrics]
+            [hive-mcp.telemetry.resources :as resources]
             [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -53,6 +54,12 @@
   (let [opts (hotspots-opts params)]
     (text {:port? (metrics/port-available?) :opts opts :rows (metrics/hotspots opts)})))
 
+(defn handle-resources
+  "Answer the JVM resource report: sampler status, trend (Metaspace and class
+   growth per hour, RSS slope), the latest sample and the gauge names."
+  [_params]
+  (text (resources/report)))
+
 (defn handle-reset
   "Clear the port aggregates."
   [_params]
@@ -63,10 +70,12 @@
   "The `metrics` command group."
   {"metrics" {:handler {:snapshot #'handle-snapshot
                         :hotspots #'handle-hotspots
+                        :resources #'handle-resources
                         :reset    #'handle-reset}
               :description (str "Internal op timing: metrics snapshot (every op key), "
                                 "metrics hotspots [by=total|count|mean|p99|max|errors] [limit] "
-                                "[area e.g. mcp/tool, mcp/mw], metrics reset.")}})
+                                "[area e.g. mcp/tool, mcp/mw], metrics resources (JVM CPU/heap/Metaspace/"
+                                "classes/threads/GC/RSS trend), metrics reset.")}})
 
 (defn install!
   "Contribute the `metrics` group to `target-tool`. Never throws; returns the
@@ -80,5 +89,6 @@
 
 (m/=> handle-snapshot [:=> [:cat [:maybe :map]] TextContent])
 (m/=> handle-hotspots [:=> [:cat [:maybe :map]] TextContent])
+(m/=> handle-resources [:=> [:cat [:maybe :map]] TextContent])
 (m/=> handle-reset [:=> [:cat [:maybe :map]] TextContent])
 (m/=> install! [:=> [:cat] :any])
