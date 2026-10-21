@@ -115,5 +115,6 @@
   {:completed (fire-once {:type :task-completed :task-id "f00-fire" :status "completed" :result "ok"})})
 
 (deftest register-requires-string-ids-test
-  (is (thrown? AssertionError (callback/register! :f00-kw {:ling-id "ling-a"})))
+  ;; refused by the :pre, or by the contract first when it is instrumented
+  (is (thrown? Throwable (callback/register! :f00-kw {:ling-id "ling-a"})))
   (is (= "f00-x" (callback/register! "f00-x" {:ling-id "ling-a"}))))
