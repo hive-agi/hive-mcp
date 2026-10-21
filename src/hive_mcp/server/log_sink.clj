@@ -114,6 +114,19 @@
   "Number of retained older generations."
   3)
 
+(def log-levels
+  "Timbre levels HIVE_MCP_LOG_LEVEL may name."
+  #{:trace :debug :info :warn :error :fatal :report})
+
+(defn parse-log-level
+  "Timbre :min-level for the HIVE_MCP_LOG_LEVEL value `s` (\"debug\",
+   \":warn\", \"INFO\" ...). Blank, nil or unknown values give :info, so the
+   server never runs at :debug by accident: at the live request rate every
+   request's DEBUG lines cost real CPU."
+  [s]
+  (let [k (some-> s str .trim .toLowerCase (.replaceFirst "^:" "") not-empty keyword)]
+    (if (contains? log-levels k) k :info)))
+
 (defn- open-verified-fd!
   "Open relative to a pinned private directory and inspect the OPEN Linux
    inode with fstat before writing. Fail closed off Linux amd64."
