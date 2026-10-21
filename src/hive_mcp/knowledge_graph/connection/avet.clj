@@ -48,12 +48,27 @@
   (->> (spi/query store '[:find ?e ?v :in $ ?a :where [?e ?a ?v]] [attr])
        (sort-by (juxt second first))))
 
+(defn- value-indexed?
+  "True when `db` keeps `attr` in its value-first index. datalevin indexes
+   every attribute; datascript and datahike only an attribute whose schema
+   carries :db/index or :db/unique. A database created before the attribute
+   was indexed holds no AVET datoms for it, so walking :avet answers empty."
+  [engine db attr]
+  (or (= "datalevin.db" engine)
+      (let [s (get (:schema db) attr)]
+        (boolean (or (:db/index s) (:db/unique s))))))
+
 (defn- snapshot-values-ascending
   [store attr]
-  (let [db (spi/db-snapshot store)]
-    (if-let [[fn-sym index] (get engine-index (engine-of db))]
+  (let [db     (spi/db-snapshot store)
+        engine (engine-of db)
+        [fn-sym index] (get engine-index engine)]
+    (cond
+      (and fn-sym (value-indexed? engine db attr))
       (map (fn [d] [(:e d) (:v d)]) ((requiring-resolve fn-sym) db index attr))
-      (if db (datalog-fallback store attr) ()))))
+
+      db (datalog-fallback store attr)
+      :else ())))
 
 (extend-protocol IAttrValueIndex
   Object
