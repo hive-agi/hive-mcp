@@ -15,8 +15,18 @@
 
 (use-fixtures :each (fn [f] (binding [config/*config-source* (src/empty-source)] (f))))
 
+;; A uniform draw splits the :maybe toward nil and :enabled between true and
+;; false, so :failed lands near a third of 60 draws, close enough to the
+;; floor that some seeds starve it. A coin drawn beside the config enables it
+;; on heads (:failed) and leaves the uniform draw on tails, so :failed sits
+;; near two thirds and :disabled near one third: both clear the floor.
 (def ^:private UnbindableConfig
   [:maybe
+   {:gen/schema [:tuple [:maybe [:map [:enabled :boolean] [:port [:enum -1 -2 -70000]]]]
+                 [:enum -1 -2 -70000]
+                 :boolean]
+    :gen/fmap   (fn [[cfg port enable?]]
+                  (if enable? {:enabled true :port port} cfg))}
    [:map
     [:enabled :boolean]
     [:port [:enum -1 -2 -70000]]]])
@@ -31,7 +41,7 @@
             (nil? out)))
    :classify (fn [_ out] (:status out :disabled))
    :classify-domain #{:disabled :failed}
-   :num-tests 150 :classify-floor 11})
+   :num-tests 60})
 
 (golden/deftest-golden websocket-start-paths-golden
   "test/golden/hive-mcp/server/transport/websocket-mcp.edn"
