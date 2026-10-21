@@ -17,7 +17,10 @@
   (:require [clojure.test :refer [deftest is testing]]
             [hive-dsl.adt :as adt]
             [hive-mcp.resilience.classify :as classify]
-            [hive-mcp.resilience.protocol :as proto])
+            [hive-mcp.resilience.protocol :as proto]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]
+            [hive-test.golden :refer [deftest-golden]]
+            [malli.generator :as mg])
   (:import [java.io IOException]
            [java.util.concurrent ExecutionException]))
 
@@ -118,3 +121,50 @@
              (variant (proto/classify
                        c
                        (ex-info "x" {:milvus-clj.client/transport :http :code 1804}))))))))
+
+;;; ---------------------------------------------------------------------------
+;;; Facets driven by the contract's own Throwable_ generator: a root cause
+;;; from every arm, buried under 0-3 wrapper links whose message carries no
+;;; marker and whose ex-data is empty. The classification is decided by the
+;;; root, whatever the wrapping.
+;;; ---------------------------------------------------------------------------
+
+(def ^:private root-variant
+  "Oracle: the variant each generated root cause must classify as."
+  {"Milvus code=1804" :err/schema-mismatch
+   "auth"             :err/auth
+   "transport drop"   :err/transient
+   "too large"        :err/validation
+   "dim mismatch"     :err/schema-mismatch
+   "eof"              :err/transient
+   "Broken pipe"      :err/transient
+   "something else"   :err/unknown})
+
+(defn- root-cause [^Throwable t]
+  (if-let [c (.getCause t)] (recur c) t))
+
+(deftrifecta-from-schema classify-reads-the-root-cause
+  #'classify/classify
+  {:in [:cat classify/Throwable_]
+   :out proto/ErrorClassValue
+   :rel (fn [[t] out]
+          (= (:adt/variant out) (root-variant (.getMessage ^Throwable (root-cause t)))))
+   :classify (fn [_ out] (:adt/variant out))
+   :classify-domain proto/ErrorClassVariant
+   :classify-floor 10
+   :num-tests 300})
+
+(defn- chain-label
+  "EDN-stable description of a throwable's cause chain (Throwables do not
+   round-trip through EDN)."
+  [^Throwable t]
+  (loop [t t acc []]
+    (if t
+      (recur (.getCause t) (conj acc (str (.getSimpleName (class t)) ": " (.getMessage t))))
+      acc)))
+
+(deftest-golden classify-sampled-chains-golden
+  "test/golden/hive-mcp/resilience/classify-chains.edn"
+  (mapv (fn [t] {:chain (chain-label t)
+                 :class (dissoc (classify/classify t) :details)})
+        (mg/sample classify/Throwable_ {:seed 11 :size 10})))
