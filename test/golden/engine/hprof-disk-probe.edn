@@ -1,0 +1,7 @@
+{:no-ancestor-bytes 0,
+ :no-ancestor-gb 0.0,
+ :no-ancestor-pressured? true,
+ :tmp-floor-zero false,
+ :tmp-floor-absurd true,
+ :missing-child-of-tmp true,
+ :file-arg true}

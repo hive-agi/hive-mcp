@@ -1,0 +1,9 @@
+{:map {:ok {:a 1, :b {:c "x"}}},
+ :missing {:ok nil},
+ :non-map {:ok nil},
+ :parse-fail
+ {:error :io/edn-read, :class "class java.lang.RuntimeException"},
+ :write-ok {:ok {:k [1 2]}},
+ :written {:ok {:k [1 2]}},
+ :write-fail
+ {:error :io/edn-write, :class "class java.io.FileNotFoundException"}}

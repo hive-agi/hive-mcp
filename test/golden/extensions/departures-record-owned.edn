@@ -1,0 +1,8 @@
+{:tools ["agent" "memory"],
+ :spawn {:addon :hive-agent, :at-ms true},
+ :kill nil,
+ :index {:addon :hive-agent, :at-ms true},
+ :other-addon nil,
+ :none-owned [],
+ :empty-record nil,
+ :replayed {:addon :b, :at-ms 7}}

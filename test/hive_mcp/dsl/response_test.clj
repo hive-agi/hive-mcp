@@ -3,7 +3,8 @@
    Verifies noop pass-through when no extensions registered,
    and parameter resolution logic."
   (:require [clojure.test :refer [deftest is testing]]
-            [hive-mcp.dsl.response :as r]))
+            [hive-mcp.dsl.response :as r]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]))
 
 ;; =============================================================================
 ;; Test Fixtures: Realistic Response Shapes
@@ -401,3 +402,104 @@
           result (r/format-results-compact input)]
       (is (= "extra" (:custom (:s result))))
       (is (= 1 (:t (:s result)))))))
+
+;; =============================================================================
+;; Facets driven by the contracts
+;; =============================================================================
+
+(def ^:private CallerId
+  [:maybe [:enum "swarm-1" "ling-a" "coordinator" "lingering" ""]])
+
+(deftrifecta-from-schema ling-caller-by-prefix
+  #'r/ling-caller?
+  {:in [:cat CallerId]
+   :out [:maybe :boolean]
+   :rel (fn [[id] out]
+          (= (boolean (and id (or (.startsWith ^String id "swarm-") (.startsWith ^String id "ling-"))))
+             (boolean out)))
+   :classify (fn [_ out] (if out :ling :other))
+   :classify-domain #{:ling :other}
+   :golden-path "test/golden/dsl/response-ling-caller.edn"
+   :num-tests 200})
+
+(def ^:private CompressArgs
+  ;; Drawn from a flat list of :compact values so every mode is reached at
+  ;; a similar rate (an open :or under-sampled :minimal and :full).
+  [:map {:gen/schema [:tuple [:enum false true "compact" "minimal" "full" :compact :minimal :full
+                              "bogus" :weird 3 nil]
+                      CallerId]
+         :gen/fmap (fn [[c id]] (cond-> {} (some? c) (assoc :compact c) id (assoc :_caller_id id)))}
+   [:compact {:optional true} [:or :boolean [:enum "compact" "minimal" "full" "bogus" :compact :minimal :weird] :int]]
+   [:_caller_id {:optional true} CallerId]])
+
+(defn- mode-oracle
+  "The docstring's priority list, restated."
+  [{:keys [compact _caller_id]}]
+  (let [ling? (and (string? _caller_id)
+                   (or (.startsWith ^String _caller_id "swarm-") (.startsWith ^String _caller_id "ling-")))]
+    (cond
+      (false? compact)  nil
+      (true? compact)   :compact
+      (#{"compact" "minimal" "full" :compact :minimal :full} compact) (keyword compact)
+      (nil? compact)    (when ling? :compact)
+      :else             nil)))
+
+(deftrifecta-from-schema resolve-compress-mode-priority
+  #'r/resolve-compress-mode
+  ;; nil args (the contract admits them) answer nil; pinned in
+  ;; resolve-compress-mode-nil-args so the golden cases stay varied.
+  {:in [:cat CompressArgs]
+   :out [:maybe r/CompressMode]
+   :rel (fn [[args] out] (= (mode-oracle args) out))
+   :classify (fn [_ out] (or out :none))
+   :classify-domain #{:none :compact :minimal :full}
+   :golden-path "test/golden/dsl/response-resolve-compress-mode.edn"
+   :num-tests 400})
+
+(deftest resolve-compress-mode-nil-args
+  (is (nil? (r/resolve-compress-mode nil))))
+
+(def ^:private GenEnvelopeBase
+  [:map
+   [:success {:optional true} [:maybe :boolean]]
+   [:summary {:optional true} [:maybe [:map-of {:max 3} [:enum :total :success :failed :waves :custom] [:int {:min 0 :max 5}]]]]
+   [:waves {:optional true} [:maybe [:map-of {:max 3} [:enum "wave_1" "wave_2" "wave_10"]
+                                     [:vector {:max 2} [:map [:id [:enum "a" "b"]] [:success :boolean]
+                                                        [:result {:optional true} [:enum "r1" "r2"]]
+                                                        [:error {:optional true} [:enum "boom"]]]]]]]
+   [:dry_run {:optional true} [:maybe :boolean]]
+   [:plan {:optional true} [:maybe [:map [:waves [:int {:min 0 :max 3}]]]]]
+   [:errors {:optional true} [:maybe [:vector {:max 2} [:enum "Op missing :id" "bad"]]]]])
+
+(def ^:private GenEnvelope
+  ;; A third of the cases are forced into a dry run with a plan, a third
+  ;; into an executed run with waves, so each envelope arm is reached.
+  [:and {:gen/schema [:tuple GenEnvelopeBase [:enum :dry :exec :as-drawn]]
+         :gen/fmap (fn [[env arm]]
+                     (case arm
+                       :dry  (assoc env :dry_run true :plan {:waves 1})
+                       :exec (-> env (assoc :dry_run false) (update :waves #(or % {"wave_1" []})))
+                       env))}
+   GenEnvelopeBase])
+
+(def ^:private wave-n #(parse-long (subs % 5)))
+
+(deftrifecta-from-schema format-results-compact-shape
+  #'r/format-results-compact
+  {:in [:cat GenEnvelope]
+   :out r/CompactEnvelope
+   :rel (fn [[{:keys [success summary waves dry_run plan errors]}] out]
+          (and (= success (:ok out))
+               (= (count summary) (count (:s out)))
+               (= (if (and waves (not dry_run))
+                    (mapv (fn [{:keys [id success result error]}]
+                            (cond-> {:id id :ok success} result (assoc :d result) error (assoc :e error)))
+                          (mapcat val (sort-by (comp wave-n key) waves)))
+                    nil)
+                  (:r out))
+               (= (when (and dry_run plan) plan) (:p out))
+               (= errors (:E out))))
+   :classify (fn [_ out] (cond (:dr out) :dry-run (:r out) :executed :else :summary-only))
+   :classify-domain #{:dry-run :executed :summary-only}
+   :golden-path "test/golden/dsl/response-format-results-compact.edn"
+   :num-tests 300})

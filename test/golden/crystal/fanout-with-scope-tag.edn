@@ -1,0 +1,27 @@
+{:case-0
+ {:out {:tags ["scope:project:hive"], :content "c2"},
+  :in [{:tags nil, :content "c2"} "hive"]},
+ :case-1
+ {:out {:content "c1", :tags ["scope:project:a.b"]},
+  :in [{:content "c1", :tags ["scope:project:a.b"]} "a.b"]},
+ :case-2
+ {:out
+  {:tags
+   ["scope:project:a.b" "scope:project:hive" "scope:multi-project"]},
+  :in [{:tags ["scope:project:hive" "scope:multi-project"]} "a.b"]},
+ :case-3
+ {:out {:content "c1", :tags ["scope:multi-project"]},
+  :in [{:content "c1", :tags ["scope:multi-project"]} :umbrella]},
+ :case-4 {:out {:tags ["scope:project:a.b"]}, :in [{:tags nil} "a.b"]},
+ :case-5 {:out {:tags ["scope:project:a.b"]}, :in [{} "a.b"]},
+ :case-6
+ {:out {:content "c2", :tags ["scope:multi-project"]},
+  :in [{:content "c2"} :umbrella]},
+ :case-7
+ {:out
+  {:tags
+   ["session-summary" "scope:project:hive" "scope:multi-project"]},
+  :in
+  [{:tags
+    ["session-summary" "scope:project:hive" "scope:multi-project"]}
+   :umbrella]}}

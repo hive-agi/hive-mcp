@@ -1,0 +1,14 @@
+{:empty
+ {:summary {:before 0, :after 0, :kept 0, :gzipped 0, :deleted 0},
+  :files []},
+ :keep-2-gzip
+ {:summary {:before 20, :after 25, :kept 2, :gzipped 1, :deleted 2},
+  :files ["c.hprof.gz" "d.hprof.gz"]},
+ :keep-2-raw
+ {:summary {:before 20, :after 8, :kept 2, :gzipped 0, :deleted 2},
+  :files ["c.hprof.gz" "d.hprof"]},
+ :keep-0
+ {:summary {:before 20, :after 0, :kept 0, :gzipped 0, :deleted 4},
+  :files []},
+ :floor-zero {:ret nil, :calls []},
+ :floor-absurd {:ret nil, :calls [78]}}

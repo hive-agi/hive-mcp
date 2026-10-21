@@ -1,0 +1,40 @@
+{:require-miss
+ {:key :hive/absent, :available [:hive/editor :hive/kg-store]},
+ :consumer {:declared [:a :b], :nil-set [], :plain []},
+ :pipeline-ok
+ {:keys
+  [:addon
+   :addon-id-fn
+   :init!
+   :init-result
+   :injected-services
+   :on-success
+   :reg-result
+   :register!
+   :service-keys
+   :store-atom],
+  :reg-ok? true,
+  :init-ok? true,
+  :services #:hive{:editor :editor, :kg-store {:conn :fake}}},
+ :init-as-addon
+ {:ok {:registered ["f08.di-helper"], :total 1},
+  :nil {:registered [], :total 0}},
+ :init-config
+ {:services #:hive{:editor :editor, :kg-store {:conn :fake}},
+  :runtime-ports? true},
+ :callbacks 1,
+ :bad-extra-dep nil,
+ :missing-req nil,
+ :resolve
+ {:hit clojure.core/identity,
+  :miss nil,
+  :all {:c clojure.core/count, :i clojure.core/identity},
+  :any-missing nil},
+ :deps
+ {:satisfied
+  {:satisfied? true, :missing [], :available [:hive/editor]},
+  :missing
+  {:satisfied? false,
+   :missing [:hive/absent],
+   :available [:hive/editor]}},
+ :stored? true}

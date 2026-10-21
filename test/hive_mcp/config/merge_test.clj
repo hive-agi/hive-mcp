@@ -3,7 +3,9 @@
    for the dedicated carto vector store (qdrant-carto) and the
    :carto-store service key."
   (:require [clojure.test :refer [deftest is testing]]
-            [hive-mcp.config.merge :as merge]))
+            [hive-mcp.config.merge :as merge]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]
+            [clojure.string :as str]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -54,3 +56,70 @@
       (is (= "carto-snippets" (:collection svc)))
       ;; carto-store backend default still present
       (is (= :qdrant-carto (get-in merged [:services :carto-store :backend]))))))
+
+;; =============================================================================
+;; Facets: deep-merge and parse-key-path, driven by their contracts
+;; =============================================================================
+
+(def ^:private K [:enum :a :b])
+
+;; the map arm is listed twice so nested maps meet nested maps often enough
+;; for the :nested-merge variant to clear its floor
+(def ^:private Leaf [:or :int [:map-of {:max 3} K :int] [:map-of {:min 1 :max 2} K :int]])
+
+(def ^:private Cfg
+  "Two levels of small configs, so keys collide often and the map/map,
+   map/scalar and scalar/map arms of the merge are all reached."
+  [:map-of {:max 3} K Leaf])
+
+(defn- merged-oracle
+  "Independent statement of the docstring: user wins at every level,
+   missing keys are filled from defaults at any depth. With no defaults
+   the user config comes back as given (nil stays nil)."
+  [d u]
+  (if (empty? d)
+    u
+    (into {}
+          (for [k (distinct (concat (keys d) (keys u)))]
+            (let [dv (get d k) uv (get u k)]
+              [k (cond (not (contains? u k))      dv
+                       (and (map? dv) (map? uv))  (merged-oracle dv uv)
+                       :else                      uv)])))))
+
+(deftrifecta-from-schema deep-merge-user-wins-defaults-fill
+  #'merge/deep-merge
+  {:in [:cat Cfg [:maybe Cfg]]
+   :out [:maybe merge/ConfigMap]
+   :rel (fn [[d u] out] (= (merged-oracle d u) out))
+   :classify (fn [[d u] _]
+               (cond (nil? u) :no-user
+                     (some (fn [[k v]] (and (map? v) (map? (get u k)))) d) :nested-merge
+                     :else :flat))
+   :classify-domain #{:no-user :nested-merge :flat}
+   :golden-path "test/golden/config/merge-deep-merge.edn"
+   :num-tests 300})
+
+;; Segments are non-blank so every parsed keyword reads back as EDN in the
+;; golden; the blank-segment case is pinned in parse-key-path-keeps-empty-segments.
+(def ^:private DottedKey
+  [:or [:enum nil "" "  "]
+   [:string {:gen/schema [:vector {:min 1 :max 4} [:enum "a" "kg" "port"]]
+             :gen/fmap #(str/join "." %)}]])
+
+(deftrifecta-from-schema parse-key-path-splits-on-dots
+  #'merge/parse-key-path
+  {:in [:cat DottedKey]
+   :out [:maybe merge/KeyPath]
+   :rel (fn [[s] out]
+          (if (str/blank? s)
+            (nil? out)
+            ;; str/split drops trailing empty segments only
+            (= (str/replace s #"\.+$" "") (str/join "." (map name out)))))
+   :classify (fn [[s] _] (if (str/blank? s) :blank :path))
+   :classify-domain #{:blank :path}
+   :golden-path "test/golden/config/merge-parse-key-path.edn"
+   :num-tests 300})
+
+(deftest parse-key-path-keeps-empty-segments
+  (is (= [:a (keyword "") :b] (merge/parse-key-path "a..b")))
+  (is (= [:a] (merge/parse-key-path "a.")) "trailing empty segments are dropped"))
