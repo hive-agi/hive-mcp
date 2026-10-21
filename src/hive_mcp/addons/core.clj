@@ -16,7 +16,8 @@
             [hive-mcp.addons.runtime-ports :as runtime-ports]
             [hive-mcp.extensions.dispatch-wrap :as dispatch-wrap]
             [hive-mcp.addons.schema :as schema]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.addons.metrics :as addon-metrics]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -220,7 +221,9 @@
       (let [init-result
             (r/try-effect* :addon/init-exception
                            (let [start-time (System/nanoTime)
-                                 result (proto/initialize! addon (init-config id opts))
+                                 result (addon-metrics/timed-call
+                                         [:addon/init (addon-metrics/label id)]
+                                         #(proto/initialize! addon (init-config id opts)))
                                  elapsed-ms (/ (- (System/nanoTime) start-time) 1e6)]
                              (if (:success? result)
                                (do
@@ -432,10 +435,15 @@
 
    Each tool's :handler is dispatched through
    hive-mcp.extensions.dispatch-wrap/wrap-addon-handler: the registered
-   :addon/wrap-handler extension, then the drain gate an unmount waits on."
+   :addon/wrap-handler extension, then the drain gate an unmount waits on.
+   Outermost, each call is timed under [:addon/tool <addon-id> <tool-name>]
+   (hive-mcp.addons.metrics)."
   []
   (mapv (fn [t] (if (ifn? (:handler t))
-                  (update t :handler #(dispatch-wrap/wrap-addon-handler (:addon-source t) %))
+                  (update t :handler
+                          #(addon-metrics/wrap-handler
+                            [:addon/tool (addon-metrics/label (:addon-source t)) (addon-metrics/label (:name t))]
+                            (dispatch-wrap/wrap-addon-handler (:addon-source t) %)))
                   t))
         (:installed (resolve-addon-tools))))
 

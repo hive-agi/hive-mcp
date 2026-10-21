@@ -5,7 +5,8 @@
    bound to hive-mcp implementations. Adapters resolve lazily to keep manifest
    parsing free of startup-order and require-cycle hazards."
   (:require [malli.core :as m]
-            [hive-mcp.addons.schema :as schema]))
+            [hive-mcp.addons.schema :as schema]
+            [hive-mcp.addons.metrics :as addon-metrics]))
 
 (defn- resolve!
   [sym]
@@ -19,12 +20,14 @@
   (apply (resolve! sym) args))
 
 (defn invoke-registered-tool!
-  "Invoke a registered callable tool from a fresh catalog, including hidden tools."
+  "Invoke a registered callable tool from a fresh catalog, including hidden tools.
+   The call is timed under [:addon/invoke <tool-name>] (hive-mcp.addons.metrics)."
   [catalog tool-name arguments]
   (let [spec (some #(when (= tool-name (:name %)) %) (catalog))]
     (when-not (and spec (ifn? (:handler spec)))
       (throw (ex-info "Host tool unavailable." {:error :addon/tool-unavailable})))
-    ((:handler spec) arguments)))
+    (addon-metrics/timed-call [:addon/invoke (addon-metrics/label tool-name)]
+                              #((:handler spec) arguments))))
 
 (defn shared-jvm?
   "True when an Integrant system is up in THIS JVM: the process that serves
