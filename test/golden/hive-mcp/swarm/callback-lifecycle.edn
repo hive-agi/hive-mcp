@@ -1,0 +1,6 @@
+{:after-register
+ {"f00-a" "ling-a", "f00-b" "ling-b", "f00-c" "ling-a"},
+ :after-cleanup-for-ling-a {"f00-b" "ling-b"},
+ :cleanup-stale-keeps-fresh {"f00-b" "ling-b"},
+ :cleanup-stale-zero-age {},
+ :listener-active? false}
