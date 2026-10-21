@@ -1,0 +1,54 @@
+{:case-0
+ {:out {:claims {}, :added [], :errors []},
+  :in ([{:owner :hive.b, :dirs []}] [])},
+ :case-1
+ {:out
+  {:claims {}, :added [], :errors ["hive.c: denied" "hive.c: gone"]},
+  :in
+  ([{:owner "hive.c", :dirs []} {:owner "hive.c", :dirs ["/c/src"]}]
+   [{:error :hot/extend-failed, :message "denied"}
+    {:error :hot/extend-failed, :message "gone"}
+    {:added ["/a/src" "/b/src"]}
+    {:error :hot/extend-failed, :message "gone"}])},
+ :case-2
+ {:out {:claims {}, :added [], :errors []},
+  :in
+  ([]
+   [{:added ["/b/src"]}
+    {:error :hot/extend-failed, :message "denied"}])},
+ :case-3
+ {:out {:claims {}, :added [], :errors [":hive.b: gone"]},
+  :in
+  ([{:owner :hive.b, :dirs []}]
+   [{:error :hot/extend-failed, :message "gone"}
+    {:added ["/a/src" "/a/src"]}
+    {:added ["/a/src" "/b/src"]}])},
+ :case-4
+ {:out
+  {:claims {":hive.a" ["/b/src"]},
+   :added ["/b/src" "/a/src"],
+   :errors [":hive.b: denied"]},
+  :in
+  ([{:owner :hive.a, :dirs ["/b/src"]}
+    {:owner :hive.b, :dirs ["/c/src"]}
+    {:owner :hive.a, :dirs []}
+    {:owner "hive.c", :dirs ["/b/src"]}]
+   [{:added ["/b/src" "/a/src"]}
+    {:error :hot/extend-failed, :message "denied"}])},
+ :case-5
+ {:out
+  {:claims {":hive.b" ["/a/src" "/c/src"], "hive.c" []},
+   :added ["/b/src" "/b/src" "/b/src" "/a/src"],
+   :errors []},
+  :in
+  ([{:owner "hive.c", :dirs []}
+    {:owner :hive.b, :dirs ["/a/src" "/c/src"]}]
+   [{:added ["/b/src" "/b/src"]} {:added ["/b/src" "/a/src"]}])},
+ :case-6
+ {:out {:claims {}, :added [], :errors []}, :in ([] [{:added []}])},
+ :case-7
+ {:out {:claims {"hive.c" ["/b/src"]}, :added ["/b/src"], :errors []},
+  :in
+  ([{:owner "hive.c", :dirs ["/b/src"]}
+    {:owner :hive.a, :dirs ["/a/src" "/a/src"]}]
+   [{:added ["/b/src"]}])}}
