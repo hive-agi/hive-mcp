@@ -31,7 +31,7 @@
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.memory.domain :as domain]
-            [hive-mcp.tools.core :refer [coerce-int!]]
+            [hive-mcp.tools.core :as tcore :refer [coerce-int!]]
             [hive-mcp.tools.result-bridge :as rb]
             [hive-mcp.dns.result :as result :refer [rescue]]
             [hive-mcp.concurrency.pool :as pool]
@@ -42,7 +42,9 @@
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
-            [hive-mcp.memory.ingest-search :as ingest-search]))
+            [hive-mcp.memory.ingest-search :as ingest-search]
+            [malli.core :as m]
+            [hive-mcp.tools.memory.schema :as ms]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -510,3 +512,30 @@
 
       :else
       (rb/result->mcp raw))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> filter-required-tags
+      [:=> [:cat [:map [:entries {:optional true} [:maybe [:sequential ms/SearchHit]]]
+                  [:tags {:optional true} [:maybe [:sequential ms/Tag]]]]]
+       [:vector ms/SearchHit]])
+
+(m/=> resolve-exclude-tags
+      [:=> [:cat [:map [:exclude-tags {:optional true} [:maybe [:sequential ms/Tag]]]
+                  [:default-excludes {:optional true} [:maybe [:sequential ms/Tag]]]
+                  [:required-tags {:optional true} [:maybe [:sequential ms/Tag]]]]]
+       [:vector :string]])
+
+(m/=> search-payload
+      [:=> [:cat [:map [:results {:optional true} [:maybe [:sequential {:gen/max 3} any?]]]
+
+                  [:query {:optional true} [:maybe :string]]
+                  [:scope {:optional true} [:maybe :string]]
+                  [:exclude-tags {:optional true} [:maybe [:sequential ms/Tag]]]
+                  [:default-excludes {:optional true} [:maybe [:sequential ms/Tag]]]
+                  [:dropped-null-hits {:optional true} [:maybe nat-int?]]]]
+       ms/SearchPayload])
+
+(m/=> handle-search-semantic [:=> [:cat ms/McpParams] tcore/McpResponse])

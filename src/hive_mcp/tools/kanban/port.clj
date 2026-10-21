@@ -17,7 +17,8 @@
             [hive-mcp.tools.kanban.transitions :as kt]
             [hive-mcp.tools.memory-kanban :as memory-kanban]
             [hive-mcp.tools.memory-kanban.query :as query]
-            [hive-mcp.vectordb.kanban-facade :as kanban-facade]))
+            [hive-mcp.vectordb.kanban-facade :as kanban-facade]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -158,3 +159,10 @@
     (registry/register! :IKanbanRead impl)
     (registry/register! :IKanbanWrite impl)
     impl))
+
+(def KanbanProvider
+  "A provider of both kanban ports; generates core's `CoreKanban`."
+  [:fn {:gen/fmap (fn [_] (->CoreKanban)) :gen/schema :nil}
+   #(and (satisfies? kanban/IKanbanRead %) (satisfies? kanban/IKanbanWrite %))])
+
+(m/=> register! [:=> [:cat] KanbanProvider])

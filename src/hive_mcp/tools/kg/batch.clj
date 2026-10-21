@@ -15,7 +15,8 @@
             [hive-mcp.batch.protocol :as proto]
             [hive-mcp.dns.result :refer [rescue]]
             [hive-mcp.tools.cli :as cli]
-            [hive-mcp.dispatch.handler :as dispatch]))
+            [hive-mcp.dispatch.handler :as dispatch]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -52,6 +53,19 @@
   (batch-schema [_this]
     (proto/batch-schema delegate)))
 
+(def KGRunner
+  "A `KGBatchRunner` (satisfies `Batchable`)."
+  [:fn {:gen/elements [(->KGBatchRunner {} nil)]
+        :error/message "must be a hive-mcp.tools.kg.batch.KGBatchRunner"}
+   #(instance? KGBatchRunner %)])
+
+(def RunnerOpts
+  "`make-kg-runner` opts: a handler tree and an fx emitter, both optional."
+  [:maybe
+   [:map
+    [:handlers {:optional true} [:maybe [:map-of {:gen/max 0} :any :any]]]
+    [:emit-fx {:optional true} [:maybe [:fn {:gen/elements [(fn [_ _] nil)]} ifn?]]]]])
+
 (defn make-kg-runner
   "Factory — build a `KGBatchRunner` satisfying `Batchable`."
   ([] (make-kg-runner {}))
@@ -62,6 +76,8 @@
                    {:resolve-handler resolver
                     :emit-fx         (or emit-fx default-emit-fx)})]
      (->KGBatchRunner hs delegate))))
+
+(m/=> make-kg-runner [:function [:=> [:cat] KGRunner] [:=> [:cat RunnerOpts] KGRunner]])
 
 ;; =============================================================================
 ;; Public convenience shim — mirrors `hive-mcp.tools.multi/run-multi`
@@ -80,3 +96,9 @@
   ([ops] (run-batch ops {}))
   ([ops opts]
    (proto/batch-execute @default-runner ops opts)))
+
+(m/=> run-batch
+  [:function
+   [:=> [:cat [:sequential batch/RawOp]] batch/RunResult]
+   [:=> [:cat [:sequential batch/RawOp] [:maybe [:map [:dry-run? {:optional true} [:maybe :boolean]]]]]
+    batch/RunResult]])

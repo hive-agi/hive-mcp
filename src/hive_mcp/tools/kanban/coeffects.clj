@@ -8,7 +8,9 @@
             [hive-mcp.context.request :as ctx]
             [hive-mcp.tools.kanban.transitions :as kt]
             [hive-mcp.tools.memory.scope :as scope]
-            [hive-mcp.vectordb.kanban-facade :as kanban-facade]))
+            [hive-mcp.vectordb.kanban-facade :as kanban-facade]
+            [hive-mcp.tools.kanban.schema :as ks]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -51,3 +53,5 @@
   []
   (cofx/reg-cofx :kanban/entry      entry-cofx)
   (cofx/reg-cofx :kanban/project-id project-id-cofx))
+
+(m/=> register-all! [:=> [:cat] ks/HandlerRegistry])
