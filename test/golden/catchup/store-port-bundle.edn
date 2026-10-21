@@ -1,6 +1,8 @@
 {:axiom-candidates [],
  :axioms [{:id "e1", :type "axiom", :content "axiom one"}],
- :conventions [{:id "e5", :type "convention", :content "conv two"}],
+ :conventions
+ [{:id "e5", :type "convention", :content "conv two"}
+  {:id "e2", :type "convention", :content "legacy axiom"}],
  :decisions [{:id "e3", :type "decision", :content "decision one"}],
  :expiring [],
  :principles [],

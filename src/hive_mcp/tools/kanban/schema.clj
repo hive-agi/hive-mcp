@@ -249,9 +249,11 @@
 (def RecentTodo [:map [:id :any] [:title :any] [:tags :any]])
 
 (def Summary
-  "`gather-kanban-summary`: bucket counts, recent todos, scope tag."
+  "`gather-kanban-summary`: bucket counts, distinct project count, recent
+   todos, scope tag. :projects is absent when the board read failed."
   [:map
    [:counts Counts]
+   [:projects {:optional true} [:int {:min 0}]]
    [:recent-todos [:vector RecentTodo]]
    [:scope-tag [:maybe :string]]])
 
@@ -259,8 +261,41 @@
   "A summary as `catchup-section` reads it."
   [:maybe [:map
            [:counts {:optional true} [:maybe [:map-of :keyword [:int {:min 0}]]]]
+           [:projects {:optional true} [:maybe [:int {:min 0}]]]
            [:recent-todos {:optional true} [:maybe [:sequential RecentTodo]]]
            [:scope-tag {:optional true} [:maybe :string]]]])
+
+(def BoardSummary
+  "`summarize-board`: bucket counts, distinct project count, recent todos."
+  [:map {:closed true}
+   [:counts Counts]
+   [:projects [:int {:min 0}]]
+   [:recent-todos [:vector {:max 10} RecentTodo]]])
+
+(def ScopeTags
+  "`scope:project:*` tags of the visible projects."
+  [:set [:string {:gen/elements ["scope:project:proj-a" "scope:project:proj-b"
+                                 "scope:project:global"]}]])
+
+(def BoardGate
+  "What `gate-board` admits: entries whose scope tag is in :scope-tags, or
+   with no scope tag and a :project-id in :visible-ids. nil admits all."
+  [:maybe [:map
+           [:scope-tags ScopeTags]
+           [:visible-ids [:set ProjectId]]]])
+
+(def BoardScopeSpec
+  "The IBoardSource scope spec the catchup block reads with."
+  [:map {:closed true}
+   [:project-id [:maybe ProjectId]]
+   [:include-descendants? :boolean]
+   [:include-ancestors? [:= false]]])
+
+(def BoardView
+  "`board-view`: the scope spec to read with and the gate to apply."
+  [:map {:closed true}
+   [:scope-spec BoardScopeSpec]
+   [:view BoardGate]])
 
 (def Section
   "`catchup-section`: nil for an empty board, else the summary plus :hint."
