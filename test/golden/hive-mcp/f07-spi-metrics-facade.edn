@@ -1,0 +1,8 @@
+{:returns [nil nil nil nil nil nil],
+ :calls
+ [[:inc-events :agent/spawn :info]
+  [:inc-events :wave/failed :error]
+  [:duration "memory" 0.25]
+  [:lings 3]
+  [:effect {:counter :wave_failure}]
+  [:effect nil]]}
