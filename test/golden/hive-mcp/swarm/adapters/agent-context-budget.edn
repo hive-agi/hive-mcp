@@ -1,0 +1,16 @@
+{:register
+ {:max-budget-usd 1.5,
+  :spent-usd 0.0,
+  :model "claude",
+  :tool-calls 0,
+  :exceeded? false,
+  :denied-calls 0},
+ :deregister
+ {:max-budget-usd 1.5,
+  :spent-usd 0.0,
+  :model "claude",
+  :tool-calls 0,
+  :exceeded? false,
+  :denied-calls 0},
+ :deregister-gone nil,
+ :noop-register nil}

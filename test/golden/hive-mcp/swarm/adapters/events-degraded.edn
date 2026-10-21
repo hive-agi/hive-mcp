@@ -1,0 +1,18 @@
+{:dispatch-unregistered nil,
+ :handler-registered? false,
+ :dag-status-keys
+ [:active
+  :completed
+  :completed-ids
+  :dispatched
+  :dispatched-map
+  :failed
+  :failed-ids
+  :max-slots
+  :plan-id
+  :ready
+  :task-ids
+  :wave-log],
+ :dag-active? false,
+ :noop-start-dag {:active false, :plan-id "p", :reason :no-scheduler},
+ :vessel-context nil}
