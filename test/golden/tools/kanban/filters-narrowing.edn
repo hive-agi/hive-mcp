@@ -1,0 +1,59 @@
+{:case-0 {:out false, :in nil},
+ :case-1
+ {:out true,
+  :in
+  {:priority [],
+   :created_after nil,
+   :updated_after {},
+   :tags [],
+   :offset {}}},
+ :case-10
+ {:out true,
+  :in
+  {:priority 0.486328125,
+   :created_after nil,
+   :tags ["session-todo" :a677 "session-todo" :B :a "doing"],
+   :tag_match "3tLi"}},
+ :case-11
+ {:out true,
+  :in
+  {:created_after
+   #{1.5 Q..ma/q +qvk*/o-TxS true false -4/11 :xao/J-+0},
+   :tags
+   #{nil
+     :i*Mi
+     :.2o
+     :_
+     "priority-low"
+     "session-todo"
+     "kanban"
+     "todo"
+     :Bq
+     :!55k.*
+     "topic"},
+   :offset
+   (-541N
+    \W
+    #uuid "e726373e-9e2a-4318-a5fb-576822cc21b8"
+    h*/slAp
+    1/12),
+   :limit nil,
+   :fields nil}},
+ :case-2
+ {:out true,
+  :in
+  {:query #{2/3 \e},
+   :priority (),
+   :created_after #{0.5},
+   :updated_after {},
+   :tags nil}},
+ :case-3
+ {:out false,
+  :in
+  {:priority nil, :updated_after nil, :offset nil, :fields [:* "QP"]}},
+ :case-4 {:out false, :in nil},
+ :case-5 {:out false, :in nil},
+ :case-6 {:out false, :in nil},
+ :case-7 {:out false, :in nil},
+ :case-8 {:out false, :in nil},
+ :case-9 {:out false, :in {:query {}, :priority nil, :limit nil}}}

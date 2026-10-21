@@ -1,0 +1,27 @@
+{:case-0 {:out true, :in ({:id nil} nil)},
+ :case-1 {:out false, :in ({:tags #{nil}} "medium")},
+ :case-10
+ {:out true,
+  :in
+  ({:tags
+    ["priority-low"
+     "kanban"
+     "doing"
+     nil
+     :CJ8
+     "priority-low"
+     :R21
+     :FG
+     "done"],
+    :content {:priority "urgent", :created nil}}
+   nil)},
+ :case-11 {:out false, :in ({:content "3g7heL56"} "low")},
+ :case-2 {:out true, :in ({:id 0, :tags [], :content "XbwuH"} nil)},
+ :case-3 {:out false, :in ({:tags nil} "low")},
+ :case-4 {:out true, :in ({:id nil, :content nil} nil)},
+ :case-5 {:out true, :in ({:tags #{}, :content nil} nil)},
+ :case-6 {:out true, :in ({} nil)},
+ :case-7 {:out true, :in ({:id -5} nil)},
+ :case-8 {:out true, :in ({:id nil, :content "EGJ"} nil)},
+ :case-9
+ {:out true, :in ({:id "b5u6vc4z599g", :tags nil, :content nil} nil)}}
