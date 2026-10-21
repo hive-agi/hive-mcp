@@ -446,7 +446,8 @@
                               :timeout_ms timeout_ms
                               :files files})]
 
-        ;; Emit turn-dispatched event for relay handler
+        ;; Notify UI spectators the turn went out. Frontend push only: the
+        ;; turn itself was delivered by handle-swarm-dispatch above.
         (emit! :agora/turn-dispatched {:dialogue-id dialogue-id
                                        :from sender-id
                                        :to to

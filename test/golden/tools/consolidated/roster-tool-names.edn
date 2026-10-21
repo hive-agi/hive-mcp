@@ -1,7 +1,6 @@
 {:roster
  ["addon"
   "agent"
-  "agora"
   "analysis"
   "config"
   "events"
