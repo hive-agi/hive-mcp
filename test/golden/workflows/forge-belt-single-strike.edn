@@ -1,0 +1,10 @@
+{:total-smited 1,
+ :quenched? false,
+ :continuous? false,
+ :smite-result {:smited ["z"], :failed [], :count 1},
+ :strike-count 1,
+ :last-strike "2026-01-01T00:00:00Z",
+ :survey-result {:tasks [{:id "t1"}], :count 1},
+ :success true,
+ :spark-result {:spawned ["l1"], :failed [], :count 1},
+ :total-sparked 1}

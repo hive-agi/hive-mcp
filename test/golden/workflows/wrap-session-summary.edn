@@ -1,0 +1,23 @@
+{:full
+ {:session-ref nil,
+  :agent-id "a",
+  :crystal-result {:summary-id "s1", :session "sess", :stats {:n 1}},
+  :kg-result {:created-count 2},
+  :eviction {:evicted 2},
+  :contains-result {:created-count 0, :skipped true},
+  :notify-sent? true,
+  :adopted [],
+  :project-id "proj"},
+ :degraded
+ {:notify-degraded true,
+  :session-ref nil,
+  :agent-id "a",
+  :crystal-result
+  {:skipped true, :degraded true, :error "boom", :stats {}},
+  :kg-result {:created-count 0, :skipped true},
+  :eviction {:evicted 2},
+  :contains-result {:created-count 0, :skipped true},
+  :notify-sent? false,
+  :notify-error "boom",
+  :adopted [],
+  :project-id "proj"}}
