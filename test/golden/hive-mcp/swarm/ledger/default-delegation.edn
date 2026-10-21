@@ -1,0 +1,8 @@
+{:calls
+ {"append!" {:ns "hive-agent.swarm.ledger.default", :var "append!"},
+  "reset-store!"
+  {:ns "hive-agent.swarm.ledger.default", :var "reset-store!"},
+  "set-store!"
+  {:ns "hive-agent.swarm.ledger.default", :var "set-store!"},
+  "store" {:ns "hive-agent.swarm.ledger.default", :var "store"}},
+ :values {"LedgerStore" "clojure.lang.PersistentVector"}}
