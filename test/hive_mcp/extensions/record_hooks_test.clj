@@ -2,6 +2,8 @@
   "Record hooks: the registry, and each derived-record exit that applies
    them. Every exit test first shows what reaches the sink with no hook (the
    decrypted value, verbatim), then that a hook rewrites or drops it."
+  {:clj-kondo/config '{:linters {:unresolved-symbol
+                                 {:exclude [(hive-mcp.extensions.record-hooks-test/with-tree [report])]}}}}
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
