@@ -8,7 +8,8 @@
    deps."
   (:require [clojure.test :refer [deftest is use-fixtures]]
             [hive-mcp.protocols.memory :as proto]
-            [hive-mcp.tools.kanban.migration :as mig]))
+            [hive-mcp.tools.kanban.migration :as mig]
+            [hive-test.golden :refer [deftest-golden]]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -161,3 +162,19 @@
     (is (true? (:default-registered? s)))
     (is (false? (:kanban-registered? s)))
     (is (= 3 (:source-count s)))))
+
+;; Golden over the whole pipeline with both slots satisfied by the stubs:
+;; status before, a dry run, the live run, what landed, and a full verify.
+(deftest-golden migration-pipeline-over-stub-slots
+  "test/golden/tools/kanban/migration-pipeline.edn"
+  (let [target-state (atom {})]
+    (proto/register-store! :default (source-stub fixture-entries))
+    (let [no-target (mig/status)]
+      (proto/register-store! :kanban (target-stub target-state))
+      {:status-no-target no-target
+       :extracted        (mapv :id (mig/extract-kanban-from-default-store))
+       :dry-run          (mig/migrate-to-kanban! {:dry-run? true})
+       :live             (mig/migrate-to-kanban! {:batch-size 2})
+       :landed           (sort (keys @target-state))
+       :verify           (update (mig/verify {:sample-size 10}) :missing sort)
+       :status-after     (mig/status)})))

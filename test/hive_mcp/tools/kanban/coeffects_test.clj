@@ -1,8 +1,11 @@
 (ns hive-mcp.tools.kanban.coeffects-test
   (:require [hive-mcp.project.scope]
             [clojure.test :refer [deftest is testing]]
+            [hive-mcp.test.stub.memory-store :as mem-stub]
             [hive-mcp.tools.kanban.coeffects :as coeffects]
-            [hive-mcp.vectordb.kanban-facade :as kanban-facade]))
+            [hive-mcp.vectordb.kanban-facade :as kanban-facade]
+            [hive-spi.memory.registry :as sreg]
+            [hive-test.golden :refer [deftest-golden]]))
 
 (def ^:private project-id-cofx #'coeffects/project-id-cofx)
 (def ^:private entry-cofx #'coeffects/entry-cofx)
@@ -53,3 +56,25 @@
     (with-redefs [kanban-facade/get-entry-by-id (fn [_id] nil)]
       (let [result (entry-cofx {:event [:kanban/move {:task-id "missing"}]})]
         (is (nil? (:kanban/entry result)))))))
+
+;; Golden over both coeffects with the memory port satisfied by the stub store
+;; (no with-redefs): a stored scoped entry, an absent id, and the scope tag
+;; winning over the directory.
+(deftest-golden coeffects-over-a-stub-store
+  "test/golden/tools/kanban/coeffects.edn"
+  (mem-stub/with-stub-store
+    (fn []
+      (mem-stub/seed! (sreg/get-store)
+                      [{:id "cf-1" :type "note"
+                        :content {:task-type "kanban" :title "T" :status "todo"}
+                        :tags ["kanban" "todo" "scope:project:proj-a"]}])
+      (let [found   (entry-cofx {:event [:kanban/move {:task-id "cf-1"}]})
+            missing (entry-cofx {:event [:kanban/move {:task-id "nope"}]})]
+        {:registered (sort (keys (select-keys (coeffects/register-all!)
+                                              [:kanban/entry :kanban/project-id])))
+         :found      (select-keys (:kanban/entry found) [:id :tags :content])
+         :missing    (contains? missing :kanban/entry)
+         :missing-v  (:kanban/entry missing)
+         :scoped-pid (:kanban/project-id
+                      (project-id-cofx (assoc found :event [:kanban/move {:task-id "cf-1"
+                                                                          :directory "/tmp/elsewhere"}])))}))))

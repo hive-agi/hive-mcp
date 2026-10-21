@@ -1,0 +1,5 @@
+{:cycle
+ {:promoted 0,
+  :candidates 0,
+  :total-scanned 0,
+  :error "store-not-configured"}}

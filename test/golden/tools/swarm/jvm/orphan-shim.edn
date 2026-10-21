@@ -1,0 +1,20 @@
+{:truly-orphaned
+ [:missing
+  "hive-agent"
+  "hive-agent.swarm.tools.jvm.orphan"
+  "truly-orphaned?"],
+ :protected
+ [:missing
+  "hive-agent"
+  "hive-agent.swarm.tools.jvm.orphan"
+  "protected-type?"],
+ :age
+ [:missing
+  "hive-agent"
+  "hive-agent.swarm.tools.jvm.orphan"
+  "age-orphan?"],
+ :detector
+ [:missing
+  "hive-agent"
+  "hive-agent.swarm.tools.jvm.orphan"
+  "orphan-detector"]}

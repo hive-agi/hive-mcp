@@ -1,0 +1,10 @@
+{:cleanup
+ [:missing
+  "hive-agent"
+  "hive-agent.swarm.tools.jvm.summary"
+  "build-cleanup-summary"],
+ :guard
+ [:missing
+  "hive-agent"
+  "hive-agent.swarm.tools.jvm.summary"
+  "build-resource-guard-summary"]}

@@ -1,0 +1,7 @@
+{:cycle
+ {:decayed 0,
+  :expired 0,
+  :total-scanned 0,
+  :error "No default memory store registered."},
+ :handler
+ {:type "text", :text "Memory store not configured", :isError true}}

@@ -1,0 +1,44 @@
+{:nil-params
+ {:directory nil,
+  :config
+  {:max-slots 10,
+   :presets ["ling" "mcp-first" "saa"],
+   :spawn-mode nil,
+   :model nil,
+   :preset nil,
+   :seeds nil,
+   :ctx-refs nil,
+   :kg-node-ids nil}},
+ :empty
+ {:directory nil,
+  :config
+  {:max-slots 10,
+   :presets ["ling" "mcp-first" "saa"],
+   :spawn-mode nil,
+   :model nil,
+   :preset nil,
+   :seeds nil,
+   :ctx-refs nil,
+   :kg-node-ids nil}},
+ :full
+ {:directory "/tmp/proj",
+  :config
+  {:max-slots 3,
+   :presets ["tdd"],
+   :spawn-mode :headless,
+   :model "sonnet",
+   :preset "p",
+   :seeds ["s"],
+   :ctx-refs {:a "c"},
+   :kg-node-ids ["n"]}},
+ :two-arity
+ {:directory nil,
+  :config
+  {:max-slots 1,
+   :presets ["ling" "mcp-first" "saa"],
+   :spawn-mode nil,
+   :model nil,
+   :preset nil,
+   :seeds nil,
+   :ctx-refs nil,
+   :kg-node-ids nil}}}

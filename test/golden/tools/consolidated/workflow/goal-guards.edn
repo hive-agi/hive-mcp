@@ -1,0 +1,20 @@
+{:missing-goal-spec
+ {:type "text",
+  :text
+  "plan-goal requires :goal_spec — a GoalSpec {:goal #{facts} :init #{facts}} as an EDN string or map.",
+  :isError true},
+ :unparseable
+ {:type "text",
+  :text
+  "plan-goal requires :goal_spec — a GoalSpec {:goal #{facts} :init #{facts}} as an EDN string or map.",
+  :isError true},
+ :verb-index-vector
+ {:type "text",
+  :text
+  "plan-goal :verb_index must be an EDN map of verb-id -> {:requires :provides :deletes :cost}.",
+  :isError true},
+ :verb-index-number
+ {:type "text",
+  :text
+  "plan-goal :verb_index must be an EDN map of verb-id -> {:requires :provides :deletes :cost}.",
+  :isError true}}

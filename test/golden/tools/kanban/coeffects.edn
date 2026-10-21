@@ -1,0 +1,8 @@
+{:registered (:kanban/entry :kanban/project-id),
+ :found
+ {:id "cf-1",
+  :tags ["kanban" "todo" "scope:project:proj-a"],
+  :content {:task-type "kanban", :title "T", :status "todo"}},
+ :missing true,
+ :missing-v nil,
+ :scoped-pid "proj-a"}

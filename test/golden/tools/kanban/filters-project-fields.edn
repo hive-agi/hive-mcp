@@ -1,0 +1,36 @@
+{:case-0
+ {:out {:id "a", :title "t", :status "todo"},
+  :in ({:id "a", :title "t", :status "todo"} nil)},
+ :case-1
+ {:out {:status "todo"},
+  :in ({:id "a", :title "t", :status "todo"} ["nope" :status])},
+ :case-10
+ {:out {:id "a", :title "t", :status "todo"},
+  :in ({:id "a", :title "t", :status "todo"} nil)},
+ :case-11
+ {:out {:status "todo"},
+  :in ({:id "a", :title "t", :status "todo"} [:status])},
+ :case-2
+ {:out {:id "a", :title "t", :status "todo"},
+  :in ({:id "a", :title "t", :status "todo"} nil)},
+ :case-3
+ {:out {:id "a", :title "t", :status "todo"},
+  :in ({:id "a", :title "t", :status "todo"} [])},
+ :case-4
+ {:out {:id "a", :title "t", :status "todo"},
+  :in ({:id "a", :title "t", :status "todo"} nil)},
+ :case-5
+ {:out {:id "a", :title "t", :status "todo"},
+  :in ({:id "a", :title "t", :status "todo"} nil)},
+ :case-6
+ {:out {:id "a", :title "t", :status "todo"},
+  :in ({:id "a", :title "t", :status "todo"} nil)},
+ :case-7
+ {:out {:id "a", :title "t", :status "todo"},
+  :in ({:id "a", :title "t", :status "todo"} nil)},
+ :case-8
+ {:out {:id "a", :title "t", :status "todo"},
+  :in ({:id "a", :title "t", :status "todo"} nil)},
+ :case-9
+ {:out {:id "a", :title "t", :status "todo"},
+  :in ({:id "a", :title "t", :status "todo"} nil)}}
