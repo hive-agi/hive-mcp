@@ -1,17 +1,13 @@
 (ns hive-mcp.tools.catchup.hierarchy
-  "Hierarchy project-id resolution + per-descendant parallel fetch.
+  "Hierarchy project-id resolution + single-query hierarchy fetch.
 
-   Computes the visible project-id set for scope filtering and drives the
-   parallel Milvus fan-out — H12: one branch per descendant project-id with
-   `{:project-ids [pid]}` (single-element vec) instead of the legacy
-   `project_id IN [a b c ...]` scalar filter. Tests whether Milvus's scalar
-   index is faster on `==` than IN-list. Pure infrastructure — no cache, no
-   side effects besides Milvus RPCs."
+   Computes the visible project-id set for scope filtering and pulls the
+   hierarchy's metadata rows in ONE `{:project-ids [...]}` query. The
+   per-project fairness cap the old one-RPC-per-descendant fan-out (H12)
+   provided is applied in memory after the fetch. Pure infrastructure: no
+   cache, no side effects besides the backend query."
   (:require [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.project.scope :as project-scope]
-            [hive-mcp.dns.result :refer [rescue]]
-            [hive-weave.parallel :as wpar]
-            [clojure.tools.logging :as log]
             [hive-mcp.resilience.store :refer [with-resilience]]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -42,13 +38,6 @@
    only `chunk-count` still consults it for the legacy partition shape."
   15)
 
-(def ^:private per-descendant-budget-ms
-  "Per-branch timeout for the H12 single-value Milvus query. Single
-   `project_id == pid` should land well under the legacy 16s/IN-15 chunk;
-   30s leaves headroom for cold-path jitter before bounded-pmap drops to
-   fallback []."
-  30000)
-
 (def ^:private per-descendant-limit
   "Per-descendant entry cap. Most descendants hold a handful of entries;
    50 keeps the fan-out total well under `bundle-hierarchy-limit` × N
@@ -57,14 +46,6 @@
    downstream consumption anyway, so the cap protects against runaway
    metadata transport on a single noisy branch."
   50)
-
-(def ^:private per-descendant-concurrency
-  "Cap on simultaneous in-flight Milvus RPCs for the H12 fan-out. Sized to
-   leave room for the global axiom + principle + scope-pierce branches
-   sharing the same connection pool — a 45-way fan-out at full parallelism
-   risks thrashing the pool. 8 keeps wall-clock close to single-RPC latency
-   while bounding pool pressure."
-  8)
 
 (defn compute-hierarchy-project-ids
   "Compute the full set of visible project IDs for DB-level filtering."
@@ -77,72 +58,55 @@
         (vec (remove #(= "global" %) all-ids))))))
 
 ;; =============================================================================
-;; Telemetry wrapper — DI via hive-ttracking when present (mirrors bundle.clj)
+;; Single-query hierarchy fetch + in-memory per-project cap
 ;; =============================================================================
 
-(def ^:private tt-timed-query-var
-  "Late-bound reference to `hive-ttracking.core/timed-query`. DI via
-   classpath presence so the ns still loads on minimal CI builds."
-  (delay
-    (rescue nil
-            (require 'hive-ttracking.core)
-            (resolve 'hive-ttracking.core/timed-query))))
+(def ^:private max-query-limit
+  "Upper bound on a single backend query's row limit (Milvus caps
+   offset+limit at 16384)."
+  16384)
 
-(defn- timed-query-inline
-  "Fallback telemetry wrapper used when hive-ttracking is absent."
-  [label qfn]
-  (fn []
-    (let [t0 (System/currentTimeMillis)
-          result (qfn)
-          elapsed (- (System/currentTimeMillis) t0)
-          n (count (or result []))]
-      (if (zero? n)
-        (log/warn "catchup hierarchy" label "returned 0 entries in" elapsed "ms")
-        (log/info "catchup hierarchy" label ":" n "entries in" elapsed "ms"))
-      result)))
+(defn single-query-limit
+  "Row limit for the single hierarchy query over `n` projects: the same
+   total the per-descendant fan-out could return (`per-descendant-limit`
+   rows per project), bounded by `max-query-limit`."
+  [n]
+  (min max-query-limit (* per-descendant-limit (max 1 n))))
 
-(defn- timed-query
-  "Dispatch to hive-ttracking.core/timed-query when available, else inline."
-  [label qfn]
-  (if-let [tt @tt-timed-query-var]
-    (tt label qfn)
-    (timed-query-inline label qfn)))
-
-(defn- fetch-one-descendant
-  "Single-descendant Milvus query under H12. `:project-ids [pid]` is a
-   single-element vec to coerce the backend into `project_id == pid`
-   instead of `project_id IN [pid]`. Each call is wrapped in `timed-query`
-   so the per-branch elapsed lands as a structured log line — cheap
-   evidence for the IN-list-vs-equality hypothesis."
-  [store pid]
-  ((timed-query (str "hierarchy/desc/" pid)
-                #(with-resilience
-                   (mem-proto/query-entries store
-                     {:project-ids [pid]
-                      :limit per-descendant-limit
-                      :output-fields metadata-projection})))))
+(defn cap-per-project
+  "Keep at most `cap` entries per `:project-id`, newest `:created` first,
+   and return them as one vector ordered newest-first. Restores, in memory,
+   the per-descendant fairness the old one-RPC-per-project fan-out gave."
+  [cap entries]
+  (->> entries
+       (group-by :project-id)
+       vals
+       (mapcat #(take cap (sort-by :created (fn [a b] (compare b a)) %)))
+       (sort-by :created (fn [a b] (compare b a)))
+       vec))
 
 (defn chunked-hierarchy-fetch
-  "H12 per-descendant fork-join: replaces the legacy
-   `project_id IN [a b c ...]` scalar filter with N single-value branches
-   (`{:project-ids [pid]}` per branch), fanned out via hive-weave
-   bounded-pmap. Tests whether Milvus's scalar index is faster on `==` than
-   IN-list. `per-chunk-limit` is accepted for signature compatibility with
-   bundle.clj's chunked-limit math but ignored — H12 uses
-   `per-descendant-limit` per branch. Timed-out branches contribute []
-   (graceful degradation); each branch logs elapsed + row-count via
-   `timed-query`."
+  "One IN-list query for the whole hierarchy, replacing the H12
+   per-descendant fan-out (one RPC per descendant: ~190 RPCs, 8.3 s per
+   catchup on the live workspace). The backend gets
+   `{:project-ids (vec hierarchy-ids)}` once, with a limit sized so every
+   project still fits its `per-descendant-limit` share, and the same
+   metadata projection. The per-project cap is then applied in memory by
+   `cap-per-project` (newest first), so one noisy descendant still cannot
+   crowd the others out. `per-chunk-limit` is accepted for signature
+   compatibility with bundle.clj and ignored."
   [store hierarchy-ids _per-chunk-limit]
   (if (empty? hierarchy-ids)
     []
-    (vec (mapcat identity
-                 (wpar/bounded-pmap
-                   {:concurrency (min per-descendant-concurrency
-                                      (count hierarchy-ids))
-                    :timeout-ms  per-descendant-budget-ms
-                    :fallback    []}
-                   (partial fetch-one-descendant store)
-                   hierarchy-ids)))))
+    (let [ids (vec hierarchy-ids)]
+      (cap-per-project
+        per-descendant-limit
+        (or (with-resilience
+              (mem-proto/query-entries store
+                {:project-ids   ids
+                 :limit         (single-query-limit (count ids))
+                 :output-fields metadata-projection}))
+            [])))))
 
 (defn chunk-count
   "Number of parallel chunks the fan-out will produce for `hierarchy-ids`.

@@ -233,6 +233,26 @@
            (blank-payload-value? (:message data))
            (every? blank-payload-value? (vals residual))))))
 
+(defn resolve-shout-project-id
+  "Project a shout is labelled with. Priority: explicit `:project-id` >
+   vessel context > the resolved slave's `:slave/project-id` > the
+   project of `directory` > \"global\". The slave row sits before the
+   directory so a ling's shout carries its own project even when no vessel
+   answers and the shout names no directory."
+  [explicit vessel-pid slave-pid directory]
+  (or explicit
+      vessel-pid
+      slave-pid
+      (when directory (project-scope/get-current-project-id directory))
+      "global"))
+
+(defn status-write-needed
+  "The `status` to write onto `slave`, or nil when there is nothing to
+   write: no status, or the slave row already carries it."
+  [slave status]
+  (when (and status (not= status (:slave/status slave)))
+    status))
+
 (defn- shout!*
   "Internal shout implementation — assumes payload has been validated
    non-empty by `shout!`. Returns the routing verdict map."
@@ -247,11 +267,12 @@
         ;; Vessel delegates to DataScript (slave/cwd, slave/project-id) — the
         ;; formal answer to the project-id coupling bug (vessel owns context).
         vessel-ctx (vessel/resolve-agent-context resolved-slave-id)
-        ;; Priority: explicit > vessel > directory > global
-        project-id (or explicit-project-id
-                       (:project-id vessel-ctx)
-                       (when directory (project-scope/get-current-project-id directory))
-                       "global")
+        ;; Priority: explicit > vessel > slave row > directory > global
+        project-id (resolve-shout-project-id
+                    explicit-project-id
+                    (:project-id vessel-ctx)
+                    (:slave/project-id resolved-slave)
+                    directory)
         ;; Spawner identity — the reader whose context this shout enters when
         ;; nothing more specific addresses it. hive-mcp.channel.audience routes
         ;; on it; absent it, the shout is root-level and reaches coordinator
@@ -363,8 +384,13 @@
                                         :last-seen now}
                                  :created-at (or (get-in entries [agent-id :created-at]) now)
                                  :last-accessed now})))))
-    ;; 2. DataScript slave status — unless the shout is status-neutral
-    (when-let [status (and resolved-slave (shout-slave-status event-type data))]
+    ;; 2. DataScript slave status — unless the shout is status-neutral, or
+    ;; the slave already carries that status (every write is a datascript tx
+    ;; that also notifies slave-index subscribers; a progress shout stream
+    ;; would otherwise rewrite :working on every shout).
+    (when-let [status (status-write-needed resolved-slave
+                                           (and resolved-slave
+                                                (shout-slave-status event-type data)))]
       (proto/update-slave! registry/default-registry resolved-slave-id
                            {:slave/status status}))
     ;; 3. Local fanout always, backbone publish when connected
