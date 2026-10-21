@@ -23,16 +23,16 @@
     hive-mcp.tools.kanban.effects hive-mcp.tools.kanban.events
     hive-mcp.tools.kanban.filters hive-mcp.tools.kanban.migration
     hive-mcp.tools.kanban.port hive-mcp.tools.kanban.predicates
-    hive-mcp.tools.kanban.transitions hive-mcp.tools.kanban.list.plan
-    hive-mcp.tools.kanban.list.source])
+    hive-mcp.tools.kanban.transitions hive-mcp.tools.kanban.update
+    hive-mcp.tools.kanban.list.plan hive-mcp.tools.kanban.list.source])
 
 (coverage/deftest-contract-coverage tools-kanban-contracts
   {:paths [kanban-dir]})
 
 (deftest tools-kanban-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths [kanban-dir]})]
-    (is (= 73 (count (:universe report))) "every public defn of tools/kanban and tools/kanban/list")
-    (is (= 73 (count (:covered report))))))
+    (is (= 77 (count (:universe report))) "every public defn of tools/kanban and tools/kanban/list")
+    (is (= 77 (count (:covered report))))))
 
 (deftest every-tools-kanban-contract-generates-both-sides
   (apply require kanban-nss)

@@ -162,14 +162,16 @@
     (or (get @entry-locks k)
         (get (swap! entry-locks (fn [m] (if (contains? m k) m (assoc m k (Object.))))) k))))
 
-(defn- dispatch-committed!
+(defn dispatch-committed!
   "Dispatch `event` under the per-id lock of `task-id` and lift the outcome
    into a Result. The effect map alone is not proof of a write: the fx runner
    drops the commit's answer and swallows its exceptions, so `facade-update!`
    publishes the answer through `keffects/*write-outcome*`. A store refusal
    (nil or a hive-spi failure map, see `kanban-facade/write-rejected?`) is
    `:kanban/write-rejected`, and a commit that never answered (it threw) is
-   `:kanban/write-failed`, instead of an ok the caller reads as success."
+   `:kanban/write-failed`, instead of an ok the caller reads as success.
+   Public so an event registered outside this namespace
+   (hive-mcp.tools.kanban.update) commits under the same lock and outcome."
   [event task-id]
   (locking (entry-lock task-id)
     (let [outcome (atom nil)
@@ -337,6 +339,8 @@
 
       :else
       (dispatch-committed! [:kanban/edit event-payload] task-id))))
+
+(m/=> dispatch-committed! [:=> [:cat ks/Event :any] ks/Result])
 
 ;; =============================================================================
 ;; Contracts
