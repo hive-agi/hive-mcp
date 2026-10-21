@@ -37,7 +37,8 @@
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.addons.core :as addon-core]
-            [hive-mcp.addons.schema :as schema])
+            [hive-mcp.addons.schema :as schema]
+            [hive-mcp.addons.metrics :as addon-metrics])
   (:import [java.util.jar JarFile]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -486,9 +487,13 @@
   [manifest register-fn! init-addon-fn!]
   (let [addon-id (:addon/id manifest)
         effect   (r/try-effect* :manifest/init-error
-                                (if-let [ctor (resolve-constructor manifest)]
+                                (if-let [ctor (addon-metrics/timed-call
+                                               [:addon/load (addon-metrics/label addon-id) "resolve"]
+                                               #(resolve-constructor manifest))]
                                   (let [config (prepare-config manifest)
-                                        result (ctor config)]
+                                        result (addon-metrics/timed-call
+                                                [:addon/load (addon-metrics/label addon-id) "construct"]
+                                                #(ctor config))]
                                     (if (satisfies? proto/IAddon result)
                                       (do
                                         (register-fn! result)
