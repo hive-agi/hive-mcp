@@ -56,15 +56,10 @@
 
 (def NodeIds
   "A collection of node ids for the batch readers and record-co-access!: a
-   vector or list, or an empty set.
-
-   BUG (recorded, not fixed): each of these calls `(distinct node-ids)`, and
-   clojure.core/distinct destructures its collection with nth, so a NON-EMPTY
-   set throws UnsupportedOperationException (nth not supported on this type:
-   PersistentHashSet), e.g. (batch-get-edges-from #{\"n1\"}). An empty set
-   short-circuits before distinct and returns {}. The schema states that
-   current domain."
-  [:maybe [:or [:sequential :string] [:set {:max 0} :string]]])
+   vector, list or set. The bodies take `(distinct (seq node-ids))`, so any
+   collection is accepted (a non-empty set used to throw, because
+   clojure.core/distinct destructures its argument with nth)."
+  [:maybe [:or [:sequential :string] [:set :string]]])
 
 (def EdgesByNode
   "Edges grouped by the node id they hang off."
