@@ -1,0 +1,13 @@
+{:case-0 {:out nil, :in nil},
+ :case-1 {:out nil, :in ""},
+ :case-2
+ {:out
+  #:covtest{:point [:map [:x :int] [:y :int]],
+            :name [:string {:min 1}],
+            :mode [:enum "a" "b"]},
+  :in "covtest"},
+ :case-3 {:out nil, :in "no-such-schema-file"},
+ :case-4 {:out nil, :in nil},
+ :case-5 {:out nil, :in nil},
+ :case-6 {:out nil, :in nil},
+ :case-7 {:out nil, :in nil}}

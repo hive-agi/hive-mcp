@@ -1,0 +1,8 @@
+{:case-0 {:out nil, :in (:no-file/x {:x 0, :y 0})},
+ :case-1 {:out nil, :in (:no-file/x "")},
+ :case-2 {:out true, :in (:covtest/point {:x -2, :y 1})},
+ :case-3 {:out false, :in (:covtest/mode nil)},
+ :case-4 {:out true, :in (:covtest/point {:x 2, :y 0})},
+ :case-5 {:out true, :in (:covtest/point {:x -14, :y 3})},
+ :case-6 {:out false, :in (:covtest/mode {:x 0, :y -1})},
+ :case-7 {:out nil, :in (:plain {:x -1, :y -4})}}
