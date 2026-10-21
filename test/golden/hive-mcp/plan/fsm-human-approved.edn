@@ -1,0 +1,8 @@
+{:case-0 {:out true, :in ({:status :approved})},
+ :case-1 {:out false, :in ({:status :executing})},
+ :case-2 {:out false, :in ({:status :draft})},
+ :case-3 {:out true, :in ({:status :approved})},
+ :case-4 {:out true, :in ({:status :approved})},
+ :case-5 {:out false, :in ({:status :executing})},
+ :case-6 {:out false, :in ({:status :draft})},
+ :case-7 {:out true, :in ({:status :approved})}}

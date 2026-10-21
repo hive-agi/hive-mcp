@@ -1,0 +1,14 @@
+{:run
+ {:status :executing,
+  :task-ids ["task-step-1" "task-step-2" "task-step-3"],
+  :valid? true},
+ :run-no-exec-fn
+ {:message "Plan FSM failed", :data {:status :executing}},
+ :run-cyclic {:message "Plan FSM failed", :data {:status :validated}},
+ :dry-run {:status :validated, :valid? true},
+ :dry-run-parse-fail
+ {:message "Plan validation failed: No ## headers found in content",
+  :data
+  {:phase :parse,
+   :error "No ## headers found in content",
+   :status :draft}}}
