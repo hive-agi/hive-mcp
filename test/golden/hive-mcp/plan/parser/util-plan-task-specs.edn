@@ -1,0 +1,212 @@
+{:case-0 {:out [], :in ({:steps []})},
+ :case-1
+ {:out
+  [{:title "B",
+    :description nil,
+    :priority "high",
+    :tags [],
+    :depends-on ["b"],
+    :plan-step-id "c",
+    :method :manual}
+   {:title "B",
+    :description "desc",
+    :priority "medium",
+    :tags ["x"],
+    :depends-on ["c" "c"],
+    :plan-step-id "a"}],
+  :in
+  ({:steps
+    [{:id "c",
+      :title "B",
+      :priority :high,
+      :tags [],
+      :depends-on ["b"],
+      :method :manual}
+     {:id "a",
+      :title "B",
+      :description "desc",
+      :priority :medium,
+      :tags ["x"],
+      :depends-on ["c" "c"]}]})},
+ :case-2
+ {:out
+  [{:title "A",
+    :description nil,
+    :priority "medium",
+    :tags [],
+    :depends-on ["d" "a"],
+    :plan-step-id "c"}
+   {:title "A",
+    :description "desc",
+    :priority "medium",
+    :tags ["x" "x"],
+    :depends-on [],
+    :plan-step-id "d"}
+   {:title "B",
+    :description nil,
+    :priority "high",
+    :tags ["x"],
+    :depends-on ["a" "d"],
+    :plan-step-id "a"}
+   {:title "A",
+    :description nil,
+    :priority "high",
+    :tags ["y"],
+    :depends-on [],
+    :plan-step-id "c",
+    :method :manual}],
+  :in
+  ({:steps
+    [{:id "c",
+      :title "A",
+      :priority :medium,
+      :tags [],
+      :depends-on ["d" "a"],
+      :hidden 0}
+     {:id "d",
+      :title "A",
+      :description "desc",
+      :priority :medium,
+      :tags ["x" "x"],
+      :depends-on [],
+      :hidden -2}
+     {:id "a",
+      :title "B",
+      :priority :high,
+      :tags ["x"],
+      :depends-on ["a" "d"]}
+     {:id "c",
+      :title "A",
+      :priority :high,
+      :tags ["y"],
+      :depends-on [],
+      :method :manual}]})},
+ :case-3
+ {:out
+  [{:title "B",
+    :description nil,
+    :priority "medium",
+    :tags [],
+    :depends-on ["d" "b"],
+    :plan-step-id "b"}
+   {:title "B",
+    :description "desc",
+    :priority "low",
+    :tags ["x"],
+    :depends-on [],
+    :plan-step-id "d"}
+   {:title "B",
+    :description nil,
+    :priority "high",
+    :tags ["y"],
+    :depends-on ["a"],
+    :plan-step-id "c",
+    :method :saa}],
+  :in
+  ({:steps
+    [{:id "b",
+      :title "B",
+      :description nil,
+      :priority :medium,
+      :tags [],
+      :depends-on ["d" "b"],
+      :hidden 3}
+     {:id "d",
+      :title "B",
+      :description "desc",
+      :priority :low,
+      :tags ["x"],
+      :depends-on [],
+      :hidden 2}
+     {:id "c",
+      :title "B",
+      :priority :high,
+      :tags ["y"],
+      :depends-on ["a"],
+      :method :saa}]})},
+ :case-4
+ {:out
+  [{:title "A",
+    :description nil,
+    :priority "high",
+    :tags [],
+    :depends-on ["b"],
+    :plan-step-id "d",
+    :method :manual}],
+  :in
+  ({:steps
+    [{:id "d",
+      :title "A",
+      :priority :high,
+      :tags [],
+      :depends-on ["b"],
+      :method :manual,
+      :hidden 0}]})},
+ :case-5
+ {:out
+  [{:title "A",
+    :description nil,
+    :priority "medium",
+    :tags [],
+    :depends-on [],
+    :plan-step-id "d",
+    :method :saa}],
+  :in
+  ({:steps
+    [{:id "d",
+      :title "A",
+      :priority :medium,
+      :tags [],
+      :depends-on [],
+      :method :saa,
+      :hidden 0}]})},
+ :case-6
+ {:out
+  [{:title "B",
+    :description nil,
+    :priority "low",
+    :tags [],
+    :depends-on [],
+    :plan-step-id "d",
+    :method :manual}
+   {:title "B",
+    :description nil,
+    :priority "low",
+    :tags [],
+    :depends-on ["d"],
+    :plan-step-id "c",
+    :method :saa}],
+  :in
+  ({:steps
+    [{:id "d",
+      :title "B",
+      :priority :low,
+      :tags [],
+      :depends-on [],
+      :method :manual,
+      :hidden 1}
+     {:id "c",
+      :title "B",
+      :description nil,
+      :priority :low,
+      :tags [],
+      :depends-on ["d"],
+      :method :saa,
+      :hidden -2}]})},
+ :case-7
+ {:out
+  [{:title "B",
+    :description "desc",
+    :priority "low",
+    :tags [],
+    :depends-on ["c"],
+    :plan-step-id "c"}],
+  :in
+  ({:steps
+    [{:id "c",
+      :title "B",
+      :description "desc",
+      :priority :low,
+      :tags [],
+      :depends-on ["c"],
+      :hidden -2}]})}}
