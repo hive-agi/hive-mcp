@@ -18,7 +18,8 @@
             [hive-mcp.tools.composite.default-async :as default-async]
             [hive-mcp.tools.composite.departed :as departed]
             [malli.core :as m]
-            [hive-mcp.tools.core :as core]))
+            [hive-mcp.tools.core :as core]
+            [hive-mcp.addons.metrics :as addon-metrics]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -35,7 +36,8 @@
    Every handler is dispatched through
    hive-mcp.extensions.dispatch-wrap/wrap-addon-handler as (wrap addon-id
    handler): the registered :addon/wrap-handler extension, then the drain gate
-   an unmount waits on.
+   an unmount waits on. Outermost, each call is timed under
+   [:addon/tool <addon-id> \"<tool> <command>\"] (hive-mcp.addons.metrics).
 
    The gate is `dispatch/handler?` and NOT `fn?`, and this is the site where
    that mattered most: `fn?` is false for a var, so a var-registered handler
@@ -46,7 +48,9 @@
   (when-let [commands (acmds/get-commands tool-name)]
     (into {} (map (fn [[cmd {:keys [handler addon]}]]
                     [(keyword cmd) (if (dispatch/handler? handler)
-                                     (dispatch-wrap/wrap-addon-handler addon handler)
+                                     (addon-metrics/wrap-handler
+                                      [:addon/tool (addon-metrics/label addon) (str tool-name " " cmd)]
+                                      (dispatch-wrap/wrap-addon-handler addon handler))
                                      handler)]))
           commands)))
 

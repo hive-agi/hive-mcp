@@ -50,7 +50,7 @@
              so it has no result to promise, and no test may call it."}})
 
 (deftest the-gate-is-not-vacuous
-  (is (= 81  (count (:universe (coverage/coverage {:paths batch-paths}))))))
+  (is (= 82  (count (:universe (coverage/coverage {:paths batch-paths}))))))
 
 (deftest every-server-contract-generates-both-sides
   (doseq [ns-sym '[hive-mcp.server.core hive-mcp.server.init hive-mcp.server.lifecycle
