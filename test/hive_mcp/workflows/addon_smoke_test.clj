@@ -8,7 +8,9 @@
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.workflows.addon-smoke :as smoke]
             [hive-mcp.addons.protocol :as proto]
-            [hive-mcp.addons.core :as addons]))
+            [hive-mcp.addons.core :as addons]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]
+            [hive-test.golden :as golden]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -64,3 +66,65 @@
         (is (false? (smoke/addons-initialized? ids))))
       (finally
         (addons/unregister-addon! id)))))
+
+;; -----------------------------------------------------------------------------
+;; Facets
+;; -----------------------------------------------------------------------------
+
+(def ^:private active-stub-id "smoke-facet-active")
+(def ^:private registered-stub-id "smoke-facet-registered")
+
+(defn- with-stub-addons
+  "Register one stub addon and boot it (:active), register a second without
+   booting it; unregister both afterwards."
+  [f]
+  (addons/register-addon! (->StubAddon active-stub-id))
+  (addons/init-addon! active-stub-id)
+  (addons/register-addon! (->StubAddon registered-stub-id))
+  (try (f)
+       (finally
+         (addons/shutdown-addon! active-stub-id)
+         (addons/unregister-addon! active-stub-id)
+         (addons/unregister-addon! registered-stub-id))))
+
+(def ^:private StubId [:enum "smoke-facet-active" "smoke-facet-registered" "smoke-facet-absent"])
+
+(def ^:private IdColl
+  [:maybe [:or [:set {:max 3} StubId] [:vector {:max 3} StubId]]])
+
+(deftrifecta-from-schema addons-initialized?-is-every-id-active
+  #'smoke/addons-initialized?
+  {:in [:cat IdColl]
+   :out :boolean
+   :rel (fn [[ids] out] (= out (every? #{active-stub-id} ids)))
+   :classify (fn [_ out] out)
+   :classify-domain #{true false}
+   ;; the property's registry state is installed per test by the fixture
+   :num-tests 100})
+
+(clojure.test/use-fixtures :each with-stub-addons)
+
+(golden/deftest-golden cold-jvm-smoke-golden
+  "test/golden/hive-mcp/workflows/addon-smoke-cold-jvm.edn"
+  ;; This JVM (the :test-unit classpath) carries no hive-workflows addon, so
+  ;; every check answers its absent-addon shape.
+  (let [{:keys [by-id scan-errors] :as discovered} (smoke/discovered-addons)
+        report (smoke/check)
+        ;; BUG (recorded, not fixed): check-ir-seam's contract promises
+        ;; {:ok? false :ir-loadable? false} when hive-workflows is absent, but
+        ;; requiring-resolve THROWS FileNotFoundException for a missing
+        ;; namespace instead of answering nil, so the `if-not` branch is
+        ;; unreachable. Pinned as the current behaviour: it throws.
+        ir-seam (try (smoke/check-ir-seam)
+                     (catch java.io.FileNotFoundException _ :throws-file-not-found))]
+    {:on-classpath? (smoke/addons-on-classpath?)
+     :initialized? (smoke/addons-initialized?)
+     :discovered {:by-id (vec (sort (keys by-id))) :scan-errors (count scan-errors)
+                  :scan-total-nonneg? (<= 0 (:scan-total discovered))}
+     :check (-> report
+                (select-keys [:ok? :missing-addons :unresolved :missing-methods])
+                (update-vals #(if (set? %) (vec (sort %)) %)))
+     :report-prefix (subs (:report report) 0 5)
+     :ir-seam ir-seam
+     :required (vec (sort smoke/required-addon-ids))
+     :methods (vec (sort smoke/required-methods))}))
