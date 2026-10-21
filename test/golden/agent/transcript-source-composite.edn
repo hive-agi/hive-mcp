@@ -1,0 +1,15 @@
+{:listing
+ {:ok [{:agent-id "x", :source :a} {:agent-id "z", :source :bad}]},
+ :first-wins {:ok [{:turn 1}]},
+ :second {:ok [{:turn 2}]},
+ :error-passes {:error :io/failed, :why "disk"},
+ :not-found
+ {:error :transcript/not-found,
+  :agent-id "nobody",
+  :source :any,
+  :message "No transcript for agent nobody"},
+ :empty
+ {:error :transcript/not-found,
+  :agent-id "x",
+  :source :any,
+  :message "No transcript for agent x"}}
