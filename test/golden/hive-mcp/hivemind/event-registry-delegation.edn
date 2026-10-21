@@ -1,0 +1,28 @@
+{:calls
+ {"event-type-schema" {:returned "clojure.lang.PersistentArrayMap"},
+  "format-icon"
+  {:ns "hive-agent.swarm.hivemind.event-registry", :var "format-icon"},
+  "mcp-enum"
+  {:ns "hive-agent.swarm.hivemind.event-registry", :var "mcp-enum"},
+  "severity"
+  {:ns "hive-agent.swarm.hivemind.event-registry", :var "severity"},
+  "slave-status"
+  {:ns "hive-agent.swarm.hivemind.event-registry",
+   :var "slave-status"},
+  "terminal?"
+  {:ns "hive-agent.swarm.hivemind.event-registry", :var "terminal?"},
+  "valid-event-type?"
+  {:ns "hive-agent.swarm.hivemind.event-registry",
+   :var "valid-event-type?"},
+  "valid-transition?"
+  {:ns "hive-agent.swarm.hivemind.event-registry",
+   :var "valid-transition?"}},
+ :values
+ {"EventType" "clojure.lang.PersistentVector",
+  "all-event-type-strings" nil,
+  "all-event-types" nil,
+  "event-type->slave-status" nil,
+  "mcp-event-types" nil,
+  "registry" nil,
+  "severity-levels" nil,
+  "terminal-event-types" nil}}
