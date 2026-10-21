@@ -36,26 +36,79 @@
             entries)
     entries))
 
+(defn in-project?
+  "True iff PROJECT-ID names a project, i.e. is neither nil nor \"global\"."
+  [project-id]
+  (boolean (and project-id (not= project-id "global"))))
+
 (defn compute-full-scope-tags
   "Compute full hierarchy scope tags for in-memory safety-net filtering."
   [project-id]
-  (let [in-project? (and project-id (not= project-id "global"))]
-    (cond-> (project-scope/full-hierarchy-scope-tags project-id)
-      in-project? (disj "scope:global"))))
+  (cond-> (project-scope/full-hierarchy-scope-tags project-id)
+    (in-project? project-id) (disj "scope:global")))
+
+(def ^:private global-scope-tag "scope:global")
+
+(defn- scope-tag?
+  "True iff T is a scope tag: `scope:global` or `scope:project:*`."
+  [t]
+  (let [t (str t)]
+    (or (= global-scope-tag t) (.startsWith ^String t "scope:project:"))))
+
+(defn hcr-visible?
+  "True iff ENTRY is visible from the hierarchy given as VISIBLE-SCOPE-TAGS
+   (the `scope:project:*` tags of the visible projects) and VISIBLE-IDS (the
+   visible project ids, \"global\" included).
+
+   A scope tag is authoritative. An entry carrying any scope tag is visible
+   iff it carries `scope:global` or a tag in VISIBLE-SCOPE-TAGS, whatever its
+   :project-id. An entry with no scope tag is visible iff its :project-id is
+   in VISIBLE-IDS."
+  [entry visible-scope-tags visible-ids]
+  (let [tags        (map str (:tags entry))
+        scope-tags  (if (set? visible-scope-tags) visible-scope-tags (set visible-scope-tags))
+        visible-ids (if (set? visible-ids) visible-ids (set visible-ids))]
+    (if (some scope-tag? tags)
+      (boolean (some #(or (= global-scope-tag %) (contains? scope-tags %)) tags))
+      (contains? visible-ids (:project-id entry)))))
 
 (defn scope-filter-entries
-  "Scope filter. An entry's `scope:project:*` tag is authoritative: when present
-   it must intersect `scope-tags`. Entries with no `scope:project:*` tag fall
-   back to `:project-id ∈ visible-ids`."
+  "ENTRIES for which `hcr-visible?` holds under SCOPE-TAGS and VISIBLE-IDS."
   [entries scope-tags visible-ids]
-  (let [scope-tags (set scope-tags)
-        scope-tag? (fn [t] (.startsWith ^String (str t) "scope:project:"))]
-    (filter (fn [entry]
-              (let [entry-tags (set (or (:tags entry) []))]
-                (if (some scope-tag? entry-tags)
-                  (boolean (some scope-tags entry-tags))
-                  (contains? visible-ids (:project-id entry)))))
-            entries)))
+  (let [scope-tags  (set scope-tags)
+        visible-ids (set visible-ids)]
+    (filter #(hcr-visible? % scope-tags visible-ids) entries)))
+
+(defn hcr-view
+  "The HCR view of PROJECT-ID: {:in-project? :scope-tags :visible-ids}.
+   HIERARCHY-IDS are the project ids visible from PROJECT-ID; :visible-ids is
+   that set plus \"global\". SCOPE-TAGS default to `compute-full-scope-tags`."
+  ([project-id hierarchy-ids]
+   (hcr-view project-id hierarchy-ids (compute-full-scope-tags project-id)))
+  ([project-id hierarchy-ids scope-tags]
+   {:in-project? (in-project? project-id)
+    :scope-tags  (set scope-tags)
+    :visible-ids (conj (set hierarchy-ids) "global")}))
+
+(defn hcr-gate
+  "ENTRIES visible under VIEW (see `hcr-view`), as a vector. A view at global
+   scope (:in-project? false) passes ENTRIES through unchanged."
+  [view entries]
+  (vec (if (:in-project? view)
+         (scope-filter-entries entries (:scope-tags view) (:visible-ids view))
+         entries)))
+
+(defn gate-branches
+  "BRANCHES (key -> rows) with every row set gated under VIEW: keys in
+   ALWAYS-GATED through `scope-filter-entries` at every scope, the others
+   through `hcr-gate`. Returns key -> vector of rows."
+  [view always-gated branches]
+  (into {}
+        (map (fn [[k rows]]
+               [k (if (contains? always-gated k)
+                    (vec (scope-filter-entries rows (:scope-tags view) (:visible-ids view)))
+                    (hcr-gate view rows))]))
+        branches))
 
 (defn scope-filter-entries-strict
   "Strict variant of `scope-filter-entries` — keeps only entries whose
@@ -74,21 +127,22 @@
           entries))
 
 (defn scope-pierce-entries
-  "Extract axioms, catchup-priority, and session-summary entries that pierce
-   scope boundaries. Returns nil when caller is at global scope (no piercing needed).
+  "The axiom, catchup-priority and session-summary entries of ENTRIES, the
+   kinds a global-pierce fetch carries into a project's catchup. Selection
+   only: the caller still gates the result with `hcr-gate`. Returns nil when
+   caller is at global scope (no piercing needed).
 
    Entry :type may be a keyword (:axiom) or a string (\"axiom\") depending on the
    store path; `name` normalises both."
   [entries project-id]
-  (let [in-project? (and project-id (not= project-id "global"))]
-    (when in-project?
-      (filter (fn [entry]
-                (let [entry-tags (set (or (:tags entry) []))
-                      entry-type (name (or (:type entry) ""))]
-                  (or (= entry-type "axiom")
-                      (contains? entry-tags "catchup-priority")
-                      (contains? entry-tags "session-summary"))))
-              entries))))
+  (when (in-project? project-id)
+    (filter (fn [entry]
+              (let [entry-tags (set (or (:tags entry) []))
+                    entry-type (name (or (:type entry) ""))]
+                (or (= entry-type "axiom")
+                    (contains? entry-tags "catchup-priority")
+                    (contains? entry-tags "session-summary"))))
+            entries)))
 
 (defn entry-expiring-soon?
   "Check if entry expires within 7 days."
