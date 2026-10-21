@@ -7,7 +7,8 @@
             [hive-mcp.tools.core
  :refer
  [mcp-error emacs-timeout-ms-property git-files-property]]
-            [hive-mcp.tools.magit :as magit-handlers]))
+            [hive-mcp.tools.magit :as magit-handlers]
+            [malli.core :as m]))
 
 (defn parallel-refusal
   "Pure: the refusal message for a batch-commit asked to run in parallel, or nil.
@@ -23,6 +24,8 @@
     (str "batch-commit/parallel-unsupported: batch-commit runs serially because "
          "every operation stages and commits through the same git index; "
          "omit :parallel or pass false.")))
+
+(m/=> parallel-refusal [:=> [:cat [:maybe :map]] [:maybe [:string {:min 1}]]])
 
 (defn- handle-batch-commit
   "Batch commit multiple operations. Injects :command \"commit\" into each op."

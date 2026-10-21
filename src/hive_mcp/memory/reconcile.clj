@@ -17,7 +17,8 @@
 
    Ids are compared as strings; nil and blank ids are not ids. A nil vector
    id is counted under :nil-vector-ids so it stays visible instead of being
-   silently dropped.")
+   silently dropped."
+  (:require [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -45,6 +46,46 @@
   [coll]
   (into #{} (keep id-string) coll))
 
+(def IdColl
+  "An id listing: any collection of values, compared as strings; nil and
+   blank ones are not ids."
+  [:maybe [:or [:sequential :any] [:set :any]]])
+
+(def DiffReport
+  "What `diff-ids` and `report` answer."
+  [:map
+   [:orphan-vector-ids [:vector [:string {:min 1}]]]
+   [:unindexed-store-ids [:vector [:string {:min 1}]]]
+   [:nil-vector-ids [:int {:min 0}]]
+   [:store-count [:int {:min 0}]]
+   [:vector-count [:int {:min 0}]]
+   [:consistent-count [:int {:min 0}]]
+   [:consistent? :boolean]])
+
+(def ReconcileSources
+  "An IReconcileSources port."
+  [:fn {:error/message "must satisfy IReconcileSources"
+        :gen/elements [(reify IReconcileSources
+                         (store-ids [_] ["a" "lost"])
+                         (vector-ids [_] ["a" "ghost" nil]))]}
+   #(satisfies? IReconcileSources %)])
+
+(def TruncatableReport
+  "A report as `truncate-report` reads it: the two id listings, either may
+   be absent."
+  [:map
+   [:orphan-vector-ids {:optional true} [:maybe [:sequential :any]]]
+   [:unindexed-store-ids {:optional true} [:maybe [:sequential :any]]]])
+
+(def TruncatedReport
+  "REPORT with its listings capped and the full sizes kept."
+  [:map
+   [:orphan-vector-ids [:vector :any]]
+   [:unindexed-store-ids [:vector :any]]
+   [:orphan-count [:int {:min 0}]]
+   [:unindexed-count [:int {:min 0}]]
+   [:truncated? :boolean]])
+
 (defn diff-ids
   "Compare the entry-store ids with the vector-index ids. Pure.
 
@@ -70,11 +111,15 @@
      :consistent-count    (- (count store) (count missing))
      :consistent?         (and (empty? orphans) (empty? missing) (zero? nils))}))
 
+(m/=> diff-ids [:=> [:cat IdColl IdColl] DiffReport])
+
 (defn report
   "Read both listings from SOURCES (an IReconcileSources) and diff them.
    Reads only: SOURCES is asked for ids and never written to."
   [sources]
   (diff-ids (store-ids sources) (vector-ids sources)))
+
+(m/=> report [:=> [:cat ReconcileSources] DiffReport])
 
 (defn truncate-report
   "Cap the two id listings of REPORT at LIMIT entries each, so a badly
@@ -91,3 +136,5 @@
            :unindexed-store-ids (vec (take limit missing))
            :truncated? (boolean (or (> (count orphans) limit)
                                     (> (count missing) limit))))))
+
+(m/=> truncate-report [:=> [:cat TruncatableReport :int] TruncatedReport])
