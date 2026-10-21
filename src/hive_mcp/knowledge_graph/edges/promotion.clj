@@ -39,7 +39,7 @@
 
    Returns the count of edges created or reinforced."
   [entry-ids & [{:keys [scope created-by]}]]
-  (let [ids (vec (distinct entry-ids))]
+  (let [ids (vec (distinct (seq entry-ids)))]
     (when (>= (count ids) 2)
       (conn/with-tx-batch
         (let [pairs (for [i (range (count ids))
