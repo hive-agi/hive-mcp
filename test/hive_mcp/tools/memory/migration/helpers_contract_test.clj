@@ -29,6 +29,7 @@
                                (every? (set "0123456789abcdef") s)))))
    :classify (fn [_ out] out)
    :classify-domain #{true false}
+   :classify-floor 10
    :num-tests 200})
 
 (deftrifecta-from-schema extract-scope-id-strips-the-project-prefix
