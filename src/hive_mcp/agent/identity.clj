@@ -31,7 +31,8 @@
             [hive-dsl.result :as r]
             [taoensso.timbre :as log]
             [hive-mcp.agent.grant :as grant]
-            [malli.core :as m])
+            [malli.core :as m]
+            [hive-mcp.extensions.soft :as ext-soft])
   (:import [java.nio.file Files LinkOption StandardCopyOption]
            [java.nio.file.attribute FileAttribute PosixFilePermissions]))
 
@@ -65,7 +66,7 @@
 ;; =============================================================================
 
 (defn- soft [sym]
-  (try (requiring-resolve sym) (catch Throwable _ nil)))
+  (ext-soft/resolve-cached sym))
 
 (defn domain
   "The credential domain fns, or nil when the hive-agent addon is absent."
