@@ -227,12 +227,16 @@
   (= (:dimension config1) (:dimension config2)))
 
 (defn describe
-  "Human-readable description of an EmbeddingConfig."
+  "Human-readable description of an EmbeddingConfig.
+   Total: a malformed or nil config still describes (missing parts read
+   as \"?\"), so it is safe on a log or error path."
   [config]
-  (format "%s/%s (%d dims)"
-          (name (:provider-type config))
-          (:model config)
-          (:dimension config)))
+  (let [kind (:provider-type config)
+        dim  (:dimension config)]
+    (format "%s/%s (%s dims)"
+            (if (or (keyword? kind) (symbol? kind) (string? kind)) (name kind) "?")
+            (or (:model config) "?")
+            (if (some? dim) dim "?"))))
 
 ;; =============================================================================
 ;; Contracts (malli)
