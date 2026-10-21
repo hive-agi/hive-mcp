@@ -1,0 +1,157 @@
+{:case-0
+ {:out
+  {:id "p1",
+   :title "Plan",
+   :steps
+   [{:id "s2",
+     :title "A",
+     :depends-on [],
+     :files [],
+     :priority :medium,
+     :estimate :medium,
+     :tags []}],
+   :source-format :edn,
+   :tags []},
+  :in
+  ({:id "p1",
+    :title "Plan",
+    :steps [{:id "s2", :title "A", :depends-on nil, :files []}]})},
+ :case-1
+ {:out
+  {:id "p1",
+   :title "Plan",
+   :steps
+   [{:id "s2",
+     :title "A",
+     :depends-on [],
+     :files ["a.clj"],
+     :priority :medium,
+     :estimate :medium,
+     :tags []}
+    {:id "s1",
+     :title "A",
+     :priority :low,
+     :files [],
+     :depends-on [],
+     :estimate :medium,
+     :tags []}],
+   :source-format :edn,
+   :tags []},
+  :in
+  ({:id "p1",
+    :title "Plan",
+    :steps
+    [{:id "s2", :title "A", :depends-on nil, :files ["a.clj"]}
+     {:id "s1", :title "A", :priority "trivial", :files []}]})},
+ :case-2
+ {:out
+  {:id "p1",
+   :title "Plan",
+   :steps [],
+   :source-format :markdown,
+   :tags []},
+  :in
+  ({:id "p1", :title "Plan", :steps [], :source-format :markdown})},
+ :case-3
+ {:out
+  {:id "p1",
+   :title "Plan",
+   :steps
+   [{:id "s2",
+     :title "B",
+     :priority :medium,
+     :estimate :medium,
+     :depends-on [],
+     :files [],
+     :tags []}],
+   :source-format :edn,
+   :tags []},
+  :in
+  ({:id "p1",
+    :title "Plan",
+    :steps
+    [{:id "s2",
+      :title "B",
+      :priority nil,
+      :estimate "medium",
+      :depends-on [],
+      :files nil}],
+    :source-format :edn})},
+ :case-4
+ {:out
+  {:id "p1", :title "Plan", :steps [], :source-format :edn, :tags []},
+  :in ({:id "p1", :title "Plan", :steps [], :source-format :edn})},
+ :case-5
+ {:out
+  {:id "p1",
+   :title "Plan",
+   :steps
+   [{:id "s2",
+     :title "B",
+     :depends-on ["s1"],
+     :priority :medium,
+     :files [],
+     :estimate :medium,
+     :tags []}],
+   :source-format :markdown,
+   :tags []},
+  :in
+  ({:id "p1",
+    :title "Plan",
+    :steps [{:id "s2", :title "B", :depends-on ["s1"]}],
+    :source-format :markdown})},
+ :case-6
+ {:out
+  {:id "p1",
+   :title "Plan",
+   :steps
+   [{:id "s2",
+     :title "B",
+     :priority :medium,
+     :depends-on ["s2"],
+     :files [],
+     :estimate :medium,
+     :tags []}
+    {:id "s1",
+     :title "B",
+     :priority :medium,
+     :estimate :small,
+     :depends-on [],
+     :files [],
+     :tags []}],
+   :source-format :markdown,
+   :tags []},
+  :in
+  ({:id "p1",
+    :title "Plan",
+    :steps
+    [{:id "s2", :title "B", :priority "Medium", :depends-on ["s2"]}
+     {:id "s1", :title "B", :priority nil, :estimate :SMALL}],
+    :source-format :markdown})},
+ :case-7
+ {:out
+  {:id "p1",
+   :title "Plan",
+   :steps
+   [{:id "s2",
+     :title "A",
+     :priority :medium,
+     :depends-on [],
+     :files [],
+     :estimate :medium,
+     :tags []}
+    {:id "s2",
+     :title "A",
+     :files [],
+     :depends-on [],
+     :priority :medium,
+     :estimate :medium,
+     :tags []}],
+   :source-format :edn,
+   :tags []},
+  :in
+  ({:id "p1",
+    :title "Plan",
+    :steps
+    [{:id "s2", :title "A", :priority :normal}
+     {:id "s2", :title "A", :files []}]})}}
