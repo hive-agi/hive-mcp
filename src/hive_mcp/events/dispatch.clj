@@ -173,8 +173,10 @@
   [event-id start-ns outcome]
   (when-let [f @metrics-record]
     (try (f [:event/dispatch event-id] (- (System/nanoTime) (long start-ns)) outcome)
-         (catch Throwable _ nil)))
+         (catch Throwable _sink-failure-must-not-fail-dispatch nil)))
   nil)
+
+(mall/=> record-dispatch! [:=> [:cat :any :int [:enum :ok :error]] :nil])
 
 (defn dispatch
   "Dispatch an event through its registered handler chain.
@@ -186,7 +188,8 @@
    1. malli schema validation at the boundary
    2. timing, recorded as `[:event/dispatch event-id]` through the late-bound
       hive-ttracking metrics port (`record-dispatch!`); outcome :error when the
-      chain throws or no handler is registered
+      chain throws or no handler is registered. A successful dispatch is also
+      observed in the Prometheus request histogram as `event-dispatch-<id>`.
    3. effect metrics and the ENGINE-L0.4 unhandled-effect counter, contributed
       as an fx executor (see `effect-executor`) rather than as a second do-fx
 
@@ -212,7 +215,10 @@
                      (record-dispatch! event-id start-ns :error)
                      (throw t)))]
       (if result
-        (do (record-dispatch! event-id start-ns :ok)
+        (do (metrics-port/observe-request-duration!
+             (str "event-dispatch-" (name event-id))
+             (/ (- (System/nanoTime) start-ns) 1e9))
+            (record-dispatch! event-id start-ns :ok)
             result)
         (do (record-dispatch! event-id start-ns :error)
             (throw (ex-info (str "No handler registered for event: " event-id)
