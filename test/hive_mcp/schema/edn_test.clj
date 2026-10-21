@@ -27,7 +27,10 @@
 
 (deftrifecta-from-schema load-schema-file-reads-the-classpath-file
   hive-mcp.schema.edn/load-schema-file
-  {:in [:maybe [:enum "covtest" "no-such-schema-file" ""]]
+  ;; "covtest" is its own :or branch so about half the runs reach the found
+  ;; arm; under a flat [:maybe [:enum ...]] it was ~1 in 9 and starved the
+  ;; classification floor on unlucky seeds
+  {:in [:or [:enum "covtest"] [:maybe [:enum "no-such-schema-file" ""]]]
    :out [:maybe sedn/SchemaFile]
    :rel (fn [ns-name out] (= out (when (= "covtest" ns-name) fixture)))
    :classify (fn [_ out] (some? out))

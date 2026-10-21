@@ -1,11 +1,10 @@
-{:counts {:tools 19, :verbs 37, :aliases 11, :batchables 3},
+{:counts {:tools 18, :verbs 37, :aliases 11, :batchables 3},
  :owned
  {:aliases ["#" "c" "d" "f" "id" "idk" "n" "p" "q" "rel" "t"],
   :batchables ["kanban" "kg" "memory"],
   :tools
   ["addon"
    "agent"
-   "agora"
    "analysis"
    "config"
    "events"
