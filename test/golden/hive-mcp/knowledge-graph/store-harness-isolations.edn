@@ -1,0 +1,21 @@
+{:global-sync
+ {:seen {:thread-local? false, :global-set? true, :sync-writes? true},
+  :events [:create :dispose],
+  :global-restored? true},
+ :global
+ {:seen {:thread-local? false, :global-set? true, :sync-writes? false},
+  :events [:create :dispose],
+  :global-restored? true},
+ :ds-available? true,
+ :thread-local-async
+ {:seen {:thread-local? true, :global-set? false, :sync-writes? false},
+  :events [:create :dispose],
+  :global-restored? true},
+ :body-throws {:message "body failed", :events [:create :dispose]},
+ :thread-local
+ {:seen {:thread-local? true, :global-set? false, :sync-writes? true},
+  :events [:create :dispose],
+  :global-restored? true},
+ :fixture nil,
+ :skip-ok :ran,
+ :skip "Fake fixture failed, skipping: no driver\n"}
