@@ -153,6 +153,7 @@
   "tools.cost" :hive-agent
   "tools.crystal" :hive-memory
   "tools.kanban" :hive-kanban
+  "tools.git-local-root" :hive-emacs
   "tools.kg" :hive-memory
   "tools.magit" :hive-emacs
   "tools.memory" :hive-memory
