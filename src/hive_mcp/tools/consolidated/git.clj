@@ -72,7 +72,7 @@
 (def tool-def
   {:name "git"
    :consolidated true
-   :description "Git operations via Magit: status (repo state), stage (add files), commit (create commit), push (to remote), branches (list all), log (recent commits), diff (view changes), pull/fetch (from remote), feature-branches (for /ship). Use command='help' to list all."
+   :description "Git operations via Magit: status (repo state), stage (add files), commit (create commit), push (to remote), branches (list all), log (recent commits), diff (view changes), pull/fetch (from remote), feature-branches (list feature/fix branches; to ship one use `git ship land|status|reconcile`). Use command='help' to list all."
    :inputSchema {:type "object"
                  :properties (merge
                               {"command" {:type "string"

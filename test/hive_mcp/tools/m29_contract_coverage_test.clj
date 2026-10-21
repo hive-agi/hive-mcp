@@ -30,11 +30,11 @@
 (deftest m29-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths batch-paths})
         nss    (set (map (comp symbol namespace) (:universe report)))]
-    (is (= 35 (count nss)) "every namespace of the batch with a public defn")
+    (is (= 36 (count nss)) "every namespace of the batch with a public defn")
     (is (not-any? #(re-find #"tools\.swarm\.jvm\." (str %)) nss)
         "tools/swarm/jvm/ is m30's")
-    (is (= 164 (count (:universe report))) "every public defn of the batch")
-    (is (= 164 (count (:covered report))))))
+    (is (= 166 (count (:universe report))) "every public defn of the batch")
+    (is (= 166 (count (:covered report))))))
 
 (deftest every-m29-contract-generates-both-sides
   (let [nss (set (map (comp symbol namespace)

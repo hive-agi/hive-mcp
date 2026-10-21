@@ -1,14 +1,26 @@
 {:case-0
- {:out {:error "node_id must be a non-empty string"},
+ {:out
+  {:type "text",
+   :text "node_id must be a non-empty string",
+   :isError true},
   :in ({:max_depth 2})},
  :case-1
- {:out {:error "node_id must be a non-empty string"},
+ {:out
+  {:type "text",
+   :text "node_id must be a non-empty string",
+   :isError true},
   :in ({:node_id nil, :max_depth 2, :scope "hive-mcp:agora"})},
  :case-2
- {:out {:error "node_id must be a non-empty string"},
+ {:out
+  {:type "text",
+   :text "node_id must be a non-empty string",
+   :isError true},
   :in ({:max_depth nil, :scope nil})},
  :case-3
- {:out {:error "node_id must be a non-empty string"},
+ {:out
+  {:type "text",
+   :text "node_id must be a non-empty string",
+   :isError true},
   :in ({:scope nil})},
  :case-4
  {:out
@@ -17,8 +29,20 @@
    "{\"success\":true,\"node-id\":\"b-1\",\"direct-count\":0,\"transitive-count\":0,\"total-count\":0,\"direct\":[],\"transitive\":[],\"by-relation\":{}}"},
   :in ({:node_id "b-1", :max_depth nil})},
  :case-5
- {:out {:error "node_id must be a non-empty string"},
+ {:out
+  {:type "text",
+   :text "node_id must be a non-empty string",
+   :isError true},
   :in ({:max_depth nil})},
  :case-6
- {:out {:error "node_id must be a non-empty string"}, :in ({})},
- :case-7 {:out {:error "node_id must be a non-empty string"}, :in ({})}}
+ {:out
+  {:type "text",
+   :text "node_id must be a non-empty string",
+   :isError true},
+  :in ({})},
+ :case-7
+ {:out
+  {:type "text",
+   :text "node_id must be a non-empty string",
+   :isError true},
+  :in ({})}}
