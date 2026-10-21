@@ -1,0 +1,77 @@
+{:no-store
+ {:fatal
+  {:result
+   {:error :resilience/fatal,
+    :throwable "ExceptionInfo: too large",
+    :class :err/validation},
+   :calls 1,
+   :valid? true,
+   :kick-and-wait false},
+  :ok
+  {:result {:ok :fine}, :calls 1, :valid? true, :kick-and-wait false},
+  :schema-mismatch
+  {:result
+   {:error :embedder/dim-mismatch,
+    :message "dim",
+    :details {:code 1804, :message "dim"},
+    :throwable "ExceptionInfo: Milvus code=1804"},
+   :calls 1,
+   :valid? true,
+   :kick-and-wait false},
+  :transient-recovers
+  {:result {:ok :recovered},
+   :calls 2,
+   :valid? true,
+   :kick-and-wait false},
+  :transient-twice
+  {:result
+   {:error :resilience/retry-failed,
+    :throwable "IOException: Connection reset"},
+   :calls 2,
+   :valid? true,
+   :kick-and-wait false}},
+ :with-store
+ {:fatal
+  {:result
+   {:error :resilience/fatal,
+    :throwable "ExceptionInfo: too large",
+    :class :err/validation},
+   :calls 1,
+   :valid? true,
+   :heal-calls []},
+  :ok {:result {:ok :fine}, :calls 1, :valid? true, :heal-calls []},
+  :schema-mismatch
+  {:result
+   {:error :embedder/dim-mismatch,
+    :message "dim",
+    :details {:code 1804, :message "dim"},
+    :throwable "ExceptionInfo: Milvus code=1804"},
+   :calls 1,
+   :valid? true,
+   :heal-calls []},
+  :transient-recovers
+  {:result {:ok :recovered},
+   :calls 2,
+   :valid? true,
+   :heal-calls [:kick [:await 5]]},
+  :transient-twice
+  {:result
+   {:error :resilience/retry-failed,
+    :throwable "IOException: Connection reset"},
+   :calls 2,
+   :valid? true,
+   :heal-calls [:kick [:await 5]]}},
+ :kick-and-wait
+ {:default-budget true,
+  :explicit true,
+  :calls [:kick [:await 8000] :kick [:await 9]]},
+ :legacy
+ {:fatal
+  {:thrown "ExceptionInfo: too large", :tag :embedder/input-too-large},
+  :ok {:value :fine},
+  :schema-mismatch
+  {:thrown "ExceptionInfo: dim", :tag :embedder/dim-mismatch},
+  :transient-recovers {:value :recovered},
+  :transient-twice
+  {:thrown "IOException: Connection reset", :tag nil}},
+ :dead-store-kick false}
