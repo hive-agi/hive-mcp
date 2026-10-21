@@ -74,6 +74,8 @@
   "test/golden/addons/headless-facade.edn"
   scenario)
 
-(deftest aliases-are-the-spi-protocols
-  (is (identical? spi/IHeadlessBackend h/IHeadlessBackend))
-  (is (identical? spi/IHeadlessCapabilities h/IHeadlessCapabilities)))
+(deftest aliases-name-the-spi-protocols
+  ;; A `def` alias holds the protocol map as of load time; extending the
+  ;; protocol rebinds the spi var's root, so compare the var it names.
+  (is (= #'spi/IHeadlessBackend (:var h/IHeadlessBackend)))
+  (is (= #'spi/IHeadlessCapabilities (:var h/IHeadlessCapabilities))))

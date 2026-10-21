@@ -34,5 +34,11 @@
   "test/golden/protocols/memory-liveness.edn"
   scenario)
 
-(deftest alias-is-the-canonical-protocol
-  (is (identical? ports/IMemoryStoreLiveness live/IMemoryStoreLiveness)))
+(deftest alias-names-the-canonical-protocol
+  ;; The alias holds the protocol map as of load time; extending the protocol
+  ;; (as RecordingStore does above) rebinds the canonical var's root, so the
+  ;; two maps are not identical. That is why liveness-store? asks the
+  ;; canonical var. What the alias does keep is the canonical var itself.
+  (is (= #'ports/IMemoryStoreLiveness (:var live/IMemoryStoreLiveness)))
+  (is (live/liveness-store? (->RecordingStore (atom []) true))
+      "an impl registered after this namespace loaded is still seen"))
