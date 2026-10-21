@@ -3,7 +3,8 @@
    request ingress, not inferred from provider type. The permit covers the
    actual provider HTTP call, including a full batch."
   (:require [hive-mcp.embeddings.protocol :as proto]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.protocols.store-metrics :as metrics]))
 
 (def ^:dynamic *lane*
   "Admission lane for gated embedding calls. MCP tool ingress binds
@@ -222,9 +223,13 @@
 (defrecord GatedProvider [delegate gate]
   proto/EmbeddingProvider
   (embed-text [_ text]
-    (with-permit gate *lane* #(proto/embed-text delegate text)))
+    (with-permit gate *lane*
+      #(metrics/timed (metrics/embed-key delegate :embed-text)
+                      (proto/embed-text delegate text))))
   (embed-batch [_ texts]
-    (with-permit gate *lane* #(proto/embed-batch delegate texts)))
+    (with-permit gate *lane*
+      #(metrics/timed (metrics/embed-key delegate :embed-batch)
+                      (proto/embed-batch delegate texts))))
   (embedding-dimension [_]
     (proto/embedding-dimension delegate)))
 
