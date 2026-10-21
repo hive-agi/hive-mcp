@@ -3,8 +3,8 @@
 
    Loading this namespace is what makes core the kanban CONTRIBUTOR: it
    installs core's IKanbanRead / IKanbanWrite provider in
-   hive-mcp.spi.kanban.registry and the :kanban catchup block in
-   hive-mcp.spi.catchup-registry. An addon that owns the board does the same at
+   hive-spi.kanban.registry and the :kanban catchup block in
+   hive-spi.catchup.registry. An addon that owns the board does the same at
    its initialize! and replaces both."
   (:require [clojure.tools.logging :as log]
             [hive-mcp.tools.cli :refer [make-cli-handler make-batch-handler]]

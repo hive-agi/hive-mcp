@@ -38,7 +38,7 @@
             [hive-mcp.tools.catchup.relevance :as relevance]
             [hive-mcp.tools.catchup.outcome :as outcome]
             [hive-mcp.tools.catchup.caller :as catchup-caller]
-            [hive-mcp.spi.catchup-registry :as blocks]
+            [hive-spi.catchup.registry :as blocks]
             [hive-mcp.extensions.soft :as soft]
             [hive-mcp.tools.catchup.block-cache :as block-cache]
             [hive-mcp.tools.catchup.caps :as catchup-caps]
@@ -101,7 +101,7 @@
    still land. Ordered by the registry, never by naming a contributor.
    A block that declares :block/cache is served from the shared block cache."
   [ctx]
-  (let [{:keys [blocks failed]} (blocks/compose ctx block-cache/run-block)
+  (let [{:keys [blocks failed]} (block-cache/compose ctx)
         order (into {} (map-indexed (fn [i b] [(:block/id b) i])) (blocks/registered-blocks))]
     (when (seq failed)
       (log/warn "catchup: contributed blocks failed" failed))
@@ -185,7 +185,7 @@
                                                                     (assoc acc k
                                                                            (rescue nil (block-cache/run-status-provider k provider-fn project-id))))
                                                                   {} status-providers))))
-              ;; Contributed blocks (hive-mcp.spi.catchup-registry): core's own
+              ;; Contributed blocks (hive-spi.catchup.registry): core's own
               ;; domains and addons register {:block/id :block/fn :block/order};
               ;; catchup composes them without naming a contributor.
               f-blocks (pool/with-io ((tt/timed-query "catchup/blocks-total"

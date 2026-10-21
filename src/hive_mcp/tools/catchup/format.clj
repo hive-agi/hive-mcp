@@ -298,7 +298,7 @@
         :hint (if memory-available?
                 "Axioms and priority conventions are being delivered via ---MEMORY--- piggyback blocks. AXIOMS are INVIOLABLE - follow them word-for-word. Entries with :kg key have Knowledge Graph relationships."
                 "Memory is unavailable; no empty-memory claim or piggyback delivery was made.")})
-      ;; Contributed blocks (hive-mcp.spi.catchup-registry), already in
+      ;; Contributed blocks (hive-spi.catchup.registry), already in
       ;; :block/order. Each becomes its own section named after its id; the
       ;; host never names a contributor.
       (seq (contributed-sections contributed-blocks))

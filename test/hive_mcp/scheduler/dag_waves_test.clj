@@ -18,8 +18,8 @@
   (:require [hive-mcp.project.scope]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.scheduler.dag-waves :as dag]
-            [hive-mcp.spi.kanban :as kanban]
-            [hive-mcp.spi.kanban.registry :as kanban-port]
+            [hive-spi.kanban :as kanban]
+            [hive-spi.kanban.registry :as kanban-port]
             [hive-mcp.test.stub.kanban :as kport]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [hive-mcp.agent.ling :as ling]
@@ -142,7 +142,7 @@
 
 (defn with-kanban-port
   "clojure.test fixture: the table-backed double answers both kanban ports.
-   The scheduler resolves the provider through hive-mcp.spi.kanban.registry
+   The scheduler resolves the provider through hive-spi.kanban.registry
    on every call, so the double is installed there, never captured."
   [f]
   (let [prior (into {} (for [p [:IKanbanRead :IKanbanWrite] :when (kanban-port/registered? p)]

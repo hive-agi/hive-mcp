@@ -15,7 +15,7 @@
   (:require [clojure.test :refer [deftest testing is]]
             [clojure.test.check.generators :as gen]
             [hive-test.trifecta :refer [deftrifecta]]
-            [hive-mcp.spi.catchup-registry :as catchup-registry]
+            [hive-spi.catchup.registry :as catchup-registry]
             [clojure.data.json :as json]
             ;; Wrap path
             [hive-mcp.crystal.harvest.collect :as collect]

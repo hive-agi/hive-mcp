@@ -1,6 +1,6 @@
 (ns hive-mcp.test.stub.kanban
   "clojure.test fixtures and a recording double for the kanban ports
-   (hive-mcp.spi.kanban).
+   (hive-spi.kanban).
 
    with-core-kanban       core's real provider (hive-mcp.tools.kanban.port)
                           over whatever memory store the test installed
@@ -12,8 +12,8 @@
    [method argument].
 
    Both fixtures restore the ports to the providers they found."
-  (:require [hive-mcp.spi.kanban :as kanban]
-            [hive-mcp.spi.kanban.registry :as registry]
+  (:require [hive-spi.kanban :as kanban]
+            [hive-spi.kanban.registry :as registry]
             [hive-mcp.tools.kanban.port :as port]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>

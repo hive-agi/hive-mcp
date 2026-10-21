@@ -1,134 +1,75 @@
 (ns hive-mcp.spi.kanban.registry
-  "The DIP swap point for the kanban ports, plus a facade over the registered
-   providers.
+  "DEPRECATED shim over hive-spi.kanban.registry. Require that instead.
 
-   A provider registers itself with `register!`; consumers call the facade fns
-   (`list-tasks`, `get-task`, `transition!`, `create-task!`) and never name a
-   provider namespace. With nothing registered every facade fn answers from
-   the Noops, so a consumer loads and runs with no provider on the classpath:
-   reads are empty, writes are a {:err ...} value.
-
-   The facade resolves the provider on EVERY call, so a later registration
-   (an addon at initialize!, a test fixture) is what the next call answers
-   from. A captured value would freeze the seam.
-
-   HOST-LOCAL: the kernel's copy of hive-spi.kanban.registry.
-   See hive-mcp.spi.kanban."
+   The kanban DIP registry lived here, host-local, until hive-spi released it
+   (1.4.0). Core now registers and resolves its provider through the library
+   namespace. This shim stays for one release for addons that still name it.
+   It keeps NO provider table of its own: every fn forwards to the library, so
+   a provider registered here is the provider the library facade answers from."
   (:require [hive-mcp.spi.kanban :as kanban]
-            [taoensso.timbre :as log]
+            [hive-spi.kanban.registry :as registry]
             [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-;; =============================================================================
-;; Degraded defaults
-;; =============================================================================
-
-(defn- unavailable
-  [port]
-  {:error   :kanban/provider-unavailable
-   :message (str "no provider registered for " port)})
-
-(defrecord NoopKanbanRead []
-  kanban/IKanbanRead
-  ;; An empty board, not an envelope: list results are iterated by callers.
-  (list-tasks [_ _query] [])
-  (get-task [_ _id] nil))
-
-(defrecord NoopKanbanWrite []
-  kanban/IKanbanWrite
-  (transition! [_ _request] {:err (unavailable :IKanbanWrite)})
-  (create-task! [_ _request] {:err (unavailable :IKanbanWrite)}))
-
 (def noops
-  "Port key -> Noop instance. The registry's fallback table."
-  {:IKanbanRead  (->NoopKanbanRead)
-   :IKanbanWrite (->NoopKanbanWrite)})
+  "Port key -> Noop instance (the library's table)."
+  registry/noops)
 
 (def port->protocol
-  "Port key -> the protocol an implementation must satisfy."
-  {:IKanbanRead  kanban/IKanbanRead
-   :IKanbanWrite kanban/IKanbanWrite})
+  "Port key -> the protocol an implementation must satisfy (the library's table)."
+  registry/port->protocol)
 
 (defn noop?
-  "True when `impl` is a degraded default for either kanban port."
+  "See hive-spi.kanban.registry/noop?."
   [impl]
-  (contains? (set (vals noops)) impl))
-
-;; =============================================================================
-;; Registry
-;; =============================================================================
-
-(defonce ^:private -providers (atom {}))
-
-(defonce ^:private -warned (atom #{}))
+  (registry/noop? impl))
 
 (defn register!
-  "Install `impl` as the provider for `port`. Returns `impl`.
-   Throws when `impl` does not satisfy the port's protocol — a wiring error
-   must fail loudly at startup, unlike a missing provider which degrades."
+  "See hive-spi.kanban.registry/register!."
   [port impl]
-  (if-let [proto (get port->protocol port)]
-    (if (satisfies? proto impl)
-      (do (swap! -providers assoc port impl)
-          (swap! -warned disj port)
-          impl)
-      (throw (ex-info "impl does not satisfy the port protocol"
-                      {:port port :impl (type impl)})))
-    (throw (ex-info "unknown kanban port" {:port port :known (keys port->protocol)}))))
+  (registry/register! port impl))
 
 (defn unregister!
-  "Drop the provider for `port`, reverting it to its Noop default."
+  "See hive-spi.kanban.registry/unregister!."
   [port]
-  (swap! -providers dissoc port)
-  nil)
+  (registry/unregister! port))
 
 (defn reset-providers!
-  "Drop every provider. Test-support."
+  "See hive-spi.kanban.registry/reset-providers!."
   []
-  (reset! -providers {})
-  (reset! -warned #{})
-  nil)
+  (registry/reset-providers!))
 
 (defn registered?
-  "True when a non-Noop provider is installed for `port`."
+  "See hive-spi.kanban.registry/registered?."
   [port]
-  (contains? @-providers port))
+  (registry/registered? port))
 
 (defn provider
-  "The active provider for `port` — a registered impl, else the Noop default.
-   Warns once per port on first degraded use."
+  "See hive-spi.kanban.registry/provider."
   [port]
-  (or (get @-providers port)
-      (do (when-not (contains? @-warned port)
-            (swap! -warned conj port)
-            (log/warn "kanban port degraded, no provider registered:" port))
-          (get noops port))))
-
-;; =============================================================================
-;; Facade
-;; =============================================================================
+  (registry/provider port))
 
 (defn list-tasks
-  "See hive-mcp.spi.kanban/IKanbanRead."
+  "See hive-spi.kanban.registry/list-tasks."
   [query]
-  (kanban/list-tasks (provider :IKanbanRead) query))
+  (registry/list-tasks query))
 
 (defn get-task
-  "See hive-mcp.spi.kanban/IKanbanRead."
+  "See hive-spi.kanban.registry/get-task."
   [id]
-  (kanban/get-task (provider :IKanbanRead) id))
+  (registry/get-task id))
 
 (defn transition!
-  "See hive-mcp.spi.kanban/IKanbanWrite."
+  "See hive-spi.kanban.registry/transition!."
   [request]
-  (kanban/transition! (provider :IKanbanWrite) request))
+  (registry/transition! request))
 
 (defn create-task!
-  "See hive-mcp.spi.kanban/IKanbanWrite."
+  "See hive-spi.kanban.registry/create-task!."
   [request]
-  (kanban/create-task! (provider :IKanbanWrite) request))
+  (registry/create-task! request))
 
 ;; =============================================================================
 ;; Contracts

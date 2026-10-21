@@ -1,20 +1,18 @@
 (ns hive-mcp.spi.catchup-registry
-  "The injection point for catchup blocks.
+  "DEPRECATED shim over hive-spi.catchup.registry. Require that instead.
 
-   A catchup answer is composed from BLOCKS. Every contributor, the host's
-   own domains and addons alike, registers one:
+   The catchup block registry lived here, host-local, until hive-spi released
+   it (1.4.0). Core now composes catchup from the library registry. This shim
+   stays for one release because addons (hive-git's :forge-inbox,
+   hive-knowledge's host catchup) still soft-resolve
+   `hive-mcp.spi.catchup-registry/register-block!`. It keeps NO block table of
+   its own: every fn forwards to the library, so a block registered here is a
+   block catchup composes.
 
-     {:block/id    kw           the key its value lands under
-      :block/fn    (fn [ctx])   returns the block value (a map)
-      :block/order int          lower runs first}
-
-   The host never names a contributor: it calls `compose` with a context
-   and receives every registered block's value keyed by id.
-
-   HOST-LOCAL: the kernel's copy of the contribution registry. It moves to
-   hive-spi (ns hive-spi.catchup.registry) once that library releases it;
-   until then the kernel cannot require an unreleased coordinate."
-  (:require [hive-spi.slot :as slot]
+   `compose` keeps the 2-arity (ctx, run) the host used for its block cache;
+   hive-spi's compose has only the 1-arity, so the runner arity is built here
+   over the library's `registered-blocks`."
+  (:require [hive-spi.catchup.registry :as registry]
             [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -25,9 +23,7 @@
 
    :block/cache (optional) opts the block into the host's shared cache:
    true for the default policy, or a policy map
-   {:fresh-ms n :max-age-ms n :drop-tags #{tag} :key-by [ctx-key ...]}.
-   Only a block whose value is the same for every caller with the same
-   :key-by values may opt in."
+   {:fresh-ms n :max-age-ms n :drop-tags #{tag} :key-by [ctx-key ...]}."
   [:map
    [:block/id :keyword]
    [:block/fn fn?]
@@ -35,55 +31,44 @@
    [:block/cache {:optional true} [:or :boolean :map]]])
 
 (defn block?
-  "True iff X has the Block shape."
+  "See hive-spi.catchup.registry/block?."
   [x]
-  (and (map? x)
-       (keyword? (:block/id x))
-       (fn? (:block/fn x))
-       (integer? (:block/order x))))
-
-(defonce ^:private block-slot
-  (slot/multi-slot {:validate block?}))
+  (registry/block? x))
 
 (defn register-block!
-  "Install BLOCK under its :block/id, replacing any block already there.
-   Returns BLOCK. Throws when BLOCK does not have the Block shape."
+  "See hive-spi.catchup.registry/register-block!."
   [block]
-  (slot/reg-put! block-slot (:block/id block) block))
+  (registry/register-block! block))
 
 (defn unregister-block!
-  "Remove the block under ID. No-op when absent. Returns nil."
+  "See hive-spi.catchup.registry/unregister-block!."
   [id]
-  (slot/reg-remove! block-slot id))
+  (registry/unregister-block! id))
 
 (defn registered-blocks
-  "Every registered block, sorted by :block/order then :block/id."
+  "See hive-spi.catchup.registry/registered-blocks."
   []
-  (->> (vals (slot/reg-snapshot block-slot))
-       (sort-by (juxt :block/order :block/id))
-       vec))
+  (registry/registered-blocks))
 
 (defn registered?
-  "True iff a block is installed under ID."
+  "See hive-spi.catchup.registry/registered?."
   [id]
-  (some? (slot/reg-get block-slot id)))
+  (registry/registered? id))
 
 (defn reset-registry!
-  "Remove every registered block. Returns nil."
+  "See hive-spi.catchup.registry/reset-registry!."
   []
-  (slot/reg-clear! block-slot))
+  (registry/reset-registry!))
 
 (defn compose
   "Run every registered block against CTX in :block/order.
 
    Returns {:blocks {id value} :failed {id message}}. A block that throws
-   lands in :failed with the exception message and never aborts the others;
-   a block that returns nil lands in :blocks as nil.
-
+   lands in :failed with the exception message and never aborts the others.
    RUN (fn [block ctx]) is how one block is executed; the default calls its
-   :block/fn. The host passes a runner that honours :block/cache."
+   :block/fn."
   ([ctx]
-   (compose ctx (fn [block ctx] ((:block/fn block) ctx))))
+   (registry/compose ctx))
   ([ctx run]
    (reduce (fn [acc {:block/keys [id] :as block}]
              (try
@@ -91,7 +76,7 @@
                (catch Throwable t
                  (assoc-in acc [:failed id] (or (ex-message t) (str (class t)))))))
            {:blocks {} :failed {}}
-           (registered-blocks))))
+           (registry/registered-blocks))))
 
 ;; =============================================================================
 ;; Contracts

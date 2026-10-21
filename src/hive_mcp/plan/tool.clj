@@ -9,7 +9,7 @@
    5. Create KG edges: task --depends-on--> task (from step dependencies)"
 
   (:require [hive-mcp.tools.core :refer [mcp-json mcp-error]]
-            [hive-mcp.spi.kanban.registry :as kanban-port]
+            [hive-spi.kanban.registry :as kanban-port]
             [hive-mcp.plan.fsm :as plan-fsm]
             [hive-mcp.plan.kg-degraded :as kg-degraded]
             [hive-mcp.vectordb.facade :as facade]
