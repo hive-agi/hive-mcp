@@ -139,6 +139,16 @@
    {:description "Total wave failures by reason"
     :labels [:wave-id :reason]}))
 
+;; Histogram: one op-key observation from the metrics port (labels: area op sub outcome)
+(def ^:private op-seconds-name :hive-mcp/op-seconds)
+
+(def ^:private op-seconds-collector
+  (prometheus/histogram
+   op-seconds-name
+   {:description "Latency of hive internal operations by metrics-port op key"
+    :labels [:area :op :sub :outcome]
+    :buckets [0.0001 0.0005 0.001 0.005 0.01 0.05 0.1 0.5 1.0 5.0 30.0]}))
+
 
 ;; Global Prometheus collector registry.
 ;; Initialized lazily on first access to avoid startup ordering issues.
@@ -162,7 +172,9 @@
          wave-success-rate-collector
          wave-items-total-collector
          wave-duration-seconds-collector
-         wave-failures-total-collector))))
+         wave-failures-total-collector
+         ;; Metrics-port op histogram
+         op-seconds-collector))))
 
 
 ;; =============================================================================
@@ -315,6 +327,59 @@
   (prometheus/inc
    (@registry wave-failures-total-name {:wave-id (str wave-id)
                                         :reason (name (or reason :unknown))})))
+
+(defn- op-label
+  "Label value for one op-key element: a keyword's name with namespace, else str; \"-\" for nil."
+  ^String [x]
+  (cond (nil? x) "-"
+        (keyword? x) (subs (str x) 1)
+        :else (str x)))
+
+(defonce ^:private ^java.util.concurrent.ConcurrentHashMap op-children
+  (java.util.concurrent.ConcurrentHashMap.))
+
+(defn op-labels
+  "The {area op sub outcome} label map hive_mcp_op_seconds uses for op key k."
+  [k outcome]
+  (let [[area op sub] (if (sequential? k) k [k])]
+    {:area (op-label area) :op (op-label op) :sub (op-label sub)
+     :outcome (op-label outcome)}))
+
+(m/=> op-labels [:=> [:cat :any :any]
+                 [:map [:area :string] [:op :string] [:sub :string] [:outcome :string]]])
+
+(defonce ^:private ^java.util.concurrent.ConcurrentHashMap op-children-error
+  (java.util.concurrent.ConcurrentHashMap.))
+
+(defn observe-op!
+  "Observe one metrics-port observation in hive_mcp_op_seconds. The labelled
+   child is cached per k and outcome, so only the first call per key allocates."
+  [k elapsed-ns outcome]
+  (let [^java.util.concurrent.ConcurrentHashMap cache
+        (if (identical? outcome :error) op-children-error op-children)
+        ^io.prometheus.client.Histogram$Child child
+        (or (.get cache k)
+            (let [c (@registry op-seconds-name (op-labels k outcome))]
+              (or (.putIfAbsent cache k c) c)))]
+    (.observe child (/ (double elapsed-ns) 1e9))
+    nil))
+
+(m/=> observe-op! [:=> [:cat :any :int :any] :nil])
+
+(deftype OpSecondsSink [])
+
+(defn prom-sink
+  "A metrics-port sink (hive-ttracking.metrics/IMetricsSink) feeding
+   hive_mcp_op_seconds; snapshot is {}. nil when the port is absent."
+  []
+  (when-let [pv (try (requiring-resolve 'hive-ttracking.metrics/IMetricsSink)
+                     (catch Throwable _ nil))]
+    (let [proto @pv]
+      (when-not (extends? proto OpSecondsSink)
+        (extend OpSecondsSink proto
+          {:observe! (fn [_ k elapsed-ns outcome] (observe-op! k elapsed-ns outcome))
+           :snapshot (fn [_] {})}))
+      (OpSecondsSink.))))
 
 (m/=> inc-wave-failures! [:=> [:cat :any [:maybe LabelName]] CounterChild])
 

@@ -29,7 +29,8 @@
             [hive-mcp.server.routes.async-ack :as async-ack]
             [hive-mcp.tools.async-params :as async-params]
             [malli.core :as m]
-            [hive-mcp.server.routes.async-task.lane :as async-lane])
+            [hive-mcp.server.routes.async-task.lane :as async-lane]
+            [hive-mcp.telemetry.metrics :as metrics])
 (:import [java.util.concurrent RejectedExecutionException]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -228,21 +229,27 @@
    (embeddings.shared-gate/*lane*, via `in-embed-lane`), so a caller waiting
    on an embedding is admitted ahead of queued background (:batch) work such
    as an ingest. Work the call hands to the background rebinds :batch
-   (wrap-handler-async, shared-gate/batch-fn)."
+   (wrap-handler-async, shared-gate/batch-fn).
+
+   The layer's own work (everything before the inner handler) is recorded as
+   [:mcp/mw :context]."
   [handler]
   (fn [args]
-    (let [raw-args (walk/keywordize-keys args)
+    (let [t0 (System/nanoTime)
+          raw-args (walk/keywordize-keys args)
           {args :args who :identity decision :decision}
           (agent-identity/verify-request! raw-args "mcp" *identity-get-slave*)]
       (if-not (:allow? decision true)
-        [{:type "text" :isError true
-          :text (agent-identity/refusal-text decision (:caller-id who))}]
+        (do (metrics/record! [:mcp/mw :context] (- (System/nanoTime) t0) :ok)
+            [{:type "text" :isError true
+              :text (agent-identity/refusal-text decision (:caller-id who))}])
         (binding [ctx/*request-cache* (atom {})]
           (let [agent-id (id/extract-agent-id args nil)
                 project-id (id/extract-project-id args)
                 directory (id/extract-directory args)]
             (crystal/record-session-start! agent-id)
             (touch-caller-activity! *identity-get-slave* (:_caller_id args))
+            (metrics/record! [:mcp/mw :context] (- (System/nanoTime) t0) :ok)
             (ctx/with-request-context {:agent-id agent-id
                                        :caller-id (:_caller_id args)
                                        :identity who
@@ -266,13 +273,14 @@
 (m/=> wrap-handler-normalize [:=> [:cat Handler] Handler])
 
 (defn wrap-handler-compress
-  "Apply response compression when `compact` param is present."
+  "Apply response compression when `compact` param is present. The
+   compression itself is recorded as [:mcp/mw :compress]."
   [handler]
   (fn [args]
     (let [mode (compress/resolve-compress-mode args)
           content (handler args)]
       (if mode
-        (compress/compress-content content mode)
+        (metrics/timed [:mcp/mw :compress] (compress/compress-content content mode))
         content))))
 
 (m/=> wrap-handler-compress [:=> [:cat Handler] Handler])
@@ -470,16 +478,17 @@
      else  — proceeds.
 
    A seam that THROWS is logged and the call proceeds: a broken guard must not
-   brick every tool on the server."
+   brick every tool on the server. The decision is recorded as [:mcp/mw :guard]."
   [handler tool-name]
   (fn [args]
     (let [decision (when-let [decide (ext/get-extension gp/decide-ext-key)]
-                     (try
-                       (decide :mcp (guard-raw-context tool-name args))
-                       (catch Exception e
-                         (log/error e "guard: seam threw; call NOT judged"
-                                    {:tool tool-name})
-                         nil)))]
+                     (metrics/timed [:mcp/mw :guard]
+                       (try
+                         (decide :mcp (guard-raw-context tool-name args))
+                         (catch Exception e
+                           (log/error e "guard: seam threw; call NOT judged"
+                                      {:tool tool-name})
+                           nil))))]
       (case (:guard/verdict decision)
         :deny (do (log/warn "guard: refused a tool call"
                             {:tool tool-name :rule (:guard/rule-id decision)})
@@ -524,7 +533,8 @@
   ([agent-id project-id] (get-piggyback-messages agent-id project-id nil))
   ([agent-id project-id session-id]
    (require 'hive-mcp.channel.piggyback)
-   (let [child-pids (resolve-child-project-ids project-id)]
+   (let [child-pids (metrics/timed [:mcp/mw :piggyback :descendants]
+                      (resolve-child-project-ids project-id))]
      ((resolve 'hive-mcp.channel.piggyback/get-messages)
       agent-id
       :project-id project-id
@@ -628,13 +638,16 @@
    lineage, which is every session today, means unrestricted and the call
    proceeds untouched. The refusal names the missing capability and the
    `hivemind ask` path. The caller id is self-asserted until spawn
-   credentials are verified, so this stops mistakes, not a hostile child."
+   credentials are verified, so this stops mistakes, not a hostile child.
+   The check is recorded as [:mcp/mw :grant]."
   [handler tool-name]
   (fn [args]
-    (let [caller (some-> (or (ctx/current-verified-caller-id) (:_caller_id args)) str not-empty)
+    (let [t0 (System/nanoTime)
+          caller (some-> (or (ctx/current-verified-caller-id) (:_caller_id args)) str not-empty)
           get-slave *grant-get-slave*
           no (when (and caller (grant/recorded-grant get-slave caller))
-               (grant/call-refusal (*grant-domain*) get-slave caller tool-name (:command args)))]
+               (grant/call-refusal (*grant-domain*) get-slave caller tool-name (:command args)))
+          _ (metrics/record! [:mcp/mw :grant] (- (System/nanoTime) t0) :ok)]
       (if no
         (do (log/warn "grant: refused a tool call" {:tool tool-name :command (:command args) :caller caller})
             [{:type "text" :isError true :text no}])
@@ -651,7 +664,11 @@
 
    The HIVEMIND read is keyed two ways: the reader id (caller plus project)
    owns the project cursor, and the caller alone owns the global cursor, so
-   a session that touches several repos reads each global shout once."
+   a session that touches several repos reads each global shout once.
+
+   Each channel drain is recorded as [:mcp/mw :piggyback <channel>], channel in
+   #{:async :memory :blocks :catchup :hivemind}; the descendant-project
+   resolution inside the hivemind read as [:mcp/mw :piggyback :descendants]."
   ([handler] (wrap-handler-piggybacks handler nil))
   ([handler tool-name]
    (fn [args]
@@ -661,7 +678,8 @@
            request-ctx {:tool-name tool-name :cues task-tokens :caller-id caller-id}
            async-cap (:allowance (spend-piggyback-budget response-piggyback-char-budget
                                                     async-buf/drain-char-budget 0))
-           async-drain (async-buf/drain! caller-id (max 0 (- async-cap 160)))
+           async-drain (metrics/timed [:mcp/mw :piggyback :async]
+                         (async-buf/drain! caller-id (max 0 (- async-cap 160))))
            async-content (if async-drain
                            (id/wrap-delimited-block content "TOOLRESULT" (pr-str async-drain))
                            content)
@@ -672,8 +690,9 @@
            act-ctx (activation/drain-ctx request-ctx)
            memory-cap (:allowance (spend-piggyback-budget remaining-async 12000 0))
            memory-drain (when (> memory-cap 200)
-                          (drain-memory-piggyback caller-id
-                            (assoc act-ctx :char-budget (- memory-cap 200))))
+                          (metrics/timed [:mcp/mw :piggyback :memory]
+                            (drain-memory-piggyback caller-id
+                              (assoc act-ctx :char-budget (- memory-cap 200)))))
            memory-content (if memory-drain
                             (id/wrap-memory-piggyback-content async-content memory-drain)
                             async-content)
@@ -684,7 +703,8 @@
            ;; :block/*, rendered by tag. The host names none of them, so a new
            ;; block is an addon plus a config entry rather than a commit here.
            blocks-cap (:allowance (spend-piggyback-budget remaining-memory blocks/max-response-chars 0))
-           extra-blocks (blocks/render request-ctx blocks-cap)
+           extra-blocks (metrics/timed [:mcp/mw :piggyback :blocks]
+                          (blocks/render request-ctx blocks-cap))
            blocks-content (reduce (fn [acc [tag body]] (id/wrap-delimited-block acc tag body))
                                   memory-content extra-blocks)
            remaining-blocks (:remaining (spend-piggyback-budget remaining-memory
@@ -693,14 +713,15 @@
                                                   (piggyback-content-chars memory-content))))
            catchup-cap (:allowance (spend-piggyback-budget remaining-blocks 4000 0))
            catchup-blocks (when (> catchup-cap 100)
-                            (drain-catchup-piggyback caller-id
-                              ;; STRICT: this response owns a hard ceiling, so the
-                              ;; provider costs candidates on the wire and defers an
-                              ;; oversized one instead of letting it ride first.
-                              (assoc request-ctx
-                                     :char-budget (- catchup-cap 100)
-                                     :strict? true
-                                     :ceiling response-piggyback-char-budget)))
+                            (metrics/timed [:mcp/mw :piggyback :catchup]
+                              (drain-catchup-piggyback caller-id
+                                ;; STRICT: this response owns a hard ceiling, so the
+                                ;; provider costs candidates on the wire and defers an
+                                ;; oversized one instead of letting it ride first.
+                                (assoc request-ctx
+                                       :char-budget (- catchup-cap 100)
+                                       :strict? true
+                                       :ceiling response-piggyback-char-budget))))
            catchup-content (reduce-kv
                             (fn [acc tag body]
                               (id/wrap-delimited-block acc
@@ -711,8 +732,9 @@
            scope (id/extract-project-scope args)
            hm-agent-id (ctx-id/make-piggyback-agent-id caller scope)
            hm-project-id (ctx-id/project-scope-string scope)
-           hivemind-msgs (get-piggyback-messages hm-agent-id hm-project-id
-                                                 (ctx-id/caller-id-string caller))]
+           hivemind-msgs (metrics/timed [:mcp/mw :piggyback :hivemind]
+                           (get-piggyback-messages hm-agent-id hm-project-id
+                                                   (ctx-id/caller-id-string caller)))]
        (id/wrap-piggyback catchup-content hivemind-msgs)))))
 
 (m/=> wrap-handler-piggybacks [:function [:=> [:cat Handler] Handler] [:=> [:cat Handler ToolName] Handler]])
@@ -722,9 +744,39 @@
 ;; Middleware Chain Composition
 ;; =============================================================================
 
+(def ^:const ^:private max-verb-chars
+  "Longest command verb kept as a label; longer verbs read as \"-\"."
+  48)
+
+(defn command-verb
+  "The label for a call's command: the first word of `:command` (or
+   \"command\"), \"-\" when absent, blank or longer than `max-verb-chars`."
+  [args]
+  (let [c (or (get args :command) (get args "command"))
+        s (cond (keyword? c) (name c) (string? c) c :else nil)
+        w (when s (let [t (str/triml s) i (.indexOf ^String t " ")]
+                    (if (neg? i) t (subs t 0 i))))]
+    (if (and w (pos? (count w)) (<= (count w) max-verb-chars)) w "-")))
+
+(m/=> command-verb [:=> [:cat [:maybe :map]] :string])
+
+(defn wrap-handler-metrics
+  "Record each call as [:mcp/tool tool-name verb] (verb per `command-verb`),
+   outcome :error when the chain throws (rethrown). Recording never fails the call."
+  [handler tool-name]
+  (let [tool (or tool-name "-")]
+    (fn [args]
+      (metrics/timed [:mcp/tool tool (command-verb args)]
+        (handler args)))))
+
+(m/=> wrap-handler-metrics [:=> [:cat Handler ToolName] Handler])
+
 (defn build-middleware-chain
-  "Compose the 9-layer middleware chain around a raw tool handler.
+  "Compose the 10-layer middleware chain around a raw tool handler.
    Testable in isolation — no tool definition machinery needed.
+
+   The metrics layer is OUTERMOST: it times the whole call, every other layer
+   included, as [:mcp/tool tool-name verb].
 
    The grant gate sits just outside the guard: a call the caller's grant does
    not permit is refused before any rule is judged or any future is queued.
@@ -745,6 +797,7 @@
       wrap-handler-compress
       (wrap-handler-piggybacks tool-name)
       wrap-handler-context
-      wrap-handler-response))
+      wrap-handler-response
+      (wrap-handler-metrics tool-name)))
 
 (m/=> build-middleware-chain [:=> [:cat Handler ToolName [:maybe [:or [:set :any] [:sequential :any]]]] Handler])

@@ -239,6 +239,19 @@
 ;; Lifecycle — start! / stop! / reset!
 ;; =============================================================================
 
+(defn install-metrics!
+  "Install the metrics port sink and contribute the `project metrics` verbs,
+   both bound late. A no-op when hive-ttracking.metrics is absent; never throws."
+  []
+  (try
+    (when-let [install (requiring-resolve 'hive-mcp.telemetry.metrics/install-default!)]
+      (when (install)
+        (when-let [verbs (requiring-resolve 'hive-mcp.telemetry.metrics-tool/install!)]
+          (verbs))))
+    (catch Throwable e
+      (log/warn "metrics install failed (non-fatal):" (ex-message e))
+      nil)))
+
 (defn start!
   "Initialize the Integrant system from system.edn + profile overlay.
 
@@ -250,7 +263,9 @@
    Accepts optional profile keyword (:desktop, :k8s-headless, :k8s-minimal).
    Profile precedence: explicit :profile > HIVE_PROFILE env > :desktop.
    `:hprof-boot!` is a boot port for isolated lifecycle tests; production
-   defaults to hprof/boot! and retains the disk-pressure abort."
+   defaults to hprof/boot! and retains the disk-pressure abort.
+   The metrics sink (`install-metrics!`) is installed before ig/init so boot
+   work is observed too."
   [& {:keys [profile hprof-boot!] :or {profile nil hprof-boot! hprof/boot!}}]
   (let [profile (resolve-profile profile)]
     (when @system
@@ -265,6 +280,7 @@
     ;; ENGINE-L0.5 — cap manifold's wait-pool BEFORE any deferred runs
     ;; (the wait-pool fn is delay-cached, so this must precede ig/init).
     (manifold-pool/boot!)
+    (install-metrics!)
     (let [config (load-system-config profile)
           sys    (timed-init config)]
       (clojure.core/reset! system sys)
