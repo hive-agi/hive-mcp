@@ -30,7 +30,7 @@
             [hive-mcp.tools.async-params :as async-params]
             [malli.core :as m]
             [hive-mcp.server.routes.async-task.lane :as async-lane]
-            [hive-mcp.telemetry.metrics :as metrics])
+            [hive-mcp.server.routes.metrics-seam :as metrics])
 (:import [java.util.concurrent RejectedExecutionException]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
