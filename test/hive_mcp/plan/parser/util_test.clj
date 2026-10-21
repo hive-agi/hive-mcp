@@ -5,7 +5,8 @@
   (:require [clojure.test :refer [use-fixtures]]
             [hive-mcp.plan.field-registry :as fr]
             [hive-schemas.test :as hst]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.plan.parser.util]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;

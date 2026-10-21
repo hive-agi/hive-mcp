@@ -9,7 +9,6 @@
             [hive-mcp.saa.registry :as registry]
             [hive-mcp.saa.registry.tool-intents :as tool-intents]
             [hive-mcp.saa.support :as support]
-            [hive-schemas.test :refer [deftrifecta-from-schema]]
             [hive-test.golden :as golden]
             [malli.core :as m]))
 
@@ -27,14 +26,6 @@
   [plan-id opts]
   (swap! calls conj [plan-id opts])
   {:plan-id (str "sched-" plan-id) :started true})
-
-(def ^:private DispatchArgs
-  [:cat
-   [:maybe [:map [:id [:enum "plan-1" "plan-2"]]]]
-   [:maybe [:enum "agent-x"]]
-   [:maybe [:map
-            [:directory {:optional true} [:enum "/repo" "/tmp"]]
-            [:run-id {:optional true} [:enum "run-7" "run-8"]]]]])
 
 (defn- dispatch-under-stub
   "Build the dispatch fn over the stub port and apply it, answering the
