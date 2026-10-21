@@ -1,8 +1,13 @@
 (ns hive-mcp.protocols.kg
   "Re-exports the KG SPI (hive-spi.kg.protocol) and owns active-store slot
-   management. Backends implement hive-spi.kg.protocol/IKGStore directly."
+   management. Backends implement hive-spi.kg.protocol/IKGStore directly.
+
+   The data-path methods (transact!, query, entity, entid, pull-entity,
+   eids-by-attr, db-snapshot) are metered as [:store/kg <backend> <method>]
+   when storage metering is enabled (hive-mcp.protocols.store-metrics)."
   (:require [hive-spi.kg.protocol :as spi]
             [hive-mcp.protocols.registry :as reg]
+            [hive-mcp.protocols.store-metrics :as sm]
             [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -16,13 +21,42 @@
 (def ITemporalKGStore   spi/ITemporalKGStore)
 
 (def ensure-conn!   spi/ensure-conn!)
-(def transact!      spi/transact!)
-(def query          spi/query)
-(def entity         spi/entity)
-(def entid          spi/entid)
-(def pull-entity    spi/pull-entity)
-(def eids-by-attr   spi/eids-by-attr)
-(def db-snapshot    spi/db-snapshot)
+
+(defn transact!
+  "`hive-spi.kg.protocol/transact!`, metered as [:store/kg <backend> :transact!]."
+  [store tx-data]
+  (sm/kg-timed store :transact! (spi/transact! store tx-data)))
+
+(defn query
+  "`hive-spi.kg.protocol/query`, metered as [:store/kg <backend> :query]."
+  ([store q] (sm/kg-timed store :query (spi/query store q)))
+  ([store q inputs] (sm/kg-timed store :query (spi/query store q inputs))))
+
+(defn entity
+  "`hive-spi.kg.protocol/entity`, metered as [:store/kg <backend> :entity]."
+  [store eid]
+  (sm/kg-timed store :entity (spi/entity store eid)))
+
+(defn entid
+  "`hive-spi.kg.protocol/entid`, metered as [:store/kg <backend> :entid]."
+  [store lookup-ref]
+  (sm/kg-timed store :entid (spi/entid store lookup-ref)))
+
+(defn pull-entity
+  "`hive-spi.kg.protocol/pull-entity`, metered as [:store/kg <backend> :pull-entity]."
+  [store pattern eid]
+  (sm/kg-timed store :pull-entity (spi/pull-entity store pattern eid)))
+
+(defn eids-by-attr
+  "`hive-spi.kg.protocol/eids-by-attr`, metered as [:store/kg <backend> :eids-by-attr]."
+  [store attr]
+  (sm/kg-timed store :eids-by-attr (spi/eids-by-attr store attr)))
+
+(defn db-snapshot
+  "`hive-spi.kg.protocol/db-snapshot`, metered as [:store/kg <backend> :db-snapshot]."
+  [store]
+  (sm/kg-timed store :db-snapshot (spi/db-snapshot store)))
+
 (def reset-conn!    spi/reset-conn!)
 (def close!         spi/close!)
 (def delete-database! spi/delete-database!)
@@ -84,5 +118,15 @@
   []
   (and (store-set?)
        (spi/temporal-store? (get-store))))
+
+;; Metered data-path methods: the store input is loose (protocol dispatch
+;; rejects a non-store); answers are backend values.
+(m/=> transact! [:=> [:cat :any :any] :any])
+(m/=> query [:function [:=> [:cat :any :any] :any] [:=> [:cat :any :any :any] :any]])
+(m/=> entity [:=> [:cat :any :any] :any])
+(m/=> entid [:=> [:cat :any :any] :any])
+(m/=> pull-entity [:=> [:cat :any :any :any] :any])
+(m/=> eids-by-attr [:=> [:cat :any :any] :any])
+(m/=> db-snapshot [:=> [:cat :any] :any])
 
 (m/=> active-temporal? [:=> [:cat] :boolean])

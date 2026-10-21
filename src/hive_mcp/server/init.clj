@@ -403,12 +403,19 @@
    A post-extensions fallback in `ensure-memory-store!` guarantees a live
    store even when the selected addon fails to register.
 
+   First adds the storage-metering decorator to the hive-spi chain (a no-op
+   when hive-ttracking.metrics is absent), so every store registered from
+   here on, addon stores included, is metered.
+
    This is the COMPOSITION ROOT, and the one place allowed to name a concrete
    backend. It wires two INDEPENDENT seams: the memory-entry store
    (protocols.memory) and the named-collection store (protocols.vector) that
    plan.plans and presets.core drive."
   []
   (result/rescue-log "wire-memory-store!" nil
+                     (when-let [install! (requiring-resolve
+                                          'hive-mcp.protocols.store-metrics/install-memory-decorator!)]
+                       (install!))
                      (let [backend (resolve-memory-backend)]
                        (case backend
                          "milvus"
