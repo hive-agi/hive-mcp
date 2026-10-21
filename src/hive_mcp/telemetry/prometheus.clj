@@ -381,7 +381,8 @@
            :snapshot (fn [_] {})}))
       (OpSecondsSink.))))
 
-(m/=> prom-sink [:=> [:cat] [:maybe [:fn #(instance? OpSecondsSink %)]]])
+(m/=> prom-sink [:=> [:cat] [:maybe [:fn {:gen/elements [(OpSecondsSink.)]}
+                                       #(instance? OpSecondsSink %)]]])
 
 (m/=> inc-wave-failures! [:=> [:cat :any [:maybe LabelName]] CounterChild])
 

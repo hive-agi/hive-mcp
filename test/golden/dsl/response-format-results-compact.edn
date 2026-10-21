@@ -1,0 +1,49 @@
+{:case-0
+ {:out {:ok nil, :s {}, :dr true, :p {:waves 1}, :E []},
+  :in
+  ({:success nil,
+    :waves
+    {"wave_2" [{:id "b", :success true} {:id "b", :success true}]},
+    :errors [],
+    :dry_run true,
+    :plan {:waves 1}})},
+ :case-1
+ {:out {:ok nil, :s {:custom 0, :ok 1, :w 0}, :r []},
+  :in
+  ({:summary {:custom 0, :success 1, :waves 0},
+    :waves {"wave_1" []},
+    :dry_run false,
+    :plan {:waves 1}})},
+ :case-2
+ {:out {:ok false, :s {}},
+  :in
+  ({:success false,
+    :summary {},
+    :waves
+    {"wave_10"
+     [{:id "b", :success true}
+      {:id "a", :success false, :error "boom"}],
+     "wave_1" []},
+    :dry_run true,
+    :plan nil})},
+ :case-3 {:out {:ok nil, :s {}}, :in ({:summary nil, :dry_run nil})},
+ :case-4
+ {:out {:ok nil, :s {}, :r []},
+  :in ({:success nil, :dry_run false, :waves {"wave_1" []}})},
+ :case-5
+ {:out {:ok nil, :s {:f 4, :ok 3, :custom 3}, :r []},
+  :in
+  ({:summary {:failed 4, :success 3, :custom 3},
+    :dry_run false,
+    :waves {"wave_1" []}})},
+ :case-6
+ {:out {:ok nil, :s {}, :r []},
+  :in ({:dry_run false, :waves {"wave_1" []}})},
+ :case-7
+ {:out {:ok true, :s {}, :dr true, :p {:waves 1}, :E []},
+  :in
+  ({:success true,
+    :waves {},
+    :errors [],
+    :dry_run true,
+    :plan {:waves 1}})}}

@@ -24,9 +24,11 @@
 (def ^:private Raw
   ;; Generated with :type always drawn (an optional :type would send half the
   ;; draws into the default arm); :tool-use and :none stand for unrecognized
-  ;; shapes, :none being dissoc'ed to a type-less message.
-  (into [:map {:gen/schema (into [:map [:type [:enum :message :complete :result :error
-                                               :saa-complete :tool-use :none]]]
+  ;; shapes, :none being dissoc'ed to a type-less message. :error and
+  ;; :saa-complete are their own :or branch: as 1 of 7 flat enum members
+  ;; :pm/error drew 5 of 100 on an unlucky seed, under the classify floor.
+  (into [:map {:gen/schema (into [:map [:type [:or [:enum :error :saa-complete]
+                                               [:enum :message :complete :result :tool-use :none]]]]
                                  raw-entries)
                :gen/fmap (fn [m] (if (= :none (:type m)) (dissoc m :type) m))}
          [:type {:optional true} [:enum :message :complete :result :error :saa-complete :tool-use]]]

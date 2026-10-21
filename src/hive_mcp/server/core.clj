@@ -82,8 +82,11 @@
 
 (m/=> register-coordinator-file! [:=> [:cat log-sink/Sink] :map])
 
+;; Min level from HIVE_MCP_LOG_LEVEL, default :info. Timbre's own default is
+;; :debug, which the server must not run at (see log-sink/parse-log-level).
 (log/merge-config!
- {:appenders
+ {:min-level (log-sink/parse-log-level (System/getenv "HIVE_MCP_LOG_LEVEL"))
+  :appenders
   {:println {:enabled? true
              :async? false
              :fn (log-sink/appender-fn console-sink)}}})

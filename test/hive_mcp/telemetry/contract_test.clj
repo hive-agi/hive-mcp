@@ -24,8 +24,8 @@
 
 (deftest telemetry-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths ["src/hive_mcp/telemetry"]})]
-    (is (= 24 (count (:universe report))))
-    (is (= 24 (count (:covered report))))))
+    (is (= 40 (count (:universe report))))
+    (is (= 40 (count (:covered report))))))
 
 (deftest every-telemetry-contract-generates-both-sides
   (doseq [ns-sym '[hive-mcp.telemetry.core hive-mcp.telemetry.health hive-mcp.telemetry.prometheus]

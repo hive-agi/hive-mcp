@@ -512,19 +512,52 @@
 ;; Piggyback Draining
 ;; =============================================================================
 
+(defonce ^:private child-pids-cache
+  ;; {:tree <identity of the cached project tree> :by-pid {pid #{...}}}
+  (atom {:tree nil :by-pid {}}))
+
+(defn memoized-child-pids
+  "Descendant project-id set for `project-id`, memoized in `cache` keyed
+   on the IDENTITY of `tree` (the cached project tree). A different tree
+   object (e.g. after `tree/invalidate-tree-cache!` and a rebuild) drops
+   every memoized entry, so invalidation is free. A nil `tree` is never
+   memoized: `compute` runs every time. `compute` is (fn [pid] -> seq)."
+  [cache tree project-id compute]
+  (if (nil? tree)
+    (some-> (seq (compute project-id)) set)
+    (let [{t :tree by-pid :by-pid} @cache]
+      (if (and (identical? t tree) (contains? by-pid project-id))
+        (get by-pid project-id)
+        (let [pids (some-> (seq (compute project-id)) set)]
+          (swap! cache (fn [{t' :tree :as c}]
+                         (if (identical? t' tree)
+                           (assoc-in c [:by-pid project-id] pids)
+                           {:tree tree :by-pid {project-id pids}})))
+          pids)))))
+
+(m/=> memoized-child-pids
+      [:=> [:cat :any :any [:maybe :string] ifn?]
+       [:maybe [:set :string]]])
+
 (defn- resolve-child-project-ids
   "Resolve descendant project-ids using the project hierarchy tree
    (.hive-project.edn), NOT the Datascript slave registry. Tree-based
    resolution survives ling cleanup — shouts from terminated child-project
-   lings remain visible to the parent coordinator."
+   lings remain visible to the parent coordinator.
+
+   Runs on every request, so the result is memoized on the identity of the
+   cached project tree (see `memoized-child-pids`)."
   [project-id]
   (when project-id
     (try
       (when-let [desc-fn (requiring-resolve 'hive-mcp.project.scope/descendant-scopes)]
-        (let [child-pids (desc-fn project-id)]
+        (let [tree-fn (requiring-resolve 'hive-mcp.project.tree/get-cached-tree)
+              child-pids (memoized-child-pids child-pids-cache (tree-fn)
+                                              project-id desc-fn)]
           (when (seq child-pids)
-            (log/debug "Piggyback: including descendant project-ids for" project-id ":" child-pids)
-            (set child-pids))))
+            (log/debug "Piggyback: including" (count child-pids)
+                       "descendant project-ids for" project-id)
+            child-pids)))
       (catch Exception e
         (log/debug "Piggyback: descendant project-id resolution failed (non-fatal):" (.getMessage e))
         nil))))

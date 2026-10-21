@@ -1,0 +1,22 @@
+{:noop
+ {:fetch {},
+  :gather nil,
+  :compress nil,
+  :render "",
+  :recon "",
+  :catchup
+  {:ctx-refs {},
+   :kg-node-ids [],
+   :scope "proj",
+   :reconstruct-fn true}},
+ :delegated
+ {:fetch {:resolved {:axioms "ax-1", :decisions "dec-1"}},
+  :gather {:nodes ["A" "B"], :scope "hive-mcp"},
+  :compress "KG: 2 nodes",
+  :render "refs=1 kg=true",
+  :recon "hive-mcp:1/1",
+  :catchup
+  {:ctx-refs {:a "x"},
+   :kg-node-ids ["x"],
+   :scope "proj",
+   :reconstruct-fn true}}}

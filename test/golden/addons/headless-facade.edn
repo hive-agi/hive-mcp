@@ -1,0 +1,19 @@
+{:dispatch
+ {:id :stub,
+  :spawn {:spawned "ling-1"},
+  :dispatch {:dispatched "task"},
+  :status {:status :running},
+  :kill {:killed true},
+  :interrupt {:interrupted true},
+  :calls
+  [[:spawn {:ling-id "ling-1"} {:model "m"}]
+   [:dispatch {:ling-id "ling-1"} "task"]
+   [:status {:ling-id "ling-1"} nil]
+   [:kill {:ling-id "ling-1"}]
+   [:interrupt {:ling-id "ling-1"}]]},
+ :backend? {:bare true, :addon true, :map false, :nil false},
+ :addon? {:bare false, :addon true, :map false},
+ :capabilities
+ {:bare [:cap/multi-turn :cap/streaming],
+  :declared [:cap/streaming :cap/tools],
+  :direct [:cap/streaming :cap/tools]}}
