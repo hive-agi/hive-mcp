@@ -1,0 +1,23 @@
+{:case-0 {:out true, :in ("```edn\n{:x 1}\n```")},
+ :case-1 {:out true, :in ("```edn\n{:x 1}\n```")},
+ :case-2
+ {:out true,
+  :in
+  ("Intro text\n\n```edn\n{:id \"plan-a\", :title \"Alpha\", :steps [{:id \"s3\", :title \"Do B\"} {:id :s2, :title \"Do A\", :priority :LOW} {:id :s2, :title \"Do B\", :priority :high}]}\n```\n")},
+ :case-3
+ {:out true,
+  :in
+  ("```edn\n{:phase 1 :tasks [{:id :s2, :title \"Do B\"} {:id \"s3\", :title \"Do A\"} {:id \"s3\", :title \"Do B\"}]}\n```")},
+ :case-4
+ {:out true,
+  :in
+  ("Intro text\n\n```edn\n{:id \"plan-a\", :title \"Alpha\", :steps [{:id \"s3\", :title \"Do B\"} {:id :s2, :title \"Do A\"}]}\n```\n")},
+ :case-5
+ {:out true,
+  :in
+  ("Intro text\n\n```edn\n{:id \"plan-a\", :title \"Beta\", :steps [{:id \"s3\", :title \"Do A\"} {:id :s1, :title \"Do B\", :priority :LOW}]}\n```\n")},
+ :case-6
+ {:out true,
+  :in
+  ("```edn\n{:phase 1 :tasks [{:id :s2, :title \"Do B\", :priority \"urgent\"} {:id :s2, :title \"Do A\"} {:id \"s3\", :title \"Do B\"}]}\n```")},
+ :case-7 {:out true, :in ("```edn\n{:x 1}\n```")}}

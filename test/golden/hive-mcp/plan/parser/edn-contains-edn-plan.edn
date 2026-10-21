@@ -1,0 +1,18 @@
+{:case-0
+ {:out true,
+  :in
+  ("Intro text\n\n```edn\n{:id \"plan-b\", :title \"Alpha\", :steps [{:id \"s3\", :title \"Do A\"}]}\n```\n")},
+ :case-1 {:out false, :in ("```edn\n{:x 1}\n```")},
+ :case-2
+ {:out true,
+  :in ("```edn\n{:phase 1 :tasks [{:id :s1, :title \"Do B\"}]}\n```")},
+ :case-3
+ {:out true,
+  :in
+  ("Intro text\n\n```edn\n{:id \"plan-a\", :title \"Beta\", :steps [{:id :s2, :title \"Do B\"} {:id \"s3\", :title \"Do A\", :priority :high}]}\n```\n")},
+ :case-4 {:out false, :in ("```edn\n{:x 1}\n```")},
+ :case-5 {:out false, :in ("```edn\n{:x 1}\n```")},
+ :case-6
+ {:out true,
+  :in ("```edn\n{:phase 1 :tasks [{:id :s1, :title \"Do A\"}]}\n```")},
+ :case-7 {:out false, :in ("Notes about Alpha")}}
