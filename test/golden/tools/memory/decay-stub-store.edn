@@ -1,0 +1,28 @@
+{:plans
+ [{:id "d1",
+   :type "note",
+   :duration "short",
+   :access-count 0,
+   :old-beta 1.0,
+   :delta 1.365359,
+   :new-beta 2.365359}
+  {:id "d2",
+   :type "axiom",
+   :duration "permanent",
+   :access-count 0,
+   :old-beta 1,
+   :delta 0.910239,
+   :new-beta 1.910239}
+  {:id "d3",
+   :type "note",
+   :duration "medium",
+   :access-count 9,
+   :old-beta 1,
+   :delta 0.417032,
+   :new-beta 1.417032}],
+ :fresh nil,
+ :scoped-a ["d1" "d2"],
+ :apply-d1
+ {:id "d1", :delta 1.365359, :old-beta 1.0, :new-beta 2.365359},
+ :apply-d2 nil,
+ :cycle {:decayed 1, :expired 0, :total-scanned 2, :error nil}}
