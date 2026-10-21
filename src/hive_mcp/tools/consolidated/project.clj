@@ -11,7 +11,8 @@
             [hive-mcp.tools.composite :as composite]
             [hive-mcp.tools.core :as tcore]
             [hive-mcp.tools.result-bridge :as rb]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -59,11 +60,17 @@
 (defn handle-project-scan [params]
   (rb/result->mcp (rb/try-result :project/scan-failed #(scan* params))))
 
+(m/=> handle-project-scan [:=> [:cat [:maybe :map]] hive-mcp.tools.core/McpResponse])
+
 (defn handle-project-tree [params]
   (rb/result->mcp (rb/try-result :project/tree-failed #(tree* params))))
 
+(m/=> handle-project-tree [:=> [:cat [:maybe :map]] hive-mcp.tools.core/McpResponse])
+
 (defn handle-project-staleness [params]
   (rb/result->mcp (rb/try-result :project/staleness-failed #(staleness* params))))
+
+(m/=> handle-project-staleness [:=> [:cat [:maybe :map]] hive-mcp.tools.core/McpResponse])
 
 ;; ── Core project handlers ────────────────────────────────────────────────
 

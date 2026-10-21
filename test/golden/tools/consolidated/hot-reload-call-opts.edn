@@ -1,0 +1,8 @@
+{:case-0 {:out {}, :in ({} nil)},
+ :case-1 {:out {:mount-opts {:x 0}}, :in ({:mount-opts {:x 0}} "yes")},
+ :case-2 {:out {}, :in ({} nil)},
+ :case-3 {:out {:force? true, :ns-reloaded? false}, :in ({} true)},
+ :case-4 {:out {:mount-opts {:x -2}}, :in ({:mount-opts {:x -2}} nil)},
+ :case-5 {:out {}, :in ({} nil)},
+ :case-6 {:out {}, :in ({} nil)},
+ :case-7 {:out {}, :in ({} nil)}}

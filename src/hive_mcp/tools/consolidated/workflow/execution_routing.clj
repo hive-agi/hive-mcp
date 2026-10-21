@@ -83,6 +83,7 @@
   [task]
   (boolean (seq (get-in task [:context :execution]))))
 
+
 (defn disposition
   "The `ForgeTaskDisposition` of one task for an unroutable mode."
   [task]
@@ -90,6 +91,15 @@
                             :disposition/reject
                             :disposition/dispatch)
                           {:task task}))
+
+(def DispositionValue
+  "A ForgeTaskDisposition value: which variant, and the task it carries."
+  [:map
+   [:adt/type [:= :ForgeTaskDisposition]]
+   [:adt/variant [:enum :disposition/dispatch :disposition/reject]]
+   [:task :map]])
+
+(m/=> disposition [:=> [:cat [:maybe :map]] DispositionValue])
 
 (defn- ->rejection
   [route {:keys [id title]}]
@@ -116,5 +126,8 @@
 ;; Contracts
 ;; =============================================================================
 
-(m/=> execution-routed? [:=> [:cat ForgeTask] :boolean])
+;; Input :any, not ForgeTask: the body is a get-in, total over any value, and
+;; execution-routed-detection (deftrifecta-predicate) drives it with values
+;; outside ForgeTask; the ForgeTask input threw on every negative case.
+(m/=> execution-routed? [:=> [:cat :any] :boolean])
 (m/=> reject-execution-routed [:=> [:cat UnroutableMode [:sequential ForgeTask]] Partition])

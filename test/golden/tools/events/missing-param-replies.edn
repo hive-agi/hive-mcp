@@ -1,0 +1,10 @@
+{:dump {:ok false, :command :dump, :error "Missing :agent-id"},
+ :enable
+ {:ok false,
+  :command :enable,
+  :error "Provide :agent-ids ([...]) or :all true"},
+ :register-handler
+ {:ok false, :command :register-handler, :error "Missing :event-id"},
+ :stats {:ok false, :command :stats, :error "Missing :agent-id"},
+ :tail {:ok false, :command :tail, :error "Missing :agent-id"},
+ :unreg-fx {:ok false, :command :unreg-fx, :error "Missing :fx-id"}}

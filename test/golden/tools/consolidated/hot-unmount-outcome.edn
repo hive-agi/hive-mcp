@@ -1,0 +1,32 @@
+{:case-0 {:out #:hot{:ejected []}, :in {:ok #:hot{:ejected []}}},
+ :case-1
+ {:out {:message "z", :ok? false, :reason "hot/eject-failed"},
+  :in {:error :hot/eject-failed, :message "z"}},
+ :case-2
+ {:out {:hot/ejected ["NL" "r"], :ok? false},
+  :in {:hot/ejected ["NL" "r"], :ok? false}},
+ :case-3
+ {:out {:hot/ejected [], :ok? false},
+  :in {:hot/ejected [], :ok? false}},
+ :case-4
+ {:out
+  {:ok? false,
+   :reason "hot/eject-failed",
+   :message ":hot/eject-failed"},
+  :in {:error :hot/eject-failed}},
+ :case-5
+ {:out
+  {:ok? false,
+   :reason "hot/eject-failed",
+   :message ":hot/eject-failed"},
+  :in {:error :hot/eject-failed}},
+ :case-6
+ {:out
+  {:message ":hot/eject-refused",
+   :ok? false,
+   :reason "hot/eject-refused",
+   :hot/refused? true},
+  :in {:error :hot/eject-refused, :message nil}},
+ :case-7
+ {:out #:hot{:ejected ["2Y7n83" "G" "Z5Vqvb"]},
+  :in {:ok #:hot{:ejected ["2Y7n83" "G" "Z5Vqvb"]}}}}

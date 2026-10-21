@@ -1,0 +1,8 @@
+{:case-0 {:out nil, :in {}},
+ :case-1 {:out "/tmp/x.jar", :in {:addon nil, :path "/tmp/x.jar"}},
+ :case-2 {:out nil, :in {}},
+ :case-3 {:out nil, :in {:path nil}},
+ :case-4 {:out "hive.carto", :in {:addon "hive.carto"}},
+ :case-5 {:out nil, :in {}},
+ :case-6 {:out nil, :in {}},
+ :case-7 {:out nil, :in {}}}

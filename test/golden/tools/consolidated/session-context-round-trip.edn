@@ -1,0 +1,5 @@
+{:map {:put :stored, :read-back? true, :evicted true, :gone? true},
+ :nested {:put :stored, :read-back? true, :evicted true, :gone? true},
+ :nil {:put :refused, :text "Missing required field: data"},
+ :string {:put :stored, :read-back? true, :evicted true, :gone? true},
+ :vector {:put :stored, :read-back? true, :evicted true, :gone? true}}

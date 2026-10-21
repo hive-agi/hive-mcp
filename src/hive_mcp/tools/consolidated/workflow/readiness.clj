@@ -14,7 +14,8 @@
             [hive-mcp.dns.result :as result]
             [taoensso.timbre :as log]
             [hive-mcp.agent.ling.headless-registry :as headless-registry]
-            [hive-spi.addon.headless :as headless-spi]))
+            [hive-spi.addon.headless :as headless-spi]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -67,6 +68,8 @@
                                    2000)]
                    (and success (= "t" result)))))
 
+(m/=> vterm-ready? [:=> [:cat [:maybe :string]] :boolean])
+
 (defn headless-ready?
   "Check if a headless ling's process is alive.
    Relaxed from requiring stdout output — Claude CLI may take 10+ seconds
@@ -77,6 +80,8 @@
                  (when-let [status (headless/headless-status agent-id)]
                    (:alive? status))))
 
+(m/=> headless-ready? [:=> [:cat [:maybe :string]] [:maybe :boolean]])
+
 (defn registered-backend-ready?
   "Check a ling whose spawn-mode names a registered headless backend: ready
    when BACKEND's headless-status reports it :idle or :running."
@@ -84,6 +89,8 @@
   (result/rescue false
                  (contains? #{:idle :running}
                             (:slave/status (headless-spi/headless-status backend {:id agent-id} nil)))))
+
+(m/=> registered-backend-ready? [:=> [:cat [:maybe :string] :any] :boolean])
 
 ;; ── Mode Dispatch ───────────────────────────────────────────────────────────
 
@@ -101,6 +108,8 @@
     (if-let [backend (headless-registry/get-headless-backend spawn-mode)]
       (registered-backend-ready? agent-id backend)
       (vterm-ready? agent-id))))
+
+(m/=> ling-cli-ready? [:=> [:cat [:maybe :string] [:maybe :keyword]] [:maybe :boolean]])
 
 ;; ── Polling Loop ────────────────────────────────────────────────────────────
 
@@ -186,3 +195,6 @@
                          :spawn-mode       spawn-mode
                          :ds-found?        (some? (:slave retry))})
               (assoc retry :elapsed-ms total-elapsed))))))))
+
+(m/=> wait-for-ling-ready [:=> [:cat [:maybe :string] [:maybe :keyword]]
+                           [:map [:ready? :boolean] [:elapsed-ms :int]]])

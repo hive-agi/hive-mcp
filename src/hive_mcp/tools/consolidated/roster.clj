@@ -12,7 +12,8 @@
 
    Composite tools (analysis) live in `composite-tools` — they have no
    per-tool ns; their handler is built by
-   `hive-mcp.tools.composite/build-composite-handler` keyed on tool-name.")
+   `hive-mcp.tools.composite/build-composite-handler` keyed on tool-name."
+  (:require [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -52,3 +53,5 @@
   []
   (vec (sort (concat (map first consolidated-tools)
                      composite-tools))))
+
+(m/=> tool-names [:=> [:cat] [:vector [:string {:min 1}]]])

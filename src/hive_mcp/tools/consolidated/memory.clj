@@ -11,7 +11,8 @@
             [hive-mcp.tools.composite :as composite]
             [hive-mcp.tools.memory :as mem]
             [hive-mcp.tools.memory.batch :as memory-batch]
-            [hive-mcp.batch.cli-adapter :as bca]))
+            [hive-mcp.batch.cli-adapter :as bca]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -172,6 +173,8 @@
                             bare-batch-pointer)
       :else            nil)))
 
+(m/=> bare-batch-refusal [:=> [:cat [:maybe :map]] [:maybe [:string {:min 1}]]])
+
 (defn make-bare-batch-handler
   "Handler for the bare `batch` verb of the memory tool. A call naming files is
    handed to DELEGATE as `ingest batch`, the addon verb it used to reach by
@@ -182,6 +185,8 @@
     (if-let [msg (bare-batch-refusal params)]
       {:type "text" :text msg :isError true}
       (delegate (assoc params :command "ingest batch")))))
+
+(m/=> make-bare-batch-handler [:=> [:cat hive-mcp.tools.core/ToolHandler] hive-mcp.tools.core/ToolHandler])
 
 ;; =============================================================================
 ;; Canonical Handlers — memory flat + kg/migration nested (core-owned)
@@ -381,5 +386,15 @@
                                           "(e.g. \"causes\", \"part-of\", \"motivates\"). Use with relation=\"relates\"; "
                                           "normalized to kebab-case; ignored for structural relations.")}))])
       (catch Exception _ [base]))))
+
+(def AdvertisedToolDef
+  "One advertised MCP tool-def: a name, a description and an object
+   inputSchema whose properties are keyed by param name."
+  [:map
+   [:name [:string {:min 1}]]
+   [:description :string]
+   [:inputSchema [:map [:type [:= "object"]] [:properties [:map-of :string :map]]]]])
+
+(m/=> tool-defs [:=> [:cat] [:vector {:min 1 :max 1} AdvertisedToolDef]])
 
 (def tools [tool-def])

@@ -12,7 +12,8 @@
                  lazily so the tool loads even when the hive-spi workflow schemas
                  are off the runtime classpath."
   (:require [clojure.edn :as edn]
-            [hive-mcp.tools.core :refer [mcp-error mcp-json]]))
+            [hive-mcp.tools.core :refer [mcp-error mcp-json]]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -84,6 +85,8 @@
                                    :directory      (:directory params)}
                             (some? vi) (assoc :verb-index vi)))))))
 
+(m/=> handle-plan-goal [:=> [:cat [:maybe :map]] hive-mcp.tools.core/McpResponse])
+
 ;; ── goal-schema ──────────────────────────────────────────────────────────────
 
 (def ^:private example-goal-spec
@@ -123,3 +126,5 @@
                                    "through the author path (fail-loud on unsound / unknown refs). The :example "
                                    "with :example-verb-index above plans to a sound 4-step workflow verbatim.")}))
       (mcp-error "goal-schema unavailable: hive-spi.workflow.planner not on the runtime classpath."))))
+
+(m/=> handle-goal-schema [:=> [:cat [:maybe :map]] hive-mcp.tools.core/McpResponse])

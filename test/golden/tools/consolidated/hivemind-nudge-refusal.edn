@@ -1,0 +1,10 @@
+{:blank
+ {:type "text", :text "agent_id is required for nudge", :isError true},
+ :message-only
+ {:type "text", :text "agent_id is required for nudge", :isError true},
+ :nil
+ {:type "text", :text "agent_id is required for nudge", :isError true},
+ :no-id
+ {:type "text", :text "agent_id is required for nudge", :isError true},
+ :spaces
+ {:type "text", :text "agent_id is required for nudge", :isError true}}
