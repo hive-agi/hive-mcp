@@ -1,0 +1,24 @@
+{:case-0
+ {:out {:id "b95u", :artifact {:name ""}, :kind "artifact-update"},
+  :in ("b95u" {:name ""})},
+ :case-1
+ {:out {:id 0, :artifact {:name "Wg8D"}, :kind "artifact-update"},
+  :in (0 {:name "Wg8D"})},
+ :case-2
+ {:out {:id "sr3fD", :artifact {:name "3y"}, :kind "artifact-update"},
+  :in ("sr3fD" {:name "3y"})},
+ :case-3
+ {:out {:id "3t", :artifact {:name "w67"}, :kind "artifact-update"},
+  :in ("3t" {:name "w67"})},
+ :case-4
+ {:out {:id 2, :artifact {:name "9g"}, :kind "artifact-update"},
+  :in (2 {:name "9g"})},
+ :case-5
+ {:out {:id "U", :artifact {:name "J3"}, :kind "artifact-update"},
+  :in ("U" {:name "J3"})},
+ :case-6
+ {:out {:id "z", :artifact {:name "5"}, :kind "artifact-update"},
+  :in ("z" {:name "5"})},
+ :case-7
+ {:out {:id "i8an", :artifact {:name "1"}, :kind "artifact-update"},
+  :in ("i8an" {:name "1"})}}

@@ -1,0 +1,64 @@
+{:case-0
+ {:out
+  {:id "b95u",
+   :status
+   {:state "working",
+    :message {:role "agent", :parts [{:type "text", :text nil}]}},
+   :kind "status-update"},
+  :in ("b95u" "working" nil)},
+ :case-1
+ {:out
+  {:id 0,
+   :status
+   {:state "canceled",
+    :message {:role "agent", :parts [{:type "text", :text "7R28G"}]}},
+   :kind "status-update"},
+  :in (0 "canceled" "7R28G")},
+ :case-2
+ {:out
+  {:id "sr3fD",
+   :status
+   {:state "failed",
+    :message {:role "agent", :parts [{:type "text", :text "F"}]}},
+   :kind "status-update"},
+  :in ("sr3fD" "failed" "F")},
+ :case-3
+ {:out
+  {:id "3t",
+   :status
+   {:state nil,
+    :message {:role "agent", :parts [{:type "text", :text "76P"}]}},
+   :kind "status-update"},
+  :in ("3t" nil "76P")},
+ :case-4
+ {:out
+  {:id 2,
+   :status
+   {:state "canceled",
+    :message {:role "agent", :parts [{:type "text", :text nil}]}},
+   :kind "status-update"},
+  :in (2 "canceled" nil)},
+ :case-5
+ {:out
+  {:id "U",
+   :status
+   {:state "canceled",
+    :message {:role "agent", :parts [{:type "text", :text nil}]}},
+   :kind "status-update"},
+  :in ("U" "canceled" nil)},
+ :case-6
+ {:out
+  {:id "z",
+   :status
+   {:state nil,
+    :message {:role "agent", :parts [{:type "text", :text nil}]}},
+   :kind "status-update"},
+  :in ("z" nil nil)},
+ :case-7
+ {:out
+  {:id "i8an",
+   :status
+   {:state nil,
+    :message {:role "agent", :parts [{:type "text", :text nil}]}},
+   :kind "status-update"},
+  :in ("i8an" nil nil)}}
