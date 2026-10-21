@@ -252,6 +252,8 @@
       (log/warn "metrics install failed (non-fatal):" (ex-message e))
       nil)))
 
+(m/=> install-metrics! [:=> [:cat] :any])
+
 (defn start!
   "Initialize the Integrant system from system.edn + profile overlay.
 

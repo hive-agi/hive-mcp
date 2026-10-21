@@ -74,3 +74,11 @@
   []
   (try (addon-cmds/contribute! target-tool owner contribution)
        (catch Throwable _ nil)))
+
+(def ^:private TextContent
+  [:map [:type [:= "text"]] [:text :string]])
+
+(m/=> handle-snapshot [:=> [:cat [:maybe :map]] TextContent])
+(m/=> handle-hotspots [:=> [:cat [:maybe :map]] TextContent])
+(m/=> handle-reset [:=> [:cat [:maybe :map]] TextContent])
+(m/=> install! [:=> [:cat] :any])

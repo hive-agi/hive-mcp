@@ -381,6 +381,8 @@
            :snapshot (fn [_] {})}))
       (OpSecondsSink.))))
 
+(m/=> prom-sink [:=> [:cat] [:maybe [:fn #(instance? OpSecondsSink %)]]])
+
 (m/=> inc-wave-failures! [:=> [:cat :any [:maybe LabelName]] CounterChild])
 
 (defmacro with-wave-timing

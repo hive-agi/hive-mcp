@@ -36,6 +36,8 @@
     (catch Throwable _ (.increment recorder-errors)))
   nil)
 
+(m/=> record! [:=> [:cat :any :int :any] :nil])
+
 (defn recorder-error-count
   "Recorder exceptions swallowed by `record!` since load."
   []
@@ -101,6 +103,8 @@
     (catch Throwable e
       (log/warn "metrics: install failed (non-fatal):" (ex-message e))
       nil)))
+
+(m/=> install-default! [:=> [:cat] :any])
 
 (defn snapshot
   "The port's current snapshot, {} when the port is absent."
