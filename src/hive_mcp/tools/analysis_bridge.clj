@@ -1,7 +1,7 @@
 (ns hive-mcp.tools.analysis-bridge
   "Enriched `analysis bridge-status` command.
 
-   The upstream lsp-mcp handler only surfaces Emacs lsp-mode workspaces,
+   The upstream lsp-mcp handler only surfaces live-bridge workspaces,
    which are often empty when the active analysis path is the Docker
    sidecar cache or in-process clojure-lsp. That produced the misleading
    `{:lsp-available true, :workspace-count 0, :workspaces nil}` after a
@@ -10,7 +10,7 @@
    This namespace contributes a replacement `bridge-status` handler into
    the `analysis` composite tool that splits the view into two axes:
 
-     :workspaces-registered  — Emacs lsp-mode workspaces (live bridge)
+     :workspaces-registered  — workspaces of the registered live LSP bridge
      :workspaces-resolved    — projects with resolved analysis in this
                                JVM (sidecar cache + in-process memo)
 
@@ -40,28 +40,25 @@
   (rescue nil (requiring-resolve sym)))
 
 ;; =============================================================================
-;; Registered Workspaces (Emacs lsp-mode bridge)
+;; Registered Workspaces (live LSP bridge, any vessel)
 ;; =============================================================================
 
-(defn- emacs-bridge-status
-  "Call lsp-mcp's Emacs bridge for live workspace state.
-   Returns the bridge payload map, or nil if the bridge isn't wired up."
+(defn- live-bridge-status
+  "Ask the live LSP bridge a vessel registered in lsp-mcp for workspace
+   state. Returns the bridge payload map, or nil when none is available."
   []
-  (when-let [make-fn (try-resolve 'lsp-mcp.emacs-bridge/make-emacs-bridge)]
+  (when-let [active (try-resolve 'lsp-mcp.bridge/active-bridge)]
     (when-let [status-fn (try-resolve 'lsp-mcp.bridge/bridge-status)]
       (try
-        (let [inst   (make-fn)
-              avail? (when-let [a (try-resolve 'lsp-mcp.bridge/bridge-available?)]
-                       (boolean (a inst)))]
-          (when avail?
-            (status-fn inst)))
+        (when-let [inst (active)]
+          (status-fn inst))
         (catch Exception e
-          (log/debug "Emacs bridge-status probe failed:" (ex-message e))
+          (log/debug "live LSP bridge-status probe failed:" (ex-message e))
           nil)))))
 
 (defn- normalize-registered
-  "Normalize raw Emacs bridge workspaces into a vector of
-   {:root str :server-id keyword :source :emacs-lsp} maps.
+  "Normalize raw live-bridge workspaces into a vector of
+   {:root str :server-id keyword :source :live-lsp} maps.
    Always returns a vector, never nil."
   [bridge-status]
   (->> (:workspaces bridge-status)
@@ -69,7 +66,7 @@
        (mapv (fn [ws]
                (-> ws
                    (select-keys [:root :server-id])
-                   (assoc :source :emacs-lsp))))))
+                   (assoc :source :live-lsp))))))
 
 ;; =============================================================================
 ;; Resolved Workspaces (sidecar cache + in-process memo)
@@ -143,27 +140,27 @@
 (defn build-status
   "Pure builder — assembles the enriched bridge-status payload from the
    three probe results. Exposed for testing without hitting side effects."
-  [{:keys [registered resolved emacs-probe]}]
+  [{:keys [registered resolved live-probe]}]
   (let [registered (vec (or registered []))
         resolved   (vec (or resolved []))
         all        (dedup-by-root (concat registered resolved))]
-    {:lsp-available         (boolean (:lsp-available emacs-probe))
+    {:lsp-available         (boolean (:lsp-available live-probe))
      :workspaces-registered registered
      :workspaces-resolved   resolved
      :workspace-count       (count all)
      :workspaces            all
-     :sources               {:emacs-lsp     (count registered)
+     :sources               {:live-lsp     (count registered)
                              :sidecar-cache (count (filter #(= :sidecar-cache (:source %)) resolved))
                              :in-process    (count (filter #(= :in-process (:source %)) resolved))}}))
 
 (defn bridge-status
-  "Public entry point — gathers data from Emacs bridge + sidecar cache
+  "Public entry point — gathers data from the live LSP bridge + sidecar cache
    + in-process memo and returns the enriched status map."
   []
-  (let [emacs-probe (emacs-bridge-status)]
+  (let [live-probe (live-bridge-status)]
     (build-status
-     {:emacs-probe emacs-probe
-      :registered  (normalize-registered emacs-probe)
+     {:live-probe live-probe
+      :registered  (normalize-registered live-probe)
       :resolved    (into [] (concat (sidecar-resolved)
                                     (in-process-resolved)))})))
 
@@ -197,7 +194,7 @@
     {:handler     mcp-handler
      :params      {}
      :description (str "Live LSP bridge + resolved-analysis status. "
-                       "Returns :workspaces-registered (Emacs lsp-mode), "
+                       "Returns :workspaces-registered (live LSP bridge), "
                        ":workspaces-resolved (sidecar cache + in-process), "
                        "and :workspace-count = union cardinality.")}})
   (log/info "Installed enriched analysis bridge-status handler"))
@@ -210,14 +207,14 @@
   "One workspace row on either axis; :source says where it came from."
   [:map
    [:root {:optional true} [:maybe :string]]
-   [:source {:optional true} [:enum :emacs-lsp :sidecar-cache :in-process]]])
+   [:source {:optional true} [:enum :live-lsp :sidecar-cache :in-process]]])
 
 (def ProbeInput
   "build-status's three probe results; every key may be absent or nil."
   [:map
    [:registered {:optional true} [:maybe [:sequential Workspace]]]
    [:resolved {:optional true} [:maybe [:sequential Workspace]]]
-   [:emacs-probe {:optional true} [:maybe :map]]])
+   [:live-probe {:optional true} [:maybe :map]]])
 
 (def BridgeStatus
   "The enriched bridge-status payload. :workspaces is never nil."
@@ -228,7 +225,7 @@
    [:workspace-count [:int {:min 0}]]
    [:workspaces [:vector Workspace]]
    [:sources [:map
-              [:emacs-lsp [:int {:min 0}]]
+              [:live-lsp [:int {:min 0}]]
               [:sidecar-cache [:int {:min 0}]]
               [:in-process [:int {:min 0}]]]]])
 
