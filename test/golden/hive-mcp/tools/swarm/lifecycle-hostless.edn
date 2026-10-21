@@ -1,0 +1,10 @@
+{:kill
+ {:type "text",
+  :text
+  "Swarm host unavailable: no :vessel :dispatch capability is registered, or the vessel reports its swarm addon unloaded.",
+  :isError true},
+ :spawn
+ {:type "text",
+  :text
+  "Swarm host unavailable: no :vessel :dispatch capability is registered, or the vessel reports its swarm addon unloaded.",
+  :isError true}}

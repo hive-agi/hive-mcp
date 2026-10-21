@@ -1,0 +1,5 @@
+{:filter
+ [{:id "a", :tags ["kanban" "todo"], :content {:task-type "kanban"}}],
+ :visible-glob nil,
+ :visible-self ["a" "a-1"],
+ :visible-up ["a" "root" "global"]}

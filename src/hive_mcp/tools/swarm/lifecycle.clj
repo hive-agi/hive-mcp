@@ -11,7 +11,8 @@
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.spi.metrics :as metrics-port]
-            [hive-dsl.bounded-atom :refer [bclear!]]))
+            [hive-dsl.bounded-atom :refer [bclear!]]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -41,6 +42,14 @@
                              :project-id project-id}))
         (catch Exception e
           (core/mcp-error (str "Error: " (ex-message e))))))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> handle-swarm-kill [:=> [:cat [:maybe :map]] core/SwarmResponse])
+
+(m/=> handle-swarm-spawn [:=> [:cat [:maybe :map]] core/SwarmResponse])
 
 (defn- format-blocking-ops
   "Format blocking operations for error message."

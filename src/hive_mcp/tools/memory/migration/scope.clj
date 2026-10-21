@@ -2,12 +2,13 @@
   "Scope-tag migration: detect orphaned hash-based scopes and rewrite them
    to name-based scopes."
   (:require [hive-mcp.tools.memory.core :refer [with-store]]
-            [hive-mcp.tools.core :refer [mcp-json mcp-error]]
+            [hive-mcp.tools.core :as core :refer [mcp-json mcp-error]]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.tools.memory.migration.helpers :as helpers]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.vectordb.resilience :refer [with-resilience]]))
+            [hive-mcp.vectordb.resilience :refer [with-resilience]]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -72,3 +73,14 @@
                      :dry-run (boolean dry-run)
                      :old-scope old_scope
                      :new-scope new_scope}))))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+;;
+;; Both handlers answer one MCP text response; a with-store boundary turns a
+;; store failure into mcp-error.
+
+(m/=> handle-detect-orphaned [:=> [:cat :any] core/McpResponse])
+
+(m/=> handle-migrate-scope [:=> [:cat [:maybe :map]] core/McpResponse])

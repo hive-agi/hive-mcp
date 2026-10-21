@@ -16,7 +16,8 @@
   (:require [hive-dsl.result :as r]
             [hive-mcp.tools.migrate.kanban.events :as mig-events]
             [hive-mcp.tools.migrate.kanban.ports :as ports]
-            [hive-mcp.tools.migrate.kanban.pure :as pure]))
+            [hive-mcp.tools.migrate.kanban.pure :as pure]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -319,6 +320,43 @@
 
             :else
             (recur (inc i))))))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def Result
+  "A hive-dsl Result: {:ok value} or {:error category ...}."
+  [:or [:map [:ok :any]] [:map [:error :keyword]]])
+
+(def Deps
+  "The wired port map (`api/make-deps`); each use case reads only its slots."
+  [:map
+   [:source-lister {:optional true} :any]
+   [:source-reader {:optional true} :any]
+   [:target-reader {:optional true} :any]
+   [:target-probe {:optional true} :any]
+   [:target-durability {:optional true} :any]
+   [:writer {:optional true} :any]
+   [:state {:optional true} :any]
+   [:held-ids {:optional true} :any]])
+
+(def RunOpts
+  [:maybe
+   [:map
+    [:batch-size {:optional true} [:int {:min 1}]]
+    [:max-steps {:optional true} [:int {:min 0}]]
+    [:dry-run? {:optional true} :any]]])
+
+(m/=> init-ids! [:=> [:cat Deps] Result])
+
+(m/=> migrate-batch! [:=> [:cat Deps RunOpts] Result])
+
+(m/=> step! [:=> [:cat Deps RunOpts] Result])
+
+(m/=> status [:=> [:cat Deps] Result])
+
+(m/=> run! [:=> [:cat Deps RunOpts] Result])
 
 ;; =============================================================================
 ;; status — read-only

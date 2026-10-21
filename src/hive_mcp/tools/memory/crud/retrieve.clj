@@ -4,13 +4,14 @@
             [hive-mcp.tools.memory.core :refer [with-store]]
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.tools.memory.format :as fmt]
-            [hive-mcp.tools.core :refer [mcp-json mcp-error]]
+            [hive-mcp.tools.core :as core :refer [mcp-json mcp-error]]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
             [hive-mcp.tools.memory.crud.deferred :as deferred]
-            [hive-mcp.context.request :as ctx]))
+            [hive-mcp.context.request :as ctx]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -153,3 +154,21 @@
           (log/info "Updated tags for entry:" id)
           (mcp-json (fmt/entry->json-alist updated)))
         (mcp-json {:error "Entry not found" :id id})))))
+
+;;; =============================================================================
+;;; Contracts
+;;; =============================================================================
+;;
+;; Every retrieval handler is a with-store boundary: params in, one MCP text
+;; response out (mcp-json payload, or mcp-error on a refused param or a store
+;; failure).
+
+(m/=> handle-get-full [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-get-metadata [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-batch-get [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-check-duplicate [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-update-tags [:=> [:cat [:maybe :map]] core/McpResponse])

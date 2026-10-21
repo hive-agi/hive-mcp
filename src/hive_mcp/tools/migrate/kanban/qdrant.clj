@@ -21,7 +21,8 @@
             [hive-dsl.result :as r]
             [hive-mcp.tools.migrate.kanban.ports :as ports]
             [hive-mcp.tools.migrate.kanban.pure :as pure]
-            [hive-mcp.tools.migrate.optional :as opt])
+            [hive-mcp.tools.migrate.optional :as opt]
+            [malli.core :as m])
   (:import [java.util UUID]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -121,3 +122,17 @@
                {:message (.getMessage t) :n (count ids)})))))
 
 (defn make-entry-reader [qstore] (->QdrantEntryReader qstore))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def EntryReader
+  [:fn {:gen/elements [(->QdrantEntryReader nil)]} #(satisfies? ports/IEntryReader %)])
+
+(m/=> decode-results-by-id
+  [:function
+   [:=> [:cat [:maybe [:sequential :any]] [:maybe [:sequential :string]]] [:map-of :string :map]]
+   [:=> [:cat [:maybe [:sequential :any]] [:maybe [:sequential :string]] ifn?] [:map-of :string :map]]])
+
+(m/=> make-entry-reader [:=> [:cat [:maybe :some]] EntryReader])

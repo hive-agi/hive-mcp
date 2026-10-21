@@ -26,7 +26,8 @@
             [hive-mcp.agent.ling.strategy :as strategy]
             [hive-dsl.result :as result]
             [clojure.string :as str]
-            [hive-mcp.tools.swarm.channel :as channel]))
+            [hive-mcp.tools.swarm.channel :as channel]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -250,3 +251,25 @@
 
         (core/mcp-error-json {:error "Unknown pre-flight result"
                               :preflight preflight})))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def ChangeEntry
+  "A recent file change as the claim history reports it."
+  [:map [:file {:optional true} :any] [:agent {:optional true} :any]])
+
+(m/=> build-changes-section [:=> [:cat [:maybe [:sequential ChangeEntry]]] [:maybe :string]])
+
+(m/=> inject-changes-section [:=> [:cat :string [:maybe :string]] :string])
+
+(m/=> inject-shout-reminder [:=> [:cat :string] :string])
+
+(m/=> inject-staleness-context [:=> [:cat :string [:maybe :map]] :string])
+
+(m/=> resolve-spawn-mode [:=> [:cat [:maybe :map]] :keyword])
+
+(m/=> enhance-prompt [:=> [:cat :string [:maybe [:sequential :string]]] :string])
+
+(m/=> handle-swarm-dispatch [:=> [:cat [:maybe :map]] core/SwarmResponse])

@@ -6,7 +6,7 @@
             [hive-mcp.tools.memory.duration :as dur]
             [hive-mcp.tools.memory.classify :as classify]
             [hive-mcp.tools.memory.gaps :as gaps]
-            [hive-mcp.tools.core :refer [mcp-json mcp-error coerce-vec!]]
+            [hive-mcp.tools.core :as core :refer [mcp-json mcp-error coerce-vec!]]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.plan.plans :as plans]
             [hive-mcp.plan.gate :as plan-gate]
@@ -27,7 +27,8 @@
             [hive-mcp.tools.memory.crud.deferred :as deferred]
             [hive-mcp.embeddings.shared-gate :as embed-gate]
             [hive-mcp.tools.memory.crud.edge-outcome :as edge-outcome]
-            [hive-mcp.extensions.registry :as ext]))
+            [hive-mcp.extensions.registry :as ext]
+            [malli.core :as m]))
 
 (def ^:const ^:private memory-write-timeout-ms
   "Timeout budget for a single memory write (Chroma add + KG tx + fetch).
@@ -629,3 +630,63 @@
       (if (#{:coercion-error :embedding-too-long :plan-gate-rejected :role-gate-rejected} (:type (ex-data e)))
         (mcp-error (.getMessage e))
         (throw e)))))
+
+;;; =============================================================================
+;;; Contracts
+;;; =============================================================================
+
+(def RoleCardValidator
+  "A RoleCard validator as injected or registered: {:valid? fn :explain fn}.
+   The selection itself is source-agnostic, so a candidate is any non-nil
+   value; a malformed one is rejected later by the role gate."
+  :some)
+
+(def ValidatorSources
+  [:maybe
+   [:map
+    [:injected {:optional true} :any]
+    [:extension {:optional true} :any]
+    [:spi {:optional true} :any]]])
+
+(def ValidatorChoice
+  [:or
+   [:map [:source [:enum :injected :extension :spi]] [:validator RoleCardValidator]]
+   [:map [:source [:= :none]] [:validator :nil]]])
+
+(def WriteStage
+  "The stage a memory add is in; :queued until a pool thread takes it."
+  :keyword)
+
+(def ProgressSnapshot
+  [:map
+   [:stage {:optional true} [:maybe WriteStage]]
+   [:started-ns {:optional true} [:maybe :int]]
+   [:stage-since-ns {:optional true} [:maybe :int]]])
+
+(def ProgressAtom
+  "The progress tracker: an atom holding a ProgressSnapshot."
+  [:fn {:gen/schema [:map [:stage WriteStage] [:started-ns :int] [:stage-since-ns :int]]
+        :gen/fmap atom}
+   #(and (instance? clojure.lang.IAtom %) (map? @%))])
+
+(def TimeoutDiagnostic
+  [:map
+   [:stage WriteStage]
+   [:elapsed-ms [:int {:min 0}]]
+   [:stage-elapsed-ms [:int {:min 0}]]
+   [:timeout-ms :any]
+   [:cause [:enum :pool-queue-wait :stage-stalled]]])
+
+(m/=> select-role-card-validator [:=> [:cat ValidatorSources] ValidatorChoice])
+
+(m/=> set-role-card-validator! [:=> [:cat :any] :any])
+
+(m/=> current-role-card-validator [:=> [:cat] [:maybe RoleCardValidator]])
+
+(m/=> new-progress [:=> [:cat] ProgressAtom])
+
+(m/=> timeout-diagnostic [:=> [:cat ProgressSnapshot :any :int] TimeoutDiagnostic])
+
+(m/=> timeout-message [:=> [:cat [:maybe :map]] :string])
+
+(m/=> handle-add [:=> [:cat [:maybe :map]] core/McpResponse])

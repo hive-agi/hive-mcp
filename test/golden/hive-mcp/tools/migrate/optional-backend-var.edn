@@ -1,0 +1,5 @@
+{:present "MIGRATE",
+ :absent
+ {:missing clojure.string/no-such-fn,
+  :hint
+  "this migration needs an optional backend; add its coordinate via local.deps.edn or a deps alias"}}

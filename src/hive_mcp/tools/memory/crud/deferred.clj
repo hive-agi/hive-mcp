@@ -3,7 +3,8 @@
    An outbox write precedes acknowledgement; reembed drains it by id."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [malli.core :as m]))
 
 (def ^:dynamic *queue-dir*
   (str (System/getProperty "user.home") "/.local/share/hive/pending-reembed"))
@@ -117,3 +118,63 @@
            sort
            vec)
       [])))
+
+;;; =============================================================================
+;;; Contracts
+;;; =============================================================================
+
+(def Tags
+  "Entry tags as stored: a sequential or set of tag strings, or nil. The tag
+   transition walks any seqable element-wise, and an existing trifecta feeds a
+   bare string, so a string is admitted too (its chars become the elements)."
+  [:maybe [:or [:sequential :string] [:set :string] :string]])
+
+(def EntryId
+  "A memory entry id, or nil when a caller passed none (the outbox then
+   names the file after the empty string and finds nothing)."
+  [:maybe :string])
+
+(def StoreKey
+  "IMemoryStore registry slot (:default, :kanban, ...)."
+  :keyword)
+
+(def ParkedEntry
+  "A memory entry as parked in the outbox: any entry map with an :id; the
+   pending-reembed tag and :deferred/store-key are outbox bookkeeping."
+  [:map
+   [:id :string]
+   [:tags {:optional true} Tags]
+   [:deferred/store-key {:optional true} StoreKey]])
+
+(def Throwable_
+  "Any Throwable; generates ex-info values carrying an embedder error."
+  [:fn {:gen/schema [:enum :embedder/embed-failed :embedder/chain-exhausted
+                     :embedder/gate-timeout :other]
+        :gen/fmap (fn [k] (ex-info (name k) {:error k}))}
+   #(instance? Throwable %)])
+
+(def ^:private Char_
+  "A character: what a bare-string Tags input contributes per element."
+  [:fn {:gen/schema [:int {:min 97 :max 122}] :gen/fmap char} char?])
+
+(m/=> reembed-tags [:=> [:cat Tags :any] [:vector [:or :string Char_]]])
+
+(m/=> embedding-failure? [:=> [:cat Throwable_] [:maybe [:or :boolean :keyword]]])
+
+(m/=> park! [:=> [:cat ParkedEntry] :string])
+
+(m/=> lookup [:=> [:cat EntryId] [:maybe :map]])
+
+(m/=> remove! [:=> [:cat EntryId] :boolean])
+
+(m/=> with-store-key [:=> [:cat :map [:maybe StoreKey]] :map])
+
+(m/=> store-key-of [:=> [:cat [:maybe :map]] [:maybe StoreKey]])
+
+(m/=> ->store-entry [:=> [:cat :map] [:map [:tags [:vector :string]]]])
+
+(m/=> amend! [:=> [:cat EntryId [:maybe :map]] [:maybe :string]])
+
+(m/=> id-of-file-name [:=> [:cat [:maybe :string]] [:maybe :string]])
+
+(m/=> pending-ids [:=> [:cat] [:vector :string]])

@@ -17,7 +17,8 @@
             [hive-mcp.tools.migrate.kanban.milvus :as mig-milvus]
             [hive-mcp.tools.migrate.kanban.state :as mig-state]
             [hive-mcp.tools.migrate.kanban.usecases :as uc]
-            [hive-mcp.tools.migrate.kanban.store :as mig-store]))
+            [hive-mcp.tools.migrate.kanban.store :as mig-store]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -86,3 +87,31 @@
   ([] (reset! (make-deps)))
   ([{:keys [state] :as _deps}]
    ((requiring-resolve 'hive-mcp.tools.migrate.kanban.ports/reset-state!) state)))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def DepsOverrides
+  "make-deps keyword overrides, as an even run of key/value args."
+  [:cat [:* [:cat [:enum :source-store :target-store :state-path :source-lister
+                   :source-reader :target-reader :target-probe :target-durability
+                   :writer :state]
+             :any]]])
+
+(def Deps
+  [:map
+   [:source-lister :any] [:source-reader :any] [:target-reader :any]
+   [:target-probe :any] [:target-durability :any] [:writer :any] [:state :any]])
+
+(m/=> make-deps [:=> DepsOverrides Deps])
+
+(m/=> init-ids! [:function [:=> [:cat] uc/Result] [:=> [:cat uc/Deps] uc/Result]])
+
+(m/=> step! [:function [:=> [:cat uc/RunOpts] uc/Result] [:=> [:cat uc/Deps uc/RunOpts] uc/Result]])
+
+(m/=> run! [:function [:=> [:cat uc/RunOpts] uc/Result] [:=> [:cat uc/Deps uc/RunOpts] uc/Result]])
+
+(m/=> status [:function [:=> [:cat] uc/Result] [:=> [:cat uc/Deps] uc/Result]])
+
+(m/=> reset! [:function [:=> [:cat] uc/Result] [:=> [:cat uc/Deps] uc/Result]])

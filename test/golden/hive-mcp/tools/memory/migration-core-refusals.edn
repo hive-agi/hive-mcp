@@ -1,0 +1,14 @@
+{:rename-no-old
+ {:type "text", :text "old-project-id is required", :isError true},
+ :scoped-no-new
+ {:type "text", :text "new-project-id is required", :isError true},
+ :scoped-no-old
+ {:type "text", :text "old-project-id is required", :isError true},
+ :scoped-no-target
+ {:type "text",
+  :text "Either entry-ids or tag-filter is required",
+  :isError true},
+ :scoped-same
+ {:type "text",
+  :text "old-project-id and new-project-id must be different",
+  :isError true}}

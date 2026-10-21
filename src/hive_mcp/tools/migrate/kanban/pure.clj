@@ -1,7 +1,8 @@
 (ns hive-mcp.tools.migrate.kanban.pure
   "Pure helpers for the kanban cross-store migration. No IO, no side effects.
    Every fn here is data-in/data-out so trifecta tests can exercise the full
-   surface without spinning up milvus or qdrant.")
+   surface without spinning up milvus or qdrant."
+  (:require [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -347,3 +348,111 @@
 
     :else
     {:id id :ok? false :error (str "unexpected add-entry! answer: " (pr-str answer))}))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def Id
+  "A memory entry id. The pure helpers only compare and carry ids, so an
+   integer id is admitted too (the cursor tests slice integer ids); stores
+   use strings."
+  [:or :string :int])
+
+(def Entry
+  "An entry as a store read answers it, or nil when the store had no row.
+   :content is an opened map, a sealed string envelope, or absent."
+  [:maybe
+   [:map
+    [:id {:optional true} Id]
+    [:content {:optional true} [:maybe [:or [:map-of :any :any] :string]]]]])
+
+(def ClassifierOutcome
+  [:enum :missing-from-source :not-task :already-full :unreadable :ready-to-write])
+
+(def Outcome
+  "Every outcome a tally may carry: classifier results plus post-write ones."
+  [:enum :missing-from-source :not-task :already-full :unreadable :ready-to-write
+   :written :would-write :failed :queued :unconfirmed])
+
+(def OutcomeRow
+  "One batch outcome. The cursor helpers read only :outcome and the settled
+   split only position, so every key is optional (permissive in)."
+  [:map
+   [:id {:optional true} Id]
+   [:outcome {:optional true} Outcome]
+   [:target-absent? {:optional true} :boolean]
+   [:reason {:optional true} :keyword]
+   [:error {:optional true} [:maybe :string]]])
+
+(def OutcomeRows [:sequential OutcomeRow])
+
+(def Tally
+  "Per-outcome counts; tally-outcomes always answers every Outcome key."
+  [:map-of :keyword :int])
+
+(def Cursor [:int {:min 0}])
+
+(def WriteRow
+  [:or
+   [:map [:id :any] [:ok? [:= true]] [:error :nil]]
+   [:map [:id :any] [:ok? [:= false]] [:queued? [:= true]] [:error :string]]
+   [:map [:id :any] [:ok? [:= false]] [:error :string]]])
+
+(def BatchResult
+  [:map
+   [:start {:optional true} [:maybe Cursor]]
+   [:cursor Cursor]
+   [:outcomes OutcomeRows]
+   [:tally {:optional true} [:maybe Tally]]
+   [:done? {:optional true} :boolean]])
+
+(def MigrationState
+  "Saved migration state; fold-batch rewrites the cursor, phase, last step,
+   stats and the :failed / :unreadable rows, leaving every other key."
+  [:map
+   [:cursor {:optional true} Cursor]
+   [:phase {:optional true} :keyword]
+   [:stats {:optional true} [:maybe Tally]]
+   [:failed {:optional true} [:maybe [:sequential [:map [:id Id]]]]]
+   [:unreadable {:optional true} [:maybe [:sequential [:map [:id Id]]]]]])
+
+(m/=> task-type-kanban? [:=> [:cat [:maybe :map]] :boolean])
+
+(m/=> full-payload? [:=> [:cat [:maybe :map]] :boolean])
+
+(m/=> stub-row? [:=> [:cat :any] :boolean])
+
+(m/=> classify-outcome [:=> [:cat Entry Entry] ClassifierOutcome])
+
+(m/=> unreadable-reason [:=> [:cat Entry] [:enum :hidden :unopenable :not-a-card]])
+
+(m/=> probe-candidates [:=> [:cat OutcomeRows] [:vector [:maybe Id]]])
+
+(m/=> mark-hidden [:=> [:cat OutcomeRows [:maybe [:or [:sequential Id] [:set Id]]]] [:vector OutcomeRow]])
+
+(m/=> slice-batch
+  [:=> [:cat [:vector Id] :int [:int {:min 1}]]
+   [:tuple [:vector Id] Cursor :boolean]])
+
+(m/=> hold-cursor [:=> [:cat Cursor OutcomeRows Cursor :boolean] [:tuple Cursor :boolean]])
+
+(m/=> needs-durable-ack? [:=> [:cat OutcomeRows] :boolean])
+
+(m/=> unconfirm-written [:=> [:cat OutcomeRows :any] OutcomeRows])
+
+(m/=> unconfirmed-ids [:=> [:cat OutcomeRows] [:vector [:maybe Id]]])
+
+(m/=> tally-outcomes [:=> [:cat OutcomeRows] Tally])
+
+(m/=> merge-tally [:=> [:cat [:maybe Tally] [:maybe Tally]] [:maybe Tally]])
+
+(m/=> settled-outcomes [:=> [:cat Cursor Cursor OutcomeRows] [:vector OutcomeRow]])
+
+(m/=> fold-batch [:=> [:cat [:maybe MigrationState] BatchResult :any] MigrationState])
+
+(m/=> dedup-sorted-ids [:=> [:cat [:sequential [:sequential Id]]] [:vector Id]])
+
+(m/=> strip-derived [:=> [:cat [:maybe :map]] [:maybe :map]])
+
+(m/=> write-result [:=> [:cat :any :any] WriteRow])

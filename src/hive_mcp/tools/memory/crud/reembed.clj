@@ -18,12 +18,13 @@
    Acceptance origin: kanban 20260427004720-6447110d."
   (:require [hive-mcp.tools.memory.core :refer [with-store]]
             [hive-mcp.tools.memory.format :as fmt]
-            [hive-mcp.tools.core :refer [mcp-json mcp-error]]
+            [hive-mcp.tools.core :as core :refer [mcp-json mcp-error]]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.dns.result :refer [rescue-log]]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.tools.memory.crud.deferred :as deferred]))
+            [hive-mcp.tools.memory.crud.deferred :as deferred]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -127,3 +128,21 @@
       (let [store (mem-proto/get-store)
             results (mapv #(batch-op-result store %) ids)]
         (tally-statuses results)))))
+
+;;; =============================================================================
+;;; Contracts
+;;; =============================================================================
+
+(def ReembedTally
+  "The drain tally: every count non-negative and summing to :total."
+  [:map
+   [:total [:int {:min 0}]]
+   [:reembedded [:int {:min 0}]]
+   [:not-found [:int {:min 0}]]
+   [:errors [:int {:min 0}]]])
+
+(m/=> handle-reembed [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-batch-reembed [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> drain-pending! [:=> [:cat] ReembedTally])
