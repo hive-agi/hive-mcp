@@ -50,13 +50,13 @@
    :num-tests 200})
 
 (defn- refusal-or-success?
-  "A handler answers the bare node-id error for a refused id, and a JSON
-   success otherwise (the store is empty but healthy)."
+  "A handler answers an MCP error for a refused id, and a JSON success
+   otherwise (the store is empty but healthy)."
   [ids out]
   (if (every? valid-id? ids)
     (and (m/validate core/McpResponse out)
          (true? (:success (json/read-str (:text out) :key-fn keyword))))
-    (m/validate ks/NodeIdError out)))
+    (m/validate ks/NodeIdRefusal out)))
 
 (deftrifecta-from-schema traverse-refuses-or-walks
   #'q/handle-kg-traverse
@@ -120,8 +120,12 @@
             (and (true? (:success body)) (map? (:backend-health body)))))
    :num-tests 20})
 
-(deftest a-node-id-refusal-escapes-as-a-bare-map
-  ;; BUG (recorded, not fixed): the validation refusal is not an MCP error.
-  (is (= {:error "start_node must be a non-empty string"}
+(deftest a-node-id-refusal-is-an-mcp-error
+  (is (= {:type "text" :text "start_node must be a non-empty string" :isError true}
          (q/handle-kg-traverse {:start_node nil})))
-  (is (not (m/validate core/McpResponse (q/handle-kg-traverse {:start_node "$x"})))))
+  (doseq [out [(q/handle-kg-traverse {:start_node "$x"})
+               (q/handle-kg-impact-analysis {:node_id ""})
+               (q/handle-kg-find-path {:from_node "a-1" :to_node nil})
+               (q/handle-kg-node-context {:node_id 42})]]
+    (is (m/validate ks/NodeIdRefusal out) (pr-str out))
+    (is (true? (:isError out)))))
