@@ -1,0 +1,15 @@
+{:case-0
+ {:out :vectordb/invalid-write-result,
+  :in {:id "fail", :type "note", :tags []}},
+ :case-1
+ {:out :vectordb/invalid-write-result,
+  :in {:id "nil", :type "note", :tags ["b" "b"]}},
+ :case-2 {:out "e1", :in {:id "e1", :type "note", :tags ["a"]}},
+ :case-3
+ {:out "e3", :in {:id "e3", :type "decision", :tags ["b" "a"]}},
+ :case-4 {:out "e1", :in {:id "e1", :type "note", :tags []}},
+ :case-5 {:out "e1", :in {:id "e1", :type "note", :tags []}},
+ :case-6 {:out "e2", :in {:id "e2", :type "decision", :tags []}},
+ :case-7
+ {:out :vectordb/invalid-write-result,
+  :in {:id "nil", :type "note", :tags []}}}

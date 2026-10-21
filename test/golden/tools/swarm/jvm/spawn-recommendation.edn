@@ -1,0 +1,32 @@
+{:case-0
+ {:out "Memory high - consider enabling auto_cleanup",
+  :in (nil false nil)},
+ :case-1 {:out "Safe to spawn new processes", :in (true true false)},
+ :case-10
+ {:out "Memory high - consider enabling auto_cleanup",
+  :in (nil nil false)},
+ :case-11
+ {:out "Memory high - consider enabling auto_cleanup",
+  :in (nil nil false)},
+ :case-2
+ {:out "Capacity reached - wait for running tasks to complete",
+  :in (nil true false)},
+ :case-3
+ {:out "Memory high - consider enabling auto_cleanup",
+  :in (nil nil false)},
+ :case-4 {:out "Safe to spawn new processes", :in (true true nil)},
+ :case-5
+ {:out "Capacity reached - wait for running tasks to complete",
+  :in (nil true nil)},
+ :case-6
+ {:out "Memory high - consider enabling auto_cleanup",
+  :in (nil nil nil)},
+ :case-7
+ {:out "Memory high - consider enabling auto_cleanup",
+  :in (nil nil nil)},
+ :case-8
+ {:out "Capacity reached - wait for running tasks to complete",
+  :in (nil true nil)},
+ :case-9
+ {:out "Memory high - consider enabling auto_cleanup",
+  :in (false false nil)}}

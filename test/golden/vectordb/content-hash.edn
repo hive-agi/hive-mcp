@@ -1,0 +1,32 @@
+{:case-0
+ {:out
+  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  :in ""},
+ :case-1
+ {:out
+  "f3331ff0c516a28ad95149054bc94dc4138ede4ef3a672f8da898a3483698144",
+  :in {:k 2}},
+ :case-2
+ {:out
+  "3097da03aa7aa153a7cf1e61a0a96660512046d9ec8b58fab4ef4f1876b51fea",
+  :in {:k 1}},
+ :case-3
+ {:out
+  "3097da03aa7aa153a7cf1e61a0a96660512046d9ec8b58fab4ef4f1876b51fea",
+  :in {:k 1}},
+ :case-4
+ {:out
+  "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+  :in "a"},
+ :case-5
+ {:out
+  "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+  :in "a"},
+ :case-6
+ {:out
+  "3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d",
+  :in "b"},
+ :case-7
+ {:out
+  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  :in ""}}

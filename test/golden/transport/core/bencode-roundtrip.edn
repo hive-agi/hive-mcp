@@ -1,0 +1,14 @@
+{:case-0 {:out {}, :in {}},
+ :case-1 {:out {"type" "pong"}, :in {:type "pong"}},
+ :case-2 {:out {"id" "kw", "type" [1 1]}, :in {"id" :kw, :type [1 1]}},
+ :case-3
+ {:out {"data" "ping", "type" "pong"},
+  :in {:data "ping", :type "pong"}},
+ :case-4 {:out {"id" [1]}, :in {"id" [1]}},
+ :case-5
+ {:out {"id" ["a" 1 "a"], "type" ["a"]},
+  :in {"id" ["a" 1 "a"], :type ["a"]}},
+ :case-6
+ {:out {"data" "kw", "id" 3, "type" 5},
+  :in {"id" 3, :type 5, :data :kw}},
+ :case-7 {:out {"id" "ping", "type" []}, :in {:type [], "id" "ping"}}}

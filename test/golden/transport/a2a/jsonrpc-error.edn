@@ -1,0 +1,41 @@
+{:case-0
+ {:out
+  {:jsonrpc "2.0", :id 0, :error {:code -32004, :message "missing"}},
+  :in (0 -32004 "missing")},
+ :case-1
+ {:out {:jsonrpc "2.0", :id 0, :error {:code -32600, :message "bad"}},
+  :in (0 -32600 "bad")},
+ :case-2
+ {:out
+  {:jsonrpc "2.0",
+   :id "1",
+   :error {:code -32003, :message "bad", :data {:hint "h2"}}},
+  :in ("1" -32003 "bad" :hint "h2")},
+ :case-3
+ {:out
+  {:jsonrpc "2.0",
+   :id "1",
+   :error {:code -32601, :message "bad", :data {:hint "h1"}}},
+  :in ("1" -32601 "bad" :hint "h1")},
+ :case-4
+ {:out
+  {:jsonrpc "2.0",
+   :id nil,
+   :error {:code -32002, :message "bad", :data {:hint "h2"}}},
+  :in (nil -32002 "bad" :hint "h2")},
+ :case-5
+ {:out
+  {:jsonrpc "2.0",
+   :id 3,
+   :error {:code -32003, :message "missing", :data {:hint "h2"}}},
+  :in (3 -32003 "missing" :hint "h2")},
+ :case-6
+ {:out
+  {:jsonrpc "2.0",
+   :id "1",
+   :error {:code -32001, :message "bad", :data {:hint "h1"}}},
+  :in ("1" -32001 "bad" :hint "h1")},
+ :case-7
+ {:out
+  {:jsonrpc "2.0", :id 1, :error {:code -32004, :message "missing"}},
+  :in (1 -32004 "missing")}}

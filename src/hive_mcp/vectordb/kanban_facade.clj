@@ -29,7 +29,9 @@
             [hive-mcp.protocols.memory :as proto]
             [taoensso.timbre :as log]
             [hive-mcp.events.write-events :as write-events]
-            [hive-spi.memory.contract :as contract]))
+            [hive-spi.memory.contract :as contract]
+            [malli.core :as m]
+            [hive-mcp.vectordb.facade :as facade]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -46,6 +48,12 @@
   []
   (cfg-core/get-kanban-store-mode))
 
+(def Mode
+  "A kanban-store routing mode."
+  [:enum :default :dual-read :kanban])
+
+(m/=> mode [:=> [:cat] Mode])
+
 (defn active-key
   "Registry slot the *write* side targets:
      :default → :default      (legacy / milvus)
@@ -59,6 +67,8 @@
     :default :default
     (:kanban :dual-read) :kanban))
 
+(m/=> active-key [:=> [:cat] [:enum :default :kanban]])
+
 (defn registered?
   "True iff the registry has an entry under `slot-kw`. Wraps
    protocols.memory/registered-stores so callers don't reach for the
@@ -66,12 +76,16 @@
   [slot-kw]
   (some? (get (proto/registered-stores) slot-kw)))
 
+(m/=> registered? [:=> [:cat :any] :boolean])
+
 (defn available?
   "True iff the :kanban slot is currently registered. The kanban codepath
    uses this to decide whether to gate dual-read fallback or fail loud
    in :kanban mode at boot time."
   []
   (registered? :kanban))
+
+(m/=> available? [:=> [:cat] :boolean])
 
 ;;; ============================================================================
 ;;; Store resolution (mode-aware)
@@ -149,6 +163,8 @@
                       (rescue nil (proto/get-entry (proto/get-store :kanban) id)))
                     (proto/get-entry (proto/get-store) id)))))
 
+(m/=> get-entry-by-id [:=> [:cat [:maybe :string]] [:maybe facade/Entry]])
+
 (defn query-entries
   "Query kanban entries with filtering. Mirrors hive-mcp.vectordb.facade
    surface (keyword-arg API for backward compat with the kanban codepath
@@ -206,6 +222,10 @@
       :kanban    (merged-query)
       :dual-read (merged-query))))
 
+;; :default mode passes the store's answer through (nil allowed); the merging
+;; modes always answer a vector.
+(m/=> query-entries [:=> [:cat facade/KwTail] [:maybe facade/Entries]])
+
 ;;; ============================================================================
 ;;; CRUD — write path
 ;;; ============================================================================
@@ -261,6 +281,8 @@
                          :project-id  (:project-id entry)}))
     id))
 
+(m/=> add-entry! [:=> [:cat facade/EntryIn] facade/StoreAnswer])
+
 (defn write-rejected?
   "True when a store's answer to a write means nothing landed: nil (unknown
    id, the hive-spi :absent answer) or a hive-spi failure map, i.e.
@@ -270,6 +292,8 @@
   [result]
   (or (nil? result)
       (contract/failure? result)))
+
+(m/=> write-rejected? [:=> [:cat :any] :boolean])
 
 (defn update-entry!
   "Soft-update a kanban entry (status retag, tag rewrite). In :dual-read,
@@ -294,6 +318,8 @@
                          :fields     (vec (keys updates))})
     result))
 
+(m/=> update-entry! [:=> [:cat :string [:map-of :keyword :any]] facade/StoreAnswer])
+
 (defn delete-entry!
   "Hard-delete a kanban entry. In :dual-read, attempts both slots so
    the entry can't resurrect from the legacy slot during soak. Announces
@@ -313,6 +339,8 @@
       (forget-write! id)
       (announce! :deleted {:id id}))
     result))
+
+(m/=> delete-entry! [:=> [:cat :string] facade/StoreAnswer])
 
 ;;; ============================================================================
 ;;; Boot-time validation
@@ -345,3 +373,6 @@
                   nil)]
     (when warning (log/warn warning {:mode m}))
     {:mode m :ok? ok :warning warning}))
+
+(m/=> validate-mode!
+      [:=> [:cat] [:map [:mode Mode] [:ok? :boolean] [:warning [:maybe :string]]]])
