@@ -1,0 +1,25 @@
+{:case-0
+ {:out {:retry? true, :backoff-ms 8000, :escalate? false},
+  :in
+  ({:adt/variant :err/transient, :adt/type :ErrorClass, :message ""})},
+ :case-1
+ {:out {:retry? false, :backoff-ms 0, :escalate? true},
+  :in (#:adt{:variant :err/made-up})},
+ :case-2
+ {:out {:retry? false, :backoff-ms 0, :escalate? true}, :in (nil)},
+ :case-3
+ {:out {:retry? false, :backoff-ms 0, :escalate? true}, :in ("str")},
+ :case-4
+ {:out {:retry? false, :backoff-ms 0, :escalate? true}, :in (nil)},
+ :case-5
+ {:out {:retry? false, :backoff-ms 0, :escalate? true}, :in (nil)},
+ :case-6
+ {:out {:retry? true, :backoff-ms 8000, :escalate? false},
+  :in
+  ({:adt/variant :err/transient,
+    :adt/type :ErrorClass,
+    :message "76"})},
+ :case-7
+ {:out {:retry? false, :backoff-ms 0, :escalate? true},
+  :in
+  ({:adt/variant :err/validation, :adt/type :ErrorClass, :message ""})}}
