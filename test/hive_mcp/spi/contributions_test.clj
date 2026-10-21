@@ -74,4 +74,4 @@
 
 (deftest contribute-requires-a-keyword-kind-and-a-map
   (is (thrown? AssertionError (contrib/contribute! "tools" :k {})))
-  (is (thrown? AssertionError (contrib/contribute! :f07/kind :k :not-a-map))))
+  (is (thrown? AssertionError (apply contrib/contribute! [:f07/kind :k :not-a-map]))))
