@@ -1,0 +1,28 @@
+{:case-0 {:out {:steps []}, :in ({:steps []})},
+ :case-1
+ {:out
+  {:default-method :bad,
+   :steps
+   [{:id "c", :method :saa}
+    {:id "a", :method :bad}
+    {:id "c", :method :manual}]},
+  :in
+  ({:default-method :bad,
+    :steps
+    [{:id "c", :method :saa} {:id "a"} {:id "c", :method :manual}]})},
+ :case-2
+ {:out {:steps [{:id "c", :method :saa}]},
+  :in ({:steps [{:id "c", :method :saa}]})},
+ :case-3
+ {:out {:steps [{:id "c"} {:id "b"}]},
+  :in ({:steps [{:id "c"} {:id "b"}]})},
+ :case-4
+ {:out {:default-method "bad", :steps [{:id "c", :method :manual}]},
+  :in ({:default-method "bad", :steps [{:id "c", :method :manual}]})},
+ :case-5 {:out {:steps [{:id "c"}]}, :in ({:steps [{:id "c"}]})},
+ :case-6
+ {:out {:steps [{:id "b", :method :manual}]},
+  :in ({:steps [{:id "b", :method :manual}]})},
+ :case-7
+ {:out {:steps [{:id "a", :method :saa}]},
+  :in ({:steps [{:id "a", :method :saa}]})}}

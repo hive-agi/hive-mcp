@@ -1,0 +1,13 @@
+{:on-classpath? false,
+ :initialized? false,
+ :discovered {:by-id [], :scan-errors 0, :scan-total-nonneg? true},
+ :check
+ {:ok? false,
+  :missing-addons
+  ["hive.workflows.progress" "hive.workflows.strategy"],
+  :unresolved [],
+  :missing-methods [:dag-wave :forge-belt :saa]},
+ :report-prefix "FAIL:",
+ :ir-seam :throws-file-not-found,
+ :required ["hive.workflows.progress" "hive.workflows.strategy"],
+ :methods [:dag-wave :forge-belt :saa]}

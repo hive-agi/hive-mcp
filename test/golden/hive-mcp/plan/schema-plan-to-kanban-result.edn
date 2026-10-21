@@ -1,0 +1,19 @@
+{:valid true,
+ :invalid false,
+ :explain-valid nil,
+ :explain-invalid
+ {:plan-id ["should be a string"], :kg-edges ["missing required key"]},
+ :explain-step
+ {:id ["should be a string"], :title ["missing required key"]},
+ :valid-step true,
+ :example-valid true,
+ :step-keys
+ [:depends-on
+  :description
+  :estimate
+  :execution
+  :files
+  :id
+  :priority
+  :tags
+  :title]}

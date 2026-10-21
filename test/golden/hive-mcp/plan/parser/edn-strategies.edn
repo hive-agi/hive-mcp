@@ -1,0 +1,33 @@
+{:phase-blocks
+ {:success true,
+  :plan
+  {:steps
+   [{:id "a",
+     :title "A",
+     :depends-on [],
+     :priority :medium,
+     :files [],
+     :estimate :medium,
+     :tags []}
+    {:id "b",
+     :title "B",
+     :depends-on ["a"],
+     :priority :medium,
+     :files [],
+     :estimate :medium,
+     :tags []}],
+   :title "Untitled Plan",
+   :source-format :edn,
+   :tags []}},
+ :empty-steps
+ {:success true,
+  :plan
+  {:steps [], :title "Untitled Plan", :source-format :edn, :tags []}},
+ :no-plan
+ {:success false,
+  :error
+  "No EDN plan found (tried direct parse, embedded extraction, ```edn blocks, and phase blocks)"},
+ :broken
+ {:success false,
+  :error
+  "No EDN plan found (tried direct parse, embedded extraction, ```edn blocks, and phase blocks)"}}

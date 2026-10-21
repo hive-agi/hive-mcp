@@ -1,0 +1,96 @@
+{:case-0
+ {:out
+  {:id "s1",
+   :title "A",
+   :depends-on [],
+   :files [],
+   :priority :medium,
+   :estimate :medium,
+   :tags []},
+  :in ({:id "s1", :title "A", :depends-on nil, :files []})},
+ :case-1
+ {:out
+  {:id "s1",
+   :title "A",
+   :priority :medium,
+   :estimate :medium,
+   :depends-on [],
+   :files [],
+   :tags []},
+  :in
+  ({:id "s1",
+    :title "A",
+    :priority nil,
+    :estimate :huge,
+    :depends-on [],
+    :files []})},
+ :case-2
+ {:out
+  {:id "s2",
+   :title "B",
+   :depends-on [],
+   :files [],
+   :priority :medium,
+   :estimate :medium,
+   :tags []},
+  :in ({:id "s2", :title "B", :depends-on nil, :files nil})},
+ :case-3
+ {:out
+  {:id "s2",
+   :title "A",
+   :depends-on ["s1" "s1"],
+   :files ["a.clj"],
+   :priority :medium,
+   :estimate :medium,
+   :tags []},
+  :in
+  ({:id "s2", :title "A", :depends-on ["s1" "s1"], :files ["a.clj"]})},
+ :case-4
+ {:out
+  {:id "s2",
+   :title "A",
+   :priority :low,
+   :depends-on ["s2" "s2"],
+   :files [],
+   :estimate :medium,
+   :tags []},
+  :in
+  ({:id "s2",
+    :title "A",
+    :priority "trivial",
+    :depends-on ["s2" "s2"]})},
+ :case-5
+ {:out
+  {:id "s2",
+   :title "B",
+   :estimate :medium,
+   :depends-on [],
+   :priority :medium,
+   :files [],
+   :tags []},
+  :in ({:id "s2", :title "B", :estimate "medium"})},
+ :case-6
+ {:out
+  {:id "s2",
+   :title "A",
+   :estimate :medium,
+   :depends-on ["s1" "s1"],
+   :files [],
+   :priority :medium,
+   :tags []},
+  :in
+  ({:id "s2",
+    :title "A",
+    :estimate :huge,
+    :depends-on ["s1" "s1"],
+    :files nil})},
+ :case-7
+ {:out
+  {:id "s1",
+   :title "B",
+   :priority :medium,
+   :depends-on [],
+   :files [],
+   :estimate :medium,
+   :tags []},
+  :in ({:id "s1", :title "B", :priority nil, :depends-on []})}}

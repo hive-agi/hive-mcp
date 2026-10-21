@@ -1,0 +1,7 @@
+{:silence
+ [{:adt/type :PhaseMessage, :adt/variant :pm/chunk, :phase :silence}
+  {:adt/type :PhaseMessage,
+   :adt/variant :pm/phase-complete,
+   :phase :silence}],
+ :act [{:adt/type :PhaseMessage, :adt/variant :pm/error, :phase :act}],
+ :empty []}

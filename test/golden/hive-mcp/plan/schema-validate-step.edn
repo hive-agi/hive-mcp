@@ -1,0 +1,112 @@
+{:case-0
+ {:out
+  {:valid true,
+   :data
+   {:id "",
+    :title "",
+    :description "",
+    :files [],
+    :estimate :small,
+    :execution {:model "", :persona {}}}},
+  :in
+  ({:id "",
+    :title "",
+    :description "",
+    :files [],
+    :estimate :small,
+    :execution {:model "", :persona {}}})},
+ :case-1
+ {:out
+  {:valid false,
+   :errors
+   {:priority ["should be either :high, :medium or :low"],
+    :estimate ["should be either :small, :medium or :large"]}},
+  :in
+  ({:id "s2",
+    :title "A",
+    :priority :HIGH,
+    :estimate nil,
+    :depends-on []})},
+ :case-2
+ {:out
+  {:valid false,
+   :errors
+   {:id ["should be a string"],
+    :depends-on ["invalid type"],
+    :priority ["should be either :high, :medium or :low"],
+    :estimate ["should be either :small, :medium or :large"]}},
+  :in
+  ({:id 0,
+    :title "A",
+    :priority nil,
+    :estimate "medium",
+    :depends-on nil})},
+ :case-3
+ {:out
+  {:valid false,
+   :errors {:estimate ["should be either :small, :medium or :large"]}},
+  :in ({:id "s1", :title "A", :estimate :huge})},
+ :case-4
+ {:out
+  {:valid true,
+   :data
+   {:id "3qE",
+    :title "o",
+    :depends-on ["74" "j2h7"],
+    :files ["7n85" "6i" "zh97"],
+    :estimate :large,
+    :execution {:model "016"}}},
+  :in
+  ({:id "3qE",
+    :title "o",
+    :depends-on ["74" "j2h7"],
+    :files ["7n85" "6i" "zh97"],
+    :estimate :large,
+    :execution {:model "016"}})},
+ :case-5
+ {:out
+  {:valid true,
+   :data
+   {:id "",
+    :title "hZ21u",
+    :estimate :small,
+    :tags ["U7" "Bs8" "ME" "L2dB" "Xr"]}},
+  :in
+  ({:id "",
+    :title "hZ21u",
+    :estimate :small,
+    :tags ["U7" "Bs8" "ME" "L2dB" "Xr"]})},
+ :case-6
+ {:out
+  {:valid true,
+   :data
+   {:id "",
+    :title "Z3A",
+    :depends-on [],
+    :estimate :large,
+    :tags ["K" "DI13qJ" "B3uO0" "4NJl"],
+    :execution {:spawn-mode ""}}},
+  :in
+  ({:id "",
+    :title "Z3A",
+    :depends-on [],
+    :estimate :large,
+    :tags ["K" "DI13qJ" "B3uO0" "4NJl"],
+    :execution {:spawn-mode ""}})},
+ :case-7
+ {:out
+  {:valid true,
+   :data
+   {:id "i8an",
+    :title "13",
+    :description "N",
+    :files [""],
+    :execution
+    {:provider "2", :spawn-mode "3JWB", :presets ["mdp0" "op" ""]}}},
+  :in
+  ({:id "i8an",
+    :title "13",
+    :description "N",
+    :files [""],
+    :execution
+    {:provider "2", :spawn-mode "3JWB", :presets ["mdp0" "op" ""]}})}}

@@ -1,0 +1,90 @@
+{:registered
+ [:fb/compile
+  :fb/cont
+  :fb/h1
+  :fb/h2
+  :fb/h3
+  :fb/h3.5
+  :fb/h4
+  :fb/h5
+  :fb/h6
+  :fb/h7
+  :fb/q1
+  :fb/q2
+  :fb/q3
+  :fb/q4
+  :fb/q5
+  :fb/q6
+  :fb/q7
+  :fb/q8
+  :fb/run
+  :fb/s1
+  :fb/s2
+  :fb/strike],
+ :single-no-tasks
+ {:out
+  {:strike-count 0,
+   :total-smited 1,
+   :total-sparked 0,
+   :success true,
+   :continuous? false},
+  :calls
+  [[:kill "/tmp/forge-facet" "scope:/tmp/forge-facet"]
+   [:survey "/tmp/forge-facet" 0]]},
+ :single-two-tasks
+ {:out
+  {:strike-count 1,
+   :total-smited 1,
+   :total-sparked 2,
+   :success true,
+   :continuous? false},
+  :calls
+  [[:kill "/tmp/forge-facet" "scope:/tmp/forge-facet"]
+   [:survey "/tmp/forge-facet" 2]
+   [:spawn ["t1" "t2"] 2]]},
+ :continuous-drains
+ {:out
+  {:strike-count 2,
+   :total-smited 3,
+   :total-sparked 2,
+   :success true,
+   :continuous? true},
+  :calls
+  [[:kill "/tmp/forge-facet" "scope:/tmp/forge-facet"]
+   [:survey "/tmp/forge-facet" 1]
+   [:spawn ["t1"] 2]
+   [:kill "/tmp/forge-facet" "scope:/tmp/forge-facet"]
+   [:survey "/tmp/forge-facet" 1]
+   [:spawn ["t2"] 2]
+   [:kill "/tmp/forge-facet" "scope:/tmp/forge-facet"]
+   [:survey "/tmp/forge-facet" 0]]},
+ :continuous-all-fail
+ {:out
+  {:strike-count 1,
+   :total-smited 1,
+   :total-sparked 0,
+   :success true,
+   :continuous? true},
+  :calls
+  [[:kill "/tmp/forge-facet" "scope:/tmp/forge-facet"]
+   [:survey "/tmp/forge-facet" 1]
+   [:spawn ["t1"] 2]]},
+ :predicates
+ {:empty
+  #:fb{:q1 false,
+       :q2 false,
+       :q3 true,
+       :q4 false,
+       :q5 true,
+       :q6 false,
+       :q7 false,
+       :q8 true},
+  :busy
+  #:fb{:q1 false,
+       :q2 true,
+       :q3 false,
+       :q4 true,
+       :q5 false,
+       :q6 true,
+       :q7 false,
+       :q8 true}}}

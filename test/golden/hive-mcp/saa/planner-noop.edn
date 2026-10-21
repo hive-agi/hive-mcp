@@ -1,0 +1,4 @@
+{:satisfies? true,
+ :type "class hive_mcp.saa.planner.NoopPlanSynthesizer",
+ :empty nil,
+ :scored nil}

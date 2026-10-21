@@ -1,0 +1,207 @@
+{:case-0
+ {:out
+  {:success true,
+   :plan
+   {:id "plan-a",
+    :title "Beta",
+    :steps
+    [{:id "s2",
+      :title "Do A",
+      :priority :low,
+      :depends-on [],
+      :files [],
+      :estimate :medium,
+      :tags []}
+     {:id "s3",
+      :title "Do A",
+      :depends-on [],
+      :priority :medium,
+      :files [],
+      :estimate :medium,
+      :tags []}],
+    :source-format :edn,
+    :tags []}},
+  :in
+  ("#:plan{:id \"plan-a\", :title \"Beta\", :steps [#:step{:id :s2, :title \"Do A\", :priority :LOW} #:step{:id \"s3\", :title \"Do A\"}]}")},
+ :case-1
+ {:out
+  {:success true,
+   :plan
+   {:id "plan-a",
+    :title "Alpha",
+    :steps
+    [{:id "s1",
+      :title "Do B",
+      :priority :low,
+      :depends-on [],
+      :files [],
+      :estimate :medium,
+      :tags []}],
+    :source-format :edn,
+    :tags []}},
+  :in
+  ("#:plan{:id \"plan-a\", :title \"Alpha\", :steps [#:step{:id :s1, :title \"Do B\", :priority :LOW}]}")},
+ :case-2
+ {:out
+  {:success true,
+   :plan
+   {:id "plan-a",
+    :title "Alpha",
+    :steps
+    [{:id "s3",
+      :title "Do B",
+      :depends-on [],
+      :priority :medium,
+      :files [],
+      :estimate :medium,
+      :tags []}
+     {:id "s2",
+      :title "Do A",
+      :priority :low,
+      :depends-on [],
+      :files [],
+      :estimate :medium,
+      :tags []}
+     {:id "s2",
+      :title "Do B",
+      :priority :high,
+      :depends-on [],
+      :files [],
+      :estimate :medium,
+      :tags []}],
+    :source-format :edn,
+    :tags []}},
+  :in
+  ("{:id \"plan-a\", :title \"Alpha\", :steps [{:id \"s3\", :title \"Do B\"} {:id :s2, :title \"Do A\", :priority :LOW} {:id :s2, :title \"Do B\", :priority :high}]}")},
+ :case-3
+ {:out
+  {:success true,
+   :plan
+   {:id "plan-b",
+    :title "Alpha",
+    :steps
+    [{:id "s2",
+      :title "Do B",
+      :depends-on [],
+      :priority :medium,
+      :files [],
+      :estimate :medium,
+      :tags []}
+     {:id "s3",
+      :title "Do A",
+      :depends-on [],
+      :priority :medium,
+      :files [],
+      :estimate :medium,
+      :tags []}
+     {:id "s3",
+      :title "Do B",
+      :depends-on [],
+      :priority :medium,
+      :files [],
+      :estimate :medium,
+      :tags []}],
+    :source-format :edn,
+    :tags []}},
+  :in
+  ("# Plan Output\n\nHere is the plan:\n\n{:id \"plan-b\", :title \"Alpha\", :steps [{:id :s2, :title \"Do B\"} {:id \"s3\", :title \"Do A\"} {:id \"s3\", :title \"Do B\"}]}\n\nPlease review.")},
+ :case-4
+ {:out
+  {:success true,
+   :plan
+   {:id "plan-a",
+    :title "Alpha",
+    :steps
+    [{:id "s3",
+      :title "Do B",
+      :depends-on [],
+      :priority :medium,
+      :files [],
+      :estimate :medium,
+      :tags []}
+     {:id "s2",
+      :title "Do A",
+      :depends-on [],
+      :priority :medium,
+      :files [],
+      :estimate :medium,
+      :tags []}],
+    :source-format :edn,
+    :tags []}},
+  :in
+  ("{:id \"plan-a\", :title \"Alpha\", :steps [{:id \"s3\", :title \"Do B\"} {:id :s2, :title \"Do A\"}]}")},
+ :case-5
+ {:out
+  {:success true,
+   :plan
+   {:id "plan-a",
+    :title "Beta",
+    :steps
+    [{:id "s3",
+      :title "Do A",
+      :depends-on [],
+      :priority :medium,
+      :files [],
+      :estimate :medium,
+      :tags []}
+     {:id "s1",
+      :title "Do B",
+      :priority :low,
+      :depends-on [],
+      :files [],
+      :estimate :medium,
+      :tags []}],
+    :source-format :edn,
+    :tags []}},
+  :in
+  ("{:id \"plan-a\", :title \"Beta\", :steps [{:id \"s3\", :title \"Do A\"} {:id :s1, :title \"Do B\", :priority :LOW}]}")},
+ :case-6
+ {:out
+  {:success true,
+   :plan
+   {:id "plan-b",
+    :title "Alpha",
+    :steps
+    [{:id "s2",
+      :title "Do B",
+      :priority :high,
+      :depends-on [],
+      :files [],
+      :estimate :medium,
+      :tags []}
+     {:id "s2",
+      :title "Do A",
+      :depends-on [],
+      :priority :medium,
+      :files [],
+      :estimate :medium,
+      :tags []}
+     {:id "s3",
+      :title "Do B",
+      :depends-on [],
+      :priority :medium,
+      :files [],
+      :estimate :medium,
+      :tags []}],
+    :source-format :edn,
+    :tags []}},
+  :in
+  ("# Plan Output\n\nHere is the plan:\n\n{:id \"plan-b\", :title \"Alpha\", :steps [{:id :s2, :title \"Do B\", :priority \"urgent\"} {:id :s2, :title \"Do A\"} {:id \"s3\", :title \"Do B\"}]}\n\nPlease review.")},
+ :case-7
+ {:out
+  {:success true,
+   :plan
+   {:id "plan-a",
+    :title "Beta",
+    :steps
+    [{:id "s2",
+      :title "Do A",
+      :depends-on [],
+      :priority :medium,
+      :files [],
+      :estimate :medium,
+      :tags []}],
+    :source-format :edn,
+    :tags []}},
+  :in
+  ("#:plan{:id \"plan-a\", :title \"Beta\", :steps [#:step{:id :s2, :title \"Do A\"}]}")}}

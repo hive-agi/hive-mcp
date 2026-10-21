@@ -1,0 +1,32 @@
+{:case-0
+ {:out
+  "You are in ACT phase (SAA Strategy).\nYour goal: Execute the plan from the Abstract phase.\n- Follow the plan step by step\n- Make precise, focused changes\n- Verify each change before moving to the next\n\nExecute the following plan:\nfix auth\n\nFollow the plan precisely. Make changes file by file. Verify each change before moving to the next.",
+  :in (:act "fix auth" nil)},
+ :case-1
+ {:out
+  "You are in ACT phase (SAA Strategy).\nYour goal: Execute the plan from the Abstract phase.\n- Follow the plan step by step\n- Make precise, focused changes\n- Verify each change before moving to the next\n\nExecute the following plan:\nplan X\n\nOriginal task: ctx\n\nFollow the plan precisely. Make changes file by file. Verify each change before moving to the next.",
+  :in (:act "plan X" "ctx")},
+ :case-2
+ {:out
+  "You are in SILENCE phase (SAA Strategy).\nYour goal: Observe and collect context WITHOUT acting.\n- Read files, search code, query memory\n- Record what you find as structured observations\n- Do NOT edit files or run commands\n- At the end, produce a summary of observations\n\nTASK: plan X\n\nExplore the codebase and collect context. List all relevant files, patterns, and observations.\n\nPrior knowledge context:\n\"ctx\"",
+  :in (:silence "plan X" "ctx")},
+ :case-3
+ {:out
+  "You are in ABSTRACT phase (SAA Strategy).\nYour goal: Synthesize the observations from Silence phase into an action plan.\n- Prioritize findings by importance and relevance\n- Identify patterns and connections\n- Produce a structured plan with specific steps\n- Each step should name the file, the change, and the rationale\n\nBased on these observations from the Silence phase:\nnil\n\nSynthesize these into a concrete action plan.\n\nOriginal task: ctx\n\nProduce a structured plan with specific steps. Each step should name the file, the change, and the rationale.",
+  :in (:abstract nil "ctx")},
+ :case-4
+ {:out
+  "You are in SILENCE phase (SAA Strategy).\nYour goal: Observe and collect context WITHOUT acting.\n- Read files, search code, query memory\n- Record what you find as structured observations\n- Do NOT edit files or run commands\n- At the end, produce a summary of observations\n\nTASK: plan X\n\nExplore the codebase and collect context. List all relevant files, patterns, and observations.",
+  :in (:silence "plan X" nil)},
+ :case-5
+ {:out
+  "You are in SILENCE phase (SAA Strategy).\nYour goal: Observe and collect context WITHOUT acting.\n- Read files, search code, query memory\n- Record what you find as structured observations\n- Do NOT edit files or run commands\n- At the end, produce a summary of observations\n\nTASK: plan X\n\nExplore the codebase and collect context. List all relevant files, patterns, and observations.",
+  :in (:silence "plan X" nil)},
+ :case-6
+ {:out
+  "You are in ABSTRACT phase (SAA Strategy).\nYour goal: Synthesize the observations from Silence phase into an action plan.\n- Prioritize findings by importance and relevance\n- Identify patterns and connections\n- Produce a structured plan with specific steps\n- Each step should name the file, the change, and the rationale\n\nBased on these observations from the Silence phase:\nnil\n\nSynthesize these into a concrete action plan.\n\nProduce a structured plan with specific steps. Each step should name the file, the change, and the rationale.",
+  :in (:abstract nil nil)},
+ :case-7
+ {:out
+  "You are in ACT phase (SAA Strategy).\nYour goal: Execute the plan from the Abstract phase.\n- Follow the plan step by step\n- Make precise, focused changes\n- Verify each change before moving to the next\n\nExecute the following plan:\nUse best judgment.\n\nFollow the plan precisely. Make changes file by file. Verify each change before moving to the next.",
+  :in (:act nil nil)}}
