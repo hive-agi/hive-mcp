@@ -29,7 +29,8 @@
             [taoensso.timbre :as log]
             [hive-mcp.hot.reseat :as reseat]
             [hive-mcp.hot.registrations :as registrations]
-            [malli.core :as m])
+            [malli.core :as m]
+            [hive-mcp.hot.restore :as restore])
   (:import [java.io File]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -281,7 +282,8 @@
                             (fn [] (refresh nil)))
    :host/remount!         nil
    :host/reseat!          (reseat/via-var `reseat/reseat!)
-   :host/rebind-registrations! (reseat/via-var `registrations/rebind-stale!)})
+   :host/rebind-registrations! (reseat/via-var `registrations/rebind-stale!)
+   :host/restore!         (reseat/via-var `restore/restore!)})
 
 (m/=> default-ports [:=> [:cat] Ports])
 
@@ -377,6 +379,7 @@
      :unchanged? :multi-file :stale-registrations :rebound-registrations
      :interlock :kept-vars :forced-unload :orphans :dead-links :kept-state
      :records-redefined :remount :reseated :tools-refreshed :surface :hive-hot
+     :pinned-refreshed :restored
 
    The repairs run in order: remount the addons, re-seat the live record
    instances of every loaded namespace that registered a re-seater
@@ -385,6 +388,11 @@
    then refresh the surface (tool table included), so the table is rebuilt
    over re-seated holders, once. :stale-registrations is what is still stale
    AFTER the rebind, :rebound-registrations what the rebind repaired.
+
+   :pinned-refreshed is hive-hot's report of the pinned namespaces (protocol
+   definers) refreshed in place. On a FAILED pass, :restored is
+   hive-mcp.hot.restore's report: the namespaces the pass unloaded and left
+   absent, required again, so the server's own namespaces keep answering.
 
    :pass is :scoped when a change under the roots drove hive-hot, :pending
    when nothing changed but the image had repairs queued, :none otherwise."
@@ -413,7 +421,8 @@
              reseated (when repair? (repair! ports :host/reseat! loaded))
              rebound  (when repair? (repair! ports :host/rebind-registrations! loaded))
              tools    (when repair? (repair! ports :host/refresh-tools!))
-             surface  (when repair? (repair! ports :host/refresh-surface!))]
+             surface  (when repair? (repair! ports :host/refresh-surface!))
+             restored (when-not ok? (repair! ports :host/restore! (:unloaded res)))]
          (log/info "core hot-reload" {:ok? ok? :pass kind :loaded (count loaded)
                                       :failed (:failed res) :ms (:ms res)})
          {:ok?                   ok?
@@ -428,6 +437,8 @@
           :dragged               (vec (:dragged res))
           :unchanged?            (boolean (:unchanged? res))
           :multi-file            (:multi-file res)
+          :pinned-refreshed      (:pinned-refreshed res)
+          :restored              restored
           :stale-registrations   (stale-registrations res rebound)
           :rebound-registrations (when (map? rebound) (or (:rebound rebound) (:error rebound)))
           :interlock             {:no-reload (count (:no-reload interlock))}
