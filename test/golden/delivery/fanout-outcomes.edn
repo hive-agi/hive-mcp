@@ -1,0 +1,26 @@
+{:first
+ {:avail-throws :unavailable-throw,
+  :hangs :timeout,
+  :ok :ok,
+  :throws :exception,
+  :unavailable :unavailable},
+ :second
+ {:avail-throws :unavailable-throw,
+  :hangs :timeout,
+  :ok :ok,
+  :throws :exception,
+  :unavailable :unavailable},
+ :breaker-open
+ {:avail-throws :breaker-open,
+  :hangs :breaker-open,
+  :ok :ok,
+  :throws :breaker-open,
+  :unavailable :unavailable},
+ :delivered [:one :two :three],
+ :via-protocol
+ {:avail-throws :unavailable-throw,
+  :hangs :timeout,
+  :ok :ok,
+  :throws :exception,
+  :unavailable :unavailable},
+ :empty {}}

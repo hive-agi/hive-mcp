@@ -1,0 +1,5 @@
+{:given-id "parent-1",
+ :ts-is-int true,
+ :fresh-id true,
+ :idempotent true,
+ :payload-kept 1}
