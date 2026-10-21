@@ -1,0 +1,8 @@
+{:case-0 {:out true, :in (hive-mcp.hot.self-test)},
+ :case-1 {:out false, :in (clojure.string)},
+ :case-2 {:out false, :in (hive-mcp.dispatch.handler)},
+ :case-3 {:out true, :in (hive-mcp.protocols.dispatch)},
+ :case-4 {:out true, :in (hive-mcp.protocols.dispatch)},
+ :case-5 {:out true, :in (clojure.core)},
+ :case-6 {:out false, :in (hive-mcp.hot.self)},
+ :case-7 {:out true, :in (hive-mcp.protocols.dispatch)}}

@@ -6,10 +6,12 @@
    types arguments by multi's schema and multi does not declare `kinds`. The
    target then swept one kind per character. multi now decodes forwarded
    params against the TARGET's inputSchema."
-  (:require [clojure.test :refer [deftest is testing use-fixtures]]
+  (:require [clojure.data.json :as json]
+            [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.extensions.registry :as ext]
             [hive-mcp.multi.param-coerce :as pc]
-            [hive-mcp.tools.consolidated.multi :as multi]))
+            [hive-mcp.tools.consolidated.multi :as multi]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -84,6 +86,58 @@
       (is (contains? res :error) (str k " " (pr-str v)))
       (is (= (name k) (:param res)))
       (is (re-find (re-pattern (str "^" (name k) ": ")) (:message res))))))
+
+;; ---------------------------------------------------------------------------
+;; Trifecta: each declared param arrives already typed, as its JSON text, or
+;; as undecodable text; undeclared and anyOf params ride along as strings.
+;; ---------------------------------------------------------------------------
+
+(def ^:private typed
+  {:kinds ["pods" "svc"] :labels {"app" "x"} :limit 20 :ratio 0.5 :correlate false})
+
+(def ^:private garbage
+  {:kinds "pods" :labels "app=x" :limit "many" :ratio "half" :correlate "maybe"})
+
+(def ^:private Params
+  "Params for probe-schema: per declared key, one of absent / typed / JSON
+   text / garbage text."
+  [:map-of {:gen/schema [:map-of [:enum :kinds :labels :limit :ratio :correlate]
+                         [:enum :typed :text :text :text :garbage]]
+            :gen/fmap (fn [picks]
+                        (into {:command "search" :either "[\"x\"]" :extra "[1]"}
+                              (map (fn [[k how]]
+                                     [k (case how
+                                          :typed   (typed k)
+                                          :text    (json/write-str (typed k))
+                                          :garbage (garbage k))]))
+                              picks))}
+   :keyword :any])
+
+(def ^:private garbage-order
+  "coerce-params folds over coercion-spec's map; its key order decides which
+   bad param is reported first."
+  (keys (pc/coercion-spec probe-schema)))
+
+(def ^:private ProbeSchema
+  "The one target inputSchema the trifecta drives (generated as itself)."
+  [:map-of {:gen/schema :nil :gen/fmap (fn [_] probe-schema)} :any :any])
+
+(deftrifecta-from-schema coerce-params-decodes-or-names-the-first-bad-param
+  #'pc/coerce-params
+  {:in [:cat ProbeSchema Params]
+   :out [:map-of :any :any]
+   :rel (fn [[_ params] out]
+          (if-let [bad (first (filter #(= (garbage %) (get params %)) garbage-order))]
+            (and (= (name bad) (:param out))
+                 (contains? out :error)
+                 (not (contains? out :ok)))
+            (= out {:ok (reduce-kv (fn [m k v]
+                                     (assoc m k (if (and (contains? typed k) (string? v))
+                                                  (typed k) v)))
+                                   {} params)})))
+   :classify (fn [_ out] (if (contains? out :ok) :decoded :refused))
+   :classify-domain #{:decoded :refused}
+   :num-tests 300})
 
 ;; ---------------------------------------------------------------------------
 ;; Through handle-multi: a recording stub tool registered like an addon's

@@ -1,0 +1,28 @@
+{:conflict
+ {:steps [:ok :conflict],
+  :index {"x" {:full :memory/content, :owner :addon/a}},
+  :by-owner #:addon{:a #{"x"}},
+  :lookups
+  {"x" {:full :memory/content, :owner :addon/a}, "y" nil, "z" nil}},
+ :core-is-not-overridable
+ {:steps [:ok :conflict],
+  :index {"x" {:full :memory/content, :owner :multi/core}},
+  :by-owner #:multi{:core #{"x"}},
+  :lookups
+  {"x" {:full :memory/content, :owner :multi/core}, "y" nil, "z" nil}},
+ :deregister
+ {:steps [:ok :ok #{"x"}],
+  :index {"y" {:full :kg/to, :owner :addon/b}},
+  :by-owner #:addon{:b #{"y"}},
+  :lookups {"x" nil, "y" {:full :kg/to, :owner :addon/b}, "z" nil}},
+ :fresh
+ {:steps [:ok],
+  :index {"x" {:full :memory/content, :owner :addon/a}},
+  :by-owner #:addon{:a #{"x"}},
+  :lookups
+  {"x" {:full :memory/content, :owner :addon/a}, "y" nil, "z" nil}},
+ :replace
+ {:steps [:ok :replaced],
+  :index {"x" {:full :kg/from, :owner :addon/a}},
+  :by-owner #:addon{:a #{"x"}},
+  :lookups {"x" {:full :kg/from, :owner :addon/a}, "y" nil, "z" nil}}}

@@ -1,0 +1,32 @@
+{:conflict
+ {:steps [:ok :conflict],
+  :index {"x" {:tool "memory", :command "add", :owner :multi/core}},
+  :by-owner #:multi{:core #{"x"}},
+  :lookups
+  {"x" {:tool "memory", :command "add", :owner :multi/core},
+   "y" nil,
+   "z" nil}},
+ :deregister
+ {:steps [:ok :ok #{"y"}],
+  :index {"x" {:tool "memory", :command "add", :owner :addon/a}},
+  :by-owner #:addon{:a #{"x"}},
+  :lookups
+  {"x" {:tool "memory", :command "add", :owner :addon/a},
+   "y" nil,
+   "z" nil}},
+ :fresh
+ {:steps [:ok],
+  :index {"x" {:tool "memory", :command "add", :owner :addon/a}},
+  :by-owner #:addon{:a #{"x"}},
+  :lookups
+  {"x" {:tool "memory", :command "add", :owner :addon/a},
+   "y" nil,
+   "z" nil}},
+ :replace
+ {:steps [:ok :replaced],
+  :index {"x" {:tool "memory", :command "search", :owner :addon/a}},
+  :by-owner #:addon{:a #{"x"}},
+  :lookups
+  {"x" {:tool "memory", :command "search", :owner :addon/a},
+   "y" nil,
+   "z" nil}}}
