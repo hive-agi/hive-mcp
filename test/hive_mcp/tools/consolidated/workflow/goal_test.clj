@@ -9,8 +9,12 @@
    goal-schema + the missing-input guard run unconditionally."
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.data.json :as json]
+            [clojure.string :as str]
             [hive-mcp.tools.consolidated.workflow :as wf]
-            [hive-mcp.tools.consolidated.workflow.goal :as goal]))
+            [hive-mcp.tools.consolidated.workflow.goal :as goal]
+            [hive-mcp.tools.core :as core]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]
+            [hive-test.golden :refer [deftest-golden]]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -109,3 +113,31 @@
                  :verb_index "[:not :a :map]"})]
       (is (:isError resp))
       (is (re-find #"verb_index" (:text resp))))))
+
+;;; ── facets over the input guards (no facade needed) ────────────────────────
+
+(def ^:private BadGoalParams
+  "plan-goal params whose :goal_spec is absent, not EDN, or neither map nor
+   string: the guard answers before the facade is ever resolved."
+  [:map
+   [:goal_spec {:optional true} [:or :nil :int :boolean [:enum "{:goal" "#{" "(" "{:a"]]]
+   [:author {:optional true} :boolean]
+   [:directory {:optional true} [:enum "/tmp/x"]]])
+
+(deftrifecta-from-schema plan-goal-without-goal-spec-is-loud
+  hive-mcp.tools.consolidated.workflow.goal/handle-plan-goal
+  {:in        BadGoalParams
+   :out       core/McpResponse
+   :rel       (fn [_ out]
+                (and (true? (:isError out))
+                     (str/includes? (:text out) "requires :goal_spec")))
+   :num-tests 200})
+
+(deftest-golden plan-goal-guard-answers
+  "test/golden/tools/consolidated/workflow/goal-guards.edn"
+  {:missing-goal-spec (goal/handle-plan-goal {})
+   :unparseable       (goal/handle-plan-goal {:goal_spec "{:goal"})
+   :verb-index-vector (goal/handle-plan-goal {:goal_spec  {:goal #{[:a/b]} :init #{}}
+                                              :verb_index "[:not :a :map]"})
+   :verb-index-number (goal/handle-plan-goal {:goal_spec  "{:goal #{} :init #{}}"
+                                              :verb_index 42})})
