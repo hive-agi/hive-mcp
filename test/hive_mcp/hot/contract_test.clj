@@ -288,16 +288,14 @@
     (is (nil? (keep/release-no-unload!))))
   (testing "pending? reads the queue"
     (is (boolean? (keep/pending?))))
-  ;; prepare-pass! and run-pending! are NOT called here: run-pending! drives a
-  ;; real clj-reload pass, which unloads every namespace whose file changed
-  ;; since the image loaded. Their contracts are checked on the report shapes.
-  (testing "the report schemas tell a pass report from a reload answer"
-    (let [pass {:forced [] :orphans [] :dead-links {} :unrepairable [] :kept {}}
-          answer {:success true :ms 3 :error nil :pending-pass? true :loaded [] :unloaded []}]
+  ;; prepare-pass! is NOT called here: it queues a real clj-reload pass.
+  ;; Its contract is checked on the report shape.
+  (testing "the pass report schema is closed"
+    (let [pass {:forced [] :orphans [] :dead-links {} :unrepairable [] :kept {}}]
       (is (m/validate keep/PassReport pass))
-      (is (not (m/validate keep/PassReport answer)))
-      (is (m/validate keep/ReloadAnswer answer))
-      (is (not (m/validate keep/ReloadAnswer (assoc answer :pending-pass? false)))))))
+      (is (not (m/validate keep/PassReport (assoc pass :success true))))))
+  (testing "keep runs no reloader of its own: the pending pass is hive-hot's"
+    (is (nil? (ns-resolve 'hive-mcp.hot.keep 'run-pending!)))))
 
 ;; ---------------------------------------------------------------------------
 ;; core (projection, and the boundary on the refusal and empty-port paths)
