@@ -1,0 +1,12 @@
+{:case-0 {:out nil, :in 0},
+ :case-1 {:out "agent", :in "\tagent\tspawn"},
+ :case-10 {:out nil, :in ""},
+ :case-11 {:out "memory", :in "  Memory add"},
+ :case-2 {:out nil, :in ""},
+ :case-3 {:out "memory", :in "  Memory add"},
+ :case-4 {:out "kg", :in "kg traverse"},
+ :case-5 {:out "kg", :in :kg},
+ :case-6 {:out nil, :in "   "},
+ :case-7 {:out "kg", :in "kg traverse"},
+ :case-8 {:out "memory", :in "  Memory add"},
+ :case-9 {:out "agent", :in "\tagent\tspawn"}}

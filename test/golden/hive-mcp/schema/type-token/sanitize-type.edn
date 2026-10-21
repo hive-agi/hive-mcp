@@ -1,0 +1,8 @@
+{:case-0 {:out nil, :in "   "},
+ :case-1 {:out "6", :in "6"},
+ :case-2 {:out nil, :in 42},
+ :case-3 {:out "4", :in "4"},
+ :case-4 {:out "snippet", :in :Snippet},
+ :case-5 {:out "snippet", :in :Snippet},
+ :case-6 {:out "axiom", :in :axiom},
+ :case-7 {:out "b", :in :a/b}}

@@ -34,7 +34,12 @@
   (list-workflows [_ _] []))
 
 (def ^:private AnyEngine
-  [:or wf/WorkflowEngine
+  ;; Half the draws are the persistent StubEngine, the rest spread over the
+  ;; other arms: a plain four-way :or left :persistent near 8 of 60 against
+  ;; a floor of 7.
+  [:or {:gen/schema [:tuple [:or wf/WorkflowEngine :int :string] :boolean]
+        :gen/fmap (fn [[x stub?]] (if stub? (->StubEngine) x))}
+   wf/WorkflowEngine
    [:fn {:gen/schema :nil :gen/fmap (fn [_] (->StubEngine))} #(instance? StubEngine %)]
    :int :string])
 

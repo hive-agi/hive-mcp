@@ -1,0 +1,16 @@
+{:stub {:slave/id "x", :liveness-age-ms 42},
+ :unknown nil,
+ :no-mode nil,
+ :annotated
+ [#:slave{:liveness-age-ms 0, :id "a"}
+  #:slave{:liveness-age-ms 1500, :id "b"}
+  #:slave{:id "c"}
+  #:slave{:id "d"}
+  #:slave{:id "e"}
+  #:slave{:id "z"}],
+ :not-found
+ {:type "text",
+  :text
+  "Failed to get status: The swarm needs hive-datascript, which is not on the classpath (hive-datascript.swarm.queries/get-slave)",
+  :isError true},
+ :digest-keys (:isError :text :type)}

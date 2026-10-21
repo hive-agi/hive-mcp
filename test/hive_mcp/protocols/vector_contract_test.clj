@@ -5,7 +5,8 @@
   (:require [clojure.test :refer [deftest is use-fixtures]]
             [hive-mcp.protocols.vector :as pv]
             [hive-schemas.test :refer [deftrifecta-from-schema]]
-            [hive-test.golden :as golden]))
+            [hive-test.golden :as golden]
+            [hive-mcp.protocols.store-metrics :as sm]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -21,8 +22,14 @@
 
 (def ^:private Outcome
   "Port write returns: nil, an id, an :error-carrying map (its :error may be
-   nil), or a success map without :error."
-  [:or :nil :int
+   nil), or a success map without :error. Half the draws carry :error: a
+   plain four-way :or left the error arm near 13 of 100 against a floor of 12."
+  [:or {:gen/schema [:tuple [:or :nil :int [:map [:id :int]]]
+                     [:map [:error [:maybe [:enum :io/timeout :io/refused]]]
+                      [:message {:optional true} :string]]
+                     :boolean]
+        :gen/fmap (fn [[ok err error?]] (if error? err ok))}
+   :nil :int
    [:map [:error [:maybe [:enum :io/timeout :io/refused]]] [:message {:optional true} :string]]
    [:map [:id :int]]])
 
@@ -59,7 +66,9 @@
                      (catch clojure.lang.ExceptionInfo e (:reason (ex-data e))))
         s (reify pv/IVectorCollectionStore)
         installed (pv/set-store! s)
-        during {:set? (pv/store-set?) :same? (every? #(identical? s %) [installed (pv/get-store) (pv/require-store)])}
+        during {:set? (pv/store-set?)
+                :same? (every? #(identical? s (sm/unwrap %))
+                               [installed (pv/get-store) (pv/require-store)])}
         cleared (pv/clear-store!)]
     {:before before :refused refused :during during :cleared cleared
      :after {:set? (pv/store-set?) :get (pv/get-store)}}))

@@ -1,0 +1,22 @@
+{:case-0
+ {:out "kg-timeout:tasks:0ms",
+  :in ("tasks" {:error :weave/timeout, :timeout-ms 0})},
+ :case-1 {:out "kg-degraded:tasks::+", :in ("tasks" {:error :+})},
+ :case-2
+ {:out "kg-error:edges:",
+  :in ("edges" {:error :weave/exception, :message ""})},
+ :case-3
+ {:out "kg-error:decision:unknown",
+  :in ("decision" {:error :weave/exception})},
+ :case-4
+ {:out "kg-error:edges:i",
+  :in ("edges" {:error :weave/exception, :message "i"})},
+ :case-5
+ {:out "kg-error:edges:ce",
+  :in ("edges" {:error :weave/exception, :message "ce"})},
+ :case-6
+ {:out "kg-timeout:decision:-1ms",
+  :in ("decision" {:error :weave/timeout, :timeout-ms -1})},
+ :case-7
+ {:out "kg-timeout:tasks:-4ms",
+  :in ("tasks" {:error :weave/timeout, :timeout-ms -4})}}

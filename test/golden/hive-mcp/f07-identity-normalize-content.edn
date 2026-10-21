@@ -1,0 +1,19 @@
+{:case-0
+ {:out [{:type "image", :data "080x"}],
+  :in ([{:type "image", :data "080x"}])},
+ :case-1 {:out [{:type "text", :text "-1"}], :in (-1)},
+ :case-2 {:out [{:type "text", :text ""}], :in (nil)},
+ :case-3 {:out [{:type "text", :text "4"}], :in ("4")},
+ :case-4
+ {:out [{:type "text", :text "oez"}],
+  :in ({:type "text", :text "oez"})},
+ :case-5
+ {:out [{:type "text", :text "h"}], :in ({:type "text", :text "h"})},
+ :case-6
+ {:out [{:type "text", :text "gN0qp"}],
+  :in ({:type "text", :text "gN0qp"})},
+ :case-7
+ {:out [{:type "image", :data "yuM"} {:type "text", :text "3uwj7"}],
+  :in
+  ({:content
+    [{:type "image", :data "yuM"} {:type "text", :text "3uwj7"}]})}}

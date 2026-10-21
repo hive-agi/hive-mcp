@@ -1,0 +1,88 @@
+{:case-0
+ {:out
+  {:max-slots 10,
+   :presets ["ling" "mcp-first" "saa"],
+   :spawn-mode :claude,
+   :model nil,
+   :preset nil,
+   :seeds nil,
+   :ctx-refs nil,
+   :kg-node-ids nil},
+  :in {:spawn_mode "claude"}},
+ :case-1
+ {:out
+  {:max-slots 10,
+   :presets [],
+   :spawn-mode :claude,
+   :model nil,
+   :preset nil,
+   :seeds nil,
+   :ctx-refs nil,
+   :kg-node-ids nil},
+  :in {:max_slots nil, :spawn_mode "claude", :presets []}},
+ :case-2
+ {:out
+  {:max-slots 10,
+   :presets ["ling" "mcp-first" "saa"],
+   :spawn-mode nil,
+   :model nil,
+   :preset nil,
+   :seeds nil,
+   :ctx-refs nil,
+   :kg-node-ids nil},
+  :in {:spawn_mode nil, :presets nil}},
+ :case-3
+ {:out
+  {:max-slots 10,
+   :presets ["ling" "mcp-first" "saa"],
+   :spawn-mode nil,
+   :model nil,
+   :preset nil,
+   :seeds nil,
+   :ctx-refs nil,
+   :kg-node-ids nil},
+  :in {:presets nil}},
+ :case-4
+ {:out
+  {:max-slots 3,
+   :presets ["ling" "mcp-first" "saa"],
+   :spawn-mode nil,
+   :model nil,
+   :preset nil,
+   :seeds nil,
+   :ctx-refs nil,
+   :kg-node-ids nil},
+  :in {:max_slots 3, :spawn_mode nil}},
+ :case-5
+ {:out
+  {:max-slots 10,
+   :presets ["ling" "mcp-first" "saa"],
+   :spawn-mode nil,
+   :model nil,
+   :preset nil,
+   :seeds nil,
+   :ctx-refs nil,
+   :kg-node-ids nil},
+  :in {:spawn_mode nil}},
+ :case-6
+ {:out
+  {:max-slots 10,
+   :presets ["ling" "mcp-first" "saa"],
+   :spawn-mode nil,
+   :model nil,
+   :preset nil,
+   :seeds nil,
+   :ctx-refs nil,
+   :kg-node-ids nil},
+  :in {}},
+ :case-7
+ {:out
+  {:max-slots 10,
+   :presets ["ling" "mcp-first" "saa"],
+   :spawn-mode nil,
+   :model nil,
+   :preset nil,
+   :seeds nil,
+   :ctx-refs nil,
+   :kg-node-ids nil},
+  :in {}}}

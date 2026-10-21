@@ -1,0 +1,3 @@
+{:agent-present false,
+ :cleanup :needs-hive-agent,
+ :guard :needs-hive-agent}

@@ -157,6 +157,27 @@
 ;; Dispatch
 ;; =============================================================================
 
+(defonce ^:private metrics-record
+  ^{:doc "Deref: `hive-ttracking.metrics/record!` or nil when that namespace is
+          absent. Required once; later derefs re-check with a plain `resolve`,
+          so a port mounted after first use is still picked up."}
+  (let [d (delay (try (requiring-resolve 'hive-ttracking.metrics/record!)
+                      (catch Throwable _ nil)))]
+    (reify clojure.lang.IDeref
+      (deref [_] (or @d (resolve 'hive-ttracking.metrics/record!))))))
+
+(defn record-dispatch!
+  "Record one dispatch of `event-id` that started at `start-ns`
+   (System/nanoTime) with `outcome` (:ok | :error) as
+   `[:event/dispatch event-id]`. Total: never throws, no-op without the port."
+  [event-id start-ns outcome]
+  (when-let [f @metrics-record]
+    (try (f [:event/dispatch event-id] (- (System/nanoTime) (long start-ns)) outcome)
+         (catch Throwable _sink-failure-must-not-fail-dispatch nil)))
+  nil)
+
+(mall/=> record-dispatch! [:=> [:cat :any :int [:enum :ok :error]] :nil])
+
 (defn dispatch
   "Dispatch an event through its registered handler chain.
 
@@ -165,7 +186,10 @@
    and notifies observers. This namespace contributes only what is the host's:
 
    1. malli schema validation at the boundary
-   2. Prometheus telemetry
+   2. timing, recorded as `[:event/dispatch event-id]` through the late-bound
+      hive-ttracking metrics port (`record-dispatch!`); outcome :error when the
+      chain throws or no handler is registered. A successful dispatch is also
+      observed in the Prometheus request histogram as `event-dispatch-<id>`.
    3. effect metrics and the ENGINE-L0.4 unhandled-effect counter, contributed
       as an fx executor (see `effect-executor`) rather than as a second do-fx
 
@@ -185,12 +209,20 @@
   (let [event-id (first event)
         start-ns (System/nanoTime)]
     (metrics-port/inc-events! event-id :info)
-    (if-let [result (router/dispatch-sync event)]
-      (do
-        (metrics-port/observe-request-duration! (str "event-dispatch-" (name event-id)) (/ (- (System/nanoTime) start-ns) 1e9))
-        result)
-      (throw (ex-info (str "No handler registered for event: " event-id)
-                      {:event event})))))
+    (let [result (try
+                   (router/dispatch-sync event)
+                   (catch Throwable t
+                     (record-dispatch! event-id start-ns :error)
+                     (throw t)))]
+      (if result
+        (do (metrics-port/observe-request-duration!
+             (str "event-dispatch-" (name event-id))
+             (/ (- (System/nanoTime) start-ns) 1e9))
+            (record-dispatch! event-id start-ns :ok)
+            result)
+        (do (record-dispatch! event-id start-ns :error)
+            (throw (ex-info (str "No handler registered for event: " event-id)
+                            {:event event})))))))
 
 (mall/=> dispatch [:=> [:cat [:vector :any]] :map])
 

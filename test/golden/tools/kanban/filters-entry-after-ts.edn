@@ -1,0 +1,41 @@
+{:case-0 {:out true, :in ({:content {:created "bad"}} :created nil)},
+ :case-1
+ {:out false,
+  :in ({:content {:created "bad"}} :created "2026-04-29T00:00:00Z")},
+ :case-10
+ {:out true,
+  :in
+  ({:content {:created "2026-04-28T09:00:00-0300"}}
+   :created
+   "2026-04-26T00:00:00-03:00")},
+ :case-11
+ {:out false,
+  :in ({:content {:created "bad"}} :created "2026-04-29T00:00:00Z")},
+ :case-2
+ {:out true,
+  :in
+  ({:content {:created "2026-04-28T09:00:00-0300"}}
+   :created
+   "2026-04-26T00:00:00-03:00")},
+ :case-3
+ {:out false,
+  :in
+  ({:content {:created "2026-04-25T09:00:00Z"}}
+   :created
+   "2026-04-26T00:00:00-03:00")},
+ :case-4
+ {:out true,
+  :in ({:content {:created "2026-04-28T09:00:00-0300"}} :created nil)},
+ :case-5
+ {:out true,
+  :in ({:content {:created "2026-04-28T09:00:00-0300"}} :created nil)},
+ :case-6
+ {:out true,
+  :in ({:content {:created "2026-04-25T09:00:00Z"}} :created nil)},
+ :case-7 {:out true, :in ({:content {:created "bad"}} :created nil)},
+ :case-8
+ {:out true,
+  :in ({:content {:created "2026-04-25T09:00:00Z"}} :created nil)},
+ :case-9
+ {:out true,
+  :in ({:content {:created "2026-04-28T09:00:00-0300"}} :created nil)}}

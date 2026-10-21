@@ -1,0 +1,17 @@
+{:case-0
+ {:out {:method :bad, :mode "Wave"},
+  :in ({:method :Bad, :mode "Wave"} :step)},
+ :case-1
+ {:out {:verify "Wave", :mode :saa, :other 0},
+  :in ({:verify "Wave", :mode :SAA, :other 0} :plan)},
+ :case-2
+ {:out {:method "Wave", :verify "bad", :mode :bad},
+  :in ({:method "Wave", :verify "bad", :mode "bad"} :plan)},
+ :case-3 {:out {:verify :Bad}, :in ({:verify :Bad} :plan)},
+ :case-4
+ {:out {:method :saa, :other 1}, :in ({:method :SAA, :other 1} :step)},
+ :case-5 {:out {:verify "bad"}, :in ({:verify "bad"} :step)},
+ :case-6 {:out {}, :in ({} :step)},
+ :case-7
+ {:out {:method :bad, :mode "Wave"},
+  :in ({:method "bad", :mode "Wave"} :step)}}

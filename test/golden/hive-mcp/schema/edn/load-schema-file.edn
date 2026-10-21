@@ -1,0 +1,33 @@
+{:case-0
+ {:out
+  #:covtest{:point [:map [:x :int] [:y :int]],
+            :name [:string {:min 1}],
+            :mode [:enum "a" "b"]},
+  :in "covtest"},
+ :case-1 {:out nil, :in ""},
+ :case-2 {:out nil, :in nil},
+ :case-3 {:out nil, :in nil},
+ :case-4
+ {:out
+  #:covtest{:point [:map [:x :int] [:y :int]],
+            :name [:string {:min 1}],
+            :mode [:enum "a" "b"]},
+  :in "covtest"},
+ :case-5
+ {:out
+  #:covtest{:point [:map [:x :int] [:y :int]],
+            :name [:string {:min 1}],
+            :mode [:enum "a" "b"]},
+  :in "covtest"},
+ :case-6
+ {:out
+  #:covtest{:point [:map [:x :int] [:y :int]],
+            :name [:string {:min 1}],
+            :mode [:enum "a" "b"]},
+  :in "covtest"},
+ :case-7
+ {:out
+  #:covtest{:point [:map [:x :int] [:y :int]],
+            :name [:string {:min 1}],
+            :mode [:enum "a" "b"]},
+  :in "covtest"}}

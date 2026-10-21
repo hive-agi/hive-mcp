@@ -1,0 +1,48 @@
+{:case-0
+ {:out
+  {:type "text",
+   :text
+   "{\"success\":true,\"scope\":\"global\",\"count\":0,\"contradictions\":[]}"},
+  :in ({})},
+ :case-1
+ {:out
+  {:type "text",
+   :text
+   "{\"success\":true,\"scope\":\"hive-mcp:agora\",\"count\":0,\"contradictions\":[]}"},
+  :in ({:scope "hive-mcp:agora"})},
+ :case-2
+ {:out
+  {:type "text",
+   :text
+   "{\"success\":true,\"scope\":\"global\",\"count\":0,\"contradictions\":[]}"},
+  :in ({:scope nil})},
+ :case-3
+ {:out
+  {:type "text",
+   :text
+   "{\"success\":true,\"scope\":\"global\",\"count\":0,\"contradictions\":[]}"},
+  :in ({:scope nil})},
+ :case-4
+ {:out
+  {:type "text",
+   :text
+   "{\"success\":true,\"scope\":\"global\",\"count\":0,\"contradictions\":[]}"},
+  :in ({})},
+ :case-5
+ {:out
+  {:type "text",
+   :text
+   "{\"success\":true,\"scope\":\"global\",\"count\":0,\"contradictions\":[]}"},
+  :in ({})},
+ :case-6
+ {:out
+  {:type "text",
+   :text
+   "{\"success\":true,\"scope\":\"global\",\"count\":0,\"contradictions\":[]}"},
+  :in ({})},
+ :case-7
+ {:out
+  {:type "text",
+   :text
+   "{\"success\":true,\"scope\":\"global\",\"count\":0,\"contradictions\":[]}"},
+  :in ({})}}

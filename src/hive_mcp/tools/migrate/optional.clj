@@ -10,7 +10,8 @@
    Resolving at CALL time keeps the coupling to the moment a migration
    actually runs. hive-mcp then compiles and boots with no backend on the
    classpath, and a migration invoked without one fails with a directed
-   message instead of a load-time ClassNotFoundException.")
+   message instead of a load-time ClassNotFoundException."
+  (:require [malli.core :as m]))
 
 (defn backend-var
   "The Var NS-STR/SYM, resolved on first use.
@@ -23,3 +24,10 @@
                       {:missing (symbol ns-str (name sym))
                        :hint (str "this migration needs an optional backend; add its "
                                   "coordinate via local.deps.edn or a deps alias")}))))
+
+(def Var_
+  "A resolved Var."
+  [:fn {:gen/elements [#'clojure.core/identity #'clojure.core/inc]} var?])
+
+;; A missing backend is a documented throw; a present one answers its Var.
+(m/=> backend-var [:=> [:cat :string [:or :symbol :keyword :string]] Var_])

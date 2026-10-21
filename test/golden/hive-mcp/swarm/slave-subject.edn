@@ -1,0 +1,16 @@
+{:case-0
+ {:out "hive.v1.slave.slave-ready.ling-a",
+  :in ("slave-ready" "ling-a")},
+ :case-1
+ {:out "hive.v1.slave.slave-ready.unknown", :in ("slave-ready" nil)},
+ :case-2
+ {:out "hive.v1.slave.slave-spawned.unknown",
+  :in (:slave-spawned nil)},
+ :case-3
+ {:out "hive.v1.slave.task-failed.unknown", :in (:task-failed nil)},
+ :case-4
+ {:out "hive.v1.slave.slave-spawned.ling-a",
+  :in (:slave-spawned "ling-a")},
+ :case-5
+ {:out "hive.v1.slave.slave-spawned.ling-a",
+  :in (:slave-spawned "ling-a")}}

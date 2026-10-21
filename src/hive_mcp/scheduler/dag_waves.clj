@@ -1,6 +1,6 @@
 (ns hive-mcp.scheduler.dag-waves
   "DAGWave scheduler for dependency-ordered task dispatch."
-  (:require [hive-mcp.spi.kanban.registry :as kanban-port]
+  (:require [hive-spi.kanban.registry :as kanban-port]
             [hive-mcp.dns.result :as result]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [hive-mcp.agent.ling :as ling]
@@ -12,7 +12,8 @@
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive.events :as ev]
-            [hive-mcp.scheduler.dag-eligibility :as elig]))
+            [hive-mcp.scheduler.dag-eligibility :as elig]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -117,6 +118,41 @@
    :human-guard = human-only cards are never dispatched."
   #{:task-ids :plan-scope :human-guard})
 
+;; =============================================================================
+;; Schemas
+;; =============================================================================
+
+(def IdColl
+  "A collection of task ids (sets in state, any seqable from callers)."
+  [:maybe [:or [:set :any] [:sequential :any]]])
+
+(def ReadyTask
+  "One ready task find-ready-tasks answers."
+  [:map [:task-id :any] [:title :any] [:description :any] [:role :any]
+   [:deps [:set :any]] [:dep-count [:int {:min 0}]]])
+
+(def LingOutcome [:enum :succeeded :failed])
+
+(def DagState
+  "The scheduler state map (dag-state's value) the pure transitions thread."
+  [:map
+   [:dispatched [:map-of :any :any]]
+   [:completed [:set :any]]
+   [:failed [:set :any]]
+   [:wave-log [:vector :map]]])
+
+(def PlanSummary
+  "The final report of a finished plan."
+  [:map
+   [:plan-id :any] [:run-id :any] [:result [:enum "success" "failure"]]
+   [:completed [:int {:min 0}]] [:failed [:int {:min 0}]] [:skipped [:int {:min 0}]]
+   [:failed-ids [:vector :any]] [:skipped-ids [:vector :any]] [:message :string]])
+
+(def StopResult
+  "stop-dag!'s report."
+  [:map [:stopped [:= true]] [:plan-id :any] [:completed-count :int]
+   [:failed-count :int] [:dispatched-count :int] [:wave-log [:maybe [:vector :map]]]])
+
 (defn- in-scope
   "TODOS restricted to TASK-IDS, or every todo when TASK-IDS is nil (the
    unbounded, board-wide mode)."
@@ -154,6 +190,14 @@
                       :deps    deps
                       :dep-count (count deps)}))))
          vec))))
+
+;; boundary: reads the kanban port and the KG (both rescued); the sequential
+;; result is a vector of ReadyTask
+(m/=> find-ready-tasks [:function
+                        [:=> [:cat [:maybe :string] IdColl [:maybe [:map-of :any :any]] IdColl]
+                         [:vector ReadyTask]]
+                        [:=> [:cat [:maybe :string] IdColl [:maybe [:map-of :any :any]] IdColl IdColl]
+                         [:vector ReadyTask]]])
 
 ;; =============================================================================
 ;; Stateful Dispatch Functions
@@ -265,6 +309,14 @@
        :dispatched-tasks dispatched-results
        :skipped-count skipped})))
 
+;; boundary: spawns lings and mutates dag-state; max-slots bounds the wave
+(m/=> dispatch-wave! [:=> [:cat [:sequential [:map [:task-id :any]]] :int [:maybe :map]]
+                      [:map
+                       [:dispatched-count [:int {:min 0}]]
+                       [:dispatched-tasks [:sequential [:map [:task-id :any]
+                                                        [:status [:enum :dispatched :failed]]]]]
+                       [:skipped-count [:int {:min 0}]]]])
+
 ;; =============================================================================
 ;; Ling Outcome (data)
 ;; =============================================================================
@@ -289,11 +341,16 @@
        sort
        vec))
 
+(m/=> terminal-event-types [:=> [:cat] [:vector :keyword]])
+
 (defn event-channel-topic
   "The hive-mcp.channel.core topic a hivemind event of EVENT-TYPE is published
    on — the same `hivemind-<name>` naming the delivery channels use."
   [event-type]
   (keyword (str "hivemind-" (name event-type))))
+
+;; `name` accepts a keyword, symbol or string
+(m/=> event-channel-topic [:=> [:cat [:or :keyword :symbol :string]] :keyword])
 
 (defn ling-outcome
   "Pure: :succeeded or :failed for a ling event of EVENT-TYPE carrying DATA.
@@ -303,6 +360,8 @@
   (if (= "failure" (str (:result data)))
     :failed
     (get-in ling-event-outcomes [event-type :outcome] :succeeded)))
+
+(m/=> ling-outcome [:=> [:cat :any [:maybe :map]] LingOutcome])
 
 ;; =============================================================================
 ;; Completion Handler
@@ -322,11 +381,16 @@
                                 :ling-id   ling-id
                                 :timestamp ts}))))
 
+;; any outcome other than :failed records as completed
+(m/=> record-outcome [:=> [:cat DagState :any :any :any :any] DagState])
+
 (defn plan-finished?
   "Pure: a plan is finished when nothing is ready and nothing is in flight.
    Dependents of a failed task never become ready, so they do not hold it open."
   [ready in-flight]
   (and (empty? ready) (empty? in-flight)))
+
+(m/=> plan-finished? [:=> [:cat [:maybe [:sequential :any]] [:maybe [:map-of :any :any]]] :boolean])
 
 (defn- depends-on-any?
   "True when some id in DEPS is in UNSATISFIABLE."
@@ -345,6 +409,8 @@
                       dep-graph)]
       (if (= grown blocked) blocked (recur grown)))))
 
+(m/=> blocked-task-ids [:=> [:cat [:maybe [:map-of :any IdColl]] IdColl] [:set :any]])
+
 (defn plan-summary
   "Pure: the final report of a finished plan STATE with SKIPPED task ids."
   [{:keys [plan-id completed failed opts]} skipped]
@@ -359,6 +425,14 @@
      :skipped-ids (vec (sort skipped))
      :message     (str "All tasks complete. " n-ok " succeeded, " n-failed " failed, "
                        n-skipped " skipped.")}))
+
+;; failed / skipped are sorted, so their ids must be mutually comparable
+(m/=> plan-summary [:=> [:cat [:map [:plan-id {:optional true} :any]
+                               [:completed {:optional true} IdColl]
+                               [:failed {:optional true} [:maybe [:or [:set :string] [:sequential :string]]]]
+                               [:opts {:optional true} [:maybe :map]]]
+                         [:maybe [:or [:set :string] [:sequential :string]]]]
+                    PlanSummary])
 
 (defn- remaining-dep-graph
   "{task-id -> #{dep-id}} for every in-scope todo task the plan never handled."
@@ -432,6 +506,13 @@
             (settle-task! kanban-task-id agent-id (ling-outcome event-type* data) directory)
             (emit-wave! :workflow/wave-completed)
             (advance-dag! directory))))))
+
+;; boundary: answers nil when inactive or not a DAG task, else the advance
+;; step's wave report or the finished plan's summary
+(m/=> on-ling-complete [:=> [:cat [:map [:agent-id {:optional true} :any]
+                                   [:event-type {:optional true} :any]
+                                   [:data {:optional true} [:maybe :map]]]]
+                        [:maybe :map]])
 
 ;; =============================================================================
 ;; Channel Subscription (core.async pub/sub)
@@ -576,6 +657,28 @@
        :ready-count (count ready)
        :initial-dispatch result})))
 
+(def StartOpts
+  "start-dag! options (see its docstring). Open map."
+  [:maybe
+   [:map
+    [:max-slots {:optional true} :int]
+    [:cwd {:optional true} [:maybe :string]]
+    [:presets {:optional true} [:maybe [:sequential :string]]]
+    [:project-id {:optional true} [:maybe :string]]
+    [:run-id {:optional true} :any]
+    [:max-budget-usd {:optional true} [:maybe number?]]
+    [:task-ids {:optional true} IdColl]
+    [:board-wide? {:optional true} :any]
+    [:require-plan-scope? {:optional true} :any]]])
+
+;; throws ex-info when already active, on an empty :task-ids, or when a
+;; required plan scope resolves to nothing
+(m/=> start-dag! [:=> [:cat :any StartOpts]
+                  [:map [:started [:= true]] [:stopped :boolean] [:plan-id :any]
+                   [:max-slots :int] [:max-budget-usd [:maybe number?]]
+                   [:task-ids [:maybe [:set :any]]] [:ready-count [:int {:min 0}]]
+                   [:initial-dispatch [:maybe :map]]]])
+
 (defn stop-dag!
   "Stop the DAG scheduler."
   []
@@ -597,6 +700,8 @@
      :failed-count (count (:failed state))
      :dispatched-count (count (:dispatched state))
      :wave-log (:wave-log state)}))
+
+(m/=> stop-dag! [:=> [:cat] StopResult])
 
 ;; =============================================================================
 ;; Query Functions
@@ -626,6 +731,14 @@
      :failed-ids   (:failed state)
      :dispatched-map (:dispatched state)
      :wave-log     (take-last 20 (:wave-log state))}))
+
+(m/=> dag-status [:=> [:cat]
+                  [:map [:active :boolean] [:plan-id :any] [:task-ids :any]
+                   [:max-slots :int] [:completed :int] [:failed :int]
+                   [:dispatched :int] [:ready :int]
+                   [:completed-ids [:set :any]] [:failed-ids [:set :any]]
+                   [:dispatched-map [:map-of :any :any]]
+                   [:wave-log [:maybe [:sequential :map]]]]])
 
 ;; =============================================================================
 ;; Comment / REPL Usage

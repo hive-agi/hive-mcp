@@ -1,0 +1,11 @@
+{:case-0 {:out :allowed, :in ("memory_add" nil)},
+ :case-1 {:out :allowed, :in ("memory_add" {"command" "echo hi"})},
+ :case-2
+ {:out :tier-1, :in ("file_write" {"file" "a/generated/b.clj"})},
+ :case-3 {:out :tier-3, :in ("bash" {})},
+ :case-4
+ {:out :tier-1, :in ("file_write" {"file" "src/foo_test.clj"})},
+ :case-5
+ {:out :tier-1, :in ("file_write" {"file" "a/generated/b.clj"})},
+ :case-6 {:out :allowed, :in ("clojure_edit" nil)},
+ :case-7 {:out :allowed, :in ("kanban" nil)}}

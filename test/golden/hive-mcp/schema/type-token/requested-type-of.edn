@@ -1,0 +1,8 @@
+{:case-0 {:out nil, :in nil},
+ :case-1 {:out nil, :in #{}},
+ :case-2 {:out "", :in ["N" "requested-type:"]},
+ :case-3 {:out nil, :in []},
+ :case-4 {:out nil, :in nil},
+ :case-5 {:out nil, :in nil},
+ :case-6 {:out nil, :in nil},
+ :case-7 {:out nil, :in nil}}

@@ -1,0 +1,9 @@
+{:case-0 {:out nil, :in (nil)},
+ :case-1
+ {:out #{:implements :depends-on}, :in (["depends-on" "implements"])},
+ :case-2 {:out nil, :in (0)},
+ :case-3 {:out #{:implements}, :in (#{:implements})},
+ :case-4 {:out #{:implements}, :in ("implements")},
+ :case-5 {:out #{:implements}, :in ("implements")},
+ :case-6 {:out #{}, :in ([])},
+ :case-7 {:out #{:projects-to}, :in ("projects-to")}}

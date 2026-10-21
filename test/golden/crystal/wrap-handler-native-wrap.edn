@@ -1,0 +1,19 @@
+{:no-store
+ {:type "text",
+  :isError true,
+  :body
+  {:success false,
+   :error "Memory store not configured",
+   :message
+   "Memory query requires a registered IMemoryStore (Milvus, Qdrant, etc.) with embedding provider"}},
+ :empty-harvest
+ {:type "text",
+  :isError false,
+  :body
+  {:session true,
+   :directory true,
+   :total 0,
+   :persisted 0,
+   :failed 0,
+   :wraps []}},
+ :writes 0}

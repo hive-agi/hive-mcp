@@ -9,7 +9,7 @@
    5. Create KG edges: task --depends-on--> task (from step dependencies)"
 
   (:require [hive-mcp.tools.core :refer [mcp-json mcp-error]]
-            [hive-mcp.spi.kanban.registry :as kanban-port]
+            [hive-spi.kanban.registry :as kanban-port]
             [hive-mcp.plan.fsm :as plan-fsm]
             [hive-mcp.plan.kg-degraded :as kg-degraded]
             [hive-mcp.vectordb.facade :as facade]
@@ -19,7 +19,8 @@
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.plan.schema :as schema]
-            [hive-spi.schema.derive :as derive]))
+            [hive-spi.schema.derive :as derive]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -459,3 +460,28 @@
 (def tools
   "REMOVED: Flat plan_to_kanban tool no longer exposed. Use consolidated `kanban` tool with `plan-to-kanban` command."
   [])
+;; =============================================================================
+;; Function Contracts (m16 coverage batch)
+;; =============================================================================
+
+(m/=> compute-waves
+      [:=> [:cat [:sequential :map]]
+       [:map-of :string :int]])
+
+(m/=> plan-to-kanban
+      [:=> [:cat :any [:* :any]] :map])
+
+(m/=> handle-plan-to-kanban
+      [:=> [:cat :map]
+       :map])
+
+(m/=> plan-contract
+      [:=> [:cat :any]
+       [:map
+        [:required [:vector :string]]
+        [:step-required [:vector :string]]
+        [:step-enums :map]]])
+
+(m/=> handle-plan-schema
+      [:=> [:cat :any]
+       :map])

@@ -1,0 +1,28 @@
+{:case-0
+ {:out {:new-duration "long", :changed? false, :at-boundary? true},
+  :in ("long" 0)},
+ :case-1
+ {:out
+  {:new-duration "permanent", :changed? false, :at-boundary? true},
+  :in ("permanent" 1)},
+ :case-2
+ {:out
+  {:new-duration "ephemeral", :changed? false, :at-boundary? true},
+  :in ("ephemeral" -2)},
+ :case-3
+ {:out
+  {:new-duration "permanent", :changed? false, :at-boundary? true},
+  :in ("permanent" 2)},
+ :case-4
+ {:out {:new-duration "medium", :changed? false, :at-boundary? true},
+  :in ("medium" 0)},
+ :case-5
+ {:out {:new-duration "long", :changed? false, :at-boundary? true},
+  :in (nil 0)},
+ :case-6
+ {:out {:new-duration "long", :changed? false, :at-boundary? true},
+  :in (nil 0)},
+ :case-7
+ {:out
+  {:new-duration "permanent", :changed? false, :at-boundary? true},
+  :in ("permanent" 0)}}

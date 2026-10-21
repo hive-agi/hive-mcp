@@ -1,0 +1,14 @@
+{:case-0 {:out ["/proj/src"], :in (nil ["/proj/src"])},
+ :case-1
+ {:out ["/other/src" "/proj/dev"],
+  :in ([] ["/other/src" "/proj/dev"])},
+ :case-2 {:out ["/proj/src"], :in (nil ["/proj/src"])},
+ :case-3
+ {:out ["/other/src" "/proj/src"],
+  :in (nil ["/other/src" "/proj/src"])},
+ :case-4
+ {:out ["/proj/dev" "/abs/src" "/abs/src"],
+  :in (["dev" "/abs/src" "/abs/src"] ["/proj/src"])},
+ :case-5 {:out ["/proj/src"], :in (nil ["/proj/src"])},
+ :case-6 {:out ["/other/src"], :in (nil ["/other/src"])},
+ :case-7 {:out ["/proj/src"], :in (nil ["/proj/src"])}}

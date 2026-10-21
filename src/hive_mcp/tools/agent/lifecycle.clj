@@ -12,7 +12,9 @@
             [hive-mcp.tools.swarm.status :as swarm-status]
             [taoensso.timbre :as log]
             [clojure.string :as str]
-            [hive-mcp.swarm.sync :as sync]))
+            [hive-mcp.swarm.sync :as sync]
+            [malli.core :as m]
+            [hive-mcp.tools.result-bridge :as rb]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -147,3 +149,39 @@
   (if (empty? prompt)
     (mcp-error "prompt is required")
     (swarm-status/handle-swarm-broadcast params)))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def LifecycleParams
+  "Params of a lifecycle handler: an open map. Required keys are checked by
+   the body (a missing one answers an MCP error), so all are optional here."
+  [:maybe [:map
+           [:agent_id {:optional true} [:maybe :string]]
+           [:task_id {:optional true} [:maybe :string]]
+           [:prompt {:optional true} [:maybe :string]]]])
+
+(def TaskRow
+  "A swarm task row as the registry stores it."
+  [:map
+   [:task/id :string]
+   [:task/started-at {:optional true} [:maybe inst?]]])
+
+(def LifecycleHandler
+  [:=> [:cat LifecycleParams] rb/McpResponse])
+
+(m/=> handle-interrupt LifecycleHandler)
+
+(m/=> handle-cleanup [:=> [:cat :any] rb/McpResponse])
+
+(m/=> handle-claims LifecycleHandler)
+
+(m/=> latest-task-id [:=> [:cat [:maybe [:sequential TaskRow]]] [:maybe :string]])
+
+(m/=> handle-collect
+      [:function
+       [:=> [:cat LifecycleParams] rb/McpResponse]
+       [:=> [:cat helpers/Port LifecycleParams] rb/McpResponse]])
+
+(m/=> handle-broadcast LifecycleHandler)

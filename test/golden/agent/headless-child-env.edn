@@ -1,0 +1,9 @@
+{:static
+ {"A" "1",
+  "B" "2",
+  "BB_MCP_PROJECT_DIR" "/work",
+  "OPENROUTER_MODEL" "deepseek/x",
+  "CLAUDE_SWARM_SLAVE_ID" "ling-g",
+  "HIVE_AGENT_CREDENTIAL" "tok"},
+ :withheld-present? false,
+ :claude-model-no-override? true}

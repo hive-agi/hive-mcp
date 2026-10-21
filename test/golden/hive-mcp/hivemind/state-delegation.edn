@@ -1,0 +1,34 @@
+{:calls
+ {"add-swarm-prompt!"
+  {:ns "hive-agent.swarm.hivemind.state", :var "add-swarm-prompt!"},
+  "clear-agent-messages!"
+  {:ns "hive-agent.swarm.hivemind.state",
+   :var "clear-agent-messages!"},
+  "clear-agent-registry!"
+  {:ns "hive-agent.swarm.hivemind.state",
+   :var "clear-agent-registry!"},
+  "clear-ling-results!"
+  {:ns "hive-agent.swarm.hivemind.state", :var "clear-ling-results!"},
+  "current-agent-registry" {:returned nil},
+  "get-pending-ling-results"
+  {:ns "hive-agent.swarm.hivemind.state",
+   :var "get-pending-ling-results"},
+  "get-swarm-prompts"
+  {:ns "hive-agent.swarm.hivemind.state", :var "get-swarm-prompts"},
+  "mark-ling-reviewed!"
+  {:ns "hive-agent.swarm.hivemind.state", :var "mark-ling-reviewed!"},
+  "record-ling-result!"
+  {:ns "hive-agent.swarm.hivemind.state", :var "record-ling-result!"},
+  "remove-ling-result!"
+  {:ns "hive-agent.swarm.hivemind.state", :var "remove-ling-result!"},
+  "remove-swarm-prompt!"
+  {:ns "hive-agent.swarm.hivemind.state",
+   :var "remove-swarm-prompt!"}},
+ :values
+ {"AgentId" "clojure.lang.PersistentVector",
+  "BoundedAtom" "clojure.lang.PersistentVector",
+  "PutResult" "clojure.lang.PersistentVector",
+  "agent-registry" nil,
+  "ling-results" nil,
+  "pending-asks" nil,
+  "pending-swarm-prompts" nil}}

@@ -17,7 +17,8 @@
             [hive-mcp.protocols.registry]
             [hive-mcp.protocols.vector]
             [hive-mcp.protocols.vessel]
-            [hive-mcp.protocols.workflow]))
+            [hive-mcp.protocols.workflow]
+            [hive-mcp.protocols.store-metrics]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -51,8 +52,8 @@
 
 (deftest the-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths ["src/hive_mcp/protocols"] :exempt exempt})]
-    (is (= 105 (count (:universe report))) "every public defn of the tree")
-    (is (= 75 (count (:covered report))))
+    (is (= 124 (count (:universe report))) "every public defn of the tree")
+    (is (= 94 (count (:covered report))))
     (is (= 30 (count exempt)))))
 
 (def ^:private gated-namespaces
@@ -60,8 +61,9 @@
     hive-mcp.protocols.dispatch hive-mcp.protocols.editor
     hive-mcp.protocols.event-backbone hive-mcp.protocols.kg
     hive-mcp.protocols.memory hive-mcp.protocols.memory-liveness
-    hive-mcp.protocols.registry hive-mcp.protocols.vector
-    hive-mcp.protocols.vessel hive-mcp.protocols.workflow])
+    hive-mcp.protocols.registry hive-mcp.protocols.store-metrics
+    hive-mcp.protocols.vector hive-mcp.protocols.vessel
+    hive-mcp.protocols.workflow])
 
 (deftest every-protocols-contract-generates-both-sides
   (doseq [ns-sym gated-namespaces

@@ -17,7 +17,6 @@
             [hive-mcp.tools.catchup :as catchup]
             [hive-mcp.channel.context-store :as ctx-store]
             [hive-mcp.test.stub.extensions :as ext-stub]
-            [hive-mcp.chroma.core :as chroma]
             [hive-mcp.dispatch.handler :as dispatch]))
 
 ;; =============================================================================
@@ -137,11 +136,12 @@
         (is (:isError result))
         (is (str/includes? (:text result) "Catchup failed"))))))
 
-(deftest test-catchup-without-chroma
-  (testing "catchup when Chroma not configured returns error"
-    ;; When Chroma is not configured, handle-native-catchup returns error
-    (with-redefs [chroma/embedding-configured? (constantly false)
-                  catchup/handle-native-catchup
+(deftest test-catchup-without-memory-store
+  (testing "catchup when the memory store is not configured returns error"
+    ;; When no store is configured, handle-native-catchup returns error. The
+    ;; session handler only delegates, so the fault is injected at that seam;
+    ;; a redef of the backend's embedding-configured? was inert here.
+    (with-redefs [catchup/handle-native-catchup
                   (fn [_]
                     {:type "text"
                      :text "Chroma not configured"

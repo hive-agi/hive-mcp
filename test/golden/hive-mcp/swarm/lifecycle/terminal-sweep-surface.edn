@@ -1,0 +1,13 @@
+{:interval-s 60,
+ :name "lings/terminal-liveness",
+ :default-interval-s 60,
+ :registered? false,
+ :offline
+ {:sweep-once-0
+  {:ns "hive-datascript.swarm.queries", :var "get-all-slaves"},
+  :sweep-once-1
+  {:ns "hive-datascript.swarm.queries", :var "get-all-slaves"},
+  :record-sweep
+  {:ns "hive-datascript.swarm.queries", :var "get-all-slaves"},
+  :record-sweep-no-clock
+  {:ns "hive-datascript.swarm.queries", :var "get-all-slaves"}}}

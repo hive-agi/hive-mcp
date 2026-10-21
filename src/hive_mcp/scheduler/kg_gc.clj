@@ -34,7 +34,8 @@
       :chunk-size 500 :deadline-ms 300000 :max-heap-ratio 0.85
       :dry-run? false}"
   (:require [hive-mcp.config.core :as config]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -49,6 +50,37 @@
    :max-heap-ratio   0.85
    :dry-run?         false})
 
+(def LaneConfig
+  "Lane config with defaults applied (see the ns docstring). Open map: the
+   service config may carry extra keys."
+  [:map
+   [:enabled :any]
+   [:interval-minutes number?]
+   [:limit :int]
+   [:edge-budget :int]
+   [:chunk-size :int]
+   [:deadline-ms number?]
+   [:max-heap-ratio number?]
+   [:dry-run? :any]])
+
+(def Verdict
+  "The lane report `verdict` folds a cleanup result into."
+  [:map
+   [:ok? :boolean]
+   [:vacuous? :boolean]
+   [:blind [:vector [:map [:class :keyword] [:reason :any]]]]
+   [:selected [:map [:orphaned :int] [:pruned :int] [:demoted :int]]]
+   [:collected [:map [:orphaned :int] [:pruned :int] [:demoted :int]
+                [:total :int] [:edges-removed number?]]]
+   [:coverage [:map [:scanned :int] [:universe :any] [:cursor :any] [:partial :int]]]
+   [:errors :int]
+   [:stopped :any]])
+
+(def LaneState
+  "The lane's bookkeeping atom value."
+  [:map [:running? :boolean] [:last-run-ms [:maybe :int]] [:cursor :any]
+   [:cycles :int] [:last-result [:maybe :map]]])
+
 (defonce ^:private lane-state
   (atom {:running? false :last-run-ms nil :cursor nil :cycles 0 :last-result nil}))
 
@@ -56,6 +88,8 @@
   "Lane config with defaults applied."
   []
   (merge defaults (config/get-service-config :kg-gc)))
+
+(m/=> lane-config [:=> [:cat] LaneConfig])
 
 ;; =============================================================================
 ;; Guards
@@ -68,6 +102,8 @@
         used (- (.totalMemory rt) (.freeMemory rt))]
     (double (/ used (.maxMemory rt)))))
 
+(m/=> heap-ratio [:=> [:cat] [:double {:min 0.0}]])
+
 (defn make-continue?
   "0-arg fn asked before every retraction chunk. nil = go on; otherwise the
    reason to stop. heap-fn and now-fn are injectable for tests."
@@ -78,6 +114,18 @@
       (> (heap-fn) max-heap-ratio)                   :heap-pressure
       (> (- (now-fn) start-ms) deadline-ms)          :deadline
       :else                                          nil)))
+
+(def ContinueFn
+  "0-arg continuation probe: nil to go on, else the stop reason."
+  [:=> [:cat] [:maybe [:enum :heap-pressure :deadline]]])
+
+(m/=> make-continue? [:function
+                      [:=> [:cat [:map [:max-heap-ratio number?] [:deadline-ms number?]] :int]
+                       ContinueFn]
+                      [:=> [:cat [:map [:max-heap-ratio number?] [:deadline-ms number?]] :int
+                            [:maybe [:map [:heap-fn {:optional true} [:=> [:cat] number?]]
+                                     [:now-fn {:optional true} [:=> [:cat] :int]]]]]
+                       ContinueFn]])
 
 ;; =============================================================================
 ;; Verdict
@@ -117,6 +165,27 @@
                  :partial (count partial)}
      :errors    (or errors 0)
      :stopped   (some :stopped partial)}))
+
+(def CleanupResult
+  "A cleanup-synthetics! result as verdict reads it. Every key optional."
+  [:maybe
+   [:map
+    [:universe {:optional true} [:maybe [:map [:sources {:optional true} :int]]]]
+    [:blind {:optional true} [:maybe [:sequential [:map [:class :keyword] [:reason :any]]]]]
+    [:scanned {:optional true} [:maybe :int]]
+    [:orphaned {:optional true} [:maybe :int]]
+    [:pruned {:optional true} [:maybe :int]]
+    [:demoted {:optional true} [:maybe :int]]
+    [:errors {:optional true} [:maybe :int]]
+    [:partial {:optional true} [:maybe [:sequential [:map [:stopped {:optional true} :any]]]]]
+    [:next-cursor {:optional true} :any]
+    [:error {:optional true} :any]
+    [:details {:optional true}
+     [:maybe [:sequential [:map [:complete? {:optional true} :boolean]
+                           [:outcome {:optional true} [:enum :orphaned :pruned :demoted :skipped]]
+                           [:effect-count {:optional true} [:maybe :int]]]]]]]])
+
+(m/=> verdict [:=> [:cat CleanupResult] Verdict])
 
 ;; =============================================================================
 ;; Lane
@@ -184,9 +253,31 @@
          (finally
            (swap! lane-state assoc :running? false)))))))
 
+(def RunLaneOpts
+  "lane-config overrides plus the :force? / :cleanup-fn / :heap-fn hooks."
+  [:maybe
+   [:map
+    [:force? {:optional true} :any]
+    [:cleanup-fn {:optional true} [:=> [:cat :map] CleanupResult]]
+    [:heap-fn {:optional true} [:=> [:cat] number?]]]])
+
+(def LaneOutcome
+  "A skipped tick, or the verdict with the run's dry-run flag and duration."
+  [:or
+   [:map [:skipped [:= true]] [:reason :string]]
+   (into Verdict [[:dry-run? :boolean] [:duration-ms :int]])])
+
+(m/=> run-lane! [:function
+                 [:=> [:cat] LaneOutcome]
+                 [:=> [:cat RunLaneOpts] LaneOutcome]])
+
 (defn status [] (assoc @lane-state :config (lane-config)))
+
+(m/=> status [:=> [:cat] (conj LaneState [:config LaneConfig])])
 
 (defn reset-state!
   "Test/ops hook: forget the cursor and the last run."
   []
   (reset! lane-state {:running? false :last-run-ms nil :cursor nil :cycles 0 :last-result nil}))
+
+(m/=> reset-state! [:=> [:cat] LaneState])

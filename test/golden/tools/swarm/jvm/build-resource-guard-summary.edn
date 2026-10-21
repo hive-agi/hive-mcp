@@ -1,0 +1,171 @@
+{:case-0
+ {:out
+  {:can-spawn true,
+   :memory
+   {:initial {:percent-used 0, :available-mb 0},
+    :final {:percent-used 0, :available-mb 1},
+    :threshold-percent 80,
+    :min-available-mb 2048},
+   :status :recovered-after-cleanup,
+   :cleanup {:ran true, :dry-run false, :orphans-found 0, :killed 1},
+   :recommendation "Safe to spawn new processes"},
+  :in
+  (true
+   {:percent-used 0, :available-mb 0}
+   {:percent-used 0, :available-mb 1}
+   80
+   2048
+   true
+   false
+   {:auto-clean false, :cleanup-dry false}
+   {:orphans-found 0, :killed ["1"]})},
+ :case-1
+ {:out
+  {:can-spawn true,
+   :memory
+   {:initial {:percent-used 1, :available-mb 0},
+    :final {:percent-used 1, :available-mb 1},
+    :threshold-percent 80,
+    :min-available-mb 2048},
+   :status :recovered-after-cleanup,
+   :cleanup {:ran true, :dry-run false, :orphans-found 1, :killed 1},
+   :recommendation "Safe to spawn new processes"},
+  :in
+  (true
+   {:percent-used 1, :available-mb 0}
+   {:percent-used 1, :available-mb 1}
+   80
+   2048
+   true
+   false
+   {:auto-clean true, :cleanup-dry false}
+   {:orphans-found 1, :killed ["1"]})},
+ :case-2
+ {:out
+  {:can-spawn false,
+   :memory
+   {:initial {:percent-used 2, :available-mb 1},
+    :final {:percent-used 0, :available-mb 1},
+    :threshold-percent 80,
+    :min-available-mb 2048},
+   :status :healthy,
+   :cleanup nil,
+   :recommendation "Memory high - consider enabling auto_cleanup"},
+  :in
+  (false
+   {:percent-used 2, :available-mb 1}
+   {:percent-used 0, :available-mb 1}
+   80
+   2048
+   false
+   false
+   {:auto-clean false, :cleanup-dry true}
+   nil)},
+ :case-3
+ {:out
+  {:can-spawn false,
+   :memory
+   {:initial {:percent-used 0, :available-mb 1},
+    :final {:percent-used 1, :available-mb 1},
+    :threshold-percent 80,
+    :min-available-mb 2048},
+   :status :capacity-reached,
+   :cleanup {:ran true, :dry-run false, :orphans-found 2, :killed 2},
+   :recommendation
+   "Capacity reached - wait for running tasks to complete"},
+  :in
+  (false
+   {:percent-used 0, :available-mb 1}
+   {:percent-used 1, :available-mb 1}
+   80
+   2048
+   true
+   true
+   {:auto-clean true, :cleanup-dry false}
+   {:orphans-found 2, :killed ["1" "1"]})},
+ :case-4
+ {:out
+  {:can-spawn false,
+   :memory
+   {:initial {:percent-used 2, :available-mb 0},
+    :final {:percent-used 1, :available-mb 2},
+    :threshold-percent 80,
+    :min-available-mb 2048},
+   :status :healthy,
+   :cleanup nil,
+   :recommendation
+   "Memory high - set cleanup_dry_run=false to actually kill orphans"},
+  :in
+  (false
+   {:percent-used 2, :available-mb 0}
+   {:percent-used 1, :available-mb 2}
+   80
+   2048
+   false
+   true
+   {:auto-clean true, :cleanup-dry true}
+   nil)},
+ :case-5
+ {:out
+  {:can-spawn false,
+   :memory
+   {:initial {:percent-used 14, :available-mb 3},
+    :final {:percent-used 1, :available-mb 0},
+    :threshold-percent 80,
+    :min-available-mb 2048},
+   :status :capacity-reached,
+   :cleanup {:ran true, :dry-run true, :orphans-found 0, :killed 1},
+   :recommendation
+   "Memory high - set cleanup_dry_run=false to actually kill orphans"},
+  :in
+  (false
+   {:percent-used 14, :available-mb 3}
+   {:percent-used 1, :available-mb 0}
+   80
+   2048
+   true
+   true
+   {:auto-clean true, :cleanup-dry true}
+   {:orphans-found 0, :killed ["2"]})},
+ :case-6
+ {:out
+  {:can-spawn false,
+   :memory
+   {:initial {:percent-used 0, :available-mb 1},
+    :final {:percent-used 1, :available-mb 31},
+    :threshold-percent 80,
+    :min-available-mb 2048},
+   :status :capacity-reached,
+   :cleanup {:ran true, :dry-run false, :orphans-found 2, :killed 2},
+   :recommendation "Memory high - consider enabling auto_cleanup"},
+  :in
+  (false
+   {:percent-used 0, :available-mb 1}
+   {:percent-used 1, :available-mb 31}
+   80
+   2048
+   true
+   true
+   {:auto-clean false, :cleanup-dry false}
+   {:orphans-found 2, :killed ["2" "1"]})},
+ :case-7
+ {:out
+  {:can-spawn true,
+   :memory
+   {:initial {:percent-used 1, :available-mb 4},
+    :final {:percent-used 12, :available-mb 4},
+    :threshold-percent 80,
+    :min-available-mb 2048},
+   :status :healthy,
+   :cleanup nil,
+   :recommendation "Safe to spawn new processes"},
+  :in
+  (true
+   {:percent-used 1, :available-mb 4}
+   {:percent-used 12, :available-mb 4}
+   80
+   2048
+   false
+   false
+   {:auto-clean false, :cleanup-dry false}
+   nil)}}

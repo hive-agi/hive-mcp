@@ -1,0 +1,24 @@
+{:with-run-id
+ {:out
+  {:wave-id "run-7",
+   :result
+   {:plan-id "sched-plan-1", :started true, :status :dispatched}},
+  :call ["plan-1" {:cwd "/repo", :run-id "run-7"}]},
+ :scheduler-id
+ {:out
+  {:wave-id "sched-plan-2",
+   :result
+   {:plan-id "sched-plan-2", :started true, :status :dispatched}},
+  :call ["plan-2" {:cwd "/tmp"}]},
+ :nil-ctx
+ {:out
+  {:wave-id "sched-plan-1",
+   :result
+   {:plan-id "sched-plan-1", :started true, :status :dispatched}},
+  :call ["plan-1" {:cwd nil}]},
+ :nil-plan
+ {:out
+  {:wave-id "run-8",
+   :result {:plan-id "sched-", :started true, :status :dispatched}},
+  :call [nil {:cwd nil, :run-id "run-8"}]},
+ :conforms true}

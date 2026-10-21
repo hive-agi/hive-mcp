@@ -8,7 +8,9 @@
    cache, no side effects besides the backend query."
   (:require [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.project.scope :as project-scope]
-            [hive-mcp.resilience.store :refer [with-resilience]]))
+            [hive-mcp.resilience.store :refer [with-resilience]]
+            [hive-mcp.tools.catchup.shapes :as shapes]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -114,3 +116,21 @@
    the partition-all arithmetic."
   [hierarchy-ids]
   (max 1 (count (partition-all hierarchy-chunk-size hierarchy-ids))))
+
+(m/=> single-query-limit [:=> [:cat [:int {:min 0 :max 100000}]] [:int {:min 1 :max 16384}]])
+
+(m/=> cap-per-project [:=> [:cat pos-int? [:sequential shapes/Entry]] [:vector shapes/Entry]])
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def HierarchyIds
+  "Project ids for the hierarchy fan-out, or nil."
+  [:maybe [:sequential [:string {:gen/schema [:enum "p" "child-a" "child-b"]}]]])
+
+(m/=> compute-hierarchy-project-ids [:=> [:cat shapes/ProjectId] [:maybe [:vector :string]]])
+(m/=> chunked-hierarchy-fetch
+      [:=> [:cat mem-proto/MemoryStore HierarchyIds [:maybe :int]] [:vector shapes/Entry]])
+(m/=> chunk-count
+      [:=> [:cat [:maybe [:or [:sequential :any] [:set :any]]]] pos-int?])

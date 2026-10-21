@@ -1,0 +1,40 @@
+{:case-0
+ {:out
+  "Plan validation failed (phase: unknown)\n\nErrors:\n  - Schema: missing :title\n\nHow to fix:\nFix the schema\n\nPlan-to-kanban contract:\n  {:id    \"plan-<timestamp>-<topic>\"\n   :title \"Short descriptive title\"\n   :steps [{:id \"step-1\" :title \"Step title\" :depends-on [] :priority :high}]}",
+  :in ({:errors ["Schema: missing :title"], :hint "Fix the schema"})},
+ :case-1
+ {:out
+  "Plan validation failed (phase: schema)\n\nErrors:\n  - cycle a->b\n  - Schema: missing :title\n\nHow to fix:\nFix the schema\n\nPlan-to-kanban contract:\n  {:id    \"plan-<timestamp>-<topic>\"\n   :title \"Short descriptive title\"\n   :steps [{:id \"step-1\" :title \"Step title\" :depends-on [] :priority :high}]}",
+  :in
+  ({:errors ["cycle a->b" "Schema: missing :title"],
+    :hint "Fix the schema",
+    :phase :schema})},
+ :case-2
+ {:out
+  "Plan validation failed (phase: parse)\n\nErrors:\n\n\nHow to fix:\nFix the schema\n\nPlan-to-kanban contract:\n  {:id    \"plan-<timestamp>-<topic>\"\n   :title \"Short descriptive title\"\n   :steps [{:id \"step-1\" :title \"Step title\" :depends-on [] :priority :high}]}",
+  :in ({:errors [], :hint "Fix the schema", :phase :parse})},
+ :case-3
+ {:out
+  "Plan validation failed (phase: schema)\n\nErrors:\n  - Schema: missing :title\n\nHow to fix:\nBreak the cycle\n\nPlan-to-kanban contract:\n  {:id    \"plan-<timestamp>-<topic>\"\n   :title \"Short descriptive title\"\n   :steps [{:id \"step-1\" :title \"Step title\" :depends-on [] :priority :high}]}",
+  :in
+  ({:errors ["Schema: missing :title"],
+    :hint "Break the cycle",
+    :phase :schema})},
+ :case-4
+ {:out
+  "Plan validation failed (phase: unknown)\n\nErrors:\n  - Missing dep: step-9\n  - cycle a->b\n  - cycle a->b\n\nHow to fix:\nFix the schema\n\nPlan-to-kanban contract:\n  {:id    \"plan-<timestamp>-<topic>\"\n   :title \"Short descriptive title\"\n   :steps [{:id \"step-1\" :title \"Step title\" :depends-on [] :priority :high}]}",
+  :in
+  ({:errors ["Missing dep: step-9" "cycle a->b" "cycle a->b"],
+    :hint "Fix the schema"})},
+ :case-5
+ {:out
+  "Plan validation failed (phase: unknown)\n\nErrors:\n  - cycle a->b\n\nHow to fix:\nFix the schema\n\nPlan-to-kanban contract:\n  {:id    \"plan-<timestamp>-<topic>\"\n   :title \"Short descriptive title\"\n   :steps [{:id \"step-1\" :title \"Step title\" :depends-on [] :priority :high}]}",
+  :in ({:errors ["cycle a->b"], :hint "Fix the schema"})},
+ :case-6
+ {:out
+  "Plan validation failed (phase: unknown)\n\nErrors:\n\n\nHow to fix:\nBreak the cycle\n\nPlan-to-kanban contract:\n  {:id    \"plan-<timestamp>-<topic>\"\n   :title \"Short descriptive title\"\n   :steps [{:id \"step-1\" :title \"Step title\" :depends-on [] :priority :high}]}",
+  :in ({:errors [], :hint "Break the cycle"})},
+ :case-7
+ {:out
+  "Plan validation failed (phase: unknown)\n\nErrors:\n  - Missing dep: step-9\n\nHow to fix:\nFix the schema\n\nPlan-to-kanban contract:\n  {:id    \"plan-<timestamp>-<topic>\"\n   :title \"Short descriptive title\"\n   :steps [{:id \"step-1\" :title \"Step title\" :depends-on [] :priority :high}]}",
+  :in ({:errors ["Missing dep: step-9"], :hint "Fix the schema"})}}

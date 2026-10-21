@@ -1,0 +1,39 @@
+{:case-0
+ {:out {:type "text", :text "ingest batch"}, :in {:paths "a.md"}},
+ :case-1
+ {:out
+  {:type "text",
+   :text
+   "Refused: operations were given to bare `batch`, which is not run. memory has no generic `batch` verb. To batch memory sub-commands call command=batch-add, batch-edit, batch-get (or batch-feedback, batch-tags, batch-duration, batch-promote, batch-demote, batch-reembed); for mixed commands such as `kg edge` use the multi tool's operations batch. Bare `batch` belongs to the ingest addon: file ingestion is command=\"ingest batch\" with paths (array of file paths) or dir.",
+   :isError true},
+  :in {:operations [{}], :paths "a.md", :dir "/notes"}},
+ :case-2
+ {:out {:type "text", :text "ingest batch"},
+  :in {:paths ["b.org"], :dir nil}},
+ :case-3
+ {:out
+  {:type "text",
+   :text
+   "Refused: bare `batch` with no operations and no files. memory has no generic `batch` verb. To batch memory sub-commands call command=batch-add, batch-edit, batch-get (or batch-feedback, batch-tags, batch-duration, batch-promote, batch-demote, batch-reembed); for mixed commands such as `kg edge` use the multi tool's operations batch. Bare `batch` belongs to the ingest addon: file ingestion is command=\"ingest batch\" with paths (array of file paths) or dir.",
+   :isError true},
+  :in {:dir nil}},
+ :case-4
+ {:out {:type "text", :text "ingest batch"},
+  :in {:operations " ", :paths ["b.org" "a.md"]}},
+ :case-5
+ {:out {:type "text", :text "ingest batch"},
+  :in {:paths ["b.org" "b.org"]}},
+ :case-6
+ {:out
+  {:type "text",
+   :text
+   "Refused: bare `batch` with no operations and no files. memory has no generic `batch` verb. To batch memory sub-commands call command=batch-add, batch-edit, batch-get (or batch-feedback, batch-tags, batch-duration, batch-promote, batch-demote, batch-reembed); for mixed commands such as `kg edge` use the multi tool's operations batch. Bare `batch` belongs to the ingest addon: file ingestion is command=\"ingest batch\" with paths (array of file paths) or dir.",
+   :isError true},
+  :in {}},
+ :case-7
+ {:out
+  {:type "text",
+   :text
+   "Refused: bare `batch` with no operations and no files. memory has no generic `batch` verb. To batch memory sub-commands call command=batch-add, batch-edit, batch-get (or batch-feedback, batch-tags, batch-duration, batch-promote, batch-demote, batch-reembed); for mixed commands such as `kg edge` use the multi tool's operations batch. Bare `batch` belongs to the ingest addon: file ingestion is command=\"ingest batch\" with paths (array of file paths) or dir.",
+   :isError true},
+  :in {}}}

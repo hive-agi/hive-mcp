@@ -1,0 +1,15 @@
+{:before
+ {:agent-context [false true],
+  :events [false true],
+  :ling-host [false true],
+  :memory-scope [false true],
+  :messaging [false true],
+  :piggyback false},
+ :returned :installed,
+ :after
+ {:agent-context [true false],
+  :events [true false],
+  :ling-host [true false],
+  :memory-scope [true false],
+  :messaging [true false],
+  :piggyback true}}

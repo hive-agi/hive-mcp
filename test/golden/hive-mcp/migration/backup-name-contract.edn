@@ -1,0 +1,44 @@
+{:case-0
+ {:out
+  {:scope :kg,
+   :backend :datalevin,
+   :timestamp "20261019T120000",
+   :filename "kg-datalevin-20261019T120000.edn"},
+  :in "kg-datalevin-20261019T120000.edn"},
+ :case-1
+ {:out
+  {:scope :memory,
+   :backend :chroma,
+   :timestamp "20260101T000000",
+   :filename "memory-chroma-20260101T000000.edn"},
+  :in "memory-chroma-20260101T000000.edn"},
+ :case-2 {:out nil, :in "bad"},
+ :case-3
+ {:out
+  {:scope :kg,
+   :backend :datalevin,
+   :timestamp "20261019T120000",
+   :filename "kg-datalevin-20261019T120000.edn"},
+  :in "kg-datalevin-20261019T120000.edn"},
+ :case-4
+ {:out
+  {:scope :kg,
+   :backend :datalevin,
+   :timestamp "20261019T120000",
+   :filename "kg-datalevin-20261019T120000.edn"},
+  :in "kg-datalevin-20261019T120000.edn"},
+ :case-5
+ {:out
+  {:scope :memory,
+   :backend :chroma,
+   :timestamp "20260101T000000",
+   :filename "memory-chroma-20260101T000000.edn"},
+  :in "memory-chroma-20260101T000000.edn"},
+ :case-6 {:out nil, :in "bad"},
+ :case-7
+ {:out
+  {:scope :kg,
+   :backend :datalevin,
+   :timestamp "20261019T120000",
+   :filename "kg-datalevin-20261019T120000.edn"},
+  :in "kg-datalevin-20261019T120000.edn"}}

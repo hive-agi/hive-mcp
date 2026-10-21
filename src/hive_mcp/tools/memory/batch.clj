@@ -24,7 +24,9 @@
             [hive-mcp.batch.protocol :as proto]
             [hive-mcp.dns.result :refer [rescue]]
             [hive-mcp.tools.cli :as cli]
-            [hive-mcp.dispatch.handler :as dispatch]))
+            [hive-mcp.dispatch.handler :as dispatch]
+            [malli.core :as m]
+            [hive-mcp.tools.memory.schema :as ms]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -127,3 +129,21 @@
   ([ops] (run-batch ops {}))
   ([ops opts]
    (proto/batch-execute @default-runner ops opts)))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def MemoryRunner
+  "A `MemoryBatchRunner` (satisfies `Batchable`)."
+  [:fn {:gen/elements [(->MemoryBatchRunner {} nil)]
+        :error/message "must be a hive-mcp.tools.memory.batch.MemoryBatchRunner"}
+   #(instance? MemoryBatchRunner %)])
+
+(m/=> make-memory-runner
+      [:function [:=> [:cat] MemoryRunner] [:=> [:cat ms/RunnerOpts] MemoryRunner]])
+
+(m/=> run-batch
+      [:function
+       [:=> [:cat ms/RunOps] batch/RunResult]
+       [:=> [:cat ms/RunOps ms/RunOpts] batch/RunResult]])

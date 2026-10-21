@@ -1,0 +1,54 @@
+{:annotated
+ {:success true,
+  :plan
+  {:title "Plan",
+   :steps
+   [{:id "t1",
+     :title "Add validation",
+     :description "Body\n### Sub detail",
+     :depends-on [],
+     :priority :high,
+     :estimate :medium,
+     :files ["src/a.clj" "src/b.clj"],
+     :tags []}
+    {:id "tests-depends-t1-estimate-small-2",
+     :title "Tests",
+     :description nil,
+     :depends-on ["t1"],
+     :priority :medium,
+     :estimate :small,
+     :files [],
+     :tags []}],
+   :source-format :markdown,
+   :tags []}},
+ :edn-overlay
+ {:success true,
+  :plan
+  {:title "P",
+   :steps
+   [{:id "x1",
+     :title "Step one",
+     :description "Rest of body",
+     :depends-on [],
+     :priority :low,
+     :estimate :medium,
+     :files ["f.clj"],
+     :tags []}],
+   :source-format :markdown,
+   :tags []}},
+ :blank-slug
+ {:success true,
+  :plan
+  {:title "Untitled Plan",
+   :steps
+   [{:id "step-1",
+     :title "!!!",
+     :description nil,
+     :depends-on [],
+     :priority :medium,
+     :estimate :medium,
+     :files [],
+     :tags []}],
+   :source-format :markdown,
+   :tags []}},
+ :no-headers {:success false, :error "No ## headers found in content"}}

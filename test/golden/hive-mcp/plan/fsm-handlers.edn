@@ -1,0 +1,57 @@
+{:draft-bad {:status :draft, :parse-failed true},
+ :validate-cycle
+ {:status :validated,
+  :valid? false,
+  :validation
+  {:cycles {:valid false, :cycle "Circular dependency detected"}}},
+ :draft-content {:status :draft, :parse-format :edn},
+ :guards
+ {:schema-valid true,
+  :schema-invalid false,
+  :has-tasks true,
+  :no-tasks false},
+ :execute-throws
+ {:x 1, :status :execute-failed, :error "boom", :errors ["e1"]},
+ :validate-ok {:status :validated, :valid? true},
+ :draft-plan
+ {:plan
+  {:id "plan-20260128-kg-staleness",
+   :title "Implement Bayesian Staleness for KG",
+   :decision-id "20260128161901-40d76a65",
+   :description
+   "Add staleness detection to Knowledge Graph for memory validity tracking",
+   :source-format :edn,
+   :tags ["knowledge-graph" "staleness" "bayesian"],
+   :steps
+   [{:id "step-1",
+     :title "Add disc entity schema for file tracking",
+     :description "Extend KG schema with disc entities for file state",
+     :depends-on [],
+     :priority :high,
+     :files ["src/hive_mcp/knowledge_graph/schema.clj"],
+     :estimate :small,
+     :tags ["schema"]}
+    {:id "step-2",
+     :title "Implement content-hash staleness detection",
+     :description
+     "Add functions to detect when file content changes vs cached hash",
+     :depends-on ["step-1"],
+     :priority :high,
+     :files ["src/hive_mcp/knowledge_graph/staleness.clj"],
+     :estimate :medium,
+     :tags ["staleness"]}
+    {:id "step-3",
+     :title "Add certainty propagation on stale edges",
+     :description
+     "When disc changes, propagate reduced certainty to dependent KG edges",
+     :depends-on ["step-2"],
+     :priority :medium,
+     :files ["src/hive_mcp/knowledge_graph/certainty.clj"],
+     :estimate :medium,
+     :tags ["certainty" "bayesian"]}]},
+  :status :draft},
+ :draft-none {:status :draft, :error "No content or plan provided"},
+ :execute-none {:x 1, :status :executing},
+ :execute-stub
+ {:status :executing,
+  :task-ids ["task-step-1" "task-step-2" "task-step-3"]}}

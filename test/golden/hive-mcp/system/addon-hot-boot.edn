@@ -1,0 +1,21 @@
+{:ok
+ {:ok
+  {:mounted 1,
+   :claims {},
+   :dirs ["/a/src"],
+   :registered ["hive.a"],
+   :skipped [],
+   :fresh? true,
+   :ok? true,
+   :errors []}},
+ :empty {:ok {:mounted 0, :skipped-boot :no-mounted-addons}},
+ :no-host {:error :addon-hot/no-mount-host, :mounted 1},
+ :plan-fail :addon-hot/plan-failed,
+ :reg-fail :addon-hot/register-failed,
+ :registered [#:addon{:id "hive.a"}],
+ :start
+ {:registered [#:addon{:id "hive.a"}],
+  :result-ok? true,
+  :last-is-result true,
+  :stop ["hive.a"]},
+ :stop-empty nil}

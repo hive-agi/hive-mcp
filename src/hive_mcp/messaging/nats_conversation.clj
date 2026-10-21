@@ -34,7 +34,8 @@
    - Subscriptions are no-ops when backbone is disconnected. Caller must
      re-invoke `start-subscriptions!` after backbone is up."
 
-  (:require [hive-mcp.protocols.event-backbone :as eb]
+  (:require [malli.core :as m]
+            [hive-mcp.protocols.event-backbone :as eb]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -51,30 +52,42 @@
   [to-agent-id]
   (str conv-prefix ".tell." to-agent-id))
 
+(m/=> tell-subject [:=> [:cat :string] :string])
+
 (defn ask-subject
   "hive.conv.ask.<to-agent-id>"
   [to-agent-id]
   (str conv-prefix ".ask." to-agent-id))
+
+(m/=> ask-subject [:=> [:cat :string] :string])
 
 (defn respond-subject
   "hive.conv.respond.<ask-id>"
   [ask-id]
   (str conv-prefix ".respond." ask-id))
 
+(m/=> respond-subject [:=> [:cat :string] :string])
+
 (defn tell-wildcard
   "hive.conv.tell.> — listen for tells to any agent on this node."
   []
   (str conv-prefix ".tell.>"))
+
+(m/=> tell-wildcard [:=> [:cat] [:= "hive.conv.tell.>"]])
 
 (defn ask-wildcard
   "hive.conv.ask.> — listen for asks to any agent on this node."
   []
   (str conv-prefix ".ask.>"))
 
+(m/=> ask-wildcard [:=> [:cat] [:= "hive.conv.ask.>"]])
+
 (defn respond-wildcard
   "hive.conv.respond.> — listen for any reply (correlation by :ask-id)."
   []
   (str conv-prefix ".respond.>"))
+
+(m/=> respond-wildcard [:=> [:cat] [:= "hive.conv.respond.>"]])
 
 ;; =============================================================================
 ;; Identity gate
@@ -94,10 +107,14 @@
   [ids]
   (reset! *self-agent-ids (if (set? ids) ids (set ids))))
 
+(m/=> set-self-agent-ids! [:=> [:cat [:maybe [:sequential :string]]] [:set :string]])
+
 (defn add-self-agent-id!
   "Append a single hosted agent-id."
   [id]
   (swap! *self-agent-ids (fnil conj #{}) id))
+
+(m/=> add-self-agent-id! [:=> [:cat :string] [:set :string]])
 
 (defn- addressed-to-self?
   "True if the envelope's :to is in our hosted set, OR if no set is
@@ -133,11 +150,15 @@
   {:pre [(string? to) (map? envelope)]}
   (publish* (tell-subject to) envelope))
 
+(m/=> publish-tell! [:=> [:cat [:map [:to :string]]] :boolean])
+
 (defn publish-ask!
   "Publish a :conversation/ask envelope on hive.conv.ask.<to>."
   [{:keys [to] :as envelope}]
   {:pre [(string? to) (map? envelope)]}
   (publish* (ask-subject to) envelope))
+
+(m/=> publish-ask! [:=> [:cat [:map [:to :string]]] :boolean])
 
 (defn publish-respond!
   "Publish a :conversation/respond envelope on hive.conv.respond.<ask-id>.
@@ -146,6 +167,8 @@
   [{:keys [ask-id] :as envelope}]
   {:pre [(string? ask-id) (map? envelope)]}
   (publish* (respond-subject ask-id) envelope))
+
+(m/=> publish-respond! [:=> [:cat [:map [:ask-id :string]]] :boolean])
 
 ;; =============================================================================
 ;; Subscriber side — emit events, never call effects directly
@@ -219,6 +242,8 @@
                   (tell-wildcard) (ask-wildcard) (respond-wildcard))
         true))))
 
+(m/=> start-subscriptions! [:=> [:cat] :boolean])
+
 (defn stop-subscriptions!
   "Unsubscribe from all hive.conv.* subjects. Safe to call even if not
    subscribed."
@@ -233,7 +258,11 @@
     (reset! *subscribed false)
     (log/info "[nats-conv] subscriptions stopped")))
 
+(m/=> stop-subscriptions! [:=> [:cat] :any])
+
 (defn subscribed?
   "True if conversation subscriptions are currently active."
   []
   @*subscribed)
+
+(m/=> subscribed? [:=> [:cat] :boolean])

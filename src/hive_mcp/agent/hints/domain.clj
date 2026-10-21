@@ -180,7 +180,8 @@
 
 (m/=> meaningful-tags [:=> [:cat Strings] [:vector :string]])
 
-(m/=> scope-visible? [:=> [:cat Strings :any [:maybe [:map-of :any :any]]] :any])
+;; Truthy answer: the matching scope tag (a string), else `contains?`'s boolean.
+(m/=> scope-visible? [:=> [:cat Strings :any [:maybe [:map-of :any :any]]] [:or :string :boolean]])
 
 (m/=> axiom-section [:=> [:cat Items] Section])
 

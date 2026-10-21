@@ -1,0 +1,3 @@
+{:completed
+ {:format-fn-saw ["f00-fire" {:status "completed", :result "ok"}],
+  :still-registered? true}}

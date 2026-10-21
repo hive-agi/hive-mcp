@@ -3,7 +3,9 @@
 
    Compat shim: moved to hive-agent.swarm.tools.agent.dag in hive-agent. Every public var delegates there
    through requiring-resolve; hive-mcp does not compile-depend on hive-agent."
-  (:require [hive-mcp.swarm.delegate :as delegate]))
+  (:require [hive-mcp.swarm.delegate :as delegate]
+            [malli.core :as m]
+            [hive-mcp.tools.result-bridge :as rb]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -36,3 +38,24 @@
   {:arglists '([_params])}
   [& args]
   (apply (impl! 'handle-dag-stop) args))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def DagParams
+  "Params of a dag subcommand: an open map (start reads plan_id, cwd,
+   max_slots, presets, project_id, task_ids, board_wide; status/stop none)."
+  [:maybe [:map
+           [:plan_id {:optional true} [:maybe :string]]
+           [:cwd {:optional true} [:maybe :string]]
+           [:project_id {:optional true} [:maybe :string]]]])
+
+(def DagHandler
+  "A dag shim: params -> the delegate's MCP response. Throws ex-info when
+   hive-agent is not on the classpath."
+  [:=> [:cat DagParams] rb/McpResponse])
+
+(m/=> handle-dag-start DagHandler)
+(m/=> handle-dag-status DagHandler)
+(m/=> handle-dag-stop DagHandler)

@@ -1,0 +1,31 @@
+{:empty {},
+ :compiled :ok,
+ :listing
+ {:broken
+  {:has-spec? true,
+   :has-handlers? true,
+   :compiled? false,
+   :error true},
+  :orphan
+  {:has-spec? true,
+   :has-handlers? false,
+   :compiled? false,
+   :error false},
+  :test-wf
+  {:has-spec? true,
+   :has-handlers? true,
+   :compiled? true,
+   :error false}},
+ :run {:started true, :processed true},
+ :scanned
+ [:catchup :complete-session :forge-belt :saa-workflow :wrap-session],
+ :init
+ {:catchup {:has-spec? true, :has-handlers? true, :compiled? true},
+  :complete-session
+  {:has-spec? true, :has-handlers? true, :compiled? true},
+  :forge-belt {:has-spec? true, :has-handlers? true, :compiled? true},
+  :saa-workflow
+  {:has-spec? true, :has-handlers? true, :compiled? true},
+  :wrap-session
+  {:has-spec? true, :has-handlers? true, :compiled? true}},
+ :spec-keys [:fsm :opts]}

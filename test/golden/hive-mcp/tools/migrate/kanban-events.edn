@@ -1,0 +1,11 @@
+{:ids
+ #{:kanban-mig/batch-completed
+   :kanban-mig/batch-started
+   :kanban-mig/entry-failed
+   :kanban-mig/entry-written
+   :kanban-mig/ids-listed
+   :kanban-mig/run-done
+   :kanban-mig/scan-started},
+ :init :ok,
+ :again :ok,
+ :typo :refused}

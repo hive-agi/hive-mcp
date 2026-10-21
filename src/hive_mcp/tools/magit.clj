@@ -1,20 +1,20 @@
 (ns hive-mcp.tools.magit
   "Magit integration handlers for MCP.
-
    Provides comprehensive git operations via magit addon:
-   - Status, branches, log, diff
-   - Stage, commit, push, pull, fetch
-   - Feature branch listing for /ship and /ship-pr skills
+   - Status, branches, log, diff; stage, commit, push, pull, fetch
+   - Feature branch listing (to ship a branch: `git ship land|status|reconcile`)
 
    Result DSL: Internal logic returns Result maps ({:ok val} or {:error category}).
    Single try-result boundary at each handler level. Zero nested try-catch."
   (:require [hive-mcp.dns.result :as result]
-            [hive-mcp.tools.core :refer [mcp-success mcp-error emacs-timeout-ms]]
+            [hive-mcp.tools.core :as core :refer [mcp-success mcp-error emacs-timeout-ms]]
+            [hive-mcp.tools.git-local-root :as local-root]
             [hive-mcp.context.request :as ctx]
             [taoensso.timbre :as log]
             [clojure.string :as str]
             [hive-spi.editor.services :as svc]
-            [clojure.data.json :as json]))
+            [clojure.data.json :as json]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -326,7 +326,8 @@
    staged and VERIFIED before the commit runs; a path that does not exist, or a
    stage that leaves the index empty for those paths, fails the operation
    instead of committing whatever the index already held. An explicit path list
-   also refuses a foreign staged path, naming it, unless include_staged is true."
+   also refuses a foreign staged path, naming it, unless include_staged is true.
+   A deps.edn :local/root leaving the repo is refused (git-local-root/refusal)."
   [{:keys [message all directory files include_staged] :as params}]
   (let [dir (resolve-directory directory)
         timeout-ms (emacs-timeout-ms params)
@@ -341,9 +342,9 @@
                     (verify-index-scope norm dir))]
         (if (and (some? scope) (nil? (find scope :ok)))
           (result->mcp scope)
-          (handle-op :magit/commit-failed
-                     {:op :magit/commit :message message :all stage-all :directory dir}
-                     timeout-ms))))))
+          (or (local-root/refusal dir stage-all)
+              (handle-op :magit/commit-failed {:op :magit/commit :message message
+                                               :all stage-all :directory dir} timeout-ms)))))))
 
 (defn handle-magit-push
   "Push to remote. Optionally set upstream tracking.
@@ -380,13 +381,52 @@
                (emacs-timeout-ms params))))
 
 (defn handle-magit-feature-branches
-  "Get list of feature/fix/feat branches (for /ship and /ship-pr skills)."
+  "Get list of feature/fix/feat branches. To ship one, use `git ship land|status|reconcile`."
   [{:keys [directory] :as params}]
   (let [dir (resolve-directory directory)]
     (log/info "magit-feature-branches" {:directory dir})
     (handle-op :magit/feature-branches-failed
                {:op :magit/feature-branches :directory dir}
                (emacs-timeout-ms params))))
+
+;;; =============================================================================
+;;; Contracts
+;;; =============================================================================
+
+(def Files
+  "The `files` parameter as callers send it: a path collection, one path,
+   a whitespace-separated path string, or the `all` marker."
+  [:maybe [:or :string :keyword :symbol [:sequential :any] [:set :any]]])
+
+(m/=> resolve-directory [:=> [:cat :any] :string])
+
+(m/=> normalize-files
+      [:=> [:cat Files] [:maybe [:or [:= :all] [:vector {:min 1} :string]]]])
+
+(m/=> staged-outside-files
+      [:=> [:cat [:sequential :string] [:sequential :string]] [:vector :string]])
+
+;; Every handler answers one MCP text response through the Result boundary.
+;; A malformed timeout_ms THROWS by design (core/emacs-timeout-ms).
+(m/=> handle-magit-status [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-magit-branches [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-magit-log [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-magit-diff [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-magit-stage [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-magit-commit [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-magit-push [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-magit-pull [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-magit-fetch [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-magit-feature-branches [:=> [:cat [:maybe :map]] core/McpResponse])
 
 ;; Tool definitions for magit handlers
 

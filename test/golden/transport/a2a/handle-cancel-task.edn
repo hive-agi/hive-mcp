@@ -1,0 +1,23 @@
+{:case-0
+ {:out {:error {:code -32602, :message "id is required"}}, :in {}},
+ :case-1
+ {:out
+  {:error
+   {:code -32602,
+    :message
+    "Cannot resolve agent for task. Provide metadata.hive-agent-id"}},
+  :in {:id "t1"}},
+ :case-2
+ {:out {:error {:code -32602, :message "id is required"}},
+  :in {:id ""}},
+ :case-3
+ {:out {:error {:code -32602, :message "id is required"}},
+  :in {:id ""}},
+ :case-4
+ {:out {:error {:code -32602, :message "id is required"}}, :in {}},
+ :case-5
+ {:out {:error {:code -32602, :message "id is required"}}, :in {}},
+ :case-6
+ {:out {:error {:code -32602, :message "id is required"}}, :in {}},
+ :case-7
+ {:out {:error {:code -32602, :message "id is required"}}, :in {}}}

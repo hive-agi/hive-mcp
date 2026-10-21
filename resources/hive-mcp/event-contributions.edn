@@ -46,8 +46,7 @@
 
   {:key :agora
    :install! hive-mcp.events.handlers.agora/register-handlers!
-   :events #{:agora/turn-dispatched :agora/timeout :agora/turn-completed
-             :agora/dispatch-next :agora/consensus}
+   :events #{:agora/turn-completed :agora/dispatch-next :agora/consensus}
    :addon :hive-agora}
 
   {:key :saa

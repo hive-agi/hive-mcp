@@ -1,0 +1,8 @@
+{:record nil,
+ :silent nil,
+ :batch nil,
+ :query nil,
+ :count 0,
+ :prune {:ok false, :error "temporal store unavailable"},
+ :retained
+ [:kanban-delete :kanban-done :kanban-edit :kanban-move :kanban-retag]}

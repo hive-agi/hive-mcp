@@ -1,0 +1,11 @@
+{:installed? true,
+ :staleness [0.8 nil],
+ :propagate {:propagated 1, :path "src/a.clj"},
+ :top-stale [["a.clj"] ["a.clj" "b.clj"]],
+ :reset-cache nil,
+ :calls
+ [[:staleness-value :file-changed]
+  [:staleness-value :unknown]
+  [:propagate "src/a.clj" 0.8 :file-changed]
+  [:top-stale {:n 1}]
+  [:top-stale nil]]}

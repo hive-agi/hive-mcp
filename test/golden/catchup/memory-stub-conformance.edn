@@ -1,0 +1,8 @@
+{:axioms-scan ["ax-b" "ax-far" "ax-global-far" "ax-global-pid-far-tag" "ax-mixed" "ax-untagged-far" "ax-untagged-global" "ax-ws"],
+ :descendant-scan ["dec-a" "dec-b-misfiled" "exp-a" "pr-a" "ss-a"],
+ :fresh-sessions ["ss-far"],
+ :global-pierce ["ax-global-pid-far-tag" "ax-untagged-global" "conv-prio-far" "conv-prio-global" "exp-far-pierce" "exp-global-pierce"],
+ :hierarchy-in-list ["ax-ws" "cand-a1" "dec-a" "dec-b-misfiled" "dec-untagged-a1" "exp-a" "legacy-ax-ws" "pr-a" "prp-ws" "ss-a" "wrap-a1"],
+ :limit-cuts-newest ["ax-global-far" "ax-far" "ax-ws"],
+ :priority-principles ["prp-far" "prp-ws"],
+ :tags-are-and ["conv-prio-global" "conv-prio-global-from-far" "exp-global-from-far" "exp-global-pierce"]}

@@ -1,0 +1,8 @@
+{:case-0 {:out false, :in ("note")},
+ :case-1 {:out false, :in ("Plan")},
+ :case-2 {:out true, :in ("plan")},
+ :case-3 {:out false, :in (:plan)},
+ :case-4 {:out true, :in ("plan")},
+ :case-5 {:out true, :in ("plan")},
+ :case-6 {:out false, :in ("Plan")},
+ :case-7 {:out false, :in ("decision")}}

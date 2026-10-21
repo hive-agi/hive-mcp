@@ -1,0 +1,6 @@
+{:config {:auto-kanban-on-explore true},
+ :merge-noop {:auto-kanban-on-explore true},
+ :nil-params
+ {:type "text",
+  :text "Missing required field: commit_msg",
+  :isError true}}

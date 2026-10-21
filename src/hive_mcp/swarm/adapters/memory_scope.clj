@@ -28,7 +28,8 @@
    adapter runs on the SPI's Noop."
   (:require [hive-spi.swarm.ports.memory-scope :as spi]
             [hive-mcp.project.scope :as project-scope]
-            [hive-mcp.extensions.soft :as soft]))
+            [hive-mcp.extensions.soft :as soft]
+            [malli.core :as m]))
 
 (defn make-adapter
   "Build the hive-mcp implementation of both memory-scope SPI protocols."
@@ -52,8 +53,17 @@
                     #(spi/kg-first-context spi/noop paths)
                     paths))))
 
+(def Adapter
+  "Something that fills the memory-scope port: project scope and staleness."
+  [:fn {:gen/fmap (fn [_] (make-adapter)) :gen/schema :nil}
+   #(and (satisfies? spi/IProjectScope %) (satisfies? spi/IDiscStaleness %))])
+
+(m/=> make-adapter [:=> [:cat] Adapter])
+
 (defn install!
   "Install the hive-mcp adapter into the SPI slot. Idempotent by overwrite —
    the last installer wins, which is what a re-init should do."
   []
   (spi/set-memory-scope! (make-adapter)))
+
+(m/=> install! [:=> [:cat] Adapter])

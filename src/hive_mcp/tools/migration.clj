@@ -26,7 +26,9 @@
             [clojure.java.io :as io]
             [clojure.edn :as edn]
             [taoensso.timbre :as log]
-            [hive-mcp.vectordb.facade :as facade]))
+            [hive-mcp.vectordb.facade :as facade]
+            [malli.core :as m]
+            [hive-mcp.extensions.record-hooks :as record-hooks]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -72,13 +74,14 @@
 
 (defn- export-memory-to-edn
   "Export all Chroma memory entries to EDN format for backup.
+   Each entry first passes the :export/entry record hooks
+   (hive-mcp.extensions.record-hooks); one a hook drops is left out.
    Returns {:entries [...] :counts {:note N :snippet N ...} :total N}"
   []
-  (let [;; Get all entries including expired for complete backup
-        entries (facade/query-entries :limit 50000 :include-expired? true)
-        ;; Remove :document field (regenerated on import from content)
+  (let [entries (->> (facade/query-entries :limit 50000 :include-expired? true)
+                     (keep #(record-hooks/apply-hooks :export/entry %))
+                     vec)
         clean-entries (mapv #(dissoc % :document) entries)
-        ;; Group by type for counts
         by-type (group-by :type entries)]
     {:entries clean-entries
      :counts (into {} (map (fn [[k v]] [(keyword k) (count v)]) by-type))
@@ -564,3 +567,64 @@
       :adapters (cmd-adapters cmd-params)
       :help     (cmd-help cmd-params)
       (cmd-help cmd-params))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+;;
+;; The cmd-* fns answer PLAIN maps (the consolidated tool serializes them); a
+;; missing required param or a refused restore THROWS ex-info by design.
+
+(def Backend
+  "A KG backend keyword."
+  [:enum :datascript :datalevin :datahike])
+
+(def HelpResult
+  "cmd-help's command catalogue."
+  [:map [:commands [:vector [:map [:command :string] [:description :string]
+                             [:params [:vector :map]]]]]])
+
+(m/=> cmd-status [:=> [:cat :any]
+                  [:map [:kg [:map [:backend :any] [:counts :map] [:temporal? :boolean]]]
+                   [:backups [:map [:count [:int {:min 0}]] [:latest :any]
+                              [:recent [:sequential :any]]]]]])
+
+(m/=> cmd-backup [:=> [:cat [:maybe :map]] :map])
+
+(m/=> cmd-restore [:=> [:cat [:maybe :map]]
+                   [:or
+                    [:map [:dry-run [:= true]] [:path :string] [:scope-check :any]]
+                    [:map [:success :boolean] [:path :string] [:project-id :any]]]])
+
+(m/=> cmd-list [:=> [:cat [:maybe :map]]
+                [:map [:backups [:sequential :any]] [:count [:int {:min 0}]]
+                 [:project-id-filter {:optional true} :string]]])
+
+(m/=> cmd-switch [:=> [:cat [:maybe :map]]
+                  [:or
+                   [:map [:dry-run [:= true]] [:from :any] [:to :any] [:would-migrate :any]]
+                   [:map [:success :any] [:from :any] [:to :any] [:migrated :any]
+                    [:validation :any]]]])
+
+(m/=> cmd-sync [:=> [:cat [:maybe :map]]
+                [:map [:success :any] [:from :any] [:to :any] [:synced :any]
+                 [:validation :any]]])
+
+(m/=> cmd-validate [:=> [:cat [:maybe :map]] :map])
+
+(m/=> cmd-adapters [:=> [:cat :any] [:map [:adapters [:sequential :any]]]])
+
+(m/=> cmd-export [:=> [:cat [:maybe :map]]
+                  [:map [:success [:= true]] [:path :string] [:counts :any] [:adapter :any]]])
+
+(m/=> cmd-import [:=> [:cat [:maybe :map]]
+                  [:or
+                   [:map [:dry-run [:= true]] [:path :string]
+                    [:would-import [:map [:edges :int] [:disc :int] [:synthetic :int]]]]
+                   [:map [:success :boolean] [:path :string] [:imported :any] [:errors :any]]]])
+
+(m/=> cmd-help [:=> [:cat :any] HelpResult])
+
+;; handle-migration answers whichever cmd-* the :command names (help by
+;; default), so its output is the union of their result maps.
+(m/=> handle-migration [:=> [:cat [:maybe :map]] :map])

@@ -1,0 +1,14 @@
+{:registered nil,
+ :empty {:total-edges 0, :by-relation {}, :by-scope {}},
+ :added
+ {:total-edges 3,
+  :by-relation {:implements 2, :refines 1},
+  :by-scope {"s1" 2}},
+ :removed
+ {:total-edges 2,
+  :by-relation {:implements 1, :refines 1},
+  :by-scope {"s1" 1}},
+ :migrated
+ {:total-edges 2,
+  :by-relation {:implements 1, :refines 1},
+  :by-scope {"s2" 1}}}

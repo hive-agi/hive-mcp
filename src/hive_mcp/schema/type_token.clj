@@ -21,7 +21,8 @@
 
    `hive-mcp.memory.type-registry` call-throughs to everything here, so an
    existing caller keeps its name."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -35,6 +36,14 @@
   "Upper bound on a sanitized type token (chars). Bounds keyword interning
    and config growth; long enough for any legitimate type name."
   64)
+
+(def Token
+  "A sanitized type token: trimmed, lowercased, non-blank."
+  [:and {:gen/schema [:string {:min 1}]
+         :gen/fmap #(str "t" (str/lower-case (str/trim %)))}
+   :string
+   [:fn {:error/message "trimmed, lowercased and non-blank"}
+    #(and (not (str/blank? %)) (= % (str/lower-case (str/trim %))))]])
 
 (def ^:private safe-type-re
   "A safe type token: starts with a letter, then letters/digits/_/-.
@@ -50,6 +59,8 @@
     (let [s (-> (if (keyword? t) (name t) t) str/trim str/lower-case)]
       (when-not (str/blank? s) s))))
 
+(m/=> sanitize-type [:=> [:cat :any] [:maybe Token]])
+
 (defn safe-type?
   "True when `t` reduces to a safe type token: non-blank, length <=
    max-type-length, matching ^[a-z][a-z0-9_-]*$ after sanitization. Rejects
@@ -61,6 +72,8 @@
    (when-let [s (sanitize-type t)]
      (and (<= (count s) max-type-length)
           (re-matches safe-type-re s)))))
+
+(m/=> safe-type? [:=> [:cat :any] :boolean])
 
 ;; =============================================================================
 ;; The requested-type marker
@@ -82,6 +95,8 @@
   (when (safe-type? type)
     (str requested-type-tag-prefix (sanitize-type type))))
 
+(m/=> requested-type-tag [:=> [:cat :any] [:maybe [:string {:min 16}]]])
+
 (defn requested-type-of
   "Read back the gated type a parked entry originally requested, from its
    tags. Returns nil when no requested-type marker is present."
@@ -91,3 +106,5 @@
             (when (str/starts-with? s requested-type-tag-prefix)
               (subs s (count requested-type-tag-prefix)))))
         tags))
+
+(m/=> requested-type-of [:=> [:cat [:maybe [:or [:sequential :any] [:set :any]]]] [:maybe :string]])

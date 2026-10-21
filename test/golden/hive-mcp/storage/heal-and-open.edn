@@ -1,0 +1,13 @@
+{:audit {:err :storage/open-aborted, :classification :lock-contention},
+ :chain :conn,
+ :clean :conn,
+ :exhausted
+ {:err :storage/heal-exhausted,
+  :classification :wal-corrupt,
+  :attempts 1},
+ :quarantine-lock
+ {:err :storage/open-aborted, :classification :lock-contention},
+ :quarantine-ok :conn,
+ :throw {:err :storage/open-aborted, :classification :wal-corrupt},
+ :truncate-empty
+ {:err :storage/open-aborted, :classification :wal-corrupt}}

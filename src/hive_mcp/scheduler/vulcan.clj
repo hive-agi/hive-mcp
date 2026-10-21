@@ -5,7 +5,8 @@
             [hive-mcp.dns.result :refer [rescue]]
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.kanban-facade :as kanban]
-            [clojure.data.json :as json]))
+            [clojure.data.json :as json]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -14,17 +15,51 @@
 ;; KG Dependency Queries (thin I/O wrappers — testable via with-redefs)
 ;; =============================================================================
 
+;; =============================================================================
+;; Schemas
+;; =============================================================================
+
+(def EntryState
+  "Readiness states `entry-state` / `task-state` / `dependency-state` answer."
+  [:enum :done :open :missing :invalid :lookup-error])
+
+(def DepsFn
+  "Injected dependency lookup: task-id → collection of dependency ids."
+  [:=> [:cat :any] [:maybe [:or [:set :any] [:sequential :any]]]])
+
+(def StateFn
+  "Injected state lookup: dep-id → an EntryState, or a legacy exists-fn
+   boolean / nil. Any other value reads as :invalid."
+  [:=> [:cat :any] :any])
+
+(def Completed
+  "Ids already known complete; called as a set (contains?), nil reads as none."
+  [:maybe [:set :any]])
+
+(def VTask
+  "A kanban task as the Vulcan sort reads it. Open map."
+  [:map
+   [:id {:optional true} :any]
+   [:priority {:optional true} [:maybe :string]]
+   [:wave-number {:optional true} [:maybe :int]]])
+
 (defn get-task-deps
   "Query task dependency IDs. Lookup errors propagate so callers cannot mistake failure for no dependencies."
   [task-id]
   (let [edges (kg-edges/get-edges-from task-id)]
     (set (keep #(when (= :depends-on (:kg-edge/relation %)) (:kg-edge/to %)) edges))))
 
+;; boundary: reads the KG edge store; lookup errors propagate (see docstring)
+(m/=> get-task-deps [:=> [:cat :any] [:set :any]])
+
 (defn task-exists?
   "Check if a task still exists in the memory store."
   [task-id]
   (rescue false
           (some? (facade/get-entry-by-id task-id))))
+
+;; boundary: memory store read, rescued to false
+(m/=> task-exists? [:=> [:cat :any] :boolean])
 
 ;; =============================================================================
 ;; Pure Readiness Calculations
@@ -47,12 +82,17 @@
           :else :invalid))
       (catch Exception _ :invalid))))
 
+;; any value: a non-map or malformed :content classifies :invalid
+(m/=> entry-state [:=> [:cat :any] [:enum :done :open :missing :invalid]])
+
 (defn task-state
   "Read completion from the configured kanban store; lookup failures remain explicit and blocked."
   [task-id]
   (try
     (entry-state (kanban/get-entry-by-id task-id))
     (catch Exception _ :lookup-error)))
+
+(m/=> task-state [:=> [:cat :any] EntryState])
 
 (defn dependency-state
   "Normalize a state lookup, including legacy exists-fn booleans. Absence is not completion."
@@ -68,10 +108,14 @@
           :else :invalid))
       (catch Exception _ :lookup-error))))
 
+(m/=> dependency-state [:=> [:cat :any Completed StateFn] EntryState])
+
 (defn dep-satisfied?
   "A dependency is satisfied only by explicit completion or a stored done status."
   [dep-id completed-ids state-fn]
   (= :done (dependency-state dep-id completed-ids state-fn)))
+
+(m/=> dep-satisfied? [:=> [:cat :any Completed StateFn] :boolean])
 
 (defn task-ready?
   "Check if a task has all its dependencies satisfied."
@@ -81,12 +125,17 @@
       true
       (every? #(dep-satisfied? % completed-ids exists-fn) deps))))
 
+(m/=> task-ready? [:=> [:cat :any Completed DepsFn StateFn] :boolean])
+
 (defn filter-ready-tasks
   "Filter todo tasks to only those with all deps satisfied."
   [tasks completed-ids deps-fn exists-fn]
   (filterv (fn [task]
              (task-ready? (:id task) completed-ids deps-fn exists-fn))
            tasks))
+
+(m/=> filter-ready-tasks [:=> [:cat [:maybe [:sequential VTask]] Completed DepsFn StateFn]
+                          [:vector VTask]])
 
 ;; =============================================================================
 ;; Wave Number Computation
@@ -113,6 +162,15 @@
          (swap! memo assoc task-id wave)
          wave)))))
 
+;; the 4-arity is the recursion's memo/visiting state; a cycle answers 0
+(m/=> compute-wave-number [:function
+                           [:=> [:cat :any DepsFn] [:int {:min 0}]]
+                           [:=> [:cat :any DepsFn
+                                 [:fn {:gen/schema :nil :gen/fmap (fn [_] (atom {}))}
+                                  (fn [a] (instance? clojure.lang.Atom a))]
+                                 [:set :any]]
+                            [:int {:min 0}]]])
+
 (defn enrich-with-wave-numbers
   "Add :wave-number to each task map based on KG dependency depth."
   [tasks deps-fn]
@@ -121,6 +179,9 @@
             (assoc task :wave-number
                    (compute-wave-number (:id task) deps-fn memo #{})))
           tasks)))
+
+(m/=> enrich-with-wave-numbers [:=> [:cat [:maybe [:sequential VTask]] DepsFn]
+                                [:vector [:map [:wave-number [:int {:min 0}]]]]])
 
 ;; =============================================================================
 ;; Vulcan Sort (priority > wave-number > creation-date)
@@ -147,6 +208,9 @@
                    (compare wa wb)
                    (compare (str (:id a)) (str (:id b))))))))
          tasks)))
+
+;; an unknown priority string ranks as medium
+(m/=> sort-vulcan [:=> [:cat [:maybe [:sequential VTask]]] [:vector VTask]])
 
 ;; =============================================================================
 ;; High-Level API (composes the above)
@@ -185,3 +249,26 @@
      {:tasks ready :count (count ready)
       :blocked blocked :blocked-count (count blocked)
       :scoped-count (count scoped)})))
+
+(def PrioritizeOpts
+  "Injection opts for prioritize-tasks. Open map."
+  [:maybe
+   [:map
+    [:deps-fn {:optional true} DepsFn]
+    [:state-fn {:optional true} [:maybe StateFn]]
+    [:exists-fn {:optional true} [:maybe StateFn]]
+    [:task_ids {:optional true} [:maybe [:or [:sequential :any] [:set :any]]]]]])
+
+(def Prioritized
+  "The ready frontier and what was blocked."
+  [:map
+   [:tasks [:vector [:map [:wave-number [:int {:min 0}]]]]]
+   [:count [:int {:min 0}]]
+   [:blocked [:vector [:map [:task-id :any]]]]
+   [:blocked-count [:int {:min 0}]]
+   [:scoped-count [:int {:min 0}]]])
+
+(m/=> prioritize-tasks [:function
+                        [:=> [:cat [:maybe [:sequential VTask]]] Prioritized]
+                        [:=> [:cat [:maybe [:sequential VTask]] Completed] Prioritized]
+                        [:=> [:cat [:maybe [:sequential VTask]] Completed PrioritizeOpts] Prioritized]])

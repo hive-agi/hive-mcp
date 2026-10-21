@@ -10,7 +10,7 @@
    - handlers.claim   - File claims (:claim/file-released, :claim/notify-waiting)
    - handlers.hot-reload - Hot reload lifecycle (:hot/reload-start, :hot/reload-success, :file/changed)
    - handlers.kg     - Knowledge Graph (:kg/edge-created, :kg/edge-updated, :kg/edge-removed, :kg/node-promoted)
-   - handlers.agora  - Agora dialogue events (:agora/turn-dispatched, :agora/timeout, :agora/turn-completed, :agora/dispatch-next, :agora/consensus)
+   - handlers.agora  - Agora dialogue events (:agora/turn-completed, :agora/dispatch-next, :agora/consensus)
    - handlers.saa    - SAA workflow (:saa/started, :saa/phase-complete, :saa/completed, :saa/failed)
    - handlers.lifecycle - GC lifecycle (:lifecycle/sweep)
 
@@ -43,8 +43,6 @@
    - :kg/edge-updated       - KG edge confidence changed
    - :kg/edge-removed       - KG edge deleted
    - :kg/node-promoted      - Knowledge promoted to parent scope
-   - :agora/turn-dispatched   - Agora turn dispatched to ling
-   - :agora/timeout           - Agora timeout
    - :agora/turn-completed    - Unified ling turn completion
    - :agora/dispatch-next     - Relay the next turn to a ling participant
    - :agora/consensus         - Crystallize dialogue result to memory

@@ -1,0 +1,19 @@
+[[:empty #{}]
+ [:reg-alpha {:registered? true, :terminal-id :alpha}]
+ [:reg-bad
+  {:registered? false,
+   :terminal-id :bad,
+   :errors ["Object does not satisfy ITerminalAddon protocol"]}]
+ [:reg-beta {:registered? true, :terminal-id :beta}]
+ [:terminals #{:beta :alpha}]
+ [:spawn-alpha "alpha-l1"]
+ [:replace {:registered? true, :terminal-id :alpha}]
+ [:spawn-alpha2 "alpha2-l1"]
+ [:spawn-none nil]
+ [:raw-is-addon true]
+ [:raw-missing nil]
+ [:dereg-beta {:deregistered? true, :terminal-id :beta}]
+ [:dereg-again {:deregistered? false, :terminal-id :beta}]
+ [:after #{:alpha}]
+ [:clear nil]
+ [:cleared #{}]]

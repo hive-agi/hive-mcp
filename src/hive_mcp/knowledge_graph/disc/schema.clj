@@ -26,21 +26,22 @@
 
 (def PositiveNumber
   "A Beta-distribution parameter: a positive double, or a positive integer,
-   in the range the scoring fns compute over.
+   in the range the stored priors live in (2.0..7.0 plus observation counts).
 
-   BUG (recorded, not fixed): `beta-lower-bound` computes the variance as
-   `(/ (* a b) (* sum sum (+ sum 1)))` and fails outside that range:
-     - INTEGER parameters overflow long arithmetic and throw
-       ArithmeticException once alpha + beta exceeds about 2.09e6, e.g.
-       {:disc/certainty-alpha 1 :disc/certainty-beta 2097151};
-     - tiny DOUBLES underflow the denominator to 0.0 and throw
-       ArithmeticException (Divide by zero), e.g. alpha 1.1e-162, beta 2.8e-163;
-     - huge DOUBLES overflow to Infinity and yield NaN, e.g. alpha 9e307.
-   Stored parameters are doubles near the 2.0..7.0 priors, so the schema
-   states the range the body survives."
+   `beta-lower-bound` accepts the full positive range (see BetaParam); the
+   other scoring fns still do plain long arithmetic, so this bound stays for
+   their contracts."
   [:or
    [:double {:min 1.0E-100 :max 1.0E100}]
    [:int {:min 1 :max 1000000}]])
+
+(def BetaParam
+  "Any positive finite Beta parameter: a double from the smallest subnormal
+   to Double/MAX_VALUE, or any positive long. beta-lower-bound computes over
+   this whole range."
+  [:or
+   [:double {:min Double/MIN_VALUE :max Double/MAX_VALUE}]
+   [:int {:min 1 :max Long/MAX_VALUE}]])
 
 (def Score
   "A staleness or certainty score in [0, 1]."
@@ -78,6 +79,13 @@
   (mu/merge Disc [:map
                   [:disc/certainty-alpha PositiveNumber]
                   [:disc/certainty-beta PositiveNumber]]))
+
+(def BetaDisc
+  "A Disc whose Beta parameters may take any positive finite value: the input
+   of beta-lower-bound."
+  (mu/merge Disc [:map
+                  [:disc/certainty-alpha {:optional true} BetaParam]
+                  [:disc/certainty-beta {:optional true} BetaParam]]))
 
 (def VolatilityClass
   "The volatility classes classify-volatility returns."

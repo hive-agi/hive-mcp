@@ -1,0 +1,21 @@
+{:case-0 {:out {}, :in ([])},
+ :case-1
+ {:out {"c" {:id "c", :n 0}, "a" {:id "a", :n -1}},
+  :in ([{:id "c", :n 0} {:id "a", :n -1}])},
+ :case-2
+ {:out
+  {"b" {:id "b", :n 0}, "c" {:id "c", :n 1}, "a" {:id "a", :n -1}},
+  :in
+  ([{:id "b", :n 0}
+    {:id "c", :n 1}
+    {:id "a", :n -1}
+    {:id "b", :n 0}])},
+ :case-3
+ {:out {"b" {:id "b", :n -1}, "c" {:id "c", :n -2}},
+  :in ([{:id "b", :n 0} {:id "c", :n -2} {:id "b", :n -1}])},
+ :case-4 {:out {"c" {:id "c", :n -1}}, :in ([{:id "c", :n -1}])},
+ :case-5 {:out {"c" {:id "c", :n -2}}, :in ([{:id "c", :n -2}])},
+ :case-6
+ {:out {"c" {:id "c", :n 19}},
+  :in ([{:id "c", :n 5} {:id "c", :n 19}])},
+ :case-7 {:out {"b" {:id "b", :n 0}}, :in ([{:id "b", :n 0}])}}

@@ -1,7 +1,8 @@
 (ns hive-mcp.tools.swarm.state
   "Hivemind state integration for swarm status, mapping DataScript slave status to working status."
   (:require [hive-mcp.tools.swarm.registry :as registry]
-            [hive-mcp.swarm.datascript :as ds]))
+            [hive-mcp.swarm.datascript :as ds]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -41,3 +42,16 @@
                 slave)
               slave))
           slaves-detail)))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def WorkingStatus [:enum "working" "idle" "blocked"])
+
+(m/=> get-slave-working-status [:=> [:cat [:maybe :string]] [:maybe WorkingStatus]])
+
+(m/=> get-unified-swarm-status [:=> [:cat] [:map-of :any [:map [:working-status WorkingStatus]]]])
+
+(m/=> merge-hivemind-into-slaves
+  [:=> [:cat [:maybe [:sequential [:map [:slave-id {:optional true} :any]]]]] [:maybe [:vector :map]]])

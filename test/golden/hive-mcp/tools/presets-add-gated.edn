@@ -1,0 +1,24 @@
+{:case-0
+ {:out {:type "text", :text "Chroma not configured", :isError true},
+  :in ({:name "x"})},
+ :case-1
+ {:out {:type "text", :text "Chroma not configured", :isError true},
+  :in ({:name "x", :content "body"})},
+ :case-2
+ {:out {:type "text", :text "Chroma not configured", :isError true},
+  :in ({:name "tdd"})},
+ :case-3
+ {:out {:type "text", :text "Chroma not configured", :isError true},
+  :in ({:name "reviewer", :content "body"})},
+ :case-4
+ {:out {:type "text", :text "Chroma not configured", :isError true},
+  :in ({:name "tdd"})},
+ :case-5
+ {:out {:type "text", :text "Chroma not configured", :isError true},
+  :in ({:name "tdd"})},
+ :case-6
+ {:out {:type "text", :text "Chroma not configured", :isError true},
+  :in ({:name "reviewer"})},
+ :case-7
+ {:out {:type "text", :text "Chroma not configured", :isError true},
+  :in ({:name "x"})}}

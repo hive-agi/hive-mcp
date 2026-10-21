@@ -29,10 +29,9 @@
    shape change on success — only a structured err body on failure."
   (:require [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
-            [hive-mcp.knowledge-graph.scope :as kg-scope]
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.memory.domain :as domain]
-            [hive-mcp.tools.core :refer [coerce-int!]]
+            [hive-mcp.tools.core :as tcore :refer [coerce-int!]]
             [hive-mcp.tools.result-bridge :as rb]
             [hive-mcp.dns.result :as result :refer [rescue]]
             [hive-mcp.concurrency.pool :as pool]
@@ -43,7 +42,9 @@
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
-            [hive-mcp.memory.ingest-search :as ingest-search]))
+            [hive-mcp.memory.ingest-search :as ingest-search]
+            [malli.core :as m]
+            [hive-mcp.tools.memory.schema :as ms]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -315,6 +316,21 @@
    and stay visible — they are few and high-signal."
   ["carto" "ingestion-chunk"])
 
+(defn resolve-exclude-tags
+  "Pure: the exclusion set a search runs with. Takes one map,
+   {:exclude-tags <caller value or nil> :default-excludes [...] :required-tags [...]}.
+
+   A caller-supplied EXCLUDE-TAGS (even empty) is used as given. Without one the
+   DEFAULT-EXCLUDES apply, minus any tag the caller REQUIRES: a search with
+   tags=[\"ingestion-chunk\"] asked for those hits by name, and the default
+   exclusion would otherwise make that search contradict itself and answer
+   nothing (kanban 20260519145016-4561f6bc)."
+  [{:keys [exclude-tags default-excludes required-tags]}]
+  (if (some? exclude-tags)
+    (vec exclude-tags)
+    (let [required (set required-tags)]
+      (vec (remove required default-excludes)))))
+
 (defn search-payload
   "Pure: the ok payload of a semantic search.
 
@@ -359,15 +375,13 @@
      eat the whole budget (the other side still races to complete).
    - post-filter gets 5s — bounded CPU, independent of network health.
 
+   VISIBLE-PROJECT-IDS is the project filter pushed to the store (nil = none);
+   `domain/scope->search-project-ids` computes it from the caller's scope.
+
    REQUIRED-TAGS: when non-empty, both sides over-fetch by `tag-overfetch`
    and the post stage keeps only hits carrying every tag."
-  [query limit-val type project-id in-project? include_descendants exclude-tags required-tags]
-  (let [visible-project-ids (when in-project?
-                              (let [visible (kg-scope/visible-scopes project-id)
-                                    descendants (when include_descendants
-                                                  (kg-scope/descendant-scopes project-id))]
-                                (vec (distinct (concat visible descendants)))))
-        effective-excludes (vec exclude-tags)
+  [query limit-val type project-id visible-project-ids exclude-tags required-tags]
+  (let [effective-excludes (vec exclude-tags)
         fetch-limit (if (seq required-tags) (* limit-val tag-overfetch) limit-val)
         fj (parallel/fork-join
             {:budget-ms (budget :total)}
@@ -423,9 +437,14 @@
   "Pure search logic returning Result. Validates inputs and dispatches to the
    default IMemoryStore via search-store*.
    exclude_tags defaults to `default-exclude-tags` — pass a tag vector to
-   replace that default with your own exclusion set.
+   replace that default with your own exclusion set. A tag named in `tags` is
+   dropped from the default (see `resolve-exclude-tags`).
    tags, when given, is a required set: only hits carrying every tag are
    returned (AND, as in `memory query`).
+   scope: an EXPLICIT project scope (anything but nil/\"all\"/\"global\") is a
+   strict filter — only that project (+ its descendants) is returned, not its
+   ancestors or global. nil auto-derives from directory and keeps the
+   hierarchy; \"all\" lifts the filter.
    include_descendants defaults to true — pass false to restrict to current project."
   [{:keys [query limit type directory include_descendants scope exclude_tags tags]}]
   (let [directory (or directory (ctx/current-directory))
@@ -448,11 +467,14 @@
                                  "Configure a memory store with an embedding provider.")})
       (let [project-id (scope/get-current-project-id directory)
             sf (domain/parse-scope scope project-id)
-            [effective-pid in-project?] (domain/scope->effective sf)]
-        (search-store* query limit-val type effective-pid in-project?
-                       include-descendants? (if (some? exclude_tags)
-                                              exclude_tags
-                                              default-exclude-tags)
+            [effective-pid _in-project?] (domain/scope->effective sf)
+            visible-project-ids (domain/scope->search-project-ids
+                                 sf {:include-descendants? include-descendants?
+                                     :strict?              true})]
+        (search-store* query limit-val type effective-pid visible-project-ids
+                       (resolve-exclude-tags {:exclude-tags     exclude_tags
+                                              :default-excludes default-exclude-tags
+                                              :required-tags    required-tags})
                        required-tags)))))
 
 (defn handle-search-semantic
@@ -490,3 +512,30 @@
 
       :else
       (rb/result->mcp raw))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> filter-required-tags
+      [:=> [:cat [:map [:entries {:optional true} [:maybe [:sequential ms/SearchHit]]]
+                  [:tags {:optional true} [:maybe [:sequential ms/Tag]]]]]
+       [:vector ms/SearchHit]])
+
+(m/=> resolve-exclude-tags
+      [:=> [:cat [:map [:exclude-tags {:optional true} [:maybe [:sequential ms/Tag]]]
+                  [:default-excludes {:optional true} [:maybe [:sequential ms/Tag]]]
+                  [:required-tags {:optional true} [:maybe [:sequential ms/Tag]]]]]
+       [:vector :string]])
+
+(m/=> search-payload
+      [:=> [:cat [:map [:results {:optional true} [:maybe [:sequential {:gen/max 3} any?]]]
+
+                  [:query {:optional true} [:maybe :string]]
+                  [:scope {:optional true} [:maybe :string]]
+                  [:exclude-tags {:optional true} [:maybe [:sequential ms/Tag]]]
+                  [:default-excludes {:optional true} [:maybe [:sequential ms/Tag]]]
+                  [:dropped-null-hits {:optional true} [:maybe nat-int?]]]]
+       ms/SearchPayload])
+
+(m/=> handle-search-semantic [:=> [:cat ms/McpParams] tcore/McpResponse])

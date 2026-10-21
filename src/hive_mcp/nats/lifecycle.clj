@@ -13,7 +13,8 @@
   (:require [hive-mcp.protocols.lifecycle :as lifecycle]
             [hive-mcp.system.registry :as reg]
             [hive-mcp.nats.client :as nats-client]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; =============================================================================
 ;; NatsShutdown — priority 200 (client band)
@@ -40,3 +41,11 @@
 ;; Auto-register on ns load — layer1.clj requires this ns at init time
 (defonce ^:private -registered?
   (do (register!) true))
+
+;; =============================================================================
+;; Function Contracts (m16 coverage batch)
+;; =============================================================================
+
+(m/=> register!
+      [:=> [:cat]
+       :any])

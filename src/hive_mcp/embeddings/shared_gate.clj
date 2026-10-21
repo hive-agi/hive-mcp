@@ -3,7 +3,8 @@
    request ingress, not inferred from provider type. The permit covers the
    actual provider HTTP call, including a full batch."
   (:require [hive-mcp.embeddings.protocol :as proto]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.protocols.store-metrics :as metrics]))
 
 (def ^:dynamic *lane*
   "Admission lane for gated embedding calls. MCP tool ingress binds
@@ -36,15 +37,20 @@
 
 (defn new-gate
   "Gate capacity and maximum wait in milliseconds. Admission is shared across
-   all providers wrapped by the process-wide gate."
-  [permits timeout-ms]
-  (when-not (and (pos-int? permits) (pos-int? timeout-ms))
-    (throw (ex-info "Embedding gate requires positive permits and timeout"
-                    {:permits permits :timeout-ms timeout-ms})))
-  {:permits permits :timeout-ms timeout-ms
-   :lock (Object.)
-   :active (atom 0)
-   :waiting (atom {:interactive 0 :batch 0})})
+   all providers wrapped by the process-wide gate. `:interactive-reserve` adds
+   permits only the :interactive lane may take, so a held batch call can never
+   leave an interactive caller without one."
+  ([permits timeout-ms] (new-gate permits timeout-ms {}))
+  ([permits timeout-ms {:keys [interactive-reserve] :or {interactive-reserve 0}}]
+   (when-not (and (pos-int? permits) (pos-int? timeout-ms) (nat-int? interactive-reserve))
+     (throw (ex-info "Embedding gate requires positive permits and timeout"
+                     {:permits permits :timeout-ms timeout-ms
+                      :interactive-reserve interactive-reserve})))
+   {:permits permits :timeout-ms timeout-ms
+    :interactive-reserve interactive-reserve
+    :lock (Object.)
+    :active (atom 0)
+    :waiting (atom {:interactive 0 :batch 0})}))
 
 (def Gate
   "A gate built by `new-gate`: capacity, maximum wait, its monitor and the
@@ -56,15 +62,32 @@
    [:map
     [:permits pos-int?]
     [:timeout-ms pos-int?]
+    [:interactive-reserve {:optional true} nat-int?]
     [:lock some?]
     [:active [:fn #(instance? clojure.lang.IAtom %)]]
     [:waiting [:fn #(instance? clojure.lang.IAtom %)]]]])
 
 ;; Inputs admit anything: the body validates them and throws ex-info itself.
-(m/=> new-gate [:=> [:cat :any :any] Gate])
+(m/=> new-gate [:function
+                [:=> [:cat :any :any] Gate]
+                [:=> [:cat :any :any [:map [:interactive-reserve {:optional true} :any]]] Gate]])
+
+(defn lane-capacity
+  "Permits `lane` may hold in `gate`: every lane shares `:permits`, and only
+   :interactive may also take the reserve."
+  [gate lane]
+  (+ (:permits gate)
+     (if (= :interactive lane) (get gate :interactive-reserve 0) 0)))
+
+(m/=> lane-capacity [:=> [:cat Gate Lane] pos-int?])
 
 (def default-permits
   "Process gate capacity when [:embeddings :gate :permits] is unset."
+  1)
+
+(def default-interactive-reserve
+  "Process gate permits reserved for the :interactive lane when
+   [:embeddings :gate :interactive-reserve] is unset."
   1)
 
 (def default-timeout-ms
@@ -82,16 +105,27 @@
 ;; path and the body falls back to `default-permits`.
 (m/=> permits-from-config [:=> [:cat :any] pos-int?])
 
-(defn- configured-permits
-  "Capacity from the global config, resolved lazily so this namespace does not
-   load the config subsystem; any failure yields the default."
+(defn reserve-from-config
+  "Interactive reserve from a config map: [:embeddings :gate
+   :interactive-reserve] when it is a natural number, else
+   `default-interactive-reserve`. 0 restores plain one-lane capacity."
+  [cfg]
+  (let [n (get-in cfg [:embeddings :gate :interactive-reserve])]
+    (if (nat-int? n) n default-interactive-reserve)))
+
+(m/=> reserve-from-config [:=> [:cat :any] nat-int?])
+
+(defn- global-config
+  "The global config, resolved lazily so this namespace does not load the
+   config subsystem; nil on any failure."
   []
-  (try
-    (permits-from-config ((requiring-resolve 'hive-mcp.config.core/get-global-config)))
-    (catch Throwable _ default-permits)))
+  (try ((requiring-resolve 'hive-mcp.config.core/get-global-config))
+       (catch Throwable _ nil)))
 
-(defonce process-gate (new-gate (configured-permits) default-timeout-ms))
-
+(defonce process-gate
+  (let [cfg (global-config)]
+    (new-gate (permits-from-config cfg) default-timeout-ms
+              {:interactive-reserve (reserve-from-config cfg)})))
 (defn batch-fn
   "Wrap `f` so it runs in the :batch lane on whatever thread executes it.
    Background work started from a request thread (futures and pools convey
@@ -136,7 +170,7 @@
           (let [remaining (- end (System/currentTimeMillis))
                 waiting @(:waiting gate)]
             (cond
-              (and (< @(:active gate) (:permits gate))
+              (and (< @(:active gate) (lane-capacity gate lane))
                    (= lane (next-lane (:interactive waiting) (:batch waiting))))
               (do (swap! (:active gate) inc) true)
 
@@ -189,9 +223,13 @@
 (defrecord GatedProvider [delegate gate]
   proto/EmbeddingProvider
   (embed-text [_ text]
-    (with-permit gate *lane* #(proto/embed-text delegate text)))
+    (with-permit gate *lane*
+      #(metrics/timed (metrics/embed-key delegate :embed-text)
+                      (proto/embed-text delegate text))))
   (embed-batch [_ texts]
-    (with-permit gate *lane* #(proto/embed-batch delegate texts)))
+    (with-permit gate *lane*
+      #(metrics/timed (metrics/embed-key delegate :embed-batch)
+                      (proto/embed-batch delegate texts))))
   (embedding-dimension [_]
     (proto/embedding-dimension delegate)))
 

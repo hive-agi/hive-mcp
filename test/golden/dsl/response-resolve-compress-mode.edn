@@ -1,0 +1,9 @@
+{:case-0 {:out nil, :in ({:compact :weird})},
+ :case-1 {:out nil, :in ({:compact :weird, :_caller_id "ling-a"})},
+ :case-2 {:out nil, :in ({:compact false})},
+ :case-3
+ {:out :compact, :in ({:compact :compact, :_caller_id "lingering"})},
+ :case-4 {:out :compact, :in ({:compact true})},
+ :case-5 {:out :compact, :in ({:compact true})},
+ :case-6 {:out :full, :in ({:compact "full"})},
+ :case-7 {:out nil, :in ({})}}

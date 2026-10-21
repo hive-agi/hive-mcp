@@ -11,7 +11,8 @@
             [hive-mcp.agent.ling :as ling]
             [hive-mcp.swarm.datascript.queries :as ds-queries]
             [hive-mcp.protocols.dispatch :as dispatch-ctx]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -51,6 +52,48 @@
   [params]
   (or (:contextId params)
       (str "ctx-" (System/currentTimeMillis))))
+
+;; =============================================================================
+;; Handler result schemas
+;; =============================================================================
+
+(def HandlerError
+  "A refusal: the JSON-RPC error the transport wraps into its response."
+  [:map [:error [:map [:code :int] [:message :string]]]])
+
+(def HandlerSuccess
+  "An answered call: the A2A task the transport wraps as the result."
+  [:map [:result schema/Task]])
+
+(def HandlerResult
+  "Every handler answers one of the two. A dispatch or kill failure is
+   answered as an error; only an absent swarm library (the agent lookup runs
+   outside the handlers' try) propagates as a throw."
+  [:or HandlerError HandlerSuccess])
+
+(def StreamingResult
+  "The streaming handler's success also tells the transport which task to
+   open the SSE stream for."
+  [:or HandlerError
+   [:map [:result schema/Task] [:stream? [:= true]] [:task-id :any]]])
+
+(def SendParams
+  "tasks/send params: an A2A message and the configuration naming the agent.
+   Both may be missing; the handler refuses, it does not throw."
+  [:maybe
+   [:map
+    [:message {:optional true} [:maybe [:map [:role {:optional true} [:maybe :string]]
+                                        [:parts {:optional true} [:maybe [:sequential schema/Part]]]]]]
+    [:configuration {:optional true} [:maybe [:map [:agentId {:optional true} [:maybe :string]]]]]
+    [:contextId {:optional true} [:maybe :string]]]])
+
+(def TaskIdParams
+  "tasks/get and tasks/cancel params: the task id, and for cancel the
+   metadata naming the hive agent."
+  [:maybe
+   [:map
+    [:id {:optional true} [:maybe :string]]
+    [:metadata {:optional true} [:maybe [:map [:hive-agent-id {:optional true} [:maybe :string]]]]]]])
 
 ;; =============================================================================
 ;; SendMessage Handler
@@ -108,6 +151,8 @@
         {:error {:code (:agent-not-found schema/error-codes)
                  :message (str "Agent not found: " agent-id)}}))))
 
+(m/=> handle-send-message [:=> [:cat SendParams] HandlerResult])
+
 ;; =============================================================================
 ;; GetTask Handler
 ;; =============================================================================
@@ -147,6 +192,8 @@
         {:error {:code (:internal-error schema/error-codes)
                  :message (str "GetTask failed: " (ex-message e))}}))))
 
+(m/=> handle-get-task [:=> [:cat TaskIdParams] HandlerResult])
+
 ;; =============================================================================
 ;; CancelTask Handler
 ;; =============================================================================
@@ -185,6 +232,8 @@
         {:error {:code (:invalid-params schema/error-codes)
                  :message "Cannot resolve agent for task. Provide metadata.hive-agent-id"}}))))
 
+(m/=> handle-cancel-task [:=> [:cat TaskIdParams] HandlerResult])
+
 ;; =============================================================================
 ;; SendStreamingMessage Handler (SSE)
 ;; =============================================================================
@@ -205,3 +254,5 @@
       (assoc result
              :stream? true
              :task-id (get-in result [:result :id])))))
+
+(m/=> handle-send-streaming-message [:=> [:cat SendParams] StreamingResult])

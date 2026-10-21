@@ -3,7 +3,7 @@
   (:require [hive-mcp.tools.cli :refer [make-cli-handler]]
             [hive-mcp.tools.session-complete :as session-handlers]
             [hive-mcp.tools.result-bridge :as rb]
-            [hive-mcp.tools.core :refer [mcp-error mcp-json]]
+            [hive-mcp.tools.core :as tc :refer [mcp-error mcp-json]]
             [hive-mcp.tools.crystal :as crystal]
             [hive-mcp.tools.catchup :as catchup]
             [hive-mcp.context.request :as ctx]
@@ -13,7 +13,8 @@
             [hive-mcp.tools.memory.scope :as scope]
             [taoensso.timbre :as log]
             [hive-mcp.tools.consolidated.session-config :as session-config]
-            [hive-mcp.embeddings.shared-gate :as embed-gate]))
+            [hive-mcp.embeddings.shared-gate :as embed-gate]
+            [malli.core :as m]))
 
 (defn- evict-agent-context!
   "Evict context-store entries for a completing agent."
@@ -142,6 +143,8 @@
                :project-id project-id
                :cwd        effective-dir})))
 
+(m/=> handle-whoami [:=> [:cat [:maybe :map]] tc/McpJsonResponse])
+
 (defn- wrap-async!
   "Execute wrap crystallization + eviction in background thread.
    Logs completion/failure. Notifies via hivemind shout (already in crystallize path).
@@ -179,6 +182,8 @@
                :directory directory
                :message "Crystallization running in background. Completion notified via hivemind."})))
 
+(m/=> handle-wrap [:=> [:cat [:maybe :map]] tc/McpJsonResponse])
+
 (defn handle-catchup
   "Restore session context from Chroma memory.
    Delegates to catchup/handle-native-catchup which already returns MCP response."
@@ -190,35 +195,49 @@
       (:ok r)
       (mcp-error (str "Catchup failed: " (or (:message r) (str (:error r))))))))
 
+(m/=> handle-catchup [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (defn handle-context-put
   "Store data in ephemeral context store, returns ctx-id for pass-by-reference."
   [params]
   (rb/result->mcp (rb/try-result :session/context-put-failed #(context-put* params))))
+
+(m/=> handle-context-put [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (defn handle-context-get
   "Retrieve entry from context store by ID."
   [params]
   (rb/result->mcp (rb/try-result :session/context-get-failed #(context-get* params))))
 
+(m/=> handle-context-get [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (defn handle-context-query
   "Query context store entries by tags."
   [params]
   (rb/result->mcp (rb/try-result :session/context-query-failed #(context-query* params))))
+
+(m/=> handle-context-query [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (defn handle-context-evict
   "Remove entry from context store by ID."
   [params]
   (rb/result->mcp (rb/try-result :session/context-evict-failed #(context-evict* params))))
 
+(m/=> handle-context-evict [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (defn handle-context-stats
   "Return context store statistics."
   [params]
   (rb/result->mcp (rb/try-result :session/context-stats-failed #(context-stats* params))))
 
+(m/=> handle-context-stats [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (defn handle-context-reconstruct
   "Reconstruct compressed context from context-store refs and KG traversal."
   [params]
   (rb/result->mcp (rb/try-result :session/context-reconstruct-failed #(context-reconstruct* params))))
+
+(m/=> handle-context-reconstruct [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (defn handle-complete
   "Complete a ling session with GC sweep and context eviction.
@@ -233,6 +252,8 @@
     (when eviction
       (log/info "session-complete: context eviction" eviction))
     result))
+
+(m/=> handle-complete [:=> [:cat [:maybe :map]] :map])
 
 (def handlers
   "The `session` verbs, stored as VARS so a reload of THIS namespace reaches the

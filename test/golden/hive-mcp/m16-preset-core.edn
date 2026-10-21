@@ -1,0 +1,35 @@
+{:full
+ {:name "tdd",
+  :title "tdd",
+  :category "testing",
+  :summary "Write the test first. Red, green, refactor.",
+  :key-points
+  ["small steps"
+   "run often"
+   "keep green"
+   "delete duplication"
+   "name the intent"]},
+ :content-key
+ {:name "x",
+  :title "x",
+  :category "general",
+  :summary "Para one.",
+  :key-points ["a" "b"]},
+ :empty
+ {:name "bare",
+  :title "bare",
+  :category "general",
+  :summary "No summary available",
+  :key-points []},
+ :no-bullets
+ {:name "nb",
+  :title "nb",
+  :category "general",
+  :summary "Only prose.",
+  :key-points []},
+ :title-fallback
+ {:name "nm",
+  :title "nm",
+  :category "general",
+  :summary "no title",
+  :key-points []}}

@@ -20,6 +20,7 @@
             [hive-mcp.server.init :as init]
             [hive-mcp.server.routes :as routes]
             [hive-mcp.dns.result :as result]
+            [malli.core :as m]
             [taoensso.timbre :as log]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -150,6 +151,8 @@
    default, every META-INF/hive-addons manifest) or :none (core only)."
   [config]
   (get config :discover :classpath))
+
+(m/=> discovery-mode [:=> [:cat [:maybe [:map [:discover {:optional true} :keyword]]]] :keyword])
 
 (defmethod ig/init-key :hive/extensions
   [_ config]

@@ -1,0 +1,12 @@
+{:nil
+ {:type "text",
+  :text "author/register require an :ast (EDN string or map).",
+  :isError true},
+ :no-ast
+ {:type "text",
+  :text "author/register require an :ast (EDN string or map).",
+  :isError true},
+ :number-ast
+ {:type "text",
+  :text "author/register require an :ast (EDN string or map).",
+  :isError true}}

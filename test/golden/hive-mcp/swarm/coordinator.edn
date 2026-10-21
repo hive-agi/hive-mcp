@@ -1,0 +1,10 @@
+{:blocked {:action :dispatch, :files ("/x.clj")},
+ :queued
+ {:action :queued,
+  :conflicts [{:file "/held.clj", :held-by "holder"}],
+  :position 1},
+ :dispatch {:action :dispatch, :files ["src/free.clj"]},
+ :queue-length 1,
+ :ready-before [],
+ :ready-after-release ["q1"],
+ :queue-after []}

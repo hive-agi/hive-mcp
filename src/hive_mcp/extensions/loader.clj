@@ -19,7 +19,8 @@
             [hive-mcp.extensions.reactive :as reactive]
             [hive-mcp.extensions.runtime :as runtime]
             [hive-mcp.server.log-sink :as log-sink]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.addons.metrics :as addon-metrics]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -97,6 +98,10 @@
    Strategy: try init-as-addon! first (new multiplexer protocol),
    then fall back to init! (legacy self-registration).
 
+   Each attempt (namespace load through requiring-resolve plus the init call)
+   is timed under [:addon/load <init-ns> <init-fn-name>]
+   (hive-mcp.addons.metrics).
+
    On exception inside the init fn, logs at :error level with stacktrace
    + ns + strategy name, then returns nil. Previously these failures were
    silently swallowed by `rescue nil`, masking macroexpansion errors and
@@ -110,12 +115,14 @@
         legacy-sym (symbol (str ns-sym) "init!")
         try-call   (fn [strategy-name init-sym]
                      (try
-                       (when-let [init-fn (try-resolve init-sym)]
-                         (let [result (init-fn)]
-                           (log/info "Extension" ns-sym
-                                     "initialized via" strategy-name ":"
-                                     (:total result 0) "capabilities")
-                           result))
+                       (addon-metrics/timed-call
+                        [:addon/load (str ns-sym) (name init-sym)]
+                        #(when-let [init-fn (try-resolve init-sym)]
+                           (let [result (init-fn)]
+                             (log/info "Extension" ns-sym
+                                       "initialized via" strategy-name ":"
+                                       (:total result 0) "capabilities")
+                             result)))
                        (catch Throwable t
                          (log/error t
                                     "Extension init FAILED for" ns-sym

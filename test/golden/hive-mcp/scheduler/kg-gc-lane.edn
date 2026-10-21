@@ -1,0 +1,24 @@
+{:ran
+ {:ok? true,
+  :blind [],
+  :errors 0,
+  :vacuous? false,
+  :selected {:orphaned 1, :pruned 0, :demoted 0},
+  :coverage
+  {:scanned 2, :universe {:sources 2}, :cursor nil, :partial 0},
+  :dry-run? false,
+  :stopped nil,
+  :collected
+  {:orphaned 1, :pruned 0, :demoted 0, :total 1, :edges-removed 3}},
+ :cleanup-opts
+ {:limit 50,
+  :edge-budget 20000,
+  :chunk-size 500,
+  :dry-run? false,
+  :after nil},
+ :not-due {:skipped true, :reason "not due or already running"},
+ :heavy {:skipped true, :reason "heap-pressure"},
+ :disabled {:skipped true, :reason "kg-gc disabled via config"},
+ :status {:running? false, :cycles-run 1},
+ :config-validates true,
+ :heap-ratio-sane true}

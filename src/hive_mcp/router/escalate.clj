@@ -9,7 +9,8 @@
    Pure — no I/O, no global state. Caller passes the resolved
    `:embedder` config + the spec already chosen by `resolve/resolve-spec`."
   (:require [hive-dsl.result :as r]
-            [hive-mcp.router.resolve :as resolve]))
+            [hive-mcp.router.resolve :as resolve]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -36,6 +37,15 @@
        (number? doc-size-tokens)
        (> doc-size-tokens (:provider/max-tokens spec))))
 
+(def SpecWithCeiling
+  "The part of a `ProviderSpec` escalation reads: its key and ceiling."
+  [:map
+   [:provider/key {:optional true} :keyword]
+   [:provider/max-tokens :int]])
+
+;; doc-size-tokens is any value: nil and non-numbers read as fitting
+(m/=> over-budget? [:=> [:cat SpecWithCeiling :any] :boolean])
+
 (defn maybe-escalate
   "Return `(ok spec)` if the doc fits; otherwise resolve the heavy-tier
    provider and return its spec. An unknown heavy-tier key surfaces
@@ -55,3 +65,10 @@
           ;; pin :default to the heavy-tier key for a direct provider lookup
           heavy-config (assoc config :default heavy-key :routes nil)]
       (resolve/resolve-spec heavy-config nil))))
+
+;; a fitting doc answers (ok spec) with the input spec verbatim, so the ok arm
+;; is the input shape, not only a validated ProviderSpec
+(m/=> maybe-escalate [:=> [:cat resolve/EmbedderConfig SpecWithCeiling :any]
+                      [:or
+                       [:map [:ok SpecWithCeiling]]
+                       [:map [:error resolve/RouterError]]]])

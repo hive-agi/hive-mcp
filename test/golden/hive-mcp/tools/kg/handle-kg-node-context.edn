@@ -1,0 +1,48 @@
+{:case-0
+ {:out
+  {:type "text",
+   :text "node_id must be a non-empty string",
+   :isError true},
+  :in ({})},
+ :case-1
+ {:out
+  {:type "text",
+   :text "node_id must be a non-empty string",
+   :isError true},
+  :in ({:node_id ""})},
+ :case-2
+ {:out
+  {:type "text",
+   :text "node_id must be a non-empty string",
+   :isError true},
+  :in ({:node_id nil})},
+ :case-3
+ {:out
+  {:type "text",
+   :text "node_id must be a non-empty string",
+   :isError true},
+  :in ({:node_id nil})},
+ :case-4
+ {:out
+  {:type "text",
+   :text "node_id must be a non-empty string",
+   :isError true},
+  :in ({})},
+ :case-5
+ {:out
+  {:type "text",
+   :text "node_id must be a non-empty string",
+   :isError true},
+  :in ({})},
+ :case-6
+ {:out
+  {:type "text",
+   :text "node_id must be a non-empty string",
+   :isError true},
+  :in ({})},
+ :case-7
+ {:out
+  {:type "text",
+   :text "node_id must be a non-empty string",
+   :isError true},
+  :in ({})}}

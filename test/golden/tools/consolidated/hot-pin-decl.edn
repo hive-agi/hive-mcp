@@ -1,0 +1,10 @@
+{:case-0 {:out {:policy :pinned, :idle-ms 1000}, :in {}},
+ :case-1
+ {:out {:policy :pinned, :idle-ms 2}, :in {:policy nil, :idle_ms 2}},
+ :case-2 {:out {:policy :pinned, :idle-ms 1000}, :in {}},
+ :case-3 {:out {:policy :pinned, :idle-ms 1000}, :in {:idle_ms nil}},
+ :case-4
+ {:out {:policy :pinned, :idle-ms 1000}, :in {:policy "pinned"}},
+ :case-5 {:out {:policy :pinned, :idle-ms 1000}, :in {}},
+ :case-6 {:out {:policy :pinned, :idle-ms 1000}, :in {}},
+ :case-7 {:out {:policy :pinned, :idle-ms 1000}, :in {}}}

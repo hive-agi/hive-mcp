@@ -1,0 +1,17 @@
+{:happy
+ {:spawn "slave-gold-ling-7",
+  :dispatch {:dispatched? true},
+  :status {:slave/status :idle, :alive? true, :slave/id "ling-7"},
+  :status-nil {:alive? true, :slave/id "ling-7"},
+  :kill {:killed? true, :id "ling-7"},
+  :interrupt {:success? true, :ling-id "ling-7"}},
+ :throwing
+ {:spawn {:thrown "spawn failed"},
+  :dispatch {:thrown "dispatch failed"},
+  :status {:slave/status :idle, :headless-addon-error? true},
+  :status-nil nil,
+  :kill {:killed? false, :id "ling-7", :reason :addon-exception},
+  :interrupt
+  {:success? false,
+   :ling-id "ling-7",
+   :errors ["Headless addon interrupt threw exception"]}}}

@@ -497,7 +497,8 @@
 
 (m/=> entry-timestamp [:=> [:cat Entry] [:maybe :int]])
 
-(m/=> tool-call-name [:=> [:cat ToolCall] :any])
+;; Falls back to "unknown", so never nil.
+(m/=> tool-call-name [:=> [:cat ToolCall] :some])
 
 (m/=> tool-call-arguments [:=> [:cat ToolCall] :string])
 
@@ -522,7 +523,7 @@
 
 (m/=> iso [:=> [:cat [:maybe number?]] [:maybe :string]])
 
-(m/=> glob->pred [:=> [:cat :any] ifn?])
+(m/=> glob->pred [:=> [:cat :any] AgentIdPred])
 
 (m/=> collapse-listing
       [:=> [:cat [:sequential [:map-of :any :any]]] [:sequential [:map-of :any :any]]])
@@ -563,9 +564,9 @@
 
 (m/=> find-hits
       [:=> [:cat [:maybe [:map-of :any :any]] [:maybe [:sequential Entry]]
-            [:map [:pattern [:fn #(instance? java.util.regex.Pattern %)]]]
+            [:map [:pattern Pattern]]
             [:maybe [:map-of :any :any]]]
-       [:sequential [:map-of :any :any]]])
+       [:sequential Hit]])
 
 (m/=> written-path [:=> [:cat ToolCall] :any])
 
@@ -607,4 +608,4 @@
         [:wall-ms {:optional true} :int]
         [:idle-gap {:optional true} [:map-of :any :any]]]])
 
-(m/=> digest-row [:=> [:cat [:map-of :any :any]] [:map-of :any :any]])
+(m/=> digest-row [:=> [:cat [:map-of :any :any]] DigestRow])

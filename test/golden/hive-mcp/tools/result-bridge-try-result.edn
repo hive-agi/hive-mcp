@@ -1,0 +1,12 @@
+{:ok {:ok 1},
+ :ex-info
+ {:error :t/x,
+  :message "bad",
+  :data {:k 1},
+  :class "clojure.lang.ExceptionInfo"},
+ :npe
+ {:error :t/x,
+  :message "java.lang.NullPointerException",
+  :class "java.lang.NullPointerException"},
+ :keywords {:a 1, :b 2},
+ :nil-map {}}

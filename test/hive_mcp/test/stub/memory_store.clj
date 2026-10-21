@@ -16,7 +16,9 @@
      add-entry!       => entry id (string)
      delete-entry!    => true
      cleanup-expired! => {:count n :deleted-ids [id ...] :repaired 0}
-     query-entries  => vector of entries, filtered then ordered
+     query-entries  => vector of entries, filtered then ordered, then cut to
+                       :limit and projected to :output-fields; filter and
+                       projection semantics in hive-mcp.test.stub.memory-query
      search-similar => entries ranked by token overlap, each carrying :score
      health-check   => {:healthy? :latency-ms :backend :entry-count :errors :checked-at}
      store-status   => {:backend :configured? :entry-count :supports-search?}"
@@ -25,7 +27,10 @@
             [hive-mcp.memory.ids :as ids]
             [hive-spi.memory.ports :as ports]
             [hive-spi.memory.registry :as registry]
-            [clojure.data.json :as json]))
+            [clojure.data.json :as json]
+            [hive-mcp.test-support.registry-isolation :as isolation]
+            [hive-mcp.test.stub.memory-query
+             :refer [->name expiry-ms expired? matches? apply-order-by project-fields]]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -34,62 +39,6 @@
 ;; =============================================================================
 ;; Pure helpers
 ;; =============================================================================
-
-(defn- ->name
-  "Keyword or string to its string name; nil stays nil."
-  [x]
-  (cond (nil? x) nil (keyword? x) (name x) :else (str x)))
-
-(defn- parse-ts
-  "Epoch millis for an ISO-8601 instant or zoned datetime; nil when unparseable."
-  [s]
-  (when (string? s)
-    (try
-      (.toEpochMilli (java.time.Instant/parse s))
-      (catch Exception _
-        (try
-          (.toEpochMilli (.toInstant (java.time.ZonedDateTime/parse s)))
-          (catch Exception _ nil))))))
-
-(defn- expiry-ms
-  "Epoch millis of the entry's expiry. Accepts :expires (backend field) or
-   :expires-at (contract-test field); nil when neither parses."
-  [entry]
-  (or (parse-ts (:expires entry)) (parse-ts (:expires-at entry))))
-
-(defn- expired?
-  "True when the entry's expiry is strictly before NOW-MS."
-  [entry now-ms]
-  (when-let [t (expiry-ms entry)]
-    (< t now-ms)))
-
-(defn- tag-set [entry] (into #{} (map str) (:tags entry)))
-
-(defn- matches?
-  "Does ENTRY satisfy the query-entries OPTS filters at NOW-MS?"
-  [entry {:keys [type project-id project-ids tags exclude-tags include-expired?]} now-ms]
-  (let [ts (tag-set entry)]
-    (and (or (nil? type) (= (->name type) (->name (:type entry))))
-         (or (nil? project-id) (= project-id (:project-id entry)))
-         (or (empty? project-ids) (contains? (set project-ids) (:project-id entry)))
-         (every? #(contains? ts (str %)) (or tags []))
-         (not-any? #(contains? ts (str %)) (or exclude-tags []))
-         (or include-expired? (not (expired? entry now-ms))))))
-
-(defn- apply-order-by
-  "Sort ENTRIES by [field direction]; identity when ORDER-BY is nil."
-  [order-by entries]
-  (if-let [[field direction] order-by]
-    (vec (sort-by field (if (= direction :desc) #(compare %2 %1) compare) entries))
-    (vec entries)))
-
-(defn- project-fields
-  "ROWS trimmed to OUTPUT-FIELDS (entry-key names); :id always survives."
-  [rows output-fields]
-  (if (seq output-fields)
-    (let [ks (conj (set (map keyword output-fields)) :id)]
-      (mapv #(select-keys % ks) rows))
-    rows))
 
 (defn- tokens [s]
   (into #{} (remove str/blank?) (str/split (str/lower-case (str s)) #"[^\p{Alnum}]+")))
@@ -393,25 +342,23 @@
 
 (defn with-stub-store
   "clojure.test fixture: install a fresh stub as :default for the test, then
-   restore whatever store registry was in place before."
+   restore whatever store registry was in place before. Refuses to run inside
+   a live addon server and restores the prior slot map atomically instead of
+   calling the global reset-registry!."
   [f]
-  (let [prior (registry/registered-stores)]
-    (try
+  (isolation/with-restored-store-registry
+    (fn []
       (install! (->stub))
-      (f)
-      (finally
-        (registry/reset-registry!)
-        (doseq [[k s] prior] (registry/register-store! k s))))))
+      (f))))
 
 (defn with-no-store
   "Run F with an EMPTY store registry, then restore the prior one.
 
-   For asserting the not-configured branch without naming a backend."
+   For asserting the not-configured branch without naming a backend. Refuses
+   to run inside a live addon server and restores the prior slot map
+   atomically instead of calling the global reset-registry!."
   [f]
-  (let [prior (registry/registered-stores)]
-    (try
-      (registry/reset-registry!)
-      (f)
-      (finally
-        (registry/reset-registry!)
-        (doseq [[k s] prior] (registry/register-store! k s))))))
+  (isolation/with-restored-store-registry
+    (fn []
+      (isolation/restore-stores! {})
+      (f))))

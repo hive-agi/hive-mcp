@@ -1,0 +1,18 @@
+{:a {:acquired? true, :conflicts [], :warnings [], :spans-claimed 1},
+ :b1
+ {:acquired? false,
+  :spans-claimed 0,
+  :conflicts
+  [{:file "src/held.clj",
+    :qn nil,
+    :mode :file,
+    :held-by "ling-a",
+    :reason :file-claim}],
+  :warnings [],
+  :parked ["src/held.clj"],
+  :yield-requested [{:holder "ling-a", :file "src/held.clj"}]},
+ :b2 {:acquired? false, :parked ["src/held.clj"], :yield-requested []},
+ :b3 {:acquired? true, :conflicts [], :warnings [], :spans-claimed 1},
+ :b4 {:acquired? true, :conflicts [], :warnings [], :spans-claimed 0},
+ :sent [["ling-b" "ling-a" :claim/yield-request "src/held.clj"]],
+ :deadlock nil}

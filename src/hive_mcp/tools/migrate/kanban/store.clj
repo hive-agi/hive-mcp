@@ -27,7 +27,8 @@
             [hive-mcp.tools.migrate.kanban.pure :as pure]
             [taoensso.timbre :as log]
             [hive-spi.memory.decorate :as decorate]
-            [hive-spi.memory.ports :as sp]))
+            [hive-spi.memory.ports :as sp]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -181,3 +182,39 @@
    ok only while the store reports itself connected."
   [store]
   (->StoreDurability store))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def MemoryStore
+  "Any IMemoryStore (the decorated registry store in production), or nil:
+   the adapters only close over it, and the port tests build them over nil
+   to check the record type. The generator need not answer calls."
+  [:maybe
+   [:fn {:gen/elements [(reify proto/IMemoryStore (connected? [_] true))]}
+    #(satisfies? proto/IMemoryStore %)]])
+
+(def Durability
+  [:fn {:gen/elements [(->StoreDurability nil)]} #(satisfies? ports/ITargetDurability %)])
+
+(def EntryReader
+  [:fn {:gen/elements [(->StoreEntryReader nil)]} #(satisfies? ports/IEntryReader %)])
+
+(def EntryWriter
+  [:fn {:gen/elements [(->StoreEntryWriter nil)]} #(satisfies? ports/IEntryWriter %)])
+
+(def IdProbe
+  [:fn {:gen/elements [(->StoreIdProbe nil)]} #(satisfies? ports/IIdProbe %)])
+
+(m/=> entries-by-id
+  [:=> [:cat [:maybe [:sequential :any]] [:maybe [:or [:sequential :any] [:set :any]]]]
+   [:map-of :any :map]])
+
+(m/=> make-durability [:=> [:cat MemoryStore] Durability])
+
+(m/=> make-entry-reader [:=> [:cat MemoryStore] EntryReader])
+
+(m/=> make-entry-writer [:=> [:cat MemoryStore] EntryWriter])
+
+(m/=> make-id-probe [:=> [:cat MemoryStore] IdProbe])

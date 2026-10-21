@@ -1,0 +1,9 @@
+{:case-0 {:out 0, :in {:committed nil, :used nil}},
+ :case-1
+ {:out 11811160064, :in {:committed 12884901888, :used 1073741824}},
+ :case-2 {:out 0, :in {:committed nil, :used nil}},
+ :case-3 {:out 0, :in {:committed nil, :used 4294967296}},
+ :case-4 {:out 12884901888, :in {:committed 12884901888, :used nil}},
+ :case-5 {:out 0, :in {:committed nil, :used nil}},
+ :case-6 {:out 0, :in {:committed nil, :used nil}},
+ :case-7 {:out 0, :in {:committed nil, :used nil}}}

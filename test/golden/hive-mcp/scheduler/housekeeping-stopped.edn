@@ -1,0 +1,15 @@
+{:stop {:stopped false, :reason "not-running"},
+ :running? false,
+ :config {:enabled true, :interval-minutes 5},
+ :inventory
+ ["agent/completed-saa-states"
+  "channels/event-journal"
+  "knowledge-graph/gc-lane"
+  "lings/ledger-cold"
+  "lings/terminal-liveness"
+  "memory/pending-reembed"
+  "swarm/stale-callbacks"
+  "system/bounded-atom-gc"
+  "system/jvm-gc-hint"
+  "tools/completed-async-batches"],
+ :disjoint {:empty true, :foreign true, :owned false}}

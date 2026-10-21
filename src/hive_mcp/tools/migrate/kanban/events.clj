@@ -9,7 +9,8 @@
    layers can override via `reg-event-fx` or hook fx by name."
   (:require [hive.events.fx :as fx]
             [hive.events.router :as router]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -88,3 +89,26 @@
     (throw (ex-info "Unknown migrator event id" {:event-id event-id
                                                   :allowed event-ids})))
   (router/dispatch [event-id payload]))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def EventId
+  "An id in `event-ids`; emit refuses (throws) any other."
+  [:enum :kanban-mig/scan-started :kanban-mig/ids-listed :kanban-mig/batch-started
+   :kanban-mig/batch-completed :kanban-mig/entry-written :kanban-mig/entry-failed
+   :kanban-mig/run-done])
+
+(def Registry
+  "What a hive-events registration answers: the registry map after the write."
+  [:map-of :keyword :any])
+
+(m/=> register-default-fx! [:=> [:cat] Registry])
+
+(m/=> register-default-handlers! [:=> [:cat] Registry])
+
+(m/=> init! [:=> [:cat] [:= :ok]])
+
+;; Permissive in: an unknown id is a documented throw, not a contract breach.
+(m/=> emit [:=> [:cat :keyword :any] :any])

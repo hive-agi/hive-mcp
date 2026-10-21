@@ -5,7 +5,8 @@
             [manifold.stream :as s]
             [clojure.core.async :as async :refer [go-loop <!]]
             [clojure.data.json :as json]
-            [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]])
+            [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
+            [malli.core :as m])
   (:import [java.io File]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -85,11 +86,28 @@
     (log/info "WebSocket server started on port" actual-port)
     actual-port))
 
+(def Chan
+  "A core.async channel."
+  [:fn {:gen/fmap (fn [_] (async/chan)) :gen/schema :nil}
+   #(satisfies? clojure.core.async.impl.protocols/Channel %)])
+
+;; Answers the port actually bound; a bind failure throws (the caller rescues).
+(m/=> start-server!
+      [:=> [:cat [:map
+                  [:port {:optional true} [:maybe [:int {:min 0 :max 65535}]]]
+                  [:project-dir {:optional true} [:maybe :string]]
+                  [:input-ch {:optional true} [:maybe Chan]]
+                  [:output-ch {:optional true} [:maybe Chan]]]]
+       [:int {:min 0 :max 65535}]])
+
 (defn stop-server! []
   (when-let [{:keys [server port]} @server-atom]
     (.close server)
     (remove-lockfile! port)
     (reset! server-atom nil)))
+
+;; nil when no server was running, else reset!'s answer (nil).
+(m/=> stop-server! [:=> [:cat] :nil])
 
 (defn notify!
   "Send JSON-RPC 2.0 notification to all connected WebSocket clients."
@@ -99,4 +117,9 @@
       (when (s/stream? client)
         @(s/put! client msg)))))
 
+;; params must be JSON-writable; doseq answers nil.
+(m/=> notify! [:=> [:cat :string :any] :nil])
+
 (defn connected? [] (boolean (seq @clients)))
+
+(m/=> connected? [:=> [:cat] :boolean])

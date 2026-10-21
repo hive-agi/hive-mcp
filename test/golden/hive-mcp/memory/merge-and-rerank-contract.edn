@@ -1,0 +1,41 @@
+{:case-0 {:out [], :in ([] [] 0)},
+ :case-1
+ {:out [],
+  :in ([{:id "b", :distance 1.5}] [{:id "b", :distance 2.0}] 0)},
+ :case-2
+ {:out [{:id "a", :distance 1.0}],
+  :in ([] [{:id "a", :distance 1.0}] 1)},
+ :case-3
+ {:out [{:id "a", :distance 2.0}],
+  :in ([{:id "a", :distance 2.0}] [] 1)},
+ :case-4
+ {:out [{:id "b", :distance 0.5625}],
+  :in
+  ([{:id "a", :distance 1.25}
+    {:id "a", :distance 0.75}
+    {:id "a", :distance 2.0}
+    {:id "b", :distance 0.75}]
+   [{:id "a", :distance 0.875}
+    {:id "a", :distance 2.0}
+    {:id "b", :distance 0.5625}
+    {:id "a", :distance 1.75}]
+   1)},
+ :case-5
+ {:out [{:id "a", :distance 0.5} {:id "b", :distance 1.0}],
+  :in
+  ([{:id "b", :distance 1.0} {:id "b", :distance 2.0}]
+   [{:id "a", :distance 2.0}
+    {:id "a", :distance 0.5}
+    {:id "a", :distance 2.0}]
+   3)},
+ :case-6
+ {:out [{:id "b", :distance 1.09375}],
+  :in ([{:id "b", :distance 2.0}] [{:id "b", :distance 1.09375}] 4)},
+ :case-7
+ {:out [{:id "a", :distance 0.5}],
+  :in
+  ([{:id "b", :distance 0.75}
+    {:id "b", :distance 2.0}
+    {:id "a", :distance 0.5}]
+   []
+   1)}}

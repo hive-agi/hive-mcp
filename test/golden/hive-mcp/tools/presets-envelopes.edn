@@ -1,0 +1,32 @@
+{:get
+ {:type "text",
+  :text "Preset not found: zz-no-such-preset",
+  :isError true},
+ :list-slim {:type "text", :text "{\"presets\":[],\"count\":0}"},
+ :migrate
+ {:type "text",
+  :text
+  "Chroma not configured. Configure Chroma with embedding provider before migration.",
+  :isError true},
+ :delete {:type "text", :text "Chroma not configured", :isError true},
+ :search
+ {:type "text",
+  :text
+  "Chroma not configured. Semantic search requires Chroma with embedding provider.",
+  :isError true},
+ :header-0
+ {:type "text",
+  :text
+  "{\"header\":null,\"mode\":\"lazy\",\"preset-count\":0,\"approx-tokens\":300}"},
+ :list
+ {:type "text",
+  :text
+  "{\"error\":\"Chroma not configured\",\"message\":\"Use file-based presets via swarm_list_presets\"}"},
+ :status
+ {:type "text",
+  :text
+  "{\"collection\":\"hive-mcp-presets\",\"chroma-configured?\":false}"},
+ :core
+ {:type "text",
+  :text "Preset not found: zz-no-such-preset",
+  :isError true}}

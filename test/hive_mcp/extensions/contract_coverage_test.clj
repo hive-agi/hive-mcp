@@ -7,6 +7,7 @@
             [malli.generator :as mg]
             [hive-mcp.extensions.deftool]
             [hive-mcp.extensions.delegate]
+            [hive-mcp.extensions.departures]
             [hive-mcp.extensions.dispatch-wrap]
             [hive-mcp.extensions.lifecycle]
             [hive-mcp.extensions.loader]
@@ -29,7 +30,8 @@
    :exempt exemptions})
 
 (def ^:private extension-namespaces
-  '[hive-mcp.extensions.deftool hive-mcp.extensions.delegate hive-mcp.extensions.dispatch-wrap
+  '[hive-mcp.extensions.deftool hive-mcp.extensions.delegate hive-mcp.extensions.departures
+    hive-mcp.extensions.dispatch-wrap
     hive-mcp.extensions.lifecycle hive-mcp.extensions.loader hive-mcp.extensions.mount-host
     hive-mcp.extensions.reactive hive-mcp.extensions.registry hive-mcp.extensions.runtime
     hive-mcp.extensions.soft])

@@ -14,6 +14,7 @@
   ;; SPDX-License-Identifier: AGPL-3.0-or-later
   (:require [hive-mcp.protocols.lifecycle :as lifecycle]
             [hive-mcp.system.registry :as reg]
+            [malli.core :as m]
             [taoensso.timbre :as log])
   (:import [java.util.concurrent Executors ScheduledExecutorService
                                  TimeUnit ScheduledFuture]))
@@ -100,6 +101,9 @@
                 {:heartbeat-s heartbeat-s
                  :registered  (count (reg/registered-sweeps))}))))
 
+;; effect only: logs once when it starts, nil either way
+(m/=> start! [:=> [:cat] :nil])
+
 (defn stop!
   "Stop the sweep coordinator. Idempotent — safe to call when not running.
    Cancels the scheduled handle, shuts down the executor, and resets state."
@@ -118,6 +122,9 @@
     (log/info "Sweep coordinator stopped"))
   (reset! running?-atom false))
 
+;; the reset! of running? answers false
+(m/=> stop! [:=> [:cat] [:= false]])
+
 (defn status
   "Return a pure read of coordinator state, intended for the /status tool."
   []
@@ -126,6 +133,17 @@
    :last-run-at @last-run-at
    :run-counts  @run-counts
    :registered  (mapv lifecycle/sweep-name (reg/registered-sweeps))})
+
+(def CoordinatorStatus
+  "status: the coordinator's state for the /status tool."
+  [:map
+   [:running? :boolean]
+   [:heartbeat-s number?]
+   [:last-run-at [:map-of reg/RegistryKey :int]]
+   [:run-counts [:map-of reg/RegistryKey :int]]
+   [:registered [:vector reg/RegistryKey]]])
+
+(m/=> status [:=> [:cat] CoordinatorStatus])
 
 ;; =============================================================================
 ;; Self-registration as IShutdownHook (priority 50)

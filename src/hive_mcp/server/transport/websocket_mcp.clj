@@ -5,7 +5,9 @@
   (:require [hive-mcp.config.core :as config]
             [hive-mcp.transport.websocket :as ws]
             [taoensso.timbre :as log]
-            [hive-mcp.dns.result :as result]))
+            [hive-mcp.dns.result :as result]
+            [malli.core :as m]
+            [hive-mcp.server.transport.schema :as ts]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -43,3 +45,7 @@
                {:status :failed :port port})
            (do (log/info "WebSocket MCP server started" {:port port})
                {:status :running :port port :server server})))))))
+
+(m/=> start-websocket-server! [:function
+                               [:=> [:cat] ts/MaybeStartStatus]
+                               [:=> [:cat ts/ComponentConfig] ts/MaybeStartStatus]])

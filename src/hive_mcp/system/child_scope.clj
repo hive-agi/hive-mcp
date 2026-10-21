@@ -38,6 +38,7 @@
    starts the command once more, plain. Coverage limits are in `start!`'s
    doc. `*probe*` / `*prefix*` are the call-time seams for callers and tests."
   (:require [clojure.string :as str]
+            [malli.core :as m]
             [taoensso.timbre :as log])
   (:import [java.util.concurrent TimeUnit]))
 
@@ -80,6 +81,44 @@
 ;; Pure calculation
 ;; ---------------------------------------------------------------------------
 
+;; ---------------------------------------------------------------------------
+;; Schemas
+;; ---------------------------------------------------------------------------
+
+(def Argv
+  "A command line. Any sequential of strings in; argv fns answer a vector."
+  [:sequential :string])
+
+(def Probe
+  "The probe port: a fn answering whether scoped spawns work. An
+   expiring-probe also takes one argument (record an answer)."
+  [:fn {:gen/elements [(constantly true) (constantly false)]} ifn?])
+
+(def ProbeAnswer
+  "Whatever a probe answered; only exactly true counts as available."
+  :any)
+
+(def PlanOpts
+  "Where the child runs: its PATH, its cwd, and the prefix to use."
+  [:maybe [:map
+           [:path {:optional true} [:maybe :string]]
+           [:cwd {:optional true} [:maybe :string]]
+           [:prefix {:optional true} [:maybe Argv]]]])
+
+(def ExecFile
+  "A resolved executable java.io.File."
+  [:fn {:gen/elements [(java.io.File. "/bin/sh")]} #(instance? java.io.File %)])
+
+(def ProcBuilder
+  "A java.lang.ProcessBuilder already configured with the plain argv."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (ProcessBuilder. ^java.util.List ["true"]))}
+   #(instance? ProcessBuilder %)])
+
+(def Proc
+  "A started java.lang.Process."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (.start (ProcessBuilder. ^java.util.List ["true"])))}
+   #(instance? Process %)])
+
 (defn scoped-argv
   "argv to spawn given the probe's answer: `scope-prefix` + argv when
    available? is exactly true, argv unchanged (as a vector) otherwise.
@@ -89,6 +128,8 @@
     (if (and (true? available?) (seq argv))
       (into scope-prefix argv)
       argv)))
+
+(m/=> scoped-argv [:=> [:cat ProbeAnswer [:maybe Argv]] [:vector :string]])
 
 (defn resolve-executable
   "The executable File `argv0` names for a child whose PATH is `path` and whose
@@ -115,6 +156,8 @@
                   (when (exe? f) f)))
               (str/split (or path "") #":" -1))))))
 
+(m/=> resolve-executable [:=> [:cat [:maybe :string] [:maybe :string] [:maybe :string]] [:maybe ExecFile]])
+
 (defn plan-argv
   "argv to spawn given the probe's answer and where the child will run:
    `prefix` (default `scope-prefix`) + argv when available? is exactly true AND
@@ -131,6 +174,8 @@
     (if (and (true? available?) (seq argv) (resolve-executable (first argv) path cwd))
       (into (vec (or prefix scope-prefix)) argv)
       argv)))
+
+(m/=> plan-argv [:=> [:cat ProbeAnswer [:maybe Argv] PlanOpts] [:vector :string]])
 
 (def scope-failure-signatures
   "How systemd-run's OWN failures begin on stderr, the ones where it exits 1
@@ -154,6 +199,13 @@
           (<= 1 (count (str/split-lines text)) 2)
           (some #(str/starts-with? text %) scope-failure-signatures)))))
 
+(m/=> scope-start-failure?
+  [:=> [:cat [:map
+              [:exit {:optional true} [:maybe :int]]
+              [:stdout-quiet? {:optional true} :any]
+              [:stderr {:optional true} [:maybe :string]]]]
+   :boolean])
+
 ;; ---------------------------------------------------------------------------
 ;; Port application
 ;; ---------------------------------------------------------------------------
@@ -168,6 +220,8 @@
                        (log/debug "child-scope probe threw, plain spawn" {:error (ex-message t)})
                        false))]
     (scoped-argv available? argv)))
+
+(m/=> argv-for [:=> [:cat Probe [:maybe Argv]] [:vector :string]])
 
 ;; ---------------------------------------------------------------------------
 ;; Adapters
@@ -191,12 +245,16 @@
           (do (.destroyForcibly p) false)))
       (catch Throwable _ false))))
 
+(m/=> systemd-probe [:=> [:cat] :boolean])
+
 (defn caching-probe
   "Wrap a probe so it runs at most once; later calls return the first answer.
    A probe that throws caches false."
   [probe]
   (let [answer (delay (try (true? (probe)) (catch Throwable _ false)))]
     (fn [] @answer)))
+
+(m/=> caching-probe [:=> [:cat Probe] Probe])
 
 (def default-ttl-ms
   "How long `default-probe`'s answer stands before a spawn re-probes."
@@ -226,6 +284,14 @@
         (reset! state {:answer (true? answer) :at (clock)})
         (true? answer))))))
 
+(m/=> expiring-probe
+  [:function
+   [:=> [:cat Probe] Probe]
+   [:=> [:cat Probe [:maybe [:map
+                             [:ttl-ms {:optional true} :int]
+                             [:clock {:optional true} [:maybe Probe]]]]]
+    Probe]])
+
 (def default-probe
   "Process-wide probe: the real systemd-run check. Its answer stands for
    `default-ttl-ms`, then the next spawn re-probes; a spawn that sees the scope
@@ -249,6 +315,8 @@
          (log/debug "child-scope probe refused an answer" {:error (ex-message t)})))
   nil)
 
+(m/=> record-answer! [:=> [:cat Probe :any] :nil])
+
 (defn child-argv
   "argv for a child process spawned by hive-mcp: in a sibling
    ManagedOOMPreference=none scope when available, plain otherwise.
@@ -261,6 +329,12 @@
   ([probe argv opts]
    (let [available? (try (true? (probe)) (catch Throwable _ false))]
      (plan-argv available? argv opts))))
+
+(m/=> child-argv
+  [:function
+   [:=> [:cat [:maybe Argv]] [:vector :string]]
+   [:=> [:cat Probe [:maybe Argv]] [:vector :string]]
+   [:=> [:cat Probe [:maybe Argv] PlanOpts] [:vector :string]]])
 
 (def ^:private default-watch-ms
   "Longest `start!` watches a scoped spawn for systemd-run's own failure. The
@@ -370,3 +444,12 @@
                    (record-answer! probe false)
                    (.command pb ^java.util.List plain)
                    (.start pb))))))))))
+
+(m/=> start!
+  [:function
+   [:=> [:cat ProcBuilder] Proc]
+   [:=> [:cat ProcBuilder [:maybe [:map
+                                   [:probe {:optional true} [:maybe Probe]]
+                                   [:prefix {:optional true} [:maybe Argv]]
+                                   [:watch-ms {:optional true} [:maybe :int]]]]]
+    Proc]])

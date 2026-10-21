@@ -1,0 +1,10 @@
+{:empty {:reconciled 0, :spared 0, :skipped 0, :total 0},
+ :one-headless
+ {:result {:reconciled 1, :spared 0, :skipped 0, :total 1},
+  :retired [["s1" #:slave{:status :zombie, :alive? false}]]},
+ :mixed
+ {:result {:reconciled 1, :spared 2, :skipped 2, :total 5},
+  :retired [["s5" #:slave{:status :zombie, :alive? false}]]},
+ :unregistered-terminal
+ {:result {:reconciled 1, :spared 0, :skipped 0, :total 1},
+  :retired [["s1" #:slave{:status :zombie, :alive? false}]]}}

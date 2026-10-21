@@ -6,7 +6,8 @@
    later (e.g., Milvus, DataScript-for-testing).
 
    DDD: Repository pattern - ChromaMemoryStore is the Chroma aggregate adapter."
-  (:require [hive-mcp.protocols.memory :as proto]
+  (:require [malli.core :as m]
+            [hive-mcp.protocols.memory :as proto]
             [hive-mcp.chroma.core :as chroma]
             [hive-mcp.chroma.crud :as ccrud]
             [hive-mcp.chroma.search :as csearch]
@@ -14,7 +15,8 @@
             [hive-mcp.dns.result :as result]
             [taoensso.timbre :as log]
             [clojure.string :as str]
-            [hive-spi.memory.ports :as ports]))
+            [hive-spi.memory.ports :as ports]
+            [hive-mcp.chroma.helpers :as h]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -35,6 +37,14 @@
                 store the text it may index this way; without it the
                 collection would index ciphertext."
   [:embed-text])
+
+;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
+;;
+;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+;; =========================================================================
+;; Pure Calculations (extracted to lower per-fn CC)
+;; =========================================================================
 
 (defn- now-iso
   "Current ISO 8601 timestamp string."
@@ -88,6 +98,8 @@
   (let [s (if (instance? clojure.lang.Named field) (name field) (str field))]
     (keyword (str/replace s "_" "-"))))
 
+(m/=> field-key [:=> [:cat :any] :keyword])
+
 (defn project-fields
   "ENTRIES trimmed to OUTPUT-FIELDS (entry-key names as strings or keywords,
    kebab-case or Milvus snake_case column names, see field-key). :id always
@@ -98,6 +110,25 @@
     (let [ks (conj (set (map field-key output-fields)) :id)]
       (mapv #(select-keys % ks) entries))
     entries))
+
+(defn hit->entry
+  "A Chroma search hit as the entry map the IMemoryStore port promises.
+   The vendor answers {:id :document :metadata :distance ...} with every entry
+   field (:type, :project-id, :tags, ...) nested under :metadata; the port's
+   readers, and the hive-spi conformance filter case, read them top level.
+   The raw hit keys (:metadata, :document, :distance) are kept so callers that
+   read the vendor shape are unaffected."
+  [hit]
+  (if (map? (:metadata hit))
+    (merge hit (h/metadata->entry hit))
+    hit))
+
+(m/=> hit->entry [:=> [:cat [:map [:id :any]]] [:map [:id :any]]])
+
+(m/=> project-fields
+      [:=> [:cat [:maybe [:sequential :map]]
+             [:maybe [:sequential [:or :string :keyword :symbol]]]]
+       [:maybe [:sequential :map]]])
 
 (defn- build-health-map
   "Build health-check response from probe result and latency.
@@ -229,11 +260,12 @@
 
   (search-similar [_this query-text opts]
     (let [{:keys [limit type project-ids exclude-tags]} opts]
-      (csearch/search-similar query-text
-                              :limit (or limit 10)
-                              :type type
-                              :project-ids project-ids
-                              :exclude-tags exclude-tags)))
+      (mapv hit->entry
+            (csearch/search-similar query-text
+                                    :limit (or limit 10)
+                                    :type type
+                                    :project-ids project-ids
+                                    :exclude-tags exclude-tags))))
 
   (supports-semantic-search? [_this]
     (boolean (chroma/embedding-configured?)))
@@ -385,6 +417,8 @@
                                       :port 8000
                                       :collection-name "hive-mcp-memory"}
                                      opts)))))
+
+(m/=> create-store [:function [:=> [:cat] [:fn {:gen/elements [(->ChromaMemoryStore (atom {}))]} #(satisfies? proto/IMemoryStore %)]] [:=> [:cat :map] [:fn {:gen/elements [(->ChromaMemoryStore (atom {}))]} #(satisfies? proto/IMemoryStore %)]]])
 
 ;; =========================================================================
 ;; IMemoryStoreScan — complete enumeration (seal.migrate, `seal project`)

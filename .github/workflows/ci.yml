@@ -107,6 +107,19 @@ jobs:
             --add-opens=java.base/java.nio=ALL-UNNAMED
             -Dio.netty.tryReflectionSetAccessible=true
 
+  # bin/hive-mcp's OOM wiring, driven with a stub `clojure` (no JVM). The
+  # scope assertions skip themselves when the runner has no systemd user
+  # manager; the restart, exit-status, OOMD_PREF=off and SIGTERM cases run.
+  launcher:
+    name: Launcher (bin/hive-mcp)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run launcher test
+        run: timeout 300 bin/hive-mcp-launcher-test.sh
+
   deps:
     name: Dependency Resolution
     runs-on: ubuntu-latest

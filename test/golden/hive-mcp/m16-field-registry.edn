@@ -1,0 +1,8 @@
+{:empty-keys #{},
+ :after-register {:step-keys #{:method}, :project-keys #{:method}},
+ :normalized {:agent :claude, :other 1},
+ :validate-report
+ [{:scope :step, :key :verify, :value "nope", :error "not a keyword"}],
+ :defaults
+ {:default-method :saa,
+  :steps [{:id "a", :method :saa} {:id "b", :method :manual}]}}

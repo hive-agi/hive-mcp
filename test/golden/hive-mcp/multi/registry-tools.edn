@@ -1,0 +1,23 @@
+{:addon-wins-first
+ {:steps [:ok :conflict],
+  :index {"x" {:handler :echo, :owner :addon/a}},
+  :by-owner #:addon{:a #{"x"}},
+  :lookups {"x" {:handler :echo, :owner :addon/a}, "y" nil, "z" nil}},
+ :core-overridden
+ {:steps [:ok :replaced],
+  :index {"x" {:handler :ping, :owner :addon/a}},
+  :by-owner #:addon{:a #{"x"}},
+  :lookups {"x" {:handler :ping, :owner :addon/a}, "y" nil, "z" nil}},
+ :deregister-core
+ {:steps [:ok :ok #{"x"}],
+  :index {"y" {:handler :ping, :batchable :kg, :owner :addon/b}},
+  :by-owner #:addon{:b #{"y"}},
+  :lookups
+  {"x" nil,
+   "y" {:handler :ping, :batchable :kg, :owner :addon/b},
+   "z" nil}},
+ :fresh
+ {:steps [:ok],
+  :index {"x" {:handler :echo, :owner :addon/a}},
+  :by-owner #:addon{:a #{"x"}},
+  :lookups {"x" {:handler :echo, :owner :addon/a}, "y" nil, "z" nil}}}

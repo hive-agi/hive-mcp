@@ -1,0 +1,4 @@
+{:errored {:loaded-ok 0, :loaded-fail 1, :loaded-queued 0},
+ :landed {:loaded-ok 1, :loaded-fail 0, :loaded-queued 0},
+ :queued {:loaded-ok 0, :loaded-fail 0, :loaded-queued 1},
+ :refused {:loaded-ok 0, :loaded-fail 1, :loaded-queued 0}}

@@ -60,7 +60,8 @@
             [hive-mcp.hooks.core :as hooks]
             [hive-mcp.protocols.vessel :as vessel]
             [hive-mcp.extensions.soft :as soft]
-            [hive-mcp.swarm.sync :as sync]))
+            [hive-mcp.swarm.sync :as sync]
+            [malli.core :as m]))
 
 (defn make-adapter
   "Build the hive-mcp implementation of all events SPI protocols."
@@ -161,8 +162,21 @@
         (vessel/resolve-agent-context agent-id)
         (catch Exception _ nil)))))
 
+(def Adapter
+  "Something that fills the events port: all seven protocols at once."
+  [:fn {:gen/fmap (fn [_] (make-adapter)) :gen/schema :nil}
+   #(and (satisfies? spi/IEventDispatch %) (satisfies? spi/IAgentEventPublisher %)
+         (satisfies? spi/IHookTrigger %) (satisfies? spi/ISwarmTelemetry %)
+         (satisfies? spi/IDagWaveScheduler %) (satisfies? spi/IAgentEventBroadcaster %)
+         (satisfies? spi/IVesselContextSource %))])
+
+(m/=> make-adapter [:=> [:cat] Adapter])
+
 (defn install!
   "Install the hive-mcp adapter into the SPI slot. Idempotent by overwrite —
    the last installer wins, which is what a re-init should do."
   []
   (spi/set-events! (make-adapter)))
+
+;; set-events! answers the installed adapter
+(m/=> install! [:=> [:cat] Adapter])

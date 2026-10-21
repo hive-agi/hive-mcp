@@ -1,0 +1,20 @@
+{:case-0 {:out nil, :in ("full-datalevin-20260203T1645.edn")},
+ :case-1 {:out nil, :in ("full-datalevin-20261020T000000.json")},
+ :case-2 {:out nil, :in ("kg-datalevin-20260203T164530.json")},
+ :case-3 {:out nil, :in ("memory-chroma-20261020T000000.json")},
+ :case-4
+ {:out
+  {:scope :kg,
+   :backend :datalevin,
+   :timestamp "20261020T000000",
+   :filename "kg-datalevin-20261020T000000.edn"},
+  :in ("kg-datalevin-20261020T000000.edn")},
+ :case-5 {:out nil, :in ("kg-datalevin-20260203T1645.edn")},
+ :case-6
+ {:out
+  {:scope :memory,
+   :backend :chroma,
+   :timestamp "20261020T000000",
+   :filename "memory-chroma-20261020T000000.edn"},
+  :in ("memory-chroma-20261020T000000.edn")},
+ :case-7 {:out nil, :in ("full-datalevin-2026-02-03.edn")}}

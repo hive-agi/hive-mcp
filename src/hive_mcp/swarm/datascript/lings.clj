@@ -6,7 +6,9 @@
    without the addon. `with-critical-op` expands to this namespace's
    enter/exit fns, which delegate."
   (:require [hive-mcp.swarm.delegate :as delegate]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.swarm.datascript.schema :as s]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -23,12 +25,53 @@
   (impl sym))
 
 (defn add-slave! {:arglists '([slave-id {:keys [name status depth parent presets cwd project-id kanban-task-id], :or {status :idle, depth 1}}])} [& args] (apply (impl! 'add-slave!) args))
+
+;; Contracts transcribe hive-datascript.swarm.lings, where the behaviour lives.
+;; A missing entity answers nil; a :pre the store asserts (a string id, a known
+;; status) is part of the input schema.
+(def ^:private AddSlaveOpts
+  [:map
+   [:name {:optional true} [:maybe :string]]
+   [:status {:optional true} s/SlaveStatus]
+   [:depth {:optional true} :int]
+   [:parent {:optional true} [:maybe :string]]
+   [:presets {:optional true} [:maybe s/StringColl]]
+   [:cwd {:optional true} [:maybe :string]]
+   [:project-id {:optional true} [:maybe :string]]
+   [:kanban-task-id {:optional true} [:maybe :string]]])
+
+(m/=> add-slave! [:=> [:cat :string [:maybe AddSlaveOpts]] s/TxReport])
 (defn add-task! {:arglists '([task-id slave-id {:keys [status prompt files], :or {status :dispatched}}])} [& args] (apply (impl! 'add-task!) args))
+
+(m/=> add-task! [:=> [:cat [:maybe :string] :string
+                         [:maybe [:map [:status {:optional true} s/TaskStatus]
+                                  [:prompt {:optional true} [:maybe :string]]
+                                  [:files {:optional true} [:maybe s/StringColl]]]]]
+                 s/TxReport])
 (defn add-to-wait-queue! {:arglists '([ling-id file-path])} [& args] (apply (impl! 'add-to-wait-queue!) args))
+
+(m/=> add-to-wait-queue! [:=> [:cat :string :string] s/TxReport])
 (defn append-stdout! {:arglists '([slave-id lines])} [& args] (apply (impl! 'append-stdout!) args))
+
+;; A string or a collection of strings; answers the buffer's line count.
+(m/=> append-stdout! [:=> [:cat :any [:or :string [:sequential :string]]] s/Count])
 (defn archive-claim-to-history! {:arglists '([file-path {:keys [slave-id prior-hash released-hash lines-added lines-removed]}])} [& args] (apply (impl! 'archive-claim-to-history!) args))
+
+(m/=> archive-claim-to-history!
+      [:=> [:cat :string [:map [:slave-id :string]
+                          [:prior-hash {:optional true} [:maybe :string]]
+                          [:released-hash {:optional true} [:maybe :string]]
+                          [:lines-added {:optional true} [:maybe :int]]
+                          [:lines-removed {:optional true} [:maybe :int]]]]
+       s/TxReport])
 (defn can-kill? {:arglists '([slave-id])} [& args] (apply (impl! 'can-kill?) args))
+
+(m/=> can-kill? [:=> [:cat s/EntityId]
+                 [:or [:map [:can-kill? [:= true]] [:blocking-ops [:= #{}]]]
+                  [:map [:can-kill? [:= false]] [:blocking-ops [:set {:min 1} :keyword]]]]])
 (defn claim-age-ms {:arglists '([file-path])} [& args] (apply (impl! 'claim-age-ms) args))
+
+(m/=> claim-age-ms [:=> [:cat s/EntityId] [:maybe :int]])
 (def ^:private dead-statuses
   "Slave statuses whose claims no longer protect anything."
   #{:terminated :dead :killed :zombie})
@@ -80,32 +123,111 @@
            :file     file-path
            :held-by  holder})
       (apply (impl! 'claim-file!) file-path slave-id more))))
+
+;; The refusal map when another live slave holds the key, else the store's
+;; upsert report.
+(m/=> claim-file!
+      ;; The opts are destructured with :keys, which reads any value (an
+      ;; existing caller passes a bare task-id string, read as no opts).
+      [:=> [:cat :string :string
+            [:? [:or [:maybe [:map [:task-id {:optional true} [:maybe :string]]
+                              [:prior-hash {:optional true} [:maybe :string]]
+                              [:qn {:optional true} [:maybe :string]]
+                              [:mode {:optional true} [:maybe :keyword]]]]
+                 :string]]]
+       [:or s/TxReport
+        [:map [:claimed? [:= false]] [:refused [:= :held-by-live-slave]]
+         [:file :string] [:held-by :string]]]])
 (defn claim-stale? {:arglists '([file-path] [file-path threshold-ms])} [& args] (apply (impl! 'claim-stale?) args))
+
+;; nil when there is no claim, else whether it is older than the threshold.
+(m/=> claim-stale? [:function
+                    [:=> [:cat s/EntityId] [:maybe :boolean]]
+                    [:=> [:cat s/EntityId s/Threshold] [:maybe :boolean]]])
 (defn cleanup-stale-claims! {:arglists '([] [threshold-ms])} [& args] (apply (impl! 'cleanup-stale-claims!) args))
+
+(m/=> cleanup-stale-claims!
+      [:function
+       [:=> [:cat] [:map [:released-count s/Count] [:released-files [:vector :string]]]]
+       [:=> [:cat s/Threshold] [:map [:released-count s/Count] [:released-files [:vector :string]]]]])
 (defn cleanup-stdout-buffer! {:arglists '([slave-id])} [& args] (apply (impl! 'cleanup-stdout-buffer!) args))
+
+(m/=> cleanup-stdout-buffer! [:=> [:cat :any] :boolean])
 (defn complete-task! {:arglists '([task-id])} [& args] (apply (impl! 'complete-task!) args))
+
+(m/=> complete-task! [:=> [:cat s/EntityId] s/MaybeTxReport])
 (def default-stale-threshold-ms @(impl 'default-stale-threshold-ms))
 (defn enter-critical-op! {:arglists '([slave-id op-type])} [& args] (apply (impl! 'enter-critical-op!) args))
+
+(m/=> enter-critical-op! [:=> [:cat s/EntityId s/CriticalOp] s/MaybeTxReport])
 (defn exit-critical-op! {:arglists '([slave-id op-type])} [& args] (apply (impl! 'exit-critical-op!) args))
+
+(m/=> exit-critical-op! [:=> [:cat s/EntityId s/CriticalOp] s/MaybeTxReport])
 (defn fail-task! {:arglists '([task-id status])} [& args] (apply (impl! 'fail-task!) args))
+
+(m/=> fail-task! [:=> [:cat s/EntityId [:enum :error :timeout]] s/MaybeTxReport])
 (defn get-all-claims {:arglists '([& args])} [& args] (apply (impl! 'get-all-claims) args))
+
+(m/=> get-all-claims [:=> [:cat] [:sequential s/ClaimRow]])
 (defn get-claim-info {:arglists '([& args])} [& args] (apply (impl! 'get-claim-info) args))
+
+(m/=> get-claim-info [:=> [:cat s/EntityId] [:maybe s/ClaimInfo]])
 (defn get-critical-ops {:arglists '([slave-id])} [& args] (apply (impl! 'get-critical-ops) args))
+
+(m/=> get-critical-ops [:=> [:cat s/EntityId] [:set :keyword]])
 (defn get-stale-claims {:arglists '([] [threshold-ms])} [& args] (apply (impl! 'get-stale-claims) args))
+
+(def ^:private StaleClaim
+  (into s/ClaimRow [[:age-ms :int] [:age-minutes :int]]))
+
+(m/=> get-stale-claims [:function
+                        [:=> [:cat] [:sequential StaleClaim]]
+                        [:=> [:cat s/Threshold] [:sequential StaleClaim]]])
 (defn get-stdout {:arglists '([slave-id] [slave-id n])} [& args] (apply (impl! 'get-stdout) args))
+
+(m/=> get-stdout [:function
+                  [:=> [:cat :any] [:vector s/StdoutLine]]
+                  [:=> [:cat :any [:int {:min 0}]] [:vector s/StdoutLine]]])
 (defn get-stdout-buffer-info {:arglists '([slave-id])} [& args] (apply (impl! 'get-stdout-buffer-info) args))
+
+(m/=> get-stdout-buffer-info
+      [:=> [:cat :any]
+       [:maybe [:map [:line-count s/Count] [:next-idx s/Count]
+                [:oldest-idx [:maybe s/Count]] [:newest-idx [:maybe s/Count]]
+                [:max-lines s/Count]]]])
 (defn get-stdout-since {:arglists '([slave-id since-idx])} [& args] (apply (impl! 'get-stdout-since) args))
+
+(m/=> get-stdout-since [:=> [:cat :any :int] [:vector s/StdoutLine]])
 (defn init-stdout-buffer! {:arglists '([slave-id])} [& args] (apply (impl! 'init-stdout-buffer!) args))
+
+(m/=> init-stdout-buffer! [:=> [:cat :any] s/Atom])
 (defn refresh-claim! {:arglists '([file-path])} [& args] (apply (impl! 'refresh-claim!) args))
+
+(m/=> refresh-claim! [:=> [:cat s/EntityId] s/MaybeTxReport])
 (defn release-claim! {:arglists '([file-path])} [& args] (apply (impl! 'release-claim!) args))
+
+(m/=> release-claim! [:=> [:cat s/EntityId] s/MaybeTxReport])
 (defn release-claims-for-slave! {:arglists '([slave-id])} [& args] (apply (impl! 'release-claims-for-slave!) args))
+
+(m/=> release-claims-for-slave! [:=> [:cat s/EntityId] s/Count])
 (defn release-claims-for-task! {:arglists '([task-id])} [& args] (apply (impl! 'release-claims-for-task!) args))
+
+(m/=> release-claims-for-task! [:=> [:cat s/EntityId] s/Count])
 (defn remove-slave! {:arglists '([slave-id])} [& args] (apply (impl! 'remove-slave!) args))
+
+(m/=> remove-slave! [:=> [:cat s/EntityId] s/MaybeTxReport])
 (defn reset-stdout-buffers! {:arglists '([])} [& args] (apply (impl! 'reset-stdout-buffers!) args))
+
+;; reset! answers the new, empty registry.
+(m/=> reset-stdout-buffers! [:=> [:cat] [:map-of {:max 0} :any :any]])
 (def stdout-buffer-max-lines @(impl 'stdout-buffer-max-lines))
 (def stdout-buffers @(impl 'stdout-buffers))
 (defn update-slave! {:arglists '([slave-id updates])} [& args] (apply (impl! 'update-slave!) args))
+
+(m/=> update-slave! [:=> [:cat s/EntityId :map] s/MaybeTxReport])
 (defn update-task! {:arglists '([task-id updates])} [& args] (apply (impl! 'update-task!) args))
+
+(m/=> update-task! [:=> [:cat s/EntityId :map] s/MaybeTxReport])
 
 (defmacro with-critical-op
   "Execute body while holding a critical operation guard.

@@ -1,0 +1,8 @@
+{:case-0 {:out :batch, :in (nil "ship land")},
+ :case-1 {:out :batch, :in (nil "status")},
+ :case-2 {:out :batch, :in ("git" nil)},
+ :case-3 {:out :batch, :in ("memory" :ship-land)},
+ :case-4 {:out :short, :in ("git" "live sync")},
+ :case-5 {:out :short, :in ("git" "ship release")},
+ :case-6 {:out :batch, :in ("memory" "live sync")},
+ :case-7 {:out :batch, :in (nil "ship release")}}

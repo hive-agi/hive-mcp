@@ -1,0 +1,34 @@
+{:case-0
+ {:out {:registered ["synth-c" "synth-c"], :orphans []},
+  :in (["synth-c" "synth-c"] {:visible? false, :records #{}})},
+ :case-1
+ {:out {:registered ["synth-c" "synth-c" "synth-a"], :orphans []},
+  :in
+  (["synth-c" "synth-c" "synth-a"]
+   {:visible? false, :records #{"synth-b" "synth-c" "synth-a"}})},
+ :case-2
+ {:out {:registered [], :orphans []},
+  :in ([] {:visible? false, :records #{"synth-c" "synth-a"}})},
+ :case-3
+ {:out {:registered ["synth-a"], :orphans []},
+  :in (["synth-a"] {:visible? true, :records #{"synth-b" "synth-a"}})},
+ :case-4
+ {:out
+  {:registered
+   ["synth-c" "synth-20260101T000000-x" "synth-b" "synth-c" "synth-a"],
+   :orphans []},
+  :in
+  (["synth-c" "synth-20260101T000000-x" "synth-b" "synth-c" "synth-a"]
+   {:visible? false, :records #{}})},
+ :case-5
+ {:out {:registered ["synth-c" "synth-a"], :orphans []},
+  :in (["synth-c" "synth-a"] {:visible? false, :records #{}})},
+ :case-6
+ {:out {:registered [], :orphans ["synth-b"]},
+  :in (["synth-b"] {:visible? true, :records #{}})},
+ :case-7
+ {:out
+  {:registered ["synth-20260101T000000-x" "synth-c"], :orphans []},
+  :in
+  (["synth-20260101T000000-x" "synth-c"]
+   {:visible? false, :records #{}})}}

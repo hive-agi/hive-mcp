@@ -24,7 +24,9 @@
             [hive-mcp.tools.catchup.scope-filter :as sf]
             [hive-mcp.tools.catchup.axiom-cache :as axc]
             [hive-mcp.tools.catchup.bundle :as bundle]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [hive-mcp.tools.catchup.shapes :as shapes]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -80,3 +82,16 @@
 (def query-regular-conventions  #'bundle/query-regular-conventions)
 (def query-all-scoped           #'bundle/query-all-scoped)
 (def query-catchup-bundle       #'bundle/query-catchup-bundle)
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def ^:private Directory
+  "A working directory as callers hand it over, or nil."
+  [:maybe [:string {:gen/schema [:enum "/tmp" "/nonexistent-m26/a/b" "relative/dir" "/"]}]])
+
+(m/=> get-current-project-name
+      [:function
+       [:=> [:cat] [:maybe :string]]
+       [:=> [:cat Directory] [:maybe :string]]])

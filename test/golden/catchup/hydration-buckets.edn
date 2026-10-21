@@ -1,0 +1,2 @@
+{:axioms [{:id "e1", :content "axiom one", :distance 0.3}],
+ :decisions [{:id "zz"} {:id "e3", :content "decision one"}]}

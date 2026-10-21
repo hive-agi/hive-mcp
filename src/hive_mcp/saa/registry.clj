@@ -29,7 +29,8 @@
             [hive-mcp.saa.planner :as planner]
             [hive-dsl.adt :refer [adt-case]]
             [hive-dsl.result :refer [rescue]]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -77,6 +78,11 @@
                   :ignored)))
           (or entries []))))
 
+;; owner / k are the addon id and hook key as the lifecycle passes them;
+;; entries is any hook value (a non-sequential, non-map value is skipped)
+(m/=> register-by-key! [:=> [:cat :any :any :any]
+                        [:vector [:enum :ok :replaced :conflict :ignored]]])
+
 (defn deregister-by-key!
   "Remove every entry an addon registered under a SAA `k`.
 
@@ -92,6 +98,9 @@
     :saa/dispatch-mode  (r-dispatch/deregister-by-owner! owner)
     nil))
 
+;; an unknown key has a nil `case` default
+(m/=> deregister-by-key! [:=> [:cat :any :any] [:maybe [:set :any]]])
+
 (defn deregister-by-owner!
   "Clear every entry across all six child registries owned by `owner`."
   [owner]
@@ -101,6 +110,12 @@
    :tool-intents   (r-intents/deregister-by-owner! owner)
    :plan-stores    (r-stores/deregister-by-owner! owner)
    :dispatch-modes (r-dispatch/deregister-by-owner! owner)})
+
+(m/=> deregister-by-owner! [:=> [:cat :any]
+                            [:map
+                             [:providers [:set :any]] [:scorers [:set :any]]
+                             [:planners [:set :any]] [:tool-intents [:set :any]]
+                             [:plan-stores [:set :any]] [:dispatch-modes [:set :any]]]])
 
 ;; =============================================================================
 ;; Resolvers — ALWAYS return a satisfying record (LSP)
@@ -116,6 +131,11 @@
        (some-> (r-providers/lookup default-id) :provider)
        (adapters/->default-phase-provider nil))))
 
+;; a registered entry's value is returned as stored; the LSP promise is the
+;; seeded default, so an addon-registered non-satisfying value is not caught
+;; here (register-by-key! accepts any :provider)
+(m/=> lookup-phase-provider-or-default [:function [:=> [:cat] adapters/PhaseProvider] [:=> [:cat :any] adapters/PhaseProvider]])
+
 (defn lookup-scorer-or-default
   "Return the IObservationScorer for `scorer-id`, the :saa/default entry, or a
    freshly-constructed DefaultObservationScorer. Never nil (LSP) — seed-independent."
@@ -125,6 +145,8 @@
        (some-> (r-scorers/lookup default-id) :scorer)
        (scorer/->default-scorer))))
 
+(m/=> lookup-scorer-or-default [:function [:=> [:cat] scorer/ObservationScorer] [:=> [:cat :any] scorer/ObservationScorer]])
+
 (defn lookup-planner-or-default
   "Return the IPlanSynthesizer for `planner-id`, the :saa/default entry, or a
    freshly-constructed NoopPlanSynthesizer. Never nil (LSP) — seed-independent."
@@ -133,6 +155,8 @@
    (or (some-> (r-planners/lookup planner-id) :planner)
        (some-> (r-planners/lookup default-id) :planner)
        (planner/->noop-planner))))
+
+(m/=> lookup-planner-or-default [:function [:=> [:cat] planner/PlanSynthesizer] [:=> [:cat :any] planner/PlanSynthesizer]])
 
 (defn resolve-tools
   "Resolve the concrete tool set for `provider-id` + neutral `capability`.
@@ -144,6 +168,8 @@
         provider-slice (r-intents/lookup-owner-slice provider-id capability)]
     (vec (sort (into (set core-slice) provider-slice)))))
 
+(m/=> resolve-tools [:=> [:cat :any :any] [:vector :any]])
+
 (defn lookup-plan-store
   "Return the registered plan-store fn (fn [plan agent-id directory]), or nil
    when no owner fills the :saa/plan-store port. The kernel seeds none."
@@ -151,11 +177,18 @@
   ([store-id]
    (some-> (r-stores/lookup store-id) :store)))
 
+;; the stored :store value is returned as registered (documented as an ifn)
+(m/=> lookup-plan-store [:function
+                         [:=> [:cat] :any]
+                         [:=> [:cat :any] :any]])
+
 (defn lookup-dispatch-mode
   "Return the dispatch fn (fn [plan agent-id ctx]) registered for `mode`, or nil
    when no owner contributed that mode."
   [mode]
   (some-> (r-dispatch/lookup mode) :dispatch))
+
+(m/=> lookup-dispatch-mode [:=> [:cat :any] :any])
 
 ;; =============================================================================
 ;; Snapshot — pure value across all four child registries
@@ -178,6 +211,16 @@
                      (:version planners) (:version intents)
                      (:version stores) (:version dispatch)])}))
 
+(def RegistrySnapshot
+  "The façade snapshot: each child's snapshot plus a combined :version."
+  [:map
+   [:providers types/RegistrySnapshot] [:scorers types/RegistrySnapshot]
+   [:planners types/RegistrySnapshot] [:tool-intents r-intents/ToolIntentSnapshot]
+   [:plan-stores types/RegistrySnapshot] [:dispatch-modes types/RegistrySnapshot]
+   [:version :int]])
+
+(m/=> snapshot [:=> [:cat] RegistrySnapshot])
+
 (defn reset-for-test!
   "Clear all six child registries. Test-only."
   []
@@ -187,6 +230,9 @@
   (r-intents/reset-for-test!)
   (r-stores/reset-for-test!)
   (r-dispatch/reset-for-test!))
+
+;; answers the last child's reset value — an empty registry state
+(m/=> reset-for-test! [:=> [:cat] types/RegistryState])
 
 (defn restore!
   "Put every child registry back to the state captured by a prior `snapshot`.
@@ -198,6 +244,9 @@
   (r-intents/restore! (:tool-intents snap))
   (r-stores/restore! (:plan-stores snap))
   (r-dispatch/restore! (:dispatch-modes snap)))
+
+;; snap may be nil or partial: each child restores a missing slot to empty
+(m/=> restore! [:=> [:cat [:maybe :map]] :map])
 
 ;; =============================================================================
 ;; Bootstrap: seed :saa/core owner before first registration arrives

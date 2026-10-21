@@ -8,6 +8,7 @@
    - Custom (user-defined transforms)"
 
   (:require [clojure.walk :as walk]
+            [malli.core :as m]
             [taoensso.timbre :as log]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -139,6 +140,18 @@
 ;; Adapter Helpers
 ;; =============================================================================
 
+;; The implementation object is a protocol port. Generate a real built-in adapter
+;; for tests without imposing a concrete implementation on callers.
+(def AdapterPort [:fn {:gen/elements [(->IdentityAdapter) (->JsonAdapter)]}
+                  #(satisfies? IAdapter %)])
+
+(m/=> register-adapter! [:=> [:cat AdapterPort] AdapterPort])
+(m/=> get-adapter [:=> [:cat :keyword] [:maybe AdapterPort]])
+(m/=> list-adapters
+      [:=> [:cat] [:vector [:map [:id :keyword] [:name :string]
+                                  [:description :string] [:version :string]
+                                  [:formats [:set :keyword]]]]])
+
 (defn transform-export
   "Apply adapter transformation for export.
 
@@ -154,6 +167,10 @@
     (throw (ex-info "Unknown adapter" {:adapter adapter-id
                                        :available (keys @adapter-registry)}))))
 
+(m/=> transform-export
+      [:function [:=> [:cat :keyword :any] :any]
+       [:=> [:cat :keyword :any [:maybe :map]] :any]])
+
 (defn transform-import
   "Apply adapter transformation for import.
 
@@ -168,3 +185,7 @@
     (import-transform adapter data opts)
     (throw (ex-info "Unknown adapter" {:adapter adapter-id
                                        :available (keys @adapter-registry)}))))
+
+(m/=> transform-import
+      [:function [:=> [:cat :keyword :any] :any]
+       [:=> [:cat :keyword :any [:maybe :map]] :any]])

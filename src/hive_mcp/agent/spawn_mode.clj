@@ -4,7 +4,7 @@
    Built on hive-dsl.adt/defadt. Provides type-safe spawn mode dispatch
    with compile-time exhaustiveness checking via adt-case.
 
-   Variants: :claude | :vterm | :headless | :agent-sdk
+   Variants: :claude | :vterm | :headless
 
    This module is the type-safe counterpart to spawn-mode-registry.
    - spawn-mode-registry: SST for metadata (requires-emacs?, io-model, etc.),
@@ -37,8 +37,7 @@
      (adt-case SpawnMode mode
        :claude     :emacs-claude
        :vterm      :emacs-buffer
-       :headless   :abstract-headless
-       :agent-sdk  :sdk-subprocess)
+       :headless   :abstract-headless)
 
      ;; Extract keyword (for backward compat)
      (sm/to-keyword mode) ;; => :vterm
@@ -67,15 +66,13 @@
    :vterm     — Raw Emacs vterm buffer via vterm-mcp
    :headless  — Abstract headless mode; concrete backend resolved at spawn
                 time via headless-registry/resolve-default-backend.
-   :agent-sdk — Claude Agent SDK subprocess
 
    Addon-contributed modes (e.g. :hive-agent, :tmux) are valid runtime
    spawn-mode keywords but are NOT ADT variants — they flow as plain
    keywords through registry-based validation."
   :claude
   :vterm
-  :headless
-  :agent-sdk)
+  :headless)
 
 ;; =============================================================================
 ;; Keyword Coercion (backward compatibility bridge)
@@ -87,7 +84,7 @@
 ;; =============================================================================
 
 (def SpawnModeKw
-  [:enum :claude :vterm :headless :agent-sdk])
+  [:enum :claude :vterm :headless])
 
 (def SpawnModeValue
   "SpawnMode ADT value."
@@ -216,4 +213,4 @@
   "Set of subprocess/API variants (no Emacs required) within the closed
    ADT. Addon-contributed headless modes (e.g. :hive-agent) are tracked
    in `hive-mcp.agent.spawn-mode-registry/headless-modes` at runtime."
-  #{:headless :agent-sdk})
+  #{:headless})

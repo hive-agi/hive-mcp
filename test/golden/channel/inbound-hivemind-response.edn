@@ -1,0 +1,37 @@
+{:case-0
+ {:out ["q-kw" "Let it ship" "pedro"],
+  :in
+  {:type "hivemind-response",
+   :ask-id :q-kw,
+   :answer "Let it ship",
+   :decision "approve",
+   :by "pedro"}},
+ :case-1 {:out nil, :in {"answer" "hivemind-response"}},
+ :case-10 {:out nil, :in "text"},
+ :case-11 {:out nil, :in {}},
+ :case-12
+ {:out ["q-kw" "approve" "pedro"],
+  :in
+  {:type "hivemind-response",
+   :ask-id :q-kw,
+   :decision "approve",
+   :by "pedro"}},
+ :case-13 {:out nil, :in {:type "hivemind-response"}},
+ :case-14 {:out nil, :in {:type "hivemind-response"}},
+ :case-15
+ {:out nil,
+  :in {:type :hivemind-response, :ask-id :q-kw, :decision " "}},
+ :case-2 {:out nil, :in "text"},
+ :case-3 {:out nil, :in {"by" "hivemind-response"}},
+ :case-4 {:out nil, :in {:type "other", :answer "yes"}},
+ :case-5 {:out nil, :in {:type "other", :ask-id "", :answer ""}},
+ :case-6 {:out nil, :in {:type "hivemind-response"}},
+ :case-7 {:out nil, :in {:type "other"}},
+ :case-8 {:out nil, :in {:type "hivemind-response", :answer nil}},
+ :case-9
+ {:out ["no" "emacs" "no"],
+  :in
+  {"type" "hivemind-response",
+   "ask-id" "no",
+   "by" "no",
+   "answer" "emacs"}}}

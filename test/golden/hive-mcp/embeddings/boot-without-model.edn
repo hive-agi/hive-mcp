@@ -1,0 +1,10 @@
+{:endpoint-a
+ {:returned true,
+  :chroma {:host "chroma.boot", :port 8123},
+  :service {:initialized? true, :global-fallback? false},
+  :provider? false},
+ :endpoint-b
+ {:returned true,
+  :chroma {:host "chroma.other", :port 9001},
+  :service {:initialized? true, :global-fallback? false},
+  :provider? false}}

@@ -1,0 +1,24 @@
+{:queued-never-started
+ {:stage :queued,
+  :elapsed-ms 30000,
+  :stage-elapsed-ms 30000,
+  :timeout-ms 30000,
+  :cause :pool-queue-wait},
+ :stuck-in-dedup
+ {:stage :dedup-lookup,
+  :elapsed-ms 30000,
+  :stage-elapsed-ms 29900,
+  :timeout-ms 30000,
+  :cause :stage-stalled},
+ :stuck-in-fetch
+ {:stage :fetch,
+  :elapsed-ms 30000,
+  :stage-elapsed-ms 1000,
+  :timeout-ms 30000,
+  :cause :stage-stalled},
+ :stuck-in-index
+ {:stage :index,
+  :elapsed-ms 30000,
+  :stage-elapsed-ms 21000,
+  :timeout-ms 30000,
+  :cause :stage-stalled}}

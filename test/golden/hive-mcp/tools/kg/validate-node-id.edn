@@ -1,0 +1,14 @@
+{:case-0 {:out nil, :in ("a-1" "from")},
+ :case-1
+ {:out {:error "to must be a non-empty string"}, :in (nil "to")},
+ :case-2 {:out nil, :in ("node-x" "node_id")},
+ :case-3 {:out nil, :in ("a-1" "node_id")},
+ :case-4 {:out nil, :in ("b-1" "to")},
+ :case-5
+ {:out
+  {:error
+   "to is an unresolved reference or placeholder ($ref), not a node id"},
+  :in ("$ref" "to")},
+ :case-6 {:out nil, :in ("c-2" "to")},
+ :case-7
+ {:out {:error "from must be a non-empty string"}, :in ("" "from")}}

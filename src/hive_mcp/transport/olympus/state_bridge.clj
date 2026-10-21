@@ -14,7 +14,8 @@
   (:require [taoensso.timbre :as log]
             [hive-mcp.dns.result :as result]
             [hive-mcp.transport.olympus.snapshots :as snap]
-            [hive-mcp.swarm.datascript :as ds]))
+            [hive-mcp.swarm.datascript :as ds]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -179,6 +180,10 @@
                  (ds/listen! :olympus-state-bridge on-ds-transaction!)
                  (log/info "Olympus DS state bridge wired - auto-pushing swarm store changes")))
 
+;; Never throws: nil whether the listener was installed (the body ends on a
+;; log call) or the wiring failed and was rescued.
+(m/=> wire-ds-state-bridge! [:=> [:cat] :nil])
+
 (defn stop-ds-state-bridge!
   "Remove the swarm store listener and stop bridge loop.
    Called from stop! during server shutdown."
@@ -187,3 +192,5 @@
                  (result/rescue nil (ds/unlisten! :olympus-state-bridge))
                  (stop-bridge-loop!)
                  (log/debug "DS state bridge stopped")))
+
+(m/=> stop-ds-state-bridge! [:=> [:cat] :nil])

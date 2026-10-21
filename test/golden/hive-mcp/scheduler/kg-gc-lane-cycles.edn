@@ -1,0 +1,29 @@
+{:first
+ {:ok? true,
+  :blind [],
+  :errors 0,
+  :vacuous? false,
+  :selected {:orphaned 1, :pruned 0, :demoted 0},
+  :coverage
+  {:scanned 3, :universe {:sources 3}, :cursor "synth-1", :partial 0},
+  :dry-run? false,
+  :stopped nil,
+  :collected
+  {:orphaned 1, :pruned 0, :demoted 0, :total 1, :edges-removed 2}},
+ :second
+ {:ok? false,
+  :blind
+  [{:class :universe,
+    :reason
+    "derived synthetic universe is empty; an empty graph and a broken read look the same, so 0 collected proves nothing"}],
+  :errors 0,
+  :vacuous? true,
+  :selected {:orphaned 0, :pruned 0, :demoted 0},
+  :coverage
+  {:scanned 0, :universe {:sources 0}, :cursor nil, :partial 0},
+  :dry-run? false,
+  :stopped nil,
+  :collected
+  {:orphaned 0, :pruned 0, :demoted 0, :total 0, :edges-removed 0}},
+ :gated {:skipped true, :reason "not due or already running"},
+ :cursors [{:after nil} {:after "synth-1"}]}

@@ -15,7 +15,8 @@
             [hive-mcp.saa.adapters :as adapters]
             [hive-mcp.saa.scorer :as scorer]
             [hive-mcp.saa.planner :as planner]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -86,6 +87,18 @@
       {:wave-id (or rid (str (:plan-id res)))
        :result  (assoc res :status :dispatched)})))
 
+(def StartDag
+  "The scheduler port: (fn [plan-id opts]) => {:plan-id _ ...}."
+  [:=> [:cat :any [:map [:cwd :any] [:run-id {:optional true} :any]]]
+   [:map [:plan-id {:optional true} :any]]])
+
+(def DispatchFn
+  "A :saa/dispatch-mode fn: (fn [plan agent-id ctx]) => {:wave-id _ :result _}."
+  [:=> [:cat [:maybe :map] :any [:maybe :map]]
+   [:map [:wave-id :string] [:result [:map [:status [:= :dispatched]]]]]])
+
+(m/=> dag-wave-dispatch-fn [:=> [:cat StartDag] DispatchFn])
+
 (defn- scheduler-start-dag!
   "The kernel DAG scheduler's start-dag!, resolved when a wave is dispatched."
   [plan-id opts]
@@ -126,3 +139,14 @@
   (let [result (seed!)]
     (log/info "[saa.core-seed] re-seeded :saa/core owner" result)
     result))
+
+(def SeedCounts
+  "Counts registered per child registry by one seed pass."
+  [:map
+   [:providers [:= 1]]
+   [:scorers [:= 1]]
+   [:planners [:= 1]]
+   [:tool-intents [:int {:min 0}]]
+   [:dispatch-modes [:= 1]]])
+
+(m/=> install! [:=> [:cat] SeedCounts])

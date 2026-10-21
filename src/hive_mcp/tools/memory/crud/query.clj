@@ -3,7 +3,11 @@
   (:require [hive-mcp.tools.memory.core :refer [with-store]]
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.tools.memory.format :as fmt]
-            [hive-mcp.tools.core :refer [mcp-json mcp-error coerce-int! coerce-vec!]]
+            [hive-mcp.tools.core
+ :as
+ core
+ :refer
+ [mcp-json mcp-error coerce-int! coerce-vec!]]
             [hive-mcp.memory.domain :as domain]
             [hive-dsl.adt :refer [adt-case]]
             [hive-mcp.protocols.memory :as mem-proto]
@@ -12,7 +16,8 @@
             [hive-mcp.context.request :as ctx]
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -259,3 +264,24 @@
   "Backward-compatible alias: delegates to handle-query with verbosity=metadata."
   [params]
   (handle-query (assoc params :verbosity "metadata")))
+
+;;; =============================================================================
+;;; Contracts
+;;; =============================================================================
+
+(def ScopedEntry
+  "An entry as the scope filter reads it: :tags and :project-id, both optional."
+  [:map
+   [:tags {:optional true} [:maybe [:sequential :string]]]
+   [:project-id {:optional true} [:maybe :string]]])
+
+(m/=> entry-after? [:=> [:cat [:maybe :map] :keyword :any] :boolean])
+
+(m/=> apply-auto-scope-filter
+  [:function
+   [:=> [:cat [:sequential ScopedEntry] [:maybe :string]] [:sequential ScopedEntry]]
+   [:=> [:cat [:sequential ScopedEntry] [:maybe :string] :any] [:sequential ScopedEntry]]])
+
+(m/=> handle-query [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-query-metadata [:=> [:cat [:maybe :map]] core/McpResponse])

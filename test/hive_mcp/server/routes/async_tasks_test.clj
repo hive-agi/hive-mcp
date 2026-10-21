@@ -45,13 +45,20 @@
 ;; =============================================================================
 
 (deftest a-submitted-task-runs-and-completes
+  ;; CI (hive-mcp PR #478): this read the state straight off the latch and saw
+  ;; :task/running. The latch opens INSIDE f; :task/done is written by the
+  ;; wrapper's `finally`, after f returns. `hold` keeps that window open on
+  ;; every run, so reading the state off the latch fails every time instead
+  ;; of once in a while: wait for the terminal state itself.
   (let [done (CountDownLatch. 1)
+        hold (CountDownLatch. 1)
         ran  (atom false)]
     (at/submit! {:task-id "t-ok" :tool "memory" :caller-id "test"
-                 :f (fn [] (reset! ran true) (.countDown done))})
+                 :f (fn [] (reset! ran true) (.countDown done) (await-latch hold 5000))})
     (is (await-latch done 5000) "the task should have run")
     (is (true? @ran))
-    (is (= :task/done (:state (at/get-task "t-ok")))
+    (.countDown hold)
+    (is (await-state "t-ok" :task/done 5000)
         "a task that reached its own end is :done")))
 
 ;; =============================================================================
@@ -135,6 +142,45 @@
         "cancellation must reach the task's own thread, not merely mark a flag")
     (is (= :task/cancelled (:state (at/get-task "t-cancel"))))))
 
+(deftest a-started-task-never-loses-its-handle-or-its-running-state
+  ;; CI (hive-mcp PR #447): cancel! answered :cancel/not-started for a task
+  ;; whose body was already running. submit! attached the handle with a
+  ;; read-then-write of the row while the pool thread's `set-state!` did its
+  ;; own read-then-write; whichever wrote second erased the other's field.
+  ;; One thread per task makes the two writers race on every submission.
+  (let [n       300
+        started (CountDownLatch. n)
+        release (CountDownLatch. 1)
+        thread-runner
+        (reify at/ITaskRunner
+          (-run [_ f] (let [t (Thread. ^Runnable f)] (.start t) t))
+          (-cancel [_ t] (.interrupt ^Thread t) true)
+          (-view [_ t] {:present?   (some? t)
+                        :done?      (boolean (and t (not (.isAlive ^Thread t))))
+                        :cancelled? false}))]
+    (reset! at/runner thread-runner)
+    (try
+      (dotimes [i n]
+        (at/submit! {:task-id (str "t-race-" i) :tool "memory" :caller-id "test"
+                     :f (fn [] (.countDown started) (await-latch release 30000))}))
+      (is (await-latch started 10000) "every task's body started")
+      ;; A body has started, so its :task/running write has been issued, but
+      ;; that write lands just after the latch. Wait for the state itself.
+      (let [rows (mapv #(at/get-task (str "t-race-" %)) (range n))
+            lost-state  (remove #(await-state (:task-id %) :task/running 5000) rows)
+            lost-handle (remove #(= :cancel/interrupted
+                                    (:adt/variant (st/cancel-outcome
+                                                   (:task-id %)
+                                                   (#'at/entry-view (:task-id %)))))
+                                rows)]
+        (is (empty? (map :task-id lost-state))
+            "a started task must not be put back to :task/queued")
+        (is (empty? (map :task-id lost-handle))
+            "a started task must keep the handle cancel! needs"))
+      (finally
+        (.countDown release)
+        (reset! at/runner nil)))))
+
 (deftest cancelling-an-unknown-task-answers-rather-than-throws
   ;; Asking about a task that already finished, or never existed, is a
   ;; reasonable question. It gets an answer with a reason.
@@ -143,12 +189,16 @@
     (is (= :cancel/unknown-task (:adt/variant res)))))
 
 (deftest cancelling-a-finished-task-says-so
+  ;; The reason DOES depend on the race: cancel-outcome answers
+  ;; :cancel/already-finished only once the row is terminal or the future is
+  ;; done, and both happen after the latch inside f opens. Read off the latch,
+  ;; cancel! found a live future and answered :cancel/interrupted (measured:
+  ;; 3 runs in 20). Wait for the task to finish before asking.
   (let [done (CountDownLatch. 1)]
     (at/submit! {:task-id "t-finished" :tool "memory" :caller-id "test"
                  :f (fn [] (.countDown done))})
     (is (await-latch done 5000))
-    ;; The future is done the instant f returns; give the state write its turn
-    ;; by asserting on the reason, which does not depend on that race.
+    (is (await-state "t-finished" :task/done 5000))
     (let [res (at/cancel! "t-finished")]
       (is (false? (st/stops-the-work? res)))
       (is (= :cancel/already-finished (:adt/variant res))))))
@@ -219,6 +269,9 @@
 ;; =============================================================================
 
 (deftest forget-drops-finished-tasks-and-keeps-running-ones
+  ;; "Finished" means the row is terminal, which lands after the latch inside
+  ;; f opens. Sweeping off the latch could find t-gone still :task/running and
+  ;; rightly keep it, so wait for the state before sweeping.
   (let [done    (CountDownLatch. 1)
         started (CountDownLatch. 1)
         release (CountDownLatch. 1)]
@@ -228,6 +281,7 @@
                  :f (fn [] (.countDown started) (await-latch release 5000))})
     (is (await-latch done 5000))
     (is (await-latch started 5000))
+    (is (await-state "t-gone" :task/done 5000))
     (at/forget!)
     (is (nil? (at/get-task "t-gone")) "a finished task is dropped")
     (is (some? (at/get-task "t-stays")) "a running task is never dropped")

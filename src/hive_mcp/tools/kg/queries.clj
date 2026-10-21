@@ -1,12 +1,14 @@
 (ns hive-mcp.tools.kg.queries
   "KG read-only query handlers for traversal, impact analysis, and graph stats."
-  (:require [hive-mcp.tools.core :refer [mcp-json mcp-error]]
+  (:require [hive-mcp.tools.core :as core :refer [mcp-json mcp-error]]
             [hive-mcp.knowledge-graph.connection :as connection]
             [hive-mcp.knowledge-graph.edges :as edges]
             [hive-mcp.knowledge-graph.queries :as queries]
             [hive-mcp.knowledge-graph.scope :as scope]
             [taoensso.timbre :as log]
-            [hive-mcp.knowledge-graph.schema :as kg-schema]))
+            [hive-mcp.knowledge-graph.schema :as kg-schema]
+            [malli.core :as m]
+            [hive-mcp.tools.kg.schema :as ks]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -23,6 +25,16 @@
     {:error (str param-name " is an unresolved reference or placeholder ("
                  node-id "), not a node id")}))
 
+(m/=> validate-node-id [:=> [:cat ks/NodeIdArg :string] [:maybe ks/NodeIdError]])
+
+(defn refuse-node-id
+  "validate-node-id's refusal as an MCP error result (:isError true), or nil
+   for an id the handler may use. Handlers return this, never the bare map."
+  [node-id param-name]
+  (some-> (validate-node-id node-id param-name) :error mcp-error))
+
+(m/=> refuse-node-id [:=> [:cat ks/NodeIdArg :string] [:maybe ks/NodeIdRefusal]])
+
 (defn parse-relations-filter
   "Parse relations filter from string or array to set of keywords."
   [relations]
@@ -32,6 +44,8 @@
     (coll? relations) (set (map keyword relations))
     (string? relations) #{(keyword relations)}
     :else nil))
+
+(m/=> parse-relations-filter [:=> [:cat ks/Relations] ks/RelationSet])
 
 (defn- traverse-empty-hint
   "Diagnostic hint when traverse returns 0 results.
@@ -59,7 +73,7 @@
   [{:keys [start_node direction relations max_depth scope]}]
   (log/info "kg_traverse" {:start start_node :direction direction})
   (try
-    (or (validate-node-id start_node "start_node")
+    (or (refuse-node-id start_node "start_node")
         (let [dir-kw (case direction
                        (:incoming "incoming") :incoming
                        (:both "both")         :both
@@ -87,12 +101,14 @@
       (log/error e "kg_traverse failed")
       (mcp-error (str "Traversal failed: " (.getMessage e))))))
 
+(m/=> handle-kg-traverse [:=> [:cat ks/TraverseParams] ks/KgResponse])
+
 (defn handle-kg-impact-analysis
   "Find all nodes that depend on a given node."
   [{:keys [node_id max_depth scope]}]
   (log/info "kg_impact_analysis" {:node node_id})
   (try
-    (or (validate-node-id node_id "node_id")
+    (or (refuse-node-id node_id "node_id")
         (let [opts (cond-> {}
                      max_depth (assoc :max-depth max_depth)
                      scope (assoc :scope scope))
@@ -109,13 +125,15 @@
       (log/error e "kg_impact_analysis failed")
       (mcp-error (str "Impact analysis failed: " (.getMessage e))))))
 
+(m/=> handle-kg-impact-analysis [:=> [:cat ks/ImpactParams] ks/KgResponse])
+
 (defn handle-kg-find-path
   "Find shortest path between two nodes."
   [{:keys [from_node to_node direction relations max_depth scope]}]
   (log/info "kg_find_path" {:from from_node :to to_node})
   (try
-    (or (validate-node-id from_node "from_node")
-        (validate-node-id to_node "to_node")
+    (or (refuse-node-id from_node "from_node")
+        (refuse-node-id to_node "to_node")
         (let [dir-kw (case direction
                        (:outgoing "outgoing") :outgoing
                        (:incoming "incoming") :incoming
@@ -141,6 +159,8 @@
       (log/error e "kg_find_path failed")
       (mcp-error (str "Path finding failed: " (.getMessage e))))))
 
+(m/=> handle-kg-find-path [:=> [:cat ks/FindPathParams] ks/KgResponse])
+
 (defn handle-kg-subgraph
   "Extract subgraph visible from a scope."
   [{:keys [scope]}]
@@ -163,6 +183,8 @@
       (log/error e "kg_subgraph failed")
       (mcp-error (str "Subgraph extraction failed: " (.getMessage e))))))
 
+(m/=> handle-kg-subgraph [:=> [:cat ks/ScopeParams] core/McpResponse])
+
 (defn handle-kg-contradictions
   "Find edges with :contradicts relation in scope."
   [{:keys [scope]}]
@@ -177,12 +199,14 @@
       (log/error e "kg_contradictions failed")
       (mcp-error (str "Contradiction search failed: " (.getMessage e))))))
 
+(m/=> handle-kg-contradictions [:=> [:cat ks/ScopeParams] core/McpResponse])
+
 (defn handle-kg-node-context
   "Get full context for a node: incoming, outgoing, confidence stats."
   [{:keys [node_id]}]
   (log/info "kg_node_context" {:node node_id})
   (try
-    (or (validate-node-id node_id "node_id")
+    (or (refuse-node-id node_id "node_id")
         (let [result (queries/get-node-context node_id)]
           (mcp-json {:success true
                      :node-id node_id
@@ -206,6 +230,8 @@
       (log/error e "kg_node_context failed")
       (mcp-error (str "Context retrieval failed: " (.getMessage e))))))
 
+(m/=> handle-kg-node-context [:=> [:cat ks/NodeParams] ks/KgResponse])
+
 (defn handle-kg-stats
   "Get statistics about the Knowledge Graph."
   [_]
@@ -220,6 +246,8 @@
     (catch Exception e
       (log/error e "kg_stats failed")
       (mcp-error (str "Stats retrieval failed: " (.getMessage e))))))
+
+(m/=> handle-kg-stats [:=> [:cat ks/AnyParams] core/McpResponse])
 
 (def query-tools
   "Tool definitions for KG read-only operations."

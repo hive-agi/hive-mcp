@@ -1,0 +1,8 @@
+{:case-0 {:out {:refused? true, :ok? false}, :in {:refused? true}},
+ :case-1 {:out nil, :in nil},
+ :case-2 {:out "", :in ""},
+ :case-3 {:out "4", :in "4"},
+ :case-4 {:out nil, :in nil},
+ :case-5 {:out nil, :in nil},
+ :case-6 {:out nil, :in nil},
+ :case-7 {:out {:refused? true, :ok? false}, :in {:refused? true}}}

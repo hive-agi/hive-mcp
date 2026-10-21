@@ -1,0 +1,12 @@
+{:response {:content [1]},
+ :retry :ok,
+ :guard-ctx {:tool "t", :agent-id "a", :cwd "/d", :caller-id "c"},
+ :nats :ok,
+ :default-async
+ [{:command "add", :async true}
+  {:command "add", :async false}
+  {:command "get"}],
+ :not-async 7,
+ :lane :ran,
+ :compress-off [{:type "text", :text "x"}],
+ :normalize [[{:a 1}] [{:type "text", :text "s"}]]}

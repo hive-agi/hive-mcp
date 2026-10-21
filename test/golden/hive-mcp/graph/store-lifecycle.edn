@@ -1,0 +1,24 @@
+{:by-map :ling,
+ :no-in 2,
+ :by-vec :coordinator,
+ :after-reset
+ {:entity-count 0,
+  :friction-count 0,
+  :knowledge-count 0,
+  :agent-count 0,
+  :persist-path nil},
+ :retracted true,
+ :after
+ {:entity-count 3,
+  :friction-count 1,
+  :knowledge-count 1,
+  :agent-count 1,
+  :persist-path nil},
+ :missing nil,
+ :before
+ {:entity-count 4,
+  :friction-count 1,
+  :knowledge-count 1,
+  :agent-count 2,
+  :persist-path nil},
+ :entity #:agent{:id "ling-1", :type :ling}}

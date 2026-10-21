@@ -20,7 +20,8 @@
    in use. Property test `batchable_lsp_test/lsp-substitutability` enforces.
 
    Decision: 20260429230453-7e7627cc"
-  (:require [hive-mcp.batch.cli-adapter :as bca]
+  (:require [malli.core :as m]
+            [hive-mcp.batch.cli-adapter :as bca]
             [hive-mcp.batch.protocol :as bproto]
             [hive-dsl.result :as r :refer [rescue]]
             [clojure.data.json :as json]
@@ -232,5 +233,11 @@
 ;; =============================================================================
 
 (defn memory-batchable [] (->MemoryBatchable))
+
+(m/=> memory-batchable [:=> [:cat] [:fn {:gen/elements [(->MemoryBatchable)]} #(satisfies? bproto/Batchable %)]])
 (defn kg-batchable     [] (->KgBatchable))
+
+(m/=> kg-batchable [:=> [:cat] [:fn {:gen/elements [(->KgBatchable)]} #(satisfies? bproto/Batchable %)]])
 (defn kanban-batchable [] (->KanbanBatchable))
+
+(m/=> kanban-batchable [:=> [:cat] [:fn {:gen/elements [(->KanbanBatchable)]} #(satisfies? bproto/Batchable %)]])

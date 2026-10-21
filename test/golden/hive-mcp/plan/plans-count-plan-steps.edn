@@ -1,0 +1,20 @@
+{:case-0 {:out nil, :in (nil)},
+ :case-1
+ {:out 0,
+  :in
+  ("Some prose 3. not at line start\nSome prose 3. not at line start\nSome prose 3. not at line start\nSome prose 3. not at line start")},
+ :case-2 {:out 1, :in ("  1) item")},
+ :case-3 {:out 2, :in ("  1) item\n2. item")},
+ :case-4
+ {:out 0,
+  :in
+  ("Some prose 3. not at line start\nSome prose 3. not at line start\nSome prose 3. not at line start\nSome prose 3. not at line start\nSome prose 3. not at line start\nSome prose 3. not at line start")},
+ :case-5
+ {:out 0,
+  :in
+  ("Some prose 3. not at line start\nSome prose 3. not at line start\nSome prose 3. not at line start")},
+ :case-6
+ {:out 0,
+  :in
+  ("Some prose 3. not at line start\nSome prose 3. not at line start")},
+ :case-7 {:out nil, :in (nil)}}

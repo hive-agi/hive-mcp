@@ -12,7 +12,9 @@
             [hive-weave.parallel :as wpar]
             [clojure.tools.logging :as log]
             [hive-mcp.resilience.store :refer [with-resilience]]
-            [hive-mcp.tools.catchup.bundle-cache :as bc]))
+            [hive-mcp.tools.catchup.bundle-cache :as bc]
+            [hive-mcp.tools.catchup.shapes :as shapes]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -130,3 +132,16 @@
         swap-each   (fn [coll]
                       (mapv #(merge-hydrated % (get by-id (:id %))) coll))]
     (reduce-kv (fn [m k v] (assoc m k (swap-each v))) {} buckets)))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def BucketsIn
+  "Buckets as `hydrate-buckets` accepts them: bucket -> entries, or nil."
+  [:maybe [:map-of {:gen/schema [:map-of [:enum :axioms :decisions :sessions]
+                                 [:vector {:gen/max 3} shapes/Entry]]}
+           :any [:maybe [:sequential shapes/Entry]]]])
+
+(m/=> has-tag? [:=> [:cat [:maybe shapes/Entry] shapes/Tag] :boolean])
+(m/=> hydrate-buckets [:=> [:cat BucketsIn] [:map-of :any [:vector shapes/Entry]]])

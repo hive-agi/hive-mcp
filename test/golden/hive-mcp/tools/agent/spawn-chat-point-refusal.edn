@@ -1,0 +1,29 @@
+{:case-0
+ {:out
+  "resume and chat_run_id needs a chat-point capable headless backend; this spawn resolved to :hive-agent, which would drop them.",
+  :in (:hive-agent {:resume {:run-id "r"}, :chat-run-id "c"} #{})},
+ :case-1
+ {:out nil,
+  :in
+  (:hive-agent
+   {:resume {:run-id "r"}, :chat-run-id "c"}
+   #{:sandbox :chat-points})},
+ :case-2 {:out nil, :in (:claude {:chat-run-id "c"} #{:chat-points})},
+ :case-3
+ {:out nil, :in (:headless {:resume {:run-id "r"}} #{:chat-points})},
+ :case-4
+ {:out
+  "chat_run_id needs a chat-point capable headless backend; this spawn resolved to :claude, which would drop them.",
+  :in (:claude {:chat-run-id "c"} #{})},
+ :case-5
+ {:out
+  "chat_run_id needs a chat-point capable headless backend; this spawn resolved to :claude, which would drop them.",
+  :in (:claude {:chat-run-id "c"} #{})},
+ :case-6
+ {:out
+  "chat_run_id needs a chat-point capable headless backend; this spawn resolved to :headless, which would drop them.",
+  :in (:headless {:chat-run-id "c", :llm-retries 1} #{})},
+ :case-7
+ {:out
+  "resume needs a chat-point capable headless backend; this spawn resolved to :hive-agent, which would drop them.",
+  :in (:hive-agent {:resume {:run-id "r"}, :llm-retries 1} #{})}}

@@ -16,7 +16,8 @@
                          declared, since the alias is then advertised already
      any other illegal   dropped: no spelling of it can reach a handler
 
-   Calculations only (stratified L1).")
+   Calculations only (stratified L1)."
+  (:require [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -85,3 +86,23 @@
   "Property keys of `tool` a provider would reject. Empty when legal."
   [tool]
   (vec (remove legal-key? (keys (get-in tool [:inputSchema :properties])))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def PropKey
+  "A property key as a schema carries it: keyword or string, legal or not."
+  [:or :keyword :string])
+
+(def Props
+  "An inputSchema :properties map."
+  [:map-of PropKey :any])
+
+(m/=> legal-key? [:=> [:cat :any] :boolean])
+
+(m/=> legal-properties [:=> [:cat [:maybe Props]] [:maybe Props]])
+
+(m/=> legal-tool [:=> [:cat [:maybe :map]] [:maybe :map]])
+
+(m/=> illegal-keys [:=> [:cat [:maybe :map]] [:vector :any]])

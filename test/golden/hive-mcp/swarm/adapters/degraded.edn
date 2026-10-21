@@ -1,0 +1,7 @@
+{:events/handler-registered? false,
+ :events/dispatch-unregistered nil,
+ :events/trigger-hooks-without-registry [],
+ :ling-host/readiness-unknown-ling {:ready? false, :phase :host-error},
+ :sink/id :piggyback,
+ :sink/accepts [true false false false false],
+ :sink/priority 1000}

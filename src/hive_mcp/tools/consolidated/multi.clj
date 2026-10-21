@@ -14,7 +14,8 @@
             [hive-mcp.multi.registry :as multi-registry]
             [hive-mcp.multi.registry.tools :as r-tools]
             [hive-mcp.context.request :as ctx]
-            [hive-mcp.multi.param-coerce :as param-coerce]))
+            [hive-mcp.multi.param-coerce :as param-coerce]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -25,6 +26,8 @@
   []
   (r-tools/all-names))
 
+(m/=> tool-names [:=> [:cat] [:sequential :string]])
+
 (defn get-tool-handler
   "Resolve a consolidated tool handler by name; nil for a nil or unknown tool.
    Routes through `multi.registry/resolve-tool-handler` (DIP) — covers the
@@ -33,6 +36,8 @@
   [tool-name]
   (when tool-name
     (multi-registry/resolve-tool-handler (name tool-name))))
+
+(m/=> get-tool-handler [:=> [:cat [:maybe [:or :string :keyword :symbol]]] [:maybe hive-mcp.tools.core/ToolHandler]])
 
 ;; ── Lazy Resolution Helpers ───────────────────────────────────────────────────
 
@@ -154,6 +159,12 @@
                           {:index i :value op})))
         operations))
 
+(def MalformedOperation
+  "A non-map entry of a batch, named by its index."
+  [:map [:index [:int {:min 0}]] [:value :any]])
+
+(m/=> malformed-operations [:=> [:cat [:maybe [:or [:sequential :any] :string]]] [:vector MalformedOperation]])
+
 (defn malformed-operations-message
   "Human message naming each non-map entry of a batch by index."
   [malformed]
@@ -162,6 +173,8 @@
                              (str "index " index " = " (pr-str value)))
                            malformed))
        ". For verb sentences use the 'dsl' param: [[verb, params], ...]."))
+
+(m/=> malformed-operations-message [:=> [:cat [:sequential MalformedOperation]] [:string {:min 1}]])
 
 (defn- handle-batch
   "Handle batch dispatch mode with dependency-ordered wave execution.
@@ -365,6 +378,8 @@
               (dissoc :tool :command)
               (update :operations #(if (sequential? %) (mapv inherit %) %))))))))
 
+(m/=> batch-route [:=> [:cat [:maybe :map]] [:maybe :map]])
+
 (defn handle-multi
   "Route to consolidated tool by :tool param, forwarding remaining params.
 
@@ -426,6 +441,8 @@
           (dispatch-to-tool tool-str handler (dissoc normalized :tool))
           (mcp-error (str "Unknown tool: " tool-str
                           ". Available: " (str/join ", " (tool-names)))))))))
+
+(m/=> handle-multi [:=> [:cat [:maybe :map]] :map])
 
 (def tool-def
   {:name "multi"

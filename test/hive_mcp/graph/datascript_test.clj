@@ -18,7 +18,8 @@
             [clojure.java.io :as io]
             [hive-mcp.graph.protocol :as proto]
             [hive-mcp.graph.datascript :as ds]
-            [hive-mcp.graph.schema :as schema]))
+            [hive-mcp.graph.schema :as schema]
+            [hive-test.golden :refer [deftest-golden]]))
 
 ;; =============================================================================
 ;; Test Fixtures and Helpers
@@ -499,3 +500,38 @@
     (is (thrown? AssertionError
                  (schema/make-agent {:id "test"
                                      :type :invalid-type})))))
+
+;; In-memory store (no persist path) driven through the ns-level helpers:
+;; transact!, query (vector and map args), ds-entity, find-similar ranking,
+;; retract! (entity and datom arms), store-stats and ds-reset!.
+(deftest-golden store-helpers-golden
+  "test/golden/hive-mcp/graph/datascript-store-helpers.edn"
+  (let [store (ds/make-datascript-store)
+        _     (ds/transact! store [{:agent/id "a-1" :agent/type :ling}
+                                   {:agent/id "a-2" :agent/type :coordinator}])
+        a1    (:db/id (ds/ds-entity store [:agent/id "a-1"]))
+        _     (ds/transact! store [{:friction/type :tool-missing :friction/context "file search broken"
+                                    :friction/reported-by a1}
+                                   {:friction/type :tool-missing :friction/context "file search slow today"
+                                    :friction/reported-by a1}
+                                   {:friction/type :preset-gap :friction/context "unrelated words"
+                                    :friction/reported-by a1}
+                                   {:knowledge/type :decision :knowledge/content "use malli"}])
+        q-id  '[:find ?t . :in $ ?id :where [?e :agent/id ?id] [?e :agent/type ?t]]
+        before (ds/store-stats store)
+        similar (mapv (juxt :content :similarity) (proto/find-similar store :friction "file search broken"))
+        unknown (proto/find-similar store :nope "x")
+        by-map  (ds/query store q-id {:id "a-2"})
+        by-vec  (ds/query store q-id ["a-1"])
+        no-in   (ds/query store '[:find (count ?e) . :where [?e :agent/id _]] {:ignored 1})
+        missing (ds/retract! store [:agent/id "nobody"])
+        _       (ds/retract! store [a1 :agent/type :ling])
+        a1-type (:agent/type (ds/ds-entity store [:agent/id "a-1"]))
+        _       (ds/retract! store [:agent/id "a-2"])
+        after   (ds/store-stats store)
+        _       (ds/ds-reset! store)]
+    {:before before :similar similar :unknown unknown
+     :by-map by-map :by-vec by-vec :no-in no-in
+     :missing-retract missing :a1-type-after-datom-retract a1-type
+     :after after :reset (ds/store-stats store)
+     :history (proto/history store 1) :persist (proto/persist! store)}))

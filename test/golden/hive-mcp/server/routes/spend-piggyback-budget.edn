@@ -1,0 +1,8 @@
+{:case-0 {:out {:allowance 0, :remaining 0}, :in (-1 1 0)},
+ :case-1 {:out {:allowance 0, :remaining 0}, :in (-1 0 0)},
+ :case-2 {:out {:allowance 0, :remaining 0}, :in (0 2 -1)},
+ :case-3 {:out {:allowance 0, :remaining 0}, :in (-1 1 -1)},
+ :case-4 {:out {:allowance 1, :remaining 1}, :in (1 2 -1)},
+ :case-5 {:out {:allowance 0, :remaining 0}, :in (0 0 7)},
+ :case-6 {:out {:allowance 1, :remaining 14}, :in (14 1 -4)},
+ :case-7 {:out {:allowance 2, :remaining 1}, :in (2 14 1)}}

@@ -22,6 +22,43 @@
     (->> (m/children schema)
          (map first))))
 
+(def MapSchema
+  "What the emitters accept: any malli schema (form or compiled). Only a :map
+   schema emits; any other schema makes the emitter throw ex-info, so the
+   generator offers :map schemas, the path that produces elisp."
+  [:fn {:error/message "must be a malli schema"
+        :gen/elements [[:map [:id :string] [:type [:enum :note :snippet :decision]]
+                        [:content :string] [:tags [:vector :string]]]
+                       [:map [:enabled :boolean] [:port {:optional true} [:maybe :int]]]
+                       [:map [:x [:or :string :int]] [:ratio :double] [:kind :keyword]]
+                       [:map [:name :string]]]}
+   #(try (m/schema %) true (catch Exception _ false))])
+
+(def StructName
+  "The elisp struct name an emitter is given under :name."
+  [:or [:string {:min 1}] :symbol])
+
+(def EmitOpts
+  "Emitter options. :name is required in effect (an emitter throws ex-info
+   without it) but is optional here, because the throw is part of the
+   documented behaviour. :constructor and :include feed cl-defstruct,
+   :defaults maps a field to its default slot value, :var names the
+   validator's argument."
+  [:map
+   [:name {:optional true} [:maybe StructName]]
+   [:constructor {:optional true} [:maybe [:string {:min 1}]]]
+   [:include {:optional true} [:maybe [:string {:min 1}]]]
+   [:defaults {:optional true} [:maybe [:map-of :keyword :any]]]
+   [:var {:optional true} [:maybe [:string {:min 1}]]]])
+
+(def SchemaOptsPairs
+  "[schema opts] pairs, for the batch emitters."
+  [:sequential [:tuple MapSchema EmitOpts]])
+
+(def ElispSource
+  "Generated elisp source text."
+  :string)
+
 ;; =============================================================================
 ;; Elisp Code Generation
 ;; =============================================================================
@@ -76,6 +113,8 @@
               (or include-clause "")
               fields-str))))
 
+(m/=> emit-struct [:=> [:cat MapSchema EmitOpts] [:string {:min 1}]])
+
 (defn emit-struct-with-defaults
   "Generate elisp cl-defstruct with default slot values."
   [schema opts]
@@ -103,6 +142,8 @@
               struct-opts
               fields-str))))
 
+(m/=> emit-struct-with-defaults [:=> [:cat MapSchema EmitOpts] [:string {:min 1}]])
+
 ;; =============================================================================
 ;; Batch Generation
 ;; =============================================================================
@@ -113,6 +154,8 @@
   (->> schema-opts-pairs
        (map (fn [[schema opts]] (emit-struct schema opts)))
        (str/join "\n\n")))
+
+(m/=> emit-structs [:=> [:cat SchemaOptsPairs] ElispSource])
 
 ;; =============================================================================
 ;; JSON-RPC Deserialization (plist → struct)
@@ -199,12 +242,16 @@
    %s))"
               fn-name struct-name create-fn args-str))))
 
+(m/=> emit-from-plist [:=> [:cat MapSchema EmitOpts] [:string {:min 1}]])
+
 (defn emit-from-plist-all
   "Generate -from-plist functions for multiple schemas."
   [schemas]
   (->> schemas
        (map (fn [[schema opts]] (emit-from-plist schema opts)))
        (str/join "\n\n")))
+
+(m/=> emit-from-plist-all [:=> [:cat SchemaOptsPairs] ElispSource])
 
 ;; =============================================================================
 ;; Validator Predicate Generation
@@ -315,12 +362,16 @@
               entry-var
               checks-str))))
 
+(m/=> emit-validator [:=> [:cat MapSchema EmitOpts] [:string {:min 1}]])
+
 (defn emit-validators
   "Generate -valid-p functions for multiple schemas."
   [schemas]
   (->> schemas
        (map (fn [[schema opts]] (emit-validator schema opts)))
        (str/join "\n\n")))
+
+(m/=> emit-validators [:=> [:cat SchemaOptsPairs] ElispSource])
 
 (comment
   ;; Example usage

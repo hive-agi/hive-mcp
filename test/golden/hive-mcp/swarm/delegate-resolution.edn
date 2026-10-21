@@ -1,0 +1,20 @@
+{:available-present true,
+ :available-absent false,
+ :present-var clojure.string/join,
+ :present-no-var nil,
+ :absent-deref nil,
+ :absent-call
+ [:threw
+  "The swarm needs f00-absent-addon, which is not on the classpath (f00-absent-addon.swarm.thing/make)"
+  {:swarm/addon-missing true,
+   :addon "f00-absent-addon",
+   :ns "f00-absent-addon.swarm.thing",
+   :var "make"}],
+ :required-present clojure.string/join,
+ :required-outdated
+ [:threw
+  "clojure.string/f00-no-such-var is not in the clojure on the classpath; it predates this host. Upgrade clojure."
+  {:swarm/addon-outdated true,
+   :addon "clojure",
+   :ns "clojure.string",
+   :var "f00-no-such-var"}]}

@@ -1,0 +1,14 @@
+{:jsonl-list {:ok ({:agent-id "ling-a", :source :jsonl})},
+ :jsonl-read
+ {:ok [{:turn 1, :role "user"} {:turn 2, :role "assistant"}]},
+ :jsonl-missing :transcript/not-found,
+ :dl-list
+ {:ok
+  ({:agent-id "ling-b", :project-id "hive", :source :datalevin}
+   {:agent-id "ling-b", :project-id "other", :source :datalevin})},
+ :dl-read
+ {:ok
+  [{:transcript/turn 1, :agent "ling-b"}
+   {:transcript/turn 3, :agent "ling-b"}]},
+ :dl-skipped :transcript/not-found,
+ :dl-read-fails :effect/exception}

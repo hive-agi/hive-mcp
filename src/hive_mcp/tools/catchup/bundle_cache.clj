@@ -29,7 +29,9 @@
             [hive-mcp.tools.catchup.axiom-cache :as axc]
             [hive-mcp.tools.catchup.bucket-types :as bt]
             [hive-mcp.dns.result :refer [rescue rescue-log]]
-            [clojure.tools.logging :as log])
+            [clojure.tools.logging :as log]
+            [malli.core :as m]
+            [hive-mcp.tools.catchup.shapes :as shapes])
   (:import [java.lang.ref WeakReference]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -322,3 +324,38 @@
   "True once `invalidate!` is registered with write-events."
   []
   (contains? (write-events/listener-keys) ::invalidate))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def Stats
+  "`stats`: the counters (named by the tiers that bumped them) plus the tier
+   sizes, every value a count."
+  [:map
+   [:bundles nat-int?] [:content nat-int?] [:refreshing nat-int?] [:in-flight nat-int?]
+   [:hit nat-int?] [:stale nat-int?] [:miss nat-int?]])
+
+(def ComputeFn
+  "A 0-arity computation the cache runs at most once per key."
+  [:fn {:gen/schema [:enum {} {:axioms [{:id "e1"}]}] :gen/fmap constantly} ifn?])
+
+(def FetchFn
+  "ids -> seq of entry maps, the batch read the content tier falls back to."
+  [:fn {:gen/schema [:vector {:gen/max 2} shapes/Entry] :gen/fmap constantly} ifn?])
+
+(def Ids
+  "Entry ids to resolve; nils are dropped, duplicates collapse."
+  [:maybe [:or {:gen/schema [:vector {:gen/max 4} shapes/EntryId]}
+           [:sequential :any] [:set :any]]])
+
+(m/=> now-ms [:=> [:cat] :int])
+(m/=> stats [:=> [:cat] Stats])
+(m/=> reset-cache! [:=> [:cat] :nil])
+(m/=> single-flight [:=> [:cat [:any {:gen/schema :keyword}] ComputeFn] :any])
+(m/=> cached-bundle [:=> [:cat shapes/ProjectId ComputeFn] :any])
+(m/=> cached-entries [:=> [:cat Ids FetchFn] [:map-of :any shapes/Entry]])
+(m/=> invalidate! [:=> [:cat shapes/MemoryWrite] :nil])
+(m/=> evict-stale! [:=> [:cat] nat-int?])
+(m/=> ensure-subscribed! [:=> [:cat] :nil])
+(m/=> subscribed? [:=> [:cat] :boolean])

@@ -18,7 +18,8 @@
             [hive-mcp.scheduler.gc-gate :as gc-gate]
             [hive-mcp.config.core :as config]
             [taoensso.timbre :as log]
-            [clojure.set :as set])
+            [clojure.set :as set]
+            [malli.core :as m])
   (:import [java.util.concurrent Executors ScheduledExecutorService TimeUnit]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -86,6 +87,9 @@
   [registered-names]
   (empty? (set/intersection housekeeping-sweep-names
                             (set registered-names))))
+
+;; registered-names is any collection (coerced with `set`)
+(m/=> disjoint-sweep-owners? [:=> [:cat [:maybe [:or [:sequential :any] [:set :any]]]] :boolean])
 
 (defn housekeeping-sweep!
   "Run a single housekeeping sweep. Each task is guarded independently.
@@ -202,6 +206,18 @@
     (log/info "Housekeeping: sweep" sweep-num "completed in" elapsed-ms "ms")
     result)))
 
+(def SweepResult
+  "One sweep's per-task results. Each task answers its callee's value, its
+   fallback merged with {:failed true :error _}, or {:skipped true :reason _}."
+  [:map
+   [:callbacks :any] [:async-batches :any] [:event-journal :any]
+   [:saa-states :any] [:gc-sweep :any] [:terminal-liveness :any]
+   [:ledger-cold :any] [:kg-gc :any] [:pending-reembed :any]
+   [:gc-hint [:map [:freed-mb :int] [:committed-freed-mb :int]]]
+   [:sweep-number [:int {:min 1}]] [:duration-ms :int] [:timestamp inst?]])
+
+(m/=> housekeeping-sweep! [:=> [:cat] SweepResult])
+
 ;; =============================================================================
 ;; Scheduler Lifecycle
 ;; =============================================================================
@@ -263,6 +279,11 @@
           (log/error e "Housekeeping: failed to start scheduler")
           {:started false :reason (.getMessage e)})))))
 
+(m/=> start! [:=> [:cat]
+              [:or
+               [:map [:started [:= true]] [:interval-minutes number?]]
+               [:map [:started [:= false]] [:reason [:maybe :string]]]]])
+
 (defn stop!
   "Stop the periodic housekeeping scheduler."
   []
@@ -285,6 +306,12 @@
         (swap! scheduler-state assoc :executor nil :running? false)
         {:stopped true :error (.getMessage e)}))))
 
+(m/=> stop! [:=> [:cat]
+             [:or
+              [:map [:stopped [:= false]] [:reason [:= "not-running"]]]
+              [:map [:stopped [:= true]] [:sweeps-completed :int]]
+              [:map [:stopped [:= true]] [:error [:maybe :string]]]]])
+
 (defn status
   "Return current housekeeping scheduler status."
   []
@@ -294,3 +321,11 @@
      :last-run (:last-run state)
      :last-result (:last-result state)
      :config (get-housekeeping-config)}))
+
+(m/=> status [:=> [:cat]
+              [:map
+               [:running? :boolean]
+               [:sweep-count :int]
+               [:last-run [:maybe inst?]]
+               [:last-result [:maybe SweepResult]]
+               [:config [:map [:enabled :any] [:interval-minutes :any]]]]])

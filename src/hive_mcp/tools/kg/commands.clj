@@ -1,6 +1,6 @@
 (ns hive-mcp.tools.kg.commands
   "KG write/mutate command handlers for edge creation, promotion, and grounding."
-  (:require [hive-mcp.tools.core :refer [mcp-json mcp-error]]
+  (:require [hive-mcp.tools.core :as core :refer [mcp-json mcp-error]]
             [hive-mcp.tools.kg.queries :as q]
             [hive-mcp.tools.kg.synthetics :as synthetics]
             [hive-mcp.knowledge-graph.connection :as conn]
@@ -8,7 +8,9 @@
             [hive-mcp.knowledge-graph.grounding :as grounding]
             [hive-mcp.knowledge-graph.schema :as schema]
             [taoensso.timbre :as log]
-            [hive-mcp.context.request :as ctx]))
+            [hive-mcp.context.request :as ctx]
+            [malli.core :as m]
+            [hive-mcp.tools.kg.schema :as ks]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -56,6 +58,8 @@
       (conn/flush-pending!)
       result)))
 
+(m/=> with-kg-flush [:=> [:cat ks/Handler] ks/Handler])
+
 (defn- edge-created-by
   "The `created-by` an edge written by this request carries: the request's
    attribution (hive-mcp.context.request/attribution) when the transport stamped
@@ -70,9 +74,9 @@
   (log/info "kg_add_edge" {:from from :to to :relation relation})
   (try
     ;; Validate inputs
-    (or (q/validate-node-id from "from")
-        (q/validate-node-id to "to")
-        (validate-relation relation)
+    (or (q/refuse-node-id from "from")
+        (q/refuse-node-id to "to")
+        (some-> (validate-relation relation) :error mcp-error)
         ;; Execute
         (let [relation-kw (if (keyword? relation) relation (keyword relation))
               created-by (edge-created-by created_by)
@@ -157,6 +161,8 @@
                        :failed  (- (count classified) succeeded)}}
       error (assoc :write_error error))))
 
+(m/=> batch-envelope [:=> [:cat [:sequential ks/ClassifiedOp] ks/BulkWrite] ks/BatchEnvelope])
+
 (defn add-edges-with
   "Create every valid edge in :operations in ONE transaction through
    `transact-fn`, reporting per-op outcomes as an MCP response. A transaction
@@ -176,6 +182,8 @@
                  :transactions 1})
       (mcp-json envelope))))
 
+(m/=> add-edges-with [:=> [:cat ks/TransactFn ks/AddEdgesParams] core/McpResponse])
+
 (defn handle-kg-add-edges
   "Create every edge in :operations in ONE synchronous transaction.
 
@@ -184,6 +192,8 @@
    reported against every valid op. Returns {:results :summary}."
   [params]
   (add-edges-with conn/transact-sync! params))
+
+(m/=> handle-kg-add-edges [:=> [:cat ks/AddEdgesParams] core/McpResponse])
 
 (defn- promote*
   "Promote knowledge edge to a broader scope, preserving the original. Raw impl
@@ -265,7 +275,7 @@
   [{:keys [entry_id force]}]
   (log/info "kg_reground" {:entry-id entry_id :force force})
   (try
-    (or (q/validate-node-id entry_id "entry_id")
+    (or (q/refuse-node-id entry_id "entry_id")
         (let [result (grounding/reground-entry! entry_id)]
           (mcp-json {:success true
                      :status (name (:status result))
@@ -276,6 +286,8 @@
     (catch Exception e
       (log/error e "kg_reground failed")
       (mcp-error (str "Re-grounding failed: " (.getMessage e))))))
+
+(m/=> handle-kg-reground [:=> [:cat ks/RegroundParams] ks/KgResponse])
 
 (def handle-kg-cleanup-synthetics
   "Delete or demote synthetic-pattern nodes whose targets are mostly
@@ -304,6 +316,8 @@
     (catch Exception e
       (log/error e "kg_backfill_grounding failed")
       (mcp-error (str "Backfill grounding failed: " (.getMessage e))))))
+
+(m/=> handle-kg-backfill-grounding [:=> [:cat ks/BackfillParams] core/McpResponse])
 
 (def command-tools
   "Tool definitions for KG write/mutate operations."

@@ -11,7 +11,9 @@
      same id + same owner      → idempotent silent replace
      same id + different owner → :saa/registry-conflict warn-log,
                                  first-write-wins"
-  (:require [taoensso.timbre :as log]))
+  (:require [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.saa.types :as types]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -52,6 +54,9 @@
                  :rejected-owner owner}))
     @outcome))
 
+;; owner and id are stored as given; see registry.scorers/register!
+(m/=> register! [:=> [:cat :any :any :map] types/RegisterOutcome])
+
 (defn deregister-by-owner!
   "Remove every plan store registered by `owner`. Returns set of removed ids."
   [owner]
@@ -64,15 +69,21 @@
                 :by-owner (dissoc by-owner owner)})))
     @removed))
 
+(m/=> deregister-by-owner! [:=> [:cat :any] [:set :any]])
+
 (defn lookup
   "Return the registered entry for a store-id, or nil."
   [store-id]
   (get-in @state [:by-id store-id]))
 
+(m/=> lookup [:=> [:cat :any] [:maybe types/RegistryRecord]])
+
 (defn all-ids
   "Sorted vector of all registered store-ids."
   []
   (vec (sort (keys (:by-id @state)))))
+
+(m/=> all-ids [:=> [:cat] [:vector :any]])
 
 (defn snapshot
   "Immutable value of the registry plus a :version hash."
@@ -80,10 +91,16 @@
   (let [s @state]
     {:version (hash s) :data s}))
 
+(m/=> snapshot [:=> [:cat] types/RegistrySnapshot])
+
 (defn restore!
   "Replace the registry state with a prior `snapshot` value. Test-only."
   [{:keys [data]}]
   (reset! state (or data {:by-id {} :by-owner {}})))
 
+(m/=> restore! [:=> [:cat types/RestoreArg] :map])
+
 (defn reset-for-test! []
   (reset! state {:by-id {} :by-owner {}}))
+
+(m/=> reset-for-test! [:=> [:cat] types/RegistryState])

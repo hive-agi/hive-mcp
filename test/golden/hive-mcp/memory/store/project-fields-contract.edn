@@ -1,0 +1,37 @@
+{:case-0 {:out [], :in ([] [])},
+ :case-1
+ {:out [{:content "", :id ""}],
+  :in ([{:id "", :project-id "B", :content ""}] ["content"])},
+ :case-2 {:out [], :in ([] ["project_id"])},
+ :case-3
+ {:out [{:id "gLw", :project-id ""}],
+  :in
+  ([{:id "gLw", :project-id "", :content ""}]
+   ["missing" "project_id"])},
+ :case-4
+ {:out [{:id ""} {:id "J"} {:id "1"} {:id ""}],
+  :in
+  ([{:id "", :project-id "R0a", :content "22"}
+    {:id "J", :project-id "", :content "J4"}
+    {:id "1", :project-id "ar7U", :content "F7l"}
+    {:id "", :project-id "J", :content "7"}]
+   ["missing" "missing"])},
+ :case-5
+ {:out [{:content "6mac", :id "5i1"} {:content "", :id "O"}],
+  :in
+  ([{:id "5i1", :project-id "", :content "6mac"}
+    {:id "O", :project-id "9fTnM", :content ""}]
+   ["missing" "content"])},
+ :case-6
+ {:out [{:id "j2v1m"}],
+  :in ([{:id "j2v1m", :project-id "7", :content "1v"}] ["missing"])},
+ :case-7
+ {:out
+  [{:id "tVGKr6", :project-id "G4"}
+   {:id "fpwl", :project-id "3"}
+   {:id "Z", :project-id "6"}],
+  :in
+  ([{:id "tVGKr6", :project-id "G4", :content "90a6w"}
+    {:id "fpwl", :project-id "3", :content "h54M"}
+    {:id "Z", :project-id "6", :content "e9a"}]
+   ["project_id" "project_id"])}}

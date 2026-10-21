@@ -1,0 +1,7 @@
+{:coerce
+ [#:adt{:variant :role/worker, :type :HivemindRole}
+  #:adt{:variant :role/hivemind, :type :HivemindRole}
+  nil
+  nil],
+ :tools-worker nil,
+ :pool [[:t] nil]}

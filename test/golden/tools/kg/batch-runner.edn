@@ -1,0 +1,76 @@
+{:one-edge
+ {:success true,
+  :waves
+  {1
+   {:ops [{:id "a", :tool "edge"}],
+    :results
+    [{:id "a",
+      :tool "edge",
+      :command nil,
+      :success true,
+      :result {:type "text", :text "edge x->y"},
+      :data {:type "text", :text "edge x->y"}}]}},
+  :summary {:total 1, :success 1, :failed 0, :waves 1}},
+ :mixed
+ {:success false,
+  :waves
+  {1
+   {:ops [{:id "a", :tool "edge"} {:id "c", :tool "nope"}],
+    :results
+    [{:id "a",
+      :tool "edge",
+      :command nil,
+      :success true,
+      :result {:type "text", :text "edge x->y"},
+      :data {:type "text", :text "edge x->y"}}
+     {:id "c",
+      :tool "nope",
+      :command nil,
+      :success false,
+      :error "Tool not found: nope",
+      :data nil}]},
+   2
+   {:ops [{:id "b", :tool "boom"}],
+    :results
+    [{:id "b",
+      :tool "boom",
+      :command nil,
+      :success false,
+      :error "kaboom",
+      :data nil}]}},
+  :summary {:total 3, :success 1, :failed 2, :waves 2}},
+ :chain
+ {:success true,
+  :waves
+  {1
+   {:ops [{:id "a", :tool "traverse"}],
+    :results
+    [{:id "a",
+      :tool "traverse",
+      :command nil,
+      :success true,
+      :result {:type "text", :text "traverse n1"},
+      :data {:type "text", :text "traverse n1"}}]},
+   2
+   {:ops [{:id "b", :tool "edge"}],
+    :results
+    [{:id "b",
+      :tool "edge",
+      :command nil,
+      :success true,
+      :result {:type "text", :text "edge n1->n2"},
+      :data {:type "text", :text "edge n1->n2"}}]}},
+  :summary {:total 2, :success 2, :failed 0, :waves 2}},
+ :dry-run
+ {:success true,
+  :dry-run true,
+  :waves
+  {1 {:ops [{:id "a", :tool "edge", :entity_id "a"}]},
+   2
+   {:ops
+    [{:id "b", :tool "traverse", :depends_on ["a"], :entity_id "b"}]}},
+  :summary {:total 2, :success 0, :failed 0, :waves 2}},
+ :empty
+ {:success true,
+  :waves {},
+  :summary {:total 0, :success 0, :failed 0, :waves 0}}}

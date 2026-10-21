@@ -1,0 +1,36 @@
+{:case-0
+ {:out [{:type "image", :data "x"}],
+  :in ([{:type "image", :data "x"}] "MEMORY" nil)},
+ :case-1
+ {:out
+  [{:type "text", :text "a"}
+   {:type "text", :text "\n\n---MEMORY---\nbody\n---/MEMORY---"}],
+  :in
+  ([{:type "text", :text "a"} {:type "text", :text ""}]
+   "MEMORY"
+   "body")},
+ :case-2
+ {:out [{:type "text", :text "\n\n---MEMORY---\nbody\n---/MEMORY---"}],
+  :in ([] "MEMORY" "body")},
+ :case-3
+ {:out
+  [{:type "text", :text "\n\n---HIVEMIND---\nbody\n---/HIVEMIND---"}],
+  :in ([{:type "text", :text ""}] "HIVEMIND" "body")},
+ :case-4
+ {:out
+  [{:type "text", :text "a"}
+   {:type "text", :text "a"}
+   {:type "image", :data "x"}],
+  :in
+  ([{:type "text", :text "a"}
+    {:type "text", :text "a"}
+    {:type "image", :data "x"}]
+   "MEMORY"
+   nil)},
+ :case-5
+ {:out [{:type "text", :text "bb"}],
+  :in ([{:type "text", :text "bb"}] "MEMORY" nil)},
+ :case-6 {:out [], :in ([] "HIVEMIND" nil)},
+ :case-7
+ {:out [{:type "image", :data "x"}],
+  :in ([{:type "image", :data "x"}] "MEMORY" nil)}}

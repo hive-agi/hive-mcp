@@ -1,0 +1,11 @@
+{:steps
+ [[:default "server"]
+  [:ensure "server"]
+  [:select-unbound {:daemon-id "server", :reason :default}]
+  [:bind "d2"]
+  [:get-bound "d2"]
+  [:select-bound {:daemon-id "d2", :reason :bound}]
+  [:bindings-while-bound {"ling-1" "d2"}]
+  [:unbind nil]
+  [:get-unbound nil]
+  [:reset-cache nil]]}

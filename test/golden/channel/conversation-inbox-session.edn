@@ -1,0 +1,32 @@
+[[:empty-peek nil]
+ [:push-tell true]
+ [:push-ask true]
+ [:push-unknown true]
+ [:push-over-cap true]
+ [:push-other true]
+ [:pending? [true false]]
+ [:counts [3 1 2]]
+ [:peek
+  {:tell
+   [{:event-type :odd, :from "b"}
+    {:event-type :conversation/tell, :from "c", :message "third"}],
+   :ask
+   [{:event-type :conversation/ask,
+     :from "a",
+     :ask-id "q1",
+     :question "?"}],
+   :respond []}]
+ [:drain
+  {:tell
+   [{:event-type :odd, :from "b"}
+    {:event-type :conversation/tell, :from "c", :message "third"}],
+   :ask
+   [{:event-type :conversation/ask,
+     :from "a",
+     :ask-id "q1",
+     :question "?"}]}]
+ [:drain-again nil]
+ [:clear-l2 true]
+ [:clear-l2-again false]
+ [:reset {}]
+ [:agents 0]]

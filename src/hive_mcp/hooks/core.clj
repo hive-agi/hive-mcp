@@ -9,7 +9,8 @@
    - Handlers: Functions (fn [context]) that receive event context
    - Events: Keywords from the hook-events set"
   (:require [taoensso.timbre :as log]
-            [hive-mcp.dispatch.handler :as dispatch]))
+            [hive-mcp.dispatch.handler :as dispatch]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -62,6 +63,28 @@
 ;; Registry Creation
 ;; =============================================================================
 
+;; =============================================================================
+;; Value schemas
+;; =============================================================================
+
+(def HookEvent
+  "An event key. The body refuses one outside `hook-events` with ex-info, so
+   the contract states only that it is a keyword."
+  [:keyword {:gen/elements (vec (sort hook-events))}])
+
+(def Handler
+  "An invocable hook handler, a fn or a var (Capture-by-Var)."
+  [:fn {:error/message "an invocable handler"
+        :gen/elements [identity (fn [ctx] (count ctx)) (fn [_] (throw (ex-info "hook failed" {})))]}
+   ifn?])
+
+(def HookRegistry
+  "An atom of event -> [handler ...]."
+  [:fn {:error/message "an atom of event -> handlers"
+        :gen/schema :nil
+        :gen/fmap (fn [_] (atom (into {} (map (fn [event] [event []]) hook-events))))}
+   #(and (instance? clojure.lang.Atom %) (map? @%))])
+
 (defn create-registry
   "Creates a new hook registry initialized with empty vectors for all events.
 
@@ -72,6 +95,8 @@
      @registry => {:task-complete [] :session-end [] ...}"
   []
   (atom (into {} (map (fn [event] [event []]) hook-events))))
+
+(m/=> create-registry [:=> [:cat] HookRegistry])
 
 ;; =============================================================================
 ;; Hook Registration
@@ -96,6 +121,8 @@
   (swap! registry update event conj handler)
   (log/debug "Registered hook for" event)
   nil)
+
+(m/=> register-hook [:=> [:cat HookRegistry HookEvent Handler] :nil])
 
 ;; =============================================================================
 ;; Hook Triggering
@@ -134,3 +161,6 @@
         results (mapv #(safe-call-handler % context) handlers)]
     (log/debug "Triggered" (count handlers) "hooks for" event)
     (mapv #(if (:error %) % (:result %)) results)))
+
+;; Results are whatever each handler answers, or {:error ex} for one that threw.
+(m/=> trigger-hooks [:=> [:cat HookRegistry HookEvent :any] [:vector :any]])
