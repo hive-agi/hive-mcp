@@ -1,0 +1,8 @@
+{"" "",
+ "  many\t\twhitespace \n runs  " "many whitespace runs",
+ "Authorization: Bearer sk-abc123xyz"
+ "Authorization: [redacted] [redacted]",
+ "api_key=hunter2 and token: kept-because-separate"
+ "[redacted] and token: kept-because-separate",
+ "plain message, nothing secret" "plain message, nothing secret",
+ "token=abc password=  sk-short" "[redacted] password= sk-short"}

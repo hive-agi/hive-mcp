@@ -1,0 +1,11 @@
+{"drop-first"
+ {:registered [:a/one :b/two], :applied nil, :elsewhere {:trail []}},
+ "drop-middle"
+ {:registered [:a/one :c/three :d/four],
+  :applied nil,
+  :elsewhere {:trail []}},
+ "none" {:registered [], :applied {:trail []}, :elsewhere {:trail []}},
+ "two-ordered"
+ {:registered [:a/one :b/two],
+  :applied {:trail [:a/one :b/two]},
+  :elsewhere {:trail []}}}

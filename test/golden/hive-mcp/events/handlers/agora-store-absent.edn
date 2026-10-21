@@ -1,0 +1,36 @@
+{:dispatch-next
+ {""
+  {:answer
+   {:log
+    {:level :error,
+     :message
+     "dispatch-next failed for : The swarm needs hive-agent, which is not on the classpath (hive-agent.swarm.agora.schema/get-dialogue)"}}},
+  "d-1"
+  {:answer
+   {:log
+    {:level :error,
+     :message
+     "dispatch-next failed for d-1: The swarm needs hive-agent, which is not on the classpath (hive-agent.swarm.agora.schema/get-dialogue)"}}},
+  "dialogue-xyz"
+  {:answer
+   {:log
+    {:level :error,
+     :message
+     "dispatch-next failed for dialogue-xyz: The swarm needs hive-agent, which is not on the classpath (hive-agent.swarm.agora.schema/get-dialogue)"}}}},
+ :turn-completed
+ {:raised
+  {:swarm/addon-missing true,
+   :addon "hive-agent",
+   :ns "hive-agent.swarm.agora.schema",
+   :var "get-dialogue"}},
+ :consensus
+ {:raised
+  {:swarm/addon-missing true,
+   :addon "hive-agent",
+   :ns "hive-agent.swarm.agora.schema",
+   :var "get-dialogue"}},
+ :registered
+ [:agora/consensus
+  :agora/dispatch-next
+  :agora/turn-completed
+  :agora/turn-response]}
