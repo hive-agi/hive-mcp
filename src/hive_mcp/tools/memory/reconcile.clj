@@ -14,8 +14,10 @@
    Params:
      :limit  cap on each listed id vector (default 100, min 1)"
   (:require [hive-mcp.memory.reconcile :as reconcile]
-            [hive-mcp.tools.core :refer [mcp-json mcp-error]]
-            [hive-mcp.dns.result :refer [rescue-log]]))
+            [hive-mcp.tools.core :as tcore :refer [mcp-json mcp-error]]
+            [hive-mcp.dns.result :refer [rescue-log]]
+            [malli.core :as m]
+            [hive-mcp.tools.memory.schema :as ms]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -64,3 +66,16 @@
   [{:keys [limit]}]
   (rescue-log "[memory] reconcile" (mcp-error "reconcile failed")
     (mcp-json (reconcile-response @-sources limit))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> set-sources! [:=> [:cat [:maybe ms/ReconcileSources]] [:maybe ms/ReconcileSources]])
+(m/=> clear-sources! [:=> [:cat] :nil])
+
+(m/=> reconcile-response
+      [:=> [:cat [:maybe ms/ReconcileSources] [:any {:gen/schema [:maybe [:or :int [:enum "3" "x" "0"]]]}]]
+       ms/ReconcileResponse])
+
+(m/=> handle-reconcile [:=> [:cat ms/McpParams] tcore/McpResponse])

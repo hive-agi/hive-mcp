@@ -1,0 +1,112 @@
+{:case-0
+ {:out
+  {:results [{:id "a"}],
+   :count 1,
+   :dropped-null-hits 0,
+   :query "q",
+   :scope nil,
+   :excluded-tags ["ingestion-chunk"],
+   :excludes-source :caller},
+  :in
+  ({:results [{:id "a"}],
+    :query "q",
+    :exclude-tags ["ingestion-chunk"],
+    :default-excludes ["carto" "ingestion-chunk"]})},
+ :case-1
+ {:out
+  {:results [{:id "b"}],
+   :count 1,
+   :dropped-null-hits 0,
+   :query "q",
+   :scope nil,
+   :excluded-tags ["a"],
+   :excludes-source :caller},
+  :in
+  ({:results [{:id "b"}],
+    :query "q",
+    :exclude-tags ["a"],
+    :default-excludes ["carto" "ingestion-chunk"]})},
+ :case-2
+ {:out
+  {:results [],
+   :count 0,
+   :dropped-null-hits 0,
+   :query "q",
+   :scope nil,
+   :excluded-tags [],
+   :excludes-source :none},
+  :in
+  ({:results [],
+    :query "q",
+    :exclude-tags [],
+    :default-excludes ["carto" "ingestion-chunk"]})},
+ :case-3
+ {:out
+  {:results [],
+   :count 0,
+   :dropped-null-hits 0,
+   :query "x",
+   :scope nil,
+   :excluded-tags ["a"],
+   :excludes-source :caller},
+  :in
+  ({:results [],
+    :query "x",
+    :exclude-tags ["a"],
+    :default-excludes ["carto" "ingestion-chunk"]})},
+ :case-4
+ {:out
+  {:results [{:id "b"} {:id "b"}],
+   :count 2,
+   :dropped-null-hits 0,
+   :query "q",
+   :scope nil,
+   :excluded-tags [],
+   :excludes-source :none},
+  :in
+  ({:results [{:id "b"} {:id "b"}],
+    :query "q",
+    :exclude-tags [],
+    :default-excludes ["carto" "ingestion-chunk"]})},
+ :case-5
+ {:out
+  {:results [{:id "b"}],
+   :count 1,
+   :dropped-null-hits 0,
+   :query "q",
+   :scope nil,
+   :excluded-tags ["ingestion-chunk"],
+   :excludes-source :caller},
+  :in
+  ({:results [{:id "b"}],
+    :query "q",
+    :exclude-tags ["ingestion-chunk"],
+    :default-excludes ["carto" "ingestion-chunk"]})},
+ :case-6
+ {:out
+  {:results [],
+   :count 0,
+   :dropped-null-hits 0,
+   :query "x",
+   :scope nil,
+   :excluded-tags ["carto" "a"],
+   :excludes-source :caller},
+  :in
+  ({:results [],
+    :query "x",
+    :exclude-tags ["carto" "a"],
+    :default-excludes ["carto" "ingestion-chunk"]})},
+ :case-7
+ {:out
+  {:results [{:id "b"}],
+   :count 1,
+   :dropped-null-hits 0,
+   :query "q",
+   :scope nil,
+   :excluded-tags ["carto"],
+   :excludes-source :caller},
+  :in
+  ({:results [{:id "b"}],
+    :query "q",
+    :exclude-tags ["carto"],
+    :default-excludes ["carto" "ingestion-chunk"]})}}

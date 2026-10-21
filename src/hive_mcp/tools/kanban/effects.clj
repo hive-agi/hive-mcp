@@ -22,7 +22,9 @@
             [hive-mcp.swarm.datascript :as ds]
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.kanban-facade :as kanban-facade]
-            [hive-mcp.session.current :as session]))
+            [hive-mcp.session.current :as session]
+            [hive-mcp.tools.kanban.schema :as ks]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -127,3 +129,6 @@
   (fx/reg-fx :kanban/notify-done      notify-done!)
   (fx/reg-fx :kanban/temporal-record  temporal-record!)
   (fx/reg-fx :kanban/facade-update    facade-update!))
+
+(m/=> archive-task-data [:=> [:cat ks/MaybeEntry :any] ks/ArchiveData])
+(m/=> register-all! [:=> [:cat] ks/HandlerRegistry])

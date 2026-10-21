@@ -1,0 +1,21 @@
+{:case-0
+ {:out {:final-duration "long", :tiers-promoted 0}, :in ("long" 0)},
+ :case-1
+ {:out {:final-duration "permanent", :tiers-promoted 0},
+  :in ("permanent" 1)},
+ :case-2
+ {:out {:final-duration "short", :tiers-promoted 1},
+  :in ("ephemeral" 1)},
+ :case-3
+ {:out {:final-duration "long", :tiers-promoted 1}, :in ("medium" 1)},
+ :case-4
+ {:out {:final-duration "ephemeral", :tiers-promoted 0},
+  :in ("ephemeral" 0)},
+ :case-5
+ {:out {:final-duration "long", :tiers-promoted 3},
+  :in ("ephemeral" 3)},
+ :case-6
+ {:out {:final-duration "medium", :tiers-promoted 1}, :in ("short" 1)},
+ :case-7
+ {:out {:final-duration "permanent", :tiers-promoted 0},
+  :in ("permanent" 1)}}

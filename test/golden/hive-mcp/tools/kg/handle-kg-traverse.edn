@@ -1,0 +1,31 @@
+{:case-0
+ {:out {:error "start_node must be a non-empty string"},
+  :in ({:direction :both, :scope nil})},
+ :case-1
+ {:out {:error "start_node must be a non-empty string"},
+  :in
+  ({:start_node nil,
+    :direction :both,
+    :relations nil,
+    :max_depth nil,
+    :scope "hive-mcp:agora"})},
+ :case-2
+ {:out {:error "start_node must be a non-empty string"},
+  :in ({:direction nil, :max_depth 1, :scope nil})},
+ :case-3
+ {:out {:error "start_node must be a non-empty string"}, :in ({})},
+ :case-4
+ {:out
+  {:type "text",
+   :text
+   "{\"success\":true,\"start-node\":\"b-1\",\"result-count\":0,\"results\":[],\"hint\":\"Node has no edges in KG. It may not have been enriched yet.\"}"},
+  :in ({:start_node "b-1", :direction nil, :max_depth nil})},
+ :case-5
+ {:out {:error "start_node must be a non-empty string"},
+  :in ({:direction nil, :max_depth 4, :scope "global"})},
+ :case-6
+ {:out {:error "start_node must be a non-empty string"},
+  :in ({:relations #{:implements}, :scope "global"})},
+ :case-7
+ {:out {:error "start_node must be a non-empty string"},
+  :in ({:relations nil, :max_depth 2})}}

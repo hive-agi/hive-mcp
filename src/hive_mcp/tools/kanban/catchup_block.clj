@@ -6,7 +6,9 @@
             [hive-dsl.result :refer [ok ok? let-ok try-effect* ok->]]
             [hive-mcp.tools.kanban.list.plan :as list-plan]
             [hive-mcp.vectordb.kanban-facade :as kanban-facade]
-            [hive-spi.catchup.registry :as blocks]))
+            [hive-spi.catchup.registry :as blocks]
+            [hive-mcp.tools.kanban.schema :as ks]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -88,3 +90,7 @@
   "Install the kanban block in the catchup block registry. Returns it."
   []
   (blocks/register-block! block))
+
+(m/=> gather-kanban-summary [:=> [:cat [:maybe :string]] ks/Summary])
+(m/=> catchup-section [:=> [:cat ks/SummaryIn] ks/Section])
+(m/=> register! [:=> [:cat] ks/CatchupBlock])

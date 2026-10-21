@@ -1,0 +1,44 @@
+{:case-0 {:out nil, :in (nil)},
+ :case-1
+ {:out
+  {:counts {},
+   :recent-todos
+   [{:id "b", :title "t", :tags []} {:id "b", :title "t", :tags []}],
+   :scope-tag nil,
+   :hint
+   "Kanban summary for current project scope. Use mcp__hive__project kanban list status=todo|inprogress for full rows."},
+  :in
+  ({:counts {},
+    :recent-todos
+    [{:id "b", :title "t", :tags []} {:id "b", :title "t", :tags []}],
+    :scope-tag nil})},
+ :case-2
+ {:out
+  {:counts {:doing 1, :done 4},
+   :recent-todos
+   [{:id "b", :title "t", :tags []} {:id "b", :title "t", :tags []}],
+   :scope-tag "scope:project:x",
+   :hint
+   "Kanban summary for current project scope. Use mcp__hive__project kanban list status=todo|inprogress for full rows."},
+  :in
+  ({:counts {:doing 1, :done 4},
+    :recent-todos
+    [{:id "b", :title "t", :tags []} {:id "b", :title "t", :tags []}],
+    :scope-tag "scope:project:x"})},
+ :case-3
+ {:out
+  {:counts {},
+   :recent-todos
+   [{:id "a", :title "t", :tags []} {:id "a", :title "t", :tags []}],
+   :scope-tag nil,
+   :hint
+   "Kanban summary for current project scope. Use mcp__hive__project kanban list status=todo|inprogress for full rows."},
+  :in
+  ({:counts {},
+    :recent-todos
+    [{:id "a", :title "t", :tags []} {:id "a", :title "t", :tags []}],
+    :scope-tag nil})},
+ :case-4 {:out nil, :in (nil)},
+ :case-5 {:out nil, :in (nil)},
+ :case-6 {:out nil, :in (nil)},
+ :case-7 {:out nil, :in (nil)}}

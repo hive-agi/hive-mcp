@@ -1,0 +1,18 @@
+{:case-0
+ {:out {:error "node_id must be a non-empty string"}, :in ({})},
+ :case-1
+ {:out {:error "node_id must be a non-empty string"},
+  :in ({:node_id ""})},
+ :case-2
+ {:out {:error "node_id must be a non-empty string"},
+  :in ({:node_id nil})},
+ :case-3
+ {:out {:error "node_id must be a non-empty string"},
+  :in ({:node_id nil})},
+ :case-4
+ {:out {:error "node_id must be a non-empty string"}, :in ({})},
+ :case-5
+ {:out {:error "node_id must be a non-empty string"}, :in ({})},
+ :case-6
+ {:out {:error "node_id must be a non-empty string"}, :in ({})},
+ :case-7 {:out {:error "node_id must be a non-empty string"}, :in ({})}}
