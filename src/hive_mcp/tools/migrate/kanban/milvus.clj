@@ -106,30 +106,6 @@
                      (or page-cap default-page-cap))))
 
 ;; =============================================================================
-;; Contracts
-;; =============================================================================
-
-(def MilvusStore
-  "The milvus-backed source store; the adapters only close over it."
-  [:maybe :some])
-
-(def IdLister
-  [:fn {:gen/elements [(->MilvusIdLister nil default-tag-filter default-page-cap)]}
-   #(satisfies? ports/IIdLister %)])
-
-(def EntryReader
-  [:fn {:gen/elements [(->MilvusEntryReader nil)]} #(satisfies? ports/IEntryReader %)])
-
-(m/=> make-entry-reader [:=> [:cat MilvusStore] EntryReader])
-
-(m/=> make-id-lister
-  [:function
-   [:=> [:cat MilvusStore] IdLister]
-   [:=> [:cat MilvusStore [:maybe [:map [:tag-filter {:optional true} [:maybe :string]]
-                                   [:page-cap {:optional true} [:maybe [:int {:min 1}]]]]]]
-    IdLister]])
-
-;; =============================================================================
 ;; IEntryReader
 ;; =============================================================================
 
@@ -157,3 +133,27 @@
 (defn make-entry-reader
   [milvus-store]
   (->MilvusEntryReader milvus-store))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def MilvusStore
+  "The milvus-backed source store; the adapters only close over it."
+  [:maybe :some])
+
+(def IdLister
+  [:fn {:gen/elements [(->MilvusIdLister nil default-tag-filter default-page-cap)]}
+   #(satisfies? ports/IIdLister %)])
+
+(def EntryReader
+  [:fn {:gen/elements [(->MilvusEntryReader nil)]} #(satisfies? ports/IEntryReader %)])
+
+(m/=> make-entry-reader [:=> [:cat MilvusStore] EntryReader])
+
+(m/=> make-id-lister
+  [:function
+   [:=> [:cat MilvusStore] IdLister]
+   [:=> [:cat MilvusStore [:maybe [:map [:tag-filter {:optional true} [:maybe :string]]
+                                   [:page-cap {:optional true} [:maybe [:int {:min 1}]]]]]]
+    IdLister]])

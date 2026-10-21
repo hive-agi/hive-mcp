@@ -151,6 +151,39 @@
   (->StoreIdProbe store))
 
 ;; =============================================================================
+;; Durability gate
+;; =============================================================================
+
+(defrecord StoreDurability [store]
+  ;; Asked through the DECORATED store's port (`connected?`, which the seal
+  ;; layers forward to the backend), never the backend's fields. A store
+  ;; that is not connected may still answer add-entry! with the id, out of
+  ;; an in-memory fallback (hive-qdrant does): that is no durable write.
+  ;; A store that cannot answer at all is refused too.
+  ports/ITargetDurability
+  (check-durable [_]
+    (if (nil? store)
+      (r/err :store/missing {})
+      (try
+        (if (true? (proto/connected? store))
+          (r/ok {:connected? true})
+          (r/err :target/not-durable
+                 {:message (str "the migration target store is not connected: its writes"
+                                " would land only in memory. Connect it, then run again.")
+                  :store   (str (class (decorate/base-store store)))}))
+        (catch Throwable t
+          (r/err :target/not-durable
+                 {:message (str "the migration target store cannot say whether it is connected: "
+                                (or (.getMessage t) (str (class t))))
+                  :store   (str (class store))}))))))
+
+(defn make-durability
+  "Durability gate over STORE (the decorated registry store in production):
+   ok only while the store reports itself connected."
+  [store]
+  (->StoreDurability store))
+
+;; =============================================================================
 ;; Contracts
 ;; =============================================================================
 
@@ -185,36 +218,3 @@
 (m/=> make-entry-writer [:=> [:cat MemoryStore] EntryWriter])
 
 (m/=> make-id-probe [:=> [:cat MemoryStore] IdProbe])
-
-;; =============================================================================
-;; Durability gate
-;; =============================================================================
-
-(defrecord StoreDurability [store]
-  ;; Asked through the DECORATED store's port (`connected?`, which the seal
-  ;; layers forward to the backend), never the backend's fields. A store
-  ;; that is not connected may still answer add-entry! with the id, out of
-  ;; an in-memory fallback (hive-qdrant does): that is no durable write.
-  ;; A store that cannot answer at all is refused too.
-  ports/ITargetDurability
-  (check-durable [_]
-    (if (nil? store)
-      (r/err :store/missing {})
-      (try
-        (if (true? (proto/connected? store))
-          (r/ok {:connected? true})
-          (r/err :target/not-durable
-                 {:message (str "the migration target store is not connected: its writes"
-                                " would land only in memory. Connect it, then run again.")
-                  :store   (str (class (decorate/base-store store)))}))
-        (catch Throwable t
-          (r/err :target/not-durable
-                 {:message (str "the migration target store cannot say whether it is connected: "
-                                (or (.getMessage t) (str (class t))))
-                  :store   (str (class store))}))))))
-
-(defn make-durability
-  "Durability gate over STORE (the decorated registry store in production):
-   ok only while the store reports itself connected."
-  [store]
-  (->StoreDurability store))
