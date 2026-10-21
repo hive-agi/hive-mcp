@@ -1,0 +1,12 @@
+{:qwen
+ {:api-base "http://stub/v1",
+  :api-key "k1",
+  :model "text-embedding-qwen3-8b",
+  :dimension 4096,
+  :dimension* 4096},
+ :unknown
+ {:api-base "http://alt/v1",
+  :api-key "k2",
+  :model "venice-other",
+  :dimension 4096,
+  :dimension* 4096}}

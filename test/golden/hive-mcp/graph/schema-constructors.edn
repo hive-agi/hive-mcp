@@ -1,0 +1,38 @@
+{:knowledge+
+ #:knowledge{:confidence 0.9,
+             :content "p",
+             :derived-from #{1 2},
+             :tags #{:b :a},
+             :type :pattern},
+ :knowledge
+ #:knowledge{:confidence 0.5, :content "use malli", :type :decision},
+ :friction+
+ #:friction{:context "gap",
+            :count 1,
+            :reported-by [:agent/id "a"],
+            :resolved? false,
+            :type :preset-gap,
+            :workaround "manual"},
+ :memory
+ #:memory{:duration :long,
+          :id "m1",
+          :references [1],
+          :tags #{"x"},
+          :type :note},
+ :preds
+ {:agent [false false true false false false false],
+  :duration [false false false false true false false],
+  :friction [true false false false false false false],
+  :knowledge [false true false false false false false],
+  :memory [false true false true false false false],
+  :recall [false false false false false true false]},
+ :recall+ #:recall{:context :cross-project, :count 4, :memory 5},
+ :agent #:agent{:id "ling-1", :spawned-by 3, :type :ling},
+ :recall #:recall{:context :user-feedback, :count 1, :memory 5},
+ :memory-0 #:memory{:duration :permanent, :id "m2", :type :decision},
+ :friction
+ #:friction{:context "no grep",
+            :count 1,
+            :reported-by 7,
+            :resolved? false,
+            :type :tool-missing}}

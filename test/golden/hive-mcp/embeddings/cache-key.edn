@@ -1,0 +1,32 @@
+{:case-0
+ {:out
+  "::e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  :in (nil "" "")},
+ :case-1
+ {:out
+  ":z:18f5384d58bcb1bba0bcd9e6a6781d1a6ac2cc280c330ecbab6cb7931b721552",
+  :in ("" "z" "Y")},
+ :case-2
+ {:out
+  "::5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+  :in (nil "" "0")},
+ :case-3
+ {:out
+  ":b6a6f3377fdbbbe71da8e03945f5fa18a7100c4077028918b594f9c79f162d87",
+  :in (nil nil "0D")},
+ :case-4
+ {:out
+  "3qE::e7f6c011776e8db7cd330b54174fd76f7d0216b612387a5ffcfb81e6f0919683",
+  :in ("3qE" "" "6")},
+ :case-5
+ {:out
+  ":wV:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  :in (nil "wV" "")},
+ :case-6
+ {:out
+  ":3f79bb7b435b05321651daefd374cdc681dc06faa65e374e38337b88ca046dea",
+  :in (nil nil "e")},
+ :case-7
+ {:out
+  ":e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  :in (nil nil "")}}

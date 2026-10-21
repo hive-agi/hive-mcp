@@ -1,0 +1,5 @@
+{:near ["x" "z" "y"],
+ :where ["z"],
+ :got [["x" "X2"]],
+ :left ("x" "z"),
+ :coll "vs"}

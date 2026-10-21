@@ -5,7 +5,8 @@
    and unknown-but-safe types are auto-registered with sane defaults. Safety
    (charset + bounded length) is the security gate that replaced membership."
   (:require [clojure.test :refer [deftest is testing]]
-            [hive-mcp.memory.type-registry :as tr]))
+            [hive-mcp.memory.type-registry :as tr]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -163,3 +164,41 @@
   (testing "a nomination is NOT piggybacked — it is not law until approved"
     (is (not (contains? (tr/piggyback-types) :axiom-candidate)))
     (is (contains? (tr/piggyback-types) :axiom))))
+
+;; Schema-driven facets (the contracts' own :out schemas). Tokens are drawn
+;; half from gated/known names in mixed case and padding, half from
+;; unsafe/odd values, so every resolve-write-type arm is reached.
+(def ^:private TypeToken
+  [:any {:gen/schema [:tuple [:enum :gated :known :novel :unsafe]
+                      [:enum "axiom" "AXIOM " :axiom]
+                      [:enum "note" " Principle" :decision]
+                      [:enum "brand-new" "adr_v2"]
+                      [:enum "bad type!" "9lives" "" nil 42]]
+         :gen/fmap (fn [[k g kn nv un]] (case k :gated g :known kn :novel nv :unsafe un))}])
+
+(deftrifecta-from-schema resolve-write-type-parks-only-gated-types
+  #'tr/resolve-write-type
+  {:in [:cat TypeToken]
+   :out [:maybe [:map [:type :string] [:requested :string] [:queued? :boolean] [:gate [:maybe :map]]]]
+   :rel (fn [[t] out]
+          (let [s (tr/sanitize-type t)]
+            (cond
+              (not (and s (tr/safe-type? s))) (nil? out)
+              (tr/gated-type? s) (and (:queued? out) (= s (:requested out))
+                                      (= (tr/queue-target s) (:type out)))
+              :else (= {:type s :requested s :queued? false :gate nil} out))))
+   :classify (fn [_ out] (cond (nil? out) :rejected (:queued? out) :queued :else :direct))
+   :classify-domain #{:rejected :queued :direct}
+   :golden-path "test/golden/hive-mcp/memory/type-registry-resolve-write-type.edn"
+   :num-tests 200})
+
+(deftrifecta-from-schema strip-queue-tags-inverts-queued-tags
+  #'tr/strip-queue-tags
+  {:in [:cat [:sequential [:string {:gen/elements ["a" "scope:global" "axiom-pending"
+                                                   "requested-type:axiom" "b"]}]]]
+   :out [:vector :string]
+   :rel (fn [[tags] out]
+          (and (= out (vec (remove #(or (= "axiom-pending" %)
+                                        (.startsWith ^String % "requested-type:")) tags)))
+               (= out (tr/strip-queue-tags (tr/queued-tags out (tr/gate-of "axiom") "axiom")))))
+   :num-tests 200})

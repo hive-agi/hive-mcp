@@ -1,0 +1,14 @@
+{:one :datalevin,
+ :ds-health {:status :healthy, :backend :datascript},
+ :datascript true,
+ :unknown [nil nil],
+ :supported [:datahike :datalevin :datascript :proximum],
+ :one-opts :datahike,
+ :two-opts [:datalevin {:recovery-policy :strict}],
+ :two [:datalevin {}],
+ :calls
+ [[:one :datalevin]
+  [:one :datahike]
+  [:two :datalevin {:recovery-policy :strict}]
+  [:two :datalevin {}]],
+ :none nil}

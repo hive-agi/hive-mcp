@@ -1,0 +1,12 @@
+{:kick {:out true, :calls [:kick-reconnect! [:await-reconnect! 250]]},
+ :transient? [true true false],
+ :result-retry
+ {:out {:ok :recovered},
+  :calls [:kick-reconnect! [:await-reconnect! 300]]},
+ :retried
+ {:out :recovered, :calls [:kick-reconnect! [:await-reconnect! 300]]},
+ :result-ok {:out {:ok 8}, :calls []},
+ :macro-result {:out {:ok :v}, :calls []},
+ :macro {:out 3, :calls []},
+ :ok {:out 7, :calls []},
+ :budget 8000}
