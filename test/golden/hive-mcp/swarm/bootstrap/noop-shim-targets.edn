@@ -1,0 +1,8 @@
+{"->NoopBootstrap"
+ [:delegates-to "hive-agent.swarm.bootstrap.noop" "->NoopBootstrap"],
+ "make-noop-bootstrap"
+ [:delegates-to
+  "hive-agent.swarm.bootstrap.noop"
+  "make-noop-bootstrap"],
+ "map->NoopBootstrap"
+ [:delegates-to "hive-agent.swarm.bootstrap.noop" "map->NoopBootstrap"]}

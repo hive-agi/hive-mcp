@@ -9,6 +9,7 @@
             [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.storage.file-hash :as fh]
             [hive-mcp.storage.recovery :as rec]
+            [hive-mcp.test.coverage-margin :as margin]
             [hive-mcp.test.stub.txlog-ops :as stub]
             [hive-schemas.coverage :as coverage]
             [hive-schemas.test :refer [deftrifecta-from-schema]]
@@ -61,12 +62,40 @@
 (def ^:private Msg
   [:enum "MDB_CORRUPTED" "txn-log corrupt" "MDB_BUSY" "lock held" "MDB_VERSION_MISMATCH" "boom" ""])
 
+(def ^:private msgs-by-class
+  "Msg members by the classification each one names on its own."
+  {:wal-corrupt      ["MDB_CORRUPTED" "txn-log corrupt"]
+   :version-mismatch ["MDB_VERSION_MISMATCH"]
+   :lock-contention  ["MDB_BUSY" "lock held"]
+   :unknown          ["boom" ""]})
+
+(defn- open-failure
+  "A throwable whose classification is `target`, or nil for :nil. The
+   classifying message sits on the outer ex-info (with any Msg as its cause,
+   so outer-wins precedence is exercised) or on the cause under a neutral
+   outer message. :unknown keeps both messages neutral."
+  [[target outer? i j free]]
+  (let [pick    (fn [k n] (let [ms (msgs-by-class k)] (nth ms (mod n (count ms)))))
+        neutral (pick :unknown j)]
+    (case target
+      :nil     nil
+      :unknown (ex-info (pick :unknown i) {} (Exception. ^String neutral))
+      (if outer?
+        (ex-info (pick target i) {} (Exception. ^String free))
+        (ex-info neutral {} (Exception. ^String (pick target i)))))))
+
+(def ^:private OpenFailure
+  "nil or a throwable. The generator picks the classification first: a
+   uniform pick over two Msgs plus :maybe's nil drew :version-mismatch about
+   17 times in 300, against a classify floor of 18."
+  [:maybe {:gen/schema [:tuple [:enum :nil :wal-corrupt :version-mismatch :lock-contention :unknown]
+                        :boolean nat-int? nat-int? Msg]
+           :gen/fmap open-failure}
+   [:fn (fn [t] (instance? Throwable t))]])
+
 (deftrifecta-from-schema classification-walks-the-cause-chain
   #'rec/classify-open-failure
-  {:in [:cat [:maybe [:fn {:gen/schema [:tuple Msg Msg]
-                           :gen/fmap (fn [[outer inner]]
-                                       (ex-info outer {} (Exception. ^String inner)))}
-                      (fn [t] (instance? Throwable t))]]]
+  {:in [:cat OpenFailure]
    :out rec/Classification
    :rel (fn [[t] out]
           (let [cls (fn [msg] (cond (re-find #"MDB_CORRUPTED|txn-log" msg) :wal-corrupt
@@ -78,6 +107,13 @@
    :classify (fn [_ out] out)
    :classify-domain rec/Classification
    :num-tests 300})
+
+(deftest classification-coverage-has-margin
+  ;; 4000 draws keep the measured share within a few points of the true one,
+  ;; so this is stable without a pinned seed.
+  (is (= {} (margin/thin-variants [:cat OpenFailure] #'rec/classify-open-failure
+                                  (fn [_ out] out) rec/Classification 4000))
+      "every classification is drawn at least half as often as an even split"))
 
 (deftrifecta-from-schema quarantine-path-is-deterministic
   #'rec/quarantine-path

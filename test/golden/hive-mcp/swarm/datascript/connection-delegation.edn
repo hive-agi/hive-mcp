@@ -1,0 +1,15 @@
+{:calls
+ {"create-conn"
+  {:ns "hive-datascript.swarm.connection", :var "create-conn"},
+  "current-test-conn"
+  {:ns "hive-datascript.swarm.connection", :var "current-test-conn"},
+  "ensure-conn"
+  {:ns "hive-datascript.swarm.connection", :var "ensure-conn"},
+  "gen-id" {:ns "hive-datascript.swarm.connection", :var "gen-id"},
+  "get-conn" {:ns "hive-datascript.swarm.connection", :var "get-conn"},
+  "now" {:ns "hive-datascript.swarm.connection", :var "now"},
+  "reset-conn!"
+  {:ns "hive-datascript.swarm.connection", :var "reset-conn!"},
+  "with-test-conn"
+  {:ns "hive-datascript.swarm.connection", :var "with-test-conn"}},
+ :values {"DSConn" nil}}

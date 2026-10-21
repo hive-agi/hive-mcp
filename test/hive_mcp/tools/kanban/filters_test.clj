@@ -2,8 +2,11 @@
   "Pure-fn tests for kanban list filter helpers in
    `hive-mcp.tools.kanban.filters`. Exercises the token-budget
    filters wired into `handle-mem-kanban-list-slim`."
-  (:require [clojure.test :refer [deftest is testing]]
-            [hive-mcp.tools.kanban.filters :as kf]))
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
+            [hive-mcp.tools.kanban.filters :as kf]
+            [hive-mcp.tools.kanban.schema :as ks]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]))
 
 (def ^:private fixture
   [{:id "a"
@@ -103,3 +106,89 @@
     (is (not (kf/post-filters? {:status "todo"})))
     (is (not (kf/post-filters? {:query ""})))
     (is (not (kf/post-filters? {:query "   "})))))
+
+;; =============================================================================
+;; Trifectas over the contracts (generators from hive-mcp.tools.kanban.schema)
+;; =============================================================================
+
+(deftrifecta-from-schema substring-ci-is-case-blind-containment
+  hive-mcp.tools.kanban.filters/substring-ci?
+  ;; nil needle / nil or non-string haystack are pinned in substring-ci?-test
+  {:in          [:cat [:enum "GREP" "rip" "" "zz" "Returns"] [:enum "ripgrep returns" "Fix Grep" "x"]]
+   :out         :boolean
+   :rel         (fn [[n h] out]
+                  (= out (str/includes? (str/lower-case h) (str/lower-case n))))
+   :num-tests   200
+   :n-cases     12
+   :golden-path "test/golden/tools/kanban/filters-substring-ci.edn"})
+
+(deftrifecta-from-schema entry-priority-nil-matches-all
+  hive-mcp.tools.kanban.filters/entry-priority?
+  {:in          [:cat ks/EntryIn [:maybe [:enum "high" "medium" "low" "urgent"]]]
+   :out         :boolean
+   :rel         (fn [[entry p] out]
+                  (let [c (:content entry)]
+                    (= out (or (nil? p) (and (map? c) (= p (:priority c)))))))
+   :num-tests   200
+   :n-cases     12
+   :golden-path "test/golden/tools/kanban/filters-entry-priority.edn"})
+
+(def ^:private TagsArg [:maybe [:vector {:max 3} [:enum "kanban" "todo" "priority-high" "infra"]]])
+
+(deftrifecta-from-schema entry-tags-match-all-or-any
+  hive-mcp.tools.kanban.filters/entry-tags-match?
+  {:in          [:cat [:map [:tags [:vector {:max 4} [:enum "kanban" "todo" "doing" "priority-high" "infra"]]]]
+                 TagsArg [:enum :all :any "all"]]
+   :out         :boolean
+   :rel         (fn [[entry extra mode] out]
+                  (let [have (set (:tags entry))]
+                    (= out (cond (empty? extra) true
+                                 (= mode :any) (boolean (some have extra))
+                                 :else (every? have extra)))))
+   :num-tests   300
+   :n-cases     12
+   :golden-path "test/golden/tools/kanban/filters-entry-tags-match.edn"})
+
+(deftrifecta-from-schema paginate-drops-then-takes
+  hive-mcp.tools.kanban.filters/paginate
+  {:in          [:cat [:vector {:max 8} :int] [:maybe [:int {:min -1 :max 5}]] [:maybe [:int {:min -1 :max 5}]]]
+   :out         [:maybe [:sequential :any]]
+   :rel         (fn [[coll off lim] out]
+                  (= out (cond->> coll
+                           (and off (pos? off)) (drop off)
+                           (and lim (pos? lim)) (take lim))))
+   :num-tests   300
+   :n-cases     12
+   :golden-path "test/golden/tools/kanban/filters-paginate.edn"})
+
+(deftrifecta-from-schema project-fields-selects-named-keys
+  hive-mcp.tools.kanban.filters/project-fields
+  {:in          [:cat [:map [:id [:enum "a"]] [:title [:enum "t"]] [:status [:enum "todo"]]]
+                 [:maybe [:vector {:max 3} [:enum :id "title" :status "nope"]]]]
+   :out         [:maybe [:map-of :any :any]]
+   :rel         (fn [[task fields] out]
+                  (= out (if (empty? fields) task (select-keys task (map keyword fields)))))
+   :num-tests   200
+   :n-cases     12
+   :golden-path "test/golden/tools/kanban/filters-project-fields.edn"})
+
+(deftrifecta-from-schema narrowing-post-filters-ignore-pagination
+  hive-mcp.tools.kanban.filters/narrowing-post-filters?
+  {:in          ks/ListParams
+   :out         :boolean
+   :rel         (fn [in out]
+                  (= out (boolean (or (and (string? (:query in)) (not (str/blank? (:query in))))
+                                      (:priority in) (:created_after in) (:updated_after in)
+                                      (and (#{"any" :any} (:tag_match in)) (seq (:tags in)))))))
+   :num-tests   300
+   :n-cases     12
+   :golden-path "test/golden/tools/kanban/filters-narrowing.edn"})
+
+(deftrifecta-from-schema entry-after-ts-compares-instants
+  hive-mcp.tools.kanban.filters/entry-after-ts?
+  {:in          [:cat [:map [:content [:map [:created [:enum "2026-04-28T09:00:00-0300" "2026-04-25T09:00:00Z" "bad"]]]]]
+                 [:enum :created]
+                 [:maybe [:enum "2026-04-26T00:00:00-03:00" "2026-04-29T00:00:00Z" "nope"]]]
+   :out         :boolean
+   :n-cases     12
+   :golden-path "test/golden/tools/kanban/filters-entry-after-ts.edn"})

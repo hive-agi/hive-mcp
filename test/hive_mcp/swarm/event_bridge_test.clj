@@ -9,7 +9,8 @@
             [hive-mcp.swarm.event-bridge :as bridge]
             [hive-mcp.protocols.event-backbone :as eb]
             [hive-mcp.channel.core :as channel]
-            [clojure.core.async]))
+            [clojure.core.async]
+            [hive-schemas.test :as hst]))
 
 ;; =============================================================================
 ;; FakeBackbone — records every call, pretends to be connected when asked.
@@ -209,3 +210,17 @@
               :stop-1 (do (bridge/stop-nats-bridge!) :ok)
               :stop-2 (do (bridge/stop-nats-bridge!) :ok)
               :after  (select-keys (bridge/bridge-status) [:running])}))})
+
+;; slave-subject is pure: prefix, the event type's name, the slave id or
+;; "unknown". Driven from its contract; the input schema mixes keyword and
+;; string types and nil ids so both coercions are reached.
+(hst/deftrifecta-from-schema slave-subject-builds-the-hierarchy
+  hive-mcp.swarm.event-bridge/slave-subject
+  {:in  [:cat [:or [:enum :slave-spawned :task-failed :prompt-stall] [:enum "slave-ready" "x"]]
+         [:maybe [:enum "ling-a" "ling-b"]]]
+   :out [:fn {:gen/elements ["hive.v1.slave.slave-spawned.ling-a"]}
+         #(and (string? %) (.startsWith ^String % "hive.v1.slave."))]
+   :rel (fn [[t id] out]
+          (= out (str "hive.v1.slave." (name t) "." (or id "unknown"))))
+   :num-tests 200
+   :golden-path "test/golden/swarm/event-bridge/slave-subject.edn"})

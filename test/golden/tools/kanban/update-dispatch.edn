@@ -1,0 +1,26 @@
+{:no-task-id
+ {:error :kanban/invalid-task-id,
+  :message "Update requires :task-id",
+  :given nil},
+ :bad-status
+ {:error :kanban/invalid-status,
+  :message "Invalid status: bogus. Valid: todo, doing, review, done",
+  :given "bogus"},
+ :nothing-to-do
+ {:error :kanban/nothing-to-edit,
+  :message
+  "Update requires at least one of :title, :description, :append-description, :priority",
+  :task-id "t1"},
+ :bad-priority
+ {:error :kanban/invalid-priority,
+  :message "Priority must be one of high, medium, low",
+  :given "urgent"},
+ :missing-entry {:error :kanban/invalid-task},
+ :committed
+ {:content
+  {:task-type "kanban",
+   :title "Moved",
+   :description "d",
+   :status "doing",
+   :priority "medium"},
+  :tags ["kanban" "doing" "priority-medium" "scope:project:p"]}}

@@ -1,0 +1,8 @@
+{:registered ["ling-1" "drone-1" "ling-2"],
+ :all ("drone-1" "ling-1" "ling-2"),
+ :lings ("ling-1" "ling-2"),
+ :by-id {:id "drone-1", :kind :drone, :status :working},
+ :unregister "ling-1",
+ :after ("drone-1" "ling-2"),
+ :missing nil,
+ :cleared nil}

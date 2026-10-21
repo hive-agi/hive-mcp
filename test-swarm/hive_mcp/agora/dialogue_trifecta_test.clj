@@ -70,9 +70,8 @@
   {:in        DialogueIdIn
    :out       :boolean
    ;; the basic check reads the last turn ADDRESSED to each participant.
-   ;; BUG (recorded, not fixed): an unknown dialogue has no participants, so
-   ;; `(= 0 0)` and `(every? ... ())` make it answer true. Pinned as is.
-   :rel       (fn [id out] (= out (contains? #{"dlg-agree" "dlg-missing"} id)))
+   ;; An unknown dialogue has no participants, so nobody agrees: false.
+   :rel       (fn [id out] (= out (= "dlg-agree" id)))
    :n-cases   10})
 
 (hst/deftrifecta-from-schema dialogue-active-contract

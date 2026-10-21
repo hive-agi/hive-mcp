@@ -1,0 +1,8 @@
+{:no-args
+ {"available?"
+  [:delegates-to "hive-agent.swarm.claim.graph" "available?"],
+  "reset-cache!"
+  [:delegates-to "hive-agent.swarm.claim.graph" "reset-cache!"]},
+ :callers [:delegates-to "hive-agent.swarm.claim.graph" "callers"],
+ :callers-fn
+ [:delegates-to "hive-agent.swarm.claim.graph" "callers-fn"]}

@@ -1,0 +1,15 @@
+{:reset {},
+ :held-key-file
+ [:delegates-to "hive-agent.swarm.claim.span" "file-span"],
+ :sent [],
+ :deadlock-no-graph nil,
+ :acquire-empty
+ {:acquired? true, :conflicts [], :warnings [], :spans-claimed 0},
+ :acquire-nil
+ {:acquired? true, :conflicts [], :warnings [], :spans-claimed 0},
+ :deadlock-no-keys nil,
+ :held-key-form
+ [:delegates-to "hive-agent.swarm.claim.span" "form-span"],
+ :held-key-file-mode
+ [:delegates-to "hive-agent.swarm.claim.span" "file-span"],
+ :acquire-one [:delegates-to "hive-agent.swarm.claim.span" "span"]}

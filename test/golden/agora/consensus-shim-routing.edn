@@ -1,0 +1,34 @@
+{approval-ratio "hive-agent.swarm.agora.consensus/approval-ratio",
+ approvals-aligned?
+ "hive-agent.swarm.agora.consensus/approvals-aligned?",
+ calculate-progress-score
+ "hive-agent.swarm.agora.consensus/calculate-progress-score",
+ check-consensus "hive-agent.swarm.agora.consensus/check-consensus",
+ consensus-result "hive-agent.swarm.agora.consensus/consensus-result",
+ count-approvals "hive-agent.swarm.agora.consensus/count-approvals",
+ count-participants
+ "hive-agent.swarm.agora.consensus/count-participants",
+ deadlocked? "hive-agent.swarm.agora.consensus/deadlocked?",
+ extract-short-name
+ "hive-agent.swarm.agora.consensus/extract-short-name",
+ get-active-proposal
+ "hive-agent.swarm.agora.consensus/get-active-proposal",
+ get-dialogue-config
+ "hive-agent.swarm.agora.consensus/get-dialogue-config",
+ get-participants "hive-agent.swarm.agora.consensus/get-participants",
+ last-turn-for "hive-agent.swarm.agora.consensus/last-turn-for",
+ nash-equilibrium?
+ "hive-agent.swarm.agora.consensus/nash-equilibrium?",
+ normalize-participant-match
+ "hive-agent.swarm.agora.consensus/normalize-participant-match",
+ parse-signal "hive-agent.swarm.agora.consensus/parse-signal",
+ should-recruit-mediator?
+ "hive-agent.swarm.agora.consensus/should-recruit-mediator?",
+ signal->equilibrium-contribution
+ "hive-agent.swarm.agora.consensus/signal->equilibrium-contribution",
+ stuck? "hive-agent.swarm.agora.consensus/stuck?",
+ threshold-consensus?
+ "hive-agent.swarm.agora.consensus/threshold-consensus?",
+ turn-count "hive-agent.swarm.agora.consensus/turn-count",
+ turns-since-last-proposal
+ "hive-agent.swarm.agora.consensus/turns-since-last-proposal"}

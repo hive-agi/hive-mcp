@@ -1,0 +1,30 @@
+{:keys
+ [:block/alpha
+  :block/beta
+  :block/blank
+  :block/boom
+  :block/datum
+  :block/huge
+  :block/nilly],
+ :no-cues
+ [["ALPHA" 26 "alpha body mentions kanban"]
+  ["BETA" 28 "beta for memory axiom kanban"]
+  ["DATUM" 6 "{:n 1}"]
+  ["HUGE" 4015 "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"]],
+ :cue-ordered
+ [["BETA" 28 "beta for memory axiom kanban"]
+  ["ALPHA" 26 "alpha body mentions kanban"]
+  ["DATUM" 6 "{:n 1}"]
+  ["HUGE" 4015 "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"]],
+ :zero-budget [],
+ :strict-tiny [["BETA" 28 "beta for memory axiom kanban"]],
+ :next-call
+ [["BETA" 28 "beta for memory axiom kanban"]
+  ["ALPHA" 26 "alpha body mentions kanban"]
+  ["DATUM" 6 "{:n 1}"]
+  ["HUGE" 4015 "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"]],
+ :nil-ctx
+ [["ALPHA" 26 "alpha body mentions kanban"]
+  ["BETA" 22 "beta for  axiom kanban"]
+  ["DATUM" 6 "{:n 1}"]
+  ["HUGE" 4015 "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"]]}

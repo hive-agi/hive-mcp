@@ -1,0 +1,23 @@
+{add-participant! "hive-agent.swarm.agora.schema/add-participant!",
+ add-turn! "hive-agent.swarm.agora.schema/add-turn!",
+ check-consensus "hive-agent.swarm.agora.schema/check-consensus",
+ config->edn "hive-agent.swarm.agora.schema/config->edn",
+ count-signals "hive-agent.swarm.agora.schema/count-signals",
+ create-conn "hive-agent.swarm.agora.schema/create-conn",
+ create-dialogue! "hive-agent.swarm.agora.schema/create-dialogue!",
+ edn->config "hive-agent.swarm.agora.schema/edn->config",
+ ensure-conn "hive-agent.swarm.agora.schema/ensure-conn",
+ gen-id "hive-agent.swarm.agora.schema/gen-id",
+ get-conn "hive-agent.swarm.agora.schema/get-conn",
+ get-dialogue "hive-agent.swarm.agora.schema/get-dialogue",
+ get-turn "hive-agent.swarm.agora.schema/get-turn",
+ get-turns "hive-agent.swarm.agora.schema/get-turns",
+ get-turns-by-sender
+ "hive-agent.swarm.agora.schema/get-turns-by-sender",
+ list-dialogues "hive-agent.swarm.agora.schema/list-dialogues",
+ now "hive-agent.swarm.agora.schema/now",
+ remove-participant!
+ "hive-agent.swarm.agora.schema/remove-participant!",
+ reset-conn! "hive-agent.swarm.agora.schema/reset-conn!",
+ update-dialogue-status!
+ "hive-agent.swarm.agora.schema/update-dialogue-status!"}

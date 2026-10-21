@@ -1,0 +1,19 @@
+{:refreshed 2,
+ :tools ("extra" "memory" "read_file"),
+ :has-handler true,
+ :missing nil,
+ :schemas
+ ({:name "memory",
+   :description
+   "Memory. Compact schema: only the shared parameters are listed; each command accepts its own. Use command='help' to list them.",
+   :consolidated true,
+   :inputSchema
+   {:type "object",
+    :properties {"command" {:type "string"}},
+    :additionalProperties true}}
+  {:name "read_file",
+   :description "Read.",
+   :inputSchema
+   {:type "object", :properties {"path" {:type "string"}}}}),
+ :filtered ["extra"],
+ :reseat ("memory" "read_file")}

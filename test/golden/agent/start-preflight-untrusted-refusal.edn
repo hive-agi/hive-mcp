@@ -1,0 +1,13 @@
+[[:trusted-root nil]
+ [:untrusted-root
+  {:cwd "/ws/hive/sub",
+   :root "/ws/hive",
+   :message
+   "Claude Code has not trusted /ws/hive (spawn cwd /ws/hive/sub). A claude ling started there opens on the folder-trust dialog and exits when its task is typed. Fix: run `claude` once in /ws/hive and choose \"Yes, I trust this folder\", or set projects[\"/ws/hive\"].hasTrustDialogAccepted to true in ~/.claude.json. Or spawn with a trusted cwd."}]
+ [:no-root
+  {:cwd "/tmp/x/",
+   :root "/tmp/x",
+   :message
+   "Claude Code has not trusted /tmp/x (spawn cwd /tmp/x/). A claude ling started there opens on the folder-trust dialog and exits when its task is typed. Fix: run `claude` once in /tmp/x and choose \"Yes, I trust this folder\", or set projects[\"/tmp/x\"].hasTrustDialogAccepted to true in ~/.claude.json. Or spawn with a trusted cwd."}]
+ [:not-interactive nil]
+ [:no-cwd nil]]

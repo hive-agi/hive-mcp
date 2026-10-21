@@ -8,7 +8,11 @@
    - Error handling for invalid inputs"
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.string :as str]
-            [hive-mcp.schema.elisp :as se]))
+            [hive-mcp.schema.elisp :as se]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]
+            [hive-test.golden :refer [deftest-golden]]
+            [malli.core :as m]
+            [malli.util :as mu]))
 
 ;; =============================================================================
 ;; Test emit-struct - Basic Usage
@@ -406,3 +410,82 @@
       (is (str/includes? struct-code "hive-memory-entry"))
       (is (str/includes? validator-code "hive-memory-entry"))
       (is (str/includes? from-plist-code "hive-memory-entry")))))
+
+;; =============================================================================
+;; Facets driven by the emitters' own m/=> contracts
+;; =============================================================================
+;;
+;; The per-emitter oracles live in hive-mcp.schema.contract-test. These take
+;; the contract's OWN argument schemas (the generating :gen/elements of
+;; schemas, and the opts map) and pin RELATIONS between the emitters. :name is
+;; required here: the contract admits a missing name, which is the documented
+;; throw, tested above.
+
+(defn- contract-args
+  "The [schema opts] argument schemas of SYM's m/=> contract."
+  [sym]
+  (let [cat (first (m/children (m/schema (get-in (m/function-schemas) ['hive-mcp.schema.elisp sym :schema]))))]
+    (m/children cat)))
+
+(def ^:private ElispArgs
+  "emit-struct's contract arguments, with :name present and a string."
+  (let [[schema opts] (contract-args 'emit-struct)]
+    [:cat schema (mu/assoc (mu/required-keys opts [:name]) :name [:enum "hive-a" "hive-b" "hive-cfg"])]))
+
+(defn- field-list [s] (mapv (comp name first) (m/children (m/schema s))))
+
+;; FINDING (recorded, src unchanged): emit-struct-with-defaults drops :include
+;; and emit-from-plist ignores :constructor, so a struct emitted with
+;; {:constructor "make-a"} gets a from-plist calling the undefined
+;; hive-a-create. Neither docstring promises those options; the relations
+;; below state the current behaviour and the golden pins it.
+(deftrifecta-from-schema emit-struct-with-no-defaults-is-emit-struct
+  hive-mcp.schema.elisp/emit-struct-with-defaults
+  {:in ElispArgs
+   :out [:string {:min 1}]
+   :rel (fn [[s o] out]
+          (if (empty? (:defaults o))
+            (= out (se/emit-struct s (dissoc o :include)))
+            (every? (fn [f] (if (contains? (:defaults o) (keyword f))
+                              (str/includes? out (str "(" f " "))
+                              (str/includes? out f)))
+                    (field-list s))))
+   :num-tests 200
+   :golden-path "test/golden/hive-mcp/schema/elisp/emit-struct-with-defaults.edn"})
+
+(deftrifecta-from-schema emit-validator-checks-the-struct-predicate-first
+  hive-mcp.schema.elisp/emit-validator
+  {:in ElispArgs
+   :out [:string {:min 1}]
+   :rel (fn [[_ o] out]
+          (let [v (or (:var o) "entry")]
+            (str/includes? out (str "(and (" (:name o) "-p " v ")"))))
+   :num-tests 200
+   :golden-path "test/golden/hive-mcp/schema/elisp/emit-validator.edn"})
+
+(defn- occurrences
+  "How many times NEEDLE occurs in HAYSTACK."
+  [^String haystack ^String needle]
+  (loop [from 0 n 0]
+    (let [i (str/index-of haystack needle from)]
+      (if i (recur (+ i (count needle)) (inc n)) n))))
+
+(deftrifecta-from-schema emit-from-plist-calls-the-struct-constructor
+  hive-mcp.schema.elisp/emit-from-plist
+  {:in ElispArgs
+   :out [:string {:min 1}]
+   :rel (fn [[s o] out]
+          (and (str/includes? out (str "(" (:name o) "-create\n"))
+               (= (count (field-list s)) (occurrences out "(plist-get plist :"))))
+   :num-tests 200
+   :golden-path "test/golden/hive-mcp/schema/elisp/emit-from-plist.edn"})
+
+(deftest-golden elisp-emitters-agree-on-one-schema-golden
+  "test/golden/hive-mcp/schema/elisp/pipeline.edn"
+  (let [s [:map [:id :string] [:type [:enum :note :snippet]] [:port {:optional true} [:maybe :int]]]
+        o {:name "hive-a" :constructor "make-a"}]
+    {:struct (se/emit-struct s o)
+     :defaults (se/emit-struct-with-defaults s (assoc o :defaults {:port 7910}))
+     :validator (se/emit-validator s (assoc o :var "row"))
+     :from-plist (se/emit-from-plist s o)
+     :batch (se/emit-structs [[s o] [[:map [:x :int]] {:name "hive-b"}]])}))

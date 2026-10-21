@@ -1,0 +1,27 @@
+[[:ids-valid? true]
+ [:batch-keys #{:decisions}]
+ [:first-get
+  {:data {:kind "axioms"},
+   :tags #{"axioms" "catchup"},
+   :ttl-ms 300000,
+   :access-count 1,
+   :accessed? true}]
+ [:second-get
+  {:data {:kind "axioms"},
+   :tags #{"axioms" "catchup"},
+   :ttl-ms 300000,
+   :access-count 2,
+   :accessed? true}]
+ [:expired-get nil]
+ [:missing-get nil]
+ [:query-catchup ([1 2 3] {:kind "axioms"})]
+ [:query-limit 1]
+ [:query-all (["d1"] [1 2 3] {:kind "axioms"})]
+ [:stats {:total 3, :bytes-approx 29}]
+ [:evict-tag 1]
+ [:evict-b true]
+ [:evict-b-again false]
+ [:put-dead true]
+ [:reaped 1]
+ [:after ({:kind "axioms"})]
+ [:final-stats {:total 1, :bytes-approx 16}]]

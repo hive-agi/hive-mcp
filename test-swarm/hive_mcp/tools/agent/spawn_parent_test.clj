@@ -17,7 +17,9 @@
             [hive-mcp.agent.provider.collect :as provider-collect]
             [hive-test.isolation :as iso]
             [hive-mcp.isolation-methods]
-            [hive-mcp.test.stub.terminal-addon :as term-stub]))
+            [hive-mcp.test.stub.terminal-addon :as term-stub]
+            [hive-mcp.context.request :as request-ctx]
+            [hive-mcp.agent.ling.start-preflight :as preflight]))
 
 (defn- coordinator-process-fixture
   "Reset the logic db and run as the coordinator process: spawn guard open,
@@ -37,9 +39,18 @@
   coordinator-process-fixture)
 
 (defn- spawn-ling!
-  "Spawn a ling through the MCP handler; fail the test on an error response."
+  "Spawn a ling through the MCP handler; fail the test on an error response.
+   The mode is pinned to the stub :claude terminal, which stands in for the
+   editor and for Claude Code's folder trust, so neither the host's configured
+   default spawn mode (headless on a dev box), a missing Emacs daemon, nor
+   ~/.claude.json changes what runs."
   [params]
-  (let [result (spawn/handle-spawn (merge {:type "ling" :cwd "/tmp/project"} params))]
+  (let [result (binding [spawn/*editor-reachable?* (constantly true)
+                         preflight/*folder-trust*
+                         (reify preflight/IFolderTrust
+                           (trusted-roots [_] #{"/tmp/project"})
+                           (checkout-root [_ _] nil))]
+                 (spawn/handle-spawn (merge {:type "ling" :cwd "/tmp/project" :spawn_mode "claude"} params)))]
     (is (not (:isError result)) (str "spawn failed: " (:text result)))
     (json/read-str (:text result) :key-fn keyword)))
 
@@ -106,3 +117,36 @@
     (spawn-ling! {:name "ling-b"})
     (spawn-ling! {:name "grandchild" :parent "ling-b" :_caller_id "ling-a"})
     (is (= "ling-b" (:slave/parent (queries/get-slave "grandchild"))))))
+
+(deftest spawner-test
+  (testing "the spawner is the caller, never the `parent` param"
+    (is (= "ling-a" (spawn/spawner {:parent "ling-x" :_caller_id "ling-a"})))
+    (is (= "coordinator:42" (spawn/spawner {:parent "coordinator:7" :_caller_id "coordinator:42"}))))
+  (testing "an unknown or root-level caller is the empty string, whatever parent is named"
+    (is (= "" (spawn/spawner {:parent "coordinator:7"})))
+    (is (= "" (spawn/spawner {:parent "coordinator:7" :_caller_id ""})))
+    (is (= "" (spawn/spawner {:parent "coordinator:7" :_caller_id "coordinator"})))
+    (is (= "" (spawn/spawner {}))))
+  (testing "a verified caller of the request in flight wins over the asserted `_caller_id`"
+    (binding [request-ctx/*request-ctx* {:identity {:verified? true :caller-id "ling-v"}}]
+      (is (= "ling-v" (spawn/spawner {:parent "coordinator:7" :_caller_id "ling-a"})))))
+  (testing "with no `_caller_id`, the request context's caller is the spawner"
+    (binding [request-ctx/*request-ctx* {:caller-id "coordinator:42"}]
+      (is (= "coordinator:42" (spawn/spawner {:parent "coordinator:7"}))))))
+
+(deftest explicit-parent-records-the-real-spawner-test
+  (testing "a spawn naming another agent as parent records the CALLER as :slave/spawned-by"
+    (spawn-ling! {:name "ling-a"})
+    (spawn-ling! {:name "ling-b"})
+    (spawn-ling! {:name "grandchild" :parent "ling-b" :_caller_id "ling-a"})
+    (let [row (queries/get-slave "grandchild")]
+      (is (= "ling-b" (:slave/parent row)) "routing still follows the explicit parent")
+      (is (= "ling-a" (:slave/spawned-by row)))))
+  (testing "an outsider session naming a member session as parent is recorded as itself"
+    (spawn-ling! {:name "spoof" :parent "coordinator:1269206" :_caller_id "coordinator:999"})
+    (let [row (queries/get-slave "spoof")]
+      (is (= "coordinator:1269206" (:slave/parent row)))
+      (is (= "coordinator:999" (:slave/spawned-by row)))))
+  (testing "a caller-less spawn naming a parent records the empty spawner, not the parent"
+    (spawn-ling! {:name "orphan" :parent "ling-b"})
+    (is (= "" (:slave/spawned-by (queries/get-slave "orphan"))))))

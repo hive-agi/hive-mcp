@@ -1,0 +1,47 @@
+{:edge-walks
+ {:nil-start {:final-duration "permanent", :tiers-promoted 1},
+  :blank-start {:final-duration "short", :tiers-promoted 2}},
+ :plans
+ [{:id "e1",
+   :type "decision",
+   :duration "short",
+   :cross_projects ["a" "b" "c"],
+   :cross_project_count 3,
+   :tiers_to_promote 0,
+   :next_duration "short"}
+  {:id "e2",
+   :type "note",
+   :duration "medium",
+   :cross_projects [],
+   :cross_project_count 0,
+   :tiers_to_promote 0,
+   :next_duration "medium"}
+  {:id "e3",
+   :type "convention",
+   :duration "permanent",
+   :cross_projects ["a" "b"],
+   :cross_project_count 2,
+   :tiers_to_promote 0,
+   :next_duration "permanent"}],
+ :promote-two
+ {:id "e1",
+  :promoted true,
+  :old_duration "short",
+  :new_duration "long",
+  :tiers_promoted 2},
+ :promote-capped
+ {:id "e2",
+  :promoted true,
+  :old_duration "medium",
+  :new_duration "permanent",
+  :tiers_promoted 2},
+ :promote-none {:id "e3", :promoted false, :duration "permanent"},
+ :stored
+ ({:id "e1", :duration "long"}
+  {:id "e2", :duration "permanent"}
+  {:id "e3", :duration "permanent"}),
+ :cycle {:promoted 0, :candidates 0, :total-scanned 3, :entries []},
+ :handler-dry
+ {:type "text",
+  :text
+  "{\"promoted\":0,\"candidates\":0,\"total_scanned\":3,\"dry_run\":true,\"entries\":[]}"}}

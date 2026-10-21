@@ -1,0 +1,20 @@
+{:calls
+ {"add-wrap-notification!"
+  {:ns "hive-datascript.swarm.coordination.wrap-queue",
+   :var "add-wrap-notification!"},
+  "get-unprocessed-wraps"
+  {:ns "hive-datascript.swarm.coordination.wrap-queue",
+   :var "get-unprocessed-wraps"},
+  "get-unprocessed-wraps-for-hierarchy"
+  {:ns "hive-datascript.swarm.coordination.wrap-queue",
+   :var "get-unprocessed-wraps-for-hierarchy"},
+  "get-unprocessed-wraps-for-project"
+  {:ns "hive-datascript.swarm.coordination.wrap-queue",
+   :var "get-unprocessed-wraps-for-project"},
+  "get-unprocessed-wraps-for-session"
+  {:ns "hive-datascript.swarm.coordination.wrap-queue",
+   :var "get-unprocessed-wraps-for-session"},
+  "mark-wrap-processed!"
+  {:ns "hive-datascript.swarm.coordination.wrap-queue",
+   :var "mark-wrap-processed!"}},
+ :values {}}

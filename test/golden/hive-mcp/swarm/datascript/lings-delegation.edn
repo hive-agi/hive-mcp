@@ -1,0 +1,64 @@
+{:calls
+ {"add-slave!" {:ns "hive-datascript.swarm.lings", :var "add-slave!"},
+  "add-task!" {:ns "hive-datascript.swarm.lings", :var "add-task!"},
+  "add-to-wait-queue!"
+  {:ns "hive-datascript.swarm.lings", :var "add-to-wait-queue!"},
+  "append-stdout!"
+  {:ns "hive-datascript.swarm.lings", :var "append-stdout!"},
+  "archive-claim-to-history!"
+  {:ns "hive-datascript.swarm.lings",
+   :var "archive-claim-to-history!"},
+  "can-kill?" {:ns "hive-datascript.swarm.lings", :var "can-kill?"},
+  "claim-age-ms"
+  {:ns "hive-datascript.swarm.lings", :var "claim-age-ms"},
+  "claim-file!"
+  {:ns "hive-agent.swarm.logic", :var "get-logic-db-atom"},
+  "claim-stale?"
+  {:ns "hive-datascript.swarm.lings", :var "claim-stale?"},
+  "cleanup-stale-claims!"
+  {:ns "hive-datascript.swarm.lings", :var "cleanup-stale-claims!"},
+  "cleanup-stdout-buffer!"
+  {:ns "hive-datascript.swarm.lings", :var "cleanup-stdout-buffer!"},
+  "complete-task!"
+  {:ns "hive-datascript.swarm.lings", :var "complete-task!"},
+  "enter-critical-op!"
+  {:ns "hive-datascript.swarm.lings", :var "enter-critical-op!"},
+  "exit-critical-op!"
+  {:ns "hive-datascript.swarm.lings", :var "exit-critical-op!"},
+  "fail-task!" {:ns "hive-datascript.swarm.lings", :var "fail-task!"},
+  "get-all-claims"
+  {:ns "hive-datascript.swarm.lings", :var "get-all-claims"},
+  "get-claim-info"
+  {:ns "hive-datascript.swarm.lings", :var "get-claim-info"},
+  "get-critical-ops"
+  {:ns "hive-datascript.swarm.lings", :var "get-critical-ops"},
+  "get-stale-claims"
+  {:ns "hive-datascript.swarm.lings", :var "get-stale-claims"},
+  "get-stdout" {:ns "hive-datascript.swarm.lings", :var "get-stdout"},
+  "get-stdout-buffer-info"
+  {:ns "hive-datascript.swarm.lings", :var "get-stdout-buffer-info"},
+  "get-stdout-since"
+  {:ns "hive-datascript.swarm.lings", :var "get-stdout-since"},
+  "init-stdout-buffer!"
+  {:ns "hive-datascript.swarm.lings", :var "init-stdout-buffer!"},
+  "refresh-claim!"
+  {:ns "hive-datascript.swarm.lings", :var "refresh-claim!"},
+  "release-claim!"
+  {:ns "hive-datascript.swarm.lings", :var "release-claim!"},
+  "release-claims-for-slave!"
+  {:ns "hive-datascript.swarm.lings",
+   :var "release-claims-for-slave!"},
+  "release-claims-for-task!"
+  {:ns "hive-datascript.swarm.lings", :var "release-claims-for-task!"},
+  "remove-slave!"
+  {:ns "hive-datascript.swarm.lings", :var "remove-slave!"},
+  "reset-stdout-buffers!"
+  {:ns "hive-datascript.swarm.lings", :var "reset-stdout-buffers!"},
+  "update-slave!"
+  {:ns "hive-datascript.swarm.lings", :var "update-slave!"},
+  "update-task!"
+  {:ns "hive-datascript.swarm.lings", :var "update-task!"}},
+ :values
+ {"default-stale-threshold-ms" nil,
+  "stdout-buffer-max-lines" nil,
+  "stdout-buffers" nil}}
