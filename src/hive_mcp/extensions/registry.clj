@@ -19,7 +19,8 @@
   (:require [hive-mcp.protocols.registry :as reg]
             [malli.core :as m]
             [hive-addon.registry.commands :as addon-cmds]
-            [hive-addon.tool-contract :as tool-contract]))
+            [hive-addon.tool-contract :as tool-contract]
+            [hive-mcp.extensions.departures :as departures]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -441,9 +442,11 @@
 (m/=> contribute-commands! [:=> [:cat :string :any [:map-of :any :map]] CommandContributions])
 
 (defn retract-commands!
-  "Remove all commands contributed by an addon from a tool. Notifies the
-   contribution listeners afterwards."
+  "Remove all commands contributed by an addon from a tool, recording them as
+   departed (hive-mcp.extensions.departures) first. Notifies the contribution
+   listeners afterwards."
   [tool-name addon-id]
+  (departures/record-owned! {tool-name (addon-cmds/get-commands tool-name)} addon-id)
   (addon-cmds/retract! tool-name addon-id)
   (notify-once! {:type :retract :tool-name tool-name :addon-id addon-id})
   (all-contributions))
@@ -451,14 +454,13 @@
 (m/=> retract-commands! [:=> [:cat :string :any] CommandContributions])
 
 (defn retract-all-by-addon!
-  "Remove all contributions from an addon across all tools (for shutdown).
+  "Remove all contributions from an addon across all tools (for shutdown),
+   recording them as departed (hive-mcp.extensions.departures) first.
    Notifies the contribution listeners once per tool the addon had touched."
   [addon-id]
   ;; the touched set must be read BEFORE the retraction, or there is nothing
   ;; left to attribute the notifications to
-  (let [touched (into [] (keep (fn [[tn cmds]]
-                                 (when (some #(= addon-id (:addon (val %))) cmds) tn)))
-                      (all-contributions))]
+  (let [touched (departures/record-owned! (all-contributions) addon-id)]
     (addon-cmds/retract-all! addon-id)
     (doseq [tn touched]
       (notify-once! {:type :retract :tool-name tn :addon-id addon-id}))

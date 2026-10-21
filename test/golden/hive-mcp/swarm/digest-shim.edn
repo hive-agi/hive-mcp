@@ -1,0 +1,4 @@
+{:agent-row [:delegates-to "hive-agent.swarm.digest" "agent-row"],
+ :render [:delegates-to "hive-agent.swarm.digest" "render"],
+ :roster [:delegates-to "hive-agent.swarm.digest" "roster"],
+ :default-message-cap nil}

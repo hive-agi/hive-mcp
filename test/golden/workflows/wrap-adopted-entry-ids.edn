@@ -1,0 +1,18 @@
+{:case-0 {:out [], :in []},
+ :case-1
+ {:out ["e1"], :in [{} #:wrap-queue{:created-ids ["e1" nil nil]}]},
+ :case-2
+ {:out ["e2" "e3" "e1"],
+  :in
+  [{:wrap-queue/created-ids ["e2" nil], :created-ids nil}
+   #:wrap-queue{:created-ids nil}
+   {:wrap-queue/created-ids ["e3" nil "e1"],
+    :created-ids ["e3" "e2" nil]}
+   {:wrap-queue/created-ids [], :created-ids [nil]}]},
+ :case-3 {:out [], :in [#:wrap-queue{:created-ids nil} {} {}]},
+ :case-4 {:out [], :in [#:wrap-queue{:created-ids nil}]},
+ :case-5 {:out [], :in [{}]},
+ :case-6
+ {:out [], :in [{:wrap-queue/created-ids nil, :created-ids nil} {}]},
+ :case-7
+ {:out ["e3"], :in [#:wrap-queue{:created-ids ["e3" "e3" "e3"]}]}}

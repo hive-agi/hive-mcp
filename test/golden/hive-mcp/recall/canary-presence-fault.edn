@@ -1,76 +1,40 @@
 {:case-0
- {:out
-  {:fault :recall/probe-empty,
-   :label :carto-semantic,
-   :probe "",
-   :count "",
-   :diagnosis
-   "the probe returned nothing. An index that answers zero to its own smoke query is down, not empty."},
-  :in ({:label :carto-semantic, :count "", :probe ""})},
+ {:out nil, :in ({:label :carto-semantic, :count 1, :probe ""})},
  :case-1
  {:out
   {:fault :recall/probe-empty,
    :label :carto-semantic,
    :probe "6",
-   :count nil,
-   :diagnosis
-   "the probe returned nothing. An index that answers zero to its own smoke query is down, not empty."},
-  :in ({:label :carto-semantic, :count nil, :probe "6"})},
- :case-2
- {:out
-  {:fault :recall/probe-empty,
-   :label :lexical-anchor,
-   :probe "",
-   :count nil,
-   :diagnosis "87"},
-  :in
-  ({:label :lexical-anchor, :count nil, :probe "", :diagnosis "87"})},
- :case-3
- {:out
-  {:fault :recall/probe-empty,
-   :label :supersession,
-   :probe "0",
-   :count 0,
-   :diagnosis
-   "the probe returned nothing. An index that answers zero to its own smoke query is down, not empty."},
-  :in ({:label :supersession, :count 0, :probe "0", :diagnosis nil})},
- :case-4
- {:out
-  {:fault :recall/probe-empty,
-   :label :lexical-anchor,
-   :probe "",
    :count "",
-   :diagnosis "Hk"},
+   :diagnosis
+   "the probe returned nothing. An index that answers zero to its own smoke query is down, not empty."},
+  :in ({:label :carto-semantic, :count "", :probe "6"})},
+ :case-2
+ {:out nil,
   :in
-  ({:label :lexical-anchor, :count "", :probe "", :diagnosis "Hk"})},
+  ({:label :lexical-anchor, :count 3, :probe "", :diagnosis "87"})},
+ :case-3
+ {:out nil,
+  :in ({:label :supersession, :count 1, :probe "0", :diagnosis nil})},
+ :case-4
+ {:out nil,
+  :in
+  ({:label :lexical-anchor, :count 3, :probe "", :diagnosis "Hk"})},
  :case-5
  {:out
   {:fault :recall/probe-empty,
    :label :lexical-anchor,
    :probe "Sb",
-   :count nil,
+   :count "ce",
    :diagnosis "nhe6"},
   :in
   ({:label :lexical-anchor,
-    :count nil,
+    :count "ce",
     :probe "Sb",
     :diagnosis "nhe6"})},
  :case-6
- {:out
-  {:fault :recall/probe-empty,
-   :label :supersession,
-   :probe "Bfv33",
-   :count 0,
-   :diagnosis
-   "the probe returned nothing. An index that answers zero to its own smoke query is down, not empty."},
+ {:out nil,
   :in
-  ({:label :supersession, :count 0, :probe "Bfv33", :diagnosis nil})},
+  ({:label :supersession, :count 1, :probe "Bfv33", :diagnosis nil})},
  :case-7
- {:out
-  {:fault :recall/probe-empty,
-   :label :carto-semantic,
-   :probe "hLM4T",
-   :count -1,
-   :diagnosis
-   "the probe returned nothing. An index that answers zero to its own smoke query is down, not empty."},
-  :in ({:label :carto-semantic, :count -1, :probe "hLM4T"})}}
+ {:out nil, :in ({:label :carto-semantic, :count 2, :probe "hLM4T"})}}

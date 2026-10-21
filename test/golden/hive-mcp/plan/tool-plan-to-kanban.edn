@@ -1,0 +1,41 @@
+{:ok
+ {:kg-warnings [],
+  :task-ids ["task-1" "task-2" "task-3"],
+  :plan-source "file",
+  :edge-count true,
+  :step-mapping {:a "task-1", :b "task-2", :c "task-3"},
+  :plan-title "P",
+  :success true,
+  :kg-degraded? false,
+  :waves {:a 0, :b 1, :c 2},
+  :max-wave 2,
+  :decision-id "d1",
+  :task-count 3},
+ :requests
+ [{:title "A",
+   :priority "high",
+   :directory "/tmp/plan-tool-facet",
+   :context {:plan-step-id "a", :files ["x.clj"]},
+   :tags ["wave:0"]}
+  {:title "B",
+   :priority "medium",
+   :directory "/tmp/plan-tool-facet",
+   :context {:plan-step-id "b"},
+   :tags ["wave:1"]}
+  {:title "C",
+   :priority "medium",
+   :directory "/tmp/plan-tool-facet",
+   :context {:plan-step-id "c"},
+   :tags ["wave:2"]}],
+ :user-waves {:waves {:a 1, :b 0}, :max-wave 1, :task-count 2},
+ :rejected
+ {:isError true,
+  :head "Plan conversion failed: Failed to create some kanban tasks",
+  :errors
+  "Errors: a: kanban backend rejected: title refused (rejected)"},
+ :cyclic true,
+ :missing-file true,
+ :handler-blank
+ {:isError true,
+  :head "Either plan_id or plan_path is required",
+  :errors nil}}

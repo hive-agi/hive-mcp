@@ -7,7 +7,8 @@
 
    Compat shim: moved to hive-agent.swarm.bootstrap.datahike-driver in hive-agent. Every public var delegates there
    through requiring-resolve; hive-mcp does not compile-depend on hive-agent."
-  (:require [hive-mcp.swarm.delegate :as delegate]))
+  (:require [hive-mcp.swarm.delegate :as delegate]
+            [malli.core :as m]))
 
 (defn- impl [sym]
   (delegate/resolve-var "hive-agent.swarm.bootstrap.datahike-driver" sym))
@@ -20,3 +21,6 @@
 (defn db {:arglists '([& args])} [& args] (apply (impl 'db) args))
 (defn release {:arglists '([& args])} [& args] (apply (impl 'release) args))
 (defn database-exists? {:arglists '([& args])} [& args] (apply (impl 'database-exists?) args))
+
+;; the one driver fn with a stable shape: a store config in, a boolean out
+(m/=> database-exists? [:=> [:cat [:map [:store [:map [:backend :keyword] [:path :string]]]]] :boolean])

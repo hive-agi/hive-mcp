@@ -38,11 +38,13 @@
             [hive-mcp.tools.catchup.relevance :as relevance]
             [hive-mcp.tools.catchup.outcome :as outcome]
             [hive-mcp.tools.catchup.caller :as catchup-caller]
-            [hive-mcp.spi.catchup-registry :as blocks]
+            [hive-spi.catchup.registry :as blocks]
             [hive-mcp.extensions.soft :as soft]
             [hive-mcp.tools.catchup.block-cache :as block-cache]
             [hive-mcp.tools.catchup.caps :as catchup-caps]
-            [hive-mcp.tools.catchup.private-view :as pv]))
+            [hive-mcp.tools.catchup.private-view :as pv]
+            [malli.core :as m]
+            [hive-mcp.tools.core :as core]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -99,7 +101,7 @@
    still land. Ordered by the registry, never by naming a contributor.
    A block that declares :block/cache is served from the shared block cache."
   [ctx]
-  (let [{:keys [blocks failed]} (blocks/compose ctx block-cache/run-block)
+  (let [{:keys [blocks failed]} (block-cache/compose ctx)
         order (into {} (map-indexed (fn [i b] [(:block/id b) i])) (blocks/registered-blocks))]
     (when (seq failed)
       (log/warn "catchup: contributed blocks failed" failed))
@@ -183,7 +185,7 @@
                                                                     (assoc acc k
                                                                            (rescue nil (block-cache/run-status-provider k provider-fn project-id))))
                                                                   {} status-providers))))
-              ;; Contributed blocks (hive-mcp.spi.catchup-registry): core's own
+              ;; Contributed blocks (hive-spi.catchup.registry): core's own
               ;; domains and addons register {:block/id :block/fn :block/order};
               ;; catchup composes them without naming a contributor.
               f-blocks (pool/with-io ((tt/timed-query "catchup/blocks-total"
@@ -402,3 +404,27 @@
      :text (json/write-str
             {:error "wrap unavailable: this build has no memory domain (hive-memory)"})
      :isError true}))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def CatchupResponse
+  "A catchup answer: the vector of per-block MCP text responses on success, or
+   one MCP error response (store not configured, failure)."
+  [:or core/McpResponse [:vector core/McpResponse]])
+
+(def SpawnContextOpts
+  "spawn-context options; :mode picks :full (default), :ref or :hints."
+  [:maybe [:map
+           [:mode {:optional true} [:enum :full :ref :hints]]
+           [:task {:optional true} [:maybe :string]]
+           [:task-id {:optional true} [:maybe :string]]]])
+
+(m/=> spawn-context [:function
+                     [:=> [:cat [:maybe :string]] [:maybe :string]]
+                     [:=> [:cat [:maybe :string] SpawnContextOpts] [:maybe :string]]])
+
+(m/=> handle-native-catchup [:=> [:cat [:maybe :map]] CatchupResponse])
+
+(m/=> handle-native-wrap [:=> [:cat [:maybe :map]] CatchupResponse])

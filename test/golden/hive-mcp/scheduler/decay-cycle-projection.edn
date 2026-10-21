@@ -1,0 +1,34 @@
+{:all-gated-off
+ {:keys
+  [:canary-stats
+   :cycle-number
+   :disc-stats
+   :duration-ms
+   :edge-stats
+   :grounding-stats
+   :memory-stats
+   :timestamp],
+  :valid? true,
+  :memory-is-map? true,
+  :edge-is-map? true,
+  :disc-stats {:skipped true, :reason "disc-decay-disabled"},
+  :grounding-stats {:skipped true, :reason "grounding-disabled"},
+  :canary-stats {:skipped true, :reason "canary-disabled"}},
+ :counter-steps true,
+ :disc-only-off
+ {:disc-stats {:skipped true, :reason "disc-decay-disabled"},
+  :grounding-stats :ran,
+  :canary-stats {:skipped true, :reason "canary-disabled"}},
+ :stop-when-idle {:stopped false, :reason "not-running"},
+ :status-shape
+ {:running? false,
+  :has-last-result? true,
+  :config-keys
+  [:disc-enabled
+   :edge-limit
+   :enabled
+   :grounding-enabled
+   :grounding-limit
+   :interval-minutes
+   :memory-limit
+   :project-id]}}

@@ -9,7 +9,11 @@
             [hive-schemas.coverage :refer [deftest-contract-coverage]]
             [hive-schemas.test :refer [deftrifecta-from-schema]]
             [hive-test.golden :as golden]
-            [malli.core :as m]))
+            [hive-mcp.agent.hints.domain :as hd]
+            [hive-mcp.agent.agent-definition :as ad]
+            [hive-mcp.agent.agent-definition.spec :as spec]
+            [malli.core :as m]
+            [malli.generator :as mg]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -166,6 +170,38 @@
   (is (= 0 (ts/entry-turn {})))
   (is (= 4 (ts/entry-turn {:turn 4})))
   (is (= 5 (ts/entry-turn {:transcript/turn 5}))))
+
+(defn- output-of [ns-sym f]
+  (let [s (m/form (get-in (m/function-schemas) [ns-sym f :schema]))]
+    (last s)))
+
+(deftest tightened-outputs-generate-and-hold
+  (testing "every tightened output schema generates (no bare [:fn ...] left)"
+    (doseq [[n f] '[[hive-mcp.agent.transcript-insight find-hits]
+                    [hive-mcp.agent.transcript-insight glob->pred]
+                    [hive-mcp.agent.transcript-insight digest-row]
+                    [hive-mcp.agent.transcript-insight tool-call-name]
+                    [hive-mcp.agent.transcript-source entry-turn]
+                    [hive-mcp.agent.hints.domain scope-visible?]
+                    [hive-mcp.agent.agent-definition.compose get-system-prompt]
+                    [hive-mcp.agent.agent-definition get-system-prompt]]]
+      (testing (str n "/" f)
+        (is (some? (mg/sample (output-of n f) {:size 3}))))))
+  (testing "find-hits input generates its Pattern"
+    (is (instance? java.util.regex.Pattern (mg/generate ti/Pattern))))
+  (testing "real outputs conform"
+    (let [es [{:role "tool" :content "all green" :turn 2 :name "bash"}]
+          hits (ti/find-hits {:agent "a" :run "r"} es (ti/compile-needle "green") {})
+          d (ti/digest "ling" es)]
+      (is (m/validate [:sequential ti/Hit] hits))
+      (is (m/validate ti/DigestRow (ti/digest-row d)))
+      (is (m/validate ti/AgentIdPred (ti/glob->pred "ling-*")))
+      (is (= "unknown" (ti/tool-call-name {}))))
+    (is (= "scope:x" (hd/scope-visible? #{"scope:x"} #{} {:tags ["scope:x"]})))
+    (is (false? (hd/scope-visible? #{} #{"p"} {:project-id "q"})))
+    (is (m/validate spec/PromptHolder {:system-prompt (fn [] "dyn")}))
+    (is (nil? (ad/get-system-prompt {})))
+    (is (= "dyn" (ad/get-system-prompt {:system-prompt (fn [] "dyn")})))))
 
 (deftest-contract-coverage transcript-contract-coverage
   {:paths ["src/hive_mcp/agent/transcript_insight.clj"

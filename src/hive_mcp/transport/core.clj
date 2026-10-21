@@ -26,7 +26,8 @@
      (stop-server! server)"
   (:require [bencode.core :as bencode]
             [taoensso.timbre :as log]
-            [hive-mcp.dns.result :as result])
+            [hive-mcp.dns.result :as result]
+            [malli.core :as m])
   (:import [java.net UnixDomainSocketAddress StandardProtocolFamily]
            [java.nio ByteBuffer]
            [java.nio.channels ServerSocketChannel SocketChannel]
@@ -41,12 +42,54 @@
 ;; Bencode Helpers (shared with channel.clj)
 ;; =============================================================================
 
+;; =============================================================================
+;; Value schemas
+;; =============================================================================
+
+(def Bencodable
+  "A value bencode can write: strings, integers, byte arrays, named values
+   (written as their name), nil (an empty list), and maps with named or
+   string keys and sequential collections of those. Booleans, doubles and
+   numeric map keys throw."
+  [:schema {:registry {::bval [:or :string :int :keyword :symbol :nil bytes?
+                               [:map-of [:or :string :keyword] [:ref ::bval]]
+                               [:sequential [:ref ::bval]]
+                               [:set [:ref ::bval]]]}}
+   [:ref ::bval]])
+
+(def Decoded
+  "A decoded bencode value: byte strings become strings, maps get string
+   keys, lists become vectors."
+  [:schema {:registry {::dval [:or :string :int
+                               [:map-of :string [:ref ::dval]]
+                               [:vector [:ref ::dval]]]}}
+   [:ref ::dval]])
+
+(def Bytes
+  [:fn {:gen/fmap (fn [s] (.getBytes ^String s "UTF-8")) :gen/schema :string} bytes?])
+
+(def PushbackStream
+  [:fn {:gen/fmap (fn [^String s] (PushbackInputStream. (ByteArrayInputStream. (.getBytes s "UTF-8"))))
+        :gen/schema :string}
+   #(instance? PushbackInputStream %)])
+
+(def ServerOpts
+  "Server options. Callbacks are invoked with a message map / client id."
+  [:map
+   [:type {:optional true} [:maybe :keyword]]
+   [:path {:optional true} [:maybe :string]]
+   [:port {:optional true} [:maybe [:int {:min 0 :max 65535}]]]
+   [:on-message {:optional true} [:maybe ifn?]]
+   [:on-connect {:optional true} [:maybe ifn?]]])
+
 (defn encode-msg
   "Encode Clojure map to bencode bytes."
   [msg]
   (let [baos (ByteArrayOutputStream.)]
     (bencode/write-bencode baos msg)
     (.toByteArray baos)))
+
+(m/=> encode-msg [:=> [:cat Bencodable] Bytes])
 
 (defn- bytes->str
   "Convert byte arrays to strings recursively."
@@ -64,6 +107,9 @@
                  (let [in (PushbackInputStream. (ByteArrayInputStream. data))]
                    (-> (bencode/read-bencode in)
                        bytes->str))))
+
+;; nil when the bytes are not one bencode value.
+(m/=> decode-msg [:=> [:cat Bytes] [:maybe Decoded]])
 
 (defn decode-msg-from-stream
   "Decode bencode message from a PushbackInputStream.
@@ -90,6 +136,8 @@
     (catch Exception e
       (log/debug "Bencode stream decode error:" (.getMessage e))
       nil)))
+
+(m/=> decode-msg-from-stream [:=> [:cat PushbackStream] [:or [:= :eof] :nil Decoded]])
 
 ;; =============================================================================
 ;; Transport Protocol
@@ -190,6 +238,11 @@
   [path]
   (->UnixTransport path nil nil))
 
+(m/=> unix-transport
+      [:=> [:cat :string]
+       [:fn {:gen/fmap (fn [p] (->UnixTransport p nil nil)) :gen/schema :string}
+        #(instance? UnixTransport %)]])
+
 ;; =============================================================================
 ;; TCP Transport (Client)
 ;; =============================================================================
@@ -232,6 +285,11 @@
   "Create a TCP transport for the given host and port."
   [host port]
   (->TCPTransport host port nil nil))
+
+(m/=> tcp-transport
+      [:=> [:cat :string [:int {:min 0 :max 65535}]]
+       [:fn {:gen/fmap (fn [h] (->TCPTransport h 1 nil nil)) :gen/schema :string}
+        #(instance? TCPTransport %)]])
 
 ;; =============================================================================
 ;; Server Helpers
@@ -366,6 +424,12 @@
                             "Unix" (str "Unix server listening on " path)))
     server))
 
+(m/=> start-unix-server!
+      [:=> [:cat ServerOpts]
+       [:fn {:gen/fmap (fn [_] (map->UnixServer {:path "/tmp/x.sock" :clients (atom {}) :running? (atom false)}))
+             :gen/schema :nil}
+        #(instance? UnixServer %)]])
+
 (defn- broadcast-to-clients!
   "Broadcast a message to all connected clients in the clients atom."
   [clients-atom msg]
@@ -399,6 +463,12 @@
   (close [this]
     (stop-server! this)))
 
+(def Server
+  "A transport server: implements IServer and carries the clients atom."
+  [:fn {:gen/fmap (fn [_] (map->TCPServer {:port 0 :clients (atom {}) :running? (atom false)}))
+        :gen/schema :nil}
+   #(and (satisfies? IServer %) (instance? clojure.lang.IDeref (:clients %)))])
+
 (defn start-tcp-server!
   "Start a TCP server.
 
@@ -426,6 +496,12 @@
                             "TCP" (str "TCP server listening on port " port)))
     server))
 
+(m/=> start-tcp-server!
+      [:=> [:cat ServerOpts]
+       [:fn {:gen/fmap (fn [_] (map->TCPServer {:port 0 :clients (atom {}) :running? (atom false)}))
+             :gen/schema :nil}
+        #(instance? TCPServer %)]])
+
 ;; =============================================================================
 ;; Factory Functions
 ;; =============================================================================
@@ -447,15 +523,22 @@
     :tcp (start-tcp-server! opts)
     (start-tcp-server! opts)))
 
+;; :unix starts a Unix server; any other :type, nil included, a TCP one.
+(m/=> start-server! [:=> [:cat ServerOpts] Server])
+
 (defn broadcast!
   "Broadcast message to all clients of a server."
   [server msg]
   (broadcast-to-clients! (:clients server) msg))
 
+(m/=> broadcast! [:=> [:cat Server Bencodable] :nil])
+
 (defn client-count
   "Get number of connected clients."
   [server]
   (count @(:clients server)))
+
+(m/=> client-count [:=> [:cat Server] [:int {:min 0}]])
 
 (comment
   ;; Development REPL examples

@@ -12,7 +12,9 @@
 
    Pure — no IO, deterministic. Caller owns context construction."
   (:require [clojure.set :as set]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [hive-mcp.tools.catchup.shapes :as shapes]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -161,3 +163,46 @@
    (filter-by-relevance entries ctx default-threshold))
   ([entries ctx threshold]
    (filterv #(>= (axiom-relevance % ctx) threshold) entries)))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def ProjectKeywords
+  "`project-keywords`. ;; BUG: an id made only of separators (\"-\") yields a
+   set holding nil: (first (str/split \"-\" #\"-\")) is nil. Schema states
+   current behaviour."
+  [:set [:maybe :string]])
+
+(def Vocabulary
+  "Topic tags: domain vocabulary, strings."
+  [:set :string])
+
+(def RelevanceCtx
+  "A scoring context. Built by `build-context`; callers may assoc more keys
+   (:persona-lens)."
+  [:maybe [:map
+           [:project-id {:optional true} shapes/ProjectId]
+           [:project-keywords {:optional true} [:maybe [:set :any]]]
+           [:vocabulary {:optional true} [:maybe [:set :any]]]]])
+
+(def Score
+  "A relevance score: one of the three steps the docstring names."
+  [:enum 0.0 0.5 1.0])
+
+(m/=> topic-tags [:=> [:cat shapes/Tags] Vocabulary])
+(m/=> project-keywords [:=> [:cat [:maybe :string]] ProjectKeywords])
+(m/=> context-vocabulary [:=> [:cat shapes/Entries] Vocabulary])
+(m/=> build-context
+      [:=> [:cat [:maybe [:map
+                          [:project-id {:optional true} shapes/ProjectId]
+                          [:co-loaded-entries {:optional true} shapes/Entries]]]]
+       [:map
+        [:project-id shapes/ProjectId]
+        [:project-keywords ProjectKeywords]
+        [:vocabulary Vocabulary]]])
+(m/=> axiom-relevance [:=> [:cat [:maybe shapes/Entry] RelevanceCtx] Score])
+(m/=> filter-by-relevance
+      [:function
+       [:=> [:cat shapes/Entries RelevanceCtx] [:vector shapes/Entry]]
+       [:=> [:cat shapes/Entries RelevanceCtx number?] [:vector shapes/Entry]]])

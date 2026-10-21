@@ -1,0 +1,20 @@
+{:status
+ [:missing
+  "hive-agent"
+  "hive-agent.swarm.tools.jvm.memory"
+  "memory-status"],
+ :high?
+ [:missing
+  "hive-agent"
+  "hive-agent.swarm.tools.jvm.memory"
+  "memory-high?"],
+ :recommendation
+ [:missing
+  "hive-agent"
+  "hive-agent.swarm.tools.jvm.memory"
+  "spawn-recommendation"],
+ :usage
+ [:missing
+  "hive-agent"
+  "hive-agent.swarm.tools.jvm.memory"
+  "get-memory-usage"]}

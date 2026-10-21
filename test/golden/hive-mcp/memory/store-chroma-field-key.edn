@@ -1,0 +1,8 @@
+{:case-0 {:out :type, :in ("type")},
+ :case-1 {:out :type, :in (:type)},
+ :case-2 {:out :tags, :in (tags)},
+ :case-3 {:out :tags, :in (tags)},
+ :case-4 {:out :project-id, :in (:project-id)},
+ :case-5 {:out :project-id, :in (:project-id)},
+ :case-6 {:out :content, :in (:content)},
+ :case-7 {:out :a-b-c, :in ("a_b_c")}}

@@ -1,0 +1,29 @@
+{:case-0 {:out [], :in []},
+ :case-1
+ {:out [nil "e1"],
+  :in
+  [{:id "fail", :type "decision", :tags ["b"]}
+   {:id "e1", :type "decision", :tags ["a" "b"]}]},
+ :case-2
+ {:out [nil nil "e1" nil],
+  :in
+  [{:id "fail", :type "note", :tags []}
+   {:id "nil", :type "note", :tags []}
+   {:id "e1", :type "decision", :tags ["b" "a"]}
+   {:id "fail", :type "note", :tags []}]},
+ :case-3
+ {:out ["e3" nil "e3"],
+  :in
+  [{:id "e3", :type "decision", :tags []}
+   {:id "fail", :type "decision", :tags ["b"]}
+   {:id "e3", :type "decision", :tags ["a" "a"]}]},
+ :case-4
+ {:out [nil], :in [{:id "nil", :type "note", :tags ["b" "a"]}]},
+ :case-5
+ {:out [nil], :in [{:id "nil", :type "note", :tags ["a" "a"]}]},
+ :case-6
+ {:out [nil nil],
+  :in
+  [{:id "nil", :type "decision", :tags ["b"]}
+   {:id "fail", :type "decision", :tags []}]},
+ :case-7 {:out [nil], :in [{:id "fail", :type "decision", :tags []}]}}

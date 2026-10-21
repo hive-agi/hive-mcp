@@ -6,7 +6,8 @@
             [hive-dsl.adt :refer [adt-case]]
             [clojure.set]
             [clojure.string :as str]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.tools.memory.schema :as ms]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -193,9 +194,44 @@
 
 (def ProjectId
   "Non-blank project identifier string; \"global\" is the root scope."
-  [:and :string [:fn (fn [s] (not (str/blank? s)))]])
+  [:and {:gen/elements ["global" "hive-mcp" "proj-a"]}
+   :string [:fn (fn [s] (not (str/blank? s)))]])
+
 
 (m/=> get-current-project-id
       [:function
        [:=> [:cat] ProjectId]
        [:=> [:cat [:maybe :string]] ProjectId]])
+
+(m/=> effective-directory [:=> [:cat ms/DirectoryInput] [:maybe :string]])
+
+(m/=> inject-project-scope
+      [:=> [:cat ms/Tags ms/ProjectIdText] [:vector :string]])
+
+(m/=> explicit-project-id [:=> [:cat ms/Tags] [:maybe :string]])
+
+(m/=> make-scope-tag [:=> [:cat [:maybe ms/ProjectIdText]] :string])
+
+(m/=> retag-scope [:=> [:cat ms/Tags ms/ScopeTag ms/ScopeTag] [:vector :string]])
+
+(m/=> matches-scope? [:=> [:cat ms/Entry ms/ScopeFilter] ms/ScopeMatch])
+
+(m/=> derive-scope-filter
+      [:=> [:cat [:maybe [:string {:gen/elements ["all" "global" "auto" "hive-mcp" "scope:global"]}]]
+            [:maybe ms/ProjectIdText]]
+
+       domain/ScopeFilterMalli])
+
+(m/=> resolve-scope-chain [:=> [:cat [:maybe ms/ProjectIdText]] [:vector :string]])
+
+(m/=> expand-scope-tags
+      [:function
+       [:=> [:cat [:maybe ms/ProjectIdText]] [:set :string]]
+       [:=> [:cat [:maybe ms/ProjectIdText] :any] [:set :string]]])
+
+(m/=> derive-hierarchy-scope-filter
+      [:=> [:cat [:or domain/ScopeFilterMalli [:maybe ms/ProjectIdText] [:enum "all"]]]
+       [:maybe [:set :string]]])
+
+(m/=> matches-hierarchy-scopes?
+      [:=> [:cat ms/Entry [:maybe [:set :string]]] ms/ScopeMatch])

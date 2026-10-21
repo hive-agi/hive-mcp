@@ -1,0 +1,129 @@
+{:case-0
+ {:out
+  {:default-async-commands nil,
+   :inputSchema
+   {:properties
+    {"async"
+     {:type "boolean",
+      :description
+      "Set true to run in the background so the call does not block the agent loop. A queued call returns {:queued true :task-id ...} at once; its result arrives in a ---TOOLRESULT--- block on a later hive call."},
+     "async-timeout-ms"
+     {:type "integer",
+      :description
+      "With async:true, cancel the queued call after this many ms."}}}},
+  :in {:default-async-commands nil, :inputSchema {:properties {}}}},
+ :case-1
+ {:out
+  {:default-async-commands [],
+   :inputSchema
+   {:properties
+    {"async" {:type "string"},
+     "async-timeout-ms"
+     {:type "integer",
+      :description
+      "With async:true, cancel the queued call after this many ms."}}}},
+  :in
+  {:default-async-commands [],
+   :inputSchema {:properties {"async" {:type "string"}}}}},
+ :case-2
+ {:out
+  {:default-async-commands nil,
+   :inputSchema
+   {:properties
+    {"async"
+     {:type "boolean",
+      :description
+      "Set true to run in the background so the call does not block the agent loop. A queued call returns {:queued true :task-id ...} at once; its result arrives in a ---TOOLRESULT--- block on a later hive call."},
+     "async-timeout-ms"
+     {:type "integer",
+      :description
+      "With async:true, cancel the queued call after this many ms."},
+     "limit" {:type "boolean"}}}},
+  :in
+  {:default-async-commands nil,
+   :inputSchema {:properties {"limit" {:type "boolean"}}}}},
+ :case-3
+ {:out
+  {:default-async-commands nil,
+   :inputSchema
+   {:properties
+    {"async"
+     {:type "boolean",
+      :description
+      "Set true to run in the background so the call does not block the agent loop. A queued call returns {:queued true :task-id ...} at once; its result arrives in a ---TOOLRESULT--- block on a later hive call."},
+     "async-timeout-ms"
+     {:type "integer",
+      :description
+      "With async:true, cancel the queued call after this many ms."},
+     "path" {:type "boolean"},
+     "limit" {:type "string"}}}},
+  :in
+  {:default-async-commands nil,
+   :inputSchema
+   {:properties
+    {"path" {:type "boolean"}, "limit" {:type "string"}}}}},
+ :case-4
+ {:out
+  {:default-async-commands ["run" "run"],
+   :inputSchema
+   {:properties
+    {"async" {:type "boolean"},
+     "async-timeout-ms"
+     {:type "integer",
+      :description
+      "With async:true, cancel the queued call after this many ms."},
+     "limit" {:type "string"}}}},
+  :in
+  {:default-async-commands ["run" "run"],
+   :inputSchema
+   {:properties
+    {"limit" {:type "string"}, "async" {:type "boolean"}}}}},
+ :case-5
+ {:out
+  {:default-async-commands nil,
+   :inputSchema
+   {:properties
+    {"async"
+     {:type "boolean",
+      :description
+      "Set true to run in the background so the call does not block the agent loop. A queued call returns {:queued true :task-id ...} at once; its result arrives in a ---TOOLRESULT--- block on a later hive call."},
+     "async-timeout-ms"
+     {:type "integer",
+      :description
+      "With async:true, cancel the queued call after this many ms."},
+     "limit" {:type "boolean"},
+     "path" {:type "string"}}}},
+  :in
+  {:default-async-commands nil,
+   :inputSchema
+   {:properties
+    {"limit" {:type "boolean"}, "path" {:type "string"}}}}},
+ :case-6
+ {:out
+  {:default-async-commands nil,
+   :inputSchema
+   {:properties
+    {"async" {:type "boolean"},
+     "async-timeout-ms"
+     {:type "integer",
+      :description
+      "With async:true, cancel the queued call after this many ms."}}}},
+  :in
+  {:default-async-commands nil,
+   :inputSchema {:properties {"async" {:type "boolean"}}}}},
+ :case-7
+ {:out
+  {:default-async-commands nil,
+   :inputSchema
+   {:properties
+    {"async" {:type "boolean"},
+     "async-timeout-ms"
+     {:type "integer",
+      :description
+      "With async:true, cancel the queued call after this many ms."},
+     "limit" {:type "boolean"}}}},
+  :in
+  {:default-async-commands nil,
+   :inputSchema
+   {:properties
+    {"async" {:type "boolean"}, "limit" {:type "boolean"}}}}}}

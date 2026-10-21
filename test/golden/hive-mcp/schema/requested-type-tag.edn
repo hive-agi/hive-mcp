@@ -1,0 +1,8 @@
+{:case-0 {:out "requested-type:plan", :in (:plan)},
+ :case-1 {:out nil, :in (-1)},
+ :case-2 {:out nil, :in ([])},
+ :case-3 {:out nil, :in (nil)},
+ :case-4 {:out "requested-type:od-", :in (:oD-)},
+ :case-5 {:out nil, :in (:!n+)},
+ :case-6 {:out "requested-type:g", :in (:g)},
+ :case-7 {:out "requested-type:my_type-3", :in ("my_type-3")}}

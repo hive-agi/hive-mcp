@@ -1,0 +1,25 @@
+{:limit-coerce
+ {:type "text",
+  :text
+  "I was expecting a number for `limit` but got the string \"abc\".\n\nThis looks like a string that isn't a valid number.\n\nHINT: Pass an integer, not a string:\n\n    WRONG:  limit: \"abc\"\n    RIGHT:  limit: 20",
+  :isError true},
+ :limit-high
+ {:type "text",
+  :text
+  "memory query :limit must be between 0 and 1000; large backend reads can time out and masquerade as empty results. Narrow with :created_after / :updated_after and use smaller pages.",
+  :isError true},
+ :limit-neg
+ {:type "text",
+  :text
+  "memory query :limit must be between 0 and 1000; large backend reads can time out and masquerade as empty results. Narrow with :created_after / :updated_after and use smaller pages.",
+  :isError true},
+ :text-query
+ {:type "text",
+  :text
+  "memory query is structured filtering and does not accept :query text. Use command=search with :query for semantic retrieval.",
+  :isError true},
+ :unfiltered
+ {:type "text",
+  :text
+  "memory query: no filter given. Provide :type (or narrow with :tags / :exclude_tags / :scope / :duration / :created_after / :updated_after) — an unfiltered query would return an arbitrary slice of memory, not an answer.",
+  :isError true}}

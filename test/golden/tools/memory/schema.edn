@@ -1,0 +1,25 @@
+{:params-form
+ [:map
+  [:id
+   {:optional true}
+   [:any
+    #:gen{:schema
+          [:maybe [:string #:gen{:elements ["e1" "e2" "nope"]}]]}]]
+  [:directory
+   {:optional true}
+   [:any
+    #:gen{:schema
+          [:maybe
+           [:string
+            #:gen{:elements ["/tmp/x" "/home/test/hive-mcp"]}]]}]]
+  [:limit
+   {:optional true}
+   [:any #:gen{:schema [:maybe [:int {:min 1, :max 20}]]}]]
+  [:dry_run {:optional true} [:any #:gen{:schema [:maybe :boolean]}]]
+  [:feedback {:optional true} [:enum "helpful"]]],
+ :promotion-arms
+ {:not-promoted true, :promoted true, :zero-tiers false},
+ :entry-tags
+ {:int false, :joined true, :nil true, :set true, :vector true},
+ :tier-walk-open? false,
+ :preview-len [false true]}

@@ -40,7 +40,8 @@
             [hive-mcp.extensions.soft :as soft]
             [hive-mcp.hot.core :as hot-core]
             [hive-mcp.hot.reseat :as reseat]
-            [hive-mcp.swarm.lifecycle.boot-reconcile :as boot-reconcile]))
+            [hive-mcp.swarm.lifecycle.boot-reconcile :as boot-reconcile]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -48,6 +49,20 @@
 ;; =============================================================================
 ;; Embedding Warm-Up
 ;; =============================================================================
+
+(def AtomRef
+  "An atom: the cell a boot step stores its state in."
+  [:fn {:error/message "must be an atom" :gen/schema :nil :gen/fmap (fn [_] (atom nil))}
+   #(instance? clojure.lang.IAtom %)])
+
+(def Background
+  "The handle of work started off the boot thread: a daemon Thread or a future."
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (future nil))}
+   #(or (instance? Thread %) (future? %))])
+
+(def SchedulerOutcome
+  "A scheduler stop answer, nil when the stop itself failed (rescued)."
+  [:maybe :map])
 
 (defn warmup-embedding!
   "Fire a background future to warm up the Ollama embedding model.
@@ -91,6 +106,8 @@
           (catch Exception e
             (log/warn "Embedding warmup failed (non-fatal):" (ex-message e))))))))
 
+(m/=> warmup-embedding! [:=> [:cat] Background])
+
 ;; =============================================================================
 ;; Embedding Provider Initialization
 ;; =============================================================================
@@ -104,6 +121,8 @@
    that arrived since the last call and leaves the rest alone."
   []
   (contrib/load-manifest! boot-manifest-resource))
+
+(m/=> load-boot-contributions! [:=> [:cat] [:map-of :keyword [:map [:contributed [:sequential :any]] [:absent [:sequential :any]]]]])
 
 (defn init-embedding-provider!
   "Run the :embeddings boot step: the Chroma connection, the EmbeddingService
@@ -125,6 +144,8 @@
     (when (empty? ran)
       (log/info "no embedding boot step contributed; semantic search is unconfigured"))
     (boolean (and (seq ran) (empty? failed)))))
+
+(m/=> init-embedding-provider! [:=> [:cat] :boolean])
 
 ;; =============================================================================
 ;; Hot-Reload Auto-Healing
@@ -170,6 +191,8 @@
   []
   (some-> (resolve server-context-var) deref))
 
+(m/=> server-context-atom [:=> [:cat] [:maybe AtomRef]])
+
 (defn on-hot-reload-event!
   "The :mcp-auto-heal listener body: on :reload-success, re-seat the live
    record instances of the loaded namespaces (hive-mcp.hot.reseat; a watcher
@@ -181,6 +204,15 @@
     (result/rescue-log "on-hot-reload-event! reseat" nil
                        (reseat/reseat! (mapv str (:loaded event))))
     (handle-hot-reload-success! (server-context-atom) event)))
+
+(def HotReloadEvent
+  "A hive-hot listener event. Only :reload-success is acted on."
+  [:map [:type :keyword]
+   [:loaded {:optional true} [:maybe [:sequential :any]]]
+   [:unloaded {:optional true} [:maybe [:sequential :any]]]
+   [:ms {:optional true} [:maybe number?]]])
+
+(m/=> on-hot-reload-event! [:=> [:cat [:maybe HotReloadEvent]] :nil])
 
 (def auto-heal-listener-id
   "The key the auto-heal listener is registered under in hive-hot."
@@ -201,6 +233,10 @@
    (log/info "Registered hot-reload listener for MCP auto-healing")
    auto-heal-listener-id))
 
+(m/=> register-hot-reload-listener! [:function
+                                     [:=> [:cat] [:= :mcp-auto-heal]]
+                                     [:=> [:cat [:=> [:cat :keyword :any] :any]] [:= :mcp-auto-heal]]])
+
 ;; =============================================================================
 ;; Event System Initialization
 ;; =============================================================================
@@ -214,6 +250,8 @@
                  (effects/register-effects!)
                  (ev-handlers/register-handlers!)
                  (log/info "hive-events system initialized")))
+
+(m/=> init-events! [:=> [:cat] :nil])
 
 ;; =============================================================================
 ;; Coordinator Registration
@@ -243,6 +281,8 @@
                                               :cwd cwd})
                    (reset! coordinator-id-atom project-id)
                    (log/info "Coordinator registered:" project-id "(also as slave for bb-mcp compat)"))))
+
+(m/=> register-coordinator! [:=> [:cat AtomRef] :nil])
 
 ;; =============================================================================
 ;; Memory Store Wiring
@@ -349,6 +389,8 @@
                        (boot-health/record-memory! facts)
                        facts)))
 
+(m/=> verify-memory-store! [:=> [:cat] [:maybe [:map [:backend :string] [:deferred-to [:maybe :string]] [:store-set? :boolean]]]])
+
 (defn wire-memory-store!
   "Select and wire the memory backend.
 
@@ -361,12 +403,19 @@
    A post-extensions fallback in `ensure-memory-store!` guarantees a live
    store even when the selected addon fails to register.
 
+   First adds the storage-metering decorator to the hive-spi chain (a no-op
+   when hive-ttracking.metrics is absent), so every store registered from
+   here on, addon stores included, is metered.
+
    This is the COMPOSITION ROOT, and the one place allowed to name a concrete
    backend. It wires two INDEPENDENT seams: the memory-entry store
    (protocols.memory) and the named-collection store (protocols.vector) that
    plan.plans and presets.core drive."
   []
   (result/rescue-log "wire-memory-store!" nil
+                     (when-let [install! (requiring-resolve
+                                          'hive-mcp.protocols.store-metrics/install-memory-decorator!)]
+                       (install!))
                      (let [backend (resolve-memory-backend)]
                        (case backend
                          "milvus"
@@ -379,6 +428,8 @@
                            (wire-vector-store! backend)
                            (log/info "ChromaMemoryStore wired as active IMemoryStore backend"
                                      {:backend backend}))))))
+
+(m/=> wire-memory-store! [:=> [:cat] :nil])
 
 (defn ensure-memory-store!
   "Guarantee an active IMemoryStore after addon loading.
@@ -403,6 +454,8 @@
                                  "wiring fallback")
                        (wire-vector-store! (resolve-memory-backend)))))
 
+(m/=> ensure-memory-store! [:=> [:cat] :nil])
+
 ;; =============================================================================
 ;; Channel Bridge + Sync
 ;; =============================================================================
@@ -414,6 +467,8 @@
   (result/rescue-log "init-channel-bridge!" nil
                  (channel-bridge/init!)
                  (log/info "Channel bridge initialized - channel events will dispatch to hive-events")))
+
+(m/=> init-channel-bridge! [:=> [:cat] :nil])
 
 (defn- build-swarm-bootstrap
   "Construct the configured ISwarmBootstrap.
@@ -480,6 +535,13 @@
                                     " (NATS backbone not connected)")))))
                   (log/info "Swarm sync started - logic database will track swarm state"))))
 
+(m/=> start-swarm-sync! [:function
+                         [:=> [:cat] :nil]
+                         [:=> [:cat [:map [:source {:optional true} [:maybe :keyword]]
+                                     [:event-backbone {:optional true} [:maybe :keyword]]
+                                     [:db-path {:optional true} [:maybe :string]]
+                                     [:timeout-ms {:optional true} [:maybe :int]]]] :nil]])
+
 ;; =============================================================================
 ;; Hot-Reload Watcher
 ;; =============================================================================
@@ -504,6 +566,16 @@
                           base            (.getPath (java.io.File. ^java.io.File base (str d)))
                           :else           (.getAbsolutePath f))))]
     (mapv resolve (or (seq configured) (seq roots) ["src"]))))
+
+(def DirName
+  "A directory as config names it: a string, or a File / Path from the
+   classpath roots."
+  [:or [:string {:min 1}]
+   [:fn {:gen/schema [:string {:min 1}] :gen/fmap #(java.io.File. ^String %)}
+    #(or (instance? java.io.File %) (instance? java.nio.file.Path %))]])
+
+(m/=> watch-dirs [:=> [:cat [:maybe [:sequential DirName]] [:maybe [:sequential DirName]]]
+                  [:vector [:string {:min 1}]]])
 
 (defn init-hot-reload-watcher!
   "Initialize hot-reload watcher with claim-aware coordination.
@@ -549,6 +621,10 @@
                        (register-hot-reload-listener!)))
       (log/info "Hot-reload disabled via .hive-project.edn"))))
 
+(m/=> init-hot-reload-watcher! [:=> [:cat [:maybe [:map [:hot-reload {:optional true} :any]
+                                                   [:watch-dirs {:optional true} :any]]]]
+                                [:maybe [:= :mcp-auto-heal]]])
+
 ;; =============================================================================
 ;; Registry Sync
 ;; =============================================================================
@@ -560,6 +636,8 @@
   (result/rescue-log "start-registry-sync!" nil
                  (swarm/start-registry-sync!)
                  (log/info "Lings registry sync started - lings_available will track elisp lings")))
+
+(m/=> start-registry-sync! [:=> [:cat] :nil])
 
 ;; =============================================================================
 ;; Decay Scheduler
@@ -585,6 +663,8 @@
                          (log/info "Decay scheduler started:" result)
                          (log/info "Decay scheduler not started:" (:reason result))))))))
 
+(m/=> start-decay-scheduler! [:=> [:cat] :nil])
+
 (defn run-recall-canary!
   "Run the golden recall canary once, at boot, before agents ask anything.
 
@@ -608,6 +688,8 @@
                         "trusted until this clears:" (:faults verdict)))
            verdict))))))
 
+(m/=> run-recall-canary! [:=> [:cat] [:maybe [:map [:ok? :boolean]]]])
+
 (defn run-recall-canary-async!
   "Run the boot canary on a daemon thread.
 
@@ -620,6 +702,8 @@
     (.setDaemon true)
     (.start)))
 
+(m/=> run-recall-canary-async! [:=> [:cat] Background])
+
 (defn stop-decay-scheduler!
   "Stop the periodic decay scheduler. Called during shutdown."
   []
@@ -627,6 +711,8 @@
                  (require 'hive-mcp.scheduler.decay)
                  (when-let [stop-fn (resolve 'hive-mcp.scheduler.decay/stop!)]
                    (stop-fn))))
+
+(m/=> stop-decay-scheduler! [:=> [:cat] SchedulerOutcome])
 
 ;; =============================================================================
 ;; Housekeeping Scheduler (gc-fix-5)
@@ -658,6 +744,8 @@
                  (when-let [reaper-start! (resolve 'hive-mcp.channel.context-store/start-reaper!)]
                    (reaper-start!))))
 
+(m/=> start-housekeeping-scheduler! [:=> [:cat] :any])
+
 (defn stop-housekeeping-scheduler!
   "Stop the periodic housekeeping scheduler and the context-store TTL reaper.
    Called during shutdown."
@@ -670,6 +758,8 @@
                  (require 'hive-mcp.channel.context-store)
                  (when-let [reaper-stop! (resolve 'hive-mcp.channel.context-store/stop-reaper!)]
                    (reaper-stop!))))
+
+(m/=> stop-housekeeping-scheduler! [:=> [:cat] :any])
 
 ;; =============================================================================
 ;; NATS Initialization
@@ -687,6 +777,8 @@
       (reg-channels!))
     (catch Exception e
       (log/warn "[init] Failed to register delivery channels (non-fatal):" (ex-message e)))))
+
+(m/=> init-delivery-channels! [:=> [:cat] [:maybe [:vector :keyword]]])
 
 (defn init-nats!
   "Initialize NATS client + bridge + backbone. Opt-in via config: services.nats.enabled = true.
@@ -711,6 +803,8 @@
                        (when-let [cb-start (requiring-resolve 'hive-mcp.swarm.callback/start-listener!)]
                          (cb-start)))))))
 
+(m/=> init-nats! [:=> [:cat] :any])
+
 ;; =============================================================================
 ;; Forge Belt Defaults
 ;; =============================================================================
@@ -726,6 +820,8 @@
     (catch Throwable e
       (log/warn "register-forge-belt-defaults! failed -- forge-belt extension points will return noop:"
                 (.getMessage e)))))
+
+(m/=> register-forge-belt-defaults! [:=> [:cat] :nil])
 
 ;; =============================================================================
 ;; Extension Loading
@@ -753,6 +849,8 @@
                    (when (and get-adv check!)
                      (check! (filter :consolidated (get-adv)))))))
 
+(m/=> load-extensions! [:=> [:cat] [:maybe [:sequential :any]]])
+
 ;; =============================================================================
 ;; Workflow Engine Initialization
 ;; =============================================================================
@@ -776,6 +874,8 @@
                    (registry-init!)
                    (set-engine! (create-engine))
                    (log/info "FSM workflow engine initialized and wired as active IWorkflowEngine"))))
+
+(m/=> init-workflow-engine! [:=> [:cat] :nil])
 
 ;; =============================================================================
 ;; nREPL-mode initialization (for dev/bb-mcp without full -main)
@@ -803,6 +903,13 @@
       (log/info "server-context populated:" (:count out) "tools (middleware-wrapped)")
       out)))
 
+(def RefreshReport
+  "routes/refresh-surfaces!' answer."
+  [:map [:count [:int {:min 0}]] [:changed [:vector :string]]
+   [:surfaces [:vector :any]] [:failed [:vector :any]]])
+
+(m/=> populate-server-context! [:=> [:cat] RefreshReport])
+
 (defn nrepl-init!
   "Initialize essential services for nREPL-mode operation (dev REPL, bb-mcp).
    Runs the subset of -main phases needed for tools to work via nREPL:
@@ -823,3 +930,5 @@
 
   (populate-server-context!)
   (log/info "nrepl-init! complete"))
+
+(m/=> nrepl-init! [:=> [:cat] :nil])

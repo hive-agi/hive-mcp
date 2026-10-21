@@ -1,0 +1,10 @@
+{:case-0 {:out nil, :in ({})},
+ :case-1
+ {:out "ling-p",
+  :in ({:parent "ling-p", :_caller_id "coordinator-hive"})},
+ :case-2 {:out nil, :in ({})},
+ :case-3 {:out "coordinator:s1", :in ({:_caller_id "coordinator:s1"})},
+ :case-4 {:out "ling-p", :in ({:parent "ling-p"})},
+ :case-5 {:out nil, :in ({})},
+ :case-6 {:out nil, :in ({})},
+ :case-7 {:out nil, :in ({})}}

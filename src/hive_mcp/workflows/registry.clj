@@ -33,7 +33,9 @@
             [hive.events.fsm :as fsm]
             [sci.core :as sci]
             [taoensso.timbre :as log]
-            [hive-mcp.dispatch.handler :as dh])
+            [hive-mcp.dispatch.handler :as dh]
+            [malli.core :as m]
+            [hive-mcp.workflows.schema :as wfs])
   (:import [java.io PushbackReader]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -66,6 +68,10 @@
   (with-open [rdr (PushbackReader. (io/reader f))]
     (read rdr)))
 
+(def WorkflowStatus
+  "One list-workflows row."
+  [:map [:has-spec? :boolean] [:has-handlers? :boolean] [:compiled? :boolean] [:error [:maybe :string]]])
+
 (defn scan-fsm-specs
   "Scan resources/fsm/ for .edn spec files. Returns map of
    {workflow-name {:spec parsed-edn}}.
@@ -97,6 +103,8 @@
       (do
         (log/warn "No fsm/ directory found on classpath")
         {}))))
+
+(m/=> scan-fsm-specs [:=> [:cat] [:map-of :keyword [:map [:spec :any]]]])
 
 ;; =============================================================================
 ;; Handler Registration
@@ -136,6 +144,11 @@
      (log/warn "Cannot register handlers — workflow not found in registry"
                {:workflow workflow-name
                 :available (keys @registry)}))))
+
+(m/=> register-handlers!
+  [:function
+   [:=> [:cat :any [:maybe [:map-of :keyword wfs/Fn]]] :nil]
+   [:=> [:cat :any [:maybe [:map-of :keyword wfs/Fn]] [:maybe [:map-of :keyword :any]]] :nil]])
 
 ;; =============================================================================
 ;; Compilation
@@ -242,6 +255,8 @@
             reg)))
   :ok)
 
+(m/=> compile-registry! [:=> [:cat] [:= :ok]])
+
 ;; =============================================================================
 ;; Lookup
 ;; =============================================================================
@@ -252,10 +267,14 @@
   [workflow-name]
   (get-in @registry [workflow-name :compiled]))
 
+(m/=> get-workflow [:=> [:cat :any] [:maybe wfs/CompiledFsm]])
+
 (defn get-spec
   "Look up the raw EDN spec for a workflow. Useful for inspection/debugging."
   [workflow-name]
   (get-in @registry [workflow-name :spec]))
+
+(m/=> get-spec [:=> [:cat :any] :any])
 
 (defn list-workflows
   "List all registered workflows with their status.
@@ -269,6 +288,8 @@
                          :error         compile-error}))
    {}
    @registry))
+
+(m/=> list-workflows [:=> [:cat] [:map-of :any WorkflowStatus]])
 
 ;; =============================================================================
 ;; Lifecycle
@@ -297,11 +318,15 @@
     (log/info "Registry reloaded" {:workflows (keys @registry)
                                    :preserved-handlers (keys old-handlers)})))
 
+(m/=> reload! [:=> [:cat] :nil])
+
 (defn reset-registry!
   "Clear the entire registry. Mainly for testing."
   []
   (reset! registry {})
   :ok)
+
+(m/=> reset-registry! [:=> [:cat] [:= :ok]])
 
 ;; =============================================================================
 ;; Forge Belt Registration (First Entry)
@@ -331,6 +356,8 @@
       :end    (ns-resolve belt-ns 'handle-end)
       :halt   (ns-resolve belt-ns 'handle-halt)
       :error  (ns-resolve belt-ns 'handle-error)})))
+
+(m/=> register-forge-belt! [:=> [:cat] :nil])
 
 ;; =============================================================================
 ;; Wrap Session Registration
@@ -362,6 +389,8 @@
       :evict       (ns-resolve ns' 'handle-evict)
       :end         (ns-resolve ns' 'handle-end)
       :error       (ns-resolve ns' 'handle-error)})))
+
+(m/=> register-wrap-session! [:=> [:cat] :nil])
 
 ;; =============================================================================
 ;; Complete Session Registration
@@ -396,6 +425,8 @@
       :end         (ns-resolve ns' 'handle-end)
       :error       (ns-resolve ns' 'handle-error)})))
 
+(m/=> register-complete-session! [:=> [:cat] :nil])
+
 ;; =============================================================================
 ;; Catchup Session Registration
 ;; =============================================================================
@@ -429,6 +460,8 @@
       :end            (ns-resolve ns' 'handle-end)
       :error          (ns-resolve ns' 'handle-error)})))
 
+(m/=> register-catchup! [:=> [:cat] :nil])
+
 ;; =============================================================================
 ;; SAA Workflow Registration
 ;; =============================================================================
@@ -447,6 +480,8 @@
      :saa-workflow
      @(ns-resolve ns' 'handler-map)
      @(ns-resolve ns' 'spec-ref-map))))
+
+(m/=> register-saa-workflow! [:=> [:cat] :nil])
 
 ;; =============================================================================
 ;; Init (Boot Entry Point)
@@ -472,3 +507,5 @@
   (let [workflows (list-workflows)]
     (log/info "Workflow registry initialized" {:workflows workflows})
     workflows))
+
+(m/=> init! [:=> [:cat] [:map-of :any WorkflowStatus]])

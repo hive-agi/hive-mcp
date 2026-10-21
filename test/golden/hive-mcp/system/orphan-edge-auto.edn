@@ -1,0 +1,23 @@
+{:case-0 {:out false, :in nil},
+ :case-1
+ {:out false,
+  :in
+  #:kg-edge{:id "e3",
+            :from "20260101000000-aaaaaaaa",
+            :source-type "manual"}},
+ :case-2
+ {:out false,
+  :in
+  #:kg-edge{:id "e2",
+            :from "20260101000000-aaaaaaaa",
+            :source-type :inferred}},
+ :case-3
+ {:out true,
+  :in
+  #:kg-edge{:id "e1",
+            :from "20260101000000-aaaaaaaa",
+            :source-type "automated"}},
+ :case-4 {:out false, :in nil},
+ :case-5 {:out false, :in nil},
+ :case-6 {:out false, :in nil},
+ :case-7 {:out false, :in nil}}

@@ -1,0 +1,14 @@
+{:case-0 {:out {:cascade? false, :force? true}, :in {:force true}},
+ :case-1
+ {:out {:cascade? false, :force? true},
+  :in {:cascade nil, :force true, :drain_ms -1}},
+ :case-2
+ {:out {:cascade? false, :force? false},
+  :in {:force nil, :drain_ms nil}},
+ :case-3 {:out {:cascade? false, :force? false}, :in {:drain_ms nil}},
+ :case-4
+ {:out {:cascade? false, :force? false},
+  :in {:cascade false, :force nil}},
+ :case-5 {:out {:cascade? false, :force? false}, :in {:force nil}},
+ :case-6 {:out {:cascade? false, :force? false}, :in {}},
+ :case-7 {:out {:cascade? false, :force? false}, :in {}}}

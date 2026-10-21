@@ -1,0 +1,121 @@
+{:case-0 {:out {:valid true}, :in ({:steps []})},
+ :case-1
+ {:out {:valid false, :step "c", :missing ["b"]},
+  :in
+  ({:steps
+    [{:id "c",
+      :title "B",
+      :priority :high,
+      :tags [],
+      :depends-on ["b"],
+      :method :manual}
+     {:id "a",
+      :title "B",
+      :description "desc",
+      :priority :medium,
+      :tags ["x"],
+      :depends-on ["c" "c"]}]})},
+ :case-2
+ {:out {:valid true},
+  :in
+  ({:steps
+    [{:id "c",
+      :title "A",
+      :priority :medium,
+      :tags [],
+      :depends-on ["d" "a"],
+      :hidden 0}
+     {:id "d",
+      :title "A",
+      :description "desc",
+      :priority :medium,
+      :tags ["x" "x"],
+      :depends-on [],
+      :hidden -2}
+     {:id "a",
+      :title "B",
+      :priority :high,
+      :tags ["x"],
+      :depends-on ["a" "d"]}
+     {:id "c",
+      :title "A",
+      :priority :high,
+      :tags ["y"],
+      :depends-on [],
+      :method :manual}]})},
+ :case-3
+ {:out {:valid false, :step "c", :missing ["a"]},
+  :in
+  ({:steps
+    [{:id "b",
+      :title "B",
+      :description nil,
+      :priority :medium,
+      :tags [],
+      :depends-on ["d" "b"],
+      :hidden 3}
+     {:id "d",
+      :title "B",
+      :description "desc",
+      :priority :low,
+      :tags ["x"],
+      :depends-on [],
+      :hidden 2}
+     {:id "c",
+      :title "B",
+      :priority :high,
+      :tags ["y"],
+      :depends-on ["a"],
+      :method :saa}]})},
+ :case-4
+ {:out {:valid false, :step "d", :missing ["b"]},
+  :in
+  ({:steps
+    [{:id "d",
+      :title "A",
+      :priority :high,
+      :tags [],
+      :depends-on ["b"],
+      :method :manual,
+      :hidden 0}]})},
+ :case-5
+ {:out {:valid true},
+  :in
+  ({:steps
+    [{:id "d",
+      :title "A",
+      :priority :medium,
+      :tags [],
+      :depends-on [],
+      :method :saa,
+      :hidden 0}]})},
+ :case-6
+ {:out {:valid true},
+  :in
+  ({:steps
+    [{:id "d",
+      :title "B",
+      :priority :low,
+      :tags [],
+      :depends-on [],
+      :method :manual,
+      :hidden 1}
+     {:id "c",
+      :title "B",
+      :description nil,
+      :priority :low,
+      :tags [],
+      :depends-on ["d"],
+      :method :saa,
+      :hidden -2}]})},
+ :case-7
+ {:out {:valid true},
+  :in
+  ({:steps
+    [{:id "c",
+      :title "B",
+      :description "desc",
+      :priority :low,
+      :tags [],
+      :depends-on ["c"],
+      :hidden -2}]})}}

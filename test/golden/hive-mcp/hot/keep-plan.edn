@@ -1,0 +1,48 @@
+{:case-0
+ {:out {},
+  :in
+  ([[ns b] [def c] [ns d]]
+   {b :resource, a :plain, d :resource}
+   #{:resource})},
+ :case-1
+ {:out {a {:tag defonce}, c {:tag defonce}},
+  :in
+  ([[ns b] [ns d] [defonce a] [defonce c]]
+   {c :plain, d :plain, a :resource, b :plain}
+   #{:resource})},
+ :case-2
+ {:out {d {:tag defonce}},
+  :in
+  ([[def c] [defonce d]]
+   {b :resource, c :plain, d :resource, a :resource}
+   #{:resource})},
+ :case-3
+ {:out {d {:tag defonce}, a {:tag def}},
+  :in
+  ([[defonce d] [defn a] [def a]]
+   {a :resource, d :resource, b :resource}
+   #{:resource})},
+ :case-4
+ {:out {a {:tag defonce}, d {:tag def}, b {:tag defonce}},
+  :in
+  ([[def a] [defonce a] [def d] [defn a] [defonce b]]
+   {c :resource, a :resource, d :resource, b :plain}
+   #{:resource})},
+ :case-5
+ {:out {},
+  :in
+  ([[ns c] [defn b] [ns d]]
+   {d :resource, a :resource, c :resource, b :resource}
+   #{:resource})},
+ :case-6
+ {:out {},
+  :in
+  ([[ns c] [ns d]]
+   {a :resource, d :plain, b :resource, c :resource}
+   #{:resource})},
+ :case-7
+ {:out {},
+  :in
+  ([[ns d] [defn a] [def d]]
+   {b :resource, d :plain, a :resource}
+   #{:resource})}}

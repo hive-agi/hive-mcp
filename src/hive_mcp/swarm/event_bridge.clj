@@ -24,7 +24,8 @@
      and (optionally) one publisher; no edits to consumers."
   (:require [hive-mcp.channel.core :as channel]
             [hive-mcp.protocols.event-backbone :as eb]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -48,6 +49,12 @@
    Pure: no side effects. event-type is a keyword like :slave-spawned."
   [event-type slave-id]
   (str slave-prefix "." (name event-type) "." (or slave-id "unknown")))
+
+;; event-type is named (keyword or string); a nil slave-id reads "unknown"
+(m/=> slave-subject [:=> [:cat [:or :keyword :string] [:maybe :string]]
+                     [:fn {:gen/elements ["hive.v1.slave.slave-spawned.ling-a"
+                                          "hive.v1.slave.task-failed.unknown"]}
+                      #(and (string? %) (.startsWith ^String % "hive.v1.slave."))]])
 
 (def slave-wildcard
   "Wildcard subject for ALL slave/task events (used by the inbound bridge)."
@@ -117,6 +124,8 @@
                   "on" (eb/backbone-id bb) "backbone")
         true))))
 
+(m/=> start-nats-bridge! [:=> [:cat] :boolean])
+
 (defn stop-nats-bridge!
   "Stop the NATS → channel.core bridge. Idempotent."
   []
@@ -128,10 +137,19 @@
     (swap! bridge-state assoc :running false)
     (log/info "[swarm.event-bridge] stopped")))
 
+;; nil when the bridge was not running; otherwise the log call's nil too
+(m/=> stop-nats-bridge! [:=> [:cat] :nil])
+
 (defn bridge-status
   "Return current bridge state for diagnostics."
   []
   @bridge-state)
+
+(def BridgeState
+  "The bridge's diagnostic state."
+  [:map [:running :boolean] [:backbone-id {:optional true} :any]])
+
+(m/=> bridge-status [:=> [:cat] BridgeState])
 
 ;; =============================================================================
 ;; Outbound: in-process channel → NATS (opt-in helper)
@@ -158,3 +176,10 @@
     (let [bb (eb/get-backbone)]
       (when (eb/connected? bb)
         (eb/publish! bb (slave-subject type slave-id) event)))))
+
+;; throws without :type; answers the backbone publish result, or nil when the
+;; event came in from NATS or the backbone is down
+(m/=> publish-slave-event! [:=> [:cat [:map [:type [:or :keyword :string]]
+                                       [:slave-id {:optional true} [:maybe :string]]
+                                       [:via {:optional true} :any]]]
+                            :any])

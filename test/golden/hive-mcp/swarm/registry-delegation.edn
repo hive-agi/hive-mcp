@@ -1,0 +1,42 @@
+{:list-slaves
+ [:delegates-to "hive-datascript.swarm.queries" "get-all-slaves"],
+ :remove-slave!
+ [:delegates-to "hive-datascript.swarm.lings" "remove-slave!"],
+ :get-task [:delegates-to "hive-datascript.swarm.queries" "get-task"],
+ :has-conflict?
+ [:delegates-to "hive-datascript.swarm.queries" "has-conflict?"],
+ :slave-exists?
+ [:delegates-to "hive-datascript.swarm.queries" "get-slave"],
+ :list-slaves-status-wins
+ [:delegates-to
+  "hive-datascript.swarm.queries"
+  "get-slaves-by-status"],
+ :db-stats [:delegates-to "hive-datascript.swarm.queries" "db-stats"],
+ :list-slaves-by-project
+ [:delegates-to
+  "hive-datascript.swarm.queries"
+  "get-slaves-by-project"],
+ :can-kill? [:delegates-to "hive-datascript.swarm.lings" "can-kill?"],
+ :get-slave
+ [:delegates-to "hive-datascript.swarm.queries" "get-slave"],
+ :add-slave!
+ [:delegates-to "hive-datascript.swarm.lings" "add-slave!"],
+ :claim-file!
+ [:delegates-to "hive-agent.swarm.logic" "get-logic-db-atom"],
+ :reset-conn!
+ [:delegates-to "hive-datascript.swarm.connection" "reset-conn!"],
+ :get-slave-ids-by-project
+ [:delegates-to
+  "hive-datascript.swarm.queries"
+  "get-slave-ids-by-project"],
+ :add-task! [:delegates-to "hive-datascript.swarm.lings" "add-task!"],
+ :check-file-conflicts
+ [:delegates-to
+  "hive-datascript.swarm.queries"
+  "check-file-conflicts"],
+ :list-slaves-by-status
+ [:delegates-to
+  "hive-datascript.swarm.queries"
+  "get-slaves-by-status"],
+ :update-slave!
+ [:delegates-to "hive-datascript.swarm.lings" "update-slave!"]}

@@ -22,7 +22,8 @@
             [hive-spi.swarm.guards :as guards]
             [taoensso.timbre :as log]
             [hive-mcp.tools.consolidated.workflow.ir :as ir]
-            [hive-mcp.tools.consolidated.workflow.goal :as goal]))
+            [hive-mcp.tools.consolidated.workflow.goal :as goal]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -51,6 +52,8 @@
                :quenched? true})
     (rb/result->mcp (rb/try-result :forge/strike-legacy-failed
                                    #(forge-cycle/forge-strike-legacy* params forge-state)))))
+
+(m/=> handle-forge-strike-legacy [:=> [:cat [:maybe :map]] hive-mcp.tools.core/McpResponse])
 
 (defn handle-forge-strike
   "Execute ONE forge cycle, FSM-driven by default with legacy config gate.
@@ -98,6 +101,8 @@
           (mcp-json {:queued true
                      :message "Forge strike started in background. Check 'forge status' for results."}))))))
 
+(m/=> handle-forge-strike [:=> [:cat [:maybe :map]] hive-mcp.tools.core/McpResponse])
+
 ;; ── Forge Status ────────────────────────────────────────────────────────────
 
 (defn handle-forge-status
@@ -105,6 +110,8 @@
   [params]
   (rb/result->mcp (rb/try-result :forge/status-failed
                                  #(forge-ops/forge-status* params forge-state))))
+
+(m/=> handle-forge-status [:=> [:cat [:maybe :map]] hive-mcp.tools.core/McpResponse])
 
 ;; ── Forge Survey ────────────────────────────────────────────────────────────
 
@@ -131,6 +138,8 @@
   (rb/result->mcp (rb/try-result :forge/survey-failed
                                  #(result/ok (forge-ops/survey-view (forge-ops/survey params))))))
 
+(m/=> handle-forge-survey [:=> [:cat [:maybe :map]] hive-mcp.tools.core/McpResponse])
+
 ;; ── Forge Quench ────────────────────────────────────────────────────────────
 
 (defn handle-forge-quench
@@ -149,6 +158,8 @@
       (mcp-json {:success true
                  :message "Forge quenched. Active lings will finish. No new spawns."
                  :state @forge-state}))))
+
+(m/=> handle-forge-quench [:=> [:cat [:maybe :map]] hive-mcp.tools.core/McpResponse])
 
 ;; ── Multi-Front Coordinator (addon extension) ────────────────────────────
 
@@ -169,6 +180,8 @@
                   #(let [start-fn (resolve-multi-front "start-multi-front!")]
                      (result/ok (start-fn params))))))
 
+(m/=> handle-multi-front-start [:=> [:cat [:maybe :map]] hive-mcp.tools.core/McpResponse])
+
 (defn handle-multi-front-status
   "Get multi-front coordination status with per-front milestone progress."
   [_params]
@@ -177,6 +190,8 @@
                   #(let [status-fn (resolve-multi-front "multi-front-status")]
                      (result/ok (status-fn))))))
 
+(m/=> handle-multi-front-status [:=> [:cat [:maybe :map]] hive-mcp.tools.core/McpResponse])
+
 (defn handle-multi-front-stop
   "Stop multi-front coordination."
   [_params]
@@ -184,6 +199,8 @@
    (rb/try-result :multi-front/stop-failed
                   #(let [stop-fn (resolve-multi-front "stop-multi-front!")]
                      (result/ok (stop-fn))))))
+
+(m/=> handle-multi-front-stop [:=> [:cat [:maybe :map]] hive-mcp.tools.core/McpResponse])
 
 ;; ── Deprecated Aliases ──────────────────────────────────────────────────────
 

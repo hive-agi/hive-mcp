@@ -1,0 +1,8 @@
+{:results
+ [["coordinator" nil]
+  ["coordinator:" nil]
+  ["swarm-ling-f02-x" nil]
+  [nil nil]
+  [42 nil]],
+ :calls [],
+ :store [[:add "s1" {:depth 1}] [:claims "s1"]]}

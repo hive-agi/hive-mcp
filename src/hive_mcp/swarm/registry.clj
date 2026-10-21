@@ -21,7 +21,8 @@
   (:require [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.swarm.datascript.connection :as conn]
             [hive-mcp.swarm.datascript.queries :as queries]
-            [hive-mcp.project.scope :as project-scope]))
+            [hive-mcp.project.scope :as project-scope]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -29,6 +30,30 @@
 ;;; =============================================================================
 ;;; Slave Read Operations
 ;;; =============================================================================
+
+;;; =============================================================================
+;;; Schemas
+;;; =============================================================================
+
+(def Slave
+  "A slave entity as the store pulls it (:slave/* attributes). Open."
+  [:map [:slave/id :string]])
+
+(def TxReport
+  "A DataScript transaction report (a record, so a map)."
+  [:map [:db-after :any] [:tx-data [:sequential :any]]])
+
+(def AddSlaveOpts
+  "add-slave! opts, per its docstring."
+  [:map
+   [:name {:optional true} [:maybe :string]]
+   [:status {:optional true} [:maybe :keyword]]
+   [:depth {:optional true} [:maybe :int]]
+   [:parent {:optional true} [:maybe :string]]
+   [:presets {:optional true} [:maybe [:sequential :string]]]
+   [:cwd {:optional true} [:maybe :string]]
+   [:project-id {:optional true} [:maybe :string]]
+   [:kanban-task-id {:optional true} [:maybe :string]]])
 
 (defn get-slave
   "Get a slave by ID.
@@ -50,6 +75,8 @@
   [slave-id]
   (ds/get-slave slave-id))
 
+(m/=> get-slave [:=> [:cat :string] [:maybe Slave]])
+
 (defn slave-exists?
   "Check if a slave is registered.
 
@@ -68,6 +95,8 @@
      true if slave exists, false otherwise."
   [slave-id]
   (some? (ds/get-slave slave-id)))
+
+(m/=> slave-exists? [:=> [:cat :string] :boolean])
 
 (defn list-slaves
   "Get all slaves, optionally filtered.
@@ -105,6 +134,14 @@
        (map :slave/id slaves)
        slaves))))
 
+;; a lazy seq of slave maps, or of ids with :ids-only?
+(m/=> list-slaves [:function
+                   [:=> [:cat] [:sequential Slave]]
+                   [:=> [:cat [:maybe [:map [:status {:optional true} [:maybe :keyword]]
+                                       [:project-id {:optional true} [:maybe :string]]
+                                       [:ids-only? {:optional true} :boolean]]]]
+                    [:sequential [:or Slave :string]]]])
+
 (defn get-slave-ids-by-project
   "Get slave IDs for a specific project.
 
@@ -122,6 +159,8 @@
      Seq of slave-id strings belonging to the project."
   [project-id]
   (ds/get-slave-ids-by-project project-id))
+
+(m/=> get-slave-ids-by-project [:=> [:cat [:maybe :string]] [:sequential :string]])
 
 ;;; =============================================================================
 ;;; Slave Write Operations
@@ -158,6 +197,8 @@
                        (when cwd (project-scope/get-current-project-id cwd)))]
     (ds/add-slave! slave-id (assoc opts :project-id project-id))))
 
+(m/=> add-slave! [:=> [:cat :string AddSlaveOpts] TxReport])
+
 (defn update-slave!
   "Update an existing slave's attributes.
 
@@ -178,6 +219,8 @@
   [slave-id updates]
   (ds/update-slave! slave-id updates))
 
+(m/=> update-slave! [:=> [:cat :string :map] [:maybe TxReport]])
+
 (defn remove-slave!
   "Remove a slave from the registry.
 
@@ -197,6 +240,8 @@
      Transaction report on success, nil if slave not found."
   [slave-id]
   (ds/remove-slave! slave-id))
+
+(m/=> remove-slave! [:=> [:cat :string] [:maybe TxReport]])
 
 ;;; =============================================================================
 ;;; Connection Management
@@ -220,6 +265,8 @@
      nil (side effect only)"
   []
   (conn/reset-conn!))
+
+(m/=> reset-conn! [:=> [:cat] :nil])
 
 ;;; =============================================================================
 ;;; Operational Checks (Extended Operations - not in ISwarmRegistry)
@@ -247,6 +294,8 @@
   [slave-id]
   (ds/can-kill? slave-id))
 
+(m/=> can-kill? [:=> [:cat :string] [:map [:can-kill? :boolean] [:blocking-ops [:set :keyword]]]])
+
 ;;; =============================================================================
 ;;; Task Operations (ISwarmRegistry methods)
 ;;; =============================================================================
@@ -271,6 +320,12 @@
   [task-id slave-id opts]
   (ds/add-task! task-id slave-id opts))
 
+(m/=> add-task! [:=> [:cat [:maybe :string] :string
+                       [:map [:status {:optional true} :keyword]
+                        [:prompt {:optional true} [:maybe :string]]
+                        [:files {:optional true} [:maybe [:sequential :string]]]]]
+                 TxReport])
+
 (defn get-task
   "Get a task by ID.
 
@@ -285,6 +340,8 @@
      Map with task attributes or nil if not found."
   [task-id]
   (ds/get-task task-id))
+
+(m/=> get-task [:=> [:cat :string] [:maybe [:map [:task/id :string]]]])
 
 ;;; =============================================================================
 ;;; File Claims (Extended Operations - not yet in ISwarmRegistry)
@@ -310,6 +367,8 @@
   [file-path slave-id task-id]
   (ds/claim-file! file-path slave-id {:task-id task-id}))
 
+(m/=> claim-file! [:=> [:cat :string :string [:maybe :string]] TxReport])
+
 (defn has-conflict?
   "Check if files have existing claims.
 
@@ -325,6 +384,14 @@
      true if any file has a conflicting claim, false otherwise."
   [files slave-id]
   (ds/has-conflict? files slave-id))
+
+;; BUG: the wrapper forwards (files slave-id) to queries/has-conflict?, whose
+;; parameters are (file-path requesting-slave), and the docstring promises a
+;; boolean while the store answers {:conflict? bool [:held-by id]}. A files
+;; COLLECTION is compared as one path, so it never matches a claim. The
+;; contract records the CURRENT behaviour; see the m21 report.
+(m/=> has-conflict? [:=> [:cat :any [:maybe :string]]
+                     [:map [:conflict? :boolean] [:held-by {:optional true} :string]]])
 
 (defn check-file-conflicts
   "Check files for conflicts with details.
@@ -344,6 +411,12 @@
   [files slave-id]
   (ds/check-file-conflicts files slave-id))
 
+;; BUG: forwards (files slave-id) to queries/check-file-conflicts, whose
+;; parameters are (requesting-slave files): the slave id is taken as the file
+;; list. The docstring promises {:has-conflicts :conflicts}; the store answers a
+;; seq of {:file :held-by}. Contract records the CURRENT behaviour.
+(m/=> check-file-conflicts [:=> [:cat :any :any] [:sequential [:map [:file :string] [:held-by :string]]]])
+
 ;;; =============================================================================
 ;;; Debug/Stats (Utility functions)
 ;;; =============================================================================
@@ -362,6 +435,8 @@
      Map with :slaves, :tasks, :claims counts."
   []
   (queries/db-stats))
+
+(m/=> db-stats [:=> [:cat] [:map [:slaves [:int {:min 0}]] [:tasks [:int {:min 0}]] [:claims [:int {:min 0}]]]])
 
 ;;; =============================================================================
 ;;; Migration Notes

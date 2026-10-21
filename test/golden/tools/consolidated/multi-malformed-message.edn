@@ -1,0 +1,38 @@
+{:case-0
+ {:out
+  "operations entries must be {id, tool, command, ...} objects; got index 0 = []. For verb sentences use the 'dsl' param: [[verb, params], ...].",
+  :in [{:index 0, :value []}]},
+ :case-1
+ {:out
+  "operations entries must be {id, tool, command, ...} objects; got index 0 = nil, index 0 = nil. For verb sentences use the 'dsl' param: [[verb, params], ...].",
+  :in [{:index 0, :value nil} {:index 0, :value nil}]},
+ :case-2
+ {:out
+  "operations entries must be {id, tool, command, ...} objects; got index 0 = \\u, index 2 = nil, index 1 = nil. For verb sentences use the 'dsl' param: [[verb, params], ...].",
+  :in
+  [{:index 0, :value \u}
+   {:index 2, :value nil}
+   {:index 1, :value nil}]},
+ :case-3
+ {:out
+  "operations entries must be {id, tool, command, ...} objects; got index 2 = nil, index 0 = nil, index 4 = nil. For verb sentences use the 'dsl' param: [[verb, params], ...].",
+  :in
+  [{:index 2, :value nil}
+   {:index 0, :value nil}
+   {:index 4, :value nil}]},
+ :case-4
+ {:out
+  "operations entries must be {id, tool, command, ...} objects; got index 2 = {}, index 1 = {}. For verb sentences use the 'dsl' param: [[verb, params], ...].",
+  :in [{:index 2, :value {}} {:index 1, :value {}}]},
+ :case-5
+ {:out
+  "operations entries must be {id, tool, command, ...} objects; got index 1 = [], index 0 = [\\x]. For verb sentences use the 'dsl' param: [[verb, params], ...].",
+  :in [{:index 1, :value []} {:index 0, :value [\x]}]},
+ :case-6
+ {:out
+  "operations entries must be {id, tool, command, ...} objects; got index 1 = -5, index 8 = nil. For verb sentences use the 'dsl' param: [[verb, params], ...].",
+  :in [{:index 1, :value -5} {:index 8, :value nil}]},
+ :case-7
+ {:out
+  "operations entries must be {id, tool, command, ...} objects; got index 1 = nil. For verb sentences use the 'dsl' param: [[verb, params], ...].",
+  :in [{:index 1, :value nil}]}}

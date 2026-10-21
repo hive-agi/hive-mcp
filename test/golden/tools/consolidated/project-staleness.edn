@@ -1,0 +1,2 @@
+{:absent {:stale true, :directory "/m27/nonexistent"},
+ :nested {:stale true, :directory "/m27/a/b/c"}}

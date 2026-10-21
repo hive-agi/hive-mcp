@@ -1,0 +1,20 @@
+{:answers
+ [:configured
+  {:name "mem"}
+  {:name "c"}
+  :deleted
+  :added
+  []
+  []
+  :deleted
+  :updated],
+ :calls
+ [[:configure {:host "h", :port 8000}]
+  [:get-collection "mem"]
+  [:create-collection "c" {:metadata {:dimension 3}}]
+  [:delete-collection {:id "x"}]
+  [:add {:id "c"} [{:id 1}] {:upsert? true}]
+  [:get {:id "c"} {:ids ["1"]}]
+  [:query {:id "c"} [0.5 0.25] {:num-results 2}]
+  [:delete {:id "c"} {:ids ["1"]}]
+  [:update {:id "c"} [{:id 1, :document "d"}]]]}

@@ -1,0 +1,19 @@
+{:agent-id ["a" "b" "d"],
+ :caller-id ["ling-1" "coordinator"],
+ :directory ["/a" "/b"],
+ :project-id ["p1" "p2"],
+ :caller-identity
+ [#:adt{:variant :caller/coordinator, :type :CallerId}
+  {:adt/variant :caller/named,
+   :adt/type :CallerId,
+   :slave-id "ling-x"}],
+ :project-scope
+ {:adt/variant :project/scoped,
+  :adt/type :ProjectScope,
+  :project-id "hive"},
+ :piggyback
+ [[{:type "text",
+    :text "t\n\n---HIVEMIND---\n[{:a 1}]\n---/HIVEMIND---"}]
+  [{:type "text", :text "t"}]
+  [{:type "text", :text "m\n\n---MEMORY---\n{:n 1}\n---/MEMORY---"}]
+  []]}

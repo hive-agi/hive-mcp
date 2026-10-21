@@ -2,7 +2,9 @@
   "Pure predicates and enums for kanban task semantics.
 
    Extracted from hive-mcp.tools.memory-kanban so transitions and
-   event handlers can stay pure.")
+   event handlers can stay pure."
+  (:require [hive-mcp.tools.kanban.schema :as ks]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -53,3 +55,9 @@
   "True iff memory entry is a kanban task (by content shape)."
   [entry]
   (boolean (kanban-task-type? (:content entry))))
+
+(m/=> normalize-status [:=> [:cat [:maybe ks/StatusText]] [:maybe :string]])
+(m/=> valid-status? [:=> [:cat [:maybe ks/StatusText]] :boolean])
+(m/=> done? [:=> [:cat [:maybe ks/StatusText]] :boolean])
+(m/=> kanban-task-type? [:=> [:cat [:maybe [:or ks/ContentMap [:map-of :string :any] :string]]] [:maybe [:= true]]])
+(m/=> kanban-entry? [:=> [:cat ks/MaybeEntry] :boolean])

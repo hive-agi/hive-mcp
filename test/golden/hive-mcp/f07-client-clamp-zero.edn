@@ -1,0 +1,8 @@
+{:case-0 {:out "<truncated:vec>", :in ([-1] 0)},
+ :case-1 {:out "<truncated:set>", :in (#{} 0)},
+ :case-2 {:out "<truncated:map>", :in ({:c. -1, :_0 1} 0)},
+ :case-3 {:out "<truncated:vec>", :in ([] 0)},
+ :case-4 {:out "3qE", :in ("3qE" 0)},
+ :case-5 {:out "<truncated:set>", :in (#{} 0)},
+ :case-6 {:out "<truncated:map>", :in ({} 0)},
+ :case-7 {:out "<truncated:set>", :in (#{-23} 0)}}

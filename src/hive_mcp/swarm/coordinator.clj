@@ -42,7 +42,8 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.spi.disc :as disc-port]))
+            [hive-mcp.spi.disc :as disc-port]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -53,6 +54,28 @@
 
 (defonce ^:private task-queue
   (atom []))
+
+;; =============================================================================
+;; Schemas
+;; =============================================================================
+
+(def TaskSpec
+  "A task as callers hand it in; open, every key optional."
+  [:map
+   [:id {:optional true} [:maybe :string]]
+   [:slave-id {:optional true} [:maybe :string]]
+   [:prompt {:optional true} [:maybe :string]]
+   [:files {:optional true} [:maybe [:sequential :string]]]
+   [:dependencies {:optional true} [:maybe [:sequential [:tuple :string :string]]]]
+   [:timeout-ms {:optional true} [:maybe :int]]])
+
+(def QueuedTask
+  "A task in the queue: an id and a queued-at stamp are always present."
+  [:map [:id :string] [:queued-at :int]])
+
+(def FileConflict
+  "A file another slave holds."
+  [:map [:file :string] [:held-by :string]])
 
 (defn queue-task!
   "Add a task to the waiting queue.
@@ -66,10 +89,14 @@
               "- waiting for files:" (:files task))
     (:id task)))
 
+(m/=> queue-task! [:=> [:cat TaskSpec] :string])
+
 (defn get-queue
   "Get the current task queue."
   []
   @task-queue)
+
+(m/=> get-queue [:=> [:cat] [:vector QueuedTask]])
 
 (defn clear-queue!
   "Clear all queued tasks."
@@ -77,11 +104,15 @@
   (reset! task-queue [])
   (log/info "Task queue cleared"))
 
+(m/=> clear-queue! [:=> [:cat] :nil])
+
 (defn remove-from-queue!
   "Remove a specific task from the queue."
   [task-id]
   (swap! task-queue (fn [q] (vec (remove #(= (:id %) task-id) q))))
   (log/debug "Removed task from queue:" task-id))
+
+(m/=> remove-from-queue! [:=> [:cat [:maybe :string]] :nil])
 
 (defn get-ready-tasks
   "Get tasks whose conflicts have cleared.
@@ -93,6 +124,9 @@
                        (:slave-id task)
                        (:files task))))
             queue)))
+
+;; a lazy filter over the queue
+(m/=> get-ready-tasks [:=> [:cat] [:sequential QueuedTask]])
 
 ;; =============================================================================
 ;; Heuristic File Extraction
@@ -125,6 +159,9 @@
          (remove #(str/starts-with? % "http"))
          distinct
          vec)))
+
+;; nil for a non-string prompt
+(m/=> extract-files-from-prompt [:=> [:cat :any] [:maybe [:vector :string]]])
 
 ;; =============================================================================
 ;; Atomic Claim Acquisition (Race-Free)
@@ -186,6 +223,12 @@
                :conflicts []
                :files-claimed (count files)})))))))
 
+;; nil when files is empty
+(m/=> atomic-claim-files! [:=> [:cat [:maybe :string] :string [:maybe [:sequential :string]]]
+                           [:maybe [:map [:acquired? :boolean]
+                                    [:conflicts [:vector FileConflict]]
+                                    [:files-claimed [:int {:min 0}]]]]])
+
 ;; =============================================================================
 ;; Pre-Flight Check API
 ;; =============================================================================
@@ -237,6 +280,17 @@
      :queue? has-conflicts?  ; Queue if file conflicts (can clear later)
      :would-deadlock (vec (or deadlock-pairs []))
      :extracted-files (when extracted? effective-files)}))
+
+(def PreFlight
+  "`pre-flight-check`'s verdict."
+  [:map
+   [:approved? :boolean]
+   [:conflicts [:vector FileConflict]]
+   [:queue? [:maybe :any]]
+   [:would-deadlock [:vector [:tuple :string :string]]]
+   [:extracted-files [:maybe [:vector :string]]]])
+
+(m/=> pre-flight-check [:=> [:cat TaskSpec] PreFlight])
 
 ;; =============================================================================
 ;; Claim Management
@@ -300,6 +354,11 @@
          :propagated propagation-result
          :archived? (boolean archived?)}))))
 
+(m/=> contextual-claim-release!
+      [:=> [:cat :string]
+       [:or [:map [:released? [:= false]] [:reason [:= :no-claim]]]
+        [:map [:released? [:= true]] [:changed? :boolean] [:propagated :any] [:archived? :boolean]]]])
+
 (defn register-task-claims!
   "Register file claims for a dispatched task.
    Call this after successful dispatch.
@@ -316,6 +375,9 @@
       (logic/add-task-file! task-id f)
       (claim-tools/record-claim-timestamp! f slave-id))
     (log/info "Registered" (count files) "file claims for task" task-id)))
+
+;; nil: the effect is the claims, logged
+(m/=> register-task-claims! [:=> [:cat [:maybe :string] :string [:maybe [:sequential :string]]] :nil])
 
 (defn release-task-claims!
   "Release file claims when a task completes.
@@ -348,6 +410,10 @@
        :propagated propagated-count
        :details results})))
 
+(m/=> release-task-claims! [:=> [:cat [:maybe :string]]
+                            [:map [:released [:int {:min 0}]] [:changed [:int {:min 0}]]
+                             [:propagated [:int {:min 0}]] [:details [:sequential :map]]]])
+
 ;; =============================================================================
 ;; Queue Processing (call periodically or on events)
 ;; =============================================================================
@@ -363,6 +429,8 @@
         (remove-from-queue! (:id task)))
       (log/info "Queue processing: " (count ready) "tasks ready for dispatch"))
     ready))
+
+(m/=> process-queue! [:=> [:cat] [:sequential QueuedTask]])
 
 ;; =============================================================================
 ;; Convenience API
@@ -398,9 +466,22 @@
       {:action :dispatch
        :files (or (seq files) (:extracted-files check-result))})))
 
+(m/=> dispatch-or-queue!
+      [:=> [:cat TaskSpec]
+       [:or
+        [:map [:action [:= :blocked]] [:reason [:= :circular-dependency]]
+         [:would-deadlock [:vector [:tuple :string :string]]]]
+        [:map [:action [:= :queued]] [:task-id :string] [:conflicts [:vector FileConflict]]
+         [:position [:int {:min 1}]]]
+        [:map [:action [:= :dispatch]] [:files [:maybe [:sequential :string]]]]]])
+
 (defn coordinator-status
   "Get current coordinator status."
   []
   {:queue-length (count @task-queue)
    :queued-tasks (mapv #(select-keys % [:id :slave-id :queued-at]) @task-queue)
    :db-stats (logic/db-stats)})
+
+(m/=> coordinator-status [:=> [:cat] [:map [:queue-length [:int {:min 0}]]
+                                      [:queued-tasks [:vector :map]]
+                                      [:db-stats :map]]])

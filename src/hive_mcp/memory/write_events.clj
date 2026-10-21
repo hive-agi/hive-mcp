@@ -61,7 +61,9 @@
   []
   (we/listener-keys))
 
-(m/=> listener-keys [:=> [:cat] [:sequential :keyword]])
+;; The kernel answers (set (keys @listeners)) — a set, not a sequence
+;; (corrected in the f04 facet sweep; the old [:sequential :keyword] rejected it).
+(m/=> listener-keys [:=> [:cat] [:set :keyword]])
 
 (defn notify!
   "See `hive-mcp.events.write-events/notify!`."

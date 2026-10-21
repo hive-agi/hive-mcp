@@ -1,12 +1,12 @@
 (ns hive-mcp.tools.catchup.contributed-blocks-test
-  "Every block registered in hive-mcp.spi.catchup-registry reaches the catchup
+  "Every block registered in hive-spi.catchup.registry reaches the catchup
    answer as its own {\"_block\": \"<id>\", ...} section, in :block/order, with
    no per-id rendering in the host. Blocks are registered in the REAL registry
    and catchup runs end to end against the stub memory store."
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing use-fixtures]]
-            [hive-mcp.spi.catchup-registry :as blocks]
+            [hive-spi.catchup.registry :as blocks]
             [hive-mcp.test.stub.memory-store :as mem-stub]
             [hive-mcp.tools.catchup :as catchup]
             [hive-mcp.tools.catchup.format :as fmt]

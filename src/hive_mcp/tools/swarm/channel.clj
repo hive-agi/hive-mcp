@@ -3,7 +3,8 @@
   (:require [clojure.core.async :as async :refer [go-loop <!]]
             [hive-dsl.bounded-atom :refer [bounded-atom bput! bget bclear! register-sweepable!]]
             [hive-dsl.result :refer [rescue]]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -127,6 +128,36 @@
                 (unsub-fn event-type sub-ch)))))
   (bclear! channel-subscriptions)
   (log/info "Channel subscriptions stopped"))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def TaskId
+  "A task id; the bounded maps key it as (str task-id)."
+  [:or :string :keyword :int])
+
+(def BoundedPut
+  "What a bounded-map write answers."
+  [:map [:evicted-count [:int {:min 0}]] [:result :map]])
+
+(m/=> check-event-journal [:=> [:cat [:maybe TaskId]] :any])
+
+(m/=> clear-dispatched-tasks! [:=> [:cat] :nil])
+
+(m/=> clear-event-journal! [:=> [:cat] :nil])
+
+(m/=> dispatched-task? [:=> [:cat [:maybe TaskId]] :boolean])
+
+(m/=> record-dispatched-task! [:=> [:cat TaskId] BoundedPut])
+
+(m/=> record-task-result! [:=> [:cat TaskId [:maybe :map]] [:maybe BoundedPut]])
+
+;; Boundary: answers the subscription go-loop's channel, or nil without a
+;; channel layer; callers ignore it.
+(m/=> start-channel-subscriptions! [:=> [:cat] :any])
+
+(m/=> stop-channel-subscriptions! [:=> [:cat] :nil])
 
 (defn check-event-journal
   "Check event journal for task completion, returns the event or nil."

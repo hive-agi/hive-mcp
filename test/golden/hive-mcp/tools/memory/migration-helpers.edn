@@ -1,0 +1,8 @@
+{:edn-missing nil,
+ :extract "hive-mcp",
+ :extract-none nil,
+ :hash-long true,
+ :hash-named false,
+ :hash-short false,
+ :orphan true,
+ :rewrite ["note" "scope:project:new"]}

@@ -1,0 +1,9 @@
+{:case-0 {:out "swarm-y", :in (#:slave{:id "swarm-y"})},
+ :case-1 {:out "swarm-y", :in (#:slave{:id "swarm-y", :name ""})},
+ :case-2 {:out "x", :in (#:slave{:id "swarm-x-orphan"})},
+ :case-3
+ {:out "named", :in (#:slave{:id "swarm--orphan", :name "named"})},
+ :case-4 {:out "x", :in (#:slave{:id "swarm-x-orphan"})},
+ :case-5 {:out "x", :in (#:slave{:id "swarm-x-orphan"})},
+ :case-6 {:out "", :in (#:slave{:id "swarm--orphan"})},
+ :case-7 {:out "swarm-y", :in (#:slave{:id "swarm-y"})}}

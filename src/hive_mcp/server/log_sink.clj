@@ -14,7 +14,8 @@
 
    A slow writer stalls only the drain thread; the worst case for callers is
    lost console lines, visible as (dropped sink)."
-  (:require [clojure.java.io :as io])
+  (:require [clojure.java.io :as io]
+            [malli.core :as m])
   (:import [java.nio.file Files LinkOption StandardCopyOption StandardOpenOption]
            [java.nio.file.attribute PosixFilePermissions]
            [java.util.concurrent ArrayBlockingQueue BlockingQueue TimeUnit]
@@ -37,10 +38,18 @@
       (.write w (str line \newline))
       (.flush w))))
 
+(def Writer
+  "A LineWriter: the port a sink drains into."
+  [:fn {:error/message "must satisfy LineWriter"
+        :gen/schema :nil :gen/fmap (fn [_] (->ErrStreamWriter))}
+   #(satisfies? LineWriter %)])
+
 (defn err-stream-writer
   "The production writer: the root *err* stream."
   []
   (->ErrStreamWriter))
+
+(m/=> err-stream-writer [:=> [:cat] Writer])
 
 (defn file-path
   "Coordinator log under the user-private state directory. Honors XDG_STATE_HOME."
@@ -50,6 +59,13 @@
                state-home
                (str (System/getProperty "user.home") "/.local/state"))
              "hive-mcp" "coordinator.log")))
+
+(def FileValue
+  "A java.io.File."
+  [:fn {:gen/schema [:string {:min 1}] :gen/fmap #(java.io.File. (str "/tmp/" %))}
+   #(instance? java.io.File %)])
+
+(m/=> file-path [:=> [:cat] FileValue])
 
 (defn- private-file!
   "Open every ancestor with O_DIRECTORY|O_NOFOLLOW, creating only the final
@@ -98,6 +114,21 @@
   "Number of retained older generations."
   3)
 
+(def log-levels
+  "Timbre levels HIVE_MCP_LOG_LEVEL may name."
+  #{:trace :debug :info :warn :error :fatal :report})
+
+(defn parse-log-level
+  "Timbre :min-level for the HIVE_MCP_LOG_LEVEL value `s` (\"debug\",
+   \":warn\", \"INFO\" ...). Blank, nil or unknown values give :info, so the
+   server never runs at :debug by accident: at the live request rate every
+   request's DEBUG lines cost real CPU."
+  [s]
+  (let [k (some-> s str .trim .toLowerCase (.replaceFirst "^:" "") not-empty keyword)]
+    (if (contains? log-levels k) k :info)))
+
+(m/=> parse-log-level [:=> [:cat :any] (into [:enum] log-levels)])
+
 (defn- open-verified-fd!
   "Open relative to a pinned private directory and inspect the OPEN Linux
    inode with fstat before writing. Fail closed off Linux amd64."
@@ -133,7 +164,8 @@
     (when-not (= (long (alength bytes))
                  (long (.invoke (.getFunction libc "write") Long/TYPE
                                 (object-array [fd buf (long (alength bytes))]))))
-      (throw (ex-info "Log write failed or incomplete" {})))))
+      (throw (ex-info "Log write failed or incomplete" {})))
+    (java.lang.ref.Reference/reachabilityFence buf))) ; Memory frees its peer once collected
 
 (declare rotate-generations!)
 
@@ -198,6 +230,10 @@
   ([] (file-line-writer (file-path)))
   ([file] (->FileLineWriter (io/file file))))
 
+(m/=> file-line-writer [:function
+                        [:=> [:cat] Writer]
+                        [:=> [:cat [:or [:string {:min 1}] FileValue]] Writer]])
+
 ;; =============================================================================
 ;; Sink
 ;; =============================================================================
@@ -232,29 +268,65 @@
                      (.setDaemon true)
                      (.start)))]
      {:queue q :dropped dropped :failed failed :running running :thread thread
-      :capacity capacity})))
+      :capacity capacity :writer writer})))
+
+(def SinkOpts
+  "make-sink options."
+  [:map
+   [:capacity {:optional true} [:int {:min 1}]]
+   [:start? {:optional true} :boolean]])
+
+(defn- of-instance
+  "A schema for an instance of a host class, generating (make)."
+  [pred make]
+  [:fn {:gen/schema :nil :gen/fmap (fn [_] (make))} pred])
+
+(def Sink
+  "A bounded dropping sink: its queue, the dropped and failed counters, the
+   running flag, the drain thread (nil when built with :start? false) and the
+   capacity it was built with."
+  [:map
+   [:queue (of-instance #(instance? BlockingQueue %) #(ArrayBlockingQueue. 4))]
+   [:dropped (of-instance #(instance? AtomicLong %) #(AtomicLong. 0))]
+   [:failed (of-instance #(instance? AtomicLong %) #(AtomicLong. 0))]
+   [:running (of-instance #(instance? clojure.lang.IAtom %) #(atom false))]
+   [:thread [:maybe (of-instance #(instance? Thread %) #(Thread. ^Runnable (fn [])))]]
+   [:capacity [:int {:min 1}]]])
+
+(m/=> make-sink [:function
+                 [:=> [:cat Writer] Sink]
+                 [:=> [:cat Writer SinkOpts] Sink]])
 
 (defn offer!
-  "Hand `line` to the sink without blocking. Returns :queued or :dropped."
-  [{:keys [^BlockingQueue queue ^AtomicLong dropped]} line]
-  (if (.offer queue line)
+  "Hand `line` to the sink without blocking: :queued, or :dropped when full or stopped."
+  [{:keys [^BlockingQueue queue ^AtomicLong dropped running]} line]
+  (if (and @running (.offer queue line))
     :queued
     (do (.incrementAndGet dropped) :dropped)))
+
+(m/=> offer! [:=> [:cat Sink :string] [:enum :queued :dropped]])
 
 (defn dropped
   "Lines dropped because the queue was full."
   [sink]
   (.get ^AtomicLong (:dropped sink)))
 
+(m/=> dropped [:=> [:cat Sink] [:int {:min 0}]])
+
 (defn depth
   "Lines currently waiting for the writer."
   [sink]
   (.size ^BlockingQueue (:queue sink)))
 
+(m/=> depth [:=> [:cat Sink] [:int {:min 0}]])
+
 (defn stop!
   "Stop the drain thread after its current write. Queued lines are abandoned."
   [{:keys [running]}]
   (reset! running false))
+
+(m/=> stop! [:=> [:cat [:map [:running (of-instance #(instance? clojure.lang.IAtom %) #(atom true))]]]
+             [:= false]])
 
 (defn appender-fn
   "Timbre appender :fn that offers the formatted line to `sink`."
@@ -263,12 +335,28 @@
     (let [{:keys [output_]} data]
       (offer! sink (force output_)))))
 
+(def AppenderFn
+  "A Timbre appender :fn: one arity over Timbre's data map."
+  [:=> [:cat :map] :any])
+
+(m/=> appender-fn [:=> [:cat Sink] AppenderFn])
+
 (defrecord BootEvent [addon-id phase elapsed-ms status])
 
 (defn boot-event
   "Build a typed timing record; appender writes only validated addon identifiers."
   [addon-id phase elapsed-ms status]
   (->BootEvent addon-id phase elapsed-ms status))
+
+(def BootEventValue
+  "A BootEvent record. boot-event builds one from any four values; the file
+   appender validates it before rendering (valid-boot-event?)."
+  [:fn {:gen/schema [:tuple :keyword [:enum :addon :init :slowest :complete :manifest-scan]
+                     [:double {:min 0.0 :max 1e6}] [:= :ok]]
+        :gen/fmap #(apply ->BootEvent %)}
+   #(instance? BootEvent %)])
+
+(m/=> boot-event [:=> [:cat :any :any :any :any] BootEventValue])
 
 (defn- valid-boot-event?
   [event]
@@ -312,9 +400,15 @@
        (instance? BootEvent (first (:vargs data)))
        (valid-boot-event? (first (:vargs data)))))
 
+;; A falsy answer is nil when an (and ...) clause short-circuits on a set
+;; lookup, false otherwise; a truthy answer is true.
+(m/=> boot-line? [:=> [:cat [:maybe :map]] [:maybe :boolean]])
+
 (defn boot-appender-fn
   "Timbre file appender: serialize only typed boot events, never formatted output."
   [sink]
   (fn [data]
     (when (boot-line? data)
       (offer! sink (render-boot-event (first (:vargs data)))))))
+
+(m/=> boot-appender-fn [:=> [:cat Sink] AppenderFn])

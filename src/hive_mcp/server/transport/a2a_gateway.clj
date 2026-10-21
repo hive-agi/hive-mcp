@@ -4,7 +4,9 @@
    Single responsibility: start A2A gateway if enabled via config."
   (:require [hive-mcp.config.core :as config]
             [hive-mcp.dns.result :as result]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.server.transport.schema :as ts]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -48,3 +50,11 @@
                {:status :failed :port port})
            (do (log/info "A2A gateway started" {:port port})
                {:status :running :port port})))))))
+
+;; BUG: hive-mcp.transport.a2a/start! swallows its own bind failure and
+;; answers nil, which is not ::failed, so a gateway that is NOT listening is
+;; reported {:status :running} (seen with :port -1). The contract states the
+;; current behaviour; the facet test pins it.
+(m/=> start-a2a-gateway! [:function
+                          [:=> [:cat] ts/MaybeStartStatus]
+                          [:=> [:cat ts/ComponentConfig] ts/MaybeStartStatus]])

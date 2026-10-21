@@ -13,7 +13,9 @@
             [hive-spi.editor.services :as svc]
             [clojure.data.json :as json]
             [hive-mcp.swarm.bootstrap.noop :as noop]
-            [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]))
+            [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
+            [malli.core :as m]
+            [hive-mcp.swarm.bootstrap.protocol :as bp]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -84,6 +86,15 @@
         impl (build-bootstrap resolved (dissoc opts :source))]
     (log/info "swarm.bootstrap.factory: built" resolved "bootstrap")
     impl))
+
+(def ConfigFn
+  "The injected config read: (config-fn :swarm-sync :source) -> source or nil.
+   A throwing read falls back to the legacy default."
+  [:=> [:cat :keyword :keyword] :any])
+
+;; an unknown :source falls back to NoopBootstrap, so the source is open
+(m/=> make-bootstrap [:=> [:cat [:map [:source {:optional true} [:maybe [:or :keyword :string]]]] ConfigFn]
+                      bp/Bootstrap])
 
 ;; Re-export protocol fns so callers can avoid a second require.
 (def load-slaves     proto/-load-slaves)

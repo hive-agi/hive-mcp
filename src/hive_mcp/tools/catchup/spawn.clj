@@ -11,7 +11,8 @@
             [hive-mcp.dns.result :refer [rescue]]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.extensions.soft :as soft]))
+            [hive-mcp.extensions.soft :as soft]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -191,3 +192,22 @@
                          :git-info git-info
                          :project-name (or project-name project-id "global")}))
                      context-str))))))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def SpawnOpts
+  "spawn-context options. :mode picks :ref, :hints or (any other value) :full."
+  [:maybe [:map
+           [:mode {:optional true} [:maybe [:or :keyword :string]]]
+           [:task {:optional true} [:maybe :string]]
+           [:task-id {:optional true} [:maybe :string]]]])
+
+(def ^:private Directory
+  [:maybe [:string {:gen/schema [:enum "/tmp" "/nonexistent-m26/x"]}]])
+
+(m/=> spawn-context
+      [:function
+       [:=> [:cat Directory] [:maybe :string]]
+       [:=> [:cat Directory SpawnOpts] [:maybe :string]]])

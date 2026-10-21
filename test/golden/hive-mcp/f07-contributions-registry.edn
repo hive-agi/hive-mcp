@@ -1,0 +1,9 @@
+{:returned [:b :a],
+ :reset [nil {}],
+ :forget [nil [:b :boom :inert]],
+ :entry-none nil,
+ :order [:b :a :boom :inert],
+ :side-effect [:b2 :a],
+ :ran [:b :a],
+ :entry-a {:source :addon, :install! :fn, :addon :x},
+ :failed [:boom]}

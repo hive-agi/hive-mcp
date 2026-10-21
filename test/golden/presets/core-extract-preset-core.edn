@@ -1,0 +1,88 @@
+{:case-0
+ {:out
+  {:name "clarity",
+   :title "clarity",
+   :category "testing",
+   :summary "Write the test first.",
+   :key-points ["c" "a" "a" "b"]},
+  :in
+  ({:name "clarity",
+    :category "testing",
+    :content "\n\nWrite the test first.\n\n- c\n- a\n- a\n- b"})},
+ :case-1
+ {:out
+  {:name "clarity",
+   :title "clarity",
+   :category "coding",
+   :summary "No summary available",
+   :key-points ["c" "c" "b" "b" "b"]},
+  :in
+  ({:name "clarity",
+    :category "coding",
+    :content "# Refactor\n\n\n\n- c\n- c\n- b\n- b\n- b\n- b\n- c"})},
+ :case-2
+ {:out
+  {:name "tdd",
+   :title "tdd",
+   :category "coding",
+   :summary "Keep layers pure.",
+   :key-points ["b" "b" "c" "b" "c"]},
+  :in
+  ({:name "tdd",
+    :category "coding",
+    :content
+    "# Testing\n\nKeep layers pure.\n\n- b\n- b\n- c\n- b\n- c\n- a"})},
+ :case-3
+ {:out
+  {:name "tdd",
+   :title "tdd",
+   :category "testing",
+   :summary "Write the test first.",
+   :key-points ["c"]},
+  :in
+  ({:name "tdd",
+    :content "# Testing\n\nWrite the test first.\n\n- c"})},
+ :case-4
+ {:out
+  {:name "tdd",
+   :title "tdd",
+   :category "coding",
+   :summary "No summary available",
+   :key-points ["a" "a"]},
+  :in
+  ({:name "tdd",
+    :category "coding",
+    :content "# Refactor\n\n\n\n- a\n- a"})},
+ :case-5
+ {:out
+  {:name "tdd",
+   :title "tdd",
+   :category "coding",
+   :summary "Keep layers pure.",
+   :key-points ["a" "c" "c" "b" "a"]},
+  :in
+  ({:name "tdd",
+    :category "coding",
+    :content
+    "\n\nKeep layers pure.\n\n- a\n- c\n- c\n- b\n- a\n- b"})},
+ :case-6
+ {:out
+  {:name "tdd",
+   :title "tdd",
+   :category "testing",
+   :summary "Write the test first.",
+   :key-points ["b" "b" "a" "a" "a"]},
+  :in
+  ({:name "tdd",
+    :content
+    "# Refactor\n\nWrite the test first.\n\n- b\n- b\n- a\n- a\n- a\n- b"})},
+ :case-7
+ {:out
+  {:name "clarity",
+   :title "clarity",
+   :category "testing",
+   :summary "Write the test first.",
+   :key-points ["c"]},
+  :in
+  ({:name "clarity",
+    :content "# Refactor\n\nWrite the test first.\n\n- c"})}}

@@ -15,7 +15,8 @@
    a refusal map or nil is :loaded-fail, a queue ack is :loaded-queued."
   (:require [hive-spi.memory.ports :as ports]
             [taoensso.timbre :as log]
-            [hive-spi.memory.contract :as contract]))
+            [hive-spi.memory.contract :as contract]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -141,3 +142,23 @@
   [m]
   (reset! migrator m)
   m)
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def BatchMigrator
+  "An IBatchMigrator implementation. The registry is a defonce, so after a
+   reload of this namespace it may still hold a record built against the
+   previous protocol interface; the interface is matched by name as well,
+   which survives that reload where satisfies? would not."
+  [:fn {:gen/elements [(->DefaultBatchMigrator)]}
+   #(or (satisfies? IBatchMigrator %)
+        (some (fn [^Class c] (= "hive_mcp.tools.migrate.batch.IBatchMigrator" (.getName c)))
+              (supers (class %))))])
+
+(m/=> load-write-outcome [:=> [:cat :any] [:enum :ok :queued :fail]])
+
+(m/=> current-migrator [:=> [:cat] BatchMigrator])
+
+(m/=> set-migrator! [:=> [:cat BatchMigrator] BatchMigrator])

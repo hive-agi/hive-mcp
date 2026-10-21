@@ -6,7 +6,7 @@
             [hive-mcp.tools.memory.duration :as dur]
             [hive-mcp.tools.memory.classify :as classify]
             [hive-mcp.tools.memory.gaps :as gaps]
-            [hive-mcp.tools.core :refer [mcp-json mcp-error coerce-vec!]]
+            [hive-mcp.tools.core :as core :refer [mcp-json mcp-error coerce-vec!]]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.plan.plans :as plans]
             [hive-mcp.plan.gate :as plan-gate]
@@ -20,19 +20,87 @@
             [hive-mcp.crystal.recall :as recall]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.vectordb.resilience :refer [with-resilience]]
+            [hive-mcp.vectordb.resilience :refer [with-resilience call-with-resilience]]
             [hive-mcp.memory.type-registry :as type-registry]
             [hive-weave.core :as weave]
             [hive-mcp.memory.write-events :as write-events]
             [hive-mcp.tools.memory.crud.deferred :as deferred]
             [hive-mcp.embeddings.shared-gate :as embed-gate]
             [hive-mcp.tools.memory.crud.edge-outcome :as edge-outcome]
-            [hive-mcp.extensions.registry :as ext]))
+            [hive-mcp.extensions.registry :as ext]
+            [malli.core :as m]))
 
 (def ^:const ^:private memory-write-timeout-ms
   "Timeout budget for a single memory write (Chroma add + KG tx + fetch).
    On timeout the write may still land later; caller gets an error."
   30000)
+
+(def ^:dynamic *write-timeout-ms*
+  "Effective outer budget `handle-add` waits for `do-add!`. Defaults to
+   `memory-write-timeout-ms`; a dynamic var so a test can shrink it without
+   waiting 30 s on a stalled store stub."
+  memory-write-timeout-ms)
+
+(def ^:const ^:private store-stage-heal-budget-ms
+  "Heal-wait budget for a store stage whose backend already wraps its own
+   RPCs in a reconnect-and-retry (hive-milvus `resilient`: await + retry).
+   `with-resilience` at the default 8 s on top of that double-wraps every
+   RPC (about 16 s per stage) and eats the 30 s outer ceiling before the
+   caller learns anything. The handler layer keeps a short second chance
+   for a store that does not heal itself; cross-store back-edge probes
+   (`find-target-store`, `update-target-incoming!`) keep the default budget.
+   Kanban 20260529003400-5c19ae4f (b)."
+  2000)
+
+(defmacro ^:private with-stage-resilience
+  "`with-resilience` at `store-stage-heal-budget-ms`. For store stages the
+   backend already protects; see that constant."
+  [& body]
+  `(call-with-resilience (fn [] ~@body) store-stage-heal-budget-ms))
+
+(defn new-progress
+  "A fresh progress tracker for one `handle-add` call: an atom holding the
+   stage the write is in and when it entered it. Starts at `:queued`, the
+   stage a write is in until a pool thread picks it up.
+   Kanban 20260529003400-5c19ae4f (a)."
+  []
+  (let [now (System/nanoTime)]
+    (atom {:stage :queued :started-ns now :stage-since-ns now})))
+
+(defn- mark-stage!
+  "Record that the write entered `stage`. A nil `progress` is a no-op, so
+   `do-add!` callers outside `handle-add` (tests, kanban) pay nothing."
+  [progress stage]
+  (when progress
+    (swap! progress assoc :stage stage :stage-since-ns (System/nanoTime)))
+  nil)
+
+(defn timeout-diagnostic
+  "Pure: the diagnostic map for a write that outran `timeout-ms`.
+   `snapshot` is the deref'd progress tracker, `now-ns` a `System/nanoTime`
+   reading. Returns {:stage :elapsed-ms :stage-elapsed-ms :timeout-ms :cause}.
+
+   :cause is :pool-queue-wait when no pool thread ever started the write
+   (stage :queued), :stage-stalled when a stage was entered and did not
+   return in time."
+  [snapshot timeout-ms now-ns]
+  (let [{:keys [stage started-ns stage-since-ns]} snapshot
+        stage (or stage :queued)
+        ->ms  (fn [from] (if from (quot (max 0 (- now-ns from)) 1000000) 0))]
+    {:stage            stage
+     :elapsed-ms       (->ms started-ns)
+     :stage-elapsed-ms (->ms stage-since-ns)
+     :timeout-ms       timeout-ms
+     :cause            (if (= :queued stage) :pool-queue-wait :stage-stalled)}))
+
+(defn timeout-message
+  "Human-readable text for a `timeout-diagnostic` map. Keeps the historical
+   `memory add timed out after <N>ms` prefix and appends the stage, how long
+   the stage ran, the cause, and the EDN of the full diagnostic."
+  [{:keys [stage stage-elapsed-ms timeout-ms cause] :as diag}]
+  (str "memory add timed out after " timeout-ms "ms in stage " stage
+       " (stage elapsed " stage-elapsed-ms "ms, cause " cause "). "
+       "The write may still land later. " (pr-str diag)))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -281,7 +349,10 @@
    Wraps the store add-entry! in `with-resilience` so a dropped
    HTTP transport (selector-manager-closed IOException surfaced as
    ExecutionException) kicks the heal loop and retries once before
-   surfacing the failure to the caller.
+   surfacing the failure to the caller. The wrap uses the short
+   `store-stage-heal-budget-ms` (via `with-stage-resilience`) because the
+   backend's own `resilient` already waits and retries; the default 8 s on
+   top of it double-waited every RPC.
 
    On embedding failure the complete entry, with its store slot, is persisted
    to the local outbox BEFORE its id is acknowledged; the housekeeping drain
@@ -319,7 +390,7 @@
         {:keys [ok failure attempts]}
         (binding [embed-gate/*lane* :interactive]
           (deferred/call-with-embed-retry
-            #(with-resilience
+            #(with-stage-resilience
                (mem-proto/add-entry! (mem-proto/get-store store-key) entry))
             deferred/default-retry
             #(Thread/sleep (long %))))]
@@ -341,12 +412,14 @@
    = 600 ms, which stays well under the 30 s memory-write-timeout-ms
    and is invisible to callers when the first read already succeeds.
 
-   Each store read is wrapped in `with-resilience` so a transport drop
-   during the read-after-write window triggers a heal-and-retry. All
-   types — plans included — go through the same IMemoryStore path."
+   Each store read is wrapped in `with-stage-resilience` (the short
+   `store-stage-heal-budget-ms`, since the backend's own `resilient` already
+   heals) so a transport drop during the read-after-write window triggers a
+   heal-and-retry. All types — plans included — go through the same
+   IMemoryStore path."
   [store entry-id]
   (loop [attempt 1]
-    (let [fetched (with-resilience (mem-proto/get-entry store entry-id))]
+    (let [fetched (with-stage-resilience (mem-proto/get-entry store entry-id))]
       (cond
         (some? fetched) fetched
         (>= attempt read-after-write-attempts) nil
@@ -367,12 +440,16 @@
    A deferred entry (embed failed, parked in the outbox) is answered from
    its outbox record; its :kg-outgoing link is amended into that record so
    the drain stores it with the entry. The response names the cause as
-   `:embedding_error` so the caller sees why the entry is not searchable yet."
+   `:embedding_error` so the caller sees why the entry is not searchable yet.
+
+   `:progress` (optional, from `new-progress`) is told which stage the write
+   is in (`:kg-edges`, `:link-outgoing`, `:fetch`) so a timeout can name it."
   [entry-id kg-params project-id agent-id
-   {:keys [tags-with-scope type knowledge-gaps store-key]
+   {:keys [tags-with-scope type knowledge-gaps store-key progress]
     :or {store-key :default}}]
   (let [store (mem-proto/get-store store-key)
         pending (deferred/lookup entry-id)
+        _ (mark-stage! progress :kg-edges)
         {:keys [edge-ids edge-errors]}
         (edge-outcome/attempt-edges
          #(create-kg-edges! entry-id kg-params project-id agent-id)
@@ -382,8 +459,10 @@
                       (deferred/lookup entry-id))
                   pending)
         _ (when (and (seq edge-ids) (not pending))
-            (with-resilience
+            (mark-stage! progress :link-outgoing)
+            (with-stage-resilience
               (mem-proto/update-entry! store entry-id {:kg-outgoing edge-ids})))
+        _ (mark-stage! progress :fetch)
         created (or pending (fetch-with-retry store entry-id))]
     (when-not created
       (log/error "Failed to retrieve entry after indexing:" entry-id))
@@ -421,13 +500,17 @@
    generic memory-add surface used by axiom/principle/snippet writes.
 
    Both the duplicate-detection read and the duplicate-tag-merge write
-   are wrapped in `with-resilience`: if the Milvus HTTP transport drops
-   between the find-duplicate call and the dedup update, the heal loop
-   fires and the call retries once — otherwise transient failures here
-   would leak through `with-store`'s generic try/catch as errors."
+   are wrapped in `with-stage-resilience`: if the Milvus HTTP transport
+   drops between the find-duplicate call and the dedup update, the heal
+   loop fires and the call retries once — otherwise transient failures here
+   would leak through `with-store`'s generic try/catch as errors.
+
+   `:progress` (optional, from `new-progress`) is told which stage the write
+   is in (`:dedup-lookup`, `:dedup-update`, `:index`, then finalize's stages)
+   so `handle-add` can name the stage a timeout happened in."
   [{:keys [type content tags duration directory agent_id
            kg_implements kg_supersedes kg_depends_on kg_refines abstraction_level
-           knowledge_gaps store-key]
+           knowledge_gaps store-key progress]
     :or   {store-key :default}}]
   (let [tags-vec (coerce-vec! tags :tags [])
         kg-vecs {:kg-implements-vec (coerce-vec! kg_implements :kg_implements [])
@@ -457,11 +540,13 @@
             content-hash (mem-proto/content-hash content)
             duration-str (or duration "long")
             expires (dur/calculate-expires duration-str)
-            existing (with-resilience
+            _ (mark-stage! progress :dedup-lookup)
+            existing (with-stage-resilience
                        (mem-proto/find-duplicate store type content-hash {:project-id project-id}))]
         (if existing
-          (let [merged-tags (distinct (concat (:tags existing) tags-with-scope))
-                updated (with-resilience
+          (let [_ (mark-stage! progress :dedup-update)
+                merged-tags (distinct (concat (:tags existing) tags-with-scope))
+                updated (with-stage-resilience
                           (mem-proto/update-entry! store (:id existing) {:tags merged-tags}))]
             (log/info "Duplicate found, merged tags:" (:id existing))
             (write-events/notify! :updated {:id (:id existing) :memory-type type
@@ -475,7 +560,8 @@
                            :expires expires :project-id project-id
                            :abstraction-level abstraction-level
                            :knowledge-gaps knowledge-gaps :agent-id agent-id
-                           :store-key store-key}
+                           :store-key store-key :progress progress}
+                _ (mark-stage! progress :index)
                 raw-id (index-entry! entry-ctx)]
             ;; Contract guard: IMemoryStore/add-entry! must return a non-blank
             ;; id string. Some backends (e.g. Milvus under circuit-breaker
@@ -500,7 +586,12 @@
 (defn handle-add
   "Add an entry to project memory with optional KG edge creation.
    Runs the IO-heavy core on the dedicated memory-pool so slow Chroma
-   or KG calls cannot saturate the shared io-pool."
+   or KG calls cannot saturate the shared io-pool.
+
+   A write that outruns `*write-timeout-ms*` is answered with a
+   stage-attributed error (see `timeout-diagnostic`): which stage was
+   running, how long the write and that stage had run, and whether the
+   write never left the pool queue."
   [{:keys [type abstraction_level] :as args}]
   (try
     (cond
@@ -527,16 +618,21 @@
             ;; defaults, so unknown-but-safe types persist and stay consistent.
             args (assoc args :type (type-registry/ensure-type! eff-type))
             timeout-sentinel ::timeout
+            timeout-ms *write-timeout-ms*
+            progress (new-progress)
+            args (assoc args :progress progress)
             result (wpool/await!
                     (pool/memory-pool)
                     #(try (do-add! args)
                           (catch Throwable t {::caught t}))
-                    {:timeout-ms memory-write-timeout-ms
+                    {:timeout-ms timeout-ms
                      :fallback   timeout-sentinel
                      :name       "memory-add"})]
         (cond
           (= result timeout-sentinel)
-          (mcp-error (str "memory add timed out after " memory-write-timeout-ms "ms"))
+          (let [diag (timeout-diagnostic @progress timeout-ms (System/nanoTime))]
+            (log/warn "memory add timed out:" (pr-str diag))
+            (mcp-error (timeout-message diag)))
 
           (and (map? result) (contains? result ::caught))
           (throw (::caught result))
@@ -546,3 +642,63 @@
       (if (#{:coercion-error :embedding-too-long :plan-gate-rejected :role-gate-rejected} (:type (ex-data e)))
         (mcp-error (.getMessage e))
         (throw e)))))
+
+;;; =============================================================================
+;;; Contracts
+;;; =============================================================================
+
+(def RoleCardValidator
+  "A RoleCard validator as injected or registered: {:valid? fn :explain fn}.
+   The selection itself is source-agnostic, so a candidate is any non-nil
+   value; a malformed one is rejected later by the role gate."
+  :some)
+
+(def ValidatorSources
+  [:maybe
+   [:map
+    [:injected {:optional true} :any]
+    [:extension {:optional true} :any]
+    [:spi {:optional true} :any]]])
+
+(def ValidatorChoice
+  [:or
+   [:map [:source [:enum :injected :extension :spi]] [:validator RoleCardValidator]]
+   [:map [:source [:= :none]] [:validator :nil]]])
+
+(def WriteStage
+  "The stage a memory add is in; :queued until a pool thread takes it."
+  :keyword)
+
+(def ProgressSnapshot
+  [:map
+   [:stage {:optional true} [:maybe WriteStage]]
+   [:started-ns {:optional true} [:maybe :int]]
+   [:stage-since-ns {:optional true} [:maybe :int]]])
+
+(def ProgressAtom
+  "The progress tracker: an atom holding a ProgressSnapshot."
+  [:fn {:gen/schema [:map [:stage WriteStage] [:started-ns :int] [:stage-since-ns :int]]
+        :gen/fmap atom}
+   #(and (instance? clojure.lang.IAtom %) (map? @%))])
+
+(def TimeoutDiagnostic
+  [:map
+   [:stage WriteStage]
+   [:elapsed-ms [:int {:min 0}]]
+   [:stage-elapsed-ms [:int {:min 0}]]
+   [:timeout-ms :any]
+   [:cause [:enum :pool-queue-wait :stage-stalled]]])
+
+(m/=> select-role-card-validator [:=> [:cat ValidatorSources] ValidatorChoice])
+
+(m/=> set-role-card-validator! [:=> [:cat :any] :any])
+
+(m/=> current-role-card-validator [:=> [:cat] [:maybe RoleCardValidator]])
+
+(m/=> new-progress [:=> [:cat] ProgressAtom])
+
+(m/=> timeout-diagnostic [:=> [:cat ProgressSnapshot :any :int] TimeoutDiagnostic])
+
+(m/=> timeout-message [:=> [:cat [:maybe :map]] :string])
+
+(m/=> handle-add [:=> [:cat [:maybe :map]] core/McpResponse])

@@ -1,0 +1,13 @@
+{:case-0 {:out false, :in nil},
+ :case-1
+ {:out false, :in {:id "t2", :content {"task-type" "research"}}},
+ :case-10 {:out false, :in {:id "t2", :content nil}},
+ :case-11 {:out false, :in {:id "t2", :content nil}},
+ :case-2 {:out false, :in {:id "t1", :content "5U"}},
+ :case-3 {:out true, :in {:id "t1", :content {:task-type "kanban"}}},
+ :case-4 {:out false, :in nil},
+ :case-5 {:out false, :in nil},
+ :case-6 {:out false, :in nil},
+ :case-7 {:out false, :in nil},
+ :case-8 {:out false, :in nil},
+ :case-9 {:out false, :in {:id "t1", :content "z5xKOF"}}}

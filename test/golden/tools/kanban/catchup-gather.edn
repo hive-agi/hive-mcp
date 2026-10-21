@@ -1,0 +1,28 @@
+{:scoped
+ {:counts {:todo 2, :inprogress 1, :inreview 0, :done 1},
+  :recent-todos
+  ({:id "cb-1",
+    :title "One",
+    :tags
+    ["kanban"
+     "todo"
+     "priority-medium"
+     "scope:project:kanban-block-test"]}
+   {:id "cb-2",
+    :title "Two",
+    :tags
+    ["kanban"
+     "todo"
+     "priority-medium"
+     "scope:project:kanban-block-test"]}),
+  :scope-tag "scope:project:kanban-block-test",
+  :projects 1},
+ :other
+ {:counts {:todo 0, :inprogress 0, :inreview 0, :done 0},
+  :recent-todos [],
+  :scope-tag "scope:project:no-such-project",
+  :projects 0},
+ :no-store
+ {:counts {},
+  :recent-todos [],
+  :scope-tag "scope:project:kanban-block-test"}}

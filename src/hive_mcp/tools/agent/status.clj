@@ -8,7 +8,9 @@
             [hive-mcp.swarm.digest :as digest]
             [hive-mcp.hivemind.state :as hm-state]
             [hive-mcp.agent.ling.headless-registry :as headless-registry]
-            [hive-spi.addon.headless :as headless]))
+            [hive-spi.addon.headless :as headless]
+            [malli.core :as m]
+            [hive-mcp.tools.result-bridge :as rb]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -115,3 +117,33 @@
     (catch Exception e
       (log/warn "agent digest failed:" (.getMessage e))
       (mcp-error (str "Digest failed: " (.getMessage e))))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def StatusParams
+  "agent status / digest params: an open map, every key optional."
+  [:maybe [:map
+           [:agent_id {:optional true} [:maybe :string]]
+           [:type {:optional true} [:maybe [:or :string :keyword]]]
+           [:project_id {:optional true} [:maybe :string]]
+           [:include_stale {:optional true} :any]
+           [:verbose {:optional true} :any]]])
+
+(def AnnotatedRow
+  "A row after `annotate-liveness`: :slave/liveness-age-ms, when copied, is
+   a non-negative number."
+  [:map [:slave/liveness-age-ms {:optional true} [:and number? [:>= 0]]]])
+
+(m/=> annotate-liveness
+      [:=> [:cat helpers/Port [:maybe [:sequential :map]]] [:vector AnnotatedRow]])
+
+(m/=> backend-status-fn
+      [:function
+       [:=> [:cat] helpers/Port]
+       [:=> [:cat helpers/Port] helpers/Port]])
+
+(m/=> handle-status [:=> [:cat StatusParams] rb/McpResponse])
+
+(m/=> handle-digest [:=> [:cat StatusParams] rb/McpResponse])

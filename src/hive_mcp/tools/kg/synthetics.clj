@@ -34,8 +34,10 @@
             [hive-mcp.knowledge-graph.edges :as edges]
             [hive-mcp.knowledge-graph.edge-cycle :as edge-cycle]
             [hive-mcp.protocols.memory :as mem-proto]
-            [hive-mcp.tools.core :refer [mcp-json mcp-error]]
-            [taoensso.timbre :as log]))
+            [hive-mcp.tools.core :as core :refer [mcp-json mcp-error]]
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.tools.kg.schema :as ks]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -102,6 +104,8 @@
          sort
          vec)))
 
+(m/=> list-synthetic-source-nodes [:=> [:cat] [:vector :string]])
+
 ;; =============================================================================
 ;; Record visibility: the orphaned-record selection class
 ;; =============================================================================
@@ -124,6 +128,8 @@
   []
   (set (conn/query '[:find [?id ...] :where [_ :kg-synthetic/id ?id]])))
 
+(m/=> synthetic-record-ids [:=> [:cat] [:set :any]])
+
 (defn count-projection-edges
   "Count of every :projects-to edge, whatever its source. The non-vacuity
    reference: if this is positive, an empty synth- source universe is a
@@ -132,6 +138,8 @@
   (or (conn/query '[:find (count ?e) .
                     :where [?e :kg-edge/relation :projects-to]])
       0))
+
+(m/=> count-projection-edges [:=> [:cat] nat-int?])
 
 (defn record-visibility
   "Can the orphaned-record class be decided over `sources`?
@@ -152,6 +160,8 @@
 
       :else {:visible? true :records records})))
 
+(m/=> record-visibility [:=> [:cat ks/Sources] ks/RecordVisibility])
+
 (defn partition-sources
   "Split synth- edge sources into {:registered [...] :orphans [...]} against a
    record-visibility result. When the orphan class is not visible, every
@@ -161,6 +171,8 @@
     {:registered (filterv #(contains? records %) sources)
      :orphans    (filterv #(not (contains? records %)) sources)}
     {:registered (vec sources) :orphans []}))
+
+(m/=> partition-sources [:=> [:cat ks/Sources ks/VisibilityIn] ks/Partition])
 
 ;; =============================================================================
 ;; Bounded retraction
@@ -221,6 +233,8 @@
               stop                          (assoc :stopped stop)
               (and (not stop) (pos? remaining)) (assoc :stopped :edge-budget))))))))
 
+(m/=> retract-node-bounded! [:=> [:cat ks/SynthId ks/RetractOpts] ks/RetractResult])
+
 (defn reap-orphans!
   "Collect synthetics whose node record is gone while their edges survive.
    No liveness lookups: the class is decided on the record alone.
@@ -260,6 +274,8 @@
               (if stopped
                 (assoc acc :stopped stopped)
                 (recur (rest todo) acc)))))))))
+
+(m/=> reap-orphans! [:=> [:cat [:? ks/ReapOpts]] ks/ReapResult])
 
 ;; =============================================================================
 ;; Live-ratio Classification
@@ -431,6 +447,8 @@
     (let [later? #(pos? (compare % after))]
       (into (filterv later? ids) (remove later?) ids))))
 
+(m/=> rotate-after [:=> [:cat [:sequential ks/SynthId] [:maybe ks/SynthId]] [:vector ks/SynthId]])
+
 (defn cleanup-synthetics!
   "Scan synthetic-pattern nodes and act on those that are dead.
 
@@ -568,6 +586,8 @@
                 :next-cursor      (peek taken)
                 :details          @details})))))
 
+(m/=> cleanup-synthetics! [:=> [:cat [:? ks/CleanupOpts]] ks/CleanupResult])
+
 ;; =============================================================================
 ;; MCP Handler
 ;; =============================================================================
@@ -620,6 +640,8 @@
     (catch Exception e
       (log/error e "kg_cleanup_synthetics failed")
       (mcp-error (str "cleanup-synthetics failed: " (.getMessage e))))))
+
+(m/=> handle-kg-cleanup-synthetics [:=> [:cat ks/CleanupParams] core/McpResponse])
 
 (def tool-def
   {:name "kg_cleanup_synthetics"

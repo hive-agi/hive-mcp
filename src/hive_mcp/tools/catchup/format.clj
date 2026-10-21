@@ -6,7 +6,9 @@
             [taoensso.timbre :as log]
             [hive-mcp.schema.type-token :as token]
             [hive-mcp.tools.catchup.outcome :as outcome]
-            [hive-mcp.addons.boot-health :as boot-health]))
+            [hive-mcp.addons.boot-health :as boot-health]
+            [hive-mcp.tools.catchup.shapes :as shapes]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -296,7 +298,7 @@
         :hint (if memory-available?
                 "Axioms and priority conventions are being delivered via ---MEMORY--- piggyback blocks. AXIOMS are INVIOLABLE - follow them word-for-word. Entries with :kg key have Knowledge Graph relationships."
                 "Memory is unavailable; no empty-memory claim or piggyback delivery was made.")})
-      ;; Contributed blocks (hive-mcp.spi.catchup-registry), already in
+      ;; Contributed blocks (hive-spi.catchup.registry), already in
       ;; :block/order. Each becomes its own section named after its id; the
       ;; host never names a contributor.
       (seq (contributed-sections contributed-blocks))
@@ -411,3 +413,132 @@
        (format-spawn-decisions decisions)
        (format-spawn-stale-files stale-files)
        (format-spawn-git git-info)))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def TextBlock
+  "One MCP text content block."
+  [:map [:type [:= "text"]] [:text :string]])
+
+(def ErrorBlock
+  "An MCP error content block."
+  [:map [:type [:= "text"]] [:text :string] [:isError [:= true]]])
+
+(def CatchupMeta
+  "`entry->catchup-meta`: id, type name, preview."
+  [:map {:closed true} [:id :any] [:T :string] [:P :string]])
+
+(def AxiomMeta
+  [:map {:closed true}
+   [:id :any] [:type [:= "axiom"]] [:tags [:vector :any]] [:content :any]
+   [:severity [:= "INVIOLABLE"]]])
+
+(def PriorityMeta
+  [:map {:closed true}
+   [:id :any] [:type [:= "convention"]] [:tags [:vector :any]] [:content :any]])
+
+(def ReviewMeta
+  [:map {:closed true}
+   [:id :any] [:requested :string] [:tags [:vector :any]]
+   [:preview :string] [:approve :string] [:reject :string]])
+
+(def WrapPreview
+  [:map {:closed true}
+   [:id :any] [:created :any] [:tags [:vector :any]] [:preview :string]])
+
+(def ^:private JsonValue
+  "A value `json/write-str` accepts; what contributed blocks carry."
+  [:any {:gen/schema [:or :nil :string :int :boolean
+                      [:map-of {:gen/max 3} [:enum :n :items :_block] [:or :int :string [:vector {:gen/max 3} :int]]]
+                      [:vector {:gen/max 3} :string]]}])
+
+(def ^:private JsonMap
+  "A map block payload."
+  [:map-of {:gen/schema [:map-of {:gen/max 4} [:enum :_block :a :items :note]
+                         [:or :string :int [:vector {:gen/max 30} [:string {:gen/max 40}]]]]}
+   :any :any])
+
+(def Contributed
+  "[[id value] ...] in :block/order."
+  [:maybe [:sequential [:tuple [:any {:gen/schema [:enum :kanban :x/y "s"]}] JsonValue]]])
+
+(def KgInsights
+  "KG insights; open, only the listed keys are trimmed."
+  [:maybe [:map
+           [:stale-files {:optional true} [:maybe [:sequential :any]]]
+           [:contradictions {:optional true} [:maybe [:sequential :any]]]
+           [:superseded {:optional true} [:maybe [:sequential :any]]]
+           [:grounding-warnings {:optional true}
+            [:maybe [:map [:stale-entries {:optional true} [:maybe [:sequential :any]]]]]]]])
+
+(def GitInfoIn
+  "Git info as the spawn formatter reads it."
+  [:maybe [:map
+           [:branch {:optional true} [:maybe :string]]
+           [:uncommitted {:optional true} :any]
+           [:last-commit {:optional true} [:maybe :string]]]])
+
+(def ContentEntries
+  "Entries whose :content the spawn formatters print."
+  [:maybe [:sequential [:map [:content {:optional true} :any]]]])
+
+(def DecisionMetas
+  [:maybe [:sequential [:map [:preview {:optional true} [:maybe :string]] [:P {:optional true} [:maybe :string]]]]])
+
+(def StaleFiles
+  "disc top-stale-files rows."
+  [:maybe [:sequential [:map
+                        [:path :any]
+                        [:score number?]
+                        [:days-since-read {:optional true} [:maybe :int]]
+                        [:hash-mismatch? {:optional true} :any]]]])
+
+(def ResponseIn
+  "build-catchup-response input. Open: every key optional."
+  [:map
+   [:memory-status {:optional true} [:maybe outcome/QueryOutcome]]
+   [:project-name {:optional true} [:maybe :string]]
+   [:project-id {:optional true} shapes/ProjectId]
+   [:scopes {:optional true} [:maybe [:sequential :string]]]
+   [:kg-insights {:optional true} KgInsights]
+   [:contributed-blocks {:optional true} Contributed]
+   [:carto-status {:optional true} [:maybe :map]]
+   [:context-refs {:optional true} [:maybe :map]]])
+
+(def Throwable?
+  [:fn {:gen/elements [(ex-info "boom" {}) (RuntimeException. "rt")]} #(instance? Throwable %)])
+
+(m/=> entry->catchup-meta [:=> [:cat [:maybe shapes/Entry] [:maybe nat-int?]] CatchupMeta])
+(m/=> entry->axiom-meta [:=> [:cat [:maybe shapes/Entry]] AxiomMeta])
+(m/=> entry->review-meta [:=> [:cat [:maybe shapes/Entry]] ReviewMeta])
+(m/=> entry->priority-meta [:=> [:cat [:maybe shapes/Entry]] PriorityMeta])
+(m/=> build-scopes [:=> [:cat [:maybe :string] shapes/ProjectId] [:vector :string]])
+(m/=> cap-axiom-content [:=> [:cat [:maybe shapes/Entry]] [:maybe shapes/Entry]])
+(m/=> cap-piggyback-entry [:=> [:cat [:maybe shapes/Entry]] [:maybe shapes/Entry]])
+(m/=> entry->wrap-preview [:=> [:cat [:maybe shapes/Entry]] WrapPreview])
+(m/=> trim-kg-insights [:=> [:cat KgInsights] KgInsights])
+(m/=> enforce-block-budget
+      [:function
+       [:=> [:cat JsonMap] :map]
+       [:=> [:cat JsonMap nat-int?] :map]])
+(m/=> block-name [:=> [:cat [:any {:gen/schema [:or :keyword :qualified-keyword :string]}]] :string])
+(m/=> contributed-sections [:=> [:cat Contributed] [:vector TextBlock]])
+(m/=> build-catchup-response [:=> [:cat ResponseIn] [:vector TextBlock]])
+(m/=> store-not-configured-error [:=> [:cat] ErrorBlock])
+(m/=> catchup-error [:=> [:cat Throwable?] ErrorBlock])
+(m/=> format-spawn-axioms [:=> [:cat ContentEntries] [:maybe :string]])
+(m/=> format-spawn-priorities [:=> [:cat ContentEntries] [:maybe :string]])
+(m/=> format-spawn-decisions [:=> [:cat DecisionMetas] [:maybe :string]])
+(m/=> format-spawn-git [:=> [:cat GitInfoIn] [:maybe :string]])
+(m/=> format-spawn-stale-files [:=> [:cat StaleFiles] [:maybe :string]])
+(m/=> serialize-spawn-context
+      [:=> [:cat [:map
+                  [:axioms {:optional true} ContentEntries]
+                  [:priority-conventions {:optional true} ContentEntries]
+                  [:decisions {:optional true} DecisionMetas]
+                  [:git-info {:optional true} GitInfoIn]
+                  [:project-name {:optional true} [:maybe :string]]
+                  [:stale-files {:optional true} StaleFiles]]]
+       :string])

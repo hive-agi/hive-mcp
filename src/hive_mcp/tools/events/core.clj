@@ -12,7 +12,8 @@
   (:require [clojure.data.json                :as json]
             [clojure.string                   :as str]
             [hive-mcp.tools.core              :as tcore]
-            [hive-mcp.tools.events.commands   :as cmd]))
+            [hive-mcp.tools.events.commands   :as cmd]
+            [malli.core :as m]))
 
 ;; =============================================================================
 ;; Subcommand dispatch
@@ -64,6 +65,8 @@
 
       :else
       (to-mcp (h params)))))
+
+(m/=> handle [:=> [:cat [:maybe :map]] hive-mcp.tools.core/McpResponse])
 
 ;; =============================================================================
 ;; Tool definition

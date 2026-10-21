@@ -1,0 +1,32 @@
+{:case-0
+ {:out
+  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  :in ("")},
+ :case-1
+ {:out
+  "8b20e9e1f1ba9386bc7fa54b0a73c9369cfa4001b1a88c6f196f7f59d0240b63",
+  :in (:.)},
+ :case-2
+ {:out
+  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  :in (nil)},
+ :case-3
+ {:out
+  "c3d24bc083da2e8213f472cc2a0fa8e4984af1ce9f82b63d20b9cc7d2d503c83",
+  :in (:?)},
+ :case-4
+ {:out
+  "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+  :in (1)},
+ :case-5
+ {:out
+  "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+  :in (0)},
+ :case-6
+ {:out
+  "dabc4b1c58574fe898c4c218a0856669d55f817ee7df27b63c534892fd1fb5d9",
+  :in (-14)},
+ :case-7
+ {:out
+  "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35",
+  :in (2)}}

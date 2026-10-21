@@ -1,0 +1,88 @@
+{:case-0
+ {:out
+  {"async"
+   {:type "boolean",
+    :description
+    "Set true to run in the background so the call does not block the agent loop. A queued call returns {:queued true :task-id ...} at once; its result arrives in a ---TOOLRESULT--- block on a later hive call."},
+   "async-timeout-ms"
+   {:type "integer",
+    :description
+    "With async:true, cancel the queued call after this many ms."}},
+  :in nil},
+ :case-1
+ {:out
+  {"async"
+   {:type "boolean",
+    :description
+    "Set true to run in the background so the call does not block the agent loop. A queued call returns {:queued true :task-id ...} at once; its result arrives in a ---TOOLRESULT--- block on a later hive call."},
+   "async-timeout-ms"
+   {:type "integer",
+    :description
+    "With async:true, cancel the queued call after this many ms."}},
+  :in []},
+ :case-2
+ {:out
+  {"async"
+   {:type "boolean",
+    :description
+    "Set false to force synchronous execution and get the full result in-band (default: this tool's commands may queue and return {:queued true :task-id ...}). Set true to force queueing. A queued call returns {:queued true :task-id ...} at once; its result arrives in a ---TOOLRESULT--- block on a later hive call."},
+   "async-timeout-ms"
+   {:type "integer",
+    :description
+    "With async:true, cancel the queued call after this many ms."}},
+  :in #{nil #{}}},
+ :case-3
+ {:out
+  {"async"
+   {:type "boolean",
+    :description
+    "Set true to run in the background so the call does not block the agent loop. A queued call returns {:queued true :task-id ...} at once; its result arrives in a ---TOOLRESULT--- block on a later hive call."},
+   "async-timeout-ms"
+   {:type "integer",
+    :description
+    "With async:true, cancel the queued call after this many ms."}},
+  :in #{}},
+ :case-4
+ {:out
+  {"async"
+   {:type "boolean",
+    :description
+    "Set true to run in the background so the call does not block the agent loop. A queued call returns {:queued true :task-id ...} at once; its result arrives in a ---TOOLRESULT--- block on a later hive call."},
+   "async-timeout-ms"
+   {:type "integer",
+    :description
+    "With async:true, cancel the queued call after this many ms."}},
+  :in nil},
+ :case-5
+ {:out
+  {"async"
+   {:type "boolean",
+    :description
+    "Set true to run in the background so the call does not block the agent loop. A queued call returns {:queued true :task-id ...} at once; its result arrives in a ---TOOLRESULT--- block on a later hive call."},
+   "async-timeout-ms"
+   {:type "integer",
+    :description
+    "With async:true, cancel the queued call after this many ms."}},
+  :in nil},
+ :case-6
+ {:out
+  {"async"
+   {:type "boolean",
+    :description
+    "Set true to run in the background so the call does not block the agent loop. A queued call returns {:queued true :task-id ...} at once; its result arrives in a ---TOOLRESULT--- block on a later hive call."},
+   "async-timeout-ms"
+   {:type "integer",
+    :description
+    "With async:true, cancel the queued call after this many ms."}},
+  :in nil},
+ :case-7
+ {:out
+  {"async"
+   {:type "boolean",
+    :description
+    "Set true to run in the background so the call does not block the agent loop. A queued call returns {:queued true :task-id ...} at once; its result arrives in a ---TOOLRESULT--- block on a later hive call."},
+   "async-timeout-ms"
+   {:type "integer",
+    :description
+    "With async:true, cancel the queued call after this many ms."}},
+  :in nil}}

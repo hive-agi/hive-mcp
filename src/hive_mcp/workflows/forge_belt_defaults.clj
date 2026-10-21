@@ -11,7 +11,8 @@
   (:require [hive-mcp.extensions.registry :as ext]
             [hive-mcp.config.core :as config]
             [hive.events.fsm :as fsm]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -341,3 +342,5 @@
     :fb/cont    run-continuous-belt*})
 
   (log/info "Registered forge belt defaults (22 :fb/* extension points)"))
+
+(m/=> register-forge-belt-defaults! [:=> [:cat] :nil])

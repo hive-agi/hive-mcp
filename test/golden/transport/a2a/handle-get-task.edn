@@ -1,0 +1,37 @@
+{:case-0
+ {:out {:error {:code -32602, :message "id is required"}}, :in {}},
+ :case-1
+ {:out
+  {:result
+   {:id "a2a-1",
+    :contextId "a2a-1",
+    :status
+    {:state "working",
+     :message
+     {:role "agent",
+      :parts [{:type "text", :text "Task in progress"}]}},
+    :kind "task"}},
+  :in {:id "a2a-1"}},
+ :case-2
+ {:out {:error {:code -32602, :message "id is required"}},
+  :in {:id ""}},
+ :case-3
+ {:out
+  {:result
+   {:id "t1",
+    :contextId "t1",
+    :status
+    {:state "working",
+     :message
+     {:role "agent",
+      :parts [{:type "text", :text "Task in progress"}]}},
+    :kind "task"}},
+  :in {:id "t1"}},
+ :case-4
+ {:out {:error {:code -32602, :message "id is required"}}, :in {}},
+ :case-5
+ {:out {:error {:code -32602, :message "id is required"}}, :in {}},
+ :case-6
+ {:out {:error {:code -32602, :message "id is required"}}, :in {}},
+ :case-7
+ {:out {:error {:code -32602, :message "id is required"}}, :in {}}}

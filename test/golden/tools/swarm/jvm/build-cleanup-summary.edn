@@ -1,0 +1,515 @@
+{:case-0
+ {:out
+  {:orphan-detection
+   {:mode "age-based", :truly-orphaned-count 1, :managed-by-claude 0},
+   :total-jvm-processes 1,
+   :orphans-found 1,
+   :orphan-pids ("1"),
+   :details
+   ({:pid "2",
+     :type :leiningen,
+     :orphan true,
+     :truly-orphaned true,
+     :parent-is-claude false,
+     :swarm-spawned false,
+     :swarm-slave-id "s1"}),
+   :swarm
+   {:total-swarm-spawned 1,
+    :by-slave {"unknown" {:count 1, :pids ("1")}}},
+   :by-type {"nrepl" 2, "other" 1, "shadow-cljs" 1},
+   :dry-run true,
+   :swarm-only-mode false,
+   :min-age-threshold 30,
+   :killed []},
+  :in
+  ([{}]
+   [{:pid "1",
+     :type :nrepl,
+     :swarm-spawned true,
+     :swarm-slave-id nil,
+     :orphan false,
+     :truly-orphaned true,
+     :parent-is-claude true}
+    {:pid "2",
+     :type :other,
+     :swarm-spawned false,
+     :swarm-slave-id "s1",
+     :orphan false,
+     :truly-orphaned false,
+     :parent-is-claude false}
+    {:pid "3",
+     :type :shadow-cljs,
+     :swarm-spawned false,
+     :swarm-slave-id "s1",
+     :orphan false,
+     :truly-orphaned false,
+     :parent-is-claude false}
+    {:pid "2",
+     :type :nrepl,
+     :swarm-spawned false,
+     :swarm-slave-id "s1",
+     :orphan true,
+     :truly-orphaned false,
+     :parent-is-claude false}]
+   [{:pid "2",
+     :type :leiningen,
+     :swarm-spawned false,
+     :swarm-slave-id "s1",
+     :orphan true,
+     :truly-orphaned true,
+     :parent-is-claude false}]
+   [{:pid "1"}]
+   nil
+   {:dry-run true,
+    :swarm-only false,
+    :min-age 30,
+    :true-orphans-only false})},
+ :case-1
+ {:out
+  {:orphan-detection
+   {:mode "true-orphans",
+    :truly-orphaned-count 2,
+    :managed-by-claude 0},
+   :total-jvm-processes 2,
+   :orphans-found 2,
+   :orphan-pids ("2" "1"),
+   :details
+   ({:pid "3",
+     :type :leiningen,
+     :orphan false,
+     :truly-orphaned true,
+     :parent-is-claude false,
+     :swarm-spawned false,
+     :swarm-slave-id nil}
+    {:pid "3",
+     :type :other,
+     :orphan true,
+     :truly-orphaned true,
+     :parent-is-claude false,
+     :swarm-spawned false,
+     :swarm-slave-id "s1"}),
+   :swarm
+   {:total-swarm-spawned 1,
+    :by-slave {"unknown" {:count 1, :pids ("2")}}},
+   :by-type {"shadow-cljs" 1, "leiningen" 1},
+   :dry-run true,
+   :swarm-only-mode false,
+   :min-age-threshold 30,
+   :killed []},
+  :in
+  ([{} {}]
+   [{:pid "3",
+     :type :shadow-cljs,
+     :swarm-spawned false,
+     :swarm-slave-id "s1",
+     :orphan true,
+     :truly-orphaned false,
+     :parent-is-claude true}
+    {:pid "2",
+     :type :leiningen,
+     :swarm-spawned true,
+     :swarm-slave-id nil,
+     :orphan true,
+     :truly-orphaned false,
+     :parent-is-claude true}]
+   [{:pid "3",
+     :type :leiningen,
+     :swarm-spawned false,
+     :swarm-slave-id nil,
+     :orphan false,
+     :truly-orphaned true,
+     :parent-is-claude false}
+    {:pid "3",
+     :type :other,
+     :swarm-spawned false,
+     :swarm-slave-id "s1",
+     :orphan true,
+     :truly-orphaned true,
+     :parent-is-claude false}]
+   [{:pid "2"} {:pid "1"}]
+   []
+   {:dry-run true,
+    :swarm-only false,
+    :min-age 30,
+    :true-orphans-only true})},
+ :case-2
+ {:out
+  {:orphan-detection
+   {:mode "true-orphans",
+    :truly-orphaned-count 0,
+    :managed-by-claude 1},
+   :total-jvm-processes 0,
+   :orphans-found 3,
+   :orphan-pids ("2" "2" "1"),
+   :details
+   ({:pid "1",
+     :type :nrepl,
+     :orphan true,
+     :truly-orphaned false,
+     :parent-is-claude true,
+     :swarm-spawned true,
+     :swarm-slave-id nil}),
+   :swarm
+   {:total-swarm-spawned 2,
+    :by-slave {"unknown" {:count 2, :pids ("2" "3")}}},
+   :by-type {"other" 1, "leiningen" 1, "shadow-cljs" 1},
+   :dry-run false,
+   :swarm-only-mode false,
+   :min-age-threshold 0,
+   :killed []},
+  :in
+  ([]
+   [{:pid "3",
+     :type :other,
+     :swarm-spawned false,
+     :swarm-slave-id "s1",
+     :orphan false,
+     :truly-orphaned true,
+     :parent-is-claude true}
+    {:pid "2",
+     :type :leiningen,
+     :swarm-spawned true,
+     :swarm-slave-id nil,
+     :orphan false,
+     :truly-orphaned true,
+     :parent-is-claude false}
+    {:pid "3",
+     :type :shadow-cljs,
+     :swarm-spawned true,
+     :swarm-slave-id nil,
+     :orphan false,
+     :truly-orphaned true,
+     :parent-is-claude false}]
+   [{:pid "1",
+     :type :nrepl,
+     :swarm-spawned true,
+     :swarm-slave-id nil,
+     :orphan true,
+     :truly-orphaned false,
+     :parent-is-claude true}]
+   [{:pid "2"} {:pid "2"} {:pid "1"}]
+   nil
+   {:dry-run false,
+    :swarm-only false,
+    :min-age 0,
+    :true-orphans-only true})},
+ :case-3
+ {:out
+  {:orphan-detection
+   {:mode "true-orphans",
+    :truly-orphaned-count 1,
+    :managed-by-claude 1},
+   :total-jvm-processes 1,
+   :orphans-found 0,
+   :orphan-pids (),
+   :details
+   ({:pid "3",
+     :type :leiningen,
+     :orphan false,
+     :truly-orphaned true,
+     :parent-is-claude false,
+     :swarm-spawned true,
+     :swarm-slave-id nil}
+    {:pid "1",
+     :type :leiningen,
+     :orphan true,
+     :truly-orphaned false,
+     :parent-is-claude true,
+     :swarm-spawned true,
+     :swarm-slave-id nil}),
+   :swarm {:total-swarm-spawned 0, :by-slave {}},
+   :by-type {},
+   :dry-run true,
+   :swarm-only-mode true,
+   :min-age-threshold 30,
+   :killed []},
+  :in
+  ([{}]
+   []
+   [{:pid "3",
+     :type :leiningen,
+     :swarm-spawned true,
+     :swarm-slave-id nil,
+     :orphan false,
+     :truly-orphaned true,
+     :parent-is-claude false}
+    {:pid "1",
+     :type :leiningen,
+     :swarm-spawned true,
+     :swarm-slave-id nil,
+     :orphan true,
+     :truly-orphaned false,
+     :parent-is-claude true}]
+   []
+   nil
+   {:dry-run true,
+    :swarm-only true,
+    :min-age 30,
+    :true-orphans-only true})},
+ :case-4
+ {:out
+  {:orphan-detection
+   {:mode "age-based", :truly-orphaned-count 0, :managed-by-claude 0},
+   :total-jvm-processes 4,
+   :orphans-found 3,
+   :orphan-pids ("2" "2" "2"),
+   :details (),
+   :swarm
+   {:total-swarm-spawned 2,
+    :by-slave
+    {"s1" {:count 1, :pids ("1")}, "unknown" {:count 1, :pids ("3")}}},
+   :by-type {"nrepl" 1, "leiningen" 2, "shadow-cljs" 1},
+   :dry-run false,
+   :swarm-only-mode true,
+   :min-age-threshold 0,
+   :killed []},
+  :in
+  ([{} {} {} {}]
+   [{:pid "2",
+     :type :nrepl,
+     :swarm-spawned false,
+     :swarm-slave-id "s1",
+     :orphan true,
+     :truly-orphaned false,
+     :parent-is-claude true}
+    {:pid "1",
+     :type :leiningen,
+     :swarm-spawned true,
+     :swarm-slave-id "s1",
+     :orphan true,
+     :truly-orphaned true,
+     :parent-is-claude true}
+    {:pid "3",
+     :type :shadow-cljs,
+     :swarm-spawned true,
+     :swarm-slave-id nil,
+     :orphan false,
+     :truly-orphaned true,
+     :parent-is-claude true}
+    {:pid "1",
+     :type :leiningen,
+     :swarm-spawned false,
+     :swarm-slave-id "s1",
+     :orphan true,
+     :truly-orphaned false,
+     :parent-is-claude false}]
+   []
+   [{:pid "2"} {:pid "2"} {:pid "2"}]
+   nil
+   {:dry-run false,
+    :swarm-only true,
+    :min-age 0,
+    :true-orphans-only false})},
+ :case-5
+ {:out
+  {:orphan-detection
+   {:mode "true-orphans",
+    :truly-orphaned-count 1,
+    :managed-by-claude 1},
+   :total-jvm-processes 2,
+   :orphans-found 2,
+   :orphan-pids ("2" "2"),
+   :details
+   ({:pid "3",
+     :type :other,
+     :orphan false,
+     :truly-orphaned false,
+     :parent-is-claude true,
+     :swarm-spawned false,
+     :swarm-slave-id nil}
+    {:pid "1",
+     :type :other,
+     :orphan true,
+     :truly-orphaned true,
+     :parent-is-claude false,
+     :swarm-spawned false,
+     :swarm-slave-id "s1"}),
+   :swarm
+   {:total-swarm-spawned 1,
+    :by-slave {"unknown" {:count 1, :pids ("1")}}},
+   :by-type {"other" 2, "nrepl" 1},
+   :dry-run true,
+   :swarm-only-mode true,
+   :min-age-threshold 30,
+   :killed []},
+  :in
+  ([{} {}]
+   [{:pid "1",
+     :type :other,
+     :swarm-spawned false,
+     :swarm-slave-id nil,
+     :orphan true,
+     :truly-orphaned false,
+     :parent-is-claude true}
+    {:pid "1",
+     :type :nrepl,
+     :swarm-spawned true,
+     :swarm-slave-id nil,
+     :orphan false,
+     :truly-orphaned false,
+     :parent-is-claude true}
+    {:pid "1",
+     :type :other,
+     :swarm-spawned false,
+     :swarm-slave-id "s1",
+     :orphan true,
+     :truly-orphaned true,
+     :parent-is-claude true}]
+   [{:pid "3",
+     :type :other,
+     :swarm-spawned false,
+     :swarm-slave-id nil,
+     :orphan false,
+     :truly-orphaned false,
+     :parent-is-claude true}
+    {:pid "1",
+     :type :other,
+     :swarm-spawned false,
+     :swarm-slave-id "s1",
+     :orphan true,
+     :truly-orphaned true,
+     :parent-is-claude false}]
+   [{:pid "2"} {:pid "2"}]
+   ["1"]
+   {:dry-run true,
+    :swarm-only true,
+    :min-age 30,
+    :true-orphans-only true})},
+ :case-6
+ {:out
+  {:orphan-detection
+   {:mode "age-based", :truly-orphaned-count 1, :managed-by-claude 2},
+   :total-jvm-processes 0,
+   :orphans-found 1,
+   :orphan-pids ("1"),
+   :details
+   ({:pid "1",
+     :type :nrepl,
+     :orphan true,
+     :truly-orphaned true,
+     :parent-is-claude false,
+     :swarm-spawned true,
+     :swarm-slave-id nil}
+    {:pid "1",
+     :type :nrepl,
+     :orphan false,
+     :truly-orphaned false,
+     :parent-is-claude true,
+     :swarm-spawned false,
+     :swarm-slave-id nil}
+    {:pid "2",
+     :type :leiningen,
+     :orphan false,
+     :truly-orphaned false,
+     :parent-is-claude true,
+     :swarm-spawned false,
+     :swarm-slave-id "s1"}),
+   :swarm {:total-swarm-spawned 0, :by-slave {}},
+   :by-type {"nrepl" 1},
+   :dry-run true,
+   :swarm-only-mode true,
+   :min-age-threshold 0,
+   :killed []},
+  :in
+  ([]
+   [{:pid "3",
+     :type :nrepl,
+     :swarm-spawned false,
+     :swarm-slave-id nil,
+     :orphan true,
+     :truly-orphaned true,
+     :parent-is-claude true}]
+   [{:pid "1",
+     :type :nrepl,
+     :swarm-spawned true,
+     :swarm-slave-id nil,
+     :orphan true,
+     :truly-orphaned true,
+     :parent-is-claude false}
+    {:pid "1",
+     :type :nrepl,
+     :swarm-spawned false,
+     :swarm-slave-id nil,
+     :orphan false,
+     :truly-orphaned false,
+     :parent-is-claude true}
+    {:pid "2",
+     :type :leiningen,
+     :swarm-spawned false,
+     :swarm-slave-id "s1",
+     :orphan false,
+     :truly-orphaned false,
+     :parent-is-claude true}]
+   [{:pid "1"}]
+   ["2" "2"]
+   {:dry-run true,
+    :swarm-only true,
+    :min-age 0,
+    :true-orphans-only false})},
+ :case-7
+ {:out
+  {:orphan-detection
+   {:mode "true-orphans",
+    :truly-orphaned-count 2,
+    :managed-by-claude 1},
+   :total-jvm-processes 2,
+   :orphans-found 2,
+   :orphan-pids ("1" "2"),
+   :details
+   ({:pid "1",
+     :type :shadow-cljs,
+     :orphan true,
+     :truly-orphaned true,
+     :parent-is-claude false,
+     :swarm-spawned true,
+     :swarm-slave-id nil}
+    {:pid "2",
+     :type :shadow-cljs,
+     :orphan false,
+     :truly-orphaned true,
+     :parent-is-claude true,
+     :swarm-spawned false,
+     :swarm-slave-id nil}
+    {:pid "3",
+     :type :shadow-cljs,
+     :orphan false,
+     :truly-orphaned false,
+     :parent-is-claude false,
+     :swarm-spawned true,
+     :swarm-slave-id nil}),
+   :swarm {:total-swarm-spawned 0, :by-slave {}},
+   :by-type {},
+   :dry-run false,
+   :swarm-only-mode false,
+   :min-age-threshold 30,
+   :killed []},
+  :in
+  ([{} {}]
+   []
+   [{:pid "1",
+     :type :shadow-cljs,
+     :swarm-spawned true,
+     :swarm-slave-id nil,
+     :orphan true,
+     :truly-orphaned true,
+     :parent-is-claude false}
+    {:pid "2",
+     :type :shadow-cljs,
+     :swarm-spawned false,
+     :swarm-slave-id nil,
+     :orphan false,
+     :truly-orphaned true,
+     :parent-is-claude true}
+    {:pid "3",
+     :type :shadow-cljs,
+     :swarm-spawned true,
+     :swarm-slave-id nil,
+     :orphan false,
+     :truly-orphaned false,
+     :parent-is-claude false}]
+   [{:pid "1"} {:pid "2"}]
+   nil
+   {:dry-run false,
+    :swarm-only false,
+    :min-age 30,
+    :true-orphans-only true})}}

@@ -4,7 +4,8 @@
    describe. Reaches the hive-workflows facade (hive-workflows.mcp) via
    requiring-resolve — hive-mcp keeps no compile dependency on hive-workflows."
   (:require [clojure.edn :as edn]
-            [hive-mcp.tools.core :refer [mcp-error mcp-json]]))
+            [hive-mcp.tools.core :as tc :refer [mcp-error mcp-json]]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -59,33 +60,53 @@
                       {:tags  (into [] (map keyword) (:tags params))
                        :limit (:limit params)})))
 
+(m/=> handle-list [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (defn handle-get [params]
   (->mcp (call-facade 'get-workflow (:workflow_id params))))
+
+(m/=> handle-get [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (defn handle-describe [params]
   (->mcp (call-facade 'describe-workflow (:workflow_id params))))
 
+(m/=> handle-describe [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (defn handle-author [params]
   (with-ast params (fn [ast opts] (call-facade 'author ast opts))))
+
+(m/=> handle-author [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (defn handle-register [params]
   (with-ast params (fn [ast opts] (call-facade 'register ast opts))))
 
+(m/=> handle-register [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (defn handle-run [params]
   (->mcp (call-facade 'run (:workflow_id params) (or (:opts params) {}))))
+
+(m/=> handle-run [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (defn handle-status [params]
   (->mcp (call-facade 'status (:workflow_id params))))
 
+(m/=> handle-status [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (defn handle-cancel [params]
   (->mcp (call-facade 'cancel (:workflow_id params) {})))
+
+(m/=> handle-cancel [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (defn handle-describe-method [params]
   (->mcp (if-let [m (:method params)]
            (call-facade 'describe-method m)
            (call-facade 'describe-method))))
 
+(m/=> handle-describe-method [:=> [:cat [:maybe :map]] tc/McpResponse])
+
 (defn handle-describe-vocabulary [params]
   (->mcp (if-let [v (:verb params)]
            (call-facade 'describe-vocabulary v)
            (call-facade 'describe-vocabulary))))
+
+(m/=> handle-describe-vocabulary [:=> [:cat [:maybe :map]] tc/McpResponse])

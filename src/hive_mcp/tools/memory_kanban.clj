@@ -18,7 +18,7 @@
             [hive-mcp.memory.temporal :as temporal]
             [hive-mcp.project.tree :as tree]
             [hive-mcp.swarm.datascript :as ds]
-            [hive-mcp.tools.core :refer [mcp-json mcp-error]]
+            [hive-mcp.tools.core :as core :refer [mcp-json mcp-error]]
             [hive-mcp.tools.kanban.events :as kanban-events]
             [hive-mcp.tools.kanban.predicates :as kp]
             [hive-mcp.tools.kanban.transitions :as kt]
@@ -33,7 +33,9 @@
             [hive-mcp.tools.kanban.filters :as kf]
             [hive-mcp.vectordb.kanban-facade :as kanban-facade]
             [hive-mcp.tools.memory-kanban.query :as query]
-            [hive-mcp.session.current :as session]))
+            [hive-mcp.session.current :as session]
+            [malli.core :as m]
+            [hive-mcp.tools.kanban.update :as kanban-update]))
 
 (declare query-kanban-entries resolve-project-ids-with-descendants effective-dir stats* filter-kanban-by-tags list-slim*)
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -234,18 +236,23 @@
                      (str "Move failed: " (:error result)))))))
 
 (defn- edit*
-  "Edit a kanban task's title/description/priority via the event bus.
+  "Edit a kanban task's title/description/priority via the event bus, and
+   with a status given move it in the SAME commit (`dispatch-update!`): the
+   store takes the whole update or none of it (kanban 20261020212530-132e3ea7).
    Like `move*`, the slim view is derived from the committed effect payload
    rather than a read-back, because some vector backends are eventual here."
-  [{:keys [task_id id title description append_description priority directory]}]
-  (let [task-id (or task_id id)
-        result  (kanban-events/dispatch-edit!
-                 {:task-id            task-id
-                  :title              title
-                  :description        description
-                  :append-description append_description
-                  :priority           priority
-                  :directory          directory})]
+  [{:keys [task_id id new_status status title description append_description priority directory]}]
+  (let [task-id    (or task_id id)
+        new-status (or new_status status)
+        payload    {:task-id            task-id
+                    :title              title
+                    :description        description
+                    :append-description append_description
+                    :priority           priority
+                    :directory          directory}
+        result     (if new-status
+                     (kanban-update/dispatch-update! (assoc payload :new-status new-status))
+                     (kanban-events/dispatch-edit! payload))]
     (if (r/ok? result)
       (let [{:keys [content tags]} (get-in result [:ok :kanban/facade-update :payload])]
         (mcp-json (kt/task->slim {:id task-id :content content :tags tags})))
@@ -256,18 +263,16 @@
   "Route a `kanban update` call to a status move, a content edit, or both.
 
    `new_status`/`status` moves; `title`/`description`/`priority` edit. When
-   both are given the move commits first, so the edit's coeffect reads the
-   already-moved entry and the returned slim view carries both changes.
+   both are given `edit*` sends them as ONE commit, so the returned slim view
+   carries both changes or the call fails with nothing applied.
    `append_description` extends the existing description without replacing it."
   [{:keys [new_status status title description append_description priority] :as params}]
   (let [given? (fn [v] (and (string? v) (not (str/blank? v))))
         move?  (some given? [new_status status])
         edit?  (some given? [title description append_description priority])]
     (cond
-      (and move? edit?) (let [moved (move* params)]
-                          (if (:isError moved) moved (edit* params)))
-      edit?             (edit* params)
-      :else             (move* params))))
+      edit?  (edit* (cond-> params (not move?) (dissoc :new_status :status)))
+      :else  (move* params))))
 
 (defn- retag*
   "Retag a kanban entry: scope-move (project_id) + optional ±tags.
@@ -460,6 +465,32 @@
 (defn handle-mem-kanban-quick
   [{:keys [title directory agent_id]}]
   (handle-mem-kanban-create {:title title :directory directory :agent_id agent_id}))
+
+;; ============================================================
+;; Contracts
+;; ============================================================
+
+;; Permissive in: :description is passed through as given (any value wins
+;; over :content); only a non-blank string :content is read as a body.
+(m/=> create-description [:=> [:cat [:maybe :map]] :any])
+
+;; Every handler is a safe-call boundary: params in, one MCP text response
+;; out (mcp-json payload or mcp-error), never a throw.
+(m/=> handle-mem-kanban-create [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-mem-kanban-list-slim [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-mem-kanban-move [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-mem-kanban-retag [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-mem-kanban-delete [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-mem-kanban-stats [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-mem-kanban-get [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-mem-kanban-quick [:=> [:cat [:maybe :map]] core/McpResponse])
 
 (def tools
   "REMOVED: Flat mem-kanban tools no longer exposed. Use consolidated `kanban` tool."

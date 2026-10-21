@@ -3,12 +3,14 @@
   (:require [hive-mcp.tools.memory.core :refer [with-store]]
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.tools.memory.format :as fmt]
-            [hive-mcp.tools.core :refer [mcp-json]]
+            [hive-mcp.tools.core :as tcore :refer [mcp-json]]
             [hive-mcp.memory.temporal :as temporal]
             [hive-mcp.protocols.memory :as mem-proto]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.vectordb.resilience :refer [with-resilience]])
+            [hive-mcp.vectordb.resilience :refer [with-resilience]]
+            [malli.core :as m]
+            [hive-mcp.tools.memory.schema :as ms])
   (:import [java.time ZonedDateTime]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -117,3 +119,18 @@
                        :helpful helpful
                        :unhelpful unhelpful}))
           (mcp-json {:error "Entry not found"}))))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> handle-log-access [:=> [:cat ms/McpParams] tcore/McpResponse])
+
+(m/=> handle-feedback
+      [:=> [:cat (ms/params
+                  [:map [:feedback {:optional true}
+                         [:any {:gen/schema [:maybe [:enum "helpful" "unhelpful" "bogus"]]}]]])]
+
+       tcore/McpResponse])
+
+(m/=> handle-helpfulness-ratio [:=> [:cat ms/McpParams] tcore/McpResponse])

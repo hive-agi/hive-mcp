@@ -1,0 +1,21 @@
+{:normalize-map [{:echo "x"}],
+ :normalize-str [{:type "text", :text "plain"}],
+ :normalize-seq [{:type "text", :text "a"}],
+ :response {:content [{:type "text", :text "r"}]},
+ :async-calls
+ [{:command "x"}
+  {:command "ship-land", :async true}
+  {:command "status"}
+  {:command "ship-land", :async false}
+  {:command "status", :async true}
+  {}],
+ :guard-context
+ [{:tool "memory",
+   :input {:directory "/w", :agent_id "a1"},
+   :agent-id "a1",
+   :cwd "/w"}
+  {:tool "kanban",
+   :input {:directory "/w", :_caller_id "ling-9"},
+   :agent-id nil,
+   :cwd "/w",
+   :caller-id "ling-9"}]}

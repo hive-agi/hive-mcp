@@ -132,12 +132,14 @@
 (defn set-store!
   "Install STORE as the active vector-collection store. Returns STORE.
    Called from the composition root, which is the one place allowed to name a
-   concrete backend."
+   concrete backend. With storage metering enabled the installed value is
+   STORE metered as [:store/vector <backend> <method>]."
   [store]
   (when-not (satisfies? IVectorCollectionStore store)
     (throw (ex-info "Not an IVectorCollectionStore"
                     {:reason ::not-a-store :got (type store)})))
-  (reset! -store store)
+  (reset! -store ((requiring-resolve 'hive-mcp.protocols.store-metrics/wrap-store)
+                  :vector store {:protocols [IVectorCollectionStore]}))
   store)
 
 (def VectorStore

@@ -1,0 +1,13 @@
+{:case-0
+ {:out "hive.v1.agent.completed.VB58W", :in ("VB58W" :completed)},
+ :case-1
+ {:out "hive.v1.agent.failed.Vu3W5K7", :in ("Vu3W5K7" :failed)},
+ :case-2 {:out "hive.v1.agent.progress.fk", :in ("fk" :progress)},
+ :case-3 {:out "hive.v1.agent.progress.j6pk", :in ("j6pk" :progress)},
+ :case-4
+ {:out "hive.v1.agent.failed.24b6077Pft1x",
+  :in ("24b6077Pft1x" :failed)},
+ :case-5 {:out "hive.v1.agent.failed.U7b8Ai", :in ("U7b8Ai" :failed)},
+ :case-6 {:out "hive.v1.agent.failed.z2R", :in ("z2R" :failed)},
+ :case-7
+ {:out "hive.v1.agent.completed.z508U", :in ("z508U" :completed)}}

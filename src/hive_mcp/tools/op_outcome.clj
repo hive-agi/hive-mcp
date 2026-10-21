@@ -23,7 +23,8 @@
 
    SPDX-License-Identifier: AGPL-3.0-or-later"
   (:require [clojure.data.json :as json]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -97,3 +98,34 @@
   "True when `result` is failed under `op-outcome`."
   ([result] (op-failed? result nil))
   ([result opts] (:failed? (op-outcome result opts))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def FailureKind
+  "The rule a failed result matched, in the order the ns doc lists them."
+  [:enum :success-false :body-failure :is-error :ok-false :error-key :null-id])
+
+(def Outcome
+  "What `op-outcome` answers: not failed, or failed with a kind and a reason."
+  [:or
+   [:map {:closed true} [:failed? [:= false]]]
+   [:map {:closed true}
+    [:failed? [:= true]]
+    [:kind FailureKind]
+    [:message :string]]])
+
+(def OutcomeOpts
+  "op-outcome options; :null-id-key arms the :null-id rule."
+  [:maybe [:map [:null-id-key {:optional true} :any]]])
+
+(m/=> json-failure-body [:=> [:cat :any] [:maybe [:map [:success [:= false]]]]])
+
+(m/=> op-outcome [:function
+                  [:=> [:cat :any] Outcome]
+                  [:=> [:cat :any OutcomeOpts] Outcome]])
+
+(m/=> op-failed? [:function
+                  [:=> [:cat :any] :boolean]
+                  [:=> [:cat :any OutcomeOpts] :boolean]])

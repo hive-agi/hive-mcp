@@ -1,0 +1,6 @@
+{:datascript [1 1],
+ :global 1,
+ :passes-value :ran,
+ :backend-fixtures {:datahike true, :datalevin true, :datascript true},
+ :current-backend :datascript,
+ :global-restored? true}

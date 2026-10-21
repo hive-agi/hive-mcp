@@ -1,0 +1,29 @@
+{:status-no-target
+ {:default-registered? true,
+  :kanban-registered? false,
+  :source-count 3,
+  :sample-ids ["k1" "k2" "k3"]},
+ :extracted ["k1" "k2" "k3"],
+ :dry-run
+ {:extracted 3,
+  :transformed 3,
+  :loaded-ok 0,
+  :loaded-fail 0,
+  :loaded-queued 0,
+  :batches 0,
+  :dry-run? true},
+ :live
+ {:extracted 3,
+  :transformed 3,
+  :dry-run? false,
+  :loaded-ok 3,
+  :loaded-fail 0,
+  :loaded-queued 0,
+  :batches 2},
+ :landed ("k1" "k2" "k3"),
+ :verify {:checked 3, :ok 3, :missing ()},
+ :status-after
+ {:default-registered? true,
+  :kanban-registered? true,
+  :source-count 3,
+  :sample-ids ["k1" "k2" "k3"]}}

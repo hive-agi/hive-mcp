@@ -40,7 +40,6 @@
             [hive-mcp.agora.signal :as signal]
             [hive-mcp.tools.swarm.dispatch :as dispatch]
             [hive-spi.swarm.ports.messaging :as push]
-            [datascript.core :as d]
             [clojure.data.json :as json]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
             [malli.core :as m]))
@@ -234,16 +233,13 @@
 (defn join-dialogue
   "Add a participant to an existing dialogue.
 
-   Used for dynamic role assignment when lings recruit new voices.
+   Used for dynamic role assignment when lings recruit new voices. The agora
+   store's owner writes the membership (schema/add-participant!).
 
    Returns: true if joined, false if dialogue not found"
   [dialogue-id slave-id]
-  (if-let [_dialogue (schema/get-dialogue dialogue-id)]
-    (let [c (schema/get-conn)
-          db @c
-          eid (:db/id (d/entity db [:agora.dialogue/id dialogue-id]))]
-      (d/transact! c [{:db/id eid
-                       :agora.dialogue/participants slave-id}])
+  (if (schema/add-participant! dialogue-id slave-id)
+    (do
       (log/info "Participant" slave-id "joined dialogue" dialogue-id)
       (emit! :agora/participant-joined {:dialogue-id dialogue-id
                                         :slave-id slave-id})
@@ -257,17 +253,14 @@
 (defn leave-dialogue
   "Remove a participant from a dialogue.
 
-   Typically called during ling /wrap or session end.
-   If participant was in active turn, marks as :defer.
+   Typically called during ling /wrap or session end. The agora store's
+   owner writes the membership (schema/remove-participant!); a dialogue left
+   with fewer than two participants is marked :aborted.
 
    Returns: true if left, false if not found"
   [dialogue-id slave-id]
-  (if-let [_dialogue (schema/get-dialogue dialogue-id)]
-    (let [c (schema/get-conn)
-          db @c
-          eid (:db/id (d/entity db [:agora.dialogue/id dialogue-id]))]
-      ;; Retract the participant
-      (d/transact! c [[:db/retract eid :agora.dialogue/participants slave-id]])
+  (if (schema/remove-participant! dialogue-id slave-id)
+    (do
       (log/info "Participant" slave-id "left dialogue" dialogue-id)
       (emit! :agora/participant-left {:dialogue-id dialogue-id
                                       :slave-id slave-id})
@@ -351,16 +344,15 @@
   "Check if dialogue has reached Nash equilibrium.
 
    Returns true when all participants have signaled :no-change or :approve
-   in their most recent turn.
-
-   NOTE: This is a basic implementation. The consensus namespace provides
-   more sophisticated detection with thresholds and timeout handling."
+   in their most recent turn. An unknown dialogue, or one with no
+   participants left, is false: nobody agreeing is not a consensus.
+   The consensus namespace adds thresholds and timeout handling."
   [dialogue-id]
   (let [participants (get-participants dialogue-id)
         last-turns (map #(get-last-turn-for dialogue-id %) participants)
         signals (map :signal (filter some? last-turns))]
-    (and (= (count signals) (count participants))
-         (every? equilibrium-signals signals))))
+    (boolean (and (seq participants) (= (count signals) (count participants))
+                  (every? equilibrium-signals signals)))))
 
 (m/=> nash-equilibrium? [:=> [:cat schema/DialogueId] :boolean])
 
@@ -454,7 +446,8 @@
                               :timeout_ms timeout_ms
                               :files files})]
 
-        ;; Emit turn-dispatched event for relay handler
+        ;; Notify UI spectators the turn went out. Frontend push only: the
+        ;; turn itself was delivered by handle-swarm-dispatch above.
         (emit! :agora/turn-dispatched {:dialogue-id dialogue-id
                                        :from sender-id
                                        :to to

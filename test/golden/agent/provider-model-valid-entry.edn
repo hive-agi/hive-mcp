@@ -1,0 +1,15 @@
+{:case-0 {:out true, :in {:dispatch :chatgpt-oauth, :secret-key nil}},
+ :case-1 {:out false, :in {:api-url "", :secret-key :+-}},
+ :case-10 {:out false, :in "entry"},
+ :case-11 {:out false, :in {:api-url "", :secret-key nil}},
+ :case-2 {:out false, :in "entry"},
+ :case-3 {:out false, :in {:api-url "http://x/v1", :secret-key :A}},
+ :case-4 {:out false, :in {:dispatch :bogus, :secret-key 7}},
+ :case-5 {:out false, :in {:dispatch :bogus, :secret-key "str"}},
+ :case-6
+ {:out false, :in {:dispatch :anthropic-oauth, :secret-key "str"}},
+ :case-7
+ {:out false, :in {:dispatch :subscription, :secret-key "str"}},
+ :case-8
+ {:out false, :in {:dispatch :subscription, :secret-key "str"}},
+ :case-9 {:out false, :in {:api-url "http://x/v1", :secret-key nil}}}

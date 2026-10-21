@@ -1,0 +1,11 @@
+{:status-keys
+ (:classloader-info
+  :eval-count
+  :rotation-threshold
+  :shared-session-id),
+ :rotated-session nil,
+ :rotated-count 0,
+ :cl-keys
+ (:chain-depth :dynamic-classloader-count :thread-context-classloader),
+ :cl-depth-positive true,
+ :cl-count-bounded true}

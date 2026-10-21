@@ -1,0 +1,105 @@
+{:case-0
+ {:out
+  {:id "t2",
+   :contextId "c1",
+   :status
+   {:state "canceled",
+    :message {:role "agent", :parts [{:type "text", :text "done"}]}},
+   :kind "task",
+   :metadata {:k 1}},
+  :in ("t2" "c1" "canceled" "done" :metadata {:k 1})},
+ :case-1
+ {:out
+  {:id "t2",
+   :contextId "c1",
+   :status
+   {:state "completed",
+    :message {:role "agent", :parts [{:type "text", :text "ok"}]}},
+   :kind "task",
+   :messages [],
+   :artifacts []},
+  :in ("t2" "c1" "completed" "ok" :messages [] :artifacts [])},
+ :case-2
+ {:out
+  {:id "t1",
+   :contextId "c1",
+   :status
+   {:state "working",
+    :message {:role "agent", :parts [{:type "text", :text ""}]}},
+   :kind "task",
+   :messages [{:role "user", :parts [{:type "text", :text "q"}]}],
+   :artifacts []},
+  :in
+  ("t1"
+   "c1"
+   "working"
+   ""
+   :messages
+   [{:role "user", :parts [{:type "text", :text "q"}]}]
+   :artifacts
+   [])},
+ :case-3
+ {:out
+  {:id "t1",
+   :contextId "c2",
+   :status
+   {:state "completed",
+    :message {:role "agent", :parts [{:type "text", :text "done"}]}},
+   :kind "task"},
+  :in ("t1" "c2" "completed" "done")},
+ :case-4
+ {:out
+  {:id "t1",
+   :contextId "c1",
+   :status
+   {:state "completed",
+    :message {:role "agent", :parts [{:type "text", :text "ok"}]}},
+   :kind "task"},
+  :in ("t1" "c1" "completed" "ok")},
+ :case-5
+ {:out
+  {:id "t1",
+   :contextId "c1",
+   :status
+   {:state "canceled",
+    :message {:role "agent", :parts [{:type "text", :text ""}]}},
+   :kind "task",
+   :messages [{:role "user", :parts [{:type "text", :text "q"}]}],
+   :artifacts []},
+  :in
+  ("t1"
+   "c1"
+   "canceled"
+   ""
+   :messages
+   [{:role "user", :parts [{:type "text", :text "q"}]}]
+   :artifacts
+   [])},
+ :case-6
+ {:out
+  {:id "t1",
+   :contextId "c2",
+   :status
+   {:state "completed",
+    :message {:role "agent", :parts [{:type "text", :text "done"}]}},
+   :kind "task",
+   :messages [{:role "user", :parts [{:type "text", :text "q"}]}],
+   :artifacts []},
+  :in
+  ("t1"
+   "c2"
+   "completed"
+   "done"
+   :messages
+   [{:role "user", :parts [{:type "text", :text "q"}]}]
+   :artifacts
+   [])},
+ :case-7
+ {:out
+  {:id "t2",
+   :contextId "c1",
+   :status
+   {:state "failed",
+    :message {:role "agent", :parts [{:type "text", :text "done"}]}},
+   :kind "task"},
+  :in ("t2" "c1" "failed" "done")}}

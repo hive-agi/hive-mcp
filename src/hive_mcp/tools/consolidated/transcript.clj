@@ -26,7 +26,8 @@
             [hive-dsl.result :as r]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.tools.core :as tcore]))
+            [hive-mcp.tools.core :as tcore]
+            [malli.core :as m]))
 
 ;; =============================================================================
 ;; Query Execution
@@ -476,6 +477,16 @@
       {:list-runs (constantly (r/ok []))
        :run-tip   (constantly (r/ok nil))})))
 
+(def RunsPort
+  "The `:runs` port: list-runs answers Result<[run-summary]>, run-tip answers
+   Result<tip|nil> for a run id. Callable members are `ifn?`; the generator
+   yields the empty port hive-agent-runs answers without hive-agent."
+  [:map
+   [:list-runs [:fn {:gen/elements [(constantly {:ok []})]} ifn?]]
+   [:run-tip [:fn {:gen/elements [(constantly {:ok nil})]} ifn?]]])
+
+(m/=> hive-agent-runs [:=> [:cat] RunsPort])
+
 (defn handle-transcript
   "Route transcript MCP commands. Returns an MCP-envelope result, never throws.
 
@@ -524,3 +535,7 @@
      (catch Throwable e
        (log/warn e "[transcript] command failed" (:command params))
        (tcore/mcp-error (str "transcript " (:command params) " failed: " (ex-message e)))))))
+
+(m/=> handle-transcript [:function
+                         [:=> [:cat [:maybe :map]] hive-mcp.tools.core/McpResponse]
+                         [:=> [:cat :any [:maybe :map]] hive-mcp.tools.core/McpResponse]])

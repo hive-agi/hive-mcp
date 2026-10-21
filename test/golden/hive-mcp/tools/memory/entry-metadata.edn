@@ -1,0 +1,41 @@
+{:case-0
+ {:out
+  {:id "e1",
+   :type "decision",
+   :preview "",
+   :tags ["kanban" "a"],
+   :created nil},
+  :in
+  ({:id "e1", :type "decision", :tags ["kanban" "a"], :content nil}
+   6)},
+ :case-1
+ {:out
+  {:id "e2", :type "note", :preview "s...", :tags [], :created nil},
+  :in ({:id "e2", :type "note", :tags [], :content "short"} 7)},
+ :case-2
+ {:out
+  {:id "e1",
+   :type "note",
+   :preview "",
+   :tags ["a" "kanban"],
+   :created nil},
+  :in
+  ({:id "e1", :type "note", :tags ["a" "kanban"], :content nil} 7)},
+ :case-3
+ {:out {:id "e1", :type "note", :preview "", :tags [], :created nil},
+  :in ({:id "e1", :type "note", :tags nil, :content nil} 7)},
+ :case-4
+ {:out
+  {:id "e2", :type "note", :preview "...", :tags [], :created nil},
+  :in ({:id "e2", :type "note", :tags nil, :content "short"} 6)},
+ :case-5
+ {:out {:id "e2", :type "note", :preview "", :tags [], :created nil},
+  :in ({:id "e2", :type "note", :tags nil, :content nil} 9)},
+ :case-6
+ {:out
+  {:id "e1", :type "decision", :preview "", :tags [], :created nil},
+  :in ({:id "e1", :type "decision", :tags nil, :content nil} 7)},
+ :case-7
+ {:out
+  {:id "e2", :type "decision", :preview "", :tags ["a"], :created nil},
+  :in ({:id "e2", :type "decision", :tags ["a"], :content nil} 7)}}

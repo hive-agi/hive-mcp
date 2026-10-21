@@ -1,0 +1,12 @@
+{:out-dir "target/boot-classes",
+ :stamp-file "target/boot-classes/.aot-stamp.edn",
+ :stamp-under-out-dir? true,
+ :protocols-first
+ [malli.core
+  hive-addon.protocol
+  hive-mcp.addons.protocol
+  hive-mcp.addons.terminal
+  hive-mcp.protocols.vessel],
+ :ctors-vector? true,
+ :ctors-symbols? true,
+ :ctors-distinct? true}

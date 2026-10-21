@@ -1,0 +1,13 @@
+{:case-0 {:out {:role nil, :parts []}, :in (nil nil)},
+ :case-1
+ {:out
+  {:role "agent",
+   :parts [{:type "text", :text "97s"} {:type "text", :text nil}]},
+  :in
+  ("agent" [{:type "text", :text "97s"} {:type "text", :text nil}])},
+ :case-2 {:out {:role nil, :parts []}, :in (nil nil)},
+ :case-3 {:out {:role nil, :parts []}, :in (nil [])},
+ :case-4 {:out {:role "agent", :parts []}, :in ("agent" nil)},
+ :case-5 {:out {:role nil, :parts []}, :in (nil nil)},
+ :case-6 {:out {:role nil, :parts []}, :in (nil nil)},
+ :case-7 {:out {:role nil, :parts []}, :in (nil nil)}}

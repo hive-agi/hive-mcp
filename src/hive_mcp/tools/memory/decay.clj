@@ -10,10 +10,12 @@
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.crystal.core :as crystal]
             [hive-mcp.memory.temporal :as temporal]
-            [hive-mcp.tools.core :refer [mcp-json]]
+            [hive-mcp.tools.core :as tcore :refer [mcp-json]]
             [hive-mcp.context.request :as ctx]
             [taoensso.timbre :as log]
-            [hive-mcp.vectordb.resilience :refer [with-resilience]]))
+            [hive-mcp.vectordb.resilience :refer [with-resilience]]
+            [malli.core :as m]
+            [hive-mcp.tools.memory.schema :as ms]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -143,3 +145,23 @@
     (catch Exception e
       {:decayed 0 :expired 0 :total-scanned 0
        :error (.getMessage e)})))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> query-scoped-entries
+      [:=> [:cat [:maybe :string] [:int {:min 0 :gen/max 20}]] [:vector ms/Entry]])
+
+(m/=> build-decay-plan [:=> [:cat ms/Entry ms/DecayOpts] [:maybe ms/DecayPlan]])
+
+(m/=> apply-decay! [:=> [:cat ms/Entry ms/DecayOpts] [:maybe ms/DecayApplied]])
+
+(m/=> handle-decay
+      [:=> [:cat (ms/params
+                  [:map [:access_threshold {:optional true} [:maybe [:int {:min 0 :gen/max 5}]]]
+                   [:recency_days {:optional true} [:maybe [:int {:min 0 :gen/max 30}]]]])]
+
+       tcore/McpResponse])
+
+(m/=> run-decay-cycle! [:=> [:cat ms/McpParams] ms/DecayCycle])

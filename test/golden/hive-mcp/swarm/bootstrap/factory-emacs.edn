@@ -1,0 +1,20 @@
+{:throwing-config [{:id 1}],
+ :from-string-config [],
+ :good-json
+ {:slaves
+  [{:slave-id "a", :status "idle"} {:slave-id "b", :status "working"}],
+  :calls [[:swarm/status 1234]]},
+ :unavailable {:slaves [], :calls nil},
+ :bad-json {:slaves [], :calls [[:swarm/status 1234]]},
+ :unknown-source
+ [:threw
+  {:swarm/addon-missing true,
+   :ns "hive-agent.swarm.bootstrap.noop",
+   :var "make-noop-bootstrap"}],
+ :none-source
+ [:threw
+  {:swarm/addon-missing true,
+   :ns "hive-agent.swarm.bootstrap.noop",
+   :var "make-noop-bootstrap"}],
+ :snapshot-is-self [true true nil],
+ :failed {:slaves [], :calls [[:swarm/status 1234]]}}

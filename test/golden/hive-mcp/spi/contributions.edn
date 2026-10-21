@@ -1,0 +1,8 @@
+{:order [:a :b :c],
+ :report {:ran [:a], :failed {:b "b fails"}},
+ :ran [:a2],
+ :entry-c {:source :addon, :payload 1},
+ :after-forget #{:b :a},
+ :after-reset {},
+ :absent-manifest {},
+ :load-absent {}}

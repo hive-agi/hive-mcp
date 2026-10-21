@@ -9,7 +9,8 @@
    Commands: fetch, search"
   (:require [hive-mcp.tools.composite :as composite]
             [hive-mcp.tools.core :refer [mcp-error]]
-            [hive-mcp.extensions.registry :as ext]))
+            [hive-mcp.extensions.registry :as ext]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -29,6 +30,8 @@
                     (some (fn [t] (when (= tool-name (:name t)) (:handler t)))))]
       (h params)
       (mcp-error (str tool-name " tool not available (addon not loaded)")))))
+
+(m/=> delegate-to-standalone [:=> [:cat :string] hive-mcp.tools.core/ToolHandler])
 
 ;; =============================================================================
 ;; Canonical Handlers (core — addons can override via contribute-commands!)

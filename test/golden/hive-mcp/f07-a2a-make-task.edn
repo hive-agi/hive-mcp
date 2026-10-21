@@ -1,0 +1,74 @@
+{:case-0
+ {:out
+  {:id "b95u",
+   :contextId 0,
+   :status
+   {:state nil,
+    :message {:role "agent", :parts [{:type "text", :text nil}]}},
+   :kind "task"},
+  :in ("b95u" 0 nil nil)},
+ :case-1
+ {:out
+  {:id 0,
+   :contextId 1,
+   :status
+   {:state "canceled",
+    :message {:role "agent", :parts [{:type "text", :text nil}]}},
+   :kind "task"},
+  :in (0 1 "canceled" nil)},
+ :case-2
+ {:out
+  {:id "sr3fD",
+   :contextId 2,
+   :status
+   {:state nil,
+    :message
+    {:role "agent", :parts [{:type "text", :text "q3BeL8Cc"}]}},
+   :kind "task"},
+  :in ("sr3fD" 2 nil "q3BeL8Cc")},
+ :case-3
+ {:out
+  {:id "3t",
+   :contextId "gS0xj",
+   :status
+   {:state nil,
+    :message {:role "agent", :parts [{:type "text", :text "o"}]}},
+   :kind "task"},
+  :in ("3t" "gS0xj" nil "o")},
+ :case-4
+ {:out
+  {:id 2,
+   :contextId 2,
+   :status
+   {:state nil,
+    :message
+    {:role "agent", :parts [{:type "text", :text "1JuS3Nf"}]}},
+   :kind "task"},
+  :in (2 2 nil "1JuS3Nf")},
+ :case-5
+ {:out
+  {:id "U",
+   :contextId 14,
+   :status
+   {:state nil,
+    :message {:role "agent", :parts [{:type "text", :text "N95Y7"}]}},
+   :kind "task"},
+  :in ("U" 14 nil "N95Y7")},
+ :case-6
+ {:out
+  {:id "z",
+   :contextId "M",
+   :status
+   {:state "working",
+    :message {:role "agent", :parts [{:type "text", :text "K2x"}]}},
+   :kind "task"},
+  :in ("z" "M" "working" "K2x")},
+ :case-7
+ {:out
+  {:id "i8an",
+   :contextId "QJ79",
+   :status
+   {:state "working",
+    :message {:role "agent", :parts [{:type "text", :text nil}]}},
+   :kind "task"},
+  :in ("i8an" "QJ79" "working" nil)}}

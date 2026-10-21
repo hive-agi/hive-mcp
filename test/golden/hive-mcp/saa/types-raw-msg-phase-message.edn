@@ -1,0 +1,86 @@
+{:case-0
+ {:out
+  {:adt/variant :pm/chunk,
+   :adt/type :PhaseMessage,
+   :phase :abstract,
+   :content
+   {:type :tool-use,
+    :saa-phase :abstract,
+    :error "boom",
+    :message "bad"}},
+  :in
+  ({:type :tool-use,
+    :saa-phase :abstract,
+    :error "boom",
+    :message "bad"}
+   nil)},
+ :case-1
+ {:out
+  {:adt/variant :pm/saa-complete,
+   :adt/type :PhaseMessage,
+   :summary
+   {:phase :act,
+    :saa-phase :abstract,
+    :content "hello",
+    :data "payload"}},
+  :in
+  ({:type :saa-complete,
+    :phase :act,
+    :saa-phase :abstract,
+    :content "hello",
+    :data "payload"}
+   :abstract)},
+ :case-2
+ {:out
+  {:adt/variant :pm/chunk,
+   :adt/type :PhaseMessage,
+   :phase :abstract,
+   :content
+   {:type :tool-use,
+    :phase :act,
+    :saa-phase :abstract,
+    :content "hello",
+    :data "payload",
+    :message "bad"}},
+  :in
+  ({:type :tool-use,
+    :phase :act,
+    :saa-phase :abstract,
+    :content "hello",
+    :data "payload",
+    :message "bad"}
+   nil)},
+ :case-3
+ {:out
+  {:adt/variant :pm/error,
+   :adt/type :PhaseMessage,
+   :phase :act,
+   :error "bad"},
+  :in
+  ({:type :error, :phase :act, :content "done", :message "bad"} :act)},
+ :case-4
+ {:out
+  {:adt/variant :pm/phase-complete,
+   :adt/type :PhaseMessage,
+   :phase nil,
+   :payload "done"},
+  :in ({:type :result, :content "done", :error "boom"} nil)},
+ :case-5
+ {:out
+  {:adt/variant :pm/saa-complete,
+   :adt/type :PhaseMessage,
+   :summary {:phase :silence}},
+  :in ({:type :saa-complete, :phase :silence} nil)},
+ :case-6
+ {:out
+  {:adt/variant :pm/saa-complete,
+   :adt/type :PhaseMessage,
+   :summary {:content "hello", :message "bad"}},
+  :in ({:type :saa-complete, :content "hello", :message "bad"} nil)},
+ :case-7
+ {:out
+  {:adt/variant :pm/chunk,
+   :adt/type :PhaseMessage,
+   :phase :abstract,
+   :content {:saa-phase :abstract, :error "boom"}},
+  :in ({:saa-phase :abstract, :error "boom"} nil)}}

@@ -1,0 +1,15 @@
+{:connected
+ {:returns [nil nil nil nil nil nil],
+  :received
+  [{:type "agents", :data [{:id "ling-1"}]}
+   {:type "custom", :k 1}
+   {:type "string-type"}
+   {:type "agent-spawned", :agent {:id "ling-2", :status "idle"}}
+   {:type "hivemind-shout",
+    :agent-id "ling-2",
+    :event-type "progress",
+    :message "half",
+    :task "t",
+    :data nil}
+   {:type "kg-entry-added", :entry {:id "e1"}}]},
+ :no-clients nil}

@@ -1,0 +1,48 @@
+{:case-0
+ {:out
+  {:type "object",
+   :properties {"a" {:type "integer"}, "b" {:type "string"}},
+   :required ["a"]},
+  :in ([:map [:a :int] [:b {:optional true} :string]])},
+ :case-1 {:out {:type "integer"}, :in (:int)},
+ :case-2
+ {:out
+  {:type "object",
+   :properties
+   {"inner"
+    {:type "object",
+     :properties {"k" {:type "boolean"}},
+     :required ["k"]}},
+   :required ["inner"]},
+  :in ([:map [:inner [:map [:k :boolean]]]])},
+ :case-3
+ {:out
+  {:type "object",
+   :properties {"name" {:type "string", :minLength 1}},
+   :required ["name"]},
+  :in ([:map [:name [:string {:min 1}]]])},
+ :case-4
+ {:out
+  {:type "object",
+   :properties {"a" {:type "integer"}, "b" {:type "string"}},
+   :required ["a"]},
+  :in ([:map [:a :int] [:b {:optional true} :string]])},
+ :case-5
+ {:out {:type "array", :items {:type "string"}},
+  :in ([:vector :string])},
+ :case-6
+ {:out
+  {:type "object",
+   :properties
+   {"inner"
+    {:type "object",
+     :properties {"k" {:type "boolean"}},
+     :required ["k"]}},
+   :required ["inner"]},
+  :in ([:map [:inner [:map [:k :boolean]]]])},
+ :case-7
+ {:out
+  {:type "object",
+   :properties {"name" {:type "string", :minLength 1}},
+   :required ["name"]},
+  :in ([:map [:name [:string {:min 1}]]])}}

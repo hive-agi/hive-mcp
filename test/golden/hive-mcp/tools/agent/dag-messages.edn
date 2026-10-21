@@ -1,0 +1,6 @@
+{:start
+ "The swarm needs hive-agent, which is not on the classpath (hive-agent.swarm.tools.agent.dag/handle-dag-start)",
+ :status
+ "The swarm needs hive-agent, which is not on the classpath (hive-agent.swarm.tools.agent.dag/handle-dag-status)",
+ :stop
+ "The swarm needs hive-agent, which is not on the classpath (hive-agent.swarm.tools.agent.dag/handle-dag-stop)"}

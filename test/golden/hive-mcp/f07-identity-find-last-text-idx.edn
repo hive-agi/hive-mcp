@@ -1,0 +1,10 @@
+{:case-0 {:out nil, :in (nil)},
+ :case-1
+ {:out 0,
+  :in ([{:type "text", :text "4"} {:type "text", :text "CI7J9"}])},
+ :case-2 {:out nil, :in ([])},
+ :case-3 {:out 0, :in ([{:type "text", :text "47TY0Y7"}])},
+ :case-4 {:out nil, :in (nil)},
+ :case-5 {:out nil, :in (nil)},
+ :case-6 {:out nil, :in (nil)},
+ :case-7 {:out nil, :in (nil)}}

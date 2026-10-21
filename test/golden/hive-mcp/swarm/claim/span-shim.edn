@@ -1,0 +1,16 @@
+{:conflicts?
+ [:delegates-to "hive-agent.swarm.claim.span" "conflicts?"],
+ :explain [:delegates-to "hive-agent.swarm.claim.span" "explain"],
+ :overlap [:delegates-to "hive-agent.swarm.claim.span" "overlap"],
+ :conflicts [:delegates-to "hive-agent.swarm.claim.span" "conflicts"],
+ :widen [:delegates-to "hive-agent.swarm.claim.span" "widen"],
+ :assess-no-ctx
+ [:delegates-to "hive-agent.swarm.claim.span" "conflicts"],
+ :form-span [:delegates-to "hive-agent.swarm.claim.span" "form-span"],
+ :assess-with-ctx
+ [:delegates-to "hive-agent.swarm.claim.span" "conflicts"],
+ :file-span [:delegates-to "hive-agent.swarm.claim.span" "file-span"],
+ :key-of [:delegates-to "hive-agent.swarm.claim.span" "key-of"],
+ :context-for [nil nil],
+ :load-time-values [nil nil nil],
+ :span [:delegates-to "hive-agent.swarm.claim.span" "span"]}

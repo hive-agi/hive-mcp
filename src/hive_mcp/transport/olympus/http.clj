@@ -19,7 +19,8 @@
             [hive-mcp.swarm.datascript.queries :as ds-queries]
             [hive-mcp.transport.olympus.snapshots :as snap]
             [hive-mcp.transport.olympus.stream :as stream]
-            [hive-mcp.transport.olympus.state-bridge :as state-bridge]))
+            [hive-mcp.transport.olympus.state-bridge :as state-bridge]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -250,6 +251,14 @@
                         (log/info "Olympus WebSocket server started on port" actual-port)
                         actual-port))))))
 
+(def Port [:int {:min 0 :max 65535}])
+
+;; The bound port; nil when the server could not start.
+(m/=> start!
+      [:function
+       [:=> [:cat] [:maybe Port]]
+       [:=> [:cat [:maybe [:map [:port {:optional true} [:maybe Port]]]]] [:maybe Port]]])
+
 (defn stop!
   "Stop the Olympus WebSocket server, DS state bridge, and channel subscriptions."
   []
@@ -267,6 +276,9 @@
     (log/info "Olympus WebSocket server stopped (was on port" port ")")
     true))
 
+;; true when a running server was stopped, nil when none was running.
+(m/=> stop! [:=> [:cat] [:maybe [:= true]]])
+
 (defn status
   "Get Olympus WS server status including DS bridge state."
   []
@@ -276,3 +288,12 @@
    :connected? (pos? (count @stream/clients))
    :ds-bridge {:active? (boolean @state-bridge/ds-bridge-thread)
                :queue-size (.size state-bridge/ds-bridge-queue)}})
+
+(m/=> status
+      [:=> [:cat]
+       [:map
+        [:running? :boolean]
+        [:port [:maybe Port]]
+        [:clients [:int {:min 0}]]
+        [:connected? :boolean]
+        [:ds-bridge [:map [:active? :boolean] [:queue-size [:int {:min 0}]]]]]])

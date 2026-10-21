@@ -1,0 +1,56 @@
+{:case-0
+ {:out true,
+  :in
+  ({:id "",
+    :title "",
+    :description "",
+    :steps [{:id "", :title "", :depends-on [], :estimate :medium}],
+    :source-format :markdown,
+    :tags []})},
+ :case-1
+ {:out false,
+  :in
+  ({:id "p1",
+    :title "Plan",
+    :steps
+    [{:id "s2", :title "A", :priority :low, :depends-on nil}
+     {:id "s2",
+      :title "A",
+      :priority nil,
+      :depends-on nil,
+      :files ["a.clj"]}],
+    :source-format :edn})},
+ :case-2
+ {:out false,
+  :in
+  ({:id "p1",
+    :title "Plan",
+    :steps
+    [{:id "s2", :title "A", :estimate "medium", :files []}
+     {:id "s1", :title "B", :estimate :SMALL, :depends-on ["s1"]}]})},
+ :case-3 {:out true, :in ({:id "p1", :title "Plan", :steps []})},
+ :case-4
+ {:out true,
+  :in
+  ({:id "3qE",
+    :title "o",
+    :decision-id nil,
+    :steps [],
+    :source-format :edn})},
+ :case-5 {:out true, :in ({:id "", :title "hZ21u", :steps []})},
+ :case-6
+ {:out true,
+  :in
+  ({:id "",
+    :title "Z3A",
+    :decision-id nil,
+    :steps [],
+    :tags ["8H0T4" "" "mvC0"]})},
+ :case-7
+ {:out true,
+  :in
+  ({:id "i8an",
+    :title "13",
+    :description "N",
+    :steps [],
+    :source-format :markdown})}}

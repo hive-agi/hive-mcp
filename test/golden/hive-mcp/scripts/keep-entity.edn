@@ -1,0 +1,10 @@
+{:case-0
+ {:out true,
+  :in (#:kg-edge{:id "e1", :from "20260101-abc", :to "node-1"})},
+ :case-1 {:out false, :in (#:some{:attr "6"})},
+ :case-2 {:out false, :in ("")},
+ :case-3 {:out false, :in (nil)},
+ :case-4 {:out true, :in (#:mem-mutation{:id "mut-2", :op :feedback})},
+ :case-5 {:out true, :in (#:mem-mutation{:id "mut-2", :op :decay})},
+ :case-6 {:out false, :in (#:some{:attr "8"})},
+ :case-7 {:out true, :in (#:mem-mutation{:id "mut-2", :op :decay})}}

@@ -1,0 +1,8 @@
+{:a-self-only {:ids ["k-a-doing" "k-a-done" "k-a-review" "k-a-session-todo" "k-a-todo-1" "k-a-todo-2"], :multi-project? false},
+ :a-self-and-descendants {:ids ["k-a-doing" "k-a-done" "k-a-review" "k-a-session-todo" "k-a-todo-1" "k-a-todo-2" "k-a1-done" "k-a1-misfiled-b" "k-a1-tagged-ws" "k-a1-todo"], :multi-project? true},
+ :a-with-ancestors {:ids ["k-a-doing" "k-a-done" "k-a-review" "k-a-session-todo" "k-a-todo-1" "k-a-todo-2" "k-global-far-tag" "k-global-todo" "k-global-untagged-done" "k-ws-todo" "k-ws-untagged-todo"], :multi-project? true},
+ :a-todo-tag {:ids ["k-a-session-todo" "k-a-todo-1" "k-a-todo-2" "k-a1-misfiled-b" "k-a1-tagged-ws" "k-a1-todo"], :multi-project? true},
+ :global-self-only {:ids ["k-global-far-tag" "k-global-todo" "k-global-untagged-done"], :multi-project? true},
+ :whole-board-all {:ids ["k-a-doing" "k-a-done" "k-a-review" "k-a-session-todo" "k-a-todo-1" "k-a-todo-2" "k-a1-done" "k-a1-misfiled-b" "k-a1-tagged-ws" "k-a1-todo" "k-b-todo" "k-far-todo" "k-global-far-tag" "k-global-todo" "k-global-untagged-done" "k-ws-todo" "k-ws-untagged-todo"], :multi-project? true},
+ :whole-board-global {:ids ["k-a-doing" "k-a-done" "k-a-review" "k-a-session-todo" "k-a-todo-1" "k-a-todo-2" "k-a1-done" "k-a1-misfiled-b" "k-a1-tagged-ws" "k-a1-todo" "k-b-todo" "k-far-todo" "k-global-far-tag" "k-global-todo" "k-global-untagged-done" "k-ws-todo" "k-ws-untagged-todo"], :multi-project? true},
+ :ws-self-and-descendants {:ids ["k-a-doing" "k-a-done" "k-a-review" "k-a-session-todo" "k-a-todo-1" "k-a-todo-2" "k-a1-done" "k-a1-misfiled-b" "k-a1-tagged-ws" "k-a1-todo" "k-b-todo" "k-ws-todo" "k-ws-untagged-todo"], :multi-project? true}}

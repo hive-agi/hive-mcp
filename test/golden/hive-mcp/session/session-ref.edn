@@ -1,0 +1,120 @@
+{:case-0
+ {:out
+  #:session{:id nil,
+            :kind :coordinator,
+            :parent-id nil,
+            :depth 0,
+            :project-id nil,
+            :agent-id nil},
+  :in
+  ({:id nil,
+    :kind :coordinator,
+    :parent-id nil,
+    :depth nil,
+    :project-id nil,
+    :agent-id ""})},
+ :case-1
+ {:out
+  #:session{:id nil,
+            :kind :adhoc,
+            :parent-id nil,
+            :depth 0,
+            :project-id nil,
+            :agent-id nil},
+  :in
+  ({:id "  ",
+    :kind :bogus,
+    :parent-id "",
+    :depth 0,
+    :project-id " ",
+    :agent-id ""})},
+ :case-2
+ {:out
+  #:session{:id nil,
+            :kind :adhoc,
+            :parent-id nil,
+            :depth 3,
+            :project-id nil,
+            :agent-id "a"},
+  :in
+  ({:id nil,
+    :kind :adhoc,
+    :parent-id nil,
+    :depth 3,
+    :project-id nil,
+    :agent-id "a"})},
+ :case-3
+ {:out
+  #:session{:id nil,
+            :kind :adhoc,
+            :parent-id nil,
+            :depth nil,
+            :project-id nil,
+            :agent-id nil},
+  :in
+  ({:id nil,
+    :kind nil,
+    :parent-id nil,
+    :depth nil,
+    :project-id nil,
+    :agent-id nil})},
+ :case-4
+ {:out
+  #:session{:id nil,
+            :kind :adhoc,
+            :parent-id nil,
+            :depth 0,
+            :project-id nil,
+            :agent-id nil},
+  :in
+  ({:id "  ",
+    :kind :bogus,
+    :parent-id nil,
+    :depth 0,
+    :project-id nil,
+    :agent-id nil})},
+ :case-5
+ {:out
+  #:session{:id nil,
+            :kind :adhoc,
+            :parent-id nil,
+            :depth 3,
+            :project-id "hive",
+            :agent-id nil},
+  :in
+  ({:id nil,
+    :kind :bogus,
+    :parent-id nil,
+    :depth 3,
+    :project-id "hive",
+    :agent-id ""})},
+ :case-6
+ {:out
+  #:session{:id nil,
+            :kind :adhoc,
+            :parent-id "s-b",
+            :depth nil,
+            :project-id "hive",
+            :agent-id nil},
+  :in
+  ({:id nil,
+    :kind nil,
+    :parent-id "s-b",
+    :depth nil,
+    :project-id "hive",
+    :agent-id ""})},
+ :case-7
+ {:out
+  #:session{:id nil,
+            :kind :adhoc,
+            :parent-id "s-b",
+            :depth 3,
+            :project-id nil,
+            :agent-id "a"},
+  :in
+  ({:id nil,
+    :kind nil,
+    :parent-id "s-b",
+    :depth 3,
+    :project-id nil,
+    :agent-id "a"})}}

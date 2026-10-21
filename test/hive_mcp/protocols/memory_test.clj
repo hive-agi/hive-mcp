@@ -2,7 +2,8 @@
   "TDD tests for multi-store registry in hive-mcp.protocols.memory."
   (:require [clojure.test :refer [deftest testing is use-fixtures]]
             [hive-mcp.protocols.memory :as proto]
-            [hive-spi.memory.ports :as ports]))
+            [hive-spi.memory.ports :as ports]
+            [hive-mcp.test-support.registry-isolation :as isolation]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -28,8 +29,7 @@
   (reset-store! [_] true))
 
 (defn- reset-registry-fixture [f]
-  (proto/reset-registry!)
-  (try (f) (finally (proto/reset-registry!))))
+  (isolation/with-isolated-store-registry f))
 
 (use-fixtures :each reset-registry-fixture)
 

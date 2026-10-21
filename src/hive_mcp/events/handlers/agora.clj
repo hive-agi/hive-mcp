@@ -2,13 +2,14 @@
   "Agora dialogue event handlers.
 
    Handles events related to Agora multi-ling dialogues:
-   - :agora/turn-dispatched  - Relay turn to target ling's terminal
    - :agora/turn-completed   - Unified turn completion (renamed from turn-response)
    - :agora/dispatch-next    - Relay the next turn to a ling participant
    - :agora/consensus        - Crystallize dialogue result to memory
-   - :agora/timeout          - Handle dialogue timeout
 
-   Event chain: :agora/turn-completed -> :agora/dispatch-next -> :swarm-send-prompt"
+   Event chain: :agora/turn-completed -> :agora/dispatch-next -> :swarm-send-prompt
+
+   Turns themselves go out through `hive-mcp.agora.dialogue/dialogue-dispatch`,
+   which delegates to the standard swarm dispatch; no handler here relays them."
 
   (:require [hive-mcp.events.core :as ev]
             [hive-mcp.events.interceptors :as interceptors]
@@ -24,10 +25,6 @@
 ;; =============================================================================
 ;; Constants
 ;; =============================================================================
-
-(def ^:const max-turns
-  "Maximum turns before dialogue times out to prevent infinite loops."
-  50)
 
 (def ^:private agora-context-template
   "Template for injecting Agora context into prompts.
@@ -63,104 +60,10 @@ Signals: propose/counter=reset equilibrium, approve/no-change=toward consensus
           from
           message))
 
-;; =============================================================================
-;; Handler: :agora/turn-dispatched
-;; =============================================================================
-
 (def ^:private SendPrompt
   "The :swarm-send-prompt effect: the ling the turn is relayed to and the
    Agora-framed prompt it receives."
   [:map [:slave-id :any] [:prompt :string]])
-
-(defn handle-agora-turn-dispatched
-  "Handler for :agora/turn-dispatched events.
-
-   Called after a turn is dispatched within an Agora dialogue.
-   Relays the message to the target ling's terminal with Agora context.
-
-   Expects event data:
-   {:dialogue-id \"dialogue-uuid\"
-    :from        \"sender-slave-id\"
-    :to          \"target-slave-id\"
-    :turn-num    5
-    :signal      :propose
-    :message     \"The actual message content\"
-    :topic       \"Dialogue topic\"}
-
-   Produces effects:
-   - :log              - Log relay status
-   - :swarm-send-prompt - Send enhanced prompt to target ling
-   - :dispatch         - Chain to timeout event if max turns exceeded"
-  [_coeffects [_ {:keys [dialogue-id from to turn-num message topic]}]]
-  (let [dialogue (dialogue/get-dialogue dialogue-id)]
-    (cond
-      ;; Dialogue not found
-      (nil? dialogue)
-      {:log {:level :warn
-             :message (str "Agora turn relay skipped - dialogue not found: " dialogue-id)}}
-
-      ;; Dialogue already reached consensus - no need to relay
-      (= :consensus (:status dialogue))
-      {:log {:level :info
-             :message (str "Agora " dialogue-id " already at consensus, not relaying")}}
-
-      ;; Dialogue aborted or timed out
-      (#{:aborted :timeout} (:status dialogue))
-      {:log {:level :info
-             :message (str "Agora " dialogue-id " is " (name (:status dialogue)) ", not relaying")}}
-
-      ;; Max turns exceeded - trigger timeout
-      (>= turn-num max-turns)
-      {:log {:level :warn
-             :message (str "Agora " dialogue-id " exceeded max turns (" max-turns ")")}
-       :dispatch [:agora/timeout {:dialogue-id dialogue-id
-                                  :reason :max-turns
-                                  :turn-count turn-num}]}
-
-      ;; Normal case: relay to target ling
-      :else
-      {:log {:level :debug
-             :message (str "Relaying Agora turn " turn-num " to " to " in dialogue " dialogue-id)}
-       :swarm-send-prompt {:slave-id to
-                           :prompt (format-agora-prompt
-                                    {:dialogue-id dialogue-id
-                                     :from from
-                                     :topic topic
-                                     :message message})}})))
-
-(m/=> handle-agora-turn-dispatched
-      [:=> hs/HandlerArgs
-       [:map
-        [:log hs/LogEffect]
-        [:dispatch {:optional true}
-         [:tuple [:= :agora/timeout]
-          [:map [:dialogue-id :any] [:reason [:= :max-turns]] [:turn-count :any]]]]
-        [:swarm-send-prompt {:optional true} SendPrompt]]])
-
-;; =============================================================================
-;; Handler: :agora/timeout
-;; =============================================================================
-
-(defn handle-agora-timeout
-  "Handler for :agora/timeout events.
-
-   Called when a dialogue exceeds max turns or times out.
-   Updates dialogue status to :timeout.
-
-   Expects event data:
-   {:dialogue-id \"dialogue-uuid\"
-    :reason      :max-turns | :inactivity
-    :turn-count  50}
-
-   Produces effects:
-   - :log - Log timeout message"
-  [_coeffects [_ {:keys [dialogue-id reason turn-count]}]]
-  {:log {:level :warn
-         :message (str "Agora dialogue " dialogue-id " timed out"
-                       " (reason: " (name (or reason :unknown)) ")"
-                       (when turn-count (str ", turns: " turn-count)))}})
-
-(m/=> handle-agora-timeout [:=> hs/HandlerArgs [:map [:log hs/LogEffect]]])
 
 ;; =============================================================================
 ;; Handler: :agora/turn-completed (Unified Turn Completion)
@@ -359,24 +262,12 @@ Signals: propose/counter=reset equilibrium, approve/no-change=toward consensus
   "Register agora-related event handlers.
 
    Handlers registered:
-   - :agora/turn-dispatched  - Relay turn to target ling (existing)
-   - :agora/timeout          - Handle dialogue timeout (existing)
    - :agora/turn-completed   - Unified turn completion (renamed from turn-response)
    - :agora/dispatch-next    - Relay the next turn to a ling participant
    - :agora/consensus        - Crystallize dialogue result
 
    Event chain: turn-completed -> dispatch-next -> swarm-send-prompt"
   []
-  ;; Existing handlers
-  (ev/reg-event :agora/turn-dispatched
-                [interceptors/debug]
-                handle-agora-turn-dispatched)
-
-  (ev/reg-event :agora/timeout
-                [interceptors/debug]
-                handle-agora-timeout)
-
-  ;; Unified event chain handlers
   (ev/reg-event :agora/turn-completed
                 [interceptors/debug]
                 handle-turn-completed)

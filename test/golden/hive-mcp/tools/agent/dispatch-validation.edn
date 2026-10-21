@@ -1,0 +1,24 @@
+{:case-0
+ {:out {:type "text", :text "agent_id is required", :isError true},
+  :in ({:prompt ""})},
+ :case-1
+ {:out {:type "text", :text "agent_id is required", :isError true},
+  :in ({:agent_id "", :prompt "do it", :priority "high"})},
+ :case-2
+ {:out {:type "text", :text "agent_id is required", :isError true},
+  :in ({:prompt "do it", :priority "high"})},
+ :case-3
+ {:out {:type "text", :text "agent_id is required", :isError true},
+  :in ({:priority "high"})},
+ :case-4
+ {:out {:type "text", :text "agent_id is required", :isError true},
+  :in ({:agent_id "", :prompt "do it"})},
+ :case-5
+ {:out {:type "text", :text "agent_id is required", :isError true},
+  :in ({:prompt "do it"})},
+ :case-6
+ {:out {:type "text", :text "agent_id is required", :isError true},
+  :in ({})},
+ :case-7
+ {:out {:type "text", :text "agent_id is required", :isError true},
+  :in ({})}}

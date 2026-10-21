@@ -1,0 +1,10 @@
+{:case-0
+ {:out "hive-mcp.a-b.c", :in (["/r/src"] "/r/src/hive_mcp/a_b/c.clj")},
+ :case-1 {:out "o.b-c", :in (["/o/src"] "/o/src/o/b_c.clj")},
+ :case-2 {:out nil, :in ([] "/r/srcx/hive_mcp/y.clj")},
+ :case-3 {:out nil, :in ([] "/elsewhere/hive_mcp/x.clj")},
+ :case-4
+ {:out nil, :in (["/o/src" "/o/src"] "/r/src/hive_mcp/ui.cljs")},
+ :case-5 {:out nil, :in (["/o/src"] "/r/src/hive_mcp/ui.cljs")},
+ :case-6 {:out nil, :in ([] "/r/src/hive_mcp/ui.cljs")},
+ :case-7 {:out nil, :in (["/o/src"] "/r/src/hive_mcp/x.cljc")}}

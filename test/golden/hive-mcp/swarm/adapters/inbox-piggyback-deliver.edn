@@ -1,0 +1,30 @@
+{:plain
+ {:receipt-valid? true,
+  :delivered? true,
+  :queued
+  [{:content "hello",
+    :kind nil,
+    :from nil,
+    :contextId nil,
+    :meta nil}],
+  :drained-again []},
+ :full
+ {:receipt-valid? true,
+  :delivered? true,
+  :queued
+  [{:content "do x",
+    :kind "task",
+    :from "coord",
+    :contextId "ctx-1",
+    :meta {:a 1}}],
+  :drained-again []},
+ :non-string-body
+ {:receipt-valid? true,
+  :delivered? true,
+  :queued
+  [{:content "42",
+    :kind "note",
+    :from nil,
+    :contextId nil,
+    :meta nil}],
+  :drained-again []}}

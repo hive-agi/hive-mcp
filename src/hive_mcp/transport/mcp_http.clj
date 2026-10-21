@@ -37,6 +37,23 @@
    :method-not-found -32601
    :internal-error   -32603})
 
+(def ErrorKind
+  "A key of `error-codes`."
+  [:enum :parse-error :invalid-request :method-not-found :internal-error])
+
+(def RpcId
+  "A JSON-RPC id as the message carried it, or nil when it carried none."
+  [:maybe [:or :string :int]])
+
+(def RpcErrorBody
+  [:map [:jsonrpc [:= "2.0"]] [:id RpcId]
+   [:error [:map [:code [:maybe :int]] [:message [:maybe :string]]]]])
+
+(def RpcResultBody
+  [:map [:jsonrpc [:= "2.0"]] [:id RpcId] [:result :any]])
+
+(def Port [:int {:min 0 :max 65535}])
+
 ;; ── Ports ────────────────────────────────────────────────────────────────
 
 (defprotocol IRpcDispatch
@@ -57,12 +74,26 @@
   (notify! [_ method params]
     (receive-notification method context params)))
 
+(def Dispatch
+  "An IRpcDispatch port."
+  [:fn {:gen/fmap (fn [_] (reify IRpcDispatch
+                            (request! [_ _ _] {:ok true})
+                            (notify! [_ _ _] nil)))
+        :gen/schema :nil}
+   #(satisfies? IRpcDispatch %)])
+
 (defn sdk-dispatch
   "Dispatch into the MCP SDK's method table over CONTEXT."
   [context]
   (->SdkDispatch context
                  (requiring-resolve 'jsonrpc4clj.server/receive-request)
                  (requiring-resolve 'jsonrpc4clj.server/receive-notification)))
+
+(m/=> sdk-dispatch
+      [:=> [:cat :map]
+       [:fn {:gen/fmap (fn [_] (->SdkDispatch {} (constantly nil) (constantly nil)))
+             :gen/schema :nil}
+        #(instance? SdkDispatch %)]])
 
 ;; ── Pure ─────────────────────────────────────────────────────────────────
 
@@ -72,17 +103,25 @@
   [token requested]
   (exposure/bind-host token requested))
 
+(m/=> bind-host [:=> [:cat exposure/Secret [:maybe :string]] exposure/Host])
+
 (defn bearer-ok?
   "True when TOKEN is blank, or AUTH-HEADER is exactly `Bearer TOKEN`.
    Constant-time."
   [token auth-header]
   (exposure/bearer-ok? token auth-header))
 
+(m/=> bearer-ok? [:=> [:cat exposure/Secret [:maybe :string]] :boolean])
+
 (defn rpc-error [id kind message]
   {:jsonrpc "2.0" :id id :error {:code (error-codes kind) :message message}})
 
+(m/=> rpc-error [:=> [:cat RpcId ErrorKind [:maybe :string]] RpcErrorBody])
+
 (defn rpc-result [id value]
   {:jsonrpc "2.0" :id id :result value})
+
+(m/=> rpc-result [:=> [:cat RpcId :any] RpcResultBody])
 
 (defn parse-message
   "BODY string to {:ok msg} or {:error reply-map}."
@@ -100,6 +139,11 @@
 
       :else {:ok parsed})))
 
+(m/=> parse-message
+      [:=> [:cat :string]
+       [:or [:map [:ok RpcMessage]]
+        [:map [:error [:map [:status [:= 400]] [:body RpcErrorBody]]]]]])
+
 (defn answer
   "One parsed MSG through DISPATCH to an HttpReply."
   [dispatch {:keys [id method params] :as msg}]
@@ -116,6 +160,13 @@
 
         :else
         {:status 200 :body (rpc-result id v)}))))
+
+;; A notification (no :id) is 202 with no body; a request is 200 with a
+;; result or an error body.
+(m/=> answer
+      [:=> [:cat Dispatch RpcMessage]
+       [:or [:map [:status [:= 202]]]
+        [:map [:status [:= 200]] [:body [:or RpcResultBody RpcErrorBody]]]]])
 
 ;; ── Boundary ─────────────────────────────────────────────────────────────
 
@@ -154,6 +205,17 @@
                   reply
                   (answer dispatch (:ok parsed)))))))))
 
+(def RingHandler
+  "A ring handler: request map -> ring response."
+  [:=> [:cat :map] [:map [:status :int] [:headers [:map-of :string :string]]
+                    [:body {:optional true} :string]]])
+
+(m/=> make-handler
+      [:=> [:cat Dispatch exposure/Secret]
+       [:fn {:gen/fmap (fn [_] (fn [_] {:status 404 :headers {}}))
+             :gen/schema :nil}
+        ifn?]])
+
 (defonce ^:private server-atom (atom nil))
 
 (defn start!
@@ -175,12 +237,27 @@
                   (if token "(bearer auth)" "(no auth, loopback only)"))
         actual))))
 
+;; The bound port, nil when the server could not start.
+(m/=> start!
+      [:=> [:cat [:map [:dispatch {:optional true} [:maybe Dispatch]]
+                  [:port {:optional true} [:maybe Port]]
+                  [:token {:optional true} exposure/Secret]
+                  [:bind {:optional true} [:maybe :string]]]]
+       [:maybe Port]])
+
 (defn stop! []
   (when-let [{:keys [server port]} @server-atom]
     (.close ^java.io.Closeable server)
     (reset! server-atom nil)
     (log/info "MCP HTTP stopped (was on port" port ")")))
 
+;; nil either way: the last form is a log call, or no server was running.
+(m/=> stop! [:=> [:cat] :nil])
+
 (defn status []
   (let [s @server-atom]
     {:running? (boolean s) :port (:port s) :bind (:bind s) :auth? (boolean (:auth? s))}))
+
+(m/=> status
+      [:=> [:cat]
+       [:map [:running? :boolean] [:port [:maybe Port]] [:bind [:maybe :string]] [:auth? :boolean]]])

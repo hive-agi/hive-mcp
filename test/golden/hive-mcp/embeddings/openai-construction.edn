@@ -1,0 +1,21 @@
+{:small
+ {:api-base "http://stub/v1",
+  :api-key "sk-t",
+  :model "text-embedding-3-small",
+  :dimension 1536,
+  :dimension* 1536},
+ :large
+ {:api-base "http://stub/v1",
+  :api-key "sk-t",
+  :model "text-embedding-3-large",
+  :dimension 3072,
+  :dimension* 3072},
+ :ada
+ {:api-base "http://stub/v1",
+  :api-key "sk-t",
+  :model "text-embedding-ada-002",
+  :dimension 1536,
+  :dimension* 1536},
+ :unknown
+ ["Unknown model: not-an-openai-model. Supported: (\"text-embedding-3-small\" \"text-embedding-3-large\" \"text-embedding-ada-002\")"
+  {:type :unknown-model, :model "not-an-openai-model"}]}

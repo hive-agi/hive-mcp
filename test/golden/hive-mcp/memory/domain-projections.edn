@@ -1,0 +1,26 @@
+{:all {:effective [nil false], :ids nil, :ids+desc nil, :tags nil},
+ :auto
+ {:effective ["f04-unknown-project" true],
+  :ids ["f04-unknown-project"],
+  :ids+desc ["f04-unknown-project"],
+  :tags ["scope:global" "scope:project:f04-unknown-project"]},
+ :auto-global
+ {:effective ["global" false],
+  :ids ["global"],
+  :ids+desc ["global"],
+  :tags ["scope:global"]},
+ :auto-nil
+ {:effective [nil nil],
+  :ids ["global"],
+  :ids+desc ["global"],
+  :tags ["scope:global"]},
+ :global
+ {:effective ["global" false],
+  :ids ["global"],
+  :ids+desc ["global"],
+  :tags ["scope:global"]},
+ :project
+ {:effective ["f04-unknown-project" true],
+  :ids ["f04-unknown-project" "global"],
+  :ids+desc ["f04-unknown-project" "global"],
+  :tags ["scope:global" "scope:project:f04-unknown-project"]}}

@@ -1,0 +1,3 @@
+{:allowed {:approved true, :tier :allowed, :reviewer :none},
+ :tier-1 {:approved true, :tier :tier-1, :reviewer :auto},
+ :approved? [true false nil]}

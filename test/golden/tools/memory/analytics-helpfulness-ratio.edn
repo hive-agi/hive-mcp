@@ -1,0 +1,26 @@
+{:case-0
+ {:out
+  {:type "text",
+   :text "{\"ratio\":0.75,\"helpful\":3,\"unhelpful\":1}"},
+  :in {:id "e1"}},
+ :case-1
+ {:out {:type "text", :text "{\"error\":\"Entry not found\"}"},
+  :in {:id "nope"}},
+ :case-2
+ {:out
+  {:type "text",
+   :text "{\"ratio\":null,\"helpful\":0,\"unhelpful\":0}"},
+  :in {:id "e2"}},
+ :case-3
+ {:out
+  {:type "text",
+   :text "{\"ratio\":0.75,\"helpful\":3,\"unhelpful\":1}"},
+  :in {:id "e1"}},
+ :case-4
+ {:out
+  {:type "text",
+   :text "{\"ratio\":0.75,\"helpful\":3,\"unhelpful\":1}"},
+  :in {:id "e1"}},
+ :case-5
+ {:out {:type "text", :text "{\"error\":\"Entry not found\"}"},
+  :in {:id "nope"}}}

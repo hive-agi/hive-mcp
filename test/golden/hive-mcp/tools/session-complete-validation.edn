@@ -1,0 +1,44 @@
+{:case-0
+ {:out
+  {:type "text",
+   :text "Missing required field: commit_msg",
+   :isError true},
+  :in ({})},
+ :case-1
+ {:out
+  {:type "text", :text "commit_msg cannot be empty", :isError true},
+  :in ({:commit_msg "\t\n", :task_ids ["t2"]})},
+ :case-2
+ {:out
+  {:type "text",
+   :text "Missing required field: commit_msg",
+   :isError true},
+  :in ({})},
+ :case-3
+ {:out
+  {:type "text",
+   :text "Missing required field: commit_msg",
+   :isError true},
+  :in ({:task_ids []})},
+ :case-4
+ {:out
+  {:type "text", :text "commit_msg cannot be empty", :isError true},
+  :in ({:commit_msg "\t\n"})},
+ :case-5
+ {:out
+  {:type "text",
+   :text "Missing required field: commit_msg",
+   :isError true},
+  :in ({})},
+ :case-6
+ {:out
+  {:type "text",
+   :text "Missing required field: commit_msg",
+   :isError true},
+  :in ({})},
+ :case-7
+ {:out
+  {:type "text",
+   :text "Missing required field: commit_msg",
+   :isError true},
+  :in ({})}}

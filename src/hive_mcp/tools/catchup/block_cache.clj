@@ -1,6 +1,6 @@
 (ns hive-mcp.tools.catchup.block-cache
   "Process-wide cache for the parts of catchup that are not the memory bundle:
-   contributed blocks (hive-mcp.spi.catchup-registry), status providers
+   contributed blocks (hive-spi.catchup.registry), status providers
    (:catchup/status-providers) and the context-store refs of a bundle.
 
    The bundle has its own cache (`bundle-cache`). Before this namespace, every
@@ -27,7 +27,10 @@
             [hive-mcp.tools.catchup.bundle-cache :as bundle-cache]
             [hive-mcp.channel.context-store :as context-store]
             [hive-mcp.dns.result :refer [rescue rescue-log]]
-            [clojure.tools.logging :as log])
+            [clojure.tools.logging :as log]
+            [hive-spi.catchup.registry :as blocks]
+            [malli.core :as m]
+            [hive-mcp.tools.catchup.shapes :as shapes])
   (:import [java.lang.ref WeakReference]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -167,6 +170,20 @@
     (cached (block-key block policy ctx) policy #((:block/fn block) ctx))
     ((:block/fn block) ctx)))
 
+(defn compose
+  "Run every block registered in hive-spi.catchup.registry against CTX in
+   :block/order, each through `run-block` so a block that opts in is served
+   from this cache. Returns {:blocks {id value} :failed {id message}}: a block
+   that throws lands in :failed and never aborts the others."
+  [ctx]
+  (reduce (fn [acc {:block/keys [id] :as block}]
+            (try
+              (assoc-in acc [:blocks id] (run-block block ctx))
+              (catch Throwable t
+                (assoc-in acc [:failed id] (or (ex-message t) (str (class t)))))))
+          {:blocks {} :failed {}}
+          (blocks/registered-blocks)))
+
 (defn run-status-provider
   "Run status provider K (fn [project-id]) for PROJECT-ID through the cache."
   [k provider-fn project-id]
@@ -234,3 +251,73 @@
   (rescue-log "catchup block-cache: register listener" nil
     (write-events/register-listener! ::invalidate invalidate!))
   nil)
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def Policy
+  "A cache policy (see the ns doc)."
+  [:map {:gen/schema [:map [:fresh-ms [:enum 0 1000 30000]] [:max-age-ms [:enum 0 2000 300000]]
+                      [:drop-tags {:optional true} [:set [:enum "kanban" "decision"]]]]}
+   [:fresh-ms :int]
+   [:max-age-ms :int]
+   [:drop-tags {:optional true} [:maybe [:or [:set :any] [:sequential :any]]]]
+   [:key-by {:optional true} [:maybe [:sequential :keyword]]]])
+
+(def BlockIn
+  "A contributed block as the registry holds it; only :block/id, :block/fn
+   and :block/cache are read."
+  [:map {:gen/schema [:map
+                      [:block/id [:enum :kanban :carto :x/y]]
+                      [:block/fn [:fn {:gen/elements [(constantly {:n 1}) (constantly nil) :project-id]} ifn?]]
+                      [:block/cache {:optional true} [:or :boolean [:map [:fresh-ms [:enum 10 1000]]]]]]}
+   [:block/id {:optional true} :any]
+   [:block/fn {:optional true} ifn?]
+   [:block/cache {:optional true} :any]])
+
+(def BlockCtx
+  "A block's call context."
+  [:maybe [:map {:gen/schema [:map [:project-id shapes/ProjectId] [:directory [:enum "/d" "/e"]]]}]])
+
+(def Thunk
+  "A 0-arity computation."
+  [:fn {:gen/elements [(constantly 1) (constantly nil) (constantly {:a 1})]} ifn?])
+
+(def Stats
+  "`stats`: every counter bumped so far plus the two sizes."
+  [:map-of :keyword nat-int?])
+
+(def ContextRefs
+  "{category ctx-id}, as context-store/context-put-batch! answers."
+  [:maybe [:map-of :keyword :string]])
+
+(m/=> now-ms [:=> [:cat] :int])
+(m/=> stats [:=> [:cat] [:and Stats [:map [:hit nat-int?] [:stale nat-int?] [:miss nat-int?]
+                                    [:entries nat-int?] [:refreshing nat-int?]]]])
+(m/=> reset-cache! [:=> [:cat] :nil])
+(m/=> cached [:=> [:cat [:any {:gen/schema [:tuple :keyword :string]}] Policy Thunk] :any])
+(m/=> block-policy [:=> [:cat [:maybe BlockIn]] [:maybe Policy]])
+;; block-key reads only :key-by from the policy, so any map (or nil) is accepted.
+(m/=> block-key [:=> [:cat [:maybe BlockIn]
+                       [:maybe [:map [:key-by {:optional true} [:maybe [:sequential :keyword]]]]]
+                       BlockCtx]
+                 [:and [:vector :any] [:cat [:= :block] [:* :any]]]])
+(m/=> run-block [:=> [:cat BlockIn BlockCtx] :any])
+;; every registered block's value or failure message, keyed by block id
+(m/=> compose [:=> [:cat BlockCtx]
+               [:map {:closed true}
+                [:blocks [:map-of :any :any]]
+                [:failed [:map-of :any :string]]]])
+(m/=> run-status-provider
+      [:=> [:cat [:any {:gen/schema :keyword}]
+            [:fn {:gen/elements [(constantly {:ok true}) str]} ifn?]
+            shapes/ProjectId]
+       :any])
+(m/=> shared-context-refs
+      [:=> [:cat [:maybe :string] [:maybe shapes/Buckets]
+            [:fn {:gen/elements [(constantly {:axioms "ctx-1"}) (constantly nil) (constantly {})]} ifn?]]
+       ContextRefs])
+(m/=> invalidate! [:=> [:cat shapes/MemoryWrite] :nil])
+(m/=> evict-stale! [:=> [:cat] nat-int?])
+(m/=> ensure-subscribed! [:=> [:cat] :nil])

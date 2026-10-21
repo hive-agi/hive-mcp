@@ -1,0 +1,16 @@
+{:batch-empty
+ {:type "text",
+  :text "ids is required (array of memory entry ID strings)",
+  :isError true},
+ :batch-nil
+ {:type "text",
+  :text "ids is required (array of memory entry ID strings)",
+  :isError true},
+ :metadata-blank
+ {:type "text",
+  :text "memory metadata: id must be a non-empty string",
+  :isError true},
+ :metadata-nil
+ {:type "text",
+  :text "memory metadata: id must be a non-empty string",
+  :isError true}}

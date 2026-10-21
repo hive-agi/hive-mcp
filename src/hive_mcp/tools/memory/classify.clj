@@ -3,7 +3,9 @@
   (:require [hive-mcp.extensions.registry :as ext]
             [hive-mcp.knowledge-graph.schema :as kg-schema]
             [hive-dsl.result :refer [rescue]]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [malli.core :as m]
+            [hive-mcp.tools.memory.schema :as ms]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -62,3 +64,18 @@
         enhanced-level (when-let [classify-fn (ext/get-extension :gs/classify)]
                          (rescue nil (classify-fn entry-type content tags heuristic-level)))]
     (or enhanced-level heuristic-level type-level)))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> content-keyword-level [:=> [:cat [:maybe ms/GapText]] ms/SignalLevel])
+
+(m/=> tag-level-signal
+      [:=> [:cat [:maybe [:or [:sequential :any] [:set :any]]]] ms/SignalLevel])
+
+(m/=> classify-abstraction-level
+      [:=> [:cat [:any {:gen/schema [:maybe [:or [:enum "note" "decision" "axiom" "convention" "zzz"] [:enum :decision :note]]]}]
+            [:maybe ms/GapText]
+            [:maybe [:or [:sequential :any] [:set :any]]]]
+       ms/Level])

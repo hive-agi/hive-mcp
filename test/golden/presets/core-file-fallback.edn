@@ -1,0 +1,27 @@
+{:scanned
+ [{:id "ddd",
+   :name "ddd",
+   :title "ddd",
+   :content "Bounded context and aggregate design.\n",
+   :category "architecture",
+   :tags "ddd,architecture",
+   :source "file"}
+  {:id "tdd",
+   :name "tdd",
+   :title "TDD Discipline",
+   :content
+   "# TDD Discipline\n\n**red-green** cycles.\n\n## Small Steps\n- write a test\n",
+   :category "testing",
+   :tags "tdd,testing,red-green,small steps",
+   :source "file"}],
+ :from-file
+ {:id "tdd",
+  :name "tdd",
+  :title "TDD Discipline",
+  :content
+  "# TDD Discipline\n\n**red-green** cycles.\n\n## Small Steps\n- write a test\n",
+  :category "testing",
+  :tags "tdd,testing,red-green,small steps",
+  :source "file"},
+ :missing nil,
+ :not-a-dir nil}

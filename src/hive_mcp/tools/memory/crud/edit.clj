@@ -15,12 +15,13 @@
    follow-up work; correctness ships first."
   (:require [hive-mcp.tools.memory.core :refer [with-store]]
             [hive-mcp.tools.memory.duration :as duration]
-            [hive-mcp.tools.core :refer [mcp-json mcp-error]]
+            [hive-mcp.tools.core :as core :refer [mcp-json mcp-error]]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.memory.type-registry :as type-registry]
             [clojure.string :as str]
             [taoensso.timbre :as log]
-            [hive-mcp.memory.write-events :as write-events]))
+            [hive-mcp.memory.write-events :as write-events]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -389,3 +390,24 @@
         (let [results (mapv batch-op-result operations)
               summary (tally-statuses results)]
           (mcp-json (assoc summary :results results)))))))
+
+;;; =============================================================================
+;;; Contracts
+;;; =============================================================================
+
+(def DryRunResult
+  "One dry-run verdict: {:id :ok true} or {:id :ok false :error msg}. The id
+   is echoed as given (it may be absent or blank on a refused op)."
+  [:or
+   [:map [:id :any] [:ok [:= true]]]
+   [:map [:id :any] [:ok [:= false]] [:error [:maybe :string]]]])
+
+(m/=> unrecognised-params [:=> [:cat [:maybe :map]] [:vector :string]])
+
+(m/=> dry-run-op [:=> [:cat ifn? [:maybe :map]] DryRunResult])
+
+;; Both handlers answer one MCP text response (mcp-json or mcp-error); a
+;; with-store boundary turns a store failure into mcp-error.
+(m/=> handle-edit [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-batch-edit [:=> [:cat [:maybe :map]] core/McpResponse])

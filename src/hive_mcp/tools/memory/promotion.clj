@@ -7,12 +7,14 @@
    - Pure helpers: walk-tiers, build-xpoll-plan"
   (:require [hive-mcp.tools.memory.core :refer [with-store]]
             [hive-mcp.tools.memory.duration :as dur]
-            [hive-mcp.tools.core :refer [mcp-json]]
+            [hive-mcp.tools.core :as tcore :refer [mcp-json]]
             [hive-mcp.crystal.core :as crystal]
             [hive-mcp.memory.temporal :as temporal]
             [hive-mcp.protocols.memory :as mem-proto]
             [taoensso.timbre :as log]
-            [hive-mcp.vectordb.resilience :refer [with-resilience]]))
+            [hive-mcp.vectordb.resilience :refer [with-resilience]]
+            [malli.core :as m]
+            [hive-mcp.tools.memory.schema :as ms]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -167,3 +169,24 @@
     (catch Exception e
       (log/warn "run-xpoll-cycle! failed (non-blocking):" (.getMessage e))
       {:error (.getMessage e) :promoted 0 :candidates 0 :total-scanned 0})))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> walk-tiers
+      ;; An unknown start (nil, "") walks from index -1: the first step lands
+      ;; on "ephemeral". Documented inputs are duration names.
+      [:=> [:cat [:maybe ms/DurationName] [:int {:gen/min 0 :gen/max 6}]] ms/TierWalk])
+
+(m/=> build-xpoll-plan [:=> [:cat ms/Entry] ms/XpollPlan])
+
+(m/=> promote-entry-by-tiers! [:=> [:cat ms/Entry [:int {:min 0 :gen/max 6}]] ms/Promotion])
+
+(m/=> handle-xpoll-promote
+      [:=> [:cat (ms/params
+                  [:map [:min_projects {:optional true} [:maybe [:int {:min 0 :gen/max 4}]]]])]
+
+       tcore/McpResponse])
+
+(m/=> run-xpoll-cycle! [:=> [:cat ms/McpParams] ms/XpollCycle])

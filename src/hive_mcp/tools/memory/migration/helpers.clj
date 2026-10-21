@@ -6,7 +6,8 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [hive-mcp.dns.result :refer [rescue]]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -75,3 +76,39 @@
   (let [old-tag (str "scope:project:" old-scope)
         new-tag (str "scope:project:" new-scope)]
     (mapv #(if (= % old-tag) new-tag %) tags)))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def Directory
+  "A project directory path; nil reads as the current directory (io/file)."
+  [:maybe :string])
+
+(def HiveProjectConfig
+  "A parsed .hive-project.edn: :project-id and :aliases are the keys the
+   migration reads and writes; every other key passes through."
+  [:map
+   [:project-id {:optional true} :any]
+   [:aliases {:optional true} [:maybe [:sequential :any]]]])
+
+(def EdnUpdateResult
+  [:or
+   [:map [:success [:= true]] [:config HiveProjectConfig]]
+   [:map [:error [:maybe :string]]]])
+
+(def ScopeTagged
+  "A tag as scope helpers read it: any value; only scope:project: strings match."
+  [:maybe :string])
+
+(m/=> read-hive-project-edn [:=> [:cat Directory] :any])
+
+(m/=> update-hive-project-edn! [:=> [:cat Directory :any :any] EdnUpdateResult])
+
+(m/=> hash-scope? [:=> [:cat :any] :boolean])
+
+(m/=> extract-scope-id [:=> [:cat :any] [:maybe :string]])
+
+(m/=> orphaned-scope-tag? [:=> [:cat :any] [:maybe :boolean]])
+
+(m/=> update-scope-tag [:=> [:cat [:maybe [:sequential :any]] :any :any] [:vector :any]])

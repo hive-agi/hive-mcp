@@ -1,0 +1,36 @@
+{"kanban"
+ {:batchable? true,
+  :record "KanbanBatchable",
+  :schema
+  {:type "object",
+   :properties
+   {:operations
+    {:type "array",
+     :items
+     {:type "object",
+      :properties {:command {:type "string", :enum ["update"]}}}}}}},
+ "kg"
+ {:batchable? true,
+  :record "KgBatchable",
+  :schema
+  {:type "object",
+   :properties
+   {:operations
+    {:type "array",
+     :items
+     {:type "object",
+      :properties
+      {:command {:type "string", :enum ["edge" "traverse"]}}}}}}},
+ "memory"
+ {:batchable? true,
+  :record "MemoryBatchable",
+  :schema
+  {:type "object",
+   :properties
+   {:operations
+    {:type "array",
+     :items
+     {:type "object",
+      :properties
+      {:command {:type "string", :enum ["add" "edit" "get"]}}}},
+    :dry_run {:type "boolean"}}}}}

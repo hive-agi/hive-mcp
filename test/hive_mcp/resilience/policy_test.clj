@@ -9,7 +9,8 @@
    3. Every `ErrorClass` variant has a row — no fallthrough surprises."
   (:require [clojure.test :refer [deftest is testing]]
             [hive-mcp.resilience.policy :as policy]
-            [hive-mcp.resilience.protocol :as proto]))
+            [hive-mcp.resilience.protocol :as proto]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -48,3 +49,47 @@
     (is (true?  (policy/retry? (proto/error-class :err/transient {:message "x"}))))
     (is (false? (policy/retry? (proto/error-class :err/schema-mismatch
                                                    {:message "x" :details {}}))))))
+
+;;; ---------------------------------------------------------------------------
+;;; Facets over the contract's `:any` input: real ErrorClass values (half of
+;;; them transient, so both decisions are reached) mixed with non-ADT values
+;;; that must fall through to the conservative :err/unknown row.
+;;; ---------------------------------------------------------------------------
+
+(def ^:private DecideInput
+  [:or {:gen/schema [:tuple proto/ErrorClassValue :boolean
+                     [:enum :adt :adt :adt nil :kw "str" {} {:adt/variant :err/made-up}]]
+        :gen/fmap (fn [[err transient? junk]]
+                    (cond (not= :adt junk) junk
+                          transient?       (assoc err :adt/variant :err/transient)
+                          :else            err))}
+   proto/ErrorClassValue :any])
+
+(deftrifecta-from-schema decide-reads-the-variant
+  #'policy/decide
+  {:in [:cat DecideInput]
+   :out policy/RetryDecision
+   :rel (fn [[err] out]
+          (if (= :err/transient (:adt/variant err))
+            (= out {:retry? true :backoff-ms policy/default-budget-ms :escalate? false})
+            (= out {:retry? false :backoff-ms 0 :escalate? true})))
+   :classify (fn [_ out] (if (:retry? out) :retry :escalate))
+   :classify-domain #{:retry :escalate}
+   :golden-path "test/golden/hive-mcp/resilience/policy-decide-mixed.edn"
+   :num-tests 300})
+
+(deftrifecta-from-schema retry?-is-transient-only
+  #'policy/retry?
+  {:in [:cat DecideInput]
+   :out :boolean
+   :rel (fn [[err] out] (= out (= :err/transient (:adt/variant err))))
+   :classify (fn [_ out] out)
+   :classify-domain #{true false}
+   :num-tests 300})
+
+(deftrifecta-from-schema policy-schema-mismatch?-re-exports-protocol
+  #'policy/schema-mismatch?
+  {:in [:cat DecideInput]
+   :out :boolean
+   :rel (fn [[err] out] (= out (= :err/schema-mismatch (:adt/variant err))))
+   :num-tests 300})

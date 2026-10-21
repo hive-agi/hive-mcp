@@ -1,0 +1,23 @@
+{:case-0 {:out {}, :in ([])},
+ :case-1
+ {:out {"axiom-candidate" [], "friction-candidate" []},
+  :in ([["friction-candidate" []] ["axiom-candidate" []]])},
+ :case-2
+ {:out {"friction-candidate" []},
+  :in
+  ([["friction-candidate" [{:id "b"} {:id "a"}]]
+    ["friction-candidate" []]
+    ["friction-candidate" []]])},
+ :case-3
+ {:out {"axiom-candidate" []},
+  :in ([["axiom-candidate" []] ["axiom-candidate" []]])},
+ :case-4
+ {:out {"friction-candidate" [{:id "a"}]},
+  :in ([["friction-candidate" [{:id "a"}]]])},
+ :case-5
+ {:out {"friction-candidate" []}, :in ([["friction-candidate" []]])},
+ :case-6
+ {:out {"axiom-candidate" [{:id "b"}]},
+  :in ([["axiom-candidate" [{:id "b"}]]])},
+ :case-7
+ {:out {"friction-candidate" []}, :in ([["friction-candidate" []]])}}

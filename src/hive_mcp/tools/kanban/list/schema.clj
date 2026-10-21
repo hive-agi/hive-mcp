@@ -23,26 +23,30 @@
 
 (def TagMode [:enum "all" "any"])
 
-(def Tag [:string {:min 1 :max 24}])
+;; BUG (pre-existing, fixed in cov-mcp m28): the size bounds below were `:max`,
+;; i.e. part of the CONTRACT, so `plan/shape` rejected real boards (a
+;; `scope:project:kanban-port-test` tag is 30 chars). They are generator
+;; sizing only, so they are `:gen/max` now.
+(def Tag [:string {:min 1 :gen/max 24}])
 
-(def Tags [:vector {:max 4} Tag])
+(def Tags [:vector {:gen/max 4} Tag])
 
 (def Timestamp
   "ISO-8601-ish string; the post-filters compare these lexically."
-  [:string {:min 1 :max 24}])
+  [:string {:min 1 :gen/max 24}])
 
 (def Field [:enum "id" "title" "status" "priority" "project"])
 
-(def Fields [:vector {:max 5} Field])
+(def Fields [:vector {:gen/max 5} Field])
 
-(def PageIndex [:int {:min 0 :max 10000}])
+(def PageIndex [:int {:min 0 :gen/max 10000}])
 
 (def ListRequest
   [:map
    [:status        {:optional true} [:maybe Status]]
    [:tags          {:optional true} [:maybe Tags]]
    [:tag_match     {:optional true} [:maybe TagMode]]
-   [:query         {:optional true} [:maybe [:string {:max 12}]]]
+   [:query         {:optional true} [:maybe [:string {:gen/max 12}]]]
    [:priority      {:optional true} [:maybe Priority]]
    [:created_after {:optional true} [:maybe Timestamp]]
    [:updated_after {:optional true} [:maybe Timestamp]]
@@ -76,19 +80,19 @@
 (def Content
   [:map
    [:task-type   [:= "kanban"]]
-   [:title       [:maybe [:string {:max 12}]]]
+   [:title       [:maybe [:string {:gen/max 12}]]]
    [:status      [:maybe Status]]
    [:priority    [:maybe Priority]]
-   [:description {:optional true} [:maybe [:string {:max 12}]]]
+   [:description {:optional true} [:maybe [:string {:gen/max 12}]]]
    [:created     {:optional true} [:maybe Timestamp]]])
 
 (def Entry
   [:map
-   [:id      [:string {:min 1 :max 24}]]
-   [:tags    [:vector {:max 6} Tag]]
+   [:id      [:string {:min 1 :gen/max 24}]]
+   [:tags    [:vector {:gen/max 6} Tag]]
    [:content Content]])
 
-(def Board [:vector {:max 24} Entry])
+(def Board [:vector {:gen/max 24} Entry])
 
 (def SlimTask
   [:map

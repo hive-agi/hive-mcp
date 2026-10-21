@@ -167,7 +167,7 @@
     (let [ops [{:id "a" :tool "memory"}
                {:id "b" :tool "kg" :depends_on ["a"]}
                {:id "c" :tool "preset" :depends_on ["a"]}
-               {:id "d" :tool "agora" :depends_on ["b" "c"]}]
+               {:id "d" :tool "olympus" :depends_on ["b" "c"]}]
           result (multi/assign-waves ops)
           by-id (into {} (map (juxt :id identity) result))]
       (is (= 1 (:wave (get by-id "a"))))

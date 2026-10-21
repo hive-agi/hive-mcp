@@ -1,0 +1,64 @@
+{:case-0
+ {:out
+  {:span/file "",
+   :span/mode :body,
+   :span/qn "a/g",
+   :claim/slave nil,
+   :claim/key ""},
+  :in #:claim{:qn "a/g", :mode nil}},
+ :case-1
+ {:out
+  {:span/file "",
+   :span/mode :signature,
+   :span/qn "a/g",
+   :claim/slave nil,
+   :claim/key ""},
+  :in #:claim{:file "", :qn "a/g", :mode :signature}},
+ :case-2
+ {:out
+  {:span/file "",
+   :span/mode :file,
+   :span/qn nil,
+   :claim/slave "ling-a",
+   :claim/key ""},
+  :in #:claim{:qn nil, :mode nil, :slave "ling-a"}},
+ :case-3
+ {:out
+  {:span/file "",
+   :span/mode :file,
+   :span/qn nil,
+   :claim/slave nil,
+   :claim/key ""},
+  :in #:claim{:mode nil, :slave nil}},
+ :case-4
+ {:out
+  {:span/file "",
+   :span/mode :file,
+   :span/qn nil,
+   :claim/slave "ling-a",
+   :claim/key ""},
+  :in #:claim{:file "", :qn nil, :mode nil, :slave "ling-a"}},
+ :case-5
+ {:out
+  {:span/file "",
+   :span/mode :file,
+   :span/qn nil,
+   :claim/slave "ling-a",
+   :claim/key ""},
+  :in #:claim{:qn nil, :mode nil, :slave "ling-a"}},
+ :case-6
+ {:out
+  {:span/file "",
+   :span/mode :file,
+   :span/qn nil,
+   :claim/slave nil,
+   :claim/key ""},
+  :in #:claim{:mode :file, :slave nil}},
+ :case-7
+ {:out
+  {:span/file "",
+   :span/mode :file,
+   :span/qn nil,
+   :claim/slave nil,
+   :claim/key ""},
+  :in #:claim{:mode :body}}}

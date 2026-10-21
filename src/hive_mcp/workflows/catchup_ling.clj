@@ -8,7 +8,8 @@
 
   (:require [hive-mcp.context.budget :as budget]
             [hive-mcp.dns.result :refer [rescue]]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -96,3 +97,11 @@
 
           ;; Nil or empty
                 :else nil)))))
+
+(m/=> ling-catchup
+  [:=> [:cat [:maybe [:map
+                      [:directory {:optional true} [:maybe :string]]
+                      [:task {:optional true} [:maybe :string]]
+                      [:kanban-task-id {:optional true} [:maybe :string]]
+                      [:token-budget {:optional true} [:maybe :int]]]]]
+   [:maybe [:string {:min 1}]]])

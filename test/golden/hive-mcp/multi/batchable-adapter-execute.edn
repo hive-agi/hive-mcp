@@ -1,0 +1,70 @@
+{:mixed
+ {:result
+  {:success false,
+   :waves
+   {1
+    {:ops
+     [{:id "a", :tool "probe", :command "echo"}
+      {:id "c", :tool "nope", :command "x"}],
+     :results
+     [{:id "a",
+       :tool "probe",
+       :command "echo",
+       :success true,
+       :result {:type "text", :text "hi"},
+       :data {:type "text", :text "hi"}}
+      {:id "c",
+       :tool "nope",
+       :command "x",
+       :success false,
+       :error "Tool not found: nope",
+       :data nil}]},
+    2
+    {:ops [{:id "b", :tool "probe", :command "boom"}],
+     :results
+     [{:id "b",
+       :tool "probe",
+       :command "boom",
+       :success false,
+       :error "boom",
+       :data nil}]}},
+   :summary {:total 3, :success 1, :failed 2, :waves 2}},
+  :fx
+  [:multi/wave-complete
+   :multi/op-error
+   :multi/wave-complete
+   :multi/op-error]},
+ :all-ok
+ {:result
+  {:success true,
+   :waves
+   {1
+    {:ops [{:id "a", :tool "probe", :command "echo"}],
+     :results
+     [{:id "a",
+       :tool "probe",
+       :command "echo",
+       :success true,
+       :result {:type "text", :text "one"},
+       :data {:type "text", :text "one"}}]},
+    2
+    {:ops [{:id "b", :tool "probe", :command "echo"}],
+     :results
+     [{:id "b",
+       :tool "probe",
+       :command "echo",
+       :success true,
+       :result {:type "text", :text "two"},
+       :data {:type "text", :text "two"}}]}},
+   :summary {:total 2, :success 2, :failed 0, :waves 2}},
+  :fx [:multi/wave-complete :multi/wave-complete]},
+ :invalid
+ {:result
+  {:success false,
+   :errors ["Operation 'a' missing :tool"],
+   :summary {:total 1, :success 0, :failed 0, :waves 0}},
+  :fx []},
+ :schema
+ {:type "object",
+  :properties
+  {:operations {:type "array"}, :dry_run {:type "boolean"}}}}

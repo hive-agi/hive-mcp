@@ -1,0 +1,9 @@
+{:blank-features {:kind :readiness, :flag-agrees? true},
+ :kebab-id
+ {:kind :doctor,
+  :isError false,
+  :ok? false,
+  :id "no.such.addon.kebab"},
+ :no-id {:kind :readiness, :flag-agrees? true},
+ :unknown-addon
+ {:kind :doctor, :isError false, :ok? false, :id "no.such.addon"}}

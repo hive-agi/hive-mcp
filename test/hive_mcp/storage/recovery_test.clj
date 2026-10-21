@@ -4,7 +4,8 @@
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
             [hive-mcp.storage.recovery :as rec]
-            [hive-mcp.test.stub.txlog-ops :as txlog-stub]))
+            [hive-mcp.test.stub.txlog-ops :as txlog-stub]
+            [hive-test.golden :refer [deftest-golden]]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -395,3 +396,32 @@
           (is (not (.exists (io/file src)))
               ":quarantine ran after :truncate aborted — src moved aside"))
         (finally (cleanup-db-and-siblings! src))))))
+
+;; Classification table + the heal-and-open! policy matrix, with the txlog
+;; ops port satisfied by the fixture's stub (no datalevin). Every row of the
+;; matrix pairs a policy with a failure class; the golden records the outcome
+;; (value, or the ex-info message and :err) and how many opens were tried.
+(deftest-golden classification-and-policy-matrix-golden
+  "test/golden/hive-mcp/storage/recovery-policy-matrix.edn"
+  (let [msgs     ["MDB_CORRUPTED" "txn-log corruption at 1" "MDB_VERSION_MISMATCH"
+                  "schema version 3" "MDB_BUSY" "file lock held" "unrelated"]
+        classify (into (sorted-map)
+                       (for [m msgs] [m (rec/classify-open-failure (ex m))]))
+        wrapped  (rec/classify-open-failure (ex "outer" (ex "inner" (ex "EAGAIN"))))
+        run      (fn [strategy msg]
+                   (let [calls (atom 0)
+                         out   (try (rec/heal-and-open!
+                                     {:policy {:strategy strategy :max-attempts 2}
+                                      :db-path (tmp-db-path)}
+                                     (fn [] (swap! calls inc) (throw (ex msg))))
+                                    (catch clojure.lang.ExceptionInfo e
+                                      [(ex-message e) (:err (ex-data e))]))]
+                     {:out out :opens @calls}))]
+    {:classify classify
+     :wrapped  wrapped
+     :default-policy rec/default-policy
+     :quarantine-path (rec/quarantine-path "/db/kg" 42)
+     :matrix (into (sorted-map)
+                   (for [s [:throw :audit :quarantine :truncate]
+                         m ["MDB_CORRUPTED" "MDB_BUSY" "unrelated"]]
+                     [(str (name s) "/" m) (run s m)]))}))

@@ -29,7 +29,9 @@
             ;; Engine resilience — defense-in-depth L0.5 bounded manifold pool
             [hive-mcp.engine.manifold-pool :as manifold-pool]
             [hive-mcp.config.io :as config-io]
-            [hive-mcp.server.log-sink :as log-sink])
+            [hive-mcp.server.log-sink :as log-sink]
+            [malli.core :as m]
+            [hive-mcp.server.log-guard :as log-guard])
   (:gen-class))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -44,7 +46,31 @@
   (log-sink/make-sink (log-sink/err-stream-writer)))
 
 (defonce file-sink
-  (log-sink/make-sink (log-sink/file-line-writer)))
+  (log-sink/make-sink (log-guard/guarded-writer (log-sink/file-line-writer))))
+
+(defonce ^{:doc "Embedding warnings beside coordinator.log, so a starved or failing
+   embedder leaves an on-disk trace (kanban 20261020223606-16e6e1ef). A delay:
+   only `install-log-files!` (the -main path) starts its drain thread."}
+  embed-log-sink
+  (delay (log-sink/make-sink
+          (log-guard/guarded-writer
+           (log-sink/file-line-writer
+            (io/file (.getParentFile ^java.io.File (log-sink/file-path)) "embeddings.log"))))))
+
+(defn- install-log-files!
+  "Production wiring, called from -main: route embedding warnings to
+   embeddings.log, and close both file sinks in a JVM shutdown hook. Those
+   sinks call libc through JNA on daemon threads; closing them first means no
+   native log call is in flight while the JVM tears down (kanban
+   20261020231003-2a41a962). Returns the hook thread."
+  []
+  (let [embed @embed-log-sink]
+    (log/merge-config!
+     {:appenders {:embedding-warnings
+                  {:enabled? true
+                   :async? false
+                   :fn (log-guard/ns-warn-appender-fn embed ["hive-mcp.embeddings."])}}})
+    (log-guard/register-close-on-shutdown! [file-sink embed] 2000)))
 
 (defn register-coordinator-file!
   "Install the boot-only file appender over an injected asynchronous sink."
@@ -54,8 +80,13 @@
                                    :async? false
                                    :fn (log-sink/boot-appender-fn sink)}}}))
 
+(m/=> register-coordinator-file! [:=> [:cat log-sink/Sink] :map])
+
+;; Min level from HIVE_MCP_LOG_LEVEL, default :info. Timbre's own default is
+;; :debug, which the server must not run at (see log-sink/parse-log-level).
 (log/merge-config!
- {:appenders
+ {:min-level (log-sink/parse-log-level (System/getenv "HIVE_MCP_LOG_LEVEL"))
+  :appenders
   {:println {:enabled? true
              :async? false
              :fn (log-sink/appender-fn console-sink)}}})
@@ -85,11 +116,23 @@
   ([cli-profile env-profile config-profile]
    (keyword (or cli-profile env-profile config-profile "desktop"))))
 
+(def ProfileName
+  "A profile as the CLI, the env or config.edn spell it: a string or a
+   keyword, nil when that source names none."
+  [:maybe [:or [:string {:min 1}] :keyword]])
+
+(m/=> profile-from [:function
+                    [:=> [:cat ProfileName ProfileName] :keyword]
+                    [:=> [:cat ProfileName ProfileName ProfileName] :keyword]])
+
 (defn config-system
   "The :system section of config.edn: {:profile kw, :overrides {ig-key map-or-nil}}.
    {} when the file or the section is absent or unreadable."
   []
   (or (some-> (config-io/read-config-file config-io/config-path) :ok :system) {}))
+
+(m/=> config-system [:=> [:cat] [:map [:profile {:optional true} :any]
+                                 [:overrides {:optional true} [:maybe :map]]]])
 
 (defn resolve-profile
   "Resolve the profile keyword from the CLI --profile arg, HIVE_PROFILE env,
@@ -97,6 +140,8 @@
   ([] (resolve-profile nil))
   ([cli-profile]
    (profile-from cli-profile (System/getenv "HIVE_PROFILE") (:profile (config-system)))))
+
+(m/=> resolve-profile [:function [:=> [:cat] :keyword] [:=> [:cat ProfileName] :keyword]])
 
 (defn read-base-config
   "Read and parse the base system.edn config with Integrant readers."
@@ -107,6 +152,12 @@
                     {:resource "hive/system.edn"
                      :hint "Ensure resources/ is on :paths"}))))
 
+(def SystemConfig
+  "An Integrant config: component key -> its config."
+  [:map-of :keyword :any])
+
+(m/=> read-base-config [:=> [:cat] SystemConfig])
+
 (defn read-profile-config
   "Read profile overlay EDN. Returns {} if profile file not found."
   [profile]
@@ -116,6 +167,8 @@
       (do (log/warn "Profile" path "not found, using base config only")
           {}))))
 
+(m/=> read-profile-config [:=> [:cat [:or :keyword :string]] SystemConfig])
+
 (defn apply-overlay
   "BASE with OVERLAY meta-merged over it. A key OVERLAY sets to nil is removed
    (Integrant exclusion); meta-merge alone would keep the base value."
@@ -123,6 +176,8 @@
   (let [nil-keys (into #{} (comp (filter (fn [[_ v]] (nil? v))) (map key)) overlay)
         overlay' (into {} (remove (fn [[_ v]] (nil? v))) overlay)]
     (apply dissoc (meta-merge base overlay') nil-keys)))
+
+(m/=> apply-overlay [:=> [:cat [:map-of :any :any] [:map-of :any :any]] [:map-of :any :any]])
 
 (defn load-system-config
   "Base system.edn, then the profile overlay, then config.edn's
@@ -133,6 +188,11 @@
    (-> (read-base-config)
        (apply-overlay (read-profile-config profile))
        (apply-overlay (or overrides {})))))
+
+(m/=> load-system-config [:function
+                          [:=> [:cat] SystemConfig]
+                          [:=> [:cat [:or :keyword :string]] SystemConfig]
+                          [:=> [:cat [:or :keyword :string] [:maybe [:map-of :any :any]]] SystemConfig]])
 
 ;; =============================================================================
 ;; Boot timing — per-init-key duration instrumentation
@@ -182,6 +242,21 @@
 ;; Lifecycle — start! / stop! / reset!
 ;; =============================================================================
 
+(defn install-metrics!
+  "Install the metrics port sink and contribute the `project metrics` verbs,
+   both bound late. A no-op when hive-ttracking.metrics is absent; never throws."
+  []
+  (try
+    (when-let [install (requiring-resolve 'hive-mcp.telemetry.metrics/install-default!)]
+      (when (install)
+        (when-let [verbs (requiring-resolve 'hive-mcp.telemetry.metrics-tool/install!)]
+          (verbs))))
+    (catch Throwable e
+      (log/warn "metrics install failed (non-fatal):" (ex-message e))
+      nil)))
+
+(m/=> install-metrics! [:=> [:cat] :any])
+
 (defn start!
   "Initialize the Integrant system from system.edn + profile overlay.
 
@@ -193,7 +268,9 @@
    Accepts optional profile keyword (:desktop, :k8s-headless, :k8s-minimal).
    Profile precedence: explicit :profile > HIVE_PROFILE env > :desktop.
    `:hprof-boot!` is a boot port for isolated lifecycle tests; production
-   defaults to hprof/boot! and retains the disk-pressure abort."
+   defaults to hprof/boot! and retains the disk-pressure abort.
+   The metrics sink (`install-metrics!`) is installed before ig/init so boot
+   work is observed too."
   [& {:keys [profile hprof-boot!] :or {profile nil hprof-boot! hprof/boot!}}]
   (let [profile (resolve-profile profile)]
     (when @system
@@ -208,6 +285,7 @@
     ;; ENGINE-L0.5 — cap manifold's wait-pool BEFORE any deferred runs
     ;; (the wait-pool fn is delay-cached, so this must precede ig/init).
     (manifold-pool/boot!)
+    (install-metrics!)
     (let [config (load-system-config profile)
           sys    (timed-init config)]
       (clojure.core/reset! system sys)
@@ -222,6 +300,13 @@
       (log/info "Integrant system initialized:" (count sys) "keys")
       sys)))
 
+(def StartOpts
+  "start! / reset! keyword args: :profile, and the :hprof-boot! port."
+  [:* [:alt [:cat [:= :profile] ProfileName]
+       [:cat [:= :hprof-boot!] [:=> [:cat] :any]]]])
+
+(m/=> start! [:=> [:cat StartOpts] SystemConfig])
+
 (defn stop!
   "Halt the running Integrant system. Safe to call when no system running.
    Keys are halted in reverse init order (Integrant default)."
@@ -232,6 +317,8 @@
     (clojure.core/reset! system nil)
     (log/info "Integrant system halted.")
     :halted))
+
+(m/=> stop! [:=> [:cat] [:maybe [:= :halted]]])
 
 (defn reset!
   "Stop system, reload changed namespaces via clj-reload, re-init system.
@@ -248,6 +335,8 @@
           (log/info "Namespaces reloaded. Restarting..."))
       (log/warn "clj-reload not available (dev-only dep). Skipping reload."))
     (start! :profile profile :hprof-boot! hprof-boot!)))
+
+(m/=> reset! [:=> [:cat StartOpts] SystemConfig])
 
 ;; =============================================================================
 ;; Blocking — keepalive integration for -main
@@ -302,6 +391,7 @@
 
    Profile precedence: --profile flag > HIVE_PROFILE env > desktop"
   [& args]
+  (install-log-files!)
   (let [{:keys [profile]} (parse-cli-args args)
         sys (start! :profile profile)]
     (block-until-shutdown! sys)))

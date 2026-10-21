@@ -15,7 +15,7 @@
   (:require [clojure.test :refer [deftest testing is]]
             [clojure.test.check.generators :as gen]
             [hive-test.trifecta :refer [deftrifecta]]
-            [hive-mcp.spi.catchup-registry :as catchup-registry]
+            [hive-spi.catchup.registry :as catchup-registry]
             [clojure.data.json :as json]
             ;; Wrap path
             [hive-mcp.crystal.harvest.collect :as collect]
@@ -470,50 +470,36 @@
 ;; phantom duplicates, no synthesized progress it never saw.
 ;; =============================================================================
 
-(deftest e2e-empty-wrap-minimal-breadcrumb
-  (testing "Wrap with no activity persists one minimal breadcrumb; catchup surfaces exactly it"
+(deftest e2e-empty-wrap-persists-nothing (testing "Wrap with no activity persists nothing; catchup surfaces no session"
     (let [[entries-atom store] (make-memory-store)]
       (register-lifecycle-extensions!)
       (try
         (with-e2e-mocks store
 
-          ;; Override session-start to nil for the empty-session scenario
           (with-redefs [crystal/get-session-start (fn [& _] nil)]
 
-            ;; Wrap with empty session (no progress notes, no tasks, no commits)
             (let [harvested (collect/harvest-all {:directory test-directory
                                                 :agent-id test-agent})
                   crystal-result (synthesis/synthesize harvested)]
 
-              ;; No content => minimal breadcrumb, NOT a skip
-              (is (not (:skipped crystal-result))
-                  "quiet session should still crystallize (breadcrumb, not skip)")
-              (is (some? (:summary-id crystal-result))
-                  "quiet session should produce a summary-id")
+              (is (true? (:skipped crystal-result))
+                  "quiet session is skipped, not crystallized")
+              (is (= "no-activity" (:reason crystal-result)))
+              (is (nil? (:summary-id crystal-result))
+                  "quiet session produces no summary-id")
+              (is (map? (:memory-decay-stats crystal-result))
+                  "lifecycle maintenance still runs on a skipped wrap")
 
-              ;; Exactly one entry lands in the store, and it is the minimal one
-              (is (= 1 (count @entries-atom))
-                  "quiet wrap should persist exactly one entry (no phantom extras)")
-              (let [breadcrumb (first @entries-atom)
-                    tags (set (:tags breadcrumb))]
-                (is (contains? tags "wrap-minimal")
-                    "the breadcrumb should be tagged 'wrap-minimal'")
-                (is (contains? tags "session-summary")
-                    "the breadcrumb should be tagged 'session-summary'")
-                (is (re-find #"Progress notes: 0" (str (:content breadcrumb)))
-                    "the breadcrumb should report zero harvested progress notes"))
+              (is (zero? (count @entries-atom))
+                  "quiet wrap persists no entry, not even a wrap-minimal breadcrumb")
 
-              ;; Catchup surfaces exactly that one breadcrumb session
               (let [catchup-result (catchup/handle-native-catchup
                                     {:directory test-directory
                                      :_caller_id "coordinator"})
                     context-block (json/read-str (:text (nth catchup-result 1)) :key-fn keyword)
                     sessions (get-in context-block [:context :sessions])]
-                (is (= 1 (count sessions))
-                    "catchup should return exactly the one breadcrumb session")
-                (is (re-find #"Quiet session|Progress notes: 0|Session Summary"
-                             (str (:P (first sessions))))
-                    "the catchup session preview should be the quiet-session breadcrumb")))))
+                (is (empty? sessions)
+                    "catchup surfaces no session for a skipped wrap")))))
 
         (finally
           (deregister-lifecycle-extensions!))))))

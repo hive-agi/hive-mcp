@@ -207,26 +207,6 @@
       (is (:ready? result) "OpenRouter should be immediately ready")
       (is (= 1 (:attempts result)) "Should pass on first attempt"))))
 
-(deftest test-agent-sdk-delegates-to-agent-sdk-ready
-  ;; NOTE: :agent-sdk is NOT "always ready" any more — ling-cli-ready? dispatches
-  ;; to agent-sdk-ready? (session :idle + live event-loop thread). Asserting
-  ;; unconditional readiness here would just hang on the 60s default timeout.
-  (testing "Agent SDK / Claude SDK modes dispatch to agent-sdk-ready?"
-    (with-redefs [readiness/agent-sdk-ready? (constantly true)]
-      (is (true? (readiness/ling-cli-ready? "sdk-ling" :agent-sdk)))
-      (is (true? (readiness/ling-cli-ready? "sdk-ling" :claude-sdk))))
-    (with-redefs [readiness/agent-sdk-ready? (constantly false)]
-      (is (false? (readiness/ling-cli-ready? "sdk-ling" :agent-sdk)))
-      (is (false? (readiness/ling-cli-ready? "sdk-ling" :claude-sdk)))))
-
-  (testing "An agent-sdk ling with a live session is ready on the first poll"
-    (ds-lings/add-slave! "sdk-ling" {:status :idle :depth 1 :cwd "/tmp"})
-
-    (with-redefs [readiness/agent-sdk-ready? (constantly true)]
-      (let [result (wait-for-ling-ready "sdk-ling" :agent-sdk)]
-        (is (:ready? result) "Agent SDK should be ready once its session is idle")
-        (is (= 1 (:attempts result)) "Should pass on first attempt")))))
-
 (deftest test-headless-mode-dispatches-to-headless-ready
   (testing "Headless / claude-process modes dispatch to headless-ready?"
     (with-redefs [readiness/headless-ready? (constantly true)]

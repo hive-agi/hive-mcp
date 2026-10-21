@@ -1,0 +1,54 @@
+{:case-0
+ {:out {:id "", :type :memory-deleted},
+  :in (:deleted {:id "", :junk 0})},
+ :case-1
+ {:out
+  {:id "W",
+   :memory-type "",
+   :tags [],
+   :project-id "",
+   :type :memory-deleted},
+  :in
+  (:deleted
+   {:id "W", :memory-type "", :tags [], :project-id "", :junk 0})},
+ :case-2
+ {:out {:id "3", :tags ["" ""], :type :memory-added},
+  :in (:added {:id "3", :tags ["" ""], :junk 0})},
+ :case-3
+ {:out {:id "", :type :memory-updated}, :in (:updated {:id ""})},
+ :case-4
+ {:out {:id "m2Z2", :tags ["l49" "WpXD"], :type :memory-added},
+  :in (:added {:id "m2Z2", :tags ["l49" "WpXD"]})},
+ :case-5
+ {:out
+  {:id "ih1",
+   :tags ["0vr0" "coop" "K86J" "B"],
+   :project-id "3",
+   :type :memory-added},
+  :in
+  (:added
+   {:id "ih1",
+    :tags ["0vr0" "coop" "K86J" "B"],
+    :project-id "3",
+    :junk -1})},
+ :case-6
+ {:out
+  {:id "8",
+   :memory-type "O7svn",
+   :project-id "Fg",
+   :type :memory-updated},
+  :in
+  (:updated
+   {:id "8", :memory-type "O7svn", :project-id "Fg", :junk -2})},
+ :case-7
+ {:out
+  {:id "",
+   :memory-type "",
+   :tags ["FBa97M" "d" "JEuUZ" "" "LC4eq"],
+   :type :memory-deleted},
+  :in
+  (:deleted
+   {:id "",
+    :memory-type "",
+    :tags ["FBa97M" "d" "JEuUZ" "" "LC4eq"],
+    :junk -56})}}

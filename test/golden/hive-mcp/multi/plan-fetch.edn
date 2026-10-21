@@ -1,0 +1,45 @@
+{:case-0
+ {:out
+  {:error :multi/plan-not-found,
+   :plan-id "absent",
+   :message "no plan with id: absent"},
+  :in ("absent")},
+ :case-1
+ {:out
+  {:error :multi/plan-malformed,
+   :plan-id "plan-not-edn",
+   :message "plan content is not valid EDN"},
+  :in ("plan-not-edn")},
+ :case-2
+ {:out {:ok {:ops [], :wave-count 0, :reason "empty"}},
+  :in ("plan-ok-2")},
+ :case-3
+ {:out
+  {:ok
+   {:ops [{:id "a", :tool "memory", :command "search"}],
+    :wave-count 1}},
+  :in ("plan-ok")},
+ :case-4
+ {:out
+  {:ok
+   {:ops [{:id "a", :tool "memory", :command "search"}],
+    :wave-count 1}},
+  :in ("plan-ok")},
+ :case-5
+ {:out
+  {:error :multi/plan-malformed,
+   :plan-id "plan-not-edn",
+   :message "plan content is not valid EDN"},
+  :in ("plan-not-edn")},
+ :case-6
+ {:out
+  {:error :multi/plan-malformed,
+   :plan-id "plan-no-ops",
+   :message "plan content missing :ops vector"},
+  :in ("plan-no-ops")},
+ :case-7
+ {:out
+  {:ok
+   {:ops [{:id "a", :tool "memory", :command "search"}],
+    :wave-count 1}},
+  :in ("plan-ok")}}

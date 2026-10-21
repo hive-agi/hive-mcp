@@ -1,0 +1,8 @@
+{:case-0 {:out false, :in "id-1"},
+ :case-1 {:out true, :in {:success? false, :error "x"}},
+ :case-2 {:out true, :in {:error :milvus/unavailable}},
+ :case-3 {:out true, :in {:success? false, :error "x"}},
+ :case-4 {:out false, :in {:queued? true}},
+ :case-5 {:out false, :in {:queued? true}},
+ :case-6 {:out false, :in {:queued? true}},
+ :case-7 {:out false, :in {:queued? true}}}

@@ -1,0 +1,39 @@
+{:case-0
+ {:out {:tasks [{:id "b", :title ""}]},
+  :in {:tasks [{:id "b", :title ""}]}},
+ :case-1
+ {:out {:tasks [{:id "b", :title "l"} {:id "b", :title ""}], :count 0},
+  :in
+  {:tasks
+   [{:id "b", :title "l"}
+    {:id "b", :title "", :description "", :context {}}],
+   :count 0}},
+ :case-2 {:out {:tasks []}, :in {:tasks []}},
+ :case-3
+ {:out
+  {:tasks [{:id "a", :title "", :execution {:model "m1"}}], :count -1},
+  :in
+  {:tasks
+   [{:id "a",
+     :title "",
+     :description "",
+     :context {:execution {:model "m1"}}}],
+   :count -1}},
+ :case-4
+ {:out
+  {:tasks
+   [{:id "a", :title "R0a"}
+    {:id "a", :title ""}
+    {:id "a", :title ""}]},
+  :in
+  {:tasks
+   [{:id "a", :title "R0a", :description ""}
+    {:id "a", :title "", :description "14", :context {}}
+    {:id "a", :title ""}]}},
+ :case-5
+ {:out {:tasks [{:id "b", :title "O"}]},
+  :in {:tasks [{:id "b", :title "O", :description "9"}]}},
+ :case-6 {:out {:tasks []}, :in {:tasks []}},
+ :case-7
+ {:out {:tasks [{:id "b", :title "G"}]},
+  :in {:tasks [{:id "b", :title "G", :context {}}]}}}

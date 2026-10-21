@@ -13,13 +13,14 @@
    Result DSL: Internal logic returns Result maps ({:ok val} or {:error category}).
    Single try-result boundary at each handler level. Zero nested try-catch."
   (:require [hive-mcp.dns.result :as result]
-            [hive-mcp.tools.core :refer [mcp-json mcp-error]]
+            [hive-mcp.tools.core :as core :refer [mcp-json mcp-error]]
             [hive-mcp.tools.kg.queries :as kg-queries]
             [hive-mcp.tools.kg.commands :as kg-commands]
             [hive-mcp.knowledge-graph.versioning :as versioning]
             [taoensso.timbre :as log]
             [hive-spi.schema.registry :as sreg]
-            [hive-mcp.extensions.deftool :as dt]))
+            [hive-mcp.extensions.deftool :as dt]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -395,6 +396,35 @@
   [params]
   (log/info "kg_validate_migration" {:edges (:expected_edges params) :disc (:expected_disc params) :synthetic (:expected_synthetic params)})
   (result->mcp (try-result :kg/validate-migration-failed #(validate-migration* params))))
+
+;;; =============================================================================
+;;; Contracts
+;;; =============================================================================
+;;
+;; Every versioning and migration handler is a try-result boundary: params in,
+;; one MCP text response out (mcp-json on {:ok}, mcp-error on {:error}).
+
+(m/=> handle-kg-branch [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-kg-checkout [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-kg-branches [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-kg-snapshot-id [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-kg-history [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-kg-merge [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-kg-versioning-status [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-kg-migrate [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-kg-export [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-kg-import [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-kg-validate-migration [:=> [:cat [:maybe :map]] core/McpResponse])
 
 ;;; =============================================================================
 ;;; Migration Tool Definitions

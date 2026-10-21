@@ -1,0 +1,80 @@
+{:case-0
+ {:out {:class :foreign},
+  :in
+  ({:kernel/segments ["server" "swarm.datascript"],
+    :kernel/forbidden-requires {},
+    :waiver-baseline 0,
+    :waivers []}
+   hive-mcp)},
+ :case-1
+ {:out {:class :extract, :target :hive-agent},
+  :in
+  ({:kernel/tools [hive-mcp.agent.ling],
+    :kernel/forbidden-requires {},
+    :extraction
+    {"agent" :hive-agent,
+     "hivemind" :hive-agent,
+     "graph" :hive-memory,
+     "agent.cost" :hive-cost},
+    :extraction/listed {}}
+   "hive-mcp.agent.x")},
+ :case-2
+ {:out {:class :kernel},
+  :in
+  ({:kernel/segments ["server" "swarm.datascript"],
+    :kernel/tools [hive-mcp.agent.ling],
+    :kernel/forbidden-requires
+    {"datascript.core" {:owners ["swarm.datascript"]}},
+    :extraction
+    {"agent" :hive-agent,
+     "hivemind" :hive-agent,
+     "graph" :hive-memory,
+     "agent.cost" :hive-cost},
+    :extraction/listed
+    {:hive-agent
+     [hive-mcp.agent
+      hive-mcp.agent.ling
+      hive-mcp.hivemind.state
+      hive-mcp.hivemind.gone]},
+    :waivers []}
+   hive-mcp.agent.ling)},
+ :case-3
+ {:out {:class :unknown},
+  :in
+  ({:kernel/tools [hive-mcp.agent.ling],
+    :extraction {},
+    :waivers
+    [{:from "hive-mcp.hivemind", :to "hive-mcp.hivemind"}
+     {:from datascript.core, :to datascript.core.impl}]}
+   "hive-mcp.")},
+ :case-4
+ {:out {:class :kernel},
+  :in
+  ({:kernel/segments ["server" "swarm.datascript"],
+    :extraction {"tools" :hive-tools},
+    :waiver-baseline -1}
+   hive-mcp.server.init)},
+ :case-5
+ {:out {:class :unknown},
+  :in
+  (#:kernel{:tools [hive-mcp.tools.core]} hive-mcp.agent.cost.model)},
+ :case-6
+ {:out {:class :foreign},
+  :in
+  ({:extraction
+    {"agent" :hive-agent,
+     "hivemind" :hive-agent,
+     "graph" :hive-memory,
+     "agent.cost" :hive-cost},
+    :waivers
+    [{:from "hive-mcp.hivemind", :to "malli.core"}
+     {:from "hive-mcp.agent.x", :to "hive-mcp.hivemind"}
+     {:from hive-mcp.hivemind.state, :to hive-mcp.graph.schema}]}
+   datascript.core)},
+ :case-7
+ {:out {:class :foreign},
+  :in
+  ({:kernel/segments [],
+    :kernel/forbidden-requires {},
+    :waiver-baseline 0}
+   hive-mcp)}}

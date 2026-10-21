@@ -1,0 +1,3 @@
+{:empty {:kind :readiness, :flag-agrees? true},
+ :ignored-params {:kind :readiness, :flag-agrees? true},
+ :nil {:kind :readiness, :flag-agrees? true}}

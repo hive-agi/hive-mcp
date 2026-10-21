@@ -1,0 +1,20 @@
+{:case-0 {:out "src/b.clj", :in ("src/b.clj")},
+ :case-1
+ {:out "src/b.clj",
+  :in (#:span{:file "src/b.clj", :mode :file, :qn nil})},
+ :case-2
+ {:out "src/a.clj#a/g",
+  :in (#:span{:file "src/a.clj", :mode :body, :qn "a/g"})},
+ :case-3
+ {:out "src/a.clj#a/g",
+  :in (#:span{:file "src/a.clj", :mode :body, :qn "a/g"})},
+ :case-4
+ {:out "src/b.clj",
+  :in (#:span{:file "src/b.clj", :mode :file, :qn nil})},
+ :case-5
+ {:out "src/b.clj",
+  :in (#:span{:file "src/b.clj", :mode :file, :qn nil})},
+ :case-6
+ {:out "src/a.clj",
+  :in (#:span{:file "src/a.clj", :mode :file, :qn nil})},
+ :case-7 {:out "src/b.clj", :in ("src/b.clj")}}

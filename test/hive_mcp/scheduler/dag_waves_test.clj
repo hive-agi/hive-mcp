@@ -18,8 +18,8 @@
   (:require [hive-mcp.project.scope]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.scheduler.dag-waves :as dag]
-            [hive-mcp.spi.kanban :as kanban]
-            [hive-mcp.spi.kanban.registry :as kanban-port]
+            [hive-spi.kanban :as kanban]
+            [hive-spi.kanban.registry :as kanban-port]
             [hive-mcp.test.stub.kanban :as kport]
             [hive-mcp.knowledge-graph.edges :as kg-edges]
             [hive-mcp.agent.ling :as ling]
@@ -29,6 +29,7 @@
             [clojure.data.json :as json]
             [clojure.core.async :as async]
             [hive-mcp.test.stub.memory-store :as stub]
+            [hive-schemas.test :refer [deftrifecta-from-schema]]
             [hive-spi.memory.registry :as sreg]
             [hive-mcp.vectordb.kanban-facade :as kanban-facade]))
 
@@ -142,7 +143,7 @@
 
 (defn with-kanban-port
   "clojure.test fixture: the table-backed double answers both kanban ports.
-   The scheduler resolves the provider through hive-mcp.spi.kanban.registry
+   The scheduler resolves the provider through hive-spi.kanban.registry
    on every call, so the double is installed there, never captured."
   [f]
   (let [prior (into {} (for [p [:IKanbanRead :IKanbanWrite] :when (kanban-port/registered? p)]
@@ -1493,3 +1494,61 @@
       (is (= ["w0"] (spawned-task-ids)))
       (dag/on-ling-complete {:agent-id (:id (first @*spawned-lings)) :event-type :completed :data {}})
       (is (= ["w0" "w1"] (spawned-task-ids))))))
+
+;; =============================================================================
+;; Facets over the pure transitions (no mocks needed)
+;; =============================================================================
+
+(def ^:private TaskId [:enum "a" "b" "c" "d" "e" "f"])
+
+(def ^:private DepGraph
+  "Graphs over six ids, deps as sets or vectors, self-loops and cycles
+   allowed: blocking must still terminate and be exact."
+  [:maybe [:map-of TaskId [:or [:set {:max 3} TaskId] [:vector {:max 3} TaskId]]]])
+
+(defn- reachable-blocked
+  "Oracle: every graph key with a dependency path (length >= 1) to a failed
+   id, found by breadth-first search over the reverse edges."
+  [graph failed]
+  (let [rdeps (reduce-kv (fn [acc t deps] (reduce #(update %1 %2 (fnil conj #{}) t) acc deps))
+                         {} (or graph {}))]
+    (loop [frontier (vec (set failed)) seen #{}]
+      (if-let [x (first frontier)]
+        (let [new (remove seen (get rdeps x))]
+          (recur (into (subvec frontier 1) new) (into seen new)))
+        seen))))
+
+(deftrifecta-from-schema blocked-task-ids-is-reverse-reachability
+  #'dag/blocked-task-ids
+  {:in [:cat DepGraph [:or [:set {:max 2} TaskId] [:vector {:max 2} TaskId] :nil]]
+   :out [:set :any]
+   :rel (fn [[graph failed] out] (= out (reachable-blocked graph failed)))
+   :classify (fn [_ out] (if (empty? out) :none :some))
+   :classify-domain #{:none :some}
+   :golden-path "test/golden/hive-mcp/scheduler/dag-blocked-reachability.edn"
+   :num-tests 300})
+
+(deftrifecta-from-schema plan-summary-reports-exact-counts
+  #'dag/plan-summary
+  ;; failed and skipped are empty about half the time each, so the
+  ;; "success" verdict (both empty) is reached about a quarter of the time
+  {:in [:cat [:map
+              [:plan-id [:enum "p1" "p2"]]
+              [:completed [:set {:max 3} TaskId]]
+              [:failed [:or [:= #{}] [:= []] [:set {:max 2} [:enum "x" "y" "z"]]
+                        [:vector {:max 2} [:enum "x" "y"]]]]
+              [:opts [:map [:run-id {:optional true} [:enum "r1"]]]]]
+        [:or [:= #{}] [:= []] [:set {:max 2} [:enum "s1" "s2" "s3"]]
+         [:vector {:max 2} [:enum "s1" "s2"]]]]
+   :out [:map [:result [:enum "success" "failure"]] [:message :string]]
+   :rel (fn [[{:keys [plan-id completed failed opts]} skipped] out]
+          (let [nf (count failed) ns (count skipped) nc (count completed)]
+            (= out {:plan-id plan-id :run-id (:run-id opts)
+                    :result (if (= 0 nf ns) "success" "failure")
+                    :completed nc :failed nf :skipped ns
+                    :failed-ids (vec (sort failed)) :skipped-ids (vec (sort skipped))
+                    :message (str "All tasks complete. " nc " succeeded, " nf " failed, "
+                                  ns " skipped.")})))
+   :classify (fn [_ out] (:result out))
+   :classify-domain #{"success" "failure"}
+   :num-tests 300})

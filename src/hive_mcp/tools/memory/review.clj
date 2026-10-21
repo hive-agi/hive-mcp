@@ -14,10 +14,12 @@
             [hive-mcp.tools.memory.crud.edit :as edit]
             [hive-mcp.tools.memory.crud.query :as query]
             [hive-mcp.tools.memory.core :refer [with-entry]]
-            [hive-mcp.tools.core :refer [mcp-error mcp-json]]
+            [hive-mcp.tools.core :as tcore :refer [mcp-error mcp-json]]
             [hive-mcp.memory.type-registry :as type-registry]
             [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.tools.memory.schema :as ms]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -150,3 +152,23 @@
             (if-not (type-registry/valid-type? target)
               (mcp-error (str "Invalid target type for reject: " (pr-str as)))
               (resolve-entry! entry id target v reason))))))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> queue-types [:=> [:cat] [:set :string]])
+
+(m/=> group-queues
+      [:=> [:cat [:sequential [:tuple :string [:sequential any?]]]] ms/QueueGroups])
+
+(m/=> handle-review
+      [:=> [:cat [:map
+                  [:id {:optional true} [:any {:gen/schema [:maybe [:enum "e1" "" "nope"]]}]]
+                  [:verdict {:optional true} [:any {:gen/schema [:maybe [:enum "approve" "reject" "x"]]}]]
+                  [:as {:optional true} [:maybe :string]]
+                  [:type {:optional true} [:any {:gen/schema [:maybe [:enum "axiom-candidate" "nope"]]}]]
+                  [:reason {:optional true} [:maybe :string]]]]
+       ;; A failed *query-port* response is passed through as the port gave it.
+       [:or tcore/McpResponse [:map [:isError [:= true]] [:text [:maybe :string]]]]])
+

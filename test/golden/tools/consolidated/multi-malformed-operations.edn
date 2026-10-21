@@ -1,0 +1,27 @@
+{:case-0 {:out [], :in []},
+ :case-1
+ {:out
+  [{:index 0, :value ""}
+   {:index 1, :value [-1]}
+   {:index 2, :value "1"}],
+  :in ["" [-1] "1"]},
+ :case-2
+ {:out
+  [{:index 0, :value nil}
+   {:index 1, :value nil}
+   {:index 2, :value 1}
+   {:index 3, :value [0]}
+   {:index 4, :value [0]}],
+  :in [nil nil 1 [0] [0]]},
+ :case-3
+ {:out
+  [{:index 0, :value "gLw"}
+   {:index 1, :value []}
+   {:index 2, :value "S"}
+   {:index 3, :value 1}],
+  :in ["gLw" [] "S" 1]},
+ :case-4
+ {:out [{:index 0, :value nil} {:index 1, :value "o"}], :in [nil "o"]},
+ :case-5 {:out [], :in [{:tool "kg"} {:tool "memory"}]},
+ :case-6 {:out [{:index 1, :value 8}], :in [{:tool "kg"} 8]},
+ :case-7 {:out [{:index 0, :value 1}], :in [1]}}

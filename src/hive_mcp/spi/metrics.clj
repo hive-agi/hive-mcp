@@ -23,7 +23,8 @@
    `inc-events!` on every event. `install!`, `uninstall!` and
    `reset-cache!` clear the cache, so a namespace that arrives later (an
    addon mounting its telemetry) is picked up on the next call."
-  (:require [hive-mcp.extensions.soft :as soft]))
+  (:require [hive-mcp.extensions.soft :as soft]
+            [malli.core :as m]))
 
 (defprotocol IMetrics
   "Every metric the kernel reports. An implementation returns nil from all
@@ -140,3 +141,26 @@
   "Handle a `:prometheus` event effect."
   [effect-data]
   (-handle-effect! (current) effect-data))
+
+;; ---------------------------------------------------------------------------
+;; Contracts
+;; ---------------------------------------------------------------------------
+
+(def Impl
+  "An `IMetrics` implementation. Generates as `noop`."
+  [:fn {:error/message "should satisfy IMetrics"
+        :gen/schema :nil
+        :gen/fmap (fn [_] noop)}
+   (fn [x] (satisfies? IMetrics x))])
+
+(m/=> reset-cache! [:=> [:cat] :nil])
+(m/=> install! [:=> [:cat Impl] Impl])
+(m/=> uninstall! [:=> [:cat] :nil])
+(m/=> current [:=> [:cat] Impl])
+;; The four reporters' return is unread by every caller (see IMetrics); the
+;; late-bound prometheus host answers its client Child objects, so the
+;; output is :any. The inputs are the documented shapes.
+(m/=> inc-events! [:=> [:cat :keyword [:enum :info :warn :error :fatal]] :any])
+(m/=> observe-request-duration! [:=> [:cat :string number?] :any])
+(m/=> set-lings-active! [:=> [:cat :int] :any])
+(m/=> handle-effect! [:=> [:cat [:maybe :map]] :any])

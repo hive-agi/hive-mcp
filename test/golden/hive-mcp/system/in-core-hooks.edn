@@ -1,0 +1,8 @@
+{:ret :registered,
+ :snapshot
+ {:shutdown
+  [["olympus-ws/stop" 10]
+   ["coordinator/mark-terminated" 450]
+   ["session-end/hooks" 490]],
+  :sweeps [],
+  :resources nil}}

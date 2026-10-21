@@ -1,0 +1,62 @@
+{:case-0
+ {:out :task/running,
+  :in
+  (:task/running {:present? false, :done? true, :cancelled? false})},
+ :case-1
+ {:out :task/running,
+  :in
+  (:task/running {:present? false, :done? false, :cancelled? true})},
+ :case-10
+ {:out :task/cancelled,
+  :in
+  (:task/cancelled {:present? false, :done? false, :cancelled? true})},
+ :case-11
+ {:out :task/timed-out,
+  :in
+  (:task/timed-out {:present? true, :done? false, :cancelled? true})},
+ :case-12
+ {:out :task/failed,
+  :in (:task/failed {:present? true, :done? true, :cancelled? true})},
+ :case-13
+ {:out :task/cancelled,
+  :in
+  (:task/cancelled {:present? true, :done? false, :cancelled? false})},
+ :case-14
+ {:out :task/done,
+  :in
+  (:task/running {:present? true, :done? true, :cancelled? false})},
+ :case-15
+ {:out :task/queued,
+  :in
+  (:task/queued {:present? true, :done? false, :cancelled? false})},
+ :case-2
+ {:out :task/cancelled,
+  :in
+  (:task/cancelled {:present? false, :done? false, :cancelled? true})},
+ :case-3
+ {:out :task/failed,
+  :in (:task/failed {:present? true, :done? false, :cancelled? true})},
+ :case-4
+ {:out :task/cancelled,
+  :in
+  (:task/cancelled
+   {:present? false, :done? false, :cancelled? false})},
+ :case-5
+ {:out :task/cancelled,
+  :in
+  (:task/cancelled {:present? false, :done? true, :cancelled? false})},
+ :case-6
+ {:out :task/failed,
+  :in
+  (:task/failed {:present? true, :done? false, :cancelled? false})},
+ :case-7
+ {:out :task/timed-out,
+  :in
+  (:task/timed-out {:present? false, :done? true, :cancelled? false})},
+ :case-8
+ {:out :task/queued,
+  :in
+  (:task/queued {:present? true, :done? false, :cancelled? false})},
+ :case-9
+ {:out :task/done,
+  :in (:task/done {:present? true, :done? true, :cancelled? false})}}

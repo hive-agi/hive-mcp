@@ -1,0 +1,9 @@
+{:string "AXIOM: never push.\nContext line.",
+ :long-default-budget
+ {:chars 10000, :head "word word word word word word word word "},
+ :long-small-budget
+ {:chars 10000, :head "word word word word word word word word "},
+ :structured "PRESET\n\nAXIOMS\n\nCTX\n\nHIST",
+ :structured-tight "PRESET\n\nAXIOMS\n\nCTX\n\nHIST",
+ :empty nil,
+ :no-extension-answer nil}

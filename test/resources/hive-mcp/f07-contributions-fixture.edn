@@ -1,0 +1,8 @@
+;; Fixture manifest for hive-mcp.spi.contributions-test (cov-facets f07).
+;; One entry whose :install! resolves (clojure.core/list), one whose :install!
+;; names a namespace that is not on the classpath (absent, not fatal), and one
+;; whose optional :describe does not resolve (dropped, entry still present).
+{:f07/tools
+ [{:key :present :install! clojure.core/list :addon :f07}
+  {:key :absent :install! f07.no-such-ns/install! :addon :f07}
+  {:key :partial :install! clojure.core/vector :describe f07.no-such-ns/describe :addon :f07}]}

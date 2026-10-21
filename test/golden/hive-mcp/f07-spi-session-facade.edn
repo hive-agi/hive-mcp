@@ -1,0 +1,4 @@
+{:start ["ling-1" nil],
+ :hooks {:registered [:session-end]},
+ :reset-cache nil,
+ :calls [[:start "ling-1"] [:start nil] [:hooks "test-registry"]]}

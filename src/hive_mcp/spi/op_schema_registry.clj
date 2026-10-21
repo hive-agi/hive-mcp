@@ -14,7 +14,8 @@
    concrete op-schema keys — the addon owns its field schemas (reverted-9 rule);
    core stays field-agnostic and merely forwards the bundle to hive-spi."
   (:require [hive-spi.schema.registry :as reg]
-            [clojure.tools.logging :as log]))
+            [clojure.tools.logging :as log]
+            [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -59,3 +60,10 @@
   "Forget all ownership records (does NOT touch the hive-spi registry). Test-only."
   []
   (reset! owners* {}))
+
+;; Contracts. A bundle is {schema-key malli-form}; anything else is the
+;; malformed arm, which logs and answers nil, so the bundle input is :any.
+(m/=> register-by-key! [:=> [:cat :any :any :any] [:maybe [:sequential :keyword]]])
+(m/=> deregister-by-owner! [:=> [:cat :any] [:vector :keyword]])
+(m/=> owned [:=> [:cat] [:map-of :any [:set :keyword]]])
+(m/=> reset-for-test! [:=> [:cat] [:= {} {}]])

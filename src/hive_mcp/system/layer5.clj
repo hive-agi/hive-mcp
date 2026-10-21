@@ -23,6 +23,7 @@
             [hive-mcp.server.lifecycle :as lifecycle]
             [hive-mcp.dns.result :as result]
             [clojure.core.async :as async]
+            [malli.core :as m]
             [taoensso.timbre :as log]
             [hive-mcp.system.sweep-coordinator :as sweep-coordinator]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -115,7 +116,8 @@
     ;; reasons. That is not a design, it is how it happens to work today.
     (doseq [sweeper-ns '[hive-mcp.system.sweepers.orphan-channel
                          hive-mcp.system.sweepers.async-result
-                         hive-mcp.system.sweepers.heap-pressure]]
+                         hive-mcp.system.sweepers.heap-pressure
+                         hive-mcp.system.sweepers.orphan-edge]]
       (require sweeper-ns))
     ;; ONE OWNER PER SWEEP, enforced at the REGISTRATION SITE, not here.
     ;; :hive/housekeeping owns terminal liveness on its own 5 minute timer, so
@@ -190,6 +192,15 @@
                                    (when-let [server (:server context)]
                                      ((requiring-resolve 'jsonrpc4clj.server/send-notification)
                                       server "notifications/tools/list_changed" {})))})))
+
+;; answers REGISTER!'s answer: the surface id for routes/register-surface!;
+;; nil when the context carries no :tools atom
+(m/=> register-stdio-surface!
+  [:=> [:cat [:fn {:gen/elements [(fn [id _surface] id)]} ifn?]
+        [:maybe [:map [:tools {:optional true}
+                       [:maybe [:fn {:gen/schema :nil :gen/fmap (fn [_] (atom {}))}
+                                #(instance? clojure.lang.IAtom %)]]]]]]
+   :any])
 
 (defmethod ig/init-key :hive/mcp-stdio
   [_ {:keys [hot-reload] :as _config}]

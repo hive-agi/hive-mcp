@@ -8,7 +8,8 @@
    a caller cannot learn the secret by timing.
 
    Pure: no I/O, no state."
-  (:require [clojure.string :as str])
+  (:require [clojure.string :as str]
+            [malli.core :as m])
   (:import [java.security MessageDigest]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -17,6 +18,15 @@
 (def loopback "127.0.0.1")
 
 (def all-interfaces "0.0.0.0")
+
+(def Secret
+  "A shared secret or token; blank or nil means none is configured."
+  [:maybe :string])
+
+(def Host
+  "An interface to listen on: a requested host string, or one of the two
+   defaults."
+  [:string {:min 1}])
 
 (defn bind-host
   "The interface to listen on. Loopback when SECRET is blank, whatever was
@@ -27,6 +37,10 @@
     (str/blank? requested) all-interfaces
     :else                  requested))
 
+;; A blank (but non-empty) requested host passes through only with a secret,
+;; and only when not blank, so the answer is never blank.
+(m/=> bind-host [:=> [:cat Secret [:maybe :string]] Host])
+
 (defn bearer-ok?
   "True when SECRET is blank (no auth configured), or AUTH-HEADER is exactly
    `Bearer SECRET`. The comparison is constant-time."
@@ -35,3 +49,7 @@
       (MessageDigest/isEqual
        (.getBytes (str auth-header) "UTF-8")
        (.getBytes (str "Bearer " secret) "UTF-8"))))
+
+;; The header is read with `str`, so a missing header (nil) is a refusal, not
+;; a throw.
+(m/=> bearer-ok? [:=> [:cat Secret [:maybe :string]] :boolean])

@@ -1,23 +1,24 @@
 (ns hive-mcp.tools.kanban.port
-  "Core's provider for the kanban ports (hive-mcp.spi.kanban).
+  "Core's provider for the kanban ports (hive-spi.kanban).
 
    `CoreKanban` implements IKanbanRead and IKanbanWrite over the kanban
    domain (list plan, facade, move event bus, create handler) and speaks the
    port's public status vocabulary. `register!` installs it under
-   :IKanbanRead and :IKanbanWrite in hive-mcp.spi.kanban.registry; consumers
+   :IKanbanRead and :IKanbanWrite in hive-spi.kanban.registry; consumers
    resolve the provider through that registry on every call."
   (:require [clojure.data.json :as json]
             [clojure.set :as set]
             [clojure.string :as str]
-            [hive-mcp.spi.kanban :as kanban]
-            [hive-mcp.spi.kanban.registry :as registry]
+            [hive-spi.kanban :as kanban]
+            [hive-spi.kanban.registry :as registry]
             [hive-dsl.result :as r :refer [rescue]]
             [hive-mcp.tools.kanban.events :as kanban-events]
             [hive-mcp.tools.kanban.predicates :as kp]
             [hive-mcp.tools.kanban.transitions :as kt]
             [hive-mcp.tools.memory-kanban :as memory-kanban]
             [hive-mcp.tools.memory-kanban.query :as query]
-            [hive-mcp.vectordb.kanban-facade :as kanban-facade]))
+            [hive-mcp.vectordb.kanban-facade :as kanban-facade]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -158,3 +159,10 @@
     (registry/register! :IKanbanRead impl)
     (registry/register! :IKanbanWrite impl)
     impl))
+
+(def KanbanProvider
+  "A provider of both kanban ports; generates core's `CoreKanban`."
+  [:fn {:gen/fmap (fn [_] (->CoreKanban)) :gen/schema :nil}
+   #(and (satisfies? kanban/IKanbanRead %) (satisfies? kanban/IKanbanWrite %))])
+
+(m/=> register! [:=> [:cat] KanbanProvider])

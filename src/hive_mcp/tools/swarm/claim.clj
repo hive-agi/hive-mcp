@@ -4,7 +4,9 @@
             [hive-mcp.swarm.logic :as logic]
             [hive-mcp.events.core :as events]
             [clojure.data.json :as json]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]
+            [hive-mcp.tools.swarm.core :as swarm-core]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -20,6 +22,23 @@
   "Remove a claim from DataScript when task completes."
   [file-path]
   (lings/release-claim! file-path))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(m/=> handle-claim-cleanup [:=> [:cat [:maybe :map]] swarm-core/SwarmResponse])
+
+(m/=> handle-claim-clear [:=> [:cat [:maybe :map]] swarm-core/SwarmResponse])
+
+(m/=> handle-claim-list [:=> [:cat :any] swarm-core/SwarmResponse])
+
+;; Boundary writes into the DataScript claim store; the answer is the
+;; store's transaction report, which callers ignore.
+(m/=> record-claim-timestamp!
+  [:function [:=> [:cat :string] :any] [:=> [:cat :string [:maybe :string]] :any]])
+
+(m/=> remove-claim-timestamp! [:=> [:cat :string] :any])
 
 (defn- format-claim
   "Format a claim with timestamp and staleness info."

@@ -1,0 +1,5 @@
+{:await-shutdown :shutdown,
+ :await-done :done,
+ :await-closed nil,
+ :stdio-wins [:stdio :done],
+ :shutdown-wins [:shutdown :shutdown]}

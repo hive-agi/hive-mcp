@@ -1,0 +1,8 @@
+{:before 0,
+ :after 2,
+ :refused {:broadcast-refused :no-reason-given},
+ :short {:text "short"},
+ :cut {:text "x… [ref:r]", :ref "r"},
+ :conv [],
+ :reader? false,
+ :session nil}

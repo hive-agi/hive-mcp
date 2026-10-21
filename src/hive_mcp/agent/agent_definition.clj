@@ -221,6 +221,7 @@
 (m/=> custom? [:=> [:cat [:maybe spec/AnyMap]] [:maybe :keyword]])
 (m/=> plugin? [:=> [:cat [:maybe spec/AnyMap]] :boolean])
 (m/=> has-all-tools? [:=> [:cat [:maybe spec/AnyMap]] :boolean])
-(m/=> get-system-prompt [:=> [:cat [:maybe spec/AnyMap]] :any])
+;; A string prompt is returned as is, a fn prompt is called, an absent one is nil.
+(m/=> get-system-prompt [:=> [:cat spec/PromptHolder] [:maybe :string]])
 (m/=> summarize [:=> [:cat [:maybe spec/AnyMap]] :string])
 (m/=> list-summary [:=> [:cat [:maybe spec/Definitions]] :string])

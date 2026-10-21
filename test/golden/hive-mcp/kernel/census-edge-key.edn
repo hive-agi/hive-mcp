@@ -1,0 +1,24 @@
+{:case-0
+ {:out {:from hive-mcp.server.core, :to hive-mcp},
+  :in ({:from hive-mcp.server.core, :to hive-mcp})},
+ :case-1
+ {:out {:from hive-mcp.hivemind, :to hive-mcp.agent.x},
+  :in ({:from "hive-mcp.hivemind", :to "hive-mcp.agent.x"})},
+ :case-2
+ {:out {:from hive-mcp.hivemind.fresh, :to hive-mcp.agent.ling},
+  :in ({:from hive-mcp.hivemind.fresh, :to hive-mcp.agent.ling})},
+ :case-3
+ {:out {:from hive-mcp.server.core, :to hive-mcp.},
+  :in ({:from hive-mcp.server.core, :to "hive-mcp."})},
+ :case-4
+ {:out {:from hive-mcp.hivemind, :to hive-mcp.server.init},
+  :in ({:from "hive-mcp.hivemind", :to hive-mcp.server.init})},
+ :case-5
+ {:out {:from hive-mcp.graph.schema, :to hive-mcp.agent.cost.model},
+  :in ({:from hive-mcp.graph.schema, :to hive-mcp.agent.cost.model})},
+ :case-6
+ {:out {:from hive-mcp.agent.ling, :to datascript.core},
+  :in ({:from hive-mcp.agent.ling, :to datascript.core})},
+ :case-7
+ {:out {:from hive-mcp.swarm.datascript.lings, :to hive-mcp},
+  :in ({:from hive-mcp.swarm.datascript.lings, :to hive-mcp})}}

@@ -42,7 +42,9 @@
 
   (:require [hive.events.fsm :as fsm]
             [clojure.string :as str]
-            [hive-mcp.workflows.support :as support]))
+            [hive-mcp.workflows.support :as support]
+            [malli.core :as m]
+            [hive-mcp.workflows.schema :as wfs]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -56,20 +58,28 @@
   [data]
   (and (:commit-msg data) (:agent-id data) (not (:error data))))
 
+(m/=> valid? [:=> [:cat wfs/Data] wfs/Truthy])
+
 (defn invalid?
   "Check if validation failed."
   [data]
   (some? (:error data)))
+
+(m/=> invalid? [:=> [:cat wfs/Data] :boolean])
 
 (defn has-tasks?
   "Check if there are kanban tasks to move to done."
   [data]
   (seq (:task-ids data)))
 
+(m/=> has-tasks? [:=> [:cat wfs/Data] wfs/Truthy])
+
 (defn no-tasks?
   "Check if there are no kanban tasks (skip kanban step)."
   [data]
   (empty? (:task-ids data)))
+
+(m/=> no-tasks? [:=> [:cat wfs/Data] :boolean])
 
 (def always
   "Dispatch predicate — always true. Shared seam (support/always)."
@@ -114,6 +124,12 @@
              :task-ids (or merged-tasks [])
              :error nil))))
 
+(m/=> handle-start
+  [:=> [:cat wfs/Resources wfs/Data]
+   [:or
+    [:map [:agent-id :any] [:directory :any] [:task-ids [:sequential :any]] [:error :nil]]
+    [:map [:agent-id :any] [:directory :any] [:error some?]]]])
+
 (defn handle-commit
   "Commit staged changes with the provided message.
    EDN handler key: :commit
@@ -127,6 +143,8 @@
       (let [result (git-commit-fn commit-msg directory)]
         (assoc data :commit-result result))
       (assoc data :commit-result {:skipped true}))))
+
+(m/=> handle-commit [:=> [:cat wfs/Resources wfs/Data] [:map [:commit-result :any]]])
 
 (defn handle-kanban
   "Move kanban tasks to done status.
@@ -142,6 +160,8 @@
         (assoc data :kanban-result result))
       (assoc data :kanban-result {:moved 0 :skipped (empty? task-ids)}))))
 
+(m/=> handle-kanban [:=> [:cat wfs/Resources wfs/Data] [:map [:kanban-result :any]]])
+
 (defn handle-crystallize
   "Run wrap/crystallize for memory persistence.
    EDN handler key: :crystallize
@@ -156,6 +176,8 @@
         (assoc data :crystal-result result))
       (assoc data :crystal-result {:skipped true}))))
 
+(m/=> handle-crystallize [:=> [:cat wfs/Resources wfs/Data] [:map [:crystal-result :any]]])
+
 (defn handle-shout
   "Broadcast completion to hivemind coordinator.
    EDN handler key: :shout
@@ -168,6 +190,8 @@
     (when shout-fn
       (shout-fn agent-id :completed (str "Session complete: " commit-msg)))
     (assoc data :shout-sent? true)))
+
+(m/=> handle-shout [:=> [:cat wfs/Resources wfs/Data] [:map [:shout-sent? [:= true]]]])
 
 (defn handle-plan-check
   "Check for explorer preset and maybe trigger plan-to-kanban.
@@ -183,6 +207,8 @@
         (assoc data :plan-result result))
       (assoc data :plan-result nil))))
 
+(m/=> handle-plan-check [:=> [:cat wfs/Resources wfs/Data] [:map [:plan-result :any]]])
+
 (defn handle-evict
   "Evict context-store entries for the completing agent.
    EDN handler key: :evict
@@ -195,6 +221,8 @@
   [resources data]
   (support/handle-evict resources data nil))
 
+(m/=> handle-evict [:=> [:cat wfs/Resources wfs/Data] [:map [:eviction wfs/Eviction]]])
+
 (defn handle-end
   "Terminal state handler. Returns final session complete summary.
    EDN handler key: :end"
@@ -205,6 +233,10 @@
                     :plan-result :eviction])
       (assoc :status :ok
              :tasks-completed (count (:task-ids data)))))
+
+(m/=> handle-end
+  [:=> [:cat wfs/Resources wfs/Fsm]
+   [:map [:status [:= :ok]] [:tasks-completed [:int {:min 0}]]]])
 
 (def handle-error
   "Error state handler. Captures error context and throws.
@@ -311,6 +343,8 @@
   []
   (fsm/compile complete-session-spec))
 
+(m/=> compile-complete [:=> [:cat] wfs/CompiledFsm])
+
 (defn run-complete
   "Execute a compiled session complete FSM.
 
@@ -332,6 +366,11 @@
                            :directory nil}
                           opts)})))
 
+(m/=> run-complete
+  [:function
+   [:=> [:cat wfs/CompiledFsm wfs/Resources] wfs/RunResult]
+   [:=> [:cat wfs/CompiledFsm wfs/Resources [:maybe :map]] wfs/RunResult]])
+
 (defn run-session-complete
   "Convenience: compile and run a single session complete.
 
@@ -352,3 +391,5 @@
    ```"
   ([resources initial-data]
    (run-complete (compile-complete) resources initial-data)))
+
+(m/=> run-session-complete [:=> [:cat wfs/Resources [:maybe :map]] wfs/RunResult])

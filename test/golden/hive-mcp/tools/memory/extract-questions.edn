@@ -1,0 +1,10 @@
+{:case-0
+ {:out ["question: What is this thing for?"],
+  :in ("What is this thing for?")},
+ :case-1 {:out [], :in ("plain prose.")},
+ :case-2 {:out [], :in ("unclear: who owns it")},
+ :case-3 {:out [], :in ("FIXME later")},
+ :case-4 {:out [], :in ("TODO: wire the adapter")},
+ :case-5 {:out [], :in ("plain prose.")},
+ :case-6 {:out [], :in ("missing: tests")},
+ :case-7 {:out [], :in ("TODO: wire the adapter")}}

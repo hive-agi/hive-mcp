@@ -1,0 +1,22 @@
+{:case-0
+ {:out {:entry {:id "e-1"}},
+  :in ({:text "{\"entry\":{\"id\":\"e-1\"}}"})},
+ :case-1
+ {:out {:text {:entry {:id "e-1"}}},
+  :in ({:text {:entry {:id "e-1"}}})},
+ :case-2 {:out [{:id "p-2", :count 0}], :in ([{:id "p-2", :count 0}])},
+ :case-3
+ {:out "{\"id\":\"p-1\",\"count\":0}",
+  :in ("{\"id\":\"p-1\",\"count\":0}")},
+ :case-4
+ {:out {:type "text", :text "plain words, not json"},
+  :in ({:type "text", :text "plain words, not json"})},
+ :case-5
+ {:out {:entry {:id "e-1"}},
+  :in ({:type "text", :text "{\"entry\":{\"id\":\"e-1\"}}"})},
+ :case-6
+ {:out {:type "text", :text "plain words, not json"},
+  :in ({:type "text", :text "plain words, not json"})},
+ :case-7
+ {:out {:entry {:id "e-1"}},
+  :in ({:type "text", :text "{\"entry\":{\"id\":\"e-1\"}}"})}}

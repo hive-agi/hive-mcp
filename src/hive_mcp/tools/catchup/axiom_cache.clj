@@ -1,19 +1,22 @@
 (ns hive-mcp.tools.catchup.axiom-cache
   "Stale-while-revalidate cache for `type=axiom` memory queries.
 
-   Axioms are GLOBAL: every entry is visible from every project, including
-   siblings outside the hierarchy. So the fetch skips scope filtering and
-   hits the store with a pure `type=axiom` scan — but that scan is the
-   single slowest Milvus branch (cold-path scalar filter). The cache hides
-   that cost behind a 5-min TTL and a thundering-herd-gated background
-   refresh so repeat catchups don't re-pay the 20s budget."
+   The fetch scans `type=axiom` without a project filter, then keeps only the
+   axioms visible from the caller's project under the HCR gate
+   (`scope-filter/hcr-gate`): `scope:global` axioms from anywhere, and axioms
+   scoped to the project, its ancestors or its descendants. That scan is the
+   single slowest Milvus branch (cold-path scalar filter); the cache hides it
+   behind a 5-min per-project TTL and a thundering-herd-gated background
+   refresh."
   (:require [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.concurrency.pool :as pool]
             [hive-mcp.dns.result :refer [rescue rescue-interrupt rescue-log]]
             [hive-mcp.tools.catchup.hierarchy :as hier]
             [clojure.tools.logging :as log]
             [hive-mcp.resilience.store :refer [with-resilience]]
-            [hive-mcp.tools.catchup.scope-filter :as sf])
+            [hive-mcp.tools.catchup.scope-filter :as sf]
+            [hive-mcp.tools.catchup.shapes :as shapes]
+            [malli.core :as m])
   (:import [java.util.concurrent Future TimeUnit TimeoutException]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -121,6 +124,11 @@
         (log/warnf t "catchup/query-axioms %s branch failed — partial results" label)
         []))))
 
+(defn- axiom-view
+  "The HCR view (`sf/hcr-view`) the cache gates PROJECT-ID's axioms by."
+  [project-id]
+  (sf/hcr-view project-id (hier/compute-hierarchy-project-ids project-id)))
+
 (defn- fetch-axioms-sync!
   "Synchronous fetch with per-branch budget. Stores result in cache, returns it.
 
@@ -130,36 +138,32 @@
    legacy is then deref'd against `axioms-legacy-budget-ms` counted FROM THAT
    POINT, so it is charged only for the time it adds beyond formal. A branch
    that blows its budget is cancelled and contributes [] while the other
-   branch's rows still land. The union is de-duplicated by :id, newest-first,
-   capped at 100."
+   branch's rows still land. Each branch keeps only the rows visible under
+   `axiom-view` (`sf/hcr-gate`) before its cut; the union is de-duplicated
+   by :id, newest-first, capped at 100."
   [project-id now]
   (let [store (mem-proto/get-store)
+        view (axiom-view project-id)
+        newest-100 #(->> % (sort-by :created (fn [a b] (compare b a))) (take 100) vec)
+        scan (fn [label type]
+               ((timed-query label
+                             #(with-resilience
+                                (mem-proto/query-entries
+                                  store
+                                  {:type type
+                                   :limit 200
+                                   :output-fields hier/metadata-projection})))))
         formal-deadline (+ now axioms-formal-budget-ms)
         f-formal (pool/with-catchup
                    (rescue-interrupt "catchup/query-axioms" []
-                     (->> ((timed-query "axioms/formal"
-                                        #(with-resilience
-                                           (mem-proto/query-entries
-                                             store
-                                             {:type "axiom"
-                                              :limit 200
-                                              :output-fields hier/metadata-projection}))))
-                          (sort-by :created #(compare %2 %1))
-                          (take 100)
-                          vec)))
+                     (->> (scan "axioms/formal" "axiom")
+                          (sf/hcr-gate view)
+                          newest-100)))
         f-legacy (pool/with-catchup
                    (rescue-interrupt "catchup/query-axioms:legacy" []
-                     (-> ((timed-query "axioms/legacy"
-                                       #(with-resilience
-                                          (mem-proto/query-entries
-                                            store
-                                            {:type "convention"
-                                             :limit 200
-                                             :output-fields hier/metadata-projection}))))
-                         (sf/filter-by-tags legacy-axiom-tags)
-                         (->> (sort-by :created #(compare %2 %1))
-                              (take 100)
-                              vec))))
+                     (->> (sf/filter-by-tags (scan "axioms/legacy" "convention") legacy-axiom-tags)
+                          (sf/hcr-gate view)
+                          newest-100)))
         formal (deref-with-deadline f-formal formal-deadline "formal"
                                     axioms-formal-budget-ms)
         legacy-deadline (+ (System/currentTimeMillis) axioms-legacy-budget-ms)
@@ -167,9 +171,7 @@
                                     axioms-legacy-budget-ms)
         result (->> (concat formal legacy)
                     (sf/distinct-by :id)
-                    (sort-by :created #(compare %2 %1))
-                    (take 100)
-                    vec)]
+                    newest-100)]
     (swap! axioms-cache assoc project-id
            {:result result
             :expires-at (+ now axioms-cache-ttl-ms)
@@ -190,8 +192,9 @@
         (swap! axioms-refreshing disj project-id)))))
 
 (defn query-axioms
-  "Query axiom entries: the formal `type=axiom` rows unioned with the legacy
-   `type=convention` rows tagged `axiom`, de-duplicated by :id.
+  "Axioms visible from PROJECT-ID under the HCR gate: the formal `type=axiom`
+   rows unioned with the legacy `type=convention` rows tagged `axiom`,
+   de-duplicated by :id.
 
    Stale-while-revalidate cache: fresh hit returns immediately; stale hit
    returns immediately and triggers a background refresh so the next call
@@ -206,3 +209,19 @@
       fresh         (:result hit)
       hit           (do (trigger-refresh! project-id) (:result hit))
       :else         (fetch-axioms-sync! project-id now))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def AxiomCache
+  "The axiom cache value: project-id -> stored result."
+  [:map-of shapes/ProjectId
+   [:map [:result [:vector shapes/Entry]] [:expires-at :int] [:stored-at :int]]])
+
+(m/=> invalidate-axioms-cache!
+      [:function
+       [:=> [:cat] AxiomCache]
+       [:=> [:cat shapes/ProjectId] AxiomCache]])
+(m/=> evict-stale! [:=> [:cat] nat-int?])
+(m/=> query-axioms [:=> [:cat shapes/ProjectId] [:vector {:max 100} shapes/Entry]])

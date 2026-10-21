@@ -1,0 +1,39 @@
+{:unknown-type
+ {:type :validation-error,
+  :error-type :not-a-type,
+  :valid-types
+  [:chroma-unavailable
+   :emacs-unreachable
+   :harvest-failed
+   :hot-reload-failed
+   :nrepl-connection
+   :nrepl-disconnect
+   :nrepl-eval-error
+   :nrepl-timeout
+   :restart-collision
+   :validation-failed
+   :websocket-death
+   :wrap-crystallize-failed],
+  :message "Unknown error type: :not-a-type"},
+ :unknown-severity
+ {:type :validation-error,
+  :severity :loud,
+  :valid-severities [:error :fatal :info :warn],
+  :message "Invalid severity: :loud"},
+ :both-unknown
+ {:type :validation-error,
+  :error-type :nope,
+  :valid-types
+  [:chroma-unavailable
+   :emacs-unreachable
+   :harvest-failed
+   :hot-reload-failed
+   :nrepl-connection
+   :nrepl-disconnect
+   :nrepl-eval-error
+   :nrepl-timeout
+   :restart-collision
+   :validation-failed
+   :websocket-death
+   :wrap-crystallize-failed],
+  :message "Unknown error type: :nope"}}

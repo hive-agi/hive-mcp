@@ -1,0 +1,8 @@
+{:files {:type "text", :text "[\"clj\"]"},
+ :blank {:type "text", :text "[\"\"]"},
+ :find {:type "text", :text "[\"\"]"},
+ :recent {:type "text", :text "[\"\"]"},
+ :list {:type "text", :text "[\"\"]"},
+ :info {:type "text", :text "[\"\"]"},
+ :refused
+ {:type "text", :text "Error: projectile not loaded", :isError true}}

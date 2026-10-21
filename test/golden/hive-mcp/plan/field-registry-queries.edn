@@ -1,0 +1,6 @@
+{:step-keys #{:method :verify},
+ :plan-keys #{:mode},
+ :project-keys #{:method},
+ :by-key :wave,
+ :invalid nil,
+ :after-dereg #{:mode}}

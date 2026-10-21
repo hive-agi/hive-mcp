@@ -24,11 +24,63 @@
             [hive-mcp.channel.context-store :as ctx-store]
             [hive-mcp.channel.audience :as audience]
             [hive-mcp.channel.broadcast-ledger :as bledger]
-            [hive-mcp.swarm.delegate :as delegate])
+            [hive-mcp.swarm.delegate :as delegate]
+            [malli.core :as m])
   (:import [java.lang Exception]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+;; Value schemas for the contracts below. The message shapes transcribe the
+;; docstrings of registry->messages, shout-with-verdict! and cap-message.
+
+(def EventType
+  [:or {:gen/elements [:progress :completed :error :started "progress" :no-such-event]} :keyword :string])
+
+(def AgentId [:string {:gen/elements ["ling-a" "ling-b" "coordinator"]}])
+
+(def RingMessage
+  "One message in an agent's ring, as shout!* writes it."
+  [:map
+   [:event-type {:optional true} :any]
+   [:message {:optional true} [:maybe :string]]
+   [:task {:optional true} [:maybe :string]]
+   [:timestamp {:optional true} [:maybe :int]]
+   [:project-id {:optional true} [:maybe :string]]
+   [:shout-id {:optional true} [:maybe :string]]
+   [:parent-id {:optional true} [:maybe :string]]
+   [:broadcast? {:optional true} [:maybe :boolean]]
+   [:deliberate? {:optional true} [:maybe :boolean]]
+   [:to {:optional true} [:maybe :string]]
+   [:context-id {:optional true} [:maybe :string]]
+   [:ref {:optional true} [:maybe :string]]])
+
+(def RegistrySnapshot
+  "agent-id -> bounded-atom entry holding the agent's message ring."
+  [:maybe [:map-of AgentId [:map [:data {:optional true} [:map [:messages {:optional true} [:maybe [:vector RingMessage]]]]]]]])
+
+(def PiggybackRow
+  [:map
+   [:agent-id :any] [:event-type :any] [:message :string] [:timestamp :any] [:project-id :string]
+   [:shout-id {:optional true} :string] [:task {:optional true} :string]
+   [:parent-id {:optional true} :string] [:broadcast? {:optional true} [:= true]]
+   [:to {:optional true} :string] [:context-id {:optional true} :string]
+   [:ref {:optional true} :string] [:deliberate? {:optional true} [:= true]]])
+
+(def ShoutData
+  "What a shout carries: usually a map, but any value is accepted and judged
+   by empty-shout?."
+  [:or {:gen/elements [{:message "hi"} {:task "t" :to "ling-b"} {} nil "" {:directory "/x"}]} :map :any])
+
+(def Verdict
+  [:multi {:dispatch :delivered}
+   [true [:map [:delivered [:= true]] [:shout-id :string]
+          [:routing [:enum :direct :broadcast :spawner]]
+          [:context-id {:optional true} :string] [:to {:optional true} :string]
+          [:ref {:optional true} :string] [:broadcast-refused {:optional true} :keyword]
+          [:to-unresolved {:optional true} :string]]]
+   [false [:map {:closed true} [:delivered [:= false]] [:reason [:= :empty-payload]]]]])
+
 
 (defn registry->messages
   "Project an agent-registry SNAPSHOT (agent-id -> entry) into piggyback rows.
@@ -69,6 +121,8 @@
                   deliberate? (assoc :deliberate? true)))))
           entries))
 
+(m/=> registry->messages [:=> [:cat RegistrySnapshot] [:sequential PiggybackRow]])
+
 (defn- all-hivemind-messages
   "Piggyback source over the swarm's local message ring.
 
@@ -104,6 +158,9 @@
              (some? event-type)
              (event-registry/valid-event-type? event-type))
     (event-type->slave-status event-type)))
+
+;; nil for a status-neutral shout, a nil or unknown event type.
+(m/=> shout-slave-status [:=> [:cat [:maybe EventType] :any] [:maybe :keyword]])
 
 (def ^:const default-shout-message-cap
   "Fallback cap when config is unloaded or missing :hivemind/:shout-message-cap.
@@ -146,6 +203,11 @@
          s
          (let [head-n (max 0 (- cap 3))]
            (str (subs s 0 head-n) ellipsis)))))))
+
+(m/=> cap-message
+      [:function
+       [:=> [:cat :any] [:maybe :string]]
+       [:=> [:cat :any [:int {:min 3}]] [:maybe :string]]])
 
 (defn- elide-message
   "Bound a shout's message to the configured cap, keeping what does not fit.
@@ -233,6 +295,34 @@
            (blank-payload-value? (:message data))
            (every? blank-payload-value? (vals residual))))))
 
+(m/=> empty-shout? [:=> [:cat :any] :boolean])
+
+(defn resolve-shout-project-id
+  "Project a shout is labelled with. Priority: explicit `:project-id` >
+   vessel context > the resolved slave's `:slave/project-id` > the
+   project of `directory` > \"global\". The slave row sits before the
+   directory so a ling's shout carries its own project even when no vessel
+   answers and the shout names no directory."
+  [explicit vessel-pid slave-pid directory]
+  (or explicit
+      vessel-pid
+      slave-pid
+      (when directory (project-scope/get-current-project-id directory))
+      "global"))
+
+(m/=> resolve-shout-project-id
+      [:=> [:cat [:maybe :string] [:maybe :string] [:maybe :string] [:maybe :string]]
+       :string])
+
+(defn status-write-needed
+  "The `status` to write onto `slave`, or nil when there is nothing to
+   write: no status, or the slave row already carries it."
+  [slave status]
+  (when (and status (not= status (:slave/status slave)))
+    status))
+
+(m/=> status-write-needed [:=> [:cat [:maybe :map] [:maybe :keyword]] [:maybe :keyword]])
+
 (defn- shout!*
   "Internal shout implementation — assumes payload has been validated
    non-empty by `shout!`. Returns the routing verdict map."
@@ -247,11 +337,12 @@
         ;; Vessel delegates to DataScript (slave/cwd, slave/project-id) — the
         ;; formal answer to the project-id coupling bug (vessel owns context).
         vessel-ctx (vessel/resolve-agent-context resolved-slave-id)
-        ;; Priority: explicit > vessel > directory > global
-        project-id (or explicit-project-id
-                       (:project-id vessel-ctx)
-                       (when directory (project-scope/get-current-project-id directory))
-                       "global")
+        ;; Priority: explicit > vessel > slave row > directory > global
+        project-id (resolve-shout-project-id
+                    explicit-project-id
+                    (:project-id vessel-ctx)
+                    (:slave/project-id resolved-slave)
+                    directory)
         ;; Spawner identity — the reader whose context this shout enters when
         ;; nothing more specific addresses it. hive-mcp.channel.audience routes
         ;; on it; absent it, the shout is root-level and reaches coordinator
@@ -363,8 +454,13 @@
                                         :last-seen now}
                                  :created-at (or (get-in entries [agent-id :created-at]) now)
                                  :last-accessed now})))))
-    ;; 2. DataScript slave status — unless the shout is status-neutral
-    (when-let [status (and resolved-slave (shout-slave-status event-type data))]
+    ;; 2. DataScript slave status — unless the shout is status-neutral, or
+    ;; the slave already carries that status (every write is a datascript tx
+    ;; that also notifies slave-index subscribers; a progress shout stream
+    ;; would otherwise rewrite :working on every shout).
+    (when-let [status (status-write-needed resolved-slave
+                                           (and resolved-slave
+                                                (shout-slave-status event-type data)))]
       (proto/update-slave! registry/default-registry resolved-slave-id
                            {:slave/status status}))
     ;; 3. Local fanout always, backbone publish when connected
@@ -420,6 +516,8 @@
       {:delivered false :reason :empty-payload})
     (shout!* agent-id event-type data)))
 
+(m/=> shout-with-verdict! [:=> [:cat AgentId EventType ShoutData] Verdict])
+
 (defn shout!
   "Broadcast a message to the hivemind coordinator.
 
@@ -445,6 +543,8 @@
    every existing caller treats it as one."
   [agent-id event-type data]
   (boolean (:delivered (shout-with-verdict! agent-id event-type data))))
+
+(m/=> shout! [:=> [:cat AgentId EventType ShoutData] :boolean])
 
 (defn- asker-parent-id
   "Spawner of `agent-id` per the slave registry, or nil when unknown."
@@ -489,10 +589,15 @@
   [& args]
   (apply (ask-impl 'pending-ask-entry) args))
 
+;; Shim over hive-agent.swarm.hivemind.ask; the entry it builds is the addon's.
+(m/=> pending-ask-entry [:=> [:cat [:map [:agent-id {:optional true} :any] [:question {:optional true} :any]]] :map])
+
 (defn ask-timeout-shout
   {:arglists '([ask-id entry timeout-ms])}
   [& args]
   (apply (ask-impl 'ask-timeout-shout) args))
+
+(m/=> ask-timeout-shout [:=> [:cat :string :map nat-int?] :map])
 
 (defn ask!
   "Ask the human, blocking until an answer or the timeout. Opts :timeout-ms,
@@ -504,10 +609,15 @@
   [& args]
   (apply (ask-impl 'ask!) (ask-ports) args))
 
+;; Shim: blocks for the human's answer, or answers a timeout map.
+(m/=> ask! [:=> [:cat AgentId :string [:maybe [:sequential :string]] [:* :any]] :any])
+
 (defn respond-ask!
   "Answer pending ask `ask-id` with any string: an option, yes/no or typed
    text. The first answer wins; see hive-agent.swarm.hivemind.ask/respond-ask!."
   {:arglists '([ask-id answer & {:keys [by]}])}
   [& args]
   (apply (ask-impl 'respond-ask!) (ask-ports) args))
+
+(m/=> respond-ask! [:=> [:cat :string :string [:* :any]] :any])
 
