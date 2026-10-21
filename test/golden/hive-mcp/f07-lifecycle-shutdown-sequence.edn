@@ -1,0 +1,6 @@
+{:report
+ {:ran 3,
+  :errors [["b/throws" "hook failed"] ["c/budgeted" :timeout]]},
+ :seen
+ [["a/ok" 500 :test] ["b/throws" 500 :test] ["c/budgeted" 50 :test]],
+ :empty {:ran 0, :errors []}}

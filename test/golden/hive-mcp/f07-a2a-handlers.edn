@@ -1,0 +1,17 @@
+{:no-agent-id
+ {:error {:code -32602, :message "configuration.agentId is required"}},
+ :blank-agent
+ {:error {:code -32602, :message "configuration.agentId is required"}},
+ :no-parts
+ {:error {:code -32602, :message "message.parts is required"}},
+ :nil-params
+ {:error {:code -32602, :message "configuration.agentId is required"}},
+ :stream-refused
+ {:error {:code -32602, :message "message.parts is required"}},
+ :get-no-id {:error {:code -32602, :message "id is required"}},
+ :cancel-no-id {:error {:code -32602, :message "id is required"}},
+ :cancel-no-meta
+ {:error
+  {:code -32602,
+   :message
+   "Cannot resolve agent for task. Provide metadata.hive-agent-id"}}}

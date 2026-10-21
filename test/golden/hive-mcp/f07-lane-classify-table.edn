@@ -1,0 +1,4 @@
+{:declared :short,
+ :undeclared :batch,
+ :default-table-short :short,
+ :default-table-batch :batch}

@@ -1,0 +1,26 @@
+{:case-0
+ {:out {:jsonrpc "2.0", :id nil, :error {:code -32700, :message nil}},
+  :in (nil :parse-error nil)},
+ :case-1
+ {:out
+  {:jsonrpc "2.0", :id "g2", :error {:code -32600, :message "7R28G"}},
+  :in ("g2" :invalid-request "7R28G")},
+ :case-2
+ {:out {:jsonrpc "2.0", :id nil, :error {:code -32600, :message "F"}},
+  :in (nil :invalid-request "F")},
+ :case-3
+ {:out
+  {:jsonrpc "2.0", :id nil, :error {:code -32601, :message "76P"}},
+  :in (nil :method-not-found "76P")},
+ :case-4
+ {:out {:jsonrpc "2.0", :id 2, :error {:code -32700, :message nil}},
+  :in (2 :parse-error nil)},
+ :case-5
+ {:out {:jsonrpc "2.0", :id nil, :error {:code -32600, :message nil}},
+  :in (nil :invalid-request nil)},
+ :case-6
+ {:out {:jsonrpc "2.0", :id nil, :error {:code -32603, :message nil}},
+  :in (nil :internal-error nil)},
+ :case-7
+ {:out {:jsonrpc "2.0", :id nil, :error {:code -32700, :message nil}},
+  :in (nil :parse-error nil)}}

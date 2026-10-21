@@ -1,0 +1,8 @@
+{:case-0 {:out "hive.v1.tool.t", :in (:t)},
+ :case-1 {:out "hive.v1.tool.unknown", :in (nil)},
+ :case-2 {:out "hive.v1.tool.unknown", :in ("")},
+ :case-3 {:out "hive.v1.tool.unknown", :in ("  ")},
+ :case-4 {:out "hive.v1.tool._?", :in (_?)},
+ :case-5 {:out "hive.v1.tool.o98", :in (:o98)},
+ :case-6 {:out "hive.v1.tool.memory-add", :in ("memory-add")},
+ :case-7 {:out "hive.v1.tool.g22!", :in (:g22!)}}

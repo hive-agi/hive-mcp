@@ -1,0 +1,43 @@
+{:case-0
+ {:out {:ok {:jsonrpc "2.0", :id 1, :method "tools/list"}},
+  :in ("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools\\/list\"}")},
+ :case-1
+ {:out
+  {:error
+   {:status 400,
+    :body
+    {:jsonrpc "2.0",
+     :id 3,
+     :error
+     {:code -32600, :message "Expected one JSON-RPC 2.0 message"}}}},
+  :in ("{\"jsonrpc\":\"1.0\",\"id\":3,\"method\":\"ping\"}")},
+ :case-2
+ {:out
+  {:error
+   {:status 400,
+    :body
+    {:jsonrpc "2.0",
+     :id nil,
+     :error {:code -32700, :message "Body is not JSON"}}}},
+  :in ("{nope")},
+ :case-3
+ {:out
+  {:error
+   {:status 400,
+    :body
+    {:jsonrpc "2.0",
+     :id nil,
+     :error {:code -32700, :message "Body is not JSON"}}}},
+  :in ("")},
+ :case-4
+ {:out {:ok {:jsonrpc "2.0", :id 1, :method "ping"}},
+  :in ("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}")},
+ :case-5
+ {:out {:ok {:jsonrpc "2.0", :id 0, :method "ping"}},
+  :in ("{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"ping\"}")},
+ :case-6
+ {:out {:ok {:jsonrpc "2.0", :id 8, :method "tools/list"}},
+  :in ("{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools\\/list\"}")},
+ :case-7
+ {:out {:ok {:jsonrpc "2.0", :id 1, :method "ping"}},
+  :in ("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}")}}
