@@ -1,0 +1,6 @@
+{:datahike-indexed true,
+ :datahike-unindexed false,
+ :datahike-unique true,
+ :datalevin-unschemed true,
+ :datascript-absent false,
+ :datascript-indexed true}
