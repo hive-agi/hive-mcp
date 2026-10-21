@@ -1,0 +1,6 @@
+{:adapter-readiness
+ {:ready? false, :phase :host-error, :elapsed-ms 0, :attempts 0},
+ :noop-readiness
+ {:ready? false, :phase :no-host, :elapsed-ms 0, :attempts 0},
+ :adapter-catchup nil,
+ :noop-catchup nil}
