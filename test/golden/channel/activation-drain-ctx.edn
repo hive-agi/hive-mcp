@@ -1,0 +1,18 @@
+{:absent
+ {:with-cues {:tokens #{"kanban" "axiom"}}, :no-cues {:tokens #{}}},
+ :well-formed
+ {:with-cues
+  {:tokens #{"memory" "kanban" "extra" "axiom"},
+   :pins #{"m-1"},
+   :floor-cap 3},
+  :no-cues
+  {:tokens #{"memory" "extra"}, :pins #{"m-1"}, :floor-cap 3}},
+ :mixed
+ {:with-cues {:tokens #{"kanban" "ok" "axiom"}, :pins #{"m-2"}},
+  :no-cues {:tokens #{"ok"}, :pins #{"m-2"}}},
+ :garbage
+ {:with-cues {:tokens #{"kanban" "axiom"}}, :no-cues {:tokens #{}}},
+ :empty-map
+ {:with-cues {:tokens #{"kanban" "axiom"}}, :no-cues {:tokens #{}}},
+ :throws
+ {:with-cues {:tokens #{"kanban" "axiom"}}, :no-cues {:tokens #{}}}}

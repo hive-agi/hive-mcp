@@ -1,0 +1,7 @@
+[[:started {:type :unix, :port nil, :path? true}]
+ [:again-same? true]
+ [:clients 0]
+ [:connected? false]
+ [:mark nil]
+ [:guarded-stop [nil 0]]
+ [:force-stop [nil nil]]]

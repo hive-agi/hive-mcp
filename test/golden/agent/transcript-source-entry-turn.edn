@@ -1,0 +1,13 @@
+{:case-0 {:out 0, :in nil},
+ :case-1 {:out 1, :in #:transcript{:turn 1}},
+ :case-10 {:out 36, :in {:transcript/turn 36, :role "assistant"}},
+ :case-11 {:out 0, :in {:role "assistant"}},
+ :case-2
+ {:out 1, :in {:turn 1, :transcript/turn 1, :role "assistant"}},
+ :case-3 {:out 0, :in #:transcript{:turn nil}},
+ :case-4 {:out 0, :in nil},
+ :case-5 {:out 0, :in nil},
+ :case-6 {:out 0, :in nil},
+ :case-7 {:out 0, :in nil},
+ :case-8 {:out 0, :in nil},
+ :case-9 {:out 38, :in {:turn 38, :transcript/turn nil, :role "user"}}}

@@ -1,0 +1,20 @@
+{:populated
+ {:defaults-none nil,
+  :providers {:openrouter {:base-url "https://x"}},
+  :defaults-str {:model "opus"},
+  :defaults-kw {:model "haiku"},
+  :present #{:f02-collect-b :f02-collect-a},
+  :secret "sk-a",
+  :present-set #{},
+  :priority [:anthropic :openrouter],
+  :secret-missing nil},
+ :malformed
+ {:defaults-none nil,
+  :providers nil,
+  :defaults-str nil,
+  :defaults-kw nil,
+  :present #{},
+  :secret nil,
+  :present-set #{},
+  :priority nil,
+  :secret-missing nil}}
