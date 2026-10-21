@@ -8,7 +8,8 @@
    `(render-unit default-opts)` and a test pins that equality.
 
    Installing or enabling the unit is a host action, never done from here:
-   enabling it takes over the live serving port.")
+   enabling it takes over the live serving port."
+  (:require [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -31,6 +32,16 @@
    :start-limit-burst 3
    :start-limit-interval-sec 300})
 
+(def RenderOpts
+  "The opts `render-unit` accepts: every knob, as text or a non-negative
+   count. `UnitOpts` is the narrower set the shipped unit is generated from."
+  [:map
+   [:working-dir :string]
+   [:exec-start :string]
+   [:restart-sec [:int {:min 0}]]
+   [:start-limit-burst [:int {:min 0}]]
+   [:start-limit-interval-sec [:int {:min 0}]]])
+
 (defn render-unit
   "Render the hive-mcp.service text for `opts` (see `UnitOpts`).
    Always `Restart=on-failure`: a clean stop (systemctl stop) stays stopped."
@@ -50,3 +61,5 @@
        "\n"
        "[Install]\n"
        "WantedBy=default.target\n"))
+
+(m/=> render-unit [:=> [:cat RenderOpts] [:string {:min 1}]])

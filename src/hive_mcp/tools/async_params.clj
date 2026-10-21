@@ -6,7 +6,8 @@
    declare `async` can never receive `async:false`. Both surfaces that
    advertise tools apply `with-async-params`: the server's own table
    (`server.routes/make-tool`) and the registry surface external loaders
-   read (`tools.registry/get-advertised-tools`, `get-consolidated-tools`).")
+   read (`tools.registry/get-advertised-tools`, `get-consolidated-tools`)."
+  (:require [malli.core :as m]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -32,6 +33,30 @@
   {"async-timeout-ms" {:type "integer"
                        :description "With async:true, cancel the queued call after this many ms."}})
 
+(def DefaultAsyncCommands
+  "A tool's :default-async-commands: any collection of command names, only
+   ever tested for emptiness here, or nil."
+  [:maybe [:or [:set :any] [:sequential :any]]])
+
+(def AsyncProps
+  "The two schema properties `async-props` answers, string keyed."
+  [:map {:closed true}
+   ["async" [:map [:type [:= "boolean"]] [:description [:string {:min 1}]]]]
+   ["async-timeout-ms" [:map [:type [:= "integer"]] [:description [:string {:min 1}]]]]])
+
+(def ToolDef
+  "A tool map as `with-async-params` reads it: its default-async command set
+   and the :properties of its :inputSchema, both optional."
+  [:maybe [:map
+           [:default-async-commands {:optional true} DefaultAsyncCommands]
+           [:inputSchema {:optional true}
+            [:maybe [:map [:properties {:optional true} [:maybe :map]]]]]]])
+
+(def AsyncToolDef
+  "A tool map whose :inputSchema :properties declare both async params (the
+   tool's own `async`, when it had one, is kept as it was)."
+  [:map [:inputSchema [:map [:properties [:map ["async" :any] ["async-timeout-ms" :any]]]]]])
+
 (defn async-props
   "Schema properties for a tool whose default-async command set is
    DEFAULT-ASYNC-COMMANDS: opt-out wording when it queues anything by default,
@@ -42,12 +67,16 @@
            async-opt-in-property)
          async-timeout-property))
 
+(m/=> async-props [:=> [:cat DefaultAsyncCommands] AsyncProps])
+
 (defn with-async-params
   "TOOL with the async params merged under its :inputSchema properties. A tool
    that declares its own `async` keeps it. Idempotent."
   [{:keys [default-async-commands] :as tool}]
   (update-in tool [:inputSchema :properties]
              #(merge (async-props default-async-commands) %)))
+
+(m/=> with-async-params [:=> [:cat ToolDef] AsyncToolDef])
 
 (defn async-flag
   "The caller's `async` value as a boolean, or nil when unset. A client that
@@ -61,3 +90,6 @@
                           ("false" "0" "no" "") false
                           true)
     :else               (boolean v)))
+
+;; any wire value is read: nil stays unset, everything else is a boolean
+(m/=> async-flag [:=> [:cat :any] [:maybe :boolean]])

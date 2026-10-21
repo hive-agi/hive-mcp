@@ -11,7 +11,8 @@
    `handle-client-message!` delivers it. The answer is any text, and both
    `answer` and `decision` are accepted as its key."
   (:require [clojure.string :as str]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -22,6 +23,16 @@
   [msg k]
   (let [v (get msg (keyword k) (get msg k))]
     (if (keyword? v) (name v) v)))
+
+(def ClientMessage
+  "What a client sends, as the channel decodes it: any JSON value, a map
+   keyed by keywords (WebSocket) or strings (bencode)."
+  [:or :nil :boolean :int :double :string [:sequential :any]
+   [:map-of [:or :keyword :string] :any]])
+
+(def AskAnswer
+  "[ask-id answer by], each non-blank."
+  [:tuple [:string {:min 1}] [:string {:min 1}] [:string {:min 1}]])
 
 (defn hivemind-response
   "Pure: [ask-id answer by] for a client's hivemind-response message, or nil
@@ -34,6 +45,8 @@
       (when (and (string? ask-id) (not (str/blank? ask-id))
                  (string? answer) (not (str/blank? answer)))
         [ask-id answer (if (str/blank? by) "human" by)]))))
+
+(m/=> hivemind-response [:=> [:cat ClientMessage] [:maybe AskAnswer]])
 
 (defn handle-client-message!
   "The WebSocket channel's :on-message: deliver a client's answer to the
@@ -51,3 +64,7 @@
     (catch Exception e
       (log/warn "Client" client-id "message failed:" (.getMessage e))
       nil)))
+
+;; true/false from respond-ask! (delivered, or no such pending ask); nil for an
+;; unrouted message or a failed delivery. The client id is the channel's own.
+(m/=> handle-client-message! [:=> [:cat ClientMessage :any] [:maybe :boolean]])
