@@ -88,7 +88,9 @@
   "Pure computation: derive all spawn decisions from ling state and opts.
    Returns a plan map with resolved mode, model, strategy, and context.
    :grant is the effective grant (wire form) decided at the tool boundary,
-   or nil for an unrestricted child."
+   or nil for an unrestricted child. :spawned-by is the request caller that
+   asked for the spawn (\"\" for root-level), or nil when the spawn did not
+   come through the tool boundary."
   [ling opts]
   (let [effective-model (or (:model opts) (:model ling))
         mode (lifecycle/resolve-effective-mode
@@ -103,6 +105,7 @@
             (:provider opts) (assoc :provider (:provider opts)))
      :depth depth
      :parent parent
+     :spawned-by (:spawned-by opts)
      :kanban-task-id kanban-task-id
      :presets (or (:presets opts) (:presets ling))
      :cwd (:cwd ling)
@@ -237,7 +240,7 @@
      (assoc :credential credential))))
 
 (defn- initial-slave-attrs
-  [{:keys [depth parent presets cwd project-id kanban-task-id grant]} enriched-task]
+  [{:keys [depth parent presets cwd project-id kanban-task-id grant spawned-by]} enriched-task]
   (cond-> {:status (if enriched-task :working :idle)
            :depth depth
            :parent parent
@@ -245,7 +248,15 @@
            :cwd cwd
            :project-id project-id
            :kanban-task-id kanban-task-id}
-    (some? grant) (assoc :grant grant)))
+    (some? grant) (assoc :grant grant)
+    (some? spawned-by) (assoc :spawned-by spawned-by)))
+
+(def spawned-by-attr
+  "Registry attribute naming the request caller that asked for a spawn: the
+   caller id as `hive-mcp.tools.agent.spawn/spawner` read it, \"\" when that
+   caller was root-level. Unlike :slave/parent it is never taken from a
+   param, so enclave lineage (hive-cloak) walks it instead."
+  :slave/spawned-by)
 
 (def row-safe-keys
   "Row attrs kept when the row filter itself throws: routing and liveness
@@ -281,18 +292,21 @@
    can be referenced: a coordinator session named as parent gets its own row
    on demand. A recorded grant is written beside :slave/parent in the same
    registration, before the backend starts the ling, so its first tool call
-   is already gated.
+   is already gated. So is :slave/spawned-by, the request caller that asked
+   for the spawn: enclave membership follows it, never :slave/parent, which
+   an explicit `parent` param sets to any agent.
 
    The row attrs pass hive-agent's row filters first (`row-attrs`), so an
    addon such as hive-darkmatter can replace identifying attrs before they
-   reach the registry. The grant is not filtered: it gates, it does not name.
+   reach the registry. The grant and the spawner are not filtered: they gate,
+   they do not name.
 
    The filtered presets are also persisted as an ordered scalar snapshot via
    the spawn-store port before backend start, preserving declared precedence
    when the cardinality-many preset attribute reads back as a set."
   [store slave-id attrs]
   (spawn-store/ensure-coordinator-session! store (:parent attrs))
-  (let [filtered (row-attrs (row-filter) slave-id (dissoc attrs :grant))
+  (let [filtered (row-attrs (row-filter) slave-id (dissoc attrs :grant :spawned-by))
         presets (:presets filtered)
         res (spawn-store/add-slave! store slave-id filtered)]
     (when (seq presets)
@@ -300,6 +314,8 @@
                                  {:slave/preset-order (pr-str (vec presets))}))
     (when-let [g (:grant attrs)]
       (spawn-store/update-slave! store slave-id {grant/slave-attr g}))
+    (when (string? (:spawned-by attrs))
+      (spawn-store/update-slave! store slave-id {spawned-by-attr (:spawned-by attrs)}))
     res))
 
 (defn- register-requested-slave!
