@@ -117,6 +117,10 @@
   [hierarchy-ids]
   (max 1 (count (partition-all hierarchy-chunk-size hierarchy-ids))))
 
+(m/=> single-query-limit [:=> [:cat [:int {:min 0 :max 100000}]] [:int {:min 1 :max 16384}]])
+
+(m/=> cap-per-project [:=> [:cat pos-int? [:sequential shapes/Entry]] [:vector shapes/Entry]])
+
 ;; =============================================================================
 ;; Contracts
 ;; =============================================================================

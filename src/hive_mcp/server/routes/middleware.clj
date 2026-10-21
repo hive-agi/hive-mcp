@@ -526,6 +526,10 @@
                            {:tree tree :by-pid {project-id pids}})))
           pids)))))
 
+(m/=> memoized-child-pids
+      [:=> [:cat :any :any [:maybe :string] ifn?]
+       [:maybe [:set :string]]])
+
 (defn- resolve-child-project-ids
   "Resolve descendant project-ids using the project hierarchy tree
    (.hive-project.edn), NOT the Datascript slave registry. Tree-based

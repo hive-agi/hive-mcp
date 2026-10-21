@@ -127,6 +127,8 @@
   (let [k (some-> s str .trim .toLowerCase (.replaceFirst "^:" "") not-empty keyword)]
     (if (contains? log-levels k) k :info)))
 
+(m/=> parse-log-level [:=> [:cat :any] (into [:enum] log-levels)])
+
 (defn- open-verified-fd!
   "Open relative to a pinned private directory and inspect the OPEN Linux
    inode with fstat before writing. Fail closed off Linux amd64."
