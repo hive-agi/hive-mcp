@@ -1,0 +1,102 @@
+{:case-0
+ {:out
+  {:id "e2",
+   :requested "axiom",
+   :tags [],
+   :preview "",
+   :approve "memory review :id e2 :verdict approve",
+   :reject "memory review :id e2 :verdict reject :as principle"},
+  :in ({:id "e2", :type :axiom, :created "2026-01-01T00:00:00Z"})},
+ :case-1
+ {:out
+  {:id "e2",
+   :requested "axiom",
+   :tags [],
+   :preview "",
+   :approve "memory review :id e2 :verdict approve",
+   :reject "memory review :id e2 :verdict reject :as principle"},
+  :in
+  ({:id "e2",
+    :type :note,
+    :tags nil,
+    :content "",
+    :created "2026-01-01T00:00:00Z"})},
+ :case-2
+ {:out
+  {:id "e1",
+   :requested "axiom",
+   :tags [],
+   :preview
+   "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé …",
+   :approve "memory review :id e1 :verdict approve",
+   :reject "memory review :id e1 :verdict reject :as principle"},
+  :in
+  ({:id "e1",
+    :type "decision",
+    :content
+    "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+    :created "2026-01-01T00:00:00Z"})},
+ :case-3
+ {:out
+  {:id "e1",
+   :requested "axiom",
+   :tags [],
+   :preview "",
+   :approve "memory review :id e1 :verdict approve",
+   :reject "memory review :id e1 :verdict reject :as principle"},
+  :in ({:id "e1"})},
+ :case-4
+ {:out
+  {:id "e1",
+   :requested "axiom",
+   :tags [],
+   :preview
+   "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+   :approve "memory review :id e1 :verdict approve",
+   :reject "memory review :id e1 :verdict reject :as principle"},
+  :in
+  ({:id "e1",
+    :type :note,
+    :content
+    "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"})},
+ :case-5
+ {:out
+  {:id "e1",
+   :requested "axiom",
+   :tags [],
+   :preview
+   "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé …",
+   :approve "memory review :id e1 :verdict approve",
+   :reject "memory review :id e1 :verdict reject :as principle"},
+  :in
+  ({:id "e1",
+    :type :note,
+    :content
+    "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+    :created "2026-01-01T00:00:00Z"})},
+ :case-6
+ {:out
+  {:id "e1",
+   :requested "axiom",
+   :tags [],
+   :preview "",
+   :approve "memory review :id e1 :verdict approve",
+   :reject "memory review :id e1 :verdict reject :as principle"},
+  :in
+  ({:id "e1",
+    :tags ["scope:project:p"],
+    :created "2026-01-01T00:00:00Z"})},
+ :case-7
+ {:out
+  {:id "e2",
+   :requested "axiom",
+   :tags [],
+   :preview
+   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa …",
+   :approve "memory review :id e2 :verdict approve",
+   :reject "memory review :id e2 :verdict reject :as principle"},
+  :in
+  ({:id "e2",
+    :tags nil,
+    :content
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})}}

@@ -1,0 +1,56 @@
+{:case-0
+ {:out 1.0,
+  :in
+  ({:tags ["catchup-priority"]}
+   {:project-id "p",
+    :project-keywords #{"clojure"},
+    :vocabulary #{"malli"}})},
+ :case-1
+ {:out 1.0,
+  :in
+  ({:tags ["typography" "scope:project:hive-mcp"]}
+   {:project-id "hive-mcp",
+    :project-keywords #{"hive-mcp" "mcp"},
+    :vocabulary #{"knowledge"}})},
+ :case-2
+ {:out 0.0,
+  :in
+  ({:tags []}
+   {:project-id "hive-mcp",
+    :project-keywords #{},
+    :vocabulary #{"knowledge" "typography" "malli"}})},
+ :case-3
+ {:out 1.0,
+  :in
+  ({:tags ["catchup-priority"]}
+   {:project-id nil,
+    :project-keywords #{"hive-mcp"},
+    :vocabulary #{"knowledge" "typography" "malli"}})},
+ :case-4
+ {:out 0.5,
+  :in
+  ({:tags ["malli" "axiom" "clojure" "typography"]}
+   {:project-id "hive-mcp",
+    :project-keywords #{},
+    :vocabulary #{"knowledge" "typography"}})},
+ :case-5
+ {:out 0.0,
+  :in
+  ({:tags ["malli" "scope:project:p"]}
+   {:project-id "hive-mcp",
+    :project-keywords #{"hive-mcp"},
+    :vocabulary #{"knowledge" "typography"}})},
+ :case-6
+ {:out 0.0,
+  :in
+  ({:tags []}
+   {:project-id nil,
+    :project-keywords #{"clojure" "mcp"},
+    :vocabulary #{"knowledge" "typography" "malli"}})},
+ :case-7
+ {:out 0.5,
+  :in
+  ({:tags ["axiom" "clojure"]}
+   {:project-id nil,
+    :project-keywords #{"hive-mcp" "clojure"},
+    :vocabulary #{}})}}

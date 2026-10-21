@@ -1,0 +1,21 @@
+{:case-0 {:out #{}, :in ([])},
+ :case-1
+ {:out #{"java" "memory" "typography" "java.memory"},
+  :in (["typography" "axiom" "java.memory"])},
+ :case-2
+ {:out #{"clojure" "hive" "hive-knowledge" "knowledge"},
+  :in
+  (["hive-knowledge" "scope:project:p" "clojure" "clojure" "axiom"])},
+ :case-3
+ {:out #{"clojure"},
+  :in (["scope:project:p" "agent:ling-1" "clojure" "axiom"])},
+ :case-4
+ {:out #{"priority" "typography" "catchup" "catchup-priority"},
+  :in (["typography" "catchup-priority"])},
+ :case-5
+ {:out #{"java" "memory" "java.memory"},
+  :in (["java.memory" "priority-high"])},
+ :case-6 {:out #{}, :in (["axiom" "axiom"])},
+ :case-7
+ {:out #{"priority" "catchup" "catchup-priority"},
+  :in (["catchup-priority"])}}

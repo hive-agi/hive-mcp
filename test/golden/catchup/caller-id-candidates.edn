@@ -1,0 +1,8 @@
+{:case-0 {:out ["coordinator"], :in ("coordinator")},
+ :case-1 {:out ["coordinator:12x"], :in ("coordinator:12x")},
+ :case-2 {:out ["7"], :in ("7")},
+ :case-3 {:out ["ling-1:1234" "ling-1"], :in ("ling-1:1234")},
+ :case-4 {:out ["7"], :in ("7")},
+ :case-5 {:out ["7"], :in ("7")},
+ :case-6 {:out ["ling-1:7" "ling-1"], :in ("ling-1:7")},
+ :case-7 {:out ["coordinator7"], :in ("coordinator7")}}

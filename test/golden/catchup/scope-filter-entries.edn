@@ -1,0 +1,148 @@
+{:case-0
+ {:out (),
+  :in
+  ([{:id "e3",
+     :tags [],
+     :project-id "p",
+     :created "2026-03-01T00:00:00Z"}
+    {:id "e1",
+     :tags [],
+     :project-id "p",
+     :created "2026-02-01T00:00:00Z"}]
+   #{}
+   #{})},
+ :case-1
+ {:out
+  ({:id "e3",
+    :tags ["catchup-priority"],
+    :project-id "global",
+    :created "2026-02-01T00:00:00Z"}
+   {:id "e3",
+    :tags ["scope:project:p" "scope:project:other"],
+    :project-id "p",
+    :created "2026-03-01T00:00:00Z"}),
+  :in
+  ([{:id "e3",
+     :tags ["scope:project:other" "scope:project:other" "x"],
+     :project-id "global",
+     :created "2026-03-01T00:00:00Z"}
+    {:id "e3",
+     :tags ["catchup-priority"],
+     :project-id "global",
+     :created "2026-02-01T00:00:00Z"}
+    {:id "e3",
+     :tags ["scope:project:p" "scope:project:other"],
+     :project-id "p",
+     :created "2026-03-01T00:00:00Z"}]
+   #{"scope:project:p"}
+   #{"global"})},
+ :case-2
+ {:out (),
+  :in
+  ([{:id "e2",
+     :tags ["catchup-priority"],
+     :project-id "global",
+     :created "2026-01-01T00:00:00Z"}]
+   #{"scope:project:p"}
+   #{"p"})},
+ :case-3
+ {:out (),
+  :in
+  ([{:id "e2",
+     :tags ["scope:project:other" "scope:project:p"],
+     :project-id "global",
+     :created "2026-02-01T00:00:00Z"}
+    {:id "e3",
+     :tags ["x" "catchup-priority" "x"],
+     :project-id "other",
+     :created "2026-03-01T00:00:00Z"}]
+   #{}
+   #{"p" "global"})},
+ :case-4
+ {:out
+  ({:id "e1",
+    :tags ["catchup-priority" "catchup-priority"],
+    :project-id "p",
+    :created "2026-02-01T00:00:00Z"}
+   {:id "e2",
+    :tags [],
+    :project-id "p",
+    :created "2026-02-01T00:00:00Z"}
+   {:id "e1",
+    :tags ["scope:project:p" "scope:project:other" "x"],
+    :project-id "global",
+    :created "2026-02-01T00:00:00Z"}
+   {:id "e2",
+    :tags [],
+    :project-id "p",
+    :created "2026-01-01T00:00:00Z"}
+   {:id "e1",
+    :tags [],
+    :project-id "p",
+    :created "2026-03-01T00:00:00Z"}),
+  :in
+  ([{:id "e1",
+     :tags ["catchup-priority" "catchup-priority"],
+     :project-id "p",
+     :created "2026-02-01T00:00:00Z"}
+    {:id "e2",
+     :tags [],
+     :project-id "p",
+     :created "2026-02-01T00:00:00Z"}
+    {:id "e1",
+     :tags ["scope:project:p" "scope:project:other" "x"],
+     :project-id "global",
+     :created "2026-02-01T00:00:00Z"}
+    {:id "e2",
+     :tags [],
+     :project-id "p",
+     :created "2026-01-01T00:00:00Z"}
+    {:id "e1",
+     :tags [],
+     :project-id "p",
+     :created "2026-03-01T00:00:00Z"}
+    {:id "e3",
+     :tags ["catchup-priority"],
+     :project-id "other",
+     :created "2026-01-01T00:00:00Z"}]
+   #{"scope:project:p"}
+   #{"p"})},
+ :case-5
+ {:out
+  ({:id "e2",
+    :tags ["scope:project:p" "x" "scope:project:p"],
+    :project-id "other",
+    :created "2026-01-01T00:00:00Z"}),
+  :in
+  ([{:id "e3",
+     :tags [],
+     :project-id "global",
+     :created "2026-03-01T00:00:00Z"}
+    {:id "e2",
+     :tags ["scope:project:p" "x" "scope:project:p"],
+     :project-id "other",
+     :created "2026-01-01T00:00:00Z"}]
+   #{"scope:project:p"}
+   #{})},
+ :case-6
+ {:out (),
+  :in
+  ([{:id "e3",
+     :tags [],
+     :project-id "other",
+     :created "2026-02-01T00:00:00Z"}]
+   #{"scope:project:p"}
+   #{"global"})},
+ :case-7
+ {:out (),
+  :in
+  ([{:id "e3",
+     :tags ["x"],
+     :project-id "global",
+     :created "2026-02-01T00:00:00Z"}
+    {:id "e1",
+     :tags [],
+     :project-id "p",
+     :created "2026-02-01T00:00:00Z"}]
+   #{}
+   #{})}}

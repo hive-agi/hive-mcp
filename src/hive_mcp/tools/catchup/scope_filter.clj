@@ -5,7 +5,9 @@
    Deliberately keyword-only so the caller can pre-compute
    `full-hierarchy-scope-tags` once and share it across branches."
   (:require [hive-mcp.project.scope :as project-scope]
-            [hive-mcp.dns.result :refer [rescue]]))
+            [hive-mcp.dns.result :refer [rescue]]
+            [hive-mcp.tools.catchup.shapes :as shapes]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -99,3 +101,26 @@
                   now (java.time.ZonedDateTime/now)
                   week-later (.plusDays now 7)]
               (.isBefore exp-time week-later)))))
+
+;; =============================================================================
+;; Contracts
+;; =============================================================================
+
+(def ^:private ProjectId shapes/ProjectId)
+
+(def VisibleIds
+  "The project ids an entry without a scope tag may come from. Membership is
+   tested with `contains?`, so a set (or nil, which contains nothing)."
+  [:maybe [:set {:gen/schema [:set [:enum "p" "other" "global"]]} :any]])
+
+(m/=> distinct-by [:=> [:cat ifn? [:maybe [:sequential :any]]] [:vector :any]])
+(m/=> newest-first [:=> [:cat shapes/Entries] [:sequential shapes/Entry]])
+(m/=> filter-by-tags [:=> [:cat shapes/Entries shapes/Tags] shapes/Entries])
+(m/=> compute-full-scope-tags [:=> [:cat ProjectId] [:set :string]])
+(m/=> scope-filter-entries
+      [:=> [:cat shapes/Entries shapes/Tags VisibleIds] [:sequential shapes/Entry]])
+(m/=> scope-filter-entries-strict
+      [:=> [:cat shapes/Entries shapes/Tags] [:sequential shapes/Entry]])
+(m/=> scope-pierce-entries
+      [:=> [:cat shapes/Entries ProjectId] [:maybe [:sequential shapes/Entry]]])
+(m/=> entry-expiring-soon? [:=> [:cat [:maybe shapes/Entry]] [:maybe :boolean]])

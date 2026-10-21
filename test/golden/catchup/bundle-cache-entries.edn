@@ -1,0 +1,13 @@
+{:case-0 {:out {}, :in []},
+ :case-1 {:out {}, :in [nil "e9" nil]},
+ :case-2
+ {:out
+  {"e3" {:id "e3", :content "c-e3"},
+   "e1" {:id "e1", :content "c-e1"},
+   "e2" {:id "e2", :content "c-e2"}},
+  :in ["e3" "e9" "e1" "e1" "e2"]},
+ :case-3 {:out {}, :in [nil "e9" nil nil]},
+ :case-4 {:out {"e3" {:id "e3", :content "c-e3"}}, :in ["e3" nil]},
+ :case-5 {:out {}, :in [nil nil]},
+ :case-6 {:out {"e3" {:id "e3", :content "c-e3"}}, :in [nil "e3"]},
+ :case-7 {:out {}, :in [nil]}}
