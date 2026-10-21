@@ -25,7 +25,8 @@
             [hive-mcp.emacs.client :as emacs-client]
             [hive-mcp.agent.grant :as grant]
             [malli.core :as m]
-            [hive-mcp.tools.result-bridge :as rb]))
+            [hive-mcp.tools.result-bridge :as rb]
+            [hive-mcp.context.request :as request-ctx]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -102,22 +103,48 @@
 ;;; Spawn Handler
 ;;; =============================================================================
 
+(defn caller-parent
+  "The parent a spawn by `caller-id` is attributed to when no `parent` is
+   named. A coordinator-lane caller counts only when it names a SESSION
+   (`coordinator:<session>`), so the spawn's shouts reach that one window; a
+   lane spelled without a session (`coordinator`, `coordinator-hive`) leaves
+   the spawn root-level, the lane the audience layer routes to every
+   coordinator reader. Blank or nil is root-level."
+  [caller-id]
+  (let [caller (when-not (str/blank? (str caller-id)) (str caller-id))]
+    (when caller
+      (if (audience/coordinator-reader? caller)
+        (when (audience/coordinator-session caller) caller)
+        caller))))
+
 (defn effective-parent
   "The parent a spawn is attributed to. An explicit non-blank `parent` wins.
    Otherwise the calling agent (`:_caller_id`, stamped on every MCP request by
-   the transport) is the parent. A coordinator-lane caller counts only when
-   it names a SESSION (`coordinator:<session>`), so the spawn's shouts reach
-   that one window; a lane spelled without a session (`coordinator`,
-   `coordinator-hive`) leaves the spawn root-level, the lane the audience
-   layer routes to every coordinator reader."
+   the transport) is the parent, read by `caller-parent`.
+
+   This is routing (whose window the spawn's shouts reach), not trust: an
+   explicit `parent` may name any agent, so nothing that grants membership
+   reads it. See `spawner`."
   [{:keys [parent _caller_id]}]
-  (let [explicit (when-not (str/blank? (str parent)) parent)
-        caller   (when-not (str/blank? (str _caller_id)) (str _caller_id))]
-    (or explicit
-        (when caller
-          (if (audience/coordinator-reader? caller)
-            (when (audience/coordinator-session caller) caller)
-            caller)))))
+  (let [explicit (when-not (str/blank? (str parent)) parent)]
+    (or explicit (caller-parent _caller_id))))
+
+(defn spawner
+  "Who actually asked for this spawn: the request's caller, never the
+   `parent` param. The verified caller id of the request in flight wins,
+   then the transport-stamped `:_caller_id`, then the request context's
+   asserted caller, each read by `caller-parent`. The empty string when the
+   caller is unknown or root-level.
+
+   It is recorded as :slave/spawned-by, and enclave membership (hive-cloak's
+   lineage) follows it instead of :slave/parent, so naming a member session as
+   `parent` inherits nothing."
+  [{:keys [_caller_id]}]
+  (let [present (fn [s] (when-not (str/blank? (str s)) (str s)))
+        caller  (or (present (request-ctx/current-verified-caller-id))
+                    (present _caller_id)
+                    (present (request-ctx/current-caller-id)))]
+    (or (caller-parent caller) "")))
 
 (defn- normalize-tier
   "Normalize the optional economy role. cheap delegates model selection to the
@@ -411,6 +438,7 @@
                                         err)))
                     slave-id (proto/spawn! ling-agent (cond-> {:task brief
                                                                :parent parent
+                                                               :spawned-by (spawner params)
                                                                :kanban-task-id kanban_task_id
                                                                :spawn-mode (:spawn-mode ling-agent)
                                                                :model effective-model
@@ -493,6 +521,13 @@
    [:map [:refused :string]]])
 
 (m/=> effective-parent [:=> [:cat SpawnParams] [:maybe :string]])
+
+(m/=> caller-parent [:=> [:cat :any] [:maybe :string]])
+
+;; Never nil: the empty string records "root-level", so a lineage reader can
+;; tell a spawn whose spawner is known to be nobody from a row written before
+;; :slave/spawned-by existed.
+(m/=> spawner [:=> [:cat SpawnParams] :string])
 
 (m/=> sandbox-decision [:=> [:cat :any] [:maybe [:or :boolean [:= :refused]]]])
 
