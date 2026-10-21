@@ -1,0 +1,8 @@
+{:connected? nil,
+ :publish! nil,
+ :subscribe! nil,
+ :unsubscribe! nil,
+ :stop! nil,
+ :watch-add :hive-mcp.nats.client.facet-test/f07,
+ :watch-remove nil,
+ :clamp-seq (1 (2 "<truncated:seq>"))}

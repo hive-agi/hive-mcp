@@ -1,0 +1,26 @@
+{:returns [nil nil nil nil nil nil nil nil nil nil],
+ :log
+ [[:pub
+   "hive.v1.shout.hive.a1"
+   {:agent-id "a1", :project-id "hive", :message "m"}
+   true]
+  [:pub "hive.v1.shout.global.unknown" {:message "no ids"} true]
+  [:pub "hive.v1.event.agent-spawn" {:type :agent-spawn} true]
+  [:pub "hive.v1.tool.memory-add" {:tool-name :memory-add} true]
+  [:pub "hive.v1.tool.unknown" {:tool-name ""} true]
+  [:pub
+   "hive.v1.agent.failed.l1"
+   {:event-type :failed, :ling-id "l1"}
+   true]
+  [:pub
+   "hive.v1.wave.r1.completed.t1"
+   {:run-id "r1", :task-id "t1"}
+   false]
+  [:sub "hive.v1.shout.>"]
+  [:sub "hive.v1.tool.>"]
+  [:sub "hive.v1.agent.completed.>"]
+  [:sub "hive.v1.agent.failed.>"]
+  [:unsub "hive.v1.shout.>"]
+  [:unsub "hive.v1.tool.>"]
+  [:unsub "hive.v1.agent.completed.>"]
+  [:unsub "hive.v1.agent.failed.>"]]}
