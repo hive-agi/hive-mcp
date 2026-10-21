@@ -1,0 +1,22 @@
+{:all
+ {:entries
+  [{:id "a", :tags ["kanban" "todo" "scope:project:p1"]}
+   {:id "b", :tags ["kanban" "scope:project:p2"]}
+   {:id "d", :project-id "p1", :tags ["kanban" "todo"]}],
+  :multi-project? true},
+ :no-project
+ {:entries
+  [{:id "a", :tags ["kanban" "todo" "scope:project:p1"]}
+   {:id "b", :tags ["kanban" "scope:project:p2"]}
+   {:id "d", :project-id "p1", :tags ["kanban" "todo"]}],
+  :multi-project? true},
+ :p1
+ {:entries
+  [{:id "a", :tags ["kanban" "todo" "scope:project:p1"]}
+   {:id "d", :project-id "p1", :tags ["kanban" "todo"]}],
+  :multi-project? false},
+ :p2-todo {:entries [], :multi-project? false},
+ :p1-window-1
+ {:entries [{:id "a", :tags ["kanban" "todo" "scope:project:p1"]}],
+  :multi-project? false},
+ :empty-source {:entries [], :multi-project? false}}
