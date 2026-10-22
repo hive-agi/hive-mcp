@@ -10,18 +10,160 @@
             [clojure.edn :as edn]
             [hive-mcp.config.path :as config-path]
             [malli.core :as m]
-            [hive-mcp.tools.core :as tc]))
+            [hive-mcp.tools.core :as tc]
+            [clojure.string :as str]
+            [hive-mcp.config.io :as config-io]
+            [hive-mcp.config.secrets :as secrets]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 ;; ── Pure Result-returning functions ───────────────────────────────────────────
 
+;; ── Secret redaction (response edge) ─────────────────────────────────────────
+
+(def ^:private sensitive-name-re
+  #"(?i)(token|secret|passw|passphrase|credential|api[-_]?key|private[-_]?key|(^|[-_.])keys?($|[-_.]))")
+
+(defn- sensitive-key?
+  [k]
+  (boolean (when (or (keyword? k) (string? k) (symbol? k))
+             (re-find sensitive-name-re (name k)))))
+
+(defn- blank-secret?
+  [v]
+  (or (nil? v) (and (string? v) (str/blank? v))))
+
+(defn- pass-ref?
+  [v]
+  (and (string? v) (str/starts-with? v "pass:")))
+
+(defn- raw-secrets
+  "The :secrets map as declared, before resolution."
+  []
+  (if config/*config-source*
+    (:secrets (config/get-global-config))
+    (let [r (config-io/read-config-file config-io/config-path)]
+      (when (contains? r :ok) (:secrets (:ok r))))))
+
+(defn- env-var-name
+  [k]
+  (or (first (get secrets/secret-registry k))
+      (when (keyword? k) (secrets/env-var-for k))))
+
+(defn- secret-source
+  [k v raw]
+  (let [raw-v (when (map? raw) (get raw k))]
+    (cond
+      (or (pass-ref? raw-v) (pass-ref? v))  :pass
+      (not (blank-secret? raw-v))           :config
+      (when-let [ev (env-var-name k)]
+        (not (str/blank? (System/getenv ev)))) :env
+      :else                                  :pass)))
+
+(defn- secret-state
+  [k v raw]
+  (if (blank-secret? v)
+    {:state :unset}
+    {:state :set :source (secret-source k v @raw)}))
+
+(defn- redact-leaf
+  [v]
+  (cond
+    (blank-secret? v) {:state :unset}
+    (pass-ref? v)     {:state :set :source :pass}
+    :else             {:state :set :source :config}))
+
+(defn- empty-like
+  [v]
+  (if (record? v) {} (empty v)))
+
+(defn- map-coll
+  [f v]
+  (if (seq? v) (doall (map f v)) (into (empty v) (map f) v)))
+
+(defn- redact-tree
+  [v secret?]
+  (cond
+    (map? v)  (into (empty-like v)
+                    (map (fn [[k x]] [k (redact-tree x (or secret? (sensitive-key? k)))]))
+                    v)
+    (coll? v) (map-coll #(redact-tree % secret?) v)
+    (and secret? (or (string? v) (number? v))) (redact-leaf v)
+    :else     v))
+
+(defn- redact-secrets-map
+  [m raw]
+  (if (map? m)
+    (into (empty-like m)
+          (map (fn [[k v]] [k (if (coll? v) (redact-tree v true) (secret-state k v raw))]))
+          m)
+    (redact-tree m true)))
+
+(defn- redact-at
+  "Redact `v` as the value sitting at key `path` of the config tree."
+  [path v raw]
+  (let [path (vec path)]
+    (cond
+      (= [:secrets] path)                     (redact-secrets-map v raw)
+      (and (= :secrets (first path)) (= 2 (count path)) (not (coll? v)))
+      (secret-state (second path) v raw)
+      (= :secrets (first path))               (redact-tree v true)
+      (some sensitive-key? path)              (redact-tree v true)
+      (map? v)  (into (empty-like v)
+                      (map (fn [[k x]] [k (redact-at (conj path k) x raw)]))
+                      v)
+      (coll? v) (map-coll #(redact-at path % raw) v)
+      :else     v)))
+
+(defn- redact-config
+  "Redact `v` found at `path`; the declared secrets are read only on demand."
+  ([v] (redact-config [] v))
+  ([path v] (redact-at path v (delay (raw-secrets)))))
+
+(defn- redact-errors
+  "Malli explanation errors: each :value is redacted by its own :in path."
+  [base errors]
+  (let [raw (delay (raw-secrets))]
+    (mapv (fn [e]
+            (if (and (map? e) (contains? e :value))
+              (assoc e :value (redact-at (into (vec base) (:in e)) (:value e) raw))
+              e))
+          errors)))
+
+(defn- secret-strings
+  [v secret?]
+  (cond
+    (map? v)  (mapcat (fn [[k x]] (secret-strings x (or secret? (sensitive-key? k)))) v)
+    (coll? v) (mapcat #(secret-strings % secret?) v)
+    (and secret? (or (string? v) (number? v)) (>= (count (str/trim (str v))) 4)) [(str/trim (str v))]
+    :else     nil))
+
+(defn- scrub-text
+  "Backstop: replace any live secret string that still reached the text."
+  [text]
+  (if-not (string? text)
+    text
+    (let [ss (->> (secret-strings (config/get-global-config) false)
+                  distinct
+                  (sort-by count >))]
+      (reduce (fn [t s]
+                (-> t
+                    (str/replace s "[redacted]")
+                    (str/replace (str/replace s "/" "\\/") "[redacted]")))
+              text ss))))
+
+(defn- respond
+  [category f]
+  (update (rb/result->mcp (rb/try-result category f)) :text scrub-text))
+
 (defn- get*
   [{:keys [key]}]
   (if (or (nil? key) (= "" key))
     (result/err :config/get {:message "Missing required parameter: key. Example: config get {\"key\": \"embeddings.ollama.host\"}"})
-    (result/ok {:key key :value (config/get-config-value key)})))
+    (result/ok {:key key
+                :value (redact-config (config/parse-key-path key)
+                                      (config/get-config-value key))})))
 
 (defn- coerce-value
   "EDN-aware coercion for `config set value=...`. MCP transports often
@@ -56,18 +198,21 @@
                 {:message (str "Missing required parameter: key. Example: "
                                "config set {\"key\": \"embeddings.ollama.host\", "
                                "\"value\": \"http://new:11434\"}")})
-    (let [coerced (coerce-value value)]
+    (let [coerced (coerce-value value)
+          kp      (config/parse-key-path key)
+          shown   (redact-config kp coerced)
+          secret? (not= shown coerced)]
       (config/set-config-value! key coerced)
-      (log/info "Config set:" key "=" coerced "(coerced from" value ")")
+      (log/info "Config set:" key (if secret? "(value redacted)" (str "= " coerced)))
       (result/ok {:key key
-                  :value coerced
-                  :raw-input value
+                  :value shown
+                  :raw-input (if secret? shown value)
                   :coerced? (not= coerced value)
                   :status "updated"}))))
 
 (defn- list-config*
   [_params]
-  (result/ok {:config (config/get-global-config)}))
+  (result/ok {:config (redact-config (config/get-global-config))}))
 
 (defn- reload*
   [_params]
@@ -82,62 +227,71 @@
               :exists? (.exists (io/file config-path/config-path))}))
 
 (defn- validate*
-  "Validate current config against schema. Optionally validate a section."
+  "Validate current config against schema. Optionally validate a section.
+   The echoed config, section value and malli errors are redacted."
   [{:keys [key]}]
   (let [cfg (config/get-global-config)]
     (if (and key (not= key ""))
-      ;; Validate specific section
       (let [section-kw (keyword key)]
         (try
           (let [value (get cfg section-kw)
                 v (schema/validate-section section-kw value)]
-            (result/ok (assoc v :section key)))
+            (result/ok (cond-> (assoc v :section key)
+                         (contains? v :value)
+                         (update :value #(redact-config [section-kw] %))
+                         (contains? v :errors)
+                         (update :errors #(redact-errors [section-kw] %))
+                         (contains? v :humanized)
+                         (update :humanized #(redact-config [section-kw] %)))))
           (catch Exception e
             (result/err :config/validate {:message (ex-message e)}))))
-      ;; Validate full config
-      (result/ok (schema/validate-config cfg)))))
+      (let [v (schema/validate-config cfg)]
+        (result/ok (cond-> v
+                     (contains? v :config)    (update :config redact-config)
+                     (contains? v :errors)    (update :errors #(redact-errors [] %))
+                     (contains? v :humanized) (update :humanized redact-config)))))))
 
 ;; ── Public handlers (MCP boundary) ────────────────────────────────────────────
 
 (defn handle-get
-  "Read a config value by dotted key path."
+  "Read a config value by dotted key path. Secrets come back as state + source."
   [params]
-  (rb/result->mcp (rb/try-result :config/get-failed #(get* params))))
+  (respond :config/get-failed #(get* params)))
 
 (m/=> handle-get [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (defn handle-set
   "Set a config value at a dotted key path and persist to disk."
   [params]
-  (rb/result->mcp (rb/try-result :config/set-failed #(set* params))))
+  (respond :config/set-failed #(set* params)))
 
 (m/=> handle-set [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (defn handle-list
-  "List all configuration values."
+  "List all configuration values. Secrets come back as state + source."
   [params]
-  (rb/result->mcp (rb/try-result :config/list-failed #(list-config* params))))
+  (respond :config/list-failed #(list-config* params)))
 
 (m/=> handle-list [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (defn handle-reload
   "Reload config from disk, merging with defaults."
   [params]
-  (rb/result->mcp (rb/try-result :config/reload-failed #(reload* params))))
+  (respond :config/reload-failed #(reload* params)))
 
 (m/=> handle-reload [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (defn handle-path
   "Show config file path."
   [params]
-  (rb/result->mcp (rb/try-result :config/path-failed #(path* params))))
+  (respond :config/path-failed #(path* params)))
 
 (m/=> handle-path [:=> [:cat [:maybe :map]] tc/McpResponse])
 
 (defn handle-validate
-  "Validate config against malli schema."
+  "Validate config against malli schema. Secrets come back as state + source."
   [params]
-  (rb/result->mcp (rb/try-result :config/validate-failed #(validate* params))))
+  (respond :config/validate-failed #(validate* params)))
 
 (m/=> handle-validate [:=> [:cat [:maybe :map]] tc/McpResponse])
 
