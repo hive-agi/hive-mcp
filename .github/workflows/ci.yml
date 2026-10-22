@@ -120,6 +120,9 @@ jobs:
       - name: Run launcher test
         run: timeout 300 bin/hive-mcp-launcher-test.sh
 
+      - name: Test-count gate self-test
+        run: timeout 60 bin/test-count-floor-test.sh
+
   deps:
     name: Dependency Resolution
     runs-on: ubuntu-latest
