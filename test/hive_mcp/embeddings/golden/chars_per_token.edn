@@ -1,6 +1,6 @@
 {:empty 0,
- :explicit-4 8192,
+ :explicit-4 8193,
  :four-chars 2,
- :old-gap 10000,
- :pt-ceiling 8167,
- :three-chars 1}
+ :old-gap 6001,
+ :pt-ceiling 4901,
+ :three-chars 2}

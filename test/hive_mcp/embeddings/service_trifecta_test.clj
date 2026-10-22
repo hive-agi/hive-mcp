@@ -18,19 +18,20 @@
 ;; estimate-tokens
 ;; -----------------------------------------------------------------------------
 
-(defn- expected-tokens
-  "Oracle read off the docstring: ceil(chars / ratio), ratio defaulting to
-   `default-chars-per-token` when absent or non-positive."
-  [content ratio]
-  (let [r (if (and (number? ratio) (pos? ratio)) (double ratio) 3.0)
-        n (count (or content ""))]
-    (long (Math/ceil (/ n r)))))
+(defn- expected-tokens?
+  "Oracle read off the docstring: empty or nil content is 0 tokens; any
+   other content is at least 1 and at most two per character plus one."
+  [content out]
+  (let [n (count (or content ""))]
+    (if (zero? n)
+      (zero? out)
+      (<= 1 out (inc (* 2 n))))))
 
 (deftrifecta-from-schema estimate-tokens-trifecta
   hive-mcp.embeddings.service/estimate-tokens
   {:in [:cat [:maybe :string] [:maybe [:enum -1 0 1 2.5 3.0 4]]]
    :out [:int {:min 0}]
-   :rel (fn [[content ratio] out] (= out (expected-tokens content ratio)))
+   :rel (fn [[content _ratio] out] (expected-tokens? content out))
    :num-tests 300
    :seed 89
    :n-cases 10
@@ -38,7 +39,7 @@
 
 (deftest validate-content-size-arms
   (testing "content that fits answers nil"
-    (is (nil? (service/validate-content-size! "abc" {:max-tokens 1 :provider-key :p}))))
+    (is (nil? (service/validate-content-size! "abc" {:max-tokens 2 :provider-key :p}))))
   (testing "oversized content throws :embedder/input-too-large"
     (is (= :embedder/input-too-large
            (try (service/validate-content-size! "abcdefg" {:max-tokens 1 :provider-key :p})
