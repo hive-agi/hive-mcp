@@ -164,6 +164,13 @@
   [attr]
   (avet/attr-values-ascending (ensure-store!) attr))
 
+(defn eids-with-value
+  "Lazy seq of the eids whose `attr` equals `value`, ascending by eid, read
+   from the active store's value-first index (see connection.avet).
+   Realizing the first N eids touches O(N) datoms."
+  [attr value]
+  (avet/eids-with-value (ensure-store!) attr value))
+
 (m/=> attr-values-ascending [:=> [:cat :keyword] [:sequential [:tuple :int :any]]])
 
 (defn db-snapshot
