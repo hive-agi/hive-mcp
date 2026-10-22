@@ -24,6 +24,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Launcher notices: stderr only (stdout is the stdio JSON-RPC channel).
+notice() { echo "hive-mcp: $*" >&2; }
+
 # ── Profile resolution ──────────────────────────────────────────────
 # Parse --profile flag from args (consume it, pass rest to clj)
 PROFILE="${HIVE_PROFILE:-}"
@@ -48,10 +51,10 @@ done
 
 if [[ -n "$PROFILE" ]]; then
   export HIVE_PROFILE="$PROFILE"
-  echo "hive-mcp: profile=$HIVE_PROFILE" >&2
+  notice "profile=$HIVE_PROFILE"
 else
   unset HIVE_PROFILE
-  echo "hive-mcp: profile from config.edn [:system :profile], else desktop" >&2
+  notice "profile from config.edn [:system :profile], else desktop"
 fi
 
 # ── Local deps overlay ──────────────────────────────────────────────
@@ -65,7 +68,7 @@ fi
 SDEPS_ARG=()
 if [[ -f "$PROJECT_DIR/local.deps.edn" ]]; then
   SDEPS_ARG=(-Sdeps "$(cat "$PROJECT_DIR/local.deps.edn")")
-  echo "hive-mcp: merging local.deps.edn"
+  notice "merging local.deps.edn"
 fi
 
 # ── AOT boot classes (opt-in) ───────────────────────────────────────
@@ -94,16 +97,16 @@ source_newer_than() {
 
 if fast_boot_requested; then
   if [[ ! -f "$STAMP" ]]; then
-    echo "hive-mcp: HIVE_FAST_BOOT set but no AOT classes — booting from source"
-    echo "hive-mcp:   build them: clojure -Sdeps \"\$(cat local.deps.edn)\" -X:aot-boot"
+    notice "HIVE_FAST_BOOT set but no AOT classes — booting from source"
+    notice "  build them: clojure -Sdeps \"\$(cat local.deps.edn)\" -X:aot-boot"
   else
     STALE="$(source_newer_than "$STAMP" || true)"
     if [[ -n "$STALE" ]]; then
-      echo "hive-mcp: AOT classes are stale ($STALE is newer) — booting from source"
-      echo "hive-mcp:   rebuild them: clojure -Sdeps \"\$(cat local.deps.edn)\" -X:aot-boot"
+      notice "AOT classes are stale ($STALE is newer) — booting from source"
+      notice "  rebuild them: clojure -Sdeps \"\$(cat local.deps.edn)\" -X:aot-boot"
     else
       ALIASES=":mcp:fast-boot"
-      echo "hive-mcp: fast boot — AOT classes from target/boot-classes"
+      notice "fast boot — AOT classes from target/boot-classes"
     fi
   fi
 fi
@@ -127,7 +130,7 @@ JVM_ARGS=(-J-Xmx"$HIVE_MCP_XMX" -J-Xms"$HIVE_MCP_XMS"
 # (systemd-coredump: `coredumpctl list java`).
 if [[ "${HIVE_MCP_COREDUMP:-0}" == "1" ]]; then
   ulimit -c "$(ulimit -H -c)" 2>/dev/null || true
-  echo "hive-mcp: core dumps enabled (ulimit -c $(ulimit -c))" >&2
+  notice "core dumps enabled (ulimit -c $(ulimit -c))"
 fi
 JVM_ARGS+=(-J-XX:+CreateCoredumpOnCrash)
 
