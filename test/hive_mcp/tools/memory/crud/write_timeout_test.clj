@@ -147,3 +147,31 @@
                                 :tags ["t"] :directory "/tmp"}))]
       (is (not (:isError res)) "a prompt write still succeeds")
       (is (= ["note"] @seen)))))
+
+(deftest default-stage-budgets-fit-under-the-outer-ceiling
+  (let [b wr/default-stage-budgets-ms
+        longest (+ (:dedup-lookup b) (max (:index b) (:dedup-update b))
+                   (:kg-edges b) (:link-outgoing b) (:fetch b))]
+    (is (< longest wr/*write-timeout-ms*)
+        "the longest stage path ends before the outer timeout, so a stage error fires first")))
+
+(deftest handle-add-stage-over-budget-names-the-stage
+  (proto/register-store! :default
+                         (stub-store (constantly nil)
+                                     (fn [_] (Thread/sleep 1500) "id-late")))
+  (let [t0  (System/currentTimeMillis)
+        res (binding [wr/*stage-budgets-ms* (assoc wr/default-stage-budgets-ms :index 200)]
+              (wr/handle-add {:type "note" :content (str "slow-index-" (random-uuid))
+                              :tags ["t"] :directory "/tmp"}))
+        took (- (System/currentTimeMillis) t0)
+        text (:text res)]
+    (is (:isError res) "an over-budget stage is an error")
+    (is (str/includes? text "stage :index exceeded its 200ms budget")
+        "the stage that ran out of budget is named")
+    (is (str/includes? text ":budget-ms 200") "the EDN diagnostic carries the budget")
+    (is (< took 1400) "the add fails at the stage budget, not when the store returns")))
+
+(deftest stage-budget-message-names-stage-and-budget
+  (let [msg (wr/stage-budget-message {:stage :fetch :budget-ms 3000 :elapsed-ms 3001})]
+    (is (str/includes? msg "stage :fetch exceeded its 3000ms budget"))
+    (is (str/includes? msg "stage elapsed 3001ms"))))
