@@ -1,8 +1,8 @@
 (ns hive-mcp.system.sweepers.stale-cache-contract-test
   "Contract facets for hive-mcp.system.sweepers.stale-cache. The evictor set is
-   a process-global defonce with no unregister, so the only evictors added
-   here are side-effect free and answer a fixed count."
-  (:require [clojure.test :refer [deftest is]]
+   a process-global defonce with no unregister, so each test captures it and
+   restores it afterwards."
+  (:require [clojure.test :refer [deftest is use-fixtures]]
             [hive-mcp.protocols.lifecycle :as lifecycle]
             [hive-mcp.system.sweepers.stale-cache :as stale]
             [hive-test.golden :as golden]
@@ -11,6 +11,12 @@
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+(use-fixtures :each
+  (fn [f]
+    (let [evictors @#'stale/*cache-evictors
+          saved    @evictors]
+      (try (f) (finally (reset! evictors saved))))))
 
 (defn- evict-three [] 3)
 (defn- evict-flag [] :done)

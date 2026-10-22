@@ -13,7 +13,7 @@
    - the host namespace is PRESENT (resolver hands back a recording stub):
      arguments and the return value pass through unchanged, and each
      adapter keeps its own throw/no-throw contract."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.swarm.adapters.agent-context :as agent-context]
             [hive-mcp.swarm.adapters.events :as events]
             [hive-mcp.swarm.adapters.ling-host :as ling-host]
@@ -28,6 +28,12 @@
 ;; =============================================================================
 ;; Resolvers standing in for the two classpaths
 ;; =============================================================================
+
+(use-fixtures :each
+  (fn [f]
+    (let [cache @#'soft/cache
+          saved @cache]
+      (try (f) (finally (reset! cache saved))))))
 
 (defn- host-gone
   "A classpath every soft host namespace has left."

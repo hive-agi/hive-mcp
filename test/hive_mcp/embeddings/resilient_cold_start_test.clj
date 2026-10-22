@@ -14,8 +14,9 @@
 
 (clojure.test/use-fixtures :each
   (fn [test-fn]
-    (reset! res/provider-health {})
-    (test-fn)))
+    (let [saved @res/provider-health]
+      (reset! res/provider-health {})
+      (try (test-fn) (finally (reset! res/provider-health saved))))))
 
 (defrecord ColdStartProvider [model load-ms calls]
   proto/EmbeddingProvider
