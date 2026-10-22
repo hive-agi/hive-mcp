@@ -476,7 +476,7 @@
       ;; The gate notice is DERIVED from the entry's own tags, so the response
       ;; cannot disagree with what was stored.
       (let [requested (type-registry/requested-type-of tags-with-scope)]
-        (mcp-json (cond-> (fmt/entry->json-alist created)
+        (mcp-json (cond-> (assoc (fmt/entry->receipt created) :id entry-id)
                     pending (assoc :embedding_deferred true :reembed_id entry-id
                                    :embedding_error (some-> pending :deferred/last-error :error str))
                     (seq edge-ids) (assoc :kg_edges_created edge-ids)
@@ -552,7 +552,7 @@
             (write-events/notify! :updated {:id (:id existing) :memory-type type
                                             :tags merged-tags :project-id project-id
                                             :fields [:tags]})
-            (mcp-json (fmt/entry->json-alist updated)))
+            (mcp-json (fmt/entry->receipt updated)))
           (let [_ (when (= type "plan") (validate-plan-gate! content))
                 _ (when (= type "role") (validate-role-gate! content))
                 entry-ctx {:type type :content content :tags-with-scope tags-with-scope
