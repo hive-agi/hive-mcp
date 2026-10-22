@@ -110,7 +110,7 @@
 
         ;; hive-hot - unified hot-reload with events integration
         io.github.hive-agi/hive-hot
-        {:mvn/version "0.2.3"}
+        {:mvn/version "0.2.4"}
 
         ;; Prometheus metrics - iapetos wrapper; hotspot collector adds
         ;; JVM metrics (memory, GC, threads).
