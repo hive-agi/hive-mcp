@@ -32,7 +32,7 @@
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
-;; SPDX-License-Identifier: MIT
+;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (def ^:const rationale-marker
   "An explicit opt-in marker an author puts on the first line of a section to

@@ -47,6 +47,11 @@ jobs:
           set -e
           bin/test-count-floor.sh unit-tests.log "$rc"
 
+      # LICENSE, version.edn :license and the src SPDX headers must agree
+      # before a pom is published; Deploy alone only warns.
+      - name: Verify license
+        run: clojure -T:build verify-license :strict true
+
       # A published coordinate is immutable, so a version already on Clojars
       # makes Deploy a no-op rather than a 403. The tag step below still says
       # whether this commit is the one that shipped it.
