@@ -323,6 +323,40 @@
 
 (m/=> status-write-needed [:=> [:cat [:maybe :map] [:maybe :keyword]] [:maybe :keyword]])
 
+(def ^:const ring-size
+  "Messages kept per agent in the local piggyback ring."
+  10)
+
+(defn ring-append
+  "Append `message` to an agent's ring `messages`, bounded at `size` rows.
+   Pure.
+
+   The new message is always kept. To make room, telemetry (rows without
+   :deliberate?) is evicted first, oldest first; a deliberate row is
+   evicted only when the older rows hold no telemetry, again oldest first.
+   Order is preserved."
+  ([messages message] (ring-append messages message ring-size))
+  ([messages message size]
+   (let [old (vec messages)
+         over (- (count old) (dec size))]
+     (if (<= over 0)
+       (conj old message)
+       (let [delib? #(boolean (:deliberate? %))
+             drop-tel (min over (count (remove delib? old)))
+             drop-delib (- over drop-tel)
+             step (fn [[acc t d] m]
+                    (cond
+                      (and (not (delib? m)) (pos? t)) [acc (dec t) d]
+                      (and (delib? m) (pos? d)) [acc t (dec d)]
+                      :else [(conj acc m) t d]))]
+         (conj (first (reduce step [[] drop-tel drop-delib] old)) message))))))
+
+(m/=> ring-append
+      [:function
+       [:=> [:cat [:maybe [:sequential RingMessage]] RingMessage] [:vector RingMessage]]
+       [:=> [:cat [:maybe [:sequential RingMessage]] RingMessage pos-int?]
+        [:vector RingMessage]]])
+
 (defn- shout!*
   "Internal shout implementation — assumes payload has been validated
    non-empty by `shout!`. Returns the routing verdict map."
@@ -450,7 +484,7 @@
                      (fn [entries]
                        (let [messages (or (get-in entries [agent-id :data :messages]) [])]
                          (assoc entries agent-id
-                                {:data {:messages (vec (take-last 10 (conj messages message)))
+                                {:data {:messages (ring-append messages message)
                                         :last-seen now}
                                  :created-at (or (get-in entries [agent-id :created-at]) now)
                                  :last-accessed now})))))
