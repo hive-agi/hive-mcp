@@ -18,7 +18,8 @@
             [clojure.string :as str]
             [clojure.data.json :as json]
             [hive-mcp.tools.multi :as multi]
-            [hive-mcp.test.stub.batch-extensions :as bx]))
+            [hive-mcp.test.stub.batch-extensions :as bx]
+            [hive-mcp.test.stub.isolated-registry :as iso]))
 
 ;; =============================================================================
 ;; Test Infrastructure
@@ -43,7 +44,7 @@
   [data]
   {:type "text" :text (json/write-str data)})
 
-(use-fixtures :each bx/with-batch-extensions)
+(use-fixtures :each iso/with-fresh-registries bx/with-batch-extensions)
 
 (defn- mock-handlers
   "Build a resolve-tool-handler replacement from a map of tool-name → handler-fn."

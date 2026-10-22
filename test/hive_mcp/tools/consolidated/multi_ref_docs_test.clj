@@ -8,11 +8,14 @@
    wrote $0 and had the whole batch refused."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [hive-mcp.tools.consolidated.multi :as multi]))
+            [hive-mcp.tools.consolidated.multi :as multi]
+            [hive-mcp.test.stub.isolated-registry :as iso]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+(clojure.test/use-fixtures :each iso/with-fresh-registries)
 
 (defn- description [param]
   (get-in multi/tool-def [:inputSchema :properties param :description]))
