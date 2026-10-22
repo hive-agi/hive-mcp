@@ -10,6 +10,9 @@
       :success true,
       :result {:type "text", :text "edge x->y"},
       :data {:type "text", :text "edge x->y"}}]}},
+  :committed ["a"],
+  :failed [],
+  :partial? false,
   :summary {:total 1, :success 1, :failed 0, :waves 1}},
  :mixed
  {:success false,
@@ -38,6 +41,9 @@
       :success false,
       :error "kaboom",
       :data nil}]}},
+  :committed ["a"],
+  :failed ["c" "b"],
+  :partial? true,
   :summary {:total 3, :success 1, :failed 2, :waves 2}},
  :chain
  {:success true,
@@ -60,6 +66,9 @@
       :success true,
       :result {:type "text", :text "edge n1->n2"},
       :data {:type "text", :text "edge n1->n2"}}]}},
+  :committed ["a" "b"],
+  :failed [],
+  :partial? false,
   :summary {:total 2, :success 2, :failed 0, :waves 2}},
  :dry-run
  {:success true,
@@ -73,4 +82,7 @@
  :empty
  {:success true,
   :waves {},
+  :committed [],
+  :failed [],
+  :partial? false,
   :summary {:total 0, :success 0, :failed 0, :waves 0}}}
