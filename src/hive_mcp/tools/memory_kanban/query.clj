@@ -195,6 +195,10 @@
 (defn list-slim-data
   "The slim board rows `list-slim*` serializes, as data. Same params.
 
+   The board is fetched with one store query per `plan/store-queries` tag
+   set (OR-tags fan out so the store narrows by tag) and merged by id
+   (`src/merge-boards`); the post-filters in `plan/shape` then run over it.
+
    Session todos (`session-todo` tag) are dropped unless the request opts in
    (`plan/hidden-tags`): they are an agent's own step list, not backlog."
   [{:keys [include_descendants include_ancestors project_id scope]
@@ -205,13 +209,15 @@
   (let [eff-dir    (ctx/resolve-caller-directory params)
         scoped-pid (or project_id (scope/get-current-project-id eff-dir))
         fetch-plan (plan/plan params)
+        scope-spec {:project-id           scoped-pid
+                    :include-descendants? include_descendants
+                    :include-ancestors?   (not (false? include_ancestors))
+                    :scope                scope}
         {:keys [entries multi-project?]}
-        (src/scoped-board *board-source*
-                          {:project-id           scoped-pid
-                           :include-descendants? include_descendants
-                           :include-ancestors?   (not (false? include_ancestors))
-                           :scope                scope}
-                          fetch-plan)]
+        (src/merge-boards
+         (mapv #(src/scoped-board *board-source* scope-spec
+                                  (assoc fetch-plan :required-tags %))
+               (plan/store-queries fetch-plan)))]
     (plan/shape fetch-plan
                 (plan/drop-hidden entries (plan/hidden-tags params))
                 multi-project?)))
