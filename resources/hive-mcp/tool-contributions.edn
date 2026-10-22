@@ -43,7 +43,7 @@
   {:key :agent      :load hive-mcp.tools.consolidated.agent/tools      :addon :hive-agent}
   {:key :agora      :load hive-mcp.tools.consolidated.agora/tools      :addon :hive-agora}
   {:key :kanban     :load hive-mcp.tools.consolidated.kanban/tools     :addon :hive-kanban}
-  {:key :kg         :load hive-mcp.tools.consolidated.kg/tools         :addon :hive-memory}
+  {:key :kg         :load hive-mcp.tools.kg/tool-def                   :addon :hive-memory}
   {:key :magit      :load hive-mcp.tools.consolidated.magit/tools      :addon :hive-emacs}
   {:key :migration  :load hive-mcp.tools.consolidated.migration/tools  :addon :hive-memory}
   {:key :olympus    :load hive-mcp.tools.consolidated.olympus/tools    :addon :hive-emacs}

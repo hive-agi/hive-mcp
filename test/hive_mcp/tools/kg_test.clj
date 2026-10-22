@@ -13,8 +13,8 @@
             [hive-mcp.tools.kg :as kg]
             [hive-mcp.tools.kg.queries :as kg-queries]
             [hive-mcp.tools.kg.commands :as kg-commands]
-            [hive-mcp.tools.consolidated.kg :as consolidated-kg]
-            [hive-mcp.dispatch.handler :as dispatch]))
+            [hive-mcp.dispatch.handler :as dispatch]
+            [clojure.java.io :as io]))
 
 ;;; =============================================================================
 ;;; Helpers
@@ -157,8 +157,8 @@
 ;;; =============================================================================
 
 (deftest consolidated-handlers-map-complete
-  (testing "Consolidated KG handler map wires all commands"
-    (let [commands (set (keys consolidated-kg/handlers))]
+  (testing "KG handler map wires all commands"
+    (let [commands (set (keys kg/handlers))]
       (is (contains? commands :traverse))
       (is (contains? commands :edge))
       (is (contains? commands :impact))
@@ -172,19 +172,21 @@
       (is (contains? commands :cleanup-synthetics))
       (is (contains? commands :batch-edge))
       (is (contains? commands :batch-traverse))
-      (is (= 13 (count commands)) "13 consolidated commands")))
+      (is (= 13 (count commands)) "13 kg commands")))
   (testing "every wired command is advertised in the tool's command enum"
-    (let [advertised (set (get-in consolidated-kg/tool-def
+    (let [advertised (set (get-in kg/tool-def
                                   [:inputSchema :properties "command" :enum]))]
-      (is (every? #(contains? advertised (name %)) (keys consolidated-kg/handlers))))))
+      (is (every? #(contains? advertised (name %)) (keys kg/handlers)))))
+  (testing "the retired consolidated namespace is gone"
+    (is (nil? (io/resource "hive_mcp/tools/consolidated/kg.clj")))))
 
 (deftest consolidated-handlers-resolve-correctly
-  (testing "Consolidated handler map resolves to sub-namespace fns"
+  (testing "KG handler map resolves to sub-namespace fns"
     ;; Read through `dispatch/current`: the table holds VARS so a reload of
     ;; hive-mcp.tools.kg reaches it, and a var is never `=` to the function it
     ;; holds. What is worth asserting is WHICH function each command reaches,
     ;; and that survives whatever the seam is spelled as next.
-    (let [h #(dispatch/current (get consolidated-kg/handlers %))]
+    (let [h #(dispatch/current (get kg/handlers %))]
       ;; Queries
       (is (= (h :traverse) kg-queries/handle-kg-traverse))
       (is (= (h :impact)   kg-queries/handle-kg-impact-analysis))

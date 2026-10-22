@@ -139,7 +139,6 @@
   "tools.consolidated.git" :hive-emacs
   "tools.consolidated.hivemind" :hive-agent
   "tools.consolidated.kanban" :hive-kanban
-  "tools.consolidated.kg" :hive-memory
   "tools.consolidated.magit" :hive-emacs
   "tools.consolidated.memory" :hive-memory
   "tools.consolidated.migrate-kanban" :hive-kanban
