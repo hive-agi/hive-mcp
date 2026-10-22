@@ -192,4 +192,5 @@
     (recall/register-created-id! "b" "project-beta")
     (let [all (recall/flush-created-ids!)]
       (is (= 2 (count all)))
-      (is (empty? (recall/get-created-ids))))))
+      (is (empty? (recall/get-created-ids))))
+    (reset! @#'recall/created-ids-buffer [])))
