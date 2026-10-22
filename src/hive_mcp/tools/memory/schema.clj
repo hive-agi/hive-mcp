@@ -175,6 +175,18 @@
   [:map {:closed true}
    [:id any?] [:type any?] [:preview :string] [:tags any?] [:created any?]])
 
+(def EntryReceipt
+  "What a memory write answers: identity, status and new metadata, never the
+   content. :preview is at most 80 chars plus an ellipsis."
+  [:map {:closed true}
+   [:id any?] [:status [:= "ok"]] [:type any?] [:tags any?]
+   [:chars [:int {:min 0}]]
+   [:preview [:string {:max 61}]]
+   [:content-hash {:optional true} any?]
+   [:duration {:optional true} any?]
+   [:expires {:optional true} any?]
+   [:project-id {:optional true} any?]])
+
 (def PreviewLen
   "entry->metadata preview length. The body truncates the preview to
    (- len 3) and then cuts (- len 6) chars, so a length below 6 throws on a

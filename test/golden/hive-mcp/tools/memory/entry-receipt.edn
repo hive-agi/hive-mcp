@@ -1,0 +1,32 @@
+{:case-0 {:out nil, :in (nil)},
+ :case-1
+ {:out
+  {:id "e2",
+   :status "ok",
+   :type "note",
+   :tags [],
+   :chars 5,
+   :preview "short"},
+  :in ({:id "e2", :type "note", :tags [], :content "short"})},
+ :case-2
+ {:out
+  {:id "e1",
+   :status "ok",
+   :type "note",
+   :tags ["a" "kanban"],
+   :chars 0,
+   :preview ""},
+  :in ({:id "e1", :type "note", :tags ["a" "kanban"], :content nil})},
+ :case-3
+ {:out
+  {:id "e1",
+   :status "ok",
+   :type "note",
+   :tags [],
+   :chars 0,
+   :preview ""},
+  :in ({:id "e1", :type "note", :tags nil, :content nil})},
+ :case-4 {:out nil, :in (nil)},
+ :case-5 {:out nil, :in (nil)},
+ :case-6 {:out nil, :in (nil)},
+ :case-7 {:out nil, :in (nil)}}
