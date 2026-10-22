@@ -13,6 +13,9 @@
 #      or not, and the stub stays in the caller's cgroup.
 #   5. SIGTERM to the supervised launcher reaches the stub, and the launcher
 #      exits 143.
+#   6. every launcher notice path (profile, local.deps.edn, the HIVE_FAST_BOOT
+#      missing / stale / fresh branches, core dumps) leaves stdout empty, the
+#      stdio JSON-RPC channel, and says its notice on stderr.
 #
 #   bin/hive-mcp-launcher-test.sh     # one line per case, exits 1 on failure
 #
@@ -137,6 +140,34 @@ alive=no; [[ -n "$spid" ]] && kill -0 "$spid" 2>/dev/null && alive=yes
 expect "SIGTERM: stub got TERM, launcher exit 143, no orphan" \
   "rc=$rc signals=$(cat "$D/signals" 2>/dev/null) orphan=$alive launches=$(lines "$D/pids")" \
   "rc=143 signals=term orphan=no launches=1"
+
+# 6. Notices never reach stdout. A copy of the launcher in a scratch project
+#    dir, so local.deps.edn and target/boot-classes can be staged per case.
+P="$TMP/proj"
+mkdir -p "$P/bin" "$P/src/x"
+cp "$LAUNCHER" "$P/bin/hive-mcp"
+cp "$SCRIPT_DIR/oom-policy.sh" "$P/bin/oom-policy.sh"
+echo '{}' > "$P/local.deps.edn"
+stamp="$P/target/boot-classes/.aot-stamp.edn"
+notice_case() { # <name> <want-stderr-substring> [env...]
+  local name="$1" want="$2"; shift 2
+  new_case "notice-$name" 0
+  env "$@" STUB_DIR="$D" HIVE_MCP_SUPERVISE=0 HIVE_MCP_OOMD_PREFERENCE=off \
+    PATH="$TMP/bin:$PATH" timeout 120 "$P/bin/hive-mcp" </dev/null >"$D/out" 2>"$D/err"
+  local rc=$? hit=no
+  grep -qF -- "$want" "$D/err" && hit=yes
+  expect "notice $name: stdout empty, notice on stderr" \
+    "rc=$rc stdout=$(wc -c < "$D/out") stderr-has-notice=$hit" "rc=0 stdout=0 stderr-has-notice=yes"
+}
+notice_case local-deps "merging local.deps.edn"
+notice_case profile "profile=k8s-minimal" HIVE_PROFILE=k8s-minimal
+notice_case coredump "core dumps enabled" HIVE_MCP_COREDUMP=1
+rm -rf "$P/target"
+notice_case fast-boot-missing "no AOT classes" HIVE_FAST_BOOT=1
+mkdir -p "$(dirname "$stamp")"; touch -d '2000-01-01' "$stamp"; touch "$P/src/x/a.clj"
+notice_case fast-boot-stale "AOT classes are stale" HIVE_FAST_BOOT=1
+touch "$stamp"; touch -d '2000-01-01' "$P/src/x/a.clj"
+notice_case fast-boot-fresh "fast boot" HIVE_FAST_BOOT=true
 
 echo "hive-mcp-launcher-test: $pass passed, $fail failed"
 (( fail == 0 ))

@@ -116,7 +116,8 @@
       (binding [*out* *err*]
         (println "[hive-events] WARNING: missing handlers:" (sort missing))))
     (when (seq extra)
-      (println "[hive-events] Extra handlers registered (not declared):" (sort extra)))
+      (binding [*out* *err*]
+        (println "[hive-events] Extra handlers registered (not declared):" (sort extra))))
     {:registered registered :missing missing :extra extra}))
 
 (m/=> verify-handlers!
@@ -178,7 +179,8 @@
     (verify-handlers!)
     (reset! *registered true)
     (when first?
-      (println "[hive-events] Handlers registered:" (sort (expected-events))))
+      (binding [*out* *err*]
+        (println "[hive-events] Handlers registered:" (sort (expected-events)))))
     true))
 
 (m/=> register-handlers! [:=> [:cat] [:= true]])
