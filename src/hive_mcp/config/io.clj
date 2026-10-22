@@ -44,12 +44,19 @@
 (defn write-config!
   "Write config map to disk as EDN. Creates parent dirs if needed.
    Perms hardened to 0600 — config holds secrets.
+   A test JVM (-Dhive.test=true) is refused the operator's own config.edn: a
+   test declares config, it never rewrites the developer's ~/.config/hive-mcp.
    Returns Result: (ok config) on success, (err :io/config-write ...) on failure."
   ([config] (write-config! config config-path))
   ([config path]
-   (let [r (di-file/write-edn! path config {:secret? true})]
-     (when (result/ok? r)
-       (log/info "Config written to" path))
-     r)))
+   (if (and (config-path/test-jvm?)
+            (= (.getCanonicalPath (java.io.File. ^String path))
+               (.getCanonicalPath (java.io.File. ^String config-path/operator-config-path))))
+     (do (log/error "Refused: a test JVM tried to write the operator's config.edn" {:path path})
+         (result/err :io/config-write-refused {:path path :reason :test-jvm}))
+     (let [r (di-file/write-edn! path config {:secret? true})]
+       (when (result/ok? r)
+         (log/info "Config written to" path))
+       r))))
 
 (m/=> write-config! [:function [:=> [:cat :map] :map] [:=> [:cat :map :string] :map]])

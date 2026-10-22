@@ -18,7 +18,21 @@
                   [:any {:gen/schema :string}]] :string])
 
 (def config-path
-  "The global config.edn of this process. HIVE_MCP_CONFIG names another file,
-   so a second instance runs from its own config."
-  (resolve-config-path (System/getenv "HIVE_MCP_CONFIG")
+  "The global config.edn of this process. The hive.mcp.config system property,
+   then HIVE_MCP_CONFIG, names another file, so a second instance (or a test
+   JVM) runs from its own config."
+  (resolve-config-path (or (System/getProperty "hive.mcp.config")
+                           (System/getenv "HIVE_MCP_CONFIG"))
                        (System/getProperty "user.home")))
+
+(def operator-config-path
+  "The operator's own config.edn, whatever override this process runs under.
+   A test JVM must never write it."
+  (resolve-config-path nil (System/getProperty "user.home")))
+
+(defn test-jvm?
+  "True when this JVM was started by a test alias (-Dhive.test=true)."
+  []
+  (= "true" (System/getProperty "hive.test")))
+
+(m/=> test-jvm? [:=> [:cat] :boolean])
