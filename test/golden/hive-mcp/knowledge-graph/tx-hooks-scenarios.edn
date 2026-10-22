@@ -1,0 +1,8 @@
+{"none"
+ {:registered [],
+  :result {:tx [#:kg-edge{:id "e1", :relation :refines}]}},
+ "ordered"
+ {:registered [:a/one :c/three],
+  :result {:tx [[:db/add 1 :a "x"] :a/one :c/three]}},
+ "refused"
+ {:registered [:a/one :b/two :c/three], :result {:refused-by :b/two}}}

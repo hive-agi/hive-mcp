@@ -1,0 +1,11 @@
+{"all-present" {:restored [], :still-unloaded []},
+ "missing"
+ {:restored [],
+  :still-unloaded
+  [{:ns "covg.never.loaded-b", :error-names-classpath? true}
+   {:ns "covg.never.loaded-a", :error-names-classpath? true}]},
+ "mixed-repeats"
+ {:restored [],
+  :still-unloaded
+  [{:ns "covg.never.loaded-a", :error-names-classpath? true}]},
+ "none" {:restored [], :still-unloaded []}}

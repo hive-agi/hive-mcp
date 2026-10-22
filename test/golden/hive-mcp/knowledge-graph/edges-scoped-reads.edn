@@ -1,0 +1,13 @@
+{:visible
+ {"a" ["e1" "e2" "e5"],
+  "a+global" ["e1" "e2" "e4" "e5"],
+  "all" ["e1" "e2" "e3" "e4" "e5"],
+  "none" ["e2"]},
+ :neighborhood
+ {"ghost" [],
+  "n0-depth0" [],
+  "n1-depth1-all" ["e1" "e2" "e4"],
+  "n1-depth2-a" ["e1" "e2"],
+  "n1-depth2-all" ["e1" "e2" "e3" "e4"]},
+ :occurrences {"n0" 1, "n1" 3, "n2" 2, "n3" 3, "n4" 1},
+ :eid-count 5}

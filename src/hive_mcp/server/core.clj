@@ -406,6 +406,10 @@
         sys (start! :profile profile)]
     (block-until-shutdown! sys)))
 
+;; CLI strings in. It blocks until shutdown and then System/exit, so no value
+;; ever comes back; :nil is the output type of a call that does not return.
+(m/=> -main [:=> [:cat [:* :string]] :nil])
+
 (comment
   ;; For REPL development — use dev/user.clj (go)/(halt)/(reset) instead
   (start!)

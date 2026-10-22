@@ -165,18 +165,6 @@
 
 (deftest-contract-coverage swarm-bootstrap-contracts-gate
   {:paths ["src/hive_mcp/swarm/bootstrap"]
-   :exempt
-   {'hive-mcp.swarm.bootstrap.datahike-driver/create-database
-    "Variadic passthrough to datahike.api/create-database through the hive-agent shim; its argument and return are datahike's own (config map, store-dependent result), owned by datahike, not by this facade."
-    'hive-mcp.swarm.bootstrap.datahike-driver/connect
-    "Variadic passthrough to datahike.api/connect; returns a datahike Connection object with no stable data shape."
-    'hive-mcp.swarm.bootstrap.datahike-driver/transact
-    "Variadic passthrough to datahike.api/transact (conn plus tx-data or an arg map); the tx-report and the tx-data grammar are datahike's."
-    'hive-mcp.swarm.bootstrap.datahike-driver/q
-    "Variadic passthrough to datahike.api/q: a Datalog query plus any inputs, answering whatever the :find spec projects. The domain is genuinely open."
-    'hive-mcp.swarm.bootstrap.datahike-driver/pull
-    "Variadic passthrough to datahike.api/pull; the result shape is the caller's pull pattern."
-    'hive-mcp.swarm.bootstrap.datahike-driver/db
-    "Variadic passthrough to datahike.api/db; returns a datahike DB value (a Java object with no stable data shape)."
-    'hive-mcp.swarm.bootstrap.datahike-driver/release
-    "Variadic passthrough to datahike.api/release over a Connection object; returns datahike's own release result."}})
+   ;; The driver passthroughs transcribe datahike.api's published signatures
+   ;; (datahike.api.specification), so none is exempt.
+   :exempt {}})

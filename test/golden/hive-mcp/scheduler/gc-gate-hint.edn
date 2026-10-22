@@ -1,0 +1,55 @@
+{"compact"
+ {:out
+  {:gc? false,
+   :reason :not-fragmented,
+   :before-mb 1024,
+   :used-mb 1024,
+   :committed-mb 2048,
+   :freed-mb 0,
+   :committed-freed-mb 0,
+   :still-fragmented? false},
+  :gcs 0},
+ "fragmented"
+ {:out
+  {:gc? true,
+   :reason :fragmented,
+   :before-mb 1024,
+   :used-mb 512,
+   :committed-mb 3072,
+   :freed-mb 512,
+   :committed-freed-mb 3072,
+   :still-fragmented? true},
+  :gcs 1},
+ "gc-fails"
+ {:out
+  {:gc? false,
+   :reason :gc-failed,
+   :before-mb 1024,
+   :used-mb 1024,
+   :committed-mb 6144,
+   :freed-mb 0,
+   :committed-freed-mb 0,
+   :still-fragmented? true},
+  :gcs 0},
+ "probe-fails"
+ {:out
+  {:gc? false,
+   :reason :probe-failed,
+   :before-mb 0,
+   :used-mb 0,
+   :committed-mb 0,
+   :freed-mb 0,
+   :committed-freed-mb 0,
+   :still-fragmented? false},
+  :gcs 0},
+ "zero-used"
+ {:out
+  {:gc? false,
+   :reason :not-fragmented,
+   :before-mb 0,
+   :used-mb 0,
+   :committed-mb 6144,
+   :freed-mb 0,
+   :committed-freed-mb 0,
+   :still-fragmented? false},
+  :gcs 0}}

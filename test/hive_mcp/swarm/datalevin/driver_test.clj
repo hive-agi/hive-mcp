@@ -4,8 +4,7 @@
    library, this tree) a call raises addon-missing naming the var it reached
    for, and a delegated load-time value is nil; the golden, the property and
    the mutants pin that. The behaviour itself runs in test-swarm/.
-   q is exempt from the contract gate (its result is shaped by the query), so
-   it sits outside the delegation table."
+   Every contracted fn, q included, is in the delegation table."
   (:require [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.properties :as prop]
             [hive-mcp.swarm.datalevin.driver]
