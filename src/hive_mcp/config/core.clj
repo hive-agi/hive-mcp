@@ -55,21 +55,60 @@
 ;; Loading (Orchestrator)
 ;; =============================================================================
 
+(defn boot-write-plan
+  "What a boot load may write to the config file at `path`, given whether the
+   file exists and what reading it returned.
+
+     :generate   - no file: write the defaults (or a migrated legacy config)
+     :merge-back - the file read as a map: write it back deep-merged over the
+                   defaults, so new default keys appear in the file
+     :refuse     - the file exists but did not read as a map (a parse error,
+                   an empty or half-written file): write NOTHING
+
+   A file that exists is the operator's config. Defaults never replace it."
+  [exists? read-result]
+  (cond
+    (not exists?)                                            :generate
+    (and (result/ok? read-result) (map? (:ok read-result)))  :merge-back
+    :else                                                    :refuse))
+
+(m/=> boot-write-plan [:=> [:cat :boolean :any] [:enum :generate :merge-back :refuse]])
+
+(defn- read-existing-config
+  "Read the config at `path`. When the file exists but does not read as a map,
+   retry a few times: a writer replacing the file can leave it briefly empty or
+   half written, and that moment must not count as \"no config\"."
+  [path]
+  (loop [attempt 1]
+    (let [r (config-io/read-config-file path)]
+      (if (or (and (result/ok? r) (map? (:ok r)))
+              (not (.exists (java.io.File. ^String path)))
+              (>= attempt 3))
+        r
+        (do (Thread/sleep 150)
+            (recur (inc attempt)))))))
+
 (defn load-global-config!
   "Load global config from disk, deep-merge with default-config, cache in atom.
-   Orchestrates: io/read → merge/deep-merge → atom reset → io/write."
+   Orchestrates: io/read → merge/deep-merge → atom reset → io/write.
+   An existing file that cannot be read is never overwritten (see
+   `boot-write-plan`)."
   ([]
    (load-global-config! config-io/config-path))
   ([path]
-   (let [;; Read config file, returning nil on error or missing
-         read-result (config-io/read-config-file path)
-         user-config (if (result/ok? read-result)
+   (let [exists?     (.exists (java.io.File. ^String path))
+         read-result (read-existing-config path)
+         user-config (if (and (result/ok? read-result) (map? (:ok read-result)))
                        (:ok read-result)
-                       (do (log/warn "Failed reading config:" read-result)
-                           nil))
-         ;; Try legacy path fallback
+                       (when exists?
+                         (log/error "config.edn exists but did not read as a map;"
+                                    "running on built-in defaults IN MEMORY ONLY and leaving the file untouched."
+                                    "Fix the file and reload (project config reload)."
+                                    {:path path :read read-result})
+                         nil))
+         ;; Try legacy path fallback, only when there is no config file at all
          user-config (or user-config
-                         (when (= path config-io/config-path)
+                         (when (and (not exists?) (= path config-io/config-path))
                            (let [legacy-result (config-io/read-config-file config-io/legacy-config-path)]
                              (when (and (result/ok? legacy-result) (:ok legacy-result))
                                (log/info "Migrating config: found legacy" config-io/legacy-config-path
@@ -95,16 +134,17 @@
          {:keys [secrets sources]} (secrets/resolve-all-secrets (:secrets merged))
          merged (assoc merged :secrets secrets)]
      (reset! global-config merged)
-     ;; Persist merged config to disk (creates if missing, updates if incomplete)
-     ;; NOTE: we persist the pre-secret-resolution config so pass: refs and nils
-     ;; stay in the file — runtime secrets live only in the atom.
+     ;; Persist the pre-secret-resolution config so pass: refs and nils stay in
+     ;; the file; runtime secrets live only in the atom.
      (when (= path config-io/config-path)
-       (let [disk-config (if user-config
-                           (merge/deep-merge merge/default-config user-config)
-                           merge/default-config)]
-         (config-io/write-config! disk-config path))
-       (when-not user-config
-         (log/info "Auto-generated config.edn with defaults at" path)))
+       (case (boot-write-plan exists? read-result)
+         :generate   (do (config-io/write-config! (if user-config
+                                                    (merge/deep-merge merge/default-config user-config)
+                                                    merge/default-config)
+                                                  path)
+                         (log/info "Auto-generated config.edn at" path))
+         :merge-back (config-io/write-config! (merge/deep-merge merge/default-config user-config) path)
+         :refuse     nil))
      (log/info "Global config loaded from" path
                (if user-config "(user config found, deep-merged with defaults)" "(using defaults)"))
      (secrets/log-secret-sources! sources)

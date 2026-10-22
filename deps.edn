@@ -411,7 +411,7 @@
    ;; plain `clojure -M:test` is safe on a shared host. Every :test* alias
    ;; carries the same cap so any composition keeps it; a -J-Xmx on the
    ;; command line comes after alias :jvm-opts and still overrides it.
-   :jvm-opts ["-Xmx2g" "-Dhive.kg.backend=datascript"]
+   :jvm-opts ["-Xmx2g" "-Dhive.test=true" "-Dhive.mcp.config=target/test-config/config.edn" "-Dhive.kg.backend=datascript"]
    :main-opts ["-m" "cognitect.test-runner"
                "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]}
 
@@ -432,7 +432,7 @@
                 ;; only declared on :test. This is the CI alias; it is the one that
                 ;; must not be able to fail at load.
                 io.github.hive-agi/hive-schemas {:mvn/version "0.1.40"}}
-   :jvm-opts ["-Xmx2g" "-Dhive.kg.backend=datascript"]
+   :jvm-opts ["-Xmx2g" "-Dhive.test=true" "-Dhive.mcp.config=target/test-config/config.edn" "-Dhive.kg.backend=datascript"]
    :main-opts ["-m" "cognitect.test-runner" "-e" ":integration"
                "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]
    :exec-fn cognitect.test-runner.api/test
@@ -447,7 +447,7 @@
   ;;   clojure -M:test-unit:test-focus -n hive-mcp.foo-test
   ;;   clojure -M:test:test-swarm:test-focus -d test-swarm -n hive-mcp.bar-test
   :test-focus
-  {:jvm-opts ["-Xmx2g"]
+  {:jvm-opts ["-Xmx2g" "-Dhive.test=true" "-Dhive.mcp.config=target/test-config/config.edn"]
    :main-opts ["-m" "cognitect.test-runner" "-e" ":integration"]}
 
   ;; Run only integration tests (requires Emacs with emacs-mcp loaded)
@@ -460,7 +460,7 @@
                 ;; Same reason as :test-unit — this alias also puts test/ on the
                 ;; path, so it loads every test ns before selecting :integration.
                 io.github.hive-agi/hive-schemas {:mvn/version "0.1.40"}}
-   :jvm-opts ["-Xmx2g" "-Dhive.kg.backend=datascript"]
+   :jvm-opts ["-Xmx2g" "-Dhive.test=true" "-Dhive.mcp.config=target/test-config/config.edn" "-Dhive.kg.backend=datascript"]
    :main-opts ["-m" "cognitect.test-runner" "-i" ":integration"
                "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]
    :exec-fn cognitect.test-runner.api/test
@@ -491,7 +491,7 @@
   ;; Drivers (datalevin/datahike) + the KG-store siblings are NOT declared here
   ;; — the user's local.deps.edn brings whichever backend they run against.
   :test-backends
-  {:jvm-opts ["-Xmx2g"]
+  {:jvm-opts ["-Xmx2g" "-Dhive.test=true" "-Dhive.mcp.config=target/test-config/config.edn"]
    :main-opts ["-m" "cognitect.test-runner"
                "-r" "^hive-mcp\\.backends\\..*-test$"]}
 
@@ -508,7 +508,7 @@
   ;; supplies its own main and is unaffected.
   :test-swarm
   {:extra-paths ["test-swarm"]
-   :jvm-opts ["-Xmx2g"]
+   :jvm-opts ["-Xmx2g" "-Dhive.test=true" "-Dhive.mcp.config=target/test-config/config.edn"]
    :main-opts ["-m" "cognitect.test-runner"
                "-d" "test-swarm"
                "-r" "^hive-mcp\\..*-test$"]}
