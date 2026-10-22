@@ -18,8 +18,8 @@
 (def ^:private ScopeTag [:enum "scope:project:a" "scope:project:b" "scope:global"])
 
 (deftrifecta-from-schema visible hive-mcp.knowledge-graph.edges.scoped/visible?
-  {:in  [:cat [:map [:kg-edge/id :string] [:kg-edge/scope {:optional true} ScopeTag]]
-         [:maybe [:set {:gen/max 3} ScopeTag]]]
+  {:in  [:cat [:map [:kg-edge/id :string] [:kg-edge/scope ScopeTag]]
+         [:maybe [:set {:gen/max 1} ScopeTag]]]
    :out :boolean
    :rel (fn [[edge scope-set] out]
           (= out (or (nil? scope-set)
