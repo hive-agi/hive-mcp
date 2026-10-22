@@ -2,11 +2,15 @@
  {:out
   {:success true,
    :waves {},
+   :committed [],
+   :failed [],
+   :partial? false,
    :summary {:total 0, :success 0, :failed 0, :waves 0}},
   :in []},
  :case-1
  {:out
   {:success false,
+   :plan-rejected? true,
    :errors ["Operation 'c' depends on non-existent 'd'"],
    :summary {:total 2, :success 0, :failed 0, :waves 0}},
   :in
@@ -41,6 +45,9 @@
        :success true,
        :result {:echo nil},
        :data {:echo nil}}]}},
+   :committed ["c" "d" "a"],
+   :failed [],
+   :partial? false,
    :summary {:total 3, :success 3, :failed 0, :waves 2}},
   :in
   [{:id "a", :tool "kanban", :depends_on ["c"]}
@@ -49,6 +56,7 @@
  :case-3
  {:out
   {:success false,
+   :plan-rejected? true,
    :errors
    ["Operation 'b' depends on non-existent 'a'"
     "Operation 'd' depends on itself"],
@@ -60,6 +68,7 @@
  :case-4
  {:out
   {:success false,
+   :plan-rejected? true,
    :errors
    ["Operation 'd' depends on itself"
     "Operation 'd' depends on non-existent 'b'"],
@@ -78,6 +87,9 @@
        :success true,
        :result {:echo nil},
        :data {:echo nil}}]}},
+   :committed ["d"],
+   :failed [],
+   :partial? false,
    :summary {:total 1, :success 1, :failed 0, :waves 1}},
   :in [{:id "d", :tool "memory"}]},
  :case-6
@@ -101,6 +113,9 @@
        :success true,
        :result {:echo nil},
        :data {:echo nil}}]}},
+   :committed ["c" "d"],
+   :failed [],
+   :partial? false,
    :summary {:total 2, :success 2, :failed 0, :waves 1}},
   :in
   [{:id "c", :tool "kanban", :command "add", :depends_on []}
@@ -118,5 +133,8 @@
        :success true,
        :result {:echo "query"},
        :data {:echo "query"}}]}},
+   :committed ["c"],
+   :failed [],
+   :partial? false,
    :summary {:total 1, :success 1, :failed 0, :waves 1}},
   :in [{:id "c", :tool "kg", :command "query"}]}}

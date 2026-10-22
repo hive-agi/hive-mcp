@@ -29,7 +29,7 @@
             (nil? out)))
    :classify (fn [[args] _] (contains? args :embedder))
    :classify-domain #{true false}
-   :num-tests 100})
+   :num-tests 150 :classify-floor 12})
 
 (deftest memory-add-with-embedder-is-an-mcp-error
   (let [out (crud/handle-add {:type "note" :content "x" :embedder "noop"})]

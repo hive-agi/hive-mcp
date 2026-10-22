@@ -26,6 +26,19 @@
 ;; Co-Access Recording
 ;; =============================================================================
 
+(defn- existing-co-access-edges
+  "Every :co-accessed edge among `ids`, keyed by [from to].
+   One `find-edges-between` read in place of a `find-edge` per pair."
+  [ids]
+  (reduce (fn [acc edge]
+            (let [k [(:kg-edge/from edge) (:kg-edge/to edge)]]
+              (cond-> acc
+                (and (= :co-accessed (:kg-edge/relation edge))
+                     (not (contains? acc k)))
+                (assoc k edge))))
+          {}
+          (queries/find-edges-between (set ids))))
+
 (defn record-co-access!
   "Record co-access pattern between a batch of memory entries.
    Creates :co-accessed edges between pairs that were recalled together.
@@ -46,10 +59,11 @@
                           j (range (inc i) (count ids))]
                       [(nth ids i) (nth ids j)])
              ;; Limit pairs to avoid quadratic explosion on large batches
-              limited-pairs (take 50 pairs)]
+              limited-pairs (take 50 pairs)
+              existing-by-pair (existing-co-access-edges ids)]
           (count
            (for [[from-id to-id] limited-pairs]
-             (if-let [existing (queries/find-edge from-id to-id :co-accessed)]
+             (if-let [existing (get existing-by-pair [from-id to-id])]
               ;; Reinforce existing co-access edge
                (do (write/increment-confidence! (:kg-edge/id existing) 0.1)
                    (write/verify-edge! (:kg-edge/id existing))

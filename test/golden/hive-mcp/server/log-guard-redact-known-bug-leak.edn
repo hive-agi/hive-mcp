@@ -1,0 +1,6 @@
+{"colon-space"
+ {:in "api_key=hunter2 and token: kept-because-separate",
+  :out "[redacted] and token: kept-because-separate"},
+ "equals-space"
+ {:in "token=abc password=  sk-short",
+  :out "[redacted] password= sk-short"}}

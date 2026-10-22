@@ -15,7 +15,7 @@
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
-;; SPDX-License-Identifier: MIT
+;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (def ^:private opts
   "Index policy with the full floor policy pinned, so the test never reads

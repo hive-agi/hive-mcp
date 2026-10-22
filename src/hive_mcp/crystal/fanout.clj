@@ -235,37 +235,62 @@
    facts. Empty slices are skipped; a session that produced no harvest at
    all returns `[]`.
 
+   `synth-fn` (default: the registered `:cc/summarize-progress` synthesiser)
+   maps one legacy-harvested map to an entry or nil; `mechanical-wraps`
+   passes the never-delegated mechanical summariser.
+
    Step-6: every returned `:entry` carries an explicit scope tag prepended
    to its `:tags`. Step-8 wires this output into `handle-native-wrap` for
    the IMemoryStore add fan-out."
-  [hbs]
-  (let [meta-keys (select-keys hbs [:session :directory :agent-id])
-        meta-with-scalars (merge meta-keys
+  ([hbs] (synthesize-wraps hbs synthesise-one))
+  ([hbs synth-fn]
+   (let [meta-keys (select-keys hbs [:session :directory :agent-id])
+         meta-with-scalars (merge meta-keys
                                   (select-keys (:umbrella hbs)
                                                [:session-timing :session-temporal]))
-        per-scope-results
-        (for [pid   (sort (bs/scope-pids hbs))
-              :let  [slice (get-in hbs [:by-scope pid])]
-              :when (non-empty-slice? slice)
-              :let  [harvested (slice->harvested pid slice meta-with-scalars)
-                     entry     (synthesise-one harvested)]
-              :when entry]
-          {:pid pid :entry (with-scope-tag entry pid)})
+         per-scope-results
+         (doall
+          (for [pid   (sort (bs/scope-pids hbs))
+                :let  [slice (get-in hbs [:by-scope pid])]
+                :when (non-empty-slice? slice)
+                :let  [harvested (slice->harvested pid slice meta-with-scalars)
+                       entry     (synth-fn harvested)]
+                :when entry]
+            {:pid pid :entry (with-scope-tag entry pid)}))
 
-        umbrella-result
-        (when (non-empty-umbrella? hbs)
-          (let [harvested (umbrella->harvested hbs meta-with-scalars)
-                entry     (synthesise-one harvested)]
-            (when entry
-              {:pid bs/umbrella-sentinel
-               :entry (with-scope-tag entry bs/umbrella-sentinel)})))]
+         umbrella-result
+         (when (non-empty-umbrella? hbs)
+           (let [harvested (umbrella->harvested hbs meta-with-scalars)
+                 entry     (synth-fn harvested)]
+             (when entry
+               {:pid bs/umbrella-sentinel
+                :entry (with-scope-tag entry bs/umbrella-sentinel)})))]
 
-    (let [results (vec (cond-> per-scope-results
-                         umbrella-result (concat [umbrella-result])))]
-      (log/info "synthesize-wraps:"
-                "scopes-emitted:" (count per-scope-results)
-                "umbrella?" (some? umbrella-result)
-                "total:" (count results))
-      results)))
+     (let [results (vec (cond-> per-scope-results
+                          umbrella-result (concat [umbrella-result])))]
+       (log/info "synthesize-wraps:"
+                 "scopes-emitted:" (count per-scope-results)
+                 "umbrella?" (some? umbrella-result)
+                 "total:" (count results))
+       results))))
 
-(m/=> synthesize-wraps [:=> [:cat bs/HarvestByScope] [:vector [:map [:pid [:or [:= :umbrella] :string]] [:entry [:map [:tags [:vector :string]]]]]]])
+(defn- mechanical-one
+  "The never-delegated mechanical summary for one legacy-harvested map."
+  [harvested]
+  (core/mechanical-progress-summary (:progress-notes harvested)
+                                    (:git-commits harvested)
+                                    harvested))
+
+(defn mechanical-wraps
+  "`synthesize-wraps` with the mechanical summariser: no network, no LLM.
+   Same pids and scope tags as the synthesised fan-out, each entry tagged
+   `wrap-mechanical`."
+  [hbs]
+  (mapv #(update-in % [:entry :tags] conj "wrap-mechanical")
+        (synthesize-wraps hbs mechanical-one)))
+
+(m/=> mechanical-wraps [:=> [:cat bs/HarvestByScope] [:vector [:map [:pid [:or [:= :umbrella] :string]] [:entry [:map [:tags [:vector :string]]]]]]])
+
+(m/=> synthesize-wraps [:function
+                        [:=> [:cat bs/HarvestByScope] [:vector [:map [:pid [:or [:= :umbrella] :string]] [:entry [:map [:tags [:vector :string]]]]]]]
+                        [:=> [:cat bs/HarvestByScope ifn?] [:vector [:map [:pid [:or [:= :umbrella] :string]] [:entry [:map [:tags [:vector :string]]]]]]]])

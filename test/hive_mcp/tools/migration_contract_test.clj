@@ -24,7 +24,7 @@
             (= (mig/cmd-help {}) out)))
    :classify (fn [_ out] (if (contains? out :adapters) :adapters :help))
    :classify-domain #{:adapters :help}
-   :num-tests 100})
+   :num-tests 150 :classify-floor 13})
 
 (defn- refused
   "Run f; a throw (malli :invalid-input or the fn's own ex-info) is :refused."

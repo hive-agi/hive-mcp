@@ -11,7 +11,6 @@
             [hive-spi.swarm.guards :as guards]
             [hive-mcp.server.registration]              ; side-effect: tools/list defmethod
             [hive-mcp.extensions.registry :as ext]
-            [hive-mcp.addons.core :as addons]
             [taoensso.timbre :as log]
             [clojure.spec.alpha :as s]
             [hive-mcp.tools.composite :as composite]
@@ -142,19 +141,11 @@
 (m/=> make-tool [:=> [:cat ToolDefIn] MadeTool])
 
 (defn collect-surface-inputs
-  "COLLECT: read every source of the advertised surface once, into a
-   `tools/SurfaceInputs` value. The only impure step of the table; everything
-   after it is `tools/advertised-tools`.
-
-   A child ling sees the same layers with `tools/child-excluded-tool-names`
-   dropped, whichever layer would have supplied them."
+  "COLLECT: the `tools/SurfaceInputs` of the advertised surface. Delegates to
+   `tools/collect-surface-inputs`, which owns it so every surface reader
+   (this server, external loaders, the dispatch coherence check) shares one."
   []
-  {:base     (tools/core-tools)
-   :dynamic  (vec (ext/get-registered-tools))
-   :addon    (vec (:installed (addons/resolve-addon-tools)))
-   :absorbed (tools/absorbed-root-names)
-   :excluded (if (guards/child-ling?) tools/child-excluded-tool-names #{})
-   :visible  (tools/visible-root-names)})
+  (tools/collect-surface-inputs))
 
 (m/=> collect-surface-inputs [:=> [:cat] [:map [:base [:sequential :map]] [:dynamic [:vector :map]]
                                           [:addon [:vector :map]] [:absorbed [:set :string]]
@@ -162,9 +153,11 @@
 
 (defn advertised-tool-defs
   "The advertised tool defs (raw handlers), deduped and gated: the one surface
-   boot, every refresh, every transport and agent delegation agree on."
+   boot, every refresh, every transport and agent delegation agree on. It is
+   `tools/advertised-tool-defs`, the same surface `tools/get-advertised-tools`
+   is derived from."
   []
-  (tools/advertised-tools (collect-surface-inputs)))
+  (tools/advertised-tool-defs))
 
 (m/=> advertised-tool-defs [:=> [:cat] [:sequential [:map [:name :string]]]])
 

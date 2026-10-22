@@ -462,35 +462,67 @@
 ;; Pipeline
 ;; =============================================================================
 
+(defn- op-plan-errors
+  "Per-op plan errors from the injected VALIDATE-OP, each naming the op's id
+   and index. VALIDATE-OP takes one normalized op and answers a seq of message
+   strings, empty when the op is acceptable. A validator that throws rejects
+   that op instead of letting it run unchecked."
+  [validate-op ops]
+  (if-not (ifn? validate-op)
+    []
+    (into []
+          (comp (map-indexed
+                 (fn [i op]
+                   (let [msgs (try (seq (validate-op op))
+                                   (catch Exception e
+                                     [(str "param validation crashed: " (ex-message e))]))]
+                     (map #(str "Operation '" (:id op) "' (index " i "): " %) msgs))))
+                cat)
+          ops)))
+
 (defn- compile-batch
-  "Normalize → resolve node refs → validate → assign-waves. Returns Result.
+  "Normalize → resolve node refs → validate → per-op param check →
+   assign-waves. Returns Result.
    Ok:  {:waved-ops [...] :wave-groups {1 [...] 2 [...]}}
-   Err: :multi/validation-failed with :errors and :total."
-  [ops]
-  (let [normalized (mapv normalize-op ops)
-        ;; A node-id param (:from/:to/...) naming a sibling op is sugar for a
-        ;; cross-op ref. Resolved HERE rather than in the DSL compiler so both
-        ;; the `:dsl` and `:operations` surfaces get it. Idempotent: an already
-        ;; canonical `$ref:` renders unchanged, so DSL-compiled ops pass through.
-        resolved   (delegate-or-noop :dv/compile-ops normalized [normalized])
-        dangling   (filterv :dangling resolved)]
-    (if (seq dangling)
-      ;; A `$`-prefixed value naming no declared op cannot resolve. Refuse the
-      ;; batch instead of letting the placeholder be stored as a literal node id.
-      (result/err :multi/validation-failed
-                  {:errors (mapv (fn [op]
-                                   (str "Operation " (:id op)
-                                        " references undeclared op ids: "
-                                        (pr-str (:dangling op))))
-                                 dangling)
-                   :total  (count ops)})
-      (let [validation (validate-ops resolved)]
-        (if-not (:valid validation)
-          (result/err :multi/validation-failed
-                      {:errors (:errors validation) :total (count ops)})
-          (let [waved (assign-waves resolved)]
-            (result/ok {:waved-ops   waved
-                        :wave-groups (group-by :wave waved)})))))))
+   Err: :multi/validation-failed with :errors and :total.
+
+   VALIDATE-OP (optional) is applied to EVERY op before any op runs, so one op
+   with a bad param rejects the whole plan and nothing executes."
+  ([ops] (compile-batch ops nil))
+  ([ops validate-op]
+   (let [normalized (mapv normalize-op ops)
+         ;; A node-id param (:from/:to/...) naming a sibling op is sugar for a
+         ;; cross-op ref. Resolved HERE rather than in the DSL compiler so both
+         ;; the `:dsl` and `:operations` surfaces get it. Idempotent: an already
+         ;; canonical `$ref:` renders unchanged, so DSL-compiled ops pass through.
+         resolved   (delegate-or-noop :dv/compile-ops normalized [normalized])
+         dangling   (filterv :dangling resolved)]
+     (if (seq dangling)
+       ;; A `$`-prefixed value naming no declared op cannot resolve. Refuse the
+       ;; batch instead of letting the placeholder be stored as a literal node id.
+       (result/err :multi/validation-failed
+                   {:errors (mapv (fn [op]
+                                    (str "Operation " (:id op)
+                                         " references undeclared op ids: "
+                                         (pr-str (:dangling op))))
+                                  dangling)
+                    :total  (count ops)})
+       (let [validation  (validate-ops resolved)
+             plan-errors (when (:valid validation)
+                           (op-plan-errors validate-op resolved))]
+         (cond
+           (not (:valid validation))
+           (result/err :multi/validation-failed
+                       {:errors (:errors validation) :total (count ops)})
+
+           (seq plan-errors)
+           (result/err :multi/validation-failed
+                       {:errors plan-errors :total (count ops)})
+
+           :else
+           (let [waved (assign-waves resolved)]
+             (result/ok {:waved-ops   waved
+                         :wave-groups (group-by :wave waved)}))))))))
 
 (defn- build-dry-run-response
   "Build dry-run plan response from wave groups."
@@ -508,7 +540,12 @@
   [_fx-id _fx-data])
 
 (defn- execute-all-waves
-  "Execute all waves sequentially, collect results, emit FX via injected fn."
+  "Execute all waves sequentially, collect results, emit FX via injected fn.
+
+   The run states which ops committed and which did not: `:committed` lists
+   the ids of ops that succeeded (their side effects persist), `:failed` the
+   ids of ops that failed or were skipped, both in plan order. `:partial?` is
+   true when both are non-empty, i.e. the batch was half-applied."
   [resolve-handler emit-fx wave-groups total-count]
   (let [wave-count  (count wave-groups)
         all-results (atom {})
@@ -541,43 +578,54 @@
                     :wave-num wave-num}))))
 
     (let [results       (vals @all-results)
+          ordered       (mapcat (comp :results val) @wave-log)
+          committed     (into [] (comp (filter :success) (map :id)) ordered)
+          failed        (into [] (comp (remove :success) (map :id)) ordered)
           success-cnt   (count (filter :success results))
           failed-cnt    (count (remove :success results))
           timed-out-cnt (count (filter :timed-out results))]
-      {:success (zero? failed-cnt)
-       :waves   @wave-log
-       :summary (cond-> {:total   total-count
-                         :success success-cnt
-                         :failed  failed-cnt
-                         :waves   wave-count}
-                  ;; timeouts surfaced distinctly
-                  (pos? timed-out-cnt) (assoc :timed-out timed-out-cnt))})))
+      {:success   (zero? failed-cnt)
+       :waves     @wave-log
+       :committed committed
+       :failed    failed
+       :partial?  (boolean (and (seq committed) (seq failed)))
+       :summary   (cond-> {:total   total-count
+                           :success success-cnt
+                           :failed  failed-cnt
+                           :waves   wave-count}
+                    ;; timeouts surfaced distinctly
+                    (pos? timed-out-cnt) (assoc :timed-out timed-out-cnt))})))
 
 (defn run-operations
   "Execute a vector of operations with dependency ordering.
 
-   Pipeline: normalize → validate → assign-waves → execute-per-wave
+   Pipeline: normalize → validate → param check → assign-waves → execute-per-wave
 
    Required options:
      :resolve-handler  (fn [tool-name] handler-fn-or-nil)
 
    Optional options:
-     :dry-run?  bool — validate and plan only, don't execute
-     :emit-fx   (fn [fx-id fx-data]) — observability hook (default: noop)
+     :dry-run?     bool — validate and plan only, don't execute
+     :emit-fx      (fn [fx-id fx-data]) — observability hook (default: noop)
+     :validate-op  (fn [normalized-op] [error-string ...]) — per-op param
+                   check run on EVERY op before ANY op executes; a non-empty
+                   answer for one op rejects the whole plan
 
    Returns:
      {:success bool
       :waves   {1 {:ops [...] :results [...]} ...}
       :summary {:total N :success M :failed F :waves W}
-      :errors  [...] (validation errors if any)}"
-  [ops {:keys [resolve-handler dry-run? emit-fx]
+      :committed [op-id ...] :failed [op-id ...] :partial? bool  (executed runs)
+      :errors  [...] :plan-rejected? true  (validation errors; nothing ran)}"
+  [ops {:keys [resolve-handler dry-run? emit-fx validate-op]
         :or   {emit-fx noop-emit-fx}}]
   (assert (ifn? resolve-handler) "run-operations requires :resolve-handler fn")
-  (let [compiled (compile-batch ops)]
+  (let [compiled (compile-batch ops validate-op)]
     (if (result/err? compiled)
-      {:success false
-       :errors  (:errors compiled)
-       :summary {:total (or (:total compiled) (count ops)) :success 0 :failed 0 :waves 0}}
+      {:success        false
+       :plan-rejected? true
+       :errors         (:errors compiled)
+       :summary        {:total (or (:total compiled) (count ops)) :success 0 :failed 0 :waves 0}}
       (let [{:keys [wave-groups]} (:ok compiled)]
         (if dry-run?
           (build-dry-run-response wave-groups (count ops))
@@ -734,7 +782,9 @@
   [:map
    [:resolve-handler ResolveHandler]
    [:dry-run? {:optional true} [:maybe :boolean]]
-   [:emit-fx {:optional true} [:maybe EmitFx]]])
+   [:emit-fx {:optional true} [:maybe EmitFx]]
+   [:validate-op {:optional true}
+    [:maybe [:fn {:gen/elements [(constantly [])]} ifn?]]]])
 
 (def Summary
   "The counters of a run."
@@ -753,6 +803,10 @@
    [:summary Summary]
    [:waves {:optional true} :map]
    [:errors {:optional true} [:sequential :string]]
+   [:plan-rejected? {:optional true} :boolean]
+   [:committed {:optional true} [:vector :any]]
+   [:failed {:optional true} [:vector :any]]
+   [:partial? {:optional true} :boolean]
    [:dry-run {:optional true} :boolean]])
 
 (def RunnerConfig

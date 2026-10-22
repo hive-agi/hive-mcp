@@ -1,6 +1,9 @@
 {:empty
  {:success true,
   :waves {},
+  :committed [],
+  :failed [],
+  :partial? false,
   :summary {:total 0, :success 0, :failed 0, :waves 0}},
  :unknown
  {:success false,
@@ -14,4 +17,7 @@
       :success false,
       :error "Tool not found: no-such",
       :data nil}]}},
+  :committed [],
+  :failed ["a"],
+  :partial? false,
   :summary {:total 1, :success 0, :failed 1, :waves 1}}}

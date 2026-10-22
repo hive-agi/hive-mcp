@@ -20,6 +20,46 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
+(def ^:private payload-keys
+  "Payload params a caller may nest under `data` by mistake."
+  [:task :message])
+
+(defn- present-text
+  "`v` when it is a non-blank string, else nil."
+  [v]
+  (when (and (string? v) (not (str/blank? v))) v))
+
+(defn lift-nested-payload
+  "Normalize a shout's payload params. `task` and `message` are top-level
+   params; a caller that nests them under `data` (keyword or string key) has
+   them lifted out. A non-blank top-level value always wins, and the nested
+   copy is removed from `data` either way so it cannot override it.
+   -> {:task :message :data :lifted [\"task\"? \"message\"?]}"
+  [{:keys [task message data]}]
+  (let [m? (map? data)
+        nested (fn [k] (when m? (present-text (or (get data k) (get data (name k))))))
+        lifts (filterv (fn [[k top]] (and (nil? (present-text top)) (nested k)))
+                       [[:task task] [:message message]])
+        lifted-keys (set (map first lifts))
+        value (fn [k top] (if (contains? lifted-keys k) (nested k) top))
+        strip (fn [d k] (if (or (contains? lifted-keys k)
+                                (and (present-text (get {:task task :message message} k))
+                                     (nested k)))
+                          (dissoc d k (name k))
+                          d))]
+    {:task (value :task task)
+     :message (value :message message)
+     :data (if m? (reduce strip data payload-keys) data)
+     :lifted (mapv (comp name first) lifts)}))
+
+(m/=> lift-nested-payload
+      [:=> [:cat [:map [:task {:optional true} :any] [:message {:optional true} :any] [:data {:optional true} :any]]]
+       [:map [:task :any] [:message :any] [:data :any] [:lifted [:vector :string]]]])
+
+(def empty-payload-error
+  "What a ling reads when its shout carried nothing to send."
+  "Shout NOT sent: empty payload. Pass `message` (and optionally `task`) as TOP-LEVEL params, not only as keys under `data`.")
+
 (def tools
   [{:name "hivemind_shout"
     :description "Send a message into the swarm.
@@ -107,16 +147,21 @@ The env var fallback reads from MCP server process, NOT your ling process!"
                  ;; that asked to broadcast has to learn it was refused, and a
                  ;; sender that opened a conversation needs the id to continue
                  ;; under. Reporting only :success would hide both.
-                 (let [verdict (messaging/shout-with-verdict!
-                                effective-id (keyword event_type)
-                                (merge {:task task :message message :deliberate? true}
-                                       (when to {:to to})
-                                       (when context_id {:context-id context_id})
-                                       (when broadcast {:broadcast? true})
-                                       (when broadcast_reason {:broadcast-reason broadcast_reason})
-                                       (when directory {:directory directory})
-                                       (when project_id {:project-id project_id})
-                                       data))]
+                 (let [{:keys [task message data lifted]}
+                       (lift-nested-payload {:task task :message message :data data})
+                       verdict (if (messaging/empty-shout? (merge (when (map? data) data)
+                                                                  {:task task :message message}))
+                                 {:delivered false :reason :empty-payload}
+                                 (messaging/shout-with-verdict!
+                                  effective-id (keyword event_type)
+                                  (merge {:task task :message message :deliberate? true}
+                                         (when to {:to to})
+                                         (when context_id {:context-id context_id})
+                                         (when broadcast {:broadcast? true})
+                                         (when broadcast_reason {:broadcast-reason broadcast_reason})
+                                         (when directory {:directory directory})
+                                         (when project_id {:project-id project_id})
+                                         data)))]
                    {:type "text"
                     :text (json/write-str
                            (cond-> {:success (boolean (:delivered verdict))
@@ -125,6 +170,12 @@ The env var fallback reads from MCP server process, NOT your ling process!"
                              (:context-id verdict) (assoc :context_id (:context-id verdict))
                              (:to verdict) (assoc :to (:to verdict))
                              (:ref verdict) (assoc :payload_ref (:ref verdict))
+                             (seq lifted)
+                             (assoc :lifted_from_data lifted
+                                    :lifted_note (str "Lifted " (str/join ", " lifted)
+                                                      " out of `data`; pass them as top-level params."))
+                             (= :empty-payload (:reason verdict))
+                             (assoc :error "empty-payload" :hint empty-payload-error)
                              (:to-unresolved verdict)
                              (assoc :to_unresolved (:to-unresolved verdict)
                                     :to_warning (str "No agent named " (:to-unresolved verdict)

@@ -40,7 +40,7 @@
         agent (coverage/coverage {:paths [agent-dir]})]
     (is (= (set top-level-nss) (set (map (comp symbol namespace) (:universe top)))))
     (is (= (set agent-nss) (set (map (comp symbol namespace) (:universe agent)))))
-    (is (= 47 (count (:universe top)) (count (:covered top))) "every top-level public defn")
+    (is (= 49 (count (:universe top)) (count (:covered top))) "every top-level public defn")
     (is (= 43 (count (:universe agent)) (count (:covered agent))) "every tools/agent public defn")))
 
 (deftest every-m25-contract-generates-both-sides

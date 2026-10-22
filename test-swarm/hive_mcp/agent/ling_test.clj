@@ -20,7 +20,7 @@
             [hive-mcp.swarm.datascript.lings :as ds-lings]
             [hive-mcp.swarm.datascript.queries :as ds-queries]
             [hive-mcp.swarm.datascript.connection :as conn]
-            [hive-mcp.emacs.client :as ec]
+            [hive-mcp.emacs-ext.client :as ec]
             [hive-test.isolation :as iso]
             hive-mcp.isolation-methods
             [hive-mcp.test.stub.terminal-addon :as terminal-stub]

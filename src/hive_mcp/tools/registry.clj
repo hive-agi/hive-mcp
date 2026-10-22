@@ -40,7 +40,9 @@
             [hive-mcp.spi.contributions :as contrib]
             [hive-mcp.tools.schema-keys :as schema-keys]
             [hive-mcp.tools.async-params :as async-params]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-spi.swarm.guards :as guards]
+            [hive-mcp.addons.core :as addons]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -250,19 +252,6 @@
     (log/info "Filtered tools for listing:" (count visible-tools))
     visible-tools))
 
-(defn- distinct-by-name
-  "Dedupe a tool seq by :name, keeping the FIRST occurrence and preserving
-   order. Consolidated native roots are listed first, so a native supertool
-   wins over a same-named addon tool (no false-discoverability duplicate)."
-  [tools]
-  (-> (reduce (fn [[seen acc] t]
-                (if (contains? seen (:name t))
-                  [seen acc]
-                  [(conj seen (:name t)) (conj acc t)]))
-              [#{} []]
-              tools)
-      second))
-
 (defn- merge-schema-ext
   "Fold addon-contributed schema extensions into a tool's :inputSchema, mirroring
    server.routes/make-tool. External loaders (bb-mcp) read :inputSchema straight
@@ -314,42 +303,6 @@
                                      (not= "async" (name k))
                                      (subcommand-scoped? v))))
                       props)))))
-
-(defn get-advertised-tools
-  "Canonical MCP surface for external loaders (e.g. the bb-mcp dynamic loader).
-
-   = consolidated native roots ++ addon/extension tools, deduped by name
-   (consolidated wins), with the visibility gate applied, and with addon
-   command contributions (`fold-contributions`), addon schema extensions and
-   the `async` params (`async-params/with-async-params`, after the fold so a
-   contributed default-async verb gets the opt-out wording) merged into each
-   :inputSchema. Non-allowlisted tools are KEPT in the list but marked
-   :deprecated, so a consumer can hide them from tools/list while still
-   dispatching them via tools/call (back-compat).
-
-   Single-sources the gate: build-server-spec, refresh-tools! and any external
-   loader all derive their surface from `apply-visibility-gate`, so the
-   advertised set can no longer drift from the gate config. Schema-ext merge
-   keeps this surface in sync with the stdio/server-context path (make-tool).
-
-   Every property key is provider-legal (`schema-keys/legal-tool`): a client
-   forwards this surface to an LLM provider, which rejects the whole request
-   over one key like `kg-rank?`.
-
-   With opts {:compact-schema? true} each advertised :inputSchema omits its
-   subcommand-scoped params. Opt-in per request; the zero-arity surface and
-   every dispatch path are unchanged."
-  ([] (get-advertised-tools nil))
-  ([{:keys [compact-schema?]}]
-   (let [tools (mapv (comp schema-keys/legal-tool async-params/with-async-params
-                           merge-schema-ext fold-contributions)
-                     (apply-visibility-gate
-                      (distinct-by-name
-                       (concat (filterv :consolidated (get-all-tools :include-deprecated? false))
-                               (ext/get-registered-tools)))))]
-     (if compact-schema?
-       (mapv compact-schema tools)
-       tools))))
 
 ;; =============================================================================
 ;; The advertised surface: ONE pure function (Collect -> PROMOTE)
@@ -417,6 +370,61 @@
            (surface-order inputs winners))
      visible)))
 
+(defn collect-surface-inputs
+  "COLLECT: read every source of the advertised surface once, into a
+   `SurfaceInputs` value. The only impure step of the surface; everything
+   after it is `advertised-tools`.
+
+   The :addon layer is the addon tools the claim rules installed
+   (`addons/resolve-addon-tools`), so a name an addon claims over core is
+   held by the addon through `surface-precedence`.
+
+   A child ling sees the same layers with `child-excluded-tool-names`
+   dropped, whichever layer would have supplied them."
+  []
+  {:base     (core-tools)
+   :dynamic  (vec (ext/get-registered-tools))
+   :addon    (vec (:installed (addons/resolve-addon-tools)))
+   :absorbed (absorbed-root-names)
+   :excluded (if (guards/child-ling?) child-excluded-tool-names #{})
+   :visible  (visible-root-names)})
+
+(defn advertised-tool-defs
+  "The ONE advertised tool surface (raw handlers, claims applied, deduped and
+   gated): boot, every refresh, every transport, agent delegation, external
+   loaders (`get-advertised-tools`) and the dispatch coherence check all read
+   it."
+  []
+  (advertised-tools (collect-surface-inputs)))
+
+(defn get-advertised-tools
+  "Canonical MCP surface for external loaders (e.g. the bb-mcp dynamic loader).
+
+   = `advertised-tool-defs`, the very surface the server spec is built from
+   (addon claims over core names applied), with addon command contributions
+   (`fold-contributions`), addon schema extensions and the `async` params
+   (`async-params/with-async-params`, after the fold so a contributed
+   default-async verb gets the opt-out wording) merged into each
+   :inputSchema. Non-allowlisted tools are KEPT in the list but marked
+   :deprecated, so a consumer can hide them from tools/list while still
+   dispatching them via tools/call (back-compat).
+
+   Every property key is provider-legal (`schema-keys/legal-tool`): a client
+   forwards this surface to an LLM provider, which rejects the whole request
+   over one key like `kg-rank?`.
+
+   With opts {:compact-schema? true} each advertised :inputSchema omits its
+   subcommand-scoped params. Opt-in per request; the zero-arity surface and
+   every dispatch path are unchanged."
+  ([] (get-advertised-tools nil))
+  ([{:keys [compact-schema?]}]
+   (let [tools (mapv (comp schema-keys/legal-tool async-params/with-async-params
+                           merge-schema-ext fold-contributions)
+                     (advertised-tool-defs))]
+     (if compact-schema?
+       (mapv compact-schema tools)
+       tools))))
+
 (def tools
   "Static aggregation (deprecated — use get-filtered-tools)."
   (get-base-tools))
@@ -433,6 +441,10 @@
 (def ToolDefs
   "A realized tool table: always a vector of tool defs."
   [:vector ToolDef])
+
+(m/=> collect-surface-inputs [:=> [:cat] SurfaceInputs])
+
+(m/=> advertised-tool-defs [:=> [:cat] ToolDefs])
 
 (m/=> get-base-tools [:=> [:cat] ToolDefs])
 

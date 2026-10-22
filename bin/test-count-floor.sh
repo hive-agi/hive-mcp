@@ -32,12 +32,12 @@
 # ============================================================================
 set -euo pipefail
 
-# Floor measured on GitHub Actions CI run 37863003751 (staging bf593e10,
-# 2026-10-09): "Ran 6425 tests containing 26361 assertions." The floor sits
+# Floor measured on GitHub Actions CI run 39700157964 (staging 8bddcfe7,
+# 2026-10-22): "Ran 13805 tests containing 53607 assertions." The floor sits
 # slightly below that so deleting a handful of dead tests does not need a
 # floor change, while losing a whole namespace chunk does trip it.
-MIN_TESTS="${MIN_TESTS:-6300}"
-MIN_ASSERTIONS="${MIN_ASSERTIONS:-25800}"
+MIN_TESTS="${MIN_TESTS:-13000}"
+MIN_ASSERTIONS="${MIN_ASSERTIONS:-50000}"
 
 log="${1:?usage: test-count-floor.sh <runner-log> [runner-exit-code]}"
 rc="${2:-0}"
@@ -65,6 +65,12 @@ failures="$(echo "$result" | awk '{print $1}')"
 errors="$(echo "$result" | awk '{print $3}')"
 
 echo "test-count-floor: ran $tests tests / $assertions assertions (floor $MIN_TESTS / $MIN_ASSERTIONS); ${failures:-?} failures, ${errors:-?} errors; runner exit $rc"
+
+# A run that asserted nothing is never green, whatever floor the env sets.
+if [ "$tests" -le 0 ] || [ "$assertions" -le 0 ]; then
+  echo "test-count-floor: EMPTY RUN — the runner ran no tests or no assertions" >&2
+  exit 3
+fi
 
 if [ "$tests" -lt "$MIN_TESTS" ] || [ "$assertions" -lt "$MIN_ASSERTIONS" ]; then
   echo "test-count-floor: COUNT BELOW FLOOR — part of the suite did not run" >&2

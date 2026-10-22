@@ -14,14 +14,30 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
+(defn- shape-bullets
+  "Resize the drawn `bullets` to the chosen arm: none, 1..4, or 5..7."
+  [arm bullets]
+  (let [pool (cycle (or (seq bullets) ["a"]))
+        n    (count bullets)]
+    (case arm
+      :none   []
+      :some   (vec (take (inc (mod n 4)) pool))
+      :capped (vec (take (+ 5 (mod n 3)) pool)))))
+
 (def ^:private Markdown
   ;; A title, an optional paragraph, then 0..7 bullets: reaches the
-  ;; no-summary, no-bullets and capped-at-five arms.
+  ;; no-summary, no-bullets and capped-at-five arms. A uniform bullet vector
+  ;; leaves the empty arm to chance (~1/8 of draws, and test.check's growing
+  ;; sizes push it lower), which starves :no-bullets below the classification
+  ;; floor on some seeds. An arm drawn beside the bullets picks the class
+  ;; deliberately, so each of the three sits near a third of the samples.
   [:string {:gen/schema [:tuple [:enum "# Testing" "# Refactor" ""]
                          [:enum "" "Write the test first." "Keep layers pure."]
-                         [:vector {:max 7} [:enum "a" "b" "c"]]]
-            :gen/fmap (fn [[title para bullets]]
-                        (str/join "\n" (concat [title "" para ""] (map #(str "- " %) bullets))))}])
+                         [:vector {:max 7} [:enum "a" "b" "c"]]
+                         [:enum :none :some :capped]]
+            :gen/fmap (fn [[title para bullets arm]]
+                        (str/join "\n" (concat [title "" para ""]
+                                               (map #(str "- " %) (shape-bullets arm bullets)))))}])
 
 (def ^:private PresetIn
   [:map [:name [:enum "tdd" "clarity"]]
@@ -45,7 +61,7 @@
                                :else :no-bullets))
    :classify-domain #{:capped :some-bullets :no-bullets}
    :golden-path "test/golden/presets/core-extract-preset-core.edn"
-   :num-tests 300})
+   :num-tests 300 :classify-floor 13})
 
 (defn- temp-dir []
   (.toFile (java.nio.file.Files/createTempDirectory

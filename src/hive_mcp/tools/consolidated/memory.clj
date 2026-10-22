@@ -209,7 +209,7 @@
           ;; Nested subdomains resolved lazily via composite/lazy-resolve-handlers
           ;; — drops the static `c-kg`/`c-mig` :requires that previously
           ;; coupled this ns to those consolidators (DIP).
-          :kg         (composite/lazy-resolve-handlers 'hive-mcp.tools.consolidated.kg/handlers)
+          :kg         (composite/lazy-resolve-handlers 'hive-mcp.tools.kg/handlers)
           :migration  (composite/lazy-resolve-handlers 'hive-mcp.tools.consolidated.migration/handlers)}))
 
 (def write-commands
@@ -366,7 +366,7 @@
    namespace by design (DIP; see canonical-handlers)."
   []
   (let [subdomain-props (merge (composite/lazy-resolve-schema-props
-                                'hive-mcp.tools.consolidated.kg/tool-def)
+                                'hive-mcp.tools.kg/tool-def)
                                (composite/lazy-resolve-schema-props
                                 'hive-mcp.tools.consolidated.migration/tool-def))
         base (update-in tool-def [:inputSchema :properties]

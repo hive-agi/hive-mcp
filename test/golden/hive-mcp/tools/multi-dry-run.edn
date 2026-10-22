@@ -13,5 +13,6 @@
   :summary {:total 2, :success 0, :failed 0, :waves 2}},
  :cycle
  {:success false,
+  :plan-rejected? true,
   :errors ["Circular dependency detected among: a, b"],
   :summary {:total 2, :success 0, :failed 0, :waves 0}}}

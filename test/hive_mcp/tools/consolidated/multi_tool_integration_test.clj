@@ -22,7 +22,7 @@
             ;; All consolidated tools
             [hive-mcp.tools.consolidated.memory :as memory]
             [hive-mcp.tools.consolidated.addon :as addon]
-            [hive-mcp.tools.consolidated.kg :as kg]
+            [hive-mcp.tools.kg :as kg]
             [hive-mcp.tools.consolidated.hivemind :as hivemind]
             [hive-mcp.tools.consolidated.kanban :as kanban]
             [hive-mcp.tools.consolidated.preset :as preset]
@@ -40,11 +40,14 @@
             ;; Multi meta-facade
             [hive-mcp.tools.consolidated.multi :as multi]
             [hive-mcp.dispatch.handler :as dispatch]
-            [hive-mcp.dispatch.verbs :as verbs]))
+            [hive-mcp.dispatch.verbs :as verbs]
+            [hive-mcp.test.stub.isolated-registry :as iso]))
 
 ;; =============================================================================
 ;; Helpers
 ;; =============================================================================
+
+(use-fixtures :each iso/with-fresh-registries)
 
 (defn parse-response
   "Parse JSON response from handler."
@@ -356,7 +359,6 @@
     (doseq [[tool-key {:keys [tools-var]}]
             {:memory    {:tools-var #'memory/tools}
              :addon     {:tools-var #'addon/tools}
-             :kg        {:tools-var #'kg/tools}
              :hivemind  {:tools-var #'hivemind/tools}
              :kanban    {:tools-var #'kanban/tools}
              :preset    {:tools-var #'preset/tools}

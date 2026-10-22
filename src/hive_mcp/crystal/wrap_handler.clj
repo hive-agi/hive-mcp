@@ -17,7 +17,8 @@
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.tools.catchup.format :as fmt]
             [taoensso.timbre :as log]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.crystal.core :as core]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -27,14 +28,17 @@
   "Native multi-scope wrap implementation — Step 8 of plan
    `20260504173159-46dc47f1`.
 
-   Pipeline (no extension delegation):
+   Pipeline:
      1. `coll/harvest-all-by-scope` — flat harvest → attribution → partition
         → `HarvestByScope`.
-     2. `fan/synthesize-wraps` — fan-out one entry per touched scope plus
-        an umbrella; each entry carries an explicit `scope:project:<pid>`
-        (or `scope:multi-project`) tag from step-6 `with-scope-tag`.
-     3. `persist/persist-wraps!` — direct `mem-proto/add-entry!` per entry
-        with explicit `:project-id` from `:pid` (no pwd derivation).
+     2. Without a registered LLM synthesiser: `fan/synthesize-wraps` (the
+        mechanical fallback) + `persist/persist-wraps!`, one write per scope.
+     3. With one: `fan/mechanical-wraps` is persisted FIRST (no network), so
+        a synthesis that throws, times out or never returns still leaves the
+        wrap; then `fan/synthesize-wraps` runs and `persist/upgrade-wraps!`
+        rewrites each pid's mechanical entry in place (same id, no duplicate).
+     Every entry carries an explicit `scope:project:<pid>` (or
+     `scope:multi-project`) tag.
 
    Returns MCP text payload with aggregate shape:
      {:session   <session-id>
@@ -42,7 +46,8 @@
       :total     <count>
       :persisted <count>
       :failed    <count>
-      :wraps     [{:pid :project-id :id :success? :error?} ...]}"
+      :wraps     [{:pid :project-id :id :success? :error?} ...]
+      :synthesis <\"upgraded\" | \"failed: <msg>\">   ; only when delegated}"
   [args]
   (let [directory (ctx/resolve-caller-directory args)
         agent-id (:agent_id args)]
@@ -50,22 +55,31 @@
     (if-not (mem-proto/store-set?)
       (fmt/store-not-configured-error)
       (try
-        (let [hbs            (coll/harvest-all-by-scope {:directory directory
-                                                         :agent-id  agent-id})
-              wraps          (fan/synthesize-wraps hbs)
-              persist-result (persist/persist-wraps! wraps)]
+        (let [hbs (coll/harvest-all-by-scope {:directory directory
+                                              :agent-id  agent-id})
+              [persist-result synthesis]
+              (if-not (core/synthesis-delegated?)
+                [(persist/persist-wraps! (fan/synthesize-wraps hbs)) nil]
+                (let [mechanical (persist/persist-wraps! (fan/mechanical-wraps hbs))]
+                  (try
+                    [(persist/upgrade-wraps! mechanical (fan/synthesize-wraps hbs)) "upgraded"]
+                    (catch Throwable t
+                      (log/warn t "native-wrap: synthesis failed, mechanical wrap kept")
+                      [mechanical (str "failed: " (ex-message t))]))))]
           (log/info "native-wrap: completed"
                     {:total     (:total persist-result)
                      :persisted (:persisted persist-result)
-                     :failed    (:failed persist-result)})
+                     :failed    (:failed persist-result)
+                     :synthesis synthesis})
           {:type "text"
            :text (json/write-str
-                  {:session   (:session hbs)
-                   :directory directory
-                   :total     (:total persist-result)
-                   :persisted (:persisted persist-result)
-                   :failed    (:failed persist-result)
-                   :wraps     (:results persist-result)})})
+                  (cond-> {:session   (:session hbs)
+                           :directory directory
+                           :total     (:total persist-result)
+                           :persisted (:persisted persist-result)
+                           :failed    (:failed persist-result)
+                           :wraps     (:results persist-result)}
+                    synthesis (assoc :synthesis synthesis)))})
         (catch Exception e
           (log/error e "native-wrap failed")
           {:type "text"

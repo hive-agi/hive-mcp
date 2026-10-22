@@ -75,6 +75,19 @@
                    :limit  (page-cap req)
                    :fields (when (seq fields) (vec fields))}})
 
+(defn store-queries
+  "Tag sets the store is asked for, one AND-query each; the fetched board is
+   their union. With OR-tags the request fans out into one query per OR-tag
+   (required tags plus that tag), so the store narrows by tag server-side;
+   otherwise a single query on the required tags. `shape` still applies every
+   post-filter, so the answer is the same as filtering the required-tag board."
+  [{:keys [required-tags post-filters]}]
+  (if-let [ors (seq (distinct (:or-tags post-filters)))]
+    (mapv #(conj (vec required-tags) %) ors)
+    [(vec required-tags)]))
+
+(m/=> store-queries [:=> [:cat s/FetchPlan] [:vector {:min 1} [:vector {:min 1} s/Tag]]])
+
 (def session-todo-tag
   "Tag an agent's ITodoStore puts on the cards that mirror its session step
    list (hive-agent.todo.kanban-store). Those cards are private working

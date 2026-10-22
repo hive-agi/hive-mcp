@@ -1,0 +1,8 @@
+{:case-0 {:out 8, :in {:embeddings {:batch {:max-texts nil}}}},
+ :case-1 {:out 8, :in {:embeddings {}}},
+ :case-2 {:out 2, :in {:embeddings {:batch {:max-texts 2}}}},
+ :case-3 {:out 2, :in {:embeddings {:batch {:max-texts 2}}}},
+ :case-4 {:out 1, :in {:embeddings {:batch {:max-texts 1}}}},
+ :case-5 {:out 4, :in {:embeddings {:batch {:max-texts 4}}}},
+ :case-6 {:out 2, :in {:embeddings {:batch {:max-texts 2}}}},
+ :case-7 {:out 8, :in {}}}

@@ -46,6 +46,29 @@
   [entries]
   (->SeqBoardSource (vec entries)))
 
+(defn merge-boards
+  "One scoped board from several `scoped-board` answers over the same scope:
+   entries unioned by id (first occurrence kept, in order); multi-project? when
+   any answer says so or the union spans more than one project, so a fanned-out
+   fetch answers the flag a single fetch of the union would."
+  [boards]
+  (let [seen    (volatile! #{})
+        entries (into []
+                      (comp (mapcat :entries)
+                            (filter (fn [e]
+                                      (let [id (:id e)]
+                                        (when-not (contains? @seen id)
+                                          (vswap! seen conj id)
+                                          true)))))
+                      boards)]
+    {:entries        entries
+     :multi-project? (boolean (or (some :multi-project? boards)
+                                  (next (distinct (map project-of entries)))))}))
+
+(m/=> merge-boards [:=> [:cat [:sequential [:map [:entries [:maybe [:sequential ks/EntryIn]]]
+                                                 [:multi-project? :boolean]]]]
+                    [:map [:entries [:vector ks/EntryIn]] [:multi-project? :boolean]]])
+
 (def BoardSource
   "An `IBoardSource` adapter; generates an empty in-memory source."
   [:fn {:gen/fmap (fn [_] (->SeqBoardSource []))

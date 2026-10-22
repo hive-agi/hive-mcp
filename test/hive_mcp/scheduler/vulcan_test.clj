@@ -266,4 +266,4 @@
    :classify-domain #{:done :open :missing :invalid}
    :classify-floor 10
    :golden-path "test/golden/hive-mcp/scheduler/vulcan-entry-state.edn"
-   :num-tests 300})
+   :num-tests 500})

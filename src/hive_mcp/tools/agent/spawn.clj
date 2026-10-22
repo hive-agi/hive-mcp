@@ -22,7 +22,7 @@
             [clojure.string :as str]
             [hive-mcp.channel.audience :as audience]
             [hive-mcp.agent.ling.headless-registry :as headless-registry]
-            [hive-mcp.emacs.client :as emacs-client]
+            [hive-mcp.emacs-ext.client :as emacs-client]
             [hive-mcp.agent.grant :as grant]
             [malli.core :as m]
             [hive-mcp.tools.result-bridge :as rb]

@@ -5,7 +5,10 @@
   (:require [clojure.test :refer [is]]
             [clojure.test.check.generators :as gen]
             [hive-mcp.tools.consolidated.multi :as multi]
-            [hive-test.trifecta :refer [deftrifecta]]))
+            [hive-test.trifecta :refer [deftrifecta]]
+            [hive-mcp.test.stub.isolated-registry :as iso]))
+
+(clojure.test/use-fixtures :each iso/with-fresh-registries)
 
 (def ^:private edge-op
   {:id "e1" :tool "kg" :command "edge" :from "a" :to "b" :relation "relates"})

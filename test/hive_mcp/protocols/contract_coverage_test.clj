@@ -23,15 +23,9 @@
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
-(def ^:private port-method-reason
-  (str "protocol-method re-export: a defn (not a def alias, so an impl extended "
-       "after load is still dispatched) that calls the hive-spi.memory.ports method "
-       "of the same name and nothing else. Its contract is the port's, executable as "
-       "hive-spi.memory.conformance; the host fns that compute over these methods "
-       "(active-store-status, get-entries-projected, the role predicates) carry "
-       "the m/=> contracts"))
-
 (def ^:private memory-port-methods
+  "The hive-spi.memory.ports methods hive-mcp.protocols.memory re-exports as
+   defns, each with the m/=> contract the port's docstring states."
   ["connect!" "disconnect!" "connected?" "health-check" "add-entry!" "get-entry"
    "update-entry!" "delete-entry!" "query-entries" "search-similar"
    "supports-semantic-search?" "cleanup-expired!" "entries-expiring-soon"
@@ -42,19 +36,20 @@
    "target-collection-for" "relocate-entry!"
    "asof-entry" "history-entry" "asof-query" "between-query"])
 
-(def ^:private exempt
-  (into {} (map (fn [f] [(symbol "hive-mcp.protocols.memory" f) port-method-reason]))
-        memory-port-methods))
-
 (coverage/deftest-contract-coverage protocols-contracts
   {:paths ["src/hive_mcp/protocols"]
-   :exempt exempt})
+   :exempt {}})
 
 (deftest the-gate-is-not-vacuous
-  (let [report (coverage/coverage {:paths ["src/hive_mcp/protocols"] :exempt exempt})]
+  (let [report (coverage/coverage {:paths ["src/hive_mcp/protocols"] :exempt {}})]
     (is (= 124 (count (:universe report))) "every public defn of the tree")
-    (is (= 94 (count (:covered report))))
-    (is (= 30 (count exempt)))))
+    (is (= 124 (count (:covered report))))))
+
+(deftest every-port-method-re-export-is-contracted
+  (let [fs (get (m/function-schemas) 'hive-mcp.protocols.memory)]
+    (is (= 30 (count memory-port-methods)))
+    (doseq [f memory-port-methods]
+      (is (contains? fs (symbol f)) f))))
 
 (def ^:private gated-namespaces
   '[hive-mcp.protocols.agent-bridge hive-mcp.protocols.delivery-channel

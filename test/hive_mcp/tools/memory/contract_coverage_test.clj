@@ -43,8 +43,8 @@
 
 (deftest tools-memory-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths batch-files})]
-    (is (= 62 (count (:universe report))) "every public defn of the top-level files")
-    (is (= 62 (count (:covered report))))))
+    (is (= 63 (count (:universe report))) "every public defn of the top-level files")
+    (is (= 63 (count (:covered report))))))
 
 (deftest every-tools-memory-contract-generates-both-sides
   (doseq [ns-sym contracted-nss
@@ -86,9 +86,9 @@
                   (:excludes-source out))))
    :classify (fn [_ out] (:excludes-source out))
    :classify-domain #{:none :default :caller}
-   :classify-floor 5
+   :classify-floor 10
    :golden-path "test/golden/hive-mcp/tools/memory/search-payload-contract.edn"
-   :num-tests 200})
+   :num-tests 450})
 
 (deftrifecta-from-schema filter-required-tags-keeps-supersets
   #'search/filter-required-tags

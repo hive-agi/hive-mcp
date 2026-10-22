@@ -56,15 +56,25 @@
 
 ;; Step i may depend only on steps before it, so the graph is a DAG; picks are
 ;; indices reduced modulo i. Some draws give independent roots, some chains.
+;; A uniform draw leaves the :flat class (no dependency anywhere) to chance:
+;; it needs a 0/1-step plan or every pick list empty, so on some seeds it
+;; starves below the classification floor. Correlate a coin with the draw
+;; instead: heads drops every dependency (flat), tails keeps the drawn DAG
+;; and makes s2 depend on s1 (layered), so both classes sit near half.
+(defn- dag-steps [[n picks layered?]]
+  (let [n     (if layered? (max n 2) n)
+        picks (if layered? (update picks 1 #(if (seq %) % [0])) picks)]
+    (vec (for [i (range n)]
+           {:id (ids i)
+            :depends-on (if (or (zero? i) (not layered?))
+                          []
+                          (vec (distinct (map #(ids (mod % i)) (picks i)))))}))))
+
 (def ^:private DagSteps
   [:sequential {:gen/schema [:tuple [:int {:min 0 :max 5}]
-                             [:vector {:min 5 :max 5} [:vector {:max 2} [:int {:min 0 :max 4}]]]]
-                :gen/fmap (fn [[n picks]]
-                            (vec (for [i (range n)]
-                                   {:id (ids i)
-                                    :depends-on (if (zero? i)
-                                                  []
-                                                  (vec (distinct (map #(ids (mod % i)) (picks i)))))})))}
+                             [:vector {:min 5 :max 5} [:vector {:max 2} [:int {:min 0 :max 4}]]]
+                             :boolean]
+                :gen/fmap dag-steps}
    [:map [:id :string] [:depends-on [:vector :string]]]])
 
 (defn- expected-waves [steps]
@@ -79,7 +89,7 @@
    :rel (fn [[steps] out] (= out (expected-waves steps)))
    :classify (fn [_ out] (if (some pos? (vals out)) :layered :flat))
    :classify-domain #{:layered :flat}
-   :golden-path "test/golden/hive-mcp/plan/tool-compute-waves-dag.edn"})
+   :golden-path "test/golden/hive-mcp/plan/tool-compute-waves-dag.edn" :classify-floor 11 :num-tests 250})
 
 ;; -----------------------------------------------------------------------------
 ;; plan-to-kanban with the kanban write port stubbed

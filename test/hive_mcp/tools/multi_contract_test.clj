@@ -9,11 +9,14 @@
             [hive-mcp.tools.multi :as multi]
             [hive-schemas.test :refer [deftrifecta-from-schema]]
             [hive-test.golden :as golden]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.test.stub.isolated-registry :as iso]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+(clojure.test/use-fixtures :each iso/with-fresh-registries)
 
 (def ^:private OpRow
   [:map [:id [:enum "a" "b"]] [:success :boolean]

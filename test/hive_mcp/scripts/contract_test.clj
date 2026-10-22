@@ -4,8 +4,8 @@
    against a fresh per-test DataScript KG store (fixtures/datascript-fixture),
    so no real datahike directory is touched and every test owns its store.
    rebuild! itself moves the open store's directory and exits the JVM's agents,
-   so it is not driven here; aot-boot's compile-boot-closure! calls System/exit
-   and is exempted in the gate."
+   and aot-boot's compile-boot-closure! calls System/exit, so neither is driven
+   here; both are contracted and covered by the gate."
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is use-fixtures]]
             [hive-mcp.knowledge-graph.connection :as conn]
@@ -29,11 +29,7 @@
 
 (coverage/deftest-contract-coverage scripts-contracts
   {:paths ["src/hive_mcp/scripts"]
-   :exempt {'hive-mcp.scripts.aot-boot/compile-boot-closure!
-            "An exec-fn that never returns: it ends in (System/exit 0|1) after
-             AOT-compiling the boot closure into target/boot-classes. There is
-             no return value to promise, and calling it under any test or
-             instrumentation would exit the JVM."}})
+   :exempt {}})
 
 (deftest the-gate-is-not-vacuous
   (is (= 9 (count (:universe (coverage/coverage {:paths ["src/hive_mcp/scripts"]}))))))
@@ -85,9 +81,9 @@
    :classify (fn [_ out] out)
    :classify-domain rebuild/EntityKind
    ;; structural edges are about one draw in twenty; 5 of 300 is a firm floor
-   :classify-floor 5
+   :classify-floor 10
    :golden-path "test/golden/hive-mcp/scripts/entity-kind.edn"
-   :num-tests 300})
+   :num-tests 550})
 
 (deftrifecta-from-schema keep-entity-keeps-mutations-and-durable-edges
   #'rebuild/keep-entity?
@@ -108,7 +104,7 @@
    :classify-domain #{true false}
    :classify-floor 10
    :golden-path "test/golden/hive-mcp/scripts/structural-edge.edn"
-   :num-tests 200})
+   :num-tests 250})
 
 ;; =============================================================================
 ;; Export / import / verify over a fresh DataScript store

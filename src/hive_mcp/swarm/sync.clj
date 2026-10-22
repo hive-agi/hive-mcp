@@ -542,8 +542,43 @@
 ;; Full Sync (Bootstrap) — backend-agnostic via ISwarmBootstrap
 ;; =============================================================================
 
+(defn mark-restored
+  "Pure: `row` as restored at `now`, keeping as :restored-status the status
+   it had before classify-row can retire it."
+  [row now]
+  (cond-> (assoc row :restored-at now)
+    (some? (:status row)) (assoc :restored-status (keyword (:status row)))))
+
+(m/=> mark-restored [:=> [:cat bp/SlaveRow inst?]
+                     [:map [:restored-at inst?] [:restored-status {:optional true} :keyword]]])
+
+(defn restore-updates
+  "Pure: the registry attributes a restored `slave` row carries beyond what
+   add-slave! writes. :slave/parent is a lookup ref, so it is set only when
+   `parent-row?` says the parent already has a registry row; :slave/parent-id
+   carries the parent either way. :slave/last-event-at is the row's last
+   recorded event (its last snapshot when the source keeps no event time),
+   never the restore time."
+  [slave parent-row?]
+  (let [parent (:parent-id slave)
+        last-event (or (:last-event-at slave) (:snapshot-at slave) (:created-at slave))]
+    (cond-> {}
+      (:spawn-mode slave) (assoc :ling/spawn-mode (:spawn-mode slave))
+      (:process-pid slave) (assoc :slave/process-pid (:process-pid slave))
+      (:created-at slave) (assoc :slave/created-at (:created-at slave))
+      (:liveness slave) (assoc :slave/liveness (:liveness slave))
+      (false? (:alive? slave)) (assoc :slave/alive? false)
+      (:restored-at slave) (assoc :slave/restored-at (:restored-at slave))
+      (:restored-status slave) (assoc :slave/restored-status (keyword (:restored-status slave)))
+      last-event (assoc :slave/last-event-at last-event)
+      parent (assoc :slave/parent-id parent)
+      (and parent parent-row?) (assoc :slave/parent parent))))
+
+(m/=> restore-updates [:=> [:cat bp/SlaveRow :boolean] :map])
+
 (defn- register-slave-from-status!
-  "Register one classified snapshot row. Preserve its creation time and liveness verdict."
+  "Register one classified snapshot row. Preserve its creation time, liveness
+   verdict, restore stamp (mark-restored), parent and last event."
   [slave]
   (let [slave-id (:slave-id slave)
         status (some-> (:status slave) keyword)
@@ -552,15 +587,11 @@
         cwd (:cwd slave)
         project-id (or (:project-id slave)
                        (when cwd (project-scope/get-current-project-id cwd)))
-        reg (get-swarm-registry)]
+        reg (get-swarm-registry)
+        parent-row? (boolean (some->> (:parent-id slave) (proto/get-slave reg)))]
     (proto/add-slave! reg slave-id {:status status :name name :depth depth
                                     :cwd cwd :project-id project-id})
-    (let [updates (cond-> {}
-                    (:spawn-mode slave) (assoc :ling/spawn-mode (:spawn-mode slave))
-                    (:process-pid slave) (assoc :slave/process-pid (:process-pid slave))
-                    (:created-at slave) (assoc :slave/created-at (:created-at slave))
-                    (:liveness slave) (assoc :slave/liveness (:liveness slave))
-                    (false? (:alive? slave)) (assoc :slave/alive? false))]
+    (let [updates (restore-updates slave parent-row?)]
       (when (seq updates)
         (proto/update-slave! reg slave-id updates)))
     (log/debug "Sync: bootstrapped slave" slave-id status "project-id:" project-id)))
@@ -622,19 +653,22 @@
 (defn full-sync-from-bootstrap!
   "Full sync from the bootstrap source. Classify liveness before any registration.
    probe-fn accepts snapshot rows and returns liveness evidence. The three-arity
-   form injects the reset and registration ports for isolated consumers."
+   form injects the reset and registration ports, and an optional :now clock,
+   for isolated consumers. Every row is stamped by mark-restored before
+   classify-row can retire it."
   ([] (full-sync-from-bootstrap! (get-swarm-bootstrap) probe-evidence))
   ([bs probe-fn]
    (full-sync-from-bootstrap! bs probe-fn {:reset! conn/reset-conn!
                                           :register! register-slave-from-status!}))
-  ([bs probe-fn {:keys [reset! register!]}]
+  ([bs probe-fn {:keys [reset! register! now] :or {now #(java.util.Date.)}}]
    (log/info "Starting full sync from bootstrap source...")
    (let [slaves (try (bootstrap/load-slaves bs)
                      (catch Exception e
                        (log/error "Bootstrap load failed:" (.getMessage e))
                        []))
          evidence (probe-fn slaves)
-         classified (mapv #(classify-row % evidence) slaves)]
+         restored-at (now)
+         classified (mapv #(classify-row (mark-restored % restored-at) evidence) slaves)]
      (reset!)
      (run! register! classified)
      (log/info "Full sync complete:" (count classified) "slaves"))))
@@ -649,7 +683,8 @@
        [:=> [:cat] :nil]
        [:=> [:cat bp/Bootstrap ProbeFn] :nil]
        [:=> [:cat bp/Bootstrap ProbeFn [:map [:reset! [:=> [:cat] :any]]
-                                       [:register! [:=> [:cat :map] :any]]]]
+                                       [:register! [:=> [:cat :map] :any]]
+                                       [:now {:optional true} [:=> [:cat] inst?]]]]
         :nil]])
 
 ;; Backwards-compatibility alias — keep old call sites working until they

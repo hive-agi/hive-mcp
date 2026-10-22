@@ -90,13 +90,25 @@
 
 (defn get-edges-by-scope
   "Query all edges within a specific scope.
-   Returns all edges that have the given scope."
-  [scope]
-  (let [query '[:find [(pull ?e [*]) ...]
-                :in $ ?scope
-                :where
-                [?e :kg-edge/scope ?scope]]]
-    (conn/query query scope)))
+   Returns all edges that have the given scope.
+
+   With {:limit n}: at most n edges, the first n by entity id. The scope's
+   eids are read lazily from the :kg-edge/scope value index and only those n
+   are pulled (narrow `edge-pull-pattern`), so the read touches O(n) datoms
+   instead of materializing every edge of the scope."
+  ([scope]
+   (let [query '[:find [(pull ?e [*]) ...]
+                 :in $ ?scope
+                 :where
+                 [?e :kg-edge/scope ?scope]]]
+     (conn/query query scope)))
+  ([scope {:keys [limit]}]
+   (if (nil? limit)
+     (get-edges-by-scope scope)
+     (into []
+           (comp (partition-all default-edge-batch-size)
+                 (mapcat pull-edge-batch))
+           (take limit (conn/eids-with-value :kg-edge/scope scope))))))
 
 (defn find-edge
   "Find an edge between two nodes.
@@ -332,7 +344,10 @@
 (m/=> get-edges-by-relation [:function
                              [:=> [:cat es/Relation] es/Edges]
                              [:=> [:cat es/Relation es/Scope] es/Edges]])
-(m/=> get-edges-by-scope [:=> [:cat :string] es/Edges])
+(m/=> get-edges-by-scope [:function
+                          [:=> [:cat :string] es/Edges]
+                          [:=> [:cat :string [:maybe [:map [:limit {:optional true} [:maybe pos-int?]]]]]
+                           es/Edges]])
 (m/=> find-edge [:function
                  [:=> [:cat :string :string] [:maybe es/Edge]]
                  [:=> [:cat :string :string [:maybe es/Relation]] [:maybe es/Edge]]])

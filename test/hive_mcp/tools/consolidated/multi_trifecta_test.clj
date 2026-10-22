@@ -4,11 +4,14 @@
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is]]
             [hive-mcp.tools.consolidated.multi :as mu]
-            [hive-schemas.test :refer [deftrifecta-from-schema]]))
+            [hive-schemas.test :refer [deftrifecta-from-schema]]
+            [hive-mcp.test.stub.isolated-registry :as iso]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
+
+(clojure.test/use-fixtures :each iso/with-fresh-registries)
 
 (def Operations
   "A batch whose entries mix op maps with the non-map shapes callers send."

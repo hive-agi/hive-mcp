@@ -120,6 +120,20 @@ jobs:
       - name: Run launcher test
         run: timeout 300 bin/hive-mcp-launcher-test.sh
 
+      - name: Test-count gate self-test
+        run: timeout 60 bin/test-count-floor-test.sh
+
+      - name: Setup Babashka
+        uses: DeLaGuardo/setup-clojure@13.2
+        with:
+          bb: 'latest'
+
+      # Every :test* alias in deps.edn must state an -Xmx heap ceiling.
+      - name: Test heap-cap check
+        run: |
+          timeout 60 bin/test-heap-cap-check.bb --self-test
+          timeout 60 bin/test-heap-cap-check.bb deps.edn
+
   deps:
     name: Dependency Resolution
     runs-on: ubuntu-latest

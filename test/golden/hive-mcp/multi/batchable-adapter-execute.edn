@@ -28,6 +28,9 @@
        :success false,
        :error "boom",
        :data nil}]}},
+   :committed ["a"],
+   :failed ["c" "b"],
+   :partial? true,
    :summary {:total 3, :success 1, :failed 2, :waves 2}},
   :fx
   [:multi/wave-complete
@@ -56,11 +59,15 @@
        :success true,
        :result {:type "text", :text "two"},
        :data {:type "text", :text "two"}}]}},
+   :committed ["a" "b"],
+   :failed [],
+   :partial? false,
    :summary {:total 2, :success 2, :failed 0, :waves 2}},
   :fx [:multi/wave-complete :multi/wave-complete]},
  :invalid
  {:result
   {:success false,
+   :plan-rejected? true,
    :errors ["Operation 'a' missing :tool"],
    :summary {:total 1, :success 0, :failed 0, :waves 0}},
   :fx []},

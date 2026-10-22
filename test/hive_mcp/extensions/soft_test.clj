@@ -13,7 +13,7 @@
    - the host namespace is PRESENT (resolver hands back a recording stub):
      arguments and the return value pass through unchanged, and each
      adapter keeps its own throw/no-throw contract."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.swarm.adapters.agent-context :as agent-context]
             [hive-mcp.swarm.adapters.events :as events]
             [hive-mcp.swarm.adapters.ling-host :as ling-host]
@@ -22,11 +22,18 @@
             [hive-spi.swarm.ports.agent-context :as ctx-spi]
             [hive-spi.swarm.ports.events :as events-spi]
             [hive-spi.swarm.ports.ling-host :as ling-spi]
-            [hive-spi.swarm.ports.memory-scope :as scope-spi]))
+            [hive-spi.swarm.ports.memory-scope :as scope-spi]
+            [clojure.string]))
 
 ;; =============================================================================
 ;; Resolvers standing in for the two classpaths
 ;; =============================================================================
+
+(use-fixtures :each
+  (fn [f]
+    (let [cache @#'soft/cache
+          saved @cache]
+      (try (f) (finally (reset! cache saved))))))
 
 (defn- host-gone
   "A classpath every soft host namespace has left."
@@ -68,6 +75,36 @@
     (binding [soft/*resolve* (constantly boom)]
       (is (thrown? clojure.lang.ExceptionInfo
                    (soft/host-or 'any.ns/f (constantly :fallback)))))))
+
+(defn- counting-resolver
+  "A resolver that counts its calls into CALLS and answers ANSWER."
+  [calls answer]
+  (fn [_sym] (swap! calls inc) answer))
+
+(deftest resolve-cached-pays-a-miss-once-per-retry-window
+  (let [calls (atom 0)]
+    (binding [soft/*resolve* (counting-resolver calls nil)]
+      (dotimes [_ 50] (is (nil? (soft/resolve-cached 'absent.ns/f))))
+      (is (= 1 @calls) "a remembered miss does not resolve again")
+      (testing "once the retry window has passed, the symbol is tried again"
+        (swap! @#'soft/cache update [soft/*resolve* 'absent.ns/f] assoc :retry-at 0)
+        (soft/resolve-cached 'absent.ns/f)
+        (is (= 2 @calls))))))
+
+(deftest resolve-cached-keeps-a-hit
+  (let [calls (atom 0)]
+    (binding [soft/*resolve* (counting-resolver calls #'clojure.string/upper-case)]
+      (dotimes [_ 50]
+        (is (= #'clojure.string/upper-case (soft/resolve-cached 'clojure.string/upper-case))))
+      (is (= 1 @calls)))))
+
+(deftest resolve-cached-finds-a-namespace-that-loads-later
+  (let [answer (atom nil)]
+    (binding [soft/*resolve* (fn [_] @answer)]
+      (is (nil? (soft/resolve-cached 'later.ns/f)))
+      (reset! answer #'clojure.string/upper-case)
+      (swap! @#'soft/cache update [soft/*resolve* 'later.ns/f] assoc :retry-at 0)
+      (is (= #'clojure.string/upper-case (soft/resolve-cached 'later.ns/f))))))
 
 ;; =============================================================================
 ;; memory-scope: project identity is kernel, the three disc methods are soft

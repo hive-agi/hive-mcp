@@ -57,10 +57,38 @@
    :golden-path "test/golden/tools/consolidated/hot-eject-target.edn"
    :num-tests   100})
 
+(defn- shape-pin-params
+  "Bend a drawn `params` map to the chosen classification `arm`, keeping the
+   drawn values wherever they already fit it. The bad-policy arm also drops a
+   non-positive idle_ms, so the policy refusal is the one that answers."
+  [[params arm valid bad-idle good-idle]]
+  (let [ok-policy? (contains? #{"eager" "lazy" "pinned" nil} (:policy params))
+        fix-policy #(cond-> % (not ok-policy?) (assoc :policy valid))]
+    (case arm
+      :bad-policy    (cond-> (assoc params :policy "bogus")
+                       (not (pos-int? (:idle_ms params))) (dissoc :idle_ms))
+      :bad-idle      (-> params fix-policy (assoc :idle_ms bad-idle))
+      :explicit-idle (-> params fix-policy (assoc :idle_ms good-idle))
+      :baseline-idle (-> params fix-policy (dissoc :idle_ms)))))
+
 (def PinParams
   "idle_ms leans to non-positive values so the bad-idle refusal is reached as
-   often as the accepting arms."
-  [:map
+   often as the accepting arms.
+
+   A uniform draw still leaves :bad-idle (a VALID policy beside a present,
+   non-positive idle_ms) near a tenth of the draws, close enough to the floor
+   that some seeds starve it. A classification arm drawn beside the params
+   bends each draw into its class deliberately, so all four classes sit near
+   a quarter of the samples."
+  [:map {:gen/schema [:tuple
+                      [:map
+                       [:policy {:optional true} [:maybe [:enum "eager" "lazy" "pinned" "bogus" ""]]]
+                       [:idle_ms {:optional true} [:maybe [:or [:int {:min -10 :max 0}] [:int {:min 1 :max 100000}]]]]]
+                      [:enum :bad-policy :bad-idle :explicit-idle :baseline-idle]
+                      [:enum "eager" "lazy" "pinned"]
+                      [:int {:min -10 :max 0}]
+                      [:int {:min 1 :max 100000}]]
+         :gen/fmap shape-pin-params}
    [:policy {:optional true} [:maybe [:enum "eager" "lazy" "pinned" "bogus" ""]]]
    [:idle_ms {:optional true} [:maybe [:or [:int {:min -10 :max 0}] [:int {:min 1 :max 100000}]]]]])
 

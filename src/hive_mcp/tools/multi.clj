@@ -25,7 +25,11 @@
             [taoensso.timbre :as log]
             [clojure.data.json :as json]
             [hive-mcp.context.request :as ctx]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [clojure.string :as str]
+            [hive-mcp.dsl.verbs :as verbs]
+            [hive-mcp.dsl.param-domain :as pd]
+            [hive-mcp.multi.param-coerce :as param-coerce]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -148,6 +152,84 @@
   [op]
   (batch/execute-op resolve-tool-handler op))
 
+(m/=> validate-op [:=> [:cat batch/Op] [:vector :string]])
+
+;; =============================================================================
+;; Plan-time param validation
+;; =============================================================================
+
+(def ^:private closed-command-params
+  "{[tool command] accepted-param-set} for every command whose handler's
+   params are known exactly, derived from the DSL's `verbs/verb-params` so the
+   `operations` surface and the `dsl` surface reject the same keys. A verb
+   whose id param is remapped onto another command (m@ -> batch-get) is left
+   out: its set describes the DSL spelling, not the raw command."
+  (into {}
+        (keep (fn [[verb accepted]]
+                (when-let [{:keys [tool command]} (get verbs/verb-table verb)]
+                  (when-not (contains? verbs/entity-id-remaps [tool command])
+                    [[tool command] accepted]))))
+        verbs/verb-params))
+
+(def ^:private op-plumbing-params
+  "Keys any op may carry beyond its handler's own params: batch plumbing,
+   caller scope and the queueing flag every consolidated tool reads."
+  (into (conj verbs/verb-meta-params pd/entity-id-key :id :wave :async)
+        pd/meta-param-keys))
+
+(defn- op-input-schema
+  "The inputSchema TOOL-NAME advertises, with addon schema extensions merged,
+   or nil when the tool has no flat definition. Resolved lazily:
+   hive-mcp.tools.registry sits above this namespace."
+  [tool-name]
+  (rescue nil
+          (when-let [tool-def ((requiring-resolve 'hive-mcp.tools.registry/get-tool-by-name)
+                               tool-name)]
+            (let [schema-ext ((requiring-resolve 'hive-mcp.extensions.registry/get-schema-extensions)
+                              tool-name)]
+              (cond-> (:inputSchema tool-def)
+                (seq schema-ext) (update :properties merge schema-ext))))))
+
+(defn- unknown-param-errors
+  "Messages for params outside the closed set of OP's command, if it has one."
+  [{:keys [tool command] :as op}]
+  (when-let [accepted (get closed-command-params [(str tool) (str command)])]
+    (let [unknown (->> (keys op)
+                       (remove #(or (contains? accepted %)
+                                    (contains? op-plumbing-params %)))
+                       (sort-by str))]
+      (when (seq unknown)
+        [(str "Unknown param(s) for " tool " " command ": "
+              (str/join ", " (map name unknown))
+              " (accepted: " (str/join ", " (sort (map name accepted))) ")")]))))
+
+(defn- schema-type-errors
+  "Messages for a param whose string value cannot be decoded to the JSON type
+   the target tool's schema declares. `$ref:` values resolve at run time and
+   are not checked here."
+  [{:keys [tool] :as op}]
+  (when-let [schema (op-input-schema (str tool))]
+    (let [params  (into {}
+                        (remove (fn [[k v]]
+                                  (or (contains? op-plumbing-params k)
+                                      (batch/ref? v))))
+                        op)
+          coerced (param-coerce/coerce-params schema params)]
+      (when-not (contains? coerced :ok)
+        [(str "Parameter error for tool " tool ": " (:message coerced))]))))
+
+(defn validate-op
+  "Plan-time check of one normalized op's params, run on every op of a batch
+   before any op executes. Returns a vector of error messages, empty when the
+   op is acceptable. Checks params outside a closed command's accepted set and
+   string values the target schema cannot decode. An op without a tool is left
+   to the structural validation."
+  [{:keys [tool] :as op}]
+  (if (str/blank? (str tool))
+    []
+    (into (vec (unknown-param-errors op))
+          (schema-type-errors op))))
+
 ;; =============================================================================
 ;; Top-level runner (thin wrapper over batch/run-operations)
 ;; =============================================================================
@@ -170,7 +252,11 @@
 (defn run-multi
   "Execute a vector of cross-tool operations with dependency ordering.
 
-   Pipeline: normalize → validate → assign-waves → execute-per-wave
+   Pipeline: normalize → validate → param check → assign-waves → execute-per-wave
+
+   Every op's params are checked by `validate-op` before any op runs: one op
+   with a bad param rejects the whole plan with a per-op error list and
+   executes nothing.
 
    Options:
      :dry-run — validate and plan only, don't execute
@@ -179,6 +265,7 @@
      {:success bool
       :waves   {1 {:ops [...] :results [...]} ...}
       :summary {:total N :success M :failed F :waves W}
+      :committed [...] :failed [...] :partial? bool
       :errors  [...]}
 
    Internally delegates through the `Batchable` protocol via the default
@@ -188,7 +275,8 @@
   (batch-proto/batch-execute
    @default-runner
    ops
-   {:dry-run? (boolean dry-run)}))
+   {:dry-run?    (boolean dry-run)
+    :validate-op #(validate-op %)}))
 
 ;; =============================================================================
 ;; Result Formatting (hive-mcp MCP-specific)
@@ -225,15 +313,23 @@
   "Format multi-execution results for MCP response.
    Returns a JSON-serializable map suitable for {:type \"text\" :text ...}.
 
+   An executed run carries `committed` / `failed` op ids and `partial` when
+   the batch was half-applied; a rejected plan carries `plan_rejected`.
+
    Options (keyword args):
    - :compact — apply batch envelope compression."
-  [{:keys [success waves summary errors dry-run] :as _results} & {:keys [compact]}]
+  [{:keys [success waves summary errors dry-run committed failed partial? plan-rejected?]
+    :as _results} & {:keys [compact]}]
   (let [output (cond-> {:success success
                         :summary summary}
                  dry-run     (assoc :dry_run true
                                     :plan (format-dry-run-plan waves))
                  (not dry-run)
                  (assoc :waves (format-execution-waves waves))
+                 (some? committed) (assoc :committed committed)
+                 (some? failed)    (assoc :failed failed)
+                 partial?          (assoc :partial true)
+                 plan-rejected?    (assoc :plan_rejected true)
                  errors (assoc :errors errors))
         compressed (if compact
                      (compress/format-results-compact output)

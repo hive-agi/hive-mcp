@@ -64,6 +64,11 @@
   [& args]
   (apply (impl! 'q) args))
 
+;; (q query & inputs): a query form (vector, map or string) then its inputs.
+;; The result is whatever the query's :find spec projects (a set of tuples, a
+;; scalar, a collection, a pulled map), so the output is stated as open.
+(m/=> q [:=> [:cat [:or [:vector :any] :map :string] [:* :any]] :any])
+
 (defn transact!
   {:arglists '([& args])}
   [& args]

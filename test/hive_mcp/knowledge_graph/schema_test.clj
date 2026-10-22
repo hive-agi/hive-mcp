@@ -169,8 +169,13 @@
     (is (contains? (schema/relation-types) :implements))
     (is (contains? (schema/relation-types) :depends-on)))
   (testing "register-relation-type! adds to relation-types"
-    (schema/register-relation-type! :test-relation)
-    (is (contains? (schema/relation-types) :test-relation))))
+    (let [exts   @#'schema/relation-type-extensions
+          before @exts]
+      (try
+        (schema/register-relation-type! :test-relation)
+        (is (contains? (schema/relation-types) :test-relation))
+        (finally
+          (reset! exts before))))))
 
 (deftest relates-and-normalize-predicate-test
   (testing ":relates is a core relation (open semantic lane)"

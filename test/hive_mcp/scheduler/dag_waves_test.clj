@@ -1525,6 +1525,7 @@
    :rel (fn [[graph failed] out] (= out (reachable-blocked graph failed)))
    :classify (fn [_ out] (if (empty? out) :none :some))
    :classify-domain #{:none :some}
+   :classify-floor 12
    :golden-path "test/golden/hive-mcp/scheduler/dag-blocked-reachability.edn"
    :num-tests 300})
 

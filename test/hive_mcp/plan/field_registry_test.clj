@@ -76,7 +76,7 @@
             (= (vec expected) out)))
    :classify (fn [_ out] (if (seq out) :errors :clean))
    :classify-domain #{:errors :clean}
-   :golden-path "test/golden/hive-mcp/plan/field-registry-validate-fields.edn"})
+   :golden-path "test/golden/hive-mcp/plan/field-registry-validate-fields.edn" :classify-floor 12 :num-tests 150})
 
 (def ^:private StepsPlan
   [:map

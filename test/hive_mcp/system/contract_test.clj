@@ -103,11 +103,26 @@
 
 (def ^:private ArgvIn [:vector {:max 4} [:enum "sh" "ls" "/bin/sh" "nope-not-a-binary" "-c"]])
 
+(def ^:private ArgvOpts
+  [:map [:path [:enum "/bin:/usr/bin" "" "/nonexistent"]] [:cwd [:enum "/" "/tmp"]]
+   [:prefix [:enum ["env" "S=1"] ["systemd-run"]]]])
+
+;; A uniform draw reaches :scoped only when ok? is true, argv is non-empty,
+;; its head resolves AND the path can resolve it: ~5% of draws, so 200 tests
+;; land near the floor of 5 and some seeds starve it. A coin drawn beside the
+;; arguments forces a scoped draw (ok? true, "sh" first, a real PATH) on
+;; heads and leaves the uniform draw on tails, so :scoped sits near half.
+(def ^:private PlanArgvIn
+  (into [:cat {:gen/schema [:tuple [:enum true false nil :yes] ArgvIn ArgvOpts :boolean]
+               :gen/fmap   (fn [[ok? argv opts scope?]]
+                             (if scope?
+                               [true (into ["sh"] (take 3 argv)) (assoc opts :path "/bin:/usr/bin")]
+                               [ok? argv opts]))}]
+        [[:enum true false nil :yes] ArgvIn ArgvOpts]))
+
 (deftrifecta-from-schema plan-argv-scopes-only-a-resolvable-command
   #'cs/plan-argv
-  {:in [:cat [:enum true false nil :yes] ArgvIn
-        [:map [:path [:enum "/bin:/usr/bin" "" "/nonexistent"]] [:cwd [:enum "/" "/tmp"]]
-         [:prefix [:enum ["env" "S=1"] ["systemd-run"]]]]]
+  {:in PlanArgvIn
    :out [:vector :string]
    :rel (fn [[ok? argv {:keys [path cwd prefix]}] out]
           (if (and (true? ok?) (seq argv) (cs/resolve-executable (first argv) path cwd))
@@ -115,9 +130,9 @@
             (= out argv)))
    :classify (fn [[_ argv _] out] (if (= out argv) :plain :scoped))
    :classify-domain #{:plain :scoped}
-   :classify-floor 5
+   :classify-floor 11
    :golden-path "test/golden/hive-mcp/system/plan-argv.edn"
-   :num-tests 200})
+   :num-tests 500})
 
 (deftrifecta-from-schema scope-start-failure-needs-every-signal
   #'cs/scope-start-failure?
@@ -132,9 +147,9 @@
                                  stderr))))
    :classify (fn [_ out] out)
    :classify-domain #{true false}
-   :classify-floor 3
+   :classify-floor 10
    :golden-path "test/golden/hive-mcp/system/scope-start-failure.edn"
-   :num-tests 200})
+   :num-tests 500})
 
 (deftest probes-cache-expire-and-record
   (let [calls (atom 0)

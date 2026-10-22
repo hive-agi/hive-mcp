@@ -9,7 +9,8 @@
             [hive-mcp.agent.identity :as agent-identity]
             [hive-mcp.agent.headless :as headless]
             [hive-mcp.context.request :as ctx]
-            [hive-mcp.server.routes.middleware :as mw]))
+            [hive-mcp.server.routes.middleware :as mw]
+            [hive-mcp.extensions.soft :as ext-soft]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -32,6 +33,13 @@
         (is (= "ling-a" (get env "CLAUDE_SWARM_SLAVE_ID")))
         (is (= "real-token" (get env "HIVE_AGENT_CREDENTIAL")))
         (is (= "1" (get env "X")) "other env-extra entries pass through")))))
+
+(deftest an-absent-domain-is-resolved-once-not-per-request
+  ;; Without hive-agent, every request used to retry four failed loads.
+  (let [calls (atom 0)]
+    (binding [ext-soft/*resolve* (fn [_sym] (swap! calls inc) nil)]
+      (dotimes [_ 25] (is (nil? (agent-identity/domain))))
+      (is (= 4 @calls) "one attempt per domain symbol, then remembered"))))
 
 (deftest build-child-env-cannot-be-overridden-by-env-extra
   (let [env (headless/build-child-env

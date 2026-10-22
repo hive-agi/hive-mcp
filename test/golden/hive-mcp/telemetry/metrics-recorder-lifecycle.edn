@@ -1,0 +1,7 @@
+{:recorded
+ [[[:mcp :tool "kg"] :ok]
+  [[:mcp :tool "memory"] :ok]
+  [[:mcp :tool "bad"] :error]],
+ :timed-value :answer,
+ :timed-raised :rethrown,
+ :install-answers-previous? true}
