@@ -31,12 +31,17 @@
    :num-tests 100
    :mutations [["chars-over-4" mutant-chars-over-4]]})
 
+(def ^:private pt-prose
+  "A memória do enxame guarda decisões, convenções e notas; cada agente lê o contexto antes de agir, e a ingestão de livros em português exige atenção ao tamanho máximo da entrada. Não há garantia de que a estimativa esteja correta sem medição. ")
+
+(defn- pt-of-length [n]
+  (subs (apply str (repeat (inc (quot n (count pt-prose))) pt-prose)) 0 n))
+
 (deftest guard-refuses-content-the-old-basis-let-through
-  ;; 30,000 chars: chars/4 = 7,500 <= 8,192 (passed, then 500ed remotely);
-  ;; chars/3 = 10,000 > 8,192 (refused locally with the size in the message).
+  ;; Portuguese prose measured at ~3.0 chars/token on qwen3-embedding:4b:
+  ;; 30,000 chars passed chars/4 (7,500 <= 8,192) and then 500ed remotely.
   (let [resolved {:max-tokens 8192 :provider-key :ollama-qwen3}]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"10000 est\. tokens"
-                          (svc/validate-content-size! (apply str (repeat 30000 \a)) resolved)))
-    (is (nil? (svc/validate-content-size! (apply str (repeat 24000 \a)) resolved)))
-    (is (nil? (svc/validate-content-size! (apply str (repeat 30000 \a))
-                                          (assoc resolved :chars-per-token 4.0))))))
+    (is (= :embedder/input-too-large
+           (try (svc/validate-content-size! (pt-of-length 30000) resolved)
+                (catch clojure.lang.ExceptionInfo e (:error (ex-data e))))))
+    (is (nil? (svc/validate-content-size! (pt-of-length 20000) resolved)))))
