@@ -679,6 +679,37 @@
   ([activity harvested]
    (delegate :cc/summarize-memory summarize-memory-activity-fallback [activity harvested])))
 
+(defn synthesis-delegated?
+  "True when an extension (an LLM synthesiser) answers for the session
+   summary instead of the inline mechanical fallback."
+  []
+  (boolean (or (ext/get-extension :cc/summarize-progress)
+               (ext/get-extension :cc/summarize-memory))))
+
+(m/=> synthesis-delegated? [:=> [:cat] :boolean])
+
+(defn mechanical-progress-summary
+  "The inline progress summary, never delegated: no network, no LLM."
+  [notes git-commits harvested]
+  (summarize-session-progress-fallback notes git-commits harvested))
+
+(m/=> mechanical-progress-summary [:=> [:cat [:maybe [:sequential :any]] [:maybe [:sequential :any]] [:maybe :map]] [:maybe SummaryNote]])
+
+(defn mechanical-session-summary
+  "The inline session summary for a harvest, never delegated: the progress
+   summary, else the memory-activity summary, else nil."
+  [harvested]
+  (or (summarize-session-progress-fallback
+       (concat (:progress-notes harvested) (:completed-tasks harvested))
+       (:git-commits harvested)
+       harvested)
+      (summarize-memory-activity-fallback
+       {:created  (count (or (:memory-ids-created harvested) []))
+        :accessed (count (or (:memory-ids-accessed harvested) []))}
+       harvested)))
+
+(m/=> mechanical-session-summary [:=> [:cat [:maybe :map]] [:maybe SummaryNote]])
+
 (m/=> summarize-memory-activity [:function [:=> [:cat [:maybe [:map [:created {:optional true} [:maybe number?]] [:accessed {:optional true} [:maybe number?]]]]] [:maybe SummaryNote]] [:=> [:cat [:maybe [:map [:created {:optional true} [:maybe number?]] [:accessed {:optional true} [:maybe number?]]]] :any] [:maybe SummaryNote]]])
 
 (defn meaningful-harvest?

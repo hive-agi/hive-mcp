@@ -330,31 +330,72 @@
 ;; Session Synthesis (main entry point)
 ;; =============================================================================
 
+(defn- summary-entry
+  "The store-ready {:content :tags} for `summary` (nil = minimal breadcrumb)."
+  [summary harvested session-timing scope-tag umbrella? extra-tags]
+  (let [minimal? (nil? summary)
+        summary  (or summary (minimal-wrap-summary (crystal/session-id) harvested))
+        content  (build-summary-content summary session-timing harvested)
+        base     (into (or (:tags summary) []) ["auto-kg" "session-wrap" "temporal"])
+        tags     (cond-> (into (conj (vec base) scope-tag) extra-tags)
+                   minimal? (conj "wrap-minimal")
+                   umbrella? (conj "umbrella"))]
+    {:content content :tags tags}))
+
+(defn- synthesized-summary
+  "The (possibly LLM-backed) summary through the registered extensions.
+   nil when neither answers."
+  [harvested]
+  (or (crystal/summarize-session-progress
+       (concat (:progress-notes harvested)
+               (:completed-tasks harvested))
+       (:git-commits harvested)
+       harvested)
+      (crystal/summarize-memory-activity
+       {:created  (count (or (:memory-ids-created harvested) []))
+        :accessed (count (or (:memory-ids-accessed harvested) []))}
+       harvested)))
+
+(defn- upgrade-summary!
+  "Rewrite the persisted mechanical summary `id` with the synthesised one, in
+   place (same id, so the KG edges hold). Any failure keeps the mechanical
+   entry. Returns {:upgraded? bool :error msg?}."
+  [id harvested session-timing scope-tag umbrella?]
+  (try
+    (if-let [summary (synthesized-summary harvested)]
+      (let [{:keys [content tags]} (summary-entry summary harvested session-timing
+                                                  scope-tag umbrella? [])
+            r (facade/update-entry! id {:content content
+                                        :tags tags
+                                        :content-hash (facade/content-hash content)})]
+        (if (or (nil? r) (false? r) (and (map? r) (:error r)))
+          {:upgraded? false :error (str "update refused: " (pr-str r))}
+          {:upgraded? true}))
+      {:upgraded? false})
+    (catch Throwable t
+      (log/warn t "wrap synthesis failed; mechanical summary kept:" id)
+      {:upgraded? false :error (ex-message t)})))
+
 (defn- store-one-summary!
   "Effectful: persist a single scoped summary to the memory store and run
    lifecycle ops for that scope. Returns a SessionSummary-shaped map with
-   :summary-id (or :error) merged with lifecycle stats."
+   :summary-id (or :error) merged with lifecycle stats.
+
+   When an LLM synthesiser is registered, the mechanical summary is stored
+   FIRST (tagged wrap-mechanical) and the synthesis then rewrites that same
+   entry; a synthesis that throws, times out or the process dying mid-call
+   leaves the mechanical entry persisted. Without a synthesiser the summary
+   is mechanical already and is stored once."
   [harvested project-id directory scope-tag umbrella?]
   (let [session-timing (or (:session-timing harvested)
                            (crystal/session-timing-metadata nil (java.time.Instant/now)))
-        content-summary (or (crystal/summarize-session-progress
-                             (concat (:progress-notes harvested)
-                                     (:completed-tasks harvested))
-                             (:git-commits harvested)
-                             harvested)
-                            (crystal/summarize-memory-activity
-                             {:created  (count (or (:memory-ids-created harvested) []))
-                              :accessed (count (or (:memory-ids-accessed harvested) []))}
-                             harvested))
-        minimal? (nil? content-summary)
-        summary (or content-summary
-                    (minimal-wrap-summary (crystal/session-id) harvested))
-        content (build-summary-content summary session-timing harvested)
-        base-tags (into (or (:tags summary) []) ["auto-kg" "session-wrap" "temporal"])
-        ;; Force scope tag explicitly (do not rely on cwd-derived project-id).
-        tags (cond-> (conj (vec base-tags) scope-tag)
-               minimal? (conj "wrap-minimal")
-               umbrella? (conj "umbrella"))
+        delegated? (crystal/synthesis-delegated?)
+        first-summary (if delegated?
+                        (crystal/mechanical-session-summary harvested)
+                        (synthesized-summary harvested))
+        {:keys [content tags]} (summary-entry first-summary harvested session-timing
+                                              scope-tag umbrella?
+                                              (when delegated? ["wrap-mechanical"]))
         expires (dur/calculate-expires "short")
         lifecycle-fut (pool/with-solo
                         (run-lifecycle-ops! project-id directory :harvested harvested))
@@ -367,6 +408,9 @@
                                       :expires (or expires "")
                                       :project-id project-id
                                       :content-hash (facade/content-hash content)}))
+        upgrade (when (and delegated? (result/ok? store-r))
+                  (upgrade-summary! (:ok store-r) harvested session-timing
+                                    scope-tag umbrella?))
         lifecycle (deref lifecycle-fut op-timeout
                          {:lifecycle-error "timeout"})]
     (when (result/ok? store-r)
@@ -391,6 +435,7 @@
               :umbrella? (boolean umbrella?)
               :session-timing session-timing
               :stats (:summary harvested)}
+             (when upgrade {:synthesis upgrade})
              lifecycle)
       {:error (:message store-r)
        :project-id project-id

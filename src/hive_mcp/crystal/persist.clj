@@ -163,4 +163,60 @@
         :failed    (count (remove :success? results))
         :results   results}))))
 
+(defn- upgrade-one!
+  "Rewrite the already-persisted entry `id` with the synthesised `entry`
+   (id, and so every KG edge, preserved). Falls back to a fresh add when the
+   store refuses the update."
+  [store id {:keys [pid entry] :as wrap}]
+  (try
+    (let [normalized (normalize-entry pid entry)
+          updates    (cond-> (select-keys normalized [:content :tags :type :duration :expires])
+                       (string? (:content normalized))
+                       (assoc :content-hash (mem-proto/content-hash (:content normalized))))
+          raw        (mem-proto/update-entry! store id updates)]
+      (if (or (nil? raw) (false? raw) (and (map? raw) (:error raw)))
+        (do (log/warn "wrap-upgrade: update refused for" id "- adding instead")
+            (assoc (persist-one! store wrap) :upgraded-from id))
+        (do (log/info "wrap-upgrade:" {:pid pid :id id})
+            (write-events/notify! :updated {:id id :memory-type (:type normalized)
+                                            :tags (:tags normalized)
+                                            :project-id (:project-id normalized)
+                                            :fields (vec (keys updates))})
+            {:pid pid :project-id (:project-id normalized) :id id
+             :success? true :error nil :upgraded? true})))
+    (catch Throwable t
+      (log/warn "wrap-upgrade failed for" id ":" (ex-message t))
+      {:pid pid :project-id (pid->project-id pid) :id id
+       :success? true :error nil :upgraded? false})))
+
+(defn upgrade-wraps!
+  "Upgrade the mechanical wraps already persisted (`persisted`, the
+   `persist-wraps!` report) with the synthesised `wraps`. A synthesised wrap
+   whose pid already has a persisted entry rewrites that entry in place; one
+   without is added. A persisted entry the synthesis did not answer for stays
+   as written. Returns a PersistReport over the union."
+  ([persisted wraps] (upgrade-wraps! persisted wraps :default))
+  ([persisted wraps store-key]
+   (if-not (mem-proto/store-set?)
+     persisted
+     (let [store    (mem-proto/get-store store-key)
+           by-pid   (into {} (keep (fn [r] (when (and (:success? r) (:id r)) [(:pid r) (:id r)])))
+                          (:results persisted))
+           upgraded (mapv (fn [{:keys [pid] :as w}]
+                            (if-let [id (get by-pid pid)]
+                              (upgrade-one! store id w)
+                              (persist-one! store w)))
+                          wraps)
+           answered (set (map :pid wraps))
+           kept     (remove #(contains? answered (:pid %)) (:results persisted))
+           results  (vec (concat upgraded kept))]
+       {:total     (count results)
+        :persisted (count (filter :success? results))
+        :failed    (count (remove :success? results))
+        :results   (mapv #(select-keys % [:pid :project-id :id :success? :error]) results)}))))
+
+(m/=> upgrade-wraps! [:function
+                      [:=> [:cat PersistReport [:sequential Wrap]] PersistReport]
+                      [:=> [:cat PersistReport [:sequential Wrap] :keyword] PersistReport]])
+
 (m/=> persist-wraps! [:function [:=> [:cat [:sequential Wrap]] PersistReport] [:=> [:cat [:sequential Wrap] :keyword] PersistReport]])
