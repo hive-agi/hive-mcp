@@ -238,8 +238,8 @@
 
 (deftest kg-batch-commands-wiring
   (testing "kg tool-def has batch-edge and batch-traverse in schema"
-    (require 'hive-mcp.tools.consolidated.kg)
-    (let [tool-def @(resolve 'hive-mcp.tools.consolidated.kg/tool-def)
+    (require 'hive-mcp.tools.kg)
+    (let [tool-def @(resolve 'hive-mcp.tools.kg/tool-def)
           schema (:inputSchema tool-def)
           enum (get-in schema [:properties "command" :enum])]
       (is (some #{"batch-edge"} enum) "batch-edge in command enum")
@@ -248,7 +248,7 @@
       (is (get-in schema [:properties "parallel"]) "parallel property exists")))
 
   (testing "kg handlers map has both batch keys"
-    (let [handlers @(resolve 'hive-mcp.tools.consolidated.kg/handlers)]
+    (let [handlers @(resolve 'hive-mcp.tools.kg/handlers)]
       (is (dispatch/handler? (get handlers :batch-edge)) ":batch-edge handler is dispatchable")
       (is (dispatch/handler? (get handlers :batch-traverse)) ":batch-traverse handler is dispatchable"))))
 

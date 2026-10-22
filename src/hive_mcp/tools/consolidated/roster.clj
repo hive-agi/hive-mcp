@@ -25,7 +25,7 @@
   '[["agent"          hive-mcp.tools.consolidated.agent/handle-agent]
     ["addon"          hive-mcp.tools.consolidated.addon/handle-addon]
     ["memory"         hive-mcp.tools.consolidated.memory/handle-memory]
-    ["kg"             hive-mcp.tools.consolidated.kg/handle-kg]
+    ["kg"             hive-mcp.tools.kg/handle-kg]
     ["hivemind"       hive-mcp.tools.consolidated.hivemind/handle-hivemind]
     ["magit"          hive-mcp.tools.consolidated.magit/handle-magit]
     ["kanban"         hive-mcp.tools.consolidated.kanban/handle-kanban]

@@ -3,7 +3,7 @@
 
    Same shape as `hive-mcp.tools.memory.batch`: wraps
    `hive-mcp.batch/make-default-runner` with a kg-specific
-   `:resolve-handler` over `hive-mcp.tools.consolidated.kg/handlers`.
+   `:resolve-handler` over `hive-mcp.tools.kg/handlers`.
 
    The consolidated kg ns is resolved lazily via `requiring-resolve` so
    this batch ns loads even when deeper kg deps (datahike / datalevin
@@ -26,7 +26,7 @@
   []
   (or (rescue nil
               (when-let [v (requiring-resolve
-                            'hive-mcp.tools.consolidated.kg/handlers)]
+                            'hive-mcp.tools.kg/handlers)]
                 @v))
       {}))
 
