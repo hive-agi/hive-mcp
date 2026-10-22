@@ -7,9 +7,12 @@
             [clojure.string :as str]
             [hive-mcp.tools.consolidated.multi :as multi]
             [hive-mcp.tools.result-bridge :as rb]
-            [hive-mcp.dsl.verbs :as verbs]))
+            [hive-mcp.dsl.verbs :as verbs]
+            [hive-mcp.test.stub.isolated-registry :as iso]))
 
 ;; ── Generators ────────────────────────────────────────────────────────────────
+
+(clojure.test/use-fixtures :each iso/with-fresh-registries)
 
 (def gen-tool-name
   (gen/elements ["memory" "kg" "agent" "kanban" "session" "config"

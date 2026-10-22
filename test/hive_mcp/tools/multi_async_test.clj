@@ -5,7 +5,8 @@
             [clojure.string :as str]
             [hive-mcp.tools.multi-async :as async]
             [hive-mcp.channel.context-store :as ctx]
-            [hive-mcp.dns.result :as result]))
+            [hive-mcp.dns.result :as result]
+            [hive-mcp.test.stub.isolated-registry :as iso]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -23,7 +24,7 @@
          (async/reset-all!)
          (ctx/reset-all!))))
 
-(use-fixtures :each clean-fixture)
+(use-fixtures :each iso/with-fresh-registries clean-fixture)
 
 ;; =============================================================================
 ;; Mock run-multi implementations

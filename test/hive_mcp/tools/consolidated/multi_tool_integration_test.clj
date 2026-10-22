@@ -40,11 +40,14 @@
             ;; Multi meta-facade
             [hive-mcp.tools.consolidated.multi :as multi]
             [hive-mcp.dispatch.handler :as dispatch]
-            [hive-mcp.dispatch.verbs :as verbs]))
+            [hive-mcp.dispatch.verbs :as verbs]
+            [hive-mcp.test.stub.isolated-registry :as iso]))
 
 ;; =============================================================================
 ;; Helpers
 ;; =============================================================================
+
+(use-fixtures :each iso/with-fresh-registries)
 
 (defn parse-response
   "Parse JSON response from handler."

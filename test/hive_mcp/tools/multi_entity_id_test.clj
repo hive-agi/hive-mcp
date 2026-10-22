@@ -9,9 +9,10 @@
             [clojure.data.json :as json]
             [hive-mcp.batch :as batch]
             [hive-mcp.dsl.verbs :as verbs]
-            [hive-mcp.test.stub.batch-extensions :as bx]))
+            [hive-mcp.test.stub.batch-extensions :as bx]
+            [hive-mcp.test.stub.isolated-registry :as iso]))
 
-(use-fixtures :each bx/with-batch-extensions)
+(use-fixtures :each iso/with-fresh-registries bx/with-batch-extensions)
 
 (defn- json-ok [data]
   {:type "text" :text (json/write-str data)})

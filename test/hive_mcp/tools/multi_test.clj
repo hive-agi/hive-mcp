@@ -12,7 +12,8 @@
             [clojure.string :as str]
             [clojure.data.json :as json]
             [hive-mcp.tools.multi :as multi]
-            [hive-mcp.test.stub.batch-extensions :as bx]))
+            [hive-mcp.test.stub.batch-extensions :as bx]
+            [hive-mcp.test.stub.isolated-registry :as iso]))
 
 ;; =============================================================================
 ;; Part 1: validate-ops Tests
@@ -22,7 +23,7 @@
 ;; resolution through the :bx/* extension registry. A cold JVM has that
 ;; registry empty; the live server has it filled. Arrange the collaborator
 ;; rather than assert its absence.
-(use-fixtures :each bx/with-batch-extensions)
+(use-fixtures :each iso/with-fresh-registries bx/with-batch-extensions)
 
 (deftest validate-ops-valid-basic-test
   (testing "Simple valid ops pass validation"
