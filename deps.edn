@@ -311,6 +311,10 @@
               ;; every loader lives ~70 min. Measured 2026-10-20 after 4h:
               ;; 73,805 loaders reachable after a full GC, 1 GB metaspace,
               ;; growing ~10 loaders/s. 50 ms/MB keeps them ~3 min instead.
+              ;; The same policy governs datahike's index nodes, which the
+              ;; persistent-sorted-set holds by SoftReference: measured
+              ;; 2026-10-22 at -Xmx10g, 49M datoms (~3.5 GB of a 5.1 GB live
+              ;; set) stayed reachable after a full GC.
               "-XX:SoftRefLRUPolicyMSPerMB=50"]}
 
   :nrepl
