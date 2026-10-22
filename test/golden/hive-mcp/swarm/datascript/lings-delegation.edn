@@ -39,6 +39,7 @@
   {:ns "hive-datascript.swarm.lings", :var "get-stdout-buffer-info"},
   "get-stdout-since"
   {:ns "hive-datascript.swarm.lings", :var "get-stdout-since"},
+  "holder-live?" {:returned "java.lang.Boolean"},
   "init-stdout-buffer!"
   {:ns "hive-datascript.swarm.lings", :var "init-stdout-buffer!"},
   "refresh-claim!"

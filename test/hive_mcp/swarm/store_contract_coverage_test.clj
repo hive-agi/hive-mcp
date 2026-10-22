@@ -55,8 +55,8 @@
 
 (deftest swarm-store-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths paths :exempt exempt})]
-    (is (= 138 (count (:universe report))) "every public defn of the six directories")
-    (is (= 138 (count (:covered report))) "contracted: every one")
+    (is (= 139 (count (:universe report))) "every public defn of the six directories")
+    (is (= 139 (count (:covered report))) "contracted: every one")
     (is (empty? (:exempt report)))))
 
 (def ^:private store-nses

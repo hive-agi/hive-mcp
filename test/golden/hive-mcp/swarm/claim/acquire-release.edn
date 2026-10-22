@@ -1,7 +1,13 @@
-{:a1 {:acquired? true, :conflicts [], :warnings [], :spans-claimed 2},
+{:a1
+ {:acquired? true,
+  :conflicts [],
+  :warnings [],
+  :spans-claimed 2,
+  :spans-refreshed 0},
  :a2
  {:acquired? false,
   :spans-claimed 0,
+  :spans-refreshed 0,
   :conflicts
   [{:file "src/x.clj",
     :qn nil,
@@ -9,8 +15,18 @@
     :held-by "ling-a",
     :reason :file-claim}],
   :warnings []},
- :a3 {:acquired? true, :conflicts [], :warnings [], :spans-claimed 1},
- :a4 {:acquired? true, :conflicts [], :warnings [], :spans-claimed 0},
+ :a3
+ {:acquired? true,
+  :conflicts [],
+  :warnings [],
+  :spans-claimed 1,
+  :spans-refreshed 0},
+ :a4
+ {:acquired? true,
+  :conflicts [],
+  :warnings [],
+  :spans-claimed 0,
+  :spans-refreshed 0},
  :held
  ({:span/file "src/w.clj",
    :span/mode :body,

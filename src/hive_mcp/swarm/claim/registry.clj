@@ -82,7 +82,8 @@
    [:acquired? :boolean]
    [:conflicts [:vector span/Conflict]]
    [:warnings [:vector [:map]]]
-   [:spans-claimed [:int {:min 0}]]])
+   [:spans-claimed [:int {:min 0}]]
+   [:spans-refreshed {:optional true} [:int {:min 0}]]])
 
 (def TxReport
   "A DataScript transaction report, as lings/claim-file! answers it (a record,
@@ -128,17 +129,90 @@
       (inst? v)    (inst-ms v)
       :else        nil)))
 
-(defn- stale-row?
-  "True when a claim is older than `threshold-ms`.
+(defn- epoch-ms
+  "Epoch millis of an inst or a bare long, else nil."
+  [v]
+  (cond
+    (number? v) (long v)
+    (inst? v)   (inst-ms v)
+    :else       nil))
 
-   A row with no readable timestamp is NOT stale. That is the conservative
-   direction: keeping a claim whose age is unknown costs one agent a wait,
-   while dropping it hands the form to a second editor while the first may
-   still be in it."
+(defn- touched-ms
+  "Epoch millis of a claim row's last refresh, or nil when it was never touched.
+
+   `refresh-claim!` stamps `:claim/heartbeat-at`; `held-spans` copies it onto
+   the projected row as :touched-at. Every spelling is read so a projection
+   that grows the field later is honoured without a change here."
+  [row]
+  (some (comp epoch-ms row)
+        [:touched-at :claim/touched-at :heartbeat-at :claim/heartbeat-at]))
+
+(defn last-active-ms
+  "Epoch millis of a claim row's LAST ACTIVITY: the later of its creation and
+   its last refresh. nil when it carries neither.
+
+   This is what makes the claim a lease rather than a timer: an agent that keeps
+   writing its form keeps its claim, however long ago it first took it. A legacy
+   row, never refreshed, falls back to its creation time exactly as before."
+  [row]
+  (let [ts (keep identity [(created-ms row) (touched-ms row)])]
+    (when (seq ts) (reduce max ts))))
+
+(m/=> last-active-ms [:=> [:cat [:map-of :keyword :any]] [:maybe :int]])
+
+(defn- stale-row?
+  "True when a claim has had no activity for longer than `threshold-ms`.
+
+   Activity is `last-active-ms`, so a refreshed claim stays live however old its
+   creation. A row with no readable timestamp is NOT stale. That is the
+   conservative direction: keeping a claim whose age is unknown costs one agent
+   a wait, while dropping it hands the form to a second editor while the first
+   may still be in it."
   [row now-ms threshold-ms]
-  (if-let [created (created-ms row)]
-    (> (- now-ms created) threshold-ms)
+  (if-let [active (last-active-ms row)]
+    (> (- now-ms active) threshold-ms)
     false))
+
+(defn heartbeats
+  "{claim-key heartbeat-inst} for every claim that was ever refreshed.
+
+   `get-all-claims` projects a closed field list that does not include the
+   heartbeat, so it is read here with one query. A store that cannot answer
+   (no swarm addon, no connection) yields {} and every claim falls back to its
+   creation time, which is the pre-lease behaviour, never a looser one."
+  []
+  (try
+    (let [q-db       (requiring-resolve 'hive-mcp.swarm.datascript/q-db)
+          current-db (requiring-resolve 'hive-mcp.swarm.datascript/current-db)]
+      (into {}
+            (q-db (current-db)
+                  '[:find ?k ?h
+                    :where
+                    [?e :claim/file ?k]
+                    [?e :claim/heartbeat-at ?h]])))
+    (catch Throwable no-store-means-creation-age
+      (log/debug "claim heartbeats unavailable:" (ex-message no-store-means-creation-age))
+      {})))
+
+;; boundary: one query over the swarm claim store, {} when it cannot answer
+(m/=> heartbeats [:=> [:cat] [:map-of :string inst?]])
+
+(defn key-stale?
+  "True when the claim keyed `k` exists and has had no activity for
+   `threshold-ms` (default the store's stale threshold). The lease-aware
+   replacement for the store's creation-age `claim-stale?`."
+  ([k] (key-stale? k lings/default-stale-threshold-ms))
+  ([k threshold-ms]
+   (if-let [info (lings/get-claim-info k)]
+     (stale-row? (assoc info :touched-at (get (heartbeats) k))
+                 (System/currentTimeMillis)
+                 threshold-ms)
+     false)))
+
+;; boundary: reads the claim row and its heartbeat from the swarm store
+(m/=> key-stale? [:function
+                  [:=> [:cat :string] :boolean]
+                  [:=> [:cat :string [:int {:min 0}]] :boolean]])
 
 (defn held-spans
   "Live claims as spans, each carrying its holder.
@@ -147,32 +221,47 @@
    otherwise fence that form off forever, and since a claim is advisory (carto
    refuses a stale fingerprint regardless) honouring a dead one buys no safety
    and costs every later agent. `:include-stale?` keeps them, for the claim
-   listing tools that exist to show exactly that."
+   listing tools that exist to show exactly that.
+
+   Staleness is measured from LAST ACTIVITY (`last-active-ms`: the later of
+   creation and the last `refresh-claim!` heartbeat), so a claim is a lease its
+   holder keeps by working, not a timer that runs out under it.
+
+   `:drop-dead?` also drops claims whose holder fails `lings/holder-live?`
+   (unregistered, or in a dead status), the rule `claim-file!` already uses to
+   take such a key over. Off by default so listings still show them."
   ([] (held-spans nil))
-  ([{:keys [include-stale? threshold-ms now-ms]
-     :or   {include-stale? false}}]
+  ([{:keys [include-stale? threshold-ms now-ms drop-dead?]
+     :or   {include-stale? false drop-dead? false}}]
    (let [threshold (or threshold-ms lings/default-stale-threshold-ms)
-         now       (or now-ms (System/currentTimeMillis))]
+         now       (or now-ms (System/currentTimeMillis))
+         beats     (heartbeats)
+         live?     (memoize lings/holder-live?)]
      (into []
            (comp
             (map (fn [row]
                    ;; get-all-claims projects :file/:slave-id/:qn/:mode rather
                    ;; than raw attributes, so accept both shapes.
-                   (cond-> row
-                     (and (:file row) (not (:claim/file row)))
-                     (assoc :claim/file (:file row))
+                   (let [row (cond-> row
+                               (and (:file row) (not (:claim/file row)))
+                               (assoc :claim/file (:file row))
 
-                     (and (:slave-id row) (not (:claim/slave row)))
-                     (assoc :claim/slave (:slave-id row))
+                               (and (:slave-id row) (not (:claim/slave row)))
+                               (assoc :claim/slave (:slave-id row))
 
-                     (and (:qn row) (not (:claim/qn row)))
-                     (assoc :claim/qn (:qn row))
+                               (and (:qn row) (not (:claim/qn row)))
+                               (assoc :claim/qn (:qn row))
 
-                     (and (:mode row) (not (:claim/mode row)))
-                     (assoc :claim/mode (:mode row)))))
+                               (and (:mode row) (not (:claim/mode row)))
+                               (assoc :claim/mode (:mode row)))
+                         beat (get beats (:claim/file row))]
+                     (cond-> row
+                       (and beat (not (:touched-at row))) (assoc :touched-at beat)))))
             (remove (fn [row]
                       (and (not include-stale?)
                            (stale-row? row now threshold))))
+            (remove (fn [row]
+                      (and drop-dead? (not (live? (:claim/slave row))))))
             (map row->span))
            (lings/get-all-claims)))))
 
@@ -182,7 +271,8 @@
                   [:=> [:cat [:maybe [:map
                                       [:include-stale? {:optional true} :boolean]
                                       [:threshold-ms {:optional true} [:maybe [:int {:min 0}]]]
-                                      [:now-ms {:optional true} [:maybe :int]]]]]
+                                      [:now-ms {:optional true} [:maybe :int]]
+                                      [:drop-dead? {:optional true} [:maybe :boolean]]]]]
                    [:vector HeldSpan]]])
 
 ;; =============================================================================
@@ -197,6 +287,7 @@
   ([wanted slave-id] (conflicts-for wanted slave-id nil))
   ([wanted slave-id scope]
    (span/conflicts (graph/callers-fn scope) (held-spans) wanted slave-id)))
+
 
 (m/=> conflicts-for [:function
                      [:=> [:cat span/SpanLike [:maybe :string]] [:vector span/Conflict]]
@@ -267,6 +358,16 @@
   []
   (logic/get-logic-db-atom))
 
+(defn- own-hold?
+  "True when `held` already records `slave-id` holding `s` in the same mode, so
+   claiming it again is a refresh, not a new claim."
+  [held s slave-id]
+  (let [k (span/key-of s)]
+    (boolean (some #(and (= k (:claim/key %))
+                         (= slave-id (:claim/slave %))
+                         (= (:span/mode s) (:span/mode %)))
+                   held))))
+
 (defn acquire!
   "Check every span in `wanted` and claim them all, or claim none.
 
@@ -278,39 +379,52 @@
    on the same file through ANOTHER worktree is reported under :warnings and
    does not refuse; without one, :warnings is always empty.
 
-   Returns {:acquired? bool :conflicts [...] :warnings [...] :spans-claimed n}.
+   A span `slave-id` already holds in the same mode is REFRESHED
+   (`lings/refresh-claim!`: its heartbeat moves to now, its creation time is
+   kept) rather than claimed again, so re-acquiring renews the lease.
+   `:drop-dead?` makes claims of dead or unregistered holders not block (see
+   `held-spans`).
+
+   Returns {:acquired? bool :conflicts [...] :warnings [...] :spans-claimed n
+            :spans-refreshed n}.
    Each conflict and warning carries :file :qn :mode :held-by :reason plus a
    rendered :message, so the refusal tells an agent which form to wait on
    rather than which file."
-  [wanted slave-id & [{:keys [task-id scope ctx]}]]
+  [wanted slave-id & [{:keys [task-id scope ctx drop-dead?]}]]
   (let [spans  (mapv span/span wanted)
         render (fn [xs] (mapv #(assoc % :message (span/explain %)) xs))]
     (if (empty? spans)
-      {:acquired? true :conflicts [] :warnings [] :spans-claimed 0}
+      {:acquired? true :conflicts [] :warnings [] :spans-claimed 0 :spans-refreshed 0}
       (locking (claim-lock)
         (let [callers  (graph/callers-fn scope)
-              held     (held-spans)
+              held     (held-spans {:drop-dead? drop-dead?})
               assessed (mapv #(span/assess callers held % slave-id ctx) spans)
               found    (vec (mapcat :conflicts assessed))
               warned   (render (distinct (mapcat :warnings assessed)))]
           (if (seq found)
             (do (log/info "claim refused for" slave-id "on" (count spans)
                           "spans:" (count found) "conflicts")
-                {:acquired?     false
-                 :spans-claimed 0
-                 :conflicts     (render found)
-                 :warnings      warned})
-            (do (doseq [s spans]
-                  (claim-span! s slave-id {:task-id task-id}))
-                {:acquired?     true
-                 :conflicts     []
-                 :warnings      warned
-                 :spans-claimed (count spans)})))))))
+                {:acquired?       false
+                 :spans-claimed   0
+                 :spans-refreshed 0
+                 :conflicts       (render found)
+                 :warnings        warned})
+            (let [{renew true fresh false} (group-by #(own-hold? held % slave-id) spans)]
+              (doseq [s renew]
+                (lings/refresh-claim! (span/key-of s)))
+              (doseq [s fresh]
+                (claim-span! s slave-id {:task-id task-id}))
+              {:acquired?       true
+               :conflicts       []
+               :warnings        warned
+               :spans-claimed   (count spans)
+               :spans-refreshed (count renew)})))))))
 
 (m/=> acquire! [:function
                 [:=> [:cat Wanted :string] AcquireResult]
                 [:=> [:cat Wanted :string [:maybe [:map
                                                    [:task-id {:optional true} [:maybe :string]]
                                                    [:scope {:optional true} [:maybe :string]]
-                                                   [:ctx {:optional true} [:maybe span/Ctx]]]]]
+                                                   [:ctx {:optional true} [:maybe span/Ctx]]
+                                                   [:drop-dead? {:optional true} [:maybe :boolean]]]]]
                  AcquireResult]])
