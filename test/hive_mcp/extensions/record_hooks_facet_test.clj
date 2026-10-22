@@ -18,6 +18,16 @@
 (defn- clean! []
   (doseq [p points id (hooks/registered p)] (hooks/unregister! p id)))
 
+(defn- preserve-registry
+  "Snapshot the global hook registry (hooks other namespaces registered at
+   load, at every Point) before this namespace runs, and put it back exactly
+   afterwards."
+  [t]
+  (let [registry @#'hooks/hooks
+        saved @registry]
+    (try (t) (finally (reset! registry saved)))))
+
+(use-fixtures :once preserve-registry)
 (use-fixtures :each (fn [t] (clean!) (try (t) (finally (clean!)))))
 
 (def ^:private Scenario

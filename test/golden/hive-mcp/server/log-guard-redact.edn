@@ -1,8 +1,12 @@
-{"" "",
- "  many\t\twhitespace \n runs  " "many whitespace runs",
- "Authorization: Bearer sk-abc123xyz"
- "Authorization: [redacted] [redacted]",
- "api_key=hunter2 and token: kept-because-separate"
- "[redacted] and token: kept-because-separate",
- "plain message, nothing secret" "plain message, nothing secret",
- "token=abc password=  sk-short" "[redacted] password= sk-short"}
+{"assignment"
+ {:in "api_key=hunter2 and other words",
+  :out "[redacted] and other words"},
+ "bearer-header"
+ {:in "Authorization: Bearer sk-abc123xyz",
+  :out "Authorization: [redacted] [redacted]"},
+ "empty" {:in "", :out ""},
+ "plain"
+ {:in "plain message, nothing secret",
+  :out "plain message, nothing secret"},
+ "whitespace"
+ {:in "  many\t\twhitespace \n runs  ", :out "many whitespace runs"}}
