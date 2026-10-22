@@ -1,0 +1,6 @@
+{:value {:status 200},
+ :rethrown "boom",
+ :recorded
+ [[[:http :get "/health"] true :ok]
+  [[:http :post "/mcp"] true :error]],
+ :answer-when-recorder-throws nil}
