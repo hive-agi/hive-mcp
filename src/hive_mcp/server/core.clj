@@ -244,7 +244,8 @@
 
 (defn install-metrics!
   "Install the metrics port sink and contribute the `project metrics` verbs,
-   both bound late. A no-op when hive-ttracking.metrics is absent; never throws."
+   both bound late (a no-op when hive-ttracking.metrics is absent), then start
+   the JVM resource sampler (idempotent). Never throws."
   []
   (try
     (when-let [install (requiring-resolve 'hive-mcp.telemetry.metrics/install-default!)]
@@ -253,6 +254,12 @@
           (verbs))))
     (catch Throwable e
       (log/warn "metrics install failed (non-fatal):" (ex-message e))
+      nil))
+  (try
+    (when-let [start (requiring-resolve 'hive-mcp.telemetry.resources/start-default!)]
+      (start))
+    (catch Throwable e
+      (log/warn "resource sampler start failed (non-fatal):" (ex-message e))
       nil)))
 
 (m/=> install-metrics! [:=> [:cat] :any])
@@ -309,12 +316,15 @@
 
 (defn stop!
   "Halt the running Integrant system. Safe to call when no system running.
-   Keys are halted in reverse init order (Integrant default)."
+   Keys are halted in reverse init order (Integrant default). The JVM
+   resource sampler is stopped too (idempotent)."
   []
   (when-let [sys @system]
     (log/info "Halting Integrant system...")
     (ig/halt! sys)
     (clojure.core/reset! system nil)
+    (try (when-let [stop (requiring-resolve 'hive-mcp.telemetry.resources/stop!)] (stop))
+         (catch Throwable _ nil))
     (log/info "Integrant system halted.")
     :halted))
 
