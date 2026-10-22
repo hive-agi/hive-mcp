@@ -13,7 +13,8 @@
             [hive-test.isolation :as iso]
             hive-mcp.isolation-methods
             [hive-mcp.swarm.datascript.lings :as lings]
-            [hive-mcp.swarm.delegate :as delegate]))
+            [hive-mcp.swarm.delegate :as delegate]
+            [hive-mcp.swarm.claim.graph :as graph]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -177,7 +178,8 @@
                          :wanted  (mapv :span/qn wanted)
                          :held    (count held)
                          :opts    (set (keys opts))
-                         :callers (fn? (:callers-fn opts))})
+                         :callers (= (some? (:callers-fn opts))
+                                     (some? (graph/callers-fn nil)))})
        [{:file f :qn "app.core/alpha" :held-by "ling-1"
          :why {:fact [:claim/blocks] :rules [:same-form] :premises []}}]))
     (let [r (gate/check-write! {:agent-id "ling-2"
@@ -186,7 +188,7 @@
       (is (= [{:agent "ling-2" :wanted ["app.core/alpha" "app.core/delta"]
                :held 1 :opts #{:callers-fn :ctx} :callers true}]
              @seen)
-          "called ONCE with the whole wanted vector")
+          "called ONCE with the whole wanted vector, threading the host's callers graph (nil without carto)")
       (is (= {:fact [:claim/blocks] :rules [:same-form] :premises []}
              (:why (first (:conflicts r))))))))
 

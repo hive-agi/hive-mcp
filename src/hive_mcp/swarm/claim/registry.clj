@@ -158,6 +158,8 @@
   (let [ts (keep identity [(created-ms row) (touched-ms row)])]
     (when (seq ts) (reduce max ts))))
 
+(m/=> last-active-ms [:=> [:cat [:map-of :keyword :any]] [:maybe :int]])
+
 (defn- stale-row?
   "True when a claim has had no activity for longer than `threshold-ms`.
 
@@ -192,6 +194,9 @@
       (log/debug "claim heartbeats unavailable:" (ex-message no-store-means-creation-age))
       {})))
 
+;; boundary: one query over the swarm claim store, {} when it cannot answer
+(m/=> heartbeats [:=> [:cat] [:map-of :string inst?]])
+
 (defn key-stale?
   "True when the claim keyed `k` exists and has had no activity for
    `threshold-ms` (default the store's stale threshold). The lease-aware
@@ -203,6 +208,11 @@
                  (System/currentTimeMillis)
                  threshold-ms)
      false)))
+
+;; boundary: reads the claim row and its heartbeat from the swarm store
+(m/=> key-stale? [:function
+                  [:=> [:cat :string] :boolean]
+                  [:=> [:cat :string [:int {:min 0}]] :boolean]])
 
 (defn held-spans
   "Live claims as spans, each carrying its holder.

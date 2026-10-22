@@ -6,9 +6,17 @@
  :available?
  [:delegates-to "hive-agent.swarm.claim.graph" "callers-fn"],
  :acquire-nothing
- {:acquired? true, :conflicts [], :warnings [], :spans-claimed 0},
+ {:acquired? true,
+  :conflicts [],
+  :warnings [],
+  :spans-claimed 0,
+  :spans-refreshed 0},
  :acquire-nothing-set
- {:acquired? true, :conflicts [], :warnings [], :spans-claimed 0},
+ {:acquired? true,
+  :conflicts [],
+  :warnings [],
+  :spans-claimed 0,
+  :spans-refreshed 0},
  :release-span! [:delegates-to "hive-agent.swarm.claim.span" "key-of"],
  :acquire-one [:delegates-to "hive-agent.swarm.claim.span" "span"],
  :held-spans

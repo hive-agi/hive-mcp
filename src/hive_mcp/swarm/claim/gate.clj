@@ -52,7 +52,8 @@
             [hive-mcp.swarm.datascript :as ds]
             [hive-mcp.swarm.datascript.lings :as lings]
             [hive-mcp.swarm.delegate :as delegate]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [malli.core :as m])
   (:import [java.nio.file Path Paths]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -76,6 +77,9 @@
    vector of wanted spans."
   [f]
   (first (reset-vals! reason-override f)))
+
+;; boundary: swaps the explainer seam; the previous one
+(m/=> register-reason-fn! [:=> [:cat [:maybe ifn?]] [:maybe ifn?]])
 
 (def ^:dynamic *yield-notify!*
   "(fn [sender to event-type data]) used for yield requests; nil means
@@ -103,6 +107,8 @@
   [raw]
   (when (and (string? raw) (not (str/blank? raw)))
     (peek (identity/caller-id-lookup-keys (str/trim raw)))))
+
+(m/=> agent-key [:=> [:cat :any] [:maybe :string]])
 
 (defn- anchor
   "`file` as an absolute, normalized path; a relative one resolves against `cwd`."
@@ -233,3 +239,37 @@
       {:allowed? true
        :degraded (str (.getSimpleName (class gate-fails-open)) ": "
                       (ex-message gate-fails-open))})))
+
+(def GateSpan
+  "One span a writer asks for."
+  [:map
+   [:file :string]
+   [:qn {:optional true} [:maybe :string]]
+   [:mode {:optional true} [:maybe [:or :keyword :string]]]])
+
+(def WriteRequest
+  "What carto sends before it writes."
+  [:map
+   [:agent-id {:optional true} [:maybe :string]]
+   [:cwd {:optional true} [:maybe :string]]
+   [:scope {:optional true} [:maybe :string]]
+   [:op {:optional true} [:maybe :keyword]]
+   [:spans {:optional true} [:maybe [:sequential GateSpan]]]])
+
+(def WriteDecision
+  "The gate's answer: allowed (claimed, skipped or degraded) or refused."
+  [:or
+   [:map
+    [:allowed? [:= true]]
+    [:acquired {:optional true} [:int {:min 0}]]
+    [:warnings {:optional true} [:vector :map]]
+    [:lease-ms {:optional true} [:int {:min 0}]]
+    [:skipped {:optional true} :keyword]
+    [:degraded {:optional true} :string]]
+   [:map
+    [:allowed? [:= false]]
+    [:conflicts [:vector :map]]
+    [:hint :string]]])
+
+;; boundary: claims through the swarm store and may tell holders to yield
+(m/=> check-write! [:=> [:cat WriteRequest] WriteDecision])

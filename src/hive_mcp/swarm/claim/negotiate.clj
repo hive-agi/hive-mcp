@@ -173,6 +173,21 @@
   (request-yields! notify! requester task-id (holds conflicts)
                    (or now-ms (System/currentTimeMillis))))
 
+(def YieldSent
+  "One yield request actually sent: the holder asked and the key it holds."
+  [:map [:holder :string] [:file :string]])
+
+;; boundary: tells each holder through notify!; the requests actually sent
+(m/=> request-yields-for!
+      [:function
+       [:=> [:cat :string [:sequential span/Conflict]] [:vector YieldSent]]
+       [:=> [:cat :string [:sequential span/Conflict]
+             [:maybe [:map
+                      [:task-id {:optional true} [:maybe :string]]
+                      [:notify! {:optional true} NotifyFn]
+                      [:now-ms {:optional true} [:maybe :int]]]]]
+        [:vector YieldSent]]])
+
 (defn- warn-claimant!
   "Tell `ling-id` about holds on its files in other worktrees. Never blocks."
   [notify! ling-id task-id warnings]

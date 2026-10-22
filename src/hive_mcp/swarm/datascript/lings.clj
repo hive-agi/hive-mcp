@@ -91,6 +91,9 @@
                        slave-id)]
        (not (contains? dead-statuses (:slave/status slave)))))))
 
+;; boundary: reads the slave entity from the swarm store
+(m/=> holder-live? [:=> [:cat [:maybe :string]] :boolean])
+
 (defn- lease-stale?
   "True when the claim on `file-path` has had no activity for the lease window.
 
