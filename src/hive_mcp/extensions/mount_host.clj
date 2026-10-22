@@ -164,6 +164,22 @@
         (map->AddonRegistryHost (into {} host)))
     host))
 
+(defn- stale-registry-host?
+  "A record named like AddonRegistryHost but of an earlier class object."
+  [host]
+  (and (record? host)
+       (not (instance? AddonRegistryHost host))
+       (= (.getName ^Class (class host)) (.getName ^Class AddonRegistryHost))))
+
+;; Any value in. The answer is that same value, unless it was a stale
+;; AddonRegistryHost, which comes back as a current one carrying its seams.
+(m/=> current [:=> [:cat :any] :any
+               [:fn {:error/message "current answers its host, or rebuilds a stale registry host"}
+                (fn [[[host] out]]
+                  (if (stale-registry-host? host)
+                    (and (instance? AddonRegistryHost out) (= (into {} host) (into {} out)))
+                    (identical? host out)))]])
+
 ;; =============================================================================
 ;; Boundary: unregister ids after teardown
 ;; =============================================================================

@@ -94,3 +94,8 @@
     (when clean? (write-stamp! results))
     (shutdown-agents)
     (System/exit (if clean? 0 1))))
+
+;; -X entry: clojure.exec hands it the exec-args map (nil when none). It ends
+;; in System/exit, so no value ever comes back; :nil is the output type of a
+;; call that does not return.
+(m/=> compile-boot-closure! [:=> [:cat [:maybe :map]] :nil])

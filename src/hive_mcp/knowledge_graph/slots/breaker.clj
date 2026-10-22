@@ -12,7 +12,8 @@
    of the kernel var would not reach callers of this name. See memory
    20260919135346-7838bb58."
   (:refer-clojure :exclude [reset!])
-  (:require [hive-mcp.resilience.breaker :as cb]))
+  (:require [hive-mcp.resilience.breaker :as cb]
+            [malli.core :as m]))
 
 (def default-policy
   "See `hive-mcp.resilience.breaker/default-policy`."
@@ -67,3 +68,16 @@
   "See `hive-mcp.resilience.breaker/reset!`."
   [breaker-atom]
   (cb/reset! breaker-atom))
+
+;; Contracts: the kernel's, stated over the kernel's own schemas, so the
+;; facade's contract cannot drift from the fn it calls through to.
+(m/=> fresh [:=> [:cat] cb/Breaker])
+(m/=> on-success [:=> [:cat :any] cb/Breaker])
+(m/=> on-failure [:=> [:cat :map cb/Policy :int] cb/Breaker])
+(m/=> maybe-recover [:=> [:cat cb/Breaker :int] cb/Breaker])
+(m/=> decision [:=> [:cat :map] [:enum :pass :block]])
+(m/=> attempt [:=> [:cat cb/BreakerAtom :any cb/Policy] cb/Breaker])
+(m/=> record-success! [:=> [:cat cb/BreakerAtom :any] cb/BreakerMap])
+(m/=> record-failure! [:=> [:cat cb/BreakerAtom :any cb/Policy] cb/Breaker])
+(m/=> snapshot [:=> [:cat cb/BreakerAtom] :map])
+(m/=> reset! [:=> [:cat cb/BreakerAtom] :map])
