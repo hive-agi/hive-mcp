@@ -81,7 +81,7 @@
 
    The one liveness rule for claim holders: `claim-file!` takes over a key
    whose holder fails it, and `claim.registry/held-spans` (`:drop-dead?`) and
-   `claim.gate` stop counting such a holder as a blocker. An unregistered id
+   `claim.negotiate/check-write!` stop counting such a holder as a blocker. An unregistered id
    fails it too, matching what `claim-file!` has always done: a claim row
    cannot outlive the slave entity it references."
   [slave-id]

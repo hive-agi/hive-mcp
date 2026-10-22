@@ -1,11 +1,10 @@
 (ns hive-mcp.swarm.claim.gate-test
   "The carto write gate through the REAL claim store (`:swarm-ds` isolation,
    as `roundtrip-test`). Yield requests go to a recording notify fn through
-   `gate/*yield-notify!*`; the conflict explainer is installed through
-   `gate/register-reason-fn!`. No var is redefined except `registry/acquire!`
+   `negotiate/*yield-notify!*`; the conflict explainer is installed through
+   `negotiate/register-reason-fn!`. No var is redefined except `registry/acquire!`
    in the fail-open test, which needs an internal error to happen."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
-            [hive-mcp.swarm.claim.gate :as gate]
             [hive-mcp.swarm.claim.negotiate :as negotiate]
             [hive-mcp.swarm.claim.registry :as registry]
             [hive-mcp.swarm.claim.span :as span]
@@ -21,10 +20,10 @@
 
 (defn- clean-seams [t]
   (negotiate/reset-yield-ledger!)
-  (let [prev (gate/register-reason-fn! nil)]
+  (let [prev (negotiate/register-reason-fn! nil)]
     (try (t)
          (finally
-           (gate/register-reason-fn! prev)
+           (negotiate/register-reason-fn! prev)
            (negotiate/reset-yield-ledger!)))))
 
 (use-fixtures :each (iso/with-isolations :swarm-ds) clean-seams)
@@ -36,7 +35,7 @@
   id)
 
 (defn- write! [agent-id qn]
-  (gate/check-write! {:agent-id agent-id
+  (negotiate/check-write! {:agent-id agent-id
                       :op       :write-form
                       :spans    [{:file f :qn qn :mode :body}]}))
 
@@ -66,7 +65,7 @@
   (ling! "ling-2")
   (write! "ling-1" "app.core/alpha")
   (let [sent (atom [])
-        r    (binding [gate/*yield-notify!* (fn [& args] (swap! sent conj (vec args)))]
+        r    (binding [negotiate/*yield-notify!* (fn [& args] (swap! sent conj (vec args)))]
                (write! "ling-2" "app.core/alpha"))
         c    (first (:conflicts r))]
     (is (false? (:allowed? r)))
@@ -82,7 +81,7 @@
     (testing "the holder is asked to yield, once, and the caller is not parked"
       (is (= [["ling-2" "ling-1" :claim/yield-request]]
              (mapv #(subvec % 0 3) @sent)))
-      (binding [gate/*yield-notify!* (fn [& args] (swap! sent conj (vec args)))]
+      (binding [negotiate/*yield-notify!* (fn [& args] (swap! sent conj (vec args)))]
         (write! "ling-2" "app.core/alpha"))
       (is (= 1 (count @sent)) "a retry does not repeat the request")
       (is (empty? (ds/q '[:find ?w :where [?w :wait-queue/ling-id "ling-2"]]))))))
@@ -96,9 +95,9 @@
 
 (deftest a-nil-or-blank-agent-is-skipped
   (is (= {:allowed? true :skipped :no-agent}
-         (gate/check-write! {:agent-id nil :spans [{:file f :qn "app.core/alpha"}]})))
+         (negotiate/check-write! {:agent-id nil :spans [{:file f :qn "app.core/alpha"}]})))
   (is (= {:allowed? true :skipped :no-agent}
-         (gate/check-write! {:agent-id "  " :spans [{:file f :qn "app.core/alpha"}]})))
+         (negotiate/check-write! {:agent-id "  " :spans [{:file f :qn "app.core/alpha"}]})))
   (is (empty? (registry/held-spans))))
 
 (deftest an-internal-error-fails-open-as-degraded
@@ -172,7 +171,7 @@
   (ling! "ling-2")
   (write! "ling-1" "app.core/alpha")
   (let [seen (atom [])]
-    (gate/register-reason-fn!
+    (negotiate/register-reason-fn!
      (fn [held wanted agent opts]
        (swap! seen conj {:agent   agent
                          :wanted  (mapv :span/qn wanted)
@@ -182,7 +181,7 @@
                                      (some? (graph/callers-fn nil)))})
        [{:file f :qn "app.core/alpha" :held-by "ling-1"
          :why {:fact [:claim/blocks] :rules [:same-form] :premises []}}]))
-    (let [r (gate/check-write! {:agent-id "ling-2"
+    (let [r (negotiate/check-write! {:agent-id "ling-2"
                                 :spans    [{:file f :qn "app.core/alpha"}
                                            {:file f :qn "app.core/delta"}]})]
       (is (= [{:agent "ling-2" :wanted ["app.core/alpha" "app.core/delta"]
@@ -210,7 +209,7 @@
   (ling! "ling-1")
   (ling! "ling-2")
   (write! "ling-1" "app.core/alpha")
-  (gate/register-reason-fn! (fn [& _] (throw (ex-info "boom" {}))))
+  (negotiate/register-reason-fn! (fn [& _] (throw (ex-info "boom" {}))))
   (let [r (write! "ling-2" "app.core/alpha")]
     (is (false? (:allowed? r)))
     (is (nil? (:why (first (:conflicts r)))))))
