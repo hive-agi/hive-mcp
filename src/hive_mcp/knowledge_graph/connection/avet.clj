@@ -70,6 +70,26 @@
       db (datalog-fallback store attr)
       :else ())))
 
+(defn eids-with-value
+  "Lazy seq of the eids whose `attr` equals `value`, ascending by eid, read
+   from the value-first index of the store's snapshot: a seek to the
+   [attr value] prefix, so realizing the first N touches O(N) datoms rather
+   than every datom of the value. An unindexed attribute or an unknown
+   engine falls back to a Datalog read, which realizes every match."
+  [store attr value]
+  (let [db     (spi/db-snapshot store)
+        engine (engine-of db)
+        [fn-sym index] (get engine-index engine)]
+    (cond
+      (and fn-sym (value-indexed? engine db attr))
+      (map :e ((requiring-resolve fn-sym) db index attr value))
+
+      db (sort (spi/query store '[:find [?e ...] :in $ ?a ?v :where [?e ?a ?v]]
+                          [attr value]))
+      :else ())))
+
+(m/=> eids-with-value [:=> [:cat :any :keyword :any] [:sequential :int]])
+
 (extend-protocol IAttrValueIndex
   Object
   (attr-values-ascending [store attr]
