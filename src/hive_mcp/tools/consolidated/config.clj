@@ -71,9 +71,10 @@
 
 (defn- reload*
   [_params]
-  (let [loaded (config/load-global-config!)]
+  (let [{:keys [loaded rewire]} ((requiring-resolve 'hive-mcp.server.config-reload/reload!))]
     (result/ok {:status "reloaded"
-                :keys (vec (keys loaded))})))
+                :keys (vec (keys loaded))
+                :rewire rewire})))
 
 (defn- path*
   "Return config file path info."
