@@ -130,13 +130,27 @@
 
 (m/=> resolve-tool-handler [:=> [:cat :string] [:maybe [:fn {:gen/elements [identity]} ifn?]]])
 
+(defn advertised-surface
+  "The ONE advertised tool surface (`hive-mcp.tools.registry/advertised-tool-defs`:
+   addon claims over core names applied, raw handlers), resolved at call time
+   because the tool registry loads this namespace. [] when it cannot be loaded."
+  []
+  (vec (rescue []
+               (when-let [f (requiring-resolve 'hive-mcp.tools.registry/advertised-tool-defs)]
+                 (f)))))
+
 (defn dispatch-divergences
-  "Coherence check between advertised consolidated tools and the multi dispatch
+  "Coherence check between the advertised tool surface and the multi dispatch
    registry. Returns a vector of {:tool name :advertised-handler h :dispatch-owner o}
    for every tool whose multi-dispatch entry is still :multi/core-owned while its
    advertised handler differs from that seed — an addon override that never reached
-   `multi` (no reconciling :multi/tool hook). `dispatch-lookup` resolves a tool-name
-   to its multi.registry.tools entry (defaults to r-tools/lookup); injectable for tests."
+   `multi` (no reconciling :multi/tool hook).
+
+   Zero-arity reads `advertised-surface`, the surface the server actually serves,
+   so a name an addon CLAIMS over core is compared with the addon's handler.
+   `dispatch-lookup` resolves a tool-name to its multi.registry.tools entry
+   (defaults to r-tools/lookup); injectable for tests."
+  ([] (dispatch-divergences (advertised-surface)))
   ([advertised-tools] (dispatch-divergences advertised-tools r-tools/lookup))
   ([advertised-tools dispatch-lookup]
    (into []
@@ -150,19 +164,23 @@
                       :dispatch-owner (:owner entry)}))))
          advertised-tools)))
 
-(m/=> dispatch-divergences [:function [:=> [:cat [:sequential :map]] [:vector :map]] [:=> [:cat [:sequential :map] [:fn {:gen/elements [(constantly nil)]} ifn?]] [:vector :map]]])
+(m/=> dispatch-divergences [:function [:=> [:cat] [:vector :map]] [:=> [:cat [:sequential :map]] [:vector :map]] [:=> [:cat [:sequential :map] [:fn {:gen/elements [(constantly nil)]} ifn?]] [:vector :map]]])
+
+(m/=> advertised-surface [:=> [:cat] [:vector :map]])
 
 (defn check-dispatch-coherence!
   "Log a WARN for every advertised/dispatch divergence (see dispatch-divergences)
-   and return the divergence vector. Effect: logging only; never throws."
-  [advertised-tools]
-  (let [divs (rescue [] (dispatch-divergences advertised-tools))]
-    (doseq [{:keys [tool]} divs]
-      (log/warn "[multi.registry] advertised tool overrides core but `multi` dispatches the :multi/core seed — override unreachable via `multi tool`; add a :multi/tool hook from the owning addon"
-                {:tool tool}))
-    divs))
+   and return the divergence vector. Zero-arity checks `advertised-surface`.
+   Effect: logging only; never throws."
+  ([] (check-dispatch-coherence! (advertised-surface)))
+  ([advertised-tools]
+   (let [divs (rescue [] (dispatch-divergences advertised-tools))]
+     (doseq [{:keys [tool]} divs]
+       (log/warn "[multi.registry] advertised tool overrides core but `multi` dispatches the :multi/core seed — override unreachable via `multi tool`; add a :multi/tool hook from the owning addon"
+                 {:tool tool}))
+     divs)))
 
-(m/=> check-dispatch-coherence! [:=> [:cat [:sequential :map]] [:vector :map]])
+(m/=> check-dispatch-coherence! [:function [:=> [:cat] [:vector :map]] [:=> [:cat [:sequential :map]] [:vector :map]]])
 
 (defn lookup-batchable-or-default
   "Return the explicit Batchable record for a tool, or a DefaultBatchableAdapter

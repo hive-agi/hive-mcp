@@ -832,7 +832,10 @@
    Uses classpath manifest scanning + addon self-registration.
    Non-fatal: system works without extensions (noop defaults).
 
-   Must run AFTER embedding/memory services (extensions may use Chroma)."
+   Must run AFTER embedding/memory services (extensions may use Chroma).
+
+   Ends with the multi-dispatch coherence check over the served surface
+   (claims applied), WARN-only."
   []
   (result/rescue-log "load-extensions!" nil
                  (require 'hive-mcp.extensions.loader)
@@ -842,12 +845,9 @@
                        (log/info "Extension loading complete:" result)))))
   ;; The memory deferral is a promise; check it was kept.
   (verify-memory-store!)
-  ;; Post-init multi-dispatch coherence check (WARN-only)
   (result/rescue-log "load-extensions!" nil
-                 (let [get-adv (requiring-resolve 'hive-mcp.tools.registry/get-advertised-tools)
-                       check!  (requiring-resolve 'hive-mcp.multi.registry/check-dispatch-coherence!)]
-                   (when (and get-adv check!)
-                     (check! (filter :consolidated (get-adv)))))))
+                 (when-let [check! (requiring-resolve 'hive-mcp.multi.registry/check-dispatch-coherence!)]
+                   (check!))))
 
 (m/=> load-extensions! [:=> [:cat] [:maybe [:sequential :any]]])
 
