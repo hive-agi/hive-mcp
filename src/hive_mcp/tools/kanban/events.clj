@@ -140,13 +140,16 @@
    move/edit/retag emits at least `:kanban/facade-update`, so an empty map
    means there was nothing to update: `:kanban/invalid-task`, never an ok
    that the boundary would render as a success-shaped row of nulls
-   (card 20260916162147-173c1d52)."
+   (card 20260916162147-173c1d52). The error names the param that carried
+   the id, so a caller that sent it under another key can see which one
+   was read."
   [fx-map task-id]
   (if (seq fx-map)
     (r/ok fx-map)
     (r/err :kanban/invalid-task
-           {:message (str "Entry not found or not a kanban task: " task-id)
-            :task-id task-id})))
+           {:message (str "Entry not found or not a kanban task (param task_id): " task-id)
+            :task-id task-id
+            :param   :task_id})))
 
 (defonce ^:private entry-locks
   ;; One monitor per task id. Every kanban verb is a read-modify-write of the
