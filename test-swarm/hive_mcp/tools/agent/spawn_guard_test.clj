@@ -15,7 +15,6 @@
             [hive-mcp.tools.agent.spawn :as spawn]
             [hive-spi.swarm.guards :as guards]
             [hive-mcp.agent.protocol :as proto]
-            [hive-mcp.emacs.client :as ec]
             [hive-mcp.swarm.datascript.connection :as conn]
             [hive-mcp.swarm.logic :as logic]
             [hive-mcp.tools.swarm.core :as swarm-core]
