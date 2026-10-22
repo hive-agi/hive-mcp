@@ -88,6 +88,8 @@
                           [attr value]))
       :else ())))
 
+(m/=> eids-with-value [:=> [:cat :any :keyword :any] [:sequential :int]])
+
 (extend-protocol IAttrValueIndex
   Object
   (attr-values-ascending [store attr]

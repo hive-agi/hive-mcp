@@ -171,6 +171,8 @@
   [attr value]
   (avet/eids-with-value (ensure-store!) attr value))
 
+(m/=> eids-with-value [:=> [:cat :keyword :any] [:sequential :int]])
+
 (m/=> attr-values-ascending [:=> [:cat :keyword] [:sequential [:tuple :int :any]]])
 
 (defn db-snapshot
