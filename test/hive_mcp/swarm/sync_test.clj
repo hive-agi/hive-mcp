@@ -17,7 +17,8 @@
             [hive-mcp.swarm.sync :as sync]
             [hive-schemas.test :as hst]
             [hive-spi.swarm.bootstrap :as bootstrap]
-            [hive-test.golden :refer [deftest-golden]]))
+            [hive-test.golden :refer [deftest-golden]]
+            [hive-spi.swarm.protocol :as proto]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -113,3 +114,53 @@
     (is (identical? r (sync/get-hooks-registry)))
     (sync/set-hooks-registry! nil)
     (is (nil? (sync/get-hooks-registry)))))
+
+(defn- recording-registry
+  "An ISwarmRegistry stub: PARENTS are the ids it already holds a row for;
+   add-slave!/update-slave! calls are recorded into CALLS."
+  [calls parents]
+  (reify proto/ISwarmRegistry
+    (add-slave! [_ id opts] (swap! calls conj [:add id opts]) {})
+    (get-slave [_ id] (when (contains? parents id) {:slave/id id}))
+    (update-slave! [_ id updates] (swap! calls conj [:update id updates]) {})))
+
+(defn- restore-through-registry
+  "full-sync-from-bootstrap! with the production register port over a stub
+   registry and a fixed clock; the recorded registry writes."
+  [rows parents now]
+  (let [calls (atom [])
+        slot @#'sync/swarm-registry-atom
+        before @slot]
+    (sync/set-swarm-registry! (recording-registry calls parents))
+    (try
+      (sync/full-sync-from-bootstrap!
+       (source-of rows)
+       (constantly {:emacs {:state :known :ids #{}} :live-pids #{} :live-ids #{}
+                    :terminal-modes #{}})
+       {:reset! (constantly nil)
+        :register! @#'sync/register-slave-from-status!
+        :now (constantly now)})
+      @calls
+      (finally (reset! slot before)))))
+
+(deftest restored-rows-carry-the-host-restart-facts-test
+  (let [now      #inst "2026-10-22T12:00:00Z"
+        snap     #inst "2026-10-22T11:59:00Z"
+        writes   (restore-through-registry
+                  [{:slave-id "orphan" :status :working :spawn-mode :headless
+                    :project-id "p" :cwd "/w" :parent-id "coord-1" :snapshot-at snap}
+                   {:slave-id "stray" :status "idle" :spawn-mode :headless
+                    :project-id "p" :parent-id "gone"}]
+                  #{"coord-1"} now)
+        updates  (into {} (keep (fn [[op id u]] (when (= :update op) [id u]))) writes)
+        restore-keys [:slave/restored-at :slave/restored-status :slave/last-event-at
+                      :slave/parent-id :slave/parent]]
+    (is (= {:slave/restored-at now :slave/restored-status :working
+            :slave/last-event-at snap :slave/parent-id "coord-1" :slave/parent "coord-1"}
+           (select-keys (get updates "orphan") restore-keys))
+        "the status before retirement, the last snapshot (not the restore time) and the parent survive")
+    (is (= :zombie (some (fn [[op id o]] (when (and (= :add op) (= "orphan" id)) (:status o))) writes))
+        "the row is still retired")
+    (is (= {:slave/restored-at now :slave/restored-status :idle :slave/parent-id "gone"}
+           (select-keys (get updates "stray") restore-keys))
+        "an absent parent is kept as an id, never as a dangling lookup ref")))
