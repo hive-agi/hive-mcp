@@ -5,7 +5,8 @@
             [clojure.set :as set]
             [hive-mcp.tools.composite :as composite]
             [hive-mcp.tools.consolidated.swarm :as swarm]
-            [hive-mcp.extensions.registry :as ext]))
+            [hive-mcp.extensions.registry :as ext]
+            [clojure.string :as str]))
 
 (def tool-def-map
   {:inputSchema {:properties {"from-map" {:type "string"}}}})
@@ -128,3 +129,65 @@
 
 (deftest build-merged-tool-is-identity-without-contributions-test
   (is (= merged-core (composite/build-merged-tool merged-core))))
+
+;; =============================================================================
+;; Deprecated contributions route but are not advertised.
+;;
+;; Measured 2026-10-23: the memory tool description was 6593 chars, about a
+;; third of it ~25 hive-cloak aliases whose summary is "Deprecated: use
+;; `cloak ...`" — bytes every client paid every session, pointing at a root
+;; the visibility gate may hide.
+;; =============================================================================
+
+(deftest deprecated-contribution?-test
+  (testing "the structured flag, true or a replacement string"
+    (is (composite/deprecated-contribution? {:deprecated true}))
+    (is (composite/deprecated-contribution? {:deprecated "use `cloak on`"})))
+  (testing "the summary prefix, when no flag is declared"
+    (is (composite/deprecated-contribution? {:description "Deprecated: use `cloak status`."}))
+    (is (composite/deprecated-contribution? {:summary "deprecated: gone next release"})))
+  (testing "an explicit false wins over the prefix"
+    (is (not (composite/deprecated-contribution?
+              {:deprecated false :description "Deprecated: but still advertised"}))))
+  (testing "ordinary contributions"
+    (is (not (composite/deprecated-contribution? {:description "Seal one entry."})))
+    (is (not (composite/deprecated-contribution? {:description "Mentions deprecated mid-line."})))
+    (is (not (composite/deprecated-contribution? {})))
+    (is (not (composite/deprecated-contribution? nil)))))
+
+(deftest contributed-commands-text-omits-deprecated-test
+  (let [cmds {"belt"        {:handler (fn [_] nil) :description "Scan the belt."}
+              "seal-status" {:handler (fn [_] nil) :description "Deprecated: use `cloak status`."}
+              "old-flag"    {:handler (fn [_] nil) :deprecated true :description "Old thing."}}
+        text (composite/contributed-commands-text cmds)]
+    (is (str/includes? text "belt - Scan the belt."))
+    (is (not (str/includes? text "seal-status")))
+    (is (not (str/includes? text "old-flag")))
+    (is (not (str/includes? text "Deprecated")))
+    (testing "nothing advertised -> no sentence at all"
+      (is (nil? (composite/contributed-commands-text
+                 (select-keys cmds ["seal-status" "old-flag"])))))))
+
+(deftest deprecated-contribution-routes-but-is-not-advertised-test
+  (ext/contribute-commands! "merged-test-root" :merged-test-addon
+                            {"seal-status" {:handler     (fn [_] {:type "text" :text "legacy"})
+                                            :description "Deprecated: use `cloak status`."
+                                            :params      {"slot" {:type "string"}}}
+                             "belt"        {:handler     (fn [_] {:type "text" :text "belt"})
+                                            :description "Scan the belt."}})
+  (try
+    (let [core (assoc-in merged-core [:inputSchema :properties "command" :enum] ["a"])
+          t    (composite/build-merged-tool core)]
+      (testing "absent from the description sentence"
+        (is (str/includes? (:description t) "belt - Scan the belt."))
+        (is (not (str/includes? (:description t) "seal-status"))))
+      (testing "kept in the enum and its params kept, so schema-validating clients still accept it"
+        (is (= ["a" "belt" "seal-status"] (get-in t [:inputSchema :properties "command" :enum])))
+        (is (= {:type "string"} (get-in t [:inputSchema :properties "slot"])))))
+    (testing "present in routing"
+      (let [hs (composite/effective-handlers "merged-test-root" {:a (fn [_] nil)})]
+        (is (contains? hs :seal-status))
+        (is (= "legacy" (:text ((:seal-status hs) {}))))
+        (is (= "legacy" (:text ((composite/build-merged-handler "merged-test-root" {:a (fn [_] nil)})
+                                {:command "seal-status"}))))))
+    (finally (ext/retract-commands! "merged-test-root" :merged-test-addon))))
