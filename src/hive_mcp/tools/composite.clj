@@ -124,14 +124,32 @@
         (when (map? h) (seq (map name (keys h))))
         (seq (registered-tool-verbs cmd)))))
 
+(defn- registered-root-names
+  "The ::cli/root-oracle port: {:names #{..} :hidden #{..}} over the advertised
+   tool surface, :hidden being the roots carrying :deprecated (the visibility
+   gate's mark, so tools/list leaves them out). Resolved SOFTLY because
+   hive-mcp.tools.registry requires this namespace; read only when an
+   unknown-command error is being built."
+  []
+  (let [tools (or (some-> (requiring-resolve 'hive-mcp.tools.registry/advertised-tool-defs)
+                          (apply []))
+                  [])
+        named (filter (comp string? :name) tools)]
+    {:names  (into #{} (map :name) named)
+     :hidden (into #{} (comp (filter :deprecated) (map :name)) named)}))
+
 (defn- with-contribution-meta
-  "HANDLERS with ADDON-CMDS' root keys recorded as ::cli/opaque-roots and the
-   ::cli/verb-oracle port bound to TOOL-NAME's contributions."
+  "HANDLERS with ADDON-CMDS' root keys recorded as ::cli/opaque-roots, the
+   ::cli/verb-oracle port bound to TOOL-NAME's contributions, TOOL-NAME as
+   ::cli/tool-name and the ::cli/root-oracle port naming the registered root
+   tools (an unknown `memory cloak help` is routed to the `cloak` root)."
   [handlers tool-name addon-cmds]
   (vary-meta handlers
              #(-> %
                   (update ::cli/opaque-roots (fnil into #{}) (keys addon-cmds))
-                  (assoc ::cli/verb-oracle (partial contributed-verbs tool-name)))))
+                  (assoc ::cli/verb-oracle (partial contributed-verbs tool-name)
+                         ::cli/tool-name tool-name
+                         ::cli/root-oracle registered-root-names))))
 
 (defn build-composite-handler
   "Build a handler fn that dispatches to contributed addon handlers only.

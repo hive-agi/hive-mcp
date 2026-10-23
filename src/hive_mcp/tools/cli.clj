@@ -279,19 +279,62 @@
            (take 3)
            (mapv first)))))
 
+(defn root-route-hint
+  "One line routing CMD to the root tool its first word names, or nil.
+
+   ROOTS is {:names #{tool-name ...} :hidden #{tool-name ...}}: every
+   registered root tool, and the ones the visibility gate hides from
+   tools/list. TOOL-NAME is the tool CMD was sent to (nil when unknown).
+
+   `memory command=\"cloak help\"` reads as a memory verb, but `cloak` is a root
+   of its own; on an install whose [:tool-roots :visible] leaves it out the
+   agent cannot even see it listed, so it loops on `memory cloak ...`. The line
+   names the route, and the config knob when the root is hidden. The tool CMD
+   was sent to is never routed to itself. Pure."
+  [cmd tool-name {:keys [names hidden]}]
+  (let [words (map name (parse-command cmd))
+        head  (some-> (first words) str/lower-case)
+        rest-cmd (str/join " " (rest words))]
+    (when (and head (contains? (set names) head)
+               (not= head (some-> tool-name str/lower-case)))
+      (str "`" head "` is a tool of its own, not "
+           (if tool-name (str "a `" tool-name "` command") "a command of this tool")
+           ": call the `" head "` tool with command=\""
+           (if (str/blank? rest-cmd) "help" rest-cmd) "\""
+           (when (contains? (set hidden) head)
+             (str " (hidden from tools/list on this install; add \"" head
+                  "\" to [:tool-roots :visible] in config.edn to list it)"))
+           "."))))
+
+(defn- root-route-line
+  "`root-route-hint` for CMD from the tree's ::root-oracle port, a 0-arity fn
+   answering {:names #{..} :hidden #{..}}, and its ::tool-name. nil when the
+   tree carries no port, the port throws, or nothing routes. The port is
+   injected (hive-mcp.tools.composite binds it to the live registry), so this
+   namespace never requires the registry."
+  [cmd handlers]
+  (let [{oracle ::root-oracle tool-name ::tool-name} (meta handlers)]
+    (when (and cmd (ifn? oracle))
+      (try (root-route-hint cmd tool-name (oracle))
+           (catch Throwable _ nil)))))
+
 (defn- unknown-command-error
-  "Loud error for a command this tree cannot resolve. Leads with the roots
-   that own the token (`Did you mean: carto multi?`), then the nearest known
-   commands by edit distance, then the valid roots. A root that neither
-   enumerates nor declares the token is never offered."
+  "Loud error for a command this tree cannot resolve. Leads with the root
+   tool the first word names when it is not this tool's command at all
+   (`root-route-line`), then the roots that own the token (`Did you mean:
+   carto multi?`), then the nearest known commands by edit distance, then the
+   valid roots. A root that neither enumerates nor declares the token is never
+   offered."
   [command handlers]
   (let [raw       (normalize-command command)
         cmd       (when (and raw (not (str/blank? raw))) (str/trim raw))
+        route     (root-route-line cmd handlers)
         roots     (when cmd (:roots (qualification-hints cmd handlers)))
         qualified (map #(str (name %) " " cmd) roots)
         near      (when cmd (nearest-commands cmd handlers))
         suggest   (distinct (concat qualified near))]
-    (mcp-error (str "Unknown command: " command "."
+    (mcp-error (str (when route (str route " "))
+                    "Unknown command: " command "."
                     (when (seq suggest)
                       (str " Did you mean: " (str/join ", " suggest) "?"))
                     " Valid: " (str/join ", " (sort (map name (keys handlers))))))))
@@ -525,6 +568,14 @@
 (m/=> resolve-handler [:=> [:cat HandlerTree [:sequential :any]] Resolution])
 
 (m/=> declared-verbs [:=> [:cat [:maybe :map] :any] [:maybe [:set :string]]])
+
+(def RootNames
+  "What the ::root-oracle port answers: every registered root tool name, and
+   the ones the visibility gate hides from tools/list."
+  [:map [:names [:set :string]] [:hidden [:set :string]]])
+
+(m/=> root-route-hint [:=> [:cat [:maybe :string] [:maybe :string] RootNames]
+                       [:maybe :string]])
 
 (m/=> make-cli-handler [:function
                         [:=> [:cat HandlerTree] core/ToolHandler]
