@@ -300,7 +300,11 @@
               ;; Cost: that sweep's GC becomes a full STW pause (~1s at this heap).
               "-XX:SoftMaxHeapSize=4g"
               "-XX:+ParallelRefProcEnabled"
-              "-XX:-ExplicitGCInvokesConcurrent"]}
+              "-XX:-ExplicitGCInvokesConcurrent"
+              ;; --- Metaspace containment (memory 20261020143717-25bdae12) ---
+              "-XX:SoftRefLRUPolicyMSPerMB=50"
+              "-XX:MaxMetaspaceSize=2g"
+              "-XX:NativeMemoryTracking=summary"]}
 
   :nrepl
   {:extra-paths ["dev" "test"]
@@ -356,7 +360,11 @@
               ;; it, 780MB -> 256MB without.
               "-XX:SoftMaxHeapSize=4g"
               "-XX:+ParallelRefProcEnabled"
-              "-XX:-ExplicitGCInvokesConcurrent"]
+              "-XX:-ExplicitGCInvokesConcurrent"
+              ;; --- Metaspace containment (memory 20261020143717-25bdae12) ---
+              "-XX:SoftRefLRUPolicyMSPerMB=50"
+              "-XX:MaxMetaspaceSize=2g"
+              "-XX:NativeMemoryTracking=summary"]
    ;; Same main as the container. The system's :hive/nrepl component is the
    ;; nREPL (HIVE_MCP_NREPL_PORT, default 7910); it resolves CIDER and
    ;; refactor-nrepl from the classpath this alias supplies.
