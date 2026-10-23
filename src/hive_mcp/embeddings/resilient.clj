@@ -10,7 +10,8 @@
             [hive-dsl.adt :as adt]
             [clojure.string :as str]
             [hive-mcp.embeddings.shared-gate :as shared]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.memory.write-latency :as write-latency]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -260,13 +261,23 @@
                                                 (recur (if retry? (cons entry more) more)
                                                        failures skipped forced?)))))))))))
 
+(defn- timed-chain
+  "`run-chain`, crediting its wall time (gate wait included) to the memory add
+   in flight on this thread, if any (`write-latency/add-embed-ms!`).
+   Kanban 20260928204307-01ca0962."
+  [embedder call]
+  (let [t0 (System/nanoTime)]
+    (try (run-chain embedder call)
+         (finally
+           (write-latency/add-embed-ms! (quot (- (System/nanoTime) t0) 1000000))))))
+
 (defrecord ResilientEmbedder [chain budget-ms total-budget-ms cold-budget-ms warmth health cooldown-ms clock]
   shared/AdmissionOwner
   proto/EmbeddingProvider
   (embed-text [this text]
-    (run-chain this (fn [p] (proto/embed-text p text))))
+    (timed-chain this (fn [p] (proto/embed-text p text))))
   (embed-batch [this texts]
-    (run-chain this (fn [p] (proto/embed-batch p texts))))
+    (timed-chain this (fn [p] (proto/embed-batch p texts))))
   (embedding-dimension [_]
     (proto/embedding-dimension (:provider (first chain)))))
 

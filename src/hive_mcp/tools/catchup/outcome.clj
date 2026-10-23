@@ -38,6 +38,23 @@
 (defn summary [outcome]
   (select-keys outcome [:status :warnings]))
 
+(defn with-write-health
+  "Pure: fold a write-path health map {:status :warnings :write-path} into a
+   memory-status summary. A reachable store (:ok) whose writes are slow
+   becomes :degraded; a :timeout/:error status is never softened. The
+   :write-path detail (per-stage p50/p95/max, embed-gate and memory-pool
+   gauges) rides along. nil write health leaves the summary unchanged.
+   Kanban 20260928204307-01ca0962."
+  [summary write-health]
+  (if-not write-health
+    summary
+    (let [rank {:ok 0 :degraded 1 :timeout 2 :error 3}
+          worse (max-key rank (:status summary :ok) (:status write-health :ok))]
+      (cond-> (assoc summary
+                     :status worse
+                     :warnings (into (vec (:warnings summary)) (:warnings write-health)))
+        (:write-path write-health) (assoc :write-path (:write-path write-health))))))
+
 (defn map-value [outcome f]
   (if (available? outcome)
     (update outcome :value f)
