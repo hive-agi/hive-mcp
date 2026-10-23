@@ -101,6 +101,58 @@
   (str "memory add timed out after " timeout-ms "ms in stage " stage
        " (stage elapsed " stage-elapsed-ms "ms, cause " cause "). "
        "The write may still land later. " (pr-str diag)))
+
+(def default-stage-budgets-ms
+  "Per-stage wall-clock budget, in ms, for one memory add. A stage that
+   outruns its budget fails at once with an error naming it, instead of
+   draining the whole outer `*write-timeout-ms*`. The longest path
+   (dedup-lookup, index, kg-edges, link-outgoing, fetch) sums to 28 s, under
+   the 30 s outer ceiling, so the per-stage error fires first. :dedup-update
+   replaces :index on the duplicate path. :kg-edges bounds the back-edge
+   fan-out."
+  {:dedup-lookup  4000
+   :dedup-update  4000
+   :index         12000
+   :kg-edges      6000
+   :link-outgoing 3000
+   :fetch         3000})
+
+(def ^:dynamic *stage-budgets-ms*
+  "Effective per-stage budgets; `default-stage-budgets-ms` unless rebound.
+   A stage absent from the map runs unbounded (only the outer ceiling)."
+  default-stage-budgets-ms)
+
+(defn stage-budget-message
+  "Human-readable text for a stage that outran its budget. Names the stage,
+   its budget and how long it had run, then the EDN of the diagnostic."
+  [{:keys [stage budget-ms elapsed-ms] :as diag}]
+  (str "memory add stage " stage " exceeded its " budget-ms "ms budget"
+       " (stage elapsed " elapsed-ms "ms). The write may still land later. "
+       (pr-str diag)))
+
+(defn- run-stage!
+  "Run `f` as write stage `stage`: record the stage on `progress`, then, when
+   `*stage-budgets-ms*` has a budget for it, wait at most that long. A stage
+   that outruns its budget is cancelled and throws ex-info
+   {:type :stage-budget-exceeded :stage :budget-ms :elapsed-ms}. A throw from
+   `f` itself is rethrown unwrapped."
+  [progress stage f]
+  (mark-stage! progress stage)
+  (if-let [budget-ms (get *stage-budgets-ms* stage)]
+    (let [start (System/nanoTime)
+          fut   (future (f))
+          r     (try (deref fut budget-ms ::over-budget)
+                     (catch java.util.concurrent.ExecutionException e
+                       (throw (or (.getCause e) e))))]
+      (if (= r ::over-budget)
+        (let [diag {:stage stage :budget-ms budget-ms
+                    :elapsed-ms (quot (- (System/nanoTime) start) 1000000)}]
+          (future-cancel fut)
+          (log/warn "memory add stage over budget:" (pr-str diag))
+          (throw (ex-info (stage-budget-message diag)
+                          (assoc diag :type :stage-budget-exceeded))))
+        r))
+    (f)))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -169,8 +221,10 @@
        :kg-incoming bookkeeping on each target is one Milvus read + one
        upsert; no embed cost (see IMemoryStoreMetadataWrite). Running
        these in parallel under `weave/fork-join` collapses wall-clock
-       latency from sum(per-target) → max(per-target), keeping the
-       compound add safely under `memory-write-timeout-ms`."
+       latency from sum(per-target) → max(per-target). The fan-out is
+       bounded by the `:kg-edges` entry of `*stage-budgets-ms*`; a back-edge
+       that outruns it is logged naming the stage and the target, and the
+       edge ids are still returned (phase 1 already committed them)."
   [entry-id {:keys [kg_implements kg_supersedes kg_depends_on kg_refines]} project-id agent-id]
   (let [created-by   (ctx/attribution-created-by (ctx/current-attribution agent-id)
                                            (when agent-id (str "agent:" agent-id)))
@@ -193,15 +247,24 @@
                    (add-edges kg_supersedes :supersedes)
                    (add-edges kg_depends_on :depends-on)
                    (add-edges kg_refines    :refines)))))
+        budget-ms (max 500 (- (get *stage-budgets-ms* :kg-edges 25000) 1000))
         tasks
         (into [] (map-indexed
                    (fn [i {:keys [target-id edge-id]}]
                      [(keyword (str "back-edge-" i))
-                      #(update-target-incoming! target-id edge-id)
-                      nil])
-                   edge-records))]
+                      #(do (update-target-incoming! target-id edge-id) ::done)
+                      ::over-budget]))
+              edge-records)]
     (when (seq tasks)
-      (apply weave/fork-join {:budget-ms 25000} tasks))
+      (let [results (apply weave/fork-join {:budget-ms budget-ms} tasks)
+            missed  (keep-indexed (fn [i {:keys [target-id]}]
+                                    (when (= ::over-budget
+                                             (get results (keyword (str "back-edge-" i))))
+                                      target-id))
+                                  edge-records)]
+        (when (seq missed)
+          (log/warn "memory add stage :kg-edges: back-edge bookkeeping did not finish within"
+                    budget-ms "ms for targets" (vec missed)))))
     (mapv :edge-id edge-records)))
 
 (defn- build-entry-tags
@@ -435,7 +498,8 @@
 
    The entry is already stored when this runs, so a failed edge write never
    fails the add: the response carries the entry id plus `:kg_edge_errors`
-   [{:relation :to :error}], and the :added notify still fires.
+   [{:relation :to :error}], and the :added notify still fires. A :kg-edges
+   stage over its budget is reported the same way, the error naming the stage.
 
    A deferred entry (embed failed, parked in the outbox) is answered from
    its outbox record; its :kg-outgoing link is amended into that record so
@@ -443,27 +507,28 @@
    `:embedding_error` so the caller sees why the entry is not searchable yet.
 
    `:progress` (optional, from `new-progress`) is told which stage the write
-   is in (`:kg-edges`, `:link-outgoing`, `:fetch`) so a timeout can name it."
+   is in (`:kg-edges`, `:link-outgoing`, `:fetch`) so a timeout can name it;
+   each stage runs under its `*stage-budgets-ms*` budget (`run-stage!`)."
   [entry-id kg-params project-id agent-id
    {:keys [tags-with-scope type knowledge-gaps store-key progress]
     :or {store-key :default}}]
   (let [store (mem-proto/get-store store-key)
         pending (deferred/lookup entry-id)
-        _ (mark-stage! progress :kg-edges)
         {:keys [edge-ids edge-errors]}
         (edge-outcome/attempt-edges
-         #(create-kg-edges! entry-id kg-params project-id agent-id)
+         #(run-stage! progress :kg-edges
+                      (fn [] (create-kg-edges! entry-id kg-params project-id agent-id)))
          (edge-outcome/edge-requests kg-params))
         pending (if (and pending (seq edge-ids))
                   (do (deferred/amend! entry-id {:kg-outgoing edge-ids})
                       (deferred/lookup entry-id))
                   pending)
         _ (when (and (seq edge-ids) (not pending))
-            (mark-stage! progress :link-outgoing)
-            (with-stage-resilience
-              (mem-proto/update-entry! store entry-id {:kg-outgoing edge-ids})))
-        _ (mark-stage! progress :fetch)
-        created (or pending (fetch-with-retry store entry-id))]
+            (run-stage! progress :link-outgoing
+                        #(with-stage-resilience
+                           (mem-proto/update-entry! store entry-id {:kg-outgoing edge-ids}))))
+        created (or pending
+                    (run-stage! progress :fetch #(fetch-with-retry store entry-id)))]
     (when-not created
       (log/error "Failed to retrieve entry after indexing:" entry-id))
     (log/info "Created memory entry:" entry-id
@@ -473,10 +538,8 @@
     (write-events/notify! :added {:id entry-id :memory-type type
                                   :tags tags-with-scope :project-id project-id})
     (if created
-      ;; The gate notice is DERIVED from the entry's own tags, so the response
-      ;; cannot disagree with what was stored.
       (let [requested (type-registry/requested-type-of tags-with-scope)]
-        (mcp-json (cond-> (fmt/entry->json-alist created)
+        (mcp-json (cond-> (assoc (fmt/entry->receipt created) :id entry-id)
                     pending (assoc :embedding_deferred true :reembed_id entry-id
                                    :embedding_error (some-> pending :deferred/last-error :error str))
                     (seq edge-ids) (assoc :kg_edges_created edge-ids)
@@ -507,7 +570,9 @@
 
    `:progress` (optional, from `new-progress`) is told which stage the write
    is in (`:dedup-lookup`, `:dedup-update`, `:index`, then finalize's stages)
-   so `handle-add` can name the stage a timeout happened in."
+   so `handle-add` can name the stage a timeout happened in. Each store
+   stage runs under its `*stage-budgets-ms*` budget (`run-stage!`); a stage
+   over budget answers an error naming that stage."
   [{:keys [type content tags duration directory agent_id
            kg_implements kg_supersedes kg_depends_on kg_refines abstraction_level
            knowledge_gaps store-key progress]
@@ -540,19 +605,19 @@
             content-hash (mem-proto/content-hash content)
             duration-str (or duration "long")
             expires (dur/calculate-expires duration-str)
-            _ (mark-stage! progress :dedup-lookup)
-            existing (with-stage-resilience
-                       (mem-proto/find-duplicate store type content-hash {:project-id project-id}))]
+            existing (run-stage! progress :dedup-lookup
+                                 #(with-stage-resilience
+                                    (mem-proto/find-duplicate store type content-hash {:project-id project-id})))]
         (if existing
-          (let [_ (mark-stage! progress :dedup-update)
-                merged-tags (distinct (concat (:tags existing) tags-with-scope))
-                updated (with-stage-resilience
-                          (mem-proto/update-entry! store (:id existing) {:tags merged-tags}))]
+          (let [merged-tags (distinct (concat (:tags existing) tags-with-scope))
+                updated (run-stage! progress :dedup-update
+                                    #(with-stage-resilience
+                                       (mem-proto/update-entry! store (:id existing) {:tags merged-tags})))]
             (log/info "Duplicate found, merged tags:" (:id existing))
             (write-events/notify! :updated {:id (:id existing) :memory-type type
                                             :tags merged-tags :project-id project-id
                                             :fields [:tags]})
-            (mcp-json (fmt/entry->json-alist updated)))
+            (mcp-json (fmt/entry->receipt updated)))
           (let [_ (when (= type "plan") (validate-plan-gate! content))
                 _ (when (= type "role") (validate-role-gate! content))
                 entry-ctx {:type type :content content :tags-with-scope tags-with-scope
@@ -561,8 +626,7 @@
                            :abstraction-level abstraction-level
                            :knowledge-gaps knowledge-gaps :agent-id agent-id
                            :store-key store-key :progress progress}
-                _ (mark-stage! progress :index)
-                raw-id (index-entry! entry-ctx)]
+                raw-id (run-stage! progress :index #(index-entry! entry-ctx))]
             ;; Contract guard: IMemoryStore/add-entry! must return a non-blank
             ;; id string. Some backends (e.g. Milvus under circuit-breaker
             ;; fail-soft) return a {:success? false ...} failure map instead,
@@ -623,8 +687,10 @@
             args (assoc args :progress progress)
             result (wpool/await!
                     (pool/memory-pool)
-                    #(try (do-add! args)
-                          (catch Throwable t {::caught t}))
+                    (let [budgets *stage-budgets-ms*]
+                      #(binding [*stage-budgets-ms* budgets]
+                         (try (do-add! args)
+                              (catch Throwable t {::caught t}))))
                     {:timeout-ms timeout-ms
                      :fallback   timeout-sentinel
                      :name       "memory-add"})]
@@ -688,6 +754,14 @@
    [:stage-elapsed-ms [:int {:min 0}]]
    [:timeout-ms :any]
    [:cause [:enum :pool-queue-wait :stage-stalled]]])
+
+(def StageBudgetDiagnostic
+  [:map
+   [:stage WriteStage]
+   [:budget-ms [:int {:min 0}]]
+   [:elapsed-ms [:int {:min 0}]]])
+
+(m/=> stage-budget-message [:=> [:cat StageBudgetDiagnostic] :string])
 
 (m/=> select-role-card-validator [:=> [:cat ValidatorSources] ValidatorChoice])
 

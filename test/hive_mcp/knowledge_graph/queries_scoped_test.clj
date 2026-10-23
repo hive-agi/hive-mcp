@@ -190,3 +190,26 @@
     (testing "orphans: old pulls every edge, new pulls none"
       (is (= total (pulled-by old-orphans)))
       (is (zero? (pulled-by queries/find-orphan-nodes))))))
+
+(deftest edges-by-scope-limit-pulls-at-most-limit
+  (seed!)
+  (let [tag   (scope/scope->tag "proj-b")
+        full  (edges/get-edges-by-scope tag)
+        limit 25]
+    (testing "the unbounded arity is unchanged"
+      (is (= 500 (count full)))
+      (is (= full (edges/get-edges-by-scope tag nil)))
+      (is (= full (edges/get-edges-by-scope tag {}))))
+    (testing "a limited read pulls at most :limit entities and returns that many"
+      (let [rows   (atom nil)
+            pulled (pulled-by #(reset! rows (edges/get-edges-by-scope tag {:limit limit})))]
+        (is (= limit (count @rows)))
+        (is (<= pulled limit))
+        (is (every? #(= tag (:kg-edge/scope %)) @rows))
+        (is (= (count (distinct (map :kg-edge/id @rows))) limit))
+        (is (every? (set (map :kg-edge/id full)) (map :kg-edge/id @rows)))))
+    (testing "a limit past the scope's size answers the whole scope"
+      (is (= (set (map :kg-edge/id full))
+             (set (map :kg-edge/id (edges/get-edges-by-scope tag {:limit 100000}))))))
+    (testing "an unknown scope answers empty without pulling"
+      (is (zero? (pulled-by #(is (= [] (edges/get-edges-by-scope "nope" {:limit 10})))))))))

@@ -454,6 +454,47 @@
                                  "wiring fallback")
                        (wire-vector-store! (resolve-memory-backend)))))
 
+(defn- remount-store-addon!
+  "Restart addon ID so it re-reads its config: shut it down when active, then
+   initialize it with the config a manifest mount resolves (config.edn
+   :services and :addons layers, runtime ports). An addon that never
+   registered (it failed at boot) is mounted from its classpath manifest.
+   Answers the init result."
+  [id]
+  (let [registered? (requiring-resolve 'hive-mcp.addons.core/addon-registered?)
+        shutdown!   (requiring-resolve 'hive-mcp.addons.core/shutdown-addon!)
+        init!       (requiring-resolve 'hive-mcp.addons.core/init-addon!)
+        prepare     (requiring-resolve 'hive-mcp.addons.manifest/prepare-config)]
+    (if (registered? id)
+      (do (shutdown! id)
+          (init! id (prepare {:addon/id id})))
+      (let [scan     (requiring-resolve 'hive-mcp.addons.manifest/scan-classpath-manifests)
+            from!    (requiring-resolve 'hive-mcp.addons.manifest/init-from-manifest!)
+            register (requiring-resolve 'hive-mcp.addons.core/register-addon!)
+            manifest (first (filter #(= id (:addon/id %)) (:manifests (scan))))]
+        (if manifest
+          (from! manifest register init!)
+          {:success? false :errors [(str "no manifest for " id " on the classpath")]})))))
+
+(defn rewire-memory-store!
+  "Re-run memory-store wiring against the CURRENT config, for `config reload`.
+   A backend that defers to an addon gets that addon remounted (so it reads
+   its new config and registers itself as :default); any other backend is
+   wired as at boot. Then the post-extensions fallback runs. Idempotent.
+   Answers true when a :default store is installed afterwards."
+  []
+  (let [backend (resolve-memory-backend)]
+    (if-let [addon-id (deferred-store-addon backend)]
+      (let [res (remount-store-addon! addon-id)]
+        (when-not (:success? res)
+          (log/error "rewire-memory-store!: store addon did not remount"
+                     {:backend backend :addon addon-id :errors (:errors res)})))
+      (wire-memory-store!))
+    (ensure-memory-store!)
+    (boolean (mem-proto/store-set?))))
+
+(m/=> rewire-memory-store! [:=> [:cat] :boolean])
+
 (m/=> ensure-memory-store! [:=> [:cat] :nil])
 
 ;; =============================================================================
@@ -832,7 +873,10 @@
    Uses classpath manifest scanning + addon self-registration.
    Non-fatal: system works without extensions (noop defaults).
 
-   Must run AFTER embedding/memory services (extensions may use Chroma)."
+   Must run AFTER embedding/memory services (extensions may use Chroma).
+
+   Ends with the multi-dispatch coherence check over the served surface
+   (claims applied), WARN-only."
   []
   (result/rescue-log "load-extensions!" nil
                  (require 'hive-mcp.extensions.loader)
@@ -842,12 +886,9 @@
                        (log/info "Extension loading complete:" result)))))
   ;; The memory deferral is a promise; check it was kept.
   (verify-memory-store!)
-  ;; Post-init multi-dispatch coherence check (WARN-only)
   (result/rescue-log "load-extensions!" nil
-                 (let [get-adv (requiring-resolve 'hive-mcp.tools.registry/get-advertised-tools)
-                       check!  (requiring-resolve 'hive-mcp.multi.registry/check-dispatch-coherence!)]
-                   (when (and get-adv check!)
-                     (check! (filter :consolidated (get-adv)))))))
+                 (when-let [check! (requiring-resolve 'hive-mcp.multi.registry/check-dispatch-coherence!)]
+                   (check!))))
 
 (m/=> load-extensions! [:=> [:cat] [:maybe [:sequential :any]]])
 

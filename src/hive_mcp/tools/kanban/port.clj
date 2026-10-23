@@ -139,7 +139,8 @@
           (if-let [{:keys [content tags]} (get-in res [:ok :kanban/facade-update :payload])]
             {:ok (->task (kt/task->slim {:id task-id :content content :tags tags}))}
             {:err {:error   :kanban/invalid-task
-                   :message (str "Entry not found or not a kanban task: " task-id)}})
+                   :param   :task_id
+                   :message (str "Entry not found or not a kanban task (param task_id): " task-id)}})
           (write-error :kanban/move-failed res)))
       (catch Throwable t
         {:err {:error :kanban/move-failed :message (or (ex-message t) (str (class t)))}})))

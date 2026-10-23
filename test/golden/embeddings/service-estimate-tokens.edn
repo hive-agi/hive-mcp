@@ -1,10 +1,10 @@
 {:case-0 {:out 0, :in (nil nil)},
- :case-1 {:out 1, :in ("1" nil)},
+ :case-1 {:out 2, :in ("1" nil)},
  :case-2 {:out 0, :in (nil 3.0)},
- :case-3 {:out 1, :in ("WS" 0)},
+ :case-3 {:out 2, :in ("WS" 0)},
  :case-4 {:out 0, :in ("" nil)},
  :case-5 {:out 0, :in ("" nil)},
- :case-6 {:out 2, :in ("ir2v" nil)},
+ :case-6 {:out 4, :in ("ir2v" nil)},
  :case-7 {:out 0, :in (nil nil)},
  :case-8 {:out 0, :in (nil 0)},
  :case-9 {:out 0, :in (nil 4)}}

@@ -45,12 +45,9 @@
    "src/hive_mcp/swarm/lifecycle"
    "src/hive_mcp/swarm/logic"])
 
-(def ^:private exempt
-  {'hive-mcp.swarm.datalevin.driver/q
-   "Passthrough to datalevin.core/q: the result shape is chosen by the
-    query's :find spec (a set of tuples, a scalar, a collection, a pulled map),
-    so no schema states the domain; its argument list is query-then-inputs,
-    which is datalevin's own contract."})
+;; None left: datalevin.driver/q contracts its query-then-inputs arguments;
+;; its result, projected by the query's :find spec, is stated as open.
+(def ^:private exempt {})
 
 (coverage/deftest-contract-coverage swarm-store-contracts-gate
   {:paths paths
@@ -58,9 +55,9 @@
 
 (deftest swarm-store-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths paths :exempt exempt})]
-    (is (= 138 (count (:universe report))) "every public defn of the six directories")
-    (is (= 137 (count (:covered report))) "contracted: all but the one exemption")
-    (is (= #{'hive-mcp.swarm.datalevin.driver/q} (set (keys (:exempt report)))))))
+    (is (= 139 (count (:universe report))) "every public defn of the six directories")
+    (is (= 139 (count (:covered report))) "contracted: every one")
+    (is (empty? (:exempt report)))))
 
 (def ^:private store-nses
   '[hive-mcp.swarm.datalevin.connection hive-mcp.swarm.datalevin.driver

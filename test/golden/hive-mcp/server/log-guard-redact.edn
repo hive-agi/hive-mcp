@@ -1,0 +1,12 @@
+{"assignment"
+ {:in "api_key=hunter2 and other words",
+  :out "[redacted] and other words"},
+ "bearer-header"
+ {:in "Authorization: Bearer sk-abc123xyz",
+  :out "Authorization: [redacted] [redacted]"},
+ "empty" {:in "", :out ""},
+ "plain"
+ {:in "plain message, nothing secret",
+  :out "plain message, nothing secret"},
+ "whitespace"
+ {:in "  many\t\twhitespace \n runs  ", :out "many whitespace runs"}}

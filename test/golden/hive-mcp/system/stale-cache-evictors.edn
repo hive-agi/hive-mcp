@@ -1,7 +1,7 @@
 {:before-is-set true,
  :first-adds true,
  :repeat-idempotent true,
- :grew-by [1 0],
+ :grew-by [1 1],
  :snapshot-agrees true,
  :sweep-name "caches/stale",
  :interval-s 300}

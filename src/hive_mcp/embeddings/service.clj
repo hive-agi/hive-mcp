@@ -463,25 +463,99 @@
 (m/=> resolve-provider-for-type [:=> [:cat [:maybe TypeName]] Resolved])
 
 (def default-chars-per-token
-  "Characters per token assumed when estimating embedder input size.
-   Measured against qwen3-embedding:4b on Portuguese prose at ~3.0; the old
-   chars/4 basis under-counted non-English text, letting content past the
-   real ceiling through the local guard to fail at the provider."
-  3.0)
+  "Letters per token assumed for a run of ASCII letters (one word) when
+   no provider ratio is declared. The other character classes are costed
+   in `script-aware-tokens`."
+  5.0)
+
+(defn- run-end
+  "Index just past the run of code points from `i` that satisfy `pred?`."
+  ^long [^String s ^long i pred?]
+  (let [n (.length s)]
+    (loop [j i]
+      (if (< j n)
+        (let [cp (.codePointAt s j)]
+          (if (pred? cp) (recur (+ j (Character/charCount cp))) j))
+        j))))
+
+(defn- ascii-letter? [^long cp]
+  (and (< cp 128) (Character/isLetter (int cp))))
+
+(defn- ascii-digit? [^long cp]
+  (and (>= cp 48) (<= cp 57)))
+
+(defn- wide-letter?
+  "A non-ASCII letter below U+3000: Latin extensions, Greek, Cyrillic,
+   Hebrew, Arabic and Indic letters, which the tokenizer splits finely."
+  [^long cp]
+  (and (>= cp 128) (< cp 0x3000) (Character/isLetter (int cp))))
+
+(defn- transitions
+  "How many adjacent pairs in `s` differ by `(f ch)`."
+  ^long [^String s f]
+  (let [n (.length s)]
+    (loop [k 1 acc 0]
+      (if (< k n)
+        (recur (inc k) (if (= (f (.charAt s (dec k))) (f (.charAt s k))) acc (inc acc)))
+        acc))))
+
+(defn- script-aware-tokens
+  "Conservative token count of `s` with no tokenizer: ASCII words cost
+   ceil(len / `word-cpt`) plus one per case change, every ASCII digit and
+   punctuation mark costs one, non-ASCII letter runs cost one per two
+   letters, every other code point (CJK, kana, hangul, symbols) costs one,
+   or two above the BMP. Whitespace is free except a multi-character run
+   (indentation, blank lines) or a space before a digit. Plus one."
+  ^long [^String s ^double word-cpt]
+  (let [n (.length s)]
+    (loop [i 0 acc 1]
+      (if (>= i n)
+        acc
+        (let [cp (.codePointAt s i)]
+          (cond
+            (Character/isWhitespace (int cp))
+            (let [j   (run-end s i #(Character/isWhitespace (int %)))
+                  len (- j i)
+                  add (cond
+                        (> len 1) (inc (transitions (subs s i j) identity))
+                        (and (< j n) (ascii-digit? (.codePointAt s j))) 1
+                        :else 0)]
+              (recur j (+ acc add)))
+
+            (ascii-letter? cp)
+            (let [j (run-end s i ascii-letter?)
+                  w (subs s i j)]
+              (recur j (+ acc
+                          (long (Math/ceil (/ (- j i) word-cpt)))
+                          (transitions w #(Character/isUpperCase (char %))))))
+
+            (< cp 128)
+            (recur (inc i) (inc acc))
+
+            (wide-letter? cp)
+            (let [j (run-end s i wide-letter?)]
+              (recur j (+ acc (long (Math/ceil (/ (.codePointCount s i j) 2.0))))))
+
+            :else
+            (recur (+ i (Character/charCount cp))
+                   (+ acc (if (> cp 0xFFFF) 2 1)))))))))
 
 (defn estimate-tokens
-  "Cheap token estimate: chars / `chars-per-token` (default
-   `default-chars-per-token`), rounded up. Same basis as the size guard
-   `validate-content-size!`, so guard and escalation router agree."
+  "Conservative, tokenizer-free token estimate of `content`, script-aware
+   so it does not under-count CJK, digits, punctuation or non-English
+   prose (see `script-aware-tokens`). `chars-per-token` is the letters per
+   token for ASCII words (default `default-chars-per-token`). The size
+   guard `validate-content-size!` uses this same estimate, so guard and
+   escalation router agree."
   ([content] (estimate-tokens content nil))
   ([content chars-per-token]
    (let [ratio (if (and (number? chars-per-token) (pos? chars-per-token))
                  (double chars-per-token)
-                 default-chars-per-token)]
-     (long (Math/ceil (/ (count (or content "")) ratio))))))
+                 default-chars-per-token)
+         s     (or content "")]
+     (if (= "" s) 0 (script-aware-tokens s ratio)))))
 
-;; `count` accepts any counted content (callers pass strings); a
-;; non-positive or non-numeric ratio falls back to the default.
+;; A non-positive or non-numeric ratio falls back to the default.
 (m/=> estimate-tokens [:function
                        [:=> [:cat [:maybe :string]] [:int {:min 0}]]
                        [:=> [:cat [:maybe :string] :any] [:int {:min 0}]]])

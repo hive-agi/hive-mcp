@@ -1,0 +1,12 @@
+[{:id "k2",
+  :title "t-k2",
+  :status "todo",
+  :priority "low",
+  :relation "contains",
+  :direction "outgoing"}
+ {:id "k1",
+  :title "t-k1",
+  :status "doing",
+  :priority "low",
+  :relation "depends-on",
+  :direction "incoming"}]

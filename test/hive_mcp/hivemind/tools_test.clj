@@ -15,7 +15,8 @@
             [hive-mcp.hivemind.tools :as tools]
             [hive-mcp.test.shim-facets :as sf]
             [hive-test.golden :refer [deftest-golden]]
-            [hive-test.mutation :as hmut]))
+            [hive-test.mutation :as hmut]
+            [hive-mcp.hivemind.messaging]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -77,3 +78,65 @@
            (sf/outcome (handler "hivemind_status") [{:project_id "p"}]))
         "SEAM GAP: hivemind.status reads registry/default-registry, a nil shim value offline")
     (is (string? (:text ((handler "hivemind_status") {:project_id "p"}))))))
+
+(deftest lift-nested-payload-cases
+  (is (= {:task nil :message "hi" :data {"x" 1} :lifted ["message"]}
+         (tools/lift-nested-payload {:data {"message" "hi" "x" 1}}))
+      "string-keyed nested message is lifted")
+  (is (= {:task "t" :message "hi" :data {} :lifted ["task" "message"]}
+         (tools/lift-nested-payload {:message "" :data {:message "hi" :task "t"}}))
+      "keyword-keyed nested task and message are lifted over a blank top level")
+  (is (= {:task nil :message "top" :data {} :lifted []}
+         (tools/lift-nested-payload {:message "top" :data {"message" "nested"}}))
+      "a top-level message wins and the nested copy cannot override it")
+  (is (= {:task nil :message nil :data {} :lifted []}
+         (tools/lift-nested-payload {:data {}}))
+      "a truly empty payload stays empty")
+  (is (= {:task nil :message nil :data nil :lifted []}
+         (tools/lift-nested-payload {}))))
+
+(hmut/deftest-mutations lift-nested-payload-mutations
+  hive-mcp.hivemind.tools/lift-nested-payload
+  [["never lifts" (fn [{:keys [task message data]}] {:task task :message message :data data :lifted []})]
+   ["always overwrites top level"
+    (fn [{:keys [task message data]}]
+      {:task (or (get data "task") (:task data) task)
+       :message (or (get data "message") (:message data) message)
+       :data data :lifted []})]]
+  (fn []
+    (is (= "hi" (:message (tools/lift-nested-payload {:data {"message" "hi"}}))))
+    (is (= "top" (:message (tools/lift-nested-payload {:message "top" :data {:message "x"}}))))))
+
+(defn- shout-with-stub
+  "Run hivemind_shout with the verdict fn stubbed by the real empty-payload
+   guard, returning [data-sent answer]."
+  [args]
+  (let [sent (atom nil)]
+    (with-redefs [hive-mcp.hivemind.messaging/shout-with-verdict!
+                  (fn [_id _et data]
+                    (reset! sent data)
+                    (if (hive-mcp.hivemind.messaging/empty-shout? data)
+                      {:delivered false :reason :empty-payload}
+                      {:delivered true :routing :spawner :shout-id "s"}))]
+      (let [a (answer "hivemind_shout" (merge {:agent_id "ling-1" :event_type "progress"} args))]
+        [@sent a]))))
+
+(deftest nested-data-message-is-delivered-and-named
+  (let [[sent a] (shout-with-stub {:data {"message" "ECHO-9044"}})]
+    (is (= "ECHO-9044" (:message sent)))
+    (is (not (contains? sent "message")))
+    (is (true? (:success a)))
+    (is (= ["message"] (:lifted_from_data a)))))
+
+(deftest empty-shout-is-refused-with-a-named-error
+  (let [[_ a] (shout-with-stub {:data {}})]
+    (is (false? (:success a)))
+    (is (= "empty-payload" (:error a)))
+    (is (= tools/empty-payload-error (:hint a)))))
+
+(deftest top-level-message-shout-is-unchanged
+  (let [[sent a] (shout-with-stub {:message "plain"})]
+    (is (= "plain" (:message sent)))
+    (is (true? (:success a)))
+    (is (not (contains? a :lifted_from_data)))
+    (is (not (contains? a :error)))))

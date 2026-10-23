@@ -1,0 +1,10 @@
+{"blank-area" {:in {:area ""}, :out {:by :total, :limit 20}},
+ "empty" {:in {}, :out {:by :total, :limit 20}},
+ "keyword-by"
+ {:in {:by :errors, :limit 3}, :out {:by :errors, :limit 3}},
+ "nil" {:in nil, :out {:by :total, :limit 20}},
+ "string-keys"
+ {:in {"by" "p99", "limit" "7", "area" "mcp/tool"},
+  :out {:by :p99, :limit 7, :area "mcp/tool"}},
+ "unknown-by"
+ {:in {:by "bogus", :limit "junk"}, :out {:by :total, :limit 20}}}

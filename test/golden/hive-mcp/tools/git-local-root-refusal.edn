@@ -1,0 +1,19 @@
+{"all-clean-tree" nil,
+ "all-dirty-tree"
+ {:isError true,
+  :text
+  "git/local-root: commit refused: a committed deps file points :local/root outside the repository (deps.edn:2 acme/lib {:local/root \"../lib\"}; x/deps.edn:2 acme/lib {:local/root \"../lib\"}). Pin a released version; keep checkouts in local.deps.edn."},
+ "checker-error"
+ {:isError true,
+  :text "git/local-root: commit refused: index unreadable"},
+ "clean-index" nil,
+ "dirty-tree-not-all" nil,
+ "no-hive-git" nil,
+ "staged-escape"
+ {:isError true,
+  :text
+  "git/local-root: commit refused: a committed deps file points :local/root outside the repository (deps.edn:2 acme/lib {:local/root \"../lib\"}). Pin a released version; keep checkouts in local.deps.edn."},
+ "staged-unparseable"
+ {:isError true,
+  :text
+  "git/local-root: commit refused: a committed deps file points :local/root outside the repository (sub/bb.edn does not parse as EDN). Pin a released version; keep checkouts in local.deps.edn."}}

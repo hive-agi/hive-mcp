@@ -19,7 +19,7 @@
             [hive-mcp.swarm.datascript.lings :as ds-lings]
             [hive-mcp.swarm.datascript.queries :as queries]
             [hive-mcp.swarm.logic :as logic]
-            [hive-mcp.emacs.client :as ec]
+            [hive-mcp.emacs-ext.client :as ec]
             [hive-mcp.tools.swarm.core :as swarm-core]
             [hive-mcp.events.core :as events]
             [hive-mcp.scheduler.dag-waves :as dag-waves]

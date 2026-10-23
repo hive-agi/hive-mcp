@@ -66,6 +66,37 @@
         (seq kg-outgoing) (assoc :kg_outgoing_ids kg-outgoing)
         (seq kg-incoming) (assoc :kg_incoming_ids kg-incoming)))))
 
+(def ^:private receipt-preview-len 60)
+
+(defn- content-text
+  "Content as the text whose length a receipt reports."
+  [content]
+  (cond
+    (nil? content)    ""
+    (string? content) content
+    (map? content)    (json/write-str content)
+    :else             (str content)))
+
+(defn entry->receipt
+  "Write receipt for a stored entry: identity, status and the metadata the
+   write produced, with a short preview and the content length in place of
+   the content itself. Returns nil when entry is nil."
+  [entry]
+  (when entry
+    (let [text (content-text (:content entry))]
+      (cond-> {:id      (:id entry)
+               :status  "ok"
+               :type    (:type entry)
+               :tags    (or (:tags entry) [])
+               :chars   (count text)
+               :preview (if (> (count text) receipt-preview-len)
+                          (str (subs text 0 receipt-preview-len) "…")
+                          text)}
+        (:content-hash entry) (assoc :content-hash (:content-hash entry))
+        (:duration entry)     (assoc :duration (:duration entry))
+        (:expires entry)      (assoc :expires (:expires entry))
+        (:project-id entry)   (assoc :project-id (:project-id entry))))))
+
 (defn- truncate-string
   "Truncate string to max-len, adding ellipsis if truncated."
   [s max-len]
@@ -110,6 +141,8 @@
   "Convert collection of entries to metadata-only JSON string."
   [entries]
   (json/write-str (mapv entry->metadata entries)))
+
+(m/=> entry->receipt [:=> [:cat ms/MaybeEntry] [:maybe ms/EntryReceipt]])
 
 ;; =============================================================================
 ;; Contracts

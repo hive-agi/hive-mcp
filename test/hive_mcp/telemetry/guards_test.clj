@@ -35,8 +35,8 @@
 ;; =============================================================================
 ;;
 ;; The harvest code reaches Emacs through the extension seam
-;; `:emacs/eval-elisp-with-timeout` (hive-mcp.emacs-ext.client), NOT through
-;; hive-mcp.emacs.client. Absence is ARRANGED rather than assumed: the stub is
+;; `:emacs/eval-elisp-with-timeout` (hive-mcp.emacs-ext.client). Absence is
+;; ARRANGED rather than assumed: the stub is
 ;; registered in the real registry and restored afterwards, so these tests
 ;; behave identically on a cold JVM (empty registry) and in a live image where
 ;; hive-emacs IS loaded.

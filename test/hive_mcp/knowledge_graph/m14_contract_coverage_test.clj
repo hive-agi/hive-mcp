@@ -14,19 +14,11 @@
   {:paths ["src/hive_mcp/knowledge_graph/edges"]
    :exempt {}})
 
-(def ^:private breaker-facade-reason
-  (str "call-through facade over the hive-mcp.resilience.breaker kernel var: its "
-       "result is whatever the kernel var returns, and a redef of the kernel must "
-       "reach callers of this name (hive-mcp.kernel.misfiled-facade-test), so the "
-       "contract belongs on the kernel fn, outside this batch"))
-
+;; The breaker facade states the kernel's contracts over the kernel's schemas
+;; (hive-mcp.resilience.breaker), so it needs no exemption.
 (deftest-contract-coverage slots-contracts
   {:paths ["src/hive_mcp/knowledge_graph/slots"]
-   :exempt (into {}
-                 (map (fn [f] [(symbol "hive-mcp.knowledge-graph.slots.breaker" f)
-                               breaker-facade-reason]))
-                 ["fresh" "on-success" "on-failure" "maybe-recover" "decision" "attempt"
-                  "record-success!" "record-failure!" "snapshot" "reset!"])})
+   :exempt {}})
 
 (deftest-contract-coverage store-contracts
   {:paths ["src/hive_mcp/knowledge_graph/store"]

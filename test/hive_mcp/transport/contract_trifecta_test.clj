@@ -413,23 +413,27 @@
   (is (m/validate snap/FullSnapshot (snap/build-full-snapshot))))
 
 (deftest stream-emitters-with-no-clients-are-silent-nil
-  (reset! stream/clients #{})
-  (is (nil? (stream/broadcast! {:type :agents :data []})))
-  (is (nil? (stream/emit! :agents {:data []})))
-  (is (nil? (stream/emit! :agents nil)))
-  (is (nil? (stream/emit-agent-event! :agent-spawned {:id "a"})))
-  (is (nil? (stream/emit-hivemind-shout! {:agent-id "a" :event-type "progress" :message "m"})))
-  (is (nil? (stream/emit-kg-event! :memory-entry-added {:entry-id "e"}))))
+  (let [prev @stream/clients]
+    (reset! stream/clients #{})
+    (try
+      (is (nil? (stream/broadcast! {:type :agents :data []})))
+      (is (nil? (stream/emit! :agents {:data []})))
+      (is (nil? (stream/emit! :agents nil)))
+      (is (nil? (stream/emit-agent-event! :agent-spawned {:id "a"})))
+      (is (nil? (stream/emit-hivemind-shout! {:agent-id "a" :event-type "progress" :message "m"})))
+      (is (nil? (stream/emit-kg-event! :memory-entry-added {:entry-id "e"})))
+      (finally (reset! stream/clients prev)))))
 
 (deftest broadcast-reaches-a-connected-client
-  (let [sink (ms/stream 4)]
+  (let [sink (ms/stream 4)
+        prev @stream/clients]
     (reset! stream/clients #{sink})
     (try
       (stream/emit-agent-event! :agent-spawned {:id "a1"})
       (let [msg @(ms/try-take! sink nil 1000 nil)]
         (is (str/includes? msg "\"type\":\"agent-spawned\""))
         (is (str/includes? msg "\"agent\":{\"id\":\"a1\"}")))
-      (finally (reset! stream/clients #{})))))
+      (finally (reset! stream/clients prev)))))
 
 (deftest state-bridge-stop-is-nil-and-idempotent
   (is (nil? (bridge/stop-ds-state-bridge!)))

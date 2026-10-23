@@ -44,13 +44,10 @@
 
 (coverage/deftest-contract-coverage server-contracts
   {:paths batch-paths
-   :exempt {'hive-mcp.server.core/-main
-            "The JVM entry point: it starts the system and then blocks on the
-             keepalive until shutdown, ending in System/exit. It never returns,
-             so it has no result to promise, and no test may call it."}})
+   :exempt {}})
 
 (deftest the-gate-is-not-vacuous
-  (is (= 82  (count (:universe (coverage/coverage {:paths batch-paths}))))))
+  (is (= 83  (count (:universe (coverage/coverage {:paths batch-paths}))))))
 
 (deftest every-server-contract-generates-both-sides
   (doseq [ns-sym '[hive-mcp.server.core hive-mcp.server.init hive-mcp.server.lifecycle

@@ -4,6 +4,7 @@
   "get-conn"
   {:ns "hive-agent.swarm.datalevin.driver", :var "get-conn"},
   "pull" {:ns "hive-agent.swarm.datalevin.driver", :var "pull"},
+  "q" {:ns "hive-agent.swarm.datalevin.driver", :var "q"},
   "transact!"
   {:ns "hive-agent.swarm.datalevin.driver", :var "transact!"}},
  :values {}}

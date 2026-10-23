@@ -1,0 +1,8 @@
+{:ok {:value {:success? true}, :recorded [[[:addon :start] :ok]]},
+ :error-answer
+ {:value {:isError true}, :recorded [[[:addon :tool "x"] :error]]},
+ :thrown {:value "down", :recorded [[[:addon :stop] :error]]},
+ :wrapped
+ {:value [3 7],
+  :recorded [[[:addon :handler] :ok] [[:addon :handler] :ok]]},
+ :no-recorder {:value :plain, :wrap-is-identity? true}}

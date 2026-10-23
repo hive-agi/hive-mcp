@@ -16,5 +16,6 @@
  {:id "kp-2", :title "Ship", :status "inreview", :priority "medium"},
  :move-missing
  {:error :kanban/invalid-task,
-  :message "Entry not found or not a kanban task: kp-none"},
+  :message
+  "Entry not found or not a kanban task (param task_id): kp-none"},
  :create-ok? true}

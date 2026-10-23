@@ -22,8 +22,9 @@
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 (def ^:private exemptions
-  {'hive-mcp.extensions.mount-host/current
-   "Identity on every value that is not a stale AddonRegistryHost: it is handed any IMountHost (or :not-a-host) and answers that same value, so its only true contract is [:=> [:cat :any] :any], which contracts nothing. The rebuild arm is pinned by mount-host-contract-test and mount_host_test."})
+  "None left: mount-host/current carries an :any -> :any contract whose :fn
+   guard states the identity-or-rebuild relation."
+  {})
 
 (coverage/deftest-contract-coverage extension-contracts
   {:paths ["src/hive_mcp/extensions"]

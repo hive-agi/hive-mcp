@@ -48,4 +48,5 @@
       (is (= before @writer/in-flight) "in-flight is decremented by the batch")
       (finally
         (async/close! (:tx-chan loopm))
-        (async/alts!! [(:go-chan loopm) (async/timeout 2000)])))))
+        (async/alts!! [(:go-chan loopm) (async/timeout 2000)])
+        (reset! writer/in-flight before)))))

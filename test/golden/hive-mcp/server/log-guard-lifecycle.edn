@@ -1,0 +1,7 @@
+{:closed-before false,
+ :closed-after true,
+ :first-close true,
+ :second-close true,
+ :unguarded-close true,
+ :unguarded-closed? false,
+ :delegate ["one"]}

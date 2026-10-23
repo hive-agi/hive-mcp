@@ -40,7 +40,17 @@ jobs:
       # pom is immutable on Clojars, so a red suite must never be able to
       # ship a version that cannot be withdrawn.
       - name: Test
-        run: clojure -M:test-unit
+        run: |
+          set +e
+          clojure -M:test-unit 2>&1 | tee unit-tests.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          bin/test-count-floor.sh unit-tests.log "$rc"
+
+      # LICENSE, version.edn :license and the src SPDX headers must agree
+      # before a pom is published; Deploy alone only warns.
+      - name: Verify license
+        run: clojure -T:build verify-license :strict true
 
       # A published coordinate is immutable, so a version already on Clojars
       # makes Deploy a no-op rather than a 403. The tag step below still says

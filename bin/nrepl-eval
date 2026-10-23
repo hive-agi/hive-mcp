@@ -19,7 +19,7 @@ translation:
 
     hive-mcp.tools.consolidated.kanban/handle-kanban   {:command "create" ...}
     hive-mcp.tools.consolidated.memory/handle-memory   {:command "add" ...}
-    hive-mcp.tools.consolidated.kg/handle-kg           {:command "edge" ...}
+    hive-mcp.tools.kg/handle-kg                        {:command "edge" ...}
     hive-mcp.tools.consolidated.project/handle-project {:command "workflow wrap" ...}
 
 String keys are NOT accepted by them; a map with "command" reports

@@ -76,7 +76,7 @@
 ;; Test: Flex Embedding Dimensions
 ;; =============================================================================
 
-(deftest ^:integration test-dimension-mismatch-triggers-recreation
+(deftest test-dimension-mismatch-triggers-recreation
   (testing "When embedding dimension changes, collection is recreated"
     ;; Setup: Create collection with 384 dimensions
     (setup-embedder! 384)
@@ -113,7 +113,7 @@
     (is (= 4096 (get-collection-dimension))
         "Collection should be recreated with new dimension")))
 
-(deftest ^:integration test-matching-dimension-reuses-collection
+(deftest test-matching-dimension-reuses-collection
   (testing "When embedding dimension matches, collection is reused"
     ;; Setup: Create collection with 768 dimensions
     (setup-embedder! 768)
@@ -155,7 +155,7 @@
       (is (some? (presets/get-preset "test-preset-reuse-2"))
           "New preset should exist"))))
 
-(deftest ^:integration test-new-collection-created-with-correct-dimension
+(deftest test-new-collection-created-with-correct-dimension
   (testing "New collection is created with provider's dimension"
     ;; Configure with 512 dimensions
     (setup-embedder! 512)
@@ -173,7 +173,7 @@
     (is (= 512 (get-collection-dimension))
         "New collection should have provider's dimension")))
 
-(deftest ^:integration test-dimension-change-preserves-nothing
+(deftest test-dimension-change-preserves-nothing
   (testing "Dimension change recreates collection, losing old data"
     ;; This is expected behavior - when dimension changes, old embeddings
     ;; are incompatible and must be discarded
@@ -213,7 +213,7 @@
 ;; Test: Status Reporting
 ;; =============================================================================
 
-(deftest ^:integration test-status-reports-dimension-info
+(deftest test-status-reports-dimension-info
   (testing "Status includes dimension information"
     (setup-embedder! 384)
 

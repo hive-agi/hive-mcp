@@ -106,11 +106,11 @@
         ;; 0.5.10 publishes the router registry API (get-event, get-interceptors,
         ;; append-interceptor!, get-fx) that hive-mcp.events.registry delegates to.
         io.github.hive-agi/hive-events
-        {:mvn/version "0.5.19"}
+        {:mvn/version "0.6.1"}
 
         ;; hive-hot - unified hot-reload with events integration
         io.github.hive-agi/hive-hot
-        {:mvn/version "0.2.1"}
+        {:mvn/version "0.2.4"}
 
         ;; Prometheus metrics - iapetos wrapper; hotspot collector adds
         ;; JVM metrics (memory, GC, threads).
@@ -130,7 +130,7 @@
 
         ;; hive-dsl — Result monad, rescue/guard DSL, error taxonomy
         io.github.hive-agi/hive-dsl
-        {:mvn/version "0.5.37"}
+        {:mvn/version "0.6.1"}
 
         ;; hive-spi — pure SPI contract leaf (protocols + schemas + ADTs).
         ;; Required at compile time by core namespaces. Pinned to the published
@@ -139,7 +139,7 @@
         ;; local.deps.edn :local/root override.
         ;; 1.0.0: the ports carry a published stability promise, which is what
         ;; lets this host make one of its own. See hive-spi's CHANGELOG.
-        io.github.hive-agi/hive-spi {:mvn/version "1.4.9"}
+        io.github.hive-agi/hive-spi {:mvn/version "1.4.11"}
 
         ;; NO CONCRETE BACKEND BELONGS HERE. hive-milvus / hive-qdrant /
         ;; clj-qdrant depend on hive-mcp for their addon surface, so declaring
@@ -161,29 +161,29 @@
         ;; hive-help — required directly by hive-mcp.embeddings.routing. It used
         ;; to arrive transitively through hive-milvus; once the backend left
         ;; :deps that route vanished, so the real dependency is declared here.
-        io.github.hive-agi/hive-help {:mvn/version "0.1.6"}
+        io.github.hive-agi/hive-help {:mvn/version "0.2.1"}
 
         ;; hive-addon — standalone IAddon contract (leaf lib) + plug/mount/compose.
         ;; hive-mcp.addons.protocol re-exports it via def-aliases so the ~30
         ;; monorepo addon implementors can depend on hive-addon instead of
         ;; compile-depending on hive-mcp.
         ;; 1.1.7 is the first Clojars release carrying hive-addon.resources.
-        io.github.hive-agi/hive-addon {:mvn/version "1.1.8"}
+        io.github.hive-agi/hive-addon {:mvn/version "1.1.10"}
 
         ;; hive-di — declarative typed config resolution (defconfig/env/literal)
         ;; Used by hive-mcp.embeddings.env-config and downstream addons.
-        io.github.hive-agi/hive-di {:mvn/version "0.4.19"}
+        io.github.hive-agi/hive-di {:mvn/version "0.5.2"}
 
         ;; hive-weave — Parallel utilities (bounded-pmap) used by project/tree.clj;
         ;; hive-weave.retry/with-recovery used by knowledge-graph/store/datahike.clj
         ;; (first released in 0.2.6 — 0.2.5 does not contain the retry ns).
-        io.github.hive-agi/hive-weave {:mvn/version "0.4.2"}
+        io.github.hive-agi/hive-weave {:mvn/version "0.4.7"}
 
         ;; hive-schemas — pinned at the TOP level, not only in :test/:test-unit.
         ;; Transitive callers can pull 0.1.6, which exists on Gitea only (404 on
         ;; Clojars and Central), so the default tree cannot resolve from a public
         ;; runner. :use-top makes this pin win everywhere.
-        io.github.hive-agi/hive-schemas {:mvn/version "0.1.40"}
+        io.github.hive-agi/hive-schemas {:mvn/version "0.2.2"}
 
         ;; hive-ttracking — telemetry/timing (timed-query, track*, bench*).
         ;; Consumed by catchup.clj and siblings (bundle/hydration/hierarchy).
@@ -191,7 +191,7 @@
 
         ;; hive-system — system-level abstractions (IProcess, INetwork,
         ;; process liveness, secrets, shell, redaction).
-        io.github.hive-agi/hive-system {:mvn/version "0.3.22"}
+        io.github.hive-agi/hive-system {:mvn/version "0.4.3"}
 
         ;; Integrant — lifecycle framework for component-based systems
         ;; Replaces monolithic start! with declarative system map + profile merging
@@ -223,7 +223,9 @@
               "-Dclojure.core.async.pool-size=8"
               "--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED"
               "--add-opens=java.base/java.nio=ALL-UNNAMED"
-              "-Dio.netty.tryReflectionSetAccessible=true"]}
+              "-Dio.netty.tryReflectionSetAccessible=true"
+              ;; See :dev: soft refs pin eval classloaders in metaspace.
+              "-XX:SoftRefLRUPolicyMSPerMB=50"]}
 
   ;; One-off KG datahike rebuild (drops legacy structural edges).
   ;; Run STANDALONE with hive-mcp STOPPED:
@@ -301,8 +303,21 @@
               "-XX:SoftMaxHeapSize=4g"
               "-XX:+ParallelRefProcEnabled"
               "-XX:-ExplicitGCInvokesConcurrent"
-              ;; --- Metaspace containment (memory 20261020143717-25bdae12) ---
+              ;; --- Metaspace containment ---
+              ;; Every nREPL eval (one per bb-mcp tool call) compiles classes
+              ;; into a fresh DynamicClassLoader, and DynamicClassLoader's class
+              ;; cache holds them by SoftReference. The default policy keeps a
+              ;; soft ref alive 1000 ms per MB of free heap, so with ~4g free
+              ;; every loader lives ~70 min. Measured 2026-10-20 after 4h:
+              ;; 73,805 loaders reachable after a full GC, 1 GB metaspace,
+              ;; growing ~10 loaders/s. 50 ms/MB keeps them ~3 min instead.
+              ;; The same policy governs datahike's index nodes, which the
+              ;; persistent-sorted-set holds by SoftReference: measured
+              ;; 2026-10-22 at -Xmx10g, 49M datoms (~3.5 GB of a 5.1 GB live
+              ;; set) stayed reachable after a full GC.
               "-XX:SoftRefLRUPolicyMSPerMB=50"
+              ;; Ceiling above the measured 1.2 GB committed peak: with
+              ;; ExitOnOutOfMemoryError a lower cap exits the coordinator.
               "-XX:MaxMetaspaceSize=2g"
               "-XX:NativeMemoryTracking=summary"]}
 
@@ -361,7 +376,7 @@
               "-XX:SoftMaxHeapSize=4g"
               "-XX:+ParallelRefProcEnabled"
               "-XX:-ExplicitGCInvokesConcurrent"
-              ;; --- Metaspace containment (memory 20261020143717-25bdae12) ---
+              ;; Metaspace containment: see :dev.
               "-XX:SoftRefLRUPolicyMSPerMB=50"
               "-XX:MaxMetaspaceSize=2g"
               "-XX:NativeMemoryTracking=summary"]
@@ -387,13 +402,13 @@
                 ;; Generative testing for spec validation
                 org.clojure/test.check {:mvn/version "1.1.3"}
                 ;; Trifecta macro: golden + property + mutation facets
-                io.github.hive-agi/hive-test {:mvn/version "0.5.0"}
+                io.github.hive-agi/hive-test {:mvn/version "0.5.2"}
                 ;; hive-schemas.test — a malli schema drives hive-test property +
                 ;; mutation facets with no hand-written generator, oracle, or
                 ;; mutant. Must come from the JAR, not :local/root — the macros
                 ;; live in src/synth, which ships but is not on the project's
                 ;; :paths.
-                io.github.hive-agi/hive-schemas {:mvn/version "0.1.40"}}
+                io.github.hive-agi/hive-schemas {:mvn/version "0.2.2"}}
                 ;; hive-spi now lives in :deps (core nses require it) — no
                 ;; :test-alias override needed.
    ;; Backend drivers are NOT here — the default cold-CI test path is
@@ -419,7 +434,7 @@
    ;; plain `clojure -M:test` is safe on a shared host. Every :test* alias
    ;; carries the same cap so any composition keeps it; a -J-Xmx on the
    ;; command line comes after alias :jvm-opts and still overrides it.
-   :jvm-opts ["-Xmx2g" "-Dhive.kg.backend=datascript"]
+   :jvm-opts ["-Xmx2g" "-Dhive.test=true" "-Dhive.mcp.config=target/test-config/config.edn" "-Dhive.kg.backend=datascript"]
    :main-opts ["-m" "cognitect.test-runner"
                "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]}
 
@@ -433,14 +448,14 @@
    :extra-deps {io.github.cognitect-labs/test-runner
                 {:git/tag "v0.5.1" :git/sha "dfb30dd"}
                 org.clojure/test.check {:mvn/version "1.1.3"}
-                io.github.hive-agi/hive-test {:mvn/version "0.5.0"}
+                io.github.hive-agi/hive-test {:mvn/version "0.5.2"}
                 ;; Must match :test. The runner LOADS every test namespace before
                 ;; it filters by selector, so a test ns requiring hive-schemas.test
                 ;; aborts this whole alias — all 405 namespaces — if the dep is
                 ;; only declared on :test. This is the CI alias; it is the one that
                 ;; must not be able to fail at load.
-                io.github.hive-agi/hive-schemas {:mvn/version "0.1.40"}}
-   :jvm-opts ["-Xmx2g" "-Dhive.kg.backend=datascript"]
+                io.github.hive-agi/hive-schemas {:mvn/version "0.2.2"}}
+   :jvm-opts ["-Xmx2g" "-Dhive.test=true" "-Dhive.mcp.config=target/test-config/config.edn" "-Dhive.kg.backend=datascript"]
    :main-opts ["-m" "cognitect.test-runner" "-e" ":integration"
                "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]
    :exec-fn cognitect.test-runner.api/test
@@ -455,7 +470,7 @@
   ;;   clojure -M:test-unit:test-focus -n hive-mcp.foo-test
   ;;   clojure -M:test:test-swarm:test-focus -d test-swarm -n hive-mcp.bar-test
   :test-focus
-  {:jvm-opts ["-Xmx2g"]
+  {:jvm-opts ["-Xmx2g" "-Dhive.test=true" "-Dhive.mcp.config=target/test-config/config.edn"]
    :main-opts ["-m" "cognitect.test-runner" "-e" ":integration"]}
 
   ;; Run only integration tests (requires Emacs with emacs-mcp loaded)
@@ -464,11 +479,11 @@
    :extra-deps {io.github.cognitect-labs/test-runner
                 {:git/tag "v0.5.1" :git/sha "dfb30dd"}
                 org.clojure/test.check {:mvn/version "1.1.3"}
-                io.github.hive-agi/hive-test {:mvn/version "0.5.0"}
+                io.github.hive-agi/hive-test {:mvn/version "0.5.2"}
                 ;; Same reason as :test-unit — this alias also puts test/ on the
                 ;; path, so it loads every test ns before selecting :integration.
-                io.github.hive-agi/hive-schemas {:mvn/version "0.1.40"}}
-   :jvm-opts ["-Xmx2g" "-Dhive.kg.backend=datascript"]
+                io.github.hive-agi/hive-schemas {:mvn/version "0.2.2"}}
+   :jvm-opts ["-Xmx2g" "-Dhive.test=true" "-Dhive.mcp.config=target/test-config/config.edn" "-Dhive.kg.backend=datascript"]
    :main-opts ["-m" "cognitect.test-runner" "-i" ":integration"
                "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]
    :exec-fn cognitect.test-runner.api/test
@@ -499,7 +514,7 @@
   ;; Drivers (datalevin/datahike) + the KG-store siblings are NOT declared here
   ;; — the user's local.deps.edn brings whichever backend they run against.
   :test-backends
-  {:jvm-opts ["-Xmx2g"]
+  {:jvm-opts ["-Xmx2g" "-Dhive.test=true" "-Dhive.mcp.config=target/test-config/config.edn"]
    :main-opts ["-m" "cognitect.test-runner"
                "-r" "^hive-mcp\\.backends\\..*-test$"]}
 
@@ -516,7 +531,7 @@
   ;; supplies its own main and is unaffected.
   :test-swarm
   {:extra-paths ["test-swarm"]
-   :jvm-opts ["-Xmx2g"]
+   :jvm-opts ["-Xmx2g" "-Dhive.test=true" "-Dhive.mcp.config=target/test-config/config.edn"]
    :main-opts ["-m" "cognitect.test-runner"
                "-d" "test-swarm"
                "-r" "^hive-mcp\\..*-test$"]}
@@ -534,7 +549,7 @@
   ;; There is NO `uber` task; the server runs from source everywhere,
   ;; including the container (see Dockerfile and bin/docker-entrypoint.sh).
   :build
-  {:deps {io.github.hive-agi/hive-build {:mvn/version "0.1.28"}}
+  {:deps {io.github.hive-agi/hive-build {:mvn/version "0.2.1"}}
    :ns-default hive-build.api}
   :aot-boot {:extra-paths ["target/boot-classes"]
              :exec-fn hive-mcp.scripts.aot-boot/compile-boot-closure!

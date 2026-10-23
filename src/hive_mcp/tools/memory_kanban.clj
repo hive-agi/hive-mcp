@@ -35,7 +35,8 @@
             [hive-mcp.tools.memory-kanban.query :as query]
             [hive-mcp.session.current :as session]
             [malli.core :as m]
-            [hive-mcp.tools.kanban.update :as kanban-update]))
+            [hive-mcp.tools.kanban.update :as kanban-update]
+            [hive-mcp.tools.kanban.children :as children]))
 
 (declare query-kanban-entries resolve-project-ids-with-descendants effective-dir stats* filter-kanban-by-tags list-slim*)
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -218,12 +219,47 @@
           crud-result
           {:type "text" :text (:text crud-result)})))))
 
+(defn- live-child-deps
+  "Production reads for `children/open-children`: the KG edge queries and a
+   kanban-store-first entry lookup."
+  []
+  {:edges-from kg-edges/get-edges-from
+   :edges-to   kg-edges/get-edges-to
+   :get-entry  (fn [id]
+                 (or (try (kanban-facade/get-entry-by-id id) (catch Throwable _ nil))
+                     (try (proto/get-entry (proto/get-store) id) (catch Throwable _ nil))))})
+
+(defn with-open-children
+  "When `new-status` is done, attach the card's open KG children to the slim
+   view as :open_children plus a :hint, so the caller can close or re-parent
+   them. Read-only and non-fatal: a failed lookup returns `slim` unchanged.
+   `deps` defaults to the live KG + store reads."
+  ([slim task-id new-status]
+   (with-open-children slim task-id new-status (live-child-deps)))
+  ([slim task-id new-status deps]
+   (if-not (and (string? new-status) (kp/done? new-status))
+     slim
+     (let [children (try (children/open-children task-id deps)
+                         (catch Throwable t
+                           (log/debug "open-children lookup failed (non-fatal):" (ex-message t))
+                           nil))]
+       (cond-> slim
+         (seq children)
+         (assoc :open_children children
+                :hint (str (count children) " linked card(s) are still open. "
+                           "Close or re-parent them; nothing was changed.")))))))
+
+(m/=> with-open-children [:function
+                          [:=> [:cat :map [:maybe :string] [:maybe :string]] :map]
+                          [:=> [:cat :map [:maybe :string] [:maybe :string] :map] :map]])
+
 (defn- move*
   "Soft-transition a kanban task to a new status via the event bus.
    On success, return a slim view derived from the committed effect
    payload instead of doing an immediate backend read. Some vector
    backends are read-after-write eventual here, so reading the entry
-   back can echo the old status even though the write succeeded."
+   back can echo the old status even though the write succeeded.
+   A move to done also lists the card's open KG children."
   [{:keys [task_id new_status status id directory]}]
   (let [task-id    (or task_id id)
         new-status (or new_status status)
@@ -231,7 +267,8 @@
                     {:task-id task-id :new-status new-status :directory directory})]
     (if (r/ok? result)
       (let [{:keys [content tags]} (get-in result [:ok :kanban/facade-update :payload])]
-        (mcp-json (kt/task->slim {:id task-id :content content :tags tags})))
+        (mcp-json (with-open-children (kt/task->slim {:id task-id :content content :tags tags})
+                    task-id new-status)))
       (mcp-error (or (:message result)
                      (str "Move failed: " (:error result)))))))
 
@@ -240,7 +277,8 @@
    with a status given move it in the SAME commit (`dispatch-update!`): the
    store takes the whole update or none of it (kanban 20261020212530-132e3ea7).
    Like `move*`, the slim view is derived from the committed effect payload
-   rather than a read-back, because some vector backends are eventual here."
+   rather than a read-back, because some vector backends are eventual here.
+   A move to done also lists the card's open KG children."
   [{:keys [task_id id new_status status title description append_description priority directory]}]
   (let [task-id    (or task_id id)
         new-status (or new_status status)
@@ -255,7 +293,8 @@
                      (kanban-events/dispatch-edit! payload))]
     (if (r/ok? result)
       (let [{:keys [content tags]} (get-in result [:ok :kanban/facade-update :payload])]
-        (mcp-json (kt/task->slim {:id task-id :content content :tags tags})))
+        (mcp-json (with-open-children (kt/task->slim {:id task-id :content content :tags tags})
+                    task-id new-status)))
       (mcp-error (or (:message result)
                      (str "Edit failed: " (:error result)))))))
 

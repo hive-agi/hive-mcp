@@ -38,7 +38,8 @@
             [hive-mcp.tools.multi :as multi]
             [hive-mcp.tools.consolidated.multi :as c-multi]
             [hive-mcp.test.stub.memory-store :as stub]
-            [hive-mcp.test.stub.batch-extensions :as bx]))
+            [hive-mcp.test.stub.batch-extensions :as bx]
+            [hive-mcp.test.stub.isolated-registry :as iso]))
 
 ;; =============================================================================
 ;; Helpers
@@ -65,7 +66,7 @@
   (when-let [waves (:waves parsed)]
     (mapcat val waves)))
 
-(use-fixtures :each stub/with-stub-store bx/with-batch-extensions)
+(use-fixtures :each iso/with-fresh-registries stub/with-stub-store bx/with-batch-extensions)
 
 ;; =============================================================================
 ;; Part 1: normalize-op Tests
