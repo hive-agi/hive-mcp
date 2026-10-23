@@ -92,6 +92,41 @@
           (is (= {:tool-name "code" :cues #{"carto"} :caller-id "c1"} @seen))
           (is (not (contains? @seen :args))))))))
 
+(defn- await-late-answer
+  "True once a late provider answer for `caller-id` is held, false after 5 s."
+  [caller-id]
+  (deref (future (loop []
+                   (if (contains? @@#'activation/late-answers caller-id)
+                     true
+                     (do (Thread/onSpinWait) (recur)))))
+         5000 false))
+
+(deftest a-slow-provider-never-delays-the-response
+  (let [release (promise)]
+    (with-redefs [activation/deadline-ms 50]
+      (with-provider
+        (fn [_] @release {:pins #{"late-pin"} :tokens #{"late-token"}})
+        (fn []
+          (let [t0  (System/nanoTime)
+                ctx (activation/drain-ctx {:tool-name "code" :cues #{"carto"} :caller-id "slow"})
+                ms  (/ (- (System/nanoTime) t0) 1e6)]
+            (testing "the response gets the plain cues within the deadline"
+              (is (= {:tokens #{"carto"}} ctx))
+              (is (< ms 1000)))
+            (testing "a second call while the first still runs starts no new provider call"
+              (is (= {:tokens #{"x"}}
+                     (activation/drain-ctx {:tool-name "code" :cues #{"x"} :caller-id "slow"}))))
+            (deliver release true)
+            (is (await-late-answer "slow"))
+            (testing "the late answer is held for that caller only"
+              (is (= #{"slow"} (set (keys @@#'activation/late-answers)))))
+            (testing "and rides on that caller's NEXT drain, once"
+              (let [next-ctx (activation/drain-ctx {:tool-name "code" :cues #{"y"} :caller-id "slow"})]
+                (is (contains? (:pins next-ctx) "late-pin"))
+                (is (contains? (:tokens next-ctx) "late-token"))
+                (is (contains? (:tokens next-ctx) "y")))
+              (is (not (contains? @@#'activation/late-answers "slow"))))))))))
+
 ;; =============================================================================
 ;; drain-telemetry — the offers-vs-access measurement S4 tunes against
 ;; =============================================================================

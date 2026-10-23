@@ -54,6 +54,35 @@
 
 (m/=> provider [:=> [:cat] [:maybe ifn?]])
 
+(def deadline-ms
+  "Longest a tool response waits for the activation provider."
+  200)
+
+(defonce ^{:private true :doc "caller-id -> a provider answer that arrived after its deadline."}
+  late-answers
+  (atom {}))
+
+(defonce ^{:private true :doc "caller-ids whose provider call is still running."}
+  in-flight
+  (atom #{}))
+
+(defn- merge-answer
+  "`base` drain ctx with a `sane` provider answer folded in."
+  [base {:keys [pins tokens floor-cap]}]
+  (cond-> base
+    (seq tokens) (update :tokens set/union tokens)
+    (seq pins)   (update :pins (fnil set/union #{}) pins)
+    floor-cap    (assoc :floor-cap floor-cap)))
+
+(defn- call-provider
+  "The provider's sane answer, or nil when it throws or answers garbage."
+  [f actx]
+  (try
+    (sane (f actx))
+    (catch Throwable t
+      (log/debug t "activation: provider failed; drain falls back to cues")
+      nil)))
+
 (defn drain-ctx
   "Drain ctx for one tool call: `{:tokens cues}` merged with whatever the
    activation provider contributes.
@@ -61,22 +90,31 @@
    `activation-ctx` is the read-only view a rule gets — tool name, the cue
    tokens harvested under `task-signal`'s allowlist, and the caller. Rules see
    the ALLOWLISTED cues only; raw tool args never reach them, so
-   `task-signal/denied-arg-keys` governs activation input by construction."
+   `task-signal/denied-arg-keys` governs activation input by construction.
+
+   The provider gets `deadline-ms`. An answer that arrives later is kept for
+   the same caller and folded into its NEXT drain, so a slow provider delays
+   its pins by one call instead of delaying the response. While a caller's
+   provider call is still running, no second one starts for that caller."
   [{:keys [tool-name cues caller-id] :as _activation-ctx}]
-  (let [base {:tokens (or cues #{})}]
-    (if-let [f (provider)]
-      (try
-        (if-let [{:keys [pins tokens floor-cap]}
-                 (sane (f {:tool-name tool-name :cues (or cues #{}) :caller-id caller-id}))]
-          (cond-> base
-            (seq tokens) (update :tokens set/union tokens)
-            (seq pins) (assoc :pins pins)
-            floor-cap (assoc :floor-cap floor-cap))
-          base)
-        (catch Throwable t
-          (log/debug t "activation: provider failed; drain falls back to cues")
-          base))
-      base)))
+  (let [[old _] (swap-vals! late-answers dissoc caller-id)
+        base    (cond-> {:tokens (or cues #{})}
+                  (contains? old caller-id) (merge-answer (get old caller-id)))
+        f       (provider)]
+    (if-not f
+      base
+      (let [[running _] (swap-vals! in-flight conj caller-id)]
+        (if (contains? running caller-id)
+          base
+          (let [actx {:tool-name tool-name :cues (or cues #{}) :caller-id caller-id}
+                fut  (future
+                       (try (call-provider f actx)
+                            (finally (swap! in-flight disj caller-id))))
+                ans  (deref fut deadline-ms ::late)]
+            (if (= ::late ans)
+              (do (future (when-let [a @fut] (swap! late-answers assoc caller-id a)))
+                  base)
+              (cond-> base ans (merge-answer ans)))))))))
 
 (m/=> drain-ctx
       [:=> [:cat [:maybe [:map
