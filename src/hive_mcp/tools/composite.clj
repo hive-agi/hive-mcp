@@ -277,18 +277,49 @@
           (str (subs s 0 (dec max-summary-chars)) "…")
           s)))))
 
+(def ^:private deprecated-summary-prefix
+  "The summary prefix that marks a contribution deprecated when its spec
+   carries no :deprecated flag. hive-cloak's legacy memory spellings
+   (seal-status, enclave-on, work-handoff-*, ...) declare themselves this way
+   and nothing else, so the prefix is the only signal readable without
+   changing that addon. Compared case-insensitively."
+  "deprecated:")
+
+(defn deprecated-contribution?
+  "True when contribution SPEC is deprecated: it routes, but is not advertised.
+   The structured :deprecated key wins whenever present (true, or a string
+   naming the replacement; false keeps it advertised whatever its summary
+   says); without it, a summary that starts with `Deprecated:` marks it."
+  [spec]
+  (if (contains? spec :deprecated)
+    (boolean (:deprecated spec))
+    (boolean (some-> (contribution-summary spec)
+                     str/lower-case
+                     (str/starts-with? deprecated-summary-prefix)))))
+
+(defn advertised-contributions
+  "ADDON-CMDS without the deprecated contributions (`deprecated-contribution?`):
+   the part of a tool's contributions its description and `command` enum
+   advertise. Routing reads the full set (effective-handlers), so a caller
+   still using a deprecated spelling keeps working."
+  [addon-cmds]
+  (into {} (remove (comp deprecated-contribution? val)) addon-cmds))
+
 (defn contributed-commands-text
   "ADDON-CMDS (command name -> contribution spec) as one sentence for a tool
-   description: every contributed command with its one-line purpose. nil when
-   there are none."
+   description: every ADVERTISED contributed command with its one-line purpose.
+   Deprecated contributions are left out (`advertised-contributions`): they
+   still route, but a client should not pay description bytes for spellings
+   it is told not to use. nil when nothing is left to advertise."
   [addon-cmds]
-  (when (seq addon-cmds)
-    (str "Addon-contributed (`<name> help` lists a subdomain's verbs): "
-         (str/join "; " (for [[cmd spec] (sort-by key addon-cmds)]
-                          (if-let [s (contribution-summary spec)]
-                            (str cmd " - " s)
-                            (str cmd))))
-         ".")))
+  (let [advertised (advertised-contributions addon-cmds)]
+    (when (seq advertised)
+      (str "Addon-contributed (`<name> help` lists a subdomain's verbs): "
+           (str/join "; " (for [[cmd spec] (sort-by key advertised)]
+                            (if-let [s (contribution-summary spec)]
+                              (str cmd " - " s)
+                              (str cmd))))
+           "."))))
 
 (defn contributed-command-names
   "Every command string ADDON-CMDS (command name -> contribution spec) makes
@@ -333,14 +364,21 @@
 (defn build-merged-tool
   "Fold the current addon contributions to TOOL-NAME into a consolidated
    tool-def's advertised surface: every contributed command's :params joins
-   the inputSchema properties, the `command` enum — when the core declares
-   one — grows the contributed command names, and the description gains one
+   the inputSchema properties, the `command` enum (when the core declares
+   one) grows the contributed command names, and the description gains one
    line naming each contributed command with its purpose
    (`contributed-commands-text`). Verb-level contributions
    (hive-mcp.dispatch.verbs) fold in too, through `fold-verb-contributions`.
    The commands a contribution declares :default-async join
    :default-async-commands (`default-async/fold`).
    Returns the tool-def unchanged when nothing has been contributed.
+
+   Deprecated contributions (`deprecated-contribution?`) are left out of the
+   DESCRIPTION only. They stay in the `command` enum and keep their :params:
+   a client that validates arguments against the schema, or constrains its
+   decoding to the enum, would otherwise refuse an old spelling before it
+   ever reached routing, and a deprecated alias exists precisely so that
+   spelling keeps working until it is removed.
 
    Routing already folded contributions in (effective-handlers); this is the
    SCHEMA half. The MCP layer forwards only the params a tool declares, so a
@@ -441,12 +479,20 @@
    #(or (nil? %) (map? %) (var? %))])
 
 (def ContributionSpec
-  "One addon command contribution: its handler and the docs it advertises."
+  "One addon command contribution: its handler and the docs it advertises.
+   :deprecated (true, or a string naming the replacement) keeps it routed but
+   leaves it out of the tool description (`deprecated-contribution?`)."
   [:map
    [:handler {:optional true} :any]
    [:summary {:optional true} [:maybe :string]]
    [:description {:optional true} [:maybe :string]]
+   [:deprecated {:optional true} [:maybe [:or :boolean :string]]]
    [:params {:optional true} [:maybe :map]]])
+
+(m/=> deprecated-contribution? [:=> [:cat [:maybe ContributionSpec]] :boolean])
+
+(m/=> advertised-contributions
+      [:=> [:cat [:maybe [:map-of :string ContributionSpec]]] [:map-of :string ContributionSpec]])
 
 (m/=> lazy-resolve-handlers [:=> [:cat :symbol] :map])
 
