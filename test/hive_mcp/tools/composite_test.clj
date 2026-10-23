@@ -164,9 +164,30 @@
     (is (not (str/includes? text "seal-status")))
     (is (not (str/includes? text "old-flag")))
     (is (not (str/includes? text "Deprecated")))
-    (testing "nothing advertised -> no sentence at all"
-      (is (nil? (composite/contributed-commands-text
-                 (select-keys cmds ["seal-status" "old-flag"])))))))
+    (testing "nothing advertised and no replacement root named -> no sentence at all"
+      (is (nil? (composite/contributed-commands-text (select-keys cmds ["old-flag"])))))))
+
+;; Measured 2026-10-23 (hive-assay advert lab r3, deepseek-v4-1-flash-1017):
+;; with the `cloak` root listed, a question about the "default enclave" of
+;; memory "sealing" still took 10-22 turns, because nothing an agent reads
+;; maps those words to the `cloak` tool. Dropping the deprecated aliases from
+;; the description removes the last such bridge, so one short pointer line
+;; per replacement root replaces them.
+
+(deftest contributed-commands-text-names-where-deprecated-commands-moved-test
+  (let [cmds {"enclave-on"        {:description "Deprecated: use `cloak on`."}
+              "seal-edges"        {:description "Deprecated: use `cloak edges hide`."}
+              "work-handoff-push" {:deprecated "use `cloak handoff push`"}
+              "old-flag"          {:deprecated true :description "Old thing."}
+              "belt"              {:description "Scan the belt."}}
+        text (composite/contributed-commands-text cmds)]
+    (testing "the advertised sentence comes first, then one pointer per replacement root"
+      (is (= (str "Addon-contributed (`<name> help` lists a subdomain's verbs): belt - Scan the belt. "
+                  "Moved to the `cloak` tool (call it with command=\"help\"): enclave, seal, work.")
+             text)))
+    (testing "only deprecated contributions -> the pointer alone"
+      (is (= "Moved to the `cloak` tool (call it with command=\"help\"): seal."
+             (composite/contributed-commands-text (select-keys cmds ["seal-edges" "old-flag"])))))))
 
 (deftest deprecated-contribution-routes-but-is-not-advertised-test
   (ext/contribute-commands! "merged-test-root" :merged-test-addon

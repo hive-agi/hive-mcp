@@ -19,7 +19,8 @@
             [hive-mcp.tools.composite.departed :as departed]
             [malli.core :as m]
             [hive-mcp.tools.core :as core]
-            [hive-mcp.addons.metrics :as addon-metrics]))
+            [hive-mcp.addons.metrics :as addon-metrics]
+            [hive-mcp.tools.composite.moved :as moved]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -328,16 +329,22 @@
    description: every ADVERTISED contributed command with its one-line purpose.
    Deprecated contributions are left out (`advertised-contributions`): they
    still route, but a client should not pay description bytes for spellings
-   it is told not to use. nil when nothing is left to advertise."
+   it is told not to use. Only the root they moved to is named, one short line
+   per root (`moved/moved-commands-text`). nil when nothing is left to say."
   [addon-cmds]
-  (let [advertised (advertised-contributions addon-cmds)]
-    (when (seq advertised)
-      (str "Addon-contributed (`<name> help` lists a subdomain's verbs): "
-           (str/join "; " (for [[cmd spec] (sort-by key advertised)]
-                            (if-let [s (contribution-summary spec)]
-                              (str cmd " - " s)
-                              (str cmd))))
-           "."))))
+  (let [advertised (advertised-contributions addon-cmds)
+        sentence   (when (seq advertised)
+                     (let [s (str "Addon-contributed (`<name> help` lists a subdomain's verbs): "
+                                  (str/join "; " (for [[cmd spec] (sort-by key advertised)]
+                                                   (if-let [s (contribution-summary spec)]
+                                                     (str cmd " - " s)
+                                                     (str cmd)))))]
+                       (if (str/ends-with? s ".") s (str s "."))))
+        moved-line (moved/moved-commands-text
+                    (for [[cmd spec] addon-cmds
+                          :when (deprecated-contribution? spec)]
+                      [cmd (if (string? (:deprecated spec)) (:deprecated spec) (contribution-summary spec))]))]
+    (some->> [sentence moved-line] (remove nil?) seq (str/join " "))))
 
 (defn contributed-command-names
   "Every command string ADDON-CMDS (command name -> contribution spec) makes
