@@ -315,7 +315,11 @@
               ;; persistent-sorted-set holds by SoftReference: measured
               ;; 2026-10-22 at -Xmx10g, 49M datoms (~3.5 GB of a 5.1 GB live
               ;; set) stayed reachable after a full GC.
-              "-XX:SoftRefLRUPolicyMSPerMB=50"]}
+              "-XX:SoftRefLRUPolicyMSPerMB=50"
+              ;; Ceiling above the measured 1.2 GB committed peak: with
+              ;; ExitOnOutOfMemoryError a lower cap exits the coordinator.
+              "-XX:MaxMetaspaceSize=2g"
+              "-XX:NativeMemoryTracking=summary"]}
 
   :nrepl
   {:extra-paths ["dev" "test"]
@@ -373,7 +377,9 @@
               "-XX:+ParallelRefProcEnabled"
               "-XX:-ExplicitGCInvokesConcurrent"
               ;; Metaspace containment: see :dev.
-              "-XX:SoftRefLRUPolicyMSPerMB=50"]
+              "-XX:SoftRefLRUPolicyMSPerMB=50"
+              "-XX:MaxMetaspaceSize=2g"
+              "-XX:NativeMemoryTracking=summary"]
    ;; Same main as the container. The system's :hive/nrepl component is the
    ;; nREPL (HIVE_MCP_NREPL_PORT, default 7910); it resolves CIDER and
    ;; refactor-nrepl from the classpath this alias supplies.
