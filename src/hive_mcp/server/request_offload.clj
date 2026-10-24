@@ -98,12 +98,16 @@
                             (.cancel ^Future task true)))))
     cf))
 
+(m/=> submit [:=> [:cat [:fn #(instance? ExecutorService %)] ifn?] [:fn #(instance? CompletableFuture %)]])
+
 ;; ── Method-table wrapping ─────────────────────────────────────────────────
 
 (defn offloaded?
   "True when F is a wrapper this namespace installed."
   [f]
   (boolean (::orig (meta f))))
+
+(m/=> offloaded? [:=> [:cat :any] :boolean])
 
 (defn wrap-method
   "Wrap the request-method fn ORIG: with ::executor in the context, the call
@@ -120,6 +124,8 @@
           (orig method context params)))
       {::orig orig})))
 
+(m/=> wrap-method [:=> [:cat ifn?] ifn?])
+
 (defn offload!
   "Wrap the receive-request method for METHOD in place. Returns true when it
    is wrapped afterwards, nil when there is no such method."
@@ -127,6 +133,8 @@
   (when-let [orig (get (methods jsonrpc-server/receive-request) method)]
     (.addMethod ^clojure.lang.MultiFn jsonrpc-server/receive-request method (wrap-method orig))
     true))
+
+(m/=> offload! [:=> [:cat :any] [:maybe [:= true]]])
 
 (declare receive-cancelled)
 
@@ -144,6 +152,8 @@
                 "notifications/cancelled" #'receive-cancelled)
     names))
 
+(m/=> install! [:=> [:cat] [:vector :any]])
+
 ;; ── Cancellation ───────────────────────────────────────────────────────────
 
 (defn cancel-pending!
@@ -154,6 +164,8 @@
     (do (p/cancel! pending) true)
     false))
 
+(m/=> cancel-pending! [:=> [:cat :any :any] :boolean])
+
 (defn receive-cancelled
   "MCP notifications/cancelled {:requestId id}: cancel that request if it is
    still running. The SDK's own method was a no-op."
@@ -162,6 +174,8 @@
     (when (cancel-pending! (:server context) id)
       (log/debug "MCP request cancelled by client" id)))
   nil)
+
+(m/=> receive-cancelled [:=> [:cat :any :any [:maybe map?]] :nil])
 
 ;; ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -174,8 +188,12 @@
     (log/info "MCP requests offloaded from the read loop, concurrency" n)
     (assoc context ::executor (executor n) ::concurrency n)))
 
+(m/=> attach [:=> [:cat [:maybe map?] :any] map?])
+
 (defn detach!
   "Shut the executor in CONTEXT down, interrupting the handlers still running."
   [context]
   (some-> ^ExecutorService (::executor context) .shutdownNow)
   nil)
+
+(m/=> detach! [:=> [:cat [:maybe map?]] :nil])
