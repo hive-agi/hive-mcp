@@ -28,7 +28,8 @@
             [hive-mcp.embeddings.shared-gate :as embed-gate]
             [hive-mcp.tools.memory.crud.edge-outcome :as edge-outcome]
             [hive-mcp.extensions.registry :as ext]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.memory.write-latency :as write-latency]))
 
 (def ^:const ^:private memory-write-timeout-ms
   "Timeout budget for a single memory write (Chroma add + KG tx + fetch).
@@ -73,6 +74,15 @@
   [progress stage]
   (when progress
     (swap! progress assoc :stage stage :stage-since-ns (System/nanoTime)))
+  nil)
+
+(defn- record-stage-ms!
+  "Add `ms` to `stage`'s wall time under :timings on `progress` (a stage may
+   run more than once, e.g. :kg-edges per relation). nil `progress` is a no-op.
+   Kanban 20260928204307-01ca0962."
+  [progress stage ms]
+  (when progress
+    (swap! progress update-in [:timings stage] (fnil + 0) (long ms)))
   nil)
 
 (defn timeout-diagnostic
@@ -135,24 +145,29 @@
    `*stage-budgets-ms*` has a budget for it, wait at most that long. A stage
    that outruns its budget is cancelled and throws ex-info
    {:type :stage-budget-exceeded :stage :budget-ms :elapsed-ms}. A throw from
-   `f` itself is rethrown unwrapped."
+   `f` itself is rethrown unwrapped. The stage's wall time, success or not, is
+   added to `progress` :timings (`record-stage-ms!`) for the latency ring."
   [progress stage f]
   (mark-stage! progress stage)
-  (if-let [budget-ms (get *stage-budgets-ms* stage)]
-    (let [start (System/nanoTime)
-          fut   (future (f))
-          r     (try (deref fut budget-ms ::over-budget)
-                     (catch java.util.concurrent.ExecutionException e
-                       (throw (or (.getCause e) e))))]
-      (if (= r ::over-budget)
-        (let [diag {:stage stage :budget-ms budget-ms
-                    :elapsed-ms (quot (- (System/nanoTime) start) 1000000)}]
-          (future-cancel fut)
-          (log/warn "memory add stage over budget:" (pr-str diag))
-          (throw (ex-info (stage-budget-message diag)
-                          (assoc diag :type :stage-budget-exceeded))))
-        r))
-    (f)))
+  (let [t0 (System/nanoTime)]
+    (try
+      (if-let [budget-ms (get *stage-budgets-ms* stage)]
+        (let [start (System/nanoTime)
+              fut   (future (f))
+              r     (try (deref fut budget-ms ::over-budget)
+                         (catch java.util.concurrent.ExecutionException e
+                           (throw (or (.getCause e) e))))]
+          (if (= r ::over-budget)
+            (let [diag {:stage stage :budget-ms budget-ms
+                        :elapsed-ms (quot (- (System/nanoTime) start) 1000000)}]
+              (future-cancel fut)
+              (log/warn "memory add stage over budget:" (pr-str diag))
+              (throw (ex-info (stage-budget-message diag)
+                              (assoc diag :type :stage-budget-exceeded))))
+            r))
+        (f))
+      (finally
+        (record-stage-ms! progress stage (quot (- (System/nanoTime) t0) 1000000))))))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -655,7 +670,12 @@
    A write that outruns `*write-timeout-ms*` is answered with a
    stage-attributed error (see `timeout-diagnostic`): which stage was
    running, how long the write and that stage had run, and whether the
-   write never left the pool queue."
+   write never left the pool queue.
+
+   Every add that reaches the pool, successful or not, records its per-stage
+   wall times (dedup, embed, upsert, kg, read-after-write, total) into the
+   `write-latency` ring that catchup's memory-status reads
+   (kanban 20260928204307-01ca0962)."
   [{:keys [type abstraction_level] :as args}]
   (try
     (cond
@@ -684,11 +704,23 @@
             timeout-sentinel ::timeout
             timeout-ms *write-timeout-ms*
             progress (new-progress)
+            embed-ms (atom 0)
             args (assoc args :progress progress)
+            ;; Only this (the caller's) thread records, once, after await!
+            ;; answered: the outcome is decided by what await! returned, so a
+            ;; worker interrupted by the timeout can never record :error over
+            ;; the :timeout the caller saw.
+            record! (fn [outcome]
+                      (let [{:keys [started-ns timings]} @progress]
+                        (write-latency/record! {:timings  timings
+                                                :embed-ms @embed-ms
+                                                :total-ms (quot (- (System/nanoTime) started-ns) 1000000)
+                                                :outcome  outcome})))
             result (wpool/await!
                     (pool/memory-pool)
                     (let [budgets *stage-budgets-ms*]
-                      #(binding [*stage-budgets-ms* budgets]
+                      #(binding [*stage-budgets-ms* budgets
+                                 write-latency/*embed-ms* embed-ms]
                          (try (do-add! args)
                               (catch Throwable t {::caught t}))))
                     {:timeout-ms timeout-ms
@@ -697,13 +729,17 @@
         (cond
           (= result timeout-sentinel)
           (let [diag (timeout-diagnostic @progress timeout-ms (System/nanoTime))]
+            (record! :timeout)
             (log/warn "memory add timed out:" (pr-str diag))
             (mcp-error (timeout-message diag)))
 
           (and (map? result) (contains? result ::caught))
-          (throw (::caught result))
+          (do (record! :error)
+              (throw (::caught result)))
 
-          :else result)))
+          :else
+          (do (record! (if (:isError result) :error :ok))
+              result))))
     (catch clojure.lang.ExceptionInfo e
       (if (#{:coercion-error :embedding-too-long :plan-gate-rejected :role-gate-rejected} (:type (ex-data e)))
         (mcp-error (.getMessage e))

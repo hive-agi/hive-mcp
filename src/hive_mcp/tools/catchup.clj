@@ -53,6 +53,22 @@
 ;; Re-exports (backward compatibility)
 ;; =============================================================================
 
+(defn- memory-status-with-writes
+  "catchup's memory-status: store reachability from `bundle`, folded with the
+   memory add write-path health (hive-mcp.memory.write-latency, resolved
+   softly so the kernel takes no static edge into the memory extraction).
+   A failure to read write health never fails catchup.
+   Kanban 20260928204307-01ca0962."
+  [bundle]
+  (let [summary (outcome/summary bundle)
+        health-fn (soft/resolve-soft 'hive-mcp.memory.write-latency/write-health)]
+    (outcome/with-write-health summary
+                               (when health-fn
+                                 (try (health-fn)
+                                      (catch Exception e
+                                        (log/debug "catchup: write health unavailable" (ex-message e))
+                                        nil))))))
+
 (defn spawn-context
   "Generate a compact context payload for ling spawn injection.
    Delegates to catchup.spawn/spawn-context. See that ns for full docs."
@@ -372,7 +388,7 @@
                                              context-refs))]
 
           (fmt/build-catchup-response
-           {:scopes scopes, :axiom-candidates-meta axiom-candidates-meta, :project-name project-name, :principles-meta principles-meta, :priority-principles-meta priority-principles-meta, :recent-wraps recent-wraps, :context-refs context-refs, :axioms-meta axioms-meta, :memory-status (outcome/summary bundle), :priority-meta priority-meta, :carto-status carto-status, :expiring-meta expiring-meta, :git-info git-info, :sessions-meta sessions-meta, :snippets-meta snippets-meta, :decisions-meta decisions-base, :conventions-meta conventions-base, :project-id project-id, :contributed-blocks contributed}))
+           {:scopes scopes, :axiom-candidates-meta axiom-candidates-meta, :project-name project-name, :principles-meta principles-meta, :priority-principles-meta priority-principles-meta, :recent-wraps recent-wraps, :context-refs context-refs, :axioms-meta axioms-meta, :memory-status (memory-status-with-writes bundle), :priority-meta priority-meta, :carto-status carto-status, :expiring-meta expiring-meta, :git-info git-info, :sessions-meta sessions-meta, :snippets-meta snippets-meta, :decisions-meta decisions-base, :conventions-meta conventions-base, :project-id project-id, :contributed-blocks contributed}))
         (catch Exception e
           (fmt/catchup-error e))))))
 
