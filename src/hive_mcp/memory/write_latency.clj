@@ -128,6 +128,11 @@
      :free (max 0 (- cap @active))
      :queued (long (reduce + 0 (vals w)))}))
 
+(def Gauge
+  [:map [:capacity nat-int?] [:free nat-int?] [:queued nat-int?]])
+
+(m/=> gate-gauge [:=> [:cat [:map [:permits int?] [:active :any] [:waiting :any]]] Gauge])
+
 ;; ---------------------------------------------------------------------------
 ;; Boundary: one atom, live gauges
 ;; ---------------------------------------------------------------------------
@@ -146,6 +151,8 @@
   (when-let [a *embed-ms*] (swap! a + (long ms)))
   nil)
 
+(m/=> add-embed-ms! [:=> [:cat number?] :nil])
+
 (defn record!
   "Record one add (raw timings, see `canonical-sample`) into `ring-atom`."
   ([raw] (record! ring raw))
@@ -153,12 +160,16 @@
    (swap! ring-atom record (canonical-sample raw))
    nil))
 
+(m/=> record! [:function [:=> [:cat :map] :nil] [:=> [:cat [:fn #(instance? clojure.lang.IAtom %)] :map] :nil]])
+
 (defn gauges
   "Live embed-gate and memory-pool counters."
   []
   {:embed-gate  (gate-gauge embed-gate/process-gate)
    :memory-pool (select-keys (wpool/pool-stats (pool/memory-pool))
                              [:active :queued :pool-size])})
+
+(m/=> gauges [:=> [:cat] [:map [:embed-gate Gauge] [:memory-pool :map]]])
 
 (defn write-health
   "{:status :warnings :write-path {:stages :outcomes :gauges}} for catchup's
@@ -168,6 +179,10 @@
    (let [summary (summarize ring-value)]
      (assoc (health summary gauges-value)
             :write-path (assoc summary :gauges gauges-value)))))
+
+(m/=> write-health [:function
+                    [:=> [:cat] [:map [:status [:enum :ok :degraded]] [:warnings [:vector :map]] [:write-path :map]]]
+                    [:=> [:cat Ring :map] [:map [:status [:enum :ok :degraded]] [:warnings [:vector :map]] [:write-path :map]]]])
 
 (m/=> empty-ring [:function [:=> [:cat] Ring] [:=> [:cat pos-int?] Ring]])
 (m/=> record [:=> [:cat Ring Sample] Ring])

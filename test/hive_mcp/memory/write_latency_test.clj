@@ -166,10 +166,38 @@
         "the same adds are degraded against a 100ms threshold")
     (is (= #{:embed-gate :memory-pool} (set (keys (wl/gauges)))) "live gauges read")))
 
+(defn- blocked-store
+  "IMemoryStore stub whose add-entry! (the upsert) parks on `gate` until the
+   test delivers it, so a timeout is decided by the write timeout alone, not by
+   a race between two wall-clock sleeps."
+  [gate]
+  (reify proto/IMemoryStore
+    (connect!       [_ _] {:success? true})
+    (disconnect!    [_]   nil)
+    (connected?     [_]   true)
+    (health-check   [_]   {:healthy? true})
+    (add-entry!     [_ _] @gate (str "id-" (random-uuid)))
+    (get-entry      [_ id] {:id id :type "note" :content "x" :tags []})
+    (update-entry!  [_ id _] {:success? true :id id})
+    (delete-entry!  [_ _] nil)
+    (query-entries  [_ _] [])
+    (search-similar [_ _ _] [])
+    (supports-semantic-search? [_] false)
+    (cleanup-expired! [_] {})
+    (entries-expiring-soon [_ _ _] [])
+    (find-duplicate [_ _ _ _] nil)
+    (store-status   [_] {})
+    (reset-store!   [_] nil)))
+
 (deftest timed-out-add-is-recorded-as-timeout
-  (proto/register-store! :default (sleepy-store 1500))
-  (let [res (binding [wr/*write-timeout-ms* 200
-                      wr/*stage-budgets-ms* {}]
-              (add!))]
-    (is (:isError res))
-    (is (= 1 (get-in (wl/summarize @wl/ring) [:outcomes :timeout])))))
+  (let [gate (promise)]
+    (proto/register-store! :default (blocked-store gate))
+    (try
+      (let [res (binding [wr/*write-timeout-ms* 200
+                          wr/*stage-budgets-ms* {}]
+                  (add!))]
+        (is (:isError res))
+        (is (= {:timeout 1} (:outcomes (wl/summarize @wl/ring)))
+            "exactly one sample, recorded by the caller as :timeout"))
+      (finally
+        (deliver gate :released)))))

@@ -55,6 +55,8 @@
                      :warnings (into (vec (:warnings summary)) (:warnings write-health)))
         (:write-path write-health) (assoc :write-path (:write-path write-health))))))
 
+(m/=> with-write-health [:=> [:cat :map [:maybe [:map [:status {:optional true} Status] [:warnings {:optional true} [:sequential Warning]] [:write-path {:optional true} :map]]]] [:map [:status Status] [:warnings [:vector Warning]]]])
+
 (defn map-value [outcome f]
   (if (available? outcome)
     (update outcome :value f)

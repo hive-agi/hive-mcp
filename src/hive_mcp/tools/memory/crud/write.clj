@@ -706,23 +706,23 @@
             progress (new-progress)
             embed-ms (atom 0)
             args (assoc args :progress progress)
+            ;; Only this (the caller's) thread records, once, after await!
+            ;; answered: the outcome is decided by what await! returned, so a
+            ;; worker interrupted by the timeout can never record :error over
+            ;; the :timeout the caller saw.
             record! (fn [outcome]
                       (let [{:keys [started-ns timings]} @progress]
-                        (let [[old _] (swap-vals! progress assoc :recorded? true)] (when-not (:recorded? old) (write-latency/record! {:timings  timings
-                          :embed-ms @embed-ms
-                          :total-ms (quot (- (System/nanoTime) started-ns) 1000000)
-                          :outcome  outcome})))))
+                        (write-latency/record! {:timings  timings
+                                                :embed-ms @embed-ms
+                                                :total-ms (quot (- (System/nanoTime) started-ns) 1000000)
+                                                :outcome  outcome})))
             result (wpool/await!
                     (pool/memory-pool)
                     (let [budgets *stage-budgets-ms*]
                       #(binding [*stage-budgets-ms* budgets
                                  write-latency/*embed-ms* embed-ms]
-                         (try (let [r (do-add! args)]
-                                (record! (if (:isError r) :error :ok))
-                                r)
-                              (catch Throwable t
-                                (record! :error)
-                                {::caught t}))))
+                         (try (do-add! args)
+                              (catch Throwable t {::caught t}))))
                     {:timeout-ms timeout-ms
                      :fallback   timeout-sentinel
                      :name       "memory-add"})]
@@ -734,9 +734,12 @@
             (mcp-error (timeout-message diag)))
 
           (and (map? result) (contains? result ::caught))
-          (throw (::caught result))
+          (do (record! :error)
+              (throw (::caught result)))
 
-          :else result)))
+          :else
+          (do (record! (if (:isError result) :error :ok))
+              result))))
     (catch clojure.lang.ExceptionInfo e
       (if (#{:coercion-error :embedding-too-long :plan-gate-rejected :role-gate-rejected} (:type (ex-data e)))
         (mcp-error (.getMessage e))
