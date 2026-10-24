@@ -414,35 +414,22 @@
               role-card-validator-extension-key
               "and hive-spi.role.card is absent; the :role entry is stored unvalidated")))
 
+(defn- add-with-optional-receipt!
+  "Use the optional SPI only when the registered (possibly decorated) store
+   itself implements it. Never peel decorators: their get-entry may decrypt,
+   filter or reshape the backend's receipt. Older SPI versions use add-entry!."
+  [store entry]
+  (let [protocol (try
+                   (some-> (requiring-resolve
+                             'hive-spi.memory.receipt/IMemoryStoreAddReceipt) deref)
+                   (catch java.io.FileNotFoundException _ nil))]
+    (if (and protocol (satisfies? protocol store))
+      ((requiring-resolve 'hive-spi.memory.receipt/-add-entry-returning!) store entry)
+      (mem-proto/add-entry! store entry))))
+
 (defn- index-entry!
-  "Index entry through IMemoryStore. Plan-type entries get enriched with
-   plan-specific metadata (`:plan-status`, `:steps-count`) but are
-   stored via the same `add-entry!` path as every other type — there
-   is no separate plans collection.
-
-   `:store-key` selects the multi-store registry slot. Defaults to
-   `:default` (legacy). Kanban writes thread `:kanban` through so the
-   entry lands in the dedicated qdrant collection instead of milvus.
-
-   Wraps the store add-entry! in `with-resilience` so a dropped
-   HTTP transport (selector-manager-closed IOException surfaced as
-   ExecutionException) kicks the heal loop and retries once before
-   surfacing the failure to the caller. The wrap uses the short
-   `store-stage-heal-budget-ms` (via `with-stage-resilience`) because the
-   backend's own `resilient` already waits and retries; the default 8 s on
-   top of it double-waited every RPC.
-
-   On embedding failure the complete entry, with its store slot, is persisted
-   to the local outbox BEFORE its id is acknowledged; the housekeeping drain
-   reembeds it into that slot. Other store failures are never misreported as
-   deferred writes. The embed runs on the :interactive lane of the shared
-   provider gate, ahead of batch callers.
-
-   A transient embed failure (provider not warm after a restart, one dropped
-   call) is retried a few times in place before the entry is parked
-   (`deferred/call-with-embed-retry`). A parked entry is never silent: the
-   failure is logged at ERROR with its cause and attempt count, and the cause
-   is recorded on the outbox record for the response and the drain."
+  "Index via the registered store; optional receipt support is negotiated on
+   the outermost store. Embedding failures still park in the durable outbox."
   [{:keys [type content tags-with-scope content-hash duration-str
            expires project-id abstraction-level knowledge-gaps store-key]
     :or {store-key :default}}]
@@ -469,7 +456,7 @@
         (binding [embed-gate/*lane* :interactive]
           (deferred/call-with-embed-retry
             #(with-stage-resilience
-               (mem-proto/add-entry! (mem-proto/get-store store-key) entry))
+               (add-with-optional-receipt! (mem-proto/get-store store-key) entry))
             deferred/default-retry
             #(Thread/sleep (long %))))]
     (if failure
@@ -523,17 +510,21 @@
 
    `:progress` (optional, from `new-progress`) is told which stage the write
    is in (`:kg-edges`, `:link-outgoing`, `:fetch`) so a timeout can name it;
-   each stage runs under its `*stage-budgets-ms*` budget (`run-stage!`)."
+   each stage runs under its `*stage-budgets-ms*` budget (`run-stage!`).
+   A canonical receipt replaces read-after-write only with no KG requests."
   [entry-id kg-params project-id agent-id
-   {:keys [tags-with-scope type knowledge-gaps store-key progress]
+   {:keys [tags-with-scope type knowledge-gaps store-key progress receipt]
     :or {store-key :default}}]
   (let [store (mem-proto/get-store store-key)
         pending (deferred/lookup entry-id)
+        requests (edge-outcome/edge-requests kg-params)
         {:keys [edge-ids edge-errors]}
-        (edge-outcome/attempt-edges
-         #(run-stage! progress :kg-edges
-                      (fn [] (create-kg-edges! entry-id kg-params project-id agent-id)))
-         (edge-outcome/edge-requests kg-params))
+        (if (seq requests)
+          (edge-outcome/attempt-edges
+           #(run-stage! progress :kg-edges
+                        (fn [] (create-kg-edges! entry-id kg-params project-id agent-id)))
+           requests)
+          {:edge-ids [] :edge-errors []})
         pending (if (and pending (seq edge-ids))
                   (do (deferred/amend! entry-id {:kg-outgoing edge-ids})
                       (deferred/lookup entry-id))
@@ -543,6 +534,9 @@
                         #(with-stage-resilience
                            (mem-proto/update-entry! store entry-id {:kg-outgoing edge-ids}))))
         created (or pending
+                    (when (and (empty? requests) (map? receipt)
+                               (= entry-id (:id receipt)))
+                      receipt)
                     (run-stage! progress :fetch #(fetch-with-retry store entry-id)))]
     (when-not created
       (log/error "Failed to retrieve entry after indexing:" entry-id))
@@ -641,26 +635,27 @@
                            :abstraction-level abstraction-level
                            :knowledge-gaps knowledge-gaps :agent-id agent-id
                            :store-key store-key :progress progress}
-                raw-id (run-stage! progress :index #(index-entry! entry-ctx))]
-            ;; Contract guard: IMemoryStore/add-entry! must return a non-blank
-            ;; id string. Some backends (e.g. Milvus under circuit-breaker
-            ;; fail-soft) return a {:success? false ...} failure map instead,
-            ;; which used to silently poison KG edges and surface as the
-            ;; misleading "Entry indexed as {...} but retrieval failed" error.
-            ;; Reject map / nil / blank returns up front with an actionable
-            ;; message so the store's real failure reason is visible.
-            (if-not (and (string? raw-id) (not (str/blank? raw-id)))
+                add-result (run-stage! progress :index #(index-entry! entry-ctx))
+                ;; Only a receipt carrying the canonical entry can bypass fetch.
+                ;; Queued/failure maps (and malformed receipts) remain errors.
+                entry-id (if (map? add-result) (:id add-result) add-result)
+                receipt (when (and (map? add-result)
+                                   (map? (:entry add-result))
+                                   (= entry-id (get-in add-result [:entry :id])))
+                          (:entry add-result))]
+            (if-not (and (string? entry-id) (not (str/blank? entry-id))
+                         (or (not (map? add-result)) receipt))
               (mcp-error (str "Memory store add-entry! did not return an id "
-                              "(got " (pr-str raw-id) "). "
+                              "(got " (pr-str add-result) "). "
                               "Backend is likely degraded or offline — "
                               "check store health and retry."))
-              (let [entry-id raw-id
-                    _ (recall/register-created-id! entry-id project-id type)
+              (let [_ (recall/register-created-id! entry-id project-id type)
                     kg-params {:kg_implements (:kg-implements-vec kg-vecs)
                                :kg_supersedes (:kg-supersedes-vec kg-vecs)
                                :kg_depends_on (:kg-depends-on-vec kg-vecs)
                                :kg_refines    (:kg-refines-vec kg-vecs)}]
-                (finalize-entry! entry-id kg-params project-id agent-id entry-ctx)))))))))
+                (finalize-entry! entry-id kg-params project-id agent-id
+                                 (assoc entry-ctx :receipt receipt))))))))))
 
 (defn handle-add
   "Add an entry to project memory with optional KG edge creation.
@@ -678,6 +673,7 @@
    (kanban 20260928204307-01ca0962)."
   [{:keys [type abstraction_level] :as args}]
   (try
+
     (cond
       (not (type-registry/valid-type? type))
       (mcp-error (str "Invalid memory type: " (pr-str type)

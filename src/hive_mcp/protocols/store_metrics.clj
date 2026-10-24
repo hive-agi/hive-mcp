@@ -146,8 +146,12 @@
        (sort-by #(str (:var %)))))
 
 (def ^:private kind->protocols
-  {:memory (delay (protocols-in 'hive-spi.memory.ports))
-   :kg     (delay (protocols-in 'hive-spi.kg.protocol))})
+  {:memory (delay
+             (cond-> (vec (protocols-in 'hive-spi.memory.ports))
+               (try (requiring-resolve 'hive-spi.memory.receipt/IMemoryStoreAddReceipt)
+                    (catch java.io.FileNotFoundException _older-spi nil))
+               (into (protocols-in 'hive-spi.memory.receipt))))
+   :kg (delay (protocols-in 'hive-spi.kg.protocol))})
 
 (defn- var-sym [^clojure.lang.Var v]
   (symbol (str (.-ns v)) (str (.-sym v))))
