@@ -33,7 +33,7 @@
 
         ;; JNA: server/log_sink.clj calls libc (stat/open/write) through it.
         ;; Declared directly; it used to arrive transitively via libpython-clj.
-        net.java.dev.jna/jna {:mvn/version "5.12.1"}
+        net.java.dev.jna/jna {:mvn/version "5.19.1"}
 
         ;; nREPL client support
         nrepl/bencode {:mvn/version "1.2.0"}
@@ -81,7 +81,7 @@
         com.taoensso/timbre {:mvn/version "6.8.0"}
 
         ;; Schema validation (malli)
-        metosin/malli {:mvn/version "0.20.2"}
+        metosin/malli {:mvn/version "0.20.3"}
 
         ;; Chroma vector database client - BuddhiLW fork with v2 API support
         io.github.buddhilw/clojure-chroma-client
@@ -98,7 +98,7 @@
 
         ;; clj-kondo for code analysis (call graphs, linting)
         ;; Exclude log4j-slf4j2-impl to avoid conflict with slf4j-timbre
-        clj-kondo/clj-kondo {:mvn/version "2026.08.04"
+        clj-kondo/clj-kondo {:mvn/version "2026.10.20"
                              :exclusions [org.apache.logging.log4j/log4j-slf4j2-impl]}
 
         ;; hive-events - re-frame inspired event system for JVM
@@ -110,7 +110,7 @@
 
         ;; hive-hot - unified hot-reload with events integration
         io.github.hive-agi/hive-hot
-        {:mvn/version "0.2.4"}
+        {:mvn/version "0.2.5"}
 
         ;; Prometheus metrics - iapetos wrapper; hotspot collector adds
         ;; JVM metrics (memory, GC, threads).
@@ -122,7 +122,7 @@
 
         ;; java-diff-utils for proper unified diff computation (hunks, context)
         ;; Used by drone diff protocol for token-efficient diff storage
-        io.github.java-diff-utils/java-diff-utils {:mvn/version "4.17"}
+        io.github.java-diff-utils/java-diff-utils {:mvn/version "4.18"}
 
         ;; Process execution - babashka.process for CLI wrappers
         ;; Used by overarch, scc, and other CLI tool integrations
@@ -130,7 +130,7 @@
 
         ;; hive-dsl — Result monad, rescue/guard DSL, error taxonomy
         io.github.hive-agi/hive-dsl
-        {:mvn/version "0.6.1"}
+        {:mvn/version "0.6.2"}
 
         ;; hive-spi — pure SPI contract leaf (protocols + schemas + ADTs).
         ;; Required at compile time by core namespaces. Pinned to the published
@@ -139,7 +139,7 @@
         ;; local.deps.edn :local/root override.
         ;; 1.0.0: the ports carry a published stability promise, which is what
         ;; lets this host make one of its own. See hive-spi's CHANGELOG.
-        io.github.hive-agi/hive-spi {:mvn/version "1.4.13"}
+        io.github.hive-agi/hive-spi {:mvn/version "1.4.14"}
 
         ;; NO CONCRETE BACKEND BELONGS HERE. hive-milvus / hive-qdrant /
         ;; clj-qdrant depend on hive-mcp for their addon surface, so declaring
@@ -253,7 +253,7 @@
                 ;; (clj-memory-meter self-attach) + DebugNonSafepoints (profiler).
                 com.clojure-goes-fast/clj-memory-meter {:mvn/version "0.5.0"}
                 com.clojure-goes-fast/jvm-alloc-rate-meter {:mvn/version "0.1.4"}
-                com.clojure-goes-fast/clj-async-profiler {:mvn/version "1.8.0"}}
+                com.clojure-goes-fast/clj-async-profiler {:mvn/version "1.9.0"}}
    ;; Heap cap + G1GC tuning, string dedup, bounded core.async pool, Netty
    ;; access, Proximum HNSW SIMD. -Xmx6g hard cap; SoftMaxHeapSize=4g soft-caps
    ;; the peak; ratio flags + periodic GC return idle RSS to the OS.
@@ -331,7 +331,7 @@
                 ;; (clj-memory-meter self-attach) + DebugNonSafepoints (profiler).
                 com.clojure-goes-fast/clj-memory-meter {:mvn/version "0.5.0"}
                 com.clojure-goes-fast/jvm-alloc-rate-meter {:mvn/version "0.1.4"}
-                com.clojure-goes-fast/clj-async-profiler {:mvn/version "1.8.0"}}
+                com.clojure-goes-fast/clj-async-profiler {:mvn/version "1.9.0"}}
    ;; Heap cap + G1GC tuning, string dedup, bounded core.async pool, Netty
    ;; access, Proximum HNSW SIMD. -Xmx6g hard cap; SoftMaxHeapSize=4g soft-caps
    ;; the peak; ratio flags + periodic GC return idle RSS to the OS.
