@@ -176,7 +176,9 @@ services:
   # Used by :services :carto-store {:backend :qdrant-carto}.
   # =============================================================================
   qdrant-carto:
-    image: qdrant/qdrant:latest
+    # Pinned: Qdrant only guarantees storage upgrades one minor version at a
+    # time, so bump deliberately (v1.17 -> v1.18 -> ...) on existing volumes.
+    image: qdrant/qdrant:${QDRANT_VERSION:-v1.17.1}
     container_name: hive-mcp-qdrant-carto
     ports:
       - "6333:6333"
