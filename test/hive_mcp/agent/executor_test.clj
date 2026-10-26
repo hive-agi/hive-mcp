@@ -9,7 +9,8 @@
             [hive-mcp.agent.registry :as registry]
             [hive-mcp.channel.piggyback-tap :as tap]
             [hive-mcp.channel.activation :as act]
-            [hive-mcp.extensions.registry :as ext]))
+            [hive-mcp.extensions.registry :as ext]
+            [hive-addon.registry.commands :as acmds]))
 
 ;; =============================================================================
 ;; Test Fixtures
@@ -191,3 +192,44 @@
     (is (identical? tap/drain-all! (#'executor/drain-fn-for {})))
     (let [stub (fn [_ _ _] nil)]
       (is (identical? stub (#'executor/drain-fn-for {:drain-fn stub}))))))
+
+(deftest unknown-tool-names-the-route-that-still-works
+  (testing "no owner: the bare message"
+    (is (= "Unknown tool: nope" (executor/unknown-tool-message "nope" []))))
+  (testing "an owner: the message names the tool and the command spelling"
+    (is (= (str "Unknown tool: carto. carto is a subcommand of the code tool: "
+                "call code with command=\"carto <verb>\"")
+           (executor/unknown-tool-message "carto" ["code"]))))
+  (testing "execute-tool asks the owner port, not a hardcoded string"
+    (binding [executor/*subdomain-owners* (fn [t] (when (= t "zz_sub") ["zz_root"]))]
+      (let [res (executor/execute-tool "zz_sub" {})]
+        (is (false? (:success res)))
+        (is (re-find #"zz_sub is a subcommand of the zz_root tool" (:error res)))
+        (is (re-find #"command=\"zz_sub <verb>\"" (:error res))))))
+  (testing "a failing owner port degrades to the bare message"
+    (binding [executor/*subdomain-owners* (fn [_] (throw (ex-info "boom" {})))]
+      (is (= "Unknown tool: zz_sub" (:error (executor/execute-tool "zz_sub" {})))))))
+
+(deftest subdomain-owners-are-read-from-the-registries
+  (let [root "zz_test_root"
+        sub  "zz_test_sub"]
+    (registry/register!
+     [{:name root :description "test root"
+       :inputSchema {:type "object"
+                     :properties {"command" {:type "string"
+                                             :enum ["help" "zz_enum_sub verb"]}}}
+       :handler (fn [_] {:type "text" :text "ok"})}])
+    (try
+      (acmds/contribute! root :zz-test-addon {sub {:handler (fn [_] nil)
+                                                   :description "test"}})
+      (testing "an addon contribution under a registered root names that root"
+        (is (= [root] (#'executor/registry-subdomain-owners sub)))
+        (is (re-find (re-pattern (str sub " is a subcommand of the " root " tool"))
+                     (:error (executor/execute-tool sub {})))))
+      (testing "a multi-word command enum entry names its root"
+        (is (= [root] (#'executor/registry-subdomain-owners "zz_enum_sub"))))
+      (testing "a name no tool routes has no owner"
+        (is (= [] (#'executor/registry-subdomain-owners "zz_nobody"))))
+      (finally
+        (acmds/retract! root :zz-test-addon)
+        (swap! registry/registry dissoc root)))))
