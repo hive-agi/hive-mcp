@@ -14,7 +14,8 @@
             [hive-mcp.batch.cli-adapter :as bca]
             [hive-mcp.tools.swarm.batch :as swarm-batch]
             [hive-mcp.extensions.registry :as ext]
-            [hive-mcp.tools.core :refer [mcp-error]]))
+            [hive-mcp.tools.core :refer [mcp-error]]
+            [malli.core :as m]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -49,6 +50,9 @@
   (when-let [gate (ext/get-extension :agent/spawn-gate)]
     (gate verb params)))
 
+(m/=> spawn-gate-refusal
+      [:=> [:cat [:enum :spawn :batch-spawn] [:maybe :map]] [:maybe :string]])
+
 (defn handle-gated-spawn
   "`agent spawn`: refused with the gate's message, nothing spawned, when
    `spawn-gate-refusal` answers one; otherwise spawn/handle-spawn."
@@ -57,6 +61,8 @@
     (mcp-error refusal)
     (spawn/handle-spawn params)))
 
+(m/=> handle-gated-spawn [:=> [:cat :map] hive-mcp.tools.core/McpResponse])
+
 (defn handle-gated-batch-spawn
   "`agent batch-spawn`: the gate judges the whole call, every operation
    included, before any of them spawns."
@@ -64,6 +70,8 @@
   (if-let [refusal (spawn-gate-refusal :batch-spawn params)]
     (mcp-error refusal)
     (batch-spawn-handler params)))
+
+(m/=> handle-gated-batch-spawn [:=> [:cat :map] hive-mcp.tools.core/McpResponse])
 
 (def canonical-handlers
   "The `agent` verbs, stored as VARS so a reload of any agent.* module reaches
