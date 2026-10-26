@@ -197,24 +197,66 @@
                   [s e]))
               others))))
 
+(defn- write-visible?
+  "True when `entry` (a fresh read) already carries every field `updates`
+   asked for. :updated is a timestamp the store may restamp, so it is not
+   compared; tags are compared as sets because stores do not keep order."
+  [entry updates]
+  (boolean
+   (and (map? entry)
+        (not (:error entry))
+        (every? (fn [[k v]]
+                  (case k
+                    :updated true
+                    :tags    (= (set v) (set (:tags entry)))
+                    (= v (get entry k))))
+                updates))))
+
+(defn- readback-verified
+  "Fresh read of `id`, marked `:readback :verified`, when it already shows
+   `updates`; nil otherwise or when the read itself fails."
+  [store id updates]
+  (let [e (try (mem-proto/get-entry store id) (catch Throwable _ nil))]
+    (when (write-visible? e updates)
+      (assoc e :readback :verified))))
+
 (defn- updated-entry
   "Normalize the store-dependent return of `IMemoryStore/update-entry!`.
 
    Milvus/Chroma answer with the updated entry MAP; the qdrant store backing
    the :kanban slot answers with the entry ID STRING. Both are successes.
-   Returns the updated entry map, or nil when the store signalled failure.
+   Returns the updated entry map, or nil when the write did not land.
 
    An id answer whose read-back is not visible yet (eventual store) is a
-   success marked `:readback :pending`. Any other answer counts as success
-   only when a fresh read shows the written :content-hash."
-  [store id updated updates]
-  (cond
-    (and (map? updated) (not (:error updated))) updated
-    (and (string? updated) (= updated id))      (or (mem-proto/get-entry store id)
-                                                    {:id id :readback :pending})
-    :else (let [h (:content-hash updates)
-                e (when h (mem-proto/get-entry store id))]
-            (when (and e (= h (:content-hash e))) e))))
+   success marked `:readback :pending`.
+
+   ANY OTHER ANSWER (an `{:error ..}` failure map, nil, a thrown call) does
+   not mean the write was lost. Under contention the milvus store answers a
+   failure when an RPC deref or the embedding gate times out, while the
+   upsert it already sent can still land (seen on async `memory review`: 3 of
+   7 'failed' reviews were saved). So the verdict is read from the store:
+   a fresh read showing every requested field is a success. When it does not
+   show them, the update is sent ONCE more (it carries absolute values, so a
+   repeat is idempotent) and judged the same way. `retry!` performs that
+   repeat; it is the store call itself in production."
+  ([store id updated updates]
+   (updated-entry store id updated updates
+                  #(mem-proto/update-entry! store id updates)))
+  ([store id updated updates retry!]
+   (cond
+     (and (map? updated) (not (:error updated))) updated
+     (and (string? updated) (= updated id))      (or (mem-proto/get-entry store id)
+                                                     {:id id :readback :pending})
+     :else
+     (or (readback-verified store id updates)
+         (let [again (try (retry!) (catch Throwable t
+                                     (log/warn "Memory edit retry threw for" id ":" (ex-message t))
+                                     nil))]
+           (cond
+             (and (map? again) (not (:error again))) again
+             (and (string? again) (= again id))      (or (mem-proto/get-entry store id)
+                                                         {:id id :readback :pending})
+             :else (readback-verified store id updates)))))))
 
 (def ^:private edit-locks
   (vec (repeatedly 256 #(Object.))))
@@ -231,12 +273,22 @@
         (if (empty? updates)
           {:id id :noop true :existing existing}
           (do
-            (let [raw     (mem-proto/update-entry! store id updates)
+            (let [raw     (try (mem-proto/update-entry! store id updates)
+                               ;; A timed-out call can still land its write:
+                               ;; the verdict comes from updated-entry's read-back.
+                               (catch Exception e
+                                 (log/warn "Memory edit store call threw for" id ":" (ex-message e))
+                                 {:error (or (ex-message e) (str (class e)))}))
                   updated (updated-entry store id raw updates)]
               (when-not updated
-                (throw (ex-info (str "Memory store update failed for " id)
+                (throw (ex-info (str "Memory store update failed for " id
+                                     " (not visible on read-back after one retry"
+                                     (when-let [err (and (map? raw) (:error raw))]
+                                       (str "; store said " (pr-str err)))
+                                     ")")
                                 {:type :memory-update-failed
                                  :id id
+                                 :store-error (when (map? raw) (:error raw))
                                  :result-type (some-> raw class str)})))
               (log/info "Memory edit:" id
                         "fields:" (vec (keys updates))
