@@ -235,9 +235,12 @@
    completion publishes on hive.v1.wave.<run-id>.completed.<task-id>.
    Threads :max-budget-usd so each dispatched ling carries a spend guardrail:
    this scheduler auto-advances waves on completion, so an uncapped ling here
-   is an unbounded spend loop with no operator in it."
+   is an unbounded spend loop with no operator in it.
+   Threads :spawned-by, the caller `start-dag!` captured: later waves spawn
+   on an event thread with no request in flight, so the plan builder could
+   not read the caller from the request context there."
   [task-id title role {:keys [cwd presets project-id prefer-lightweight? run-id max-budget-usd
-                              description parent rules]
+                              description parent rules spawned-by]
                        :or {prefer-lightweight? true}}]
   (let [safe-title (-> (or title "task")
                        str/lower-case
@@ -260,6 +263,8 @@
                                                     :task task}
                                              parent
                                              (assoc :parent parent)
+                                             (string? spawned-by)
+                                             (assoc :spawned-by spawned-by)
                                              run-id
                                              (assoc :run-id run-id)
                                              (and max-budget-usd (pos? max-budget-usd))
@@ -628,7 +633,12 @@
                           :run-id run-id
                           :max-budget-usd effective-budget
                           :task-ids task-ids
-                          :rules (:rules opts)}})
+                          :rules (:rules opts)
+                          ;; Captured now, inside the start request: later
+                          ;; waves spawn on the event listener thread.
+                          :spawned-by (if (string? (:spawned-by opts))
+                                        (:spawned-by opts)
+                                        (ling/request-spawner))}})
 
     ;; Start event listener for completion detection
     (start-event-listener!)
