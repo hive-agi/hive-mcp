@@ -202,7 +202,7 @@
                                        :enum ["all"]
                                        :description "[list/status] scope=\"all\" lifts the project filter entirely — returns the whole board across EVERY workspace (opt-in cross-workspace view). Omit for the default scoped view (current project + ancestors [+ descendants])."}
                               "project_id" {:type "string"
-                                            :description "[list] Exact-match project filter (overrides directory-derived scope). [retag] Alias for new_project_id."}
+                                            :description "[list] Exact-match project filter (overrides directory-derived scope). [create] Project the card lands in (overrides directory; a conflicting scope:project tag is refused). [retag] Alias for new_project_id."}
                               "query" {:type "string"
                                        :description "[list] Case-insensitive substring match on title + description. [get] Fallback semantic-search term when the id misses in both stores (defaults to the id itself)"}
                               "tags" {:type "array" :items {:type "string"}

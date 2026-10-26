@@ -36,7 +36,8 @@
             [hive-mcp.session.current :as session]
             [malli.core :as m]
             [hive-mcp.tools.kanban.update :as kanban-update]
-            [hive-mcp.tools.kanban.children :as children]))
+            [hive-mcp.tools.kanban.children :as children]
+            [hive-mcp.tools.kanban.create-scope :as create-scope]))
 
 (declare query-kanban-entries resolve-project-ids-with-descendants effective-dir stats* filter-kanban-by-tags list-slim*)
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -167,7 +168,7 @@
                             tags)
                       "medium")
         status    (or (kp/normalize-status status) "todo")
-        project-id (scope/get-current-project-id eff-dir)
+        project-id (or (create-scope/explicit-project-id params) (scope/get-current-project-id eff-dir))
         idem-key   (normalize-idempotency-key params)
         ;; Idempotency check: if an entry tagged `idempotency:<key>`
         ;; already exists in this project scope, return its id without
@@ -190,7 +191,7 @@
             ;; and re-emitted by build-kanban-tags, so keeping it would duplicate.
             extra-tags (when (sequential? tags)
                          (into [] (comp (filter string?)
-                                        (remove #(str/starts-with? % "priority-")))
+                                        (remove #(or (str/starts-with? % "priority-") (str/starts-with? % "scope:project:"))))
                                tags))
             ;; Thread the idempotency tag through if a key was supplied
             ;; — future creates with the same key will hit
