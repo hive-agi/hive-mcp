@@ -20,7 +20,8 @@
             [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.session.current :as session]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.extensions.record-hooks :as record-hooks]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -28,6 +29,18 @@
 ;; =============================================================================
 ;; Kanban DONE Hook
 ;; =============================================================================
+
+(defn- shown-title
+  "The title of task `id` as the :kanban/history record hooks let it be
+   shown outside the memory store (log lines, the channel broadcast): the
+   hooked row's :title, nil when a hook drops the row or throws."
+  [id title project-id]
+  (try
+    (:title (record-hooks/apply-hooks :kanban/history
+                                      {:task-id id :title title :project-id project-id}))
+    (catch Exception e
+      (log/warn "Kanban DONE hook: history hook refused the title of" id ":" (ex-message e))
+      nil)))
 
 (defn on-kanban-done
   "Hook called when a kanban task moves to DONE.
@@ -38,32 +51,37 @@
 
    The completed-task row is stamped with the writing session's id, so a
    scoped wrap harvests and clears its own rows and leaves a concurrent
-   session's alone. Kanban 20260915164015-7e057e5b."
+   session's alone. Kanban 20260915164015-7e057e5b.
+
+   The title leaves the memory store (log lines, the task-completed
+   broadcast) only as the :kanban/history record hooks show it; a dropped
+   row is announced without one."
   [{:keys [id title project-id _context _priority _started] :as task}]
-  (log/info "Kanban DONE hook triggered for task:" id title "project-id:" project-id)
-  (result/rescue nil
-                 (do (ds/register-completed-task!
-                      id {:title title
-                          :project-id project-id
-                          :session-id (result/rescue nil (session/session-id {:project-id project-id}))})
-                     (log/debug "Registered completed task in DataScript:" id "project-id:" project-id)))
-  (let [progress-note (crystal/task-to-progress-note
-                       (assoc task :completed-at (.toString (java.time.Instant/now))))
-        {:keys [results error]} (persist/persist-wraps!
-                                 [{:pid project-id :entry progress-note}])
-        {note-id :id ok? :success? note-error :error} (first results)]
-    (if ok?
-      (do
-        (log/info "Created progress note for completed task:" id)
-        (when (channel/server-connected?)
-          (channel/broadcast! {:type "task-completed"
-                               :task-id id
-                               :title title
-                               :progress-note-id note-id}))
-        {:success true :progress-note-id note-id :task task})
-      (let [msg (or note-error error "progress-note persist returned no id")]
-        (log/error "Failed to create progress note:" msg)
-        {:success false :error msg :task task}))))
+  (let [shown (shown-title id title project-id)]
+    (log/info "Kanban DONE hook triggered for task:" id shown "project-id:" project-id)
+    (result/rescue nil
+                   (do (ds/register-completed-task!
+                        id {:title title
+                            :project-id project-id
+                            :session-id (result/rescue nil (session/session-id {:project-id project-id}))})
+                       (log/debug "Registered completed task in DataScript:" id "project-id:" project-id)))
+    (let [progress-note (crystal/task-to-progress-note
+                         (assoc task :completed-at (.toString (java.time.Instant/now))))
+          {:keys [results error]} (persist/persist-wraps!
+                                   [{:pid project-id :entry progress-note}])
+          {note-id :id ok? :success? note-error :error} (first results)]
+      (if ok?
+        (do
+          (log/info "Created progress note for completed task:" id)
+          (when (channel/server-connected?)
+            (channel/broadcast! (cond-> {:type "task-completed"
+                                         :task-id id
+                                         :progress-note-id note-id}
+                                  shown (assoc :title shown))))
+          {:success true :progress-note-id note-id :task task})
+        (let [msg (or note-error error "progress-note persist returned no id")]
+          (log/error "Failed to create progress note:" msg)
+          {:success false :error msg :task task})))))
 
 (m/=> on-kanban-done [:=> [:cat [:map [:id {:optional true} :any] [:title {:optional true} :any] [:project-id {:optional true} [:maybe :string]]]] [:or [:map [:success [:= true]] [:progress-note-id :any] [:task :map]] [:map [:success [:= false]] [:error :any] [:task :map]]]])
 
