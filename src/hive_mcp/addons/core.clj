@@ -273,6 +273,14 @@
                                      (log/debug "Addon registered hooks"
                                                 {:addon id :keys (keys hooks-map)})))
 
+                    ;; Now that the addon is :active with its root tools
+                    ;; registered, rebuild the advertised surface and the
+                    ;; agent-delegation registry. The refresh its initialize!
+                    ;; triggered by contributing commands ran before both, so
+                    ;; on a remount it re-seated the registry WITHOUT the
+                    ;; addon's root tools (tool-friction 20261020202536-3357f82c).
+                                 (when-let [names (seq (keep :name (r/rescue [] (proto/tools addon))))]
+                                   (ext/notify-tools-registered! id names))
                                  (log/info "Addon initialized" {:addon id
                                                                 :elapsed-ms elapsed-ms})
                                  (assoc result :addon-name id :elapsed-ms elapsed-ms))
