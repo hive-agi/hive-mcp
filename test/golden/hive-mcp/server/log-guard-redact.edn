@@ -4,9 +4,27 @@
  "bearer-header"
  {:in "Authorization: Bearer sk-abc123xyz",
   :out "Authorization: [redacted] [redacted]"},
+ "colon-space"
+ {:in "api_key=hunter2 and token: kept-because-separate",
+  :out "[redacted] and token: [redacted]"},
  "empty" {:in "", :out ""},
+ "equals-space"
+ {:in "token=abc password=  sk-short",
+  :out "[redacted] password= [redacted]"},
+ "json-key"
+ {:in "{\"api_key\": \"jsonsecret\", \"other\": 1}",
+  :out "{\"api_key\": [redacted] \"other\": 1}"},
  "plain"
  {:in "plain message, nothing secret",
   :out "plain message, nothing secret"},
+ "quoted-colon-space"
+ {:in "token: \"quoted secret words\" tail",
+  :out "token: [redacted] [redacted] [redacted] tail"},
+ "quoted-equals-space"
+ {:in "password= 'single quoted' tail",
+  :out "password= [redacted] [redacted] tail"},
+ "quoted-inline"
+ {:in "password=\"inline quoted secret\" tail",
+  :out "[redacted] [redacted] [redacted] tail"},
  "whitespace"
  {:in "  many\t\twhitespace \n runs  ", :out "many whitespace runs"}}

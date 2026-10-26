@@ -64,29 +64,42 @@
    :classify-domain #{:redacted :clean}
    :num-tests 200})
 
-;; BUG (recorded, not fixed; src/hive_mcp/server/log_guard.clj secret-word?):
-;; a credential key word that ENDS in ':' or '=' and is followed by whitespace
-;; is not redacted, and neither is the secret word after it, because only
-;; bearer/authorization prefixes redact the NEXT word. Tracked by bug card
-;; 20261022150130-5f4d0e4f. The KNOWN-BUG golden below pins that leaking
-;; behaviour on purpose, so a fix shows up as a deliberate golden change; its
-;; expected output is NOT the desired behaviour.
+;; Bug card 20261022150130-5f4d0e4f (fixed): a credential key word ending in
+;; ':' or '=' followed by whitespace used to leave the secret after it in the
+;; output, and a golden pinned that leak. The cases below now live in the main
+;; golden, and `spaced-key-secrets-never-reach-the-output` asserts it directly.
+(def ^:private spaced-key-cases
+  "A credential key word ending in ':' or '=' with its value in the NEXT word,
+   bare or quoted (bug card 20261022150130-5f4d0e4f)."
+  {"colon-space"         "api_key=hunter2 and token: kept-because-separate"
+   "equals-space"        "token=abc password=  sk-short"
+   "quoted-colon-space"  "token: \"quoted secret words\" tail"
+   "quoted-equals-space" "password= 'single quoted' tail"
+   "json-key"            "{\"api_key\": \"jsonsecret\", \"other\": 1}"
+   "quoted-inline"       "password=\"inline quoted secret\" tail"})
+
 (golden/deftest-golden redact-golden
   "test/golden/hive-mcp/server/log-guard-redact.edn"
   (into (sorted-map)
-        (for [[label s] {"plain"         "plain message, nothing secret"
-                         "bearer-header" "Authorization: Bearer sk-abc123xyz"
-                         "assignment"    "api_key=hunter2 and other words"
-                         "whitespace"    "  many\t\twhitespace \n runs  "
-                         "empty"         ""}]
+        (for [[label s] (merge {"plain"         "plain message, nothing secret"
+                                "bearer-header" "Authorization: Bearer sk-abc123xyz"
+                                "assignment"    "api_key=hunter2 and other words"
+                                "whitespace"    "  many\t\twhitespace \n runs  "
+                                "empty"         ""}
+                               spaced-key-cases)]
           [label {:in s :out (guard/redact s)}])))
 
-(golden/deftest-golden redact-KNOWN-BUG-leaks-secret-after-spaced-key-golden
-  "test/golden/hive-mcp/server/log-guard-redact-known-bug-leak.edn"
-  (into (sorted-map)
-        (for [[label s] {"colon-space"  "api_key=hunter2 and token: kept-because-separate"
-                         "equals-space" "token=abc password=  sk-short"}]
-          [label {:in s :out (guard/redact s)}])))
+(deftest spaced-key-secrets-never-reach-the-output
+  (doseq [[s secrets] {"api_key=hunter2 and token: kept-because-separate" ["hunter2" "kept-because-separate"]
+                       "token=abc password=  sk-short"                    ["abc" "sk-short"]
+                       "token: \"quoted secret words\" tail"              ["quoted" "secret" "words"]
+                       "password= 'single quoted' tail"                   ["single" "quoted"]
+                       "{\"api_key\": \"jsonsecret\", \"other\": 1}"      ["jsonsecret"]
+                       "password=\"inline quoted secret\" tail"           ["inline" "quoted" "secret"]
+                       "PASSWORD: pw1 Token= tk2 secret: s3"              ["pw1" "tk2" "s3"]}]
+    (let [out (guard/redact s)]
+      (doseq [secret secrets]
+        (is (not (str/includes? out secret)) (str (pr-str secret) " leaked from " (pr-str s)))))))
 
 ;; =============================================================================
 ;; Close lifecycle (LineWriter port injected)
