@@ -33,8 +33,8 @@
     (is (= 36 (count nss)) "every namespace of the batch with a public defn")
     (is (not-any? #(re-find #"tools\.swarm\.jvm\." (str %)) nss)
         "tools/swarm/jvm/ is m30's")
-    (is (= 172 (count (:universe report))) "every public defn of the batch")
-    (is (= 172 (count (:covered report))))))
+    (is (= 173 (count (:universe report))) "every public defn of the batch")
+    (is (= 173 (count (:covered report))))))
 
 (deftest every-m29-contract-generates-both-sides
   (let [nss (set (map (comp symbol namespace)
