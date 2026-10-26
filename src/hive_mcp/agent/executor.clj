@@ -11,7 +11,9 @@
             [hive-mcp.channel.task-signal :as task-signal]
             [hive-mcp.agent.grant :as grant]
             [hive-mcp.channel.activation :as activation]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-addon.registry.commands :as acmds]
+            [clojure.string :as str]))
 
 #_{:clj-kondo/ignore [:deprecated-var]}
 (def ^:dynamic ^:deprecated *current-agent-id* ctx/*current-agent-id*)
@@ -50,9 +52,55 @@
       (grant/call-refusal (grant/domain) grant/registry-get-slave caller tool-name
                           (or (get arguments :command) (get arguments "command"))))))
 
+(defn- enum-subdomains
+  "The first words of TOOL's multi-word `command` enum entries
+   (\"docs describe-function\" -> \"docs\"). Pure."
+  [tool]
+  (into #{}
+        (keep (fn [c] (when (and (string? c) (str/includes? c " "))
+                        (first (str/split c #" ")))))
+        (get-in tool [:inputSchema :properties "command" :enum])))
+
+(defn- registry-subdomain-owners
+  "Registered tools that route TOOL-NAME as a subcommand, sorted. Read from
+   the tool registry and the addon command registry, never a hardcoded list:
+   an addon contribution (`code carto`) or a multi-word command enum entry
+   (`emacs docs <verb>`) names the owner. Only tools the delegation registry
+   can call are answered."
+  [tool-name]
+  (let [registered (set (registry/list-tools))
+        contributed (filter #(contains? (acmds/get-commands %) tool-name)
+                            (acmds/contributed-tool-names))
+        enumerated (filter #(contains? (enum-subdomains (registry/get-tool %)) tool-name)
+                           registered)]
+    (->> (concat contributed enumerated)
+         (filter registered)
+         (remove #{tool-name})
+         distinct
+         sort
+         vec)))
+
+(def ^:dynamic *subdomain-owners*
+  "Port: tool-name -> the registered tools that route it as a subcommand.
+   Tests bind a stub rather than mutating the registries."
+  registry-subdomain-owners)
+
+(defn unknown-tool-message
+  "The error for a call to TOOL-NAME, which no registered tool answers. When
+   OWNERS (tools routing TOOL-NAME as a subcommand) is non-empty, the message
+   names the route that still works. Pure."
+  [tool-name owners]
+  (let [base (str "Unknown tool: " tool-name)]
+    (if (seq owners)
+      (str base ". " tool-name " is a subcommand of the "
+           (str/join " or " (map #(str % " tool") owners)) ": call "
+           (str/join " or " (map #(str % " with command=\"" tool-name " <verb>\"") owners)))
+      base)))
+
 (defn execute-tool
   "Execute a tool by name with arguments. A call the caller's grant does not
-   permit is refused before the handler runs."
+   permit is refused before the handler runs. An unknown tool that another
+   tool routes as a subcommand is answered with that route."
   [tool-name arguments]
   (if-let [tool (registry/get-tool tool-name)]
     (if-let [no (grant-refusal tool-name arguments)]
@@ -65,7 +113,10 @@
           {:success true :result (:ok result)}
           (do (log/error "Tool execution failed:" tool-name {:error (:message result)})
               {:success false :error (:message result)}))))
-    {:success false :error (str "Unknown tool: " tool-name)}))
+    {:success false
+     :error (unknown-tool-message
+             tool-name
+             (r/guard Exception [] (*subdomain-owners* (str tool-name))))}))
 
 (defn format-tool-result
   "Format tool result as assistant message for conversation history."
@@ -172,6 +223,8 @@
 (def Permissions
   "Permission flags a tool call runs with (a coll, `(set perms)` is taken)."
   [:maybe [:or [:sequential :any] [:set :any]]])
+
+(m/=> unknown-tool-message [:=> [:cat :any [:maybe [:sequential :string]]] :string])
 
 ;; `and` answers false/nil/true, so the result is a maybe-boolean.
 (m/=> requires-approval? [:=> [:cat :any Permissions] [:maybe :boolean]])
