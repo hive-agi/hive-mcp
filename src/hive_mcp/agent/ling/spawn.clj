@@ -20,7 +20,9 @@
             [hive-mcp.agent.grant :as grant]
             [hive-mcp.agent.identity :as agent-identity]
             [hive-mcp.swarm.datascript :as ds]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.context.request :as request-ctx]
+            [hive-mcp.channel.audience :as audience]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -84,13 +86,64 @@
 
 (declare ->ling)
 
+(defn caller-lineage
+  "The spawner a request caller CALLER-ID records. A coordinator-lane caller
+   counts only when it names a SESSION (`coordinator:<session>`); a lane
+   spelled without one (`coordinator`, `coordinator-hive`) is root-level.
+   Blank or nil is root-level, read as nil."
+  [caller-id]
+  (let [caller (when-not (str/blank? (str caller-id)) (str caller-id))]
+    (when caller
+      (if (audience/coordinator-reader? caller)
+        (when (audience/coordinator-session caller) caller)
+        caller))))
+
+(m/=> caller-lineage [:=> [:cat :any] [:maybe :string]])
+
+(defn request-spawner
+  "The spawner of the request in flight, read from the request context: the
+   verified caller id, else the asserted one, through `caller-lineage`.
+   \"\" when the caller is known to be root-level; nil when no request is in
+   flight or it carries no caller, i.e. the spawner is UNKNOWN."
+  []
+  (let [present (fn [s] (when-not (str/blank? (str s)) (str s)))]
+    (when-let [caller (or (present (request-ctx/current-verified-caller-id))
+                          (present (request-ctx/current-caller-id)))]
+      (or (caller-lineage caller) ""))))
+
+(m/=> request-spawner [:=> [:cat] [:maybe :string]])
+
+(defn resolve-spawned-by
+  "The :spawned-by a spawn records, decided in ONE place for every path
+   (the tool handler, dag-waves, workflows, the deprecated swarm spawn, any
+   internal create-ling!). A string :spawned-by in OPTS wins (the tool
+   boundary and schedulers that captured their caller pass one). Otherwise
+   REQUEST-SPAWNER (a 0-arg port, `request-spawner` by default) answers from
+   the request context. When neither knows, the spawn is logged at warn and
+   nil is answered: an unknown spawner is never recorded as \"\" (which means
+   root-level), so enclave lineage can tell the two apart."
+  ([ling-id opts] (resolve-spawned-by ling-id opts request-spawner))
+  ([ling-id opts request-spawner]
+   (let [explicit (:spawned-by opts)]
+     (if (string? explicit)
+       explicit
+       (or (request-spawner)
+           (do (log/warn "[spawn] no spawner known for this spawn; :slave/spawned-by not recorded"
+                         {:ling-id ling-id :parent (:parent opts)})
+               nil))))))
+
+(m/=> resolve-spawned-by
+      [:function
+       [:=> [:cat :any [:maybe :map]] [:maybe :string]]
+       [:=> [:cat :any [:maybe :map] ifn?] [:maybe :string]]])
+
 (defn- compute-spawn-plan
-  "Pure computation: derive all spawn decisions from ling state and opts.
+  "Derive all spawn decisions from ling state and opts.
    Returns a plan map with resolved mode, model, strategy, and context.
    :grant is the effective grant (wire form) decided at the tool boundary,
    or nil for an unrestricted child. :spawned-by is the request caller that
-   asked for the spawn (\"\" for root-level), or nil when the spawn did not
-   come through the tool boundary."
+   asked for the spawn (\"\" for root-level), resolved by
+   `resolve-spawned-by` for every spawn path, or nil (logged) when unknown."
   [ling opts]
   (let [effective-model (or (:model opts) (:model ling))
         mode (lifecycle/resolve-effective-mode
@@ -105,7 +158,7 @@
             (:provider opts) (assoc :provider (:provider opts)))
      :depth depth
      :parent parent
-     :spawned-by (:spawned-by opts)
+     :spawned-by (resolve-spawned-by (:id ling) opts)
      :kanban-task-id kanban-task-id
      :presets (or (:presets opts) (:presets ling))
      :cwd (:cwd ling)
