@@ -380,7 +380,11 @@
                 worker-tier (normalize-tier tier)
                 token-budget (normalize-token-budget token_budget)
                 loop-params (loop-opts params)
-                brief (spawn-brief params)
+                brief (or (spawn-brief params)
+                          ;; A resume with no brief continues the recorded run
+                          ;; instead of idling until a dispatch.
+                          (when (:resume loop-params)
+                            "Continue the resumed run from where it stopped."))
                 resolved (llm-registry/resolve-provider-model
                            {:provider provider
                             :model (if (= :cheap worker-tier) nil model)

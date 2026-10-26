@@ -592,7 +592,10 @@
                                  :task-id   task-id
                                  :error     (ex-message e)
                                  :timestamp (System/currentTimeMillis)})))
-            (throw (ex-info "Failed to dispatch to ling"
+            (throw (ex-info (str "Failed to dispatch to ling " id ": "
+                                 (or (not-empty (ex-message e)) (.getName (class e)))
+                                 (when-let [refusal (:refusal (ex-data e))]
+                                   (str " " (pr-str refusal))))
                             {:ling-id id :task-id task-id :error (ex-message e)}
                             e)))))))
 
