@@ -31,8 +31,8 @@
 
 (deftest tools-kanban-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths [kanban-dir]})]
-    (is (= 83 (count (:universe report))) "every public defn of tools/kanban and tools/kanban/list")
-    (is (= 83 (count (:covered report))))))
+    (is (= 84 (count (:universe report))) "every public defn of tools/kanban and tools/kanban/list")
+    (is (= 84 (count (:covered report))))))
 
 (deftest every-tools-kanban-contract-generates-both-sides
   (apply require kanban-nss)
