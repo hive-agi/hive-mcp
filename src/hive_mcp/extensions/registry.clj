@@ -507,6 +507,8 @@
                          :tools     (vec tool-names)})
   tool-names)
 
+(m/=> notify-tools-registered! [:=> [:cat SchemaOwner [:sequential :string]] [:sequential :string]])
+
 (m/=> retract-schemas-by-owner! [:=> [:cat SchemaOwner] [:vector :string]])
 
 (m/=> effective-schema-properties
