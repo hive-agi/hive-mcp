@@ -8,6 +8,14 @@ clojure -P -M:test-unit          # pre-fetch dependencies
 clojure -M:test-unit             # the suite CI gates on
 ```
 
+On a machine that also runs a hive-mcp server, start test JVMs through
+`bin/clj-test` (same arguments as `clojure`, e.g. `bin/clj-test -M:test-unit`)
+or `bin/test-sandboxed.sh`. Both raise the JVM's `oom_score_adj` to 800 and give
+it its own systemd scope, so if the host runs out of memory the test JVM is
+killed and the server is not. A plain `clojure -M:test*` runs at the caller's
+adj (usually 0, the same as the server). No deps.edn alias can change that.
+`bb test` goes through `bin/clj-test`.
+
 `bin/hive-mcp-foss` boots the host with the FOSS starter pack merged
 (see [`starter.deps.edn`](starter.deps.edn)). `HIVE_STARTER=0` boots the bare
 core instead.

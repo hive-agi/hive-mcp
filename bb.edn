@@ -4,7 +4,7 @@
 
  :tasks
  {test {:doc "Run tests"
-        :task (shell "clojure -M:test")}
+        :task (shell "bin/clj-test -M:test")}
 
   repl {:doc "Start a scratch dev nREPL on an OS-assigned port (never 7910)"
         :task (shell "clojure -M:dev-repl")}

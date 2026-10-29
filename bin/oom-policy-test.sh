@@ -178,6 +178,17 @@ STUB_OUT="$TMP/sbx2" PATH="$TMP/bin:$TMP/probe-ok:$PATH" timeout 60 "$SCRIPT_DIR
 mapfile -t sbx < "$TMP/sbx2" 2>/dev/null
 expect "sandbox fallback: bare run in the caller's cgroup" "rc=$rc cg=${sbx[0]:-}" "rc=0 cg=$self_cg"
 
+# bin/clj-test: the `clojure -M:test*` wrapper. A fake clojure records the adj
+# it was started with and its argv; the real clojure is never run.
+printf '#!/bin/sh\necho "adj=$(cat /proc/$$/oom_score_adj) args=$*"\n' > "$TMP/fake-clojure"
+chmod +x "$TMP/fake-clojure"
+got="$(HIVE_CLJ_TEST_CLOJURE="$TMP/fake-clojure" HIVE_TEST_OOMD_PREFERENCE=off \
+        timeout 20 "$SCRIPT_DIR/clj-test" -M:test-unit -n a.b-test 2>/dev/null)"
+expect "clj-test: child raised to 800, argv untouched" "$got" "adj=800 args=-M:test-unit -n a.b-test"
+got="$(HIVE_CLJ_TEST_CLOJURE="$TMP/fake-clojure" HIVE_TEST_OOM_SCORE_ADJ=500 \
+        timeout 20 "$SCRIPT_DIR/clj-test" -M:test 2>/dev/null)"
+expect "clj-test: HIVE_TEST_OOM_SCORE_ADJ=500 (scoped launch)" "$got" "adj=500 args=-M:test"
+
 expect "this shell untouched" "$(cat /proc/self/oom_score_adj)" "$base"
 echo "oom-policy-test: $pass passed, $fail failed"
 (( fail == 0 ))
