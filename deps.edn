@@ -434,6 +434,10 @@
    ;; plain `clojure -M:test` is safe on a shared host. Every :test* alias
    ;; carries the same cap so any composition keeps it; a -J-Xmx on the
    ;; command line comes after alias :jvm-opts and still overrides it.
+   ;; OOM rank: an alias cannot set oom_score_adj, so a plain `clojure -M:test*`
+   ;; runs at the caller's adj (0, the same as the server). bin/clj-test (any
+   ;; `clojure` args) and bin/test-sandboxed.sh raise it to 800 so the test JVM
+   ;; dies before hive-mcp. Use one of them on a shared host.
    :jvm-opts ["-Xmx2g" "-Dhive.test=true" "-Dhive.mcp.config=target/test-config/config.edn" "-Dhive.kg.backend=datascript"]
    :main-opts ["-m" "cognitect.test-runner"
                "-r" "^hive-mcp\\.(?!backends\\.).*-test$"]}
