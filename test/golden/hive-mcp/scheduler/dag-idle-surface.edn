@@ -1,5 +1,5 @@
 {:terminal [:completed :context-death :error :truncated],
- :capabilities #{:human-guard :task-ids :plan-scope},
+ :capabilities #{:human-guard :task-ids :rules :plan-scope},
  :on-complete nil,
  :stopped
  {:stopped true,

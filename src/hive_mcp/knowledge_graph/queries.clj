@@ -15,7 +15,8 @@
             [hive-mcp.knowledge-graph.edges :as edges]
             [hive-mcp.knowledge-graph.edges.scoped :as scoped]
             [hive-mcp.knowledge-graph.scope :as scope]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [hive-mcp.knowledge-graph.protocols :as reader]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -77,74 +78,51 @@
 ;;; =============================================================================
 
 (defn traverse
-  "Walk graph from a starting node using breadth-first search.
-
-   Arguments:
-     start-node-id - Node ID to start traversal from
-     opts - Map with optional keys:
-            :direction  - :outgoing (default), :incoming, or :both
-            :relations  - Set of relation types to follow (default: all)
-            :max-depth  - Maximum traversal depth (default: 3)
-            :scope      - Limit to edges within visible scopes
-
-   Returns:
-     Sequence of {:node-id <id>
-                  :edge <edge-map>
-                  :depth <n>
-                  :path [<node-ids from start>]}
-
-   Example:
-     (traverse \"memory-123\" {:direction :outgoing
-                               :relations #{:implements :depends-on}
-                               :max-depth 2
-                               :scope \"hive-mcp:agora\"})"
+  "Breadth-first traversal with at most 128 frontier nodes per batch.
+   Options: :direction (:outgoing, :incoming, :both), :relations (set),
+   :max-depth (default 3), :scope (visible scopes), :edge-reader (IEdgeReader).
+   Returns {:node-id :edge :depth :path} rows. No cross-request cache."
   [start-node-id opts]
   {:pre [(string? start-node-id)]}
-  (let [{:keys [direction relations max-depth scope]
+  (let [{:keys [direction relations max-depth scope edge-reader]
          :or {direction :outgoing
-              max-depth default-max-depth}} opts
+              max-depth default-max-depth
+              edge-reader edges/default-reader}} opts
         scope-set (when scope (scope/visible-scope-tags scope))]
-    (log/debug "Traversing from:" start-node-id
-               "direction:" direction
-               "max-depth:" max-depth
-               "relations:" relations
-               "scope:" scope)
-    (loop [queue [[start-node-id 0 [start-node-id]]]  ;; [node-id, depth, path]
+    (loop [queue [[start-node-id 0 [start-node-id]]]
            visited #{start-node-id}
            results []]
-      (if (empty? queue)
+      (if (or (empty? queue) (>= (second (first queue)) max-depth))
         results
-        (let [[current-node depth path] (first queue)
-              remaining-queue (rest queue)]
-          (if (>= depth max-depth)
-            ;; At max depth, skip expanding neighbors
-            (recur remaining-queue visited results)
-            ;; Get adjacent edges and filter
-            (let [adjacent-edges (get-adjacent-edges current-node direction)
-                  matching-edges (->> adjacent-edges
+        (let [depth (second (first queue))
+              ;; Never prefetch the next depth or an unbounded frontier.
+              chunk (vec (take 128 (take-while #(= depth (second %)) queue)))
+              ids (mapv first chunk)
+              outgoing (when (#{:outgoing :both} direction)
+                         (reader/batch-get-edges-from edge-reader ids))
+              incoming (when (#{:incoming :both} direction)
+                         (reader/batch-get-edges-to edge-reader ids))
+              [visited results added]
+              (reduce
+               (fn [[seen rows added] [node depth path]]
+                 (let [adjacent (case direction
+                                  :outgoing (get outgoing node)
+                                  :incoming (get incoming node)
+                                  :both (concat (get outgoing node) (get incoming node)))
+                       neighbors (->> adjacent
                                       (filter #(edge-matches-scope? % scope-set))
-                                      (filter #(edge-matches-relations? % relations)))
-                  ;; Extract unvisited neighbors
-                  new-neighbors (->> matching-edges
-                                     (map #(vector (edge->neighbor % current-node) %))
-                                     (filter #(not (contains? visited (first %)))))
-                  ;; Build result entries for new neighbors
-                  new-results (mapv (fn [[neighbor-id edge]]
-                                      {:node-id neighbor-id
-                                       :edge edge
-                                       :depth (inc depth)
-                                       :path (conj path neighbor-id)})
-                                    new-neighbors)
-                  ;; Build queue entries for new neighbors
-                  new-queue-entries (mapv (fn [[neighbor-id _]]
-                                            [neighbor-id
-                                             (inc depth)
-                                             (conj path neighbor-id)])
-                                          new-neighbors)
-                  new-visited (into visited (map first new-neighbors))]
-              (recur (into (vec remaining-queue) new-queue-entries)
-                     new-visited
-                     (into results new-results)))))))))
+                                      (filter #(edge-matches-relations? % relations))
+                                      (map #(vector (edge->neighbor % node) %))
+                                      (remove #(contains? seen (first %)))
+                                      vec)]
+                   [(into seen (map first neighbors))
+                    (into rows (map (fn [[id edge]]
+                                      {:node-id id :edge edge :depth (inc depth)
+                                       :path (conj path id)}) neighbors))
+                    (into added (map (fn [[id _]] [id (inc depth) (conj path id)]) neighbors))]))
+               [visited results []] chunk)]
+          (recur (into (vec (drop (count chunk) queue)) added)
+                 visited results))))))
 
 ;;; =============================================================================
 ;;; Shortest Path (BFS)

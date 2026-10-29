@@ -484,6 +484,31 @@
       (notify-contribution! {:type :retract-schema :tool-name tn :addon-id owner}))
     touched))
 
+(defn notify-tools-registered!
+  "Tell the contribution listeners that ADDON-ID's root tools (TOOL-NAMES)
+   were registered, so the advertised surface and the agent-delegation
+   registry are rebuilt WITH them. Returns TOOL-NAMES.
+
+   An addon's `initialize!` contributes its commands before its root tools are
+   registered and before it is :active, and that contribution's refresh is the
+   last one a remount used to trigger. The agent registry was therefore
+   re-seated from a table without the addon's own root tools: after a
+   `hive.carto` reload a running ling got \"Unknown tool: carto\" while
+   `code carto <verb>` kept working (tool-friction 20261020202536-3357f82c).
+
+   Notified DIRECTLY, like a schema retraction: hive-addon's listener seam
+   carries command events only. Before the surface listener is installed (the
+   boot pass, which builds the tables once afterwards) nothing listens and
+   this is a no-op."
+  [addon-id tool-names]
+  (notify-contribution! {:type      :tools-registered
+                         :tool-name nil
+                         :addon-id  addon-id
+                         :tools     (vec tool-names)})
+  tool-names)
+
+(m/=> notify-tools-registered! [:=> [:cat SchemaOwner [:sequential :string]] [:sequential :string]])
+
 (m/=> retract-schemas-by-owner! [:=> [:cat SchemaOwner] [:vector :string]])
 
 (m/=> effective-schema-properties

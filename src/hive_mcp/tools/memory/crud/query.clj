@@ -203,6 +203,20 @@
        (nil? created-after)
        (nil? updated-after)))
 
+(defn query-directory
+  "The directory a query resolves its project from. An explicit :directory
+   wins; otherwise the request context's directory, then the caller-directory
+   chain (bb-mcp's caller cwd, the server's working directory).
+
+   The request context alone was nil on the MCP path, so an omitted
+   directory resolved project \"global\" and `memory query type=tool-friction`
+   answered [] although every report lives under its owner project."
+  [directory]
+  (scope/effective-directory
+   {:directory directory
+    :current   (or (ctx/current-directory)
+                   (ctx/resolve-caller-directory nil))}))
+
 (defn handle-query
   "Query project memory by type with scope, temporal, and verbosity filtering.
    `created_after` / `updated_after` are ISO-8601 strings — entries whose
@@ -210,7 +224,7 @@
    AND re-checked client-side). Results sort newest-first."
   [{:keys [type tags exclude_tags limit duration scope directory include_descendants verbosity query
            created_after updated_after]}]
-  (let [directory (or directory (ctx/current-directory))
+  (let [directory (query-directory directory)
         include-descendants? (if (some? include_descendants)
                                (boolean include_descendants)
                                true)
@@ -264,6 +278,8 @@
   "Backward-compatible alias: delegates to handle-query with verbosity=metadata."
   [params]
   (handle-query (assoc params :verbosity "metadata")))
+
+(m/=> query-directory [:=> [:cat [:maybe :string]] [:maybe :string]])
 
 ;;; =============================================================================
 ;;; Contracts

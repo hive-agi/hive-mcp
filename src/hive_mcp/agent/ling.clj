@@ -21,6 +21,8 @@
 (def ->ling              #'spawn/->ling)
 (def create-ling!        #'spawn/create-ling!)
 
+(def request-spawner     #'spawn/request-spawner)
+
 ;; --- Status / queries --------------------------------------------------------
 (def get-ling            #'status/get-ling)
 (def list-lings          #'status/list-lings)

@@ -31,7 +31,8 @@
             [hive-mcp.test.stub.memory-store :as stub]
             [hive-schemas.test :refer [deftrifecta-from-schema]]
             [hive-spi.memory.registry :as sreg]
-            [hive-mcp.vectordb.kanban-facade :as kanban-facade]))
+            [hive-mcp.vectordb.kanban-facade :as kanban-facade]
+            [clojure.string :as str]))
 
 ;; =============================================================================
 ;; Test Fixtures
@@ -1201,6 +1202,34 @@
       "an explicit failure result fails even a :completed event")
   (is (= :succeeded (dag/ling-outcome nil {}))
       "an untagged event keeps the old completed-channel reading"))
+
+(deftest suspect-completion-is-not-a-success
+  ;; friction 20261021123123-70298deb: a :completed exit whose shout carried
+  ;; :suspect no-deliverable unblocked the card's dependents.
+  (doseq [s [:no-deliverable "no-deliverable" :ended-blocked]]
+    (is (= :failed (dag/ling-outcome :completed {:suspect s})) (pr-str s)))
+  (doseq [s [nil "" "  "]]
+    (is (= :succeeded (dag/ling-outcome :completed {:suspect s}))
+        (str "no verdict in " (pr-str s)))))
+
+(deftest plan-rules-lead-every-dispatched-brief
+  ;; friction 20261021123123-70298deb: the plan's rules (own worktree, capped
+  ;; test heap, never edit main checkouts) never reached the lings.
+  (with-dag-mocks
+    (reset! dag/dag-state {:active true :dispatched {} :completed #{} :failed #{}
+                           :wave-log [] :opts {}})
+    (dag/dispatch-wave! [{:task-id "task-a" :title "Do A" :description "details"}] 1
+                        {:cwd test-directory :rules "Work in your own worktree."})
+    (let [task (get-in (first @*spawned-lings) [:opts :task])]
+      (is (str/starts-with? task "Rules for every card of this plan (follow them):\nWork in your own worktree.\n\nDo A"))
+      (is (str/includes? task "project kanban get id=task-a"))
+      (is (str/ends-with? task "details")))
+    (reset! *spawned-lings [])
+    (reset! dag/dag-state {:active true :dispatched {} :completed #{} :failed #{}
+                           :wave-log [] :opts {}})
+    (dag/dispatch-wave! [{:task-id "task-b" :title "Do B"}] 1 {:cwd test-directory})
+    (is (str/starts-with? (get-in (first @*spawned-lings) [:opts :task]) "Do B")
+        "no rules, no preamble")))
 
 (deftest listener-covers-every-terminal-event
   (is (= [:completed :context-death :error :truncated] (dag/terminal-event-types)))

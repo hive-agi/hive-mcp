@@ -26,7 +26,8 @@
             [hive-mcp.agent.grant :as grant]
             [malli.core :as m]
             [hive-mcp.tools.result-bridge :as rb]
-            [hive-mcp.context.request :as request-ctx]))
+            [hive-mcp.context.request :as request-ctx]
+            [hive-mcp.agent.ling.spawn :as spawn-impl]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -109,13 +110,10 @@
    (`coordinator:<session>`), so the spawn's shouts reach that one window; a
    lane spelled without a session (`coordinator`, `coordinator-hive`) leaves
    the spawn root-level, the lane the audience layer routes to every
-   coordinator reader. Blank or nil is root-level."
+   coordinator reader. Blank or nil is root-level. The reading is
+   `hive-mcp.agent.ling.spawn/caller-lineage`, shared with the spawn plan."
   [caller-id]
-  (let [caller (when-not (str/blank? (str caller-id)) (str caller-id))]
-    (when caller
-      (if (audience/coordinator-reader? caller)
-        (when (audience/coordinator-session caller) caller)
-        caller))))
+  (spawn-impl/caller-lineage caller-id))
 
 (defn effective-parent
   "The parent a spawn is attributed to. An explicit non-blank `parent` wins.
@@ -380,7 +378,11 @@
                 worker-tier (normalize-tier tier)
                 token-budget (normalize-token-budget token_budget)
                 loop-params (loop-opts params)
-                brief (spawn-brief params)
+                brief (or (spawn-brief params)
+                          ;; A resume with no brief continues the recorded run
+                          ;; instead of idling until a dispatch.
+                          (when (:resume loop-params)
+                            "Continue the resumed run from where it stopped."))
                 resolved (llm-registry/resolve-provider-model
                            {:provider provider
                             :model (if (= :cheap worker-tier) nil model)

@@ -217,7 +217,13 @@
                 spec        (assoc (routes-ns) :server-id server-id)
                 log-ch      (async/chan (async/sliding-buffer 20))
                 server      (io-server {:log-ch log-ch})
-                context     (assoc (create-ctx! spec) :server server)]
+                ;; MCP-CONCURRENT-REQUESTS: request handlers run on a bounded
+                ;; executor, not on jsonrpc4clj's read loop, so one stuck call
+                ;; no longer holds later requests or $/cancelRequest.
+                attach      (requiring-resolve 'hive-mcp.server.request-offload/attach)
+                get-cfg     (requiring-resolve 'hive-mcp.config.core/get-in-config)
+                context     (attach (assoc (create-ctx! spec) :server server)
+                                    (result/rescue nil (get-cfg [:server :request-concurrency])))]
             ;; Wire server context into hot-reload for MCP auto-heal after reload
             (when-let [ctx-atom (:server-context-atom hot-reload)]
               (reset! ctx-atom context)
@@ -239,6 +245,8 @@
   [_ state]
   (when (= :running (:status state))
     (log/info ":hive/mcp-stdio halt — closing log channel")
+      (when-let [detach! (requiring-resolve 'hive-mcp.server.request-offload/detach!)]
+        (detach! (:context state)))
     ;; Close the log channel. The actual stdio server shutdown is driven by
     ;; keepalive delivering :shutdown (which races the join promise).
     ;; We don't System/exit here — that's the caller's decision.

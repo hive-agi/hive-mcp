@@ -28,7 +28,8 @@
             [hive-mcp.embeddings.shared-gate :as embed-gate]
             [hive-mcp.tools.memory.crud.edge-outcome :as edge-outcome]
             [hive-mcp.extensions.registry :as ext]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.memory.write-latency :as write-latency]))
 
 (def ^:const ^:private memory-write-timeout-ms
   "Timeout budget for a single memory write (Chroma add + KG tx + fetch).
@@ -73,6 +74,15 @@
   [progress stage]
   (when progress
     (swap! progress assoc :stage stage :stage-since-ns (System/nanoTime)))
+  nil)
+
+(defn- record-stage-ms!
+  "Add `ms` to `stage`'s wall time under :timings on `progress` (a stage may
+   run more than once, e.g. :kg-edges per relation). nil `progress` is a no-op.
+   Kanban 20260928204307-01ca0962."
+  [progress stage ms]
+  (when progress
+    (swap! progress update-in [:timings stage] (fnil + 0) (long ms)))
   nil)
 
 (defn timeout-diagnostic
@@ -135,24 +145,29 @@
    `*stage-budgets-ms*` has a budget for it, wait at most that long. A stage
    that outruns its budget is cancelled and throws ex-info
    {:type :stage-budget-exceeded :stage :budget-ms :elapsed-ms}. A throw from
-   `f` itself is rethrown unwrapped."
+   `f` itself is rethrown unwrapped. The stage's wall time, success or not, is
+   added to `progress` :timings (`record-stage-ms!`) for the latency ring."
   [progress stage f]
   (mark-stage! progress stage)
-  (if-let [budget-ms (get *stage-budgets-ms* stage)]
-    (let [start (System/nanoTime)
-          fut   (future (f))
-          r     (try (deref fut budget-ms ::over-budget)
-                     (catch java.util.concurrent.ExecutionException e
-                       (throw (or (.getCause e) e))))]
-      (if (= r ::over-budget)
-        (let [diag {:stage stage :budget-ms budget-ms
-                    :elapsed-ms (quot (- (System/nanoTime) start) 1000000)}]
-          (future-cancel fut)
-          (log/warn "memory add stage over budget:" (pr-str diag))
-          (throw (ex-info (stage-budget-message diag)
-                          (assoc diag :type :stage-budget-exceeded))))
-        r))
-    (f)))
+  (let [t0 (System/nanoTime)]
+    (try
+      (if-let [budget-ms (get *stage-budgets-ms* stage)]
+        (let [start (System/nanoTime)
+              fut   (future (f))
+              r     (try (deref fut budget-ms ::over-budget)
+                         (catch java.util.concurrent.ExecutionException e
+                           (throw (or (.getCause e) e))))]
+          (if (= r ::over-budget)
+            (let [diag {:stage stage :budget-ms budget-ms
+                        :elapsed-ms (quot (- (System/nanoTime) start) 1000000)}]
+              (future-cancel fut)
+              (log/warn "memory add stage over budget:" (pr-str diag))
+              (throw (ex-info (stage-budget-message diag)
+                              (assoc diag :type :stage-budget-exceeded))))
+            r))
+        (f))
+      (finally
+        (record-stage-ms! progress stage (quot (- (System/nanoTime) t0) 1000000))))))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -399,35 +414,22 @@
               role-card-validator-extension-key
               "and hive-spi.role.card is absent; the :role entry is stored unvalidated")))
 
+(defn- add-with-optional-receipt!
+  "Use the optional SPI only when the registered (possibly decorated) store
+   itself implements it. Never peel decorators: their get-entry may decrypt,
+   filter or reshape the backend's receipt. Older SPI versions use add-entry!."
+  [store entry]
+  (let [protocol (try
+                   (some-> (requiring-resolve
+                             'hive-spi.memory.receipt/IMemoryStoreAddReceipt) deref)
+                   (catch java.io.FileNotFoundException _ nil))]
+    (if (and protocol (satisfies? protocol store))
+      ((requiring-resolve 'hive-spi.memory.receipt/-add-entry-returning!) store entry)
+      (mem-proto/add-entry! store entry))))
+
 (defn- index-entry!
-  "Index entry through IMemoryStore. Plan-type entries get enriched with
-   plan-specific metadata (`:plan-status`, `:steps-count`) but are
-   stored via the same `add-entry!` path as every other type — there
-   is no separate plans collection.
-
-   `:store-key` selects the multi-store registry slot. Defaults to
-   `:default` (legacy). Kanban writes thread `:kanban` through so the
-   entry lands in the dedicated qdrant collection instead of milvus.
-
-   Wraps the store add-entry! in `with-resilience` so a dropped
-   HTTP transport (selector-manager-closed IOException surfaced as
-   ExecutionException) kicks the heal loop and retries once before
-   surfacing the failure to the caller. The wrap uses the short
-   `store-stage-heal-budget-ms` (via `with-stage-resilience`) because the
-   backend's own `resilient` already waits and retries; the default 8 s on
-   top of it double-waited every RPC.
-
-   On embedding failure the complete entry, with its store slot, is persisted
-   to the local outbox BEFORE its id is acknowledged; the housekeeping drain
-   reembeds it into that slot. Other store failures are never misreported as
-   deferred writes. The embed runs on the :interactive lane of the shared
-   provider gate, ahead of batch callers.
-
-   A transient embed failure (provider not warm after a restart, one dropped
-   call) is retried a few times in place before the entry is parked
-   (`deferred/call-with-embed-retry`). A parked entry is never silent: the
-   failure is logged at ERROR with its cause and attempt count, and the cause
-   is recorded on the outbox record for the response and the drain."
+  "Index via the registered store; optional receipt support is negotiated on
+   the outermost store. Embedding failures still park in the durable outbox."
   [{:keys [type content tags-with-scope content-hash duration-str
            expires project-id abstraction-level knowledge-gaps store-key]
     :or {store-key :default}}]
@@ -454,7 +456,7 @@
         (binding [embed-gate/*lane* :interactive]
           (deferred/call-with-embed-retry
             #(with-stage-resilience
-               (mem-proto/add-entry! (mem-proto/get-store store-key) entry))
+               (add-with-optional-receipt! (mem-proto/get-store store-key) entry))
             deferred/default-retry
             #(Thread/sleep (long %))))]
     (if failure
@@ -508,17 +510,21 @@
 
    `:progress` (optional, from `new-progress`) is told which stage the write
    is in (`:kg-edges`, `:link-outgoing`, `:fetch`) so a timeout can name it;
-   each stage runs under its `*stage-budgets-ms*` budget (`run-stage!`)."
+   each stage runs under its `*stage-budgets-ms*` budget (`run-stage!`).
+   A canonical receipt replaces read-after-write only with no KG requests."
   [entry-id kg-params project-id agent-id
-   {:keys [tags-with-scope type knowledge-gaps store-key progress]
+   {:keys [tags-with-scope type knowledge-gaps store-key progress receipt]
     :or {store-key :default}}]
   (let [store (mem-proto/get-store store-key)
         pending (deferred/lookup entry-id)
+        requests (edge-outcome/edge-requests kg-params)
         {:keys [edge-ids edge-errors]}
-        (edge-outcome/attempt-edges
-         #(run-stage! progress :kg-edges
-                      (fn [] (create-kg-edges! entry-id kg-params project-id agent-id)))
-         (edge-outcome/edge-requests kg-params))
+        (if (seq requests)
+          (edge-outcome/attempt-edges
+           #(run-stage! progress :kg-edges
+                        (fn [] (create-kg-edges! entry-id kg-params project-id agent-id)))
+           requests)
+          {:edge-ids [] :edge-errors []})
         pending (if (and pending (seq edge-ids))
                   (do (deferred/amend! entry-id {:kg-outgoing edge-ids})
                       (deferred/lookup entry-id))
@@ -528,6 +534,9 @@
                         #(with-stage-resilience
                            (mem-proto/update-entry! store entry-id {:kg-outgoing edge-ids}))))
         created (or pending
+                    (when (and (empty? requests) (map? receipt)
+                               (= entry-id (:id receipt)))
+                      receipt)
                     (run-stage! progress :fetch #(fetch-with-retry store entry-id)))]
     (when-not created
       (log/error "Failed to retrieve entry after indexing:" entry-id))
@@ -626,26 +635,27 @@
                            :abstraction-level abstraction-level
                            :knowledge-gaps knowledge-gaps :agent-id agent-id
                            :store-key store-key :progress progress}
-                raw-id (run-stage! progress :index #(index-entry! entry-ctx))]
-            ;; Contract guard: IMemoryStore/add-entry! must return a non-blank
-            ;; id string. Some backends (e.g. Milvus under circuit-breaker
-            ;; fail-soft) return a {:success? false ...} failure map instead,
-            ;; which used to silently poison KG edges and surface as the
-            ;; misleading "Entry indexed as {...} but retrieval failed" error.
-            ;; Reject map / nil / blank returns up front with an actionable
-            ;; message so the store's real failure reason is visible.
-            (if-not (and (string? raw-id) (not (str/blank? raw-id)))
+                add-result (run-stage! progress :index #(index-entry! entry-ctx))
+                ;; Only a receipt carrying the canonical entry can bypass fetch.
+                ;; Queued/failure maps (and malformed receipts) remain errors.
+                entry-id (if (map? add-result) (:id add-result) add-result)
+                receipt (when (and (map? add-result)
+                                   (map? (:entry add-result))
+                                   (= entry-id (get-in add-result [:entry :id])))
+                          (:entry add-result))]
+            (if-not (and (string? entry-id) (not (str/blank? entry-id))
+                         (or (not (map? add-result)) receipt))
               (mcp-error (str "Memory store add-entry! did not return an id "
-                              "(got " (pr-str raw-id) "). "
+                              "(got " (pr-str add-result) "). "
                               "Backend is likely degraded or offline — "
                               "check store health and retry."))
-              (let [entry-id raw-id
-                    _ (recall/register-created-id! entry-id project-id type)
+              (let [_ (recall/register-created-id! entry-id project-id type)
                     kg-params {:kg_implements (:kg-implements-vec kg-vecs)
                                :kg_supersedes (:kg-supersedes-vec kg-vecs)
                                :kg_depends_on (:kg-depends-on-vec kg-vecs)
                                :kg_refines    (:kg-refines-vec kg-vecs)}]
-                (finalize-entry! entry-id kg-params project-id agent-id entry-ctx)))))))))
+                (finalize-entry! entry-id kg-params project-id agent-id
+                                 (assoc entry-ctx :receipt receipt))))))))))
 
 (defn handle-add
   "Add an entry to project memory with optional KG edge creation.
@@ -655,9 +665,15 @@
    A write that outruns `*write-timeout-ms*` is answered with a
    stage-attributed error (see `timeout-diagnostic`): which stage was
    running, how long the write and that stage had run, and whether the
-   write never left the pool queue."
+   write never left the pool queue.
+
+   Every add that reaches the pool, successful or not, records its per-stage
+   wall times (dedup, embed, upsert, kg, read-after-write, total) into the
+   `write-latency` ring that catchup's memory-status reads
+   (kanban 20260928204307-01ca0962)."
   [{:keys [type abstraction_level] :as args}]
   (try
+
     (cond
       (not (type-registry/valid-type? type))
       (mcp-error (str "Invalid memory type: " (pr-str type)
@@ -684,11 +700,23 @@
             timeout-sentinel ::timeout
             timeout-ms *write-timeout-ms*
             progress (new-progress)
+            embed-ms (atom 0)
             args (assoc args :progress progress)
+            ;; Only this (the caller's) thread records, once, after await!
+            ;; answered: the outcome is decided by what await! returned, so a
+            ;; worker interrupted by the timeout can never record :error over
+            ;; the :timeout the caller saw.
+            record! (fn [outcome]
+                      (let [{:keys [started-ns timings]} @progress]
+                        (write-latency/record! {:timings  timings
+                                                :embed-ms @embed-ms
+                                                :total-ms (quot (- (System/nanoTime) started-ns) 1000000)
+                                                :outcome  outcome})))
             result (wpool/await!
                     (pool/memory-pool)
                     (let [budgets *stage-budgets-ms*]
-                      #(binding [*stage-budgets-ms* budgets]
+                      #(binding [*stage-budgets-ms* budgets
+                                 write-latency/*embed-ms* embed-ms]
                          (try (do-add! args)
                               (catch Throwable t {::caught t}))))
                     {:timeout-ms timeout-ms
@@ -697,13 +725,17 @@
         (cond
           (= result timeout-sentinel)
           (let [diag (timeout-diagnostic @progress timeout-ms (System/nanoTime))]
+            (record! :timeout)
             (log/warn "memory add timed out:" (pr-str diag))
             (mcp-error (timeout-message diag)))
 
           (and (map? result) (contains? result ::caught))
-          (throw (::caught result))
+          (do (record! :error)
+              (throw (::caught result)))
 
-          :else result)))
+          :else
+          (do (record! (if (:isError result) :error :ok))
+              result))))
     (catch clojure.lang.ExceptionInfo e
       (if (#{:coercion-error :embedding-too-long :plan-gate-rejected :role-gate-rejected} (:type (ex-data e)))
         (mcp-error (.getMessage e))

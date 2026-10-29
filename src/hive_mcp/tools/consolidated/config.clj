@@ -122,12 +122,17 @@
   ([path v] (redact-at path v (delay (raw-secrets)))))
 
 (defn- redact-errors
-  "Malli explanation errors: each :value is redacted by its own :in path."
+  "Malli explanation errors: each :value is redacted by its own :in path, and
+   the live :schema object becomes its printed form so the error serializes."
   [base errors]
   (let [raw (delay (raw-secrets))]
     (mapv (fn [e]
-            (if (and (map? e) (contains? e :value))
-              (assoc e :value (redact-at (into (vec base) (:in e)) (:value e) raw))
+            (if (map? e)
+              (cond-> e
+                (contains? e :value)
+                (assoc :value (redact-at (into (vec base) (:in e)) (:value e) raw))
+                (contains? e :schema)
+                (update :schema #(try (pr-str (m/form %)) (catch Exception _ (pr-str %)))))
               e))
           errors)))
 

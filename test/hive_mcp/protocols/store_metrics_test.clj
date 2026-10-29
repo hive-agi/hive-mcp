@@ -10,7 +10,8 @@
             [hive-spi.kg.protocol :as kgp]
             [hive-spi.memory.decorate :as decorate]
             [hive-spi.memory.ports :as ports]
-            [hive-spi.memory.stub :as stub]))
+            [hive-spi.memory.stub :as stub]
+            [hive-spi.memory.receipt :as receipt]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -105,3 +106,51 @@
   (let [w (sm/wrap-store :memory (stub/create-store))]
     (ports/add-entry! w {:id "e2" :type "note" :content "c" :tags []})
     (is (= "e2" (:id (ports/get-entry w "e2"))))))
+
+(deftest memory-wrapper-refreshes-late-receipt-extensions
+  (let [store (reify ports/IMemoryStore
+                (add-entry! [_ entry] (:id entry)))
+        entry {:id "late" :content "canonical"}
+        calls (atom [])
+        before (sm/wrap-store :memory store)]
+    (is (not (satisfies? receipt/IMemoryStoreAddReceipt before)))
+    (is (= "legacy" (ports/add-entry! before {:id "legacy"})))
+    (try
+      (extend (class store) receipt/IMemoryStoreAddReceipt
+              {:-add-entry-returning! (fn [_ input]
+                                       (swap! calls conj input)
+                                       {:id "late" :entry entry})})
+      (let [after (sm/wrap-store :memory store)]
+        (is (sm/metered? after))
+        (is (satisfies? receipt/IMemoryStoreAddReceipt after))
+        (is (= {:id "late" :entry entry}
+               (receipt/-add-entry-returning! after {:content "input"})))
+        (is (= [{:content "input"}] @calls))
+        (is (= [[[:store/memory :reify :add-entry!] :ok]
+                [[:store/memory :reify :-add-entry-returning!] :ok]]
+               @observed)))
+      (finally
+        (extend (class store) receipt/IMemoryStoreAddReceipt nil)))))
+
+(deftest memory-wrapper-forwards-direct-receipts-and-rethrows
+  (let [entry {:id "direct" :content "canonical"}
+        failure (ex-info "receipt failed" {})
+        store (reify
+                ports/IMemoryStore
+                (add-entry! [_ _] (throw (ex-info "legacy bypass" {})))
+                receipt/IMemoryStoreAddReceipt
+                (-add-entry-returning! [_ input]
+                  (if (:fail? input)
+                    (throw failure)
+                    {:id "direct" :entry entry})))
+        wrapped (sm/wrap-store :memory store)]
+    (is (sm/metered? wrapped))
+    (is (satisfies? receipt/IMemoryStoreAddReceipt wrapped))
+    (is (= {:id "direct" :entry entry}
+           (receipt/-add-entry-returning! wrapped {:content "input"})))
+    (is (identical? failure
+                    (try (receipt/-add-entry-returning! wrapped {:fail? true})
+                         (catch clojure.lang.ExceptionInfo e e))))
+    (is (= [[[:store/memory :reify :-add-entry-returning!] :ok]
+            [[:store/memory :reify :-add-entry-returning!] :error]]
+           @observed))))

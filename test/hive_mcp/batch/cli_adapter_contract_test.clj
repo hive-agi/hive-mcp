@@ -7,7 +7,9 @@
             [hive-mcp.batch.cli-adapter :as cli]
             [hive-test.golden :as golden]
             [malli.core :as m]
-            [malli.generator :as mg]))
+            [malli.generator :as mg]
+            [hive-mcp.tools.swarm.batch :as swarm-batch]
+            [hive-mcp.batch.protocol :as proto]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -62,6 +64,59 @@
           h    (cli/cli-batch-handler {:run-fn (stub-runner seen) :cmd-kw :edge})]
       (h {:operations [{}]})
       (is (= "edge" (:tool (first @seen)))))))
+
+(deftest dry-run-plans-without-executing-test
+  ;; friction 20261025163809-2b150fff: `agent batch-spawn dry_run:true`
+  ;; merged dry_run under each op and spawned real lings.
+  (doseq [flag [{:dry_run true} {:dry-run true} {:dry_run "true"}]]
+    (testing (str "outer " (pr-str flag) " asks the runner for a plan only")
+      (let [calls (atom [])
+            h     (cli/cli-batch-handler
+                   {:run-fn (fn [ops opts]
+                              (swap! calls conj {:ops ops :opts opts})
+                              {:success true :dry-run true
+                               :waves {1 {:ops (mapv #(assoc % :id "op-1") ops)}}
+                               :summary {:total (count ops) :success 0 :failed 0 :waves 1}})
+                    :cmd-kw :spawn :tool-name "agent spawn" :shared-params? true})
+            out   (h (merge {:operations [{:name "a" :task "t"}] :cwd "/x"} flag))
+            body  (json/read-str (:text out) :key-fn keyword)
+            [{:keys [ops opts]}] @calls]
+        (is (m/validate Envelope out))
+        (is (= 1 (count @calls)))
+        (is (true? (:dry-run? opts)) "the runner is told to plan, not run")
+        (is (not-any? #(or (contains? % :dry_run) (contains? % :dry-run)) ops)
+            "the flag is not forwarded to the spawn op as a param")
+        (is (= "/x" (:cwd (first ops))) "other shared params still merge")
+        (is (true? (:dry_run body)))
+        (is (false? (:executed body)))
+        (is (= [{:name "a" :task "t" :cwd "/x" :command "spawn" :id "op-1" :wave 1}]
+               (:planned body))))))
+  (testing "dry_run false runs as before"
+    (let [opts-seen (atom nil)
+          h (cli/cli-batch-handler {:run-fn (fn [_ops opts] (reset! opts-seen opts)
+                                              {:success true :waves {} :summary {}})
+                                    :cmd-kw :spawn :shared-params? true})]
+      (h {:operations [{:name "a"}] :dry_run false})
+      (is (= {} @opts-seen)))))
+
+(deftest dry-run-through-the-swarm-runner-spawns-nothing-test
+  ;; The real Batchable swarm runner behind `agent batch-spawn`: in dry-run
+  ;; the spawn handler is never called, and the plan names each op.
+  (let [spawned (atom 0)
+        runner  (swarm-batch/make-swarm-runner
+                 {:handlers {:agent {:spawn (fn [_] (swap! spawned inc) {:type "text" :text "{}"})}}})
+        h       (cli/cli-batch-handler {:run-fn #(proto/batch-execute runner %1 %2)
+                                        :cmd-kw :spawn :tool-name "agent spawn"
+                                        :shared-params? true})
+        body    (json/read-str (:text (h {:operations [{:name "a" :task "t"} {:name "b" :task "u"}]
+                                          :dry_run true}))
+                               :key-fn keyword)]
+    (is (zero? @spawned))
+    (is (false? (:executed body)))
+    (is (= ["a" "b"] (mapv :name (:planned body))))
+    (testing "without dry_run the same handler spawns"
+      (h {:operations [{:name "a" :task "t"}]})
+      (is (= 1 @spawned)))))
 
 (deftest handler-spec-is-refused-test
   ;; the body asserts; under instrumentation the contract refuses first, so

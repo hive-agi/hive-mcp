@@ -115,26 +115,72 @@
   "Lower-case fragments of a word that assigns a credential."
   ["api_key" "api-key" "apikey" "token" "secret" "password" "passwd"])
 
+(defn- key-word?
+  "True when `word` is a bare credential key whose value follows in the NEXT
+   word: it names a credential and ends in ':' or '=' ('token:', 'password=',
+   '\"api_key\":')."
+  [word]
+  (let [lw (str/lower-case word)]
+    (boolean
+     (and (some #(str/includes? lw %) secret-markers)
+          (or (str/ends-with? lw "=") (str/ends-with? lw ":"))))))
+
+(defn- redacts-next?
+  "True when `prev` announces that the word after it is a credential: a
+   bearer/authorization prefix, or a bare credential key ('token:')."
+  [prev]
+  (boolean
+   (and prev
+        (or (contains? #{"bearer" "authorization:" "authorization="} (str/lower-case prev))
+            (key-word? prev)))))
+
 (defn- secret-word?
   "True when `word`, or the word before it, looks like a credential."
   [prev word]
-  (let [lw (str/lower-case word)
-        lp (some-> prev str/lower-case)]
-    (or (contains? #{"bearer" "authorization:" "authorization="} lp)
+  (let [lw (str/lower-case word)]
+    (or (redacts-next? prev)
         (and (str/starts-with? lw "sk-") (> (count lw) 8))
         (and (some #(str/includes? lw %) secret-markers)
              (or (str/includes? lw "=") (str/includes? lw ":"))
-             (not (or (str/ends-with? lw "=") (str/ends-with? lw ":")))))))
+             (not (key-word? word))))))
+
+(defn- open-quote
+  "The quote char a credential `word` opens and does not close, else nil. The
+   value is what follows the word's first ':' or '=' for an inline assignment
+   ('password=\"a'), the whole word when `prev` announced it ('\"a')."
+  [prev word]
+  (let [i (if (redacts-next? prev)
+            0
+            (inc (reduce min (count word)
+                         (remove nil? [(str/index-of word "=") (str/index-of word ":")]))))
+        value (subs word (min i (count word)))
+        q (first value)]
+    (when (and (contains? #{\" \'} q)
+               (not (str/includes? (subs value 1) (str q))))
+      q)))
 
 (defn redact
   "Replace credential-looking words in `s` with [redacted]; whitespace is
-   collapsed to single spaces."
+   collapsed to single spaces. A key word ending in ':' or '=' redacts the
+   word after it, and a credential value that opens a quote is redacted word
+   by word through the word that closes it."
   [s]
   (let [words (->> (partition-by #(Character/isWhitespace ^char %) (str s))
                    (map #(apply str %))
                    (remove str/blank?))]
-    (str/join " " (map (fn [prev word] (if (secret-word? prev word) "[redacted]" word))
-                       (cons nil words) words))))
+    (loop [prev nil, ws words, open nil, out []]
+      (if-let [[word & more] (seq ws)]
+        (cond
+          open
+          (recur word more (when-not (str/includes? word (str open)) open)
+                 (conj out "[redacted]"))
+
+          (secret-word? prev word)
+          (recur word more (open-quote prev word) (conj out "[redacted]"))
+
+          :else
+          (recur word more nil (conj out word)))
+        (str/join " " out)))))
 
 (m/=> redact [:=> [:cat :any] :string])
 

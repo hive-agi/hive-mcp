@@ -10,7 +10,11 @@
             [taoensso.timbre :as log]
             [hive-spi.editor.services :as svc]
             [clojure.string :as str]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [clojure.data.json :as json]
+            [hive-mcp.project.tree :as tree]
+            [hive-mcp.project.scope :as project-scope]
+            [hive-mcp.extensions.record-hooks :as record-hooks]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -68,11 +72,44 @@
   (log/info "projectile-recent")
   (dispatch-projectile {:op :project/recent}))
 
+(defn- root-entity
+  "The project-tree entity a projectile ROOT belongs to: the nearest
+   .hive-project.edn at or above it. nil for a root in no project."
+  [root]
+  (let [pid (when (string? root) (project-scope/infer-scope-from-path root))]
+    (when (and pid (not= "global" pid))
+      {:project/id pid :project/path root})))
+
+(defn- visible-roots
+  "The projectile list JSON `text` without the roots whose project the
+   :project/visible record hooks hide from the calling session. A root in no
+   project is kept. Throws when `text` cannot be read, so nothing unjudged is
+   shown."
+  [text]
+  (let [rows   (json/read-str text)
+        judged (mapv (fn [row] [row (root-entity (get row "root"))]) rows)
+        shown  (set (map :project/id (tree/visible-projects (keep second judged))))]
+    (json/write-str (into [] (keep (fn [[row ent]]
+                                     (when (or (nil? ent) (contains? shown (:project/id ent)))
+                                       row)))
+                          judged))))
+
 (defn handle-projectile-list-projects
-  "List all known projectile projects."
+  "List all known projectile projects the calling session may see: a root
+   whose project the :project/visible record hooks hide (an enclaved project,
+   for a session outside its enclave) is left out. With no such hook the
+   answer passes through untouched. An answer that cannot be judged is
+   refused."
   [_]
   (log/info "projectile-list-projects")
-  (dispatch-projectile {:op :project/list-projects}))
+  (let [out (dispatch-projectile {:op :project/list-projects})]
+    (if (or (:isError out) (empty? (record-hooks/registered :project/visible)))
+      out
+      (try
+        (assoc out :text (visible-roots (:text out)))
+        (catch Exception e
+          (log/warn "projectile-list-projects: answer not judged, refused:" (ex-message e))
+          (mcp-error "Error: the project list could not be filtered for this session"))))))
 
 (def tools
   "REMOVED: Flat projectile tools no longer exposed. Use consolidated `project` tool."

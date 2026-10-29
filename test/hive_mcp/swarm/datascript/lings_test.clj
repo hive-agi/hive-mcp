@@ -20,6 +20,12 @@
 (def ^:private shim 'hive-mcp.swarm.datascript.lings)
 (def ^:private target "hive-datascript.swarm.lings")
 (def ^:private overrides '{claim-file! {:ns "hive-agent.swarm.logic", :var "get-logic-db-atom"}})
+
+(def ^:private delegating
+  "The contracted fns that delegate by name. holder-live? composes
+   queries/get-slave with the dead-status rule rather than delegating, so it is
+   not a namesake call; its behaviour runs in test-swarm (claim gate_test)."
+  (vec (remove '#{holder-live?} (sf/contracted shim))))
 (def ^:private golden-path "test/golden/hive-mcp/swarm/datascript/lings-delegation.edn")
 
 (golden/deftest-golden lings-delegation-golden
@@ -28,7 +34,7 @@
                      #(sf/delegation-table shim (sf/contracted shim))))
 
 (defspec every-lings-call-reaches-its-namesake 100
-  (prop/for-all [[sym args] (sf/call-gen shim (sf/contracted shim))]
+  (prop/for-all [[sym args] (sf/call-gen shim delegating)]
     (sf/reaches-expected? shim target overrides sym args)))
 
 ;; Offline only: with the library present the call does real work.

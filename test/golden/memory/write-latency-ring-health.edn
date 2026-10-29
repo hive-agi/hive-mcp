@@ -1,0 +1,34 @@
+{:bounded
+ {:n 3,
+  :capacity 3,
+  :stages
+  {:dedup {:n 3, :p50 1, :p95 1, :max 1},
+   :embed {:n 3, :p50 25, :p95 25, :max 25},
+   :upsert {:n 3, :p50 25, :p95 25, :max 25},
+   :read-after-write {:n 3, :p50 1, :p95 1, :max 1},
+   :total {:n 3, :p50 100, :p95 100, :max 100}},
+  :threshold 10000,
+  :status :ok},
+ :empty {:n 0, :capacity 4, :stages {}, :threshold 10000, :status :ok},
+ :fast-adds
+ {:n 4,
+  :capacity 8,
+  :stages
+  {:dedup {:n 4, :p50 1, :p95 1, :max 1},
+   :embed {:n 4, :p50 62, :p95 100, :max 100},
+   :upsert {:n 4, :p50 63, :p95 100, :max 100},
+   :read-after-write {:n 4, :p50 1, :p95 1, :max 1},
+   :total {:n 4, :p50 250, :p95 400, :max 400}},
+  :threshold 10000,
+  :status :ok},
+ :slow-tail
+ {:n 8,
+  :capacity 8,
+  :stages
+  {:dedup {:n 8, :p50 1, :p95 1, :max 1},
+   :embed {:n 8, :p50 75, :p95 7750, :max 7750},
+   :upsert {:n 8, :p50 75, :p95 7750, :max 7750},
+   :read-after-write {:n 8, :p50 1, :p95 1, :max 1},
+   :total {:n 8, :p50 300, :p95 31000, :max 31000}},
+  :threshold 10000,
+  :status :degraded}}

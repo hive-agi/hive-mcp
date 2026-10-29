@@ -19,7 +19,8 @@
             [hive-mcp.tools.composite.departed :as departed]
             [malli.core :as m]
             [hive-mcp.tools.core :as core]
-            [hive-mcp.addons.metrics :as addon-metrics]))
+            [hive-mcp.addons.metrics :as addon-metrics]
+            [hive-mcp.tools.composite.moved :as moved]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -124,14 +125,32 @@
         (when (map? h) (seq (map name (keys h))))
         (seq (registered-tool-verbs cmd)))))
 
+(defn- registered-root-names
+  "The ::cli/root-oracle port: {:names #{..} :hidden #{..}} over the advertised
+   tool surface, :hidden being the roots carrying :deprecated (the visibility
+   gate's mark, so tools/list leaves them out). Resolved SOFTLY because
+   hive-mcp.tools.registry requires this namespace; read only when an
+   unknown-command error is being built."
+  []
+  (let [tools (or (some-> (requiring-resolve 'hive-mcp.tools.registry/advertised-tool-defs)
+                          (apply []))
+                  [])
+        named (filter (comp string? :name) tools)]
+    {:names  (into #{} (map :name) named)
+     :hidden (into #{} (comp (filter :deprecated) (map :name)) named)}))
+
 (defn- with-contribution-meta
-  "HANDLERS with ADDON-CMDS' root keys recorded as ::cli/opaque-roots and the
-   ::cli/verb-oracle port bound to TOOL-NAME's contributions."
+  "HANDLERS with ADDON-CMDS' root keys recorded as ::cli/opaque-roots, the
+   ::cli/verb-oracle port bound to TOOL-NAME's contributions, TOOL-NAME as
+   ::cli/tool-name and the ::cli/root-oracle port naming the registered root
+   tools (an unknown `memory cloak help` is routed to the `cloak` root)."
   [handlers tool-name addon-cmds]
   (vary-meta handlers
              #(-> %
                   (update ::cli/opaque-roots (fnil into #{}) (keys addon-cmds))
-                  (assoc ::cli/verb-oracle (partial contributed-verbs tool-name)))))
+                  (assoc ::cli/verb-oracle (partial contributed-verbs tool-name)
+                         ::cli/tool-name tool-name
+                         ::cli/root-oracle registered-root-names))))
 
 (defn build-composite-handler
   "Build a handler fn that dispatches to contributed addon handlers only.
@@ -277,18 +296,55 @@
           (str (subs s 0 (dec max-summary-chars)) "…")
           s)))))
 
+(def ^:private deprecated-summary-prefix
+  "The summary prefix that marks a contribution deprecated when its spec
+   carries no :deprecated flag. hive-cloak's legacy memory spellings
+   (seal-status, enclave-on, work-handoff-*, ...) declare themselves this way
+   and nothing else, so the prefix is the only signal readable without
+   changing that addon. Compared case-insensitively."
+  "deprecated:")
+
+(defn deprecated-contribution?
+  "True when contribution SPEC is deprecated: it routes, but is not advertised.
+   The structured :deprecated key wins whenever present (true, or a string
+   naming the replacement; false keeps it advertised whatever its summary
+   says); without it, a summary that starts with `Deprecated:` marks it."
+  [spec]
+  (if (contains? spec :deprecated)
+    (boolean (:deprecated spec))
+    (boolean (some-> (contribution-summary spec)
+                     str/lower-case
+                     (str/starts-with? deprecated-summary-prefix)))))
+
+(defn advertised-contributions
+  "ADDON-CMDS without the deprecated contributions (`deprecated-contribution?`):
+   the part of a tool's contributions its description and `command` enum
+   advertise. Routing reads the full set (effective-handlers), so a caller
+   still using a deprecated spelling keeps working."
+  [addon-cmds]
+  (into {} (remove (comp deprecated-contribution? val)) addon-cmds))
+
 (defn contributed-commands-text
   "ADDON-CMDS (command name -> contribution spec) as one sentence for a tool
-   description: every contributed command with its one-line purpose. nil when
-   there are none."
+   description: every ADVERTISED contributed command with its one-line purpose.
+   Deprecated contributions are left out (`advertised-contributions`): they
+   still route, but a client should not pay description bytes for spellings
+   it is told not to use. Only the root they moved to is named, one short line
+   per root (`moved/moved-commands-text`). nil when nothing is left to say."
   [addon-cmds]
-  (when (seq addon-cmds)
-    (str "Addon-contributed (`<name> help` lists a subdomain's verbs): "
-         (str/join "; " (for [[cmd spec] (sort-by key addon-cmds)]
-                          (if-let [s (contribution-summary spec)]
-                            (str cmd " - " s)
-                            (str cmd))))
-         ".")))
+  (let [advertised (advertised-contributions addon-cmds)
+        sentence   (when (seq advertised)
+                     (let [s (str "Addon-contributed (`<name> help` lists a subdomain's verbs): "
+                                  (str/join "; " (for [[cmd spec] (sort-by key advertised)]
+                                                   (if-let [s (contribution-summary spec)]
+                                                     (str cmd " - " s)
+                                                     (str cmd)))))]
+                       (if (str/ends-with? s ".") s (str s "."))))
+        moved-line (moved/moved-commands-text
+                    (for [[cmd spec] addon-cmds
+                          :when (deprecated-contribution? spec)]
+                      [cmd (if (string? (:deprecated spec)) (:deprecated spec) (contribution-summary spec))]))]
+    (some->> [sentence moved-line] (remove nil?) seq (str/join " "))))
 
 (defn contributed-command-names
   "Every command string ADDON-CMDS (command name -> contribution spec) makes
@@ -333,14 +389,21 @@
 (defn build-merged-tool
   "Fold the current addon contributions to TOOL-NAME into a consolidated
    tool-def's advertised surface: every contributed command's :params joins
-   the inputSchema properties, the `command` enum — when the core declares
-   one — grows the contributed command names, and the description gains one
+   the inputSchema properties, the `command` enum (when the core declares
+   one) grows the contributed command names, and the description gains one
    line naming each contributed command with its purpose
    (`contributed-commands-text`). Verb-level contributions
    (hive-mcp.dispatch.verbs) fold in too, through `fold-verb-contributions`.
    The commands a contribution declares :default-async join
    :default-async-commands (`default-async/fold`).
    Returns the tool-def unchanged when nothing has been contributed.
+
+   Deprecated contributions (`deprecated-contribution?`) are left out of the
+   DESCRIPTION only. They stay in the `command` enum and keep their :params:
+   a client that validates arguments against the schema, or constrains its
+   decoding to the enum, would otherwise refuse an old spelling before it
+   ever reached routing, and a deprecated alias exists precisely so that
+   spelling keeps working until it is removed.
 
    Routing already folded contributions in (effective-handlers); this is the
    SCHEMA half. The MCP layer forwards only the params a tool declares, so a
@@ -441,12 +504,20 @@
    #(or (nil? %) (map? %) (var? %))])
 
 (def ContributionSpec
-  "One addon command contribution: its handler and the docs it advertises."
+  "One addon command contribution: its handler and the docs it advertises.
+   :deprecated (true, or a string naming the replacement) keeps it routed but
+   leaves it out of the tool description (`deprecated-contribution?`)."
   [:map
    [:handler {:optional true} :any]
    [:summary {:optional true} [:maybe :string]]
    [:description {:optional true} [:maybe :string]]
+   [:deprecated {:optional true} [:maybe [:or :boolean :string]]]
    [:params {:optional true} [:maybe :map]]])
+
+(m/=> deprecated-contribution? [:=> [:cat [:maybe ContributionSpec]] :boolean])
+
+(m/=> advertised-contributions
+      [:=> [:cat [:maybe [:map-of :string ContributionSpec]]] [:map-of :string ContributionSpec]])
 
 (m/=> lazy-resolve-handlers [:=> [:cat :symbol] :map])
 

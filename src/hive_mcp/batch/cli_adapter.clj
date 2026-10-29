@@ -52,6 +52,31 @@
     {:type "text"
      :text (json/write-str payload)}))
 
+(defn- dry-run-requested?
+  "True when the outer call asks for a plan only: `dry_run` (the Batchable
+   surface's spelling) or `dry-run`, as a boolean or its string form."
+  [params]
+  (boolean (some #(contains? #{true "true"} (get params %)) [:dry_run :dry-run])))
+
+(defn- dry-run->cli-envelope
+  "Render a Batchable dry-run plan `{:waves {n {:ops [...]}} :summary}` (or a
+   refused plan with :errors) as the CLI text envelope: what WOULD run, per
+   op, with nothing executed."
+  [cmd-name {:keys [waves summary errors]}]
+  (let [planned (vec (mapcat (fn [[wave {:keys [ops]}]]
+                               (mapv #(assoc (dissoc % :tool) :wave wave :command cmd-name)
+                                     ops))
+                             (into (sorted-map) (or waves {}))))]
+    {:type "text"
+     :text (json/write-str
+            (cond-> {:dry_run true
+                     :executed false
+                     :planned planned
+                     :summary (select-keys summary [:total :waves])
+                     :note (str "dry run: nothing was executed; drop dry_run to run batch-"
+                                cmd-name)}
+              (seq errors) (assoc :errors errors)))}))
+
 (def CliEnvelope
   "What a CLI batch handler answers: the legacy text envelope, or an MCP
    error when no operations were given."
@@ -82,13 +107,19 @@
                    the underlying runner expects a nested path
                    (e.g. `\"agent spawn\"` for `swarm.batch/run-batch`).
      `:shared-params?`  when true, the params of the outer call (minus
-                   `:operations`, `:parallel` and `:command`) are merged under
-                   each op, the op's own params winning on conflict — what
-                   `make-batch-handler` has always done. Default false, which
-                   hands the runner the ops exactly as given.
+                   `:operations`, `:parallel`, `:command` and the dry-run
+                   flag) are merged under each op, the op's own params
+                   winning on conflict — what `make-batch-handler` has
+                   always done. Default false, which hands the runner the
+                   ops exactly as given.
 
    Per-op `:command` is forced to `(name cmd-kw)` so callers cannot
-   smuggle a different command in via the operation map."
+   smuggle a different command in via the operation map.
+
+   `dry_run` (or `dry-run`) true on the outer call is honoured: the runner is
+   asked for its plan (`{:dry-run? true}`) and nothing executes. It used to be
+   merged under every op as an ordinary param, so `agent batch-spawn
+   dry_run:true` spawned real lings (friction 20261025163809-2b150fff)."
   [{:keys [run-fn cmd-kw tool-name shared-params?]}]
   (assert (ifn? run-fn)         ":run-fn must be a fn")
   (assert (keyword? cmd-kw)     ":cmd-kw must be a keyword")
@@ -99,12 +130,16 @@
         (mcp-error
          (str "operations is required (array of {command, ...} objects) for batch-"
               cmd-name))
-        (let [shared (when shared-params?
-                       (dissoc params :operations :parallel :command))
-              ops    (mapv (fn [op]
-                             (assoc (merge shared op) :tool op-tool :command cmd-name))
-                           operations)]
-          (batchable-result->cli-envelope cmd-name (run-fn ops {})))))))
+        (let [dry-run? (dry-run-requested? params)
+              shared   (when shared-params?
+                         (dissoc params :operations :parallel :command
+                                 :dry_run :dry-run))
+              ops      (mapv (fn [op]
+                               (assoc (merge shared op) :tool op-tool :command cmd-name))
+                             operations)]
+          (if dry-run?
+            (dry-run->cli-envelope cmd-name (run-fn ops {:dry-run? true}))
+            (batchable-result->cli-envelope cmd-name (run-fn ops {}))))))))
 
 (m/=> cli-batch-handler
       [:=> [:cat HandlerSpec]

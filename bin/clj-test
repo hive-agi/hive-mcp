@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# bin/clj-test — `clojure` for cold test JVMs, ranked to die before hive-mcp.
+#
+#   bin/clj-test -M:test-unit
+#   bin/clj-test -M:test-unit:test-focus -n hive-mcp.foo-test
+#   bin/clj-test -Sdeps "$(cat local.deps.edn)" -M:test:test-swarm
+#
+# Every argument goes to `clojure` unchanged. The only difference from calling
+# `clojure` directly is the OOM standing of the JVM it starts:
+#
+#   * kernel OOM killer: this shell raises its own oom_score_adj (inherited by
+#     the JVM) to HIVE_TEST_OOM_SCORE_ADJ, default 800, the same figure
+#     bin/test-sandboxed.sh uses. Raising needs no privilege. 0 = leave as is.
+#   * systemd-oomd: the JVM runs in its own user scope with
+#     ManagedOOMPreference=HIVE_TEST_OOMD_PREFERENCE (default none), so a run
+#     started from inside hive-mcp does not sit in the server's avoid scope.
+#     "off" keeps it in the caller's cgroup.
+#
+# Why: on 2026-09-16 two sequential cold `clojure -M:test-unit` JVMs pushed the
+# host into a global OOM; the kernel killed qdrant (adj 200), chrome (adj 300)
+# and then the serving hive-mcp (adj 0), because the test JVM also sat at 0.
+# A plain `clojure -M:test*` still runs at the caller's adj (no alias can set
+# it); use this wrapper, or bin/test-sandboxed.sh, on a shared host.
+# Kanban 20260821160108-67943c99.
+#
+# Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/oom-policy.sh
+source "$SCRIPT_DIR/oom-policy.sh"
+
+adj="${HIVE_TEST_OOM_SCORE_ADJ:-800}"
+[[ "$adj" == 0 ]] || oom_adj_set "$adj"
+
+CLOJURE="${HIVE_CLJ_TEST_CLOJURE:-clojure}"   # override for tests of this wrapper
+pref="${HIVE_TEST_OOMD_PREFERENCE:-none}"
+if [[ "$pref" == "off" ]]; then
+  exec "$CLOJURE" "$@"
+fi
+oom_run_scoped hive-mcp-test "$pref" "$CLOJURE" "$@"

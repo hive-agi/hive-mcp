@@ -304,6 +304,48 @@
     (is (str/includes? text "Did you mean: carto multi, kanban multi?"))
     (is (not (str/includes? text "clojure multi")))))
 
+(deftest unknown-command-routes-to-a-root-tool-of-its-own
+  (let [roots    {:names #{"memory" "cloak" "kg"} :hidden #{"cloak"}}
+        handlers (with-meta {:add (fn [_] :add) :search (fn [_] :search)}
+                   {::cli/tool-name   "memory"
+                    ::cli/root-oracle (constantly roots)})
+        call     #(:text ((cli/make-cli-handler handlers) {:command %}))]
+    (testing "a visible root named by the first word leads with the route"
+      (let [text (call "kg traverse")]
+        (is (str/starts-with?
+             text
+             (str "`kg` is a tool of its own, not a `memory` command: "
+                  "call the `kg` tool with command=\"traverse\". Unknown command: kg traverse.")))
+        (is (not (str/includes? text "hidden from tools/list")))
+        (is (str/includes? text "Valid: add, search"))))
+
+    (testing "a hidden root also says how to list it"
+      (is (= (str "`cloak` is a tool of its own, not a `memory` command: "
+                  "call the `cloak` tool with command=\"help\" (hidden from tools/list "
+                  "on this install; add \"cloak\" to [:tool-roots :visible] in config.edn "
+                  "to list it). Unknown command: cloak help. Valid: add, search")
+             (call "cloak help"))))
+
+    (testing "an ordinary typo gets no route line"
+      (let [text (call "serch")]
+        (is (str/starts-with? text "Unknown command: serch."))
+        (is (not (str/includes? text "tool of its own")))))
+
+    (testing "the tool is never routed to itself, and a throwing port is silent"
+      (is (str/starts-with? (call "memory nope") "Unknown command"))
+      (let [boom (vary-meta handlers assoc ::cli/root-oracle
+                            (fn [] (throw (ex-info "boom" {}))))]
+        (is (str/starts-with? (:text ((cli/make-cli-handler boom) {:command "cloak help"}))
+                              "Unknown command: cloak help."))))))
+
+(deftest root-route-hint-is-pure
+  (let [roots {:names #{"cloak" "kg"} :hidden #{}}]
+    (is (= "`cloak` is a tool of its own, not a `memory` command: call the `cloak` tool with command=\"help\"."
+           (cli/root-route-hint "cloak" "memory" roots)))
+    (is (nil? (cli/root-route-hint "serch" "memory" roots)))
+    (is (nil? (cli/root-route-hint nil "memory" roots)))
+    (is (nil? (cli/root-route-hint "kg x" "kg" roots)))))
+
 (deftest unknown-command-with-no-owner-lists-only-valid-commands
   (testing "the reported defect: undeclared opaque roots are not offered"
     (let [handlers (with-meta {:analysis      {:_handler (fn [_] :a)}

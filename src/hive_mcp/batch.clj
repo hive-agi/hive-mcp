@@ -288,10 +288,10 @@
 ;; =============================================================================
 
 (defn- execute-wave
-  "Execute all operations in a single wave. Delegates to extension :bx/j.
-   Noop: sequential execution via mapv."
+  "Execute all operations in a single wave. Delegates to extension :bx/j
+   (noop: mapv); each op runs under the calling thread's bindings."
   [resolve-handler wave-ops]
-  (let [exec-one (partial execute-op resolve-handler)]
+  (let [exec-one (bound-fn* (partial execute-op resolve-handler))]
     (if-let [f (ext/get-extension :bx/j)]
       (f wave-ops exec-one)
       (mapv exec-one wave-ops))))

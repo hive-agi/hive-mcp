@@ -72,3 +72,33 @@
   (let [p (parsed (call {:command "set" :key "embeddings.ollama.host" :value "http://h:1"}))]
     (is (= "http://h:1" (:value p)))
     (is (= "http://h:1" (:raw-input p)))))
+
+(deftest validate-section-and-project-route-redact-secrets
+  (let [project (requiring-resolve 'hive-mcp.tools.consolidated.project/handle-project)]
+    (doseq [[label f] [["config validate key=secrets"
+                        #(config-tool/handle-config {:command "validate" :key "secrets"})]
+                       ["config validate key=services"
+                        #(config-tool/handle-config {:command "validate" :key "services"})]
+                       ["project config validate"
+                        #(project {:command "config validate"})]
+                       ["project config get secrets"
+                        #(project {:command "config get" :key "secrets"})]
+                       ["project config list"
+                        #(project {:command "config list"})]]]
+      (testing label
+        (let [r (binding [config/*config-source*
+                          (src/atom-source (atom (fixture-config)) merge/default-config)]
+                  (f))]
+          (is (string? (:text r)))
+          (is (nil? (leaked-substring (:text r)))))))))
+
+(deftest validate-errors-redact-a-malformed-secrets-section
+  (testing ":secrets that fails the schema echoes no secret in :errors or :humanized"
+    (let [bad (assoc (fixture-config) :secrets [fake-api-key fake-token])]
+      (doseq [params [{:command "validate"} {:command "validate" :key "secrets"}]]
+        (testing (pr-str params)
+          (let [r (binding [config/*config-source*
+                            (src/atom-source (atom bad) merge/default-config)]
+                    (config-tool/handle-config params))]
+            (is (string? (:text r)))
+            (is (nil? (leaked-substring (:text r))))))))))

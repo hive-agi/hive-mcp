@@ -116,7 +116,7 @@
    key and drain the whole todo board. :plan-scope = a plan's own cards bound
    the run (and :require-plan-scope? / :board-wide? are honoured);
    :human-guard = human-only cards are never dispatched."
-  #{:task-ids :plan-scope :human-guard})
+  #{:task-ids :plan-scope :human-guard :rules})
 
 ;; =============================================================================
 ;; Schemas
@@ -235,9 +235,12 @@
    completion publishes on hive.v1.wave.<run-id>.completed.<task-id>.
    Threads :max-budget-usd so each dispatched ling carries a spend guardrail:
    this scheduler auto-advances waves on completion, so an uncapped ling here
-   is an unbounded spend loop with no operator in it."
+   is an unbounded spend loop with no operator in it.
+   Threads :spawned-by, the caller `start-dag!` captured: later waves spawn
+   on an event thread with no request in flight, so the plan builder could
+   not read the caller from the request context there."
   [task-id title role {:keys [cwd presets project-id prefer-lightweight? run-id max-budget-usd
-                              description parent]
+                              description parent rules spawned-by]
                        :or {prefer-lightweight? true}}]
   (let [safe-title (-> (or title "task")
                        str/lower-case
@@ -245,7 +248,9 @@
         truncated (subs safe-title 0 (min 30 (count safe-title)))
         ling-id (str "swarm-dag-" truncated "-" (System/currentTimeMillis))
         role* (normalize-role role)
-        task (str title
+        task (str (when-not (str/blank? rules)
+                    (str "Rules for every card of this plan (follow them):\n" rules "\n\n"))
+                  title
                   "\n\nKanban card " task-id ": read it in full with"
                   " `project kanban get id=" task-id "` before starting."
                   (when-not (str/blank? description) (str "\n\n" description)))]
@@ -258,6 +263,8 @@
                                                     :task task}
                                              parent
                                              (assoc :parent parent)
+                                             (string? spawned-by)
+                                             (assoc :spawned-by spawned-by)
                                              run-id
                                              (assoc :run-id run-id)
                                              (and max-budget-usd (pos? max-budget-usd))
@@ -354,12 +361,17 @@
 
 (defn ling-outcome
   "Pure: :succeeded or :failed for a ling event of EVENT-TYPE carrying DATA.
-   An explicit `:result \"failure\"` in the data fails any event; an unknown
-   event type reads as success, as the completed channel always did."
+   An explicit `:result \"failure\"` fails any event, and so does a `:suspect`
+   verdict (hive-agent's :no-deliverable or :ended-blocked): a run that ended
+   without delivering must not unblock its card's dependents (friction
+   20261021123123-70298deb). An unknown event type reads as success."
   [event-type data]
-  (if (= "failure" (str (:result data)))
-    :failed
-    (get-in ling-event-outcomes [event-type :outcome] :succeeded)))
+  (let [suspect (:suspect data)]
+    (if (or (= "failure" (str (:result data)))
+            (and (some? suspect)
+                 (not (str/blank? (if (keyword? suspect) (name suspect) (str suspect))))))
+      :failed
+      (get-in ling-event-outcomes [event-type :outcome] :succeeded))))
 
 (m/=> ling-outcome [:=> [:cat :any [:maybe :map]] LingOutcome])
 
@@ -620,7 +632,13 @@
                           :project-id effective-project-id
                           :run-id run-id
                           :max-budget-usd effective-budget
-                          :task-ids task-ids}})
+                          :task-ids task-ids
+                          :rules (:rules opts)
+                          ;; Captured now, inside the start request: later
+                          ;; waves spawn on the event listener thread.
+                          :spawned-by (if (string? (:spawned-by opts))
+                                        (:spawned-by opts)
+                                        (ling/request-spawner))}})
 
     ;; Start event listener for completion detection
     (start-event-listener!)

@@ -9,12 +9,12 @@
    Op keys: [:store/<kind> <backend> <method>] and [:embed/<provider> <op>],
    each element a keyword derived from a class name or a protocol method.
 
-   A metered store is a reify built once per [kind, target class]: it
-   implements exactly the port protocols the target satisfies, forwards every
-   method and records it. It exposes only those protocols (plus
-   hive-spi IStoreDecorator for memory stores): keyword lookups and
-   `instance?` checks on the concrete record do not see through it. `unwrap`
-   returns the target."
+   A metered store is a reify cached per kind, target class and supported
+   protocol interfaces: it implements exactly the port protocols the target
+   satisfies, forwards every method and records it. It exposes only those
+   protocols (plus hive-spi IStoreDecorator for memory stores): keyword lookups
+   and `instance?` checks on the concrete record do not see through it.
+   `unwrap` returns the target."
   (:require [clojure.string :as str]
             [hive-spi.memory.decorate :as decorate]
             [hive-spi.memory.ports]
@@ -146,8 +146,12 @@
        (sort-by #(str (:var %)))))
 
 (def ^:private kind->protocols
-  {:memory (delay (protocols-in 'hive-spi.memory.ports))
-   :kg     (delay (protocols-in 'hive-spi.kg.protocol))})
+  {:memory (delay
+             (cond-> (vec (protocols-in 'hive-spi.memory.ports))
+               (try (requiring-resolve 'hive-spi.memory.receipt/IMemoryStoreAddReceipt)
+                    (catch java.io.FileNotFoundException _older-spi nil))
+               (into (protocols-in 'hive-spi.memory.receipt))))
+   :kg (delay (protocols-in 'hive-spi.kg.protocol))})
 
 (defn- var-sym [^clojure.lang.Var v]
   (symbol (str (.-ns v)) (str (.-sym v))))
@@ -185,16 +189,19 @@
                         protocols))))))))
 
 (def ^:private ^ConcurrentHashMap ctors
-  "Compiled wrapper constructors by [kind target-class]; rebuilt on reload so
-   wrappers implement the current IMetered."
+  "Compiled wrapper constructors by [kind target-class supported-interfaces];
+   rebuilt on reload so wrappers implement the current IMetered."
   (ConcurrentHashMap.))
 
 (defn- ctor-for
   [kind protocols area decorator? target]
-  (let [ck [kind (class target)]]
+  ;; extend replaces a protocol Var's root; cached maps miss later extensions.
+  (let [ps (->> protocols
+                (map #(if-let [v (:var %)] @v %))
+                (filterv #(satisfies? % target)))
+        ck [kind (class target) (mapv :on-interface ps)]]
     (or (.get ctors ck)
-        (let [ps (filterv #(satisfies? % target) protocols)
-              c  (build-ctor area ps decorator?)]
+        (let [c (build-ctor area ps decorator?)]
           (.putIfAbsent ctors ck c)
           (.get ctors ck)))))
 
