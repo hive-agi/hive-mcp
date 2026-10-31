@@ -1,0 +1,9 @@
+{:fresh
+ [[:mkdir "/h/.config/systemd/user"]
+  [:write "/h/.config/systemd/user/hive-mcp.service"]
+  [:run nil]],
+ :stale
+ [[:mkdir "/h/.config/systemd/user"]
+  [:write "/h/.config/systemd/user/hive-mcp.service"]
+  [:run nil]],
+ :unchanged []}
