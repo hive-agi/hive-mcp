@@ -18,7 +18,8 @@
             [hive-mcp.tools.catchup.format :as fmt]
             [taoensso.timbre :as log]
             [malli.core :as m]
-            [hive-mcp.crystal.core :as core]))
+            [hive-mcp.crystal.core :as core]
+            [hive-mcp.crystal.chain :as chain]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -37,6 +38,9 @@
         a synthesis that throws, times out or never returns still leaves the
         wrap; then `fan/synthesize-wraps` runs and `persist/upgrade-wraps!`
         rewrites each pid's mechanical entry in place (same id, no duplicate).
+     4. `chain/chain-wraps!` links each persisted summary to the previous
+        summary of its project with a :supersedes KG edge, when a store and
+        the KG are present. A chain failure never fails the wrap.
      Every entry carries an explicit `scope:project:<pid>` (or
      `scope:multi-project`) tag.
 
@@ -47,7 +51,8 @@
       :persisted <count>
       :failed    <count>
       :wraps     [{:pid :project-id :id :success? :error?} ...]
-      :synthesis <\"upgraded\" | \"failed: <msg>\">   ; only when delegated}"
+      :synthesis <\"upgraded\" | \"failed: <msg>\">   ; only when delegated
+      :chained   {:linked <count> :failed <count>}   ; only when chained}"
   [args]
   (let [directory (ctx/resolve-caller-directory args)
         agent-id (:agent_id args)]
@@ -65,12 +70,15 @@
                     [(persist/upgrade-wraps! mechanical (fan/synthesize-wraps hbs)) "upgraded"]
                     (catch Throwable t
                       (log/warn t "native-wrap: synthesis failed, mechanical wrap kept")
-                      [mechanical (str "failed: " (ex-message t))]))))]
+                      [mechanical (str "failed: " (ex-message t))]))))
+              chained (when-let [c (chain/store-chain)]
+                        (chain/chain-wraps! c persist-result))]
           (log/info "native-wrap: completed"
                     {:total     (:total persist-result)
                      :persisted (:persisted persist-result)
                      :failed    (:failed persist-result)
-                     :synthesis synthesis})
+                     :synthesis synthesis
+                     :chained   (:linked chained)})
           {:type "text"
            :text (json/write-str
                   (cond-> {:session   (:session hbs)
@@ -79,7 +87,8 @@
                            :persisted (:persisted persist-result)
                            :failed    (:failed persist-result)
                            :wraps     (:results persist-result)}
-                    synthesis (assoc :synthesis synthesis)))})
+                    synthesis (assoc :synthesis synthesis)
+                    chained   (assoc :chained (select-keys chained [:linked :failed]))))})
         (catch Exception e
           (log/error e "native-wrap failed")
           {:type "text"
