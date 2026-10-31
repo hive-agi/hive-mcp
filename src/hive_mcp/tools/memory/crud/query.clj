@@ -94,6 +94,19 @@
   [sf include-descendants?]
   (domain/scope->project-ids sf include-descendants?))
 
+(defn store-read-failure
+  "The failure a store answered to a read, or nil when it answered rows.
+
+   A row sequence (empty included) and nil are answers. Anything else is a
+   store that could not look: a timed-out or partial read (hive-milvus
+   `{:error :milvus/read-incomplete ...}`) or the resilience wrapper's
+   `{:success? false ...}` failure value. Filtering such a map as rows drops
+   every key and answers `[]`, which a caller cannot tell from a real empty
+   result. Pure."
+  [answer]
+  (when-not (or (nil? answer) (sequential? answer))
+    answer))
+
 (defn- fetch-entries
   "Fetch entries from the IMemoryStore with over-fetch factor.
 
@@ -221,7 +234,9 @@
   "Query project memory by type with scope, temporal, and verbosity filtering.
    `created_after` / `updated_after` are ISO-8601 strings — entries whose
    timestamp is strictly greater survive (pushed down to the store filter
-   AND re-checked client-side). Results sort newest-first."
+   AND re-checked client-side). Results sort newest-first.
+   A store that answers a failure instead of rows (`store-read-failure`)
+   is an error response naming it, never an empty result."
   [{:keys [type tags exclude_tags limit duration scope directory include_descendants verbosity query
            created_after updated_after]}]
   (let [directory (query-directory directory)
@@ -260,15 +275,21 @@
                     entries     (fetch-entries type project-ids tags limit-val include-descendants?
                                                :exclude-tags exclude-tags
                                                :created-after created_after
-                                               :updated-after updated_after)
-                    filtered    (apply-scope-filter entries sf include-descendants?)
-                    results     (apply-post-filters filtered
-                                                    {:tags tags
-                                                     :duration duration
-                                                     :created-after created_after
-                                                     :updated-after updated_after
-                                                     :limit-val limit-val})]
-                (format-query-results results project-id metadata-only?))))))
+                                               :updated-after updated_after)]
+                (if-let [failure (store-read-failure entries)]
+                  (do (log/warn "mcp-memory-query: store answered a failure, not rows"
+                                {:type type :tags tags :error (:error failure)})
+                      (mcp-error (str "memory query: the store could not answer this read ("
+                                      (pr-str (or (:error failure) (:errors failure) failure))
+                                      "); this is not an empty result. Retry, or narrow the query.")))
+                  (let [filtered (apply-scope-filter entries sf include-descendants?)
+                        results  (apply-post-filters filtered
+                                                     {:tags tags
+                                                      :duration duration
+                                                      :created-after created_after
+                                                      :updated-after updated_after
+                                                      :limit-val limit-val})]
+                    (format-query-results results project-id metadata-only?))))))))
       (catch clojure.lang.ExceptionInfo e
         (if (= :coercion-error (:type (ex-data e)))
           (mcp-error (.getMessage e))
@@ -290,6 +311,8 @@
   [:map
    [:tags {:optional true} [:maybe [:sequential :string]]]
    [:project-id {:optional true} [:maybe :string]]])
+
+(m/=> store-read-failure [:=> [:cat :any] [:maybe :any]])
 
 (m/=> entry-after? [:=> [:cat [:maybe :map] :keyword :any] :boolean])
 
