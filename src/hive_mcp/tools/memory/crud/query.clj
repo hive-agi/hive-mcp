@@ -168,6 +168,35 @@
   (and (string? tag)
        (clojure.string/starts-with? tag "scope:project:")))
 
+(def project-id-tag-prefix
+  "Prefix of a query tag that names an entry's :project-id field rather than
+   a stored tag: `project-id:topic:microservices` matches entries whose
+   :project-id is `topic:microservices`."
+  "project-id:")
+
+(defn split-project-id-tags
+  "Partition query `tags` into stored-tag predicates and :project-id
+   predicates. Returns {:tags [...] :project-ids [...]}; :project-ids holds
+   the ids named by `project-id:<id>` tags (blank ids dropped), in order."
+  [tags]
+  (let [pid-tag?  #(and (string? %) (str/starts-with? % project-id-tag-prefix))
+        ids       (into [] (comp (filter pid-tag?)
+                                 (map #(subs % (count project-id-tag-prefix)))
+                                 (remove str/blank?)
+                                 (distinct))
+                        tags)]
+    {:tags        (into [] (remove pid-tag?) tags)
+     :project-ids ids}))
+
+(defn apply-project-id-filter
+  "Keep entries whose :project-id is one of `project-ids`; an empty or nil
+   `project-ids` keeps every entry."
+  [project-ids entries]
+  (if (seq project-ids)
+    (let [wanted (set project-ids)]
+      (filter #(contains? wanted (:project-id %)) entries))
+    entries))
+
 (defn- resolve-scope
   "Honor a caller-supplied :tags scope-predicate by skipping pwd auto-derivation.
 
@@ -221,7 +250,9 @@
   "Query project memory by type with scope, temporal, and verbosity filtering.
    `created_after` / `updated_after` are ISO-8601 strings — entries whose
    timestamp is strictly greater survive (pushed down to the store filter
-   AND re-checked client-side). Results sort newest-first."
+   AND re-checked client-side). Results sort newest-first.
+   A `project-id:<id>` tag matches the entry's :project-id field instead of a
+   stored tag; with no explicit scope it replaces pwd auto-scoping."
   [{:keys [type tags exclude_tags limit duration scope directory include_descendants verbosity query
            created_after updated_after]}]
   (let [directory (query-directory directory)
@@ -229,10 +260,13 @@
                                (boolean include_descendants)
                                true)
         metadata-only? (not= verbosity "full")
-        tags         (coerce-vec! tags :tags [])
+        raw-tags     (coerce-vec! tags :tags [])
+        {tags :tags pid-filter :project-ids} (split-project-id-tags raw-tags)
         exclude-tags (coerce-vec! exclude_tags :exclude_tags [])
         raw-scope    scope
-        scope        (resolve-scope scope tags)]
+        scope        (if (and (nil? scope) (seq pid-filter))
+                       "all"
+                       (resolve-scope scope tags))]
     (log/info "mcp-memory-query:" type "scope:" scope "directory:" directory
               "include_descendants:" include-descendants? "verbosity:" (or verbosity "metadata"))
     (try
@@ -241,7 +275,7 @@
         (mcp-error (str "memory query is structured filtering and does not accept :query text. "
                         "Use command=search with :query for semantic retrieval."))
 
-        (unconstrained? type tags exclude-tags raw-scope duration created_after updated_after)
+        (unconstrained? type raw-tags exclude-tags raw-scope duration created_after updated_after)
         (mcp-error (str "memory query: no filter given. Provide :type "
                         "(or narrow with :tags / :exclude_tags / :scope / :duration / "
                         ":created_after / :updated_after) — an unfiltered query would "
@@ -256,12 +290,15 @@
             (with-store
               (let [project-id  (scope/get-current-project-id directory)
                     sf          (domain/parse-scope scope project-id)
-                    project-ids (resolve-project-ids-for-db sf include-descendants?)
+                    project-ids (if (seq pid-filter)
+                                  pid-filter
+                                  (resolve-project-ids-for-db sf include-descendants?))
                     entries     (fetch-entries type project-ids tags limit-val include-descendants?
                                                :exclude-tags exclude-tags
                                                :created-after created_after
                                                :updated-after updated_after)
-                    filtered    (apply-scope-filter entries sf include-descendants?)
+                    filtered    (->> (apply-scope-filter entries sf include-descendants?)
+                                     (apply-project-id-filter pid-filter))
                     results     (apply-post-filters filtered
                                                     {:tags tags
                                                      :duration duration
@@ -290,6 +327,14 @@
   [:map
    [:tags {:optional true} [:maybe [:sequential :string]]]
    [:project-id {:optional true} [:maybe :string]]])
+
+(m/=> split-project-id-tags
+  [:=> [:cat [:maybe [:sequential :any]]]
+   [:map [:tags [:vector :any]] [:project-ids [:vector :string]]]])
+
+(m/=> apply-project-id-filter
+  [:=> [:cat [:maybe [:sequential :string]] [:sequential ScopedEntry]]
+   [:sequential ScopedEntry]])
 
 (m/=> entry-after? [:=> [:cat [:maybe :map] :keyword :any] :boolean])
 
