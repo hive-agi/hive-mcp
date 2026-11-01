@@ -17,7 +17,8 @@
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
             [clojure.string :as str]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.protocols.memory-read :as mread]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -102,10 +103,14 @@
    `{:error :milvus/read-incomplete ...}`) or the resilience wrapper's
    `{:success? false ...}` failure value. Filtering such a map as rows drops
    every key and answers `[]`, which a caller cannot tell from a real empty
-   result. Pure."
+   result. Pure.
+   An empty vector the memory port degraded from such a failure
+   (`hive-mcp.protocols.memory-read/incomplete` metadata) is a failure too."
   [answer]
-  (when-not (or (nil? answer) (sequential? answer))
-    answer))
+  (cond
+    (and (sequential? answer) (mread/incomplete answer)) (mread/incomplete answer)
+    (or (nil? answer) (sequential? answer))              nil
+    :else                                                answer))
 
 (defn- fetch-entries
   "Fetch entries from the IMemoryStore with over-fetch factor.

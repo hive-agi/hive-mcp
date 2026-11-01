@@ -10,7 +10,8 @@
             [clojure.test.check.generators :as gen]
             [hive-test.trifecta :refer [deftrifecta]]
             [hive-mcp.protocols.memory :as mem-proto]
-            [hive-mcp.tools.memory.crud.query :as q]))
+            [hive-mcp.tools.memory.crud.query :as q]
+            [hive-mcp.protocols.memory-read :as mread]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -80,3 +81,11 @@
     (let [resp (query-against [])]
       (is (not (:isError resp)))
       (is (= [] (json/read-str (:text resp)))))))
+
+(deftest port-degraded-read-is-still-a-failure
+  (testing "an empty vector the memory port degraded from a failure is a failure"
+    (let [degraded (mread/read-answer :query-entries {:error :milvus/read-incomplete :failed ["c"]})]
+      (is (= :milvus/read-incomplete (:error (q/store-read-failure degraded))))
+      (is (true? (:isError (query-against degraded))))))
+  (testing "a plain empty vector is not"
+    (is (nil? (q/store-read-failure (with-meta [] {}))))))
