@@ -86,11 +86,34 @@
         (mcp-json [(fmt/entry->metadata entry)])
         (mcp-error (str "Entry not found: " id))))))
 
+(defn- in-kanban-store?
+  "True when ID resolves in the dedicated :kanban store slot. Best-effort:
+   an unregistered slot or a failing read answers false."
+  [id]
+  (boolean
+   (when-let [store (get (mem-proto/registered-stores) :kanban)]
+     (try (some? (mem-proto/get-entry store id))
+          (catch Throwable _ false)))))
+
+(defn missing-payload
+  "Pure: the :missing part of a batch-get answer. MISSING ids absent from
+   memory; IN-KANBAN the subset the kanban store holds, reported with the
+   command that reads them."
+  [missing in-kanban]
+  (let [in-kanban (filterv (set in-kanban) missing)
+        absent    (filterv (complement (set in-kanban)) missing)]
+    (cond-> {}
+      (seq absent)    (assoc :missing absent)
+      (seq in-kanban) (assoc :in_kanban in-kanban
+                             :kanban_hint (str "These ids are kanban cards, not memory entries; "
+                                               "read them with `project kanban get` (task_id=<id>).")))))
+
 (defn handle-batch-get
   "Get multiple memory entries by IDs in a single call with KG edges.
    Each store read is wrapped in `with-resilience` so a dropped transport
    on one ID triggers heal-and-retry rather than poisoning the whole batch.
-   Deferred entries (still in the reembed outbox) resolve too."
+   Deferred entries (still in the reembed outbox) resolve too. A missing id
+   the kanban store holds is reported under :in_kanban (`missing-payload`)."
   [{:keys [ids]}]
   (if (or (nil? ids) (empty? ids))
     (mcp-error "ids is required (array of memory entry ID strings)")
@@ -112,9 +135,12 @@
                               {:error "Entry not found" :id id}))
                           ids)
             found   (filterv #(not (:error %)) results)
-            missing (filterv :error results)]
-        (mcp-json (cond-> {:entries found :count (count found)}
-                    (seq missing) (assoc :missing (mapv :id missing))))))))
+            missing (mapv :id (filterv :error results))]
+        (mcp-json (merge {:entries found :count (count found)}
+                         (when (seq missing)
+                           (missing-payload missing (filterv in-kanban-store? missing)))))))))
+
+(m/=> missing-payload [:=> [:cat [:sequential :string] [:sequential :string]] :map])
 
 (defn handle-check-duplicate
   "Check if content already exists in memory.
