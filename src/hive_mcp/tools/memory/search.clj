@@ -331,6 +331,12 @@
     (let [required (set required-tags)]
       (vec (remove required default-excludes)))))
 
+(def empty-not-absence-warning
+  "Warning carried by a search that returned nothing while it dropped hits."
+  (str "count 0 is NOT evidence of absence: the store returned hits that were "
+       "dropped for missing an ID (stale or degraded index). Retry, or look the "
+       "entry up by id or tag (memory query) before concluding nothing exists."))
+
 (defn search-payload
   "Pure: the ok payload of a semantic search.
 
@@ -340,19 +346,24 @@
    (:caller) or nothing (:none). A caller can then tell an empty corpus
    from a filtered one, and knows to pass exclude_tags=[] to see the rest
    (kanban 20260728020157-1407f421).
-   :dropped-null-hits counts store and ingest hits missing an ID before ranking."
+   :dropped-null-hits counts store and ingest hits missing an ID before ranking.
+   An empty result with dropped hits carries :warning
+   (`empty-not-absence-warning`)."
   [{:keys [results query scope exclude-tags default-excludes dropped-null-hits]}]
-  (let [excluded (vec exclude-tags)]
-    {:results         results
-     :count           (count results)
-     :dropped-null-hits (or dropped-null-hits 0)
-     :query           query
-     :scope           scope
-     :excluded-tags   excluded
-     :excludes-source (cond
-                        (empty? excluded)                    :none
-                        (= (set excluded) (set default-excludes)) :default
-                        :else                                :caller)}))
+  (let [excluded (vec exclude-tags)
+        dropped  (or dropped-null-hits 0)]
+    (cond-> {:results         results
+             :count           (count results)
+             :dropped-null-hits dropped
+             :query           query
+             :scope           scope
+             :excluded-tags   excluded
+             :excludes-source (cond
+                                (empty? excluded)                    :none
+                                (= (set excluded) (set default-excludes)) :default
+                                :else                                :caller)}
+      (and (empty? results) (pos? dropped))
+      (assoc :warning empty-not-absence-warning))))
 
 ;; =============================================================================
 ;; Composite search-store* (fork-join across store + ingest)
