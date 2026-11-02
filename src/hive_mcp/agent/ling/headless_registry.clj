@@ -256,6 +256,49 @@
 
 (m/=> resolve-default-backend [:=> [:cat [:maybe :keyword]] [:maybe :keyword]])
 
+(defn backend-gap
+  "Pure. {:configured k :registered #{...}} when CONFIGURED is a concrete
+   backend keyword absent from REGISTERED; nil for nil, the :auto sentinel,
+   a non-keyword, or a registered backend."
+  [configured registered]
+  (let [registered (set registered)]
+    (when (and (keyword? configured)
+               (not (headless-defaults/auto? configured))
+               (not (contains? registered configured)))
+      {:configured configured :registered registered})))
+
+(m/=> backend-gap
+      [:=> [:cat :any [:maybe [:or [:set :keyword] [:sequential :keyword]]]]
+       [:maybe [:map [:configured :keyword] [:registered [:set :keyword]]]]])
+
+(defn missing-configured-backend
+  "`backend-gap` of the configured default backend against this process's
+   registry. An unreadable config reads as :auto."
+  []
+  (backend-gap (try (headless-defaults/default-backend)
+                    (catch Throwable _unreadable-config-reads-as-auto nil))
+               (registered-headless)))
+
+(m/=> missing-configured-backend
+      [:=> [:cat] [:maybe [:map [:configured :keyword] [:registered [:set :keyword]]]]])
+
+(defn ensure-configured-backend!
+  "Nil when a :headless spawn may resolve its backend. Throws ex-info
+   {:reason :spawn/backend-unavailable :configured :registered} when the
+   configured default backend is a concrete keyword that is not registered."
+  []
+  (when-let [{:keys [configured registered]} (missing-configured-backend)]
+    (throw (ex-info (str "Configured headless backend " configured
+                         " is not registered (registered: " (pr-str (vec (sort registered)))
+                         "). The addon that contributes it is not mounted. Remount it"
+                         " (hot reload / hot activate), or set [:headless :default-backend]"
+                         " to :auto in config.edn to accept any registered backend.")
+                    {:reason :spawn/backend-unavailable
+                     :configured configured
+                     :registered registered}))))
+
+(m/=> ensure-configured-backend! [:=> [:cat] :nil])
+
 (defn clear-registry!
   "Reset the headless registry. Intended for testing only."
   []
