@@ -243,6 +243,10 @@
        "axioms, principles and priority conventions still drain via ---MEMORY--- "
        "piggyback blocks."))
 
+(m/=> degraded-subsystems
+      [:=> [:cat [:maybe :map] [:maybe :map]]
+       [:vector [:map [:subsystem :string] [:status [:maybe :string]] [:why :string]]]])
+
 (defn build-catchup-response
   [{:keys [project-name project-id scopes git-info permeation
            axioms-meta axiom-candidates-meta
