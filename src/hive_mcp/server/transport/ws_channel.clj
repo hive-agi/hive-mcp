@@ -45,11 +45,15 @@
                                        :env "HIVE_MCP_WS_CHANNEL_PORT"
                                        :parse parse-long
                                        :default 9999)
+        host (config/get-service-value :ws-channel :host
+                                       :env "HIVE_MCP_WS_CHANNEL_HOST"
+                                       :default "127.0.0.1")
+        opts (assoc (channel-opts port) :host host)
         check-interval-ms 30000] ; Check every 30 seconds
     ;; Start initial server
     (result/rescue nil
-                   (ws-channel/start! (channel-opts port))
-                   (log/info "WebSocket channel server started on port" port))
+                   (ws-channel/start! opts)
+                   (log/info "WebSocket channel server started on" host "port" port))
     ;; Start monitoring loop
     (when-not @ws-channel-monitor
       (reset! ws-channel-monitor
@@ -62,8 +66,8 @@
                 (when-not (:running? (ws-channel/status))
                   (log/warn "WebSocket channel server died, attempting restart...")
                   (result/rescue nil
-                                 (ws-channel/start! (channel-opts port))
-                                 (log/info "WebSocket channel server restarted on port" port)))
+                                 (ws-channel/start! opts)
+                                 (log/info "WebSocket channel server restarted on" host "port" port)))
                 (recur)))
       (log/info "WebSocket channel auto-heal monitor started"))))
 
