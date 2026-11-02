@@ -6,7 +6,8 @@
             [hive-mcp.test.stub.headless-backend :as hb]
             [hive-test.isolation :as iso]
             [hive-mcp.isolation-methods]
-            [hive-mcp.agent.ling.headless-registry :as headless-registry]))
+            [hive-mcp.agent.ling.headless-registry :as headless-registry]
+            [clojure.data.json :as json]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -78,3 +79,20 @@
     (is (:isError resp))
     (is (re-find #"chat_run_id" (:text resp)))
     (is (nil? ctx))))
+
+(deftest a-resume-with-no-task-starts-instead-of-idling
+  (testing "resume {run_id, prompt} and no task: a brief is attached and the prompt rides the resume"
+    (let [b (hb/->backend :hive-agent)
+          [resp ctx] (spawn-headless b {:name "resume-prompt-only"
+                                        :resume {:run_id "run-a" :prompt "go on"}})
+          opts (some-> (hb/calls-of b :spawn!) first second)
+          body (json/read-str (:text resp) :key-fn keyword)]
+      (is (not (:isError resp)) (:text resp))
+      (is (true? (:task-attached body)))
+      (is (nil? (:warning body)))
+      (is (string? (:task opts)))
+      (is (= {:run-id "run-a" :prompt "go on"} (:resume ctx)))))
+  (testing "a bare resume with no task also starts"
+    (let [b (hb/->backend :hive-agent)
+          [resp _] (spawn-headless b {:name "resume-bare" :resume {:run_id "run-a"}})]
+      (is (true? (:task-attached (json/read-str (:text resp) :key-fn keyword)))))))
