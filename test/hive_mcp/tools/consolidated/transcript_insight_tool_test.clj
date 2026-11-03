@@ -72,6 +72,15 @@
   (is (not (:isError response)) (:text response))
   (json/read-str (:text response) :key-fn keyword))
 
+(deftest the-agent-id-the-bridge-injects-does-not-narrow-a-listing
+  (let [injected {:agent_id "coordinator:caller"}
+        agents   (fn [params]
+                   (map :agent (:transcripts (body (call (merge injected {:command "list"} params))))))]
+    (is (= ["e3-c" "ss-a" "ss-b"] (agents {})))
+    (is (= ["ss-a" "ss-b"] (agents {:parent "coordinator:s1"})))
+    (is (= ["ss-a"] (agents {:agent "ss-a"})) "an explicit agent still narrows")
+    (is (= 2 (:count (body (call (merge injected {:command "digest" :parent "coordinator:s1"}))))))))
+
 (deftest list-is-compact-newest-first-and-filtered
   (let [b (body (call {:command "list"}))]
     (is (= ["e3-c" "ss-a" "ss-b"] (map :agent (:transcripts b))))
