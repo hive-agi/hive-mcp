@@ -176,17 +176,16 @@
 
 (m/=> row-parent [:=> [:cat [:maybe [:map-of :any :any]]] [:maybe :string]])
 
-(defrecord SwarmParentIndex []
-  ;; Reads the swarm slave registry. A row restored from a snapshot whose parent
-  ;; has no row carries the parent only in :slave/parent-id.
-  ParentIndex
-  (parent-of [_ agent-id]
-    (try
-      (when-let [get-slave (requiring-resolve 'hive-mcp.swarm.datascript.queries/get-slave)]
-        (row-parent (get-slave agent-id)))
-      (catch Throwable _ nil))))
-
-(defn default-parent-index [] (->SwarmParentIndex))
+(defn default-parent-index
+  "A ParentIndex over the swarm slave registry. `parent-of` answers nil when
+   the registry or the row is absent."
+  []
+  (reify ParentIndex
+    (parent-of [_ agent-id]
+      (try
+        (when-let [get-slave (requiring-resolve 'hive-mcp.swarm.datascript.queries/get-slave)]
+          (row-parent (get-slave agent-id)))
+        (catch Throwable _ nil)))))
 
 ;; Defaults to 0, so never nil.
 (m/=> entry-turn [:=> [:cat [:maybe [:map-of :any :any]]] :some])
@@ -201,13 +200,13 @@
   [:fn {:gen/elements [(->CompositeSource [])]}
    #(instance? hive_mcp.agent.transcript_source.CompositeSource %)])
 
-(def SwarmParentIndexValue
-  "A SwarmParentIndex. Generates the (stateless) index itself."
-  [:fn {:gen/elements [(->SwarmParentIndex)]}
-   #(instance? hive_mcp.agent.transcript_source.SwarmParentIndex %)])
+(def ParentIndexValue
+  "A ParentIndex. Generates the (stateless) default index."
+  [:fn {:gen/elements [(default-parent-index)]}
+   #(satisfies? ParentIndex %)])
 
 (m/=> composite [:=> [:cat [:sequential :any]] CompositeSourceValue])
 
 (m/=> default-source [:=> [:cat] CompositeSourceValue])
 
-(m/=> default-parent-index [:=> [:cat] SwarmParentIndexValue])
+(m/=> default-parent-index [:=> [:cat] ParentIndexValue])
