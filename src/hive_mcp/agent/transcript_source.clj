@@ -166,17 +166,24 @@
 (defprotocol ParentIndex
   (parent-of [this agent-id] "The spawning coordinator/ling id of `agent-id`, or nil."))
 
+(defn row-parent
+  "Parent id of a slave registry row: :slave/parent (an id or a pulled
+   {:slave/id} map), else :slave/parent-id. nil when the row names none."
+  [row]
+  (let [p (:slave/parent row)
+        p (if (map? p) (:slave/id p) p)]
+    (if (string? p) p (:slave/parent-id row))))
+
+(m/=> row-parent [:=> [:cat [:maybe [:map-of :any :any]]] [:maybe :string]])
+
 (defrecord SwarmParentIndex []
-  ;; Reads the swarm slave registry (rows persist past a ling's death until
-  ;; the JVM restarts). nil when the registry or the row is absent.
+  ;; Reads the swarm slave registry. A row restored from a snapshot whose parent
+  ;; has no row carries the parent only in :slave/parent-id.
   ParentIndex
   (parent-of [_ agent-id]
     (try
       (when-let [get-slave (requiring-resolve 'hive-mcp.swarm.datascript.queries/get-slave)]
-        (let [p (:slave/parent (get-slave agent-id))]
-          (cond (string? p) p
-                (map? p)    (:slave/id p)
-                :else       nil)))
+        (row-parent (get-slave agent-id)))
       (catch Throwable _ nil))))
 
 (defn default-parent-index [] (->SwarmParentIndex))
