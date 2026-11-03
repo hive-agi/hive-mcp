@@ -55,6 +55,20 @@
                                      handler)]))
           commands)))
 
+(defn- late-bound
+  "LEAF of the handlers map named by SYM, at PATH, as a handler that looks itself
+   up when called. A nested map stays a map, so the tree keeps its shape. When
+   the lookup finds nothing, the handler read at load time answers."
+  [sym path leaf]
+  (if (map? leaf)
+    (into {} (map (fn [[k v]] [k (late-bound sym (conj path k) v)])) leaf)
+    (with-meta
+      (fn [& args]
+        (let [current (try (get-in (some-> (requiring-resolve sym) deref) path)
+                           (catch Throwable _ nil))]
+          (apply (or current leaf) args)))
+      (meta leaf))))
+
 (defn lazy-resolve-handlers
   "Lazily resolve a consolidated tool's `handlers` map by fully-qualified
    symbol, triggering ns load on first access (DIP).
@@ -65,11 +79,16 @@
    moving / renaming a subdomain consolidator no longer breaks compile,
    it just yields an empty handler tree at runtime.
 
+   Each leaf resolves SYM again when called (`late-bound`). The link to the
+   subdomain is invisible to a namespace reload, so a root holding the handlers
+   it read at load time would keep calling the old namespace's code after the
+   subdomain reloads.
+
    Returns the handlers tree on success, `{}` on miss. Caller merges
    into its canonical-handlers tree the same way the literal reference
    would have."
   [sym]
-  (or (try (some-> (requiring-resolve sym) deref)
+  (or (try (some->> (requiring-resolve sym) deref (late-bound sym []))
            (catch Throwable _ nil))
       {}))
 
