@@ -11,7 +11,8 @@
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
             [hive-mcp.tools.memory.crud.deferred :as deferred]
             [hive-mcp.context.request :as ctx]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.tools.memory.read-outcome :as read-outcome]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -38,10 +39,26 @@
     {:outgoing (mapv edge->json-map outgoing)
      :incoming (mapv edge->json-map incoming)}))
 
+(defn- read-entry
+  "The entry `id` as the store reads it, a deferred entry included. Answers nil
+   when absent, or the store's failure map when it could not read."
+  [store id]
+  (or (deferred/lookup id)
+      (with-resilience (mem-proto/get-entry store id))))
+
+(defn- read-failed-response
+  "The answer when `cause` stopped the read of `id`: an error that says the
+   entry may still exist, never `Entry not found`."
+  [id cause]
+  (mcp-error (str "memory read of " id " FAILED (" cause "); this is not evidence the entry is absent")))
+
 (defn handle-get-full
   "Get full content of a memory entry by ID with KG edges.
    Wraps the store read in `with-resilience` so a transient transport
    drop triggers the heal loop + retry before surfacing a not-found.
+
+   A store that could not read is reported as a failed read, not as an entry
+   or as not-found.
 
    An entry whose embed failed is answered from the durable reembed outbox
    and flagged :embedding_deferred; it cannot participate in semantic search
@@ -49,21 +66,23 @@
   [{:keys [id]}]
   (log/info "mcp-memory-get-full:" id)
   (with-store
-    (let [store (mem-proto/get-store)]
-      (if-let [entry (or (deferred/lookup id)
-                         (with-resilience (mem-proto/get-entry store id)))]
-        (let [base-result (fmt/entry->json-alist entry)
-              {:keys [outgoing incoming]}
-              (try (get-kg-edges-for-entry id)
-                   (catch Exception e
-                     (log/warn "KG edge lookup failed for" id ":" (.getMessage e))
-                     {:outgoing [] :incoming []}))
-              result (cond-> base-result
-                       (deferred/lookup id) (assoc :embedding_deferred true)
-                       (seq outgoing) (assoc :kg_outgoing outgoing)
-                       (seq incoming) (assoc :kg_incoming incoming))]
-          (mcp-json result))
-        (mcp-json {:error "Entry not found" :id id})))))
+    (let [store (mem-proto/get-store)
+          entry (read-entry store id)]
+      (if-let [cause (read-outcome/entry-read-failure entry)]
+        (read-failed-response id cause)
+        (if entry
+          (let [base-result (fmt/entry->json-alist entry)
+                {:keys [outgoing incoming]}
+                (try (get-kg-edges-for-entry id)
+                     (catch Exception e
+                       (log/warn "KG edge lookup failed for" id ":" (.getMessage e))
+                       {:outgoing [] :incoming []}))
+                result (cond-> base-result
+                         (deferred/lookup id) (assoc :embedding_deferred true)
+                         (seq outgoing) (assoc :kg_outgoing outgoing)
+                         (seq incoming) (assoc :kg_incoming incoming))]
+            (mcp-json result))
+          (mcp-json {:error "Entry not found" :id id}))))))
 
 (defn handle-get-metadata
   "Get a single entry by ID, projected to the metadata shape.
@@ -74,6 +93,7 @@
    id or fail; it must never answer with an unrelated result set.
 
    A deferred entry (embed failed, still in the reembed outbox) resolves too.
+   A store that could not read is reported as a failed read.
 
    Returns a ONE-ELEMENT array so the response keeps the metadata-listing shape."
   [{:keys [id]}]
@@ -81,10 +101,12 @@
   (if (or (not (string? id)) (str/blank? id))
     (mcp-error "memory metadata: id must be a non-empty string")
     (with-store
-      (if-let [entry (or (deferred/lookup id)
-                         (with-resilience (mem-proto/get-entry (mem-proto/get-store) id)))]
-        (mcp-json [(fmt/entry->metadata entry)])
-        (mcp-error (str "Entry not found: " id))))))
+      (let [entry (read-entry (mem-proto/get-store) id)]
+        (if-let [cause (read-outcome/entry-read-failure entry)]
+          (read-failed-response id cause)
+          (if entry
+            (mcp-json [(fmt/entry->metadata entry)])
+            (mcp-error (str "Entry not found: " id))))))))
 
 (defn- in-kanban-store?
   "True when ID resolves in the dedicated :kanban store slot. Best-effort:
@@ -92,7 +114,8 @@
   [id]
   (boolean
    (when-let [store (get (mem-proto/registered-stores) :kanban)]
-     (try (some? (mem-proto/get-entry store id))
+     (try (let [entry (mem-proto/get-entry store id)]
+            (and (some? entry) (nil? (read-outcome/entry-read-failure entry))))
           (catch Throwable _ false)))))
 
 (defn missing-payload
@@ -113,32 +136,40 @@
    Each store read is wrapped in `with-resilience` so a dropped transport
    on one ID triggers heal-and-retry rather than poisoning the whole batch.
    Deferred entries (still in the reembed outbox) resolve too. A missing id
-   the kanban store holds is reported under :in_kanban (`missing-payload`)."
+   the kanban store holds is reported under :in_kanban (`missing-payload`).
+   An id the store could not read is reported under :unreadable with its
+   cause, never as missing."
   [{:keys [ids]}]
   (if (or (nil? ids) (empty? ids))
     (mcp-error "ids is required (array of memory entry ID strings)")
     (with-store
       (let [store (mem-proto/get-store)
             results (mapv (fn [id]
-                            (if-let [entry (or (deferred/lookup id)
-                                               (with-resilience (mem-proto/get-entry store id)))]
-                              (let [base (fmt/entry->json-alist entry)
-                                    {:keys [outgoing incoming]}
-                                    (try (get-kg-edges-for-entry id)
-                                         (catch Exception e
-                                           (log/warn "KG edge lookup failed for" id ":" (.getMessage e))
-                                           {:outgoing [] :incoming []}))]
-                                (cond-> base
-                                  (deferred/lookup id) (assoc :embedding_deferred true)
-                                  (seq outgoing) (assoc :kg_outgoing outgoing)
-                                  (seq incoming) (assoc :kg_incoming incoming)))
-                              {:error "Entry not found" :id id}))
+                            (let [entry (read-entry store id)
+                                  cause (read-outcome/entry-read-failure entry)]
+                              (cond
+                                cause {:unreadable cause :id id}
+                                entry (let [base (fmt/entry->json-alist entry)
+                                            {:keys [outgoing incoming]}
+                                            (try (get-kg-edges-for-entry id)
+                                                 (catch Exception e
+                                                   (log/warn "KG edge lookup failed for" id ":" (.getMessage e))
+                                                   {:outgoing [] :incoming []}))]
+                                        (cond-> base
+                                          (deferred/lookup id) (assoc :embedding_deferred true)
+                                          (seq outgoing) (assoc :kg_outgoing outgoing)
+                                          (seq incoming) (assoc :kg_incoming incoming)))
+                                :else {:error "Entry not found" :id id})))
                           ids)
-            found   (filterv #(not (:error %)) results)
+            unreadable (filterv :unreadable results)
+            found   (filterv #(not (or (:error %) (:unreadable %))) results)
             missing (mapv :id (filterv :error results))]
-        (mcp-json (merge {:entries found :count (count found)}
-                         (when (seq missing)
-                           (missing-payload missing (filterv in-kanban-store? missing)))))))))
+        (mcp-json (cond-> (merge {:entries found :count (count found)}
+                                 (when (seq missing)
+                                   (missing-payload missing (filterv in-kanban-store? missing))))
+                    (seq unreadable) (assoc :unreadable (mapv (fn [{:keys [id unreadable]}]
+                                                                {:id id :cause unreadable})
+                                                              unreadable))))))))
 
 (m/=> missing-payload [:=> [:cat [:sequential :string] [:sequential :string]] :map])
 
@@ -169,17 +200,20 @@
   "Replace tags on an existing memory entry.
    Both the existence check and the tag-update write are wrapped in
    `with-resilience` so a dropped transport between them kicks the
-   heal loop and retries once."
+   heal loop and retries once. A store that could not read writes nothing."
   [{:keys [id tags]}]
   (log/info "mcp-memory-update-tags:" id "tags:" tags)
   (with-store
-    (let [store (mem-proto/get-store)]
-      (if-let [_existing (with-resilience (mem-proto/get-entry store id))]
-        (let [updated (with-resilience
-                        (mem-proto/update-entry! store id {:tags (or tags [])}))]
-          (log/info "Updated tags for entry:" id)
-          (mcp-json (fmt/entry->json-alist updated)))
-        (mcp-json {:error "Entry not found" :id id})))))
+    (let [store    (mem-proto/get-store)
+          existing (with-resilience (mem-proto/get-entry store id))]
+      (if-let [cause (read-outcome/entry-read-failure existing)]
+        (read-failed-response id cause)
+        (if existing
+          (let [updated (with-resilience
+                          (mem-proto/update-entry! store id {:tags (or tags [])}))]
+            (log/info "Updated tags for entry:" id)
+            (mcp-json (fmt/entry->json-alist updated)))
+          (mcp-json {:error "Entry not found" :id id}))))))
 
 ;;; =============================================================================
 ;;; Contracts

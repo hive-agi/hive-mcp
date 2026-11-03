@@ -61,6 +61,13 @@
     {:rows [] :status :failed :failed []
      :cause (str "store answered " (type raw) ", not a sequence of entries")}))
 
+(defn entry-read-failure
+  "The cause when RAW, the answer of a single-entry read, says the store could
+   not read: an error Result or a Failure map. nil for an entry or for absence."
+  [raw]
+  (when (or (error-result? raw) (failure-map? raw))
+    (:cause (classify raw))))
+
 (defn kept-rows
   "ROWS with an id, and how many were dropped for having none."
   [rows]
@@ -95,3 +102,5 @@
 (m/=> classify [:=> [:cat :any] ReadOutcome])
 (m/=> kept-rows [:=> [:cat [:sequential :map]] [:map [:rows [:vector :map]] [:dropped-null-ids nat-int?]]])
 (m/=> warnings [:=> [:cat ReadOutcome :map] [:vector :string]])
+
+(m/=> entry-read-failure [:=> [:cat :any] [:maybe :string]])
