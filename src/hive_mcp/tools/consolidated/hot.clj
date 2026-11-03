@@ -31,7 +31,8 @@
             [hive-mcp.extensions.runtime :as runtime]
             [malli.core :as m]
             [malli.error :as me]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [hive-mcp.tools.consolidated.hot.branch :as branch]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -1090,7 +1091,8 @@
    table (20260817195749-0d407e9c). The first of hive-mcp's 55 dispatch maps to
    be converted, and the worked example the rest follow: flat, every value a
    bare symbol naming a local defn, nothing here that inspects a handler rather
-   than calling it.
+   than calling it. `branch` is the one subtree: its verbs live in their own
+   namespace, and they are what extends a tree at runtime.
 
    Reading it through a var is safe because `tools/cli.clj` classifies every
    tree node through `dispatch/current` (commit cdd876f7). It was NOT safe
@@ -1121,7 +1123,8 @@
    :activate    #'handle-activate
    :evict       #'handle-evict
    :pin         #'handle-pin
-   :sweep       #'handle-sweep})
+   :sweep       #'handle-sweep
+   :branch      #'branch/handlers})
 
 
 (def handlers canonical-handlers)
@@ -1135,10 +1138,16 @@
   (composite/build-merged-handler "hot" #'canonical-handlers))
 
 (defn command-enum
-  "The advertised `command` values: every canonical verb, sorted, plus help.
-   Derived, so registering a verb in canonical-handlers advertises it."
+  "The advertised `command` values: every canonical verb, sorted, plus help, and
+   for a verb that is a subtree each `<verb> <sub>` too, which is what a caller
+   actually sends. Derived, so registering a verb in canonical-handlers
+   advertises it."
   []
-  (conj (vec (sort (map name (keys canonical-handlers)))) "help"))
+  (conj (vec (sort (mapcat (fn [[k v]]
+                             (cons (name k) (map #(str (name k) " " %)
+                                                 (composite/handler-verb-names v))))
+                           canonical-handlers)))
+        "help"))
 
 (m/=> command-enum [:=> [:cat] [:vector {:min 1} :string]])
 
@@ -1175,6 +1184,9 @@
         "true with :reason), pin (set a validated policy at runtime; it never mounts a dormant "
         "addon; force allows :lazy on a surface-less addon), "
         "sweep (evict every idle lazy addon and close idle parts now). "
+        "branch add|around|list|remove (extend or wrap any path of ANY tool, live, from code, "
+        "a var or a file: add grafts a verb beside what a path routes, even below an opaque "
+        "handler; around wraps a verb, a subtree or a whole tool; `branch help` has examples). "
         "Use command='help' to list all.")
    :inputSchema
    {:type "object"
@@ -1189,7 +1201,7 @@
      "strategy" {:type "string"
                  :description "[reload] Override the reload strategy for this addon (e.g. \"remount\", \"in-place\", \"inert\"). Omit to let the chain select."}
      "path" {:type "string"
-             :description "[inject/eject/unmount] Absolute path of the addon: a project dir (its deps.edn :paths go on the classpath), a source dir, or a jar. inject mounts its META-INF/hive-addons manifests (addons already mounted are left alone); eject plugs out what was injected from it."}
+             :description "[branch] The route in the target tool's tree, e.g. \"belt hello\". [inject/eject/unmount] Absolute path of the addon: a project dir (its deps.edn :paths go on the classpath), a source dir, or a jar. inject mounts its META-INF/hive-addons manifests (addons already mounted are left alone); eject plugs out what was injected from it."}
      "resolve_deps" {:type "boolean"
                      :description "[inject] Also hand the project's deps.edn :deps to clojure.repl.deps/add-libs before mounting (needs a tools.deps basis in the running image). Default false."}
      "cascade" {:type "boolean"
@@ -1201,6 +1213,22 @@
      "policy" {:type "string"
                :enum (mapv name (rest (policy-schema)))
                :description "[pin] Lifecycle policy to set at runtime; pin defaults to \"pinned\"."}
+     "tool" {:type "string"
+             :description "[branch] The tool whose tree is extended, e.g. \"git\"."}
+     "code" {:type "string"
+             :description "[branch add|around] Clojure source; its last form is the fn. Runs in this JVM with its authority."}
+     "symbol" {:type "string"
+               :description "[branch add|around] Qualified var holding the fn; a reload of its namespace reaches the branch."}
+     "file" {:type "string"
+             :description "[branch add|around] Clojure file to load: alone, its last form is the fn; with symbol, loaded first."}
+     "owner" {:type "string"
+              :description "[branch] Who the branch belongs to; default \"llm\". Alone on remove: all of its branches."}
+     "summary" {:type "string"
+                :description "[branch add|around] One line advertised in the target tool's description."}
+     "schema" {:type "object"
+               :description "[branch add|around] Params the branch declares, as JSON Schema properties, folded into the target tool's schema."}
+     "order" {:type "integer"
+              :description "[branch around] Lowest runs outermost; default 0."}
      "idle_ms" {:type "integer"
                 :description "[pin] Idle time in ms before a lazy addon may be evicted. Omitted: reset to the addon's declared value."}}
     :required ["command"]}

@@ -16,7 +16,8 @@
             [hive-mcp.tools.composite :as composite]
             [taoensso.timbre :as log]
             [hive-addon.registry.commands :as acmds]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.dispatch.branches :as branches]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -176,18 +177,20 @@
    listener table outlives a core reload, so a captured value would keep
    running the OLD code.
 
-   Two things are subscribed, not one. The facade's own listener list is what
-   a contribution through hive-mcp.extensions.registry notifies. The hive-addon
+   Three things are subscribed. The facade's own listener list is what a
+   contribution through hive-mcp.extensions.registry notifies. The hive-addon
    listener seam is what a contribution made DIRECTLY to
    hive-addon.registry.commands notifies, and an addon that has migrated off
    the facade makes exactly that kind of contribution. That seam was armed by a
    delay which only a facade call forced, so a fully migrated fleet would have
    armed it never: commands would land in the store and the advertised surface
    would never rebuild. Arming it here, at install time, is what makes the
-   migration safe to perform one addon at a time."
+   migration safe to perform one addon at a time. The third is
+   hive-mcp.dispatch.branches, so a runtime branch reaches the surface too."
   []
   (let [id (ext/add-contribution-listener! :reactive-surface #'contribution-listener)]
     (rescue nil (ext/ensure-seam-listener!))
+    (branches/add-listener! :reactive-surface #'contribution-listener)
     id))
 
 (m/=> install! [:=> [:cat] [:= :reactive-surface]])
@@ -195,6 +198,7 @@
 (defn uninstall!
   "Unsubscribe. For tests."
   []
+  (branches/remove-listener! :reactive-surface)
   (ext/remove-contribution-listener! :reactive-surface))
 
 (m/=> uninstall! [:=> [:cat] [:= :reactive-surface]])

@@ -172,8 +172,10 @@
     (is (thrown? AssertionError (hot/lifecycle-verb {:bridge "not-a-symbol"})))))
 
 (deftest advertised-commands-follow-the-verb-table-test
-  (is (= (set (conj (map name (keys hot/canonical-handlers)) "help"))
-         (set (get-in hot/tool-def [:inputSchema :properties "command" :enum])))))
+  (let [enum (set (get-in hot/tool-def [:inputSchema :properties "command" :enum]))]
+    (is (every? enum (conj (map name (keys hot/canonical-handlers)) "help")))
+    ;; a subtree advertises what a caller actually sends
+    (is (every? enum ["branch add" "branch around" "branch list" "branch remove" "branch help"]))))
 
 (deftest lifecycle-gate-hint-names-the-real-config-path-test
   (lc/uninstall!)

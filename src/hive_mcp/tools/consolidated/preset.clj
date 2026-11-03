@@ -1,8 +1,8 @@
 (ns hive-mcp.tools.consolidated.preset
   "Consolidated Preset CLI tool."
-  (:require [hive-mcp.tools.cli :refer [make-cli-handler]]
-            [hive-mcp.tools.presets :as preset-handlers]
-            [taoensso.timbre :as log]))
+  (:require [hive-mcp.tools.presets :as preset-handlers]
+            [taoensso.timbre :as log]
+            [hive-mcp.tools.composite :as composite]))
 
 (defn- handle-list
   "List presets with verbosity control."
@@ -53,7 +53,7 @@
                     {} deprecated-aliases)))
 
 (def handle-preset
-  (make-cli-handler #'handlers))
+  (composite/build-merged-handler "preset" #'handlers))
 
 (def tool-def
   {:name "preset"

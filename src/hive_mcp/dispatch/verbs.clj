@@ -111,7 +111,9 @@
   "STATIC with CONTRIBUTIONS folded in verb by verb through `resolve-verb`.
    Keeps STATIC's metadata and records every refusal under ::refusals in the
    result's metadata (the boundary logs them). A :missing verb gets a handler
-   answering `missing-verb-error`."
+   answering `missing-verb-error`. The result is marked ::folded, so `effective`
+   does not fold it again: a runtime branch wrapped around a contributed verb
+   between two folds would otherwise lose to that contribution."
   [static contributions]
   (let [root  (root-of static)
         verbs (distinct (concat (keys static) (keys contributions)
@@ -125,6 +127,7 @@
                           m))
                       {} rs)]
     (with-meta m (assoc (meta static)
+                        ::folded true
                         ::refusals (filterv #(= :refused (:source %)) rs)))))
 
 (m/=> fold-verbs [:=> [:cat :map :map] :map])
@@ -247,9 +250,10 @@
 
 (defn effective
   "STATIC with the verbs contributed under its root folded in (`fold-verbs`),
-   refusals logged once each. STATIC unchanged when it names no root."
+   refusals logged once each. STATIC unchanged when it names no root, or when it
+   has already been folded."
   [static]
-  (if-let [root (and (map? static) (root-of static))]
+  (if-let [root (and (map? static) (not (::folded (meta static))) (root-of static))]
     (let [folded (fold-verbs static (contributions root))]
       (log-refusals! root (::refusals (meta folded)))
       folded)

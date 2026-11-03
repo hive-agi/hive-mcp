@@ -10,8 +10,8 @@
      status  — Read-only progress snapshot
      reset   — Wipe migration state (Phase A must rerun)"
   (:require [hive-dsl.result :as r]
-            [hive-mcp.tools.cli :refer [make-cli-handler]]
-            [hive-mcp.tools.migrate.kanban.api :as mig-api]))
+            [hive-mcp.tools.migrate.kanban.api :as mig-api]
+            [hive-mcp.tools.composite :as composite]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -60,7 +60,7 @@
    :reset   #'cmd-reset})
 
 (def handle-migrate-kanban
-  (make-cli-handler #'handlers))
+  (composite/build-merged-handler "migrate_kanban" #'handlers))
 
 ;; =============================================================================
 ;; Tool definition

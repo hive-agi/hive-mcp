@@ -20,7 +20,8 @@
             [malli.core :as m]
             [hive-mcp.tools.core :as core]
             [hive-mcp.addons.metrics :as addon-metrics]
-            [hive-mcp.tools.composite.moved :as moved]))
+            [hive-mcp.tools.composite.moved :as moved]
+            [hive-mcp.dispatch.branches :as branches]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -150,6 +151,29 @@
     {:names  (into #{} (map :name) named)
      :hidden (into #{} (comp (filter :deprecated) (map :name)) named)}))
 
+(defn- with-branches
+  "TREE as TOOL-NAME dispatches on it once its runtime branches apply
+   (hive-mcp.dispatch.branches), read per call so a branch registered later is
+   visible. Verb contributions fold in FIRST, or an around on a contributed verb
+   would wrap the static entry that contribution then replaces. TREE itself when
+   the tool has no branch.
+
+   A branch is dispatched like any contribution: through the addon wrap and drain
+   gate of its owner, timed under [:addon/tool <owner> \"<tool> <path>\"]."
+  [tool-name tree]
+  (if-let [bs (seq (branches/of tool-name))]
+    (let [folded (branches/fold
+                  (verbs/effective-tree tree) bs tool-name
+                  {:declared  (partial contributed-verbs tool-name)
+                   :wrap-leaf (fn [{:keys [owner path]} leaf]
+                                (addon-metrics/wrap-handler
+                                 [:addon/tool (addon-metrics/label owner)
+                                  (str tool-name " " (branches/path-str path))]
+                                 (dispatch-wrap/wrap-addon-handler owner leaf)))})]
+      (branches/note-refusals! tool-name (::branches/refusals (meta folded)))
+      folded)
+    tree))
+
 (defn- with-contribution-meta
   "HANDLERS with ADDON-CMDS' root keys recorded as ::cli/opaque-roots, the
    ::cli/verb-oracle port bound to TOOL-NAME's contributions, TOOL-NAME as
@@ -176,7 +200,8 @@
   (fn [params]
     (departed/dispatch tool-name
                        #(let [addon-cmds (or (addon-commands->handlers tool-name) {})]
-                          (with-contribution-meta addon-cmds tool-name addon-cmds))
+                          (with-contribution-meta (with-branches tool-name addon-cmds)
+                            tool-name addon-cmds))
                        (fn [handlers p] ((cli/make-cli-handler handlers) p))
                        params)))
 
@@ -198,7 +223,8 @@
 
 (defn effective-handlers
   "The handler tree TOOL-NAME dispatches on right now: CANONICAL-HANDLERS merged
-   with the commands addons have contributed under TOOL-NAME (addon wins).
+   with the commands addons have contributed under TOOL-NAME (addon wins), its
+   runtime branches on top (`with-branches`).
    Re-resolved on every call, so a contribution registered later is visible.
 
    CANONICAL-HANDLERS may be the map itself or the VAR that holds it, and
@@ -214,12 +240,13 @@
    map's METADATA: a contributed handler receives the whole :command and routes
    the remainder itself, so this tree cannot enumerate what lives beneath it.
    The ::cli/verb-oracle port beside it answers which verbs each opaque root,
-   core or contributed, routes (`contributed-verbs`). The map value itself is
-   identical to the plain merge."
+   core or contributed, routes (`contributed-verbs`). With no branches the map
+   value itself is identical to the plain merge."
   [tool-name canonical-handlers]
   (let [canonical (dispatch/current canonical-handlers)
         addon-cmds (addon-commands->handlers tool-name)]
-    (with-contribution-meta (merge canonical addon-cmds) tool-name (or addon-cmds {}))))
+    (with-contribution-meta (with-branches tool-name (merge canonical addon-cmds))
+      tool-name (or addon-cmds {}))))
 
 (defn build-merged-handler
   "Build a handler fn that merges core handlers with addon contributions.
@@ -401,6 +428,30 @@
       (update-in [:inputSchema :properties]
                  #(merge-with union-property % params)))))
 
+(defn fold-branch-contributions
+  "TOOL-DEF with its runtime branches folded into the advertised surface: the
+   commands they make callable join the `command` enum (when it has one), their
+   :params join the properties through `union-property`, and the description
+   gains one sentence naming each. Unchanged when the tool has no branch."
+  [tool-def]
+  (let [bs (branches/of (:name tool-def))]
+    (if (empty? bs)
+      tool-def
+      (let [{:keys [names params lines]} (branches/surface bs)
+            core-enum (get-in tool-def [:inputSchema :properties "command" :enum])
+            sentence  (str "Runtime branches: "
+                           (str/join "; " (for [[cmd purpose] lines
+                                                :let [cmd (if (str/blank? cmd) "(whole tool)" cmd)]]
+                                            (if (str/blank? purpose) cmd (str cmd " - " purpose))))
+                           ".")]
+        (cond-> (update tool-def :description #(str/join " " (remove str/blank? [% sentence])))
+          (and (seq core-enum) (seq names))
+          (assoc-in [:inputSchema :properties "command" :enum]
+                    (vec (sort (distinct (concat core-enum names)))))
+
+          (seq params)
+          (update-in [:inputSchema :properties] #(merge-with union-property % params)))))))
+
 (defn build-merged-tool
   "Fold the current addon contributions to TOOL-NAME into a consolidated
    tool-def's advertised surface: every contributed command's :params joins
@@ -408,7 +459,8 @@
    one) grows the contributed command names, and the description gains one
    line naming each contributed command with its purpose
    (`contributed-commands-text`). Verb-level contributions
-   (hive-mcp.dispatch.verbs) fold in too, through `fold-verb-contributions`.
+   (hive-mcp.dispatch.verbs) fold in too, through `fold-verb-contributions`,
+   and so do runtime branches, through `fold-branch-contributions`.
    The commands a contribution declares :default-async join
    :default-async-commands (`default-async/fold`).
    Returns the tool-def unchanged when nothing has been contributed.
@@ -437,23 +489,24 @@
         addon-params    (apply merge-with union-property
                                (keep :params (vals (or addon-cmds {}))))
         core-enum       (get-in core-tool-def [:inputSchema :properties "command" :enum])]
-    (fold-verb-contributions
-     (if (empty? addon-cmds)
-       core-tool-def
-       (cond-> (default-async/fold core-tool-def addon-cmds)
-         (seq core-enum)
-         (assoc-in [:inputSchema :properties "command" :enum]
-                   (vec (sort (distinct (concat core-enum addon-cmd-names)))))
+    (fold-branch-contributions
+     (fold-verb-contributions
+      (if (empty? addon-cmds)
+        core-tool-def
+        (cond-> (default-async/fold core-tool-def addon-cmds)
+          (seq core-enum)
+          (assoc-in [:inputSchema :properties "command" :enum]
+                    (vec (sort (distinct (concat core-enum addon-cmd-names)))))
 
-         (seq addon-params)
-         (update-in [:inputSchema :properties]
-                    #(merge-with union-property % addon-params))
+          (seq addon-params)
+          (update-in [:inputSchema :properties]
+                     #(merge-with union-property % addon-params))
 
-         true
-         (update :description #(str/join " " (remove str/blank? [% (contributed-commands-text addon-cmds)])))
+          true
+          (update :description #(str/join " " (remove str/blank? [% (contributed-commands-text addon-cmds)])))
 
-         true
-         (assoc :composite true))))))
+          true
+          (assoc :composite true)))))))
 
 (defn discoverability-gaps
   "Every way the addon contributions to CORE-TOOL-DEF's tool fail the
@@ -515,16 +568,17 @@
                commands))))
 
 (defn build-merged-handlers
-  "Build handler map merging core + addon for registry introspection.
+  "Build handler map merging core + addon for registry introspection, runtime
+   branches included.
    canonical-handlers: keyword->fn map from a consolidated tool, or the VAR
    that holds it — resolved here, at call time, for the same reason
    `effective-handlers` resolves it."
   [tool-name canonical-handlers]
   (let [canonical  (dispatch/current canonical-handlers)
         addon-cmds (addon-commands->handlers tool-name)]
-    (if addon-cmds
-      (merge canonical addon-cmds)
-      canonical)))
+    (with-branches tool-name (if addon-cmds
+                               (merge canonical addon-cmds)
+                               canonical))))
 
 ;; =============================================================================
 ;; Batch Builder
