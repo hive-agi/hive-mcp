@@ -141,7 +141,7 @@
   "One boot-health finding."
   [:map
    [:issue [:enum :memory-store-missing :below-floor :expected-missing
-            :baseline-drop :mount-failed]]
+            :baseline-drop :baseline-unmounted :mount-failed]]
    [:severity [:enum :error :warn]]
    [:message :string]])
 
@@ -166,6 +166,7 @@
    [:expected-min {:optional true} [:maybe [:int {:min 0 :max 20}]]]
    [:expected {:optional true} BootIds]
    [:baseline {:optional true} [:maybe [:map [:discovered {:optional true} BootIds]
+                                    [:mounted {:optional true} BootIds]
                                     [:at {:optional true} :string]]]]
    [:memory {:optional true} [:maybe BootMemory]]])
 
