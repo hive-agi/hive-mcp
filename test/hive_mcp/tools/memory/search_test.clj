@@ -214,6 +214,35 @@
                 (str "thrown errors must return fast, got " elapsed "ms"))
             (is (some? (:text resp)))))))))
 
+(deftest unavailable-store-is-a-failed-search-not-absence-test
+  (testing "a store that answers an error Result or a Failure map (Milvus
+            unreachable) yields :memory/search-failed, never count 0
+            (kanban 20260915232000-267ac9be)"
+    (doseq [[label answer]
+            [["read-incomplete, no partial rows"
+              {:error   :milvus/read-incomplete
+               :failed  [{:collection "hive-mcp-memory" :message "HTTP connect timed out"}]
+               :partial []}]
+             ["read-incomplete, partial rows"
+              {:error   :milvus/read-incomplete
+               :failed  [{:collection "hive-mcp-memory" :message "HTTP connect timed out"}]
+               :partial [{:id "n-1" :type "note" :content "x" :distance 0.1}]}]
+             ["Failure map"
+              {:success? false :errors ["Milvus client not connected"] :reconnecting? true}]]]
+      (let [calls (atom 0)
+            store (->StubStore (fn [_q _opts] (swap! calls inc) answer))]
+        (with-stubs
+          (with-stub-store store
+            (let [resp (search/handle-search-semantic
+                        {:query "x" :limit 3 :directory "/tmp/test"})
+                  body (str (:text resp))]
+              (is (:isError resp) (str label ": an outage must be an error response"))
+              (is (re-find #"vectordb" body) (str label ": names the stage: " body))
+              (is (re-find #"not be evidence of absence" body) (str label ": " body))
+              (is (not (re-find #"\"count\"" body))
+                  (str label ": no ok payload with a count: " body))
+              (is (= 1 @calls) (str label ": an error answer is not retried as empty")))))))))
+
 ;; =============================================================================
 ;; Budget sanity: total wall clock bounded even on pathological combos
 ;; =============================================================================

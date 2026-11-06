@@ -15,7 +15,9 @@
             [hive-mcp.knowledge-graph.edges.write :as write]
             [hive-mcp.test-fixtures :as fixtures]
             [hive-mcp.test.stub.chroma-transport :as transport]
-            [hive-test.golden :refer [deftest-golden]]))
+            [hive-test.golden :refer [deftest-golden]]
+            [hive-mcp.protocols.memory :as mem-proto]
+            [hive-mcp.test.stub.memory-store :as mem-stub]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -53,14 +55,15 @@
 
 (deftest-golden node-ids-by-tag-golden
   "test/golden/hive-mcp/knowledge-graph/edges-nodes-by-tag.edn"
-  {:served   (with-chroma (fixtures/->MockEmbedder 8)
+  {:served   (mem-stub/with-stub-store
                (fn []
-                 (crud/index-memory-entry! {:id "e1" :content "a" :type "note" :tags ["x" "y"]})
-                 (crud/index-memory-entry! {:id "e2" :content "b" :type "note" :tags ["y"]})
+                 (mem-stub/seed! (mem-proto/get-store)
+                                 [{:id "e1" :content "a" :type "note" :tags ["x" "y"]}
+                                  {:id "e2" :content "b" :type "note" :tags ["y"]}])
                  {:x (nodes/node-ids-by-tag "x")
                   :y (sort (nodes/node-ids-by-tag "y"))
                   :z (nodes/node-ids-by-tag "zz")}))
-   :degraded (with-chroma nil #(nodes/node-ids-by-tag "x"))})
+   :degraded (mem-stub/with-no-store #(nodes/node-ids-by-tag "x"))})
 
 (deftest limit-is-the-documented-cap
   (is (= 10000 nodes/node-ids-by-tag-limit)))
