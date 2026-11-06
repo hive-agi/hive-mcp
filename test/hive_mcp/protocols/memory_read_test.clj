@@ -46,13 +46,20 @@
                          [:get-entries    (proto/get-entries store ["a" "b"])]]]
       (testing (name op)
         (is (vector? answer))
-        (is (empty? answer))
-        (is (zero? (count answer)) "count no longer walks the error map's keys")
+        (is (= (:partial incomplete-answer) answer) "the partial rows are kept")
+        (is (= 2 (count answer)) "count no longer walks the error map's keys")
         (is (= {:op op
                 :error :milvus/read-incomplete
                 :failed (:failed incomplete-answer)
-                :partial-count 2}
+                :partial-count 2
+                :partial (:partial incomplete-answer)}
                (mread/incomplete answer)))))))
+
+(deftest failed-read-with-no-partial-rows-is-empty-and-marked
+  (let [answer (mread/read-answer :query-entries (assoc incomplete-answer :partial []))]
+    (is (= [] answer))
+    (is (= :milvus/read-incomplete (:error (mread/incomplete answer))))
+    (is (not (contains? (mread/incomplete answer) :partial)))))
 
 (deftest complete-reads-pass-through-unchanged
   (let [rows  [{:id "a" :content "x"} {:id "b" :content "y"}]
@@ -68,8 +75,9 @@
       (is (nil? (mread/read-answer :get-entries nil))))))
 
 (deftest projected-batch-read-survives-an-error-result
-  (is (= [] (proto/get-entries-projected (->AnswerStore incomplete-answer)
-                                         ["a"] {:output-fields ["id"]}))))
+  (is (= [{:id "a"} {:id "b"}]
+         (proto/get-entries-projected (->AnswerStore incomplete-answer)
+                                      ["a"] {:output-fields ["id"]}))))
 
 (deftrifecta read-answer-never-answers-a-map
   mread/read-answer
@@ -85,10 +93,10 @@
    :pred (fn [answer] (and (sequential? answer) (every? map? answer)))
    :num-tests 50
    :mutations [["pass-error-through" (fn [_ answer] answer)]
-               ["drop-the-mark"      (fn [_ answer] (if (map? answer) [] answer))]
+               ["drop-the-mark"      (fn [_ answer] (if (map? answer) (vec (:partial answer)) answer))]
                ["swallow-entries"    (fn [_ _] [])]]
    :assert (fn []
              (let [d (mread/read-answer :query-entries incomplete-answer)]
-               (is (= [] d))
+               (is (= (:partial incomplete-answer) d))
                (is (= :milvus/read-incomplete (:error (mread/incomplete d)))))
              (is (= [{:id "x"}] (mread/read-answer :search-similar [{:id "x"}]))))})

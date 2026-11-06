@@ -9,10 +9,11 @@
 
    A caller that maps, counts or seqs that map walks its key/value pairs as if
    they were entries. `read-answer` is the one place hive-mcp turns such an
-   answer into an explicit degraded value: an empty vector whose metadata
-   carries the failure under `::incomplete`, logged once at warn. Callers keep
-   iterating a vector, and `incomplete` tells a failed read from a true empty
-   one. Pure apart from the log line."
+   answer into an explicit degraded value: a vector of the partial rows the
+   store did return (empty when it returned none) whose metadata carries the
+   failure under `::incomplete`, logged once at warn. Callers keep iterating
+   a vector, a partial read keeps its rows, and `incomplete` tells a failed or
+   partial read from a complete one. Pure apart from the log line."
   (:require [malli.core :as m]
             [taoensso.timbre :as log]))
 
@@ -34,25 +35,33 @@
 
 (defn read-answer
   "ANSWER as a value safe to iterate. Entries (any sequential, or nil) pass
-   through unchanged. A store error Result becomes an empty vector with
+   through unchanged. A store error Result becomes a vector of its partial
+   rows (the maps under :partial, empty when it has none) with
    `{::incomplete {:op OP :error .. :failed .. :partial-count n}}` metadata,
-   logged at warn. Any other map is a contract breach of the store and is
-   degraded the same way."
+   logged at warn. A partial read therefore keeps the rows it did get and is
+   still marked incomplete. Any other map is a contract breach of the store
+   and is degraded the same way."
   [op answer]
   (if (map? answer)
-    (let [failure (cond-> {:op op :error (get answer :error :store/non-sequential-answer)}
+    (let [rows    (vec (filter map? (:partial answer)))
+          failure (cond-> {:op op :error (get answer :error :store/non-sequential-answer)}
                     (:failed answer)  (assoc :failed (:failed answer))
-                    (:partial answer) (assoc :partial-count (count (:partial answer))))]
-      (log/warn "memory" (name op) "answered a failure, not entries; degrading to []:"
-                (pr-str (dissoc failure :op)))
-      (with-meta [] {::incomplete failure}))
+                    (:partial answer) (assoc :partial-count (count rows)))]
+      (log/warn "memory" (name op) "answered a failure, not entries; keeping"
+                (count rows) "partial row(s):" (pr-str (dissoc failure :op)))
+      (with-meta rows {::incomplete failure}))
     answer))
 
 (m/=> read-answer [:=> [:cat :keyword :any] [:maybe [:sequential :any]]])
 
 (defn incomplete
-  "The failure a `read-answer` value carries, or nil for a complete read."
+  "The failure a `read-answer` value carries, or nil for a complete read.
+   When the read kept partial rows they are under :partial, so the failure
+   reads like the store's own error Result (see
+   `hive-mcp.tools.memory.read-outcome/classify`)."
   [answer]
-  (::incomplete (meta answer)))
+  (when-let [failure (::incomplete (meta answer))]
+    (cond-> failure
+      (seq answer) (assoc :partial (vec answer)))))
 
 (m/=> incomplete [:=> [:cat :any] [:maybe Failure]])
