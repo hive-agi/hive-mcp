@@ -44,7 +44,8 @@
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
             [hive-mcp.memory.ingest-search :as ingest-search]
             [malli.core :as m]
-            [hive-mcp.tools.memory.schema :as ms]))
+            [hive-mcp.tools.memory.schema :as ms]
+            [hive-mcp.tools.memory.read-outcome :as read-outcome]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -380,6 +381,11 @@
       :partial <partial results if any>
       :cause <ex-message>}
 
+   A store that ANSWERS but not with entries (an error Result such as
+   hive-milvus' `:milvus/read-incomplete`, or a Failure map) is an outage,
+   not absence: it is the same :vectordb err, never an ok with count 0
+   (kanban 20260915232000-267ac9be).
+
    Budget rationale:
    - store and ingest run in parallel under the collective :total budget.
    - each vectordb side has its own 15s cap, so one hung backend cannot
@@ -407,7 +413,9 @@
                                   (run-ingest-query query fetch-limit))
              {:stage :vectordb :value []}])
         store-side  (:store fj)
-        ingest-side (:ingest fj)]
+        ingest-side (:ingest fj)
+        store-read  (when-not (contains? store-side :err)
+                      (read-outcome/classify (:value store-side)))]
     (cond
       ;; Store side failed or timed out — surface structured err.
       (contains? store-side :err)
@@ -416,6 +424,17 @@
         (log/warn (ex-info "memory search: store stage failed"
                            {:stage stage :cause msg :query query}))
         (stage-err stage msg nil))
+
+      ;; Store answered with a failed or incomplete read, not with entries.
+      (not= :complete (:status store-read))
+      (let [{:keys [cause failed rows]} store-read
+            msg (str "store read " (name (:status store-read)) " (" cause
+                     "); an empty result would not be evidence of absence")]
+        (log/warn (ex-info "memory search: store read failed"
+                           {:stage :vectordb :cause cause :query query}))
+        (stage-err :vectordb msg
+                   {:failed-collections (mapv #(or (:collection %) (str %)) failed)
+                    :partial-count      (count rows)}))
 
       :else
       (let [store-results  (:value store-side)
