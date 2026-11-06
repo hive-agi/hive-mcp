@@ -79,3 +79,12 @@
   (is (string? (ts/hive-agent-datalevin-root)))
   (is (satisfies? ts/TranscriptSource (ts/default-source)))
   (is (satisfies? ts/ParentIndex (ts/default-parent-index))))
+
+(deftest row-parent-reads-both-registry-spellings
+  (is (= "coordinator:1" (ts/row-parent {:slave/parent "coordinator:1"})))
+  (is (= "coordinator:1" (ts/row-parent {:slave/parent {:slave/id "coordinator:1"}})))
+  (is (= "coordinator:1" (ts/row-parent {:slave/parent nil :slave/parent-id "coordinator:1"}))
+      "a restored row whose parent has no row keeps the parent in :slave/parent-id only")
+  (is (= "coordinator:1" (ts/row-parent {:slave/parent "coordinator:1" :slave/parent-id "coordinator:2"})))
+  (is (nil? (ts/row-parent {:slave/id "orphan"})))
+  (is (nil? (ts/row-parent nil))))

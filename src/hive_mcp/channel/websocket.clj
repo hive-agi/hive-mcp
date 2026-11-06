@@ -136,14 +136,21 @@
       :else
       (ws-connection-handler req))))
 
+(defn- bind-address
+  "Socket address the server listens on: HOST, loopback when HOST is nil."
+  [host port]
+  (java.net.InetSocketAddress. ^String (or host "127.0.0.1") (int port)))
+
 (defn start!
-  "Start WebSocket channel server with HTTP endpoints."
-  [{:keys [port on-message] :or {port 9999}}]
+  "Start WebSocket channel server with HTTP endpoints. Listens on :host,
+   loopback by default: the channel carries every session's traffic and has
+   no authentication."
+  [{:keys [host port on-message] :or {port 9999}}]
   (if @server-atom
     (do
       (log/warn "WebSocket channel already running on port" (:port @server-atom))
       (:port @server-atom))
-    (let [server (http/start-server hybrid-handler {:port port})
+    (let [server (http/start-server hybrid-handler {:socket-address (bind-address host port)})
           actual-port (netty/port server)]
       (reset! server-atom {:server server
                            :port actual-port
@@ -153,6 +160,7 @@
       actual-port)))
 
 (m/=> start! [:=> [:cat [:map
+                         [:host {:optional true} [:maybe :string]]
                          [:port {:optional true} [:int {:min 0 :max 65535}]]
                          [:on-message {:optional true} [:maybe ifn?]]]]
               [:int {:min 0 :max 65535}]])
