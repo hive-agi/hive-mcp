@@ -98,6 +98,17 @@
 ;; Composite Handler Builder
 ;; =============================================================================
 
+(defn handler-verb-names
+  "The verb names HANDLER routes when it is a verb map, read through
+   `dispatch/current` (a var holding a verb map counts), sorted, without the
+   :_handler default route; nil for an opaque handler."
+  [handler]
+  (let [node (dispatch/current handler)]
+    (when (map? node)
+      (not-empty (vec (sort (map name (remove #{:_handler} (keys node)))))))))
+
+(m/=> handler-verb-names [:=> [:cat :any] [:maybe [:vector :string]]])
+
 (defn- registered-tool-verbs
   "The `command` enum of the registered standalone tool named TOOL-NAME, or
    nil. A contributed subdomain that forwards to such a tool (`code carto` ->
@@ -112,17 +123,17 @@
   "The verbs the subdomain K contributed under TOOL-NAME routes, or nil when it
    declares none. Asked, first answer wins:
      - the contribution spec's :verbs (a collection, or a 0-arity fn)
-     - the keys of a verb-map :handler
+     - the keys of a verb-map :handler (read through `dispatch/current`, so a
+       var holding a verb map answers too; :_handler is not a verb)
      - the command enum of a registered tool named K
    This is the ::cli/verb-oracle port an unknown-command hint consults, so a
    bare verb is offered only under the subdomains that really route it."
   [tool-name k]
   (let [cmd  (name k)
         spec (get (acmds/get-commands tool-name) cmd)
-        v    (:verbs spec)
-        h    (:handler spec)]
+        v    (:verbs spec)]
     (or (seq (if (fn? v) (v) v))
-        (when (map? h) (seq (map name (keys h))))
+        (seq (handler-verb-names (:handler spec)))
         (seq (registered-tool-verbs cmd)))))
 
 (defn- registered-root-names
@@ -351,12 +362,16 @@
    callable, sorted: each command name, and for a contribution whose :handler
    is a verb map, each `<command> <verb>` too. The verbs are what a caller
    actually sends (`ship land`, `belt scan`); an enum holding only the
-   subdomain name would refuse every one of them."
+   subdomain name would refuse every one of them.
+
+   The handler is read through `dispatch/current`, as routing reads it: a verb
+   map registered as a VAR routes its verbs, so it advertises them too. The
+   :_handler key is the subtree's default route, not a verb, and is never
+   advertised as `<command> _handler`."
   [addon-cmds]
   (vec (sort (distinct
-              (for [[cmd {:keys [handler]}] addon-cmds
-                    command (cons cmd (when (map? handler)
-                                        (map #(str cmd " " (name %)) (keys handler))))]
+              (for [[cmd spec] addon-cmds
+                    command (cons cmd (map #(str cmd " " %) (handler-verb-names (:handler spec))))]
                 command)))))
 
 (defn fold-verb-contributions
@@ -439,6 +454,51 @@
 
          true
          (assoc :composite true))))))
+
+(defn discoverability-gaps
+  "Every way the addon contributions to CORE-TOOL-DEF's tool fail the
+   discoverability contract, as [{:tool :command :addon :gap :verb?}], empty
+   when an agent holding only the advertised schema can find and consume every
+   contributed command.
+
+   The universe is the MOUNTED contribution handlers (hive-addon's command
+   registry, each verb map read through `dispatch/current`), never the
+   advertised schema it is checked against. Gaps:
+     :no-summary         an advertised contribution with neither :summary nor
+                         :description, so the description names it bare
+     :no-help            a verb-map handler with no `help` verb and no
+                         :_handler, so `<command> help` cannot answer
+     :not-in-description an advertised contribution the merged description
+                         does not name
+     :unadvertised-verb  a routed `<command> <verb>` missing from the merged
+                         `command` enum (only when the core declares one)
+   Deprecated contributions are exempt from the description checks: they are
+   routed on purpose without being advertised."
+  [core-tool-def]
+  (let [tool-name (:name core-tool-def)
+        cmds      (acmds/get-commands tool-name)
+        merged    (build-merged-tool core-tool-def)
+        desc      (str (:description merged))
+        enum      (some-> (get-in merged [:inputSchema :properties "command" :enum]) set)
+        gap       (fn [cmd spec g & [verb]]
+                    (cond-> {:tool tool-name :command cmd :addon (:addon spec) :gap g}
+                      verb (assoc :verb verb)))]
+    (vec
+     (for [[cmd spec] (sort-by key cmds)
+           :let [verbs (handler-verb-names (:handler spec))
+                 node  (dispatch/current (:handler spec))
+                 adv?  (not (deprecated-contribution? spec))]
+           g     (concat
+                  (when (and adv? (nil? (contribution-summary spec)))
+                    [(gap cmd spec :no-summary)])
+                  (when (and (map? node) (not (contains? node :help)) (not (contains? node :_handler)))
+                    [(gap cmd spec :no-help)])
+                  (when (and adv? (not (str/includes? desc cmd)))
+                    [(gap cmd spec :not-in-description)])
+                  (when enum
+                    (for [v verbs :when (not (contains? enum (str cmd " " v)))]
+                      (gap cmd spec :unadvertised-verb v))))]
+       g))))
 
 ;; =============================================================================
 ;; Handler Map for Registry Introspection
@@ -550,6 +610,12 @@
 (m/=> fold-verb-contributions [:=> [:cat ToolDef] ToolDef])
 
 (m/=> build-merged-tool [:=> [:cat ToolDef] ToolDef])
+
+(m/=> discoverability-gaps
+      [:=> [:cat ToolDef]
+       [:vector [:map [:tool :string] [:command :string] [:addon :any]
+                 [:gap [:enum :no-summary :no-help :not-in-description :unadvertised-verb]]
+                 [:verb {:optional true} :string]]]])
 
 (m/=> build-composite-handlers [:=> [:cat :string] [:map-of :keyword :any]])
 

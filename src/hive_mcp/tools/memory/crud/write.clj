@@ -491,6 +491,27 @@
         :else (do (Thread/sleep (* attempt read-after-write-base-ms))
                   (recur (inc attempt)))))))
 
+(defn- link-outgoing!
+  "Run the :link-outgoing stage: write `edge-ids` as the entry's :kg-outgoing.
+   Returns nil when the write finished, or {:stage :link-outgoing :reason ...}
+   when it outran its budget or threw. Never throws an Exception: the entry and
+   its KG edges already exist when this runs."
+  [progress store entry-id edge-ids]
+  (try
+    (run-stage! progress :link-outgoing
+                #(with-stage-resilience
+                   (mem-proto/update-entry! store entry-id {:kg-outgoing edge-ids})))
+    nil
+    (catch Exception e
+      (let [data (ex-data e)
+            over? (= :stage-budget-exceeded (:type data))]
+        (log/warn "memory add" entry-id ":kg-outgoing link not confirmed; entry and edges kept:"
+                  (or (.getMessage e) (.getName (class e))))
+        (cond-> {:stage :link-outgoing
+                 :reason (if over? :budget-exceeded :error)}
+          over? (merge (select-keys data [:budget-ms :elapsed-ms]))
+          (not over?) (assoc :error (or (.getMessage e) (.getName (class e)))))))))
+
 (defn- finalize-entry!
   "Wire KG edges, fetch created entry, notify the write, and format response.
 
@@ -502,6 +523,8 @@
    fails the add: the response carries the entry id plus `:kg_edge_errors`
    [{:relation :to :error}], and the :added notify still fires. A :kg-edges
    stage over its budget is reported the same way, the error naming the stage.
+   A :link-outgoing write that outruns its budget or throws is reported as
+   `:kg_outgoing_pending` {:stage :reason ...}; the edges were already created.
 
    A deferred entry (embed failed, parked in the outbox) is answered from
    its outbox record; its :kg-outgoing link is amended into that record so
@@ -529,10 +552,8 @@
                   (do (deferred/amend! entry-id {:kg-outgoing edge-ids})
                       (deferred/lookup entry-id))
                   pending)
-        _ (when (and (seq edge-ids) (not pending))
-            (run-stage! progress :link-outgoing
-                        #(with-stage-resilience
-                           (mem-proto/update-entry! store entry-id {:kg-outgoing edge-ids}))))
+        link-pending (when (and (seq edge-ids) (not pending))
+                       (link-outgoing! progress store entry-id edge-ids))
         created (or pending
                     (when (and (empty? requests) (map? receipt)
                                (= entry-id (:id receipt)))
@@ -543,6 +564,7 @@
     (log/info "Created memory entry:" entry-id
               (when (seq edge-ids) (str " with " (count edge-ids) " KG edges"))
               (when (seq edge-errors) (str " edge-errors:" (count edge-errors)))
+              (when link-pending (str " kg-outgoing pending:" (:reason link-pending)))
               (when (seq knowledge-gaps) (str " gaps:" (count knowledge-gaps))))
     (write-events/notify! :added {:id entry-id :memory-type type
                                   :tags tags-with-scope :project-id project-id})
@@ -553,6 +575,7 @@
                                    :embedding_error (some-> pending :deferred/last-error :error str))
                     (seq edge-ids) (assoc :kg_edges_created edge-ids)
                     (seq edge-errors) (assoc :kg_edge_errors edge-errors)
+                    link-pending (assoc :kg_outgoing_pending link-pending)
                     requested
                     (assoc :queued_for_review
                            {:requested_type requested

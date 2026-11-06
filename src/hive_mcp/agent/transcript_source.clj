@@ -166,20 +166,26 @@
 (defprotocol ParentIndex
   (parent-of [this agent-id] "The spawning coordinator/ling id of `agent-id`, or nil."))
 
-(defrecord SwarmParentIndex []
-  ;; Reads the swarm slave registry (rows persist past a ling's death until
-  ;; the JVM restarts). nil when the registry or the row is absent.
-  ParentIndex
-  (parent-of [_ agent-id]
-    (try
-      (when-let [get-slave (requiring-resolve 'hive-mcp.swarm.datascript.queries/get-slave)]
-        (let [p (:slave/parent (get-slave agent-id))]
-          (cond (string? p) p
-                (map? p)    (:slave/id p)
-                :else       nil)))
-      (catch Throwable _ nil))))
+(defn row-parent
+  "Parent id of a slave registry row: :slave/parent (an id or a pulled
+   {:slave/id} map), else :slave/parent-id. nil when the row names none."
+  [row]
+  (let [p (:slave/parent row)
+        p (if (map? p) (:slave/id p) p)]
+    (if (string? p) p (:slave/parent-id row))))
 
-(defn default-parent-index [] (->SwarmParentIndex))
+(m/=> row-parent [:=> [:cat [:maybe [:map-of :any :any]]] [:maybe :string]])
+
+(defn default-parent-index
+  "A ParentIndex over the swarm slave registry. `parent-of` answers nil when
+   the registry or the row is absent."
+  []
+  (reify ParentIndex
+    (parent-of [_ agent-id]
+      (try
+        (when-let [get-slave (requiring-resolve 'hive-mcp.swarm.datascript.queries/get-slave)]
+          (row-parent (get-slave agent-id)))
+        (catch Throwable _ nil)))))
 
 ;; Defaults to 0, so never nil.
 (m/=> entry-turn [:=> [:cat [:maybe [:map-of :any :any]]] :some])
@@ -194,13 +200,13 @@
   [:fn {:gen/elements [(->CompositeSource [])]}
    #(instance? hive_mcp.agent.transcript_source.CompositeSource %)])
 
-(def SwarmParentIndexValue
-  "A SwarmParentIndex. Generates the (stateless) index itself."
-  [:fn {:gen/elements [(->SwarmParentIndex)]}
-   #(instance? hive_mcp.agent.transcript_source.SwarmParentIndex %)])
+(def ParentIndexValue
+  "A ParentIndex. Generates the (stateless) default index."
+  [:fn {:gen/elements [(default-parent-index)]}
+   #(satisfies? ParentIndex %)])
 
 (m/=> composite [:=> [:cat [:sequential :any]] CompositeSourceValue])
 
 (m/=> default-source [:=> [:cat] CompositeSourceValue])
 
-(m/=> default-parent-index [:=> [:cat] SwarmParentIndexValue])
+(m/=> default-parent-index [:=> [:cat] ParentIndexValue])

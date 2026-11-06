@@ -123,6 +123,9 @@ jobs:
       - name: Test-count gate self-test
         run: timeout 60 bin/test-count-floor-test.sh
 
+      - name: Signed-push hook self-test
+        run: timeout 60 bin/pre-push-signed-test.sh
+
       - name: Setup Babashka
         uses: DeLaGuardo/setup-clojure@13.2
         with:

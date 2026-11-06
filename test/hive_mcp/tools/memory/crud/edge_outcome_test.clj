@@ -91,3 +91,67 @@
            (mem-proto/unregister-store! :default)
            (when-let [old (:default snapshot)]
              (mem-proto/register-store! :default old))))))))
+
+(defn- slow-link-store
+  "recording-store whose update-entry! runs `link!` first (sleep or throw)."
+  [entry link!]
+  (let [inner (recording-store entry (atom []))]
+    (reify mem-proto/IMemoryStore
+      (connect! [_ c] (mem-proto/connect! inner c)) (disconnect! [_] nil) (connected? [_] true)
+      (health-check [_] {})
+      (add-entry! [_ e] (:id e))
+      (get-entry [_ id] (mem-proto/get-entry inner id))
+      (update-entry! [_ id u] (link!) (mem-proto/update-entry! inner id u))
+      (delete-entry! [_ _] nil) (query-entries [_ _] [])
+      (search-similar [_ _ _] []) (supports-semantic-search? [_] false)
+      (cleanup-expired! [_] nil) (entries-expiring-soon [_ _ _] [])
+      (find-duplicate [_ _ _ _] nil) (store-status [_] {})
+      (reset-store! [_] nil))))
+
+(defn- finalize-with-link
+  "finalize-entry! for one refines edge over a store whose link write runs `link!`."
+  [link!]
+  (let [entry    {:id "entry-2" :type "note" :content "kept" :tags ["note"]}
+        snapshot (mem-proto/registered-stores)]
+    (try
+      (mem-proto/register-store! :default (slow-link-store entry link!))
+      (binding [hive-mcp.tools.memory.crud.write/*stage-budgets-ms*
+                (assoc hive-mcp.tools.memory.crud.write/default-stage-budgets-ms
+                       :link-outgoing 200)]
+        (let [resp (#'hive-mcp.tools.memory.crud.write/finalize-entry!
+                    "entry-2" {:kg_refines ["target-2"]} "test" nil
+                    {:tags-with-scope ["note"] :type "note"})]
+          {:resp resp :body (json/read-str (:text resp) :key-fn keyword)}))
+      (finally
+        (mem-proto/unregister-store! :default)
+        (when-let [old (:default snapshot)]
+          (mem-proto/register-store! :default old))))))
+
+(deftest slow-outgoing-link-is-pending-not-an-error
+  (fixtures/global-datascript-fixture
+   (fn []
+     (let [never (promise)
+           t0 (System/currentTimeMillis)
+           {:keys [resp body]} (finalize-with-link #(deref never 5000 nil))]
+       (is (not (:isError resp)) "the entry and its edges exist, so the add succeeds")
+       (is (= "entry-2" (:id body)))
+       (is (= 1 (count (:kg_edges_created body))) "the edge created in the KG is reported")
+       (is (= {:stage "link-outgoing" :reason "budget-exceeded" :budget-ms 200}
+              (select-keys (:kg_outgoing_pending body) [:stage :reason :budget-ms])))
+       (is (< (- (System/currentTimeMillis) t0) 4000) "the add answers at the stage budget")))))
+
+(deftest failed-outgoing-link-is-pending-not-an-error
+  (fixtures/global-datascript-fixture
+   (fn []
+     (let [{:keys [resp body]} (finalize-with-link #(throw (ex-info "milvus down" {})))]
+       (is (not (:isError resp)))
+       (is (= "error" (get-in body [:kg_outgoing_pending :reason])))
+       (is (= "milvus down" (get-in body [:kg_outgoing_pending :error])))))))
+
+(deftest prompt-outgoing-link-reports-nothing-pending
+  (fixtures/global-datascript-fixture
+   (fn []
+     (let [{:keys [resp body]} (finalize-with-link (constantly nil))]
+       (is (not (:isError resp)))
+       (is (= 1 (count (:kg_edges_created body))))
+       (is (not (contains? body :kg_outgoing_pending)))))))
