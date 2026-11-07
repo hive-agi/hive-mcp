@@ -6,13 +6,16 @@
    through injected effects. Neither step enables or starts the unit; that
    would take over the live serving port and stays a host decision.
 
-   No malli here: the `bb install-unit` task loads this namespace on
-   babashka, which has no malli. The text installed is the committed
+   The `bb install-unit` task loads this namespace on babashka, which has no
+   malli, so the malli contracts sit behind a `#?(:bb .. :clj ..)` reader
+   conditional: the JVM (and its contract-coverage gate) sees them, bb does
+   not. The text installed is the committed
    resources/systemd/hive-mcp.service, which the unit test pins to
    `hive-mcp.service.unit/render-unit` of the default opts."
   (:require [clojure.java.io :as io]
             [clojure.java.shell :as shell]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            #?@(:bb [] :clj [[malli.core :as m]])))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -106,3 +109,28 @@
     (when (seq steps)
       (println "Not enabled. To run it: systemctl --user enable --now hive-mcp.service"
                "(this takes over the serving nREPL port)."))))
+
+;; Contracts, JVM only: babashka has no malli.
+#?(:bb nil
+   :clj
+   (do
+     (def Step
+       "One install step."
+       [:multi {:dispatch :op}
+        [:mkdir [:map [:op [:= :mkdir]] [:path :string]]]
+        [:write [:map [:op [:= :write]] [:path :string] [:content :string]]]
+        [:run [:map [:op [:= :run]] [:argv [:vector :string]]]]])
+
+     (m/=> unit-dir [:=> [:cat :string] :string])
+
+     (m/=> install-plan
+           [:=> [:cat [:map [:unit-text :string] [:dir :string] [:current [:maybe :string]]]]
+            [:vector Step]])
+
+     (m/=> describe-step [:=> [:cat Step] :string])
+
+     (m/=> run-plan!
+           [:=> [:cat [:map [:mkdir! ifn?] [:write! ifn?] [:run-cmd! ifn?]] [:sequential Step]]
+            [:map [:done [:vector Step]] [:failed [:maybe Step]] [:result :any]]])
+
+     (m/=> -main [:=> [:cat [:* :string]] :any])))
