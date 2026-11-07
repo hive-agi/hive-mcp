@@ -73,42 +73,45 @@
                  (recur (conj done step) more)
                  {:done done :failed step :result r}))))))
 
-(def host-fx
-  "The real effects: filesystem and a subprocess."
-  {:mkdir! (fn [path] (.mkdirs (io/file path)))
-   :write! (fn [path content] (spit path content))
-   :run-cmd! (fn [argv] (apply shell/sh argv))})
+#?(:clj
+   (def host-fx
+     "The real effects: filesystem and a subprocess."
+     {:mkdir! (fn [path] (.mkdirs (io/file path)))
+      :write! (fn [path content] (spit path content))
+      :run-cmd! (fn [argv] (apply shell/sh argv))}))
 
-(defn- read-if-exists
-  "Text at `path`, or nil when there is no file."
-  [path]
-  (let [f (io/file path)]
-    (when (.exists f) (slurp f))))
+#?(:clj
+   (defn- read-if-exists
+     "Text at `path`, or nil when there is no file."
+     [path]
+     (let [f (io/file path)]
+       (when (.exists f) (slurp f)))))
 
-(defn -main
-  "bb install-unit [--dry-run]: copy the committed unit into
+#?(:clj
+   (defn -main
+     "bb install-unit [--dry-run]: copy the committed unit into
    ~/.config/systemd/user and run daemon-reload. Never enables or starts it."
-  [& args]
-  (let [dry? (some #{"--dry-run"} args)
-        dir (unit-dir (System/getProperty "user.home"))
-        unit-text (slurp (or (io/resource "systemd/hive-mcp.service")
-                             (io/file "resources/systemd/hive-mcp.service")))
-        steps (install-plan {:unit-text unit-text
-                             :dir dir
-                             :current (read-if-exists (str dir "/" unit-name))})]
-    (when (empty? steps)
-      (println "hive-mcp.service is already installed and unchanged."))
-    (doseq [s steps]
-      (println (str (when dry? "[dry-run] ") (describe-step s))))
-    (when-not dry?
-      (let [{:keys [failed result]} (run-plan! host-fx steps)]
-        (when failed
-          (binding [*out* *err*]
-            (println (str "failed: " (describe-step failed) "\n" (:err result))))
-          (System/exit 1))))
-    (when (seq steps)
-      (println "Not enabled. To run it: systemctl --user enable --now hive-mcp.service"
-               "(this takes over the serving nREPL port)."))))
+     [& args]
+     (let [dry? (some #{"--dry-run"} args)
+           dir (unit-dir (System/getProperty "user.home"))
+           unit-text (slurp (or (io/resource "systemd/hive-mcp.service")
+                                (io/file "resources/systemd/hive-mcp.service")))
+           steps (install-plan {:unit-text unit-text
+                                :dir dir
+                                :current (read-if-exists (str dir "/" unit-name))})]
+       (when (empty? steps)
+         (println "hive-mcp.service is already installed and unchanged."))
+       (doseq [s steps]
+         (println (str (when dry? "[dry-run] ") (describe-step s))))
+       (when-not dry?
+         (let [{:keys [failed result]} (run-plan! host-fx steps)]
+           (when failed
+             (binding [*out* *err*]
+               (println (str "failed: " (describe-step failed) "\n" (:err result))))
+             (System/exit 1))))
+       (when (seq steps)
+         (println "Not enabled. To run it: systemctl --user enable --now hive-mcp.service"
+                  "(this takes over the serving nREPL port).")))))
 
 ;; Contracts, JVM only: babashka has no malli.
 #?(:bb nil
