@@ -87,13 +87,18 @@
      :expected     #{id ...}  optional ids that must mount
      :baseline     {:discovered [...]} optional last healthy roster
      :memory       {:backend s :deferred-to id :store-set? bool}
-   Returns a vector of {:issue kw :severity :error|:warn :message s ...}."
+   Returns a vector of {:issue kw :severity :error|:warn :message s ...}.
+   An id the baseline MOUNTED that is discovered again but did not mount is
+   :baseline-unmounted (an error), so a boot that loses a few addons it
+   still discovers is degraded and never overwrites the baseline."
   [{:keys [discovered mounted failed expected-min expected baseline memory]}]
   (let [n-disc   (count discovered)
         mounted* (set mounted)
         missing  (sort (set/difference (set expected) mounted*))
         base-n   (count (:discovered baseline))
         lost     (sort (set/difference (set (:discovered baseline)) (set discovered)))
+        unmounted (sort (set/difference (set/intersection (set (:mounted baseline)) (set discovered))
+                                        mounted*))
         {:keys [backend deferred-to store-set?]} memory]
     (cond-> []
       (and (some? deferred-to) (false? store-set?))
@@ -132,6 +137,15 @@
                             " discovered " base-n ". Missing: "
                             (str/join ", " (take 12 lost))
                             (when (> (count lost) 12) (str " … +" (- (count lost) 12) " more")))})
+
+      (seq unmounted)
+      (conj {:issue    :baseline-unmounted
+             :severity :error
+             :missing  (vec unmounted)
+             :message  (str "addon(s) the last healthy boot"
+                            (when-let [at (:at baseline)] (str " (" at ")"))
+                            " mounted were discovered but did not mount: "
+                            (str/join ", " unmounted))})
 
       (seq failed)
       (conj {:issue    :mount-failed

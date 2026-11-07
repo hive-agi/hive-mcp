@@ -213,6 +213,9 @@
    call, shared by its subagents, distinct per session even when every
    session's agent-id is nil.
 
+   Session start is recorded under `ctx/session-agent-id` of the agent id and
+   caller id, the same key a wrap resolves through `crystal/resolve-agent`.
+
    Identity: the spawn credential the transport carries as
    `:_caller_credential` is verified here (hive-mcp.agent.identity) and
    STRIPPED from the args before anything else sees them, so no handler,
@@ -247,7 +250,8 @@
           (let [agent-id (id/extract-agent-id args nil)
                 project-id (id/extract-project-id args)
                 directory (id/extract-directory args)]
-            (crystal/record-session-start! agent-id)
+            (crystal/record-session-start!
+             (ctx/session-agent-id agent-id (:_caller_id args)))
             (touch-caller-activity! *identity-get-slave* (:_caller_id args))
             (metrics/record! [:mcp/mw :context] (- (System/nanoTime) t0) :ok)
             (ctx/with-request-context {:agent-id agent-id

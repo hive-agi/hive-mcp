@@ -223,12 +223,13 @@
 
 (defn- with-filters
   "Coerce the listing filters into ti/select-listing opts, then call `f`.
-   A bad `since` is an MCP error naming it."
-  [{:keys [agent agent_id id project project_id parent since]} now-ms f]
+   A bad `since` is an MCP error naming it. `agent_id` is not a filter: the
+   MCP bridge injects the caller's id under that key on every call."
+  [{:keys [agent id project project_id parent since]} now-ms f]
   (let [since-ms (ti/parse-since since now-ms)]
     (if (:error since-ms)
       (tcore/mcp-error (:error since-ms))
-      (f {:agent    (or agent agent_id id)
+      (f {:agent    (or agent id)
           :project  (some-> (or project project_id) str str/trim not-empty)
           :parent   (some-> parent str str/trim not-empty)
           :since-ms since-ms}))))
@@ -389,9 +390,9 @@
 
 (defn- multi-digest?
   "A digest over many lings: a parent is given, or the agent is a glob."
-  [{:keys [parent agent agent_id id]}]
+  [{:keys [parent agent id]}]
   (or (not (str/blank? (str parent)))
-      (boolean (re-find #"[*?]" (str (or agent agent_id id))))))
+      (boolean (re-find #"[*?]" (str (or agent id))))))
 
 (defn- digest-response [source parents params now-ms]
   (if-not (multi-digest? params)

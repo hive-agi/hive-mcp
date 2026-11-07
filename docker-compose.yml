@@ -189,20 +189,22 @@ services:
 
   # =============================================================================
   # Core: NATS Server (default, always starts)
-  # Push-based drone notifications
+  # Hive event bus and session inboxes. Loopback only; config: nats://127.0.0.1:14322
   # =============================================================================
   nats:
-    image: nats:latest
+    image: nats:2.10-alpine
     container_name: hive-mcp-nats
     ports:
-      - "4222:4222"
-      - "8222:8222"
-    command: ["--jetstream", "--http_port", "8222"]
-    # No healthcheck: nats:latest is distroless (no /bin/sh, wget, or curl),
-    # so in-container probes are impossible. TCP reachability on 4222/8222
-    # and the HTTP monitor at http://localhost:8222/healthz are the source
-    # of truth. Previously: ["CMD","wget","--spider","-q","http://localhost:8222/healthz"]
-    # which failed with "wget: executable file not found" on every probe.
+      - "127.0.0.1:14322:4222"
+      - "127.0.0.1:18322:8222"
+    command: ["--jetstream", "--store_dir", "/data", "--http_port", "8222"]
+    volumes:
+      - hive-nats-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
 
   # =============================================================================
@@ -276,6 +278,8 @@ volumes:
   chroma-data:
     driver: local
   hive-qdrant-carto-data:
+    driver: local
+  hive-nats-data:
     driver: local
   # lsp-cache: replaced with bind mount to ~/.cache/hive-lsp for host ↔ container sharing
 

@@ -69,6 +69,10 @@
       (let [r (mk/with-open-children slim "parent" "done" stub-deps)]
         (is (= 5 (count (:open_children r))))
         (is (re-find #"5 linked card" (:hint r)))))
+    (testing "the hint reports the move that was committed, never that nothing changed"
+      (let [hint (:hint (mk/with-open-children slim "parent" "done" stub-deps))]
+        (is (not (re-find #"(?i)nothing was changed" hint)))
+        (is (re-find #"(?i)moved to done" hint))))
     (testing "any other status leaves the view alone and never reads the KG"
       (let [boom {:edges-from (fn [_] (throw (ex-info "read" {})))
                   :edges-to   (fn [_] (throw (ex-info "read" {})))

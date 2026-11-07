@@ -17,7 +17,10 @@
             [taoensso.timbre :as log]
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
             [clojure.string :as str]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.tools.memory.read-outcome :as read-outcome]
+            [hive-mcp.tools.memory.duration :as dur]
+            [hive-mcp.protocols.memory-read :as mread]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -33,10 +36,12 @@
     entries))
 
 (defn- apply-duration-filter
-  "Filter entries by duration."
+  "Filter entries by duration. Stores answer :duration as a keyword or a
+   string, the request carries a string; both sides compare by name."
   [duration entries]
   (if duration
-    (filter #(= (:duration %) duration) entries)
+    (let [want (name duration)]
+      (filter #(some-> (:duration %) name (= want)) entries))
     entries))
 
 (defn entry-after?
@@ -94,37 +99,59 @@
   [sf include-descendants?]
   (domain/scope->project-ids sf include-descendants?))
 
-(defn- fetch-entries
-  "Fetch entries from the IMemoryStore with over-fetch factor.
+(defn store-read-failure
+  "The failure a store answered to a read, or nil when it answered rows.
 
-   Temporal thresholds are pushed INTO the store query (stores that predate
-   them ignore unknown opts and degrade to client-side filtering); `:order-by`
-   asks for newest-first. Milvus scalar query cannot sort server-side, so a
-   temporal query ALSO widens the fetch window (min 200, cap 500) — otherwise
-   per-collection limit truncation favors the oldest qualifying rows and the
-   client-side sort never sees the newest. Qualifying sets beyond the cap
-   need a narrower threshold.
+   A row sequence (empty included) and nil are answers. Anything else is a
+   store that could not look: a timed-out or partial read (hive-milvus
+   `{:error :milvus/read-incomplete ...}`) or the resilience wrapper's
+   `{:success? false ...}` failure value. Filtering such a map as rows drops
+   every key and answers `[]`, which a caller cannot tell from a real empty
+   result. Pure.
+   An empty vector the memory port degraded from such a failure
+   (`hive-mcp.protocols.memory-read/incomplete` metadata) is a failure too."
+  [answer]
+  (cond
+    (and (sequential? answer) (mread/incomplete answer)) (mread/incomplete answer)
+    (or (nil? answer) (sequential? answer))              nil
+    :else                                                answer))
+
+(defn- fetch-entries
+  "Read entries from the IMemoryStore with an over-fetch factor, and answer
+   a ReadOutcome (`read-outcome/classify`) carrying the :fetch-limit used.
+
+   Temporal thresholds are pushed INTO the store query; `:order-by` asks for
+   newest-first. Filters the store does not apply (duration, and the scope
+   safety net) run after the fetch, so a query carrying a temporal threshold
+   or a duration widens the window (min 200, cap `max-query-limit`). The
+   handler reports a window the store filled, because matching rows past it
+   are not seen.
 
    Wraps the IMemoryStore `query-entries` call in `with-resilience` so a
    dropped Milvus HTTP transport is recovered via the heal loop and the
-   call retries once before surfacing an error."
+   call retries once. A store that answers an error Result or a Failure map
+   is classified as :failed or :incomplete, never iterated as entries; so is
+   an empty vector the memory port degraded from such an answer
+   (`store-read-failure` recovers the failure from its metadata)."
   [type project-ids-for-db tags limit-val include-descendants?
-   & {:keys [exclude-tags created-after updated-after]}]
+   & {:keys [exclude-tags created-after updated-after duration]}]
   (let [over-fetch-factor (if include-descendants? 4 3)
         base-limit        (* limit-val over-fetch-factor)
-        fetch-limit       (if (or created-after updated-after)
-                            (min 500 (max 200 base-limit))
-                            base-limit)]
-    (with-resilience
-      (mem-proto/query-entries (mem-proto/get-store)
-                               {:type type
-                                :project-ids project-ids-for-db
-                                :tags tags
-                                :exclude-tags exclude-tags
-                                :created-after created-after
-                                :updated-after updated-after
-                                :order-by [:created :desc]
-                                :limit fetch-limit}))))
+        fetch-limit       (if (or created-after updated-after duration)
+                            (min max-query-limit (max 200 base-limit))
+                            base-limit)
+        raw               (with-resilience
+                            (mem-proto/query-entries (mem-proto/get-store)
+                                                     {:type type
+                                                      :project-ids project-ids-for-db
+                                                      :tags tags
+                                                      :exclude-tags exclude-tags
+                                                      :created-after created-after
+                                                      :updated-after updated-after
+                                                      :order-by [:created :desc]
+                                                      :limit fetch-limit}))]
+    (assoc (read-outcome/classify (or (store-read-failure raw) raw))
+           :fetch-limit fetch-limit)))
 
 (defn- apply-scope-filter
   "Apply in-memory scope filter as safety net.
@@ -155,12 +182,19 @@
        (take limit-val)))
 
 (defn- format-query-results
-  "Format results and record co-access pattern asynchronously."
-  [results project-id metadata-only?]
-  (record-batch-co-access! (mapv :id results) project-id)
-  (if metadata-only?
-    (mcp-json (mapv fmt/entry->metadata results))
-    (mcp-json (mapv fmt/entry->json-alist results))))
+  "Format results and record co-access pattern asynchronously. With no
+   WARNINGS the answer is the plain vector of rows; with any, it is
+   {:results rows :count n :warnings [..]} so a short or empty answer says why."
+  ([results project-id metadata-only?]
+   (format-query-results results project-id metadata-only? []))
+  ([results project-id metadata-only? warnings]
+   (record-batch-co-access! (mapv :id results) project-id)
+   (let [rows (if metadata-only?
+                (mapv fmt/entry->metadata results)
+                (mapv fmt/entry->json-alist results))]
+     (if (seq warnings)
+       (mcp-json {:results rows :count (count rows) :warnings (vec warnings)})
+       (mcp-json rows)))))
 
 (defn- tag-encodes-scope?
   "True when a tag string explicitly anchors a scope (e.g. \"scope:project:topic:X\")."
@@ -221,7 +255,16 @@
   "Query project memory by type with scope, temporal, and verbosity filtering.
    `created_after` / `updated_after` are ISO-8601 strings — entries whose
    timestamp is strictly greater survive (pushed down to the store filter
-   AND re-checked client-side). Results sort newest-first."
+   AND re-checked client-side). Results sort newest-first.
+
+   A failed or partial store read, rows dropped for a missing id, and a
+   fetch window the store filled before the post-filters ran each add a
+   :warnings line; the answer is then {:results :count :warnings}. A
+   :duration outside `dur/duration-order` is refused, never answered [].
+   A read the store could not answer at all (ReadOutcome :failed, see
+   `store-read-failure`) is also marked :isError, so a caller that only
+   looks at rows (the guard memory source) cannot take it for an empty
+   result."
   [{:keys [type tags exclude_tags limit duration scope directory include_descendants verbosity query
            created_after updated_after]}]
   (let [directory (query-directory directory)
@@ -247,6 +290,10 @@
                         ":created_after / :updated_after) — an unfiltered query would "
                         "return an arbitrary slice of memory, not an answer."))
 
+        (and (some? duration) (not (dur/valid-duration? (name duration))))
+        (mcp-error (str "memory query :duration " (pr-str duration) " is not a duration; use one of "
+                        (str/join ", " dur/duration-order) "."))
+
         :else
         (let [limit-val (coerce-int! limit :limit 20)]
           (if (or (neg? limit-val) (> limit-val max-query-limit))
@@ -257,18 +304,28 @@
               (let [project-id  (scope/get-current-project-id directory)
                     sf          (domain/parse-scope scope project-id)
                     project-ids (resolve-project-ids-for-db sf include-descendants?)
-                    entries     (fetch-entries type project-ids tags limit-val include-descendants?
+                    outcome     (fetch-entries type project-ids tags limit-val include-descendants?
                                                :exclude-tags exclude-tags
                                                :created-after created_after
-                                               :updated-after updated_after)
-                    filtered    (apply-scope-filter entries sf include-descendants?)
-                    results     (apply-post-filters filtered
-                                                    {:tags tags
-                                                     :duration duration
-                                                     :created-after created_after
-                                                     :updated-after updated_after
-                                                     :limit-val limit-val})]
-                (format-query-results results project-id metadata-only?))))))
+                                               :updated-after updated_after
+                                               :duration duration)
+                    {kept :rows dropped :dropped-null-ids} (read-outcome/kept-rows (:rows outcome))
+                    filtered    (apply-scope-filter kept sf include-descendants?)
+                    results     (vec (apply-post-filters filtered
+                                                         {:tags tags
+                                                          :duration duration
+                                                          :created-after created_after
+                                                          :updated-after updated_after
+                                                          :limit-val limit-val}))
+                    window-full? (and (>= (count (:rows outcome)) (:fetch-limit outcome))
+                                      (< (count results) limit-val))
+                    warnings    (read-outcome/warnings outcome {:dropped-null-ids dropped
+                                                                :window-full? window-full?
+                                                                :fetch-limit (:fetch-limit outcome)})]
+                (when (seq warnings)
+                  (log/warn "mcp-memory-query answered with warnings:" warnings))
+                (cond-> (format-query-results results project-id metadata-only? warnings)
+                  (= :failed (:status outcome)) (assoc :isError true)))))))
       (catch clojure.lang.ExceptionInfo e
         (if (= :coercion-error (:type (ex-data e)))
           (mcp-error (.getMessage e))
@@ -301,3 +358,5 @@
 (m/=> handle-query [:=> [:cat [:maybe :map]] core/McpResponse])
 
 (m/=> handle-query-metadata [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> store-read-failure [:=> [:cat :any] [:maybe :any]])

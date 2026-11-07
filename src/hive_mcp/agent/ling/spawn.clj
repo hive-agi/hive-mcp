@@ -143,12 +143,18 @@
    :grant is the effective grant (wire form) decided at the tool boundary,
    or nil for an unrestricted child. :spawned-by is the request caller that
    asked for the spawn (\"\" for root-level), resolved by
-   `resolve-spawned-by` for every spawn path, or nil (logged) when unknown."
+   `resolve-spawned-by` for every spawn path, or nil (logged) when unknown.
+   Throws :spawn/backend-unavailable when an abstract :headless spawn would
+   resolve past a configured backend that is not registered."
   [ling opts]
   (let [effective-model (or (:model opts) (:model ling))
+        requested (or (:spawn-mode opts) (:spawn-mode ling)
+                      (lifecycle/default-spawn-mode))
+        _ (when (= :headless requested)
+            (headless-reg/ensure-configured-backend!))
         mode (lifecycle/resolve-effective-mode
               {:model effective-model
-               :spawn-mode (or (:spawn-mode opts) (:spawn-mode ling))})
+               :spawn-mode requested})
         {:keys [depth parent kanban-task-id]
          :or {depth 1}} opts]
     {:effective-model effective-model
