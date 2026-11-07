@@ -155,3 +155,19 @@
        (is (not (:isError resp)))
        (is (= 1 (count (:kg_edges_created body))))
        (is (not (contains? body :kg_outgoing_pending)))))))
+
+(deftest unconfirmed-edges-name-how-to-check
+  ;; Friction 20261102191317-61f419a8: a pending link or an edge error left the
+  ;; caller no way to learn the final outcome short of guessing a read.
+  (fixtures/global-datascript-fixture
+   (fn []
+     (let [{pending-body :body} (finalize-with-link #(throw (ex-info "milvus down" {})))
+           {ok-body :body} (finalize-with-link (constantly nil))]
+       (is (= "unconfirmed" (get-in pending-body [:kg_check :status])))
+       (is (re-find #"memory get id=entry-2 include_kg=true"
+                    (get-in pending-body [:kg_check :how])))
+       (is (not (contains? ok-body :kg_check)) "a confirmed link reports no check"))
+     (is (= {:status "unconfirmed" :targets ["a"]}
+            (dissoc (edge-outcome/outcome-check "e" [{:relation "refines" :to "a" :error "x"}] nil)
+                    :how)))
+     (is (nil? (edge-outcome/outcome-check "e" [] nil))))))
