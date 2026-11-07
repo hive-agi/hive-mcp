@@ -32,6 +32,7 @@
    :stats            #'cmd/handle-stats
    :register-handler #'cmd/handle-register-handler
    :unreg-fx         #'cmd/handle-unreg-fx
+   :bus-status       #'cmd/handle-bus-status
    :help             #'cmd/handle-help})
 
 (defn- normalize-command

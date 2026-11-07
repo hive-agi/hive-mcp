@@ -17,7 +17,7 @@
   {:ok false,
    :command "bogus",
    :error
-   "Unknown command: bogus. Valid: disable, dump, enable, help, register-handler, stats, tail, unreg-fx",
+   "Unknown command: bogus. Valid: bus-status, disable, dump, enable, help, register-handler, stats, tail, unreg-fx",
    :result nil}],
  :stats-no-id
  {:ok false,

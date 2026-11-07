@@ -14,10 +14,12 @@
 
   (:require [clojure.data.json :as json]
             [taoensso.timbre :as log]
-            [malli.core :as m])
+            [malli.core :as m]
+            [clojure.string :as str])
   (:import [io.nats.client Nats Options$Builder Connection$Status
             MessageHandler]
-           [java.time Duration]))
+           [java.time Duration]
+[io.nats.client ConnectionListener]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -47,52 +49,159 @@
   []
   (some-> @connection (.getStatus) (= Connection$Status/CONNECTED)))
 
+(defonce ^:private conn-state
+  (atom {:status :stopped}))
+
+(defonce ^:private epoch-counter (atom 0))
+
+(defonce ^:private on-connect-hooks (atom {}))
+
+(defn redact-url
+  "Pure: a NATS URL with any user:pass@ credentials removed."
+  [url]
+  (some-> url str (clojure.string/replace #"//[^/@]*@" "//")))
+
+(m/=> redact-url [:=> [:cat [:maybe :string]] [:maybe :string]])
+
+(defn add-on-connect-hook!
+  "Run `(f jnats-connection)` on every CONNECTED/RECONNECTED event, boot
+   included, and at once when the client is already connected, so the order
+   of registration against connect does not matter. Idempotent per key. A
+   throwing hook is logged and isolated."
+  [key f]
+  (swap! on-connect-hooks assoc key f)
+  (when-let [conn (and (connected?) @connection)]
+    (try (f conn)
+         (catch Throwable t
+           (log/warn "[NATS] on-connect hook" key "failed:" (.getMessage t)))))
+  key)
+
+(m/=> add-on-connect-hook! [:=> [:cat :any ifn?] :any])
+
+(defn remove-on-connect-hook!
+  "Remove the on-connect hook under `key`. Safe when absent."
+  [key]
+  (swap! on-connect-hooks dissoc key)
+  nil)
+
+(m/=> remove-on-connect-hook! [:=> [:cat :any] :nil])
+
+(defn- run-on-connect-hooks! [conn]
+  (doseq [[k f] @on-connect-hooks]
+    (try (f conn)
+         (catch Throwable t
+           (log/warn "[NATS] on-connect hook" k "failed:" (.getMessage t))))))
+
+(defn- adopt-connection!
+  "First CONNECTED: publish the Connection and a dispatcher. Reconnects
+   reuse both (jnats heals the same Connection and its subscriptions)."
+  [conn]
+  (when-not (identical? conn @connection)
+    (reset! dispatcher (.createDispatcher conn))
+    (reset! connection conn)))
+
+(defn- connection-listener
+  "Listener bound to one start! epoch. Once stop!/start! moves the epoch on,
+   any event from the old attempt closes that attempt's Connection: an async
+   connect that never succeeded is not reachable through `connection`, so
+   this is the only place it can be stopped."
+  [epoch]
+  (reify ConnectionListener
+    (connectionEvent [_ conn ev]
+      (if (not= epoch @epoch-counter)
+        (when (not= "CLOSED" (.name ev))
+          (future (try (.close conn) (catch Exception _))))
+        (case (.name ev)
+          ("CONNECTED" "RECONNECTED")
+          (do (adopt-connection! conn)
+              (swap! conn-state assoc :status :connected :error nil
+                     :since (System/currentTimeMillis))
+              (swap! conn-state update :connects (fnil inc 0))
+              (log/info "[NATS]" (.getEvent ev) (:url @conn-state))
+              (run-on-connect-hooks! conn))
+          "DISCONNECTED"
+          (swap! conn-state assoc :status :reconnecting
+                 :since (System/currentTimeMillis))
+          "CLOSED"
+          (swap! conn-state assoc :status :closed)
+          nil)))))
+
+(defn- stop-connection!
+  "Close the current connection (if any) and invalidate its listener."
+  []
+  (swap! epoch-counter inc)
+  (when-let [conn @connection]
+    (try (.close conn) (catch Exception _)))
+  (reset! connection nil)
+  (reset! dispatcher nil)
+  (reset! subscriptions {}))
+
+(def ClientStatus
+  [:map
+   [:status [:enum :stopped :connecting :connected :reconnecting :closed :failed]]
+   [:connected? :boolean]
+   [:url {:optional true} [:maybe :string]]
+   [:since {:optional true} [:maybe :int]]
+   [:connects {:optional true} :int]
+   [:error {:optional true} [:maybe :string]]])
+
+(defn status
+  "Client connection state, measured from the live Connection when present.
+   The URL is reported without credentials."
+  []
+  (let [s @conn-state
+        up? (boolean (connected?))]
+    (cond-> (assoc (select-keys s [:status :url :since :connects :error])
+                   :connected? up?)
+      (and up? (not= :connected (:status s))) (assoc :status :connected))))
+
+(m/=> status [:=> [:cat] ClientStatus])
+
 (defn start!
-  "Connect to NATS server. Non-fatal on failure — logs warning and returns nil.
+  "Connect to NATS without blocking boot, and keep trying forever.
 
    Options:
      :url                - NATS server URL (default: nats://localhost:4222)
-     :connection-timeout - Connection timeout in ms (default: 5000)
-     :max-reconnects     - Max reconnect attempts (default: -1, retry forever)
-     :reconnect-wait     - Wait between reconnects in ms (default: 1000)
+     :connection-timeout - per-attempt timeout in ms (default: 5000)
+     :max-reconnects     - reconnect attempts (default: -1, forever)
+     :reconnect-wait     - wait between attempts in ms (default: 1000)
 
-   -1 is jnats' \"reconnect forever\". The old default of 5 meant one
-   nats-server restart, or any blip longer than ~5s, closed this connection
-   PERMANENTLY: nothing re-runs start!, and every NATS-backed feature (wave
-   latch, backbone fan-out, progress transport) then degraded silently for the
-   life of the process. Measured live 2026-09-05 with the server up and this
-   connection CLOSED.
-
-   Sets connectionName to 'hive-mcp' for NATS server monitoring and debugging."
+   Returns at once. A broker that is down now is joined when it comes up;
+   the connection, dispatcher and every on-connect hook arrive through the
+   jnats ConnectionListener, the same path a later reconnect takes."
   [{:keys [url connection-timeout max-reconnects reconnect-wait]
     :or {url "nats://localhost:4222"
          connection-timeout 5000
          max-reconnects -1
          reconnect-wait 1000}}]
-  (try
-    (let [opts (-> (Options$Builder.)
-                   (.server url)
-                   (.connectionTimeout (Duration/ofMillis connection-timeout))
-                   (.maxReconnects max-reconnects)
-                   (.reconnectWait (Duration/ofMillis reconnect-wait))
-                   (.connectionName "hive-mcp")
-                   (.build))
-          conn (Nats/connect opts)]
-      (reset! connection conn)
-      (reset! dispatcher (.createDispatcher conn))
-      (log/info "[NATS] Connected to" url))
-    (catch Exception e
-      (log/warn "[NATS] Connection failed (non-fatal):" (.getMessage e)))))
+  (stop-connection!)
+  (let [epoch (swap! epoch-counter inc)]
+    (swap! conn-state assoc :url (redact-url url) :status :connecting
+           :since (System/currentTimeMillis))
+    (try
+      (let [opts (-> (Options$Builder.)
+                     (.server url)
+                     (.connectionTimeout (Duration/ofMillis connection-timeout))
+                     (.maxReconnects max-reconnects)
+                     (.reconnectWait (Duration/ofMillis reconnect-wait))
+                     (.connectionName "hive-mcp")
+                     (.connectionListener (connection-listener epoch))
+                     (.build))]
+        (Nats/connectAsynchronously opts true)
+        (log/info "[NATS] Connecting (async, retry forever) to" (redact-url url)))
+      (catch Exception e
+        (swap! conn-state assoc :status :failed :error (.getMessage e))
+        (log/warn "[NATS] Connection setup failed (non-fatal):" (.getMessage e))))
+    nil))
 
 (defn stop!
   "Disconnect from NATS server. Safe to call when not connected."
   []
-  (when-let [conn @connection]
-    (try (.close conn) (catch Exception _))
-    (reset! connection nil)
-    (reset! dispatcher nil)
-    (reset! subscriptions {})
-    (log/info "[NATS] Disconnected")))
+  (let [had? (some? @connection)]
+    (stop-connection!)
+    (swap! conn-state assoc :status :stopped :since (System/currentTimeMillis))
+    (when had? (log/info "[NATS] Disconnected"))
+    nil))
 
 ;; =============================================================================
 ;; Connection Watches
