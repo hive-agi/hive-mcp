@@ -45,7 +45,8 @@
             [hive-mcp.memory.ingest-search :as ingest-search]
             [malli.core :as m]
             [hive-mcp.tools.memory.schema :as ms]
-            [hive-mcp.tools.memory.read-outcome :as read-outcome]))
+            [hive-mcp.tools.memory.read-outcome :as read-outcome]
+            [hive-mcp.protocols.memory-read :as mread]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -239,9 +240,21 @@
 ;; Stages — each wrapped with its own safe-future-call + timeout
 ;; =============================================================================
 
+(defn- store-answer
+  "The store's answer to a search, with a failure the memory port degraded
+   into a marked vector (`hive-mcp.protocols.memory-read/read-answer`)
+   recovered as the failure itself, so `read-outcome/classify` sees a failed
+   or incomplete read, never a complete empty one. Pure."
+  [answer]
+  (or (when (sequential? answer) (mread/incomplete answer))
+      answer))
+
 (defn- run-store-query
   "Vectordb stage A: the primary store search + one fallback retry
    without exclude-tags (for false-negative recovery).
+
+   A store read that failed or came back incomplete is answered as the
+   failure (see `store-answer`) and is NOT retried as an empty result.
 
    Wrapped in `safe-future-call` with the :vectordb budget. A dropped
    HTTP transport kicks the Milvus heal loop via with-resilience."
@@ -249,21 +262,23 @@
   (safe/safe-future-call
    {:timeout-ms (budget :vectordb) :name "memory-search/store"}
    (fn []
-     (let [first-pass (with-resilience
-                        (mem-proto/search-similar
-                         (mem-proto/get-store) query
-                         {:limit        (* limit-val 2)
-                          :type         type
-                          :project-ids  visible-project-ids
-                          :exclude-tags effective-excludes}))]
-       (if (and (empty? first-pass) (seq effective-excludes))
+     (let [first-pass (store-answer
+                       (with-resilience
+                         (mem-proto/search-similar
+                          (mem-proto/get-store) query
+                          {:limit        (* limit-val 2)
+                           :type         type
+                           :project-ids  visible-project-ids
+                           :exclude-tags effective-excludes})))]
+       (if (and (sequential? first-pass) (empty? first-pass) (seq effective-excludes))
          (do (log/warn "search fallback: retrying without exclude-tags for query:" query)
-             (with-resilience
-               (mem-proto/search-similar
-                (mem-proto/get-store) query
-                {:limit       (* limit-val 2)
-                 :type        type
-                 :project-ids visible-project-ids})))
+             (store-answer
+              (with-resilience
+                (mem-proto/search-similar
+                 (mem-proto/get-store) query
+                 {:limit       (* limit-val 2)
+                  :type        type
+                  :project-ids visible-project-ids}))))
          first-pass)))))
 
 (defn- run-ingest-query

@@ -18,7 +18,8 @@
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
             [clojure.string :as str]
             [malli.core :as m]
-            [hive-mcp.tools.memory.read-outcome :as read-outcome]))
+            [hive-mcp.tools.memory.read-outcome :as read-outcome]
+            [hive-mcp.protocols.memory-read :as mread]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -95,6 +96,23 @@
   [sf include-descendants?]
   (domain/scope->project-ids sf include-descendants?))
 
+(defn store-read-failure
+  "The failure a store answered to a read, or nil when it answered rows.
+
+   A row sequence (empty included) and nil are answers. Anything else is a
+   store that could not look: a timed-out or partial read (hive-milvus
+   `{:error :milvus/read-incomplete ...}`) or the resilience wrapper's
+   `{:success? false ...}` failure value. Filtering such a map as rows drops
+   every key and answers `[]`, which a caller cannot tell from a real empty
+   result. Pure.
+   An empty vector the memory port degraded from such a failure
+   (`hive-mcp.protocols.memory-read/incomplete` metadata) is a failure too."
+  [answer]
+  (cond
+    (and (sequential? answer) (mread/incomplete answer)) (mread/incomplete answer)
+    (or (nil? answer) (sequential? answer))              nil
+    :else                                                answer))
+
 (defn- fetch-entries
   "Read entries from the IMemoryStore with an over-fetch factor, and answer
    a ReadOutcome (`read-outcome/classify`) carrying the :fetch-limit used.
@@ -109,7 +127,9 @@
    Wraps the IMemoryStore `query-entries` call in `with-resilience` so a
    dropped Milvus HTTP transport is recovered via the heal loop and the
    call retries once. A store that answers an error Result or a Failure map
-   is classified as :failed or :incomplete, never iterated as entries."
+   is classified as :failed or :incomplete, never iterated as entries; so is
+   an empty vector the memory port degraded from such an answer
+   (`store-read-failure` recovers the failure from its metadata)."
   [type project-ids-for-db tags limit-val include-descendants?
    & {:keys [exclude-tags created-after updated-after duration]}]
   (let [over-fetch-factor (if include-descendants? 4 3)
@@ -127,7 +147,8 @@
                                                       :updated-after updated-after
                                                       :order-by [:created :desc]
                                                       :limit fetch-limit}))]
-    (assoc (read-outcome/classify raw) :fetch-limit fetch-limit)))
+    (assoc (read-outcome/classify (or (store-read-failure raw) raw))
+           :fetch-limit fetch-limit)))
 
 (defn- apply-scope-filter
   "Apply in-memory scope filter as safety net.
@@ -235,7 +256,11 @@
 
    A failed or partial store read, rows dropped for a missing id, and a
    fetch window the store filled before the post-filters ran each add a
-   :warnings line; the answer is then {:results :count :warnings}."
+   :warnings line; the answer is then {:results :count :warnings}.
+   A read the store could not answer at all (ReadOutcome :failed, see
+   `store-read-failure`) is also marked :isError, so a caller that only
+   looks at rows (the guard memory source) cannot take it for an empty
+   result."
   [{:keys [type tags exclude_tags limit duration scope directory include_descendants verbosity query
            created_after updated_after]}]
   (let [directory (query-directory directory)
@@ -291,7 +316,8 @@
                                                                 :fetch-limit (:fetch-limit outcome)})]
                 (when (seq warnings)
                   (log/warn "mcp-memory-query answered with warnings:" warnings))
-                (format-query-results results project-id metadata-only? warnings))))))
+                (cond-> (format-query-results results project-id metadata-only? warnings)
+                  (= :failed (:status outcome)) (assoc :isError true)))))))
       (catch clojure.lang.ExceptionInfo e
         (if (= :coercion-error (:type (ex-data e)))
           (mcp-error (.getMessage e))
@@ -324,3 +350,5 @@
 (m/=> handle-query [:=> [:cat [:maybe :map]] core/McpResponse])
 
 (m/=> handle-query-metadata [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> store-read-failure [:=> [:cat :any] [:maybe :any]])
