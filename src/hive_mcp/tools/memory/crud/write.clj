@@ -525,6 +525,8 @@
    stage over its budget is reported the same way, the error naming the stage.
    A :link-outgoing write that outruns its budget or throws is reported as
    `:kg_outgoing_pending` {:stage :reason ...}; the edges were already created.
+   Either one adds `:kg_check` (`edge-outcome/outcome-check`), naming the read
+   that tells the caller which edges finally landed.
 
    A deferred entry (embed failed, parked in the outbox) is answered from
    its outbox record; its :kg-outgoing link is amended into that record so
@@ -554,6 +556,7 @@
                   pending)
         link-pending (when (and (seq edge-ids) (not pending))
                        (link-outgoing! progress store entry-id edge-ids))
+        kg-check (edge-outcome/outcome-check entry-id edge-errors link-pending)
         created (or pending
                     (when (and (empty? requests) (map? receipt)
                                (= entry-id (:id receipt)))
@@ -576,6 +579,7 @@
                     (seq edge-ids) (assoc :kg_edges_created edge-ids)
                     (seq edge-errors) (assoc :kg_edge_errors edge-errors)
                     link-pending (assoc :kg_outgoing_pending link-pending)
+                    kg-check (assoc :kg_check kg-check)
                     requested
                     (assoc :queued_for_review
                            {:requested_type requested
@@ -583,7 +587,9 @@
                             :reason         (:reason (type-registry/gate-of requested))}))))
       (mcp-error (str "Entry indexed as " entry-id " but retrieval failed. Check memory store connectivity."
                       (when (seq edge-errors)
-                        (str " KG edges also failed: " (pr-str edge-errors))))))))
+                        (str " KG edges also failed: " (pr-str edge-errors)))
+                      (when kg-check
+                        (str " Check edges with: " (:how kg-check))))))))
 
 (defn- do-add!
   "Inner core of handle-add. Runs the memory-store/KG IO path through
