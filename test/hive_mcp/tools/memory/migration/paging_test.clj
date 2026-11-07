@@ -85,7 +85,7 @@
 (deftest the-deadline-is-checked-between-pages
   (let [store (->PagedStore (atom (seed 3)) (atom {}))
         clock (atom 0)
-        res   (migration/migrate-in-pages!
+        res   (#'migration/migrate-in-pages!
                store [["chunk-00000"] ["chunk-00001"] ["chunk-00002"]]
                {:dry-run true :deadline-ms 15 :now-ms #(swap! clock + 10)})]
     (is (false? (:complete? res)))

@@ -207,7 +207,7 @@
                               (mem-proto/query-entries store (assoc opts :limit 10000)))
                             tag-filter))))))
 
-(defn migrate-in-pages!
+(defn- migrate-in-pages!
   "Resolve and migrate the ids of ID-PAGES one page at a time.
 
    The deadline is checked before each page is REALIZED, so a slow scan stops
