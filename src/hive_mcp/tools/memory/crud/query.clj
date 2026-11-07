@@ -18,7 +18,8 @@
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
             [clojure.string :as str]
             [malli.core :as m]
-            [hive-mcp.tools.memory.read-outcome :as read-outcome]))
+            [hive-mcp.tools.memory.read-outcome :as read-outcome]
+            [hive-mcp.tools.memory.duration :as dur]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -34,10 +35,12 @@
     entries))
 
 (defn- apply-duration-filter
-  "Filter entries by duration."
+  "Filter entries by duration. Stores answer :duration as a keyword or a
+   string, the request carries a string; both sides compare by name."
   [duration entries]
   (if duration
-    (filter #(= (:duration %) duration) entries)
+    (let [want (name duration)]
+      (filter #(some-> (:duration %) name (= want)) entries))
     entries))
 
 (defn entry-after?
@@ -235,7 +238,8 @@
 
    A failed or partial store read, rows dropped for a missing id, and a
    fetch window the store filled before the post-filters ran each add a
-   :warnings line; the answer is then {:results :count :warnings}."
+   :warnings line; the answer is then {:results :count :warnings}. A
+   :duration outside `dur/duration-order` is refused, never answered []."
   [{:keys [type tags exclude_tags limit duration scope directory include_descendants verbosity query
            created_after updated_after]}]
   (let [directory (query-directory directory)
@@ -260,6 +264,10 @@
                         "(or narrow with :tags / :exclude_tags / :scope / :duration / "
                         ":created_after / :updated_after) — an unfiltered query would "
                         "return an arbitrary slice of memory, not an answer."))
+
+        (and (some? duration) (not (dur/valid-duration? (name duration))))
+        (mcp-error (str "memory query :duration " (pr-str duration) " is not a duration; use one of "
+                        (str/join ", " dur/duration-order) "."))
 
         :else
         (let [limit-val (coerce-int! limit :limit 20)]
