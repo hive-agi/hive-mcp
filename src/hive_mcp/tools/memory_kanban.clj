@@ -233,8 +233,10 @@
 (defn with-open-children
   "When `new-status` is done, attach the card's open KG children to the slim
    view as :open_children plus a :hint, so the caller can close or re-parent
-   them. Read-only and non-fatal: a failed lookup returns `slim` unchanged.
-   `deps` defaults to the live KG + store reads."
+   them. Advisory only: callers attach it AFTER the move committed, so the
+   hint says the card moved; it never claims nothing changed (tool-friction
+   20261103111352-281e0c13). Read-only and non-fatal: a failed lookup returns
+   `slim` unchanged. `deps` defaults to the live KG + store reads."
   ([slim task-id new-status]
    (with-open-children slim task-id new-status (live-child-deps)))
   ([slim task-id new-status deps]
@@ -247,8 +249,9 @@
        (cond-> slim
          (seq children)
          (assoc :open_children children
-                :hint (str (count children) " linked card(s) are still open. "
-                           "Close or re-parent them; nothing was changed.")))))))
+                :hint (str "The card moved to done. " (count children)
+                           " linked card(s) are still open: close or re-parent them,"
+                           " or move this card back (new_status=inreview).")))))))
 
 (m/=> with-open-children [:function
                           [:=> [:cat :map [:maybe :string] [:maybe :string]] :map]
