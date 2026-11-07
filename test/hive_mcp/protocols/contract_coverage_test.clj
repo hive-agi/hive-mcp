@@ -42,8 +42,8 @@
 
 (deftest the-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths ["src/hive_mcp/protocols"] :exempt {}})]
-    (is (= 124 (count (:universe report))) "every public defn of the tree")
-    (is (= 124 (count (:covered report))))))
+    (is (= 127 (count (:universe report))) "every public defn of the tree")
+    (is (= 127 (count (:covered report))))))
 
 (deftest every-port-method-re-export-is-contracted
   (let [fs (get (m/function-schemas) 'hive-mcp.protocols.memory)]

@@ -1,0 +1,9 @@
+{:empty-rows {:in [], :out nil},
+ :milvus-incomplete
+ {:in {:error :milvus/read-incomplete, :failed ["c"], :partial []},
+  :out {:error :milvus/read-incomplete, :failed ["c"], :partial []}},
+ :nil-answer {:in nil, :out nil},
+ :resilience
+ {:in {:success? false, :errors ["timeout"], :reconnecting? true},
+  :out {:success? false, :errors ["timeout"], :reconnecting? true}},
+ :rows {:in [{:id "a"}], :out nil}}
