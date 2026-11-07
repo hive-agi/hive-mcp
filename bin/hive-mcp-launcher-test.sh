@@ -37,6 +37,8 @@ expect() { if [[ "$2" == "$3" ]]; then ok "$1"; else bad "$1: want [$3] got [$2]
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/hive-mcp-launcher-test.XXXXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
+# Every case takes its restart lock here, never the live one.
+export HIVE_MCP_RESTART_LOCK_FILE="$TMP/restart.lock"
 
 # The stub clojure: launch n reads line n of $STUB_DIR/codes. A number is its
 # exit status; "wait" traps TERM, says it is ready and idles until signalled.
@@ -168,6 +170,40 @@ mkdir -p "$(dirname "$stamp")"; touch -d '2000-01-01' "$stamp"; touch "$P/src/x/
 notice_case fast-boot-stale "AOT classes are stale" HIVE_FAST_BOOT=1
 touch "$stamp"; touch -d '2000-01-01' "$P/src/x/a.clj"
 notice_case fast-boot-fresh "fast boot" HIVE_FAST_BOOT=true
+
+# 7. Restart lock: while one launcher runs the server, a second one starts
+#    no JVM, exits 75 and names the holder; once the holder is gone the lock
+#    is free again, and every winning launch left one line in restarts.log.
+new_case lock-holder wait
+HOLDER_D="$D"
+STUB_DIR="$D" HIVE_MCP_SUPERVISE=1 HIVE_MCP_OOMD_PREFERENCE=off OOM_RESTART_DELAY=0 \
+  HIVE_MCP_RESTART_BY=coordinator:first PATH="$TMP/bin:$PATH" \
+  "$LAUNCHER" </dev/null >"$D/out" 2>"$D/err" &
+lpid=$!
+for _ in $(seq 300); do [[ -f "$D/ready" ]] && break; sleep 0.1; done
+new_case lock-second 0
+HIVE_MCP_SUPERVISE=1 HIVE_MCP_OOMD_PREFERENCE=off HIVE_MCP_RESTART_BY=coordinator:second \
+  run_launcher; rc=$?
+named=no; grep -qF "by=coordinator:first" "$D/err" && named=yes
+expect "lock: second launcher exits 75, launches nothing, names the holder" \
+  "rc=$rc launches=$(lines "$D/pids") stdout=$(wc -c < "$D/out") holder-named=$named" \
+  "rc=75 launches=0 stdout=0 holder-named=yes"
+kill -TERM "$lpid"; wait "$lpid" 2>/dev/null
+spid="$(head -1 "$HOLDER_D/pids" 2>/dev/null)"
+[[ -n "$spid" ]] && kill -KILL "$spid" 2>/dev/null
+new_case lock-after 0
+HIVE_MCP_SUPERVISE=0 HIVE_MCP_OOMD_PREFERENCE=off HIVE_MCP_RESTART_BY=coordinator:third \
+  run_launcher; rc=$?
+expect "lock: free again once the holder exited" "rc=$rc launches=$(lines "$D/pids")" "rc=0 launches=1"
+expect "lock: restarts.log names each winner" \
+  "$(grep -c 'by=coordinator:first' "$TMP/restarts.log")$(grep -c 'by=coordinator:second' "$TMP/restarts.log")$(grep -c 'by=coordinator:third' "$TMP/restarts.log")" \
+  "101"
+new_case lock-off 0
+HIVE_MCP_RESTART_LOCK=off HIVE_MCP_RESTART_LOCK_FILE="$TMP/nolock/r.lock" HIVE_MCP_SUPERVISE=0 \
+  HIVE_MCP_OOMD_PREFERENCE=off run_launcher; rc=$?
+expect "lock off: launches, creates no lock file" \
+  "rc=$rc launches=$(lines "$D/pids") lockdir=$([[ -e "$TMP/nolock" ]] && echo yes || echo no)" \
+  "rc=0 launches=1 lockdir=no"
 
 echo "hive-mcp-launcher-test: $pass passed, $fail failed"
 (( fail == 0 ))
