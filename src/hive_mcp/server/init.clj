@@ -822,8 +822,11 @@
 (m/=> init-delivery-channels! [:=> [:cat] [:maybe [:vector :keyword]]])
 
 (defn init-nats!
-  "Initialize NATS client + bridge + backbone. Opt-in via config: services.nats.enabled = true.
-   Non-fatal: system degrades to NoopBackbone + polling if NATS unavailable.
+  "Initialize the event bus. Opt-in via config: services.nats.enabled = true.
+   Never blocks on the broker: hive-mcp.nats.bus/connect! starts an async
+   client that retries forever. The bridge subscriptions run from an
+   on-connect hook, once per connection, so a boot with the broker down
+   reaches the same state as a boot with it up. Status: `event bus status`.
 
    Delivery channels are registered separately via init-delivery-channels!
    so headless hosts still get a working delivery surface even when NATS
@@ -832,15 +835,11 @@
   (result/rescue-log "init-nats!" nil
                  (let [nats-config (global-config/get-service-config :nats)]
                    (when (:enabled nats-config)
-                     (let [start! (requiring-resolve 'hive-mcp.nats.client/start!)
-                           bridge! (requiring-resolve 'hive-mcp.nats.bridge/start-subscriptions!)
-                           create-bb (requiring-resolve 'hive-mcp.nats.backbone/create-backbone)
-                           set-bb! (requiring-resolve 'hive-mcp.protocols.event-backbone/set-backbone!)]
-                       (start! nats-config)
-                       (let [bb (create-bb)]
-                         (set-bb! bb)
-                         (log/info "[init] NatsBackbone set as active IEventBackbone"))
-                       (bridge!)
+                     (let [connect!  (requiring-resolve 'hive-mcp.nats.bus/connect!)
+                           once      (requiring-resolve 'hive-mcp.nats.bus/once-per-connection)
+                           bridge!   (requiring-resolve 'hive-mcp.nats.bridge/start-subscriptions!)]
+                       (connect! nats-config
+                                 {::bridge-subscriptions (once (fn [_conn] (bridge!)))})
                        (when-let [cb-start (requiring-resolve 'hive-mcp.swarm.callback/start-listener!)]
                          (cb-start)))))))
 

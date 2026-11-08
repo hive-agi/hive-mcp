@@ -12,4 +12,4 @@
   {:ok false,
    :command "m27-nope",
    :error
-   "Unknown command: m27-nope. Valid: disable, dump, enable, help, register-handler, stats, tail, unreg-fx"}}}
+   "Unknown command: m27-nope. Valid: bus-status, disable, dump, enable, help, register-handler, stats, tail, unreg-fx"}}}
