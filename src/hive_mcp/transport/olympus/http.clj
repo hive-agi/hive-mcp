@@ -231,24 +231,31 @@
 
    Options:
      :port - Port number (default: 7911, env: HIVE_MCP_OLYMPUS_WS_PORT)
+     :host - Address to listen on (default: 127.0.0.1,
+             env: HIVE_MCP_OLYMPUS_WS_HOST); the feed has no authentication
 
    Returns the actual port number."
   ([] (start! {}))
-  ([{:keys [port]}]
+  ([{:keys [port host]}]
    (let [port (or port
                   (config/get-service-value :olympus :ws-port
                                             :env "HIVE_MCP_OLYMPUS_WS_PORT"
                                             :parse parse-long
-                                            :default 7911))]
+                                            :default 7911))
+         host (or host
+                  (config/get-service-value :olympus :ws-host
+                                            :env "HIVE_MCP_OLYMPUS_WS_HOST"
+                                            :default "127.0.0.1"))]
      (if @server-atom
        (do
          (log/warn "Olympus WS server already running on port" (:port @server-atom))
          (:port @server-atom))
        (result/rescue nil
-                      (let [server (http/start-server http-handler {:port port})
+                      (let [server (http/start-server http-handler
+                                                      {:socket-address (java.net.InetSocketAddress. ^String host (int port))})
                             actual-port (netty/port server)]
                         (reset! server-atom {:server server :port actual-port})
-                        (log/info "Olympus WebSocket server started on port" actual-port)
+                        (log/info "Olympus WebSocket server started on" (str host ":" actual-port))
                         actual-port))))))
 
 (def Port [:int {:min 0 :max 65535}])
