@@ -20,7 +20,8 @@
             [hive-mcp.transport.olympus.snapshots :as snap]
             [hive-mcp.transport.olympus.stream :as stream]
             [hive-mcp.transport.olympus.state-bridge :as state-bridge]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.transport.origin :as origin]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -234,6 +235,9 @@
      :host - Address to listen on (default: 127.0.0.1,
              env: HIVE_MCP_OLYMPUS_WS_HOST); the feed has no authentication
 
+   Every request whose Origin is not loopback answers 403
+   (`hive-mcp.transport.origin/wrap-loopback-origin`).
+
    Returns the actual port number."
   ([] (start! {}))
   ([{:keys [port host]}]
@@ -251,7 +255,7 @@
          (log/warn "Olympus WS server already running on port" (:port @server-atom))
          (:port @server-atom))
        (result/rescue nil
-                      (let [server (http/start-server http-handler
+                      (let [server (http/start-server (origin/wrap-loopback-origin #'http-handler)
                                                       {:socket-address (java.net.InetSocketAddress. ^String host (int port))})
                             actual-port (netty/port server)]
                         (reset! server-atom {:server server :port actual-port})

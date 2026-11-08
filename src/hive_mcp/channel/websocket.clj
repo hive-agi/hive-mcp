@@ -7,7 +7,8 @@
             [clojure.data.json :as json]
             [hive-mcp.dns.result :refer [rescue]]
             [taoensso.timbre :as log]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.transport.origin :as origin]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -123,16 +124,9 @@
 
 (defn origin-allowed?
   "Pure: may a WebSocket upgrade carrying `origin` (the Origin header value,
-   nil when absent) connect? Absent: yes, a non-browser client. Present: only
-   an http(s) origin whose host is localhost, 127.0.0.1 or [::1]."
+   nil when absent) connect? See `hive-mcp.transport.origin/allowed?`."
   [origin]
-  (if (nil? origin)
-    true
-    (let [uri  (rescue nil (java.net.URI. (str origin)))
-          host (some-> uri .getHost)]
-      (boolean (and uri
-                    (#{"http" "https"} (.getScheme ^java.net.URI uri))
-                    (#{"localhost" "127.0.0.1" "[::1]" "::1"} host))))))
+  (origin/allowed? origin))
 
 (m/=> origin-allowed? [:=> [:cat [:maybe :string]] :boolean])
 
