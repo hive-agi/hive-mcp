@@ -49,6 +49,15 @@
   []
   (some-> @connection (.getStatus) (= Connection$Status/CONNECTED)))
 
+(defn current-connection
+  "The live jnats Connection when CONNECTED, else nil. For callers that need
+   the JetStream API (hive-mcp.nats.inbox); everything else goes through
+   publish!/subscribe!."
+  []
+  (when (connected?) @connection))
+
+(m/=> current-connection [:=> [:cat] :any])
+
 (defonce ^:private conn-state
   (atom {:status :stopped}))
 
