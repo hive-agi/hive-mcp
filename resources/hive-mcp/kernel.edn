@@ -139,6 +139,7 @@
   "tools.consolidated.analysis" :hive-emacs
   "tools.consolidated.git" :hive-emacs
   "tools.consolidated.hivemind" :hive-agent
+  "tools.consolidated.inbox" :hive-agent
   "tools.consolidated.kanban" :hive-kanban
   "tools.consolidated.magit" :hive-emacs
   "tools.consolidated.memory" :hive-memory
