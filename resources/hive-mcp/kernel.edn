@@ -65,6 +65,7 @@
   hive-mcp.tools.clojure-discover
   hive-mcp.tools.consolidated.multi
   hive-mcp.tools.consolidated.hot
+  hive-mcp.tools.consolidated.inbox
   hive-mcp.tools.consolidated.addon
   hive-mcp.tools.consolidated.config
   hive-mcp.tools.consolidated.session-config
@@ -139,7 +140,6 @@
   "tools.consolidated.analysis" :hive-emacs
   "tools.consolidated.git" :hive-emacs
   "tools.consolidated.hivemind" :hive-agent
-  "tools.consolidated.inbox" :hive-agent
   "tools.consolidated.kanban" :hive-kanban
   "tools.consolidated.magit" :hive-emacs
   "tools.consolidated.memory" :hive-memory
