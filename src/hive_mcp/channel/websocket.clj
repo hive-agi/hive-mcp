@@ -121,17 +121,43 @@
 
                 socket)))
 
+(defn origin-allowed?
+  "Pure: may a WebSocket upgrade carrying `origin` (the Origin header value,
+   nil when absent) connect? Absent: yes, a non-browser client. Present: only
+   an http(s) origin whose host is localhost, 127.0.0.1 or [::1]."
+  [origin]
+  (if (nil? origin)
+    true
+    (let [uri  (rescue nil (java.net.URI. (str origin)))
+          host (some-> uri .getHost)]
+      (boolean (and uri
+                    (#{"http" "https"} (.getScheme ^java.net.URI uri))
+                    (#{"localhost" "127.0.0.1" "[::1]" "::1"} host))))))
+
+(m/=> origin-allowed? [:=> [:cat [:maybe :string]] :boolean])
+
+(defn- forbidden-origin [origin]
+  (log/warn "WebSocket upgrade refused: Origin" origin "is not loopback")
+  {:status  403
+   :headers {"Content-Type" "text/plain"}
+   :body    "Forbidden: WebSocket Origin must be loopback"})
+
 (defn- hybrid-handler
-  "Hybrid HTTP/WebSocket handler routing to metrics, health, or WS upgrade."
+  "Hybrid HTTP/WebSocket handler routing to metrics, health, or WS upgrade.
+   A WS upgrade from a non-loopback Origin answers 403."
   [req]
-  (let [uri (:uri req)
-        method (:request-method req)]
+  (let [uri    (:uri req)
+        method (:request-method req)
+        origin (get-in req [:headers "origin"])]
     (cond
       (and (= method :get) (= uri "/metrics"))
       (metrics-handler req)
 
       (and (= method :get) (= uri "/health"))
       (health-handler req)
+
+      (not (origin-allowed? origin))
+      (forbidden-origin origin)
 
       :else
       (ws-connection-handler req))))
