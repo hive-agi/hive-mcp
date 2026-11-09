@@ -11,7 +11,9 @@
             [hive-mcp.nats.inbox :as inbox]
             [hive-mcp.protocols.event-backbone :as eb]
             [hive-mcp.tools.core :refer [mcp-json mcp-error]]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.nats.sense-republish :as sense-republish]
+            [hive-mcp.nats.sense-adapters :as sense-adapters]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -61,17 +63,26 @@
                     " or set HIVE_INBOX_ID"))))
 
 (defn handle-arm
-  "Create or keep the durable for an inbox. Re-arm keeps the cursor."
+  "Create or keep the durable for an inbox. Re-arm keeps the cursor. The
+   caller (`_caller_id`) is bound to the inbox, so the terminal and attention
+   senses of the lings it spawns are republished there
+   (hive-mcp.nats.sense-republish)."
   [params]
   (need-inbox "arm" params
               (fn [id]
                 (with-conn "arm"
                   (fn [conn]
-                    (assoc (inbox/arm! conn id)
-                           :how-to-receive
-                           (str "inbox read inbox=" id
-                                " (pulls and acks; wait_ms long-polls). A push"
-                                " endpoint for Monitor is a later slice.")))))))
+                    (let [armed  (inbox/arm! conn id)
+                          caller (blank->nil (:_caller_id params))]
+                      (when caller (sense-republish/bind-inbox! caller id))
+                      (sense-adapters/start!)
+                      (cond-> (assoc armed
+                                     :how-to-receive
+                                     (str "inbox read inbox=" id
+                                          " (pulls and acks; wait_ms long-polls). A push"
+                                          " endpoint for Monitor is a later slice."))
+                        caller (assoc :senses-from-lings-of
+                                      (sense-republish/binding-key caller)))))))))
 
 (defn handle-send
   "Publish `body` (alias `message`) to inbox `to`."
@@ -100,10 +111,12 @@
                                       :wait-ms (->int (or (:wait_ms params) (:wait-ms params)))})))))
 
 (defn handle-status
-  "One inbox's cursor, or every armed inbox when none is named."
+  "One inbox's cursor, or every armed inbox when none is named, with the
+   sense republisher's state (bindings, counts, degraded?)."
   [params]
   (let [id (resolve-inbox-id params (env-inbox))]
-    (with-conn "status" #(inbox/status % id))))
+    (with-conn "status" #(assoc (inbox/status % id)
+                                :sense-republish (sense-republish/status)))))
 
 (def ^:private Reply hive-mcp.tools.core/McpResponse)
 (m/=> handle-arm    [:=> [:cat [:maybe :map]] Reply])
