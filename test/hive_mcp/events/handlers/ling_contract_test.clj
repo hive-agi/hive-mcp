@@ -25,14 +25,15 @@
    :out [:map
          [:log [:map [:level [:= :info]] [:message :string]]]
          [:ds-transact [:tuple [:map [:slave/id :string] [:slave/name :string]
-                                [:slave/status [:= :starting]] [:slave/depth [:int {:min 1}]]
+                                [:slave/status [:= :starting]] [:slave/depth {:optional true} [:int {:min 1}]]
                                 [:slave/tasks-completed [:= 0]] [:slave/created-at inst?]
                                 [:slave/presets [:vector :string]] [:slave/cwd [:maybe :string]]]]]]
    :rel (fn [[_ [_ {:keys [slave-id name presets cwd depth]}]] out]
           (let [row (first (:ds-transact out))
                 id (or slave-id name "unknown-ling")]
-            (= {:slave/id id :slave/name (or name id) :slave/depth (or depth 1)
-                :slave/presets (vec (or presets [])) :slave/cwd cwd}
+            (= (cond-> {:slave/id id :slave/name (or name id)
+                        :slave/presets (vec (or presets [])) :slave/cwd cwd}
+                 (some? depth) (assoc :slave/depth depth))
                (select-keys row [:slave/id :slave/name :slave/depth :slave/presets :slave/cwd]))))
    :num-tests 100})
 
