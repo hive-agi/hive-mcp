@@ -267,7 +267,8 @@
    [:query any?]
    [:scope any?]
    [:excluded-tags [:vector any?]]
-   [:excludes-source [:enum :none :default :caller]]])
+   [:excludes-source [:enum :none :default :caller]]
+   [:warning {:optional true} :string]])
 
 ;; =============================================================================
 ;; Batch runner

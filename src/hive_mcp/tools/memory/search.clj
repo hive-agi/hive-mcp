@@ -44,7 +44,9 @@
             [hive-mcp.vectordb.resilience :refer [with-resilience]]
             [hive-mcp.memory.ingest-search :as ingest-search]
             [malli.core :as m]
-            [hive-mcp.tools.memory.schema :as ms]))
+            [hive-mcp.tools.memory.schema :as ms]
+            [hive-mcp.tools.memory.read-outcome :as read-outcome]
+            [hive-mcp.protocols.memory-read :as mread]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -238,9 +240,21 @@
 ;; Stages — each wrapped with its own safe-future-call + timeout
 ;; =============================================================================
 
+(defn- store-answer
+  "The store's answer to a search, with a failure the memory port degraded
+   into a marked vector (`hive-mcp.protocols.memory-read/read-answer`)
+   recovered as the failure itself, so `read-outcome/classify` sees a failed
+   or incomplete read, never a complete empty one. Pure."
+  [answer]
+  (or (when (sequential? answer) (mread/incomplete answer))
+      answer))
+
 (defn- run-store-query
   "Vectordb stage A: the primary store search + one fallback retry
    without exclude-tags (for false-negative recovery).
+
+   A store read that failed or came back incomplete is answered as the
+   failure (see `store-answer`) and is NOT retried as an empty result.
 
    Wrapped in `safe-future-call` with the :vectordb budget. A dropped
    HTTP transport kicks the Milvus heal loop via with-resilience."
@@ -248,21 +262,23 @@
   (safe/safe-future-call
    {:timeout-ms (budget :vectordb) :name "memory-search/store"}
    (fn []
-     (let [first-pass (with-resilience
-                        (mem-proto/search-similar
-                         (mem-proto/get-store) query
-                         {:limit        (* limit-val 2)
-                          :type         type
-                          :project-ids  visible-project-ids
-                          :exclude-tags effective-excludes}))]
-       (if (and (empty? first-pass) (seq effective-excludes))
+     (let [first-pass (store-answer
+                       (with-resilience
+                         (mem-proto/search-similar
+                          (mem-proto/get-store) query
+                          {:limit        (* limit-val 2)
+                           :type         type
+                           :project-ids  visible-project-ids
+                           :exclude-tags effective-excludes})))]
+       (if (and (sequential? first-pass) (empty? first-pass) (seq effective-excludes))
          (do (log/warn "search fallback: retrying without exclude-tags for query:" query)
-             (with-resilience
-               (mem-proto/search-similar
-                (mem-proto/get-store) query
-                {:limit       (* limit-val 2)
-                 :type        type
-                 :project-ids visible-project-ids})))
+             (store-answer
+              (with-resilience
+                (mem-proto/search-similar
+                 (mem-proto/get-store) query
+                 {:limit       (* limit-val 2)
+                  :type        type
+                  :project-ids visible-project-ids}))))
          first-pass)))))
 
 (defn- run-ingest-query
@@ -331,6 +347,12 @@
     (let [required (set required-tags)]
       (vec (remove required default-excludes)))))
 
+(def empty-not-absence-warning
+  "Warning carried by a search that returned nothing while it dropped hits."
+  (str "count 0 is NOT evidence of absence: the store returned hits that were "
+       "dropped for missing an ID (stale or degraded index). Retry, or look the "
+       "entry up by id or tag (memory query) before concluding nothing exists."))
+
 (defn search-payload
   "Pure: the ok payload of a semantic search.
 
@@ -340,19 +362,24 @@
    (:caller) or nothing (:none). A caller can then tell an empty corpus
    from a filtered one, and knows to pass exclude_tags=[] to see the rest
    (kanban 20260728020157-1407f421).
-   :dropped-null-hits counts store and ingest hits missing an ID before ranking."
+   :dropped-null-hits counts store and ingest hits missing an ID before ranking.
+   An empty result with dropped hits carries :warning
+   (`empty-not-absence-warning`)."
   [{:keys [results query scope exclude-tags default-excludes dropped-null-hits]}]
-  (let [excluded (vec exclude-tags)]
-    {:results         results
-     :count           (count results)
-     :dropped-null-hits (or dropped-null-hits 0)
-     :query           query
-     :scope           scope
-     :excluded-tags   excluded
-     :excludes-source (cond
-                        (empty? excluded)                    :none
-                        (= (set excluded) (set default-excludes)) :default
-                        :else                                :caller)}))
+  (let [excluded (vec exclude-tags)
+        dropped  (or dropped-null-hits 0)]
+    (cond-> {:results         results
+             :count           (count results)
+             :dropped-null-hits dropped
+             :query           query
+             :scope           scope
+             :excluded-tags   excluded
+             :excludes-source (cond
+                                (empty? excluded)                    :none
+                                (= (set excluded) (set default-excludes)) :default
+                                :else                                :caller)}
+      (and (empty? results) (pos? dropped))
+      (assoc :warning empty-not-absence-warning))))
 
 ;; =============================================================================
 ;; Composite search-store* (fork-join across store + ingest)
@@ -368,6 +395,11 @@
       :stage :embed|:vectordb|:post
       :partial <partial results if any>
       :cause <ex-message>}
+
+   A store that ANSWERS but not with entries (an error Result such as
+   hive-milvus' `:milvus/read-incomplete`, or a Failure map) is an outage,
+   not absence: it is the same :vectordb err, never an ok with count 0
+   (kanban 20260915232000-267ac9be).
 
    Budget rationale:
    - store and ingest run in parallel under the collective :total budget.
@@ -396,7 +428,9 @@
                                   (run-ingest-query query fetch-limit))
              {:stage :vectordb :value []}])
         store-side  (:store fj)
-        ingest-side (:ingest fj)]
+        ingest-side (:ingest fj)
+        store-read  (when-not (contains? store-side :err)
+                      (read-outcome/classify (:value store-side)))]
     (cond
       ;; Store side failed or timed out — surface structured err.
       (contains? store-side :err)
@@ -405,6 +439,17 @@
         (log/warn (ex-info "memory search: store stage failed"
                            {:stage stage :cause msg :query query}))
         (stage-err stage msg nil))
+
+      ;; Store answered with a failed or incomplete read, not with entries.
+      (not= :complete (:status store-read))
+      (let [{:keys [cause failed rows]} store-read
+            msg (str "store read " (name (:status store-read)) " (" cause
+                     "); an empty result would not be evidence of absence")]
+        (log/warn (ex-info "memory search: store read failed"
+                           {:stage :vectordb :cause cause :query query}))
+        (stage-err :vectordb msg
+                   {:failed-collections (mapv #(or (:collection %) (str %)) failed)
+                    :partial-count      (count rows)}))
 
       :else
       (let [store-results  (:value store-side)

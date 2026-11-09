@@ -209,6 +209,44 @@
                                   {:_block bname :value value}))))))
         contributed))
 
+(def ^:private carto-ready-readiness
+  "Carto readiness values that are not a degradation."
+  #{:ready :ok :indexed :empty "ready" "ok" "indexed" "empty"})
+
+(defn degraded-subsystems
+  "Pure: the subsystems a catchup answered from in a degraded state, each
+   {:subsystem name :status s :why text}, in header order. Memory is degraded
+   when its query outcome is not :ok or carries warnings; carto when its
+   readiness is outside `carto-ready-readiness` or it reports warnings."
+  [memory-status carto-status]
+  (let [mem-st (:status memory-status)]
+    (cond-> []
+      (and memory-status
+           (or (not (contains? #{:ok "ok"} mem-st)) (seq (:warnings memory-status))))
+      (conj {:subsystem "memory"
+             :status    (some-> mem-st name)
+             :why       (or (some-> (:warnings memory-status) first str)
+                            "memory query outcome is not ok")})
+
+      (and carto-status
+           (or (not (contains? carto-ready-readiness (:readiness carto-status)))
+               (seq (:warnings carto-status))))
+      (conj {:subsystem "carto"
+             :status    (some-> (:readiness carto-status) name)
+             :why       (or (some-> (:warnings carto-status) first str)
+                            "carto readiness is not ready")}))))
+
+(def degraded-note
+  "Header note when a subsystem is degraded."
+  (str "Degraded subsystems answered this catchup: counts and blocks from them "
+       "may undercount. A zero or missing count is not evidence of absence; "
+       "axioms, principles and priority conventions still drain via ---MEMORY--- "
+       "piggyback blocks."))
+
+(m/=> degraded-subsystems
+      [:=> [:cat [:maybe :map] [:maybe :map]]
+       [:vector [:map [:subsystem :string] [:status [:maybe :string]] [:why :string]]]])
+
 (defn build-catchup-response
   [{:keys [project-name project-id scopes git-info permeation
            axioms-meta axiom-candidates-meta
@@ -255,7 +293,15 @@
                 :permeation permeation
                 :memory-status memory-status
                 :memory-piggyback piggyback}
-         memory-available? (assoc :counts counts)))
+         memory-available? (assoc :counts counts)
+         (and memory-available? (every? zero? (vals counts)))
+         (assoc :counts-note (str "Every count is 0 for what this catchup's queries "
+                                  "returned; that is not evidence of an empty knowledge "
+                                  "base. Axioms, principles and priority conventions "
+                                  "drain via ---MEMORY--- piggyback blocks independently."))
+         (seq (degraded-subsystems memory-status carto-status))
+         (assoc :degraded (degraded-subsystems memory-status carto-status)
+                :degraded-note degraded-note)))
       ;; Review queue first after the header: a pending nomination is a
       ;; decision only the human can make, and it blocks nothing else.
       ;; Omitted entirely when the queue is empty — an empty queue is not news.

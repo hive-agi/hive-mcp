@@ -83,6 +83,22 @@
    ;; same turn, not queued behind an async task.
    :review            #'mem/handle-mcp-memory-review})
 
+(defn dry-run-refusal
+  "The refusal text when PARAMS ask a single-command batch for a dry run
+   (dry-run, dry_run or dry-run?, any value but false/\"false\"), else nil.
+   These batches have no preview mode, so a dry run is refused before any op
+   runs rather than silently performed as a write. Pure."
+  [cmd-name params]
+  (let [flag (some (fn [k] (when (contains? params k) [k (get params k)]))
+                   [:dry-run :dry_run :dry-run?])]
+    (when (and flag (not (contains? #{false nil "false"} (second flag))))
+      (str "Refused: batch-" cmd-name " has no dry-run mode and "
+           (name (first flag)) " was given; nothing was written. "
+           "Drop the param to perform the writes (batch-edit is the batch verb "
+           "with a validating dry-run)."))))
+
+(m/=> dry-run-refusal [:=> [:cat :string [:maybe :map]] [:maybe :string]])
+
 (defn- make-single-command-batch
   "Batch handler for ops targeting one memory command, run through a
    `Batchable` runner (RUN-FN, default `hive-mcp.tools.memory.batch/run-batch`)
@@ -121,8 +137,14 @@
                                   "' operations; got: " (pr-str (:command op))
                                   ". Use the multi tool's operations batch for mixed-command batches.")})]
      (fn [{:keys [operations] :as params}]
-       (if (or (nil? operations) (empty? operations))
+       (cond
+         (dry-run-refusal cmd-name params)
+         {:type "text" :isError true :text (dry-run-refusal cmd-name params)}
+
+         (or (nil? operations) (empty? operations))
          (batch-fn params)
+
+         :else
          (let [accepted (filterv targets? operations)
                ;; Only accepted ops reach the runner, so its results vector is
                ;; aligned with ACCEPTED, not with OPERATIONS. Zip it back onto

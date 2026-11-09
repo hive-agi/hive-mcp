@@ -103,6 +103,35 @@
   []
   (->NoopBackbone))
 
+(def BackboneStatus
+  [:map
+   [:backbone-id :keyword]
+   [:installed? :boolean]
+   [:connected? :boolean]
+   [:working? :boolean]
+   [:summary :string]])
+
+(defn backbone-status
+  "Which backbone is active and whether it actually works. :working? is true
+   only for an installed, non-noop backbone that reports connected? now, so
+   neither a NoopBackbone nor a disconnected NatsBackbone passes as a bus."
+  []
+  (let [bb   (get-backbone)
+        id   (backbone-id bb)
+        inst (and (backbone-set?) (not= :noop id))
+        up?  (boolean (try (connected? bb) (catch Exception _ false)))
+        ok?  (and inst up?)]
+    {:backbone-id id
+     :installed?  (boolean inst)
+     :connected?  up?
+     :working?    (boolean ok?)
+     :summary     (cond
+                    (not inst) "no event bus: NoopBackbone, events stay in-process"
+                    ok?        (str (name id) " backbone connected")
+                    :else      (str (name id) " backbone installed but NOT connected"))}))
+
+(m/=> backbone-status [:=> [:cat] BackboneStatus])
+
 (def Backbone
   "Any value satisfying IEventBackbone; generates NoopBackbones."
   [:fn {:gen/schema :nil :gen/fmap (fn [_] (->NoopBackbone))}
