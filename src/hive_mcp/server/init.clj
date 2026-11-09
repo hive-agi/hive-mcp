@@ -837,9 +837,13 @@
                    (when (:enabled nats-config)
                      (let [connect!  (requiring-resolve 'hive-mcp.nats.bus/connect!)
                            once      (requiring-resolve 'hive-mcp.nats.bus/once-per-connection)
-                           bridge!   (requiring-resolve 'hive-mcp.nats.bridge/start-subscriptions!)]
+                           bridge!   (requiring-resolve 'hive-mcp.nats.bridge/start-subscriptions!)
+                           senses!   (requiring-resolve 'hive-mcp.nats.sense-adapters/start!)]
+                       ;; sense republish is idempotent, so every (re)connect
+                       ;; also picks up a hive-agent that mounted late
                        (connect! nats-config
-                                 {::bridge-subscriptions (once (fn [_conn] (bridge!)))})
+                                 {::bridge-subscriptions (once (fn [_conn] (bridge!)))
+                                  ::sense-republish      (fn [_conn] (senses!))})
                        (when-let [cb-start (requiring-resolve 'hive-mcp.swarm.callback/start-listener!)]
                          (cb-start)))))))
 
