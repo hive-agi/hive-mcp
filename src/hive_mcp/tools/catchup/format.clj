@@ -269,6 +269,16 @@
    (select-keys carto-status [:indexed-forms-cached :cached-at :cached-age-ms
                               :indexed-forms-pending? :indexed-forms-populated?])))
 
+(m/=> carto-status-block
+      [:=> [:cat [:maybe :map]]
+       [:map
+        [:_block [:= "carto-status"]]
+        [:warnings :any]
+        [:hint :any]
+        [:indexed-forms-cached {:optional true} :any]
+        [:cached-at {:optional true} :any]
+        [:cached-age-ms {:optional true} :any]]])
+
 (defn build-catchup-response
   [{:keys [project-name project-id scopes git-info permeation
            axioms-meta axiom-candidates-meta
