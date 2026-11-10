@@ -32,7 +32,7 @@
    rides `:kanban/edit-temporal-record`, beside the move's
    `:kanban/temporal-record`. Returns nil for a missing or non-kanban entry."
   [{:keys [:kanban/entry] :as coeffects}
-   [_ {:keys [task-id new-status title description append-description priority]}]]
+   [_ {:keys [task-id new-status title description append-description priority agent-id]}]]
   (when-let [move (events/move-fx coeffects [:kanban/move {:task-id task-id :new-status new-status}])]
     (let [{moved-content :content moved-tags :tags}
           (get-in move [:kanban/facade-update :payload])
@@ -42,7 +42,8 @@
                                                  :title              title
                                                  :description        description
                                                  :append-description append-description
-                                                 :priority           priority}])
+                                                 :priority           priority
+                                                 :agent-id           agent-id}])
           content (get-in edit [:kanban/facade-update :payload :content])
           tags    (or (get-in edit [:kanban/facade-update :payload :tags]) moved-tags)
           final   (assoc moved :content content :tags tags)]

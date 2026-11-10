@@ -37,8 +37,12 @@
 ;; 1. edit-transition — pure trifecta
 ;; =============================================================================
 
-(defn run-edit-transition [{:keys [entry edits]}]
-  (kt/edit-transition (or entry fixture-entry) (or edits {})))
+(defn run-edit-transition
+  "Pins the history clock (`:at`) so a replaced description's
+   `:description-history` stamp is stable in the golden."
+  [{:keys [entry edits]}]
+  (kt/edit-transition (or entry fixture-entry)
+                      (merge {:at "2026-01-01T00:00:00+0000"} edits)))
 
 (deftrifecta edit-transition-contract
   hive-mcp.tools.kanban.edit-trifecta-test/run-edit-transition
