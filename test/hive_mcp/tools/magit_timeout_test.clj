@@ -80,7 +80,7 @@
 
 (deftest a-passed-timeout-reaches-the-client-verbatim
   (sh/with-swarm-host [stub answer-all]
-    (tools/handle-magit-push {:directory "/tmp/repo" :timeout_ms 60000})
+    (tools/handle-magit-status {:directory "/tmp/repo" :timeout_ms 60000})
     (is (empty? (untimed-calls stub)))
     (let [[[_op timeout]] (timed-calls stub)]
       (is (= 60000 timeout)
@@ -88,22 +88,23 @@
 
 (deftest a-string-timeout-arrives-as-a-number
   (sh/with-swarm-host [stub answer-all]
-    (tools/handle-magit-push {:directory "/tmp/repo" :timeout_ms "45000"})
+    (tools/handle-magit-status {:directory "/tmp/repo" :timeout_ms "45000"})
     (is (= 45000 (second (first (timed-calls stub)))))))
 
 (def ^:private command-params
   "One representative invocation per git command that reaches Emacs.
-   `batch-commit` is excluded: it is a fan-out over :commit, already covered."
+   `batch-commit` is excluded: it is a fan-out over :commit, already covered.
+   push, pull and fetch are excluded: they run on the git CLI and never reach
+   Emacs (`cli-only-commands`)."
   {:status           {}
    :stage            {:files "src/a.clj"}
    :commit           {:message "m"}
-   :push             {:set_upstream true}
    :branches         {}
    :log              {:count 5}
    :diff             {:target "staged"}
-   :pull             {}
-   :fetch            {:remote "origin"}
    :feature-branches {}})
+
+(def ^:private cli-only-commands #{:push :pull :fetch})
 
 (deftest every-emacs-backed-git-command-honours-the-timeout
   (testing "a handler added later without threading timeout_ms is the
@@ -124,7 +125,7 @@
 
 (deftest the-commands-covered-are-the-commands-the-tool-offers
   (testing "so a new command cannot be added without this suite noticing"
-    (let [reachable (disj (set (keys git/canonical-handlers)) :batch-commit)]
+    (let [reachable (apply disj (set (keys git/canonical-handlers)) :batch-commit cli-only-commands)]
       (is (= reachable (set (keys command-params)))
           "command-params has drifted from the tool's own handler map"))))
 

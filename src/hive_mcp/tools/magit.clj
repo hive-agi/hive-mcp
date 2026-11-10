@@ -50,64 +50,276 @@
 ;;; Result DSL Helpers (boundary pattern — same as tools/cider.clj)
 ;;; =============================================================================
 
+(def ^:private local-timeout-ms
+  "Budget for a local git run (index, log, status) when the caller set none."
+  60000)
+
+(def ^:private remote-timeout-ms
+  "Budget for a git run that waits on a network remote when the caller set none."
+  120000)
+
 (defn- git!
-  "Run git ARGS in DIR, optionally feeding IN on stdin. {:exit :out}."
-  ([dir args] (git! dir args nil))
-  ([dir args in]
-   (let [process (-> (ProcessBuilder. ^java.util.List (into ["git"] args))
-                     (.directory (java.io.File. ^String dir))
-                     (.redirectErrorStream true)
-                     (.start))]
-     (with-open [w (.getOutputStream process)]
-       (when in (.write w (.getBytes ^String in java.nio.charset.StandardCharsets/UTF_8))))
-     (let [out (String. (.readAllBytes (.getInputStream process))
-                        java.nio.charset.StandardCharsets/UTF_8)]
-       {:exit (.waitFor process) :out out}))))
+  "Run git ARGS in DIR, optionally feeding IN on stdin, for at most TIMEOUT-MS
+   (nil = `local-timeout-ms`). {:exit :out}; a run that outlives its budget is
+   destroyed and answers exit -1. Git never prompts: the server has no terminal
+   to answer a credential or merge-message prompt, so such a run fails instead
+   of hanging."
+  ([dir args] (git! dir args nil nil))
+  ([dir args in] (git! dir args in nil))
+  ([dir args in timeout-ms]
+   (let [budget (long (or timeout-ms local-timeout-ms))
+         pb (-> (ProcessBuilder. ^java.util.List (into ["git"] args))
+                (.directory (java.io.File. ^String dir))
+                (.redirectErrorStream true))
+         env (.environment pb)]
+     (.put env "GIT_TERMINAL_PROMPT" "0")
+     (.put env "GIT_MERGE_AUTOEDIT" "no")
+     (let [process (.start pb)
+           out (future (String. (.readAllBytes (.getInputStream process))
+                                java.nio.charset.StandardCharsets/UTF_8))]
+       (with-open [w (.getOutputStream process)]
+         (when in (.write w (.getBytes ^String in java.nio.charset.StandardCharsets/UTF_8))))
+       (if (.waitFor process budget java.util.concurrent.TimeUnit/MILLISECONDS)
+         {:exit (.exitValue process) :out @out}
+         (do (.destroyForcibly process)
+             {:exit -1 :out (str "git " (str/join " " args) " timed out after " budget "ms")}))))))
 
 (defn- git-ok [{:keys [exit out]} category]
   (if (zero? exit)
     (result/ok out)
     (result/err category {:message (str category " - " (str/trim out))})))
 
+(defn- git-out
+  "Trimmed output of a successful git run in DIR, else nil."
+  [dir args]
+  (let [{:keys [exit out]} (git! dir args)]
+    (when (zero? exit) (str/trim out))))
+
+(defn- git-lines
+  "Non-blank output lines of a successful git run in DIR, [] otherwise."
+  [dir args]
+  (if-let [out (git-out dir args)]
+    (vec (remove str/blank? (str/split-lines out)))
+    []))
+
+(defn- recent-commits
+  "The last N commits in DIR, shaped as the editor's api-log answers them."
+  [dir n]
+  (mapv (fn [line]
+          (let [[h sh an ae s d] (str/split line (re-pattern (str (char 0))) -1)]
+            {:hash (or h "") :short-hash (or sh "") :author (or an "") :email (or ae "")
+             :subject (or s "") :date (or d "")}))
+        (git-lines dir ["log" (str "-n" n) "--format=%H%x00%h%x00%an%x00%ae%x00%s%x00%ai"])))
+
+(defn- cli-status
+  "Repository status in DIR as the JSON the editor's api-status encodes, plus
+   \"backend\": \"git-cli\" so a reader can tell which side answered."
+  [dir]
+  (if-let [root (git-out dir ["rev-parse" "--show-toplevel"])]
+    (let [staged (git-lines dir ["diff" "--cached" "--name-only"])
+          unstaged (git-lines dir ["diff" "--name-only"])
+          untracked (git-lines dir ["ls-files" "--others" "--exclude-standard"])
+          [behind ahead] (some-> (git-out dir ["rev-list" "--left-right" "--count" "@{upstream}...HEAD"])
+                                 (str/split #"\s+"))]
+      (result/ok
+       (json/write-str
+        {:repository root
+         :branch (git-out dir ["rev-parse" "--abbrev-ref" "HEAD"])
+         :upstream (git-out dir ["rev-parse" "--abbrev-ref" "@{upstream}"])
+         :ahead (or (some-> ahead parse-long) 0)
+         :behind (or (some-> behind parse-long) 0)
+         :staged staged :staged-count (count staged)
+         :unstaged unstaged :unstaged-count (count unstaged)
+         :untracked untracked :untracked-count (count untracked)
+         :stashes (git-lines dir ["stash" "list" "--oneline"])
+         :recent-commits (recent-commits dir 5)
+         :clean (every? empty? [staged unstaged untracked])
+         :magit-available false
+         :backend "git-cli"})))
+    (result/err :magit/status-failed
+                {:message (str ":magit/status-failed - not a git repository: " dir)})))
+
+(defn- cli-branches [dir]
+  {:current (git-out dir ["rev-parse" "--abbrev-ref" "HEAD"])
+   :upstream (git-out dir ["rev-parse" "--abbrev-ref" "@{upstream}"])
+   :local (git-lines dir ["branch" "--format=%(refname:short)"])
+   :remote (git-lines dir ["branch" "-r" "--format=%(refname:short)"])})
+
+(defn- cli-diff [dir target]
+  (let [staged #(:out (git! dir ["diff" "--cached" "-U3"]))
+        unstaged #(:out (git! dir ["diff" "-U3"]))]
+    (result/ok (str/trim (case target
+                           "unstaged" (unstaged)
+                           "all" (str (staged) "\n---\n" (unstaged))
+                           (staged))))))
+
+(defn- push-argv
+  "The git push argv for BRANCH to REMOTE. The refspec is always the explicit
+   HEAD:refs/heads/<branch>, so the push lands on <remote>/<branch> whatever the
+   branch tracks: a worktree cut from origin/staging tracks origin/staging, and
+   a bare `git push` then refuses (push.default=simple, 'the upstream branch of
+   your current branch does not match the name of your current branch') or, on
+   push.default=upstream, would move staging. With SET-UPSTREAM, -u re-points
+   tracking at <remote>/<branch>."
+  [{:keys [remote branch set-upstream]}]
+  (cond-> ["push"]
+    set-upstream (conj "-u")
+    true (conj remote (str "HEAD:refs/heads/" branch))))
+
+(defn- push-remote
+  "The remote a push goes to: the caller's, else the branch's own remote, else origin."
+  [dir branch remote]
+  (or remote
+      (let [r (git-out dir ["config" "--get" (str "branch." branch ".remote")])]
+        (when-not (or (str/blank? r) (= "." r)) r))
+      "origin"))
+
+(defn- cli-push
+  "Push the current branch of DIR to <remote>/<same name>, never to a
+   differently named upstream."
+  [{:keys [directory remote set-upstream]} timeout-ms]
+  (if-let [branch (git-out directory ["symbolic-ref" "--quiet" "--short" "HEAD"])]
+    (let [remote (push-remote directory branch remote)
+          target (str remote "/" branch)
+          upstream (git-out directory ["rev-parse" "--abbrev-ref" "@{upstream}"])
+          argv (push-argv {:remote remote :branch branch :set-upstream set-upstream})
+          {:keys [exit out]} (git! directory argv nil (or timeout-ms remote-timeout-ms))]
+      (if (zero? exit)
+        (result/ok
+         (str/join "\n"
+                   (cond-> [(str "Pushed " branch " to " target ".")]
+                     (and upstream (not= upstream target) set-upstream)
+                     (conj (str "Upstream moved from " upstream " to " target "."))
+                     (and upstream (not= upstream target) (not set-upstream))
+                     (conj (str "Upstream left at " upstream "; set_upstream=true points it at "
+                                target "."))
+                     (and (nil? upstream) set-upstream)
+                     (conj (str "Upstream set to " target "."))
+                     (not (str/blank? out)) (conj (str/trim out)))))
+        (result/err :magit/push-failed
+                    {:message (str ":magit/push-failed - git " (str/join " " argv) " - "
+                                   (str/trim out))})))
+    (result/err :magit/push-failed
+                {:message (str ":magit/push-failed - HEAD is detached in " directory
+                               "; check out a branch to push")})))
+
+(defn- cli-fetch
+  "Fetch REMOTE, or each configured remote in turn when none is named. One
+   unreachable remote does not fail the others: the answer names it and the
+   fetch succeeds when at least one remote answered."
+  [{:keys [directory remote]} timeout-ms]
+  (let [remotes (if remote [remote] (git-lines directory ["remote"]))
+        runs (mapv (fn [r] [r (git! directory ["fetch" r] nil (or timeout-ms remote-timeout-ms))])
+                   remotes)
+        fetched (filterv (comp zero? :exit second) runs)
+        failed (filterv (comp not zero? :exit second) runs)
+        failures (map (fn [[r {:keys [out]}]] (str "Could not fetch " r ": " (str/trim out))) failed)]
+    (cond
+      (empty? remotes)
+      (result/err :magit/fetch-failed
+                  {:message (str ":magit/fetch-failed - no remote configured in " directory)})
+
+      (empty? fetched)
+      (result/err :magit/fetch-failed
+                  {:message (str ":magit/fetch-failed - " (str/join "\n" failures))})
+
+      :else
+      (result/ok (str/join "\n" (concat [(str "Fetched " (str/join ", " (map first fetched)) ".")]
+                                        failures
+                                        (keep (fn [[_ {:keys [out]}]] (not-empty (str/trim out)))
+                                              fetched)))))))
+
 (defn- cli-op
-  "Plain-git twin of the commit-path closed ops, used when no editor vessel
-   can serve them. nil for any other op."
-  [{:keys [op directory files paths message all]}]
-  (case op
-    :magit/stage
-    (git-ok (git! directory (if (= :all files) ["add" "-A"] (into ["add" "--"] files)))
-            :magit/stage-failed)
+  "Plain-git twin of every closed :magit/* op: the backend for the remote ops,
+   and the failover for the others when the editor vessel cannot run them (no
+   Emacs, as for a coordinator in tmux, or an Emacs whose bridge did not load).
+   nil for an op it does not know."
+  ([op] (cli-op op nil))
+  ([{:keys [op directory files paths message all target] :as m} timeout-ms]
+   (case op
+     :magit/stage
+     (git-ok (git! directory (if (= :all files) ["add" "-A"] (into ["add" "--"] files)))
+             :magit/stage-failed)
 
-    :magit/stage-verify
-    (if-let [missing (first (remove #(.exists (java.io.File. ^String directory ^String %)) paths))]
-      (result/ok (json/write-str {:status "missing" :path missing}))
-      (let [added (git! directory (into ["add" "--"] paths))]
-        (if-not (zero? (:exit added))
-          (git-ok added :magit/stage-failed)
-          (let [staged (git! directory (into ["diff" "--cached" "--name-only" "--"] paths))]
-            (result/ok (json/write-str {:status (if (str/blank? (:out staged)) "empty" "ok")}))))))
+     :magit/stage-verify
+     (if-let [missing (first (remove #(.exists (java.io.File. ^String directory ^String %)) paths))]
+       (result/ok (json/write-str {:status "missing" :path missing}))
+       (let [added (git! directory (into ["add" "--"] paths))]
+         (if-not (zero? (:exit added))
+           (git-ok added :magit/stage-failed)
+           (let [staged (git! directory (into ["diff" "--cached" "--name-only" "--"] paths))]
+             (result/ok (json/write-str {:status (if (str/blank? (:out staged)) "empty" "ok")}))))))
 
-    :magit/commit
-    (git-ok (git! directory (cond-> ["commit"] all (conj "-a") true (conj "-F" "-")) message)
-            :magit/commit-failed)
+     :magit/commit
+     (git-ok (git! directory (cond-> ["commit"] all (conj "-a") true (conj "-F" "-")) message)
+             :magit/commit-failed)
 
-    nil))
+     :magit/status (cli-status directory)
+     :magit/branches (result/ok (json/write-str (cli-branches directory)))
+     :magit/log (result/ok (json/write-str (recent-commits directory (or (:count m) 10))))
+     :magit/diff (cli-diff directory target)
+     :magit/feature-branches
+     (let [{:keys [current local]} (cli-branches directory)]
+       (result/ok (json/write-str
+                   {:current current
+                    :feature_branches (filterv #(re-find #"^(feature|fix|feat)/" %) local)})))
+     :magit/push (cli-push m timeout-ms)
+     :magit/pull (git-ok (git! directory ["pull" "--no-edit"] nil (or timeout-ms remote-timeout-ms))
+                         :magit/pull-failed)
+     :magit/fetch (cli-fetch m timeout-ms)
+     nil)))
 
-(defn- vessel-unsupported? [error]
-  (str/includes? (str error) ":unsupported"))
+(def ^:private cli-only-ops
+  "Ops that never reach the editor. They wait on a network remote, which is
+   where a 5 s emacsclient budget times out, and the editor's push let a bare
+   `git push` pick the refspec from the branch's upstream, which refuses (or
+   targets the wrong branch) when that upstream has another name."
+  #{:magit/push :magit/pull :magit/fetch})
+
+(def ^:private idempotent-ops
+  "Ops safe to run again on the CLI after the editor timed out on them: the
+   reads, and staging (adding a path twice leaves the same index). A commit is
+   not here: a timed-out commit may have landed, and a rerun would commit again."
+  #{:magit/status :magit/branches :magit/log :magit/diff :magit/feature-branches
+    :magit/stage :magit/stage-verify})
+
+(def ^:private vessel-never-ran
+  "Vessel failures that prove the op never executed in the editor: no vessel
+   registered, the Emacs bridge did not load, the circuit breaker is open, or
+   emacsclient could not reach (or find) a daemon. Rerunning the op on the CLI
+   after one of these cannot run it twice."
+  #"(?i)bridge entrypoints failed to load|circuit breaker open|can't find socket|connection refused|server did not respond|socket.*not available|cannot run program|capability-unavailable|:unsupported")
+
+(defn- failover?
+  "True when op OP should run on the CLI after the vessel answered ENVELOPE."
+  [op {:keys [error timed-out]}]
+  (boolean
+   (and (:directory op)
+        (or (re-find vessel-never-ran (str error))
+            (and timed-out (contains? idempotent-ops (:op op)))))))
 
 (defn- dispatch->result
-  "Dispatch a closed magit operation and convert the eval-shaped envelope to Result.
-   When no editor vessel serves the op (:unsupported, e.g. a background session
-   without Emacs), the commit-path ops fall back to plain git in :directory."
+  "Run a closed magit operation and convert its answer to Result.
+   Remote ops (push, pull, fetch) run on the git CLI. Every other op goes to
+   the editor vessel first and fails over to the git CLI in :directory when the
+   vessel never ran it (see `vessel-never-ran`), or, for an idempotent op, timed
+   out. A commit that timed out is NOT rerun: it may have completed."
   [op timeout-ms]
-  (let [{:keys [success result error]} (svc/invoke :vessel :dispatch op timeout-ms)]
-    (cond
-      success (result/ok result)
-      (and (vessel-unsupported? error) (:directory op)) (or (cli-op op)
-                                                            (result/err :magit/dispatch-failed
-                                                                        {:message (str error)}))
-      :else (result/err :magit/dispatch-failed {:message (str error)}))))
+  (if (contains? cli-only-ops (:op op))
+    (cli-op op timeout-ms)
+    (let [{:keys [success result error] :as envelope}
+          (svc/invoke :vessel :dispatch op timeout-ms)]
+      (cond
+        success (result/ok result)
+        (failover? op envelope)
+        (do (log/info "magit op failing over to the git CLI" {:op (:op op) :vessel-error (str error)})
+            (or (cli-op op timeout-ms)
+                (result/err :magit/dispatch-failed {:message (str error)})))
+        (:timed-out envelope)
+        (result/err :magit/dispatch-failed
+                    {:message (str error "\nThe editor may still have run " (:op op)
+                                   "; it was not retried. Read `git status` before repeating it.")})
+        :else (result/err :magit/dispatch-failed {:message (str error)})))))
 
 
 (defn- try-result
@@ -347,12 +559,14 @@
                                                :all stage-all :directory dir} timeout-ms)))))))
 
 (defn handle-magit-push
-  "Push to remote. Optionally set upstream tracking.
+  "Push the current branch to <remote>/<current-branch>, on the git CLI.
 
-   `remote` selects the remote explicitly; omitted or blank, git's own default
-   remote is used. A push is the magit command most likely to outrun the
-   client's default timeout — it waits on a remote. Pass `timeout_ms` to give
-   it a longer budget."
+   The refspec is always explicit (HEAD:refs/heads/<branch>), so a branch that
+   tracks a differently named upstream (a worktree cut from origin/staging)
+   pushes to its own name and never to that upstream. set_upstream=true points
+   tracking at <remote>/<branch>. `remote` selects the remote; omitted or
+   blank, the branch's configured remote is used, else origin. Runs without
+   Emacs; `timeout_ms` bounds the git run (default 120000)."
   [{:keys [set_upstream remote directory] :as params}]
   (let [dir (resolve-directory directory)
         remote (some-> remote str str/trim not-empty)]
