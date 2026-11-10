@@ -130,6 +130,41 @@
     :else
     (r/err :hot/eject-failed (assoc report :message (str/join "; " (:errors report))))))
 
+(def FallbackReport
+  "The EjectReport slice every fallback answer carries."
+  [:map
+   [:hot/ejected [:vector :any]]
+   [:hot/fallback [:= true]]
+   [:hot/drain :map]
+   [:ok? :boolean]])
+
+(def FallbackResult
+  "plug-out!'s Result form of a fallback report."
+  [:or
+   [:map [:ok :map]]
+   [:map
+    [:error [:enum :hot/eject-refused :hot/eject-unknown :hot/eject-failed]]
+    [:message [:maybe :string]]]])
+
+(m/=> fallback-base [:=> [:cat :any [:sequential :any] [:sequential :any]] FallbackReport])
+
+(m/=> refusal [:=> [:cat :map [:sequential :any] [:sequential :any] :any]
+               [:map
+                [:ok? [:= false]]
+                [:hot/refused? [:= true]]
+                [:hot/blocking [:vector :any]]
+                [:errors [:vector :string]]]])
+
+(m/=> retained [:=> [:cat [:sequential :any] [:sequential :any] [:sequential :any]]
+                [:map
+                 [:classpath [:vector :any]]
+                 [:hive-hot-dirs [:vector :any]]
+                 [:namespaces [:vector :any]]
+                 [:restart-required? [:= true]]
+                 [:message :string]]])
+
+(m/=> outcome [:=> [:cat :map] FallbackResult])
+
 ;; =============================================================================
 ;; Collaborators, resolved at call time
 ;; =============================================================================
@@ -253,3 +288,6 @@
   "eject-fallback as plug-out!'s Result (see `outcome`). Never throws."
   [host specs target & [opts]]
   (outcome (eject-fallback host specs target opts)))
+
+(m/=> plug-out-fallback [:=> [:cat :any [:maybe [:sequential :map]] :any [:? [:maybe :map]]]
+                         FallbackResult])
