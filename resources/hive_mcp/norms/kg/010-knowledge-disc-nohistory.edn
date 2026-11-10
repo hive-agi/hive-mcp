@@ -1,0 +1,47 @@
+{:tx-data
+ ;; KG-MEM-NOHISTORY-AUDIT (kanban 20260705003615-24e79445): install on LIVE
+ ;; stores the :db/noHistory flags that schema.clj (knowledge-schema,
+ ;; disc-schema, kg-schema) already declares for derived, recomputable attrs.
+ ;; schema.clj only reaches the datascript/datalevin paths; a datahike store
+ ;; gets its schema from these filename-keyed norms, and 002 (hive-mcp) / 102
+ ;; (hive-knowledge disc) are installed already, so editing them would do nothing
+ ;; there. Same alter-only pattern as 006/007.
+ ;;
+ ;; SAFE ON AN EXISTING STORE: datahike lists :db/noHistory in the always-allow
+ ;; branch of schema/find-invalid-schema-updates, so it is a schema-only alter:
+ ;; no :db/index, :db/unique or valueType change, so no index backfill (the
+ ;; failure mode of the dropped norm 010-kg-edge-last-verified-index) and no
+ ;; datom is rewritten. The minimal {:db/ident X :db/noHistory true} form merges
+ ;; into each attr's existing definition. On a fresh DB, where hive-knowledge's
+ ;; 102-disc-schema runs after this, the later typed definition merges into it
+ ;; and keeps the flag (checked against datahike 0.8.1910).
+ ;;
+ ;; FORWARD-ONLY: history recorded before this norm stays until a store rebuild.
+ ;; This norm does not reclaim it, and it needs no gc-storage run.
+ ;;
+ ;; Every attr below holds a latest-value-wins observation, recomputed from
+ ;; disk, git or a rescan. No reader in hive-mcp, hive-knowledge or hive-carto
+ ;; reads its history. Retained on purpose (source of truth or audit value):
+ ;; :knowledge/abstraction-level, :knowledge/gaps, :knowledge/source-type,
+ ;; :disc/path, :disc/git-commit, :disc/project-id, :disc/volatility-class,
+ ;; :kg-edge/predicate.
+ [;; grounding stamps, rewritten on every re-ground (drift detection reads only
+  ;; the current value)
+  {:db/ident :knowledge/grounded-at      :db/noHistory true}
+  {:db/ident :knowledge/grounded-from    :db/noHistory true}
+  {:db/ident :knowledge/source-hash      :db/noHistory true}
+
+  ;; disc observations: recomputed from the file on disk on every analysis/read
+  {:db/ident :disc/content-hash          :db/noHistory true}
+  {:db/ident :disc/analyzed-at           :db/noHistory true}
+  {:db/ident :disc/last-read-at          :db/noHistory true}
+  {:db/ident :disc/read-count            :db/noHistory true}
+  {:db/ident :disc/certainty-alpha       :db/noHistory true}
+  {:db/ident :disc/certainty-beta        :db/noHistory true}
+  {:db/ident :disc/last-observation      :db/noHistory true}
+
+  ;; carto :has-schema edge satellites: rewritten by every carto scan; the
+  ;; rest of :kg-edge/* went noHistory in 007
+  {:db/ident :kg-edge/schema-text        :db/noHistory true}
+  {:db/ident :kg-edge/schema-head        :db/noHistory true}
+  {:db/ident :kg-edge/schema-subject     :db/noHistory true}]}
