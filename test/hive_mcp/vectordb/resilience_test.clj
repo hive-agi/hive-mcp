@@ -13,6 +13,7 @@
             [hive-spi.memory.registry :as registry]
             [hive-mcp.resilience.store :as resilience]
             [hive-test.golden :refer [deftest-golden]]
+            [hive-mcp.test-support.registry-isolation :as registry-isolation]
             [hive-mcp.vectordb.resilience :as vr]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
@@ -110,22 +111,24 @@
 (defn- put-store! [k store]
   (registry/register-store! k store))
 
-(defn- clear-registry! []
-  (registry/reset-registry!))
-
 (defn- registry-fixture
-  "Run each test against an empty store registry, restoring the prior one."
+  "Run each test against an empty store registry. Refuses a running addon
+   server before any write, empties the slot map and puts the exact prior one
+   back in one atomic swap; the global reset-registry! is never called."
   [t]
-  (let [snapshot (registry/registered-stores)]
-    (try
-      (clear-registry!)
-      (t)
-      (finally
-        (clear-registry!)
-        (doseq [[k s] snapshot]
-          (put-store! k s))))))
+  (registry-isolation/with-restored-store-registry
+    (fn []
+      (registry-isolation/restore-stores! {})
+      (t))))
 
 (use-fixtures :each registry-fixture)
+
+(deftest registry-fixture-cannot-clobber-a-live-registry
+  ;; Test isolation (card 20260629165759-7b9fd43c): the fixture called the
+  ;; global reset-registry! before and after every test and re-registered the
+  ;; prior stores one by one, with no addon-server refusal.
+  (is (= registry-isolation/isolated-fixture-report
+         (registry-isolation/fixture-isolation-report registry-fixture))))
 
 ;; =============================================================================
 ;; transient-failure? — pure classification
