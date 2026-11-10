@@ -9,6 +9,7 @@
   (:require [hive-dsl.result :as r]
             [hive.events.cofx :as cofx]
             [hive.events.router :as router]
+            [hive-mcp.tools.kanban.claim :as claim]
             [hive-mcp.tools.kanban.coeffects :as kcofx]
             [hive-mcp.tools.kanban.effects :as keffects]
             [hive-mcp.tools.kanban.predicates :as pred]
@@ -28,7 +29,8 @@
    public dispatch wraps this in a Result for the MCP boundary.
 
    Effect map invariants:
-     * `:kanban/facade-update` is ALWAYS present (the soft commit)
+     * `:kanban/facade-update` is ALWAYS present (the soft commit), except
+       for a refused claim, below
      * a move whose target equals the current status is NOT a transition: it
        still commits, but emits no temporal record, no movement, no hooks
      * `:kanban/notify-done` and `:kanban/archive-external` ONLY for a
@@ -36,27 +38,64 @@
      * both carry the POST-transition entry: the archive is a record of the
        COMPLETED task, so it must not be handed the coeffect snapshot whose
        tags and content still say `todo`
-     * No effect deletes from the store"
-  [{:keys [:kanban/entry :kanban/project-id]} [_ {:keys [task-id new-status]}]]
+     * No effect deletes from the store
+     * a move into `doing` is a CLAIM by `:owner` (hive-mcp.tools.kanban.claim):
+       a card held by a live foreign owner answers ONLY `:kanban/claim-refused`,
+       and nothing is written, unless `:steal-claim?` is true. A move to todo
+       or done clears the claim."
+  [{:keys [:kanban/entry :kanban/project-id :kanban/claim-ctx]}
+   [_ {:keys [task-id new-status owner steal-claim?]}]]
   (when (and entry (pred/kanban-entry? entry))
     (let [{:keys [old-status new-status new-content new-tags title]}
           (kt/transition entry new-status project-id)
-          moved?    (not= (pred/normalize-status old-status) new-status)
-          done?     (and moved? (pred/done? new-status))
-          moved-entry (assoc entry :tags new-tags :content new-content)]
-      (cond-> {:kanban/facade-update {:task-id task-id
-                                      :payload {:content new-content
-                                                :tags    new-tags}}}
-        moved? (assoc :kanban/track-movement {:task-id task-id :title title
-                                              :from old-status :to new-status
-                                              :project-id project-id}
-                      :kanban/temporal-record {:entry-id   task-id
-                                               :op         (if done? :kanban-done :kanban-move)
-                                               :data       {:old-status old-status
-                                                            :new-status new-status}
-                                               :project-id project-id})
-        done?  (assoc :kanban/notify-done      {:entry moved-entry :task-id task-id}
-                      :kanban/archive-external {:entry moved-entry :task-id task-id})))))
+          verdict   (when (claim/claims-on? new-status)
+                      (claim/decide (merge claim-ctx
+                                           {:claim  (claim/claim-of (:content entry))
+                                            :owner  owner
+                                            :steal? (true? steal-claim?)})))]
+      (if (claim/refused? verdict)
+        {:kanban/claim-refused (assoc verdict :task-id task-id)}
+        (let [new-content (claim/apply-claim new-content new-status verdict
+                                             (claim/owner-key owner) (kt/kanban-timestamp))
+              moved?      (not= (pred/normalize-status old-status) new-status)
+              done?       (and moved? (pred/done? new-status))
+              moved-entry (assoc entry :tags new-tags :content new-content)]
+          (cond-> {:kanban/facade-update {:task-id task-id
+                                          :payload {:content new-content
+                                                    :tags    new-tags}}}
+            moved? (assoc :kanban/track-movement {:task-id task-id :title title
+                                                  :from old-status :to new-status
+                                                  :project-id project-id}
+                          :kanban/temporal-record {:entry-id   task-id
+                                                   :op         (if done? :kanban-done :kanban-move)
+                                                   :data       {:old-status old-status
+                                                                :new-status new-status}
+                                                   :project-id project-id})
+            done?  (assoc :kanban/notify-done      {:entry moved-entry :task-id task-id}
+                          :kanban/archive-external {:entry moved-entry :task-id task-id})))))))
+
+(defn claim-fx
+  "Pure handler of `:kanban/claim`: record `:owner`'s claim on the card
+   without moving its status (the `agent spawn` kanban_task_id path). A card
+   held by a live foreign owner answers only `:kanban/claim-refused` unless
+   `:steal-claim?`. A done card is never claimed. Returns nil for a missing or
+   non-kanban entry."
+  [{:keys [:kanban/entry :kanban/claim-ctx]} [_ {:keys [task-id owner steal-claim?]}]]
+  (when (and entry (pred/kanban-entry? entry))
+    (let [content (or (:content entry) {})
+          verdict (if (pred/done? (kt/current-status entry))
+                    :skip
+                    (claim/decide (merge claim-ctx
+                                         {:claim  (claim/claim-of content)
+                                          :owner  owner
+                                          :steal? (true? steal-claim?)})))]
+      (if (claim/refused? verdict)
+        {:kanban/claim-refused (assoc verdict :task-id task-id)}
+        {:kanban/facade-update
+         {:task-id task-id
+          :payload {:content (claim/apply-claim content nil verdict
+                                                (claim/owner-key owner)
+                                                (kt/kanban-timestamp))}}}))))
 
 (defn retag-fx
   "Pure handler. Given coeffects (entry) and an event, return the effect map
@@ -144,8 +183,19 @@
    the id, so a caller that sent it under another key can see which one
    was read."
   [fx-map task-id]
-  (if (seq fx-map)
+  (cond
+    (:kanban/claim-refused fx-map)
+    (let [v (:kanban/claim-refused fx-map)]
+      (r/err :kanban/claim-refused
+             {:message (claim/refusal-message task-id v)
+              :task-id task-id
+              :holder  (:holder v)
+              :since   (:since v)}))
+
+    (seq fx-map)
     (r/ok fx-map)
+
+    :else
     (r/err :kanban/invalid-task
            {:message (str "Entry not found or not a kanban task (param task_id): " task-id)
             :task-id task-id
@@ -208,11 +258,18 @@
   []
   (kcofx/register-all!)
   (keffects/register-all!)
+  (claim/register!)
   (router/reg-event-fx
    :kanban/move
    [(cofx/inject-cofx :kanban/entry)
-    (cofx/inject-cofx :kanban/project-id)]
+    (cofx/inject-cofx :kanban/project-id)
+    (cofx/inject-cofx :kanban/claim-ctx)]
    move-fx)
+  (router/reg-event-fx
+   :kanban/claim
+   [(cofx/inject-cofx :kanban/entry)
+    (cofx/inject-cofx :kanban/claim-ctx)]
+   claim-fx)
   (router/reg-event-fx
    :kanban/retag
    [(cofx/inject-cofx :kanban/entry)]
@@ -258,6 +315,19 @@
       ;; effects map, then returns the final context. We surface that
       ;; effects map to the caller as a Result.
       (dispatch-committed! [:kanban/move normalized] (:task-id normalized)))))
+
+(defn dispatch-claim!
+  "Public boundary entry point: record `owner`'s claim on `task-id` without
+   a status move. `event-payload` {:task-id :owner :steal-claim?}.
+
+   Returns (r/ok effect-map), (r/err :kanban/claim-refused {:holder :since
+   :message}) when a live foreign owner holds the card, or the usual
+   :kanban/invalid-task / write errors."
+  [{:keys [task-id] :as event-payload}]
+  (init!)
+  (if (str/blank? (str task-id))
+    (r/err :kanban/invalid-task-id {:message "Claim requires :task-id" :given task-id})
+    (dispatch-committed! [:kanban/claim event-payload] task-id)))
 
 (defn dispatch-retag!
   "Public boundary entry point. Synchronously dispatch a `:kanban/retag` event
@@ -350,6 +420,8 @@
 ;; =============================================================================
 
 (m/=> move-fx [:=> [:cat ks/Coeffects ks/Event] [:maybe ks/FxMap]])
+(m/=> claim-fx [:=> [:cat ks/Coeffects ks/Event] [:maybe ks/FxMap]])
+(m/=> dispatch-claim! [:=> [:cat ks/DispatchPayload] ks/Result])
 (m/=> retag-fx [:=> [:cat ks/Coeffects ks/Event] [:maybe ks/FxMap]])
 (m/=> edit-fx [:=> [:cat ks/Coeffects ks/Event] [:maybe ks/FxMap]])
 (m/=> register-all! [:=> [:cat] ks/HandlerRegistry])

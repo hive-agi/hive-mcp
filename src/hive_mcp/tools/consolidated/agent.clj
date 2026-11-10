@@ -216,7 +216,9 @@
                               "parent" {:type "string"
                                         :description "Parent agent ID for spawn"}
                               "kanban_task_id" {:type "string"
-                                                :description "Kanban task ID to link to ling. On session_complete, linked task auto-moves to done."}
+                                                :description "Kanban task ID to link to ling. On session_complete, linked task auto-moves to done. Spawn claims the card for the spawner (parent); a card another live coordinator/agent claims is refused, naming the holder and since."}
+                              "steal_claim" {:type "boolean"
+                                             :description "[spawn] Take over the kanban_task_id card even when another live owner claims it."}
                               ;; kill params
                               "force" {:type "boolean"
                                        :description "Force kill even if critical ops in progress"}

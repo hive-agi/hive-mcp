@@ -19,7 +19,7 @@
 (def ^:private kanban-dir "src/hive_mcp/tools/kanban")
 
 (def ^:private kanban-nss
-  '[hive-mcp.tools.kanban.catchup-block hive-mcp.tools.kanban.coeffects
+  '[hive-mcp.tools.kanban.catchup-block hive-mcp.tools.kanban.claim hive-mcp.tools.kanban.coeffects
     hive-mcp.tools.kanban.effects hive-mcp.tools.kanban.events
     hive-mcp.tools.kanban.filters hive-mcp.tools.kanban.migration
     hive-mcp.tools.kanban.port hive-mcp.tools.kanban.predicates
@@ -31,8 +31,8 @@
 
 (deftest tools-kanban-gate-is-not-vacuous
   (let [report (coverage/coverage {:paths [kanban-dir]})]
-    (is (= 84 (count (:universe report))) "every public defn of tools/kanban and tools/kanban/list")
-    (is (= 84 (count (:covered report))))))
+    (is (= 97 (count (:universe report))) "every public defn of tools/kanban and tools/kanban/list")
+    (is (= 97 (count (:covered report))))))
 
 (deftest every-tools-kanban-contract-generates-both-sides
   (apply require kanban-nss)

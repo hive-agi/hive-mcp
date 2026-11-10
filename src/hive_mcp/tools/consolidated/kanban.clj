@@ -159,6 +159,8 @@
                               "description" {:type "string"
                                              :description "[create|update] Task description. On update a non-blank value replaces the current description in place."}
                               "append_description" {:type "string" :description "[update] Append text to the existing description; description replaces it."}
+                              "steal_claim" {:type "boolean"
+                                             :description "[update] A move to inprogress claims the card for you (owner + since on the card); a card another live agent or coordinator claims is refused, naming the holder. true takes it over. todo/done clear the claim."}
                               "task_id" {:type "string"
                                          :description "Task ID to get/move/update/retag/delete"}
                               "id" {:type "string"
