@@ -1,20 +1,12 @@
 (ns hive-mcp.knowledge-graph.edges.nodes-test
   "Node-level reads over the KG edge set, inside a fresh thread-local
    DataScript store (the KG store port injected by the harness), and the
-   tag lookup over the in-memory Chroma transport + MockEmbedder (its
-   cross-context port), including the loud degrade to [] when no embedding
-   provider is configured."
+   tag lookup over the IMemoryStore port (contract stub), including the
+   degrade to [] when no memory store is registered."
   (:require [clojure.test :refer [deftest is]]
-            [hive-mcp.chroma.client :as client]
-            [hive-mcp.chroma.connection :as chroma-conn]
-            [hive-mcp.chroma.crud :as crud]
-            [hive-mcp.config.test-support :as cfg]
-            [hive-mcp.embeddings.active :as active]
             [hive-mcp.knowledge-graph.edges.m14-support :as sup]
             [hive-mcp.knowledge-graph.edges.nodes :as nodes]
             [hive-mcp.knowledge-graph.edges.write :as write]
-            [hive-mcp.test-fixtures :as fixtures]
-            [hive-mcp.test.stub.chroma-transport :as transport]
             [hive-test.golden :refer [deftest-golden]]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.test.stub.memory-store :as mem-stub]))
@@ -38,20 +30,6 @@
       :n2-nil     (sort (nodes/neighbors "n2" nil))
       :bad-dir    (try (nodes/neighbors "n1" :sideways)
                        (catch clojure.lang.ExceptionInfo e (ex-data e)))})))
-
-(defn- with-chroma
-  "Run F with the in-memory transport and a mock provider (or none)."
-  [provider f]
-  (let [prior-t (client/transport)
-        prior-p (active/get-embedding-provider)]
-    (client/set-transport! (transport/->transport))
-    (if provider (active/set-embedding-provider! provider) (active/reset-embedding-provider!))
-    (chroma-conn/reset-collection-cache!)
-    (try (cfg/with-config {:embedder {:no-embed-types #{} :routes {}}} (f))
-         (finally
-           (chroma-conn/reset-collection-cache!)
-           (client/set-transport! prior-t)
-           (if prior-p (active/set-embedding-provider! prior-p) (active/reset-embedding-provider!))))))
 
 (deftest-golden node-ids-by-tag-golden
   "test/golden/hive-mcp/knowledge-graph/edges-nodes-by-tag.edn"
