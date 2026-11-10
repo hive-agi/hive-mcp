@@ -35,6 +35,16 @@ bump, not a quiet minor, because a consumer's storage would change under it.
 
 ## [Unreleased]
 
+### Fixed
+- `git push` goes to `<remote>/<current-branch>` with an explicit refspec, never to
+  a differently named upstream (a worktree cut from `origin/staging`);
+  `set_upstream=true` re-points tracking at `<remote>/<current-branch>`.
+- `git push|pull|fetch` run on the git CLI and never need Emacs; every other `git`
+  verb fails over to the git CLI when the Emacs bridge does not load, no vessel is
+  registered (tmux coordinators), or, for reads and staging, emacsclient times out.
+  A commit that timed out in the editor is not re-run. Fetching every remote
+  tolerates one unreachable remote.
+
 ## [1.9.1] - 2026-10-02
 
 ### Changed
