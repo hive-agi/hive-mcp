@@ -1141,27 +1141,26 @@
   ;; silently collapsed. The fix reads through vectordb.kanban-facade, which
   ;; core's real kanban provider (installed here in place of the table double)
   ;; still does behind the IKanbanRead port.
-  (let [kanban-id    "kanban-slot-only-task"
-        kanban-card  {:id kanban-id :content {:title "lives in :kanban slot" :status "todo"}}
-        prior-kanban (get (sreg/registered-stores) :kanban)]
-    (try
-      ;; Card resolvable ONLY through the :kanban slot; force :kanban routing.
-      (sreg/register-store!
-       :kanban (stub/->stub nil {:get-entry-fn (fn [id] (when (= id kanban-id) kanban-card))}))
-      (kport/with-core-kanban
-        (fn []
-          (with-redefs [kanban-facade/mode (constantly :kanban)]
-            (testing "kanban-slot card is not done, and is resolved via the :kanban slot"
-              (is (some? (#'dag/get-kanban-task kanban-id))
-                  "get-kanban-task must resolve the card through the :kanban slot")
-              (is (false? (#'dag/kanban-task-done? kanban-id #{}))
-                  "wrong-facade regression: a live kanban card must read as NOT done"))
-            (testing "the same card counts as done once its id is in the completed set"
-              (is (true? (#'dag/kanban-task-done? kanban-id #{kanban-id})))))))
-      (finally
-        (if prior-kanban
-          (sreg/register-store! :kanban prior-kanban)
-          (sreg/unregister-store! :kanban))))))
+  ;; The :kanban registration runs under with-restored-store-registry: a running
+  ;; addon server is refused before the slot is touched, and the prior slot map
+  ;; is restored in one atomic swap instead of a per-slot re-register.
+  (let [kanban-id   "kanban-slot-only-task"
+        kanban-card {:id kanban-id :content {:title "lives in :kanban slot" :status "todo"}}]
+    (isolation/with-restored-store-registry
+      (fn []
+        ;; Card resolvable ONLY through the :kanban slot; force :kanban routing.
+        (sreg/register-store!
+         :kanban (stub/->stub nil {:get-entry-fn (fn [id] (when (= id kanban-id) kanban-card))}))
+        (kport/with-core-kanban
+          (fn []
+            (with-redefs [kanban-facade/mode (constantly :kanban)]
+              (testing "kanban-slot card is not done, and is resolved via the :kanban slot"
+                (is (some? (#'dag/get-kanban-task kanban-id))
+                    "get-kanban-task must resolve the card through the :kanban slot")
+                (is (false? (#'dag/kanban-task-done? kanban-id #{}))
+                    "wrong-facade regression: a live kanban card must read as NOT done"))
+              (testing "the same card counts as done once its id is in the completed set"
+                (is (true? (#'dag/kanban-task-done? kanban-id #{kanban-id})))))))))))
 
 (deftest with-task-store-cannot-clobber-a-live-registry
   ;; Test isolation (card 20260629165759-7b9fd43c): the fixture used to call
