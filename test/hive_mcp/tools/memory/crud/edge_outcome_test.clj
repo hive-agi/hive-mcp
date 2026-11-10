@@ -6,6 +6,7 @@
             [hive-test.trifecta :refer [deftrifecta]]
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.knowledge-graph.store.fixtures :as fixtures]
+            [hive-mcp.test-support.registry-isolation :as isolation]
             [hive-mcp.tools.memory.crud.edge-outcome :as edge-outcome]
             [hive-mcp.tools.memory.crud.write]))
 
@@ -73,24 +74,20 @@
 (deftest add-response-names-entry-when-an-edge-fails
   (fixtures/global-datascript-fixture
    (fn []
-     (let [entry    {:id "entry-1" :type "note" :content "kept" :tags ["note"]}
-           updates  (atom [])
-           snapshot (mem-proto/registered-stores)]
-       (try
-         (mem-proto/register-store! :default (recording-store entry updates))
-         (let [resp (#'hive-mcp.tools.memory.crud.write/finalize-entry!
-                     "entry-1" {:kg_depends_on [""]} "test" nil
-                     {:tags-with-scope ["note"] :type "note"})
-               body (json/read-str (:text resp) :key-fn keyword)]
-           (is (not (:isError resp)))
-           (is (= "entry-1" (:id body)))
-           (is (= [{:relation "depends-on" :to ""}]
-                  (mapv #(dissoc % :error) (:kg_edge_errors body))))
-           (is (empty? @updates) "no :kg-outgoing link is written for failed edges"))
-         (finally
-           (mem-proto/unregister-store! :default)
-           (when-let [old (:default snapshot)]
-             (mem-proto/register-store! :default old))))))))
+     (let [entry   {:id "entry-1" :type "note" :content "kept" :tags ["note"]}
+           updates (atom [])]
+       (isolation/with-restored-store-registry
+        (fn []
+          (mem-proto/register-store! :default (recording-store entry updates))
+          (let [resp (#'hive-mcp.tools.memory.crud.write/finalize-entry!
+                      "entry-1" {:kg_depends_on [""]} "test" nil
+                      {:tags-with-scope ["note"] :type "note"})
+                body (json/read-str (:text resp) :key-fn keyword)]
+            (is (not (:isError resp)))
+            (is (= "entry-1" (:id body)))
+            (is (= [{:relation "depends-on" :to ""}]
+                   (mapv #(dissoc % :error) (:kg_edge_errors body))))
+            (is (empty? @updates) "no :kg-outgoing link is written for failed edges"))))))))
 
 (defn- slow-link-store
   "recording-store whose update-entry! runs `link!` first (sleep or throw)."
@@ -109,23 +106,21 @@
       (reset-store! [_] nil))))
 
 (defn- finalize-with-link
-  "finalize-entry! for one refines edge over a store whose link write runs `link!`."
+  "finalize-entry! for one refines edge over a store whose link write runs `link!`.
+   The :default write runs under with-restored-store-registry: a running addon
+   server is refused before it, and the prior slot map comes back atomically."
   [link!]
-  (let [entry    {:id "entry-2" :type "note" :content "kept" :tags ["note"]}
-        snapshot (mem-proto/registered-stores)]
-    (try
-      (mem-proto/register-store! :default (slow-link-store entry link!))
-      (binding [hive-mcp.tools.memory.crud.write/*stage-budgets-ms*
-                (assoc hive-mcp.tools.memory.crud.write/default-stage-budgets-ms
-                       :link-outgoing 200)]
-        (let [resp (#'hive-mcp.tools.memory.crud.write/finalize-entry!
-                    "entry-2" {:kg_refines ["target-2"]} "test" nil
-                    {:tags-with-scope ["note"] :type "note"})]
-          {:resp resp :body (json/read-str (:text resp) :key-fn keyword)}))
-      (finally
-        (mem-proto/unregister-store! :default)
-        (when-let [old (:default snapshot)]
-          (mem-proto/register-store! :default old))))))
+  (let [entry {:id "entry-2" :type "note" :content "kept" :tags ["note"]}]
+    (isolation/with-restored-store-registry
+     (fn []
+       (mem-proto/register-store! :default (slow-link-store entry link!))
+       (binding [hive-mcp.tools.memory.crud.write/*stage-budgets-ms*
+                 (assoc hive-mcp.tools.memory.crud.write/default-stage-budgets-ms
+                        :link-outgoing 200)]
+         (let [resp (#'hive-mcp.tools.memory.crud.write/finalize-entry!
+                     "entry-2" {:kg_refines ["target-2"]} "test" nil
+                     {:tags-with-scope ["note"] :type "note"})]
+           {:resp resp :body (json/read-str (:text resp) :key-fn keyword)}))))))
 
 (deftest slow-outgoing-link-is-pending-not-an-error
   (fixtures/global-datascript-fixture

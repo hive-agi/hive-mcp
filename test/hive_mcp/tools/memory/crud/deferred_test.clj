@@ -5,8 +5,21 @@
             [hive-test.trifecta :refer [deftrifecta]]
             [clojure.test.check.generators]
             [hive-mcp.protocols.memory]
+            [hive-mcp.test-support.registry-isolation :as isolation]
             [hive-mcp.tools.memory.crud.write]
             [hive-mcp.tools.memory.crud.reembed]))
+
+(defn- with-stores
+  "Register SLOT->STORE for F. Refuses a running addon server before any slot
+   is written and restores the exact prior slot map in one atomic swap; it
+   never unregisters and re-registers slot by slot, and never calls the global
+   reset-registry! (card 20260629165759-7b9fd43c)."
+  [slot->store f]
+  (isolation/with-restored-store-registry
+    (fn []
+      (doseq [[slot store] slot->store]
+        (hive-mcp.protocols.memory/register-store! slot store))
+      (f))))
 
 (defn tag-transition
   "Adapt the two-argument policy to trifecta's unary input port."
@@ -53,20 +66,15 @@
                 (search-similar [_ _ _] []) (supports-semantic-search? [_] false)
                 (cleanup-expired! [_] nil) (entries-expiring-soon [_ _ _] [])
                 (find-duplicate [_ _ _ _] nil) (store-status [_] {})
-                (reset-store! [_] nil))
-        snapshot (hive-mcp.protocols.memory/registered-stores)]
+                (reset-store! [_] nil))]
     (binding [deferred/*queue-dir* (.getPath dir)]
-      (try
-        (hive-mcp.protocols.memory/register-store! :default store)
-        (let [id (#'hive-mcp.tools.memory.crud.write/index-entry!
-                  {:type "note" :content "important" :tags-with-scope ["note"]
-                   :project-id "test" :duration-str "long"})]
-          (is (= "important" (:content (deferred/lookup id))))
-          (is (some #{"pending-reembed"} (:tags (deferred/lookup id)))))
-        (finally
-          (hive-mcp.protocols.memory/unregister-store! :default)
-          (when-let [old (:default snapshot)]
-            (hive-mcp.protocols.memory/register-store! :default old)))))))
+      (with-stores {:default store}
+        (fn []
+          (let [id (#'hive-mcp.tools.memory.crud.write/index-entry!
+                    {:type "note" :content "important" :tags-with-scope ["note"]
+                     :project-id "test" :duration-str "long"})]
+            (is (= "important" (:content (deferred/lookup id))))
+            (is (some #{"pending-reembed"} (:tags (deferred/lookup id))))))))))
 
 (deftest shared-gate-timeout-is-deferrable
   (is (true? (boolean (deferred/embedding-failure?
@@ -138,30 +146,24 @@
 
 (deftest a-kanban-entry-drains-into-the-kanban-slot-with-its-edges
   (let [default-writes (atom [])
-        kanban-writes (atom [])
-        snapshot (hive-mcp.protocols.memory/registered-stores)]
+        kanban-writes (atom [])]
     (binding [deferred/*queue-dir* (temp-dir "pending-kanban")]
-      (try
-        (hive-mcp.protocols.memory/register-store! :default (recording-store default-writes))
-        (hive-mcp.protocols.memory/register-store! :kanban (recording-store kanban-writes))
-        (deferred/park! (deferred/with-store-key
-                          {:id "k-1" :type "kanban" :content "card" :tags ["kanban"]}
-                          :kanban))
-        (deferred/amend! "k-1" {:kg-outgoing ["edge-1"]})
-        (is (= {:total 1 :reembedded 1 :not-found 0 :errors 0}
-               (hive-mcp.tools.memory.crud.reembed/drain-pending!)))
-        (is (empty? @default-writes) "never drained into the caller's default slot")
-        (is (= [{:id "k-1" :type "kanban" :content "card" :tags ["kanban"]
-                 :kg-outgoing ["edge-1"]}]
-               @kanban-writes))
-        (is (empty? (deferred/pending-ids)))
-        (testing "a second sweep has nothing to reembed"
-          (is (zero? (:total (hive-mcp.tools.memory.crud.reembed/drain-pending!)))))
-        (finally
-          (hive-mcp.protocols.memory/unregister-store! :kanban)
-          (hive-mcp.protocols.memory/unregister-store! :default)
-          (doseq [[k s] snapshot]
-            (hive-mcp.protocols.memory/register-store! k s)))))))
+      (with-stores {:default (recording-store default-writes)
+                    :kanban (recording-store kanban-writes)}
+        (fn []
+          (deferred/park! (deferred/with-store-key
+                            {:id "k-1" :type "kanban" :content "card" :tags ["kanban"]}
+                            :kanban))
+          (deferred/amend! "k-1" {:kg-outgoing ["edge-1"]})
+          (is (= {:total 1 :reembedded 1 :not-found 0 :errors 0}
+                 (hive-mcp.tools.memory.crud.reembed/drain-pending!)))
+          (is (empty? @default-writes) "never drained into the caller's default slot")
+          (is (= [{:id "k-1" :type "kanban" :content "card" :tags ["kanban"]
+                   :kg-outgoing ["edge-1"]}]
+                 @kanban-writes))
+          (is (empty? (deferred/pending-ids)))
+          (testing "a second sweep has nothing to reembed"
+            (is (zero? (:total (hive-mcp.tools.memory.crud.reembed/drain-pending!))))))))))
 
 (defn failure-stamp
   "Adapt with-failure to trifecta's unary input port."
@@ -268,46 +270,35 @@
     (reset-store! [_] nil)))
 
 (deftest a-write-that-embeds-on-the-second-try-is-stored-not-parked
-  (let [calls (atom 0)
-        snapshot (hive-mcp.protocols.memory/registered-stores)]
+  (let [calls (atom 0)]
     (binding [deferred/*queue-dir* (temp-dir "pending-warm")]
-      (try
-        (hive-mcp.protocols.memory/register-store! :default (failing-store 1 calls))
-        (let [id (#'hive-mcp.tools.memory.crud.write/index-entry!
-                  {:type "note" :content "warm" :tags-with-scope ["note"]
-                   :project-id "test" :duration-str "long"})]
-          (is (string? id))
-          (is (= 2 @calls))
-          (is (nil? (deferred/lookup id)) "a recovered write leaves nothing in the outbox"))
-        (finally
-          (hive-mcp.protocols.memory/unregister-store! :default)
-          (doseq [[k s] snapshot]
-            (hive-mcp.protocols.memory/register-store! k s)))))))
+      (with-stores {:default (failing-store 1 calls)}
+        (fn []
+          (let [id (#'hive-mcp.tools.memory.crud.write/index-entry!
+                    {:type "note" :content "warm" :tags-with-scope ["note"]
+                     :project-id "test" :duration-str "long"})]
+            (is (string? id))
+            (is (= 2 @calls))
+            (is (nil? (deferred/lookup id)) "a recovered write leaves nothing in the outbox")))))))
 
 (deftest a-write-whose-embed-keeps-failing-is-parked-with-its-cause
-  (let [calls (atom 0)
-        snapshot (hive-mcp.protocols.memory/registered-stores)]
+  (let [calls (atom 0)]
     (binding [deferred/*queue-dir* (temp-dir "pending-cold")]
-      (try
-        (hive-mcp.protocols.memory/register-store! :default (failing-store 100 calls))
-        (let [id (#'hive-mcp.tools.memory.crud.write/index-entry!
-                  {:type "note" :content "cold" :tags-with-scope ["note"]
-                   :project-id "test" :duration-str "long"})
-              parked (deferred/lookup id)]
-          (is (= 3 @calls) "retried in place before parking")
-          (is (some #{"pending-reembed"} (:tags parked)))
-          (is (= :embedder/no-provider (get-in parked [:deferred/last-error :error])))
-          (is (= 1 (:deferred/attempts parked))))
-        (finally
-          (hive-mcp.protocols.memory/unregister-store! :default)
-          (doseq [[k s] snapshot]
-            (hive-mcp.protocols.memory/register-store! k s)))))))
+      (with-stores {:default (failing-store 100 calls)}
+        (fn []
+          (let [id (#'hive-mcp.tools.memory.crud.write/index-entry!
+                    {:type "note" :content "cold" :tags-with-scope ["note"]
+                     :project-id "test" :duration-str "long"})
+                parked (deferred/lookup id)]
+            (is (= 3 @calls) "retried in place before parking")
+            (is (some #{"pending-reembed"} (:tags parked)))
+            (is (= :embedder/no-provider (get-in parked [:deferred/last-error :error])))
+            (is (= 1 (:deferred/attempts parked)))))))))
 
 (deftest a-failed-drain-counts-the-attempt-and-reports-the-stuck-ids
-  (let [snapshot (hive-mcp.protocols.memory/registered-stores)]
-    (binding [deferred/*queue-dir* (temp-dir "pending-stuck")]
-      (try
-        (hive-mcp.protocols.memory/register-store! :default (failing-store 100 (atom 0)))
+  (binding [deferred/*queue-dir* (temp-dir "pending-stuck")]
+    (with-stores {:default (failing-store 100 (atom 0))}
+      (fn []
         (deferred/park! {:id "stuck-1" :type "note" :content "c" :tags []})
         (let [first-sweep (hive-mcp.tools.memory.crud.reembed/drain-pending!)
               second-sweep (hive-mcp.tools.memory.crud.reembed/drain-pending!)
@@ -320,11 +311,7 @@
           (is (= :embedder/no-provider (get-in parked [:deferred/last-error :error])))
           (is (not-any? #(= "deferred" (namespace %))
                         (filter keyword? (keys (deferred/->store-entry parked))))
-              "outbox bookkeeping never reaches the store"))
-        (finally
-          (hive-mcp.protocols.memory/unregister-store! :default)
-          (doseq [[k s] snapshot]
-            (hive-mcp.protocols.memory/register-store! k s)))))))
+              "outbox bookkeeping never reaches the store"))))))
 
 (deftest recording-a-failure-never-loses-or-throws-on-a-corrupt-record
   (binding [deferred/*queue-dir* (temp-dir "pending-corrupt-stamp")]
