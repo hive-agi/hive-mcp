@@ -31,7 +31,8 @@
             [hive-mcp.extensions.runtime :as runtime]
             [malli.core :as m]
             [malli.error :as me]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [hive-mcp.tools.consolidated.hot-eject-fallback :as eject-fallback]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -262,13 +263,15 @@
 
 (def eject-report-keys
   "The EjectReport keys `eject` answers with: what was removed and what stays,
-   and the wait for calls in flight that ran first."
+   and the wait for calls in flight that ran first. :hot/fallback and
+   :retained come from the host-native fallback (hot-eject-fallback)."
   [:hot/target :hot/ejected :hot/unknown :hot/refused? :hot/blocking
    :hot/drain :hot/busy? :hot/forced?
    :hot/torn-down :hot/unregistered :hot/unsupported :hot/ungoverned
    :hot/unhot :hot/forgotten :hot/dirs-removed :hot/dirs-retained
    :hot/dirs-reason :hot/classpath-retained :hot/namespaces-retained
-   :hot/remounted :teardown/data-preserved? :ok? :errors])
+   :hot/remounted :hot/fallback :retained
+   :teardown/data-preserved? :ok? :errors])
 
 (defn plug-out-opts
   "Pure. The eject!/plug-out! opts an `eject` or `unmount` call asks for:
@@ -465,6 +468,7 @@
                           (assoc (select-keys report inject-report-keys)
                                  :mounted (mapv #(select-keys % mount-result-keys)
                                                 (:mounted report))
+                                 :hot/undo (eject-fallback/undo-mode)
                                  :hive-hot hot-init)
                           surface)]
             (log/info "hot inject" {:path path
@@ -761,6 +765,7 @@
    [:opts {:optional true} ifn?]
    [:report-keys [:vector :keyword]]
    [:project {:optional true} ifn?]
+   [:fallback {:optional true} ifn?]
    [:example {:optional true} :string]])
 
 (def HostPorts
@@ -798,11 +803,12 @@
   "Run a HostVerb descriptor against PARAMS over PORTS: derive the target,
    resolve the bridge now, call (bridge host specs target opts), refresh the
    surface, answer the report's :report-keys plus :surface. An absent bridge
+   runs the descriptor's :fallback (same arguments) when it has one, else
    answers `unsupported-report`; nothing here throws."
-  [{:keys [bridge target opts report-keys project example] :as verb} ports params]
+  [{:keys [bridge target opts report-keys project fallback example] :as verb} ports params]
   {:pre [(m/validate HostVerb verb) (m/validate HostPorts ports)]}
   (let [t (target params)
-        f (soft bridge)
+        f (or (soft bridge) fallback)
         h (when (and (some? t) f) ((:host ports)))]
     (cond
       (nil? t) (mcp-error (str "a target is required" (when example (str ", e.g. " example))))
@@ -816,7 +822,8 @@
                            (log/warn "host verb bridge threw" {:bridge bridge :error (ex-message e)})
                            {:ok? false :reason :bridge-threw :errors [(str bridge ": " (ex-message e))]}))
             surface ((:refresh! ports))]
-        (log/info "hot host verb" {:bridge bridge :target t :ok? (:ok? report)})
+        (log/info "hot host verb" {:bridge bridge :target t :ok? (:ok? report)
+                                   :fallback? (true? (:hot/fallback report))})
         (mcp-json (cond-> (assoc (select-keys report report-keys) :surface surface)
                     (:reason report) (assoc :reason (:reason report))))))))
 
@@ -845,10 +852,13 @@
   "Plug an addon OUT of the running host (the inverse of inject). Calls in
    flight drain first (bounded by drain_ms; still running answers busy unless
    force). Refused while mounted addons depend on it unless cascade, which
-   remounts them without it."
+   remounts them without it. Without hive-addon's eject! the host-native
+   fallback plugs it out (:hot/fallback true; no drain, no cascade, and what
+   stays until a restart under :retained)."
   (host-verb {:bridge      'hive-addon.hot.inject/eject!
               :target      #'eject-target
               :opts        #'plug-out-opts
+              :fallback    #'eject-fallback/eject-fallback
               :report-keys eject-report-keys
               :example     "{:command \"eject\" :addon \"hive.rss\"}"}))
 
@@ -895,6 +905,7 @@
    :target      #'eject-target
    :opts        #'plug-out-opts
    :project     #'unmount-outcome
+   :fallback    #'eject-fallback/plug-out-fallback
    :report-keys unmount-report-keys
    :example     "{:command \"unmount\" :addon \"hive.rss\"}"})
 
