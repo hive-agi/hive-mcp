@@ -34,7 +34,7 @@
    (`events/move-fx`) answers that refusal alone: neither half is written.
    Returns nil for a missing or non-kanban entry."
   [{:keys [:kanban/entry] :as coeffects}
-   [_ {:keys [task-id new-status title description append-description priority owner steal-claim?]}]]
+   [_ {:keys [task-id new-status title description append-description priority agent-id owner steal-claim?]}]]
   (when-let [move (events/move-fx coeffects [:kanban/move {:task-id task-id :new-status new-status
                                                            :owner owner :steal-claim? steal-claim?}])]
     (if (:kanban/claim-refused move)
@@ -47,7 +47,8 @@
                                                    :title              title
                                                    :description        description
                                                    :append-description append-description
-                                                   :priority           priority}])
+                                                   :priority           priority
+                                                   :agent-id           agent-id}])
             content (get-in edit [:kanban/facade-update :payload :content])
             tags    (or (get-in edit [:kanban/facade-update :payload :tags]) moved-tags)
             final   (assoc moved :content content :tags tags)]
