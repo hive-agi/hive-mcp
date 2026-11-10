@@ -30,29 +30,34 @@
    The edit is applied to the moved entry. A move into `done` hands the
    completion hooks the entry as finally written. The edit's audit record
    rides `:kanban/edit-temporal-record`, beside the move's
-   `:kanban/temporal-record`. Returns nil for a missing or non-kanban entry."
+   `:kanban/temporal-record`. A move into doing whose claim is refused
+   (`events/move-fx`) answers that refusal alone: neither half is written.
+   Returns nil for a missing or non-kanban entry."
   [{:keys [:kanban/entry] :as coeffects}
-   [_ {:keys [task-id new-status title description append-description priority agent-id]}]]
-  (when-let [move (events/move-fx coeffects [:kanban/move {:task-id task-id :new-status new-status}])]
-    (let [{moved-content :content moved-tags :tags}
-          (get-in move [:kanban/facade-update :payload])
-          moved   (assoc entry :content moved-content :tags moved-tags)
-          edit    (events/edit-fx {:kanban/entry moved}
-                                  [:kanban/edit {:task-id            task-id
-                                                 :title              title
-                                                 :description        description
-                                                 :append-description append-description
-                                                 :priority           priority
-                                                 :agent-id           agent-id}])
-          content (get-in edit [:kanban/facade-update :payload :content])
-          tags    (or (get-in edit [:kanban/facade-update :payload :tags]) moved-tags)
-          final   (assoc moved :content content :tags tags)]
-      (cond-> (assoc move :kanban/facade-update {:task-id task-id
-                                                 :payload {:content content :tags tags}})
-        (:kanban/notify-done move)      (assoc-in [:kanban/notify-done :entry] final)
-        (:kanban/archive-external move) (assoc-in [:kanban/archive-external :entry] final)
-        (:kanban/temporal-record edit)  (assoc :kanban/edit-temporal-record
-                                               (:kanban/temporal-record edit))))))
+   [_ {:keys [task-id new-status title description append-description priority agent-id owner steal-claim?]}]]
+  (when-let [move (events/move-fx coeffects [:kanban/move {:task-id task-id :new-status new-status
+                                                           :owner owner :steal-claim? steal-claim?}])]
+    (if (:kanban/claim-refused move)
+      move
+      (let [{moved-content :content moved-tags :tags}
+            (get-in move [:kanban/facade-update :payload])
+            moved   (assoc entry :content moved-content :tags moved-tags)
+            edit    (events/edit-fx {:kanban/entry moved}
+                                    [:kanban/edit {:task-id            task-id
+                                                   :title              title
+                                                   :description        description
+                                                   :append-description append-description
+                                                   :priority           priority
+                                                   :agent-id           agent-id}])
+            content (get-in edit [:kanban/facade-update :payload :content])
+            tags    (or (get-in edit [:kanban/facade-update :payload :tags]) moved-tags)
+            final   (assoc moved :content content :tags tags)]
+        (cond-> (assoc move :kanban/facade-update {:task-id task-id
+                                                   :payload {:content content :tags tags}})
+          (:kanban/notify-done move)      (assoc-in [:kanban/notify-done :entry] final)
+          (:kanban/archive-external move) (assoc-in [:kanban/archive-external :entry] final)
+          (:kanban/temporal-record edit)  (assoc :kanban/edit-temporal-record
+                                                 (:kanban/temporal-record edit)))))))
 
 (defn register!
   "Register the `:kanban/update` event and the edit-audit effect, after the
@@ -64,7 +69,8 @@
   (router/reg-event-fx
    :kanban/update
    [(cofx/inject-cofx :kanban/entry)
-    (cofx/inject-cofx :kanban/project-id)]
+    (cofx/inject-cofx :kanban/project-id)
+    (cofx/inject-cofx :kanban/claim-ctx)]
    update-fx)
   true)
 

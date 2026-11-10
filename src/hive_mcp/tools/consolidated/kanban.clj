@@ -158,6 +158,8 @@
                                         :description "Filter by task status"}
                               "title" {:type "string"
                                        :description "[create|update] Task title. On update a non-blank value replaces the current title in place — entry id, KG edges, status and scope are preserved."}
+                              "steal_claim" {:type "boolean"
+                                             :description "[update] A move to inprogress claims the card for you (owner + since on the card); a card another live agent or coordinator claims is refused, naming the holder. true takes it over. todo/done clear the claim."}
                               "description" {:type "string"
                                              :description "[create|update] Task description. On update a non-blank value replaces the current description; the old text is kept in the card's description-history (see history/restore). To add a note, use append_description."}
                               "append_description" {:type "string" :description "[update] Append text to the existing description after a blank line, without replacing it. Applied after description when both are given."}

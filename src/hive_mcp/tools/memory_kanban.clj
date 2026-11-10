@@ -257,6 +257,17 @@
                           [:=> [:cat :map [:maybe :string] [:maybe :string]] :map]
                           [:=> [:cat :map [:maybe :string] [:maybe :string] :map] :map]])
 
+(defn claim-params
+  "The claim half of a kanban update payload: {:owner :steal-claim?}. The
+   owner is the request's session agent id (a coordinator speaks as
+   `coordinator:<session>`); `steal_claim` true takes a card a live foreign
+   owner holds. See hive-mcp.tools.kanban.claim."
+  [params]
+  {:owner        (try (ctx/current-session-agent-id params) (catch Throwable _ nil))
+   :steal-claim? (contains? #{true "true"} (:steal_claim params))})
+
+(m/=> claim-params [:=> [:cat [:maybe :map]] [:map [:owner [:maybe :string]] [:steal-claim? :boolean]]])
+
 (defn- move*
   "Soft-transition a kanban task to a new status via the event bus.
    On success, return a slim view derived from the committed effect
@@ -264,11 +275,12 @@
    backends are read-after-write eventual here, so reading the entry
    back can echo the old status even though the write succeeded.
    A move to done also lists the card's open KG children."
-  [{:keys [task_id new_status status id directory]}]
+  [{:keys [task_id new_status status id directory] :as params}]
   (let [task-id    (or task_id id)
         new-status (or new_status status)
         result     (kanban-events/dispatch-move!
-                    {:task-id task-id :new-status new-status :directory directory})]
+                    (merge {:task-id task-id :new-status new-status :directory directory}
+                           (claim-params params)))]
     (if (r/ok? result)
       (let [{:keys [content tags]} (get-in result [:ok :kanban/facade-update :payload])]
         (mcp-json (with-open-children (kt/task->slim {:id task-id :content content :tags tags})
@@ -283,7 +295,7 @@
    Like `move*`, the slim view is derived from the committed effect payload
    rather than a read-back, because some vector backends are eventual here.
    A move to done also lists the card's open KG children."
-  [{:keys [task_id id new_status status title description append_description priority directory agent_id]}]
+  [{:keys [task_id id new_status status title description append_description priority directory agent_id] :as params}]
   (let [task-id    (or task_id id)
         new-status (or new_status status)
         payload    {:task-id            task-id
@@ -294,7 +306,8 @@
                     :agent-id           (or agent_id (try (ctx/current-agent-id) (catch Throwable _ nil)))
                     :directory          directory}
         result     (if new-status
-                     (kanban-update/dispatch-update! (assoc payload :new-status new-status))
+                     (kanban-update/dispatch-update! (merge (assoc payload :new-status new-status)
+                                                            (claim-params params)))
                      (kanban-events/dispatch-edit! payload))]
     (if (r/ok? result)
       (let [{:keys [content tags]} (get-in result [:ok :kanban/facade-update :payload])]
