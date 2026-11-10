@@ -83,4 +83,23 @@
   (let [{:keys [store vector]} @(:listings sources)]
     (boolean (and (:exhausted? store) (:exhausted? vector)))))
 
+(defrecord ScanSources [listing]
+  rec/IReconcileSources
+  (store-ids [_] @listing)
+  (vector-ids [_] @listing))
+
+(defn scan-sources
+  "An IReconcileSources over SCAN, a (fn [] -> ids) that lists every entry id
+   of a store whose vectors live in the same row as the entry (Milvus: one
+   row holds id, payload and embedding). Both sides read ONE listing, run at
+   most once per sources value, so the report is the store's own id hygiene:
+   a row without a usable id shows as :nil-vector-ids, and orphan/unindexed
+   stay empty because a co-located row cannot drift from itself. A store with
+   a separate vector index must install its own two-sided sources instead.
+   SCAN is complete or throws (`IMemoryStoreScan/scan-ids`), never short."
+  [scan]
+  (->ScanSources (delay (vec (scan)))))
+
+(m/=> scan-sources [:=> [:cat ifn?] rec/ReconcileSources])
+
 (m/=> exhausted? [:=> [:cat [:fn #(instance? PagedSources %)]] :boolean])
