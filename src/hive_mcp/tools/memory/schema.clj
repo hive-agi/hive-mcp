@@ -245,6 +245,20 @@
 (def ReconcileResponse
   [:map [:status [:enum "ok" "not-wired"]]])
 
+(def ReconcilePurge
+  "The :purge block of a purge request: what was decided and the counts."
+  [:map
+   [:mode [:enum "unsupported" "refused" "dry-run" "applied"]]
+   [:candidate-count [:int {:min 0}]]
+   [:skipped-nil-ids [:int {:min 0}]]
+   [:purged [:int {:min 0}]]
+   [:planned-count {:optional true} [:int {:min 0}]]
+   [:kept-count {:optional true} [:int {:min 0}]]
+   [:reason {:optional true} :string]])
+
+(def ReconcilePurgeResponse
+  [:map [:status [:= "ok"]] [:purge ReconcilePurge]])
+
 (def QueueGroups
   [:map-of :string [:vector any?]])
 

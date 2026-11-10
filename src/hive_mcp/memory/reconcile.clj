@@ -12,8 +12,9 @@
    is its public shape. The boundary is the `IReconcileSources` port, which
    answers the two id listings; an adapter backed by the live stores is a
    separate slice. Nothing here writes to a store, so a report can never
-   change what it measures. Purging orphan vectors is a follow-up that
-   consumes `:orphan-vector-ids` from this report.
+   change what it measures. Purging orphan vectors goes through the separate
+   `IOrphanVectorPurge` port and `purge-plan`; the verb in
+   hive-mcp.tools.memory.reconcile gates it behind purge + i_mean_it.
 
    Ids are compared as strings; nil and blank ids are not ids. A nil vector
    id is counted under :nil-vector-ids so it stays visible instead of being
@@ -33,6 +34,19 @@
       "Ids of every entry in the entry store (the source of truth).")
     (vector-ids [this]
       "Ids of every record in the vector index, nil ids included.")))
+
+(defonce ^:private -orphan-vector-purge-defined? (atom false))
+
+(when (compare-and-set! -orphan-vector-purge-defined? false true)
+  (defprotocol IOrphanVectorPurge
+    "Optional and vector-side only: delete vector-index records by id. A
+     sources value whose vector index is separate from the entry store
+     implements it next to IReconcileSources. It never deletes an
+     entry-store row: the caller only passes ids the entry store does not
+     hold (`purge-plan`)."
+    (purge-vector-ids! [this ids]
+      "Delete the vector-index records whose ids are IDS (strings). Answers
+       how many were deleted.")))
 
 (defn- id-string
   "The id as a non-blank string, or nil when it is not an id."
@@ -138,3 +152,14 @@
                                     (> (count missing) limit))))))
 
 (m/=> truncate-report [:=> [:cat TruncatableReport :int] TruncatedReport])
+
+(defn purge-plan
+  "The ids a purge may delete: those of CANDIDATE-IDS absent from
+   STORE-ID-COLL, as sorted strings. Pure. Set difference, so an id the
+   entry store holds is never in the plan. The purge path calls it with a
+   FRESH store listing read just before the delete, so an entry written
+   between the report and the purge is kept."
+  [store-id-coll candidate-ids]
+  (:orphan-vector-ids (diff-ids store-id-coll candidate-ids)))
+
+(m/=> purge-plan [:=> [:cat IdColl IdColl] [:vector [:string {:min 1}]]])
