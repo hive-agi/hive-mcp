@@ -283,7 +283,7 @@
    Like `move*`, the slim view is derived from the committed effect payload
    rather than a read-back, because some vector backends are eventual here.
    A move to done also lists the card's open KG children."
-  [{:keys [task_id id new_status status title description append_description priority directory]}]
+  [{:keys [task_id id new_status status title description append_description priority directory agent_id]}]
   (let [task-id    (or task_id id)
         new-status (or new_status status)
         payload    {:task-id            task-id
@@ -291,6 +291,7 @@
                     :description        description
                     :append-description append_description
                     :priority           priority
+                    :agent-id           (or agent_id (try (ctx/current-agent-id) (catch Throwable _ nil)))
                     :directory          directory}
         result     (if new-status
                      (kanban-update/dispatch-update! (assoc payload :new-status new-status))
@@ -449,16 +450,94 @@
       (mcp-error "kanban get requires :task_id (or :id)")
       (let [[entry store-label] (fetch-entry-any-store target)]
         (if entry
-          (mcp-json (-> (fmt/entry->json-alist entry)
-                        (assoc :store store-label
-                               :is_kanban (kp/kanban-entry? entry))
-                        (merge (kg-summary target))))
+          (let [revs (count (kt/description-history (kt/entry-content entry)))]
+            (mcp-json (cond-> (-> (fmt/entry->json-alist entry)
+                                  (assoc :store store-label
+                                         :is_kanban (kp/kanban-entry? entry))
+                                  (merge (kg-summary target)))
+                        (pos? revs) (assoc :description_revisions revs
+                                           :description_history_hint
+                                           (str revs " earlier description(s) kept; kanban history task_id="
+                                                target " lists them, kanban restore task_id=" target
+                                                " rev=<n> brings one back.")))))
           (let [suggestions (search-suggestions (or query target) eff-dir)]
             (mcp-json (cond-> {:error          "Entry not found by id"
                                :id             target
                                :searched_stores ["kanban" "default"]
                                :hint           "id missed in both the kanban store and the default memory store (separate backends); semantic-search candidates below"}
                         (seq suggestions) (assoc :suggestions suggestions)))))))))
+
+;; ============================================================
+;; Description history — read and restore
+;;
+;; `kanban update description=` used to replace the text with no copy kept
+;; (tool-friction 20261109131421-47d2a184: 24 cards overwritten, 5 lost).
+;; edit-transition now keeps each replaced text under :description-history;
+;; these two verbs read it back and restore a revision.
+;; ============================================================
+
+(defn history-view
+  "Pure: the description history of kanban `entry` as
+   {:id :title :description :revisions [{:rev n :description :replaced-at :agent}]}.
+   Revisions are numbered from 1, oldest first."
+  [task-id entry]
+  (let [content (kt/entry-content entry)]
+    {:id          task-id
+     :title       (kt/content-val content :title nil)
+     :description (kt/content-val content :description nil)
+     :revisions   (vec (map-indexed (fn [i rev] (assoc rev :rev (inc i)))
+                                    (kt/description-history content)))}))
+
+(defn revision-description
+  "Pure: the description text of revision `rev` (1-based, as `history-view`
+   numbers it, given as an integer or a numeric string) of kanban `entry`.
+   Returns {:ok text} or {:error message}."
+  [entry rev]
+  (let [n    (cond (integer? rev) rev
+                   (string? rev)  (parse-long (str/trim rev))
+                   :else          nil)
+        revs (kt/description-history (kt/entry-content entry))]
+    (cond
+      (nil? n)
+      {:error "kanban restore requires rev: the revision number from kanban history"}
+
+      (not (<= 1 n (count revs)))
+      {:error (str "No revision " rev "; this card has " (count revs) " (rev 1.." (count revs) ")")}
+
+      :else
+      {:ok (:description (nth revs (dec n)))})))
+
+(defn- fetch-kanban-entry
+  "The kanban entry for `task-id`, or an mcp-error response as {:error resp}."
+  [task-id]
+  (if (or (nil? task-id) (and (string? task-id) (str/blank? task-id)))
+    {:error (mcp-error "requires :task_id (or :id)")}
+    (let [[entry _] (fetch-entry-any-store task-id)]
+      (cond
+        (nil? entry)                      {:error (mcp-error (str "Task not found: " task-id))}
+        (not (kp/kanban-entry? entry))    {:error (mcp-error (str "Entry is not a kanban task: " task-id))}
+        :else                             {:entry entry}))))
+
+(defn- history*
+  [{:keys [task_id id]}]
+  (let [task-id (or task_id id)
+        {:keys [entry error]} (fetch-kanban-entry task-id)]
+    (or error (mcp-json (history-view task-id entry)))))
+
+(defn- restore*
+  "Put revision `rev` back as the description. Goes through the normal edit
+   path, so the description being replaced is itself pushed onto the history
+   and a restore can be undone."
+  [{:keys [task_id id rev] :as params}]
+  (let [task-id (or task_id id)
+        {:keys [entry error]} (fetch-kanban-entry task-id)]
+    (or error
+        (let [{text :ok msg :error} (revision-description entry rev)]
+          (if msg
+            (mcp-error msg)
+            (edit* (-> params
+                       (select-keys [:directory :agent_id])
+                       (assoc :task_id task-id :description text))))))))
 
 ;; ============================================================
 ;; Public Handlers
@@ -505,6 +584,18 @@
   [params]
   (safe-call :kanban/get-failed #(with-store (get* params))))
 
+(defn handle-mem-kanban-history
+  "List a task's earlier descriptions (each replaced by `update description=`),
+   numbered from 1, oldest first, with when and by whom each was replaced."
+  [params]
+  (safe-call :kanban/history-failed #(with-store (history* params))))
+
+(defn handle-mem-kanban-restore
+  "Restore revision `rev` from `kanban history` as the task's description.
+   The replaced text joins the history, so a restore can itself be undone."
+  [params]
+  (safe-call :kanban/restore-failed #(with-store (restore* params))))
+
 (defn handle-mem-kanban-quick
   [{:keys [title directory agent_id]}]
   (handle-mem-kanban-create {:title title :directory directory :agent_id agent_id}))
@@ -534,6 +625,14 @@
 (m/=> handle-mem-kanban-get [:=> [:cat [:maybe :map]] core/McpResponse])
 
 (m/=> handle-mem-kanban-quick [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-mem-kanban-history [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> handle-mem-kanban-restore [:=> [:cat [:maybe :map]] core/McpResponse])
+
+(m/=> history-view [:=> [:cat :any [:maybe :map]] :map])
+
+(m/=> revision-description [:=> [:cat [:maybe :map] :any] [:or [:map [:ok :any]] [:map [:error :string]]]])
 
 (def tools
   "REMOVED: Flat mem-kanban tools no longer exposed. Use consolidated `kanban` tool."

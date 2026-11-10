@@ -161,7 +161,9 @@
            [:title {:optional true} :any]
            [:description {:optional true} :any]
            [:append-description {:optional true} :any]
-           [:priority {:optional true} :any]]])
+           [:priority {:optional true} :any]
+           [:at {:optional true} :any]
+           [:agent-id {:optional true} :any]]])
 
 (def EditResult
   "`edit-transition`: the derived content edit."
@@ -215,6 +217,7 @@
    [:description {:optional true} :any]
    [:append-description {:optional true} :any]
    [:priority {:optional true} :any]
+   [:agent-id {:optional true} :any]
    [:directory {:optional true} [:maybe :string]]])
 
 (def Result

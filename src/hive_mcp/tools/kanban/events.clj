@@ -108,14 +108,15 @@
      * `:kanban/temporal-record` op = `:kanban-edit`, emitted only when a
        field actually changed, so a no-op edit leaves no audit noise.
      * No completion hooks, no movement tracking, no delete effect"
-  [{:keys [:kanban/entry]} [_ {:keys [task-id title description append-description priority]}]]
+  [{:keys [:kanban/entry]} [_ {:keys [task-id title description append-description priority agent-id]}]]
   (when (and entry (pred/kanban-entry? entry))
     (let [{:keys [changed new-content new-tags
                   old-title new-title old-priority new-priority]}
           (kt/edit-transition entry {:title              title
                                      :description        description
                                      :append-description append-description
-                                     :priority           priority})
+                                     :priority           priority
+                                     :agent-id           agent-id})
           project-id (kt/extract-project-id-from-tags entry)]
       (cond-> {:kanban/facade-update
                {:task-id task-id
