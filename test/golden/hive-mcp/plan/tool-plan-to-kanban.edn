@@ -7,6 +7,7 @@
   :plan-title "P",
   :success true,
   :kg-degraded? false,
+  :kg-pending? false,
   :waves {:a 0, :b 1, :c 2},
   :max-wave 2,
   :decision-id "d1",

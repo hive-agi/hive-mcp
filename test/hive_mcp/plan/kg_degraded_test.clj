@@ -272,7 +272,9 @@
 
 (deftest integration-build-execute-fn-kg-ok-test
   (testing "KG returns edges → kg-degraded? false, edges flow through"
-    (with-redefs [plan-tool/create-plan-decision-edge!    (fn [& _] :decision-edge-id)
+    (with-redefs [;; The faked edge ids read back at once.
+                  hive-mcp.knowledge-graph.edges/get-edge (constantly {})
+                  plan-tool/create-plan-decision-edge!    (fn [& _] :decision-edge-id)
                   plan-tool/create-plan-task-edges!       (fn [& _] [:e1 :e2])
                   plan-tool/create-task-dependency-edges! (fn [& _] [:e3])]
       (let [execute-fn (#'plan-tool/build-execute-fn
@@ -292,9 +294,89 @@
         ;; All three batches contributed edges.
         (is (= #{:e1 :e2 :e3 :decision-edge-id} (set (:kg-edges result))))))))
 
+;; =============================================================================
+;; Durability verdict: queued edges are pending, not lost.
+;; =============================================================================
+
+(def ^:private ok-result {:edges [:e1] :warnings [] :degraded? false})
+
+(deftest with-durability-test
+  (testing "edges read back: not pending, not degraded, no warning"
+    (is (= (assoc ok-result :pending? false)
+           (sut/with-durability ok-result (constantly true)))))
+
+  (testing "edges not readable within the budget: pending with a kg-pending
+            warning, NOT degraded, and the edge ids are kept"
+    (let [result (sut/with-durability ok-result (constantly nil))]
+      (is (true? (:pending? result)))
+      (is (false? (:degraded? result)))
+      (is (= [:e1] (:edges result)))
+      (is (= ["kg-pending:edges-queued:200ms"] (:warnings result)))))
+
+  (testing "edges that land during the wait are not pending"
+    (let [calls (atom 0)]
+      (is (false? (:pending? (sut/with-durability
+                               ok-result (fn [_] (> (swap! calls inc) 3))))))))
+
+  (testing "a throwing check counts as not readable yet and does not escape"
+    (let [result (sut/with-durability ok-result (fn [_] (throw (ex-info "x" {}))))]
+      (is (true? (:pending? result)))
+      (is (false? (:degraded? result)))))
+
+  (testing "the check is asked about the LAST edge id"
+    (let [seen (atom nil)]
+      (sut/with-durability {:edges [:e1 :e2 :e3] :warnings [] :degraded? false}
+                           (fn [id] (reset! seen id) true))
+      (is (= :e3 @seen))))
+
+  (testing "no edges: nothing to wait for, the check is not called"
+    (let [called? (atom false)
+          empty-result {:edges [] :warnings ["kg-timeout:a:200ms"] :degraded? true}]
+      (is (= (assoc empty-result :pending? false)
+             (sut/with-durability empty-result (fn [_] (reset! called? true)))))
+      (is (false? @called?)))))
+
+(deftest integration-build-execute-fn-slow-store-test
+  ;; The real edge fns run against the isolated store. The budget is raised
+  ;; from the fixture's 200ms: the first write opens that store, and a cold
+  ;; open is not what these tests measure.
+  (testing "real edge writes: every edge id is returned and reads back"
+    (with-redefs [sut/kg-call-timeout-ms (constantly 5000)]
+      (let [execute-fn (#'plan-tool/build-execute-fn
+                        "/tmp/nodir" "plan-id" "test-project" "test-agent")
+            plan      (plan-with [{:id "s1" :title "T1" :depends-on []}
+                                  {:id "s2" :title "T2" :depends-on ["s1"]}])
+            result    (execute-fn {:plan plan})]
+        (is (= 2 (count (:task-ids result))))
+        (is (= 4 (count (:kg-edges result)))
+            "decision edge + two plan->task edges + one task->task edge")
+        (is (every? string? (:kg-edges result)))
+        (is (false? (:kg-degraded? result)))
+        (is (false? (:kg-pending? result)))
+        (is (= [] (:kg-warnings result))))))
+
+  (testing "a store slower than the budget leaves the edges queued: every edge
+            id is still returned and nothing is reported skipped"
+    (with-redefs [sut/kg-call-timeout-ms (constantly 5000)
+                  sut/with-durability
+                  (let [real sut/with-durability]
+                    (fn [kg-result _] (with-redefs [sut/kg-call-timeout-ms (constantly 50)]
+                                        (real kg-result (constantly nil)))))]
+      (let [execute-fn (#'plan-tool/build-execute-fn
+                        "/tmp/nodir" "plan-id" "test-project" "test-agent")
+            plan      (plan-with [{:id "s1" :title "T1" :depends-on []}
+                                  {:id "s2" :title "T2" :depends-on ["s1"]}])
+            result    (execute-fn {:plan plan})]
+        (is (= 4 (count (:kg-edges result))))
+        (is (false? (:kg-degraded? result)))
+        (is (true? (:kg-pending? result)))
+        (is (= ["kg-pending:edges-queued:50ms"] (:kg-warnings result)))))))
+
 (deftest integration-build-execute-fn-kg-partial-test
   (testing "one batch hangs, others ok → partial edges + 1 warning"
-    (with-redefs [plan-tool/create-plan-decision-edge!    (fn [& _] :ok-decision)
+    (with-redefs [;; The faked edge ids read back at once.
+                  hive-mcp.knowledge-graph.edges/get-edge (constantly {})
+                  plan-tool/create-plan-decision-edge!    (fn [& _] :ok-decision)
                   plan-tool/create-plan-task-edges!       (fn [& _] ((thunk-hang)))
                   plan-tool/create-task-dependency-edges! (fn [& _] [:dep-edge])]
       (let [execute-fn (#'plan-tool/build-execute-fn
