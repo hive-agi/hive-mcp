@@ -75,7 +75,9 @@
    [:relations {:optional true} Relations]
    [:max_depth {:optional true} Depth]
    [:scope {:optional true} ScopeText]
-   [:limit {:optional true} (loose [:maybe [:int {:min 0 :max 10}]])]])
+   [:limit {:optional true} (loose [:maybe [:or [:int {:min 0 :max 10}] [:enum "3" "x"]]])]
+   [:exclude_relations {:optional true} (loose [:maybe [:vector {:max 2} [:enum "co-accessed" "implements"]]])]
+   [:min_confidence {:optional true} (loose [:maybe [:or [:double {:min 0.0 :max 1.0}] [:enum "0.5" "x"]]])]])
 
 (def ImpactParams
   [:map

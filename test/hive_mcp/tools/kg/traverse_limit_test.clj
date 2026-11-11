@@ -58,6 +58,73 @@
       (is (true? (:truncated? b))))))
 
 ;; -----------------------------------------------------------------------------
+;; Row filters run before the cap (review H1). The hive-knowledge `kg traverse`
+;; wrapper hands core every param, then filters exclude_relations and
+;; min_confidence and takes limit itself. `addon-post-filter` is that step,
+;; copied from hive-knowledge digest_tools.clj handle-traverse-enhanced, so the
+;; seam the agent calls is driven here without the addon on the classpath.
+;; -----------------------------------------------------------------------------
+
+(defn- noisy-hub!
+  "10 co-accessed edges stored before 5 implements edges, the shape of a real
+   node: co-accessed dominates and comes first in BFS order."
+  []
+  (conn/with-tx-batch
+    (doseq [i (range 10)]
+      (edges/add-edge! {:from "hub" :to (str "co-" i) :relation :co-accessed :confidence 0.3}))
+    (doseq [i (range 5)]
+      (edges/add-edge! {:from "hub" :to (str "impl-" i) :relation :implements :confidence 0.9}))))
+
+(defn- addon-post-filter [{:keys [exclude_relations min_confidence limit]} parsed]
+  (let [excl (when (seq exclude_relations) (set (map keyword exclude_relations)))
+        rows (cond->> (:results parsed)
+               excl           (remove #(contains? excl (keyword (:relation %))))
+               min_confidence (filter #(>= (or (:confidence %) 1.0) min_confidence)))]
+    (if (and limit (pos? limit)) (take limit rows) rows)))
+
+(defn- via-addon [params]
+  (let [out (kg/handle-kg-traverse params)]
+    (is (not (:isError out)) (:text out))
+    (addon-post-filter params (body out))))
+
+(deftest limit-counts-rows-after-exclude-relations
+  (noisy-hub!)
+  (let [params {:start_node "hub" :limit 5 :exclude_relations ["co-accessed"]}
+        b      (body (q/handle-kg-traverse params))]
+    (is (= 5 (:result-count b)) "the 5 implements rows, not 5 co-accessed rows cut first")
+    (is (every? #(= "implements" (:relation %)) (:results b)))
+    (is (not (:truncated? b)) "5 rows survive the filter, so nothing was cut")
+    (is (= 5 (count (via-addon params))) "and the addon's own post-filter keeps all 5"))
+  (testing "a limit below the filtered count still cuts, and counts the filtered rows"
+    (let [b (body (q/handle-kg-traverse {:start_node "hub" :limit 2 :exclude_relations ["co-accessed"]}))]
+      (is (= 2 (:result-count b)))
+      (is (true? (:truncated? b)))
+      (is (= 5 (:total-count b))))))
+
+(deftest limit-counts-rows-after-min-confidence
+  (noisy-hub!)
+  (let [params {:start_node "hub" :limit 5 :min_confidence 0.5}
+        b      (body (q/handle-kg-traverse params))]
+    (is (= 5 (:result-count b)))
+    (is (every? #(>= (:confidence %) 0.5) (:results b)))
+    (is (= 5 (count (via-addon params))))))
+
+(deftest numeric-strings-are-read-as-numbers-and-junk-is-refused
+  (noisy-hub!)
+  (let [b (body (q/handle-kg-traverse {:start_node "hub" :limit "3" :min_confidence "0.5"}))]
+    (is (= 3 (:result-count b)) "\"3\" from a path without wire coercion is 3")
+    (is (every? #(= "implements" (:relation %)) (:results b))))
+  (is (= 3 (:result-count (body (q/handle-kg-traverse {:start_node "hub" :limit 3.0}))))
+      "an integral double is an integer")
+  (doseq [[params re] [[{:start_node "hub" :limit "x"} #"limit must be a positive integer"]
+                       [{:start_node "hub" :limit 2.5} #"limit must be a positive integer"]
+                       [{:start_node "hub" :min_confidence "x"} #"min_confidence must be a number"]]]
+    (let [out (q/handle-kg-traverse params)]
+      (is (true? (:isError out)) (pr-str params))
+      (is (re-find re (:text out)) (pr-str params))
+      (is (re-find #"omit it" (:text out)) "the refusal names the remedy"))))
+
+;; -----------------------------------------------------------------------------
 ;; Contract for the class: a param the tool boundary accepts for a verb must be
 ;; one the verb's handler declares. A param the boundary coerces and the
 ;; handler never destructures is exactly how `limit` was swallowed.
@@ -82,6 +149,23 @@
     (is (empty? (remove (declared schema) params))
         (str v " is sent params its handler does not declare: "
              (vec (remove (declared schema) params))))))
+
+(deftest every-param-the-tool-documents-for-traverse-is-declared-by-the-handler
+  (testing "derived from kg/tool-def, not a hand-written list: a property whose
+            description is scoped to traverse (\"traverse: ...\") must be in
+            TraverseParams, and must be coerced at the boundary"
+    (let [props      (get-in kg/tool-def [:inputSchema :properties])
+          documented (set (keep (fn [[k {:keys [description]}]]
+                                  (when (re-find #"(^|; )traverse:" (or description ""))
+                                    (keyword k)))
+                                props))
+          coerced    (set (keys @#'kg/coerce-schema))]
+      (is (contains? documented :limit) "the derivation finds the known traverse params")
+      (is (empty? (remove (declared ks/TraverseParams) documented))
+          (str "documented for traverse but not declared by its handler: "
+               (vec (remove (declared ks/TraverseParams) documented))))
+      (is (empty? (remove #(or (coerced %) (= "string" (get-in props [(name %) :type]))) documented))
+          "a non-string traverse param is coerced from its JSON string form"))))
 
 (deftest the-traverse-verb-documents-limit-to-callers
   (let [props (get-in kg/tool-def [:inputSchema :properties])]
