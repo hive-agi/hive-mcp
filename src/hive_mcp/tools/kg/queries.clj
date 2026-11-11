@@ -5,6 +5,7 @@
             [hive-mcp.knowledge-graph.edges :as edges]
             [hive-mcp.knowledge-graph.queries :as queries]
             [hive-mcp.knowledge-graph.scope :as scope]
+            [clojure.string :as str]
             [taoensso.timbre :as log]
             [hive-mcp.knowledge-graph.schema :as kg-schema]
             [malli.core :as m]
@@ -68,38 +69,116 @@
            (when scope (str ", scope=" scope))
            ")."))))
 
+(defn- refuse-limit
+  "An MCP error for a `limit` that is present but not a positive integer, or
+   nil. A limit is a row cap; zero or a negative number would silently answer
+   nothing, so it is refused with what to send instead."
+  [limit]
+  (when (and (some? limit) (not (pos-int? limit)))
+    (mcp-error (str "limit must be a positive integer (got " (pr-str limit)
+                    "); omit it to get every row"))))
+
+(defn- cap-rows
+  "Take at most `limit` of `rows`. Returns [kept total truncated?]."
+  [limit rows]
+  (let [total (count rows)
+        kept  (if limit (vec (take limit rows)) (vec rows))]
+    [kept total (< (count kept) total)]))
+
+(defn- coerce-number
+  "A caller's number as it may arrive on a path without wire coercion: a
+   number stays, a numeric string is parsed, anything else is returned as is
+   (so the refusal names what was sent). An integral double becomes a long
+   when `integral?`."
+  [x integral?]
+  (let [n (cond
+            (number? x) x
+            (and (string? x) (re-matches #"\s*-?\d+(\.\d+)?\s*" x))
+            (parse-double (str/trim x))
+            :else x)]
+    (if (and integral? (number? n) (== n (Math/rint (double n)))
+             (< (Math/abs (double n)) 1e15))
+      (long n)
+      n)))
+
+(defn- refuse-min-confidence
+  "An MCP error for a `min_confidence` that is present but not a number, or nil."
+  [min-confidence]
+  (when (and (some? min-confidence) (not (number? min-confidence)))
+    (mcp-error (str "min_confidence must be a number between 0.0 and 1.0 (got "
+                    (pr-str min-confidence) "); omit it to keep every confidence"))))
+
+(defn- row-filter
+  "A predicate over traverse rows for the row filters a caller may send:
+   `exclude_relations` (names or keywords) and `min_confidence` (an edge with
+   no confidence counts as 1.0). nil when neither is present.
+
+   These run BEFORE `limit`, so the cap counts rows that survive them. The
+   hive-knowledge `kg traverse` wrapper filters on the same params after this
+   handler answers; filtering here first keeps its result from being cut
+   before it filters (a limit 5 over 10 excluded rows used to answer 0)."
+  [exclude-relations min-confidence]
+  (let [excl (when (seq exclude-relations)
+               (set (map keyword (if (coll? exclude-relations)
+                                   exclude-relations
+                                   [exclude-relations]))))]
+    (when (or excl min-confidence)
+      (fn [{:keys [edge]}]
+        (and (not (and excl (contains? excl (keyword (:kg-edge/relation edge)))))
+             (or (nil? min-confidence)
+                 (>= (double (or (:kg-edge/confidence edge) 1.0))
+                     (double min-confidence))))))))
+
 (defn handle-kg-traverse
-  "Walk graph from a starting node via BFS."
-  [{:keys [start_node direction relations max_depth scope]}]
-  (log/info "kg_traverse" {:start start_node :direction direction})
-  (try
-    (or (refuse-node-id start_node "start_node")
-        (let [dir-kw (case direction
-                       (:incoming "incoming") :incoming
-                       (:both "both")         :both
-                       :outgoing)  ;; default
-              rel-set (parse-relations-filter relations)
-              opts (cond-> {:direction dir-kw}
-                     rel-set (assoc :relations rel-set)
-                     max_depth (assoc :max-depth max_depth)
-                     scope (assoc :scope scope))
-              results (queries/traverse start_node opts)
-              response (cond-> {:success true
-                                :start-node start_node
-                                :result-count (count results)
-                                :results (mapv (fn [{:keys [node-id edge depth path]}]
-                                                 {:node-id node-id
-                                                  :relation (:kg-edge/relation edge)
-                                                  :confidence (:kg-edge/confidence edge)
-                                                  :depth depth
-                                                  :path path})
-                                               results)}
-                         (empty? results)
-                         (assoc :hint (traverse-empty-hint start_node opts)))]
-          (mcp-json response)))
-    (catch Exception e
-      (log/error e "kg_traverse failed")
-      (mcp-error (str "Traversal failed: " (.getMessage e))))))
+  "Walk graph from a starting node via BFS. Rows are filtered by
+   `exclude_relations` and `min_confidence` first, then `limit` caps what is
+   answered; a capped answer carries :truncated? true and :total-count (the
+   filtered row count). `limit` caps the payload only: the BFS still walks
+   to max_depth. A numeric string (\"3\", \"0.5\") is read as its number, for
+   paths that skip wire coercion. A `limit` that is not a positive integer is
+   refused (it used to mean \"no limit\" on the hive-knowledge path); omit it
+   instead."
+  [{:keys [start_node direction relations max_depth scope exclude_relations]
+    raw-limit :limit raw-min-confidence :min_confidence}]
+  (let [limit          (some-> raw-limit (coerce-number true))
+        min-confidence (some-> raw-min-confidence (coerce-number false))]
+    (log/info "kg_traverse" {:start start_node :direction direction :limit limit})
+    (try
+      (or (refuse-node-id start_node "start_node")
+          (refuse-limit limit)
+          (refuse-min-confidence min-confidence)
+          (let [dir-kw (case direction
+                         (:incoming "incoming") :incoming
+                         (:both "both")         :both
+                         :outgoing)  ;; default
+                rel-set (parse-relations-filter relations)
+                opts (cond-> {:direction dir-kw}
+                       rel-set (assoc :relations rel-set)
+                       max_depth (assoc :max-depth max_depth)
+                       scope (assoc :scope scope))
+                keep? (row-filter exclude_relations min-confidence)
+                rows  (cond->> (queries/traverse start_node opts)
+                        keep? (filter keep?))
+                [results total truncated?] (cap-rows limit rows)
+                response (cond-> {:success true
+                                  :start-node start_node
+                                  :result-count (count results)
+                                  :results (mapv (fn [{:keys [node-id edge depth path]}]
+                                                   {:node-id node-id
+                                                    :relation (:kg-edge/relation edge)
+                                                    :confidence (:kg-edge/confidence edge)
+                                                    :depth depth
+                                                    :path path})
+                                                 results)}
+                           truncated?
+                           (assoc :truncated? true :total-count total)
+
+                           (empty? results)
+                           (assoc :hint (traverse-empty-hint start_node opts)))]
+            (mcp-json response)))
+      (catch Exception e
+        (log/error e "kg_traverse failed")
+        (mcp-error (str "Traversal failed: " (.getMessage e)))))))
 
 (m/=> handle-kg-traverse [:=> [:cat ks/TraverseParams] ks/KgResponse])
 
@@ -265,7 +344,9 @@
                                "max_depth" {:type "integer"
                                             :description "Maximum traversal depth (default: 3)"}
                                "scope" {:type "string"
-                                        :description "Limit to edges visible from this scope"}}
+                                        :description "Limit to edges visible from this scope"}
+                               "limit" {:type "integer"
+                                        :description "Max rows to return; a capped answer carries truncated? and total-count"}}
                   :required ["start_node"]}
     :handler handle-kg-traverse}
 

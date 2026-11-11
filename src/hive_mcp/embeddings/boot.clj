@@ -115,7 +115,8 @@
 
         ;; Global fallback provider (Ollama), only with a configured model
                      (when ollama-model
-                       (chroma/set-embedding-provider! (ollama/->provider {:host ollama-host :model ollama-model}))
+                       (chroma/set-embedding-provider! (ollama/->provider {:host ollama-host :model ollama-model})
+                                                       {:impl :ollama :host ollama-host :model (str ollama-model)})
                        (log/info "Global fallback embedding provider: Ollama at" ollama-host))
 
                      (log/info "Embedding config from config.edn:" {:ollama-host ollama-host

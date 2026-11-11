@@ -139,7 +139,8 @@
                (conn/get-or-create-named-collection
                  (:collection-name resolved) (:dimension resolved)
                  (embedding-service/space-for-resolved resolved {:metric conn/metric}))
-               (conn/get-or-create-collection))
+               (conn/get-or-create-collection
+                 (embedding-service/default-space {:metric conn/metric})))
         provider (if resolved (:provider resolved) (emb/get-embedding-provider))
         embed-1 (fn [p] (emb/embed-text p embed-text))
         embedding (if no-embed?
@@ -198,10 +199,14 @@
 (defn index-memory-entries!
   "Index multiple memory entries in batch with full metadata.
    Uses the shared provider gate for the complete embed-batch call. Entries should have :id pre-set.
-   A transient string :embed-text is embedded in place of the document and never persisted."
+   A transient string :embed-text is embedded in place of the document and never persisted.
+   Space-guarded: a default collection stamped with another embedding space
+   than the global provider's refuses the batch (:embedding-space-mismatch)
+   before anything is embedded or written."
   [entries]
   (emb/require-embedding!)
-  (let [coll (conn/get-or-create-collection)
+  (let [coll (conn/get-or-create-collection
+               (embedding-service/default-space {:metric conn/metric}))
         now  (h/iso-timestamp)
         stored (mapv strip-transient entries)
         docs (mapv h/memory-to-document stored)

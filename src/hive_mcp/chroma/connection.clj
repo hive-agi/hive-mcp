@@ -2,6 +2,7 @@
   "Chroma connection configuration, collection management, and health status."
   (:require [hive-mcp.chroma.client :as chroma]
             [hive-mcp.embeddings.active :as emb]
+            [hive-mcp.embeddings.service :as embedding-service]
             [hive-mcp.embeddings.space :as space]
             [taoensso.timbre :as log] [hive-dsl.result :refer [rescue]]
             [malli.core :as m]))
@@ -79,20 +80,6 @@
   (log/info log-msg)
   coll)
 
-(defn get-or-create-collection
-  "Get existing collection or create new one."
-  []
-  (or @collection-cache
-      (let [coll-name (:collection-name @config)
-            _ (emb/require-embedding!)
-            dim (emb/embedding-dimension (emb/get-embedding-provider))]
-        (if-let [existing (try-get-collection coll-name)]
-          (cache-collection! existing (str "Using existing Chroma collection: " coll-name))
-          (cache-collection! (create-new-collection coll-name dim)
-                             (str "Created Chroma collection: " coll-name " dimension: " dim))))))
-
-(m/=> get-or-create-collection [:=> [:cat] chroma/Coll])
-
 (defonce ^:private named-collection-cache (atom {}))
 
 (def metric
@@ -100,6 +87,37 @@
   :l2)
 
 (defonce ^:private legacy-warned (atom #{}))
+
+(declare admit-space!)
+
+(defn get-or-create-collection
+  "Get the default (unnamed) collection or create it. A new one is stamped
+   with the global provider's space when that space can be named.
+
+   With `space` (an EmbeddingSpace) the collection must hold it, as in
+   `get-or-create-named-collection`: a stamped collection of another space
+   throws ex-info :embedding-space-mismatch, an unstamped (legacy) one is
+   admitted with a warning. No argument, or a nil `space`, skips the guard."
+  ([] (get-or-create-collection nil))
+  ([space]
+   (let [coll-name (:collection-name @config)
+         coll (or @collection-cache
+                  (let [_ (emb/require-embedding!)
+                        dim (emb/embedding-dimension (emb/get-embedding-provider))]
+                    (if-let [existing (try-get-collection coll-name)]
+                      (cache-collection! existing (str "Using existing Chroma collection: " coll-name))
+                      (cache-collection!
+                       (create-new-collection
+                        coll-name dim
+                        (some-> (or space (embedding-service/default-space {:metric metric}))
+                                space/space->metadata))
+                       (str "Created Chroma collection: " coll-name " dimension: " dim)))))]
+     (if space (admit-space! coll-name coll space) coll))))
+
+(m/=> get-or-create-collection
+      [:function
+       [:=> [:cat] chroma/Coll]
+       [:=> [:cat [:maybe space/EmbeddingSpace]] chroma/Coll]])
 
 (defn- admit-space!
   "Guard `coll` (named `coll-name`) for vectors of `space`. A stamped
@@ -172,6 +190,21 @@
 
 (m/=> chroma-available? [:=> [:cat] [:maybe :boolean]])
 
+(defn provider-spec
+  "Build the embedding space spec for a provider, including its resolved host
+   when present. Return nil when the provider has no configured model."
+  [provider-type model provider]
+  (when model
+    (cond-> {:impl provider-type :model (str model)}
+      (:host provider) (assoc :host (str (:host provider))))))
+
+(m/=> provider-spec
+      [:=> [:cat :keyword :any [:maybe [:map [:host {:optional true} :any]]]]
+       [:maybe [:map
+                [:impl :keyword]
+                [:model :string]
+                [:host {:optional true} :string]]]])
+
 (defn reinitialize-embeddings!
   "Fix hot-reload protocol mismatch by reloading namespaces and reinitializing."
   [& {:keys [provider-type] :or {provider-type :ollama}}]
@@ -203,7 +236,8 @@
                    :ollama ((resolve 'hive-mcp.embeddings.ollama/->provider) opts)
                    :openai ((resolve 'hive-mcp.embeddings.openai/->provider) opts)
                    :openrouter ((resolve 'hive-mcp.embeddings.openrouter/->provider) opts))]
-    (emb/set-embedding-provider! provider)
+    (emb/set-embedding-provider! provider
+                                 (provider-spec provider-type (:model opts) provider))
 
     (let [fixed? (satisfies? emb/EmbeddingProvider provider)]
       (if fixed?

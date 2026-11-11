@@ -112,7 +112,8 @@
                        (conn/get-or-create-named-collection
                          (:collection-name resolved) (:dimension resolved)
                          (embedding-service/space-for-resolved resolved {:metric conn/metric}))
-                       (conn/get-or-create-collection))
+                       (conn/get-or-create-collection
+                         (embedding-service/default-space {:metric conn/metric})))
             query-emb (emb/embed-text provider shaped-query)
             results   (search-collection coll query-emb limit where-clause where-doc-clause)]
         (log/debug "Semantic search for:" (subs query-text 0 (min 50 (count query-text)))

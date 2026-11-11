@@ -149,7 +149,10 @@
    The model comes from opts :model or OPENROUTER_EMBEDDING_MODEL."
   ([] (set-as-default! {}))
   ([opts]
-   (active/set-embedding-provider! (->provider opts))
+   (active/set-embedding-provider!
+    (->provider opts)
+    (when-let [model (or (:model opts) (:model (resolve-config! {})))]
+      {:impl :openrouter :model (str model)}))
    (log/info "OpenRouter embeddings enabled with" (or (:model opts) (:model (resolve-config! {}))))))
 
 ;; Ends in log/info, which returns nil.
