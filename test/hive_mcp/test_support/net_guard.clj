@@ -13,7 +13,8 @@
    read at the end of the run by hive-mcp.test-runner, which fails the run.
 
    NIO SocketChannel and Netty bypass the ProxySelector; the static gate
-   (hive-mcp.default-tier-isolation-test) covers what this cannot see.")
+   (hive-mcp.default-tier-isolation-test) covers what this cannot see."
+  (:require [clojure.string]))
 
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
@@ -40,6 +41,26 @@
         (or (#{"localhost" "127.0.0.1" "::1" "[::1]" "0:0:0:0:0:0:0:1" "0.0.0.0"} host)
             (re-matches #"127(\.\d{1,3}){3}" host)))))
 
+(defn own-interface-addresses
+  "The address literals of this machine's own network interfaces."
+  []
+  (try
+    (->> (java.util.Collections/list (java.net.NetworkInterface/getNetworkInterfaces))
+         (mapcat #(java.util.Collections/list (.getInetAddresses ^java.net.NetworkInterface %)))
+         (map #(first (clojure.string/split (.getHostAddress ^java.net.InetAddress %) #"%")))
+         set)
+    (catch Exception _ #{})))
+
+(defn local-host?
+  "True for loopback and for an address literal of one of this machine's own
+   interfaces: a bind test that probes its own server on a LAN address never
+   leaves the host."
+  [host]
+  (boolean
+   (or (loopback-host? host)
+       (and host (contains? (own-interface-addresses)
+                            (clojure.string/replace host #"^\[|\]$" ""))))))
+
 (defn violation
   "The refusal for a connect to URI, or nil when it is allowed."
   [^java.net.URI uri]
@@ -48,7 +69,7 @@
         port (if (neg? port) (case (.getScheme uri) "https" 443 "http" 80 -1) port)]
     (cond
       (nil? host) nil
-      (not (loopback-host? host)) {:uri (str uri) :reason :non-loopback-host}
+      (not (local-host? host)) {:uri (str uri) :reason :non-loopback-host}
       (contains? live-ports port) {:uri (str uri) :reason :live-service-port
                                    :service (live-ports port)}
       :else nil)))
