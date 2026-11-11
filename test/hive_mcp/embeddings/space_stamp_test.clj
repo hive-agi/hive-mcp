@@ -47,10 +47,11 @@
 (def ^:private ^:dynamic *transport* nil)
 
 (defn- stub-ports [f]
-  (let [prior-t (client/transport)
-        prior-p (active/get-embedding-provider)
-        prior-s (active/get-embedding-provider-spec)
-        t       (transport/->transport)]
+  (let [prior-t     (client/transport)
+        prior-p     (active/get-embedding-provider)
+        prior-spec  (active/get-embedding-provider-spec)
+        resolver-fn @(deref #'service/digest-resolver)
+        t           (transport/->transport)]
     (client/set-transport! t)
     (active/set-embedding-provider! (fixtures/->MockEmbedder dim))
     (conn/reset-collection-cache!)
@@ -64,12 +65,12 @@
           (cfg/with-config embedder-config (f))))
       (finally
         (mi/unstrument! {:filters [(mi/-filter-var contracted)]})
-        (service/set-digest-resolver! (fn [_] nil))
+        (service/set-digest-resolver! resolver-fn)
         (conn/reset-collection-cache!)
         (registry/clear-cache!)
         (client/set-transport! prior-t)
         (if prior-p
-          (active/set-embedding-provider! prior-p prior-s)
+          (active/set-embedding-provider! prior-p prior-spec)
           (active/reset-embedding-provider!))))))
 
 (use-fixtures :each stub-ports)
@@ -271,3 +272,45 @@
     (is (= "dn" (ollama/digest-in-tags tags "nomic-embed-text")) "bare name = :latest")
     (is (nil? (ollama/digest-in-tags tags "absent")))
     (is (nil? (ollama/digest-in-tags nil "absent")))))
+
+(deftest default-space-returns-nil-when-digest-unresolved
+  (testing "default-space returns nil when the digest resolver returns nil"
+    (let [spec {:impl :ollama :model "stub-embed" :host "http://stub.invalid"}]
+      (active/set-embedding-provider! (fixtures/->MockEmbedder dim) spec)
+      ;; Stub the resolver to return nil (digest unresolved)
+      (service/set-digest-resolver! (fn [_spec] nil))
+      (is (nil? (service/default-space {:metric :l2}))
+          "default-space should be nil when digest cannot be resolved"))
+    (testing "and the collection stays unstamped (no metadata written)"
+      (conn/reset-collection-cache!)
+      (let [coll (conn/get-or-create-collection)]
+        (is (nil? (space/metadata->space (stored-metadata (default-name))))
+            "no stamp metadata should be present in the collection")))))
+
+(deftest read-path-does-not-stamp
+  (testing "real zero-arity read paths do not stamp an existing collection"
+    (name-global-provider!)
+    (service/set-digest-resolver! (fn [_spec] "sha256:test-read-digest"))
+    (conn/reset-collection-cache!)
+    ;; Raw creation leaves a legacy collection. Its metadata is the witness:
+    ;; the digest below is resolvable, but no read may write it.
+    (gate/deref-write (client/create-collection (default-name) :metadata {:dimension dim}))
+    (is (nil? (space/metadata->space (stored-metadata (default-name)))))
+    (is (true? (conn/chroma-available?)))
+    (is (nil? (crud/get-entry-by-id "absent")))
+    (is (= {:count 0 :types {}} (crud/collection-stats)))
+    (is (nil? (space/metadata->space (stored-metadata (default-name))))
+        "chroma-available?, get-entry-by-id and collection-stats never stamp")))
+
+(deftest openai-provider-without-digest-still-names-a-default-space
+  (active/set-embedding-provider!
+   (fixtures/->MockEmbedder dim)
+   {:impl :openai :model "text-embedding-3-small"})
+  ;; The production digest port has no answer for non-Ollama providers.
+  (service/set-digest-resolver! (fn [{:keys [impl]}]
+                                  (when (= :ollama impl) "sha256:unused")))
+  (let [s (service/default-space {:metric :l2})]
+    (is (some? s))
+    (is (= :openai (:provider s)))
+    (is (= "text-embedding-3-small" (:model s)))
+    (is (nil? (:digest s)))))

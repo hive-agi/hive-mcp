@@ -769,14 +769,24 @@
   "The EmbeddingSpace of the global provider, whose vectors land in the
    default (unnamed) collection: the spec it was set with (impl, model, exact
    digest), its own dimension and the same revisions as `space-for-resolved`,
-   plus `extra` from the vector store. Nil when no global provider is set or
-   it was set without a spec, whose space nobody can name."
+   plus `extra` from the vector store. Nil when no global provider is set,
+   it was set without a spec (whose space nobody can name), or an Ollama
+   digest could not be resolved. Providers without a digest concept keep
+   their unrecorded digest and still name a space."
   ([] (default-space nil))
   ([extra]
    (when-let [provider (chroma/get-embedding-provider)]
-     (spec->space (chroma/get-embedding-provider-spec)
-                  (chroma/embedding-dimension provider)
-                  extra))))
+     (let [spec  (chroma/get-embedding-provider-spec)
+           space (spec->space spec
+                              (chroma/embedding-dimension provider)
+                              extra)]
+       ;; An Ollama tag without its served digest cannot name an exact space:
+       ;; leave the default collection unstamped until resolution succeeds.
+       ;; Remote providers have no digest concept; their nil digest is the
+       ;; meaningful "unrecorded" value they had before this guard.
+       (when (or (not= :ollama (:impl spec))
+                 (:digest space))
+         space)))))
 
 (m/=> default-space [:function
                      [:=> [:cat] [:maybe space/EmbeddingSpace]]
