@@ -104,8 +104,9 @@
    registry's state atom and the state is read inside the lock, so of two
    racing persists the later one always writes the newer snapshot."
   [reg]
-  (locking (:state reg)
-    (write-awaiters! (:path reg) (:awaiters @(:state reg)))))
+  (let [state (:state reg)]
+    (locking state
+      (write-awaiters! (:path reg) (:awaiters @state)))))
 
 (defn awaiters
   "Every awaiter the registry holds, as a vector sorted by :created."

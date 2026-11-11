@@ -55,8 +55,10 @@
 
 (defn require-ports!
   "Throw the same refusal the defaults throw when `awaiter`'s source :type
-   or owner :kind has no registered method; answer `awaiter` otherwise.
-   Opens nothing, so it is safe before anything is recorded."
+   or owner :kind has no registered method, and let the resumer refuse an
+   owner it cannot resume (open-resumer is called once and its fn dropped);
+   answer `awaiter` otherwise. Opens no source, so it is safe before
+   anything is recorded."
   [awaiter]
   (let [t (get-in awaiter [:subscription :type])
         k (get-in awaiter [:owner :kind])]
@@ -64,4 +66,5 @@
       ((get-method open-source :default) (:subscription awaiter) awaiter nil))
     (when-not (contains? (methods open-resumer) k)
       ((get-method open-resumer :default) (:owner awaiter)))
+    (open-resumer (:owner awaiter))
     awaiter))
