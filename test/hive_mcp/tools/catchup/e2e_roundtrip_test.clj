@@ -5,7 +5,7 @@
      Work -> Wrap (crystallize) -> Memory (persist) -> Catchup (recall) -> Context restored
 
    Strategy:
-   - An atom acts as the shared in-memory store (the 'Chroma')
+   - An atom-backed IMemoryStore acts as the shared in-memory store
    - Phase 1 (Wrap): harvest + crystallize with deterministic mocks.
      Verifies a session-summary entry lands in the atom.
    - Phase 2 (Catchup): With the same atom, call handle-native-catchup.
@@ -30,7 +30,6 @@
             ;; Infrastructure mocked
             [hive-mcp.protocols.memory :as mem-proto]
             [hive-mcp.vectordb.facade :as facade]
-            [hive-mcp.chroma.core :as chroma]
             [hive-mcp.tools.memory.scope :as scope]
             [hive-mcp.tools.memory.duration :as dur]
             [hive-mcp.context.request :as ctx]
@@ -60,7 +59,7 @@
 (def ^:private test-agent "e2e-agent")
 
 ;; =============================================================================
-;; In-Memory Store (shared atom acts as Chroma)
+;; In-Memory Store (shared atom behind the IMemoryStore port)
 ;; =============================================================================
 
 (defn- make-memory-store

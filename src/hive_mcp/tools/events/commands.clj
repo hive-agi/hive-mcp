@@ -229,6 +229,15 @@
 ;; help
 ;; =============================================================================
 
+(defn handle-bus-status
+  "Which event backbone is active and whether it is connected."
+  [_params]
+  (r/rescue (err :bus-status "Internal error in events.bus-status")
+    (let [status (resolve-or-throw 'hive-mcp.nats.bus/bus-status)]
+      (ok :bus-status (status)))))
+
+(m/=> handle-bus-status [:=> [:cat EventsParams] EventsReply])
+
 (def help-text
   (str "events tool — hive-agent observability surface\n"
        "\n"

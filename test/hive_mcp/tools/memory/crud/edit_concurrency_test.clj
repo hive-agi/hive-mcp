@@ -1,7 +1,9 @@
 (ns hive-mcp.tools.memory.crud.edit-concurrency-test
   (:require [clojure.data.json :as json]
-            [clojure.test :refer [deftest is]]
+            [clojure.test :refer [deftest is testing]]
+            [hive-mcp.addons.core :as addons]
             [hive-mcp.protocols.memory :as proto]
+            [hive-mcp.test-support.registry-isolation :as isolation]
             [hive-mcp.tools.memory.crud.edit :as edit]))
 
 (defn- store-for [state before-write]
@@ -25,15 +27,41 @@
     (store-status [_] {})
     (reset-store! [_] nil)))
 
-(defn- with-edit-store [store f]
-  (let [previous (proto/registered-stores)]
-    (try
+(defn- with-edit-store
+  "Install STORE as :default for F. Refuses a running addon server before the
+   store is written and puts the exact prior slot map back in one atomic swap;
+   it never calls the global reset-registry! (card 20260629165759-7b9fd43c)."
+  [store f]
+  (isolation/with-restored-store-registry
+    (fn []
       (proto/set-store! store)
-      (f)
-      (finally
-        (proto/reset-registry!)
-        (doseq [[slot old] previous]
-          (proto/register-store! slot old))))))
+      (f))))
+
+(deftest with-edit-store-cannot-clobber-a-live-registry
+  ;; The fixture used to call the global reset-registry! in its finally and
+  ;; never checked for a running addon server, so loading this ns in a live
+  ;; nREPL wiped every live store slot.
+  (let [before (proto/registered-stores)
+        state (atom {:id "iso" :type "note" :content "x"})]
+    (testing "a throwing body leaves the exact prior slot map behind"
+      (is (thrown? Exception
+                   (with-edit-store (store-for state nil)
+                     (fn []
+                       (is (some? (proto/get-store)) "stub installed as :default")
+                       (throw (Exception. "body failed"))))))
+      (is (= before (proto/registered-stores))))
+    (testing "a running addon server is refused before any store is written"
+      (let [ran? (atom false)
+            writes (atom 0)]
+        (with-redefs [addons/registry-status (constantly {:total 1 :active 1 :registered 0 :error 0})
+                      proto/set-store! (fn [s] (swap! writes inc) s)]
+          (is (= :live-addon-registry
+                 (:reason (ex-data (try (with-edit-store (store-for state nil)
+                                          (fn [] (reset! ran? true)))
+                                        (catch clojure.lang.ExceptionInfo e e)))))))
+        (is (false? @ran?))
+        (is (zero? @writes))
+        (is (= before (proto/registered-stores)))))))
 
 (defn- body [response]
   (json/read-str (:text response) :key-fn keyword))

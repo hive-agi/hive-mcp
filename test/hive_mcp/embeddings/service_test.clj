@@ -6,15 +6,14 @@
    - Per-collection configuration
    - Provider resolution with fallback chain
    - Dimension queries
-   - Integration with chroma/get-provider-for
+   - Collection-aware embedding API (hive-mcp.embeddings.active/get-provider-for)
 
    Uses MockEmbedder for deterministic testing without external dependencies."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hive-mcp.embeddings.service :as service]
             [hive-mcp.embeddings.config :as config]
             [hive-mcp.embeddings.registry :as registry]
-            [hive-mcp.chroma.core :as chroma]
-            [hive-mcp.embeddings.active :as chroma-emb]
+            [hive-mcp.embeddings.active :as emb]
             [hive-mcp.test-fixtures :as fixtures]))
 
 ;; =============================================================================
@@ -32,7 +31,7 @@
    factories via registry/init! and drops the provider cache both ways, so a
    real provider cached by another namespace can neither leak in nor out."
   [f]
-  (let [original-global @@#'chroma-emb/embedding-provider]
+  (let [original-global @@#'emb/embedding-provider]
     (try
       (service/reset-service!)
       (service/init!)
@@ -41,13 +40,13 @@
        :ollama
        (fn [config] (fixtures/->MockEmbedder (:dimension config))))
       ;; Set global fallback for backward compatibility tests
-      (chroma/set-embedding-provider! (fixtures/->MockEmbedder 384))
+      (emb/set-embedding-provider! (fixtures/->MockEmbedder 384))
       (f)
       (finally
         (service/reset-service!)
         (registry/clear-cache!)
         (registry/init!)
-        (reset! @#'chroma-emb/embedding-provider original-global)))))
+        (reset! @#'emb/embedding-provider original-global)))))
 
 (use-fixtures :each with-clean-service)
 
@@ -175,7 +174,7 @@
       (service/configure-collection! "my-collection" cfg)
       (let [provider (service/get-provider-for "my-collection")]
         (is (some? provider))
-        (is (= 1024 (chroma/embedding-dimension provider)))))))
+        (is (= 1024 (emb/embedding-dimension provider)))))))
 
 (deftest test-provider-resolution-fallback-to-global
   (testing "Unconfigured collection falls back to global provider"
@@ -183,11 +182,11 @@
     (let [provider (service/get-provider-for "unconfigured-collection")]
       (is (some? provider))
       ;; Global provider is MockEmbedder with 384 dims
-      (is (= 384 (chroma/embedding-dimension provider))))))
+      (is (= 384 (emb/embedding-dimension provider))))))
 
 (deftest test-provider-resolution-no-fallback-throws
   (testing "No config and no global provider throws"
-    (chroma/set-embedding-provider! nil)
+    (emb/set-embedding-provider! nil)
     (is (thrown? clojure.lang.ExceptionInfo
                  (service/get-provider-for "no-provider-collection")))))
 
@@ -273,26 +272,26 @@
       (is (zero? (:cached-count (registry/cache-stats)))))))
 
 ;; =============================================================================
-;; Test: chroma/get-provider-for Integration
+;; Test: embeddings.active collection-aware API (delegates to the service)
 ;; =============================================================================
 
-(deftest test-chroma-get-provider-for-integration
-  (testing "chroma/get-provider-for delegates to service"
-    (service/configure-collection! "chroma-test" (config/ollama-config {:model "mxbai-embed-large"}))
-    (let [provider (chroma/get-provider-for "chroma-test")]
+(deftest test-active-get-provider-for-integration
+  (testing "active/get-provider-for delegates to service"
+    (service/configure-collection! "active-test" (config/ollama-config {:model "mxbai-embed-large"}))
+    (let [provider (emb/get-provider-for "active-test")]
       (is (some? provider))
-      (is (= 1024 (chroma/embedding-dimension provider))))))
+      (is (= 1024 (emb/embedding-dimension provider))))))
 
-(deftest test-chroma-embed-text-for
-  (testing "chroma/embed-text-for uses collection's provider"
-    (service/configure-collection! "embed-via-chroma" (config/ollama-config {:model test-ollama-model}))
-    (let [embedding (chroma/embed-text-for "embed-via-chroma" "test")]
+(deftest test-active-embed-text-for
+  (testing "active/embed-text-for uses collection's provider"
+    (service/configure-collection! "embed-via-active" (config/ollama-config {:model test-ollama-model}))
+    (let [embedding (emb/embed-text-for "embed-via-active" "test")]
       (is (= 2560 (count embedding))))))
 
-(deftest test-chroma-get-dimension-for
-  (testing "chroma/get-dimension-for returns collection's dimension"
-    (service/configure-collection! "dim-via-chroma" (config/ollama-config {:model "mxbai-embed-large"}))
-    (is (= 1024 (chroma/get-dimension-for "dim-via-chroma")))))
+(deftest test-active-get-dimension-for
+  (testing "active/get-dimension-for returns collection's dimension"
+    (service/configure-collection! "dim-via-active" (config/ollama-config {:model "mxbai-embed-large"}))
+    (is (= 1024 (emb/get-dimension-for "dim-via-active")))))
 
 ;; =============================================================================
 ;; Test: Multi-Collection Scenario

@@ -330,6 +330,28 @@
         (grant/child-grant (when (or parent-wire requested) (*grant-domain*))
                            parent-wire requested child-depth)))))
 
+(defn kanban-claim-refusal
+  "Claim card `kanban-task-id` for the spawner before the ling starts, and
+   answer the refusal text when another live owner holds it, else nil. The
+   claim owner is the spawn's `parent` lineage: the explicit parent when
+   given, else the caller (`effective-parent`), so the coordinator that spawns
+   holds the card and its ling works under that claim. `steal_claim` true
+   takes the card over. No card, no owner, or a claim that cannot be checked
+   (store down, unknown card) never blocks a spawn."
+  [{:keys [kanban_task_id steal_claim] :as params}]
+  (when-not (str/blank? (str kanban_task_id))
+    (when-let [owner (effective-parent params)]
+      (let [res (try ((requiring-resolve 'hive-mcp.tools.kanban.events/dispatch-claim!)
+                      {:task-id kanban_task_id :owner owner
+                       :steal-claim? (contains? #{true "true"} steal_claim)})
+                     (catch Throwable e
+                       (log/debug "kanban claim on spawn failed (non-fatal):" (ex-message e))
+                       nil))]
+        (when (= :kanban/claim-refused (:error res))
+          (:message res))))))
+
+(m/=> kanban-claim-refusal [:=> [:cat [:maybe :map]] [:maybe :string]])
+
 (defn handle-spawn
   "Spawn a new ling agent.
 
@@ -438,6 +460,8 @@
                         (throw (ex-info (str "Provider " (clojure.core/name effective-provider)
                                              " cannot serve this spawn: " (:fix err))
                                         err)))
+                    _ (when-let [refusal (kanban-claim-refusal params)]
+                        (throw (ex-info refusal {:kanban/claim-refused kanban_task_id})))
                     slave-id (proto/spawn! ling-agent (cond-> {:task brief
                                                                :parent parent
                                                                :spawned-by (spawner params)

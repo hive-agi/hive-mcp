@@ -4,7 +4,8 @@
             [clojure.data.json :as json]
             [hive-mcp.tools.memory.crud.retrieve :as retrieve]
             [hive-mcp.tools.memory.read-outcome :as read-outcome]
-            [hive-mcp.protocols.memory :as mem-proto]))
+            [hive-mcp.protocols.memory :as mem-proto]
+            [hive-mcp.test-support.registry-isolation :as isolation]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -35,18 +36,15 @@
   (reset-store! [_] nil))
 
 (defn- with-default-store
-  "Run F with STORE in the default slot and an empty kanban slot, then restore."
+  "Run F with STORE in the default slot and an empty kanban slot. Refuses a
+   running addon server before either slot is touched and restores the exact
+   prior slot map in one atomic swap, instead of re-registering slot by slot."
   [store f]
-  (let [prior (mem-proto/registered-stores)]
-    (try
+  (isolation/with-restored-store-registry
+    (fn []
       (mem-proto/register-store! :default store)
       (mem-proto/register-store! :kanban (->MapStore {}))
-      (f)
-      (finally
-        (doseq [slot [:default :kanban]]
-          (if-let [p (get prior slot)]
-            (mem-proto/register-store! slot p)
-            (mem-proto/unregister-store! slot)))))))
+      (f))))
 
 (def ^:private entry {:id "here" :type "note" :content "real" :tags ["t"]})
 

@@ -7,7 +7,8 @@
             [clojure.data.json :as json]
             [hive-mcp.dns.result :refer [rescue]]
             [taoensso.timbre :as log]
-            [malli.core :as m]))
+            [malli.core :as m]
+            [hive-mcp.transport.origin :as origin]))
 ;; Copyright (C) 2026 Pedro Gomes Branquinho (BuddhiLW) <pedrogbranquinho@gmail.com>
 ;;
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -121,17 +122,36 @@
 
                 socket)))
 
+(defn origin-allowed?
+  "Pure: may a WebSocket upgrade carrying `origin` (the Origin header value,
+   nil when absent) connect? See `hive-mcp.transport.origin/allowed?`."
+  [origin]
+  (origin/allowed? origin))
+
+(m/=> origin-allowed? [:=> [:cat [:maybe :string]] :boolean])
+
+(defn- forbidden-origin [origin]
+  (log/warn "WebSocket upgrade refused: Origin" origin "is not loopback")
+  {:status  403
+   :headers {"Content-Type" "text/plain"}
+   :body    "Forbidden: WebSocket Origin must be loopback"})
+
 (defn- hybrid-handler
-  "Hybrid HTTP/WebSocket handler routing to metrics, health, or WS upgrade."
+  "Hybrid HTTP/WebSocket handler routing to metrics, health, or WS upgrade.
+   A WS upgrade from a non-loopback Origin answers 403."
   [req]
-  (let [uri (:uri req)
-        method (:request-method req)]
+  (let [uri    (:uri req)
+        method (:request-method req)
+        origin (get-in req [:headers "origin"])]
     (cond
       (and (= method :get) (= uri "/metrics"))
       (metrics-handler req)
 
       (and (= method :get) (= uri "/health"))
       (health-handler req)
+
+      (not (origin-allowed? origin))
+      (forbidden-origin origin)
 
       :else
       (ws-connection-handler req))))

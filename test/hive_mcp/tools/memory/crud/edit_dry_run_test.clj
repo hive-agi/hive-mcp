@@ -5,6 +5,7 @@
             [clojure.test.check.generators :as gen]
             [hive-test.trifecta :refer [deftrifecta]]
             [hive-mcp.protocols.memory :as mem-proto]
+            [hive-mcp.test-support.registry-isolation :as isolation]
             [hive-mcp.tools.memory.crud.edit :as edit]))
 
 (def ^:private stored
@@ -70,22 +71,20 @@
 (deftest dry-run-reports-per-op-and-writes-nothing
   ;; Distinct ids per op: a batch naming one id twice is refused before any
   ;; check runs (edit-concurrency), and a dry run mirrors the real edit.
-  (let [writes   (atom [])
-        entries  (assoc stored "e2" {:id "e2" :type "note" :content "alpha beta beta"})
-        snapshot (mem-proto/registered-stores)]
-    (try
-      (mem-proto/register-store! :default (recording-store entries writes))
-      (let [resp (edit/handle-batch-edit
-                  {:dry-run true
-                   :operations [{:id "e1" :find "alpha" :replace "z"}
-                                {:id "e2" :find "beta" :replace "z"}
-                                {:id "gone" :content "x"}]})
-            body (json/read-str (:text resp) :key-fn keyword)]
-        (is (= [true false false] (mapv :ok (:results body))))
-        (is (= 1 (:valid body)))
-        (is (= 2 (:invalid body)))
-        (is (empty? @writes) "a dry run must not touch the store"))
-      (finally
-        (mem-proto/unregister-store! :default)
-        (when-let [old (:default snapshot)]
-          (mem-proto/register-store! :default old))))))
+  ;; Registry writes run under with-restored-store-registry: a running addon
+  ;; server is refused first, and the prior slot map is restored atomically.
+  (let [writes  (atom [])
+        entries (assoc stored "e2" {:id "e2" :type "note" :content "alpha beta beta"})]
+    (isolation/with-restored-store-registry
+     (fn []
+       (mem-proto/register-store! :default (recording-store entries writes))
+       (let [resp (edit/handle-batch-edit
+                   {:dry-run true
+                    :operations [{:id "e1" :find "alpha" :replace "z"}
+                                 {:id "e2" :find "beta" :replace "z"}
+                                 {:id "gone" :content "x"}]})
+             body (json/read-str (:text resp) :key-fn keyword)]
+         (is (= [true false false] (mapv :ok (:results body))))
+         (is (= 1 (:valid body)))
+         (is (= 2 (:invalid body)))
+         (is (empty? @writes) "a dry run must not touch the store"))))))

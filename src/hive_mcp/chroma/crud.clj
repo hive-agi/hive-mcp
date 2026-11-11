@@ -134,8 +134,11 @@
         _ (when (and resolved (not no-embed?))
             (embedding-service/validate-content-size! embed-text resolved))
         coll (if resolved
+               ;; Space-guarded: a collection stamped with another embedding
+               ;; space refuses the write (:embedding-space-mismatch).
                (conn/get-or-create-named-collection
-                 (:collection-name resolved) (:dimension resolved))
+                 (:collection-name resolved) (:dimension resolved)
+                 (embedding-service/space-for-resolved resolved {:metric conn/metric}))
                (conn/get-or-create-collection))
         provider (if resolved (:provider resolved) (emb/get-embedding-provider))
         embed-1 (fn [p] (emb/embed-text p embed-text))
@@ -152,6 +155,11 @@
                           (do (log/warn "Embed via" (:provider-key resolved)
                                         "failed for entry" entry-id "— failing over to"
                                         (:provider-key alt) "(" (.getMessage e1) ")")
+                              ;; The sibling must embed into the collection's own
+                              ;; space too: a stamped collection refuses it.
+                              (conn/get-or-create-named-collection
+                                (:collection-name alt) (:dimension alt)
+                                (embedding-service/space-for-resolved alt {:metric conn/metric}))
                               (try (embed-1 (:provider alt))
                                    (catch Throwable e2
                                      (log/error "Embed failover also failed for entry"
